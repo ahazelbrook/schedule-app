@@ -7,13 +7,33 @@
   var N = A.SECTIONS.length;
 
   /* ---------- build the panels, tabs and rail ---------- */
+  /* The figure kit is not in the first load (routes.js 'figures'). The creator's panels need its option lists, so they are built the
+     first time the creator opens (startCreator), once the kit is here; a sheet, Home or the table never pay for them. */
+  var L = window.B68Load;
   var panels = $('panels'), tabsEl = $('tabs'), rail = $('rail');
+  var SIL = '<svg class="pic-sil" viewBox="0 0 240 240" aria-hidden="true" focusable="false"><circle cx="120" cy="90" r="42" fill="currentColor" opacity=".28"/><path d="M34 240c0-54 36-86 86-86s86 32 86 86z" fill="currentColor" opacity=".28"/></svg>';
+  /* ask for the bundle: urgent (a route that cannot do without it) at once, else when idle; the arrival is B68Load.onFigures (end of this file) */
+  function wantKit(urgent) {
+    if (!L || typeof L.kit !== 'function' || A.kitReady) return;
+    L.kit(urgent === true).then(function (ok) { if (ok === false && urgent === true) toast('The figure kit could not load. Check the connection and try again.', true); });
+  }
+  function needKit() { if (A.kitReady) return true; toast('The figure kit is still loading. Try again in a moment.', true); wantKit(true); return false; }
+  var creatorOn = false;
+  function buildCreator() {
   A.SECTIONS.forEach(function (s, i) {
     var p = el('div', 'panel'); p.id = 'panel-' + i; p.setAttribute('role', 'tabpanel');
     s.build().forEach(function (c) { p.appendChild(c); }); panels.appendChild(p);
     var t = el('button', 'tab', esc(s.name)); t.type = 'button'; t.setAttribute('role', 'tab'); t.id = 'tab-' + i; t.onclick = function () { showStep(i); }; tabsEl.appendChild(t);
     var r = el('button', null, '<span class="n">' + (i + 1) + '</span><span>' + esc(s.name) + '</span>'); r.type = 'button'; r.onclick = function () { showStep(i); }; rail.appendChild(r);
   });
+  }
+  /* the creator opens: panels once, then the step and the drawings. Without the kit it asks for it now and says so */
+  function startCreator() {
+    if (document.body.dataset.mode !== 'create') return;
+    if (!A.kitReady) { var w = $('warnings'); if (w) w.textContent = 'Loading the figure kit…'; wantKit(true); return; }
+    if (!creatorOn) { creatorOn = true; buildCreator(); }
+    showStep(S.step); A.draw(); A.drawLineup();
+  }
   function stepDone(i) {
     var sh = S.sheet, p = A.pbOf();
     switch (i) {
@@ -57,6 +77,7 @@
   /* ---------- the crew line-up ---------- */
   var roster = [], lineKey = null;
   A.drawLineup = function () {
+    if (!A.kitReady || document.body.dataset.mode !== 'create') return;   /* it is in the creator; startCreator draws it on opening */
     try {
       var you = A.renderSpec(); you.id = (you.id || 'you') + '-lu';
       var others = roster.length ? roster.slice(0, 6).map(function (d, i) { var s = clone(d.spec); s.id = 'r' + i + '-' + A.slug(d.name); s.name = d.name; s.playbook = d.playbookName || d.playbook; return s; }) : C.pcs.map(function (c) { return clone(c); });
@@ -128,6 +149,7 @@
     var gp = $('gm-page'); if (gp) gp.hidden = m !== 'gm';
     var dp = $('display-page'); if (dp) dp.hidden = m !== 'display';
     if (m !== 'sheet' && was === 'sheet') closeSheet();
+    if (m === 'create' && was !== 'create') startCreator();
     if (m !== 'table' && was === 'table') closeTable();
     if (m === 'table' && was !== 'table') startTable();
     if (m !== 'print' && was === 'print') closePrint();
@@ -318,7 +340,7 @@
       if (!data) { toast(first ? 'That character was not found.' : 'This character was removed.', true); goBack(); return; }
       latest = data; cache[id] = data;
       var doc = Object.assign({ id: id }, clone(data));
-      try { if (first) { first = false; T.open(doc, api); } else if (T.update) T.update(doc); syncTitle(); }
+      try { if (first) { first = false; T.open(doc, api); wantKit(false); } else if (T.update) T.update(doc); syncTitle(); }
       catch (e) { toast('The sheet could not render: ' + (e && e.message || e), true); }
     }
     if (typeof ref.onSnapshot === 'function') {
@@ -503,7 +525,7 @@
     if (!Cm) { if (!lazily('table', 'table', startTable, 'the table', panelNote('table-page'))) toast('The table module is missing.', true); return; }
     if (tableOn) return;
     if (!dbSettled) { Cm.notice('Opening the table…'); return; }   /* boot calls again once the files settle */
-    startCampaign();
+    startCampaign(); wantKit(false);
     if (!campRef) { Cm.notice(NO_TABLE, true); return; }
     tableOn = true;
     Cm.open(tableApi(campRef));
@@ -593,7 +615,7 @@
   }
   function startCast() {
     var Cp = castMod(); if (!Cp) { toast('The cast module is missing.', true); return; }
-    castOn = true;
+    castOn = true; wantKit(true);
     try { Cp.open(location.hash || '#cast'); } catch (e) { toast('The cast could not render: ' + (e && e.message || e), true); }
   }
   function castRoute() { var Cp = castMod(); if (Cp && castOn) { try { Cp.route(location.hash || '#cast'); } catch (e) {} } }
@@ -793,6 +815,7 @@
   /* may this viewer change this character: the GM any, a player their own and the unowned (the server's rule) */
   function mayEdit(d) { return A.canWrite !== false && (A.isGM === true || !d.owner || d.owner === A.me); }
   function figureSvg(d, h, pre) {
+    if (!A.kitReady) return SIL;   /* the kit's arrival draws the cards again (onFigures, end of this file) */
     try { var s = clone(d.spec); s.id = pre + d.id; var svg = K.render(s, { height: h, lod: 'lo', shadow: false }).svg; return svg.replace(/<svg([^>]*?)\swidth="[^"]*"/, '<svg$1').replace(/<svg([^>]*?)\sheight="[^"]*"/, '<svg$1'); } catch (e) { return '?'; }
   }
   function renderCards(list) {
@@ -1061,9 +1084,9 @@
       case 'dlAll': downloadAll(); break;
       case 'dlEverything': downloadEverything(); break;
       case 'restoreBtn': pickRestore(); break;
-      case 'dlSvg': saveFile(fileBase() + '.svg', A.figureSvg(900)); break;
-      case 'dlMug': saveFile(fileBase() + '-mugshot.svg', A.mugshot().svg); break;
-      case 'dlPng': (function () { var svg = S.view === 'mug' ? A.mugshot().svg : A.figureSvg(900); var m = svg.match(/viewBox="([^"]+)"/); var vb = m ? m[1].split(/\s+/).map(parseFloat) : [0, 0, 540, 900]; var H = 1600, W = Math.round(H * vb[2] / vb[3]); var img = new Image(); var url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' })); img.onload = function () { try { var c = document.createElement('canvas'); c.width = W; c.height = H; var g = c.getContext('2d'); g.fillStyle = '#e8e2d4'; g.fillRect(0, 0, W, H); g.drawImage(img, 0, 0, W, H); c.toBlob(function (bl) { URL.revokeObjectURL(url); if (bl) saveFile(fileBase() + (S.view === 'mug' ? '-mugshot' : '') + '.png', bl); else toast('Could not rasterise the figure.', true); }, 'image/png'); } catch (e) { toast('Could not rasterise: ' + e.message, true); } }; img.onerror = function () { URL.revokeObjectURL(url); toast('Could not rasterise the figure.', true); }; img.src = url; })(); break;
+      case 'dlSvg': if (!needKit()) break; saveFile(fileBase() + '.svg', A.figureSvg(900)); break;
+      case 'dlMug': if (!needKit()) break; saveFile(fileBase() + '-mugshot.svg', A.mugshot().svg); break;
+      case 'dlPng': if (!needKit()) break; (function () { var svg = S.view === 'mug' ? A.mugshot().svg : A.figureSvg(900); var m = svg.match(/viewBox="([^"]+)"/); var vb = m ? m[1].split(/\s+/).map(parseFloat) : [0, 0, 540, 900]; var H = 1600, W = Math.round(H * vb[2] / vb[3]); var img = new Image(); var url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' })); img.onload = function () { try { var c = document.createElement('canvas'); c.width = W; c.height = H; var g = c.getContext('2d'); g.fillStyle = '#e8e2d4'; g.fillRect(0, 0, W, H); g.drawImage(img, 0, 0, W, H); c.toBlob(function (bl) { URL.revokeObjectURL(url); if (bl) saveFile(fileBase() + (S.view === 'mug' ? '-mugshot' : '') + '.png', bl); else toast('Could not rasterise the figure.', true); }, 'image/png'); } catch (e) { toast('Could not rasterise: ' + e.message, true); } }; img.onerror = function () { URL.revokeObjectURL(url); toast('Could not rasterise the figure.', true); }; img.src = url; })(); break;
       case 'copySheet': copyText(A.sheetMarkdown(), 'Sheet copied as Markdown.'); break;
       case 'copySpec': copyText(JSON.stringify(S.spec, null, 2), 'Figure spec copied as JSON.'); break;
       case 'copyLink': copyText(location.href.split('#')[0] + '#s' + b64url(JSON.stringify({ spec: S.spec, sheet: Object.assign({}, S.sheet, { docId: undefined }) })), 'Link copied. It carries the whole character.'); break;
@@ -1154,6 +1177,7 @@
     var ready = homeReady();
     if (files) files.hidden = !ready || !db;
     if (!ready) { box.innerHTML = '<p class="hm-wait" role="status">Opening your sheets…</p>'; return; }
+    wantKit(false);
     var act = document.activeElement, keep = act && box.contains(act) ? (act.id === 'homeTitle' ? '#homeTitle' : act.id === 'homeNameIn' ? '#homeNameIn' : act.getAttribute('data-hm') ? '[data-hm="' + act.getAttribute('data-hm') + '"]' + (act.dataset.id ? '[data-id="' + act.dataset.id + '"]' : '') : null) : null;
     var f = tableFacts(), mine = A.me ? roster.filter(function (d) { return d.owner === A.me; }) : [];
     box.innerHTML = A.isGM === true && db ? (f.started ? homeGm(f) : homeSetup(f)) : mine.length ? homeBack(f, mine) : homeWelcome(f);
@@ -1285,7 +1309,7 @@
     else if (draft) { S.spec = draft.spec; S.sheet = normaliseSheet(draft.sheet); delete S.sheet.docId; S.step = Math.max(0, Math.min(N - 1, +draft.step || 0)); S.dirty = !!draft.dirty; }
     else { S.spec = clone(A.BASE_FIGURE); S.sheet = A.blankSheet(); }
     if (!S.spec.props) S.spec.props = [];
-    showStep(S.step); A.draw(); A.drawLineup(); whoami(); syncView(); syncBackups();
+    showStep(S.step); whoami(); syncView(); syncBackups();   /* the creator draws when it opens (startCreator), not here */
     /* the first view, from the hash (or the hot snapshot when there is none); quiet: the hash already says so */
     var sm = !h && saved ? saved.mode : null;
     pendingOpen = hashOpen() || (sm === 'sheet' && saved.open ? saved.open : null);
@@ -1336,5 +1360,15 @@
       }).catch(function () { dbSettled = true; cannotOpen('Saved characters are not available here, so that sheet cannot open.'); renderHome(); if (document.body.dataset.mode === 'table') startTable(); });
     } else { dbSettled = true; $('rosterNote').textContent = 'Saved characters are not available in this view.'; whoami(); syncBackups(); cannotOpen(''); renderHome(); if (document.body.dataset.mode === 'table') startTable(); }
   }
+  /* the kit and the canon are here: bind the creator's shells, then draw what is on show and mark the rest to draw when it is shown.
+     The sheet, the cast page and the table board have their own hooks (tracker.js, cast-page.js, schedule.js) */
+  if (L && typeof L.onFigures === 'function') L.onFigures(function () {
+    A.bindKit();
+    var m = document.body.dataset.mode;
+    if (m === 'create') startCreator();
+    else if (m === 'home') renderRoster(roster);
+    else rosterStale = true;   /* the cards draw when the next mode switch redraws them (setMode) */
+  });
+  setTimeout(function () { wantKit(false); }, 5000);   /* whatever route this is, the kit is on this device soon (offline use needs it cached) */
   if (hot && hot.ready) hot.ready(function (data) { boot(data || {}); }); else boot((hot && hot.data) || {});
 })();
