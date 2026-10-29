@@ -1295,6 +1295,19 @@
     }
     return view;
   }
+  /* targetInView(play, state, openRooms) -> { room, label } | null: the one marker the players' map may carry for a person (VV8, design 5.3).
+   * The target, at the published state.t (never a peek), in a room open to the players, while a public event is on in that room or a PC is in it.
+   * It is missionFor's hud.target (one rule, one place) with the target's player-safe label added; gone, nowhere or a closed room is null.
+   * Only the target is ever returned: no other person, and no note, look or wary. A v1 play is null. */
+  function targetInView(play, state, openRooms) {
+    var view = playerView(play, state, openRooms), st = isObj(state) ? state : {};
+    if (!view) return null;
+    var t = typeof st.t === "number" && isFinite(st.t) ? st.t : 0;
+    var m = missionFor(view, st, t, []);
+    var who = view.people.filter(function (p) { return p.target; })[0];
+    if (!m || !m.hud.target || !who || !who.label) return null;
+    return { room: m.hud.target.room, label: who.label };
+  }
   function eventSetHas(play, id) {
     return (Array.isArray(play.events) ? play.events : []).some(function (e) { return isObj(e) && e.id === id; });
   }
@@ -1424,5 +1437,5 @@
     return m;
   }
 
-  return { checkPlay: checkPlay, positionOf: positionOf, lookers: lookers, routesAt: routesAt, leadsInReach: leadsInReach, beatCard: beatCard, playerView: playerView, missionFor: missionFor, placesAt: placesAt, beatOf: beatOf, timeLabel: timeLabel, inMin: inMin, countPlay: countPlay, minuteOf: minuteOf, whereAt: whereAt, lensRating: lensRating, seesMatches: seesMatches, ballView: ballView, KINDS: KINDS, DIRS: DIRS, LIMITS: LIMITS };
+  return { checkPlay: checkPlay, positionOf: positionOf, lookers: lookers, routesAt: routesAt, leadsInReach: leadsInReach, beatCard: beatCard, playerView: playerView, targetInView: targetInView, missionFor: missionFor, placesAt: placesAt, beatOf: beatOf, timeLabel: timeLabel, inMin: inMin, countPlay: countPlay, minuteOf: minuteOf, whereAt: whereAt, lensRating: lensRating, seesMatches: seesMatches, ballView: ballView, KINDS: KINDS, DIRS: DIRS, LIMITS: LIMITS };
 });

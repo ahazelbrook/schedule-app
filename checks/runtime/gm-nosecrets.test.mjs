@@ -673,7 +673,7 @@ await test('(m) the builder is blind: lens, people, play, danger and timeline pa
   if (/POISON|#d11/.test(all)) throw new Error('a field that is not a crew or pin map, a PC name or a clock\'s size/filled reached a token: ' + all);
   const src = read(path.join(ROOT, 'app', 'gm-page.js'));
   const sig = src.match(/function playerTokens\(([^)]*)\)/);
-  if (!sig || sig[1].replace(/\s/g, '') !== 'placed,shown,clocks,pcs') throw new Error('playerTokens\' parameters changed: ' + (sig && sig[1]));
+  if (!sig || sig[1].replace(/\s/g, '') !== "placed,shown,clocks,pcs,mark") throw new Error('playerTokens\' parameters changed: ' + (sig && sig[1]));
   const body = src.slice(src.indexOf('function playerTokens('), src.indexOf('function tokenHidden('));
   if (/\.lens|\.people|\bplay\b|\.stops|\.events|\.disguises/.test(body.replace(/\/\*[\s\S]*?\*\//g, ''))) throw new Error('playerTokens reads something it must never see');
   const set = src.slice(src.indexOf('function playerTokenSet('), src.indexOf('/* ---- the strip ---- */'));
@@ -796,6 +796,104 @@ await test('(m) the real kit, 30 invented rolls at four reveals: markers appear 
   if (bad.length) throw new Error(bad.length + ' problems: ' + bad.slice(0, 4).join(' ; '));
   if (n < 100 || drawn < 100) throw new Error('only ' + n + ' copies and ' + drawn + ' markers: the check is not testing anything');
   console.log('     ' + n + ' player copies, ' + drawn + ' markers drawn');
+});
+
+/* ---------- (m) VV8: the target's marker on the player layer (design 5.3, H6) ---------- */
+// B.targetInView is the one rule (the target, at the published ball.t, in an open room, at a public event or with a PC); playerTokens draws it
+// through the same tokenScreen as the crew. Each negative runs beside a positive control.
+const VV8_B = createRequire(import.meta.url)(path.join(ROOT, 'app', 'gm', 'ball.js'));
+const VV8_PLAY = JSON.parse(read(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'pelican-play-v2.json')));
+const VV8_TARGET = VV8_PLAY.people.filter((p) => p.target === true || p.kind === 'target')[0];
+const vv8Crew = (room, extra) => ({ pc1: { room, disguise: 'guest', ...(extra || {}) } });
+const vv8 = (t, crew, open, over, play) => VV8_B.targetInView(play || VV8_PLAY, { site: 'Invented Works', t, crew: crew || {}, over: over || {}, open: open || [] }, open || []);
+const VV8_ALL = ['Showroom', 'Cocktail lounge', 'Private card rooms', 'Security control room', 'Underground counting room', 'Luxury penthouse'];
+
+await test('(m) VV8 the marker comes and goes with the time: at a public event, with a PC in his room, and neither', () => {
+  assertEq(VV8_TARGET.label, 'Odette Marsh', 'the fixture\'s target');
+  assertEq(vv8(60, {}, VV8_ALL), { room: 'Showroom', label: 'Odette Marsh' }, 'the public event is on (22:00) in his room, no PC anywhere');
+  assertEq(vv8(100, {}, VV8_ALL), null, 'positive-control pair: 22:40, no event, no PC in his room');
+  assertEq(vv8(100, vv8Crew('Showroom'), VV8_ALL), { room: 'Showroom', label: 'Odette Marsh' }, 'a PC is in his room');
+  assertEq(vv8(100, vv8Crew('Cocktail lounge'), VV8_ALL), null, 'a PC in another room');
+  assertEq(vv8(150, vv8Crew('Private card rooms'), VV8_ALL), { room: 'Private card rooms', label: 'Odette Marsh' }, '23:30 he has moved: the marker moved with him');
+  assertEq(vv8(150, vv8Crew('Showroom'), VV8_ALL), null, '... and the PC left behind sees nothing');
+  assertEq(vv8(75, {}, VV8_ALL), null, 'the event is over at 22:15');
+  assertEq(vv8(0, {}, VV8_ALL), null, 'before the event');
+});
+
+await test('(m) VV8 the marker never shows in a room that is not open (each beside its open control)', () => {
+  assertEq(vv8(60, {}, ['Showroom']).room, 'Showroom', 'control: Showroom open');
+  assertEq(vv8(60, {}, ['Cocktail lounge', 'Private card rooms']), null, 'his room closed, others open');
+  assertEq(vv8(60, {}, []), null, 'nothing open');
+  assertEq(vv8(150, vv8Crew('Private card rooms'), ['Showroom']), null, 'a PC with him in a closed room');
+  const drawn = GP.playerTokens({ crew: {}, pins: {} }, ['Showroom'], [], [], { room: 'Private card rooms', label: 'Odette Marsh' });
+  assertEq(drawn, [], 'playerTokens: a mark in a room it was not told is open draws nothing');
+  assertEq(GP.playerTokens({ crew: {}, pins: {} }, ['Showroom'], [], [], { room: 'Showroom', label: 'Odette Marsh' }).map((x) => [x.room, x.label]), [['Showroom', 'Odette Marsh']], 'control: open');
+});
+
+await test('(m) VV8 only the target: a non-target person in view gets no marker (positive control beside it)', () => {
+  // Pip Quill (staff) is in the Cocktail lounge from 21:00 with a PC; the target is in the Showroom
+  assertEq(vv8(10, vv8Crew('Cocktail lounge'), VV8_ALL), null, 'a staff member and a PC in the Cocktail lounge, the target elsewhere: no marker');
+  assertEq(vv8(10, vv8Crew('Showroom'), VV8_ALL), { room: 'Showroom', label: 'Odette Marsh' }, 'control: the target with a PC does get one');
+  const m = vv8(10, vv8Crew('Showroom'), VV8_ALL);
+  assertEq(Object.keys(m).sort(), ['label', 'room'], 'only a room and a label');
+  const toks = GP.playerTokens({ crew: { pc1: 'Showroom' }, pins: {} }, ['Showroom'], [], [{ id: 'pc1', name: 'Cass Fenn', icon: '' }], m);
+  const all = JSON.stringify(toks);
+  for (const n of ['Wren', 'Tully', 'Pip', 'Quill', 'GM-ONLY']) if (all.includes(n)) throw new Error('a non-target name reached the marker: ' + n);
+  assertEq(toks.map((x) => [x.room, x.label]), [['Showroom', 'Odette Marsh, Cass Fenn']], 'one token per room: the target first, then the PC');
+  if (!toks[0].svg.includes('>OM<') || !toks[0].svg.includes('>CF<')) throw new Error('both pills drawn');
+  const rich = GP.playerTokens({ crew: {}, pins: {} }, ['Showroom'], [], [], { room: 'Showroom', label: 'Odette Marsh', look: 'POISONLOOK', note: 'POISONNOTE', wary: true });
+  if (rich.length !== 1 || /POISON|wary/.test(JSON.stringify(rich))) throw new Error('an extra key on the mark reached the token');
+});
+
+await test('(m) VV8 the marker follows a Lockdown (over.at) and disappears on Target is down (over.gone)', () => {
+  assertEq(vv8(100, vv8Crew('Showroom'), VV8_ALL), { room: 'Showroom', label: 'Odette Marsh' }, 'control: before');
+  assertEq(vv8(100, vv8Crew('Showroom'), VV8_ALL, { od: { at: 'Cocktail lounge' } }), null, 'locked into the Cocktail lounge: gone from the Showroom');
+  assertEq(vv8(100, vv8Crew('Cocktail lounge'), VV8_ALL, { od: { at: 'Cocktail lounge' } }), { room: 'Cocktail lounge', label: 'Odette Marsh' }, 'and there with a PC: shown there');
+  assertEq(vv8(100, vv8Crew('Cocktail lounge'), ['Showroom'], { od: { at: 'Cocktail lounge' } }), null, 'the lockdown room closed: nothing');
+  assertEq(vv8(60, vv8Crew('Showroom'), VV8_ALL, { od: { gone: true } }), null, 'Target is down: nobody to show, even at a public event with a PC');
+  assertEq(vv8(60, vv8Crew('Showroom'), VV8_ALL, { od: { gone: false } }) !== null, true, 'control: gone:false is not gone');
+});
+
+await test('(m) VV8 v1 is unchanged: a v1 play gives no marker, and playerTokens without a mark is as before', () => {
+  assertEq(VV8_B.targetInView({ v: 1, clock: { start: '21:00', end: '01:00' } }, { t: 60, crew: { pc1: 'Showroom' } }, VV8_ALL), null, 'v1 play');
+  assertEq(VV8_B.targetInView(null, {}, []), null, 'no play');
+  assertEq(VV8_B.targetInView(VV8_PLAY, null, VV8_ALL), null, 'no state: t 0, nothing on');
+  const four = GP.playerTokens({ crew: { pc1: 'Lobby' }, pins: {} }, ['Lobby'], [], TK_PCS);
+  if (four.length !== 1) throw new Error('control: one token');
+  assertEq(GP.playerTokens({ crew: { pc1: 'Lobby' }, pins: {} }, ['Lobby'], [], TK_PCS, null), four, 'a null mark is no mark');
+  assertEq(GP.playerTokens({ crew: { pc1: 'Lobby' }, pins: {} }, ['Lobby'], [], TK_PCS, { room: 'Lobby' }), four, 'a mark without a label draws nothing');
+});
+
+await test('(m) VV8 the gate: the target\'s label passes only when the page allows it, any other person still refuses the set; icons are glyphs; the page wiring', async () => {
+  const roll = { ...TK_ROLL, rooms: [{ name: 'Showroom', band: 'public' }, { name: 'Cocktail lounge', band: 'public' }, { name: 'Private card rooms', band: 'controlled' }], targetRoom: 'Private card rooms', targetBand: 'controlled' };
+  const mk = GP.playerTokens({ crew: { pc1: 'Showroom' }, pins: {} }, ['Showroom', 'Cocktail lounge'], [], [{ id: 'pc1', name: 'Cass Fenn', icon: '🎭' }], { room: 'Showroom', label: 'Odette Marsh' });
+  if (!mk[0].svg.includes('🎭')) throw new Error('the costume icon is on the pill');
+  const others = ['Wren Tully', 'Pip Quill', 'Guest'];       // the deny list the page builds, with the target's label taken out
+  const ok = GP.playerDisplay(roll, TK_MAP(), mapRender, { tokens: mk, hide: others });
+  if (ok.tokens !== 1 || ok.tokensRefused || tokCount(ok.svg) !== 1) throw new Error('control: the marker is drawn (' + ok.tokens + ')');
+  const bad = GP.playerDisplay(roll, TK_MAP(), mapRender, { tokens: mk, hide: ['Odette Marsh'].concat(others) });
+  if (bad.tokens !== 0 || !bad.tokensRefused) throw new Error('with the target on the deny list the set is refused');
+  const other = GP.playerTokens({ crew: {}, pins: {} }, ['Showroom'], [], [], { room: 'Showroom', label: 'Wren Tully' });
+  const refused = GP.playerDisplay(roll, TK_MAP(), mapRender, { tokens: other, hide: others });
+  if (refused.tokens !== 0 || !refused.tokensRefused) throw new Error('a non-target label on a mark is refused by the gate');
+  const src = read(path.join(ROOT, 'app', 'gm-page.js'));
+  const deny = src.slice(src.indexOf('function tokenDeny('), src.indexOf('RUN_ICONS'));
+  if (/p\.kind === 'target' && fold\(p\.label\) === ok/.test(deny)) { /* ok */ } else throw new Error('tokenDeny exempts something other than the target');
+  const set = src.slice(src.indexOf('function playerTokenSet('), src.indexOf('/* ---- the strip ---- */'));
+  if (!/targetMark\(rs, st, shown\)/.test(set) || !/P\.playerTokens\(placed, shown, clocks, pcs, mark\)/.test(set) || !/tokenDeny\(rs\.play, mark \? mark\.label : ''\)/.test(set)) throw new Error('the player set does not build the marker through playerTokens and the deny list');
+  if (!/rs\.B\.targetInView\(rs\.play, st, shown\)/.test(src)) throw new Error('the marker is not B.targetInView at the published ball');
+  if (/\bpeek\b|S\.rvPeek|shownT/.test(set)) throw new Error('the player set reads a peek');
+});
+
+await test('(m) VV8 a hidden target gets no marker (the page checks hiddenSecretNames); costume glyphs are emoji-presentation, an unknown icon draws none', () => {
+  const src = read(path.join(ROOT, 'app', 'gm-page.js'));
+  const tm = src.slice(src.indexOf('function targetMark('), src.indexOf('function playerTokenSet('));
+  if (!tm.includes("hiddenSecretNames().some(function (n) { return fold(n) === f; }) ? null : m")) throw new Error("targetMark does not drop a hidden NPC's name");
+  const pill = (i) => GP.runTokenSvg({ pills: [{ t: 'CF', c: '#111111', i }], pies: [] });
+  const known = pill('🎭');
+  if (!known.includes('🎭️') || !/fill="#fff"/.test(known) || !/font-family="[^"]*Emoji/.test(known)) throw new Error('control: a known glyph is drawn with U+FE0F, a fill and an emoji font');
+  for (const bad of ['G', 'xx', '', undefined, '<b>']) if (/font-size="44"/.test(pill(bad))) throw new Error('an unknown icon drew something: ' + bad);
+  assertEq(pill('G').includes('>G<'), false, 'and not a letter');
 });
 
 /* ---------- (n) single rooms (M4 step 5; map kit 0.9 "room:<name>" reveal entries) ---------- */
