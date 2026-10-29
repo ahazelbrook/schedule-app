@@ -33,6 +33,9 @@ const SCREEN_SQL = `SELECT d.seq AS seq, m.mirror AS mirror,
 
 // ---------- the hidden-name scan ----------
 const ASCII_ONLY = /^[\x00-\x7f]*$/;
+// the characters NFKC rewrites into letters (compatibility forms: full-width, ligatures, super- and subscripts, letterlike, enclosed, width variants,
+// mathematical alphanumerics) and a few Latin ones; a view without any is the same text folded or not
+const FOLDS = /[ ª²-¶¸-º¼-¾ĲĳĿŀŉſǄ-ǌǱ-ǳʰ-ʸᴬ-ᶿẚẛ - ⁰-₟℀-↏①-⓿ⱼⱽ　-㏿ﬀ-ﭏ︰-﹯＀-￯]|[\ud835\ud83c]/;
 const nfkc = (s) => (ASCII_ONLY.test(s) ? s : s.normalize('NFKC'));
 
 function decodeEntities(s) {
@@ -75,8 +78,10 @@ export function hiddenNameHit(views, names) {
   const any = new RegExp(needles.map((x) => x.needle.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')).join('|'));
   for (const view of views) {
     if (typeof view !== 'string' || !view) continue;
-    const ascii = ASCII_ONLY.test(view);
-    const folded = (ascii ? view : view.normalize('NFKC')).toLowerCase(), plain = ascii ? null : view.toLowerCase();
+    // NFKC only where it can change a letter: a map's text is full of ordinary non-ASCII marks (a dot, a curly quote, an arrow) that
+    // NFKC leaves alone, and folding a 600 KiB view for one of them would double the cost (4 ms against 2 ms in node)
+    const ascii = ASCII_ONLY.test(view), fold = !ascii && FOLDS.test(view);
+    const folded = (fold ? view.normalize('NFKC') : view).toLowerCase(), plain = fold ? view.toLowerCase() : null;
     if (!any.test(folded) && !(plain !== null && any.test(plain))) continue;
     for (const { name, needle } of needles) {
       if ((folded.indexOf(needle) >= 0 || (plain !== null && plain.indexOf(needle) >= 0)) && namesHit(view, [name])) return true;

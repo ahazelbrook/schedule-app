@@ -268,6 +268,10 @@ await step('the scan helpers: views, the prefilter agrees with namesHit on a sha
   expect(hit === false, 'no false hit on a big map');
   const planted = big.replace('Stairs', 'Stairs Invented Person Azorblin0'); expect(planted !== big, 'the control edit applied');
   expect(hiddenNameHit(svgViews(planted), many) === true, 'a planted name in a big map is found');
+  const curly = planted.replace('<svg', '<svg data-note="Gil’s ·"');
+  expect(curly !== planted && hiddenNameHit(svgViews(curly), many) === true, 'and still found in a map that holds a curly quote and a dot (the view is not folded for those)');
+  const wide = big.replace('Stairs', 'Stairs Invented Person Ａzorblin0'); // a full-width A
+  expect(wide !== big && hiddenNameHit(svgViews(wide), many) === true, 'and a full-width spelling is still folded and found');
   console.log('     (scan of a ' + Math.round(big.length / 1024) + ' KiB map against 40 names: ' + ms.toFixed(1) + ' ms per scan in node)');
   expect(ms < 30, 'the scan is cheap enough for 10 ms of Worker CPU after the prefilter: ' + ms.toFixed(1) + ' ms here');
   // end to end through the route with a stored big map
