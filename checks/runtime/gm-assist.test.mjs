@@ -227,8 +227,8 @@ const REPLIES = () => ({
   mystery: { known: [], theories: [], push_next: '', must_land_item: '', how: 'no list' },
 });
 
-// the Scribe and Meanwhile (gm-assist-scribe.test.mjs) came after these tests: P1_WAKES is the table they were written for
-const { scribe: _sc, meanwhile: _mw, ...P1_WAKES } = WAKES;
+// the Scribe and Meanwhile (gm-assist-scribe.test.mjs) and Who is who (gm-assist-whois.test.mjs) came after these tests: P1_WAKES is the table they were written for
+const { scribe: _sc, meanwhile: _mw, whois: _wi, ...P1_WAKES } = WAKES;
 const LEGACY_WAKES = { ref: WAKES.ref, clerk: WAKES.clerk, ledger: WAKES.ledger, voice: WAKES.voice };
 async function setup(opts = {}) {
   const exec = await memoryExec({ schemaFile: path.join(ROOT, 'schema.sql') });

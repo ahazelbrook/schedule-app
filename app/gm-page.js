@@ -1682,7 +1682,7 @@
     var g = gmApi(), A = W.B68GmAssist, me = S;
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
     if (!A || !g || typeof g.assistTick !== 'function' || typeof g.stt !== 'function') return;
-    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onTyped: function (text) { return S === me ? cogmTyped(me, text) : null; }, onAutopilot: function () { if (S === me) apToggle(); }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onStall: function (v) { if (S === me) setStall(v); }, onMeanwhile: function (v) { if (S === me) setMeanwhile(v); }, onHandout: function (h) { if (S === me) offerHandoutFromBox(h); }, dots: function () { return S === me && S.dots != null ? S.dots : null; }, onNote: function (text) { return S === me && !!addCapture('m', text, true); },
+    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onTyped: function (text) { return S === me ? cogmTyped(me, text) : null; }, onAutopilot: function () { if (S === me) apToggle(); }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onWhois: function (w) { if (S === me) whoisIn(w); }, onStall: function (v) { if (S === me) setStall(v); }, onMeanwhile: function (v) { if (S === me) setMeanwhile(v); }, onHandout: function (h) { if (S === me) offerHandoutFromBox(h); }, dots: function () { return S === me && S.dots != null ? S.dots : null; }, onNote: function (text) { return S === me && !!addCapture('m', text, true); },
       screen: { vocab: screenVocab, cleanSpec: screenCleanSpec }, onScreen: function (item) { if (S === me) setScreenItem(item); } }); } catch (e) { me.assist = null; }
   }
 
@@ -4062,12 +4062,44 @@
   function sttLi(d, l) {
     return '<li>' + (l.kind === 'mark' ? '<i>— ' + esc(l.text || 'reconnected') + ' —</i>' : (typeof l.speaker === 'number' ? '<button type="button" class="gm-lab gm-stt-who" data-gm="stt-name" data-sp="' + l.speaker + '" title="Name this speaker">' + esc(sttName(d, l.speaker)) + '</button>' : '<span class="gm-lab">' + esc(sttName(d, l.speaker)) + '</span>') + ' ' + esc(l.text)) + '</li>';
   }
+  /* Who is who: Blade's suggestions (the tick's, or the "Blade, guess" button). Page memory only: they are never written to the listening document
+     (the table display can read it), and nothing is applied until the GM taps a chip, which is the ordinary speakers PATCH. */
+  var WHOIS = { sug: {}, no: {}, busy: false, msg: '' };
+  function whoisIn(w) {
+    if (!isObj(w)) return;
+    Object.keys(w).forEach(function (n) {
+      var v = w[n]; if (!/^\d{1,2}$/.test(n) || !isObj(v) || !str(v.name).trim()) return;
+      WHOIS.sug[n] = { name: str(v.name).trim().slice(0, 60), why: str(v.why).trim().slice(0, 80) };
+    });
+    renderStt();
+  }
+  function whoisHtml(d) {
+    var chips = Object.keys(WHOIS.sug).sort(function (a, b) { return a - b; }).map(function (n) {
+      var s = WHOIS.sug[n], cur = isObj(d.speakers) ? str(d.speakers[n]).trim().toLowerCase() : '';
+      if (WHOIS.no[n + '|' + s.name.toLowerCase()] || (cur && cur.indexOf(s.name.toLowerCase()) >= 0)) return '';   /* dismissed, or already named so ("Pat (Wexley)") */
+      return '<span class="gm-whois"><button type="button" class="btn gm-whois-take" data-gm="whois-take" data-sp="' + esc(n) + '" title="Name S' + esc(n) + ' ' + esc(s.name) + '">S' + esc(n) + ' ' + esc(s.name) + '?' + (s.why ? ' <small>(' + esc(s.why) + ')</small>' : '') + '</button>' +
+        '<button type="button" class="btn gm-whois-no" data-gm="whois-no" data-sp="' + esc(n) + '" aria-label="Dismiss the guess for S' + esc(n) + '">×</button></span>';
+    }).join('');
+    var a = S && S.assist, can = !!(a && typeof a.canGuess === 'function' && a.canGuess());
+    return (can ? '<p class="gm-whois-bar"><button type="button" class="btn" data-gm="whois-ask"' + (WHOIS.busy ? ' disabled' : '') + ' title="Blade reads the last stretch of talk and suggests who each unnamed number is. You tap to accept.">Blade, guess</button>' + (WHOIS.msg ? ' <span class="gm-dim">' + esc(WHOIS.msg) + '</span>' : '') + '</p>' : '') +
+      (chips ? '<div class="gm-whois-chips">' + chips + '</div>' : '');
+  }
+  function whoisAsk() {
+    var me = S, a = me && me.assist; if (WHOIS.busy || !a || typeof a.guess !== 'function') return;
+    WHOIS.busy = true; WHOIS.msg = 'Guessing…'; renderStt(true);
+    a.guess().then(function (r) {
+      WHOIS.busy = false; if (S !== me) return;
+      WHOIS.msg = !r ? '' : r.error === 'cap' ? 'Cap reached for tonight.' : r.error === 'busy' ? 'Blade is busy: try again in a moment.' : r.error ? 'Could not guess.' : r.warning ? r.warning : r.nothing ? 'No unnamed voice has said enough yet.' : Object.keys(r.whois || {}).length ? '' : 'Not sure about anyone yet.';
+      renderStt(true);
+    });
+  }
   function sttName(doc, sp) { var n = doc && isObj(doc.speakers) ? doc.speakers[String(sp)] : ''; return sp === null || sp === undefined ? '?' : n || 'S' + sp; }
   function renderStt(force) {
     var box = $q('#gm-stt'); if (!box) return;
     var act = document.activeElement;
     if (!force && act && box.contains(act) && act.hasAttribute && act.hasAttribute('data-sttspk')) return;   /* not while a name is being typed */
     var d = STT.doc || { want: 'off', speakers: {}, status: { state: 'idle' } }, st = isObj(d.status) ? d.status : { state: 'idle' }, on = d.want === 'on';
+    if (WHOIS.ses !== (typeof d.session === 'string' ? d.session : '')) { if (WHOIS.ses !== undefined) { WHOIS.sug = {}; WHOIS.no = {}; } WHOIS.ses = typeof d.session === 'string' ? d.session : ''; }   /* a new session: speaker numbers mean other people, so old guesses go */
     var age = st.at ? Math.max(0, Math.round((Date.now() - Date.parse(st.at)) / 1000)) : null;
     var line = !STT.loaded ? 'Loading…' : STT.error ? 'Could not read listening: ' + STT.error
       : on && (st.state === 'idle' || st.state === 'stopped' || st.state === 'error') ? 'Waiting for the iPad: tap “Tap to start listening” on it.'
@@ -4084,7 +4116,7 @@
         : '<button type="button" class="btn primary" data-gm="stt-on" title="The iPad shows a button: tap it once to open the mic">Start listening</button>') + '</div>' +
       '<details class="gm-fold" data-sttfold="1"' + ((STT.fold === undefined ? on : STT.fold) ? ' open' : '') + '><summary>Who is who</summary><div class="gm-stt-spk">' + nums.map(function (n) {
         return '<label class="gm-field" for="gm-stt-s' + n + '"><span class="gm-lab">S' + n + '</span><input type="text" id="gm-stt-s' + n + '" data-sttspk="' + n + '" maxlength="60" autocomplete="off" placeholder="Name (Character)" value="' + esc(isObj(d.speakers) ? d.speakers[String(n)] || '' : '') + '"></label>';
-      }).join('') + '</div><p class="gm-dim">Numbers are Deepgram’s guesses and restart after a reconnect. Names apply to lines the PC copies from now on. Tap a name in the lines below to set it. A new session starts with no names.</p>' +
+      }).join('') + '</div><p class="gm-dim">Numbers are Deepgram’s guesses and restart after a reconnect. Names apply to lines the PC copies from now on. Tap a name in the lines below to set it. A new session starts with no names.</p>' + whoisHtml(d) +
         '<button type="button" class="btn" data-gm="stt-clear"' + (named.length ? '' : ' disabled') + '>Clear names</button></details>' +
       (tail.length > 5 ? '<details class="gm-fold" data-sttmore="1"' + (STT.more ? ' open' : '') + '><summary>More</summary><ol class="gm-stt-tail gm-stt-more">' + tail.slice(-30, -5).map(function (l) { return sttLi(d, l); }).join('') + '</ol></details>' : '') +
       (tail.length ? '<ol class="gm-stt-tail gm-stt-now">' + tail.slice(-5).map(function (l) { return sttLi(d, l); }).join('') + '</ol>' : '') +
@@ -5627,6 +5659,9 @@
       case 'ch-end': chEnd(); break;
       case 'ch-ipad': chShow(false); break;
       case 'stt-name': { var spn = b.getAttribute('data-sp'); STT.fold = true; renderStt(true); var si = $q('#gm-stt-s' + spn); if (si) { si.focus(); try { si.select(); } catch (e) {} } break; }
+      case 'whois-take': { var wn = b.getAttribute('data-sp'), ws = WHOIS.sug[wn]; if (ws) { var wsp = {}; wsp[wn] = ws.name; delete WHOIS.sug[wn]; sttPatch({ speakers: wsp }); } break; }
+      case 'whois-no': { var wd = b.getAttribute('data-sp'), wx = WHOIS.sug[wd]; if (wx) { WHOIS.no[wd + '|' + wx.name.toLowerCase()] = 1; delete WHOIS.sug[wd]; renderStt(true); } break; }
+      case 'whois-ask': whoisAsk(); break;
       case 'retry': load(); break;
       case 'upload': upload(); break;
       case 'cancel-import': start(); break;
@@ -5659,9 +5694,9 @@
         else { S.locRoll = null; S.map = null; renderLocation(); }
         break;
       }
-      case 'stt-on': sttPatch({ want: 'on', session: String(isObj(camp) && isObj(camp.session) ? +camp.session.number || '' : '') }); break;
-      case 'stt-clear': { var spk = STT.doc && isObj(STT.doc.speakers) ? STT.doc.speakers : {}, nul = {}, any = false; Object.keys(spk).forEach(function (k) { nul[k] = null; any = true; }); if (any) sttPatch({ speakers: nul }); break; }
-      case 'stt-off': sttPatch({ want: 'off' }); break;
+      case 'stt-on': WHOIS.sug = {}; WHOIS.no = {}; sttPatch({ want: 'on', session: String(isObj(camp) && isObj(camp.session) ? +camp.session.number || '' : '') }); break;
+      case 'stt-clear': { WHOIS.sug = {}; WHOIS.no = {}; var spk = STT.doc && isObj(STT.doc.speakers) ? STT.doc.speakers : {}, nul = {}, any = false; Object.keys(spk).forEach(function (k) { nul[k] = null; any = true; }); if (any) sttPatch({ speakers: nul }); break; }
+      case 'stt-off': WHOIS.sug = {}; WHOIS.no = {}; sttPatch({ want: 'off' }); break;
       case 'opp-add': oppAdd(); break;
       case 'opp-show': oppShow(b.getAttribute('data-mode')); break;
       case 'opp-one': oppShow('carousel', b.getAttribute('data-id')); break;

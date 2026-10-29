@@ -53,6 +53,7 @@ function rig(over = {}, brOpts) {
     stt: async () => { calls.stt++; return { doc: { want: gm.want } }; }, want: 'on',
     assistTick: async (after, npc, rolled) => { calls.rolled.push(rolled === true); calls.tick.push(after); calls.tickArgs.push(npc === undefined ? [after] : [after, npc]); if (gm.tickErr) throw gm.tickErr; return gm.reply || GOOD; },
     assistAnother: async (req) => { calls.another.push(req); if (gm.anotherErr) throw gm.anotherErr; return gm.anotherReply; },
+    assistWhois: async () => { calls.whois = (calls.whois || 0) + 1; if (gm.whoisErr) throw gm.whoisErr; return gm.whoisReply || { whois: {} }; },
     assistFit: async (req) => { calls.fit.push(req); if (gm.fitErr) throw gm.fitErr; return gm.fitReply; },
     assistCards: async () => { calls.cards++; if (gm.cardsErr) throw gm.cardsErr; return gm.stored || { cards: [], updates: [] }; },
     assistMark: async (req) => { calls.marks.push(req); if (gm.markErr) throw gm.markErr; return { marked: req.items.length }; },
@@ -251,7 +252,7 @@ await test('the box is in the GM bundle only, before gm-page.js, and the avatar 
 
 await test('GM only and never player-visible: the box touches nothing but stt / assistTick / assistFit, stores nothing, no network of its own', () => {
   const src = fs.readFileSync(path.join(ROOT, 'app', 'gm', 'assist-panel.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-  assert.deepEqual([...new Set([...src.matchAll(/\bgm\.(\w+)/g)].map((m) => m[1]))].sort(), ['assistAnother', 'assistAsk', 'assistCards', 'assistFit', 'assistGate', 'assistMark', 'assistTick', 'stt']);
+  assert.deepEqual([...new Set([...src.matchAll(/\bgm\.(\w+)/g)].map((m) => m[1]))].sort(), ['assistAnother', 'assistAsk', 'assistCards', 'assistFit', 'assistGate', 'assistMark', 'assistTick', 'assistWhois', 'stt']);
   assert.ok(!/localStorage|sessionStorage|indexedDB|fetch\(|XMLHttpRequest|setDisplay|patchState|patchAmbient|patchStt|sendBeacon|eval\(|innerHTML\s*=\s*[^'"(\s]*\bc\.text/.test(src), 'no storage, no network, no display or state write');
   const page = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
   const m = /function mountAssist\(\) \{[\s\S]*?\n  \}\n/.exec(page);
@@ -475,6 +476,32 @@ await test('gm-page: Voice is wired into the Rack (name, Another, Clear), the ti
 
 // ---------- WP4: Stall (the Rack), Mystery and Showrunner cards ----------
 const STALL = { kind: 'complication', offer: 'A runner bursts in with bad news.', why: 'The table has gone quiet.', at: '2030-01-01T09:30:00.000Z' };
+await test('Who is who: the tick\'s whois reaches the page (onWhois), never the box; "Blade, guess" asks the route once, sends what comes back, and a cap or a phone stops it', async () => {
+  const W = { 2: { name: 'Quinn', why: 'answers to Dara' } };
+  let got = [];
+  let r = rig({ onWhois: (v) => got.push(v) }); r.gm.reply = { ...GOOD, whois: W };
+  await r.ctl.poll();
+  assert.deepEqual(got, [W]);
+  assert.ok(!/Quinn/.test(r.br.stub('#as-list').innerHTML), 'a suggestion is not a card');
+  r.gm.reply = { ...GOOD, whois: {} }; await r.ctl.poll(); assert.deepEqual(got, [W], 'an empty whois sends nothing');
+  r = rig(); r.gm.reply = { ...GOOD, whois: W }; await r.ctl.poll(); assert.equal(r.calls.tick.length, 1, 'a page without onWhois is unchanged');
+  got = []; r = rig({ onWhois: (v) => got.push(v) });
+  assert.equal(r.ctl.canGuess(), true);
+  r.gm.whoisReply = { whois: W, spend: { tonight: 1, cap: 20, tier: 'all', tick: 0 } };
+  const out = await r.ctl.guess();
+  assert.equal(r.calls.whois, 1); assert.deepEqual(got, [W]); assert.deepEqual(out.whois, W);
+  r.gm.whoisReply = { whois: {}, nothing: 'no unnamed speaker has said enough yet' };
+  assert.equal((await r.ctl.guess()).nothing, 'no unnamed speaker has said enough yet'); assert.deepEqual(got, [W]);
+  r.gm.whoisReply = { whois: {}, warnings: ['re-push the assist part'] };
+  assert.equal((await r.ctl.guess()).warning, 're-push the assist part');
+  r.gm.whoisErr = err(429, 'Blade is busy guessing'); assert.equal((await r.ctl.guess()).error, 'busy');
+  r.gm.whoisErr = err(429, "tonight's cap is reached"); assert.equal((await r.ctl.guess()).error, 'cap');
+  assert.equal(r.ctl.canGuess(), false, 'the cap pauses the box: no more guesses');
+  assert.equal(await r.ctl.guess(), null);
+  r = rig({ onWhois: () => {} }, { phone: true }); assert.equal(r.ctl.canGuess(), false); assert.equal(await r.ctl.guess(), null); assert.equal(r.calls.whois || 0, 0);
+  r = rig(); assert.equal(r.ctl.canGuess(), false, 'no onWhois, no guess');
+});
+
 await test('Stall: the offer reaches the page (onStall), not the box; Listening off, a phone and the cap clear it; busy leaves it', async () => {
   let got = [];
   let r = rig({ onStall: (v) => got.push(v) }); r.gm.reply = { ...GOOD, stall: STALL };

@@ -1061,3 +1061,10 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 #gm-page .gm-run-room.pos-risky { border-left: 6px solid #b87a00; }
 #gm-page .gm-run-room.pos-desperate { border-left: 6px solid #b3261e; }
 #gm-page .gm-run-room.danger { outline: 2px solid var(--alarm); }
+
+/* Who is who: Blade's suggestions (a tap names the speaker; the x dismisses it) */
+#gm-page .gm-whois-bar { margin: 6px 0 2px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#gm-page .gm-whois-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+#gm-page .gm-whois { display: inline-flex; gap: 2px; }
+#gm-page .gm-whois-take small { opacity: .75; }
+#gm-page .gm-whois-no { padding-inline: 8px; }

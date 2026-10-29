@@ -42,7 +42,7 @@ export function contextBlock(file, text) {
   return '<context name="' + path.basename(file) + '">\n' + text + '\n</context>';
 }
 
-/** gm-private/assist-config.json -> { prep?, rules?, cast?, factions?, extra? }; a missing file is {}, a broken one throws. */
+/** gm-private/assist-config.json -> { prep?, rules?, cast?, factions?, gm?, extra? }; a missing file is {}, a broken one throws. gm is the GM's own name (for Who is who). */
 export function readConfig(file) {
   if (!file || !fs.existsSync(file)) return {};
   let c;
@@ -53,6 +53,10 @@ export function readConfig(file) {
     if (c[k] === undefined) continue;
     if (typeof c[k] !== 'string' || !c[k].trim()) throw new Error('assist config: ' + k + ' must be a vault-relative path');
     out[k] = c[k].trim();
+  }
+  if (c.gm !== undefined) {
+    if (typeof c.gm !== 'string' || !c.gm.trim() || c.gm.length > 60) throw new Error('assist config: gm must be the GM\'s name (1-60 characters)');
+    out.gm = c.gm.trim();
   }
   if (c.extra !== undefined) {
     if (!c.extra || typeof c.extra !== 'object' || Array.isArray(c.extra)) throw new Error('assist config: extra must be an object of { "<seat>": "<vault-relative note>" }');
@@ -436,6 +440,7 @@ export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, c
     ['prep', prep || config.prep || '', true],
   ];
   const blocks = [], used = [], stats = {};
+  let roster = null;      // Who is who: the names the Worker may answer with, beside the file id (the Worker never holds the prefix text)
   for (const [what, rel, named] of want) {
     if (what === 'prep') {
       const npc = collectHowToPlay(vault);
@@ -446,7 +451,7 @@ export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, c
         stats.npcWithout = npc.missing.length;
       }
       const pl = mergePlayers(playersFromNotes(vault), readPlayersFile(playersFile));
-      if (pl.source) { const t = playersText(pl.map); blocks.push(contextBlock(PLAYERS_NAME, t)); used.push({ rel: PLAYERS_NAME, sha: sha(t) }); stats.players = pl.source; }
+      if (pl.source) { roster = { players: pl.map }; const t = playersText(pl.map); blocks.push(contextBlock(PLAYERS_NAME, t)); used.push({ rel: PLAYERS_NAME, sha: sha(t) }); stats.players = pl.source; }
       else warn('assist: no player table (no player: on the PC notes, no gm-private/players.json): the prefix does not say who plays whom');
       // handouts: a stable block (it changes only when the handouts do), so it sits with the others, ahead of never-reveal and prep
       const ht = handoutsText(handouts && handouts.items);
@@ -491,6 +496,8 @@ export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, c
   // seat extras: the config's, with --assist-extra (extraArg) winning per seat. Errors here stop the build; the prefix is unaffected.
   const ex = buildExtra(vault, { ...(config.extra || {}), ...(extraArg || {}) }, warn);
   if (ex) stats.extra = ex.src;
+  if (config.gm) { roster = { ...(roster || { players: {} }), gm: config.gm }; stats.gm = 1; }
+  else if (roster) warn('assist: no "gm" name in gm-private/assist-config.json: Who is who can name the players but not the GM');
   const prefix = blocks.join('\n\n');
   const tokens = estimateTokens(prefix);
   if (tokens > TOKEN_WARN) warn('assist: the prefix is about ' + Math.round(tokens / 1000) + 'k tokens (over ' + TOKEN_WARN / 1000 + 'k; Haiku\'s price rises above 100k): trim the prep or the cast');
@@ -498,5 +505,6 @@ export function buildAssist({ vault, exportedAt, warn = () => {}, prep, rules, c
     src: { file: used.map((u) => u.rel).join(' + ').slice(0, 1200), blockSha: sha(used.map((u) => u.sha).join('\n')), exportedAt, tokens, ...stats },
     prefix,
     ...(ex ? { extra: ex.extra } : {}),
+    ...(roster ? { roster } : {}),
   };
 }

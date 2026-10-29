@@ -252,5 +252,24 @@ await test('extra: --assist-extra is parsed (seat=note, the seat checked); gm-pa
   assert.equal(bad.status, 2); assert.match(bad.stderr, /nobody is not a seat/);
 });
 
+// ---------- Who is who: the roster the Worker validates names against ----------
+await test('roster: the part carries { players, gm } beside the prefix (the Worker never holds the prefix text); the GM comes from assist-config "gm"', () => {
+  put(CHARACTERS + '/Ann Test.md', PC('Ann Test', 'Zed'));
+  const cfg = readConfig(put('cfg-gm.json', JSON.stringify({ gm: ' Sam Test ' })));
+  assert.deepEqual(cfg, { gm: 'Sam Test' });
+  const { part, w } = build({ config: cfg });
+  assert.deepEqual(part.roster, { players: { 'Ann Test': 'Zed' }, gm: 'Sam Test' });
+  assert.ok(!w.some((m) => /no "gm" name/.test(m)));
+  assert.ok(!part.prefix.includes('Sam Test'), 'the GM name is not added to the prefix');
+  const noGm = build();
+  assert.deepEqual(noGm.part.roster, { players: { 'Ann Test': 'Zed' } });
+  assert.ok(noGm.w.some((m) => /no "gm" name/.test(m)), 'a warning, not a failure');
+  fs.rmSync(path.join(tmp, ...CHARACTERS.split('/'), 'Ann Test.md'));
+  assert.deepEqual(build({ config: cfg, playersFile: path.join(tmp, 'absent.json') }).part.roster, { players: {}, gm: 'Sam Test' });
+  assert.equal(build({ playersFile: path.join(tmp, 'absent.json') }).part.roster, undefined, 'no names at all: no roster');
+  assert.throws(() => readConfig(put('cfg-gm-bad.json', JSON.stringify({ gm: '' }))), /gm must be the GM/);
+  assert.throws(() => readConfig(put('cfg-gm-bad2.json', JSON.stringify({ gm: 5 }))), /gm must be the GM/);
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

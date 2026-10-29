@@ -22,6 +22,12 @@
 //        The Mystery keeper may also name a handout: the answer then carries `handout: { id, why, at }`, a separate field that never takes the
 //        card slot. The id must be in the live `handouts` pack part (read from D1 only when the seat named one, and only if the part is
 //        under 16 KB); anything else is dropped. The GM's page offers it in the Rack; the GM's tap is what shows it.
+//   POST /api/gm/assist/whois {} -> { whois: { "<n>": { name, why } }, spend }    the "Blade, guess" button in the Who is who fold: the whois seat (Haiku, medium; functions/_lib/assist/whois.js) at once.
+//        It reads the last 120 lines of the newest connection (speaker numbers restart on every connection) and the assist part's `roster` (players and the GM), and answers for the unnamed
+//        numbers with at least 3 lines. The Worker keeps only a name that is a player's or the GM's, a number that was asked about, and a name given to one number (a name claimed for two is dropped),
+//        and clips why to 80 characters. A suggestion only: nothing is applied or stored in the listening document (the display can read that); the GM's tap is the existing speakers PATCH. Not a Core seat
+//        (stops at 85% of the cap). 429 at the cap, while a whois call is in flight, or within 10 s of the last one. Without a `roster` in the part there is no call: { whois: {}, warnings }.
+//        The tick runs the same seat on its own (flag 'tick'; 3-minute cooldown) once an unnamed number has 8 lines in the last 120, and adds the same `whois` to its answer.
 //   POST /api/gm/assist/another { npc, shown: [..] } -> { cards: [], voice: { who, lines: [one], at }, spend, last }
 //        The Another tap on a Voice line: the voice_plus seat writes ONE more line for the same NPC, different from the 1-6 shown
 //        lines (each at most 400 characters). 400 on a bad body; 429 at the cap or while a voice_plus call is in flight or cooling
@@ -132,6 +138,7 @@ import { cachedClient, callSeat } from '../../_lib/assist/claude.js';
 import { melbourneHHMM } from '../../_lib/assist/clock.js';
 import { makeLeases, DEADLINE_MS, DEFAULT_DEADLINE_MS } from '../../_lib/assist/leases.js';
 import { SEATS, WAKES, CUE_INSTRUCTION } from '../../_lib/assist/seats.js';
+import { rosterOf, unnamedNeeds, anyUnnamed, whoisUser, toWhois, WHOIS_LINES, WHOIS_NOW_MIN_LINES, WHOIS_NOW_GAP_MS } from '../../_lib/assist/whois.js';
 import { cleanItem, verdictOf, unknownVerdict } from '../../_lib/assist/gatekeeper.js';
 import { checkNpc, newNpcId, writeNpc } from '../../_lib/npcs.js';
 import { toPortrait, toProp, toWire, buildBoard, boardSource, cleanName, cleanAsk, cleanVocab } from '../../_lib/assist/screen.js';
@@ -228,7 +235,7 @@ export function cleanShown(v) {
   return out;
 }
 
-const NO_PREFIX = { fileId: '', legacy: false, extra: {}, found: true };   // the hands seat never reads the assist part, so /act does not even look for it
+const NO_PREFIX = { fileId: '', legacy: false, extra: {}, roster: null, found: true };   // the hands seat never reads the assist part, so /act does not even look for it
 
 const REPUSH = 're-push the assist part';
 const FILE_ID = /^file_[A-Za-z0-9_-]{4,100}$/;
@@ -281,9 +288,16 @@ const loadPrefixRd = (db, campaign) => rd(db.prepare("SELECT body FROM gm_pack W
   const fileId = body && typeof body.file_id === 'string' && FILE_ID.test(body.file_id) ? body.file_id : '';
   const legacy = !!(body && typeof body.prefix === 'string' && body.prefix);   // the old part carried the text: never sent
   const extra = body && body.extra && typeof body.extra === 'object' ? body.extra : {};
-  return { fileId, legacy, extra, found: !!row };
+  return { fileId, legacy, extra, roster: rosterOf(body), found: !!row };
 }, true);
 const loadPrefix = (db, campaign) => runRead(loadPrefixRd(db, campaign));
+
+/**
+ * Who is who: the newest connection's lines (speaker numbers restart on every connection, so an older one would mix two people under one number), the latest
+ * WHOIS_LINES of them, oldest first. One statement; the newest line decides the connection in SQL, so the Worker parses nothing.
+ */
+const whoisLinesRd = (db, campaign) => rd(db.prepare("SELECT seq, session, conn, speaker, kind, text FROM gm_transcript WHERE campaign = ?1 AND kind = 'line' AND speaker IS NOT NULL AND (session, conn) = (SELECT session, conn FROM gm_transcript WHERE campaign = ?1 AND kind = 'line' ORDER BY seq DESC LIMIT 1) ORDER BY seq DESC LIMIT ?2").bind(campaign, WHOIS_LINES), (rows) => rows.reverse());
+const NO_ROSTER = 're-push the assist part: it has no players list for Who is who';
 
 // the provider says the file named in the prompt is gone (404 / not found / invalid file id)
 function fileGone(e) {
@@ -530,7 +544,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
   async function handle({ request, env, data, waitUntil }) {
     requireGm(data);                                   // first: before the method, the body or the database
     const url = new URL(request.url);
-    const action = /\/api\/gm\/assist\/(tick|fit|another|gatekeeper|cards|portrait-add|portrait|prop|wire|board|ask|act)\/?$/.exec(url.pathname);
+    const action = /\/api\/gm\/assist\/(tick|fit|another|gatekeeper|cards|portrait-add|portrait|prop|wire|board|ask|act|whois)\/?$/.exec(url.pathname);
     if (!action) throw new HttpError(404, 'not found');
     if (action[1] === 'cards') {                       // the box's memory: no key, no model
       if (request.method === 'GET') {
@@ -570,7 +584,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const handsLog = actIn ? await spendAndLastHands(db, campaign, t0) : null;
     const spentBefore = start ? start.spent : handsLog ? handsLog.spent : await tonight(db, campaign, t0);
     const tier = budgetTier(spentBefore, cap);
-    const { fileId, legacy, extra, found } = start ? start.prefix : actIn ? NO_PREFIX : await loadPrefix(db, campaign);
+    const { fileId, legacy, extra, roster, found } = start ? start.prefix : actIn ? NO_PREFIX : await loadPrefix(db, campaign);
     const warnings = actIn ? [] : legacy ? [REPUSH] : found && fileId ? [] : ['no assist part in the GM pack'];
     const stt = start ? start.stt : await loadStt(db, campaign);
     const speakers = stt.doc.speakers || {};
@@ -621,7 +635,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       try { return await run(name, user); } catch (e) { if (e && e.busy) { skipped.push({ seat: name, why: 'in-flight' }); return null; } throw e; }
     }
     const spend = () => ({ tonight: dollars(spentBefore + thisTick), cap, tier: budgetTier(spentBefore + thisTick, cap), tick: dollars(thisTick) });
-    const done = (cards, flags, last, updates = [], more = {}) => json({ cards, updates, flags, spend: spend(), last, ...(more.voice ? { voice: more.voice } : {}), ...(more.stall ? { stall: more.stall } : {}), ...(more.meanwhile ? { meanwhile: more.meanwhile } : {}), ...(more.handout ? { handout: more.handout } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}), ...(isTick ? { health: { skipped, reaped, ran } } : {}) });
+    const done = (cards, flags, last, updates = [], more = {}) => json({ cards, updates, flags, spend: spend(), last, ...(more.voice ? { voice: more.voice } : {}), ...(more.stall ? { stall: more.stall } : {}), ...(more.meanwhile ? { meanwhile: more.meanwhile } : {}), ...(more.handout ? { handout: more.handout } : {}), ...(more.whois ? { whois: more.whois } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}), ...(isTick ? { health: { skipped, reaped, ran } } : {}) });
 
     if (action[1] === 'act') {
       // The co-GM's hands (design 5.3/5.4). Core tier: it runs to the cap like Ref. One at a time, and not more often than every 8 s (from the log).
@@ -755,6 +769,21 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       return done([], [], last, [], one ? { voice: { kind: 'say', who: one.who || npc, lines: [one.line], at } } : {});
     }
 
+    if (action[1] === 'whois') {
+      if (!roster) return json({ whois: {}, spend: spend(), warnings: [NO_ROSTER] });
+      const gate = canRun('whois', { now: t0, lastRun: await lastRuns(db, campaign, t0), inFlight: live(), tier, cooldowns: { ...COOLDOWN_MS, whois: WHOIS_NOW_GAP_MS } });
+      if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? "tonight's cap is reached" : gate.why === 'cooldown' ? 'Blade has only just guessed' : 'Blade is busy guessing');
+      const lines = await runRead(whoisLinesRd(db, campaign));
+      const needs = unnamedNeeds(lines, speakers, WHOIS_NOW_MIN_LINES);
+      if (!needs.length) return json({ whois: {}, nothing: 'no unnamed speaker has said enough yet', spend: spend() });
+      const { cfg, r, timing } = await run('whois', whoisUser({ roster, needs, speakers, lines }));
+      const at = new Date(now()).toISOString();
+      const w = r ? toWhois(r.json, roster, needs) : null;
+      await logRow(db, campaign, { at, session: lines.length ? lines[lines.length - 1].session : '', seat: 'whois', cfg, usage: r && r.usage, cost: r && r.cost, flags: ['whois'], timing,
+        card: r ? { out: r.json, shown: 0, whois: w || {}, asked: needs.map((x) => x.n) } : { error: errors.length ? errors[0].error : 'no reply', shown: 0 } }).run();
+      return json({ whois: w || {}, spend: spend(), ...(errors.length ? { errors } : {}) });
+    }
+
     // ---- tick ----
     isTick = true;                                       // from here every answer carries health: { skipped, reaped }
     live(); reaped = leases.takeReaped();
@@ -827,7 +856,14 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       clocks: wake.includes('meanwhile') && tableClocksRd(db, campaign),
       known: wake.includes('mystery') && lastKnownRd(db, campaign, t0),
       clerk: wake.includes('clerk') && clerkKnownRd(db, campaign, t0),
+      whois: wake.includes('whois') && !!roster && anyUnnamed(tail, speakers) && whoisLinesRd(db, campaign),      // most ticks have no unnamed speaker in the last four minutes: no read
     });
+    // Who is who wakes only for an unnamed number with enough lines (whois.js); otherwise it is not woken, and costs no call
+    let whoisNeeds = [];
+    if (wake.includes('whois')) {
+      whoisNeeds = pre.whois ? unnamedNeeds(pre.whois, speakers) : [];
+      if (!whoisNeeds.length) wake = wake.filter((n) => n !== 'whois');
+    }
     const storyRow = pre.story || null;
     const curSession = fresh.length ? fresh[fresh.length - 1].session : session;
     if (storyRow && storyRow.session === curSession) prior = storyRow.story;
@@ -864,6 +900,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     let clerkNames = [];
     if (wake.includes('clerk')) { clerkNames = pre.clerk; turns.clerk = clerkUser({ known: clerkNames, stamp: hhmm(t0), talk: recentText }); }
     if (scribeTurn) turns.scribe = scribeTurn;
+    if (wake.includes('whois')) turns.whois = whoisUser({ roster, needs: whoisNeeds, speakers, lines: pre.whois });
     // each woken seat is on its own deadline: a slow one cannot hold the others' cards. A seat another request took meanwhile is skipped, not an error.
     const settled = await Promise.allSettled(wake.map((name) => run(name, name === 'voice' ? voiceTurn : turns[name] || user)));
     const all = [];
@@ -874,7 +911,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       else all.push({ name, cfg: seats[name], r: null, timing: { secs: 0, stop: '' } });      // run() catches its own errors, so this is a bug's safety net
     });
     // Voice and Stall go to the Rack, not to the Editor's card slot
-    const vx = all.find((x) => x.name === 'voice'), sx = all.find((x) => x.name === 'stall'), results = all.filter((x) => !['voice', 'stall', 'scribe', 'meanwhile'].includes(x.name));
+    const vx = all.find((x) => x.name === 'voice'), sx = all.find((x) => x.name === 'stall'), results = all.filter((x) => !['voice', 'stall', 'scribe', 'meanwhile', 'whois'].includes(x.name));
 
     // What the Editor weighs the new cards against is read once the seats have answered (a card another request showed meanwhile counts), all
     // in one round trip: the shown cards, the held Ref cards (unless already read), the gap clocks, the Rack's recent items (when Voice or Stall
@@ -925,6 +962,15 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       rows.push(logRow(db, campaign, { at, session, seat: 'stall', cfg: sx.cfg, usage: sx.r && sx.r.usage, cost: sx.r && sx.r.cost, flags, timing: sx.timing,
         card: sx.r ? { out: sx.r.json, ...(st ? { stall: 1, text: st.offer, keys: st.keys } : {}) } : { error: errors.find((e) => e.seat === 'stall')?.error || 'no reply' } }));
     }
+    // Who is who: a suggestion for the GM's page alone, never a card; its row records the cost and what it said (shown: 0, so it restores as nothing)
+    let whoisOut = null;
+    const hx = all.find((x) => x.name === 'whois');
+    if (hx) {
+      const w = hx.r ? toWhois(hx.r.json, roster, whoisNeeds) : null;
+      if (w && Object.keys(w).length) whoisOut = w;
+      rows.push(logRow(db, campaign, { at, session, seat: 'whois', cfg: hx.cfg, usage: hx.r && hx.r.usage, cost: hx.r && hx.r.cost, flags, timing: hx.timing,
+        card: hx.r ? { out: hx.r.json, shown: 0, whois: w || {}, asked: whoisNeeds.map((x) => x.n) } : { error: errors.find((e) => e.seat === 'whois')?.error || 'no reply', shown: 0 } }));
+    }
     // the Scribe's row IS the story store (no migration); Meanwhile's cutaway goes to the Rack beside Voice and Stall
     const bx = all.find((x) => x.name === 'scribe');
     if (bx) {
@@ -943,7 +989,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     if (rows.length) await db.batch(rows);
     const cardOut = edit.card ? [{ seat: edit.card.seat, at, text: edit.card.text, ...(edit.card.detail ? { detail: edit.card.detail } : {}), ...restoreGlance(edit.card, edit.card.seat) }] : [];
     const updatesOut = edit.updates.flatMap((u) => (u.items || [{ key: (u.keys || [])[0] || '', text: u.text }]).map((it) => ({ seat: 'ledger', at, key: it.key, text: it.text, ...ledgerGlance(it.text) })));
-    return done(cardOut, flags, cursor, updatesOut, { voice: voiceOut, stall: stallOut, handout: handoutOut, meanwhile: meanwhileOut });
+    return done(cardOut, flags, cursor, updatesOut, { voice: voiceOut, stall: stallOut, handout: handoutOut, meanwhile: meanwhileOut, whois: whoisOut });
   };
 }
 

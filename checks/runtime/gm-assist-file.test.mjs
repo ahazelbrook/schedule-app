@@ -168,5 +168,16 @@ await test('pack push: with no B68_ANTHROPIC_KEY the assist part is refused (the
   assert.ok(rep.pushed.some((p) => p.id === 'console'));
 });
 
+await test('the roster rides beside the file id, on an upload and on a reuse, and the text never does', async () => {
+  const dir = tmpDir(), stateFile = path.join(dir, STATE_NAME), client = mockClient();
+  const roster = { players: { 'Ann Test': 'Zed' }, gm: 'Sam Test' };
+  const a = await preparePart({ prefix: 'ROSTER TEXT', roster }, { stateFile, client });
+  assert.deepEqual(a.body, { file_id: 'file_mock1AAAA', hash: sha256('ROSTER TEXT'), roster });
+  const b = await preparePart({ prefix: 'ROSTER TEXT', roster: { ...roster, gm: 'Pat Test' } }, { stateFile, client });
+  assert.equal(b.action, 'reuse'); assert.equal(b.body.roster.gm, 'Pat Test', 'a changed roster is pushed without a new upload');
+  assert.equal(client.uploads.length, 1);
+  assert.equal((await preparePart({ prefix: 'ROSTER TEXT' }, { stateFile, client })).body.roster, undefined);
+});
+
 console.log(failed ? `\n${failed} FAILED, ${passed} passed` : `\nALL PASSED (${passed})`);
 process.exit(failed ? 1 : 0);

@@ -152,7 +152,7 @@ export async function preflight(opts = {}) {
       }
       for (const seat of liveSeats) if (!exSeats.includes(seat)) say('               live extra ' + seat + ': in the live part but not in the pack (a push removes it)');
       if (state && hash && state.hash === hash) {
-        const body = { file_id: state.file_id, hash, ...(isObj(part.extra) ? { extra: part.extra } : {}) };
+        const body = { file_id: state.file_id, hash, ...(isObj(part.extra) ? { extra: part.extra } : {}), ...(isObj(part.roster) ? { roster: part.roster } : {}) };
         const c = cleanPart({ part: 'assist', src, body });
         const localV = await shortHash(c.body);
         say('               local would leave v' + localV + ': ' + (liveV === localV ? 'MATCHES the live assist part' : 'DIFFERS from the live assist part'));

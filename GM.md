@@ -141,6 +141,13 @@ fails and nobody is known, nothing is purged.
     sends it again.
   - **Naming a speaker from a line**: in the iPad panel's newest lines, the speaker is a button; it opens **Who is who**
     on that speaker's box. `Enter` saves the name.
+  - **Blade guesses who is who**: inside **Who is who**, **Blade, guess** asks Blade at once who each unnamed speaker number is
+    (any number with at least 3 lines on the current connection). While Listening is on and Blade is on, Blade also looks by itself,
+    at most every 3 minutes, once an unnamed number has about 8 lines. A guess shows as a chip under the boxes, like **S2 Quinn?
+    (says "I" as Dara)**: tap it to name the speaker (it is the same save as typing the name), or tap **x** to dismiss it, and
+    that same guess does not come back. Nothing is ever applied without your tap, a guess is never sent to the iPad or the phones,
+    and it can only be a player's name or yours from the players list (see below). A guess only appears when Blade is set up and
+    under 85% of tonight's cap.
   - **Update pack asks first** when the file would lose prep the app has (a part gone, a prep note gone or much
     shorter): the button reads **Upload anyway** and confirms (the same guard as `gm:pack` and `gm:push`, SYNC.md). A part the app
     retired on purpose (`engagement`, Engage's) is not a loss, in either guard (`RETIRED_PARTS`).
@@ -1020,7 +1027,7 @@ its own `kind` (complication or clue), because the console reads it.
 **Why the prefix is a file.** Every seat reads the same long reference text (the rules digest, the cast, each NPC card's How to play block, the player-to-character table and tonight's
 prep, up to ~90k tokens; the table comes from `player:` on the PC notes or the git-ignored `gm-private/players.json`, which wins). The Worker runs on Workers Free, where a request gets 10 ms of CPU: waiting on Claude or D1 is
 free, but reading, parsing and re-sending that text on every tick is not. So the GM's PC uploads the text once to
-Anthropic's Files API as a plain-text file, the pushed `assist` part holds only `{ file_id, hash, extra }`, and each seat
+Anthropic's Files API as a plain-text file, the pushed `assist` part holds only `{ file_id, hash, extra, roster }`, and each seat
 call names the file. Nothing campaign-specific is in git, in D1 or in the Worker.
 
 **Pushing the `assist` part.** `npm run gm:pack` builds it (the pack file on the PC keeps the text); `gm:push` uploads the
@@ -1154,6 +1161,13 @@ back after a reload. **GM's eyes only:** nothing here is sent to the iPad or the
 you are the only reader, Blade may draw on hidden prep, and its instructions ask it to put anything from the never-reveal list in the **secret** field (shown as "(secret)" in the plain text) so it is
 not read out by accident. A scene it writes frames the moment and ends on a question or choice for the players, and never decides what a player character
 does, thinks or feels. New colour offered for ideas is labelled as new.
+
+`POST /api/gm/assist/whois {}` -> `{ whois: { "<n>": { name, why } }, spend }` (GM only; the **Blade, guess** button in Who is who). Seat `whois`: Haiku 5.5, medium effort, 4k output, no cached prefix (it reads the
+roster and the talk only, so it cannot leak prep), a JSON list of `{ speaker, name, why }`. It reads the last 120 lines of the newest connection (speaker numbers restart on every connection) and answers for unnamed numbers with at least 3 lines.
+The Worker keeps an answer only when the number was asked about and the name is a player's name or the GM's from the assist part's `roster`: a name that is not on it is dropped, a name given to two numbers is dropped for both, and `why` is plain text of at most 80 characters.
+A suggestion only: nothing is applied, and it is never written to the listening document (the table display can read that); a tap in the page is the ordinary `PATCH /api/gm/stt { speakers }`. Not a Core seat, so it stops at 85% of the cap (429 "cap reached"); one at a time and not within 10 s of the last guess (429).
+The tick runs the same seat by itself (flag `tick`, 3-minute cooldown) once an unnamed number has 8 lines among the last 120, and adds the same `whois` to its answer. Each call is logged like any seat (seat `whois`, `shown: 0`). With no `roster` in the part there is no call: `{ whois: {}, warnings }`.
+The roster is `{ players: { "<character>": "<player>" }, gm }` beside the file id in the pushed part: the players come from the same table as the prefix (`player:` on the PC notes, or `gm-private/players.json`), and the GM's own name from `"gm": "<name>"` in `gm-private/assist-config.json` (without it the players can be named but not the GM; `gm:pack` warns).
 
 `POST /api/gm/assist/ask { q }` -> `{ answer: { q, at, kind, headline, bullets, say, secret, more, text } | null, spend }` (GM only; `q` is one line of at most 600 characters, else a 400 before the
 database or the key are touched). Seat `ask`: Opus 5.5, medium effort, 8k output, a JSON schema (`kind` rule/say/idea/npc/recap/other, `headline`, `bullets`, `say`, `secret`, `more`) so a panel can fold it. The Worker clips each field in code (headline 90 characters, 5 bullets of 120, say 600, secret 300, more 900); `text` is their plain rendering (the secret marked "(secret)"), at most 4000 characters, and is what the history, `gm:after` and the restore path read. An old row without the fields comes back as `{ headline: text }`. It reads, after

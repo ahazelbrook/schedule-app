@@ -41,15 +41,16 @@ export function defaultClient(env = process.env) {
 
 /**
  * body: the local assist part body { prefix, extra?, ... }. opts: { stateFile, client (or null), dryRun }.
- * Returns { body, action, note }: body is { file_id, hash, extra? } to push; action is 'reuse' | 'upload' | 'would-upload'
+ * Returns { body, action, note }: body is { file_id, hash, extra?, roster? } to push; action is 'reuse' | 'upload' | 'would-upload'
  * (dry run only) | 'no-key'. A body that has no prefix text (already the small form) passes through as 'as-is'.
  */
 export async function preparePart(body, { stateFile, client, dryRun = false }) {
   const extra = body.extra && typeof body.extra === 'object' ? body.extra : undefined;
+  const roster = body.roster && typeof body.roster === 'object' ? body.roster : undefined;      // the players and the GM, for Who is who: pushed beside the file id
   if (typeof body.prefix !== 'string') return { body, action: 'as-is', note: '' };
   const hash = sha256(body.prefix);
   const state = readState(stateFile);
-  const small = (file_id) => ({ file_id, hash, ...(extra ? { extra } : {}) });
+  const small = (file_id) => ({ file_id, hash, ...(extra ? { extra } : {}), ...(roster ? { roster } : {}) });
   if (state && state.hash === hash) return { body: small(state.file_id), action: 'reuse', note: 'the prefix is unchanged: file ' + state.file_id + ' is reused' };
   if (dryRun) {
     return { body: small('file_NEW_UPLOAD'), action: 'would-upload', note: 'would upload the prefix (' + body.prefix.length + ' characters) as ' + FILE_NAME + (state ? ' and, once the part is pushed, delete the file it replaces (' + state.file_id + ')' : '') };
