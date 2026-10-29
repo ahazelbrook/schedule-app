@@ -171,6 +171,8 @@ await step('a refused or failed write, and every read, pokes nothing', async () 
     ['display PUT with a stale ifSeq', 'PUT', '/api/gm/display', GM, { kind: 'blank', ifSeq: 999999 }, 409],
     ['a malformed body', 'PATCH', '/api/campaign', GM, { crew: 'nope' }, 400],
     ['a player portrait-add', 'POST', '/api/gm/assist/portrait-add', ALEX, { name: 'x', spec: {} }, 403],
+    ['a player whois', 'POST', '/api/gm/assist/whois', ALEX, {}, 403],
+    ['the iPad whois', 'POST', '/api/gm/assist/whois', IPAD, {}, 403],
   ];
   for (const [label, m, p, u, b, want] of bad) {
     const r = await call(hub, m, p, { user: u, body: b });

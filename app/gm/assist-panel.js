@@ -1173,6 +1173,7 @@
         if (gone) return;
         if (isObj(res) && isObj(res.voice)) sendVoice(res.voice); else if (!npc) sendVoice(null);   /* nobody on stage: nothing from Voice shows */
         if (isObj(res) && isObj(res.stall) && str(res.stall.offer).trim()) sendStall(res.stall);
+        if (isObj(res) && isObj(res.whois) && Object.keys(res.whois).length) sendWhois(res.whois);
         if (isObj(res) && isObj(res.meanwhile) && str(res.meanwhile.cutaway).trim()) sendMeanwhile(res.meanwhile);
         if (isObj(res) && isObj(res.handout) && str(res.handout.id).trim() && typeof o.onHandout === 'function') { try { o.onHandout({ id: str(res.handout.id).trim(), why: str(res.handout.why), at: str(res.handout.at) }); } catch (e) {} }
         var fresh = absorb(st, res, new Date().toISOString());
@@ -1226,6 +1227,7 @@
     function sendNone() { sendVoice(null); sendStall(null); sendMeanwhile(null); }   /* Listening off, the cap: nothing from Voice, Stall or Meanwhile shows */
     function sendMeanwhile(v) { if (typeof o.onMeanwhile === 'function') { try { o.onMeanwhile(v); } catch (e) {} } }
     function sendStall(v) { if (typeof o.onStall === 'function') { try { o.onStall(v); } catch (e) {} } }
+    function sendWhois(v) { if (typeof o.onWhois === 'function') { try { o.onWhois(v); } catch (e) {} } }   /* Who is who: suggestions for the Listening fold, from the tick or the Blade, guess button; never a card */
     /* the Another button needs what the Fixer's does: a box that is set up, not capped, not a phone */
     function canAnother() { return canFit() && !!gm && typeof gm.assistAnother === 'function'; }
     function another(req) {
@@ -1236,6 +1238,24 @@
         if (isObj(res) && isObj(res.spend)) { absorb(st, { spend: res.spend, warnings: [] }, ''); render(); }
         var v = res && isObj(res.voice) && Array.isArray(res.voice.lines) && res.voice.lines.length ? res.voice : null;
         return v ? { voice: v } : { error: 'none' };
+      }, function (e) {
+        if (gone) return null;
+        var k = errKind(e);
+        if (k === 'cap') { st.paused = 'cap'; sendNone(); render(); }
+        return { error: k };
+      });
+    }
+
+    /* "Blade, guess" (Who is who): POST /gm/assist/whois at once. -> { whois } | { nothing } | { warning } | { error: 'cap' | 'busy' | ... } | null (not available). Suggestions go to o.onWhois. */
+    function canGuess() { return canFit() && !!gm && typeof gm.assistWhois === 'function' && typeof o.onWhois === 'function'; }
+    function guess() {
+      if (!canGuess()) return Promise.resolve(null);
+      return Promise.resolve().then(function () { return gm.assistWhois(); }).then(function (res) {
+        if (gone) return null;
+        if (isObj(res) && isObj(res.spend)) { absorb(st, { spend: res.spend, warnings: [] }, ''); render(); }
+        var w = isObj(res) && isObj(res.whois) ? res.whois : {};
+        if (Object.keys(w).length) sendWhois(w);
+        return { whois: w, nothing: str(res && res.nothing), warning: res && Array.isArray(res.warnings) && res.warnings.length ? str(res.warnings[0]) : '' };
       }, function (e) {
         if (gone) return null;
         var k = errKind(e);
@@ -1387,7 +1407,7 @@
 
     return {
       setAutopilot: setAutopilot,
-      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, pin: togglePin, isPinned: function () { return docked(); }, undoNewest: undoNewest, addCard: addCard, updateCard: updateCard, removeCard: removeCard, relayout: relayout, poll: poll, rolled: rolled, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another, canScreen: canScreen, screenMake: screenMake, ask: ask, canAsk: canAsk,
+      ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, pin: togglePin, isPinned: function () { return docked(); }, undoNewest: undoNewest, addCard: addCard, updateCard: updateCard, removeCard: removeCard, relayout: relayout, poll: poll, rolled: rolled, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another, canGuess: canGuess, guess: guess, canScreen: canScreen, screenMake: screenMake, ask: ask, canAsk: canAsk,
       state: function () { return JSON.parse(JSON.stringify({ open: st.open, cards: st.cards, updates: st.updates, asks: st.cards.filter(function (c) { return c.src === 'ask'; }), ask: st.ask, nowId: st.nowId, renders: { cards: cache.builds, more: cache.moreRenders }, after: st.after, spend: st.spend, paused: st.paused, error: st.error, listening: st.listening, unread: unread(), fit: st.fit, screen: st.screen, banner: bannerCard ? bannerCard.headline : '' })); },
       el: function () { return host; },
       cogmSwitch: cogmSwitch,

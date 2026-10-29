@@ -28,9 +28,9 @@ await test('the Scribe is Haiku 5.5 at low effort; Meanwhile is Sonnet 5.5 at lo
 });
 
 await test('wake rules: the Scribe on every tick, Meanwhile only on scene_change; neither on a quiet tick with no flag', () => {
-  assert.deepEqual(decide({ flags: ['tick'], now: T }).seats, ['showrunner', 'scribe']);
+  assert.deepEqual(decide({ flags: ['tick'], now: T }).seats, ['showrunner', 'scribe', 'whois']);
   assert.deepEqual(decide({ flags: ['scene_change'], now: T }).seats, ['meanwhile']);
-  assert.deepEqual(decide({ flags: ['scene_change', 'tick'], now: T }).seats, ['showrunner', 'scribe', 'meanwhile']);
+  assert.deepEqual(decide({ flags: ['scene_change', 'tick'], now: T }).seats, ['showrunner', 'scribe', 'meanwhile', 'whois']);
   assert.deepEqual(decide({ flags: ['harm'], now: T }).seats, ['ref', 'ledger']);
 });
 
@@ -46,10 +46,10 @@ await test('ladder: the Scribe runs until 85% (drops at core); Meanwhile drops a
   assert.ok(!CORE_SEATS.includes('scribe') && !CORE_SEATS.includes('meanwhile'));
   assert.ok(DROPPED_WHEN_REDUCED.includes('meanwhile') && !DROPPED_WHEN_REDUCED.includes('scribe'));
   const at = (spent) => decide({ flags: ['tick', 'scene_change'], now: T, spent, cap: 20 }).seats;
-  assert.deepEqual(at(0), ['showrunner', 'scribe', 'meanwhile']);
-  assert.deepEqual(at(11.99), ['showrunner', 'scribe', 'meanwhile'], 'just under 60%');
-  assert.deepEqual(at(12), ['scribe'], 'at 60% Meanwhile and the Showrunner go; the Scribe stays');
-  assert.deepEqual(at(16.99), ['scribe'], 'just under 85%');
+  assert.deepEqual(at(0), ['showrunner', 'scribe', 'meanwhile', 'whois']);
+  assert.deepEqual(at(11.99), ['showrunner', 'scribe', 'meanwhile', 'whois'], 'just under 60%');
+  assert.deepEqual(at(12), ['scribe', 'whois'], 'at 60% Meanwhile and the Showrunner go; the Scribe stays');
+  assert.deepEqual(at(16.99), ['scribe', 'whois'], 'just under 85%');
   assert.deepEqual(at(17), [], 'at 85% the Scribe goes too');
   assert.deepEqual(at(20), []);
   assert.equal(tierAllows(budgetTier(16.9, 20), 'scribe'), true); assert.equal(tierAllows(budgetTier(17, 20), 'scribe'), false);

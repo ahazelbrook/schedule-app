@@ -15,6 +15,7 @@
 //      Showrunner's and Mystery's go through the Editor, behind Ref and Clerk, under the same one-card-per-five-minutes gap.
 //   7. Scribe (the story so far) wakes on every tick, every 5 minutes, until 85%; Meanwhile on scene_change, every 20 minutes, until
 //      60%. Ask Blade (the GM's typed question) is a tap like Portrait and Prop: no cooldown, not a Core seat, so it stops at 85%.
+//      Whois (who is who) is not a Core seat either: it stops at 85% like Voice and Stall, and its answer is only ever a suggestion the GM taps.
 //      Silence (silenceFlag, above) raises `stall` in code. A Ref card that repeats the same slip within 10 minutes is suppressed (Phase 0: Ref repeats itself on adjacent
 //      minutes). isRepeatSlip() is that rule; the Editor uses it too.
 
@@ -45,6 +46,7 @@ export const COOLDOWN_MS = {
   mystery: 15 * 60 * 1000,
   meanwhile: 20 * 60 * 1000,
   scribe: 5 * 60 * 1000,            // the story so far is folded every five minutes of new talk
+  whois: 3 * 60 * 1000,             // who is who: on a tick with an unnamed speaker, at most every three minutes (the GM's "Blade, guess" button uses a 10 s gap instead)
 };
 
 // ---------- the silence flag (code only, no model) ----------

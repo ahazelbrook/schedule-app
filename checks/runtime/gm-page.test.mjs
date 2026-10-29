@@ -4208,5 +4208,89 @@ await test('A2e. start() running again on the same page (Update pack, then Cance
   await h.save();
 });
 
+/* =====================================================================================================================
+   Who is who: Blade's suggestions (STT-W). Chips in the fold; a tap is the ordinary speakers PATCH; nothing is applied otherwise.
+   ===================================================================================================================== */
+async function whoisPage({ speakers = {}, canGuess = true, withBox = true } = {}) {
+  const sent = [], log = { opts: null, guesses: 0, reply: null };
+  const fg = fakeGm();
+  fg.gm.assistTick = async () => ({ cards: [], updates: [], flags: [], spend: { tonight: 0, cap: 20, tier: 'all', tick: 0 }, last: 1 });
+  fg.gm.assistWhois = async () => ({ whois: {} });
+  fg.gm.stt = async () => ({ doc: { want: 'on', speakers, status: { state: 'listening', at: new Date().toISOString(), lines: 2 } } });
+  fg.gm.transcript = async () => ({ lines: [{ speaker: 2, kind: 'line', text: 'Who knocks?' }] });
+  fg.gm.patchStt = async (p) => { sent.push(p); return { doc: { want: 'on', speakers: Object.assign({}, speakers, p.speakers || {}), status: { state: 'listening' } } }; };
+  const A = { create(o) {
+    log.opts = o;
+    return { destroy() {}, toggle() {}, isOpen: () => false, close() {}, canFit: () => true, canGuess: () => canGuess, guess() { log.guesses++; if (log.reply) o.onWhois(log.reply); return Promise.resolve({ whois: log.reply || {} }); } };
+  } };
+  const h = await openPage({ br: fakeBrowser(withBox ? { B68GmAssist: A } : {}), fg, camp: CAMP3 });
+  h.press('i');
+  assert.ok(await until(() => h.q('#gm-stt [data-sttfold]')), 'the Listening panel is up');
+  return { h, sent, log, fg, sug: (w) => { log.opts.onWhois(w); } };
+}
+const chipTxt = (h) => h.qa('#gm-stt .gm-whois-take').map((b) => (b.textContent || '').replace(/\s+/g, ' ').trim());
+
+await test('Who is who: a suggestion shows as a chip "S2 Quinn? (why)"; nothing is sent until the tap; the tap is the ordinary speakers PATCH and the chip goes', async () => {
+  const t = await whoisPage();
+  assert.deepEqual(chipTxt(t.h), [], 'no suggestion, no chip');
+  t.sug({ 2: { name: 'Quinn', why: "says 'I' as Dara; others call them by name" } });
+  assert.deepEqual(chipTxt(t.h), ["S2 Quinn? (says 'I' as Dara; others call them by name)"]);
+  assert.deepEqual(t.sent, [], 'a suggestion applies nothing');
+  t.h.q('[data-gm="whois-take"]').click();
+  assert.ok(await until(() => t.sent.length === 1));
+  assert.equal(JSON.stringify(t.sent[0]), JSON.stringify({ speakers: { 2: 'Quinn' } }));
+  assert.deepEqual(chipTxt(t.h), [], 'the chip is gone once taken');
+  await t.h.save();
+});
+
+await test('Who is who: the x dismisses a chip without any PATCH, and the same guess does not come back; a different name does', async () => {
+  const t = await whoisPage();
+  t.sug({ 2: { name: 'Quinn', why: 'a' } });
+  t.h.q('[data-gm="whois-no"]').click();
+  assert.deepEqual(chipTxt(t.h), []); assert.deepEqual(t.sent, [], 'dismissing sends nothing');
+  t.sug({ 2: { name: 'quinn', why: 'again' } });
+  assert.deepEqual(chipTxt(t.h), [], 'the same name is not offered again');
+  t.sug({ 2: { name: 'Sam', why: 'b' } });
+  assert.deepEqual(chipTxt(t.h), ['S2 Sam? (b)']);
+  await t.h.save();
+});
+
+await test('Who is who: a number the GM named differently still gets a chip; one named the same (even as "Name (Character)") does not', async () => {
+  const t = await whoisPage({ speakers: { 2: 'Pat (Wexley)' } });
+  t.sug({ 2: { name: 'Quinn', why: 'x' } });
+  assert.deepEqual(chipTxt(t.h), ['S2 Quinn? (x)'], 'differently named');
+  t.sug({ 2: { name: 'Pat', why: 'y' } });
+  assert.deepEqual(chipTxt(t.h), [], 'already Pat (Wexley)');
+  await t.h.save();
+});
+
+await test('Who is who: everything the model returned is escaped, in the chip and its tooltip', async () => {
+  const t = await whoisPage();
+  t.sug({ 2: { name: 'Quinn<img src=x onerror=alert(1)>', why: '<script>alert(1)</script> "quoted" & <b>bold</b>' } });
+  assert.equal(t.h.qa('#gm-stt img').length, 0); assert.equal(t.h.qa('#gm-stt script').length, 0); assert.equal(t.h.qa('#gm-stt .gm-whois b').length, 0);
+  const chip = t.h.q('#gm-stt .gm-whois-take');
+  assert.ok(chip.textContent.includes('<script>alert(1)</script>') && chip.textContent.includes('"quoted" & <b>bold</b>'), 'shown as text');
+  assert.ok(chip.getAttribute('title').includes('<img'), 'and in the title as text');
+  t.sug({ 'x"><b>': { name: 'Q', why: 'bad key' }, 77777: { name: 'Q', why: 'long key' } });
+  assert.equal(chipTxt(t.h).length, 1, 'a key that is not a speaker number is ignored');
+  await t.h.save();
+});
+
+await test('Who is who: "Blade, guess" asks the box once and the answer becomes chips; no box (a phone) or a capped box means no button', async () => {
+  const t = await whoisPage();
+  t.log.reply = { 3: { name: 'Sam', why: 'asks what you do' } };
+  const btn = t.h.q('[data-gm="whois-ask"]'); assert.ok(btn); assert.match(btn.textContent, /Blade, guess/);
+  btn.click();
+  assert.ok(await until(() => chipTxt(t.h).length === 1)); assert.equal(t.log.guesses, 1); assert.deepEqual(chipTxt(t.h), ['S3 Sam? (asks what you do)']);
+  assert.deepEqual(t.sent, [], 'still nothing applied');
+  await t.h.save();
+  const n = await whoisPage({ withBox: false });
+  assert.equal(n.h.q('[data-gm="whois-ask"]'), null, 'no box, no button');
+  await n.h.save();
+  const c = await whoisPage({ canGuess: false });
+  assert.equal(c.h.q('[data-gm="whois-ask"]'), null, 'capped or not set up: no button');
+  await c.h.save();
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
