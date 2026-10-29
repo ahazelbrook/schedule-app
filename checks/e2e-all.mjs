@@ -44,6 +44,7 @@ const CHECKS = [
   ['checks/runtime/gm-run.e2e.mjs', 'Run the site: floors, the evening clock, disguise, crew, pins (8877)'],
   ['checks/runtime/gm-run-v2.e2e.mjs', 'the Run tab for a v2 night: start, beats, peek, moves, Open for the players, keys, Focus at three sizes (8950)'],
   ['checks/runtime/gm-mission.e2e.mjs', 'the players\' mission from the Run view: the chip, Next and Back, a peek, the Players view, the overlay, End the night (8910)'],
+  ['checks/runtime/mission-loop.e2e.mjs', 'the whole mission loop: GM, iPad and two phones; Next, Heard, Tell the crew, a hidden name refused, Reveal and send, End the night, latency (8920)'],
   ['checks/runtime/gm-score.e2e.mjs', 'the Score panel (8859)'],
   ['checks/runtime/gm-chase.e2e.mjs', 'the Chase panel and the iPad drawing its strip (8861)'],
   ['checks/runtime/gm-assist-panel.e2e.mjs', 'the Blade panel: tab, banner, polling, Fit, Ask (8862)'],
