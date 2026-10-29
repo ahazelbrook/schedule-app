@@ -1,0 +1,408 @@
+{
+ "v": 2,
+ "clock": {
+  "start": "21:00",
+  "end": "01:00",
+  "beat": 15,
+  "label": "Gala night",
+  "starts": {
+   "6": "21:30",
+   "crit": "21:00",
+   "4/5": "21:45",
+   "1-3": "22:00"
+  }
+ },
+ "floors": {
+  "0": "Ground",
+  "1": "Upper",
+  "2": "Loft",
+  "-1": "Under"
+ },
+ "zones": [
+  {
+   "id": "floor",
+   "label": "The floor",
+   "rooms": [
+    "Showroom",
+    "Cocktail lounge"
+   ],
+   "pub": "Where the guests are"
+  },
+  {
+   "id": "back",
+   "label": "Back of house",
+   "rooms": [
+    "Underground counting room",
+    "Security control room"
+   ],
+   "pub": "Staff only"
+  },
+  {
+   "id": "cards",
+   "label": "The card rooms",
+   "rooms": [
+    "Private card rooms"
+   ],
+   "pub": "High stakes"
+  },
+  {
+   "id": "loft",
+   "label": "The loft",
+   "rooms": [
+    "Luxury penthouse"
+   ],
+   "pub": "Private rooms upstairs"
+  }
+ ],
+ "routes": [
+  {
+   "id": "lift",
+   "from": "Cocktail lounge",
+   "to": "Luxury penthouse",
+   "via": "GM-ONLY-VIA-2",
+   "dir": "up",
+   "needs": "GM-ONLY-NEEDS-1",
+   "watched": true
+  },
+  {
+   "id": "trap",
+   "from": "Underground counting room",
+   "to": "Showroom",
+   "via": "GM-ONLY-VIA-1",
+   "pub": "A trapdoor from the counting room into the showroom",
+   "dir": "both",
+   "open": [
+    {
+     "from": "23:00",
+     "to": "00:00"
+    }
+   ]
+  }
+ ],
+ "people": [
+  {
+   "id": "od",
+   "label": "Odette Marsh",
+   "kind": "target",
+   "stops": [
+    {
+     "at": "21:00",
+     "room": "Showroom",
+     "note": "GM-ONLY-NOTE-1"
+    },
+    {
+     "at": "23:30",
+     "room": "Private card rooms",
+     "note": "GM-ONLY-NOTE-2"
+    },
+    {
+     "at": "00:15",
+     "room": "Luxury penthouse",
+     "note": "GM-ONLY-NOTE-3"
+    }
+   ]
+  },
+  {
+   "id": "wr",
+   "label": "Wren Tully",
+   "kind": "guard",
+   "look": "A tall man in a grey coat",
+   "wary": "GM-ONLY-WARY-1",
+   "note": "GM-ONLY-NOTE-4",
+   "stops": [
+    {
+     "at": "21:00",
+     "with": "od"
+    },
+    {
+     "at": "23:00",
+     "room": "Security control room"
+    },
+    {
+     "at": "23:30",
+     "with": "od"
+    }
+   ]
+  },
+  {
+   "id": "pq",
+   "label": "Pip Quill",
+   "kind": "staff",
+   "look": "A cook's hat and a cleaver",
+   "wary": "GM-ONLY-WARY-2",
+   "stops": [
+    {
+     "at": "21:00",
+     "room": "Cocktail lounge"
+    },
+    {
+     "at": "00:00",
+     "room": "Underground counting room"
+    }
+   ]
+  },
+  {
+   "id": "iv",
+   "label": "GM-ONLY-PERSON-1",
+   "kind": "rival",
+   "stops": [
+    {
+     "at": "21:00",
+     "room": "Security control room"
+    },
+    {
+     "at": "00:30",
+     "gone": true
+    }
+   ]
+  }
+ ],
+ "disguises": [
+  {
+   "id": "guest",
+   "label": "Guest",
+   "icon": "mask",
+   "home": [
+    "floor"
+   ],
+   "risky": [
+    "cards"
+   ],
+   "sees": [],
+   "get": "GM-ONLY-GET-1"
+  },
+  {
+   "id": "cook",
+   "label": "Cook",
+   "icon": "tray",
+   "home": [
+    "back"
+   ],
+   "risky": [
+    "floor"
+   ],
+   "sees": [
+    "pq"
+   ],
+   "get": "GM-ONLY-GET-2"
+  },
+  {
+   "id": "guard",
+   "label": "Guard",
+   "icon": "jacket",
+   "home": [
+    "floor",
+    "back"
+   ],
+   "risky": [
+    "cards",
+    "loft"
+   ],
+   "sees": [
+    "wr"
+   ],
+   "get": "GM-ONLY-GET-3"
+  }
+ ],
+ "items": [
+  {
+   "id": "key",
+   "label": "A brass key",
+   "pub": "Opens the service lift",
+   "lift": [
+    {
+     "zone": "loft",
+     "to": "risky"
+    }
+   ]
+  }
+ ],
+ "events": [
+  {
+   "at": "22:00",
+   "id": "sp",
+   "label": "GM-ONLY-LABEL-1",
+   "room": "Showroom",
+   "vis": "public",
+   "pub": "The speeches",
+   "say": "GM-ONLY-SAY-1"
+  },
+  {
+   "at": "23:30",
+   "id": "cr",
+   "label": "GM-ONLY-LABEL-2",
+   "room": "Private card rooms",
+   "vis": "hidden",
+   "pub": "Odette at the card tables"
+  },
+  {
+   "at": "00:00",
+   "id": "fw",
+   "label": "GM-ONLY-LABEL-3",
+   "room": "Showroom",
+   "vis": "public",
+   "fx": "dawn",
+   "pub": "The fireworks"
+  },
+  {
+   "at": "00:30",
+   "id": "sh",
+   "label": "GM-ONLY-LABEL-4",
+   "room": "Private card rooms",
+   "vis": "hidden",
+   "rival": true,
+   "pub": "A shot in the card rooms"
+  }
+ ],
+ "ways": [
+  {
+   "id": "A",
+   "name": "GM-ONLY-NAME-1",
+   "pubName": "The Last Hand",
+   "kind": "quiet",
+   "window": {
+    "at": "23:30",
+    "until": "00:15",
+    "room": "Private card rooms",
+    "pub": "Late, at the cards",
+    "told": "cr"
+   },
+   "lead": {
+    "line": "She never leaves a table while she's winning.",
+    "who": "GM-ONLY-WHO-1",
+    "room": "Cocktail lounge",
+    "from": "21:00",
+    "to": "23:00"
+   },
+   "steps": [
+    "A seat at her table",
+    "Make her lose"
+   ],
+   "cost": "GM-ONLY-COST-1",
+   "note": "GM-ONLY-NOTE-5"
+  },
+  {
+   "id": "B",
+   "name": "GM-ONLY-NAME-2",
+   "pubName": "Going Up",
+   "kind": "loud",
+   "window": {
+    "at": "00:15",
+    "room": "Luxury penthouse",
+    "pub": "After midnight, upstairs"
+   },
+   "lead": {
+    "line": "The lift key hangs on the cook's hook.",
+    "who": "GM-ONLY-WHO-2",
+    "room": "Underground counting room",
+    "from": "21:00",
+    "to": "00:00"
+   },
+   "steps": [
+    "The key",
+    "The lift"
+   ],
+   "needs": [
+    "key"
+   ],
+   "cost": "GM-ONLY-COST-2",
+   "note": "GM-ONLY-NOTE-6"
+  }
+ ],
+ "intel": [
+  {
+   "id": "I1",
+   "text": "The programme: speeches at ten, fireworks at midnight",
+   "from": "GM-ONLY-FROM-1",
+   "reveals": {
+    "events": [
+     "sp",
+     "fw"
+    ]
+   }
+  },
+  {
+   "id": "I2",
+   "text": "Odette plays cards at half past eleven",
+   "from": "GM-ONLY-FROM-2",
+   "reveals": {
+    "events": [
+     "cr"
+    ],
+    "ways": [
+     "A"
+    ]
+   }
+  },
+  {
+   "id": "I3",
+   "text": "A trapdoor opens between the counting room and the showroom at eleven",
+   "from": "GM-ONLY-FROM-3",
+   "reveals": {
+    "routes": [
+     "trap"
+    ]
+   }
+  },
+  {
+   "id": "I4",
+   "text": "The rival moves at half past twelve",
+   "from": "GM-ONLY-FROM-4",
+   "reveals": {
+    "events": [
+     "sh"
+    ]
+   }
+  }
+ ],
+ "alarm": {
+  "clock": "Fuse",
+  "beats": [
+   "GM-ONLY-BEAT-1",
+   "GM-ONLY-BEAT-2",
+   "GM-ONLY-BEAT-3",
+   "GM-ONLY-BEAT-4",
+   "GM-ONLY-BEAT-5",
+   "GM-ONLY-BEAT-6"
+  ],
+  "pub": [
+   "A door slams",
+   "Someone is looking",
+   "The lift is guarded",
+   "Staff are being checked",
+   "Odette looks nervous",
+   "Lockdown"
+  ],
+  "ticks": [
+   {
+    "why": "GM-ONLY-WHY-1",
+    "by": 1
+   }
+  ],
+  "at": {
+   "5": "skip-private",
+   "6": "lockdown"
+  }
+ },
+ "entries": [
+  {
+   "id": "front",
+   "label": "GM-ONLY-ENTRY-1",
+   "room": "Showroom",
+   "disguise": "guest",
+   "know": "free",
+   "note": "GM-ONLY-NOTE-7"
+  }
+ ],
+ "exits": [
+  {
+   "id": "lift",
+   "label": "GM-ONLY-EXIT-1",
+   "from": "Luxury penthouse",
+   "note": "GM-ONLY-NOTE-8"
+  }
+ ],
+ "secret": [
+  "GM-ONLY-SECRET-1"
+ ]
+}
