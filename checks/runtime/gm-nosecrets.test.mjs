@@ -1163,5 +1163,124 @@ await test('(o) the page\'s mission path reaches the players through one write a
   if (/\bcards\b/.test(server)) throw new Error('the display route mentions cards');
 });
 
+/* ---------- (o) VV9: what the band and each card may NOT hold, from the fixture's own fields (design 5.7 item 5) ----------
+   VV6's tests above prove no GM-ONLY marker reaches a PATCH. These add the other half of the rule: the band holds nothing that is for a phone card,
+   and a card holds nothing that only the other PC heard, was told or carries. The lists come from the fixture and the night's state
+   (fixtures/gm/mission-secrecy-lib.mjs), never from the mission under test, so they cannot agree with a leak. Asserted on the real PATCH body
+   AND on what the server's cleanMission keeps of it. Every rule runs beside a positive control: the string IS delivered to its owner. */
+const URLM = await import('node:url');
+const SEC = await import(URLM.pathToFileURL(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'mission-secrecy-lib.mjs')).href);
+const { cleanMission: SRV_CLEAN } = await import(URLM.pathToFileURL(path.join(ROOT, 'functions', '_lib', 'campaign.js')).href);
+const FXN = SEC.loadFixture();
+const vv9crews = [
+  { pc_a: { room: 'Cocktail lounge', disguise: 'guest' }, pc_b: { room: 'Cocktail lounge', disguise: 'cook' } },
+  { pc_a: { room: 'Security control room', disguise: 'guard' }, pc_b: { room: 'Showroom', disguise: 'guest' } },
+];
+const vv9heard = [{}, { A: { pc_a: 90 } }, { A: { pc_b: 95 } }, { A: { pc_a: 90 }, B: { pc_b: 95 } }, { A: { pc_b: 95 }, B: { pc_a: 100 } }, { A: { pc_a: 90, pc_b: 95 }, B: { pc_a: 100 } }];
+const vv9told = [{}, { I1: ['pc_a'], I3: ['pc_b'] }, { I1: ['pc_b'], I2: ['pc_a'], I3: ['pc_a'] }, { I1: 'crew', I2: ['pc_b'], I3: 'crew' }, { I2: 'crew', I4: ['pc_a'] }];
+function vv9states() {
+  const out = []; let n = 0;
+  for (const heard of vv9heard) for (const told of vv9told) for (let it = 0; it < 3; it++) for (const crewBase of vv9crews) for (const tt of [0, 45, 75, 120, 135, 150, 215]) {
+    const crew = JSON.parse(JSON.stringify(crewBase));
+    if (it === 1) crew.pc_a.items = ['key'];
+    if (it === 2) crew.pc_b.items = ['key'];
+    out.push({ v: 2, site: 'x', start: 45, t: tt, crew, told, heard, steps: n % 2 ? { A: [true, false], B: [false, false] } : {}, ways: {}, over: {} });
+    n++;
+  }
+  return out;
+}
+const vv9has = SEC.has;
+const vv9check = (m, st, label, tally) => SEC.checkMission(FXN, m, st, label, tally);
+
+await test('(o) VV9 the lists are sound before they are used: the pool is non-empty, disjoint from the band\'s own words, and no marker is in it', () => {
+  const pool = SEC.cardPool(FXN), vocab = SEC.bandVocabulary(FXN);
+  if (pool.length < 15) throw new Error('only ' + pool.length + ' card-only strings');
+  for (const p of pool) for (const v of vocab) if (v.toLowerCase().includes(p.toLowerCase())) throw new Error('"' + p + '" is inside the band\'s own word "' + v + '"');
+  for (const m of SEC.markers(FXN)) if (pool.some((p) => p.includes(m))) throw new Error('a marker is in the pool');
+  if (SEC.markers(FXN).length < 30) throw new Error('markers');
+  for (const must of ['The Last Hand', 'A brass key', 'Late, at the cards', 'Make her lose']) if (!pool.includes(must)) throw new Error('the pool lacks ' + must);
+});
+
+await test('(o) VV9 over 1200+ nights: the band holds no card-only string and no later step; a card holds nothing only the other PC heard, was told or carries; each owner\'s own strings are there; on the PATCH body and on what cleanMission keeps', async () => {
+  const states = vv9states(), tally = { negBand: 0, negCard: 0, pos: 0, seen: new Set() }, cleanTally = { negBand: 0, negCard: 0, pos: 0, seen: new Set() }, pool = SEC.cardPool(FXN), reached = new Set();
+  let bodies = 0;
+  for (const st of states) {
+    const r = await mnight(mplay(), [{ state: st, clocks: [{ name: 'Fuse', filled: 2, hidden: false }] }], { names: [] });
+    if (r.refused.length) throw new Error('the screen refused a clean night: ' + JSON.stringify(r.refused[0]));
+    if (r.bodies.length !== 1) throw new Error('expected one body, got ' + r.bodies.length);
+    bodies++;
+    const m = JSON.parse(r.bodies[0]).mission, label = 'night ' + bodies + ' (t=' + st.t + ')';
+    vv9check(m, st, 'PATCH body, ' + label, tally);
+    { const cards = JSON.stringify(m.cards); pool.forEach((p) => { if (vv9has(cards, p)) reached.add(p); }); }
+    const kept = SRV_CLEAN(JSON.parse(JSON.stringify(m)));
+    vv9check(kept, st, 'cleanMission, ' + label, cleanTally);
+  }
+  if (bodies < 1200) throw new Error('only ' + bodies + ' nights');
+  for (const t of [tally, cleanTally]) if (t.negBand < 20000 || t.negCard < 20000 || t.pos < 1500) throw new Error('the sweep checked too little: ' + JSON.stringify({ negBand: t.negBand, negCard: t.negCard, pos: t.pos }));
+  /* the pool WAS delivered to cards somewhere in the sweep, so "the band holds none of it" is not a pass because nothing ever carried it */
+  const missing = pool.filter((p) => !reached.has(p));
+  if (missing.length) throw new Error('never delivered to a card in the sweep: ' + JSON.stringify(missing));
+  const delivered = (set, s) => [...set].some((x) => vv9has(x, s));
+  for (const must of ['The Last Hand', 'She never leaves a table while she\'s winning.', 'Late, at the cards', 'After midnight, upstairs', 'A brass key', 'The programme: speeches at ten, fireworks at midnight', 'A trapdoor opens between the counting room and the showroom at eleven'])
+    if (!delivered(tally.seen, must)) throw new Error('control: "' + must + '" was never expected on a card, so no rule about it ran');
+  if (tally.seen.size !== cleanTally.seen.size) throw new Error('cleanMission changed what a card delivers: ' + tally.seen.size + ' vs ' + cleanTally.seen.size);
+});
+
+await test('(o) VV9 the screen reaches every string of the mission: for each leaf of two built missions (band, cards and card ids), a hidden name put there is refused at exactly that path', () => {
+  /* two nights between them fill every string field: one while a public event is on (the band's Now), one while a guard watches a PC and a route is open */
+  const crew = (busy) => ({ pc_a: { room: 'Security control room', disguise: 'guard', items: ['key'], busy: busy }, pc_b: { room: 'Cocktail lounge', disguise: 'cook' } });
+  const sts = [65, 135].map((t) => ({ v: 2, site: 'x', start: 45, t: MT('21:00') + t, crew: crew(MT('23:45')), told: { I1: 'crew', I2: ['pc_a'], I3: ['pc_b'] }, heard: { A: { pc_a: 90, pc_b: 95 }, B: { pc_b: 100 } }, steps: { A: [true, false] }, ways: {}, over: {} }));
+  const clocks = [{ name: 'Fuse', filled: 3, hidden: false }];
+  const shape = (p) => p.filter((x) => typeof x !== 'number').join('.');
+  const covered = new Set(), deny = { names: ['Zed Qwerty'], secrets: [] };
+  let n = 0;
+  for (const st of sts) {
+    const built = MPUB.buildMission(MBALL, { play: mplay(), state: st, clocks, pcs: MPCS, open: MROOMS }, 1);
+    if (!built) throw new Error('control: the rich night built no mission');
+    if (MPUB.screenMission(built, deny, GP.namesHit) !== null) throw new Error('control: the unmodified mission is refused');
+    const leaves = [];
+    const walkLeaves = (v, p) => {
+      if (typeof v === 'string') { if (v) leaves.push({ p: p, id: false }); }
+      else if (Array.isArray(v)) v.forEach((x, i) => walkLeaves(x, p.concat(i)));
+      else if (v && typeof v === 'object') Object.keys(v).forEach((k) => { if (p.length === 1 && p[0] === 'cards') leaves.push({ p: p.concat(k), id: true }); walkLeaves(v[k], p.concat(k)); });
+    };
+    walkLeaves(built, []);
+    leaves.filter((l) => !l.id).forEach((l) => covered.add(shape(l.p).replace(/^cards\.[^.]+\./, 'card.')));
+    for (const l of leaves) {
+      const m = JSON.parse(JSON.stringify(built));
+      if (l.id) {                                         /* a card id: rename the key */
+        m.cards['Zed Qwerty'] = m.cards[l.p[1]]; delete m.cards[l.p[1]];
+        const hit = MPUB.screenMission(m, deny, GP.namesHit);
+        if (!hit || hit.path !== 'mission.cards.Zed Qwerty') throw new Error('a card id was not screened: ' + JSON.stringify(hit));
+        n++; continue;
+      }
+      let o = m;
+      for (let i = 0; i < l.p.length - 1; i++) o = o[l.p[i]];
+      o[l.p[l.p.length - 1]] = 'Zed Qwerty';
+      const hit = MPUB.screenMission(m, deny, GP.namesHit), at = 'mission.' + l.p.join('.');
+      if (!hit || hit.path !== at || hit.kind !== 'name') throw new Error('a hidden name at ' + at + ' was not stopped there: ' + JSON.stringify(hit));
+      n++;
+    }
+  }
+  const want = ['hud.time', 'hud.label', 'hud.now.text', 'hud.now.until', 'hud.next.text', 'hud.next.at', 'hud.night.marks.icon', 'hud.night.marks.text', 'hud.alarm.name', 'hud.alarm.text', 'hud.crew.name', 'hud.crew.costume', 'hud.crew.icon', 'hud.crew.room',
+    'card.name', 'card.owner', 'card.costume', 'card.icon', 'card.room', 'card.pos', 'card.warn.who', 'card.warn.look', 'card.warn.sees', 'card.zones.controlled', 'card.zones.risky', 'card.items', 'card.leads.name', 'card.leads.line',
+    'card.leads.heard', 'card.leads.window', 'card.leads.next', 'card.know', 'card.next.text', 'card.next.at', 'card.paths.text', 'card.paths.until', 'card.busy'];
+  for (const w of want) if (!covered.has(w)) throw new Error('control: the rich nights never fill ' + w + ' (filled: ' + [...covered].join(' ') + '), so the screen is not proved over it');
+  if (n < 90) throw new Error('only ' + n + ' leaves were tried');
+});
+
+await test('(o) VV9 the display route\'s only mission read is mission.seq and mission.hud: no statement can select the cards', () => {
+  const lib = read(path.join(ROOT, 'functions', '_lib', 'campaign.js')), from = lib.indexOf('export async function loadMissionPart');
+  if (from < 0) throw new Error('loadMissionPart moved');
+  const body = lib.slice(from, lib.indexOf('\n}\n', from)).replace(/\/\*[\s\S]*?\*\//g, '');
+  const paths = body.match(/\$\.mission[A-Za-z0-9_.]*/g) || [];
+  if (!paths.length || paths.some((p) => p !== '$.mission.seq' && p !== '$.mission.hud')) throw new Error('loadMissionPart reads ' + JSON.stringify(paths));
+  if (/cards/.test(body)) throw new Error('loadMissionPart mentions cards');
+  for (const f of ['ambient.js', 'state.js']) {
+    const p = path.join(ROOT, 'functions', 'api', 'gm', f);
+    if (fs.existsSync(p) && /mission/.test(read(p).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, ''))) throw new Error(f + ' reads the mission');
+  }
+});
+
 console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');
 process.exit(failed ? 1 : 0);
