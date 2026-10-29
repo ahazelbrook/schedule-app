@@ -2,6 +2,8 @@
 // (default 8950), with INVENTED authored sites (a made-up venue and cast) in the location part of the pack: one v1 site and one v2
 // site (checks/runtime/fixtures/gm/pelican-play-v2.json). The tab shows for v2 only; the engagement start; a beat back and next
 // write ball.t; a peek writes nothing; a PC moved by tap and by drag; Open for the players asks; the keys; Focus at three sizes.
+// VV5 adds: This beat (four beats, three snapshots, False dawn, the alarm's buttons at their fill, Target is down and the exits), the crew
+// (busy, items, noticed, blown, costume, room), the job (Heard by, steps, done, a delay from now) and intel (Tell).
 //   PW_MODULE=<playwright install> PW_CHANNEL=msedge node checks/runtime/gm-run-v2.e2e.mjs      (GM_SHOTS=<dir> keeps screenshots)
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, readFileSync, mkdirSync } from 'node:fs';
@@ -203,7 +205,8 @@ try {
   const hb = await G.page.$$eval('.rv-sec[data-sec="room"] [data-rv="heard"]', (b) => b.map((x) => x.textContent + '/' + x.getAttribute('data-way') + '/' + x.getAttribute('data-pc')));
   check(hb.join() === 'Dov Ketch/A/run-pc2', 'with a Heard by button for the PC who is there (' + hb.join() + ')');
   await G.page.click('.rv-sec[data-sec="room"] [data-rv="heard"]');
-  check(!(await ball()).heard, 'Heard by writes nothing yet (the next ticket wires it)');
+  b = await until(async () => { const x = await ball(); return x && x.heard ? x : null; }, 8000);
+  check(!!b && b.heard.A && b.heard.A['run-pc2'] === 45, 'Heard by (VV5) writes ball.heard.A.<pc> = the published time (' + JSON.stringify(b && b.heard) + ')');
   await G.page.click('.rv-card[data-room="Luxury penthouse"] .rv-cn');
   check(/Not open to the players/.test(await side()), 'a shut room says so');
   await G.page.click('.rv-sec[data-sec="room"] [data-rv="move"][data-id="run-pc3"]');
@@ -266,6 +269,203 @@ try {
   await G.page.click('[data-rv="view"][data-v="board"]');
   check((await G.page.$$('.rv-card')).length === 6, 'Board brings the cards back');
 
+  /* ==== VV5 (the beat card, the crew, the job, intel) ============================================================ */
+  const secT = (name) => G.page.$eval('.rv-sec[data-sec="' + name + '"]', (e) => e.textContent.replace(/\s+/g, ' ').trim());
+  const ballT = async () => (await ball()).t;
+  const waitBall = (pred, ms = 8000) => until(async () => { const x = await ball(); return x && pred(x) ? x : null; }, ms);
+  const crewRow = (id) => '.rv-crew[data-pc="' + id + '"]';
+  const BEAT = '.rv-sec[data-sec="beat"]';
+  const od = (x, hhmm) => BALL.placesAt(c2.play, x, BALL.minuteOf(hhmm, '21:00')).od;
+  check(await G.page.$$eval('.rv-sec', (e) => e.map((x) => x.getAttribute('data-sec')).join()) === 'beat,room,crew,job,intel', 'the right column: This beat first (order 0), then the room, the crew, the job and intel');
+  check(await ballT() === 75, 'the night stands at 22:15 (beat 6)');
+
+  /* four beats: each Next rewrites the card; 23:00 brings the Passage and the looker's wary line */
+  const seen = [];
+  for (let k = 1; k <= 4; k++) {
+    await G.page.click('[data-rv="next"]');
+    await waitBall((x) => x.t === 75 + 15 * k);
+    const want = BALL.timeLabel(c2.play, 75 + 15 * k);
+    check(await G.page.waitForFunction((w) => document.querySelector('.rv-sec[data-sec="beat"] .rv-sh').textContent === 'This beat · ' + w, want, { timeout: 5000 }).then(() => true, () => false), 'Next ' + k + ': This beat reads ' + want);
+    seen.push(await secT('beat'));
+  }
+  check(/Passage opened 23:00 · Underground counting room ↔ Showroom/.test(seen[2]) && !/Passage opened/.test(seen[3]) && !/Passage opened/.test(seen[1]), 'snapshot 23:00: the Passage opens in the beat it opens, and only there');
+  check(/Pip Quill is where Dov Ketch is/.test(seen[2]) && /GM-ONLY-WARY-2/.test(seen[2]), 'a looker in a PC\'s room: its wary line is shown to the GM');
+  check(await G.page.$$eval(BEAT + ' [data-vv="dawn"]', (b) => b.length) === 0, 'no False dawn button on a card with no fx event');
+
+  /* 23:30 and 00:00 (jumps): the typed list in speaking order; the fx event carries False dawn */
+  await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+  await G.page.keyboard.press('Shift+ArrowRight'); await waitBall((x) => x.t === 150);
+  await G.page.waitForFunction(() => document.querySelector('.rv-sec[data-sec="beat"] .rv-sh').textContent === 'This beat · 23:30', null, { timeout: 5000 });
+  check(await G.page.$$eval(BEAT + ' .rv-bi', (l) => l.map((x) => x.className.replace('rv-bi t-', '')).join()) === 'event,move,looker,next', 'snapshot 23:30: the event, the target\'s move, a looker, then what is next');
+  const s2 = await secT('beat');
+  check(/GM-ONLY-LABEL-2 · Private card rooms/.test(s2) && /Odette Marsh → Private card rooms until 00:15/.test(s2), 'the move says until when: the target\'s next stop, 00:15');
+  await G.page.keyboard.press('Shift+ArrowRight'); await waitBall((x) => x.t === 180);
+  await G.page.waitForFunction(() => document.querySelector('.rv-sec[data-sec="beat"] .rv-sh').textContent === 'This beat · 00:00', null, { timeout: 5000 });
+  const s3 = await secT('beat');
+  check(/GM-ONLY-LABEL-3 · Showroom/.test(s3) && /Passage closed 00:00/.test(s3) && /00:15 Odette Marsh → Luxury penthouse in 15 min/.test(s3), 'snapshot 00:00: the fireworks, the Passage closing, and the next move');
+  check(await G.page.$$eval(BEAT + ' [data-vv="dawn"]', (b) => b.length) === 1, 'the fx event carries one False dawn button');
+
+  /* False dawn asks first (it reuses the page's runDawn); a no sends nothing */
+  answer.no = true; asked.length = 0;
+  const amb = async () => (await api('GET', '/gm/ambient')).json;
+  await G.page.click(BEAT + ' [data-vv="dawn"]');
+  await sleep(1200);
+  check(asked.length === 1 && /The iPad goes white for 30 seconds/.test(asked[0]) && !(await amb()).doc.overlay && !(await ball()).dawn, 'False dawn asks first; a no sends nothing and records nothing');
+  answer.no = false; asked.length = 0;
+  await G.page.click(BEAT + ' [data-vv="dawn"]');
+  const ov = await until(async () => { const a = await amb(); return a.doc.overlay ? a : null; }, 8000);
+  check(asked.length === 1 && !!ov && ov.doc.overlay.fx === 'dawn' && ov.doc.overlay.ms === 30000, 'a yes sends the dawn');
+  await api('PATCH', '/gm/ambient', { overlay: null });
+
+  /* a peek reads as the beat that ends there, and writes nothing */
+  await G.page.click('.rv-sq[data-i="4"]');
+  check(await G.page.$eval(BEAT + ' .rv-sh', (e) => e.textContent) === 'Looking at 22:00' && await G.page.$eval(BEAT + ' .rv-say', (e) => /SAY/.test(e.textContent) && /GM-ONLY-SAY-1/.test(e.textContent)), 'peeking at 22:00: the card for that beat, the SAY line in a band');
+  check(await ballT() === 180, 'and the published time did not move');
+  await G.page.keyboard.press('Escape');
+
+  /* the pacing line: wall clock, page-local */
+  check(/^beat 13 · \d+ min in$/.test(await G.page.$eval('[data-pace]', (e) => e.textContent)) && !JSON.stringify(await gmState()).includes('min in'), 'the pacing line reads beat 13 · m min in, and is held nowhere shared');
+
+  /* the alarm's buttons appear only at their fill (the table clock Fuse is the alarm) */
+  const setFuse = async (n) => {
+    const cur = (await api('GET', '/campaign')).json.doc;
+    const r = await api('PATCH', '/campaign', { clocks: cur.clocks.map((c) => (c.name === 'Fuse' ? { ...c, filled: n } : c)), updatedAt: new Date().toISOString() });
+    await G.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    return r.status;
+  };
+  const alarmBtns = () => G.page.$$eval(BEAT + ' [data-vv="skip"], ' + BEAT + ' [data-vv="lockdown"], ' + BEAT + ' [data-vv="release"]', (b) => b.map((x) => x.getAttribute('data-vv')).join());
+  check(await alarmBtns() === '', 'at Fuse 2/6: neither alarm button');
+  check(await setFuse(6) === 200 && !!(await until(async () => (await alarmBtns()) === 'skip,lockdown', 15000)), 'a jump from 2 straight to 6: both buttons (at or past their fill)');
+  check(await setFuse(5) === 200 && !!(await until(async () => (await alarmBtns()) === 'skip', 15000)), 'at Fuse 5: only "skip the next private stop"');
+  const skipTxt = await G.page.$eval(BEAT + ' [data-vv="skip"]', (e) => e.textContent);
+  check(/skip the next private stop/.test(skipTxt) && /Luxury penthouse 00:15/.test(skipTxt), 'and it names the stop it would skip (the penthouse, 00:15)');
+  await G.page.click(BEAT + ' [data-vv="skip"]');
+  b = await waitBall((x) => x.over && x.over.od && Array.isArray(x.over.od.skip));
+  check(!!b && JSON.stringify(b.over.od.skip) === '[2]' && od(b, '00:30').room === 'Private card rooms', 'it writes ball.over.od.skip with the stop\'s index, and Odette stays in the card rooms (' + JSON.stringify(b && b.over) + ')');
+  check(await setFuse(6) === 200 && !!(await until(async () => (await alarmBtns()) === 'lockdown', 15000)), 'at Fuse 6: only Lockdown');
+  await G.page.click(BEAT + ' [data-vv="lockdown"]');
+  b = await waitBall((x) => x.over && x.over.od && x.over.od.at);
+  check(!!b && b.over.od.at === 'Security control room', 'Lockdown sends the target to the alarm lockdown room and holds her there (ball.over.od.at)');
+  check(!!(await until(async () => (await alarmBtns()) === 'release', 8000)), 'and the button becomes Release');
+  await G.page.click(BEAT + ' [data-vv="release"]');
+  b = await waitBall((x) => !(x.over && x.over.od && x.over.od.at));
+  check(!!b, 'Release lets her move again');
+  await setFuse(2);
+  check(!!(await until(async () => (await alarmBtns()) === '', 15000)), 'back at 2/6 the alarm buttons are gone');
+
+  /* the job: the target's row, a delay that starts now, the rival */
+  const job = () => secT('job');
+  check(/Odette Marsh Private card rooms/.test(await job()) && !/→ Luxury penthouse/.test(await job()), 'the skipped stop is gone from the target\'s row');
+  check(/GM-ONLY-PERSON-1 Security control room next 00:30 → gone/.test(await job()), 'the rival\'s next move is on the job');
+  await G.page.click('.rv-sec[data-sec="job"] [data-vv="late"][data-n="15"]');
+  b = await waitBall((x) => x.over && x.over.od && x.over.od.delay === 15);
+  check(!!b && b.over.od.from === 180, 'running late +15 writes delay 15 from ball.t (180), so a person is never dragged back (' + JSON.stringify(b && b.over.od) + ')');
+  await G.page.click('.rv-sec[data-sec="job"] [data-vv="late"][data-n="0"]');
+  b = await waitBall((x) => !(x.over && x.over.od && x.over.od.delay));
+  check(!!b && !(b.over && b.over.od && b.over.od.from), 'clear removes both');
+
+  /* Target is down: the exits */
+  check(await G.page.$$eval(BEAT + ' .rv-exits', (l) => l.length) === 0, 'before: no exits listed');
+  await G.page.click(BEAT + ' [data-vv="down"]');
+  b = await waitBall((x) => x.over && x.over.od && x.over.od.gone === true);
+  check(!!b && await G.page.waitForFunction(() => { const e = document.querySelector('.rv-sec[data-sec="beat"] .rv-exits'); return !!e && /GM-ONLY-EXIT-1/.test(e.textContent) && /Luxury penthouse/.test(e.textContent); }, null, { timeout: 5000 }).then(() => true, () => false), 'Target is down writes ball.over.od.gone and the card lists play.exits');
+  check(/Odette Marsh down/.test(await job()), 'the job shows her down');
+  await G.page.click(BEAT + ' [data-vv="up"]');
+  b = await waitBall((x) => !(x.over && x.over.od && x.over.od.gone));
+  check(!!b && await G.page.$$eval(BEAT + ' .rv-exits', (l) => l.length) === 0, 'and back up takes the exits away');
+
+  /* the job: ways. B is unheard and its lead is said in the counting room, where nobody stands yet */
+  const wayB = '.rv-way[data-way="B"]';
+  check(/B GM-ONLY-NAME-2 unheard/.test(await job()) && /A GM-ONLY-NAME-1 heard by Dov Ketch/.test(await job()), 'each way shows its state: B unheard, A heard by Dov Ketch');
+  await G.page.click(wayB + ' [data-vv="way"]');
+  const bt = await G.page.$eval(wayB, (e) => e.textContent.replace(/\s+/g, ' '));
+  check(/The lift key hangs on the cook's hook/.test(bt) && /GM-ONLY-WHO-2/.test(bt) && /Underground counting room 21:00–00:00/.test(bt) && /Window 00:15 · Luxury penthouse/.test(bt) && /GM-ONLY-COST-2/.test(bt) && /GM-ONLY-NOTE-6/.test(bt) && /The key/.test(bt), 'expanded: the line and who, where and when, the window, the steps, the cost and the note');
+  check(await G.page.$$eval(wayB + ' > .rv-heard > [data-vv="heard"]', (b) => b.length) === 0 && await G.page.$$eval(wayB + ' details.rv-more [data-vv="heard"]', (b) => b.length) === 3, 'Heard by: nobody is in the lead\'s room, so all three wait behind More');
+  await G.page.selectOption(crewRow('run-pc2') + ' [data-vv="room"]', 'Underground counting room');
+  b = await waitBall((x) => x.crew['run-pc2'].room === 'Underground counting room');
+  check(!!b && b.crew['run-pc2'].moved === 12 && b.crew['run-pc2'].noticed === false, 'the room select moves her through moveCrew (moved this beat, noticed cleared)');
+  check(await G.page.waitForFunction((s) => document.querySelectorAll(s).length === 1, wayB + ' > .rv-heard > [data-vv="heard"]', { timeout: 5000 }).then(() => true, () => false) && await G.page.$eval(wayB + ' > .rv-heard > [data-vv="heard"]', (e) => e.textContent) === 'Dov Ketch', 'now Dov Ketch is the Heard by button in front, the others behind More');
+  await G.page.click(wayB + ' > .rv-heard > [data-vv="heard"]');
+  b = await waitBall((x) => x.heard && x.heard.B && x.heard.B['run-pc2'] === 180);
+  check(!!b && /B GM-ONLY-NAME-2 heard by Dov Ketch/.test(await job()), 'Heard by writes ball.heard.B.<pc> = the published time');
+  await G.page.check(wayB + ' [data-vv="step"][data-i="0"]');
+  b = await waitBall((x) => x.steps && x.steps.B);
+  check(!!b && JSON.stringify(b.steps.B) === '[true,false]' && /B GM-ONLY-NAME-2 steps 1 of 2/.test(await job()), 'ticking a step writes ball.steps.B and the row reads steps 1 of 2');
+  await G.page.click(wayB + ' [data-vv="done"]');
+  b = await waitBall((x) => x.ways && x.ways.B === 'done');
+  check(!!b && /B GM-ONLY-NAME-2 done/.test(await job()), 'Done writes ball.ways.B and the row reads done');
+  await G.page.click(wayB + ' [data-vv="done"]'); await waitBall((x) => !x.ways);
+  await G.page.uncheck(wayB + ' [data-vv="step"][data-i="0"]'); await waitBall((x) => !x.steps);
+  check(!/GM-ONLY-NAME-1 window gone/.test(await job()), 'A\'s window (to 00:15) is still open at 00:00');
+
+  /* the crew: busy, items, noticed, blown, the costume and the room; the position follows */
+  const pc1 = crewRow('run-pc1');
+  check(await G.page.$eval('.rv-crew:first-of-type .rv-crn', (e) => e.textContent) === 'Ira Lund', 'sorted by danger: Ira (desperate, no costume) comes first');
+  await G.page.click(pc1 + ' [data-vv="busy"][data-n="1"]');
+  b = await waitBall((x) => x.crew['run-pc1'].busy === 195);
+  check(!!b && /busy until 00:15/.test(await G.page.$eval(pc1 + ' .rv-busy', (e) => e.textContent)), '+1 beat: busy until t + 15 (195, 00:15)');
+  await G.page.click(pc1 + ' [data-vv="busy"][data-n="2"]');
+  b = await waitBall((x) => x.crew['run-pc1'].busy === 225);
+  check(!!b, '+2 beats adds to what is left (225)');
+  await G.page.click(pc1 + ' [data-vv="busy"][data-n="0"]');
+  b = await waitBall((x) => x.crew['run-pc1'].busy === undefined);
+  check(!!b, 'clear removes it');
+  await G.page.click(pc1 + ' [data-vv="item"][data-id="key"]');
+  b = await waitBall((x) => JSON.stringify(x.crew['run-pc1'].items) === '["key"]');
+  check(!!b, 'an item toggles into ball.crew.<pc>.items');
+  await G.page.click(pc1 + ' [data-vv="item"][data-id="key"]');
+  await waitBall((x) => x.crew['run-pc1'].items === undefined);
+  const posIs = (re) => G.page.waitForFunction((a) => new RegExp(a[1]).test(document.querySelector(a[0]).textContent), [pc1 + ' .rv-poschip', re], { timeout: 6000 }).then(() => true, () => false);
+  check(await posIs('Controlled'), 'a guard in the showroom: Controlled');
+  await G.page.click(pc1 + ' [data-vv="noticed"]');
+  b = await waitBall((x) => x.crew['run-pc1'].noticed === true);
+  check(!!b && await posIs('Risky'), 'noticed: one step worse (Risky)');
+  await G.page.selectOption(pc1 + ' [data-vv="room"]', 'Cocktail lounge');
+  b = await waitBall((x) => x.crew['run-pc1'].room === 'Cocktail lounge');
+  check(!!b && b.crew['run-pc1'].noticed === false, 'changing the room clears noticed');
+  await G.page.click(pc1 + ' [data-vv="noticed"]');
+  await waitBall((x) => x.crew['run-pc1'].noticed === true);
+  await G.page.selectOption(pc1 + ' [data-vv="costume"]', 'cook');
+  b = await waitBall((x) => x.crew['run-pc1'].disguise === 'cook');
+  check(!!b && b.crew['run-pc1'].noticed === false, 'changing the costume clears noticed too');
+  await G.page.selectOption(pc1 + ' [data-vv="costume"]', 'guard'); await waitBall((x) => x.crew['run-pc1'].disguise === 'guard');
+  await G.page.selectOption(pc1 + ' [data-vv="room"]', 'Showroom'); await waitBall((x) => x.crew['run-pc1'].room === 'Showroom');
+  check(await posIs('Controlled'), 'back as a guard in the showroom: Controlled again');
+  await G.page.click(pc1 + ' [data-vv="blown"][data-id="guard"]');
+  b = await waitBall((x) => JSON.stringify(x.crew['run-pc1'].blown) === '["guard"]');
+  check(!!b && await posIs('Desperate') && BALL.positionOf(c2.play, b, 'run-pc1').pos === 'desperate', 'blown (per costume) changes the position: Desperate');
+  check(await G.page.$eval('.rv-card[data-room="Showroom"] .rv-pc[data-id="run-pc1"]', (e) => e.classList.contains('pos-desperate')), 'and the board chip\'s edge follows');
+  await G.page.click(pc1 + ' [data-vv="pos"]');
+  const conSt = await until(async () => { const s = await gmState(); return s.con && s.con.live && s.con.live.pos === 'desperate' ? s : null; }, 8000);
+  check(!!conSt, 'tapping the position chip sets the console\'s Position to it');
+  await G.page.click(pc1 + ' [data-vv="blown"][data-id="guard"]'); await waitBall((x) => x.crew['run-pc1'].blown === undefined);
+  b = await waitBall((x) => x.crew['run-pc1'].moved === 12);          /* the room select above moved her in this beat */
+  check(!!b && await G.page.waitForFunction((s) => document.querySelector(s).getAttribute('aria-pressed') === 'true', pc1 + ' [data-vv="moved"]', { timeout: 5000 }).then(() => true, () => false), 'the moved tick is on after a move (beat index 12 at 00:00)');
+  await G.page.click('[data-rv="back"]'); await waitBall((x) => x.t === 165);
+  check(await G.page.waitForFunction((s) => document.querySelector(s).getAttribute('aria-pressed') === 'false', pc1 + ' [data-vv="moved"]', { timeout: 5000 }).then(() => true, () => false), 'and clears when the time changes');
+
+  /* intel: Tell per PC and Tell the crew */
+  await G.page.click('.rv-sec[data-sec="intel"] summary');
+  const i1 = '.rv-intel1[data-intel="I1"]';
+  check(await G.page.$$eval(i1 + ' [data-vv="tell"]', (b) => b.length) === 3 && await G.page.$$eval(i1 + ' [data-vv="tellcrew"]', (b) => b.length) === 1, 'intel: a Tell button per PC, and Tell the crew');
+  await G.page.click(i1 + ' [data-vv="tell"][data-pc="run-pc1"]');
+  b = await waitBall((x) => x.told && JSON.stringify(x.told.I1) === '["run-pc1"]');
+  check(!!b, 'Tell Cass Fenn: ball.told.I1 = [pc]');
+  await G.page.click(i1 + ' [data-vv="tellcrew"]');
+  b = await waitBall((x) => x.told && x.told.I1 === 'crew');
+  check(!!b && await G.page.$eval(i1 + ' [data-vv="tell"]', (e) => e.disabled), 'Tell the crew: ball.told.I1 = "crew"');
+  await G.page.click(i1 + ' [data-vv="tellcrew"]');
+  await waitBall((x) => !x.told);
+  check(/Intel 0 of 4 told/.test(await secT('intel')), 'and takes it back (0 of 4 told)');
+
+  await G.page.click(wayB + ' [data-vv="way"]'); await shot(G.page, 'runv2-04-beat-crew-job');
+  /* put the night back where the later sections expect it: 22:15, the lounge */
+  await G.page.selectOption(crewRow('run-pc2') + ' [data-vv="room"]', 'Cocktail lounge'); await waitBall((x) => x.crew['run-pc2'].room === 'Cocktail lounge');
+  await api('PATCH', '/gm/state', { ball: { t: 75 } }); await G.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await G.page.waitForFunction(() => document.querySelector('#rv-time').textContent.trim() === '22:15', null, { timeout: 10000 });
+  check(!JSON.stringify(await gmState()).includes('"pace"'), 'nothing of the pacing line reached the state');
+  /* ==== end VV5 ==== */
+
   /* ---- 10. nothing leaked: the iPad's payload and the campaign document ---- */
   const camp = (await api('GET', '/campaign')).json;
   check(!JSON.stringify(camp).includes('"mission"'), 'no mission in the campaign document (publishing is VV6)');
@@ -291,7 +491,7 @@ try {
     await sleep(300);
     const m = await S.page.evaluate(() => {
       const r = (s) => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, right: b.right, sh: e.scrollHeight, ch: e.clientHeight }; };
-      return { vh: window.innerHeight, focus: document.querySelector('#gm-root').classList.contains('focus'), pane: r('#gm-runv'), head: r('.rv-head'), main: r('.rv-main'), side: r('.rv-side'), sec: r('.rv-sec[data-sec="room"]'), lastCard: (() => { const c = [...document.querySelectorAll('.rv-card')].pop().getBoundingClientRect(); return c.bottom; })() };
+      return { vh: window.innerHeight, focus: document.querySelector('#gm-root').classList.contains('focus'), pane: r('#gm-runv'), head: r('.rv-head'), main: r('.rv-main'), side: r('.rv-side'), sec: r('.rv-sec[data-sec="beat"]'), lastCard: (() => { const c = [...document.querySelectorAll('.rv-card')].pop().getBoundingClientRect(); return c.bottom; })() };
     });
     await shot(S.page, 'runv2-focus-' + w + 'x' + h);
     console.log('     ' + w + 'x' + h + ' ' + JSON.stringify(m));

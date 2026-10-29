@@ -20,6 +20,7 @@
  *   pcs() -> [{ id, name }]                   floors() -> { list, floorOf }
  *   isOpen(room) -> bool                      openRoom(room, on)   (the page's roomOpen: it asks first)
  *   mapSvg() -> svg text | ""                 clockNamed(name) -> { filled, size } | null
+ *   dawn()             VV5: the False dawn button (the page's runDawn, which asks first)        setPosition(pos)  VV5: the console's Position
  *   publish(t, why)    THE CALL SITE VV6 FILLS: why is "start" | "beat" | "jump"; the page's body is empty today.
  *   toast(msg, bad)
  *
@@ -28,7 +29,7 @@
  *   menuItems                 [{ id, label, run(ctx) }]  Run's menu button lists them (VV6: "End the night")
  *   views                     [{ id, label, render(box, ctx) }]  Board and Map are first; VV6 adds "Players"
  *   sections                  [{ id, order, render(box, ctx) }]  the right column, by order (VV5: This beat 0, the crew 100, the job 200, intel 300)
- *   hooks                     { heard(way, pc, ctx) }  the Heard by buttons (VV5)
+ *   hooks                     { heard(way, pc, ctx) }  the Heard by buttons (VV5 fills it: ball.heard.<way>.<pc> = the published time)
  *   ctx = { play, st, model, t, shownT, peeking, host, sel, set(change), select(room), rerender(), toast(msg, bad), esc(text) }
  * Text from the play reaches the page through esc() only.
  */
@@ -206,7 +207,8 @@
       var rs = site(); if (!rs) return null;
       var st = host.state(), shownT = peekT !== null ? peekT : timeOf(st);
       var m = model(rs.play, st, { t: shownT, pcs: host.pcs(), floors: host.floors(), isOpen: host.isOpen });
-      return { rs: rs, st: st, m: m, shownT: shownT, ctx: null };
+      /* VV5: ctx is filled here (it was null, so a click that read build().ctx got nothing) */
+      return { rs: rs, st: st, m: m, shownT: shownT, ctx: ctxFor(rs, st, m, shownT) };
     }
 
     /* the header */
@@ -437,6 +439,340 @@
     return self;
   }
 
+  /* ==== VV5 BEGIN: This beat, the crew, the job, intel (design 5.2). Registered through `sections` and `hooks.heard`; the view above does not know them. ==== */
+  var POSNAME = { controlled: "Controlled", risky: "Risky", desperate: "Desperate" };
+  var pace = null;                       /* { key, at } page-local: the wall clock when this page first saw the night started (never written to the state) */
+  var ui5 = { ways: {}, intel: false, more: {}, prev: null };    /* ways opened, the intel fold, "More" opened, the last published time seen */
+
+  /* a person's stops as stopsV2 indexes them (the sorted list that has a usable time): [{ j, t, at, room, with, gone }] */
+  function sortedStops(person, start) {
+    var arr = list(isObj(person) ? person.stops : []).filter(isObj).map(function (s, i) { return { s: s, i: i, t: B.minuteOf(s.at, start) }; }).filter(function (x) { return !isNaN(x.t); });
+    arr.sort(function (a, b) { return a.t - b.t || a.i - b.i; });
+    return arr.map(function (x, j) { return { j: j, t: x.t, at: str(x.s.at), priv: x.s.private === true, room: typeof x.s.room === "string" ? x.s.room : "", "with": typeof x.s["with"] === "string" ? x.s["with"] : "", gone: x.s.gone === true }; });
+  }
+  /* the first change of room after t for each id, scanning minute by minute with the overrides applied: { <id>: { at, room|null } | null }
+   * (room null is "gone"). Scans two beats past the end of the night so the last stops still show. */
+  function scanChanges(play, st, ids, t) {
+    var out = {}, cur = {}, p0 = B.placesAt(play, st, t), span = B.minuteOf(play.clock.end, play.clock.start), end = (isNaN(span) ? 1440 : span) + beatLen(play) * 2, left = ids.length;
+    ids.forEach(function (id) { out[id] = null; cur[id] = p0[id] ? p0[id].room : null; });
+    for (var m = t + 1; m <= end && left > 0; m++) {
+      var pl = B.placesAt(play, st, m);
+      ids.forEach(function (id) {
+        if (out[id]) return;
+        var r = pl[id] ? pl[id].room : null;
+        if (r !== cur[id]) { out[id] = { at: m, room: r }; left--; }
+      });
+    }
+    return out;
+  }
+  /* is the stop one the players could know of: a public event, or one that a told intel item reveals, at that minute (and room) */
+  function stopKnown(view, at, room) {
+    return !!view && list(view.events).some(function (e) { return e.at === at && (e.room === room || e.room === undefined) && (e.vis === "public" || (isObj(e.aud) && (e.aud.crew || list(e.aud.pcs).length > 0))); });
+  }
+  function targetOf(play) { return list(play.people).filter(function (p) { return isObj(p) && p.kind === "target"; })[0] || null; }
+  function rivalOf(play) { return list(play.people).filter(function (p) { return isObj(p) && p.kind === "rival"; })[0] || null; }
+  function pcName5(id, ctx) { var n = ""; list(ctx.host.pcs()).forEach(function (p) { if (p.id === id) n = p.name; }); return n || id; }
+
+  /* the crew by danger: desperate with a looker first, then desperate, risky with, risky, controlled with, controlled, then the unplaced */
+  function crewOrder(play, st, pcs, t) {
+    var rank = { desperate: 0, risky: 2, controlled: 4 };
+    return list(pcs).map(function (pc, i) {
+      var c = isObj(st.crew) && isObj(st.crew[pc.id]) ? st.crew[pc.id] : {}, placed = typeof c.room === "string" && c.room !== "";
+      var p = placed ? B.positionOf(play, st, pc.id) : { pos: "", why: "" }, lk = placed ? B.lookers(play, st, pc.id, t) : { here: [], soon: [] };
+      return { id: pc.id, name: pc.name, i: i, pos: p.pos, why: p.why, here: lk.here, soon: lk.soon, rank: placed ? (rank[p.pos] === undefined ? 4 : rank[p.pos]) + (lk.here.length ? 0 : 1) : 9 };
+    }).sort(function (a, b) { return a.rank - b.rank || a.i - b.i; });
+  }
+  /* the target's stop to skip at the alarm's threshold: its next future stop flagged private: true (never a public one) */
+  function skipTarget(play, st, t, isOpen) {
+    var tg = targetOf(play); if (!tg) return null;
+    var skipped = isObj(st.over) && isObj(st.over[tg.id]) && Array.isArray(st.over[tg.id].skip) ? st.over[tg.id].skip : [];
+    var fut = sortedStops(tg, play.clock.start).filter(function (s) { return s.t > t && skipped.indexOf(s.j) < 0 && s.priv && s.room; });
+    var pick = fut[0];
+    return pick ? { person: tg.id, stop: pick } : null;
+  }
+
+  /* write one ball key: fn edits a copy; an empty map removes the key; fn may return false for "nothing to write" */
+  function setKey(ctx, key, fn) {
+    var st = ctx.host.state(), cur = clone(isObj(st[key]) ? st[key] : {});
+    if (fn(cur) === false) return;
+    var ch = {}; ch[key] = Object.keys(cur).length ? cur : null;
+    ctx.set(ch); ctx.rerender();
+  }
+  function setCrewKey(ctx, pc, fn) { setKey(ctx, "crew", function (crew) { var c = isObj(crew[pc]) ? crew[pc] : (crew[pc] = {}); fn(c); }); }
+  function setOver(ctx, person, fn) {
+    setKey(ctx, "over", function (over) {
+      var o = isObj(over[person]) ? over[person] : (over[person] = {});
+      fn(o); if (!Object.keys(o).length) delete over[person];
+    });
+  }
+  function toggleIn(arr, v) { var i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); return arr; }
+
+  /* "Heard by": ball.heard.<way>.<pc> = the published time; the same button again takes it back */
+  function heard5(way, pc, ctx) {
+    var t = ctx.t;
+    setKey(ctx, "heard", function (h) { var w = isObj(h[way]) ? h[way] : (h[way] = {}); if (typeof w[pc] === "number") { delete w[pc]; if (!Object.keys(w).length) delete h[way]; } else w[pc] = t; });
+  }
+
+  /* the wall-clock pacing line: page-local (sessionStorage at most), never written to the shared state */
+  function paceNote(play, st) {
+    if (!isStarted(st)) return null;
+    var key = str(st.site) + "|" + st.start;
+    if (!pace || pace.key !== key) {
+      var at = 0;
+      try { at = +(typeof sessionStorage !== "undefined" && sessionStorage.getItem("b68-rv-pace|" + key)) || 0; } catch (e) { at = 0; }
+      if (!at) { at = Date.now(); try { if (typeof sessionStorage !== "undefined") sessionStorage.setItem("b68-rv-pace|" + key, String(at)); } catch (e2) { /* page-local anyway */ } }
+      pace = { key: key, at: at };
+    }
+    return { n: B.beatOf(play, timeOf(st)).n, min: Math.max(0, Math.floor((Date.now() - pace.at) / 60000)) };
+  }
+  function paceText(p) { return "beat " + p.n + " · " + p.min + " min in"; }
+
+  /* ---- This beat ----------------------------------------------------------------------------------------------- */
+  function beatSection(box, ctx) {
+    var play = ctx.play, st = ctx.st, t = ctx.shownT;
+    if (!isStarted(st)) { box.innerHTML = '<h3 class="rv-sh">This beat</h3><p class="rv-dim">The night has not started. Pick the engagement result above.</p>'; box.onclick = null; return; }
+    /* what changed since the last published time (a step, a jump or a beat back); a peek reads as the beat that ends there */
+    var now = timeOf(st), key = str(st.site);
+    if (!ui5.prev || ui5.prev.key !== key) ui5.prev = { key: key, cur: now, prev: now };
+    else if (ui5.prev.cur !== now) ui5.prev = { key: key, cur: now, prev: ui5.prev.cur };
+    var card = B.beatCard(play, st, ctx.peeking ? t : ui5.prev.prev, t);
+    var tg = targetOf(play), over = tg && isObj(st.over) && isObj(st.over[tg.id]) ? st.over[tg.id] : {};
+    var sc = scanChanges(play, st, tg ? [tg.id] : [], t), label = function (m) { return B.timeLabel(play, m); };
+    var h = '<h3 class="rv-sh">' + (ctx.peeking ? "Looking at " : "This beat · ") + esc(label(t)) + "</h3>";
+    var pc = paceNote(play, st);
+    if (pc && !ctx.peeking) h += '<p class="rv-pace rv-dim" data-pace="1">' + esc(paceText(pc)) + "</p>";
+    var say = function (txt, who) { return '<div class="rv-say"><span class="rv-saylab">SAY</span> “' + esc(txt) + "”" + (who ? ' <small class="rv-dim">' + esc(who) + "</small>" : "") + "</div>"; };
+    var rows = card.items.map(function (it) {
+      var ic, body = "";
+      switch (it.type) {
+        case "event":
+          ic = it.rival ? "☠" : it.vis === "public" ? "★" : "◆";
+          body = "<b>" + esc(it.at) + "</b> " + esc(it.label || it.pub) + (it.room ? ' <span class="rv-dim">· ' + esc(it.room) + "</span>" : "") +
+            (it.fx === "dawn" ? ' <button type="button" class="rv-btn sm" data-vv="dawn">False dawn</button>' : "") + (it.say ? say(it.say) : "");
+          break;
+        case "move": {
+          ic = "◆";
+          var nx = sc[it.id];
+          body = esc(it.label) + " → <b>" + esc(it.to) + "</b>" + (nx ? ' <span class="rv-dim">until ' + esc(label(nx.at)) + "</span>" : "") + (it.note ? ' <span class="rv-dim">' + esc(it.note) + "</span>" : "");
+          break;
+        }
+        case "looker":
+          ic = "◎";
+          body = esc(it.label) + (it.when === "soon" ? " arrives " + esc(it.at) + " (in " + it.inMin + " min) where " : it.arrived ? " arrives where " : " is where ") + esc(pcName5(it.pc, ctx)) + " is" +
+            ' <span class="rv-dim">· ' + esc(POS_LETTER[it.pos] || it.pos) + "</span>" + (it.look ? ' <span class="rv-dim">(' + esc(it.look) + ")</span>" : "") + (it.wary ? '<div class="rv-wary">' + esc(it.wary) + "</div>" : "");
+          break;
+        case "route": ic = "⇅"; body = "Passage " + esc(it.change) + " " + esc(it.at) + ' <span class="rv-dim">· ' + esc(it.from) + " ↔ " + esc(it.to) + "</span>"; break;
+        case "gone": ic = "✗"; body = esc(it.label) + " gone " + esc(it.at) + ' <span class="rv-dim">· from ' + esc(it.from) + "</span>"; break;
+        case "lead":
+          ic = "✦";
+          body = "In reach: <b>" + esc(it.way) + "</b> " + (it.anywhere ? '<span class="rv-dim">(said anywhere)</span>' : "(" + esc(pcName5(it.pc, ctx)) + ")") + (it.name ? ' <span class="rv-dim">' + esc(it.name) + "</span>" : "") + say(it.line, it.who);
+          break;
+        case "next":
+          ic = "⌛";
+          body = "<b>" + esc(it.at) + "</b> " + esc(it.label || it.pub || it.what) + (it.what === "move" ? " → " + esc(it.to) : "") + (it.what === "route" ? " (" + esc(it.change) + ")" : "") + ' <span class="rv-dim">in ' + it.inMin + " min</span>";
+          break;
+        default: return "";
+      }
+      return '<li class="rv-bi t-' + esc(it.type) + '"><span class="rv-bic" aria-hidden="true">' + ic + '</span><div class="rv-bb">' + body + "</div></li>";
+    }).join("");
+    h += '<ul class="rv-beat5">' + (rows || '<li class="rv-dim">Nothing lands this beat.</li>') + "</ul>";
+
+    /* the buttons something needs you for: the alarm's thresholds (only at their fill), the target down */
+    var btns = "";
+    if (isObj(play.alarm) && isObj(play.alarm.at) && str(play.alarm.clock)) {
+      var ck = ctx.host.clockNamed(str(play.alarm.clock)), filled = ck ? Math.max(0, Math.floor(+ck.filled || 0)) : 0, nm = str(play.alarm.label) || str(play.alarm.clock);
+      Object.keys(play.alarm.at).forEach(function (k) {
+        if (filled < +k) return;                                   /* from its fill on, until taken (ball.acted) or the clock is cleared */
+        if (play.alarm.at[k] === "skip-private") {
+          if (isObj(st.acted) && st.acted[k] === true) return;
+          var sk = skipTarget(play, st, ctx.t, ctx.host.isOpen);
+          btns += '<button type="button" class="rv-btn" data-vv="skip" data-k="' + esc(k) + '"' + (sk ? "" : " disabled") + ">" + esc(nm) + " " + k + ": skip the next private stop" + (sk ? " <small>" + esc(sk.stop.room + " " + label(sk.stop.t)) + "</small>" : " <small>no private stop left</small>") + "</button>";
+        } else if (play.alarm.at[k] === "lockdown") {
+          btns += typeof over.at === "string" && over.at ? '<button type="button" class="rv-btn" data-vv="release">' + esc(nm) + " " + k + ": locked down in " + esc(over.at) + " · release</button>"
+            : '<button type="button" class="rv-btn" data-vv="lockdown">' + esc(nm) + " " + k + ": lockdown</button>";
+        }
+      });
+    }
+    if (tg) btns += over.gone === true ? '<button type="button" class="rv-btn" data-vv="up">' + esc(str(tg.label)) + " is back up</button>" : '<button type="button" class="rv-btn" data-vv="down">' + esc(str(tg.label)) + " is down</button>";
+    if (btns) h += '<div class="rv-acts">' + btns + "</div>";
+    if (over.gone === true) {
+      var ex = list(play.exits).filter(isObj);
+      h += '<h4 class="rv-lab">The way out</h4>' + (ex.length ? '<ul class="rv-exits">' + ex.map(function (x) { return "<li><b>" + esc(x.label) + "</b>" + (x.from ? ' <span class="rv-dim">from ' + esc(x.from) + "</span>" : "") + (x.note ? " · " + esc(x.note) : "") + "</li>"; }).join("") + "</ul>" : '<p class="rv-dim">The play lists no exits.</p>');
+    }
+    box.innerHTML = h;
+    box.onclick = function (ev) {
+      var el = ev.target.closest ? ev.target.closest("[data-vv]") : null; if (!el || !box.contains(el)) return;
+      var a = el.getAttribute("data-vv"), host = ctx.host, tgId = tg ? tg.id : "";
+      if (a === "dawn") { if (typeof host.dawn === "function") host.dawn(); else ctx.toast("The false dawn is not wired on this page.", true); }
+      else if (a === "skip") { var sk2 = skipTarget(ctx.play, host.state(), ctx.t, host.isOpen); if (sk2) { setOver(ctx, sk2.person, function (o) { o.skip = list(o.skip).concat([sk2.stop.j]); }); setKey(ctx, "acted", function (m) { m[el.getAttribute("data-k")] = true; }); } }
+      else if (a === "lockdown") { var w = B.placesAt(ctx.play, host.state(), ctx.t)[tgId]; var ld = isObj(ctx.play.alarm) && isObj(ctx.play.alarm.lockdown) ? ctx.play.alarm.lockdown.room : ""; if (ld || (w && w.room)) setOver(ctx, tgId, function (o) { o.at = ld || w.room; }); else ctx.toast("The target is not anywhere to hold.", true); }
+      else if (a === "release") setOver(ctx, tgId, function (o) { delete o.at; });
+      else if (a === "down") setOver(ctx, tgId, function (o) { o.gone = true; });
+      else if (a === "up") setOver(ctx, tgId, function (o) { delete o.gone; });
+    };
+  }
+
+  /* ---- The crew ------------------------------------------------------------------------------------------------ */
+  function crewSection(box, ctx) {
+    var play = ctx.play, st = ctx.st, t = ctx.t, beat = beatLen(play), nowI = B.beatOf(play, t).i;
+    var rooms = Object.keys(ctx.model.cards), order = crewOrder(play, st, list(ctx.host.pcs()), t), dis = list(play.disguises).filter(isObj), items = list(play.items).filter(isObj);
+    var h = '<h3 class="rv-sh">The crew</h3>';
+    if (!order.length) h += '<p class="rv-dim">The table has no characters yet.</p>';
+    order.forEach(function (o) {
+      var c = isObj(st.crew) && isObj(st.crew[o.id]) ? st.crew[o.id] : {}, room = typeof c.room === "string" ? c.room : "", d = dis.filter(function (x) { return x.id === c.disguise; })[0];
+      var busy = typeof c.busy === "number" && c.busy > t ? c.busy : null, blown = list(c.blown), seen = o.here.length > 0;
+      h += '<div class="rv-crew' + (o.pos ? " pos-" + esc(o.pos) : "") + '" data-pc="' + esc(o.id) + '">' +
+        '<div class="rv-cr1"><b class="rv-crn">' + esc(o.name) + "</b>" +
+        '<select class="rv-sel" data-vv="costume" aria-label="' + esc(o.name) + ' costume"><option value="">no costume</option>' + dis.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === c.disguise ? " selected" : "") + ">" + esc(x.label) + "</option>"; }).join("") + "</select>" +
+        '<select class="rv-sel" data-vv="room" aria-label="' + esc(o.name) + ' room"><option value="">no room</option>' + rooms.map(function (r) { return '<option value="' + esc(r) + '"' + (r === room ? " selected" : "") + ">" + esc(r) + "</option>"; }).join("") + "</select>" +
+        (o.pos ? '<button type="button" class="rv-btn sm rv-poschip pos-' + esc(o.pos) + '" data-vv="pos" data-pos="' + esc(o.pos) + '" title="' + esc(o.why + " · tap to set the console’s Position") + '">' + esc(POS_LETTER[o.pos] || o.pos) + " " + esc(POSNAME[o.pos] || o.pos) + "</button>" : "") +
+        (seen ? '<span class="rv-mk ' + (o.pos === "controlled" ? "eye" : "warn") + '" title="seen through" aria-label="' + (o.pos === "controlled" ? "Seen through, but belongs here" : "Out of place, and seen through") + '">' + (o.pos === "controlled" ? "◎" : "⚠") + "</span>" : "") +
+        (room ? '<button type="button" class="rv-btn sm rv-tog" data-vv="moved" aria-pressed="' + (c.moved === nowI) + '" title="Moved this beat">' + (c.moved === nowI ? "✓ moved" : "moved") + "</button>" : "") + "</div>";
+      if (seen) h += '<div class="rv-wary">' + o.here.map(function (l) { return "<b>" + esc(l.label) + "</b>: " + esc(l.wary || l.look || "is looking"); }).join(" · ") + "</div>";
+      if (o.soon.length) h += '<div class="rv-dim rv-soon">' + o.soon.map(function (l) { return esc(l.label) + " in " + l.inMin + " min"; }).join(" · ") + "</div>";
+      h += '<div class="rv-cr2"><button type="button" class="rv-btn sm rv-tog" data-vv="noticed" aria-pressed="' + (c.noticed === true) + '"' + (d ? "" : " disabled") + ">Noticed</button>" +
+        '<span class="rv-busy">' + (busy !== null ? "busy until " + esc(B.timeLabel(play, busy)) : "free") + "</span>" +
+        '<button type="button" class="rv-btn sm" data-vv="busy" data-n="1">+1 beat</button><button type="button" class="rv-btn sm" data-vv="busy" data-n="2">+2 beats</button>' +
+        '<button type="button" class="rv-btn sm" data-vv="busy" data-n="0"' + (busy === null ? " disabled" : "") + ">clear</button></div>";
+      if (items.length) h += '<div class="rv-cr3"><span class="rv-lab">Items</span>' + items.map(function (it) { return '<button type="button" class="rv-btn sm rv-tog" data-vv="item" data-id="' + esc(it.id) + '" aria-pressed="' + (list(c.items).indexOf(it.id) >= 0) + '">' + esc(it.label || it.id) + "</button>"; }).join("") + "</div>";
+      if (d || blown.length) {
+        h += '<div class="rv-cr3"><span class="rv-lab">Blown</span>';
+        if (d) h += '<button type="button" class="rv-btn sm rv-tog" data-vv="blown" data-id="' + esc(d.id) + '" aria-pressed="' + (blown.indexOf(d.id) >= 0) + '">' + esc(d.label) + "</button>";
+        blown.filter(function (id) { return !d || id !== d.id; }).forEach(function (id) { var x = dis.filter(function (q) { return q.id === id; })[0]; h += '<button type="button" class="rv-btn sm rv-tog" data-vv="blown" data-id="' + esc(id) + '" aria-pressed="true">' + esc(x ? x.label : id) + "</button>"; });
+        h += "</div>";
+      }
+      h += "</div>";
+    });
+    box.innerHTML = h;
+    box.onclick = function (ev) {
+      var el = ev.target.closest ? ev.target.closest("[data-vv]") : null; if (!el || !box.contains(el) || el.tagName === "SELECT") return;
+      var row = el.closest("[data-pc]"), pc = row ? row.getAttribute("data-pc") : "", a = el.getAttribute("data-vv");
+      if (a === "pos") { if (typeof ctx.host.setPosition === "function") ctx.host.setPosition(el.getAttribute("data-pos")); }
+      else if (a === "noticed") setCrewKey(ctx, pc, function (c) { c.noticed = !(c.noticed === true); });
+      else if (a === "moved") setCrewKey(ctx, pc, function (c) { if (c.moved === nowI) delete c.moved; else c.moved = nowI; });
+      else if (a === "busy") { var n = +el.getAttribute("data-n"); setCrewKey(ctx, pc, function (c) { if (n === 0) delete c.busy; else c.busy = Math.max(typeof c.busy === "number" ? c.busy : 0, t) + n * beat; }); }
+      else if (a === "item") { var iid = el.getAttribute("data-id"); setCrewKey(ctx, pc, function (c) { var l = toggleIn(list(c.items).slice(), iid); if (l.length) c.items = l; else delete c.items; }); }
+      else if (a === "blown") { var bid = el.getAttribute("data-id"); setCrewKey(ctx, pc, function (c) { var l = toggleIn(list(c.blown).slice(), bid); if (l.length) c.blown = l; else delete c.blown; }); }
+    };
+    box.onchange = function (ev) {
+      var el = ev.target; if (!el || !el.getAttribute) return;
+      var row = el.closest("[data-pc]"), pc = row ? row.getAttribute("data-pc") : "", a = el.getAttribute("data-vv");
+      if (a === "costume") setCrewKey(ctx, pc, function (c) { if (el.value) c.disguise = el.value; else delete c.disguise; c.noticed = false; });     /* noticed clears with the costume */
+      else if (a === "room") {
+        if (el.value) { ctx.set({ crew: moveCrew(ctx.host.state(), pc, el.value, nowI) }); ctx.rerender(); }           /* and with the room: moveCrew clears it */
+        else setCrewKey(ctx, pc, function (c) { delete c.room; c.noticed = false; });
+      }
+    };
+  }
+
+  /* ---- The job ------------------------------------------------------------------------------------------------- */
+  function waySummary(play, st, w, t) {
+    var ticks = isObj(st.steps) && Array.isArray(st.steps[w.id]) ? st.steps[w.id] : [], total = list(w.steps).length, n = ticks.filter(Boolean).length;
+    var hm = isObj(st.heard) && isObj(st.heard[w.id]) ? st.heard[w.id] : {}, hd = Object.keys(hm).filter(function (k) { return typeof hm[k] === "number"; });
+    var mark = isObj(st.ways) ? st.ways[w.id] : "", until = isObj(w.window) && typeof w.window.until === "string" ? B.minuteOf(w.window.until, play.clock.start) : NaN;
+    var gone = mark === "gone" || (!isNaN(until) && t >= until);
+    return { state: mark === "done" ? "done" : gone ? "gone" : n > 0 ? "steps" : hd.length ? "heard" : "unheard", n: n, total: total, heard: hd, ticks: ticks };
+  }
+  function jobSection(box, ctx) {
+    var play = ctx.play, st = ctx.st, t = ctx.shownT, label = function (m) { return B.timeLabel(play, m); }, ways = list(play.ways).filter(isObj), pcs = list(ctx.host.pcs());
+    var h = '<h3 class="rv-sh">The job</h3>', tg = targetOf(play), rv = rivalOf(play), ids = [tg, rv].filter(Boolean).map(function (p) { return p.id; });
+    var places = B.placesAt(play, st, t), sc = scanChanges(play, st, ids, t), view = B.playerView(play, st, list(st.open));
+    var over = tg && isObj(st.over) && isObj(st.over[tg.id]) ? st.over[tg.id] : {};
+    if (tg) {
+      var tw = places[tg.id], tn = sc[tg.id];
+      h += '<div class="rv-target" data-who="target"><span class="rv-lab">' + esc(str(tg.label)) + "</span> " +
+        (over.gone === true ? "<b>down</b>" : tw ? "<b>" + esc(tw.room) + "</b>" : '<span class="rv-dim">nowhere yet</span>') +
+        (over.gone !== true && tn ? ' <span class="rv-dim">until ' + esc(label(tn.at)) + "</span> → " + (tn.room ? esc(tn.room) : "gone") + (tn.room && !stopKnown(view, tn.at, tn.room) ? ' <em class="rv-hid">(hidden)</em>' : "") : "") +
+        (typeof over.at === "string" && over.at ? ' <span class="rv-hid">held in ' + esc(over.at) + "</span>" : "") + (typeof over.delay === "number" && over.delay ? ' <span class="rv-hid">' + over.delay + " min late</span>" : "") +
+        '<div class="rv-acts"><span class="rv-lab">Running late</span>' + [15, 30].map(function (n) { return '<button type="button" class="rv-btn sm" data-vv="late" data-n="' + n + '">+' + n + "</button>"; }).join("") + '<button type="button" class="rv-btn sm" data-vv="late" data-n="0"' + (over.delay ? "" : " disabled") + ">clear</button></div></div>";
+    }
+    if (rv) {
+      var rw = places[rv.id], rn = sc[rv.id];
+      h += '<div class="rv-target" data-who="rival"><span class="rv-lab">' + esc(str(rv.label)) + "</span> " + (rw ? esc(rw.room) : '<span class="rv-dim">nowhere</span>') +
+        (rn ? ' <span class="rv-dim">next ' + esc(label(rn.at)) + "</span> → " + (rn.room ? esc(rn.room) : "gone") : ' <span class="rv-dim">nothing more</span>') + "</div>";
+    }
+    if (!ways.length) h += '<p class="rv-dim">The play has no ways.</p>';
+    ways.forEach(function (w) {
+      var s = waySummary(play, st, w, t), open = !!ui5.ways[w.id];
+      var sum = s.state === "done" ? "done" : s.state === "gone" ? "window gone" : s.state === "steps" ? "steps " + s.n + " of " + s.total : s.state === "heard" ? "heard by " + s.heard.map(function (id) { return pcName5(id, ctx); }).join(", ") : "unheard";
+      h += '<div class="rv-way st-' + s.state + '" data-way="' + esc(w.id) + '"><button type="button" class="rv-wayhd" data-vv="way" aria-expanded="' + open + '"><b>' + esc(w.id) + "</b> " + esc(str(w.name)) + ' <span class="rv-wst">' + esc(sum) + "</span></button>";
+      if (open) {
+        var ld = isObj(w.lead) ? w.lead : null, wd = isObj(w.window) ? w.window : null;
+        if (ld && ld.line) h += '<div class="rv-say"><span class="rv-saylab">SAY</span> “' + esc(ld.line) + "”" + (ld.who ? ' <small class="rv-dim">' + esc(ld.who) + "</small>" : "") + "</div>";
+        if (ld) h += '<p class="rv-wl">Said ' + (ld.room ? "in <b>" + esc(ld.room) + "</b>" : "anywhere") + " " + esc(str(ld.from)) + "–" + esc(str(ld.to)) + "</p>";
+        if (wd) h += '<p class="rv-wl">Window ' + esc(str(wd.at)) + (wd.until ? "–" + esc(wd.until) : "") + (wd.room ? " · <b>" + esc(wd.room) + "</b>" : "") + "</p>";
+        var stp = list(w.steps);
+        if (stp.length) h += '<ul class="rv-steps">' + stp.map(function (x, i) { return '<li><label><input type="checkbox" data-vv="step" data-i="' + i + '"' + (s.ticks[i] ? " checked" : "") + "> " + esc(x) + "</label></li>"; }).join("") + "</ul>";
+        if (w.cost) h += '<p class="rv-wl"><span class="rv-lab">Cost</span> ' + esc(w.cost) + "</p>";
+        if (w.note) h += '<p class="rv-wl"><span class="rv-lab">Note</span> ' + esc(w.note) + "</p>";
+        var hdm = isObj(st.heard) && isObj(st.heard[w.id]) ? st.heard[w.id] : {};
+        var inRoom = function (p) { var cr = isObj(st.crew) && isObj(st.crew[p.id]) ? st.crew[p.id] : {}; return !!cr.room && (!ld || !ld.room || cr.room === ld.room); };
+        var near = pcs.filter(inRoom), far = pcs.filter(function (p) { return !inRoom(p); });
+        var hb = function (p) { var on = typeof hdm[p.id] === "number"; return '<button type="button" class="rv-btn sm rv-tog" data-vv="heard" data-pc="' + esc(p.id) + '" aria-pressed="' + on + '">' + esc(p.name) + (on ? " ✓ " + esc(label(hdm[p.id])) : "") + "</button>"; };
+        h += '<div class="rv-heard"><span class="rv-lab">Heard by</span> ' + (near.length ? near.map(hb).join(" ") : '<span class="rv-dim">nobody is in the room</span>') + "</div>";
+        if (far.length) h += '<details class="rv-more" data-more="' + esc(w.id) + '"' + (ui5.more[w.id] ? " open" : "") + '><summary>More</summary><div class="rv-heard">' + far.map(hb).join(" ") + "</div></details>";
+        h += '<div class="rv-acts"><button type="button" class="rv-btn sm rv-tog" data-vv="done" aria-pressed="' + (s.state === "done") + '">Done</button></div>';
+      }
+      h += "</div>";
+    });
+    box.innerHTML = h;
+    box.onclick = function (ev) {
+      var el = ev.target.closest ? ev.target.closest("[data-vv]") : null; if (!el || !box.contains(el)) return;
+      var a = el.getAttribute("data-vv"), wrap = el.closest("[data-way]"), wid = wrap ? wrap.getAttribute("data-way") : "", tgId = tg ? tg.id : "";
+      if (a === "way") { ui5.ways[wid] = !ui5.ways[wid]; ctx.rerender(); }
+      else if (a === "heard") heard5(wid, el.getAttribute("data-pc"), ctx);
+      else if (a === "done") setKey(ctx, "ways", function (m) { if (m[wid] === "done") delete m[wid]; else m[wid] = "done"; });
+      else if (a === "late") { var n = +el.getAttribute("data-n"), from = ctx.t; setOver(ctx, tgId, function (o) { if (n === 0) { delete o.delay; delete o.from; } else { o.delay = n; o.from = from; } }); }
+    };
+    box.onchange = function (ev) {
+      var el = ev.target; if (!el || !el.getAttribute || el.getAttribute("data-vv") !== "step") return;
+      var wrap = el.closest("[data-way]"), wid = wrap ? wrap.getAttribute("data-way") : "", i = +el.getAttribute("data-i"), on = !!el.checked;
+      var w = ways.filter(function (x) { return x.id === wid; })[0], total = w ? list(w.steps).length : 0;
+      setKey(ctx, "steps", function (m) {
+        var arr = Array.isArray(m[wid]) ? m[wid].slice() : []; while (arr.length < total) arr.push(false);
+        arr[i] = on; if (arr.some(Boolean)) m[wid] = arr; else delete m[wid];
+      });
+    };
+    box.ontoggle = null;
+    if (!box.__rv5toggle) { box.__rv5toggle = true; box.addEventListener("toggle", function (ev) { var d = ev.target; if (d && d.getAttribute && d.getAttribute("data-more")) ui5.more[d.getAttribute("data-more")] = !!d.open; }, true); }
+  }
+
+  /* ---- Intel (a fold) ------------------------------------------------------------------------------------------ */
+  function intelSection(box, ctx) {
+    var play = ctx.play, st = ctx.st, intel = list(play.intel).filter(isObj), pcs = list(ctx.host.pcs()), told = isObj(st.told) ? st.told : {};
+    var h = '<details class="rv-intel"' + (ui5.intel ? " open" : "") + '><summary class="rv-sh">Intel <small>' + intel.filter(function (x) { return told[x.id] !== undefined; }).length + " of " + intel.length + " told</small></summary>";
+    if (!intel.length) h += '<p class="rv-dim">The play has no intel.</p>';
+    intel.forEach(function (x) {
+      var v = told[x.id], crew = v === "crew", ids = Array.isArray(v) ? v : [];
+      h += '<div class="rv-intel1" data-intel="' + esc(x.id) + '"><div><b>' + esc(x.id) + "</b> " + esc(x.text) + (x.from ? ' <span class="rv-dim">· ' + esc(x.from) + "</span>" : "") + '</div><div class="rv-acts">' +
+        pcs.map(function (p) { return '<button type="button" class="rv-btn sm rv-tog" data-vv="tell" data-pc="' + esc(p.id) + '" aria-pressed="' + (crew || ids.indexOf(p.id) >= 0) + '"' + (crew ? " disabled" : "") + ">Tell " + esc(p.name) + "</button>"; }).join("") +
+        '<button type="button" class="rv-btn sm rv-tog" data-vv="tellcrew" aria-pressed="' + crew + '">Tell the crew</button></div></div>';
+    });
+    box.innerHTML = h + "</details>";
+    box.onclick = function (ev) {
+      var el = ev.target.closest ? ev.target.closest("[data-vv]") : null; if (!el || !box.contains(el)) return;
+      var wrap = el.closest("[data-intel]"), id = wrap ? wrap.getAttribute("data-intel") : "", a = el.getAttribute("data-vv");
+      if (a === "tellcrew") setKey(ctx, "told", function (m) { if (m[id] === "crew") delete m[id]; else m[id] = "crew"; });
+      else if (a === "tell") { var pc = el.getAttribute("data-pc"); setKey(ctx, "told", function (m) { if (m[id] === "crew") return false; var l = toggleIn(Array.isArray(m[id]) ? m[id].slice() : [], pc); if (l.length) m[id] = l; else delete m[id]; }); }
+    };
+    if (!box.__rv5toggle) { box.__rv5toggle = true; box.addEventListener("toggle", function (ev) { if (ev.target && ev.target.classList && ev.target.classList.contains("rv-intel")) ui5.intel = !!ev.target.open; }, true); }
+  }
+
+  /* the wall-clock line keeps counting without a redraw (page-local; it stops when the line leaves the page) */
+  var paceTimer = null;
+  function paceTick() {
+    var els = typeof document !== "undefined" ? document.querySelectorAll("[data-pace]") : [];
+    if (!els.length || !pace) { clearInterval(paceTimer); paceTimer = null; return; }
+    for (var i = 0; i < els.length; i++) els[i].textContent = paceText({ n: +((/beat (\d+)/.exec(els[i].textContent) || [0, 0])[1]), min: Math.max(0, Math.floor((Date.now() - pace.at) / 60000)) });
+  }
+  sections.push({ id: "beat", order: 0, render: function (box, ctx) { beatSection(box, ctx); if (!paceTimer && typeof setInterval === "function" && typeof document !== "undefined") paceTimer = setInterval(paceTick, 20000); } });
+  sections.push({ id: "crew", order: 100, render: crewSection });
+  sections.push({ id: "job", order: 200, render: jobSection });
+  sections.push({ id: "intel", order: 300, render: intelSection });
+  hooks.heard = heard5;
+  /* ==== VV5 END ==== */
+
   return { create: create, model: model, moveCrew: moveCrew, stepTime: stepTime, jumpTime: jumpTime, startMinutes: startMinutes, initials: initials,
-    setPlayersChip: setPlayersChip, menuItems: menuItems, views: views, sections: sections, hooks: hooks };
+    setPlayersChip: setPlayersChip, menuItems: menuItems, views: views, sections: sections, hooks: hooks,
+    sortedStops: sortedStops, scanChanges: scanChanges, crewOrder: crewOrder, skipTarget: skipTarget, waySummary: waySummary };
 });

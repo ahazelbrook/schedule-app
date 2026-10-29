@@ -98,7 +98,8 @@
     {
      "at": "00:15",
      "room": "Luxury penthouse",
-     "note": "GM-ONLY-NOTE-3"
+     "note": "GM-ONLY-NOTE-3",
+     "private": true
     }
    ]
   },
@@ -382,6 +383,9 @@
   "at": {
    "5": "skip-private",
    "6": "lockdown"
+  },
+  "lockdown": {
+   "room": "Security control room"
   }
  },
  "entries": [
