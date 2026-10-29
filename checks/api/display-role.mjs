@@ -305,7 +305,7 @@ async function main() {
       await sleepMs(300); // a late poke to the wrong socket would land inside this
       const kinds = (s) => s.messages().slice(1).map((m) => m.k);
       expect(JSON.stringify(kinds(gm)) === JSON.stringify(['characters', 'ambient', 'display', 'stt', 'stt', 'cue', 'campaign', 'npcs', 'ambient', 'characters']), 'GM heard ' + JSON.stringify(kinds(gm)));
-      expect(JSON.stringify(kinds(player)) === JSON.stringify(['characters', 'campaign', 'npcs', 'characters']), 'player heard ' + JSON.stringify(kinds(player)));
+      expect(JSON.stringify(kinds(player)) === JSON.stringify(['characters', 'screen', 'campaign', 'npcs', 'characters']), 'player heard ' + JSON.stringify(kinds(player)));   // 'screen' is the display PUT with the phones' mirror on (MM1); the display role and the GM never hear it
       expect(JSON.stringify(kinds(spoof)) === JSON.stringify(kinds(player)), 'the spoofing player heard what a player hears: ' + JSON.stringify(kinds(spoof)));
       expect(JSON.stringify(kinds(display)) === JSON.stringify(['ambient', 'display', 'stt', 'stt', 'ambient']), 'display heard ' + JSON.stringify(kinds(display)));
       for (const s of all) {
