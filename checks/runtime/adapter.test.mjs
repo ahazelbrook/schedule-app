@@ -1482,12 +1482,14 @@ await test('status.newBuild: null while the server runs this page\'s build; the 
 
 /* ---------- live sync (design 2.5): the poke socket, with a fake WebSocket ---------- */
 /* A WebSocket stand-in the test drives by hand: nothing opens, answers or closes until the test says so. */
-function fakeSockets({ autoPong = true, flap = false } = {}) {
+function fakeSockets({ autoPong = true, flap = false, autoOpen = false } = {}) {
+  const mode = { flap, autoOpen };
   const made = [];
   class FakeWS {
     constructor(url) {
       this.url = url; this.sent = []; this.closed = null; this.at = Date.now(); made.push(this);
-      if (flap) setTimeout(() => { this.open(); setTimeout(() => this.drop(1006), 1); }, 1);   // opens, says hello and drops at once
+      if (mode.flap) setTimeout(() => { this.open(); setTimeout(() => this.drop(1006), 1); }, 1);   // opens, says hello and drops at once
+      else if (mode.autoOpen) setTimeout(() => this.open(), 1);
     }
     send(d) { this.sent.push(d); if (d === 'ping' && autoPong && !this.mute) setTimeout(() => this.onmessage && this.onmessage({ data: 'pong' }), 1); }
     close(code) { this.closed = code === undefined ? 1005 : code; }
@@ -1496,7 +1498,7 @@ function fakeSockets({ autoPong = true, flap = false } = {}) {
     poke(k) { this.onmessage && this.onmessage({ data: JSON.stringify({ k, t: Date.now() }) }); }
     drop(code) { this.onclose && this.onclose({ code }); }
   }
-  return { FakeWS, made, last: () => made[made.length - 1] };
+  return { FakeWS, made, mode, last: () => made[made.length - 1] };
 }
 const LIVE_KNOBS = { pingMs: 100000, pongMs: 100000, silentMs: 100000, echoMs: 80, graceMs: 80, badMs: 700, backoff: [60, 120, 300], pokeGapMs: 0 };
 const HEALTHY_MS = 400;
@@ -1713,9 +1715,9 @@ await test('live gate: a socket that opens, gets hello and drops with 1006 at on
   un();
 });
 
-await test('live gate: the breaker stops connecting after the limit and live sync stays off on that page, the poll going on', async () => {
+await test('live gate: the breaker stops connecting after the limit of unplanned failures and live sync stays off on that page, the poll going on', async () => {
   const api = fakeApi();
-  const { b, ws, polls, un } = await liveUp(api, { backoff: [20], maxConnects: 4, stableMs: 100000 }, { flap: true });
+  const { b, ws, polls, un } = await liveUp(api, { backoff: [20], maxFails: 4, stableMs: 100000 }, { flap: true });
   await sleep(900);
   eq(ws.made.length, 4, 'connects stop at the limit');
   ok(b.win.B68Live.state().broken, 'the breaker says so');
@@ -1753,6 +1755,44 @@ await test('live gate: coming back visible after a 1000 close connects nothing u
   eq(ws.made.length, 1, 'none while the switch is off');
   api.live = true; await until(() => ws.made.length > 1, 600);
   eq(ws.made.length, 2, 'a poll that said live: true opened it');
+  un();
+});
+
+await test('live breaker: sixty hidden/visible flips (planned closes) never trip it and live sync stays on', async () => {
+  const api = fakeApi();
+  const { b, ws, un } = await liveUp(api, { echoMs: 100000, graceMs: 100000 }, { autoOpen: true });
+  await until(() => b.win.B68Live.state().open, 300);
+  const vis = () => (b.listeners.visibilitychange || []).forEach((fn) => fn());
+  for (let i = 0; i < 60; i++) { b.document.hidden = true; vis(); b.document.hidden = false; vis(); await sleep(4); }
+  await until(() => b.win.B68Live.state().open, 300);
+  const st = b.win.B68Live.state();
+  ok(!st.broken && st.open, 'not broken, still open: ' + JSON.stringify(st));
+  eq(ws.made.length, 61, 'one socket per visible, no more');
+  un();
+});
+
+await test('live breaker: 21 unplanned drops trip it at the limit of 20', async () => {
+  const api = fakeApi();
+  const { b, ws, un } = await liveUp(api, { backoff: [5], stableMs: 100000 }, { flap: true });
+  await until(() => b.win.B68Live.state().broken, 4000);
+  const st = b.win.B68Live.state();
+  ok(st.broken, 'tripped');
+  eq(ws.made.length, 20, 'twenty connects, each ended by an unplanned drop, then no more');
+  await sleep(200); eq(ws.made.length, 20, 'and none after');
+  un();
+});
+
+await test('live breaker: a socket that stays open for the stable time resets the count', async () => {
+  const api = fakeApi();
+  const { b, ws, un } = await liveUp(api, { backoff: [10], stableMs: 100, maxFails: 3, echoMs: 100000, graceMs: 100000 }, { flap: true });
+  await until(() => ws.made.length >= 2, 1000);                         // two unplanned failures
+  ws.mode.flap = false; ws.mode.autoOpen = true;
+  await until(() => b.win.B68Live.state().open, 1000);
+  await sleep(250);                                                     // past stableMs: the count starts over
+  ws.mode.flap = true; ws.mode.autoOpen = false;
+  ws.last().drop(1006);
+  await until(() => b.win.B68Live.state().broken, 2000);
+  eq(ws.made.length, 5, 'three more failures after the reset (sockets 3, 4, 5), where without it the drop of socket 3 would already have been the third and stopped at 3');
   un();
 });
 

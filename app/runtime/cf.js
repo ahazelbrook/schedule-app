@@ -284,7 +284,7 @@
   var live = (function () {
     var subs = [], ws = null, opened = false, wantFlag = null, blocked = false, blockedAt = 0, nextTryAt = 0, retry = 0, openedAt = 0;
     var timers = { ping: null, pong: null, retry: null, hello: null, stable: null }, lastSignal = 0, badUntil = 0, grace = false, connects = 0;
-    var connectLog = [], broken = false;   /* the circuit breaker: connect times in the last hour; past the limit live sync stays off until a reload */
+    var failLog = [], broken = false;   /* the circuit breaker: UNPLANNED failures in the last hour (a drop, a missed pong, a refused or silent connect); past the limit live sync stays off until a reload. Planned closes never count. */
     var pokeAt = {}, pend = {};
     var BACKOFF = Array.isArray(LV.backoff) ? LV.backoff : [1000, 2000, 5000, 10000, 30000];
     function now() { return Date.now(); }
@@ -307,14 +307,13 @@
       repoll();
     }
     /* THE connect gate: every path that can open a socket (a poll answer, the retry timer, a page coming back, a new listener) ends here.
-       It refuses before nextTryAt (every close that was not our own advances the backoff) and past 20 connects an hour. */
+       It refuses before nextTryAt (every close that was not our own advances the backoff) and past 20 unplanned failures an hour. */
     function connect() {
       if (ws || !able() || wantFlag !== true || blocked || broken) return;
       var t = now();
       if (t < nextTryAt) return;
-      connectLog = connectLog.filter(function (x) { return t - x < 3600000; });
-      if (connectLog.length >= lvn('maxConnects', 20)) { broken = true; return; }
-      connectLog.push(t);
+      failLog = failLog.filter(function (x) { return t - x < 3600000; });
+      if (failLog.length >= lvn('maxFails', 20)) { broken = true; return; }
       var w;
       connects++;
       try { w = new window.WebSocket(url()); } catch (e) { failedConnect(); return; }
@@ -332,7 +331,7 @@
         if (!j || typeof j !== 'object') return;
         if (j.hello) {
           clearT('hello');
-          clearT('stable'); timers.stable = setTimeout(function () { timers.stable = null; retry = 0; }, lvn('stableMs', 60000));   /* the backoff starts over only after a minute open */
+          clearT('stable'); timers.stable = setTimeout(function () { timers.stable = null; retry = 0; failLog = []; }, lvn('stableMs', 60000));   /* the backoff and the failure count start over only after a minute open */
           opened = true; openedAt = now(); grace = true; pokeAt = {}; pend = {};
           armPing();
           fire('hello');
@@ -351,7 +350,7 @@
         reconnectSoon(); repoll();
       };
     }
-    function advance() { nextTryAt = now() + backoffMs(); retry++; }
+    function advance() { nextTryAt = now() + backoffMs(); retry++; failLog.push(now()); }   /* every caller is an unplanned close or failure */
     function failedConnect() { blocked = true; blockedAt = now(); advance(); }
     function reconnectSoon() {
       clearT('retry');
