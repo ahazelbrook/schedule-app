@@ -372,14 +372,16 @@
     /* the wrappers (.ds-idrow, .ds-bar, .ds-about) only group on a phone: on a desk and in print they are display: contents,
        so the head's grid is what it was. On a phone the bar (Back, the status, Print, "…" and the vitals) sticks to the top
        and the identity folds into one closed "About" row. */
+    var mbtn = live ? missionButton() : '';
     return '<div class="ds-head">' +
       '<div class="ds-idrow">' +
         '<div class="ds-title"><h2 class="ds-name">' + esc(name) + '</h2><div class="ds-pb">' + esc(pb ? pb.name : doc.playbookName || 'Subject') + '</div><div class="ds-desc">' + desc + '</div></div>' + th +
       '</div>' +
       '<div class="ds-bar">' +
-        '<div class="ds-nav">' +
+        '<div class="ds-nav' + (mbtn ? ' ds-nav-m' : '') + '">' +
           '<button type="button" class="btn sm" data-act="back" data-always="1">← Back</button>' +
           (live ? tableButton() : '') +
+          mbtn +
           '<button type="button" class="btn sm ds-wide" data-act="edit"' + (ro ? ' disabled' : '') + '>Edit figure</button>' +
           '<button type="button" class="btn sm" data-act="print" data-always="1">Print</button>' +
           (live ? moreMenu(name) : '') +
@@ -1173,6 +1175,7 @@
   var ACTIONS = {
     back: function () { if (cur.api && cur.api.back) cur.api.back(); },
     tablescreen: function (d, btn) { openTableScreen(btn); },
+    missionscreen: function (d, btn) { openMissionScreen(btn); },
     edit: function () { if (cur.api && cur.api.edit) cur.api.edit(); },
     print: function () { printFigure(true); try { window.print(); } catch (e) { note('Printing is not available here'); } },
     /* Remove deletes the character for everyone, for good: it sits at the foot of "…", for the owner and the GM, behind a
@@ -1525,7 +1528,7 @@
     note('Session ' + n + ' started'); commit();
   }
   /* roll-panel controls stay live for read-only viewers (they write nothing); everything else is gated */
-  var RO_OK = { back: 1, tablescreen: 1, view: 1, print: 1, rollopen: 1, resistopen: 1, fortopen: 1, rollclose: 1, abstrip: 1, abitem: 1, rollopt: 1, rollpos: 1, rolleff: 1, fortn: 1, roll: 1, panelclose: 1, dtopen: 1, dtopt: 1, dtroll: 1, rollapp: 1, resistapp: 1, markharm: 1, markresist: 1, markrattr: 1, markrdone: 1, more: 1, about: 1, loadout: 1, jump: 1 };
+  var RO_OK = { back: 1, tablescreen: 1, missionscreen: 1, view: 1, print: 1, rollopen: 1, resistopen: 1, fortopen: 1, rollclose: 1, abstrip: 1, abitem: 1, rollopt: 1, rollpos: 1, rolleff: 1, fortn: 1, roll: 1, panelclose: 1, dtopen: 1, dtopt: 1, dtroll: 1, rollapp: 1, resistapp: 1, markharm: 1, markresist: 1, markrattr: 1, markrdone: 1, more: 1, about: 1, loadout: 1, jump: 1 };
   /* one panel at a time: the mark strip, a roll, a downtime activity or the end of session */
   function anyPanel() { return !!(cur && (cur.ui.mark || cur.ui.roll || cur.ui.dt || cur.ui.endSess)); }
   function closePanels() { if (!cur) return; cur.ui.mark = null; cur.ui.roll = null; cur.ui.dt = null; cur.ui.endSess = null; }
@@ -1562,6 +1565,7 @@
   }
   function onDocKey(e) {
     if (!cur || (e.key !== 'Escape' && e.key !== 'Esc')) return;
+    if (mv) { closeMissionScreen(); return; }
     if (tv) { closeTableScreen(); return; }
     if (cur.ui.more) { cur.ui.more = false; render(); var mb = cur.root.querySelector('.ds-morebtn'); if (mb) try { mb.focus({ preventScroll: true }); } catch (x) {} return; }
     if (!anyPanel()) return; closePanels(); render();
@@ -1658,6 +1662,150 @@
     v.cap.hidden = !(title || cap);
   }
 
+  /* ---------- the mission card (VV7, design 5.4) ----------
+     api.mission() (boot.js) is { time, now, pcs: [{ id, name, card }] } for the characters THIS player owns that have a card in the campaign
+     document's mission, or null (then there is no Mission button). The page holds that document already and hears its poke, so nothing here
+     asks for anything: boot calls T.refresh() when the document moves. The button carries a dot while a card of theirs differs from the one
+     they last opened (a hash per character in localStorage; nothing for changes elsewhere in the mission). The viewer is a full-screen layer
+     on the page body like the Table viewer, redrawn in place when the document moves. It is not a feed: no sound, no vibration, no animation,
+     no live region. Everything the document holds is put in as text. */
+  var MSEEN_KEY = 'b68.mission.seen', mv = null, mSeen = null;
+  var POS_WORD = { controlled: 'Controlled', risky: 'Risky', desperate: 'Desperate' };
+  function missionData() {
+    var f = cur && cur.api && cur.api.mission; if (typeof f !== 'function') return null;
+    var m = null; try { m = f(); } catch (e) { m = null; }
+    return m && Array.isArray(m.pcs) && m.pcs.length ? m : null;
+  }
+  /* the dot's fingerprint is the card's STABLE fields: inMin counts down every beat, so a publish that only moves countdowns lights nothing */
+  function stableCard(card) {
+    if (!card || typeof card !== 'object') return card;
+    var o = {}; Object.keys(card).forEach(function (k) { o[k] = card[k]; });
+    if (Array.isArray(o.next)) o.next = o.next.map(function (n) { if (!n || typeof n !== 'object') return n; var q = {}; Object.keys(n).forEach(function (k) { if (k !== 'inMin') q[k] = n[k]; }); return q; });
+    return o;
+  }
+  function cardHash(card) { var s = JSON.stringify(stableCard(card)) || '', h = 5381; for (var i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0; return s.length + ':' + h; }
+  function mSeenMap() {
+    if (mSeen === null) { try { var o = JSON.parse(localStorage.getItem(MSEEN_KEY) || 'null'); mSeen = o && typeof o === 'object' && !Array.isArray(o) ? o : {}; } catch (e) { mSeen = {}; } }
+    return mSeen;
+  }
+  function markMissionSeen(pc) { mSeenMap()[pc.id] = cardHash(pc.card); try { localStorage.setItem(MSEEN_KEY, JSON.stringify(mSeen)); } catch (e) {} }
+  function pcNew(pc) { return mSeenMap()[pc.id] !== cardHash(pc.card); }
+  function missionNew(m) { return !!m && m.pcs.some(pcNew); }
+  function missionButtonBody(nw) { return 'Mission' + (nw ? '<span class="ds-tdot" aria-hidden="true"></span>' : ''); }
+  function missionButton() {
+    var m = missionData(); if (!m) return '';
+    var nw = missionNew(m);
+    return '<button type="button" class="btn sm ds-missionbtn' + (nw ? ' new' : '') + '" data-act="missionscreen" data-always="1" aria-haspopup="dialog" aria-label="' + (nw ? 'Mission card, changed' : 'Mission card') +
+      '" title="Your costume, where it works, who is watching and what you have heard">' + missionButtonBody(nw) + '</button>';
+  }
+  function refreshMissionDot() {
+    if (!cur || !cur.root) return; var b = cur.root.querySelector('.ds-missionbtn'); if (!b) return;
+    var nw = missionNew(missionData());
+    b.classList.toggle('new', nw); b.setAttribute('aria-label', nw ? 'Mission card, changed' : 'Mission card'); b.innerHTML = missionButtonBody(nw);
+  }
+  function closeMissionScreen(restore) {
+    if (!mv) return; var v = mv; mv = null;
+    if (v.el.parentNode) v.el.parentNode.removeChild(v.el);
+    var back = (cur && cur.root && cur.root.querySelector && cur.root.querySelector('.ds-missionbtn')) || v.from;
+    if (restore !== false && back && back.focus && document.body.contains(back)) { try { back.focus({ preventScroll: true }); } catch (e) {} }
+  }
+  function mAdd(parent, tag, cls, text) { var n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; parent.appendChild(n); return n; }
+  function strs(a) { return (Array.isArray(a) ? a : []).filter(function (x) { return typeof x === 'string' && x.trim(); }).map(function (x) { return x.trim(); }); }
+  function inWords(n) { n = Math.floor(+n); if (!(n >= 0)) return ''; if (n < 60) return 'in ' + n + ' min'; var h = Math.floor(n / 60), r = n % 60; return 'in ' + h + ' h' + (r ? ' ' + (r < 10 ? '0' : '') + r : ''); }
+  function cueLine(o) {   /* { text, where, until | at, inMin } as one line of plain words */
+    if (!o || typeof o !== 'object') return typeof o === 'string' ? o : '';
+    var bits = [typeof o.text === 'string' ? o.text : ''];
+    if (typeof o.where === 'string' && o.where) bits.push(o.where);
+    if (typeof o.until === 'string' && o.until) bits.push('until ' + o.until);
+    if (typeof o.at === 'string' && o.at) bits.push(o.at + (o.inMin != null && inWords(o.inMin) ? ', ' + inWords(o.inMin) : ''));
+    else if (o.inMin != null && inWords(o.inMin)) bits.push(inWords(o.inMin));
+    return bits.filter(Boolean).join(' · ');
+  }
+  function paintMission() {
+    var v = mv; if (!v) return;
+    var m = missionData(); if (!m) { closeMissionScreen(); return; }
+    var pc = m.pcs.filter(function (p) { return p.id === v.pc; })[0]; if (!pc) { pc = m.pcs[0]; v.pc = pc.id; }
+    var key = m.pcs.map(function (p) { return p.id; }).join('|');
+    if (key !== v.swKey) {   /* the switcher is rebuilt only when the list of characters changes, so a redraw never takes a tap's focus away */
+      v.swKey = key; v.sw.textContent = '';
+      if (m.pcs.length > 1) m.pcs.forEach(function (p) {
+        var b = mAdd(v.sw, 'button', 'btn sm ds-mv-pc', ''); b.type = 'button'; b.dataset.pc = p.id;
+        b.addEventListener('click', function () { if (mv !== v) return; v.pc = p.id; v.body.scrollTop = 0; paintMission(); });
+      });
+      v.sw.hidden = m.pcs.length < 2;
+    }
+    Array.prototype.forEach.call(v.sw.children, function (b) {
+      var p = m.pcs.filter(function (q) { return q.id === b.dataset.pc; })[0]; if (!p) return;
+      b.textContent = (p.card && typeof p.card.name === 'string' && p.card.name) || p.name || 'Character';
+      if (p.id !== pc.id && pcNew(p)) { var d = document.createElement('span'); d.className = 'ds-tdot'; d.setAttribute('aria-hidden', 'true'); b.appendChild(d); }
+      b.setAttribute('aria-pressed', String(p.id === pc.id));
+    });
+    var c = pc.card && typeof pc.card === 'object' ? pc.card : {}, body = v.body, keep = body.scrollTop;
+    body.textContent = '';
+    var who = (typeof c.name === 'string' && c.name) || pc.name || 'Your character', cos = typeof c.costume === 'string' ? c.costume : '';
+    var head = mAdd(body, 'div', 'ds-mv-head'); mAdd(head, 'h2', 'ds-mv-name', who + (cos ? ' · ' + cos : ''));
+    if (m.time) mAdd(head, 'span', 'ds-mv-time', m.time);
+    var pos = typeof c.pos === 'string' && POS_WORD[c.pos] ? c.pos : '';
+    var st = mAdd(body, 'div', 'ds-mv-status' + (pos ? ' pos-' + pos : ''));
+    if (typeof c.room === 'string' && c.room) mAdd(st, 'div', 'ds-mv-room', c.room);
+    mAdd(st, 'div', 'ds-mv-word', pos ? POS_WORD[pos] : 'Unknown');
+    if (typeof c.busy === 'string' && c.busy) mAdd(st, 'div', 'ds-mv-room', 'Busy until ' + c.busy);
+    if (c.warn && typeof c.warn === 'object') {
+      var w = mAdd(body, 'div', 'ds-mv-warn'); w.setAttribute('role', 'note');
+      mAdd(w, 'div', 'ds-mv-warnh', '⚠ ' + (typeof c.warn.who === 'string' && c.warn.who ? c.warn.who : 'Someone') + ' is here');
+      if (typeof c.warn.look === 'string' && c.warn.look) mAdd(w, 'p', 'ds-mv-p', c.warn.look);
+      if (typeof c.warn.sees === 'string' && c.warn.sees) mAdd(w, 'p', 'ds-mv-p', 'Sees through: ' + c.warn.sees);
+    }
+    var z = c.zones && typeof c.zones === 'object' ? c.zones : {}, ctl = strs(z.controlled), rsk = strs(z.risky);
+    if (ctl.length || rsk.length) {
+      var zs = mAdd(body, 'div', 'ds-mv-sec'); mAdd(zs, 'h3', 'ds-mv-h', 'Your costume');
+      if (ctl.length) mAdd(zs, 'p', 'ds-mv-p', 'Controlled in ' + ctl.join(', ') + '.');
+      mAdd(zs, 'p', 'ds-mv-p', rsk.length ? 'Risky in ' + rsk.join(', ') + '. Anywhere else is desperate.' : 'Risky nowhere. Anywhere else is desperate.');
+    }
+    var leads = (Array.isArray(c.leads) ? c.leads : []).filter(function (l) { return l && typeof l === 'object'; });
+    if (leads.length) {
+      var open = leads.filter(function (l) { return !l.done; }), done = leads.filter(function (l) { return l.done; });
+      var ls = mAdd(body, 'div', 'ds-mv-sec'); mAdd(ls, 'h3', 'ds-mv-h', 'Leads');
+      open.concat(done).forEach(function (l) {
+        var li = mAdd(ls, 'div', 'ds-mv-lead' + (l.done ? ' done' : ''));
+        var f = function (cls, text) { if (typeof text === 'string' && text) mAdd(li, 'p', 'ds-mv-p ' + cls, text); };
+        f('ds-mv-ln', typeof l.name === 'string' ? l.name : ''); f('', typeof l.line === 'string' ? '“' + l.line + '”' : '');
+        f('ds-mv-meta', typeof l.heard === 'string' && l.heard ? 'Heard ' + l.heard : ''); f('ds-mv-meta', typeof l.window === 'string' && l.window ? l.window : '');
+        f('ds-mv-meta', typeof l.next === 'string' && l.next && !l.done ? 'Next: ' + l.next : '');
+      });
+    }
+    var items = strs(c.items);
+    if (items.length) { var it = mAdd(body, 'div', 'ds-mv-sec'); mAdd(it, 'h3', 'ds-mv-h', 'You carry'); mAdd(it, 'p', 'ds-mv-p', items.join(' · ')); }
+    var paths = (Array.isArray(c.paths) ? c.paths : []).map(cueLine).filter(Boolean);
+    if (paths.length) { var ps = mAdd(body, 'div', 'ds-mv-sec'); mAdd(ps, 'h3', 'ds-mv-h', 'Ways through now'); paths.forEach(function (t) { mAdd(ps, 'p', 'ds-mv-p', t); }); }
+    var know = strs(c.know);
+    if (know.length) { var ks = mAdd(body, 'div', 'ds-mv-sec'); mAdd(ks, 'h3', 'ds-mv-h', 'You know'); know.forEach(function (t) { mAdd(ks, 'p', 'ds-mv-p', t); }); }
+    var now = (Array.isArray(m.now) ? m.now : []).map(cueLine).filter(Boolean), next = (Array.isArray(c.next) ? c.next : []).map(cueLine).filter(Boolean);
+    if (now.length || next.length) {
+      var ns = mAdd(body, 'div', 'ds-mv-sec ds-mv-nn');
+      now.forEach(function (t) { var p = mAdd(ns, 'p', 'ds-mv-p'); mAdd(p, 'b', null, 'NOW '); p.appendChild(document.createTextNode(t)); });
+      next.forEach(function (t) { var p = mAdd(ns, 'p', 'ds-mv-p'); mAdd(p, 'b', null, 'NEXT '); p.appendChild(document.createTextNode(t)); });
+    }
+    body.scrollTop = keep;
+    markMissionSeen(pc); refreshMissionDot();   /* looking at it now: its dot goes */
+  }
+  function openMissionScreen(from) {
+    var m = missionData(); if (!m || mv) return;
+    var el = document.createElement('div'); el.className = 'ds-mv'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', 'Your mission card');
+    var top = mAdd(el, 'div', 'ds-mv-top'), x = mAdd(top, 'button', 'ds-mv-x', '×'); x.type = 'button'; x.setAttribute('aria-label', 'Close the mission card');
+    mAdd(top, 'span', 'ds-mv-hh', 'Mission');
+    var sw = mAdd(el, 'div', 'ds-mv-sw'); sw.hidden = true;
+    var body = mAdd(el, 'div', 'ds-mv-body');
+    x.addEventListener('click', function () { closeMissionScreen(); });
+    var mine = m.pcs.filter(function (p) { return cur && cur.doc && p.id === cur.doc.id; })[0] || m.pcs[0];   /* this sheet's character if it has a card, else the first */
+    mv = { el: el, body: body, sw: sw, swKey: '', pc: mine.id, from: from || null };
+    document.body.appendChild(el);
+    try { x.focus({ preventScroll: true }); } catch (e) {}
+    paintMission();
+  }
+  /* the campaign document moved (boot calls T.refresh): redraw the open viewer in place, or just the button's dot */
+  function missionSync() { if (mv) paintMission(); else refreshMissionDot(); }
+
   /* ---------- API ---------- */
   T.open = function (doc, api) {
     var root = document.getElementById('dossier'); if (!root) return;
@@ -1684,14 +1832,14 @@
     if (c.timer) { clearTimeout(c.timer); c.timer = null; flushSave(); } /* typed text still waiting goes out before the sheet closes */
     cur = null; if (c.statusT) clearTimeout(c.statusT);
     if (c.screenOff) { try { c.screenOff(); } catch (e) {} c.screenOff = null; }
-    closeTableScreen(false);
+    closeTableScreen(false); closeMissionScreen(false);
     c.root.removeEventListener('click', onClick); c.root.removeEventListener('input', onInput); c.root.removeEventListener('change', onChange); c.root.removeEventListener('keydown', onKey);
     document.removeEventListener('keydown', onDocKey); document.removeEventListener('click', onDocClick);
     window.removeEventListener('b68:runtime', onRuntime); window.removeEventListener('pagehide', onHide); document.removeEventListener('visibilitychange', onHide);
     c.root.innerHTML = ''; c.root.className = 'dossier';
   };
   /* something the sheet reads from outside its document changed (the table's session, api.table): redraw */
-  T.refresh = function () { if (cur) render(); };
+  T.refresh = function () { if (cur) { render(); missionSync(); } };
   T.isOpen = function () { return !!cur; };
   T.play = function () { return cur ? clone(cur.play) : null; };
   /* a read-only copy of a sheet in another root (the season print): the markup the live sheet prints for someone who

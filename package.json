@@ -24,6 +24,7 @@
     "check:live-clients": "node checks/runtime/live-clients.e2e.mjs",
     "check:table-screen": "node checks/api/table-screen.mjs",
     "check:table-screen-e2e": "node checks/runtime/table-screen.e2e.mjs",
+    "check:mission-card-e2e": "node checks/runtime/mission-card.e2e.mjs",
     "check:clocks": "node checks/api/clocks.mjs",
     "check:clocks-e2e": "node checks/runtime/clocks.e2e.mjs",
     "check:gm-api": "node checks/api/gm.mjs",

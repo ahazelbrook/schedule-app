@@ -426,6 +426,10 @@
   #dossier.ds-live .ds-nav { display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; }
   #dossier.ds-live .ds-nav .ds-wide { display: none; }
   #dossier.ds-live .ds-nav > .btn { order: 2; flex: 0 0 auto; }
+  #dossier.ds-live .ds-nav-m { gap: 5px; flex-wrap: wrap; }   /* Back, Table, Mission, Print and "…" fill a 390 px phone's row: the status would be a clipped sliver, so it is hidden, and an error (.bad) takes a row of its own */
+  #dossier.ds-live .ds-nav-m .ds-status { display: none; }
+  #dossier.ds-live .ds-nav-m .ds-status.bad { display: block; order: 9; flex: 0 0 100%; }
+  #dossier.ds-live .ds-nav-m > .btn { padding-left: 9px; padding-right: 9px; }
   #dossier.ds-live .ds-nav > [data-act="back"] { order: 0; }
   #dossier.ds-live .ds-status { order: 1; flex: 1 1 auto; min-width: 0; white-space: normal; padding: 0; font-size: 10.5px; line-height: 1.25; }
   #dossier.ds-live .ds-more { order: 3; }
@@ -629,6 +633,46 @@
 #dossier .ds-tablebtn .ds-tdot { display: inline-block; width: 9px; height: 9px; margin-left: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--paper); vertical-align: 1px; }
 #dossier .ds-tablebtn.new { border-color: var(--accent); }
 #dossier.ds-live .ds-nav > [data-act="tablescreen"] { order: 0; }
+
+/* ---- the Mission button and the mission card (VV7, design 5.4) ----
+   Same dot as the Table button. The card is a full-screen layer on the page body, always dark, with no transition or animation anywhere
+   in it: it is read at a glance and put face down. Prose is 16 px, the status word 28 px. */
+#dossier .ds-missionbtn { position: relative; }
+#dossier .ds-missionbtn .ds-tdot { display: inline-block; width: 9px; height: 9px; margin-left: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--paper); vertical-align: 1px; }
+#dossier .ds-missionbtn.new { border-color: var(--accent); }
+#dossier.ds-live .ds-nav > [data-act="missionscreen"] { order: 0; }
+.ds-mv { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; background: #0b0a09; color: #f1ece4; overscroll-behavior: contain; padding-bottom: env(safe-area-inset-bottom, 0px); }
+.ds-mv, .ds-mv * { transition: none !important; animation: none !important; }
+.ds-mv-top { display: flex; align-items: center; gap: 12px; padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 8px; flex: 0 0 auto; }
+.ds-mv-x { min-width: 44px; min-height: 44px; padding: 0; border: 2px solid #f1ece4; border-radius: 0; background: transparent; color: #f1ece4; font: 700 28px/1 var(--font-mono, monospace); cursor: pointer; }
+.ds-mv-x:focus-visible, .ds-mv-pc:focus-visible { outline: 3px solid #ffd166; outline-offset: 2px; }
+.ds-mv-hh { font: 900 14px/1.2 var(--font-cond, sans-serif); text-transform: uppercase; letter-spacing: .08em; }
+.ds-mv-sw { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 12px 8px; flex: 0 0 auto; }
+.ds-mv .ds-mv-pc { min-height: 44px; background: transparent; color: #f1ece4; border: 2px solid #8a8174; font-weight: 400; }   /* 16.9:1 on the card's dark */
+.ds-mv .ds-mv-pc[aria-pressed="true"] { background: #f1ece4; color: #0b0a09; border-color: #f1ece4; font-weight: 900; text-decoration: underline; text-underline-offset: 4px; }   /* 16.9:1; selected is also bold and underlined, not colour alone */
+.ds-mv-pc .ds-tdot { display: inline-block; width: 9px; height: 9px; margin-left: 6px; border-radius: 50%; background: #ffd166; vertical-align: 1px; }
+.ds-mv-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 16px 24px; max-width: 34em; width: 100%; margin: 0 auto; box-sizing: border-box; }
+.ds-mv-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.ds-mv-name { margin: 0 0 10px; font: 900 18px/1.25 var(--font-cond, sans-serif); text-transform: uppercase; letter-spacing: .04em; overflow-wrap: anywhere; }
+.ds-mv-time { font: 700 16px/1.2 var(--font-mono, monospace); flex: 0 0 auto; }
+.ds-mv-status { padding: 12px 14px; margin-bottom: 12px; border: 2px solid #f1ece4; background: #2a2622; color: #f1ece4; }
+.ds-mv-status.pos-controlled { background: #1f6b34; border-color: #7fd49a; color: #fff; }
+.ds-mv-status.pos-risky { background: #f2b233; border-color: #ffe09a; color: #1a1305; }
+.ds-mv-status.pos-desperate { background: #a8201a; border-color: #ff9a92; color: #fff; }
+.ds-mv-room { font: 700 16px/1.3 var(--font-body, sans-serif); text-transform: uppercase; letter-spacing: .06em; overflow-wrap: anywhere; }
+.ds-mv-word { font: 900 28px/1.15 var(--font-cond, sans-serif); text-transform: uppercase; letter-spacing: .04em; }
+.ds-mv-warn { padding: 10px 14px; margin-bottom: 12px; border: 2px solid #ffd166; background: #3a2d08; }
+.ds-mv-warnh { font: 900 16px/1.3 var(--font-cond, sans-serif); text-transform: uppercase; letter-spacing: .05em; color: #ffd166; overflow-wrap: anywhere; }
+.ds-mv-sec { margin: 0 0 14px; }
+.ds-mv-h { margin: 0 0 4px; font: 900 13px/1.2 var(--font-cond, sans-serif); text-transform: uppercase; letter-spacing: .1em; color: #cfc7bb; }
+.ds-mv-p { margin: 0 0 6px; font: 400 16px/1.45 var(--font-body, sans-serif); overflow-wrap: anywhere; }
+.ds-mv-lead { margin: 0 0 10px; padding-left: 10px; border-left: 3px solid #8a8174; }
+.ds-mv-lead .ds-mv-p { margin-bottom: 2px; }
+.ds-mv-ln { font-weight: 700; }
+.ds-mv-meta { color: #cfc7bb; }
+.ds-mv-lead.done .ds-mv-p { text-decoration: line-through; color: #a39a8c; }
+.ds-mv-nn { padding-top: 8px; border-top: 2px solid #4a443c; }
+@media print { .ds-mv { display: none !important; } }
 .ds-tv { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; background: #0b0a09; color: #f1ece4; touch-action: pan-x pan-y pinch-zoom; overscroll-behavior: contain; padding-bottom: env(safe-area-inset-bottom, 0px); }
 .ds-tv-top { display: flex; align-items: center; gap: 12px; padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 8px; flex: 0 0 auto; }
 .ds-tv-x { min-width: 44px; min-height: 44px; padding: 0; border: 2px solid #f1ece4; border-radius: 0; background: transparent; color: #f1ece4; font: 700 28px/1 var(--font-mono, monospace); cursor: pointer; }
