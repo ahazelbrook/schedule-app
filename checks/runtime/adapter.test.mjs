@@ -131,8 +131,9 @@ function fakeApi({ gms = ['gm@x.test'] } = {}) {
       let doc = null;
       if (method === 'PUT') doc = clone(body);
       else if (method === 'PATCH') {
-        const { log, clockOps, ...rest } = body;
+        const { log, clockOps, mission, ...rest } = body;
         doc = merge(clone(base), rest);
+        if ('mission' in body) { if (mission === null) delete doc.mission; else doc.mission = clone(mission); }     // the GM's mission replaces whole (functions/api/campaign.js)
         if (Array.isArray(rest.clocks)) doc.clocks = withClockIds(doc.clocks);
         if (clockOps !== undefined) {
           try { checkClockOps(clockOps); } catch (e) { return [e.status, { error: e.message }]; }
@@ -723,6 +724,35 @@ await test('campaign: update merges optimistically, sends a PATCH, then takes th
   const n = snaps.length, gets = campaignGets(api);
   await sleep(POLL * 3);
   eq([snaps.length, campaignGets(api)], [n, gets], 'quiet after own write');
+  un();
+});
+
+await test('campaign: a mission replaces whole (the optimistic copy and a folded write), and null removes it (VV6)', async () => {
+  const api = fakeApi();
+  api.setCampaign(campaignDoc());
+  const b = browser(api, { email: 'gm@x.test' });
+  const ref = (await b.win.claude.use('db')).collection('campaign').doc('main');
+  const snaps = []; const un = ref.onSnapshot((s) => snaps.push(s));
+  await until(() => snaps.length);
+  const m1 = { v: 1, seq: 1, hud: { time: '21:00' }, cards: { a: { name: 'A' }, b: { name: 'B' } } };
+  const m2 = { v: 1, seq: 2, hud: { time: '21:15' }, cards: { a: { name: 'A2' }, b: { name: 'B2' } } };
+  const m3 = { v: 1, seq: 3, hud: { time: '21:30' }, cards: { a: { name: 'A3' } } };
+  const p1 = ref.update({ mission: m1 });          // goes out at once
+  const p2 = ref.update({ mission: m2 });          // waits behind it ...
+  const p3 = ref.update({ mission: m3 });          // ... and is folded with it
+  eq(snaps[snaps.length - 1].data().mission, m3, 'optimistic: replaced, not merged (card b is gone)');
+  await Promise.all([p1, p2, p3]);
+  eq(api.campaign.mission, m3, 'the server holds the last one');
+  const sent = b.fetchLog.filter((f) => f.url === '/api/campaign' && f.opts.method === 'PATCH').map((f) => JSON.parse(f.opts.body).mission);
+  eq(sent, [m1, m3], 'the second write carries the whole of the last mission, whatever the first held');
+  const q = ref.update({ mission: null });
+  eq('mission' in snaps[snaps.length - 1].data(), false, 'optimistic null removes it');
+  await q;
+  eq('mission' in api.campaign, false, 'and on the server');
+  const q1 = ref.update({ mission: m1 }), q2 = ref.update({ mission: null });
+  eq('mission' in snaps[snaps.length - 1].data(), false, 'a mission then null in one go: gone');
+  await Promise.all([q1, q2]);
+  eq('mission' in api.campaign, false);
   un();
 });
 

@@ -17,6 +17,8 @@
 //   (n) single rooms (M4 step 5, map kit 0.9): a room opened on its own, alone in a closed band or on top of a band, shows that room and no
 //       hidden room's name, tint, wall, door or fixture; the player copy is renumbered 1..k so it never says how many rooms are shut; the
 //       markers follow the same rule as the kit (band OR own entry), keyed on the room's name.
+//   (o) the players' mission (VV6): over a sweep of nights the PATCH body holds no GM-ONLY marker of the section 5 fixture, a marker put in a player-safe field is
+//       stopped by the screen (with controls), and the mission reaches the players through one write and the gate, never the display push.
 //   (i) the chase strip (the Chase panel): a hidden opposing clock, the roll lines and GM notes never reach the svg sent to the iPad,
 //       over a fuzzed set of invented chases, and the page sends a chase only through chaseDisplay (map kit 0.6's B68Map.chase; until
 //       the vendored kit has it, checks/runtime/fixtures/chase-kit-stub.js stands in).
@@ -942,6 +944,125 @@ await test('(n) markers follow the kit\'s rule, keyed on the room\'s NAME: a PC 
     if (!/roomShown\(/.test(body)) throw new Error(fn + ' no longer decides "shown" with roomShown');
     if (/reveal\.indexOf\((r|room)\.band\)/.test(body)) throw new Error(fn + ' still tests a band alone');
   }
+});
+
+/* ---------- (o) the players' mission (VV6; design 5.7): the PATCH body holds only what a player may read ----------
+   The section 5 fixture marks every GM-ONLY string "GM-ONLY-...". A controller (the real mission-publish.js, the real ball.js, the page's own whole-word
+   test) is driven over a sweep of nights; every body it would PATCH is collected. None holds a marker. Positive controls: the fixture holds the markers, the
+   bodies hold the player-safe words, and a marker put into a player-safe field is stopped by the screen (and is in the payload when nothing screens it). */
+const MBALL = createRequire(import.meta.url)(path.join(ROOT, 'app', 'gm', 'ball.js'));
+const MPUB = createRequire(import.meta.url)(path.join(ROOT, 'app', 'gm', 'mission-publish.js'));
+const MFX = JSON.parse(read(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'pelican-play-v2.json')));
+const MROOMS = MFX.zones.flatMap((z) => z.rooms);
+const mplay = (mut) => { const p = JSON.parse(JSON.stringify(MFX)); if (mut) mut(p); return MBALL.checkPlay(p, MROOMS).play; };
+const MT = (hhmm) => MBALL.minuteOf(hhmm, '21:00');
+const MPCS = [{ id: 'pc_a', name: 'Ana Quill', owner: 'u1' }, { id: 'pc_b', name: 'Bo Tarn', owner: 'u2' }];
+const MARKERS = [...new Set(JSON.stringify(MFX).match(/GM-ONLY-[A-Z0-9-]+/g))];
+/* run one night through the real controller: returns every body it sent, and what it refused */
+async function mnight(play, states, deny) {
+  const bodies = [], timers = []; let clock = 0, cur = null;
+  const ctl = MPUB.create({
+    ball: MBALL, source: () => ({ play, state: cur.state, clocks: cur.clocks || [{ name: 'Fuse', filled: 2, hidden: false }], pcs: MPCS, open: cur.open || MROOMS,
+      deny: () => ({ names: (deny && deny.names) || [], secrets: Array.isArray(play.secret) ? play.secret : [] }) }),
+    send: async (m) => { bodies.push(JSON.stringify({ mission: m })); return true; }, stored: () => null, namesHit: GP.namesHit,
+    toast() {}, delay: (fn, ms) => { const h = { fn, at: clock + ms }; timers.push(h); return h; }, cancel: (h) => { const i = timers.indexOf(h); if (i >= 0) timers.splice(i, 1); },
+  });
+  const refused = [];
+  ctl.onPublished((e) => { if (e.refused) refused.push(e.refused); });
+  for (const s of states) {
+    cur = s; ctl.changed();
+    const due = timers.splice(0); clock += 800; due.forEach((t) => t.fn());
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  return { bodies, refused };
+}
+const msweep = () => {
+  const told = [{}, { I1: 'crew' }, { I1: 'crew', I2: ['pc_a'], I3: 'crew', I4: ['pc_b'] }, { I1: ['pc_a'], I2: 'crew', I3: 'crew', I4: 'crew' }];
+  const heard = [{}, { A: { pc_a: 90 } }, { A: { pc_a: 90, pc_b: 95 }, B: { pc_a: 100, pc_b: 100 } }];
+  const crews = [{ pc_a: { room: 'Showroom', disguise: 'guard' }, pc_b: { room: MROOMS[2], disguise: 'cook' } },
+    { pc_a: { room: 'Private card rooms', disguise: 'guest', noticed: true, blown: ['cook'], items: ['key'] }, pc_b: { room: 'Luxury penthouse', disguise: 'guard', busy: MT('23:00') } }];
+  const out = []; let n = 0;
+  for (const t of told) for (const h of heard) for (const c of crews) for (const tt of [0, 45, 75, 150, 215, 225]) {
+    out.push({ state: { v: 2, site: 'The Pelican Rooms', start: 45, t: tt, crew: c, told: t, heard: h, steps: n % 2 ? { A: [true, false] } : {}, ways: n % 3 === 0 ? { B: 'done' } : {}, over: n % 5 === 0 ? { od: { delay: 30 }, iv: { gone: true } } : {} }, clocks: [{ name: 'Fuse', filled: n % 7, hidden: n % 11 === 0 }] });
+    n++;
+  }
+  return out;
+};
+
+await test('(o) the section 5 fixture holds the markers in its GM-only fields (positive control: the sweep below would see one)', () => {
+  if (MARKERS.length < 30) throw new Error('only ' + MARKERS.length + ' markers in the fixture');
+  const play = mplay();
+  if (!JSON.stringify(play).includes('GM-ONLY')) throw new Error('the checked play dropped the markers');
+  const safe = JSON.stringify(MBALL.missionFor(MBALL.playerView(play, { crew: {}, told: {} }, MROOMS), { crew: {}, told: {} }, 0, MPCS));
+  if (safe.includes('GM-ONLY')) throw new Error('control: an empty night already leaks');
+});
+
+await test('(o) over 100+ nights (every beat, told, heard, carried, costume, tick, alarm), no body the controller PATCHes holds a GM-ONLY marker; the player-safe words do reach it', async () => {
+  const states = msweep(), { bodies, refused } = await mnight(mplay(), states, { names: [] });
+  if (states.length < 100) throw new Error('only ' + states.length + ' states');
+  if (bodies.length < 50) throw new Error('only ' + bodies.length + ' bodies were sent');
+  if (refused.length) throw new Error('the screen refused a clean night: ' + JSON.stringify(refused[0]));
+  const all = bodies.join('\n');
+  MARKERS.forEach((m) => { if (all.includes(m)) throw new Error('a marker reached the PATCH body: ' + m); });
+  ['The Last Hand', 'Going Up', 'The speeches', 'A brass key', 'She never leaves a table while she\'s winning.', 'Late, at the cards', 'The programme: speeches at ten', 'Ana Quill'].forEach((w) => {
+    if (!all.includes(w)) throw new Error('positive control: "' + w + '" never reached a body, so the sweep proved nothing about it');
+  });
+  if (all.includes('Odette Marsh')) throw new Error('the target\'s name went out');
+});
+
+await test('(o) a marker put into a player-safe field is stopped by the screen, one marker per field kind, and is in the payload when nothing screens it (the control)', async () => {
+  const fields = {
+    'an event pub': (p, m) => { p.events[0].pub = 'On now: ' + m; },
+    'an intel text': (p, m) => { p.intel[0].text = 'They say ' + m; },
+    'a way\'s public name': (p, m) => { p.ways[0].pubName = m; },
+    'a lead line': (p, m) => { p.ways[0].lead.line = m + ' is the word'; },
+    'a way\'s window': (p, m) => { p.ways[1].window.pub = m; },
+    'a zone label': (p, m) => { p.zones[0].label = m; },
+    'a disguise label': (p, m) => { p.disguises[0].label = m; },
+    'an item label': (p, m) => { p.items[0].label = m; },
+    'an alarm line': (p, m) => { p.alarm.pub[2] = m; },
+    'the clock label': (p, m) => { p.clock.label = m; },
+  };
+  const hot = { v: 2, site: 'x', start: 0, t: MT('22:00'), crew: { pc_a: { room: 'Showroom', disguise: 'guest', items: ['key'] }, pc_b: { room: 'Cocktail lounge', disguise: 'guest' } },
+    told: { I1: 'crew', I2: 'crew' }, heard: { A: { pc_a: 10, pc_b: 10 }, B: { pc_a: 10 } }, steps: {} };
+  const night = [{ state: hot, clocks: [{ name: 'Fuse', filled: 3, hidden: false }] }];
+  let ran = 0;
+  for (const [what, set] of Object.entries(fields)) {
+    const play = mplay((p) => { set(p, 'GM-ONLY-SECRET-1'); });
+    /* the control: the engine alone puts it in the mission, so the screen is what stands between */
+    const raw = JSON.stringify(MPUB.buildMission(MBALL, { play, state: hot, clocks: night[0].clocks, pcs: MPCS, open: MROOMS }, 1));
+    if (!raw.includes('GM-ONLY-SECRET-1')) throw new Error('control: ' + what + ' did not carry the marker to the mission (the test would prove nothing)');
+    const r = await mnight(play, night, { names: [] });
+    if (r.bodies.join('').includes('GM-ONLY')) throw new Error(what + ': a marker was PATCHed');
+    if (r.bodies.length !== 0 || r.refused.length !== 1 || r.refused[0].kind !== 'secret') throw new Error(what + ': not refused as a secret word (' + JSON.stringify(r.refused) + ', ' + r.bodies.length + ' sent)');
+    ran++;
+  }
+  /* and the hidden NPC / clock names (the page's hiddenSecretNames) in a mission string */
+  for (const [what, set] of Object.entries({ 'an event pub': fields['an event pub'], 'an intel text': fields['an intel text'], 'a zone label': fields['a zone label'] })) {
+    const play = mplay((p) => { set(p, 'Maren Holt'); });
+    const r = await mnight(play, night, { names: ['Maren Holt'] });
+    if (r.bodies.length || !r.refused.length || r.refused[0].name !== 'Maren Holt') throw new Error(what + ': a hidden NPC\'s name was not stopped');
+    const clean = await mnight(mplay((p) => { set(p, 'Maren Holts'); }), night, { names: ['Maren Holt'] });
+    if (clean.bodies.length !== 1) throw new Error(what + ': control: a longer word is not the name, so it goes (' + clean.bodies.length + ')');
+    ran++;
+  }
+  if (ran < 13) throw new Error('only ' + ran + ' variants ran');
+});
+
+await test('(o) the page\'s mission path reaches the players through one write and the gate: no display push, no cards on the display route, the overlay by showOverlay', () => {
+  const mod = read(path.join(ROOT, 'app', 'gm', 'mission-publish.js')).replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const bad of [/pushDisplay/, /setDisplay/, /patchAmbient/, /fetch\(/, /innerHTML/, /\.display\(/]) if (bad.test(mod)) throw new Error('mission-publish.js uses ' + bad);
+  const src = read(path.join(ROOT, 'app', 'gm-page.js')), from = src.indexOf('the players\' mission (app/gm/mission-publish.js'), to = src.indexOf('the heat / wanted sync: campaign(doc) feeds it');
+  if (from < 0 || to < from) throw new Error('the mission block is not where it was');
+  const block = src.slice(from, to).replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const bad of [/pushDisplay\(/, /setDisplay/, /patchAmbient\(/, /gate\.mark/]) if (bad.test(block)) throw new Error('the mission block uses ' + bad);
+  if (!/overlay: function \(o\) \{ return S === me \? showOverlay\(o\)/.test(block)) throw new Error('the overlay no longer goes through showOverlay (the gate)');
+  if (!/a\.publishMission\(m\)/.test(block)) throw new Error('the mission no longer goes out through the api\'s publishMission');
+  const boot = read(path.join(ROOT, 'app', 'boot.js')), pm = boot.slice(boot.indexOf('publishMission: function'), boot.indexOf('publishMission: function') + 500);
+  if (!/campRef\.update\(\{ mission:/.test(pm)) throw new Error('boot.js publishMission is not a campaign update');
+  const server = read(path.join(ROOT, 'functions', 'api', 'gm', 'display.js')).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  if (/\bcards\b/.test(server)) throw new Error('the display route mentions cards');
 });
 
 console.log(failed ? `\n${failed} FAILED` : '\nALL PASSED');

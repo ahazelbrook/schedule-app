@@ -306,6 +306,7 @@ try {
   check(await G.page.$$eval(BEAT + ' [data-vv="dawn"]', (b) => b.length) === 1, 'the fx event carries one False dawn button');
 
   /* False dawn asks first (it reuses the page's runDawn); a no sends nothing */
+  await api('PATCH', '/gm/ambient', { overlay: null });        /* VV6: a Next onto the speeches left its overlay in the ambient document */
   answer.no = true; asked.length = 0;
   const amb = async () => (await api('GET', '/gm/ambient')).json;
   await G.page.click(BEAT + ' [data-vv="dawn"]');
@@ -468,7 +469,8 @@ try {
 
   /* ---- 10. nothing leaked: the iPad's payload and the campaign document ---- */
   const camp = (await api('GET', '/campaign')).json;
-  check(!JSON.stringify(camp).includes('"mission"'), 'no mission in the campaign document (publishing is VV6)');
+  const pub = camp.doc && camp.doc.mission;
+  check(!!pub && pub.v === 1 && pub.seq >= 1 && ['GM-ONLY', 'Odette'].every((w) => !JSON.stringify(pub).includes(w)), 'the night is published to the campaign document (VV6), with no GM-only text and no target name');
   const disp = JSON.stringify((await api('GET', '/gm/display')).json || {});
   check(['GM-ONLY', 'Odette', 'Wren', 'Pip Quill', 'Fuse'].every((w) => !disp.includes(w)), 'the iPad payload carries no GM-only text, no person and no clock name');
   await G.c.close();

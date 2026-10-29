@@ -1521,6 +1521,7 @@
     if (me.sttTimer) { W.clearInterval(me.sttTimer); me.sttTimer = null; }
     if (me.cogm) { cogmStop(me); me.cogm = null; }
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
+    if (me.mission) { try { me.mission.flush(); } catch (e) {} me.mission.destroy(); me.mission = null; }   /* a publish that is waiting goes now */
     apUnmount(me);
     S = null;
     setApp(false);
@@ -1668,7 +1669,7 @@
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready'; S.prepKey = null;
     mountAssist();
-    layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack(); apMount();
+    layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack(); apMount(); mountMission();
     /* listening: every 5 s while the iPad tab is open, every 15 s otherwise (the top bar shows it) */
     if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden) { if (S.panel === 'ipad' || n2 % 3 === 0) loadStt(); renderBeat(); } }, 5000); }
     if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
@@ -3043,6 +3044,7 @@
     base.site = name;
     Object.keys(change).forEach(function (k) { if (change[k] === null || change[k] === undefined) delete base[k]; else base[k] = change[k]; });
     var ok = patch({ ball: replacePatch(old, base) });
+    if (ok && S.mission) S.mission.changed();     /* the players' mission follows the ball (debounced; a v2 night only; B68GmMission) */
     if (ok && !quiet) liveTokens();         /* a marker or a pin moved, or a room opened or closed: while the map is live on the iPad, it follows (M3, M4 step 5) */
     return ok;
   }
@@ -3313,7 +3315,13 @@
     return out;
   }
   /* THE CALL SITE VV6 FILLS: publish the mission for ball.t = t. why is 'start', 'beat' or 'jump'. Nothing is sent today. */
-  function runPublish(t, why) {}
+  /* >>> VV6: the mission follows ball.t through ballSet (debounced, in mountMission). Here: a Next lays the public event's overlay.
+     rvHost.set stashes the time before the write (S.rvPrevT); 'beat' forward is Next, 'beat' back, 'jump' and 'start' are not, and a peek never calls this. */
+  function runPublish(t, why) {
+    var from = S ? S.rvPrevT : undefined; if (S) S.rvPrevT = undefined;
+    if (S && S.mission && why === 'beat' && typeof from === 'number' && t > from) S.mission.landed(from, t, 'next');
+  }
+  /* <<< VV6 */
   function runMapSvg() {
     var K = W.B68Map, rs = runSite(); if (!rs || !K || !K.render || !S.locRoll) return '';
     var mu = mapUi(), o = mapOpts(mu, 'gm', revealEntries(mu)), sig = runApply(o), r;
@@ -3328,7 +3336,7 @@
     return {
       site: function () { var rs = runV2(); return rs ? { name: rs.name, play: rs.play } : null; },
       state: function () { var rs = runV2(); return rs ? ballDoc(rs.name) : {}; },
-      set: function (change, quiet) { var rs = runV2(); if (!rs) return false; var ok = ballSet(rs.name, change, quiet === true); if (ok && !quiet) runDraw(true); return !!ok; },
+      set: function (change, quiet) { var rs = runV2(); if (!rs) return false; var prev = ballDoc(rs.name).t; var ok = ballSet(rs.name, change, quiet === true); if (ok && change && 't' in change) S.rvPrevT = prev; /* VV6 */ if (ok && !quiet) runDraw(true); return !!ok; },
       pcs: runPcs, floors: function () { var rs = runV2(); return rs ? runFloors(rs) : { list: [], floorOf: {} }; }, isOpen: runIsOpen,
       openRoom: function (name, on) { roomOpen(name, on); }, mapSvg: runMapSvg,
       clockNamed: function (name) { var l = tableClocks().filter(function (c) { return str(c.name).trim() === name; }); return l.length ? l[0] : null; },
@@ -3966,6 +3974,93 @@
     if (S && isObj(S.npcs)) Object.keys(S.npcs).forEach(function (id) { var d = S.npcs[id]; if (isObj(d) && d.revealed !== true) { if (str(d.name).trim()) out.push(d.name); if (str(d.alias).trim()) out.push(d.alias); } });
     tableClocks().forEach(function (c) { if (c.hidden && str(c.name).trim()) out.push(c.name); });
     return out;
+  }
+  /* ---------- the players' mission (app/gm/mission-publish.js, design 5.1, 5.5c, 5.7) ----------
+     A v2 night publishes what the players may read of it: the band (mission.hud, which the iPad polls) and one card per PC (which phones read
+     from the campaign document). The page hands the module a SOURCE (the v2 play block, the ball document, the table clocks, the filed PCs
+     with their owners and the rooms the players can see) and the module builds it blind (ball.playerView, then ball.missionFor), screens every
+     string and writes PATCH /api/campaign { mission }. The time published is ball.t, never a peek (S.runT is page-local and is not read).
+     The deny list is the map's hidden names (tokenHidden: hidden rooms, threats, the watcher), the hidden NPCs and clocks
+     (hiddenSecretNames) and play.secret. The people's and costumes' labels are NOT in it: a card names its own costume. */
+  function missionSource() {
+    var rs = runSite(); if (!rs || !S.locRoll || rs.play.v !== 2) return null;
+    var reveal = revealList(mapUi()).concat(cleanRooms(ballDoc(rs.name).open).map(function (n) { return 'room:' + n; }));     /* the Run view's rule: runIsOpen */
+    var open = (Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : []).filter(function (r) { return roomShown(r, reveal) && str(r.name); }).map(function (r) { return str(r.name); });
+    var pcs = dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), owner: str(c.owner) }; });
+    var play = rs.play, roll = S.locRoll;
+    return { play: play, state: ballDoc(rs.name), clocks: tableClocks(), pcs: pcs, open: open,
+      deny: function () { return { names: tokenHidden(roll, reveal, []).concat(hiddenSecretNames()), secrets: (Array.isArray(play.secret) ? play.secret : []).filter(function (x) { return typeof x === 'string'; }) }; } };
+  }
+  /* an unrevealed NPC whose name or alias is this one */
+  function hiddenNpcNamed(name) {
+    var n = fold(name), ids = Object.keys(S && isObj(S.npcs) ? S.npcs : {});
+    for (var i = 0; i < ids.length; i++) { var d = S.npcs[ids[i]]; if (isObj(d) && d.revealed !== true && n && (fold(d.name) === n || fold(d.alias) === n)) return { id: ids[i], name: str(d.name).trim() || str(name) }; }
+    return null;
+  }
+  /* Reveal <name> and send: the cast document's own reveal (as Put on stage and the co-GM do it), after asking. -> true when done */
+  function missionReveal(npc) {
+    var ref = npcRef(npc.id); if (!ref) { toast('The cast is not available here.', true); return Promise.resolve(false); }
+    if (!W.confirm(npc.name + ' is hidden from the players. Reveal them so the band and cards can name them?')) return Promise.resolve(false);
+    var d = S && S.npcs ? S.npcs[npc.id] : null;
+    return Promise.resolve().then(function () { return ref.update({ revealed: true, firstSeen: (isObj(d) && d.firstSeen) || nowIso() }); }).then(function () {
+      if (S && isObj(S.npcs) && isObj(S.npcs[npc.id])) S.npcs[npc.id].revealed = true;      /* the screen reads the cast: do not wait for its snapshot */
+      return true;
+    });
+  }
+  /* the actionable notice (a toast with a button): one at a time, until a publish lands or it is dismissed */
+  function missionOffer(spec) {
+    if (!S || !S.root) return;
+    var box = $q('#gm-offer');
+    if (!spec) { S.offer = null; if (box && box.parentNode) box.parentNode.removeChild(box); return; }
+    S.offer = spec;
+    if (!box) { box = document.createElement('div'); box.id = 'gm-offer'; box.className = 'gm-offer'; box.setAttribute('role', 'alert'); S.root.appendChild(box); }
+    box.innerHTML = '<span class="gm-offer-t">' + esc(spec.text) + '</span> <button type="button" class="btn sm primary" data-gm="offer-go">' + esc(spec.label) + '</button> <button type="button" class="btn sm" data-gm="offer-x">Not now</button>';
+  }
+  function missionOfferGo() {
+    var spec = S && S.offer; if (!spec) return;
+    missionOffer(null);
+    Promise.resolve().then(function () { return spec.run(); }).then(null, function (e) { toast('Could not do that: ' + errText(e), true); });
+  }
+  function mountMission() {
+    var M = W.B68GmMission, B = W.B68GmBall, me = S;
+    if (me.mission) { try { me.mission.destroy(); } catch (e) {} }       /* start() runs again after a pack import */
+    me.mission = null;
+    if (!M || !B) return;
+    me.mission = M.create({
+      ball: B,
+      source: function () { return S === me ? missionSource() : null; },
+      send: function (m) { var a = me.api; if (!a || typeof a.publishMission !== 'function') return Promise.reject(new Error('The table is not available here.')); return a.publishMission(m); },
+      stored: function () { return isObj(camp) && isObj(camp.mission) ? camp.mission : null; },
+      namesHit: namesHit,
+      hiddenNpc: function (name) { return S === me ? hiddenNpcNamed(name) : null; },
+      reveal: function (npc) { return S === me ? missionReveal(npc) : Promise.resolve(false); },
+      offer: function (spec) { if (S === me) missionOffer(spec); },
+      toast: toast,
+      overlay: function (o) { return S === me ? showOverlay(o) : Promise.resolve(null); },
+      confirm: function (msg) { return W.confirm(msg); }
+    });
+    me.mission.onPublished(function (r) { if (r && r.ok && S === me) missionOffer(null); });
+    /* >>> VV6 in the Run view (app/gm/run-view.js seams): the Players chip, "End the night" in Run's menu, the Players view */
+    var RV = W.B68GmRunView, chip = function () { if (!RV || !RV.setPlayersChip) return; var st = me.mission.status(); RV.setPlayersChip(st.text || 'Players: —', st.ok); };
+    if (RV && Array.isArray(RV.menuItems) && !RV.menuItems.some(function (i) { return i.id === 'end-night'; })) {
+      RV.menuItems.push({ id: 'end-night', label: 'End the night', run: function () { var h = missionHooks(); if (h) h.endNight(); } });
+      RV.views.push({ id: 'players', label: 'Players', render: function (box) { var h = missionHooks(); if (h) h.renderPlayersView(box); else box.textContent = 'Nothing is published to the players.'; } });
+    }
+    me.mission.onPublished(function () {
+      if (S !== me) return;
+      chip();
+      var rs = runV2(); if (rs && me.rv && ballDoc(rs.name).view === 'players') me.rv.rerender();       /* the Players view follows what was published */
+    });
+    chip();
+    /* <<< VV6 */
+  }
+  /* what the Run view (VV4) calls: the module's controller for this page, and the Players view's renderer */
+  function missionHooks() {
+    var me = S, ctl = me && me.mission, M = W.B68GmMission; if (!ctl || !M) return null;
+    return {
+      onPublished: ctl.onPublished, status: ctl.status, last: ctl.last, publishNow: ctl.publishNow, endNight: ctl.endNight, landed: ctl.landed, changed: ctl.changed,
+      renderPlayersView: function (el, m) { return M.renderPlayersView(el, m === undefined ? ctl.last() : m, W.document); }
+    };
   }
   /* the heat / wanted sync: campaign(doc) feeds it (see makeCrewSync) */
   var crewSync = makeCrewSync({
@@ -4724,6 +4819,7 @@
   function charactersChanged() {
     if (!S || S.status !== 'ready' || JSON.stringify(dtPcs()) === S.dtPcSig) return;
     runStale();
+    if (S.mission) S.mission.changed();         /* a card carries its PC's name and owner */
     var a = document.activeElement, box = $q('#gm-dt');
     if (a && box && box.contains(a) && str(a.tagName).toUpperCase() === 'SELECT') return;
     renderDowntime();
@@ -5842,6 +5938,8 @@
       case 'run-step': runStep(+b.getAttribute('data-d') || 0); break;
       case 'run-next': runNext(); break;
       case 'run-dawn': runDawn(); break;
+      case 'offer-go': missionOfferGo(); break;
+      case 'offer-x': missionOffer(null); break;
       case 'run-pc': runArm('pc', str(b.getAttribute('data-id'))); break;
       case 'run-clock': runArm('clock', str(b.getAttribute('data-id'))); break;
       case 'run-room': runRoom(str(b.getAttribute('data-room'))); break;
@@ -5965,6 +6063,7 @@
     if (S && S.status === 'ready') {
       renderRail(); renderBar(); scMaybeRedraw(); runStale();
       apClocksFeed(); apSubjects();
+      if (S.mission) S.mission.noteClocks();      /* the alarm clock's fill or visibility is on the players' band */
       /* the stage changed: the NPC tab's buttons follow */
       if ((isObj(camp) && isObj(camp.scene) ? JSON.stringify(camp.scene.npcs || {}) : '') !== before) {
         [].forEach.call(S.root.querySelectorAll('[data-gm="npcstage"]'), function (b) { var on = staged(b.getAttribute('data-id')); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Off stage' : 'Put on stage'; b.classList.toggle('primary', !on); });
@@ -5985,10 +6084,15 @@
     /* for checks (gm.e2e.mjs): the current roll, and the display gate */
     _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer, svg: S.map.svg }, panel: S.panel, seg: S.seg, doc: S.doc, runCacheN: S.runCache ? S.runCache.keys.length : 0 } : null; },
     _pushDisplay: function (d) { return pushDisplay(d); },
+    _ballSet: function (change) { var rs = runSite(); return rs ? ballSet(rs.name, change) : false; },     /* for checks: what the Run view does through its host */
     /* "Claude suggests" (a later step calls this): a Show handout? item in the Rack. Returns false for an id the pack does not hold. */
     suggestHandout: function (id, why) { return suggestHandout(id, why); },
     /* overlays on the iPad (the false dawn, the autopilot): showOverlay({ kind, ms, ... }) and clearOverlay(), through the ambient document */
     showOverlay: showOverlay, clearOverlay: clearOverlay,
+    /* the players' mission (gm/mission-publish.js): null before the page is ready or without a v2 night's modules. onPublished(fn) -> off (fn({ ok, ended?, time, at, seq, error?, refused? })),
+       status() -> { ok, time, at, seq, text } ("Players: HH:MM ✓"), last(), publishNow(), endNight() (asks first), landed(from, to, how) (an overlay only for 'next'),
+       changed(), renderPlayersView(el, mission?) (the last published mission by default) */
+    mission: missionHooks,
     _ambient: function () { return { doc: AM.doc, shown: AM.shown, loaded: AM.loaded, crew: crewSync.state().lastSent }; },
     /* the autopilot's controller state, for checks (the page's own log is S.doc.ap.log), and Voice's lines as the box would hand them over */
     _autopilot: function () { return S && S.ap ? S.ap.core.state() : null; },

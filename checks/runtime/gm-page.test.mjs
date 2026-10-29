@@ -310,6 +310,7 @@ class FEl {
   addEventListener(t, fn) { (this.ls[t] = this.ls[t] || []).push(fn); }
   get textContent() { return this.kids.map((k) => (k.nodeType === 3 ? k.text : k.textContent)).join(''); } set textContent(v) { this.kids = [{ nodeType: 3, text: String(v) }]; }
   set innerHTML(h) { this.kids = []; this._html = String(h); parseInto(this, String(h), this.doc); } get innerHTML() { return this._html || ''; }
+  insertAdjacentHTML(pos, h) { const t = new FEl('div', this.doc); parseInto(t, String(h), this.doc); t.kids.forEach((k) => this.appendChild(k)); }
   appendChild(n) { n.parentNode = this; this.kids.push(n); return n; } removeChild(n) { this.kids = this.kids.filter((k) => k !== n); n.parentNode = null; return n; }
   contains(n) { for (let p = n; p; p = p.parentNode) if (p === this) return true; return false; }
   closest(sel) { const alts = parseSel(sel); for (let p = this; p && p.nodeType === 1; p = p.parentNode) if (alts.some((a) => a.length === 1 && matches(p, a[0]))) return p; return null; }
@@ -4312,6 +4313,217 @@ await test('Who is who: a session change clears the pending chips (speaker numbe
   assert.ok(await until(() => t.sent.length === 1));
   assert.ok(await until(() => chipTxt(t.h).length === 0), 'S3 is gone too');
   await t.h.save();
+});
+
+/* =====================================================================================================================
+   VV6. The players' mission, published from the page (gm/mission-publish.js; design 5.1, 5.5c, 5.7). INVENTED venue: the section 5 fixture.
+   The module's own cases (debounce, refusal, End the night, the overlay) are in gm-mission.test.mjs; these prove the PAGE feeds it the right
+   things and nothing else: the filed PCs with their owners, the rooms the players can see, ball.t and never a peek, the table's alarm clock.
+   ===================================================================================================================== */
+const RVIEW = require(path.join(ROOT, 'app', 'gm', 'run-view.js'));
+const MPUBM = require(path.join(ROOT, 'app', 'gm', 'mission-publish.js'));
+const V2FX = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'pelican-play-v2.json'), 'utf8'));
+const V2PLAY = (mut) => { const p = cl(V2FX); if (mut) mut(p); return BALL.checkPlay(p, RUN_ROOMS.map((r) => r.name)).play; };
+const V2PCS = [{ id: 'pc1', name: 'Cass Fenn', owner: 'u1' }, { id: 'pc2', name: 'Dov Ketch', owner: 'u2' }];
+const V2CAMP = { session: { number: 3 }, crew: {}, clocks: [{ id: 'c1', name: 'Fuse', size: 6, filled: 2, kind: 'danger' }] };
+const V2BALL = () => ({ site: 'The Pelican Rooms', v: 2, start: 0, t: 60, crew: { pc1: { room: 'Showroom', disguise: 'guest' }, pc2: { room: 'Cocktail lounge', disguise: 'guest' } }, told: { I1: 'crew' }, heard: { A: { pc1: 15 } } });
+async function openMission({ play, ball, camp, cast, ambient } = {}) {
+  const fg = fakeGm(undefined, Object.assign({}, prepPart, runPack(RUN_SITE(play || V2PLAY()))));
+  if (ambient !== false) addAmbient(fg);
+  fg.server.doc = { ball: Object.assign(V2BALL(), ball || {}) };
+  const sent = [];
+  const api = Object.assign({ characters: () => V2PCS, publishMission: async (m) => { if (sent.fail) throw sent.fail; sent.push(m === null ? null : cl(m)); return true; } }, cast ? cast.api : {});
+  const { K } = spyKit();
+  const h = await openPage({ fg, camp: camp || V2CAMP, over: { B68GmPrep: PR, B68Markdown: MDN, B68Map: K, B68GmBall: BALL, B68GmMission: MPUBM, B68GmRunView: RVIEW }, api });
+  h.press('r'); h.q('.pp-site[data-score="b68g-score-goose"] [data-gm="siteauth"]').click();
+  h.sent = sent; h.fg = fg; return h;
+}
+const V2MARK = /GM-ONLY/;
+/* the night moves by the ball, written as the Run view's host does (ballSet); the Run view's own clicks are in gm-mission.e2e.mjs */
+const bump = (h, d) => h.page._ballSet({ t: ((stateDoc(h).ball || {}).t || 0) + d });
+
+await test('VV6a. a change to the night publishes once, 800 ms later: ball.t, the filed PCs with their owners, seq 1 then 2, no GM-ONLY string; a floor tab publishes nothing', async () => {
+  const h = await openMission();
+  assert.ok(h.page.mission(), 'the hooks exist on a ready page');
+  await rsleep(900); assert.equal(h.sent.length, 0, 'opening the page publishes nothing');
+  bump(h, 15);
+  await rsleep(400); assert.equal(h.sent.length, 0, 'not before the wait is over');
+  assert.ok(await until(() => h.sent.length === 1, 300), 'one PATCH about 800 ms after the change');
+  const m = h.sent[0];
+  assert.equal(m.seq, 1); assert.equal(m.t, 75); assert.equal(m.hud.time, '22:15'); assert.equal(m.site, 'The Pelican Rooms');
+  assert.deepEqual(Object.keys(m.cards).sort(), ['pc1', 'pc2']);
+  assert.deepEqual([m.cards.pc1.owner, m.cards.pc2.owner, m.cards.pc1.name], ['u1', 'u2', 'Cass Fenn'], 'the filed PCs, with their owners');
+  assert.ok(!V2MARK.test(JSON.stringify(m)), 'no marker in the body');
+  assert.ok(JSON.stringify(m).includes('The programme') && JSON.stringify(m).includes('The Last Hand'), 'positive control: what was told and heard is in it');
+  assert.deepEqual(h.page.mission().status(), Object.assign({}, h.page.mission().status(), { ok: true, time: '22:15', seq: 1, text: 'Players: 22:15 ✓' }));
+  bump(h, 15);
+  assert.ok(await until(() => h.sent.length === 2, 300)); assert.equal(h.sent[1].seq, 2); assert.equal(h.sent[1].t, 90);
+  /* a floor tab, a lens: the page writes the ball, the mission is the same, nothing is sent */
+  h.page._ballSet({ floor: 1, view: 'map' });
+  await rsleep(1100); assert.equal(h.sent.length, 2, 'unchanged: not sent');
+  await h.save();
+});
+
+await test('VV6c. only a v2 night publishes: a v1 play block, and a v2 play with a ball that is not a v2 ball, send nothing', async () => {
+  const a = await openMission({ play: RUN_PLAY });
+  bump(a, 15); await rsleep(1100); assert.equal(a.sent.length, 0, 'v1: Run the site is as it was');
+  await a.save();
+  const b = await openMission({ ball: { v: null } });
+  bump(b, 15); await rsleep(1100); assert.equal(b.sent.length, 0, 'no v2 ball: no night yet');
+  await b.save();
+  const c = await openMission(); bump(c, 15); assert.ok(await until(() => c.sent.length === 1, 300), 'positive control: the v2 night does');
+  await c.save();
+});
+
+await test('VV6d. the alarm clock is the table clock the play names: its fill reaches the band; hidden, it leaves the players\' screens', async () => {
+  const h = await openMission();
+  bump(h, 15);
+  assert.ok(await until(() => h.sent.length === 1, 300));
+  assert.deepEqual(h.sent[0].hud.alarm, { name: 'Alarm', size: 6, filled: 2, text: 'Someone is looking' });
+  h.page.campaign({ session: { number: 3 }, crew: {}, clocks: [{ id: 'c1', name: 'Fuse', size: 6, filled: 4, kind: 'danger' }] });
+  assert.ok(await until(() => h.sent.length === 2, 300), 'the table ticked the clock: a PATCH, with no ball change');
+  assert.equal(h.sent[1].hud.alarm.filled, 4);
+  h.page.campaign({ session: { number: 3 }, crew: {}, clocks: [{ id: 'c1', name: 'Fuse', size: 6, filled: 4, kind: 'danger', hidden: true }] });
+  assert.ok(await until(() => h.sent.length === 3, 300)); assert.equal(h.sent[2].hud.alarm, null, 'a hidden clock: no alarm');
+  h.page.campaign({ session: { number: 3 }, crew: {}, clocks: [{ id: 'c1', name: 'Fuse', size: 6, filled: 4, kind: 'danger', hidden: true }, { id: 'c2', name: 'Other', size: 4, filled: 1, kind: 'danger' }] });
+  await rsleep(1000); assert.equal(h.sent.length, 3, 'another clock changes nothing');
+  await h.save();
+});
+
+/* a cast the page can reveal into: rig.cast edits, rig.updates records the page's writes */
+function revealRig(cast) {
+  const rig = { cast: cl(cast), cbs: [], updates: [] };
+  const snap = () => ({ docs: Object.keys(rig.cast).map((id) => ({ id, data: () => cl(rig.cast[id]) })) });
+  rig.api = { db: () => ({ collection: () => ({ onSnapshot: (cb) => { rig.cbs.push(cb); cb(snap()); return () => {}; }, doc: (id) => ({ update: async (p) => { rig.updates.push([id, cl(p)]); Object.assign(rig.cast[id], p); rig.cbs.forEach((cb) => cb(snap())); } }) }) }) };
+  return rig;
+}
+const NAMED_INTEL = () => V2PLAY((p) => { p.intel[0].text = 'The programme: Maren Holt speaks at ten'; });
+
+await test('VV6e. a hidden NPC named in the mission is not sent; the notice offers "Reveal Maren Holt and send"; taking it reveals through the cast document, then sends', async () => {
+  const rig = revealRig({ npc_v: { name: 'Maren Holt', alias: '', revealed: false, spec: {} } });
+  const h = await openMission({ play: NAMED_INTEL(), cast: rig });
+  bump(h, 15);
+  assert.ok(await until(() => h.q('#gm-offer'), 300), 'a notice with a button');
+  assert.equal(h.sent.length, 0, 'fails closed');
+  assert.match(h.q('#gm-offer').textContent, /Maren Holt/); assert.equal(h.q('#gm-offer [data-gm="offer-go"]').textContent, 'Reveal Maren Holt and send');
+  assert.equal(rig.updates.length, 0, 'asking reveals nothing');
+  /* declining the confirm: nothing happens */
+  h.br.W.confirm = () => false;
+  h.q('[data-gm="offer-go"]').click(); await rsleep(60);
+  assert.equal(rig.updates.length, 0); assert.equal(h.sent.length, 0);
+  h.br.W.confirm = () => true;
+  assert.ok(!h.q('#gm-offer'), 'taking the offer cleared the notice');
+  /* the next change tries again and the notice comes back: one element, replaced, never stacked */
+  bump(h, 15);
+  assert.ok(await until(() => h.q('#gm-offer'), 300), 'offered again'); assert.equal(h.qa('#gm-offer').length, 1);
+  h.q('[data-gm="offer-x"]').click(); assert.ok(!h.q('#gm-offer'), 'Not now takes it away');
+  assert.equal(h.sent.length, 0); assert.equal(rig.updates.length, 0, 'nothing was revealed');
+  await h.save();
+});
+
+await test('VV6e2. Reveal and send: the confirm, then the cast document says revealed, then the mission goes with the name in it', async () => {
+  const rig = revealRig({ npc_v: { name: 'Maren Holt', alias: '', revealed: false, spec: {} } });
+  const h = await openMission({ play: NAMED_INTEL(), cast: rig });
+  bump(h, 15);
+  assert.ok(await until(() => h.q('#gm-offer'), 300));
+  const asked = []; h.br.W.confirm = (m) => { asked.push(m); return true; };
+  h.q('[data-gm="offer-go"]').click();
+  assert.ok(await until(() => h.sent.length === 1, 300), 'sent after the reveal');
+  assert.match(asked[0], /Maren Holt is hidden from the players/);
+  assert.equal(rig.updates.length, 1); assert.equal(rig.updates[0][0], 'npc_v'); assert.equal(rig.updates[0][1].revealed, true); assert.ok(rig.updates[0][1].firstSeen);
+  assert.ok(JSON.stringify(h.sent[0]).includes('Maren Holt'), 'now it may name her'); assert.equal(h.sent[0].t, 75);
+  assert.ok(!h.q('#gm-offer'), 'the notice is gone');
+  await h.save();
+});
+
+await test('VV6f. a hidden CLOCK or room named in a mission string is refused with a toast (no reveal to offer); a secret word too', async () => {
+  const a = await openMission({ play: V2PLAY((p) => { p.intel[0].text = 'Watch the Slow Wick'; }), camp: { session: { number: 3 }, crew: {}, clocks: [{ id: 'c1', name: 'Fuse', size: 6, filled: 2 }, { id: 'c9', name: 'Slow Wick', size: 4, filled: 0, hidden: true }] } });
+  bump(a, 15); await rsleep(1100);
+  assert.equal(a.sent.length, 0); assert.ok(!a.q('#gm-offer'));
+  assert.ok(a.br.toasts.some(([m, bad]) => bad && /Slow Wick/.test(m)), JSON.stringify(a.br.toasts));
+  await a.save();
+  const b = await openMission({ play: V2PLAY((p) => { p.intel[0].text = 'Go through GM-ONLY-SECRET-1 quietly'; }) });
+  bump(b, 15); await rsleep(1100);
+  assert.equal(b.sent.length, 0); assert.ok(b.br.toasts.some(([m, bad]) => bad && /secret word/.test(m)));
+  await b.save();
+  /* a PC standing in a room the players cannot see: the publish still goes, with room "" on the card (the room's name is not sent); opened, the card names it */
+  const c = await openMission({ ball: { crew: { pc1: { room: 'Luxury penthouse', disguise: 'guest' }, pc2: { room: 'Cocktail lounge', disguise: 'guest' } } } });
+  bump(c, 15); await rsleep(1100);
+  assert.equal(c.sent.length, 1, 'never refused for a PC\'s own room'); assert.equal(c.sent[0].cards.pc1.room, '', 'blanked: a hidden room\'s name is not sent');
+  assert.ok(!JSON.stringify(c.sent[0]).includes('Luxury penthouse'), 'nowhere in the body'); assert.ok(!c.br.toasts.some(([m, bad]) => bad));
+  c.br.W.confirm = () => true; c.q('[data-gm="layer"][data-v="player"]').click();
+  const open = roomBtn(c, 'open', 'Luxury penthouse'); assert.ok(open, 'the room list offers it');
+  open.click(); assert.ok(await until(() => c.sent.length === 2, 400), 'opened for the players: the next mission names it'); assert.equal(c.sent[1].cards.pc1.room, 'Luxury penthouse');
+  await c.save();
+});
+
+await test('VV6k. cards only for the PCs on the job (in ball.crew) that are filed characters; a told window\'s room is blanked while its room is shut and shown when opened', async () => {
+  const h = await openMission({ ball: { crew: { pc1: { room: 'Showroom', disguise: 'guest' }, ghost: { room: 'Showroom', disguise: 'guest' } }, told: { I1: 'crew', I2: 'crew' }, heard: { A: { pc1: 15 } } } });
+  bump(h, 15); assert.ok(await until(() => h.sent.length === 1, 300));
+  assert.deepEqual(Object.keys(h.sent[0].cards), ['pc1'], 'pc2 is filed but not on the job; "ghost" is on the job but not filed');
+  const win = h.sent[0].cards.pc1.leads[0].window;
+  assert.match(win, /^23:30/); assert.ok(!win.includes('Private card rooms'), 'the shut room is not named in the window: ' + win);
+  await h.save();
+  const o = await openMission({ ball: { open: ['Private card rooms'], told: { I1: 'crew', I2: 'crew' }, heard: { A: { pc1: 15 } } } });
+  bump(o, 15); assert.ok(await until(() => o.sent.length === 1, 300));
+  assert.ok(o.sent[0].cards.pc1.leads[0].window.includes('Private card rooms'), 'positive control: opened, the same window names it');
+  await o.save();
+});
+
+await test('VV6g. End the night asks, then PATCHes mission null; the Players view shows what was published, then nothing', async () => {
+  const h = await openMission();
+  bump(h, 15);
+  assert.ok(await until(() => h.sent.length === 1, 300));
+  const box = h.br.doc.createElement('div'); h.root.appendChild(box);
+  h.page.mission().renderPlayersView(box);
+  assert.match(box.textContent, /22:15/); assert.match(box.textContent, /Cass Fenn/); assert.match(box.textContent, /Dov Ketch/);
+  bump(h, 15); /* the state moves on; the view keeps what was last published until the next publish */
+  h.page.mission().renderPlayersView(box); assert.match(box.textContent, /22:15/, 'not the GM state');
+  h.br.W.confirm = () => false;
+  assert.equal((await h.page.mission().endNight()).skipped, 'declined'); assert.equal(h.sent.filter((m) => m === null).length, 0);
+  h.br.W.confirm = () => true;
+  const r = await h.page.mission().endNight();
+  assert.equal(r.ended, true); assert.equal(h.sent[h.sent.length - 1], null, 'PATCH { mission: null }');
+  h.page.mission().renderPlayersView(box); assert.match(box.textContent, /Nothing is published/);
+  const n = h.sent.length; bump(h, 15); await rsleep(1100);
+  assert.equal(h.sent.length, n, 'an ended night stays ended');
+  await h.save();
+});
+
+await test('VV6h. the overlay: Next landing on a public event lays its pub over the iPad for 8 s, through the gate; Back and a peek lay nothing', async () => {
+  const h = await openMission();
+  const mp = h.page.mission(), amb = () => h.fg.server.ambPatches.filter((p) => p.overlay && p.overlay.kind);
+  await mp.landed(45, 60, 'back'); await mp.landed(45, 60, 'peek'); assert.equal(amb().length, 0);
+  await mp.landed(45, 60, 'next');
+  assert.equal(amb().length, 1); const ov = amb()[0].overlay;
+  assert.deepEqual([ov.kind, ov.text, ov.ms], ['text', 'The speeches', 8000]); assert.ok(ov.id && Object.keys(ov).sort().join() === 'id,kind,ms,text', 'the overlay shape the gate knows');
+  assert.ok(!V2MARK.test(JSON.stringify(h.fg.server.ambPatches)));
+  /* a hidden NPC's name in the pub is refused by the module AND would be by the gate: nothing is sent */
+  const rig = revealRig({ npc_v: { name: 'Maren Holt', alias: '', revealed: false, spec: {} } });
+  const g = await openMission({ play: V2PLAY((p) => { p.events[0].pub = 'Maren Holt takes the stage'; }), cast: rig });
+  await g.page.mission().landed(45, 60, 'next'); assert.equal(g.fg.server.ambPatches.filter((p) => p.overlay && p.overlay.kind).length, 0);
+  await h.save(); await g.save();
+});
+
+await test('VV6i. closing the page sends a publish that is waiting (the GM leaves the tab inside the 800 ms)', async () => {
+  const h = await openMission();
+  bump(h, 15);
+  assert.equal(h.sent.length, 0);
+  await h.page.close(); await rsleep(30);
+  assert.equal(h.sent.length, 1, 'flushed on close'); assert.equal(h.sent[0].t, 75);
+  await rsleep(1000); assert.equal(h.sent.length, 1, 'and only once');
+});
+
+await test('VV6j. a send the server refuses (a network error) keeps the night going: a toast, the chip loses its tick, the next change tries again', async () => {
+  const h = await openMission();
+  h.sent.fail = Object.assign(new Error('offline'), { status: 503 });
+  const seen = []; h.page.mission().onPublished((e) => seen.push(e.ok));
+  bump(h, 15);
+  assert.ok(await until(() => seen.length === 1, 300)); assert.equal(seen[0], false);
+  assert.ok(h.br.toasts.some(([m, bad]) => bad && /not updated/.test(m)));
+  h.sent.fail = null; bump(h, 15);
+  assert.ok(await until(() => h.sent.length === 1, 300)); assert.equal(h.sent[0].t, 90); assert.deepEqual(seen, [false, true]);
+  await h.save();
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);
