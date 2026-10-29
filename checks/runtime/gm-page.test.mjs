@@ -1524,6 +1524,45 @@ await test('11f. listening: a speaker in the lines is a button; it opens Who is 
   await h.save();
 });
 
+await test('11f2. listening: Clear names sends a null for every named number; the lines show only the doc’s session, all of them when it has none', async () => {
+  const fg = fakeGm(), sent = [];
+  let doc = { want: 'on', session: '4', speakers: { 0: 'Speaker A', 2: 'Speaker B' }, status: { state: 'listening', at: new Date().toISOString(), lines: 3 } };
+  fg.gm.stt = async () => ({ doc });
+  fg.gm.transcript = async () => ({ lines: [{ speaker: 0, kind: 'line', session: '3', text: 'Older words.' }, { speaker: 1, kind: 'line', session: '4', text: 'Current words.' }, { speaker: 0, kind: 'line', session: '', text: 'Unstamped.' }] });
+  fg.gm.patchStt = async (p) => { sent.push(p); return { doc: Object.assign({}, doc, { speakers: {} }) }; };
+  const h = await openPage({ fg, camp: CAMP3 });
+  h.press('i');
+  assert.ok(await until(() => h.qa('#gm-stt .gm-stt-tail li').length === 1), 'only session 4’s line');
+  assert.ok(h.q('#gm-stt .gm-stt-tail').textContent.includes('Current words.') && !h.q('#gm-stt .gm-stt-tail').textContent.includes('Older'));
+  h.q('#gm-stt [data-gm="stt-clear"]').click(); await until(() => sent.length);
+  assert.equal(JSON.stringify(sent.pop()), JSON.stringify({ speakers: { 0: null, 2: null } }));
+  doc = Object.assign({}, doc, { session: '' });   // no session: today’s behaviour, every line
+  const h2 = await openPage({ fg, camp: CAMP3 });
+  h2.press('i');
+  assert.ok(await until(() => h2.qa('#gm-stt .gm-stt-tail li').length === 3), 'no session: all three lines');
+  await h.save(); await h2.save();
+});
+
+await test('11f3. listening: at most the 5 newest lines of the session show, newest last; More holds the earlier ones, shut until opened and kept across a refresh', async () => {
+  const fg = fakeGm(), lines = [];
+  for (let i = 1; i <= 12; i++) lines.push({ speaker: i % 2, kind: 'line', session: '4', text: 'Line number ' + i + '.' });
+  lines.unshift({ speaker: 0, kind: 'line', session: '3', text: 'Last time.' });
+  fg.gm.stt = async () => ({ doc: { want: 'on', session: '4', speakers: {}, status: { state: 'listening', at: new Date().toISOString(), lines: 12 } } });
+  fg.gm.transcript = async () => ({ lines });
+  const h = await openPage({ fg, camp: CAMP3 });
+  h.press('i');
+  assert.ok(await until(() => h.qa('#gm-stt ol.gm-stt-now li').length === 5));
+  const shown = h.qa('#gm-stt ol.gm-stt-now li').map((li) => li.textContent);
+  assert.ok(shown[0].includes('Line number 8.') && shown[4].includes('Line number 12.'), 'the newest five, newest last: ' + shown.join('|'));
+  const more = h.q('[data-sttmore]'); assert.ok(more && !more.hasAttribute('open'), 'More is shut by default');
+  assert.equal(h.qa('#gm-stt .gm-stt-more li').length, 7, 'the earlier lines of this session, not last session’s');
+  assert.ok(!h.q('#gm-stt').textContent.includes('Last time.'));
+  more.open = true; dispatch(more, 'toggle');
+  h.q('#gm-stt [data-gm="stt-name"]').click();   // any re-render
+  assert.ok(h.q('[data-sttmore]').hasAttribute('open'), 'More stays open across a render');
+  await h.save();
+});
+
 await test('11g. clocks to the iPad: Show on iPad sends the players’ clocks as a checked svg; a clock changing on the table sends them again', async () => {
   const camp = { session: { number: 3 }, crew: {}, clocks: [{ name: 'Bluecoats close in', filled: 2, size: 6 }, { name: 'Secret plan', filled: 1, size: 4, hidden: true }] };
   const fg = fakeGm(), h = await openPage({ fg, camp });

@@ -979,6 +979,20 @@ async function main() {
     expect(j.stt.want === 'off' && j.stt.session === '9.1', 'off again: ' + JSON.stringify(j.stt));
   });
 
+  await step('stt names: a new session starts with none, the same session keeps them, names sent with the change survive, null clears', async () => {
+    const doc = async () => (await gm('GET', '/api/gm/stt')).json.doc;
+    status(await gm('PATCH', '/api/gm/stt', { session: '40', speakers: { 0: 'Speaker A', 1: 'Speaker B' } }), 200);
+    status(await gm('PATCH', '/api/gm/stt', { session: '40', want: 'on' }), 200);
+    expect(JSON.stringify((await doc()).speakers) === '{"0":"Speaker A","1":"Speaker B"}', 'same session keeps names');
+    status(await gm('PATCH', '/api/gm/stt', { session: '41' }), 200);
+    expect(JSON.stringify((await doc()).speakers) === '{}', 'a new session clears names: ' + JSON.stringify((await doc()).speakers));
+    status(await gm('PATCH', '/api/gm/stt', { session: '42', speakers: { 2: 'Speaker C' } }), 200);
+    expect(JSON.stringify((await doc()).speakers) === '{"2":"Speaker C"}', 'names sent with the change survive');
+    status(await gm('PATCH', '/api/gm/stt', { speakers: { 2: null } }), 200);
+    expect(JSON.stringify((await doc()).speakers) === '{}', 'null clears');
+    status(await gm('PATCH', '/api/gm/stt', { want: 'off' }), 200);
+  });
+
   await step('state: {} until written; PATCH merges maps, null deletes, arrays replace; the 256 KiB cap; /api/campaign untouched', async () => {
     const campBefore = (await gm('GET', '/api/campaign')).json;
     let r = await gm('GET', '/api/gm/state'); status(r, 200);

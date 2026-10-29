@@ -2975,7 +2975,8 @@
   function foldOpen(id) { return foldState().indexOf(id) >= 0; }
   function onToggle(ev) {
     var d = ev.target; if (!d || !d.getAttribute) return;
-    if (d.hasAttribute('data-sttfold')) { STT.fold = !!d.open; return; }   /* "Who is who": kept open or shut across the 5 s refresh */
+    if (d.hasAttribute('data-sttfold')) { STT.fold = !!d.open; return; }
+    if (d.hasAttribute('data-sttmore')) { STT.more = !!d.open; return; }   /* "More" lines: same */   /* "Who is who": kept open or shut across the 5 s refresh */
     if (!d.hasAttribute('data-fold')) return;
     var id = d.getAttribute('data-fold'), a = foldState().filter(function (x) { return x !== id && /^[a-z-]{1,24}$/.test(x); });
     if (d.open) a.push(id);
@@ -4045,13 +4046,21 @@
   var STT_LABEL = { idle: 'Not listening', starting: 'Starting…', listening: 'Listening', reconnecting: 'Reconnecting…', stopped: 'Stopped', error: 'Stopped by an error' };
   function loadStt() {
     var g = gmApi(); if (!g || typeof g.stt !== 'function') return;
-    Promise.all([g.stt(), g.transcript({ tail: 8 }).then(function (r) { return r; }, function () { return null; })]).then(function (res) {
+    Promise.all([g.stt(), g.transcript({ tail: 30 }).then(function (r) { return r; }, function () { return null; })]).then(function (res) {
       STT.doc = res[0] && res[0].doc || null; STT.at = res[0] && res[0].updatedAt || null; STT.tail = res[1] && Array.isArray(res[1].lines) ? res[1].lines : STT.tail; STT.error = ''; STT.loaded = true; renderStt(); renderBar();
     }, function (e) { STT.error = errText(e); STT.loaded = true; renderStt(); renderBar(); });
   }
   function sttPatch(p) {
     var g = gmApi(); if (!g || typeof g.patchStt !== 'function') { toast('Listening needs the hosted app.', true); return; }
     Promise.resolve().then(function () { return g.patchStt(p); }).then(function (r) { STT.doc = r && r.doc || STT.doc; STT.at = r && r.updatedAt || STT.at || nowIso(); renderStt(true); renderBar(); }, function (e) { toast('Could not change listening: ' + errText(e), true); });
+  }
+  /* the doc's session, when it has one: only that session's lines (older ones are last time's speakers); none: every line as before */
+  function sttLines(doc) {
+    var ses = doc && typeof doc.session === 'string' ? doc.session : '';
+    return ses ? STT.tail.filter(function (l) { return String(l && l.session != null ? l.session : '') === ses; }) : STT.tail;
+  }
+  function sttLi(d, l) {
+    return '<li>' + (l.kind === 'mark' ? '<i>— ' + esc(l.text || 'reconnected') + ' —</i>' : (typeof l.speaker === 'number' ? '<button type="button" class="gm-lab gm-stt-who" data-gm="stt-name" data-sp="' + l.speaker + '" title="Name this speaker">' + esc(sttName(d, l.speaker)) + '</button>' : '<span class="gm-lab">' + esc(sttName(d, l.speaker)) + '</span>') + ' ' + esc(l.text)) + '</li>';
   }
   function sttName(doc, sp) { var n = doc && isObj(doc.speakers) ? doc.speakers[String(sp)] : ''; return sp === null || sp === undefined ? '?' : n || 'S' + sp; }
   function renderStt(force) {
@@ -4064,7 +4073,9 @@
       : on && (st.state === 'idle' || st.state === 'stopped' || st.state === 'error') ? 'Waiting for the iPad: tap “Tap to start listening” on it.'
       : (STT_LABEL[st.state] || st.state) + (st.lines ? ' · ' + st.lines + ' lines sent' : '') + (age !== null ? ' · ' + (age < 60 ? age + ' s' : Math.round(age / 60) + ' min') + ' ago' : '');
     var stale = on && st.state === 'listening' && age !== null && age > 40;
-    var seen = STT.tail.reduce(function (m, l) { return typeof l.speaker === 'number' && l.speaker > m ? l.speaker : m; }, -1);
+    var tail = sttLines(d);
+    var seen = tail.reduce(function (m, l) { return typeof l.speaker === 'number' && l.speaker > m ? l.speaker : m; }, -1);
+    var named = Object.keys(isObj(d.speakers) ? d.speakers : {}).filter(function (k) { return d.speakers[k]; });
     var nums = []; for (var i = 0; i <= Math.max(4, seen, Math.max.apply(null, Object.keys(isObj(d.speakers) ? d.speakers : {}).map(Number).concat([-1]))); i++) nums.push(i);
     box.innerHTML = '<section class="gm-box gm-stt"><h3 class="gm-band">Listening' + (on ? ' <span class="gm-stt-on">● on</span>' : '') + '</h3><div class="gm-ipad-body">' +
       '<p class="gm-ipad-line' + (stale || st.state === 'error' ? ' bad' : '') + '" role="status">' + esc(line) + (stale ? ' No word from the iPad for a while: is the display open?' : '') + '</p>' +
@@ -4073,10 +4084,10 @@
         : '<button type="button" class="btn primary" data-gm="stt-on" title="The iPad shows a button: tap it once to open the mic">Start listening</button>') + '</div>' +
       '<details class="gm-fold" data-sttfold="1"' + ((STT.fold === undefined ? on : STT.fold) ? ' open' : '') + '><summary>Who is who</summary><div class="gm-stt-spk">' + nums.map(function (n) {
         return '<label class="gm-field" for="gm-stt-s' + n + '"><span class="gm-lab">S' + n + '</span><input type="text" id="gm-stt-s' + n + '" data-sttspk="' + n + '" maxlength="60" autocomplete="off" placeholder="Name (Character)" value="' + esc(isObj(d.speakers) ? d.speakers[String(n)] || '' : '') + '"></label>';
-      }).join('') + '</div><p class="gm-dim">Numbers are Deepgram’s guesses and restart after a reconnect. Names apply to lines the PC copies from now on. Tap a name in the lines below to set it.</p></details>' +
-      (STT.tail.length ? '<ol class="gm-stt-tail">' + STT.tail.map(function (l) {
-        return '<li>' + (l.kind === 'mark' ? '<i>— ' + esc(l.text || 'reconnected') + ' —</i>' : (typeof l.speaker === 'number' ? '<button type="button" class="gm-lab gm-stt-who" data-gm="stt-name" data-sp="' + l.speaker + '" title="Name this speaker">' + esc(sttName(d, l.speaker)) + '</button>' : '<span class="gm-lab">' + esc(sttName(d, l.speaker)) + '</span>') + ' ' + esc(l.text)) + '</li>';
-      }).join('') + '</ol>' : '') +
+      }).join('') + '</div><p class="gm-dim">Numbers are Deepgram’s guesses and restart after a reconnect. Names apply to lines the PC copies from now on. Tap a name in the lines below to set it. A new session starts with no names.</p>' +
+        '<button type="button" class="btn" data-gm="stt-clear"' + (named.length ? '' : ' disabled') + '>Clear names</button></details>' +
+      (tail.length > 5 ? '<details class="gm-fold" data-sttmore="1"' + (STT.more ? ' open' : '') + '><summary>More</summary><ol class="gm-stt-tail gm-stt-more">' + tail.slice(-30, -5).map(function (l) { return sttLi(d, l); }).join('') + '</ol></details>' : '') +
+      (tail.length ? '<ol class="gm-stt-tail gm-stt-now">' + tail.slice(-5).map(function (l) { return sttLi(d, l); }).join('') + '</ol>' : '') +
       sttCopier(d, on) + '</div></section>';
   }
   /* the PC's heartbeat: fresh within 3 minutes while listening is on */
@@ -5649,6 +5660,7 @@
         break;
       }
       case 'stt-on': sttPatch({ want: 'on', session: String(isObj(camp) && isObj(camp.session) ? +camp.session.number || '' : '') }); break;
+      case 'stt-clear': { var spk = STT.doc && isObj(STT.doc.speakers) ? STT.doc.speakers : {}, nul = {}, any = false; Object.keys(spk).forEach(function (k) { nul[k] = null; any = true; }); if (any) sttPatch({ speakers: nul }); break; }
       case 'stt-off': sttPatch({ want: 'off' }); break;
       case 'opp-add': oppAdd(); break;
       case 'opp-show': oppShow(b.getAttribute('data-mode')); break;

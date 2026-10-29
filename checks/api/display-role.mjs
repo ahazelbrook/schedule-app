@@ -161,6 +161,7 @@ async function main() {
     // the display cannot change what it is told; a player cannot read it
     status(await call('PATCH', '/api/gm/stt', { user: IPAD, body: { want: 'off' } }), 403);
     status(await call('PATCH', '/api/gm/stt', { user: IPAD, body: { session: '1' } }), 403);
+    status(await call('PATCH', '/api/gm/stt', { user: IPAD, body: { speakers: { 0: 'Fixture' } } }), 403);
     status(await call('GET', '/api/gm/display?sseq=1', { user: PLAYER }), 403);
     expect(same((await call('GET', '/api/gm/display', { user: IPAD })).json.stt, g.json.stt), 'unchanged by the refused PATCHes');
     // and when the GM turns it off the part follows
