@@ -159,6 +159,8 @@ export async function patchState(db, campaign, patch, meta) {
     const doc = deepMerge(current, patch);
     // `meta.liveOff`: this write turns live sync off (the stored switch was on or absent, and is now an explicit false); the read is the one made above
     if (meta) meta.liveOff = current.live !== false && doc.live === false;
+    // `meta.mirrorFlip`: this write changes the phones' mirror switch (on unless an explicit false; MM1), either way
+    if (meta) meta.mirrorFlip = (current.mirror !== false) !== (doc.mirror !== false);
     const text = JSON.stringify(doc);
     if (byteLength(text) > LIMITS.state) throw new HttpError(413, 'the GM state is too large (at most ' + LIMITS.state + ' bytes)');
     const result = row

@@ -621,3 +621,22 @@
   #dossier .ds-perm { font-size: 7px; }
   #dossier .ds-mem { break-inside: avoid; }
 }
+
+/* ---- the Table button and the table screen viewer (MM1) ----
+   The button sits in the sticky bar beside Back; its dot says the iPad changed since this phone last looked. The viewer is a layer on the
+   page body (outside #dossier), always dark, with the browser's own pinch-zoom (touch-action allows it; there is no zoom script). */
+#dossier .ds-tablebtn { position: relative; }
+#dossier .ds-tablebtn .ds-tdot { display: inline-block; width: 9px; height: 9px; margin-left: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--paper); vertical-align: 1px; }
+#dossier .ds-tablebtn.new { border-color: var(--accent); }
+#dossier.ds-live .ds-nav > [data-act="tablescreen"] { order: 0; }
+.ds-tv { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; background: #0b0a09; color: #f1ece4; touch-action: pan-x pan-y pinch-zoom; overscroll-behavior: contain; padding-bottom: env(safe-area-inset-bottom, 0px); }
+.ds-tv-top { display: flex; align-items: center; gap: 12px; padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 8px; flex: 0 0 auto; }
+.ds-tv-x { min-width: 44px; min-height: 44px; padding: 0; border: 2px solid #f1ece4; border-radius: 0; background: transparent; color: #f1ece4; font: 700 28px/1 var(--font-mono, monospace); cursor: pointer; }
+.ds-tv-x:focus-visible, .ds-tv-retry:focus-visible { outline: 3px solid #ffd166; outline-offset: 2px; }
+.ds-tv-h { font: 900 14px/1.2 var(--font-cond, sans-serif); text-transform: uppercase; letter-spacing: .08em; }
+.ds-tv-stage { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: auto; padding: 0 8px; }
+.ds-tv-img { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; margin: auto; background: #1a1714; }
+.ds-tv-none { max-width: 28em; margin: 0 auto 12px; padding: 0 16px; font: 400 16px/1.45 var(--font-body, sans-serif); text-align: center; color: #cfc7bb; }
+.ds-tv-retry { margin: 0 auto; min-height: 44px; }
+.ds-tv-cap { flex: 0 0 auto; margin: 0; padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px)); font: 400 14px/1.4 var(--font-body, sans-serif); text-align: center; color: #e6dfd3; }
+@media print { .ds-tv { display: none !important; } }

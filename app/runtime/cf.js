@@ -6,6 +6,8 @@
    window.claude.gm (pack, packPart, importPart, removePart, state, patchState, display, setDisplay, ambient,
    patchAmbient, stt, patchStt, sttToken, transcript, addTranscript, assistTick, assistFit, assistCards, assistMark, assistAsk, assistAct) is the GM tools'
    API (GM.md): plain calls, never queued, cached or snapshotted here.
+   window.claude.table (screen, screenSeq, onScreenSeq) is the phones' copy of the iPad's map or handout (MM1): screenSeq arrives in the
+   data poll, screen() fetches the picture when the viewer opens.
    window.claude.profile.setName(name) changes the signed-in person's own display name (PATCH /api/me); a plain call too.
    Offline: the last loaded data is kept in localStorage per user, the page can start from it when the network
    is unreachable, and writes queue (in order, in localStorage) until it is back. It also makes the hosted page
@@ -724,6 +726,7 @@
     api('GET', '/' + COLLECTION + (full ? '' : '?since=' + encodeURIComponent(since)))
       .then(function (r) {
         r = r || {};
+        noteScreen(r.screenSeq);                      /* the table screen's seq (MM1): a number, 0 when the iPad shows nothing a phone may copy */
         lastSync = nowIso();                          /* before applyServer, so the snapshot it saves carries it */
         var chg = null;
         /* a write started or finished while this poll was out: its view may be stale, ask again */
@@ -1439,6 +1442,31 @@
     }
   };
 
+  /* ---------- table: the phones' copy of the iPad's map or handout (MM1, design 2.4). The data poll carries `screenSeq` (the
+     display's seq while the mirror is on and the iPad shows a map or a handout, else 0); nothing here polls on its own. screen()
+     is the one call that fetches the picture, made when the player opens the viewer (or while it is open and screenSeq moves). ---------- */
+  var screenSeq = 0, screenListeners = [];
+  function noteScreen(v) {
+    if (typeof v !== 'number' || !isFinite(v)) return;      /* an older server sends none: keep what we have */
+    v = v > 0 ? Math.floor(v) : 0;
+    if (v === screenSeq) return;
+    screenSeq = v;
+    screenListeners.slice().forEach(function (cb) { try { cb(v); } catch (e) { setTimeout(function () { throw e; }, 0); } });
+  }
+  var table = {
+    /* GET /api/table/screen -> { seq, kind: 'none' } | { seq, kind: 'svg', svg, title?, caption? } | { seq, kind: 'handout', file, title? }.
+       A plain call, never queued or cached. A network failure rejects with `network: true`. */
+    screen: function () { return api('GET', '/table/screen'); },
+    /* the latest screenSeq the data poll brought (0: nothing to show) */
+    screenSeq: function () { return screenSeq; },
+    /* cb(seq) on every change of screenSeq, including a move to 0; returns the unsubscribe function */
+    onScreenSeq: function (cb) {
+      if (typeof cb !== 'function') return function () {};
+      screenListeners.push(cb);
+      return function () { var i = screenListeners.indexOf(cb); if (i >= 0) screenListeners.splice(i, 1); };
+    }
+  };
+
   /* ---------- window.claude ---------- */
   var uses = {};
   var makers = {
@@ -1453,6 +1481,7 @@
     },
     rules: rules,
     gm: gm,
+    table: table,
     profile: profile
   };
 

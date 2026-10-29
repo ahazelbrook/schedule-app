@@ -44,7 +44,7 @@ import { LIMITS, requireGm, cleanDisplay, loadDisplay, putDisplay, loadAmbient, 
 import { joinOverlayNpc } from '../../_lib/npcs.js';
 import { joinOverlayClock } from '../../_lib/campaign.js';
 import { loadSttPart } from '../../_lib/stt.js';
-import { liveFlag, pokeLive } from '../../_lib/live.js';
+import { liveFlag, mirrorFlag, screenKind, pokeLive } from '../../_lib/live.js';
 
 const METHODS = ['GET', 'PUT'];
 
@@ -106,7 +106,10 @@ export async function onRequest({ request, env, data, waitUntil }) {
   }
   const display = cleanDisplay(raw);
   const db = await getDb(env);
+  // the phones' table screen (MM1): read the mirror switch before the write (only for a map or a handout), poke after it succeeded
+  const phones = screenKind(display.kind) && await mirrorFlag(db, campaign);
   const out = await putDisplay(db, campaign, display, ifSeq);
   pokeLive({ env, waitUntil }, ['display']);
+  if (phones) pokeLive({ env, waitUntil }, ['screen']);
   return json(out);
 }

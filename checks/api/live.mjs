@@ -77,11 +77,11 @@ await step('the kinds table is design 2.5: who hears what, screen reserved for p
   expect(same(KINDS.characters, ['player', 'gm']) && same(KINDS.campaign, ['player', 'gm']) && same(KINDS.npcs, ['player', 'gm']), 'phones and GM pages: characters, campaign, npcs');
   expect(same(KINDS.display, ['display', 'gm']) && same(KINDS.ambient, ['display', 'gm']) && same(KINDS.stt, ['display', 'gm']), 'the iPad and GM pages: display, ambient, stt');
   expect(same(KINDS.cue, ['gm']), 'cue: GM pages only');
-  expect(same(KINDS.screen, ['player']), 'screen: phones only (reserved)');
+  expect(same(KINDS.screen, ['player']), 'screen: phones only (MM1)');
   expect(rolesFor('nope').length === 0 && rolesFor('constructor').length === 0 && rolesFor('__proto__').length === 0, 'unknown kinds (and Object.prototype names) are heard by nobody');
 });
 
-await step('the pokeLive call sites: exactly the write paths, and no source ever sends screen', () => {
+await step('the pokeLive call sites: exactly the write paths; screen is sent only by the display push and the mirror switch (MM1)', () => {
   const sites = [];
   const walk = (dir) => { for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, f.name);
@@ -90,10 +90,10 @@ await step('the pokeLive call sites: exactly the write paths, and no source ever
   } };
   walk(path.join(ROOT, 'functions', 'api'));
   const want = ['functions/api/campaign.js campaign', 'functions/api/characters/[id].js characters', 'functions/api/characters/[id].js characters', 'functions/api/characters/[id].js characters',
-    'functions/api/gm/ambient.js ambient', 'functions/api/gm/assist.js npcs', 'functions/api/gm/display.js display', 'functions/api/gm/stt.js stt',
+    'functions/api/gm/ambient.js ambient', 'functions/api/gm/assist.js npcs', 'functions/api/gm/display.js display', 'functions/api/gm/display.js screen', 'functions/api/gm/state.js screen', 'functions/api/gm/stt.js stt',
     'functions/api/gm/transcript.js cue', 'functions/api/npcs/[id].js npcs', 'functions/api/npcs/[id].js npcs', 'functions/api/npcs/[id].js npcs', 'functions/api/npcs/index.js npcs'];
   expect(same(sites.sort(), want.sort()), 'call sites: ' + JSON.stringify(sites.sort()));
-  expect(!sites.some((s) => /screen/.test(s)), 'nothing sends screen');
+  expect(sites.filter((s) => /screen/.test(s)).length === 2, 'only the display push and the mirror switch send screen');
 });
 
 // ---------- every write path ----------
@@ -356,8 +356,12 @@ await step('the switch: on by default; GET /api/characters carries it in the pol
   expect(since.json.live === true && 'campaignUpdatedAt' in since.json && 'npcsUpdatedAt' in since.json, 'the ?since form carries it too');
   const stamp = exec.log.filter((s) => /json_type\(doc, '\$\.live'\)/.test(s));
   expect(stamp.length >= 2 && stamp.every((s) => /CASE WHEN json_valid\(doc\) THEN json_type\(doc, '\$\.live'\) END/.test(s)), 'the switch is read with json_type in SQL, guarded by json_valid: ' + stamp.length);
-  const bare = exec.log.slice(-6).filter((s) => /FROM campaigns/i.test(s)).filter((s) => /\bdoc\b/.test(s.replace(/json_valid\(doc\)|json_type\(doc, '\$\.live'\)/g, '')));
+  // MM1 adds exactly these expressions to the stamp statement: the mirror's json_type (same shape as live's) and the DISPLAY row's kind (from gm_display, only while the mirror is not off)
+  const MM1_KIND = "(SELECT CASE WHEN json_valid(doc) THEN json_extract(doc, '$.kind') END FROM gm_display WHERE";
+  const bare = exec.log.slice(-6).filter((s) => /FROM campaigns/i.test(s)).filter((s) => /\bdoc\b/.test(s.split(MM1_KIND).join('(').replace(/json_valid\(doc\)|json_type\(doc, '\$\.(?:live|mirror)'\)/g, '')));
   expect(bare.length === 0, 'no statement of the poll loads a campaigns document: ' + bare.join(' | '));
+  const mm1 = exec.log.slice(-6).filter((s) => s.includes(MM1_KIND));
+  expect(mm1.length >= 1 && mm1.every((s) => !/json_extract\(doc, '\$\.(?:svg|file|title|caption)'\)/.test(s)), 'the poll reads the display row\'s kind and nothing else of it');
 });
 
 await step('the switch: the GM sets it in the GM state (PATCH /api/gm/state { live }); false reaches the phone poll and the display answers; only an explicit false turns it off', async () => {

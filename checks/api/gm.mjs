@@ -1012,7 +1012,7 @@ async function main() {
   });
 
   await step('/api/characters carries no GM key (gmUpdatedAt was removed: nothing read it); GM and player see the same keys', async () => {
-    const KEYS = 'campaignUpdatedAt,docs,live,now,npcsUpdatedAt';   // live: the live-sync switch (MD1b), the same for everyone
+    const KEYS = 'campaignUpdatedAt,docs,live,now,npcsUpdatedAt,screenSeq';   // live: the live-sync switch (MD1b); screenSeq: the table screen's seq (MM1); the same for everyone
     status(await gm('PATCH', '/api/gm/state', { ui: { tab: 'B' } }), 200);
     for (const q of ['', '?since=' + encodeURIComponent(new Date(0).toISOString())]) {
       const p = await player('GET', '/api/characters' + q); status(p, 200);

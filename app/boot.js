@@ -255,6 +255,13 @@
     if (e && e.code === 'dropped') return m.charAt(0).toUpperCase() + m.slice(1);
     return 'Could not load ' + what + ': ' + m;
   }
+  /* the hosted runtime's window.claude.table (MM1): seq() is the latest screenSeq the data poll brought (0: nothing a phone may copy),
+     load() fetches the picture (GET /api/table/screen), on(cb) hears every change of screenSeq and returns its unsubscribe */
+  function tableScreenApi() {
+    var t = window.claude && window.claude.table;
+    if (!t || typeof t.screen !== 'function' || typeof t.screenSeq !== 'function' || typeof t.onScreenSeq !== 'function') return null;
+    return { seq: function () { return t.screenSeq(); }, load: function () { return t.screen(); }, on: function (cb) { return t.onScreenSeq(cb); } };
+  }
   function openCharacter(id) {
     if (!id) return;
     if (!db) { pendingOpen = id; if (dbSettled) toast('Saved characters are not available in this view.', true); return; }
@@ -302,7 +309,9 @@
         (Array.isArray(c.versatile) ? c.versatile : []).forEach(function (v) { if (typeof v === 'string' && v.trim()) out.push({ name: v.trim(), text: '' }); });
         return out;
       },
-      profiles: userCap && typeof userCap.profiles === 'function' ? profiles : null
+      profiles: userCap && typeof userCap.profiles === 'function' ? profiles : null,
+      /* the phones' copy of the iPad's map or handout (MM1): null where the runtime has none, so the sheet draws no Table button */
+      screen: tableScreenApi()
     };
     function arrived(data) {
       if (openId !== id) return;

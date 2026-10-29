@@ -80,6 +80,11 @@ B68Tracker.refresh()                        // something the sheet reads outside
 //                                   //   player and doc.owner is someone else; the GM, the owner and an unowned doc get the viewer's
 //                                   //   global value. On someone else's sheet the status reads "Read only · Sam’s character".
 //   profiles(ids) -> Promise<{ id: name }> | null   // optional: names the owner in that status ("another player" without it)
+//   screen: { seq() -> n, load() -> Promise<answer>, on(cb) -> unsubscribe } | null
+//                                   // optional (MM1): the phones' copy of the iPad's map or handout (the hosted runtime's window.claude.table).
+//                                   //   null (the artifact, file://) draws no Table button. seq() is the data poll's screenSeq (0: nothing to show);
+//                                   //   load() is GET /api/table/screen; on(cb) hears every change of seq. The sheet's Table button carries a dot while
+//                                   //   seq() is a number this phone has not looked at (localStorage `b68.table.seen`), and opens a full-screen viewer.
 //   table() -> { session, inPlay } | null           // optional: the table's session (campaign/main, CAMPAIGN.md): session = session.number,
 //                                   //   inPlay = started and not ended; null when there is no started table (no db, no document, or the
 //                                   //   hosted default that was never written). Boot calls B68Tracker.refresh() whenever it changes.

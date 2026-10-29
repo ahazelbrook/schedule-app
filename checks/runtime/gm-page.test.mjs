@@ -1302,6 +1302,32 @@ await test('10b2. Live sync is a menu item (MD1b): on until the GM turns it off;
   assert.strictEqual(fg.server.doc.live, true, 'the state ends on');
   assert.ok(sent.every((p) => typeof p.live === 'boolean'), 'only booleans are sent');
 });
+await test('10b4. Phones mirror the iPad (MM1) sits beside the iPad controls, in the bar and the iPad tab: on until the GM turns it off; one press sends { mirror: false }, the next { mirror: true }; both buttons follow', async () => {
+  const fg = fakeGm(), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
+  const bar = () => h.q('.gm-bar [data-gm="mirror"]');
+  assert.ok(bar() && bar().getAttribute('aria-pressed') === 'true' && /^Phones: see it/.test(bar().textContent), 'on by default, in the bar: ' + (bar() && bar().textContent));
+  { const sib = bar().parentNode.children, i = sib.indexOf(bar()); assert.ok(i > 0 && sib[i - 1].getAttribute('data-gm') === 'darkipad', 'right beside Lights out'); }
+  await openIpad(h);
+  const panel = () => h.q('#gm-ipad [data-gm="mirror"]');
+  assert.ok(panel() && panel().getAttribute('aria-pressed') === 'true' && /^Phones mirror the iPad: on/.test(panel().textContent), 'and in the iPad tab: ' + (panel() && panel().textContent));
+  { const sib = panel().parentNode.children, i = sib.indexOf(panel()); assert.ok(i > 0 && sib[i - 1].getAttribute('data-gm') === 'darkipad', 'beside Lights out there too'); }
+  panel().click();
+  assert.ok(bar().getAttribute('aria-pressed') === 'false' && /^Phones: off/.test(bar().textContent) && panel().textContent.includes('off (turn on)'), 'one press turns it off, and both buttons follow: ' + bar().textContent + ' / ' + panel().textContent);
+  assert.ok(br.toasts.some((x) => /no longer mirror/.test(x[0])), 'a toast says what it did');
+  bar().click();
+  assert.ok(bar().getAttribute('aria-pressed') === 'true' && panel().textContent.includes('on (turn off)'), 'and back on from the bar');
+  await h.save();
+  const sent = fg.server.patches.filter((p) => 'mirror' in p);
+  assert.deepEqual(sent.map((p) => p.mirror), [false, true], 'exactly the two flips went out, as booleans: ' + JSON.stringify(sent));
+  assert.ok(!fg.server.patches.some((p) => 'live' in p), 'Live sync is not touched');
+  assert.strictEqual(fg.server.doc.mirror, true, 'the state ends on');
+});
+await test('10b5. Phones mirror off reaches the server as an explicit false; a page opened on that state shows it off', async () => {
+  const fg = fakeGm(), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
+  h.q('.gm-bar [data-gm="mirror"]').click();
+  await h.save();
+  assert.strictEqual(fg.server.doc.mirror, false, 'an explicit false (the server treats anything else as on)');
+});
 await test('10b3. Live sync off reaches the server: the state holds an explicit false until it is turned on again', async () => {
   const fg = fakeGm(), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
   h.q('[data-gm="menu"]').click(); h.q('.gm-menu-list [data-gm="livesync"]').click();
