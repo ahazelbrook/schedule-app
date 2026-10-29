@@ -284,6 +284,33 @@
     if (!t || typeof t.screen !== 'function' || typeof t.screenSeq !== 'function' || typeof t.onScreenSeq !== 'function') return null;
     return { seq: function () { return t.screenSeq(); }, load: function () { return t.screen(); }, on: function (cb) { return t.onScreenSeq(cb); } };
   }
+  /* The player's own mission cards (VV7, design 5.4): { time, now: [hud.now], pcs: [{ id, name, card }] } for each character whose owner is
+     the signed-in player and that has a card in the campaign document's mission.cards (keyed by the character's document id), in
+     roster order; null when there are none. Read from the campaign document this page already holds: no request. Another owner's
+     card is never copied out of the document. */
+  function missionCards() {
+    var t = campLoaded && tableExists && isObj(tableLatest) ? tableLatest : null, m = t && isObj(t.mission) ? t.mission : null;
+    if (!m || !isObj(m.cards) || !A.me) return null;
+    var ids = [], pcs = [];
+    roster.forEach(function (d) { if (d && d.id && ids.indexOf(d.id) < 0) ids.push(d.id); });
+    Object.keys(cache).forEach(function (k) { if (ids.indexOf(k) < 0) ids.push(k); });
+    ids.forEach(function (id) {
+      var d = cache[id] || roster.filter(function (r) { return r.id === id; })[0];
+      if (!isObj(d) || d.owner !== A.me || !isObj(m.cards[id])) return;
+      if (typeof m.cards[id].owner === 'string' && m.cards[id].owner && m.cards[id].owner !== A.me) return;   /* the card names another owner: never shown, whoever the roster says */
+      pcs.push({ id: String(id), name: String(d.name || ''), card: clone(m.cards[id]) });
+    });
+    if (!pcs.length) return null;
+    var hud = isObj(m.hud) ? m.hud : {};
+    return { time: typeof hud.time === 'string' ? hud.time : '', now: Array.isArray(hud.now) ? clone(hud.now) : [], pcs: pcs };
+  }
+  /* the roster may arrive after the campaign document, or change who owns what: the open sheet redraws only when the set of cards it may show moved */
+  var missionKey = '';
+  function missionRosterSync() {
+    var m = missionCards(), k = m ? m.pcs.map(function (p) { return p.id; }).join('|') : '';
+    if (k === missionKey) return; missionKey = k;
+    var T2 = tracker(); if (openId && T2 && T2.refresh) { try { T2.refresh(); } catch (e) {} }
+  }
   function openCharacter(id) {
     if (!id) return;
     if (!db) { pendingOpen = id; if (dbSettled) toast('Saved characters are not available in this view.', true); return; }
@@ -333,7 +360,8 @@
       },
       profiles: userCap && typeof userCap.profiles === 'function' ? profiles : null,
       /* the phones' copy of the iPad's map or handout (MM1): null where the runtime has none, so the sheet draws no Table button */
-      screen: tableScreenApi()
+      screen: tableScreenApi(),
+      mission: missionCards   /* this player's own mission cards (VV7), or null */
     };
     function arrived(data) {
       if (openId !== id) return;
@@ -1352,7 +1380,7 @@
         col().orderBy('updatedAt', 'desc').limit(60).onSnapshot(function (snap) {
           var docs = [], seen = {};
           (snap.docs || []).forEach(function (doc) { var data = (doc.data && doc.data()) || {}; if (!data.spec) return; seen[doc.id] = true; cache[doc.id] = data; docs.push(Object.assign({ id: doc.id }, data)); });
-          rosterSeen = true; renderRoster(docs);
+          rosterSeen = true; renderRoster(docs); missionRosterSync();
           var Gc = gmMod(); if (Gc && typeof Gc.characters === 'function') { try { Gc.characters(); } catch (e) {} }   /* the Downtime panel's PCs */
           if (A._followCache && openId) A._followCache(openId);
           if (pendingOpen) { var id = pendingOpen; pendingOpen = null; openCharacter(id); }
