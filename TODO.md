@@ -1,7 +1,7 @@
 # RUN THE JOB (v2): state at 29/10/2026
 
 **Built and merged (VV1 to VV10, PRs #108 to #117).** The Run tab's v2 view, publishing to the players, the iPad band,
-the phone's Mission card, End the night, the alarm buttons and the server's cleanMission. Documented in GM.md, "Run the job (v2)".
+the phone's Mission card, End the night, Reset the night (VV12), the alarm buttons and the server's cleanMission. Documented in GM.md, "Run the job (v2)".
 
 **Still to do.**
 - Tue 3/11: the release gate, then deploy, then the real level pushed as the location part.

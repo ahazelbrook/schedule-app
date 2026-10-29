@@ -1075,6 +1075,7 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 #gm-page .rv-head { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; border: 2px solid var(--rule); background: var(--inset); padding: 6px 10px; }
 #gm-page .rv-btn { font: 900 12px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; border: 2px solid var(--rule); background: var(--card); color: var(--ink); padding: 8px 10px; min-height: 36px; cursor: pointer; box-shadow: 2px 2px 0 var(--shadow-ink); }
 #gm-page .rv-btn.sm { min-height: 28px; padding: 5px 8px; box-shadow: none; }
+#gm-page .rv-btn.rv-reset { background: transparent; color: var(--ink-dim, inherit); opacity: .75; margin-inline-start: 8px; }
 #gm-page .rv-btn small { font: 700 11px/1 var(--font-mono); letter-spacing: 0; text-transform: none; }
 #gm-page .rv-btn:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 #gm-page .rv-btn:disabled { opacity: .4; cursor: default; box-shadow: none; }

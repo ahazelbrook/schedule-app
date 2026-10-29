@@ -423,5 +423,43 @@ await test('before any publish, the Players view shows the mission the campaign 
   assert.equal(MP.playersModel({ v: 1 }), null);
 });
 
+/* ---- Reset the night (VV12) ---- */
+await test('resetNight sends { mission: null } with no confirm of its own, clears the ended marker, and the SAME start publishes again (endNight alone would not)', async () => {
+  /* the difference: after endNight, the same start key stays off */
+  const e = rig(); e.ctl.changed(); await e.advance(800); assert.equal(e.sent.length, 1);
+  await e.ctl.endNight(); assert.notEqual(e.ctl._state().endedFor, null, 'endNight leaves the marker');
+  e.state.t = T('23:45'); e.ctl.changed(); await e.advance(1600);
+  assert.equal(e.sent.length, 2, 'endNight: the same start publishes nothing more (1 publish + 1 null)');
+  /* resetNight: no confirm asked (the answer is no, and it still goes), marker cleared */
+  const r = rig({ confirm: false }); r.answer = false;
+  r.ctl.changed(); await r.advance(800); assert.equal(r.sent.length, 1);
+  const res = await r.ctl.resetNight();
+  assert.equal(res.ok, true); assert.equal(res.ended, true); assert.equal(r.sent.length, 2); assert.equal(r.sent[1], null, 'PATCH { mission: null }');
+  assert.equal(r.ctl._state().endedFor, null, 'the ended-for-this-start marker is cleared');
+  assert.equal(r.ctl.last(), null); assert.equal(r.ctl.status().text, '');
+  r.state.t = T('23:45'); r.ctl.changed(); await r.advance(800);
+  assert.equal(r.sent.length, 3, 'a publish for the SAME start key goes out after the reset');
+  assert.ok(r.sent[2] && r.sent[2].hud && r.sent[2].hud.time === '23:45' && r.sent[2].seq > r.sent[0].seq, 'and it is the new time, numbered on');
+});
+
+await test('resetNight while a publish is still out: that publish does not land after the reset (gen bumped), and the marker is clear', async () => {
+  const q = rig(); const waits = []; const sent = [];
+  const ctl = MP.create({ ball: B, source: q.source, namesHit: GP.namesHit, stored: () => null, confirm: () => false,
+    send: (m) => (m === null ? Promise.resolve(sent.push(null)) : new Promise((res) => waits.push(() => { sent.push(clone(m)); res(true); }))),
+    delay: (fn, ms) => { const h = { fn, at: q.clock + ms }; q.timers.push(h); return h; }, cancel: (h) => { const i = q.timers.indexOf(h); if (i >= 0) q.timers.splice(i, 1); } });
+  ctl.changed(); await q.advance(800); assert.equal(waits.length, 1, 'a publish is out');
+  const res = await ctl.resetNight(); assert.equal(res.ended, true);
+  waits[0](); await sleep(5);
+  assert.equal(ctl.last(), null, 'the late landing is ignored: last() stays empty'); assert.equal(ctl.status().text, '');
+  assert.equal(ctl._state().endedFor, null);
+});
+
+await test('resetNight with a failing send says so, still clears the marker, and leaves the mission as it was', async () => {
+  const f = rig(); f.ctl.changed(); await f.advance(800); f.failWith = Object.assign(new Error('503'), { status: 503 });
+  const bad = await f.ctl.resetNight();
+  assert.equal(bad.ok, false); assert.ok(f.ctl.last(), 'still published'); assert.equal(f.ctl._state().endedFor, null);
+  assert.ok(f.toasts.some(([m, b]) => b && /Could not clear the players/.test(m) && /End the night/.test(m)), JSON.stringify(f.toasts));
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
