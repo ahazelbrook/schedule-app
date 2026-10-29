@@ -83,6 +83,8 @@ B68Tracker.refresh()                        // something the sheet reads outside
 //   table() -> { session, inPlay } | null           // optional: the table's session (campaign/main, CAMPAIGN.md): session = session.number,
 //                                   //   inPlay = started and not ended; null when there is no started table (no db, no document, or the
 //                                   //   hosted default that was never written). Boot calls B68Tracker.refresh() whenever it changes.
+//   crewAbilities() -> [{ name, text }] | null      // optional: the crew's taken special abilities, for the roll panel's abilities strip
+//                                   //   (display only). null = not known yet (no table, or crews.js still loading); [] = none taken.
 // }
 ```
 

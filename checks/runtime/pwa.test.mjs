@@ -196,7 +196,7 @@ await test('routes.js: index.html loads exactly the core bundle; every other bun
   const W = routes(), L = W.B68Load;
   ok(L && typeof L.need === 'function' && typeof L.files === 'function', 'routes.js defines B68Load');
   eq(W.B68_BUILD, 'dev', "the committed build is 'dev' (scripts/deploy.sh stamps it for the upload)");
-  eq(Object.keys(L.BUNDLES), ['core', 'table', 'print', 'gm', 'display'], 'the bundles');
+  eq(Object.keys(L.BUNDLES), ['core', 'table', 'print', 'crews', 'gm', 'display'], 'the bundles');
   eq(htmlTags(), L.BUNDLES.core, "index.html's stylesheet and script tags are BUNDLES.core, in order");
   const core = new Set(L.BUNDLES.core);
   for (const [name, list] of Object.entries(L.BUNDLES)) {

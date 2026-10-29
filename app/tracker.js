@@ -757,6 +757,38 @@
   function noSave() { return readOnly() || !cur.api || typeof cur.api.save !== 'function'; }
   function notSavedWhy() { return readOnly() ? 'read only' : 'this view cannot save'; }
   function markDice(play, m) { return (play.dots[m.action] || 0) + (m.push ? 1 : 0) + (m.assist ? 1 : 0) + (m.bargain ? 1 : 0); }
+  /* ---------- the abilities strip (MU2): in the mark and roll panels, folded, the sheet's own abilities and the crew's with one
+     line each; a tap opens the text. Display only: nothing here decides what applies. The crew's come from api.crewAbilities()
+     (boot reads them from the campaign document every player already receives): null = not known yet, [] = none taken. ---------- */
+  function ownAbilities(play, pb) {
+    var text = {};
+    if (pb) {
+      if (isHull(pb)) text[AUTOMATON[0]] = AUTOMATON[1];
+      if (pb.fixedAbility) text[pb.fixedAbility[0]] = pb.fixedAbility[1];
+      (pb.abilities || []).forEach(function (a) { text[a[0]] = a[1] || ''; });
+    }
+    return (play.abilities || []).map(function (n) { return { n: n, t: text[n] || '' }; });
+  }
+  function crewAbilitiesNow() {
+    var a = cur && cur.api; if (!a || typeof a.crewAbilities !== 'function') return null;
+    try { var l = a.crewAbilities(); return Array.isArray(l) ? l.map(function (x) { return { n: String(x && x.name || ''), t: String(x && x.text || '') }; }).filter(function (x) { return x.n; }) : null; } catch (e) { return null; }
+  }
+  function abGroup(key, label, list) {
+    var h = '<div class="ds-abgrp"><div class="ds-lab">' + label + '</div>';
+    if (!list.length) return h + '<p class="ds-dim ds-abnone">None taken yet.</p></div>';
+    list.forEach(function (a) {
+      var k = key + ':' + a.n, on = !!(cur.ui.abOpen && cur.ui.abOpen[k]);
+      h += '<button type="button" class="ds-abi' + (on ? ' open' : '') + '" data-act="abitem" data-k="' + esc(k) + '" data-always="1" aria-expanded="' + on + '"><b class="ds-abi-n">' + esc(a.n) + '</b>' + (a.t ? '<span class="ds-abi-t">' + esc(a.t) + '</span>' : '') + '</button>';
+    });
+    return h + '</div>';
+  }
+  function abStrip(play, pb) {
+    var mine = ownAbilities(play, pb), crew = crewAbilitiesNow(), open = !!cur.ui.abStrip;
+    var sum = 'Abilities · yours ' + mine.length + (crew ? ' · the crew’s ' + crew.length : '');
+    var h = '<div class="ds-abstrip' + (open ? ' open' : '') + '"><button type="button" class="ds-abstrip-t" data-act="abstrip" data-always="1" aria-expanded="' + open + '"><span>' + esc(sum) + '</span><span class="ds-abstrip-c" aria-hidden="true">' + (open ? '−' : '+') + '</span></button>';
+    if (open) h += '<div class="ds-abstrip-b">' + abGroup('p', 'Yours', mine) + (crew ? abGroup('c', 'The crew’s', crew) : '<p class="ds-dim ds-abnone">The crew’s abilities are not available here.</p>') + '</div>';
+    return h + '</div>';
+  }
   function markPanel(play, pb) {
     var m = cur.ui.mark; if (!m) return '';
     var sn = stressName(pb), sm = stressMax(pb), h = '', title, sub;
@@ -777,6 +809,7 @@
       if (m.push) h += '<div class="ds-roll-applied"><span class="ds-lab">Marked</span>+2 ' + esc(sn) + ' (push) <span class="ds-dim">' + play.stress + ' / ' + sm + '</span></div>';
     } else { title = 'Resist · <b>' + esc(m.resist.attr) + '</b>'; sub = resistDice(play, pb, m.resist.attr) + 'd · physical dice'; }
     if (m.resist) h += resistHelper(play, pb, m);
+    h += abStrip(play, pb);
     /* the in-app roll, second; Close ends the strip (on a phone it is a bottom sheet, so the × is not the only way out) */
     h += '<div class="ds-mark-foot">' + (m.action
       ? '<button type="button" class="chip sm txt" data-act="rollapp" data-a="' + esc(m.action) + '" data-always="1">Roll in the app</button>'
@@ -842,6 +875,7 @@
       h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">' + r.n + 'd</b><span class="ds-dim">' + (r.n === 0 ? 'roll 2d, take the lowest' : 'read the highest die') + '</span></span><button type="button" class="btn sm primary" data-act="roll" data-always="1">' + (r.result ? 'Roll again' : 'Roll') + '</button></div>';
       if (r.result) h += rollResult(r, pb);
     }
+    h += abStrip(play, pb);
     return '<div class="ds-roll" tabindex="-1" role="region" aria-label="Roll"><div class="ds-roll-h"><span class="ds-roll-t">' + title + '</span><span class="ds-roll-sub">' + sub + '</span><button type="button" class="ds-x ds-roll-x" data-act="rollclose" data-always="1" aria-label="Close the roll panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div>' + panelFoot() + '</div>';
   }
   /* the phone's bottom sheet ends in a Close button (hidden on a desk, where the panel sits inline with its ×) */
@@ -1024,6 +1058,7 @@
        was; only a slot whose string differs from the last one drawn is replaced, so a tap redraws its box (and the vitals)
        and nothing else, and a poll that brings back what the sheet already shows changes nothing */
     var parts = buildParts();
+    var oldPanel = cur.root.querySelector('.ds-roll'), keepTop = oldPanel ? oldPanel.scrollTop : 0;   /* a redrawn panel starts at the top: put it back where it was */
     if (!cur.slots || !cur.slots.head || cur.root.firstChild !== cur.slots.head.anchor || !cur.slots.head.anchor.parentNode) {
       cur.root.innerHTML = slotMark('head') + slotMark('bar') + '<div class="ds-grid">' + Object.keys(COLS).map(function (c) { return '<div class="ds-col ds-' + c + '">' + COLS[c].map(slotMark).join('') + '</div>'; }).join('') + '</div>';
       cur.slots = {}; anchorsIn(cur.root, cur.slots);
@@ -1046,6 +1081,8 @@
     /* the roll panel: bring it (or, after a roll, its verdict) into view, and keep keyboard focus inside the sheet so Esc closes it.
        On a phone the panel is a fixed bottom sheet (tracker.css): it is in view by itself, only its verdict may need a scroll inside it */
     var panel = open ? cur.root.querySelector('.ds-roll') : null;
+    if (panel && oldPanel && keepTop && !cur.ui.rollScroll && panel !== oldPanel && panel.className === oldPanel.className && panel.getAttribute('aria-label') === oldPanel.getAttribute('aria-label')) panel.scrollTop = keepTop;   /* the same panel redrawn, not another one opened */
+    if (panel && cur.ui.abScroll) { cur.ui.abScroll = false; var strip = panel.querySelector('.ds-abstrip.open'); if (strip) { try { strip.scrollIntoView({ block: 'nearest' }); } catch (e) {} } }
     if (panel) {
       if (cur.ui.rollScroll) {
         var want = cur.ui.rollScroll, fixed = false; cur.ui.rollScroll = false;
@@ -1250,6 +1287,8 @@
     resistopen: function (d) { var m = cur.ui.mark; if (m && !m.action && m.resist && m.resist.attr === d.attr) { cur.ui.mark = null; render(); return; } closePanels(); cur.ui.mark = { action: null, resist: { attr: d.attr, result: null } }; cur.ui.rollScroll = true; render(); },
     fortopen: function () { var r = cur.ui.roll; if (r && r.kind === 'fortune') { cur.ui.roll = null; render(); return; } closePanels(); cur.ui.roll = { kind: 'fortune', n: 2, result: null }; cur.ui.rollScroll = true; render(); },
     rollclose: function () { cur.ui.roll = null; render(); },
+    abstrip: function () { cur.ui.abStrip = !cur.ui.abStrip; cur.ui.abScroll = cur.ui.abStrip; render(); },
+    abitem: function (d) { var o = cur.ui.abOpen || (cur.ui.abOpen = {}); if (o[d.k]) delete o[d.k]; else o[d.k] = true; render(); },
     rollopt: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action' || r.result) return; if (r.paid && r.paid[d.k]) return; if (d.k === 'push' && !r.push && cur.play.stress + 2 > stressMax(cur.pb)) return; r[d.k] = !r[d.k]; r.result = null; render(); },
     /* after a roll its options are locked: the verdict stands for what was rolled */
     rollpos: function (d) { var r = cur.ui.roll; if (!r || r.kind !== 'action' || r.result || POSITIONS.indexOf(d.v) < 0) return; r.position = d.v; render(); },
@@ -1442,7 +1481,7 @@
     note('Session ' + n + ' started'); commit();
   }
   /* roll-panel controls stay live for read-only viewers (they write nothing); everything else is gated */
-  var RO_OK = { back: 1, view: 1, print: 1, rollopen: 1, resistopen: 1, fortopen: 1, rollclose: 1, rollopt: 1, rollpos: 1, rolleff: 1, fortn: 1, roll: 1, panelclose: 1, dtopen: 1, dtopt: 1, dtroll: 1, rollapp: 1, resistapp: 1, markharm: 1, markresist: 1, markrattr: 1, markrdone: 1, more: 1, about: 1, loadout: 1, jump: 1 };
+  var RO_OK = { back: 1, view: 1, print: 1, rollopen: 1, resistopen: 1, fortopen: 1, rollclose: 1, abstrip: 1, abitem: 1, rollopt: 1, rollpos: 1, rolleff: 1, fortn: 1, roll: 1, panelclose: 1, dtopen: 1, dtopt: 1, dtroll: 1, rollapp: 1, resistapp: 1, markharm: 1, markresist: 1, markrattr: 1, markrdone: 1, more: 1, about: 1, loadout: 1, jump: 1 };
   /* one panel at a time: the mark strip, a roll, a downtime activity or the end of session */
   function anyPanel() { return !!(cur && (cur.ui.mark || cur.ui.roll || cur.ui.dt || cur.ui.endSess)); }
   function closePanels() { if (!cur) return; cur.ui.mark = null; cur.ui.roll = null; cur.ui.dt = null; cur.ui.endSess = null; }

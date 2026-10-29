@@ -34,6 +34,7 @@
       'markdown.js', 'rules.js', 'cast-page.js', 'name-edit.js', 'runtime/cf.js', 'routes.js', 'boot.js'],
     table: TABLE,
     print: TABLE,
+    crews: ['crews.js'],   /* just the crew playbooks' text, for the sheet's roll-panel abilities strip (the table bundle loads it too, once) */
     gm: ['gm.css', 'prep.css', 'maps/map-kit.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'cue.js', 'gm/cogm.js', 'gm/autopilot.js', 'gm-page.js'],
     display: ['display.css', 'cue.js', 'stt.js', 'display-page.js']
   };

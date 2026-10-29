@@ -173,6 +173,20 @@
 #dossier .ds-cohsq { width: 14px; height: 14px; border: 2px solid var(--rule); }
 #dossier .ds-coh.on .ds-cohpip, #dossier .ds-coh.on .ds-cohsq { background: var(--accent); border-color: var(--accent); }
 
+/* ---- the abilities strip in the roll panels: folded to one line, each ability one line until tapped (MU2) ---- */
+#dossier .ds-abstrip { border-top: 1px solid var(--hair); margin-top: 4px; }
+#dossier .ds-abstrip-t { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; padding: 8px 2px; border: 0; background: transparent; color: var(--ink-soft); font: 700 11.5px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; cursor: pointer; text-align: left; }
+#dossier .ds-abstrip.open > .ds-abstrip-t { color: var(--ink); }
+#dossier .ds-abstrip-c { font: 700 16px/1 var(--font-mono); }
+#dossier .ds-abstrip-b { display: grid; gap: 8px; padding-bottom: 8px; }
+#dossier .ds-abgrp { display: grid; gap: 0; }
+#dossier .ds-abi { display: grid; gap: 1px; width: 100%; text-align: left; background: transparent; border: 0; border-top: 1px solid var(--hair); padding: 5px 2px; font: inherit; font-size: 12.5px; line-height: 1.35; color: inherit; cursor: pointer; min-width: 0; }
+#dossier .ds-abi-n { font: 900 11.5px/1.3 var(--font-cond); text-transform: uppercase; letter-spacing: .05em; overflow-wrap: anywhere; }
+#dossier .ds-abi.open .ds-abi-n { color: var(--accent); }
+#dossier .ds-abi-t { display: block; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--ink-soft); }
+#dossier .ds-abi.open .ds-abi-t { white-space: normal; overflow: visible; color: var(--ink); }
+#dossier .ds-abnone { margin: 0; }
+
 /* ---- abilities ---- */
 #dossier .ds-ab { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: start; font-size: 12.5px; line-height: 1.4; padding: 5px 0; border-top: 1px solid var(--hair); }
 #dossier .ds-ab:first-child { border-top: 0; }
@@ -389,16 +403,17 @@
 /* ---- phones: one column in the order play needs it (screen only, so print keeps its three columns) ---- */
 @media screen and (max-width: 760px) {
   #dossier .ds-col { display: contents; }
-  #dossier .ds-grid .ds-box { order: 10; }
+  #dossier .ds-grid .ds-box { order: 11; }
   #dossier .ds-grid .ds-stressbox { order: 1; }
   #dossier .ds-grid .ds-harmbox { order: 2; }
   #dossier .ds-grid .ds-actbox { order: 3; }
-  #dossier .ds-grid .ds-xpbox { order: 4; }
-  #dossier .ds-grid .ds-itembox { order: 5; }
-  #dossier .ds-grid .ds-dtbox { order: 6; }
-  #dossier .ds-grid .ds-sessbox { order: 7; }
-  #dossier .ds-grid .ds-keybox { order: 8; }
-  #dossier .ds-grid .ds-stackbox { order: 9; }
+  #dossier .ds-grid .ds-abbox { order: 4; }   /* Special abilities, right after Actions (MU2) */
+  #dossier .ds-grid .ds-xpbox { order: 5; }
+  #dossier .ds-grid .ds-itembox { order: 6; }
+  #dossier .ds-grid .ds-dtbox { order: 7; }
+  #dossier .ds-grid .ds-sessbox { order: 8; }
+  #dossier .ds-grid .ds-keybox { order: 9; }
+  #dossier .ds-grid .ds-stackbox { order: 10; }
   /* the first screen of the live sheet: the name and thumbnail; a sticky bar (Back, the status, Print, "…", and the vitals,
      each a jump to its box); "About" folded; then the table bar and the boxes in play order */
   #dossier.ds-live .ds-head { display: contents; }
@@ -457,6 +472,12 @@
   #dossier .ds-rattr .seg { flex: 1 1 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   #dossier .ds-mark-foot { justify-content: space-between; }
   #dossier .ds-mark-close { display: inline-block; }
+  /* the abilities strip: 44px to tap, 12px labels, 14px prose (MU1's floors) */
+  #dossier .ds-abstrip-t { min-height: 44px; }
+  #dossier .ds-abstrip-t, #dossier .ds-abgrp > .ds-lab { font-size: 12px; }
+  #dossier .ds-abi { min-height: 44px; }
+  #dossier .ds-abi-n { font-size: 12px; }
+  #dossier .ds-abi-t, #dossier .ds-abnone { font-size: 14px; }
   /* Mark +1 / +2 and the vice buttons as a 2 × 2 grid, so none wraps alone */
   #dossier .ds-markrow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #dossier .ds-markrow .ds-gap { display: none; }

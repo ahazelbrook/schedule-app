@@ -15,6 +15,7 @@ const CHECKS = [
   ['app/checks/pn-e2e.js', 'creating each paranormal playbook'],
   ['app/checks/trackercheck.js', 'the living sheet for the core playbooks'],
   ['app/checks/ms3.js', 'the sheet redraws only the boxes that changed'],
+  ['app/checks/mu2.js', 'the roll panel abilities strip: the sheet and the crew, folded, read-only'],
   ['app/checks/trackerpn.js', 'every sheet control for the paranormal playbooks, and printing'],
   ['app/checks/printcheck.js', 'the single-sheet print PDFs'],
   ['app/checks/dice.js', 'the roll panel'],
