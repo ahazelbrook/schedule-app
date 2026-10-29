@@ -736,12 +736,16 @@
   /* the combined token for one room, as the svg the kit nests (viewBox 540 x 600): up to four initials pills (the last "+N" when
      more), a red ring when danger, the lens chip (C, R, D or ?) and a small pie for each pinned clock.
      o: { pills: [{ t, c }], pies: [{ f, s }], lens: pos | null, danger: bool } */
+  /* a costume's icon as an emoji-presentation glyph (U+FE0F), or '' for anything that is not one of the known icons: an unknown name draws nothing, never a letter */
+  var RUN_GLYPHS = ['🎭', '🍽', '🧥', '🔑', '🎩', '🛡', '🧺'];
+  function runGlyph(g) { var b = str(g).replace(/️/g, ''); return RUN_GLYPHS.indexOf(b) >= 0 ? b + '️' : ''; }
   function runTokenSvg(o) {
     o = o || {};
     var s = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 600"><rect x="20" y="20" width="500" height="560" rx="44" fill="#fffdf6" stroke="' + (o.danger ? '#d11' : '#1a1a1a') + '" stroke-width="' + (o.danger ? 40 : 14) + '"/>';
     (Array.isArray(o.pills) ? o.pills : []).slice(0, 4).forEach(function (p, i) {
       var x = 50 + (i % 2) * 235, y = 60 + Math.floor(i / 2) * 150;
-      s += '<rect x="' + x + '" y="' + y + '" width="220" height="130" rx="34" fill="' + esc(p.c) + '"/><text x="' + (x + 110) + '" y="' + (y + 90) + '" text-anchor="middle" font-size="84" font-weight="700" fill="#fff">' + esc(p.t) + '</text>';
+      s += '<rect x="' + x + '" y="' + y + '" width="220" height="130" rx="34" fill="' + esc(p.c) + '"/><text x="' + (x + 110) + '" y="' + (y + 90) + '" text-anchor="middle" font-size="84" font-weight="700" fill="#fff">' + esc(p.t) + '</text>' +
+        (runGlyph(p.i) ? '<text x="' + (x + 192) + '" y="' + (y + 50) + '" text-anchor="middle" font-size="44" fill="#fff" font-family="Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, sans-serif">' + runGlyph(p.i) + '</text>' : '');      /* VV8: the costume's icon, an icon and no text */
     });
     (Array.isArray(o.pies) ? o.pies : []).slice(0, 3).forEach(function (p, i) {
       var cx = 100 + i * 120, cy = 480, r = 48, size = +p.s > 0 ? +p.s : 0, f = size ? Math.max(0, Math.min(1, (+p.f || 0) / size)) : 0;
@@ -762,23 +766,27 @@
      ids and names. It never receives the play block, the lens or the people, so it cannot draw them.
      A token is { room, label, svg }: one per room (so none hides another), the label the PCs' names only. */
   function hasOwn(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
-  function playerTokens(placed, shown, clocks, pcs) {
+  function playerTokens(placed, shown, clocks, pcs, mark) {
     var crew = isObj(placed) && isObj(placed.crew) ? placed.crew : {}, pins = isObj(placed) && isObj(placed.pins) ? placed.pins : {};
     var open = Object.create(null), byRoom = Object.create(null);
     (Array.isArray(shown) ? shown : []).forEach(function (n) { if (typeof n === 'string' && n) open[n] = true; });
-    function slot(room) { return byRoom[room] || (byRoom[room] = { names: [], pies: [] }); }
+    function slot(room) { return byRoom[room] || (byRoom[room] = { names: [], icons: [], pies: [], mark: '' }); }
     (Array.isArray(pcs) ? pcs : []).forEach(function (c) {
       if (!isObj(c) || typeof c.id !== 'string' || !c.id || !hasOwn(crew, c.id)) return;
       var at = crew[c.id], room = isObj(at) ? at.room : at, name = str(c.name).trim();       /* a v1 crew entry is the room's name; a v2 one is { room, ... } and only its room is read */
-      if (typeof room === 'string' && open[room] && name) slot(room).names.push(name);
+      if (typeof room === 'string' && open[room] && name) { var sl = slot(room); sl.names.push(name); sl.icons.push(typeof c.icon === 'string' ? c.icon.slice(0, 4) : ''); }
     });
+    /* VV8: mark is { room, label } from the engine's targetInView, already limited to the target in view in an open room; it adds one pill
+       and its label to that room's token, nothing else (no note, look or wary exists on it). A room the players cannot see draws nothing. */
+    if (isObj(mark) && typeof mark.room === 'string' && open[mark.room] && str(mark.label).trim()) slot(mark.room).mark = str(mark.label).trim();
     (Array.isArray(clocks) ? clocks : []).forEach(function (c) {
       if (!isObj(c) || c.hidden || typeof c.id !== 'string' || !c.id || !hasOwn(pins, c.id)) return;
       var room = pins[c.id];
       if (typeof room === 'string' && open[room]) slot(room).pies.push({ f: +c.filled || 0, s: +c.size || 0 });
     });
     return Object.keys(byRoom).sort().map(function (room) {
-      var s = byRoom[room], pills = s.names.map(function (n) { return { t: runInitials(n), c: '#111111' }; });
+      var s = byRoom[room], pills = s.names.map(function (n, i) { return { t: runInitials(n), c: '#111111', i: s.icons[i] }; });
+      if (s.mark) { pills.unshift({ t: runInitials(s.mark), c: RUN_KIND.target }); s.names.unshift(s.mark); }       /* first, so the "+N" pill never hides him */
       if (pills.length > 4) pills = pills.slice(0, 3).concat([{ t: '+' + (pills.length - 3), c: '#333333' }]);
       var label = s.names.slice(0, 3).join(', ') + (s.names.length > 3 ? ' +' + (s.names.length - 3) : '');
       return { room: room, label: shortLabel(label, 30), svg: runTokenSvg({ pills: pills, pies: s.pies.slice(0, 3) }) };
@@ -3114,9 +3122,9 @@
   }
   /* Names the markers on a player copy must never carry: the play's people and disguises (whole labels) and the names of hidden clocks.
      This is the ONLY use of `play.people` on the player path: it feeds tokenScreen's deny list and nothing is drawn from it. */
-  function tokenDeny(play) {
-    var out = [];
-    (Array.isArray(play && play.people) ? play.people : []).forEach(function (p) { if (isObj(p) && str(p.label).trim()) out.push(str(p.label)); });
+  function tokenDeny(play, allow) {
+    var out = [], ok = fold(allow);       /* VV8: allow is the label of the target while his marker is in view: the one name that may be on a marker, and only his */
+    (Array.isArray(play && play.people) ? play.people : []).forEach(function (p) { if (isObj(p) && str(p.label).trim() && !(ok && p.kind === 'target' && fold(p.label) === ok)) out.push(str(p.label)); });
     (Array.isArray(play && play.disguises) ? play.disguises : []).forEach(function (d) { if (isObj(d) && str(d.label).trim()) out.push(str(d.label)); });
     tableClocks().forEach(function (c) { if (c.hidden && str(c.name).trim()) out.push(str(c.name)); });
     return out;
@@ -3125,14 +3133,36 @@
      run, or when the ball (read through ballDoc: another site's crew is never this one's) places nothing. Only { crew, pins } are
      picked from the ball. `sig` names the request (before the screen) so live reveal compares one thing. Never touches the GM layer's
      drawn-map cache (S.runCache). */
+  /* >>> VV8 */
+  var RUN_ICONS = { mask: '🎭', tray: '🍽', jacket: '🧥', key: '🔑', hat: '🎩', badge: '🛡', apron: '🧺' };
+  function iconGlyph(name) { return runGlyph(RUN_ICONS[str(name)]); }
+  /* the glyph of the costume a PC wears (an icon, never its label), '' for none or a v1 night */
+  function pcIcon(rs, st, id) {
+    var c = rs.play.v === 2 && isObj(st.crew) && isObj(st.crew[id]) ? st.crew[id] : null, d = null;
+    if (c) (Array.isArray(rs.play.disguises) ? rs.play.disguises : []).forEach(function (x) { if (isObj(x) && x.id === c.disguise) d = x; });
+    return d ? iconGlyph(d.icon) : '';
+  }
+  /* THE ONE PLACE the target's marker is decided: B.targetInView (app/gm/ball.js) -> { room, label } | null, from the published ball (a peek
+     is never in it) and the rooms the player map shows. It reaches the iPad only inside playerTokenSet -> playerTokens -> tokenScreen. */
+  function targetMark(rs, st, shown) {
+    var m = rs.play.v === 2 && typeof rs.B.targetInView === 'function' ? rs.B.targetInView(rs.play, st, shown) : null;
+    if (!m) return null;
+    /* a target whose name (or an alias the cast holds) is a hidden NPC's gets no marker at all, not even initials, until he is revealed */
+    var f = fold(m.label);
+    return hiddenSecretNames().some(function (n) { return fold(n) === f; }) ? null : m;
+  }
+  /* <<< VV8 */
   function playerTokenSet(reveal) {
     var none = { tokens: [], hide: [], sig: '' }, rs = runSite(); if (!rs || !S.locRoll) return none;
     var st = ballDoc(rs.name), placed = { crew: isObj(st.crew) ? st.crew : {}, pins: isObj(st.pins) ? st.pins : {} };
-    if (!Object.keys(placed.crew).length && !Object.keys(placed.pins).length) return none;
     var shown = (Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : []).filter(function (r) { return roomShown(r, reveal); }).map(function (r) { return str(r.name); });
-    var pcs = dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c) }; });
+    /* >>> VV8: the target's marker (design 5.3, H6): B.targetInView at the published ball.t and the rooms this very map shows */
+    var mark = targetMark(rs, st, shown);
+    /* <<< VV8 */
+    if (!Object.keys(placed.crew).length && !Object.keys(placed.pins).length && !mark) return none;
+    var pcs = dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), icon: pcIcon(rs, st, c.id) }; });
     var clocks = tableClocks().filter(function (c) { return str(c.id); }).map(function (c) { return { id: str(c.id), size: c.size, filled: c.filled, hidden: !!c.hidden }; });
-    var tokens = P.playerTokens(placed, shown, clocks, pcs), hide = tokenDeny(rs.play);
+    var tokens = P.playerTokens(placed, shown, clocks, pcs, mark), hide = tokenDeny(rs.play, mark ? mark.label : '');
     return { tokens: tokens, hide: hide, sig: P.tokenSig(tokens, hide) };
   }
 
@@ -3307,7 +3337,7 @@
     var st = ballDoc(rs.name), m = runV2Model(rs, +st.t >= 0 ? +st.t : 0), out = [];
     Object.keys(m.cards).sort().forEach(function (name) {
       var c = m.cards[name]; if (c.lvl === null) return;
-      var pills = c.pcs.map(function (p) { return { t: p.ini, c: '#111111' }; }).concat(c.npcs.map(function (n) { return { t: n.ini, c: RUN_KIND[n.kind] || '#5d5d5d' }; }));
+      var pills = c.pcs.map(function (p) { return { t: p.ini, c: '#111111', i: p.icon }; }).concat(c.npcs.map(function (n) { return { t: n.ini, c: RUN_KIND[n.kind] || '#5d5d5d' }; }));
       if (!pills.length) return;
       if (pills.length > 4) pills = pills.slice(0, 3).concat([{ t: '+' + (pills.length - 3), c: '#333333' }]);
       out.push({ room: name, label: '', svg: runTokenSvg({ pills: pills, pies: [], lens: null, danger: c.pcs.some(function (p) { return p.mark === 'warn'; }) }) });
@@ -4940,7 +4970,7 @@
       S.npcUnsub = db.collection('npcs').onSnapshot(function (snap) {
         if (S !== me) return;
         var m = {}; (snap && snap.docs || []).forEach(function (d) { var x = d && typeof d.data === 'function' ? d.data() : null; if (isObj(x)) m[d.id] = x; });
-        me.npcs = m; renderNpcs(); renderRail(); apSubjects();
+        me.npcs = m; renderNpcs(); renderRail(); apSubjects(); liveTokens();        /* VV8: revealing (or filing) an NPC can show or hide the target's marker */
       }, function () {});
     } catch (e) { S.npcUnsub = null; }
   }
