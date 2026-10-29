@@ -194,7 +194,9 @@ const STT_ATTEMPTS = 5;
 export async function patchStt(db, campaign, patch, meta) {
   for (let attempt = 0; attempt < STT_ATTEMPTS; attempt++) {
     const cur = await loadStt(db, campaign);
-    const doc = deepMerge(cur.doc, patch);
+    /* Deepgram numbers speakers per connection, so a new session starts with no names; names sent in the same PATCH apply on top */
+    const fresh = 'session' in patch && patch.session !== cur.doc.session;
+    const doc = deepMerge(fresh ? { ...cur.doc, speakers: {} } : cur.doc, patch);
     if (isPlainObject(doc.speakers)) {
       for (const k of Object.keys(doc.speakers)) if (doc.speakers[k] === null) delete doc.speakers[k];
       if (Object.keys(doc.speakers).length > STT_LIMITS.speakers) throw new HttpError(400, 'at most ' + STT_LIMITS.speakers + ' named speakers');

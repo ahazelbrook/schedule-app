@@ -200,6 +200,26 @@ await test('server: the control document: the GM sets want, session, speakers; t
     assert.throws(() => cleanSttPatch(p, role), undefined, JSON.stringify(p));
 });
 
+await test('server: a session change starts the names empty; the same session keeps them; names in the same PATCH survive; the display cannot set either', async () => {
+  const db = await newDb(), names = async () => (await loadStt(db, 'default')).doc.speakers;
+  await patchStt(db, 'default', cleanSttPatch({ want: 'on', session: '5', speakers: { 0: 'Speaker A', 3: 'Speaker B' } }, 'gm'));
+  assert.deepEqual(await names(), { 0: 'Speaker A', 3: 'Speaker B' }, 'names sent with the first session stay');
+  await patchStt(db, 'default', cleanSttPatch({ want: 'off', session: '5' }, 'gm'));
+  await patchStt(db, 'default', cleanSttPatch({ want: 'on', session: '5' }, 'gm'));
+  assert.deepEqual(await names(), { 0: 'Speaker A', 3: 'Speaker B' }, 'the same session keeps them');
+  await patchStt(db, 'default', cleanSttPatch({ status: { state: 'listening', lines: 1 } }, 'display'));
+  assert.deepEqual(await names(), { 0: 'Speaker A', 3: 'Speaker B' }, 'a status report keeps them');
+  await patchStt(db, 'default', cleanSttPatch({ want: 'on', session: '6' }, 'gm'));
+  assert.deepEqual(await names(), {}, 'a new session starts empty');
+  assert.equal((await loadStt(db, 'default')).doc.session, '6');
+  await patchStt(db, 'default', cleanSttPatch({ session: '7', speakers: { 1: 'Speaker C' } }, 'gm'));
+  assert.deepEqual(await names(), { 1: 'Speaker C' }, 'names in the same PATCH as the change survive');
+  await patchStt(db, 'default', cleanSttPatch({ speakers: { 1: null } }, 'gm'));
+  assert.deepEqual(await names(), {}, 'null clears');
+  assert.throws(() => cleanSttPatch({ session: '8' }, 'display'), (e) => e.status === 403);
+  assert.throws(() => cleanSttPatch({ speakers: { 0: 'x' } }, 'display'), (e) => e.status === 403);
+});
+
 await test('server: the part the display GET carries is want and session only; its seq moves with those two and with nothing the iPad reports', async () => {
   const db = await newDb();
   const blank = await loadSttPart(db, 'default');

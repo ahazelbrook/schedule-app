@@ -835,6 +835,8 @@ The iPad sits in the middle of the table, so it hears everyone; it replaces the 
 (`Tools/blades-68-transcriber.md`, kept as the fallback). The path, and who holds what:
 
 1. **Start listening** (iPad panel, `I`): GM state in `gm_stt` (`want: on`, the session number, speaker names).
+   **Names reset with the session:** a PATCH that sets a `session` different from the stored one starts **Who is who** empty (Deepgram numbers speakers per connection); names sent in the same PATCH stay.
+   **Clear names** in the fold resets them mid-session (after a reconnect), and the lines list shows only the current session's lines.
 2. **The iPad** (`#display`) learns what the GM wants from its display poll: `GET /api/gm/display` carries `stt: { seq, want, session }`
    (see Endpoints and "How it polls"), and `display-page.js` hands each change to `B68Stt.feed()`. The transcriber makes no request of its own
    for it; only against a server whose display answers carry no `stt` (an older build) does it fall back to `GET /api/gm/stt` every 4 s. While
