@@ -57,12 +57,13 @@
     show: 'show', reveal: 'show', display: 'show', put: 'show',
     stress: 'sheet', harm: 'sheet', xp: 'sheet', coin: 'sheet', coins: 'sheet', trauma: 'sheet'
   };
-  /* past and -ing forms of the command verbs (Deepgram writes "Created NPC called ..."): honoured ONLY in the first command slot after the wake word, and only
-     when the cue parses to something (see softOk). Capture verbs (note, name, loose end) and call/rename are left out: "Blade named his dog" is talk, not a command. */
+  /* past and -ing forms of the make verbs, and "ticked" (Deepgram writes "Created NPC called ..."): honoured ONLY in the first command slot after the wake word, and only
+     when the cue parses to something (see softOk). Fill, clear and mark are left out ("Blade filled the car"), as are capture verbs (note, name, loose end) and call/rename: "Blade named his dog" is talk, not a command. */
   var INFL = {
     created: 'make', creating: 'make', made: 'make', making: 'make', added: 'make', adding: 'make', started: 'make', starting: 'make',
-    ticked: 'tick', ticking: 'tick', marked: 'mark', marking: 'mark', filled: 'fill', filling: 'fill', cleared: 'clear', clearing: 'clear'
+    ticked: 'tick'
   };
+  var CARRY_NO = { it: 1, that: 1, 'this': 1, them: 1, him: 1, her: 1, me: 1, us: 1, after: 1, a: 1, an: 1, 'the': 1, off: 1, out: 1, up: 1, quits: 1 };
   var AT_NOUN = { clock: 1, npc: 1, npcs: 1, enpc: 1, anpc: 1, empc: 1 };
   var NAME_STOP = { is: 1, was: 1, of: 1, 'for': 1, a: 1, an: 1, 'the': 1, and: 1 };
   var NUMW = { one: 1, won: 1, two: 2, to: 2, too: 2, three: 3, four: 4, 'for': 4, five: 5, six: 6, sick: 6, seven: 7, eight: 8, ate: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
@@ -151,7 +152,10 @@
     var t = toks[k], n1 = toks[k + 1], n2 = toks[k + 2], n3 = toks[k + 3], n4 = toks[k + 4];
     if (!t) return null;
     if (Object.prototype.hasOwnProperty.call(INFL, t.w)) return { k: k, verb: INFL[t.w], soft: true };
-    if (t.w === 'at' && n1 && (n1.w === 'a' || n1.w === 'an') && n2 && (AT_NOUN[n2.w] || (n2.w === 'n' && n3 && n3.w === 'p' && n4 && n4.w === 'c'))) return { k: k, verb: 'make', soft: true };
+    if (t.w === 'at' && n1 && (n1.w === 'a' || n1.w === 'an') && n2 && (AT_NOUN[n2.w] || (n2.w === 'n' && n3 && n3.w === 'p' && n4 && n4.w === 'c'))) {
+      for (var q = k + 3; q < toks.length - 1; q++) if (toks[q].w === 'called' || toks[q].w === 'named') return { k: k, verb: 'make', soft: true };
+      return null;
+    }
     /* "status six segment clock": an unrecognised verb starting sta- (status, stat, stats), an optional a/an, then <number> segment clock and nothing looser */
     if (/^sta/.test(t.w) && !Object.prototype.hasOwnProperty.call(CMD, t.w)) {
       var j = k + 1;
@@ -183,12 +187,21 @@
     }
     return true;
   }
-  /* a loose form counts only when the cue parses to something: not refused, and not an unknown clock ("Blade made it out of the alley" is talk).
+  /* a loose form counts only when the cue parses COMPLETE (an action, nothing missing, nothing refused) ("Blade made it out of the alley" is talk).
      find() with no table reads in assume mode, so find and parse can disagree on these, as they do for a mishearing. */
   function softOk(text, live, toks, i, hit) {
     if (!isObj(live) && /^(?:tick|mark|fill|clear)$/.test(hit.verb)) return false;      /* with no table every short word would pass as a clock name: a past-tense tick needs the table */
     var got = run(text, isObj(live) ? live : {}, { toks: toks, wi: i, vi: hit.k, verb: hit.verb }, !isObj(live));
-    return !got.refused && got.missing !== 'clock' && (got.actions.length > 0 || !!got.missing);
+    /* complete or silent: an action, nothing missing, nothing refused. A make must say called/named; a tick must name its clock (no "it", "that", "the clock"). */
+    if (got.refused || got.missing || !got.actions.length || got.viaPron) return false;
+    if (hit.verb === 'make') {
+      for (var q = hit.k + 1; q < toks.length - 1; q++) {
+        if ((toks[q].w === 'called' || toks[q].w === 'named') && !CARRY_NO[toks[q + 1].w]) return true;
+        if (/[.?!]/.test(toks[q].p) && !(toks[q + 1] && (toks[q + 1].w === 'called' || toks[q + 1].w === 'named'))) return false;      /* only a name marker opening the next sentence carries over */
+      }
+      return false;
+    }
+    return true;
   }
   function locate(text, live) {
     var toks = tokenize(text), pending = null;
@@ -399,7 +412,7 @@
 
   function resolveTick(args, live, mode, assume) {
     var clocks = Array.isArray(live.clocks) ? live.clocks : [];
-    var hits, spoken = args.spoken, amount = args.amount;
+    var hits, spoken = args.spoken, amount = args.amount, viaPron = !!args.pron;
     if (args.pron) {
       var lc = isObj(live.lastClock) ? str(live.lastClock.id) : str(live.lastClock);
       /* "the clock" first looks for a clock really named that */
@@ -426,7 +439,7 @@
     else if (mode === 'clear') { if (amount === null) return { missing: 'amount', draft: { type: 'clock_tick', clock_id: str(c.id), clock_name: str(c.name) } }; by = -Math.min(12, amount); }
     else by = Math.min(12, amount === null ? 1 : amount);
     if (by === 0) return { refused: 'nochange' };
-    return { action: { type: 'clock_tick', clock_id: str(c.id), clock_name: str(c.name), by: by } };
+    return { action: { type: 'clock_tick', clock_id: str(c.id), clock_name: str(c.name), by: by }, viaPron: viaPron };
   }
 
   function parse(text, live) {
@@ -443,7 +456,7 @@
     if (loc.pending) { res.pending = true; return res; }
     var vi = loc.vi, verb = loc.verb, e = sentenceEnd(toks, vi), k, out = null;
     /* "make a six clock. Called Escape": a name marker opening the next sentence of the same line belongs to this make (only if the first part named nothing) */
-    if (verb === 'make' && e + 1 < toks.length && /[.?!]/.test(toks[e].p) && (toks[e + 1].w === 'called' || toks[e + 1].w === 'named')) {
+    if (verb === 'make' && e + 1 < toks.length && /[.?!]/.test(toks[e].p) && (toks[e + 1].w === 'called' || toks[e + 1].w === 'named') && toks[e + 2] && !CARRY_NO[toks[e + 2].w]) {
       var hasMark = false; for (k = vi + 1; k <= e; k++) if (NAME_MARK[toks[k].w]) hasMark = true;
       if (!hasMark) e = sentenceEnd(toks, e + 1);
     }
@@ -520,6 +533,7 @@
     if (out.action) { out.action.quote = res.quote; res.actions.push(out.action); }
     if (out.missing) { res.missing = out.missing; res.candidates = out.candidates || []; res.name = out.name || ''; if (out.draft) res.draft = out.draft; }
     if (out.refused) res.refused = out.refused;
+    if (out.viaPron) res.viaPron = true;
     return res;
   }
   P.parse = parse;
