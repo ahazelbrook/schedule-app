@@ -33,14 +33,14 @@ const STUB = src.slice(a0, a1) + '})();';
     await B68Load.need('crews');
     const pb = 'hound', P = B68Content.byId[pb];
     B68.choosePlaybook(pb);
-    const sh = B68.S.sheet; sh.name = 'Strip Sam'; sh.ability = P.abilities[0][0]; sh.ability2 = P.abilities[1][0]; sh.customAbility = '<i>Quuxmaster</i> invented test ability';
+    const sh = B68.S.sheet; sh.name = 'Zzq Sheet'; sh.ability = P.abilities[0][0]; sh.ability2 = P.abilities[1][0]; sh.customAbility = '<i>Quuxmaster</i> invented test ability';
     const play = B68Tracker.initialPlay(sh, pb);
     const char = { v: 2, name: sh.name, alias: '', code: P.prefix + '-968-1234', playbook: pb, playbookName: P.name, spec: null, sheet: sh, play, owner: 'u_player', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z' };
     const R = B68Crews.byId.dealers, own = [R.abilities[0], R.abilities[1]];
     return { char, own: own.map(a => ({ name: a[0], text: a[1] })), mine: [P.abilities[0], P.abilities[1]].map(a => ({ name: a[0], text: a[1] })) };
   });
   await scratch.close();
-  const campaign = { crew: { playbook: 'dealers', name: 'Test crew', abilities: { [seed.own[0].name]: 1, [seed.own[1].name]: 1 } }, session: { number: 1, startedAt: '2026-01-02T00:00:00.000Z' }, clocks: [], updatedAt: '2026-01-02T00:00:00.000Z' };
+  const campaign = { crew: { playbook: 'dealers', name: 'Zzq Crew', abilities: { [seed.own[0].name]: 1, [seed.own[1].name]: 1 } }, session: { number: 1, startedAt: '2026-01-02T00:00:00.000Z' }, clocks: [], updatedAt: '2026-01-02T00:00:00.000Z' };
   const store = (withTable) => { const s = { 'characters/pc1': seed.char }; if (withTable) s['campaign/main'] = campaign; return s; };
 
   async function open(role, withTable, w, h) {

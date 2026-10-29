@@ -1081,7 +1081,7 @@
     /* the roll panel: bring it (or, after a roll, its verdict) into view, and keep keyboard focus inside the sheet so Esc closes it.
        On a phone the panel is a fixed bottom sheet (tracker.css): it is in view by itself, only its verdict may need a scroll inside it */
     var panel = open ? cur.root.querySelector('.ds-roll') : null;
-    if (panel && keepTop && !cur.ui.rollScroll && panel !== oldPanel) panel.scrollTop = keepTop;
+    if (panel && oldPanel && keepTop && !cur.ui.rollScroll && panel !== oldPanel && panel.className === oldPanel.className && panel.getAttribute('aria-label') === oldPanel.getAttribute('aria-label')) panel.scrollTop = keepTop;   /* the same panel redrawn, not another one opened */
     if (panel && cur.ui.abScroll) { cur.ui.abScroll = false; var strip = panel.querySelector('.ds-abstrip.open'); if (strip) { try { strip.scrollIntoView({ block: 'nearest' }); } catch (e) {} } }
     if (panel) {
       if (cur.ui.rollScroll) {
