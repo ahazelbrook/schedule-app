@@ -820,6 +820,44 @@ With `DISPLAY_EMAILS` unset the role does not exist. Check: `npm run check:displ
 then `npx wrangler secret put DISPLAY_EMAILS` and sign the iPad in with that email. `scripts/deploy.sh` does not manage this secret.
 The display page's NPC view reads `npcs`, which this role cannot; it falls back to the pushed title and caption.
 
+## Run the job (v2: `app/gm/run-view.js`, `app/gm/ball.js`, `app/gm/mission-publish.js`)
+
+The Run tab (key **G**) runs a v2 play block (`play.v === 2`) on an authored site. A v1 site keeps Location's Run the site strip (see below).
+
+**The tab.**
+- **Start the night.** Pick the engagement result (Crit, 6, 4/5 or 1-3, from `play.clock.starts`). That sets `ball.start` and `ball.t`. Nothing publishes before the night starts.
+- **The beat.** A beat is `play.clock.beat` minutes (5 to 60, default 15). Left and Right step one beat back or forward (never before the start, never past the last beat). Shift+Right jumps to the next thing that happens: an event, a stop, a route window or a way window. Esc closes a peek.
+- **Peek.** Tapping a square on the beat track previews that time in a dashed frame, on this page only, with **Back to now** (or Esc). It never writes `ball.t` and never publishes.
+- **The board.** Room cards grouped by floor. Tap a room to select it: its PCs, NPCs, routes and marks. To move a PC, tap the PC, then the room, or drag the PC's chip onto the room (`ball.crew`). "Noticed" clears when the room changes.
+- **Views.** Board, Map (the site's map with the fog) and Players (the mission as last published).
+- **This beat.** The beat's buttons, including the alarm buttons (below).
+- **The crew.** The PCs on the job, each with its position (controlled, risky or desperate) and the reason.
+- **The job.** Heard by buttons per way and PC; a press records the time the PC heard (`ball.heard`).
+- **Intel.** Tell and Tell the crew record what the crew has been told (`ball.told`).
+- **The pacing line** shows where the night sits against its clock.
+
+**Publishing.** Any change to the ball, the alarm clock or the filed PCs publishes 800 ms later, at `ball.t` and nothing else. The mission is built blind (`playerView`, then `missionFor`), screened against hidden names and secret words, and sent as `PATCH { mission }`. The header chip reads **Players: HH:MM ✓** after a publish lands. A screen hit sends nothing and says where: a hidden NPC offers **Reveal <name> and send** (it asks first); other hits show a toast. Next onto a public event puts that event's text on the iPad for 8 s. Back, jumps, start and peeks never do. The server cleans the mission again, refuses a hidden name (422) and refuses a player's write (403).
+
+**End the night.** Run's menu → **End the night** (it asks). That sends `PATCH { mission: null }`, clearing the players' mission. Publishing stays off until the night's start changes.
+
+**What reaches whom.**
+
+| Who | Sees |
+|---|---|
+| The GM page | Everything. |
+| The iPad (the band beside the map, its own poll part `?hseq=N`) | The time, now, next, the night's squares, the alarm's player label and line, the crew's costumes, and the target's marker on the map while he is in view in an open room. Never the cards. |
+| Each phone | Its own PC's card only. The campaign document holds every card and each phone renders only its owner's. Soft privacy, by design. |
+
+GM-only: every event label, a way's name, people other than the target and the watcher who sees through your costume, notes, wary lines, steps past the next, and secret words.
+
+**The v1 fallback.** A v1 play keeps Location's **Run the site** strip unchanged. If the Run view misbehaves, Location (B) still has the map, the fog and **Show on iPad**.
+
+**Gaps.**
+- **Alarm buttons.** Each threshold in `play.alarm.at` shows a button once the alarm clock's fill reaches it, and stays until acted on. Skip the next private stop is disabled when the target has no private stop left.
+- **Skip the next private stop.** Drops the target's next future private stop from his route (stored as a skip in `ball.over`). Never a public stop.
+- **Lockdown.** Holds the target in the room named by `play.alarm.lockdown.room`, or in the room he is in when none is named. A toast says so if he is nowhere to hold.
+- **Running late.** +15 or +30 adds that many minutes to the target's stops from now on. Clear removes it.
+
 ## Handouts (`npm run gm:handouts`, the iPad panel `I`)
 
 The prepared props (the images the vault holds for the table) as a list the GM can show directly, and that Claude can suggest.

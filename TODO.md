@@ -1,3 +1,19 @@
+# RUN THE JOB (v2): state at 29/10/2026
+
+**Built and merged (VV1 to VV10, PRs #108 to #117).** The Run tab's v2 view, publishing to the players, the iPad band,
+the phone's Mission card, End the night, the alarm buttons and the server's cleanMission. Documented in GM.md, "Run the job (v2)".
+
+**Still to do.**
+- Tue 3/11: the release gate, then deploy, then the real level pushed as the location part.
+- Wed 4/11: the smoke test. Three beats with two phones.
+- Thu 5/11: last deploy.
+
+**Known follow-ups.**
+- A 9th card is dropped silently (the server caps cards at 8).
+- The hud is served without a re-clean.
+- Costume emoji to check on the iPad.
+- An old GM page left open across the deploy prints "[object Object]" in the v1 strip for a v2 ball.
+
 # RESUME HERE (updated 17 Oct 2026, morning AEDT)
 
 **State.** `main` is live: Worker `47f70eaf`, deployed 17 Oct (a game day, on Alex's go-ahead), rollback
