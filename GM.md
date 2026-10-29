@@ -840,6 +840,8 @@ The Run tab (key **G**) runs a v2 play block (`play.v === 2`) on an authored sit
 
 **End the night.** Run's menu → **End the night** (it asks). That sends `PATCH { mission: null }`, clearing the players' mission. Publishing stays off until the night's start changes.
 
+**Reset the night.** Once the night has started, a quiet **Reset the night** button sits in the Run header, after the Players chip and away from the beat buttons (not on the iPad or the phones). It asks first. On a yes it clears the players' mission (`PATCH { mission: null }`, so the band and every card go), then takes the ball back to unstarted: only `site`, `floor` and `open` stay, and the clock, crew, heard, steps, ways, told, delays and alarm keys go. Start the night is offered again, and picking the same result a second time publishes again (unlike End the night). The table clocks, the map's open rooms, the Location card and the NPC cast are not touched. If the mission write fails it says so and the ball still resets (press End the night to try again); if the ball write fails nothing else changes. Use it to rehearse a night from different starts, or when the wrong engagement result was picked.
+
 **What reaches whom.**
 
 | Who | Sees |

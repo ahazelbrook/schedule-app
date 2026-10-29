@@ -26,6 +26,7 @@
      publishNow(opts?)           publish now -> Promise<{ ok, skipped?, refused?, error?, seq?, time? }>
      flush()                     publishNow() only if a publish is waiting (the page closing)
      endNight()                  asks, then PATCH { mission: null }; publishing stays off until the night's start changes
+     resetNight()                no ask (the Run view asks): PATCH { mission: null }, and publishing is on again for the same start
      landed(from, to, how)       the time moved from -> to; how 'next' may lay one 8 s text overlay (never 'back', never a peek)
      onPublished(fn) -> off      fn({ ok, ended?, time, at, seq, error? }) after every publish and End the night
      status()                    -> { ok, time, at, seq, text } text is "Players: HH:MM ✓" ("" before the first publish)
@@ -239,6 +240,24 @@
       });
     }
 
+    /* ---- Reset the night: End the night without its own confirm (the Run view asks), and the night may start again at the SAME result ----
+       It clears the ended-for-this-start marker, so the next publish for the same start key goes out, and bumps gen so a publish still out
+       cannot land after the reset. If the send fails it says so, and the marker is still cleared (the ball is reset next; End the night is there to try again). */
+    function resetNight() {
+      if (st.timer !== null) { cancel(st.timer); st.timer = null; }
+      st.again = false; st.gen++; st.endedFor = null;
+      return Promise.resolve().then(function () { return d.send(null); }).then(function () {
+        st.last = null; st.lastKey = ''; st.ok = false; st.time = ''; st.at = ''; st.ended = true; st.endedFor = null;
+        var r = { ok: true, ended: true, time: '', at: clockStamp(now()), seq: st.seq };
+        emit(r);
+        return r;
+      }, function (e) {
+        st.endedFor = null;
+        say('Could not clear the players’ screens: ' + str(e && e.message || 'failed') + '. The night is reset; press End the night to try again.', true);
+        return { ok: false, error: e };
+      });
+    }
+
     /* ---- the overlay a public event earns when Next lands on it ---- */
     function landed(from, to, how) {
       if (how !== 'next' || typeof d.overlay !== 'function') return Promise.resolve(null);
@@ -263,6 +282,7 @@
       publishNow: function (o) { return publishMission(o); },
       flush: function () { return st.timer !== null ? publishMission() : Promise.resolve(null); },
       endNight: endNight,
+      resetNight: resetNight,
       landed: landed,
       onPublished: function (fn) { if (typeof fn !== 'function') return function () {}; listeners.push(fn); return function () { var i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); }; },
       status: function () {

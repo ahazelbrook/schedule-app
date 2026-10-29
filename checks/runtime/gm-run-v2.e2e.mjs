@@ -502,6 +502,61 @@ try {
     else check(m.lastCard <= m.vh || m.main.sh > m.main.ch, w + 'x' + h + ': the board scrolls on its own if it does not fit');
     await S.c.close();
   }
+  /* ---- 13. Reset the night (VV12) ---- */
+  {
+    const Z = await open();
+    await Z.page.keyboard.press('g');
+    await Z.page.waitForSelector('.rv-head');
+    const mission = async () => (await api('GET', '/campaign')).json.doc.mission || null;
+    const onlyKept = (x) => !!x && Object.keys(x).every((k) => ['site', 'floor', 'open'].includes(k)) && x.site === NAME2;
+    check(await Z.page.$eval('.rv-head .rv-reset', (e) => e.textContent.trim() === 'Reset the night' && !e.matches('[data-rv="next"], [data-rv="back"]')), 'a started night shows Reset the night in the header, apart from the beat buttons');
+    /* a no changes nothing */
+    const before = JSON.stringify(await ball()), mBefore = JSON.stringify(await mission());
+    check(before.length > 80 && !!(await mission()), 'positive control: the night carries state and a published mission');
+    answer.no = true; const n0 = asked.length;
+    await Z.page.click('.rv-head .rv-reset'); await sleep(1500);
+    answer.no = false;
+    check(asked.length === n0 + 1 && /^Reset the night\? The clock goes back to Start the night/.test(asked[n0]) && /table clocks stay as they are/.test(asked[n0]), 'Reset the night asks first, in plain words');
+    check(JSON.stringify(await ball()) === before && JSON.stringify(await mission()) === mBefore && (await Z.page.$$('.rv-start')).length === 0, 'a no: the ball, the mission and the view are exactly as they were');
+    /* a yes resets the night as it stands (whatever the earlier sections left) */
+    await Z.page.click('.rv-head .rv-reset');
+    check(!!(await until(async () => onlyKept(await ball()) && !(await mission()), 10000)), 'a yes: the ball holds only site/floor/open and the campaign document has no mission (' + JSON.stringify(await ball()) + ')');
+    check(!!(await Z.page.waitForSelector('.rv-start [data-rv="start"]', { timeout: 8000 }).then(() => true, () => false)) && (await Z.page.$$('.rv-head .rv-reset')).length === 0, 'Start the night is offered again, and the reset button is gone');
+    let disp = (await api('GET', '/gm/display?hseq=999999')).json;
+    check(!!disp.mission && disp.mission.hud === null && typeof disp.mission.hseq === 'number' && !disp.mission.unchanged, 'the display answer\'s mission part is { hseq, hud: null } (' + JSON.stringify(disp.mission) + ')');
+    check(JSON.stringify((await ball()).open) !== undefined && (await ball()).site === NAME2, 'the map\'s open rooms and the site stay');
+
+    /* a night from the same start, then a reset, then the SAME result again */
+    const fresh = async () => {
+      await Z.page.click('[data-rv="start"][data-key="4/5"]');
+      await until(async () => { const x = await ball(); return x && x.start === 45 ? x : null; }, 8000);
+      check(!!(await until(async () => { const m = await mission(); return m && m.hud && m.hud.time === '21:45' ? m : null; }, 10000)), 'the night starts at 4/5 and the band is published (21:45)');
+    };
+    await fresh();
+    await Z.page.click('[data-rv="next"]'); await until(async () => (await timeText(Z.page)) === '22:00', 8000);
+    await Z.page.click('[data-rv="next"]'); await until(async () => (await timeText(Z.page)) === '22:15', 8000);
+    await Z.page.click('.rv-tray .rv-pc[data-id="run-pc2"]'); await Z.page.click('.rv-card[data-room="Cocktail lounge"]');
+    await until(async () => { const x = await ball(); return x && x.crew && x.crew['run-pc2'] ? x : null; }, 8000);
+    await Z.page.click('.rv-card[data-room="Cocktail lounge"] .rv-cn');
+    await Z.page.click('.rv-sec[data-sec="room"] [data-rv="heard"]');
+    const mid = await until(async () => { const x = await ball(); return x && x.heard && x.crew && x.t === 75 ? x : null; }, 8000);
+    check(!!mid && !!mid.heard.A, 'two beats, a PC placed and a lead heard are in the ball');
+    check(!!(await until(async () => { const m = await mission(); return m && m.hud && m.hud.time === '22:15' ? m : null; }, 10000)), 'and the band follows to 22:15');
+    const seqBefore = (await mission()).seq;
+    await Z.page.click('.rv-head .rv-reset');
+    check(!!(await until(async () => onlyKept(await ball()) && !(await mission()), 10000)), 'Reset the night: the ball is down to site/floor/open and the mission is gone');
+    disp = (await api('GET', '/gm/display?hseq=999999')).json;
+    check(!!disp.mission && disp.mission.hud === null, 'the display GET\'s mission part is { hseq, hud: null }');
+    await Z.page.waitForSelector('.rv-start [data-rv="start"]', { timeout: 8000 });
+    await fresh();                      /* the SAME result again: publishing works on the same start */
+    await Z.page.click('[data-rv="next"]');
+    const again = await until(async () => { const m = await mission(); return m && m.hud && m.hud.time === '22:00' ? m : null; }, 10000);
+    check(!!again && again.seq > seqBefore, 'the SAME start picked again and a beat stepped: the mission is published again, the band returns (seq ' + seqBefore + ' to ' + (again && again.seq) + ')');
+    const after = await ball();
+    check(after.start === 45 && after.t === 60 && !after.heard && !after.crew, 'and nothing from the earlier night came back (' + JSON.stringify(after) + ')');
+    await Z.c.close();
+  }
+
   check(!errors.length, 'no page errors: ' + errors.slice(0, 3).join(' | '));
   await browser.close();
 } catch (e) { failed++; console.log('FAIL ' + (e && e.stack || e)); }

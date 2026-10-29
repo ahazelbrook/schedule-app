@@ -168,5 +168,70 @@ test('waySummary: unheard, heard by, steps n of m, done, and gone once t passes 
   assert.equal(R.waySummary(play, {}, wB, TT('01:00')).state, 'unheard', 'a window with no until never closes by itself');
 });
 
+/* ---- Reset the night (VV12): the button, the ball change, the confirm ---- */
+const dummy = () => ({ innerHTML: '', textContent: '', hidden: false, onclick: null, setAttribute() {}, getAttribute() { return null; }, removeAttribute() {}, querySelector() { return null; }, querySelectorAll() { return []; }, classList: { add() {}, remove() {} } });
+function viewRig(state) {
+  const r = { state, sets: [], asked: [], toasts: [], mission: 0, answer: true, setOk: true, handlers: {} };
+  r.host = {
+    site: () => ({ name: 'The Pelican Rooms', play }), state: () => r.state,
+    set: (c) => { r.sets.push(c); return r.setOk; }, pcs: () => PCS, floors: () => floors, isOpen: () => true, openRoom() {}, mapSvg: () => '', clockNamed: () => null,
+    publish() {}, toast: (m, bad) => r.toasts.push([m, !!bad]),
+    confirm: (m) => { r.asked.push(m); return r.answer; }, resetMission: () => { r.mission++; return Promise.resolve({ ok: true }); },
+  };
+  r.view = R.create(r.host);
+  r.box = Object.assign(dummy(), { querySelector: () => dummy(), addEventListener: (k, fn) => { r.handlers[k] = fn; }, contains: () => true });
+  r.view.attach(r.box); r.view.render(r.box);
+  r.click = (rv) => r.handlers.click({ target: { closest: () => ({ getAttribute: (k) => (k === 'data-rv' ? rv : null) }) }, preventDefault() {} });
+  return r;
+}
+const FULL = { v: 2, site: 'The Pelican Rooms', floor: 1, open: ['Showroom'], start: 0, t: 45, crew: { p1: { room: 'Showroom' } }, heard: { A: { p1: 5 } }, steps: { A: [true] },
+  ways: { A: 'done' }, told: { I1: 'crew' }, over: { od: { delay: 15 } }, acted: { x: 1 }, alarm: { n: 1 }, dawn: { at: 'x' }, lens: 'a', view: 'players', vv5: { k: 1 }, runT: 3 };
+
+test('the Reset the night button is absent before Start the night and present after', () => {
+  const before = viewRig({ site: 'The Pelican Rooms', open: ['Showroom'] });
+  assert.ok(/data-rv="start"/.test(before.box.innerHTML), 'positive control: the start buttons are drawn');
+  assert.ok(!/data-rv="reset"/.test(before.box.innerHTML) && !/Reset the night/.test(before.box.innerHTML), 'no reset before the start');
+  const after = viewRig({ ...FULL });
+  assert.ok(/data-rv="reset"[^>]*>Reset the night</.test(after.box.innerHTML), 'the button is in the header once started');
+  assert.ok(/data-rv="reset"/.test(after.box.innerHTML.split('data-rv="next"')[1]), 'and it sits after the Next beat button, not beside it');
+});
+
+test('resetChange keeps exactly site, floor and open and drops every other key', () => {
+  const ch = R.resetChange(FULL);
+  assert.deepEqual(Object.keys(ch).sort(), Object.keys(FULL).filter((k) => !['site', 'floor', 'open'].includes(k)).sort());
+  assert.ok(Object.values(ch).every((v) => v === null), 'each is set to null (the page deletes it)');
+  /* applied the way ballSet does: what is left is site/floor/open */
+  const left = { ...FULL }; Object.keys(ch).forEach((k) => delete left[k]);
+  assert.deepEqual(left, { site: 'The Pelican Rooms', floor: 1, open: ['Showroom'] });
+  assert.deepEqual(R.resetChange({ site: 'x' }), {}); assert.deepEqual(R.resetChange(null), {});
+});
+
+await (async () => {
+  const name = 'accepting the confirm clears the mission first, then writes one ball change that drops everything but site/floor/open; the view is un-started';
+  try {
+    const r = viewRig({ ...FULL });
+    await r.click('reset'); await new Promise((res) => setTimeout(res, 0));
+    assert.equal(r.asked.length, 1); assert.match(r.asked[0], /^Reset the night[?] The clock goes back to Start the night/); assert.match(r.asked[0], /table clocks stay as they are/);
+    assert.equal(r.mission, 1, 'mission cleared');
+    assert.equal(r.sets.length, 1); assert.deepEqual(r.sets[0], R.resetChange(FULL));
+    assert.ok(!('site' in r.sets[0]) && !('floor' in r.sets[0]) && !('open' in r.sets[0]));
+    passed++; console.log('PASS ' + name);
+  } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); }
+})();
+
+await (async () => {
+  const name = 'declining the confirm writes nothing and clears nothing; a failed ball write is said and leaves the rest alone';
+  try {
+    const r = viewRig({ ...FULL }); r.answer = false;
+    await r.click('reset'); await new Promise((res) => setTimeout(res, 0));
+    assert.equal(r.asked.length, 1); assert.equal(r.sets.length, 0, 'no ball write'); assert.equal(r.mission, 0, 'no mission write');
+    const bad = viewRig({ ...FULL }); bad.setOk = false;
+    await bad.click('reset'); await new Promise((res) => setTimeout(res, 0));
+    assert.equal(bad.mission, 1); assert.equal(bad.sets.length, 1);
+    assert.ok(bad.toasts.some(([m, b]) => b && /Could not reset the night/.test(m)), JSON.stringify(bad.toasts));
+    passed++; console.log('PASS ' + name);
+  } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); }
+})();
+
 console.log(failed ? 'FAILED ' + failed + ' of ' + (failed + passed) : 'ok ' + passed + ' passed');
 process.exit(failed ? 1 : 0);

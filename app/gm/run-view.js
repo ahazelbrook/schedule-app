@@ -13,6 +13,7 @@
  *   moveCrew(st, pcId, room, beatIndex) -> the new ball.crew (the PC placed in the room, noticed cleared when the room changed).
  *   stepTime(play, st, dir) -> the new ball.t for a beat back or forward (never before ball.start), or null.
  *   jumpTime(play, st) -> the minute of the next thing that happens after ball.t, or null.
+ *   resetChange(st) -> the ball change that un-starts the night: every key but site, floor and open set to null (VV12).
  *   startMinutes(play) -> [{ key, label, at, t }] the engagement results play.clock.starts offers, in minutes from clock.start.
  *
  * THE VIEW (needs a DOM): create(host) -> { render(box), peek(t), unpeek(), ... }. host is the page's side of the contract:
@@ -22,6 +23,7 @@
  *   mapSvg() -> svg text | ""                 clockNamed(name) -> { filled, size } | null
  *   dawn()             VV5: the False dawn button (the page's runDawn, which asks first)        setPosition(pos)  VV5: the console's Position
  *   publish(t, why)    THE CALL SITE VV6 FILLS: why is "start" | "beat" | "jump"; the page's body is empty today.
+ *   confirm(msg) -> bool  VV12: the page's confirm        resetMission() -> Promise: VV12: the players' mission cleared (mission-publish resetNight)
  *   toast(msg, bad)
  *
  * SEAMS for the tickets that build on this view (module-level, shared by every instance):
@@ -92,6 +94,16 @@
     var t = timeOf(st), span = spanOf(play), best = null;
     happenings(play).forEach(function (m) { if (m > t && m < span && (best === null || m < best)) best = m; });
     return best;
+  }
+
+  /* VV12 Reset the night: the map's fog (site, floor, open) belongs to the Location, not the night; every other key goes */
+  var KEEP = ["site", "floor", "open"];
+  var RESET_ASK = "Reset the night? The clock goes back to Start the night, and every PC’s room, costume, leads heard, intel told, steps and the target’s delays are cleared. " +
+    "The iPad band and every phone’s card go. The map’s open rooms and the table clocks stay as they are.";
+  function resetChange(st) {
+    var ch = {};
+    Object.keys(isObj(st) ? st : {}).forEach(function (k) { if (KEEP.indexOf(k) < 0) ch[k] = null; });
+    return ch;
   }
 
   function moveCrew(st, pcId, room, beatIndex) {
@@ -238,6 +250,7 @@
           '<span class="rv-pie" style="--f:' + (size ? Math.round(filled / size * 100) : 0) + '%"></span> ' + esc(m.alarm.name) + ' <b>' + filled + "/" + size + "</b></button>";
       }
       h += '<span class="rv-chip rv-players" data-ok="' + (players.ok ? 1 : 0) + '">' + esc(players.text) + "</span>";
+      if (m.started) h += '<button type="button" class="rv-btn sm rv-reset" data-rv="reset" title="Back to Start the night; asks first">Reset the night</button>';
       if (menuItems.length) h += '<button type="button" class="rv-btn" data-rv="menu" aria-haspopup="true" aria-label="Run menu">⋯</button>';
       h += "</div>";
       if (m.alarm && alarmOpen) {
@@ -347,6 +360,19 @@
     self.peek = function (t) { var rs = site(); if (!rs) return; var st = host.state(); peekT = isStarted(st) && t !== timeOf(st) ? t : null; self.rerender(); };
     self.unpeek = function () { if (peekT === null) return false; peekT = null; self.rerender(); return true; };
     self.peeking = function () { return peekT !== null; };
+    /* VV12: ask, clear the players' mission, then un-start the ball (site, floor and open stay); a failed mission write is said and the ball still resets */
+    self.resetNight = function () {
+      var rs = site(); if (!rs || !isStarted(host.state())) return Promise.resolve(false);
+      if (typeof host.confirm !== "function" || !host.confirm(RESET_ASK)) return Promise.resolve(false);
+      var old = host.state(), key = str(old.site || rs.name) + "|" + old.start;
+      return Promise.resolve(typeof host.resetMission === "function" ? host.resetMission() : null).then(null, function () { return null; }).then(function () {
+        var ok = host.set(resetChange(host.state()));
+        if (!ok) { host.toast("Could not reset the night: the state was not saved, so the night is still running. The players' screens were cleared until the next beat.", true); self.rerender(); return false; }
+        try { if (typeof sessionStorage !== "undefined") sessionStorage.removeItem("b68-rv-pace|" + key); } catch (e) { /* page-local anyway */ }
+        pace = null; ui5.prev = null; ui5.ways = {}; ui5.more = {};
+        self.reset(); self.rerender(); return true;
+      });
+    };
     self.reset = function () { peekT = null; sel = ""; arm = ""; drag = null; };
 
     function onClick(ev) {
@@ -360,6 +386,7 @@
         case "next": self.step(1); break;
         case "peek": { var i = +el.getAttribute("data-i"); self.peek(i * beatLen(rs.play)); break; }
         case "unpeek": self.unpeek(); break;
+        case "reset": self.resetNight(); break;
         case "alarm": alarmOpen = !alarmOpen; self.rerender(); break;
         case "view": host.set({ view: el.getAttribute("data-v") === "board" ? null : el.getAttribute("data-v") }, true); self.rerender(); break;
         case "pc": {
@@ -772,7 +799,7 @@
   hooks.heard = heard5;
   /* ==== VV5 END ==== */
 
-  return { create: create, model: model, moveCrew: moveCrew, stepTime: stepTime, jumpTime: jumpTime, startMinutes: startMinutes, initials: initials,
+  return { create: create, model: model, moveCrew: moveCrew, resetChange: resetChange, resetAsk: RESET_ASK, stepTime: stepTime, jumpTime: jumpTime, startMinutes: startMinutes, initials: initials,
     setPlayersChip: setPlayersChip, menuItems: menuItems, views: views, sections: sections, hooks: hooks,
     sortedStops: sortedStops, scanChanges: scanChanges, crewOrder: crewOrder, skipTarget: skipTarget, waySummary: waySummary };
 });

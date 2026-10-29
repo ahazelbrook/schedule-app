@@ -3371,6 +3371,8 @@
       openRoom: function (name, on) { roomOpen(name, on); }, mapSvg: runMapSvg,
       clockNamed: function (name) { var l = tableClocks().filter(function (c) { return str(c.name).trim() === name; }); return l.length ? l[0] : null; },
       publish: runPublish, toast: toast,
+      /* VV12 Reset the night: the page's confirm, and the players' mission cleared (mission-publish resetNight) */
+      confirm: function (msg) { return W.confirm(msg); }, resetMission: function () { var h = missionHooks(); return h ? h.resetNight() : Promise.resolve(null); },
       /* VV5 BEGIN */ dawn: function () { return runDawn(); }, setPosition: function (pos) { if (S && hasSit()) setPos(pos); } /* VV5 END */
     };
   }
@@ -4088,7 +4090,7 @@
   function missionHooks() {
     var me = S, ctl = me && me.mission, M = W.B68GmMission; if (!ctl || !M) return null;
     return {
-      onPublished: ctl.onPublished, status: ctl.status, last: ctl.last, publishNow: ctl.publishNow, endNight: ctl.endNight, landed: ctl.landed, changed: ctl.changed,
+      onPublished: ctl.onPublished, status: ctl.status, last: ctl.last, publishNow: ctl.publishNow, endNight: ctl.endNight, resetNight: ctl.resetNight, landed: ctl.landed, changed: ctl.changed,
       renderPlayersView: function (el, m) { return M.renderPlayersView(el, m === undefined ? ctl.last() : m, W.document); }
     };
   }
