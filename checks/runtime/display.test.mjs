@@ -1148,6 +1148,92 @@ await test('no way to the GM routes from the display: no link, no #gm, no href s
   assert.ok(!/dp-hatch|dp-back/.test(fs.readFileSync(path.join(ROOT, 'app', 'display.css'), 'utf8')), 'the hold-to-reveal styles are gone');
 });
 
+/* ---------- the band beside the map (VV3, design 5.3): the hud as the page draws it ---------- */
+/* a hud in the shape the server's cleanMission leaves (optional strings are "" rather than absent); the venue and names are invented */
+const HUD = {
+  time: '22:30', label: 'Gala night',
+  now: [{ text: 'The photo call', where: 'The floor', until: '23:00' }],
+  next: [{ text: 'The toast', where: 'Showroom', at: '00:00', inMin: 90 }],
+  night: { beats: 16, start: 2, cur: 6, marks: [{ i: 3, icon: 'star', text: 'The speeches' }, { i: 12, icon: 'diamond', text: 'The fireworks' }] },
+  alarm: { name: 'Fuse', size: 6, filled: 2, text: 'A door slams' },
+  crew: [{ name: 'Ada', costume: 'Cook', icon: 'tray', room: 'Cocktail lounge' }, { name: 'Bo', costume: 'Guest', icon: 'mask', room: '' }],
+  target: { room: '' }, ways: { found: 2, total: 7 }
+};
+await test('band: no hud, or junk, is no band', () => {
+  for (const h of [null, undefined, 3, 'x', []]) assert.equal(P.bandModel(h), null);
+});
+await test('band: the time and label, NOW (with "until"), NEXT (with "in 1 h 30"), alarm, crew and ways, in the design\'s words', () => {
+  const m = P.bandModel(HUD);
+  assert.equal(m.time, '22:30'); assert.equal(m.label, 'Gala night');
+  assert.deepEqual(m.now, [{ text: 'The photo call', where: 'The floor', until: 'until 23:00' }]);
+  assert.equal(m.next.length, 1); assert.equal(m.next[0].inText, 'in 1 h 30'); assert.equal(m.next[0].soon, false); assert.equal(m.next[0].kicker, 'Next');
+  assert.deepEqual(m.alarm, { name: 'Fuse', size: 6, filled: 2, count: '2 of 6', text: 'A door slams' });
+  assert.deepEqual(m.crew.map((c) => [c.name, c.costume, c.badge, c.room]), [['Ada', 'Cook', 'T', 'Cocktail lounge'], ['Bo', 'Guest', 'M', '']]);
+  assert.equal(m.ways, 'Ways found: 2 of 7');
+});
+await test('band: inText reads minutes the way the table says them', () => {
+  assert.deepEqual([0, 15, 45, 60, 90, 125, null, 'x', -5].map(P.inText), ['now', 'in 15 min', 'in 45 min', 'in 1 h', 'in 1 h 30', 'in 2 h 5', '', '', 'now']);
+});
+await test('band: NEXT turns amber at one beat or less, and says so in words (a "Next, soon" label), not by colour alone', () => {
+  const at = (inMin) => P.bandModel({ ...HUD, next: [{ text: 'The toast', where: '', at: '', inMin }] }).next[0];
+  assert.equal(P.BAND_BEAT, 15);
+  assert.equal(at(16).soon, false); assert.equal(at(15).soon, true); assert.equal(at(0).soon, true);
+  assert.equal(at(15).kicker, 'Next, soon'); assert.equal(at(15).inText, 'in 15 min'); assert.equal(at(0).inText, 'now');
+});
+await test('band: the night is one square per beat: before the start shaded, past dark, the current outlined, marks keep their icon', () => {
+  const sq = P.bandModel(HUD).night.squares;
+  assert.equal(sq.length, 16);
+  assert.deepEqual(sq.map((q) => q.state).slice(0, 8), ['before', 'before', 'past', 'past', 'past', 'past', 'cur', 'ahead']);
+  assert.equal(sq[3].mark.icon, 'star'); assert.equal(sq[12].mark.icon, 'diamond'); assert.equal(sq[4].mark, null);
+  assert.equal(sq.filter((q) => q.state === 'cur').length, 1);
+  const none = P.bandModel({ ...HUD, night: { beats: 4, start: 0, cur: -1, marks: [{ i: 99, icon: 'star', text: 'off the end' }] } }).night;
+  assert.deepEqual(none.squares.map((q) => q.state), ['ahead', 'ahead', 'ahead', 'ahead']); assert.equal(none.marks.length, 0);
+  assert.equal(P.bandModel({ ...HUD, night: null }).night, null);
+});
+await test('band: empty strings and nulls leave their section out (truthiness, not key presence); ways only with a total', () => {
+  const m = P.bandModel({ time: '22:30', label: '', now: [], next: [], night: null, alarm: null, crew: [{ name: '', costume: '', icon: '' }], target: null, ways: { found: 0, total: 0 } });
+  assert.equal(m.label, ''); assert.deepEqual(m.now, []); assert.deepEqual(m.next, []); assert.equal(m.alarm, null); assert.deepEqual(m.crew, []); assert.equal(m.ways, null);
+  assert.equal(P.bandModel({ ...HUD, ways: { found: 9, total: 7 } }).ways, 'Ways found: 7 of 7', 'found is held to the total');
+  assert.equal(P.bandModel({ ...HUD, alarm: { name: 'Fuse', size: 6, filled: 99, text: '' } }).alarm.count, '6 of 6');
+});
+await test('band: the signature moves with the content and not with a repeat', () => {
+  assert.equal(P.bandSig(P.bandModel(HUD)), P.bandSig(P.bandModel(JSON.parse(JSON.stringify(HUD)))));
+  assert.notEqual(P.bandSig(P.bandModel(HUD)), P.bandSig(P.bandModel({ ...HUD, time: '22:45' })));
+  assert.equal(P.bandSig(null), '');
+});
+await test('band: missionPart reads { hseq, hud }, { hseq, hud: null } and { hseq, unchanged } and ignores the rest', () => {
+  assert.deepEqual(P.missionPart({ mission: { hseq: 3, hud: { time: 'x' } } }), { hseq: 3, hud: { time: 'x' } });
+  assert.deepEqual(P.missionPart({ mission: { hseq: 0, hud: null } }), { hseq: 0, hud: null });
+  assert.deepEqual(P.missionPart({ mission: { hseq: 3, unchanged: true } }), { hseq: 3, unchanged: true });
+  for (const bad of [{}, { mission: null }, { mission: { hud: {} } }, { mission: { hseq: 'a', hud: {} } }, { mission: { hseq: 1, hud: 'x' } }, { mission: { hseq: 1 } }]) assert.equal(P.missionPart(bad), null);
+});
+await test('band: the poller sends hseq (0 first, then the one it holds), keeps the 4 s beat, and hands the hud over only when it moved', async () => {
+  const got = [], calls = [];
+  const r = rig({ onMission: (h) => got.push(h), fetch: (seq, aseq, sseq, hseq) => { calls.push({ hseq, at: r.c.now }); return r.g.handler(hseq); } });
+  r.g.handler = (hseq) => Promise.resolve(hseq === 2 ? { seq: 1, unchanged: true, mission: { hseq: 2, unchanged: true } } : { ...ok(1, { kind: 'blank' }), mission: { hseq: 2, hud: HUD } });
+  r.poller.start(); await r.c.advance(0); await r.c.advance(BEAT); await r.c.advance(BEAT);
+  assert.deepEqual(calls.map((c) => [c.hseq, c.at]), [[0, 0], [2, 4000], [2, 8000]], 'hseq 0 first, then the held one, on the same 4 s beat');
+  assert.equal(got.length, 1); assert.equal(got[0].time, '22:30');
+  r.g.handler = () => Promise.resolve({ seq: 1, unchanged: true, mission: { hseq: 0, hud: null } });
+  await r.c.advance(BEAT); assert.equal(got.length, 2); assert.equal(got[1], null, 'a removed mission clears the band');
+  r.poller.stop();
+});
+await test('band: an answer with no mission part (an older server) calls onMission never and does not stop the display', async () => {
+  const got = [], r = rig({ onMission: (h) => got.push(h) });
+  r.g.handler = () => Promise.resolve(ok(1, { kind: 'text', text: 'a' }));
+  r.poller.start(); await r.c.advance(0); assert.equal(got.length, 0); assert.equal(r.data.length, 1); r.poller.stop();
+});
+await test('band: the page paints the band with text nodes only and no control, and the band takes no taps', () => {
+  const code = fs.readFileSync(path.join(ROOT, 'app', 'display-page.js'), 'utf8');
+  const a = code.indexOf('function bandPaint'), b = code.indexOf('function bandFit');
+  assert.ok(a > 0 && b > a, 'bandPaint found');
+  const body = code.slice(a, b);
+  assert.ok(!/innerHTML|insertAdjacentHTML|el\(\s*'(button|a|input)'|addEventListener|\bon\(/.test(body), 'no markup sink, no control, no listener in the band');
+  const css = fs.readFileSync(path.join(ROOT, 'app', 'display.css'), 'utf8').replace(/\s+/g, ' ');
+  assert.ok(/\.dp-band \{[^}]*pointer-events: none/.test(css), 'the band takes no taps');
+  assert.ok(/prefers-reduced-motion: reduce\) \{ \.dp-band\.dp-b-fade \{ animation: none/.test(css), 'reduced motion: no fade');
+});
+
 await test('the module exposes the page interface', () => {
   assert.equal(typeof D.mount, 'function'); assert.equal(typeof D.unmount, 'function');
   assert.doesNotThrow(() => D.unmount());                                             // unmounting nothing is fine

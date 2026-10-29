@@ -1369,11 +1369,12 @@
        ambient: { seq, unchanged: true }, stt: { seq, unchanged: true } }. stt is only what the table iPad needs of the transcriber
        (GM.md "Listening"); without sseq the answer has no stt, and seq alone (no aseq) is the oldest call: { seq, unchanged: true }
        while current, with the parts ignored. */
-    display: function (seq, aseq, sseq) {
+    display: function (seq, aseq, sseq, hseq) {
       var q = [];
       if (seq !== undefined && seq !== null) q.push(qs('seq', seq));
       if (aseq !== undefined && aseq !== null) q.push(qs('aseq', aseq));
       if (sseq !== undefined && sseq !== null) q.push(qs('sseq', sseq));
+      if (hseq !== undefined && hseq !== null) q.push(qs('hseq', hseq));   /* the band's part: adds `mission` (VV2) */
       var t0 = Date.now();
       return api('GET', '/gm/display' + (q.length ? '?' + q.join('&') : '')).then(function (r) {
         if (r && typeof r.live === 'boolean') live.flag(r.live, t0);   /* the switch rides in this answer too (design 2.5) */
