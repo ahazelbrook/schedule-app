@@ -70,7 +70,7 @@ import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { basenames } from "./lib/vault.mjs";
-import { buildPrep } from "./lib/prep-export.mjs";
+import { buildPrep, npcCard } from "./lib/prep-export.mjs";
 import { packLosses, lossLines } from "./lib/pack-guard.mjs";
 import { buildScreen } from "./lib/screen-export.mjs";
 import { buildDowntime } from "./lib/downtime-export.mjs";
@@ -692,7 +692,7 @@ function buildCampaign(vault, exportedAt) {
   }
 
   // NPCs (not solo)
-  const npcs = [];
+  const npcs = [], cards = {};
   for (const f of mdFiles(path.join(root, "NPCs"))) {
     const body = load(f);
     const fm = parseFrontmatter(body);
@@ -713,6 +713,8 @@ function buildCampaign(vault, exportedAt) {
       district: String(fm.district || ""), glance: g ? g[1].trim() : "", say,
       playedBy: String(fm.played_by || ""), mannerism: mn ? mn[1].trim() : "",
     });
+    const card = npcCard(body);
+    if (card) cards[path.basename(f, ".md")] = card;
   }
 
   // names: view.js reads the NPC generator's T.nameMasc / nameFem / nameAmb / family arrays by regex
@@ -772,7 +774,7 @@ function buildCampaign(vault, exportedAt) {
   const stamp = used.slice().sort((a, b) => a[0] < b[0] ? -1 : 1).map(([p, t]) => p + "\n" + t).join("\n\u0000\n");
   return {
     src: { file: "Wiki/Games/Blades in the Dark/{Campaigns/Group/b68g-factions.md, Campaigns/Group/Characters/, Campaigns/Group/ (the crew sheet), NPCs/, Clocks/, Tools/blades-68-npc-generator.md} (" + used.length + " files)", blockSha: sha(stamp), exportedAt },
-    pcs, callbacks, cast, standing, owed, npcs, names, clocks, crew,
+    pcs, callbacks, cast, standing, owed, npcs, cards, names, clocks, crew,
   };
 }
 
@@ -889,7 +891,7 @@ function main() {
     if (sc0 && sc0.T.loc) console.log("  score.T.loc: " + Object.keys(sc0.T.loc.factionDetail).length + " dossiers, " + Object.keys(sc0.T.loc.factionThumb).length + " thumbnails, " + sc0.T.loc.district.length + " districts, " + sc0.T.loc.targetNames.length + " building types (laid from the location part)");
     const c = parts.campaign;
     console.log("  campaign: pcs " + c.pcs.length + ", callbacks " + c.callbacks.length + ", cast " + c.cast.length + ", standing " + c.standing.length +
-      ", owed " + c.owed.length + ", npcs " + c.npcs.length + ", names " + c.names.first.length + "/" + c.names.family.length + ", clocks " + c.clocks.length +
+      ", owed " + c.owed.length + ", npcs " + c.npcs.length + ", cards " + Object.keys(c.cards).length + " (" + Math.round(JSON.stringify(c.cards).length / 1024) + " KiB)" + ", names " + c.names.first.length + "/" + c.names.family.length + ", clocks " + c.clocks.length +
       ", crew " + (c.crew ? c.crew.type + " Tier " + c.crew.tier + " (" + c.crew.enemies.length + " enemies, " + c.crew.abilities.length + " abilities)" : "none"));
     const pr = parts.prep;
     console.log("  prep: " + (pr ? pr.notes.length + " note(s), " + pr.notes.reduce((n, x) => n + x.blocks.length, 0) + " blocks, " +

@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { scanNote, tickLines, sectionOf, embedOf, alignTasks } from '../../scripts/lib/prep.mjs';
-import { buildPrep, loadMarkdown } from '../../scripts/lib/prep-export.mjs';
+import { buildPrep, loadMarkdown, npcCard } from '../../scripts/lib/prep-export.mjs';
 import { pullPrep, fileAtTable } from '../../scripts/lib/sync-prep.mjs';
 import { basenames, assertPrepWritable, AT_TABLE } from '../../scripts/lib/vault.mjs';
 import { emptyCampaign } from '../../scripts/lib/ledger.mjs';
@@ -131,6 +131,28 @@ await test('page: the keys R (prep) and O (cards); the display line for cards', 
   const GP = require(path.join(ROOT, 'app', 'gm-page.js'))._pure;
   assert.equal(GP.keyAction({ key: 'r' }).panel, 'prep'); assert.equal(GP.keyAction({ key: 'O' }).panel, 'cards'); assert.equal(GP.keyAction({ key: 'r', typing: true }), null);
   assert.equal(GP.displayLine({ kind: 'cards', cards: [{}, {}], mode: 'spread' }), 'Cards · 2, spread');
+});
+
+/* ---------- 3b. the NPC card (the peek and the cast list's Card) ---------- */
+const CARD = ['---', 'wiki: entity', 'role: "Lamp seller"', '---', '', '# Odo Plim', '', '*A man who sells lamps.* %%a note to self%%', '',
+  '> [!tip] Read aloud', '> A brass lamp in each hand.', '',
+  '> [!example] How to play', '> - **Cast** A tired shopkeeper', '> - **Mannerism** Polishes as he talks', '',
+  '## Say it out loud', '', '> "Two for a shilling, and not a penny less."', '',
+  '## Mid-scene', '', '| | |', '|---|---|', '| **He wants** | His lamps back. |', '', 'He keeps his takings in [[pip-pockets]].', '',
+  '> [!gm] GM only: the lamps', '> They are stolen. ^lamp-secret', '', '', '', '',
+  '## In play', '', '---', '', '> [!info] Provenance', '> **Invented** for the test.', '> Second line.', ''].join('\n');
+await test('npc card: as written, less frontmatter, title, provenance, comments and block ids; card() renders it with the page\'s links', async () => {
+  const c = npcCard(CARD);
+  for (const gone of ['wiki: entity', 'role:', '# Odo Plim', 'Provenance', 'Invented', 'Second line', 'a note to self', '^lamp-secret']) assert.ok(!c.includes(gone), gone);
+  for (const kept of ['> [!tip] Read aloud\n> A brass lamp in each hand.', '> [!example] How to play\n> - **Cast** A tired shopkeeper', '## Say it out loud\n\n> "Two for a shilling, and not a penny less."',
+    '| **He wants** | His lamps back. |', '> [!gm] GM only: the lamps\n> They are stolen.\n']) assert.ok(c.includes(kept), kept);
+  assert.ok(!/\n[ \t]*\n[ \t]*\n[ \t]*\n/.test(c) && c === c.trim() && c.startsWith('*A man'), 'blank runs and ends trimmed');
+  assert.equal(npcCard('---\nrole: x\n---\n'), '');
+  assert.equal(npcCard('---\nrole: x\n---\n\n# Odo Plim\n\n> [!info] Provenance\n> Invented.\n'), '');
+  const html = PR.card(part, c, { M, id: 'pk-' });
+  assert.ok(/data-callout="tip"/.test(html) && /data-callout="example"/.test(html) && /data-callout="gm"/.test(html) && /<table/.test(html), 'callouts and a table');
+  assert.ok(/href="#pp:note:pip-pockets"/.test(html) && /id="pk-say-it-out-loud"/.test(html) && !/data-task=/.test(html));
+  assert.equal(PR.card(part, c, {}), ''); assert.equal(PR.card(part, '  ', { M }), '');
 });
 
 /* ---------- 4. the pull ---------- */

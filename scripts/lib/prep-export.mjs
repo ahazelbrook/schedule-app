@@ -67,6 +67,26 @@ export function siteHints(fm) {
 }
 
 /**
+ * An NPC card as the GM page shows it (the campaign part's `cards`): the card's Markdown as written, less its frontmatter,
+ * its first # title (the app shows the name), every `> [!info] Provenance` callout, %% comments %%, block ids at line ends
+ * and runs of 3+ blank lines. '' when nothing is left.
+ */
+export function npcCard(text) {
+  let s = String(text == null ? '' : text).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
+  s = s.replace(/^---[ \t]*\n(?:[\s\S]*?\n)?---[ \t]*(?:\n|$)/, '').replace(/%%[\s\S]*?%%/g, '');
+  const out = [];
+  let title = false, prov = false;
+  for (const ln of s.split('\n')) {
+    if (prov && /^[ \t]*>/.test(ln)) continue;
+    prov = false;
+    if (/^[ \t]*>[ \t]*\[!info\][+-]?[ \t]*Provenance\b/i.test(ln)) { prov = true; continue; }
+    if (!title && /^# +\S/.test(ln)) { title = true; continue; }
+    out.push(ln.replace(/[ \t]+\^[A-Za-z0-9-]+[ \t]*$/, ''));
+  }
+  return out.join('\n').replace(/\n(?:[ \t]*\n){3,}/g, '\n\n').replace(/^\s*\n/, '').replace(/\s+$/, '');
+}
+
+/**
  * Build the part. opts: { vault, repo, exportedAt, basenames (Map lower-case basename -> [rel]), warn }.
  * Returns the part ({ src, ...body }), or null when no note opts in.
  */

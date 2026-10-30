@@ -482,7 +482,8 @@ fails and nobody is known, nothing is purged.
     box: mechanics that need more than a chip; and a bullet that opens with a bold word sets the word as a label (the GM's
     action: **Hand**, **Ask**, **Wait**), except inside SAY;
   - links: `[[#Heading]]` scrolls; an NPC, PC or faction opens a peek card from the pack's campaign part (an NPC in the app's
-    cast gets Show on iPad and Put on stage); another prep note opens it, at the heading the link names; a note carried in as a
+    cast gets Show on iPad and Put on stage); the peek, and the **Card** button in the cast list (N), show the NPC's whole card
+    from the pack's campaign part (`cards`, built from the vault card with its provenance stripped); another prep note opens it, at the heading the link names; a note carried in as a
     transclusion scrolls to the heading the link names inside it (`[[pockets#B. The swan job]]` lands on B, not on the note's
     first transclusion), else to the transclusion; the open note by its own name scrolls here rather than leaving for Obsidian;
     anything else opens in Obsidian (`obsidian://open`). A jump lands under the sticky bars (`scroll-margin-top` on the sections,
