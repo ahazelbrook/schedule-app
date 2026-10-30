@@ -76,7 +76,7 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
     const keys = await p.evaluate(() => Object.keys(B68Tracker).sort().join(','));
     assert(keys === '_rng,close,initialPlay,isOpen,open,play,refresh,renderStatic,update', 'hound: public surface unchanged: ' + keys);
     let s = await stored(p);
-    assert(s.session === 0 && JSON.stringify(s.keyHitSession) === '{}' && s.trainedThisDowntime === false, 'hound: new fields seeded ' + JSON.stringify([s.session, s.keyHitSession, s.trainedThisDowntime]));
+    assert(s.session === 0 && JSON.stringify(s.keyHitSession) === '{}' && s.trainedThisDowntime === false && s.xpHold === 0, 'hound: new fields seeded ' + JSON.stringify([s.session, s.keyHitSession, s.trainedThisDowntime, s.xpHold]));
     assert(await has(p, '#dossier .ds-c2 .ds-sessbox') && await has(p, '#dossier .ds-c2 .ds-dtbox'), 'hound: Session and Downtime boxes in column 2');
     assert((await text(p, '#dossier [data-act="sessstart"]')) === 'Start session 1', 'hound: start label ' + (await text(p, '#dossier [data-act="sessstart"]')));
     /* start session 1 */
@@ -84,14 +84,14 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
     s = await stored(p);
     assert(s.session === 1 && s.log[0].kind === 'note' && s.log[0].text === 'Session 1 started' && typeof s.log[0].at === 'string', 'hound: session 1 started ' + JSON.stringify([s.session, s.log[0]]));
     assert((await text(p, '#dossier [data-act="sessstart"]')) === 'Start session 2', 'hound: label moves on');
-    /* a key hit: +1 xp, flagged for this session; a second hit on the same key this session gives no xp */
-    const xp0 = s.xp.playbook;
+    /* a key hit: +1 xp on the bar, flagged for this session; a second hit on the same key this session gives no xp */
+    const xp0 = s.xp.playbook, h0 = s.xpHold;
     await once(p, '#dossier .ds-pip[data-act="keyhit"][data-i="0"][data-n="1"]', 'key hit');
     s = await stored(p);
-    assert(s.keys[0].hits === 1 && s.xp.playbook === xp0 + 1 && s.keyHitSession['0'] === true, 'hound: key hit flagged ' + JSON.stringify([s.keys[0].hits, s.xp.playbook, s.keyHitSession]));
+    assert(s.keys[0].hits === 1 && s.xp.playbook === xp0 && s.xpHold === h0 + 1 && s.keyHitSession['0'] === true, 'hound: key hit puts 1 xp on the bar, the playbook track unchanged ' + JSON.stringify([s.keys[0].hits, s.xp.playbook, s.xpHold, s.keyHitSession]));
     assert(await has(p, '#dossier .ds-key .ds-hitnow'), 'hound: key shows "hit this session"');
     await click(p, '#dossier .ds-pip[data-act="keyhit"][data-i="0"][data-n="2"]');
-    s = await stored(p); assert(s.keys[0].hits === 2 && s.xp.playbook === xp0 + 1, 'hound: second hit same session, no xp ' + JSON.stringify([s.keys[0].hits, s.xp.playbook]));
+    s = await stored(p); assert(s.keys[0].hits === 2 && s.xp.playbook === xp0 && s.xpHold === h0 + 1, 'hound: second hit same session, no xp ' + JSON.stringify([s.keys[0].hits, s.xp.playbook, s.xpHold]));
     /* end of session: two triggers at 1 and 2 → +3 */
     await click(p, '#dossier [data-act="endopen"]');
     assert(await has(p, '#dossier .ds-sessbox .ds-endp'), 'hound: end panel under the Session box');
@@ -104,28 +104,31 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
     await click(p, '#dossier [data-act="endval"][data-i="1"][data-v="2"]');
     assert((await text(p, '#dossier .ds-endp .ds-roll-big')) === '+3 xp', 'hound: total ' + (await text(p, '#dossier .ds-endp .ds-roll-big')));
     assert(/clears this session’s key hits \(1 key\)/.test(await text(p, '#dossier .ds-endp')), 'hound: says key hits clear');
+    assert((await text(p, '#dossier .ds-endp .ds-roll-go')).indexOf('on the bar: ' + (h0 + 1) + ' → ' + (h0 + 4) + ' to spend') >= 0 && /Key hits and desperate or zero-dot rolls went on the bar as they happened\./.test(await text(p, '#dossier .ds-endp')), 'hound: the total goes on the bar: ' + (await text(p, '#dossier .ds-endp .ds-roll-go')));
     await shot(p, '#dossier .ds-sessbox', 'out/session-desk-panel.png');
     await once(p, '#dossier [data-act="endmark"]', 'end session');
     s = await stored(p);
-    assert(s.xp.playbook === xp0 + 4, 'hound: playbook xp +3 after the key hit: ' + s.xp.playbook);
+    assert(s.xp.playbook === xp0 && s.xpHold === h0 + 4, 'hound: +3 on the bar after the key hit, the playbook track unchanged: ' + JSON.stringify([s.xp.playbook, s.xpHold]));
     assert(JSON.stringify(s.keyHitSession) === '{}', 'hound: key hit flag cleared ' + JSON.stringify(s.keyHitSession));
     assert(s.keys[0].hits === 2, 'hound: the key marks stay');
     assert(s.log[0].kind === 'note' && /^Session 1 ended: \+3 xp \(addressed a challenge with .+; struggled with issues stemming from a deadlock ×2\)$/.test(s.log[0].text), 'hound: end log ' + s.log[0].text);
     assert(!(await has(p, '#dossier .ds-key .ds-hitnow')), 'hound: "hit this session" gone');
     assert(/Applied/.test(await text(p, '#dossier .ds-endp .ds-roll-applied')) && !(await has(p, '#dossier [data-act="endmark"]')), 'hound: end panel shows the result once');
+    assert((await text(p, '#dossier .ds-endp .ds-roll-applied')).indexOf('+3 xp on the bar (' + (h0 + 4) + ' to spend)') >= 0 && /Spend it on any track in the XP box\./.test(await text(p, '#dossier .ds-endp')), 'hound: result lines: ' + (await text(p, '#dossier .ds-endp .ds-roll-applied')));
     await shot(p, '#dossier .ds-sessbox', 'out/session-desk-ended.png');
     /* the same key can earn xp again next session */
     await click(p, '#dossier [data-act="sessstart"]');
     await click(p, '#dossier .ds-pip[data-act="keyhit"][data-i="0"][data-n="3"]');
-    s = await stored(p); assert(s.session === 2 && s.xp.playbook === xp0 + 5 && s.keyHitSession['0'] === true, 'hound: next session key hit pays again ' + JSON.stringify([s.session, s.xp.playbook, s.keyHitSession]));
-    /* the cap: 5 + 4 → 8, 1 lost, advance pointer */
+    s = await stored(p); assert(s.session === 2 && s.xpHold === h0 + 5 && s.keyHitSession['0'] === true, 'hound: next session key hit pays again ' + JSON.stringify([s.session, s.xpHold, s.keyHitSession]));
+    /* no cap on the bar: 5 + 4 → 9 to spend, nothing lost */
     await click(p, '#dossier [data-act="endopen"]');
     await click(p, '#dossier [data-act="endval"][data-i="0"][data-v="2"]'); await click(p, '#dossier [data-act="endval"][data-i="1"][data-v="2"]');
-    assert(/1 lost to the cap/.test(await text(p, '#dossier .ds-endp .ds-roll-go')), 'hound: preview says 1 lost: ' + (await text(p, '#dossier .ds-endp .ds-roll-go')));
+    const go = await text(p, '#dossier .ds-endp .ds-roll-go');
+    assert(go.indexOf('on the bar: ' + (h0 + 5) + ' → ' + (h0 + 9) + ' to spend') >= 0 && !/lost/.test(go), 'hound: preview, nothing lost: ' + go);
     await click(p, '#dossier [data-act="endmark"]');
     s = await stored(p);
-    assert(s.xp.playbook === 8 && /^Session 2 ended: \+4 xp .* · 1 lost to the cap$/.test(s.log[0].text), 'hound: capped ' + s.xp.playbook + ' ' + s.log[0].text);
-    assert(/Special abilities box/.test(await text(p, '#dossier .ds-endfull')), 'hound: points at the advance: ' + (await text(p, '#dossier .ds-endfull')));
+    assert(s.xpHold === h0 + 9 && s.xp.playbook === xp0 && /^Session 2 ended: \+4 xp \(.+ ×2; .+ ×2\)$/.test(s.log[0].text), 'hound: the bar just grows, nothing lost ' + JSON.stringify([s.xpHold, s.xp.playbook, s.log[0].text]));
+    assert(!(await has(p, '#dossier .ds-endfull')) && /Spend it on any track in the XP box\./.test(await text(p, '#dossier .ds-endp')), 'hound: points at the XP box');
     await p.keyboard.press('Escape'); await p.waitForTimeout(100);
     assert(!(await has(p, '#dossier .ds-endp')), 'hound: Esc closes the end panel');
 
@@ -198,21 +201,21 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
     s = await stored(p); assert(s.clocks.length === nClocks + 1 && s.clocks[nClocks].filled === 6 && /, complete$/.test(s.log[0].text), 'hound: same clock completes (no second clock) ' + JSON.stringify(s.clocks) + ' ' + s.log[0].text);
     /* ---- train: once per downtime ---- */
     await click(p, '#dossier [data-act="dtopen"][data-k="train"]');
-    const pr0 = s.xp.prowess;
-    await click(p, '#dossier [data-act="dtopt"][data-k="track"][data-v="prowess"]');
+    const th0 = s.xpHold, xpw = JSON.stringify(s.xp);
+    assert(!(await has(p, '#dossier [data-act="dtopt"][data-k="track"]')) && /Mark 1 xp on the bar, to spend on any track\. Once per downtime;/.test(await text(p, '#dossier .ds-dt')), 'hound: train puts xp on the bar, no track chips: ' + (await text(p, '#dossier .ds-dt')));
     await once(p, '#dossier [data-act="dttrain"]', 'train');
     s = await stored(p);
-    assert(s.xp.prowess === pr0 + 1 && s.trainedThisDowntime === true && s.log[0].kind === 'roll' && s.log[0].text === 'Train Prowess · +1 xp (' + (pr0 + 1) + ' / 6)', 'hound: trained ' + JSON.stringify([s.xp.prowess, s.trainedThisDowntime, s.log[0]]));
-    await click(p, '#dossier [data-act="dtopt"][data-k="track"][data-v="insight"]');
+    assert(s.xpHold === th0 + 1 && JSON.stringify(s.xp) === xpw && s.trainedThisDowntime === true && s.log[0].kind === 'roll' && s.log[0].text === 'Train · +1 xp on the bar', 'hound: trained ' + JSON.stringify([s.xpHold, s.trainedThisDowntime, s.log[0]]));
+    assert((await text(p, '#dossier .ds-dt .ds-roll-applied')).indexOf('+1 xp on the bar (' + (th0 + 1) + ' to spend)') >= 0, 'hound: train applied line ' + (await text(p, '#dossier .ds-dt .ds-roll-applied')));
+    await click(p, '#dossier [data-act="dtopen"][data-k="train"]'); await click(p, '#dossier [data-act="dtopen"][data-k="train"]');   /* closed and opened again: a fresh panel */
     assert(await p.$eval('#dossier [data-act="dttrain"]', n => n.disabled) && /Already trained this downtime/.test(await text(p, '#dossier .ds-trained')), 'hound: second train refused');
     const w0 = await writes(p); await p.evaluate(() => { const b = document.querySelector('#dossier [data-act="dttrain"]'); b.disabled = false; b.click(); }); await p.waitForTimeout(150);
-    s = await stored(p); assert((await writes(p)) === w0 && s.xp.insight === 0, 'hound: forced second train still refused');
-    assert(await p.$eval('#dossier [data-act="dtopt"][data-k="track"][data-v="playbook"]', n => n.disabled), 'hound: full playbook track cannot be trained');
+    s = await stored(p); assert((await writes(p)) === w0 && s.xpHold === th0 + 1, 'hound: forced second train still refused');
     await click(p, '#dossier [data-act="sessstart"]');
     s = await stored(p); assert(s.session === 3 && s.trainedThisDowntime === false, 'hound: start session clears training');
     assert(await has(p, '#dossier .ds-dt') && !(await has(p, '#dossier .ds-trained')) && !(await p.$eval('#dossier [data-act="dttrain"]', n => n.disabled)), 'hound: the open Train panel is live again after Start session');
     await click(p, '#dossier [data-act="dttrain"]');
-    s = await stored(p); assert(s.xp.insight === 1 && s.trainedThisDowntime === true, 'hound: train allowed again after the next session start');
+    s = await stored(p); assert(s.xpHold === th0 + 2 && s.trainedThisDowntime === true, 'hound: train allowed again after the next session start');
     /* a roll panel closes the downtime panel */
     await click(p, '#dossier .ds-actbtn[data-a="Hunt"]');
     assert(!(await has(p, '#dossier .ds-dt')) && (await p.$$eval('#dossier .ds-roll', ns => ns.length)) === 1, 'hound: roll panel replaces the downtime panel');
@@ -225,8 +228,8 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
     s = await stored(p); assert(JSON.stringify(s.keyHitSession) === '{"1":true}', 'hound: flags follow the keys ' + JSON.stringify(s.keyHitSession));
 
     /* ---- an older document without the new fields opens unchanged ---- */
-    const old = await p.evaluate(() => { const id = Object.keys(window.__store)[0]; const d = JSON.parse(JSON.stringify(window.__store[id])); delete d.play.session; delete d.play.keyHitSession; delete d.play.trainedThisDowntime; window.__oldSaves = 0; B68Tracker.open(Object.assign({ id }, d), { save: () => { window.__oldSaves++; return Promise.resolve(); }, canWrite: true }); const pl = B68Tracker.play(); return { s: pl.session, k: pl.keyHitSession, t: pl.trainedThisDowntime, saves: window.__oldSaves, label: document.querySelector('#dossier [data-act="sessstart"]').textContent }; });
-    assert(old.s === 0 && JSON.stringify(old.k) === '{}' && old.t === false && old.saves === 0 && old.label === 'Start session 1', 'hound: older doc defaults ' + JSON.stringify(old));
+    const old = await p.evaluate(() => { const id = Object.keys(window.__store)[0]; const d = JSON.parse(JSON.stringify(window.__store[id])); delete d.play.session; delete d.play.keyHitSession; delete d.play.trainedThisDowntime; delete d.play.xpHold; window.__oldSaves = 0; B68Tracker.open(Object.assign({ id }, d), { save: () => { window.__oldSaves++; return Promise.resolve(); }, canWrite: true }); const pl = B68Tracker.play(); return { s: pl.session, k: pl.keyHitSession, t: pl.trainedThisDowntime, h: pl.xpHold, saves: window.__oldSaves, label: document.querySelector('#dossier [data-act="sessstart"]').textContent }; });
+    assert(old.s === 0 && JSON.stringify(old.k) === '{}' && old.t === false && old.h === 0 && old.saves === 0 && old.label === 'Start session 1', 'hound: older doc defaults ' + JSON.stringify(old));
 
     /* ---- read only: downtime rolls happen, nothing is written ---- */
     const roBefore = await p.evaluate(() => { const id = Object.keys(window.__store)[0]; const d = JSON.parse(JSON.stringify(window.__store[id])); d.play.stress = 4; window.__roSaves = 0; B68Tracker.open(Object.assign({ id }, d), { save: () => { window.__roSaves++; return Promise.resolve(); }, canWrite: false }); return B68Tracker.play(); });
@@ -297,19 +300,26 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
     await p.evaluate(RNG([5])); await click(p, '#dossier .ds-dt [data-act="dtroll"]');
     let s = await stored(p); assert(s.healing === 2 && /^Repair \(a mechanic\) 1d · 5 → partial, \+2 repair \(2 \/ 4\)$/.test(s.log[0].text), 'hull: repair log ' + s.log[0].text);
     await shot(p, '#dossier .ds-dtbox', 'out/session-hull-downtime.png');
+    /* a memory clock spends xp from the bar: with nothing on it, a tap changes nothing */
+    const wm = await writes(p); await click(p, '#dossier .ds-seg[data-act="memory"][data-i="0"][data-n="2"]');
+    s = await stored(p); assert(s.memories[0].filled === 0 && (await play(p)).memories[0].filled === 0 && (await writes(p)) === wm, 'hull: an empty bar ticks no memory clock');
     await click(p, '#dossier [data-act="sessstart"]');
     await click(p, '#dossier [data-act="endopen"]');
     const rows = await p.$$eval('#dossier .ds-endrow', ns => ns.map(n => n.firstChild.textContent));
     assert(rows.length === 2 && /^You obeyed orders, or addressed a challenge with cold simplicity\.$/.test(rows[0]), 'hull: triggers ' + rows.join(' | '));
-    assert(await has(p, '#dossier [data-act="endtarget"][data-v="0"]'), 'hull: memory clock choice offered');
+    assert(!(await has(p, '#dossier [data-act="endtarget"]')) && !/Mark on/.test(await text(p, '#dossier .ds-endp')), 'hull: no "Mark on" choice');
     await click(p, '#dossier [data-act="endval"][data-i="0"][data-v="2"]'); await click(p, '#dossier [data-act="endval"][data-i="1"][data-v="1"]');
-    await click(p, '#dossier [data-act="endtarget"][data-v="0"]');
     await shot(p, '#dossier .ds-sessbox', 'out/session-hull-panel.png');
-    const xp0 = s.xp.playbook;
+    const xp0 = s.xp.playbook, h0 = s.xpHold;
     await once(p, '#dossier [data-act="endmark"]', 'hull end session');
     s = await stored(p);
-    assert(s.memories[0].filled === 3 && s.xp.playbook === xp0, 'hull: 3 xp went into memory 1 ' + JSON.stringify([s.memories[0].filled, s.xp.playbook]));
-    assert(/^Session 1 ended: \+3 xp \(.+\) · 3 to memory 1$/.test(s.log[0].text), 'hull: end log ' + s.log[0].text);
+    assert(s.xpHold === h0 + 3 && s.xp.playbook === xp0 && s.memories[0].filled === 0, 'hull: the 3 xp went on the bar ' + JSON.stringify([s.xpHold, s.xp.playbook, s.memories[0].filled]));
+    assert(/^Session 1 ended: \+3 xp \(.+\)$/.test(s.log[0].text) && !/memory/.test(s.log[0].text), 'hull: end log ' + s.log[0].text);
+    /* with xp on the bar a memory clock spends it; lowering the clock puts it back */
+    await click(p, '#dossier .ds-seg[data-act="memory"][data-i="0"][data-n="2"]');
+    s = await stored(p); assert(s.memories[0].filled === 2 && s.xpHold === h0 + 1, 'hull: memory 1 ticked 2 from the bar ' + JSON.stringify([s.memories[0].filled, s.xpHold]));
+    await click(p, '#dossier .ds-seg[data-act="memory"][data-i="0"][data-n="2"]');
+    s = await stored(p); assert(s.memories[0].filled === 1 && s.xpHold === h0 + 2, 'hull: lowering memory 1 puts 1 back ' + JSON.stringify([s.memories[0].filled, s.xpHold]));
     await p.context().close();
   }
 

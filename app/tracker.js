@@ -163,7 +163,7 @@
       /* paranormal playbooks */
       alluvium: 0, strictures: [], darkMajesty: null, mission: null, ghostItems: '', enemies: '', feeding: '', telltale: '', echoAbilities: '',
       /* round 5: sessions and downtime */
-      session: 0, keyHitSession: {}, trainedThisDowntime: false };
+      session: 0, keyHitSession: {}, trainedThisDowntime: false, xpHold: 0 };
   }
   function blankMission(name, answers) { var a = Array.isArray(answers) ? answers.slice(0, 4).map(function (x) { return String(x == null ? '' : x); }) : []; while (a.length < 4) a.push(''); return { name: name || '', answers: a, details: [] }; }
   function initialPlay(sheet, playbookId) {
@@ -224,6 +224,7 @@
     base.session = Math.max(0, Math.floor(+base.session || 0));
     if (typeof base.keyHitSession !== 'object' || Array.isArray(base.keyHitSession)) base.keyHitSession = {};
     base.trainedThisDowntime = !!base.trainedThisDowntime;
+    base.xpHold = clamp(Math.floor(+base.xpHold || 0), 0, 99);
     return base;
   }
 
@@ -424,7 +425,7 @@
     var sm = stressMax(pb), hl = harmLines(play.harm), ld = loadNow(play, pb), parts = [
       ['ds-stressbox', stressName(pb), play.stress + '/' + sm, play.stress >= sm, stressName(pb) + ' ' + play.stress + ' of ' + sm],
       ['ds-harmbox', isHull(pb) ? 'Damage' : 'Harm', String(hl.n), /^[34]:/.test(hl.worst), hl.n ? hl.n + ' harm, worst level ' + hl.worst : 'No harm'],
-      ['ds-xpbox', 'XP', play.xp.playbook + '/8', play.xp.playbook >= 8, 'Playbook xp ' + play.xp.playbook + ' of 8']];
+      ['ds-xpbox', 'XP', play.xp.playbook + '/8' + (play.xpHold ? ' +' + play.xpHold : ''), play.xp.playbook >= 8, 'Playbook xp ' + play.xp.playbook + ' of 8' + (play.xpHold ? ', ' + play.xpHold + ' unspent' : '')]];
     if (ld) parts.push(['ds-itembox', 'Load', ld.total + '/' + ld.limit, ld.total > ld.limit, 'Load ' + ld.total + ' of ' + ld.limit]);
     return '<div class="ds-vitals" style="--n:' + parts.length + '">' + parts.map(function (x) { return '<button type="button" class="ds-vit' + (x[3] ? ' hot' : '') + '" data-act="jump" data-to="' + x[0] + '" data-always="1" title="' + esc(x[4]) + '" aria-label="' + esc(x[4]) + ': go to the box"><span>' + esc(x[1]) + '</span> <b class="mono">' + esc(x[2]) + '</b></button>'; }).join('') + '</div>';
   }
@@ -617,11 +618,19 @@
     if (vamp) h += '<div class="ds-lab ds-sub">Echo special abilities</div>' + (pb.echoAbilitiesRule ? '<p class="hint">' + esc(pb.echoAbilitiesRule) + '</p>' : '') + textarea('echoAbilities', play.echoAbilities, 'Anything carried over from your time as a ghost', 'sm');
     return box(hull ? 'Hull traits' : isPara(pb) ? 'Traits' : 'Special abilities', h, '<span class="ds-xpmini">xp ' + pipRow(8, play.xp.playbook, 'xp', ' data-k="playbook"', 'ds-xbox') + '</span>', 'ds-abbox');
   }
+  /* the xp holding bar: earned xp waits here, a mark per xp, until a track box spends it */
+  function holdBar(play) {
+    var n = play.xpHold || 0, m = '';
+    for (var i = 0; i < Math.min(n, 12); i++) m += '<span class="ds-hmark"></span>';
+    return '<div class="row ds-hold"><span class="ds-lab">Unspent xp</span><span class="ds-hmarks" aria-hidden="true">' + m + (n > 12 ? '<span class="ds-hmore">+' + (n - 12) + '</span>' : '') + '</span><span class="mono ds-count">' + n + ' to spend</span>' +
+      '<button type="button" class="btn sm" data-act="xphold" data-v="-1" aria-label="Take 1 xp off the bar"' + (n > 0 ? '' : ' disabled') + '>−</button><button type="button" class="btn sm" data-act="xphold" data-v="1" aria-label="Add 1 xp to the bar">+ Add xp</button></div>' +
+      '<p class="hint">' + (n ? 'Earned xp lands here. Tap a box on any track to spend it.' : 'Nothing to spend. Xp you earn in play lands here, or add it by hand.') + '</p>';
+  }
   function triggers(play, pb) {
     var hull = isHull(pb), tt = isTT(pb);
-    var h = '<ul class="ds-trig">' +
-      '<li>Every time you roll a <b>desperate action</b> or a <b>zero-dot action</b>, mark xp in any attribute of your choice.</li>' +
-      '<li>Once per session when you <b>hit a key</b>, mark 1 xp and mark the key.</li>' +
+    var h = holdBar(play) + '<ul class="ds-trig">' +
+      '<li>Every time you roll a <b>desperate action</b> or a <b>zero-dot action</b>, earn xp (2 if both).</li>' +
+      '<li>Once per session when you <b>hit a key</b>, earn 1 xp and mark the key.</li>' +
       '<li class="ds-trig-h">At the end of each session, mark 1 xp (or 2 xp if you really smashed it) if:</li>';
     sessionTriggers(play, pb).forEach(function (t) { h += '<li>' + (isPara(pb) ? esc(t) : esc(t).replace(/a deadlock\.$/, 'a <b>deadlock</b>.')) + '</li>'; });
     h += '</ul>';
@@ -660,12 +669,10 @@
       '<button type="button" class="btn sm primary" data-act="endopen" aria-expanded="' + !!e + '"' + (t && !en ? ' disabled title="No session has started at the table"' : '') + '>End session' + (t && en ? ' ' + en : '') + '</button></span></div>';
     return box('Session', h, '', 'ds-sessbox', endPanel(play, pb));
   }
-  /* what "Mark xp" would do: playbook xp capped at 8; a Hull may send it to a memory clock first, the rest spills into playbook xp */
+  /* what "Mark xp" would do: the whole total goes on the bar, nothing lost */
   function endPlan(play, pb, e) {
-    var total = e.vals.reduce(function (t, v) { return t + v; }, 0), xp = play.xp.playbook || 0, toMem = 0, mem = null;
-    if (isHull(pb) && e.target !== 'xp' && play.memories[+e.target]) { mem = play.memories[+e.target]; toMem = Math.min(total, Math.max(0, (mem.size || 8) - (mem.filled || 0))); }
-    var rest = total - toMem, toXp = Math.min(rest, Math.max(0, 8 - xp));
-    return { total: total, toMem: toMem, mem: mem, memI: mem ? +e.target : null, toXp: toXp, lost: rest - toXp, xpAfter: xp + toXp };
+    var total = e.vals.reduce(function (t, v) { return t + v; }, 0), hold = play.xpHold || 0;
+    return { total: total, hold: hold, after: Math.min(99, hold + total) };
   }
   function advancePointer(pb) { return isTT(pb) ? 'Gain clarity in the XP box.' : 'pick a new ' + (isHull(pb) ? 'trait in the Hull traits box' : isPara(pb) ? 'trait in the Traits box' : 'special ability in the Special abilities box') + ' (8 xp are spent when you do).'; }
   function endPanel(play, pb) {
@@ -676,21 +683,14 @@
       h += '<div class="ds-endrow"><span>' + esc(t) + '</span><span class="seg">' + [0, 1, 2].map(function (v) { return '<button type="button" class="chip sm" data-act="endval" data-i="' + i + '" data-v="' + v + '" aria-pressed="' + (e.vals[i] === v) + '"' + (done ? ' disabled' : '') + ' aria-label="' + esc(trigLabel(t)) + ': ' + v + ' xp">' + v + '</button>'; }).join('') + '</span></div>';
     });
     h += '</div>';
-    if (isHull(pb)) {
-      h += '<div class="ds-roll-row"><span class="ds-lab">Mark on</span><span class="ds-actchips ds-endtarget"><button type="button" class="chip sm" data-act="endtarget" data-v="xp" aria-pressed="' + (e.target === 'xp') + '"' + (done ? ' disabled' : '') + '>Playbook xp</button>' +
-        play.memories.map(function (m, i) { var full = (m.filled || 0) >= (m.size || 8); return '<button type="button" class="chip sm" data-act="endtarget" data-v="' + i + '" aria-pressed="' + (String(e.target) === String(i)) + '"' + (done || full ? ' disabled' : '') + ' title="' + esc(m.name) + '">Memory ' + (i + 1) + ' · ' + (m.filled || 0) + '/' + (m.size || 8) + '</button>'; }).join('') + '</span></div>';
-      if (plan.mem) h += '<p class="hint">Memory ' + (plan.memI + 1) + ': ' + esc(plan.mem.name) + (plan.total > plan.toMem ? ' Only ' + plan.toMem + ' fit' + (plan.toMem === 1 ? 's' : '') + '; the rest goes to playbook xp.' : '') + '</p>';
-    }
-    var where = !plan.total ? 'nothing to mark' : plan.mem ? '+' + plan.toMem + ' memory ' + (plan.memI + 1) + (plan.toXp || plan.lost ? ' · playbook ' + (play.xp.playbook || 0) + ' → ' + plan.xpAfter + ' / 8' : '') : 'playbook ' + (play.xp.playbook || 0) + ' → ' + plan.xpAfter + ' / 8';
+    var where = !plan.total ? 'nothing to mark' : 'on the bar: ' + plan.hold + ' → ' + plan.after + ' to spend';
     if (!done) {
-      h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">+' + plan.total + ' xp</b><span class="ds-dim">' + esc(where) + (plan.lost ? ' · <b class="ds-warn">' + plan.lost + ' lost to the cap</b>' : '') + '</span></span>' +
+      h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">+' + plan.total + ' xp</b><span class="ds-dim">' + esc(where) + '</span></span>' +
         '<button type="button" class="btn sm primary" data-act="endmark">' + (plan.total ? 'Mark xp' : 'End without xp') + '</button></div>';
-      h += '<p class="hint">Ends session ' + n + (n !== (play.session || 0) ? ', the table’s (this sheet is on ' + (play.session || 0) + ')' : '') + ': logs it' + (hits ? ' and clears this session’s key hits (' + hits + ' key' + (hits === 1 ? '' : 's') + ')' : '') + '. Key hits and desperate rolls were marked as they happened.</p>';
+      h += '<p class="hint">Ends session ' + n + (n !== (play.session || 0) ? ', the table’s (this sheet is on ' + (play.session || 0) + ')' : '') + ': logs it' + (hits ? ' and clears this session’s key hits (' + hits + ' key' + (hits === 1 ? '' : 's') + ')' : '') + '. Key hits and desperate or zero-dot rolls went on the bar as they happened.</p>';
     } else {
       h += '<div class="ds-roll-res"><div class="ds-roll-applied"><span class="ds-lab">Applied</span>' + esc(e.result.lines.join(' · ')) + '</div>';
-      if (e.result.lost) h += '<p class="hint ds-warn">' + e.result.lost + ' xp lost to the cap.</p>';
-      if (e.result.full) h += '<p class="hint ds-warn ds-endfull">Playbook track full: ' + esc(advancePointer(pb)) + '</p>';
-      if (e.result.memFull) h += '<p class="hint ds-warn">Memory complete: write it in the Human memories box. You also remember one key, a human contact, and a special ability from another playbook.</p>';
+      h += '<p class="hint">Spend it on any track in the XP box.</p>';
       h += '<p class="hint">Downtime next: use the Downtime box, then ' + esc(nextStart(play)) + '.</p></div>';
     }
     return '<div class="ds-roll ds-endp" tabindex="-1" role="region" aria-label="End of session"><div class="ds-roll-h"><span class="ds-roll-t">End of session · <b>' + n + '</b></span><span class="ds-roll-sub">' + trig.length + ' triggers · 0, 1 or 2 xp each</span><button type="button" class="ds-x ds-roll-x" data-act="panelclose" data-always="1" aria-label="Close the end of session panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div>' + panelFoot() + '</div>';
@@ -747,12 +747,9 @@
       h += diceGo(dtDice(play, pb, t), esc(t.action) + ' rating', 'Roll', !!t.result);
     } else {
       sub = 'once per downtime';
-      var tracks = ATTRS.map(function (a) { return [a.toLowerCase(), a, 6]; }).concat([['playbook', 'Playbook', 8]]);
-      h += '<p class="hint">Mark 1 xp in an attribute or your playbook. Once per downtime; ' + (tableNow() ? 'joining the next session' : 'Start session') + ' clears it.</p>';
-      h += '<div class="ds-roll-row"><span class="ds-lab">Track</span><span class="seg">' + tracks.map(function (x) { var v = play.xp[x[0]] || 0, full = v >= x[2]; return '<button type="button" class="chip sm" data-act="dtopt" data-k="track" data-v="' + x[0] + '" data-always="1" aria-pressed="' + (t.track === x[0]) + '"' + (full ? ' disabled title="Track full: advance first"' : '') + '>' + esc(x[1]) + ' ' + v + '/' + x[2] + '</button>'; }).join('') + '</span></div>';
+      h += '<p class="hint">Mark 1 xp on the bar, to spend on any track. Once per downtime; ' + (tableNow() ? 'joining the next session' : 'Start session') + ' clears it.</p>';
       var blocked = play.trainedThisDowntime && !(t.result && t.result.saved);
-      var sel = tracks.filter(function (x) { return x[0] === t.track; })[0], selFull = !sel || (play.xp[sel[0]] || 0) >= sel[2];
-      if (!t.result) h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">+1 xp</b><span class="ds-dim">' + (sel ? esc(sel[1]) + ' ' + (play.xp[sel[0]] || 0) + ' → ' + Math.min(sel[2], (play.xp[sel[0]] || 0) + 1) + ' / ' + sel[2] : 'choose a track') + '</span></span><button type="button" class="btn sm primary" data-act="dttrain"' + (blocked || ro || selFull ? ' disabled' : '') + '>Mark 1 xp</button></div>';
+      if (!t.result) h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">+1 xp</b><span class="ds-dim">on the bar: ' + (play.xpHold || 0) + ' → ' + Math.min(99, (play.xpHold || 0) + 1) + ' to spend</span></span><button type="button" class="btn sm primary" data-act="dttrain"' + (blocked || ro ? ' disabled' : '') + '>Mark 1 xp</button></div>';
       if (blocked) h += '<p class="hint ds-warn ds-trained">Already trained this downtime: ' + esc(capWord(nextStart(play))) + ' clears it.</p>';
       if (ro && !t.result) h += '<p class="hint">Not saved (' + notSavedWhy() + '): training writes nothing here.</p>';
     }
@@ -905,7 +902,7 @@
       var prepaid = !!(r.paid && r.paid.push);
       h += '<div class="ds-roll-opts">' + tog('push', 'Push yourself', '+1d · 2 ' + esc(sn) + (prepaid ? ' · marked already' : rolled && r.push ? ' · paid' : ''), pushBlocked || rolled || prepaid) + tog('assist', 'Assist', '+1d · a crewmate takes 1 ' + esc(sn), rolled) + tog('bargain', 'Devil’s Bargain', '+1d · the GM names a price', rolled) + '</div>';
       if (pushBlocked) h += '<p class="hint ds-warn">Pushing would take ' + esc(sn) + ' past ' + sm + ': ' + esc(overflowRule(pb)) + '. Mark it by hand if you push anyway.</p>';
-      h += '<div class="ds-roll-row"><span class="ds-lab">Position' + rl('position') + '</span><span class="seg">' + POSITIONS.map(function (p) { return '<button type="button" class="chip sm" data-act="rollpos" data-v="' + p + '" data-always="1" aria-pressed="' + (r.position === p) + '"' + (rolled ? ' disabled' : '') + '>' + capWord(p) + '</button>'; }).join('') + '</span>' + (r.position === 'desperate' ? '<span class="ds-dim">marks 1 ' + esc(attr) + ' xp</span>' : '') + '</div>';
+      h += '<div class="ds-roll-row"><span class="ds-lab">Position' + rl('position') + '</span><span class="seg">' + POSITIONS.map(function (p) { return '<button type="button" class="chip sm" data-act="rollpos" data-v="' + p + '" data-always="1" aria-pressed="' + (r.position === p) + '"' + (rolled ? ' disabled' : '') + '>' + capWord(p) + '</button>'; }).join('') + '</span>' + (r.position === 'desperate' || !dots ? '<span class="ds-dim">' + (r.position === 'desperate' ? 'earns ' + (dots ? 1 : 2) : 'zero-dot: earns 1') + ' xp</span>' : '') + '</div>';
       h += '<div class="ds-roll-row"><span class="ds-lab">Effect' + rl('effect') + '</span><span class="seg">' + EFFECTS.map(function (p) { return '<button type="button" class="chip sm" data-act="rolleff" data-v="' + p + '" data-always="1" aria-pressed="' + (r.effect === p) + '"' + (rolled ? ' disabled' : '') + '>' + capWord(p) + '</button>'; }).join('') + '</span><span class="ds-dim">for the fiction only</span></div>';
       if (rolled) h += '<p class="hint">The options stay as rolled. For a different roll, close this and tap the action again.</p>';
     } else if (r.kind === 'resist') {
@@ -935,7 +932,7 @@
     } else {
       var why = r.kind === 'action' ? OUTCOMES[r.position][word] : word === 'critical' ? 'Exceptional result.' : word === 'success' ? 'Good result.' : word === 'partial' ? 'Mixed result.' : 'Bad result.';
       h += '<div class="ds-roll-read"><span class="ds-roll-word ' + word + '">' + capWord(word) + '</span><span class="ds-roll-why">' + (r.kind === 'action' ? capWord(r.position) + ', ' + r.effect + ' effect · ' : '') + esc(why) + '</span></div>';
-      if (res.low) h += '<p class="hint">Zero dice: the lowest of two is read, so no critical is possible.' + (r.kind === 'action' ? ' A zero-dot action also lets you mark xp in an attribute of your choice.' : '') + '</p>';
+      if (res.low) h += '<p class="hint">Zero dice: the lowest of two is read, so no critical is possible.' + (r.kind === 'action' ? ' A zero-dot action earns 1 xp, even with a push or help.' : '') + '</p>';
       if (res.applied && res.applied.length) h += '<div class="ds-roll-applied"><span class="ds-lab">' + (res.saved ? 'Applied' : 'Not saved (' + esc(res.savedWhy || '') + ')') + '</span>' + esc(res.applied.join(' · ')) + '</div>';
       else if (!res.saved) h += '<div class="ds-roll-applied"><span class="ds-lab">Not saved (' + esc(res.savedWhy || '') + ')</span><span class="ds-dim">the roll was not logged</span></div>';
       else h += '<div class="ds-roll-applied"><span class="ds-lab">Logged</span><span class="ds-dim">nothing else to mark</span></div>';
@@ -1153,6 +1150,12 @@
 
   /* ---------- actions ---------- */
   function toggleTrack(curV, n) { return curV === n ? n - 1 : n; }
+  /* xp on the bar pays for a raised track (cost > 0) and takes back a lowered one (cost < 0); false when the bar is short */
+  function spendHold(cost) {
+    var p = cur.play, h = p.xpHold || 0;
+    if (cost > 0 && h < cost) { note(h ? 'Only ' + h + ' xp on the bar' : 'No xp on the bar: add it first, then tap the track'); render(); return false; }
+    p.xpHold = clamp(h - cost, 0, 99); return true;
+  }
   function spendForAbility(name, what) {
     var p = cur.play;
     if (p.xp.playbook >= 8) { if (!window.confirm('Spend 8 playbook xp on ' + what + '?')) return false; p.xp.playbook -= 8; note('8 xp spent on ' + name); return true; }
@@ -1215,7 +1218,7 @@
     /* time traveler: spend one canister / vial of alluvium, clear 5 Instability */
     restabilize: function () { if (!(cur.play.alluvium > 0)) { note('No alluvium left'); return; } cur.play.alluvium--; cur.play.stress = Math.max(0, cur.play.stress - 5); note('Restabilized: one ' + ((cur.pb && cur.pb.alluviumName) || 'canister') + ' used'); commit(); },
     alluvium: function (d) { cur.play.alluvium = clamp(toggleTrack(cur.play.alluvium, +d.n), 0, alluvMax(cur.pb)); commit(); },
-    /* once per session per key: the first hit this session marks 1 playbook xp and sets play.keyHitSession[i]; End session clears it */
+    /* once per session per key: the first hit this session puts 1 xp on the bar and sets play.keyHitSession[i]; End session clears it */
     keyhit: function (d) {
       var p = cur.play, i = +d.i, k = p.keys[i]; if (!k) return; var n = +d.n, hs = p.keyHitSession || {};
       if (n > (k.hits || 0)) {
@@ -1223,7 +1226,7 @@
         if (hs[i]) note('Already hit this session: no more xp from this key until the session ends');
         else {
           var nh = Object.assign({}, hs); nh[i] = true; p.keyHitSession = nh;
-          if (p.xp.playbook < 8) { p.xp = Object.assign({}, p.xp, { playbook: p.xp.playbook + 1 }); note('Key hit: +1 playbook xp'); } else note('Key hit: playbook xp is full');
+          p.xpHold = clamp((p.xpHold || 0) + 1, 0, 99); note('Key hit: +1 xp on the bar');
         }
       } else k.hits = n - 1;
       commit();
@@ -1305,7 +1308,9 @@
     adddetail: function () { if (!cur.play.mission) cur.play.mission = blankMission('', []); cur.play.mission.details.push(''); commit(); var ins = cur.root.querySelectorAll('.ds-detail .ds-in'); if (ins.length) ins[ins.length - 1].focus(); },
     rmdetail: function (d) { var m = cur.play.mission, i = +d.i; if (!m || !(i >= 0 && i < m.details.length)) return; if (m.details[i] && !window.confirm('Remove this mission detail?')) return; m.details.splice(i, 1); commit(); },
     frame: function (d) { var a = cur.play.frame, i = a.indexOf(d.n); if (i >= 0) { if (!window.confirm('Remove the frame feature ' + d.n + '?')) return; a.splice(i, 1); } else { if (!window.confirm('Add the frame feature ' + d.n + '? (Frame Upgrade grants two.)')) return; a.push(d.n); } commit(); },
-    xp: function (d) { var k = d.k, max = k === 'playbook' ? 8 : 6; cur.play.xp[k] = clamp(toggleTrack(cur.play.xp[k], +d.n), 0, max); if (cur.ui.advance === k && cur.play.xp[k] < 6) cur.ui.advance = null; commit(); },
+    /* a track box spends from the bar; lowering a track puts the difference back */
+    xp: function (d) { var k = d.k, max = k === 'playbook' ? 8 : 6, old = cur.play.xp[k] || 0, v = clamp(toggleTrack(old, +d.n), 0, max); if (!spendHold(v - old)) return; cur.play.xp[k] = v; if (cur.ui.advance === k && v < 6) cur.ui.advance = null; commit(); },
+    xphold: function (d) { var p = cur.play, h = p.xpHold || 0, v = clamp(h + (+d.v < 0 ? -1 : 1), 0, 99); if (v === h) return; p.xpHold = v; note(v > h ? '+1 xp on the bar (' + v + ' to spend)' : '1 xp off the bar (' + v + ' to spend)'); commit(); },
     advance: function (d) { cur.ui.advance = d.k; render(); },
     advcancel: function () { cur.ui.advance = null; render(); },
     advdot: function (d) { var max = dotMax(cur.play, cur.pb, d.a); if ((cur.play.dots[d.a] || 0) >= max) return; cur.play.dots[d.a] = (cur.play.dots[d.a] || 0) + 1; cur.play.xp[d.k] = 0; cur.ui.advance = null; note(d.a + ' is now ' + cur.play.dots[d.a]); commit(); },
@@ -1324,7 +1329,7 @@
     clock: function (d) { var c = cur.play.clocks[+d.i]; if (!c) return; c.filled = toggleTrack(c.filled, +d.n); commit(); },
     rmclock: function (d) { var c = cur.play.clocks[+d.i]; if (!c) return; if ((c.name || c.filled) && !window.confirm('Remove the clock ' + (c.name || '') + '?')) return; cur.play.clocks.splice(+d.i, 1); commit(); },
     addclock: function (d) { var n = cur.root.querySelector('.ds-newclock'); cur.play.clocks.push({ name: n ? n.value.trim() : '', size: +d.n || 4, filled: 0 }); commit(); },
-    memory: function (d) { var m = cur.play.memories[+d.i]; if (!m) return; m.filled = toggleTrack(m.filled, +d.n); commit(); },
+    memory: function (d) { var m = cur.play.memories[+d.i]; if (!m) return; var old = m.filled || 0, v = clamp(toggleTrack(old, +d.n), 0, m.size || 8); if (!spendHold(v - old)) return; m.filled = v; commit(); },
     suspicion: function (d) { cur.play.suspicion = toggleTrack(cur.play.suspicion, +d.n); commit(); },
     log: function () { var n = cur.root.querySelector('.ds-newlog'); var v = n && n.value.trim(); if (!v) { if (n) n.focus(); return; } addLog(cur.play, { at: new Date().toISOString(), kind: 'note', text: v }); commit(); },
     rmlog: function (d) { if (!window.confirm('Remove this log entry?')) return; cur.play.log.splice(+d.i, 1); commit(); },
@@ -1355,7 +1360,9 @@
         /* a push marked in the strip is paid already, for this first roll; a roll after it pays again */
         if (r.push && !(r.paid && r.paid.push)) plan.push({ text: '+2 ' + sn, run: function () { p.stress = clamp(p.stress + 2, 0, sm); return '+2 ' + sn + ' (' + p.stress + ' / ' + sm + ')'; } });
         if (r.paid) r.paid.push = false;
-        if (r.position === 'desperate' && key) plan.push({ text: '+1 ' + attr + ' xp', run: function () { if ((p.xp[key] || 0) >= 6) return attr + ' xp is full: advance first'; p.xp[key] = clamp((p.xp[key] || 0) + 1, 0, 6); return '+1 ' + attr + ' xp (' + p.xp[key] + ' / 6)' + (p.xp[key] >= 6 ? ' — advance ready' : ''); } });
+        /* desperate, zero-dot (the action's own rating, whatever dice were added), or both: xp on the bar */
+        var why = []; if (r.position === 'desperate') why.push('desperate'); if (!dots) why.push('zero-dot');
+        var earn = why.length; if (earn) plan.push({ text: '+' + earn + ' xp to the bar (' + why.join(', ') + ')', run: function () { p.xpHold = clamp((p.xpHold || 0) + earn, 0, 99); return '+' + earn + ' xp on the bar (' + p.xpHold + ' to spend)'; } });
         res.saved = !ro; res.savedWhy = ro ? notSavedWhy() : '';
         res.applied = plan.map(function (x) { return ro ? x.text : x.run(); });
       } else if (r.kind === 'resist') {
@@ -1375,26 +1382,19 @@
     endopen: function () {
       if (cur.ui.endSess) { cur.ui.endSess = null; render(); return; }
       if (tableNow() && !endNo(cur.play)) return; /* nothing has started at the table */
-      closePanels(); cur.ui.endSess = { vals: sessionTriggers(cur.play, cur.pb).map(function () { return 0; }), target: 'xp', result: null }; cur.ui.rollScroll = true; render();
+      closePanels(); cur.ui.endSess = { vals: sessionTriggers(cur.play, cur.pb).map(function () { return 0; }), result: null }; cur.ui.rollScroll = true; render();
     },
     endval: function (d) { var e = cur.ui.endSess, i = +d.i; if (!e || e.result || !(i >= 0 && i < e.vals.length)) return; e.vals[i] = clamp(d.v, 0, 2); render(); },
-    endtarget: function (d) { var e = cur.ui.endSess; if (!e || e.result || !isHull(cur.pb)) return; e.target = d.v === 'xp' ? 'xp' : clamp(d.v, 0, cur.play.memories.length - 1); render(); },
     endmark: function () {
       var e = cur.ui.endSess, p = cur.play, pb = cur.pb; if (!e || e.result || noSave()) return;
-      var plan = endPlan(p, pb, e), n = endNo(p), trig = sessionTriggers(p, pb), lines = [], memFull = false, hits = Object.keys(p.keyHitSession || {}).length;
+      var plan = endPlan(p, pb, e), n = endNo(p), trig = sessionTriggers(p, pb), lines = [], hits = Object.keys(p.keyHitSession || {}).length;
       if (n !== (p.session || 0)) p.session = n; /* the table's session is the one that ended */
-      if (plan.toXp) p.xp = Object.assign({}, p.xp, { playbook: plan.xpAfter });
-      if (plan.toMem) {
-        p.memories = p.memories.map(function (m, i) { return i === plan.memI ? Object.assign({}, m, { filled: (m.filled || 0) + plan.toMem }) : m; });
-        var mm = p.memories[plan.memI]; memFull = mm.filled >= (mm.size || 8);
-        lines.push('+' + plan.toMem + ' memory ' + (plan.memI + 1) + ' (' + mm.filled + ' / ' + (mm.size || 8) + ')');
-      }
-      if (plan.toXp || !plan.toMem) lines.push('+' + plan.toXp + ' playbook xp (' + p.xp.playbook + ' / 8)');
+      p.xpHold = plan.after; lines.push('+' + plan.total + ' xp on the bar (' + p.xpHold + ' to spend)');
       p.keyHitSession = {}; if (hits) lines.push('key hits cleared');
       var names = []; e.vals.forEach(function (v, i) { if (v && trig[i]) names.push(trigLabel(trig[i]) + (v === 2 ? ' ×2' : '')); });
-      var text = 'Session ' + n + ' ended: +' + plan.total + ' xp' + (names.length ? ' (' + names.join('; ') + ')' : '') + (plan.toMem ? ' · ' + plan.toMem + ' to memory ' + (plan.memI + 1) : '') + (plan.lost ? ' · ' + plan.lost + ' lost to the cap' : '');
+      var text = 'Session ' + n + ' ended: +' + plan.total + ' xp' + (names.length ? ' (' + names.join('; ') + ')' : '');
       addLog(p, { at: new Date().toISOString(), kind: 'note', text: text });
-      e.result = { lines: lines, lost: plan.lost, full: p.xp.playbook >= 8, memFull: memFull };
+      e.result = { lines: lines };
       note('Session ' + n + ' ended'); commit();
     },
     panelclose: function () { closePanels(); render(); },
@@ -1405,9 +1405,8 @@
       if (cur.ui.dt && cur.ui.dt.kind === k) { cur.ui.dt = null; render(); return; }
       closePanels();
       var open = -1; p.clocks.forEach(function (c, i) { if (open < 0 && c.filled < c.size) open = i; });
-      var track = ['insight', 'prowess', 'resolve', 'playbook'].filter(function (x) { return (p.xp[x] || 0) < (x === 'playbook' ? 8 : 6); })[0] || 'playbook';
       var def = k === 'project' ? 'Study' : 'Tinker';
-      cur.ui.dt = { kind: k, who: 'self', action: ACTS.indexOf(def) >= 0 ? def : ACTS[0], n: 2, clock: open >= 0 ? open : 'new', newName: '', size: 8, track: track, result: null };
+      cur.ui.dt = { kind: k, who: 'self', action: ACTS.indexOf(def) >= 0 ? def : ACTS[0], n: 2, clock: open >= 0 ? open : 'new', newName: '', size: 8, result: null };
       cur.ui.rollScroll = true; render();
     },
     dtopt: function (d) {
@@ -1417,7 +1416,6 @@
       else if (k === 'n') t.n = clamp(v, 0, 4);
       else if (k === 'clock') { if (v === 'new') t.clock = 'new'; else if (+v >= 0 && +v < cur.play.clocks.length) t.clock = +v; else return; }
       else if (k === 'size') { if ([4, 6, 8].indexOf(+v) < 0) return; t.size = +v; }
-      else if (k === 'track') { if (['insight', 'prowess', 'resolve', 'playbook'].indexOf(v) < 0) return; t.track = v; }
       else return;
       t.result = null; render();
     },
@@ -1461,12 +1459,9 @@
     dttrain: function () {
       var t = cur.ui.dt, p = cur.play; if (!t || t.kind !== 'train' || noSave()) return;
       if (p.trainedThisDowntime) { note('Already trained this downtime'); render(); return; }
-      var k = t.track, max = k === 'playbook' ? 8 : 6; if (['insight', 'prowess', 'resolve', 'playbook'].indexOf(k) < 0) return;
-      if ((p.xp[k] || 0) >= max) { note('That track is full: advance first'); return; }
-      var v = (p.xp[k] || 0) + 1, label = k === 'playbook' ? 'playbook' : capWord(k), nx = Object.assign({}, p.xp); nx[k] = v;
-      p.xp = nx; p.trainedThisDowntime = true;
-      t.result = { saved: true, applied: ['+1 ' + label + ' xp (' + v + ' / ' + max + ')' + (v >= max ? ' — advance ready' : '')] };
-      addLog(p, { at: new Date().toISOString(), kind: 'roll', text: 'Train ' + label + ' · +1 xp (' + v + ' / ' + max + ')' });
+      p.xpHold = clamp((p.xpHold || 0) + 1, 0, 99); p.trainedThisDowntime = true;
+      t.result = { saved: true, applied: ['+1 xp on the bar (' + p.xpHold + ' to spend)'] };
+      addLog(p, { at: new Date().toISOString(), kind: 'roll', text: 'Train · +1 xp on the bar' });
       commit();
     },
     resistapply: function () {

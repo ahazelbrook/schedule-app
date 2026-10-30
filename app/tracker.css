@@ -98,6 +98,12 @@
 #dossier .ds-xbox.on { background: var(--accent); border-color: var(--accent); }
 #dossier .ds-xpmini { display: inline-flex; gap: 5px; align-items: center; font: 900 9px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; color: var(--ink-soft); }
 #dossier .ds-xpmini .ds-pips { gap: 3px; }
+/* the xp holding bar: earned xp waits here, a mark per xp, until a track box spends it */
+#dossier .ds-hold { gap: 6px 10px; flex-wrap: wrap; align-items: center; }
+#dossier .ds-hold .ds-lab { margin: 0; }
+#dossier .ds-hmarks { display: inline-flex; gap: 3px; flex-wrap: wrap; align-items: center; min-width: 0; }
+#dossier .ds-hmark { display: inline-block; width: 9px; height: 12px; border: 2px solid var(--accent); border-radius: 2px; background: var(--accent); transform: skewX(-12deg); pointer-events: none; }
+#dossier .ds-hmore { font: 700 11px/1 var(--font-mono); color: var(--ink-soft); margin-left: 3px; }
 #dossier .ds-sq { width: 15px; height: 15px; border: 2px solid var(--rule); background: transparent; padding: 0; cursor: pointer; flex: 0 0 auto; display: inline-block; }
 #dossier .ds-sq.on { background: var(--accent); border-color: var(--accent); }
 #dossier .ds-dias { display: inline-flex; gap: 7px; flex-wrap: wrap; }
@@ -604,6 +610,7 @@
   #dossier .ds-pip { width: 11px; height: 11px; }
   #dossier .ds-sbox { width: 14px; height: 19px; }
   #dossier .ds-xbox { width: 10px; height: 13px; }
+  #dossier .ds-hmark { width: 7px; height: 10px; background: #b8481a !important; border-color: #b8481a !important; }
   #dossier .ds-dia { width: 9px; height: 9px; margin: 1px; }
   #dossier .ds-dias { gap: 5px; }
   #dossier .ds-sq, #dossier .ds-circ { width: 11px; height: 11px; }
