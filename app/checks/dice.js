@@ -75,7 +75,7 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
     const keys = await p.evaluate(() => Object.keys(B68Tracker).sort().join(','));
     assert(keys === '_rng,close,initialPlay,isOpen,open,play,refresh,renderStatic,update', 'hound: public surface unchanged: ' + keys);
     let s = await play(p);
-    const skirmish = s.dots.Skirmish, prowessXp = s.xp.prowess, stress0 = s.stress;
+    const skirmish = s.dots.Skirmish, prowessXp = s.xp.prowess, stress0 = s.stress, hold0 = s.xpHold || 0;
     notes.push('hound Skirmish ' + skirmish + ' dots, stress ' + stress0 + ', prowess xp ' + prowessXp);
     /* action names are buttons, pips still work */
     assert((await p.$$eval('#dossier .ds-actbtn', ns => ns.length)) === 12, 'hound: 12 action buttons');
@@ -154,6 +154,7 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
     await click(p, '#dossier [data-act="rollpos"][data-v="desperate"]');
     assert((await text(p, '#dossier .ds-roll-big')) === (skirmish + 1) + 'd', 'hound: push adds a die: ' + (await text(p, '#dossier .ds-roll-big')));
     const pushNote = await text(p, '#dossier [data-act="rollopt"][data-k="push"]'); assert(/2 Stress/.test(pushNote), 'hound: push costs 2 Stress: ' + pushNote);
+    assert(/earns 1 xp/.test(await text(p, '#dossier .ds-roll-body')) && !/earns 2 xp/.test(await text(p, '#dossier .ds-roll-body')), 'hound: a desperate dotted action earns 1 xp');
     await p.evaluate(RNG([6, 4, 2, 1]));
     await shotPanel(p, 'out/dice-desk-panel.png');
     await click(p, '#dossier [data-act="roll"]');
@@ -163,11 +164,11 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
     const word = await text(p, '#dossier .ds-roll-word'); assert(word === 'Success', 'hound: reading ' + word);
     s = await stored(p);
     assert(s.stress === stress0 + 2, 'hound: push marked 2 Stress: ' + s.stress);
-    assert(s.xp.prowess === prowessXp + 1, 'hound: desperate marked 1 Prowess xp: ' + s.xp.prowess);
+    assert(s.xp.prowess === prowessXp && s.xpHold === hold0 + 1, 'hound: desperate put 1 xp on the bar, Prowess xp unchanged: ' + JSON.stringify([s.xp.prowess, s.xpHold]));
     assert(s.log.length === 1 && s.log[0].kind === 'roll' && typeof s.log[0].at === 'string', 'hound: one roll log entry ' + JSON.stringify(s.log[0]));
     const want = 'Skirmish ' + (skirmish + 1) + 'd (push) · desperate · ' + [6, 4, 2, 1].slice(0, skirmish + 1).join(',') + ' → success';
     assert(s.log[0].text === want, 'hound: log text "' + s.log[0].text + '" vs "' + want + '"');
-    const applied = await text(p, '#dossier .ds-roll-applied'); assert(/\+2 Stress/.test(applied) && /\+1 Prowess xp/.test(applied), 'hound: applied line ' + applied);
+    const applied = await text(p, '#dossier .ds-roll-applied'); assert(/\+2 Stress/.test(applied) && applied.indexOf('+1 xp on the bar (' + (hold0 + 1) + ' to spend)') >= 0, 'hound: applied line ' + applied);
     const writes = await p.evaluate(() => window.__writes.length);
     await p.screenshot({ path: 'out/dice-desk.png', fullPage: true });
     const li = await p.$eval('#dossier .ds-log li', n => n.className + '|' + !!n.querySelector('.ds-logdie') + '|' + n.querySelector('.ds-logt').className);
@@ -184,6 +185,7 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
     await openRoll(p, '' + zero + '');
     assert(/take the lowest/.test(await text(p, '#dossier .ds-roll-go')), 'hound: 0d says take lowest');
     assert((await text(p, '#dossier .ds-roll-big')) === '0d', 'hound: 0d readout');
+    assert(/zero-dot: earns 1 xp/.test(await text(p, '#dossier .ds-roll-body')), 'hound: a zero-dot risky action says it earns 1 xp');
     await p.evaluate(RNG([5, 2]));
     await click(p, '#dossier [data-act="roll"]');
     const zd = await p.$$eval('#dossier .ds-roll-res .ds-die', ns => ns.map(n => n.getAttribute('aria-label') + (n.classList.contains('hi') ? '*' : '')));
@@ -191,7 +193,8 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
     assert((await text(p, '#dossier .ds-roll-word')) === 'Failure', 'hound: zero-dot reads the lowest (2 = failure)');
     s = await stored(p);
     assert(s.log[0].text === zero + ' 0d (2d take lowest) · risky · 5,2 → failure', 'hound: zero-dot log ' + s.log[0].text);
-    assert(s.stress === stress0 + 2 && s.xp.prowess === prowessXp + 1, 'hound: zero-dot risky roll changed nothing else');
+    assert(s.stress === stress0 + 2 && s.xp.prowess === prowessXp && s.xpHold === hold0 + 2, 'hound: the zero-dot risky roll put 1 xp on the bar and changed nothing else: ' + JSON.stringify([s.stress, s.xp.prowess, s.xpHold]));
+    assert(/A zero-dot action earns 1 xp, even with a push or help\./.test(await text(p, '#dossier .ds-roll-res')) && (await text(p, '#dossier .ds-roll-applied')).indexOf('+1 xp on the bar (' + (hold0 + 2) + ' to spend)') >= 0, 'hound: zero-dot hint and applied line: ' + (await text(p, '#dossier .ds-roll-applied')));
     /* critical: two 6s */
     await openRoll(p, 'Skirmish');
     await click(p, '#dossier [data-act="rollopt"][data-k="assist"]');
@@ -202,7 +205,7 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
     assert((await p.$$eval('#dossier .ds-roll-res .ds-die.six', ns => ns.length)) === 2, 'hound: both 6s in accent');
     s = await stored(p);
     assert(new RegExp('^Skirmish ' + (skirmish + 2) + 'd \\(assist, bargain\\) · risky · 6,6(,[1-6])* → critical$').test(s.log[0].text), 'hound: critical log ' + s.log[0].text);
-    assert(s.stress === stress0 + 2, 'hound: no push, no stress: ' + s.stress);
+    assert(s.stress === stress0 + 2 && s.xpHold === hold0 + 2, 'hound: no push, no stress; a risky dotted roll earns nothing: ' + JSON.stringify([s.stress, s.xpHold]));
     /* zero dice cannot crit: 6,6 taken lowest is a success */
     await openRoll(p, '' + zero + ''); await p.evaluate(RNG([6, 6])); await click(p, '#dossier [data-act="roll"]');
     assert((await text(p, '#dossier .ds-roll-word')) === 'Success', 'hound: 0d 6,6 is a success, not a critical');

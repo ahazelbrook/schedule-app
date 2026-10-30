@@ -64,11 +64,31 @@ const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
   /* the figure is drawn once: a tap re-renders the sheet around the same SVG node */
   const fg = await d.evaluate(() => { const f = document.querySelector('#dossier .ds-figbox [data-k="fig"]'); document.querySelector('#dossier .ds-sbox[data-n="1"]').click(); const g = document.querySelector('#dossier .ds-figbox [data-k="fig"]'); document.querySelector('#dossier .ds-sbox[data-n="3"]').click(); return { svg: !!(g && g.querySelector('svg')), same: f === g, thumb: !!document.querySelector('#dossier img.ds-thumb') }; });
   assert(fg.svg && fg.same && !fg.thumb, 'desk: the Figure box keeps its drawn SVG node across a tap, and no thumbnail is drawn: ' + JSON.stringify(fg));
-  // xp box: playbook 3 (the one in the XP box body)
-  await d.click('#dossier .ds-c2 .ds-tools .ds-xbox[data-k="playbook"][data-n="3"]'); await d.waitForTimeout(100);
-  s = await d.evaluate(() => window.saved.play); assert(s.xp.playbook === 3, 'xp click saved: ' + s.xp.playbook);
-  // attribute xp to 6 then advance
+  // the xp holding bar: a fresh sheet holds nothing, and no track box fills without xp on it
+  const addXp = async (pg, n) => { for (let i = 0; i < n; i++) await pg.click('#dossier [data-act="xphold"][data-v="1"]'); await pg.waitForTimeout(100); };
+  const PBX = '#dossier .ds-c2 .ds-tools .ds-xbox[data-k="playbook"]';
+  const holdNow = (pg) => pg.evaluate(() => ({ count: document.querySelector('#dossier .ds-xpbox .ds-hold .ds-count').textContent, marks: document.querySelectorAll('#dossier .ds-hold .ds-hmark').length, minus: document.querySelector('#dossier [data-act="xphold"][data-v="-1"]').disabled }));
+  let hb = await holdNow(d);
+  assert(hb.count === '0 to spend' && hb.marks === 0 && hb.minus && (await d.evaluate(() => window.saved.play.xpHold)) === 0 && /Nothing to spend/.test(await d.$eval('#dossier .ds-hold + .hint', n => n.textContent)), 'a fresh sheet shows the bar at 0: ' + JSON.stringify(hb));
+  await d.click(PBX + '[data-n="3"]'); await d.waitForTimeout(100);
+  const empty = await d.evaluate(() => ({ live: B68Tracker.play().xp.playbook, hold: B68Tracker.play().xpHold, stored: window.saved.play.xp.playbook, status: document.getElementById('ds-status').textContent }));
+  assert(empty.live === 0 && empty.hold === 0 && empty.stored === 0 && /^No xp on the bar/.test(empty.status), 'an empty bar: a playbook box changes nothing: ' + JSON.stringify(empty));
+  await addXp(d, 3);
+  s = await d.evaluate(() => window.saved.play); hb = await holdNow(d);
+  assert(s.xpHold === 3 && s.xp.playbook === 0 && hb.count === '3 to spend' && hb.marks === 3 && !hb.minus, '+ Add xp three times: ' + JSON.stringify([s.xpHold, s.xp.playbook, hb]));
+  await d.click(PBX + '[data-n="3"]'); await d.waitForTimeout(100);
+  s = await d.evaluate(() => window.saved.play); assert(s.xp.playbook === 3 && s.xpHold === 0, 'playbook box 3 spends 3 from the bar: ' + JSON.stringify([s.xp.playbook, s.xpHold]));
+  await d.click(PBX + '[data-n="3"]'); await d.waitForTimeout(100);
+  s = await d.evaluate(() => window.saved.play); assert(s.xp.playbook === 2 && s.xpHold === 1, 'lowering the track puts 1 back on the bar: ' + JSON.stringify([s.xp.playbook, s.xpHold]));
+  await addXp(d, 1); await d.click('#dossier [data-act="xphold"][data-v="-1"]'); await d.waitForTimeout(100);
+  s = await d.evaluate(() => window.saved.play); hb = await holdNow(d);
+  assert(s.xpHold === 1 && hb.marks === 1 && hb.count === '1 to spend', '− takes 1 xp off the bar: ' + JSON.stringify([s.xpHold, hb]));
+  await d.click(PBX + '[data-n="3"]'); await d.waitForTimeout(100);
+  s = await d.evaluate(() => window.saved.play); assert(s.xp.playbook === 3 && s.xpHold === 0, 'xp click saved: ' + JSON.stringify([s.xp.playbook, s.xpHold]));
+  // attribute xp to 6 then advance (6 xp on the bar first)
+  await addXp(d, 6);
   await d.click('#dossier .ds-xbox[data-k="insight"][data-n="6"]'); await d.waitForTimeout(100);
+  s = await d.evaluate(() => window.saved.play); assert(s.xp.insight === 6 && s.xpHold === 0, 'insight box 6 spends 6 from the bar: ' + JSON.stringify([s.xp.insight, s.xpHold]));
   await d.click('#dossier [data-act="advance"][data-k="insight"]'); await d.waitForTimeout(100);
   await d.click('#dossier [data-act="advdot"][data-a="Hunt"]'); await d.waitForTimeout(100);
   s = await d.evaluate(() => window.saved.play); assert(s.dots.Hunt === 1 && s.xp.insight === 0, 'advance gave a Hunt dot and reset: ' + JSON.stringify([s.dots.Hunt, s.xp.insight]));
@@ -81,14 +101,14 @@ const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
   s = await d.evaluate(() => window.saved.play); assert(s.healing === 3, 'healing: ' + s.healing);
   // key hit marks xp; deadlock
   await d.click('#dossier .ds-pip[data-act="keyhit"][data-i="0"][data-n="1"]'); await d.waitForTimeout(100);
-  s = await d.evaluate(() => window.saved.play); assert(s.keys[0].hits === 1 && s.xp.playbook === 4, 'key hit +1 xp: ' + JSON.stringify([s.keys[0].hits, s.xp.playbook]));
+  s = await d.evaluate(() => window.saved.play); assert(s.keys[0].hits === 1 && s.xp.playbook === 3 && s.xpHold === 1, 'key hit +1 xp on the bar: ' + JSON.stringify([s.keys[0].hits, s.xp.playbook, s.xpHold]));
   await d.click('#dossier [data-act="deadlock"][data-i="1"][data-dir="up"]'); await d.waitForTimeout(100);
   s = await d.evaluate(() => window.saved.play); assert(s.keys[1].deadlock === 'up', 'deadlock set');
   assert(await d.evaluate(() => /Permanent/.test(document.querySelector('#dossier .ds-key.locked').textContent)), 'permanent shown');
-  // ability purchase with 8 xp
-  await d.click('#dossier .ds-c2 .ds-tools .ds-xbox[data-k="playbook"][data-n="8"]'); await d.waitForTimeout(100);
+  // ability purchase with 8 xp (5 on the bar takes the track from 3 to 8)
+  await addXp(d, 4); await d.click(PBX + '[data-n="8"]'); await d.waitForTimeout(100);
   await d.click('#dossier .ds-circ[data-n="Fixer"][data-i="1"]'); await d.waitForTimeout(100);
-  s = await d.evaluate(() => window.saved.play); assert(s.abilities.indexOf('Fixer') >= 0 && s.xp.playbook === 0, 'ability bought for 8 xp: ' + JSON.stringify([s.abilities, s.xp.playbook]));
+  s = await d.evaluate(() => window.saved.play); assert(s.abilities.indexOf('Fixer') >= 0 && s.xp.playbook === 0 && s.xpHold === 0, 'ability bought for 8 xp, nothing taken from the bar: ' + JSON.stringify([s.abilities, s.xp.playbook, s.xpHold]));
   // echo pet two circles
   await d.click('#dossier .ds-circ[data-n="Echo Pet"][data-i="1"]'); await d.waitForTimeout(80); await d.click('#dossier .ds-circ[data-n="Echo Pet"][data-i="2"]'); await d.waitForTimeout(100);
   s = await d.evaluate(() => window.saved.play); assert(s.abilityTicks['Echo Pet'] === 2, 'echo pet ticks: ' + JSON.stringify(s.abilityTicks));
@@ -314,9 +334,11 @@ const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
         const tools = vis('.ds-stressbox .ds-markrow button').map(n => ({ t: n.textContent, top: Math.round(n.getBoundingClientRect().top) }));
         const fields = vis('input:not([type="checkbox"]), textarea, select').map(n => parseFloat(getComputedStyle(n).fontSize)).filter(f => f < 16);
         const ta = vis('button').filter(n => getComputedStyle(n).touchAction !== 'manipulation').length;
-        return { low: low('.btn.sm, .chip.sm, .ds-item, .ds-resist, .ds-resrow, .ds-coh', 40), sq, tools, fields, ta };
+        const hold = vis('.ds-hold .btn').map(n => Math.round(n.getBoundingClientRect().height));
+        return { low: low('.btn.sm, .chip.sm, .ds-item, .ds-resist, .ds-resrow, .ds-coh', 40), sq, tools, fields, ta, hold };
       });
       assert(!touch.low.length, tag + ': play controls under 40px: ' + JSON.stringify(touch.low.slice(0, 8)));
+      assert(touch.hold.length === 2 && Math.min.apply(null, touch.hold) >= 40, tag + ': the xp bar’s − and + Add xp are 40px tall: ' + touch.hold.join(','));
       assert(touch.sq.length >= 2 && Math.min.apply(null, touch.sq) >= 40, tag + ': Armor / Heavy boxes have 40px hit areas: ' + touch.sq.join(','));
       assert(touch.tools.length === 4 && touch.tools[0].t === 'Mark +1' && touch.tools[1].t === 'Mark +2' && touch.tools[0].top === touch.tools[1].top && /^Clear 1$/.test(touch.tools[2].t), tag + ': Mark +1 / +2 first, side by side, then Clear 1 / Clear 3: ' + JSON.stringify(touch.tools));
       assert(!touch.fields.length && !touch.ta, tag + ': fields are 16px and buttons do not double-tap zoom: ' + JSON.stringify([touch.fields, touch.ta]));
@@ -358,7 +380,9 @@ const URL = 'file://' + require('path').resolve(__dirname, '..', 'index.html');
   if (rh.ok) { assert(rh.play.abilities[0] === 'Automaton' && rh.play.memories.length === 4 && rh.play.keys.length === 0 && rh.play.vice === '', 'hull seeding: ' + JSON.stringify([rh.play.abilities, rh.play.memories.length, rh.play.keys.length])); }
   assert(await hu.evaluate(() => document.querySelectorAll('#dossier .ds-sbox').length === 10 && document.querySelector('#dossier .ds-dia[data-act="bank"]').disabled), 'hull drain 10 and bank disabled');
   await hu.click('#dossier .ds-seg[data-act="memory"][data-i="0"][data-n="3"]'); await hu.waitForTimeout(100);
-  assert(await hu.evaluate(() => window.saved.play.memories[0].filled === 3), 'memory clock ticked');
+  assert(await hu.evaluate(() => B68Tracker.play().memories[0].filled === 0 && B68Tracker.play().xpHold === 0), 'hull: an empty bar ticks no memory clock');
+  await addXp(hu, 3); await hu.click('#dossier .ds-seg[data-act="memory"][data-i="0"][data-n="3"]'); await hu.waitForTimeout(100);
+  assert(await hu.evaluate(() => window.saved.play.memories[0].filled === 3 && window.saved.play.xpHold === 0), 'memory clock ticked from the bar');
   await hu.screenshot({ path: 'out/tracker-hull-dark.png', fullPage: true });
   /* dark phone, Veteran */
   const { p: ve, r: rv } = await open(400, 800, 'veteran-phone-dark', 'veteran', true);
