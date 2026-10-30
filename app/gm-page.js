@@ -2331,7 +2331,7 @@
       (v.note.blocks || []).forEach(function (b) { if (isObj(b) && b.k === 'embed') out.push({ kind: 'Prep', title: str(b.from).split('/').pop().replace(/\.md$/i, '') + (b.heading ? ' › ' + b.heading : ''), text: findText(b.src), go: { t: 'embed', from: str(b.from) } }); });
     }
     screenSections().forEach(function (x) { out.push({ kind: 'Screen', title: x.title, text: findText(x.md), go: { t: 'screen', id: x.id } }); });
-    (c.npcs || []).forEach(function (n) { if (!isObj(n) || !n.name) return; known[lc(n.name)] = 1; out.push({ kind: 'NPC', title: n.name, sub: [n.role, n.faction, n.district].filter(Boolean).join(' · '), text: [n.glance, n.mannerism, (Array.isArray(n.say) ? n.say : []).join(' '), n.playedBy ? 'played by ' + n.playedBy : ''].join(' '), go: { t: 'npc', name: n.name } }); });
+    (c.npcs || []).forEach(function (n) { if (!isObj(n) || !n.name) return; known[lc(n.name)] = 1; out.push({ kind: 'NPC', title: n.name, sub: [n.role, n.faction, n.district].filter(Boolean).join(' · '), text: [n.glance, n.mannerism, (Array.isArray(n.say) ? n.say : []).join(' '), n.playedBy ? 'played by ' + n.playedBy : '', npcCardPlain(n.name)].join(' '), go: { t: 'npc', name: n.name } }); });
     Object.keys(S.npcs || {}).forEach(function (id) { var n = S.npcs[id]; if (!isObj(n) || !n.name || known[lc(n.name)]) return; out.push({ kind: 'NPC (app)', title: n.name, sub: [n.role, n.faction].filter(Boolean).join(' · '), text: str(n.description), go: { t: 'npcapp' } }); });
     (c.pcs || []).forEach(function (x) { if (isObj(x) && x.name) out.push({ kind: 'PC', title: x.name, sub: x.playbook, text: [].concat(x.friend || [], x.rival || [], x.vice || []).join(' '), go: { t: 'pc', name: x.file || x.name } }); });
     (c.standing || []).forEach(function (x) { if (isObj(x) && x.faction) out.push({ kind: 'Faction', title: x.faction, sub: 'status with the crew ' + (x.status > 0 ? '+' : '') + (+x.status || 0), go: { t: 'faction', name: B68slug(x.faction) } }); });
@@ -4982,11 +4982,13 @@
     var list = npcList();
     box.innerHTML = '<div id="gm-npcgen"></div><h3 class="gm-band">The cast</h3>' +
       (list.length ? '<ul class="gm-npcs">' + list.map(function (x) {
-        var d = x.doc, rev = d.revealed === true;
+        var d = x.doc, rev = d.revealed === true, src = npcCardSrc([d.name].concat(d.alias || [])), open = !!src && S.npcCardOpen === x.id;
         return '<li class="gm-npcrow" data-id="' + esc(x.id) + '"><div class="gm-thumb" data-fig="' + esc(x.id) + '" aria-hidden="true"></div><div class="gm-npcmeta"><b>' + esc(d.name || 'Unnamed') + '</b><small>' + esc([d.role, d.faction].filter(Boolean).join(' · ')) + '</small>' + (rev ? '' : '<span class="gm-badge">Hidden</span>') + '</div>' +
-          '<div class="gm-npcacts"><button type="button" class="btn sm" data-gm="npcipad" data-id="' + esc(x.id) + '">Show on iPad</button>' + stageHtml(x.id, staged(x.id)) + '</div></li>';
+          '<div class="gm-npcacts">' + (src ? '<button type="button" class="btn sm" data-gm="npccard" data-id="' + esc(x.id) + '" aria-expanded="' + open + '">Card</button>' : '') + '<button type="button" class="btn sm" data-gm="npcipad" data-id="' + esc(x.id) + '">Show on iPad</button>' + stageHtml(x.id, staged(x.id)) + '</div></li>' +
+          (open ? '<li class="gm-npccardrow"><div class="pp-card gm-npccard pp-doc">' + npcCardHtml(src, 'nc-') + '</div></li>' : '');
       }).join('') + '</ul>' : '<p class="gm-empty">' + (S.api && S.api.db && S.api.db() ? 'No NPCs in the cast yet. Add them on the cast page.' : 'The cast is not available here.') + '</p>') +
       '<p><a class="hm-link" href="#cast">The cast page</a></p>';
+    var nc = box.querySelector('.gm-npccard'); if (nc && W.B68GmPrep) W.B68GmPrep.decorate(nc, {});
     renderNpcGen();
     scMaybeRedraw();
     var K = W.B68Figure; if (!K || !K.portrait) return;
@@ -5265,15 +5267,25 @@
     if (l.kind === 'npc' || l.kind === 'pc' || l.kind === 'faction') { prepPeek(l.kind, L); return; }
     W.location.href = B.obsidianUri(pk, L.rel);
   }
+  /* an NPC's whole card (the pack's campaign `cards`, keyed by the vault card's name), by any of its names, without case */
+  function npcCardSrc(names) {
+    var cs = (part('campaign') || {}).cards; if (!isObj(cs)) return '';
+    var want = [].concat(names).map(function (x) { return str(x).toLowerCase().trim(); }).filter(Boolean);
+    var k = Object.keys(cs).filter(function (x) { return typeof cs[x] === 'string' && want.indexOf(x.toLowerCase()) >= 0; })[0];
+    return k ? cs[k] : '';
+  }
+  function npcCardHtml(src, id) { var B = W.B68GmPrep; return B && B.card ? B.card(part('prep'), src, { M: W.B68Markdown, id: id }) : ''; }
+  function npcCardPlain(name) { var s = npcCardSrc(name), M = W.B68Markdown; return s && M && M.plain ? M.plain(s) : s; }
   function prepPeek(kind, L) {
     var box = $q('#gm-prep-peek'), pk = part('prep'), c = part('campaign') || {}, lc = function (s) { return str(s).toLowerCase(); }, h = '', acts = '';
     if (!box) return;
     if (kind === 'npc') {
       var n = (c.npcs || []).filter(function (x) { return lc(x.name) === lc(L.name); })[0] || { name: L.name };
       var appId = Object.keys(S.npcs || {}).filter(function (id) { return lc(S.npcs[id] && S.npcs[id].name) === lc(L.name); })[0];
+      var src = npcCardSrc([n.name, L.name]), ch = src ? npcCardHtml(src, 'pk-') : '';
       h = '<p class="gm-kick">NPC</p><h3>' + esc(n.name) + '</h3><p class="gm-sub">' + esc([n.role, n.faction, n.district].filter(Boolean).join(' · ')) + '</p>' +
-        (n.glance ? '<p>' + esc(n.glance) + '</p>' : '') + (n.mannerism ? '<p class="gm-dim">' + esc(n.mannerism) + '</p>' : '') +
-        (Array.isArray(n.say) && n.say.length ? '<blockquote class="pp-sayline">' + n.say.slice(0, 2).map(esc).join('<br>') + '</blockquote>' : '');
+        (ch ? '<div class="pp-cardbody pp-doc">' + ch + '</div>' : (n.glance ? '<p>' + esc(n.glance) + '</p>' : '') + (n.mannerism ? '<p class="gm-dim">' + esc(n.mannerism) + '</p>' : '') +
+        (Array.isArray(n.say) && n.say.length ? '<blockquote class="pp-sayline">' + n.say.slice(0, 2).map(esc).join('<br>') + '</blockquote>' : ''));
       if (appId) acts += '<button type="button" class="btn sm" data-gm="npcipad" data-id="' + esc(appId) + '">Show on iPad</button>' + stageHtml(appId, staged(appId));
     } else if (kind === 'pc') {
       var p = (c.pcs || []).filter(function (x) { return lc(x.file) === lc(L.name) || lc(x.name) === lc(L.name); })[0] || { name: L.name };
@@ -5285,6 +5297,7 @@
     }
     box.innerHTML = '<div class="pp-peekcard">' + h + '<p class="pp-acts">' + acts + '<a class="btn sm" href="' + esc(W.B68GmPrep.obsidianUri(pk, L.rel)) + '">Open in Obsidian</a><button type="button" class="btn sm" data-gm="prep-peekx">Close</button></p></div>';
     box.hidden = false;
+    var cb = box.querySelector('.pp-cardbody'); if (cb) W.B68GmPrep.decorate(cb, {});     /* a card has no boxes or beats: nothing of the GM state */
     try { box.scrollIntoView({ block: 'nearest' }); } catch (e) {}
   }
   /* ---------- the Cards panel: the planning meeting's opportunity cards, typed onto the card here, shown on the iPad ----------
@@ -5999,6 +6012,7 @@
       case 'dlcanvas': if (S.locRoll && W.B68GmLocation) save(slug(S.locRoll.name) + '.canvas', W.B68GmLocation.canvas(S.locRoll, part('location'))); break;
       case 'npcipad': npcToIpad(b.getAttribute('data-id')); break;
       case 'npcstage': stageNpc(b.getAttribute('data-id')); break;
+      case 'npccard': { var nci = b.getAttribute('data-id'); S.npcCardOpen = S.npcCardOpen === nci ? null : nci; renderNpcs(); var ncb = $q('#gm-npc [data-gm="npccard"][data-id="' + str(nci).replace(/"/g, '') + '"]'); if (ncb) ncb.focus(); break; }
       case 'collect': { var o = S.owed && S.owed[+b.getAttribute('data-i')]; if (!o || !W.B68GmConsole) break; patch({ con: W.B68GmConsole.intentPatch({ type: 'bargainCollected', key: W.B68GmConsole.keyOf(o.text), text: o.text }) }); try { S.con && S.con.setCampaign(part('campaign') || {}, S.doc.con || {}); } catch (x) {} toast('Collected.'); renderRail(); break; }
       case 'pinopen': S.pinOpen = S.pinOpen === b.getAttribute('data-id') ? null : b.getAttribute('data-id'); renderRail(); break;
       case 'unpin': { var up = {}; up[b.getAttribute('data-id')] = null; patch({ pins: up }, { force: true }); renderRail(); break; }

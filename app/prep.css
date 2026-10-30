@@ -142,6 +142,14 @@
 #gm-page .pp-peekcard { border: 2px solid var(--rule); background: var(--card); box-shadow: 4px 4px 0 var(--shadow-ink); padding: 10px 12px; margin: 8px 0 12px; display: grid; gap: 6px; }
 #gm-page .pp-peekcard h3 { font: 900 30px/.9 var(--font-poster); margin: 0; }
 #gm-page .pp-sayline { margin: 0; padding: 2px 0 2px 12px; border-left: 4px solid var(--accent); font-size: 15px; }
+#gm-page .pp-peekcard .pp-cardbody { max-height: min(62vh, 640px); overflow-y: auto; overscroll-behavior: contain; border-top: 2px solid var(--rule); padding: 8px 6px 0 0; }
+/* an NPC's whole card (the peek, the cast list's Card): the note's look a size down, its blocks spaced as a section's are */
+#gm-page .pp-doc.pp-cardbody, #gm-page .pp-doc.gm-npccard { font-size: 14px; }
+#gm-page .pp-doc.pp-cardbody > *, #gm-page .pp-doc.gm-npccard > * { margin: 0 0 .7em; }
+#gm-page .pp-cardbody > * > *, #gm-page .gm-npccard > * > * { margin: 0; }
+#gm-page .pp-doc.pp-cardbody h3, #gm-page .pp-doc.gm-npccard h3 { font-size: 21px; border-top-width: 3px; padding: 8px 0 0; margin: 1.1em 0 .45em; }
+#gm-page .pp-cardbody .rl-callout-body, #gm-page .gm-npccard .rl-callout-body { padding: 7px 10px 1px; }
+#gm-page .pp-cardbody blockquote:not(.rl-callout), #gm-page .gm-npccard blockquote:not(.rl-callout) { padding: 2px 0 2px 12px; border-left: 4px solid var(--accent); font-size: 15px; }
 
 /* ---- a pinned section in the rail ---- */
 #gm-page .pp-pinbox .gm-band { display: flex; justify-content: space-between; align-items: center; gap: 6px; }

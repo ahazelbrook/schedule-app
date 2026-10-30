@@ -56,9 +56,13 @@ else {
   w('Wiki/Games/Blades in the Dark/Rules/pip-screen.md', ['---', 'gm_screen: true', '---', '', '# Pip\'s screen', '', '> [!danger] House law', '> Geese first.', '',
     '## Rolling', '', '1. **Ask** what they want.', '2. **Say** what could go wrong.', '', '## Weather', '', '| | |', '|---|---|', '| 0 | drizzle |', '| 1 | a squall |', '',
     '## Canals', '', '| Canal | Rule |', '|---|---|', '| **Goosegate** | Bread is +1d. |', '| **Lampwick** | Fog all night. |', '', '## Related', '', '- [[pip-pockets]]', ''].join('\n'));
+  /* Odo's whole card, as gm:pack carries it in the campaign part's `cards` */
+  const ODO_CARD = ['> [!tip] Read aloud', '> A thin man in a canal-green coat, a brass lamp in each hand.', '',
+    '> [!example] How to play', '> - **Cast** A tired shopkeeper', '> - **Mannerism** Taps the lamp glass before he answers', '',
+    '## Say it out loud', '', '> "Two for a shilling, and not a penny less."', '', '> [!gm] GM only: the lamps', '> Every one of them is stolen.', ''].join('\n');
   const prep = buildPrep({ vault, repo: ROOT, exportedAt: new Date().toISOString(), basenames: basenames(vault) });
   const screen = buildScreen({ vault, repo: ROOT, exportedAt: new Date().toISOString() });
-  PACK = { format: 1, exportedAt: new Date().toISOString(), parts: { console: conFix.parts.console, campaign: conFix.parts.campaign,
+  PACK = { format: 1, exportedAt: new Date().toISOString(), parts: { console: conFix.parts.console, campaign: { ...conFix.parts.campaign, cards: { 'Odo Plim': ODO_CARD } },
     location: { src: { file: 'fixture/location', blockSha: '0', exportedAt: new Date().toISOString() }, T: locFix.T, extra: locFix.extra }, prep, screen } };
 }
 const packFile = path.join(stateDir, 'b68-gm-pack.json');
@@ -145,6 +149,8 @@ try {
     check(await page.waitForSelector('#gm-rail .pp-pinbox .pp-box', { timeout: 5000 }).then(() => true, () => false), 'a pinned section sits in the rail with its boxes');
     await page.click('#gm-prep a[href^="#pp:npc:"]');
     check(await page.$eval('#gm-prep-peek', (p) => !p.hidden && /Odo Plim/.test(p.textContent)), 'an NPC link opens a peek card');
+    check(await page.$eval('#gm-prep-peek .pp-cardbody', (b) => /canal-green coat/.test(b.textContent) && /Two for a shilling/.test(b.textContent) && !!b.querySelector('.rl-callout[data-callout="gm"]')).catch(() => false), 'the peek shows the NPC\'s whole card: read aloud, a say line, the GM-only box');
+    check(await page.$eval('#gm-prep-peek .pp-cardbody', (b) => getComputedStyle(b).overflowY === 'auto').catch(() => false), 'the card scrolls inside the sticky peek');
     check(page.url().endsWith('#gm'), 'a link in the note does not leave the page');
     await page.reload(); await page.waitForSelector('#gm-prep .pp-doc', { timeout: 20000 });
     check(await page.$eval('#gm-prep .pp-box[data-task="' + open1.a + '"]', (b) => b.classList.contains('here')), 'reload: the tick is still there');

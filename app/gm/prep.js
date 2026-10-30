@@ -16,6 +16,8 @@
      view(part, noteId, o)                { html, rail: [{ id, text }], secs: { id: { src, block, at } }, note }
          o = { M: B68Markdown, exportedAt }
      section(part, noteId, secId, o)      the html of one section (for a pin in the rail), or ''
+     card(part, src, o)                   the html of an NPC's whole card (the pack's campaign `cards`), rendered as a section is:
+                                          its wikilinks the page's #pp: links, no task boxes; '' without src or o.M. o = { M, id }
      link(href)                           { type: 'heading', id } | { type: 'top' } | { type: 'page', kind, key, frag } | null
      obsidianUri(part, rel)               obsidian://open?vault=…&file=…
      scores(part)                         [{ key, label, site, rel }] every embedded score card once (the exporter's `score`),
@@ -143,6 +145,13 @@
     return renderPiece(o.M, s.src, b.tasks || [], st, { part: part }, 'pin-' + secId + '--');
   }
 
+  /* an NPC's whole card, as a section renders: the prep part's links, the headings offset, no task boxes */
+  function card(part, src, o) {
+    o = o || {}; var M = o.M;
+    if (!str(src).trim() || !M || !M.render) return '';
+    return renderPiece(M, str(src), [], { k: 0 }, { part: part }, str(o.id) || 'pc-');
+  }
+
   function link(href) {
     var h = str(href);
     if (h.indexOf('#pp:') !== 0) return null;
@@ -228,5 +237,5 @@
     });
   }
 
-  return { notes: notes, view: view, section: section, link: link, obsidianUri: obsidianUri, decorate: decorate, budget: budget, hash: hash, cut: cut, slug: slug, norm: norm, scores: scores };
+  return { notes: notes, view: view, section: section, link: link, obsidianUri: obsidianUri, decorate: decorate, budget: budget, hash: hash, cut: cut, slug: slug, norm: norm, scores: scores, card: card };
 });
