@@ -1358,6 +1358,7 @@
   }
 
   /* the GM's countdown (ball.timer) as the band carries it: { endsAt: ms | null, left, paused, len }, or null when it is not that shape */
+  /* the countdown as published: { endsAt: epoch ms | null, left: sec, paused, len: sec } (the server clamps left 0..7200, len 30..7200) */
   function missionTimer(tm) {
     var num = function (v) { return typeof v === "number" && isFinite(v); };
     if (!isObj(tm) || !(tm.endsAt == null || num(tm.endsAt)) || !num(tm.left) || !num(tm.len)) return null;

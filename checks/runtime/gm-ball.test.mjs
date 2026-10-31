@@ -1326,8 +1326,8 @@ test('A1 mission hud: rooms (open rooms only, by zone), showTime from state.show
   for (const v of [undefined, false, 0, null, '']) assert.equal(mission({ crew: CREW, showTime: v }, '22:00').hud.showTime, false, String(v));
   for (const v of [true, 1]) assert.equal(mission({ crew: CREW, showTime: v }, '22:00').hud.showTime, true, String(v));
   const tm = (timer) => mission({ crew: CREW, timer }, '22:00').hud.timer;
-  assert.deepEqual(tm({ endsAt: 1700000000000, left: 120000, paused: false, len: 300000 }), { endsAt: 1700000000000, left: 120000, paused: false, len: 300000 });
-  assert.deepEqual(tm({ endsAt: null, left: 60000, paused: true, len: 300000, note: 'GM-ONLY-X' }), { endsAt: null, left: 60000, paused: true, len: 300000 }, 'only the four keys');
+  assert.deepEqual(tm({ endsAt: 1700000000000, left: 120, paused: false, len: 300 }), { endsAt: 1700000000000, left: 120, paused: false, len: 300 });
+  assert.deepEqual(tm({ endsAt: null, left: 60, paused: true, len: 300, note: 'GM-ONLY-X' }), { endsAt: null, left: 60, paused: true, len: 300 }, 'only the four keys');
   assert.deepEqual(tm({ left: 5, len: 10, paused: 'yes' }), { endsAt: null, left: 5, paused: false, len: 10 }, 'no endsAt is null; paused only when it is true');
   for (const bad of [undefined, null, 'soon', 5, [], { left: 5 }, { len: 10 }, { left: '5', len: 10 }, { left: 5, len: NaN }, { left: Infinity, len: 10 }, { endsAt: 'soon', left: 5, len: 10 }, { endsAt: NaN, left: 5, len: 10 }]) assert.equal(tm(bad), null, JSON.stringify(bad));
 });
