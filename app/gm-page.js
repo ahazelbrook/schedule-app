@@ -852,6 +852,7 @@
       case 'g': return { type: 'panel', panel: 'run' };
       case 'o': return { type: 'panel', panel: 'cards' };
       case 'f': return { type: 'focus' };
+      case 'w': return { type: 'drawer' };
       case '/': return { type: 'find' };
       case '0': return { type: 'clear' };
       case 'escape': return { type: 'esc' };
@@ -1486,7 +1487,7 @@
       pack: null, con: null, conRes: null, conErr: '', locRoll: null, locMem: {}, locErr: '', map: null, panel: 'location', seg: 'console', scn: null, scnRoll: null, scnMem: {}, scnErr: '',
       sc: null, scRoll: null, scMem: {}, scErr: '', scSig: null, scCtxSig: '', scBusy: {},
       dt: null, dtDists: null, dtRoll: null, dtSig: null, dtMem: {}, dtErr: '', dtNote: '', dtBusy: {},
-      arm: 'n', last: null, npcs: {}, npcUnsub: null, sceneOpen: false, capOpen: false, pinOpen: null, figMemo: {}, importing: null, shown: 'console' };
+      arm: 'n', last: null, npcs: {}, npcUnsub: null, sceneOpen: false, capOpen: false, dw: { open: drawerWas(), tab: 'table', pc: null, edit: false, frame: null, frameKey: '' }, pinOpen: null, figMemo: {}, importing: null, shown: 'console' };
     try { S.panel = W.localStorage.getItem('b68.gm.panel') || 'location'; S.prepWide = W.localStorage.getItem(PREP_WIDE) === '1'; } catch (e) {}
     if (SIDE.indexOf(S.panel) < 0) S.panel = 'location';
     S.saver = lastSaver = makeSessionSaver(S);
@@ -2214,7 +2215,7 @@
       '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabrow"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
       [['prep', 'Prep', 'R'], ['rules', 'GM screen', 'T'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['score', 'Score', 'J'], ['chase', 'Chase', 'C'], ['npc', 'NPC', 'N'], ['downtime', 'Downtime', 'D'], ['cards', 'Cards', 'O'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
       '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div>' + '<div class="gm-pane" data-pane="score" id="gm-score"></div><div class="gm-pane" data-pane="chase" id="gm-chase"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="downtime" id="gm-dt"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div>' + '<div class="gm-pane gm-runv" data-pane="run" id="gm-runv"></div></section>' +
-      '<aside class="gm-col gm-rail" id="gm-rail" aria-label="State"></aside></div>' +
+      '</div>' + drawerHtml() +
       '<div class="gm-foot" id="gm-foot"></div>' +
       '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button>' +
       '<div class="gm-find" id="gm-find" hidden><div class="gm-find-box" role="dialog" aria-label="Find"><label class="sr" for="gm-find-q">Find</label>' +
@@ -2234,6 +2235,7 @@
       '<span class="gm-save" role="status"></span><span class="gm-bar-exp" id="gm-bar-exp"></span>' +
       '<span class="gm-beatbar" id="gm-bar-beat" hidden><button type="button" class="gm-pill gm-beat" data-gm="beat-go" id="gm-bar-beatgo" title="The beat running (the Prep tab’s run order)"></button>' +
       '<button type="button" class="gm-bb" data-gm="beat-next" title="Start the next beat in the run order">Next beat</button></span><span class="gm-grow"></span>' +
+      '<button type="button" class="gm-bb gm-dwbtn" data-gm="drawer" id="gm-bar-drawer" aria-expanded="false" aria-controls="gm-drawer" ' + 'title="The drawer: the table, the crew and each character\u2019s sheet (W)">Drawer</button>' +
       '<button type="button" class="gm-bb" data-gm="find-open" title="Find anything: prep, the screen, NPCs, clocks, what you filed (Ctrl+K or /)">Find <kbd>Ctrl K</kbd></button>' +
       '<button type="button" class="gm-pill" data-gm="panel" data-panel="ipad" id="gm-bar-ipad" title="What the players see (the iPad tab)"></button>' +
       '<button type="button" class="gm-pill gm-ap" data-gm="aptoggle" id="gm-bar-ap" data-ap="auto" hidden></button>' +
@@ -2416,7 +2418,7 @@
     else if (g.t === 'npcapp') setPanel('npc');
     else if (g.t === 'chase') { setPanel('chase'); if (isPhone()) { S.seg = 'side'; syncPanels(); } }
     else if (g.t === 'rule') { setPanel('rules'); if (isPhone()) { S.seg = 'side'; syncPanels(); } rulesSearch(g.q, g.id); }
-    else if (g.t === 'rail') { if (isPhone()) { S.seg = 'state'; syncPanels(); } flash($q('#gm-rail .gm-clocks')); }
+    else if (g.t === 'rail') { drawerTab('table'); drawerSet(true); flash($q('#gm-rail .gm-clocks')); }
   }
 
   /* the table clocks to the iPad (an svg made here; the server checks it like any map). While the iPad shows them, a change
@@ -2468,9 +2470,10 @@
     r.classList.toggle('prep-wide', S.panel === 'prep' && !!S.prepWide);
     r.classList.toggle('focus', !!S.prepWide);       /* the laptop layout: Focus (or Prep's Wide) shrinks the console on every tab */
     r.querySelectorAll('[data-gm="prep-wide"], [data-gm="focus"]').forEach(function (b) { b.setAttribute('aria-pressed', String(!!S.prepWide)); });
+    drawerSync();
   }
   function setPanel(p) {
-    S.panel = p; if (S.seg !== 'console' && S.seg !== 'state') S.seg = 'side';
+    S.panel = p; if (S.seg !== 'console') S.seg = 'side';
     try { W.localStorage.setItem('b68.gm.panel', p); } catch (e) {}
     syncPanels();
     if (p === 'ipad') { loadAmbient(); loadStt(); }
@@ -5793,7 +5796,82 @@
     }).join('') : '<a class="chip sm" href="#cast">Nobody: the cast</a>') + '</p></section>';
     box.innerHTML = h;
     if (box.querySelector('.pp-pinbox')) decoratePrep(box);
+    drawerCrew();
   }
+
+  /* ---------- the drawer: one right-edge panel (closed by default, the open state kept per browser), three tabs.
+     Table is what the right column used to carry (renderRail fills #gm-rail inside it); Crew is the Run view's crew lines while a v2
+     night runs, then the crew sheet; Players is one sub-tab per character, each the live sheet. The sheets are same-origin iframes of the
+     app's own routes (#t, #c/<id>), AT MOST ONE AT A TIME: created when its tab opens, taken down (src blank, then the node) when the tab
+     or the drawer closes, since each is a whole client (bundle, live socket, polls). They open read-only (?ro=1, boot.js) until Edit. ---------- */
+  var DRAWER_KEY = 'b68.gm.drawer';
+  function drawerWas() { try { return W.localStorage.getItem(DRAWER_KEY) === '1'; } catch (e) { return false; } }
+  function drawerHtml() {
+    var bar = function (what) { return '<div class="gm-dframebar"><span class="gm-dfstate" data-dfstate></span>' + '<button type="button" class="btn sm" data-gm="dedit" aria-pressed="false" title="The sheet opens read-only; Edit lets you change it">Edit</button></div><div class="gm-dframe" data-dframe="' + what + '"></div>'; };
+    return '<aside class="gm-drawer" id="gm-drawer" aria-label="Drawer"><div class="gm-dhead"><div class="gm-dtabs" role="tablist" aria-label="Drawer">' +
+      [['table', 'Table'], ['crew', 'Crew'], ['players', 'Players']].map(function (t) { return '<button type="button" class="gm-dtab" role="tab" data-gm="dtab" data-tab="' + t[0] + '" aria-selected="false">' + t[1] + '</button>'; }).join('') +
+      '</div><button type="button" class="gm-x" data-gm="drawer" aria-label="Close the drawer" title="Close (W or Esc)">\u00d7</button></div>' +
+      '<div class="gm-dpane" data-dpane="table"><div class="gm-drail" id="gm-rail" aria-label="State"></div></div>' +
+      '<div class="gm-dpane" data-dpane="crew"><div class="gm-dcrew" id="gm-dcrew"></div>' + bar('crew') + '</div>' +
+      '<div class="gm-dpane" data-dpane="players"><div class="gm-dpcs" id="gm-dpcs" role="tablist" aria-label="Characters"></div>' + bar('players') + '</div></aside>';
+  }
+  function drawerCrew() {
+    var d = S && S.dw, box = $q('#gm-dcrew'); if (!d || !box || !d.open || d.tab !== 'crew') return;
+    var a = document.activeElement; if (a && a.tagName === 'SELECT' && box.contains(a)) return;      /* a room list being chosen from is left alone */
+    var rs = runV2(), v = rs ? rvInst() : null;
+    if (v && typeof v.crewInto === 'function' && v.crewInto(box)) box.removeAttribute('data-none');
+    else if (box.getAttribute('data-none') !== '1') { box.setAttribute('data-none', '1'); box.innerHTML = '<p class="gm-dim">No night is running here; the crew sheet is below.</p>'; }
+  }
+  function frameDrop() {
+    var d = S.dw, f = d.frame; d.frame = null; d.frameKey = ''; if (!f) return;
+    try { f.src = 'about:blank'; } catch (e) {}
+    try { if (f.parentNode) f.parentNode.removeChild(f); } catch (e) {}
+  }
+  /* the frame the open tab wants, or null (Table; Players with no character) */
+  function frameWanted() {
+    var d = S.dw; if (!d.open) return null;
+    if (d.tab === 'crew') return { key: 'crew|' + d.edit, pane: 'crew', hash: '#t', title: 'The crew sheet' };
+    if (d.tab === 'players' && d.pc) return { key: 'pc:' + d.pc + '|' + d.edit, pane: 'players', hash: '#c/' + encodeURIComponent(d.pc), title: 'Character sheet' };
+    return null;
+  }
+  function frameSync() {
+    var d = S.dw, w = frameWanted();
+    if (!w) { frameDrop(); return; }
+    if (d.frame && d.frameKey === w.key) return;
+    frameDrop();
+    var host = $q('[data-dframe="' + w.pane + '"]'); if (!host) return;
+    var fr = document.createElement('iframe'); fr.className = 'gm-dframe-f'; fr.setAttribute('title', w.title); fr.setAttribute('data-frame', w.key);
+    fr.src = W.location.pathname + (d.edit ? '' : '?ro=1') + w.hash;
+    host.appendChild(fr); d.frame = fr; d.frameKey = w.key;
+  }
+  function drawerTop() {      /* the drawer sits under the header; the header's height changes with the window */
+    try { var r = $q('#gm-root'), br = $q('.gm-bar'); if (r && br && S && S.dw && S.dw.open) r.style.setProperty('--dw-top', Math.round(br.getBoundingClientRect().bottom) + 'px'); } catch (e) {}
+  }
+  function drawerSync() {
+    var r = $q('#gm-root'); if (!r || !S.dw) return;
+    var d = S.dw, pcs = dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c) }; });
+    if (pcs.length && !pcs.some(function (p) { return p.id === d.pc; })) { d.pc = pcs[0].id; d.edit = false; }   /* an empty list for a moment keeps the choice and its frame */
+    r.classList.toggle('dw-open', !!d.open);
+    drawerTop(); if (!S.dwResize && W.addEventListener) { S.dwResize = true; try { W.addEventListener('resize', drawerTop); } catch (e) {} }
+    var bb = $q('#gm-bar-drawer'); if (bb) { bb.setAttribute('aria-expanded', String(!!d.open)); bb.setAttribute('aria-pressed', String(!!d.open)); }
+    r.querySelectorAll('[data-gm="dtab"]').forEach(function (b) { b.setAttribute('aria-selected', String(b.getAttribute('data-tab') === d.tab)); });
+    r.querySelectorAll('.gm-dpane').forEach(function (p) { p.hidden = p.getAttribute('data-dpane') !== d.tab; });
+    var pb = $q('#gm-dpcs');
+    if (pb && d.open && d.tab === 'players') pb.innerHTML = pcs.length ? pcs.map(function (p) { return '<button type="button" class="chip sm" role="tab" data-gm="dpc" data-id="' + esc(p.id) + '" aria-selected="' + (p.id === d.pc) + '" aria-pressed="' + (p.id === d.pc) + '">' + esc(p.name) + '</button>'; }).join('') : '<p class="gm-dim">The table has no characters yet.</p>';
+    frameSync();
+    r.querySelectorAll('[data-gm="dedit"]').forEach(function (b) { b.setAttribute('aria-pressed', String(!!d.edit)); b.textContent = d.edit ? 'Done editing' : 'Edit'; });
+    r.querySelectorAll('[data-dfstate]').forEach(function (e) { e.textContent = d.edit ? 'Editing: changes save to the sheet' : 'Read only'; });
+    drawerCrew();
+  }
+  function drawerSet(on) {
+    var d = S.dw; on = !!on; if (d.open === on) { drawerSync(); return; }
+    d.open = on; if (!on) { d.edit = false; frameDrop(); }
+    try { W.localStorage.setItem(DRAWER_KEY, on ? '1' : '0'); } catch (e) {}
+    drawerSync();
+  }
+  function drawerToggle() { drawerSet(!S.dw.open); }
+  function drawerTab(t) { var d = S.dw; if (['table', 'crew', 'players'].indexOf(t) < 0) return; if (d.tab !== t) { d.tab = t; d.edit = false; frameDrop(); } drawerSync(); }
+  function drawerPc(id) { var d = S.dw; if (d.pc !== id) { d.pc = id; d.edit = false; frameDrop(); } drawerSync(); }
   function clockLi(name, filled, size, sub) {
     var n = Math.max(1, Math.min(12, Math.floor(+size || 4))), f = Math.max(0, Math.min(n, Math.floor(+filled || 0))), seg = '';
     for (var i = 0; i < n; i++) seg += '<i' + (i < f ? ' class="on"' : '') + '></i>';
@@ -5943,7 +6021,7 @@
     if (runKey(ev)) return;
     var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target) });
     if (!a) return;
-    if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } else if (S.assist && S.assist.isOpen()) { S.assist.close(); ev.preventDefault(); } return; }
+    if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } else if (S.assist && S.assist.isOpen()) { S.assist.close(); ev.preventDefault(); } else if (S.dw && S.dw.open) { drawerSet(false); ev.preventDefault(); } return; }
     if (a.type === 'reserved') return;
     if ((a.type === 'capture' || a.type === 'last') && !capBarShown()) return;      /* the bar is hidden: its keys do nothing */
     ev.preventDefault();
@@ -5955,6 +6033,7 @@
     else if (a.type === 'blank-tap') blankTap();
     else if (a.type === 'clear') blankIpad();
     else if (a.type === 'focus') toggleFocus();
+    else if (a.type === 'drawer') drawerToggle();
     else if (a.type === 'find') findOpen();
     else if (a.type === 'assist') { if (S.assist) S.assist.toggle(); else toast('Blade is not available on this page.', true); }
     else if (a.type === 'undo') { if (S.assist && typeof S.assist.undoNewest === 'function') S.assist.undoNewest(); }
@@ -5974,6 +6053,10 @@
     switch (a) {
       case 'menu': { var ml2 = $q('.gm-menu-list'); menuOpen(!!(ml2 && ml2.hasAttribute('hidden'))); break; }
       case 'focus': toggleFocus(); break;
+      case 'drawer': drawerToggle(); break;
+      case 'dtab': drawerTab(b.getAttribute('data-tab')); break;
+      case 'dpc': drawerPc(b.getAttribute('data-id')); break;
+      case 'dedit': S.dw.edit = !S.dw.edit; drawerSync(); break;
       case 'find-open': findOpen(); break;
       case 'find-go': findGo(+b.getAttribute('data-i')); break;
       case 'beat-go': beatGo(); break;
@@ -5997,7 +6080,7 @@
       case 'update': importScreen(true); break;
       case 'forget': forget(); break;
       case 'note': exportTonight(); break;
-      case 'seg': { var sg = b.getAttribute('data-seg'); if (SIDE.indexOf(sg) >= 0) { S.seg = 'side'; setPanel(sg); } else { S.seg = sg; syncPanels(); } break; }
+      case 'seg': { var sg = b.getAttribute('data-seg'); if (sg === 'state') { drawerTab('table'); drawerSet(true); break; } if (SIDE.indexOf(sg) >= 0) { S.seg = 'side'; setPanel(sg); } else { S.seg = sg; syncPanels(); } break; }
       case 'panel': setPanel(b.getAttribute('data-panel')); break;
       case 'scene': S.sceneOpen = !S.sceneOpen; syncPanels(); break;
       case 'capopen': S.capOpen = !S.capOpen; syncPanels(); if (S.capOpen) { var ci = $q('#gm-cap-in'); if (ci) ci.focus(); } break;

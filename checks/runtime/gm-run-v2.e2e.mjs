@@ -303,9 +303,12 @@ try {
   const ballT = async () => (await ball()).t;
   const waitBall = (pred, ms = 8000) => until(async () => { const x = await ball(); return x && pred(x) ? x : null; }, ms);
   const crewRow = (id) => '.rv-crew[data-pc="' + id + '"]';
+  /* E2: the crew lines live in the drawer's Crew tab (an overlay on the right edge), so a check opens it, acts, and shuts it again */
+  const drawer = async (page, on) => { const open = await page.$eval('#gm-root', (r) => r.classList.contains('dw-open')); if (open !== on) await page.click(on ? '#gm-bar-drawer' : '#gm-drawer .gm-dhead [data-gm="drawer"]'); if (on) { await page.click('#gm-drawer [data-gm="dtab"][data-tab="crew"]'); await page.waitForSelector('#gm-dcrew .rv-crew', { timeout: 10000 }); } };
+  const crewRoom = async (page, id, room) => { await drawer(page, true); await page.selectOption(crewRow(id) + ' [data-vv="room"]', room); await drawer(page, false); };
   const BEAT = '.rv-sec[data-sec="beat"]';
   const od = (x, hhmm) => BALL.placesAt(c2.play, x, BALL.minuteOf(hhmm, '21:00')).od;
-  check(await G.page.$$eval('.rv-sec', (e) => e.map((x) => x.getAttribute('data-sec')).join()) === 'room,beat,crew,job,intel', 'the right column: Rooms on top, then This beat, the crew, the job and intel (the Tell, last)');
+  check(await G.page.$$eval('.rv-sec', (e) => e.map((x) => x.getAttribute('data-sec')).join()) === 'room,beat,job,intel', 'the right column: Rooms on top, then This beat, the job and intel (the Tell, last); the crew moved to the drawer');
   check(await ballT() === 75, 'the night stands at 22:15 (beat 6)');
 
   /* four beats: each Next rewrites the card; 23:00 brings the Passage and the looker's wary line */
@@ -411,7 +414,7 @@ try {
   const bt = await G.page.$eval(wayB, (e) => e.textContent.replace(/\s+/g, ' '));
   check(/The lift key hangs on the cook's hook/.test(bt) && /GM-ONLY-WHO-2/.test(bt) && /Underground counting room 21:00–00:00/.test(bt) && /Window 00:15 · Luxury penthouse/.test(bt) && /GM-ONLY-COST-2/.test(bt) && /GM-ONLY-NOTE-6/.test(bt) && /The key/.test(bt), 'expanded: the line and who, where and when, the window, the steps, the cost and the note');
   check(await G.page.$$eval(wayB + ' > .rv-heard > [data-vv="heard"]', (b) => b.length) === 0 && await G.page.$$eval(wayB + ' details.rv-more [data-vv="heard"]', (b) => b.length) === 3, 'Heard by: nobody is in the lead\'s room, so all three wait behind More');
-  await G.page.selectOption(crewRow('run-pc2') + ' [data-vv="room"]', 'Underground counting room');
+  await crewRoom(G.page, 'run-pc2', 'Underground counting room');
   b = await waitBall((x) => x.crew['run-pc2'].room === 'Underground counting room');
   check(!!b && b.crew['run-pc2'].moved === 12 && b.crew['run-pc2'].noticed === false, 'the room select moves her through moveCrew (moved this beat, noticed cleared)');
   check(await G.page.waitForFunction((s) => document.querySelectorAll(s).length === 1, wayB + ' > .rv-heard > [data-vv="heard"]', { timeout: 5000 }).then(() => true, () => false) && await G.page.$eval(wayB + ' > .rv-heard > [data-vv="heard"]', (e) => e.textContent) === 'Dov Ketch', 'now Dov Ketch is the Heard by button in front, the others behind More');
@@ -429,7 +432,7 @@ try {
   check(!/GM-ONLY-NAME-1 window gone/.test(await job()), 'A\'s window (to 00:15) is still open at 00:00');
 
   /* the crew: busy, items, noticed, blown, the costume and the room; the position follows */
-  const pc1 = crewRow('run-pc1');
+  const pc1 = crewRow('run-pc1'); await drawer(G.page, true);
   { const ns = await G.page.$$eval('.rv-crew .rv-crn', (l) => l.map((x) => x.textContent)); check(ns.length === 3 && ns.join() === ns.slice().sort().join(), 'the crew sits in the table\'s order (by name), not by danger: ' + ns.join()); }
   await G.page.click(pc1 + ' [data-vv="busy"][data-n="1"]');
   b = await waitBall((x) => x.crew['run-pc1'].busy === 195);
@@ -454,6 +457,7 @@ try {
   await G.page.click('[data-rv="back"]'); await waitBall((x) => x.t === 165);
   check(await G.page.waitForFunction((s) => document.querySelector(s).getAttribute('aria-pressed') === 'false', pc1 + ' [data-vv="moved"]', { timeout: 5000 }).then(() => true, () => false), 'and clears when the time changes');
 
+  await drawer(G.page, false);
   /* intel: Tell per PC and Tell the crew */
   await G.page.click('.rv-sec[data-sec="intel"] summary');
   const i1 = '.rv-intel1[data-intel="I1"]';
@@ -470,7 +474,7 @@ try {
 
   await G.page.click(wayB + ' [data-vv="way"]'); await shot(G.page, 'runv2-04-beat-crew-job');
   /* put the night back where the later sections expect it: 22:15, the lounge */
-  await G.page.selectOption(crewRow('run-pc2') + ' [data-vv="room"]', 'Cocktail lounge'); await waitBall((x) => x.crew['run-pc2'].room === 'Cocktail lounge');
+  await crewRoom(G.page, 'run-pc2', 'Cocktail lounge'); await waitBall((x) => x.crew['run-pc2'].room === 'Cocktail lounge');
   await api('PATCH', '/gm/state', { ball: { t: 75 } }); await G.page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await G.page.waitForFunction(() => document.querySelector('#rv-time').textContent.trim() === '22:15', null, { timeout: 10000 });
   check(!JSON.stringify(await gmState()).includes('"pace"'), 'nothing of the pacing line reached the state');
@@ -640,7 +644,7 @@ try {
     check(await N.page.$eval('#rv-time', (e) => parseFloat(getComputedStyle(e).fontSize) <= 26), 'the header time is small (24 px)');
 
     /* the room note's costume line and SAY lines reach the player card of a PC standing in that (open) room */
-    await N.page.selectOption('.rv-crew[data-pc="run-pc1"] [data-vv="room"]', 'Cocktail lounge');
+    await crewRoom(N.page, 'run-pc1', 'Cocktail lounge');
     const mc = await until(async () => { const m = (await api('GET', '/campaign')).json.doc.mission; const c = m && m.cards && m.cards['run-pc1']; return c && c.room === 'Cocktail lounge' && c.costumeLine ? { c, hud: m.hud } : null; }, 20000, 200);
     check(!!mc && mc.c.costumeLine === 'Brocade jackets.' && JSON.stringify(mc.c.here) === '["Mind the glass."]', 'the published card carries costumeLine and here from the room note (' + JSON.stringify(mc && mc.c) + ')');
     check(!!mc && Array.isArray(mc.hud.rooms) && mc.hud.rooms.some((z) => z.rooms.includes('Cocktail lounge')) && !mc.hud.rooms.some((z) => z.rooms.includes('Luxury penthouse')), 'the band lists the open rooms by zone, and not a room that is shut');
@@ -653,7 +657,7 @@ try {
     check((await api('PATCH', '/characters/run-pc1', { moveReq: { room: dest, seq: seq1 } })).status === 200, 'the owner\'s own character takes a top-level moveReq');
     const f1 = await until(async () => { const c = await crewOf('run-pc1'); return c && c.room === dest && c.mseq === seq1 ? c : null; }, 20000, 200);
     check(!!f1, 'the request is folded in: the PC is in ' + dest + ', mseq is the request\'s seq (' + JSON.stringify(await crewOf('run-pc1')) + ')');
-    await N.page.selectOption('.rv-crew[data-pc="run-pc1"] [data-vv="room"]', cur.room);
+    await crewRoom(N.page, 'run-pc1', cur.room);
     await until(async () => (await crewOf('run-pc1')).room === cur.room, 8000, 100);
     await sleep(2500);
     const f2 = await crewOf('run-pc1');

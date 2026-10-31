@@ -56,7 +56,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 
 /* ---- the three columns ---- */
 #gm-page .gm-segbar { display: none; }
-#gm-page .gm-main { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr) minmax(220px, 300px); gap: 16px; align-items: start; }
+#gm-page .gm-main { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 #gm-page .gm-col { display: grid; gap: 10px; align-content: start; }
 
 /* the console: the Scene line (one row of labelled chips) folds the scene / district / aim / NPC / threat controls under it at
@@ -273,10 +273,9 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 /* the blank screen (H): above everything, any key or tap brings the page back */
 .gm-blank { position: fixed; inset: 0; z-index: 2147483000; background: #000; cursor: none; }
 
-/* ---- 600–1100 px: two columns, the rail folded below ---- */
+/* ---- 600–1100 px: two columns ---- */
 @media (max-width: 1099px) {
   #gm-page .gm-main { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  #gm-page .gm-rail { grid-column: 1 / -1; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); display: grid; gap: 10px; }
 }
 /* touch screens: 44 px targets */
 @media (pointer: coarse) {
@@ -298,11 +297,8 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   #gm-page .gm-segbar .chip:nth-child(-n+6) { border-bottom: 2px solid var(--rule); }
   #gm-page .gm-segbar .chip[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }
   #gm-page .gm-main { grid-template-columns: minmax(0, 1fr); }
-  #gm-page .gm-rail { grid-template-columns: minmax(0, 1fr); }
   #gm-page .gm-tabs { display: none; }
-  #gm-root[data-seg="console"] .gm-side, #gm-root[data-seg="console"] .gm-rail,
-  #gm-root[data-seg="side"] .gm-console, #gm-root[data-seg="side"] .gm-rail,
-  #gm-root[data-seg="state"] .gm-console, #gm-root[data-seg="state"] .gm-side { display: none; }
+  #gm-root[data-seg="console"] .gm-side, #gm-root[data-seg="side"] .gm-console { display: none; }
   #gm-page .gm-cardbox, #gm-page .gm-cardbox .gm-lead, #gm-page .gm-cardbox .gm-want, #gm-page .gm-cardbox .gm-card-h, #gm-page .gm-cardbox .gm-dt-morning, #gm-page .gm-cardbox .gm-dt-mh { scroll-margin-top: 140px; scroll-margin-bottom: 84px; }   /* under the sticky bar and the two-row segmented bar, above the capture button */
   #gm-page .gs-rules { scroll-margin-top: 140px; }
   #gm-page .gm-ch-tick .gm-ch-row > .gm-field { flex-basis: 100%; }       /* Level and Time each on a row of their own: a switch never wraps */
@@ -532,9 +528,9 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
   body.gm-app #gm-page .gm-fab { display: none; }
 
   /* the three columns, each its own scroller */
-  body.gm-app #gm-page .gm-main { min-height: 0; gap: 0; align-items: stretch; grid-template-columns: clamp(300px, 26vw, 400px) minmax(0, 1fr) clamp(230px, 19vw, 300px); }
+  body.gm-app #gm-page .gm-main { min-height: 0; gap: 0; align-items: stretch; grid-template-columns: clamp(300px, 26vw, 400px) minmax(0, 1fr); }
   body.gm-app #gm-page .gm-col { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px; border-right: 2px solid var(--rule); scrollbar-width: thin; }
-  body.gm-app #gm-page .gm-rail { border-right: 0; }
+  body.gm-app #gm-page .gm-side { border-right: 0; }
   body.gm-app #gm-page .gm-side { padding: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 0; }
   body.gm-app #gm-page .gm-tabrow { display: flex; align-items: stretch; border-bottom: 2px solid var(--rule); background: var(--paper); }
   body.gm-app #gm-page .gm-tabs { flex: 1 1 auto; flex-wrap: nowrap; overflow-x: auto; gap: 0; border-bottom: 0; scrollbar-width: none; }
@@ -555,7 +551,7 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
   body.gm-app #gm-page .gm-caplist { display: none; }
 
   /* Focus: the console becomes its keys */
-  body.gm-app #gm-root.focus .gm-main { grid-template-columns: 74px minmax(0, 1fr) clamp(230px, 19vw, 300px); }
+  body.gm-app #gm-root.focus .gm-main { grid-template-columns: 74px minmax(0, 1fr); }
   body.gm-app #gm-root.focus .gm-console { display: grid; padding: 8px; }
   body.gm-app #gm-root.focus .gm-console > :not(.gm-mini) { display: none; }
   body.gm-app #gm-root.focus .gm-mini { display: grid; gap: 6px; align-content: start; }
@@ -842,12 +838,12 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 }
 @media (min-width: 1100px) {
   /* the tab's 44 px come out of the console and the rail, not the side column: its ten tabs fit one row at 1280 px with nothing to spare */
-  body.as-tab.gm-app #gm-page .gm-main { grid-template-columns: clamp(300px, calc(26vw - 20px), 400px) minmax(0, 1fr) clamp(230px, calc(19vw - 10px), 300px); }
-  body.as-tab.gm-app #gm-root.focus .gm-main { grid-template-columns: 74px minmax(0, 1fr) clamp(230px, calc(19vw - 10px), 300px); }
+  body.as-tab.gm-app #gm-page .gm-main { grid-template-columns: clamp(300px, calc(26vw - 20px), 400px) minmax(0, 1fr); }
+  body.as-tab.gm-app #gm-root.focus .gm-main { grid-template-columns: 74px minmax(0, 1fr); }
 }
 @media (min-width: 1600px) {
-  body.as-dock.gm-app #gm-page .gm-main { margin-right: 0; grid-template-columns: clamp(300px, 26vw, 400px) minmax(0, 1fr) clamp(230px, 19vw, 300px) var(--as-w); }
-  body.as-dock.gm-app #gm-root.focus .gm-main { grid-template-columns: 74px minmax(0, 1fr) clamp(230px, 19vw, 300px) var(--as-w); }
+  body.as-dock.gm-app #gm-page .gm-main { margin-right: 0; grid-template-columns: clamp(300px, 26vw, 400px) minmax(0, 1fr) var(--as-w); }
+  body.as-dock.gm-app #gm-root.focus .gm-main { grid-template-columns: 74px minmax(0, 1fr) var(--as-w); }
 }
 @media (max-width: 1599px) { .gm-assist .as-pin { display: none; } }
 
@@ -1251,3 +1247,29 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 #gm-page .gm-pv-head { margin: 0; font-weight: 700; }
 #gm-page .gm-pv-line, #gm-page .gm-pv-crew { margin: 0; font-size: 13.5px; overflow-wrap: anywhere; }
 #gm-page .gm-pv-item { display: grid; gap: 1px; }
+
+/* ---- the drawer (E2): one right-edge panel, closed by default; Table (the old right column), Crew, Players. Phones get a full-screen sheet. ---- */
+#gm-page .gm-drawer { display: none; position: fixed; top: var(--dw-top, 46px); bottom: 0; right: 0; width: min(440px, 100vw); z-index: 14; flex-direction: column; background: var(--paper); border-left: 3px solid var(--rule); box-shadow: -4px 0 0 var(--shadow-ink, rgba(0,0,0,.2)); }
+#gm-root.dw-open .gm-drawer { display: flex; }
+body.as-tab #gm-page .gm-drawer { right: 44px; }
+@media (min-width: 1600px) { body.as-dock #gm-page .gm-drawer { right: var(--as-w); } }
+#gm-page .gm-dhead { display: flex; align-items: stretch; border-bottom: 2px solid var(--rule); flex: none; }
+#gm-page .gm-dtabs { display: flex; flex: 1 1 auto; }
+#gm-page .gm-dtab { flex: 1 1 0; border: 0; border-right: 1.5px solid var(--hair); background: none; color: var(--ink); font: 900 12px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; padding: 12px 6px; min-height: 44px; cursor: pointer; }
+#gm-page .gm-dtab[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }
+#gm-page .gm-dtab:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+#gm-page .gm-dhead .gm-x { flex: none; width: 44px; border: 0; border-left: 2px solid var(--rule); background: none; color: var(--ink); font-size: 22px; cursor: pointer; }
+#gm-page .gm-dpane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain; padding: 12px; gap: 10px; }
+#gm-page .gm-dpane[hidden] { display: none; }
+#gm-page .gm-drail { display: grid; gap: 10px; align-content: start; }
+#gm-page .gm-dcrew { display: grid; gap: 6px; align-content: start; flex: none; }
+#gm-page .gm-dpcs { display: flex; flex-wrap: wrap; gap: 6px; flex: none; }
+#gm-page .gm-dpcs .chip[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }
+#gm-page .gm-dframebar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; }
+#gm-page .gm-dfstate { font: 700 11.5px/1 var(--font-mono); color: var(--ink-soft); }
+#gm-page .gm-dframebar [aria-pressed="true"] { background: var(--mustard); color: var(--on-mustard); }
+#gm-page .gm-dframe { flex: 1 1 360px; min-height: 360px; display: flex; }
+#gm-page .gm-dframe-f { flex: 1 1 auto; width: 100%; min-height: 360px; border: 2px solid var(--rule); background: var(--paper); }
+@media (max-width: 599px) {
+  body #gm-page .gm-drawer, body.as-tab #gm-page .gm-drawer { top: 0; right: 0; width: 100vw; border-left: 0; box-shadow: none; z-index: 60; }
+}

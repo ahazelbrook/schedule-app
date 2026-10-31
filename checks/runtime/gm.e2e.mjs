@@ -614,7 +614,9 @@ try {
       check(ld2.scrollWidth <= ld2.clientWidth + 1 && !ld2.wide.length && !ld2.small.length, 'phone: with the downtime card showing, no overflow and every control is at least 44 px ' + JSON.stringify([ld2.wide, ld2.small]));
       await shot(V.page, '03b-phone-downtime');
       await V.page.click('[data-gm="seg"][data-seg="state"]');
-      check(await V.page.$eval('#gm-rail', (r) => getComputedStyle(r).display !== 'none') && await V.page.$eval('.gm-console', (c) => getComputedStyle(c).display === 'none'), 'phone: State shows the rail alone');
+      check(await V.page.$eval('#gm-rail', (r) => r.offsetParent !== null && r.getBoundingClientRect().width > 0) && await V.page.$eval('#gm-drawer', (d) => d.getBoundingClientRect().width >= innerWidth - 1 && d.getBoundingClientRect().left <= 1), 'phone: State opens the drawer as a full-screen sheet holding the rail');
+      await V.page.click('#gm-drawer .gm-dhead [data-gm="drawer"]');
+      check(await V.page.$eval('#gm-drawer', (d) => getComputedStyle(d).display === 'none'), 'phone: the cross shuts the drawer');
       await V.page.click('.gm-fab');
       check(await V.page.$eval('#gm-foot', (f) => getComputedStyle(f).display !== 'none'), 'phone: the capture button opens the capture bar');
       await shot(V.page, '03-phone');

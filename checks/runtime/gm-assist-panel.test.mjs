@@ -237,6 +237,7 @@ await test('gm-page: key A is the Claude box; no other key changed', () => {
   assert.deepEqual(GP.keyAction({ key: 'i' }), { type: 'panel', panel: 'ipad' });
   assert.deepEqual(GP.keyAction({ key: 'n' }), { type: 'panel', panel: 'npc' });
   assert.deepEqual(GP.keyAction({ key: '2' }), { type: 'situation', n: 2 });
+  assert.deepEqual(GP.keyAction({ key: 'w' }), { type: 'drawer' }); assert.equal(GP.keyAction({ key: 'w', typing: true }), null, 'W toggles the drawer, never while typing');
 });
 
 await test('the box is in the GM bundle only, before gm-page.js, and the avatar is a static SVG', () => {

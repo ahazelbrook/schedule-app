@@ -99,9 +99,7 @@ fails and nobody is known, nothing is purged.
   the **Scene** line (one row of labelled chips, `Scene: any · District: any · Aim: anyone · NPC: … · Threat: 3`, that opens
   to the scene, district, PC, NPC and threat controls; closed by default at every width), the four Situation buttons, the
   card, "Earlier:" the last five rolls, and **More tables** (the nine single tables, folded) |
-  a side panel with **Prep (R)**, **GM screen (T)**, **Location (B)**, **Street (S)**, **Score (J)**, **Chase (C)**, **NPC (N)**, **Downtime (D)**, **Cards (O)** and **iPad (I)** | the state rail (crew heat, wanted, rep, stacks and
-  vault from the table, read only; table clocks; the pack's world clocks; bargains owed with **Collect**; pins; who is on
-  stage) | the capture bar at the foot (buckets, the input, **File**, "N filed", **File last roll**). 600–1100 px: two columns, the rail below. Phone: the same bar as the laptop, 44 px
+  a side panel with **Prep (R)**, **GM screen (T)**, **Location (B)**, **Street (S)**, **Score (J)**, **Chase (C)**, **NPC (N)**, **Downtime (D)**, **Cards (O)** and **iPad (I)** | the capture bar at the foot (buckets, the input, **File**, "N filed", **File last roll**). There is no right column: the state rail is the **drawer's** Table tab (below). 600–1100 px: two columns. Phone: the same bar as the laptop, 44 px
   (`’68 GM · Session · iPad: … · Menu`), then a Console | Prep | Location | Street | Score | Chase / NPC | Downtime | Cards | GM screen | iPad | State
   bar in two full rows of six (every segment in reach, nothing to drag sideways), both stuck to the top; the Position switch first,
   **Now in** (its select moves into the Scene line here) and the Scene line, the situations a 2 × 2 grid, the other controls behind the
@@ -151,9 +149,10 @@ fails and nobody is known, nothing is purged.
   - **Update pack asks first** when the file would lose prep the app has (a part gone, a prep note gone or much
     shorter): the button reads **Upload anyway** and confirms (the same guard as `gm:pack` and `gm:push`, SYNC.md). A part the app
     retired on purpose (`engagement`, Engage's) is not a loss, in either guard (`RETIRED_PARTS`).
+- **The drawer** (header button **Drawer**, key `W`, Esc or × shuts it): one right-edge panel, shut by default and remembered per browser (`b68.gm.drawer`). Under 600 px it is a full-screen sheet, opened by the **State** segment. Three tabs. **Table**: what the right column used to carry (crew heat, wanted, rep, stacks and vault from the table, read only; table clocks; the pack's world clocks; bargains owed with **Collect**; pins; who is on stage). **Crew**: the Run view's crew lines (room, moved, busy, items) while a v2 night is running, then the live crew sheet. **Players**: one sub-tab per character, each the live sheet. The sheets are same-origin frames of the app's own routes (`#t`, `#c/<id>`), **one frame at most**: made when its tab opens, taken down (src blank, then the node) when the tab or the drawer closes. They open **read only** (`?ro=1` on the app URL makes boot.js treat the viewer as unable to write) until you press **Edit**, which reloads the frame without it; leaving the tab or closing the drawer goes back to read only. The worker now sends `X-Frame-Options: SAMEORIGIN` and `frame-ancestors 'self'` (it was DENY / 'none').
 - **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd but `Ctrl+K`): `1`–`4` roll a situation (`5`–`9` do nothing: the single tables have no keys), `R` `B` `N` `S` `J` `C` `D` `O` `T` `I` switch the panel
   (Prep, Location, NPC, Street scene, Score, Chase, Downtime, Cards, GM screen, iPad; `R` and `T` also put the cursor in that pane's find box, so typing
-  lands there and not on the shortcuts), `F` Focus, `/` or `Ctrl+K` Find, `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
+  lands there and not on the shortcuts), `F` Focus, `W` the drawer (open or shut), `/` or `Ctrl+K` Find, `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
   the last roll under "Rolled at the table", `Shift+H`, or `H` twice within a second, blanks the screen until any key or tap (one stray `H` does
   nothing; the first alone says how, once per page load), `0` clears the iPad to its ambient scene (the same as **Clear → ambient**).
 - **Situations.** The console is the four Situations, one mode only (the Classic nine-button view, its toggle, the `b68.gm.view`

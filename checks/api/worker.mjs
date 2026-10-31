@@ -105,7 +105,7 @@ await step('page: doctype, charset and viewport in front of index.html, security
   expect(/width=device-width, initial-scale=1, viewport-fit=cover/.test(PAGE_HEAD), 'viewport content');
   expect(r.headers.get('Content-Type') === 'text/html; charset=utf-8', 'content-type');
   expect(r.headers.get('ETag') === '"abc"', 'etag kept');
-  expect(r.headers.get('X-Frame-Options') === 'DENY' && r.headers.get('X-Content-Type-Options') === 'nosniff', 'security headers');
+  expect(r.headers.get('X-Frame-Options') === 'SAMEORIGIN' && r.headers.get('X-Content-Type-Options') === 'nosniff', 'security headers');
   expect(!INDEX.trimStart().toLowerCase().startsWith('<!doctype'), 'app/index.html itself stays a bare fragment (the artifact wraps it)');
   expect(withPageHead('<!DOCTYPE html><p>x') === '<!DOCTYPE html><p>x', 'no second doctype');
   const redirect = await worker.fetch(new Request('https://blades.example.test/index.html'), env, {});
@@ -120,14 +120,14 @@ await step('page: doctype, charset and viewport in front of index.html, security
   expect(missing.status === 404, 'missing file: asset 404');
 });
 
-await step('page: a full Content-Security-Policy is reported, not enforced; the enforced one stays frame-ancestors only', async () => {
+await step('page: a full Content-Security-Policy is reported, not enforced; the enforced one stays frame-ancestors only (self, for the GM drawer)', async () => {
   const r = await worker.fetch(new Request('https://blades.example.test/'), { ASSETS: fakeAssets() }, {});
-  expect(r.headers.get('Content-Security-Policy') === "frame-ancestors 'none'", 'enforced CSP: ' + r.headers.get('Content-Security-Policy'));
+  expect(r.headers.get('Content-Security-Policy') === "frame-ancestors 'self'", 'enforced CSP: ' + r.headers.get('Content-Security-Policy'));
   const ro = r.headers.get('Content-Security-Policy-Report-Only') || '';
   const dir = Object.fromEntries(ro.split(';').map((d) => d.trim()).filter(Boolean).map((d) => { const [k, ...v] = d.split(/\s+/); return [k, v.join(' ')]; }));
   const want = {
     'script-src': "'self'", 'style-src': "'self' 'unsafe-inline'", 'img-src': "'self' data: blob:", 'connect-src': "'self' wss://api.deepgram.com",
-    'frame-src': "'self'", 'media-src': "'self'", 'font-src': "'self'", 'frame-ancestors': "'none'",
+    'frame-src': "'self'", 'media-src': "'self'", 'font-src': "'self'", 'frame-ancestors': "'self'",
   };
   expect(JSON.stringify(dir) === JSON.stringify(want), 'report-only policy: ' + ro);
   expect(!/unsafe-eval|\*/.test(dir['script-src']) && !/unsafe-inline/.test(dir['script-src']), 'scripts: same-origin files only');

@@ -4542,5 +4542,35 @@ await test('VV6j. a send the server refuses (a network error) keeps the night go
   await h.save();
 });
 
+await test('E2. the drawer: closed by default, W and the header button toggle it and keep the choice, one sheet frame at most, gone on close, read-only until Edit', async () => {
+  const br = fakeBrowser(); br.W.location = br.W.location || { pathname: '/', search: '', hash: '' };
+  const h = await openPage({ br, camp: CAMP3 });
+  const root = () => h.q('#gm-root');
+  assert.ok(!root().classList.contains('dw-open'), 'closed by default');
+  assert.ok(h.q('#gm-drawer #gm-rail'), 'the rail now lives inside the drawer (its Table tab)');
+  assert.ok(!h.q('.gm-rail'), 'and there is no right column any more');
+  h.q('[data-gm="drawer"]').click();
+  assert.ok(root().classList.contains('dw-open') && br.W.localStorage.getItem('b68.gm.drawer') === '1', 'the header button opens it and keeps the choice');
+  assert.equal(h.qa('iframe').length, 0, 'the Table tab holds no frame');
+  h.q('[data-gm="dtab"][data-tab="crew"]').click();
+  assert.equal(h.qa('iframe').length, 1, 'the Crew tab opens the crew sheet frame');
+  assert.ok(/[?]ro=1#t$/.test(h.q('iframe').src), 'read-only: ' + h.q('iframe').src);
+  h.q('[data-gm="dtab"][data-tab="players"]').click();
+  assert.ok(h.qa('iframe').length <= 1, 'switching tabs never leaves two frames');
+  h.q('[data-gm="dtab"][data-tab="crew"]').click(); h.q('[data-gm="dedit"]').click();
+  assert.equal(h.qa('iframe').length, 1); assert.ok(!/ro=1/.test(h.q('iframe').src), 'Edit reloads the frame without ro=1: ' + h.q('iframe').src);
+  h.q('[data-gm="dtab"][data-tab="table"]').click();
+  assert.equal(h.qa('iframe').length, 0, 'leaving a sheet tab takes its frame down');
+  h.q('[data-gm="dtab"][data-tab="crew"]').click(); assert.ok(/ro=1/.test(h.q('iframe').src), 'and the next one is read-only again');
+  h.q('.gm-drawer [data-gm="drawer"]').click();
+  assert.ok(!root().classList.contains('dw-open') && h.qa('iframe').length === 0 && br.W.localStorage.getItem('b68.gm.drawer') === '0', 'closing removes the frame');
+  await h.save();
+});
+await test('E2b. a remembered open drawer opens again; the key W is the toggle', async () => {
+  const br = fakeBrowser(); br.ls.set('b68.gm.drawer', '1'); const h = await openPage({ br, camp: CAMP3 });
+  assert.ok(h.q('#gm-root').classList.contains('dw-open'), 'open from the stored choice');
+  await h.save();
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

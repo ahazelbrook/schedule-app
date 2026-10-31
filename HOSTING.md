@@ -34,10 +34,10 @@ Ownership: **backend** owns `worker/`, `functions/`, `schema.sql`, `migrations/`
   lays the page out 980 px wide in quirks mode. The service worker caches the page as served,
   so the offline copy has the same head. `cf.js` also adds the viewport meta when it is missing.
 - **Headers.** The page: `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`,
-  `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` (enforced), a fuller
+  `X-Frame-Options: SAMEORIGIN`, `Content-Security-Policy: frame-ancestors 'self'` (enforced; the GM page's drawer frames the app's own sheets, nothing else may frame it), a fuller
   policy as `Content-Security-Policy-Report-Only` (`script-src 'self'; style-src 'self'
   'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://api.deepgram.com; frame-src
-  'self'; media-src 'self'; font-src 'self'; frame-ancestors 'none'`: the browser blocks nothing and
+  'self'; media-src 'self'; font-src 'self'; frame-ancestors 'self'`: the browser blocks nothing and
   names in its console what it would block; every route loads with no violation in Chromium, so it
   can be enforced once the browser checks have run clean on the real devices) and a `Permissions-Policy` that
   turns off camera, geolocation and payment and allows the microphone for this origin only (the

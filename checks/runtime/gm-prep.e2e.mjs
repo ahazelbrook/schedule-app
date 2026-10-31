@@ -146,7 +146,7 @@ try {
     check(await page.$eval('#gm-prep .rl-callout.pp-say', () => true).catch(() => false) && await page.$eval('#gm-prep code.pp-prov', () => true).catch(() => false), 'SAY card and provenance chip');
     check((await page.$$('#gm-prep .pp-embed')).length === 3, 'the transcluded sections are carried in');
     await page.click('#gm-prep #pp-must-land .pp-pin');
-    check(await page.waitForSelector('#gm-rail .pp-pinbox .pp-box', { timeout: 5000 }).then(() => true, () => false), 'a pinned section sits in the rail with its boxes');
+    check(await page.waitForSelector('#gm-rail .pp-pinbox .pp-box', { state: 'attached', timeout: 5000 }).then(() => true, () => false), 'a pinned section sits in the rail with its boxes');
     await page.click('#gm-prep a[href^="#pp:npc:"]');
     check(await page.$eval('#gm-prep-peek', (p) => !p.hidden && /Odo Plim/.test(p.textContent)), 'an NPC link opens a peek card');
     check(await page.$eval('#gm-prep-peek .pp-cardbody', (b) => /canal-green coat/.test(b.textContent) && /Two for a shilling/.test(b.textContent) && !!b.querySelector('.rl-callout[data-callout="gm"]')).catch(() => false), 'the peek shows the NPC\'s whole card: read aloud, a say line, the GM-only box');

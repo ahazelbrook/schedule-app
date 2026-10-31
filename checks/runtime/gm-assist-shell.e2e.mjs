@@ -238,7 +238,7 @@ try {
       await p.click('#as-pin'); await settle(p);
       check(await p.$eval('.gm-assist', (h) => h.getAttribute('data-state')) === 'pinned' && await p.evaluate(() => document.body.classList.contains('as-dock')), tag + 'Pin docks the panel');
       const cols = await p.$eval('.gm-main', (m) => getComputedStyle(m).gridTemplateColumns.split(' ').length);
-      check(cols === 4, tag + '.gm-main gains a fourth column (' + cols + ' tracks)');
+      check(cols === 3, tag + '.gm-main gains the dock column (' + cols + ' tracks: console, centre, panel)');
       pr = await rectOf(p, '#as-panel');
       const kids = await p.$$eval('.gm-main > *', (l) => l.map((x) => { const r = x.getBoundingClientRect(); return { l: r.left, r: r.right, c: x.className }; }));
       check(kids.every((k) => k.r <= pr.l + 1), tag + 'nothing overlaps the docked panel (the columns end at ' + Math.round(Math.max(...kids.map((k) => k.r))) + ', it starts at ' + Math.round(pr.l) + ')');
@@ -246,7 +246,7 @@ try {
       check(await p.$eval('#as-launch', (b) => getComputedStyle(b).display) === 'none', tag + 'the tab gives way while docked');
       await shot(p, 'pinned-' + W);
       await p.keyboard.press('Escape'); await settle(p);
-      check(await p.$eval('.gm-assist', (h) => h.getAttribute('data-state')) === 'closed' && await p.$eval('.gm-main', (m) => getComputedStyle(m).gridTemplateColumns.split(' ').length) === 3, tag + 'closing a docked panel gives the column back');
+      check(await p.$eval('.gm-assist', (h) => h.getAttribute('data-state')) === 'closed' && await p.$eval('.gm-main', (m) => getComputedStyle(m).gridTemplateColumns.split(' ').length) === 2, tag + 'closing a docked panel gives the column back');
       await p.keyboard.press('a'); await settle(p);
       check(await p.$eval('.gm-assist', (h) => h.getAttribute('data-state')) === 'pinned', tag + 'it re-opens docked (the pin stays)');
       await p.click('#as-pin'); await settle(p);
