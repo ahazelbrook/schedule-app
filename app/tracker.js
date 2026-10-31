@@ -198,6 +198,7 @@
     if (isTT(pb)) { p.alluvium = alluvStart(pb); p.mission = blankMission(sheet.mission, sheet.missionAnswers); p.bank = 0; }
     return p;
   }
+  T.mvTimerText = function (tm, now) { return mvTimerText(tm, now); };   /* for the unit test */
   T.initialPlay = initialPlay;
   /* fill in anything an older or partial play is missing */
   function normalize(play, sheet, pbId) {

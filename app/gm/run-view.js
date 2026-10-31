@@ -328,13 +328,14 @@
 
     /* the header */
     /* the beat's countdown (ball.timer, worked out by ball.js): a night started before it has none, so the default shows paused until the first Start */
-    function timerShown(p, st) { return isObj(st) && isObj(st.timer) ? st.timer : B.timerNext(p, null, "reset", Date.now()); }
+    var nowMs = function () { return typeof host.now === "function" ? host.now() : Date.now(); };
+    function timerShown(p, st) { return isObj(st) && isObj(st.timer) ? st.timer : B.timerNext(p, null, "reset", nowMs()); }
     function timerLook(tm, now) {
       var l = B.timerLeft(tm, now), paused = !(tm.paused !== true && typeof tm.endsAt === "number");
       return { l: l, paused: paused, cls: "rv-tleft" + (l <= 0 ? " zero" : l < 60 ? " warn" : "") + (paused ? " paused" : "") };
     }
     function timerHtml(p, st) {
-      var tm = timerShown(p, st), v = timerLook(tm, Date.now());
+      var tm = timerShown(p, st), v = timerLook(tm, nowMs());
       return '<span class="rv-timer" role="group" aria-label="The beat timer"><output class="' + v.cls + '" data-rvtimer aria-label="Time left in this beat">' + B.timerText(v.l) + '</output>' +
         '<button type="button" class="rv-btn sm" data-rv="tgo">' + (v.paused ? "Start" : "Pause") + '</button>' +
         '<button type="button" class="rv-btn sm" data-rv="tadd1">+1 min</button><button type="button" class="rv-btn sm" data-rv="tadd5">+5 min</button>' +
@@ -491,10 +492,10 @@
     /* actions */
     function atTime(t, why, extra) { if (host.set(Object.assign({ t: t }, extra || {}))) host.publish(t, why); self.rerender(); }
     /* the timer is written paused with the start: it never runs before Start the night */
-    function startNight(t) { var rs = site(); if (host.set({ v: 2, start: t, t: t, timer: B.timerNext(rs ? rs.play : null, null, "reset", Date.now()) })) host.publish(t, "start"); peekT = null; self.rerender(); }
+    function startNight(t) { var rs = site(); if (host.set({ v: 2, start: t, t: t, timer: B.timerNext(rs ? rs.play : null, null, "reset", nowMs()) })) host.publish(t, "start"); peekT = null; self.rerender(); }
     /* a manual step restarts the countdown for the new beat, running or paused as it was; a night with no ball.timer writes none */
-    function restartFor(play, st) { return isObj(st) && isObj(st.timer) ? { timer: B.timerNext(play, st, "restart", Date.now()) } : null; }
-    function timerDo(op, arg) { var rs = site(); if (!rs) return; var st = host.state(); if (!isStarted(st)) return; host.set({ timer: B.timerNext(rs.play, st, op, Date.now(), arg) }); self.rerender(); }
+    function restartFor(play, st) { return isObj(st) && isObj(st.timer) ? { timer: B.timerNext(play, st, "restart", nowMs()) } : null; }
+    function timerDo(op, arg) { var rs = site(); if (!rs) return; var st = host.state(); if (!isStarted(st)) return; if (host.set({ timer: B.timerNext(rs.play, st, op, nowMs(), arg) }) && typeof host.publish === "function") host.publish(timeOf(host.state()), "timer"); self.rerender(); }   /* ballSet already queues the mission publish; this keeps the call site explicit */
     function onTimerLen(ev) {
       var el = ev.target; if (!el || !el.matches || !el.matches('[data-rv="tlen"]') || !boxEl || !boxEl.contains(el)) return;
       var v = +el.value; if (!(v >= 1)) { self.rerender(); return; }
@@ -504,7 +505,7 @@
     var timerId = null;
     function timerTick() {
       var rs = boxEl ? site() : null; if (!rs) return;
-      var now = Date.now(), look = timerLook(timerShown(rs.play, host.state()), now), els = boxEl.querySelectorAll ? boxEl.querySelectorAll("[data-rvtimer]") : [];
+      var now = nowMs(), look = timerLook(timerShown(rs.play, host.state()), now), els = boxEl.querySelectorAll ? boxEl.querySelectorAll("[data-rvtimer]") : [];
       for (var i = 0; i < els.length; i++) { els[i].textContent = B.timerText(look.l); els[i].className = look.cls; }
       if (peekT !== null) return;
       var st = host.state(); if (!B.timerDue(st, now)) return;      /* read again: a second tick or another device that stepped does nothing */

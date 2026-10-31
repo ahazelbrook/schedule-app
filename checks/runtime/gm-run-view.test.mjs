@@ -388,5 +388,26 @@ test('timer: a manual step restarts the countdown in the mode it was in; no ball
   const none = viewRig({ ...BEAT }); none.click('next'); assert.ok(!('timer' in none.sets[0]));
 });
 
+test('timer: every control publishes after a good write (and not after a refused one)', () => {
+  const r = viewRig({ ...BEAT, timer: pausedTm(100) }); const pubs = []; r.host.publish = (t, why) => pubs.push(why);
+  for (const k of ['tgo', 'tadd1', 'tadd5', 'treset']) r.click(k);
+  assert.deepEqual(pubs, ['timer', 'timer', 'timer', 'timer']);
+  r.setOk = false; r.click('tgo'); assert.equal(pubs.length, 4, 'a refused write publishes nothing');
+});
+test('timer: stamps use host.now() (server time) when the host has one', () => {
+  const r = viewRig({ ...BEAT, timer: pausedTm(100) }); r.host.now = () => 5e12; r.click('tgo');
+  assert.equal(r.sets.pop().timer.endsAt, 5e12 + 100000);
+});
+test('tracker mvTimerText: paused, running, under a minute, zero, missing', () => {
+  const vm = require('node:vm'), w = {}, c = { window: w, document: { addEventListener() {}, createElement() { return {}; } }, console, setTimeout, clearTimeout, setInterval, clearInterval, localStorage: { getItem() { return null; }, setItem() {} }, navigator: {} };
+  c.self = w; w.document = c.document; vm.createContext(c); vm.runInContext(fs.readFileSync(path.join(ROOT, 'app', 'tracker.js'), 'utf8'), c);
+  const f = w.B68Tracker.mvTimerText;
+  assert.deepEqual({ ...f({ endsAt: null, left: 125, paused: true }, 0) }, { text: 'Time paused 2:05', cls: '' });
+  assert.deepEqual({ ...f({ endsAt: 100000, left: 9, paused: false }, 0) }, { text: 'Time left 1:40', cls: '' });
+  assert.deepEqual({ ...f({ endsAt: 30000, left: 9, paused: false }, 0) }, { text: 'Time left 0:30', cls: 'warn' });
+  assert.deepEqual({ ...f({ endsAt: 1000, left: 9, paused: false }, 5000) }, { text: 'Time is up', cls: 'zero' });
+  assert.deepEqual({ ...f(null, 0) }, { text: 'Time paused 0:00', cls: '' });
+});
+
 console.log(failed ? 'FAILED ' + failed + ' of ' + (failed + passed) : 'ok ' + passed + ' passed');
 process.exit(failed ? 1 : 0);

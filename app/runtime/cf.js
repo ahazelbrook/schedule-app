@@ -226,6 +226,7 @@
      the same way (plus `timeout: true`), so a stalled request never holds the poller or the write queue: the next tick,
      the `online` event and the retry timer carry on as after any other network failure. */
   var signedOutWhy = '';       /* why the last 401 said so (the server's reason, or that Access answered with its login page) */
+  var clockSkew = 0;           /* see api(): server time less this clock, ms */
   function api(method, path, body, ms) {
     if (signedOut) return Promise.reject(signedOutError());
     var opts = { method: method, credentials: 'same-origin', cache: 'no-store', redirect: 'manual', headers: { Accept: 'application/json' } };
@@ -246,6 +247,8 @@
     return Promise.resolve(sent).then(function (res) {
       setNet(true);
       noteBuild(res.headers && res.headers.get ? res.headers.get('x-b68-build') : null);
+      /* the server's clock less this one's, from the Date header (whole seconds, so +500 ms for the floor; a slow round trip is ignored): the GM's beat timer stamps endsAt on server time */
+      try { var dh = res.headers && res.headers.get ? Date.parse(res.headers.get('date') || '') : NaN, t1 = Date.now(); if (isFinite(dh) && t1 - t0 < 3000) clockSkew = Math.round(dh + 500 - (t0 + t1) / 2); } catch (e) { /* the skew stays as it was */ }
       var ct = (res.headers && res.headers.get && res.headers.get('content-type')) || '';
       if (res.status === 401 || res.redirected || res.type === 'opaqueredirect' || ct.indexOf('json') < 0) {
         var out = function (why) {
@@ -1358,6 +1361,8 @@
      through the db layer. The GM page keeps its own copy of the pack (IndexedDB). ---------- */
   var qs = function (k, v) { return k + '=' + encodeURIComponent(v); };
   var gm = {
+    /* the server's clock less this one's, ms (from the Date header of any answer; 0 until one arrives) */
+    skew: function () { return clockSkew; },
     /* GET /api/gm/pack -> { version, parts: { name: { version, src, updatedAt, bytes } } }; opts.version: the cached
        pack version, answered { version, unchanged: true } while it is still current */
     pack: function (opts) { return api('GET', '/gm/pack' + (opts && opts.version ? '?' + qs('v', opts.version) : '')); },
