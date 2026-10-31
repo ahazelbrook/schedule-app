@@ -47,7 +47,7 @@ const site = (name, play) => ({ name, rel: 'x', map: { view: 'iso', theme: 'rule
 const PARTS = {
   console: conFix.parts.console, campaign: { ...conFix.parts.campaign, src: { ...conFix.parts.campaign.src, exportedAt: NOW }, cards: { 'Pip Quill': '# Pip Quill\n\nPIPCARD-BODY a nervous cook.\n\n> [!quote] SAY\n> Not the lounge, please.' } },
   prep: { src: { file: 'fixture/prep', exportedAt: NOW }, vault: 'Fixture', links: { 'pip quill': { k: 'npc', name: 'Pip Quill', rel: 'NPCs/Pip Quill.md' } },
-    notes: [{ id: 'n-gala', rel: 'Sessions/gala.md', title: 'Gala prep', blocks: [{ k: 'md', src: '# Gala prep\n\n## Rooms\n\n### Cocktail lounge\n- **Costume:** Brocade jackets.\nLOUNGE-NOTE-BODY the bar runs the length of the room, see [[Pip Quill]].\n\n> [!quote] SAY\n> Mind the glass.\n' }] }] },
+    notes: [{ id: 'n-gala', rel: 'Sessions/gala.md', title: 'Gala prep', blocks: [{ k: 'md', src: '# Gala prep\n\n## Rooms\n\n### Cocktail lounge\n- **Costume:** Brocade jackets.\nLOUNGE-NOTE-BODY the bar runs the length of the room, see [[Pip Quill]].\n\n> [!quote] SAY\n> Mind the glass.\n\n- 21:45 the cook slips out · 22:00 the speeches start · 22:15 the raffle · 22:30 supper · 22:45 the band · 23:00 last call\n' }] }] },
   location: { src: { file: 'fixture/location', blockSha: '0', exportedAt: NOW }, T: locFix.T, extra: locFix.extra,
     authored: { v: 1, sites: { [NAME2]: site(NAME2, c2.play), [NAME1]: site(NAME1, c1.play) }, bind: {} } },
 };
@@ -615,6 +615,20 @@ try {
     const lounge = sec + ' .rv-rm[data-room="Cocktail lounge"]';
     check(await N.page.$eval(lounge, (e) => /LOUNGE-NOTE-BODY/.test(e.textContent) && !!e.querySelector('.rv-rmnote .pp-say')), 'a room block: the prep note\'s ## Rooms text for the room, its SAY callout drawn as a read-aloud card');
     check(await N.page.$eval(lounge + ' .rv-rmnote a[href^="#pp:npc:"]', (a) => /Pip Quill/.test(a.textContent)), 'a wikilink in the note is a #pp: link');
+    /* ticket R: the segment of the note holding the beat's time is lit; a peek a beat later moves it */
+    {
+      const BL = Number.isInteger(c2.play.clock.beat) ? c2.play.clock.beat : 15, bt = Math.floor(st0.t / BL) * BL, lab = (m) => BALL.timeLabel(c2.play, m);
+      const lit = () => N.page.$$eval(lounge + ' .rv-rmnote mark.rv-now', (l) => l.map((e) => e.textContent));
+      const l0 = await lit();
+      check(l0.length === 1 && l0[0].startsWith(lab(bt)), 'the room note lights the segment holding the shown beat time (' + lab(bt) + '): ' + JSON.stringify(l0));
+      check(await N.page.$eval(sec + ' .rv-nowkey', (e) => e.textContent) === 'Lit: this beat, ' + lab(bt) + '–' + lab(bt + BL), 'the legend names the beat');
+      check(await N.page.$eval(sec + ' .rv-nowkey', (e) => !!e.previousElementSibling && e.previousElementSibling.classList.contains('rv-sh')), 'the legend follows a heading');
+      await N.page.click('.rv-sq[data-i="' + (bt / BL + 1) + '"]');
+      const l1 = await lit();
+      check(l1.length === 1 && l1[0].startsWith(lab(bt + BL)) && l1[0] !== l0[0], 'peeking a beat later moves the light: ' + JSON.stringify(l1));
+      await N.page.click('[data-rv="unpeek"]');
+      check(JSON.stringify(await lit()) === JSON.stringify(l0), 'Back to now returns it');
+    }
     await N.page.click('.rv-card[data-room="Showroom"] .rv-cn');
     check(await N.page.$eval(sec + ' .rv-rm[data-room="Showroom"] .rv-nonote', (e) => /No notes for Showroom/.test(e.textContent) && /### Showroom/.test(e.textContent)), 'a room with no section says so, and what to add');
     check(await N.page.$$eval(sec + ' .rv-rm', (l) => l.length >= 1 && l[0].getAttribute('data-room') === 'Showroom'), 'the tapped room comes first');

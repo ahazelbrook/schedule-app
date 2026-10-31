@@ -418,5 +418,21 @@ test('tracker mvTimerText: paused, running, under a minute, zero, missing', () =
   assert.deepEqual({ ...f(null, 0) }, { text: 'Time paused 0:00', cls: '' });
 });
 
+test('nowSegments: the whole " · " segment holding a time inside [w0, w1); the end is exclusive; after-midnight times work', () => {
+  const tm = (tok) => B.minuteOf(tok, '21:00');
+  const T1 = 'Sgt. Rook on the door from 21:00 and again 00:45 · the harbourmaster 22:00 and 00:45 · a quiet word at 23:30';
+  const seg = (a, b, txt = T1) => R.nowSegments(txt, a, b, tm).map(([s, e]) => txt.slice(s, e));
+  assert.deepEqual(seg(0, 15), ['Sgt. Rook on the door from 21:00 and again 00:45'], 'a segment with two times lights once, whole');
+  assert.deepEqual(seg(225, 240), ['Sgt. Rook on the door from 21:00 and again 00:45', 'the harbourmaster 22:00 and 00:45'], 'a time after midnight (00:45 is minute 225); two segments light');
+  assert.deepEqual(seg(60, 75), ['the harbourmaster 22:00 and 00:45'], 'the middle segment runs from one separator to the next');
+  assert.deepEqual(seg(150, 165), ['a quiet word at 23:30'], 'the last segment runs to the end');
+  assert.deepEqual(R.nowSegments('Guests arrive at 22:00 sharp', 60, 75, tm), [[0, 28]], 'no separator: the whole text');
+  assert.deepEqual(R.nowSegments('Guests arrive at 22:00', 45, 60, tm), [], 'a time exactly at w1 is not now');
+  assert.deepEqual(R.nowSegments('Guests arrive at 22:00', 60, 75, tm), [[0, 22]], 'a time exactly at w0 is now');
+  assert.deepEqual(R.nowSegments('The bar runs the length of the room', 0, 1440, tm), [], 'no times');
+  assert.deepEqual(R.nowSegments('room 122:00 or 9:75', 0, 1440, tm), [], 'not clock times');
+  assert.deepEqual(R.nowSegments('x 22:00', 0, 1440, null), [], 'no converter: nothing');
+});
+
 console.log(failed ? 'FAILED ' + failed + ' of ' + (failed + passed) : 'ok ' + passed + ' passed');
 process.exit(failed ? 1 : 0);

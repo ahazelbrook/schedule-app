@@ -1176,6 +1176,8 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 #gm-page .rv-rmpcs .rv-lab { margin: 0 4px 0 0; }
 #gm-page .rv-hap { font-size: 13px; display: grid; gap: 3px; }
 #gm-page .rv-rmnote { max-height: 46vh; overflow-y: auto; scrollbar-width: thin; border-top: 1px dashed var(--hair); padding-top: 4px; font-size: 13px; }
+#gm-page .rv-rmnote mark.rv-now { background: var(--mustard); color: var(--on-mustard); padding: 0 2px; border-radius: 2px; }
+#gm-page .rv-nowkey { margin: 0 0 6px; font-size: 12px; }
 #gm-page .rv-nonote { margin: 0; }
 #gm-page .rv-npcname { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: var(--ink); text-decoration: underline dotted; text-underline-offset: 2px; cursor: pointer; min-height: 24px; text-align: left; }
 #gm-page .rv-npcname:hover { color: var(--accent); }

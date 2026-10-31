@@ -64,6 +64,47 @@
   }
   function iconOf(name) { var n = str(name); return ICONS[n] || (n ? Array.from(n)[0].toUpperCase() : "•"); }
   function beatLen(play) { var b = isObj(play) && isObj(play.clock) ? play.clock.beat : 0; return Number.isInteger(b) && b >= 5 && b <= 60 ? b : 15; }
+  /* ticket R: the parts of a room note that belong to the beat shown. Returns [[start, end], ...] character ranges: the whole " · "-separated
+     segment around every clock time that falls in [w0, w1) (minutes since the night's start; toMin turns "HH:MM" into that, NaN when it cannot). */
+  var SEG_SEP = " \u00b7 ", CLOCK_RE = /\b([01]?\d|2[0-3]):[0-5]\d\b/g;
+  function nowSegments(text, w0, w1, toMin) {
+    var s = str(text), out = [], re = new RegExp(CLOCK_RE.source, "g"), m, a, b, last = -1;
+    if (typeof toMin !== "function") return out;
+    while ((m = re.exec(s))) {
+      var t = toMin(m[0]);
+      if (typeof t !== "number" || isNaN(t) || !(t >= w0 && t < w1)) continue;
+      a = s.lastIndexOf(SEG_SEP, m.index); a = a < 0 ? 0 : a + SEG_SEP.length;
+      b = s.indexOf(SEG_SEP, m.index + m[0].length); if (b < 0) b = s.length;
+      if (a === last) continue;      /* a second time in the same segment */
+      last = a; out.push([a, b]);
+    }
+    return out;
+  }
+  function lightNow(box, ctx) {
+    var play = ctx.play, bl = beatLen(play), w0 = Math.floor(ctx.shownT / bl) * bl, w1 = w0 + bl, start = isObj(play.clock) ? play.clock.start : "", n = 0;
+    var toMin = function (tok) { return B.minuteOf(tok, start); };
+    Array.prototype.forEach.call(box.querySelectorAll(".rv-rmnote"), function (note) {
+      var doc = note.ownerDocument, walker = doc.createTreeWalker(note, 4 /* SHOW_TEXT */, null), nodes = [], nd;
+      while ((nd = walker.nextNode())) nodes.push(nd);
+      nodes.forEach(function (tn) {
+        for (var p = tn.parentNode; p && p !== note; p = p.parentNode) if (/^(CODE|PRE)$/i.test(p.nodeName)) return;
+        var segs = nowSegments(tn.nodeValue, w0, w1, toMin);
+        if (!segs.length) return;
+        var txt = tn.nodeValue, frag = doc.createDocumentFragment(), at = 0;
+        segs.forEach(function (r) {
+          if (r[0] > at) frag.appendChild(doc.createTextNode(txt.slice(at, r[0])));
+          var mk = doc.createElement("mark"); mk.className = "rv-now"; mk.textContent = txt.slice(r[0], r[1]); frag.appendChild(mk); at = r[1]; n++;
+        });
+        if (at < txt.length) frag.appendChild(doc.createTextNode(txt.slice(at)));
+        tn.parentNode.replaceChild(frag, tn);
+      });
+    });
+    if (n) {
+      var key = '<p class="rv-dim rv-nowkey">Lit: this beat, ' + esc(B.timeLabel(play, w0)) + "–" + esc(B.timeLabel(play, w1)) + "</p>", hd = box.querySelector(".rv-sh");
+      if (hd) hd.insertAdjacentHTML("afterend", key); else box.insertAdjacentHTML("afterbegin", key);
+    }
+  }
+
   function spanOf(play) { var n = B.minuteOf(play.clock.end, play.clock.start); return n > 0 ? n : 1440; }
   function isStarted(st) { return isObj(st) && typeof st.start === "number" && isFinite(st.start); }
   function timeOf(st) { return isObj(st) && typeof st.t === "number" && isFinite(st.t) ? Math.max(0, Math.round(st.t)) : 0; }
@@ -459,6 +500,7 @@
       });
       box.innerHTML = h;
       if (typeof host.decorate === "function") Array.prototype.forEach.call(box.querySelectorAll(".rv-rmnote"), function (el) { try { host.decorate(el); } catch (e) { /* the note still reads */ } });
+      try { lightNow(box, ctx); } catch (e) { /* the note still reads, unlit */ }
     }
 
     /* the pane */
@@ -983,5 +1025,5 @@
   return { create: create, model: model, moveCrew: moveCrew, resetChange: resetChange, resetAsk: RESET_ASK, stepTime: stepTime, jumpTime: jumpTime, startMinutes: startMinutes, initials: initials, normRoomName: normRoomName,
     setPlayersChip: setPlayersChip, menuItems: menuItems, views: views, sections: sections, hooks: hooks,
     sortedStops: sortedStops, scanChanges: scanChanges, crewOrder: crewOrder, skipTarget: skipTarget, waySummary: waySummary,
-    setWarnings: setWarnings, sayBox: sayBox, roomsShown: roomsShown, peopleIn: peopleIn, eventsIn: eventsIn, reachIn: reachIn, personNames: personNames, npcName: npcName, heardChange: heardChange, foldMoves: foldMoves };
+    nowSegments: nowSegments, setWarnings: setWarnings, sayBox: sayBox, roomsShown: roomsShown, peopleIn: peopleIn, eventsIn: eventsIn, reachIn: reachIn, personNames: personNames, npcName: npcName, heardChange: heardChange, foldMoves: foldMoves };
 });
