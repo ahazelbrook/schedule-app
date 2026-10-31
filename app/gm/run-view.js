@@ -458,7 +458,7 @@
     }
 
     /* the pane */
-    self.rerender = function () { if (boxEl) self.render(boxEl); if (crewEl && crewEl.isConnected) self.crewInto(crewEl); };
+    self.rerender = function () { if (boxEl) self.render(boxEl); if (crewEl && crewEl.isConnected && crewEl.offsetParent !== null) { var fa = crewEl.ownerDocument && crewEl.ownerDocument.activeElement; if (!(fa && fa.tagName === "SELECT" && crewEl.contains(fa))) self.crewInto(crewEl); } };
     self.render = function (box) {
       boxEl = box;
       if (live.indexOf(self) < 0) live.push(self);
@@ -646,7 +646,7 @@
     var crewEl = null;
     self.crewInto = function (box) {
       crewEl = box; var x = build(); if (!x) { box.innerHTML = ""; return false; }
-      var ctx = ctxFor(x.rs, x.st, x.m, x.shownT); ctx.rerender = function () { self.crewInto(crewEl); if (boxEl && boxEl.isConnected && boxEl.offsetParent !== null) self.rerender(); };
+      var ctx = ctxFor(x.rs, x.st, x.m, x.shownT); ctx.rerender = function () { self.rerender(); };
       try { crewSection(box, ctx); } catch (e) { box.textContent = "The crew could not be drawn: " + (e && e.message || e); }
       return true;
     };

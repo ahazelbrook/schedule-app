@@ -127,7 +127,7 @@ await step('page: a full Content-Security-Policy is reported, not enforced; the 
   const dir = Object.fromEntries(ro.split(';').map((d) => d.trim()).filter(Boolean).map((d) => { const [k, ...v] = d.split(/\s+/); return [k, v.join(' ')]; }));
   const want = {
     'script-src': "'self'", 'style-src': "'self' 'unsafe-inline'", 'img-src': "'self' data: blob:", 'connect-src': "'self' wss://api.deepgram.com",
-    'frame-src': "'self'", 'media-src': "'self'", 'font-src': "'self'", 'frame-ancestors': "'none'",
+    'frame-src': "'self'", 'media-src': "'self'", 'font-src': "'self'", 'frame-ancestors': "'self'",
   };
   expect(JSON.stringify(dir) === JSON.stringify(want), 'report-only policy: ' + ro);
   expect(!/unsafe-eval|\*/.test(dir['script-src']) && !/unsafe-inline/.test(dir['script-src']), 'scripts: same-origin files only');

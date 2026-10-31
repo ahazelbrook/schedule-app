@@ -676,8 +676,7 @@ try {
     await N.c.close();
   }
 
-  const real = errors.filter((e) => !/report-only Content Security Policy directive: "frame-ancestors/.test(e));   /* the drawer frames the app's own sheets; the REPORT-ONLY policy still says 'none', so the browser logs a note */
-  check(!real.length, 'no page errors: ' + real.slice(0, 3).join(' | '));
+  check(!errors.length, 'no page errors: ' + errors.slice(0, 3).join(' | '));
   await browser.close();
 } catch (e) { failed++; console.log('FAIL ' + (e && e.stack || e)); }
 clearTimeout(timeout);

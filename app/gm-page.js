@@ -5819,7 +5819,7 @@
     var d = S && S.dw, box = $q('#gm-dcrew'); if (!d || !box || !d.open || d.tab !== 'crew') return;
     var a = document.activeElement; if (a && a.tagName === 'SELECT' && box.contains(a)) return;      /* a room list being chosen from is left alone */
     var rs = runV2(), v = rs ? rvInst() : null;
-    if (v && typeof v.crewInto === 'function') { box.removeAttribute('data-none'); v.crewInto(box); }
+    if (v && typeof v.crewInto === 'function' && v.crewInto(box)) box.removeAttribute('data-none');
     else if (box.getAttribute('data-none') !== '1') { box.setAttribute('data-none', '1'); box.innerHTML = '<p class="gm-dim">No night is running here; the crew sheet is below.</p>'; }
   }
   function frameDrop() {
@@ -5844,12 +5844,15 @@
     fr.src = W.location.pathname + (d.edit ? '' : '?ro=1') + w.hash;
     host.appendChild(fr); d.frame = fr; d.frameKey = w.key;
   }
+  function drawerTop() {      /* the drawer sits under the header; the header's height changes with the window */
+    try { var r = $q('#gm-root'), br = $q('.gm-bar'); if (r && br && S && S.dw && S.dw.open) r.style.setProperty('--dw-top', Math.round(br.getBoundingClientRect().bottom) + 'px'); } catch (e) {}
+  }
   function drawerSync() {
     var r = $q('#gm-root'); if (!r || !S.dw) return;
     var d = S.dw, pcs = dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c) }; });
-    if (!pcs.some(function (p) { return p.id === d.pc; })) d.pc = pcs.length ? pcs[0].id : null;
+    if (pcs.length && !pcs.some(function (p) { return p.id === d.pc; })) { d.pc = pcs[0].id; d.edit = false; }   /* an empty list for a moment keeps the choice and its frame */
     r.classList.toggle('dw-open', !!d.open);
-    try { var br = $q('.gm-bar'); if (br && d.open) r.style.setProperty('--dw-top', Math.round(br.getBoundingClientRect().bottom) + 'px'); } catch (e) {}   /* the drawer sits under the header */
+    drawerTop(); if (!S.dwResize && W.addEventListener) { S.dwResize = true; try { W.addEventListener('resize', drawerTop); } catch (e) {} }
     var bb = $q('#gm-bar-drawer'); if (bb) { bb.setAttribute('aria-expanded', String(!!d.open)); bb.setAttribute('aria-pressed', String(!!d.open)); }
     r.querySelectorAll('[data-gm="dtab"]').forEach(function (b) { b.setAttribute('aria-selected', String(b.getAttribute('data-tab') === d.tab)); });
     r.querySelectorAll('.gm-dpane').forEach(function (p) { p.hidden = p.getAttribute('data-dpane') !== d.tab; });

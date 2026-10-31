@@ -196,8 +196,7 @@ try {
     check((await frames(P.page)).length === 0 && !(await shown(P.page, '#gm-drawer')), 'phone: the cross shuts it and takes the frame down');
     await P.c.close(); }
 
-  /* the REPORT-ONLY policy still says frame-ancestors 'none' (the spec changes only the enforced pair), so the browser logs a "report-only" note per framed sheet: not an error of the page */
-  const real = errors.filter((e) => !/report-only Content Security Policy directive: "frame-ancestors/.test(e));
+  const real = errors;
   check(!real.length, 'no page errors: ' + real.slice(0, 3).join(' | '));
   await browser.close();
 } catch (e) { failed++; console.log('FAIL ' + (e && e.stack || e)); }

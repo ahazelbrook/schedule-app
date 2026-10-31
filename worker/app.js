@@ -156,7 +156,7 @@ export const PAGE_HEADERS = {
   // <style> in index.html, style attributes); data: and blob: images; the transcriber's Deepgram socket; the ambient
   // scenes are same-origin frames. Once the browser checks run with no "[Report Only]" message, it can become the
   // enforced Content-Security-Policy (checks/api/worker.mjs asserts it is report-only until then).
-  'Content-Security-Policy-Report-Only': "script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://api.deepgram.com; frame-src 'self'; media-src 'self'; font-src 'self'; frame-ancestors 'none'",
+  'Content-Security-Policy-Report-Only': "script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://api.deepgram.com; frame-src 'self'; media-src 'self'; font-src 'self'; frame-ancestors 'self'",
 };
 
 export async function handlePage(res) {
