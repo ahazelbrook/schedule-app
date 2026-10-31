@@ -73,7 +73,7 @@ const RNG = (seq) => `window.B68Tracker._rng = (() => { const s = ${JSON.stringi
     const p = await open(1360, 900, 'hound', 'hound');
     assert(typeof (await p.evaluate(() => typeof B68Tracker._rng)) === 'string' && (await p.evaluate(() => B68Tracker._rng === Math.random)), 'hound: _rng defaults to Math.random');
     const keys = await p.evaluate(() => Object.keys(B68Tracker).sort().join(','));
-    assert(keys === '_rng,close,initialPlay,isOpen,open,play,refresh,renderStatic,update', 'hound: public surface unchanged: ' + keys);
+    assert(keys === '_rng,close,initialPlay,isOpen,mvTimerText,open,play,refresh,renderStatic,update', 'hound: public surface unchanged: ' + keys);
     let s = await play(p);
     const skirmish = s.dots.Skirmish, prowessXp = s.xp.prowess, stress0 = s.stress, hold0 = s.xpHold || 0;
     notes.push('hound Skirmish ' + skirmish + ' dots, stress ' + stress0 + ', prowess xp ' + prowessXp);
