@@ -15,6 +15,11 @@
  *   jumpTime(play, st) -> the minute of the next thing that happens after ball.t, or null.
  *   resetChange(st) -> the ball change that un-starts the night: every key but site, floor and open set to null (VV12).
  *   startMinutes(play) -> [{ key, label, at, t }] the engagement results play.clock.starts offers, in minutes from clock.start.
+ *   roomsShown(model, sel) -> [room]: the room tapped, then every room a PC is in, top floor down.   personNames(person) -> [npc, label] (the names a card is filed under)
+ *   peopleIn(play, st, t, room) -> [{ id, label, kind, npc, moving }] everyone placed there.   eventsIn(play, st, t, room) -> the beat's events in the room
+ *   reachIn(play, st, t, pcIds) -> [{ way, line, who, name, pcs: [{ id, heard, unheard, at }] }] the leads in reach of those PCs, heard or not
+ *   heardChange(st, way, pc, t) -> { heard, unheard }: hear, or take it back (ball.unheard keeps the auto-hear off that pair)
+ *   foldMoves(st, pcs, o) -> null | { crew, notes: [{ pc, name, room, moved }] }: the phones' move requests (moveReq.seq > crew.mseq) folded in once
  *
  * THE VIEW (needs a DOM): create(host) -> { render(box), peek(t), unpeek(), ... }. host is the page's side of the contract:
  *   site() -> { name, play } | null           state() -> ball           set(change) -> ballSet (a replace patch)
@@ -25,12 +30,15 @@
  *   publish(t, why)    THE CALL SITE VV6 FILLS: why is "start" | "beat" | "jump"; the page's body is empty today.
  *   confirm(msg) -> bool  VV12: the page's confirm        resetMission() -> Promise: VV12: the players' mission cleared (mission-publish resetNight)
  *   toast(msg, bad)
+ *   OPTIONAL (check typeof; the tests build a bare host): hasNpcCard(names) -> bool (cheap)    npcCard(names) -> html | "" (the NPC card, rendered)
+ *   decorate(el)  the Prep decorator on a node (SAY callouts become read-aloud cards)       roomNote(room) -> html | null (null: the prep note has no section for it)
  *
  * SEAMS for the tickets that build on this view (module-level, shared by every instance):
  *   setPlayersChip(text, ok)  the "Players: HH:MM" chip in the header (VV6)
- *   menuItems                 [{ id, label, run(ctx) }]  Run's menu button lists them (VV6: "End the night")
+ *   setWarnings(text)         the warnings line under the header ("" removes it)
+ *   menuItems                 [{ id, label, run(ctx) }]  (label may be a function (ctx) -> text)  Run's menu button lists them (VV6: "End the night")
  *   views                     [{ id, label, render(box, ctx) }]  Board and Map are first; VV6 adds "Players"
- *   sections                  [{ id, order, render(box, ctx) }]  the right column, by order (VV5: This beat 0, the crew 100, the job 200, intel 300)
+ *   sections                  [{ id, order, render(box, ctx) }]  the right column, by order (Rooms -10; VV5: This beat 0, the crew 100, the job 200, intel 300)
  *   hooks                     { heard(way, pc, ctx) }  the Heard by buttons (VV5 fills it: ball.heard.<way>.<pc> = the published time)
  *   ctx = { play, st, model, t, shownT, peeking, host, sel, set(change), select(room), rerender(), toast(msg, bad), esc(text) }
  * Text from the play reaches the page through esc() only.
@@ -48,7 +56,6 @@
   var clone = function (v) { return JSON.parse(JSON.stringify(v)); };
   var ICONS = { mask: "🎭", tray: "🍽", jacket: "🧥", key: "🔑", hat: "🎩", badge: "🛡", apron: "🧺" };
   var ARROW = { both: "↕", up: "↑", down: "↓" };
-  var POS_LETTER = { controlled: "C", risky: "R", desperate: "D" };
 
   function initials(label) {
     var out = "";
@@ -203,10 +210,95 @@
   }
   function setPlayersChip(text, ok) { players = { text: str(text), ok: !!ok }; live.forEach(function (v) { paintChip(v.box()); }); }
   var menuItems = [], views = [], sections = [], hooks = { heard: null };
+  /* the warnings line under the header (what a publish dropped from the players' cards); setWarnings reaches a live view without a redraw */
+  var warnText = "";
+  function paintWarn(box) {
+    var w = box && box.querySelector ? box.querySelector(".rv-warn") : null, hd = box && box.querySelector ? box.querySelector(".rv-head") : null;
+    if (!warnText) { if (w && w.parentNode) w.parentNode.removeChild(w); return; }
+    if (!w && hd && hd.parentNode) { w = box.ownerDocument.createElement("p"); w.className = "rv-warn rv-dim"; w.setAttribute("role", "status"); hd.parentNode.insertBefore(w, hd.nextSibling); }
+    if (w) w.textContent = warnText;
+  }
+  function setWarnings(text) { warnText = str(text).trim(); live.forEach(function (v) { paintWarn(v.box()); }); }
+  /* a label may be a function of ctx (read when the menu is drawn) */
+  menuItems.push({ id: "show-time", label: function (ctx) { return ctx.st.showTime === true ? "Hide the time from the players" : "Show the time to the players"; },
+    run: function (ctx) { ctx.set({ showTime: ctx.st.showTime === true ? null : true }); ctx.rerender(); } });
+
+  /* ---- the rooms, NPC names, heard (pure helpers; the sections use them) ---------------------------------------- */
+  function sayBox(txt, who) { return '<div class="rv-say"><span class="rv-saylab">SAY</span> “' + esc(txt) + "”" + (who ? ' <small class="rv-dim">' + esc(who) + "</small>" : "") + "</div>"; }
+  /* the names an NPC card may be filed under: the cast name first, then the play's label */
+  function personNames(person) { return isObj(person) ? [person.npc, person.label].filter(function (v) { return typeof v === "string" && v.trim() !== ""; }) : []; }
+  function personById(play, id) { return id == null ? null : list(isObj(play) ? play.people : []).filter(function (p) { return isObj(p) && p.id === id; })[0] || null; }
+  function hasCard(ctx, person) { var h = isObj(ctx) ? ctx.host : null; return isObj(person) && !!h && typeof h.hasNpcCard === "function" && !!h.hasNpcCard(personNames(person)); }
+  /* an NPC's name: a button that opens the card when the cast has one, else the plain text */
+  function npcName(ctx, person, text) { return hasCard(ctx, person) ? '<button type="button" class="rv-npcname" data-rv="npc" data-id="' + esc(person.id) + '">' + esc(text) + "</button>" : esc(text); }
+  /* the rooms the Rooms section shows: the room tapped, then every room a PC is in, top floor down */
+  function roomsShown(model, sel) {
+    var cards = isObj(model) && isObj(model.cards) ? model.cards : {}, out = [], has = function (n) { return typeof n === "string" && n !== "" && Object.prototype.hasOwnProperty.call(cards, n); };
+    if (has(sel)) out.push(sel);
+    list(isObj(model) ? model.rows : []).forEach(function (row) { list(isObj(row) ? row.cards : []).forEach(function (c) { if (isObj(c) && list(c.pcs).length && has(c.name) && out.indexOf(c.name) < 0) out.push(c.name); }); });
+    return out;
+  }
+  /* everyone the play places in the room at t (any kind, not only the ones the board shows) */
+  function peopleIn(play, st, t, room) {
+    var places = B.placesAt(play, isObj(st) ? st : {}, t), out = [];
+    list(play.people).filter(isObj).forEach(function (p) {
+      var w = places[p.id]; if (!w || w.room !== room) return;
+      out.push({ id: p.id, label: str(p.label), kind: str(p.kind), npc: str(p.npc), moving: w.moving ? { to: str(w.moving.to), inMin: w.moving.inMin } : null });
+    });
+    return out;
+  }
+  function eventsIn(play, st, t, room) { return list(B.beatCard(play, isObj(st) ? st : {}, t, t).items).filter(function (it) { return isObj(it) && it.type === "event" && it.room === room; }); }
+  /* the leads in reach of these PCs, heard or not (so the GM can take one back), by way in play order */
+  function reachIn(play, st, t, pcIds) {
+    st = isObj(st) ? st : {};
+    var ids = list(pcIds), hd = isObj(st.heard) ? st.heard : {}, un = isObj(st.unheard) ? st.unheard : {}, by = Object.create(null), order = [], wi = Object.create(null);
+    list(play.ways).forEach(function (w, i) { if (isObj(w) && wi[w.id] === undefined) wi[w.id] = i; });
+    B.leadsInReach(play, Object.assign({}, st, { heard: {} }), t).forEach(function (l) {
+      if (ids.indexOf(l.pc) < 0) return;
+      var g = by[l.way];
+      if (!g) { g = by[l.way] = { way: l.way, line: l.line, who: l.who, name: l.name, pcs: [] }; order.push(l.way); }
+      if (g.pcs.some(function (q) { return q.id === l.pc; })) return;
+      var hw = isObj(hd[l.way]) ? hd[l.way] : {}, uw = isObj(un[l.way]) ? un[l.way] : {}, on = typeof hw[l.pc] === "number";
+      g.pcs.push({ id: l.pc, heard: on, unheard: !!uw[l.pc], at: on ? hw[l.pc] : null });
+    });
+    var rank = function (w) { return wi[w] === undefined ? 1e9 : wi[w]; };
+    return order.map(function (w, i) { return { w: w, i: i }; }).sort(function (a, b) { return rank(a.w) - rank(b.w) || a.i - b.i; }).map(function (x) { return by[x.w]; });
+  }
+  /* hear (heard = t, the take-back mark gone) or take it back (heard gone, unheard = true): one write; empty maps are null */
+  function heardChange(st, way, pc, t) {
+    st = isObj(st) ? st : {};
+    var h = clone(isObj(st.heard) ? st.heard : {}), u = clone(isObj(st.unheard) ? st.unheard : {}), hw = isObj(h[way]) ? h[way] : null;
+    if (hw && typeof hw[pc] === "number") {
+      delete hw[pc]; if (!Object.keys(hw).length) delete h[way];
+      (u[way] = isObj(u[way]) ? u[way] : {})[pc] = true;
+    } else {
+      (h[way] = isObj(h[way]) ? h[way] : {})[pc] = t;
+      if (isObj(u[way])) { delete u[way][pc]; if (!Object.keys(u[way]).length) delete u[way]; }
+    }
+    return { heard: Object.keys(h).length ? h : null, unheard: Object.keys(u).length ? u : null };
+  }
+  /* the phones' move requests: one newer than the PC's mseq is folded in once; an open room of the site moves the PC (as a drag does),
+   * any other is only marked seen; one older than o.maxAge (from before a Reset, say) is marked seen without a word */
+  function foldMoves(st, pcs, o) {
+    st = isObj(st) ? st : {}; o = isObj(o) ? o : {};
+    if (!isObj(st.crew)) return null;
+    var crew = st.crew, notes = [], changed = false, rooms = list(o.rooms), isOpen = typeof o.isOpen === "function" ? o.isOpen : function () { return false; };
+    list(pcs).forEach(function (pc) {
+      var id = isObj(pc) ? str(pc.id) : "", mr = isObj(pc) ? pc.moveReq : null;
+      if (!id || !isObj(crew[id]) || !isObj(mr) || typeof mr.room !== "string" || !mr.room || typeof mr.seq !== "number" || !isFinite(mr.seq)) return;
+      if (!(mr.seq > (+crew[id].mseq || 0))) return;
+      var old = +o.now - mr.seq > +o.maxAge, go = !old && rooms.indexOf(mr.room) >= 0 && !!isOpen(mr.room);
+      crew = go ? moveCrew({ crew: crew }, id, mr.room, o.beat) : clone(crew);
+      crew[id] = Object.assign({}, crew[id], { mseq: mr.seq });
+      changed = true;
+      if (!old) notes.push({ pc: id, name: str(pc.name), room: mr.room, moved: go });
+    });
+    return changed ? { crew: crew, notes: notes } : null;
+  }
 
   /* ---- the view ---------------------------------------------------------------------------------------------- */
   function create(host) {
-    var boxEl = null, peekT = null, sel = "", arm = "", drag = null, noClick = false, alarmOpen = false, mq = null;
+    var boxEl = null, peekT = null, sel = "", arm = "", drag = null, noClick = false, alarmOpen = false, mq = null, npcOpen = null;
     var self = { box: function () { return boxEl; } };
 
     function site() { return host.site(); }
@@ -262,14 +354,14 @@
 
     /* the board view */
     function chipHtml(c, inTray) {
-      var cls = "rv-pc" + (c.pos ? " pos-" + c.pos : "") + (arm === c.id ? " armed" : "") + (c.moved ? " moved" : "");
-      return '<button type="button" class="' + cls + '" data-rv="pc" data-id="' + esc(c.id) + '" aria-pressed="' + (arm === c.id) + '" title="' + esc(c.name + (c.costume ? " · " + c.costume : "") + (c.pos ? " · " + c.pos + (c.why ? " (" + c.why + ")" : "") : "") + (c.looker ? " · seen through by " + c.looker : "")) + '">' +
-        '<span class="rv-ini">' + esc(c.ini) + "</span>" + (c.icon ? '<span class="rv-cic">' + esc(c.icon) + "</span>" : "") +
-        (c.mark === "warn" ? '<span class="rv-mk warn" aria-label="Out of place, and seen through">⚠</span>' : c.mark === "eye" ? '<span class="rv-mk eye" aria-label="Seen through, but belongs here">◎</span>' : "") +
+      var cls = "rv-pc" + (arm === c.id ? " armed" : "") + (c.moved ? " moved" : "");
+      return '<button type="button" class="' + cls + '" data-rv="pc" data-id="' + esc(c.id) + '" aria-pressed="' + (arm === c.id) + '" title="' + esc(c.name) + '">' +
+        '<span class="rv-ini">' + esc(c.ini) + "</span>" +
         (inTray ? '<span class="rv-nm">' + esc(c.name) + "</span>" : "") + "</button>";
     }
     function boardView(box, ctx) {
-      var m = ctx.model, h = "";
+      var m = ctx.model, h = "", byId = {};
+      list(ctx.play.people).forEach(function (p) { if (isObj(p)) byId[p.id] = p; });
       if (m.tray.length) h += '<div class="rv-tray" data-room="" role="group" aria-label="Crew not on the board"><span class="rv-lab">Not placed</span>' + m.tray.map(function (c) { return chipHtml(c, true); }).join("") + "</div>";
       if (arm) h += '<p class="rv-arm" role="status">Tap a room to move ' + esc(nameOfPc(arm, ctx)) + ' there. <button type="button" class="rv-btn sm" data-rv="disarm">Cancel</button></p>';
       m.rows.forEach(function (row) {
@@ -278,7 +370,7 @@
           return '<div class="' + cls + '" data-rv="room" data-room="' + esc(c.name) + '" role="button" tabindex="0" aria-label="' + esc(c.name + (c.open ? "" : ", not open to the players")) + '">' +
             '<div class="rv-cn">' + esc(c.name) + (c.zoneLabel ? ' <small>' + esc(c.zoneLabel) + "</small>" : "") + "</div>" +
             '<div class="rv-chips">' + c.pcs.map(function (p) { return chipHtml(p, false); }).join("") +
-            c.npcs.map(function (n) { return '<span class="rv-npc k-' + esc(n.kind) + '" title="' + esc(n.label + " (" + n.kind + ")" + (n.moving ? " → " + n.moving.to + " in " + n.moving.inMin + " min" : "")) + '"><span class="rv-ini">' + esc(n.ini) + "</span>" + (n.kind === "target" ? "★" : n.kind === "rival" ? "☠" : "") + "</span>"; }).join("") + "</div>" +
+            c.npcs.map(function (n) { var tag = hasCard(ctx, byId[n.id]) ? "button" : "span"; return "<" + tag + (tag === "button" ? ' type="button" data-rv="npc" data-id="' + esc(n.id) + '"' : "") + ' class="rv-npc k-' + esc(n.kind) + '" title="' + esc(n.label + " (" + n.kind + ")" + (n.moving ? " → " + n.moving.to + " in " + n.moving.inMin + " min" : "")) + '"><span class="rv-ini">' + esc(n.ini) + "</span>" + (n.kind === "target" ? "★" : n.kind === "rival" ? "☠" : "") + "</" + tag + ">"; }).join("") + "</div>" +
             (c.routes.length ? '<div class="rv-routes">' + c.routes.map(function (r) { return '<span class="rv-route' + (r.timed ? " timed" : "") + '" title="' + esc(r.timed ? "A passage" + (r.until ? ", open until " + r.until : "") : "A route") + '">' + (r.timed ? "⏱ " : "") + esc(r.mark) + " " + esc(r.to) + (r.until ? " <small>to " + esc(r.until) + "</small>" : "") + "</span>"; }).join("") + "</div>" : "") +
             "</div>";
         }).join("") + "</div></div>";
@@ -291,34 +383,48 @@
       box.innerHTML = svg ? '<div class="rv-map" id="rv-map">' + svg + "</div>" : '<p class="rv-empty">The map could not be drawn.</p>';
     }
 
-    /* the room tapped (a section of the right column) */
-    function roomSection(box, ctx) {
-      var name = ctx.sel, c = name ? ctx.model.cards[name] : null;
-      if (!c) { box.innerHTML = '<h3 class="rv-sh">A room</h3><p class="rv-dim">Tap a room to see who is there, the leads in reach, and to open it for the players.</p>'; return; }
-      var h = '<h3 class="rv-sh">' + esc(c.name) + (c.zoneLabel ? ' <small>' + esc(c.zoneLabel) + "</small>" : "") + "</h3>";
-      h += '<p class="rv-open ' + (c.open ? "yes" : "no") + '">' + (c.open ? "Open to the players" : "Not open to the players") + "</p>";
-      var who = c.pcs.map(function (p) { return "<li><b>" + esc(p.name) + "</b>" + (p.costume ? " · " + esc(p.costume) : "") + (p.pos ? " · " + esc(POS_LETTER[p.pos] || p.pos) : "") + (p.mark === "warn" ? " ⚠ " + esc(p.looker) : p.mark === "eye" ? " ◎ " + esc(p.looker) : "") + "</li>"; });
-      var places = B.placesAt(ctx.play, ctx.st, ctx.shownT);
-      list(ctx.play.people).filter(isObj).forEach(function (p) { var w = places[p.id]; if (w && w.room === c.name) who.push('<li class="npc">' + esc(p.label) + " <small>" + esc(p.kind) + "</small>" + (w.moving ? " → " + esc(w.moving.to) + " in " + w.moving.inMin + " min" : "") + "</li>"); });
-      h += '<h4 class="rv-lab">Here</h4><ul class="rv-who">' + (who.length ? who.join("") : '<li class="rv-dim">Nobody.</li>') + "</ul>";
-      var leads = {};
-      B.leadsInReach(ctx.play, ctx.st, ctx.shownT).forEach(function (l) { if (c.pcs.some(function (p) { return p.id === l.pc; })) (leads[l.way] = leads[l.way] || { line: l.line, who: l.who, name: l.name, pcs: [] }).pcs.push(l.pc); });
-      var ids = Object.keys(leads);
-      if (ids.length) {
-        h += '<h4 class="rv-lab">Leads in reach</h4>';
-        ids.forEach(function (w) {
-          var l = leads[w];
-          h += '<div class="rv-say"><span class="rv-saylab">SAY</span> “' + esc(l.line) + "”" + (l.who ? ' <small class="rv-dim">' + esc(l.who) + "</small>" : "") + '<div class="rv-heard">Heard by ' +
-            l.pcs.map(function (pc) { return '<button type="button" class="rv-btn sm" data-rv="heard" data-way="' + esc(w) + '" data-pc="' + esc(pc) + '">' + esc(nameOfPc(pc, ctx)) + "</button>"; }).join(" ") + "</div></div>";
-        });
-      }
-      h += '<div class="rv-acts">';
-      var bo = list(ctx.st.open);
-      if (!c.open) h += '<button type="button" class="rv-btn" data-rv="open" data-room="' + esc(c.name) + '">Open for the players</button>';
-      else if (bo.indexOf(c.name) >= 0) h += '<button type="button" class="rv-btn" data-rv="close" data-room="' + esc(c.name) + '">Close for the players</button>';
-      list(host.pcs()).forEach(function (p) { if (!c.pcs.some(function (q) { return q.id === p.id; })) h += '<button type="button" class="rv-btn" data-rv="move" data-id="' + esc(p.id) + '" data-room="' + esc(c.name) + '">Move ' + esc(p.name) + " here</button>"; });
-      h += "</div>";
+    /* the rooms (the top of the right column): the room tapped, then every room a PC is in; who is there, what happens, the leads in reach, the prep note */
+    function roomsSection(box, ctx) {
+      var m = ctx.model, shown = roomsShown(m, ctx.sel), byId = {};
+      if (!shown.length) { box.innerHTML = '<h3 class="rv-sh">Rooms</h3><p class="rv-dim">Nobody is placed yet. Tap a room to see it.</p>'; return; }
+      list(ctx.play.people).forEach(function (p) { if (isObj(p)) byId[p.id] = p; });
+      var h = "";
+      shown.forEach(function (name) {
+        var c = m.cards[name], tapped = name === ctx.sel, ppl = peopleIn(ctx.play, ctx.st, ctx.shownT, name), evs = eventsIn(ctx.play, ctx.st, ctx.shownT, name);
+        var reach = reachIn(ctx.play, ctx.st, ctx.shownT, c.pcs.map(function (p) { return p.id; }));
+        h += '<div class="rv-rm' + (tapped ? " sel" : "") + '" data-room="' + esc(name) + '"><h3 class="rv-sh">' + esc(c.name) + (c.zoneLabel ? ' <small>' + esc(c.zoneLabel) + "</small>" : "") + "</h3>" +
+          '<p class="rv-open ' + (c.open ? "yes" : "no") + '">' + (c.open ? "Open to the players" : "Not open to the players") + "</p>" +
+          '<p class="rv-rmpcs"><span class="rv-lab">PCs</span> ' + (c.pcs.length ? c.pcs.map(function (p) { return "<b>" + esc(p.name) + "</b>"; }).join(", ") : '<span class="rv-dim">none</span>') + "</p>";
+        h += '<h4 class="rv-lab">Who&#39;s here</h4><ul class="rv-who">' + (ppl.length ? ppl.map(function (p) {
+          return '<li class="npc">' + npcName(ctx, byId[p.id], p.label || p.npc || p.id) + " <small>" + esc(p.kind) + "</small>" + (p.moving ? " → " + esc(p.moving.to) + " in " + p.moving.inMin + " min" : "") + "</li>";
+        }).join("") : '<li class="rv-dim">Nobody.</li>') + "</ul>";
+        if (evs.length) h += '<h4 class="rv-lab">Happening</h4>' + evs.map(function (e) { return '<div class="rv-hap"><b>' + esc(e.at) + "</b> " + esc(e.label || e.pub) + (e.say ? sayBox(e.say) : "") + "</div>"; }).join("");
+        if (reach.length) {
+          h += '<h4 class="rv-lab">In reach</h4>';
+          reach.forEach(function (l) {
+            h += sayBox(l.line, l.who) + '<div class="rv-heard">' + l.pcs.map(function (q) {
+              return '<button type="button" class="rv-btn sm rv-tog" data-rv="unhear" data-way="' + esc(l.way) + '" data-pc="' + esc(q.id) + '" aria-pressed="' + q.heard + '" title="' + (q.heard ? "Tap to un-hear" : "Tap to hear") + '">' +
+                esc(nameOfPc(q.id, ctx)) + (q.heard ? " heard ✓ " + esc(B.timeLabel(ctx.play, q.at)) : " not heard") + "</button>";
+            }).join(" ") + "</div>";
+          });
+        }
+        if (typeof host.roomNote === "function") {
+          var note = null; try { note = host.roomNote(name); } catch (e) { note = null; }
+          h += typeof note === "string" ? '<div class="rv-rmnote pp-doc pp-cardbody">' + note + "</div>"       /* the page's renderer made it from the prep note */
+            : '<p class="rv-dim rv-nonote">No notes for ' + esc(name) + ': add <code>### ' + esc(name) + "</code> under <code>## Rooms</code> in the prep note.</p>";
+        }
+        if (tapped) {
+          var bo = list(ctx.st.open);
+          h += '<div class="rv-acts">';
+          if (!c.open) h += '<button type="button" class="rv-btn" data-rv="open" data-room="' + esc(c.name) + '">Open for the players</button>';
+          else if (bo.indexOf(c.name) >= 0) h += '<button type="button" class="rv-btn" data-rv="close" data-room="' + esc(c.name) + '">Close for the players</button>';
+          list(host.pcs()).forEach(function (p) { if (!c.pcs.some(function (q) { return q.id === p.id; })) h += '<button type="button" class="rv-btn" data-rv="move" data-id="' + esc(p.id) + '" data-room="' + esc(c.name) + '">Move ' + esc(p.name) + " here</button>"; });
+          h += "</div>";
+        }
+        h += "</div>";
+      });
       box.innerHTML = h;
+      if (typeof host.decorate === "function") Array.prototype.forEach.call(box.querySelectorAll(".rv-rmnote"), function (el) { try { host.decorate(el); } catch (e) { /* the note still reads */ } });
     }
 
     /* the pane */
@@ -330,20 +436,26 @@
       if (!x) { box.innerHTML = ""; return; }
       var ctx = x.ctx = ctxFor(x.rs, x.st, x.m, x.shownT), vid = str(x.st.view) || "board", vs = [{ id: "board", label: "Board", render: boardView }, { id: "map", label: "Map", render: mapView }].concat(views);
       var v = vs.filter(function (q) { return q.id === vid; })[0] || vs[0];
-      var secs = [{ id: "room", order: 50, render: roomSection }].concat(sections).sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
+      var secs = [{ id: "room", order: -10, render: roomsSection }].concat(sections).sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
       var peekBar = peekT !== null ? '<div class="rv-peekbar" role="status">Looking at <b>' + esc(B.timeLabel(x.rs.play, peekT)) + '</b> <button type="button" class="rv-btn sm" data-rv="unpeek">Back to now</button> <span class="rv-dim">The players are not told.</span></div>' : "";
-      box.innerHTML = headHtml(x) +
-        '<div class="rv-body"><div class="rv-main' + (peekT !== null ? " peeking" : "") + '">' +
+      box.innerHTML = headHtml(x) + (warnText ? '<p class="rv-warn rv-dim" role="status">' + esc(warnText) + "</p>" : "") +
+        '<div class="rv-body' + (v.id === "map" ? " mapview" : "") + '"><div class="rv-main' + (peekT !== null ? " peeking" : "") + '">' +
         '<div class="rv-views" role="group" aria-label="View">' + vs.map(function (q) { return '<button type="button" class="chip sm" data-rv="view" data-v="' + esc(q.id) + '" aria-pressed="' + (q.id === v.id) + '">' + esc(q.label) + "</button>"; }).join("") + "</div>" + peekBar +
         '<div class="rv-view" id="rv-view" data-view="' + esc(v.id) + '"></div></div>' +
         '<aside class="rv-side" aria-label="The room and the beat">' + secs.map(function (s) { return '<section class="rv-sec" data-sec="' + esc(s.id) + '"></section>'; }).join("") + "</aside></div>" +
-        '<ul class="rv-menu" id="rv-menu" hidden>' + menuItems.map(function (it, i) { return '<li><button type="button" class="rv-btn" data-rv="menuitem" data-i="' + i + '">' + esc(it.label) + "</button></li>"; }).join("") + "</ul>";
+        '<ul class="rv-menu" id="rv-menu" hidden>' + menuItems.map(function (it, i) { return '<li><button type="button" class="rv-btn" data-rv="menuitem" data-i="' + i + '">' + esc(typeof it.label === "function" ? it.label(ctx) : it.label) + "</button></li>"; }).join("") + "</ul>" + npcPop();
       try { v.render(box.querySelector("#rv-view"), ctx); } catch (e) { box.querySelector("#rv-view").textContent = "This view could not be drawn: " + (e && e.message || e); }
       secs.forEach(function (s) {
         var el = box.querySelector('.rv-sec[data-sec="' + s.id + '"]');
         try { s.render(el, ctx); } catch (e) { el.textContent = "This section could not be drawn: " + (e && e.message || e); }
       });
       paintChip(box);
+      var pop = box.querySelector(".rv-npcpop");
+      if (pop) {
+        if (typeof host.decorate === "function") { try { host.decorate(pop.querySelector(".rv-npcbody")); } catch (e) { /* the card still reads */ } }
+        /* beside the right column; a phone gets the CSS bottom sheet */
+        try { var side = box.querySelector("aside.rv-side"); if (side && typeof window !== "undefined" && window.innerWidth > 760) pop.style.right = Math.max(8, window.innerWidth - side.getBoundingClientRect().left + 8) + "px"; } catch (e2) { /* the CSS places it */ }
+      }
     };
 
     /* actions */
@@ -373,7 +485,16 @@
         self.reset(); self.rerender(); return true;
       });
     };
-    self.reset = function () { peekT = null; sel = ""; arm = ""; drag = null; };
+    self.reset = function () { peekT = null; sel = ""; arm = ""; drag = null; npcOpen = null; };
+    /* the NPC card beside the right column: a name tapped, or a #pp: link in a room note (the page) */
+    self.showNpc = function (names, title) { var ns = list(names).map(str).filter(Boolean); if (!ns.length) return false; npcOpen = { names: ns, title: str(title) || ns[0] }; self.rerender(); return true; };
+    self.closeNpc = function () { if (!npcOpen) return false; npcOpen = null; self.rerender(); return true; };
+    function npcPop() {
+      if (!npcOpen) return "";
+      var html = ""; try { html = typeof host.npcCard === "function" ? str(host.npcCard(npcOpen.names)) : ""; } catch (e) { html = ""; }
+      if (!html) { npcOpen = null; return ""; }           /* no card after all: no popover */
+      return '<div class="rv-npcpop" role="dialog" aria-label="NPC card"><header><b>' + esc(npcOpen.title) + '</b><button type="button" class="rv-btn sm" data-rv="npcx" aria-label="Close">×</button></header><div class="pp-doc pp-cardbody rv-npcbody">' + html + "</div></div>";
+    }
 
     function onClick(ev) {
       if (noClick) { noClick = false; ev.preventDefault(); return; }
@@ -403,11 +524,17 @@
         case "move": placeAt(el.getAttribute("data-id"), el.getAttribute("data-room")); break;
         case "open": host.openRoom(el.getAttribute("data-room"), true); self.rerender(); break;
         case "close": host.openRoom(el.getAttribute("data-room"), false); self.rerender(); break;
-        case "heard": {
+        case "heard": case "unhear": {
           var way = el.getAttribute("data-way"), pc = el.getAttribute("data-pc");
           if (typeof hooks.heard === "function") hooks.heard(way, pc, build().ctx); else host.toast("Heard by is wired in the next ticket.");
           break;
         }
+        case "npc": {
+          var pid = el.getAttribute("data-id"), who = list(rs.play.people).filter(function (q) { return isObj(q) && str(q.id) === pid; })[0];
+          if (who) { npcOpen = { names: personNames(who), title: str(who.label || who.npc) }; self.rerender(); }
+          break;
+        }
+        case "npcx": npcOpen = null; self.rerender(); break;
         case "menu": { var mu = boxEl.querySelector("#rv-menu"); if (mu) mu.hidden = !mu.hidden; break; }
         case "menuitem": { var it = menuItems[+el.getAttribute("data-i")]; var mu2 = boxEl.querySelector("#rv-menu"); if (mu2) mu2.hidden = true; if (it && typeof it.run === "function") it.run(build().ctx); break; }
       }
@@ -467,7 +594,6 @@
   }
 
   /* ==== VV5 BEGIN: This beat, the crew, the job, intel (design 5.2). Registered through `sections` and `hooks.heard`; the view above does not know them. ==== */
-  var POSNAME = { controlled: "Controlled", risky: "Risky", desperate: "Desperate" };
   var pace = null;                       /* { key, at } page-local: the wall clock when this page first saw the night started (never written to the state) */
   var ui5 = { ways: {}, intel: false, more: {}, prev: null };    /* ways opened, the intel fold, "More" opened, the last published time seen */
 
@@ -534,11 +660,8 @@
   }
   function toggleIn(arr, v) { var i = arr.indexOf(v); if (i >= 0) arr.splice(i, 1); else arr.push(v); return arr; }
 
-  /* "Heard by": ball.heard.<way>.<pc> = the published time; the same button again takes it back */
-  function heard5(way, pc, ctx) {
-    var t = ctx.t;
-    setKey(ctx, "heard", function (h) { var w = isObj(h[way]) ? h[way] : (h[way] = {}); if (typeof w[pc] === "number") { delete w[pc]; if (!Object.keys(w).length) delete h[way]; } else w[pc] = t; });
-  }
+  /* "Heard by": ball.heard.<way>.<pc> = the published time; the same button again takes it back and marks ball.unheard, so the auto-hear leaves the pair alone (one write) */
+  function heard5(way, pc, ctx) { ctx.set(heardChange(ctx.host.state(), way, pc, ctx.t)); ctx.rerender(); }
 
   /* the wall-clock pacing line: page-local (sessionStorage at most), never written to the shared state */
   function paceNote(play, st) {
@@ -568,7 +691,7 @@
     var h = '<h3 class="rv-sh">' + (ctx.peeking ? "Looking at " : "This beat · ") + esc(label(t)) + "</h3>";
     var pc = paceNote(play, st);
     if (pc && !ctx.peeking) h += '<p class="rv-pace rv-dim" data-pace="1">' + esc(paceText(pc)) + "</p>";
-    var say = function (txt, who) { return '<div class="rv-say"><span class="rv-saylab">SAY</span> “' + esc(txt) + "”" + (who ? ' <small class="rv-dim">' + esc(who) + "</small>" : "") + "</div>"; };
+    var say = sayBox;
     var rows = card.items.map(function (it) {
       var ic, body = "";
       switch (it.type) {
@@ -580,23 +703,18 @@
         case "move": {
           ic = "◆";
           var nx = sc[it.id];
-          body = esc(it.label) + " → <b>" + esc(it.to) + "</b>" + (nx ? ' <span class="rv-dim">until ' + esc(label(nx.at)) + "</span>" : "") + (it.note ? ' <span class="rv-dim">' + esc(it.note) + "</span>" : "");
+          body = npcName(ctx, personById(play, it.id), it.label) + " → <b>" + esc(it.to) + "</b>" + (nx ? ' <span class="rv-dim">until ' + esc(label(nx.at)) + "</span>" : "") + (it.note ? ' <span class="rv-dim">' + esc(it.note) + "</span>" : "");
           break;
         }
-        case "looker":
-          ic = "◎";
-          body = esc(it.label) + (it.when === "soon" ? " arrives " + esc(it.at) + " (in " + it.inMin + " min) where " : it.arrived ? " arrives where " : " is where ") + esc(pcName5(it.pc, ctx)) + " is" +
-            ' <span class="rv-dim">· ' + esc(POS_LETTER[it.pos] || it.pos) + "</span>" + (it.look ? ' <span class="rv-dim">(' + esc(it.look) + ")</span>" : "") + (it.wary ? '<div class="rv-wary">' + esc(it.wary) + "</div>" : "");
-          break;
         case "route": ic = "⇅"; body = "Passage " + esc(it.change) + " " + esc(it.at) + ' <span class="rv-dim">· ' + esc(it.from) + " ↔ " + esc(it.to) + "</span>"; break;
-        case "gone": ic = "✗"; body = esc(it.label) + " gone " + esc(it.at) + ' <span class="rv-dim">· from ' + esc(it.from) + "</span>"; break;
+        case "gone": ic = "✗"; body = npcName(ctx, personById(play, it.id), it.label) + " gone " + esc(it.at) + ' <span class="rv-dim">· from ' + esc(it.from) + "</span>"; break;
         case "lead":
           ic = "✦";
           body = "In reach: <b>" + esc(it.way) + "</b> " + (it.anywhere ? '<span class="rv-dim">(said anywhere)</span>' : "(" + esc(pcName5(it.pc, ctx)) + ")") + (it.name ? ' <span class="rv-dim">' + esc(it.name) + "</span>" : "") + say(it.line, it.who);
           break;
         case "next":
           ic = "⌛";
-          body = "<b>" + esc(it.at) + "</b> " + esc(it.label || it.pub || it.what) + (it.what === "move" ? " → " + esc(it.to) : "") + (it.what === "route" ? " (" + esc(it.change) + ")" : "") + ' <span class="rv-dim">in ' + it.inMin + " min</span>";
+          body = "<b>" + esc(it.at) + "</b> " + (it.what === "move" ? npcName(ctx, personById(play, it.id), it.label || it.pub || it.what) : esc(it.label || it.pub || it.what)) + (it.what === "move" ? " → " + esc(it.to) : "") + (it.what === "route" ? " (" + esc(it.change) + ")" : "") + ' <span class="rv-dim">in ' + it.inMin + " min</span>";
           break;
         default: return "";
       }
@@ -642,50 +760,35 @@
   /* ---- The crew ------------------------------------------------------------------------------------------------ */
   function crewSection(box, ctx) {
     var play = ctx.play, st = ctx.st, t = ctx.t, beat = beatLen(play), nowI = B.beatOf(play, t).i;
-    var rooms = Object.keys(ctx.model.cards), order = crewOrder(play, st, list(ctx.host.pcs()), t), dis = list(play.disguises).filter(isObj), items = list(play.items).filter(isObj);
+    var rooms = Object.keys(ctx.model.cards), order = list(ctx.host.pcs()), items = list(play.items).filter(isObj);
     var h = '<h3 class="rv-sh">The crew</h3>';
     if (!order.length) h += '<p class="rv-dim">The table has no characters yet.</p>';
     order.forEach(function (o) {
-      var c = isObj(st.crew) && isObj(st.crew[o.id]) ? st.crew[o.id] : {}, room = typeof c.room === "string" ? c.room : "", d = dis.filter(function (x) { return x.id === c.disguise; })[0];
-      var busy = typeof c.busy === "number" && c.busy > t ? c.busy : null, blown = list(c.blown), seen = o.here.length > 0;
-      h += '<div class="rv-crew' + (o.pos ? " pos-" + esc(o.pos) : "") + '" data-pc="' + esc(o.id) + '">' +
+      var c = isObj(st.crew) && isObj(st.crew[o.id]) ? st.crew[o.id] : {}, room = typeof c.room === "string" ? c.room : "";
+      var busy = typeof c.busy === "number" && c.busy > t ? c.busy : null;
+      h += '<div class="rv-crew" data-pc="' + esc(o.id) + '">' +
         '<div class="rv-cr1"><b class="rv-crn">' + esc(o.name) + "</b>" +
-        '<select class="rv-sel" data-vv="costume" aria-label="' + esc(o.name) + ' costume"><option value="">no costume</option>' + dis.map(function (x) { return '<option value="' + esc(x.id) + '"' + (x.id === c.disguise ? " selected" : "") + ">" + esc(x.label) + "</option>"; }).join("") + "</select>" +
         '<select class="rv-sel" data-vv="room" aria-label="' + esc(o.name) + ' room"><option value="">no room</option>' + rooms.map(function (r) { return '<option value="' + esc(r) + '"' + (r === room ? " selected" : "") + ">" + esc(r) + "</option>"; }).join("") + "</select>" +
-        (o.pos ? '<button type="button" class="rv-btn sm rv-poschip pos-' + esc(o.pos) + '" data-vv="pos" data-pos="' + esc(o.pos) + '" title="' + esc(o.why + " · tap to set the console’s Position") + '">' + esc(POS_LETTER[o.pos] || o.pos) + " " + esc(POSNAME[o.pos] || o.pos) + "</button>" : "") +
-        (seen ? '<span class="rv-mk ' + (o.pos === "controlled" ? "eye" : "warn") + '" title="seen through" aria-label="' + (o.pos === "controlled" ? "Seen through, but belongs here" : "Out of place, and seen through") + '">' + (o.pos === "controlled" ? "◎" : "⚠") + "</span>" : "") +
         (room ? '<button type="button" class="rv-btn sm rv-tog" data-vv="moved" aria-pressed="' + (c.moved === nowI) + '" title="Moved this beat">' + (c.moved === nowI ? "✓ moved" : "moved") + "</button>" : "") + "</div>";
-      if (seen) h += '<div class="rv-wary">' + o.here.map(function (l) { return "<b>" + esc(l.label) + "</b>: " + esc(l.wary || l.look || "is looking"); }).join(" · ") + "</div>";
-      if (o.soon.length) h += '<div class="rv-dim rv-soon">' + o.soon.map(function (l) { return esc(l.label) + " in " + l.inMin + " min"; }).join(" · ") + "</div>";
-      h += '<div class="rv-cr2"><button type="button" class="rv-btn sm rv-tog" data-vv="noticed" aria-pressed="' + (c.noticed === true) + '"' + (d ? "" : " disabled") + ">Noticed</button>" +
+      h += '<div class="rv-cr2">' +
         '<span class="rv-busy">' + (busy !== null ? "busy until " + esc(B.timeLabel(play, busy)) : "free") + "</span>" +
         '<button type="button" class="rv-btn sm" data-vv="busy" data-n="1">+1 beat</button><button type="button" class="rv-btn sm" data-vv="busy" data-n="2">+2 beats</button>' +
         '<button type="button" class="rv-btn sm" data-vv="busy" data-n="0"' + (busy === null ? " disabled" : "") + ">clear</button></div>";
       if (items.length) h += '<div class="rv-cr3"><span class="rv-lab">Items</span>' + items.map(function (it) { return '<button type="button" class="rv-btn sm rv-tog" data-vv="item" data-id="' + esc(it.id) + '" aria-pressed="' + (list(c.items).indexOf(it.id) >= 0) + '">' + esc(it.label || it.id) + "</button>"; }).join("") + "</div>";
-      if (d || blown.length) {
-        h += '<div class="rv-cr3"><span class="rv-lab">Blown</span>';
-        if (d) h += '<button type="button" class="rv-btn sm rv-tog" data-vv="blown" data-id="' + esc(d.id) + '" aria-pressed="' + (blown.indexOf(d.id) >= 0) + '">' + esc(d.label) + "</button>";
-        blown.filter(function (id) { return !d || id !== d.id; }).forEach(function (id) { var x = dis.filter(function (q) { return q.id === id; })[0]; h += '<button type="button" class="rv-btn sm rv-tog" data-vv="blown" data-id="' + esc(id) + '" aria-pressed="true">' + esc(x ? x.label : id) + "</button>"; });
-        h += "</div>";
-      }
       h += "</div>";
     });
     box.innerHTML = h;
     box.onclick = function (ev) {
       var el = ev.target.closest ? ev.target.closest("[data-vv]") : null; if (!el || !box.contains(el) || el.tagName === "SELECT") return;
       var row = el.closest("[data-pc]"), pc = row ? row.getAttribute("data-pc") : "", a = el.getAttribute("data-vv");
-      if (a === "pos") { if (typeof ctx.host.setPosition === "function") ctx.host.setPosition(el.getAttribute("data-pos")); }
-      else if (a === "noticed") setCrewKey(ctx, pc, function (c) { c.noticed = !(c.noticed === true); });
-      else if (a === "moved") setCrewKey(ctx, pc, function (c) { if (c.moved === nowI) delete c.moved; else c.moved = nowI; });
+      if (a === "moved") setCrewKey(ctx, pc, function (c) { if (c.moved === nowI) delete c.moved; else c.moved = nowI; });
       else if (a === "busy") { var n = +el.getAttribute("data-n"); setCrewKey(ctx, pc, function (c) { if (n === 0) delete c.busy; else c.busy = Math.max(typeof c.busy === "number" ? c.busy : 0, t) + n * beat; }); }
       else if (a === "item") { var iid = el.getAttribute("data-id"); setCrewKey(ctx, pc, function (c) { var l = toggleIn(list(c.items).slice(), iid); if (l.length) c.items = l; else delete c.items; }); }
-      else if (a === "blown") { var bid = el.getAttribute("data-id"); setCrewKey(ctx, pc, function (c) { var l = toggleIn(list(c.blown).slice(), bid); if (l.length) c.blown = l; else delete c.blown; }); }
     };
     box.onchange = function (ev) {
       var el = ev.target; if (!el || !el.getAttribute) return;
       var row = el.closest("[data-pc]"), pc = row ? row.getAttribute("data-pc") : "", a = el.getAttribute("data-vv");
-      if (a === "costume") setCrewKey(ctx, pc, function (c) { if (el.value) c.disguise = el.value; else delete c.disguise; c.noticed = false; });     /* noticed clears with the costume */
-      else if (a === "room") {
+      if (a === "room") {
         if (el.value) { ctx.set({ crew: moveCrew(ctx.host.state(), pc, el.value, nowI) }); ctx.rerender(); }           /* and with the room: moveCrew clears it */
         else setCrewKey(ctx, pc, function (c) { delete c.room; c.noticed = false; });
       }
@@ -707,7 +810,7 @@
     var over = tg && isObj(st.over) && isObj(st.over[tg.id]) ? st.over[tg.id] : {};
     if (tg) {
       var tw = places[tg.id], tn = sc[tg.id];
-      h += '<div class="rv-target" data-who="target"><span class="rv-lab">' + esc(str(tg.label)) + "</span> " +
+      h += '<div class="rv-target" data-who="target"><span class="rv-lab">' + npcName(ctx, tg, str(tg.label)) + "</span> " +
         (over.gone === true ? "<b>down</b>" : tw ? "<b>" + esc(tw.room) + "</b>" : '<span class="rv-dim">nowhere yet</span>') +
         (over.gone !== true && tn ? ' <span class="rv-dim">until ' + esc(label(tn.at)) + "</span> → " + (tn.room ? esc(tn.room) : "gone") + (tn.room && !stopKnown(view, tn.at, tn.room) ? ' <em class="rv-hid">(hidden)</em>' : "") : "") +
         (typeof over.at === "string" && over.at ? ' <span class="rv-hid">held in ' + esc(over.at) + "</span>" : "") + (typeof over.delay === "number" && over.delay ? ' <span class="rv-hid">' + over.delay + " min late</span>" : "") +
@@ -715,7 +818,7 @@
     }
     if (rv) {
       var rw = places[rv.id], rn = sc[rv.id];
-      h += '<div class="rv-target" data-who="rival"><span class="rv-lab">' + esc(str(rv.label)) + "</span> " + (rw ? esc(rw.room) : '<span class="rv-dim">nowhere</span>') +
+      h += '<div class="rv-target" data-who="rival"><span class="rv-lab">' + npcName(ctx, rv, str(rv.label)) + "</span> " + (rw ? esc(rw.room) : '<span class="rv-dim">nowhere</span>') +
         (rn ? ' <span class="rv-dim">next ' + esc(label(rn.at)) + "</span> → " + (rn.room ? esc(rn.room) : "gone") : ' <span class="rv-dim">nothing more</span>') + "</div>";
     }
     if (!ways.length) h += '<p class="rv-dim">The play has no ways.</p>';
@@ -801,5 +904,6 @@
 
   return { create: create, model: model, moveCrew: moveCrew, resetChange: resetChange, resetAsk: RESET_ASK, stepTime: stepTime, jumpTime: jumpTime, startMinutes: startMinutes, initials: initials,
     setPlayersChip: setPlayersChip, menuItems: menuItems, views: views, sections: sections, hooks: hooks,
-    sortedStops: sortedStops, scanChanges: scanChanges, crewOrder: crewOrder, skipTarget: skipTarget, waySummary: waySummary };
+    sortedStops: sortedStops, scanChanges: scanChanges, crewOrder: crewOrder, skipTarget: skipTarget, waySummary: waySummary,
+    setWarnings: setWarnings, sayBox: sayBox, roomsShown: roomsShown, peopleIn: peopleIn, eventsIn: eventsIn, reachIn: reachIn, personNames: personNames, npcName: npcName, heardChange: heardChange, foldMoves: foldMoves };
 });

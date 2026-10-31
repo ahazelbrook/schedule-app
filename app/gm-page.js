@@ -3368,7 +3368,7 @@
       var pills = c.pcs.map(function (p) { return { t: p.ini, c: '#111111', i: p.icon }; }).concat(c.npcs.map(function (n) { return { t: n.ini, c: RUN_KIND[n.kind] || '#5d5d5d' }; }));
       if (!pills.length) return;
       if (pills.length > 4) pills = pills.slice(0, 3).concat([{ t: '+' + (pills.length - 3), c: '#333333' }]);
-      out.push({ room: name, label: '', svg: runTokenSvg({ pills: pills, pies: [], lens: null, danger: c.pcs.some(function (p) { return p.mark === 'warn'; }) }) });
+      out.push({ room: name, label: '', svg: runTokenSvg({ pills: pills, pies: [], lens: null, danger: false }) });
     });
     return out;
   }
@@ -3390,18 +3390,59 @@
     }
     return stripSize(r.svg);     /* the map kit's own output from our roll; it escapes its text */
   }
+  /* A1: the leads in reach heard on their own: the new ball.heard, or null when nothing changes (ball.unheard keeps a pair out) */
+  function runHeard(rs, st, t) {
+    var BB = rs && (rs.B || W.B68GmBall); if (!BB || typeof BB.autoHear !== 'function' || !isObj(st) || typeof st.start !== 'number') return null;
+    var h; try { h = BB.autoHear(rs.play, st, isFinite(t) ? t : 0); } catch (e) { return null; }
+    return isObj(h) && JSON.stringify(h) !== JSON.stringify(isObj(st.heard) ? st.heard : {}) ? h : null;
+  }
+  /* the prep note's ## Rooms split by room (gm/room-notes.js), memoised on the prep part and the roll's room names */
+  function runRoomNotes() {
+    var R = W.B68GmRooms, pk = part('prep'); if (!S || !R || typeof R.find !== 'function' || !pk || !S.locRoll || !Array.isArray(S.locRoll.rooms)) return null;
+    var names = S.locRoll.rooms.filter(isObj).map(function (r) { return str(r.name); }).filter(Boolean), key = names.join('|');
+    if (S.rnMemo && S.rnMemo.pk === pk && S.rnMemo.key === key) return S.rnMemo.v;
+    var v = null; try { v = R.find(pk, names) || null; } catch (e) { v = null; }
+    S.rnMemo = { pk: pk, key: key, v: v };
+    return v;
+  }
+  /* a phone's move request (moveReq on its character) folded into ball.crew once; the board shows a move, a refusal is said */
+  function runFoldMoves() {
+    var rs = runV2(); if (!rs || !S || S.rvFolding) return;
+    var RV = W.B68GmRunView, BB = rs.B || W.B68GmBall; if (!RV || typeof RV.foldMoves !== 'function' || !BB || !S.locRoll || !Array.isArray(S.locRoll.rooms)) return;
+    var st = ballDoc(rs.name), me = S;
+    var pcs = dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), moveReq: isObj(c.moveReq) ? c.moveReq : null }; });
+    var beat = BB.beatOf(rs.play, +st.t >= 0 ? +st.t : 0).i, rooms = S.locRoll.rooms.filter(isObj).map(function (r) { return str(r.name); }).filter(Boolean);
+    var r = RV.foldMoves(st, pcs, { beat: beat, rooms: rooms, isOpen: runIsOpen, now: Date.now(), maxAge: 30 * 60 * 1000 }); if (!r) return;
+    me.rvFolding = true;
+    try { rvHost().set({ crew: r.crew }); } finally { me.rvFolding = false; }      /* through the auto-hear too */
+    r.notes.forEach(function (n) { if (!n.moved) toast(n.name + ' asked for ' + n.room + ': not open'); });
+  }
+  /* a #pp: link in the Run view: an NPC page opens its card beside the right column, anything else goes to Prep */
+  function runPpLink(href) {
+    var P = W.B68GmPrep, l = P && typeof P.link === 'function' ? P.link(href) : null, pk = part('prep'), L = l && l.type === 'page' && pk && isObj(pk.links) ? pk.links[l.key] : null;
+    if (L && (l.kind === 'npc' || (isObj(L) && L.kind === 'npc')) && S.rv && npcCardSrc([str(L.name)])) { S.rv.showNpc([str(L.name)], str(L.name)); return; }
+    prepLink(href);
+  }
   function rvHost() {
     return {
       site: function () { var rs = runV2(); return rs ? { name: rs.name, play: rs.play } : null; },
       state: function () { var rs = runV2(); return rs ? ballDoc(rs.name) : {}; },
-      set: function (change, quiet) { var rs = runV2(); if (!rs) return false; var prev = ballDoc(rs.name).t; var ok = ballSet(rs.name, change, quiet === true); if (ok && change && 't' in change) S.rvPrevT = prev; /* VV6 */ if (ok && !quiet) runDraw(true); return !!ok; },
+      set: function (change, quiet) { var rs = runV2(); if (!rs) return false;
+        /* A1: a time step, a drag, a phone move, a cue's move: the leads now in reach are heard in the same write */
+        if (isObj(change) && ('t' in change || 'crew' in change) && !('heard' in change)) { var merged = Object.assign({}, ballDoc(rs.name), change), hh = runHeard(rs, merged, +merged.t); if (hh) change = Object.assign({}, change, { heard: hh }); }
+        var prev = ballDoc(rs.name).t; var ok = ballSet(rs.name, change, quiet === true); if (ok && change && 't' in change) S.rvPrevT = prev; /* VV6 */ if (ok && !quiet) runDraw(true); return !!ok; },
       pcs: runPcs, floors: function () { var rs = runV2(); return rs ? runFloors(rs) : { list: [], floorOf: {} }; }, isOpen: runIsOpen,
       openRoom: function (name, on) { roomOpen(name, on); }, mapSvg: runMapSvg,
       clockNamed: function (name) { var l = tableClocks().filter(function (c) { return str(c.name).trim() === name; }); return l.length ? l[0] : null; },
       publish: runPublish, toast: toast,
       /* VV12 Reset the night: the page's confirm, and the players' mission cleared (mission-publish resetNight) */
       confirm: function (msg) { return W.confirm(msg); }, resetMission: function () { var h = missionHooks(); return h ? h.resetNight() : Promise.resolve(null); },
-      /* VV5 BEGIN */ dawn: function () { return runDawn(); }, setPosition: function (pos) { if (S && hasSit()) setPos(pos); } /* VV5 END */
+      /* VV5 BEGIN */ dawn: function () { return runDawn(); }, setPosition: function (pos) { if (S && hasSit()) setPos(pos); } /* VV5 END */,
+      /* the NPC cards and the prep note's rooms (the Rooms section), and the Prep decorator for the SAY callouts */
+      hasNpcCard: function (names) { return !!npcCardSrc(names); },
+      npcCard: function (names) { var src = npcCardSrc(names); return src ? npcCardHtml(src, 'rn-') : ''; },
+      decorate: function (el) { if (W.B68GmPrep && el) W.B68GmPrep.decorate(el, {}); },
+      roomNote: function (room) { var rn = runRoomNotes(), e = rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? rn.byRoom[room] : null; return e && str(e.md).trim() ? npcCardHtml(str(e.md), 'rm-') : null; }
     };
   }
   function rvInst() {
@@ -3424,6 +3465,7 @@
     var rs = runV2();
     runTabs(!!rs);
     if (!rs) { if (S.rv) { S.rv.reset(); S.rvSite = ''; } if (box.getAttribute('data-help') !== '1') { box.innerHTML = RUN_HELP; box.setAttribute('data-help', '1'); } return; }
+    runFoldMoves();
     if (S.panel !== 'run') return;
     var v = rvInst(); if (!v) return;
     box.removeAttribute('data-help');
@@ -3436,6 +3478,7 @@
     var k = ev.key;
     if (k === 'ArrowRight') { ev.preventDefault(); if (ev.shiftKey) S.rv.jump(); else S.rv.step(1); return true; }
     if (k === 'ArrowLeft') { ev.preventDefault(); S.rv.step(-1); return true; }
+    if (k === 'Escape' && typeof S.rv.closeNpc === 'function' && S.rv.closeNpc()) { ev.preventDefault(); return true; }
     if (k === 'Escape' && S.rv.unpeek()) { ev.preventDefault(); return true; }
     return false;
   }
@@ -4047,8 +4090,12 @@
     var reveal = revealList(mapUi()).concat(cleanRooms(ballDoc(rs.name).open).map(function (n) { return 'room:' + n; }));     /* the Run view's rule: runIsOpen */
     var open = (Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : []).filter(function (r) { return roomShown(r, reveal) && str(r.name); }).map(function (r) { return str(r.name); });
     var pcs = dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), owner: str(c.owner) }; });
-    var play = rs.play, roll = S.locRoll;
-    return { play: play, state: ballDoc(rs.name), clocks: tableClocks(), pcs: pcs, open: open,
+    var play = rs.play, roll = S.locRoll, me = S, st = ballDoc(rs.name), h = runHeard(rs, st, +st.t);
+    /* A1: the published card has the leads in reach heard; the GM state follows in one deferred write */
+    if (h) { st = Object.assign({}, st, { heard: h }); setTimeout(function () { if (S !== me) return; var s2 = ballDoc(rs.name), h2 = runHeard(rs, s2, +s2.t); if (h2) ballSet(rs.name, { heard: h2 }, true); }, 0); }
+    var rn = runRoomNotes(), rooms = {};
+    if (rn && isObj(rn.byRoom)) (Array.isArray(roll.rooms) ? roll.rooms : []).forEach(function (r) { var n = isObj(r) ? str(r.name) : '', e = n && isObj(rn.byRoom[n]) ? rn.byRoom[n] : null; if (e) rooms[n] = { costume: typeof e.costume === 'string' ? e.costume : '', say: typeof e.say === 'string' ? e.say : '' }; });
+    return { play: play, state: st, clocks: tableClocks(), pcs: pcs, open: open, rooms: rooms,
       deny: function () { return { names: tokenHidden(roll, reveal, []).concat(hiddenSecretNames()), secrets: (Array.isArray(play.secret) ? play.secret : []).filter(function (x) { return typeof x === 'string'; }) }; } };
   }
   /* an unrevealed NPC whose name or alias is this one */
@@ -4106,9 +4153,14 @@
       RV.menuItems.push({ id: 'end-night', label: 'End the night', run: function () { var h = missionHooks(); if (h) h.endNight(); } });
       RV.views.push({ id: 'players', label: 'Players', render: function (box) { var h = missionHooks(); if (h) h.renderPlayersView(box); else box.textContent = 'Nothing is published to the players.'; } });
     }
-    me.mission.onPublished(function () {
+    me.mission.onPublished(function (r) {
       if (S !== me) return;
       chip();
+      if (r && r.ok && !r.skipped && RV && RV.setWarnings) {      /* a publish that did not run the screen leaves the line as it was */
+        var names = [];
+        (Array.isArray(r.warnings) ? r.warnings : []).forEach(function (x) { var n = (typeof x === 'string' ? x : isObj(x) ? str(x.name) : '').trim(); if (n && names.indexOf(n) < 0) names.push(n); });
+        RV.setWarnings(names.length ? 'Dropped a room line naming ' + names.join(', ') + ' from the players’ card.' : '');
+      }
       var rs = runV2(); if (rs && me.rv && ballDoc(rs.name).view === 'players') me.rv.rerender();       /* the Players view follows what was published */
     });
     chip();
@@ -4877,7 +4929,9 @@
      session, so the panel is drawn again only when what it shows changed (the slim copies), and never from under a list the GM has open
      (the next change catches up) */
   function charactersChanged() {
-    if (!S || S.status !== 'ready' || JSON.stringify(dtPcs()) === S.dtPcSig) return;
+    if (!S || S.status !== 'ready') return;
+    runFoldMoves();         /* a phone's move request rides on the characters */
+    if (JSON.stringify(dtPcs()) === S.dtPcSig) return;
     runStale();
     if (S.mission) S.mission.changed();         /* a card carries its PC's name and owner */
     var a = document.activeElement, box = $q('#gm-dt');
@@ -5912,7 +5966,7 @@
   function onClick(ev) {
     if (!S || !ev.target.closest) return;
     /* the Prep tab: a link in a note, a task box, a tick-column cell (no data-gm: they come from the renderer) */
-    var pl = ev.target.closest('a[href^="#pp:"]'); if (pl && S.root.contains(pl)) { ev.preventDefault(); prepLink(pl.getAttribute('href')); return; }
+    var pl = ev.target.closest('a[href^="#pp:"]'); if (pl && pl.closest('#gm-runv')) { ev.preventDefault(); runPpLink(pl.getAttribute('href')); return; } if (pl && S.root.contains(pl)) { ev.preventDefault(); prepLink(pl.getAttribute('href')); return; }
     var pt = ev.target.closest('.rl-task[data-task]'); if (pt && S.root.contains(pt)) { ev.preventDefault(); prepTick(pt.getAttribute('data-task')); return; }
     var pc = ev.target.closest('td[data-cell]'); if (pc && S.root.contains(pc)) { prepCell(pc); return; }
     if (ev.target.id === 'gm-find') { findClose(); return; }      /* a click on the dimmed page around Find shuts it */

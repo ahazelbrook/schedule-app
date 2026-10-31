@@ -1086,7 +1086,7 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 #gm-page .rv-btn:hover:not(:disabled) { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 #gm-page .rv-btn:disabled { opacity: .4; cursor: default; box-shadow: none; }
 #gm-page .rv-btn:focus-visible, #gm-page .rv-sq:focus-visible, #gm-page .rv-card:focus-visible, #gm-page .rv-pc:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-#gm-page .rv-time { font: 900 42px/1 var(--font-cond); letter-spacing: .02em; min-width: 2.6em; text-align: center; }
+#gm-page .rv-time { font: 900 24px/1 var(--font-cond); letter-spacing: .02em; min-width: 2.6em; text-align: center; }
 #gm-page .rv-beat { font: 700 12.5px/1.2 var(--font-mono); color: var(--ink-soft); white-space: nowrap; }
 #gm-page .rv-dim { color: var(--ink-soft); font-size: 12.5px; }
 #gm-page .rv-start { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
@@ -1134,14 +1134,8 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 #gm-page .rv-cn small { font: 700 10px/1.1 var(--font-mono); text-transform: none; letter-spacing: 0; color: var(--ink-soft); display: block; }
 #gm-page .rv-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 #gm-page .rv-pc { touch-action: none; user-select: none; display: inline-flex; align-items: center; gap: 3px; min-height: 30px; min-width: 34px; padding: 2px 7px; border-radius: 16px; border: 3px solid var(--rule); background: var(--card); color: var(--ink); font: 900 12px/1 var(--font-cond); cursor: grab; }
-#gm-page .rv-pc.pos-controlled { border-color: #2a7f3f; }
-#gm-page .rv-pc.pos-risky { border-color: #b87a00; }
-#gm-page .rv-pc.pos-desperate { border-color: #b3261e; }
 #gm-page .rv-pc.armed { background: var(--mustard); color: var(--on-mustard); }
 #gm-page .rv-pc.moved::after { content: "\2713"; font-size: 10px; color: var(--ok); }
-#gm-page .rv-cic { font-size: 12px; }
-#gm-page .rv-mk.warn { color: var(--alarm); }
-#gm-page .rv-mk.eye { color: var(--accent); }
 #gm-page .rv-nm { font: 700 11px/1 inherit; text-transform: none; }
 #gm-page .rv-npc { display: inline-flex; align-items: center; gap: 2px; min-height: 26px; padding: 2px 6px; border-radius: 4px; font: 900 11.5px/1 var(--font-cond); color: #fff; background: #5d5d5d; }
 #gm-page .rv-npc.k-target { background: #8a5a00; }
@@ -1168,24 +1162,37 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 #gm-page .rv-heard { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; font-size: 12px; }
 #gm-page .rv-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 #gm-page .rv-empty { border: 2px dashed var(--hair); padding: 14px; color: var(--ink-soft); font-size: 13px; }
+/* the Rooms section (the top of the right column), the NPC card beside it, the warnings line */
+#gm-page .rv-rm { display: grid; gap: 4px; min-width: 0; }
+#gm-page .rv-rm + .rv-rm { border-top: 1px solid var(--hair); padding-top: 8px; margin-top: 4px; }
+#gm-page .rv-rm.sel { border-left: 4px solid var(--accent); padding-left: 8px; }
+#gm-page .rv-rmpcs { margin: 0; font-size: 13px; }
+#gm-page .rv-rmpcs .rv-lab { margin: 0 4px 0 0; }
+#gm-page .rv-hap { font-size: 13px; display: grid; gap: 3px; }
+#gm-page .rv-rmnote { max-height: 46vh; overflow-y: auto; scrollbar-width: thin; border-top: 1px dashed var(--hair); padding-top: 4px; font-size: 13px; }
+#gm-page .rv-nonote { margin: 0; }
+#gm-page .rv-npcname { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: var(--ink); text-decoration: underline dotted; text-underline-offset: 2px; cursor: pointer; min-height: 24px; text-align: left; }
+#gm-page .rv-npcname:hover { color: var(--accent); }
+#gm-page .rv-npcname:focus-visible, #gm-page button.rv-npc:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#gm-page button.rv-npc { border: 0; cursor: pointer; }
+#gm-page .rv-npcpop { position: fixed; top: 64px; right: 340px; width: min(420px, 92vw); max-height: calc(100vh - 90px); overflow: auto; z-index: 30; border: 2px solid var(--rule); background: var(--card); box-shadow: 4px 4px 0 var(--shadow-ink); padding: 0 10px 10px; }
+#gm-page .rv-npcpop > header { position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--card); padding: 8px 0 6px; border-bottom: 1px solid var(--hair); font: 900 14px/1.15 var(--font-cond); text-transform: uppercase; letter-spacing: .05em; }
+#gm-page .rv-npcpop > header .rv-btn { margin-inline-start: auto; }
+#gm-page .rv-warn { margin: 0; border-left: 4px solid var(--alarm); padding: 2px 8px; }
+/* the Map view: the map fills a frame (the svg has a viewBox, so it scales to fit) */
+#gm-page .rv-body.mapview .rv-map { height: calc(100vh - 150px); display: flex; align-items: center; justify-content: center; }
+#gm-page .rv-body.mapview .rv-map svg { width: 100%; height: 100%; max-height: none; }
 /* VV5 BEGIN: This beat, the crew, the job, intel */
 #gm-page .rv-pace { margin: 0; font: 700 11.5px/1.2 var(--font-mono); }
 #gm-page .rv-beat5 { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 #gm-page .rv-bi { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 6px; font-size: 13.5px; align-items: start; }
 #gm-page .rv-bic { font-size: 14px; text-align: center; }
 #gm-page .rv-bb .rv-say { margin-top: 3px; }
-#gm-page .rv-wary { border-left: 4px solid var(--alarm); padding: 2px 6px; font-size: 12.5px; color: var(--ink); background: var(--inset); }
 #gm-page .rv-exits { margin: 0; padding-left: 16px; font-size: 13px; display: grid; gap: 2px; }
 #gm-page .rv-crew { border: 1.5px solid var(--hair); border-left: 6px solid var(--hair); padding: 4px 6px; display: grid; gap: 3px; }
-#gm-page .rv-crew.pos-controlled { border-left-color: #2a7f3f; }
-#gm-page .rv-crew.pos-risky { border-left-color: #b87a00; }
-#gm-page .rv-crew.pos-desperate { border-left-color: #b3261e; }
 #gm-page .rv-cr1, #gm-page .rv-cr2, #gm-page .rv-cr3 { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
 #gm-page .rv-crn { font: 900 13px/1.1 var(--font-cond); text-transform: uppercase; letter-spacing: .05em; }
 #gm-page .rv-sel { font: 600 12px/1.2 var(--font-body, inherit); max-width: 100%; min-height: 28px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); }
-#gm-page .rv-poschip.pos-controlled { border-color: #2a7f3f; }
-#gm-page .rv-poschip.pos-risky { border-color: #b87a00; }
-#gm-page .rv-poschip.pos-desperate { border-color: #b3261e; }
 #gm-page .rv-tog[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); }
 #gm-page .rv-busy { font: 700 11.5px/1 var(--font-mono); color: var(--ink-soft); }
 #gm-page .rv-target { border-bottom: 1px solid var(--hair); padding-bottom: 4px; font-size: 13px; }
@@ -1204,7 +1211,8 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
   #gm-page .rv-body { grid-template-columns: minmax(0, 1fr); }
   #gm-page .rv-row { grid-template-columns: minmax(0, 1fr); gap: 2px; }
   #gm-page .rv-floor { padding-top: 0; }
-  #gm-page .rv-time { font-size: 34px; }
+  #gm-page .rv-time { font-size: 20px; }
+  #gm-page .rv-npcpop { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-height: 70vh; }
 }
 @media (pointer: coarse) {
   #gm-page .rv-sq { width: 30px; height: 40px; }
@@ -1216,6 +1224,10 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
   body.gm-app #gm-page .gm-pane.gm-runv { overflow: hidden; padding: 8px 10px; gap: 6px; }
   body.gm-app #gm-page .rv-body { align-items: stretch; }
   body.gm-app #gm-page .rv-main, body.gm-app #gm-page .rv-side { overflow-y: auto; scrollbar-width: thin; }
+}
+/* the Map view on the laptop: the map takes the room, the right column narrows */
+@media (min-width: 1100px) {
+  #gm-page .rv-body.mapview { grid-template-columns: minmax(0, 1fr) minmax(220px, 240px); }
 }
 
 /* The players' mission (gm/mission-publish.js): the notice with a button, and the Players view (the band and each PC's card as last published) */
