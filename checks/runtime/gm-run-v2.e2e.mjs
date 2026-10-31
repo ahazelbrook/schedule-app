@@ -271,6 +271,21 @@ try {
   await shot(G.page, 'runv2-03-map');
   { const g = await G.page.evaluate(() => { const m = document.querySelector('#rv-map').getBoundingClientRect(), s = document.querySelector('#rv-map svg').getBoundingClientRect(), a = document.querySelector('.rv-side').getBoundingClientRect(); return { mh: m.height, aw: a.width, vh: innerHeight, inside: s.bottom <= m.bottom + 1 && s.right <= m.right + 1 && s.top >= m.top - 1 }; });
     check(g.inside && g.mh >= g.vh * 0.6 && g.aw <= 250, 'Map view: the map frame fills the column height (' + Math.round(g.mh) + ' of ' + g.vh + '), the svg fits inside it, the side panel narrows (' + Math.round(g.aw) + ' px)'); }
+  { /* E1: zoom and pan on the Map view */
+    const vbw = () => G.page.$eval('#rv-map svg', (e) => +e.getAttribute('viewBox').split(' ')[2]), vbs = () => G.page.$eval('#rv-map svg', (e) => e.getAttribute('viewBox'));
+    const w0 = await vbw(), r = await G.page.$eval('#rv-map', (m) => { const b = m.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; });
+    check(!!(await G.page.$('#rv-map .mz-btn[data-mz="in"]')) && !!(await G.page.$('#rv-map .mz-btn[data-mz="out"]')) && !!(await G.page.$('#rv-map .mz-btn[data-mz="fit"]')), 'Map view: + / - / Fit buttons over the map');
+    await G.page.mouse.move(r.x, r.y); await G.page.mouse.wheel(0, -500);
+    check(!!(await until(async () => (await vbw()) < w0 * 0.8, 4000)), 'Map view: the wheel zooms in (viewBox ' + w0 + ' -> ' + (await vbw()) + ')');
+    const z1 = await vbs(); await G.page.mouse.down(); await G.page.mouse.move(r.x - 80, r.y - 40, { steps: 6 }); await G.page.mouse.up();
+    check((await vbs()) !== z1 && (await vbw()) === (+z1.split(' ')[2]), 'Map view: dragging pans without changing the zoom');
+    const z2 = await vbs();
+    await G.page.click('[data-rv="next"]'); await G.page.waitForSelector('#rv-map svg', { timeout: 15000 });
+    check(!!(await until(async () => (await vbs()) === z2, 4000)), 'Map view: the zoom and pan survive a time step (the map redraws)');
+    await G.page.click('#rv-map .mz-btn[data-mz="fit"]');
+    check((await vbw()) >= w0 - 0.01, 'Map view: Fit shows the whole map again');
+    await G.page.click('[data-rv="back"]'); await G.page.waitForSelector('#rv-map svg', { timeout: 15000 });
+  }
   await G.page.click('[data-rv="view"][data-v="board"]');
   check((await G.page.$$('.rv-card')).length === 6, 'Board brings the cards back');
 

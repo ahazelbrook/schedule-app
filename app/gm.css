@@ -1148,7 +1148,11 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 #gm-page .rv-route { font: 700 10.5px/1.2 var(--font-mono); color: var(--ink-soft); border: 1px solid var(--hair); padding: 1px 4px; }
 #gm-page .rv-route.timed { border-style: dashed; color: var(--accent); border-color: var(--accent); }
 .rv-ghost { position: fixed; z-index: 9999; transform: translate(-50%, -50%); pointer-events: none; min-width: 36px; min-height: 36px; display: grid; place-items: center; border-radius: 18px; border: 3px solid #14110e; background: #e8c33c; color: #14110e; font: 900 13px/1 sans-serif; box-shadow: 3px 3px 0 #14110e; }
-#gm-page .rv-map { border: 2px solid var(--rule); background: var(--card); }
+#gm-page .rv-map { border: 2px solid var(--rule); background: var(--card); position: relative; overflow: hidden; touch-action: none; cursor: grab; }
+#gm-page .rv-map.mz-drag { cursor: grabbing; }
+#gm-page .rv-map .mz-ctl { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 2; }
+#gm-page .rv-map .mz-btn { min-width: 36px; min-height: 36px; padding: 0 8px; border: 2px solid var(--rule); background: var(--card); color: inherit; font: 900 14px/1 var(--font-cond); cursor: pointer; }
+#gm-page .rv-map .mz-btn:hover, #gm-page .rv-map .mz-btn:focus-visible { background: var(--accent); }
 #gm-page .rv-map svg { display: block; width: 100%; height: auto; max-height: calc(100vh - 190px); }
 #gm-page .rv-sec { border: 2px solid var(--rule); background: var(--card); padding: 8px 10px; display: grid; gap: 4px; min-width: 0; }
 #gm-page .rv-sh { margin: 0; font: 900 15px/1.15 var(--font-cond); text-transform: uppercase; letter-spacing: .05em; }
