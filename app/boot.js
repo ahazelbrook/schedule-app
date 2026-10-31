@@ -284,7 +284,7 @@
     if (!t || typeof t.screen !== 'function' || typeof t.screenSeq !== 'function' || typeof t.onScreenSeq !== 'function') return null;
     return { seq: function () { return t.screenSeq(); }, load: function () { return t.screen(); }, on: function (cb) { return t.onScreenSeq(cb); } };
   }
-  /* The player's own mission cards (VV7, design 5.4): { time, now: [hud.now], pcs: [{ id, name, card }] } for each character whose owner is
+  /* The player's own mission cards (VV7, design 5.4): { time, now: [hud.now], pcs: [{ id, name, card }], rooms: [{ zone, rooms }], showTime } for each character whose owner is
      the signed-in player and that has a card in the campaign document's mission.cards (keyed by the character's document id), in
      roster order; null when there are none. Read from the campaign document this page already holds: no request. Another owner's
      card is never copied out of the document. */
@@ -302,7 +302,13 @@
     });
     if (!pcs.length) return null;
     var hud = isObj(m.hud) ? m.hud : {};
-    return { time: typeof hud.time === 'string' ? hud.time : '', now: Array.isArray(hud.now) ? clone(hud.now) : [], pcs: pcs };
+    /* the rooms the players may move to (ticket C): a clean copy, anything malformed dropped */
+    var rooms = (Array.isArray(hud.rooms) ? hud.rooms : []).map(function (g) {
+      if (!isObj(g) || !Array.isArray(g.rooms)) return null;
+      var rs = g.rooms.filter(function (r) { return typeof r === 'string' && r; }).map(String);
+      return rs.length ? { zone: typeof g.zone === 'string' ? g.zone : '', rooms: rs } : null;
+    }).filter(Boolean);
+    return { time: typeof hud.time === 'string' ? hud.time : '', now: Array.isArray(hud.now) ? clone(hud.now) : [], pcs: pcs, rooms: rooms, showTime: hud.showTime === true };
   }
   /* the roster may arrive after the campaign document, or change who owns what: the open sheet redraws only when the set of cards it may show moved */
   var missionKey = '';
@@ -361,7 +367,16 @@
       profiles: userCap && typeof userCap.profiles === 'function' ? profiles : null,
       /* the phones' copy of the iPad's map or handout (MM1): null where the runtime has none, so the sheet draws no Table button */
       screen: tableScreenApi(),
-      mission: missionCards   /* this player's own mission cards (VV7), or null */
+      mission: missionCards,   /* this player's own mission cards (VV7), or null */
+      /* asks the GM page to move one of THIS player's own characters (ticket C): one moveReq field, a merge PATCH; the GM decides */
+      requestMove: function (pcId, room) {
+        if (!db || A.canWrite === false || !isObj(cache[pcId]) || cache[pcId].owner !== A.me) return Promise.reject(new Error('That character is not yours to move.'));
+        var req = { room: String(room), seq: Date.now() };
+        if (pcId === id) return api.save({ moveReq: req });   /* the open sheet: its own save path (playDelta sends a changed top-level field as ref.update) */
+        var r2 = col().doc(pcId); if (typeof r2.update !== 'function') return Promise.reject(new Error('Saving is not available in this view.'));
+        cache[pcId] = Object.assign({}, cache[pcId], { moveReq: req });
+        return r2.update({ moveReq: req }).catch(function (e) { toast('Could not ask to move: ' + (e && e.message || e), true); throw e; });
+      }
     };
     function arrived(data) {
       if (openId !== id) return;

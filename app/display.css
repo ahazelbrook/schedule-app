@@ -280,7 +280,6 @@ html.dp-active, html.dp-active body { overflow: hidden; overscroll-behavior: non
 .dp-b-sq-cur { background: transparent; outline: 4px solid var(--dp-kick); outline-offset: 2px; border-color: var(--dp-ink); }
 .dp-b-crewline { font-size: clamp(30px, 3.7vmin, 40px); line-height: 1.12; overflow-wrap: anywhere; }
 .dp-b-crewline + .dp-b-crewline { margin-top: .12em; }
-.dp-b-badge { display: inline-flex; align-items: center; justify-content: center; width: 1.2em; height: 1.2em; margin-right: .35em; border: 2px solid var(--dp-soft); border-radius: 50%; font-size: .75em; font-weight: 800; vertical-align: .08em; }
 .dp-b-ways .dp-b-crewline { color: var(--dp-soft); }
 @media (orientation: portrait) {
   .dp-band { top: auto; left: 0; width: auto; border-left: 0; border-top: 2px solid #3a342d; max-height: 62%;
