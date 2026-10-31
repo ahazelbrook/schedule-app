@@ -126,6 +126,7 @@ try {
   await V1.c.close();
 
   check((await setCard(NAME2)).status === 200, 'the Location card is the v2 site');
+  check((await api('PATCH', '/gm/state', { phoneCards: true })).status === 200, 'Phone cards are on (they are off by default)');
   const seq0 = await seqNow();
   const G = await open();
   check(await until(() => tabShown(G.page), 15000), 'a v2 site: the Run tab is shown');

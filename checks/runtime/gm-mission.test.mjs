@@ -46,7 +46,7 @@ function rig(o = {}) {
   r.hidden = o.hidden || [];           // hidden NPC / clock names (the page's hiddenSecretNames)
   r.npcs = o.npcs || {};               // name -> id of a hidden NPC the page could reveal
   r.stored = o.stored || null;
-  r.source = () => ({ play: r.play, state: r.state, clocks: r.clocks, pcs: PCS, open: r.open, deny: () => ({ names: r.hidden.slice(), secrets: Array.isArray(r.play.secret) ? r.play.secret : [] }) });
+  r.source = () => ({ play: r.play, state: r.state, clocks: r.clocks, pcs: PCS, phoneCards: true, open: r.open, deny: () => ({ names: r.hidden.slice(), secrets: Array.isArray(r.play.secret) ? r.play.secret : [] }) });
   r.ctl = MP.create({
     ball: B, source: () => (r.dead ? null : r.source()),
     send: async (m) => { if (r.failWith) throw r.failWith; r.sent.push(m === null ? null : clone(m)); r.stored = m === null ? null : clone(m); return true; },
@@ -527,6 +527,17 @@ await test('resetNight with a failing send says so, still clears the marker, and
   const bad = await f.ctl.resetNight();
   assert.equal(bad.ok, false); assert.ok(f.ctl.last(), 'still published'); assert.equal(f.ctl._state().endedFor, null);
   assert.ok(f.toasts.some(([m, b]) => b && /Could not clear the players/.test(m) && /End the night/.test(m)), JSON.stringify(f.toasts));
+});
+
+await test('phone cards off (the default): cards are {}, the hud is deep-equal to the switch-on hud; only an explicit true turns them on', () => {
+  const r = rig(), on = MP.buildMission(B, r.source(), 1), src = { ...r.source() };
+  delete src.phoneCards;
+  const off = MP.buildMission(B, src, 1), off2 = MP.buildMission(B, { ...src, phoneCards: 'yes' }, 1);
+  assert.ok(Object.keys(on.cards).length > 0, 'a positive control: on, there are cards');
+  assert.deepEqual(off.cards, {});
+  assert.deepEqual(off2.cards, {}, 'a truthy non-true value is off');
+  assert.deepEqual(off.hud, on.hud, 'the iPad band is the same either way');
+  assert.equal(MP.screenMission(off, { names: [], secrets: [] }, GP.namesHit), null, 'an empty cards object passes the screen');
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

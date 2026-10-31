@@ -1060,7 +1060,7 @@ const MARKERS = [...new Set(JSON.stringify(MFX).match(/GM-ONLY-[A-Z0-9-]+/g))];
 async function mnight(play, states, deny) {
   const bodies = [], timers = []; let clock = 0, cur = null;
   const ctl = MPUB.create({
-    ball: MBALL, source: () => ({ play, state: cur.state, clocks: cur.clocks || [{ name: 'Fuse', filled: 2, hidden: false }], pcs: MPCS, open: cur.open || MROOMS,
+    ball: MBALL, source: () => ({ play, state: cur.state, clocks: cur.clocks || [{ name: 'Fuse', filled: 2, hidden: false }], pcs: MPCS, phoneCards: true, open: cur.open || MROOMS,
       deny: () => ({ names: (deny && deny.names) || [], secrets: Array.isArray(play.secret) ? play.secret : [] }) }),
     send: async (m) => { bodies.push(JSON.stringify({ mission: m })); return true; }, stored: () => null, namesHit: GP.namesHit,
     toast() {}, delay: (fn, ms) => { const h = { fn, at: clock + ms }; timers.push(h); return h; }, cancel: (h) => { const i = timers.indexOf(h); if (i >= 0) timers.splice(i, 1); },
@@ -1128,7 +1128,7 @@ await test('(o) a marker put into a player-safe field is stopped by the screen, 
   for (const [what, set] of Object.entries(fields)) {
     const play = mplay((p) => { set(p, 'GM-ONLY-SECRET-1'); });
     /* the control: the engine alone puts it in the mission, so the screen is what stands between */
-    const raw = JSON.stringify(MPUB.buildMission(MBALL, { play, state: hot, clocks: night[0].clocks, pcs: MPCS, open: MROOMS }, 1));
+    const raw = JSON.stringify(MPUB.buildMission(MBALL, { play, state: hot, clocks: night[0].clocks, pcs: MPCS, phoneCards: true, open: MROOMS }, 1));
     if (!raw.includes('GM-ONLY-SECRET-1')) throw new Error('control: ' + what + ' did not carry the marker to the mission (the test would prove nothing)');
     const r = await mnight(play, night, { names: [] });
     if (r.bodies.join('').includes('GM-ONLY')) throw new Error(what + ': a marker was PATCHed');
@@ -1146,7 +1146,7 @@ await test('(o) a marker put into a player-safe field is stopped by the screen, 
   }
   /* A1: a disguise label is no longer carried to the mission at all (the costume mechanic is GM-side), so it is not a field kind above */
   { const play = mplay((p) => { p.disguises.forEach((d) => { d.label = 'GM-ONLY-SECRET-1'; }); });
-    if (JSON.stringify(MPUB.buildMission(MBALL, { play, state: hot, clocks: night[0].clocks, pcs: MPCS, open: MROOMS }, 1)).includes('GM-ONLY-SECRET-1')) throw new Error('a disguise label reached the mission'); }
+    if (JSON.stringify(MPUB.buildMission(MBALL, { play, state: hot, clocks: night[0].clocks, pcs: MPCS, phoneCards: true, open: MROOMS }, 1)).includes('GM-ONLY-SECRET-1')) throw new Error('a disguise label reached the mission'); }
   if (ran < 12) throw new Error('only ' + ran + ' variants ran');
 });
 
@@ -1241,7 +1241,7 @@ await test('(o) VV9 the screen reaches every string of the mission: for each lea
   const covered = new Set(), deny = { names: ['Zed Qwerty'], secrets: [] };
   let n = 0;
   for (const st of sts) {
-    const built = MPUB.buildMission(MBALL, { play: mplay(), state: st, clocks, pcs: MPCS, open: MROOMS, rooms: { 'Security control room': { costume: 'A grey uniform', say: ['Monitors flicker'] } } }, 1);
+    const built = MPUB.buildMission(MBALL, { play: mplay(), state: st, clocks, pcs: MPCS, phoneCards: true, open: MROOMS, rooms: { 'Security control room': { costume: 'A grey uniform', say: ['Monitors flicker'] } } }, 1);
     if (!built) throw new Error('control: the rich night built no mission');
     if (MPUB.screenMission(built, deny, GP.namesHit) !== null) throw new Error('control: the unmodified mission is refused');
     const leaves = [];

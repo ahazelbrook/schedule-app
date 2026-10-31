@@ -3432,7 +3432,7 @@
       pcs: runPcs, floors: function () { var rs = runV2(); return rs ? runFloors(rs) : { list: [], floorOf: {} }; }, isOpen: runIsOpen,
       openRoom: function (name, on) { roomOpen(name, on); }, mapSvg: runMapSvg,
       clockNamed: function (name) { var l = tableClocks().filter(function (c) { return str(c.name).trim() === name; }); return l.length ? l[0] : null; },
-      publish: runPublish, toast: toast,
+      publish: runPublish, toast: toast, phoneCards: phoneCardsOn, setPhoneCards: setPhoneCards,
       /* server time: the iPad corrects to it, so the beat timer's endsAt is stamped on it (the GM api's Date-header skew; 0 when unknown) */
       now: function () { var g = gmApi(); return Date.now() + (g && typeof g.skew === 'function' ? g.skew() || 0 : 0); },
       /* VV12 Reset the night: the page's confirm, and the players' mission cleared (mission-publish resetNight) */
@@ -4085,6 +4085,15 @@
      string and writes PATCH /api/campaign { mission }. The time published is ball.t, never a peek (S.runT is page-local and is not read).
      The deny list is the map's hidden names (tokenHidden: hidden rooms, threats, the watcher), the hidden NPCs and clocks
      (hiddenSecretNames) and play.secret. The people's and costumes' labels are NOT in it: a card names its own costume. */
+  /* Phone cards (ticket P): the GM state's phoneCards, OFF unless an explicit true (the inverse of mirror). While off the published mission carries no cards. */
+  function phoneCardsOn() { return !!(S && S.doc && S.doc.phoneCards === true); }
+  function setPhoneCards(on) {
+    if (!patch({ phoneCards: on === true }, { force: true })) return false;
+    if (S.saver && S.saver.flush) S.saver.flush();
+    if (S.mission) S.mission.publishNow({ force: true });       /* the stored cards go (or come back) at once; the server replaces the mission whole */
+    toast(on ? 'Phone cards are on: each phone gets its Mission card.' : 'Phone cards are off: phones are character sheets only.');
+    return true;
+  }
   function missionSource() {
     var rs = runSite(); if (!rs || !S.locRoll || rs.play.v !== 2) return null;
     var reveal = revealList(mapUi()).concat(cleanRooms(ballDoc(rs.name).open).map(function (n) { return 'room:' + n; }));     /* the Run view's rule: runIsOpen */
@@ -4095,7 +4104,7 @@
     if (h) { st = Object.assign({}, st, { heard: h }); setTimeout(function () { if (S !== me) return; var s2 = ballDoc(rs.name), h2 = runHeard(rs, s2, +s2.t); if (h2) ballSet(rs.name, { heard: h2 }, true); }, 0); }
     var rn = runRoomNotes(), rooms = {};
     if (rn && isObj(rn.byRoom)) (Array.isArray(roll.rooms) ? roll.rooms : []).forEach(function (r) { var n = isObj(r) ? str(r.name) : '', e = n && isObj(rn.byRoom[n]) ? rn.byRoom[n] : null; if (e) rooms[n] = { costume: typeof e.costume === 'string' ? e.costume : null, say: (Array.isArray(e.say) ? e.say : []).filter(function (x) { return typeof x === 'string'; }) }; });
-    return { play: play, state: st, clocks: tableClocks(), pcs: pcs, open: open, rooms: rooms,
+    return { play: play, state: st, clocks: tableClocks(), pcs: pcs, open: open, rooms: rooms, phoneCards: phoneCardsOn(),
       deny: function () { return { names: tokenHidden(roll, reveal, []).concat(hiddenSecretNames()), secrets: (Array.isArray(play.secret) ? play.secret : []).filter(function (x) { return typeof x === 'string'; }) }; } };
   }
   /* an unrevealed NPC whose name or alias is this one */
@@ -6310,6 +6319,7 @@
     /* for checks (gm.e2e.mjs): the current roll, and the display gate */
     _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer, svg: S.map.svg }, panel: S.panel, seg: S.seg, doc: S.doc, runCacheN: S.runCache ? S.runCache.keys.length : 0 } : null; },
     _pushDisplay: function (d) { return pushDisplay(d); },
+    _setPhoneCards: function (on) { return setPhoneCards(on === true); },     /* for checks: the Run menu's Phone cards toggle */
     _ballSet: function (change) { var rs = runSite(); return rs ? ballSet(rs.name, change) : false; },     /* for checks: what the Run view does through its host */
     /* "Claude suggests" (a later step calls this): a Show handout? item in the Rack. Returns false for an id the pack does not hold. */
     suggestHandout: function (id, why) { return suggestHandout(id, why); },

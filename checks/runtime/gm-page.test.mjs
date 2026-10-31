@@ -4343,10 +4343,10 @@ const V2PLAY = (mut) => { const p = cl(V2FX); if (mut) mut(p); return BALL.check
 const V2PCS = [{ id: 'pc1', name: 'Cass Fenn', owner: 'u1' }, { id: 'pc2', name: 'Dov Ketch', owner: 'u2' }];
 const V2CAMP = { session: { number: 3 }, crew: {}, clocks: [{ id: 'c1', name: 'Fuse', size: 6, filled: 2, kind: 'danger' }] };
 const V2BALL = () => ({ site: 'The Pelican Rooms', v: 2, start: 0, t: 60, crew: { pc1: { room: 'Showroom', disguise: 'guest' }, pc2: { room: 'Cocktail lounge', disguise: 'guest' } }, told: { I1: 'crew' }, heard: { A: { pc1: 15 } } });
-async function openMission({ play, ball, camp, cast, ambient } = {}) {
+async function openMission({ play, ball, camp, cast, ambient, phoneCards } = {}) {
   const fg = fakeGm(undefined, Object.assign({}, prepPart, runPack(RUN_SITE(play || V2PLAY()))));
   if (ambient !== false) addAmbient(fg);
-  fg.server.doc = { ball: Object.assign(V2BALL(), ball || {}) };
+  fg.server.doc = { ball: Object.assign(V2BALL(), ball || {}), phoneCards: phoneCards !== false };
   const sent = [];
   const api = Object.assign({ characters: () => V2PCS, publishMission: async (m) => { if (sent.fail) throw sent.fail; sent.push(m === null ? null : cl(m)); return true; } }, cast ? cast.api : {});
   const { K } = spyKit();
@@ -4471,6 +4471,19 @@ await test('VV6f. a hidden CLOCK or room named in a mission string is refused wi
   const open = roomBtn(c, 'open', 'Luxury penthouse'); assert.ok(open, 'the room list offers it');
   open.click(); assert.ok(await until(() => c.sent.length === 2, 400), 'opened for the players: the next mission names it'); assert.equal(c.sent[1].cards.pc1.room, 'Luxury penthouse');
   await c.save();
+});
+
+await test('VV6l. Phone cards: off publishes no cards (the band stays), flipping on or off publishes at once and the switch is the explicit boolean in the GM state', async () => {
+  const h = await openMission({ phoneCards: false });
+  bump(h, 15); assert.ok(await until(() => h.sent.length === 1, 300));
+  assert.deepEqual(h.sent[0].cards, {}, 'off: no card for any PC'); assert.ok(h.sent[0].hud.crew.length === 2, 'the iPad band still names the crew');
+  h.page._setPhoneCards(true);
+  assert.ok(await until(() => h.sent.length === 2, 300), 'on publishes at once, without a time change'); assert.deepEqual(Object.keys(h.sent[1].cards).sort(), ['pc1', 'pc2']);
+  assert.deepEqual(h.sent[1].hud, h.sent[0].hud, 'the band is the same');
+  h.page._setPhoneCards(false);
+  assert.ok(await until(() => h.sent.length === 3, 300), 'off publishes at once, so the stored cards go'); assert.deepEqual(h.sent[2].cards, {});
+  assert.deepEqual(h.fg.server.patches.filter((p) => 'phoneCards' in p).map((p) => p.phoneCards), [true, false]);
+  await h.save();
 });
 
 await test('VV6k. cards only for the PCs on the job (in ball.crew) that are filed characters; a told window\'s room is blanked while its room is shut and shown when opened', async () => {
