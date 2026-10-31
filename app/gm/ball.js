@@ -28,7 +28,7 @@
  *   morning); NaN when either is not HH:MM.
  *
  * play v2 (design 5.5, 5.6): checkPlay accepts v === 2 and validates every v2 key; the v2 engine (whereAt with { over },
- * positionOf, lookers, routesAt, leadsInReach, beatCard, playerView, missionFor and the helpers beatOf, timeLabel, inMin) is
+ * positionOf, lookers, routesAt, leadsInReach, autoHear, beatCard, playerView, missionFor and the helpers beatOf, timeLabel, inMin) is
  * documented above `checkPlayV2`'s sibling block, "play v2". Times there are minutes after clock.start (ball.t's unit).
  *
  * The live view (pure, read by the GM page only): whereAt(person, minute, byId, start), lensRating(room, disguise, floorOf),
@@ -1026,6 +1026,28 @@
     return out;
   }
 
+  /* autoHear(play, ball, t) -> a NEW heard map: ball.heard copied (own keys, both levels in dicts; nothing mutated, no entry removed) plus
+   * { <way>: { <pc>: t } } for every lead leadsInReach(play, ball, t) finds (it skips pairs already heard), except a pair the GM took back
+   * (ball.unheard[way][pc] truthy). A ball or play it cannot use: the copy alone. */
+  function autoHear(play, ball, t) {
+    var src = isObj(ball) && isObj(ball.heard) ? ball.heard : {}, out = dict();
+    Object.keys(src).forEach(function (w) {
+      var h = src[w];
+      if (!isObj(h)) { put(out, w, h); return; }
+      var o = put(out, w, dict());
+      Object.keys(h).forEach(function (pc) { put(o, pc, h[pc]); });
+    });
+    if (!isObj(play) || !isObj(ball) || typeof t !== "number" || !isFinite(t)) return out;
+    var un = isObj(ball.unheard) ? ball.unheard : {};
+    leadsInReach(play, ball, t).forEach(function (l) {
+      if (own(own(un, l.way), l.pc)) return;
+      var h = own(out, l.way);
+      if (h === undefined) h = put(out, l.way, dict());
+      if (isObj(h) && own(h, l.pc) === undefined) put(h, l.pc, t);
+    });
+    return out;
+  }
+
   /* beatCard(play, state, t0, t1) -> { t0, t1, back, items }. Covers what lands in (t0, t1] when t1 > t0. When t1 <= t0 it is
    * the card for the beat that ends at t1, (t1 - beat, t1], and back is true only when t1 < t0. GM-facing: it has labels and SAY.
    * items, in speaking order, each { type, ... }:
@@ -1167,8 +1189,12 @@
    *                       next is the first unticked step, never the list
    *     waysFound, waysTotal, alarm: { name, pub: [text], size, filled } | null }   (name is play.alarm.label, else "Alarm"; never alarm.clock)
    *   events: a "seen" one is in the view when a PC is in its room now or it is revealed; missionFor shows it NOW only in its own
-   *   beat while a PC is in the room (or once the crew is told), and never as a mark or a next from presence alone. */
-  function playerView(play, state, openRooms) {
+   *   beat while a PC is in the room (or once the crew is told), and never as a mark or a next from presence alone.
+   *   opts (optional): { rooms: { <room>: { costume, say: [text] } } } the room notes' lines (gm/room-notes.js find().byRoom; md is never read).
+   *     view.rooms = { <open room>: { costume: text | null, say: [text] (<= 3) } }: open rooms with a note only, strings only.
+   *     view.zoneRooms = [{ label, rooms: [open room] }]: each zone with an open room, in play order (rooms in the zone's own order), then
+   *     { label: "", rooms } for open rooms in no zone (left out when there are none). view.zones is unchanged. */
+  function playerView(play, state, openRooms, opts) {
     if (!isObj(play) || play.v !== 2 || !isObj(play.clock)) return null;
     var st = isObj(state) ? state : {}, cl = play.clock, start = cl.start, beat = beatLen(play);
     var span = minuteOf(cl.end, start), n = beatOf(play, 0).of;
@@ -1182,6 +1208,25 @@
     var zones = Array.isArray(play.zones) ? play.zones.filter(isObj) : [];
     view.zones = zones.filter(function (z) { return Array.isArray(z.rooms) && z.rooms.some(function (r) { return openSet[r] === 1; }); })
       .map(function (z) { var o = { id: z.id, label: nameOf(z.label) }; if (typeof z.pub === "string") o.pub = z.pub; return o; });
+
+    /* the room notes' lines and the rooms by zone: open rooms only, strings only (put: a room named like a prototype key is just a key) */
+    var roomNotes = isObj(opts) && isObj(opts.rooms) ? opts.rooms : {}, inZone = dict();
+    view.rooms = {};
+    open.forEach(function (r) {
+      var rn = own(roomNotes, r);
+      if (!isObj(rn) || own(view.rooms, r) !== undefined) return;
+      put(view.rooms, r, { costume: typeof rn.costume === "string" && rn.costume.trim() ? rn.costume : null,
+        say: (Array.isArray(rn.say) ? rn.say : []).filter(function (s) { return typeof s === "string" && s.trim() !== ""; }).slice(0, 3) });
+    });
+    view.zoneRooms = [];
+    zones.forEach(function (z) {
+      var zr = Array.isArray(z.rooms) ? z.rooms : [], seen = dict();
+      zr.forEach(function (r) { if (typeof r === "string") inZone[r] = 1; });
+      var rs = zr.filter(function (r) { if (typeof r !== "string" || openSet[r] !== 1 || seen[r] === 1) return false; seen[r] = 1; return true; });
+      if (rs.length) view.zoneRooms.push({ label: nameOf(z.label), rooms: rs });
+    });
+    var looseSeen = dict(), loose = open.filter(function (r) { if (inZone[r] === 1 || looseSeen[r] === 1) return false; looseSeen[r] = 1; return true; });
+    if (loose.length) view.zoneRooms.push({ label: "", rooms: loose });
 
     /* who knows what, by intel */
     var intel = Array.isArray(play.intel) ? play.intel.filter(isObj) : [], intelAud = dict();
@@ -1312,16 +1357,26 @@
     return (Array.isArray(play.events) ? play.events : []).some(function (e) { return isObj(e) && e.id === id; });
   }
 
+  /* the GM's countdown (ball.timer) as the band carries it: { endsAt: ms | null, left, paused, len }, or null when it is not that shape */
+  function missionTimer(tm) {
+    var num = function (v) { return typeof v === "number" && isFinite(v); };
+    if (!isObj(tm) || !(tm.endsAt == null || num(tm.endsAt)) || !num(tm.left) || !num(tm.len)) return null;
+    return { endsAt: num(tm.endsAt) ? tm.endsAt : null, left: tm.left, paused: tm.paused === true, len: tm.len };
+  }
+
   /* missionFor(view, state, t, pcs) -> the mission players read: { v: 1, site, t, hud, cards }. The page adds seq.
-   * Blind: it reads the view, never the play block. state is read for state.heard (who heard a way, and when) only.
+   * Blind: it reads the view, never the play block (and of the room notes only view.rooms' costume and say lines, never an md). state is read
+   * for state.heard (who heard a way, and when), state.showTime and state.timer (the GM's ball.timer) only.
    *   hud:   { time, label, now: [{ text, where?, until }], next: [{ text, where?, at, inMin }],
    *            night: { beats, start, cur, marks: [{ i, icon, text }] }, alarm: { name, size, filled, text } | null,
-   *            crew: [{ name, costume, icon, room? }], target: { room } | null, ways: { found, total } }
-   *   cards: { <pc id>: { name, owner, costume, icon, room, pos, warn: { who, look, sees } | null,
-   *            zones: { controlled: [label], risky: [label] }, items: [label],
+   *            crew: [{ name, room? }], target: { room } | null, ways: { found, total },
+   *            rooms: [{ zone, rooms: [open room] }], showTime: bool, timer: { endsAt: ms | null, left, paused, len } | null }
+   *   cards: { <pc id>: { name, owner, room, items: [label],
    *            leads: [{ name, line, heard, window, next?, done? }], know: [text],
-   *            next: [{ text, where?, at, inMin }], paths: [{ text, until }], busy: "HH:MM" | null } }
-   * pcs is [{ id, name, owner }]; every one gets a card. At most 3 now, 3 next (4 on a card), 24 marks, 6 paths. */
+   *            next: [{ text, where?, at, inMin }], paths: [{ text, until }], busy: "HH:MM" | null,
+   *            costumeLine: text | null, here: [text] } }   the room note's lines for the PC's room, only when it is open (else null, [])
+   * The costume mechanic (costume, pos, warn, zones) stays GM-side: view.crew still carries it, no card shows it.
+   * pcs is [{ id, name, owner }]; every one gets a card. At most 3 now, 3 next (4 on a card), 24 marks, 6 paths, 3 here lines. */
   function missionFor(view, state, t, pcs) {
     if (!isObj(view) || !isObj(view.clock) || typeof t !== "number" || !isFinite(t)) return null;
     var st = isObj(state) ? state : {}, cl = view.clock, beat = cl.beat, label = function (m) { return timeLabel(cl.start, m); };
@@ -1360,7 +1415,7 @@
     var crewList = Array.isArray(pcs) ? pcs.filter(function (p) { return isObj(p) && typeof p.id === "string"; }) : [];
     var vc = isObj(view.crew) ? view.crew : {};
     var hudCrew = crewList.map(function (p) {
-      var c = own(vc, p.id), o = { name: nameOf(p.name), costume: c && c.costume ? c.costume.label : "", icon: c && c.costume ? c.costume.icon : "" };
+      var c = own(vc, p.id), o = { name: nameOf(p.name) };
       var w = c ? where(c.room) : undefined;
       if (w !== undefined) o.room = w;
       return o;
@@ -1387,31 +1442,30 @@
       next: crewNext.slice(0, 3).map(function (e) { return line(e, true); }),
       night: { beats: cl.n, start: Math.min(cl.n - 1, Math.max(0, Math.floor(cl.startMin / beat))), cur: Math.min(cl.n - 1, Math.max(0, Math.floor(t / beat))), marks: marks },
       alarm: null, crew: hudCrew, target: inView,
-      ways: { found: typeof view.waysFound === "number" ? view.waysFound : 0, total: typeof view.waysTotal === "number" ? view.waysTotal : 0 }
+      ways: { found: typeof view.waysFound === "number" ? view.waysFound : 0, total: typeof view.waysTotal === "number" ? view.waysTotal : 0 },
+      rooms: (Array.isArray(view.zoneRooms) ? view.zoneRooms : []).filter(isObj).map(function (z) {
+        return { zone: typeof z.label === "string" ? z.label : "", rooms: (Array.isArray(z.rooms) ? z.rooms : []).filter(function (r) { return typeof r === "string" && openSet[r] === 1; }) };
+      }).filter(function (z) { return z.rooms.length > 0; }),
+      showTime: !!st.showTime, timer: missionTimer(st.timer)
     };
     if (isObj(view.alarm)) hud.alarm = { name: view.alarm.name, size: view.alarm.size, filled: view.alarm.filled, text: view.alarm.filled >= 1 ? nameOf(view.alarm.pub[view.alarm.filled - 1]) : "" };
 
     var heard = isObj(st.heard) ? st.heard : {};
-    var zoneLabel = dict();
-    (Array.isArray(view.zones) ? view.zones : []).forEach(function (z) { zoneLabel[z.id] = z.label; });
-    var labelsOf = function (idsIn) { return idsIn.filter(function (id) { return zoneLabel[id] !== undefined; }).map(function (id) { return zoneLabel[id]; }); };
+    var noteOf = isObj(view.rooms) ? view.rooms : {};
 
     var cards = {};
     crewList.forEach(function (p) {
-      var c = own(vc, p.id), card = { name: nameOf(p.name), owner: typeof p.owner === "string" ? p.owner : "", costume: "", icon: "", room: "", pos: null, warn: null,
-        zones: { controlled: [], risky: [] }, items: [], leads: [], know: [], next: [], paths: [], busy: null };
+      var c = own(vc, p.id), card = { name: nameOf(p.name), owner: typeof p.owner === "string" ? p.owner : "", room: "",
+        items: [], leads: [], know: [], next: [], paths: [], busy: null, costumeLine: null, here: [] };
       put(cards, p.id, card);
       if (!c) return;
-      if (c.costume) { card.costume = c.costume.label; card.icon = c.costume.icon; }
-      card.room = c.room; card.pos = c.pos;
-      card.zones = { controlled: labelsOf(c.zones.controlled), risky: labelsOf(c.zones.risky) };
+      card.room = c.room;
       card.items = c.items.slice();
-      if (c.costume && c.room) {
-        (Array.isArray(view.people) ? view.people : []).some(function (person) {
-          if (c.sees.indexOf(person.id) < 0 || placeAt(person, t) !== c.room) return false;
-          card.warn = { who: person.label, look: nameOf(person.look), sees: c.costume.label };
-          return true;
-        });
+      /* the room's own lines: only the PC's room, only when it is open (view.rooms holds open rooms and no md) */
+      var rn = typeof c.room === "string" && c.room && openSet[c.room] === 1 ? own(noteOf, c.room) : undefined;
+      if (isObj(rn)) {
+        card.costumeLine = typeof rn.costume === "string" && rn.costume ? rn.costume : null;
+        card.here = Array.isArray(rn.say) ? rn.say.filter(function (s) { return typeof s === "string" && s; }).slice(0, 3) : [];
       }
       var leads = [];
       (Array.isArray(view.ways) ? view.ways : []).forEach(function (w) {
@@ -1437,5 +1491,5 @@
     return m;
   }
 
-  return { checkPlay: checkPlay, positionOf: positionOf, lookers: lookers, routesAt: routesAt, leadsInReach: leadsInReach, beatCard: beatCard, playerView: playerView, targetInView: targetInView, missionFor: missionFor, placesAt: placesAt, beatOf: beatOf, timeLabel: timeLabel, inMin: inMin, countPlay: countPlay, minuteOf: minuteOf, whereAt: whereAt, lensRating: lensRating, seesMatches: seesMatches, ballView: ballView, KINDS: KINDS, DIRS: DIRS, LIMITS: LIMITS };
+  return { checkPlay: checkPlay, positionOf: positionOf, lookers: lookers, routesAt: routesAt, leadsInReach: leadsInReach, autoHear: autoHear, beatCard: beatCard, playerView: playerView, targetInView: targetInView, missionFor: missionFor, placesAt: placesAt, beatOf: beatOf, timeLabel: timeLabel, inMin: inMin, countPlay: countPlay, minuteOf: minuteOf, whereAt: whereAt, lensRating: lensRating, seesMatches: seesMatches, ballView: ballView, KINDS: KINDS, DIRS: DIRS, LIMITS: LIMITS };
 });

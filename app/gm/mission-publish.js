@@ -10,9 +10,10 @@
 
    create(deps) -> the controller one GM page holds. deps:
      ball          B68GmBall (playerView, missionFor, minuteOf)
-     source()      -> null (no v2 run on screen) | { play, state, clocks, pcs, open, deny: function () -> { names, secrets } }
+     source()      -> null (no v2 run on screen) | { play, state, clocks, pcs, open, rooms?, deny: function () -> { names, secrets } }
                     play is the v2 play block; state is the GM's ball document (only ball.t is the time that is published);
-                    clocks the table's clocks; pcs [{ id, name, owner }] the filed characters; open the room names the players can see
+                    clocks the table's clocks; pcs [{ id, name, owner }] the filed characters; open the room names the players can see;
+                    rooms (optional) { <room>: { costume, say: [text] } } the room notes' lines (gm/room-notes.js), handed to playerView
      send(m)       -> Promise: PATCH { mission: m } (null removes it); rejects with an Error that has .status and the server's .message
      stored()      -> the mission the campaign document holds now, or null (its seq is where numbering carries on from after a reload)
      namesHit(text, names) -> bool, the page's whole-word test
@@ -23,7 +24,7 @@
    controller:
      changed()                   something the mission reads may have moved: publish in 800 ms (each change restarts the wait)
      noteClocks()                the table's clocks changed: changed() only when the alarm clock's fill or visibility did
-     publishNow(opts?)           publish now -> Promise<{ ok, skipped?, refused?, error?, seq?, time? }>
+     publishNow(opts?)           publish now -> Promise<{ ok, skipped?, refused?, error?, seq?, time?, warnings? }>
      flush()                     publishNow() only if a publish is waiting (the page closing)
      endNight()                  asks, then PATCH { mission: null }; publishing stays off until the night's start changes
      resetNight()                no ask (the Run view asks): PATCH { mission: null }, and publishing is on again for the same start
@@ -63,7 +64,8 @@
      is state.t, the published time. state is copied with the alarm set from the table's clock and nothing else added.
      Cards only for the PCs on the job: filed characters that are in ball.crew. A card's own room, and the room at the end of a told window's
      exact time, are blanked when that room is not open to the players (a PC may stand in a room the players cannot see; the card says nothing
-     of where rather than refusing the whole publish). Every other name stays under the screen. */
+     of where rather than refusing the whole publish). Every other name stays under the screen. A blanked room takes the card's room lines (costumeLine, here) with it.
+     state carries the ball's showTime and timer to missionFor as they are (it is a copy of src.state). */
   function buildMission(B, src, seq) {
     if (!B || typeof B.playerView !== 'function' || typeof B.missionFor !== 'function' || !isObj(src) || !isObj(src.play) || !isObj(src.state)) return null;
     var t = src.state.t;
@@ -76,7 +78,7 @@
     var pcs = (Array.isArray(src.pcs) ? src.pcs : []).filter(function (p) { return isObj(p) && typeof p.id === 'string' && p.id && Object.prototype.hasOwnProperty.call(crew, p.id); })
       .map(function (p) { return { id: p.id, name: str(p.name), owner: typeof p.owner === 'string' ? p.owner : '' }; });
     var open = Array.isArray(src.open) ? src.open : [], isOpen = function (r) { return open.indexOf(r) >= 0; };
-    var view = B.playerView(src.play, state, open);
+    var view = B.playerView(src.play, state, open, { rooms: src.rooms });
     if (!view) return null;
     /* a told window reads "23:30–00:15 · Room": the time part never holds " · ", so split at the FIRST one and the rest is the room (a room's own name may hold " · ") */
     (Array.isArray(view.ways) ? view.ways : []).forEach(function (w) {
@@ -85,7 +87,7 @@
     });
     var m = B.missionFor(view, state, t, pcs);
     if (!m) return null;
-    Object.keys(m.cards).forEach(function (id) { var c = m.cards[id]; if (isObj(c) && c.room && !isOpen(c.room)) c.room = ''; });
+    Object.keys(m.cards).forEach(function (id) { var c = m.cards[id]; if (isObj(c) && c.room && !isOpen(c.room)) { c.room = ''; c.costumeLine = null; c.here = []; } });
     m.seq = seq;
     return m;
   }
@@ -102,12 +104,16 @@
   /* ---- screenMission(mission, deny, namesHit) -> null when clean, else { name, path, kind } for the first hit ----------------
      deny = { names: [text], secrets: [text] }: names the players must not meet (the map's hidden names, hidden NPCs and clocks) and the
      play's own secret words. It fails closed: a mission that is not an object of the known shape, or a deny list or test that cannot run,
-     is a hit; so is a mission without an object band and an object of cards, and a deny list whose names or secrets are not arrays (empty is fine). */
-  function screenMission(mission, deny, namesHit) {
+     is a hit; so is a mission without an object band and an object of cards, and a deny list whose names or secrets are not arrays (empty is fine).
+     warnings (optional array): before the full scan, a card's costumeLine or here line with a deny-list hit is dropped from the mission (it is
+     mutated) and { pc, field, name } pushed (dropRoomLines); without it nothing is dropped. Every other string stays fail closed. */
+  function screenMission(mission, deny, namesHit, warnings) {
     if (!isObj(mission) || Object.keys(mission).some(function (k) { return FIELDS.indexOf(k) < 0; })) return { name: '(the mission’s shape)', path: 'mission', kind: 'shape' };
     if (!isObj(mission.hud) || !isObj(mission.cards)) return { name: '(the mission lacks its band or its cards)', path: 'mission', kind: 'shape' };
     if (typeof namesHit !== 'function' || !isObj(deny) || !Array.isArray(deny.names) || !Array.isArray(deny.secrets)) return { name: '(no deny list)', path: 'mission', kind: 'shape' };
-    var lists = [['name', deny.names], ['secret', deny.secrets]], texts = missionTexts(mission);
+    var lists = [['name', deny.names], ['secret', deny.secrets]];
+    if (Array.isArray(warnings)) dropRoomLines(mission, lists, namesHit, warnings);
+    var texts = missionTexts(mission);
     for (var i = 0; i < lists.length; i++) {
       var kind = lists[i][0], names = lists[i][1].filter(function (n) { return typeof n === 'string' && n.trim(); });
       if (!names.length) continue;
@@ -118,6 +124,32 @@
       } catch (e) { return { name: '(the deny list could not be read)', path: 'mission', kind: 'shape' }; }
     }
     return null;
+  }
+
+  /* dropRoomLines: screenMission's first pass when it is handed a warnings array. A card's room lines (costumeLine, here[i]) are the GM's own
+     prose from the room notes: one that names a deny-listed name is dropped (the mission is mutated) and noted as { pc, field, name }, rather
+     than refusing the publish. A test that throws leaves the line for the full scan, which then refuses (fail closed). */
+  function dropRoomLines(mission, lists, namesHit, warnings) {
+    var hitOf = function (text) {
+      try {
+        for (var i = 0; i < lists.length; i++) {
+          var names = lists[i][1];
+          for (var k = 0; k < names.length; k++) if (typeof names[k] === 'string' && names[k].trim() && namesHit(text, [names[k]])) return names[k];
+        }
+      } catch (e) { return null; }
+      return null;
+    };
+    Object.keys(mission.cards).forEach(function (id) {
+      var c = mission.cards[id], n;
+      if (!isObj(c)) return;
+      if (typeof c.costumeLine === 'string' && c.costumeLine && (n = hitOf(c.costumeLine)) !== null) { warnings.push({ pc: id, field: 'costumeLine', name: n }); c.costumeLine = null; }
+      if (Array.isArray(c.here)) c.here = c.here.filter(function (s) {
+        var h = typeof s === 'string' && s ? hitOf(s) : null;
+        if (h === null) return true;
+        warnings.push({ pc: id, field: 'here', name: h });
+        return false;
+      });
+    });
   }
 
   /* the server's refusal for a hidden name: 'mission names "X" at mission.hud.crew.0.name, which the players must not see' */
@@ -147,10 +179,10 @@
     function live(src) { return !!src && isObj(src.play) && src.play.v === 2 && isObj(src.state) && src.state.v === 2 && typeof src.state.t === 'number' && isFinite(src.state.t); }
 
     /* screenMission with the page's deny list; a deny list that cannot be read (it throws) is a refusal, never an uncaught throw */
-    function screenFor(m, src) {
+    function screenFor(m, src, warnings) {
       var deny = null;
       try { deny = typeof src.deny === 'function' ? src.deny() : null; } catch (e) { return { name: 'the hidden-name list could not be read', path: 'mission', kind: 'deny' }; }
-      return screenMission(m, deny, d.namesHit);
+      return screenMission(m, deny, d.namesHit, warnings);
     }
     function say(text, bad) { try { toast(text, !!bad); } catch (e) { /* none */ } }
 
@@ -193,14 +225,16 @@
       st.alarmSig = JSON.stringify(alarmOf(src.play, src.clocks) || null);     /* noteClocks compares with the alarm this mission was built from */
       var key = keyOf(m);
       if (!opts.force && key === st.lastKey) return Promise.resolve({ ok: true, skipped: 'unchanged', seq: st.seq });
-      var hit = screenFor(m, src);
+      var warnings = [], hit = screenFor(m, src, warnings);       /* a denied name in a card's room line drops that line (m is mutated) */
       if (hit) { refuse(hit); return Promise.resolve({ ok: false, refused: hit }); }
+      warnings.forEach(function (w) { say('Dropped a room line naming ' + w.name + '.', true); });
       st.busy = true;
       var gen = st.gen, time = isObj(m.hud) ? str(m.hud.time) : '';
       return Promise.resolve().then(function () { return d.send(m); }).then(function () {
         if (gen !== st.gen) { st.busy = false; return { ok: true, skipped: 'ended' }; }       /* the night was ended while this was out: the server saw the end after it */
         st.busy = false; st.ended = false; st.seq = seq; st.lastKey = key; st.last = clone(m); st.ok = true; st.time = time; st.at = clockStamp(now());
         var r = { ok: true, seq: seq, time: time, at: st.at };
+        if (warnings.length) r.warnings = warnings;
         emit(r);
         if (st.again) { st.again = false; schedule(); }
         return r;

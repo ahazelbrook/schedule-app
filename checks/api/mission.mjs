@@ -65,6 +65,8 @@ function missionOf(seq, extra = {}) {
       crew: [{ name: 'Kit', costume: 'Cook', icon: 'tray', room: 'Cocktail lounge' }, { name: 'Dot', costume: 'Guest', icon: 'mask' }],
       target: { room: 'Showroom' },
       ways: { found: 1, total: 2 },
+      rooms: [{ zone: 'The floor', rooms: ['Showroom', 'Cocktail lounge'] }, { zone: '', rooms: ['Foyer'] }],
+      showTime: true, timer: { endsAt: 1730400000000, left: 300, paused: false, len: 360 },
     },
     cards: {
       char_kit: {
@@ -74,8 +76,9 @@ function missionOf(seq, extra = {}) {
         leads: [{ name: 'The Last Hand', line: CARD_ONLY + ' she never leaves a table while she is winning.', heard: '22:30 · the Cocktail lounge', window: 'Late, at the cards', next: 'A seat at her table' }],
         know: ['The programme: speeches at ten'], next: [{ text: 'The fireworks', where: 'Showroom', at: '00:00', inMin: 90 }],
         paths: [{ text: 'A trapdoor to the showroom', until: '00:00' }], busy: null,
+        costumeLine: 'Apron and a tray', here: ['"Order up," calls the cook.'],
       },
-      char_dot: { name: 'Dot', owner: 'player.b@example.test', costume: 'Guest', icon: 'mask', room: 'Showroom', pos: 'risky', warn: null, zones: { controlled: [], risky: [] }, items: [], leads: [], know: [], next: [], paths: [], busy: '22:45' },
+      char_dot: { name: 'Dot', owner: 'player.b@example.test', costume: 'Guest', icon: 'mask', room: 'Showroom', pos: 'risky', warn: null, zones: { controlled: [], risky: [] }, items: [], leads: [], know: [], next: [], paths: [], busy: '22:45', costumeLine: null, here: [] },
     },
     ...extra,
   };
@@ -100,6 +103,8 @@ await step('cleanMission: every cap is exactly the ticket\'s, and a good mission
       alarm: { name: 'Fuse', size: 6, filled: 3, text: long(400) },
       crew: many(20, (i) => ({ name: 'c' + i, costume: 'k', icon: 'i', room: 'r' })),
       target: { room: long(300) }, ways: { found: 1, total: 2 },
+      rooms: many(20, (i) => ({ zone: 'z' + i + long(300), rooms: many(30, (j) => 'r' + j + long(300)) })), showTime: 'yes',
+      timer: { endsAt: 1730400000000.7, left: 99999, paused: 'no', len: 5 },
     },
     cards: Object.fromEntries(many(15, (i) => ['pc' + i, {
       name: long(300), owner: long(300), costume: 'k', icon: 'i', room: 'r', pos: 'p',
@@ -110,7 +115,7 @@ await step('cleanMission: every cap is exactly the ticket\'s, and a good mission
       know: many(40, (j) => 'know' + j),
       next: many(10, (j) => ({ text: 'nx' + j, where: 'w', at: '00:00', inMin: j })),
       paths: many(12, (j) => ({ text: 'p' + j, until: '00:00' })),
-      busy: null,
+      busy: null, costumeLine: long(300), here: many(6, (j) => 'h' + j + long(500)),
     }])),
   };
   const c = cleanMission(big), h = c.hud, k = c.cards.pc0;
@@ -123,6 +128,9 @@ await step('cleanMission: every cap is exactly the ticket\'s, and a good mission
   expect(k.zones.controlled.length === 12 && k.zones.risky.length === 12, 'zone lists 12');
   expect(k.items.length === 10 && k.know.length === 16 && k.next.length === 4 && k.paths.length === 6 && k.leads.length === 8, 'items 10, know 16, card next 4, paths 6, leads 8');
   expect(k.leads[0].line.length === L.line && k.leads[0].heard.length === L.str, 'a lead\'s line 300, its other strings 160');
+  expect(h.rooms.length === L.hudZones && h.rooms[0].zone.length === L.str && h.rooms[0].rooms.length === L.hudRooms && h.rooms[0].rooms[0].length === L.str, 'hud.rooms: 12 zones, 16 rooms each, 160 chars');
+  expect(L.here === 3 && k.costumeLine.length === L.str && k.here.length === 3 && k.here.every((x) => x.length === L.line), 'a card costume line 160, here: 3 lines of 300');
+  expect(h.showTime === false && same(h.timer, { endsAt: 1730400000001, left: 7200, paused: false, len: 30 }), 'showTime is a real true only; the timer is clamped (left 0..7200, len 30..7200): ' + JSON.stringify([h.showTime, h.timer]));
   expect(c.t === 12, 'numbers are made whole: ' + c.t);
   expect(same(cleanMission(c), c), 'cleaning is idempotent');
 });
@@ -130,16 +138,16 @@ await step('cleanMission: every cap is exactly the ticket\'s, and a good mission
 await step('cleanMission: unknown keys are dropped at every level, nothing is kept by name that the shape does not have', () => {
   const m = missionOf(2);
   m.extra = 'TOP'; m.hud.extra = 'HUD'; m.hud.now[0].extra = 'NOW'; m.hud.next[0].extra = 'NEXT'; m.hud.night.extra = 'NIGHT'; m.hud.night.marks[0].extra = 'MARK';
-  m.hud.alarm.extra = 'ALARM'; m.hud.crew[0].extra = 'CREW'; m.hud.target.extra = 'TARGET'; m.hud.ways.extra = 'WAYS';
+  m.hud.rooms[0].extra = 'ROOMS'; m.hud.timer.extra = 'TIMER'; m.hud.alarm.extra = 'ALARM'; m.hud.crew[0].extra = 'CREW'; m.hud.target.extra = 'TARGET'; m.hud.ways.extra = 'WAYS';
   const k = m.cards.char_kit;
   k.extra = 'CARD'; k.warn.extra = 'WARN'; k.zones.extra = 'ZONES'; k.leads[0].extra = 'LEAD'; k.leads[0].steps = ['All', 'the', 'steps']; k.leads[0].name2 = 'x';
   k.next[0].extra = 'CNEXT'; k.paths[0].extra = 'PATH'; k.secret = 'GM-ONLY-SECRET';
   const c = cleanMission(m), text = JSON.stringify(c);
-  for (const w of ['TOP', 'HUD', 'NOW', 'NEXT', 'NIGHT', 'MARK', 'ALARM', 'CREW', 'TARGET', 'WAYS', 'CARD"', 'WARN', 'ZONES', 'LEAD', 'All', 'steps', 'CNEXT', 'PATH', 'GM-ONLY-SECRET', 'name2'])
+  for (const w of ['TOP', 'HUD', 'NOW', 'NEXT', 'NIGHT', 'MARK', 'ALARM', 'CREW', 'TARGET', 'WAYS', 'CARD"', 'WARN', 'ZONES', 'LEAD', 'All', 'steps', 'CNEXT', 'PATH', 'GM-ONLY-SECRET', 'name2', 'ROOMS', 'TIMER'])
     expect(!text.includes(w), w + ' survived: ' + text.slice(0, 160));
   expect(keys(c) === 'v,site,t,seq,hud,cards', 'top: ' + keys(c));
-  expect(keys(c.hud) === 'time,label,now,next,night,alarm,crew,target,ways', 'hud: ' + keys(c.hud));
-  expect(keys(c.cards.char_kit) === 'name,owner,costume,icon,room,pos,warn,zones,items,leads,know,next,paths,busy', 'card: ' + keys(c.cards.char_kit));
+  expect(keys(c.hud) === 'time,label,now,next,night,alarm,crew,target,ways,rooms,showTime,timer', 'hud: ' + keys(c.hud));
+  expect(keys(c.cards.char_kit) === 'name,owner,costume,icon,room,pos,warn,zones,items,leads,know,next,paths,busy,costumeLine,here', 'card: ' + keys(c.cards.char_kit));
   expect(keys(c.cards.char_kit.leads[0]) === 'name,line,heard,window,next', 'lead: ' + keys(c.cards.char_kit.leads[0]));
   expect(keys(c.hud.night) === 'beats,start,cur,marks' && keys(c.hud.alarm) === 'name,size,filled,text', 'night, alarm');
 });
@@ -366,7 +374,7 @@ await step('hud only: a card\'s own text appears in NO display answer, in any fo
     expect(r.status === 200, f + ': ' + r.status);
     for (const w of cardOnly) expect(!r.text.includes(w), user + ' ' + f + ': "' + w + '" is in the display answer: ' + r.text.slice(0, 160));
     expect(!/"cards"/.test(r.text), f + ': a cards key');
-    if (r.json.mission && r.json.mission.hud) { sawHud++; expect(keys(r.json.mission.hud) === 'time,label,now,next,night,alarm,crew,target,ways', 'hud keys'); }
+    if (r.json.mission && r.json.mission.hud) { sawHud++; expect(keys(r.json.mission.hud) === 'time,label,now,next,night,alarm,crew,target,ways,rooms,showTime,timer', 'hud keys'); }
   }
   expect(sawHud >= 6, 'the hud WAS served in the forms that ask (' + sawHud + '), so the absence above is not a pass by default');
   const sql = exec.log.filter((s) => /\$\.mission/.test(s));
@@ -401,6 +409,23 @@ await step('a mission write pokes display: the iPad is told at once; GET and a r
   expect(r.pokes.length === 0 && r.pending === 0, 'GET pokes nothing');
   r = await display('seq=0&aseq=0&sseq=0&hseq=1');
   expect(r.pokes.length === 0, 'the display GET pokes nothing');
+});
+
+await step('the phone move lane needs no server change: an owner PATCHes moveReq { room, seq } on their own character (merged, not replaced); someone else\'s is 403', async () => {
+  const mk = async (id, user, name) => { const r = await call('PUT', '/api/characters/' + id, { user, body: { name, stress: 1 } }); expect(r.status === 200, 'create ' + id + ': ' + r.status); };
+  await mk('char_mv_a', ALEX, 'Rook'); await mk('char_mv_b', BEA, 'Vesper');
+  let r = await call('PATCH', '/api/characters/char_mv_a', { user: ALEX, body: { moveReq: { room: 'Showroom', seq: 1730400000000 } } });
+  expect(r.status === 200 && same(r.json.doc.moveReq, { room: 'Showroom', seq: 1730400000000 }) && r.json.doc.name === 'Rook' && r.json.doc.stress === 1, 'owner PATCH: ' + r.status + ' ' + r.text.slice(0, 160));
+  r = await call('PATCH', '/api/characters/char_mv_a', { user: ALEX, body: { moveReq: { room: 'Cocktail lounge', seq: 1730400005000 } } });
+  expect(r.status === 200 && same(r.json.doc.moveReq, { room: 'Cocktail lounge', seq: 1730400005000 }), 'a second request replaces the first: ' + r.text.slice(0, 160));
+  r = await call('GET', '/api/characters/char_mv_a', { user: BEA });
+  expect(r.status === 200 && r.json.doc.moveReq.room === 'Cocktail lounge', 'the stored doc carries moveReq (the GM page reads it from the character list)');
+  r = await call('PATCH', '/api/characters/char_mv_b', { user: ALEX, body: { moveReq: { room: 'Showroom', seq: 1 } } });
+  expect(r.status === 403, 'someone else\'s character: ' + r.status);
+  r = await call('GET', '/api/characters/char_mv_b', { user: BEA });
+  expect(r.json.doc.moveReq === undefined, 'nothing was written to the other character');
+  r = await call('PATCH', '/api/characters/char_mv_b', { user: GM, body: { moveReq: { room: 'Showroom', seq: 2 } } });
+  expect(r.status === 200, 'the GM may (they own the table)');
 });
 
 console.log('\n' + passes + ' passed, ' + failures + ' failed');
