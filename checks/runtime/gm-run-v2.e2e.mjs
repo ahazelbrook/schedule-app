@@ -212,10 +212,10 @@ try {
   b = await until(async () => { const x = await ball(); return x && x.unheard && x.unheard.A ? x : null; }, 8000);
   check(!!b && b.unheard.A['run-pc2'] === true && !(b.heard && b.heard.A && b.heard.A['run-pc2'] !== undefined), 'Un-hear writes ball.unheard.A.<pc> and takes the heard time back (' + JSON.stringify(b && [b.heard, b.unheard]) + ')');
   await G.page.click('.rv-card[data-room="Luxury penthouse"] .rv-cn');
-  check(/Not open to the players/.test(await side()), 'a shut room says so');
-  await G.page.click('.rv-sec[data-sec="room"] [data-rv="move"][data-id="run-pc3"]');
+  check(/Reveal on the map/.test(await side()), 'a shut room offers Reveal on the map');
+  await G.page.click('.rv-tray .rv-pc[data-id="run-pc3"]'); await G.page.click('.rv-card[data-room="Luxury penthouse"]');
   b = await until(async () => { const x = await ball(); return x && x.crew && x.crew['run-pc3'] ? x : null; }, 8000);
-  check(!!b && b.crew['run-pc3'].room === 'Luxury penthouse', 'Move Ira Lund here puts her in the penthouse');
+  check(!!b && b.crew['run-pc3'].room === 'Luxury penthouse', 'tapping her chip, then the shut penthouse, puts Ira Lund there');
 
   /* ---- 7. Open for the players asks: the map is live on the iPad first ---- */
   await G.page.keyboard.press('b');
@@ -237,6 +237,26 @@ try {
   check(!!(await until(async () => JSON.stringify((await ball()).open) === '["Private card rooms"]', 8000)) && asked.length === 1, 'a yes: ball.open holds the room');
   check(!!(await until(async () => (await seqNow()) > sq, 8000)), 'and the room went to the iPad through the page');
   check(await G.page.waitForFunction(() => !document.querySelector('.rv-card[data-room="Private card rooms"]').classList.contains('fog'), null, { timeout: 8000 }).then(() => true, () => false), 'the card is solid once the room is open');
+
+  /* ---- 7b. the one reveal toggle on a room card: Reveal on the map / Revealed · hide ---- */
+  {
+    const room = 'Underground counting room', btn = '.rv-sec[data-sec="room"] [data-rv="open"], .rv-sec[data-sec="room"] [data-rv="close"]';
+    const hudRooms = async () => { const x = (await api('GET', '/campaign')).json.doc.mission; return x && x.hud && Array.isArray(x.hud.rooms) ? x.hud.rooms.reduce((a, z) => a.concat(z.rooms || []), []) : []; };
+    const label = () => G.page.$eval(btn, (e) => e.textContent + '|' + e.getAttribute('aria-pressed') + '|' + e.getAttribute('data-rv')).catch(() => '');
+    await G.page.click('.rv-card[data-room="' + room + '"] .rv-cn');
+    check((await label()) === 'Reveal on the map|false|open' && !((await ball()).open || []).includes(room), 'a closed room: Reveal on the map, not pressed');
+    check(((await G.page.$$('.rv-sec[data-sec="room"] [data-rv="move"]')).length) === 0, 'no Move button in the Rooms panel');
+    sq = await seqNow();
+    await G.page.click(btn);
+    check(!!(await until(async () => ((await ball()).open || []).includes(room), 8000)), 'Reveal on the map: the GM state open holds the room');
+    check(!!(await until(async () => (await hudRooms()).includes(room), 10000)), 'and the published mission.hud.rooms includes it');
+    check(!!(await until(async () => (await seqNow()) > sq, 8000)), 'and the iPad map was published');
+    check(!!(await until(async () => (await label()) === 'Revealed · hide|true|close', 8000)), 'the button now reads Revealed · hide, pressed');
+    await G.page.click(btn);
+    check(!!(await until(async () => !((await ball()).open || []).includes(room), 8000)), 'click again: the room leaves the GM state open');
+    check(!!(await until(async () => !(await hudRooms()).includes(room), 10000)), 'and mission.hud.rooms drops it');
+    check(!!(await until(async () => (await label()) === 'Reveal on the map|false|open', 8000)), 'and the button reads Reveal on the map again');
+  }
 
   /* ---- 8. the keys ---- */
   await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());

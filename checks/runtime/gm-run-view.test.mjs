@@ -434,5 +434,34 @@ test('nowSegments: the whole " · " segment holding a time inside [w0, w1); the 
   assert.deepEqual(R.nowSegments('x 22:00', 0, 1440, null), [], 'no converter: nothing');
 });
 
+/* ---- the Rooms panel: one reveal toggle per room card, no Move buttons ---- */
+function roomsHtml(state, openSet) {
+  const secs = {};
+  const mk = () => Object.assign(dummy(), { querySelector: () => mk() });
+  const box = Object.assign(dummy(), { addEventListener() {}, contains: () => true, querySelector: (q) => { const m = /data-sec="([^"]+)"/.exec(q); if (!m) return dummy(); return secs[m[1]] || (secs[m[1]] = dummy()); } });
+  const host = {
+    site: () => ({ name: 'The Pelican Rooms', play }), state: () => state, set: () => true, pcs: () => PCS, floors: () => floors,
+    isOpen: (n) => openSet.indexOf(n) >= 0, openRoom() {}, mapSvg: () => '', clockNamed: () => null, publish() {}, toast() {}, confirm: () => true,
+  };
+  const v = R.create(host); v.attach(box); v.render(box);
+  return (secs.room || {}).innerHTML || '';
+}
+test('Rooms panel: one reveal toggle per shown room, in three states, and no Move buttons', () => {
+  const st = { site: 'The Pelican Rooms', open: ['Showroom'], start: 0, t: 45, crew: { p1: { room: 'Showroom' }, p2: { room: 'Cocktail lounge' }, p3: { room: 'Private card rooms' } } };
+  /* Showroom: opened by the Run view's own list; Cocktail lounge: open some other way (a band or survey); Private card rooms: shut */
+  const html = roomsHtml(st, ['Showroom', 'Cocktail lounge']);
+  assert.ok(html.length > 0, 'positive control: the Rooms section is drawn');
+  assert.ok(!/data-rv="move"/.test(html) && !/>Move /.test(html), 'no Move button anywhere in the Rooms section');
+  const cards = html.split('<div class="rv-rm').slice(1);
+  assert.equal(cards.length, 3, 'a card per room a PC is in');
+  const tog = (c) => c.match(/data-rv="(?:open|close)"/g) || [];
+  cards.forEach((c) => assert.ok(tog(c).length <= 1, 'at most one toggle per card'));
+  assert.ok(/data-rv="close" data-room="Showroom" aria-pressed="true">Revealed · hide</.test(html), 'a room in ball.open: pressed, Revealed · hide');
+  assert.ok(/data-rv="open" data-room="Private card rooms" aria-pressed="false">Reveal on the map</.test(html), 'a shut room: Reveal on the map');
+  const lounge = cards.filter((c) => /data-room="Cocktail lounge"/.test(c))[0];
+  assert.ok(/Revealed [(]surveyed[)]/.test(lounge) && tog(lounge).length === 0, 'a room open another way: text only, no button');
+  assert.equal(tog(html).length, 2, 'two toggles for three rooms (the surveyed one has none)');
+});
+
 console.log(failed ? 'FAILED ' + failed + ' of ' + (failed + passed) : 'ok ' + passed + ' passed');
 process.exit(failed ? 1 : 0);
