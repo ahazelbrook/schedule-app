@@ -609,6 +609,7 @@
     { id: 'wanted', file: 'wanted-wall.html', label: 'Wanted wall', needs: 'crew' },
     { id: 'meeting', file: 'planning-meeting.html', label: 'The planning meeting' },
     { id: 'credits', file: 'opening-credits.html', label: 'Opening credits', pinOnly: true, music: true },
+    { id: 'veil', file: 'sunrise-ball-opening.html', label: 'The Sunrise Ball: opening', pinOnly: true },
     { id: 'board', file: 'planning-board.html', label: 'Planning board', needs: 'score' },
     { id: 'exploded', file: 'score-exploded.html', label: 'Score site, exploded', needs: 'score' },
     { id: 'testcard', file: 'test-card.html', label: 'Please stand by', pinOnly: true }

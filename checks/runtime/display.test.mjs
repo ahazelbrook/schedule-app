@@ -874,7 +874,7 @@ await test('scoreMessage: board and iso are re-sanitised (script gone), the fiel
 
 /* ---------- the ambient floor: registry, plan and rotation ---------- */
 await test('ambient registry: ordered, URLs come only from it, the watch feed is always ?api=off', () => {
-  assert.deepEqual(P.AMBIENT_SCENES.map((s) => s.id), ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting', 'credits', 'board', 'exploded', 'testcard']);
+  assert.deepEqual(P.AMBIENT_SCENES.map((s) => s.id), ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting', 'credits', 'veil', 'board', 'exploded', 'testcard']);
   assert.equal(P.ambientUrl('harvest'), 'ambient/second-harvest');
   assert.equal(P.ambientUrl('wanted'), 'ambient/wanted-wall', 'the wanted wall polls nothing: no ?api=off');
   assert.equal(P.ambientUrl('vet'), 'ambient/grunts-vet');
@@ -884,7 +884,7 @@ await test('ambient registry: ordered, URLs come only from it, the watch feed is
   for (const s of P.AMBIENT_SCENES) assert.ok(!/\.html/.test(P.ambientUrl(s.id)), s.id + ': no .html in the URL (the asset server 307s it)');
   assert.equal(P.ambientUrl('board'), 'ambient/planning-board'); assert.equal(P.ambientUrl('exploded'), 'ambient/score-exploded');
   assert.equal(P.ambientUrl('../../etc/passwd'), ''); assert.equal(P.ambientUrl('https://evil.example/x'), ''); assert.equal(P.ambientUrl(undefined), '');
-  assert.equal(P.AMBIENT_SCENES.filter((s) => s.pinOnly).map((s) => s.id).join(), 'credits,testcard');
+  assert.equal(P.AMBIENT_SCENES.filter((s) => s.pinOnly).map((s) => s.id).join(), 'credits,veil,testcard');
   assert.equal(P.AMBIENT_SCENES.filter((s) => s.music).map((s) => s.id).join(), 'credits', 'only the credits may ask for the theme');
   assert.equal(P.AMBIENT_MUSIC, 'media/theme.mp3');
 });
