@@ -310,6 +310,7 @@
   function create(host) {
     var boxEl = null, peekT = null, sel = "", arm = "", drag = null, noClick = false, alarmOpen = false, mq = null, npcOpen = null;
     var self = { box: function () { return boxEl; } };
+    var mapViewState = {}, mapZoom = null;    /* the Map view's zoom { s, cx, cy, key }, kept across redraws */
 
     function site() { return host.site(); }
     function ctxFor(rs, st, m, shownT) {
@@ -390,7 +391,11 @@
     function nameOfPc(id, ctx) { var n = ""; list(host.pcs()).forEach(function (p) { if (p.id === id) n = p.name; }); return n || id; }
     function mapView(box) {
       var svg = host.mapSvg();
+      if (mapZoom) { mapZoom.destroy(); mapZoom = null; }
       box.innerHTML = svg ? '<div class="rv-map" id="rv-map">' + svg + "</div>" : '<p class="rv-empty">The map could not be drawn.</p>';
+      /* zoom and pan (mapzoom.js); the view lives in mapViewState so the redraw on each time step keeps it */
+      var MZ = typeof window !== "undefined" ? window.B68MapZoom : null, fr = box.querySelector("#rv-map"), el = fr && fr.querySelector("svg");
+      if (MZ && el) { try { mapZoom = MZ.attach(fr, el, { store: mapViewState }); } catch (e) { mapZoom = null; /* the map still reads, unzoomed */ } }
     }
 
     /* the rooms (the top of the right column): the room tapped, then every room a PC is in; who is there, what happens, the leads in reach, the prep note */
@@ -454,6 +459,7 @@
         '<div class="rv-view" id="rv-view" data-view="' + esc(v.id) + '"></div></div>' +
         '<aside class="rv-side" aria-label="The room and the beat">' + secs.map(function (s) { return '<section class="rv-sec" data-sec="' + esc(s.id) + '"></section>'; }).join("") + "</aside></div>" +
         '<ul class="rv-menu" id="rv-menu" hidden>' + menuItems.map(function (it, i) { return '<li><button type="button" class="rv-btn" data-rv="menuitem" data-i="' + i + '">' + esc(typeof it.label === "function" ? it.label(ctx) : it.label) + "</button></li>"; }).join("") + "</ul>" + npcPop();
+      if (v.id !== "map" && mapZoom) { mapZoom.destroy(); mapZoom = null; }
       try { v.render(box.querySelector("#rv-view"), ctx); } catch (e) { box.querySelector("#rv-view").textContent = "This view could not be drawn: " + (e && e.message || e); }
       secs.forEach(function (s) {
         var el = box.querySelector('.rv-sec[data-sec="' + s.id + '"]');
@@ -599,7 +605,7 @@
       box.addEventListener("click", onClick); box.addEventListener("keydown", onKeyCard); box.addEventListener("pointerdown", onDown);
     };
     self.dragging = function () { return !!(drag && drag.moved); };
-    self.detach = function () { var i = live.indexOf(self); if (i >= 0) live.splice(i, 1); };
+    self.detach = function () { if (mapZoom) { mapZoom.destroy(); mapZoom = null; } var i = live.indexOf(self); if (i >= 0) live.splice(i, 1); };
     return self;
   }
 

@@ -244,7 +244,7 @@ await test('routes.js: need() adds each file once, scripts in order (async off),
   eq(doc.added().length, 7, 'each file added once (the table does not wait for the figure kit)');
   const gm = L.need('gm');
   eq(doc.order().slice(0, 10), ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', 'gm.css', 'prep.css', '<style>'], 'the GM stylesheets after the cast, still before the inline style');
-  eq(doc.order().slice(14), ['figures/figure-kit.js', 'figures/cast.js', 'maps/map-kit.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'gm/run-view.js', 'gm/mission-publish.js', 'cue.js', 'gm/cogm.js', 'gm/autopilot.js', 'gm-page.js'], 'gm/*.js before gm-page.js');
+  eq(doc.order().slice(14), ['figures/figure-kit.js', 'figures/cast.js', 'maps/map-kit.js', 'mapzoom.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'gm/run-view.js', 'gm/room-notes.js', 'gm/mission-publish.js', 'cue.js', 'gm/cogm.js', 'gm/autopilot.js', 'gm-page.js'], 'gm/*.js before gm-page.js');
   doc.settle(['gm/npc.js']);
   let err = null; try { await gm; } catch (e) { err = e; }
   eq(err && err.message, 'could not load gm/npc.js', 'a file that fails rejects the bundle');
