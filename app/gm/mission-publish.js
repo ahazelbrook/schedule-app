@@ -87,6 +87,9 @@
     });
     var m = B.missionFor(view, state, t, pcs);
     if (!m) return null;
+    /* Phone cards are off unless the GM turned them on (src.phoneCards === true): drop the cards here, after missionFor built the hud from the same view
+       and before the screen, so a name in a card nobody receives raises no "Reveal and send". The band (hud) is untouched. */
+    if (src.phoneCards !== true) m.cards = {};
     Object.keys(m.cards).forEach(function (id) { var c = m.cards[id]; if (isObj(c) && c.room && !isOpen(c.room)) { c.room = ''; c.costumeLine = null; c.here = []; } });
     m.seq = seq;
     return m;

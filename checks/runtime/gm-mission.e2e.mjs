@@ -109,6 +109,7 @@ try {
 
   /* ---- the night: Start the night, place the crew ---- */
   check((await setCard(NAME2)).status === 200, 'the Location card is the v2 site');
+  check((await api('PATCH', '/gm/state', { phoneCards: true })).status === 200, 'Phone cards are on (they are off by default)');
   const G = await open();
   await G.page.keyboard.press('g');
   await G.page.waitForSelector('.rv-head', { timeout: 15000 });
@@ -118,7 +119,7 @@ try {
   const ambOverlay = async () => ((await api('GET', '/gm/ambient')).json.doc || {}).overlay || null;
   check(await chipText() === 'Players: —' && (await chipOk()) === '0', 'before the night the chip reads Players: —, no tick');
   check(!(await mission()), 'and nothing is published');
-  check(await G.page.$$eval('.rv-menu [data-rv="menuitem"]', (b) => b.map((x) => x.textContent).join()) === 'Show the time to the players,End the night', 'Run\'s menu lists End the night');
+  check(await G.page.$$eval('.rv-menu [data-rv="menuitem"]', (b) => b.map((x) => x.textContent).join()) === 'Show the time to the players,Phone cards: on,End the night', 'Run\'s menu lists End the night');
   check(await G.page.$$eval('[data-rv="view"]', (b) => b.map((x) => x.textContent).join()) === 'Board,Map,Players', 'and the views are Board, Map, Players');
 
   await G.page.click('[data-rv="start"][data-key="4/5"]');

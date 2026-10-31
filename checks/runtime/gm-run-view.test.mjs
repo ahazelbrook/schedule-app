@@ -327,6 +327,15 @@ test('the Run menu offers the time toggle, with a label that follows the state',
   it.run({ st: {}, set: (c) => { set = c; }, rerender() {} }); assert.deepEqual(set, { showTime: true });
 });
 
+test('the Run menu offers Phone cards, off until the host says on, with a title; one press asks the host to flip it', () => {
+  const it = R.menuItems.filter((i) => i.id === 'phone-cards')[0];
+  assert.ok(it && typeof it.label === 'function' && /character sheets only/.test(it.title));
+  assert.equal(it.label({ host: { phoneCards: () => false } }), 'Phone cards: off'); assert.equal(it.label({ host: { phoneCards: () => true } }), 'Phone cards: on');
+  assert.equal(it.label({ host: {} }), 'Phone cards: off');
+  let set = null; it.run({ host: { phoneCards: () => false, setPhoneCards: (v) => { set = v; } }, rerender() {} }); assert.strictEqual(set, true);
+  it.run({ host: { phoneCards: () => true, setPhoneCards: (v) => { set = v; } }, rerender() {} }); assert.strictEqual(set, false);
+});
+
 /* ---- the beat timer in the Run header: controls, Start the night, the 1 s tick ---- */
 const LEN = B.timerLen(play), BEAT = { start: 0, t: 45, crew: {} };
 const runTm = (endsAt) => ({ len: LEN, endsAt, left: LEN, paused: false }), pausedTm = (left) => ({ len: LEN, endsAt: null, left, paused: true });

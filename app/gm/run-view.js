@@ -225,6 +225,10 @@
   /* a label may be a function of ctx (read when the menu is drawn) */
   menuItems.push({ id: "show-time", label: function (ctx) { return ctx.st.showTime === true ? "Hide the time from the players" : "Show the time to the players"; },
     run: function (ctx) { ctx.set({ showTime: ctx.st.showTime === true ? null : true }); ctx.rerender(); } });
+  /* Phone cards: off unless the GM turns them on (the GM state's phoneCards, not the ball). The host publishes at once. Needs host.phoneCards() and host.setPhoneCards(on) */
+  menuItems.push({ id: "phone-cards", title: "While off, phones are character sheets only: no mission card, no Move row. The iPad is unchanged.",
+    label: function (ctx) { return "Phone cards: " + (ctx.host && typeof ctx.host.phoneCards === "function" && ctx.host.phoneCards() ? "on" : "off"); },
+    run: function (ctx) { var h = ctx.host; if (h && typeof h.phoneCards === "function" && typeof h.setPhoneCards === "function") h.setPhoneCards(!h.phoneCards()); ctx.rerender(); } });
 
   /* ---- the rooms, NPC names, heard (pure helpers; the sections use them) ---------------------------------------- */
   function sayBox(txt, who) { return '<div class="rv-say"><span class="rv-saylab">SAY</span> “' + esc(txt) + "”" + (who ? ' <small class="rv-dim">' + esc(who) + "</small>" : "") + "</div>"; }
@@ -473,7 +477,7 @@
         '<div class="rv-views" role="group" aria-label="View">' + vs.map(function (q) { return '<button type="button" class="chip sm" data-rv="view" data-v="' + esc(q.id) + '" aria-pressed="' + (q.id === v.id) + '">' + esc(q.label) + "</button>"; }).join("") + "</div>" + peekBar +
         '<div class="rv-view" id="rv-view" data-view="' + esc(v.id) + '"></div></div>' +
         '<aside class="rv-side" aria-label="The room and the beat">' + secs.map(function (s) { return '<section class="rv-sec" data-sec="' + esc(s.id) + '"></section>'; }).join("") + "</aside></div>" +
-        '<ul class="rv-menu" id="rv-menu" hidden>' + menuItems.map(function (it, i) { return '<li><button type="button" class="rv-btn" data-rv="menuitem" data-i="' + i + '">' + esc(typeof it.label === "function" ? it.label(ctx) : it.label) + "</button></li>"; }).join("") + "</ul>" + npcPop();
+        '<ul class="rv-menu" id="rv-menu" hidden>' + menuItems.map(function (it, i) { return '<li><button type="button" class="rv-btn" data-rv="menuitem" data-i="' + i + '"' + (it.title ? ' title="' + esc(it.title) + '"' : "") + ">" + esc(typeof it.label === "function" ? it.label(ctx) : it.label) + "</button></li>"; }).join("") + "</ul>" + npcPop();
       if (v.id !== "map" && mapZoom) { mapZoom.destroy(); mapZoom = null; }
       try { v.render(box.querySelector("#rv-view"), ctx); } catch (e) { box.querySelector("#rv-view").textContent = "This view could not be drawn: " + (e && e.message || e); }
       secs.forEach(function (s) {

@@ -88,6 +88,7 @@ try {
     const r = await api('POST', '/gm/pack', { part, src: p.src || {}, body: Object.fromEntries(Object.entries(p).filter(([k]) => k !== 'src')) });
     if (r.status !== 200) throw new Error('pack ' + part + ' -> ' + r.status + ' ' + JSON.stringify(r.json));
   }
+  check((await api('PATCH', '/gm/state', { phoneCards: true })).status === 200, 'Phone cards are on (they are off by default)');
   const put = await api('PUT', '/campaign', {
     v: 1, session: { number: 1, startedAt: NOW, endedAt: null },
     crew: { name: 'The Lamplighters', type: '', lair: '', notes: '', tier: 0, hold: 'weak', rep: 0, turf: 0, heat: 0, wanted: 0, vault: 0, claims: [], cohorts: [], factions: [] },
@@ -251,6 +252,24 @@ try {
   check((await mission()).seq > seqBefore, 'the stored mission moved on');
   await ownCardsOnly(4);
   await G.page.screenshot({ path: path.join(ROOT, 'gm-private', 'loop-gm.png') }).catch(() => {});
+
+  /* ---- Phone cards off: the cards go from the phones and the stored mission, the iPad band stays ---- */
+  {
+    const hud0 = JSON.stringify((await mission()).hud), pcSel = '#rv-menu [data-rv="menuitem"]:has-text("Phone cards")', pcLabel = () => G.page.$eval(pcSel, (e) => e.textContent.trim());
+    await G.page.click('[data-rv="menu"]');
+    check(await pcLabel() === 'Phone cards: on', 'the Run menu shows Phone cards: on');
+    check(/character sheets only/.test(await G.page.$eval(pcSel, (e) => e.getAttribute('title') || '')), 'and its title says what off does');
+    await G.page.click(pcSel);
+    check(!!(await until(async () => { const m = await mission(); return m && Object.keys(m.cards).length === 0 ? m : null; }, 10000)), 'Phone cards off: the stored mission holds cards {}');
+    check(!!(await until(async () => (await P.a.page.$$('.ds-missionbtn')).length === 0 && (await P.b.page.$$('.ds-missionbtn')).length === 0 && (await P.a.page.$$('.ds-mv')).length === 0, 8000)), 'and no phone shows a Mission button or card');
+    check(JSON.stringify((await mission()).hud) === hud0, 'and the iPad band (hud) is unchanged');
+    check((await bandText()) !== '', 'and the band is still on the iPad');
+    await G.page.click('[data-rv="menu"]');
+    check(await pcLabel() === 'Phone cards: off', 'the menu now reads Phone cards: off');
+    await G.page.click(pcSel);
+    check(!!(await until(async () => { const m = await mission(); return m && Object.keys(m.cards).length === 2 ? m : null; }, 10000)), 'Phone cards on again: the cards are published again');
+    check(!!(await until(async () => (await P.a.page.$$('.ds-missionbtn')).length === 1 && (await P.b.page.$$('.ds-missionbtn')).length === 1, 8000)), 'and each phone has its Mission button back');
+  }
 
   /* ---- End the night ---- */
   await G.page.click('[data-rv="menu"]');
