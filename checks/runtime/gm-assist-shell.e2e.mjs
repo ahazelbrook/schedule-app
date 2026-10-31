@@ -75,8 +75,9 @@ try {
 
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   const errors = [];
-  async function open(width, height, { reduced = false, cards = CARDS } = {}) {
+  async function open(width, height, { reduced = false, cards = CARDS, capbar = true } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block', reducedMotion: reduced ? 'reduce' : 'no-preference' });
+    if (capbar) await c.addInitScript(() => { try { localStorage.setItem('b68.gm.capbar', '1'); } catch (e) { /* the capture bar is off by default */ } });
     const page = await c.newPage();
     const seen = { ask: [] };
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -280,6 +281,17 @@ try {
     check(await p.$eval('.gm-assist', (h) => getComputedStyle(h).display === 'none'), 'phone: Blade is not drawn');
     check(await p.$eval('.gm-main', (m) => getComputedStyle(m).marginRight) === '0px', 'phone: no room is kept for the tab');
     check((await p.$$('.gm-segbar button, .gm-segbar [data-seg]')).length > 0 || await p.$eval('#gm-root', (r) => !!r.getAttribute('data-seg')), 'phone: the classic segments are still there');
+    await c.close();
+  }
+  {
+    const { c, page: p } = await open(1440, 900, { capbar: false });
+    check(await p.$eval('#gm-foot', (f) => getComputedStyle(f).display === 'none'), 'the capture bar is hidden by default');
+    await p.click('[data-gm="menu"]');
+    check(await p.$eval('#gm-menu-capbar', (b) => b.textContent === 'Show the capture bar'), 'the Menu offers Show the capture bar');
+    await p.click('#gm-menu-capbar');
+    check(await p.$eval('#gm-foot', (f) => getComputedStyle(f).display !== 'none' && f.getBoundingClientRect().height > 20), 'and it shows');
+    await p.reload(); await p.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+    check(await p.$eval('#gm-foot', (f) => getComputedStyle(f).display !== 'none'), 'the choice is kept across a reload (localStorage b68.gm.capbar)');
     await c.close();
   }
   check(errors.length === 0, 'no console errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));

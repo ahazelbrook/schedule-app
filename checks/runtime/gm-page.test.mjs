@@ -530,6 +530,22 @@ await test('6h3. Dots chip: one tap selects, tap again clears, default unset; L 
   assert.ok(lines.some((t) => /^A 4\/5 \(risky, 2d\): /.test(t)), JSON.stringify(lines));
 });
 
+await test('6h4. the capture bar is off by default: its keys do nothing until the Menu turns it on; the Menu item flips it and keeps it', async () => {
+  const br = fakeBrowser(); br.W.localStorage.removeItem('b68.gm.capbar');
+  const h = await openPage({ br, camp: { session: { number: 5 }, crew: {}, log: [] } });
+  assert.ok(!h.q('#gm-root').classList.contains('capbar'), 'hidden by default (the CSS hides #gm-foot without the capbar class)');
+  assert.equal(h.q('#gm-menu-capbar').textContent, 'Show the capture bar');
+  h.press('m'); h.press('l');
+  assert.equal(h.q('[data-gm="arm"][data-b="m"]').getAttribute('aria-pressed'), 'false', 'the bucket key arms nothing while the bar is hidden');
+  h.q('[data-gm="menu"]').click(); h.q('.gm-menu-list [data-gm="capbar"]').click();
+  assert.equal(br.W.localStorage.getItem('b68.gm.capbar'), '1'); assert.ok(h.q('#gm-root').classList.contains('capbar'));
+  h.q('[data-gm="menu"]').click();
+  assert.equal(h.q('#gm-menu-capbar').textContent, 'Hide the capture bar');
+  h.press('m'); assert.equal(h.q('[data-gm="arm"][data-b="m"]').getAttribute('aria-pressed'), 'true', 'with the bar showing the key arms the bucket');
+  h.q('.gm-menu-list [data-gm="capbar"]').click();
+  assert.equal(br.W.localStorage.getItem('b68.gm.capbar'), '0'); assert.ok(!h.q('#gm-root').classList.contains('capbar'));
+});
+
 await test('6i. captures record their session (numbers only): typed lines and L-filed rolls; absent when the campaign has none; text never in the campaign', async () => {
   const h = await openPage({ camp: { session: { number: 5 }, crew: {}, log: [] } });
   const form = h.q('[data-gm-form="capture"]'), input = h.q('#gm-cap-in');
