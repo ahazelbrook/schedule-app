@@ -1151,12 +1151,12 @@ await test('no way to the GM routes from the display: no link, no #gm, no href s
 /* ---------- the band beside the map (VV3, design 5.3): the hud as the page draws it ---------- */
 /* a hud in the shape the server's cleanMission leaves (optional strings are "" rather than absent); the venue and names are invented */
 const HUD = {
-  time: '22:30', label: 'Gala night',
+  time: '22:30', showTime: true, label: 'Gala night',
   now: [{ text: 'The photo call', where: 'The floor', until: '23:00' }],
   next: [{ text: 'The toast', where: 'Showroom', at: '00:00', inMin: 90 }],
   night: { beats: 16, start: 2, cur: 6, marks: [{ i: 3, icon: 'star', text: 'The speeches' }, { i: 12, icon: 'diamond', text: 'The fireworks' }] },
   alarm: { name: 'Fuse', size: 6, filled: 2, text: 'A door slams' },
-  crew: [{ name: 'Ada', costume: 'Cook', icon: 'tray', room: 'Cocktail lounge' }, { name: 'Bo', costume: 'Guest', icon: 'mask', room: '' }],
+  crew: [{ name: 'Ada', room: 'Cocktail lounge' }, { name: 'Bo', room: '' }],
   target: { room: '' }, ways: { found: 2, total: 7 }
 };
 await test('band: no hud, or junk, is no band', () => {
@@ -1168,8 +1168,14 @@ await test('band: the time and label, NOW (with "until"), NEXT (with "in 1 h 30"
   assert.deepEqual(m.now, [{ text: 'The photo call', where: 'The floor', until: 'until 23:00' }]);
   assert.equal(m.next.length, 1); assert.equal(m.next[0].inText, 'in 1 h 30'); assert.equal(m.next[0].soon, false); assert.equal(m.next[0].kicker, 'Next');
   assert.deepEqual(m.alarm, { name: 'Fuse', size: 6, filled: 2, count: '2 of 6', text: 'A door slams' });
-  assert.deepEqual(m.crew.map((c) => [c.name, c.costume, c.badge, c.room]), [['Ada', 'Cook', 'T', 'Cocktail lounge'], ['Bo', 'Guest', 'M', '']]);
+  assert.deepEqual(m.crew, [{ name: 'Ada', room: 'Cocktail lounge' }, { name: 'Bo', room: '' }], 'a crew line is a name and a room: no costume, no badge');
   assert.equal(m.ways, 'Ways found: 2 of 7');
+});
+await test('band: the clock shows only when the GM turned it on (showTime); the label stays, a hud from before the field is silent', () => {
+  assert.equal(P.bandModel({ ...HUD, showTime: false }).time, ''); assert.equal(P.bandModel({ ...HUD, showTime: undefined }).time, ''); assert.equal(P.bandModel({ ...HUD, showTime: 'yes' }).time, '');
+  assert.equal(P.bandModel({ ...HUD, showTime: false }).label, 'Gala night'); assert.equal(P.bandModel({ ...HUD, showTime: true }).time, '22:30');
+  assert.notEqual(P.bandSig(P.bandModel({ ...HUD, showTime: false })), P.bandSig(P.bandModel(HUD)), 'toggling it repaints');
+  assert.deepEqual(P.bandModel({ ...HUD, crew: [{ name: 'Ada', costume: 'Cook', icon: 'tray', room: 'Showroom' }] }).crew, [{ name: 'Ada', room: 'Showroom' }], 'an old hud that still carries a costume shows none');
 });
 await test('band: inText reads minutes the way the table says them', () => {
   assert.deepEqual([0, 15, 45, 60, 90, 125, null, 'x', -5].map(P.inText), ['now', 'in 15 min', 'in 45 min', 'in 1 h', 'in 1 h 30', 'in 2 h 5', '', '', 'now']);
@@ -1191,7 +1197,7 @@ await test('band: the night is one square per beat: before the start shaded, pas
   assert.equal(P.bandModel({ ...HUD, night: null }).night, null);
 });
 await test('band: empty strings and nulls leave their section out (truthiness, not key presence); ways only with a total', () => {
-  const m = P.bandModel({ time: '22:30', label: '', now: [], next: [], night: null, alarm: null, crew: [{ name: '', costume: '', icon: '' }], target: null, ways: { found: 0, total: 0 } });
+  const m = P.bandModel({ time: '22:30', label: '', now: [], next: [], night: null, alarm: null, crew: [{ name: '', room: '' }], target: null, ways: { found: 0, total: 0 } });
   assert.equal(m.label, ''); assert.deepEqual(m.now, []); assert.deepEqual(m.next, []); assert.equal(m.alarm, null); assert.deepEqual(m.crew, []); assert.equal(m.ways, null);
   assert.equal(P.bandModel({ ...HUD, ways: { found: 9, total: 7 } }).ways, 'Ways found: 7 of 7', 'found is held to the total');
   assert.equal(P.bandModel({ ...HUD, alarm: { name: 'Fuse', size: 6, filled: 99, text: '' } }).alarm.count, '6 of 6');

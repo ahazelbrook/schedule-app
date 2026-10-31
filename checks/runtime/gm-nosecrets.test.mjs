@@ -1192,7 +1192,7 @@ function vv9states() {
   return out;
 }
 const vv9has = SEC.has;
-const vv9check = (m, st, label, tally) => SEC.checkMission(FXN, m, st, label, tally);
+const vv9check = (m, st, label, tally, viaServer) => SEC.checkMission(FXN, m, st, label, tally, viaServer);
 
 await test('(o) VV9 the lists are sound before they are used: the pool is non-empty, disjoint from the band\'s own words, and no marker is in it', () => {
   const pool = SEC.cardPool(FXN), vocab = SEC.bandVocabulary(FXN);
@@ -1219,7 +1219,7 @@ await test('(o) VV9 over 1200+ nights: the band holds no card-only string and no
     vv9check(m, st, 'PATCH body, ' + label, tally);
     { const cards = JSON.stringify(m.cards); pool.forEach((p) => { if (vv9has(cards, p)) reached.add(p); }); }
     const kept = SRV_CLEAN(JSON.parse(JSON.stringify(m)));
-    vv9check(kept, st, 'cleanMission, ' + label, cleanTally);
+    vv9check(kept, st, 'cleanMission, ' + label, cleanTally, true);
   }
   if (bodies < 1200) throw new Error('only ' + bodies + ' nights');
   for (const t of [tally, cleanTally]) if (t.negBand < 20000 || t.negCard < 20000 || t.pos < 1500) throw new Error('the sweep checked too little: ' + JSON.stringify({ negBand: t.negBand, negCard: t.negCard, pos: t.pos }));

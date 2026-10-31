@@ -379,7 +379,8 @@
   Pure.bandModel = function (hud) {
     if (!isObj(hud)) return null;
     var list = function (a, n) { return Array.isArray(a) ? a.filter(isObj).slice(0, n) : []; };
-    var m = { time: bstr(hud.time, 16), label: bstr(hud.label), now: [], next: [], night: null, alarm: null, crew: [], ways: null };
+    /* the big clock only when the GM turned it on (hud.showTime); crew is { name, room }: the costume is GM-side now */
+    var m = { time: hud.showTime === true ? bstr(hud.time, 16) : '', label: bstr(hud.label), now: [], next: [], night: null, alarm: null, crew: [], ways: null };
     list(hud.now, 3).forEach(function (n) { var t = bstr(n.text); if (t) m.now.push({ text: t, where: bstr(n.where), until: bstr(n.until) ? 'until ' + bstr(n.until, 16) : '' }); });
     list(hud.next, 3).forEach(function (n) {
       var t = bstr(n.text); if (!t) return;
@@ -404,8 +405,7 @@
     }
     list(hud.crew, 8).forEach(function (c) {
       var n = bstr(c.name, 60); if (!n) return;
-      var icon = bstr(c.icon, 24);
-      m.crew.push({ name: n, costume: bstr(c.costume, 40), icon: icon, badge: icon ? icon.charAt(0).toUpperCase() : '', room: bstr(c.room, 60) });
+      m.crew.push({ name: n, room: bstr(c.room, 60) });
     });
     var w = hud.ways;
     if (isObj(w) && bnum(w.total) !== null && w.total > 0) { var tot = Math.floor(w.total), fnd = Math.max(0, Math.min(tot, Math.floor(bnum(w.found) || 0))); m.ways = 'Ways found: ' + fnd + ' of ' + tot; }
@@ -1742,9 +1742,11 @@
     function bandBlock(cls) { var d = el('div', 'dp-b-sec ' + cls); band.appendChild(d); return d; }
     function bandPaint(m) {
       band.textContent = '';
-      var h = bandBlock('dp-b-time');
-      if (m.time) bandText(h, 'dp-b-clock', m.time);
-      if (m.label) bandText(h, 'dp-b-label', m.label);
+      if (m.time || m.label) {   /* clock hidden and no label: Now/Next simply move up */
+        var h = bandBlock('dp-b-time');
+        if (m.time) bandText(h, 'dp-b-clock', m.time);
+        if (m.label) bandText(h, 'dp-b-label', m.label);
+      }
       if (m.now.length) {
         var nw = bandBlock('dp-b-now'); bandText(nw, 'dp-b-kick', 'Now');
         m.now.forEach(function (n) { var it = el('div', 'dp-b-item'); bandText(it, 'dp-b-head', n.text); var d = [n.where, n.until].filter(Boolean).join(' · '); if (d) bandText(it, 'dp-b-line', d); nw.appendChild(it); });
@@ -1773,8 +1775,7 @@
         var cw = bandBlock('dp-b-crew');
         m.crew.forEach(function (c) {
           var r = el('p', 'dp-b-crewline');
-          if (c.badge) { var b = el('span', 'dp-b-badge'); b.textContent = c.badge; b.setAttribute('aria-hidden', 'true'); r.appendChild(b); }
-          var t = el('span', 'dp-b-crewtext'); t.textContent = [c.name, c.costume].filter(Boolean).join(' · '); r.appendChild(t);
+          var t = el('span', 'dp-b-crewtext'); t.textContent = c.name; r.appendChild(t);
           if (c.room) { var rm = el('span', 'dp-b-room'); rm.textContent = ' · ' + c.room; r.appendChild(rm); }   /* "the room only if there's space": bandShrink drops it */
           cw.appendChild(r);
         });

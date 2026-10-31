@@ -53,12 +53,12 @@ const gm = (method, p, body) => fetch(BASE + p, { method, headers: { 'X-Dev-User
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><rect x="10" y="10" width="380" height="280" fill="#223" stroke="#eee" stroke-width="4"/><rect x="40" y="40" width="140" height="100" fill="#456"/><rect x="220" y="150" width="140" height="110" fill="#654"/></svg>';
 const pushMap = () => gm('PUT', '/api/gm/display', { kind: 'svg', title: 'The Pelican Rooms', caption: 'Ground floor', svg: SVG });
 const HUD = (over = {}) => ({
-  time: '22:30', label: 'Gala night',
+  time: '22:30', showTime: true, label: 'Gala night',
   now: [{ text: 'The photo call', where: 'The floor', until: '23:00' }],
   next: [{ text: 'The toast', where: 'Showroom', at: '00:00', inMin: 90 }],
   night: { beats: 16, start: 2, cur: 6, marks: [{ i: 3, icon: 'star', text: 'The speeches' }, { i: 12, icon: 'diamond', text: 'The fireworks' }] },
   alarm: { name: 'Fuse', size: 6, filled: 2, text: 'A door slams' },
-  crew: [{ name: 'Ada', costume: 'Cook', icon: 'tray', room: 'Cocktail lounge' }, { name: 'Bo', costume: 'Guest', icon: 'mask', room: 'Showroom' }, { name: 'Cy', costume: 'Guard', icon: 'jacket', room: '' }, { name: 'Di', costume: 'Guest', icon: 'mask', room: 'Cocktail lounge' }],
+  crew: [{ name: 'Ada', room: 'Cocktail lounge' }, { name: 'Bo', room: 'Showroom' }, { name: 'Cy', room: '' }, { name: 'Di', room: 'Cocktail lounge' }],
   ways: { found: 2, total: 7 }, ...over
 });
 let seq = 0;
@@ -75,7 +75,6 @@ const geometry = () => {
       const own = [...n.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim());
       if (!own || n.classList.contains('dp-b-sq')) continue;
       const cs = getComputedStyle(n), px = parseFloat(cs.fontSize);
-      if (n.classList.contains('dp-b-badge')) continue;
       texts++; minFont = Math.min(minFont, px);
       if (n.classList.contains('dp-b-clock')) clock = px;
       const a = lum(cs.color) + 0.05, b = lum(bg) + 0.05;
@@ -113,7 +112,7 @@ try {
 
     await step(name + ': the band is drawn from the hud, in the fixture\'s words', async () => {
       g = await page.evaluate(geometry);
-      for (const t of ['22:30', 'Gala night', 'NOW', 'The photo call', 'until 23:00', 'NEXT', 'The toast', 'in 1 h 30', 'Fuse 2 of 6', 'A door slams', 'Ada', 'Cook']) expect(new RegExp(t, 'i').test(g.text), 'the band says "' + t + '": ' + JSON.stringify(g.text));
+      for (const t of ['22:30', 'Gala night', 'NOW', 'The photo call', 'until 23:00', 'NEXT', 'The toast', 'in 1 h 30', 'Fuse 2 of 6', 'A door slams', 'Ada', 'Cocktail lounge']) expect(new RegExp(t, 'i').test(g.text), 'the band says "' + t + '": ' + JSON.stringify(g.text));
       if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'band-' + name.replace(/\W+/g, '-') + '.png') });
     });
     await step(name + ': the band sits beside the map (below it in portrait), never over it; the caption bar and the status keep clear', async () => {
@@ -164,6 +163,16 @@ try {
       if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'band-soon-' + name.replace(/\W+/g, '-') + '.png') });
       await setMission(HUD());
       await page.waitForFunction(() => document.querySelector('.dp-b-clock').textContent === '22:30', null, { timeout: 7000 });
+    });
+
+    await step(name + ': the clock shows only when the GM turned it on: off, Now moves up to the top and the crew lines are a name and a room', async () => {
+      expect((await setMission(HUD({ showTime: false, label: '' }))).status === 200, 'mission write');
+      await page.waitForFunction(() => !document.querySelector('.dp-b-clock') && document.querySelector('.dp-b-now'), null, { timeout: 7000 });
+      const r = await page.evaluate(() => { const b = document.querySelector('.dp-band').getBoundingClientRect(), n = document.querySelector('.dp-b-now').getBoundingClientRect(); return { clock: document.querySelectorAll('.dp-b-clock, .dp-b-time').length, gap: Math.round(n.top - b.top), badge: document.querySelectorAll('.dp-b-badge').length, crew: [...document.querySelectorAll('.dp-b-crewline')].map((e) => e.textContent.trim()).slice(0, 2) }; });
+      expect(r.clock === 0 && r.badge === 0 && r.gap < 60, JSON.stringify(r));
+      expect(r.crew[0] === 'Ada · Cocktail lounge', 'a crew line is the name and the room: ' + JSON.stringify(r.crew));
+      await setMission(HUD());
+      await page.waitForFunction(() => document.querySelector('.dp-b-clock') && document.querySelector('.dp-b-clock').textContent === '22:30', null, { timeout: 7000 });
     });
 
     await step(name + ': the band hides over an npc, text, rule, dark and blank stage, and comes back over the map', async () => {
