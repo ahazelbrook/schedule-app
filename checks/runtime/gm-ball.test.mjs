@@ -1366,7 +1366,7 @@ test('timerLen: play.clock.real minutes (rounded, 1..120) else 6 minutes; second
   assert.equal(B.timerLen({ clock: { real: 0 } }), 60); assert.equal(B.timerLen({ clock: { real: 999 } }), 7200);
   assert.equal(B.timerLen({ clock: { real: '9' } }), 360, 'text is not a number: the default'); assert.equal(B.timerLen({ clock: { real: NaN } }), 360);
 });
-test('timerLeft: running -> from endsAt (rounded up), paused -> left, garbage -> 0, clamped 0..7200', () => {
+test('timerLeft: running -> from endsAt (rounded up), paused -> left, junk -> 0, clamped 0..7200', () => {
   assert.equal(B.timerLeft({ endsAt: 10500, left: 99, paused: false, len: 360 }, 1000), 10);
   assert.equal(B.timerLeft({ endsAt: 10001, left: 99, paused: false, len: 360 }, 1000), 10, 'a started second still counts');
   assert.equal(B.timerLeft({ endsAt: 900, left: 5, paused: false, len: 360 }, 1000), 0, 'overdue is 0, never negative');
