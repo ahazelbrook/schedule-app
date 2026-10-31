@@ -279,6 +279,15 @@ try {
     check(!!(await until(async () => (await vbw()) < w0 * 0.8, 4000)), 'Map view: the wheel zooms in (viewBox ' + w0 + ' -> ' + (await vbw()) + ')');
     const z1 = await vbs(); await G.page.mouse.down(); await G.page.mouse.move(r.x - 80, r.y - 40, { steps: 6 }); await G.page.mouse.up();
     check((await vbs()) !== z1 && (await vbw()) === (+z1.split(' ')[2]), 'Map view: dragging pans without changing the zoom');
+    /* a tap is not a pan: the click reaches the page, the view does not move; a press that starts on a control never pans */
+    await G.page.evaluate(() => { window.__mzClicks = 0; document.querySelector('#rv-map').addEventListener('click', () => { window.__mzClicks++; }); });
+    const vTap = await vbs(); await G.page.mouse.move(r.x, r.y); await G.page.mouse.down(); await G.page.mouse.up();
+    check((await G.page.evaluate(() => window.__mzClicks)) === 1 && (await vbs()) === vTap, 'Map view: a tap on the map still fires its click');
+    { const before = await vbs(), bb = await G.page.$eval('#rv-map .mz-btn[data-mz="out"]', (b) => { const q = b.getBoundingClientRect(); return { x: q.left + q.width / 2, y: q.top + q.height / 2 }; });
+      await G.page.mouse.move(bb.x, bb.y); await G.page.mouse.down(); await G.page.mouse.move(bb.x - 120, bb.y + 90, { steps: 6 }); await G.page.mouse.up();
+      check((await vbs()) === before, 'Map view: a drag that starts on a control does not pan'); }
+    { const before = await vbs(); await G.page.mouse.move(r.x, r.y); await G.page.mouse.down(); await G.page.mouse.move(r.x + 2, r.y + 1); await G.page.mouse.up();
+      check((await vbs()) === before, 'Map view: a 2px wobble is a tap, not a pan'); }
     const z2 = await vbs();
     await G.page.click('[data-rv="next"]'); await G.page.waitForSelector('#rv-map svg', { timeout: 15000 });
     check(!!(await until(async () => (await vbs()) === z2, 4000)), 'Map view: the zoom and pan survive a time step (the map redraws)');

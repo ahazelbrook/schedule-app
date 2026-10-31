@@ -46,13 +46,24 @@
   };
   Pure.keyOf = function (V) { return [V.x, V.y, V.w, V.h].join(' '); };
 
+  /* the view is also kept in sessionStorage by map, so leaving the tab and coming back (or a reload) lands on the same view; storage may be absent or blocked */
+  var SKEY = 'b68.mapzoom.';
+  function remember(key, c) { try { sessionStorage.setItem(SKEY + key, JSON.stringify({ s: c.s, cx: c.cx, cy: c.cy })); } catch (e) { /* no storage: the view lives in the store only */ } }
+  function recall(key) {
+    try { var o = JSON.parse(sessionStorage.getItem(SKEY + key)); return o && isFinite(o.s) && isFinite(o.cx) && isFinite(o.cy) ? { s: o.s, cx: o.cx, cy: o.cy } : null; } catch (e) { return null; }
+  }
+  Pure.remember = remember; Pure.recall = recall;
+
   function attach(frame, svg, opts) {
     opts = opts || {};
     var V = Pure.parseViewBox(svg && svg.getAttribute('viewBox'));
     if (!V || !frame) return null;
     var store = opts.store || {}, key = Pure.keyOf(V);
     /* a different map (another floor, a new size) starts fitted; the same map keeps its view */
-    if (store.key !== key || !isFinite(store.s)) { var f0 = Pure.fit(V); store.s = f0.s; store.cx = f0.cx; store.cy = f0.cy; store.key = key; }
+    if (store.key !== key || !isFinite(store.s)) {
+      var f0 = Pure.fit(V), kept = recall(key); if (kept) f0 = kept;
+      store.s = f0.s; store.cx = f0.cx; store.cy = f0.cy; store.key = key;
+    }
     var size = { w: 1, h: 1 }, pts = {}, gesture = null, offs = [], doc = frame.ownerDocument;
     function measure() { var r = frame.getBoundingClientRect(); size = { w: Math.max(1, r.width), h: Math.max(1, r.height) }; return r; }
     function apply() {
@@ -60,6 +71,7 @@
       var w = Pure.viewWindow(V, size, c);
       svg.setAttribute('viewBox', [w.x, w.y, w.w, w.h].map(function (n) { return Math.round(n * 1000) / 1000; }).join(' '));
       frame.classList.toggle('mz-zoomed', c.s > 1.001);
+      remember(key, c);
       if (opts.onChange) opts.onChange(c);
     }
     function set(st) { store.s = st.s; store.cx = st.cx; store.cy = st.cy; apply(); }
@@ -91,26 +103,38 @@
       var a = b.getAttribute('data-mz');
       if (a === 'in') zoomBy(STEP); else if (a === 'out') zoomBy(1 / STEP); else fitView();
     });
+    /* A press is not a pan: nothing is captured and nothing is stopped until the pointer has moved PAN_SLOP px (or a second finger lands), so a tap or a click goes through
+       untouched. A press that starts on a control, a link, a chip or anything the Run view handles itself (data-rv / data-vv / role=button) never pans. */
+    var PAN_SLOP = 4, INTERACTIVE = 'button, a, input, select, textarea, summary, [role="button"], [data-rv], [data-vv], [data-mz], .rv-pc, .chip', started = false, justPanned = false;
+    function capture() { ids().forEach(function (k) { try { frame.setPointerCapture(+k); } catch (e) { /* the drag still works inside the frame */ } }); }
     on(frame, 'pointerdown', function (ev) {
       if (ev.pointerType === 'mouse' && ev.button !== 0) return;
-      try { frame.setPointerCapture(ev.pointerId); } catch (e) { /* the drag still works inside the frame */ }
-      pts[ev.pointerId] = { x: ev.clientX, y: ev.clientY };
-      begin();
+      var t = ev.target; if (t && t.closest && t.closest(INTERACTIVE)) return;
+      pts[ev.pointerId] = { x: ev.clientX, y: ev.clientY, x0: ev.clientX, y0: ev.clientY };
+      if (ids().length > 1) { begin(); started = true; capture(); }       /* a second finger is a pinch at once */
     });
     on(frame, 'pointermove', function (ev) {
-      var p = pts[ev.pointerId]; if (!p || !gesture) return;
+      var p = pts[ev.pointerId]; if (!p) return;
       p.x = ev.clientX; p.y = ev.clientY;
+      if (!started) {
+        if (Math.hypot(p.x - p.x0, p.y - p.y0) <= PAN_SLOP) return;
+        started = true; justPanned = true; begin(); capture(); frame.classList.add('mz-drag'); return;
+      }
+      if (!gesture) return;
       var c = centre(frame.getBoundingClientRect());
       set(Pure.pinchView(V, size, gesture, { d: spread(), px: c.px, py: c.py }));
-      frame.classList.add('mz-drag');
+      justPanned = true; frame.classList.add('mz-drag');
     });
     function up(ev) {
       if (!pts[ev.pointerId]) return;
       delete pts[ev.pointerId];
       try { frame.releasePointerCapture(ev.pointerId); } catch (e) { /* already released */ }
-      if (ids().length) begin(); else { gesture = null; frame.classList.remove('mz-drag'); }
+      if (ids().length) { if (started) begin(); } else { gesture = null; started = false; frame.classList.remove('mz-drag'); }
     }
     on(frame, 'pointerup', up); on(frame, 'pointercancel', up);
+    /* the click that ends a pan is not a tap on whatever the pointer finished over */
+    on(frame, 'click', function (ev) { if (justPanned) { justPanned = false; ev.stopPropagation(); ev.preventDefault(); } }, true);
+    on(frame, 'pointerdown', function () { justPanned = false; }, true);
     on(frame, 'wheel', function (ev) {
       ev.preventDefault();
       var r = measure(), px = ev.clientX - r.left - r.width / 2, py = ev.clientY - r.top - r.height / 2;

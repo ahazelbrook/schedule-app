@@ -58,7 +58,7 @@ function fakeEl(tag) {
     addEventListener(t, f) { (L[t] = L[t] || []).push(f); }, removeEventListener(t, f) { L[t] = (L[t] || []).filter((x) => x !== f); },
     fire(t, ev) { (L[t] || []).slice().forEach((f) => f(Object.assign({ preventDefault() {}, stopPropagation() {}, target: this }, ev))); }, count(t) { return (L[t] || []).length; },
     getBoundingClientRect() { return this.rect; }, setPointerCapture() {}, releasePointerCapture() {},
-    classList: null, closest(sel) { const m = /\[(.+)\]/.exec(sel)[1]; return m in this.attrs ? this : null; }
+    classList: null, closest(sel) { return sel.split(',').some((q) => { q = q.trim(); return q[0] === String.fromCharCode(91) ? q.slice(1, -1) in this.attrs : q[0] === '.' ? this.classes.has(q.slice(1)) : q === this.tag; }) ? this : null; }
   };
   el.classList = { toggle(c, on) { on ? el.classes.add(c) : el.classes.delete(c); }, add(c) { el.classes.add(c); }, remove(c) { el.classes.delete(c); } };
   return el;
@@ -84,12 +84,35 @@ await test('attach: wheel zooms at the cursor and is cancelled; buttons zoom; Fi
   ctl.fire('click', { target: btn('out') }); near(t.vb()[2], w0);
   ctl.fire('click', { target: btn('fit') }); ok(t.vb()[2] === 200 && !t.frame.classes.has('mz-zoomed'), 'fit');
 });
+await test('Pure.keyOf and Pure.fitK', () => {
+  ok(Pure.keyOf({ x: 1, y: 2, w: 3, h: 4 }) === '1 2 3 4'); ok(Pure.keyOf(V) === '0 0 200 100');
+  near(Pure.fitK(V, size), 2); near(Pure.fitK(V, { w: 100, h: 400 }), 0.5); near(Pure.fitK({ x: 0, y: 0, w: 50, h: 400 }, size), 1);
+});
+await test('a press does not pan or capture until it moves past the slop; a press on a control or a chip never pans; the click after a pan is swallowed', () => {
+  const t = setup({}); t.z.zoomBy(4); const v0 = t.vb().join(' '); let cap = 0; t.frame.setPointerCapture = () => { cap++; };
+  t.frame.fire('pointerdown', { pointerId: 1, clientX: 200, clientY: 200, button: 0, pointerType: 'mouse', target: t.svg }); t.frame.fire('pointermove', { pointerId: 1, clientX: 202, clientY: 201 });
+  ok(cap === 0 && t.vb().join(' ') === v0 && !t.frame.classes.has('mz-drag'), 'a 2px wobble is a tap'); t.frame.fire('pointerup', { pointerId: 1 });
+  const chip = fakeEl('div'); chip.classes.add('rv-pc'); const btn = fakeEl('button'); btn.setAttribute('data-rv', 'x');
+  for (const tg of [chip, btn]) { t.frame.fire('pointerdown', { pointerId: 2, clientX: 200, clientY: 200, button: 0, pointerType: 'mouse', target: tg }); t.frame.fire('pointermove', { pointerId: 2, clientX: 100, clientY: 100 }); t.frame.fire('pointerup', { pointerId: 2 }); }
+  ok(cap === 0 && t.vb().join(' ') === v0, 'interactive targets never pan');
+  t.frame.fire('pointerdown', { pointerId: 3, clientX: 200, clientY: 200, button: 0, pointerType: 'mouse', target: t.svg }); t.frame.fire('pointermove', { pointerId: 3, clientX: 190, clientY: 200 }); t.frame.fire('pointermove', { pointerId: 3, clientX: 120, clientY: 200 });
+  ok(cap > 0 && t.vb().join(' ') !== v0, 'a real drag captures and pans'); t.frame.fire('pointerup', { pointerId: 3 });
+  let stopped = false; t.frame.fire('click', { stopPropagation() { stopped = true; } }); ok(stopped, 'the click ending a pan is swallowed');
+});
+await test('the view is mirrored to sessionStorage by map, and a fresh store picks it up', () => {
+  const mem = {}; globalThis.sessionStorage = { getItem: (k) => (k in mem ? mem[k] : null), setItem: (k, v) => { mem[k] = String(v); } };
+  try {
+    const a = setup({}); a.z.zoomBy(3); ok(Object.keys(mem).length === 1 && Object.keys(mem)[0].endsWith('0 0 200 100'), 'written by map');
+    const b = setup({}); near(+b.vb()[2], +a.vb()[2], 'an empty store recalls the session view');
+    mem[Object.keys(mem)[0]] = '{not json'; const c = setup({}); ok(c.vb()[2] === 200, 'bad storage falls back to fit');
+  } finally { delete globalThis.sessionStorage; }
+});
 await test('attach: a drag pans a zoomed map and does nothing at fit; two fingers pinch', () => {
   const t = setup({});
   t.frame.fire('pointerdown', { pointerId: 1, clientX: 200, clientY: 200, button: 0, pointerType: 'mouse' }); t.frame.fire('pointermove', { pointerId: 1, clientX: 100, clientY: 200 }); t.frame.fire('pointerup', { pointerId: 1 });
   ok(t.vb()[0] === 0 && t.vb()[2] === 200, 'no pan at fit');
   t.z.zoomBy(4); const x0 = t.vb()[0];
-  t.frame.fire('pointerdown', { pointerId: 1, clientX: 200, clientY: 200, button: 0, pointerType: 'mouse' }); t.frame.fire('pointermove', { pointerId: 1, clientX: 100, clientY: 200 });
+  t.frame.fire('pointerdown', { pointerId: 1, clientX: 200, clientY: 200, button: 0, pointerType: 'mouse' }); t.frame.fire('pointermove', { pointerId: 1, clientX: 190, clientY: 200 }); t.frame.fire('pointermove', { pointerId: 1, clientX: 100, clientY: 200 });
   ok(t.vb()[0] > x0, 'dragged left shows more of the right: ' + x0 + ' -> ' + t.vb()[0]); ok(t.frame.classes.has('mz-drag')); t.frame.fire('pointerup', { pointerId: 1 }); ok(!t.frame.classes.has('mz-drag'));
   t.z.fit(); const w = t.vb()[2];
   t.frame.fire('pointerdown', { pointerId: 1, clientX: 150, clientY: 200, pointerType: 'touch' }); t.frame.fire('pointerdown', { pointerId: 2, clientX: 250, clientY: 200, pointerType: 'touch' });
