@@ -3430,6 +3430,8 @@
       openRoom: function (name, on) { roomOpen(name, on); }, mapSvg: runMapSvg,
       clockNamed: function (name) { var l = tableClocks().filter(function (c) { return str(c.name).trim() === name; }); return l.length ? l[0] : null; },
       publish: runPublish, toast: toast,
+      /* server time: the iPad corrects to it, so the beat timer's endsAt is stamped on it (the GM api's Date-header skew; 0 when unknown) */
+      now: function () { var g = gmApi(); return Date.now() + (g && typeof g.skew === 'function' ? g.skew() || 0 : 0); },
       /* VV12 Reset the night: the page's confirm, and the players' mission cleared (mission-publish resetNight) */
       confirm: function (msg) { return W.confirm(msg); }, resetMission: function () { var h = missionHooks(); return h ? h.resetNight() : Promise.resolve(null); },
       /* VV5 BEGIN */ dawn: function () { return runDawn(); }, setPosition: function (pos) { if (S && hasSit()) setPos(pos); } /* VV5 END */,

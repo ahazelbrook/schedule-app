@@ -33,6 +33,9 @@
  *
  * The live view (pure, read by the GM page only): whereAt(person, minute, byId, start), lensRating(room, disguise, floorOf),
  * seesMatches(sees, person) and ballView(play, state, floorOf). Each is documented where it is defined.
+ *
+ * The beat's countdown (ball.timer = { len: sec, endsAt: epoch ms | null, left: sec, paused }; the Run view's timed sections):
+ * timerLen(play), timerLeft(tm, now), timerNext(play, st, op, now, arg), timerDue(st, now) and timerText(sec), documented beside missionTimer.
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
@@ -1365,6 +1368,58 @@
     return { endsAt: num(tm.endsAt) ? tm.endsAt : null, left: tm.left, paused: tm.paused === true, len: tm.len };
   }
 
+  /* ---- the beat's countdown (the Run view's timed sections). ball.timer = { len: sec, endsAt: epoch ms | null, left: sec, paused }; the time
+   * left is always worked out from endsAt (never by counting ticks), so a sleep, a second tab or another device agree.
+   * timerLen(play) -> seconds: play.clock.real minutes (rounded, 1..120) when it is a finite number, else 6 minutes; 30..7200.
+   * timerLeft(tm, now) -> whole seconds left, 0..7200: running -> ceil((endsAt - now) / 1000), paused -> left; not an object -> 0.
+   * timerNext(play, st, op, now, arg) -> the new ball.timer (st is never mutated; st.timer missing -> the default, paused at full length):
+   *   start (only once st.start is a number; at 0 it starts from len), pause, add (arg seconds), reset (full length, paused),
+   *   len (arg seconds: a paused timer starts over at it, a running one keeps going and uses it at the next restart),
+   *   restart (after a step: running -> full len from now, paused -> paused at len), stop (paused at 0). Unknown op: the timer as it is.
+   *   Always { len 30..7200, endsAt whole ms | null (null whenever paused), left 0..7200, paused }.
+   * timerDue(st, now) -> true when the night has started, the timer runs and nothing is left (the Run view steps a beat then).
+   * timerText(sec) -> "m:ss" (360 -> "6:00", 59 -> "0:59", 3725 -> "62:05"). */
+  var TIMER_MAX = 7200;
+  function timerNum(v) { return typeof v === "number" && isFinite(v); }
+  function timerClamp(v, lo, hi) { v = Math.round(+v); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : lo; }
+  function timerLen(play) {
+    var r = isObj(play) && isObj(play.clock) ? play.clock.real : null;
+    return timerClamp((timerNum(r) ? Math.max(1, Math.min(120, Math.round(r))) : 6) * 60, 30, TIMER_MAX);
+  }
+  function timerRuns(tm) { return isObj(tm) && tm.paused !== true && timerNum(tm.endsAt); }
+  function timerLeft(tm, now) {
+    if (!isObj(tm)) return 0;
+    return timerClamp(timerRuns(tm) ? Math.ceil((tm.endsAt - now) / 1000) : tm.left, 0, TIMER_MAX);
+  }
+  function timerBase(play, st) {
+    var tm = isObj(st) ? st.timer : null, len = isObj(tm) && timerNum(tm.len) ? timerClamp(tm.len, 30, TIMER_MAX) : timerLen(play);
+    if (!isObj(tm)) return { len: len, endsAt: null, left: len, paused: true };
+    var left = timerNum(tm.left) ? timerClamp(tm.left, 0, TIMER_MAX) : len;
+    return timerRuns(tm) ? { len: len, endsAt: Math.round(tm.endsAt), left: left, paused: false } : { len: len, endsAt: null, left: left, paused: true };
+  }
+  function timerNext(play, st, op, now, arg) {
+    var b = timerBase(play, st), n = timerNum(now) ? Math.round(now) : 0, left = timerLeft(b, n), len = b.len;
+    var run = function (l, ln) { return { len: ln, endsAt: n + l * 1000, left: l, paused: false }; }, held = function (l, ln) { return { len: ln, endsAt: null, left: l, paused: true }; };
+    switch (op) {
+      case "start": if (!isObj(st) || typeof st.start !== "number" || !b.paused) return b; return run(left > 0 ? left : len, len);
+      case "pause": return held(left, len);
+      case "add": {
+        var add = timerNum(arg) ? Math.round(arg) : 0, l2 = timerClamp(left + add, 0, TIMER_MAX);
+        return b.paused ? held(l2, len) : { len: len, endsAt: (left > 0 ? b.endsAt : n) + (l2 - left) * 1000, left: l2, paused: false };   /* overdue: from now */
+      }
+      case "len": {
+        var ln = timerNum(arg) ? timerClamp(arg, 30, TIMER_MAX) : len;
+        return b.paused ? held(ln, ln) : { len: ln, endsAt: b.endsAt, left: left, paused: false };
+      }
+      case "reset": return held(len, len);
+      case "restart": return b.paused ? held(len, len) : run(len, len);
+      case "stop": return held(0, len);
+    }
+    return b;
+  }
+  function timerDue(st, now) { return isObj(st) && typeof st.start === "number" && timerRuns(st.timer) && timerLeft(st.timer, now) <= 0; }
+  function timerText(sec) { var s = timerClamp(Math.floor(+sec), 0, 1e9), r = s % 60; return Math.floor(s / 60) + ":" + (r < 10 ? "0" : "") + r; }
+
   /* missionFor(view, state, t, pcs) -> the mission players read: { v: 1, site, t, hud, cards }. The page adds seq.
    * Blind: it reads the view, never the play block (and of the room notes only view.rooms' costume and say lines, never an md). state is read
    * for state.heard (who heard a way, and when), state.showTime and state.timer (the GM's ball.timer) only.
@@ -1492,5 +1547,5 @@
     return m;
   }
 
-  return { checkPlay: checkPlay, positionOf: positionOf, lookers: lookers, routesAt: routesAt, leadsInReach: leadsInReach, autoHear: autoHear, beatCard: beatCard, playerView: playerView, targetInView: targetInView, missionFor: missionFor, placesAt: placesAt, beatOf: beatOf, timeLabel: timeLabel, inMin: inMin, countPlay: countPlay, minuteOf: minuteOf, whereAt: whereAt, lensRating: lensRating, seesMatches: seesMatches, ballView: ballView, KINDS: KINDS, DIRS: DIRS, LIMITS: LIMITS };
+  return { checkPlay: checkPlay, positionOf: positionOf, lookers: lookers, routesAt: routesAt, leadsInReach: leadsInReach, autoHear: autoHear, beatCard: beatCard, playerView: playerView, targetInView: targetInView, missionFor: missionFor, placesAt: placesAt, beatOf: beatOf, timeLabel: timeLabel, inMin: inMin, countPlay: countPlay, minuteOf: minuteOf, whereAt: whereAt, lensRating: lensRating, seesMatches: seesMatches, ballView: ballView, timerLen: timerLen, timerLeft: timerLeft, timerNext: timerNext, timerDue: timerDue, timerText: timerText, KINDS: KINDS, DIRS: DIRS, LIMITS: LIMITS };
 });

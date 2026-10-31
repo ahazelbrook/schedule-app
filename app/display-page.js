@@ -380,7 +380,7 @@
     if (!isObj(hud)) return null;
     var list = function (a, n) { return Array.isArray(a) ? a.filter(isObj).slice(0, n) : []; };
     /* the big clock only when the GM turned it on (hud.showTime); crew is { name, room }: the costume is GM-side now */
-    var m = { time: hud.showTime === true ? bstr(hud.time, 16) : '', label: bstr(hud.label), now: [], next: [], night: null, alarm: null, crew: [], ways: null };
+    var m = { time: hud.showTime === true ? bstr(hud.time, 16) : '', label: bstr(hud.label), now: [], next: [], night: null, alarm: null, crew: [], ways: null, timer: null };
     list(hud.now, 3).forEach(function (n) { var t = bstr(n.text); if (t) m.now.push({ text: t, where: bstr(n.where), until: bstr(n.until) ? 'until ' + bstr(n.until, 16) : '' }); });
     list(hud.next, 3).forEach(function (n) {
       var t = bstr(n.text); if (!t) return;
@@ -409,11 +409,29 @@
     });
     var w = hud.ways;
     if (isObj(w) && bnum(w.total) !== null && w.total > 0) { var tot = Math.floor(w.total), fnd = Math.max(0, Math.min(tot, Math.floor(bnum(w.found) || 0))); m.ways = 'Ways found: ' + fnd + ' of ' + tot; }
+    /* the GM's countdown: the model keeps endsAt, never the seconds left, so the signature does not move each second */
+    var tm = hud.timer, tn = function (v) { return typeof v === 'number' && isFinite(v); };
+    if (isObj(tm) && tn(tm.left)) m.timer = { endsAt: tn(tm.endsAt) ? tm.endsAt : null, left: Math.max(0, Math.min(7200, Math.round(tm.left))), paused: tm.paused === true, len: tn(tm.len) ? Math.round(tm.len) : null };
     return m;
   };
   /* a signature of what the band shows, so a poll that changes nothing repaints nothing */
   Pure.bandSig = function (m) { return m ? JSON.stringify(m) : ''; };
+  /* the countdown as the band shows it: server time is nowMs + skewMs (the iPad's clock corrected by the display GET's `now`) */
+  Pure.timerView = function (tm, nowMs, skewMs) {
+    var num = function (v) { return typeof v === 'number' && isFinite(v); };
+    if (!isObj(tm)) return { text: '0:00', state: 'zero', left: 0 };
+    var left = tm.paused === true || !num(tm.endsAt) ? (num(tm.left) ? tm.left : 0) : Math.ceil((tm.endsAt - (nowMs + (num(skewMs) ? skewMs : 0))) / 1000);
+    left = Math.max(0, Math.min(7200, Math.floor(left) || 0));
+    var r = left % 60;
+    return { text: Math.floor(left / 60) + ':' + (r < 10 ? '0' : '') + r, state: tm.paused === true ? 'paused' : left <= 0 ? 'zero' : left < 60 ? 'warn' : 'run', left: left };
+  };
+  /* the server's clock less this one's, from an answer's `now` and the request's send/arrive times; null for a slow or odd round trip */
+  Pure.skewOf = function (serverNow, t0, t1) {
+    if (typeof serverNow !== 'number' || !isFinite(serverNow) || !(t1 >= t0) || t1 - t0 > 3000) return null;
+    return Math.round(serverNow - (t0 + t1) / 2);
+  };
 
+  /* o.onSkew(ms): the server's clock less this one's (Pure.skewOf), on a good answer that carried `now` (the band's countdown) */
   Pure.createPoller = function (o) {
     var T = o.timers || { setTimeout: function (f, ms) { return setTimeout(f, ms); }, clearTimeout: function (id) { clearTimeout(id); } };
     var B = Pure.POLL, fast = o.intervalMs || B.intervalMs, idleBeat = o.idleMs || B.idleMs, idleAfter = o.idleAfterMs || B.idleAfterMs,
@@ -443,6 +461,7 @@
       if (!running) return;
       if (inflight) return;
       inflight = true;
+      var t0 = Date.now();
       var myGen = gen, done = false, guard = T.setTimeout(function () { finish(new Error('timeout')); }, tmo);
       function finish(err, r) {
         if (done) return;
@@ -458,6 +477,7 @@
           setState(code === 401 || code === 403 ? 'denied' : fails >= limit ? 'offline' : 'retrying');
         } else {
           fails = 0; lastErr = null;
+          if (typeof o.onSkew === 'function') { var sk = Pure.skewOf(r.now, t0, Date.now()); if (sk !== null) { try { o.onSkew(sk); } catch (e) { /* ditto */ } } }
           var moved = false;
           if (amb) {
             if (amb.seq !== aseq) moved = true;
@@ -1742,8 +1762,9 @@
     function bandBlock(cls) { var d = el('div', 'dp-b-sec ' + cls); band.appendChild(d); return d; }
     function bandPaint(m) {
       band.textContent = '';
-      if (m.time || m.label) {   /* clock hidden and no label: Now/Next simply move up */
+      if (m.time || m.label || m.timer) {   /* clock hidden and no label: Now/Next simply move up */
         var h = bandBlock('dp-b-time');
+        if (m.timer) { var tw = el('p', 'dp-b-timer'), tt = el('span', 'dp-b-tt'), tp = el('span', 'dp-b-tp'); tp.textContent = 'Paused'; tw.appendChild(tt); tw.appendChild(tp); h.appendChild(tw); }
         if (m.time) bandText(h, 'dp-b-clock', m.time);
         if (m.label) bandText(h, 'dp-b-label', m.label);
       }
@@ -1781,6 +1802,14 @@
         });
       }
       if (m.ways) { var wy = bandBlock('dp-b-ways'); bandText(wy, 'dp-b-crewline', m.ways); }
+      bandTimer();
+    }
+    /* the countdown ticks on its own: only the .dp-b-timer node is rewritten, never the band (bandSig is built from the model) */
+    function bandTimer() {
+      var n = band.querySelector('.dp-b-timer'), tm = s.bandModel && s.bandModel.timer; if (!n || !tm) return;
+      var v = Pure.timerView(tm, Date.now(), s.skew || 0), tt = n.querySelector('.dp-b-tt');
+      if (tt && tt.textContent !== v.text) tt.textContent = v.text;
+      n.className = 'dp-b-timer' + (v.state === 'run' ? '' : ' dp-b-t-' + v.state);
     }
     /* When the night's content is more than the band can hold, cut in the design's order: the ways found first (P1), then the crew's rooms. */
     function bandShrink() {
@@ -1805,6 +1834,8 @@
     function applyBand(hud) { s.bandModel = Pure.bandModel(hud); if (!s.bandModel) s.bandSig = ''; paintBand(); }
     if (window.ResizeObserver) { var bandRo = new ResizeObserver(function () { bandFit(); }); bandRo.observe(band); s.offs.push(function () { bandRo.disconnect(); }); }
     s.offs.push(on(window, 'resize', function () { if (!band.hidden) bandShrink(); bandFit(); }));
+    var bandTick = setInterval(bandTimer, 1000); s.offs.push(function () { clearInterval(bandTick); });
+    s.offs.push(on(document, 'visibilitychange', function () { if (!document.hidden) bandTimer(); }));
 
     /* swap in a new stage with a cross-fade */
     function swap(stage) {
@@ -1865,6 +1896,7 @@
            the small one; an adapter that does not simply gets the transcriber part in full each time */
         fetch: function (seq, aseq, sseq, hseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq, sseq === null ? undefined : sseq, hseq === null ? undefined : hseq); },
         onMission: function (hud) { applyBand(hud); },
+        onSkew: function (ms) { s.skew = ms; },
         isHidden: function () { return document.hidden; },
         onAmbient: function (doc) { applyAmbient(doc); },
         /* the transcriber's part of the answer goes to app/stt.js, which then makes no request of its own for it */

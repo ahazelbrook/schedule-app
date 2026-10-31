@@ -327,5 +327,87 @@ test('the Run menu offers the time toggle, with a label that follows the state',
   it.run({ st: {}, set: (c) => { set = c; }, rerender() {} }); assert.deepEqual(set, { showTime: true });
 });
 
+/* ---- the beat timer in the Run header: controls, Start the night, the 1 s tick ---- */
+const LEN = B.timerLen(play), BEAT = { start: 0, t: 45, crew: {} };
+const runTm = (endsAt) => ({ len: LEN, endsAt, left: LEN, paused: false }), pausedTm = (left) => ({ len: LEN, endsAt: null, left, paused: true });
+test('timer: the controls show once the night has started (a paused default when there is no ball.timer), never before', () => {
+  const before = viewRig({ site: 'The Pelican Rooms', open: ['Showroom'] });
+  assert.ok(!/data-rvtimer|data-rv="tgo"/.test(before.box.innerHTML), 'no timer before Start the night');
+  const after = viewRig({ ...BEAT });
+  const h = after.box.innerHTML;
+  assert.ok(/data-rvtimer[^>]*>\d+:\d\d</.test(h) && /data-rv="tgo">Start</.test(h) && /data-rv="tadd1"/.test(h) && /data-rv="tadd5"/.test(h) && /data-rv="treset"/.test(h) && /data-rv="tlen"/.test(h));
+  assert.ok(h.includes('>' + B.timerText(LEN) + '<') && h.includes('class="rv-tleft paused"'), 'full length, paused');
+  const going = viewRig({ ...BEAT, timer: runTm(Date.now() + 90000) });
+  assert.ok(/data-rv="tgo">Pause</.test(going.box.innerHTML));
+});
+test('timer: Start the night writes the timer paused with the start', () => {
+  const r = viewRig({ site: 'The Pelican Rooms', open: ['Showroom'] });
+  r.click('start');
+  assert.equal(r.sets.length, 1); assert.deepEqual(r.sets[0].timer, { len: LEN, endsAt: null, left: LEN, paused: true }); assert.equal(r.sets[0].start, 0);
+});
+test('timer: Start, Pause, +1, +5 and Reset write the timer through ball.js', () => {
+  const r = viewRig({ ...BEAT, timer: pausedTm(100) });
+  r.click('tgo'); const a = r.sets.pop().timer; assert.ok(a.paused === false && a.left === 100 && a.endsAt >= Date.now() + 99000 && a.endsAt <= Date.now() + 101000);
+  const g = viewRig({ ...BEAT, timer: runTm(Date.now() + 50000) });
+  g.click('tgo'); const p = g.sets.pop().timer; assert.ok(p.paused === true && p.endsAt === null && p.left >= 49 && p.left <= 50);
+  r.click('tadd1'); assert.deepEqual(r.sets.pop().timer, pausedTm(160)); r.click('tadd5'); assert.deepEqual(r.sets.pop().timer, pausedTm(400));
+  g.click('treset'); assert.deepEqual(g.sets.pop().timer, pausedTm(LEN));
+});
+test('timer: the tick steps one beat when a running timer reaches zero, restarting it, in ONE write', () => {
+  const r = viewRig({ ...BEAT, timer: runTm(Date.now() - 1000) });
+  r.view.tick();
+  assert.equal(r.sets.length, 1, 'one write'); const s = r.sets[0];
+  assert.ok(s.t > 45, 'a beat on'); assert.ok(s.timer.paused === false && s.timer.left === LEN && s.timer.endsAt >= Date.now() + LEN * 1000 - 2000, 'restarted for the next beat');
+});
+test('timer: the tick does nothing while it still has time, while paused, before the night, or with no timer', () => {
+  for (const st of [{ ...BEAT, timer: runTm(Date.now() + 30000) }, { ...BEAT, timer: pausedTm(0) }, { ...BEAT }, { site: 'The Pelican Rooms', timer: runTm(Date.now() - 5000) }]) {
+    const r = viewRig(st); r.view.tick(); assert.equal(r.sets.length, 0, JSON.stringify(st));
+  }
+});
+test('timer: never auto-steps while the GM is peeking; the first tick after the peek steps', () => {
+  const r = viewRig({ ...BEAT, timer: runTm(Date.now() - 1000) });
+  r.view.peek(90); assert.ok(r.view.peeking());
+  r.view.tick(); r.view.tick(); assert.equal(r.sets.length, 0, 'held while peeking');
+  r.view.unpeek(); r.view.tick(); assert.equal(r.sets.length, 1, 'steps once peek ends');
+});
+test('timer: a second tick on state that has already stepped does nothing (the state is re-read)', () => {
+  const r = viewRig({ ...BEAT, timer: runTm(Date.now() - 1000) });
+  r.view.tick(); const w = r.sets[0]; r.state = { ...r.state, t: w.t, timer: w.timer }; r.view.tick();
+  assert.equal(r.sets.length, 1);
+});
+test('timer: on the last beat the tick stops the timer at zero and says so, without stepping', () => {
+  let last = 0; for (let t = 0, n; (n = R.stepTime(play, { start: 0, t }, 1)) !== null; t = n) last = n;
+  const r = viewRig({ start: 0, t: last, crew: {}, timer: runTm(Date.now() - 1000) });
+  r.view.tick();
+  assert.equal(r.sets.length, 1); assert.deepEqual(r.sets[0], { timer: { len: LEN, endsAt: null, left: 0, paused: true } }); assert.ok(r.toasts.length === 1 && /Last beat/.test(r.toasts[0][0]));
+});
+test('timer: a manual step restarts the countdown in the mode it was in; no ball.timer, no timer written', () => {
+  const run = viewRig({ ...BEAT, timer: runTm(Date.now() + 20000) }); run.click('next');
+  assert.ok(run.sets[0].t > 45 && run.sets[0].timer.paused === false && run.sets[0].timer.left === LEN);
+  const held = viewRig({ ...BEAT, timer: pausedTm(7) }); held.click('next'); assert.deepEqual(held.sets[0].timer, pausedTm(LEN));
+  const none = viewRig({ ...BEAT }); none.click('next'); assert.ok(!('timer' in none.sets[0]));
+});
+
+test('timer: every control publishes after a good write (and not after a refused one)', () => {
+  const r = viewRig({ ...BEAT, timer: pausedTm(100) }); const pubs = []; r.host.publish = (t, why) => pubs.push(why);
+  for (const k of ['tgo', 'tadd1', 'tadd5', 'treset']) r.click(k);
+  assert.deepEqual(pubs, ['timer', 'timer', 'timer', 'timer']);
+  r.setOk = false; r.click('tgo'); assert.equal(pubs.length, 4, 'a refused write publishes nothing');
+});
+test('timer: stamps use host.now() (server time) when the host has one', () => {
+  const r = viewRig({ ...BEAT, timer: pausedTm(100) }); r.host.now = () => 5e12; r.click('tgo');
+  assert.equal(r.sets.pop().timer.endsAt, 5e12 + 100000);
+});
+test('tracker mvTimerText: paused, running, under a minute, zero, missing', () => {
+  const vm = require('node:vm'), w = {}, c = { window: w, document: { addEventListener() {}, createElement() { return {}; } }, console, setTimeout, clearTimeout, setInterval, clearInterval, localStorage: { getItem() { return null; }, setItem() {} }, navigator: {} };
+  c.self = w; w.document = c.document; vm.createContext(c); vm.runInContext(fs.readFileSync(path.join(ROOT, 'app', 'tracker.js'), 'utf8'), c);
+  const f = w.B68Tracker.mvTimerText;
+  assert.deepEqual({ ...f({ endsAt: null, left: 125, paused: true }, 0) }, { text: 'Time paused 2:05', cls: '' });
+  assert.deepEqual({ ...f({ endsAt: 100000, left: 9, paused: false }, 0) }, { text: 'Time left 1:40', cls: '' });
+  assert.deepEqual({ ...f({ endsAt: 30000, left: 9, paused: false }, 0) }, { text: 'Time left 0:30', cls: 'warn' });
+  assert.deepEqual({ ...f({ endsAt: 1000, left: 9, paused: false }, 5000) }, { text: 'Time is up', cls: 'zero' });
+  assert.deepEqual({ ...f(null, 0) }, { text: 'Time paused 0:00', cls: '' });
+});
+
 console.log(failed ? 'FAILED ' + failed + ' of ' + (failed + passed) : 'ok ' + passed + ' passed');
 process.exit(failed ? 1 : 0);

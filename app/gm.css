@@ -1087,6 +1087,12 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 #gm-page .rv-btn:disabled { opacity: .4; cursor: default; box-shadow: none; }
 #gm-page .rv-btn:focus-visible, #gm-page .rv-sq:focus-visible, #gm-page .rv-card:focus-visible, #gm-page .rv-pc:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 #gm-page .rv-time { font: 900 24px/1 var(--font-cond); letter-spacing: .02em; min-width: 2.6em; text-align: center; }
+#gm-page .rv-timer { display: inline-flex; align-items: center; gap: 4px; }
+#gm-page .rv-tleft { font: 900 20px/1 var(--font-cond); font-variant-numeric: tabular-nums; min-width: 3.2em; text-align: center; }
+#gm-page .rv-tleft.warn { color: #e0a030; }
+#gm-page .rv-tleft.zero { color: #d94b3a; }
+#gm-page .rv-tleft.paused { opacity: .65; }
+#gm-page .rv-tlen { width: 3.4em; }
 #gm-page .rv-beat { font: 700 12.5px/1.2 var(--font-mono); color: var(--ink-soft); white-space: nowrap; }
 #gm-page .rv-dim { color: var(--ink-soft); font-size: 12.5px; }
 #gm-page .rv-start { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }

@@ -681,6 +681,9 @@
 .ds-mv-meta { color: #cfc7bb; }
 .ds-mv-lead.done .ds-mv-p { text-decoration: line-through; color: #a39a8c; }
 .ds-mv-nn { padding-top: 8px; border-top: 2px solid #4a443c; }
+.ds-mv-timer { font-weight: 700; }
+.ds-mv-timer.warn { color: #f0b040; }
+.ds-mv-timer.zero { color: #ff5a48; }
 @media print { .ds-mv { display: none !important; } }
 .ds-tv { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; background: #0b0a09; color: #f1ece4; touch-action: pan-x pan-y pinch-zoom; overscroll-behavior: contain; padding-bottom: env(safe-area-inset-bottom, 0px); }
 .ds-tv-top { display: flex; align-items: center; gap: 12px; padding: calc(8px + env(safe-area-inset-top, 0px)) 12px 8px; flex: 0 0 auto; }
