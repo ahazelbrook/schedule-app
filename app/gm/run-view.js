@@ -99,7 +99,10 @@
         tn.parentNode.replaceChild(frag, tn);
       });
     });
-    if (n) box.insertAdjacentHTML("afterbegin", '<p class="rv-dim rv-nowkey">Lit: this beat, ' + esc(B.timeLabel(play, w0)) + "–" + esc(B.timeLabel(play, w1)) + "</p>");
+    if (n) {
+      var key = '<p class="rv-dim rv-nowkey">Lit: this beat, ' + esc(B.timeLabel(play, w0)) + "–" + esc(B.timeLabel(play, w1)) + "</p>", hd = box.querySelector(".rv-sh");
+      if (hd) hd.insertAdjacentHTML("afterend", key); else box.insertAdjacentHTML("afterbegin", key);
+    }
   }
 
   function spanOf(play) { var n = B.minuteOf(play.clock.end, play.clock.start); return n > 0 ? n : 1440; }

@@ -616,14 +616,15 @@ try {
     check(await N.page.$eval(lounge + ' .rv-rmnote a[href^="#pp:npc:"]', (a) => /Pip Quill/.test(a.textContent)), 'a wikilink in the note is a #pp: link');
     /* ticket R: the segment of the note holding the beat's time is lit; a peek a beat later moves it */
     {
-      const bt = Math.floor(st0.t / 15) * 15, lab = (m) => BALL.timeLabel(c2.play, m);
+      const BL = Number.isInteger(c2.play.clock.beat) ? c2.play.clock.beat : 15, bt = Math.floor(st0.t / BL) * BL, lab = (m) => BALL.timeLabel(c2.play, m);
       const lit = () => N.page.$$eval(lounge + ' .rv-rmnote mark.rv-now', (l) => l.map((e) => e.textContent));
       const l0 = await lit();
       check(l0.length === 1 && l0[0].startsWith(lab(bt)), 'the room note lights the segment holding the shown beat time (' + lab(bt) + '): ' + JSON.stringify(l0));
-      check(await N.page.$eval(sec + ' .rv-nowkey', (e) => e.textContent) === 'Lit: this beat, ' + lab(bt) + '–' + lab(bt + 15), 'the legend names the beat');
-      await N.page.click('.rv-sq[data-i="' + (bt / 15 + 1) + '"]');
+      check(await N.page.$eval(sec + ' .rv-nowkey', (e) => e.textContent) === 'Lit: this beat, ' + lab(bt) + '–' + lab(bt + BL), 'the legend names the beat');
+      check(await N.page.$eval(sec + ' .rv-nowkey', (e) => !!e.previousElementSibling && e.previousElementSibling.classList.contains('rv-sh')), 'the legend follows a heading');
+      await N.page.click('.rv-sq[data-i="' + (bt / BL + 1) + '"]');
       const l1 = await lit();
-      check(l1.length === 1 && l1[0].startsWith(lab(bt + 15)) && l1[0] !== l0[0], 'peeking a beat later moves the light: ' + JSON.stringify(l1));
+      check(l1.length === 1 && l1[0].startsWith(lab(bt + BL)) && l1[0] !== l0[0], 'peeking a beat later moves the light: ' + JSON.stringify(l1));
       await N.page.click('[data-rv="unpeek"]');
       check(JSON.stringify(await lit()) === JSON.stringify(l0), 'Back to now returns it');
     }

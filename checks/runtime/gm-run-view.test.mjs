@@ -409,9 +409,6 @@ test('tracker mvTimerText: paused, running, under a minute, zero, missing', () =
   assert.deepEqual({ ...f(null, 0) }, { text: 'Time paused 0:00', cls: '' });
 });
 
-console.log(failed ? 'FAILED ' + failed + ' of ' + (failed + passed) : 'ok ' + passed + ' passed');
-process.exit(failed ? 1 : 0);
-
 test('nowSegments: the whole " · " segment holding a time inside [w0, w1); the end is exclusive; after-midnight times work', () => {
   const tm = (tok) => B.minuteOf(tok, '21:00');
   const T1 = 'Sgt. Rook on the door from 21:00 and again 00:45 · the harbourmaster 22:00 and 00:45 · a quiet word at 23:30';
@@ -427,3 +424,6 @@ test('nowSegments: the whole " · " segment holding a time inside [w0, w1); the 
   assert.deepEqual(R.nowSegments('room 122:00 or 9:75', 0, 1440, tm), [], 'not clock times');
   assert.deepEqual(R.nowSegments('x 22:00', 0, 1440, null), [], 'no converter: nothing');
 });
+
+console.log(failed ? 'FAILED ' + failed + ' of ' + (failed + passed) : 'ok ' + passed + ' passed');
+process.exit(failed ? 1 : 0);
