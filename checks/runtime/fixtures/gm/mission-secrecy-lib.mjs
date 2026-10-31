@@ -12,7 +12,8 @@
 //                          what a PC's own card must hold for this state, and what it must NOT (what only the others heard, were told, or carry)
 //   bandForbidden(fx, st)  everything the band must not hold for this state
 //   keyPaths(v)            the set of key paths of a value, arrays collapsed to "*"
-//   HUD_PATHS, CARD_PATHS  the key paths design 5.5c allows (written out here, not read from the code)
+//   HUD_PATHS, CARD_PATHS  the key paths design 5.5c allows in what the page BUILDS (written out here, not read from the code)
+//   SERVER_HUD_PATHS, SERVER_CARD_PATHS  the same plus the retired costume keys cleanMission writes back blank (for stored/served missions)
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -121,11 +122,16 @@ const P = (list) => new Set(list.split(/\s+/).filter(Boolean));
 // design 5.5c, written out
 export const HUD_PATHS = P(`time label now now.*.text now.*.where now.*.until next next.*.text next.*.where next.*.at next.*.inMin
   night night.beats night.start night.cur night.marks night.marks.*.i night.marks.*.icon night.marks.*.text
-  alarm alarm.name alarm.size alarm.filled alarm.text crew crew.*.name crew.*.costume crew.*.icon crew.*.room target target.room ways ways.found ways.total
+  alarm alarm.name alarm.size alarm.filled alarm.text crew crew.*.name crew.*.room target target.room ways ways.found ways.total
   rooms rooms.*.zone rooms.*.rooms showTime timer timer.endsAt timer.left timer.paused timer.len`);
-export const CARD_PATHS = P(`name owner costume icon room pos warn warn.who warn.look warn.sees zones zones.controlled zones.risky items
+export const CARD_PATHS = P(`name owner room items
   leads leads.*.name leads.*.line leads.*.heard leads.*.window leads.*.next leads.*.done know next next.*.text next.*.where next.*.at next.*.inMin
   paths paths.*.text paths.*.until busy costumeLine here`);
+
+// What the SERVER keeps: cleanMission still accepts the retired costume fields and writes them back blank, so a stored or served mission carries those keys
+// (empty); only the lists above, which check what the page's missionFor/buildMission BUILD, forbid them.
+export const SERVER_HUD_PATHS = new Set([...HUD_PATHS, ...P('crew.*.costume crew.*.icon')]);
+export const SERVER_CARD_PATHS = new Set([...CARD_PATHS, ...P('costume icon pos warn warn.who warn.look warn.sees zones zones.controlled zones.risky')]);
 
 /* the steps of a way other than the NEXT unticked one (Alex's H7: a card shows the next step only), for every way, from the state's tick list */
 export function laterSteps(fx, st) {
@@ -141,16 +147,17 @@ export function laterSteps(fx, st) {
 
 export const has = (hay, needle) => hay.toLowerCase().includes(needle.toLowerCase());
 /* the checks on one published mission (the parsed body's mission, or what cleanMission kept), for the state it was built from */
-export function checkMission(fx, m, st, label, tally) {
+export function checkMission(fx, m, st, label, tally, viaServer = false) {
+  const HP = viaServer ? SERVER_HUD_PATHS : HUD_PATHS, CP = viaServer ? SERVER_CARD_PATHS : CARD_PATHS;
   const ids = ['pc_a', 'pc_b'];
   const band = JSON.stringify(m.hud);
   for (const bad of bandForbidden(fx, st)) { tally.negBand++; if (has(band, bad)) throw new Error(label + ': the band holds "' + bad + '"'); }
-  for (const p of keyPaths(m.hud)) if (!HUD_PATHS.has(p)) throw new Error(label + ': the band has a key outside design 5.5c: hud.' + p);
+  for (const p of keyPaths(m.hud)) if (!HP.has(p)) throw new Error(label + ': the band has a key outside design 5.5c: hud.' + p);
   for (const k of Object.keys(m)) if (!['v', 'site', 't', 'seq', 'hud', 'cards'].includes(k)) throw new Error(label + ': a top-level key outside the shape: ' + k);
   if (Object.keys(m.cards).sort().join() !== ids.join()) throw new Error(label + ': the cards are ' + Object.keys(m.cards));
   for (const id of ids) {
     const card = m.cards[id], text = JSON.stringify(card), e = expectation(fx, st, id, ids.filter((x) => x !== id));
-    for (const p of keyPaths(card)) if (!CARD_PATHS.has(p)) throw new Error(label + ': ' + id + '\'s card has a key outside design 5.5c: ' + p);
+    for (const p of keyPaths(card)) if (!CP.has(p)) throw new Error(label + ': ' + id + '\'s card has a key outside design 5.5c: ' + p);
     for (const bad of e.mustNot) { tally.negCard++; if (has(text, bad)) throw new Error(label + ': ' + id + '\'s card holds "' + bad + '" (heard, told or carried by the other, a later step, a hidden event, or a GM marker)'); }
     for (const good of e.must) { tally.pos++; tally.seen.add(good); if (!has(text, good)) throw new Error(label + ': positive control: ' + id + '\'s own "' + good + '" is missing from their card, so the negatives above proved nothing'); }
   }

@@ -1,6 +1,6 @@
 // The whole mission loop in one rehearsal (VV10, design 6.3): the GM page (1536x864), the table display (1180x820) and two phones (390x844, one player each)
 // against a real local Worker (wrangler dev, DEV_USER) on PORT (default 8920), with the INVENTED Pelican Rooms (fixtures/gm/pelican-play-v2.json).
-// The GM drives the Run view; the display shows the band; each phone has its Mission card open. Four Next presses, with the other things a night does between them:
+// The GM drives the Run view; the display shows the band; each phone has its Mission card open (it opens by itself). Four Next presses, with the other things a night does between them:
 //   - Next: the band's time, NOW and NEXT change within one poll, and each open card redraws (latency printed against the gate's 3 s)
 //   - each player sees only their own card (their name, never the other's, in the card or anywhere in the page)
 //   - Heard: a lead lands on one phone and not on the other
@@ -135,6 +135,8 @@ try {
   /* the night: start, place the crew */
   await G.page.click('[data-rv="start"][data-key="4/5"]');
   check(!!(await until(async () => (await ball()) && (await ball()).start === 45, 8000)), 'Start the night (4/5): ball.start = 45');
+  /* the big clock is off the iPad unless the GM turned it on (ball.showTime; the menu toggle is the GM page's): this rehearsal times the band by its clock, so turn it on before the crew is placed (the page adopts the server's ball on its next write) */
+  { const b0 = await ball(); await api('PATCH', '/gm/state', { ball: Object.assign({}, b0, { showTime: true }) }); }
   await G.page.click('.rv-tray .rv-pc[data-id="' + A.id + '"]'); await G.page.click('.rv-card[data-room="Showroom"]');
   await until(async () => ((await ball()).crew || {})[A.id], 8000);
   await G.page.click('.rv-tray .rv-pc[data-id="' + B.id + '"]'); await G.page.click('.rv-card[data-room="Cocktail lounge"]');
@@ -147,8 +149,7 @@ try {
     P[k] = await openPage(p.owner, 390, 844, '/#c/' + p.id, { touch: true });
     await P[k].page.waitForSelector('#dossier .ds-bar', { timeout: 30000 });
     await P[k].page.waitForSelector('.ds-missionbtn', { timeout: 15000 });
-    await P[k].page.click('.ds-missionbtn');
-    await P[k].page.waitForSelector('.ds-mv', { timeout: 5000 });
+    await P[k].page.waitForSelector('.ds-mv', { timeout: 15000 });   // the card opens by itself: it is new to this phone (no tap)
   }
   const cardText = (pg) => pg.evaluate(() => { const v = document.querySelector('.ds-mv'); return v ? v.innerText : ''; });
   const pageHas = (pg, s) => pg.evaluate((x) => document.documentElement.outerHTML.includes(x), s);

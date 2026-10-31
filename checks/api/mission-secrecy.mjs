@@ -93,8 +93,8 @@ await step('the fixture mission is accepted as the page builds it, and what the 
   const r = await call('PATCH', '/api/campaign', { body: { mission: M1 } });
   expect(r.status === 200, 'PATCH ' + r.status + ' ' + r.text.slice(0, 200));
   const tally = { negBand: 0, negCard: 0, pos: 0, seen: new Set() };
-  SEC.checkMission(FX, await storedMission(), ST, 'stored', tally);
-  SEC.checkMission(FX, r.json.doc.mission, ST, 'the PATCH answer', tally);
+  SEC.checkMission(FX, await storedMission(), ST, 'stored', tally, true);
+  SEC.checkMission(FX, r.json.doc.mission, ST, 'the PATCH answer', tally, true);
   expect(tally.negBand > 20 && tally.negCard > 20 && tally.pos >= 8, 'the rules ran: ' + JSON.stringify({ n: tally.negBand, c: tally.negCard, p: tally.pos }));
   // the campaign route serves the whole document to every player (call H5: the phone shows only its own card, the data is not locked per player)
   for (const user of [ALEX, BEA]) {
@@ -130,7 +130,7 @@ await step('the display GET, in every form: no answer holds a card\'s own string
     expect(part.hseq === 7, qs + ': hseq ' + part.hseq);
     if (part.unchanged) { expect(!('hud' in part), qs + ': unchanged with a hud'); unchanged++; }
     else {
-      for (const p of SEC.keyPaths(part.hud)) expect(SEC.HUD_PATHS.has(p), qs + ': a key outside the band\'s: hud.' + p);
+      for (const p of SEC.keyPaths(part.hud)) expect(SEC.SERVER_HUD_PATHS.has(p), qs + ': a key outside the band\'s: hud.' + p);
       expect(same(part.hud, stored.hud), qs + ': the hud served is the hud stored');
       served++;
     }
@@ -167,12 +167,12 @@ await step('extra keys never survive: beside the band, beside a card or at any d
   expect(r.status === 200, 'status ' + r.status);
   const doc = await storedDoc();
   expect(!JSON.stringify(doc).includes(mark) && !JSON.stringify(doc).includes('Make her lose'), 'an extra key survived into the stored document');
-  for (const p of SEC.keyPaths(doc.mission.hud)) expect(SEC.HUD_PATHS.has(p), 'stored: a key outside the band: hud.' + p);
-  for (const c of Object.values(doc.mission.cards)) for (const p of SEC.keyPaths(c)) expect(SEC.CARD_PATHS.has(p), 'stored: a key outside a card: ' + p);
+  for (const p of SEC.keyPaths(doc.mission.hud)) expect(SEC.SERVER_HUD_PATHS.has(p), 'stored: a key outside the band: hud.' + p);
+  for (const c of Object.values(doc.mission.cards)) for (const p of SEC.keyPaths(c)) expect(SEC.SERVER_CARD_PATHS.has(p), 'stored: a key outside a card: ' + p);
   expect(same(Object.keys(doc.mission), ['v', 'site', 't', 'seq', 'hud', 'cards']), 'stored top-level keys: ' + Object.keys(doc.mission));
   const d = await display('seq=0&aseq=0&sseq=0&hseq=0');
   expect(d.json.mission.hseq === 8, 'the new hud is served');
-  for (const p of SEC.keyPaths(d.json.mission.hud)) expect(SEC.HUD_PATHS.has(p), 'served: a key outside the band: hud.' + p);
+  for (const p of SEC.keyPaths(d.json.mission.hud)) expect(SEC.SERVER_HUD_PATHS.has(p), 'served: a key outside the band: hud.' + p);
   expect(!d.text.includes('GM-ONLY') && !d.text.includes('A brass key') && !d.text.includes(ALEX) && !deepKeys(d.json).includes('cards'), 'the extra keys did not survive: ' + d.text.slice(0, 200));
   await call('PATCH', '/api/campaign', { body: { mission: M1 } });
 });
