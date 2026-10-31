@@ -458,6 +458,13 @@
       if (MZ && el) { try { mapZoom = MZ.attach(fr, el, { store: mapViewState }); } catch (e) { mapZoom = null; /* the map still reads, unzoomed */ } }
     }
 
+    /* the one toggle on a room card: Reveal on the map / Revealed · hide (the Run view's own list), or plain text when a band or survey opened it */
+    function revealToggle(c, ctx) {
+      var mine = list(ctx.st.open).indexOf(c.name) >= 0, room = ' data-room="' + esc(c.name) + '"';
+      if (!c.open) return '<p class="rv-open no"><button type="button" class="rv-btn sm rv-tog" data-rv="open"' + room + ' aria-pressed="false">Reveal on the map</button></p>';
+      if (mine) return '<p class="rv-open yes"><button type="button" class="rv-btn sm rv-tog" data-rv="close"' + room + ' aria-pressed="true">Revealed · hide</button></p>';
+      return '<p class="rv-open yes">Revealed (surveyed)</p>';
+    }
     /* the rooms (the top of the right column): the room tapped, then every room a PC is in; who is there, what happens, the leads in reach, the prep note */
     function roomsSection(box, ctx) {
       var m = ctx.model, shown = roomsShown(m, ctx.sel), byId = {};
@@ -468,7 +475,7 @@
         var c = m.cards[name], tapped = name === ctx.sel, ppl = peopleIn(ctx.play, ctx.st, ctx.shownT, name), evs = eventsIn(ctx.play, ctx.st, ctx.shownT, name);
         var reach = reachIn(ctx.play, ctx.st, ctx.shownT, c.pcs.map(function (p) { return p.id; }));
         h += '<div class="rv-rm' + (tapped ? " sel" : "") + '" data-room="' + esc(name) + '"><h3 class="rv-sh">' + esc(c.name) + (c.zoneLabel ? ' <small>' + esc(c.zoneLabel) + "</small>" : "") + "</h3>" +
-          '<p class="rv-open ' + (c.open ? "yes" : "no") + '">' + (c.open ? "Open to the players" : "Not open to the players") + "</p>" +
+          revealToggle(c, ctx) +
           '<p class="rv-rmpcs"><span class="rv-lab">PCs</span> ' + (c.pcs.length ? c.pcs.map(function (p) { return "<b>" + esc(p.name) + "</b>"; }).join(", ") : '<span class="rv-dim">none</span>') + "</p>";
         h += '<h4 class="rv-lab">Who&#39;s here</h4><ul class="rv-who">' + (ppl.length ? ppl.map(function (p) {
           return '<li class="npc">' + npcName(ctx, byId[p.id], p.label || p.npc || p.id) + " <small>" + esc(p.kind) + "</small>" + (p.moving ? " → " + esc(p.moving.to) + " in " + p.moving.inMin + " min" : "") + "</li>";
@@ -487,14 +494,6 @@
           var note = null; try { note = host.roomNote(name); } catch (e) { note = null; }
           h += typeof note === "string" ? '<div class="rv-rmnote pp-doc pp-cardbody">' + note + "</div>"       /* the page's renderer made it from the prep note */
             : '<p class="rv-dim rv-nonote">No notes for ' + esc(name) + ': add <code>### ' + esc(name) + "</code> under <code>## Rooms</code> in the prep note.</p>";
-        }
-        if (tapped) {
-          var bo = list(ctx.st.open);
-          h += '<div class="rv-acts">';
-          if (!c.open) h += '<button type="button" class="rv-btn" data-rv="open" data-room="' + esc(c.name) + '">Open for the players</button>';
-          else if (bo.indexOf(c.name) >= 0) h += '<button type="button" class="rv-btn" data-rv="close" data-room="' + esc(c.name) + '">Close for the players</button>';
-          list(host.pcs()).forEach(function (p) { if (!c.pcs.some(function (q) { return q.id === p.id; })) h += '<button type="button" class="rv-btn" data-rv="move" data-id="' + esc(p.id) + '" data-room="' + esc(c.name) + '">Move ' + esc(p.name) + " here</button>"; });
-          h += "</div>";
         }
         h += "</div>";
       });
@@ -625,7 +624,6 @@
           if (arm) placeAt(arm, room); else { sel = room; self.rerender(); }
           break;
         }
-        case "move": placeAt(el.getAttribute("data-id"), el.getAttribute("data-room")); break;
         case "open": host.openRoom(el.getAttribute("data-room"), true); self.rerender(); break;
         case "close": host.openRoom(el.getAttribute("data-room"), false); self.rerender(); break;
         case "heard": case "unhear": {

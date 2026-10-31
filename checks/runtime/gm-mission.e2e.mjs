@@ -135,7 +135,7 @@ try {
   await G.page.click('.rv-tray .rv-pc[data-id="run-pc2"]'); await G.page.click('.rv-card[data-room="Cocktail lounge"]');
   await until(async () => ((await ball()).crew || {})['run-pc2'], 8000);
   await G.page.click('.rv-card[data-room="Luxury penthouse"] .rv-cn');
-  await G.page.click('.rv-sec[data-sec="room"] [data-rv="move"][data-id="run-pc3"]');
+  await G.page.click('.rv-tray .rv-pc[data-id="run-pc3"]'); await G.page.click('.rv-card[data-room="Luxury penthouse"]');
   await until(async () => ((await ball()).crew || {})['run-pc3'], 8000);
   check(!!(await until(async () => { const x = await mission(); return x && Object.keys(x.cards).length === 3 ? x : null; }, 10000)), 'three PCs on the job: three cards');
   m = await mission();
