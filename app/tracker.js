@@ -1606,6 +1606,7 @@
     /* the sheet may have redrawn its head since: focus goes to the button that is there now */
     var back = (cur && cur.root && cur.root.querySelector && cur.root.querySelector('.ds-tablebtn')) || v.from;
     if (restore !== false && back && back.focus && document.body.contains(back)) { try { back.focus({ preventScroll: true }); } catch (e) {} }
+    if (restore !== false && cur) missionSync();   /* a card that changed under the viewer opens now */
   }
   function openTableScreen(from) {
     var sc = screenApi(); if (!sc || tv) return;
@@ -1699,7 +1700,9 @@
     var nw = missionNew(missionData());
     b.classList.toggle('new', nw); b.setAttribute('aria-label', nw ? 'Mission card, changed' : 'Mission card'); b.innerHTML = missionButtonBody(nw);
   }
+  function onNet() { if (mv) paintMission(); }   /* online/offline: the Move row hides or shows */
   function closeMissionScreen(restore) {
+    window.removeEventListener('online', onNet); window.removeEventListener('offline', onNet);
     if (mAskT) { clearTimeout(mAskT); mAskT = null; }   /* the "Asked for" timer goes with the viewer */
     if (!mv) return; var v = mv; mv = null;
     if (v.el.parentNode) v.el.parentNode.removeChild(v.el);
@@ -1819,6 +1822,7 @@
     var body = mAdd(el, 'div', 'ds-mv-body');
     x.addEventListener('click', function () { closeMissionScreen(); });
     var mine = (pcId && m.pcs.filter(function (p) { return p.id === pcId; })[0]) || m.pcs.filter(function (p) { return cur && cur.doc && p.id === cur.doc.id; })[0] || m.pcs[0];   /* the asked-for character, else this sheet's if it has a card, else the first */
+    window.addEventListener('online', onNet); window.addEventListener('offline', onNet);
     mv = { el: el, body: body, sw: sw, swKey: '', pc: mine.id, from: from || null };
     document.body.appendChild(el);
     try { x.focus({ preventScroll: true }); } catch (e) {}
@@ -1829,7 +1833,8 @@
   function missionSync() {
     if (mv) { paintMission(); return; }
     var m = missionData(), nw = m ? m.pcs.filter(pcNew) : [], p = nw.filter(function (q) { return cur && cur.doc && q.id === cur.doc.id; })[0] || nw[0];   /* this sheet's character first */
-    if (p && cur) openMissionScreen(null, p.id); else refreshMissionDot();
+    var other = !!document.querySelector('[aria-modal="true"]:not(.ds-mv)');   /* another full-screen layer is up (the Table viewer, ...): no second dialog, the dot says so; it opens on the next sync once that layer is gone */
+    if (p && cur && !other) openMissionScreen(null, p.id); else refreshMissionDot();
   }
 
   /* ---------- API ---------- */

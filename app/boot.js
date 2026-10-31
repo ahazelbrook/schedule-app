@@ -375,7 +375,7 @@
         if (pcId === id) return api.save({ moveReq: req });   /* the open sheet: its own save path (playDelta sends a changed top-level field as ref.update) */
         var r2 = col().doc(pcId); if (typeof r2.update !== 'function') return Promise.reject(new Error('Saving is not available in this view.'));
         cache[pcId] = Object.assign({}, cache[pcId], { moveReq: req });
-        return r2.update({ moveReq: req }).catch(function (e) { toast('Could not ask to move: ' + (e && e.message || e), true); throw e; });
+        return r2.update({ moveReq: req });
       }
     };
     function arrived(data) {

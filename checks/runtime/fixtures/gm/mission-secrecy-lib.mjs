@@ -155,8 +155,12 @@ export function checkMission(fx, m, st, label, tally, viaServer = false) {
   for (const p of keyPaths(m.hud)) if (!HP.has(p)) throw new Error(label + ': the band has a key outside design 5.5c: hud.' + p);
   for (const k of Object.keys(m)) if (!['v', 'site', 't', 'seq', 'hud', 'cards'].includes(k)) throw new Error(label + ': a top-level key outside the shape: ' + k);
   if (Object.keys(m.cards).sort().join() !== ids.join()) throw new Error(label + ': the cards are ' + Object.keys(m.cards));
+  const blank = (v) => v === '' || v == null || (Array.isArray(v) && !v.length) || (isObj(v) && Object.values(v).every(blank));   // "" / null / [] / {} (or only those inside)
+  if (viaServer) for (const c of m.hud.crew || []) for (const k of ['costume', 'icon']) if (!blank(c[k])) throw new Error(label + ': a retired band key is not empty: hud.crew.' + k);
   for (const id of ids) {
-    const card = m.cards[id], text = JSON.stringify(card), e = expectation(fx, st, id, ids.filter((x) => x !== id));
+    const card = m.cards[id];
+    if (viaServer) for (const k of ['costume', 'icon', 'pos', 'warn', 'zones']) if (!blank(card[k])) throw new Error(label + ': ' + id + "'s card holds the retired key " + k + ' with content');
+    const text = JSON.stringify(card), e = expectation(fx, st, id, ids.filter((x) => x !== id));
     for (const p of keyPaths(card)) if (!CP.has(p)) throw new Error(label + ': ' + id + '\'s card has a key outside design 5.5c: ' + p);
     for (const bad of e.mustNot) { tally.negCard++; if (has(text, bad)) throw new Error(label + ': ' + id + '\'s card holds "' + bad + '" (heard, told or carried by the other, a later step, a hidden event, or a GM marker)'); }
     for (const good of e.must) { tally.pos++; tally.seen.add(good); if (!has(text, good)) throw new Error(label + ': positive control: ' + id + '\'s own "' + good + '" is missing from their card, so the negatives above proved nothing'); }

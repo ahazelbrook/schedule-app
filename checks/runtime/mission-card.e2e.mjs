@@ -241,6 +241,15 @@ try {
   check(!!(await until(async () => { const x = await card(a.page); return x && x.word === 'Showroom'; }, 6000, 100)), 'a later change to her card opens it again by itself');
   await a.page.keyboard.press('Escape');
 
+  // ---- another full-screen layer is up: no second dialog, a dot instead; the card opens once that layer is gone ----
+  await a.page.evaluate(() => { const o = document.createElement('div'); o.id = 'fake-viewer'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.style.cssText = 'position:fixed;inset:0;z-index:900'; document.body.appendChild(o); });
+  await publish(moveA(S3, 'Cocktail lounge'), '23:20');
+  check(!!(await until(async () => (await dot(a.page)) === 1, 6000, 100)) && (await card(a.page)) === null, 'a card change under another full-screen layer opens no second dialog; the Mission button shows its dot');
+  await a.page.evaluate(() => document.getElementById('fake-viewer').remove());
+  await publish(moveA(S3, 'Cocktail lounge'), '23:25');   // only countdowns move: the next sync (an arbitrary Table viewer close syncs by itself)
+  check(!!(await until(async () => { const x = await card(a.page); return x && x.word === 'Cocktail lounge'; }, 6000, 100)), 'once that layer is gone the changed card opens (on the next sync)');
+  await a.page.keyboard.press('Escape');
+
   // ---- the poke: a phone polling once a minute still hears the campaign document within about 2 s ----
   const q = await open(P1, IDA, 60000);
   check(!!(await until(() => q.page.evaluate(() => !!window.B68Live && window.B68Live.state().open), 15000, 100)), 'the live socket of the phone is open');
