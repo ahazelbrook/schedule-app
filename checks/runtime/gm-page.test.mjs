@@ -353,7 +353,7 @@ function fakeBrowser(over) {
   const doc = { listeners: {}, activeElement: null, hidden: false, createElement: (t) => new FEl(t, doc), addEventListener(t, fn) { (doc.listeners[t] = doc.listeners[t] || []).push(fn); },
     querySelector: () => null, querySelectorAll: () => [] };
   doc.body = new FEl('body', doc); doc.body.dataset.mode = 'gm'; doc.activeElement = doc.body;
-  const ls = new Map(), toasts = [];
+  const ls = new Map([['b68.gm.capbar', '1']]), toasts = [];     // the capture bar is off by default; its keys work only while it shows
   const W = { document: doc, localStorage: { getItem: (k) => (ls.has(k) ? ls.get(k) : null), setItem: (k, v) => { ls.set(k, String(v)); }, removeItem: (k) => { ls.delete(k); } },
     matchMedia: () => ({ matches: false }), addEventListener() {}, confirm: () => true, open() {}, B68: { toast: (m, bad) => toasts.push([m, !!bad]) },
     B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmScore: SCM, B68GmDowntime: DT, B68DowntimeTables: DTT, B68GmChase: CH, B68Content: CT, setTimeout, clearTimeout, console };
