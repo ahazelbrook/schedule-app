@@ -337,7 +337,7 @@ try {
   await G.page.keyboard.press('i');
   check(await G.page.$eval('#gm-ipad', (p) => !p.hidden) && await G.page.waitForSelector('#gm-ipad .gm-ipad-tile:not([disabled])[data-id="board"]', { timeout: 8000 }).then(() => true, () => false), 'I opens the iPad panel; the score scenes are open now that a score is set');
   check((await G.page.textContent('#gm-ipad-score')).includes(rollName), 'the score line names the roll');
-  check((await G.page.$$('#gm-ipad .gm-ipad-tile')).length === 16, 'sixteen scenes in the picker');
+  check((await G.page.$('#gm-ipad .gm-ipad-tile')).length === 17, 'seventeen scenes in the picker');
   await G.page.click('#gm-ipad [data-gm="darkipad"]');
   check(await until(async () => (await api('GET', '/gm/display', GM)).json.display.kind === 'dark', 5000), 'Lights out: the display is dark');
   check(/Lights out/.test(await G.page.textContent('#gm-ipad-now')), 'On the iPad now says so');
