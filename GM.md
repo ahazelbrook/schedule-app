@@ -705,6 +705,7 @@ service worker never caches a redirect. The registry ids, in picker order:
 | `wanted` | `wanted-wall` | Crew posters on wet brick: one per Wanted Level, curfew bills at Heat 4+; told heat and wanted like `watch` |
 | `meeting` | `planning-meeting` | The crew round the table in the lair over a generic map; they take turns talking |
 | `credits` | `opening-credits` | A 90-second title sequence cut to the theme; **pin only**, plays once and holds on the title card |
+| `veil` | `sunrise-ball-opening` | The Sunrise Ball's opening (s04), 30 s and silent: a crane down to the Velvet Veil and the gondola queue, Ironclad at the water door, through the glass to the chandelier, the title; **pin only**, pinned after the engagement roll while the GM narrates, plays once and holds on the title |
 | `board`, `exploded` | `planning-board`, `score-exploded` | The score scenes |
 | `testcard` | `test-card` | Please stand by (pin only) |
 

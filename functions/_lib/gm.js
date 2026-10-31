@@ -38,7 +38,7 @@ export const CARD_LIMITS = { cards: 8, field: 120, interval: 120 };
 
 // The ambient scenes (GM.md, "Ambient scenes"; the plan: docs/history/AMBIENT-PLAN.md): the ids mirror Pure.AMBIENT_SCENES in app/display-page.js; the bands are the
 // four reveal layers of a score site, lowest first.
-export const AMBIENT_SCENES = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting', 'credits', 'board', 'exploded', 'testcard'];
+export const AMBIENT_SCENES = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting', 'credits', 'veil', 'board', 'exploded', 'testcard'];
 export const WIRE_MAX = 240, WIRE_ITEMS_MAX = 6;       // a bulletin's characters, bulletins at once (mirrors functions/_lib/assist/prompts.js)
 export const AMBIENT_MODES = ['auto', 'pin', 'off'];
 // the overlay (cleanOverlay): the kinds, the clock sizes, the effects, and the caps; mirrored by Pure.OVERLAY in app/display-page.js
