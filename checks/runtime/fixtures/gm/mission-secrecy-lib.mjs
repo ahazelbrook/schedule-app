@@ -4,7 +4,9 @@
 //
 //   markers(fx)            every "GM-ONLY-..." string of the fixture (the level's GM-only fields)
 //   cardPool(fx)           every string the fixture holds ONLY for a phone card: lead lines, way names, windows, steps, intel texts, item labels,
-//                          what a watcher looks like and is called, a route's public line, the zones' labels. Never in the band.
+//                          a route's public line. Never in the band. (The zones' labels are band words since A1: hud.rooms.)
+//   nowhereWords(fx)       what a watcher looks like and is called, and the target's name: the costume mechanic is GM-side (A1), so neither
+//                          the band nor a card holds them
 //   hiddenEvents(fx)       the pub of each hidden event: in the band only once the crew as a whole has been told
 //   expectation(fx, st, pc, others)
 //                          what a PC's own card must hold for this state, and what it must NOT (what only the others heard, were told, or carry)
@@ -32,17 +34,22 @@ export function cardPool(fx) {
   for (const w of fx.ways || []) out.push(w.lead && w.lead.line, w.pubName, w.window && w.window.pub, ...(w.steps || []));
   for (const x of fx.intel || []) out.push(x.text);
   for (const i of fx.items || []) out.push(i.label);
-  for (const p of fx.people || []) if (p.kind !== 'target' && !/^GM-ONLY/.test(p.label || '')) out.push(p.look, p.label);
   for (const r of fx.routes || []) out.push(r.pub);
-  for (const z of fx.zones || []) out.push(z.label);
   for (const w of fx.ways || []) out.push(exactRange(w));
   const vocab = bandVocabulary(fx).map((v) => v.toLowerCase());
   return keep(out).filter((p) => !vocab.some((v) => v.includes(p.toLowerCase()))) ;
 }
 
-/* the strings the band legitimately holds (public events, the alarm's lines, the clock's label, the costumes): the pool must not overlap them */
+/* the watchers' names and looks, and the target's name: the costume mechanic is GM-side (A1), so neither the band nor a card holds them */
+export function nowhereWords(fx) {
+  return keep((fx.people || []).filter((p) => !/^GM-ONLY/.test(p.label || '')).flatMap((p) => [p.label, p.kind === 'target' ? null : p.look]));
+}
+
+/* the strings the band legitimately holds (public events, the alarm's lines, the clock's label, the zones' labels and room names of hud.rooms;
+   the costumes' labels stay listed though no band carries them since A1): the pool must not overlap them */
 export function bandVocabulary(fx) {
-  const out = [fx.clock && fx.clock.label, ...(fx.events || []).filter((e) => e.vis === 'public').map((e) => e.pub), ...((fx.alarm && fx.alarm.pub) || []), ...(fx.disguises || []).map((d) => d.label)];
+  const out = [fx.clock && fx.clock.label, ...(fx.events || []).filter((e) => e.vis === 'public').map((e) => e.pub), ...((fx.alarm && fx.alarm.pub) || []), ...(fx.disguises || []).map((d) => d.label),
+    ...(fx.zones || []).flatMap((z) => [z.label, ...(Array.isArray(z.rooms) ? z.rooms : [])])];
   return out.filter((s) => typeof s === 'string' && s);
 }
 
@@ -93,12 +100,12 @@ export function expectation(fx, st, pc, others) {
     if (rng) { if (knows) must.push(rng); else theirs.add(rng); }
     if (heardIt && !knows && w.window && w.window.pub && w.window.pub.length >= MIN) must.push(w.window.pub);
   }
-  return { must: keep(must), mustNot: [...theirs, ...markers(fx)] };
+  return { must: keep(must), mustNot: [...theirs, ...markers(fx), ...nowhereWords(fx)] };
 }
 
 /* the band: no card-only string, no GM marker, no hidden event the crew as a whole has not been told */
 export function bandForbidden(fx, st) {
-  const out = new Set([...cardPool(fx), ...markers(fx)]);
+  const out = new Set([...cardPool(fx), ...markers(fx), ...nowhereWords(fx)]);
   for (const e of hiddenEvents(fx)) if (!toldEvent(fx, st, e.id).crew) out.add(e.pub);
   laterSteps(fx, st).forEach((x) => out.add(x));
   return [...out];
@@ -114,10 +121,11 @@ const P = (list) => new Set(list.split(/\s+/).filter(Boolean));
 // design 5.5c, written out
 export const HUD_PATHS = P(`time label now now.*.text now.*.where now.*.until next next.*.text next.*.where next.*.at next.*.inMin
   night night.beats night.start night.cur night.marks night.marks.*.i night.marks.*.icon night.marks.*.text
-  alarm alarm.name alarm.size alarm.filled alarm.text crew crew.*.name crew.*.costume crew.*.icon crew.*.room target target.room ways ways.found ways.total`);
+  alarm alarm.name alarm.size alarm.filled alarm.text crew crew.*.name crew.*.costume crew.*.icon crew.*.room target target.room ways ways.found ways.total
+  rooms rooms.*.zone rooms.*.rooms showTime timer timer.endsAt timer.left timer.paused timer.len`);
 export const CARD_PATHS = P(`name owner costume icon room pos warn warn.who warn.look warn.sees zones zones.controlled zones.risky items
   leads leads.*.name leads.*.line leads.*.heard leads.*.window leads.*.next leads.*.done know next next.*.text next.*.where next.*.at next.*.inMin
-  paths paths.*.text paths.*.until busy`);
+  paths paths.*.text paths.*.until busy costumeLine here`);
 
 /* the steps of a way other than the NEXT unticked one (Alex's H7: a card shows the next step only), for every way, from the state's tick list */
 export function laterSteps(fx, st) {

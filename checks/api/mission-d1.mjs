@@ -67,6 +67,7 @@ function fullMission(seq) {
       alarm: { name: 'Burn', size: 6, filled: 2, text: word(3, 160) },
       crew: many(8, (i) => ({ name: 'Crew ' + i, costume: word(i, 60), icon: 'mask', room: word(i, 100) })),
       target: { room: word(4, 160) }, ways: { found: 3, total: 7 },
+      rooms: many(12, (z) => ({ zone: word(z, 160), rooms: many(16, (r) => word(r + z, 160)) })), showTime: true, timer: { endsAt: 1730400000000, left: 7200, paused: false, len: 7200 },
     },
     cards: Object.fromEntries(many(8, (c) => ['char_' + c, {
       name: 'Card ' + c, owner: word(c, 160), costume: word(c, 160), icon: 'mask', room: word(c, 160), pos: 'safe',
@@ -77,7 +78,7 @@ function fullMission(seq) {
       know: many(16, (i) => word(i, 160)),
       next: many(4, (i) => ({ text: word(i, 160), where: word(i, 160), at: '00:15', inMin: 15 * i })),
       paths: many(6, (i) => ({ text: word(i, 160), until: '00:00' })),
-      busy: '22:45',
+      busy: '22:45', costumeLine: word(c, 160), here: many(3, (i) => word(i + c, 300)),
     }])),
   };
 }

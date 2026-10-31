@@ -83,6 +83,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, "..");
 const PART_CAP = 900 * 1024;        // the server's per-part cap (contract)
 const { countPlay } = createRequire(import.meta.url)("../app/gm/ball.js");
+const Rooms = createRequire(import.meta.url)("../app/gm/room-notes.js");     // find(): a prep note's ## Rooms section, read as the GM page reads it
 const Score = createRequire(import.meta.url)("../app/gm/score.js");     // check(T) and fkey(): the app's own definitions of a complete table set and of a matching name
 
 // ---- args ---------------------------------------------------------------------------------------------
@@ -575,6 +576,29 @@ function crossCheckScore(score, campaign) {
   if (badS.length) warn("score: the board's standing names factions the faction master lacks: " + nameList(badS));
 }
 
+// Across the parts: each v2 site's rooms against the prep notes' "## Rooms" section (app/gm/room-notes.js). Warnings only: a room with no
+// section, and a play.secret word in a room's costume or SAY line (those lines reach the players' cards). No section anywhere: quiet.
+function crossCheckRooms(prep, location) {
+  const sites = location && location.authored && isObj(location.authored.sites) ? location.authored.sites : null;
+  if (!prep || !sites) return;
+  for (const name of Object.keys(sites)) {
+    const play = isObj(sites[name]) && isObj(sites[name].play) ? sites[name].play : null;
+    if (!play || play.v !== 2) continue;
+    const rooms = [];
+    for (const z of Array.isArray(play.zones) ? play.zones : []) for (const r of isObj(z) && Array.isArray(z.rooms) ? z.rooms : []) if (typeof r === "string" && r && !rooms.includes(r)) rooms.push(r);
+    const found = Rooms.find(prep, rooms);
+    if (found.source === null) continue;
+    for (const r of found.missing) warn("rooms: no section for " + r);
+    const secret = (Array.isArray(play.secret) ? play.secret : []).filter(w => typeof w === "string" && w.trim()).map(w => w.trim());
+    for (const r of rooms) {
+      const n = Object.prototype.hasOwnProperty.call(found.byRoom, r) ? found.byRoom[r] : null;
+      const lines = n ? [n.costume].concat(n.say).filter(s => typeof s === "string" && s).map(s => s.toLowerCase()) : [];
+      if (!lines.length) continue;
+      for (const w of secret) if (lines.some(s => s.includes(w.toLowerCase()))) warn('rooms: "' + w + '" from play.secret in ' + r);
+    }
+  }
+}
+
 // ---- tiny YAML frontmatter parser ---------------------------------------------------------------------
 // Handles what Dataview would hand view.js for these notes: scalars (numbers, booleans, null), quoted strings,
 // [a, b] flow lists, and `- item` block lists. Not a general YAML parser.
@@ -845,6 +869,7 @@ function main() {
   }
   if (failures.length) { for (const f of failures) console.error("FAILED  " + f); process.exit(1); }
   if (parts.score) crossCheckScore(parts.score, parts.campaign);
+  crossCheckRooms(parts.prep, parts.location);                  // warnings only, never fails the pack
 
   // the guard: never lose prep quietly (the 16/10/2026 Sync rollback)
   const losses = prev && prev.parts && typeof prev.parts === "object" ? packLosses(prev.parts, parts) : [];

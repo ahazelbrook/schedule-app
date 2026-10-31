@@ -124,6 +124,69 @@ await test('buildMission: cards only for PCs in ball.crew; a card own room and a
   assert.ok(o.cards.pc_a.leads[0].window.endsWith('Private card rooms'));
 });
 
+/* ---- A1: the room notes' lines on a card (buildMission takes src.rooms; screenMission drops a denied one; publishMission says so) ---- */
+const RNOTES = { Showroom: { costume: 'Evening dress, a borrowed pin', say: ['Chandeliers over the stage', 'A string quartet tunes up'], md: 'GM-ONLY-MD-1 prose' }, 'Luxury penthouse': { costume: 'A hotel robe', say: ['City lights below'] } };
+await test('buildMission: src.rooms reaches playerView: a card carries its open room\'s costumeLine and here, blanked with the room when the room is shut; no md goes out', () => {
+  const r = rig();                                                     // BUSY: pc_a in the Showroom, pc_b in the lounge (no note)
+  const m = MP.buildMission(B, { ...r.source(), rooms: RNOTES }, 1), json = JSON.stringify(m);
+  assert.equal(m.cards.pc_a.costumeLine, 'Evening dress, a borrowed pin'); assert.deepEqual(m.cards.pc_a.here, ['Chandeliers over the stage', 'A string quartet tunes up']);
+  assert.deepEqual([m.cards.pc_b.costumeLine, m.cards.pc_b.here], [null, []], 'no note for the lounge');
+  assert.ok(!json.includes('GM-ONLY-MD') && !json.includes('City lights below') && !MARK.test(json), 'no md, and no line of a room nobody stands in');
+  const bare = MP.buildMission(B, r.source(), 1);
+  assert.deepEqual([bare.cards.pc_a.costumeLine, bare.cards.pc_a.here], [null, []], 'no src.rooms: no lines');
+  r.state.crew.pc_a.room = 'Luxury penthouse';
+  const shut = MP.buildMission(B, { ...r.source(), rooms: RNOTES, open: ROOMS.filter((x) => x !== 'Luxury penthouse') }, 1);
+  assert.deepEqual([shut.cards.pc_a.room, shut.cards.pc_a.costumeLine, shut.cards.pc_a.here], ['', null, []], 'a shut room takes its lines with it');
+  assert.ok(!JSON.stringify(shut).includes('A hotel robe'));
+  const open = MP.buildMission(B, { ...r.source(), rooms: RNOTES }, 1);
+  assert.deepEqual([open.cards.pc_a.room, open.cards.pc_a.costumeLine, open.cards.pc_a.here], ['Luxury penthouse', 'A hotel robe', ['City lights below']], 'positive control: open, they are there');
+});
+
+await test('screenMission with a warnings array drops a denied costumeLine or here line (a hidden name or a secret word), reports { pc, field, name }, changes nothing else; every other field still fails closed; without the array a denied room line is a hit', () => {
+  const r = rig(), hit = GP.namesHit, base = MP.buildMission(B, { ...r.source(), rooms: RNOTES }, 1);
+  const deny = { names: ['Maren Holt'], secrets: ['GM-ONLY-SECRET-1'] };
+  const w0 = []; assert.equal(MP.screenMission(clone(base), deny, hit, w0), null, 'control: the clean lines pass'); assert.deepEqual(w0, []);
+  const m = clone(base);
+  m.cards.pc_a.costumeLine = 'Dress like Maren Holt'; m.cards.pc_a.here = ['Chandeliers over the stage', 'A note: GM-ONLY-SECRET-1', 'Maren Holt waves'];
+  m.cards.pc_b.costumeLine = 'GM-ONLY-SECRET-1 on a hanger'; m.cards.pc_b.here = ['Maren Holt is at the bar'];
+  const want = clone(m), warnings = [];
+  want.cards.pc_a.costumeLine = null; want.cards.pc_a.here = ['Chandeliers over the stage']; want.cards.pc_b.costumeLine = null; want.cards.pc_b.here = [];
+  assert.equal(MP.screenMission(m, deny, hit, warnings), null, 'the denied room lines are dropped, the rest is clean');
+  assert.deepEqual(warnings, [{ pc: 'pc_a', field: 'costumeLine', name: 'Maren Holt' }, { pc: 'pc_a', field: 'here', name: 'GM-ONLY-SECRET-1' }, { pc: 'pc_a', field: 'here', name: 'Maren Holt' },
+    { pc: 'pc_b', field: 'costumeLine', name: 'GM-ONLY-SECRET-1' }, { pc: 'pc_b', field: 'here', name: 'Maren Holt' }]);
+  assert.deepEqual(m, want, 'only those lines changed');
+  /* every other field stays fail closed, even beside a dropped room line */
+  const lead = clone(base), w2 = [];
+  lead.cards.pc_a.costumeLine = 'Maren Holt'; lead.cards.pc_a.leads[0].line = 'Ask Maren Holt';
+  assert.deepEqual(MP.screenMission(lead, deny, hit, w2), { name: 'Maren Holt', path: 'mission.cards.pc_a.leads.0.line', kind: 'name' });
+  assert.deepEqual(w2, [{ pc: 'pc_a', field: 'costumeLine', name: 'Maren Holt' }]);
+  const inBand = clone(base), w3 = []; inBand.hud.label = 'GM-ONLY-SECRET-1';
+  assert.deepEqual(MP.screenMission(inBand, deny, hit, w3), { name: 'GM-ONLY-SECRET-1', path: 'mission.hud.label', kind: 'secret' }); assert.deepEqual(w3, []);
+  /* without the array nothing is dropped: a denied room line is a hit like any other string */
+  const noArr = clone(base); noArr.cards.pc_a.costumeLine = 'Dress like Maren Holt';
+  assert.deepEqual(MP.screenMission(noArr, deny, hit), { name: 'Maren Holt', path: 'mission.cards.pc_a.costumeLine', kind: 'name' }); assert.equal(noArr.cards.pc_a.costumeLine, 'Dress like Maren Holt');
+  const said = clone(base); said.cards.pc_b.here = ['GM-ONLY-SECRET-1 hums'];
+  assert.deepEqual(MP.screenMission(said, deny, hit), { name: 'GM-ONLY-SECRET-1', path: 'mission.cards.pc_b.here.0', kind: 'secret' });
+  assert.equal(MP.screenMission(clone(noArr), deny, hit, 'warnings').path, 'mission.cards.pc_a.costumeLine', 'a warnings that is not an array is none');
+});
+
+await test('publishMission: a room line naming a hidden name is dropped, not refused: the publish goes, the result carries warnings, a toast says so, and nothing denied is sent', async () => {
+  const lines = { Showroom: { costume: 'Borrow Maren Holt\'s coat', say: ['Chandeliers over the stage', 'Maren Holt is by the bar'] } };
+  const r = rig({ hidden: ['Maren Holt'] }), base = r.source;
+  r.source = () => ({ ...base(), rooms: lines });
+  const res = await r.ctl.publishNow();
+  assert.equal(res.ok, true); assert.equal(r.sent.length, 1); assert.equal(r.offers.length, 0);
+  assert.deepEqual(res.warnings, [{ pc: 'pc_a', field: 'costumeLine', name: 'Maren Holt' }, { pc: 'pc_a', field: 'here', name: 'Maren Holt' }]);
+  assert.ok(r.toasts.some(([t, bad]) => t === 'Dropped a room line naming Maren Holt.' && bad), JSON.stringify(r.toasts));
+  assert.ok(!JSON.stringify(r.sent[0]).includes('Maren Holt'), 'nothing denied is sent');
+  assert.equal(r.sent[0].cards.pc_a.costumeLine, null); assert.deepEqual(r.sent[0].cards.pc_a.here, ['Chandeliers over the stage'], 'the clean line still goes');
+  assert.deepEqual(r.events[0].warnings, res.warnings);
+  /* the control: nothing denied, the lines go as written and there is no warning */
+  const c = rig(), cbase = c.source; c.source = () => ({ ...cbase(), rooms: lines });
+  const cr = await c.ctl.publishNow();
+  assert.equal(cr.ok, true); assert.equal(cr.warnings, undefined); assert.equal(c.sent[0].cards.pc_a.costumeLine, 'Borrow Maren Holt\'s coat'); assert.equal(c.toasts.length, 0);
+});
+
 /* ---- screen ---- */
 await test('screenMission: a hidden name, a secret word and a hidden room are each caught, with the path; clean text passes (a control beside each)', () => {
   const r = rig(), m = MP.buildMission(B, r.source(), 1), hit = GP.namesHit;
@@ -208,11 +271,10 @@ await test('a change that leaves the mission as it was sends nothing (a floor ta
   assert.equal(r.ctl.status().seq, 1);
 });
 
-await test('every field the mission reads makes a PATCH: ball.t, crew, heard, steps, told, open, items, blown, busy and the alarm clock', async () => {
+await test('every field the mission reads makes a PATCH: ball.t, crew, heard, steps, told, open, items, blown, busy and the alarm clock; a costume change alone does not (it is GM-side)', async () => {
   const cases = [
     ['ball.t', (r) => { r.state.t = T('22:45'); }],
     ['crew (a PC moves)', (r) => { r.state.crew.pc_b.room = 'Showroom'; }],
-    ['crew (a costume)', (r) => { r.state.crew.pc_b.disguise = 'cook'; }],
     ['heard', (r) => { r.state.heard.A.pc_b = T('22:40'); }],
     ['steps', (r) => { r.state.steps.A = [true, true]; }],
     ['told', (r) => { r.state.told.I2 = 'crew'; }],
@@ -229,6 +291,9 @@ await test('every field the mission reads makes a PATCH: ball.t, crew, heard, st
     assert.equal(r.sent.length, 2, name + ': a second PATCH');
     assert.notEqual(JSON.stringify({ ...r.sent[1], seq: 0 }), JSON.stringify({ ...r.sent[0], seq: 0 }), name + ': and it differs');
   }
+  /* A1: a costume change alone moves nothing the players read (the costume mechanic is GM-side): no second PATCH */
+  { const r = rig(); r.ctl.changed(); await r.advance(800); assert.equal(r.sent.length, 1, 'crew (a costume): the first');
+    r.state.crew.pc_b.disguise = 'cook'; r.ctl.changed(); await r.advance(800); assert.equal(r.sent.length, 1, 'crew (a costume): no second PATCH'); }
   /* the table's clocks arriving (noteClocks) wait for the alarm clock, and only it */
   const r = rig();
   r.ctl.noteClocks();                                         // the baseline
@@ -406,7 +471,10 @@ await test('the Players view is drawn from the last published mission, not the G
   assert.ok(!MARK.test(text));
   assert.deepEqual(model.cards.map((c) => c.id), ['pc_a', 'pc_b']);
   const flat = JSON.stringify(model);
-  assert.ok(flat.includes('Cook') || flat.includes('Guard'), 'the costume');
+  assert.deepEqual(model.band.crew, ['Ana Quill · Showroom', 'Bo Tarn · Cocktail lounge'], 'the crew lines: the name and the room (the costume is GM-side now)');
+  assert.deepEqual(model.cards.map((c) => (c.sections.find((s) => s.title === 'Position') || { lines: [] }).lines), [['Showroom'], ['Cocktail lounge']], 'each card says where');
+  model.cards.forEach((c) => c.sections.forEach((s) => assert.ok(!['Costume', 'Watch out', 'At home', 'Risky'].includes(s.title), c.id + ' has a ' + s.title + ' section')));
+  assert.ok(flat.includes('Showroom'), 'the room');
   assert.equal(model.band.time, '23:30');
   assert.match(model.band.ways, /^Ways found: \d+ of 2$/);
   const none = fakeDoc(); assert.equal(MP.renderPlayersView(none.root, null), null); assert.match(none.root.textContent, /Nothing is published/);

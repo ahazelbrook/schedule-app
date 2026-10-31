@@ -430,7 +430,8 @@ export const MISSION_LIMITS = {
   str: 160, line: 300,                 // characters of a string; of a lead's line
   now: 3, next: 3, cardNext: 4,        // entries of hud.now, hud.next, a card's next
   marks: 24, crew: 8, cards: 8,        // night marks, hud.crew, cards
-  leads: 8, zones: 12, items: 10, know: 16, paths: 6,   // per card
+  leads: 8, zones: 12, items: 10, know: 16, paths: 6, here: 3,   // per card (here: the room note's SAY lines)
+  hudZones: 12, hudRooms: 16,          // hud.rooms: zones, and the rooms in one
   beats: 200, size: 12, count: 99,     // whole numbers: beats in the night, an alarm clock's size, "ways found"
 };
 export const MISSION_REFUSED = 'mission names';
@@ -492,6 +493,9 @@ function cleanHud(h) {
     }),
     target: isPlainObject(h.target) ? { room: cut(h.target.room, L.str) } : null,
     ways: isPlainObject(h.ways) ? { found: whole(h.ways.found, 0, L.count), total: whole(h.ways.total, 0, L.count) } : null,
+    rooms: listOf(h.rooms, L.hudZones, (z) => (isPlainObject(z) ? { zone: cut(z.zone, L.str), rooms: listOf(z.rooms, L.hudRooms, (r) => cut(r, L.str) || null) } : null)),
+    showTime: h.showTime === true,
+    timer: isPlainObject(h.timer) ? { endsAt: Number.isFinite(h.timer.endsAt) ? Math.round(h.timer.endsAt) : null, left: whole(h.timer.left, 0, 7200), paused: h.timer.paused === true, len: whole(h.timer.len, 30, 7200) } : null,
   };
 }
 
@@ -516,12 +520,14 @@ function cleanCard(c) {
       return text ? { text, until: cut(p.until, L.str) } : null;
     }),
     busy: cut(c.busy, L.str) || null,
+    costumeLine: cut(c.costumeLine, L.str) || null,      // the room note's costume line (the old costume/pos/warn/zones stay accepted, no longer sent)
+    here: listOf(c.here, L.here, (x) => cut(x, L.line) || null),
   };
 }
 
 /**
  * The mission as stored, rebuilt field by field from design 5.5c: every key is named here and anything else is dropped; strings are cut to
- * MISSION_LIMITS.str characters (a lead's line to .line), lists to their caps, numbers made whole and kept in range. null stays null (the
+ * MISSION_LIMITS.str characters (a lead's line and a card's here lines to .line), lists to their caps, numbers made whole and kept in range. null stays null (the
  * write removes the mission). Cards are kept by PC id (ID_RE), the first MISSION_LIMITS.cards of them. HttpError(400) for a value that is not
  * an object, and for a missing or non-whole `seq` (it must be 1 or more: the iPad compares it, and 0 reads as "no mission").
  */

@@ -56,7 +56,8 @@ const PCS = [{ id: 'pc_a', name: 'Ana Quill', owner: ALEX }, { id: 'pc_b', name:
 const ST = { v: 2, site: 'The Pelican Rooms', start: 45, t: 135, crew: { pc_a: { room: 'Cocktail lounge', disguise: 'guest', items: ['key'] }, pc_b: { room: 'Cocktail lounge', disguise: 'cook' } },
   told: { I1: ['pc_a'], I2: ['pc_a'], I3: ['pc_b'] }, heard: { A: { pc_a: 90 }, B: { pc_b: 95 } }, steps: {}, ways: {}, over: {} };
 const CLOCKS = [{ name: 'Fuse', filled: 2, hidden: false }];
-const build = (st, seq, pcs = PCS) => PUB.buildMission(BALL, { play: mkPlay(), state: st, clocks: CLOCKS, pcs, open: ROOMS }, seq);
+const NOTES = Object.fromEntries(ROOMS.map((r) => [r, { costume: 'A grey uniform', say: ['Monitors flicker'] }]));   // a room note for every room: the card's costume line and here lines
+const build = (st, seq, pcs = PCS) => PUB.buildMission(BALL, { play: mkPlay(), state: st, clocks: CLOCKS, pcs, open: ROOMS, rooms: NOTES }, seq);
 const clone = (x) => JSON.parse(JSON.stringify(x));
 
 // string leaves of a mission, as paths (arrays), the card ids included as { id }
@@ -156,10 +157,10 @@ await step('extra keys never survive: beside the band, beside a card or at any d
   const m = build(ST, 8);
   const mark = 'GM-ONLY-SECRET-1', extra = (o) => { o.extra = mark; o.gmNote = mark; return o; };
   m.hud.cards = clone(m.cards); m.hud.secret = mark; m.hud.night.cards = clone(m.cards); m.hud.crew[0].owner = ALEX; m.hud.crew[0].cards = clone(m.cards);
-  extra(m); extra(m.hud); (m.hud.now[0] || m.hud.night).extra = mark; extra(m.hud.night); extra(m.hud.alarm); extra(m.hud.ways);
+  extra(m); extra(m.hud); (m.hud.now[0] || m.hud.night).extra = mark; extra(m.hud.night); extra(m.hud.alarm); extra(m.hud.ways); (m.hud.rooms || []).forEach(extra); if (m.hud.timer) extra(m.hud.timer);
   for (const id of Object.keys(m.cards)) {
     const c = extra(m.cards[id]);
-    if (c.warn) extra(c.warn); extra(c.zones); c.leads.forEach(extra); c.next.forEach(extra); c.paths.forEach(extra);
+    if (c.warn) extra(c.warn); if (c.zones) extra(c.zones); c.leads.forEach(extra); c.next.forEach(extra); c.paths.forEach(extra);
     c.steps = ['Make her lose']; c.leads.forEach((l) => { l.steps = ['Make her lose']; l.who = mark; });
   }
   const r = await call('PATCH', '/api/campaign', { body: { mission: m } });
@@ -233,8 +234,8 @@ await step('a hidden name in EVERY string of the band and of a card is 422 at th
     setAt(m, l.p, 'They said ' + name.toLowerCase() + ' was here');
     await refusal(m, name, 'mission.' + l.p.join('.'));
   }
-  for (const w of ['hud.time', 'hud.label', 'hud.now.text', 'hud.now.where', 'hud.now.until', 'hud.next.text', 'hud.next.at', 'hud.night.marks.icon', 'hud.night.marks.text', 'hud.alarm.name', 'hud.alarm.text', 'hud.crew.name', 'hud.crew.costume', 'hud.crew.icon', 'hud.crew.room', 'hud.target.room',
-    'card.name', 'card.owner', 'card.costume', 'card.icon', 'card.room', 'card.pos', 'card.warn.who', 'card.warn.look', 'card.warn.sees', 'card.zones.controlled', 'card.zones.risky', 'card.items', 'card.leads.name', 'card.leads.line', 'card.leads.heard', 'card.leads.window', 'card.leads.next',
+  for (const w of ['hud.time', 'hud.label', 'hud.now.text', 'hud.now.where', 'hud.now.until', 'hud.next.text', 'hud.next.at', 'hud.night.marks.icon', 'hud.night.marks.text', 'hud.alarm.name', 'hud.alarm.text', 'hud.crew.name', 'hud.crew.room', 'hud.target.room', 'hud.rooms.zone', 'hud.rooms.rooms',
+    'card.name', 'card.owner', 'card.room', 'card.costumeLine', 'card.here', 'card.items', 'card.leads.name', 'card.leads.line', 'card.leads.heard', 'card.leads.window', 'card.leads.next',
     'card.know', 'card.next.text', 'card.next.at', 'card.paths.text', 'card.paths.until', 'card.busy', 'site'])
     if (w !== 'hud.target.room' && w !== 'hud.now.where' && !covered.has(w)) expect(false, 'control: no night fills ' + w + ' (' + [...covered].join(' ') + ')');
   expect(tried >= 100, 'only ' + tried + ' refusals tried');

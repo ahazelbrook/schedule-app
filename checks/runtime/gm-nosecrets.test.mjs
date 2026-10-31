@@ -1117,7 +1117,6 @@ await test('(o) a marker put into a player-safe field is stopped by the screen, 
     'a lead line': (p, m) => { p.ways[0].lead.line = m + ' is the word'; },
     'a way\'s window': (p, m) => { p.ways[1].window.pub = m; },
     'a zone label': (p, m) => { p.zones[0].label = m; },
-    'a disguise label': (p, m) => { p.disguises[0].label = m; },
     'an item label': (p, m) => { p.items[0].label = m; },
     'an alarm line': (p, m) => { p.alarm.pub[2] = m; },
     'the clock label': (p, m) => { p.clock.label = m; },
@@ -1145,7 +1144,10 @@ await test('(o) a marker put into a player-safe field is stopped by the screen, 
     if (clean.bodies.length !== 1) throw new Error(what + ': control: a longer word is not the name, so it goes (' + clean.bodies.length + ')');
     ran++;
   }
-  if (ran < 13) throw new Error('only ' + ran + ' variants ran');
+  /* A1: a disguise label is no longer carried to the mission at all (the costume mechanic is GM-side), so it is not a field kind above */
+  { const play = mplay((p) => { p.disguises.forEach((d) => { d.label = 'GM-ONLY-SECRET-1'; }); });
+    if (JSON.stringify(MPUB.buildMission(MBALL, { play, state: hot, clocks: night[0].clocks, pcs: MPCS, open: MROOMS }, 1)).includes('GM-ONLY-SECRET-1')) throw new Error('a disguise label reached the mission'); }
+  if (ran < 12) throw new Error('only ' + ran + ' variants ran');
 });
 
 await test('(o) the page\'s mission path reaches the players through one write and the gate: no display push, no cards on the display route, the overlay by showOverlay', () => {
@@ -1194,7 +1196,11 @@ const vv9check = (m, st, label, tally) => SEC.checkMission(FXN, m, st, label, ta
 
 await test('(o) VV9 the lists are sound before they are used: the pool is non-empty, disjoint from the band\'s own words, and no marker is in it', () => {
   const pool = SEC.cardPool(FXN), vocab = SEC.bandVocabulary(FXN);
-  if (pool.length < 15) throw new Error('only ' + pool.length + ' card-only strings');
+  if (pool.length < 12) throw new Error('only ' + pool.length + ' card-only strings');
+  const nowhere = SEC.nowhereWords(FXN);
+  for (const w of ['Wren Tully', 'Pip Quill', 'A tall man in a grey coat', 'Odette Marsh']) if (!nowhere.includes(w)) throw new Error('the nowhere list lacks ' + w);
+  if (nowhere.some((w) => pool.includes(w) || SEC.markers(FXN).includes(w))) throw new Error('the nowhere list overlaps the pool or the markers');
+  for (const z of FXN.zones) if (pool.includes(z.label) || !vocab.includes(z.label)) throw new Error('the zone label ' + z.label + ' is not a band word (hud.rooms)');
   for (const p of pool) for (const v of vocab) if (v.toLowerCase().includes(p.toLowerCase())) throw new Error('"' + p + '" is inside the band\'s own word "' + v + '"');
   for (const m of SEC.markers(FXN)) if (pool.some((p) => p.includes(m))) throw new Error('a marker is in the pool');
   if (SEC.markers(FXN).length < 30) throw new Error('markers');
@@ -1235,7 +1241,7 @@ await test('(o) VV9 the screen reaches every string of the mission: for each lea
   const covered = new Set(), deny = { names: ['Zed Qwerty'], secrets: [] };
   let n = 0;
   for (const st of sts) {
-    const built = MPUB.buildMission(MBALL, { play: mplay(), state: st, clocks, pcs: MPCS, open: MROOMS }, 1);
+    const built = MPUB.buildMission(MBALL, { play: mplay(), state: st, clocks, pcs: MPCS, open: MROOMS, rooms: { 'Security control room': { costume: 'A grey uniform', say: ['Monitors flicker'] } } }, 1);
     if (!built) throw new Error('control: the rich night built no mission');
     if (MPUB.screenMission(built, deny, GP.namesHit) !== null) throw new Error('control: the unmodified mission is refused');
     const leaves = [];
@@ -1262,8 +1268,8 @@ await test('(o) VV9 the screen reaches every string of the mission: for each lea
       n++;
     }
   }
-  const want = ['hud.time', 'hud.label', 'hud.now.text', 'hud.now.until', 'hud.next.text', 'hud.next.at', 'hud.night.marks.icon', 'hud.night.marks.text', 'hud.alarm.name', 'hud.alarm.text', 'hud.crew.name', 'hud.crew.costume', 'hud.crew.icon', 'hud.crew.room',
-    'card.name', 'card.owner', 'card.costume', 'card.icon', 'card.room', 'card.pos', 'card.warn.who', 'card.warn.look', 'card.warn.sees', 'card.zones.controlled', 'card.zones.risky', 'card.items', 'card.leads.name', 'card.leads.line',
+  const want = ['hud.time', 'hud.label', 'hud.now.text', 'hud.now.until', 'hud.next.text', 'hud.next.at', 'hud.night.marks.icon', 'hud.night.marks.text', 'hud.alarm.name', 'hud.alarm.text', 'hud.crew.name', 'hud.crew.room', 'hud.rooms.zone', 'hud.rooms.rooms',
+    'card.name', 'card.owner', 'card.room', 'card.costumeLine', 'card.here', 'card.items', 'card.leads.name', 'card.leads.line',
     'card.leads.heard', 'card.leads.window', 'card.leads.next', 'card.know', 'card.next.text', 'card.next.at', 'card.paths.text', 'card.paths.until', 'card.busy'];
   for (const w of want) if (!covered.has(w)) throw new Error('control: the rich nights never fill ' + w + ' (filled: ' + [...covered].join(' ') + '), so the screen is not proved over it');
   if (n < 90) throw new Error('only ' + n + ' leaves were tried');

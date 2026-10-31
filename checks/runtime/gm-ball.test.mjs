@@ -922,7 +922,7 @@ test('v2 playerView is a new, frozen-safe object built from named fields only; m
   assert.deepEqual(Object.keys(m1.cards), ['a', 'b']); assert.equal(m1.cards.a.owner, 'u1'); assert.equal(m1.cards.b.name, 'Bo');
 });
 
-test('v2 mission hud: time, label, now, next, the night, crew, the alarm, ways found', () => {
+test('v2 mission hud: time, label, now, next, the night, crew (name and room), the alarm, ways found, rooms, showTime, timer', () => {
   const st = { crew: CREW, told: { I1: 'crew' }, heard: { A: { a: 90 } }, alarm: { filled: 3 } };
   let m = mission(st, '22:00');
   assert.equal(m.hud.time, '22:00'); assert.equal(m.hud.label, 'Gala night');
@@ -930,7 +930,9 @@ test('v2 mission hud: time, label, now, next, the night, crew, the alarm, ways f
   assert.deepEqual(m.hud.next, [{ text: 'The fireworks', where: 'Showroom', at: '00:00', inMin: 120 }]);
   assert.deepEqual(m.hud.night.beats, 16); assert.equal(m.hud.night.cur, 4); assert.equal(m.hud.night.start, 0);
   assert.deepEqual(m.hud.night.marks, [{ i: 4, icon: 'star', text: 'The speeches' }, { i: 12, icon: 'star', text: 'The fireworks' }]);
-  assert.deepEqual(m.hud.crew, [{ name: 'Ana', costume: 'Guard', icon: 'jacket', room: 'Showroom' }, { name: 'Bo', costume: 'Cook', icon: 'tray', room: 'Underground counting room' }]);
+  assert.deepEqual(m.hud.crew, [{ name: 'Ana', room: 'Showroom' }, { name: 'Bo', room: 'Underground counting room' }], 'name and room only: the costume stays GM-side');
+  assert.deepEqual(m.hud.rooms, [{ zone: 'The floor', rooms: ['Showroom', 'Cocktail lounge'] }, { zone: 'Back of house', rooms: ['Underground counting room', 'Security control room'] }, { zone: 'The card rooms', rooms: ['Private card rooms'] }, { zone: 'The loft', rooms: ['Luxury penthouse'] }]);
+  assert.equal(m.hud.showTime, false); assert.equal(m.hud.timer, null); assert.equal(mission({ crew: CREW, showTime: true }, '22:00').hud.showTime, true);
   assert.deepEqual(m.hud.alarm, { name: 'Alarm', size: 6, filled: 3, text: 'The lift is guarded' }, 'no alarm.label: the generic name, never alarm.clock');
   assert.deepEqual(m.hud.ways, { found: 1, total: 2 });
   assert.equal(mission({ crew: CREW }, '22:00').hud.alarm, null); assert.equal(mission({ crew: CREW, alarm: { filled: 0 } }, '22:00').hud.alarm.text, ''); assert.equal(mission({ crew: CREW, alarm: { filled: 9 } }, '22:00').hud.alarm.filled, 6); assert.equal(mission({ crew: CREW, alarm: { filled: 2, visible: false } }, '22:00').hud.alarm, null);
@@ -939,20 +941,26 @@ test('v2 mission hud: time, label, now, next, the night, crew, the alarm, ways f
   assert.deepEqual(mission({ crew: CREW }, '22:15').hud.now, []);
   m = mission({ crew: CREW }, '00:00'); assert.deepEqual(m.hud.now, [{ text: 'The fireworks', where: 'Showroom', until: '00:15' }]);
   /* a room that is not open is not named */
-  m = mission({ crew: CREW }, '22:00', ['Cocktail lounge']); assert.deepEqual(m.hud.now, [{ text: 'The speeches', until: '22:15' }]); assert.deepEqual(m.hud.crew.map((c) => c.room), [undefined, undefined]);
+  m = mission({ crew: CREW }, '22:00', ['Cocktail lounge']); assert.deepEqual(m.hud.now, [{ text: 'The speeches', until: '22:15' }]); assert.deepEqual(m.hud.crew.map((c) => c.room), [undefined, undefined]); assert.deepEqual(m.hud.crew, [{ name: 'Ana' }, { name: 'Bo' }]); assert.deepEqual(m.hud.rooms, [{ zone: 'The floor', rooms: ['Cocktail lounge'] }], 'only the open room, under its zone');
   /* no PCs, or a PC with no crew entry: a card with just the name */
-  assert.deepEqual(mission({ crew: {} }, '21:00', R2, []).cards, {}); assert.deepEqual(mission({ crew: CREW }, '21:00', R2, [{ id: 'z', name: 'Zed' }]).cards.z, { name: 'Zed', owner: '', costume: '', icon: '', room: '', pos: null, warn: null, zones: { controlled: [], risky: [] }, items: [], leads: [], know: [], next: [], paths: [], busy: null });
+  assert.deepEqual(mission({ crew: {} }, '21:00', R2, []).cards, {}); assert.deepEqual(mission({ crew: CREW }, '21:00', R2, [{ id: 'z', name: 'Zed' }]).cards.z, { name: 'Zed', owner: '', room: '', costumeLine: null, here: [], items: [], leads: [], know: [], next: [], paths: [], busy: null });
+  assert.deepEqual(Object.keys(mission({ crew: CREW }, '21:00', R2, [{ id: 'z', name: 'Zed' }]).cards.z), ['name', 'owner', 'room', 'items', 'leads', 'know', 'next', 'paths', 'busy', 'costumeLine', 'here'], 'the whole key set: no costume, icon, pos, warn or zones');
 });
 
-test('v2 mission cards: costume, position, zones, items, busy, and the target\'s marker only while in view', () => {
+test('v2 mission cards: room, items, busy, no costume keys (the costume mechanic stays GM-side), and the target\'s marker only while in view', () => {
   let m = mission({ crew: CREW }, '21:00');
-  assert.deepEqual([m.cards.a.costume, m.cards.a.icon, m.cards.a.room, m.cards.a.pos], ['Guard', 'jacket', 'Showroom', 'controlled']);
-  assert.deepEqual(m.cards.a.zones, { controlled: ['The floor', 'Back of house'], risky: ['The card rooms', 'The loft'] }); assert.deepEqual(m.cards.b.zones, { controlled: ['Back of house'], risky: ['The floor'] });
-  /* the key lifts the loft for a guest: risky, and the item is listed */
-  m = mission({ crew: { a: { room: 'Luxury penthouse', disguise: 'guest', items: ['key'], busy: T('22:15'), noticed: true } } }, '22:00', R2, [PCS[0]]);
-  assert.deepEqual(m.cards.a.zones, { controlled: ['The floor'], risky: ['The card rooms', 'The loft'] }); assert.deepEqual(m.cards.a.items, ['A brass key']); assert.equal(m.cards.a.busy, '22:15'); assert.equal(m.cards.a.pos, 'desperate', 'risky, noticed');
+  assert.deepEqual([m.cards.a.room, m.cards.b.room], ['Showroom', 'Underground counting room']);
+  for (const id of ['a', 'b']) for (const k of ['costume', 'icon', 'pos', 'warn', 'zones']) assert.equal(Object.prototype.hasOwnProperty.call(m.cards[id], k), false, id + ' has no ' + k);
+  const v0 = B.playerView(P2, { crew: CREW }, R2);
+  assert.deepEqual([v0.crew.a.costume.label, v0.crew.a.pos], ['Guard', 'controlled'], 'the view (GM side) still carries the costume and rates the position');
+  /* the key is listed and busy is a time; a noticed guest in the loft is desperate, on the GM side only */
+  const pent = { crew: { a: { room: 'Luxury penthouse', disguise: 'guest', items: ['key'], busy: T('22:15'), noticed: true } } };
+  m = mission(pent, '22:00', R2, [PCS[0]]);
+  assert.deepEqual(m.cards.a.items, ['A brass key']); assert.equal(m.cards.a.busy, '22:15'); assert.equal(m.cards.a.room, 'Luxury penthouse'); assert.equal(m.cards.a.pos, undefined);
+  assert.equal(B.playerView(P2, pent, R2).crew.a.pos, 'desperate', 'risky, noticed');
   assert.equal(mission({ crew: { a: { room: 'Showroom', disguise: 'guest', busy: T('22:00') } } }, '22:00', R2, [PCS[0]]).cards.a.busy, null, 'busy until now is over');
-  assert.equal(mission({ crew: { a: { room: 'Showroom', disguise: 'guest', blown: ['guest'] } } }, '22:00', R2, [PCS[0]]).cards.a.pos, 'desperate');
+  const blown = { crew: { a: { room: 'Showroom', disguise: 'guest', blown: ['guest'] } } };
+  assert.equal(B.playerView(P2, blown, R2).crew.a.pos, 'desperate'); assert.equal(mission(blown, '22:00', R2, [PCS[0]]).cards.a.pos, undefined);
   /* the target: in view at a public event in an open room, or with a PC; never in a closed room */
   assert.deepEqual(mission({ crew: {} }, '22:00').hud.target, { room: 'Showroom' }, 'the speeches, with no PC there');
   assert.equal(mission({ crew: {} }, '21:00').hud.target, null, 'no event, no PC');
@@ -1049,24 +1057,24 @@ test('v2 leak: the trapdoor\'s pub reaches a card\'s paths only while it is open
   assert.deepEqual(mission({ crew: CREW, told: { I3: 'crew' } }, '23:00').cards.b.know, ['A trapdoor opens between the counting room and the showroom at eleven']);
 });
 
-test('v2 leak: a looker\'s name is on a card only while they are in that PC\'s room and the PC wears the costume that sees through it', () => {
+test('v2 leak: a looker\'s name and look never reach a card (the costume mechanic stays GM-side), at every beat, in every room and costume; the view still holds the lookers', () => {
+  const NEVER = ['Wren Tully', 'Pip Quill', 'Odette Marsh', 'GM-ONLY-PERSON-1', 'A tall man in a grey coat', 'A cook\'s hat and a cleaver'];
+  let ran = 0, inRoom = 0;
   for (const t of BEATS) {
     const hhmm = B.timeLabel(P2, t), places = B.placesAt(P2, {}, t);
     for (const room of R2) for (const costume of ['guest', 'cook', 'guard']) {
       const s = { crew: { a: { room, disguise: costume } } }, m = B.missionFor(B.playerView(P2, s, R2), s, t, [PCS[0]]), json = JSON.stringify(m);
-      const wren = costume === 'guard' && places.wr && places.wr.room === room, pip = costume === 'cook' && places.pq && places.pq.room === room;
-      assert.equal(json.includes('Wren Tully'), !!wren, 'Wren, ' + costume + ' in ' + room + ' at ' + hhmm); assert.equal(json.includes('Pip Quill'), !!pip, 'Pip, ' + costume + ' in ' + room + ' at ' + hhmm);
-      assert.equal(json.includes('GM-ONLY-PERSON-1'), false); assert.equal(json.includes('Odette Marsh'), false, 'the target\'s name is never on a card');
-      if (wren) assert.deepEqual(m.cards.a.warn, { who: 'Wren Tully', look: 'A tall man in a grey coat', sees: 'Guard' });
-      else if (pip) assert.deepEqual(m.cards.a.warn, { who: 'Pip Quill', look: 'A cook\'s hat and a cleaver', sees: 'Cook' });
-      else assert.equal(m.cards.a.warn, null);
+      NEVER.forEach((w) => assert.equal(json.includes(w), false, w + ', ' + costume + ' in ' + room + ' at ' + hhmm));
+      assert.equal(m.cards.a.warn, undefined); assert.equal(m.cards.a.room, room);
+      if ((costume === 'guard' && places.wr && places.wr.room === room) || (costume === 'cook' && places.pq && places.pq.room === room)) inRoom++;
+      ran++;
     }
   }
-  /* the GM's override moves Wren, and the card follows */
-  const s = { crew: { a: { room: 'Showroom', disguise: 'guard' } }, over: { wr: { at: 'Cocktail lounge' } } };
-  assert.equal(B.missionFor(B.playerView(P2, s, R2), s, 0, [PCS[0]]).cards.a.warn, null);
-  const s2 = { crew: { a: { room: 'Cocktail lounge', disguise: 'guard' } }, over: { wr: { at: 'Cocktail lounge' } } };
-  assert.equal(B.missionFor(B.playerView(P2, s2, R2), s2, 0, [PCS[0]]).cards.a.warn.who, 'Wren Tully');
+  assert.ok(ran >= 300 && inRoom > 0, 'control: the sweep put a looker in the PC\'s room in the costume that sees through it (' + inRoom + ' times)');
+  /* the GM's override moves Wren into the PC's room: the view has him, the card still says nothing */
+  const s2 = { crew: { a: { room: 'Cocktail lounge', disguise: 'guard' } }, over: { wr: { at: 'Cocktail lounge' } } }, vw = B.playerView(P2, s2, R2);
+  assert.ok(vw.people.some((p) => p.label === 'Wren Tully'), 'control: the view (GM side) holds Wren');
+  const m2 = B.missionFor(vw, s2, 0, [PCS[0]]); assert.equal(JSON.stringify(m2).includes('Wren Tully'), false); assert.equal(m2.cards.a.warn, undefined);
   /* the view only holds people a worn costume sees through, and the target */
   assert.deepEqual(B.playerView(P2, { crew: { a: { room: 'Showroom', disguise: 'guest' } } }, R2).people.map((p) => p.id), ['od']);
   assert.deepEqual(B.playerView(P2, { crew: { a: { room: 'Showroom', disguise: 'guard' }, b: { disguise: 'cook' } } }, R2).people.map((p) => p.id), ['od', 'wr', 'pq']);
@@ -1182,7 +1190,7 @@ test('v2: ids named constructor, toString, __proto__ or hasOwnProperty are just 
     for (const t of [0, 90, 150, 200]) {
       const m = B.missionFor(B.playerView(play, st, R2), st, t, pcs);
       assert.deepEqual(Object.keys(m.cards), [id, 'b']);
-      assert.equal(m.cards[id].name, 'Weird'); assert.equal(m.cards[id].pos, 'controlled');
+      assert.equal(m.cards[id].name, 'Weird'); assert.equal(m.cards[id].room, 'Showroom');
       assert.equal(m.cards[id].leads.length, 1); assert.equal(m.cards[id].leads[0].done, true);
       assert.equal(m.cards[id].leads[0].window, '23:30–00:15 · Private card rooms', 'told by the intel item named ' + id);
       assert.equal(m.cards.b.leads.length, 0); assert.equal(JSON.stringify(m).includes('GM-ONLY'), false);
@@ -1253,6 +1261,102 @@ test('v2 private stops and the alarm lockdown room are validated: a boolean and 
   const c = B.checkPlay(p, R2); assert.equal(c.play.people[0].stops[0].private, undefined); assert.equal(c.play.alarm.lockdown, undefined);
   assert.ok(c.warnings.some((w) => /private/.test(w))); assert.ok(c.warnings.some((w) => /lockdown/.test(w)));
   const q = fx2(); q.people[0].stops[1].private = false; assert.equal(B.checkPlay(q, R2).play.people[0].stops[1].private, false);
+});
+
+/* ---- A1: the room notes' lines (playerView opts.rooms), the rooms by zone, the band's timer and showTime, autoHear ---------------- */
+const RN_NOTES = { Showroom: { costume: 'Evening dress', say: ['Chandeliers', 'A string quartet', 'Champagne', 'A fourth line'], md: 'GM-ONLY-MD-1 the room prose' },
+  'Cocktail lounge': { costume: '  ', say: [7, '', 'Ice in glasses', null] }, 'Private card rooms': { costume: 'Black tie', say: ['Green baize'], md: 'GM-ONLY-MD-2' }, Nowhere: { costume: 'Rags', say: ['Nothing here'] } };
+const rnPlain = (v) => JSON.parse(JSON.stringify(v));
+
+test('A1 playerView opts.rooms: only open rooms with a note land in view.rooms, strings only, say capped at 3, md never read', () => {
+  const v = B.playerView(P2, { crew: CREW }, PUBLIC_ROOMS, { rooms: RN_NOTES }), json = JSON.stringify(v);
+  assert.deepEqual(rnPlain(v.rooms), { Showroom: { costume: 'Evening dress', say: ['Chandeliers', 'A string quartet', 'Champagne'] }, 'Cocktail lounge': { costume: null, say: ['Ice in glasses'] } });
+  for (const w of ['GM-ONLY-MD', 'the room prose', 'Black tie', 'Green baize', 'Rags', 'A fourth line', '"md"']) assert.equal(json.includes(w), false, w);
+  assert.deepEqual(rnPlain(B.playerView(P2, { crew: CREW }, R2, { rooms: RN_NOTES }).rooms['Private card rooms']), { costume: 'Black tie', say: ['Green baize'] }, 'open, its note is there');
+  for (const opts of [undefined, null, {}, { rooms: null }, { rooms: 'Showroom' }, { rooms: ['Showroom'] }, { rooms: { Showroom: 'Evening dress' } }, { rooms: { Showroom: null } }]) assert.deepEqual(rnPlain(B.playerView(P2, { crew: CREW }, R2, opts).rooms), {}, JSON.stringify(opts));
+  assert.deepEqual(rnPlain(B.playerView(P2, { crew: CREW }, R2, { rooms: { Showroom: { costume: 5, say: 'one line' } } }).rooms), { Showroom: { costume: null, say: [] } });
+  const proto = JSON.parse('{"__proto__":{"costume":"Hacked","say":["x"]},"constructor":{"costume":"Hacked"}}');
+  assert.deepEqual(rnPlain(B.playerView(P2, { crew: CREW }, R2, { rooms: proto }).rooms), {}); assert.equal(({}).costume, undefined);
+  assert.deepEqual(B.playerView(P2, { crew: CREW }, R2, { rooms: RN_NOTES }).zones, B.playerView(P2, { crew: CREW }, R2).zones, 'view.zones is unchanged by the notes');
+});
+
+test('A1 playerView view.zoneRooms: open rooms by zone in play order (each zone\'s own room order), rooms in no zone last under "", shut rooms absent, empty zones left out', () => {
+  const ZR = [{ label: 'The floor', rooms: ['Showroom', 'Cocktail lounge'] }, { label: 'Back of house', rooms: ['Underground counting room', 'Security control room'] }, { label: 'The card rooms', rooms: ['Private card rooms'] }, { label: 'The loft', rooms: ['Luxury penthouse'] }];
+  assert.deepEqual(rnPlain(B.playerView(P2, { crew: {} }, R2).zoneRooms), ZR);
+  assert.deepEqual(rnPlain(B.playerView(P2, { crew: {} }, R2.slice().reverse()).zoneRooms), ZR, 'the play\'s order, not the open list\'s');
+  assert.deepEqual(rnPlain(B.playerView(P2, { crew: {} }, ['Luxury penthouse', 'Cocktail lounge']).zoneRooms), [{ label: 'The floor', rooms: ['Cocktail lounge'] }, { label: 'The loft', rooms: ['Luxury penthouse'] }]);
+  assert.deepEqual(rnPlain(B.playerView(P2, { crew: {} }, []).zoneRooms), []);
+  const loose = JSON.parse(JSON.stringify(P2)); loose.zones = loose.zones.filter((z) => z.id !== 'loft');
+  const lv = B.playerView(loose, { crew: {} }, ['Luxury penthouse', 'Cocktail lounge']);
+  assert.deepEqual(rnPlain(lv.zoneRooms), [{ label: 'The floor', rooms: ['Cocktail lounge'] }, { label: '', rooms: ['Luxury penthouse'] }], 'a room in no zone comes last, under ""');
+  assert.deepEqual(rnPlain(B.playerView(loose, { crew: {} }, ['Cocktail lounge']).zoneRooms), [{ label: 'The floor', rooms: ['Cocktail lounge'] }], 'no loose entry without a loose open room');
+  assert.deepEqual(lv.zones.map((z) => z.id), ['floor'], 'view.zones is as before');
+});
+
+test('A1 mission cards: costumeLine and here come from the PC\'s own room only, only while it is open; blind: no md, no other room\'s lines, none in the band', () => {
+  const s = { crew: CREW };                 /* a in the Showroom, b in the counting room (no note) */
+  let m = B.missionFor(B.playerView(P2, s, R2, { rooms: RN_NOTES }), s, T('21:00'), PCS);
+  assert.equal(m.cards.a.costumeLine, 'Evening dress'); assert.deepEqual(m.cards.a.here, ['Chandeliers', 'A string quartet', 'Champagne']);
+  assert.equal(m.cards.b.costumeLine, null); assert.deepEqual(m.cards.b.here, []);
+  const json = JSON.stringify(m), band = JSON.stringify(m.hud);
+  for (const w of ['GM-ONLY-MD', 'the room prose', 'Black tie', 'Green baize', 'Ice in glasses', 'Rags', 'A fourth line', '"md"']) assert.equal(json.includes(w), false, w);
+  assert.equal(band.includes('Evening dress') || band.includes('Chandeliers'), false, 'the band carries no room line');
+  /* each PC gets the note of the room they stand in */
+  const s2 = { crew: { a: { room: 'Cocktail lounge', disguise: 'guest' }, b: { room: 'Private card rooms', disguise: 'guest' } } };
+  m = B.missionFor(B.playerView(P2, s2, R2, { rooms: RN_NOTES }), s2, T('21:00'), PCS);
+  assert.deepEqual([m.cards.a.costumeLine, m.cards.a.here, m.cards.b.costumeLine, m.cards.b.here], [null, ['Ice in glasses'], 'Black tie', ['Green baize']]);
+  /* a shut room: its lines stay off the card */
+  m = B.missionFor(B.playerView(P2, s, ['Cocktail lounge'], { rooms: RN_NOTES }), s, T('21:00'), PCS);
+  assert.equal(m.cards.a.costumeLine, null); assert.deepEqual(m.cards.a.here, []); assert.equal(JSON.stringify(m).includes('Evening dress'), false);
+  /* even a view that carries a shut room's lines puts none on the card */
+  const forged = rnPlain(B.playerView(P2, s, ['Cocktail lounge'])); forged.rooms = { Showroom: { costume: 'Evening dress', say: ['Chandeliers'] } };
+  m = B.missionFor(forged, s, T('21:00'), PCS); assert.equal(m.cards.a.costumeLine, null); assert.deepEqual(m.cards.a.here, []);
+  /* missionFor keeps strings only and at most 3, whatever the view says */
+  const wide = rnPlain(B.playerView(P2, s, R2)); wide.rooms = { Showroom: { costume: '', say: ['1', 2, '', '3', '4', '5'] } };
+  m = B.missionFor(wide, s, T('21:00'), PCS); assert.deepEqual([m.cards.a.costumeLine, m.cards.a.here], [null, ['1', '3', '4']]);
+});
+
+test('A1 mission hud: rooms (open rooms only, by zone), showTime from state.showTime, timer shaped from state.timer or null', () => {
+  assert.deepEqual(mission({ crew: CREW }, '22:00', PUBLIC_ROOMS).hud.rooms, [{ zone: 'The floor', rooms: ['Showroom', 'Cocktail lounge'] }]);
+  assert.deepEqual(mission({ crew: CREW }, '22:00', ['Private card rooms', 'Security control room']).hud.rooms, [{ zone: 'Back of house', rooms: ['Security control room'] }, { zone: 'The card rooms', rooms: ['Private card rooms'] }]);
+  const forged = rnPlain(B.playerView(P2, { crew: CREW }, ['Cocktail lounge']));
+  forged.zoneRooms = [{ label: 'The floor', rooms: ['Showroom', 'Cocktail lounge', 5] }, null, 'x', { label: 7, rooms: ['Cocktail lounge'] }, { label: 'Back of house', rooms: ['Security control room'] }, { label: 'No list' }];
+  assert.deepEqual(B.missionFor(forged, { crew: CREW }, T('22:00'), PCS).hud.rooms, [{ zone: 'The floor', rooms: ['Cocktail lounge'] }, { zone: '', rooms: ['Cocktail lounge'] }], 'a shut room is dropped even when the view names it');
+  forged.zoneRooms = 'nope'; assert.deepEqual(B.missionFor(forged, { crew: CREW }, T('22:00'), PCS).hud.rooms, []);
+  for (const v of [undefined, false, 0, null, '']) assert.equal(mission({ crew: CREW, showTime: v }, '22:00').hud.showTime, false, String(v));
+  for (const v of [true, 1]) assert.equal(mission({ crew: CREW, showTime: v }, '22:00').hud.showTime, true, String(v));
+  const tm = (timer) => mission({ crew: CREW, timer }, '22:00').hud.timer;
+  assert.deepEqual(tm({ endsAt: 1700000000000, left: 120, paused: false, len: 300 }), { endsAt: 1700000000000, left: 120, paused: false, len: 300 });
+  assert.deepEqual(tm({ endsAt: null, left: 60, paused: true, len: 300, note: 'GM-ONLY-X' }), { endsAt: null, left: 60, paused: true, len: 300 }, 'only the four keys');
+  assert.deepEqual(tm({ left: 5, len: 10, paused: 'yes' }), { endsAt: null, left: 5, paused: false, len: 10 }, 'no endsAt is null; paused only when it is true');
+  for (const bad of [undefined, null, 'soon', 5, [], { left: 5 }, { len: 10 }, { left: '5', len: 10 }, { left: 5, len: NaN }, { left: Infinity, len: 10 }, { endsAt: 'soon', left: 5, len: 10 }, { endsAt: NaN, left: 5, len: 10 }]) assert.equal(tm(bad), null, JSON.stringify(bad));
+});
+
+test('A1 autoHear: each lead in reach for each PC is heard at t; nothing is removed or mutated; a pair the GM took back stays unheard; heard times are kept; bad input is a copy', () => {
+  const t = T('21:30'), crew = { a: { room: 'Cocktail lounge', disguise: 'guest' }, b: { room: 'Underground counting room', disguise: 'cook' } };
+  const ball = deepFreeze({ crew: rnPlain(crew), heard: {} }), reach = B.leadsInReach(P2, ball, t);
+  assert.ok(reach.some((l) => l.way === 'A' && l.pc === 'a') && reach.some((l) => l.way === 'B' && l.pc === 'b'), 'control: both leads are in reach ' + JSON.stringify(reach));
+  const want = {}; reach.forEach((l) => { (want[l.way] = want[l.way] || {})[l.pc] = t; });
+  const h = B.autoHear(P2, ball, t);
+  assert.deepEqual(rnPlain(h), want); assert.notEqual(h, ball.heard); assert.deepEqual(ball.heard, {}, 'the ball is untouched');
+  /* heard already: kept with its own time; ways the play does not know are copied; nothing in the ball changes */
+  const before = { crew: rnPlain(crew), heard: { A: { a: 3, b: 4 }, Z: { q: 1 } } }, frozen = deepFreeze(rnPlain(before)), h2 = B.autoHear(P2, frozen, t);
+  assert.equal(h2.A.a, 3); assert.equal(h2.A.b, 4); assert.deepEqual(rnPlain(h2.Z), { q: 1 }); assert.equal(h2.B.b, t);
+  assert.notEqual(h2.A, frozen.heard.A); assert.deepEqual(rnPlain(frozen), before);
+  /* the GM took a pair back */
+  const h3 = B.autoHear(P2, deepFreeze({ crew: rnPlain(crew), heard: {}, unheard: { A: { a: true } } }), t);
+  assert.equal(h3.A === undefined || h3.A.a === undefined, true, 'taken back, not heard again'); assert.equal(h3.B.b, t);
+  assert.equal(B.autoHear(P2, { crew: rnPlain(crew), heard: {}, unheard: { A: { a: false } } }, t).A.a, t, 'a falsy take-back is none');
+  assert.equal(B.autoHear(P2, { crew: rnPlain(crew), heard: { A: { a: 3 } }, unheard: { A: { a: true } } }, t).A.a, 3, 'autoHear never removes');
+  /* bad input: the copy alone */
+  const src = { crew: rnPlain(crew), heard: { A: { a: 3 }, W: 7 } };
+  for (const [p, b, tt] of [[null, src, t], [P2, src, NaN], [P2, src, '30'], [P2, src, Infinity], [P2, src, undefined]]) {
+    const out = B.autoHear(p, b, tt);
+    assert.deepEqual(rnPlain(out), { A: { a: 3 }, W: 7 }); assert.notEqual(out, src.heard); assert.notEqual(out.A, src.heard.A);
+  }
+  assert.deepEqual(rnPlain(B.autoHear(P2, null, t)), {}); assert.deepEqual(rnPlain(B.autoHear()), {}); assert.deepEqual(rnPlain(B.autoHear(P2, { heard: 'x' }, NaN)), {});
+  const pr = B.autoHear(null, JSON.parse('{"heard":{"__proto__":{"a":1}}}'), t);
+  assert.equal(Object.getOwnPropertyDescriptor(pr, '__proto__').value.a, 1); assert.equal(({}).a, undefined);
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
