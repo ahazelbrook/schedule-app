@@ -3,6 +3,7 @@
 // The source is a location note in the vault's Locations/ folder holding one fenced block, ```json b68-site:
 //   { "base":  { "seed": <integer>, "ui": { target, district, faction, approach }, "mem": "<json>" | { ... } },   (optional)
 //     "patch": { "rooms": [{ "name", "band" }, ...], ...any other field of a location roll },                       (required)
+//        a room may also carry "w" (integer 2..12) and "lvl" (-1..2) over the kit catalogue's; the kit ignores anything else
 //     "map":   { "view", "theme" },                                                                                  (optional)
 //     "play":  { v, clock, floors, routes, people, disguises, events, clocks } }                                      (optional)
 // `play` (app/gm/ball.js) is a site's timeline, routes and disguises, GM-only. It is checked against the patch's room names:

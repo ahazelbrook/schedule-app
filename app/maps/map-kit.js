@@ -2024,7 +2024,9 @@ L.entries = function (lay, model, opts = {}) {
       const bestFace = r => exteriorSides(level, r).reduce((m, sd) => Math.min(m, faceCost(sd)), Infinity);
       if (kind === "front") {
         const cands = lv0.rooms.concat(lv0.corridor ? [lv0.corridor] : []).filter(r => exteriorSides(lv0, r).some(sd => sd.side === "bottom"));
-        room = lv0.corridor || cands.sort((a, b) => depthOf(a.band) - depthOf(b.band) || b.w - a.w)[0] || lv0.rooms[0];
+        // app-side: a front vector that names a room on the street floor, with an outside wall to the street, lands on it
+        const named = findRoom(land.room), picked = named && cands.includes(named) ? named : null;
+        room = picked || lv0.corridor || cands.sort((a, b) => depthOf(a.band) - depthOf(b.band) || b.w - a.w)[0] || lv0.rooms[0];
       } else if (!room || (!d.vertical && !exteriorSides(level, room).length)) {
         // No room named (or it has no outside wall). The back route reaches as
         // deep as it can, the service side the shallowest room staff work in.
@@ -2275,7 +2277,9 @@ M.model = function (o, W) {
     const arch = dress || (info ? info.arch : "empty");
     return {
       id: "r" + i, n: 0, name: r.name, band, arch, dressed: !!dress,
-      w: info ? info.w : 2.5, lvl: info ? info.lvl : 0,
+      // app-side: a roll's own whole-number w (2..12) and lvl (-1..2) win over the catalogue's
+      w: Number.isInteger(r.w) && r.w >= 2 && r.w <= 12 ? r.w : info ? info.w : 2.5,
+      lvl: Number.isInteger(r.lvl) && r.lvl >= -1 && r.lvl <= 2 ? r.lvl : info ? info.lvl : 0,
       detail: r.detail || "", mix: r.mix || null,
       isTarget: !!r.isTarget, obstacle: r.obstacle || null, loot: r.loot || null,
       featured: !!r.featured, connects: r.connects || null,

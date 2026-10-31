@@ -523,7 +523,7 @@ fails and nobody is known, nothing is purged.
 - **Authored sites** (23/10/2026; the plan is the vault page `Projects/blades-68-authored-sites.md`). A hand-built location, assigned
   to a score card from the vault instead of rolled, that reveals band by band like any roll.
   - **The source.** A location note in the vault's `Locations/` holds one fenced block, ` ```json b68-site `: `{ base?: { seed, ui,
-    mem }, patch: { rooms: [{ name, band, detail?, isTarget? }], ...any other roll field }, map?: { view, theme } }`. A score card in
+    mem }, patch: { rooms: [{ name, band, detail?, isTarget? }], ...any other roll field }, map?: { view, theme } }`. A room may also carry `w` (a whole number, 2 to 12: its size in the plan) and `lvl` (-1 below ground, 0 street, 1 upstairs, 2 roof), which win over the kit's catalogue for that room; anything else is ignored. The front way in (`patch.vectors[0]`) may name a street-floor `room` with a wall to the street, and the map lands the front door on it (otherwise the widest, shallowest street room takes it). This is an app-side change to the vendored map kit (`B68Map` 0.9.0, `app/kits.json` notes it): the design system's map kit should take it upstream, and a kit update must keep it until then (`checks/runtime/map-kit-room.test.mjs`). A score card in
     `Campaigns/Group/Scores/` binds to it with `site: "[[<note name>]]"`. **Each room's `detail` reaches the players** once its band is
     revealed and the street description is sent (`playerSummary`): write what anyone in the room sees, never GM notes.
   - **The pack.** `scripts/lib/authored-export.mjs`, called by the location part's builder: `location.authored = { v: 1, sites: { <note
