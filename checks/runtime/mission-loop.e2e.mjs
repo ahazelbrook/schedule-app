@@ -3,11 +3,11 @@
 // The GM drives the Run view; the display shows the band; each phone has its Mission card open (it opens by itself). Four Next presses, with the other things a night does between them:
 //   - Next: the band's time, NOW and NEXT change within one poll, and each open card redraws (latency printed against the gate's 3 s)
 //   - each player sees only their own card (their name, never the other's, in the card or anywhere in the page)
-//   - Heard: a lead lands on one phone and not on the other
+//   - auto-heard: a lead in reach lands on one phone and not the other with no tap; the room panel's un-hear toggle takes it back and the next step does not re-hear it
 //   - Tell the crew: the intel is on the band (ways found) and on both cards
 //   - a hidden NPC's name is refused (nothing reaches the band or the phones), and Reveal and send then works
 //   - End the night clears the band and both cards
-// Heard by and Tell the crew are VV5's own buttons in the Run view (the room panel and the Intel fold).
+// Un-hear and Tell the crew are the Run view's own buttons (the room panel and the Intel fold).
 //   PW_MODULE=<playwright install> PW_CHANNEL=msedge node checks/runtime/mission-loop.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
@@ -210,28 +210,28 @@ try {
   const kA = await until(async () => /Odette plays cards/.test(await cardText(P.a.page)), 8000), kB = await until(async () => /Odette plays cards/.test(await cardText(P.b.page)), 8000);
   check(kA && kB, 'and the intel text is on both cards');
 
-  /* beat 3: Next, then Heard by one PC: a lead on that phone and not the other */
-  await beat(3);
+  /* beat 3: Next, and the lead in reach is heard automatically (autoHear): a lead on the PC's phone and not the other, no tap */
   const leadsA0 = await P.a.page.$$eval('.ds-mv-lead', (l) => l.length), leadsB0 = await P.b.page.$$eval('.ds-mv-lead', (l) => l.length);
-  const w0 = await waysOf();
-  check(w0 === 'Ways found: 0 of 2', 'before Heard the big display\'s band says exactly "Ways found: 0 of 2" (matched ' + JSON.stringify(w0) + ')');
-  await arm(P.b.page, "document.querySelectorAll('.ds-mv-lead').length > a", leadsB0);
-  await G.page.click('.rv-card[data-room="Cocktail lounge"] .rv-cn');
-  const tH = Date.now();
-  await G.page.click('.rv-sec[data-sec="room"] [data-rv="heard"][data-way="A"][data-pc="' + B.id + '"]');
-  check(!!(await until(async () => { const b = await ball(); return b.heard && b.heard.A && b.heard.A[B.id] === b.t; }, 8000)), 'Heard by (the room panel): ball.heard.A holds the second PC at the published time');
-  const sH = await stamp(P.b.page);
-  check(!!sH, 'Heard: a lead lands on the second player\'s card (' + (sH ? sH - tH : '-') + ' ms after the write)');
+  await beat(3);
+  check(!!(await until(async () => { const b = await ball(); return b.heard && b.heard.A && typeof b.heard.A[B.id] === 'number' && !(b.heard.A[A.id]); }, 8000)), 'auto-heard: ball.heard.A holds the second PC (stood where the lead is said) and not the first, with no tap');
   await sleep(1500);
   const leadsA1 = await P.a.page.$$eval('.ds-mv-lead', (l) => l.length), leadsB1 = await P.b.page.$$eval('.ds-mv-lead', (l) => l.length);
   const ta = await cardText(P.a.page), tb = await cardText(P.b.page);
-  check(leadsB1 === leadsB0 + 1 && leadsA1 === leadsA0 && tb.includes('The Last Hand') && !ta.includes('The Last Hand'), 'Heard: the lead is on one phone and not the other (leads ' + leadsA0 + '->' + leadsA1 + ' and ' + leadsB0 + '->' + leadsB1 + ')');
+  check(leadsB1 === 1 && leadsA1 === 0 && tb.includes('The Last Hand') && !ta.includes('The Last Hand'), 'auto-heard: the lead is on one phone and not the other (leads ' + leadsA0 + '->' + leadsA1 + ' and ' + leadsB0 + '->' + leadsB1 + ')');
   check(await pageHas(P.b.page, 'The Last Hand') && await pageHas(P.b.page, 'She never leaves a table') && !(await pageHas(P.a.page, 'The Last Hand')) && !(await pageHas(P.a.page, 'She never leaves a table')), 'and the lead (name and line) is in the hearer\'s page DOM and nowhere in the other phone\'s page');
   const w1 = await until(async () => ((await waysOf()) === 'Ways found: 1 of 2' ? 'Ways found: 1 of 2' : null), 8000);
-  check(!!w1, 'after Heard the big display\'s band says exactly "Ways found: 1 of 2" (matched ' + JSON.stringify(await waysOf()) + ')');
+  check(!!w1, 'the big display\'s band says exactly "Ways found: 1 of 2" with no tap (matched ' + JSON.stringify(await waysOf()) + ')');
+
+  /* the room panel's toggle takes it back: count down, ball.unheard set, and the next step does not re-hear it */
+  await G.page.click('.rv-card[data-room="Cocktail lounge"] .rv-cn');
+  await G.page.click('.rv-rm [data-rv="unhear"][data-way="A"][data-pc="' + B.id + '"]');
+  check(!!(await until(async () => { const b = await ball(); return !(b.heard && b.heard.A && b.heard.A[B.id]) && b.unheard && b.unheard.A && b.unheard.A[B.id]; }, 8000)), 'un-hear (the room panel): ball.heard.A drops the second PC and ball.unheard.A marks the pair');
+  check(!!(await until(async () => (await waysOf()) === 'Ways found: 0 of 2', 8000)), 'un-hear: the band says "Ways found: 0 of 2" (matched ' + JSON.stringify(await waysOf()) + ')');
 
   /* beat 4: Next, then a hidden NPC whose name is on the band is refused, and Reveal and send works */
   await beat(4);
+  { const b4 = await ball(); check(!(b4.heard && b4.heard.A && b4.heard.A[B.id]) && !!(b4.unheard && b4.unheard.A && b4.unheard.A[B.id]), 'after the next step the un-heard lead stays un-heard (ball.unheard blocks re-hearing)'); }
+  check((await waysOf()) === 'Ways found: 0 of 2', 'and the band still says "Ways found: 0 of 2" (matched ' + JSON.stringify(await waysOf()) + ')');
   const npc = { name: 'Odette', alias: '', role: 'Guest', faction: '', description: '', gmNotes: 'GM-ONLY-LOOP', revealed: false, spec };
   check((await api('PUT', '/npcs/npc_loop_hid', npc)).status === 200, 'a hidden NPC named Odette is filed');
   const seqBefore = (await mission()).seq, bandBefore = await bandText();
@@ -254,7 +254,7 @@ try {
 
   /* ---- End the night ---- */
   await G.page.click('[data-rv="menu"]');
-  await G.page.click('[data-rv="menuitem"]');
+  await G.page.click('[data-rv="menuitem"]:has-text("End the night")');   // the menu now also holds "Show the time", so pick by label
   check(!!(await until(async () => !(await mission()), 10000)), 'End the night: the mission is gone from the campaign document');
   check(!!(await until(async () => (await bandText()) === '', 12000)), 'the band is gone from the iPad');
   check(!!(await until(async () => (await P.a.page.$$('.ds-missionbtn')).length === 0 && (await P.a.page.$$('.ds-mv')).length === 0, 8000)), 'the first phone\'s card is closed and its button gone');
