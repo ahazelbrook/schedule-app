@@ -1177,6 +1177,34 @@ await test('band: the clock shows only when the GM turned it on (showTime); the 
   assert.notEqual(P.bandSig(P.bandModel({ ...HUD, showTime: false })), P.bandSig(P.bandModel(HUD)), 'toggling it repaints');
   assert.deepEqual(P.bandModel({ ...HUD, crew: [{ name: 'Ada', costume: 'Cook', icon: 'tray', room: 'Showroom' }] }).crew, [{ name: 'Ada', room: 'Showroom' }], 'an old hud that still carries a costume shows none');
 });
+await test('band: the countdown model keeps endsAt (not the seconds left), is null without a usable timer, and the signature ignores the clock', () => {
+  assert.equal(P.bandModel(HUD).timer, null); assert.equal(P.bandModel({ ...HUD, timer: { left: 'x' } }).timer, null);
+  assert.deepEqual(P.bandModel({ ...HUD, timer: { endsAt: 5000, left: 90.4, paused: false, len: 360 } }).timer, { endsAt: 5000, left: 90, paused: false, len: 360 });
+  assert.deepEqual(P.bandModel({ ...HUD, timer: { endsAt: null, left: 9999, paused: true, len: 360 } }).timer, { endsAt: null, left: 7200, paused: true, len: 360 });
+  assert.equal(P.bandSig(P.bandModel({ ...HUD, timer: { endsAt: 5000, left: 90, paused: false, len: 360 } })), P.bandSig(P.bandModel({ ...HUD, timer: { endsAt: 5000, left: 90, paused: false, len: 360 } })));
+});
+await test('band: timerView counts from endsAt on the corrected clock; amber under a minute, red at zero, Paused when paused', () => {
+  const run = { endsAt: 100000, left: 360, paused: false, len: 360 };
+  assert.deepEqual(P.timerView(run, 0, 0), { text: '1:40', state: 'run', left: 100 });
+  assert.deepEqual(P.timerView(run, 0, 40000), { text: '1:00', state: 'run', left: 60 }, 'a server clock 40 s ahead of the iPad');
+  assert.deepEqual(P.timerView(run, 0, 40500), { text: '1:00', state: 'run', left: 60 }, 'rounded up: 59.5 s still reads a minute');
+  assert.equal(P.timerView(run, 0, 41000).state, 'warn'); assert.equal(P.timerView(run, 99999, 0).text, '0:01');
+  assert.deepEqual(P.timerView(run, 100000, 0), { text: '0:00', state: 'zero', left: 0 }); assert.equal(P.timerView(run, 1e9, 0).left, 0, 'never negative');
+  assert.deepEqual(P.timerView({ endsAt: null, left: 125, paused: true, len: 360 }, 1e12, 5000), { text: '2:05', state: 'paused', left: 125 });
+  assert.equal(P.timerView({ endsAt: 5, left: 30, paused: true, len: 60 }, 1e12, 0).left, 30, 'paused ignores endsAt');
+  assert.equal(P.timerView(null, 0, 0).state, 'zero'); assert.equal(P.timerView(run, 0, undefined).left, 100);
+});
+await test('band: skewOf is the server clock less the midpoint of the round trip; slow or odd answers give null', () => {
+  assert.equal(P.skewOf(10500, 9000, 10000), 1000); assert.equal(P.skewOf(10000, 10000, 10000), 0);
+  for (const bad of [P.skewOf('x', 0, 1), P.skewOf(NaN, 0, 1), P.skewOf(1, 5, 1), P.skewOf(1, 0, 3001), P.skewOf(undefined, 0, 1)]) assert.equal(bad, null);
+});
+await test('poller: a good answer that carries now calls onSkew with the skew; one without it, or a failure, does not', async () => {
+  const sk = []; const r = rig({ onSkew: (ms) => sk.push(ms) }); let withNow = true;
+  r.g.handler = () => Promise.resolve(withNow ? { ...ok(1), now: Date.now() + 7000 } : ok(1));
+  r.poller.start(); await r.c.advance(0);
+  assert.equal(sk.length, 1); assert.ok(Math.abs(sk[0] - 7000) < 50, String(sk[0]));
+  withNow = false; await r.c.advance(BEAT); assert.equal(sk.length, 1); r.poller.stop();
+});
 await test('band: inText reads minutes the way the table says them', () => {
   assert.deepEqual([0, 15, 45, 60, 90, 125, null, 'x', -5].map(P.inText), ['now', 'in 15 min', 'in 45 min', 'in 1 h', 'in 1 h 30', 'in 2 h 5', '', '', 'now']);
 });

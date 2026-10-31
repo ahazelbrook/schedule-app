@@ -1705,6 +1705,7 @@
     window.removeEventListener('online', onNet); window.removeEventListener('offline', onNet);
     if (mAskT) { clearTimeout(mAskT); mAskT = null; }   /* the "Asked for" timer goes with the viewer */
     if (!mv) return; var v = mv; mv = null;
+    if (v.tt) clearInterval(v.tt);   /* the timer line's tick goes with the viewer */
     if (v.el.parentNode) v.el.parentNode.removeChild(v.el);
     var back = (cur && cur.root && cur.root.querySelector && cur.root.querySelector('.ds-missionbtn')) || v.from;
     if (restore !== false && back && back.focus && document.body.contains(back)) { try { back.focus({ preventScroll: true }); } catch (e) {} }
@@ -1754,6 +1755,16 @@
       mAdd(sec, 'p', 'ds-mv-p ds-mv-asked', 'Asked for ' + ask.room);
       mAskT = setTimeout(function () { mAskT = null; if (mv === v) paintMission(); }, Math.max(0, ask.at + 30000 - Date.now()) + 50);   /* one timer: repaint when it expires */
     }
+  }
+  /* the GM's countdown on the card: the phone's own clock, no skew (a second or two off is fine at a table) */
+  function mvTimerText(tm, now) {
+    var num = function (x) { return typeof x === 'number' && isFinite(x); };
+    var paused = !tm || tm.paused === true || !num(tm.endsAt), left = paused ? (tm && num(tm.left) ? tm.left : 0) : Math.ceil((tm.endsAt - now) / 1000);
+    left = Math.max(0, Math.min(7200, Math.floor(left) || 0));
+    var r = left % 60, mmss = Math.floor(left / 60) + ':' + (r < 10 ? '0' : '') + r;
+    if (paused) return { text: 'Time paused ' + mmss, cls: '' };
+    if (left <= 0) return { text: 'Time is up', cls: 'zero' };
+    return { text: 'Time left ' + mmss, cls: left < 60 ? 'warn' : '' };
   }
   function paintMission() {
     var v = mv; if (!v) return;
@@ -1810,6 +1821,11 @@
       now.forEach(function (t) { var p = mAdd(ns, 'p', 'ds-mv-p'); mAdd(p, 'b', null, 'NOW '); p.appendChild(document.createTextNode(t)); });
       next.forEach(function (t) { var p = mAdd(ns, 'p', 'ds-mv-p'); mAdd(p, 'b', null, 'NEXT '); p.appendChild(document.createTextNode(t)); });
     }
+    v.tm = m.timer && typeof m.timer === 'object' ? m.timer : null;
+    if (v.tm) {
+      var tsec = mAdd(body, 'div', 'ds-mv-sec' + (now.length || next.length ? '' : ' ds-mv-nn')), tv = mvTimerText(v.tm, Date.now());
+      mAdd(tsec, 'p', 'ds-mv-p ds-mv-timer' + (tv.cls ? ' ' + tv.cls : ''), tv.text).setAttribute('data-mvt', '');
+    }
     body.scrollTop = keep;
     markMissionSeen(pc); refreshMissionDot();   /* looking at it now: its dot goes */
   }
@@ -1824,6 +1840,13 @@
     var mine = (pcId && m.pcs.filter(function (p) { return p.id === pcId; })[0]) || m.pcs.filter(function (p) { return cur && cur.doc && p.id === cur.doc.id; })[0] || m.pcs[0];   /* the asked-for character, else this sheet's if it has a card, else the first */
     window.addEventListener('online', onNet); window.addEventListener('offline', onNet);
     mv = { el: el, body: body, sw: sw, swKey: '', pc: mine.id, from: from || null };
+    mv.tt = setInterval(function () {   /* the timer line counts down without a repaint */
+      var v = mv; if (!v || !v.tm) return;
+      var n = v.body.querySelector('[data-mvt]'); if (!n) return;
+      var t = mvTimerText(v.tm, Date.now());
+      if (n.textContent !== t.text) n.textContent = t.text;
+      n.className = 'ds-mv-p ds-mv-timer' + (t.cls ? ' ' + t.cls : '');
+    }, 1000);
     document.body.appendChild(el);
     try { x.focus({ preventScroll: true }); } catch (e) {}
     paintMission();

@@ -262,8 +262,13 @@ html.dp-active, html.dp-active body { overflow: hidden; overscroll-behavior: non
 @media (prefers-reduced-motion: reduce) { .dp-band.dp-b-fade { animation: none; } }
 .dp-root.dp-band-on .dp-stage.dp-map { right: 36%; }
 .dp-band p { margin: 0; }
-.dp-b-clock { font: 900 clamp(112px, min(13vmin, 9vw), 170px)/.95 var(--font-poster, Impact, "Arial Narrow", sans-serif); letter-spacing: .01em; font-variant-numeric: tabular-nums; }
+.dp-b-clock, .dp-b-timer { font: 900 clamp(112px, min(13vmin, 9vw), 170px)/.95 var(--font-poster, Impact, "Arial Narrow", sans-serif); letter-spacing: .01em; font-variant-numeric: tabular-nums; }
 .dp-b-label { font-size: clamp(32px, 4vmin, 44px); line-height: 1.1; color: var(--dp-soft); }
+.dp-b-timer.dp-b-t-warn { color: #f0b040; }
+.dp-b-timer.dp-b-t-zero { color: #ff5a48; }
+.dp-b-timer.dp-b-t-paused .dp-b-tt { opacity: .6; }
+.dp-b-tp { display: none; font-size: .28em; letter-spacing: .12em; margin-left: .4em; text-transform: uppercase; vertical-align: middle; }
+.dp-b-timer.dp-b-t-paused .dp-b-tp { display: inline; }
 .dp-b-kick { font: 700 clamp(26px, 3.1vmin, 34px)/1.1 var(--font-mono, ui-monospace, Menlo, monospace); letter-spacing: .08em; text-transform: uppercase; color: var(--dp-kick); }
 .dp-b-item + .dp-b-item { margin-top: .4em; }
 .dp-b-head { font: 800 clamp(40px, 4.9vmin, 54px)/1.08 var(--font-text, Helvetica, Arial, sans-serif); overflow-wrap: anywhere; }

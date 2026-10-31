@@ -113,7 +113,7 @@ await step('the display GET, in every form: no answer holds a card\'s own string
   const never = [...own, ...SEC.cardPool(FX), ...SEC.markers(FX), 'pc_a', 'pc_b', ALEX, BEA];
   const hseqs = [null, '0', '7', '6', '8', '1', '99999', '-1', 'abc', '', '7.0', '07x', '9'.repeat(30), '%00', '0x7', '7%20', '7&hseq=8'];
   const bases = ['', 'seq=0', 'seq=99999', 'seq=0&aseq=0', 'seq=0&aseq=0&sseq=0', 'seq=99999&aseq=99999&sseq=99999'];
-  const KNOWN = new Set(['seq', 'display', 'updatedAt', 'ambient', 'stt', 'overlay', 'live', 'unchanged', 'mission']);
+  const KNOWN = new Set(['seq', 'display', 'updatedAt', 'ambient', 'stt', 'overlay', 'live', 'unchanged', 'mission', 'now']);
   let served = 0, unchanged = 0, absent = 0, asked = 0, answers = 0;
   for (const user of [IPAD, GM]) for (const b of bases) for (const h of hseqs) {
     const qs = [b, h === null ? '' : 'hseq=' + h].filter(Boolean).join('&');

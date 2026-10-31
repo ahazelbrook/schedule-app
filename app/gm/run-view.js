@@ -327,6 +327,20 @@
     }
 
     /* the header */
+    /* the beat's countdown (ball.timer, worked out by ball.js): a night started before it has none, so the default shows paused until the first Start */
+    function timerShown(p, st) { return isObj(st) && isObj(st.timer) ? st.timer : B.timerNext(p, null, "reset", Date.now()); }
+    function timerLook(tm, now) {
+      var l = B.timerLeft(tm, now), paused = !(tm.paused !== true && typeof tm.endsAt === "number");
+      return { l: l, paused: paused, cls: "rv-tleft" + (l <= 0 ? " zero" : l < 60 ? " warn" : "") + (paused ? " paused" : "") };
+    }
+    function timerHtml(p, st) {
+      var tm = timerShown(p, st), v = timerLook(tm, Date.now());
+      return '<span class="rv-timer" role="group" aria-label="The beat timer"><output class="' + v.cls + '" data-rvtimer aria-label="Time left in this beat">' + B.timerText(v.l) + '</output>' +
+        '<button type="button" class="rv-btn sm" data-rv="tgo">' + (v.paused ? "Start" : "Pause") + '</button>' +
+        '<button type="button" class="rv-btn sm" data-rv="tadd1">+1 min</button><button type="button" class="rv-btn sm" data-rv="tadd5">+5 min</button>' +
+        '<button type="button" class="rv-btn sm" data-rv="treset" title="Back to the full length, paused">Reset</button>' +
+        '<input class="rv-tlen" type="number" min="1" max="120" data-rv="tlen" value="' + Math.round(tm.len / 60) + '" aria-label="Timer length in minutes" title="Timer length in minutes. Default is the play\'s clock.real, else 6."></span>';
+    }
     function headHtml(x) {
       var m = x.m, p = x.rs.play, st = x.st, nowT = timeOf(st), nowBeat = B.beatOf(p, nowT), h = '<div class="rv-head">';
       if (!m.started) {
@@ -339,7 +353,7 @@
         h += '<button type="button" class="rv-btn rv-step" data-rv="back" aria-label="Back a beat" title="Back a beat (Left)"' + (stepTime(p, st, -1) === null ? " disabled" : "") + '>◀</button>' +
           '<output class="rv-time" id="rv-time" aria-label="Published time">' + esc(B.timeLabel(p, nowT)) + '</output>' +
           '<button type="button" class="rv-btn rv-step" data-rv="next" aria-label="Next beat" title="Next beat (Right)"' + (stepTime(p, st, 1) === null ? " disabled" : "") + '>▶</button>' +
-          '<span class="rv-beat">beat ' + nowBeat.n + ' of ' + nowBeat.of + '</span>';
+          '<span class="rv-beat">beat ' + nowBeat.n + ' of ' + nowBeat.of + '</span>' + timerHtml(p, st);
       }
       h += '<div class="rv-track" role="group" aria-label="The night, a square a beat">' + m.track.map(function (q) {
         var cls = "rv-sq" + (q.before ? " before" : "") + (q.cur ? " cur" : "") + (peekT !== null && q.t === peekT ? " peek" : "") + (q.i * m.beatLen < nowT && !q.cur && m.started && !q.before ? " done" : "");
@@ -475,17 +489,39 @@
     };
 
     /* actions */
-    function atTime(t, why) { if (host.set({ t: t })) host.publish(t, why); self.rerender(); }
-    function startNight(t) { if (host.set({ v: 2, start: t, t: t })) host.publish(t, "start"); peekT = null; self.rerender(); }
+    function atTime(t, why, extra) { if (host.set(Object.assign({ t: t }, extra || {}))) host.publish(t, why); self.rerender(); }
+    /* the timer is written paused with the start: it never runs before Start the night */
+    function startNight(t) { var rs = site(); if (host.set({ v: 2, start: t, t: t, timer: B.timerNext(rs ? rs.play : null, null, "reset", Date.now()) })) host.publish(t, "start"); peekT = null; self.rerender(); }
+    /* a manual step restarts the countdown for the new beat, running or paused as it was; a night with no ball.timer writes none */
+    function restartFor(play, st) { return isObj(st) && isObj(st.timer) ? { timer: B.timerNext(play, st, "restart", Date.now()) } : null; }
+    function timerDo(op, arg) { var rs = site(); if (!rs) return; var st = host.state(); if (!isStarted(st)) return; host.set({ timer: B.timerNext(rs.play, st, op, Date.now(), arg) }); self.rerender(); }
+    function onTimerLen(ev) {
+      var el = ev.target; if (!el || !el.matches || !el.matches('[data-rv="tlen"]') || !boxEl || !boxEl.contains(el)) return;
+      var v = +el.value; if (!(v >= 1)) { self.rerender(); return; }
+      timerDo("len", Math.min(120, Math.round(v)) * 60);
+    }
+    /* every second: the [data-rvtimer] text without a rerender, then a step when due (never while peeking: the first tick after the peek steps) */
+    var timerId = null;
+    function timerTick() {
+      var rs = boxEl ? site() : null; if (!rs) return;
+      var now = Date.now(), look = timerLook(timerShown(rs.play, host.state()), now), els = boxEl.querySelectorAll ? boxEl.querySelectorAll("[data-rvtimer]") : [];
+      for (var i = 0; i < els.length; i++) { els[i].textContent = B.timerText(look.l); els[i].className = look.cls; }
+      if (peekT !== null) return;
+      var st = host.state(); if (!B.timerDue(st, now)) return;      /* read again: a second tick or another device that stepped does nothing */
+      var t = stepTime(rs.play, st, 1);
+      if (t === null) { if (host.set({ timer: B.timerNext(rs.play, st, "stop", now) })) host.toast("Last beat: the timer stopped."); self.rerender(); return; }
+      atTime(t, "beat", { timer: B.timerNext(rs.play, st, "restart", now) });
+    }
     function placeAt(pc, room) {
       var rs = site(); if (!rs) return;
       var st = host.state(), bi = B.beatOf(rs.play, timeOf(st)).i;
       if (host.set({ crew: moveCrew(st, pc, room, bi) })) { arm = ""; sel = room; }
       self.rerender();
     }
-    self.step = function (dir) { var rs = site(); if (!rs) return false; var st = host.state(), t = stepTime(rs.play, st, dir); if (t === null) return false; peekT = null; atTime(t, "beat"); return true; };
-    self.jump = function () { var rs = site(); if (!rs) return false; var st = host.state(), t = jumpTime(rs.play, st); if (t === null) { host.toast("Nothing more happens tonight."); return false; } peekT = null; atTime(t, "jump"); return true; };
+    self.step = function (dir) { var rs = site(); if (!rs) return false; var st = host.state(), t = stepTime(rs.play, st, dir); if (t === null) return false; peekT = null; atTime(t, "beat", restartFor(rs.play, st)); return true; };
+    self.jump = function () { var rs = site(); if (!rs) return false; var st = host.state(), t = jumpTime(rs.play, st); if (t === null) { host.toast("Nothing more happens tonight."); return false; } peekT = null; atTime(t, "jump", restartFor(rs.play, st)); return true; };
     self.peek = function (t) { var rs = site(); if (!rs) return; var st = host.state(); peekT = isStarted(st) && t !== timeOf(st) ? t : null; self.rerender(); };
+    self.tick = timerTick;                                /* the 1 s tick, for the tests */
     self.unpeek = function () { if (peekT === null) return false; peekT = null; self.rerender(); return true; };
     self.peeking = function () { return peekT !== null; };
     /* VV12: ask, clear the players' mission, then un-start the ball (site, floor and open stay); a failed mission write is said and the ball still resets */
@@ -525,6 +561,11 @@
         case "unpeek": self.unpeek(); break;
         case "reset": self.resetNight(); break;
         case "alarm": alarmOpen = !alarmOpen; self.rerender(); break;
+        case "tgo": { var tst = host.state(), trun = isObj(tst) && isObj(tst.timer) && tst.timer.paused !== true && typeof tst.timer.endsAt === "number"; timerDo(trun ? "pause" : "start"); break; }
+        case "tadd1": timerDo("add", 60); break;
+        case "tadd5": timerDo("add", 300); break;
+        case "treset": timerDo("reset"); break;
+        case "tlen": break;                                  /* the length box: its change listener does the work */
         case "view": host.set({ view: el.getAttribute("data-v") === "board" ? null : el.getAttribute("data-v") }, true); self.rerender(); break;
         case "pc": {
           var id = el.getAttribute("data-id"), card = el.closest(".rv-card");
@@ -602,10 +643,18 @@
 
     self.attach = function (box) {
       boxEl = box;
-      box.addEventListener("click", onClick); box.addEventListener("keydown", onKeyCard); box.addEventListener("pointerdown", onDown);
+      box.addEventListener("click", onClick); box.addEventListener("change", onTimerLen); box.addEventListener("keydown", onKeyCard); box.addEventListener("pointerdown", onDown);
+      /* the beat timer's tick; visibilitychange catches up after a sleep (the tests build a fake box, so both are guarded) */
+      if (typeof setInterval === "function" && timerId === null) { timerId = setInterval(timerTick, 1000); if (timerId && timerId.unref) timerId.unref(); }
+      if (typeof document !== "undefined") document.addEventListener("visibilitychange", timerTick);
     };
     self.dragging = function () { return !!(drag && drag.moved); };
-    self.detach = function () { if (mapZoom) { mapZoom.destroy(); mapZoom = null; } var i = live.indexOf(self); if (i >= 0) live.splice(i, 1); };
+    self.detach = function () {
+      if (mapZoom) { mapZoom.destroy(); mapZoom = null; }
+      var i = live.indexOf(self); if (i >= 0) live.splice(i, 1);
+      if (timerId !== null) { clearInterval(timerId); timerId = null; }
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", timerTick);
+    };
     return self;
   }
 

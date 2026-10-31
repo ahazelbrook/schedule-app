@@ -325,9 +325,10 @@ await step('the fourth part: no hseq means no `mission`; hseq=0 with no mission 
   const forms = ['seq=0', 'seq=0&aseq=0', 'seq=0&aseq=0&sseq=0', ''];
   for (const f of forms) {
     const a = await display(f);
-    expect(a.status === 200 && !('mission' in a.json), 'without hseq (' + f + '): ' + a.text.slice(0, 120));
+    expect(a.status === 200 && !('mission' in a.json) && !('now' in a.json), 'without hseq (' + f + '): ' + a.text.slice(0, 120));
     const b = await display((f ? f + '&' : '') + 'hseq=0');
     expect(b.status === 200 && same(b.json.mission, { hseq: 0, hud: null }), 'hseq=0 (' + f + '): ' + b.text.slice(0, 160));
+    expect(Number.isFinite(b.json.now) && Math.abs(b.json.now - Date.now()) < 60000, 'with hseq the answer carries the server clock as now, for the band countdown (' + f + '): ' + b.text.slice(0, 160));
     const c = await display((f ? f + '&' : '') + 'hseq=5');
     expect(same(c.json.mission, { hseq: 0, hud: null }), 'a page at 5 learns the mission is gone (' + f + ')');
   }

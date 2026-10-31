@@ -1359,5 +1359,59 @@ test('A1 autoHear: each lead in reach for each PC is heard at t; nothing is remo
   assert.equal(Object.getOwnPropertyDescriptor(pr, '__proto__').value.a, 1); assert.equal(({}).a, undefined);
 });
 
+/* ---- the beat timer (ball.timer): pure maths, always from endsAt ---- */
+test('timerLen: play.clock.real minutes (rounded, 1..120) else 6 minutes; seconds, 30..7200', () => {
+  assert.equal(B.timerLen(null), 360); assert.equal(B.timerLen({}), 360); assert.equal(B.timerLen({ clock: {} }), 360);
+  assert.equal(B.timerLen({ clock: { real: 10 } }), 600); assert.equal(B.timerLen({ clock: { real: 2.6 } }), 180);
+  assert.equal(B.timerLen({ clock: { real: 0 } }), 60); assert.equal(B.timerLen({ clock: { real: 999 } }), 7200);
+  assert.equal(B.timerLen({ clock: { real: '9' } }), 360, 'text is not a number: the default'); assert.equal(B.timerLen({ clock: { real: NaN } }), 360);
+});
+test('timerLeft: running -> from endsAt (rounded up), paused -> left, garbage -> 0, clamped 0..7200', () => {
+  assert.equal(B.timerLeft({ endsAt: 10500, left: 99, paused: false, len: 360 }, 1000), 10);
+  assert.equal(B.timerLeft({ endsAt: 10001, left: 99, paused: false, len: 360 }, 1000), 10, 'a started second still counts');
+  assert.equal(B.timerLeft({ endsAt: 900, left: 5, paused: false, len: 360 }, 1000), 0, 'overdue is 0, never negative');
+  assert.equal(B.timerLeft({ endsAt: null, left: 42, paused: true, len: 360 }, 1e12), 42);
+  assert.equal(B.timerLeft({ endsAt: 5000, left: 42, paused: true, len: 360 }, 1000), 42, 'paused wins over an endsAt');
+  assert.equal(B.timerLeft({ endsAt: 1e12, left: 1, paused: false }, 0), 7200);
+  for (const g of [null, undefined, 3, 'x', []]) assert.equal(B.timerLeft(g, 1000), 0);
+});
+test('timerNext: start, pause, add, reset, len, restart, stop; never mutates; endsAt null whenever paused', () => {
+  const play = { clock: { real: 5 } }, st0 = { start: 0, t: 0 }, now = 1e9, frozen = JSON.stringify(st0);
+  const base = B.timerNext(play, st0, 'reset', now);
+  assert.deepEqual(base, { len: 300, endsAt: null, left: 300, paused: true });
+  assert.equal(JSON.stringify(st0), frozen);
+  const run = B.timerNext(play, { ...st0, timer: base }, 'start', now);
+  assert.deepEqual(run, { len: 300, endsAt: now + 300000, left: 300, paused: false });
+  const st1 = { ...st0, timer: run };
+  assert.deepEqual(B.timerNext(play, st1, 'start', now + 5000), run, 'starting a running timer changes nothing');
+  assert.deepEqual(B.timerNext(play, st1, 'pause', now + 100000), { len: 300, endsAt: null, left: 200, paused: true });
+  assert.deepEqual(B.timerNext(play, st1, 'add', now + 100000, 60), { len: 300, endsAt: now + 360000, left: 260, paused: false });
+  assert.deepEqual(B.timerNext(play, { ...st0, timer: base }, 'add', now, 300), { len: 300, endsAt: null, left: 600, paused: true });
+  assert.equal(B.timerNext(play, { ...st0, timer: base }, 'add', now, 99999).left, 7200, 'clamped');
+  assert.deepEqual(B.timerNext(play, st1, 'reset', now + 9000), base);
+  assert.deepEqual(B.timerNext(play, { ...st0, timer: base }, 'len', now, 120), { len: 120, endsAt: null, left: 120, paused: true }, 'paused: starts over at the new length');
+  assert.deepEqual(B.timerNext(play, st1, 'len', now + 10000, 120), { len: 120, endsAt: now + 300000, left: 290, paused: false }, 'running: the next restart uses it');
+  assert.deepEqual(B.timerNext(play, st1, 'restart', now + 250000), { len: 300, endsAt: now + 550000, left: 300, paused: false });
+  assert.deepEqual(B.timerNext(play, { ...st0, timer: { ...base, left: 40 } }, 'restart', now), base, 'paused stays paused, back at len');
+  assert.deepEqual(B.timerNext(play, st1, 'stop', now), { len: 300, endsAt: null, left: 0, paused: true });
+  assert.deepEqual(B.timerNext(play, st1, 'nope', now), run, 'an unknown op leaves it');
+  assert.equal(B.timerNext(play, { ...st0, timer: { ...base, left: 0 } }, 'start', now).left, 300, 'a spent timer starts from len');
+});
+test('timerNext: never starts before the night (no st.start); timerDue is false then too', () => {
+  const play = { clock: { real: 5 } };
+  assert.deepEqual(B.timerNext(play, {}, 'start', 1000), { len: 300, endsAt: null, left: 300, paused: true });
+  assert.deepEqual(B.timerNext(play, null, 'start', 1000), { len: 300, endsAt: null, left: 300, paused: true });
+  assert.equal(B.timerDue({ timer: { endsAt: 0, left: 0, paused: false, len: 60 } }, 5000), false, 'not started: never due');
+});
+test('timerDue: started + running + nothing left; paused or not yet never', () => {
+  const tm = (o) => ({ len: 60, left: 60, paused: false, endsAt: 10000, ...o });
+  assert.equal(B.timerDue({ start: 0, timer: tm() }, 9000), false); assert.equal(B.timerDue({ start: 0, timer: tm() }, 10000), true);
+  assert.equal(B.timerDue({ start: 0, timer: tm({ paused: true, endsAt: null, left: 0 }) }, 99999), false, 'paused at zero is not due');
+  assert.equal(B.timerDue({ start: 0 }, 99999), false); assert.equal(B.timerDue(null, 1), false);
+});
+test('timerText: m:ss', () => {
+  assert.deepEqual([360, 59, 0, 60, 3725, -4, 7.9].map(B.timerText), ['6:00', '0:59', '0:00', '1:00', '62:05', '0:00', '0:07']);
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

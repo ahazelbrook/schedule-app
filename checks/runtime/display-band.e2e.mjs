@@ -175,6 +175,25 @@ try {
       await page.waitForFunction(() => document.querySelector('.dp-b-clock') && document.querySelector('.dp-b-clock').textContent === '22:30', null, { timeout: 7000 });
     });
 
+    await step(name + ': the beat timer: counts down on the band from endsAt, amber under a minute, red at zero, Paused when paused; the second hand needs no new poll', async () => {
+      const tm = () => page.evaluate(() => { const n = document.querySelector('.dp-b-timer'); return n ? { text: n.querySelector('.dp-b-tt').textContent, cls: n.className, paused: getComputedStyle(n.querySelector('.dp-b-tp')).display !== 'none' } : null; });
+      expect((await setMission(HUD({ timer: { endsAt: Date.now() + 120000, left: 360, paused: false, len: 360 } }))).status === 200, 'mission write');
+      await page.waitForFunction(() => document.querySelector('.dp-b-timer'), null, { timeout: 7000 });
+      let r = await tm();
+      expect(/^[12]:\d\d$/.test(r.text) && !/warn|zero|paused/.test(r.cls) && !r.paused, JSON.stringify(r));
+      const first = r.text; await page.waitForFunction((t) => document.querySelector('.dp-b-tt').textContent !== t, first, { timeout: 3500 });
+      expect((await setMission(HUD({ timer: { endsAt: Date.now() + 30000, left: 30, paused: false, len: 360 } }))).status === 200, 'mission write');
+      await page.waitForFunction(() => document.querySelector('.dp-b-timer.dp-b-t-warn'), null, { timeout: 7000 });
+      expect((await setMission(HUD({ timer: { endsAt: Date.now() - 2000, left: 30, paused: false, len: 360 } }))).status === 200, 'mission write');
+      await page.waitForFunction(() => document.querySelector('.dp-b-timer.dp-b-t-zero'), null, { timeout: 7000 });
+      r = await tm(); expect(r.text === '0:00', JSON.stringify(r));
+      expect((await setMission(HUD({ timer: { endsAt: null, left: 125, paused: true, len: 360 } }))).status === 200, 'mission write');
+      await page.waitForFunction(() => document.querySelector('.dp-b-timer.dp-b-t-paused'), null, { timeout: 7000 });
+      r = await tm(); expect(r.text === '2:05' && r.paused, JSON.stringify(r));
+      await setMission(HUD());
+      await page.waitForFunction(() => !document.querySelector('.dp-b-timer') && document.querySelector('.dp-b-clock'), null, { timeout: 7000 });
+    });
+
     await step(name + ': the band hides over an npc, text, rule, dark and blank stage, and comes back over the map', async () => {
       const pushes = [
         { kind: 'npc', npcId: 'nobody', title: 'Somebody' },
