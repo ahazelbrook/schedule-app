@@ -2244,14 +2244,14 @@
       '<p class="gm-menu-h"><span><b>GM tools</b> · The console</span><span class="gm-exp" id="gm-menu-exp"></span></p>' + '<div class="gm-menu-warn" id="gm-menu-warn" hidden></div>' +
       '<a href="#display" title="The players’ screen: open this on the iPad">Open the display page (for the iPad)</a>' +
       '<button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="clearcap">Clear tonight’s capture</button><button type="button" data-gm="update">Update pack</button>' +
-      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' +
+      '<button type="button" data-gm="capbar" id="gm-menu-capbar" title="The bottom bar that files a roll, a name, a loose end or a moment. Hidden by default; the phone’s Capture button is always there"></button><button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' +
       '<a href="#t">The table</a><a href="#rules">Rules</a><a href="#cast">The cast</a><a href="#">Home</a>' +
       '<button type="button" class="bad" data-gm="forget">Forget GM data on this device</button></span></span>' +
       '<div class="gm-signed" id="gm-signed" role="alert" hidden>' + esc(SIGNED_OUT_MSG) + '</div></div>';
   }
   function menuOpen(on) {
     var m = $q('.gm-menu-list'), b = $q('[data-gm="menu"]'); if (!m) return;
-    if (on) { renderLiveItem(); m.removeAttribute('hidden'); } else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
+    if (on) { renderLiveItem(); syncCapBar(); m.removeAttribute('hidden'); } else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
   }
   /* Live sync (design 2.5): the GM state's `live`, on unless it is an explicit false. The server puts it in the data poll's answer and the
      display's, so every page follows it within one poll; only this menu item sets it. */
@@ -5013,10 +5013,10 @@
         var d = x.doc, rev = d.revealed === true, src = npcCardSrc([d.name].concat(d.alias || [])), open = !!src && S.npcCardOpen === x.id;
         return '<li class="gm-npcrow" data-id="' + esc(x.id) + '"><div class="gm-thumb" data-fig="' + esc(x.id) + '" aria-hidden="true"></div><div class="gm-npcmeta"><b>' + esc(d.name || 'Unnamed') + '</b><small>' + esc([d.role, d.faction].filter(Boolean).join(' · ')) + '</small>' + (rev ? '' : '<span class="gm-badge">Hidden</span>') + '</div>' +
           '<div class="gm-npcacts">' + (src ? '<button type="button" class="btn sm" data-gm="npccard" data-id="' + esc(x.id) + '" aria-expanded="' + open + '">Card</button>' : '') + '<button type="button" class="btn sm" data-gm="npcipad" data-id="' + esc(x.id) + '">Show on iPad</button>' + stageHtml(x.id, staged(x.id)) + '</div></li>' +
-          (open ? '<li class="gm-npccardrow"><div class="pp-card gm-npccard pp-doc">' + npcCardHtml(src, 'nc-') + '</div></li>' : '');
+          (open ? '<li class="gm-npccardrow"><div class="pp-card gm-castcard pp-doc">' + npcCardHtml(src, 'nc-') + '</div></li>' : '');
       }).join('') + '</ul>' : '<p class="gm-empty">' + (S.api && S.api.db && S.api.db() ? 'No NPCs in the cast yet. Add them on the cast page.' : 'The cast is not available here.') + '</p>') +
       '<p><a class="hm-link" href="#cast">The cast page</a></p>';
-    var nc = box.querySelector('.gm-npccard'); if (nc && W.B68GmPrep) W.B68GmPrep.decorate(nc, {});
+    var nc = box.querySelector('.gm-castcard'); if (nc && W.B68GmPrep) W.B68GmPrep.decorate(nc, {});
     renderNpcGen();
     scMaybeRedraw();
     var K = W.B68Figure; if (!K || !K.portrait) return;
@@ -5750,8 +5750,24 @@
   }
 
   /* ---------- capture ---------- */
+  /* The capture bar (#gm-foot) is hidden unless localStorage b68.gm.capbar is '1' (the Menu flips it); the phone's Capture button opens it either way. A
+     blocked store falls back to this page load. The capture keys (the bucket letters, L) work only while the bar is there. */
+  var CAPBAR = 'b68.gm.capbar', capBarMem = null;
+  function capBarOn() { try { var v = W.localStorage.getItem(CAPBAR); if (v !== null) return v === '1'; } catch (e) { /* the memory below */ } return capBarMem === true; }
+  function capBarShown() { return capBarOn() || isPhone(); }
+  function syncCapBar() {
+    var r = $q('#gm-root'); if (r) r.classList.toggle('capbar', capBarOn());
+    var b = $q('#gm-menu-capbar'); if (b) b.textContent = capBarOn() ? 'Hide the capture bar' : 'Show the capture bar';
+  }
+  function toggleCapBar() {
+    var on = !capBarOn(); capBarMem = on;
+    try { W.localStorage.setItem(CAPBAR, on ? '1' : '0'); } catch (e) { /* this page load only */ }
+    syncCapBar(); menuOpen(false);
+    toast(on ? 'The capture bar is showing.' : 'The capture bar is hidden.');
+  }
   function renderCapture() {
     var box = $q('#gm-foot'); if (!box) return;
+    syncCapBar();
     var inp = $q('#gm-cap-in'), keep = inp && W.document.activeElement === inp ? inp.value : null;
     var all = newest(S.doc.capture);
     box.innerHTML = '<div class="gm-cap"><div class="seg gm-capb" role="group" aria-label="File as">' + BUCKETS.map(function (b) { return '<button type="button" class="chip sm" data-gm="arm" data-b="' + b.k + '" aria-pressed="' + (S.arm === b.k) + '">' + esc(b.label) + ' <kbd>' + b.key + '</kbd></button>'; }).join('') + '</div>' +
@@ -5878,6 +5894,7 @@
     if (!a) return;
     if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } else if (S.assist && S.assist.isOpen()) { S.assist.close(); ev.preventDefault(); } return; }
     if (a.type === 'reserved') return;
+    if ((a.type === 'capture' || a.type === 'last') && !capBarShown()) return;      /* the bar is hidden: its keys do nothing */
     ev.preventDefault();
     if (a.type === 'situation') rollSituation(a.n);
     else if (a.type === 'panel') { setPanel(a.panel); if (isPhone()) { S.seg = 'side'; syncPanels(); } else focusPane(a.panel); }
@@ -6048,6 +6065,7 @@
       case 'last': fileLast(); break;
       case 'clearcap': clearCapture(); break;
       case 'livesync': toggleLive(); break;
+      case 'capbar': toggleCapBar(); break;
       case 'mirror': toggleMirror(); break;
     }
   }

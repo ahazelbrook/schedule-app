@@ -191,7 +191,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-npcacts { display: flex; flex-wrap: wrap; gap: 4px 8px; justify-content: flex-end; align-items: center; }
 #gm-page .gm-npcacts [data-gm="npccard"][aria-expanded="true"] { background: var(--rule); color: var(--on-ink); }
 #gm-page .gm-npccardrow { margin-top: -8px; }                  /* the open card hangs from its row, the list's full width */
-#gm-page .gm-npccard.pp-doc { border: 2px solid var(--rule); border-top-style: dashed; background: var(--card); padding: 10px 12px 2px; max-height: 70vh; overflow-y: auto; }
+#gm-page .gm-castcard.pp-doc { border: 2px solid var(--rule); border-top-style: dashed; background: var(--card); padding: 10px 12px 2px; max-height: 70vh; overflow-y: auto; }
 #gm-page .gm-npclink { font: 400 11.5px/1.3 var(--font-mono); color: var(--ink-soft); text-underline-offset: 3px; white-space: nowrap; }
 #gm-page .gm-npclink:hover { color: var(--accent); }
 #gm-page .pp-find { flex: 0 1 220px; min-width: 120px; }
@@ -314,7 +314,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   #gm-page .gm-npcrow { grid-template-columns: 48px minmax(0, 1fr); }
   #gm-page .gm-thumb { width: 48px; height: 48px; }
   #gm-page .gm-npcacts { grid-column: 1 / -1; justify-content: flex-start; }
-  #gm-page .gm-npccard.pp-doc { padding: 8px 8px 0; max-height: none; }
+  #gm-page .gm-castcard.pp-doc { padding: 8px 8px 0; max-height: none; }
   #gm-page .gm-foot { position: fixed; left: 8px; right: 8px; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 40; margin: 0; box-shadow: 4px 4px 0 var(--shadow-ink); max-height: 60vh; overflow: auto; }
   #gm-root:not(.cap-open) .gm-foot { display: none; }
   #gm-page .gm-fab { display: inline-flex; align-items: center; justify-content: center; position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 41; min-height: 52px; min-width: 52px; padding: 0 18px; border: 2px solid var(--rule); background: var(--mustard); color: var(--on-mustard); font: 900 13px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; box-shadow: 3px 3px 0 var(--shadow-ink); cursor: pointer; }
@@ -328,6 +328,8 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   #gm-page .gm-grid { grid-template-columns: minmax(0, 1fr); gap: 0 0; }
   #gm-page .gm-grid dd { margin-bottom: 6px; }
 }
+/* the capture bar is off until the Menu turns it on (gm-page.js capBarOn); a phone's Capture button still opens it */
+@media (min-width: 600px) { #gm-page #gm-root:not(.capbar) .gm-foot { display: none; } }
 @media print { #gm-page .gm-fab, #gm-page .gm-foot, .gm-blank { display: none !important; } }
 #gm-page .gm-map.gm-leak { outline: 3px solid var(--alarm); outline-offset: -3px; }
 
