@@ -1842,11 +1842,17 @@
       var d = res.draft || {};
       spec.kind = 'idea'; spec.headline = 'How big is “' + C.plain(d.name, 60) + '”?'; spec.bullets = ['A clock needs 4, 6 or 8 segments.'];
       spec.actions = (res.candidates || [4, 6, 8]).map(function (n) { return { id: 's' + n, label: String(n), run: act(Object.assign({ type: 'clock_add', name: d.name, size: n, hidden: true }, d.filled > 0 ? { filled: Math.min(d.filled, n) } : {})) }; });
+    } else if (res.missing === 'night') {
+      spec.headline = 'Heard “' + q + '”: No night is running.';
+    } else if (res.missing === 'pc' || (res.missing === 'room' && res.name)) {
+      var many = (res.candidates || []).length > 1, what0 = res.missing === 'pc' ? 'PC' : 'room';
+      spec.headline = many ? 'Which ' + what0 + '? “' + C.plain(res.name, 60) + '” could be more than one.' : 'I don’t know a ' + what0 + ' called “' + C.plain(res.name, 60) + '”.';
+      if (many) spec.bullets = res.candidates.slice(0, 6).map(function (c) { return C.plain(c.name, 60); });
     } else if (res.missing === 'clock') {
       spec.kind = 'idea'; spec.headline = 'No clock called “' + C.plain(res.name, 60) + '”: make one?'; spec.bullets = ['Pick its size.'];
       spec.actions = [4, 6, 8].map(function (n) { return { id: 'm' + n, label: 'Make it ' + n, run: act({ type: 'clock_add', name: res.name, size: n, hidden: true }) }; });
     } else {
-      var what = res.missing === 'name' ? 'a name' : res.missing === 'amount' ? 'how many' : res.missing === 'text' ? 'the words' : 'more';
+      var what = res.missing === 'name' ? 'a name' : res.missing === 'amount' ? 'how many' : res.missing === 'text' ? 'the words' : res.missing === 'room' ? 'a room' : 'more';
       spec.kind = 'idea'; spec.headline = 'Heard “' + q + '”: I need ' + what + '. Say it again.';
     }
     ctl.addCard(spec);
@@ -1955,7 +1961,9 @@
       clocks: tableClocks().filter(function (c) { return str(c.id); }).map(function (c) { return { id: str(c.id), name: str(c.name), size: +c.size || 4, filled: +c.filled || 0, hidden: c.hidden === true }; }),
       mineClocks: Object.keys(cm.mine).map(function (k) { return cm.mine[k]; }),
       npcs: Object.keys(me.npcs || {}).map(function (id) { var d = me.npcs[id]; return { id: id, name: str(d.name), tags: Array.isArray(d.tags) ? d.tags : [], revealed: d.revealed === true, description: str(d.description), role: str(d.role) }; }),
-      pcs: dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c) }; }),
+      pcs: dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), alias: str(c.alias).trim() }; }),
+      /* A2: a v2 night is running, its rooms (the location roll's) and where each PC is, for "Blade, Rook to the showroom" */
+      night: !!runV2(), rooms: runV2() && S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms.map(function (r) { return str(r && r.name); }).filter(Boolean) : [], crew: runCrewRooms(),
       ipadClocks: !!me.clOn,
       /* "tick that": the clock Blade last made or ticked, only within the last 10 minutes (cue.js is given the id; the rule is the page's) */
       lastClock: cm.lastClock && Date.now() - cm.lastClock.at <= 600000 ? cm.lastClock.id : ''
@@ -1972,6 +1980,19 @@
     });
     return chain;
   }
+  /* A2 "Blade, Rook to the showroom": put a PC in a room on the running v2 night, the way the Run view's own move does (B68GmRunView.moveCrew: room, moved = this beat, noticed cleared, the rest of the crew entry kept) through the host's set, which writes the ball, republishes the mission and redraws.
+     -> the room the PC was in ('' when none), or null when no night is running (nothing written) */
+  function runMovePc(pcId, room) {
+    var rs = runV2(), RV = W.B68GmRunView; if (!rs || !RV || !str(pcId)) return null;      /* a room of '' is the undo of a first placement: the PC goes back to the tray */
+    var st = ballDoc(rs.name), old = isObj(st.crew) && isObj(st.crew[pcId]) ? st.crew[pcId] : {}, t = typeof st.t === 'number' && isFinite(st.t) ? Math.max(0, Math.round(st.t)) : 0;
+    if (!rvHost().set({ crew: RV.moveCrew(st, pcId, room, rs.B.beatOf(rs.play, t).i) })) return null;
+    return str(old.room);
+  }
+  function runCrewRooms() {
+    var rs = runV2(), st = rs ? ballDoc(rs.name) : {}, out = {};
+    if (isObj(st.crew)) Object.keys(st.crew).forEach(function (k) { if (isObj(st.crew[k]) && str(st.crew[k].room)) out[k] = str(st.crew[k].room); });
+    return out;
+  }
   function cogmNewId(type) { return (type === 'npc_add' ? 'npc_cogm_' : 'c_') + Date.now().toString(36) + Math.floor(Math.random() * 1679616).toString(36); }
   function cogmOne(me, a, opts) {
     var cm = me.cogm, C = cm.C, cue = !!(opts && opts.cue);
@@ -1981,7 +2002,7 @@
     var plan = C.planApply(a, cogmLive(me), { id: cogmNewId(a.type) }, cue ? { confirmed: true } : undefined);
     if (plan.op === 'drop') {
       C.mark(cm.st, a.key, 'dropped');
-      if (cue && plan.why !== 'seen') cogmCueNote(me, a, plan.why === 'no change' ? 'Nothing to change.' : plan.why === 'already known' ? 'Already known: ' + C.plain(plan.name, 80) + '.' : 'Not done: ' + plan.why + '.');
+      if (cue && plan.why !== 'seen') cogmCueNote(me, a, plan.why === 'no change' ? 'Nothing to change.' : plan.why === 'no night' ? 'No night is running.' : plan.why === 'already known' ? 'Already known: ' + C.plain(plan.name, 80) + '.' : 'Not done: ' + plan.why + '.');
       return null;
     }
     cm.acts[a.key] = a;
@@ -2024,6 +2045,11 @@
     if (plan.type === 'npc_add') {
       var ref = npcRef(plan.id); if (!ref) return Promise.reject(new Error('The cast is not available here.'));
       return Promise.resolve().then(function () { return ref.set(clone(plan.doc)); });
+    }
+    if (plan.type === 'pc_move') {
+      var was = runMovePc(plan.pc, plan.room);
+      if (was === null) return Promise.reject(new Error('No night is running.'));
+      plan.from = was; return Promise.resolve();
     }
     var ok = addCapture(plan.bucket, plan.text, true);
     if (!ok) return Promise.reject(new Error('The capture bar refused it.'));
@@ -2126,6 +2152,7 @@
      mark the card undone) and the card asks first. `viaButton` is the "Undo anyway" button: it forces, and marks the card itself. */
   function cogmLiveFor(me, rec) {
     if (rec.type === 'clock_add' || rec.type === 'clock_tick') return Promise.resolve({ clock: tableClocks().filter(function (c) { return c.id === rec.id; })[0] || null });
+    if (rec.type === 'pc_move') return Promise.resolve({ pcRoom: runCrewRooms()[rec.id] || '' });
     if (rec.type === 'capture') { var e = isObj(S.doc.capture) ? S.doc.capture[rec.id] : null; return Promise.resolve({ capture: isObj(e) ? str(e.text) : null }); }
     var ref = npcRef(rec.id);
     return Promise.resolve().then(function () { return ref && typeof ref.get === 'function' ? ref.get() : null; }).then(function (snap) {
@@ -2139,6 +2166,7 @@
       if (!api || typeof api.clockOps !== 'function') return Promise.reject(new Error('The table is not available here.'));
       return Promise.resolve().then(function () { return api.clockOps([w]); }).then(function () { if (rec.type === 'clock_add') delete me.cogm.mine[rec.id]; });
     }
+    if (rec.type === 'pc_move') return runMovePc(w.pc, w.room) === null ? Promise.reject(new Error('No night is running.')) : Promise.resolve();
     if (rec.type === 'capture') { var p = {}; p[rec.id] = null; patch({ capture: p }, { force: true }); renderCapture(); return Promise.resolve(); }
     var ref = npcRef(rec.id); if (!ref) return Promise.reject(new Error('The cast is not available here.'));
     return Promise.resolve().then(function () { return ref.update(clone(w)); });

@@ -536,7 +536,7 @@ await test('cue body: mode is absent or cue; parsed is 1-8 objects, needs mode c
 });
 
 await test('cue validation: the six cue types act; every survivor is mode act (confidence 1), whatever was sent', () => {
-  assert.deepEqual(CUE_TYPES, ['clock_add', 'clock_tick', 'npc_add', 'capture', 'undo', 'rename']);
+  assert.deepEqual(CUE_TYPES, ['clock_add', 'clock_tick', 'npc_add', 'capture', 'undo', 'rename', 'pc_move']);
   const v = cueCheck([pa({ confidence: 0.1 }), { type: 'clock_tick', quote: CUE_TWO, clock_id: 'ck1', by: 2 }, { type: 'npc_add', quote: CUE_TWO, name: 'Corvin Lathe', look: 'tall', role: 'porter' },
     { type: 'capture', quote: CUE_TWO, bucket: 'loose_end', text: 'who owns the bell' }, { type: 'undo', quote: CUE_TWO }, { type: 'rename', quote: CUE_TWO, name: 'Big Ben' }]);
   assert.deepEqual(v.actions.map((a) => [a.type, a.mode, a.confidence]), [['clock_add', 'act', 1], ['clock_tick', 'act', 1], ['npc_add', 'act', 1], ['capture', 'act', 1], ['undo', 'act', 1], ['rename', 'act', 1]]);
@@ -546,6 +546,20 @@ await test('cue validation: the six cue types act; every survivor is mode act (c
   // a roll_log is not a cue command, and the other hands rules still hold
   const bad = cueCheck([{ type: 'roll_log', quote: CUE_TWO, who: 'Odo', action: 'hunt' }, pa({ size: 7 }), pa({ name: '' }), { type: 'clock_tick', quote: CUE_TWO, clock_id: 'nope', by: 1 }, { type: 'npc_add', quote: CUE_TWO, name: 'Mirelle Tanager' }, { type: 'rename', quote: CUE_TWO, name: '   ' }]);
   assert.deepEqual(bad.actions, []); assert.deepEqual(bad.dropped.map((d) => d.why), ['unknown type', 'illegal size', 'no name', 'unknown clock', 'already known', 'no name']);
+});
+
+await test('A2 cue validation: pc_move is a page-only cue type; the PC must be in the state; strings are capped; a window or the model\'s reading drops it', () => {
+  assert.ok(CUE_TYPES.includes('pc_move'));
+  const quote = 'Blade, make a six clock called Harbour Bell and mark two on it';
+  const mv = (over = {}) => ({ type: 'pc_move', quote, pc: 'p1', room: 'Showroom', ...over });
+  const v = cueCheck([mv(), mv({ from: 'Cocktail lounge', room: 'Cocktail lounge' })]);
+  assert.deepEqual(v.actions.map((a) => [a.type, a.mode, a.pc, a.room, a.from]), [['pc_move', 'act', 'p1', 'Showroom', undefined], ['pc_move', 'act', 'p1', 'Cocktail lounge', 'Cocktail lounge']]);
+  assert.deepEqual(Object.keys(v.actions[0]).sort(), ['at', 'confidence', 'key', 'mode', 'pc', 'quote', 'room', 'type'], 'no other keys');
+  const bad = cueCheck([mv({ pc: 'nobody' }), mv({ room: '' }), mv({ pc: 7 })]);
+  assert.deepEqual(bad.actions, []); assert.deepEqual(bad.dropped.map((d) => d.why), ['unknown pc', 'no room', 'unknown pc']);
+  assert.equal(cueCheck([mv({ room: 'R'.repeat(200) })]).actions[0].room.length, 80);
+  assert.equal(validateActions([mv()], { state: cleanState(STATE), lines: CUE_LINES, cue: { parsed: false, cueLineId: 'l2' } }).dropped[0].why, 'unknown type', 'the model may not move a PC');
+  assert.equal(validateActions([mv()], { state: cleanState(STATE), lines: CUE_LINES }).dropped[0].why, 'unknown type', 'nor a window of talk');
 });
 
 await test('cue validation: undo and rename are accepted only from the page: a window, or the model\'s reading of a cue, drops them (and a window drops roll_log only into an offer)', () => {

@@ -284,6 +284,49 @@ await test('typed commands (C4f): fromTyped maps the slash forms in one place, a
   for (const k of ['/tick Quillmoth 2', '/clock 6 flood', '/npc Pembrake, a nervous lamp salesman']) { const r = Cue.parse(Cue.fromTyped(k).text, live); assert.ok(r.actions.length === 1 && !r.missing && !r.refused, k + ' ' + JSON.stringify(r)); }
 });
 
+/* A2 (31/10): "Blade, Rook to the showroom" moves a PC. The cue needs live.pcs and live.rooms; every phrasing, near-miss and decoy is in fixtures/gm/cue-phrasings.json "move". */
+await test('move: normRoom folds case, a leading "the", punctuation and spaces; every move phrasing parses to one pc_move (or the missing it should)', () => {
+  assert.equal(Cue.normRoom('The Cocktail-Lounge!'), 'cocktail lounge');
+  assert.equal(Cue.normRoom('  Gil\u2019s  Den '), 'gils den');
+  assert.equal(Cue.normRoom('\uFF33howroom'), 'showroom', 'NFKC');
+  const MV = FX.move;
+  for (const f of MV.plain) {
+    const r = Cue.parse(f.t, MV.live), tag = JSON.stringify(f.t);
+    assert.ok(Cue.find(f.t, MV.live) && Cue.find(f.t, MV.live).verb === 'move', tag + ' is found as a move');
+    assert.equal(r.refused, null, tag);
+    if (f.e.a) {
+      assert.equal(r.missing, null, tag); assert.equal(r.actions.length, 1, tag);
+      const a = r.actions[0]; assert.deepEqual([a.type, a.pc, a.room], [f.e.a[0].type, f.e.a[0].pc, f.e.a[0].room], tag);
+      assert.ok(a.quote.startsWith('Blade') || a.quote.startsWith('blade'), tag + ' quote starts at the wake word'); assert.ok(!('key' in a));
+    } else {
+      assert.equal(r.missing, f.e.m, tag); assert.equal(r.actions.length, 0, tag); assert.equal(r.name, f.e.name, tag);
+      assert.deepEqual(r.candidates.map((c) => c.id), f.e.c, tag);
+    }
+  }
+});
+
+await test('move: a clock named like a room or a PC still ticks; near misses are not cues; with no PCs or no live nothing moves', () => {
+  const MV = FX.move;
+  for (const d of MV.decoys) { const r = Cue.parse(d.t, MV.live); assert.deepEqual(r.actions.map((a) => [a.type, a.clock_id]), [['clock_tick', d.clock]], d.t); }
+  for (const t of MV.none) { const r = Cue.parse(t, MV.live); assert.ok(!r.actions.some((a) => a.type === 'pc_move') && r.missing !== 'pc' && r.missing !== 'room', t + ' ' + JSON.stringify([r.actions, r.missing])); }
+  const noPcs = Object.assign({}, MV.live, { pcs: [] });
+  for (const f of MV.plain) assert.ok(![Cue.find(f.t, noPcs), Cue.find(f.t)].some((h) => h && h.verb === 'move'), f.t + ' is not a move without PCs');
+  assert.equal(Cue.parse('Blade, Tansy to the showroom').actions.length, 0);
+});
+
+await test('move: no rooms (no night running) is missing night; a cut-off "to the" is missing room; put-up still refuses as a show', () => {
+  const MV = FX.move, noRooms = Object.assign({}, MV.live, { rooms: [] });
+  const r = Cue.parse('Blade, Tansy to the showroom', noRooms); assert.deepEqual([r.missing, r.actions.length, r.refused], ['night', 0, null]);
+  assert.equal(Cue.parse('Blade, put up the map', MV.live).refused, 'show');
+  assert.equal(Cue.parse('Blade, put Tansy up in the penthouse', MV.live).actions.length, 0, 'put needs "to/in" right after the PC');
+});
+
+await test('move: a mishearing of Blade counts only when the move parses whole', () => {
+  const MV = FX.move;
+  assert.equal(Cue.parse('Blades, Tansy to the showroom', MV.live).actions[0].type, 'pc_move');
+  assert.equal(Cue.parse('Blades, Tansy to the moon', MV.live).cue, null);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
 console.log('ALL PASSED');
