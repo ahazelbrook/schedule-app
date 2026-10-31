@@ -87,11 +87,11 @@ test('find: the first note with a "## Rooms" H2 is the source (a note with H3s b
 });
 
 test('find: "## Rooms" in any case, "Rooms \u00b7 …", "Rooms - …", closing #s, up to three spaces; other headings are not the section; it ends at the next H1 too', () => {
-  for (const h of ['## Rooms', '## ROOMS', '## rooms', '## Rooms \u00b7 Gala', '## Rooms - upstairs', '## Rooms ##', '   ## Rooms', '## The rooms']) {
+  for (const h of ['## Rooms', '## ROOMS', '## rooms', '## Rooms \u00b7 Gala', '## Rooms - upstairs', '## Rooms ##', '   ## Rooms']) {
     const r = one(h + '\n### Showroom\n- **Costume:** Brocade');
     assert.equal(r.source, 'n1', h); assert.equal(r.byRoom.Showroom.costume, 'Brocade', h);
   }
-  for (const h of ['## Roomservice', '### Rooms', '# Rooms', '##Rooms', '    ## Rooms', '## Room', 'Rooms', '## Our rooms']) assert.deepEqual(one(h + '\n### Showroom\n- **Costume:** Brocade'), EMPTY, h);
+  for (const h of ['## Roomservice', '### Rooms', '# Rooms', '##Rooms', '    ## Rooms', '## Room', 'Rooms', '## Our rooms', '## The rooms', '## Rooms and props', '## Rooms of the house', '## Roomsmith']) assert.deepEqual(one(h + '\n### Showroom\n- **Costume:** Brocade'), EMPTY, h);
   const r = one('## Rooms\n### Showroom\nIn.\n# Appendix\n### Cocktail lounge\nOut.');
   assert.deepEqual(Object.keys(r.byRoom), ['Showroom']); assert.equal(r.byRoom.Showroom.md, 'In.');
 });
