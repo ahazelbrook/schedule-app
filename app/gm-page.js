@@ -4095,7 +4095,7 @@
     /* A1: the published card has the leads in reach heard; the GM state follows in one deferred write */
     if (h) { st = Object.assign({}, st, { heard: h }); setTimeout(function () { if (S !== me) return; var s2 = ballDoc(rs.name), h2 = runHeard(rs, s2, +s2.t); if (h2) ballSet(rs.name, { heard: h2 }, true); }, 0); }
     var rn = runRoomNotes(), rooms = {};
-    if (rn && isObj(rn.byRoom)) (Array.isArray(roll.rooms) ? roll.rooms : []).forEach(function (r) { var n = isObj(r) ? str(r.name) : '', e = n && isObj(rn.byRoom[n]) ? rn.byRoom[n] : null; if (e) rooms[n] = { costume: typeof e.costume === 'string' ? e.costume : '', say: typeof e.say === 'string' ? e.say : '' }; });
+    if (rn && isObj(rn.byRoom)) (Array.isArray(roll.rooms) ? roll.rooms : []).forEach(function (r) { var n = isObj(r) ? str(r.name) : '', e = n && isObj(rn.byRoom[n]) ? rn.byRoom[n] : null; if (e) rooms[n] = { costume: typeof e.costume === 'string' ? e.costume : null, say: (Array.isArray(e.say) ? e.say : []).filter(function (x) { return typeof x === 'string'; }) }; });
     return { play: play, state: st, clocks: tableClocks(), pcs: pcs, open: open, rooms: rooms,
       deny: function () { return { names: tokenHidden(roll, reveal, []).concat(hiddenSecretNames()), secrets: (Array.isArray(play.secret) ? play.secret : []).filter(function (x) { return typeof x === 'string'; }) }; } };
   }

@@ -269,6 +269,8 @@ try {
   check(await G.page.$eval('#rv-map', (m) => m.innerHTML.includes('#fffdf6')), 'with its tokens (crew and people)');
   check(!!(await until(async () => (await ball()).view === 'map', 8000)), 'the view is kept in ball.view');
   await shot(G.page, 'runv2-03-map');
+  { const g = await G.page.evaluate(() => { const m = document.querySelector('#rv-map').getBoundingClientRect(), s = document.querySelector('#rv-map svg').getBoundingClientRect(), a = document.querySelector('.rv-side').getBoundingClientRect(); return { mh: m.height, aw: a.width, vh: innerHeight, inside: s.bottom <= m.bottom + 1 && s.right <= m.right + 1 && s.top >= m.top - 1 }; });
+    check(g.inside && g.mh >= g.vh * 0.6 && g.aw <= 250, 'Map view: the map frame fills the column height (' + Math.round(g.mh) + ' of ' + g.vh + '), the svg fits inside it, the side panel narrows (' + Math.round(g.aw) + ' px)'); }
   await G.page.click('[data-rv="view"][data-v="board"]');
   check((await G.page.$$('.rv-card')).length === 6, 'Board brings the cards back');
 
@@ -600,6 +602,7 @@ try {
     await N.page.click('.rv-card[data-room="Cocktail lounge"] .rv-cn');
     await N.page.click(lounge + ' .rv-rmnote a[href^="#pp:npc:"]');
     check(!!(await N.page.waitForSelector('.rv-npcpop', { timeout: 5000 }).then(() => true, () => false)) && await N.page.$eval('.rv-npcpop', (e) => /PIPCARD-BODY/.test(e.textContent)), 'a #pp: NPC link in a room note opens the same card');
+    await shot(N.page, 'runv2-04-rooms-npc');
     await N.page.keyboard.press('Escape');
 
     /* the header time toggle in the Run menu */
@@ -612,6 +615,11 @@ try {
     check(!!(await until(async () => (await ball()).showTime === undefined, 8000, 100)), 'and again takes it back (the key goes)');
     check(await N.page.$eval('#rv-time', (e) => parseFloat(getComputedStyle(e).fontSize) <= 26), 'the header time is small (24 px)');
 
+    /* the room note's costume line and SAY lines reach the player card of a PC standing in that (open) room */
+    await N.page.selectOption('.rv-crew[data-pc="run-pc1"] [data-vv="room"]', 'Cocktail lounge');
+    const mc = await until(async () => { const m = (await api('GET', '/campaign')).json.doc.mission; const c = m && m.cards && m.cards['run-pc1']; return c && c.room === 'Cocktail lounge' && c.costumeLine ? { c, hud: m.hud } : null; }, 20000, 200);
+    check(!!mc && mc.c.costumeLine === 'Brocade jackets.' && JSON.stringify(mc.c.here) === '["Mind the glass."]', 'the published card carries costumeLine and here from the room note (' + JSON.stringify(mc && mc.c) + ')');
+    check(!!mc && Array.isArray(mc.hud.rooms) && mc.hud.rooms.some((z) => z.rooms.includes('Cocktail lounge')) && !mc.hud.rooms.some((z) => z.rooms.includes('Luxury penthouse')), 'the band lists the open rooms by zone, and not a room that is shut');
     /* a phone move request folds in once; a GM move afterwards does not replay it */
     const crewOf = async (id) => ((await ball()).crew || {})[id];
     const cur = await crewOf('run-pc1');
