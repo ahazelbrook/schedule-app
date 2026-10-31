@@ -329,7 +329,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
   #gm-page .gm-grid dd { margin-bottom: 6px; }
 }
 /* the capture bar is off until the Menu turns it on (gm-page.js capBarOn); a phone's Capture button still opens it */
-@media (min-width: 600px) { #gm-page #gm-root:not(.capbar) .gm-foot { display: none; } }
+@media (min-width: 600px) { #gm-page #gm-root:not(.capbar):not(.cap-open) .gm-foot { display: none; } }
 @media print { #gm-page .gm-fab, #gm-page .gm-foot, .gm-blank { display: none !important; } }
 #gm-page .gm-map.gm-leak { outline: 3px solid var(--alarm); outline-offset: -3px; }
 

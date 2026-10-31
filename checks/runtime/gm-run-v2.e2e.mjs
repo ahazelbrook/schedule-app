@@ -638,6 +638,13 @@ try {
     await api('PATCH', '/characters/run-pc1', { moveReq: { room: 'Luxury penthouse', seq: seq2 } });
     const f3 = await until(async () => { const c = await crewOf('run-pc1'); return c && c.mseq === seq2 ? c : null; }, 20000, 200);
     check(!!f3 && f3.room === cur.room, 'a request for a room that is not open sets mseq and moves nobody (' + JSON.stringify(f3) + ')');
+    /* Reset the night consumes every pending request: the PC keeps only its mseq, so nothing replays after the reset */
+    const seq3 = seq2 + 1;
+    await api('PATCH', '/characters/run-pc1', { moveReq: { room: 'Showroom', seq: seq3 } });
+    await until(async () => (await crewOf('run-pc1')).mseq === seq3, 20000, 200);
+    await N.page.click('.rv-head .rv-reset');
+    const rb = await until(async () => { const x = await ball(); return x && !x.start && x.crew && x.crew['run-pc1'] ? x : null; }, 15000, 200);
+    check(!!rb && JSON.stringify(rb.crew['run-pc1']) === JSON.stringify({ mseq: seq3 }), 'Reset the night leaves each pending request consumed (crew entry holds only mseq: ' + JSON.stringify(rb && rb.crew) + ')');
     await N.c.close();
   }
 

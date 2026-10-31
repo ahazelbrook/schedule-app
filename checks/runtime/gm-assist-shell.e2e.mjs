@@ -280,6 +280,9 @@ try {
     await p.waitForTimeout(800);
     check(await p.$eval('.gm-assist', (h) => getComputedStyle(h).display === 'none'), 'phone: Blade is not drawn');
     check(await p.$eval('.gm-main', (m) => getComputedStyle(m).marginRight) === '0px', 'phone: no room is kept for the tab');
+    check(await p.$eval('#gm-foot', (f) => getComputedStyle(f).display === 'none'), 'phone: the capture bar is closed to start with');
+    await p.click('.gm-fab');
+    check(await p.$eval('#gm-foot', (f) => getComputedStyle(f).display !== 'none' && f.getBoundingClientRect().height > 20), 'phone: the Capture button opens the bar (the capbar flag is off)');
     check((await p.$$('.gm-segbar button, .gm-segbar [data-seg]')).length > 0 || await p.$eval('#gm-root', (r) => !!r.getAttribute('data-seg')), 'phone: the classic segments are still there');
     await c.close();
   }

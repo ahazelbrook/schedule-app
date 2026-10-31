@@ -107,9 +107,12 @@
   var KEEP = ["site", "floor", "open"];
   var RESET_ASK = "Reset the night? The clock goes back to Start the night, and every PC’s room, costume, leads heard, intel told, steps and the target’s delays are cleared. " +
     "The iPad band and every phone’s card go. The map’s open rooms and the table clocks stay as they are.";
-  function resetChange(st) {
-    var ch = {};
+  function resetChange(st, pcs) {
+    var ch = {}, seen = {};
     Object.keys(isObj(st) ? st : {}).forEach(function (k) { if (KEEP.indexOf(k) < 0) ch[k] = null; });
+    /* every phone request still pending is consumed: the PC gets an empty crew entry carrying its mseq, so a request from before the reset never replays */
+    list(pcs).forEach(function (pc) { var mr = isObj(pc) ? pc.moveReq : null; if (str(isObj(pc) ? pc.id : "") && isObj(mr) && typeof mr.seq === "number" && isFinite(mr.seq)) seen[pc.id] = { mseq: mr.seq }; });
+    if (Object.keys(seen).length) ch.crew = seen;
     return ch;
   }
 
@@ -277,21 +280,28 @@
     }
     return { heard: Object.keys(h).length ? h : null, unheard: Object.keys(u).length ? u : null };
   }
-  /* the phones' move requests: one newer than the PC's mseq is folded in once; an open room of the site moves the PC (as a drag does),
-   * any other is only marked seen; one older than o.maxAge (from before a Reset, say) is marked seen without a word */
+  /* a room name as the room notes and the cue fold it (gm/room-notes.js normRoom): NFKC, lower case, a leading "the " dropped, punctuation dropped */
+  function normRoomName(s) {
+    var n = str(s).normalize("NFKC").toLowerCase().replace(/^\s*the\s+/, "");
+    try { n = n.replace(new RegExp("[\\p{P}\\p{S}]+", "gu"), " "); } catch (e) { n = n.replace(/[!-\/:-@\[-`{-~]+/g, " "); }
+    return n.replace(/\s+/g, " ").trim();
+  }
+  /* the phones' move requests: one newer than the PC's mseq is folded in once, whether or not the PC has a crew entry yet (a PC in the tray, or after a
+   * Reset, is an empty entry). The room is matched to the site's rooms by normRoomName and the canonical name used; an open room moves the PC (as a drag
+   * does), any other is only marked seen (mseq stamped), so a later GM drag never replays it */
   function foldMoves(st, pcs, o) {
     st = isObj(st) ? st : {}; o = isObj(o) ? o : {};
-    if (!isObj(st.crew)) return null;
-    var crew = st.crew, notes = [], changed = false, rooms = list(o.rooms), isOpen = typeof o.isOpen === "function" ? o.isOpen : function () { return false; };
+    var crew = isObj(st.crew) ? st.crew : {}, notes = [], changed = false, rooms = list(o.rooms), isOpen = typeof o.isOpen === "function" ? o.isOpen : function () { return false; };
     list(pcs).forEach(function (pc) {
       var id = isObj(pc) ? str(pc.id) : "", mr = isObj(pc) ? pc.moveReq : null;
-      if (!id || !isObj(crew[id]) || !isObj(mr) || typeof mr.room !== "string" || !mr.room || typeof mr.seq !== "number" || !isFinite(mr.seq)) return;
-      if (!(mr.seq > (+crew[id].mseq || 0))) return;
-      var old = +o.now - mr.seq > +o.maxAge, go = !old && rooms.indexOf(mr.room) >= 0 && !!isOpen(mr.room);
-      crew = go ? moveCrew({ crew: crew }, id, mr.room, o.beat) : clone(crew);
-      crew[id] = Object.assign({}, crew[id], { mseq: mr.seq });
+      if (!id || !isObj(mr) || typeof mr.room !== "string" || !mr.room || typeof mr.seq !== "number" || !isFinite(mr.seq)) return;
+      var cur = isObj(crew[id]) ? crew[id] : {};
+      if (!(mr.seq > (+cur.mseq || 0))) return;
+      var want = normRoomName(mr.room), canon = rooms.filter(function (r) { return typeof r === "string" && normRoomName(r) === want; })[0] || "", go = !!canon && !!isOpen(canon);
+      crew = go ? moveCrew({ crew: crew }, id, canon, o.beat) : clone(crew);
+      crew[id] = Object.assign({}, crew[id] || {}, { mseq: mr.seq });
       changed = true;
-      if (!old) notes.push({ pc: id, name: str(pc.name), room: mr.room, moved: go });
+      notes.push({ pc: id, name: str(pc.name), room: canon || mr.room, moved: go });
     });
     return changed ? { crew: crew, notes: notes } : null;
   }
@@ -478,7 +488,7 @@
       if (typeof host.confirm !== "function" || !host.confirm(RESET_ASK)) return Promise.resolve(false);
       var old = host.state(), key = str(old.site || rs.name) + "|" + old.start;
       return Promise.resolve(typeof host.resetMission === "function" ? host.resetMission() : null).then(null, function () { return null; }).then(function () {
-        var ok = host.set(resetChange(host.state()));
+        var ok = host.set(resetChange(host.state(), host.pcs()));
         if (!ok) { host.toast("Could not reset the night: the state was not saved, so the night is still running. The players' screens were cleared until the next beat.", true); self.rerender(); return false; }
         try { if (typeof sessionStorage !== "undefined") sessionStorage.removeItem("b68-rv-pace|" + key); } catch (e) { /* page-local anyway */ }
         pace = null; ui5.prev = null; ui5.ways = {}; ui5.more = {};
@@ -902,7 +912,7 @@
   hooks.heard = heard5;
   /* ==== VV5 END ==== */
 
-  return { create: create, model: model, moveCrew: moveCrew, resetChange: resetChange, resetAsk: RESET_ASK, stepTime: stepTime, jumpTime: jumpTime, startMinutes: startMinutes, initials: initials,
+  return { create: create, model: model, moveCrew: moveCrew, resetChange: resetChange, resetAsk: RESET_ASK, stepTime: stepTime, jumpTime: jumpTime, startMinutes: startMinutes, initials: initials, normRoomName: normRoomName,
     setPlayersChip: setPlayersChip, menuItems: menuItems, views: views, sections: sections, hooks: hooks,
     sortedStops: sortedStops, scanChanges: scanChanges, crewOrder: crewOrder, skipTarget: skipTarget, waySummary: waySummary,
     setWarnings: setWarnings, sayBox: sayBox, roomsShown: roomsShown, peopleIn: peopleIn, eventsIn: eventsIn, reachIn: reachIn, personNames: personNames, npcName: npcName, heardChange: heardChange, foldMoves: foldMoves };

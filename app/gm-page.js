@@ -3165,12 +3165,6 @@
   /* >>> VV8 */
   var RUN_ICONS = { mask: '🎭', tray: '🍽', jacket: '🧥', key: '🔑', hat: '🎩', badge: '🛡', apron: '🧺' };
   function iconGlyph(name) { return runGlyph(RUN_ICONS[str(name)]); }
-  /* the glyph of the costume a PC wears (an icon, never its label), '' for none or a v1 night */
-  function pcIcon(rs, st, id) {
-    var c = rs.play.v === 2 && isObj(st.crew) && isObj(st.crew[id]) ? st.crew[id] : null, d = null;
-    if (c) (Array.isArray(rs.play.disguises) ? rs.play.disguises : []).forEach(function (x) { if (isObj(x) && x.id === c.disguise) d = x; });
-    return d ? iconGlyph(d.icon) : '';
-  }
   /* THE ONE PLACE the target's marker is decided: B.targetInView (app/gm/ball.js) -> { room, label } | null, from the published ball (a peek
      is never in it) and the rooms the player map shows. It reaches the iPad only inside playerTokenSet -> playerTokens -> tokenScreen. */
   function targetMark(rs, st, shown) {
@@ -3189,7 +3183,7 @@
     var mark = targetMark(rs, st, shown);
     /* <<< VV8 */
     if (!Object.keys(placed.crew).length && !Object.keys(placed.pins).length && !mark) return none;
-    var pcs = dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), icon: pcIcon(rs, st, c.id) }; });
+    var pcs = dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), icon: '' }; });      /* no costume shows on a player screen: a plain token */
     var clocks = tableClocks().filter(function (c) { return str(c.id); }).map(function (c) { return { id: str(c.id), size: c.size, filled: c.filled, hidden: !!c.hidden }; });
     var tokens = P.playerTokens(placed, shown, clocks, pcs, mark), hide = tokenDeny(rs.play, mark ? mark.label : '');
     return { tokens: tokens, hide: hide, sig: P.tokenSig(tokens, hide) };
@@ -3352,7 +3346,7 @@
      Location keeps its strip. ball.crew is { <pc>: { room, disguise, ... } } for v2 (v1 keeps a room name): playerTokens reads only the room of
      either shape. */
   function runV2() { var rs = runSite(); return rs && rs.play.v === 2 && W.B68GmRunView ? rs : null; }
-  function runPcs() { return dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c) }; }); }
+  function runPcs() { return dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), moveReq: isObj(c.moveReq) ? c.moveReq : null }; }); }
   /* a room is open to the players when its band is ticked or the GM opened it on its own */
   function runIsOpen(name) {
     var rs = runSite(); if (!rs || !S.locRoll || !Array.isArray(S.locRoll.rooms)) return false;
@@ -3366,7 +3360,7 @@
     var st = ballDoc(rs.name), m = runV2Model(rs, +st.t >= 0 ? +st.t : 0), out = [];
     Object.keys(m.cards).sort().forEach(function (name) {
       var c = m.cards[name]; if (c.lvl === null) return;
-      var pills = c.pcs.map(function (p) { return { t: p.ini, c: '#111111', i: p.icon }; }).concat(c.npcs.map(function (n) { return { t: n.ini, c: RUN_KIND[n.kind] || '#5d5d5d' }; }));
+      var pills = c.pcs.map(function (p) { return { t: p.ini, c: '#111111' }; }).concat(c.npcs.map(function (n) { return { t: n.ini, c: RUN_KIND[n.kind] || '#5d5d5d' }; }));
       if (!pills.length) return;
       if (pills.length > 4) pills = pills.slice(0, 3).concat([{ t: '+' + (pills.length - 3), c: '#333333' }]);
       out.push({ room: name, label: '', svg: runTokenSvg({ pills: pills, pies: [], lens: null, danger: false }) });
@@ -3413,7 +3407,7 @@
     var st = ballDoc(rs.name), me = S;
     var pcs = dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), moveReq: isObj(c.moveReq) ? c.moveReq : null }; });
     var beat = BB.beatOf(rs.play, +st.t >= 0 ? +st.t : 0).i, rooms = S.locRoll.rooms.filter(isObj).map(function (r) { return str(r.name); }).filter(Boolean);
-    var r = RV.foldMoves(st, pcs, { beat: beat, rooms: rooms, isOpen: runIsOpen, now: Date.now(), maxAge: 30 * 60 * 1000 }); if (!r) return;
+    var r = RV.foldMoves(st, pcs, { beat: beat, rooms: rooms, isOpen: runIsOpen }); if (!r) return;
     me.rvFolding = true;
     try { rvHost().set({ crew: r.crew }); } finally { me.rvFolding = false; }      /* through the auto-hear too */
     r.notes.forEach(function (n) { if (!n.moved) toast(n.name + ' asked for ' + n.room + ': not open'); });
