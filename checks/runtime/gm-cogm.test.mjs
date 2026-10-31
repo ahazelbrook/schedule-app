@@ -513,5 +513,41 @@ await test('9. gm-page.js cue lane: no key made, answers applied confirmed, seen
   assert.ok(/cm\.uncued && !cm\.capped && !cm\.winBusy/.test(sec), 'uncued windows run only behind the second switch');
 });
 
+/* A2 (31/10): the cue moves a PC. planApply checks the live night; the page's runMovePc does the write; planUndo puts the PC back only if they are still where the cue left them. */
+const MLIVE = { clocks: [], npcs: [], pcs: [{ id: 'pc1', name: 'Rook Marlowe', alias: 'The Fox' }, { id: 'pc2', name: 'Vesper' }], night: true, rooms: ['Showroom', 'Cocktail lounge'], crew: { pc1: 'Cocktail lounge' }, lastClock: '' };
+await test('A2 planApply pc_move: a do plan on a running night; dropped with a reason when there is no night, no such PC or room, or the PC is already there', () => {
+  const a = { type: 'pc_move', key: 'cue:1:0', pc: 'pc1', room: 'Showroom', quote: 'Blade, Rook to the showroom' };
+  assert.deepEqual(C.planApply(a, MLIVE, {}, { confirmed: true }), { op: 'do', type: 'pc_move', pc: 'pc1', name: 'Rook Marlowe', room: 'Showroom', from: '' });
+  assert.deepEqual(C.planApply(a, Object.assign({}, MLIVE, { night: false }), {}, { confirmed: true }), { op: 'drop', why: 'no night' });
+  assert.deepEqual(C.planApply(Object.assign({}, a, { pc: 'gone' }), MLIVE, {}, { confirmed: true }), { op: 'drop', why: 'that PC is gone' });
+  assert.deepEqual(C.planApply(Object.assign({}, a, { room: 'Vault' }), MLIVE, {}, { confirmed: true }), { op: 'drop', why: 'that room is not on this map' });
+  assert.deepEqual(C.planApply(Object.assign({}, a, { room: 'Cocktail lounge' }), MLIVE, {}, { confirmed: true }), { op: 'drop', why: 'no change' });
+  assert.equal(C.planApply(Object.assign({}, a, { pc: 'pc2' }), MLIVE, {}, { confirmed: true }).op, 'do', 'a PC with no room yet can be placed');
+});
+
+await test('A2 pc_move: the record and headline carry where the PC was; undo is a compare-and-swap on the PC\'s room', () => {
+  const plan = Object.assign(C.planApply({ type: 'pc_move', pc: 'pc1', room: 'Showroom' }, MLIVE, {}, { confirmed: true }), { from: 'Cocktail lounge' });
+  const rec = C.recordOf(plan);
+  assert.deepEqual(rec, { type: 'pc_move', id: 'pc1', from: 'Cocktail lounge', to: 'Showroom' });
+  assert.equal(C.headline(plan, false), 'Move Rook Marlowe to Showroom');
+  assert.equal(C.headline(plan, true), 'Moved Rook Marlowe to Showroom (from Cocktail lounge)');
+  assert.deepEqual(C.planUndo(rec, { pcRoom: 'Showroom' }), { ok: true, write: { pc: 'pc1', room: 'Cocktail lounge' } });
+  const moved = C.planUndo(rec, { pcRoom: 'Luxury penthouse' });
+  assert.deepEqual([moved.ok, moved.why, moved.now, moved.was], [false, 'changed', 'Luxury penthouse', 'Showroom']);
+  assert.deepEqual(C.planUndo(rec, { pcRoom: 'Luxury penthouse' }, true), { ok: true, write: { pc: 'pc1', room: 'Cocktail lounge' } }, 'forced');
+});
+
+await test('A2 cue lane: a cut-off "Rook to the" waits for ONE more line and joins it; an unknown room is a card with no call', () => {
+  const st = clane([crow(1, 'Blade, Vesper to the', { speaker: 1 })], MLIVE);
+  assert.equal(st.cues.length, 1, 'a move is found as a cue at ingest');
+  assert.equal(C.cueNext(st, CT0 + 100, MLIVE), null, 'waits for the next line');
+  C.ingest(st, [crow(2, 'cocktail lounge', { speaker: 0 })], 2, CT0 + 300, MLIVE);
+  const j = C.cueNext(st, CT0 + 400, MLIVE);
+  assert.equal(j.kind, 'post'); assert.equal(j.joined, true); assert.deepEqual([j.parsed[0].type, j.parsed[0].pc, j.parsed[0].room], ['pc_move', 'pc2', 'Cocktail lounge']);
+  assert.equal(j.parsed[0].quote, 'Blade, Vesper to the cocktail lounge');
+  const u = clane([crow(1, 'Blade, Vesper to the moon')], MLIVE), k = C.cueNext(u, CT0, MLIVE);
+  assert.equal(k.kind, 'card'); assert.deepEqual([k.res.missing, k.res.name], ['room', 'moon']);
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

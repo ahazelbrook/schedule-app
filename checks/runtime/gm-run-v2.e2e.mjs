@@ -557,6 +557,37 @@ try {
     await Z.c.close();
   }
 
+  /* ---- A2: the cue moves a PC. A typed "Blade, <PC> to the <room>" in the Blade panel's Ask bar writes ball.crew on the running night, "Blade, undo" puts them back ---- */
+  {
+    const Q = await open();
+    const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+    await Q.c.route('**/api/gm/assist/tick', (route) => json(route, { cards: [], updates: [], flags: [], spend: { tonight: 0.3, cap: 20, tier: 'all', tick: 0.02 }, last: 9 }));
+    await Q.c.route('**/api/gm/assist/cards', (route) => route.request().method() === 'POST' ? json(route, { marked: 1 }) : json(route, { cards: [], updates: [], asks: [] }));
+    await Q.page.keyboard.press('g');
+    await Q.page.waitForSelector('.rv-head', { timeout: 10000 });
+    await Q.page.keyboard.press('a');
+    await Q.page.waitForFunction(() => document.querySelector('#as-panel') && document.querySelector('#as-panel').getBoundingClientRect().left < innerWidth - 100, null, { timeout: 6000 });
+    const type = async (text) => { await Q.page.fill('#as-ask-q', text); await Q.page.press('#as-ask-q', 'Enter'); };
+    const cardText = (re) => until(async () => (await Q.page.$$eval('#as-list .as-card[data-id^="cogm|"]', (l) => l.map((x) => x.textContent))).find((t) => re.test(t)), 8000, 100);
+    const nowI = BALL.beatOf(c2.play, (await ball()).t).i;
+    await type('Blade, Cass to the cocktail lounge');
+    const m1 = await until(async () => { const x = await ball(); return x && x.crew && x.crew['run-pc1'] && x.crew['run-pc1'].room === 'Cocktail lounge' ? x : null; }, 10000, 100);
+    check(!!m1 && m1.crew['run-pc1'].moved === nowI, 'typed "Blade, Cass to the cocktail lounge": ball.crew holds Cass Fenn in the Cocktail lounge, moved = this beat (' + JSON.stringify(m1 && m1.crew) + ')');
+    check(!!(await cardText(/Moved Cass Fenn to Cocktail lounge/)) && !!(await until(async () => (await Q.page.$$eval('.rv-card[data-room="Cocktail lounge"] .rv-pc', (c) => c.map((x) => x.getAttribute('data-id')))).includes('run-pc1'), 8000)), 'the green card says so and the Run board shows the chip in that room');
+    await type('Blade, Dov Ketch is in the showroom');
+    check(!!(await until(async () => { const x = await ball(); return x && x.crew && x.crew['run-pc2'] && x.crew['run-pc2'].room === 'Showroom' && x.crew['run-pc1'].room === 'Cocktail lounge' ? x : null; }, 10000, 100)), '"Dov Ketch is in the showroom" moves Dov and leaves Cass where she was');
+    await type('Blade, undo');
+    check(!!(await until(async () => { const x = await ball(); return x && x.crew && x.crew['run-pc2'] && x.crew['run-pc2'].room === '' && x.crew['run-pc1'].room === 'Cocktail lounge' ? x : null; }, 10000, 100)), '"Blade, undo" puts Dov back in the tray (the newest move), Cass stays');
+    const before = JSON.stringify((await ball()).crew);
+    await type('Blade, Ira to the vault');
+    check(!!(await cardText(/don.t know a room called .vault/i)) && JSON.stringify((await ball()).crew) === before, 'an unknown room is a card and writes nothing');
+    await type('Blade, move Zed to the showroom');
+    check(!!(await cardText(/don.t know a PC called .Zed/i)) && JSON.stringify((await ball()).crew) === before, 'an unknown PC is a card and writes nothing');
+    await type('Blade, tick Fuse');
+    check(!!(await until(async () => (await api('GET', '/campaign')).json.doc.clocks.find((k) => k.name === 'Fuse' && k.filled === 3), 10000, 100)) && JSON.stringify((await ball()).crew) === before, 'a clock cue still ticks the clock');
+    await Q.c.close();
+  }
+
   check(!errors.length, 'no page errors: ' + errors.slice(0, 3).join(' | '));
   await browser.close();
 } catch (e) { failed++; console.log('FAIL ' + (e && e.stack || e)); }

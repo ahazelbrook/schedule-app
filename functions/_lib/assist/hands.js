@@ -24,7 +24,7 @@ const NAME_MAX = 80, ID_MAX = 64, LOOK_MAX = 200, ROLE_MAX = 80, TEXT_MAX = 300,
 const CLOCKS_MAX = 40, NPCS_MAX = 100, PCS_MAX = 12, STATE_SIZE_MAX = 12;
 export const BUCKETS = ['name', 'loose_end', 'moment'];
 export const TYPES = ['clock_add', 'clock_tick', 'npc_add', 'capture', 'roll_log'];
-export const CUE_TYPES = ['clock_add', 'clock_tick', 'npc_add', 'capture', 'undo', 'rename'];   // what the page's own parse of a cue may send (C4c); undo and rename only ever come this way
+export const CUE_TYPES = ['clock_add', 'clock_tick', 'npc_add', 'capture', 'undo', 'rename', 'pc_move'];   // what the page's own parse of a cue may send (C4c); undo, rename and pc_move only ever come this way
 const CUE_MODEL_TYPES = ['clock_add', 'clock_tick', 'npc_add', 'capture'];                       // what the model may return for a cue: no roll_log, and never undo or rename
 export const CUE_ID_MAX = ID_MAX;
 const POSITIONS = ['controlled', 'risky', 'desperate', 'unclear'], EFFECTS = ['limited', 'standard', 'great', 'unclear'], RESULTS = ['critical', 'full', 'partial', 'miss', 'unclear'];
@@ -196,6 +196,12 @@ export function validateActions(raw, { state, lines, cue }) {
       const name = clip(a.name, NAME_MAX);
       if (!name) { drop(a.type, 'no name'); continue; }
       out = { ...base, key: keyOf(a.type, ''), name };
+    } else if (a.type === 'pc_move') {
+      // the page's own parse only (CUE_TYPES): a PC of the state the page sent, and a room name (the Worker does not know the site's rooms; the page checks them against the live night when it applies)
+      const pc = clip(a.pc, NAME_MAX), room = clip(a.room, NAME_MAX), from = clip(a.from, NAME_MAX);
+      if (!pc || !state.pcs.some((p) => p.id === pc)) { drop(a.type, 'unknown pc'); continue; }
+      if (!room) { drop(a.type, 'no room'); continue; }
+      out = { ...base, key: keyOf(a.type, pc), pc, room, ...(from ? { from } : {}) };
     } else {
       // roll_log (P3): the page has no apply path for it yet (design 5.5), so it is only ever an offer
       const who = clip(a.who, FIELD_MAX), what = clip(a.action, FIELD_MAX);

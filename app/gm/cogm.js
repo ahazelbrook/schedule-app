@@ -164,13 +164,13 @@
   P.windowFailed = windowFailed;
 
   /* ---------- 2b. the cue lane (C4d) ---------- */
-  var WAITS = { more: 1, name: 1, text: 1, amount: 1, size: 1 };       /* what one more line can fix; 'which' and 'clock' it cannot */
+  var WAITS = { more: 1, name: 1, text: 1, amount: 1, size: 1, room: 1 };       /* what one more line can fix; 'which' and 'clock' it cannot */
   function lineAfter(st, seq) { for (var i = 0; i < st.buf.length; i++) if (st.buf[i].seq > seq) return st.buf[i]; return null; }
   function cueAge(c, now) { var t = Date.parse(c.at); return now - (isFinite(t) ? t : c.seenAt); }
   function cueNext(st, now, live) {
     var Cue = cueMod();
     if (!Cue || !st.cues.length) return null;
-    var c = st.cues[0], text = c.text, to = c.seq, joined = false, res = Cue.parse(text, live), waiting = res.pending || (res.missing && WAITS[res.missing]);
+    var c = st.cues[0], text = c.text, to = c.seq, joined = false, res = Cue.parse(text, live), waiting = res.pending || (res.missing && WAITS[res.missing] && !(res.missing === 'room' && res.name));      /* a room that was heard and is unknown is a card; only a cut-off "to the" waits */
     if (waiting) {
       var nx = lineAfter(st, c.seq);
       if (nx && !Cue.find(nx.text, live)) { text = Cue.joinLines(c.text, nx.text); to = nx.seq; joined = true; res = Cue.parse(text, live); }
@@ -255,6 +255,15 @@
       plan = { op: 'do', type: 'npc_add', id: ctx.id, name: nm, rolled: action.nameRolled === true,
         doc: { name: nm, alias: '', role: str(action.role).slice(0, 80), faction: '', description: str(action.look).slice(0, 2000), spec: {}, revealed: false, firstSeen: null, tags: ['cogm'],
           gmNotes: ('Heard' + (action.at ? ' at ' + action.at : '') + ': “' + str(action.quote).replace(/\s+/g, ' ').trim() + '” (co-GM)').slice(0, 600) } };
+    } else if (action.type === 'pc_move') {
+      /* live.night: a v2 night is running; live.rooms [name]: its rooms; live.crew { <pc>: room }: where each PC is now. The WRITE is the host's (gm-page.js runMovePc, called when the plan is carried out), not this planner's */
+      if (live.night !== true) return { op: 'drop', why: 'no night' };
+      var pcm = (live.pcs || []).filter(function (x) { return isObj(x) && str(x.id) === str(action.pc); })[0];
+      if (!pcm) return { op: 'drop', why: 'that PC is gone' };
+      var rm = (live.rooms || []).filter(function (x) { return str(x) === str(action.room); })[0];
+      if (!rm) return { op: 'drop', why: 'that room is not on this map' };
+      if (isObj(live.crew) && str(live.crew[pcm.id]) === rm) return { op: 'drop', why: 'no change' };
+      plan = { op: 'do', type: 'pc_move', pc: str(pcm.id), name: clipName(pcm.name), room: rm, from: '' };
     } else if (action.type === 'capture') {
       var b = BUCKET[action.bucket], text = str(action.text).replace(/\s+/g, ' ').trim().slice(0, 500);
       if (!b || !text) return { op: 'drop', why: 'no text' };
@@ -300,6 +309,12 @@
     tags.push('undone');
     return { ok: true, write: { revealed: false, tags: tags } };
   }
+  /* a PC the GM (or a phone) moved since is left where they are unless forced; live.pcRoom is read fresh */
+  function undoPcMove(rec, live, force) {
+    var cur = str(live.pcRoom);
+    if (cur === rec.to || force) return { ok: true, write: { pc: rec.id, room: rec.from } };
+    return { ok: false, why: 'changed', now: cur || 'no room', was: rec.to, back: rec.from };
+  }
   function undoCapture(rec, live, force) {
     if (live.capture === null || live.capture === undefined) return { ok: true, noop: 'gone' };
     if (live.capture === rec.text || force) return { ok: true, write: { remove: rec.id } };
@@ -312,6 +327,7 @@
     if (rec.type === 'clock_tick') return undoClockTick(rec, live, force === true);
     if (rec.type === 'npc_add') return undoNpc(rec, live, force === true);
     if (rec.type === 'capture') return undoCapture(rec, live, force === true);
+    if (rec.type === 'pc_move') return undoPcMove(rec, live, force === true);
     return { ok: true, noop: 'gone' };
   }
   P.planUndo = planUndo;
@@ -323,6 +339,7 @@
     if (plan.type === 'clock_add') return { type: 'clock_add', id: plan.id, snap: { name: plan.clock.name, size: plan.clock.size, filled: plan.clock.filled || 0, hidden: true } };
     if (plan.type === 'clock_tick') return { type: 'clock_tick', id: plan.id, from: plan.from, to: plan.to };
     if (plan.type === 'npc_add') return { type: 'npc_add', id: plan.id, snap: { name: plan.doc.name, description: plan.doc.description, role: plan.doc.role } };
+    if (plan.type === 'pc_move') return { type: 'pc_move', id: plan.pc, from: plan.from, to: plan.room };
     return { type: 'capture', id: '', text: plan.text };
   }
   P.recordOf = recordOf;
@@ -332,6 +349,7 @@
     var t = plan.type;
     if (t === 'clock_add') return (done ? 'Clock made (hidden): ' : 'Make a clock: ') + plain(plan.clock.name, 80) + ' (' + plan.clock.size + ')' + (plan.clock.filled > 0 ? ', ' + plan.clock.filled + ' marked' : '');
     if (t === 'clock_tick') return (done ? 'Ticked: ' : 'Tick: ') + plain(plan.name, 80) + ' ' + plan.from + '→' + plan.to + '/' + plan.size;
+    if (t === 'pc_move') return (done ? 'Moved ' : 'Move ') + plain(plan.name, 80) + ' to ' + plain(plan.room, 80) + (done && plan.from ? ' (from ' + plain(plan.from, 80) + ')' : '');
     if (t === 'npc_add') return (done ? 'New NPC (hidden): ' : 'Add an NPC: ') + plain(plan.name, 80) + (plan.rolled ? ' (name rolled)' : '');
     if (plan.roll) return (done ? 'Roll filed: ' : 'File this roll: ') + plain(plan.text, 100);
     return (done ? 'Filed: ' : 'File this: ') + plain(plan.text, 100);

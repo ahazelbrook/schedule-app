@@ -5,7 +5,7 @@
    API (every function is also on B68Cue._pure)
      find(text) -> { index, word, verb } | { index, word, verb: null, pending: true } | null
         index: the offset of the wake word in the ORIGINAL string, so text.slice(index) is the quote. word: the wake word as heard.
-        verb: the command, one of make tick mark fill clear plus call rename undo note loose name show sheet.
+        verb: the command, one of make tick mark fill clear plus call rename undo note loose name show sheet move.
         pending: a bare "Blade" that starts a clause with nothing after it yet (C4b arms the merger on it). Only the word Blade itself arms: a mishearing counts only
         when a command word follows straight after it.
      parse(text, live) -> { actions, missing, candidates, refused, name, quote, cue, pending?, draft? }
@@ -17,6 +17,7 @@
            { type: 'npc_add', name, look, role, needsName, quote }                       (no name heard: name is '' and needsName is TRUE; C4d rolls the name with the
                                                                                           NPC generator. A named NPC has needsName false)
            { type: 'capture', bucket: 'moment' | 'loose_end' | 'name', text, quote }
+           { type: 'pc_move', pc: <character id>, room: <room name as the site spells it>, quote }   (A2: needs live.pcs [{ id, name, alias }] and live.rooms [name]; missing 'pc' / 'room' (name, candidates) / 'night' (no rooms))
            { type: 'undo', quote }  { type: 'rename', name, quote }                      (ordinary actions: they go to the server like the rest; the page carries them out)
         quote: the text from the wake word to the end of the text parsed, exactly as given (case, punctuation). For a split command the page joins the two lines
         with joinLines(a, b) (ONE space) and parses the joined text, so the quote spans the join.
@@ -229,6 +230,8 @@
           else break;
         }
         var v = cmdAt(toks, k0);
+        var mvm = !v ? moveFind(toks, text, i, live) : null;
+        if (mvm) { var cm = { toks: toks, wi: i, vi: mvm.k, verb: 'move' }, gm = run(text, live, cm, false); if (gm.actions.length && !gm.missing && !gm.refused) hit = { k: mvm.k, verb: 'move' }; }
         if (v) {
           var cand = { toks: toks, wi: i, vi: k0, verb: v }, got = run(text, isObj(live) ? live : {}, cand, !isObj(live));
           if (got.actions.length && !got.missing && !got.refused) hit = { k: k0, verb: v };
@@ -236,7 +239,8 @@
         if (!hit) continue;
       }
       else {
-        hit = findVerb(toks, i);
+        var mvr = moveFind(toks, text, i, live);
+        hit = mvr ? { k: mvr.k, verb: 'move' } : findVerb(toks, i);
         if (hit && hit.soft && !softOk(text, live, toks, i, hit)) hit = findVerb(toks, i, true);
       }
       if (hit) return { toks: toks, wi: i, vi: hit.k, verb: hit.verb };
@@ -300,6 +304,92 @@
     return uniq(hit);
   }
   P.matchClock = matchClock;
+
+  /* ---------- 2b. moving a PC: "Rook to the showroom" (A2) ----------
+     live.pcs [{ id, name, alias }] and live.rooms [name] (the rooms of the running site) switch it on; with no PCs these forms are never read. After the wake word:
+     [move|send|put|take] <PC> [to|into|in] [the] <room>, <PC> to <room>, <PC> goes|heads|go|head to|into <room>, <PC> is in <room>. Only "move" and "send" may name an unknown PC
+     (a card says so); "put" and "take" need a real PC ("Blade, put up the map" stays a show). A first word that is not a PC or one of those verbs (tick, mark...) is never a move. */
+  var MOVE_V = { move: 1, moves: 1, send: 1, take: 1, put: 1 };
+  var GO_V = { goes: 1, go: 1, heads: 1, head: 1 };
+  var NOT_PC = { the: 1, a: 1, an: 1, it: 1, that: 1, 'this': 1, on: 1, over: 1, up: 1, back: 1, forward: 1, along: 1, out: 1, them: 1, us: 1, everyone: 1, everybody: 1, all: 1, both: 1 };
+  /* room names compared as: NFKC, lower case, a leading "the" off, apostrophes gone, other punctuation a space, spaces collapsed (the shared rule; A1 has its own copy) */
+  function normRoom(s) {
+    s = str(s).normalize('NFKC').toLowerCase().replace(/['’‘`]/g, '').replace(/[^\p{L}\p{N}\s]+/gu, ' ').replace(/\s+/g, ' ').trim();
+    return s.replace(/^the /, '').trim();
+  }
+  P.normRoom = normRoom;
+  /* every way a PC can be called: name, alias, first name (as token lists) */
+  function pcSeqs(pc) {
+    var out = [], seen = {};
+    [pc.name, pc.alias, str(pc.name).trim().split(/\s+/)[0]].forEach(function (n) {
+      var w = tokenize(str(n)).map(function (t) { return t.w; }), key = w.join(' ');
+      if (w.length && !seen[key]) { seen[key] = 1; out.push(w); }
+    });
+    return out;
+  }
+  function matchPcAt(toks, p, e, pcs) {
+    var best = 0, hit = [];
+    pcs.forEach(function (pc) {
+      var longest = 0;
+      pcSeqs(pc).forEach(function (seq) {
+        if (p + seq.length - 1 > e) return;
+        for (var i = 0; i < seq.length; i++) if (toks[p + i].w !== seq[i]) return;
+        if (seq.length > longest) longest = seq.length;
+      });
+      if (longest > best) { best = longest; hit = [pc]; } else if (longest && longest === best) hit.push(pc);
+    });
+    return best ? { len: best, pcs: hit } : null;
+  }
+  /* the room a spoken phrase means: normRoom exact (also with the spaces dropped: "show room"), then the one room whose name holds the spoken words ("counting"). -> { room } | { none } | { many: [names] } */
+  function resolveRoom(spoken, rooms) {
+    var n = normRoom(spoken), flat = n.replace(/ /g, ''), list = rooms.filter(function (r) { return normRoom(r); });
+    if (!n) return { none: true };
+    var hit = list.filter(function (r) { return normRoom(r) === n; });
+    if (!hit.length) hit = list.filter(function (r) { return normRoom(r).replace(/ /g, '') === flat; });
+    if (!hit.length) hit = list.filter(function (r) { return (' ' + normRoom(r) + ' ').indexOf(' ' + n + ' ') >= 0; });
+    if (hit.length === 1) return { room: hit[0] };
+    return hit.length ? { many: hit } : { none: true };
+  }
+  /* toks[k] starts a move? -> null (not a move) | the same { action } / { missing, name, candidates } a command gives */
+  function moveParse(toks, text, k, live) {
+    var pcs = (Array.isArray(live.pcs) ? live.pcs : []).filter(function (c) { return isObj(c) && str(c.id) && str(c.name).trim(); });
+    if (!pcs.length || !toks[k]) return null;
+    var e = sentenceEnd(toks, k), verb = MOVE_V[toks[k].w] ? toks[k].w : '', p = verb ? k + 1 : k, m = p <= e ? matchPcAt(toks, p, e, pcs) : null, q, unknown = '', c, r;
+    if (m) q = p + m.len;
+    else if (verb === 'move' || verb === 'moves' || verb === 'send') {
+      if (p > e || NOT_PC[toks[p].w]) return null;
+      q = p; while (q <= e && toks[q].w !== 'to' && toks[q].w !== 'into' && toks[q].w !== 'in') q++;
+      if (q === p || q > e || q - p > 3) return null;
+      unknown = span(toks, text, p, q - 1);
+    } else return null;
+    c = toks[q]; if (!c || q > e) return null;
+    if (verb) { if (c.w === 'to' || c.w === 'into' || c.w === 'in') r = q + 1; else return null; }
+    else if (c.w === 'to') r = q + 1;
+    else if (GO_V[c.w] && toks[q + 1] && q + 1 <= e && (toks[q + 1].w === 'to' || toks[q + 1].w === 'into')) r = q + 2;
+    else if (c.w === 'is' && toks[q + 1] && q + 1 <= e && (toks[q + 1].w === 'in' || toks[q + 1].w === 'into')) r = q + 2;
+    else return null;
+    if (unknown) return { missing: 'pc', name: unknown, candidates: [] };
+    if (m.pcs.length > 1) return { missing: 'pc', name: span(toks, text, p, q - 1), candidates: cands(m.pcs) };
+    var rooms = (Array.isArray(live.rooms) ? live.rooms : []).map(str).filter(Boolean);
+    if (!rooms.length) return { missing: 'night' };
+    if (r <= e && toks[r].w === 'the') r++;
+    var re = e; while (re >= r && (UM[toks[re].w] || toks[re].w === 'please' || toks[re].w === 'thanks' || toks[re].w === 'now')) re--;
+    if (re < r) return { missing: 'room', name: '', draft: { type: 'pc_move', pc: str(m.pcs[0].id) } };
+    var spoken = span(toks, text, r, re), got = resolveRoom(spoken, rooms);
+    if (got.room) return { action: { type: 'pc_move', pc: str(m.pcs[0].id), room: got.room.slice(0, 80) } };
+    return { missing: 'room', name: spoken, candidates: got.many ? got.many.map(function (n) { return { id: n, name: n }; }) : [], draft: { type: 'pc_move', pc: str(m.pcs[0].id) } };
+  }
+  /* the first word after the wake word (please, just, now, "can you" skipped) where a move could start -> { k } | null */
+  function moveFind(toks, text, i, live) {
+    if (!isObj(live) || !Array.isArray(live.pcs) || !live.pcs.length) return null;
+    var k = i + 1;
+    for (;;) {
+      if (toks[k] && (SKIP[toks[k].w] || UM[toks[k].w])) k++;
+      else if (toks[k] && MODAL[toks[k].w] && toks[k + 1] && toks[k + 1].w === 'you') k += 2;
+      else break;
+    }
+    return moveParse(toks, text, k, live) ? { k: k } : null;
+  }
 
   /* ---------- 3. parsing it ---------- */
   function cands(list) { return list.map(function (c) { return { id: str(c.id), name: str(c.name) }; }); }
@@ -470,7 +560,7 @@
     }
     var words = function (a, b) { var l = []; for (var i = a; i <= b; i++) l.push(toks[i].w); return l; };
     var capture = verb === 'note' || verb === 'loose' || verb === 'name';
-    if (!capture && verb !== 'undo' && verb !== 'rename' && verb !== 'call') {
+    if (!capture && verb !== 'undo' && verb !== 'rename' && verb !== 'call' && verb !== 'move') {
       /* show and sheet words refuse only OUTSIDE a clock's name: "a clock called Stress Test", "tick Coin Toss" */
       var inName = {}, mk, ix, cw, j2, okc;
       if (verb === 'make') {
@@ -495,7 +585,9 @@
       if (verb === 'show' || any.some(function (w) { return SHOW_W[w]; }) || (any.indexOf('put') >= 0 && any.indexOf('up') >= 0)) { res.refused = 'show'; return res; }
       if (verb === 'sheet' || any.some(function (w) { return SHEET_W[w]; })) { res.refused = 'sheet'; return res; }
     }
-    if (verb === 'undo') {
+    if (verb === 'move') {
+      out = moveParse(toks, text, vi, live) || { refused: 'unparsed' };
+    } else if (verb === 'undo') {
       var rest = words(vi + 1, e).filter(function (w) { return !/^(?:that|it|this|the|last|one|thing|action|please)$/.test(w) && !UM[w]; });
       out = rest.length ? { refused: 'unparsed' } : { action: { type: 'undo' } };
     } else if (verb === 'rename' || verb === 'call') {
@@ -562,6 +654,6 @@
     return { unknown: m ? '/' + m[1] : s.slice(0, 40) };
   }
 
-  var M = { find: find, parse: parse, fromTyped: fromTyped, joinLines: joinLines, matchClock: matchClock, numOf: numOf, norm: norm, SIZES: SIZES.slice(), _pure: P };
+  var M = { find: find, parse: parse, fromTyped: fromTyped, joinLines: joinLines, matchClock: matchClock, numOf: numOf, norm: norm, normRoom: normRoom, SIZES: SIZES.slice(), _pure: P };
   return M;
 });
