@@ -38,7 +38,7 @@
  *   setWarnings(text)         the warnings line under the header ("" removes it)
  *   menuItems                 [{ id, label, run(ctx) }]  (label may be a function (ctx) -> text)  Run's menu button lists them (VV6: "End the night")
  *   views                     [{ id, label, render(box, ctx) }]  Board and Map are first; VV6 adds "Players"
- *   sections                  [{ id, order, render(box, ctx) }]  the right column, by order (Rooms -10; VV5: This beat 0, the crew 100, the job 200, intel 300)
+ *   sections                  [{ id, order, render(box, ctx) }]  the right column, by order (Rooms -10; VV5: This beat 0, the job 200, intel 300; the crew is in the page drawer: crewInto)
  *   hooks                     { heard(way, pc, ctx) }  the Heard by buttons (VV5 fills it: ball.heard.<way>.<pc> = the published time)
  *   ctx = { play, st, model, t, shownT, peeking, host, sel, set(change), select(room), rerender(), toast(msg, bad), esc(text) }
  * Text from the play reaches the page through esc() only.
@@ -458,7 +458,7 @@
     }
 
     /* the pane */
-    self.rerender = function () { if (boxEl) self.render(boxEl); };
+    self.rerender = function () { if (boxEl) self.render(boxEl); if (crewEl && crewEl.isConnected) self.crewInto(crewEl); };
     self.render = function (box) {
       boxEl = box;
       if (live.indexOf(self) < 0) live.push(self);
@@ -642,6 +642,14 @@
     }
     function onCancel() { if (drag) { endDrag(); self.rerender(); } }
 
+    /* the crew lines into a box of the page's drawer: the same section the right column used to carry. A change redraws the box (and the pane, when it is on screen). */
+    var crewEl = null;
+    self.crewInto = function (box) {
+      crewEl = box; var x = build(); if (!x) { box.innerHTML = ""; return false; }
+      var ctx = ctxFor(x.rs, x.st, x.m, x.shownT); ctx.rerender = function () { self.crewInto(crewEl); if (boxEl && boxEl.isConnected && boxEl.offsetParent !== null) self.rerender(); };
+      try { crewSection(box, ctx); } catch (e) { box.textContent = "The crew could not be drawn: " + (e && e.message || e); }
+      return true;
+    };
     self.attach = function (box) {
       boxEl = box;
       box.addEventListener("click", onClick); box.addEventListener("change", onTimerLen); box.addEventListener("keydown", onKeyCard); box.addEventListener("pointerdown", onDown);
@@ -962,7 +970,7 @@
     for (var i = 0; i < els.length; i++) els[i].textContent = paceText({ n: +((/beat (\d+)/.exec(els[i].textContent) || [0, 0])[1]), min: Math.max(0, Math.floor((Date.now() - pace.at) / 60000)) });
   }
   sections.push({ id: "beat", order: 0, render: function (box, ctx) { beatSection(box, ctx); if (!paceTimer && typeof setInterval === "function" && typeof document !== "undefined") paceTimer = setInterval(paceTick, 20000); } });
-  sections.push({ id: "crew", order: 100, render: crewSection });
+  /* the crew lines live in the GM page's drawer (crewInto), no longer in this right column */
   sections.push({ id: "job", order: 200, render: jobSection });
   sections.push({ id: "intel", order: 300, render: intelSection });
   hooks.heard = heard5;

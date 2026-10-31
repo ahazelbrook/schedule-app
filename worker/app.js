@@ -145,10 +145,10 @@ export function withPageHead(html) {
 export const PAGE_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'same-origin',
-  'X-Frame-Options': 'DENY',
+  'X-Frame-Options': 'SAMEORIGIN',
   // frame-ancestors only: the page loads its own scripts, inline styles and data: images, so a fuller
   // CSP would need care; this one cannot break anything.
-  'Content-Security-Policy': "frame-ancestors 'none'",
+  'Content-Security-Policy': "frame-ancestors 'self'",
   // the microphone for this origin only: the table iPad's transcriber (GM.md "Listening"); still never for a frame
   'Permissions-Policy': 'camera=(), microphone=(self), geolocation=(), payment=()',
   // The fuller policy the page could carry, REPORTED ONLY: the browser blocks nothing and names in its console what it

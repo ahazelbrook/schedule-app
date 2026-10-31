@@ -43,6 +43,7 @@ const CHECKS = [
   ['checks/runtime/gm-maps.e2e.mjs', 'the Location map on the iPad: map kit 0.7, live reveal (8866)'],
   ['checks/runtime/gm-run.e2e.mjs', 'Run the site: floors, the evening clock, disguise, crew, pins (8877)'],
   ['checks/runtime/gm-run-v2.e2e.mjs', 'the Run tab for a v2 night: start, beats, peek, moves, Open for the players, keys, Focus at three sizes (8950)'],
+  ['checks/runtime/gm-drawer.e2e.mjs', 'the GM drawer: closed by default, Table / Crew / Players, one sheet frame at most, read only until Edit, three widths and a phone (9800)'],
   ['checks/runtime/gm-mission.e2e.mjs', 'the players\' mission from the Run view: the chip, Next and Back, a peek, the Players view, the overlay, End the night (8910)'],
   ['checks/runtime/mission-loop.e2e.mjs', 'the whole mission loop: GM, iPad and two phones; Next, Heard, Tell the crew, a hidden name refused, Reveal and send, End the night, latency (8920)'],
   ['checks/runtime/gm-marker.e2e.mjs', 'the target marker on the iPad: time, PC, open bands, Lockdown, Target is down (9022)'],

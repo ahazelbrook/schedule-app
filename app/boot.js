@@ -101,6 +101,8 @@
   var openId = null, openUnsub = null, latest = null;      /* the character open in the sheet; latest = its newest data (no id) */
   var cache = {};                                           /* id -> data, from the collection snapshot */
   var filter = 'all', filterChosen = false, pendingOpen = null;
+  /* ?ro=1: the GM page's drawer frames a sheet read-only (every control the sheet gates on canWrite goes quiet); its Edit button reloads the frame without it */
+  var RO_FLAG = false; try { RO_FLAG = /[?&]ro=1(&|$)/.test(location.search || ''); } catch (e) { RO_FLAG = false; }
   A.me = null; A.canWrite = null; A.isGM = false; A.isDisplay = false; A.roleKnown = false;   /* roleKnown: a signed-in user answered, so isGM is a fact */
   var userCap = null;                                       /* the user capability, for profiles */
   A.filingAvailable = function () { return !!db; };
@@ -1388,7 +1390,7 @@
         if (hosted() && window.B68Runtime.me) A.myName = window.B68Runtime.me.name || '';
         else if (typeof u.me === 'function') Promise.resolve().then(function () { return u.me(); }).then(function (m) { A.myName = (m && m.name) || ''; renderHome(); }).catch(function () {});
         var pid = typeof u.id === 'function' ? Promise.resolve(u.id()) : Promise.resolve(null);
-        return pid.then(function (id) { A.me = id || null; var cw = typeof u.can === 'function' ? Promise.resolve(u.can('data.write')) : Promise.resolve(null); return cw.then(function (c) { A.canWrite = c === true ? true : c === false ? false : null; return gmOf(u); }).then(function (g) { A.isGM = g === true; A.roleKnown = !!A.me; A.isDisplay = hosted() && !!window.B68Runtime.me && window.B68Runtime.me.role === 'display'; }); });
+        return pid.then(function (id) { A.me = id || null; var cw = typeof u.can === 'function' ? Promise.resolve(u.can('data.write')) : Promise.resolve(null); return cw.then(function (c) { A.canWrite = RO_FLAG ? false : c === true ? true : c === false ? false : null; return gmOf(u); }).then(function (g) { A.isGM = g === true; A.roleKnown = !!A.me; A.isDisplay = hosted() && !!window.B68Runtime.me && window.B68Runtime.me.role === 'display'; }); });
       }).catch(function () {});
       who.then(function () {
         whoami(); syncFilter(); A.syncAll(); syncNav();
