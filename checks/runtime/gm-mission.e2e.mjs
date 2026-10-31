@@ -118,7 +118,7 @@ try {
   const ambOverlay = async () => ((await api('GET', '/gm/ambient')).json.doc || {}).overlay || null;
   check(await chipText() === 'Players: —' && (await chipOk()) === '0', 'before the night the chip reads Players: —, no tick');
   check(!(await mission()), 'and nothing is published');
-  check(await G.page.$$eval('.rv-menu [data-rv="menuitem"]', (b) => b.map((x) => x.textContent).join()) === 'End the night', 'Run\'s menu lists End the night');
+  check(await G.page.$$eval('.rv-menu [data-rv="menuitem"]', (b) => b.map((x) => x.textContent).join()) === 'Show the time to the players,End the night', 'Run\'s menu lists End the night');
   check(await G.page.$$eval('[data-rv="view"]', (b) => b.map((x) => x.textContent).join()) === 'Board,Map,Players', 'and the views are Board, Map, Players');
 
   await G.page.click('[data-rv="start"][data-key="4/5"]');
@@ -193,13 +193,13 @@ try {
 
   /* ---- End the night ---- */
   answer.no = true; asked.length = 0;
-  await G.page.click('[data-rv="menu"]'); await G.page.click('[data-rv="menuitem"]');
+  await G.page.click('[data-rv="menu"]'); await G.page.click('[data-rv="menuitem"]:has-text("End the night")');
   await sleep(1500);
   check(asked.some((q) => /End the night/.test(q)) && !!(await mission()), 'a no to the question: it asked, and the mission stays');
   answer.no = false;
   await G.page.click('[data-rv="menu"]');
   asked.length = 0;
-  await G.page.click('[data-rv="menuitem"]');
+  await G.page.click('[data-rv="menuitem"]:has-text("End the night")');
   check(!!(await until(async () => !(await mission()), 10000)), 'End the night: the mission is gone from the campaign document');
   check(asked.some((q) => /End the night/.test(q)), 'it asked first');
   check(await chipText() === 'Players: —' && (await chipOk()) === '0', 'the chip is back to Players: — with no tick');

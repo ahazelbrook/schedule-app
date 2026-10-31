@@ -2,7 +2,7 @@
 // starts and the crew move, on the invented v2 fixture (checks/runtime/fixtures/gm/pelican-play-v2.json). Invented data only.
 //   node checks/runtime/gm-run-view.test.mjs
 import path from 'node:path';
-import { readFileSync } from 'node:fs';
+import fs, { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
@@ -232,6 +232,100 @@ await (async () => {
     passed++; console.log('PASS ' + name);
   } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); }
 })();
+
+/* ---- ticket B: the Rooms section's pure helpers, Un-hear, phone moves ---- */
+test('roomsShown: the tapped room first, then every room holding a PC, top floor down, no duplicates; unknown rooms are skipped', () => {
+  const st = { start: 0, t: 0, crew: { p1: { room: 'Showroom' }, p2: { room: 'Cocktail lounge' }, p3: { room: 'Luxury penthouse' } } };
+  const m = mk(st, 0);
+  const all = R.roomsShown(m, '');
+  assert.equal(all.length, 3); assert.equal(all[0], 'Luxury penthouse', 'the loft is the top floor'); assert.deepEqual(all.slice().sort(), ['Cocktail lounge', 'Luxury penthouse', 'Showroom']);
+  assert.deepEqual(R.roomsShown(m, 'Showroom').slice(0, 1), ['Showroom']); assert.equal(R.roomsShown(m, 'Showroom').length, 3);
+  assert.deepEqual(R.roomsShown(m, 'Security control room').slice(0, 1), ['Security control room'], 'a tapped room with nobody still shows');
+  assert.equal(R.roomsShown(m, 'Nowhere').length, 3); assert.deepEqual(R.roomsShown(null, 'x'), []);
+});
+
+test('peopleIn: every person the play places in the room, any kind; eventsIn: the beat events in that room; personNames: npc first', () => {
+  const st = { start: 0, t: 0 };
+  assert.deepEqual(R.peopleIn(play, st, 0, 'Showroom').map((p) => p.id).sort(), ['od', 'wr']);
+  assert.ok(R.peopleIn(play, st, 0, 'Showroom').every((p) => typeof p.label === 'string' && typeof p.kind === 'string'));
+  assert.deepEqual(R.peopleIn(play, st, 0, 'Nowhere'), []);
+  assert.equal(R.eventsIn(play, st, 60, 'Showroom').length, 1, 'the 22:00 event is in the beat that ends at 22:00 (t 60)');
+  assert.equal(R.eventsIn(play, st, 60, 'Cocktail lounge').length, 0);
+  assert.deepEqual(R.personNames({ npc: 'Cast Name', label: 'Label' }), ['Cast Name', 'Label']); assert.deepEqual(R.personNames({ label: 'Label' }), ['Label']); assert.deepEqual(R.personNames(null), []);
+});
+
+test('reachIn: the leads in reach of those PCs even when heard; heard and unheard marked; other rooms and PCs left out', () => {
+  const st = { start: 0, t: 0, crew: { p1: { room: 'Cocktail lounge' }, p2: { room: 'Cocktail lounge' }, p3: { room: 'Showroom' } }, heard: { A: { p1: 15 } }, unheard: { A: { p2: true } } };
+  const r = R.reachIn(play, st, 30, ['p1', 'p2', 'p3']);
+  assert.equal(r.length, 1); assert.equal(r[0].way, 'A'); assert.match(r[0].line, /never leaves a table/);
+  assert.deepEqual(r[0].pcs, [{ id: 'p1', heard: true, unheard: false, at: 15 }, { id: 'p2', heard: false, unheard: true, at: null }]);
+  assert.deepEqual(R.reachIn(play, st, 30, ['p3']), []); assert.deepEqual(R.reachIn(play, st, 30, []), []);
+  assert.deepEqual(R.reachIn(play, st, 300, ['p1']), [], 'the lead is only said from 21:00 to 23:00');
+  assert.ok(st.heard.A.p1 === 15 && !st.unheard.A.p1, 'the state is not touched');
+});
+
+test('heardChange: hear writes the time and clears the take-back; a second tap takes it back and marks it unheard; empty maps are null', () => {
+  const a = R.heardChange({ heard: {}, unheard: {} }, 'A', 'p1', 45);
+  assert.deepEqual(a, { heard: { A: { p1: 45 } }, unheard: null });
+  const b = R.heardChange({ heard: a.heard, unheard: a.unheard }, 'A', 'p1', 60);
+  assert.deepEqual(b, { heard: null, unheard: { A: { p1: true } } });
+  const c = R.heardChange({ heard: b.heard, unheard: b.unheard }, 'A', 'p1', 75);
+  assert.deepEqual(c, { heard: { A: { p1: 75 } }, unheard: null });
+  const d = R.heardChange({ heard: { A: { p1: 5, p2: 6 } }, unheard: { A: { p3: true }, B: { p1: true } } }, 'A', 'p1', 9);
+  assert.deepEqual(d, { heard: { A: { p2: 6 } }, unheard: { A: { p3: true, p1: true }, B: { p1: true } } });
+  const st = { heard: { A: { p1: 5 } } }; R.heardChange(st, 'A', 'p1', 9); assert.deepEqual(st, { heard: { A: { p1: 5 } } }, 'the input is not mutated');
+});
+
+test('foldMoves: a newer request moves an open-room PC once and sets mseq; a closed room only sets mseq; GM moves never touch mseq; a PC with no entry is folded too', () => {
+  const isOpen = (n) => n === 'Showroom' || n === 'Cocktail lounge', now = 1000000, o = { beat: 4, rooms: ROOMS, isOpen };
+  const st = { crew: { p1: { room: 'Showroom', noticed: true, busy: 99 }, p2: { room: 'Showroom' }, p3: { room: 'Showroom', mseq: 500 } } };
+  const pcs = [{ id: 'p1', name: 'Cass Fenn', moveReq: { room: 'cocktail LOUNGE', seq: now - 1000 } }, { id: 'p2', name: 'Dov Ketch', moveReq: { room: 'Luxury penthouse', seq: now - 500 } },
+    { id: 'p3', name: 'Ira Lund', moveReq: { room: 'Cocktail lounge', seq: 500 } }, { id: 'p9', name: 'Tray', moveReq: { room: 'The Showroom', seq: now } }];
+  const r = R.foldMoves(st, pcs, o);
+  assert.deepEqual(r.crew.p1, { room: 'Cocktail lounge', noticed: false, busy: 99, moved: 4, mseq: now - 1000 }, 'moved like a drag, to the canonical room name');
+  assert.deepEqual(r.crew.p2, { room: 'Showroom', mseq: now - 500 }, 'a room that is not open: only mseq');
+  assert.deepEqual(r.crew.p3, { room: 'Showroom', mseq: 500 }, 'seq not newer than mseq: untouched');
+  assert.deepEqual(r.crew.p9, { room: 'Showroom', noticed: false, moved: 4, mseq: now }, 'a PC with no entry is placed by an open-room request ("The Showroom" is Showroom)');
+  assert.deepEqual(r.notes, [{ pc: 'p1', name: 'Cass Fenn', room: 'Cocktail lounge', moved: true }, { pc: 'p2', name: 'Dov Ketch', room: 'Luxury penthouse', moved: false }, { pc: 'p9', name: 'Tray', room: 'Showroom', moved: true }]);
+  assert.equal(R.foldMoves({ crew: r.crew }, pcs, o), null, 'folded once: the same requests change nothing');
+  const gm = R.moveCrew({ crew: r.crew }, 'p1', 'Showroom', 5);
+  assert.equal(gm.p1.mseq, now - 1000, 'a GM move keeps mseq as it was'); assert.equal(R.foldMoves({ crew: gm }, pcs.slice(0, 1), o), null, 'so the old request does not replay');
+  /* a tray PC (no entry, or no crew at all) with a request to a room that is shut: stamped, then a GM drag creates the entry and nothing replays */
+  const tray = [{ id: 'p5', name: 'Tray', moveReq: { room: 'Luxury penthouse', seq: 777 } }];
+  const t1 = R.foldMoves({}, tray, o);
+  assert.deepEqual(t1.crew, { p5: { mseq: 777 } }); assert.deepEqual(t1.notes, [{ pc: 'p5', name: 'Tray', room: 'Luxury penthouse', moved: false }]);
+  const dragged = R.moveCrew({ crew: t1.crew }, 'p5', 'Showroom', 2);
+  assert.deepEqual(dragged.p5, { room: 'Showroom', noticed: false, moved: 2, mseq: 777 }); assert.equal(R.foldMoves({ crew: dragged }, tray, o), null, 'no replay over the drag');
+  const un = R.foldMoves({}, [{ id: 'p5', moveReq: { room: 'Nowhere at all', seq: 5 } }], o);
+  assert.deepEqual(un.notes, [{ pc: 'p5', name: '', room: 'Nowhere at all', moved: false }], 'an unknown room is said as asked');
+  assert.equal(R.foldMoves(st, [{ id: 'p1', moveReq: { room: '', seq: 5 } }, { id: 'p2', moveReq: null }], o), null);
+});
+
+test('resetChange: every pending phone request is consumed (an entry with only mseq), so one from before the reset never replays', () => {
+  const pcs = [{ id: 'p1', moveReq: { room: 'Showroom', seq: 900 } }, { id: 'p2', moveReq: null }, { id: 'p3' }];
+  const ch = R.resetChange({ site: 'x', open: [], start: 0, t: 9, crew: { p1: { room: 'Showroom' } }, heard: {} }, pcs);
+  assert.deepEqual(ch, { start: null, t: null, crew: { p1: { mseq: 900 } }, heard: null });
+  assert.equal(R.foldMoves({ crew: ch.crew }, pcs, { beat: 0, rooms: ROOMS, isOpen: () => true }), null, 'and the same request folds to nothing after the reset');
+  assert.deepEqual(R.resetChange({ site: 'x', crew: {} }, pcs.slice(1)), { crew: null }, 'no pending request: crew goes as before');
+});
+
+test('boot.js moveReqOf: a room and a positive seq, else null', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'boot.js'), 'utf8'), m = /function moveReqOf\(m\) \{[\s\S]*?\n  \}/.exec(src);
+  assert.ok(m, 'found in boot.js');
+  const f = new Function('isObj', m[0] + '; return moveReqOf;')((v) => !!v && typeof v === 'object' && !Array.isArray(v));
+  assert.deepEqual(f({ room: 'Showroom', seq: 5 }), { room: 'Showroom', seq: 5 });
+  assert.deepEqual(f({ room: 'Showroom', seq: '1730000000000' }), { room: 'Showroom', seq: 1730000000000 }, 'a numeric string seq');
+  for (const bad of [{ room: 'Showroom', seq: 0 }, { room: 'Showroom', seq: -3 }, { room: 'Showroom', seq: NaN }, { room: 'Showroom', seq: 'abc' }, { room: '  ', seq: 5 }, { room: 'x'.repeat(121), seq: 5 }, { seq: 5 }, { room: 'Showroom' }, null, undefined, 'x', []]) assert.equal(f(bad), null, JSON.stringify(bad));
+  assert.deepEqual(f({ room: 'x'.repeat(120), seq: 1 }), { room: 'x'.repeat(120), seq: 1 });
+});
+
+test('the Run menu offers the time toggle, with a label that follows the state', () => {
+  const it = R.menuItems.filter((i) => i.id === 'show-time')[0];
+  assert.ok(it && typeof it.label === 'function');
+  assert.match(it.label({ st: {} }), /Show the time/); assert.match(it.label({ st: { showTime: true } }), /Hide the time/);
+  let set = null; it.run({ st: { showTime: true }, set: (c) => { set = c; }, rerender() {} }); assert.deepEqual(set, { showTime: null });
+  it.run({ st: {}, set: (c) => { set = c; }, rerender() {} }); assert.deepEqual(set, { showTime: true });
+});
 
 console.log(failed ? 'FAILED ' + failed + ' of ' + (failed + passed) : 'ok ' + passed + ' passed');
 process.exit(failed ? 1 : 0);

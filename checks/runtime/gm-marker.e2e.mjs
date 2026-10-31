@@ -132,7 +132,7 @@ try {
   const d0 = await sendAndWait(() => G.page.click('[data-gm="ipad"]'));
   check(!!d0 && d0.display.kind === 'svg', 'Show on iPad: the player copy goes');
   check(d0 && (d0.display.svg.match(/#fffdf6/g) || []).length === 1 && OM(d0.display.svg) === 0 && names(d0.display.svg).length === 0, '22:40: the PC in the lounge has a marker; the target (in the Showroom, nobody with him, no event) has none');
-  check(d0 && d0.display.svg.includes('\u{1F3AD}'), 'the PC\'s marker carries the Guest costume\'s icon (a glyph, no new text)');
+  check(d0 && !d0.display.svg.includes(String.fromCodePoint(0x1F3AD)), 'the PC marker shows no costume icon: a plain token');
   check(!d0.display.svg.includes('>Guest<'), 'and not the costume\'s name');
 
   const d1 = await follow('a PC walks into his room: his marker appears on the iPad by itself (the next push the page already makes)', (s) => OM(s) === 1 && !names(s).length,

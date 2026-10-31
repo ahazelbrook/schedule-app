@@ -45,7 +45,9 @@ const c1 = BALL.checkPlay(PLAY1, roomNames), c2 = BALL.checkPlay(V2, roomNames);
 if (c1.warnings.length || c2.warnings.length) { console.log('FAIL the fixture plays have warnings: ' + c1.warnings.concat(c2.warnings).join(' | ')); process.exit(1); }
 const site = (name, play) => ({ name, rel: 'x', map: { view: 'iso', theme: 'rulebook' }, patch: { district: 'Nowhere Ward', rooms: ROOMS }, play });
 const PARTS = {
-  console: conFix.parts.console, campaign: { ...conFix.parts.campaign, src: { ...conFix.parts.campaign.src, exportedAt: NOW } },
+  console: conFix.parts.console, campaign: { ...conFix.parts.campaign, src: { ...conFix.parts.campaign.src, exportedAt: NOW }, cards: { 'Pip Quill': '# Pip Quill\n\nPIPCARD-BODY a nervous cook.\n\n> [!quote] SAY\n> Not the lounge, please.' } },
+  prep: { src: { file: 'fixture/prep', exportedAt: NOW }, vault: 'Fixture', links: { 'pip quill': { k: 'npc', name: 'Pip Quill', rel: 'NPCs/Pip Quill.md' } },
+    notes: [{ id: 'n-gala', rel: 'Sessions/gala.md', title: 'Gala prep', blocks: [{ k: 'md', src: '# Gala prep\n\n## Rooms\n\n### Cocktail lounge\n- **Costume:** Brocade jackets.\nLOUNGE-NOTE-BODY the bar runs the length of the room, see [[Pip Quill]].\n\n> [!quote] SAY\n> Mind the glass.\n' }] }] },
   location: { src: { file: 'fixture/location', blockSha: '0', exportedAt: NOW }, T: locFix.T, extra: locFix.extra,
     authored: { v: 1, sites: { [NAME2]: site(NAME2, c2.play), [NAME1]: site(NAME1, c1.play) }, bind: {} } },
 };
@@ -178,7 +180,7 @@ try {
   b = await until(async () => { const x = await ball(); return x && x.crew && x.crew['run-pc1'] ? x : null; }, 8000);
   check(!!b && b.crew['run-pc1'].room === 'Showroom' && b.crew['run-pc1'].moved === 3, 'tap then room: ball.crew has the PC in the Showroom, moved in beat index 3 (' + JSON.stringify(b && b.crew) + ')');
   check(await G.page.$eval('.rv-card[data-room="Showroom"] .rv-pc[data-id="run-pc1"]', (e) => !!e), 'and the chip sits on that card');
-  const chip = await G.page.$('.rv-tray .rv-pc[data-id="run-pc2"]'), cardBox = await (await G.page.$('.rv-card[data-room="Cocktail lounge"]')).boundingBox(), cb = await chip.boundingBox();
+  const chip = await G.page.$('.rv-tray .rv-pc[data-id="run-pc2"]'), cardBox = await (await G.page.waitForSelector('.rv-card[data-room="Cocktail lounge"]', { timeout: 10000 })).boundingBox(), cb = await chip.boundingBox();
   await G.page.mouse.move(cb.x + cb.width / 2, cb.y + cb.height / 2);
   await G.page.mouse.down();
   await G.page.mouse.move(cb.x + cb.width / 2 + 20, cb.y + cb.height / 2 + 20, { steps: 4 });
@@ -191,9 +193,8 @@ try {
   /* costumes are the next ticket's; set them from the server so the marks can be seen */
   await api('PATCH', '/gm/state', { ball: { crew: { 'run-pc1': { disguise: 'guard' }, 'run-pc2': { disguise: 'cook' } } } });
   await G.page.evaluate(() => window.dispatchEvent(new Event('focus')));        /* the GM page re-reads the state when its window gets the focus */
-  check(!!(await G.page.waitForSelector('.rv-card[data-room="Cocktail lounge"] .rv-mk.warn', { timeout: 15000 }).then(() => true, () => false)), 'a cook in the lounge, out of place with Pip Quill there: the warning mark');
-  check(await G.page.$eval('.rv-card[data-room="Showroom"] .rv-pc[data-id="run-pc1"]', (e) => !!e.querySelector('.rv-mk.eye') && e.classList.contains('pos-controlled')), 'a guard in the showroom, belonging, with Wren there: the eye, and a controlled edge');
-  check(await G.page.$eval('.rv-card[data-room="Cocktail lounge"] .rv-pc[data-id="run-pc2"]', (e) => e.classList.contains('pos-risky')), 'the edge colour comes from positionOf (risky)');
+  await G.page.waitForFunction(() => document.querySelector('.rv-card[data-room="Cocktail lounge"] .rv-pc[data-id="run-pc2"]'), null, { timeout: 15000 });
+  check(await G.page.$$eval('.rv-board .rv-mk, .rv-view .rv-mk, .rv-view .rv-cic', (l) => l.length) === 0 && await G.page.$$eval('.rv-view .rv-pc', (l) => l.every((e) => !/pos-/.test(e.className))), 'the costume mechanic is off the board: no warning or eye marks, no costume icon, no edge colour by position');
   check(await G.page.$eval('.rv-card[data-room="Private card rooms"]', (e) => e.classList.contains('fog')) && await G.page.$eval('.rv-card[data-room="Showroom"]', (e) => e.classList.contains('open')), 'cards are dashed (fog) while the room is not open to the players');
   await shot(G.page, 'runv2-02-board');
 
@@ -202,11 +203,13 @@ try {
   const side = () => G.page.$eval('.rv-sec[data-sec="room"]', (e) => e.textContent);
   check(/Cocktail lounge/.test(await side()) && /Dov Ketch/.test(await side()) && /Pip Quill/.test(await side()), 'a room tapped: who is there (a PC and a person)');
   check(await G.page.$eval('.rv-sec[data-sec="room"] .rv-say', (e) => /She never leaves a table/.test(e.textContent) && /SAY/.test(e.textContent)), 'leads in reach: the line as a SAY band');
-  const hb = await G.page.$$eval('.rv-sec[data-sec="room"] [data-rv="heard"]', (b) => b.map((x) => x.textContent + '/' + x.getAttribute('data-way') + '/' + x.getAttribute('data-pc')));
-  check(hb.join() === 'Dov Ketch/A/run-pc2', 'with a Heard by button for the PC who is there (' + hb.join() + ')');
-  await G.page.click('.rv-sec[data-sec="room"] [data-rv="heard"]');
-  b = await until(async () => { const x = await ball(); return x && x.heard ? x : null; }, 8000);
-  check(!!b && b.heard.A && b.heard.A['run-pc2'] === 45, 'Heard by (VV5) writes ball.heard.A.<pc> = the published time (' + JSON.stringify(b && b.heard) + ')');
+  b = await until(async () => { const x = await ball(); return x && x.heard && x.heard.A ? x : null; }, 8000);
+  check(!!b && b.heard.A['run-pc2'] === 45, 'auto-hear: the PC dragged into the lounge heard the lead at the published time (' + JSON.stringify(b && b.heard) + ')');
+  const ub = await G.page.$$eval('.rv-sec[data-sec="room"] [data-rv="unhear"]', (l) => l.map((x) => x.getAttribute('data-way') + '/' + x.getAttribute('data-pc') + '/' + x.getAttribute('aria-pressed')));
+  check(ub.join() === 'A/run-pc2/true', 'In reach shows an Un-hear toggle for the PC who is there, on (' + ub.join() + ')');
+  await G.page.click('.rv-sec[data-sec="room"] [data-rv="unhear"]');
+  b = await until(async () => { const x = await ball(); return x && x.unheard && x.unheard.A ? x : null; }, 8000);
+  check(!!b && b.unheard.A['run-pc2'] === true && !(b.heard && b.heard.A && b.heard.A['run-pc2'] !== undefined), 'Un-hear writes ball.unheard.A.<pc> and takes the heard time back (' + JSON.stringify(b && [b.heard, b.unheard]) + ')');
   await G.page.click('.rv-card[data-room="Luxury penthouse"] .rv-cn');
   check(/Not open to the players/.test(await side()), 'a shut room says so');
   await G.page.click('.rv-sec[data-sec="room"] [data-rv="move"][data-id="run-pc3"]');
@@ -266,6 +269,8 @@ try {
   check(await G.page.$eval('#rv-map', (m) => m.innerHTML.includes('#fffdf6')), 'with its tokens (crew and people)');
   check(!!(await until(async () => (await ball()).view === 'map', 8000)), 'the view is kept in ball.view');
   await shot(G.page, 'runv2-03-map');
+  { const g = await G.page.evaluate(() => { const m = document.querySelector('#rv-map').getBoundingClientRect(), s = document.querySelector('#rv-map svg').getBoundingClientRect(), a = document.querySelector('.rv-side').getBoundingClientRect(); return { mh: m.height, aw: a.width, vh: innerHeight, inside: s.bottom <= m.bottom + 1 && s.right <= m.right + 1 && s.top >= m.top - 1 }; });
+    check(g.inside && g.mh >= g.vh * 0.6 && g.aw <= 250, 'Map view: the map frame fills the column height (' + Math.round(g.mh) + ' of ' + g.vh + '), the svg fits inside it, the side panel narrows (' + Math.round(g.aw) + ' px)'); }
   await G.page.click('[data-rv="view"][data-v="board"]');
   check((await G.page.$$('.rv-card')).length === 6, 'Board brings the cards back');
 
@@ -276,7 +281,7 @@ try {
   const crewRow = (id) => '.rv-crew[data-pc="' + id + '"]';
   const BEAT = '.rv-sec[data-sec="beat"]';
   const od = (x, hhmm) => BALL.placesAt(c2.play, x, BALL.minuteOf(hhmm, '21:00')).od;
-  check(await G.page.$$eval('.rv-sec', (e) => e.map((x) => x.getAttribute('data-sec')).join()) === 'beat,room,crew,job,intel', 'the right column: This beat first (order 0), then the room, the crew, the job and intel');
+  check(await G.page.$$eval('.rv-sec', (e) => e.map((x) => x.getAttribute('data-sec')).join()) === 'room,beat,crew,job,intel', 'the right column: Rooms on top, then This beat, the crew, the job and intel (the Tell, last)');
   check(await ballT() === 75, 'the night stands at 22:15 (beat 6)');
 
   /* four beats: each Next rewrites the card; 23:00 brings the Passage and the looker's wary line */
@@ -289,14 +294,14 @@ try {
     seen.push(await secT('beat'));
   }
   check(/Passage opened 23:00 · Underground counting room ↔ Showroom/.test(seen[2]) && !/Passage opened/.test(seen[3]) && !/Passage opened/.test(seen[1]), 'snapshot 23:00: the Passage opens in the beat it opens, and only there');
-  check(/Pip Quill is where Dov Ketch is/.test(seen[2]) && /GM-ONLY-WARY-2/.test(seen[2]), 'a looker in a PC\'s room: its wary line is shown to the GM');
+  check(!/Pip Quill is where Dov Ketch is/.test(seen[2]) && !/GM-ONLY-WARY-2/.test(seen[2]), 'the costume mechanic is off: no looker row in the beat card');
   check(await G.page.$$eval(BEAT + ' [data-vv="dawn"]', (b) => b.length) === 0, 'no False dawn button on a card with no fx event');
 
   /* 23:30 and 00:00 (jumps): the typed list in speaking order; the fx event carries False dawn */
   await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
   await G.page.keyboard.press('Shift+ArrowRight'); await waitBall((x) => x.t === 150);
   await G.page.waitForFunction(() => document.querySelector('.rv-sec[data-sec="beat"] .rv-sh').textContent === 'This beat · 23:30', null, { timeout: 5000 });
-  check(await G.page.$$eval(BEAT + ' .rv-bi', (l) => l.map((x) => x.className.replace('rv-bi t-', '')).join()) === 'event,move,looker,next', 'snapshot 23:30: the event, the target\'s move, a looker, then what is next');
+  check(await G.page.$$eval(BEAT + ' .rv-bi', (l) => l.map((x) => x.className.replace('rv-bi t-', '')).join()) === 'event,move,next', 'snapshot 23:30: the event, the target\'s move, then what is next (no looker rows)');
   const s2 = await secT('beat');
   check(/GM-ONLY-LABEL-2 · Private card rooms/.test(s2) && /Odette Marsh → Private card rooms until 00:15/.test(s2), 'the move says until when: the target\'s next stop, 00:15');
   await G.page.keyboard.press('Shift+ArrowRight'); await waitBall((x) => x.t === 180);
@@ -377,7 +382,7 @@ try {
 
   /* the job: ways. B is unheard and its lead is said in the counting room, where nobody stands yet */
   const wayB = '.rv-way[data-way="B"]';
-  check(/B GM-ONLY-NAME-2 unheard/.test(await job()) && /A GM-ONLY-NAME-1 heard by Dov Ketch/.test(await job()), 'each way shows its state: B unheard, A heard by Dov Ketch');
+  check(/B GM-ONLY-NAME-2 unheard/.test(await job()) && /A GM-ONLY-NAME-1 unheard/.test(await job()), 'each way shows its state: B unheard, A unheard (the GM un-heard it)');
   await G.page.click(wayB + ' [data-vv="way"]');
   const bt = await G.page.$eval(wayB, (e) => e.textContent.replace(/\s+/g, ' '));
   check(/The lift key hangs on the cook's hook/.test(bt) && /GM-ONLY-WHO-2/.test(bt) && /Underground counting room 21:00–00:00/.test(bt) && /Window 00:15 · Luxury penthouse/.test(bt) && /GM-ONLY-COST-2/.test(bt) && /GM-ONLY-NOTE-6/.test(bt) && /The key/.test(bt), 'expanded: the line and who, where and when, the window, the steps, the cost and the note');
@@ -401,7 +406,7 @@ try {
 
   /* the crew: busy, items, noticed, blown, the costume and the room; the position follows */
   const pc1 = crewRow('run-pc1');
-  check(await G.page.$eval('.rv-crew:first-of-type .rv-crn', (e) => e.textContent) === 'Ira Lund', 'sorted by danger: Ira (desperate, no costume) comes first');
+  { const ns = await G.page.$$eval('.rv-crew .rv-crn', (l) => l.map((x) => x.textContent)); check(ns.length === 3 && ns.join() === ns.slice().sort().join(), 'the crew sits in the table\'s order (by name), not by danger: ' + ns.join()); }
   await G.page.click(pc1 + ' [data-vv="busy"][data-n="1"]');
   b = await waitBall((x) => x.crew['run-pc1'].busy === 195);
   check(!!b && /busy until 00:15/.test(await G.page.$eval(pc1 + ' .rv-busy', (e) => e.textContent)), '+1 beat: busy until t + 15 (195, 00:15)');
@@ -416,30 +421,10 @@ try {
   check(!!b, 'an item toggles into ball.crew.<pc>.items');
   await G.page.click(pc1 + ' [data-vv="item"][data-id="key"]');
   await waitBall((x) => x.crew['run-pc1'].items === undefined);
-  const posIs = (re) => G.page.waitForFunction((a) => new RegExp(a[1]).test(document.querySelector(a[0]).textContent), [pc1 + ' .rv-poschip', re], { timeout: 6000 }).then(() => true, () => false);
-  check(await posIs('Controlled'), 'a guard in the showroom: Controlled');
-  await G.page.click(pc1 + ' [data-vv="noticed"]');
-  b = await waitBall((x) => x.crew['run-pc1'].noticed === true);
-  check(!!b && await posIs('Risky'), 'noticed: one step worse (Risky)');
   await G.page.selectOption(pc1 + ' [data-vv="room"]', 'Cocktail lounge');
-  b = await waitBall((x) => x.crew['run-pc1'].room === 'Cocktail lounge');
-  check(!!b && b.crew['run-pc1'].noticed === false, 'changing the room clears noticed');
-  await G.page.click(pc1 + ' [data-vv="noticed"]');
-  await waitBall((x) => x.crew['run-pc1'].noticed === true);
-  await G.page.selectOption(pc1 + ' [data-vv="costume"]', 'cook');
-  b = await waitBall((x) => x.crew['run-pc1'].disguise === 'cook');
-  check(!!b && b.crew['run-pc1'].noticed === false, 'changing the costume clears noticed too');
-  await G.page.selectOption(pc1 + ' [data-vv="costume"]', 'guard'); await waitBall((x) => x.crew['run-pc1'].disguise === 'guard');
+  await waitBall((x) => x.crew['run-pc1'].room === 'Cocktail lounge');
   await G.page.selectOption(pc1 + ' [data-vv="room"]', 'Showroom'); await waitBall((x) => x.crew['run-pc1'].room === 'Showroom');
-  check(await posIs('Controlled'), 'back as a guard in the showroom: Controlled again');
-  await G.page.click(pc1 + ' [data-vv="blown"][data-id="guard"]');
-  b = await waitBall((x) => JSON.stringify(x.crew['run-pc1'].blown) === '["guard"]');
-  check(!!b && await posIs('Desperate') && BALL.positionOf(c2.play, b, 'run-pc1').pos === 'desperate', 'blown (per costume) changes the position: Desperate');
-  check(await G.page.$eval('.rv-card[data-room="Showroom"] .rv-pc[data-id="run-pc1"]', (e) => e.classList.contains('pos-desperate')), 'and the board chip\'s edge follows');
-  await G.page.click(pc1 + ' [data-vv="pos"]');
-  const conSt = await until(async () => { const s = await gmState(); return s.con && s.con.live && s.con.live.pos === 'desperate' ? s : null; }, 8000);
-  check(!!conSt, 'tapping the position chip sets the console\'s Position to it');
-  await G.page.click(pc1 + ' [data-vv="blown"][data-id="guard"]'); await waitBall((x) => x.crew['run-pc1'].blown === undefined);
+  check(await G.page.$$eval(pc1 + ' [data-vv="costume"], ' + pc1 + ' [data-vv="pos"], ' + pc1 + ' [data-vv="noticed"], ' + pc1 + ' [data-vv="blown"], ' + pc1 + ' .rv-wary', (l) => l.length) === 0, 'the crew row has no costume select, position chip, noticed or blown (the GM sets Position on the console by hand)');
   b = await waitBall((x) => x.crew['run-pc1'].moved === 12);          /* the room select above moved her in this beat */
   check(!!b && await G.page.waitForFunction((s) => document.querySelector(s).getAttribute('aria-pressed') === 'true', pc1 + ' [data-vv="moved"]', { timeout: 5000 }).then(() => true, () => false), 'the moved tick is on after a move (beat index 12 at 00:00)');
   await G.page.click('[data-rv="back"]'); await waitBall((x) => x.t === 165);
@@ -493,11 +478,11 @@ try {
     await sleep(300);
     const m = await S.page.evaluate(() => {
       const r = (s) => { const e = document.querySelector(s); if (!e) return null; const b = e.getBoundingClientRect(); return { top: b.top, bottom: b.bottom, right: b.right, sh: e.scrollHeight, ch: e.clientHeight }; };
-      return { vh: window.innerHeight, focus: document.querySelector('#gm-root').classList.contains('focus'), pane: r('#gm-runv'), head: r('.rv-head'), main: r('.rv-main'), side: r('.rv-side'), sec: r('.rv-sec[data-sec="beat"]'), lastCard: (() => { const c = [...document.querySelectorAll('.rv-card')].pop().getBoundingClientRect(); return c.bottom; })() };
+      return { vh: window.innerHeight, focus: document.querySelector('#gm-root').classList.contains('focus'), pane: r('#gm-runv'), head: r('.rv-head'), main: r('.rv-main'), side: r('.rv-side'), sec: r('.rv-sec[data-sec="room"]'), lastCard: (() => { const c = [...document.querySelectorAll('.rv-card')].pop().getBoundingClientRect(); return c.bottom; })() };
     });
     await shot(S.page, 'runv2-focus-' + w + 'x' + h);
     console.log('     ' + w + 'x' + h + ' ' + JSON.stringify(m));
-    check(m.focus && m.head.bottom < m.vh && m.sec && m.sec.bottom <= m.vh, w + 'x' + h + ': Focus on; the header and the right column\'s top are on screen');
+    check(m.focus && m.head.bottom < m.vh && m.sec && m.sec.top < m.vh, w + 'x' + h + ': Focus on; the header and the right column\'s top are on screen');
     if (w >= 1536) check(m.main.sh <= m.main.ch + 1 && m.lastCard <= m.vh && m.pane.sh <= m.pane.ch + 1, w + 'x' + h + ': the header, the whole board and the right column\'s top fit without scrolling');
     else check(m.lastCard <= m.vh || m.main.sh > m.main.ch, w + 'x' + h + ': the board scrolls on its own if it does not fit');
     await S.c.close();
@@ -538,7 +523,6 @@ try {
     await Z.page.click('.rv-tray .rv-pc[data-id="run-pc2"]'); await Z.page.click('.rv-card[data-room="Cocktail lounge"]');
     await until(async () => { const x = await ball(); return x && x.crew && x.crew['run-pc2'] ? x : null; }, 8000);
     await Z.page.click('.rv-card[data-room="Cocktail lounge"] .rv-cn');
-    await Z.page.click('.rv-sec[data-sec="room"] [data-rv="heard"]');
     const mid = await until(async () => { const x = await ball(); return x && x.heard && x.crew && x.t === 75 ? x : null; }, 8000);
     check(!!mid && !!mid.heard.A, 'two beats, a PC placed and a lead heard are in the ball');
     check(!!(await until(async () => { const m = await mission(); return m && m.hud && m.hud.time === '22:15' ? m : null; }, 10000)), 'and the band follows to 22:15');
@@ -586,6 +570,82 @@ try {
     await type('Blade, tick Fuse');
     check(!!(await until(async () => (await api('GET', '/campaign')).json.doc.clocks.find((k) => k.name === 'Fuse' && k.filled === 3), 10000, 100)) && JSON.stringify((await ball()).crew) === before, 'a clock cue still ticks the clock');
     await Q.c.close();
+  }
+
+  /* ---- B: the Rooms section (notes from the prep part, who is here, an NPC card), the time toggle, the phone's move request ---- */
+  {
+    const N = await open();
+    await N.page.keyboard.press('g');
+    await N.page.waitForSelector('.rv-head', { timeout: 10000 });
+    const st0 = await ball();
+    const pipId = (c2.play.people.find((p) => p.label === 'Pip Quill') || {}).id;
+    const pipRoom = BALL.placesAt(c2.play, st0, st0.t)[pipId];
+    check(!!pipRoom && !!pipRoom.room, 'Pip Quill is somewhere at the published time (' + JSON.stringify(pipRoom) + ')');
+    const sec = '.rv-sec[data-sec="room"]';
+    await N.page.click('.rv-card[data-room="Cocktail lounge"] .rv-cn');
+    const lounge = sec + ' .rv-rm[data-room="Cocktail lounge"]';
+    check(await N.page.$eval(lounge, (e) => /LOUNGE-NOTE-BODY/.test(e.textContent) && !!e.querySelector('.rv-rmnote .pp-say')), 'a room block: the prep note\'s ## Rooms text for the room, its SAY callout drawn as a read-aloud card');
+    check(await N.page.$eval(lounge + ' .rv-rmnote a[href^="#pp:npc:"]', (a) => /Pip Quill/.test(a.textContent)), 'a wikilink in the note is a #pp: link');
+    await N.page.click('.rv-card[data-room="Showroom"] .rv-cn');
+    check(await N.page.$eval(sec + ' .rv-rm[data-room="Showroom"] .rv-nonote', (e) => /No notes for Showroom/.test(e.textContent) && /### Showroom/.test(e.textContent)), 'a room with no section says so, and what to add');
+    check(await N.page.$$eval(sec + ' .rv-rm', (l) => l.length >= 1 && l[0].getAttribute('data-room') === 'Showroom'), 'the tapped room comes first');
+    /* an NPC name opens the card */
+    await N.page.click('.rv-card[data-room="' + pipRoom.room + '"] .rv-cn');
+    await N.page.click(sec + ' .rv-rm[data-room="' + pipRoom.room + '"] .rv-npcname');
+    check(!!(await N.page.waitForSelector('.rv-npcpop', { timeout: 5000 }).then(() => true, () => false)) && await N.page.$eval('.rv-npcpop', (e) => /PIPCARD-BODY/.test(e.textContent) && /Pip Quill/.test(e.querySelector('header').textContent)), 'an NPC name opens the card in a popover');
+    await N.page.keyboard.press('Escape');
+    check(!!(await until(async () => (await N.page.$$('.rv-npcpop')).length === 0, 5000, 100)), 'Esc closes the card');
+    await N.page.click(sec + ' .rv-rm[data-room="' + pipRoom.room + '"] .rv-npcname');
+    await N.page.click('.rv-npcpop [data-rv="npcx"]');
+    check((await N.page.$$('.rv-npcpop')).length === 0, 'the cross closes it too');
+    check(await N.page.$$eval(sec + ' .rv-npcname', (l) => l.every((b) => b.textContent === 'Pip Quill')), 'only an NPC with a card is a button (the others are plain text)');
+    await N.page.click('.rv-card[data-room="Cocktail lounge"] .rv-cn');
+    await N.page.click(lounge + ' .rv-rmnote a[href^="#pp:npc:"]');
+    check(!!(await N.page.waitForSelector('.rv-npcpop', { timeout: 5000 }).then(() => true, () => false)) && await N.page.$eval('.rv-npcpop', (e) => /PIPCARD-BODY/.test(e.textContent)), 'a #pp: NPC link in a room note opens the same card');
+    await shot(N.page, 'runv2-04-rooms-npc');
+    await N.page.keyboard.press('Escape');
+
+    /* the header time toggle in the Run menu */
+    await N.page.click('[data-rv="menu"]');
+    check(await N.page.$$eval('#rv-menu button', (l) => l.some((b) => /Show the time to the players/.test(b.textContent))), 'the Run menu offers Show the time to the players');
+    await N.page.click('#rv-menu button:has-text("Show the time to the players")');
+    check(!!(await until(async () => (await ball()).showTime === true, 8000, 100)), 'it writes ball.showTime');
+    await N.page.click('[data-rv="menu"]');
+    await N.page.click('#rv-menu button:has-text("Hide the time from the players")');
+    check(!!(await until(async () => (await ball()).showTime === undefined, 8000, 100)), 'and again takes it back (the key goes)');
+    check(await N.page.$eval('#rv-time', (e) => parseFloat(getComputedStyle(e).fontSize) <= 26), 'the header time is small (24 px)');
+
+    /* the room note's costume line and SAY lines reach the player card of a PC standing in that (open) room */
+    await N.page.selectOption('.rv-crew[data-pc="run-pc1"] [data-vv="room"]', 'Cocktail lounge');
+    const mc = await until(async () => { const m = (await api('GET', '/campaign')).json.doc.mission; const c = m && m.cards && m.cards['run-pc1']; return c && c.room === 'Cocktail lounge' && c.costumeLine ? { c, hud: m.hud } : null; }, 20000, 200);
+    check(!!mc && mc.c.costumeLine === 'Brocade jackets.' && JSON.stringify(mc.c.here) === '["Mind the glass."]', 'the published card carries costumeLine and here from the room note (' + JSON.stringify(mc && mc.c) + ')');
+    check(!!mc && Array.isArray(mc.hud.rooms) && mc.hud.rooms.some((z) => z.rooms.includes('Cocktail lounge')) && !mc.hud.rooms.some((z) => z.rooms.includes('Luxury penthouse')), 'the band lists the open rooms by zone, and not a room that is shut');
+    /* a phone move request folds in once; a GM move afterwards does not replay it */
+    const crewOf = async (id) => ((await ball()).crew || {})[id];
+    const cur = await crewOf('run-pc1');
+    check(!!cur && typeof cur.room === 'string', 'a PC in the night to ask from (' + JSON.stringify(cur) + ')');
+    const dest = cur.room === 'Showroom' ? 'Cocktail lounge' : 'Showroom';
+    const seq1 = Date.now();
+    check((await api('PATCH', '/characters/run-pc1', { moveReq: { room: dest, seq: seq1 } })).status === 200, 'the owner\'s own character takes a top-level moveReq');
+    const f1 = await until(async () => { const c = await crewOf('run-pc1'); return c && c.room === dest && c.mseq === seq1 ? c : null; }, 20000, 200);
+    check(!!f1, 'the request is folded in: the PC is in ' + dest + ', mseq is the request\'s seq (' + JSON.stringify(await crewOf('run-pc1')) + ')');
+    await N.page.selectOption('.rv-crew[data-pc="run-pc1"] [data-vv="room"]', cur.room);
+    await until(async () => (await crewOf('run-pc1')).room === cur.room, 8000, 100);
+    await sleep(2500);
+    const f2 = await crewOf('run-pc1');
+    check(f2.room === cur.room && f2.mseq === seq1, 'a GM drag afterwards leaves mseq alone and the old request is not replayed (' + JSON.stringify(f2) + ')');
+    const seq2 = seq1 + 1;
+    await api('PATCH', '/characters/run-pc1', { moveReq: { room: 'Luxury penthouse', seq: seq2 } });
+    const f3 = await until(async () => { const c = await crewOf('run-pc1'); return c && c.mseq === seq2 ? c : null; }, 20000, 200);
+    check(!!f3 && f3.room === cur.room, 'a request for a room that is not open sets mseq and moves nobody (' + JSON.stringify(f3) + ')');
+    /* Reset the night consumes every pending request: the PC keeps only its mseq, so nothing replays after the reset */
+    const seq3 = seq2 + 1;
+    await api('PATCH', '/characters/run-pc1', { moveReq: { room: 'Showroom', seq: seq3 } });
+    await until(async () => (await crewOf('run-pc1')).mseq === seq3, 20000, 200);
+    await N.page.click('.rv-head .rv-reset');
+    const rb = await until(async () => { const x = await ball(); return x && !x.start && x.crew && x.crew['run-pc1'] ? x : null; }, 15000, 200);
+    check(!!rb && JSON.stringify(rb.crew['run-pc1']) === JSON.stringify({ mseq: seq3 }), 'Reset the night leaves each pending request consumed (crew entry holds only mseq: ' + JSON.stringify(rb && rb.crew) + ')');
+    await N.c.close();
   }
 
   check(!errors.length, 'no page errors: ' + errors.slice(0, 3).join(' | '));

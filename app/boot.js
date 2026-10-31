@@ -700,6 +700,12 @@
      figure spec or the rest of the sheet. From the living sheet (doc.play; the creator's sheet for a field play lacks): the vice
      and purveyor, the contacts as [{ name, role, kind: 'friend' | 'rival' | null }] (the tracker's array, or the older map
      { 'Name, role': kind } read the same way) and the clocks as { name, size, filled }. Sorted by name. */
+  /* a phone's move request (a player may PATCH their own character: top-level moveReq { room, seq }) when it is a room name and a positive seq, else null */
+  function moveReqOf(m) {
+    if (!isObj(m) || typeof m.room !== 'string' || !m.room.trim() || m.room.length > 120) return null;
+    var s = Number(m.seq);
+    return isFinite(s) && s > 0 ? { room: m.room, seq: s } : null;
+  }
   function slimCharacter(id, d) {
     if (!isObj(d)) return null;
     var p = isObj(d.play) ? d.play : {}, sh = isObj(d.sheet) ? d.sheet : {}, t = function (v) { return v == null ? '' : String(v); };
@@ -710,7 +716,8 @@
     return {
       id: String(id), owner: t(d.owner), name: t(d.name), alias: t(d.alias), playbook: t(d.playbook), playbookName: t(d.playbookName),
       vice: t(p.vice != null ? p.vice : sh.vice), purveyor: t(p.purveyor != null ? p.purveyor : sh.purveyor), contacts: contacts,
-      clocks: (Array.isArray(p.clocks) ? p.clocks : []).filter(isObj).map(function (c) { return { name: t(c.name), size: Math.max(0, Math.floor(+c.size || 0)), filled: Math.max(0, Math.floor(+c.filled || 0)) }; })
+      clocks: (Array.isArray(p.clocks) ? p.clocks : []).filter(isObj).map(function (c) { return { name: t(c.name), size: Math.max(0, Math.floor(+c.size || 0)), filled: Math.max(0, Math.floor(+c.filled || 0)) }; }),
+      moveReq: moveReqOf(d.moveReq)
     };
   }
   function gmCharacters() {

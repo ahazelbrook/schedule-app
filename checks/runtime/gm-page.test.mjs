@@ -353,7 +353,7 @@ function fakeBrowser(over) {
   const doc = { listeners: {}, activeElement: null, hidden: false, createElement: (t) => new FEl(t, doc), addEventListener(t, fn) { (doc.listeners[t] = doc.listeners[t] || []).push(fn); },
     querySelector: () => null, querySelectorAll: () => [] };
   doc.body = new FEl('body', doc); doc.body.dataset.mode = 'gm'; doc.activeElement = doc.body;
-  const ls = new Map(), toasts = [];
+  const ls = new Map([['b68.gm.capbar', '1']]), toasts = [];     // the capture bar is off by default; its keys work only while it shows
   const W = { document: doc, localStorage: { getItem: (k) => (ls.has(k) ? ls.get(k) : null), setItem: (k, v) => { ls.set(k, String(v)); }, removeItem: (k) => { ls.delete(k); } },
     matchMedia: () => ({ matches: false }), addEventListener() {}, confirm: () => true, open() {}, B68: { toast: (m, bad) => toasts.push([m, !!bad]) },
     B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmScore: SCM, B68GmDowntime: DT, B68DowntimeTables: DTT, B68GmChase: CH, B68Content: CT, setTimeout, clearTimeout, console };
@@ -528,6 +528,22 @@ await test('6h3. Dots chip: one tap selects, tap again clears, default unset; L 
   assert.ok(lines.some((t) => /^A 4\/5 \(risky\): /.test(t)), JSON.stringify(lines));
   assert.ok(lines.some((t) => /^A 1–3 \(risky, 0d\): /.test(t)), JSON.stringify(lines));
   assert.ok(lines.some((t) => /^A 4\/5 \(risky, 2d\): /.test(t)), JSON.stringify(lines));
+});
+
+await test('6h4. the capture bar is off by default: its keys do nothing until the Menu turns it on; the Menu item flips it and keeps it', async () => {
+  const br = fakeBrowser(); br.W.localStorage.removeItem('b68.gm.capbar');
+  const h = await openPage({ br, camp: { session: { number: 5 }, crew: {}, log: [] } });
+  assert.ok(!h.q('#gm-root').classList.contains('capbar'), 'hidden by default (the CSS hides #gm-foot without the capbar class)');
+  assert.equal(h.q('#gm-menu-capbar').textContent, 'Show the capture bar');
+  h.press('m'); h.press('l');
+  assert.equal(h.q('[data-gm="arm"][data-b="m"]').getAttribute('aria-pressed'), 'false', 'the bucket key arms nothing while the bar is hidden');
+  h.q('[data-gm="menu"]').click(); h.q('.gm-menu-list [data-gm="capbar"]').click();
+  assert.equal(br.W.localStorage.getItem('b68.gm.capbar'), '1'); assert.ok(h.q('#gm-root').classList.contains('capbar'));
+  h.q('[data-gm="menu"]').click();
+  assert.equal(h.q('#gm-menu-capbar').textContent, 'Hide the capture bar');
+  h.press('m'); assert.equal(h.q('[data-gm="arm"][data-b="m"]').getAttribute('aria-pressed'), 'true', 'with the bar showing the key arms the bucket');
+  h.q('.gm-menu-list [data-gm="capbar"]').click();
+  assert.equal(br.W.localStorage.getItem('b68.gm.capbar'), '0'); assert.ok(!h.q('#gm-root').classList.contains('capbar'));
 });
 
 await test('6i. captures record their session (numbers only): typed lines and L-filed rolls; absent when the campaign has none; text never in the campaign', async () => {

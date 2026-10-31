@@ -96,6 +96,7 @@ try {
   async function open(user, hash, { width = 1280, height = 900, mobile = false, ctx = null } = {}) {
     const c = ctx || await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width, height }, serviceWorkers: 'block', isMobile: mobile, hasTouch: mobile, deviceScaleFactor: mobile ? 2 : 1, acceptDownloads: true });
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
+    await c.addInitScript(() => { try { localStorage.setItem('b68.gm.capbar', '1'); } catch (e) { /* the capture bar is off by default; these tests use it */ } });
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(user + ': ' + m.text()); });
     page.on('pageerror', (e) => errors.push(user + ' pageerror: ' + e.message));

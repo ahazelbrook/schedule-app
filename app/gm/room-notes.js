@@ -79,7 +79,7 @@
     var m = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$/.exec(t);
     return m ? { level: m[1].length, text: str(m[2]).replace(/(?:^|[ \t]+)#+$/, '').trim() } : null;
   }
-  function isRooms(text) { var n = normRoom(text); return n === 'rooms' || n.indexOf('rooms ') === 0; }
+  function isRooms(text) { return /^(?:the\s+)?rooms(?:\s*[·\-–—:].*)?$/i.test(str(text).normalize("NFKC").trim()); } /* "Rooms", or "Rooms" + a separator + anything; not "Rooms and props" */
 
   /* the first "- **Costume:**" bullet (also "**Costume**:"); an empty one is null, the search stops there */
   function costumeOf(lines) {
