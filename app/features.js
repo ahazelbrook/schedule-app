@@ -1,0 +1,143 @@
+/* features.js — the switchboard's registry (suite ticket W0.2, no switch of its own).
+
+   Every new feature of the suite ships behind a switch, default OFF. This file is the one list of them: the GM page's Menu -> Switchboard draws it, the
+   Worker reads it to know which ids a phone or the iPad may be told, and the tests read it. Pure: no DOM, no clock, no network.
+
+   Window.B68Features, and module.exports under Node (functions/_lib/features.js imports it for the Worker).
+
+   A switch: { id, label, surface, stage, default: false, doc, saturday, legacy? }
+     id         letters, digits, dots and dashes ("spine.rail", "phoneCards"); the id is the key everywhere
+     label      the Switchboard's line            doc   one line on what it does
+     surface    'gm'       GM-only: lives in the GM state document (`features`), never copied anywhere a player can read
+                'display'  the iPad: copied into the campaign document's `features`
+                'phone'    a player's phone: copied into the campaign document's `features`
+     stage      the Switchboard's group (STAGES)
+     default    always false: nothing is on until the GM turns it on, and All off puts everything back
+     saturday   what it should be on Saturday: 'on', 'try' (the GM's call on Friday) or 'off'
+     legacy     (optional) a top-level key of the GM state document that held this switch before the registry (phoneCards); read as a fallback and kept in step on a write
+
+   Where the values live
+     GM state document    features: { <id>: true | false }      every switch, whatever its surface (the source of truth)
+     campaign document    features: { <id>: true | false }      the display and phone switches only, a complete map; written by the GM page (the server cleans it again)
+   A value is ON only when it is exactly true; absent, false or anything else is off.
+
+   How a surface reads
+     the GM page    valueOf(S.doc, id), live, on every use (it is the only writer of its state document)
+     a phone        B68Flags.apply(campaignDoc) on every campaign arrival (app/sheet/flags.js, hooked in boot.js), then B68Flags.on(id)
+     the iPad       B68Flags.apply(answer) on every display poll (the answer's `features`), then B68Flags.on(id)
+
+   API
+     STAGES SURFACES SATURDAY
+     register(def) -> def        add a switch (a later ticket adds its line to SWITCHES below; tests use register/unregister)
+     unregister(id) -> bool      reset()
+     get(id) list() byStage() -> [{ stage: {id,label}, switches }]      idsFor(surface) -> [id]      publicIds() -> display and phone ids
+     valueOf(stateDoc, id) -> bool                                       values(stateDoc) -> { id: bool }
+     publicMap(stateDoc) -> { id: bool }   the display and phone switches, complete (what the campaign document should hold)
+     patchFor(stateDoc, id, on) -> a GM state patch                      patchAllOff(stateDoc) -> a GM state patch
+     cleanPublic(raw) -> { id: bool }      only display and phone ids that are registered, only booleans: a GM-only or unknown id is dropped
+     sameOn(a, b) -> bool                  the two maps turn on the same switches (absent is off) */
+(function (root, factory) {
+  'use strict';
+  var M = factory();
+  if (typeof module === 'object' && module && module.exports) module.exports = M;
+  else root.B68Features = M;
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  var SURFACES = ['gm', 'display', 'phone'];
+  var SATURDAY = ['on', 'try', 'off'];
+  /* the groups the Switchboard draws, in order (the plan's stages; `existing` is what the app already had behind a toggle) */
+  var STAGES = [
+    { id: 'existing', label: 'Already in the app' },
+    { id: 'spine', label: 'Stage 1: the spine' },
+    { id: 'map', label: 'Stage 2: the maps' },
+    { id: 'face', label: 'Stage 3: the figures' },
+    { id: 'room', label: 'Stage 4: the room' },
+    { id: 'ai', label: 'Blade (AI)' },
+    { id: 'between', label: 'Stage 5: between sessions' },
+    { id: 'fx', label: 'Effects' }
+  ];
+  var ID_RE = /^[A-Za-z][A-Za-z0-9.-]{0,39}$/;
+
+  /* THE SWITCHES. A ticket adds its own line here, default false. Keep the order: it is the order of the Switchboard. */
+  var SWITCHES = [
+    { id: 'phoneCards', label: 'Phone mission cards', surface: 'phone', stage: 'existing', default: false, saturday: 'off', legacy: 'phoneCards',
+      doc: 'Phones show a mission card and a Move row while a night runs. Off: phones are character sheets only and the published mission carries no cards (the iPad is unchanged).' }
+  ];
+
+  function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+  function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
+  function has(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+
+  var list = [];
+  function build(d) {
+    if (!isObj(d)) throw new Error('a switch is an object');
+    var id = str(d.id);
+    if (!ID_RE.test(id)) throw new Error('switch id: letters, digits, dots and dashes: ' + id);
+    if (SURFACES.indexOf(d.surface) < 0) throw new Error('switch ' + id + ': surface is gm, display or phone');
+    if (d.default !== false) throw new Error('switch ' + id + ': the default is off (default: false)');
+    if (!STAGES.some(function (s) { return s.id === d.stage; })) throw new Error('switch ' + id + ': unknown stage ' + str(d.stage));
+    if (SATURDAY.indexOf(d.saturday) < 0) throw new Error('switch ' + id + ': saturday is on, try or off');
+    var label = str(d.label).trim(), doc = str(d.doc).trim();
+    if (!label || !doc) throw new Error('switch ' + id + ': a label and a line on what it does');
+    var out = { id: id, label: label, surface: d.surface, stage: d.stage, default: false, doc: doc, saturday: d.saturday };
+    if (d.legacy !== undefined) { if (!ID_RE.test(str(d.legacy))) throw new Error('switch ' + id + ': legacy key'); out.legacy = str(d.legacy); }
+    return out;
+  }
+  function seed() { list = SWITCHES.map(build); ids(); }
+  function ids() { var seen = {}; list.forEach(function (s) { if (seen[s.id]) throw new Error('switch ' + s.id + ' is listed twice'); seen[s.id] = 1; }); }
+  seed();
+
+  function get(id) { for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i]; return null; }
+  function register(def) {
+    var s = build(def);
+    if (get(s.id)) throw new Error('switch ' + s.id + ' is already registered');
+    list.push(s);
+    return s;
+  }
+  function unregister(id) { var s = get(id); if (!s) return false; list.splice(list.indexOf(s), 1); return true; }
+  function reset() { seed(); }
+  function all() { return list.slice(); }
+  function byStage() {
+    return STAGES.map(function (st) { return { stage: st, switches: list.filter(function (s) { return s.stage === st.id; }) }; }).filter(function (g) { return g.switches.length; });
+  }
+  function idsFor(surface) { return list.filter(function (s) { return s.surface === surface; }).map(function (s) { return s.id; }); }
+  function publicIds() { return list.filter(function (s) { return s.surface !== 'gm'; }).map(function (s) { return s.id; }); }
+
+  function valueOf(doc, id) {
+    var s = get(id); if (!s || !isObj(doc)) return false;
+    if (isObj(doc.features) && typeof doc.features[id] === 'boolean') return doc.features[id];
+    return !!s.legacy && doc[s.legacy] === true;
+  }
+  function values(doc) { var o = {}; list.forEach(function (s) { o[s.id] = valueOf(doc, s.id); }); return o; }
+  function publicMap(doc) { var o = {}; list.forEach(function (s) { if (s.surface !== 'gm') o[s.id] = valueOf(doc, s.id); }); return o; }
+
+  function patchFor(doc, id, on) {
+    var s = get(id); if (!s) throw new Error('unknown switch: ' + str(id));
+    var f = {}, p = { features: f };
+    f[id] = on === true;
+    if (s.legacy) p[s.legacy] = on === true;
+    return p;
+  }
+  function patchAllOff() {
+    var f = {}, p = { features: f };
+    list.forEach(function (s) { f[s.id] = false; if (s.legacy) p[s.legacy] = false; });
+    return p;
+  }
+
+  function cleanPublic(raw) {
+    var out = {};
+    if (!isObj(raw)) return out;
+    list.forEach(function (s) { if (s.surface !== 'gm' && has(raw, s.id) && typeof raw[s.id] === 'boolean') out[s.id] = raw[s.id]; });
+    return out;
+  }
+  function sameOn(a, b) {
+    a = isObj(a) ? a : {}; b = isObj(b) ? b : {};
+    var k = {}; Object.keys(a).forEach(function (x) { k[x] = 1; }); Object.keys(b).forEach(function (x) { k[x] = 1; });
+    return Object.keys(k).every(function (x) { return (a[x] === true) === (b[x] === true); });
+  }
+
+  return { STAGES: STAGES, SURFACES: SURFACES, SATURDAY: SATURDAY, register: register, unregister: unregister, reset: reset, get: get, list: all, byStage: byStage,
+    idsFor: idsFor, publicIds: publicIds, valueOf: valueOf, values: values, publicMap: publicMap, patchFor: patchFor, patchAllOff: patchAllOff,
+    cleanPublic: cleanPublic, sameOn: sameOn };
+});

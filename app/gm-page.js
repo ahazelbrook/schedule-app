@@ -2250,7 +2250,7 @@
       '<a href="#display" title="The players’ screen: open this on the iPad">Open the display page (for the iPad)</a>' +
       '<button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="clearcap">Clear tonight’s capture</button><button type="button" data-gm="update">Update pack</button>' +
       '<button type="button" data-gm="capbar" id="gm-menu-capbar" title="The bottom bar that files a roll, a name or a moment"></button>' +
-      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' + wsMenuLine() +
+      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' + swMenuLine() + wsMenuLine() +
       '<a href="#t">The table</a><a href="#rules">Rules</a><a href="#cast">The cast</a><a href="#">Home</a>' +
       '<button type="button" class="bad" data-gm="forget">Forget GM data on this device</button></span></span>' +
       '<div class="gm-signed" id="gm-signed" role="alert" hidden>' + esc(SIGNED_OUT_MSG) + '</div></div>';
@@ -2259,6 +2259,17 @@
     var m = $q('.gm-menu-list'), b = $q('[data-gm="menu"]'); if (!m) return;
     if (on) { renderLiveItem(); syncCapBar(); m.removeAttribute('hidden'); } else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
   }
+  /* W0.2: the switchboard (gm/switchboard.js): one per page session, made on first use. Its host is this page's own patch, campaign and api. */
+  function swInst() {
+    if (!S || !W.B68GmSwitchboard || !W.B68Features) return null;
+    if (!S.sw) S.sw = W.B68GmSwitchboard.create({
+      doc: function () { return S.doc; }, patch: patch, campaign: function () { return camp; }, root: function () { return $q('#gm-root'); }, toast: toast,
+      publish: function (map) { var a = (S && S.api) || keptApi; return a && typeof a.publishFeatures === 'function' ? a.publishFeatures(map) : Promise.reject(new Error('The table is not available here.')); },
+      redraw: function () { if (S && S.status === 'ready') { renderBar(); renderRun(); } }
+    });
+    return S.sw;
+  }
+  function swMenuLine() { return W.B68GmSwitchboard && W.B68Features ? '<button type="button" data-gm="switchboard" id="gm-menu-switchboard" title="Every new feature has a switch here, off until you turn it on. All off puts the app back as it was; no reload">Switchboard</button>' : ''; }
   function wsMenuLine() { return W.B68GmWorkshop ? W.B68GmWorkshop.menuLine() : ''; }
   /* Live sync (design 2.5): the GM state's `live`, on unless it is an explicit false. The server puts it in the data poll's answer and the
      display's, so every page follows it within one poll; only this menu item sets it. */
@@ -4112,9 +4123,10 @@
      The deny list is the map's hidden names (tokenHidden: hidden rooms, threats, the watcher), the hidden NPCs and clocks
      (hiddenSecretNames) and play.secret. The people's and costumes' labels are NOT in it: a card names its own costume. */
   /* Phone cards (ticket P): the GM state's phoneCards, OFF unless an explicit true (the inverse of mirror). While off the published mission carries no cards. */
-  function phoneCardsOn() { return !!(S && S.doc && S.doc.phoneCards === true); }
+  function phoneCardsOn() { var sb = swInst(); return sb ? sb.on('phoneCards') : !!(S && S.doc && S.doc.phoneCards === true); }     /* W0.2: the switch lives in the switchboard (features.js); the old key is its fallback */
   function setPhoneCards(on) {
-    if (!patch({ phoneCards: on === true }, { force: true })) return false;
+    var sb = swInst();
+    if (!(sb ? sb.set('phoneCards', on === true) : patch({ phoneCards: on === true }, { force: true }))) return false;
     if (S.saver && S.saver.flush) S.saver.flush();
     if (S.mission) S.mission.publishNow({ force: true });       /* the stored cards go (or come back) at once; the server replaces the mission whole */
     toast(on ? 'Phone cards are on: each phone gets its Mission card.' : 'Phone cards are off: phones are character sheets only.');
@@ -6095,6 +6107,7 @@
     switch (a) {
       case 'menu': { var ml2 = $q('.gm-menu-list'); menuOpen(!!(ml2 && ml2.hasAttribute('hidden'))); break; }
       case 'focus': toggleFocus(); break;
+      case 'switchboard': menuOpen(false); { var sbi = swInst(); if (sbi) sbi.toggle(); } break;      /* W0.2 */
       case 'workshop': menuOpen(false); if (W.B68GmWorkshop) W.B68GmWorkshop.toggle($q('#gm-root'), { toast: toast }); break;      /* W0.5 */
       case 'drawer': drawerToggle(); break;
       case 'dtab': drawerTab(b.getAttribute('data-tab')); break;
@@ -6333,6 +6346,7 @@
       renderRail(); renderBar(); scMaybeRedraw(); runStale();
       apClocksFeed(); apSubjects();
       if (S.mission) S.mission.noteClocks();      /* the alarm clock's fill or visibility is on the players' band */
+      { var swc = swInst(); if (swc) swc.heal(); }      /* W0.2: the campaign document's switch copy follows the GM state's, on every arrival */
       /* the stage changed: the NPC tab's buttons follow */
       if ((isObj(camp) && isObj(camp.scene) ? JSON.stringify(camp.scene.npcs || {}) : '') !== before) {
         [].forEach.call(S.root.querySelectorAll('[data-gm="npcstage"]'), function (b) { var on = staged(b.getAttribute('data-id')); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Off stage' : 'Put on stage'; b.classList.toggle('primary', !on); });

@@ -353,6 +353,13 @@
   };
   /* The fourth part (design 5.3, 5.5d): GET ...&hseq=N adds a top-level `mission`: { hseq, hud } (hud an object, or null for no mission) or
      { hseq, unchanged: true }. Anything else is ignored (an older server sends none). */
+  /* W0.2: the answer's `features` (the display and phone switches the Worker may tell the iPad): only booleans; {} when the answer has none (an older server, none stored) */
+  Pure.featuresPart = function (r) {
+    var f = r && r.features, out = {};
+    if (!isObj(f)) return out;
+    Object.keys(f).forEach(function (k) { if (typeof f[k] === 'boolean') out[k] = f[k]; });
+    return out;
+  };
   Pure.missionPart = function (r) {
     var m = r && r.mission;
     if (!isObj(m) || typeof m.hseq !== 'number' || !isFinite(m.hseq)) return null;
@@ -489,6 +496,7 @@
             hseq = mis.hseq;
             if (!mis.unchanged && o.onMission) { try { o.onMission(mis.hud); } catch (e) { /* ditto */ } }
           }
+          if (typeof o.onFeatures === 'function') { try { o.onFeatures(Pure.featuresPart(r)); } catch (e) { /* ditto */ } }   /* W0.2: the iPad's switches, on every answer */
           if (stt) {
             if (stt.seq !== sseq) moved = true;
             sseq = stt.seq; sttSeen = true;
@@ -1897,6 +1905,7 @@
            the small one; an adapter that does not simply gets the transcriber part in full each time */
         fetch: function (seq, aseq, sseq, hseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq, sseq === null ? undefined : sseq, hseq === null ? undefined : hseq); },
         onMission: function (hud) { applyBand(hud); },
+        onFeatures: function (f) { if (root.B68Flags) root.B68Flags.apply({ features: f }); },
         onSkew: function (ms) { s.skew = ms; },
         isHidden: function () { return document.hidden; },
         onAmbient: function (doc) { applyAmbient(doc); },

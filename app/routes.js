@@ -31,7 +31,7 @@
        it is there; the cast, because its "on stage" banner shows on every screen during a scene */
     core: ['tracker.css', 'schedule.css', 'rules.css', 'cast.css',
       'content.js', 'core.js', 'zoom.js', 'steps.js', 'tracker.js', 'schedule.js',
-      'markdown.js', 'rules.js', 'cast-page.js', 'name-edit.js', 'runtime/cf.js', 'routes.js', 'boot.js'],
+      'markdown.js', 'rules.js', 'cast-page.js', 'name-edit.js', 'sheet/flags.js', 'runtime/cf.js', 'routes.js', 'boot.js'],
     /* the figure kit and the cast canon (about 1 MB): NOT in the core. First paint draws no figure; boot.js asks for this bundle
        once the route has rendered (B68Load.kit), every caller shows a placeholder and redraws on B68Load.onFigures. gm and
        display need it before they run (DEPS); season.js and the other callers wait for it themselves. sw.js precaches it for everyone but does not require it at install */
@@ -39,7 +39,7 @@
     table: TABLE,
     print: TABLE,
     crews: ['crews.js'],   /* just the crew playbooks' text, for the sheet's roll-panel abilities strip (the table bundle loads it too, once) */
-    gm: ['gm.css', 'prep.css', 'maps/map-kit.js', 'mapzoom.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'gm/night.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'gm/run-view.js', 'gm/room-notes.js', 'gm/mission-publish.js', 'cue-verbs.js', 'cue.js', 'gm/cogm.js', 'gm/autopilot.js', 'gm/tools.js', 'gm/workshop.js', 'gm-page.js'],
+    gm: ['gm.css', 'prep.css', 'maps/map-kit.js', 'mapzoom.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'gm/night.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'gm/run-view.js', 'gm/room-notes.js', 'gm/mission-publish.js', 'cue-verbs.js', 'cue.js', 'gm/cogm.js', 'gm/autopilot.js', 'features.js', 'gm/tools.js', 'gm/workshop.js', 'gm/switchboard.js', 'gm-page.js'],
     display: ['display.css', 'cue-verbs.js', 'cue.js', 'stt.js', 'display-page.js']
   };
   /* every stylesheet, in cascade order (index.html's order from before lazy loading) */

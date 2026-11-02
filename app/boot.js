@@ -518,6 +518,7 @@
       var data = snap && snap.exists !== false && typeof snap.data === 'function' ? snap.data() : null;
       if (!isObj(data)) data = null;
       tableExists = !!data; tableLatest = data ? clone(data) : null; campLoaded = true;
+      if (window.B68Flags) { try { window.B68Flags.apply(data); } catch (e) { if (window.console) console.error(e); } }   /* W0.2: the switches this campaign arrival carries, on every poll */
       var Cm = campaignMod();
       if (tableOn && Cm) { try { Cm.update(data ? clone(data) : null); } catch (e) { toast('The table could not render: ' + (e && e.message || e), true); } }
       var S2 = schedMod(); if (S2) { try { S2.card.update(data ? clone(data) : null); } catch (e) { if (window.console) console.error(e); } }
@@ -692,6 +693,11 @@
       publishMission: function (mission) {
         if (!campRef || typeof campRef.update !== 'function') return Promise.reject(new Error('The table is not available here.'));
         return Promise.resolve().then(function () { return campRef.update({ mission: mission === null ? null : clone(mission) }); }).then(function () { return true; });
+      },
+      /* W0.2: the display and phone switches, copied into the campaign document's `features` (GM only; the server cleans the map again) */
+      publishFeatures: function (features) {
+        if (!campRef || typeof campRef.update !== 'function') return Promise.reject(new Error('The table is not available here.'));
+        return Promise.resolve().then(function () { return campRef.update({ features: clone(features) }); }).then(function () { return true; });
       },
       saveFile: function (name, data) { saveFile(name, data); },
       copy: function (text, ok) { copyText(text, ok); }

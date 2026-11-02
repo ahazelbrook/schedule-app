@@ -3,6 +3,8 @@
 //      Workshop line; the Switchboard line is the only addition.
 //   2. A test tool tagged Planning (registered before the page opens) hides outside Planning when the filter is on, "All tools" and off bring it back, the tab on screen is kept,
 //      its pane draws through mount(); a Workshop tool shows Menu -> Workshop and opens in the sheet.
+//   3. Menu -> Switchboard: Phone mission cards flips, lands in the GM state (features and the old key) and in the campaign document; a phone and the iPad page learn of it
+//      on a poll, no reload; All off puts them back, no reload; a GM-only test switch never reaches the campaign document, a phone's network traffic or its flags.
 //   SEAMS_ROOT=<another worktree> with --snapshot <dir> only records the markup and screenshots (1280 and 390 px) of the page as it is there: run it on origin/main and on
 //   this branch and compare (the W0.5 "screenshots match today's" check).
 //   PW_MODULE=<playwright install> PW_CHANNEL=msedge node checks/runtime/gm-seams.e2e.mjs      (GM_SHOTS=<dir> keeps screenshots)
@@ -101,6 +103,7 @@ try {
     const TABS = ['prep', 'rules', 'location', 'scenes', 'score', 'chase', 'npc', 'downtime', 'cards', 'ipad'];
     const hasAll = (tabs) => TABS.every((id) => tabs.includes('data-panel="' + id + '"'));
     check(hasAll(base1280.tabs) && !/hidden/.test(base1280.tabs) && !/hidden/.test(base1280.seg), 'filter off, no switch on: every tab and every phone chip is there and none is hidden');
+    check(/Phone|Switchboard/.test(base1280.menu) && /id="gm-menu-switchboard"/.test(base1280.menu), 'Menu has the Switchboard line');
     check(!/Workshop/.test(base1280.menu), 'and no Workshop line while nothing is behind it');
     check(base1280.panes === 'prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,run', 'the panes are the page\'s own, in its order: ' + base1280.panes);
 
@@ -111,6 +114,7 @@ try {
         T.register({ id: 'testtool', label: 'Test tool', phases: ['plan'], key: 'Q', mount(box) { box.textContent = 'TESTTOOL-BODY'; } });
         T.register({ id: 'shopper', label: 'Shopper', phases: 'all', workshop: true, mount(box) { box.textContent = 'SHOPPER-BODY'; } });
       });
+      hook('B68Features', (F) => { F.register({ id: 'test.gm', label: 'Test GM-only switch', surface: 'gm', stage: 'spine', default: false, saturday: 'off', doc: 'A GM-only test switch.' }); });
     };
     const G = await open('#gm', { init: INIT });
     const g = G.page;
@@ -149,7 +153,44 @@ try {
     check(await g.$eval('#gm-sheet-workshop', (e) => e.hidden), 'and the sheet closes');
     check(!(await shown(g, '.gm-tab')).includes('shopper'), 'a Workshop tool has no tab');
 
-    await G.c.close();
+    /* ---- 3. the switchboard ---- */
+    const phoneTraffic = [];
+    const PH = await open('#t', { user: PLAYER, record: phoneTraffic });
+    const DS = await open('#display');
+    const flag = (p, id) => p.evaluate((i) => (window.B68Flags ? window.B68Flags.on(i) : null), id);
+    check((await flag(PH.page, 'phoneCards')) === false && (await flag(DS.page, 'phoneCards')) === false, 'a phone and the iPad page start with the switch off');
+    await PH.page.evaluate(() => { window.__phoneMarker = 'same page'; }); await DS.page.evaluate(() => { window.__dsMarker = 'same page'; }); await g.evaluate(() => { window.__gmMarker = 'same page'; });
+    await g.click('[data-gm="menu"]');
+    await g.click('#gm-menu-switchboard');
+    check(await g.$eval('#gm-sheet-switchboard', (e) => !e.hidden && /Phone mission cards/.test(e.textContent) && /Test GM-only switch/.test(e.textContent) && /All off/.test(e.textContent)), 'Menu -> Switchboard lists the switches by stage, with All off');
+    check(await g.$eval('#gm-sheet-switchboard', (e) => /Already in the app/.test(e.textContent) && /Stage 1: the spine/.test(e.textContent)), 'grouped by stage');
+    await g.click('[data-sb="phoneCards"]');
+    await g.click('[data-sb="test.gm"]');
+    await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.features && d.features['test.gm'] === true && d.features.phoneCards === true; }, 8000);
+    const st2 = (await api('GET', '/gm/state')).json.doc;
+    check(st2.features && st2.features.phoneCards === true && st2.features['test.gm'] === true && st2.phoneCards === true, 'the GM state holds both switches (and the old phoneCards key): ' + JSON.stringify(st2.features) + ' ' + st2.phoneCards);
+    const camp = await until(async () => { const c = (await api('GET', '/campaign', null, PLAYER)).json.doc; return c.features && c.features.phoneCards === true ? c : null; }, 8000);
+    check(!!camp && JSON.stringify(camp.features) === '{"phoneCards":true}', 'the campaign document holds the phone switch only: ' + JSON.stringify(camp && camp.features));
+    check(await until(async () => (await flag(PH.page, 'phoneCards')) === true, 8000), 'the phone learns of it within a poll');
+    check(await until(async () => (await flag(DS.page, 'phoneCards')) === true, 8000), 'and so does the iPad page');
+    check(await g.$eval('[data-sb="phoneCards"]', (e) => e.getAttribute('aria-pressed') === 'true' && e.textContent === 'On'), 'the sheet shows it on');
+    check((await g.evaluate(() => window.B68GmPage && 1)) !== undefined, 'the GM page is up');
+
+    await g.click('[data-sb-alloff]');
+    await until(async () => (await api('GET', '/gm/state')).json.doc.features['test.gm'] === false, 8000);      /* the page saves its state a moment after the click */
+    const st3 = (await api('GET', '/gm/state')).json.doc;
+    await until(async () => { const c = (await api('GET', '/campaign', null, PLAYER)).json.doc; return c.features && c.features.phoneCards === false; }, 8000);
+    check(Object.values(st3.features).every((v) => v === false) && st3.phoneCards === false, 'All off: every switch is false in the GM state, the old key too: ' + JSON.stringify(st3.features));
+    check(await until(async () => (await flag(PH.page, 'phoneCards')) === false, 8000) && await until(async () => (await flag(DS.page, 'phoneCards')) === false, 8000), 'the phone and the iPad are off again within a poll');
+    check((await PH.page.evaluate(() => window.__phoneMarker)) === 'same page' && (await DS.page.evaluate(() => window.__dsMarker)) === 'same page' && (await g.evaluate(() => window.__gmMarker)) === 'same page', 'no page reloaded');
+    check(await g.$eval('[data-sb="test.gm"]', (e) => e.getAttribute('aria-pressed') === 'false'), 'the GM-only switch is off too');
+
+    const all = (await api('GET', '/campaign', null, PLAYER)).text;
+    const flags = await PH.page.evaluate(() => JSON.stringify(window.B68Flags.all()));
+    check(!phoneTraffic.some((x) => x.includes('test.gm')) && !flags.includes('test.gm'), 'the GM-only id never reached the phone: not in one API answer it received, not in its flags');
+    check(!JSON.stringify((await api('GET', '/campaign', null, PLAYER)).json).includes('test.gm'), 'nor in the campaign document it can read');
+    void all;
+    await G.c.close(); await PH.c.close(); await DS.c.close();
   } else console.log('SKIP the seams are not in ' + ROOT + ' (a snapshot of main?)');
 
   check(errors.length === 0, 'no console errors or page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));

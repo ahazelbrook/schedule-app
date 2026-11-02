@@ -24,6 +24,7 @@ import {
 } from '../_lib/campaign.js';
 import { pokeLive } from '../_lib/live.js';
 import { loadHiddenNames } from '../_lib/gm.js';
+import { cleanFeatures, forPlayer } from '../_lib/features.js';
 
 export async function onRequest({ request, env, data, waitUntil }) {
   const method = request.method;
@@ -35,7 +36,8 @@ export async function onRequest({ request, env, data, waitUntil }) {
 
   if (method === 'GET') {
     const row = await loadCampaignRow(db, id);
-    return json({ doc: campaignDoc(row), updatedAt: row ? row.updated_at : null });
+    const stored = campaignDoc(row);
+    return json({ doc: gm ? stored : forPlayer(stored), updatedAt: row ? row.updated_at : null });   // W0.2: a player is never sent an id that is not a display or phone switch
   }
 
   if (method === 'PUT' && !gm) throw new HttpError(403, GM_ONLY);
@@ -56,11 +58,17 @@ export async function onRequest({ request, env, data, waitUntil }) {
     if (method === 'PUT') {
       const { mission: _ignored, ...whole } = body;     // a PUT never changes the mission: the stored one stays
       if (current.mission !== undefined) whole.mission = current.mission;
-      return whole;
+      const { features: _f, ...kept } = whole;       // nor do the switches (W0.2): a whole-document save from a stale copy must not flip one
+      if (current.features !== undefined) kept.features = current.features;
+      return kept;
     }
     const { log, clockOps, ...rest } = body;
     if (setsMission) delete rest.mission;
     const next = deepMerge(current, rest);
+    if (gm && 'features' in rest) {      // W0.2: the GM page copies the display and phone switches here; anything else in the map is dropped, never stored
+      const clean = cleanFeatures(next.features);
+      if (Object.keys(clean).length) next.features = clean; else delete next.features;
+    }
     const whole = Array.isArray(rest.clocks);
     if (whole) next.clocks = withClockIds(rest.clocks);
     if (clockOps !== undefined) next.clocks = applyClockOps(next.clocks, clockOps);
@@ -70,7 +78,7 @@ export async function onRequest({ request, env, data, waitUntil }) {
     if (setsMission) { if (mission) next.mission = mission; else delete next.mission; }     // replaced whole: a deep merge would keep a card the page dropped
     return next;
   });
-  if (setsMission) pokeLive({ env, waitUntil }, ['campaign', 'display']);     // the iPad polls for the band at once
+  if (setsMission || (gm && method === 'PATCH' && 'features' in body)) pokeLive({ env, waitUntil }, ['campaign', 'display']);     // the iPad polls for the band, or for its switches, at once
   else pokeLive({ env, waitUntil }, ['campaign']);
   return json({ doc, updatedAt: doc.updatedAt });
 }
