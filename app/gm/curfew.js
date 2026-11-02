@@ -36,11 +36,17 @@
     if (first !== null && t < first) t += 864e5;
     return t;
   }
+  /* the key the memory (warned, snoozed, kept) is filed under: the curfew time AND the night it belongs to (when its first phase began), so next week's same curfew starts clean */
+  function nightKey(night) {
+    var n = isObj(night) ? night : {}, first = null;
+    if (isObj(n.phases)) Object.keys(n.phases).forEach(function (k) { var s = n.phases[k] && n.phases[k].start; if (typeof s === 'number' && (first === null || s < first)) first = s; });
+    return n.curfewAt ? n.curfewAt + '@' + (first === null ? '' : first) : '';
+  }
   function state(night, nowMs, snooze) {
     var n = isObj(night) ? night : {};
     if (!n.phase || n.phase === 'after') return 'idle';
     var t = curfewMs(n, nowMs); if (t === null) return 'idle';
-    if (nowMs >= t) return isObj(snooze) && snooze.key === n.curfewAt && snooze.until > nowMs ? 'snoozed' : 'due';
+    if (nowMs >= t) return isObj(snooze) && snooze.key === nightKey(n) && snooze.until > nowMs ? 'snoozed' : 'due';
     return nowMs >= t - WARN_MS ? 'warn' : 'idle';
   }
   function snoozed(snooze, key, nowMs) {
@@ -74,9 +80,12 @@
     }
     function snooze() {
       var n = nightNow(); if (!n) return false;
-      var m = mem(), s = snoozed(m.snooze, n.curfewAt, now()); if (!s) return false;
+      var m = mem(), s = snoozed(m.snooze, nightKey(n), now()); if (!s) return false;
       store.set(Object.assign(m, { snooze: s })); sync(true); return true;
     }
+    /* the state as the bar sees it: "Keep running" turns a due curfew into kept, and Next beat is left alone */
+    function live() { var n = nightNow(), m = mem(), s = state(n, now(), m.snooze); return s === 'due' && m.kept === nightKey(n) ? 'kept' : s; }
+    function keep() { var n = nightNow(); if (!n) return false; store.set(Object.assign(mem(), { kept: nightKey(n) })); sync(true); return true; }
     function wire() {
       var root = r(); if (!root || rootEl === root) return;
       if (rootEl && listener) rootEl.removeEventListener('click', listener, true);
@@ -84,32 +93,34 @@
       /* capture phase: while the bar is up, Next beat means "go to the Aftermath" */
       listener = function (ev) {
         var t = ev.target; if (!alive || !t || !t.closest) return;
-        if (t.closest('[data-gm="beat-next"]') && state(nightNow(), now(), mem().snooze) === 'due') { ev.preventDefault(); ev.stopImmediatePropagation(); call(); }
+        if (t.closest('[data-gm="beat-next"]') && live() === 'due') { ev.preventDefault(); ev.stopImmediatePropagation(); call(); }
       };
       root.addEventListener('click', listener, true);
     }
     function sync(force) {
       var root = r(); if (!root) return;
       wire();
-      var n = nightNow(), m = mem(), st = state(n, now(), m.snooze), key = n && n.curfewAt || '';
+      var n = nightNow(), m = mem(), st = state(n, now(), m.snooze), key = nightKey(n), label = n && n.curfewAt || '';
       if (st === 'warn' && m.warned !== key) {
         store.set(Object.assign(m, { warned: key }));
-        if (typeof host.toast === 'function') host.toast('Curfew is at ' + key + ': thirty minutes.');
+        if (typeof host.toast === 'function') host.toast('Curfew is at ' + label + ': thirty minutes.');
       }
+      if (st === 'due' && m.kept === key) st = 'kept';
       var rail = root.querySelector('#gm-phaserail');
       if (st !== 'due') { if (el && el.parentNode) el.parentNode.removeChild(el); el = null; sig = ''; return; }
       var used = isObj(m.snooze) && m.snooze.key === key && m.snooze.used === true;
-      var s = 'due|' + used;
+      var s = 'due|' + used + '|' + key;
       if (!force && el && el.parentNode && s === sig) return;
       sig = s;
       if (!el) {
         el = root.ownerDocument.createElement('div'); el.className = 'gm-curfew'; el.setAttribute('role', 'alert');
         el.addEventListener('click', function (ev) {
           var b = ev.target && ev.target.closest ? ev.target.closest('[data-curfew]') : null; if (!b) return;
-          if (b.getAttribute('data-curfew') === 'call') call(); else snooze();
+          var w = b.getAttribute('data-curfew'); if (w === 'call') call(); else if (w === 'keep') keep(); else snooze();
         });
       }
       el.innerHTML = '<button type="button" class="gm-curfew-call" data-curfew="call">Call the Aftermath</button>' +
+        '<button type="button" class="gm-curfew-snooze" data-curfew="keep" title="Dismiss this for tonight; Next beat works as normal">Keep running</button>' +
         (used ? '' : '<button type="button" class="gm-curfew-snooze" data-curfew="snooze" title="Ask again in ten minutes (once)">Snooze 10 min</button>');
       if (!el.parentNode) { if (rail && rail.parentNode) rail.parentNode.insertBefore(el, rail.nextSibling); else root.insertBefore(el, root.firstChild); }
     }
@@ -119,8 +130,8 @@
       if (el && el.parentNode) el.parentNode.removeChild(el);
       el = null; rootEl = null;
     }
-    return { sync: sync, destroy: destroy, call: call, snooze: snooze };
+    return { sync: sync, destroy: destroy, call: call, snooze: snooze, keep: keep };
   }
 
-  return { WARN_MS: WARN_MS, SNOOZE_MS: SNOOZE_MS, curfewMs: curfewMs, state: state, snoozed: snoozed, create: create };
+  return { WARN_MS: WARN_MS, SNOOZE_MS: SNOOZE_MS, curfewMs: curfewMs, nightKey: nightKey, state: state, snoozed: snoozed, create: create };
 });

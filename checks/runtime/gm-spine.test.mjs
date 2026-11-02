@@ -148,9 +148,9 @@ await test('curfew state: warn from 30 minutes before, due at the curfew, snooze
   const at = (h, m) => new Date(2026, 10, 7, h, m, 0).getTime();
   assert.equal(Curfew.state(n(), at(22, 9), null), 'idle'); assert.equal(Curfew.state(n(), at(22, 10), null), 'warn'); assert.equal(Curfew.state(n(), at(22, 39), null), 'warn');
   assert.equal(Curfew.state(n(), at(22, 40), null), 'due');
-  const s = Curfew.snoozed(null, '22:40', at(22, 41));
+  const s = Curfew.snoozed(null, Curfew.nightKey(n()), at(22, 41));
   assert.equal(Curfew.state(n(), at(22, 45), s), 'snoozed'); assert.equal(Curfew.state(n(), at(22, 51), s), 'due', 'the snooze ends');
-  assert.equal(Curfew.snoozed(s, '22:40', at(22, 52)), null, 'once only');
+  assert.equal(Curfew.snoozed(s, Curfew.nightKey(n()), at(22, 52)), null, 'once only');
   assert.equal(Curfew.state(n({ phase: '' }), at(23, 0), null), 'idle'); assert.equal(Curfew.state(n({ phase: 'after' }), at(23, 0), null), 'idle'); assert.equal(Curfew.state(n({ curfewAt: null }), at(23, 0), null), 'idle');
   const late = n({ curfewAt: '00:30', phases: { score: { start: at(21, 0) } } });
   assert.equal(Curfew.state(late, at(22, 0), null), 'idle'); assert.equal(Curfew.state(late, new Date(2026, 10, 8, 0, 31).getTime(), null), 'due', 'a curfew after midnight is the next day\'s');
@@ -176,6 +176,27 @@ await test('curfew: the next Next-beat press, while the bar is up, moves to the 
   let ev = click(root, null, null, { beat: true }); assert.equal(ev.prevented, false); assert.equal(c.N.phase(), 'score');
   c.clock.t = new Date(2026, 10, 7, 22, 41).getTime(); cf.sync();
   ev = click(root, null, null, { beat: true }); assert.equal(ev.prevented, true); assert.equal(ev.stopped, true); assert.equal(c.N.phase(), 'after');
+});
+
+await test('curfew memory belongs to the night: the next week same curfew warns again and has its snooze back; Keep running lets Next beat through', () => {
+  const w = loadMods(withWindow({}, (x) => x)); let mem = null; const toasts = [];
+  const store = { get: () => mem, set: (v) => { mem = v; } };
+  const run = (day) => {
+    const { root } = page(), start = new Date(2026, 10, day, 19, 30).getTime(), clock = { t: start };
+    const c = ctl({ phase: 'score', curfewAt: '22:40', phases: { score: { start } } }, clock);
+    const cf = w.B68GmCurfew.create({ root: () => root, night: () => c.N, now: () => clock.t, toast: (m) => toasts.push(m), store });
+    return { root, clock, c, cf, at: (h, m) => new Date(2026, 10, day, h, m).getTime() };
+  };
+  let n = run(7); n.clock.t = n.at(22, 12); n.cf.sync(); assert.equal(toasts.length, 1);
+  n.clock.t = n.at(22, 41); n.cf.sync(); click(n.root.querySelector('.gm-curfew'), 'data-curfew', 'snooze');
+  n.clock.t = n.at(22, 55); n.cf.sync(); assert.ok(!/Snooze 10/.test(n.root.querySelector('.gm-curfew').innerHTML), 'used tonight');
+  n.cf.destroy();
+  n = run(14); n.clock.t = n.at(22, 12); n.cf.sync(); assert.equal(toasts.length, 2, 'warned again a week later');
+  n.clock.t = n.at(22, 41); n.cf.sync(); assert.ok(/Snooze 10/.test(n.root.querySelector('.gm-curfew').innerHTML), 'a fresh snooze');
+  click(n.root.querySelector('.gm-curfew'), 'data-curfew', 'keep');
+  assert.equal(n.root.querySelector('.gm-curfew'), null);
+  const ev = click(n.root, null, null, { beat: true }); assert.equal(ev.prevented, false, 'Next beat works as normal after Keep running'); assert.equal(n.c.N.phase(), 'score');
+  n.cf.destroy();
 });
 
 /* ---- 1.9 the Workshop ---- */

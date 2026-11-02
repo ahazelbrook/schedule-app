@@ -1298,9 +1298,10 @@ body.as-tab #gm-page .gm-sheet { right: 44px; }
 @media (max-width: 599px) { body.as-tab #gm-page .gm-sheet { right: 0; } }
 
 /* the spine (gm/phase-rail.js, gm/curfew.js, gm/workshop-first.js): drawn only while spine.rail, spine.curfew or spine.workshop is on */
-#gm-page .gm-phaserail { background: var(--paper); border-bottom: 2px solid var(--rule); padding: 4px 8px; }
-#gm-page .gm-pr-row { display: flex; gap: 6px; align-items: stretch; overflow-x: auto; }
-#gm-page .gm-pr-chip, #gm-page .gm-pr-all { display: flex; flex-direction: column; justify-content: center; gap: 1px; min-height: 44px; min-width: 76px; padding: 4px 10px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); font: 900 11px/1.1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; flex: 1 1 0; white-space: nowrap; }
+#gm-page .gm-phaserail { background: var(--paper); border-bottom: 2px solid var(--rule); padding: 4px 52px 4px 8px; }
+@media (max-width: 599px) { #gm-page .gm-phaserail { padding-right: 8px; } }
+#gm-page .gm-pr-row { display: flex; gap: 6px; align-items: stretch; }
+#gm-page .gm-pr-chip, #gm-page .gm-pr-all { display: flex; flex-direction: column; justify-content: center; gap: 1px; min-height: 44px; min-width: 0; padding: 4px 6px; text-align: center; align-items: center; border: 2px solid var(--rule); background: var(--card); color: var(--ink); font: 900 11px/1.1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; flex: 1 1 0; white-space: nowrap; }
 #gm-page .gm-pr-all { flex: 0 0 auto; min-width: 0; border-style: dashed; }
 #gm-page .gm-pr-all[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); border-style: solid; }
 #gm-page .gm-pr-t { font: 700 11px/1 var(--font-mono); letter-spacing: 0; text-transform: none; opacity: .85; }
