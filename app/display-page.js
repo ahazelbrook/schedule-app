@@ -513,6 +513,9 @@
           /* the overlay rides on its own, small, on every answer (null when none), after the display part so the page already knows whether it is
              dark: onOverlay(overlay | null). An answer without the key (an older server) leaves the ambient doc's overlay to onAmbient. */
           if (o.onOverlay && Object.prototype.hasOwnProperty.call(r, 'overlay') && (r.overlay === null || isObj(r.overlay))) { try { o.onOverlay(r.overlay); } catch (e) { /* ditto */ } }
+          /* the show contract's lasting layers (app/display/layers.js): a top-level `layers` beside the overlay, absent when none is set. Only an answer that carries
+             the overlay field (the new-style answer) says anything about them. */
+          if (o.onLayers && Object.prototype.hasOwnProperty.call(r, 'overlay')) { try { o.onLayers(isObj(r.layers) ? r.layers : null); } catch (e) { /* ditto */ } }
           if (moved) movedAt = clock();
           setState('live');
         }
@@ -784,7 +787,8 @@
     var O = Pure.OVERLAY;
     if (!isObj(v)) return null;
     var id = typeof v.id === 'string' ? v.id.trim() : '';
-    if (!id || id.length > O.id || O.kinds.indexOf(v.kind) < 0 || !wholeIn(v.ms, O.msMin, O.msMax)) return null;
+    var show = !!(root.B68Shows && root.B68Shows.has(v.kind));      /* a brief beat of the show contract (app/display/shows.js) */
+    if (!id || id.length > O.id || (O.kinds.indexOf(v.kind) < 0 && !show) || !wholeIn(v.ms, O.msMin, O.msMax)) return null;
     var out = { id: id, kind: v.kind, ms: v.ms };
     /* `age`: the SERVER's whole ms since it set the overlay (GET /api/gm/display adds it); absent or bad is left off (0), never the iPad's clock */
     if (wholeIn(v.age, 1, O.msMax)) out.age = v.age;
@@ -799,6 +803,10 @@
       out.npcId = v.npcId;
       /* `npc`: what the SERVER joined at read time while that NPC is revealed (GET /api/gm/display); only the fields a player may see */
       if (isObj(v.npc)) { var pn = Pure.playerNpc(v.npc); out.npc = { name: pn.name, alias: pn.alias, role: pn.role, faction: pn.faction, spec: pn.spec }; }
+    } else if (show) {
+      var pl = root.B68Shows.clean(v.kind, v.payload);        /* the SERVED payload, checked again here (rolodex and spotlight arrive joined to revealed NPCs) */
+      if (!pl) return null;
+      out.payload = pl;
     } else if (v.kind === 'fx') {
       if (O.fx.indexOf(v.fx) < 0) return null;
       out.fx = v.fx;
@@ -1440,6 +1448,9 @@
        once, for its ms from the moment this page first sees it; null or a new id takes it away. Cards take the right-hand 34% of the
        frame and the dawn the whole of it. Everything is drawn from the validated fields as text or as an svg built node by node. */
     s.ov = { seen: '', node: null, token: 0, timers: [], applied: false };
+    /* the show contract's lasting layers and the data channel to the HTML scenes (app/display/layers.js) */
+    s.layers = root.B68Layers ? root.B68Layers.attach(container, { skew: function () { return s.skew || 0; } }) : null;
+    if (s.layers) s.offs.push(function () { s.layers.destroy(); });
     function ovTimer(fn, ms) { var id = later(fn, ms); s.ov.timers.push(id); return id; }
     function ovRemove(now) {
       var node = s.ov.node; s.ov.token++; s.ov.node = null;
@@ -1485,10 +1496,22 @@
       pl.steps.forEach(function (st) { ovTimer(function () { e.setAttribute('data-phase', st.phase); }, st.at); });
       ovTimer(function () { ovRemove(true); }, pl.end);
     }
+    /* a brief beat (app/display/shows.js): the registry builds the node, this page times it by the server's clock exactly like a card */
+    function ovBeat(o, my) {
+      var left = o.ms - (o.age || 0);
+      if (left <= 0) return;
+      ovTimer(function () { ovRemove(false); }, left);
+      root.B68Shows.mount(o, { document: document, reduced: reduced() }).then(function (node) {
+        if (!node || s.dead || my !== s.ov.token) return;
+        ovLayer.appendChild(node); s.ov.node = node; s.ov.sig = ovSig(o);
+        later(function () { node.classList.add('dp-ov-in'); }, reduced() ? 0 : 30);
+      });
+    }
     function ovShow(o) {
       ovRemove(true);
       var my = s.ov.token;
       if (o.kind === 'fx') { ovDawn(o); return; }
+      if (root.B68Shows && root.B68Shows.has(o.kind)) { ovBeat(o, my); return; }
       /* the card runs out at the server's end (ms less the age the server reports; a first sight is age 0), however long an NPC takes to load */
       var left = o.ms - (o.age || 0);
       if (left <= 0) return;
@@ -1504,8 +1527,17 @@
     }
     /* A clock card follows its clock: the server joins the clock's name, size and LIVE fill to the overlay on every answer, so when the same id
        arrives with another fill the card is redrawn in place (no new slide-in, the timers untouched). */
-    function ovSig(o) { return o.kind === 'clock' ? [o.name, o.size, o.filled].join('|') : ''; }
+    function ovSig(o) { return o.kind === 'clock' ? [o.name, o.size, o.filled].join('|') : o.payload ? JSON.stringify(o.payload) : ''; }
     function ovRefresh(o) {
+      /* a brief beat whose served payload changed under the same id (an NPC on a rolodex was hidden): drawn again in place, so a hidden NPC does not stay up until the beat ends */
+      if (o && o.payload && root.B68Shows && root.B68Shows.has(o.kind) && s.ov.node && s.ov.sig !== ovSig(o)) {
+        var oldB = s.ov.node, myB = s.ov.token; s.ov.sig = ovSig(o);
+        root.B68Shows.mount(o, { document: document, reduced: reduced() }).then(function (nb) {
+          if (!nb || s.dead || myB !== s.ov.token || s.ov.node !== oldB) return;
+          nb.classList.add('dp-ov-in'); if (oldB.parentNode) oldB.parentNode.replaceChild(nb, oldB); s.ov.node = nb;
+        });
+        return;
+      }
       if (!o || o.kind !== 'clock' || !s.ov.node || s.ov.sig === ovSig(o)) return;     /* no overlay (a 'keep' with nothing seen): nothing to refresh; this threw on the first ambient doc and skipped its setPlan */
       var card = Pure.overlayCard(o); if (!card) return;
       var old = s.ov.node, node = ovCardNode(card, o);
@@ -1555,6 +1587,7 @@
        scene asks (b68:ready) and is answered, and is sent the new score when it changes. */
     s.crew = null; s.score = null; s.scoreMsg = null; s.scoreKey = ''; s.polaroids = null; s.plan = Pure.ambientPlan(ctx.ambientDoc);
     s.onLoad = function (id) {
+      if (s.layers) s.layers.sceneLoaded(id);
       if (Pure.ambientCrewScenes().indexOf(id) < 0) return;
       var m = Pure.crewMessage(s.plan);
       if (m) amb.post(id, m);
@@ -1913,6 +1946,7 @@
         onStt: function (part) { if (s.stt && typeof s.stt.feed === 'function') { try { s.stt.feed(part); } catch (e) { /* the page goes on */ } } },
         onData: function (display, seq, at) { s.seq = seq; s.updatedAt = at; paintStatus(); show(display, seq); },
         onOverlay: function (overlay) { ovApplyField(overlay); },
+        onLayers: function (layers) { if (s.layers) s.layers.apply(layers); },
         onStatus: function (p) { s.poll = p; paintStatus(); s.reloader.state(p.state); }
       });
       s.poller.start();

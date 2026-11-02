@@ -1,0 +1,88 @@
+/* The brief beats and the lasting layers on the table display (suite W0.3; app/display/show-beats.js, app/display/layers.js). New work, so it
+   draws from app/tokens.css (--b68-*). Beats are full-frame nodes in the overlay layer (.dp-overlay); the page's own in/out classes (dp-ov-in,
+   dp-ov-out) fade them. Read from 1.5 m: nothing is set smaller than --b68-t-label. */
+.dp-show { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.2vmin; text-align: center;
+  opacity: 0; transition: opacity .35s ease; color: var(--b68-paper); font-family: var(--b68-font-text); overflow: hidden; padding: 4vmin; }
+.dp-show.dp-ov-in { opacity: 1; }
+.dp-show.dp-ov-out { opacity: 0; }
+.dp-show p { margin: 0; overflow-wrap: anywhere; }
+.dp-show-kicker { font: 900 var(--b68-t-label)/1.1 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .18em; color: var(--b68-mustard); }
+.dp-show-head { font: 900 var(--b68-t-title)/1.05 var(--b68-font-poster); text-transform: uppercase; letter-spacing: .02em; }
+.dp-show-line { font: 700 var(--b68-t-lead)/1.2 var(--b68-font-text); color: var(--b68-paper-dark); max-width: 22em; }
+.dp-show-title, .dp-show-keyturn, .dp-show-ring, .dp-show-rolodex, .dp-show-spotlight { background: rgba(10, 9, 8, .82); }
+
+/* stamp */
+.dp-stamp-word { font: 900 var(--b68-t-stamp)/1 var(--b68-font-poster); text-transform: uppercase; letter-spacing: .04em; padding: .08em .3em; border: .06em solid currentColor; border-radius: .08em;
+  transform: rotate(-9deg) scale(1.6); opacity: 0; color: var(--b68-alarm-lit); text-shadow: 0 0 .02em currentColor; }
+.dp-show-stamp.dp-ov-in .dp-stamp-word { transform: rotate(-9deg) scale(1); opacity: .94; transition: transform .22s cubic-bezier(.2, 1.4, .4, 1), opacity .15s ease-out; }
+.dp-show-stamp.dp-tone-ink .dp-stamp-word { color: var(--b68-paper); }
+.dp-show-stamp.dp-tone-orange .dp-stamp-word { color: var(--b68-orange); }
+.dp-show-stamp.dp-tone-blue .dp-stamp-word { color: var(--b68-rules-blue-lit); }
+.dp-show-stamp.dp-tone-red .dp-stamp-word { color: var(--b68-alarm-lit); }
+
+/* spotted */
+.dp-show-spotted { background: radial-gradient(ellipse at center, rgba(10, 9, 8, .1) 30%, rgba(168, 33, 15, .6) 100%); }
+.dp-spotted-eye { width: 28vmin; height: auto; }
+.dp-eye-lid { fill: var(--b68-paper); stroke: var(--b68-ink); stroke-width: 3; }
+.dp-eye-iris { fill: var(--b68-alarm-lit); }
+.dp-eye-pupil { fill: var(--b68-ink); }
+.dp-spotted-word { font: 900 var(--b68-t-display)/1 var(--b68-font-poster); letter-spacing: .06em; color: var(--b68-paper); }
+.dp-show-spotted.dp-level-3 { background: radial-gradient(ellipse at center, rgba(10, 9, 8, .1) 15%, rgba(168, 33, 15, .85) 100%); }
+
+/* keyturn */
+.dp-key { width: 46vmin; height: auto; transform-origin: 19% 50%; }
+.dp-key-bow, .dp-key-shaft { fill: var(--b68-mustard); stroke: var(--b68-ink); stroke-width: 2; }
+.dp-key-hole { fill: var(--b68-ink); }
+.dp-show-keyturn.dp-ov-in .dp-key { animation: dp-key-turn 1.4s ease-in-out .3s both; }
+@keyframes dp-key-turn { 0% { transform: rotate(0); } 70% { transform: rotate(90deg); } 100% { transform: rotate(80deg); } }
+
+/* title */
+.dp-title-text { font: 900 var(--b68-t-display)/1.02 var(--b68-font-poster); text-transform: uppercase; letter-spacing: .02em; max-width: 14em; }
+
+/* wanted */
+.dp-show-wanted { background: rgba(20, 17, 14, .86); }
+.dp-wanted-word { font: 900 var(--b68-t-display)/1 var(--b68-font-poster); letter-spacing: .08em; color: var(--b68-paper); border-top: .05em solid var(--b68-paper); border-bottom: .05em solid var(--b68-paper); padding: .05em .25em; }
+.dp-wanted-stars { font-size: var(--b68-t-display); line-height: 1; letter-spacing: .12em; }
+.dp-star { color: rgba(242, 237, 225, .25); }
+.dp-star-on { color: var(--b68-alarm-lit); }
+.dp-show-wanted.dp-siren { animation: dp-siren 1s steps(2, jump-none) infinite; }
+@keyframes dp-siren { 0% { background: rgba(20, 17, 14, .86); } 100% { background: rgba(168, 33, 15, .7); } }
+
+/* ring */
+.dp-phone { width: 24vmin; height: auto; }
+.dp-phone-handset, .dp-phone-body { fill: var(--b68-paper); stroke: var(--b68-ink); stroke-width: 2.5; }
+.dp-phone-dial { fill: var(--b68-ink); }
+.dp-show-ring.dp-ov-in .dp-phone { animation: dp-ring .5s ease-in-out infinite; }
+@keyframes dp-ring { 0%, 100% { transform: rotate(-6deg); } 50% { transform: rotate(6deg); } }
+
+/* rolodex and spotlight */
+.dp-roll { display: flex; flex-wrap: wrap; justify-content: center; gap: 2.4vmin; max-width: 94%; }
+.dp-roll-card { width: 30vmin; background: var(--b68-paper); color: var(--b68-ink); border: .5vmin solid var(--b68-ink); border-radius: 1vmin; padding: 2vmin 1.6vmin; box-shadow: 1vmin 1vmin 0 var(--b68-orange);
+  transform: translateY(4vmin) rotate(-2deg); opacity: 0; }
+.dp-show-rolodex.dp-ov-in .dp-roll-card { transform: none; opacity: 1; transition: transform .4s ease, opacity .4s ease; transition-delay: calc(var(--i, 0) * 120ms); }
+.dp-roll-mono { font: 900 var(--b68-t-display)/1 var(--b68-font-poster); color: var(--b68-rules-blue); }
+.dp-roll-name { font: 900 var(--b68-t-body)/1.12 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .02em; overflow-wrap: break-word; }
+.dp-roll-sub { font: 700 var(--b68-t-label)/1.25 var(--b68-font-text); color: var(--b68-ink-soft); }
+.dp-show-spotlight .dp-roll-mono { color: var(--b68-orange); }
+.dp-spot-beam { position: absolute; inset: 0; background: radial-gradient(ellipse 34% 62% at 50% 38%, rgba(255, 214, 150, .28), rgba(255, 214, 150, 0) 70%); pointer-events: none; }
+.dp-spot-mono { font-size: calc(var(--b68-t-stamp) * 1.2); }
+.dp-show-spotlight .dp-roll-sub { color: var(--b68-paper-dark); font-size: var(--b68-t-body); }
+
+/* the lasting layers (app/display/layers.js): the flashback look over the scene and the stages, and a slim status strip */
+.dp-root[data-scene-filter="flashback"] .dp-ambient, .dp-root[data-scene-filter="flashback"] .dp-stages { filter: sepia(.75) saturate(.7) contrast(1.08) brightness(.95); }
+.dp-lay-strip { position: absolute; top: 2vmin; left: 50%; transform: translateX(-50%); z-index: 4; display: flex; align-items: center; gap: 2vmin; padding: .8vmin 2.4vmin;
+  background: rgba(10, 9, 8, .78); color: var(--b68-paper); border-radius: 99vmin; font: 900 var(--b68-t-label)/1.1 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .14em; pointer-events: none; white-space: nowrap; }
+.dp-lay-onair { color: var(--b68-alarm-lit); }
+.dp-lay-onair::before { content: ""; display: inline-block; width: .7em; height: .7em; margin-right: .5em; border-radius: 50%; background: currentColor; }
+.dp-lay-phase { color: var(--b68-mustard); }
+.dp-lay-sec { display: inline-flex; gap: .35em; }
+.dp-lay-sec i { display: block; width: .9em; height: .9em; border: .12em solid var(--b68-paper-dark); border-radius: 50%; }
+.dp-lay-sec i.on { background: var(--b68-orange); border-color: var(--b68-orange); }
+.dp-lay-sec[data-level="4"] i.on { background: var(--b68-alarm-lit); border-color: var(--b68-alarm-lit); }
+.dp-lay-face { color: var(--b68-paper-dark); letter-spacing: .06em; }
+
+@media (prefers-reduced-motion: reduce) {
+  .dp-show, .dp-show * { transition: none !important; animation: none !important; }
+  .dp-show-stamp .dp-stamp-word { transform: rotate(-9deg); opacity: .94; }
+  .dp-show-rolodex .dp-roll-card { transform: none; opacity: 1; }
+}

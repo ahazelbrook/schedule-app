@@ -21,11 +21,15 @@
 //   ifOverlay "<overlay id>"   beside `overlay: null` only (else 400): clear the overlay only while the stored one still has that id. If it
 //             does not (it ended, or another was set meanwhile) nothing is written, seq does not move, and the answer is the stored
 //             document with `unchanged: true`. The autopilot clears its own overlay this way.
+//   Show contract (functions/_lib/show.js): overlay kinds stamp|spotted|keyturn|title|wanted|ring|rolodex|spotlight carry `payload`; `layer: { path, value }`
+//   sets (value null clears) one lasting layer, `layers: null` clears them all; `ifNotOverlay: "<id>"` beside an overlay with that id sets it only while
+//   that id is not already running (a repeated command shows once). Hidden NPCs are dropped, none left is 400. Nothing is written when nothing changes.
 // The stored document is at most 1.4 MiB.
 
 import { getDb } from '../../_lib/db.js';
 import { json, methodNotAllowed, readJsonObject, campaignOf, HttpError } from '../../_lib/http.js';
-import { LIMITS, requireGm, cleanAmbientPatch, loadAmbient, patchAmbient, cleanIfOverlay, loadDisplayKind, loadHiddenNames, namesHit } from '../../_lib/gm.js';
+import { LIMITS, requireGm, cleanAmbientPatch, loadAmbient, patchAmbient, cleanIfOverlay, cleanIfNotOverlay, loadDisplayKind, loadHiddenNames, namesHit } from '../../_lib/gm.js';
+import { vetShow } from '../../_lib/show-vet.js';
 import { assertRevealedNpc } from '../../_lib/npcs.js';
 import { assertOverlayClock } from '../../_lib/campaign.js';
 import { pokeLive } from '../../_lib/live.js';
@@ -44,6 +48,7 @@ export async function onRequest({ request, env, data, waitUntil }) {
   const raw = await readJsonObject(request, LIMITS.ambientRequest);
   const patch = cleanAmbientPatch(raw);
   const ifOverlay = cleanIfOverlay(raw, patch);
+  const ifNotOverlay = cleanIfNotOverlay(raw, patch);
   const db = await getDb(env);
   const ov = patch.overlay;
   if (ov) {
@@ -59,7 +64,9 @@ export async function onRequest({ request, env, data, waitUntil }) {
     // an NPC who is not revealed (one batch of two reads, only here, only for a text overlay; the GM page scans too, this is the server's own check)
     if (ov.kind === 'text' && namesHit(ov.text, await loadHiddenNames(db, campaign))) throw new HttpError(400, 'overlay.text names something the players must not see');
   }
-  const out = await patchAmbient(db, campaign, patch, { ifOverlay });
+  // the show contract (functions/_lib/show.js): a brief beat's or a layer's NPCs are kept only while revealed, and its words are scanned for hidden names
+  await vetShow(db, campaign, ov, patch.layer || null);
+  const out = await patchAmbient(db, campaign, patch, { ifOverlay, ifNotOverlay });
   if (!out.unchanged) pokeLive({ env, waitUntil }, ['ambient']);       // a compare-and-swap that found another overlay wrote nothing: nothing to tell
   return json(out);
 }
