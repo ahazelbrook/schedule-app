@@ -50,7 +50,7 @@
       if (!F || typeof host.publish !== 'function') return false;
       var camp = typeof host.campaign === 'function' ? host.campaign() : null;
       if (!isObj(camp)) return false;                            /* the campaign has not arrived: nothing to compare with yet */
-      var want = F.publicMap(doc());
+      var want = typeof F.publishMap === 'function' ? F.publishMap(doc(), camp.features) : F.publicMap(doc());
       if (F.sameOn(want, camp.features)) return false;
       var key = JSON.stringify(want), t = now();
       if (sent.key === key && (t - sent.at < RESEND_MS || sent.n >= RESEND_MAX)) return false;

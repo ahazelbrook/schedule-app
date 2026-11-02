@@ -132,6 +132,19 @@
   function values(doc) { var o = {}; list.forEach(function (s) { o[s.id] = valueOf(doc, s.id); }); return o; }
   function publicMap(doc) { var o = {}; list.forEach(function (s) { if (s.surface !== 'gm') o[s.id] = valueOf(doc, s.id); }); return o; }
 
+  /* publishMap(stateDoc, current) -> what the GM page writes into the campaign document: the phone switch with a legacy key exactly as before, every other display or
+     phone switch only while it is ON, and a plain false only for one the document already holds (so turning it off lands). With everything off the document is
+     byte-for-byte what it was before the suite: absent means off. `current` is the campaign document's features. */
+  function publishMap(doc, current) {
+    var o = {}, cur = isObj(current) ? current : {};
+    list.forEach(function (s) {
+      if (s.surface === 'gm') return;
+      var v = valueOf(doc, s.id);
+      if (s.legacy || v) o[s.id] = v; else if (has(cur, s.id)) o[s.id] = false;
+    });
+    return o;
+  }
+
   function patchFor(doc, id, on) {
     var s = get(id); if (!s) throw new Error('unknown switch: ' + str(id));
     var f = {}, p = { features: f };
@@ -158,6 +171,6 @@
   }
 
   return { STAGES: STAGES, SURFACES: SURFACES, SATURDAY: SATURDAY, register: register, unregister: unregister, reset: reset, get: get, list: all, byStage: byStage,
-    idsFor: idsFor, publicIds: publicIds, valueOf: valueOf, values: values, publicMap: publicMap, patchFor: patchFor, patchAllOff: patchAllOff,
+    idsFor: idsFor, publicIds: publicIds, valueOf: valueOf, values: values, publicMap: publicMap, publishMap: publishMap, patchFor: patchFor, patchAllOff: patchAllOff,
     cleanPublic: cleanPublic, sameOn: sameOn };
 });
