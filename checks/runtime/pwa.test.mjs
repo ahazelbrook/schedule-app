@@ -265,7 +265,7 @@ await test('routes.js: an unstamped build (the repository, the artifact, file://
   const W = routes(stamped(), doc);
   eq(W.B68_BUILD, STAMP, 'the stamp is B68_BUILD');
   W.B68Load.need('display');
-  eq(doc.order(), ['tracker.css', 'display.css?v=' + STAMP, 'tokens.css?v=' + STAMP, 'display/shows.css?v=' + STAMP, 'display/onair.css?v=' + STAMP, 'display/hardstart.css?v=' + STAMP, '<style>', 'figures/figure-kit.js?v=' + STAMP, 'figures/cast.js?v=' + STAMP, 'tokens.js?v=' + STAMP, 'cue-verbs.js?v=' + STAMP, 'cue.js?v=' + STAMP, 'stt.js?v=' + STAMP, 'display/shows.js?v=' + STAMP, 'display/show-beats.js?v=' + STAMP, 'display/report-beat.js?v=' + STAMP, 'display/layers.js?v=' + STAMP, 'display/hardstart.js?v=' + STAMP, 'display/onair.js?v=' + STAMP, 'display/fx.js?v=' + STAMP, 'display-page.js?v=' + STAMP], 'a stamped build versions every bundle URL (the display needs the figure kit first)');
+  eq(doc.order(), ['tracker.css', 'display.css?v=' + STAMP, 'tokens.css?v=' + STAMP, 'display/shows.css?v=' + STAMP, 'display/hardstart.css?v=' + STAMP, 'display/onair.css?v=' + STAMP, '<style>', 'figures/figure-kit.js?v=' + STAMP, 'figures/cast.js?v=' + STAMP, 'tokens.js?v=' + STAMP, 'cue-verbs.js?v=' + STAMP, 'cue.js?v=' + STAMP, 'stt.js?v=' + STAMP, 'display/shows.js?v=' + STAMP, 'display/show-beats.js?v=' + STAMP, 'display/report-beat.js?v=' + STAMP, 'display/layers.js?v=' + STAMP, 'display/hardstart.js?v=' + STAMP, 'display/onair.js?v=' + STAMP, 'display/fx.js?v=' + STAMP, 'display-page.js?v=' + STAMP], 'a stamped build versions every bundle URL (the display needs the figure kit first)');
 });
 
 /* the files that only the GM's laptop and the table iPad load: in the gm or display bundle and not in core or table */
