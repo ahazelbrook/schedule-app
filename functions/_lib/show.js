@@ -14,6 +14,7 @@
 // SECRECY: an NPC id is kept only while that NPC is revealed (dropped when written, dropped again on every read), the served payload is
 // rebuilt from named keys (never a spread of what is stored), and free text is scanned for hidden names by the handler when it is set.
 import { HttpError, ID_RE, isPlainObject } from './http.js';
+import { AFTERMATH_KINDS } from './show-aftermath.js';
 
 const TONES = ['ink', 'orange', 'blue', 'red'];
 const REPORT_POSITIONS = ['controlled', 'risky', 'desperate'], REPORT_EFFECTS = ['limited', 'standard', 'great'];   // the action report card (B09 spine.stamp): report { position, effect, text? (100) }
@@ -84,6 +85,7 @@ export const SHOW_KINDS = {
       return { npcId: p.npcId };
     },
   },
+  ...AFTERMATH_KINDS,   // aftermath, credits (suite 1.6, show-aftermath.js)
 };
 export const SHOW_KIND_IDS = Object.keys(SHOW_KINDS);
 export const isShowKind = (k) => typeof k === 'string' && Object.prototype.hasOwnProperty.call(SHOW_KINDS, k);
@@ -135,7 +137,7 @@ export function cleanLayerOp(op) {
 /** The texts of a cleaned overlay patch or layer op that a reader will see as words: scanned for hidden names by the handler. */
 export function showTexts(ov, layer) {
   const out = [];
-  const add = (o) => { if (isPlainObject(o)) for (const v of Object.values(o)) if (typeof v === 'string') out.push(v); };
+  const add = (o) => { if (isPlainObject(o)) for (const v of Object.values(o)) { if (typeof v === 'string') out.push(v); else if (Array.isArray(v)) for (const x of v) if (typeof x === 'string') out.push(x); } };   // a list of lines is words too
   if (ov && isShowKind(ov.kind) && ov.payload) add(ov.payload);
   if (layer && isPlainObject(layer.value) && !Array.isArray(layer.value)) add(layer.value);
   return out;

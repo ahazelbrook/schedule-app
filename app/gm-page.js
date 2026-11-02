@@ -2270,7 +2270,7 @@
   }
   function menuOpen(on) {
     var m = $q('.gm-menu-list'), b = $q('[data-gm="menu"]'); if (!m) return;
-    if (on) { renderLiveItem(); syncCapBar(); m.removeAttribute('hidden'); } else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
+    if (on) { renderLiveItem(); syncCapBar(); if (W.B68GmAftermath && S) W.B68GmAftermath.sync($q('#gm-root'), S.doc); m.removeAttribute('hidden'); } else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
   }
   /* W0.2: the switchboard (gm/switchboard.js): one per page session, made on first use. Its host is this page's own patch, campaign and api. */
   function swInst() {
@@ -6478,6 +6478,14 @@
     if (api && api.isGM && api.isGM() === true && keptApi) crewSync.note(camp);
   }
 
+  /* suite 1.6 (gm/aftermath.js): what the Aftermath panel reads of this page: the state document, the night controller, the crew's numbers and the cast (revealed or not: the panel lists only the revealed) */
+  function aftermathFeed() {
+    if (!S) return null;
+    var c = isObj(camp) && isObj(camp.crew) ? camp.crew : {}, cast = isObj(S.npcs) ? S.npcs : {};
+    return { doc: S.doc, night: S.night, toast: toast, crew: { heat: +c.heat || 0, wanted: +c.wanted || 0, vault: +c.vault || 0 },
+      npcs: Object.keys(cast).filter(function (id) { return isObj(cast[id]); }).map(function (id) { var d = cast[id]; return { id: id, name: str(d.name), role: str(d.role), revealed: d.revealed === true, firstSeen: str(d.firstSeen), staged: staged(id) }; }) };
+  }
+
   return {
     open: open, close: close, campaign: campaign, characters: charactersChanged, purge: purge,
     available: function () { return !!(W.claude && W.claude.gm); },
@@ -6503,6 +6511,7 @@
     /* the autopilot's controller state, for checks (the page's own log is S.doc.ap.log), and Voice's lines as the box would hand them over */
     _autopilot: function () { return S && S.ap ? S.ap.core.state() : null; },
     _night: function () { return S && S.night ? S.night : null; },
+    aftermath: aftermathFeed,       /* suite 1.6 */
     _voice: function (v) { if (S) setVoice(v); }
   };
 });
