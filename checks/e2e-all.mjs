@@ -57,6 +57,7 @@ const CHECKS = [
   ['checks/runtime/mission-card.e2e.mjs', 'the phone mission card: own card only, dot, live redraw, switcher, mission null (9020)'],
   ['checks/runtime/display-ambient.e2e.mjs', 'the ambient floor on the display (8871)'],
   ['checks/runtime/display-band.e2e.mjs', 'the band beside the map: geometry at three sizes, hides over other stages, hud change within a poll, no /api/campaign (8900)'],
+  ['checks/runtime/display-webkit.e2e.mjs', 'the display at iPad and iPhone sizes, with a missing-API probe: the WebKit pass harness (9150)'],
   ['checks/runtime/display-overlay.e2e.mjs', 'overlays on the display: a clock, an NPC, a line, the dawn (8874)'],
   ['checks/runtime/show-contract.e2e.mjs', 'the show contract: every brief beat on the GM display and the iPad within a poll, a hidden NPC dropped, the layers and the scene data channel, the look book (9050)'],
   ['checks/runtime/gm-autopilot.e2e.mjs', 'the iPad autopilot: a clock overlay, Take over, secrecy, lights out, display-only expiry (8879)'],
