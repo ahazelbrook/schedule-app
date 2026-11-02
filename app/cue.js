@@ -39,6 +39,9 @@
   'use strict';
 
   var P = {};
+  /* W0.5: the verb registry (cue-verbs.js), looked up at call time: a command word this file does not know may belong to a registered verb */
+  function tryRequire(p) { try { return require(p); } catch (e) { return null; } }
+  function CV() { return (typeof B68CueVerbs !== 'undefined' && B68CueVerbs) || (typeof module === 'object' && module && typeof require === 'function' ? tryRequire('./cue-verbs.js') : null); }
   function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   /* what two names are compared as: the same rule as cogm.js and hands.js */
@@ -141,6 +144,7 @@
   function cmdAt(toks, k) {
     var t = toks[k]; if (!t) return null;
     var v = Object.prototype.hasOwnProperty.call(CMD, t.w) ? CMD[t.w] : null;
+    if (!v) { var cv = CV(); v = cv ? cv.verbFor(t.w) : null; }      /* W0.5: a registered verb's word */
     if (!v) return null;
     var n = toks[k + 1];
     if (v === 'loose') return n && (n.w === 'end' || n.w === 'ends') ? v : null;
@@ -560,7 +564,8 @@
     }
     var words = function (a, b) { var l = []; for (var i = a; i <= b; i++) l.push(toks[i].w); return l; };
     var capture = verb === 'note' || verb === 'loose' || verb === 'name';
-    if (!capture && verb !== 'undo' && verb !== 'rename' && verb !== 'call' && verb !== 'move') {
+    var reg = CV(), isReg = !!(reg && reg.has(verb));      /* W0.5: a registered verb is parsed by its own handler, below */
+    if (!capture && !isReg && verb !== 'undo' && verb !== 'rename' && verb !== 'call' && verb !== 'move') {
       /* show and sheet words refuse only OUTSIDE a clock's name: "a clock called Stress Test", "tick Coin Toss" */
       var inName = {}, mk, ix, cw, j2, okc;
       if (verb === 'make') {
@@ -585,7 +590,9 @@
       if (verb === 'show' || any.some(function (w) { return SHOW_W[w]; }) || (any.indexOf('put') >= 0 && any.indexOf('up') >= 0)) { res.refused = 'show'; return res; }
       if (verb === 'sheet' || any.some(function (w) { return SHEET_W[w]; })) { res.refused = 'sheet'; return res; }
     }
-    if (verb === 'move') {
+    if (isReg) {
+      out = reg.run(verb, { id: verb, word: toks[vi].w, text: text, rest: e > vi ? span(toks, text, vi + 1, e) : '', words: words(vi + 1, e), live: live, assume: !!assume });
+    } else if (verb === 'move') {
       out = moveParse(toks, text, vi, live) || { refused: 'unparsed' };
     } else if (verb === 'undo') {
       var rest = words(vi + 1, e).filter(function (w) { return !/^(?:that|it|this|the|last|one|thing|action|please)$/.test(w) && !UM[w]; });
@@ -654,6 +661,8 @@
     return { unknown: m ? '/' + m[1] : s.slice(0, 40) };
   }
 
+  /* W0.5: the words and verbs that are this file's own, told to the registry so a registered verb can never take one */
+  (function () { var cv = CV(); if (cv) cv.reserve(Object.keys(CMD).concat(Object.keys(INFL), Object.keys(MOVE_V)), Object.keys(CMD).map(function (k) { return CMD[k]; }).concat(['move'])); })();
   var M = { find: find, parse: parse, fromTyped: fromTyped, joinLines: joinLines, matchClock: matchClock, numOf: numOf, norm: norm, normRoom: normRoom, SIZES: SIZES.slice(), _pure: P };
   return M;
 });

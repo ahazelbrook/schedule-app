@@ -1489,7 +1489,7 @@
       dt: null, dtDists: null, dtRoll: null, dtSig: null, dtMem: {}, dtErr: '', dtNote: '', dtBusy: {},
       arm: 'n', last: null, npcs: {}, npcUnsub: null, sceneOpen: false, capOpen: false, dw: { open: drawerWas(), tab: 'table', pc: null, edit: false, frame: null, frameKey: '' }, pinOpen: null, figMemo: {}, importing: null, shown: 'console' };
     try { S.panel = W.localStorage.getItem('b68.gm.panel') || 'location'; S.prepWide = W.localStorage.getItem(PREP_WIDE) === '1'; } catch (e) {}
-    if (SIDE.indexOf(S.panel) < 0) S.panel = 'location';
+    if (!isSide(S.panel)) S.panel = 'location';
     S.saver = lastSaver = makeSessionSaver(S);
     wire(rootEl);
     screen('<p class="gm-wait" role="status">Opening the GM tools…</p>');
@@ -2199,6 +2199,9 @@
   }
   function layout() {
     var segs = [['console', 'Console'], ['prep', 'Prep'], ['location', 'Location'], ['scenes', 'Street'], ['score', 'Score'], ['chase', 'Chase'], ['npc', 'NPC'], ['downtime', 'Downtime'], ['cards', 'Cards'], ['rules', 'GM screen'], ['ipad', 'iPad'], ['state', 'State']];
+    var tabs = [['prep', 'Prep', 'R'], ['rules', 'GM screen', 'T'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['score', 'Score', 'J'], ['chase', 'Chase', 'C'], ['npc', 'NPC', 'N'], ['downtime', 'Downtime', 'D'], ['cards', 'Cards', 'O'], ['ipad', 'iPad', 'I']];
+    var TL = W.B68GmTools, ex = TL ? TL.extras() : [];   /* W0.5: the tool registry (gm/tools.js) adds tools registered after the built-ins */
+    if (ex.length) { segs = segs.concat(ex.map(function (t) { return [t.id, t.label]; })); tabs = tabs.concat(ex.map(function (t) { return [t.id, t.label, t.key]; })); }   /* the phase filter hides tabs in syncPanels, never here */
     S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '">' + barHtml() +
       '<div class="seg gm-segbar" role="tablist" aria-label="Show">' + segs.map(function (s) { return '<button type="button" class="chip" role="tab" data-gm="seg" data-seg="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
       '<div class="gm-main">' +
@@ -2213,8 +2216,8 @@
       '<div class="gm-mini" id="gm-mini" role="group" aria-label="Roll"></div><div class="gm-controls" id="gm-controls"></div>' + '<div class="gm-buttons" id="gm-buttons"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div><div class="gm-rack" id="gm-rack" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div>' +
       '<details class="gm-singles" id="gm-singles"></details></section>' +
       '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabrow"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
-      [['prep', 'Prep', 'R'], ['rules', 'GM screen', 'T'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['score', 'Score', 'J'], ['chase', 'Chase', 'C'], ['npc', 'NPC', 'N'], ['downtime', 'Downtime', 'D'], ['cards', 'Cards', 'O'], ['ipad', 'iPad', 'I']].map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('') +
-      '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div>' + '<div class="gm-pane" data-pane="score" id="gm-score"></div><div class="gm-pane" data-pane="chase" id="gm-chase"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="downtime" id="gm-dt"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div>' + '<div class="gm-pane gm-runv" data-pane="run" id="gm-runv"></div></section>' +
+      tabs.map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + (t[2] ? ' <kbd>' + t[2] + '</kbd>' : '') + '</button>'; }).join('') +
+      '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div>' + '<div class="gm-pane" data-pane="score" id="gm-score"></div><div class="gm-pane" data-pane="chase" id="gm-chase"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="downtime" id="gm-dt"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div>' + '<div class="gm-pane gm-runv" data-pane="run" id="gm-runv"></div>' + ex.map(function (t) { return '<div class="gm-pane" data-pane="' + t.id + '" id="gm-x-' + t.id + '"></div>'; }).join('') + '</section>' +
       '</div>' + drawerHtml() +
       '<div class="gm-foot" id="gm-foot"></div>' +
       '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button>' +
@@ -2247,7 +2250,7 @@
       '<a href="#display" title="The players’ screen: open this on the iPad">Open the display page (for the iPad)</a>' +
       '<button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="clearcap">Clear tonight’s capture</button><button type="button" data-gm="update">Update pack</button>' +
       '<button type="button" data-gm="capbar" id="gm-menu-capbar" title="The bottom bar that files a roll, a name or a moment"></button>' +
-      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' +
+      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' + wsMenuLine() +
       '<a href="#t">The table</a><a href="#rules">Rules</a><a href="#cast">The cast</a><a href="#">Home</a>' +
       '<button type="button" class="bad" data-gm="forget">Forget GM data on this device</button></span></span>' +
       '<div class="gm-signed" id="gm-signed" role="alert" hidden>' + esc(SIGNED_OUT_MSG) + '</div></div>';
@@ -2256,6 +2259,7 @@
     var m = $q('.gm-menu-list'), b = $q('[data-gm="menu"]'); if (!m) return;
     if (on) { renderLiveItem(); syncCapBar(); m.removeAttribute('hidden'); } else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
   }
+  function wsMenuLine() { return W.B68GmWorkshop ? W.B68GmWorkshop.menuLine() : ''; }
   /* Live sync (design 2.5): the GM state's `live`, on unless it is an explicit false. The server puts it in the data poll's answer and the
      display's, so every page follows it within one poll; only this menu item sets it. */
   function liveOn() { return !(S && S.doc && S.doc.live === false); }
@@ -2447,7 +2451,7 @@
 
   function redrawAll() {
     if (!S || S.status !== 'ready' || !$q('#gm-root')) return;
-    syncHead(); renderBar(); syncPanels(); renderConsole(); renderPrep(); renderRules(); renderLocation(); renderRun(); renderScenes(); renderNpcs(); renderScore(); renderChase(); renderDowntime(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
+    syncHead(); renderBar(); syncPanels(); renderConsole(); renderPrep(); renderRules(); renderLocation(); renderRun(); renderScenes(); renderNpcs(); renderScore(); renderChase(); renderDowntime(); renderCards(); renderIpad(); renderRail(); renderCapture(); extraSync(); syncSave();
   }
   /* the pack's export date: in the Menu in full, in the bar only when stale or an offline copy */
   function syncHead() {
@@ -2469,8 +2473,29 @@
     var fab = $q('.gm-fab'); if (fab) fab.setAttribute('aria-expanded', String(!!S.capOpen)); r.classList.toggle('cap-open', !!S.capOpen);
     r.classList.toggle('prep-wide', S.panel === 'prep' && !!S.prepWide);
     r.classList.toggle('focus', !!S.prepWide);       /* the laptop layout: Focus (or Prep's Wide) shrinks the console on every tab */
+    toolsSync(r);
     r.querySelectorAll('[data-gm="prep-wide"], [data-gm="focus"]').forEach(function (b) { b.setAttribute('aria-pressed', String(!!S.prepWide)); });
     drawerSync();
+  }
+  /* W0.5: the phase filter (gm/tools.js) hides the tabs of other phases; off, nothing is hidden. The tab on screen is always kept. */
+  var toolsOff = null;
+  function toolsSync(r) {
+    var T = W.B68GmTools; if (!T) return;
+    if (!toolsOff && typeof T.onChange === 'function') toolsOff = T.onChange(function () { if (S && S.status === 'ready' && $q('#gm-root')) syncPanels(); });
+    var cur = S.seg === 'side' ? S.panel : S.seg;
+    r.querySelectorAll('.gm-tab, .gm-segbar .chip').forEach(function (b) {
+      var id = b.getAttribute('data-panel') || b.getAttribute('data-seg');
+      if (!T.get(id)) return;
+      var show = T.visible(id, { current: id === S.panel || id === cur ? id : '' });
+      if (b.hidden === !show) return;
+      b.hidden = !show;
+    });
+  }
+  /* a tool registered after the built-ins (gm/tools.js, with a mount): drawn into its pane whenever its tab is the one on screen */
+  function extraSync() {
+    var T = W.B68GmTools, t = T && S ? T.get(S.panel) : null; if (!t || t.builtin || typeof t.mount !== 'function') return;
+    var box = $q('[data-pane="' + t.id + '"]'); if (!box) return;
+    try { t.mount(box, { toast: toast }); } catch (e) { box.textContent = t.label + ' could not open: ' + errText(e); }
   }
   function setPanel(p) {
     S.panel = p; if (S.seg !== 'console') S.seg = 'side';
@@ -2478,6 +2503,7 @@
     syncPanels();
     if (p === 'ipad') { loadAmbient(); loadStt(); }
     if (p === 'run') renderRun();
+    extraSync();
     if (p === 'chase') renderChase();      /* the start form offers the Location roll or Street scene made since it was drawn */
     spy(p);
   }
@@ -4456,6 +4482,7 @@
   function save(name, data) { if (S.api && S.api.saveFile) S.api.saveFile(name, data); }
 
   var SIDE = ['prep', 'location', 'scenes', 'score', 'chase', 'npc', 'downtime', 'cards', 'rules', 'ipad', 'run'];
+  function isSide(id) { var T = W.B68GmTools, t = T ? T.get(id) : null; return SIDE.indexOf(id) >= 0 || !!(t && !t.builtin && !t.workshop && typeof t.mount === 'function'); }
   /* ---------- the street scene roller (S): a side panel ---------- */
   function genLinesHtml(lines) {
     return (lines || []).map(function (l) { return l.kind === 'chips' ? chipsHtml(l.chips) : linesHtml([l], md); }).join('');
@@ -6068,6 +6095,7 @@
     switch (a) {
       case 'menu': { var ml2 = $q('.gm-menu-list'); menuOpen(!!(ml2 && ml2.hasAttribute('hidden'))); break; }
       case 'focus': toggleFocus(); break;
+      case 'workshop': menuOpen(false); if (W.B68GmWorkshop) W.B68GmWorkshop.toggle($q('#gm-root'), { toast: toast }); break;      /* W0.5 */
       case 'drawer': drawerToggle(); break;
       case 'dtab': drawerTab(b.getAttribute('data-tab')); break;
       case 'dpc': drawerPc(b.getAttribute('data-id')); break;
@@ -6095,7 +6123,7 @@
       case 'update': importScreen(true); break;
       case 'forget': forget(); break;
       case 'note': exportTonight(); break;
-      case 'seg': { var sg = b.getAttribute('data-seg'); if (sg === 'state') { drawerTab('table'); drawerSet(true); break; } if (SIDE.indexOf(sg) >= 0) { S.seg = 'side'; setPanel(sg); } else { S.seg = sg; syncPanels(); } break; }
+      case 'seg': { var sg = b.getAttribute('data-seg'); if (sg === 'state') { drawerTab('table'); drawerSet(true); break; } if (isSide(sg)) { S.seg = 'side'; setPanel(sg); } else { S.seg = sg; syncPanels(); } break; }
       case 'panel': setPanel(b.getAttribute('data-panel')); break;
       case 'scene': S.sceneOpen = !S.sceneOpen; syncPanels(); break;
       case 'capopen': S.capOpen = !S.capOpen; syncPanels(); if (S.capOpen) { var ci = $q('#gm-cap-in'); if (ci) ci.focus(); } break;

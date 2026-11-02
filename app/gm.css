@@ -1275,3 +1275,17 @@ body.as-tab #gm-page .gm-drawer { right: 44px; }
 @media (max-width: 599px) {
   body #gm-page .gm-drawer, body.as-tab #gm-page .gm-drawer { top: 0; right: 0; width: 100vw; border-left: 0; box-shadow: none; z-index: 60; }
 }
+
+/* ---------- the Menu's right-edge sheets: the Workshop (suite W0.5). Not drawn until a Menu line opens one. ---------- */
+#gm-page .gm-sheet { position: fixed; top: var(--dw-top, 46px); bottom: 0; right: 0; width: min(440px, 100vw); z-index: 15; display: flex; flex-direction: column; background: var(--paper); border-left: 3px solid var(--rule); box-shadow: -4px 0 0 var(--shadow-ink, rgba(0,0,0,.2)); }
+#gm-page .gm-sheet[hidden] { display: none; }
+#gm-page .gm-sheet .gm-dhead { display: flex; align-items: stretch; border-bottom: 2px solid var(--rule); flex: none; }
+#gm-page .gm-sheet-h { flex: 1 1 auto; margin: 0; padding: 12px; font: 900 13px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; }
+#gm-page .gm-sheet-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px; display: grid; gap: 10px; align-content: start; }
+#gm-page .gm-ws-list { display: flex; flex-wrap: wrap; gap: 6px; }
+@media (max-width: 599px) { body #gm-page .gm-sheet { top: 0; right: 0; width: 100vw; border-left: 0; box-shadow: none; z-index: 60; } }
+/* the phase filter (gm/tools.js, W0.5) hides a tab with [hidden]; off, no tab has it */
+#gm-page .gm-tab[hidden], #gm-page .gm-segbar .chip[hidden] { display: none; }
+body.as-tab #gm-page .gm-sheet { right: 44px; }
+@media (min-width: 1600px) { body.as-dock #gm-page .gm-sheet { right: var(--as-w); } }
+@media (max-width: 599px) { body.as-tab #gm-page .gm-sheet { right: 0; } }

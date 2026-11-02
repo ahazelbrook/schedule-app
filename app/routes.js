@@ -39,8 +39,8 @@
     table: TABLE,
     print: TABLE,
     crews: ['crews.js'],   /* just the crew playbooks' text, for the sheet's roll-panel abilities strip (the table bundle loads it too, once) */
-    gm: ['gm.css', 'prep.css', 'maps/map-kit.js', 'mapzoom.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'gm/night.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'gm/run-view.js', 'gm/room-notes.js', 'gm/mission-publish.js', 'cue.js', 'gm/cogm.js', 'gm/autopilot.js', 'gm-page.js'],
-    display: ['display.css', 'cue.js', 'stt.js', 'display-page.js']
+    gm: ['gm.css', 'prep.css', 'maps/map-kit.js', 'mapzoom.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'gm/night.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'gm/run-view.js', 'gm/room-notes.js', 'gm/mission-publish.js', 'cue-verbs.js', 'cue.js', 'gm/cogm.js', 'gm/autopilot.js', 'gm/tools.js', 'gm/workshop.js', 'gm-page.js'],
+    display: ['display.css', 'cue-verbs.js', 'cue.js', 'stt.js', 'display-page.js']
   };
   /* every stylesheet, in cascade order (index.html's order from before lazy loading) */
   var CSS_ORDER = ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', 'gm.css', 'prep.css', 'display.css'];
