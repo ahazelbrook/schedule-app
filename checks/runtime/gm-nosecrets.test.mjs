@@ -241,7 +241,10 @@ const ALLOW = new Set([
   '5505f366fcfd2394', 'b32ed6feb419d144', '56978126c0c719f4',   // band labels (location.js fallback)
   'c94db93d10cfb1de',                                         // a target-type name (location.js)
   'c2a6a317f2250f9b',                                         // the service-route regex (location.js, the fixture)
-  '92dc34bec130c877'                                          // a public cast seed description (npcs.js, npcs.mjs)
+  '92dc34bec130c877',                                         // a public cast seed description (npcs.js, npcs.mjs)
+  'a8daf073239fcdaa',                                         // a generic room type (the Pelican fixture); already public, found 03/11/2026
+  '6964f9964d92b520',                                         // a generic phrase (app/gm/location.js); already public, found 03/11/2026
+  '34d740ee8d6febd9'                                          // a generic vault handouts path; already public, found 03/11/2026
 ]);
 
 await test('(c) no string of 25+ characters from the real pack appears in a public file under app/, functions/, checks/ or scripts/', async () => {
