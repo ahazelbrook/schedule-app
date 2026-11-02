@@ -71,6 +71,8 @@ try {
     dg.opens++; dg.ws = ws; dg.url = ws.url();
     ws.onMessage((m) => { if (typeof m === 'string') { if (/CloseStream/.test(m)) dg.closed = true; } else dg.audioBytes += m.length; });
   });
+  /* a route set after the page has loaded does not reach that page's sockets (Playwright applies it from the next load): load again */
+  await ipad.reload(); await ipad.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
   check(await ipad.waitForSelector('#display-page .dp-stages', { timeout: 20000 }).then(() => true, () => false), '#display is up');
   check(await ipad.$eval('.stt-tap', (b) => b.hidden), 'no listening button until the GM asks');
 
