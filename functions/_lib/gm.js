@@ -11,7 +11,7 @@ export const GM_ONLY = 'only the GM can use the GM tools';
 const KiB = 1024;
 export const LIMITS = {
   partBody: 900 * KiB,          // bytes of JSON in one stored pack part
-  parts: 12,                    // parts in one campaign's pack
+  parts: 24,                    // parts in one campaign's pack (F5: was 12)
   request: 900 * KiB + 16 * KiB, // one POST /api/gm/pack (the part, its src and the JSON around them)
   src: 2 * KiB,                 // bytes of JSON in a part's `src`
   state: MAX_BODY_BYTES,        // 256 KiB: the stored state document, and one PATCH body

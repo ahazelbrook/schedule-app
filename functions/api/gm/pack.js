@@ -7,7 +7,7 @@
 //   POST { part, src, body }     -> { ok, part, version, bytes, unchanged, packVersion }: stores one part (body: a JSON
 //                                   object); the same body and src again is { unchanged: true } and writes nothing
 //   DELETE ?part=<name>          -> { ok, part, packVersion } (404 when missing)
-// Caps (functions/_lib/gm.js, LIMITS): part name [a-z0-9-]{1,32}, 900 KiB of JSON per part, 12 parts, 2 KiB of src;
+// Caps (functions/_lib/gm.js, LIMITS): part name [a-z0-9-]{1,32}, 900 KiB of JSON per part, 24 parts, 2 KiB of src;
 // a malformed body is 400, a size over a cap 413.
 
 import { getDb } from '../../_lib/db.js';

@@ -28,7 +28,7 @@ const PLAYER = 'player@example.test';
 const WRANGLER = join(ROOT, 'node_modules', '.bin', 'wrangler');
 const OVERALL_TIMEOUT_MS = Number(process.env.CHECK_TIMEOUT_MS || 240000);
 const KiB = 1024;
-const L = { partBody: 900 * KiB, parts: 12, src: 2 * KiB, state: 256 * KiB, svg: 600 * KiB, text: 2000, rule: 40000 };
+const L = { partBody: 900 * KiB, parts: 24, src: 2 * KiB, state: 256 * KiB, svg: 600 * KiB, text: 2000, rule: 40000 };
 const stateDir = mkdtempSync(join(tmpdir(), 'b68-gm-check-'));
 const persist = join(stateDir, 'state');
 let server = null, passes = 0, failures = 0;
@@ -243,7 +243,7 @@ async function main() {
     expect(Object.keys(idx.parts).sort().join() === 'console,location', 'nothing kept: ' + Object.keys(idx.parts));
   });
 
-  await step('pack caps: 900 KiB per part (in bytes), 2 KiB of src, 12 parts (413); at the cap is fine; DELETE frees a slot', async () => {
+  await step('pack caps: 900 KiB per part (in bytes), 2 KiB of src, 24 parts (413; F5 raised it from 12); at the cap is fine; DELETE frees a slot', async () => {
     const at = { x: 'a'.repeat(L.partBody - 8) };          // {"x":"..."} is 8 bytes of JSON around the string
     expect(JSON.stringify(at).length === L.partBody, 'fixture size');
     let r = await gm('POST', '/api/gm/pack', { part: 'big', body: at }); status(r, 200);
@@ -253,16 +253,30 @@ async function main() {
     r = await gm('POST', '/api/gm/pack', { part: 'big', body: { x: 'é'.repeat(L.partBody / 2) } }); status(r, 413);   // two bytes each
     r = await gm('POST', '/api/gm/pack', { part: 'small', body: {}, src: { file: 'f'.repeat(L.src) } }); status(r, 413);
     expect(/src is too large/.test(r.json.error), r.text);
-    // console, location and big are stored: nine more make twelve, the thirteenth is refused
-    for (let i = 0; i < 9; i++) status(await gm('POST', '/api/gm/pack', { part: 'extra-' + i, body: { n: i } }), 200);
+    // console, location and big are stored: twenty-one more make twenty-four, the twenty-fifth is refused
+    for (let i = 0; i < 21; i++) status(await gm('POST', '/api/gm/pack', { part: 'extra-' + i, body: { n: i } }), 200);
     r = await gm('POST', '/api/gm/pack', { part: 'one-too-many', body: {} }); status(r, 413);
     expect(/too many parts/.test(r.json.error), r.text);
     r = await gm('POST', '/api/gm/pack', { part: 'extra-0', body: { n: 'changed' } }); status(r, 200);   // replacing one is fine at the cap
-    expect(Object.keys((await gm('GET', '/api/gm/pack')).json.parts).length === L.parts, 'twelve parts');
+    expect(Object.keys((await gm('GET', '/api/gm/pack')).json.parts).length === L.parts, 'twenty-four parts');
     r = await gm('DELETE', '/api/gm/pack?part=big'); status(r, 200);
     expect(r.json.ok === true && r.json.part === 'big', r.text);
     status(await gm('POST', '/api/gm/pack', { part: 'one-too-many', body: {} }), 200);
-    for (const p of ['one-too-many'].concat(Array.from({ length: 9 }, (_, i) => 'extra-' + i))) status(await gm('DELETE', '/api/gm/pack?part=' + p), 200);
+    for (const p of ['one-too-many'].concat(Array.from({ length: 21 }, (_, i) => 'extra-' + i))) status(await gm('DELETE', '/api/gm/pack?part=' + p), 200);
+    expect(Object.keys((await gm('GET', '/api/gm/pack')).json.parts).sort().join() === 'console,location', 'back to two parts');
+  });
+
+  await step('F5: thirteen parts - the index GET lists all 13, its version changes with a thirteenth and answers unchanged for ?v=, a part reads back; then they are removed', async () => {
+    const names = Array.from({ length: 11 }, (_, i) => 'thirteen-' + i);
+    for (const p of names) status(await gm('POST', '/api/gm/pack', { part: p, body: { p } }), 200);
+    let r = await gm('GET', '/api/gm/pack'); status(r, 200);
+    expect(Object.keys(r.json.parts).length === 13, 'index lists ' + Object.keys(r.json.parts).length);
+    const v = r.json.version;
+    r = await gm('GET', '/api/gm/pack?v=' + v); status(r, 200);
+    expect(r.json.unchanged === true && r.json.version === v, r.text);
+    r = await gm('GET', '/api/gm/pack?part=thirteen-10'); status(r, 200);
+    expect(r.json.body.p === 'thirteen-10', r.text);
+    for (const p of names) status(await gm('DELETE', '/api/gm/pack?part=' + p), 200);
     expect(Object.keys((await gm('GET', '/api/gm/pack')).json.parts).sort().join() === 'console,location', 'back to two parts');
   });
 

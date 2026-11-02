@@ -44,7 +44,7 @@ abilities (see Score (J) below). The `engagement` part went with Engage.
 | `GET /api/gm/ambient` | `{ seq, doc, updatedAt }` (`0`, `{}`, `null` until written). GM only; the display sign-in is refused (it reads the doc through the display). |
 | `PATCH /api/gm/ambient` | top-level merge (`null` deletes, `skip: true` bumps a counter) → `{ seq, doc, updatedAt }`. Keys: `mode` auto/pin/off, `scene`, `playlist` (1–16 distinct ids), `intervalMin` 3–30, `skip`, `crew { heat 0–9, wanted 0–4 }`, `score { name, district, target, reveal, view plan/rings, board, iso }` (both svgs through `checkSvg`; the server sets `at`), `overlay` and `auto` (see Overlays). Stored doc at most 1.4 MiB, in `gm_ambient` (migration 0006). |
 
-- **Pack.** Part names `[a-z0-9-]{1,32}`; at most 12 parts; `body` a JSON object (or a string holding one), at most
+- **Pack.** Part names `[a-z0-9-]{1,32}`; at most 24 parts; `body` a JSON object (or a string holding one), at most
   900 KiB as JSON; `src` an object, at most 2 KiB. A part's `version` is the first 12 hex digits of the SHA-256 of
   `JSON.stringify(body)`; the pack's `version` hashes every part's name, version and src (`'0'` when empty). Stored in
   `gm_pack(campaign, part, version, src, updated_at /* ms */, body)`.
@@ -527,7 +527,7 @@ fails and nobody is known, nothing is purged.
     revealed and the street description is sent (`playerSummary`): write what anyone in the room sees, never GM notes.
   - **The pack.** `scripts/lib/authored-export.mjs`, called by the location part's builder: `location.authored = { v: 1, sites: { <note
     name>: { name, rel, base?, patch, map? } }, bind: { <score key>: <note name> } }`, or no key. Inside the location part because the
-    server keeps at most 12 parts. A bad block is skipped with a warning; at most 24 sites, 60 KB a block, 40 rooms.
+    server keeps at most 24 parts. A bad block is skipped with a warning; at most 24 sites, 60 KB a block, 40 rooms.
   - **The roll.** `P.authoredRoll(L, pack, site)`: the base (the generator's roll from `base`, or from a seed made of the name) with
     the patch laid over it, so the card, the folds, the map, Show on iPad and its hidden-name check and the score scene take it
     unchanged. The base's skips go unless the patch has its own; the card's three ways in are each the patch's over the base's; a way
