@@ -1071,7 +1071,7 @@
     switch (name) {
       case 'head': return header(doc, play, pb, sheet);
       case 'vitals': return cur.ui.static ? null : vitals(play, pb);
-      case 'bar': return tableBar(play);
+      case 'bar': return tableBar(play) + (window.B68Commend ? window.B68Commend.bar() : '');   /* suite 1.6: the Aftermath's commendations, while they stand */
       case 'figure': return figure(doc, pb);
       case 'stress': return stress(play, pb); case 'keys': return keys(play, pb); case 'strictures': return strictures(play, pb); case 'harm': return harm(play, pb);
       case 'cohort': return cohort(play, pb); case 'vice': return vice(play, pb); case 'abilities': return abilities(play, pb, sheet); case 'contacts': return contacts(play, pb);

@@ -18,6 +18,12 @@
     L.kit(urgent === true).then(function (ok) { if (ok === false && urgent === true) toast('The figure kit could not load. Check the connection and try again.', true); });
   }
   function needKit() { if (A.kitReady) return true; toast('The figure kit is still loading. Try again in a moment.', true); wantKit(true); return false; }
+  /* suite 1.6: the Aftermath's xp commendations on a sheet. The phone fetches app/sheet/commend.js only while the spine.aftermath switch is on, and stops it when it goes off. */
+  function commendSync() {
+    var F = window.B68Flags; if (!F) return;
+    if (F.on('spine.aftermath')) { if (L && L.need) L.need('commend').then(function () { if (window.B68Commend) window.B68Commend.start(); }, function () {}); }
+    else if (window.B68Commend) window.B68Commend.stop();
+  }
   var creatorOn = false;
   function buildCreator() {
   A.SECTIONS.forEach(function (s, i) {
@@ -518,7 +524,7 @@
       var data = snap && snap.exists !== false && typeof snap.data === 'function' ? snap.data() : null;
       if (!isObj(data)) data = null;
       tableExists = !!data; tableLatest = data ? clone(data) : null; campLoaded = true;
-      if (window.B68Flags) { try { window.B68Flags.apply(data); } catch (e) { if (window.console) console.error(e); } }   /* W0.2: the switches this campaign arrival carries, on every poll */
+      if (window.B68Flags) { try { window.B68Flags.apply(data); commendSync(); } catch (e) { if (window.console) console.error(e); } }   /* W0.2: the switches this campaign arrival carries, on every poll */
       var Cm = campaignMod();
       if (tableOn && Cm) { try { Cm.update(data ? clone(data) : null); } catch (e) { toast('The table could not render: ' + (e && e.message || e), true); } }
       var S2 = schedMod(); if (S2) { try { S2.card.update(data ? clone(data) : null); } catch (e) { if (window.console) console.error(e); } }

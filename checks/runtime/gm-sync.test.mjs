@@ -659,7 +659,7 @@ await testPack('pack: the push refuses a pack that would lose prep (the 16/10 Sy
 await test('the core ships alone: with the NPC and pack modules absent the pull still runs and says so', async () => {
   const env = await setup();
   const core = fs.mkdtempSync(path.join(os.tmpdir(), 'b68 core '));
-  const files = ['scripts/gm-sync.mjs', 'scripts/lib/d1.mjs', 'scripts/lib/vault.mjs', 'scripts/lib/ledger.mjs', 'scripts/lib/report.mjs', 'scripts/lib/sync-notes.mjs', 'functions/_lib/gm.js', 'functions/_lib/show.js', 'functions/_lib/http.js'];
+  const files = ['scripts/gm-sync.mjs', 'scripts/lib/d1.mjs', 'scripts/lib/vault.mjs', 'scripts/lib/ledger.mjs', 'scripts/lib/report.mjs', 'scripts/lib/sync-notes.mjs', 'functions/_lib/gm.js', 'functions/_lib/show.js', 'functions/_lib/show-aftermath.js', 'functions/_lib/http.js'];
   for (const f of files) { fs.mkdirSync(path.dirname(path.join(core, f)), { recursive: true }); fs.copyFileSync(path.join(ROOT, f), path.join(core, f)); }
   const { pathToFileURL } = await import('node:url');
   const m = await import(pathToFileURL(path.join(core, 'scripts', 'gm-sync.mjs')).href);
