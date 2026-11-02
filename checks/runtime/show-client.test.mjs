@@ -207,5 +207,17 @@ await test('tokens: app/tokens.css and app/tokens.js carry the same values; ever
   assert.ok(sizes.length === 0 || Math.min(...sizes) >= 3.4, 'no text on a show is set below the label size');
 });
 
+await test('the look book: GM only, in the lookbook bundle, every file exists, and a frame for every registered kind', () => {
+  const routes = fs.readFileSync(path.join(APP, 'routes.js'), 'utf8');
+  const ctx = vm.createContext({}); vm.runInContext(routes, ctx); const B = ctx.B68Load.BUNDLES;
+  assert.ok(Array.isArray(B.lookbook) && B.lookbook.includes('display/lookbook.js') && B.lookbook.includes('display/show-beats.js'));
+  for (const f of [...B.lookbook, ...B.display, ...B.gm]) assert.ok(fs.existsSync(path.join(APP, f)), f);
+  const lb = fs.readFileSync(path.join(APP, 'lookbook.html'), 'utf8'), boot = fs.readFileSync(path.join(APP, 'lookbook-boot.js'), 'utf8');
+  assert.ok(!/<script(?![^>]*src=)/.test(lb), 'no inline script (the report-only CSP asks for script-src self)');
+  assert.ok(/api\/me/.test(boot) && /role !== 'gm'/.test(boot) && /GM only/.test(boot), 'the page asks /api/me and draws nothing for anyone but the GM');
+  const sw = fs.readFileSync(path.join(APP, 'sw.js'), 'utf8'); assert.ok(!/lookbook/.test(sw), 'sw.js learns its files from routes.js');
+  assert.ok(!B.core.concat(B.table, B.figures).some((f) => /lookbook|display\/|gm\/show/.test(f)), 'players never fetch a GM or display file');
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

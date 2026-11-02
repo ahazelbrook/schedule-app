@@ -1,7 +1,7 @@
 // The show contract in a real browser (W0.3 / F6; functions/_lib/show.js, app/display/*.js): each brief-beat kind laid over the table display reaches both
 // the GM's display and the table iPad's display-only sign-in within a poll, draws its payload and goes by itself at its ms; a hidden NPC in a payload is
 // dropped by the server (and a drawn NPC who is hidden afterwards comes off in place); the lasting layers set, show, reach an ambient scene frame as a
-// b68:data message (joined to revealed NPCs only) and clear. Invented data only.
+// b68:data message (joined to revealed NPCs only) and clear; the look book draws a frame per kind at 1024 x 768 and is GM only. Invented data only.
 //   PW_MODULE=<path to playwright-core> PW_CHANNEL=msedge node checks/runtime/show-contract.e2e.mjs      (port 9050 unless PORT is set)
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -167,6 +167,33 @@ try {
       expect(csp.length === 0, 'CSP refusals: ' + csp.join(' | '));
     }
     expect(I.seen.requests.every((u) => !/\/api\/npcs|\/api\/gm\/ambient/.test(u)), 'the iPad never read the cast or the ambient document directly');
+  });
+
+  await step('the look book: GM only; a frame for every registered kind and the layers, each drawn at iPad size', async () => {
+    const L = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 1280, height: 900 } });
+    const p = await L.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(String(e && e.message || e)));
+    await p.goto(BASE + '/lookbook.html');
+    await p.waitForSelector('.lb-card', { timeout: 20000 });
+    const cardsN = await p.evaluate(() => Array.from(document.querySelectorAll('.lb-card figcaption code')).map((c) => c.textContent));
+    expect(cardsN.join(',') === 'stamp,spotted,keyturn,title,wanted,ring,rolodex,spotlight,layers', 'a card per kind: ' + cardsN.join(','));
+    await sleep(2500);
+    for (const k of ['stamp', 'rolodex', 'wanted']) {
+      const fr = p.frames().find((f) => f.url().includes('frame=' + k));
+      expect(!!fr, 'the frame for ' + k);
+      await fr.waitForSelector('.dp-show.dp-ov-in', { timeout: 15000 });
+      const size = await fr.evaluate(() => [innerWidth, innerHeight]);
+      expect(size[0] === 1024 && size[1] === 768, k + ' is drawn at iPad size: ' + size);
+    }
+    const lf = p.frames().find((f) => f.url().includes('frame=layers'));
+    await lf.waitForSelector('.dp-lay-strip', { timeout: 15000 });
+    await p.screenshot({ path: path.join(stateDir, 'lookbook.png'), fullPage: false }).catch(() => {});
+    expect(errs.length === 0, 'page errors: ' + errs.join(' | '));
+    await L.close();
+    const P = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': 'player@example.test' }, viewport: { width: 800, height: 600 } });
+    const pp = await P.newPage(); await pp.goto(BASE + '/lookbook.html');
+    await pp.waitForFunction(() => /GM only/i.test(document.body.innerText), null, { timeout: 15000 });
+    expect(!(await pp.evaluate(() => document.querySelector('.lb-card'))), 'a player sees no card');
+    await P.close();
   });
 
   await G.ctx.close(); await I.ctx.close();
