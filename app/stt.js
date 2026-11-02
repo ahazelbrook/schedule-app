@@ -197,7 +197,15 @@
     var pill = el('div', 'stt-pill'); pill.hidden = true; pill.setAttribute('role', 'status');
     pill.appendChild(el('span', 'stt-dot')); var pillText = el('span', 'stt-text', 'Listening'); pill.appendChild(pillText);
     container.appendChild(tap); container.appendChild(pill);
-    s.merger = makeMerger(function (l) { push({ kind: 'line', speaker: l.speaker, text: l.text, at: l.at, conn: l.conn, cue: l.cue === true, urgent: l.urgent === true }); }, null, W.B68Cue);
+    /* A6 (ai.onair): app/display/onair.js judges each heard line before it is queued; null while the switch is off, and then nothing below differs */
+    function air() { var a = opts && typeof opts.air === 'function' ? opts.air() : null; return a && typeof a.filter === 'function' ? a : null; }
+    var airTimer = null;
+    function airPaint() {
+      var a = air();
+      if (a) { a.paint(container, s.running && !s.stopping && s.state !== 'error'); if (!airTimer) airTimer = W.setInterval(function () { if (!s.dead) airPaint(); }, 1000); }
+      else if (airTimer) { W.clearInterval(airTimer); airTimer = null; if (opts.airOff) { try { opts.airOff(); } catch (e) {} } }
+    }
+    s.merger = makeMerger(function (l) { var a = air(); if (a) { var v = a.filter(l.text); if (v.changed) { airPaint(); report(); } if (v.drop) return; } push({ kind: 'line', speaker: l.speaker, text: l.text, at: l.at, conn: l.conn, cue: l.cue === true, urgent: l.urgent === true }); }, null, W.B68Cue);
 
     function every(fn, ms) { var id = W.setInterval(function () { if (!s.dead) fn(); }, ms); s.timers.push(id); return id; }
     function paint() {
@@ -207,11 +215,14 @@
       pillText.textContent = s.state === 'reconnecting' ? 'Listening · reconnecting' : 'Listening';
       tap.hidden = !(s.want === 'on' && (!s.running || s.needTap));
       tap.textContent = s.running && s.needTap ? 'Tap to keep listening' : 'Tap to start listening';
+      airPaint();
     }
     function report() {
       if (!gm.patchStt) return;
       s.lastReport = Date.now();
-      Promise.resolve().then(function () { return gm.patchStt({ status: { state: s.state, lines: s.sent, error: s.error } }); }).catch(function () {});
+      var st = { state: s.state, lines: s.sent, error: s.error }, a = air();       /* read now, not a tick later: the state it describes may have moved on */
+      if (a) st.pausedUntil = a.until();
+      Promise.resolve().then(function () { return gm.patchStt({ status: st }); }).catch(function () {});
     }
     function setState(st, err) { s.state = st; if (err !== undefined) s.error = err; paint(); report(); }
 
@@ -379,6 +390,7 @@
         document.removeEventListener('visibilitychange', onVis);
         if (s.running) { s.stopping = true; try { if (s.ws) s.ws.close(); } catch (e) {} s.merger.flush(); stopAudio(); s.running = false; send(); setState('stopped'); }
         s.dead = true;
+        if (airTimer) { W.clearInterval(airTimer); airTimer = null; }
         try { tap.remove(); pill.remove(); } catch (e) {}
       }
     };

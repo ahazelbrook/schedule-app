@@ -175,7 +175,7 @@ try {
     await p.goto(BASE + '/lookbook.html');
     await p.waitForSelector('.lb-card', { timeout: 20000 });
     const cardsN = await p.evaluate(() => Array.from(document.querySelectorAll('.lb-card figcaption code')).map((c) => c.textContent));
-    expect(cardsN.join(',') === 'stamp,spotted,keyturn,title,wanted,ring,rolodex,spotlight,layers', 'a card per kind: ' + cardsN.join(','));
+    expect(cardsN.join(',') === 'stamp,spotted,keyturn,title,wanted,ring,rolodex,spotlight,report,layers', 'a card per kind: ' + cardsN.join(','));
     await sleep(2500);
     for (const k of ['stamp', 'rolodex', 'wanted']) {
       const fr = p.frames().find((f) => f.url().includes('frame=' + k));

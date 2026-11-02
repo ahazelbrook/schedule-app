@@ -2263,7 +2263,7 @@
       '<a href="#display" title="The players’ screen: open this on the iPad">Open the display page (for the iPad)</a>' +
       '<button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="clearcap">Clear tonight’s capture</button><button type="button" data-gm="update">Update pack</button>' +
       '<button type="button" data-gm="capbar" id="gm-menu-capbar" title="The bottom bar that files a roll, a name or a moment"></button>' +
-      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' + swMenuLine() + wsMenuLine() +
+      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' + swMenuLine() + hsMenuLine() + wsMenuLine() +
       '<a href="#t">The table</a><a href="#rules">Rules</a><a href="#cast">The cast</a><a href="#">Home</a>' +
       '<button type="button" class="bad" data-gm="forget">Forget GM data on this device</button></span></span>' +
       '<div class="gm-signed" id="gm-signed" role="alert" hidden>' + esc(SIGNED_OUT_MSG) + '</div></div>';
@@ -2282,6 +2282,18 @@
     });
     return S.sw;
   }
+  /* 1.2 (spine.start): the hard start's sheet (gm/hardstart.js); its layers go through the show contract's own writer */
+  function hsOn() { return !!(S && W.B68GmHardStart && W.B68Features && W.B68Features.valueOf(S.doc, 'spine.start')); }
+  function hsInst() {
+    if (!hsOn()) return null;
+    if (!S.hs) S.hs = W.B68GmHardStart.make({
+      layer: function (p, v) { var c = shows(); return c ? c.layer(p, v) : Promise.resolve(null); }, npcs: function () { return S && isObj(S.npcs) ? S.npcs : {}; }, now: function () { return Date.now(); },
+      startAt: function () { var n = S && S.night && typeof S.night.night === 'function' ? S.night.night() : null; return n && W.B68GmNight ? W.B68GmNight.clockMs(n.startAt, Date.now()) || 0 : 0; },
+      root: function () { return $q('#gm-root'); }, toast: toast
+    });
+    return S.hs;
+  }
+  function hsMenuLine() { return hsOn() ? '<button type="button" data-gm="hardstart" id="gm-menu-hardstart" title="The cold open on the iPad: station clock, fuse, credits, and three faces to name">Hard start</button>' : ''; }
   function swMenuLine() { return W.B68GmSwitchboard && W.B68Features ? '<button type="button" data-gm="switchboard" id="gm-menu-switchboard" title="Every new feature has a switch here, off until you turn it on. All off puts the app back as it was; no reload">Switchboard</button>' : ''; }
   function wsMenuLine() { return W.B68GmWorkshop ? W.B68GmWorkshop.menuLine() : ''; }
   /* Live sync (design 2.5): the GM state's `live`, on unless it is an explicit false. The server puts it in the data poll's answer and the
@@ -2335,7 +2347,7 @@
     var pc = d && isObj(d.copier) && d.copier.at ? (Date.now() - Date.parse(d.copier.at)) / 1000 : null;
     var text = !on ? 'Not listening' : st.state === 'listening' && age !== null && age < 40 ? 'Listening' + (pc !== null && pc < 180 ? ' · PC copying' : ' · PC not copying') : 'Listening: waiting for the iPad';
     var warn = on && !(st.state === 'listening' && age !== null && age < 40 && pc !== null && pc < 180);
-    sp.innerHTML = '<span class="gm-dot' + (on ? warn ? ' warn' : ' on' : '') + '"></span>' + esc(text);
+    sp.innerHTML = '<span class="gm-dot' + (on ? warn ? ' warn' : ' on' : '') + '"></span>' + esc(text) + airSuffix(d); airSync();
     sp.classList.toggle('warn', warn);
     /* the pill only once the transcriber has ever been set up (the stt document written), or while it is on */
     var show = STT.loaded && (!!STT.at || on);
@@ -4491,6 +4503,15 @@
       STT.doc = res[0] && res[0].doc || null; STT.at = res[0] && res[0].updatedAt || null; STT.tail = res[1] && Array.isArray(res[1].lines) ? res[1].lines : STT.tail; STT.error = ''; STT.loaded = true; renderStt(); renderBar();
     }, function (e) { STT.error = errText(e); STT.loaded = true; renderStt(); renderBar(); });
   }
+  /* A6 (ai.onair): the page mirrors the iPad's ON AIR lamp and the off-the-record countdown (gm/onair.js reads the listening document this page already polls) */
+  function airOn() { return !!(S && W.B68GmOnAir && W.B68Features && W.B68Features.valueOf(S.doc, 'ai.onair')); }
+  var airTimer = null;
+  function airSync() {
+    if (airTimer || !airOn() || !W.B68GmOnAir.state(STT.doc, Date.now()).paused || typeof W.setInterval !== 'function') return;
+    airTimer = W.setInterval(function () { if (!airOn() || !W.B68GmOnAir.tick($q('#gm-root'), STT.doc, Date.now())) { W.clearInterval(airTimer); airTimer = null; } }, 1000);
+  }
+  function airChip(d) { return airOn() ? W.B68GmOnAir.chip(d, Date.now()) : ''; }
+  function airSuffix(d) { return airOn() ? W.B68GmOnAir.suffix(d, Date.now()) : ''; }
   function sttPatch(p) {
     var g = gmApi(); if (!g || typeof g.patchStt !== 'function') { toast('Listening needs the hosted app.', true); return; }
     Promise.resolve().then(function () { return g.patchStt(p); }).then(function (r) { STT.doc = r && r.doc || STT.doc; STT.at = r && r.updatedAt || STT.at || nowIso(); renderStt(true); renderBar(); }, function (e) { toast('Could not change listening: ' + errText(e), true); });
@@ -4550,7 +4571,7 @@
     var seen = tail.reduce(function (m, l) { return typeof l.speaker === 'number' && l.speaker > m ? l.speaker : m; }, -1);
     var named = Object.keys(isObj(d.speakers) ? d.speakers : {}).filter(function (k) { return d.speakers[k]; });
     var nums = []; for (var i = 0; i <= Math.max(4, seen, Math.max.apply(null, Object.keys(isObj(d.speakers) ? d.speakers : {}).map(Number).concat([-1]))); i++) nums.push(i);
-    box.innerHTML = '<section class="gm-box gm-stt"><h3 class="gm-band">Listening' + (on ? ' <span class="gm-stt-on">● on</span>' : '') + '</h3><div class="gm-ipad-body">' +
+    box.innerHTML = '<section class="gm-box gm-stt"><h3 class="gm-band">Listening' + (on ? ' <span class="gm-stt-on">● on</span>' : '') + airChip(d) + '</h3><div class="gm-ipad-body">' +
       '<p class="gm-ipad-line' + (stale || st.state === 'error' ? ' bad' : '') + '" role="status">' + esc(line) + (stale ? ' No word from the iPad for a while: is the display open?' : '') + '</p>' +
       (st.error && st.state !== 'listening' ? '<p class="gm-note bad">' + esc(st.error) + '</p>' : '') +
       '<div class="gm-ipad-acts">' + (on ? '<button type="button" class="btn" data-gm="stt-off">Stop listening</button>'
@@ -4562,6 +4583,7 @@
       (tail.length > 5 ? '<details class="gm-fold" data-sttmore="1"' + (STT.more ? ' open' : '') + '><summary>More</summary><ol class="gm-stt-tail gm-stt-more">' + tail.slice(-30, -5).map(function (l) { return sttLi(d, l); }).join('') + '</ol></details>' : '') +
       (tail.length ? '<ol class="gm-stt-tail gm-stt-now">' + tail.slice(-5).map(function (l) { return sttLi(d, l); }).join('') + '</ol>' : '') +
       sttCopier(d, on) + '</div></section>';
+    airSync();
   }
   /* the PC's heartbeat: fresh within 3 minutes while listening is on */
   function sttCopier(d, on) {
@@ -6197,6 +6219,7 @@
     switch (a) {
       case 'menu': { var ml2 = $q('.gm-menu-list'); menuOpen(!!(ml2 && ml2.hasAttribute('hidden'))); break; }
       case 'focus': toggleFocus(); break;
+      case 'hardstart': menuOpen(false); { var hsi = hsInst(); if (hsi) hsi.toggle(); } break;      /* 1.2 */
       case 'switchboard': menuOpen(false); { var sbi = swInst(); if (sbi) sbi.toggle(); } break;      /* W0.2 */
       case 'workshop': menuOpen(false); if (W.B68GmWorkshop) W.B68GmWorkshop.toggle($q('#gm-root'), { toast: toast }); break;      /* W0.5 */
       case 'drawer': drawerToggle(); break;

@@ -165,12 +165,20 @@ await test('switchboard: with every switch off and nothing stored, heal writes n
   const r2 = rig({}, { v: 1, features: { phoneCards: false } }); assert.equal(r2.ctl.heal(), false);
   assert.equal(rig({}, null).ctl.heal(), false, 'the campaign has not arrived: nothing to compare');
 });
-await test('switchboard: set writes the GM state (features and the old key) and copies a complete public map to the campaign; GM-only ids stay out of it', async () => {
+await test('publishMap: all off publishes exactly what main did (the legacy key only); a flip off lands as false only where the document holds the id', async () => {
+  await withSwitches([GMX, DISP, PH], () => {
+    assert.deepEqual(F.publishMap({}, undefined), { phoneCards: false });
+    assert.deepEqual(F.publishMap({ phoneCards: true }, {}), { phoneCards: true });
+    assert.deepEqual(F.publishMap({ features: { 'test.disp': true, 'test.phone': true, 'test.gm': true } }, {}), { phoneCards: false, 'test.disp': true, 'test.phone': true });
+    assert.deepEqual(F.publishMap({}, { 'test.disp': true, phoneCards: true }), { phoneCards: false, 'test.disp': false }, 'it was on, now off: false is written');
+  });
+});
+await test('switchboard: set writes the GM state (features and the old key) and copies only what is ON (plus the legacy phone key) to the campaign; GM-only ids stay out of it', async () => {
   await withSwitches([GMX, DISP, PH], async () => {
     const r = rig({}, { v: 1 });
     assert.equal(r.ctl.set('test.disp', true), true); await Promise.resolve();
     assert.deepEqual(r.calls.patch[0], { features: { 'test.disp': true } });
-    assert.deepEqual(r.calls.publish, [{ phoneCards: false, 'test.disp': true, 'test.phone': false }]);
+    assert.deepEqual(r.calls.publish, [{ phoneCards: false, 'test.disp': true }]);
     assert.equal(r.ctl.set('test.gm', true), true); await Promise.resolve();
     assert.equal(r.calls.publish.length, 1, 'a GM-only flip changes nothing public, so nothing is written to the campaign');
     assert.ok(r.calls.publish.every((m) => !('test.gm' in m)));

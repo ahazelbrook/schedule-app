@@ -1,0 +1,6 @@
+/* The ON AIR lamp (suite ticket A6, app/display/onair.js). Top left of the frame, opposite the layers' strip; read from 1.5 m. */
+.dp-onair { position: absolute; top: 2vmin; left: 2.4vmin; z-index: 6; display: flex; align-items: center; gap: 1vmin; padding: .8vmin 2vmin; border-radius: 1vmin; pointer-events: none;
+  background: rgba(10, 9, 8, .82); border: .35vmin solid var(--b68-alarm-lit); color: var(--b68-alarm-lit); font: 900 var(--b68-t-label)/1 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .22em; }
+.dp-onair::before { content: ""; width: 1.6vmin; height: 1.6vmin; border-radius: 50%; background: currentColor; box-shadow: 0 0 1.6vmin currentColor; }
+.dp-onair[data-state="off"] { border-color: var(--b68-mustard); color: var(--b68-mustard); }
+.dp-onair[data-state="off"]::before { box-shadow: none; opacity: .5; }
