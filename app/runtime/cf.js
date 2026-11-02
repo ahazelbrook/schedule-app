@@ -1401,6 +1401,8 @@
     /* the table iPad's transcriber (GM.md "Listening"). GET /api/gm/stt -> { doc, updatedAt }: { want: on | off, session,
        speakers: { n: name }, status: { state, at, lines, error } }; PATCH merges (null deletes) -> { doc, updatedAt } */
     stt: function () { return api('GET', '/gm/stt'); },
+    /* GET /api/gm/preflight -> the Preflight sheet's server facts (4.2, switch room.preflight; read-only) */
+    preflight: function () { return api('GET', '/gm/preflight'); },
     patchStt: function (p) { return api('PATCH', '/gm/stt', p || {}); },
     /* POST /api/gm/stt/token -> { token, expiresIn }: a short-lived Deepgram token (the key stays a Worker secret) */
     sttToken: function () { return api('POST', '/gm/stt/token', {}); },

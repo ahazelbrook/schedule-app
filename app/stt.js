@@ -32,6 +32,7 @@
   var DG_PARAMS = ['model=nova-3', 'language=en', 'diarize=true', 'smart_format=true', 'punctuate=true', 'interim_results=false',
     'endpointing=300', 'keyterm=Blade', 'encoding=linear16', 'sample_rate=16000', 'channels=1'];
   var DG_URL = 'wss://api.deepgram.com/v1/listen?' + DG_PARAMS.join('&');
+  var KEY_MAX = 40, KEY_CHARS = 700, KEY_ONE = 32;      /* the same caps as functions/_lib/keyterms.js: Deepgram refuses more than 500 tokens of key terms */
   var RATE = 16000;
   /* poll: the fallback's own GET (only while the display answers carry no transcriber part). status: how often the iPad's report is
      considered while the mic is open (the GM page calls it stale after 40 s); idleStatus: the report that says "still here" when it
@@ -46,6 +47,19 @@
   var SCHEME_KEY = 'b68.stt.scheme';           /* which one worked last time (not a secret) */
 
   /* ---------- pure ---------- */
+  /* A1: the stream's URL with the server's key terms added (switch ai.keyterms: the token answer's `keyterms`). Blade is already in DG_URL; a term
+     that is not plain text, or is past the caps, is skipped; no terms at all is DG_URL itself. */
+  function urlFor(terms) {
+    if (!Array.isArray(terms)) return DG_URL;
+    var seen = { blade: 1 }, n = 1, chars = 5, add = [];
+    terms.forEach(function (t) {
+      if (typeof t !== 'string') return;
+      t = t.split(/\s+/).join(' ').trim(); var k = t.toLowerCase();
+      if (!t || t.length > KEY_ONE || seen[k] || n >= KEY_MAX || chars + t.length > KEY_CHARS) return;
+      seen[k] = 1; n++; chars += t.length; add.push('keyterm=' + encodeURIComponent(t));
+    });
+    return add.length ? DG_URL + '&' + add.join('&') : DG_URL;
+  }
   /* Float32 samples at inRate -> 16-bit PCM at outRate (averaging each output sample's span) */
   function downsample(input, inRate, outRate) {
     var ratio = inRate / outRate, n = Math.floor(input.length / ratio), out = new Int16Array(n), pos = 0;
@@ -177,7 +191,7 @@
       open: function () { return open; }
     };
   }
-  var Pure = { downsample: downsample, runsOf: runsOf, makeMerger: makeMerger, lineId: lineId, DG_URL: DG_URL, SCHEMES: SCHEMES };
+  var Pure = { downsample: downsample, urlFor: urlFor, runsOf: runsOf, makeMerger: makeMerger, lineId: lineId, DG_URL: DG_URL, SCHEMES: SCHEMES };
   if (!W || !W.document) return Pure;
 
   /* ---------- the controller ---------- */
@@ -222,7 +236,10 @@
       s.lastReport = Date.now();
       var st = { state: s.state, lines: s.sent, error: s.error }, a = air();       /* read now, not a tick later: the state it describes may have moved on */
       if (a) st.pausedUntil = a.until();
-      Promise.resolve().then(function () { return gm.patchStt({ status: st }); }).catch(function () {});
+      /* 4.2: opts.device() -> Promise<{audio, files, of, build} | null>; null (the switch off, or no reporter) leaves the status exactly as it was */
+      var go = function (dev) { if (dev) st.device = dev; return gm.patchStt({ status: st }); };
+      if (typeof opts.device !== 'function') { Promise.resolve().then(function () { return go(null); }).catch(function () {}); return; }      /* no reporter: the report goes at once, as it always did */
+      Promise.resolve().then(function () { return opts.device(); }).then(null, function () { return null; }).then(go).catch(function () {});
     }
     function setState(st, err) { s.state = st; if (err !== undefined) s.error = err; paint(); report(); }
 
@@ -280,12 +297,12 @@
       Promise.resolve().then(function () { return gm.sttToken(); }).then(function (r) {
         if (!s.running || s.stopping || s.dead) return;
         var order = s.scheme && SCHEMES.indexOf(s.scheme) >= 0 ? [s.scheme].concat(SCHEMES.filter(function (x) { return x !== s.scheme; })) : SCHEMES.slice();
-        tryScheme(r.token, order, 0, conn);
+        tryScheme(r.token, order, 0, conn, s.noTerms ? DG_URL : urlFor(r.keyterms));
       }, function (e) { fail(e && e.status === 503 ? 'listening is not set up on the server (no Deepgram key)' : 'no token: ' + errText(e), e && e.status === 503); });
     }
-    function tryScheme(token, order, i, conn) {
+    function tryScheme(token, order, i, conn, url) {
       var ws, opened = false;
-      try { ws = new W.WebSocket(DG_URL, [order[i], token]); } catch (e) { fail('could not open the connection: ' + errText(e)); return; }
+      try { ws = new W.WebSocket(url, [order[i], token]); } catch (e) { fail('could not open the connection: ' + errText(e)); return; }
       ws.binaryType = 'arraybuffer';
       ws.onopen = function () {
         opened = true; s.ws = ws; s.conn = conn; s.connAt = Date.now(); s.attempt = 0; s.scheme = order[i]; lsSet(SCHEME_KEY, order[i]);
@@ -299,7 +316,7 @@
       };
       ws.onclose = function () {
         if (s.ws === ws) s.ws = null;
-        if (!opened) { if (i + 1 < order.length && !s.stopping) tryScheme(token, order, i + 1, conn); else retry('Deepgram refused the connection'); return; }
+        if (!opened) { if (i + 1 < order.length && !s.stopping) tryScheme(token, order, i + 1, conn, url); else { if (url !== DG_URL) s.noTerms = true; retry('Deepgram refused the connection'); } return; }
         if (s.running && !s.stopping && !s.dead) { s.merger.flush(); push({ kind: 'mark', text: 'reconnected', speaker: null }); retry('connection dropped'); }
       };
       ws.onerror = function () { /* onclose follows */ };
