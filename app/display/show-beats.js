@@ -60,8 +60,8 @@
 
   /* ---- keyturn: a key, turning ---- */
   S.register('keyturn', {
-    label: 'Turn the key', ms: 6000, fixture: { label: 'KEY-1', pc: 'Nell Arbuthnot' },
-    clean: function (p) { var l = C.text(p.label, 60); if (!l) return null; var pc = C.text(p.pc, 60); return opt({ label: l }, 'pc', pc); },
+    label: 'Turn the key', ms: 6000, fixture: { label: 'KEY-1', pc: 'Nell Arbuthnot', to: 'Reversed: KEY-1 word', crit: true },
+    clean: function (p) { var l = C.text(p.label, 60); if (!l) return null; var pc = C.text(p.pc, 60), to = C.text(p.to, 60), o = opt(opt({ label: l }, 'pc', pc), 'to', to); if (p.crit === true) o.crit = true; return o; },
     render: function (p, env) {
       var b = base(env, 'keyturn');
       var k = svg(b.doc, 'svg', { viewBox: '0 0 160 60', class: 'dp-key', 'aria-hidden': 'true' });
@@ -72,6 +72,8 @@
       b.n.appendChild(el(b.doc, 'p', 'dp-show-kicker', 'Turn the key'));
       b.n.appendChild(el(b.doc, 'p', 'dp-show-head', p.label));
       if (p.pc) b.n.appendChild(el(b.doc, 'p', 'dp-show-line', p.pc));
+      if (p.to) b.n.appendChild(el(b.doc, 'p', 'dp-key-to', p.to));
+      if (p.crit) b.n.appendChild(el(b.doc, 'p', 'dp-key-crit', 'AUTOMATIC CRITICAL'));
       return b.n;
     }
   });

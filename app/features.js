@@ -82,7 +82,11 @@
     { id: 'fx.pause', label: 'Pause hidden scenes', surface: 'display', stage: 'fx', default: false, saturday: 'on',
       doc: 'An ambient scene that is not on show (page hidden, covered or faded out) stops moving until it is. Off: scenes run as they always did.' },
     { id: 'fx.off', label: 'Hold scenes still', surface: 'display', stage: 'fx', default: false, saturday: 'try',
-      doc: 'Holds every ambient scene as a still picture, to save the battery and heat. On: no animation in the scenes. Off: scenes animate as they always did.' }
+      doc: 'Holds every ambient scene as a still picture, to save the battery and heat. On: no animation in the scenes. Off: scenes animate as they always did.' },
+    { id: 'spine.keyturn', label: 'Turn the key', surface: 'phone', stage: 'spine', default: false, saturday: 'on',
+      doc: 'A key with three hits offers "You can turn this key" on its sheet; turning it deadlocks the key, clears Stress, makes the next action roll an automatic critical, and lays a card over the iPad. Off: keys behave as before.' },
+    { id: 'between.keys', label: 'The key cabinet', surface: 'phone', stage: 'between', default: false, saturday: 'try',
+      doc: 'The sheet draws each key as a card that fills as it is hit; turned over, a card shows both deadlocks. Off: the keys box as before.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

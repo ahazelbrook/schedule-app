@@ -696,3 +696,23 @@
 .ds-tv-retry { margin: 0 auto; min-height: 44px; }
 .ds-tv-cap { flex: 0 0 auto; margin: 0; padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px)); font: 400 14px/1.4 var(--font-body, sans-serif); text-align: center; color: #e6dfd3; }
 @media print { .ds-tv { display: none !important; } }
+
+/* suite 1.8 / 5.6: the turned-key offer and the key cabinet (sheet/keys.js) */
+#dossier .ds-kt-row { display: grid; gap: 4px; padding: 6px 0; border-top: 1px solid var(--hair); }
+#dossier .ds-kt-offer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+#dossier .ds-kt-say { font-weight: 700; font-size: 13px; color: var(--accent); }
+#dossier .ds-kt-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+#dossier .ds-kt-auto { color: var(--accent); font-weight: 700; }
+#dossier .ds-kc { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-top: 6px; }
+#dossier .ds-kcard { position: relative; display: grid; gap: 6px; padding: 10px 28px 10px 10px; border: 1px solid var(--hair); border-radius: 6px; background: var(--paper, transparent); }
+#dossier .ds-kcard.full { border-color: var(--accent); }
+#dossier .ds-kcard.locked .ds-key-name { color: var(--accent); }
+#dossier .ds-kc-top { display: flex; align-items: center; gap: 6px; }
+#dossier .ds-kc-top .ds-key-name { flex: 1; min-width: 0; }
+#dossier .ds-kc-fill { display: flex; align-items: center; gap: 8px; }
+#dossier .ds-kc-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--hair); overflow: hidden; }
+#dossier .ds-kc-bar i { display: block; height: 100%; background: var(--accent); transition: width .25s; }
+#dossier .ds-kc-state { margin: 0; font-size: 13px; }
+#dossier .ds-kc-dl { display: grid; gap: 2px; }
+#dossier .ds-kc-rm { position: absolute; top: 4px; right: 4px; }
+@media print { #dossier .ds-kt-offer, #dossier .ds-kc-rm { display: none; } }

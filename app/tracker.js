@@ -516,14 +516,19 @@
     }
     return box(esc(name) + rl('stress'), h, '', 'ds-stressbox');
   }
+  /* suite 1.8 / 5.6: the key turn and the cabinet live in sheet/keys.js; these three lines are the only seam */
+  function skOn(id) { return !!(window.B68SheetKeys && window.B68Flags && window.B68Flags.on(id)); }
+  function skCtx() { return { esc: esc, input: input, pipRow: pipRow, play: cur.play, pb: cur.pb, ui: cur.ui, commit: commit, note: note, confirm: function (m) { return window.confirm(m); }, now: Date.now, turn: skOn('spine.keyturn') }; }
+  function skAct(n, d) { if (window.B68SheetKeys) window.B68SheetKeys.act(n, d, skCtx()); }
   function keys(play, pb) {
+    var cab = skOn('between.keys');
     var hull = isHull(pb), g = glitchy(pb), vamp = isVamp(pb), tt = isTT(pb), h = '', gname = glitchName(pb), glist = glitchList(pb);
     var used = play.keys.map(function (k) { return k.glitch; }).filter(Boolean);
     if (hull) h += '<p class="hint">You start with no keys; memories can restore them. If you have no keys when you would deadlock, mark a robotic deadlock instead.</p>';
     if (isGhost(pb)) h += '<p class="hint">You cannot turn keys. When fully drained, strike a key out with an echo irregularity instead of a deadlock.</p>';
     if (tt) h += '<p class="hint">When Instability is full, strike a key out with a temporal glitch. Each glitch adds a line to your mission details.</p>';
     if (vamp) h += '<p class="hint">Your deadlocks are maxed out: every key starts deadlocked. A further deadlock overwhelms you — level 3 harm “Incapacitated” until you feed enough to recover.</p>';
-    play.keys.forEach(function (k, i) {
+    (cab ? [] : play.keys).forEach(function (k, i) {
       var dl = k.deadlock, gl = k.glitch, struck = !!(dl || gl), side;
       if (g) {
         side = gl ? '<span class="ds-burst on" title="Permanent — hard mode">' + esc(gl) + '</span><span class="ds-perm">Permanent — hard mode</span><button type="button" class="ds-x" data-act="unglitch" data-i="' + i + '" title="Undo (GM)">undo (GM)</button>'
@@ -545,6 +550,7 @@
       }
       h += '</div>';
     });
+    if (cab) h += window.B68SheetKeys.cards(skCtx()); else if (skOn('spine.keyturn')) h += window.B68SheetKeys.offer(skCtx());
     if (play.keys.length < 4) {
       var opts = '<option value="">Add a key…</option>'; ((pb && pb.keys) || []).forEach(function (k) { if (!play.keys.some(function (x) { return x.name === keyParts(k).name; })) opts += '<option value="' + esc(k) + '">' + esc(k) + '</option>'; });
       opts += '<option value="*">Write your own</option>';
@@ -918,6 +924,7 @@
       h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">' + r.n + 'd</b><span class="ds-dim">' + (r.n === 0 ? 'roll 2d, take the lowest' : 'read the highest die') + '</span></span><button type="button" class="btn sm primary" data-act="roll" data-always="1">' + (r.result ? 'Roll again' : 'Roll') + '</button></div>';
       if (r.result) h += rollResult(r, pb);
     }
+    if (r.kind === 'action' && !r.result && play.autoCrit && window.B68SheetKeys) h += window.B68SheetKeys.banner({ play: play, esc: esc });
     h += abStrip(play, pb);
     return '<div class="ds-roll" tabindex="-1" role="region" aria-label="Roll"><div class="ds-roll-h"><span class="ds-roll-t">' + title + '</span><span class="ds-roll-sub">' + sub + '</span><button type="button" class="ds-x ds-roll-x" data-act="rollclose" data-always="1" aria-label="Close the roll panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div>' + panelFoot() + '</div>';
   }
@@ -1233,6 +1240,8 @@
       commit();
     },
     deadlock: function (d) { var k = cur.play.keys[+d.i]; if (!k) return; var word = d.dir === 'up' ? k.up : k.down; if (!window.confirm('Deadlock ' + (k.name || 'this key') + ' as ' + (d.dir === 'up' ? '▲ ' : '▼ ') + (word || d.dir) + '? Hard mode: this is permanent.')) return; k.deadlock = d.dir; commit(); },
+    kflip: function (d) { skAct('kflip', d); },
+    kturn: function (d) { skAct('kturn', d); },
     undeadlock: function (d) { var k = cur.play.keys[+d.i]; if (!k) return; if (!window.confirm('GM override: clear the permanent deadlock on ' + (k.name || 'this key') + '?')) return; k.deadlock = null; commit(); },
     /* ghost / time traveler: strike a key out with a named irregularity or glitch */
     glitchpick: function (d) { var i = +d.i; cur.ui.glitchPick = cur.ui.glitchPick === i ? null : i; render(); },
@@ -1354,6 +1363,7 @@
         var dots = p.dots[r.action] || 0, attr = attrOf(r.action) || '', key = attr.toLowerCase(), sm = stressMax(pb), sn = stressName(pb);
         if (r.push && p.stress + 2 > sm) { r.push = false; note('Cannot push: ' + sn + ' would pass ' + sm); render(); return; }
         res = rollDice(dots + (r.push ? 1 : 0) + (r.assist ? 1 : 0) + (r.bargain ? 1 : 0));
+        if (p.autoCrit && window.B68SheetKeys) window.B68SheetKeys.autoCrit(res, p);
         var flags = []; if (r.push) flags.push('push'); if (r.assist) flags.push('assist'); if (r.bargain) flags.push('bargain');
         res.text = r.action + ' ' + res.n + 'd' + (flags.length ? ' (' + flags.join(', ') + ')' : res.low ? ' (2d take lowest)' : '') + ' · ' + r.position + ' · ' + res.dice.join(',') + ' → ' + res.reading;
         /* consequences: listed first, written only when the sheet can be saved */

@@ -5094,9 +5094,14 @@
   /* the filed characters changed (boot, on each collection snapshot): the Who chips and the selects follow. Players tick their sheets all
      session, so the panel is drawn again only when what it shows changed (the slim copies), and never from under a list the GM has open
      (the next change catches up) */
+  function keyturnSync() {
+    var K = W.B68GmKeyturn, F = W.B68Features; if (!K || !F || !S || !F.valueOf(S.doc, 'spine.keyturn')) return;
+    K.sync({ pcs: dtPcs, show: function (k, p, o) { var c = shows(); return c ? c.show(k, p, o) : Promise.resolve(null); }, toast: toast, now: function () { return Date.now(); } });
+  }
   function charactersChanged() {
     if (!S || S.status !== 'ready') return;
     runFoldMoves();         /* a phone's move request rides on the characters */
+    keyturnSync();          /* a turned key (suite 1.8, switch spine.keyturn) */
     if (JSON.stringify(dtPcs()) === S.dtPcSig) return;
     runStale();
     if (S.mission) S.mission.changed();         /* a card carries its PC's name and owner */
