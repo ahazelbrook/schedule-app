@@ -23,7 +23,7 @@
   var KINDS = {
     stamp: { ms: 4000, keys: { word: ['s', 24, 1], tone: ['e', ['ink', 'orange', 'blue', 'red']] } },
     spotted: { ms: 4000, keys: { text: ['s', 60], level: ['i', [1, 3]] } },
-    keyturn: { ms: 6000, keys: { label: ['s', 60, 1], pc: ['s', 60] } },
+    keyturn: { ms: 6000, keys: { label: ['s', 60, 1], pc: ['s', 60], to: ['s', 60], crit: ['b'] } },
     title: { ms: 6000, keys: { text: ['s', 80, 1], sub: ['s', 120] } },
     wanted: { ms: 7000, keys: { level: ['i', [0, 4], 1], heat: ['i', [0, 9]], siren: ['b'] } },
     report: { ms: 180000, keys: { position: ['e', ['controlled', 'risky', 'desperate'], 1], effect: ['e', ['limited', 'standard', 'great'], 1], text: ['s', 100] } },

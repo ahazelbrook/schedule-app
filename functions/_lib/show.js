@@ -4,7 +4,7 @@
 //
 // BRIEF BEATS are overlay kinds. They ride in the ambient document's single `overlay` ({ id, kind, ms, at, payload }), so they get what the
 // overlay already has: the server's own expiry (at + ms, in liveAmbient), the lights-out rule, and a read-time join on every poll.
-//   stamp { word (24), tone? ink|orange|blue|red }      spotted { text? (60), level? 1-3 }       keyturn { label (60), pc? (60) }
+//   stamp { word (24), tone? ink|orange|blue|red }      spotted { text? (60), level? 1-3 }       keyturn { label (60), pc? (60), to? (60), crit? true }
 //   title { text (80), sub? (120) }                     wanted { level 0-4, heat? 0-9, siren? }  ring { text? (60) }
 //   rolodex { npcIds [1-12] }  and  spotlight { npcId }   -- joined to their rows like an npc overlay: REVEALED NPCs only.
 // LASTING LAYERS sit in the ambient document (`layers`, nested: band / scene / data) and stay until cleared:
@@ -54,7 +54,14 @@ const put = (o, k, v) => { if (v !== undefined) o[k] = v; return o; };
 export const SHOW_KINDS = {
   stamp: { build: (p) => put({ word: text(p.word, 'payload.word', 24, true) }, 'tone', oneOf(p.tone, 'payload.tone', TONES)) },
   spotted: { build: (p) => put(put({}, 'text', text(p.text, 'payload.text', 60)), 'level', whole(p.level, 'payload.level', 1, 3)) },
-  keyturn: { build: (p) => put({ label: text(p.label, 'payload.label', 60, true) }, 'pc', text(p.pc, 'payload.pc', 60)) },
+  keyturn: {
+    build: (p) => {
+      if (p.crit !== undefined && p.crit !== null && typeof p.crit !== 'boolean') bad('payload.crit must be true or false');
+      const o = put(put({ label: text(p.label, 'payload.label', 60, true) }, 'pc', text(p.pc, 'payload.pc', 60)), 'to', text(p.to, 'payload.to', 60));
+      if (p.crit === true) o.crit = true;
+      return o;
+    },
+  },
   title: { build: (p) => put({ text: text(p.text, 'payload.text', 80, true) }, 'sub', text(p.sub, 'payload.sub', 120)) },
   wanted: {
     build: (p) => {

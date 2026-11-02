@@ -35,6 +35,10 @@
 .dp-key-hole { fill: var(--b68-ink); }
 .dp-show-keyturn.dp-ov-in .dp-key { animation: dp-key-turn 1.4s ease-in-out .3s both; }
 @keyframes dp-key-turn { 0% { transform: rotate(0); } 70% { transform: rotate(90deg); } 100% { transform: rotate(80deg); } }
+.dp-key-to { font: 700 var(--b68-t-lead)/1.2 var(--b68-font-text); color: var(--b68-mustard); max-width: 22em; }
+.dp-key-crit { font: 900 var(--b68-t-display)/1.02 var(--b68-font-poster); text-transform: uppercase; letter-spacing: .04em; color: var(--b68-paper); margin-top: .3em; opacity: 0; }
+.dp-show-keyturn.dp-ov-in .dp-key-crit { animation: dp-key-crit-in .5s ease-out 1.5s both; }
+@keyframes dp-key-crit-in { 0% { opacity: 0; transform: scale(1.25); } 100% { opacity: 1; transform: scale(1); } }
 
 /* title */
 .dp-title-text { font: 900 var(--b68-t-display)/1.02 var(--b68-font-poster); text-transform: uppercase; letter-spacing: .02em; max-width: 14em; }

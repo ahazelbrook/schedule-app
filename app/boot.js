@@ -721,12 +721,16 @@
     var raw = p.contacts != null ? p.contacts : sh.contacts, contacts = [];
     if (Array.isArray(raw)) raw.forEach(function (c) { if (isObj(c) && t(c.name).trim()) contacts.push({ name: t(c.name).trim(), role: t(c.role).trim(), kind: kind(c.kind) }); });
     else if (isObj(raw)) Object.keys(raw).forEach(function (n) { if (n.trim()) contacts.push({ name: n.trim(), role: '', kind: kind(raw[n]) }); });
-    return {
+    var out = {
       id: String(id), owner: t(d.owner), name: t(d.name), alias: t(d.alias), playbook: t(d.playbook), playbookName: t(d.playbookName),
       vice: t(p.vice != null ? p.vice : sh.vice), purveyor: t(p.purveyor != null ? p.purveyor : sh.purveyor), contacts: contacts,
       clocks: (Array.isArray(p.clocks) ? p.clocks : []).filter(isObj).map(function (c) { return { name: t(c.name), size: Math.max(0, Math.floor(+c.size || 0)), filled: Math.max(0, Math.floor(+c.filled || 0)) }; }),
       moveReq: moveReqOf(d.moveReq)
     };
+    /* suite 1.8: a turned key rides on the slim copy only when there is one (the GM page lays the card over the iPad) */
+    var kt = isObj(p.keyTurn) ? p.keyTurn : null;
+    if (kt) out.keyTurn = { seq: Math.floor(+kt.seq) || 0, name: t(kt.name), word: t(kt.word), dir: kt.dir === 'up' ? 'up' : 'down', at: t(kt.at) };
+    return out;
   }
   function gmCharacters() {
     var ids = roster.length ? roster.map(function (d) { return d.id; }) : Object.keys(cache);
