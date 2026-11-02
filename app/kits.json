@@ -4,11 +4,11 @@
     "maps": {
       "file": "maps/map-kit.js",
       "global": "B68Map",
-      "version": "0.9.0",
-      "bytes": 827584,
-      "sha256": "0e17c9e1d95cde0279ad556aef5339dd7a79b89f3a5eac6e3ebaca2c10fcb018",
-      "source": "Blades '68 Design System, map kit 0.9.0, plus two app-side changes (front vector room, roll w/lvl); take upstream",
-      "at": "2026-10-31"
+      "version": "1.0.0",
+      "bytes": 885046,
+      "sha256": "8529b302ebfed192c0fba90727b288586845e52c5e1d39c5681ae76d1c954734",
+      "source": "Blades '68 Design System, map kit 0.9.0, plus app-side changes: front vector room, roll w/lvl, and kit 1.0 the grand map (src/grand.js, ticket 2.1); take upstream",
+      "at": "2026-11-02"
     },
     "figures": {
       "file": "figures/figure-kit.js",

@@ -138,7 +138,9 @@
     { id: 'room.duck', label: 'A speech-safe mix', surface: 'display', stage: 'room', default: false, saturday: 'try',
       doc: 'When the iPad hears “Blade”, the music ducks by 12 dB for 6 seconds. Setup: point the speaker away from the puck. Only where the iPad lets the page change the volume; otherwise it says so and does nothing. Off: the music is never touched.' },
     { id: 'room.music', label: 'Heat-state music', surface: 'display', stage: 'room', default: false, saturday: 'off',
-      doc: 'The engine only: ambient, tension, alert, evasion and resolved follow the security level and heat, a change lands on the bar from the track tempo, a flashback muffles it. Ships with one layer per state from today’s track. Off: the scene themes play as before.' }
+      doc: 'The engine only: ambient, tension, alert, evasion and resolved follow the security level and heat, a change lands on the bar from the track tempo, a flashback muffles it. Ships with one layer per state from today’s track. Off: the scene themes play as before.' },
+    { id: 'map.kit1', label: 'The grand map (map kit 1.0)', surface: 'gm', stage: 'map', default: false, saturday: 'try',
+      doc: 'A site whose block says kit: 1 draws with map kit 1.0: floors of their own, double-height rooms, its faces, a grand stair, the palazzo section. Off: every map as before.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

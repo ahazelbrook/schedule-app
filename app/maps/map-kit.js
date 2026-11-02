@@ -17,7 +17,7 @@ const M = {};
 // A THEME turns roles into paint. That is the whole trick that lets one plan
 // render as a rulebook plate, a blueprint, a case file or a heist board.
 
-M.VERSION = "0.9.0";
+M.VERSION = "1.0.0";     // 1.0: the grand map (grand.js), app-side until the design system takes it; 0.9 otherwise unchanged
 // A table looked up by a word from a roll or an option: its own entries only, so "__proto__",
 // "toString" or "constructor" find nothing (as any other unknown word does), never
 // Object.prototype's.
@@ -1004,6 +1004,13 @@ reg("hazard-strip", "Hazard striping on the floor.", [10, 1], o => { const L = o
 
 // --- Circulation ---------------------------------------------------------------------
 reg("stairs", "A straight stair, drawn as treads.", [4, 10], o => { const W = o.w || 4, H = o.h || 10, k = [R_("fxl", 0, 0, W, H)]; for (let y = -H / 2 + 0.6; y < H / 2; y += 0.9) k.push(R_("fx3", 0, y, W, 0.12)); k.push(P.poly("fx2", [[0, -H / 2 + 0.8], [0.7, -H / 2 + 2], [-0.7, -H / 2 + 2]])); return k; });
+// kit 1.0 (grand.js): an imperial stair, one flight up the middle to a landing at the back, two flights returning up the sides
+reg("stairs-grand", "A grand branching stair: one flight up the middle, two returning up the sides.", [17, 15], () => {
+  const k = [], flight = (x, y0, y1, w) => { k.push(R_("fxl", x, (y0 + y1) / 2, w, Math.abs(y1 - y0))); for (let y = Math.min(y0, y1) + 0.6; y < Math.max(y0, y1); y += 0.85) k.push(R_("fx3", x, y, w, 0.1)); k.push(R_("fx3", x - w / 2, (y0 + y1) / 2, 0.22, Math.abs(y1 - y0)), R_("fx3", x + w / 2, (y0 + y1) / 2, 0.22, Math.abs(y1 - y0))); };
+  flight(0, 7.2, -3, 5.4); k.push(R_("fxm", 0, -5, 17, 4)); flight(-6.1, -3, 7.2, 4.2); flight(6.1, -3, 7.2, 4.2);
+  k.push(P.poly("fx2", [[0, -1.4], [0.8, 0], [-0.8, 0]]), P.poly("fx2", [[-6.1, 5.6], [-5.3, 4.2], [-6.9, 4.2]]), P.poly("fx2", [[6.1, 5.6], [6.9, 4.2], [5.3, 4.2]]));
+  return k;
+});
 reg("stairs-spiral", "Circular stairs.", [5, 5], () => { const k = [P.circle("fxl", 0, 0, 2.5)]; for (let a = 0; a < 12; a++) { const t = a * 0.5236; k.push(P.line("fx3", Math.cos(t) * 0.5, Math.sin(t) * 0.5, Math.cos(t) * 2.5, Math.sin(t) * 2.5, { sw: 0.12 })); } k.push(P.circle("fx3", 0, 0, 0.5)); return k; });
 reg("lift", "A lift car in its shaft.", [5, 5], () => [R_("fx3", 0, 0, 5, 5), R_("fxm", 0, 0.3, 4, 4), R_("fx3", 0, 0.3, 0.1, 4), R_("fx2", 0, 2.4, 3, 0.25)]);
 reg("ladder", "A ladder up through a hatch.", [2, 4], () => [R_("fx3", 0, 0, 2.6, 4), R_("fxl", -0.7, 0, 0.18, 4), R_("fxl", 0.7, 0, 0.18, 4), R_("fxl", 0, -1.2, 1.4, 0.15), R_("fxl", 0, 0, 1.4, 0.15), R_("fxl", 0, 1.2, 1.4, 0.15)]);
@@ -2233,7 +2240,7 @@ L.hull = function (B) {
 };
 
 L.build = function (model, view, rng, opts = {}) {
-  const lay = view === "plan" ? planView(model, rng) : (model.rings === "radial" ? ringCircle(model, rng) : ringRect(model, rng));
+  const lay = view === "plan" ? (model.grand ? M.grand.plan(model, rng, opts.W || []) : planView(model, rng)) : (model.rings === "radial" ? ringCircle(model, rng) : ringRect(model, rng));
   if (model.target === "Ship") for (const lv of lay.levels) {
     lv.hull = L.hull(lv.bbox);
     // the site grows to hold the hull
@@ -2360,6 +2367,7 @@ M.furnish = function (room, rng, W, extraParts) {
     if (R.w < 3 || R.h < 3) return;
     let pls = recipe ? recipe(R, rng) : [];
     pls = pls.flat().filter(p => p && !p.skip && !(fi > 0 && UNIQUE.has(p.part)));
+    if (room.grandStair && fi === 0) pls = pls.filter(p => Math.abs(p.x) > 9.5 || Math.abs(p.y) > 8);     // kit 1.0: the grand stair's floor is clear
     if (extraParts && fi === 0) pls = pls.concat(extraParts(R));
     const kids = [];
     for (const pl of pls) {
@@ -2417,6 +2425,7 @@ M.circulationParts = room => R => {
   if (room.skylight && room.connects !== "skylights") out.push({ part: "skylight", x: 0, y: 0 });
   if (room.hatch && room.connects !== "a cellar") { const [x, y] = M.WAY_SPOT.hatch(R); out.push({ part: "hatch", x, y }); }
   if (room.roofHatch) { const [x, y] = M.WAY_SPOT["roof-hatch"](R); out.push({ part: "roof-hatch", x, y }); }
+  if (room.grandStair) out.push({ part: "stairs-grand", x: 0, y: 0, rot: 0 });        // kit 1.0 (grand.js): build.stair
   return out;
 };
 
@@ -3897,7 +3906,7 @@ ISO.vx = lay => (lay && lay.isoCorner === "left" ? -1 : 1);
 // Each face carries its painter's key (dk) and its plan normal (nrm) for a
 // theme that lights faces (the plate); rec, when given, gets each wall as
 // drawn ({ a, b, h, t }) for the shadows it casts. Neither reaches the file.
-function wallBoxes(lv, P0, hiddenAt, vx = 1, rec) {
+function wallBoxes(lv, P0, hiddenAt, vx = 1, rec, gw) {      // gw: kit 1.0's { hk, deco } (GR.wallOpts), else nothing
   const cx = lv.bbox.x + lv.bbox.w / 2, cy = lv.bbox.y + lv.bbox.h / 2;
   const segs = [];
   for (const w of lv.walls) {
@@ -3934,6 +3943,7 @@ function wallBoxes(lv, P0, hiddenAt, vx = 1, rec) {
       if (h1 !== false && h2 !== false) continue;
     }
     let h = s.cutH != null ? s.cutH : WALL_H[s.t] || 5;
+    if (gw && s.cutH == null) h *= gw.hk;
     if (s.t === "ext") {
       // outward = away from the floor's centre (or the pod's centre for arcs)
       const ocx = s.arc ? s.arc.cx : cx, ocy = s.arc ? s.arc.cy : cy;
@@ -3947,6 +3957,7 @@ function wallBoxes(lv, P0, hiddenAt, vx = 1, rec) {
     const pts = [], key = vx * mx + my;
     if (rec) rec.push({ a: s.a, b: s.b, h, t: s.t });
     pts.push(P.poly("wallf-" + s.t, [P0(A, 0), P0(B, 0), P0(B, h), P0(A, h)], { dk: key, nrm: [nx, ny] }));
+    if (gw && gw.deco) { const dd = gw.deco(s, h, A, B, P0); if (dd) pts.push(...dd); }
     const endB = vx * dx + dy > 0;                             // which end faces the viewer
     const E1 = endB ? B : A, E2 = endB ? B2 : A2;
     pts.push(P.poly("walle-" + s.t, [P0(E1, 0), P0(E2, 0), P0(E2, h), P0(E1, h)], { dk: key, nrm: endB ? [dx / len, dy / len] : [-dx / len, -dy / len] }));
@@ -3983,7 +3994,8 @@ ISO.build = function (lay, model, ctx) {
   const shift = new Map(), zOf = new Map();
   let z = 0;
   order.forEach((lv, i) => {
-    const sx = -(lv.bbox.x + lv.bbox.w / 2), sy = -(lv.bbox.y + lv.bbox.h / 2);
+    // kit 1.0: every floor about the street floor's centre, so a set-back floor stands where it is built
+    const C = lay.grand ? lay.grand.centre : null, sx = C ? -C[0] : -(lv.bbox.x + lv.bbox.w / 2), sy = C ? -C[1] : -(lv.bbox.y + lv.bbox.h / 2);
     shift.set(lv, [sx, sy]);
     if (i > 0) {
       const prev = order[i - 1];
@@ -4023,6 +4035,7 @@ ISO.build = function (lay, model, ctx) {
     const [sx, sy] = shift.get(lv), zz = zOf.get(lv);
     const mat = `matrix(${IC.toFixed(5)} ${vx * IS} ${(-vx * IC).toFixed(5)} ${IS} ${(IC * (sx - vx * sy)).toFixed(3)} ${(IS * (vx * sx + sy) - zz).toFixed(3)})`;
     const layers = M.scene.level(lv, model, ctx);
+    if (model.grand) M.grand.dress(lv, layers, model, ctx);
     const P0 = (p, h) => toScreen(lv, p[0], p[1], h);
     // The player copy arrives sealed (S.seal): walls and doors that face only
     // unsurveyed rooms are already gone, and the cover is in the floor layer.
@@ -4043,7 +4056,7 @@ ISO.build = function (lay, model, ctx) {
     // Upper floors float: no ground, no street.
     if (lv.lvl !== 0) layers.site = layers.site.filter(p => ["footprint", "hull", "deck"].includes(p.r));
     const drawnWalls = [];
-    const walls = slab.concat(wallBoxes(lv, P0, hiddenAt, vx, drawnWalls));
+    const walls = slab.concat(model.grand ? wallBoxes(lv, P0, hiddenAt, vx, drawnWalls, M.grand.wallOpts(lv, model)) : wallBoxes(lv, P0, hiddenAt, vx, drawnWalls));
     layers.walls = walls;
     // Icons and labels upright, at head height above their floor.
     const lifted = [];
@@ -4069,6 +4082,7 @@ ISO.build = function (lay, model, ctx) {
     const p = toScreen(order[i], a.frame.cx, a.frame.cy, 0), q = toScreen(order[i + 1], b.frame.cx, b.frame.cy, 0);
     coreLinks.push(P.line("core-link", p[0], p[1], q[0], q[1], { sw: 0.5 * k }));
   }
+  if (model.grand) coreLinks.push(...M.grand.isoLinks(order, toScreen, k, ctx.reveal));
   return { parts, coreLinks, bounds: { minX, minY, maxX, maxY } };
 };
 
@@ -7112,6 +7126,689 @@ ST.streetLife1 = function (S, F, g, o) {
   }
 };
 
+// ---- src/grand.js ----
+// =============================================================================
+// grand — map kit 1.0: the grand map (footprints, spans, faces, a grand stair, the palazzo)
+// =============================================================================
+// TODO(upstream): built app-side in the vendored kit (the Blades '68 table app, ticket 2.1, switch map.kit1). Port this file and
+// its hook lines to the design system's src/: render.js (M.render, M.buildScene, M.buildPlan), layout.js (L.build, RANK),
+// model.js (M.furnish, M.circulationParts), parts.js (stairs-grand), iso.js (WALL_H, wallBoxes, ISO.build) and themes.js
+// (projectedPaint). Then take the kit back with scripts/kits.mjs.
+//
+// Nothing here runs unless the roll says kit: 1 AND the render asks for it (opts.kit1 === true: the app's switch). Without
+// both, every byte is kit 0.9's.
+//
+// The fields, all on the roll (an authored site's patch carries them through untouched). Feet, in the site's frame: x runs
+// along the front, left to right as you face the building; y runs back from the front face.
+//   kit: 1
+//   build: {
+//     style: "palazzo",                         a flat parapet and cornice, arched windows, a rusticated base; no pitched
+//                                               roof, no chimney (else the building's own style)
+//     front: "canal" | "street",                what the front face stands on (default street)
+//     floors: { "-1" | "0" | "1" | "2": { x, y, w, d, h } },   each floor's own footprint, and h its storey height (8 to 40)
+//     core: [x, y, w, d],                       the stairs-and-lift core, on every floor it fits
+//     stair: { room, to },                      a grand branching stair in that room, up to floor `to`
+//     faces: [{ kind: "water-door" | "water-steps" | "boats" | "loading-door", room }] }
+//   rooms[i]: {
+//     lvl: -1..2, at: [x, y, w, d],             where the room stands on its floor
+//     span: 2,                                  double height: it rises through the floor above
+//     ring: "<room name>",                      on the floor above a spanning room: a mezzanine gallery round its void
+//     gallery: 4..20,                           the ring's gallery width (default 8)
+//     scale: "grand" | "service" }              tall arched windows and a chandelier, or a dropped ceiling
+// A floor whose every room has "at" (inside the footprint, none overlapping) is drawn as authored; any other floor is laid out
+// in its footprint the way 0.9 lays out a floor, and says why. Anything not understood is a warning, never a guess.
+//
+// The two views (decision D6): the SECTION is the iPad's score view, every room a cell at one plane; the exploded ISO is the
+// planning board and the print. The rings view is unchanged; the plan view takes the same layout as the iso.
+//
+// Secrecy: the layout never depends on what the crew knows, so a player copy is the GM's with pieces left out. A void is
+// known when the ring round it is (else when the room under it is); the chandelier, the double height and everything inside
+// a room are drawn only for a room the crew knows. One predicate, M.roomRevealed, as everywhere.
+
+const GR = M.grand = {};
+GR.FACES = ["water-door", "water-steps", "boats", "loading-door"];
+GR.SCALES = ["grand", "service"];
+const grNum = v => typeof v === "number" && Number.isFinite(v);
+const grObj = v => !!v && typeof v === "object" && !Array.isArray(v);
+const grLow = s => String(s == null ? "" : s).toLowerCase().trim();
+// [x, y, w, d] in the site's frame → a plan rect (the plan's y grows toward the front, which is the bottom of the page)
+const grRect = a => ({ x: a[0], y: -(a[1] + a[3]), w: a[2], h: a[3] });
+const grAt = (a, what, W) => {
+  if (a == null) return null;
+  if (Array.isArray(a) && a.length === 4 && a.every(grNum) && a[2] >= 4 && a[3] >= 4 && a[2] <= 400 && a[3] <= 400) return a.slice();
+  M.warn(W, `${what}: "at" must be [x, y, w, d] in feet, w and d 4 to 400 — laid out for it instead`);
+  return null;
+};
+const grFrame = q => ({ cx: q.x + q.w / 2, cy: q.y + q.h / 2, w: q.w, h: q.h, rot: 0 });
+const grNode = (kind, q, o) => Object.assign({ kind, band: "public", rect: q, shape: { kind: "poly", pts: G.rectPts(q) }, frame: grFrame(q) }, o || {});
+const grOver = (a, b) => Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 0.5 && Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 0.5;
+const grIn = (q, F) => q.x >= F.x - 0.5 && q.y >= F.y - 0.5 && q.x + q.w <= F.x + F.w + 0.5 && q.y + q.h <= F.y + F.h + 0.5;
+
+// --- Read: the roll's fields, checked ---------------------------------------------------
+GR.read = function (o, model, W) {
+  const b = grObj(o.build) ? o.build : {};
+  if (o.build != null && !grObj(o.build)) M.warn(W, "build is not an object — drawn without it");
+  const g = { style: null, front: "street", floors: {}, core: null, stair: null, faces: [], rooms: new Map() };
+  if (b.style != null) { if (b.style === "palazzo") g.style = "palazzo"; else M.warn(W, `build.style "${b.style}" is not palazzo — drawn in the building's own style`); }
+  if (b.front != null) { if (b.front === "canal" || b.front === "street") g.front = b.front; else M.warn(W, `build.front "${b.front}" is not canal or street — drawn on a street`); }
+  if (b.floors != null && !grObj(b.floors)) M.warn(W, "build.floors is not an object — every floor takes its own size");
+  const fl = grObj(b.floors) ? b.floors : {};
+  for (const key of Object.keys(fl)) {
+    const f = fl[key], lvl = Number(key);
+    if (!["-1", "0", "1", "2"].includes(key)) { M.warn(W, `build.floors "${key}" is not one of -1, 0, 1, 2 — left out`); continue; }
+    if (!grObj(f) || ![f.x, f.y, f.w, f.d].every(grNum) || f.w < 8 || f.d < 8 || f.w > 400 || f.d > 400) { M.warn(W, `build.floors "${key}" needs x, y, w and d in feet (w and d 8 to 400) — that floor takes its own size`); continue; }
+    let h = lvl < 0 ? 11 : 14;
+    if (f.h != null) { if (grNum(f.h) && f.h >= 8 && f.h <= 40) h = f.h; else M.warn(W, `build.floors "${key}".h must be 8 to 40 feet — drawn ${h}`); }
+    g.floors[lvl] = { x: f.x, y: f.y, w: f.w, d: f.d, h };
+  }
+  g.core = grAt(b.core, "build.core", W);
+  const raws = Array.isArray(o.rooms) ? o.rooms : [];
+  const find = n => model.rooms.find(r => grLow(r.name) === grLow(n)) || null;
+  const rings = new Map();
+  for (const r of model.rooms) {
+    const raw = raws[+r.id.slice(1)], s = { at: null, span: 1, ring: null, gallery: 8, scale: null };
+    if (grObj(raw)) {
+      s.at = grAt(raw.at, `room "${r.name}"`, W);
+      if (raw.span != null && raw.span !== 1) { if (raw.span === 2 && r.lvl < 2) s.span = 2; else M.warn(W, `room "${r.name}": span ${JSON.stringify(raw.span)} — a room spans 2 floors, from below the top floor; drawn one storey high`); }
+      if (raw.scale != null) { if (GR.SCALES.includes(raw.scale)) s.scale = raw.scale; else M.warn(W, `room "${r.name}": scale "${raw.scale}" is not grand or service — drawn plain`); }
+      if (raw.gallery != null) { if (grNum(raw.gallery) && raw.gallery >= 4 && raw.gallery <= 20) s.gallery = raw.gallery; else M.warn(W, `room "${r.name}": gallery must be 4 to 20 feet — drawn 8`); }
+      if (raw.ring != null) rings.set(r, raw.ring);
+    }
+    g.rooms.set(r, s);
+  }
+  // a ring names a room that spans up into its floor, and no other ring names it
+  for (const [r, name] of rings) {
+    const t = find(name), ts = t && g.rooms.get(t);
+    if (t && ts.span === 2 && t.lvl === r.lvl - 1 && ![...g.rooms.values()].some(q => q.ring === t)) g.rooms.get(r).ring = t;
+    else M.warn(W, `room "${r.name}": ring "${name}" is not a room spanning up from the floor below — drawn as a plain room`);
+  }
+  if (b.stair != null) {
+    const st = grObj(b.stair) ? b.stair : {}, r = find(st.room), to = st.to == null ? (r ? r.lvl + 1 : null) : st.to;
+    if (r && Number.isInteger(to) && to > r.lvl && to <= 2) { g.stair = { room: r, to }; r.grandStair = { to }; }
+    else M.warn(W, "build.stair needs a room of this site and a floor \"to\" above it (2 at most) — left out");
+  }
+  M.list(b.faces, W, "build.faces").forEach((f, i) => {
+    if (!grObj(f) || !GR.FACES.includes(f.kind)) { M.warn(W, `build.faces[${i}]: kind must be one of ${GR.FACES.join(", ")} — left out`); return; }
+    const r = f.room == null ? null : find(f.room);
+    if (f.room != null && !r) { M.warn(W, `build.faces[${i}]: room "${f.room}" is not a room of this site — left out`); return; }
+    g.faces.push({ kind: f.kind, room: r });
+  });
+  return g;
+};
+
+// --- Layout: the floors as authored -------------------------------------------------------
+// Each floor's footprint is build.floors[lvl], or the 0.9 floor's size centred on the street floor's. The layout is the GM's
+// and the players' alike: what the crew knows only ever leaves pieces out (S.seal, S.coverPiece, GR.dress, GR.section).
+GR.plan = function (model, rng, W) {
+  const g = model.grand, st = M.own(STYLE, model.rings) || STYLE.hard, byLvl = {};
+  for (const r of model.rooms) (byLvl[r.lvl] ||= []).push(r);
+  if (!byLvl[0]) {
+    const first = Object.keys(byLvl).sort((a, b) => Math.abs(a) - Math.abs(b))[0];
+    byLvl[0] = byLvl[first]; byLvl[0].forEach(r => { r.lvl = 0; }); delete byLvl[first];
+    M.warn(W, "no room on the street floor — the nearest floor is drawn at street level");
+  }
+  const order = [0, 1, 2, -1].filter(k => byLvl[k] && byLvl[k].length), multi = order.length > 1, fp = {};
+  for (const k of order) if (g.floors[k]) { const f = g.floors[k]; fp[k] = grRect([f.x, f.y, f.w, f.d]); }
+  const c0 = fp[0] ? [fp[0].x + fp[0].w / 2, fp[0].y + fp[0].h / 2] : [0, 0];
+  for (const k of order) if (!fp[k]) {
+    const A = byLvl[k].reduce((s, r) => s + r.w, 0) * UNIT_PLAN + (multi ? 1.3 * UNIT_PLAN : 0), w = Math.sqrt(A * 1.4), h = A / w;
+    fp[k] = { x: c0[0] - w / 2, y: c0[1] - h / 2, w, h };
+  }
+  const levels = order.map(k => GR.level(model, byLvl[k], k, fp[k], rng.fork("lvl" + k), multi, st, W));
+  return { kind: "plan", levels, rng, st, grand: { centre: c0 } };
+};
+
+// What of a footprint no rect covers, as rects (a grid on every edge, merged along rows, then down)
+GR.leftover = function (F, rects) {
+  const clip = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const xs = [...new Set([F.x, F.x + F.w].concat(rects.flatMap(q => [clip(q.x, F.x, F.x + F.w), clip(q.x + q.w, F.x, F.x + F.w)])).map(v => +v.toFixed(3)))].sort((a, b) => a - b);
+  const ys = [...new Set([F.y, F.y + F.h].concat(rects.flatMap(q => [clip(q.y, F.y, F.y + F.h), clip(q.y + q.h, F.y, F.y + F.h)])).map(v => +v.toFixed(3)))].sort((a, b) => a - b);
+  const free = (x, y) => !rects.some(q => x > q.x && x < q.x + q.w && y > q.y && y < q.y + q.h);
+  let runs = [];
+  for (let j = 0; j < ys.length - 1; j++) {
+    let cur = null;
+    for (let i = 0; i < xs.length - 1; i++) {
+      if (xs[i + 1] - xs[i] < 0.01 || ys[j + 1] - ys[j] < 0.01) continue;
+      if (free((xs[i] + xs[i + 1]) / 2, (ys[j] + ys[j + 1]) / 2)) { if (cur && Math.abs(cur.x + cur.w - xs[i]) < 0.01) cur.w = xs[i + 1] - cur.x; else { cur = { x: xs[i], y: ys[j], w: xs[i + 1] - xs[i], h: ys[j + 1] - ys[j] }; runs.push(cur); } }
+      else cur = null;
+    }
+  }
+  const out = [];
+  for (const q of runs) { const up = out.find(p => Math.abs(p.x - q.x) < 0.01 && Math.abs(p.w - q.w) < 0.01 && Math.abs(p.y + p.h - q.y) < 0.01); if (up) up.h += q.h; else out.push(Object.assign({}, q)); }
+  return out.filter(q => q.w >= 1 && q.h >= 1);
+};
+
+GR.level = function (model, rooms, lvl, F, rng, multi, st, W) {
+  const g = model.grand, sp = r => g.rooms.get(r), title = LEVEL_NAME[lvl], walls = [], doors = [], extras = [];
+  let authored = rooms.every(r => sp(r).at);
+  if (authored) {
+    const qs = rooms.map(r => grRect(sp(r).at));
+    if (qs.some(q => !grIn(q, F)) || qs.some((q, i) => qs.some((p, j) => j > i && grOver(p, q)))) { authored = false; M.warn(W, `${title}: its rooms' "at" leave the footprint or overlap — laid out in the footprint instead`); }
+  } else if (rooms.some(r => sp(r).at)) M.warn(W, `${title}: not every room has "at" — laid out in the footprint instead`);
+  let core = null;
+  if (authored) {
+    rooms.forEach(r => { const q = grRect(sp(r).at); rectRoom(r, q.x, q.y, q.w, q.h); });
+    if (g.core) { const q = grRect(g.core); if (grIn(q, F) && !rooms.some(r => grOver(r.rect, q))) core = grNode("core", q); }
+  } else {
+    const items = rooms.slice().sort((a, b) => depthOf(a.band) - depthOf(b.band) || b.w - a.w).map(r => ({ room: r, w: r.w, place: (x, y, w, h) => rectRoom(r, x, y, w, h) }));
+    if (multi) {
+      core = { kind: "core", band: "public", w: 1.3 };
+      const at = items.findIndex(i => depthOf(i.room.band) > 0);
+      items.splice(at < 0 ? items.length : at, 0, { room: core, w: 1.3, place: (x, y, w, h) => Object.assign(core, grNode("core", { x, y, w, h })) });
+    }
+    treemap(items, F, rng, st.jitter);
+  }
+  if (core) extras.push(core);
+  // voids: a room spanning up from the floor below opens this one
+  const voids = [];
+  if (authored) for (const s of model.rooms) {
+    const ss = sp(s);
+    if (s.lvl !== lvl - 1 || ss.span !== 2 || !ss.at) continue;
+    const S0 = grRect(ss.at), ring = rooms.find(r => sp(r).ring === s) || null;
+    let q;
+    if (ring) {
+      const gw = sp(ring).gallery, R0 = ring.rect;
+      q = { x: R0.x + gw, y: R0.y + gw, w: R0.w - 2 * gw, h: R0.h - 2 * gw };
+      if (q.w < 4 || q.h < 4 || !grIn(q, S0)) { M.warn(W, `room "${ring.name}": its gallery leaves no void over "${s.name}" — drawn as a plain room`); continue; }
+    } else {
+      q = S0;
+      if (!grIn(q, F) || rooms.some(r => grOver(r.rect, q)) || (core && grOver(core.rect, q))) { M.warn(W, `room "${s.name}": rooms stand over it on the floor above — drawn one storey high`); continue; }
+    }
+    // known as the ring is (its own hole), else as the room under it: S.nodeKnown reads band and name
+    const owner = ring || s;
+    voids.push(grNode("void", q, { band: owner.band, name: owner.name, span: s, ring }));
+  }
+  // a ring room is the gallery round its void: its outline is the frame with the void cut out (a keyhole), and it is
+  // furnished along each run of gallery
+  for (const v of voids) if (v.ring) {
+    const r = v.ring, O = r.rect, I = v.rect, o = G.rectPts(O), i = G.rectPts(I);
+    r.shape = { kind: "poly", pts: [o[0], o[1], o[2], o[3], o[0], i[0], i[3], i[2], i[1], i[0]] };
+    r.frames = [
+      { x: O.x, y: I.y + I.h, w: O.w, h: O.y + O.h - (I.y + I.h), side: "bottom" }, { x: O.x, y: O.y, w: O.w, h: I.y - O.y, side: "top" },
+      { x: O.x, y: I.y, w: I.x - O.x, h: I.h, side: "left" }, { x: I.x + I.w, y: I.y, w: O.x + O.w - (I.x + I.w), h: I.h, side: "right" }
+    ].filter(q => q.w >= 3 && q.h >= 3).map(q => Object.assign(grFrame(q), { side: q.side })).sort((a, b) => b.w * b.h - a.w * a.h);
+    r.gallery = v;     // its frame stays the whole ring (nothing placed by it may depend on the gallery); its label and markers take the widest run
+  }
+  const nodes = rooms.concat(extras);
+  if (authored) {
+    const left = GR.leftover(F, nodes.map(n => n.rect).concat(voids.filter(v => !v.ring).map(v => v.rect)));
+    const area = left.reduce((s, q) => s + q.w * q.h, 0);
+    if (area > 4) M.warn(W, `${title}: ${Math.round(area)} sq ft of its footprint is no room's — drawn as passage`);
+    for (const q of left) { const p = grNode("corridor", q); extras.push(p); nodes.push(p); }
+  }
+  for (const n of nodes) G.rectPts(n.rect).forEach((p, i, a) => walls.push(L.seg(p, a[(i + 1) % 4], st.int)));
+  G.rectPts(F).forEach((p, i, a) => walls.push(L.seg(p, a[(i + 1) % 4], "ext")));
+  for (const v of voids) if (v.ring) G.rectPts(v.rect).forEach((p, i, a) => walls.push(L.seg(p, a[(i + 1) % 4], "rail")));
+  const edges = [];
+  for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) { const e = sharedEdge(nodes[i].rect, nodes[j].rect, 3.5); if (e) edges.push({ a: nodes[i], b: nodes[j], e }); }
+  const roots = nodes.filter(r => r.kind === "core" || depthOf(r.band) === 0);
+  for (const c of connect(nodes, edges, st, rng, roots.length ? [roots[0]] : [])) {
+    const open = c.a.kind && c.b.kind, kind = open || c.a.kind === "core" || c.b.kind === "core" ? "opening" : kindFor(st, c.a, c.b);
+    const big = (c.a.w >= 5 || c.a.kind) && (c.b.w >= 5 || c.b.kind);
+    doors.push(Object.assign(doorOn(c.e, undefined, big && kind !== "vault" ? 5 : 3, kind, rng), { a: c.a, b: c.b }));
+  }
+  // a loading door (and a water door the front way in does not already make) in the room's front wall
+  const front = F.y + F.h, v0 = model.vectors[0], frontRoom = v0 && v0.room ? grLow(v0.room) : "";
+  for (const f of g.faces) {
+    if (!f.room || !rooms.includes(f.room) || !f.room.rect) continue;
+    if (f.kind !== "loading-door" && !(f.kind === "water-door" && lvl === 0 && grLow(f.room.name) !== frontRoom)) continue;
+    const q = f.room.rect;
+    if (Math.abs(q.y + q.h - front) > 0.5) { M.warn(W, `build.faces: "${f.room.name}" has no wall on the front — its ${f.kind} is left out`); continue; }
+    doors.push({ x: q.x + q.w / 2, y: front, ang: 0, w: f.kind === "loading-door" ? 6 : 5, kind: "ext-double", ext: true, face: f.kind });
+  }
+  return { lvl, title, rooms, extras: extras.concat(voids), walls, doors, bbox: F, exterior: { kind: "rect", r: F }, edges, core, voids, h: g.floors[lvl] ? g.floors[lvl].h : (lvl < 0 ? 11 : 14), authored };
+};
+
+// --- Dressing the plan and the iso -----------------------------------------------------------
+// After M.scene.level: the void's well, rail and chandelier; the canal, its water steps and boats; the barge at the loading door.
+GR.dress = function (lv, layers, model, ctx) {
+  const g = model.grand, reveal = ctx.reveal, known = r => !reveal || M.roomRevealed(reveal, r);
+  // a gallery's label stands on its widest run, not over the void
+  for (const r of lv.rooms) if (r.gallery && r.frames && r.frames.length && known(r)) {
+    const i = layers.labels.findIndex(p => p && p.meta && p.meta.kind === "room" && p.meta.room === r), f = r.frames[0];
+    if (i < 0) continue;
+    r._label = [f.cx, f.cy];
+    layers.labels[i] = S.labelBlock(r, f.cx, f.cy, layers.labels[i].meta.icons || [], ctx, S.fitRegion(r, ctx.opts.view === "iso", ctx.isoVx || 1), { lv });
+  }
+  for (const v of lv.voids || []) {
+    if (!S.nodeKnown(v, reveal || new Set(M.BANDS))) continue;
+    const q = v.rect;
+    layers.floors.push(P.rect("void-well", q.x, q.y, q.w, q.h, { cls: "void" }));
+    if (known(v.span)) {
+      // looking down into the room below: its floor, far off, and its chandelier hanging in the well
+      layers.floors.push(P.rect("floor-" + v.span.band, q.x + 2, q.y + 2, q.w - 4, q.h - 4, { opacity: 0.35 }));
+      if (g.rooms.get(v.span).scale === "grand") layers.furn.push(P.g(M.PARTS.chandelier.draw({}), { tf: { x: q.x + q.w / 2, y: q.y + q.h / 2, s: Math.min(2.2, Math.min(q.w, q.h) / 6) }, cls: "furniture fx-chandelier" }));
+    }
+  }
+  if (g.front !== "canal") return;
+  const F = lv.bbox, front = F.y + F.h;
+  const faceRoom = kind => { const f = g.faces.find(x => x.kind === kind && x.room && lv.rooms.includes(x.room)); return f ? f.room : null; };
+  const has = kind => g.faces.some(x => x.kind === kind);
+  if (lv.lvl === 0) {
+    for (const p of layers.site) if (p.r === "street") p.r = "water-body";
+    const r = faceRoom("water-door") || faceRoom("water-steps") || faceRoom("boats");
+    const cx = r && r.rect ? r.rect.x + r.rect.w / 2 : F.x + F.w / 2;
+    if (has("water-steps")) {
+      const k = [];
+      for (let i = 0; i < 5; i++) k.push(P.rect("fxl", cx - 4.5 - i * 0.6, front + i * 1.3, 9 + i * 1.2, 1.3), P.line("fx3", cx - 4.5 - i * 0.6, front + i * 1.3, cx + 4.5 + i * 0.6, front + i * 1.3, { sw: 0.12 }));
+      layers.site.push(P.g(k, { cls: "furniture fixture fx-water-steps" }));
+    }
+    if (has("boats")) layers.site.push(GR.boatTop(cx - 13, front + 5.2, 0), GR.boatTop(cx + 13, front + 6.4, 1));
+  } else if (lv.lvl < 0 && has("loading-door")) {
+    // the waterline: the canal runs along the basement's front, and the barge lies at the loading door
+    layers.floors.unshift(P.rect("water-body", F.x - 10, front, F.w + 20, 10));
+    const r = faceRoom("loading-door");
+    if (r && r.rect) layers.floors.push(P.g([P.rect("fx2", -7, -2.2, 14, 4.4, { rx: 1.4 }), P.rect("fxl", -4.5, -1.4, 2.6, 2.6), P.rect("fxl", -1.3, -1.4, 2.6, 2.6), P.rect("fxl", 1.9, -1.4, 2.6, 2.6)],
+      { tf: { x: r.rect.x + r.rect.w / 2, y: front + 4.4 }, cls: "furniture fx-barge" }));
+  }
+};
+// a long, low boat seen from above, its bow and stern raised
+GR.boatTop = (x, y, i) => P.g([P.path("fx3", "M-7 0 Q-3 -1.5 0 -1.5 Q3 -1.5 7 0 Q3 1.5 0 1.5 Q-3 1.5 -7 0 Z"), P.rect("fx2", -1.2, -0.8, 2.4, 1.6, { rx: 0.4 }), P.circle("fxl", 3.6, 0, 0.45)],
+  { tf: { x, y, rot: i ? 8 : -6 }, cls: "furniture fx-boat" });
+
+// The iso's walls: each floor's walls stand as tall as its storey, and a palazzo's far walls carry arched windows by bay (the
+// same bays whatever the rooms behind them) over a rusticated street floor.
+GR.wallOpts = function (lv, model) {
+  const g = model.grand, hk = (lv.h || 14) / 14, BAY = 9;
+  const deco = g.style !== "palazzo" || lv.lvl < 0 ? null : (s, h, A, B, P0) => {
+    if (s.t !== "ext" || h < 5) return null;
+    const horiz = Math.abs(A[1] - B[1]) < 0.01, a0 = horiz ? Math.min(A[0], B[0]) : Math.min(A[1], B[1]), a1 = horiz ? Math.max(A[0], B[0]) : Math.max(A[1], B[1]);
+    const at = (u, z) => P0(horiz ? [u, A[1]] : [A[0], u], z), out = [];
+    if (lv.lvl === 0) for (let z = h * 0.16; z < h * 0.95; z += h * 0.16) out.push(P.poly("rustic", [at(a0, z), at(a1, z), at(a1, z + 0.12), at(a0, z + 0.12)]));
+    const zb = h * 0.2, zt = h * 0.68, rw = 1.25;
+    for (let u = Math.ceil((a0 + 2) / BAY) * BAY - BAY / 2; u <= a1 - 2; u += BAY) {
+      if (u - rw < a0 + 1 || u + rw > a1 - 1) continue;
+      const pts = [at(u - rw, zb), at(u + rw, zb), at(u + rw, zt)];
+      for (let i = 1; i < 8; i++) { const t = i * Math.PI / 8; pts.push(at(u + rw * Math.cos(t), zt + rw * Math.sin(t))); }
+      pts.push(at(u - rw, zt));
+      out.push(P.poly("arch-glass", pts));
+    }
+    return out.length ? [P.g(out, { cls: "fx-arches" })] : null;
+  };
+  return { hk, deco };
+};
+
+// The iso's lines between floors: a double-height room's void drops to the room below, corner by corner (dashed, as the core)
+GR.isoLinks = function (order, toScreen, k, reveal) {
+  const out = [], known = r => !reveal || M.roomRevealed(reveal, r);
+  for (const lv of order) for (const v of lv.voids || []) {
+    const below = order.find(l => l.rooms.includes(v.span));
+    if (!below || !known(v.span) || !S.nodeKnown(v, reveal || new Set(M.BANDS))) continue;
+    for (const p of G.rectPts(v.rect)) { const a = toScreen(lv, p[0], p[1], 0), b = toScreen(below, p[0], p[1], 0); out.push(P.line("core-link", a[0], a[1], b[0], b[1], { sw: 0.45 * k })); }
+  }
+  return out;
+};
+
+// --- The section: the iPad's score view -----------------------------------------------------
+// Every floor is a row at its own storey height, front (the street or the canal) on the left, every room a cell. The rows are
+// packed from the plan layout: cells in the order they stand back from the front, sized by their floor area; the core keeps
+// its place on every floor, a spanning room's void opens the floor above at the same place, and its ring is the gallery each
+// side of the void. A floor that starts at the front starts at the left; a set-back floor stands back. Where the cells go
+// never depends on what the crew knows: the player copy only leaves pieces out.
+GR.SEC_SLAB = 1.2;
+GR.secRows = function (lay, model) {
+  const levels = (lay.allLevels || lay.levels).filter(l => !l.ground), H = lv => lv.h || (lv.lvl < 0 ? 11 : 14), T = GR.SEC_SLAB;
+  const rowY = new Map();
+  let y = 0;
+  for (const l of levels.filter(l => l.lvl >= 0).sort((a, b) => a.lvl - b.lvl)) { rowY.set(l, [y - H(l), y]); y -= H(l) + T; }
+  y = T;
+  for (const l of levels.filter(l => l.lvl < 0).sort((a, b) => b.lvl - a.lvl)) { rowY.set(l, [y, y + H(l)]); y += H(l) + T; }
+  const keyOf = n => [-(n.rect.y + n.rect.h / 2), n.rect.x];
+  const cmp = (a, b) => keyOf(a)[0] - keyOf(b)[0] || keyOf(a)[1] - keyOf(b)[1];
+  const nw = n => { const A = n.rect.w * n.rect.h; return n.kind === "core" ? 8 : n.kind === "corridor" ? Math.min(20, Math.max(6, Math.sqrt(A) * 0.7)) : Math.min(60, Math.max(12, Math.sqrt(A) * 0.9)); };
+  const frontY = Math.max(...levels.map(l => l.bbox.y + l.bbox.h));
+  let coreX = null;
+  const spanX = new Map(), rows = [];
+  for (const lv of levels) {
+    const [y0, y1] = rowY.get(lv), cells = [];
+    const nodes = lv.rooms.concat(lv.extras.filter(e => e.kind === "core" || e.kind === "corridor")).filter(n => n.rect).sort(cmp);
+    // fixed: the core where it already stands, each void (and its ring) over the room it opens
+    const fixed = [];
+    if (lv.core && lv.core.rect && coreX) fixed.push({ n: lv.core, a: coreX[0], b: coreX[1], key: lv.core });
+    for (const v of lv.voids || []) { const X = spanX.get(v.span); if (X) fixed.push({ n: v.ring || v, v, a: X[0], b: X[1], key: v.ring || v.span }); }
+    fixed.sort((p, q) => p.a - q.a);
+    const isFixed = n => fixed.some(f => f.n === n);
+    const free = nodes.filter(n => !isFixed(n));
+    // each free node goes in the gap its place in the order puts it in
+    const gaps = fixed.length + 1, inGap = Array.from({ length: gaps }, () => []);
+    for (const n of free) { let i = 0; while (i < fixed.length && cmp(fixed[i].key, n) < 0) i++; inGap[i].push(n); }
+    const atFront = Math.abs(lv.bbox.y + lv.bbox.h - frontY) < 0.5;
+    const place = (ns, a, b) => { const tot = ns.reduce((s, n) => s + nw(n), 0) || 1; let x = a; for (const n of ns) { const w = (b - a) * nw(n) / tot; cells.push({ n, a: x, b: x + w }); x += w; } };
+    const natural = ns => ns.reduce((s, n) => s + nw(n), 0);
+    for (let i = 0; i < gaps; i++) {
+      const ns = inGap[i], lo = i > 0 ? fixed[i - 1].b : (atFront ? 0 : null), hi = i < fixed.length ? fixed[i].a : null;
+      if (lo != null && hi != null) { if (ns.length) place(ns, lo, hi); else if (hi - lo > 0.5) cells.push({ n: null, a: lo, b: hi, passage: true }); }
+      else if (lo != null) place(ns, lo, lo + natural(ns));
+      else if (hi != null) place(ns, hi - natural(ns), hi);
+      else { const x0 = Math.max(0, frontY - (lv.bbox.y + lv.bbox.h)) * 0.9; place(ns, x0, x0 + natural(ns)); }
+    }
+    for (const f of fixed) {
+      if (f.n === lv.core) { cells.push({ n: f.n, a: f.a, b: f.b }); continue; }
+      const v = f.v;
+      if (!v.ring) { cells.push({ n: v.span, a: f.a, b: f.b, upper: true, v }); continue; }
+      const sg = GR.rooms(model, v.ring).gallery, gw = Math.max(3, Math.min((f.b - f.a) * 0.3, sg * (f.b - f.a) / Math.max(8, v.ring.rect.h)));
+      cells.push({ n: v.ring, a: f.a, b: f.a + gw, gallery: true }, { n: v, a: f.a + gw, b: f.b - gw, void: true, v }, { n: v.ring, a: f.b - gw, b: f.b, gallery: true });
+    }
+    cells.sort((p, q) => p.a - q.a);
+    for (const c of cells) {
+      if (c.n === lv.core && !coreX) coreX = [c.a, c.b];
+      if (c.n && c.n.name && GR.rooms(model, c.n).span === 2 && !c.upper) spanX.set(c.n, [c.a, c.b]);
+    }
+    const L0 = Math.min(...cells.map(c => c.a)), R0 = Math.max(...cells.map(c => c.b));
+    rows.push({ lv, y0, y1, cells, L: L0, R: R0 });
+  }
+  return rows;
+};
+GR.rooms = (model, r) => (r && model.grand.rooms.get(r)) || { span: 1, gallery: 8, scale: null };
+
+GR.section = function (lay, model, ctx) {
+  const k = ctx.k = Math.min(ctx.k, 1.15), { rng } = ctx, g = model.grand, T = GR.SEC_SLAB, st = model.rings;
+  const reveal = ctx.reveal, known = r => !reveal || M.roomRevealed(reveal, r), gm = ctx.opts.layer !== "player";
+  const nodeKnown = n => !n || !reveal || S.nodeKnown(n, reveal);
+  const cellKnown = c => c.passage ? true : c.void ? nodeKnown(c.v) : c.n && c.n.kind === "core" ? true : c.n && c.n.kind === "corridor" ? true : known(c.n);
+  const all = GR.secRows(lay, model), drawn = new Set(lay.levels), rows = all.filter(r => drawn.has(r.lv));
+  const Ls = { site: [], floors: [], furn: [], walls: [], doors: [], game: [], cover: [], labels: [], entries: [] };
+  const palazzo = g.style === "palazzo", canal = g.front === "canal";
+  const top = Math.min(...rows.map(r => r.y0)), bot = Math.max(0, ...rows.map(r => r.y1));
+  const XL = Math.min(...rows.map(r => r.L)), XR = Math.max(...rows.map(r => r.R)), ext = canal ? 34 : 18;
+  const H = row => row.y1 - row.y0;
+  const rowOf = lv => all.find(r => r.lv === lv);
+  const above = row => all.find(r => r.lv.lvl === row.lv.lvl + 1);
+  // the main cell a room is labelled in, and where it stands (tokens, links, threats)
+  const mainCell = new Map();
+  for (const row of rows) for (const c of row.cells) {
+    if (!c.n || !c.n.name || c.void || c.upper) continue;
+    const m = mainCell.get(c.n);
+    if (!m || c.b - c.a > m.c.b - m.c.a) mainCell.set(c.n, { row, c });
+  }
+  // does this spanning room open into the floor above (its void known to this copy)?
+  const voidAbove = r => {
+    const rr = all.find(x => x.lv.rooms.includes(r)), up = rr && above(rr);
+    const c = up && up.cells.find(q => q.v && q.v.span === r && (q.void || q.upper));
+    return c && cellKnown(c) && known(r) ? { row: up, c } : null;
+  };
+
+  // --- ground: earth, the street or the canal ---
+  const basement = all.find(r => r.lv.lvl < 0);
+  const wl = basement ? basement.y0 + H(basement) * 0.55 : 3.2;
+  Ls.site.push(P.rect("earth", XL, 0, XR - XL + ext, bot + 7));
+  if (canal) {
+    Ls.site.push(P.rect("water-body", XL - ext - 8, wl, ext + 8, bot + 7 - wl), P.rect("quay", XL - 1.6, 0, 1.6, bot + 7));
+    for (let x = XL - ext - 6; x < XL - 2; x += 3.2) Ls.site.push(P.line("rustic", x, wl + 0.6, x + 1.6, wl + 0.6, { sw: 0.18 }));
+  } else Ls.site.push(P.rect("earth", XL - ext - 8, 0, ext + 8, bot + 7), P.rect("street", XL - ext - 8, -0.6, ext + 8, 0.8));
+  if (model.street) Ls.site.push(P.text("street-label", canal ? XL - ext / 2 - 3 : XL - ext / 2 - 4, (canal ? Math.max(wl + 3.5, bot + 3) : 3.2), model.street.replace(/^the /i, "").toUpperCase(), { size: Math.max(1.6 * k, ctx.floorU || 0) }));
+
+  // --- cells: floors, double heights, galleries, voids ---
+  const slabGaps = new Map();       // row → [[a, b]] where its floor slab is open (a known void, a grand stair arriving)
+  const gap = (row, a, b) => { if (row) (slabGaps.get(row) || slabGaps.set(row, []).get(row)).push([a, b]); };
+  for (const row of rows) for (const c of row.cells) {
+    if (!cellKnown(c)) continue;
+    if (c.passage || (c.n && (c.n.kind === "corridor" || c.n.kind === "core"))) { Ls.floors.push(P.rect("floor-corridor", c.a, row.y0, c.b - c.a, H(row))); if (c.n && c.n.kind === "core") Ls.furn.push(P.g(sv.stairs(6, H(row)).filter((p, i, a) => i % 2 === 0 || i === a.length - 1), { tf: { x: (c.a + c.b) / 2, y: row.y1 }, cls: "furniture" })); continue; }
+    // a void over a room the crew knows is that room's own height (drawn with it); over one it doesn't, a dark well
+    if (c.void) { if (!known(c.v.span)) Ls.floors.push(P.rect("void-well", c.a, row.y0, c.b - c.a, H(row), { cls: "void" })); gap(row, c.a, c.b); continue; }
+    if (c.upper) { if (known(c.n)) gap(row, c.a, c.b); continue; }       // drawn with the room below, as one double-height cell
+    const r = c.n, va = GR.rooms(model, r).span === 2 ? voidAbove(r) : null, y0 = va ? va.row.y0 : row.y0;
+    const data = { band: r.band };
+    Ls.floors.push(P.rect("floor-" + r.band, c.a, y0, c.b - c.a, row.y1 - y0, { data, room: r.id }));
+    if (r.band === "secure") Ls.floors.push(P.rect("floor-tone", c.a, y0, c.b - c.a, row.y1 - y0, { data }));
+  }
+  // galleries: the ring's balustrade runs round the void, seen across it at the gallery's floor, cut at each edge
+  for (const row of rows) for (const c of row.cells) if (c.void && cellKnown(c)) {
+    const yR = row.y1, hR = 3.4, kids = [P.rect("fx3", c.a, yR - hR, c.b - c.a, 0.35), P.rect("fx3", c.a, yR - 0.35, c.b - c.a, 0.35)];
+    for (let x = c.a + 0.7; x < c.b - 0.3; x += 1.8) kids.push(P.rect("fx3", x, yR - hR + 0.35, 0.36, hR - 0.7, { rx: 0.15 }));
+    for (const x of [c.a, c.b]) kids.push(P.rect("fx3", x - 0.3, yR - hR - 0.3, 0.6, hR + 0.3 + T));
+    Ls.furn.push(P.g(kids, { cls: "furniture fx-rail", opacity: 0.85 }));
+  }
+
+  // --- furniture and dressing, from each known room's own recipe ---
+  for (const row of rows) for (const c of row.cells) {
+    if (c.void || c.upper || c.passage || !c.n || !c.n.name || !known(c.n) || !c.n.frame) continue;
+    const r = c.n, gs = GR.rooms(model, r), va = gs.span === 2 ? voidAbove(r) : null, y0 = va ? va.row.y0 : row.y0, w = c.b - c.a;
+    const main = mainCell.get(r) && mainCell.get(r).c === c;
+    if (r.grandStair && main) { Ls.furn.push(GR.secStair(c.a, c.b, row.y1, row.y0, k)); gap(above(row), c.a + 1, c.a + 7); gap(above(row), c.b - 7, c.b - 1); }
+    else if (main || c.gallery) {
+      const f = r.frame, fw = Math.max(f.w, f.h), fh = Math.min(f.w, f.h), R = { x: -fw / 2 + 1.2, y: -fh / 2 + 1.2, w: fw - 2.4, h: fh - 2.4 };
+      const recipe = M.own(M.ARCH, r.arch);
+      let pls = recipe ? recipe(R, rng.fork(r.name)).flat().filter(p => p && !p.skip) : [];
+      if (!main) pls = pls.filter(p => !UNIQUE.has(p.part));
+      pls.sort((p, q) => p.y - q.y);
+      const kids = [], used = [];
+      for (const pl of pls) {
+        const fn = M.own(SIDE, pl.part); if (!fn) continue;
+        const fx = c.a + 1.2 + (pl.x - R.x) / (R.w || 1) * (w - 2.4), pw = Math.min(pl.w || (M.own(M.PARTS, pl.part) ? M.own(M.PARTS, pl.part).size[0] : 3), w - 2.4);
+        if (used.some(u => u.part === pl.part && Math.abs(u.x - fx) < pw * 0.7)) continue;
+        used.push({ part: pl.part, x: fx });
+        kids.push(P.g(fn(pw), { tf: { x: fx, y: row.y1 }, opacity: (pl.y - R.y) / (R.h || 1) < 0.35 ? 0.55 : pl.opacity, cls: "fx-" + pl.part }));
+      }
+      if (kids.length) Ls.furn.push(P.g(kids, { cls: "furniture", room: r.id }));
+    }
+    if (!main) continue;
+    // scale: a grand room is tall, arched and lit; a service room is low under a dropped ceiling
+    if (gs.scale === "grand") {
+      const hh = row.y1 - y0, zb = row.y1 - hh * 0.12, zt = y0 + hh * (va ? 0.18 : 0.3), rw = Math.min(2.2, hh * 0.09), BAY = 10, arch = [];
+      for (let u = Math.ceil((c.a + 3) / BAY) * BAY - BAY / 2; u <= c.b - 3; u += BAY) arch.push(P.path("arch-glass", `M${u - rw} ${zb} L${u - rw} ${zt + rw} A${rw} ${rw} 0 0 1 ${u + rw} ${zt + rw} L${u + rw} ${zb} Z`, { opacity: 0.7 }));
+      if (arch.length) Ls.floors.push(P.g(arch, { cls: "fx-arches" }));
+      const cx = va ? (va.c.a + va.c.b) / 2 : (c.a + c.b) / 2, hang = va ? va.row.y0 : y0, drop = va ? (row.y0 - hang) * 0.72 : 2.5, s = va ? 1.5 : 1;
+      if (!r.grandStair) Ls.furn.push(GR.secChandelier(cx, hang, drop, s));
+    } else if (gs.scale === "service") {
+      const yc = row.y0 + H(row) * 0.3;
+      Ls.walls.push(P.rect("slab-sec", c.a + 0.3, yc, w - 0.6, 0.35), P.line("drop-ceiling", c.a + 0.5, yc + 1.4, c.b - 0.5, yc + 1.4, { sw: 0.25 }));
+    }
+  }
+
+  // --- slabs, walls, partitions and doors ---
+  const kindBetween = (a, b) => { for (const row of all) for (const d of row.lv.doors) if ((d.a === a && d.b === b) || (d.a === b && d.b === a)) return d.kind; return null; };
+  for (const row of rows) {
+    const gaps = (slabGaps.get(row) || []).slice().sort((p, q) => p[0] - q[0]);
+    // the floor under this row: whole, but for a known void or a stair arriving
+    let x = row.L; const runs = [];
+    for (const [a, b] of gaps) { if (a > x) runs.push([x, a]); x = Math.max(x, b); }
+    if (x < row.R) runs.push([x, row.R]);
+    for (const [a, b] of runs) Ls.walls.push(P.rect("slab-sec", a, row.y1, b - a, T));
+    // the roof over what no floor covers (below ground, the slab under the street)
+    const up = above(row), roofRuns = up ? [[row.L, Math.min(row.R, up.L)], [Math.max(row.L, up.R), row.R]].filter(([a, b]) => b - a > 0.5) : [[row.L, row.R]];
+    if (row.lv.lvl < 0) { for (const [a, b] of roofRuns) Ls.walls.push(P.rect("slab-sec", a, row.y0 - T, b - a, T)); }
+    else for (const [a, b] of roofRuns) {
+      Ls.walls.push(P.rect("slab-sec", a - (palazzo ? 0.4 : 0), row.y0 - T, b - a + (palazzo ? 0.8 : 0), T));
+      if (palazzo) GR.secParapet(Ls, a, b, row.y0 - T, a <= row.L + 0.01, b >= row.R - 0.01);
+      else if (row.lv.lvl >= 0 && !up && st === "blurred") { const h = Math.min(18, (b - a) * 0.32); Ls.walls.push(P.poly("roof", [[a - 2, row.y0 - T], [b + 2, row.y0 - T], [(a + b) / 2, row.y0 - T - h]]), P.rect("roof", a + (b - a) * 0.72, row.y0 - T - h * 0.85, 3, h * 0.6)); }
+    }
+    // the outer walls: a palazzo's are thick, rusticated at the street floor, and pierced by arched windows
+    for (const [xx, side] of [[row.L, -1], [row.R, 1]]) {
+      if (palazzo) {
+        const t = row.lv.lvl === 0 ? 1.8 : 1.3, x0 = side < 0 ? xx - t : xx;
+        Ls.walls.push(P.rect("slab-sec", x0, row.y0, t, H(row)));
+        if (row.lv.lvl === 0) for (let yy = row.y0 + 2; yy < row.y1; yy += 2) Ls.walls.push(P.line("rustic", x0, yy, x0 + t, yy, { sw: 0.14 }));
+        if (row.lv.lvl >= 0) { const zb = row.y1 - H(row) * 0.2, zt = row.y0 + H(row) * 0.3, rw = Math.min(1.6, H(row) * 0.08), u = x0 + t / 2; Ls.walls.push(P.path("arch-glass", `M${x0} ${zb} L${x0} ${zt + rw} A${t / 2} ${rw} 0 0 1 ${x0 + t} ${zt + rw} L${x0 + t} ${zb} Z`, { opacity: 0.85 })); void u; }
+      } else Ls.walls.push(P.line("wall-ext", xx, row.y0, xx, row.y1, { sw: 1.4 }));
+    }
+    if (palazzo && row.lv.lvl === 0) Ls.walls.push(P.rect("cornice", row.L - 2.2, row.y0 - T - 0.5, row.R - row.L + 4.4, 0.6));      // the string course
+    // partitions, with a door where the plan has one; a rail where a gallery meets its void; nothing between two unknown cells
+    const cs = row.cells;
+    for (let i = 0; i < cs.length - 1; i++) {
+      const a = cs[i], b = cs[i + 1], xw = b.a;
+      if (!cellKnown(a) && !cellKnown(b)) continue;
+      if (a.void || b.void || (a.upper && b.n === a.n) || (b.upper && a.n === b.n)) continue;
+      const ra = a.n && a.n.kind === "void" ? null : a.n, rb = b.n && b.n.kind === "void" ? null : b.n;
+      const kind = ra && rb ? kindBetween(ra, rb) : "opening", y1 = row.y1;
+      const role = (ra && ra.kind === "core") || (rb && rb.kind === "core") ? "wall-ring" : st === "soft" ? "wall-soft" : st === "glazed" ? "wall-glass" : "wall-int";
+      if (kind && kind !== "secret") {
+        Ls.walls.push(P.line(role, xw, row.y0, xw, y1 - 7.2, { sw: 0.6 }));
+        if (kind === "vault") Ls.doors.push(P.circle("door-vault", xw, y1 - 3.6, 3.2));
+        else if (kind === "curtain") for (let yy = y1 - 7; yy < y1 - 0.4; yy += 0.7) Ls.doors.push(P.circle("door-curtain", xw, yy, 0.18));
+        else if (kind !== "opening") Ls.doors.push(P.rect("door-leaf-sec", xw - 0.15, y1 - 7.2, 0.3, 7.2));
+      } else {
+        Ls.walls.push(P.line(role, xw, row.y0, xw, y1, { sw: 0.6 }));
+        if (kind === "secret") Ls.doors.push(P.line("door-secret", xw, y1 - 7, xw, y1, { sw: 0.5 }));
+      }
+    }
+    if (row.lv.title && M.showTitles(lay, ctx)) { const ts = Math.max(2.2 * k, ctx.floorU || 0); Ls.labels.push(P.text("level-title", row.R + (palazzo ? 3.2 : 2.4), row.y0 + ts * 1.1, row.lv.title.toUpperCase(), { size: ts, anchor: "start" })); }
+  }
+
+  // --- the front: a water door with steps down to the boats, a loading door at the waterline (both drawn from outside) ---
+  // The water door opens onto a stone landing on piers; steps at its end go down to the water, where the boats tie up. Under
+  // the landing, at the waterline, the loading door and its barge.
+  const ground = all.find(r => r.lv.lvl === 0) || all[0], has = kind => g.faces.some(f => f.kind === kind);
+  const xw = ground.L - (palazzo ? 1.8 : 0), land = 9, run = Math.max(4, wl * 1.1);
+  if (canal && drawn.has(ground.lv) && (has("water-door") || has("water-steps"))) {
+    const k2 = [P.rect("quay", xw - land, 0, land, 0.9), P.rect("quay", xw - land, 0.9, 1.2, wl - 0.9)];
+    if (has("water-door")) Ls.doors.push(P.path("door-gap", `M${xw - 0.1} ${-0.05} L${xw - 0.1} ${-8} A${(palazzo ? 1.8 : 0) / 2 + 1} 2.2 0 0 1 ${xw + (palazzo ? 1.8 : 0) + 0.1} ${-8} L${xw + (palazzo ? 1.8 : 0) + 0.1} ${-0.05} Z`));
+    if (has("water-steps")) { const n = Math.max(5, Math.round(wl / 0.7)); for (let j = 0; j < n; j++) k2.push(P.rect("fxl", xw - land - run + run * j / n, wl * j / n, run - run * j / n, wl / n + 0.05), P.line("fx3", xw - land - run + run * j / n, wl * j / n, xw - land, wl * j / n, { sw: 0.12 })); k2.push(P.line("fx3", xw - land - run, wl, xw - land, 0, { sw: 0.25 })); }
+    Ls.furn.push(P.g(k2, { cls: "furniture fixture fx-water-steps" }));
+  }
+  if (canal && has("loading-door") && basement && drawn.has(basement.lv)) {
+    const x0 = basement.L - (palazzo ? 1.3 : 0), yb = Math.max(basement.y0 + 0.4, wl - 6.5);
+    Ls.doors.push(P.rect("door-gap", x0 - 0.1, yb, (palazzo ? 1.3 : 0) + 0.4, wl - yb));
+    Ls.furn.push(P.g([P.path("fx2", `M${x0 - land + 1.6} ${wl - 1.3} L${x0 - 0.6} ${wl - 1.3} L${x0 - 1.2} ${wl + 1.1} L${x0 - land + 2.2} ${wl + 1.1} Z`), P.rect("fxl", x0 - land + 2.6, wl - 3, 1.8, 1.7), P.rect("fxl", x0 - land + 4.7, wl - 3, 1.8, 1.7)], { cls: "furniture fx-barge" }));
+  }
+  if (canal && has("boats")) Ls.furn.push(GR.secBoat(xw - land - run - 7.5, wl, true), GR.secBoat(xw - land - run - 19.5, wl, true));
+
+  // --- labels and the game layer ---
+  const ik = 2.2 * k;
+  for (const [r, { row, c }] of mainCell) {
+    if (!known(r)) continue;
+    // a gallery is labelled across the ring, over the void's air (the chandelier's chain passes behind)
+    const gal = c.gallery ? row.cells.filter(q => q.n === r) : null, ga = gal ? Math.min(...gal.map(q => q.a)) : c.a, gb = gal ? Math.max(...gal.map(q => q.b)) : c.b;
+    const up = above(row), roofed = palazzo && !gal && (!up || up.L > ga + 0.5 || up.R < gb - 0.5), dy = roofed ? 1.3 : 0;     // under a palazzo roof the name drops clear of the cornice
+    const x0 = ga + 0.5, x1 = gb - 0.5, y0 = row.y0 + 0.5 + dy, y1 = Math.min(row.y1 - 1, row.y0 + H(row) * (gal ? 0.52 : 0.72) + dy);
+    const ax = (x0 + x1) / 2, ay = (y0 + y1) / 2, region = [[x0 - ax, y0 - ay], [x1 - ax, y0 - ay], [x1 - ax, y1 - ay], [x0 - ax, y1 - ay]];
+    const icons = gm ? [r.isTarget && ["star", "ov-target"], r.obstacle && [M.obstacleIcon(r.obstacle), "ov-lock"], r.holdsAnswerTo && ["key", "ov-pair"], r.loot && r.featured && ["loot", "ov-loot"]].filter(Boolean) : [];
+    Ls.labels.push(M.scene.labelBlock(r, ax, ay, icons, ctx, region, { lv: row.lv }));
+    if (gm && r.isTarget) Ls.game.unshift(P.rect("ov-target-area", c.a, row.y0, c.b - c.a, H(row)));
+  }
+  const pos = new Map([...mainCell].map(([r, { row, c }]) => [r, [(c.a + c.b) / 2, (row.y0 + row.y1) / 2]]));
+  if (gm) {
+    const tgt = model.rooms.find(r => r.isTarget), td = tgt ? M.BANDS.indexOf(tgt.band) : 3;
+    const stand = (r, role, icon, t) => { const m = mainCell.get(r); if (m) Ls.game.push(M.icon(icon, m.c.a + (m.c.b - m.c.a) * (0.72 + 0.1 * t), m.row.y1 - ik * 1.1, ik * 1.2, role)); };
+    if (model.soc) model.rooms.filter(r => M.BANDS.indexOf(r.band) === Math.max(0, td - 1)).slice(0, 2).forEach((r, i) => stand(r, "ov-soc", "social", i));
+    if (model.phys) model.rooms.filter(r => r.isTarget || r.band === "controlled").slice(0, 2).forEach((r, i) => stand(r, "ov-phys", "guard", i));
+  }
+  const links = [];
+  if (gm) {
+    const byName = n => model.rooms.find(r => r.name === n);
+    const curve = (a, b, role, sw, label, link) => {
+      const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1, bend = 0.16 * len;
+      const mx = (a[0] + b[0]) / 2 - dy / len * bend, my = (a[1] + b[1]) / 2 + dx / len * bend, sh = 2.6 * k, ex = b[0] - dx / len * sh, ey = b[1] - dy / len * sh;
+      links.push(P.path(role + "-line", `M${a[0]} ${a[1]} Q${mx} ${my} ${ex} ${ey}`, { sw: sw * k }));
+      const tx = ex - mx, ty = ey - my, tl = Math.hypot(tx, ty) || 1, ux = tx / tl, uy = ty / tl, s = 1.3 * k;
+      links.push(P.poly(role + "-head", [[ex + ux * s, ey + uy * s], [ex - uy * s * 0.7, ey + ux * s * 0.7], [ex + uy * s * 0.7, ey - ux * s * 0.7]]));
+      if (label) {
+        const ts = Math.max(1.3 * k, ctx.floorU || 0), lc = M.scene.type(ctx).label, cx = (a[0] + ex) / 4 + mx / 2, cy = (a[1] + ey) / 4 + my / 2 - 0.5 * ts, w = M.textW(label, ts, lc) + 0.4 * ts;
+        links.push(P.g([P.text("ov-skip-label", cx, cy, label, { size: ts })], { cls: "map-skip-label", meta: { kind: "skip", box: { x0: cx - w / 2, y0: cy - ts * 0.85, w, h: ts * 1.1 }, text: label, size: ts, at: [cx, cy], link } }));
+      }
+    };
+    const mid = r => { const p = pos.get(r); return [p[0], p[1] + 2]; };
+    for (const p of model.pairs) { const a = byName(p.answer), b = byName(p.lock); if (a && b && pos.has(a) && pos.has(b)) curve(mid(a), mid(b), "ov-pair", 0.4); }
+    for (const s of model.skips) { const a = byName(s.from), b = byName(s.to); if (a && b && pos.has(a) && pos.has(b)) curve(mid(a), mid(b), "ov-skip", 0.7, (a.lvl !== b.lvl ? "↕ " : "") + s.via, { a: a.n, b: b.n, via: s.via }); }
+  }
+
+  // --- ways in: the front on the left, the back on the right, through the roof or the floor where the plan says ---
+  const fake = [], secEntry = {};
+  const cellOf = r => mainCell.get(r) || null;
+  for (const e of lay.entries) {
+    const kind = e.kind, v = e.vec || {}, sealed = !!reveal && kind === "back" && M.vecHidden(v);
+    const hit = e.room ? cellOf(e.room) : null, row = hit ? hit.row : (e.level && rowOf(e.level)) || ground;
+    if (!drawn.has(row.lv)) continue;
+    let x, y, dir;
+    const wallT = palazzo ? (row.lv.lvl === 0 ? 1.8 : 1.3) : 0;
+    if (kind === "front") { x = ground.L - wallT; y = ground.y1 - 3.6; dir = [-1, 0]; if (!(canal && has("water-door"))) Ls.doors.push(P.rect("door-gap", ground.L - 0.9 - wallT, ground.y1 - 7.2, 1.8 + wallT, 7.2)); }
+    else if (e.from === "above" && hit) {
+      const c = hit.c, cy = row.y0; x = e.means === "skylight" ? (c.a + c.b) / 2 : c.a + Math.min(3, (c.b - c.a) / 3); y = cy - T; dir = [0, -1];
+      if (!sealed) Ls.doors.push(e.means === "skylight" ? P.rect("skylight-sec", x - 3, cy - T - 0.2, 6, T + 0.4) : P.rect("door-gap", x - 1.3, cy - T - 0.1, 2.6, T + 0.2));
+    } else if (e.from === "below" && hit) {
+      const c = hit.c; x = c.a + Math.min(3, (c.b - c.a) / 3); y = row.y1 + T; dir = [0, 1];
+      if (!sealed) Ls.doors.push(P.rect("door-gap", x - 1.3, row.y1 - 0.1, 2.6, T + 0.2));
+    } else {
+      const mid = hit ? (hit.c.a + hit.c.b) / 2 : row.R, right = e.side === "top" || (e.side !== "bottom" && mid > (row.L + row.R) / 2);
+      const fx0 = right ? row.R + wallT : row.L - wallT, sgn = right ? 1 : -1;
+      x = fx0; y = row.y1 - 3.6; dir = [sgn, 0];
+      if (!sealed) {
+        Ls.doors.push(P.rect("door-gap", (right ? row.R : row.L - wallT) - 0.9, row.y1 - 7.2, 1.8 + wallT, 7.2));
+        const out = [], m = e.means, yF = row.y1;
+        if (m === "fire-escape") { for (let yy = yF; yy < -0.1; yy += 14) { out.push(P.rect("fxm", 0, yy - 0.35, 4.5, 0.35), P.rect("fx3", 4.3, yy - 3.4, 0.2, 3.4)); const y2 = Math.min(0, yy + 14); out.push(P.poly("fxl", [[0.6, yy], [4.4, y2], [4.4, y2 - 0.5], [0.6, yy - 0.5]])); } x = fx0 + sgn * 6; }
+        else if (m === "area-steps" || m === "cellar-steps") { out.push(P.rect("door-gap", 0, 0, 5.5, yF), P.rect("fxm", 5.3, -3, 0.25, yF + 3)); const n = Math.max(4, Math.round(yF / 0.9)); for (let j = 0; j < n; j++) out.push(P.rect("fxl", 1.2 + 4 * j / n, yF * j / n, 4 - 4 * j / n + 0.3, 0.45)); x = fx0 + sgn * 7; }
+        else if (m === "balcony") { out.push(P.rect("fxm", 0, yF - 0.45, 3.4, 0.45), P.rect("fx3", 3.2, yF - 3.6, 0.22, 3.6), P.rect("fx3", 0, yF - 3.6, 3.4, 0.22)); x = fx0 + sgn * 4.5; }
+        if (out.length) Ls.furn.push(P.g(out, { tf: { x: fx0, y: 0, sx: sgn }, cls: "furniture fixture fx-" + m }));
+      }
+    }
+    secEntry[kind] = [x, y];
+    fake.push({ vec: v, kind, level: "sec", x, y, dir });
+  }
+  const ctx2 = Object.assign({}, ctx, { toScreen: (lv, x, y) => [x, y], dirScreen: d => { const l = Math.hypot(d[0], d[1]) || 1; return [d[0] / l, d[1] / l]; } });
+  const entries = M.scene.entries({ entries: fake }, ctx2);
+
+  // --- the player cover: one path for every run of cells the crew hasn't surveyed ---
+  if (reveal) {
+    const subs = [], R2 = G.round;
+    for (const row of rows) {
+      const runs = []; let cur = null;
+      for (const c of row.cells) {
+        const hid = !cellKnown(c);
+        if (hid) { if (cur && Math.abs(cur.x1 - c.a) < 0.01) cur.x1 = c.b; else { cur = { x0: c.a, x1: c.b }; runs.push(cur); } }
+        else cur = null;
+      }
+      for (const u of runs) { const x0 = u.x0 + (Math.abs(u.x0 - row.L) < 0.01 ? 0.7 : 0.3), x1 = u.x1 - (Math.abs(u.x1 - row.R) < 0.01 ? 0.7 : 0.3); subs.push(`M${R2(x0)} ${R2(row.y0)} H${R2(x1)} V${R2(row.y1)} H${R2(x0)} Z`); }
+      if (runs.length) {
+        const u = runs.reduce((a, b) => (b.x1 - b.x0 > a.x1 - a.x0 ? b : a), runs[0]);
+        const fu = ctx.floorU || 0, uc = M.scene.type(ctx).unknown, size = M.fitText("UNSURVEYED", Math.max(6, u.x1 - u.x0 - 2), Math.max(1.9 * k, fu), uc, fu || undefined);
+        const ux = (u.x0 + u.x1) / 2, uy = (row.y0 + row.y1) / 2, uw = M.textW("UNSURVEYED", size, uc) + 1;
+        Ls.labels.push(P.g([P.text("label-unknown", ux, uy + size * 0.35, "UNSURVEYED", { size })], { cls: "map-unsurveyed", meta: { box: { x0: ux - uw / 2, y0: uy - size * 0.55, w: uw, h: size * 1.1 }, kind: "unsurveyed" } }));
+      }
+    }
+    if (subs.length) Ls.cover.push(P.g([P.path("unknown", subs.join(" "))], { cls: "map-cover" }));
+  }
+  ctx.toScreen = (lv, x, y) => {
+    for (const r of lv.rooms) for (const f of [r.frame].concat(r.frames || [])) if (f && Math.abs(f.cx - x) < 0.01 && Math.abs(f.cy - y) < 0.01 && pos.has(r)) return pos.get(r);
+    for (const e of lay.entries) if (e.level === lv && Math.abs(e.x - x) < 0.01 && Math.abs(e.y - y) < 0.01) return secEntry[e.kind] || [XL, 0];
+    const row = rowOf(lv); return row ? [(row.L + row.R) / 2, (row.y0 + row.y1) / 2] : [XL, 0];
+  };
+  ctx.dirScreen = d => d;
+  const flatE = M.flat(entries);
+  const minY = Math.min(top - T - (palazzo ? 7 : 20), ...flatE.filter(p => p.t === "rect").map(p => p.y));
+  let minX = XL - ext - 2, maxX = XR + 12 + 16 * k;
+  for (const p of flatE) if (p.t === "rect") { minX = Math.min(minX, p.x - 4 * k); maxX = Math.max(maxX, p.x + p.w + 4 * k); }
+  return { parts: [{ lv: rows[0].lv, layers: Ls, tf: { x: 0, y: 0 } }], bounds: { minX, minY, maxX, maxY: bot + 8 }, entries, links };
+};
+
+// A palazzo's roof edge: a cornice, then a balustraded parapet; returned ends get piers
+GR.secParapet = function (Ls, a, b, yTop, endL, endR) {
+  Ls.walls.push(P.rect("cornice", a - 1.6, yTop - 1.1, b - a + 3.2, 1.1), P.rect("cornice", a - 0.9, yTop - 1.5, b - a + 1.8, 0.4));
+  const y0 = yTop - 1.5, hP = 3.2, kids = [P.rect("parapet", a - 0.6, y0 - hP, b - a + 1.2, 0.5), P.rect("parapet", a - 0.6, y0 - 0.5, b - a + 1.2, 0.5)];
+  for (let x = a + 0.6; x < b - 0.3; x += 2) kids.push(P.rect("baluster", x, y0 - hP + 0.5, 0.6, hP - 1, { rx: 0.25 }));
+  for (const [x, on] of [[a - 0.6, endL], [b - 0.6, endR]]) if (on) kids.push(P.rect("parapet", x, y0 - hP - 0.3, 1.2, hP + 0.3));
+  Ls.walls.push(P.g(kids, { cls: "fx-parapet" }));
+};
+// A chandelier on its chain: two tiers of lights under a crown
+GR.secChandelier = (cx, hang, drop, s) => {
+  const y = hang + drop, k = [P.line("fx3", cx, hang, cx, y, { sw: 0.14 * s })];
+  k.push(P.path("fx2", `M${cx - 3 * s} ${y + 0.6 * s} Q${cx} ${y + 2.4 * s} ${cx + 3 * s} ${y + 0.6 * s} L${cx + 2.2 * s} ${y + 0.2 * s} Q${cx} ${y + 1.4 * s} ${cx - 2.2 * s} ${y + 0.2 * s} Z`));
+  k.push(P.path("fx2", `M${cx - 1.8 * s} ${y + 2.2 * s} Q${cx} ${y + 3.4 * s} ${cx + 1.8 * s} ${y + 2.2 * s} L${cx} ${y + 4 * s} Z`), P.rect("fx2", cx - 0.25 * s, y, 0.5 * s, 2.4 * s));
+  for (const [dx, dy, r] of [[-3, 0.4, 0.42], [-1.5, 1.1, 0.4], [0, 1.4, 0.45], [1.5, 1.1, 0.4], [3, 0.4, 0.42], [-1.8, 2.1, 0.32], [1.8, 2.1, 0.32], [0, 4, 0.3]]) k.push(P.circle("fxglow", cx + dx * s, y + dy * s, r * s));
+  return P.g(k, { cls: "furniture fx-chandelier" });
+};
+// A boat on the water, side on (a long gondola, or a squarer launch), with someone at the oar
+GR.secBoat = (x, wl, long) => P.g([
+  P.path("fx3", long ? `M${x - 6} ${wl - 2.2} Q${x - 4.5} ${wl + 0.8} ${x} ${wl + 0.8} Q${x + 4.5} ${wl + 0.8} ${x + 6} ${wl - 2.4} L${x + 5.2} ${wl - 0.8} L${x - 5.2} ${wl - 0.7} Z` : `M${x - 4.5} ${wl - 1} L${x + 4.5} ${wl - 1} L${x + 3.6} ${wl + 0.8} L${x - 3.8} ${wl + 0.8} Z`),
+  P.rect("fx2", x - 1.6, wl - 1.6, 3.2, 0.7, { rx: 0.2 })
+].concat(sv.person("fx3").map(p => Object.assign(p, { tf: { x: x + (long ? 3.4 : -2.6), y: wl - 0.8, s: 0.75 } }))).concat(long ? [P.line("fx3", x + 3.4, wl - 6, x + 5.4, wl + 0.6, { sw: 0.15 })] : []),
+{ cls: "furniture fx-boat" });
+// The grand stair, side on: one flight up the middle to a landing, then two flights branching to the floor above
+GR.secStair = function (a, b, y1, y0, k) {
+  const c = (a + b) / 2, hm = y1 - (y1 - y0) * 0.5, w = b - a, kids = [], tread = (x0, ya, x1, yb) => {
+    const n = Math.max(5, Math.round(Math.abs(ya - yb) / 0.9)), up = [];
+    for (let i = 0; i < n; i++) { const t0 = i / n, t1 = (i + 1) / n, xa = x0 + (x1 - x0) * t0, xb = x0 + (x1 - x0) * t1, yy = ya + (yb - ya) * t1; up.push(P.rect("fx2", Math.min(xa, xb), yy, Math.abs(xb - xa) + 0.05, Math.min(ya - yy + 0.4, 1.6))); }
+    up.push(P.poly("fx3", [[x0, ya + 1.2], [x1, yb + 1.2], [x1, yb + 1.7], [x0, ya + 1.7]]), P.line("fx3", x0, ya - 3, x1, yb - 3, { sw: 0.3 }));
+    for (let i = 0; i <= 4; i++) { const t = i / 4; up.push(P.line("fx3", x0 + (x1 - x0) * t, ya + (yb - ya) * t, x0 + (x1 - x0) * t, ya + (yb - ya) * t - 3, { sw: 0.1 })); }
+    return up;
+  };
+  const lw = Math.min(6, w * 0.16);
+  kids.push(...tread(c + w * 0.2, y1, c + lw / 2, hm));
+  kids.push(P.rect("fxm", c - lw / 2 - 0.4, hm, lw + 0.8, 0.8), P.rect("fx3", c - lw / 2 - 0.4, hm + 0.8, 0.5, y1 - hm - 0.8), P.rect("fx3", c + lw / 2 - 0.1, hm + 0.8, 0.5, y1 - hm - 0.8));
+  kids.push(...tread(c - lw / 2, hm, a + 1.2, y0), ...tread(c + lw / 2, hm, b - 1.2, y0));
+  kids.push(P.rect("fx2", c + w * 0.2 - 0.5, y1 - 4.2, 1, 4.2), P.circle("fxglow", c + w * 0.2, y1 - 4.6, 0.55));       // the newel post and its lamp
+  return P.g(kids, { cls: "furniture fx-stairs-grand" });
+};
+
 // ---- src/render.js ----
 // =============================================================================
 // render — the public API
@@ -7254,21 +7951,24 @@ M.render = function (o, opts = {}) {
   if (!M.own(M.THEMES, opts.theme)) { M.warn(W, `theme "${opts.theme}" is not one of ${Object.keys(M.THEMES).join(", ")} — drawing rulebook`); opts.theme = "rulebook"; }
   const theme = M.own(M.THEMES, opts.theme);
   const model = M.model(o, W);
+  // map kit 1.0 (grand.js): only when the roll says kit: 1 AND the caller asks (opts.kit1); otherwise this is 0.9, byte for byte
+  if (opts.kit1 === true && o.kit === 1) model.grand = M.grand.read(o, model, W);
   M.revealRooms(model, opts, W);
   const seed = opts.seed != null ? opts.seed : (o.seed != null ? o.seed : M.hash(model.name + model.district));
   // Ids come from the render's own inputs, so the same roll drawn the same way
   // is the same file, byte for byte (saved maps diff cleanly, caches hit).
-  const sid = opts.idPrefix || ("b68m" + M.hash(JSON.stringify([model.name, model.district, model.rooms.map(r => r.name + r.band), seed,
+  let sid = opts.idPrefix || ("b68m" + M.hash(JSON.stringify([model.name, model.district, model.rooms.map(r => r.name + r.band), seed,
     opts.view, opts.theme, opts.layer, opts.reveal || null, opts.width, opts.sheet || null, opts.legend, opts.grain !== false, raw.layout || null,
     raw.displayWidth || null, opts.floor == null ? null : opts.floor, raw.minLabelPx == null ? null : raw.minLabelPx, raw.paper || null, raw.key || null])).toString(36));
   // the street outside: its own module, the same type floor (street.js)
   if (opts.view === "street") return M.street.render(o, opts, W, theme, model, seed, opts.idPrefix || (sid + M.hash("street" + (raw.time || "")).toString(36).slice(0, 4)));
   if (!model.rooms.length) return M.emptyRender(model, opts, theme, W, seed, sid);
+  if (model.grand && !opts.idPrefix) sid += "g";
   const rng = M.rng(seed);
   // iso and section are drawn from the floor plan, so all three agree. The
   // player copy is laid out the same way, then sealed: see S.seal.
   const player = opts.layer === "player";
-  const lay = M.layout.build(model, opts.view === "rings" ? "rings" : "plan", rng.fork("layout"), { player });
+  const lay = M.layout.build(model, opts.view === "rings" ? "rings" : "plan", rng.fork("layout"), model.grand ? { player, W } : { player });
   if (player && opts.view !== "section") M.scene.seal(lay, new Set(opts.reveal || ["public"]));
   if (player) M.safeTitles(lay, model, opts.reveal);
   const drawn = M.pickFloors(lay, opts.floor, W, opts.view);
@@ -7310,7 +8010,7 @@ M.buildScene = function (lay, model, ctx, X) {
     const b = M.iso.build(lay, model, ctx);
     r = { parts: b.parts, links: b.coreLinks.concat(M.scene.links(lay, ctx)), entries: M.scene.entries(lay, ctx), bounds: b.bounds, pad: 4 * ctx.k };
   } else if (opts.view === "section") {
-    const b = M.section.build(lay, model, ctx);
+    const b = model.grand ? M.grand.section(lay, model, ctx) : M.section.build(lay, model, ctx);
     r = { parts: b.parts, links: b.links, entries: b.entries, bounds: b.bounds, pad: 4 * ctx.k };
   } else r = M.buildPlan(lay, model, ctx);
   opts._shortTags = !!ctx.shortTags;
@@ -7335,7 +8035,8 @@ M.buildScene = function (lay, model, ctx, X) {
     if (!rm || !rm.frame) { M.warn(W, `token room "${t.room}" is not on this map`); return null; }
     if (reveal && !M.roomRevealed(reveal, rm)) return null;
     const lv = lvOf(rm); if (!lv) return null;
-    const [px, py] = ctx.toScreen(lv, rm.frame.cx, rm.frame.cy, "room");
+    const f = (rm.gallery && rm.frames && rm.frames[0]) || rm.frame;     // kit 1.0: a gallery's marker stands on its widest run
+    const [px, py] = ctx.toScreen(lv, f.cx, f.cy, "room");
     return Object.assign({}, t, { x: px, y: py, roomObj: rm });
   }).filter(Boolean);
   // Legend type follows the sheet, so a big plan doesn't get a footnote legend.
@@ -7369,6 +8070,7 @@ M.buildPlan = function (lay, model, ctx) {
     const dx = x0 - (B.x - 10), dy = y0 - (B.y - 10) + titleH;
     offsets.set(lv, [dx, dy]);
     const layers = M.scene.level(lv, model, ctx);
+    if (model.grand) M.grand.dress(lv, layers, model, ctx);
     if (lv.title && M.showTitles(lay, ctx)) layers.labels.push(P.text("level-title", B.x - 10, B.y - 10 - titleH * 0.3, lv.title.toUpperCase(), { size: ts, anchor: "start" }));
     parts.push({ lv, layers, tf: { x: dx, y: dy } });
   });
@@ -8018,6 +8720,13 @@ const projectedPaint = (C, role) => {
     case "door-gap": return { fill: C.gap };
     case "skylight-sec": return { fill: C.glass, opacity: 0.8 };
     case "core-link": return { stroke: C.thin, "stroke-dasharray": "1.2 0.9", "stroke-linecap": "round" };
+    // kit 1.0 (grand.js): the void, arched windows, rustication, the cornice and the balustraded parapet
+    case "void-well": return { fill: C.end, opacity: 0.82 };
+    case "arch-glass": return { fill: C.glass, stroke: C.glassEdge, "stroke-width": 0.1 };
+    case "rustic": return { stroke: C.gap, fill: C.gap, opacity: 0.55 };
+    case "cornice": return Object.assign({ fill: C.roof }, C.edge ? { stroke: C.edge, "stroke-width": 0.12, "fill-opacity": 0.2 } : {});
+    case "parapet": return Object.assign({ fill: C.top }, C.edge ? { stroke: C.edge, "stroke-width": 0.1, "fill-opacity": 0.2 } : {});
+    case "baluster": return Object.assign({ fill: C.face }, C.edge ? { stroke: C.edge, "stroke-width": 0.08, "fill-opacity": 0.1 } : {});
   }
   return null;
 };
