@@ -536,7 +536,7 @@ await test('cue body: mode is absent or cue; parsed is 1-8 objects, needs mode c
 });
 
 await test('cue validation: the six cue types act; every survivor is mode act (confidence 1), whatever was sent', () => {
-  assert.deepEqual(CUE_TYPES, ['clock_add', 'clock_tick', 'npc_add', 'capture', 'undo', 'rename', 'pc_move']);
+  assert.deepEqual(CUE_TYPES, ['clock_add', 'clock_tick', 'npc_add', 'capture', 'undo', 'rename', 'pc_move', 'cue_do']);
   const v = cueCheck([pa({ confidence: 0.1 }), { type: 'clock_tick', quote: CUE_TWO, clock_id: 'ck1', by: 2 }, { type: 'npc_add', quote: CUE_TWO, name: 'Corvin Lathe', look: 'tall', role: 'porter' },
     { type: 'capture', quote: CUE_TWO, bucket: 'loose_end', text: 'who owns the bell' }, { type: 'undo', quote: CUE_TWO }, { type: 'rename', quote: CUE_TWO, name: 'Big Ben' }]);
   assert.deepEqual(v.actions.map((a) => [a.type, a.mode, a.confidence]), [['clock_add', 'act', 1], ['clock_tick', 'act', 1], ['npc_add', 'act', 1], ['capture', 'act', 1], ['undo', 'act', 1], ['rename', 'act', 1]]);

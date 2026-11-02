@@ -24,9 +24,14 @@ const NAME_MAX = 80, ID_MAX = 64, LOOK_MAX = 200, ROLE_MAX = 80, TEXT_MAX = 300,
 const CLOCKS_MAX = 40, NPCS_MAX = 100, PCS_MAX = 12, STATE_SIZE_MAX = 12;
 export const BUCKETS = ['name', 'loose_end', 'moment'];
 export const TYPES = ['clock_add', 'clock_tick', 'npc_add', 'capture', 'roll_log'];
-export const CUE_TYPES = ['clock_add', 'clock_tick', 'npc_add', 'capture', 'undo', 'rename', 'pc_move'];   // what the page's own parse of a cue may send (C4c); undo, rename and pc_move only ever come this way
+export const CUE_TYPES = ['clock_add', 'clock_tick', 'npc_add', 'capture', 'undo', 'rename', 'pc_move', 'cue_do'];   // what the page's own parse of a cue may send (C4c); undo, rename and pc_move only ever come this way
 const CUE_MODEL_TYPES = ['clock_add', 'clock_tick', 'npc_add', 'capture'];                       // what the model may return for a cue: no roll_log, and never undo or rename
 export const CUE_ID_MAX = ID_MAX;
+// B09 (ai.grammar): the strict grammar's verbs, one cue action type. The page carries each out (the iPad's show contract, the night, the cast); the server only validates, keys and logs it.
+//   stamp { position, effect, text? }   go { phase }   reveal | spotlight { names: [one] }   introduce { names: [1-6] }   flashback | back | offrecord | backon (nothing more)
+export const CUE_DO_VERBS = ['stamp', 'reveal', 'go', 'flashback', 'back', 'introduce', 'spotlight', 'offrecord', 'backon'];
+const STAMP_POSITIONS = ['controlled', 'risky', 'desperate'], STAMP_EFFECTS = ['limited', 'standard', 'great'], NIGHT_PHASES = ['pb', 'plan', 'score', 'after'];
+const CUE_NAMES_MAX = 6;
 const POSITIONS = ['controlled', 'risky', 'desperate', 'unclear'], EFFECTS = ['limited', 'standard', 'great', 'unclear'], RESULTS = ['critical', 'full', 'partial', 'miss', 'unclear'];
 
 /** Lowercase, accents and punctuation gone, runs of whitespace one space: what a quote and the talk are compared as. */
@@ -196,6 +201,22 @@ export function validateActions(raw, { state, lines, cue }) {
       const name = clip(a.name, NAME_MAX);
       if (!name) { drop(a.type, 'no name'); continue; }
       out = { ...base, key: keyOf(a.type, ''), name };
+    } else if (a.type === 'cue_do') {
+      const verb = typeof a.verb === 'string' ? a.verb : '';
+      if (!CUE_DO_VERBS.includes(verb)) { drop(a.type, 'unknown verb'); continue; }
+      out = { ...base, key: keyOf(a.type, verb), verb };
+      if (verb === 'stamp') {
+        if (!STAMP_POSITIONS.includes(a.position) || !STAMP_EFFECTS.includes(a.effect)) { drop(a.type, 'bad stamp'); continue; }
+        out.position = a.position; out.effect = a.effect;
+        const text = clip(a.text, 100); if (text) out.text = text;
+      } else if (verb === 'go') {
+        if (!NIGHT_PHASES.includes(a.phase)) { drop(a.type, 'bad phase'); continue; }
+        out.phase = a.phase;
+      } else if (verb === 'reveal' || verb === 'spotlight' || verb === 'introduce') {
+        const names = (Array.isArray(a.names) ? a.names : []).map((x) => clip(x, NAME_MAX)).filter(Boolean).slice(0, CUE_NAMES_MAX);
+        if (!names.length || (verb !== 'introduce' && names.length !== 1)) { drop(a.type, 'no name'); continue; }
+        out.names = names;
+      }
     } else if (a.type === 'pc_move') {
       // the page's own parse only (CUE_TYPES): a PC of the state the page sent, and a room name (the Worker does not know the site's rooms; the page checks them against the live night when it applies)
       const pc = clip(a.pc, NAME_MAX), room = clip(a.room, NAME_MAX), from = clip(a.from, NAME_MAX);
