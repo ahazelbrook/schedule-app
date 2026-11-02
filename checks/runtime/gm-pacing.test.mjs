@@ -59,7 +59,7 @@ await test('CLI: dry run writes nothing; --yes files into the highest session no
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pace-'));
   const sess = path.join(dir, 'Wiki/Games/Blades in the Dark/Campaigns/Group/Sessions');
   fs.mkdirSync(sess, { recursive: true });
-  const note = path.join(sess, 'b68g-s02.md');
+  const note = path.join(sess, 'b68g-s99.md');
   fs.writeFileSync(note, '# S2\n\n## Names\n\n-\n');
   const nf = path.join(dir, 'night.json');
   fs.writeFileSync(nf, JSON.stringify(night));
