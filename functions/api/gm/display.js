@@ -11,6 +11,8 @@
 //                     spec: only the figure's drawing keys) while that NPC is revealed, and is left out otherwise. A clock overlay is joined to
 //                     its clock now: it gains the clock's name, size and LIVE fill while the clock is present and not hidden, and is left out
 //                     otherwise (so is a clock overlay of the old shape, with no clockId). GM.md, "Overlays".
+//                     SHOW CONTRACT (functions/_lib/show.js): the brief-beat kinds ride in that same `overlay` with a `payload` (rolodex and spotlight joined to
+//                     revealed NPCs only), and the lasting layers (band / scene / data) come as a top-level `layers`, present only while any is set.
 //                     seq 0 and a blank display while none is stored. The ambient document, GM.md "Ambient scenes" and
 //                     functions/api/gm/ambient.js, rides along because the display sign-in may not call /api/gm/ambient.
 //                     So does what the iPad needs of the transcriber, so that one poll does the work of two (GM.md "Listening"):
@@ -48,6 +50,7 @@ import { LIMITS, requireGm, cleanDisplay, loadDisplay, putDisplay, loadAmbient, 
 import { joinOverlayNpc } from '../../_lib/npcs.js';
 import { joinOverlayClock, loadMissionPart } from '../../_lib/campaign.js';
 import { loadSttPart } from '../../_lib/stt.js';
+import { joinShows } from '../../_lib/show.js';
 import { liveFlag, mirrorFlag, pokeLive } from '../../_lib/live.js';
 
 const METHODS = ['GET', 'PUT'];
@@ -79,37 +82,41 @@ export async function onRequest({ request, env, data, waitUntil }) {
     // role, faction, drawing keys of the spec) and a clock overlay to its clock (name, size and the LIVE fill), or left out when that NPC is not
     // revealed / that clock is hidden, gone or the old shape. One primary-key read each, only while such an overlay is up. So a hidden NPC or
     // clock, and a fill that moves, reach a display whose ambient seq is current without the big ambient part being sent or even parsed.
+    const lay = (layers) => (layers ? { layers } : {});      // the lasting layers ride as a top-level `layers` only while any is set: with none, the answer is what it always was
     const liveOverlay = async () => {
       const lite = await loadAmbientLite(db, campaign);
       const shell = { seq: lite.seq, doc: lite.overlay ? { overlay: lite.overlay } : {}, updatedAt: lite.updatedAt };
       const a = await joinOverlayNpc(db, campaign, liveAmbient(shell, Date.now(), cur.display && cur.display.kind));
       const b = await joinOverlayClock(db, campaign, a.amb);
-      return { seq: lite.seq, overlay: b.amb.doc.overlay || null };
+      // the show contract: a brief beat and the lasting layers, rebuilt and joined to the NPCs revealed now (ONE read, only when one is named)
+      const sh = await joinShows(db, campaign, b.amb.doc.overlay || null, lite.layers);
+      return { seq: lite.seq, overlay: sh.overlay, layers: sh.layers };
     };
     // the ambient part in full: the stored document with its overlay replaced by the served one (the same object the overlay field carries)
-    const fullAmbient = async (ov) => {
+    const fullAmbient = async (ov, layers) => {
       const amb = await loadAmbient(db, campaign), doc = { ...amb.doc };
       if (ov) doc.overlay = ov; else delete doc.overlay;
+      if (layers) doc.layers = layers; else delete doc.layers;       // the stored layers hold ids; what is served is the joined copy, or nothing
       return { ...amb, doc };
     };
     if (aseq === null && sseq === null) {
       if (same) return json(withHud({ seq: cur.seq, unchanged: true }, wantHud ? (await tail(false)).part : undefined));   // the oldest call: neither the ambient nor the transcriber is even read
       const [o, rest] = await Promise.all([liveOverlay(), tail(true)]);
-      return json(withHud({ ...cur, ambient: await fullAmbient(o.overlay), overlay: o.overlay, stt: await loadSttPart(db, campaign), live: rest.live }, rest.part));
+      return json(withHud({ ...cur, ambient: await fullAmbient(o.overlay, o.layers), overlay: o.overlay, ...lay(o.layers), stt: await loadSttPart(db, campaign), live: rest.live }, rest.part));
     }
     // the live-sync switch (design 2.5): one small read beside the overlay's, on every answer a page that knows the switch can send
     // (the ones with a transcriber seq, and the first full one); the seq-only call and the older ?aseq-only one stay as they were
-    const [{ seq: aseqNow, overlay }, { live, part }] = await Promise.all([liveOverlay(), tail(sseq !== null)]);
+    const [{ seq: aseqNow, overlay, layers }, { live, part }] = await Promise.all([liveOverlay(), tail(sseq !== null)]);
     const ambSame = aseq === String(aseqNow);
-    const ambient = ambSame ? { seq: aseqNow, unchanged: true } : await fullAmbient(overlay);
+    const ambient = ambSame ? { seq: aseqNow, unchanged: true } : await fullAmbient(overlay, layers);
     if (sseq === null) {   // a display page from before the transcriber rode along: what it always got, so it never pulls the full display each time
-      return json(withHud(same && ambSame ? { seq: cur.seq, unchanged: true, ambient, overlay } : { ...cur, ambient, overlay }, part));
+      return json(withHud(same && ambSame ? { seq: cur.seq, unchanged: true, ambient, overlay, ...lay(layers) } : { ...cur, ambient, overlay, ...lay(layers) }, part));
     }
     const st = await loadSttPart(db, campaign);
     const sttSame = sseq === String(st.seq);
     const stt = sttSame ? { seq: st.seq, unchanged: true } : st;
-    if (same && ambSame && sttSame) return json(withHud({ seq: cur.seq, unchanged: true, ambient, stt, overlay, live }, part));
-    return json(withHud({ ...cur, ambient, stt, overlay, live }, part));
+    if (same && ambSame && sttSame) return json(withHud({ seq: cur.seq, unchanged: true, ambient, stt, overlay, ...lay(layers), live }, part));
+    return json(withHud({ ...cur, ambient, stt, overlay, ...lay(layers), live }, part));
   }
   const raw = await readJsonObject(request, LIMITS.displayRequest);
   let ifSeq;

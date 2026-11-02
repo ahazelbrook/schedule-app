@@ -5,6 +5,7 @@
 // Plain ES module with no Cloudflare-specific imports (WebCrypto and TextEncoder only), so node can import it.
 
 import { HttpError, ID_RE, MAX_BODY_BYTES, isPlainObject, deepMerge, nowIso, error } from './http.js';
+import { SHOW_KIND_IDS, isShowKind, cleanShowPayload, cleanLayerOp, applyLayer, overlayRunning } from './show.js';
 
 export const GM_ONLY = 'only the GM can use the GM tools';
 
@@ -42,7 +43,7 @@ export const AMBIENT_SCENES = ['harvest', 'watch', 'duskwall', 'boneyard', 'unde
 export const WIRE_MAX = 240, WIRE_ITEMS_MAX = 6;       // a bulletin's characters, bulletins at once (mirrors functions/_lib/assist/prompts.js)
 export const AMBIENT_MODES = ['auto', 'pin', 'off'];
 // the overlay (cleanOverlay): the kinds, the clock sizes, the effects, and the caps; mirrored by Pure.OVERLAY in app/display-page.js
-export const OVERLAY_KINDS = ['clock', 'npc', 'fx', 'text'];
+export const OVERLAY_KINDS = ['clock', 'npc', 'fx', 'text', ...SHOW_KIND_IDS];       // the last ones are the show contract's brief beats (functions/_lib/show.js)
 export const OVERLAY_CLOCK_SIZES = [4, 6, 8, 10, 12];
 export const OVERLAY_FX = ['dawn'];
 export const OVERLAY = { id: 40, name: 60, text: 120, msMin: 1000, msMax: 180000 };
@@ -401,6 +402,8 @@ export function cleanOverlay(v) {
   } else if (v.kind === 'npc') {
     if (typeof v.npcId !== 'string' || !ID_RE.test(v.npcId)) throw new HttpError(400, 'overlay.npcId is a bad id');
     out.npcId = v.npcId;
+  } else if (isShowKind(v.kind)) {
+    out.payload = cleanShowPayload(v.kind, v.payload);
   } else if (v.kind === 'fx') {
     if (!OVERLAY_FX.includes(v.fx)) throw new HttpError(400, 'overlay.fx must be one of ' + OVERLAY_FX.join(', '));
     out.fx = v.fx;
@@ -478,6 +481,9 @@ export function cleanAmbientPatch(raw) {
     }
   }
   if ('overlay' in raw) patch.overlay = cleanOverlay(raw.overlay);
+  // the show contract's lasting layers: one path at a time (`layer`), or all of them at once (`layers: null`)
+  if ('layer' in raw) patch.layer = cleanLayerOp(raw.layer);
+  if ('layers' in raw) { if (raw.layers !== null) throw new HttpError(400, 'layers can only be null (clear them all); set one with layer: { path, value }'); patch.layers = null; }
   if ('auto' in raw) {
     // the AUTO chip: the autopilot is driving the iPad (a boolean, for the badge only)
     if (raw.auto !== null && typeof raw.auto !== 'boolean') throw new HttpError(400, 'auto must be true or false');
@@ -519,6 +525,18 @@ export function cleanIfOverlay(raw, patch) {
   return raw.ifOverlay;
 }
 
+/**
+ * The optional `ifNotOverlay` of a PATCH /api/gm/ambient body: an overlay id, valid only beside an overlay (an object). The overlay is set
+ * only while the stored one is NOT that id and still running -- the once-by-id of a show command, so two GM pages firing the same command
+ * show it once. Returns the id, or null when the body has none.
+ */
+export function cleanIfNotOverlay(raw, patch) {
+  if (!raw || raw.ifNotOverlay === undefined || raw.ifNotOverlay === null) return null;
+  if (typeof raw.ifNotOverlay !== 'string' || !raw.ifNotOverlay.trim() || raw.ifNotOverlay.length > OVERLAY.id) throw new HttpError(400, 'ifNotOverlay must be an overlay id');
+  if (!patch || !isPlainObject(patch.overlay) || patch.overlay.id !== raw.ifNotOverlay) throw new HttpError(400, 'ifNotOverlay goes only beside an overlay with that id');
+  return raw.ifNotOverlay;
+}
+
 async function ambientRow(db, campaign) {
   return db.prepare('SELECT seq, updated_at, doc FROM gm_ambient WHERE campaign = ?1').bind(campaign).first();
 }
@@ -549,13 +567,16 @@ export function liveAmbient(amb, nowMs, displayKind) {
 }
 
 /**
- * { seq, updatedAt, overlay }: the ambient row's seq and its stored overlay (or null), with the overlay cut out in SQL by json_extract, so the
+ * { seq, updatedAt, overlay, layers }: the ambient row's seq and its stored overlay and lasting layers (or null), cut out in SQL by one json_extract, so the
  * rest of the document (a score scene can be a megabyte) is neither read into JS nor parsed. What the display GET asks every poll.
  */
 export async function loadAmbientLite(db, campaign) {
-  const row = await db.prepare("SELECT seq, updated_at, json_extract(doc, '$.overlay') AS overlay FROM gm_ambient WHERE campaign = ?1").bind(campaign).first();
-  const ov = row && typeof row.overlay === 'string' ? parseJson(row.overlay, null) : null;
-  return { seq: row ? row.seq : 0, updatedAt: row ? row.updated_at : null, overlay: isPlainObject(ov) ? ov : null };
+  // ONE json_extract with two paths (the document is parsed once, as before): the overlay and the show contract's lasting layers, as the array [overlay, layers]
+  const row = await db.prepare("SELECT seq, updated_at, json_extract(doc, '$.overlay', '$.layers') AS ol FROM gm_ambient WHERE campaign = ?1").bind(campaign).first();
+  const pair = row && typeof row.ol === 'string' ? parseJson(row.ol, null) : null;
+  const ov = Array.isArray(pair) ? pair[0] : (row && typeof row.overlay === 'string' ? parseJson(row.overlay, null) : null);
+  const ly = Array.isArray(pair) ? pair[1] : null;
+  return { seq: row ? row.seq : 0, updatedAt: row ? row.updated_at : null, overlay: isPlainObject(ov) ? ov : null, layers: isPlainObject(ly) ? ly : null };
 }
 
 /** { seq, doc, updatedAt }: `{ seq: 0, doc: {}, updatedAt: null }` while none is stored. */
@@ -571,6 +592,7 @@ export async function loadAmbient(db, campaign) {
  */
 export async function patchAmbient(db, campaign, patch, opts) {
   const ifOverlay = opts && typeof opts.ifOverlay === 'string' ? opts.ifOverlay : null;
+  const ifNotOverlay = opts && typeof opts.ifNotOverlay === 'string' ? opts.ifNotOverlay : null;
   for (let attempt = 0; attempt < AMBIENT_ATTEMPTS; attempt++) {
     const row = await ambientRow(db, campaign);
     const cur = ambientOf(row);
@@ -582,13 +604,18 @@ export async function patchAmbient(db, campaign, patch, opts) {
       const o = cur.doc.overlay;
       if (!isPlainObject(o) || o.id !== ifOverlay) return { ...cur, unchanged: true };
     }
+    // once by id (a show command): the overlay is already up under this id, so another page's identical command writes nothing
+    if (ifNotOverlay !== null && overlayRunning(cur.doc.overlay, Date.now()) && cur.doc.overlay.id === ifNotOverlay) return { ...cur, unchanged: true };
     const doc = { ...cur.doc };
     for (const [k, v] of Object.entries(patch)) {
-      if (k === 'skip') doc.skip = (doc.skip | 0) + 1;
+      if (k === 'layer') { const l = applyLayer(doc.layers, v); if (l) doc.layers = l; else delete doc.layers; }
+      else if (k === 'skip') doc.skip = (doc.skip | 0) + 1;
       else if (v === null) delete doc[k];
       else doc[k] = v;
     }
     const text = JSON.stringify(doc);
+    // a layer set to what it already is, or cleared when it is not set: nothing to write, seq does not move
+    if (('layer' in patch || 'layers' in patch) && Object.keys(patch).length === 1 && text === JSON.stringify(cur.doc)) return { ...cur, unchanged: true };
     if (byteLength(text) > LIMITS.ambient) throw new HttpError(413, 'the ambient document is too large (at most ' + LIMITS.ambient + ' bytes)');
     const now = nowIso(row && row.updated_at);
     const seq = cur.seq + 1;

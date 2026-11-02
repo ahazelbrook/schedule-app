@@ -449,7 +449,7 @@
   function askPrecache(m) {
     try {
       var sw = window.navigator && window.navigator.serviceWorker;
-      var want = m.role === 'gm' ? ['gm', 'display'] : m.role === 'display' ? ['display'] : null;
+      var want = m.role === 'gm' ? ['gm', 'display', 'lookbook'] : m.role === 'display' ? ['display'] : null;
       if (!want || !sw || !sw.ready || typeof sw.ready.then !== 'function') return;
       sw.ready.then(function (reg) {
         var w = (reg && reg.active) || sw.controller;

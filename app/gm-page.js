@@ -433,6 +433,13 @@
           var hn = []; try { hn = hiddenNames() || []; } catch (e) { return false; }
           if (namesHit(p.overlay.text, hn)) return false;
         }
+        /* the show contract: the words of a brief beat or a layer value are scanned for hidden names like a text overlay's; a layer is a known path with a value the server takes */
+        if (W.B68Show && typeof hiddenNames === 'function') {
+          var shown = W.B68Show.texts(isObj(p.overlay) ? p.overlay.kind : '', isObj(p.overlay) ? p.overlay.payload : null, isObj(p.layer) ? p.layer.path : '', isObj(p.layer) ? p.layer.value : null);
+          if (shown.length) { var hn2 = []; try { hn2 = hiddenNames() || []; } catch (e) { return false; } if (shown.some(function (x) { return namesHit(x, hn2); })) return false; }
+        }
+        if ('layer' in p && !(isObj(p.layer) && W.B68Show && W.B68Show.layerOk(p.layer.path, p.layer.value === undefined ? undefined : p.layer.value))) return false;
+        if ('layers' in p && p.layers !== null) return false;
         if ('auto' in p && p.auto !== null && typeof p.auto !== 'boolean') return false;
         if (!('score' in p) || p.score === null) return true;
         return isObj(p.score) && typeof p.score.board === 'string' && typeof p.score.iso === 'string' && ok.indexOf(p.score.board) >= 0 && ok.indexOf(p.score.iso) >= 0;
@@ -467,6 +474,8 @@
      resolves the name, size and fill, and refuses a hidden or missing clock. What goes in the text is the caller's: only what the GM chose,
      never model text or prep text. */
   var OV_FIELDS = { clock: ['clockId'], npc: ['npcId'], fx: ['fx'], text: ['text'] };
+  /* the show contract's brief beats (app/gm/show.js; functions/_lib/show.js) carry one `payload` object */
+  if (W.B68Show) W.B68Show.ids().forEach(function (k) { OV_FIELDS[k] = ['payload']; });
   function wholeBetween(v, lo, hi) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v && v >= lo && v <= hi; }
   function overlayOk(o) {
     if (!isObj(o) || !Object.prototype.hasOwnProperty.call(OV_FIELDS, o.kind)) return false;
@@ -477,6 +486,7 @@
     if (o.kind === 'clock') return typeof o.clockId === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(o.clockId);
     if (o.kind === 'npc') return typeof o.npcId === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(o.npcId);
     if (o.kind === 'fx') return o.fx === 'dawn';
+    if (W.B68Show && W.B68Show.has(o.kind)) return W.B68Show.payloadOk(o.kind, o.payload);
     return typeof o.text === 'string' && !!o.text.trim() && o.text.length <= 120;
   }
   P.overlayOk = overlayOk;
@@ -486,7 +496,7 @@
   function overlayLine(o, clockOf) {
     if (!isObj(o) || !Object.prototype.hasOwnProperty.call(OV_FIELDS, o.kind)) return '';
     var ck = o.kind === 'clock' && typeof clockOf === 'function' ? clockOf(o.clockId) : null;
-    var what = o.kind === 'fx' ? 'dawn' : o.kind === 'clock' ? (ck ? 'clock ' + str(ck.name) + ' ' + ck.filled + '/' + ck.size : 'a table clock') : o.kind === 'npc' ? 'an NPC card' : 'a line of text';
+    var what = W.B68Show && W.B68Show.has(o.kind) ? 'a ' + o.kind + ' on the iPad' : o.kind === 'fx' ? 'dawn' : o.kind === 'clock' ? (ck ? 'clock ' + str(ck.name) + ' ' + ck.filled + '/' + ck.size : 'a table clock') : o.kind === 'npc' ? 'an NPC card' : 'a line of text';
     return what + ' · ' + Math.round((Number(o.ms) || 0) / 1000) + ' s';
   }
   P.overlayLine = overlayLine;
@@ -3895,6 +3905,9 @@
     return patchAmbient({ overlay: ov });
   }
   function clearOverlay() { return patchAmbient({ overlay: null }); }
+  /* The show contract (app/gm/show.js): show(kind, payload, { ms, key }), layer(path, value), clear(). They write through patchAmbient, so the gate runs. */
+  var showCtl = null;
+  function shows() { if (!showCtl && W.B68Show) showCtl = W.B68Show.make({ send: patchAmbient, toast: toast }); return showCtl; }
 
   /* ---------- the iPad autopilot (design 6; GM.md "Autopilot") ----------
      B68GmAutopilot (gm/autopilot.js) is the pure controller; this block is its driver, and the only place it touches the page. It feeds the
@@ -6373,6 +6386,10 @@
     suggestHandout: function (id, why) { return suggestHandout(id, why); },
     /* overlays on the iPad (the false dawn, the autopilot): showOverlay({ kind, ms, ... }) and clearOverlay(), through the ambient document */
     showOverlay: showOverlay, clearOverlay: clearOverlay,
+    /* the show contract's three commands (app/gm/show.js), each idempotent by its key / its value */
+    show: function (kind, payload, opts) { var c = shows(); return c && S ? c.show(kind, payload, opts) : Promise.resolve(null); },
+    layer: function (path, value) { var c = shows(); return c && S ? c.layer(path, value) : Promise.resolve(null); },
+    clearShow: function (opts) { var c = shows(); return c && S ? c.clear(opts) : Promise.resolve(null); },
     /* the players' mission (gm/mission-publish.js): null before the page is ready or without a v2 night's modules. onPublished(fn) -> off (fn({ ok, ended?, time, at, seq, error?, refused? })),
        status() -> { ok, time, at, seq, text } ("Players: HH:MM ✓"), last(), publishNow(), endNight() (asks first), landed(from, to, how) (an overlay only for 'next'),
        changed(), renderPlayersView(el, mission?) (the last published mission by default) */

@@ -1,0 +1,41 @@
+/* Design tokens for NEW work (suite F6): paper, ink, orange, rules blue, the faction colours and a type scale for reading from 1.5 m.
+   app/tokens.js carries the same values (checks/runtime/show-contract.test.mjs keeps the two equal). The older stylesheets are untouched:
+   nothing here overrides a name they use, every name starts --b68-. The values are the design system's palette (maps/map-kit.js PALETTE). */
+:root {
+  /* paper and ink */
+  --b68-paper: #f2ede1;
+  --b68-paper-light: #fbf8f1;
+  --b68-paper-dark: #dcd4c2;
+  --b68-ink: #14110e;
+  --b68-ink-soft: #55504a;
+  --b68-ink-faint: #8e8880;
+  /* orange (the signal colour) and the rules blue */
+  --b68-orange: #e0691e;
+  --b68-orange-deep: #b8481a;
+  --b68-rules-blue: #26418f;
+  --b68-rules-blue-lit: #3f62c4;
+  /* alarm red and the caution mustard, for stamps and warnings */
+  --b68-alarm: #a8210f;
+  --b68-alarm-lit: #e03a20;
+  --b68-mustard: #e8c33c;
+  /* the faction colours: a fill and the ink that reads on it, six slots (a faction is assigned a slot by data, never here) */
+  --b68-faction-1: #e0691e; --b68-faction-1-ink: #14110e;
+  --b68-faction-2: #3f62c4; --b68-faction-2-ink: #fbf8f1;
+  --b68-faction-3: #6e8f6a; --b68-faction-3-ink: #14110e;
+  --b68-faction-4: #c9348c; --b68-faction-4-ink: #fbf8f1;
+  --b68-faction-5: #6e8a8c; --b68-faction-5-ink: #14110e;
+  --b68-faction-6: #e8c33c; --b68-faction-6-ink: #14110e;
+  /* type scale for the table display, read from 1.5 m: in vmin, so it follows the iPad however it is held. Nothing on a show is set smaller
+     than --b68-t-label. */
+  --b68-t-label: 3.4vmin;
+  --b68-t-body: 4.4vmin;
+  --b68-t-lead: 6vmin;
+  --b68-t-title: 9vmin;
+  --b68-t-display: 13vmin;
+  --b68-t-stamp: 20vmin;
+  /* the faces (the same names index.html gives them) */
+  --b68-font-poster: var(--font-poster, "Archivo Compressed", Impact, "Arial Narrow", sans-serif);
+  --b68-font-cond: var(--font-cond, "Archivo Condensed", "Arial Narrow", sans-serif);
+  --b68-font-text: var(--font-text, "GT America", Helvetica, Arial, sans-serif);
+  --b68-font-mono: var(--font-mono, "Space Mono", ui-monospace, Menlo, monospace);
+}

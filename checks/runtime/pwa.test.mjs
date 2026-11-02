@@ -196,7 +196,7 @@ await test('routes.js: index.html loads exactly the core bundle; every other bun
   const W = routes(), L = W.B68Load;
   ok(L && typeof L.need === 'function' && typeof L.files === 'function', 'routes.js defines B68Load');
   eq(W.B68_BUILD, 'dev', "the committed build is 'dev' (scripts/deploy.sh stamps it for the upload)");
-  eq(Object.keys(L.BUNDLES), ['core', 'figures', 'table', 'print', 'crews', 'gm', 'display'], 'the bundles');
+  eq(Object.keys(L.BUNDLES), ['core', 'figures', 'table', 'print', 'crews', 'gm', 'display', 'lookbook'], 'the bundles');
   eq(L.BUNDLES.figures, ['figures/figure-kit.js', 'figures/cast.js'], 'the figures bundle is the kit and the cast canon');
   ok(!HTML.includes('figure-kit.js') && !HTML.includes('figures/cast.js'), 'index.html does not load the figure kit (first paint draws no figure)');
   eq(htmlTags(), L.BUNDLES.core, "index.html's stylesheet and script tags are BUNDLES.core, in order");
@@ -244,7 +244,7 @@ await test('routes.js: need() adds each file once, scripts in order (async off),
   eq(doc.added().length, 7, 'each file added once (the table does not wait for the figure kit)');
   const gm = L.need('gm');
   eq(doc.order().slice(0, 10), ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', 'gm.css', 'prep.css', '<style>'], 'the GM stylesheets after the cast, still before the inline style');
-  eq(doc.order().slice(14), ['figures/figure-kit.js', 'figures/cast.js', 'maps/map-kit.js', 'mapzoom.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'gm/night.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'gm/run-view.js', 'gm/room-notes.js', 'gm/mission-publish.js', 'cue-verbs.js', 'cue.js', 'gm/cogm.js', 'gm/autopilot.js', 'features.js', 'gm/tools.js', 'gm/workshop.js', 'gm/switchboard.js', 'gm-page.js'], 'gm/*.js before gm-page.js');
+  eq(doc.order().slice(14), ['figures/figure-kit.js', 'figures/cast.js', 'maps/map-kit.js', 'mapzoom.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'gm/night.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'gm/run-view.js', 'gm/room-notes.js', 'gm/mission-publish.js', 'cue-verbs.js', 'cue.js', 'gm/cogm.js', 'gm/autopilot.js', 'features.js', 'gm/tools.js', 'gm/workshop.js', 'gm/switchboard.js', 'gm/show.js', 'gm-page.js'], 'gm/*.js before gm-page.js');
   doc.settle(['gm/npc.js']);
   let err = null; try { await gm; } catch (e) { err = e; }
   eq(err && err.message, 'could not load gm/npc.js', 'a file that fails rejects the bundle');
@@ -265,7 +265,7 @@ await test('routes.js: an unstamped build (the repository, the artifact, file://
   const W = routes(stamped(), doc);
   eq(W.B68_BUILD, STAMP, 'the stamp is B68_BUILD');
   W.B68Load.need('display');
-  eq(doc.order(), ['tracker.css', 'display.css?v=' + STAMP, '<style>', 'figures/figure-kit.js?v=' + STAMP, 'figures/cast.js?v=' + STAMP, 'cue-verbs.js?v=' + STAMP, 'cue.js?v=' + STAMP, 'stt.js?v=' + STAMP, 'display-page.js?v=' + STAMP], 'a stamped build versions every bundle URL (the display needs the figure kit first)');
+  eq(doc.order(), ['tracker.css', 'display.css?v=' + STAMP, 'tokens.css?v=' + STAMP, 'display/shows.css?v=' + STAMP, '<style>', 'figures/figure-kit.js?v=' + STAMP, 'figures/cast.js?v=' + STAMP, 'tokens.js?v=' + STAMP, 'cue-verbs.js?v=' + STAMP, 'cue.js?v=' + STAMP, 'stt.js?v=' + STAMP, 'display/shows.js?v=' + STAMP, 'display/show-beats.js?v=' + STAMP, 'display/layers.js?v=' + STAMP, 'display-page.js?v=' + STAMP], 'a stamped build versions every bundle URL (the display needs the figure kit first)');
 });
 
 /* the files that only the GM's laptop and the table iPad load: in the gm or display bundle and not in core or table */
@@ -819,7 +819,7 @@ await test('cf.js: once /api/me says GM it asks the worker to precache gm and di
     await win.claude.use('user'); await sleep(20);
     return posts;
   }
-  eq(await visit('gm'), [{ precache: ['gm', 'display'] }], 'the GM');
+  eq(await visit('gm'), [{ precache: ['gm', 'display', 'lookbook'] }], 'the GM (the look book too)');
   eq(await visit('display'), [{ precache: ['display'] }], 'the iPad');
   eq(await visit('player'), [], 'a player');
   eq(await visit(null), [], 'signed out');
