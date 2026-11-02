@@ -67,7 +67,7 @@ missing token is `401 {"error":"not signed in","reason":"..."}`. `reason` is a s
 
 Roles: `gm` when the email is in `GM_EMAILS` (comma-separated, case-insensitive); `display`
 when it is in `DISPLAY_EMAILS` (optional, the table iPad's own sign-in: it may only make a few
-calls, `GET /api/me`, `GET /api/gm/display`, `GET /api/live`, `GET /api/table/screen` and the transcriber's `POST /api/gm/stt/token`,
+calls, `GET /api/me`, `GET /api/gm/display`, `GET /api/live`, `GET /api/table/screen`, `GET /api/docs` (the public rows only) and the transcriber's `POST /api/gm/stt/token`,
 `GET` and `PATCH /api/gm/stt` and `POST /api/gm/transcript` (`DISPLAY_ALLOWED` in
 `functions/_lib/auth.js`; the current display page no longer calls `GET /api/gm/stt`, since the display read carries
 `want` and `session`, but older pages do); everything else is 403; GM wins if an email is in both; GM.md); else

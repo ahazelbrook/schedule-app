@@ -72,6 +72,7 @@ await step('displayMayCall: GET /api/me, GET /api/gm/display and the transcriber
   expect(displayMayCall('GET', '/api/me') && displayMayCall('GET', '/api/me/') && displayMayCall('GET', '/api/gm/display') && displayMayCall('GET', '/api/gm/display/'), 'allowed');
   expect(displayMayCall('POST', '/api/gm/stt/token') && displayMayCall('GET', '/api/gm/stt') && displayMayCall('PATCH', '/api/gm/stt/') && displayMayCall('POST', '/api/gm/transcript'), 'the transcriber is allowed');
   expect(displayMayCall('GET', '/api/live') && displayMayCall('GET', '/api/live/') && !displayMayCall('POST', '/api/live') && !displayMayCall('GET', '/api/livex') && !displayMayCall('GET', '/api/live/x'), 'the live-sync socket (GET only) is allowed');
+  expect(displayMayCall('GET', '/api/docs') && displayMayCall('GET', '/api/docs/') && !displayMayCall('PUT', '/api/docs') && !displayMayCall('DELETE', '/api/docs') && !displayMayCall('POST', '/api/docs') && !displayMayCall('GET', '/api/docs/x'), 'the store (W0.6): GET only, public rows (the handler filters)');
   for (const [m, p] of [['GET', '/api/gm/transcript'], ['DELETE', '/api/gm/transcript'], ['GET', '/api/gm/stt/token'], ['PUT', '/api/gm/stt'], ['POST', '/api/gm/stt/tokenx']])
     expect(!displayMayCall(m, p), m + ' ' + p + ' should be refused');
   for (const [m, p] of [['PATCH', '/api/me'], ['PUT', '/api/gm/display'], ['POST', '/api/gm/display'], ['GET', '/api/gm/pack'], ['GET', '/api/gm/state'],

@@ -78,6 +78,7 @@ await step('the kinds table is design 2.5: who hears what, screen reserved for p
   expect(same(KINDS.display, ['display', 'gm']) && same(KINDS.ambient, ['display', 'gm']) && same(KINDS.stt, ['display', 'gm']), 'the iPad and GM pages: display, ambient, stt');
   expect(same(KINDS.cue, ['gm']), 'cue: GM pages only');
   expect(same(KINDS.screen, ['player']), 'screen: phones only (MM1)');
+  expect(same(KINDS.docs, ['player', 'gm', 'display']), 'docs: every role (W0.6: a kind and a time, each page re-reads the rows its role may see)');
   expect(rolesFor('nope').length === 0 && rolesFor('constructor').length === 0 && rolesFor('__proto__').length === 0, 'unknown kinds (and Object.prototype names) are heard by nobody');
 });
 
@@ -90,6 +91,7 @@ await step('the pokeLive call sites: exactly the write paths; screen is sent onl
   } };
   walk(path.join(ROOT, 'functions', 'api'));
   const want = ['functions/api/campaign.js campaign', 'functions/api/campaign.js campaign, display', 'functions/api/characters/[id].js characters', 'functions/api/characters/[id].js characters', 'functions/api/characters/[id].js characters',
+    'functions/api/docs.js docs', 'functions/api/docs.js docs',
     'functions/api/gm/ambient.js ambient', 'functions/api/gm/assist.js npcs', 'functions/api/gm/display.js display', 'functions/api/gm/display.js display, screen', 'functions/api/gm/state.js screen', 'functions/api/gm/stt.js stt',
     'functions/api/gm/transcript.js cue', 'functions/api/npcs/[id].js npcs', 'functions/api/npcs/[id].js npcs', 'functions/api/npcs/[id].js npcs', 'functions/api/npcs/index.js npcs'];
   expect(same(sites.sort(), want.sort()), 'call sites: ' + JSON.stringify(sites.sort()));
