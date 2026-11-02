@@ -74,7 +74,9 @@
     { id: 'spine.sizer', label: 'The consequence sizer', surface: 'gm', stage: 'spine', default: false, saturday: 'on',
       doc: 'When a 4/5 or a 1-3 is marked on a stamped roll, the GM screen offers the consequence at full size for the stamped position, seeded from the room. Reducing it takes a second tap.' },
     { id: 'ai.grammar', label: 'A strict cue grammar, a toast and Undo', surface: 'gm', stage: 'ai', default: false, saturday: 'on',
-      doc: 'Adds the stamp, reveal, go, flashback, back, introduce, spotlight cues; every fired cue shows a 5 second toast with Undo; a cue it cannot parse says "didn\u2019t catch that" and does nothing.' }
+      doc: 'Adds the stamp, reveal, go, flashback, back, introduce, spotlight cues; every fired cue shows a 5 second toast with Undo; a cue it cannot parse says "didn\u2019t catch that" and does nothing.' },
+    { id: 'spine.start', label: 'Hard start', surface: 'display', stage: 'spine', default: false, saturday: 'on',
+      doc: 'A timed cold open on the table display: a station clock counts down, then a fuse, the credits and three faces whose name plates the GM reveals one by one. Adds a Hard start line to the Menu. Off: none of it.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

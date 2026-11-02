@@ -1451,6 +1451,14 @@
     /* the show contract's lasting layers and the data channel to the HTML scenes (app/display/layers.js) */
     s.layers = root.B68Layers ? root.B68Layers.attach(container, { skew: function () { return s.skew || 0; } }) : null;
     if (s.layers) s.offs.push(function () { s.layers.destroy(); });
+    /* the suite's display switches (each does nothing while its switch is off): the hard start (1.2, spine.start) */
+    function swOn(id) { return !!(root.B68Flags && root.B68Flags.on(id)); }
+    function suiteSync() {
+      var hs = !!(root.B68HardStart && s.layers && swOn('spine.start'));
+      if (hs && !s.hs) s.hs = root.B68HardStart.attach(container, { layers: s.layers }); else if (!hs && s.hs) { s.hs.destroy(); s.hs = null; }
+      if (s.hs) s.hs.apply();
+    }
+    s.offs.push(function () { if (s.hs) { s.hs.destroy(); s.hs = null; } });
     function ovTimer(fn, ms) { var id = later(fn, ms); s.ov.timers.push(id); return id; }
     function ovRemove(now) {
       var node = s.ov.node; s.ov.token++; s.ov.node = null;
@@ -1938,7 +1946,7 @@
            the small one; an adapter that does not simply gets the transcriber part in full each time */
         fetch: function (seq, aseq, sseq, hseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq, sseq === null ? undefined : sseq, hseq === null ? undefined : hseq); },
         onMission: function (hud) { applyBand(hud); },
-        onFeatures: function (f) { if (root.B68Flags) root.B68Flags.apply({ features: f }); },
+        onFeatures: function (f) { if (root.B68Flags) { root.B68Flags.apply({ features: f }); suiteSync(); } },
         onSkew: function (ms) { s.skew = ms; },
         isHidden: function () { return document.hidden; },
         onAmbient: function (doc) { applyAmbient(doc); },
@@ -1946,7 +1954,7 @@
         onStt: function (part) { if (s.stt && typeof s.stt.feed === 'function') { try { s.stt.feed(part); } catch (e) { /* the page goes on */ } } },
         onData: function (display, seq, at) { s.seq = seq; s.updatedAt = at; paintStatus(); show(display, seq); },
         onOverlay: function (overlay) { ovApplyField(overlay); },
-        onLayers: function (layers) { if (s.layers) s.layers.apply(layers); },
+        onLayers: function (layers) { if (s.layers) { s.layers.apply(layers); suiteSync(); } },
         onStatus: function (p) { s.poll = p; paintStatus(); s.reloader.state(p.state); }
       });
       s.poller.start();

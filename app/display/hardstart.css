@@ -1,0 +1,32 @@
+/* The hard start on the table display (suite ticket 1.2, app/display/hardstart.js). Drawn from app/tokens.css (--b68-*). Full frame, above the strip
+   (z-index 5), under nothing: it is the whole picture while it runs. Read from 1.5 m. */
+.dp-hs { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3vmin; overflow: hidden;
+  color: var(--b68-paper); font-family: var(--b68-font-text); pointer-events: none; }
+.dp-hs p { margin: 0; }
+.dp-hs-kicker { font: 900 var(--b68-t-label)/1.1 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .24em; color: var(--b68-mustard); }
+.dp-hs-card { background: transparent; }
+.dp-hs-plate { display: flex; flex-direction: column; align-items: center; gap: 1.6vmin; padding: 4vmin 7vmin; background: rgba(10, 9, 8, .86); border: .5vmin solid var(--b68-paper-dark); border-radius: 1vmin; }
+.dp-hs-clock { font: 900 var(--b68-t-display)/1 var(--b68-font-mono); letter-spacing: .06em; color: var(--b68-paper); font-variant-numeric: tabular-nums; }
+.dp-hs-label { font: 700 var(--b68-t-lead)/1.2 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .14em; color: var(--b68-paper-dark); }
+.dp-hs-fuse, .dp-hs-credits, .dp-hs-previously { background: var(--b68-ink); }
+.dp-hs-track { position: relative; width: 78vmin; height: 1.2vmin; background: var(--b68-ink-soft); border-radius: .6vmin; }
+.dp-hs-burn { position: absolute; inset: 0 auto 0 0; width: 100%; background: var(--b68-orange); border-radius: .6vmin; transform-origin: right center; animation: dp-hs-burn linear forwards; }
+.dp-hs-spark { position: absolute; right: -1vmin; top: -1.4vmin; width: 4vmin; height: 4vmin; border-radius: 50%; background: var(--b68-mustard); box-shadow: 0 0 3vmin 1vmin var(--b68-orange); animation: dp-hs-spark .18s steps(2) infinite; }
+@keyframes dp-hs-burn { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@keyframes dp-hs-spark { from { opacity: 1; } to { opacity: .55; } }
+.dp-hs-roll { display: flex; flex-direction: column; align-items: center; gap: 2.4vmin; animation: dp-hs-roll linear forwards; }
+@keyframes dp-hs-roll { from { transform: translateY(70vmin); } to { transform: translateY(-70vmin); } }
+.dp-hs-credit { display: flex; flex-direction: column; align-items: center; gap: .4vmin; }
+.dp-hs-cname { font: 900 var(--b68-t-title)/1.05 var(--b68-font-poster); text-transform: uppercase; letter-spacing: .04em; }
+.dp-hs-crole { font: 700 var(--b68-t-body)/1.2 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .16em; color: var(--b68-paper-dark); }
+.dp-hs-faces { display: flex; gap: 4vmin; align-items: flex-end; }
+.dp-hs-face { display: flex; flex-direction: column; align-items: stretch; width: 22vmin; background: var(--b68-paper-dark); border: .6vmin solid var(--b68-paper); padding: 1.2vmin; gap: 1vmin; }
+.dp-hs-sil { width: 100%; height: auto; fill: var(--b68-ink-soft); background: var(--b68-paper); }
+.dp-hs-name { display: flex; flex-direction: column; align-items: center; min-height: 9vmin; padding: .8vmin; background: var(--b68-ink); border: .3vmin solid var(--b68-ink-faint); }
+.dp-hs-pname { font: 900 var(--b68-t-lead)/1.1 var(--b68-font-poster); text-transform: uppercase; color: var(--b68-paper); text-align: center; overflow-wrap: anywhere; }
+.dp-hs-prole { font: 700 var(--b68-t-label)/1.1 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .1em; color: var(--b68-mustard); text-align: center; }
+.dp-hs-revealed .dp-hs-name { animation: dp-hs-plate .5s ease-out; }
+@keyframes dp-hs-plate { from { opacity: 0; transform: translateY(1vmin); } to { opacity: 1; transform: none; } }
+/* the strip's names would give a plate away twice */
+[data-scene-mode="start"] .dp-lay-face { display: none; }
+@media (prefers-reduced-motion: reduce) { .dp-hs-burn, .dp-hs-roll, .dp-hs-spark, .dp-hs-revealed .dp-hs-name { animation: none; } }

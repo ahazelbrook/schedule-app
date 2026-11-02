@@ -2263,7 +2263,7 @@
       '<a href="#display" title="The players’ screen: open this on the iPad">Open the display page (for the iPad)</a>' +
       '<button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="clearcap">Clear tonight’s capture</button><button type="button" data-gm="update">Update pack</button>' +
       '<button type="button" data-gm="capbar" id="gm-menu-capbar" title="The bottom bar that files a roll, a name or a moment"></button>' +
-      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' + swMenuLine() + wsMenuLine() +
+      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' + swMenuLine() + hsMenuLine() + wsMenuLine() +
       '<a href="#t">The table</a><a href="#rules">Rules</a><a href="#cast">The cast</a><a href="#">Home</a>' +
       '<button type="button" class="bad" data-gm="forget">Forget GM data on this device</button></span></span>' +
       '<div class="gm-signed" id="gm-signed" role="alert" hidden>' + esc(SIGNED_OUT_MSG) + '</div></div>';
@@ -2282,6 +2282,18 @@
     });
     return S.sw;
   }
+  /* 1.2 (spine.start): the hard start's sheet (gm/hardstart.js); its layers go through the show contract's own writer */
+  function hsOn() { return !!(S && W.B68GmHardStart && W.B68Features && W.B68Features.valueOf(S.doc, 'spine.start')); }
+  function hsInst() {
+    if (!hsOn()) return null;
+    if (!S.hs) S.hs = W.B68GmHardStart.make({
+      layer: function (p, v) { var c = shows(); return c ? c.layer(p, v) : Promise.resolve(null); }, npcs: function () { return S && isObj(S.npcs) ? S.npcs : {}; }, now: function () { return Date.now(); },
+      startAt: function () { var n = S && S.night && typeof S.night.night === 'function' ? S.night.night() : null; return n && W.B68GmNight ? W.B68GmNight.clockMs(n.startAt, Date.now()) || 0 : 0; },
+      root: function () { return $q('#gm-root'); }, toast: toast
+    });
+    return S.hs;
+  }
+  function hsMenuLine() { return hsOn() ? '<button type="button" data-gm="hardstart" id="gm-menu-hardstart" title="The cold open on the iPad: station clock, fuse, credits, and three faces to name">Hard start</button>' : ''; }
   function swMenuLine() { return W.B68GmSwitchboard && W.B68Features ? '<button type="button" data-gm="switchboard" id="gm-menu-switchboard" title="Every new feature has a switch here, off until you turn it on. All off puts the app back as it was; no reload">Switchboard</button>' : ''; }
   function wsMenuLine() { return W.B68GmWorkshop ? W.B68GmWorkshop.menuLine() : ''; }
   /* Live sync (design 2.5): the GM state's `live`, on unless it is an explicit false. The server puts it in the data poll's answer and the
@@ -6197,6 +6209,7 @@
     switch (a) {
       case 'menu': { var ml2 = $q('.gm-menu-list'); menuOpen(!!(ml2 && ml2.hasAttribute('hidden'))); break; }
       case 'focus': toggleFocus(); break;
+      case 'hardstart': menuOpen(false); { var hsi = hsInst(); if (hsi) hsi.toggle(); } break;      /* 1.2 */
       case 'switchboard': menuOpen(false); { var sbi = swInst(); if (sbi) sbi.toggle(); } break;      /* W0.2 */
       case 'workshop': menuOpen(false); if (W.B68GmWorkshop) W.B68GmWorkshop.toggle($q('#gm-root'), { toast: toast }); break;      /* W0.5 */
       case 'drawer': drawerToggle(); break;
