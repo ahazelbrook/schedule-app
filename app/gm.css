@@ -1296,3 +1296,24 @@ body.as-tab #gm-page .gm-drawer { right: 44px; }
 body.as-tab #gm-page .gm-sheet { right: 44px; }
 @media (min-width: 1600px) { body.as-dock #gm-page .gm-sheet { right: var(--as-w); } }
 @media (max-width: 599px) { body.as-tab #gm-page .gm-sheet { right: 0; } }
+
+/* the spine (gm/phase-rail.js, gm/curfew.js, gm/workshop-first.js): drawn only while spine.rail, spine.curfew or spine.workshop is on */
+#gm-page .gm-phaserail { background: var(--paper); border-bottom: 2px solid var(--rule); padding: 4px 8px; }
+#gm-page .gm-pr-row { display: flex; gap: 6px; align-items: stretch; overflow-x: auto; }
+#gm-page .gm-pr-chip, #gm-page .gm-pr-all { display: flex; flex-direction: column; justify-content: center; gap: 1px; min-height: 44px; min-width: 76px; padding: 4px 10px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); font: 900 11px/1.1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; flex: 1 1 0; white-space: nowrap; }
+#gm-page .gm-pr-all { flex: 0 0 auto; min-width: 0; border-style: dashed; }
+#gm-page .gm-pr-all[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); border-style: solid; }
+#gm-page .gm-pr-t { font: 700 11px/1 var(--font-mono); letter-spacing: 0; text-transform: none; opacity: .85; }
+#gm-page .gm-pr-chip[data-state="now"] { background: var(--rule); color: var(--on-ink); }
+#gm-page .gm-pr-chip[data-state="done"] { opacity: .6; }
+#gm-page .gm-pr-chip[data-state="now"][data-tone="amber"] { background: #b97a00; color: #fff; }
+#gm-page .gm-pr-chip[data-state="now"][data-tone="red"] { background: var(--alarm); color: #fff; }
+#gm-page .gm-pr-chip:focus-visible, #gm-page .gm-pr-all:focus-visible, #gm-page .gm-curfew button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#gm-page .gm-curfew { display: flex; gap: 6px; padding: 6px 8px; background: var(--alarm); }
+#gm-page .gm-curfew-call { flex: 1 1 auto; min-height: 52px; border: 2px solid var(--on-ink); background: var(--on-ink); color: var(--alarm); font: 900 18px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+#gm-page .gm-curfew-snooze { min-height: 52px; padding: 0 14px; border: 2px solid var(--on-ink); background: transparent; color: var(--on-ink); font: 900 12px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+@media (max-width: 599px) { #gm-page .gm-curfew { flex-direction: column; } }
+/* the Workshop's first cuts: put away while the switch is on (.ws-away on the body), shown again by the Workshop's own button */
+body.ws-away [data-gm="mirror"], body.ws-away #as-cogm-also-row, body.ws-away [data-rv="menuitem"][data-mid="phone-cards"] { display: none !important; }
+body.ws-away:not(.ws-show-screen) #as-screen { display: none; }
+body.ws-away:not(.ws-show-costume) .gm-field:has(#gm-run-lens) { display: none; }

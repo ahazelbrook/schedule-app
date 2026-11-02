@@ -2316,7 +2316,7 @@
   /* the bar's live parts: the session, what is on the iPad, listening */
   function renderBar() {
     if (!S || !S.root) return;
-    renderMirror();
+    renderMirror(); spineTick();
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
@@ -4189,10 +4189,18 @@
     Promise.resolve().then(function () { return spec.run(); }).then(null, function (e) { toast('Could not do that: ' + errText(e), true); });
   }
   /* W0.4 the night contract (gm/night.js): the controller for this page. It writes nothing until a phase is entered or a stamp or cue is logged; the iPad band (band.phase) is wired by the show contract, from night.band() */
+  /* B08 the spine (gm/spine.js): the phase rail, the curfew and the first Workshop cuts, each behind its own switch (features.js spine.*); with all three off this does nothing */
+  function spineTick() {
+    var Sp = W.B68GmSpine, F = W.B68Features; if (!Sp || !F || !S || S.status !== 'ready' || !$q('#gm-root')) return;
+    Sp.tick({ root: function () { return $q('#gm-root'); }, night: function () { return S ? S.night : null; }, now: function () { return Date.now(); }, toast: toast,
+      on: function (id) { return !!S && F.valueOf(S.doc, id); }, layer: function (p, v) { var c = shows(); return c ? c.layer(p, v) : Promise.resolve(null); },
+      phoneCards: phoneCardsOn, setPhoneCards: setPhoneCards, mirrorOn: mirrorOn, toggleMirror: toggleMirror });
+  }
   function mountNight() {
-    var N = W.B68GmNight, me = S; if (!N) { me.night = null; return; }
-    me.night = N.create({ doc: function () { return S === me ? S.doc : null; }, patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); },
+    var N = W.B68GmNight, me = S; if (W.B68GmSpine) W.B68GmSpine.reset(); if (!N) { me.night = null; return; }
+    me.night = N.create({ doc: function () { return S === me ? S.doc : null; }, patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); }, changed: spineTick,
       prep: function () { var pk = S === me ? part('prep') : null, id = pk && W.B68GmPrep ? prepNoteId(pk) : null; return id && Array.isArray(pk.notes) ? pk.notes.filter(function (n) { return isObj(n) && n.id === id; })[0] || null : null; } });
+    spineTick();
   }
   function mountMission() {
     var M = W.B68GmMission, B = W.B68GmBall, me = S;

@@ -62,7 +62,13 @@
   /* THE SWITCHES. A ticket adds its own line here, default false. Keep the order: it is the order of the Switchboard. */
   var SWITCHES = [
     { id: 'phoneCards', label: 'Phone mission cards', surface: 'phone', stage: 'existing', default: false, saturday: 'off', legacy: 'phoneCards',
-      doc: 'Phones show a mission card and a Move row while a night runs. Off: phones are character sheets only and the published mission carries no cards (the iPad is unchanged).' }
+      doc: 'Phones show a mission card and a Move row while a night runs. Off: phones are character sheets only and the published mission carries no cards (the iPad is unchanged).' },
+    { id: 'spine.rail', label: 'Phase rail', surface: 'gm', stage: 'spine', default: false, saturday: 'on',
+      doc: 'Four phases across the page header, tap to move between them, time against budget; drives the tool filter ("All tools" overrides) and lights the iPad band. Off: the header and tabs as before.' },
+    { id: 'spine.curfew', label: 'Curfew', surface: 'gm', stage: 'spine', default: false, saturday: 'on',
+      doc: 'A warning thirty minutes before the curfew, then a full-width "Call the Aftermath" that moves to the Aftermath; can be snoozed once for ten minutes. Off: no curfew bar.' },
+    { id: 'spine.workshop', label: 'Workshop drawer, first cuts', surface: 'gm', stage: 'spine', default: false, saturday: 'on',
+      doc: 'Phone cards, the costume select, the screen mirror, the uncued co-GM and the Screen props move behind Menu then Workshop. Off: they stay where they were.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
