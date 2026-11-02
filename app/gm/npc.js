@@ -466,6 +466,12 @@
         var taken = initialsInPlay();
         var first = draw();
         for (var i = 0; i < 8 && taken[first[0].toUpperCase()]; i++) first = draw();
+        // When most of the pool sits on taken letters, eight redraws can all miss: pick straight from the free names.
+        if (taken[first[0].toUpperCase()]) {
+          var src = r <= 2 ? T.nameMasc : r <= 4 ? T.nameFem : T.nameAmb;
+          var freeNames = src.filter(function (x) { return !taken[String(x).charAt(0).toUpperCase()]; });
+          if (freeNames.length) first = freeNames[Math.floor(rnd() * freeNames.length)];
+        }
         o.name = first + ' ' + fresh('family', T.family);
         o.alias = oneIn(2) ? fresh('alias', T.alias) : null;
       }
