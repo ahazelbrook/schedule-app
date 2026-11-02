@@ -924,7 +924,7 @@
       h += '<div class="ds-roll-go"><span class="ds-roll-n"><b class="ds-roll-big mono">' + r.n + 'd</b><span class="ds-dim">' + (r.n === 0 ? 'roll 2d, take the lowest' : 'read the highest die') + '</span></span><button type="button" class="btn sm primary" data-act="roll" data-always="1">' + (r.result ? 'Roll again' : 'Roll') + '</button></div>';
       if (r.result) h += rollResult(r, pb);
     }
-    if (r.kind === 'action' && !r.result && play.autoCrit && window.B68SheetKeys) h += window.B68SheetKeys.banner({ play: play, esc: esc });
+    if (r.kind === 'action' && !r.result && play.autoCrit && skOn('spine.keyturn')) h += window.B68SheetKeys.banner({ play: play, esc: esc });
     h += abStrip(play, pb);
     return '<div class="ds-roll" tabindex="-1" role="region" aria-label="Roll"><div class="ds-roll-h"><span class="ds-roll-t">' + title + '</span><span class="ds-roll-sub">' + sub + '</span><button type="button" class="ds-x ds-roll-x" data-act="rollclose" data-always="1" aria-label="Close the roll panel" title="Close (Esc)">×</button></div><div class="ds-roll-body">' + h + '</div>' + panelFoot() + '</div>';
   }
@@ -1363,7 +1363,7 @@
         var dots = p.dots[r.action] || 0, attr = attrOf(r.action) || '', key = attr.toLowerCase(), sm = stressMax(pb), sn = stressName(pb);
         if (r.push && p.stress + 2 > sm) { r.push = false; note('Cannot push: ' + sn + ' would pass ' + sm); render(); return; }
         res = rollDice(dots + (r.push ? 1 : 0) + (r.assist ? 1 : 0) + (r.bargain ? 1 : 0));
-        if (p.autoCrit && window.B68SheetKeys) window.B68SheetKeys.autoCrit(res, p);
+        if (p.autoCrit && window.B68SheetKeys) { if (skOn('spine.keyturn')) window.B68SheetKeys.autoCrit(res, p); else delete p.autoCrit; }   /* switched off: a pending critical is dropped, not honoured */
         var flags = []; if (r.push) flags.push('push'); if (r.assist) flags.push('assist'); if (r.bargain) flags.push('bargain');
         res.text = r.action + ' ' + res.n + 'd' + (flags.length ? ' (' + flags.join(', ') + ')' : res.low ? ' (2d take lowest)' : '') + ' · ' + r.position + ' · ' + res.dice.join(',') + ' → ' + res.reading;
         /* consequences: listed first, written only when the sheet can be saved */
