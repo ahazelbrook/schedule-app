@@ -518,7 +518,7 @@
         '<div class="rv-views" role="group" aria-label="View">' + vs.map(function (q) { return '<button type="button" class="chip sm" data-rv="view" data-v="' + esc(q.id) + '" aria-pressed="' + (q.id === v.id) + '">' + esc(q.label) + "</button>"; }).join("") + "</div>" + peekBar +
         '<div class="rv-view" id="rv-view" data-view="' + esc(v.id) + '"></div></div>' +
         '<aside class="rv-side" aria-label="The room and the beat">' + secs.map(function (s) { return '<section class="rv-sec" data-sec="' + esc(s.id) + '"></section>'; }).join("") + "</aside></div>" +
-        '<ul class="rv-menu" id="rv-menu" hidden>' + menuItems.map(function (it, i) { return '<li><button type="button" class="rv-btn" data-rv="menuitem" data-i="' + i + '"' + (it.title ? ' title="' + esc(it.title) + '"' : "") + ">" + esc(typeof it.label === "function" ? it.label(ctx) : it.label) + "</button></li>"; }).join("") + "</ul>" + npcPop();
+        '<ul class="rv-menu" id="rv-menu" hidden>' + menuItems.map(function (it, i) { return '<li><button type="button" class="rv-btn" data-rv="menuitem" data-i="' + i + '" data-mid="' + esc(it.id) + '"' + (it.title ? ' title="' + esc(it.title) + '"' : "") + ">" + esc(typeof it.label === "function" ? it.label(ctx) : it.label) + "</button></li>"; }).join("") + "</ul>" + npcPop();
       if (v.id !== "map" && mapZoom) { mapZoom.destroy(); mapZoom = null; }
       try { v.render(box.querySelector("#rv-view"), ctx); } catch (e) { box.querySelector("#rv-view").textContent = "This view could not be drawn: " + (e && e.message || e); }
       secs.forEach(function (s) {
