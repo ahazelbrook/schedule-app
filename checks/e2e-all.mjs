@@ -62,6 +62,7 @@ const CHECKS = [
   ['checks/runtime/show-contract.e2e.mjs', 'the show contract: every brief beat on the GM display and the iPad within a poll, a hidden NPC dropped, the layers and the scene data channel, the look book (9050)'],
   ['checks/runtime/gm-stamp.e2e.mjs', 'the stamp, the sizer and the strict cue grammar on the real GM page: Stamp row, report card, 4/5 sizer with a two-tap reduce, a typed cue with its Undo toast, didn’t catch that, All off (9030)'],
   ['checks/runtime/gm-autopilot.e2e.mjs', 'the iPad autopilot: a clock overlay, Take over, secrecy, lights out, display-only expiry (8879)'],
+  ['checks/runtime/hard-start.e2e.mjs', 'the hard start and the ON AIR lamp on the iPad, switches off and on (9060)'],
 ];
 
 const want = process.argv.slice(2);
