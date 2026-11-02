@@ -28,8 +28,8 @@ export const CUE_TYPES = ['clock_add', 'clock_tick', 'npc_add', 'capture', 'undo
 const CUE_MODEL_TYPES = ['clock_add', 'clock_tick', 'npc_add', 'capture'];                       // what the model may return for a cue: no roll_log, and never undo or rename
 export const CUE_ID_MAX = ID_MAX;
 // B09 (ai.grammar): the strict grammar's verbs, one cue action type. The page carries each out (the iPad's show contract, the night, the cast); the server only validates, keys and logs it.
-//   stamp { position, effect, text? }   go { phase }   reveal | spotlight { names: [one] }   introduce { names: [1-6] }   flashback | back | offrecord | backon (nothing more)
-export const CUE_DO_VERBS = ['stamp', 'reveal', 'go', 'flashback', 'back', 'introduce', 'spotlight', 'offrecord', 'backon'];
+//   stamp { position, effect, text? }   go { phase }   reveal | spotlight { names: [one] }   introduce { names: [1-6] }   flashback | back (nothing more)
+export const CUE_DO_VERBS = ['stamp', 'reveal', 'go', 'flashback', 'back', 'introduce', 'spotlight'];
 const STAMP_POSITIONS = ['controlled', 'risky', 'desperate'], STAMP_EFFECTS = ['limited', 'standard', 'great'], NIGHT_PHASES = ['pb', 'plan', 'score', 'after'];
 const CUE_NAMES_MAX = 6;
 const POSITIONS = ['controlled', 'risky', 'desperate', 'unclear'], EFFECTS = ['limited', 'standard', 'great', 'unclear'], RESULTS = ['critical', 'full', 'partial', 'miss', 'unclear'];

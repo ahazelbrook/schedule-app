@@ -11,7 +11,7 @@
      go <phase>       enter personal business, planning, score or aftermath on the night (and the iPad band)
      flashback        the iPad's flashback filter on          back    the filter off (a bare "back"; "back on" is the verb below)
      introduce <names>  the rolodex beat, for revealed NPCs only        spotlight <name>  the spotlight beat, a revealed NPC only
-     off the record / back on   hand the listening pause to the host (the ON AIR ticket wires it; unwired, the toast says so)
+     ("off the record" and "back on" belong to A6 / ai.onair, which handles them before the cue lane: no cue verb here, and "back on" is refused by "back")
    NOT HERE: "name them". The suite plan names it without saying what it does, so it is left out rather than guessed.
    Every verb is enabled() only while the switch is on, so with it off the registry answers as if nothing were registered.
    A word another bundle has already registered is skipped (register() throws on a clash and the throw is caught per verb), never fatal.
@@ -25,7 +25,7 @@
        host: { feature(id) -> bool, cueVerbs() -> B68CueVerbs, stamp() -> B68GmStamp controller | null, night() -> B68GmNight controller | null,
                layer(path, value) -> Promise, layerValue(path) -> value, npcs() -> [{ id, name, alias?, revealed }], reveal(id, bool) -> Promise,
                show(kind, payload, { key }) -> Promise<answer | null>, overlayId() -> id, clearOverlay() -> Promise, keyFor(key) -> id,
-               listen(on) -> Promise<bool> | undefined, toast(msg, bad), doc() -> document, setTimeout/clearTimeout }
+               toast(msg, bad), doc() -> document, setTimeout/clearTimeout }
        controller: register() unregister() run(action) -> Promise<{ ok, say }>  undoToast(text, fn)  didntCatch()  hide()   TOAST_MS */
 (function (root, factory) {
   'use strict';
@@ -40,7 +40,7 @@
   var FILL = { and: 1, a: 1, an: 1, the: 1, is: 1, it: 1, as: 1, position: 1, effect: 1, at: 1, with: 1, then: 1, um: 1, uh: 1, okay: 1, ok: 1, please: 1, now: 1, to: 1, into: 1, phase: 1, on: 1, scene: 1, present: 1, mode: 1, our: 1, that: 1, this: 1 };
   var PHASE_W = { personal: 'pb', pb: 'pb', downtime: 'pb', planning: 'plan', plan: 'plan', briefing: 'plan', score: 'score', heist: 'score', aftermath: 'after', after: 'after', payout: 'after' };
   var PHASE_LABEL = { pb: 'Personal Business', plan: 'Planning', score: 'Score', after: 'Aftermath' };
-  var VERBS = ['stamp', 'reveal', 'go', 'flashback', 'back', 'introduce', 'spotlight', 'offrecord', 'backon'];
+  var VERBS = ['stamp', 'reveal', 'go', 'flashback', 'back', 'introduce', 'spotlight'];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
@@ -93,8 +93,6 @@
       return act({ verb: verb, names: names });
     };
   }
-  function parseOff(ctx) { var w = ctx.words || []; return w[0] === 'the' && w[1] === 'record' && onlyFiller(w.slice(2)) ? act({ verb: 'offrecord' }) : unparsed(); }
-  function parseOn(ctx) { var w = ctx.words || []; return w[0] === 'on' && onlyFiller(w.slice(1)) ? act({ verb: 'backon' }) : unparsed(); }
 
   /* the registry's definitions; `enabled` is added by create() */
   function defs() {
@@ -103,11 +101,9 @@
       { id: 'reveal', phrases: [['reveal']], label: 'Reveal', parse: parseNames('reveal', 1) },
       { id: 'go', words: ['go'], label: 'Go to a phase', parse: parseGo },
       { id: 'flashback', words: ['flashback'], label: 'Flashback', parse: parseBare('flashback', { flashback: 1 }) },
-      { id: 'back', words: ['back'], label: 'Back from a flashback', parse: parseBare('back') },
+      { id: 'back', words: ['back'], label: 'Back from a flashback', parse: function (ctx) { return (ctx.words || [])[0] === 'on' ? unparsed() : parseBare('back')(ctx); } },
       { id: 'introduce', words: ['introduce', 'introducing'], label: 'Introduce', parse: parseNames('introduce', 6) },
-      { id: 'spotlight', words: ['spotlight'], label: 'Spotlight', parse: parseNames('spotlight', 1) },
-      { id: 'offrecord', phrases: [['off', 'the', 'record']], label: 'Off the record', parse: parseOff },
-      { id: 'backon', phrases: [['back', 'on']], label: 'Back on', parse: parseOn }
+      { id: 'spotlight', words: ['spotlight'], label: 'Spotlight', parse: parseNames('spotlight', 1) }
     ];
   }
 
@@ -237,9 +233,7 @@
         });
       },
       introduce: function (a) { return beat('rolodex', a, 'Introducing '); },
-      spotlight: function (a) { return beat('spotlight', a, 'Spotlight on '); },
-      offrecord: function () { return listen(false, 'Off the record.', 'Listening is not wired to a pause here.'); },
-      backon: function () { return listen(true, 'Back on.', 'Listening is not wired to a pause here.'); }
+      spotlight: function (a) { return beat('spotlight', a, 'Spotlight on '); }
     };
     function beat(kind, a, lead) {
       var r = resolve(a.names || []); if (r.error) return Promise.resolve(fail(r.error));
@@ -251,14 +245,6 @@
         return done(lead + r.npcs.map(function (p) { return p.name; }).join(', ') + '.', function () { return clearIfMine(key); });
       });
     }
-    function listen(yes, ok, unwired) {
-      if (typeof host.listen !== 'function') return Promise.resolve(fail(unwired));
-      return Promise.resolve(host.listen(yes)).then(function (r) {
-        if (r === false) return fail('Could not change listening.');
-        return done(ok, function () { return host.listen(!yes); });
-      });
-    }
-
     /* a cue_do action (already through validateActions) -> Promise<{ ok, say }>. The switch is read here too: a cue that arrives with it off does nothing. */
     function run(action) {
       if (!on()) return Promise.resolve({ ok: false, say: '' });

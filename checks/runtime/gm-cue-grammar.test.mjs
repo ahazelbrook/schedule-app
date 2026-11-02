@@ -30,7 +30,7 @@ function fakeDoc() {
   return { body, createElement: mk, toasts: () => body.children.filter((c) => c.className === 'gm-ugtoast') };
 }
 function makeHost(over = {}) {
-  const log = { layers: [], shows: [], revealed: [], toasts: [], entered: [], stamps: [], listens: [], timers: [], cleared: 0 };
+  const log = { layers: [], shows: [], revealed: [], toasts: [], entered: [], stamps: [], timers: [], cleared: 0 };
   const flags = Object.assign({ 'ai.grammar': true }, over.on || {});
   const layers = {};
   const npcs = over.npcs || [{ id: 'n-mabel', name: 'Mabel Quist', revealed: true }, { id: 'n-dov', name: 'Dov Ashgrove', revealed: true }, { id: 'n-hid', name: 'GM-ONLY-NPC-1', alias: 'GM-ONLY-ALIAS-1', revealed: false }];
@@ -46,7 +46,6 @@ function makeHost(over = {}) {
     clearOverlay: async () => { log.cleared++; overlay = ''; return {}; },
     setTimeout: (fn, ms) => { log.timers.push({ fn, ms }); return log.timers.length; }, clearTimeout: () => {}
   };
-  if (over.listen !== false && over.listen !== undefined) host.listen = over.listen;
   return { host, log, doc, flags, layers };
 }
 const parse = (t) => Cue.parse(t, LIVE);
@@ -75,17 +74,17 @@ await test('stamp: "Blade, risky, standard" and the long forms give a position, 
   assert.equal(act('Blade, risky standard ' + 'x'.repeat(300)).text.length, 100, 'capped at the report card\'s line');
 });
 
-await test('go, flashback, back, introduce, spotlight, reveal, off the record and back on: each is one cue_do action, nothing else', () => {
+await test('go, flashback, back, introduce, spotlight, reveal: each is one cue_do action, nothing else', () => {
   const c = G.create(makeHost().host); c.register();
   assert.deepEqual([act('Blade, go to planning').phase, act('Blade, go to the score').phase, act('Blade, go aftermath').phase, act('Blade, go to personal business please').phase], ['plan', 'score', 'after', 'pb']);
   assert.equal(act('Blade, flashback').verb, 'flashback'); assert.equal(act('Blade, back').verb, 'back'); assert.equal(act('Blade, back please').verb, 'back');
-  assert.equal(act('Blade, back on').verb, 'backon', '"back on" is the longer phrase and wins over "back"');
-  assert.equal(act('Blade, off the record').verb, 'offrecord'); assert.equal(act('Blade, take that off the record please').verb, 'offrecord');
+  assert.equal(parse('Blade, back on').refused, 'unparsed', '"back on" is owned by A6, not a cue verb here');
+  assert.equal(Cue.find('Blade, off the record', LIVE), null, 'A6 owns it: no cue verb');
   assert.deepEqual(act('Blade, introduce Mabel Quist and Dov Ashgrove').names, ['Mabel Quist', 'Dov Ashgrove']);
   assert.deepEqual(act('Blade, introduce the Mabel, Dov, Lotte').names, ['Mabel', 'Dov', 'Lotte']);
   assert.deepEqual(act('Blade, spotlight Dov Ashgrove.').names, ['Dov Ashgrove']);
   assert.deepEqual(act('Blade, reveal Mabel Quist').names, ['Mabel Quist']);
-  for (const w of ['stamp', 'reveal', 'go', 'flashback', 'back', 'introduce', 'spotlight', 'offrecord', 'backon']) assert.ok(V.has(w), w);
+  for (const w of ['stamp', 'reveal', 'go', 'flashback', 'back', 'introduce', 'spotlight']) assert.ok(V.has(w), w);
   for (const v of V.list()) assert.deepEqual(v.actionTypes, ['cue_do']);
 });
 
@@ -113,7 +112,7 @@ await test('every action a verb returns passes validateActions as a parsed cue; 
   const c = G.create(makeHost().host); c.register();
   const lines = [{ id: 'l1', kind: 'line', text: 'something said first' }];
   const state = hands.cleanState({ clocks: [], npcs: [], pcs: [] });
-  const sayings = ['Blade, risky, standard, the guard turns', 'Blade, go to planning', 'Blade, flashback', 'Blade, back', 'Blade, introduce Mabel and Dov', 'Blade, spotlight Dov', 'Blade, reveal Mabel', 'Blade, off the record', 'Blade, back on'];
+  const sayings = ['Blade, risky, standard, the guard turns', 'Blade, go to planning', 'Blade, flashback', 'Blade, back', 'Blade, introduce Mabel and Dov', 'Blade, spotlight Dov', 'Blade, reveal Mabel'];
   for (const t of sayings) {
     const a = act(t), ln = [{ id: 'l2', kind: 'line', text: t }];
     const v = hands.validateActions([a], { state, lines: ln, cue: { parsed: true, cueLineId: 'l2' } });
@@ -187,14 +186,6 @@ await test('spotlight and introduce put the show beat up for revealed NPCs by id
   const gone = makeHost(); const c2 = G.create(gone.host);
   await c2.run({ type: 'cue_do', verb: 'spotlight', names: ['Dov'] }); gone.host.overlayId = () => 'someone-elses'; gone.doc.toasts()[0].children[1].click(); await new Promise((r2) => setImmediate(r2));
   assert.equal(gone.log.cleared, 0, 'the overlay is no longer ours');
-});
-
-await test('off the record and back on go to the host\'s listening pause (the ON AIR ticket wires it); unwired, the toast says so and nothing is faked', async () => {
-  const calls = []; const m = makeHost({ listen: async (on) => { calls.push(on); return true; } }); const c = G.create(m.host);
-  assert.equal((await c.run({ type: 'cue_do', verb: 'offrecord' })).ok, true); assert.equal((await c.run({ type: 'cue_do', verb: 'backon' })).ok, true);
-  assert.deepEqual(calls, [false, true]);
-  const u = makeHost(); const r = await G.create(u.host).run({ type: 'cue_do', verb: 'offrecord' });
-  assert.equal(r.ok, false); assert.match(u.log.toasts[0][0], /not wired/);
 });
 
 await test('the toast: shown for five seconds with an Undo button; Undo runs once and says Undone; a new toast replaces the last; with the switch off nothing is drawn', async () => {
