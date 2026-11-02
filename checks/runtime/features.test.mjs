@@ -27,6 +27,19 @@ async function withSwitches(list, fn) {
 }
 const GMX = sw('test.gm', 'gm'), DISP = sw('test.disp', 'display'), PH = sw('test.phone', 'phone');
 
+// Every ticket adds its own line to the registry. Whatever lines ship beside phoneCards are read from the registry itself (none is named here, so a
+// new line needs no edit to this file): each is checked as a registry line, then set aside, so the rest of this file tests the switchboard against
+// phoneCards alone, as it was written.
+const SHIPPED = F.list().filter((s) => s.id !== 'phoneCards');
+await test('the tickets\' switches: each a well-formed registry line, default off, after phoneCards', async () => {
+  assert.equal(F.list()[0].id, 'phoneCards');
+  for (const s of SHIPPED) {
+    assert.equal(s.default, false, s.id); assert.ok(s.label && s.doc, s.id);
+    F.unregister(s.id); assert.doesNotThrow(() => F.register(s), s.id + ' registers again as it stands');
+  }
+});
+SHIPPED.forEach((s) => F.unregister(s.id));
+
 await test('the registry ships phoneCards and nothing else: a phone switch, default off, Saturday off, with the old key as its fallback', async () => {
   assert.deepEqual(F.list().map((s) => s.id), ['phoneCards']);
   const s = F.get('phoneCards');
