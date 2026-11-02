@@ -40,12 +40,12 @@
 
   function evaluate(facts, now, local) {
     var f = isObj(facts) ? facts : {}, out = [], dev = isObj(f.device) ? f.device : null, dg = isObj(f.deepgram) ? f.deepgram : {}, loc = isObj(local) ? local : {};
-    /* the iPad: a report older than a few minutes is no report (it sends one at least once a minute while its page is open) */
+    /* the iPad: a report older than a few minutes is no report (the iPad reports with its transcriber status, so it is silent while not listening) */
     var at = dev ? ms(dev.at) : null, fresh = !!dev && (at === null || now - at <= STALE_MS);
     if (!fresh) {
       var gone = 'The iPad has not reported ' + (dev && at !== null ? 'for ' + Math.round((now - at) / 60000) + ' minutes' : 'yet') + '.';
-      out.push(item('audio', 'iPad sound', false, gone, 'Open the display page on the iPad (signed in as the table), then run this again.'));
-      out.push(item('ipadfiles', 'iPad files', false, gone, 'Open the display page on the iPad while online, then run this again.'));
+      out.push(item('audio', 'iPad sound', false, gone, 'Start listening on the iPad, then reopen Preflight.'));
+      out.push(item('ipadfiles', 'iPad files', false, gone, 'Start listening on the iPad, then reopen Preflight.'));
     } else {
       out.push(dev.audio === 'locked' ? item('audio', 'iPad sound', false, 'Sound is locked until the iPad is touched.', 'Tap the iPad screen once.')
         : item('audio', 'iPad sound', true, dev.audio === 'none' ? 'No music file to unlock.' : 'Unlocked.', ''));
