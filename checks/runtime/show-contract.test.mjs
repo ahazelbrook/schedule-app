@@ -48,6 +48,7 @@ const FIXTURES = {
   title: { text: 'The Pelican Rooms', sub: 'Gala night' }, wanted: { level: 3, heat: 7, siren: true }, ring: { text: 'The desk phone' },
   rolodex: { npcIds: ['n-mabel', 'n-dov', 'n-lotte'] }, spotlight: { npcId: 'n-lotte' },
   report: { position: 'risky', effect: 'standard', text: 'Wren Tully turns round' },
+  aftermath: { step: 'heat', n: 3, exposure: 4, mods: 2, heat: 5, after: 0, siren: true, wanted: 2, lines: ['The Kestrel Club +1'] }, credits: { npcIds: ['n-mabel', 'n-dov'] },   // suite 1.6
 };
 
 await test('the registry: the seven brief beats and the spotlight are overlay kinds, the old four are still there', () => {

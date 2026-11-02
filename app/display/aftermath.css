@@ -1,0 +1,59 @@
+/* The Aftermath show and the end credits on the table display (suite 1.6; app/display/aftermath.js). Draws from app/tokens.css (--b68-*) and the beat
+   frame in app/display/shows.css (.dp-show). Read from 1.5 m: nothing is set smaller than --b68-t-label. */
+.dp-show-aftermath, .dp-show-credits { background: rgba(10, 9, 8, .9); }
+.dp-aft-big { font: 900 var(--b68-t-display)/1 var(--b68-font-poster); text-transform: uppercase; letter-spacing: .02em; color: var(--b68-paper); max-width: 16em; }
+.dp-aft-minus { color: var(--b68-alarm-lit); }
+.dp-aft-kept { font: 900 var(--b68-t-lead)/1.1 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .08em; color: var(--b68-mustard); }
+.dp-aft-who { color: var(--b68-orange); font-size: calc(var(--b68-t-display) * 1.1); }
+
+/* the payout: stacks, one after another */
+.dp-aft-stacks { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-end; gap: .8vmin; max-width: 80%; min-height: 12vmin; }
+.dp-aft-stack { display: block; width: 5vmin; height: 2.4vmin; background: var(--b68-mustard); border: .35vmin solid var(--b68-ink); border-radius: .4vmin; opacity: 0; transform: translateY(-6vmin); }
+.dp-show-aftermath.dp-ov-in .dp-aft-stack { opacity: 1; transform: none; transition: transform .25s ease-out, opacity .2s ease-out; transition-delay: calc(var(--i, 0) * 45ms); }
+
+/* heat: nine pips */
+.dp-aft-meter { display: flex; gap: 1.6vmin; }
+.dp-aft-pip { display: block; width: 6.4vmin; height: 6.4vmin; border: .7vmin solid var(--b68-paper-dark); border-radius: 50%; }
+.dp-aft-pip.on { background: var(--b68-orange); border-color: var(--b68-orange); }
+.dp-aft-pip:nth-child(n+7).on { background: var(--b68-alarm-lit); border-color: var(--b68-alarm-lit); }
+.dp-show-aftermath.dp-ov-in .dp-aft-pip.on { animation: dp-aft-pip .35s ease-out both; animation-delay: calc(var(--i, 0) * 110ms); }
+@keyframes dp-aft-pip { 0% { transform: scale(.4); } 70% { transform: scale(1.25); } 100% { transform: scale(1); } }
+.dp-aft-siren { z-index: 3; }
+
+/* status and harm: lines */
+.dp-aft-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1.6vmin; align-items: center; max-width: 90%; }
+.dp-aft-line { font: 900 var(--b68-t-lead)/1.15 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .04em; opacity: 0; transform: translateX(-4vmin); }
+.dp-show-aftermath.dp-ov-in .dp-aft-line { opacity: 1; transform: none; transition: transform .3s ease-out, opacity .3s ease-out; transition-delay: calc(var(--i, 0) * 220ms); }
+.dp-aft-none { color: var(--b68-paper-dark); }
+
+/* commendations: a bar that runs down for the window */
+.dp-aft-clock { width: 60%; height: 2.4vmin; border: .5vmin solid var(--b68-mustard); border-radius: 99vmin; overflow: hidden; }
+.dp-aft-clock-fill { display: block; height: 100%; width: 100%; background: var(--b68-mustard); transform-origin: left center; }
+.dp-show-aftermath.dp-ov-in .dp-aft-clock-fill { animation: dp-aft-run var(--secs, 90s) linear both; }
+@keyframes dp-aft-run { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+/* the end credits: the opening card's layout, a dark ground and four coloured bars, names set in the poster face */
+.dp-show-credits { justify-content: flex-start; padding-top: 12vmin; }
+.dp-cr-bars { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(4, 1fr); pointer-events: none; }
+.dp-cr-bar { display: block; height: 100%; transform-origin: top center; transform: scaleY(0); opacity: .9; }
+.dp-show-credits.dp-ov-in .dp-cr-bar { transform: scaleY(1); transition: transform .8s ease-out; }
+.dp-cr-bar:nth-child(2) { transition-delay: .12s; } .dp-cr-bar:nth-child(3) { transition-delay: .24s; } .dp-cr-bar:nth-child(4) { transition-delay: .36s; }
+.dp-cr-blue { background: var(--b68-rules-blue-lit); }
+.dp-cr-mustard { background: var(--b68-mustard); }
+.dp-cr-alarm { background: var(--b68-alarm-lit); }
+.dp-cr-green { background: var(--b68-faction-3); }
+.dp-show-credits .dp-show-kicker { position: relative; background: var(--b68-ink); color: var(--b68-paper); padding: .6vmin 2vmin; }
+.dp-cr-cols { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; gap: 0; align-content: start; flex: 1; overflow: hidden; }
+.dp-cr-row { padding: 1.6vmin 2vmin; text-align: left; background: none; opacity: 0; }
+.dp-show-credits.dp-ov-in .dp-cr-row { opacity: 1; transition: opacity .5s ease; transition-delay: calc(.9s + var(--i, 0) * 140ms); }
+.dp-cr-name { font: 900 var(--b68-t-title)/1 var(--b68-font-poster); text-transform: uppercase; letter-spacing: .01em; color: var(--b68-ink); }
+.dp-cr-blue .dp-cr-name, .dp-cr-alarm .dp-cr-name { color: var(--b68-paper-light); }
+.dp-cr-role { font: 700 var(--b68-t-label)/1.2 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .1em; color: var(--b68-ink); }
+.dp-cr-blue .dp-cr-role, .dp-cr-alarm .dp-cr-role { color: var(--b68-paper-dark); }
+.dp-show-credits.dp-count-9 .dp-cr-name, .dp-show-credits.dp-count-10 .dp-cr-name, .dp-show-credits.dp-count-11 .dp-cr-name, .dp-show-credits.dp-count-12 .dp-cr-name { font-size: var(--b68-t-lead); }
+
+@media (prefers-reduced-motion: reduce) {
+  .dp-aft-stack, .dp-aft-line, .dp-cr-row { opacity: 1; transform: none; transition: none !important; }
+  .dp-cr-bar { transform: none; transition: none !important; }
+  .dp-aft-pip.on, .dp-aft-clock-fill { animation: none !important; }
+}

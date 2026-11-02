@@ -29,7 +29,11 @@
     report: { ms: 180000, keys: { position: ['e', ['controlled', 'risky', 'desperate'], 1], effect: ['e', ['limited', 'standard', 'great'], 1], text: ['s', 100] } },
     ring: { ms: 5000, keys: { text: ['s', 60] } },
     rolodex: { ms: 10000, keys: { npcIds: ['l', 12, 1] } },
-    spotlight: { ms: 8000, keys: { npcId: ['d', 0, 1] } }
+    spotlight: { ms: 8000, keys: { npcId: ['d', 0, 1] } },
+    /* suite 1.6 (functions/_lib/show-aftermath.js): the Aftermath's steps, and the end credits (joined to revealed NPCs) */
+    aftermath: { ms: 60000, keys: { step: ['e', ['payout', 'tithe', 'heat', 'status', 'harm', 'unwind', 'xp'], 1], n: ['i', [1, 8]], stacks: ['i', [0, 99]], tithe: ['i', [0, 99]], kept: ['i', [0, 99]],
+      exposure: ['i', [0, 6]], mods: ['i', [-6, 6]], heat: ['i', [0, 9]], after: ['i', [0, 9]], siren: ['b'], wanted: ['i', [0, 4]], lines: ['a', 6, 0, 80], who: ['s', 60], line: ['s', 120], secs: ['i', [10, 180]] } },
+    credits: { ms: 60000, keys: { npcIds: ['l', 30, 1] } }
   };
   /* layer path -> checker(value) -> true when the server would take it */
   var LAYERS = {
@@ -63,6 +67,7 @@
       if (d[0] === 'b') return typeof v === 'boolean';
       if (d[0] === 'd') return typeof v === 'string' && ID.test(v);
       if (d[0] === 'l') return idList(v, d[1]);
+      if (d[0] === 'a') return Array.isArray(v) && v.length >= 1 && v.length <= d[1] && v.every(function (x) { return typeof x === 'string' && x.trim().length > 0 && x.replace(/[ \t\r\n]+/g, ' ').trim().length <= d[3]; });
       return false;
     });
   }
@@ -79,7 +84,7 @@
   /* the words of a beat or a layer value that a reader will see: for the hidden-name scan */
   function texts(kind, payload, path, value) {
     var out = [];
-    function add(o) { if (isObj(o)) Object.keys(o).forEach(function (k) { if (typeof o[k] === 'string') out.push(o[k]); }); }
+    function add(o) { if (isObj(o)) Object.keys(o).forEach(function (k) { if (typeof o[k] === 'string') out.push(o[k]); else if (Array.isArray(o[k])) o[k].forEach(function (x) { if (typeof x === 'string') out.push(x); }); }); }   /* a list of lines is words too */
     if (has(kind) && payload) add(payload);
     if (path && isObj(value)) add(value);
     return out;

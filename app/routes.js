@@ -39,13 +39,15 @@
     table: TABLE,
     print: TABLE,
     crews: ['crews.js'],   /* just the crew playbooks' text, for the sheet's roll-panel abilities strip (the table bundle loads it too, once) */
-    gm: ['gm.css', 'prep.css', 'maps/map-kit.js', 'mapzoom.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'gm/night.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'gm/run-view.js', 'gm/room-notes.js', 'gm/mission-publish.js', 'cue-verbs.js', 'cue.js', 'gm/cogm.js', 'gm/autopilot.js', 'features.js', 'gm/tools.js', 'gm/workshop.js', 'gm/switchboard.js', 'gm/show.js', 'gm/phase-rail.js', 'gm/curfew.js', 'gm/workshop-first.js', 'gm/spine.js', 'gm/stamp.js', 'gm/cue-grammar.js', 'gm/hardstart.js', 'gm/onair.js', 'gm/keyturn.js', 'gm-page.js'],
-    display: ['tokens.css', 'display.css', 'display/shows.css', 'display/onair.css', 'display/hardstart.css', 'tokens.js', 'cue-verbs.js', 'cue.js', 'stt.js', 'display/shows.js', 'display/show-beats.js', 'display/report-beat.js', 'display/layers.js', 'display/hardstart.js', 'display/onair.js', 'display/fx.js', 'display-page.js'],
+    gm: ['gm.css', 'prep.css', 'maps/map-kit.js', 'mapzoom.js', 'gm/console.js', 'gm/location.js', 'gm/scenes.js', 'gm/score.js', 'gm/npc.js', 'gm/figure-map.js', 'gm/prep.js', 'gm/night.js', 'downtime-tables.js', 'gm/downtime.js', 'gm/assist-panel.js', 'gm/chase.js', 'gm/ball.js', 'gm/run-view.js', 'gm/room-notes.js', 'gm/mission-publish.js', 'cue-verbs.js', 'cue.js', 'gm/cogm.js', 'gm/autopilot.js', 'features.js', 'gm/tools.js', 'gm/workshop.js', 'gm/switchboard.js', 'gm/show.js', 'gm/phase-rail.js', 'gm/curfew.js', 'gm/workshop-first.js', 'gm/preflight.js', 'gm/spine.js', 'gm/stamp.js', 'gm/cue-grammar.js', 'gm/hardstart.js', 'gm/onair.js', 'gm/keyturn.js', 'gm/aftermath.js', 'gm-page.js'],
+    display: ['tokens.css', 'display.css', 'display/shows.css', 'display/onair.css', 'display/hardstart.css', 'display/aftermath.css', 'tokens.js', 'cue-verbs.js', 'cue.js', 'stt.js', 'display/shows.js', 'display/show-beats.js', 'display/report-beat.js', 'display/preflight-report.js', 'display/aftermath.js', 'display/layers.js', 'display/hardstart.js', 'display/onair.js', 'display/fx.js', 'display-page.js'],
+    /* the phone's Aftermath commendations (suite 1.6): fetched only while the spine.aftermath switch is on (boot.js asks), so a phone with it off loads nothing */
+    commend: ['sheet/commend.js'],
     /* the look book (app/lookbook.html, GM only): every show kind with its fixture; a later bundle that adds a kind lists its renderer file here */
-    lookbook: ['tokens.css', 'display.css', 'display/shows.css', 'tokens.js', 'display/shows.js', 'display/show-beats.js', 'display/report-beat.js', 'display/layers.js', 'display/lookbook.js']
+    lookbook: ['tokens.css', 'display.css', 'display/shows.css', 'display/aftermath.css', 'tokens.js', 'display/shows.js', 'display/show-beats.js', 'display/report-beat.js', 'display/aftermath.js', 'display/layers.js', 'display/lookbook.js']
   };
   /* every stylesheet, in cascade order (index.html's order from before lazy loading) */
-  var CSS_ORDER = ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', 'gm.css', 'prep.css', 'display.css', 'tokens.css', 'display/shows.css', 'display/hardstart.css', 'display/onair.css'];
+  var CSS_ORDER = ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', 'gm.css', 'prep.css', 'display.css', 'tokens.css', 'display/shows.css', 'display/hardstart.css', 'display/onair.css', 'display/aftermath.css'];
 
   var DEPS = { gm: ['figures'], display: ['figures'] };   /* bundles that need another one in first */
   var loading = {};            /* file -> Promise (resolved: loaded; a failure is forgotten so it can be tried again) */

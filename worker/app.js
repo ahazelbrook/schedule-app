@@ -31,6 +31,7 @@ import { onRequest as gmDisplay } from '../functions/api/gm/display.js';
 import { onRequest as gmAmbient } from '../functions/api/gm/ambient.js';
 import { onRequest as gmStt } from '../functions/api/gm/stt.js';
 import { onRequest as gmSttToken } from '../functions/api/gm/stt-token.js';
+import { onRequest as gmPreflight } from '../functions/api/gm/preflight.js';
 import { onRequest as gmTranscript } from '../functions/api/gm/transcript.js';
 import { onRequest as gmAssist } from '../functions/api/gm/assist.js';
 import { onRequest as live } from '../functions/api/live.js';
@@ -64,6 +65,7 @@ export const ROUTES = [
   { re: /^\/api\/gm\/ambient\/?$/, handler: gmAmbient, path: '/api/gm/ambient' },
   { re: /^\/api\/gm\/stt\/?$/, handler: gmStt, path: '/api/gm/stt' },
   { re: /^\/api\/gm\/stt\/token\/?$/, handler: gmSttToken, path: '/api/gm/stt/token' },
+  { re: /^\/api\/gm\/preflight\/?$/, handler: gmPreflight, path: '/api/gm/preflight' },
   { re: /^\/api\/gm\/transcript\/?$/, handler: gmTranscript, path: '/api/gm/transcript' },
   // Claude at the table (the assist build plan): POST /api/gm/assist/tick, /fit, /another, /gatekeeper and the Screen's /portrait, /prop, /wire, /board and /portrait-add, Ask Blade's /ask, the co-GM's /act, Who is who's /whois, GET and POST /cards, GM only
   { re: /^\/api\/gm\/assist\/(tick|fit|another|gatekeeper|cards|portrait-add|portrait|prop|wire|board|ask|act|whois)\/?$/, handler: gmAssist, path: '/api/gm/assist/:action', params: ['action'] },

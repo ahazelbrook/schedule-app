@@ -178,15 +178,29 @@ export function cleanSttPatch(raw, role) {
       if (!Number.isInteger(s.pausedUntil) || s.pausedUntil < 0 || s.pausedUntil > 8.64e15) throw new HttpError(400, 'status.pausedUntil must be 0 or a time in milliseconds');
       out.status.pausedUntil = s.pausedUntil;
     }
+    // 4.2: the iPad's own report for the GM's Preflight (switch room.preflight); optional, and absent from a status that does not send it
+    if (s.device !== undefined) out.status.device = cleanDevice(s.device);
   }
   return out;
+}
+
+const AUDIO = ['unlocked', 'locked', 'none'];
+/** The iPad's device report -> { audio, files, of, build } with every field bounded; anything else is 400. */
+export function cleanDevice(d) {
+  if (!isPlainObject(d)) throw new HttpError(400, 'status.device must be an object');
+  if (!AUDIO.includes(d.audio)) throw new HttpError(400, 'status.device.audio must be one of ' + AUDIO.join(', '));
+  const n = (v, name) => { if (!Number.isInteger(v) || v < 0 || v > 5000) throw new HttpError(400, 'status.device.' + name + ' must be a count'); return v; };
+  return { audio: d.audio, files: n(d.files === undefined ? 0 : d.files, 'files'), of: n(d.of === undefined ? 0 : d.of, 'of'), build: typeof d.build === 'string' ? d.build.replace(/[^A-Za-z0-9._-]/g, '').slice(0, 40) : '' };
 }
 
 /** What a page shows of the control document, as one string: want, session, the speaker names and the iPad's state, line count and error.
  *  The status `at` is left out: it is a new time on every heartbeat, so a heartbeat that says the same thing compares equal (MD1b: no poke). */
 export function sttSignal(doc) {
   const s = doc && doc.status || {};
-  return JSON.stringify(s.pausedUntil === undefined ? [doc && doc.want, doc && doc.session, doc && doc.speakers, s.state, s.lines, s.error] : [doc && doc.want, doc && doc.session, doc && doc.speakers, s.state, s.lines, s.error, s.pausedUntil]);
+  const sig = [doc && doc.want, doc && doc.session, doc && doc.speakers, s.state, s.lines, s.error];
+  if (s.pausedUntil !== undefined) sig.push(s.pausedUntil);
+  if (s.device) sig.push(s.device.audio, s.device.files, s.device.of, s.device.build);     // only when reported: a status without it signs as it always did
+  return JSON.stringify(sig);
 }
 
 const STT_ATTEMPTS = 5;

@@ -120,6 +120,12 @@ export async function packHeads(db, campaign) {
   return results || [];
 }
 
+/** One part's body, parsed ({} fields as stored), or null when there is none. The only door other handlers use to read a part (this file is on the list of gm_pack readers). */
+export async function loadPartBody(db, campaign, part) {
+  const row = await db.prepare('SELECT body FROM gm_pack WHERE campaign = ?1 AND part = ?2').bind(campaign, part).first();
+  return row ? parseJson(row.body, null) : null;
+}
+
 /** The pack's version: changes whenever any part's body or src does ('0' when the pack is empty). */
 export async function packVersion(heads) {
   if (!heads.length) return '0';

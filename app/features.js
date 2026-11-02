@@ -86,7 +86,13 @@
     { id: 'spine.keyturn', label: 'Turn the key', surface: 'phone', stage: 'spine', default: false, saturday: 'on',
       doc: 'A key with three hits offers "You can turn this key" on its sheet; turning it deadlocks the key, clears Stress, makes the next action roll an automatic critical, and lays a card over the iPad. Off: keys behave as before.' },
     { id: 'between.keys', label: 'The key cabinet', surface: 'phone', stage: 'between', default: false, saturday: 'try',
-      doc: 'The sheet draws each key as a card that fills as it is hit; turned over, a card shows both deadlocks. Off: the keys box as before.' }
+      doc: 'The sheet draws each key as a card that fills as it is hit; turned over, a card shows both deadlocks. Off: the keys box as before.' },
+    { id: 'spine.aftermath', label: 'Aftermath show', surface: 'phone', stage: 'spine', default: false, saturday: 'on',
+      doc: 'The Aftermath runs as a stepped show on the iPad (payout, tithe, heat, status, harm, unwind, xp, credits), steered from the GM page, and phones show the xp triggers for 90 seconds. Off: no Aftermath entry in the Menu, and phones make no extra calls.' },
+    { id: 'ai.keyterms', label: 'Key terms for the transcriber', surface: 'gm', stage: 'ai', default: false, saturday: 'try',
+      doc: 'When the table iPad opens its listening stream, it passes the names of the crew, the revealed cast, the factions and the districts, so they are heard more reliably. Off: the stream opens as before.' },
+    { id: 'room.preflight', label: 'Preflight check', surface: 'display', stage: 'room', default: false, saturday: 'on',
+      doc: 'Menu then Preflight: green or red for the iPad sound, files kept on each device, the transcriber, the Access session and the pack version, each red with a one-line fix. Read-only. Off: no menu item and the iPad reports nothing extra.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

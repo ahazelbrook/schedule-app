@@ -30,18 +30,19 @@
     host.appendChild(layer);
     var e = root.B68Shows.entry(kind);
     if (!e) return;
-    root.B68Shows.mount({ kind: kind, payload: e.fixture }, { document: document, reduced: false }).then(function (node) {
+    var at = +new URLSearchParams(location.search).get('i'), fx = e.fixtures && e.fixtures[at] ? e.fixtures[at].fixture : e.fixture;   /* a kind with several looks (the Aftermath's steps) has `fixtures` */
+    root.B68Shows.mount({ kind: kind, payload: fx }, { document: document, reduced: false }).then(function (node) {
       if (!node) return;
       layer.appendChild(node);
       setTimeout(function () { node.classList.add('dp-ov-in'); }, 30);
     });
   }
 
-  function card(kind, label, fixture) {
+  function card(kind, label, fixture, at) {
     var fig = el('figure', 'lb-card'), cap = el('figcaption', '', label);
     cap.appendChild(document.createTextNode(' ')); cap.appendChild(el('code', '', kind));
     var box = el('div', 'lb-box'), f = document.createElement('iframe');
-    f.src = 'lookbook.html?frame=' + encodeURIComponent(kind); f.title = label;
+    f.src = 'lookbook.html?frame=' + encodeURIComponent(kind) + (at === undefined ? '' : '&i=' + at); f.title = label;
     box.appendChild(f); fig.appendChild(cap); fig.appendChild(box);
     if (fixture !== undefined) fig.appendChild(el('pre', 'lb-fixture', JSON.stringify(fixture, null, 1)));
     function fit() {
@@ -60,7 +61,10 @@
     head.appendChild(el('p', '', 'Every show kind the iPad can draw, with its fixture, at iPad size (1024 x 768, scaled to fit). Invented cast only. Rules text is never here.'));
     host.appendChild(head);
     var grid = el('div', 'lb-grid');
-    root.B68Shows.entries().forEach(function (e) { grid.appendChild(card(e.kind, e.label, e.fixture)); });
+    root.B68Shows.entries().forEach(function (e) {
+      if (e.fixtures) e.fixtures.forEach(function (x, i) { grid.appendChild(card(e.kind, x.label, x.fixture, i)); });
+      else grid.appendChild(card(e.kind, e.label, e.fixture));
+    });
     grid.appendChild(card('layers', 'Lasting layers', LAYERS_DEMO));
     host.appendChild(grid);
   }

@@ -42,7 +42,7 @@
     K[kind] = spec;
   }
   function has(kind) { return typeof kind === 'string' && Object.prototype.hasOwnProperty.call(K, kind); }
-  function entry(kind) { var s = has(kind) ? K[kind] : null; return s ? { kind: kind, label: s.label || kind, fixture: s.fixture, ms: s.ms || 6000 } : null; }
+  function entry(kind) { var s = has(kind) ? K[kind] : null; return s ? { kind: kind, label: s.label || kind, fixture: s.fixture, fixtures: Array.isArray(s.fixtures) ? s.fixtures : undefined, ms: s.ms || 6000 } : null; }
   function clean(kind, payload) {
     if (!has(kind)) return null;
     try { var out = K[kind].clean(isObj(payload) ? payload : {}); return isObj(out) ? out : null; } catch (e) { return null; }
