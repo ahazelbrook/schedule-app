@@ -163,3 +163,15 @@ CREATE TABLE IF NOT EXISTS gm_assist_log (
   card TEXT
 );
 CREATE INDEX IF NOT EXISTS gm_assist_log_at ON gm_assist_log (campaign, at);
+
+-- 0009: the store (suite build W0.6)
+CREATE TABLE IF NOT EXISTS docs (
+  campaign_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  owner TEXT NOT NULL,
+  scope TEXT NOT NULL DEFAULT 'gm' CHECK (scope IN ('gm', 'player', 'public')),
+  json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (campaign_id, kind, owner)
+);
+CREATE INDEX IF NOT EXISTS docs_campaign_updated ON docs (campaign_id, updated_at);

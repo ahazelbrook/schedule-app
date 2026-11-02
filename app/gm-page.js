@@ -40,7 +40,7 @@
      ===================================================================================================================== */
   var P = {};
   /* captureBytes: what the capture lines may take of the state document (E18), well under the soft cap so a roll always has room */
-  var LIMITS = P.LIMITS = { hist: 5, pins: 50, capture: 400, captureText: 500, captureBytes: 128 * 1024, stateSoft: 240 * 1024, stateCap: 256 * 1024, debounce: 800, staleDays: 3, partBytes: 900 * 1024, parts: 12 };
+  var LIMITS = P.LIMITS = { hist: 5, pins: 50, capture: 400, captureText: 500, captureBytes: 128 * 1024, stateSoft: 240 * 1024, stateCap: 256 * 1024, debounce: 800, staleDays: 3, partBytes: 900 * 1024, parts: 24 };
   var BANDS = P.BANDS = ['public', 'working', 'controlled', 'secure'];
   var BUCKETS = P.BUCKETS = [
     { k: 'n', label: 'Name', head: 'Names', key: 'P' },

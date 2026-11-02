@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { memoryExec, asD1 } from '../../scripts/lib/d1.mjs';
 import { newReport } from '../../scripts/lib/report.mjs';
 import { pushPack } from '../../scripts/lib/sync-pack.mjs';
+import { packIndex } from '../../functions/_lib/gm.js';
 import { buildAssist } from '../../scripts/lib/assist-export.mjs';
 import { dateKey, resolvePrep, prepProblem } from '../../scripts/lib/assist-prep.mjs';
 import { readState, STATE_NAME } from '../../scripts/lib/assist-file.mjs';
@@ -180,6 +181,25 @@ await test('push: a part with prep and Must land entries goes through without th
   assert.equal(rep.refused.length, 0);
   assert.equal(s.client.uploads.length, 1);
   assert.ok(inD1(s.exec, 'assist'));
+});
+
+// F5: the pack cap is 24 parts. Thirteen parts (one over the old cap) push whole, 24 push whole, and 25 are refused before anything is written.
+const filler = (n) => Object.fromEntries(Array.from({ length: n }, (_, i) => ['filler-' + i, { src: {}, rows: [i] }]));
+await test('F5 push: thirteen parts all land in D1 (the old cap was twelve); the index lists 13', async () => {
+  const s = await pushSetup({ prep: 'a/b.md', mustLand: 5, mustLandLanded: 0 }, filler(12));
+  const rep = await s.go();
+  assert.equal(rep.refused.length, 0);
+  assert.equal(s.exec.db.prepare("SELECT count(*) AS n FROM gm_pack WHERE campaign='c'").get().n, 13);
+  assert.equal(Object.keys((await packIndex(asD1(s.exec), 'c')).parts).length, 13);
+});
+await test('F5 push: 24 parts land; 25 stop the push with the cap named and write nothing', async () => {
+  const s = await pushSetup({ prep: 'a/b.md', mustLand: 5, mustLandLanded: 0 }, filler(23));
+  await s.go();
+  assert.equal(s.exec.db.prepare("SELECT count(*) AS n FROM gm_pack WHERE campaign='c'").get().n, 24);
+  const t = await pushSetup({ prep: 'a/b.md', mustLand: 5, mustLandLanded: 0 }, filler(24));
+  const rep = await t.go();
+  assert.ok(rep.info.some((n) => /25 parts \(at most 24\)/.test(n)), JSON.stringify(rep.info));
+  assert.equal(t.exec.db.prepare("SELECT count(*) AS n FROM gm_pack").get().n, 0);
 });
 
 await test('push: a prep named in the config and dated before today is refused; from the command line it is allowed; today or later is allowed; --allow-no-prep overrides', async () => {
@@ -394,6 +414,18 @@ await test('preflight: no pack file, or a pack with no assist part, stops with a
   fs.writeFileSync(path.join(priv, 'b68-gm-pack.json'), JSON.stringify({ format: 1, parts: {} }));
   const r = await preflight({ privateDir: priv, root: priv });
   assert.match(text(r), /no assist part/); assert.equal(r.code, 1);
+});
+
+await test('F5 preflight: a pack of thirteen parts reads as any other (it looks only at the assist part)', async () => {
+  const v = fixtureVault();
+  const { priv } = await packFor(v, { prep: rel('Group', 'night-x') });
+  const f = path.join(priv, 'b68-gm-pack.json'), pk = JSON.parse(fs.readFileSync(f, 'utf8'));
+  Object.assign(pk.parts, filler(12));
+  assert.equal(Object.keys(pk.parts).length, 13);
+  fs.writeFileSync(f, JSON.stringify(pk));
+  const r = await preflight({ vault: v, privateDir: priv, root: priv, today: '28/10/2026' });
+  assert.match(text(r), /prep note:\s+Wiki\/Games\/Blades in the Dark\/Campaigns\/Group\/Sessions\/night-x\.md/);
+  assert.notEqual(r.code, 2);
 });
 
 await test('neverEntries and parseArgs', () => {

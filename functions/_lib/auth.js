@@ -164,6 +164,8 @@ export const DISPLAY_ALLOWED = [
   { method: 'GET', re: /^\/api\/live\/?$/ },
   // the phones' table screen (MM1): a copy of what the iPad already shows, the same answer for every role
   { method: 'GET', re: /^\/api\/table\/screen\/?$/ },
+  // the store (W0.6): the public rows only, read-only; the handler adds scope = 'public' to the query for this role
+  { method: 'GET', re: /^\/api\/docs\/?$/ },
   // the transcriber (GM.md "Listening"): get a token, read and report its status, post lines; never read the transcript
   { method: 'POST', re: /^\/api\/gm\/stt\/token\/?$/ },
   { method: 'GET', re: /^\/api\/gm\/stt\/?$/ },

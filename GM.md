@@ -44,7 +44,7 @@ abilities (see Score (J) below). The `engagement` part went with Engage.
 | `GET /api/gm/ambient` | `{ seq, doc, updatedAt }` (`0`, `{}`, `null` until written). GM only; the display sign-in is refused (it reads the doc through the display). |
 | `PATCH /api/gm/ambient` | top-level merge (`null` deletes, `skip: true` bumps a counter) → `{ seq, doc, updatedAt }`. Keys: `mode` auto/pin/off, `scene`, `playlist` (1–16 distinct ids), `intervalMin` 3–30, `skip`, `crew { heat 0–9, wanted 0–4 }`, `score { name, district, target, reveal, view plan/rings, board, iso }` (both svgs through `checkSvg`; the server sets `at`), `overlay` and `auto` (see Overlays). Stored doc at most 1.4 MiB, in `gm_ambient` (migration 0006). |
 
-- **Pack.** Part names `[a-z0-9-]{1,32}`; at most 12 parts; `body` a JSON object (or a string holding one), at most
+- **Pack.** Part names `[a-z0-9-]{1,32}`; at most 24 parts; `body` a JSON object (or a string holding one), at most
   900 KiB as JSON; `src` an object, at most 2 KiB. A part's `version` is the first 12 hex digits of the SHA-256 of
   `JSON.stringify(body)`; the pack's `version` hashes every part's name, version and src (`'0'` when empty). Stored in
   `gm_pack(campaign, part, version, src, updated_at /* ms */, body)`.
@@ -527,7 +527,7 @@ fails and nobody is known, nothing is purged.
     revealed and the street description is sent (`playerSummary`): write what anyone in the room sees, never GM notes.
   - **The pack.** `scripts/lib/authored-export.mjs`, called by the location part's builder: `location.authored = { v: 1, sites: { <note
     name>: { name, rel, base?, patch, map? } }, bind: { <score key>: <note name> } }`, or no key. Inside the location part because the
-    server keeps at most 12 parts. A bad block is skipped with a warning; at most 24 sites, 60 KB a block, 40 rooms.
+    server keeps at most 24 parts. A bad block is skipped with a warning; at most 24 sites, 60 KB a block, 40 rooms.
   - **The roll.** `P.authoredRoll(L, pack, site)`: the base (the generator's roll from `base`, or from a seed made of the name) with
     the patch laid over it, so the card, the folds, the map, Show on iPad and its hidden-name check and the score scene take it
     unchanged. The base's skips go unless the patch has its own; the card's three ways in are each the patch's over the base's; a way
@@ -1003,6 +1003,19 @@ A page hears of a change at once, instead of on its next poll. **The poll stays 
 - **Service worker.** A socket is not a fetch, so `sw.js` never sees it; the code ships in `runtime/cf.js`, which is in the core bundle the worker already files.
 
 Checks: `checks/api/live.mjs` (every write path, the role header, the object down, the switch) and `checks/api/display-role.mjs` (real sockets under `wrangler dev`: each role hears only its kinds, the switch closes them); `checks/runtime/adapter.test.mjs` (the client's rules with a fake WebSocket); `checks/runtime/live-clients.e2e.mjs` (real pages: latency, the 15 s poll, a killed socket, a silent socket, the switch, the iPad's beat).
+
+## The store (W0.6: `functions/api/docs.js`, `functions/_lib/docs.js`, `migrations/0009_docs.sql`)
+
+One small table, `docs(campaign_id, kind, owner, scope, json, updated_at)`, keyed on the first three, for the suite's per-campaign documents. `kind` is `[a-z][a-z0-9-]{0,31}`; `owner` is a player's own id (their email, as `characters.owner`) or, for a GM row that belongs to the campaign, `_`; `scope` is `gm`, `player` or `public`. `json` is an object or an array, at most 64 KiB (counted in bytes; 413 over). Not part of `/api/export`.
+
+- `GET /api/docs?kind=&owner=&since=&limit=` -> `{ docs: [{ kind, owner, scope, updatedAt, json }], more }`, newest first, 100 rows unless `limit` (at most 200). `PUT /api/docs { kind, owner?, scope?, json }` replaces one row. `DELETE /api/docs?kind=&owner=` removes one (404 when absent).
+- **GM:** reads and writes every row. A new row's scope is `gm` unless the write names one; a later write that names none keeps the stored one.
+- **Player:** reads `public` rows and `player` rows whose owner is their own id (a `gm` row on their own key is invisible to them). Writes only kinds `opportunity`, `debrief` and `quiet`, only as themselves (leave `owner` out), always scope `player`. The upsert is guarded in SQL: a row the GM has set to `gm` or `public` is never replaced by a player (403). Another owner, another kind or a wider scope is 403.
+- **Display:** `GET` only, `public` rows only (the SQL adds it; the allow-list in `auth.js` and the middleware let nothing else through). A row the caller may not read is absent, never 403.
+- **`since`** is exclusive and a row's time only moves forward for that row: two rows written in the same millisecond can share a time, so a poller should re-read by kind (the rows are small), or ask for a little before the newest time it has seen.
+- **Poke:** a write or delete pokes the LiveHub with kind `docs` (heard by every role; `{ k: "docs", t }`, no data) unless it touched only GM-scope rows. No Durable Object class change: `docs` is one more entry in `KINDS` (`functions/_lib/live.js`).
+
+Check: `checks/api/docs.mjs` (the role matrix for the GM, the display and players A and B, the 64 KiB cap, the pokes, and that 0009 is additive and leaves the old code's schema alone).
 
 ## The phones' table screen (MM1: `functions/api/table/screen.js`, `functions/_lib/table-screen.js`, the sheet's Table button)
 

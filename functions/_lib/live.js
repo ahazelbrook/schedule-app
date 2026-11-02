@@ -20,6 +20,7 @@ export const KINDS = {
   ambient: ['display', 'gm'],
   stt: ['display', 'gm'],
   cue: ['gm'],
+  docs: ['player', 'gm', 'display'],      // the store (W0.6): something in /api/docs changed; each page re-reads the rows its role may see
 };
 export const ROLES = ['gm', 'player', 'display'];
 export const rolesFor = (kind) => (Object.prototype.hasOwnProperty.call(KINDS, kind) ? KINDS[kind] : []);

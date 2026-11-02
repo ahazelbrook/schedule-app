@@ -24,7 +24,7 @@ function noStore(res) {
 }
 
 // The worker's router (worker/app.js) also names the route it matched: when it does, it must be one of these as well.
-const DISPLAY_FUNCTIONS = new Set(['/api/me', '/api/gm/display', '/api/gm/stt', '/api/gm/stt/token', '/api/gm/transcript', '/api/live', '/api/table/screen']);
+const DISPLAY_FUNCTIONS = new Set(['/api/me', '/api/gm/display', '/api/gm/stt', '/api/gm/stt/token', '/api/gm/transcript', '/api/live', '/api/table/screen', '/api/docs']);
 function displayAllowed(context) {
   const { request } = context;
   let pathname;
