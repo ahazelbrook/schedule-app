@@ -16,6 +16,7 @@
 import { HttpError, ID_RE, isPlainObject } from './http.js';
 
 const TONES = ['ink', 'orange', 'blue', 'red'];
+const REPORT_POSITIONS = ['controlled', 'risky', 'desperate'], REPORT_EFFECTS = ['limited', 'standard', 'great'];   // the action report card (B09 spine.stamp): report { position, effect, text? (100) }
 export const SHOW_MS = { min: 1000, max: 180000 };
 export const SHOW_NPC_MAX = { rolodex: 12, faces: 3, credits: 30, previously: 12 };
 
@@ -63,6 +64,9 @@ export const SHOW_KINDS = {
       if (p.siren === true) o.siren = true;
       return o;
     },
+  },
+  report: {
+    build: (p) => put({ position: oneOf(p.position, 'payload.position', REPORT_POSITIONS, true), effect: oneOf(p.effect, 'payload.effect', REPORT_EFFECTS, true) }, 'text', text(p.text, 'payload.text', 100)),
   },
   ring: { build: (p) => put({}, 'text', text(p.text, 'payload.text', 60)) },
   rolodex: { npc: 'list', build: (p) => ({ npcIds: ids(p.npcIds, 'payload.npcIds', SHOW_NPC_MAX.rolodex, true) }) },

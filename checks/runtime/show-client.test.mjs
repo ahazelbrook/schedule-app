@@ -25,6 +25,7 @@ globalThis.addEventListener = (t, fn) => { if (t === 'message') listeners.push(f
 globalThis.removeEventListener = (t, fn) => { const i = listeners.indexOf(fn); if (i >= 0) listeners.splice(i, 1); };
 const S = require(path.join(APP, 'display', 'shows.js'));
 require(path.join(APP, 'display', 'show-beats.js'));
+require(path.join(APP, 'display', 'report-beat.js'));
 const Lay = require(path.join(APP, 'display', 'layers.js'));
 const Tok = require(path.join(APP, 'tokens.js'));
 const Show = require(path.join(APP, 'gm', 'show.js'));
@@ -32,7 +33,7 @@ const D = require(path.join(APP, 'display-page.js'));
 const GP = require(path.join(APP, 'gm-page.js'))._pure;
 
 const doc = { createElement: (t) => { const e = new MiniEl(t); e.style = { setProperty() {} }; return e; }, createElementNS: (ns, t) => doc.createElement(t) };
-const KINDS = ['stamp', 'spotted', 'keyturn', 'rolodex', 'title', 'wanted', 'ring', 'spotlight'];
+const KINDS = ['stamp', 'spotted', 'keyturn', 'rolodex', 'title', 'wanted', 'ring', 'spotlight', 'report'];
 
 await test('the registry holds the seven brief beats and the spotlight, each with a label, a fixture that passes its own check, and a default length', () => {
   assert.deepEqual(S.ids().sort(), [...KINDS].sort());

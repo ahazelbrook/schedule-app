@@ -1540,6 +1540,7 @@
     if (me.sttTimer) { W.clearInterval(me.sttTimer); me.sttTimer = null; }
     if (me.cogm) { cogmStop(me); me.cogm = null; }
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
+    b09Unmount(me);
     if (me.mission) { try { me.mission.flush(); } catch (e) {} me.mission.destroy(); me.mission = null; }   /* a publish that is waiting goes now */
     apUnmount(me);
     S = null;
@@ -1688,7 +1689,7 @@
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready'; S.prepKey = null;
     mountAssist();
-    layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack(); apMount(); mountMission(); mountNight();
+    layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack(); apMount(); mountMission(); mountNight(); b09Mount();
     /* listening: every 5 s while the iPad tab is open, every 15 s otherwise (the top bar shows it) */
     if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden) { if (S.panel === 'ipad' || n2 % 3 === 0) loadStt(); renderBeat(); } }, 5000); }
     if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
@@ -1840,6 +1841,7 @@
   /* a grey or yellow card for a cue that is not acted on: nothing is posted */
   function cogmCueCard(me, job) {
     var cm = me.cogm, C = cm.C, ctl = me.assist, res = job.res, id = cogmCueId(job, 'n'), q = C.plain(res.quote, 90);
+    if (b09Unparsed(me, res)) return;
     if (!ctl) return;
     var spec = { id: id, seat: 'cogm', kind: 'note', strip: true, bodyLabel: 'Heard', body: cogmQuoteBody(job), ackLabel: 'Got it ×', open: true };
     var act = function (a) { return function () { ctl.removeCard(id); return cogmCuePost(me, Object.assign({}, job, { kind: 'post', parsed: [Object.assign({ quote: res.quote }, a)] }), cm.epoch); }; };
@@ -1928,6 +1930,7 @@
   function cogmCueOne(me, a) {
     var cm = me.cogm, C = cm.C;
     if (!isObj(a) || typeof a.key !== 'string' || !a.key || C.seen(cm.st, a.key)) return null;
+    if (a.type === 'cue_do') { C.mark(cm.st, a.key, 'applied'); return b09Run(me, a); }
     if (a.type === 'undo') { C.mark(cm.st, a.key, 'applied'); return cogmCueUndo(me, a); }
     if (a.type === 'rename') { C.mark(cm.st, a.key, 'applied'); return cogmCueRename(me, a); }
     if (a.type === 'npc_add' && a.needsName) {
@@ -2078,7 +2081,7 @@
       if (plan.type === 'clock_add' || plan.type === 'clock_tick') cm.lastClock = { id: plan.id, at: Date.now() };
       var id = cogmCardId(a), spec = { kind: 'done', headline: C.headline(plan, true), bullets: [], body: C.heard(a), bodyLabel: 'Heard', actions: cogmButtons(me, a), ackLabel: 'Got it ×',
         undo: function () { return cogmUndo(me, a, false); } };
-      if (cue === true) spec.strip = true;                       /* a cue's result slides the strip out even with the panel closed */
+      if (cue === true) { spec.strip = true; b09Toast(me, spec.headline, function () { return cogmUndo(me, a, false); }); }                       /* a cue's result slides the strip out even with the panel closed */
       if (cm.cards[a.key]) ctl.updateCard(id, spec); else cm.cards[a.key] = ctl.addCard(Object.assign({ id: id, seat: 'cogm' }, spec));
     }, function (e) {
       if (S !== me) return;
@@ -2275,7 +2278,7 @@
     if (!S.sw) S.sw = W.B68GmSwitchboard.create({
       doc: function () { return S.doc; }, patch: patch, campaign: function () { return camp; }, root: function () { return $q('#gm-root'); }, toast: toast,
       publish: function (map) { var a = (S && S.api) || keptApi; return a && typeof a.publishFeatures === 'function' ? a.publishFeatures(map) : Promise.reject(new Error('The table is not available here.')); },
-      redraw: function () { if (S && S.status === 'ready') { renderBar(); renderRun(); } }
+      redraw: function () { if (S && S.status === 'ready') { renderBar(); renderRun(); b09Paint(); } }
     });
     return S.sw;
   }
@@ -2569,6 +2572,7 @@
   function setLive(id, value) { var l = {}; l[id] = value; patch({ con: { live: l } }); renderChips(); if (id !== 'pos' && S && S.pre) schedulePre(1500); }
   /* the big three-way Position switch (always on screen, the phone too) */
   function renderPos() {
+    b09Paint();
     var box = $q('#gm-pos'); if (!box) return;
     if (!hasSit()) { box.innerHTML = ''; return; }
     var cur = str(uiNow().pos);
@@ -2652,6 +2656,7 @@
     if (use) preUsed(use, res);
     stamp('situation', res);
     if (res && res.meta && (res.meta.situation === 'fourfive' || res.meta.situation === 'onetothree')) assistRolled();     /* a 4/5 or a 1-3 result; Before (a Devil's Bargain) and Someone are not rolls */
+    b09Marked(res);
   }
 
   /* ---------- Claude at the table: the console's own 1-3 and 4/5 draws, pre-rolled for the Position ----------
@@ -4128,6 +4133,70 @@
     tableClocks().forEach(function (c) { if (c.hidden && str(c.name).trim()) out.push(c.name); });
     return out;
   }
+  /* ---------- B09: the stamp (spine.stamp), the sizer (spine.sizer) and the strict cue grammar (ai.grammar) ----------
+     The logic is in gm/stamp.js and gm/cue-grammar.js; this is the seam they are given. Every switch is read live from the state document, so with all three off
+     nothing here draws, registers a cue word or writes. */
+  function b09On(id) { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, id)); }
+  function b09Layer(me, path, value) {
+    var sh = shows(); if (!sh) return Promise.resolve(null);
+    return sh.layer(path, value).then(function (r) { if (r !== null && S === me) { me.b09.layers[path] = value; } return r; });
+  }
+  function b09Mount() {
+    var St = W.B68GmStamp, Gr = W.B68GmCueGrammar, me = S; if (!St || !Gr || !W.B68Features || me.stamp) return;
+    me.b09 = { layers: {} };
+    me.stamp = St.create({
+      feature: function (id) { return S === me && b09On(id); }, doc: function () { return document; },
+      positions: function () { return S === me && S.con && Array.isArray(S.con.positions) ? S.con.positions : []; },
+      roomLines: function () { var R = W.B68GmRooms; return S === me ? St.roomLines(runRoomNotes(), St.pickRoom(runCrewRooms()), R && R.normRoom) : []; },
+      currentPosition: function () { return S === me && hasSit() ? str(uiNow().pos) : ''; }, setPosition: function (p) { if (S === me) setPos(p); },
+      show: function (payload, key, ms) { var sh = shows(); return sh ? sh.show('report', payload, { key: key, ms: ms }) : Promise.resolve(null); },
+      keyFor: function (key) { return W.B68Show ? W.B68Show.idFor(key) : key; }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
+      clearOverlay: function () { return patchAmbient({ overlay: null }); },
+      log: function (text) { if (S === me && me.night) me.night.stamp(text); }, toast: toast, changed: function () { if (S === me) b09Paint(); }
+    });
+    me.cueGrammar = Gr.create({
+      feature: function (id) { return S === me && b09On(id); }, cueVerbs: function () { return W.B68CueVerbs; }, stamp: function () { return S === me ? me.stamp : null; },
+      night: function () { return S === me ? me.night : null; }, doc: function () { return document; }, toast: toast,
+      layer: function (path, value) { return b09Layer(me, path, value); }, layerValue: function (path) { return S === me && isObj(me.b09.layers) ? (me.b09.layers[path] || null) : null; },
+      npcs: function () { return S === me ? Object.keys(isObj(me.npcs) ? me.npcs : {}).map(function (id) { var d = me.npcs[id]; return isObj(d) && !(Array.isArray(d.tags) && d.tags.indexOf('undone') >= 0) ? { id: id, name: str(d.name), alias: str(d.alias), revealed: d.revealed === true } : null; }).filter(Boolean) : []; },
+      reveal: function (id, yes) {
+        var ref = S === me ? npcRef(id) : null; if (!ref) return Promise.reject(new Error('The cast is not available here.'));
+        var d = me.npcs && me.npcs[id];
+        return Promise.resolve(ref.update(yes ? { revealed: true, firstSeen: (isObj(d) && d.firstSeen) || nowIso() } : { revealed: false })).then(function () { if (S === me && isObj(me.npcs) && isObj(me.npcs[id])) me.npcs[id].revealed = !!yes; });
+      },
+      show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
+      keyFor: function (key) { return W.B68Show ? W.B68Show.idFor(key) : key; }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
+      clearOverlay: function () { return patchAmbient({ overlay: null }); }
+    });
+    me.cueGrammar.register();
+    b09Paint();
+  }
+  function b09Unmount(me) {
+    if (me.stamp) { try { me.stamp.destroy(); } catch (e) {} me.stamp = null; }
+    if (me.stampUnbind) { try { me.stampUnbind(); } catch (e) {} me.stampUnbind = null; }
+    if (me.cueGrammar) { try { me.cueGrammar.unregister(); me.cueGrammar.hide(); } catch (e) {} me.cueGrammar = null; }
+  }
+  /* the Stamp row under Position: made on the first paint while the switch is on, taken away when it goes off */
+  function b09Paint() {
+    var St = W.B68GmStamp; if (!S || !S.stamp || !St) return;
+    var pos = $q('#gm-pos'), box = $q('#gm-stamp');
+    if (!b09On('spine.stamp') || !pos) { if (box && box.parentNode) box.parentNode.removeChild(box); return; }
+    if (!box) {
+      box = document.createElement('div'); box.id = 'gm-stamp'; box.className = 'gm-stamp'; pos.parentNode.insertBefore(box, pos.nextSibling);
+      if (S.stampUnbind) { try { S.stampUnbind(); } catch (e) {} }
+      S.stampUnbind = St.bind(box, S.stamp);
+    }
+    S.stamp.seed();
+    St.paint(document, box, S.stamp);
+  }
+  function b09Marked(res) {
+    var sit = res && res.meta ? res.meta.situation : '';
+    if (S && S.stamp && (sit === 'fourfive' || sit === 'onetothree')) S.stamp.mark(sit === 'fourfive' ? '45' : '13');
+  }
+  function b09Run(me, a) { return me.cueGrammar ? me.cueGrammar.run(a) : null; }
+  function b09Toast(me, text, undo) { if (S === me && me.cueGrammar) me.cueGrammar.undoToast(text, undo); }
+  function b09Unparsed(me, res) { if (S === me && me.cueGrammar && b09On('ai.grammar') && res && res.refused === 'unparsed') { me.cueGrammar.didntCatch(); return true; } return false; }
+
   /* ---------- the players' mission (app/gm/mission-publish.js, design 5.1, 5.5c, 5.7) ----------
      A v2 night publishes what the players may read of it: the band (mission.hud, which the iPad polls) and one card per PC (which phones read
      from the campaign document). The page hands the module a SOURCE (the v2 play block, the ball document, the table clocks, the filed PCs

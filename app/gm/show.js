@@ -26,6 +26,7 @@
     keyturn: { ms: 6000, keys: { label: ['s', 60, 1], pc: ['s', 60] } },
     title: { ms: 6000, keys: { text: ['s', 80, 1], sub: ['s', 120] } },
     wanted: { ms: 7000, keys: { level: ['i', [0, 4], 1], heat: ['i', [0, 9]], siren: ['b'] } },
+    report: { ms: 180000, keys: { position: ['e', ['controlled', 'risky', 'desperate'], 1], effect: ['e', ['limited', 'standard', 'great'], 1], text: ['s', 100] } },
     ring: { ms: 5000, keys: { text: ['s', 60] } },
     rolodex: { ms: 10000, keys: { npcIds: ['l', 12, 1] } },
     spotlight: { ms: 8000, keys: { npcId: ['d', 0, 1] } }

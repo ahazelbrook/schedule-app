@@ -47,6 +47,7 @@ const FIXTURES = {
   stamp: { word: 'PAID', tone: 'orange' }, spotted: { text: 'Eyes on the door', level: 2 }, keyturn: { label: 'KEY-1', pc: 'Nell Arbuthnot' },
   title: { text: 'The Pelican Rooms', sub: 'Gala night' }, wanted: { level: 3, heat: 7, siren: true }, ring: { text: 'The desk phone' },
   rolodex: { npcIds: ['n-mabel', 'n-dov', 'n-lotte'] }, spotlight: { npcId: 'n-lotte' },
+  report: { position: 'risky', effect: 'standard', text: 'Wren Tully turns round' },
 };
 
 await test('the registry: the seven brief beats and the spotlight are overlay kinds, the old four are still there', () => {
@@ -122,6 +123,15 @@ await test('secrecy at write: free text naming a hidden NPC (name or alias) is 4
   for (const body of bodies) assert.equal((await patch(db, body)).status, 400, JSON.stringify(body));
   assert.equal((await patch(db, OV('title', { text: 'Welcome Lotte' }))).status, 200, 'a revealed name is fine');
   assert.equal((await patch(db, { layer: { path: 'data.countdown', value: { to: 1760000000000, label: 'Curfew' } } })).status, 200);
+});
+
+await test('the report card (B09): position and effect are required and bounded, the consequence line is capped, and a hidden NPC named in it is 400', async () => {
+  const db = await withCast();
+  const ok = await patch(db, OV('report', { position: 'risky', effect: 'standard', text: 'Wren Tully turns round', junk: 1 }, { ms: 180000 }));
+  assert.equal(ok.status, 200); assert.deepEqual(ok.body.doc.overlay.payload, { position: 'risky', effect: 'standard', text: 'Wren Tully turns round' }, 'rebuilt from named keys');
+  for (const p of [{ effect: 'standard' }, { position: 'risky' }, { position: 'unclear', effect: 'standard' }, { position: 'risky', effect: 'huge' }, { position: 'risky', effect: 'standard', text: 'x'.repeat(101) }]) assert.equal((await patch(db, OV('report', p))).status, 400, JSON.stringify(p));
+  const hid = await patch(db, OV('report', { position: 'risky', effect: 'great', text: 'GM-ONLY-NPC-1 is behind you' }));
+  assert.equal(hid.status, 400); assert.ok(!JSON.stringify(hid.body).includes('GM-ONLY'));
 });
 
 await test('secrecy at write for layers: faces, credits and previously keep revealed NPCs only; none left is 400; pc faces stay', async () => {
