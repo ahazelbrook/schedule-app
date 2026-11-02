@@ -173,6 +173,11 @@ export function cleanSttPatch(raw, role) {
     const lines = s.lines === undefined ? 0 : s.lines;
     if (!Number.isInteger(lines) || lines < 0) throw new HttpError(400, 'status.lines must be a count');
     out.status = { state: s.state, at: nowIso(), lines, error: typeof s.error === 'string' ? s.error.slice(0, STT_LIMITS.error) : '' };
+    // ai.onair: when the iPad is off the record, the time (ms) it resumes by itself; 0 when it is not. Only present while that switch is on.
+    if ('pausedUntil' in s) {
+      if (!Number.isInteger(s.pausedUntil) || s.pausedUntil < 0 || s.pausedUntil > 8.64e15) throw new HttpError(400, 'status.pausedUntil must be 0 or a time in milliseconds');
+      out.status.pausedUntil = s.pausedUntil;
+    }
   }
   return out;
 }
@@ -181,7 +186,7 @@ export function cleanSttPatch(raw, role) {
  *  The status `at` is left out: it is a new time on every heartbeat, so a heartbeat that says the same thing compares equal (MD1b: no poke). */
 export function sttSignal(doc) {
   const s = doc && doc.status || {};
-  return JSON.stringify([doc && doc.want, doc && doc.session, doc && doc.speakers, s.state, s.lines, s.error]);
+  return JSON.stringify(s.pausedUntil === undefined ? [doc && doc.want, doc && doc.session, doc && doc.speakers, s.state, s.lines, s.error] : [doc && doc.want, doc && doc.session, doc && doc.speakers, s.state, s.lines, s.error, s.pausedUntil]);
 }
 
 const STT_ATTEMPTS = 5;

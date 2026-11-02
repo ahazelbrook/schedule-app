@@ -2347,7 +2347,7 @@
     var pc = d && isObj(d.copier) && d.copier.at ? (Date.now() - Date.parse(d.copier.at)) / 1000 : null;
     var text = !on ? 'Not listening' : st.state === 'listening' && age !== null && age < 40 ? 'Listening' + (pc !== null && pc < 180 ? ' · PC copying' : ' · PC not copying') : 'Listening: waiting for the iPad';
     var warn = on && !(st.state === 'listening' && age !== null && age < 40 && pc !== null && pc < 180);
-    sp.innerHTML = '<span class="gm-dot' + (on ? warn ? ' warn' : ' on' : '') + '"></span>' + esc(text);
+    sp.innerHTML = '<span class="gm-dot' + (on ? warn ? ' warn' : ' on' : '') + '"></span>' + esc(text) + airSuffix(d); airSync();
     sp.classList.toggle('warn', warn);
     /* the pill only once the transcriber has ever been set up (the stt document written), or while it is on */
     var show = STT.loaded && (!!STT.at || on);
@@ -4503,6 +4503,15 @@
       STT.doc = res[0] && res[0].doc || null; STT.at = res[0] && res[0].updatedAt || null; STT.tail = res[1] && Array.isArray(res[1].lines) ? res[1].lines : STT.tail; STT.error = ''; STT.loaded = true; renderStt(); renderBar();
     }, function (e) { STT.error = errText(e); STT.loaded = true; renderStt(); renderBar(); });
   }
+  /* A6 (ai.onair): the page mirrors the iPad's ON AIR lamp and the off-the-record countdown (gm/onair.js reads the listening document this page already polls) */
+  function airOn() { return !!(S && W.B68GmOnAir && W.B68Features && W.B68Features.valueOf(S.doc, 'ai.onair')); }
+  var airTimer = null;
+  function airSync() {
+    if (airTimer || !airOn() || !W.B68GmOnAir.state(STT.doc, Date.now()).paused || typeof W.setInterval !== 'function') return;
+    airTimer = W.setInterval(function () { if (!airOn() || !W.B68GmOnAir.tick($q('#gm-root'), STT.doc, Date.now())) { W.clearInterval(airTimer); airTimer = null; } }, 1000);
+  }
+  function airChip(d) { return airOn() ? W.B68GmOnAir.chip(d, Date.now()) : ''; }
+  function airSuffix(d) { return airOn() ? W.B68GmOnAir.suffix(d, Date.now()) : ''; }
   function sttPatch(p) {
     var g = gmApi(); if (!g || typeof g.patchStt !== 'function') { toast('Listening needs the hosted app.', true); return; }
     Promise.resolve().then(function () { return g.patchStt(p); }).then(function (r) { STT.doc = r && r.doc || STT.doc; STT.at = r && r.updatedAt || STT.at || nowIso(); renderStt(true); renderBar(); }, function (e) { toast('Could not change listening: ' + errText(e), true); });
@@ -4562,7 +4571,7 @@
     var seen = tail.reduce(function (m, l) { return typeof l.speaker === 'number' && l.speaker > m ? l.speaker : m; }, -1);
     var named = Object.keys(isObj(d.speakers) ? d.speakers : {}).filter(function (k) { return d.speakers[k]; });
     var nums = []; for (var i = 0; i <= Math.max(4, seen, Math.max.apply(null, Object.keys(isObj(d.speakers) ? d.speakers : {}).map(Number).concat([-1]))); i++) nums.push(i);
-    box.innerHTML = '<section class="gm-box gm-stt"><h3 class="gm-band">Listening' + (on ? ' <span class="gm-stt-on">● on</span>' : '') + '</h3><div class="gm-ipad-body">' +
+    box.innerHTML = '<section class="gm-box gm-stt"><h3 class="gm-band">Listening' + (on ? ' <span class="gm-stt-on">● on</span>' : '') + airChip(d) + '</h3><div class="gm-ipad-body">' +
       '<p class="gm-ipad-line' + (stale || st.state === 'error' ? ' bad' : '') + '" role="status">' + esc(line) + (stale ? ' No word from the iPad for a while: is the display open?' : '') + '</p>' +
       (st.error && st.state !== 'listening' ? '<p class="gm-note bad">' + esc(st.error) + '</p>' : '') +
       '<div class="gm-ipad-acts">' + (on ? '<button type="button" class="btn" data-gm="stt-off">Stop listening</button>'
@@ -4574,6 +4583,7 @@
       (tail.length > 5 ? '<details class="gm-fold" data-sttmore="1"' + (STT.more ? ' open' : '') + '><summary>More</summary><ol class="gm-stt-tail gm-stt-more">' + tail.slice(-30, -5).map(function (l) { return sttLi(d, l); }).join('') + '</ol></details>' : '') +
       (tail.length ? '<ol class="gm-stt-tail gm-stt-now">' + tail.slice(-5).map(function (l) { return sttLi(d, l); }).join('') + '</ol>' : '') +
       sttCopier(d, on) + '</div></section>';
+    airSync();
   }
   /* the PC's heartbeat: fresh within 3 minutes while listening is on */
   function sttCopier(d, on) {

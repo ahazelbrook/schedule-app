@@ -76,7 +76,9 @@
     { id: 'ai.grammar', label: 'A strict cue grammar, a toast and Undo', surface: 'gm', stage: 'ai', default: false, saturday: 'on',
       doc: 'Adds the stamp, reveal, go, flashback, back, introduce, spotlight cues; every fired cue shows a 5 second toast with Undo; a cue it cannot parse says "didn\u2019t catch that" and does nothing.' },
     { id: 'spine.start', label: 'Hard start', surface: 'display', stage: 'spine', default: false, saturday: 'on',
-      doc: 'A timed cold open on the table display: a station clock counts down, then a fuse, the credits and three faces whose name plates the GM reveals one by one. Adds a Hard start line to the Menu. Off: none of it.' }
+      doc: 'A timed cold open on the table display: a station clock counts down, then a fuse, the credits and three faces whose name plates the GM reveals one by one. Adds a Hard start line to the Menu. Off: none of it.' },
+    { id: 'ai.onair', label: 'ON AIR lamp and off the record', surface: 'display', stage: 'ai', default: false, saturday: 'on',
+      doc: 'An ON AIR lamp while the table display listens, and a spoken pause: "Blade, off the record" stops keeping what is heard for 5 minutes, "Blade, back on" resumes. The GM page mirrors the lamp and the countdown. Off: neither.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

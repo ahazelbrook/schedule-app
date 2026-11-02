@@ -1961,7 +1961,7 @@
       /* live sync: a poke for the display, the ambient or the transcriber makes the poll run now; the 4 s poll goes on unchanged */
       if (root.B68Live && typeof root.B68Live.on === 'function') { try { s.liveOff = root.B68Live.on(['display', 'ambient', 'stt'], function () { if (s.poller) s.poller.poke(); }); } catch (e) { s.liveOff = null; } }
       /* the transcriber (app/stt.js): idle until the GM presses Start listening, then one tap here opens the mic */
-      if (root.B68Stt && typeof root.B68Stt.attach === 'function') { try { s.stt = root.B68Stt.attach(container, { gm: ctx.gm }); } catch (e) { s.stt = null; } }
+      if (root.B68Stt && typeof root.B68Stt.attach === 'function') { try { s.stt = root.B68Stt.attach(container, { gm: ctx.gm, air: function () { return root.B68OnAir && swOn('ai.onair') ? root.B68OnAir.shared() : null; }, airOff: function () { if (root.B68OnAir) root.B68OnAir.shared().destroy(); } }); } catch (e) { s.stt = null; } }
     }
 
     /* visibility: pause polling while hidden, poll at once on return, and take the wake lock back */
