@@ -143,6 +143,8 @@
   /* the command word at toks[k], if there is one (with the two words that need a second look) */
   function cmdAt(toks, k) {
     var t = toks[k]; if (!t) return null;
+    var cv0 = CV();      /* B09: a registered phrase ("off the record", "reveal") wins at the command slot; none is registered unless its switch is on */
+    if (cv0 && typeof cv0.phraseAt === 'function') { var ph = cv0.phraseAt([t.w, toks[k + 1] && toks[k + 1].w, toks[k + 2] && toks[k + 2].w, toks[k + 3] && toks[k + 3].w].filter(Boolean)); if (ph) return ph.id; }
     var v = Object.prototype.hasOwnProperty.call(CMD, t.w) ? CMD[t.w] : null;
     if (!v) { var cv = CV(); v = cv ? cv.verbFor(t.w) : null; }      /* W0.5: a registered verb's word */
     if (!v) return null;

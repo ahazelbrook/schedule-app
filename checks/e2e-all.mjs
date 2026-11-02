@@ -60,6 +60,7 @@ const CHECKS = [
   ['checks/runtime/display-webkit.e2e.mjs', 'the display at iPad and iPhone sizes, with a missing-API probe: the WebKit pass harness (9150)'],
   ['checks/runtime/display-overlay.e2e.mjs', 'overlays on the display: a clock, an NPC, a line, the dawn (8874)'],
   ['checks/runtime/show-contract.e2e.mjs', 'the show contract: every brief beat on the GM display and the iPad within a poll, a hidden NPC dropped, the layers and the scene data channel, the look book (9050)'],
+  ['checks/runtime/gm-stamp.e2e.mjs', 'the stamp, the sizer and the strict cue grammar on the real GM page: Stamp row, report card, 4/5 sizer with a two-tap reduce, a typed cue with its Undo toast, didn’t catch that, All off (9030)'],
   ['checks/runtime/gm-autopilot.e2e.mjs', 'the iPad autopilot: a clock overlay, Take over, secrecy, lights out, display-only expiry (8879)'],
 ];
 

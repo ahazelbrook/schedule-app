@@ -1318,3 +1318,16 @@ body.as-tab #gm-page .gm-sheet { right: 44px; }
 body.ws-away [data-gm="mirror"], body.ws-away #as-cogm-also-row, body.ws-away [data-rv="menuitem"][data-mid="phone-cards"] { display: none !important; }
 body.ws-away:not(.ws-show-screen) #as-screen { display: none; }
 body.ws-away:not(.ws-show-costume) .gm-field:has(#gm-run-lens) { display: none; }
+/* B09: the stamp row, the consequence sizer and the cue toast with Undo (gm/stamp.js, gm/cue-grammar.js) */
+.gm-stamp { display: grid; gap: .4rem; padding: .5rem .6rem; border: 1px solid var(--line, #c9bfa9); border-radius: .5rem; }
+.gm-stamp[hidden] { display: none; }
+.gm-st-row { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.gm-st-text { flex: 1 1 14rem; min-width: 0; font: inherit; padding: .3rem .5rem; }
+.gm-st-b[aria-pressed="true"] { outline: 2px solid currentColor; font-weight: 700; }
+.gm-st-note { margin: 0; font-size: .85em; }
+.gm-st-sizer { display: grid; gap: .3rem; padding: .5rem; border: 1px dashed currentColor; border-radius: .4rem; }
+.gm-st-sizer p, .gm-st-sizer ul { margin: 0; }
+.gm-st-size { font-weight: 700; }
+.gm-st-lines { padding-left: 1.1rem; }
+.gm-ugtoast { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 9999; display: flex; gap: .6rem; align-items: center; max-width: 90vw; padding: .5rem .8rem; border-radius: .5rem; background: #1b1814; color: #f4ecd8; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
+.gm-ugtoast-t { overflow-wrap: anywhere; }

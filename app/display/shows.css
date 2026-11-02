@@ -81,6 +81,17 @@
 .dp-lay-sec[data-level="4"] i.on { background: var(--b68-alarm-lit); border-color: var(--b68-alarm-lit); }
 .dp-lay-face { color: var(--b68-paper-dark); letter-spacing: .06em; }
 
+/* report (B09): the action report card, held until the result is marked */
+.dp-show-report { background: rgba(10, 9, 8, .86); }
+.dp-report-row { display: flex; gap: 6vmin; justify-content: center; }
+.dp-report-cell { display: flex; flex-direction: column; align-items: center; gap: .6vmin; }
+.dp-report-k { font: 900 var(--b68-t-label)/1.1 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .18em; color: var(--b68-paper-dark); }
+.dp-report-v { font: 900 var(--b68-t-display)/1 var(--b68-font-poster); text-transform: uppercase; letter-spacing: .03em; }
+.dp-report-threat { margin-top: 2vmin; color: var(--b68-mustard); }
+.dp-show-report.dp-pos-controlled .dp-report-cell:first-child .dp-report-v { color: var(--b68-paper); }
+.dp-show-report.dp-pos-risky .dp-report-cell:first-child .dp-report-v { color: var(--b68-orange); }
+.dp-show-report.dp-pos-desperate .dp-report-cell:first-child .dp-report-v { color: var(--b68-alarm-lit); }
+
 @media (prefers-reduced-motion: reduce) {
   .dp-show, .dp-show * { transition: none !important; animation: none !important; }
   .dp-show-stamp .dp-stamp-word { transform: rotate(-9deg); opacity: .94; }
