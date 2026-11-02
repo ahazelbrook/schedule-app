@@ -1291,3 +1291,8 @@ cut-off or an empty reply gives `answer: null` and "Blade had nothing to say to 
 `ask`, `q`, the kept text; the cost counts against the cap). **Cost:** the first ask of the hour (or after a quiet spell) writes the prefix cache
 at twice the input rate, so a cold ask costs noticeably more than the next one, which reads it back. With the box off, no key, the cap reached or on a phone, the
 console works exactly as it does without it.
+
+## Pacing post-mortem and the distinctness linter
+
+- **`npm run gm:pacing -- --night <file.json>`** prints actual against planned minutes per phase and per room from a saved copy of the night (`night.log` and the phase times); `--yes` files it under "## Pacing post-mortem" in the session note (`--session N`, `--force` to replace). A log line "Room: <name> (8m)" marks a room. It reads a file only: no network, no model.
+- **`npm run check:cast-distinct`** renders every NPC at 64 px and warns on a silhouette overlap or the same outer colour plus hat. Warnings only. Check: `checks/runtime/gm-pacing.test.mjs`.
