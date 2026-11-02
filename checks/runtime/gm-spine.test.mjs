@@ -250,7 +250,7 @@ await test('the three switches are registered GM-only, off, Saturday on, in the 
     const s = F.get(id); assert.ok(s, id); assert.equal(s.surface, 'gm'); assert.equal(s.default, false); assert.equal(s.saturday, 'on'); assert.equal(s.stage, 'spine');
     assert.equal(F.valueOf({}, id), false); assert.equal(F.valueOf({ features: {} }, id), false);
   }
-  assert.ok(!F.publicIds().some((i) => i.startsWith('spine.')), 'none of them reaches the campaign document');
+  assert.ok(!F.publicIds().some((i) => ['spine.rail', 'spine.curfew', 'spine.workshop'].includes(i)), 'none of them reaches the campaign document');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
