@@ -1678,7 +1678,7 @@
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready'; S.prepKey = null;
     mountAssist();
-    layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack(); apMount(); mountMission();
+    layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack(); apMount(); mountMission(); mountNight();
     /* listening: every 5 s while the iPad tab is open, every 15 s otherwise (the top bar shows it) */
     if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden) { if (S.panel === 'ipad' || n2 % 3 === 0) loadStt(); renderBeat(); } }, 5000); }
     if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
@@ -4137,6 +4137,12 @@
     missionOffer(null);
     Promise.resolve().then(function () { return spec.run(); }).then(null, function (e) { toast('Could not do that: ' + errText(e), true); });
   }
+  /* W0.4 the night contract (gm/night.js): the controller for this page. It writes nothing until a phase is entered or a stamp or cue is logged; the iPad band (band.phase) is wired by the show contract, from night.band() */
+  function mountNight() {
+    var N = W.B68GmNight, me = S; if (!N) { me.night = null; return; }
+    me.night = N.create({ doc: function () { return S === me ? S.doc : null; }, patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); },
+      prep: function () { var pk = S === me ? part('prep') : null, id = pk && W.B68GmPrep ? prepNoteId(pk) : null; return id && Array.isArray(pk.notes) ? pk.notes.filter(function (n) { return isObj(n) && n.id === id; })[0] || null : null; } });
+  }
   function mountMission() {
     var M = W.B68GmMission, B = W.B68GmBall, me = S;
     if (me.mission) { try { me.mission.destroy(); } catch (e) {} }       /* start() runs again after a pack import */
@@ -6332,6 +6338,7 @@
     _ambient: function () { return { doc: AM.doc, shown: AM.shown, loaded: AM.loaded, crew: crewSync.state().lastSent }; },
     /* the autopilot's controller state, for checks (the page's own log is S.doc.ap.log), and Voice's lines as the box would hand them over */
     _autopilot: function () { return S && S.ap ? S.ap.core.state() : null; },
+    _night: function () { return S && S.night ? S.night : null; },
     _voice: function (v) { if (S) setVoice(v); }
   };
 });
