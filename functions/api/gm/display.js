@@ -65,9 +65,10 @@ export async function onRequest({ request, env, data, waitUntil }) {
     // THE FOURTH PART (?hseq=N, the mission's band): a top-level `mission` on any answer, only when the page asks. One statement; when the page also reads the
     // live switch it is the SAME statement (loadMissionPart), so a page that sends hseq makes no more D1 calls than one that does not. hud only, never the cards.
     const wantHud = hseq !== null;
-    const withHud = (out, part) => (part ? { ...out, mission: part, now: Date.now() } : out);   // now: the band's countdown corrects the iPad's clock by it
+    let feats = null;      // the switches the iPad may know (W0.2), set by tail() from the same read; left out of the answer while none is stored
+    const withHud = (out, part) => (part ? { ...out, mission: part, now: Date.now(), ...(feats ? { features: feats } : {}) } : out);   // now: the band's countdown corrects the iPad's clock by it
     const tail = async (needLive) => {      // the live switch (when the call reads it) and the mission part (when asked), in one read
-      if (wantHud) return loadMissionPart(db, campaign, hseq, needLive);
+      if (wantHud) { const r = await loadMissionPart(db, campaign, hseq, needLive); feats = r.features && Object.keys(r.features).length ? r.features : null; return r; }
       return { part: undefined, live: needLive ? await liveFlag(db, campaign) : true };
     };
     const cur = await loadDisplay(db, campaign);

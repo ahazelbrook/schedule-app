@@ -8,6 +8,7 @@ import { HttpError, ID_RE, MAX_BODY_BYTES, isPlainObject, nowIso } from './http.
 import { namesHit } from './gm.js';
 import { hiddenNameHit } from './table-screen.js';
 import { LIVE_SQL, liveFlagOf } from './live.js';
+import { parseFeatures } from './features.js';
 
 export const CAMPAIGN_DOC_ID = 'main';
 export const LOG_MAX = 200;
@@ -301,6 +302,7 @@ export function checkShape(body) {
     if (k in body && !isPlainObject(body[k])) throw new HttpError(400, k + ' must be an object');
   }
   if ('clockOps' in body) checkClockOps(body.clockOps);
+  if ('features' in body && body.features !== null && !isPlainObject(body.features)) throw new HttpError(400, 'features must be an object');
   const sc = body.scene;
   if (sc === undefined) return;
   if ('npcs' in sc) {
@@ -582,14 +584,17 @@ const HSEQ_RE = /^\d{1,15}$/;
  * The display GET's fourth part (?hseq=N), read in ONE statement: the mission's seq with json_extract, and `mission.hud` only while that seq
  * differs from the page's (the CASE keeps the hud, and everything else of the document, out of the answer when nothing changed). With
  * `withLive` the same statement carries the live-sync switch too, so a poll that reads the switch anyway makes no extra D1 call. The cards are
- * never selected. -> { part, live }: part is { hseq, hud } (no mission stored: hseq 0 and hud null) or { hseq, unchanged: true }.
+ * never selected. -> { part, live, features }: part is { hseq, hud } (no mission stored: hseq 0 and hud null) or { hseq, unchanged: true }.
+ * `features` (W0.2) is the campaign document's switch map for the iPad, cleaned to the display and phone switches ({} when none is stored): the same
+ * statement, one more small column, so the iPad reads its switches on every poll at no extra D1 call.
  */
 export async function loadMissionPart(db, campaign, hseqRaw, withLive) {
   const have = typeof hseqRaw === 'string' && HSEQ_RE.test(hseqRaw) ? Number(hseqRaw) : -1;      // anything else counts as stale
   const seq = "CASE WHEN json_valid(doc) THEN json_extract(doc, '$.mission.seq') END";
   const hud = "CASE WHEN json_valid(doc) AND COALESCE(json_extract(doc, '$.mission.seq'), 0) != ?2 THEN json_extract(doc, '$.mission.hud') END";
+  const feat = "CASE WHEN json_valid(doc) THEN json_extract(doc, '$.features') END";
   const row = await db.prepare(
-    'SELECT (SELECT ' + seq + ' FROM campaigns WHERE id = ?1) AS hseq, (SELECT ' + hud + ' FROM campaigns WHERE id = ?1) AS hud' +
+    'SELECT (SELECT ' + seq + ' FROM campaigns WHERE id = ?1) AS hseq, (SELECT ' + hud + ' FROM campaigns WHERE id = ?1) AS hud, (SELECT ' + feat + ' FROM campaigns WHERE id = ?1) AS feat' +
     (withLive ? ', (SELECT ' + LIVE_SQL + ' FROM campaigns WHERE id = ?3) AS live' : '')
   ).bind(...(withLive ? [campaign, have, campaign + '#gm'] : [campaign, have])).first();
   const r = row || {};
@@ -602,5 +607,5 @@ export async function loadMissionPart(db, campaign, hseqRaw, withLive) {
     try { const v = typeof r.hud === 'string' ? JSON.parse(r.hud) : null; if (isPlainObject(v)) h = v; } catch (_) { /* no hud */ }
     part = { hseq: now, hud: h };
   }
-  return { part, live: liveFlagOf(r.live === undefined ? null : r.live) };
+  return { part, live: liveFlagOf(r.live === undefined ? null : r.live), features: parseFeatures(r.feat) };
 }

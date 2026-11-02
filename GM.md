@@ -970,6 +970,19 @@ not the Deepgram key), `npm run gm:transcript -- --install` writes a hidden laun
 (`b68-transcript.vbs`) into the Windows Startup folder and starts the copier; it starts at every sign-in after that.
 `-- --uninstall` stops it and removes the launcher. It runs the repo's checked-out copy of the script.
 
+## The switchboard and the GM seams (suite W0.2, W0.5: `app/features.js`, `app/gm/switchboard.js`, `app/sheet/flags.js`, `app/gm/tools.js`, `app/gm/workshop.js`, `app/cue-verbs.js`)
+
+Every new feature of the suite ships behind a switch, default off. With every switch off the app behaves as it did before them.
+
+- **The registry is `app/features.js`.** A switch is `{ id, label, surface, stage, default: false, doc, saturday }`; `surface` is `gm`, `display` or `phone`, `saturday` is `on`, `try` or `off`. A ticket adds its own line to `SWITCHES`. `phoneCards` (the Run view's Phone cards) is the first, and keeps its old top-level key in the GM state as a fallback.
+- **Where the values live.** The GM state document's `features` (`{ id: bool }`) holds every switch. The GM page copies the display and phone switches, as a complete map, into the campaign document's `features`. Only the GM can write that key (a player's PATCH is 403); a PATCH is cleaned against the registry (a GM-only or unknown id, or a value that is not a boolean, is dropped); a whole-document PUT keeps what is stored; a player's GET is cleaned again. A GM-only id never reaches a phone or the iPad.
+- **How a surface reads.** The GM page reads `S.doc` live (it is the only writer of that document). A phone gets `features` with every campaign arrival (`boot.js` hands the document to `B68Flags.apply`). The iPad gets them as a top-level `features` in every display poll that sends `hseq` (read in the same statement as the mission part, no extra D1 call; the key is left out while none is stored). A feature asks `B68Flags.on(id)` where it needs the answer, or `B68Flags.subscribe`s and redraws. No reload.
+- **Menu -> Switchboard** lists the switches by stage with **All off**, which writes every id false and copies the public map across. `heal()` runs on each campaign arrival and rewrites the campaign copy only when it differs from the GM state's (a missing map reads as all off, so with every switch off nothing is written).
+- **The tool registry (`app/gm/tools.js`, `B68GmTools`).** Every tab is a tool `{ id, label, key, phases, workshop }`; the phases are `pb`, `plan`, `score`, `after` (the ids `night.phase` stores). `setFilter({ on, phase, all })` is what the phase rail will drive; off (the default), or `all`, shows every tab as before. The tab on screen is always kept. A tool registered with a `mount(box, host)` gets a tab and a pane. A tool with `workshop: true` has no tab: **Menu -> Workshop** (shown only when one exists) lists it in a sheet.
+- **The cue-verb registry (`app/cue-verbs.js`, `B68CueVerbs`).** A new spoken command registers `{ id, words, actionTypes, parse(ctx) }`; `cue.js` asks it for any command word it does not know. Every declared action type must also be in `hands.js` `CUE_TYPES`, or the Worker drops it (`checks/runtime/gm-cue-verbs.test.mjs` holds each verb to that).
+
+Checks: `checks/runtime/features.test.mjs`, `gm-tools.test.mjs`, `gm-cue-verbs.test.mjs`, `checks/api/features.mjs` (port 8951) and `checks/runtime/gm-seams.e2e.mjs` (port 8952; `--snapshot <dir>` records the page's markup and screenshots at 1280 and 390 px, to compare with another tree).
+
 ## Live sync (`functions/_lib/live.js`, `worker/live.js`, `functions/api/live.js`)
 
 A page hears of a change at once, instead of on its next poll. **The poll stays the source of truth**: a page with no socket behaves exactly as it did before, and a poke that never arrives costs only time.
