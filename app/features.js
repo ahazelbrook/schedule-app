@@ -78,7 +78,11 @@
     { id: 'spine.start', label: 'Hard start', surface: 'display', stage: 'spine', default: false, saturday: 'on',
       doc: 'A timed cold open on the table display: a station clock counts down, then a fuse, the credits and three faces whose name plates the GM reveals one by one. Adds a Hard start line to the Menu. Off: none of it.' },
     { id: 'ai.onair', label: 'ON AIR lamp and off the record', surface: 'display', stage: 'ai', default: false, saturday: 'on',
-      doc: 'An ON AIR lamp while the table display listens, and a spoken pause: "Blade, off the record" stops keeping what is heard for 5 minutes, "Blade, back on" resumes. The GM page mirrors the lamp and the countdown. Off: neither.' }
+      doc: 'An ON AIR lamp while the table display listens, and a spoken pause: "Blade, off the record" stops keeping what is heard for 5 minutes, "Blade, back on" resumes. The GM page mirrors the lamp and the countdown. Off: neither.' },
+    { id: 'fx.pause', label: 'Pause hidden scenes', surface: 'display', stage: 'fx', default: false, saturday: 'on',
+      doc: 'An ambient scene that is not on show (page hidden, covered or faded out) stops moving until it is. Off: scenes run as they always did.' },
+    { id: 'fx.off', label: 'Hold scenes still', surface: 'display', stage: 'fx', default: false, saturday: 'try',
+      doc: 'Holds every ambient scene as a still picture, to save the battery and heat. On: no animation in the scenes. Off: scenes animate as they always did.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

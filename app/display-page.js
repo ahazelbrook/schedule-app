@@ -1451,14 +1451,16 @@
     /* the show contract's lasting layers and the data channel to the HTML scenes (app/display/layers.js) */
     s.layers = root.B68Layers ? root.B68Layers.attach(container, { skew: function () { return s.skew || 0; } }) : null;
     if (s.layers) s.offs.push(function () { s.layers.destroy(); });
-    /* the suite's display switches (each does nothing while its switch is off): the hard start (1.2, spine.start) */
+    /* the suite's display switches (each does nothing while its switch is off): the hard start (1.2, spine.start) and the FX budget (F7, fx.pause / fx.off) */
     function swOn(id) { return !!(root.B68Flags && root.B68Flags.on(id)); }
     function suiteSync() {
       var hs = !!(root.B68HardStart && s.layers && swOn('spine.start'));
       if (hs && !s.hs) s.hs = root.B68HardStart.attach(container, { layers: s.layers }); else if (!hs && s.hs) { s.hs.destroy(); s.hs = null; }
       if (s.hs) s.hs.apply();
+      var fx = !!(root.B68Fx && (swOn('fx.pause') || swOn('fx.off')));
+      if (fx && !s.fx) s.fx = root.B68Fx.attach(container, { flags: function () { return { pause: swOn('fx.pause'), off: swOn('fx.off') }; }, covered: function () { return !!(s.amb && s.amb.state().covered); } }); else if (!fx && s.fx) { s.fx.destroy(); s.fx = null; } else if (s.fx) s.fx.sync();
     }
-    s.offs.push(function () { if (s.hs) { s.hs.destroy(); s.hs = null; } });
+    s.offs.push(function () { if (s.hs) { s.hs.destroy(); s.hs = null; } if (s.fx) { s.fx.destroy(); s.fx = null; } });
     function ovTimer(fn, ms) { var id = later(fn, ms); s.ov.timers.push(id); return id; }
     function ovRemove(now) {
       var node = s.ov.node; s.ov.token++; s.ov.node = null;
