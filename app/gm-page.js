@@ -2298,6 +2298,11 @@
   /* 4.2 Preflight (gm/preflight.js, switch room.preflight): the Menu line exists only while the switch is on */
   function pfOn() { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, 'room.preflight') && W.B68GmPreflight); }
   function pfMenuLine() { return pfOn() ? '<button type="button" data-gm="preflight" id="gm-menu-preflight" title="Is the room ready: green or red for the iPad sound, files, the transcriber, the sign-in and the pack. Read-only">Preflight</button>' : ''; }
+  /* the Menu is drawn once, so a flip of the switch adds or takes away the line in place */
+  function pfMenuSync() {
+    var on = pfOn(), b = $q('#gm-menu-preflight'), after = $q('#gm-menu-switchboard') || $q('#gm-menu-live');
+    if (on && !b && after) after.insertAdjacentHTML('afterend', pfMenuLine()); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
+  }
   function pfInst() {
     if (!pfOn()) return null;
     if (!S.pf) S.pf = W.B68GmPreflight.create({ root: function () { return $q('#gm-root'); }, toast: toast, fetchFacts: function () { var a = gmApi(); return a && typeof a.preflight === 'function' ? a.preflight() : Promise.reject(new Error('no server')); },
@@ -2341,7 +2346,7 @@
   /* the bar's live parts: the session, what is on the iPad, listening */
   function renderBar() {
     if (!S || !S.root) return;
-    renderMirror(); spineTick();
+    renderMirror(); spineTick(); pfMenuSync();
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();

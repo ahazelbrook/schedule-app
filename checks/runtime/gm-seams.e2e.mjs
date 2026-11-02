@@ -190,6 +190,16 @@ try {
     check(!phoneTraffic.some((x) => x.includes('test.gm')) && !flags.includes('test.gm'), 'the GM-only id never reached the phone: not in one API answer it received, not in its flags');
     check(!JSON.stringify((await api('GET', '/campaign', null, PLAYER)).json).includes('test.gm'), 'nor in the campaign document it can read');
     void all;
+    /* 4.2: with room.preflight on, Menu has a Preflight line that opens the sheet (read-only, items green or red with a fix); the iPad is told the switch, and off takes the line away */
+    check(await g.$('#gm-menu-preflight') === null, 'Preflight: no Menu line while the switch is off');
+    await g.click('[data-sb="room.preflight"]');
+    await until(async () => { const c = (await api('GET', '/campaign', null, PLAYER)).json.doc; return c.features && c.features['room.preflight'] === true; }, 8000);
+    check(await until(async () => (await flag(DS.page, 'room.preflight')) === true, 8000), 'Preflight: the iPad is told the switch within a poll');
+    check(await until(async () => (await g.$('#gm-menu-preflight')) !== null, 8000), 'Preflight: the Menu line appears');
+    await g.evaluate(() => { var b = document.querySelector('#gm-menu-preflight'); if (b) b.click(); });
+    check(await until(async () => g.$eval('#gm-sheet-preflight', (e) => !e.hidden && /iPad sound/.test(e.textContent) && /Deepgram/.test(e.textContent) && /Pack version/.test(e.textContent) && /Access session/.test(e.textContent)).catch(() => false), 10000), 'Preflight: the sheet lists the items');
+    check(await g.$eval('#gm-sheet-preflight', (e) => /Fix:/.test(e.textContent)), 'Preflight: a red item carries a Fix line');
+    await g.click('[data-sb-alloff]').catch(() => {});
     await G.c.close(); await PH.c.close(); await DS.c.close();
   } else console.log('SKIP the seams are not in ' + ROOT + ' (a snapshot of main?)');
 
