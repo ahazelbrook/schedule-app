@@ -24,6 +24,7 @@
       var amb = el('div', 'dp-ambient'); amb.style.background = 'transparent'; box.appendChild(amb);
       amb.appendChild(el('div', 'lb-stage'));
       host.appendChild(box);
+      if (root.B68Flags) root.B68Flags.apply({ features: { 'map.flashback': true } });     /* suite 2.9: the flashback look (grain and the Earlier caption) in the look book */
       if (root.B68Layers) root.B68Layers.attach(box, { skew: function () { return 0; } }).apply(LAYERS_DEMO);
       return;
     }

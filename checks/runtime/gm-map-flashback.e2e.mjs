@@ -147,7 +147,7 @@ try {
   check(await P.page.$eval('[data-b19="flashback"]', (b) => b.textContent === 'Back'), 'and reads Back while it is up');
   check(!!(await until(() => P.page.evaluate(() => document.querySelector('#rv-map').classList.contains('b19-flash')), 6000, 100)), 'the GM map goes sepia');
   await I0.page.waitForFunction(() => { const r = document.querySelector('.dp-root'); return !!r && r.hasAttribute('data-flash-look'); }, null, { timeout: 25000 }).then(() => check(true, 'the iPad has the flash look'), () => check(false, 'the iPad has the flash look'));
-  check(await I0.page.evaluate(() => { const r = document.querySelector('.dp-root'); return getComputedStyle(r, '::after').content.indexOf('Earlier') >= 0; }), 'the iPad caption reads Earlier…');
+  check(await I0.page.evaluate(() => { const r = document.querySelector('.dp-root'); return getComputedStyle(r, '::after').content === '"Earlier' + String.fromCharCode(0x2026) + '"'; }), 'the iPad caption reads Earlier…');
   check(await I0.page.evaluate(() => { const r = document.querySelector('.dp-root'); return /url\(/.test(getComputedStyle(r, '::before').backgroundImage); }), 'and the grain layer is drawn');
 
   /* the pin goes on the crew's room and comes up again */

@@ -127,7 +127,11 @@ await test('layers.js: data-flash-look only while the filter is up AND map.flash
 });
 await test('the files: the look is in shows.css behind data-flash-look only, the module is in the GM bundle and not on the display, and it names no campaign', () => {
   const css = fs.readFileSync(path.join(ROOT, 'app', 'display', 'shows.css'), 'utf8');
-  assert.ok(/\.dp-root\[data-flash-look\]::after \{[^}]*Earlier/.test(css)); assert.ok(!/\.dp-root::(before|after)/.test(css));
+  assert.ok(css.includes('.dp-root[data-flash-look]::after { content: "Earlier…";'), 'the full caption');
+  for (const f of ['app/display/shows.css', 'app/display/lookbook.js', 'app/gm.css', 'app/gm/map-spotted.js', 'app/gm/map-flashback.js', 'app/gm/map-threat.js', 'checks/runtime/gm-map-spotted.e2e.mjs', 'checks/runtime/gm-map-flashback.e2e.mjs', 'checks/runtime/gm-map-threat.e2e.mjs']) {
+    assert.ok(!/[\u0080-\u009f]/.test(fs.readFileSync(path.join(ROOT, f), 'utf8')), 'no C1 control characters in ' + f);
+  }
+  assert.ok(!/\.dp-root::(before|after)/.test(css));
   const routes = fs.readFileSync(path.join(ROOT, 'app', 'routes.js'), 'utf8');
   const gm = routes.split('\n').find((l) => /^\s*gm:/.test(l)), disp = routes.split('\n').find((l) => /^\s*display:/.test(l));
   assert.ok(gm.includes("'gm/map-flashback.js'") && !disp.includes('map-flashback'));

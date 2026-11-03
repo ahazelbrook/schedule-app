@@ -118,7 +118,7 @@
       /* 4. the tick, after the fill has run, and only when this page's beat is the one that landed */
       var tick = Promise.all([sting, fill]).then(function () { return wait(Math.max(0, STEPS_MS.tick - STEPS_MS.fill)); }).then(function () {
         if (!clock) { toast('No alarm clock to tick on this site: the beat ran without one.', false); return null; }
-        if (!landed) return null;
+        if (!landed) { if (!out.sting) toast('The Spotted sting did not go out, so the alarm clock was not ticked.', true); return null; }     /* unchanged = another page's beat landed first: it ticks */
         return Promise.resolve(host.tick(clock.id, clock.to)).then(function (r) {
           out.ticked = r !== null && r !== false;
           if (out.ticked && typeof host.log === 'function') host.log('Spotted in ' + room + ': the alarm clock ticks to ' + clock.to + '/' + clock.size);
