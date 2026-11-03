@@ -55,11 +55,7 @@
     { id: 'room', label: 'Stage 4: the room' },
     { id: 'ai', label: 'Blade (AI)' },
     { id: 'between', label: 'Stage 5: between sessions' },
-    { id: 'fx', label: 'Effects' },
-    { id: 'print.cards', label: 'Calling cards and standees', surface: 'gm', stage: 'between', default: false, saturday: 'off',
-      doc: 'Menu then Print: a calling card for every revealed NPC, ten to an A4 sheet, and an A4 tent standee for each NPC tagged major (silhouette or typed back). Print only. Off: no Print line for cards.' },
-    { id: 'print.blueprint', label: 'Printed blueprint', surface: 'gm', stage: 'between', default: false, saturday: 'off',
-      doc: 'Menu then Print: an A3 or A4 case-file plan of the rooms the players know, with a scale bar, a title block and a margin for a pencil. Print only. Off: no Print line for the blueprint.' }
+    { id: 'fx', label: 'Effects' }
   ];
   var ID_RE = /^[A-Za-z][A-Za-z0-9.-]{0,39}$/;
 
@@ -104,7 +100,11 @@
     { id: 'spine.debrief', label: 'The Debrief', surface: 'phone', stage: 'spine', default: false, saturday: 'on',
       doc: 'Aftermath steps not reached become a Debrief card on each sheet the next morning, with downtime picks and xp prompts, kept as the player’s own row; unanswered ones take defaults after 48 hours; replies show on a GM panel. Off: no card, no panel.' },
     { id: 'between.quiet', label: 'The quiet line', surface: 'phone', stage: 'between', default: false, saturday: 'try',
-      doc: 'A long press on the sheet header offers the X-card, pause, spotlight me and a secret note, sent only to the GM phone as a silent badge. Off: the header does nothing.' }
+      doc: 'A long press on the sheet header offers the X-card, pause, spotlight me and a secret note, sent only to the GM phone as a silent badge. Off: the header does nothing.' },
+    { id: 'print.cards', label: 'Calling cards and standees', surface: 'gm', stage: 'between', default: false, saturday: 'off',
+      doc: 'Menu then Print: a calling card for every revealed NPC, ten to an A4 sheet, and an A4 tent standee for each NPC tagged major (silhouette or typed back). Print only. Off: no Print line for cards.' },
+    { id: 'print.blueprint', label: 'Printed blueprint', surface: 'gm', stage: 'between', default: false, saturday: 'off',
+      doc: 'Menu then Print: an A3 or A4 case-file plan of the rooms the players know, with a scale bar, a title block and a margin for a pencil. Print only. Off: no Print line for the blueprint.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
