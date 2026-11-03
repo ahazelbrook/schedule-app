@@ -370,7 +370,7 @@ async function main() {
       await settle();
       for (const [n, s] of Object.entries(socks)) expect(docsFrames(s).length === 0, n + ' heard a GM-only write: ' + JSON.stringify(s.messages()));
       // a player's write
-      status(await put(A, { kind: 'quiet', json: { note: 'alice says hush' } }), 200);
+      status(await put(A, { kind: 'opportunity', json: { note: 'alice says hush' } }), 200);   // (the quiet kind pokes the GM alone: checks/api/quiet.mjs)
       for (const [n, s] of Object.entries(socks)) { await s.until(2); }
       for (const [n, s] of Object.entries(socks)) {
         const f = docsFrames(s);

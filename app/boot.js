@@ -24,6 +24,14 @@
     if (F.on('spine.aftermath')) { if (L && L.need) L.need('commend').then(function () { if (window.B68Commend) window.B68Commend.start(); }, function () {}); }
     else if (window.B68Commend) window.B68Commend.stop();
   }
+  /* suite 1.7 and 5.8: the Debrief card and the quiet line, each a lazy bundle fetched only while its own switch is on */
+  function betweenSync() {
+    var F = window.B68Flags; if (!F) return;
+    [['spine.debrief', 'debrief', 'B68Debrief'], ['between.quiet', 'quiet', 'B68Quiet']].forEach(function (x) {
+      if (F.on(x[0])) { if (L && L.need) L.need(x[1]).then(function () { if (window[x[2]]) window[x[2]].start(); }, function () {}); }
+      else if (window[x[2]]) window[x[2]].stop();
+    });
+  }
   var creatorOn = false;
   function buildCreator() {
   A.SECTIONS.forEach(function (s, i) {
@@ -524,7 +532,7 @@
       var data = snap && snap.exists !== false && typeof snap.data === 'function' ? snap.data() : null;
       if (!isObj(data)) data = null;
       tableExists = !!data; tableLatest = data ? clone(data) : null; campLoaded = true;
-      if (window.B68Flags) { try { window.B68Flags.apply(data); commendSync(); } catch (e) { if (window.console) console.error(e); } }   /* W0.2: the switches this campaign arrival carries, on every poll */
+      if (window.B68Flags) { try { window.B68Flags.apply(data); commendSync(); betweenSync(); } catch (e) { if (window.console) console.error(e); } }   /* W0.2: the switches this campaign arrival carries, on every poll */
       var Cm = campaignMod();
       if (tableOn && Cm) { try { Cm.update(data ? clone(data) : null); } catch (e) { toast('The table could not render: ' + (e && e.message || e), true); } }
       var S2 = schedMod(); if (S2) { try { S2.card.update(data ? clone(data) : null); } catch (e) { if (window.console) console.error(e); } }

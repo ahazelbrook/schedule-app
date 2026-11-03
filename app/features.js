@@ -96,7 +96,11 @@
     { id: 'face.rolodex', label: 'Rolodex lower third', surface: 'display', stage: 'face', default: false, saturday: 'on',
       doc: 'An Introduce button on a revealed character’s card in the cast list, and "Blade, introduce <name>", flip their card up as a lower third on the iPad for about 20 seconds: face, name, alias, role and faction. Off: the row of full-screen cards, as before.' },
     { id: 'face.pcstatus', label: 'PC status on the band', surface: 'gm', stage: 'face', default: false, saturday: 'try',
-      doc: 'The faces on the iPad band are the player characters, each with Stress, a mark for each harm and a stamp for each deadlocked key, updated when a sheet changes. Off: the band shows no player characters.' }
+      doc: 'The faces on the iPad band are the player characters, each with Stress, a mark for each harm and a stamp for each deadlocked key, updated when a sheet changes. Off: the band shows no player characters.' },
+    { id: 'spine.debrief', label: 'The Debrief', surface: 'phone', stage: 'spine', default: false, saturday: 'on',
+      doc: 'Aftermath steps not reached become a Debrief card on each sheet the next morning, with downtime picks and xp prompts, kept as the player’s own row; unanswered ones take defaults after 48 hours; replies show on a GM panel. Off: no card, no panel.' },
+    { id: 'between.quiet', label: 'The quiet line', surface: 'phone', stage: 'between', default: false, saturday: 'try',
+      doc: 'A long press on the sheet header offers the X-card, pause, spotlight me and a secret note, sent only to the GM phone as a silent badge. Off: the header does nothing.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
