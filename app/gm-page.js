@@ -1540,7 +1540,7 @@
     if (me.sttTimer) { W.clearInterval(me.sttTimer); me.sttTimer = null; }
     if (me.cogm) { cogmStop(me); me.cogm = null; }
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
-    b09Unmount(me);
+    b09Unmount(me); b17Unmount(me);
     if (me.mission) { try { me.mission.flush(); } catch (e) {} me.mission.destroy(); me.mission = null; }   /* a publish that is waiting goes now */
     apUnmount(me);
     S = null;
@@ -1689,7 +1689,7 @@
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready'; S.prepKey = null;
     mountAssist();
-    layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack(); apMount(); mountMission(); mountNight(); b09Mount();
+    layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack(); apMount(); mountMission(); mountNight(); b09Mount(); b17Mount();
     /* listening: every 5 s while the iPad tab is open, every 15 s otherwise (the top bar shows it) */
     if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden) { if (S.panel === 'ipad' || n2 % 3 === 0) loadStt(); renderBeat(); } }, 5000); }
     if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
@@ -2358,7 +2358,7 @@
   /* the bar's live parts: the session, what is on the iPad, listening */
   function renderBar() {
     if (!S || !S.root) return;
-    renderMirror(); spineTick(); pfMenuSync(); prMenuSync();
+    renderMirror(); spineTick(); pfMenuSync(); prMenuSync(); b17Tick();
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
@@ -3071,7 +3071,7 @@
     var hist = newest(isObj(S.doc.hist) ? S.doc.hist.location : null).slice(0, LIMITS.hist);
     if (hist.length) h += '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) { return earlierChip(x, 'location', cur && cur.hid === x._id); }).join('') + '</div>';
     box.innerHTML = h;
-    runPaint();
+    runPaint(); b17Paint();
     if (!S.map && runSite() && W.B68Map && W.B68Map.render) drawMap(true);     /* a run draws itself: its people are on the map */
     else if (S.map) showMap();
   }
@@ -3142,7 +3142,7 @@
   function showMap() {
     var box = $q('#gm-map'), w = $q('#gm-mapwarn'); if (!box || !S.map) return;
     box.innerHTML = stripSize(S.map.svg);     /* the map kit's own output from our roll; it escapes its text */
-    box.setAttribute('data-layer', S.map.layer);
+    box.setAttribute('data-layer', S.map.layer); b17Tint();
     box.classList.toggle('gm-leak', !!S.map.leak);
     if (w) w.classList.toggle('bad', !!S.map.leak);
     if (w) w.textContent = (S.map.leak ? 'Not for the iPad: ' + P.LEAK_MSG + ' ' : '') + (S.map.held ? P.TOKEN_LEAK_MSG + ' ' : '') + (S.map.layer === 'gm' ? 'GM layer: everything shows. ' : 'Player layer. ') + (S.map.warnings.length ? S.map.warnings.length + ' map note' + (S.map.warnings.length === 1 ? '' : 's') + ': ' + S.map.warnings.slice(0, 2).map(function (x) { return typeof x === 'string' ? x : x && (x.message || x.msg || JSON.stringify(x)); }).join(' · ') + (S.map.warnings.length > 2 ? ' …' : '') : '');
@@ -3586,6 +3586,7 @@
     var g = gmApi(); if (!g) return Promise.reject(new Error('The display needs the hosted app.'));
     if (!gate.allows(d)) return Promise.reject(new Error('Only a player-layer map made on this page can go to the iPad.'));
     opts = opts || {};
+    if (!opts.b17 && b17Frozen()) return Promise.reject(new Error('The iPad is frozen: unfreeze it first.'));
     if (!opts.map) endLive();
     if (!opts.chase) endChase();
     if (!opts.clocks) endClocks();
@@ -3689,7 +3690,7 @@
       if (bandOpen && !on) return;           /* its band already shows it */
       rows += '<li class="gm-roomrow"><span class="gm-roomname">' + esc(r.name) + '</span> <small class="gm-dim">' + esc(str(r.band)) + (on && bandOpen ? ', its band is open too' : on ? ', open' : '') + '</small> ' +
         (on ? '<button type="button" class="btn sm" data-gm="room-close" data-room="' + esc(r.name) + '">Close</button>'
-          : '<button type="button" class="btn sm" data-gm="room-open" data-room="' + esc(r.name) + '" title="Shows the players this room only: not its band, not the rooms beside it">Open for the players</button>') + '</li>';
+          : '<button type="button" class="btn sm" data-gm="room-open" data-room="' + esc(r.name) + '" title="Shows the players this room only: not its band, not the rooms beside it">Open for the players</button>' + b17StageBtn(r.name)) + '</li>';
     });
     if (!rows) return '';
     /* a band whose every room is now open on its own, with the band itself still shut: the rooms are all there, but its passages are not */
@@ -3744,7 +3745,7 @@
     return out.join(' and ');
   }
   function liveReveal() {
-    if (!mapOnIpad()) return;
+    if (!mapOnIpad() || b17Frozen()) return;
     var on = S.mapOn, mu = mapUi(), want = revealEntries(mu), tk = playerTokenSet(want);
     if (sameBands(want, on.reveal) && tk.sig === (on.tok || '') && !liveBusy()) return;
     var more = want.filter(function (b) { return on.reveal.indexOf(b) < 0; }), fewer = on.reveal.filter(function (b) { return want.indexOf(b) < 0; });
@@ -4210,7 +4211,10 @@
       },
       show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
       keyFor: function (key) { return W.B68Show ? W.B68Show.idFor(key) : key; }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
-      clearOverlay: function () { return patchAmbient({ overlay: null }); }
+      clearOverlay: function () { return patchAmbient({ overlay: null }); },
+      holdSpotlight: function (name) { return S === me && me.b17 ? me.b17.spot.holdByName(name) : null; },
+      narrator: function () { return S === me && me.b17 ? me.b17.spot.narrator() : Promise.resolve(false); },
+      stageSend: function () { return S === me && me.b17 && b09On('map.stage') ? me.b17.stage.send() : null; }
     });
     me.cueGrammar.register();
     b09Paint();
@@ -4276,6 +4280,80 @@
   function b09Run(me, a) { return me.cueGrammar ? me.cueGrammar.run(a) : null; }
   function b09Toast(me, text, undo) { if (S === me && me.cueGrammar) me.cueGrammar.undoToast(text, undo); }
   function b09Unparsed(me, res) { if (S === me && me.cueGrammar && b09On('ai.grammar') && res && res.refused === 'unparsed') { me.cueGrammar.didntCatch(); return true; } return false; }
+
+  /* ---------- B17: stage then send (map.stage), the security level (map.security), the stage bar and spotlight (face.spotlight) ----------
+     The logic is in gm/stage.js, gm/security.js, gm/spotlight.js and gm/panel17.js; this is the seam they are given. Each part is read live from the state document, so with
+     the three switches off nothing here draws, holds, sends or writes. A staged room lives in the controller only: it is never patched into any document. */
+  function b17Mount() {
+    var Pn = W.B68GmPanel17, me = S; if (!Pn || me.b17) return;
+    function pickRoomName() { var St = W.B68GmStamp; return St && St.pickRoom ? St.pickRoom(runCrewRooms()) : ''; }
+    me.b17 = Pn.create({
+      feature: function (id) { return S === me && b09On(id); }, toast: toast, esc: esc, changed: function () { if (S === me) { b17Paint(); b17Tint(); } },
+      rooms: function () { var rs = S === me ? runSite() : null; return rs && S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms.filter(isObj).map(function (r) { return { name: str(r.name), band: str(r.band) }; }) : []; },
+      opened: function () { var rs = S === me ? runSite() : null; return rs ? cleanRooms(ballDoc(rs.name).open) : []; },
+      shown: function (n) { var r = S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms.filter(function (x) { return isObj(x) && x.name === n; })[0] : null; return !!r && roomShown(r, revealList(mapUi())); },
+      setOpen: function (names) {
+        var rs = S === me ? runSite() : null; if (!rs) return false;
+        var ok = ballSet(rs.name, { open: names.length ? names : null });
+        if (S.map) drawMap(); renderLocation(); return !!ok;
+      },
+      liveText: function () { return S === me && mapOnIpad() ? bandWords(S.mapOn.reveal) : ''; },
+      dark: function () { return pushDisplay({ kind: 'dark' }, { b17: true }).then(function () { toast('Blank: the iPad is black.'); }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); }); },
+      alarm: function () {
+        var rs = S === me ? runSite() : null, al = rs && rs.play && rs.play.v === 2 && isObj(rs.play.alarm) ? rs.play.alarm : null; if (!al) return null;
+        var size = Math.max(Array.isArray(al.pub) ? al.pub.length : 0, Array.isArray(al.beats) ? al.beats.length : 0), st = ballDoc(rs.name), f = isObj(st.alarm) && typeof st.alarm.filled === 'number' ? Math.floor(st.alarm.filled) : 0;
+        return size > 0 ? { size: size, filled: Math.max(0, f) } : null;
+      },
+      names: function () { var Se = W.B68GmSecurity, pk = S === me ? part('prep') : null; if (!pk || !Se) return null; if (!me.b17Names || me.b17Names.pk !== pk) me.b17Names = { pk: pk, v: Se.fromPrep(pk) }; return me.b17Names.v; },
+      key: function () { var rs = S === me ? runSite() : null; return S.locRoll ? rollKey(S.locRoll) + '|' + (rs ? rs.name : '') : ''; },
+      layer: function (path, value) { if (me.b09) return b09Layer(me, path, value); var sh = shows(); return sh ? sh.layer(path, value) : Promise.resolve(null); },
+      show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
+      npcs: function () { return S === me ? Object.keys(isObj(me.npcs) ? me.npcs : {}).map(function (id) { var d = me.npcs[id]; return isObj(d) && !(Array.isArray(d.tags) && d.tags.indexOf('undone') >= 0) ? { id: id, name: str(d.name), alias: str(d.alias), revealed: d.revealed === true } : null; }).filter(Boolean) : []; },
+      roomKey: function () { return S === me ? pickRoomName() : ''; },
+      roomMd: function () { var rn = S === me ? runRoomNotes() : null, n = pickRoomName(); return rn && n && isObj(rn.byRoom) && isObj(rn.byRoom[n]) ? str(rn.byRoom[n].md) : ''; },
+      hold: function (npcId, ms) { return showOverlay({ id: 'b17sl-' + newOverlayId().slice(-8), kind: 'npc', npcId: npcId, ms: ms }); },
+      clear: function () { var up = isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; return up.indexOf('b17sl-') === 0 ? clearOverlay() : Promise.resolve(null); },
+      overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
+      confirm: function (m) { return W.confirm(m); },
+      reveal: function (id) {
+        var ref = S === me ? npcRef(id) : null; if (!ref) return Promise.reject(new Error('The cast is not available here.'));
+        var d = me.npcs && me.npcs[id];
+        return Promise.resolve(ref.update({ revealed: true, firstSeen: (isObj(d) && d.firstSeen) || nowIso() })).then(function () { if (S === me && isObj(me.npcs) && isObj(me.npcs[id])) me.npcs[id].revealed = true; });
+      }
+    });
+    me.b17Unbind = null;
+  }
+  function b17Unmount(me) {
+    if (me.b17Unbind) { try { me.b17Unbind(); } catch (e) {} me.b17Unbind = null; }
+    if (me.b17) { try { me.b17.reset(); } catch (e) {} me.b17 = null; }
+  }
+  function b17Frozen() { return !!(S && S.b17 && S.b17.holding()); }
+  /* the box under the Map heading: made on a paint while any of the three switches is on, taken away when none is */
+  function b17Paint() {
+    if (!S || !S.b17) return;
+    var mb = $q('.gm-mapbox'), box = $q('#gm-b17');
+    if (!mb || !S.b17.active()) { if (box && box.parentNode) box.parentNode.removeChild(box); return; }
+    if (!box) {
+      var h4 = mb.querySelector('h4'); box = document.createElement('div'); box.id = 'gm-b17'; box.className = 'gm-b17';
+      if (h4 && h4.nextSibling) mb.insertBefore(box, h4.nextSibling); else mb.appendChild(box);
+      if (S.b17Unbind) { try { S.b17Unbind(); } catch (e) {} }
+      S.b17Unbind = S.b17.bind(box);
+    }
+    S.b17.paint(box);
+  }
+  function b17Tint() { if (S && S.b17 && S.locRoll) S.b17.tint($q('#gm-map'), S.locRoll); }
+  function b17Tick() { if (S && S.b17 && S.status === 'ready') { S.b17.tick(); b17Paint(); } }
+  function b17Esc() { return !!(S && S.b17 && S.b17.esc()); }
+  function b17StageBtn(name) { return S && S.b17 && b09On('map.stage') ? ' <button type="button" class="btn sm" data-gm="room-stage" data-room="' + esc(name) + '" aria-pressed="' + S.b17.stage.isStaged(name) + '" title="Stage this room on this screen only; Send opens it for the players">' + (S.b17.stage.isStaged(name) ? 'Staged' : 'Stage') + '</button>' : ''; }
+  function b17Toggle(name) { if (S && S.b17 && name) { S.b17.stage.toggle(name); renderLocation(); } }
+  /* a tap on a room of the GM map stages it (switch map.stage); the map's own pan and zoom keep their taps when the switch is off */
+  function b17MapTap(ev) {
+    if (!S || !S.b17 || !b09On('map.stage')) return false;
+    var m = ev.target.closest('#gm-map [data-room]'); if (!m || !S.map || S.map.layer !== 'gm' || !S.locRoll || !Array.isArray(S.locRoll.rooms)) return false;
+    var mm = /^r(\d+)$/.exec(str(m.getAttribute('data-room'))), r = mm ? S.locRoll.rooms[+mm[1]] : null;
+    if (!isObj(r) || !str(r.name)) return false;
+    b17Toggle(str(r.name)); return true;
+  }
 
   /* ---------- the players' mission (app/gm/mission-publish.js, design 5.1, 5.5c, 5.7) ----------
      A v2 night publishes what the players may read of it: the band (mission.hud, which the iPad polls) and one card per PC (which phones read
@@ -6279,7 +6357,7 @@
     if (runKey(ev)) return;
     var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target) });
     if (!a) return;
-    if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } else if (S.assist && S.assist.isOpen()) { S.assist.close(); ev.preventDefault(); } else if (S.dw && S.dw.open) { drawerSet(false); ev.preventDefault(); } return; }
+    if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } else if (S.assist && S.assist.isOpen()) { S.assist.close(); ev.preventDefault(); } else if (S.dw && S.dw.open) { drawerSet(false); ev.preventDefault(); } else if (b17Esc()) ev.preventDefault(); return; }
     if (a.type === 'reserved') return;
     if ((a.type === 'capture' || a.type === 'last') && !capBarShown()) return;      /* the bar is hidden: its keys do nothing */
     ev.preventDefault();
@@ -6299,6 +6377,7 @@
   function toggleFocus() { S.prepWide = !S.prepWide; try { W.localStorage.setItem(PREP_WIDE, S.prepWide ? '1' : '0'); } catch (e) {} syncPanels(); }
   function onClick(ev) {
     if (!S || !ev.target.closest) return;
+    if (b17MapTap(ev)) return;
     /* the Prep tab: a link in a note, a task box, a tick-column cell (no data-gm: they come from the renderer) */
     var pl = ev.target.closest('a[href^="#pp:"]'); if (pl && pl.closest('#gm-runv')) { ev.preventDefault(); runPpLink(pl.getAttribute('href')); return; } if (pl && S.root.contains(pl)) { ev.preventDefault(); prepLink(pl.getAttribute('href')); return; }
     var pt = ev.target.closest('.rl-task[data-task]'); if (pt && S.root.contains(pt)) { ev.preventDefault(); prepTick(pt.getAttribute('data-task')); return; }
@@ -6420,6 +6499,7 @@
       case 'layer': setMap('layer', b.getAttribute('data-v')); if (b.getAttribute('data-v') !== 'player') endLive(); renderLocation(); break;
       case 'draw': drawMap(); break;
       case 'room-open': roomOpen(str(b.getAttribute('data-room')), true); break;
+      case 'room-stage': b17Toggle(str(b.getAttribute('data-room'))); break;
       case 'room-close': roomOpen(str(b.getAttribute('data-room')), false); break;
       case 'run-floor': runSetFloor(str(b.getAttribute('data-v'))); break;
       case 'run-step': runStep(+b.getAttribute('data-d') || 0); break;

@@ -1339,3 +1339,14 @@ body.ws-away:not(.ws-show-costume) .gm-field:has(#gm-run-lens) { display: none; 
 @keyframes b19-spread { from { transform: scale(0); } to { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { #gm-page .rv-map .b19-spot-fill { animation-duration: 1ms !important; } }
 #gm-page .rv-map.b19-flash svg { filter: sepia(.85) saturate(.7) contrast(1.05); }
+/* B17: the staging panel, the security line and the stage bar (gm/stage.js, gm/security.js, gm/spotlight.js, gm/panel17.js) */
+#gm-page .gm-b17 { display: grid; gap: .5rem; margin: .4rem 0; }
+#gm-page .gm-b17[hidden] { display: none; }
+#gm-page .gm-b17 > div { display: grid; gap: .35rem; padding: .45rem .55rem; border: 1px solid var(--line, #c9bfa9); border-radius: .5rem; }
+#gm-page .gm-stage-live { display: inline-block; margin-left: 6px; font: 900 9.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; background: var(--mustard); color: var(--on-mustard); padding: 3px 5px; }
+#gm-page .gm-stage-live.frozen { background: #3b6ea8; color: #fff; }
+#gm-page .gm-stage-live.blank { background: #111; color: #eee; }
+#gm-page .gm-stage-list, #gm-page .gm-bar-list { display: flex; flex-wrap: wrap; gap: .3rem; list-style: none; margin: 0; padding: 0; }
+#gm-page .gm-stage-list li { border: 1px solid #d99a1e; background: rgba(240, 170, 30, .22); border-radius: .4rem; padding: .1rem .3rem; }
+#gm-page .gm-stage-acts, #gm-page .gm-bar-add { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
+#gm-page .gm-map .gm-staged rect, #gm-page .gm-map .gm-staged path, #gm-page .gm-map .gm-staged polygon { fill: rgba(240, 170, 30, .55); stroke: #d99a1e; }

@@ -90,7 +90,7 @@ await test('go, flashback, back, introduce, spotlight, reveal: each is one cue_d
 
 await test('what it cannot parse is refused as unparsed with no action: the page says "didn\'t catch that" and does nothing', async () => {
   const m = makeHost(); const c = G.create(m.host); c.register();
-  for (const t of ['Blade, go to the Showroom', 'Blade, go', 'Blade, back to the alley', 'Blade, back on the roof', 'Blade, reveal', 'Blade, introduce', 'Blade, spotlight', 'Blade, flashback to the harbour']) {
+  for (const t of ['Blade, go to the Showroom', 'Blade, go', 'Blade, back to the alley', 'Blade, back on the roof', 'Blade, introduce', 'Blade, spotlight', 'Blade, flashback to the harbour']) {
     const r = parse(t); assert.equal(r.refused, 'unparsed', t); assert.deepEqual(r.actions, [], t);
   }
   c.didntCatch(); assert.deepEqual(m.log.toasts, [['Didn’t catch that.', false]]);
@@ -126,7 +126,7 @@ await test('every action a verb returns passes validateActions as a parsed cue; 
   assert.deepEqual(bad({ verb: 'stamp', position: 'unclear', effect: 'standard' }).dropped.map((d) => d.why), ['bad stamp']);
   assert.deepEqual(bad({ verb: 'stamp', position: 'risky' }).dropped.map((d) => d.why), ['bad stamp']);
   assert.deepEqual(bad({ verb: 'go', phase: 'nope' }).dropped.map((d) => d.why), ['bad phase']);
-  assert.deepEqual(bad({ verb: 'reveal', names: [] }).dropped.map((d) => d.why), ['no name']);
+  assert.deepEqual(bad({ verb: 'reveal', names: [] }).dropped, [], 'a bare reveal is kept: it sends the staged rooms (suite 2.3)');
   assert.deepEqual(bad({ verb: 'spotlight', names: ['A', 'B'] }).dropped.map((d) => d.why), ['no name']);
   assert.deepEqual(bad({ verb: 'teleport' }).dropped.map((d) => d.why), ['unknown verb']);
   assert.equal(bad({ verb: 'introduce', names: Array.from({ length: 9 }, (_, i) => 'N' + i) }).actions[0].names.length, 6);

@@ -110,7 +110,13 @@
     { id: 'map.flashback', label: 'The flashback filter', surface: 'display', stage: 'map', default: false, saturday: 'on',
       doc: 'The flashback look gains grain and an “Earlier…” caption on the iPad, until “Blade, back” or a tap; “Blade, flashback” can name the Stress cost; a Flashback button and a room Pin sit on the Run map. Off: the plain sepia as before.' },
     { id: 'map.threat', label: 'Threat on the map', surface: 'gm', stage: 'map', default: false, saturday: 'try',
-      doc: 'When a stamp goes up, its threatened consequence drops a glyph (a guard turning, a door locking, an alarm, harm) on the crew’s room on the Run map, before the dice. It clears with the stamp. Off: nothing is drawn.' }
+      doc: 'When a stamp goes up, its threatened consequence drops a glyph (a guard turning, a door locking, an alarm, harm) on the crew’s room on the Run map, before the dice. It clears with the stamp. Off: nothing is drawn.' },
+    { id: 'map.stage', label: 'Stage rooms, then send', surface: 'gm', stage: 'map', default: false, saturday: 'on',
+      doc: 'Tap rooms to stage them: they show amber on this screen only. Send (or “Blade, reveal”) opens them for the players together; a LIVE badge says what the iPad shows; Freeze holds the iPad; Blank (also Esc) turns it black. Off: rooms open one at a time as before.' },
+    { id: 'map.security', label: 'Security level', surface: 'gm', stage: 'map', default: false, saturday: 'try',
+      doc: 'The alarm becomes a clock of four to six named levels (a prep security: line, or generic names). The iPad tints only when a full level is reached and shows its name for three seconds; this screen shows the next level. Off: the alarm as before.' },
+    { id: 'face.spotlight', label: 'Stage bar and spotlight', surface: 'gm', stage: 'face', default: false, saturday: 'on',
+      doc: 'A stage bar holds up to three people for the room, from its Who line. One tap holds a portrait on the iPad until Narrator clears it; a hidden person asks to be revealed first. Also by voice: spotlight and a name. Off: no bar.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
