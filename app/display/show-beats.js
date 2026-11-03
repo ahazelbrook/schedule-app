@@ -133,12 +133,13 @@
   }
   S.register('rolodex', {
     label: 'Rolodex', ms: 10000, fixture: { npcs: [
-      { npcId: 'n-mabel', name: 'Mabel Quist', role: 'Fixer', faction: 'The Kestrel Club' },
+      { npcId: 'n-mabel', name: 'Mabel Quist', alias: 'Mab', role: 'Fixer', faction: 'The Kestrel Club' },
       { npcId: 'n-dov', name: 'Dov Kessler', role: 'Desk sergeant', faction: 'The Tidewater Watch' },
       { npcId: 'n-ada', name: 'Ada Vell', role: 'Croupier', faction: 'The Kestrel Club' }] },
     clean: function (p) { var l = cards(p.npcs, 12); return l ? { npcs: l } : null; },
     render: function (p, env) {
       var b = base(env, 'rolodex', 'dp-count-' + Math.min(p.npcs.length, 6));
+      if (root.B68RolodexCard && root.B68RolodexCard.on(env)) return root.B68RolodexCard.build(p, env, b);     /* the lower third (suite 3.5, switch face.rolodex) */
       b.n.appendChild(el(b.doc, 'p', 'dp-show-kicker', 'Previously, in the file'));
       var row = el(b.doc, 'div', 'dp-roll');
       p.npcs.forEach(function (c, i) {

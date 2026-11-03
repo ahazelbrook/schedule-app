@@ -1506,12 +1506,16 @@
       pl.steps.forEach(function (st) { ovTimer(function () { e.setAttribute('data-phase', st.phase); }, st.at); });
       ovTimer(function () { ovRemove(true); }, pl.end);
     }
+    /* what a beat renderer is handed; portrait() draws a cleaned head-and-shoulders from the figure kit (the Rolodex card, suite 3.5), or null */
+    function beatEnv() {
+      return { document: document, reduced: reduced(), portrait: function (spec, id) { var r = drawPortrait(spec, 'dp-rc-' + String(id).replace(/[^A-Za-z0-9_-]/g, ''), ctx.figures); return r ? document.importNode(r.node, true) : null; } };
+    }
     /* a brief beat (app/display/shows.js): the registry builds the node, this page times it by the server's clock exactly like a card */
     function ovBeat(o, my) {
       var left = o.ms - (o.age || 0);
       if (left <= 0) return;
       ovTimer(function () { ovRemove(false); }, left);
-      root.B68Shows.mount(o, { document: document, reduced: reduced() }).then(function (node) {
+      root.B68Shows.mount(o, beatEnv()).then(function (node) {
         if (!node || s.dead || my !== s.ov.token) return;
         ovLayer.appendChild(node); s.ov.node = node; s.ov.sig = ovSig(o);
         later(function () { node.classList.add('dp-ov-in'); }, reduced() ? 0 : 30);
@@ -1542,7 +1546,7 @@
       /* a brief beat whose served payload changed under the same id (an NPC on a rolodex was hidden): drawn again in place, so a hidden NPC does not stay up until the beat ends */
       if (o && o.payload && root.B68Shows && root.B68Shows.has(o.kind) && s.ov.node && s.ov.sig !== ovSig(o)) {
         var oldB = s.ov.node, myB = s.ov.token; s.ov.sig = ovSig(o);
-        root.B68Shows.mount(o, { document: document, reduced: reduced() }).then(function (nb) {
+        root.B68Shows.mount(o, beatEnv()).then(function (nb) {
           if (!nb || s.dead || myB !== s.ov.token || s.ov.node !== oldB) return;
           nb.classList.add('dp-ov-in'); if (oldB.parentNode) oldB.parentNode.replaceChild(nb, oldB); s.ov.node = nb;
         });
