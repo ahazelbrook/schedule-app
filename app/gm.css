@@ -1338,3 +1338,4 @@ body.ws-away:not(.ws-show-costume) .gm-field:has(#gm-run-lens) { display: none; 
 #gm-page .rv-map .b19-spot-fill { transform-box: fill-box; transform-origin: center; animation: b19-spread 1.1s ease-out forwards; }
 @keyframes b19-spread { from { transform: scale(0); } to { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { #gm-page .rv-map .b19-spot-fill { animation-duration: 1ms !important; } }
+#gm-page .rv-map.b19-flash svg { filter: sepia(.85) saturate(.7) contrast(1.05); }

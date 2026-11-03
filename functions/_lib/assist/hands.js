@@ -209,6 +209,9 @@ export function validateActions(raw, { state, lines, cue }) {
         if (!STAMP_POSITIONS.includes(a.position) || !STAMP_EFFECTS.includes(a.effect)) { drop(a.type, 'bad stamp'); continue; }
         out.position = a.position; out.effect = a.effect;
         const text = clip(a.text, 100); if (text) out.text = text;
+      } else if (verb === 'flashback') {
+        const stress = Number(a.stress);   // suite 2.9: the optional Stress cost; the page honours it only while map.flashback is on
+        if (a.stress !== undefined && Number.isInteger(stress) && stress >= 0 && stress <= 9) out.stress = stress;
       } else if (verb === 'go') {
         if (!NIGHT_PHASES.includes(a.phase)) { drop(a.type, 'bad phase'); continue; }
         out.phase = a.phase;

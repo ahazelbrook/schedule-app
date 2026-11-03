@@ -106,7 +106,9 @@
     { id: 'print.blueprint', label: 'Printed blueprint', surface: 'gm', stage: 'between', default: false, saturday: 'off',
       doc: 'Menu then Print: an A3 or A4 case-file plan of the rooms the players know, with a scale bar, a title block and a margin for a pencil. Print only. Off: no Print line for the blueprint.' },
     { id: 'map.spotted', label: 'The Spotted beat', surface: 'gm', stage: 'map', default: false, saturday: 'try',
-      doc: 'A Spotted button on the Run map: zoom to the room, a sting on the iPad, a yellow fill spreading from the eyes, the site’s alarm clock ticks once, then back. Off: no button.' }
+      doc: 'A Spotted button on the Run map: zoom to the room, a sting on the iPad, a yellow fill spreading from the eyes, the site’s alarm clock ticks once, then back. Off: no button.' },
+    { id: 'map.flashback', label: 'The flashback filter', surface: 'display', stage: 'map', default: false, saturday: 'on',
+      doc: 'The flashback look gains grain and an “Earlier…” caption on the iPad, until “Blade, back” or a tap; “Blade, flashback” can name the Stress cost; a Flashback button and a room Pin sit on the Run map. Off: the plain sepia as before.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

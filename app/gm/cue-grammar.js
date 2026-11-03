@@ -9,7 +9,7 @@
                       (controlled risky desperate) and an effect (limited standard great), then an optional one-line threatened consequence
      reveal <name>    reveal a hidden NPC to the players (the cast document's own flag); takes over the built-in word "reveal", which refused as "show"
      go <phase>       enter personal business, planning, score or aftermath on the night (and the iPad band)
-     flashback        the iPad's flashback filter on          back    the filter off (a bare "back"; "back on" is the verb below)
+     flashback [n]    the iPad's flashback filter on (n: the Stress cost, heard only while map.flashback is on)          back    the filter off (a bare "back"; "back on" is the verb below)
      introduce <names>  the rolodex beat, for revealed NPCs only        spotlight <name>  the spotlight beat, a revealed NPC only
      ("off the record" and "back on" belong to A6 / ai.onair, which handles them before the cue lane: no cue verb here, and "back on" is refused by "back")
    NOT HERE: "name them". The suite plan names it without saying what it does, so it is left out rather than guessed.
@@ -77,6 +77,15 @@
     if (!onlyFiller(ws, { personal: 1, business: 1, planning: 1, plan: 1, briefing: 1, score: 1, heist: 1, aftermath: 1, after: 1, payout: 1, pb: 1, downtime: 1 })) return unparsed();
     return act({ verb: 'go', phase: phase });
   }
+  /* "flashback" on its own, or (suite 2.9, parsed always, honoured only while map.flashback is on) with its Stress cost: "flashback 2", "flashback, two stress" */
+  function parseFlashback(ctx) {
+    var ws = ctx.words || [];
+    if (onlyFiller(ws, { flashback: 1 })) return act({ verb: 'flashback' });
+    var MF = (typeof self !== 'undefined' ? self : this).B68GmMapFlashback;
+    if (!MF || typeof MF.parseStress !== 'function') return unparsed();
+    var r = MF.parseStress(ws, Object.assign({ flashback: 1 }, FILL));
+    return r.ok && r.stress !== null ? act({ verb: 'flashback', stress: r.stress }) : unparsed();
+  }
   function parseBare(verb, allow) {
     return function (ctx) { return onlyFiller(ctx.words || [], allow) ? act({ verb: verb }) : unparsed(); };
   }
@@ -100,7 +109,7 @@
       { id: 'stamp', words: ['stamp', 'risky', 'controlled', 'desperate'], label: 'Stamp', parse: parseStamp },
       { id: 'reveal', phrases: [['reveal']], label: 'Reveal', parse: parseNames('reveal', 1) },
       { id: 'go', words: ['go'], label: 'Go to a phase', parse: parseGo },
-      { id: 'flashback', words: ['flashback'], label: 'Flashback', parse: parseBare('flashback', { flashback: 1 }) },
+      { id: 'flashback', words: ['flashback'], label: 'Flashback', parse: parseFlashback },
       { id: 'back', words: ['back'], label: 'Back from a flashback', parse: function (ctx) { return (ctx.words || [])[0] === 'on' ? unparsed() : parseBare('back')(ctx); } },
       { id: 'introduce', words: ['introduce', 'introducing'], label: 'Introduce', parse: parseNames('introduce', 6) },
       { id: 'spotlight', words: ['spotlight'], label: 'Spotlight', parse: parseNames('spotlight', 1) }
@@ -242,10 +251,13 @@
           });
         });
       },
-      flashback: function () {
+      flashback: function (a) {
+        var hasStress = isObj(a) && a.stress !== undefined;
+        if (hasStress && !(typeof host.feature === 'function' && host.feature('map.flashback'))) { say('Didn’t catch that.', false); return Promise.resolve({ ok: false, say: '' }); }     /* as it was: a cost is only heard while the map switch is on */
         var was = typeof host.layerValue === 'function' ? host.layerValue('scene.filter') : null;
         return Promise.resolve(host.layer('scene.filter', 'flashback')).then(function (r) {
           if (r === null) return { ok: false, say: '' };
+          if (typeof host.flashbackNote === 'function') host.flashbackNote(hasStress ? a.stress : null);
           return done('Flashback on the iPad.', function () { return host.layer('scene.filter', was === 'flashback' ? 'flashback' : null); });
         });
       },
@@ -254,6 +266,7 @@
         if (was !== 'flashback') return Promise.resolve(fail('No flashback is up.'));
         return Promise.resolve(host.layer('scene.filter', null)).then(function (r) {
           if (r === null) return { ok: false, say: '' };
+          if (typeof host.flashbackEnd === 'function') host.flashbackEnd();
           return done('Back from the flashback.', function () { return host.layer('scene.filter', 'flashback'); });
         });
       },

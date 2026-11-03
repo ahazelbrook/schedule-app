@@ -74,6 +74,14 @@
 
 /* the lasting layers (app/display/layers.js): the flashback look over the scene and the stages, and a slim status strip */
 .dp-root[data-scene-filter="flashback"] .dp-ambient, .dp-root[data-scene-filter="flashback"] .dp-stages { filter: sepia(.75) saturate(.7) contrast(1.08) brightness(.95); }
+/* map.flashback (suite 2.9): grain and an "Earlier..." caption over the sepia, only while data-flash-look is set (layers.js; the switch is on and the filter is up) */
+.dp-root[data-flash-look] .dp-ambient, .dp-root[data-flash-look] .dp-stages { filter: sepia(.9) saturate(.6) contrast(1.12) brightness(.9); }
+.dp-root[data-flash-look]::before { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: .24; mix-blend-mode: overlay; animation: dp-grain .5s steps(4) infinite;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 1.2 -.1'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.dp-root[data-flash-look]::after { content: "Earlier6"; position: absolute; left: 5vmin; bottom: 5vmin; z-index: 4; pointer-events: none; font: italic 900 var(--b68-t-stamp, 8vmin)/1 var(--b68-font-poster); letter-spacing: .04em;
+  color: var(--b68-paper, #f4ecd8); text-shadow: 0 .4vmin 2vmin rgba(10, 9, 8, .7); }
+@media (prefers-reduced-motion: reduce) { .dp-root[data-flash-look]::before { animation: none; } }
+@keyframes dp-grain { 0% { background-position: 0 0; } 25% { background-position: -40px 22px; } 50% { background-position: 30px -35px; } 75% { background-position: -18px -50px; } 100% { background-position: 0 0; } }
 .dp-lay-strip { position: absolute; top: 2vmin; left: 50%; transform: translateX(-50%); z-index: 4; display: flex; align-items: center; gap: 2vmin; padding: .8vmin 2.4vmin;
   background: rgba(10, 9, 8, .78); color: var(--b68-paper); border-radius: 99vmin; font: 900 var(--b68-t-label)/1.1 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .14em; pointer-events: none; white-space: nowrap; }
 .dp-lay-onair { color: var(--b68-alarm-lit); }

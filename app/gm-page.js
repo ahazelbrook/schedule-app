@@ -4197,6 +4197,8 @@
     me.cueGrammar = Gr.create({
       feature: function (id) { return S === me && b09On(id); }, cueVerbs: function () { return W.B68CueVerbs; }, stamp: function () { return S === me ? me.stamp : null; },
       night: function () { return S === me ? me.night : null; }, doc: function () { return document; }, toast: toast,
+      flashbackNote: function (cost) { var f = S === me && me.b19 && me.b19.flashback; if (f) { f.note(cost); f.refresh(); } },
+      flashbackEnd: function () { var f = S === me && me.b19 && me.b19.flashback; if (f) { f.noteEnd(); f.refresh(); } },
       layer: function (path, value) { return b09Layer(me, path, value); }, layerValue: function (path) { return S === me && isObj(me.b09.layers) ? (me.b09.layers[path] || null) : null; },
       npcs: function () { return S === me ? Object.keys(isObj(me.npcs) ? me.npcs : {}).map(function (id) { var d = me.npcs[id]; return isObj(d) && !(Array.isArray(d.tags) && d.tags.indexOf('undone') >= 0) ? { id: id, name: str(d.name), alias: str(d.alias), revealed: d.revealed === true } : null; }).filter(Boolean) : []; },
       reveal: function (id, yes) {
@@ -4252,13 +4254,16 @@
       clockName: function () { var rs = S === me ? runV2() : null; return rs && isObj(rs.play.alarm) ? str(rs.play.alarm.clock).trim() : ''; },
       clocks: function () { return S === me ? tableClocks() : []; },
       tick: function (id, to) { return me.api && typeof me.api.clockOps === 'function' ? Promise.resolve(me.api.clockOps([{ id: id, filled: to }])) : Promise.resolve(null); },
-      show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); }
+      show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
+      filter: function () { return S === me && me.b09 && isObj(me.b09.layers) ? (me.b09.layers['scene.filter'] || null) : null; },
+      layer: function (path, value) { if (!me.b09) me.b09 = { layers: {} }; return b09Layer(me, path, value); }
     };
   }
   function b19Mount() {
     var me = S; if (!me || me.b19) return;
     me.b19 = {};
     if (W.B68GmMapSpotted) me.b19.spotted = W.B68GmMapSpotted.create(b19Host(me));
+    if (W.B68GmMapFlashback) me.b19.flashback = W.B68GmMapFlashback.create(b19Host(me));
   }
   function b19Paint(fr, svg, zoom) {
     if (!S) return;

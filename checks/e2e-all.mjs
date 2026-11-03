@@ -66,6 +66,7 @@ const CHECKS = [
   ['checks/runtime/gm-autopilot.e2e.mjs', 'the iPad autopilot: a clock overlay, Take over, secrecy, lights out, display-only expiry (8879)'],
   ['checks/runtime/hard-start.e2e.mjs', 'the hard start and the ON AIR lamp on the iPad, switches off and on (9060)'],
   ['checks/runtime/gm-map-spotted.e2e.mjs', 'the Spotted beat on the Run map: zoom, sting, fill, one alarm tick, back, inside 3 seconds; two GM pages tick once (9071)'],
+  ['checks/runtime/gm-map-flashback.e2e.mjs', 'the flashback filter: Flashback and Pin buttons on the Run map, grain and the Earlier caption on the iPad, a tap on Back clears it, switch off and on (9072)'],
 ];
 
 const want = process.argv.slice(2);
