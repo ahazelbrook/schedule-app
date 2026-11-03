@@ -736,6 +736,13 @@
     /* suite 1.8: a turned key rides on the slim copy only when there is one (the GM page lays the card over the iPad) */
     var kt = isObj(p.keyTurn) ? p.keyTurn : null;
     if (kt) out.keyTurn = { seq: Math.floor(+kt.seq) || 0, name: t(kt.name), word: t(kt.word), dir: kt.dir === 'up' ? 'up' : 'down', at: t(kt.at) };
+    /* suite 3.7: Stress, harm levels and deadlocked keys for the band's PC faces (app/gm/pcstatus.js). NOT enumerable: JSON.stringify(slim) is the Downtime panel's
+       change signature, and a tick of Stress must not redraw it, so with the switch off nothing here is seen */
+    var harm = [], hm = isObj(p.harm) ? p.harm : {};
+    [['l4', 4], ['l3', 3], ['l2', 2], ['l1', 1]].forEach(function (k) { var v = hm[k[0]]; (Array.isArray(v) ? v : [v]).forEach(function (x) { if (x != null && String(x).trim() && harm.length < 4) harm.push(k[1]); }); });
+    Object.defineProperty(out, 'status', { enumerable: false, value: {
+      stress: typeof p.stress === 'number' && isFinite(p.stress) ? Math.max(0, Math.min(9, Math.floor(p.stress))) : null, harm: harm,
+      locks: Math.min(6, (Array.isArray(p.keys) ? p.keys : []).filter(function (k) { return isObj(k) && k.deadlock; }).length) } });
     return out;
   }
   function gmCharacters() {

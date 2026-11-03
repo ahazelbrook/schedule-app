@@ -8,7 +8,7 @@
   'use strict';
   var W = 1024, H = 768;
   var LAYERS_DEMO = {
-    band: { phase: 'plan', security: 2, faces: [{ name: 'Mabel Quist', role: 'Fixer' }, { name: 'Dov Kessler', role: 'Desk sergeant' }, { pcId: 'pc-nell' }], onair: true },
+    band: { phase: 'plan', security: 2, faces: [{ name: 'Mabel Quist', role: 'Fixer' }, { name: 'Dov Kessler', role: 'Desk sergeant' }, { pcId: 'pc-nell', name: 'Nell Arbuthnot', stress: 4, harm: [1, 2], locks: 1 }], onair: true },
     scene: { filter: 'flashback' }
   };
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -31,7 +31,7 @@
     var e = root.B68Shows.entry(kind);
     if (!e) return;
     var at = +new URLSearchParams(location.search).get('i'), fx = e.fixtures && e.fixtures[at] ? e.fixtures[at].fixture : e.fixture;   /* a kind with several looks (the Aftermath's steps) has `fixtures` */
-    root.B68Shows.mount({ kind: kind, payload: fx }, { document: document, reduced: false }).then(function (node) {
+    root.B68Shows.mount({ kind: kind, payload: fx }, { document: document, reduced: false, features: { 'face.rolodex': true } }).then(function (node) {
       if (!node) return;
       layer.appendChild(node);
       setTimeout(function () { node.classList.add('dp-ov-in'); }, 30);

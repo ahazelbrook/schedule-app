@@ -4179,7 +4179,7 @@
       show: function (payload, key, ms) { var sh = shows(); return sh ? sh.show('report', payload, { key: key, ms: ms }) : Promise.resolve(null); },
       keyFor: function (key) { return W.B68Show ? W.B68Show.idFor(key) : key; }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
       clearOverlay: function () { return patchAmbient({ overlay: null }); },
-      log: function (text) { if (S === me && me.night) me.night.stamp(text); }, toast: toast, changed: function () { if (S === me) b09Paint(); }
+      log: function (text) { if (S === me && me.night) me.night.stamp(text); }, toast: toast, changed: function () { if (S === me) { b09Paint(); pcStatusSync(); } }
     });
     me.cueGrammar = Gr.create({
       feature: function (id) { return S === me && b09On(id); }, cueVerbs: function () { return W.B68CueVerbs; }, stamp: function () { return S === me ? me.stamp : null; },
@@ -5114,10 +5114,21 @@
     var K = W.B68GmKeyturn, F = W.B68Features; if (!K || !F || !S || !F.valueOf(S.doc, 'spine.keyturn')) return;
     K.sync({ pcs: dtPcs, show: function (k, p, o) { var c = shows(); return c ? c.show(k, p, o) : Promise.resolve(null); }, toast: toast, now: function () { return Date.now(); } });
   }
+  /* PC status on the band's faces (suite 3.7, switch face.pcstatus): app/gm/pcstatus.js sends the layer only when what it would draw has changed */
+  function pcStatusSync() {
+    var K = W.B68GmPcStatus; if (!K || !S || !W.B68Features) return;
+    var me = S;
+    K.sync({
+      feature: function (id) { return S === me && b09On(id); }, pcs: dtPcs,
+      current: function () { var l = isObj(AM.doc) && isObj(AM.doc.layers) && isObj(AM.doc.layers.band) ? AM.doc.layers.band.faces : null; return Array.isArray(l) ? l : null; },
+      layer: function (path, value) { var sh = shows(); return sh ? sh.layer(path, value) : Promise.resolve(null); }
+    });
+  }
   function charactersChanged() {
     if (!S || S.status !== 'ready') return;
     runFoldMoves();         /* a phone's move request rides on the characters */
     keyturnSync();          /* a turned key (suite 1.8, switch spine.keyturn) */
+    pcStatusSync();         /* the band's PC faces (suite 3.7, switch face.pcstatus) */
     if (JSON.stringify(dtPcs()) === S.dtPcSig) return;
     runStale();
     if (S.mission) S.mission.changed();         /* a card carries its PC's name and owner */
@@ -5253,7 +5264,7 @@
       (list.length ? '<ul class="gm-npcs">' + list.map(function (x) {
         var d = x.doc, rev = d.revealed === true, src = npcCardSrc([d.name].concat(d.alias || [])), open = !!src && S.npcCardOpen === x.id;
         return '<li class="gm-npcrow" data-id="' + esc(x.id) + '"><div class="gm-thumb" data-fig="' + esc(x.id) + '" aria-hidden="true"></div><div class="gm-npcmeta"><b>' + esc(d.name || 'Unnamed') + '</b><small>' + esc([d.role, d.faction].filter(Boolean).join(' · ')) + '</small>' + (rev ? '' : '<span class="gm-badge">Hidden</span>') + '</div>' +
-          '<div class="gm-npcacts">' + (src ? '<button type="button" class="btn sm" data-gm="npccard" data-id="' + esc(x.id) + '" aria-expanded="' + open + '">Card</button>' : '') + '<button type="button" class="btn sm" data-gm="npcipad" data-id="' + esc(x.id) + '">Show on iPad</button>' + stageHtml(x.id, staged(x.id)) + '</div></li>' +
+          '<div class="gm-npcacts">' + (src ? '<button type="button" class="btn sm" data-gm="npccard" data-id="' + esc(x.id) + '" aria-expanded="' + open + '">Card</button>' : '') + '<button type="button" class="btn sm" data-gm="npcipad" data-id="' + esc(x.id) + '">Show on iPad</button>' + introHtml(x.id, rev) + stageHtml(x.id, staged(x.id)) + '</div></li>' +
           (open ? '<li class="gm-npccardrow"><div class="pp-card gm-castcard pp-doc">' + npcCardHtml(src, 'nc-') + '</div></li>' : '');
       }).join('') + '</ul>' : '<p class="gm-empty">' + (S.api && S.api.db && S.api.db() ? 'No NPCs in the cast yet. Add them on the cast page.' : 'The cast is not available here.') + '</p>') +
       '<p><a class="hm-link" href="#cast">The cast page</a></p>';
@@ -5404,6 +5415,13 @@
       patch({ npcgen: e }, { force: true });
       toast(doc.name + ' is in the cast, hidden.'); renderNpcGen();
     }, function (x) { toast('Could not add them to the cast: ' + errText(x), true); if (S === me) renderNpcGen(); });
+  }
+  /* "Introduce" (suite 3.5, switch face.rolodex): the NPC's Rolodex card as a lower third on the iPad for about 20 seconds; revealed NPCs only (the server joins to them anyway) */
+  function introHtml(id, rev) { return rev && b09On('face.rolodex') ? '<button type="button" class="btn sm" data-gm="npcintro" data-id="' + esc(id) + '" title="Flip their card up as a lower third on the iPad">Introduce</button>' : ''; }
+  function npcIntroduce(id) {
+    var d = S.npcs[id], sh = shows(); if (!d || !sh) return;
+    if (d.revealed !== true) { toast('Reveal ' + (d.name || 'them') + ' first.', true); return; }
+    sh.show('rolodex', { npcIds: [id] }, { key: 'intro-' + id, ms: 20000 }).then(function (r) { if (r !== null && r !== undefined) toast('Introducing ' + (d.name || 'them') + '.'); }, function () { toast('Could not introduce them on the iPad.', true); });
   }
   function npcToIpad(id) {
     var d = S.npcs[id]; if (!d) return;
@@ -6381,6 +6399,7 @@
       case 'dlnote': if (S.locRoll && W.B68GmLocation) save(slug(S.locRoll.name) + '.md', W.B68GmLocation.noteBody(S.locRoll, { date: dmy(new Date()) })); break;
       case 'dlcanvas': if (S.locRoll && W.B68GmLocation) save(slug(S.locRoll.name) + '.canvas', W.B68GmLocation.canvas(S.locRoll, part('location'))); break;
       case 'npcipad': npcToIpad(b.getAttribute('data-id')); break;
+      case 'npcintro': npcIntroduce(b.getAttribute('data-id')); break;
       case 'npcstage': stageNpc(b.getAttribute('data-id')); break;
       case 'npccard': { var nci = b.getAttribute('data-id'); S.npcCardOpen = S.npcCardOpen === nci ? null : nci; renderNpcs(); var ncb = $q('#gm-npc [data-gm="npccard"][data-id="' + str(nci).replace(/"/g, '') + '"]'); if (ncb) ncb.focus(); break; }
       case 'collect': { var o = S.owed && S.owed[+b.getAttribute('data-i')]; if (!o || !W.B68GmConsole) break; patch({ con: W.B68GmConsole.intentPatch({ type: 'bargainCollected', key: W.B68GmConsole.keyOf(o.text), text: o.text }) }); try { S.con && S.con.setCampaign(part('campaign') || {}, S.doc.con || {}); } catch (x) {} toast('Collected.'); renderRail(); break; }
