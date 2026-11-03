@@ -1350,3 +1350,19 @@ body.ws-away:not(.ws-show-costume) .gm-field:has(#gm-run-lens) { display: none; 
 #gm-page .gm-stage-list li { border: 1px solid #d99a1e; background: rgba(240, 170, 30, .22); border-radius: .4rem; padding: .1rem .3rem; }
 #gm-page .gm-stage-acts, #gm-page .gm-bar-add { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
 #gm-page .gm-map .gm-staged rect, #gm-page .gm-map .gm-staged path, #gm-page .gm-map .gm-staged polygon { fill: rgba(240, 170, 30, .55); stroke: #d99a1e; }
+/* 4.1 the cue stack bar (gm/cue-stack.js, switch room.cues): STANDBY and GO under the rail, and the red work-light banner after a panic */
+#gm-page .gm-cuebar { display: grid; gap: 4px; padding: 6px 8px; border-bottom: 2px solid var(--rule); background: var(--paper, #fff); }
+#gm-page .gm-cuebar[data-state="panic"] { background: var(--alarm); color: #fff; }
+#gm-page .gm-cs-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#gm-page .gm-cs-tag { font: 900 12px/1 var(--font-cond); letter-spacing: .12em; padding: 4px 8px; background: var(--rule); color: var(--on-ink); }
+#gm-page .gm-cs-idle { opacity: .6; }
+#gm-page .gm-cs-n { font: 900 13px/1 var(--font-cond); letter-spacing: .06em; }
+#gm-page .gm-cs-txt { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
+#gm-page .gm-cs-hand { font: 700 11px/1 var(--font-mono); text-transform: uppercase; opacity: .8; }
+#gm-page .gm-cs-go { min-height: 52px; min-width: 96px; font: 900 20px/1 var(--font-cond); letter-spacing: .1em; }
+#gm-page .gm-cs-go kbd, #gm-page .gm-cs-panicbtn kbd { font-size: 10px; opacity: .8; }
+#gm-page .gm-cs-next, #gm-page .gm-cs-last { font-size: .85em; opacity: .8; }
+#gm-page .gm-cs-panic { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 8px; border: 2px solid #fff; font-weight: 700; }
+#gm-page .gm-cs-panic b { font: 900 16px/1 var(--font-cond); letter-spacing: .1em; }
+#gm-page .gm-cs-panic span { flex: 1 1 14rem; }
+#gm-page .gm-cuebar button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
