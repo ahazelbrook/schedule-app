@@ -91,7 +91,7 @@ await step('the pokeLive call sites: exactly the write paths; screen is sent onl
   } };
   walk(path.join(ROOT, 'functions', 'api'));
   const want = ['functions/api/campaign.js campaign', 'functions/api/campaign.js campaign, display', 'functions/api/characters/[id].js characters', 'functions/api/characters/[id].js characters', 'functions/api/characters/[id].js characters',
-    'functions/api/docs.js docs', 'functions/api/docs.js docs',
+    'functions/api/docs.js pokeKind(out.kind)', 'functions/api/docs.js pokeKind(out.kind)',
     'functions/api/gm/ambient.js ambient', 'functions/api/gm/assist.js npcs', 'functions/api/gm/display.js display', 'functions/api/gm/display.js display, screen', 'functions/api/gm/state.js screen', 'functions/api/gm/stt.js stt',
     'functions/api/gm/transcript.js cue', 'functions/api/npcs/[id].js npcs', 'functions/api/npcs/[id].js npcs', 'functions/api/npcs/[id].js npcs', 'functions/api/npcs/index.js npcs'];
   expect(same(sites.sort(), want.sort()), 'call sites: ' + JSON.stringify(sites.sort()));

@@ -20,6 +20,7 @@ export const KINDS = {
   ambient: ['display', 'gm'],
   stt: ['display', 'gm'],
   cue: ['gm'],
+  quiet: ['gm'],                          // the quiet line (5.8): a player's quiet write pokes the GM alone, so no other phone or the display hears that one was sent
   docs: ['player', 'gm', 'display'],      // the store (W0.6): something in /api/docs changed; each page re-reads the rows its role may see
 };
 export const ROLES = ['gm', 'player', 'display'];

@@ -2270,7 +2270,7 @@
   }
   function menuOpen(on) {
     var m = $q('.gm-menu-list'), b = $q('[data-gm="menu"]'); if (!m) return;
-    if (on) { renderLiveItem(); syncCapBar(); if (W.B68GmAftermath && S) W.B68GmAftermath.sync($q('#gm-root'), S.doc); m.removeAttribute('hidden'); } else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
+    if (on) { renderLiveItem(); syncCapBar(); if (W.B68GmAftermath && S) W.B68GmAftermath.sync($q('#gm-root'), S.doc); if (W.B68GmDebrief && S) W.B68GmDebrief.sync($q('#gm-root'), S.doc); m.removeAttribute('hidden'); } else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
   }
   /* W0.2: the switchboard (gm/switchboard.js): one per page session, made on first use. Its host is this page's own patch, campaign and api. */
   function swInst() {

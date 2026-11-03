@@ -13,6 +13,8 @@ import { listDocs, putDoc, deleteDoc, DOC_LIMITS } from '../_lib/docs.js';
 import { pokeLive } from '../_lib/live.js';
 
 const METHODS = ['GET', 'PUT', 'DELETE'];
+// the quiet line is told to the GM alone (live.js KINDS.quiet); every other kind pokes 'docs' to every role as before
+const pokeKind = (kind) => (kind === 'quiet' ? 'quiet' : 'docs');
 
 export async function onRequest({ request, env, data, waitUntil }) {
   const me = data && data.me;
@@ -26,10 +28,10 @@ export async function onRequest({ request, env, data, waitUntil }) {
   if (request.method === 'PUT') {
     const body = await readJsonObject(request, DOC_LIMITS.request);
     const { poke, ...out } = await putDoc(await getDb(env), campaign, me, body);
-    if (poke) pokeLive({ env, waitUntil }, ['docs']);
+    if (poke) pokeLive({ env, waitUntil }, [pokeKind(out.kind)]);
     return json(out);
   }
   const { poke, ...out } = await deleteDoc(await getDb(env), campaign, me, { kind: q.get('kind'), owner: q.get('owner') });
-  if (poke) pokeLive({ env, waitUntil }, ['docs']);
+  if (poke) pokeLive({ env, waitUntil }, [pokeKind(out.kind)]);
   return json(out);
 }
