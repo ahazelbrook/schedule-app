@@ -170,7 +170,8 @@ await test('SECRECY: introduce and spotlight refuse a hidden NPC by name or alia
   }
   assert.deepEqual(m.log.shows, [], 'nothing reached the iPad');
   assert.ok(m.log.toasts.every((t) => t[1] === true), 'the refusals are errors');
-  assert.equal((await c.run({ type: 'cue_do', verb: 'reveal', names: ['GM-ONLY-NPC-1'] })).ok, true); assert.deepEqual(m.log.revealed, [['n-hid', true]]);
+  const rv = c.run({ type: 'cue_do', verb: 'reveal', names: ['GM-ONLY-NPC-1'] }); await new Promise((r2) => setImmediate(r2)); m.doc.toasts()[0].children[1].click();
+  assert.equal((await rv).ok, true); assert.deepEqual(m.log.revealed, [['n-hid', true]]);
   assert.equal((await c.run({ type: 'cue_do', verb: 'spotlight', names: ['GM-ONLY-NPC-1'] })).ok, true, 'revealed now, so it may be spotlit');
   assert.deepEqual(m.log.shows[0].slice(0, 2), ['spotlight', { npcId: 'n-hid' }]);
 });
@@ -200,6 +201,43 @@ await test('the toast: shown for five seconds with an Undo button; Undo runs onc
   const off = makeHost({ on: { 'ai.grammar': false } }); G.create(off.host).undoToast('Hidden.', () => {}); assert.equal(off.doc.toasts().length, 0);
   assert.equal((await G.create(off.host).run({ type: 'cue_do', verb: 'flashback' })).ok, false, 'a cue_do arriving with the switch off does nothing');
   assert.deepEqual(off.log.layers, []);
+});
+
+await test('reveal ASKS the GM first: nothing fires until Reveal is pressed; Cancel, a timeout and a newer toast all mean no; the 5 second Undo follows the confirm', async () => {
+  const nextTick = () => new Promise((r) => setImmediate(r));
+  const m = makeHost(); const c = G.create(m.host);
+  let settled = false; const p = c.run({ type: 'cue_do', verb: 'reveal', names: ['GM-ONLY-NPC-1'] }).then((r) => { settled = true; return r; });
+  await nextTick();
+  assert.equal(m.doc.toasts().length, 1); assert.equal(m.doc.toasts()[0].children[0].textContent, 'Reveal GM-ONLY-NPC-1 to the iPad?');
+  assert.deepEqual(m.log.revealed, [], 'asked, not yet fired'); assert.equal(settled, false, 'still waiting on the GM');
+  m.doc.toasts()[0].children[1].click(); const r = await p;
+  assert.equal(r.ok, true); assert.deepEqual(m.log.revealed, [['n-hid', true]]);
+  const u = m.doc.toasts()[0]; assert.equal(u.children[0].textContent, 'Revealed GM-ONLY-NPC-1.'); assert.equal(u.children[1].attrs['data-ug'], 'undo', 'the Undo toast follows the confirm');
+  assert.equal(m.log.timers[m.log.timers.length - 1].ms, 5000, 'the Undo is the five-second one');
+  u.children[1].click(); await nextTick(); assert.deepEqual(m.log.revealed, [['n-hid', true], ['n-hid', false]], 'Undo still works');
+  /* Cancel */
+  const c2 = makeHost(); const g2 = G.create(c2.host); const p2 = g2.run({ type: 'cue_do', verb: 'reveal', names: ['GM-ONLY-NPC-1'] }); await nextTick();
+  c2.doc.toasts()[0].children[2].click(); assert.equal((await p2).ok, false); assert.deepEqual(c2.log.revealed, []); assert.equal(c2.doc.toasts().length, 0);
+  /* a timeout */
+  const c3 = makeHost(); const g3 = G.create(c3.host); const p3 = g3.run({ type: 'cue_do', verb: 'reveal', names: ['GM-ONLY-NPC-1'] }); await nextTick();
+  const tm = c3.log.timers[c3.log.timers.length - 1]; assert.equal(tm.ms, 15000); tm.fn(); assert.equal((await p3).ok, false); assert.deepEqual(c3.log.revealed, []);
+  /* a newer toast */
+  const c4 = makeHost(); const g4 = G.create(c4.host); const p4 = g4.run({ type: 'cue_do', verb: 'reveal', names: ['GM-ONLY-NPC-1'] }); await nextTick();
+  g4.undoToast('Something else.', () => {}); assert.equal((await p4).ok, false); assert.deepEqual(c4.log.revealed, []);
+  /* no screen to ask on: no reveal (secrecy fails closed) */
+  const c5 = makeHost(); c5.host.doc = () => null; assert.equal((await G.create(c5.host).run({ type: 'cue_do', verb: 'reveal', names: ['GM-ONLY-NPC-1'] })).ok, false); assert.deepEqual(c5.log.revealed, []);
+  /* switch off: nothing asked, nothing fired */
+  const c6 = makeHost({ on: { 'ai.grammar': false } }); assert.equal((await G.create(c6.host).run({ type: 'cue_do', verb: 'reveal', names: ['GM-ONLY-NPC-1'] })).ok, false); assert.equal(c6.doc.toasts().length, 0);
+});
+
+await test('a PLAYER key-turn on a phone does not ask the GM: it shows at once, with no confirm toast and no reveal', async () => {
+  const K = require(path.join(ROOT, 'app', 'gm', 'keyturn.js')); K.reset();
+  const m = makeHost(); const shown = [];
+  const out = K.sync({ pcs: () => [{ id: 'pc-1', name: 'Nell Arbuthnot', keyTurn: { seq: 1, name: 'Hearth', word: 'warm', dir: 'up', at: new Date().toISOString() } }],
+    show: async (k, p, o) => { shown.push([k, o.key]); return {}; }, toast: () => {}, now: () => Date.now() });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(out.length, 1); assert.deepEqual(shown, [['keyturn', 'pc-1-1']], 'fired at once'); assert.equal(m.doc.toasts().length, 0, 'no confirm'); assert.deepEqual(m.log.revealed, []);
+  K.reset();
 });
 
 await test('another bundle owning a word does not stop the rest: a clash skips only that verb', () => {

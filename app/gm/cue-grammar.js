@@ -35,7 +35,7 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  var TOAST_MS = 5000;
+  var TOAST_MS = 5000, CONFIRM_MS = 15000;
   var POS = { controlled: 1, risky: 1, desperate: 1 }, EFF = { limited: 1, standard: 1, great: 1 };
   var FILL = { and: 1, a: 1, an: 1, the: 1, is: 1, it: 1, as: 1, position: 1, effect: 1, at: 1, with: 1, then: 1, um: 1, uh: 1, okay: 1, ok: 1, please: 1, now: 1, to: 1, into: 1, phase: 1, on: 1, scene: 1, present: 1, mode: 1, our: 1, that: 1, this: 1 };
   var PHASE_W = { personal: 'pb', pb: 'pb', downtime: 'pb', planning: 'plan', plan: 'plan', briefing: 'plan', score: 'score', heist: 'score', aftermath: 'after', after: 'after', payout: 'after' };
@@ -110,7 +110,7 @@
   /* ---------- the controller ---------- */
   function create(host) {
     host = host || {};
-    var registered = [], el = null, timer = null, toastSeq = 0;
+    var registered = [], el = null, timer = null, toastSeq = 0, pending = null;
     function on() { return typeof host.feature === 'function' ? !!host.feature('ai.grammar') : false; }
     function say(m, bad) { if (typeof host.toast === 'function') host.toast(m, !!bad); }
     function setT(fn, ms) { return typeof host.setTimeout === 'function' ? host.setTimeout(fn, ms) : setTimeout(fn, ms); }
@@ -133,6 +133,7 @@
 
     /* ---------- the toast with Undo ---------- */
     function hide() {
+      if (pending) { var pn = pending; pending = null; pn(); }
       if (timer !== null) { clrT(timer); timer = null; }
       if (el && el.parentNode) el.parentNode.removeChild(el);
       el = null;
@@ -158,6 +159,26 @@
       doc.body.appendChild(el);
       timer = setT(function () { timer = null; if (mine === toastSeq) hide(); }, TOAST_MS);
       return el;
+    }
+    /* a question toast: Promise<boolean>, true only on the button. Cancel, a timeout, a newer toast or no screen to ask on all mean no. */
+    function confirmToast(text, yesLabel) {
+      var doc = typeof host.doc === 'function' ? host.doc() : null;
+      if (!on() || !doc || !doc.body) return Promise.resolve(false);
+      hide();
+      return new Promise(function (resolve) {
+        var mine = ++toastSeq, settled = false;
+        function settle(v) { if (settled) return; settled = true; if (pending) pending = null; if (timer !== null) { clrT(timer); timer = null; } resolve(v); }
+        var box = doc.createElement('div'); box.className = 'gm-ugtoast'; box.setAttribute('role', 'alertdialog'); el = box;
+        var t = doc.createElement('span'); t.className = 'gm-ugtoast-t'; t.textContent = str(text).slice(0, 160); box.appendChild(t);
+        var yes = doc.createElement('button'); yes.type = 'button'; yes.className = 'btn sm gm-ugtoast-b'; yes.textContent = yesLabel || 'Yes'; yes.setAttribute('data-ug', 'confirm');
+        yes.addEventListener('click', function () { if (mine !== toastSeq) return settle(false); settle(true); });
+        var no = doc.createElement('button'); no.type = 'button'; no.className = 'btn sm gm-ugtoast-b'; no.textContent = 'Cancel'; no.setAttribute('data-ug', 'cancel');
+        no.addEventListener('click', function () { settle(false); if (mine === toastSeq) hide(); });
+        box.appendChild(yes); box.appendChild(no);
+        doc.body.appendChild(box);
+        timer = setT(function () { timer = null; settle(false); if (mine === toastSeq) hide(); }, CONFIRM_MS);
+        pending = function () { settle(false); };   /* hide() (a newer toast) answers no, so the question never hangs */
+      });
     }
     function didntCatch() { if (on()) say('Didn’t catch that.', false); return false; }
 
@@ -201,8 +222,12 @@
         var r = resolve(a.names || []); if (r.error) return Promise.resolve(fail(r.error));
         var p = r.npcs[0];
         if (p.revealed) return Promise.resolve(fail(p.name + ' is already revealed.'));
-        return Promise.resolve(host.reveal(p.id, true)).then(function () { return done('Revealed ' + p.name + '.', function () { return host.reveal(p.id, false); }); },
-          function () { return fail('Could not reveal ' + p.name + '.'); });
+        /* the GM is asked first (a spoken cue can mishear a name); only then does it fire, and the usual Undo follows the confirm */
+        return confirmToast('Reveal ' + p.name + ' to the iPad?', 'Reveal').then(function (yes) {
+          if (!yes) { hide(); return { ok: false, say: '' }; }
+          return Promise.resolve(host.reveal(p.id, true)).then(function () { return done('Revealed ' + p.name + '.', function () { return host.reveal(p.id, false); }); },
+            function () { return fail('Could not reveal ' + p.name + '.'); });
+        });
       },
       go: function (a) {
         var nt = typeof host.night === 'function' ? host.night() : null;

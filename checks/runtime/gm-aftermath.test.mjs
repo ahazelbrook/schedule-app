@@ -52,6 +52,15 @@ await test('lines(): split on | and new lines, trimmed, six at most, 80 characte
   assert.deepEqual(A.lines(undefined), []);
 });
 
+await test('the siren step: wanted is untouched unless the heat track is full; full means wanted +1 and the heat clears', () => {
+  const w = (heat, exposure, mods, wanted) => A.payloadFor('heat', { heat, exposure, mods, wanted }).payload;
+  const notFull = w(5, 2, 1, 2); assert.deepEqual([notFull.wanted, notFull.after, notFull.siren], [2, 8, undefined], 'heat 8: wanted stays 2, heat is 8');
+  assert.equal(w(0, 0, 0, 3).wanted, 3, 'no heat gained, wanted unchanged'); assert.equal(w(8, 0, 0, 0).wanted, 0, 'one short of full leaves wanted alone');
+  const full = w(5, 2, 2, 2); assert.deepEqual([full.wanted, full.after, full.siren], [3, 0, true], 'heat 9: wanted +1 and the heat clears');
+  assert.equal(w(9, 0, 0, 1).wanted, 2, 'already at 9 is full'); assert.equal(w(9, 6, 0, 4).wanted, 4, 'wanted stays capped at 4');
+  assert.equal(A.heatOutcome(5, 2, 1).wantedUp, 0); assert.equal(A.heatOutcome(5, 2, 2).wantedUp, 1);
+});
+
 const DATA = { stacks: 14, tithe: 3, heat: 5, exposure: 4, mods: 2, wanted: 1, status: 'The Kestrel Club +1 | The Tidewater Watch -1', harm: 'Nell Arbuthnot: a bad leg', who: 'Nell Arbuthnot', line: 'Spend your downtime first' };
 await test('every step builds a payload the GM page, the Worker and the display all accept, and stable under a second clean', () => {
   for (const s of A.STEPS) {
