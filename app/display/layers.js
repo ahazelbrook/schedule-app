@@ -36,15 +36,25 @@
     list.slice(0, max).forEach(function (c) { if (isObj(c)) { var n = text(c.name, 120); if (n) out.push({ name: n, role: text(c.role, 120) }); } });
     return out;
   }
+  /* a PC's face: { pcId } and, only when the GM page sent them (suite 3.7, face.pcstatus), name, stress 0-9, harm [levels 1-4] and locks 0-6 */
+  function pcFace(f) {
+    var o = { pcId: f.pcId }, n = text(f.name, 40), st = whole(f.stress, 0, 9), lk = whole(f.locks, 0, 6);
+    if (n) o.name = n;
+    if (st !== undefined) o.stress = st;
+    if (lk !== undefined) o.locks = lk;
+    if (Array.isArray(f.harm)) { var h = f.harm.slice(0, 4).filter(function (x) { return whole(x, 1, 4) !== undefined; }); if (h.length) o.harm = h; }
+    return o;
+  }
   /* clean(layers) -> { phase, security, onair, filter, layout, mode, countdown, faces, credits, previously } with every field present (null / [] when unset) */
+  var HARM_MARK = ['plaster', 'sling', 'splint', 'cross'];
   function clean(raw) {
     var l = isObj(raw) ? raw : {}, b = isObj(l.band) ? l.band : {}, s = isObj(l.scene) ? l.scene : {}, d = isObj(l.data) ? l.data : {};
     var faces = [];
     if (Array.isArray(b.faces)) b.faces.slice(0, 3).forEach(function (f) {
       if (!isObj(f)) return;
       var n = text(f.name, 120);
-      if (n) faces.push({ name: n, role: text(f.role, 120) });
-      else if (typeof f.pcId === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(f.pcId)) faces.push({ pcId: f.pcId });
+      if (typeof f.pcId === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(f.pcId)) faces.push(pcFace(f));      /* a PC first: it may carry a name too (suite 3.7) */
+      else if (n) faces.push({ name: n, role: text(f.role, 120) });
     });
     var cd = isObj(d.countdown) && whole(d.countdown.to, 1, 8.64e15) ? { to: d.countdown.to, label: text(d.countdown.label, 40) } : null;
     return {
@@ -72,6 +82,14 @@
       if (m.countdown && opts && typeof opts.skew === 'function') { var k = Number(opts.skew()); if (isFinite(k)) m.countdown = { to: m.countdown.to - Math.round(k / 250) * 250, label: m.countdown.label }; }
       return m;
     }
+    /* a PC face with its status: Stress pips, a plaster (level 1), a sling (level 2), a splint (level 3) or a cross (level 4) per harm, and a key stamp per deadlock */
+    function paintPc(f, add) {
+      var box = add('dp-lay-face dp-lay-pc', f.name || f.pcId);
+      var put = function (cls, t, label) { var e = doc.createElement('i'); e.className = cls; e.textContent = t; if (label) e.setAttribute('title', label); box.appendChild(e); };
+      if (f.stress !== undefined) put('dp-pc-stress', String(f.stress), 'Stress ' + f.stress);
+      (f.harm || []).forEach(function (h) { put('dp-pc-harm dp-pc-harm-' + h, HARM_MARK[h - 1], 'Harm ' + h); });
+      for (var i = 0; i < (f.locks || 0); i++) put('dp-pc-lock', 'LOCK', 'Key deadlocked');
+    }
     function paintStrip() {
       var has = state.phase !== null || state.security !== null || state.onair || state.faces.length > 0;
       if (!has) { if (strip && strip.parentNode) strip.parentNode.removeChild(strip); strip = null; return; }
@@ -84,7 +102,10 @@
         var sec = add('dp-lay-sec', ''); sec.setAttribute('data-level', String(state.security));
         for (var i = 0; i < SECURITY; i++) { var pip = doc.createElement('i'); pip.className = i <= state.security ? 'on' : ''; sec.appendChild(pip); }
       }
-      state.faces.forEach(function (f) { add('dp-lay-face', f.name || f.pcId); });
+      state.faces.forEach(function (f) {
+        if (f.pcId && (f.stress !== undefined || f.harm || f.locks)) { paintPc(f, add); return; }
+        add('dp-lay-face', f.name || f.pcId);
+      });
     }
     function apply(layers) {
       if (dead) return;

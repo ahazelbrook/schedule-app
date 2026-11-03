@@ -265,7 +265,8 @@
       var hidden = r.npcs.filter(function (p) { return !p.revealed; });
       if (hidden.length) return Promise.resolve(fail(hidden[0].name + ' is not revealed yet: say “reveal” first.'));
       var key = 'cue-' + kind + '-' + (++toastSeq) + '-' + Date.now().toString(36), payload = kind === 'rolodex' ? { npcIds: r.npcs.map(function (p) { return p.id; }) } : { npcId: r.npcs[0].id };
-      return Promise.resolve(host.show(kind, payload, { key: key })).then(function (res) {
+      var opts = { key: key }; if (kind === 'rolodex' && typeof host.feature === 'function' && host.feature('face.rolodex')) opts.ms = 20000;     /* the lower third stays about 20 seconds (suite 3.5) */
+      return Promise.resolve(host.show(kind, payload, opts)).then(function (res) {
         if (res === null || res === undefined) return { ok: false, say: '' };
         return done(lead + r.npcs.map(function (p) { return p.name; }).join(', ') + '.', function () { return clearIfMine(key); });
       });

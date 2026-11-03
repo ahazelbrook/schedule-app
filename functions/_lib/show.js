@@ -98,10 +98,24 @@ export function cleanShowPayload(kind, v) {
 }
 
 // ---- layers ----------------------------------------------------------------------------------------------------------------------
+// A player character's face may carry a short status (suite 3.7): a name, Stress 0-9, harm as levels 1-4 (no text), and a count of deadlocked keys.
+// Every field is optional and rebuilt from named keys; a plain { pcId } is still exactly { pcId }.
+const pcFace = (f) => {
+  const o = { pcId: f.pcId };
+  put(o, 'name', text(f.name, 'band.faces name', 40));
+  put(o, 'stress', whole(f.stress, 'band.faces stress', 0, 9));
+  if (f.harm !== undefined && f.harm !== null) {
+    if (!Array.isArray(f.harm) || f.harm.length > 4) bad('band.faces harm is a list of at most 4 levels');
+    o.harm = f.harm.map((h) => whole(h, 'band.faces harm level', 1, 4, true));
+    if (!o.harm.length) delete o.harm;
+  }
+  put(o, 'locks', whole(f.locks, 'band.faces locks', 0, 6));
+  return o;
+};
 const FACE = (f) => {
   if (!isPlainObject(f)) bad('band.faces holds { npcId } or { pcId }');
   if (typeof f.npcId === 'string' && ID_RE.test(f.npcId)) return { npcId: f.npcId };
-  if (typeof f.pcId === 'string' && ID_RE.test(f.pcId)) return { pcId: f.pcId };
+  if (typeof f.pcId === 'string' && ID_RE.test(f.pcId)) return pcFace(f);
   return bad('band.faces holds { npcId } or { pcId }');
 };
 export const LAYERS = {
@@ -140,6 +154,7 @@ export function showTexts(ov, layer) {
   const add = (o) => { if (isPlainObject(o)) for (const v of Object.values(o)) { if (typeof v === 'string') out.push(v); else if (Array.isArray(v)) for (const x of v) if (typeof x === 'string') out.push(x); } };   // a list of lines is words too
   if (ov && isShowKind(ov.kind) && ov.payload) add(ov.payload);
   if (layer && isPlainObject(layer.value) && !Array.isArray(layer.value)) add(layer.value);
+  if (layer && layer.path === 'band.faces' && Array.isArray(layer.value)) layer.value.forEach((f) => { if (isPlainObject(f) && f.pcId && typeof f.name === 'string') out.push(f.name); });
   return out;
 }
 

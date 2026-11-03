@@ -1,0 +1,25 @@
+/* face cards (suite 3.5 and 3.7): the Rolodex lower third and the PC status marks on the band. Looks come from app/tokens.css. */
+
+/* the Rolodex as a lower third (switch face.rolodex): a card that flips up from the foot of the screen */
+.dp-show-rolodex.dp-rc { display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; gap: 1.6vmin; padding: 0 4vmin 7vmin; background: none; perspective: 120vmin; }
+.dp-rc-card { display: flex; align-items: center; gap: 2.4vmin; min-width: 46vmin; max-width: 78%; background: var(--b68-paper); color: var(--b68-ink); border: .5vmin solid var(--b68-ink);
+  border-radius: 1vmin; padding: 1.4vmin 3vmin 1.4vmin 1.4vmin; box-shadow: 1vmin 1vmin 0 var(--b68-orange); transform-origin: 50% 100%; transform: rotateX(-88deg); opacity: 0; }
+.dp-show-rolodex.dp-ov-in .dp-rc-card { transform: none; opacity: 1; transition: transform .5s ease, opacity .35s ease; transition-delay: calc(var(--i, 0) * 160ms); }
+.dp-rc-face { flex: none; width: 15vmin; height: 15vmin; border: .4vmin solid var(--b68-ink); border-radius: .8vmin; overflow: hidden; display: flex; align-items: center; justify-content: center; background: var(--b68-paper-dark); }
+.dp-rc-face svg { width: 100%; height: 100%; }
+.dp-rc-mono { font: 900 var(--b68-t-display)/1 var(--b68-font-poster); color: var(--b68-rules-blue); }
+.dp-rc-name { font: 900 var(--b68-t-body)/1.1 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .02em; overflow-wrap: break-word; }
+.dp-rc-alias { font: 700 var(--b68-t-label)/1.2 var(--b68-font-text); font-style: italic; }
+.dp-rc-sub { font: 700 var(--b68-t-label)/1.25 var(--b68-font-text); color: var(--b68-ink-soft); }
+@media (prefers-reduced-motion: reduce) { .dp-rc-card { transform: none; opacity: 1; } }
+[data-reduced] .dp-rc-card { transform: none; opacity: 1; }
+
+/* a PC's status on the band (switch face.pcstatus): Stress, harm marks and a stamp per deadlocked key */
+.dp-lay-pc { display: inline-flex; align-items: center; gap: .5em; }
+.dp-lay-pc i { font-style: normal; }
+.dp-pc-stress { min-width: 1.5em; text-align: center; padding: 0 .3em; border-radius: .3em; background: var(--b68-orange); color: var(--b68-ink); font-weight: 900; }
+.dp-pc-harm { padding: 0 .4em; border: .12em solid var(--b68-paper-dark); border-radius: .3em; font-size: .72em; text-transform: uppercase; letter-spacing: .1em; }
+.dp-pc-harm-1 { background: var(--b68-paper); color: var(--b68-ink); }
+.dp-pc-harm-2 { background: var(--b68-mustard); color: var(--b68-ink); }
+.dp-pc-harm-3, .dp-pc-harm-4 { background: var(--b68-alarm-lit); color: var(--b68-paper); border-color: var(--b68-alarm-lit); }
+.dp-pc-lock { padding: 0 .4em; border: .14em solid var(--b68-alarm-lit); color: var(--b68-alarm-lit); border-radius: .3em; font-size: .72em; font-weight: 900; letter-spacing: .12em; transform: rotate(-4deg); }

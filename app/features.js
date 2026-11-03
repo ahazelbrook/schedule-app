@@ -92,7 +92,11 @@
     { id: 'ai.keyterms', label: 'Key terms for the transcriber', surface: 'gm', stage: 'ai', default: false, saturday: 'try',
       doc: 'When the table iPad opens its listening stream, it passes the names of the crew, the revealed cast, the factions and the districts, so they are heard more reliably. Off: the stream opens as before.' },
     { id: 'room.preflight', label: 'Preflight check', surface: 'display', stage: 'room', default: false, saturday: 'on',
-      doc: 'Menu then Preflight: green or red for the iPad sound, files kept on each device, the transcriber, the Access session and the pack version, each red with a one-line fix. Read-only. Off: no menu item and the iPad reports nothing extra.' }
+      doc: 'Menu then Preflight: green or red for the iPad sound, files kept on each device, the transcriber, the Access session and the pack version, each red with a one-line fix. Read-only. Off: no menu item and the iPad reports nothing extra.' },
+    { id: 'face.rolodex', label: 'Rolodex lower third', surface: 'display', stage: 'face', default: false, saturday: 'on',
+      doc: 'An Introduce button on a revealed character’s card in the cast list, and "Blade, introduce <name>", flip their card up as a lower third on the iPad for about 20 seconds: face, name, alias, role and faction. Off: the row of full-screen cards, as before.' },
+    { id: 'face.pcstatus', label: 'PC status on the band', surface: 'gm', stage: 'face', default: false, saturday: 'try',
+      doc: 'The faces on the iPad band are the player characters, each with Stress, a mark for each harm and a stamp for each deadlocked key, updated when a sheet changes. Off: the band shows no player characters.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

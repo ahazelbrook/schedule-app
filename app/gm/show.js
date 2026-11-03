@@ -39,7 +39,7 @@
   var LAYERS = {
     'band.phase': function (v) { return ['pb', 'plan', 'score', 'after'].indexOf(v) >= 0; },
     'band.security': function (v) { return whole(v, 0, 4); },
-    'band.faces': function (v) { return Array.isArray(v) && v.length >= 1 && v.length <= 3 && v.every(function (f) { return isObj(f) && ((typeof f.npcId === 'string' && ID.test(f.npcId)) || (typeof f.pcId === 'string' && ID.test(f.pcId))); }); },
+    'band.faces': function (v) { return Array.isArray(v) && v.length >= 1 && v.length <= 3 && v.every(function (f) { return isObj(f) && ((typeof f.npcId === 'string' && ID.test(f.npcId)) || (typeof f.pcId === 'string' && ID.test(f.pcId) && pcFaceOk(f))); }); },
     'band.onair': function (v) { return v === true; },
     'scene.filter': function (v) { return v === 'flashback'; },
     'scene.layout': function (v) { return v === 'montage'; },
@@ -48,6 +48,12 @@
     'data.credits': function (v) { return idList(v, 30); },
     'data.previously': function (v) { return idList(v, 12); }
   };
+  /* a PC face's optional status (suite 3.7): name (40), stress 0-9, harm as up to four levels 1-4, locks 0-6 */
+  function pcFaceOk(f) {
+    return (f.name === undefined || (typeof f.name === 'string' && f.name.trim().length > 0 && f.name.replace(/\s+/g, ' ').trim().length <= 40)) &&
+      (f.stress === undefined || whole(f.stress, 0, 9)) && (f.locks === undefined || whole(f.locks, 0, 6)) &&
+      (f.harm === undefined || (Array.isArray(f.harm) && f.harm.length <= 4 && f.harm.every(function (h) { return whole(h, 1, 4); })));
+  }
   var MS_MIN = 1000, MS_MAX = 180000;
   function whole(v, lo, hi) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v && v >= lo && v <= hi; }
   function idList(v, max) { return Array.isArray(v) && v.length >= 1 && v.length <= max && v.every(function (x) { return typeof x === 'string' && ID.test(x); }); }
