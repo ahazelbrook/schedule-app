@@ -108,7 +108,9 @@
     { id: 'map.spotted', label: 'The Spotted beat', surface: 'gm', stage: 'map', default: false, saturday: 'try',
       doc: 'A Spotted button on the Run map: zoom to the room, a sting on the iPad, a yellow fill spreading from the eyes, the site’s alarm clock ticks once, then back. Off: no button.' },
     { id: 'map.flashback', label: 'The flashback filter', surface: 'display', stage: 'map', default: false, saturday: 'on',
-      doc: 'The flashback look gains grain and an “Earlier…” caption on the iPad, until “Blade, back” or a tap; “Blade, flashback” can name the Stress cost; a Flashback button and a room Pin sit on the Run map. Off: the plain sepia as before.' }
+      doc: 'The flashback look gains grain and an “Earlier…” caption on the iPad, until “Blade, back” or a tap; “Blade, flashback” can name the Stress cost; a Flashback button and a room Pin sit on the Run map. Off: the plain sepia as before.' },
+    { id: 'map.threat', label: 'Threat on the map', surface: 'gm', stage: 'map', default: false, saturday: 'try',
+      doc: 'When a stamp goes up, its threatened consequence drops a glyph (a guard turning, a door locking, an alarm, harm) on the crew’s room on the Run map, before the dice. It clears with the stamp. Off: nothing is drawn.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

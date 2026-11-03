@@ -27,7 +27,8 @@
      create(host) -> controller
        host: { feature(id) -> bool, positions() -> [{ value, severity, ticks, harm }], roomLines() -> [line], currentPosition() -> pos | '',
                setPosition(pos), show(payload, key, ms) -> Promise<answer | null>, overlayId() -> id the iPad is showing, clearOverlay() -> Promise,
-               log(text), toast(msg, bad), now() -> ms, keyFor(key) -> overlay id the show will have, setTimeout/clearTimeout, changed() }
+               log(text), toast(msg, bad), now() -> ms, keyFor(key) -> overlay id the show will have, setTimeout/clearTimeout, changed(),
+               threat(stamp) and threatClear() (optional: the map.threat glyph, gm/map-threat.js) }
        controller: view() draft(pos|eff|text) fire() stampNow(pos, eff, text) mark(result) esc() clear() reduce() restore() dismiss() seed()
                    result is '45', '13' or 'clean' */
 (function (root, factory) {
@@ -144,6 +145,7 @@
     function takeDown() {
       var mine = overlayIsMine();
       stopRefresh(); listen(false);
+      if (typeof host.threatClear === 'function') host.threatClear();        /* suite 2.5: the glyph on the map clears with the stamp */
       var was = active; active = null;
       if (was && mine && typeof host.clearOverlay === 'function') return Promise.resolve(host.clearOverlay()).then(null, function () { return null; });
       return Promise.resolve(null);
@@ -174,6 +176,7 @@
         if (typeof host.log === 'function') host.log(stampLine(st));
         if (typeof host.setPosition === 'function' && typeof host.currentPosition === 'function' && host.currentPosition() !== pos) host.setPosition(pos);
         listen(true); schedule(); changed();
+        if (typeof host.threat === 'function') host.threat(st);               /* suite 2.5: the glyph drops on the room before the dice */
         return true;
       }, function () { active = prevActive; return false; });
     }

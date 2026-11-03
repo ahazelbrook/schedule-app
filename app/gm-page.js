@@ -4183,6 +4183,7 @@
   }
   function b09Mount() {
     var St = W.B68GmStamp, Gr = W.B68GmCueGrammar, me = S; if (!St || !Gr || !W.B68Features || me.stamp) return;
+    b19Mount();                                                                  /* B19: the map beats exist before the first stamp can drop a glyph */
     me.b09 = { layers: {} };
     me.stamp = St.create({
       feature: function (id) { return S === me && b09On(id); }, doc: function () { return document; },
@@ -4192,7 +4193,8 @@
       show: function (payload, key, ms) { var sh = shows(); return sh ? sh.show('report', payload, { key: key, ms: ms }) : Promise.resolve(null); },
       keyFor: function (key) { return W.B68Show ? W.B68Show.idFor(key) : key; }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
       clearOverlay: function () { return patchAmbient({ overlay: null }); },
-      log: function (text) { if (S === me && me.night) me.night.stamp(text); }, toast: toast, changed: function () { if (S === me) { b09Paint(); pcStatusSync(); } }
+      log: function (text) { if (S === me && me.night) me.night.stamp(text); }, toast: toast, changed: function () { if (S === me) { b09Paint(); pcStatusSync(); } },
+      threat: function (st) { var t = S === me && me.b19 && me.b19.threat; if (t) t.drop(st); }, threatClear: function () { var t = S === me && me.b19 && me.b19.threat; if (t) t.clear(); }
     });
     me.cueGrammar = Gr.create({
       feature: function (id) { return S === me && b09On(id); }, cueVerbs: function () { return W.B68CueVerbs; }, stamp: function () { return S === me ? me.stamp : null; },
@@ -4264,6 +4266,7 @@
     me.b19 = {};
     if (W.B68GmMapSpotted) me.b19.spotted = W.B68GmMapSpotted.create(b19Host(me));
     if (W.B68GmMapFlashback) me.b19.flashback = W.B68GmMapFlashback.create(b19Host(me));
+    if (W.B68GmMapThreat) me.b19.threat = W.B68GmMapThreat.create(b19Host(me));
   }
   function b19Paint(fr, svg, zoom) {
     if (!S) return;
