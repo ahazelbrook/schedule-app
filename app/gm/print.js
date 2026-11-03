@@ -36,7 +36,7 @@
       var d = npcs[id];
       if (!isObj(d) || d.revealed !== true || !str(d.name).trim()) return;
       var tags = Array.isArray(d.tags) ? d.tags : [];
-      out.push({ id: id, name: str(d.name).trim(), alias: str(d.alias).trim(), role: str(d.role).trim(), faction: str(d.faction).trim(),
+      out.push({ id: id, name: str(d.name).trim().slice(0, 80), alias: str(d.alias).trim().slice(0, 80), role: str(d.role).trim().slice(0, 80), faction: str(d.faction).trim().slice(0, 80),
         major: tags.some(function (t) { return str(t).trim().toLowerCase() === 'major'; }) });
     });
     out.sort(function (a, b) { var x = a.name.toLowerCase(), y = b.name.toLowerCase(); return x < y ? -1 : x > y ? 1 : 0; });
@@ -52,7 +52,8 @@
   /* ---- 3.6 the cards: 2 x 5 of 85 x 55 mm on an A4 sheet, 20 mm side margins and 11 mm top and bottom ---- */
   var CARD_CSS = '.sheet{width:210mm;height:297mm;padding:11mm 20mm;display:grid;grid-template-columns:85mm 85mm;grid-template-rows:repeat(5,55mm);page-break-after:always;overflow:hidden}' +
     '.sheet:last-child{page-break-after:auto}.card{width:85mm;height:55mm;padding:3mm;background:#f4ecd8;outline:.2mm dashed #b9ad92;outline-offset:-.2mm}' +
-    '.card .in{height:100%;border:.5mm solid #3b3326;padding:1mm;display:flex}.card .in2{flex:1;border:.2mm solid #3b3326;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:2mm}' +
+    '.card .in{height:100%;border:.5mm solid #3b3326;padding:1mm;display:flex}' +
+    '.card .in2{flex:1;border:.2mm solid #3b3326;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:2mm}' +
     '.card .nm{font-size:17pt;line-height:1.1;font-variant:small-caps;letter-spacing:.04em}.card .al{font-style:italic;font-size:10pt;margin-top:1mm}' +
     '.card .rule{width:30mm;border-top:.3mm solid #3b3326;margin:2.5mm 0}.card .rl{font-size:9pt;letter-spacing:.12em;text-transform:uppercase}.card .fc{font-size:8pt;color:#5b5140;margin-top:1mm}';
   function cardHtml(c) {
@@ -68,7 +69,8 @@
   /* ---- 3.6 the tent standee: the A4 page folds in half; the top half is the back, upside down, so it reads right from the far side ---- */
   var SILHOUETTE = '<svg viewBox="0 0 100 160" width="60mm" height="96mm" aria-hidden="true"><circle cx="50" cy="38" r="22" fill="#1c1a17"/><path d="M12 158 C12 104 30 84 50 84 C70 84 88 104 88 158 Z" fill="#1c1a17"/></svg>';
   var STANDEE_CSS = '.half{width:210mm;height:148.5mm;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:12mm;background:#f4ecd8}' +
-    '.half.back{transform:rotate(180deg);border-bottom:.3mm dashed #8a7e63;background:#e6dcc3}.half .nm{font-size:44pt;font-variant:small-caps;letter-spacing:.04em;line-height:1.05}.half .al{font-style:italic;font-size:22pt;margin-top:4mm}' +
+    '.half.back{transform:rotate(180deg);border-bottom:.3mm dashed #8a7e63;background:#e6dcc3}' +
+    '.half .nm{font-size:44pt;font-variant:small-caps;letter-spacing:.04em;line-height:1.05}.half .al{font-style:italic;font-size:22pt;margin-top:4mm}' +
     '.half .rl{font-size:16pt;letter-spacing:.16em;text-transform:uppercase;margin-top:8mm}.half .tag{font-size:10pt;letter-spacing:.2em;text-transform:uppercase;color:#6b604a;margin-bottom:6mm}';
   function standeeHtml(card, backText) {
     var c = isObj(card) ? card : {}, b = str(backText).trim();
