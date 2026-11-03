@@ -104,7 +104,9 @@
     { id: 'print.cards', label: 'Calling cards and standees', surface: 'gm', stage: 'between', default: false, saturday: 'off',
       doc: 'Menu then Print: a calling card for every revealed NPC, ten to an A4 sheet, and an A4 tent standee for each NPC tagged major (silhouette or typed back). Print only. Off: no Print line for cards.' },
     { id: 'print.blueprint', label: 'Printed blueprint', surface: 'gm', stage: 'between', default: false, saturday: 'off',
-      doc: 'Menu then Print: an A3 or A4 case-file plan of the rooms the players know, with a scale bar, a title block and a margin for a pencil. Print only. Off: no Print line for the blueprint.' }
+      doc: 'Menu then Print: an A3 or A4 case-file plan of the rooms the players know, with a scale bar, a title block and a margin for a pencil. Print only. Off: no Print line for the blueprint.' },
+    { id: 'map.spotted', label: 'The Spotted beat', surface: 'gm', stage: 'map', default: false, saturday: 'try',
+      doc: 'A Spotted button on the Run map: zoom to the room, a sting on the iPad, a yellow fill spreading from the eyes, the site’s alarm clock ticks once, then back. Off: no button.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

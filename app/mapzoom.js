@@ -146,6 +146,14 @@
     measure(); apply();
     return {
       zoomBy: zoomBy, fit: fitView, refit: function () { measure(); apply(); },
+      /* suite 2.6: the current view, a view to go back to, and a zoom that frames a box { x, y, w, h } of the map's own units (about 60% of the frame) */
+      get: function () { return { s: store.s, cx: store.cx, cy: store.cy }; }, set: set,
+      zoomToBox: function (b) {
+        if (!b || !(b.w > 0) || !(b.h > 0)) return;
+        measure();
+        var k = Math.min(size.w * 0.6 / b.w, size.h * 0.6 / b.h), s = k / Pure.fitK(V, size);
+        set({ s: Math.min(MAXZOOM, Math.max(1, s)), cx: b.x + b.w / 2, cy: b.y + b.h / 2 });
+      },
       destroy: function () { offs.forEach(function (f) { f(); }); offs = []; if (ro) ro.disconnect(); if (ctl.parentNode) ctl.parentNode.removeChild(ctl); }
     };
   }

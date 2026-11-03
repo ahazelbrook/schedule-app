@@ -456,6 +456,7 @@
       /* zoom and pan (mapzoom.js); the view lives in mapViewState so the redraw on each time step keeps it */
       var MZ = typeof window !== "undefined" ? window.B68MapZoom : null, fr = box.querySelector("#rv-map"), el = fr && fr.querySelector("svg");
       if (MZ && el) { try { mapZoom = MZ.attach(fr, el, { store: mapViewState }); } catch (e) { mapZoom = null; /* the map still reads, unzoomed */ } }
+      if (el && typeof host.mapPaint === "function") { try { host.mapPaint(fr, el, mapZoom); } catch (e) { /* the map's extras are optional */ } }
     }
 
     /* the one toggle on a room card: Reveal on the map / Revealed · hide (the Run view's own list), or plain text when a band or survey opened it */

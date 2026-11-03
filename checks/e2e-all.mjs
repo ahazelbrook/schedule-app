@@ -65,6 +65,7 @@ const CHECKS = [
   ['checks/runtime/aftermath.e2e.mjs', 'the Aftermath show: Menu entry, the eight steps on the iPad, the phone commendations, the credits, off again (9110)'],
   ['checks/runtime/gm-autopilot.e2e.mjs', 'the iPad autopilot: a clock overlay, Take over, secrecy, lights out, display-only expiry (8879)'],
   ['checks/runtime/hard-start.e2e.mjs', 'the hard start and the ON AIR lamp on the iPad, switches off and on (9060)'],
+  ['checks/runtime/gm-map-spotted.e2e.mjs', 'the Spotted beat on the Run map: zoom, sting, fill, one alarm tick, back, inside 3 seconds; two GM pages tick once (9071)'],
 ];
 
 const want = process.argv.slice(2);
