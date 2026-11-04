@@ -107,9 +107,16 @@
         add('dp-lay-face', f.name || f.pcId);
       });
     }
+    /* suite 2.9 (map.flashback): the flashback look gains grain and a caption (CSS on data-flash-look) while the switch is on; with it off the attribute is never set */
+    function look() {
+      var yes = state.filter === 'flashback' && !!(root.B68Flags && root.B68Flags.on('map.flashback'));
+      if (yes) container.setAttribute('data-flash-look', '1'); else container.removeAttribute('data-flash-look');
+    }
+    var offFlags = root.B68Flags && typeof root.B68Flags.subscribe === 'function' ? root.B68Flags.subscribe(function () { if (!dead) look(); }) : null;
     function apply(layers) {
       if (dead) return;
       state = clean(layers);
+      look();
       Object.keys(ATTRS).forEach(function (a) { var v = state[ATTRS[a]]; if (v === null || v === undefined) container.removeAttribute(a); else container.setAttribute(a, String(v)); });
       if (state.onair) container.setAttribute('data-band-onair', '1'); else container.removeAttribute('data-band-onair');
       paintStrip();
@@ -132,6 +139,8 @@
       apply: apply, message: msg, sceneLoaded: sceneLoaded, state: function () { return state; },
       destroy: function () {
         dead = true;
+        if (typeof offFlags === 'function') offFlags();
+        container.removeAttribute('data-flash-look');
         if (root.removeEventListener) root.removeEventListener('message', onMessage);
         if (strip && strip.parentNode) strip.parentNode.removeChild(strip);
         Object.keys(ATTRS).forEach(function (a) { container.removeAttribute(a); }); container.removeAttribute('data-band-onair');

@@ -3477,6 +3477,7 @@
       try { r = K.render(S.locRoll, o); } catch (e) { return ''; }
       if (sig) { var rc = S.runCache = S.runCache || { map: {}, keys: [] }; rc.map[sig] = r; rc.keys.push(sig); while (rc.keys.length > RUN_CACHE_MAX) delete rc.map[rc.keys.shift()]; }
     }
+    S.b19Model = r && r.model ? r.model : null;     /* B19: the rooms' ids, for the map beats */
     return stripSize(r.svg);     /* the map kit's own output from our roll; it escapes its text */
   }
   /* A1: the leads in reach heard on their own: the new ball.heard, or null when nothing changes (ball.unheard keeps a pair out) */
@@ -3521,7 +3522,7 @@
         if (isObj(change) && ('t' in change || 'crew' in change) && !('heard' in change)) { var merged = Object.assign({}, ballDoc(rs.name), change), hh = runHeard(rs, merged, +merged.t); if (hh) change = Object.assign({}, change, { heard: hh }); }
         var prev = ballDoc(rs.name).t; var ok = ballSet(rs.name, change, quiet === true); if (ok && change && 't' in change) S.rvPrevT = prev; /* VV6 */ if (ok && !quiet) runDraw(true); return !!ok; },
       pcs: runPcs, floors: function () { var rs = runV2(); return rs ? runFloors(rs) : { list: [], floorOf: {} }; }, isOpen: runIsOpen,
-      openRoom: function (name, on) { roomOpen(name, on); }, mapSvg: runMapSvg,
+      openRoom: function (name, on) { roomOpen(name, on); }, mapSvg: runMapSvg, mapPaint: function (fr, svg, zoom) { b19Paint(fr, svg, zoom); },
       clockNamed: function (name) { var l = tableClocks().filter(function (c) { return str(c.name).trim() === name; }); return l.length ? l[0] : null; },
       publish: runPublish, toast: toast, phoneCards: phoneCardsOn, setPhoneCards: setPhoneCards,
       /* server time: the iPad corrects to it, so the beat timer's endsAt is stamped on it (the GM api's Date-header skew; 0 when unknown) */
@@ -4182,6 +4183,7 @@
   }
   function b09Mount() {
     var St = W.B68GmStamp, Gr = W.B68GmCueGrammar, me = S; if (!St || !Gr || !W.B68Features || me.stamp) return;
+    b19Mount();                                                                  /* B19: the map beats exist before the first stamp can drop a glyph */
     me.b09 = { layers: {} };
     me.stamp = St.create({
       feature: function (id) { return S === me && b09On(id); }, doc: function () { return document; },
@@ -4191,11 +4193,14 @@
       show: function (payload, key, ms) { var sh = shows(); return sh ? sh.show('report', payload, { key: key, ms: ms }) : Promise.resolve(null); },
       keyFor: function (key) { return W.B68Show ? W.B68Show.idFor(key) : key; }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
       clearOverlay: function () { return patchAmbient({ overlay: null }); },
-      log: function (text) { if (S === me && me.night) me.night.stamp(text); }, toast: toast, changed: function () { if (S === me) { b09Paint(); pcStatusSync(); } }
+      log: function (text) { if (S === me && me.night) me.night.stamp(text); }, toast: toast, changed: function () { if (S === me) { b09Paint(); pcStatusSync(); } },
+      threat: function (st) { var t = S === me && me.b19 && me.b19.threat; if (t) t.drop(st); }, threatClear: function () { var t = S === me && me.b19 && me.b19.threat; if (t) t.clear(); }
     });
     me.cueGrammar = Gr.create({
       feature: function (id) { return S === me && b09On(id); }, cueVerbs: function () { return W.B68CueVerbs; }, stamp: function () { return S === me ? me.stamp : null; },
       night: function () { return S === me ? me.night : null; }, doc: function () { return document; }, toast: toast,
+      flashbackNote: function (cost) { var f = S === me && me.b19 && me.b19.flashback; if (f) { f.note(cost); f.refresh(); } },
+      flashbackEnd: function () { var f = S === me && me.b19 && me.b19.flashback; if (f) { f.noteEnd(); f.refresh(); } },
       layer: function (path, value) { return b09Layer(me, path, value); }, layerValue: function (path) { return S === me && isObj(me.b09.layers) ? (me.b09.layers[path] || null) : null; },
       npcs: function () { return S === me ? Object.keys(isObj(me.npcs) ? me.npcs : {}).map(function (id) { var d = me.npcs[id]; return isObj(d) && !(Array.isArray(d.tags) && d.tags.indexOf('undone') >= 0) ? { id: id, name: str(d.name), alias: str(d.alias), revealed: d.revealed === true } : null; }).filter(Boolean) : []; },
       reveal: function (id, yes) {
@@ -4231,6 +4236,42 @@
   function b09Marked(res) {
     var sit = res && res.meta ? res.meta.situation : '';
     if (S && S.stamp && (sit === 'fourfive' || sit === 'onetothree')) S.stamp.mark(sit === 'fourfive' ? '45' : '13');
+  }
+  /* ---------- B19: the map beats (map.spotted 2.6, map.flashback 2.9, map.threat 2.5). The logic is in gm/map-*.js; this is the seam. Each reads its own switch live. ---------- */
+  function b19Room(svg, name) {
+    var m = S && S.b19Model, rooms = m && Array.isArray(m.rooms) ? m.rooms : [], r = null, i;
+    for (i = 0; i < rooms.length; i++) if (isObj(rooms[i]) && str(rooms[i].name) === name) { r = rooms[i]; break; }
+    var g = r && svg && svg.querySelector ? svg.querySelector('[data-room="' + str(r.id).replace(/[^A-Za-z0-9_-]/g, '') + '"]') : null;
+    if (!g || typeof g.getBoundingClientRect !== 'function' || typeof svg.getScreenCTM !== 'function') return null;
+    var ctm = svg.getScreenCTM(), rc = g.getBoundingClientRect(); if (!ctm || !(rc.width > 0)) return null;
+    var inv = ctm.inverse(), a = svg.createSVGPoint(), b = svg.createSVGPoint(); a.x = rc.left; a.y = rc.top; b.x = rc.right; b.y = rc.bottom;
+    var p = a.matrixTransform(inv), q = b.matrixTransform(inv);
+    return { x: Math.min(p.x, q.x), y: Math.min(p.y, q.y), w: Math.abs(q.x - p.x), h: Math.abs(q.y - p.y) };
+  }
+  function b19Host(me) {
+    return {
+      feature: function (id) { return S === me && b09On(id); }, doc: function () { return document; }, toast: toast, now: function () { return Date.now(); },
+      room: function () { return S === me ? W.B68GmStamp.pickRoom(runCrewRooms()) : ''; }, roomBox: function (svg, name) { return S === me ? b19Room(svg, name) : null; },
+      log: function (text) { if (S === me && me.night) me.night.stamp(text); },
+      clockName: function () { var rs = S === me ? runV2() : null; return rs && isObj(rs.play.alarm) ? str(rs.play.alarm.clock).trim() : ''; },
+      clocks: function () { return S === me ? tableClocks() : []; },
+      tick: function (id, to) { return me.api && typeof me.api.clockOps === 'function' ? Promise.resolve(me.api.clockOps([{ id: id, filled: to }])) : Promise.resolve(null); },
+      show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
+      filter: function () { return S === me && me.b09 && isObj(me.b09.layers) ? (me.b09.layers['scene.filter'] || null) : null; },
+      layer: function (path, value) { if (!me.b09) me.b09 = { layers: {} }; return b09Layer(me, path, value); }
+    };
+  }
+  function b19Mount() {
+    var me = S; if (!me || me.b19) return;
+    me.b19 = {};
+    if (W.B68GmMapSpotted) me.b19.spotted = W.B68GmMapSpotted.create(b19Host(me));
+    if (W.B68GmMapFlashback) me.b19.flashback = W.B68GmMapFlashback.create(b19Host(me));
+    if (W.B68GmMapThreat) me.b19.threat = W.B68GmMapThreat.create(b19Host(me));
+  }
+  function b19Paint(fr, svg, zoom) {
+    if (!S) return;
+    b19Mount();
+    Object.keys(S.b19).forEach(function (k) { if (S.b19[k] && S.b19[k].paint) S.b19[k].paint(fr, svg, zoom); });
   }
   function b09Run(me, a) { return me.cueGrammar ? me.cueGrammar.run(a) : null; }
   function b09Toast(me, text, undo) { if (S === me && me.cueGrammar) me.cueGrammar.undoToast(text, undo); }
