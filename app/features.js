@@ -105,6 +105,8 @@
       doc: 'Aftermath steps not reached become a Debrief card on each sheet the next morning, with downtime picks and xp prompts, kept as the player’s own row; unanswered ones take defaults after 48 hours; replies show on a GM panel. Off: no card, no panel.' },
     { id: 'between.quiet', label: 'The quiet line', surface: 'phone', stage: 'between', default: false, saturday: 'try',
       doc: 'A long press on the sheet header offers the X-card, pause, spotlight me and a secret note, sent only to the GM phone as a silent badge. Off: the header does nothing.' },
+    { id: 'between.board', label: 'The opportunity board', surface: 'phone', stage: 'between', default: false, saturday: 'try',
+      doc: 'Players post a client, a target or an operation from their sheet, kept as their own row; Menu then Opportunity board lists them, and the ones the GM posts go up on the iPad as a pinned board for the Planning phase. Unpicked cards carry over. Off: no strip on the sheet, no menu line.' },
     { id: 'print.cards', label: 'Calling cards and standees', surface: 'gm', stage: 'between', default: false, saturday: 'off',
       doc: 'Menu then Print: a calling card for every revealed NPC, ten to an A4 sheet, and an A4 tent standee for each NPC tagged major (silhouette or typed back). Print only. Off: no Print line for cards.' },
     { id: 'print.blueprint', label: 'Printed blueprint', surface: 'gm', stage: 'between', default: false, saturday: 'off',

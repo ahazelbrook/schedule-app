@@ -89,7 +89,8 @@
     "check:b29-light": "node checks/runtime/suite-b29-light.test.mjs",
     "check:b21": "node checks/runtime/suite-b21.test.mjs && node checks/api/quiet.mjs",
     "check:cue-stack": "node checks/runtime/gm-cue-stack.test.mjs",
-    "check:cue-stack-e2e": "node checks/runtime/gm-cue-stack.e2e.mjs"
+    "check:cue-stack-e2e": "node checks/runtime/gm-cue-stack.e2e.mjs",
+    "check:b28": "node checks/runtime/suite-b28.test.mjs"
   },
   "keywords": [],
   "author": "",
