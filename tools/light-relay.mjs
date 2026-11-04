@@ -3,7 +3,7 @@
 // asking a local address sends a private-network preflight first: this answers it. It ships with a SIMULATOR driver only (no hardware, no
 // network beyond this machine); a real driver comes once the hardware is named [TODO: which lights you have, if any].
 //   node tools/light-relay.mjs [--port 9300]
-//   B68_LIGHT_ORIGINS=https://gm.example.test,...   extra page origins allowed (localhost and 127.0.0.1 on any port are always allowed)
+//   B68_LIGHT_ORIGINS=https://gm.example.test,...   extra page origins allowed (localhost and 127.0.0.1 are allowed on ports 8787,8788, or B68_LIGHT_PORTS)
 // POST /light  { channel: 'strip', rgb: [r,g,b] }  |  { channel: 'rim', alarm: true }      GET /state
 // The limits are enforced HERE on whatever arrives (app/gm/light.js holds them): the alarm is the rim only, 3 s at most, the rim never changes faster
 // than every 250 ms (2 Hz at most), one alarm at a time, and any other channel, the work light included, is refused. The driver has no work-light method at all.
@@ -45,9 +45,11 @@ export function createGuard({ driver, now = Date.now, schedule = (fn, ms) => set
   };
 }
 
+/* a local page counts only on wrangler dev's ports (B68_LIGHT_PORTS, comma list); the hosted GM page's origin comes from B68_LIGHT_ORIGINS */
+const LOCAL_PORTS = String(process.env.B68_LIGHT_PORTS || '8787,8788').split(',').map((s) => s.trim());
 function originOk(origin, extra) {
   if (!origin) return true;                 /* not a browser page (curl, the tests' raw client) */
-  try { const u = new URL(origin); if (u.hostname === 'localhost' || u.hostname === '127.0.0.1') return true; } catch { return false; }
+  try { const u = new URL(origin); if ((u.hostname === 'localhost' || u.hostname === '127.0.0.1') && LOCAL_PORTS.includes(u.port)) return true; } catch { return false; }
   return extra.includes(origin);
 }
 

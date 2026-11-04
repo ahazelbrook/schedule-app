@@ -85,6 +85,7 @@ await test('relay: private-network preflight, origin allowlist, raw out-of-spec 
   try {
     const pre = await http('OPTIONS', '/light', { headers: { origin: 'http://localhost:8788', 'access-control-request-method': 'POST', 'access-control-request-private-network': 'true' } });
     assert.equal(pre.status, 204); assert.equal(pre.headers['access-control-allow-private-network'], 'true'); assert.equal(pre.headers['access-control-allow-origin'], 'http://localhost:8788');
+    assert.equal((await http('OPTIONS', '/light', { headers: { origin: 'http://localhost:5555', 'access-control-request-private-network': 'true' } })).status, 403, 'another local port is refused');
     const ext = await http('OPTIONS', '/light', { headers: { origin: 'https://gm.example.test', 'access-control-request-private-network': 'true' } }); assert.equal(ext.status, 204);
     const bad = await http('OPTIONS', '/light', { headers: { origin: 'https://elsewhere.example.org', 'access-control-request-private-network': 'true' } });
     assert.equal(bad.status, 403); assert.equal(bad.headers['access-control-allow-origin'], undefined);
