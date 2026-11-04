@@ -61,3 +61,19 @@
 .dp-fl-passport { background: #ece3cc; }
 .dp-fl-passport .dp-fl-mrz { margin: 0; font: 700 2.2vmin/1.1 var(--b68-font-mono); letter-spacing: .02em; overflow: hidden; white-space: nowrap; color: var(--b68-ink-soft); }
 .dp-fl-passport .dp-fl-stamp { position: absolute; right: 2vmin; bottom: 14vmin; padding: .6vmin 1.4vmin; border: .5vmin solid var(--b68-rules-blue); border-radius: 50%; color: var(--b68-rules-blue); font: 900 2.2vmin/1 var(--b68-font-cond); text-transform: uppercase; transform: rotate(-12deg); opacity: .8; }
+
+/* the badge on a held card, and the faction's style: its colour on the card's edge, its type and its texture (switch face.badge) */
+.dp-fl-tag { display: flex; align-items: center; justify-content: center; gap: 1.2vmin; }
+.dp-fl-tag .dp-fl-glyph { width: 5vmin; height: 5vmin; }
+.dp-fl-tag-no { font: 700 var(--b68-t-label)/1 var(--b68-font-mono); letter-spacing: .06em; }
+.dp-fl-styled { --fl: var(--b68-faction-1); border-color: var(--fl); }
+.dp-fl-st-1 { --fl: var(--b68-faction-1); } .dp-fl-st-2 { --fl: var(--b68-faction-2); } .dp-fl-st-3 { --fl: var(--b68-faction-3); }
+.dp-fl-st-4 { --fl: var(--b68-faction-4); } .dp-fl-st-5 { --fl: var(--b68-faction-5); } .dp-fl-st-6 { --fl: var(--b68-faction-6); }
+.dp-fl-ty-poster .dp-ov-name { font-family: var(--b68-font-poster); letter-spacing: .04em; }
+.dp-fl-ty-cond .dp-ov-name { font-family: var(--b68-font-cond); letter-spacing: .1em; }
+.dp-fl-ty-text .dp-ov-name { font-family: var(--b68-font-text); letter-spacing: 0; }
+.dp-fl-tx-halftone { background-image: radial-gradient(circle, rgba(242, 237, 225, .09) 1.1px, transparent 1.6px); background-size: 1.6vmin 1.6vmin; }
+.dp-fl-tx-stripes { background-image: repeating-linear-gradient(45deg, rgba(242, 237, 225, .07) 0 .8vmin, transparent .8vmin 1.8vmin); }
+.dp-fl-tx-grid { background-image: linear-gradient(rgba(242, 237, 225, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(242, 237, 225, .07) 1px, transparent 1px); background-size: 2.2vmin 2.2vmin; }
+.dp-fl-tx-hatch { background-image: repeating-linear-gradient(45deg, rgba(242, 237, 225, .07) 0 1px, transparent 1px 1.2vmin), repeating-linear-gradient(-45deg, rgba(242, 237, 225, .07) 0 1px, transparent 1px 1.2vmin); }
+.dp-fl-tx-dots { background-image: radial-gradient(circle, rgba(242, 237, 225, .1) 2px, transparent 2.6px); background-size: 3vmin 3vmin; }

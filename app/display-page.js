@@ -1815,6 +1815,8 @@
     }));
     /* every kind of tap: iOS counts some of these as the gesture and not others (gesture() skips the rest), the first one is enough */
     ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'].forEach(function (type) { s.offs.push(on(document, type, unlockMusic)); });
+    /* the motif's audio (display/face-motif.js, switch face.badge) starts only inside a tap: this makes or resumes its one context */
+    ['pointerdown', 'touchend', 'click', 'keydown'].forEach(function (type) { s.offs.push(on(document, type, function () { if (root.B68FaceRender && swOn('face.badge')) root.B68FaceRender.unlock(); })); });
     s.offs.push(function () { stopMusic(); });
     /* the room's sound (display/room-audio.js; switches room.duck 4.4 and room.music 4.3). The page hands the engine its one <audio> element; where iOS will not move the volume the engine says so (limited) and changes nothing. */
     function roomGain(g) {
