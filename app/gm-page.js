@@ -2313,6 +2313,22 @@
     var on = prOn(), b = $q('#gm-menu-print'), after = $q('#gm-menu-switchboard') || $q('#gm-menu-live');
     if (on && !b && after) after.insertAdjacentHTML('afterend', '<button type="button" data-gm="print" id="gm-menu-print" title="Print calling cards, tent standees and the blueprint">Print</button>'); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
   }
+  /* 2.7 Intel corkboard (gm/corkboard.js, switch map.corkboard): one Menu line while the switch is on; the board is drawn through playerDisplay, the one player door */
+  function cbOn() { return !!(S && W.B68GmCorkboard && W.B68Features && W.B68Features.valueOf(S.doc, 'map.corkboard')); }
+  function cbInst() {
+    if (!cbOn()) return null;
+    if (!S.cb) S.cb = W.B68GmCorkboard.make({ on: function (id) { return W.B68Features.valueOf(S.doc, id); }, root: function () { return $q('#gm-root'); }, toast: toast, npcs: function () { return S && isObj(S.npcs) ? S.npcs : {}; },
+      roll: function () { return S.locRoll; }, hiddenNames: function () { return S.locRoll ? P.hiddenNames(S.locRoll, revealEntries(mapUi().layer === 'player' ? mapUi() : Object.assign({}, mapUi(), { layer: 'player' }))) : []; },
+      play: function () { var rs = runSite(); return rs ? rs.play : null; }, told: function () { var rs = runSite(); return rs ? ballDoc(rs.name).told : null; },
+      phase: function () { var n = S.night && S.night.night ? S.night.night() : null; return n && n.phase || ''; },
+      portrait: function (id) { var d = S.npcs && S.npcs[id], K = W.B68Figure; try { return d && isObj(d.spec) && K && K.portrait ? stripSize(K.portrait(Object.assign(clone(d.spec), { id: 'gm-cb-' + slug(id) }), { lod: 'lo' }).svg) : ''; } catch (e) { return ''; } },
+      board: function (tokens, hide) { var r = P.playerDisplay(S.locRoll, Object.assign({}, mapUi(), { layer: 'player', view: 'plan', theme: 'board' }), W.B68Map && W.B68Map.render, { tokens: tokens, hide: hide }); return { title: r.title, caption: r.caption, svg: r.svg, tokens: r.tokens, tokensRefused: r.tokensRefused }; } });
+    return S.cb;
+  }
+  function cbMenuSync() {
+    var on = cbOn(), b = $q('#gm-menu-corkboard'), after = $q('#gm-menu-print') || $q('#gm-menu-switchboard') || $q('#gm-menu-live');
+    if (on && !b && after) after.insertAdjacentHTML('afterend', '<button type="button" data-gm="corkboard" id="gm-menu-corkboard" title="The Planning board: the site on cork, intel Polaroids pinned to their rooms, mugshots on their posts">Corkboard</button>'); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
+  }
   /* 2.8 Montage (gm/montage.js, switch map.montage): one Menu line while the switch is on; the panels ride the data.montage layer */
   function mtOn() { return !!(S && W.B68GmMontage && W.B68Features && W.B68Features.valueOf(S.doc, 'map.montage')); }
   function mtInst() {
@@ -2427,7 +2443,7 @@
   /* the bar's live parts: the session, what is on the iPad, listening */
   function renderBar() {
     if (!S || !S.root) return;
-    renderMirror(); spineTick(); pfMenuSync(); prMenuSync(); rdMenuSync(); mtMenuSync(); b17Tick(); csTick(); if (b29()) b29().menuSync();
+    renderMirror(); spineTick(); pfMenuSync(); prMenuSync(); cbMenuSync(); rdMenuSync(); mtMenuSync(); b17Tick(); csTick(); if (b29()) b29().menuSync();
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
@@ -6476,6 +6492,7 @@
       case 'montage': menuOpen(false); { var mti = mtInst(); if (mti) mti.toggle(); } break;      /* 2.8 */
       case 'practical': case 'phone': case 'trouble': case 'canon': case 'frontpage': case 'absent': menuOpen(false); { var rdi = rdInst(); if (rdi) rdi.toggle(a); } break;      /* 4.5, 4.7, 5.3 */
       case 'print': menuOpen(false); { var pri = prInst(); if (pri) pri.toggle(); } break;      /* 3.6, 2.11 */
+      case 'corkboard': menuOpen(false); { var cbi = cbInst(); if (cbi) cbi.toggle(); } break;      /* 2.7 */
       case 'b29': menuOpen(false); if (b29()) b29().click(b.getAttribute('data-act')); break;      /* B29 */
       case 'preflight': menuOpen(false); { var pfi = pfInst(); if (pfi) pfi.toggle(); } break;      /* 4.2 */
       case 'workshop': menuOpen(false); if (W.B68GmWorkshop) W.B68GmWorkshop.toggle($q('#gm-root'), { toast: toast }); break;      /* W0.5 */

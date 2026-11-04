@@ -81,6 +81,7 @@
     "check:show": "node checks/runtime/show-contract.test.mjs && node checks/runtime/show-client.test.mjs",
     "check:show-e2e": "node checks/runtime/show-contract.e2e.mjs",
     "check:b22": "node checks/runtime/suite-b22-print.test.mjs",
+    "check:b32": "node checks/runtime/suite-b32-corkboard.test.mjs",
     "check:b27": "node checks/runtime/suite-b27.test.mjs",
     "check:b31": "node checks/runtime/suite-b31.test.mjs",
     "check:b10": "node checks/runtime/suite-b10-start.test.mjs && node checks/runtime/suite-b10-onair.test.mjs && node checks/runtime/suite-b10-fx.test.mjs",
