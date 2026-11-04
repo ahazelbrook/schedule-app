@@ -1,0 +1,5 @@
+/* The cast photo (suite 3.8, face.castphoto): a true-height line-up on a paper ground; the unmet are silhouettes. */
+.dp-show-castphoto { justify-content: center; background: rgba(20, 17, 14, .92); }
+.dp-cp-photo { width: 94%; max-height: 80%; display: flex; justify-content: center; align-items: center; border: .6vmin solid var(--b68-paper-dark); box-shadow: 1vmin 1vmin 0 rgba(0, 0, 0, .4); background: #e8e2d4; overflow: hidden; }
+.dp-cp-photo svg { display: block; width: 100%; height: auto; max-height: 76vh; }
+.dp-cp-count { margin: 1.4vmin 0 0; }

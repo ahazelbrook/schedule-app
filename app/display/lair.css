@@ -1,0 +1,5 @@
+/* The lair that grows (suite 5.4, between.lair): the crew's base as a cut-away section, drawn by map kit 1.0. */
+.dp-show-lair { justify-content: flex-start; padding-top: 4vmin; background: rgba(20, 17, 14, .92); }
+.dp-lair-section { width: 96%; flex: 1; min-height: 0; display: flex; justify-content: center; align-items: center; }
+.dp-lair-section svg { display: block; width: 100%; height: auto; max-height: 100%; }
+.dp-lair-cap { margin: 0 0 1.6vmin; max-width: 90%; }

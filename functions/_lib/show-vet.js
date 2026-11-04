@@ -27,7 +27,7 @@ export async function vetShow(db, campaign, ov, layer) {
   const keep = (id) => !!ok[id];
   if (show) {
     const p = show.payload, how = SHOW_KINDS[show.kind].npc;
-    if (how === 'list') { p.npcIds = p.npcIds.filter(keep); if (!p.npcIds.length) throw new HttpError(400, 'overlay.payload ' + NONE); }
+    if (how === 'list') { p.npcIds = p.npcIds.filter(keep); if (!p.npcIds.length && !(SHOW_KINDS[show.kind].keep && p.sil && p.sil.length)) throw new HttpError(400, 'overlay.payload ' + NONE); }
     if (how === 'one' && !keep(p.npcId)) throw new HttpError(400, 'overlay.payload ' + NONE);
   }
   if (lay) {

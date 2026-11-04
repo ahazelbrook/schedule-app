@@ -148,7 +148,11 @@
     { id: 'map.kit1', label: 'The grand map (map kit 1.0)', surface: 'gm', stage: 'map', default: false, saturday: 'try',
       doc: 'A site whose block says kit: 1 draws with map kit 1.0: floors of their own, double-height rooms, its faces, a grand stair, the palazzo section. Off: every map as before.' },
     { id: 'map.corkboard', label: 'The intel corkboard', surface: 'gm', stage: 'map', default: false, saturday: 'try',
-      doc: 'Menu then Corkboard: the site on cork in the heist-board look, one Polaroid for each intel fact the crew has been told pinned to its room, and a mugshot for each revealed person on their post. Only revealed rooms and people appear. It prints on A4 or A3. Off: no Corkboard line.' }
+      doc: 'Menu then Corkboard: the site on cork in the heist-board look, one Polaroid for each intel fact the crew has been told pinned to its room, and a mugshot for each revealed person on their post. Only revealed rooms and people appear. It prints on A4 or A3. Off: no Corkboard line.' },
+    { id: 'face.castphoto', label: 'A cast photo per arc', surface: 'display', stage: 'face', default: false, saturday: 'off',
+      doc: 'Menu then Cast photo: one true-height line-up of the recurring cast for an arc, anyone not yet met a silhouette, put on the iPad for up to three minutes and printed on A4 at the arc’s end. Off: no menu line.' },
+    { id: 'between.lair', label: 'The lair that grows', surface: 'display', stage: 'between', default: false, saturday: 'off',
+      doc: 'Menu then The lair: the crew’s base as a cut-away section on the iPad, a layer for each base upgrade, cohort and piece of flair read from the crew sheet, with extra flair you type. Off: no menu line.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
