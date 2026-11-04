@@ -165,7 +165,10 @@
       var roll = call('roll', null);
       if (!roll || !Array.isArray(roll.rooms)) { say('Roll or pick a location first.', true); return null; }
       var names = roll.rooms.filter(isObj).map(function (r) { return r.name; }), play = call('play', null), npcs = call('npcs', {});
-      var intel = intelOf(play, call('told', {}), names), model = { intel: intel, loose: intel.filter(function (x) { return !x.room; }).map(function (x) { return x.text; }), posts: postsOf(npcs, play, names) };
+      var intel = intelOf(play, call('told', {}), names), hid = hideOf(npcs).concat(call('hiddenNames', [])).map(fold).filter(function (n) { return n.length >= 3; });
+      /* an unpinned fact never meets the token screen, so it is screened here: any line holding a hidden room or person is dropped */
+      var loose = intel.filter(function (x) { return !x.room; }).map(function (x) { return x.text; }).filter(function (tx) { var f = fold(tx); return !hid.some(function (n) { return f.indexOf(n) >= 0; }); });
+      var model = { intel: intel, loose: loose, posts: postsOf(npcs, play, names) };
       var tokens = tokensOf(model, function (id) { return typeof h.portrait === 'function' ? h.portrait(id) : ''; }), board;
       try { board = h.board(tokens, hideOf(npcs)); } catch (e) { say(e && e.message ? e.message : 'The board could not be drawn.', true); return null; }
       if (!board || !board.svg) { say('The board could not be drawn.', true); return null; }

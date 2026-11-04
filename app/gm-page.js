@@ -2318,7 +2318,8 @@
   function cbInst() {
     if (!cbOn()) return null;
     if (!S.cb) S.cb = W.B68GmCorkboard.make({ on: function (id) { return W.B68Features.valueOf(S.doc, id); }, root: function () { return $q('#gm-root'); }, toast: toast, npcs: function () { return S && isObj(S.npcs) ? S.npcs : {}; },
-      roll: function () { return S.locRoll; }, play: function () { var rs = runSite(); return rs ? rs.play : null; }, told: function () { var rs = runSite(); return rs ? ballDoc(rs.name).told : null; },
+      roll: function () { return S.locRoll; }, hiddenNames: function () { return S.locRoll ? P.hiddenNames(S.locRoll, revealEntries(mapUi().layer === 'player' ? mapUi() : Object.assign({}, mapUi(), { layer: 'player' }))) : []; },
+      play: function () { var rs = runSite(); return rs ? rs.play : null; }, told: function () { var rs = runSite(); return rs ? ballDoc(rs.name).told : null; },
       phase: function () { var n = S.night && S.night.night ? S.night.night() : null; return n && n.phase || ''; },
       portrait: function (id) { var d = S.npcs && S.npcs[id], K = W.B68Figure; try { return d && isObj(d.spec) && K && K.portrait ? stripSize(K.portrait(Object.assign(clone(d.spec), { id: 'gm-cb-' + slug(id) }), { lod: 'lo' }).svg) : ''; } catch (e) { return ''; } },
       board: function (tokens, hide) { var r = P.playerDisplay(S.locRoll, Object.assign({}, mapUi(), { layer: 'player', view: 'plan', theme: 'board' }), W.B68Map && W.B68Map.render, { tokens: tokens, hide: hide }); return { title: r.title, caption: r.caption, svg: r.svg, tokens: r.tokens, tokensRefused: r.tokensRefused }; } });

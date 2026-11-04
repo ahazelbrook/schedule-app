@@ -159,6 +159,16 @@ await test('real board: with nothing to pin it is the kit board and nothing more
   assert.equal(d.tokens, 0); assert.equal(d.tokensRefused, false);
 });
 
+await test('loose facts are screened: a line naming a hidden room or person is dropped from the sheet and the print', () => {
+  const play = { intel: [{ id: 'l1', text: 'Meet in the ' + SECURE + ' at ten.' }, { id: 'l2', text: 'hidden person is the buyer.' }, { id: 'l3', text: 'A harmless rumour.' }] };
+  const told = { l1: 'crew', l2: 'crew', l3: 'crew' };
+  const { host, printed } = hostFor({ play: () => play, told: () => told, hiddenNames: () => [SECURE.toLowerCase()] });
+  const c = CB.make(host), b = c.build();
+  assert.deepEqual(b.model.loose, ['A harmless rumour.']);
+  c.print('A4'); assert.ok(printed[0].includes('A harmless rumour.') && !printed[0].includes(SECURE) && !/hidden person/i.test(printed[0]));
+  const box = { innerHTML: '', parentNode: null }; c.render(box); assert.ok(!box.innerHTML.includes(SECURE) && !/hidden person/i.test(box.innerHTML));
+});
+
 await test('wiring: routes bundle (GM only), Menu hook, the player door, no API', () => {
   const routes = fs.readFileSync(path.join(ROOT, 'app', 'routes.js'), 'utf8');
   const gmLine = routes.split('\n').find((l) => /^\s*gm:\s*\[/.test(l)) || '';
