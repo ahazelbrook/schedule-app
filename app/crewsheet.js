@@ -231,9 +231,16 @@
     return '<div class="cs-legacy"><span class="cs-fl">From the old crew panel</span><ul>' + l.map(function (x) { return '<li>' + esc(x.name) + (x.held ? ' <span class="tp-dim">(held)</span>' : '') + '</li>'; }).join('') + '</ul>' +
       '<button type="button" class="tp-x" data-act="crew.legacyclear" title="Clear the old list" aria-label="Clear the old claims list">clear</button></div>';
   }
+  /* suite 5.5 (sheet/claims.js, switch between.claims): the claim track above the map; '' while the switch is off, so the panel is exactly what it was */
+  function claimTrack(crew, r, ctx) {
+    var X = window.B68Claims;
+    if (!X || !X.active(ctx)) return '';
+    return X.track(cellsOf(r).map(function (c) { return { id: c.id, name: c.name, base: !!c.base, special: !!c.special, oneOff: !!c.oneOff, turf: !!c.turf, held: held(crew, c.id) }; }),
+      (sp(r).circles || []).map(function (c) { return { name: c.name, threshold: c.threshold, marked: circMarked(crew, c) }; }));
+  }
   function claimsPanel(crew, r, ctx) {
     var n = cellsOf(r).filter(function (c) { return held(crew, c.id); }).length;
-    return panel('Claims', '<p class="hint">Claim a cell joined by a bar to one you hold; dimmed cells are not connected yet' + (ctx.isGM ? ' (as GM you can claim them anyway)' : '') + '. Orange cells are special; the outlined ones are one-off targets.</p>' + claimsMap(crew, r, ctx) + legacy(crew),
+    return panel('Claims', claimTrack(crew, r, ctx) + '<p class="hint">Claim a cell joined by a bar to one you hold; dimmed cells are not connected yet' + (ctx.isGM ? ' (as GM you can claim them anyway)' : '') + '. Orange cells are special; the outlined ones are one-off targets.</p>' + claimsMap(crew, r, ctx) + legacy(crew),
       { cls: 'cs-claims', right: '<span class="tp-dim">' + n + ' held</span>' });
   }
 
@@ -258,7 +265,7 @@
       });
     });
     h += '</div></div>';
-    return panel(esc(P.label), '<div class="cs-prodtop"><span class="cs-fl">Product</span>' + kinds + '</div><div class="cs-prodtop"><span class="cs-fl cs-ul">Units <b class="mono">' + units + '</b></span>' + u + '</div>' +
+    return panel(esc(P.label), claimTrack(crew, r, ctx) + '<div class="cs-prodtop"><span class="cs-fl">Product</span>' + kinds + '</div><div class="cs-prodtop"><span class="cs-fl cs-ul">Units <b class="mono">' + units + '</b></span>' + u + '</div>' +
       '<p class="hint">Follow the arrows: a cell opens once the cell its arrow comes from is held; cells with no arrow in are open from the start. Distribution turf counts as turf on the rep track.</p>' + h + legacy(crew), { cls: 'cs-claims cs-product' });
   }
 
@@ -277,7 +284,7 @@
         }).join('<span class="cs-dash">—</span>') + ' <span class="tp-dim mono">' + truths.length + '/' + c.truths.count + '</span></div>' +
         '<div class="cs-scroll"><div class="cs-crow">' + c.cells.map(function (x) { return cellHtml(crew, r, x, ctx.isGM); }).join('') + '</div></div></div>';
     });
-    return panel('The circles', '<p class="hint">Descend circle by circle once its threshold is met: its cells open to claim and its special abilities unlock.</p>' + h + legacy(crew), { cls: 'cs-claims cs-circles' });
+    return panel('The circles', claimTrack(crew, r, ctx) + '<p class="hint">Descend circle by circle once its threshold is met: its cells open to claim and its special abilities unlock.</p>' + h + legacy(crew), { cls: 'cs-claims cs-circles' });
   }
 
   function stuntsPanel(crew, r) {
@@ -417,6 +424,7 @@
   }
   function factionsPanel(crew, ctx) {
     var list = Array.isArray(crew.factions) ? crew.factions : [], h = '<div class="tp-list">';
+    if (window.B68Claims && window.B68Claims.active(ctx)) return panel('Factions', window.B68Claims.cards(list, ctx), { right: '<button type="button" class="btn sm" data-act="crew.factionadd">Add faction</button>' });   /* suite 5.5: business cards on the ladder */
     list.forEach(function (f, i) {
       h += '<div class="tp-faction">' + ctx.input('crew.factions.' + i + '.name', f.name, 'Faction', { label: 'Faction ' + (i + 1) }) + '<span class="seg tp-status7">' + [-3, -2, -1, 0, 1, 2, 3].map(function (v) { return ctx.chip(v > 0 ? '+' + v : v < 0 ? '−' + (-v) : '0', 'crew.factionstatus', f.status === v, ' data-i="' + i + '" data-v="' + v + '"', { cls: v < 0 ? 'neg' : v > 0 ? 'pos' : '' }); }).join('') + '</span><button type="button" class="tp-x" data-act="crew.factionrm" data-i="' + i + '" title="Remove the faction" aria-label="Remove the faction">×</button></div>';
     });

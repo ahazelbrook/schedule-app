@@ -48,6 +48,8 @@
     quiet: ['sheet/quiet.js'],
     /* the opportunity board (5.1, between.board): a player posts a client, a target or an operation; fetched only while its switch is on */
     board: ['sheet/board.js'],
+    /* claims and status (5.5, between.claims): the claim track and the faction cards on the crew sheet; fetched only while its switch is on (the GM bundle carries it too) */
+    claims: ['sheet/claims.js'],
     /* the look book (app/lookbook.html, GM only): every show kind with its fixture; a later bundle that adds a kind lists its renderer file here */
     lookbook: ['tokens.css', 'display.css', 'display/shows.css', 'display/aftermath.css', 'display/face-cards.css', 'display/montage.css', 'tokens.js', 'display/shows.js', 'display/show-beats.js', 'display/rolodex-card.js', 'display/report-beat.js', 'display/aftermath.js', 'display/board.js', 'display/layers.js', 'display/montage.js', 'display/lookbook.js']
   };

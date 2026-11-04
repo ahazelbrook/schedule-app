@@ -234,6 +234,75 @@ await test('store: a player\'s opportunities are theirs alone (the other player 
 });
 
 /* ---------- 5.5 ---------- */
+const PC = require(path.join(APP, 'sheet', 'claims.js'));
+await test('between.claims is registered, default off, bland, phone-surface; a flipped doc turns it on alone', () => {
+  const s = Features.get('between.claims');
+  assert.ok(s); assert.equal(s.default, false); assert.equal(s.surface, 'phone'); assert.equal(s.stage, 'between');
+  assert.ok(s.label && s.doc && !/GM-ONLY/.test(s.doc));
+  assert.equal(Features.valueOf({}, 'between.claims'), false); assert.equal(Features.valueOf({ features: { 'between.claims': true } }, 'between.claims'), true);
+  assert.equal(Features.valueOf({ features: { 'between.board': true } }, 'between.claims'), false);
+});
+await test('routes: the claims bundle is alone and the GM bundle carries the file (the crew sheet renders on the GM page); no other bundle has it', () => {
+  assert.equal(JSON.stringify(Routes.BUNDLES.claims), '["sheet/claims.js"]'); assert.ok(Routes.BUNDLES.gm.includes('sheet/claims.js'));
+  for (const b of ['core', 'table', 'figures', 'display', 'commend', 'debrief', 'quiet', 'board', 'lookbook']) assert.ok(!Routes.BUNDLES[b].includes('sheet/claims.js'), b);
+});
+await test('pure: rung maps -3..+3 to 0..6, only -3 is war, the track counts held claims and marks only turf and target cells', () => {
+  assert.deepEqual(PC.RUNGS.map(PC.rung), [0, 1, 2, 3, 4, 5, 6]); assert.equal(PC.rung(4), -1); assert.equal(PC.rung('x'), -1); assert.equal(PC.rung(0.5), -1);
+  assert.deepEqual([-3, -2, 0, 3].map(PC.isWar), [true, false, false, false]);
+  const cells = [{ id: 'base', base: true, held: true }, { id: 'a', name: 'Informants', held: true }, { id: 'b', name: 'Dive Bar', held: false }, { id: 't', name: 'Turf', turf: true, held: true }, { id: 'o', name: 'Elusive Target', oneOff: true, special: true, held: false }];
+  const s = PC.summarise(cells);
+  assert.equal(s.held, 2); assert.equal(s.total, 4, 'the base is printed held and is not a claim');
+  assert.deepEqual(s.marks.map((m) => [m.id, m.kind, m.lit]), [['t', 'turf', true], ['o', 'target', false]]);
+  const h = PC.track(cells, []);
+  assert.equal((h.match(/b68-ct-box/g) || []).length, 4); assert.equal((h.match(/b68-ct-box on/g) || []).length, 2); assert.match(h, /<b>2<[/]b> of 4 claims held/);
+  assert.equal(PC.track([], []), '', 'nothing to track: nothing drawn');
+  assert.match(PC.track([{ id: 'x', name: 'A', held: false }], [{ name: 'First circle', threshold: 'Threshold of Gold: x', marked: true }]), /ct-mark circle lit/);
+  assert.ok(!/<script|onerror/i.test(PC.track([{ id: 'x', name: '<script>', held: true }], [])), 'names are escaped');
+});
+
+/* the real crew sheet, with the switch off and on */
+function sheetRig(opts = {}) {
+  let panel = null; const win = {}; win.window = win;
+  win.B68Campaign = { setCrewPanel(p) { panel = p; }, genericCrewPanel: { render: () => '<generic/>' } };
+  win.document = { getElementById: () => null, addEventListener() {}, head: null };
+  vm.createContext(win);
+  vm.runInContext(fs.readFileSync(path.join(APP, 'crews.js'), 'utf8'), win);
+  vm.runInContext(fs.readFileSync(path.join(APP, 'crewsheet.js'), 'utf8'), win);
+  if (opts.claims) { win.B68Flags = { on: (id) => opts.flags && opts.flags[id] === true }; win.B68Features = Features; vm.runInContext(fs.readFileSync(path.join(APP, 'sheet', 'claims.js'), 'utf8').replace(/[}][)][(]typeof self !== 'undefined' [?] self : this,/, '})(window,'), win); if (opts.start) win.B68Claims.start(); }
+  if (opts.gmDoc) win.B68GmPage = { aftermath: () => ({ doc: opts.gmDoc }) };
+  const ctx = new Proxy({ isGM: !!opts.gm, draft: () => '', input: (p, v) => '<in ' + p + '>', chip: (l, a, on, x) => '<chip ' + l + (on ? ' on' : '') + (x || '') + '>', can: () => true, esc: (t) => t }, { get: (t, k) => (k in t ? t[k] : () => '') });
+  return { render: (crew) => panel.render(crew, ctx), win };
+}
+const CREW = { playbook: 'shadows', claims: { informants: true, turf: true }, factions: [{ name: 'Kestrel Club', status: -3 }, { name: 'Tidewater Watch', status: 1 }, { name: 'Pelican Rooms', status: 0 }] };
+await test('crew sheet, switch off: the HTML is byte for byte the original, whether the module is absent, loaded and not started, or started with the flag false', () => {
+  const base = sheetRig().render(CREW);
+  assert.ok(base.length > 5000 && !/b68-ct|b68-fc/.test(base));
+  assert.equal(sheetRig({ claims: true }).render(CREW), base, 'loaded, not started');
+  assert.equal(sheetRig({ claims: true, start: true, flags: { 'between.claims': false } }).render(CREW), base, 'started, flag off');
+  assert.equal(sheetRig({ claims: true, gm: true, gmDoc: { features: {} } }).render(CREW), sheetRig({ gm: true }).render(CREW), 'GM page, switch off');
+});
+await test('crew sheet, switch on (a phone): the claim track and the faction cards appear, the WAR stamp only at -3, and the rungs are the status chips of the sheet itself', () => {
+  const h = sheetRig({ claims: true, start: true, flags: { 'between.claims': true } }).render(CREW);
+  assert.match(h, /class="b68-ct"/); assert.match(h, /claims held/);
+  assert.equal((h.match(/b68-fc-war/g) || []).length, 1, 'one WAR stamp for one faction at -3');
+  assert.match(h, /b68-fc war" data-status="-3"/); assert.match(h, /b68-fc" data-status="1"/);
+  assert.equal((h.match(/<chip /g) || []).length >= 21, true, 'seven rungs a card');
+  assert.match(h, /data-act="crew.factionrm"/); assert.match(h, /data-act="crew.factionadd"/);
+  assert.match(h, /b68-ct-mark turf lit/, 'a held turf cell lights its threshold');
+});
+await test('crew sheet, GM page: the switch is read from the state document, not the phone flags', () => {
+  const on = sheetRig({ claims: true, gm: true, gmDoc: { features: { 'between.claims': true } } }).render(CREW);
+  assert.match(on, /b68-ct/); assert.match(on, /b68-fc-war/);
+  const wrong = sheetRig({ claims: true, gm: true, gmDoc: { features: { 'between.board': true } } }).render(CREW);
+  assert.ok(!/b68-ct|b68-fc/.test(wrong), 'another switch does not turn it on');
+});
+await test('crew sheet: Dealers and Utopians get the track too, with no invented marks', () => {
+  const rig = sheetRig({ claims: true, start: true, flags: { 'between.claims': true } });
+  for (const pb of ['dealers', 'utopians', 'racers', 'militants', 'hit-squad']) {
+    let h; try { h = rig.render({ playbook: pb, claims: {}, factions: [] }); } catch (e) { assert.fail(pb + ': ' + e.message); }
+    if (/data-playbook/.test(h)) assert.match(h, /b68-ct/, pb);
+  }
+});
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
