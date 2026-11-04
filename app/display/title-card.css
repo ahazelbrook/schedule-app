@@ -1,0 +1,46 @@
+/* The score title card (suite 2.10, switch map.title; app/display/title-card.js): flat cut-paper shapes on a grid, paper, ink and two reds.
+   Timeline (every delay and duration here; the last one ends at 5.7 s, inside the card's six):
+     0.0-1.0   the grid draws                       0.3-1.95  each storey's flat plan flies in from the left, one after another
+     2.0-3.5   each plan becomes its storey of the building (one matrix, from the flat plan to the stack)
+     3.0-3.9   the walls fill in as each storey lands  3.4-3.9  the red slab         3.8-4.3  the name lands on the grid line   4.2-4.6  the line under it
+     5.7-6.0   out
+   Read from 1.5 m: the name is never set under 5vmin. With reduced motion the card is its last frame. */
+.dp-show-scoretitle { padding: 0; background: var(--b68-paper); color: var(--b68-ink); justify-content: center; }
+.dp-tc-stage { position: relative; width: min(100%, 177.78vh); aspect-ratio: 16 / 9; flex: none; }
+.dp-tc-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.dp-tc-gl { stroke: var(--b68-ink); stroke-width: .12; opacity: .3; stroke-dasharray: 200; stroke-dashoffset: 0; }
+.dp-tc-floor { transform-box: view-box; transform-origin: 0 0; }
+.dp-tc-top { stroke: var(--b68-ink); stroke-width: .3; stroke-linejoin: miter; fill: var(--b68-alarm-lit); }
+.dp-tc-left { fill: var(--b68-ink); stroke: var(--b68-ink); stroke-width: .2; }
+.dp-tc-right { fill: var(--b68-ink-soft); stroke: var(--b68-ink); stroke-width: .2; }
+.dp-tc-c1 .dp-tc-top { fill: var(--b68-orange); }
+.dp-tc-c2 .dp-tc-top { fill: var(--b68-mustard); }
+.dp-tc-c3 .dp-tc-top { fill: var(--b68-paper-light); }
+.dp-tc-c4 .dp-tc-top { fill: var(--b68-orange-deep); }
+.dp-tc-c5 .dp-tc-top { fill: var(--b68-alarm); }
+/* the grid line the name stands on is y = 80 of 90 (88.9% down); the slab is the two grid rows above it */
+.dp-tc-slab { position: absolute; left: 0; width: 66.7%; top: 66.67%; height: 22.22%; background: var(--b68-alarm-lit); transform-origin: 0 50%; }
+.dp-tc-title { position: absolute; left: 5%; width: 60%; bottom: 11.11%; margin: 0; padding-bottom: .6vmin; font: 900 clamp(5vmin, calc(150vmin / var(--n, 10)), 13vmin)/.95 var(--b68-font-poster);
+  text-transform: uppercase; letter-spacing: .01em; color: var(--b68-paper-light); text-align: left; }
+.dp-tc-sub { position: absolute; left: 5%; bottom: 2.6%; margin: 0; font: 900 var(--b68-t-label)/1 var(--b68-font-cond); letter-spacing: .22em; text-transform: uppercase; color: var(--b68-ink); text-align: left; }
+
+.dp-show-scoretitle.dp-ov-in .dp-tc-gl { animation: dp-tc-draw .7s ease-out both; animation-delay: calc(var(--i, 0) * 18ms); }
+.dp-show-scoretitle.dp-ov-in .dp-tc-floor {
+  animation: dp-tc-fly .9s cubic-bezier(.2, .9, .3, 1) both, dp-tc-morph 1s cubic-bezier(.6, 0, .2, 1) both;
+  animation-delay: calc(.3s + var(--i, 0) * .15s), calc(2s + var(--i, 0) * .1s); }
+.dp-show-scoretitle.dp-ov-in .dp-tc-left, .dp-show-scoretitle.dp-ov-in .dp-tc-right { animation: dp-tc-wall .4s ease-out both; animation-delay: calc(3s + var(--i, 0) * .1s); }
+.dp-show-scoretitle.dp-ov-in .dp-tc-slab { animation: dp-tc-slab .5s cubic-bezier(.7, 0, .2, 1) 3.4s both; }
+.dp-show-scoretitle.dp-ov-in .dp-tc-title { animation: dp-tc-land .5s cubic-bezier(.2, .9, .3, 1) 3.8s both; }
+.dp-show-scoretitle.dp-ov-in .dp-tc-sub { animation: dp-tc-land .4s ease-out 4.2s both; }
+.dp-show-scoretitle.dp-ov-in { animation: dp-tc-out .3s ease-in 5.7s both; }
+@keyframes dp-tc-draw { from { stroke-dashoffset: 200; } to { stroke-dashoffset: 0; } }
+@keyframes dp-tc-fly { from { translate: -150px 0; opacity: 0; } to { translate: 0 0; opacity: 1; } }
+@keyframes dp-tc-morph { from { transform: var(--m0); } to { transform: none; } }
+@keyframes dp-tc-wall { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dp-tc-slab { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes dp-tc-land { from { clip-path: inset(0 100% 0 0); opacity: 0; } to { clip-path: inset(0 0 0 0); opacity: 1; } }
+@keyframes dp-tc-out { from { opacity: 1; } to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .dp-show-scoretitle.dp-ov-in, .dp-show-scoretitle.dp-ov-in * { animation: none !important; }
+}
+.dp-show-scoretitle[data-reduced].dp-ov-in, .dp-show-scoretitle[data-reduced].dp-ov-in * { animation: none !important; }

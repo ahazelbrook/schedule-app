@@ -5,9 +5,9 @@
       "file": "maps/map-kit.js",
       "global": "B68Map",
       "version": "1.0.0",
-      "bytes": 885311,
-      "sha256": "692afff015c22c8a0b8166fcc0349eba981a0618c93998c4b228cec4fa754981",
-      "source": "Blades '68 Design System, map kit 0.9.0, plus app-side changes: front vector room, roll w/lvl, kit 1.0 the grand map (src/grand.js, ticket 2.1), and a room's own arch (the lair, ticket 5.4); take upstream",
+      "bytes": 887610,
+      "sha256": "89efc41401fefb121edd71372eb8ede5638f11bd8f3eedb5c2abdb56ea15a85f",
+      "source": "Blades '68 Design System, map kit 0.9.0, plus app-side changes: front vector room, roll w/lvl, kit 1.0 the grand map (src/grand.js, ticket 2.1), a room's own arch (the lair, ticket 5.4) and blueprint rooms on the player copy (opts.blueprint, ticket 2.2); take upstream",
       "at": "2026-11-04"
     },
     "figures": {
