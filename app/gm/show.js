@@ -46,13 +46,21 @@
     'scene.mode': function (v) { return v === 'start' || v === 'aftermath'; },
     'data.countdown': function (v) { return isObj(v) && whole(v.to, 1, 8.64e15) && (v.label === undefined || (typeof v.label === 'string' && v.label.trim().length <= 40)); },
     'data.credits': function (v) { return idList(v, 30); },
-    'data.previously': function (v) { return idList(v, 12); }
+    'data.previously': function (v) { return idList(v, 12); },
+    'data.montage': function (v) { return isObj(v) && Object.keys(v).length === 1 && Array.isArray(v.panels) && v.panels.length >= 2 && v.panels.length <= 4 && v.panels.every(montagePanelOk); }      /* suite 2.8 (functions/_lib/show-montage.js) */
   };
   /* a PC face's optional status (suite 3.7): name (40), stress 0-9, harm as up to four levels 1-4, locks 0-6 */
   function pcFaceOk(f) {
     return (f.name === undefined || (typeof f.name === 'string' && f.name.trim().length > 0 && f.name.replace(/\s+/g, ' ').trim().length <= 40)) &&
       (f.stress === undefined || whole(f.stress, 0, 9)) && (f.locks === undefined || whole(f.locks, 0, 6)) &&
       (f.harm === undefined || (Array.isArray(f.harm) && f.harm.length <= 4 && f.harm.every(function (h) { return whole(h, 1, 4); })));
+  }
+  /* a montage panel: a pcId, and optionally name (40), room (60), line (100) as text and done as a boolean */
+  function montagePanelOk(p) {
+    if (!isObj(p) || typeof p.pcId !== 'string' || !ID.test(p.pcId)) return false;
+    if (Object.keys(p).some(function (k) { return ['pcId', 'name', 'room', 'line', 'done'].indexOf(k) < 0; })) return false;
+    if (p.done !== undefined && typeof p.done !== 'boolean') return false;
+    return [['name', 40], ['room', 60], ['line', 100]].every(function (f) { var v = p[f[0]]; return v === undefined || (typeof v === 'string' && v.replace(/[ \t\r\n]+/g, ' ').trim().length <= f[1]); });
   }
   var MS_MIN = 1000, MS_MAX = 180000;
   function whole(v, lo, hi) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v && v >= lo && v <= hi; }

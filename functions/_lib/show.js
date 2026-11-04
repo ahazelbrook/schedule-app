@@ -15,6 +15,7 @@
 // rebuilt from named keys (never a spread of what is stored), and free text is scanned for hidden names by the handler when it is set.
 import { HttpError, ID_RE, isPlainObject } from './http.js';
 import { AFTERMATH_KINDS } from './show-aftermath.js';
+import { montageLayer, montageTexts } from './show-montage.js';
 
 const TONES = ['ink', 'orange', 'blue', 'red'];
 const REPORT_POSITIONS = ['controlled', 'risky', 'desperate'], REPORT_EFFECTS = ['limited', 'standard', 'great'];   // the action report card (B09 spine.stamp): report { position, effect, text? (100) }
@@ -137,6 +138,7 @@ export const LAYERS = {
   },
   'data.credits': (v) => ids(v, 'data.credits', SHOW_NPC_MAX.credits, true),
   'data.previously': (v) => ids(v, 'data.previously', SHOW_NPC_MAX.previously, true),
+  'data.montage': montageLayer,   // suite 2.8 (show-montage.js)
 };
 export const LAYER_PATHS = Object.keys(LAYERS);
 
@@ -154,6 +156,7 @@ export function showTexts(ov, layer) {
   const add = (o) => { if (isPlainObject(o)) for (const v of Object.values(o)) { if (typeof v === 'string') out.push(v); else if (Array.isArray(v)) for (const x of v) if (typeof x === 'string') out.push(x); } };   // a list of lines is words too
   if (ov && isShowKind(ov.kind) && ov.payload) add(ov.payload);
   if (layer && isPlainObject(layer.value) && !Array.isArray(layer.value)) add(layer.value);
+  if (layer && layer.path === 'data.montage') out.push(...montageTexts(layer.value));
   if (layer && layer.path === 'band.faces' && Array.isArray(layer.value)) layer.value.forEach((f) => { if (isPlainObject(f) && f.pcId && typeof f.name === 'string') out.push(f.name); });
   return out;
 }

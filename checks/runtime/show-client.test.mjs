@@ -175,7 +175,7 @@ await test('GM layer() and clear(): known paths and values only; null clears one
   assert.equal(sent.length, 2);
   await c.clear(); await c.clear({ layers: false });
   assert.deepEqual(sent.slice(2), [{ overlay: null, layers: null }, { overlay: null }]);
-  assert.deepEqual(Show.LAYER_PATHS.sort(), ['band.faces', 'band.onair', 'band.phase', 'band.security', 'data.countdown', 'data.credits', 'data.previously', 'scene.filter', 'scene.layout', 'scene.mode']);
+  assert.deepEqual(Show.LAYER_PATHS.sort(), ['band.faces', 'band.onair', 'band.phase', 'band.security', 'data.countdown', 'data.credits', 'data.montage', 'data.previously', 'scene.filter', 'scene.layout', 'scene.mode']);
 });
 
 await test('the GM page gate takes the new commands and refuses what names a hidden NPC, an unknown layer, or a loose overlay', () => {
