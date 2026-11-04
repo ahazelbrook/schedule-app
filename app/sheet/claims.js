@@ -67,7 +67,7 @@
     var h = '<div class="b68-fc-list">';
     (Array.isArray(list) ? list : []).forEach(function (f, i) {
       var st = isObj(f) ? f.status : 0, war = isWar(st);
-      h += '<div class="b68-fc' + (war ? ' war' : '') + '" data-status="' + st + '">' +
+      h += '<div class="b68-fc' + (war ? ' war' : '') + '" data-status="' + esc(Number(st)) + '">' +
         '<div class="b68-fc-name">' + ctx.input('crew.factions.' + i + '.name', f.name, 'Faction', { label: 'Faction ' + (i + 1) }) + '<button type="button" class="tp-x" data-act="crew.factionrm" data-i="' + i + '" title="Remove the faction" aria-label="Remove the faction">×</button></div>' +
         '<span class="seg tp-status7 b68-fc-ladder">' + RUNGS.map(function (v) { return ctx.chip(v > 0 ? '+' + v : v < 0 ? '−' + (-v) : '0', 'crew.factionstatus', st === v, ' data-i="' + i + '" data-v="' + v + '"', { cls: v < 0 ? 'neg' : v > 0 ? 'pos' : '' }); }).join('') + '</span>' +
         (war ? '<b class="b68-fc-war" aria-label="At war">WAR</b>' : '') + '</div>';
