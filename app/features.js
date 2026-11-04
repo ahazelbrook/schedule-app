@@ -95,6 +95,8 @@
       doc: 'When the table iPad opens its listening stream, it passes the names of the crew, the revealed cast, the factions and the districts, so they are heard more reliably. Off: the stream opens as before.' },
     { id: 'room.preflight', label: 'Preflight check', surface: 'display', stage: 'room', default: false, saturday: 'on',
       doc: 'Menu then Preflight: green or red for the iPad sound, files kept on each device, the transcriber, the Access session and the pack version, each red with a one-line fix. Read-only. Off: no menu item and the iPad reports nothing extra.' },
+    { id: 'room.light', label: 'One light cue', surface: 'gm', stage: 'room', default: false, saturday: 'off',
+      doc: 'A small relay on this laptop moves one light strip with the scene and flashes the rim lights once for 3 seconds on request, never faster than twice a second. The work light never changes. Off: nothing is sent.' },
     { id: 'face.rolodex', label: 'Rolodex lower third', surface: 'display', stage: 'face', default: false, saturday: 'on',
       doc: 'An Introduce button on a revealed character’s card in the cast list, and "Blade, introduce <name>", flip their card up as a lower third on the iPad for about 20 seconds: face, name, alias, role and faction. Off: the row of full-screen cards, as before.' },
     { id: 'face.pcstatus', label: 'PC status on the band', surface: 'gm', stage: 'face', default: false, saturday: 'try',
