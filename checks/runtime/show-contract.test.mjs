@@ -50,6 +50,7 @@ const FIXTURES = {
   report: { position: 'risky', effect: 'standard', text: 'Wren Tully turns round' },
   aftermath: { step: 'heat', n: 3, exposure: 4, mods: 2, heat: 5, after: 0, siren: true, wanted: 2, lines: ['The Kestrel Club +1'] }, credits: { npcIds: ['n-mabel', 'n-dov'] },   // suite 1.6
   board: { cards: ['A fixer wants a ledger fetched', 'The cashier with the second books'], who: ['Wren', 'Nell'], kinds: ['client', 'target'], carried: ['0', '1'], pick: 1 },   // suite 5.1
+  castphoto: { npcIds: ['n-mabel', 'n-dov'], sil: ['66', '74'], title: 'The Pelican Rooms' }, lair: { name: 'The Pelican Rooms', front: 'canal', layers: ['up:Workshop', 'co:Night Porters'] },   // suite 3.8 and 5.4
 };
 
 await test('the registry: the seven brief beats and the spotlight are overlay kinds, the old four are still there', () => {

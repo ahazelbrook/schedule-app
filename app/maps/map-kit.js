@@ -2279,9 +2279,11 @@ M.model = function (o, W) {
     let band = r.band;
     if (!M.BANDS.includes(band)) { M.warn(W, `room "${r.name}": band "${band}" is not one of ${M.BANDS.join(", ")} — drawn as public`); band = "public"; }
     const info = M.roomInfo(r.name, o.themeName, r.mix);
-    if (!info) M.warn(W, `room "${r.name}" is not in the catalogue — drawn empty. Add it to M.ROOMS in catalogue.js`);
+    // map kit 1.0 (the lair, B30): a room may name its own archetype (r.arch), so a room the catalogue does not know is drawn furnished. No catalogue room has one.
+    const own = typeof r.arch === "string" && M.own(M.ARCH, r.arch) ? r.arch : null;
+    if (!info && !own) M.warn(W, `room "${r.name}" is not in the catalogue — drawn empty. Add it to M.ROOMS in catalogue.js`);
     const dress = M.own(M.own(M.DRESS, o.target), r.name);
-    const arch = dress || (info ? info.arch : "empty");
+    const arch = dress || (info ? info.arch : own || "empty");
     return {
       id: "r" + i, n: 0, name: r.name, band, arch, dressed: !!dress,
       // app-side: a roll's own whole-number w (2..12) and lvl (-1..2) win over the catalogue's

@@ -2277,7 +2277,7 @@
   }
   function menuOpen(on) {
     var m = $q('.gm-menu-list'), b = $q('[data-gm="menu"]'); if (!m) return;
-    if (on) { renderLiveItem(); syncCapBar(); if (W.B68GmAftermath && S) W.B68GmAftermath.sync($q('#gm-root'), S.doc); if (W.B68GmDebrief && S) W.B68GmDebrief.sync($q('#gm-root'), S.doc); if (W.B68GmBoard && S) W.B68GmBoard.sync($q('#gm-root'), S.doc); m.removeAttribute('hidden'); } else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
+    if (on) { renderLiveItem(); syncCapBar(); if (W.B68GmAftermath && S) W.B68GmAftermath.sync($q('#gm-root'), S.doc); if (W.B68GmDebrief && S) W.B68GmDebrief.sync($q('#gm-root'), S.doc); if (W.B68GmBoard && S) W.B68GmBoard.sync($q('#gm-root'), S.doc); if (W.B68GmCastPhoto && S) W.B68GmCastPhoto.sync($q('#gm-root'), S.doc); if (W.B68GmLair && S) W.B68GmLair.sync($q('#gm-root'), S.doc); m.removeAttribute('hidden'); } else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
   }
   /* W0.2: the switchboard (gm/switchboard.js): one per page session, made on first use. Its host is this page's own patch, campaign and api. */
   function swInst() {
@@ -6757,6 +6757,9 @@
       npcs: Object.keys(cast).filter(function (id) { return isObj(cast[id]); }).map(function (id) { var d = cast[id]; return { id: id, name: str(d.name), role: str(d.role), revealed: d.revealed === true, firstSeen: str(d.firstSeen), staged: staged(id) }; }) };
   }
 
+  /* 3.8 and 5.4 (gm/castphoto.js, gm/lair.js): the cast and the crew sheet, as the two panels read them */
+  function castFeed() { return S ? { doc: S.doc, night: S.night, toast: toast, npcs: isObj(S.npcs) ? S.npcs : {}, crew: isObj(camp) && isObj(camp.crew) ? camp.crew : {} } : null; }
+
   return {
     open: open, close: close, campaign: campaign, characters: charactersChanged, purge: purge,
     available: function () { return !!(W.claude && W.claude.gm); },
@@ -6783,6 +6786,7 @@
     _autopilot: function () { return S && S.ap ? S.ap.core.state() : null; },
     _night: function () { return S && S.night ? S.night : null; },
     aftermath: aftermathFeed,       /* suite 1.6 */
+    cast: castFeed,                 /* suites 3.8 and 5.4 */
     _voice: function (v) { if (S) setVoice(v); }
   };
 });
