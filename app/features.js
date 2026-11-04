@@ -119,6 +119,8 @@
       doc: 'A ring on the iPad also rings the practical speaker; on your tap it plays a recording kept on this laptop and puts its caption on the iPad. Menu then Ringing phone. Off: a ring is the picture alone.' },
     { id: 'between.trouble', label: 'The Trouble desk', surface: 'gm', stage: 'between', default: false, saturday: 'off',
       doc: 'Menu then Trouble desk: walks the Aftermath trouble checks from the pack tables, keeps your written or pasted results as drafts, and approved ones make a front page and rumours you can put on the iPad one tap at a time. Off: no line.' },
+    { id: 'ai.canon', label: 'The canon queue', surface: 'gm', stage: 'ai', default: false, saturday: 'try',
+      doc: 'Menu then Canon queue: paste the queue note to see how many proposals are ticked and which are GM-only. Reads only; the ticked lines are filed by the laptop script gm:canon-apply, which uses no model. Off: no line.' },
     { id: 'map.spotted', label: 'The Spotted beat', surface: 'gm', stage: 'map', default: false, saturday: 'try',
       doc: 'A Spotted button on the Run map: zoom to the room, a sting on the iPad, a yellow fill spreading from the eyes, the site’s alarm clock ticks once, then back. Off: no button.' },
     { id: 'map.flashback', label: 'The flashback filter', surface: 'display', stage: 'map', default: false, saturday: 'on',
