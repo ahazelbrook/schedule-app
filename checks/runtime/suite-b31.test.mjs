@@ -249,6 +249,16 @@ await test('front page desk: save needs a headline and account; the headline goe
   assert.equal((await fresh.current()).headline.startsWith('VAULT STANDS'), true, 'read back from the store');
 });
 
+await test('front page desk: a 100-character headline is trimmed to the title beat limit of 80 at a word boundary', async () => {
+  const head = Array.from({ length: 16 }, (_, i) => 'word' + i).join(' ').slice(0, 100), shows = [];
+  assert.equal(head.length, 100);
+  const c = Fp.make({ docs: fakeDocs(), show: async (k, p) => { shows.push(p); }, toast: () => {} });
+  assert.ok(await c.save(['# ' + head, '## Account', 'A paragraph.', ''].join(String.fromCharCode(10))));
+  await c.headline();
+  assert.ok(shows[0].text.length <= 80 && head.startsWith(shows[0].text) && !shows[0].text.endsWith(' ') && !/…/.test(shows[0].text));
+  assert.ok(shows[0].text.length > 60, 'cut at the last space, not early');
+});
+
 // ---------------------------------------------------------------- the absent packet
 const PLAY = (o) => ({ stress: 2, xp: { playbook: 1, insight: 0, prowess: 0, resolve: 0 }, harm: { l1: ['', ''], l2: ['', ''], l3: '', l4: '' }, bank: 1, stacks: 0, abilities: ['Sneak'], items: ['A lamp'], ...o });
 const DOC_MARA = { name: 'Mara Quill', owner: 'mara@example.test', play: PLAY() };

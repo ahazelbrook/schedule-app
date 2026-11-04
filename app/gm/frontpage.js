@@ -88,6 +88,9 @@
     return { masthead: fp.masthead || '', issue: fp.issue || '', date: fp.date || '', headline: fp.headline, standfirst: fp.standfirst || '', account: (fp.account || []).slice(0, LIMITS.paras), name: fp.name || '', hook: fp.hook || '' };
   }
 
+  /* the title beat holds 80 characters (functions/_lib/show.js): cut at a word boundary, no ellipsis */
+  function titleText(t) { t = str(t); if (t.length <= 80) return t; var c = t.slice(0, 80), i = c.lastIndexOf(' '); return (i > 20 ? c.slice(0, i) : c).replace(/[ ,;:.-]+$/, ''); }
+
   function make(host) {
     var h = host || {}, ctl = {}, cached = null;
     function say(m, bad) { if (typeof h.toast === 'function') h.toast(m, bad); }
@@ -104,7 +107,7 @@
     ctl.headline = function () {
       return ctl.current().then(function (fp) {
         if (!fp) { say('No front page saved yet.', true); return null; }
-        return h.show('title', { text: fp.headline, sub: fp.masthead || 'Front page' }, { ms: 12000, key: 'frontpage-' + fp.headline.length });
+        return h.show('title', { text: titleText(fp.headline), sub: fp.masthead || 'Front page' }, { ms: 12000, key: 'frontpage-' + fp.headline.length });
       });
     };
     ctl.print = function () {
@@ -136,5 +139,5 @@
     return ctl;
   }
 
-  return { make: make, parseNote: parseNote, html: html, css: css, document: document_, facts: facts, KIND: KIND, LIMITS: LIMITS };
+  return { make: make, parseNote: parseNote, html: html, css: css, document: document_, facts: facts, titleText: titleText, KIND: KIND, LIMITS: LIMITS };
 });
