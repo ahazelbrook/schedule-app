@@ -556,6 +556,25 @@ test('v2 clock: beat defaults to 15 and takes 5 to 60; starts keeps only crit, 6
   }
 });
 
+test('v2 clock.countdown (map.countdown): kept as { at, label } after the start and inside the clock; countdownOf counts the beats gone', () => {
+  const r = run2((p) => { p.clock.countdown = { at: '00:00', label: '  Zzcount  ', extra: 1 }; });
+  assert.deepEqual(r.warnings, []); assert.deepEqual(r.play.clock.countdown, { at: '00:00', label: 'Zzcount' });
+  assert.deepEqual(B.countdownOf(r.play, 0), { label: 'Zzcount', at: '00:00', n: 0, of: 12, full: false });
+  assert.deepEqual(['21:30', '22:30', '23:59', '00:00', '00:45'].map((h) => B.countdownOf(r.play, T(h)).n), [2, 6, 11, 12, 12], 'a segment a beat, never past full');
+  assert.equal(B.countdownOf(r.play, T('00:00')).full, true); assert.equal(B.countdownOf(r.play, -5).n, 0); assert.equal(B.countdownOf(r.play, NaN).n, 0);
+  assert.deepEqual(B.countdownOf(r.play.clock, T('22:30')), B.countdownOf(r.play, T('22:30')), 'the clock alone reads the same');
+  const nl = run2((p) => { p.clock.countdown = { at: '23:00' }; });
+  assert.deepEqual(nl.play.clock.countdown, { at: '23:00', label: '' }); assert.equal(B.countdownOf(nl.play, 0).label, 'Countdown'); assert.equal(B.countdownOf(nl.play, 0).of, 8);
+  for (const [bad, re] of [[{ at: '9pm' }, /countdown: needs at as HH:MM/], ['00:00', /countdown: needs at as HH:MM/], [{ at: '21:00' }, /not after the start/], [{ at: '03:00' }, /inside the clock/], [{ at: '20:00' }, /inside the clock/]]) {
+    const x = run2((p) => { p.clock.countdown = bad; }); assert.equal(x.play.clock.countdown, undefined, JSON.stringify(bad)); oneWarn(x, re);
+  }
+  const lb = run2((p) => { p.clock.countdown = { at: '00:00', label: 7 }; });
+  assert.deepEqual(lb.play.clock.countdown, { at: '00:00', label: '' }); oneWarn(lb, /countdown\.label/);
+  assert.equal(B.countdownOf(P2, 0), null, 'no countdown, no count'); assert.equal(B.countdownOf(null, 0), null);
+  const view = B.playerView(r.play, { crew: {}, told: {}, heard: {}, steps: {}, ways: {}, site: 'The Pelican Rooms', start: 0, t: 90 }, R2);
+  assert.ok(view); assert.equal(JSON.stringify(view).includes('Zzcount'), false, 'the countdown never reaches a player view');
+});
+
 test('v2 zones: a room in two zones stays in the first; unknown rooms, a missing label, empty zones and extras are dropped with one warning each', () => {
   const r = run2((p) => {
     p.zones[1].rooms.push('Showroom');                       /* already in 'floor' */

@@ -41,7 +41,7 @@ const PLAY1 = {
   disguises: [{ id: 'cook', label: 'Cook', floors: [-1], sees: 'Odette Marsh' }], events: [{ at: '22:00', id: 'sp', label: 'Speeches' }], clocks: [{ name: 'Fuse', room: 'Security control room' }],
 };
 const roomNames = ROOMS.map((r) => r.name);
-const c1 = BALL.checkPlay(PLAY1, roomNames), c2 = BALL.checkPlay(V2, roomNames);
+const c1 = BALL.checkPlay(PLAY1, roomNames), c2 = BALL.checkPlay({ ...V2, clock: { ...V2.clock, countdown: { at: '00:00', label: 'Zzcount' } } }, roomNames);
 if (c1.warnings.length || c2.warnings.length) { console.log('FAIL the fixture plays have warnings: ' + c1.warnings.concat(c2.warnings).join(' | ')); process.exit(1); }
 const site = (name, play) => ({ name, rel: 'x', map: { view: 'iso', theme: 'rulebook' }, patch: { district: 'Nowhere Ward', rooms: ROOMS }, play });
 const PARTS = {
@@ -155,6 +155,27 @@ try {
   check(await G.page.$eval('.rv-players', (e) => /Players/.test(e.textContent)), 'the Players chip is in the header (VV6 fills it)');
   check(await seqNow() === seq0, 'nothing was published to the iPad');
   await shot(G.page, 'runv2-01-started');
+
+  /* ---- 2b. the countdown (map.countdown), flipped as the GM flips it, in the page's own Switchboard: a segment a beat from clock.start ---- */
+  check((await G.page.$$('.rv-count')).length === 0, 'map.countdown off: no countdown pie');
+  /* Menu -> Switchboard opens its sheet (the same line closes it again, below); the switch is a button in it */
+  const sbSheet = async () => { await G.page.click('[data-gm="menu"]'); await G.page.click('#gm-menu-switchboard'); };
+  const flipCountdown = async () => { await G.page.click('[data-sb="map.countdown"]'); return G.page.$eval('[data-sb="map.countdown"]', (e) => e.getAttribute('aria-pressed') === 'true'); };
+  const pieText = () => G.page.$eval('.rv-count', (e) => e.textContent.replace(/\s+/g, ' ').trim()).catch(() => '');
+  await sbSheet();
+  check(await flipCountdown() === true, 'the Switchboard turns map.countdown on');
+  const pie0 = await until(async () => (await pieText()) || null, 8000);
+  check(pie0 === 'Zzcount 3/12', 'the pie reads Zzcount 3/12 at 21:45, with no reload (' + pie0 + ')');
+  check(!!(await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.features && d.features['map.countdown'] === true; }, 8000)), 'and the switch is saved in the GM state');
+  await G.page.click('[data-rv="next"]');
+  check(!!(await until(async () => (await pieText()) === 'Zzcount 4/12', 8000)), 'a beat forward is a tick: 4/12 at 22:00');
+  await G.page.click('[data-rv="back"]'); await until(async () => (await ball()).t === 45, 8000);
+  check(await flipCountdown() === false, 'the Switchboard turns it off again');
+  check(!!(await until(async () => (await G.page.$$('.rv-count')).length === 0, 8000)), 'and the pie goes');
+  await sbSheet();
+  check(!!(await until(async () => !(await G.page.isVisible('#gm-sheet-switchboard')), 5000)), 'the Switchboard sheet is closed again');
+  check(!!(await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.features && d.features['map.countdown'] === false; }, 8000)), 'and the switch is saved off');
+  await sleep(2500);   /* the flips' saves and polls settle, so the board below is not redrawn under the drag checks' element handles */
 
   /* ---- 3. a beat each way ---- */
   await G.page.click('[data-rv="next"]');

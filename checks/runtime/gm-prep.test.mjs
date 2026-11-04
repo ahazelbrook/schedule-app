@@ -258,6 +258,18 @@ await test('score sites: an embedded score card carries its key, the heading abo
   } finally { fs.rmSync(v, { recursive: true, force: true }); }
 });
 
+await test('parts (spine.find): cut at ### and deeper outside fences, each running to the next such heading; the text before the first is not a part', async () => {
+  const src = '## Rooms\nintro\n### The lobby\nA line\n#### A corner\nmore\n```\n### not a heading\n```\n### Kitchens ##\nsteam\n## Next\nx';
+  const p = PR.parts(src);
+  assert.deepEqual(p.map((x) => [x.level, x.head]), [[3, 'The lobby'], [4, 'A corner'], [3, 'Kitchens']]);
+  assert.equal(p[0].src, 'A line'); assert.equal(p[1].src, 'more\n```\n### not a heading\n```'); assert.equal(p[2].src, 'steam\n## Next\nx');
+  assert.deepEqual(PR.parts(src, 2).map((x) => x.head), ['Rooms', 'The lobby', 'A corner', 'Kitchens', 'Next']);
+  assert.deepEqual(PR.parts(src, 4).map((x) => x.head), ['A corner']);
+  assert.deepEqual(PR.parts('no headings\n#tag\n> ### quoted'), []); assert.deepEqual(PR.parts(null), []);
+  assert.deepEqual(PR.parts('###    \n### Real'), [{ level: 3, head: 'Real', src: '' }]);
+  assert.equal(PR.slug('S5 · A desk, Cairn Road'), PR.slug(PR.parts('### S5 · A desk, Cairn Road')[0].head), 'a part names its heading as the page slugs it');
+});
+
 fs.rmSync(V, { recursive: true, force: true });
 console.log(failed ? `\n${passed} passed, ${failed} FAILED` : `\nALL PASSED (${passed})`);
 process.exit(failed ? 1 : 0);

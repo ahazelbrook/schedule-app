@@ -126,6 +126,24 @@ try {
   check(await page.$$eval('#gm-prep .pp-rail .chip', (cs) => cs.filter((c) => !c.hidden).map((c) => c.textContent.trim())).then((v) => v.length === 1 && /Must land/.test(v[0])), 'the find box filters the section rail; Enter goes to the first match');
   await page.fill('#gm-prep-q', ''); await page.keyboard.press('Escape');
   check(await page.$$eval('#gm-prep .pp-rail .chip', (cs) => cs.every((c) => !c.hidden)), 'cleared: every section is listed again');
+  /* spine.find: Enter lands on the heading that matches, in a piece after a transclusion too; Find (Ctrl+K) lists it as "Section › Heading" */
+  const flashed = () => page.evaluate(() => { const f = document.querySelector('#gm-prep .gm-flash'); return f ? f.id : ''; });
+  check(!/--f-the-heron-job$/.test(await (async () => { await page.fill('#gm-prep-q', 'heron'); await page.press('#gm-prep-q', 'Enter'); return flashed(); })()), 'spine.find off: Enter goes to the section, not the heading');
+  check((await api('PATCH', '/gm/state', { features: { 'spine.find': true } })).status === 200, 'spine.find is switched on');
+  const landed = await until(async () => {
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await page.fill('#gm-prep-q', 'heron'); await page.press('#gm-prep-q', 'Enter');
+    const id = await flashed(); return /--f-the-heron-job$/.test(id) ? id : null;
+  }, 15000, 600);
+  check(!!landed, 'spine.find on: Enter lands on the heading itself, F · The heron job (' + landed + ')');
+  await page.fill('#gm-prep-q', ''); await page.keyboard.press('Escape');
+  await page.keyboard.press('Control+k'); await page.fill('#gm-find-q', 'heron');
+  const hitTitles = await page.$$eval('.gm-find-hit b', (bs) => bs.map((b) => b.textContent));
+  check(hitTitles.some((t) => t === 'Cast › F · The heron job'), 'Find lists the heading as "Cast › F · The heron job" (' + hitTitles.join(' | ') + ')');
+  await page.evaluate(() => { const b = [...document.querySelectorAll('.gm-find-hit')].find((x) => (x.querySelector('b') || {}).textContent === 'Cast › F · The heron job'); if (b) b.click(); });
+  check(!!(await until(async () => /--f-the-heron-job$/.test(await flashed()), 3000, 100)), 'choosing it lands on the heading');
+  check((await api('PATCH', '/gm/state', { features: { 'spine.find': false } })).status === 200, 'spine.find off again');
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   const boxes = await page.$$eval('#gm-prep .pp-box', (bs) => bs.map((b) => ({ a: b.getAttribute('data-task'), locked: b.getAttribute('aria-disabled') === 'true' })));
   check(boxes.length > 0 && boxes.some((b) => b.locked) === !!boxes.find((b) => b.locked), 'task boxes are tickable checkboxes (' + boxes.length + ')');
   check((await page.$$('#gm-prep .pp-sec')).length > 1 && (await page.$$('#gm-prep .pp-rail .chip')).length > 1, 'sections and a section rail');

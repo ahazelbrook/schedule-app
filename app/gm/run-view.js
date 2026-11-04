@@ -31,6 +31,7 @@
  *   confirm(msg) -> bool  VV12: the page's confirm        resetMission() -> Promise: VV12: the players' mission cleared (mission-publish resetNight)
  *   toast(msg, bad)
  *   OPTIONAL (check typeof; the tests build a bare host): hasNpcCard(names) -> bool (cheap)    npcCard(names) -> html | "" (the NPC card, rendered)
+ *   feature(id) -> bool  a switch's value (map.countdown: the header's countdown pie, from ball.js countdownOf)
  *   decorate(el)  the Prep decorator on a node (SAY callouts become read-aloud cards)       roomNote(room) -> html | null (null: the prep note has no section for it)
  *
  * SEAMS for the tickets that build on this view (module-level, shared by every instance):
@@ -407,6 +408,10 @@
         return '<button type="button" class="' + cls + '" data-rv="peek" data-i="' + q.i + '"' + (q.before || !m.started ? " disabled" : "") + ' title="' + esc(q.label + (q.text ? " · " + q.text : "")) + '" aria-label="Look at ' + esc(q.label) + (q.text ? ", " + esc(q.text) : "") + '">' +
           '<span class="rv-ic" data-icon="' + esc(q.icon) + '">' + glyph + '</span></button>';
       }).join("") + "</div>";
+      /* the countdown (switch map.countdown): play.clock.countdown filled a segment a beat from the clock's start, at the time the night is at */
+      var cd = m.started && typeof host.feature === "function" && host.feature("map.countdown") && B.countdownOf ? B.countdownOf(p, nowT) : null;
+      if (cd) h += '<span class="rv-count' + (cd.full ? " full" : "") + '" role="img" aria-label="' + esc(cd.label + ": " + cd.n + " of " + cd.of) + '" title="' + esc(cd.label + ": one segment a beat, full at " + cd.at) + '">' +
+        '<span class="rv-pie" style="--f:' + Math.round(cd.n / cd.of * 100) + '%"></span> ' + esc(cd.label) + " <b>" + cd.n + "/" + cd.of + "</b></span>";
       if (m.alarm) {
         var ck = host.clockNamed(m.alarm.name), filled = ck ? Math.max(0, +ck.filled || 0) : 0, size = ck && +ck.size > 0 ? +ck.size : m.alarm.size;
         h += '<button type="button" class="rv-alarm" data-rv="alarm" aria-expanded="' + alarmOpen + '" title="' + esc(ck ? "Tap for what this beat of the alarm does" : "No table clock is named " + m.alarm.name) + '">' +

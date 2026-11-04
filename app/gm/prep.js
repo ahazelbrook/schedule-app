@@ -25,6 +25,7 @@
                                           the GM page fills with the site strip (GM.md, "Score sites")
      decorate(el, o)                      DOM: boxes, cells, beats, chips, SAY. o = { ticks, cells, beats, now }
      budget(text)                         minutes in "10 min", "35–40 min" (the upper end), or null
+     parts(src, min)                      [{ level, head, src }] cut at the headings of level min (3) and deeper: Find's targets (spine.find)
      hash(text)                           a short stable key (FNV-1a, hex) */
 (function (root, factory) {
   'use strict';
@@ -63,6 +64,21 @@
       out[out.length - 1].lines.push(ln);
     });
     return out.filter(function (s) { return s.head !== null || s.lines.join('').trim(); }).map(function (s) { return { head: s.head, src: s.lines.join('\n') }; });
+  }
+
+  /* Markdown cut at its headings of level `min` (default 3) and deeper, outside fenced code: [{ level, head, src }], each running to
+     the next such heading (its heading line left out); the text before the first is not a part. Find's rooms, scenes and ways (spine.find). */
+  function parts(src, min) {
+    var lv = Math.max(1, Math.min(6, Math.floor(+min) || 3)), out = [], fence = null;
+    str(src).split('\n').forEach(function (ln) {
+      var m = FENCE.exec(ln), h = null;
+      if (fence) { if (m && m[1].charAt(0) === fence.charAt(0) && m[1].length >= fence.length) fence = null; }
+      else if (m) fence = m[1];
+      else h = /^ {0,3}(#{1,6})[ \t]+(\S.*)$/.exec(ln);
+      if (h && h[1].length >= lv) { var head = h[2].replace(/[ \t]+#+[ \t]*$/, '').trim(); if (head) { out.push({ level: h[1].length, head: head, lines: [] }); return; } }
+      if (out.length) out[out.length - 1].lines.push(ln);
+    });
+    return out.map(function (p) { return { level: p.level, head: p.head, src: p.lines.join('\n') }; });
   }
 
   /* the wikilink resolvers: a page the pack knows becomes a #pp: link the page handles; anything else stays text */
@@ -237,5 +253,5 @@
     });
   }
 
-  return { notes: notes, view: view, section: section, link: link, obsidianUri: obsidianUri, decorate: decorate, budget: budget, hash: hash, cut: cut, slug: slug, norm: norm, scores: scores, card: card };
+  return { notes: notes, view: view, section: section, link: link, obsidianUri: obsidianUri, decorate: decorate, budget: budget, hash: hash, cut: cut, parts: parts, slug: slug, norm: norm, scores: scores, card: card };
 });

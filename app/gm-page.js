@@ -2524,6 +2524,8 @@
     if (v && v.note) {
       Object.keys(v.secs || {}).forEach(function (id) { var x = v.secs[id]; out.push({ kind: 'Prep', title: x.head || v.note.title, text: findText(x.src), go: { t: 'prep', id: id } }); });
       (v.note.blocks || []).forEach(function (b) { if (isObj(b) && b.k === 'embed') out.push({ kind: 'Prep', title: str(b.from).split('/').pop().replace(/\.md$/i, '') + (b.heading ? ' › ' + b.heading : ''), text: findText(b.src), go: { t: 'embed', from: str(b.from) } }); });
+      /* spine.find: each room, scene and way under its own heading too */
+      if (findPartsOn()) prepFindParts().forEach(function (p) { out.push({ kind: 'Prep', title: p.title, text: p.text, go: { t: 'heading', text: p.head, sec: p.sec, from: p.from } }); });
     }
     screenSections().forEach(function (x) { out.push({ kind: 'Screen', title: x.title, text: findText(x.md), go: { t: 'screen', id: x.id } }); });
     (c.npcs || []).forEach(function (n) { if (!isObj(n) || !n.name) return; known[lc(n.name)] = 1; out.push({ kind: 'NPC', title: n.name, sub: [n.role, n.faction, n.district].filter(Boolean).join(' · '), text: [n.glance, n.mannerism, (Array.isArray(n.say) ? n.say : []).join(' '), n.playedBy ? 'played by ' + n.playedBy : '', npcCardPlain(n.name)].join(' '), go: { t: 'npc', name: n.name } }); });
@@ -2574,6 +2576,7 @@
     findClose();
     if (g.t === 'prep') { prepGo(g.id); flash($q('#' + g.id)); }
     else if (g.t === 'embed') { setPanel('prep'); var em = $q('#gm-prep .pp-embed[data-from="' + g.from.replace(/"/g, '') + '"]'); if (em) { try { em.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) {} flash(em); } }
+    else if (g.t === 'heading') { setPanel('prep'); var hd = prepPartEl(g); if (hd) { prepScroll(hd); flash(hd); } else toast('That heading is not in this note.', true); }
     else if (g.t === 'screen') { setPanel('rules'); var fq = $q('#gm-gs-q'); if (fq && fq.value) { fq.value = ''; filterScreen(''); } screenJump(g.id); flash($q('#gm-rules [data-gs="' + str(g.id).replace(/"/g, '') + '"]')); }
     else if (g.t === 'npc' || g.t === 'pc' || g.t === 'faction') {
       if (!$q('#gm-prep-peek')) { toast(h.kind + ': ' + h.title + (h.sub ? ' (' + h.sub + ')' : ''), false); return; }
@@ -3634,7 +3637,9 @@
       hasNpcCard: function (names) { return !!npcCardSrc(names); },
       npcCard: function (names) { var src = npcCardSrc(names); return src ? npcCardHtml(src, 'rn-') : ''; },
       decorate: function (el) { if (W.B68GmPrep && el) W.B68GmPrep.decorate(el, {}); },
-      roomNote: function (room) { var rn = runRoomNotes(), e = rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? rn.byRoom[room] : null; return e && str(e.md).trim() ? npcCardHtml(str(e.md), 'rm-') : null; }
+      roomNote: function (room) { var rn = runRoomNotes(), e = rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? rn.byRoom[room] : null; return e && str(e.md).trim() ? npcCardHtml(str(e.md), 'rm-') : null; },
+      /* a switch's value (map.countdown: the header's countdown pie) */
+      feature: function (id) { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, id)); }
     };
   }
   function rvInst() {
@@ -5741,7 +5746,7 @@
       (v.note ? v.note.blocks : []).forEach(function (b) { (b.tasks || []).forEach(function (t) { if (t && t.a) S.prepTasks[t.a] = { rel: b.from, t: t.t, d: !!t.d }; }); });
       box.innerHTML = '<div class="pp-bar">' +
         (list.length > 1 ? '<label class="gm-field pp-pick" for="gm-prep-note"><span class="gm-lab">Note</span><select id="gm-prep-note">' + list.map(function (n) { return '<option value="' + esc(n.id) + '"' + (n.id === id ? ' selected' : '') + '>' + esc(n.title) + '</option>'; }).join('') + '</select></label>' : '') +
-        '<label class="gm-field pp-find" for="gm-prep-q"><span class="sr">Find in the note</span>' + '<input type="search" id="gm-prep-q" autocomplete="off" spellcheck="false" placeholder="Find in the note… (R)" title="Filters the sections; Enter goes to the first"></label>' +
+        '<label class="gm-field pp-find" for="gm-prep-q"><span class="sr">Find in the note</span>' + '<input type="search" id="gm-prep-q" autocomplete="off" spellcheck="false" placeholder="Find in the note… (R)" title="' + (findPartsOn() ? 'Filters the sections; Enter goes to the next room, scene or way that matches' : 'Filters the sections; Enter goes to the first') + '"></label>' +
         '<nav class="pp-rail" aria-label="Sections">' + v.rail.map(function (r) { return '<button type="button" class="chip sm" data-gm="prep-go" data-id="' + esc(r.id) + '">' + esc(r.text) + '</button>'; }).join('') + '</nav>' +
         '<button type="button" class="btn sm pp-widebtn" data-gm="prep-wide" aria-pressed="' + !!S.prepWide + '" title="Hide the console while you read">Wide</button></div>' +
         (age != null && age > 1 ? '<p class="gm-note pp-stale">Exported ' + Math.floor(age) + ' day' + (age >= 2 ? 's' : '') + ' ago. Edits made in Obsidian since then are not here: run <code>npm run gm:pack</code> and push the pack.</p>' : '') +
@@ -5769,8 +5774,46 @@
     return first;
   }
   function prepFindGo() {
-    var q = $q('#gm-prep-q'), first = prepFilter(q ? q.value : ''); if (!first) { toast('Nothing in the note matches.', true); return; }
+    var q = $q('#gm-prep-q'), val = q ? q.value : '', first = prepFilter(val);
+    /* spine.find: Enter goes to the next room, scene or way that matches (in the note's order), and round again; else the first section */
+    if (findPartsOn()) {
+      var words = foldQ(val).split(/\s+/).filter(Boolean), key = words.join(' ');
+      var hits = words.length ? prepFindParts().filter(function (p) { var t = foldQ(p.title + ' ' + p.text); return words.every(function (w) { return t.indexOf(w) >= 0; }); }) : [];
+      if (hits.length) {
+        var k = isObj(S.prepFindAt) && S.prepFindAt.q === key ? (S.prepFindAt.i + 1) % hits.length : 0, h = hits[k], el = prepPartEl({ text: h.head, sec: h.sec, from: h.from });
+        S.prepFindAt = { q: key, i: k };
+        if (el) { if (S.panel !== 'prep') setPanel('prep'); prepScroll(el); flash(el); toast((k + 1) + ' of ' + hits.length + ': ' + shortLabel(h.title, 60)); return; }
+      }
+    }
+    if (!first) { toast('Nothing in the note matches.', true); return; }
     var id = first.getAttribute('data-id'); prepGo(id); flash(prepSectionEl(id));
+  }
+  function findPartsOn() { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, 'spine.find')); }
+  /* spine.find: every heading below a section's own (### and deeper), and every heading in a transclusion, in the note's order:
+     [{ title: "Section › Heading", head, sec | '', from | '', text }] (text: the part's words, as Find reads them) */
+  function prepFindParts() {
+    var v = S && S.prepView, B = W.B68GmPrep, out = []; if (!v || !v.note || !B || typeof B.parts !== 'function') return out;
+    /* a piece with no ## of its own (the rest of a section after a transclusion) is named for the section it continues */
+    var secs = isObj(v.secs) ? v.secs : {}, last = str(v.note.title);
+    (v.note.blocks || []).forEach(function (b, bi) {
+      if (!isObj(b)) return;
+      if (b.k === 'embed') {
+        var name = str(b.from).split('/').pop().replace(/\.md$/i, '');
+        B.parts(str(b.src), 2).forEach(function (p) { out.push({ title: name + ' › ' + p.head, head: p.head, sec: '', from: str(b.from), text: findText(p.src) }); });
+        return;
+      }
+      Object.keys(secs).forEach(function (id) {
+        var x = secs[id]; if (!isObj(x) || x.block !== bi) return;
+        if (x.head) last = x.head;
+        B.parts(str(x.src), 3).forEach(function (p) { out.push({ title: last + ' › ' + p.head, head: p.head, sec: id, from: '', text: findText(p.src) }); });
+      });
+    });
+    return out;
+  }
+  /* the heading a Find part names, inside its own section or transclusion */
+  function prepPartEl(g) {
+    var scope = g.sec ? prepSectionEl(g.sec) : g.from ? $q('#gm-prep .pp-embed[data-from="' + str(g.from).replace(/"/g, '') + '"]') : null;
+    return prepHeadingEl(str(g.text), scope || undefined);
   }
   function prepTick(a) {
     var info = S.prepTasks && S.prepTasks[a]; if (!info) return;

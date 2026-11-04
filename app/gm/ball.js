@@ -416,6 +416,7 @@
    * beatCard(play, state, t0, t1) -> { t0, t1, back, items: [{ type, ... }] }
    * playerView(play, state, openRooms) -> the filtered copy; missionFor(view, state, t, pcs) -> the mission
    * beatOf(src, t) -> { n, of, i };  timeLabel(src, t) -> "HH:MM";  inMin(now, at) -> minutes until, at least 0
+   * countdownOf(src, t) -> { label, at, n, of, full } | null: clock.countdown ({ at: "HH:MM", label? }) counted in beats from the start
    * (src is a play, a view, a clock, or the clock.start string.)
    */
   var VIS = ["public", "seen", "hidden"], WAY_KINDS = ["loud", "quiet", "either"], LIFT_TO = ["risky", "controlled"];
@@ -454,6 +455,19 @@
           starts[k] = h;
         });
         clock.starts = starts;
+      }
+    }
+    /* clock.countdown: { at: "HH:MM" after the start and inside the clock, label?: text (24) }, counted by countdownOf */
+    if (c.countdown !== undefined) {
+      var cd = c.countdown, cdAt = isObj(cd) ? mins(cd.at) : NaN;
+      if (isNaN(cdAt)) { warn("play.clock.countdown: needs at as HH:MM; dropped"); delete clock.countdown; }
+      else {
+        var cdH = hhmm(cd.at), cdM = minuteOf(cdH, start);
+        if (!(cdM > 0) || !inWindow(cdH)) { warn("play.clock.countdown: " + cdH + " is not after the start and inside the clock (" + start + " to " + clock.end + "); dropped"); delete clock.countdown; }
+        else {
+          if (cd.label !== undefined && typeof cd.label !== "string") warn("play.clock.countdown.label: not text; dropped");
+          clock.countdown = { at: cdH, label: typeof cd.label === "string" ? cd.label.trim().slice(0, 24) : "" };
+        }
       }
     }
     out.clock = clock;
@@ -928,6 +942,17 @@
     var span = minuteOf(c.end, c.start), of = Math.max(1, isNaN(span) ? 1 : Math.floor(span / beat));
     var i = typeof t === "number" && isFinite(t) ? Math.min(of - 1, Math.max(0, Math.floor(t / beat))) : 0;
     return { n: i + 1, of: of, i: i };
+  }
+  /* countdownOf(src, t) -> { label, at, n, of, full } | null: the clock's countdown (clock.countdown), in beats from clock.start.
+   * `of` is the whole beats from the start to `at` (at least 1), `n` the beats gone at minute t (0 at the start, never more than
+   * `of`), and `full` is n === of. Null with no countdown, or one that is not after the start. */
+  function countdownOf(src, t) {
+    var c = isObj(src) ? (isObj(src.clock) ? src.clock : src) : {}, cd = isObj(c.countdown) ? c.countdown : null;
+    if (!cd || isNaN(mins(cd.at)) || isNaN(mins(c.start))) return null;
+    var beat = beatLen(c), of = Math.floor(minuteOf(cd.at, c.start) / beat);
+    if (!(of >= 1)) return null;
+    var n = typeof t === "number" && isFinite(t) ? Math.min(of, Math.max(0, Math.floor(t / beat))) : 0;
+    return { label: typeof cd.label === "string" && cd.label.trim() ? cd.label.trim().slice(0, 24) : "Countdown", at: hhmm(cd.at), n: n, of: of, full: n === of };
   }
   /* inMin(now, at) -> whole minutes from `now` until `at` (both minutes after clock.start), never below 0 */
   function inMin(now, at) { return Math.max(0, Math.round(at - now)); }
@@ -1547,5 +1572,5 @@
     return m;
   }
 
-  return { checkPlay: checkPlay, positionOf: positionOf, lookers: lookers, routesAt: routesAt, leadsInReach: leadsInReach, autoHear: autoHear, beatCard: beatCard, playerView: playerView, targetInView: targetInView, missionFor: missionFor, placesAt: placesAt, beatOf: beatOf, timeLabel: timeLabel, inMin: inMin, countPlay: countPlay, minuteOf: minuteOf, whereAt: whereAt, lensRating: lensRating, seesMatches: seesMatches, ballView: ballView, timerLen: timerLen, timerLeft: timerLeft, timerNext: timerNext, timerDue: timerDue, timerText: timerText, KINDS: KINDS, DIRS: DIRS, LIMITS: LIMITS };
+  return { checkPlay: checkPlay, positionOf: positionOf, lookers: lookers, routesAt: routesAt, leadsInReach: leadsInReach, autoHear: autoHear, beatCard: beatCard, playerView: playerView, targetInView: targetInView, missionFor: missionFor, placesAt: placesAt, beatOf: beatOf, countdownOf: countdownOf, timeLabel: timeLabel, inMin: inMin, countPlay: countPlay, minuteOf: minuteOf, whereAt: whereAt, lensRating: lensRating, seesMatches: seesMatches, ballView: ballView, timerLen: timerLen, timerLeft: timerLeft, timerNext: timerNext, timerDue: timerDue, timerText: timerText, KINDS: KINDS, DIRS: DIRS, LIMITS: LIMITS };
 });

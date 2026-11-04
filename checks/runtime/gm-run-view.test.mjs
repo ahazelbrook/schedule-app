@@ -196,6 +196,21 @@ test('the Reset the night button is absent before Start the night and present af
   assert.ok(/data-rv="reset"/.test(after.box.innerHTML.split('data-rv="next"')[1]), 'and it sits after the Next beat button, not beside it');
 });
 
+test('map.countdown: the header draws the play\'s countdown pie with the switch on, once started, and only when the play has one', () => {
+  const cdPlay = B.checkPlay(Object.assign(JSON.parse(JSON.stringify(raw)), { clock: Object.assign({}, raw.clock, { countdown: { at: '00:00', label: 'Zzcount' } }) }), ROOMS).play;
+  const rig = (state, on, p) => { const r = viewRig(state); r.host.site = () => ({ name: 'The Pelican Rooms', play: p || cdPlay }); r.host.feature = (id) => !!on && id === 'map.countdown'; r.view.render(r.box); return r; };
+  const at = (t) => rig({ ...FULL, start: 0, t }, true).box.innerHTML;
+  assert.ok(/class="rv-count"[^>]*aria-label="Zzcount: 6 of 12"/.test(at(90)), 'at 22:30, six of twelve');
+  assert.ok(!/class="rv-alarm[^"]*rv-count/.test(at(90)), 'its own class: a selector for the alarm never finds it');
+  assert.ok(/Zzcount <b>6\/12<\/b>/.test(at(90)) && /--f:50%/.test(at(90)));
+  assert.ok(/class="rv-count full"[^>]*aria-label="Zzcount: 12 of 12"/.test(at(180)), 'full at the countdown time');
+  assert.ok(/Zzcount <b>12\/12<\/b>/.test(at(240)), 'and it stays full after it');
+  assert.ok(!/rv-count/.test(rig({ ...FULL, t: 90 }, false).box.innerHTML), 'switch off: no pie');
+  assert.ok(!/rv-count/.test(rig({ site: 'The Pelican Rooms', open: ['Showroom'] }, true).box.innerHTML), 'not before Start the night');
+  assert.ok(!/rv-count/.test(rig({ ...FULL, t: 90 }, true, play).box.innerHTML), 'no countdown in the play: no pie');
+  assert.ok(!/rv-count/.test(viewRig({ ...FULL }).box.innerHTML), 'a host without feature() draws none');
+});
+
 test('resetChange keeps exactly site, floor and open and drops every other key', () => {
   const ch = R.resetChange(FULL);
   assert.deepEqual(Object.keys(ch).sort(), Object.keys(FULL).filter((k) => !['site', 'floor', 'open'].includes(k)).sort());
