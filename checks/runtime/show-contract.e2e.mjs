@@ -169,13 +169,14 @@ try {
     expect(I.seen.requests.every((u) => !/\/api\/npcs|\/api\/gm\/ambient/.test(u)), 'the iPad never read the cast or the ambient document directly');
   });
 
+  // The bundles after the Aftermath added the board and montage cards after the layers card, so 'layers' is no longer last; assert presence instead of position.
   await step('the look book: GM only; a frame for every registered kind and the layers, each drawn at iPad size', async () => {
     const L = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 1280, height: 900 } });
     const p = await L.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(String(e && e.message || e)));
     await p.goto(BASE + '/lookbook.html');
     await p.waitForSelector('.lb-card', { timeout: 20000 });
     const cardsN = await p.evaluate(() => Array.from(document.querySelectorAll('.lb-card figcaption code')).map((c) => c.textContent));
-    expect(['stamp', 'spotted', 'keyturn', 'title', 'wanted', 'ring', 'rolodex', 'spotlight', 'credits'].every((k) => cardsN.includes(k)) && cardsN.filter((k) => k === 'aftermath').length === 7 && cardsN[cardsN.length - 1] === 'layers', 'a card per kind (the Aftermath has one per step): ' + cardsN.join(','));
+    expect(['stamp', 'spotted', 'keyturn', 'title', 'wanted', 'ring', 'rolodex', 'spotlight', 'credits', 'board', 'layers', 'montage'].every((k) => cardsN.includes(k)) && cardsN.filter((k) => k === 'aftermath').length === 7 && cardsN.includes('layers'), 'a card per kind (the Aftermath has one per step): ' + cardsN.join(','));
     await sleep(2500);
     for (const k of ['stamp', 'rolodex', 'wanted']) {
       const fr = p.frames().find((f) => f.url().includes('frame=' + k));
