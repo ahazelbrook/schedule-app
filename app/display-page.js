@@ -1457,6 +1457,7 @@
       var hs = !!(root.B68HardStart && s.layers && swOn('spine.start'));
       if (hs && !s.hs) s.hs = root.B68HardStart.attach(container, { layers: s.layers }); else if (!hs && s.hs) { s.hs.destroy(); s.hs = null; }
       if (s.hs) s.hs.apply();
+      if (s.roomSync) s.roomSync();      /* 4.4 / 4.3: the room's sound follows the switches and the layers */
       var fx = !!(root.B68Fx && (swOn('fx.pause') || swOn('fx.off')));
       if (fx && !s.fx) s.fx = root.B68Fx.attach(container, { flags: function () { return { pause: swOn('fx.pause'), off: swOn('fx.off') }; }, covered: function () { return !!(s.amb && s.amb.state().covered); } }); else if (!fx && s.fx) { s.fx.destroy(); s.fx = null; } else if (s.fx) s.fx.sync();
     }
@@ -1630,6 +1631,7 @@
       amb.setPlan(p);
       if (Pure.crewChanged(s.crew, p.crew)) Pure.ambientCrewScenes().forEach(function (id) { amb.post(id, Pure.crewMessage(p)); });
       s.crew = p.crew;
+      if (s.roomSync) s.roomSync();
       var wk = JSON.stringify(p.wire);
       if (wk !== s.wire.key) { s.wire.key = wk; s.wire.items = p.wire; s.wire.i = 0; wireSync(); }
       else if (s.wire.items.length && s.wire.t === null && !wireEl.classList.contains('dp-wire-on')) wireSync();     /* the mode or the cover changed */
@@ -1806,6 +1808,44 @@
     /* every kind of tap: iOS counts some of these as the gesture and not others (gesture() skips the rest), the first one is enough */
     ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown'].forEach(function (type) { s.offs.push(on(document, type, unlockMusic)); });
     s.offs.push(function () { stopMusic(); });
+    /* the room's sound (display/room-audio.js; switches room.duck 4.4 and room.music 4.3). The page hands the engine its one <audio> element; where iOS will not move the volume the engine says so (limited) and changes nothing. */
+    function roomGain(g) {
+      var a = M.audio; if (!a) return g >= 1;
+      if (M.fade) return true;      /* a scene theme is fading itself out: never fight it */
+      if (g >= 1 && a.volume >= 1) return true;
+      if (!volumeMoves(a)) return false;
+      try { a.volume = g; } catch (e) { return false; }
+      return true;
+    }
+    function roomHost() {
+      return {
+        now: function () { return Date.now(); }, on: swOn, setGain: roomGain,
+        busy: function () { return !!M.frame; }, ready: function () { return M.unlocked && M.file !== false; },
+        stop: function () { if (M.audio && !M.frame) { try { M.audio.pause(); } catch (e) {} } },
+        play: function (st, t, fresh) {
+          var a = audioEl(); if (M.frame) return;
+          try {
+            if (fresh && t.src && a.src.indexOf(t.src) < 0) { a.src = t.src; a.load(); }
+            a.loop = true; a.muted = false;
+            if (a.paused) { var p = a.play(); if (p && p.then) p.then(null, function () { /* locked: the next tap tries again */ }); }
+          } catch (e) { /* the element would not play: the music is simply silent */ }
+        }
+      };
+    }
+    function roomInputs() {
+      var L = s.layers && s.layers.state ? s.layers.state() : {}, c = s.crew || {};
+      return { security: L.security === undefined ? null : L.security, phase: L.phase || null, filter: L.filter || null, heat: c.heat || 0, wanted: c.wanted || 0 };
+    }
+    s.roomSync = function () {
+      var want = !!(root.B68RoomAudio && (swOn('room.duck') || swOn('room.music')));
+      if (want && !s.room) { s.room = root.B68RoomAudio.create(roomHost()); s.roomTimer = setInterval(function () { if (s.room) { s.room.tick(); s.room.update(roomInputs()); } }, 1000); }
+      else if (!want && s.room) { clearInterval(s.roomTimer); s.roomTimer = null; s.room.destroy(); s.room = null; return; }
+      if (s.room) {
+        if (swOn('room.music') && M.file === null && !M.probe) probeTheme().then(function () { if (s.roomSync && !s.dead) s.roomSync(); });
+        s.room.update(roomInputs());
+      }
+    };
+    s.offs.push(function () { if (s.roomTimer) { clearInterval(s.roomTimer); s.roomTimer = null; } if (s.room) { s.room.destroy(); s.room = null; } s.roomSync = null; });
 
     /* status */
     function paintStatus() {
@@ -1967,7 +2007,7 @@
       /* live sync: a poke for the display, the ambient or the transcriber makes the poll run now; the 4 s poll goes on unchanged */
       if (root.B68Live && typeof root.B68Live.on === 'function') { try { s.liveOff = root.B68Live.on(['display', 'ambient', 'stt'], function () { if (s.poller) s.poller.poke(); }); } catch (e) { s.liveOff = null; } }
       /* the transcriber (app/stt.js): idle until the GM presses Start listening, then one tap here opens the mic */
-      if (root.B68Stt && typeof root.B68Stt.attach === 'function') { try { s.stt = root.B68Stt.attach(container, { gm: ctx.gm, device: root.B68DisplayPreflight ? root.B68DisplayPreflight.reporter({ music: function () { return s.music; } }) : null, air: function () { return root.B68OnAir && swOn('ai.onair') ? root.B68OnAir.shared() : null; }, airOff: function () { if (root.B68OnAir) root.B68OnAir.shared().destroy(); } }); } catch (e) { s.stt = null; } }
+      if (root.B68Stt && typeof root.B68Stt.attach === 'function') { try { s.stt = root.B68Stt.attach(container, { gm: ctx.gm, hear: function (t) { if (s.room) s.room.hear(t); }, device: root.B68DisplayPreflight ? root.B68DisplayPreflight.reporter({ music: function () { return s.music; } }) : null, air: function () { return root.B68OnAir && swOn('ai.onair') ? root.B68OnAir.shared() : null; }, airOff: function () { if (root.B68OnAir) root.B68OnAir.shared().destroy(); } }); } catch (e) { s.stt = null; } }
     }
 
     /* visibility: pause polling while hidden, poll at once on return, and take the wake lock back */

@@ -119,6 +119,12 @@
       doc: 'A stage bar holds up to three people for the room, from its Who line. One tap holds a portrait on the iPad until Narrator clears it; a hidden person asks to be revealed first. Also by voice: spotlight and a name. Off: no bar.' },
     { id: 'room.cues', label: 'The cue stack', surface: 'gm', stage: 'room', default: false, saturday: 'try',
       doc: 'Numbered cues from the Cues section of the prep note: the next one waits as STANDBY, Space or a page-turner key fires it, Bypass skips it, Esc sends the iPad to the safe scene and raises the work light. "Blade, go" fires only the cue in standby. Off: no cue bar and no keys.' }
+    { id: 'map.montage', label: 'Montage mode', surface: 'gm', stage: 'map', default: false, saturday: 'try',
+      doc: 'Menu then Montage: one tap splits the iPad into two to four panels, one per player character, each with a figure, a place the players know and one line. A marked roll resolves its panel; one tap collapses it to a single scene. Off: no Montage line.' },
+    { id: 'room.duck', label: 'A speech-safe mix', surface: 'display', stage: 'room', default: false, saturday: 'try',
+      doc: 'When the iPad hears “Blade”, the music ducks by 12 dB for 6 seconds. Setup: point the speaker away from the puck. Only where the iPad lets the page change the volume; otherwise it says so and does nothing. Off: the music is never touched.' },
+    { id: 'room.music', label: 'Heat-state music', surface: 'display', stage: 'room', default: false, saturday: 'off',
+      doc: 'The engine only: ambient, tension, alert, evasion and resolved follow the security level and heat, a change lands on the bar from the track tempo, a flashback muffles it. Ships with one layer per state from today’s track. Off: the scene themes play as before.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

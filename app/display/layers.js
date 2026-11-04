@@ -45,6 +45,18 @@
     if (Array.isArray(f.harm)) { var h = f.harm.slice(0, 4).filter(function (x) { return whole(x, 1, 4) !== undefined; }); if (h.length) o.harm = h; }
     return o;
   }
+  /* suite 2.8 (data.montage): two to four panels { pcId, name, room, line, done }; [] when unset or not that shape. Not in the scenes' b68:data message (message() is unchanged). */
+  function montagePanels(v) {
+    if (!isObj(v) || !Array.isArray(v.panels) || v.panels.length < 2 || v.panels.length > 4) return [];
+    var out = [];
+    v.panels.forEach(function (p) {
+      if (!isObj(p) || typeof p.pcId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(p.pcId)) return;
+      var o = { pcId: p.pcId, name: text(p.name, 40), room: text(p.room, 60), line: text(p.line, 100) };
+      if (p.done === true) o.done = true;
+      out.push(o);
+    });
+    return out.length >= 2 ? out : [];
+  }
   /* clean(layers) -> { phase, security, onair, filter, layout, mode, countdown, faces, credits, previously } with every field present (null / [] when unset) */
   var HARM_MARK = ['plaster', 'sling', 'splint', 'cross'];
   function clean(raw) {
@@ -60,7 +72,7 @@
     return {
       phase: oneOf(b.phase, PHASES) || null, security: whole(b.security, 0, SECURITY - 1) === undefined ? null : b.security, onair: b.onair === true,
       filter: oneOf(s.filter, ['flashback']) || null, layout: oneOf(s.layout, ['montage']) || null, mode: oneOf(s.mode, ['start', 'aftermath']) || null,
-      countdown: cd, faces: faces, credits: rows(d.credits, 30), previously: rows(d.previously, 12)
+      countdown: cd, faces: faces, credits: rows(d.credits, 30), previously: rows(d.previously, 12), montage: montagePanels(d.montage)
     };
   }
   /* the message a scene receives (`countdown.to` is already in THIS page's clock: the server's epoch less its skew, rounded to 250 ms so a jittery skew does not re-post; a scene computes to - Date.now()) */
@@ -120,6 +132,7 @@
       Object.keys(ATTRS).forEach(function (a) { var v = state[ATTRS[a]]; if (v === null || v === undefined) container.removeAttribute(a); else container.setAttribute(a, String(v)); });
       if (state.onair) container.setAttribute('data-band-onair', '1'); else container.removeAttribute('data-band-onair');
       paintStrip();
+      if (root.B68DisplayMontage) root.B68DisplayMontage.paint(container, state.montage, doc);      /* suite 2.8: nothing is drawn (or removed) while the layer is unset */
       var m = msg(), k = JSON.stringify(m);
       if (k === key) return;
       key = k;
@@ -143,6 +156,7 @@
         container.removeAttribute('data-flash-look');
         if (root.removeEventListener) root.removeEventListener('message', onMessage);
         if (strip && strip.parentNode) strip.parentNode.removeChild(strip);
+        if (root.B68DisplayMontage) root.B68DisplayMontage.paint(container, [], doc);
         Object.keys(ATTRS).forEach(function (a) { container.removeAttribute(a); }); container.removeAttribute('data-band-onair');
       }
     };

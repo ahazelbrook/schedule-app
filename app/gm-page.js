@@ -2306,6 +2306,26 @@
     var on = prOn(), b = $q('#gm-menu-print'), after = $q('#gm-menu-switchboard') || $q('#gm-menu-live');
     if (on && !b && after) after.insertAdjacentHTML('afterend', '<button type="button" data-gm="print" id="gm-menu-print" title="Print calling cards, tent standees and the blueprint">Print</button>'); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
   }
+  /* 2.8 Montage (gm/montage.js, switch map.montage): one Menu line while the switch is on; the panels ride the data.montage layer */
+  function mtOn() { return !!(S && W.B68GmMontage && W.B68Features && W.B68Features.valueOf(S.doc, 'map.montage')); }
+  function mtInst() {
+    if (!mtOn()) return null;
+    if (!S.mt) {
+      var me = S;
+      S.mt = W.B68GmMontage.make({ on: function (id) { return S === me && W.B68Features.valueOf(S.doc, id); }, toast: toast, root: function () { return $q('#gm-root'); },
+        pcs: function () { return S === me ? dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c) }; }) : []; },
+        rooms: function () { var rs = S === me && S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : [], rv = revealEntries(mapUi()); return rs.filter(function (r) { return isObj(r) && str(r.name) && roomShown(r, rv); }).map(function (r) { return str(r.name); }); },
+        over: function () { var R = W.B68GmPhaseRail; if (!(S === me && R && me.night && W.B68Features.valueOf(S.doc, 'spine.rail'))) return null; var m = R.model(me.night.night(), Date.now()), cur = m && m.items ? m.items.filter(function (i) { return i.state === 'now' && i.budget; })[0] : null; return cur ? cur.tone === 'red' : null; },
+        room: function () { return S === me && W.B68GmStamp ? W.B68GmStamp.pickRoom(runCrewRooms()) : ''; },
+        layer: function (path, value) { if (S !== me) return Promise.resolve(null); if (!me.b09) me.b09 = { layers: {} }; return b09Layer(me, path, value); },
+        log: function (text) { if (S === me && me.night) me.night.stamp(text); } });
+    }
+    return S.mt;
+  }
+  function mtMenuSync() {
+    var on = mtOn(), b = $q('#gm-menu-montage'), after = $q('#gm-menu-print') || $q('#gm-menu-switchboard') || $q('#gm-menu-live');
+    if (on && !b && after) after.insertAdjacentHTML('afterend', '<button type="button" data-gm="montage" id="gm-menu-montage" title="Split the iPad into one panel per character">Montage</button>'); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
+  }
   function swMenuLine() { return W.B68GmSwitchboard && W.B68Features ? '<button type="button" data-gm="switchboard" id="gm-menu-switchboard" title="Every new feature has a switch here, off until you turn it on. All off puts the app back as it was; no reload">Switchboard</button>' : ''; }
   /* 4.2 Preflight (gm/preflight.js, switch room.preflight): the Menu line exists only while the switch is on */
   function pfOn() { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, 'room.preflight') && W.B68GmPreflight); }
@@ -2392,7 +2412,7 @@
   /* the bar's live parts: the session, what is on the iPad, listening */
   function renderBar() {
     if (!S || !S.root) return;
-    renderMirror(); spineTick(); pfMenuSync(); prMenuSync(); b17Tick(); csTick();
+    renderMirror(); spineTick(); pfMenuSync(); prMenuSync(); mtMenuSync(); b17Tick(); csTick();
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
@@ -4275,6 +4295,7 @@
   function b09Marked(res) {
     var sit = res && res.meta ? res.meta.situation : '';
     if (S && S.stamp && (sit === 'fourfive' || sit === 'onetothree')) S.stamp.mark(sit === 'fourfive' ? '45' : '13');
+    if (S && S.mt && S.mt.active() && sit) S.mt.marked();      /* 2.8: a marked roll resolves its montage panel */
   }
   /* ---------- B19: the map beats (map.spotted 2.6, map.flashback 2.9, map.threat 2.5). The logic is in gm/map-*.js; this is the seam. Each reads its own switch live. ---------- */
   function b19Room(svg, name) {
@@ -6427,6 +6448,7 @@
       case 'focus': toggleFocus(); break;
       case 'hardstart': menuOpen(false); { var hsi = hsInst(); if (hsi) hsi.toggle(); } break;      /* 1.2 */
       case 'switchboard': menuOpen(false); { var sbi = swInst(); if (sbi) sbi.toggle(); } break;      /* W0.2 */
+      case 'montage': menuOpen(false); { var mti = mtInst(); if (mti) mti.toggle(); } break;      /* 2.8 */
       case 'print': menuOpen(false); { var pri = prInst(); if (pri) pri.toggle(); } break;      /* 3.6, 2.11 */
       case 'preflight': menuOpen(false); { var pfi = pfInst(); if (pfi) pfi.toggle(); } break;      /* 4.2 */
       case 'workshop': menuOpen(false); if (W.B68GmWorkshop) W.B68GmWorkshop.toggle($q('#gm-root'), { toast: toast }); break;      /* W0.5 */

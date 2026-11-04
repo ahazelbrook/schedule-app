@@ -129,7 +129,7 @@
      close the line, the cue starts a new one). A line ending in a bare wake word arms for ARM_S seconds of audio: the next run starting within that joins it, whatever its label.
      A line holding a cue takes a run within CUE_TAIL_MS of the last, whatever its label, then closes at once; with none it closes when
      tick() sees CUE_TAIL_MS pass. Nothing here waits for speech_final. */
-  function makeMerger(emit, clock, cue) {
+  function makeMerger(emit, clock, cue, hear) {
     var open = null, now = clock || function () { return Date.now(); }, afterUntil = -1;
     function lineOf(words, conn, t) {
       return { words: words, speaker: words[0].speaker, text: textOfWords(words), end: words[words.length - 1].end, conn: conn, at: words[0].at, opened: t, updated: t, cue: false, armed: false };
@@ -167,6 +167,7 @@
       add: function (run, conn, at) {
         var t = now(), words = run ? wordsOf(run, at) : [], joined = false, joinedCue = false;
         if (!words.length) return;                                 /* an empty or whitespace-only run is dropped */
+        if (hear) { try { hear(textOfWords(words)); } catch (e) { /* a listener never breaks the merge */ } }      /* 4.4 (room.duck): every heard run, before it waits for its command */
         if (open && open.conn === conn) {
           if (open.cue) { if (t - open.updated <= CUE_TAIL_MS && cueTakes(open, run, words)) { joined = true; joinedCue = true; } }
           else if (open.armed && run.start - open.end <= ARM_S) joined = true;       /* AUDIO time: a final lands after the words, so the wall clock would lose a long command */
@@ -219,7 +220,7 @@
       if (a) { a.paint(container, s.running && !s.stopping && s.state !== 'error'); if (!airTimer) airTimer = W.setInterval(function () { if (!s.dead) airPaint(); }, 1000); }
       else if (airTimer) { W.clearInterval(airTimer); airTimer = null; if (opts.airOff) { try { opts.airOff(); } catch (e) {} } }
     }
-    s.merger = makeMerger(function (l) { var a = air(); if (a) { var v = a.filter(l.text); if (v.changed) { airPaint(); report(); } if (v.drop) return; } push({ kind: 'line', speaker: l.speaker, text: l.text, at: l.at, conn: l.conn, cue: l.cue === true, urgent: l.urgent === true }); }, null, W.B68Cue);
+    s.merger = makeMerger(function (l) { var a = air(); if (a) { var v = a.filter(l.text); if (v.changed) { airPaint(); report(); } if (v.drop) return; } push({ kind: 'line', speaker: l.speaker, text: l.text, at: l.at, conn: l.conn, cue: l.cue === true, urgent: l.urgent === true }); }, null, W.B68Cue, opts && typeof opts.hear === 'function' ? opts.hear : null);
 
     function every(fn, ms) { var id = W.setInterval(function () { if (!s.dead) fn(); }, ms); s.timers.push(id); return id; }
     function paint() {

@@ -1,0 +1,22 @@
+/* the montage (suite 2.8, switch map.montage): one panel per player character over the scene. Looks come from app/tokens.css. */
+
+.dp-montage { position: absolute; inset: 0; z-index: 6; display: grid; gap: 1.2vmin; padding: 1.2vmin; background: var(--b68-ink); grid-auto-flow: column; grid-auto-columns: 1fr; pointer-events: none; }
+.dp-montage-3 { grid-template-columns: repeat(3, 1fr); }
+.dp-montage-4 { grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); grid-auto-flow: row; }
+.dp-mt-panel { position: relative; display: flex; flex-direction: column; justify-content: flex-end; gap: 1.4vmin; padding: 3vmin; overflow: hidden; background: var(--b68-paper); color: var(--b68-ink);
+  border: .5vmin solid var(--b68-ink); border-radius: 1vmin; animation: dp-mt-in .5s ease both; animation-delay: calc(var(--i, 0) * 120ms); }
+.dp-montage-still .dp-mt-panel { animation: none; }
+.dp-mt-blue { box-shadow: inset 0 2vmin 0 var(--b68-rules-blue); }
+.dp-mt-mustard { box-shadow: inset 0 2vmin 0 var(--b68-mustard); }
+.dp-mt-alarm { box-shadow: inset 0 2vmin 0 var(--b68-alarm); }
+.dp-mt-green { box-shadow: inset 0 2vmin 0 #3f7a4f; }
+.dp-mt-fig { flex: none; align-self: flex-start; width: 16vmin; height: 16vmin; border-radius: 50%; border: .5vmin solid var(--b68-ink); background: var(--b68-paper-dark);
+  display: flex; align-items: center; justify-content: center; font: 900 var(--b68-t-lead)/1 var(--b68-font-poster); color: var(--b68-rules-blue); }
+.dp-mt-name { margin: 0; font: 900 var(--b68-t-lead)/1.05 var(--b68-font-poster); text-transform: uppercase; overflow-wrap: break-word; }
+.dp-mt-room { margin: 0; font: 700 var(--b68-t-label)/1.2 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .04em; color: var(--b68-ink-soft); }
+.dp-mt-line { margin: 0; font: 400 var(--b68-t-body)/1.25 var(--b68-font-text); overflow-wrap: break-word; }
+.dp-mt-stamp { position: absolute; right: 2.5vmin; top: 5vmin; margin: 0; padding: .4vmin 1.6vmin; border: .6vmin solid var(--b68-alarm); color: var(--b68-alarm);
+  font: 900 var(--b68-t-body)/1 var(--b68-font-poster); letter-spacing: .08em; transform: rotate(-8deg); }
+.dp-mt-done .dp-mt-line, .dp-mt-done .dp-mt-fig { opacity: .55; }
+@keyframes dp-mt-in { from { opacity: 0; transform: translateY(3vmin); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dp-mt-panel { animation: none; } }

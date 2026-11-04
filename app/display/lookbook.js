@@ -28,6 +28,11 @@
       if (root.B68Layers) root.B68Layers.attach(box, { skew: function () { return 0; } }).apply(LAYERS_DEMO);
       return;
     }
+    if (kind === 'montage') {      /* suite 2.8: the montage layer, drawn from the module's own fixture (invented cast) */
+      var mb = el('div', 'dp-root'); mb.style.position = 'absolute'; mb.style.inset = '0'; host.appendChild(mb);
+      if (root.B68DisplayMontage) root.B68DisplayMontage.paint(mb, root.B68DisplayMontage.FIXTURE, document);
+      return;
+    }
     host.appendChild(layer);
     var e = root.B68Shows.entry(kind);
     if (!e) return;
@@ -67,6 +72,7 @@
       else grid.appendChild(card(e.kind, e.label, e.fixture));
     });
     grid.appendChild(card('layers', 'Lasting layers', LAYERS_DEMO));
+    if (root.B68DisplayMontage) grid.appendChild(card('montage', 'Montage panels (layer data.montage)', { panels: root.B68DisplayMontage.FIXTURE }));
     host.appendChild(grid);
   }
   root.B68Lookbook = { run: run, size: { w: W, h: H }, LAYERS_DEMO: LAYERS_DEMO };
