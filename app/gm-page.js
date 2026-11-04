@@ -168,8 +168,18 @@
     return out;
   }
   function openRooms(map) { return isObj(map) && map.layer === 'player' ? cleanRooms(map.open) : []; }
+  /* 2.2 (gm/knowledge.js, switch map.knowledge): the rooms known from intel only (the run's ball.know, never in map.open too); like the bands they count only on the player layer */
+  function knowRooms(map) { if (!isObj(map) || map.layer !== 'player') return []; var open = cleanRooms(map.open); return cleanRooms(map.know).filter(function (n) { return open.indexOf(n) < 0; }); }
+  /* the rooms a MARKER (a crew pill, a pinned clock, the target's pill) may stand in: the rooms the reveal shows, less the ones known as a blueprint only (`know`: not open, band not ticked).
+     A blueprint room is a name and an outline: nothing of who or what is in it. */
+  function tokenRooms(roll, reveal, know) {
+    var bp = cleanRooms(know), bands = entryBands(reveal);
+    return (roll && Array.isArray(roll.rooms) ? roll.rooms : []).filter(function (r) { return roomShown(r, reveal) && !(isObj(r) && bp.indexOf(r.name) >= 0 && bands.indexOf(r.band) < 0); }).map(function (r) { return str(r.name); });
+  }
+  P.tokenRooms = tokenRooms;
+  function knowSig(list) { return W.B68GmKnowledge ? W.B68GmKnowledge.signature(list) : ''; }
   /* what the player copy is drawn at: the revealed bands, then one "room:<name>" for each room opened on its own */
-  function revealEntries(map) { return revealList(map).concat(openRooms(map).map(function (n) { return 'room:' + n; })); }
+  function revealEntries(map) { var e = revealList(map).concat(openRooms(map).map(function (n) { return 'room:' + n; })); knowRooms(map).forEach(function (n) { if (e.indexOf('room:' + n) < 0) e.push('room:' + n); }); return e; }
   /* THE rule, the kit's: a room is shown when its band is revealed OR it has its own room entry. Every place that decides what the
      players can see from a reveal list (the hidden-name scan, the token screen, the markers' rooms) uses this one function. */
   function roomShown(room, reveal) {
@@ -193,6 +203,8 @@
       var more = cleanRooms(m.open).map(function (n) { return 'room:' + n; }).filter(function (e) { return reveal.indexOf(e) < 0; });
       if (more.length) o.reveal = reveal.concat(more);
     }
+    var bp = layer === 'player' ? knowRooms(Object.assign({}, m, { layer: 'player' })) : [];       /* 2.2: known from intel, drawn as linework */
+    if (bp.length) { var had = Array.isArray(o.reveal) ? o.reveal : ['public']; o.blueprint = bp; o.reveal = had.concat(bp.map(function (n) { return 'room:' + n; }).filter(function (e) { return had.indexOf(e) < 0; })); }
     if (m.time === 'Bluetime' || m.time === 'Night') o.time = m.time;
     var w = m.weather;
     if (w === 'rolled') o.weather = true; else if (w === 'none') o.weather = false; else if (w === 'rain' || w === 'fog' || w === 'snow') o.weather = w;
@@ -1547,7 +1559,7 @@
     if (me.sttTimer) { W.clearInterval(me.sttTimer); me.sttTimer = null; }
     if (me.cogm) { cogmStop(me); me.cogm = null; }
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
-    b09Unmount(me); b17Unmount(me); csUnmount(me);
+    b09Unmount(me); b17Unmount(me); knUnmount(me); csUnmount(me);
     if (me.mission) { try { me.mission.flush(); } catch (e) {} me.mission.destroy(); me.mission = null; }   /* a publish that is waiting goes now */
     apUnmount(me);
     S = null;
@@ -3099,10 +3111,11 @@
 
   /* ---------- the location generator ---------- */
   function locUi() { var u = Object.assign(W.B68GmLocation ? W.B68GmLocation.defaults() : {}, uiOf('loc')); u.district = distFor('loc'); return u; }
-  function mapUi() { var l = isObj(S.doc.loc) && isObj(S.doc.loc.map) ? S.doc.loc.map : {}; var m = Object.assign(clone(P.MAP0), l); m.reveal = Object.assign({}, P.MAP0.reveal, isObj(l.reveal) ? l.reveal : {}); m.open = openNow(); return m; }
+  function mapUi() { var l = isObj(S.doc.loc) && isObj(S.doc.loc.map) ? S.doc.loc.map : {}; var m = Object.assign(clone(P.MAP0), l); m.reveal = Object.assign({}, P.MAP0.reveal, isObj(l.reveal) ? l.reveal : {}); m.open = openNow(); m.know = knowNow(); return m; }
   /* the rooms the GM opened on their own for this card: the run's ball.open (M4 step 5). Only an authored site with a play block has a
      ball (runSite), and the ball is scoped to the site, so another site's rooms are never this one's. [] without one. */
   function openNow() { var rs = runSite(); return rs ? cleanRooms(ballDoc(rs.name).open) : []; }
+  function knowNow() { var rs = runSite(); return rs && b09On('map.knowledge') ? cleanRooms(ballDoc(rs.name).know) : []; }
   function replayLocation(e) {
     var L = W.B68GmLocation, pk = part('location'); if (!L || !pk || !isObj(e)) return null;
     if (e.auth) return authoredRoll(L, pk, authoredOf(pk).sites[str(e.auth)]);
@@ -3156,7 +3169,7 @@
     var hist = newest(isObj(S.doc.hist) ? S.doc.hist.location : null).slice(0, LIMITS.hist);
     if (hist.length) h += '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) { return earlierChip(x, 'location', cur && cur.hid === x._id); }).join('') + '</div>';
     box.innerHTML = h;
-    runPaint(); b17Paint();
+    runPaint(); b17Paint(); knPaint();
     if (!S.map && runSite() && W.B68Map && W.B68Map.render) drawMap(true);     /* a run draws itself: its people are on the map */
     else if (S.map) showMap();
   }
@@ -3358,6 +3371,8 @@
     var none = { tokens: [], hide: [], sig: '' }, rs = runSite(); if (!rs || !S.locRoll) return none;
     var st = ballDoc(rs.name), placed = { crew: isObj(st.crew) ? st.crew : {}, pins: isObj(st.pins) ? st.pins : {} };
     var shown = (Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : []).filter(function (r) { return roomShown(r, reveal); }).map(function (r) { return str(r.name); });
+    var noBp = tokenRooms(S.locRoll, reveal, knowRooms(Object.assign({}, mapUi(), { layer: 'player' })));      /* 2.2: never in a blueprint room (knowNow is empty with map.knowledge off) */
+    shown = shown.filter(function (n) { return noBp.indexOf(n) >= 0; });
     /* >>> VV8: the target's marker (design 5.3, H6): B.targetInView at the published ball.t and the rooms this very map shows */
     var mark = targetMark(rs, st, shown);
     /* <<< VV8 */
@@ -3607,7 +3622,7 @@
         if (isObj(change) && ('t' in change || 'crew' in change) && !('heard' in change)) { var merged = Object.assign({}, ballDoc(rs.name), change), hh = runHeard(rs, merged, +merged.t); if (hh) change = Object.assign({}, change, { heard: hh }); }
         var prev = ballDoc(rs.name).t; var ok = ballSet(rs.name, change, quiet === true); if (ok && change && 't' in change) S.rvPrevT = prev; /* VV6 */ if (ok && !quiet) runDraw(true); return !!ok; },
       pcs: runPcs, floors: function () { var rs = runV2(); return rs ? runFloors(rs) : { list: [], floorOf: {} }; }, isOpen: runIsOpen,
-      openRoom: function (name, on) { roomOpen(name, on); }, mapSvg: runMapSvg, mapPaint: function (fr, svg, zoom) { b19Paint(fr, svg, zoom); },
+      openRoom: function (name, on) { roomOpen(name, on); }, knowledgeToggle: function (name) { var k = knInst(); return k ? k.toggleHtml(name) : ''; }, knowledgeCycle: function (name) { var k = knInst(); if (k) k.cycle(name); }, mapSvg: runMapSvg, mapPaint: function (fr, svg, zoom) { b19Paint(fr, svg, zoom); },
       clockNamed: function (name) { var l = tableClocks().filter(function (c) { return str(c.name).trim() === name; }); return l.length ? l[0] : null; },
       publish: runPublish, toast: toast, phoneCards: phoneCardsOn, setPhoneCards: setPhoneCards,
       /* server time: the iPad corrects to it, so the beat timer's endsAt is stamped on it (the GM api's Date-header skew; 0 when unknown) */
@@ -3714,7 +3729,7 @@
     try { d = playerDisplay(S.locRoll, mu, W.B68Map && W.B68Map.render, tk); } catch (e) { toast(errText(e), true); return; }
     if (!confirmReveal(d.reveal, 'This map')) return;
     gate.mark(d.svg);
-    var me = S, key = rollKey(S.locRoll), on = { key: key, reveal: d.reveal.slice(), view: mu.view, theme: mu.theme, time: mu.time, weather: mu.weather, title: d.title, tok: tk.sig, tokQ: tk.sig, tokToast: d.tokensRefused ? tk.sig : null };
+    var me = S, key = rollKey(S.locRoll), on = { key: key, reveal: d.reveal.slice(), know: knowRooms(mu), view: mu.view, theme: mu.theme, time: mu.time, weather: mu.weather, title: d.title, tok: tk.sig, tokQ: tk.sig, tokToast: d.tokensRefused ? tk.sig : null };
     endLive();            /* nothing is live until this map has landed */
     pushDisplay({ kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }, {
       map: true,
@@ -3747,7 +3762,7 @@
     /* the markers asked for, and the ROOMS asked for (a room opened or closed here or on another device, M4 step 5). Bands are not compared
        here: a band ticked on another device never re-sent before and does not now (the ticks send through the box that was ticked) */
     var haveRooms = entryRooms(on.revQ === undefined ? on.reveal : on.revQ);
-    if (ask === (on.tokQ === undefined ? on.tok || '' : on.tokQ) && sameBands(entryRooms(want), haveRooms)) return;
+    if (ask === (on.tokQ === undefined ? on.tok || '' : on.tokQ) && sameBands(entryRooms(want), haveRooms) && knowSig(knowRooms(mapUi())) === knowSig(on.knowQ === undefined ? on.know : on.knowQ)) return;
     liveReveal();
   }
   function mapOnIpad() {
@@ -3819,8 +3834,43 @@
     var moreRooms = entryRooms(more), rs = moreRooms.length ? runSite() : null;
     ticksTo(entryBands(want).filter(function (b) { return entryBands(more).indexOf(b) < 0; }));
     /* a room that was asked for and refused comes back off the ball's open list (quietly: this is the answer, not a new request) */
-    if (rs) { var keep = cleanRooms(ballDoc(rs.name).open).filter(function (n) { return moreRooms.indexOf(n) < 0; }); ballSet(rs.name, { open: keep.length ? keep : null }, true); }
+    if (rs) { var keep = cleanRooms(ballDoc(rs.name).open).filter(function (n) { return moreRooms.indexOf(n) < 0; }), kk = b09On('map.knowledge') ? cleanRooms(ballDoc(rs.name).know).filter(function (n) { return moreRooms.indexOf(n) < 0; }) : null, change = { open: keep.length ? keep : null }; if (kk) change.know = kk.length ? kk : null; ballSet(rs.name, change, true); }
     if (liveBusy()) liveReveal();
+  }
+  /* a "no" to showing a blueprint room in full: it goes back to blueprint (quietly: this is the answer, not a new request) */
+  function knowRevert(upg) {
+    var rs = runSite(); if (!rs || !b09On('map.knowledge')) return;
+    var open = cleanRooms(ballDoc(rs.name).open).filter(function (n) { return upg.indexOf(n) < 0; }), kn = cleanRooms(ballDoc(rs.name).know), know = kn.concat(upg.filter(function (n) { return kn.indexOf(n) < 0; }));
+    ballSet(rs.name, { open: open.length ? open : null, know: know.length ? know : null }, true); if (S.map) drawMap(true); renderLocation();
+  }
+  /* 2.2 The three knowledge states (gm/knowledge.js, switch map.knowledge): the panel under the Map heading, and a tap on a room of the GM map cycles it */
+  function knInst() {
+    if (!S || !W.B68GmKnowledge || !W.B68Features) return null;
+    if (!S.kn) S.kn = W.B68GmKnowledge.create({ feature: function (id) { return b09On(id); }, esc: esc, toast: toast,
+      rooms: function () { return S && S.locRoll && runSite() && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : []; },
+      ctx: function () { var rs = runSite(), mu = mapUi(); return rs ? { open: cleanRooms(ballDoc(rs.name).open), know: cleanRooms(ballDoc(rs.name).know), bands: BANDS.filter(function (b) { return b === 'public' || mu.reveal[b] === true; }) } : {}; },
+      floors: function () { var rs = runSite(); if (!rs) return []; var fl = runFloors(rs); return fl.list.map(function (f) { return { name: f.name, names: Object.keys(fl.floorOf).filter(function (n) { return fl.floorOf[n] === f.lvl; }) }; }); },
+      write: function (open, know) { var rs = runSite(); return rs ? ballSet(rs.name, { open: open.length ? open : null, know: know.length ? know : null }) : false; },
+      roomBox: function (svg, name) { return b19Room(svg, name); },
+      changed: function () { if (S && S.map) drawMap(); renderLocation(); if (S && S.rv && runV2()) S.rv.rerender(); } });
+    return S.kn;
+  }
+  function knPaint() {
+    var k = S && knInst(), mb = $q('.gm-mapbox'), box = $q('#gm-b24');
+    if (!k || !mb || !k.active()) { if (box && box.parentNode) box.parentNode.removeChild(box); return; }
+    if (!box) {
+      var after = $q('#gm-b17') || mb.querySelector('h4'); box = document.createElement('div'); box.id = 'gm-b24'; box.className = 'gm-b24';
+      if (after && after.nextSibling) mb.insertBefore(box, after.nextSibling); else mb.appendChild(box);
+      if (S.knUnbind) { try { S.knUnbind(); } catch (e) {} }
+      S.knUnbind = k.bind(box);
+    }
+    k.paint(box);
+  }
+  function knUnmount(me) { if (me.knUnbind) { try { me.knUnbind(); } catch (e) {} me.knUnbind = null; } me.kn = null; }
+  function knMapTap(ev) {
+    var k = S && S.kn; if (!k || !k.active()) return false;
+    var m = ev.target.closest('#gm-map [data-room]'); if (!m || !S.map || S.map.layer !== 'gm') return false;
+    return k.tapRoom(S.locRoll, m.getAttribute('data-room'));
   }
   /* bands and rooms of a reveal list, in words: "the working band", "the working and secure bands", "the room Kitchens" */
   function bandWords(l) {
@@ -3832,10 +3882,12 @@
   function liveReveal() {
     if (!mapOnIpad() || b17Frozen()) return;
     var on = S.mapOn, mu = mapUi(), want = revealEntries(mu), tk = playerTokenSet(want);
-    if (sameBands(want, on.reveal) && tk.sig === (on.tok || '') && !liveBusy()) return;
+    var wantKnow = knowRooms(mu), upg = (on.know || []).filter(function (n) { return wantKnow.indexOf(n) < 0 && entryRooms(want).indexOf(n) >= 0; });      /* 2.2: a blueprint room now seen */
+    if (sameBands(want, on.reveal) && tk.sig === (on.tok || '') && knowSig(wantKnow) === knowSig(on.know) && !liveBusy()) return;
+    if (upg.length && !W.confirm('The map is on the iPad: this shows the players ' + (upg.length === 1 ? 'the room ' + upg[0] : 'the rooms ' + upg.join(', ')) + ' in full now. Go ahead?')) { knowRevert(upg); return; }
     var more = want.filter(function (b) { return on.reveal.indexOf(b) < 0; }), fewer = on.reveal.filter(function (b) { return want.indexOf(b) < 0; });
     if (more.length && !W.confirm('The map is on the iPad: ' + (more.length === 1 ? 'opening ' + bandWords(more) + ' shows it' : 'this shows the players ' + bandWords(more)) + (more.length === 1 ? ' to the players now' : ' now') + '. Go ahead?')) { dropBands(want, more); return; }
-    var spec = { layer: 'player', reveal: mu.reveal, open: mu.open, view: on.view, theme: on.theme, time: on.time, weather: on.weather }, d;
+    var spec = { layer: 'player', reveal: mu.reveal, open: mu.open, know: mu.know, view: on.view, theme: on.theme, time: on.time, weather: on.weather }, d;
     try { d = playerDisplay(S.locRoll, spec, W.B68Map && W.B68Map.render, tk); } catch (e) {
       on.tokQ = tk.sig;       /* not asked again until something changes */
       if (!fewer.length) { toast('Not sent: ' + errText(e) + ' The iPad still shows ' + entryBands(on.reveal).join(', ') + (entryRooms(on.reveal).length ? ' + ' + entryRooms(on.reveal).join(', ') : '') + '.', true); dropBands(want, more); return; }
@@ -3848,10 +3900,11 @@
     var me = S, key = on.key, sent = d.reveal.slice(), sig = tk.sig;
     on.tokQ = sig;        /* the markers asked for, so a poll with nothing new asks for nothing */
     on.revQ = sent;       /* and the reveal asked for (bands and rooms), likewise */
+    on.knowQ = wantKnow;  /* and the rooms known as blueprint only, so a blueprint room opened in full asks again */
     pushDisplay({ kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }, {
       map: true, live: true,
       prepare: function (body) { return S === me && S.mapOn && S.mapOn.key === key ? Object.assign({}, body, { ifSeq: S.mapOn.seq }) : null; },
-      done: function (r) { if (S === me && S.mapOn && S.mapOn.key === key && typeof r.seq === 'number') { S.mapOn.seq = r.seq; S.mapOn.reveal = sent; S.mapOn.tok = sig; } },
+      done: function (r) { if (S === me && S.mapOn && S.mapOn.key === key && typeof r.seq === 'number') { S.mapOn.seq = r.seq; S.mapOn.reveal = sent; S.mapOn.tok = sig; S.mapOn.know = wantKnow; } },
       fail: function () { if (S === me) endLive(); }
     }).then(function () {
       toast('On the iPad now: ' + d.caption + '.');
@@ -4365,6 +4418,7 @@
     if (W.B68GmMapSpotted) me.b19.spotted = W.B68GmMapSpotted.create(b19Host(me));
     if (W.B68GmMapFlashback) me.b19.flashback = W.B68GmMapFlashback.create(b19Host(me));
     if (W.B68GmMapThreat) me.b19.threat = W.B68GmMapThreat.create(b19Host(me));
+    var kn = knInst(); if (kn) me.b19.knowledge = { paint: function (fr, svg) { kn.paintRun(fr, svg); } };     /* 2.2: Intel and a tap on the Run map */
   }
   function b19Paint(fr, svg, zoom) {
     if (!S) return;
@@ -6475,7 +6529,7 @@
   function toggleFocus() { S.prepWide = !S.prepWide; try { W.localStorage.setItem(PREP_WIDE, S.prepWide ? '1' : '0'); } catch (e) {} syncPanels(); }
   function onClick(ev) {
     if (!S || !ev.target.closest) return;
-    if (b17MapTap(ev)) return;
+    if (knMapTap(ev) || b17MapTap(ev)) return;
     /* the Prep tab: a link in a note, a task box, a tick-column cell (no data-gm: they come from the renderer) */
     var pl = ev.target.closest('a[href^="#pp:"]'); if (pl && pl.closest('#gm-runv')) { ev.preventDefault(); runPpLink(pl.getAttribute('href')); return; } if (pl && S.root.contains(pl)) { ev.preventDefault(); prepLink(pl.getAttribute('href')); return; }
     var pt = ev.target.closest('.rl-task[data-task]'); if (pt && S.root.contains(pt)) { ev.preventDefault(); prepTick(pt.getAttribute('data-task')); return; }

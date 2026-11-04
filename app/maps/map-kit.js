@@ -193,17 +193,41 @@ function tfStr(tf) {
   if (tf.sx && tf.sx !== 1) s += ` scale(${n(tf.sx)} 1)`;
   return s.trim();
 }
-M.toSVG = function toSVG(pieces, theme, mode) {
+// --- Blueprint rooms (map.knowledge) -----------------------------------------------------
+// opts.blueprint lists rooms the crew knows from intel, not from having been inside: they are known (the seal, the labels, the
+// titles and the key treat them as any room they know), but drawn as linework: a pale wash and a blue line for the floor, the
+// label in blue, and none of the furniture or the label's icons. BP.ids is the set of the render's room ids (after the player
+// copy is renumbered), held for the length of one M.render call only; with no blueprint it is null and toSVG is what it was.
+const BP = { ids: null }, BP_INK = "#2f5f8f", BP_WASH = "#dfe9f2";
+M.blueprintIds = (model, opts) => {
+  if (opts.layer !== "player" || !Array.isArray(opts.blueprint) || !opts.blueprint.length) return null;
+  const names = new Set(opts.blueprint.filter(x => typeof x === "string")), R = new Set(opts.reveal || ["public"]);
+  const ids = model.rooms.filter(r => names.has(r.name) && M.roomRevealed(R, r) && !R.has(r.band)).map(r => r.id);
+  return ids.length ? new Set(ids) : null;
+};
+const bpRoom = p => (typeof p.room === "string" ? p.room : p.meta && p.meta.room && typeof p.meta.room.id === "string" ? p.meta.room.id : null);
+const bpPaint = (a, p) => {
+  const r = String(p.r || "");
+  if (r === "floor-tone") return null;
+  if (r.indexOf("floor-") === 0) return { fill: BP_WASH, stroke: BP_INK, "stroke-width": 0.3, "stroke-dasharray": "1.2 0.8" };
+  if (p.t === "text") return Object.assign(a, { fill: BP_INK });
+  return a;
+};
+M.toSVG = function toSVG(pieces, theme, mode, bp) {
   let out = "";
   for (const p of pieces) {
     if (!p) continue;
+    let inBp = bp === true;
+    if (!inBp && BP.ids) { const id = bpRoom(p); inBp = id !== null && BP.ids.has(id); }
     if (p.t === "g") {
-      const inner = toSVG(p.kids, theme, mode);
-      if (inner) out += `<g${attrs({ transform: tfStr(p.tf) || undefined, opacity: p.opacity, class: p.cls, "data-room": p.room })}>${inner}</g>`;
+      if (inBp && /(^| )(furniture|icon)( |-|$)/.test(p.cls || "")) continue;
+      const inner = toSVG(p.kids, theme, mode, inBp);
+      if (inner) out += `<g${attrs({ transform: tfStr(p.tf) || undefined, opacity: p.opacity, class: p.cls, "data-room": p.room, "data-know": inBp && !bp ? "blueprint" : undefined })}>${inner}</g>`;
       continue;
     }
     if (p.t === "raw") { if (mode !== "shadow") out += p.svg; continue; }
     let a = theme.paint(p.r, p, mode);
+    if (a && inBp && mode !== "shadow") a = bpPaint(a, p);
     if (!a) continue;
     if (mode === "shadow") {
       if (a.fill && a.fill !== "none") a.fill = theme.shadowColour;
@@ -3381,7 +3405,7 @@ S.level = function (lv, model, ctx) {
   for (const e of lv.extras) if (e.shape && (!reveal || S.nodeKnown(e, reveal))) L.floors.push(shapePiece(OPEN.has(e.kind) ? "floor-corridor" : "floor-" + e.band, e.shape));
   for (const r of lv.rooms) if (r.shape && known(r)) L.floors.push(shapePiece("floor-" + r.band, r.shape, { room: r.id, data: { band: r.band } }));
   // the deepest band gets the theme's tone (halftone, hatch …) on top
-  for (const r of lv.rooms) if (r.shape && r.band === "secure" && known(r)) L.floors.push(shapePiece("floor-tone", r.shape, { data: { band: r.band } }));
+  for (const r of lv.rooms) if (r.shape && r.band === "secure" && known(r)) L.floors.push(shapePiece("floor-tone", r.shape, { room: r.id, data: { band: r.band } }));
   // …and one cover over the rest, under the walls that face what is known
   if (reveal) { const cv = S.coverPiece(lv, reveal); if (cv) L.floors.push(cv); }
 
@@ -4287,8 +4311,8 @@ SEC.build = function (lay, model, ctx) {
       // the player copy draws nothing of a room the crew hasn't surveyed
       if (b.r && !known(b.r)) continue;
       const role = b.core || b.passage ? "floor-corridor" : "floor-" + b.r.band, sh = boxShape(b), data = b.r ? { band: b.r.band } : undefined;
-      Ls.floors.push(sh.t === "path" ? P.path(role, sh.d, { data }) : P.rect(role, b.x, y0, b.w, y1 - y0, { data }));
-      if (b.r && b.r.band === "secure") Ls.floors.push(sh.t === "path" ? P.path("floor-tone", sh.d, { data }) : P.rect("floor-tone", b.x, y0, b.w, y1 - y0, { data }));
+      Ls.floors.push(sh.t === "path" ? P.path(role, sh.d, { data, room: b.r && b.r.id }) : P.rect(role, b.x, y0, b.w, y1 - y0, { data, room: b.r && b.r.id }));
+      if (b.r && b.r.band === "secure") Ls.floors.push(sh.t === "path" ? P.path("floor-tone", sh.d, { data, room: b.r.id }) : P.rect("floor-tone", b.x, y0, b.w, y1 - y0, { data, room: b.r.id }));
       if (st === "spine" && !b.core) Ls.walls.push(P.line("drop-ceiling", b.x + 0.5, y0 + 2.2, b.x + b.w - 0.5, y0 + 2.2, { sw: 0.25 }));
       if (b.core) {
         Ls.furn.push(P.g(SIDE.stairs(6), { tf: { x: b.x + b.w / 2, y: y1 }, cls: "furniture" }));
@@ -7552,7 +7576,7 @@ GR.section = function (lay, model, ctx) {
     const r = c.n, va = GR.rooms(model, r).span === 2 ? voidAbove(r) : null, y0 = va ? va.row.y0 : row.y0;
     const data = { band: r.band };
     Ls.floors.push(P.rect("floor-" + r.band, c.a, y0, c.b - c.a, row.y1 - y0, { data, room: r.id }));
-    if (r.band === "secure") Ls.floors.push(P.rect("floor-tone", c.a, y0, c.b - c.a, row.y1 - y0, { data }));
+    if (r.band === "secure") Ls.floors.push(P.rect("floor-tone", c.a, y0, c.b - c.a, row.y1 - y0, { data, room: r.id }));
   }
   // galleries: the ring's balustrade runs round the void, seen across it at the gallery's floor, cut at each edge
   for (const row of rows) for (const c of row.cells) if (c.void && cellKnown(c)) {
@@ -7946,7 +7970,7 @@ const growEntries = (B, entries) => {
   }
 };
 
-M.render = function (o, opts = {}) {
+const render1 = function (o, opts = {}) {
   const W = [], raw = opts;
   opts = M.resolveOpts(opts, W);
   if (!M.VIEWS.includes(opts.view)) { M.warn(W, `view "${opts.view}" is not one of ${M.VIEWS.join(", ")} — drawing iso`); opts.view = "iso"; }
@@ -7956,6 +7980,7 @@ M.render = function (o, opts = {}) {
   // map kit 1.0 (grand.js): only when the roll says kit: 1 AND the caller asks (opts.kit1); otherwise this is 0.9, byte for byte
   if (opts.kit1 === true && o.kit === 1) model.grand = M.grand.read(o, model, W);
   M.revealRooms(model, opts, W);
+  BP.ids = M.blueprintIds(model, opts);
   const seed = opts.seed != null ? opts.seed : (o.seed != null ? o.seed : M.hash(model.name + model.district));
   // Ids come from the render's own inputs, so the same roll drawn the same way
   // is the same file, byte for byte (saved maps diff cleanly, caches hit).
@@ -7966,6 +7991,7 @@ M.render = function (o, opts = {}) {
   if (opts.view === "street") return M.street.render(o, opts, W, theme, model, seed, opts.idPrefix || (sid + M.hash("street" + (raw.time || "")).toString(36).slice(0, 4)));
   if (!model.rooms.length) return M.emptyRender(model, opts, theme, W, seed, sid);
   if (model.grand && !opts.idPrefix) sid += "g";
+  if (BP.ids && !opts.idPrefix) sid += "k";
   const rng = M.rng(seed);
   // iso and section are drawn from the floor plan, so all three agree. The
   // player copy is laid out the same way, then sealed: see S.seal.
@@ -8001,6 +8027,7 @@ M.render = function (o, opts = {}) {
   }
   return { svg: out.svg, width: out.width, height: out.height, warnings: W, model, layout: lay, seed, floorPx: opts.minLabelPx || 0 };
 };
+M.render = function (o, opts) { const prev = BP.ids; BP.ids = null; try { return render1(o, opts); } finally { BP.ids = prev; } };
 
 // Build a sheet's scene (floors, links, ways in, labels placed) for a theme to compose.
 M.buildScene = function (lay, model, ctx, X) {
@@ -8036,6 +8063,7 @@ M.buildScene = function (lay, model, ctx, X) {
     const rm = model.rooms.find(x => x.name === t.room);
     if (!rm || !rm.frame) { M.warn(W, `token room "${t.room}" is not on this map`); return null; }
     if (reveal && !M.roomRevealed(reveal, rm)) return null;
+    if (BP.ids && BP.ids.has(rm.id)) return null;      // a room known only as a blueprint carries no marker: nothing of who is in it
     const lv = lvOf(rm); if (!lv) return null;
     const f = (rm.gallery && rm.frames && rm.frames[0]) || rm.frame;     // kit 1.0: a gallery's marker stands on its widest run
     const [px, py] = ctx.toScreen(lv, f.cx, f.cy, "room");

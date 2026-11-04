@@ -462,6 +462,8 @@
     /* the one toggle on a room card: Reveal on the map / Revealed · hide (the Run view's own list), or plain text when a band or survey opened it */
     function revealToggle(c, ctx) {
       var mine = list(ctx.st.open).indexOf(c.name) >= 0, room = ' data-room="' + esc(c.name) + '"';
+      var kt = typeof host.knowledgeToggle === "function" ? host.knowledgeToggle(c.name) : "";      /* 2.2: dark, blueprint or seen, while map.knowledge is on */
+      if (kt) return kt;
       if (!c.open) return '<p class="rv-open no"><button type="button" class="rv-btn sm rv-tog" data-rv="open"' + room + ' aria-pressed="false">Reveal on the map</button></p>';
       if (mine) return '<p class="rv-open yes"><button type="button" class="rv-btn sm rv-tog" data-rv="close"' + room + ' aria-pressed="true">Revealed · hide</button></p>';
       return '<p class="rv-open yes">Revealed (surveyed)</p>';
@@ -625,6 +627,7 @@
           if (arm) placeAt(arm, room); else { sel = room; self.rerender(); }
           break;
         }
+        case "know": if (typeof host.knowledgeCycle === "function") host.knowledgeCycle(el.getAttribute("data-room")); self.rerender(); break;
         case "open": host.openRoom(el.getAttribute("data-room"), true); self.rerender(); break;
         case "close": host.openRoom(el.getAttribute("data-room"), false); self.rerender(); break;
         case "heard": case "unhear": {
