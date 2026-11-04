@@ -2326,6 +2326,14 @@
     var on = mtOn(), b = $q('#gm-menu-montage'), after = $q('#gm-menu-print') || $q('#gm-menu-switchboard') || $q('#gm-menu-live');
     if (on && !b && after) after.insertAdjacentHTML('afterend', '<button type="button" data-gm="montage" id="gm-menu-montage" title="Split the iPad into one panel per character">Montage</button>'); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
   }
+  /* 4.5 / 4.7 / 5.3 the practical speaker, the ringing phone and the Trouble desk (gm/room-desk.js; switches room.practical, room.phone, between.trouble): one Menu line each while its switch is on */
+  function rdInst() {
+    if (!S || !W.B68GmRoomDesk || !W.B68Features) return null;
+    if (!S.rd) S.rd = W.B68GmRoomDesk.create({ feature: function (id) { return !!(S && W.B68Features.valueOf(S.doc, id)); }, doc: function () { return S ? S.doc : null; }, toast: toast, root: function () { return $q('#gm-root'); }, part: part,
+      save: function (id, item) { var it = {}; it[id] = item; patch({ trouble: { items: it } }); }, show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); } });
+    return S.rd;
+  }
+  function rdMenuSync() { var r = rdInst(); if (r) r.menuSync({ $q: $q, after: function () { return $q('#gm-menu-print') || $q('#gm-menu-switchboard') || $q('#gm-menu-live'); } }); }
   function swMenuLine() { return W.B68GmSwitchboard && W.B68Features ? '<button type="button" data-gm="switchboard" id="gm-menu-switchboard" title="Every new feature has a switch here, off until you turn it on. All off puts the app back as it was; no reload">Switchboard</button>' : ''; }
   /* 4.2 Preflight (gm/preflight.js, switch room.preflight): the Menu line exists only while the switch is on */
   function pfOn() { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, 'room.preflight') && W.B68GmPreflight); }
@@ -2412,7 +2420,7 @@
   /* the bar's live parts: the session, what is on the iPad, listening */
   function renderBar() {
     if (!S || !S.root) return;
-    renderMirror(); spineTick(); pfMenuSync(); prMenuSync(); mtMenuSync(); b17Tick(); csTick(); if (b29()) b29().menuSync();
+    renderMirror(); spineTick(); pfMenuSync(); prMenuSync(); rdMenuSync(); mtMenuSync(); b17Tick(); csTick(); if (b29()) b29().menuSync();
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
@@ -4008,7 +4016,14 @@
   function clearOverlay() { return patchAmbient({ overlay: null }); }
   /* The show contract (app/gm/show.js): show(kind, payload, { ms, key }), layer(path, value), clear(). They write through patchAmbient, so the gate runs. */
   var showCtl = null;
-  function shows() { if (!showCtl && W.B68Show) showCtl = W.B68Show.make({ send: patchAmbient, toast: toast }); return showCtl; }
+  function shows() {
+    if (!showCtl && W.B68Show) {
+      showCtl = W.B68Show.make({ send: patchAmbient, toast: toast });
+      var sendShow = showCtl.show;   /* 4.7: a ring that reached the iPad also rings the practical speaker (gm/phone.js; off unless room.phone is on) */
+      showCtl.show = function (kind) { var pr = sendShow.apply(showCtl, arguments); if (kind === 'ring') Promise.resolve(pr).then(function (r) { var rd = r !== null ? rdInst() : null; if (rd) rd.onShow(kind); }); return pr; };
+    }
+    return showCtl;
+  }
 
   /* ---------- the iPad autopilot (design 6; GM.md "Autopilot") ----------
      B68GmAutopilot (gm/autopilot.js) is the pure controller; this block is its driver, and the only place it touches the page. It feeds the
@@ -6452,6 +6467,7 @@
       case 'hardstart': menuOpen(false); { var hsi = hsInst(); if (hsi) hsi.toggle(); } break;      /* 1.2 */
       case 'switchboard': menuOpen(false); { var sbi = swInst(); if (sbi) sbi.toggle(); } break;      /* W0.2 */
       case 'montage': menuOpen(false); { var mti = mtInst(); if (mti) mti.toggle(); } break;      /* 2.8 */
+      case 'practical': case 'phone': case 'trouble': menuOpen(false); { var rdi = rdInst(); if (rdi) rdi.toggle(a); } break;      /* 4.5, 4.7, 5.3 */
       case 'print': menuOpen(false); { var pri = prInst(); if (pri) pri.toggle(); } break;      /* 3.6, 2.11 */
       case 'b29': menuOpen(false); if (b29()) b29().click(b.getAttribute('data-act')); break;      /* B29 */
       case 'preflight': menuOpen(false); { var pfi = pfInst(); if (pfi) pfi.toggle(); } break;      /* 4.2 */
