@@ -5,6 +5,7 @@
 // Plain ES module with no Cloudflare-specific imports (WebCrypto and TextEncoder only), so node can import it.
 
 import { HttpError, ID_RE, MAX_BODY_BYTES, isPlainObject, deepMerge, nowIso, error } from './http.js';
+import FaceLook from '../../app/display/face-look.js';
 import { SHOW_KIND_IDS, isShowKind, cleanShowPayload, cleanLayerOp, applyLayer, overlayRunning } from './show.js';
 
 export const GM_ONLY = 'only the GM can use the GM tools';
@@ -388,7 +389,7 @@ function sceneId(v, name) {
  * clock overlay's clock must be one the players can see (assertOverlayClock, functions/_lib/campaign.js). Neither is copied into the
  * overlay: the display GET joins them to their rows when it is read (joinOverlayNpc, joinOverlayClock).
  * null removes it. Otherwise { id (at most 40), kind clock|npc|fx|text, ms 1000-180000, auto? } plus, per kind, clock { clockId },
- * npc { npcId }, fx { fx: 'dawn' }, text { text (at most 120) }. `auto: true` marks an overlay the autopilot sent (it never lights a
+ * npc { npcId, look? }, fx { fx: 'dawn' }, text { text (at most 120) }. `auto: true` marks an overlay the autopilot sent (it never lights a
  * blacked-out screen). A fresh object is built, so any other key (a clock's name, size or fill included) is dropped; `at` is the
  * server's time. No model text or prep text belongs in one: the GM page sends only what the GM chose.
  */
@@ -408,6 +409,12 @@ export function cleanOverlay(v) {
   } else if (v.kind === 'npc') {
     if (typeof v.npcId !== 'string' || !ID_RE.test(v.npcId)) throw new HttpError(400, 'overlay.npcId is a bad id');
     out.npcId = v.npcId;
+    // an optional look (suite 3.2-3.4): names from fixed lists only (app/display/face-look.js); a junk value is dropped, a non-object is refused
+    if (v.look !== undefined && v.look !== null) {
+      if (!isPlainObject(v.look)) throw new HttpError(400, 'overlay.look must be an object');
+      const lk = FaceLook.clean(v.look);
+      if (lk) out.look = lk;
+    }
   } else if (isShowKind(v.kind)) {
     out.payload = cleanShowPayload(v.kind, v.payload);
   } else if (v.kind === 'fx') {

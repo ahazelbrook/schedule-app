@@ -49,6 +49,7 @@
         else if (a === 'sec-up') security.step(1); else if (a === 'sec-down') security.step(-1);
         else if (a === 'spot') { if (spot.held() === id) spot.narrator(); else spot.spotlight(id); }
         else if (a === 'bar-x') spot.remove(id); else if (a === 'narrator') spot.narrator();
+        else if (a === 'expr') spot.express(str(b.getAttribute('data-expr'))); else if (a === 'sig') spot.signature();
       }
       function onSubmit(ev) {
         var f = ev.target && ev.target.closest ? ev.target.closest('[data-b17="bar-add"]') : null; if (!f) return;

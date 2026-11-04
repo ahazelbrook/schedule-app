@@ -62,6 +62,7 @@ const CHECKS = [
   ['checks/runtime/sheet-keys.e2e.mjs', 'turn the key and the key cabinet: the offer at three hits, the deadlock, Stress clear, the iPad card, the automatic critical, the cabinet, All off (9160)'],
   ['checks/runtime/show-contract.e2e.mjs', 'the show contract: every brief beat on the GM display and the iPad within a poll, a hidden NPC dropped, the layers and the scene data channel, the look book (9050)'],
   ['checks/runtime/suite-b17.e2e.mjs', 'stage then send, the security level and the stage bar on the real GM page: off draws nothing, on draws the panel, Freeze, a hand-stepped level, no secret in the display GET (8953)'],
+  ['checks/runtime/suite-b25.e2e.mjs', 'the face looks on the iPad: expressions, the signature pose, the five portrait formats, the badge and the motif on a fake audio context, a hidden person refused, no notes on the page (9250)'],
   ['checks/runtime/gm-stamp.e2e.mjs', 'the stamp, the sizer and the strict cue grammar on the real GM page: Stamp row, report card, 4/5 sizer with a two-tap reduce, a typed cue with its Undo toast, didn’t catch that, All off (9030)'],
   ['checks/runtime/aftermath.e2e.mjs', 'the Aftermath show: Menu entry, the eight steps on the iPad, the phone commendations, the credits, off again (9110)'],
   ['checks/runtime/gm-autopilot.e2e.mjs', 'the iPad autopilot: a clock overlay, Take over, secrecy, lights out, display-only expiry (8879)'],

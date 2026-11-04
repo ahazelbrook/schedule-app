@@ -480,7 +480,7 @@
      clock { clockId }, npc { npcId }, fx { fx: 'dawn' }, text { text (at most 120) }, and no other field. A clock is named by its id: the SERVER
      resolves the name, size and fill, and refuses a hidden or missing clock. What goes in the text is the caller's: only what the GM chose,
      never model text or prep text. */
-  var OV_FIELDS = { clock: ['clockId'], npc: ['npcId'], fx: ['fx'], text: ['text'] };
+  var OV_FIELDS = { clock: ['clockId'], npc: ['npcId', 'look'], fx: ['fx'], text: ['text'] };
   /* the show contract's brief beats (app/gm/show.js; functions/_lib/show.js) carry one `payload` object */
   if (W.B68Show) W.B68Show.ids().forEach(function (k) { OV_FIELDS[k] = ['payload']; });
   function wholeBetween(v, lo, hi) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v && v >= lo && v <= hi; }
@@ -491,7 +491,7 @@
     if ('auto' in o && typeof o.auto !== 'boolean') return false;
     if (typeof o.id !== 'string' || !o.id.trim() || o.id.length > 40 || !wholeBetween(o.ms, 1000, 180000)) return false;
     if (o.kind === 'clock') return typeof o.clockId === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(o.clockId);
-    if (o.kind === 'npc') return typeof o.npcId === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(o.npcId);
+    if (o.kind === 'npc') return typeof o.npcId === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(o.npcId) && (o.look === undefined || !!(W.B68FaceLook && W.B68FaceLook.clean(o.look)));
     if (o.kind === 'fx') return o.fx === 'dawn';
     if (W.B68Show && W.B68Show.has(o.kind)) return W.B68Show.payloadOk(o.kind, o.payload);
     return typeof o.text === 'string' && !!o.text.trim() && o.text.length <= 120;
@@ -4405,7 +4405,8 @@
       npcs: function () { return S === me ? Object.keys(isObj(me.npcs) ? me.npcs : {}).map(function (id) { var d = me.npcs[id]; return isObj(d) && !(Array.isArray(d.tags) && d.tags.indexOf('undone') >= 0) ? { id: id, name: str(d.name), alias: str(d.alias), revealed: d.revealed === true } : null; }).filter(Boolean) : []; },
       roomKey: function () { return S === me ? pickRoomName() : ''; },
       roomMd: function () { var rn = S === me ? runRoomNotes() : null, n = pickRoomName(); return rn && n && isObj(rn.byRoom) && isObj(rn.byRoom[n]) ? str(rn.byRoom[n].md) : ''; },
-      hold: function (npcId, ms) { return showOverlay({ id: 'b17sl-' + newOverlayId().slice(-8), kind: 'npc', npcId: npcId, ms: ms }); },
+      hold: function (npcId, ms, look) { var ov = { id: 'b17sl-' + newOverlayId().slice(-8), kind: 'npc', npcId: npcId, ms: ms }; if (look) ov.look = look; return showOverlay(ov); },
+      notes: function (id) { var d = S === me && isObj(me.npcs) ? me.npcs[id] : null; return isObj(d) ? str(d.gmNotes) : ''; },
       clear: function () { var up = isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; return up.indexOf('b17sl-') === 0 ? clearOverlay() : Promise.resolve(null); },
       overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
       confirm: function (m) { return W.confirm(m); },

@@ -33,6 +33,7 @@
       if (root.B68DisplayMontage) root.B68DisplayMontage.paint(mb, root.B68DisplayMontage.FIXTURE, document);
       return;
     }
+    if (kind.indexOf('faces-') === 0 && root.B68LookbookFaces) { root.B68LookbookFaces.frame(kind, host); return; }     /* suite 3.2-3.4: the face looks, drawn by the iPad's own renderer */
     host.appendChild(layer);
     var e = root.B68Shows.entry(kind);
     if (!e) return;
@@ -72,6 +73,7 @@
       else grid.appendChild(card(e.kind, e.label, e.fixture));
     });
     grid.appendChild(card('layers', 'Lasting layers', LAYERS_DEMO));
+    if (root.B68LookbookFaces) root.B68LookbookFaces.cards().forEach(function (c) { grid.appendChild(card(c.kind, c.label, c.fixture)); });
     if (root.B68DisplayMontage) grid.appendChild(card('montage', 'Montage panels (layer data.montage)', { panels: root.B68DisplayMontage.FIXTURE }));
     host.appendChild(grid);
   }
