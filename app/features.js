@@ -154,7 +154,9 @@
     { id: 'between.lair', label: 'The lair that grows', surface: 'display', stage: 'between', default: false, saturday: 'off',
       doc: 'Menu then The lair: the crew’s base as a cut-away section on the iPad, a layer for each base upgrade, cohort and piece of flair read from the crew sheet, with extra flair you type. Off: no menu line.' },
     { id: 'face.expressions', label: 'Expressions and a signature pose', surface: 'display', stage: 'face', default: false, saturday: 'try',
-      doc: 'The stage bar gains Neutral, Pleased, Hostile, Afraid and Their tell buttons for the person held on the iPad (the face swaps its eyes, brows and mouth), and a Signature button that plays their pose once. The tell and the pose come from lines in the person’s GM notes: Tell: smirk, Signature: lapel. Off: the portrait as drawn.' }
+      doc: 'The stage bar gains Neutral, Pleased, Hostile, Afraid and Their tell buttons for the person held on the iPad (the face swaps its eyes, brows and mouth), and a Signature button that plays their pose once. The tell and the pose come from lines in the person’s GM notes: Tell: smirk, Signature: lapel. Off: the portrait as drawn.' },
+    { id: 'face.formats', label: 'Portrait formats', surface: 'display', stage: 'face', default: false, saturday: 'off',
+      doc: 'A held person’s portrait can be a driver’s licence, a security badge, a mugshot with a placard, a society-page halftone or a passport, in a duotone of their faction’s colour, chosen by a Relation: line in their GM notes (resident, staff, suspect, society, foreign). Off: the plain portrait.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

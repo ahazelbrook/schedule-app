@@ -31,3 +31,33 @@
 @keyframes dp-fl-pose-in { from { opacity: 0; transform: translateY(2vmin); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .dp-fl-pose { animation: none; } }
 [data-reduced] .dp-fl-pose { animation: none; }
+
+/* a framed portrait: the card's own name line gives way to the frame's */
+.dp-fl-framed > .dp-ov-name { display: none; }
+.dp-fl { --fl: var(--b68-ink-soft); --fl-ink: var(--b68-paper-light); position: relative; width: min(100%, 36vmin); display: flex; flex-direction: column; gap: .8vmin; padding: 1vmin; text-align: left;
+  background: var(--b68-paper); color: var(--b68-ink); border: .4vmin solid var(--b68-ink); border-radius: 1vmin; overflow: hidden; }
+.dp-fl-c1 { --fl: var(--b68-faction-1); --fl-ink: var(--b68-faction-1-ink); } .dp-fl-c2 { --fl: var(--b68-faction-2); --fl-ink: var(--b68-faction-2-ink); }
+.dp-fl-c3 { --fl: var(--b68-faction-3); --fl-ink: var(--b68-faction-3-ink); } .dp-fl-c4 { --fl: var(--b68-faction-4); --fl-ink: var(--b68-faction-4-ink); }
+.dp-fl-c5 { --fl: var(--b68-faction-5); --fl-ink: var(--b68-faction-5-ink); } .dp-fl-c6 { --fl: var(--b68-faction-6); --fl-ink: var(--b68-faction-6-ink); }
+.dp-fl-photo { aspect-ratio: 1; overflow: hidden; border: .3vmin solid var(--b68-ink); background: var(--b68-paper-dark); position: relative; }
+.dp-fl-photo .dp-ov-portrait { width: 100%; }
+.dp-fl-head { margin: 0; padding: .3vmin 1vmin; font: 900 2.4vmin/1.2 var(--b68-font-cond); letter-spacing: .22em; text-transform: uppercase; background: var(--fl); color: var(--fl-ink); }
+.dp-fl-field { margin: 0; font: 900 var(--b68-t-label)/1.1 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .02em; overflow-wrap: anywhere; }
+.dp-fl-sub { margin: 0; font: 700 var(--b68-t-label)/1.2 var(--b68-font-text); color: var(--b68-ink-soft); overflow-wrap: anywhere; }
+.dp-fl-num { margin: 0; font: 700 var(--b68-t-label)/1.1 var(--b68-font-mono); }
+.dp-fl-txt { display: flex; flex-direction: column; gap: .4vmin; }
+.dp-fl > .dp-fl-glyph { position: absolute; bottom: 1vmin; right: 1vmin; width: 5vmin; height: 5vmin; }
+.dp-fl-licence { border-radius: 1.6vmin; background: var(--b68-paper-light); }
+.dp-fl-badge .dp-fl-head { text-align: center; padding-top: 1.6vmin; }
+.dp-fl-badge .dp-fl-hole { align-self: center; width: 7vmin; height: 1.4vmin; border-radius: 1vmin; background: var(--b68-ink); }
+.dp-fl-badge .dp-fl-bars { width: 100%; height: 3vmin; fill: var(--b68-ink); }
+.dp-fl-mugshot { background: var(--b68-paper-dark); }
+.dp-fl-mugshot .dp-fl-photo { background-image: repeating-linear-gradient(0deg, transparent 0 5.6%, rgba(20, 17, 14, .35) 5.6% 6.2%); }
+.dp-fl-placard { background: var(--b68-ink); color: var(--b68-paper-light); padding: .6vmin 1vmin; text-align: center; }
+.dp-fl-placard .dp-fl-sub { color: var(--b68-paper-dark); }
+.dp-fl-society { background: #f8f3e6; border-color: var(--b68-ink-soft); }
+.dp-fl-society .dp-fl-photo::after { content: ""; position: absolute; inset: 0; background-image: radial-gradient(circle, rgba(20, 17, 14, .55) 28%, transparent 30%); background-size: 1.1vmin 1.1vmin; mix-blend-mode: multiply; opacity: .55; pointer-events: none; }
+.dp-fl-society .dp-fl-field { font-family: var(--b68-font-text); font-style: italic; text-transform: none; font-weight: 700; }
+.dp-fl-passport { background: #ece3cc; }
+.dp-fl-passport .dp-fl-mrz { margin: 0; font: 700 2.2vmin/1.1 var(--b68-font-mono); letter-spacing: .02em; overflow: hidden; white-space: nowrap; color: var(--b68-ink-soft); }
+.dp-fl-passport .dp-fl-stamp { position: absolute; right: 2vmin; bottom: 14vmin; padding: .6vmin 1.4vmin; border: .5vmin solid var(--b68-rules-blue); border-radius: 50%; color: var(--b68-rules-blue); font: 900 2.2vmin/1 var(--b68-font-cond); text-transform: uppercase; transform: rotate(-12deg); opacity: .8; }
