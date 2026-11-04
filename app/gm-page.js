@@ -3930,6 +3930,7 @@
   /* PATCH the ambient document; the response is drawn (a refused change is a toast and the panel keeps the server's value) */
   function patchAmbient(p) {
     var g = gmApi(); if (!g || typeof g.patchAmbient !== 'function') { toast('The iPad settings need the hosted app.', true); return Promise.resolve(null); }
+    if (b17Frozen()) { toast('The iPad is frozen: unfreeze it first.', true); return Promise.resolve(null); }     /* B17: Freeze holds the iPad absolutely */
     if (!gate.allowsAmbient(p)) { toast('Only a player-layer score made on this page can go to the iPad.', true); return Promise.resolve(null); }
     AM.busy++; renderIpad();
     return Promise.resolve().then(function () { return g.patchAmbient(p); }).then(function (r) {
