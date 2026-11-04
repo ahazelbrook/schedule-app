@@ -1105,6 +1105,11 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 #gm-page .rv-alarm { display: inline-flex; align-items: center; gap: 6px; font: 900 12px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; border: 2px solid var(--rule); background: var(--card); color: var(--ink); padding: 6px 8px; min-height: 36px; cursor: pointer; }
 #gm-page .rv-alarm b { font: 700 12px/1 var(--font-mono); }
 #gm-page .rv-pie { display: inline-block; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--rule); background: conic-gradient(var(--alarm) var(--f, 0%), var(--card) 0); }
+/* map.countdown: the play's countdown, read from the time, so nothing to tap; it looks like the alarm beside it */
+#gm-page .rv-count { display: inline-flex; align-items: center; gap: 6px; font: 900 12px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; border: 2px solid var(--rule); background: var(--card); color: var(--ink); padding: 6px 8px; min-height: 36px; }
+#gm-page .rv-count b { font: 700 12px/1 var(--font-mono); }
+#gm-page .rv-count .rv-pie { background: conic-gradient(var(--mustard, #e8c33c) var(--f, 0%), var(--card) 0); }
+#gm-page .rv-count.full { border-color: var(--alarm); }
 #gm-page .rv-chip { font: 700 11.5px/1 var(--font-mono); border: 1.5px solid var(--ink-soft); color: var(--ink-soft); padding: 6px 8px; white-space: nowrap; }
 #gm-page .rv-chip[data-ok="1"] { border-color: var(--ok); color: var(--ok); }
 #gm-page .rv-alarmtext { margin: 0; border: 2px solid var(--alarm); padding: 6px 10px; font-size: 13.5px; }

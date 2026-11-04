@@ -128,7 +128,9 @@ fails and nobody is known, nothing is purged.
   - **Find** (`Ctrl+K`, `/`, or **Find** in the bar): one box over the open Prep note (its sections and transclusions),
     the GM screen, the pack's NPCs, PCs, factions and world clocks, the cast's NPCs made in the app, the table clocks,
     callbacks, the running chase's panels (by caption; one jumps to the Chase tab), and tonight's capture lines, and a few entries of the rules (from the copy this device already holds: Find never
-    starts a download). Every word must match; title matches first. `↑` `↓` choose, `Enter` jumps
+    starts a download). Every word must match; title matches first. With the switch `spine.find` on, each heading below a
+    section's own (a room, a scene, a way) and each heading in a transclusion is an entry of its own, "Section › Heading", and
+    choosing it lands on that heading. `↑` `↓` choose, `Enter` jumps
     (an NPC, PC or faction opens its peek card in the Prep tab; a rules entry opens in the GM screen pane; a capture or callback is
     copied), `Esc` shuts it.
   - **The beat in the bar**: the newest beat started in the Prep tab's run order, with its minutes against the row's
@@ -490,7 +492,8 @@ fails and nobody is known, nothing is purged.
   - **Pin** on a section keeps it, live, at the top of the rail (three at most, `prep.pins`); **Wide** hides the console (on a laptop, **Focus** shrinks it to its keys instead);
   - an embedded **score card** (the exporter's `score` on the block) gets a **Site** strip under its header: see **Score sites** below;
   - **Find in the note** (the box in the bar; `R` puts the cursor there): every word somewhere in a section's heading or text keeps
-    its chip in the section list, Enter goes to the first match, Esc leaves the box.
+    its chip in the section list, Enter goes to the first match, Esc leaves the box. With `spine.find` on, Enter goes to the
+    next heading that matches (a room, a scene, a way), in the note's order and round again, and a toast says which ("2 of 5").
   The header says when the part was exported and warns after a day. Prep text never goes to the iPad or to players; edits are
   made in Obsidian and reach the page with the next pack build and push. Checks: `checks/runtime/gm-prep.test.mjs`,
   `checks/runtime/gm-prep.e2e.mjs` (`PREP_PACK=<pack>` to look at a real pack locally).
@@ -884,6 +887,7 @@ The Run tab (key **G**) runs a v2 play block (`play.v === 2`) on an authored sit
 
 **The tab.**
 - **Start the night.** Pick the engagement result (Crit, 6, 4/5 or 1-3, from `play.clock.starts`). That sets `ball.start` and `ball.t`. Nothing publishes before the night starts.
+- **The countdown** (switch `map.countdown`). A play may name a countdown, `clock.countdown: { at: "HH:MM", label }`, after the start and inside the clock. The header then shows it beside the alarm as a pie and `label n/N`: N is the beats from the clock's start to `at`, n the beats gone, so each beat forward is a tick and a later engagement start begins part-filled. Full at `at`, and it stays full. GM only: no player view carries it.
 - **The beat.** A beat is `play.clock.beat` minutes (5 to 60, default 15). Left and Right step one beat back or forward (never before the start, never past the last beat). Shift+Right jumps to the next thing that happens: an event, a stop, a route window or a way window. Esc closes a peek.
 - **The timer.** A countdown per beat sits in the Run header once the night has started (never before Start the night), and it starts paused (`ball.timer`). Its length is `play.clock.real` minutes when the play has it, else 6 minutes (a GM default); the box beside it sets another (1 to 120 minutes). **Start**/**Pause**, **+1 min**, **+5 min** and **Reset** (back to the full length, paused) drive it. At zero, running and not peeking, it steps one beat the normal way (it publishes like Next) and restarts; on the last beat it stops. A manual step or jump restarts it too, running or paused as it was. The iPad band shows it big where the clock goes (amber under a minute, red at zero, Paused), corrected for the iPad's clock; phones show a small line under NOW.
 - **Peek.** Tapping a square on the beat track previews that time in a dashed frame, on this page only, with **Back to now** (or Esc). It never writes `ball.t` and never publishes.

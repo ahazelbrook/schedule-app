@@ -162,7 +162,11 @@
     { id: 'map.knowledge', label: 'Dark, blueprint, seen', surface: 'gm', stage: 'map', default: false, saturday: 'try',
       doc: 'On a run, a panel under the Map heading shows every room as dark, blueprint (known from intel) or seen: tap a room, or its row, to cycle it; Intel sets a band or a floor of dark rooms to blueprint. The iPad draws a blueprint room as linework, with its name, and a dark room not at all. Off: rooms open and close as before.' },
     { id: 'map.title', label: 'The score title card', surface: 'gm', stage: 'map', default: false, saturday: 'off',
-      doc: 'On GO into the Score phase the iPad puts up a six-second title card made from the site: its floor plan flies in, becomes the building, and the score’s name lands on the grid. It shows the outside only: no room and no name of one. Off: nothing is put up.' }
+      doc: 'On GO into the Score phase the iPad puts up a six-second title card made from the site: its floor plan flies in, becomes the building, and the score’s name lands on the grid. It shows the outside only: no room and no name of one. Off: nothing is put up.' },
+    { id: 'map.countdown', label: 'A countdown clock in the Run view', surface: 'gm', stage: 'map', default: false, saturday: 'on',
+      doc: 'When the site’s play has a countdown (clock.countdown: a time and a name), the Run view’s header shows it as a pie beside the alarm, one segment filled for each beat since the clock’s start: each beat forward is a tick, and it is full at the countdown’s time. GM only. Off: no pie.' },
+    { id: 'spine.find', label: 'Find lands on the heading', surface: 'gm', stage: 'spine', default: false, saturday: 'on',
+      doc: 'Find (Ctrl+K) lists each room, scene and way of the prep note under its own heading, and Enter in the Prep tab’s find box goes to the next heading that matches, a room or a scene rather than the whole section. Off: both find whole sections, as before.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
