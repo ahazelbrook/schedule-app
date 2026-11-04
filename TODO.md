@@ -1,3 +1,13 @@
+# WEBKIT PASS FOLLOW-UPS (B33)
+
+Fixed in B33 (WebKit-only, session-night paths): campaign and crew-sheet buttons now take focus on tap (Safari does not), so the redraw keeps focus on them.
+Not WebKit-only, so not fixed here (they fail on Edge too; see docs/webkit-findings.md):
+- dice, trackercheck, ms3, mu2, table: fail under the iPad/iPhone profile at a desktop viewport on Edge as well. Profile artefact; rerun at real device sizes on Friday's tech run.
+- schedule: fails on Edge too; look at it on Edge first.
+- trackerpn: fails at `#dossier .ds-gone` on Edge too.
+- season: needs `pdfinfo` (poppler), not installed here. Harness.
+- trackerpn, printcheck on WebKit: `page.pdf()` is Chromium-only. Harness.
+
 # RUN THE JOB (v2): state at 29/10/2026
 
 **Built and merged (VV1 to VV10, PRs #108 to #117).** The Run tab's v2 view, publishing to the players, the iPad band,

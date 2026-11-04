@@ -607,7 +607,9 @@
   }
   function onClick(e) {
     if (!cur) return; var t = e.target && e.target.closest ? e.target.closest('[data-act]') : null; if (!t || !cur.root.contains(t)) return;
-    if (t.disabled) return; run(t.getAttribute('data-act'), attrs(t), t);
+    if (t.disabled) return;
+    if (t.tagName === 'BUTTON' && document.activeElement !== t) { try { t.focus({ preventScroll: true }); } catch (err) {} }   /* Safari does not focus a button on tap; the redraw restores focus from activeElement */
+    run(t.getAttribute('data-act'), attrs(t), t);
   }
   function pathPerm(path) { return path.indexOf('crew.') === 0 ? 'any' : 'gm'; }
   function onInput(e) {
