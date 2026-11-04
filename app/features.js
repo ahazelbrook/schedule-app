@@ -146,7 +146,9 @@
     { id: 'room.music', label: 'Heat-state music', surface: 'display', stage: 'room', default: false, saturday: 'off',
       doc: 'The engine only: ambient, tension, alert, evasion and resolved follow the security level and heat, a change lands on the bar from the track tempo, a flashback muffles it. Ships with one layer per state from today’s track. Off: the scene themes play as before.' },
     { id: 'map.kit1', label: 'The grand map (map kit 1.0)', surface: 'gm', stage: 'map', default: false, saturday: 'try',
-      doc: 'A site whose block says kit: 1 draws with map kit 1.0: floors of their own, double-height rooms, its faces, a grand stair, the palazzo section. Off: every map as before.' }
+      doc: 'A site whose block says kit: 1 draws with map kit 1.0: floors of their own, double-height rooms, its faces, a grand stair, the palazzo section. Off: every map as before.' },
+    { id: 'map.corkboard', label: 'The intel corkboard', surface: 'gm', stage: 'map', default: false, saturday: 'try',
+      doc: 'Menu then Corkboard: the site on cork in the heist-board look, one Polaroid for each intel fact the crew has been told pinned to its room, and a mugshot for each revealed person on their post. Only revealed rooms and people appear. It prints on A4 or A3. Off: no Corkboard line.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
