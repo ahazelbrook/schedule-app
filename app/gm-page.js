@@ -2412,7 +2412,7 @@
   /* the bar's live parts: the session, what is on the iPad, listening */
   function renderBar() {
     if (!S || !S.root) return;
-    renderMirror(); spineTick(); pfMenuSync(); prMenuSync(); mtMenuSync(); b17Tick(); csTick();
+    renderMirror(); spineTick(); pfMenuSync(); prMenuSync(); mtMenuSync(); b17Tick(); csTick(); if (b29()) b29().menuSync();
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
@@ -3988,7 +3988,7 @@
     if (!gate.allowsAmbient(p)) { toast('Only a player-layer score made on this page can go to the iPad.', true); return Promise.resolve(null); }
     AM.busy++; renderIpad();
     return Promise.resolve().then(function () { return g.patchAmbient(p); }).then(function (r) {
-      AM.busy--; if (adoptAmbient(r)) crewSync.adopt(AM.doc.crew, false); renderIpad(); return r;
+      AM.busy--; if (adoptAmbient(r)) { crewSync.adopt(AM.doc.crew, false); if (b29() && AM.doc.scene) b29().scene(AM.doc.scene); } renderIpad(); return r;
     }, function (e) {
       AM.busy--; renderIpad(); toast('Could not change the iPad: ' + errText(e), true); return null;
     });
@@ -4714,7 +4714,10 @@
     airTimer = W.setInterval(function () { if (!airOn() || !W.B68GmOnAir.tick($q('#gm-root'), STT.doc, Date.now())) { W.clearInterval(airTimer); airTimer = null; } }, 1000);
   }
   function airChip(d) { return airOn() ? W.B68GmOnAir.chip(d, Date.now()) : ''; }
-  function airSuffix(d) { return airOn() ? W.B68GmOnAir.suffix(d, Date.now()) : ''; }
+  function airSuffix(d) { return (airOn() ? W.B68GmOnAir.suffix(d, Date.now()) : '') + b29Suffix(); }
+  /* B29 (ai.batch, room.light): the local recording and the light cue; all the behaviour is in gm/b29.js, gm/batch-record.js and gm/light.js */
+  function b29() { return S && W.B68GmB29 ? (S.b29 || (S.b29 = W.B68GmB29.create({ on: function (id) { return !!(W.B68Features && W.B68Features.valueOf(S.doc, id)); }, toast: toast, $: $q, now: Date.now, changed: renderBar, relay: 'http://127.0.0.1:9300' }, W))) : null; }
+  function b29Suffix() { var x = b29(); return x ? x.suffix() : ''; }
   function sttPatch(p) {
     var g = gmApi(); if (!g || typeof g.patchStt !== 'function') { toast('Listening needs the hosted app.', true); return; }
     Promise.resolve().then(function () { return g.patchStt(p); }).then(function (r) { STT.doc = r && r.doc || STT.doc; STT.at = r && r.updatedAt || STT.at || nowIso(); renderStt(true); renderBar(); }, function (e) { toast('Could not change listening: ' + errText(e), true); });
@@ -6450,6 +6453,7 @@
       case 'switchboard': menuOpen(false); { var sbi = swInst(); if (sbi) sbi.toggle(); } break;      /* W0.2 */
       case 'montage': menuOpen(false); { var mti = mtInst(); if (mti) mti.toggle(); } break;      /* 2.8 */
       case 'print': menuOpen(false); { var pri = prInst(); if (pri) pri.toggle(); } break;      /* 3.6, 2.11 */
+      case 'b29': menuOpen(false); if (b29()) b29().click(b.getAttribute('data-act')); break;      /* B29 */
       case 'preflight': menuOpen(false); { var pfi = pfInst(); if (pfi) pfi.toggle(); } break;      /* 4.2 */
       case 'workshop': menuOpen(false); if (W.B68GmWorkshop) W.B68GmWorkshop.toggle($q('#gm-root'), { toast: toast }); break;      /* W0.5 */
       case 'drawer': drawerToggle(); break;
