@@ -1,0 +1,5 @@
+{ "results": { "utterances": [
+  { "speaker": 0, "start": 1.2, "end": 4, "transcript": "We go in through the kitchen." },
+  { "speaker": 0, "start": 4.2, "end": 6, "transcript": "Rook takes the lamp." },
+  { "speaker": 1, "start": 7, "end": 9, "transcript": "I keep watch at the side door." },
+  { "speaker": 2, "start": 3725, "end": 3727, "transcript": "GM-ONLY-whisper" } ] } }

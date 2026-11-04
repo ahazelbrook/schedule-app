@@ -79,6 +79,8 @@
       doc: 'A timed cold open on the table display: a station clock counts down, then a fuse, the credits and three faces whose name plates the GM reveals one by one. Adds a Hard start line to the Menu. Off: none of it.' },
     { id: 'ai.onair', label: 'ON AIR lamp and off the record', surface: 'display', stage: 'ai', default: false, saturday: 'on',
       doc: 'An ON AIR lamp while the table display listens, and a spoken pause: "Blade, off the record" stops keeping what is heard for 5 minutes, "Blade, back on" resumes. The GM page mirrors the lamp and the countdown. Off: neither.' },
+    { id: 'ai.batch', label: 'Record the night, transcribe after', surface: 'gm', stage: 'ai', default: false, saturday: 'off',
+      doc: 'Menu then Record the night: records the table on this laptop only, never uploaded live, shown on the ON AIR lamp as REC. After the night a script turns the file into a transcript with speaker labels. Off: no recording line.' },
     { id: 'fx.pause', label: 'Pause hidden scenes', surface: 'display', stage: 'fx', default: false, saturday: 'on',
       doc: 'An ambient scene that is not on show (page hidden, covered or faded out) stops moving until it is. Off: scenes run as they always did.' },
     { id: 'fx.off', label: 'Hold scenes still', surface: 'display', stage: 'fx', default: false, saturday: 'try',
