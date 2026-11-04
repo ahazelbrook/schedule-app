@@ -18,6 +18,7 @@ import { AFTERMATH_KINDS } from './show-aftermath.js';
 import { montageLayer, montageTexts } from './show-montage.js';
 import { BOARD_KINDS } from './show-board.js';
 import { CASTPHOTO_KINDS } from './show-castphoto.js';
+import { TITLE_KINDS } from './show-title.js';
 
 const TONES = ['ink', 'orange', 'blue', 'red'];
 const REPORT_POSITIONS = ['controlled', 'risky', 'desperate'], REPORT_EFFECTS = ['limited', 'standard', 'great'];   // the action report card (B09 spine.stamp): report { position, effect, text? (100) }
@@ -91,6 +92,7 @@ export const SHOW_KINDS = {
   ...AFTERMATH_KINDS,   // aftermath, credits (suite 1.6, show-aftermath.js)
   ...BOARD_KINDS,       // board (suite 5.1, show-board.js)
   ...CASTPHOTO_KINDS,   // castphoto, lair (suite 3.8 and 5.4, show-castphoto.js)
+  ...TITLE_KINDS,       // scoretitle (suite 2.10, show-title.js)
 };
 export const SHOW_KIND_IDS = Object.keys(SHOW_KINDS);
 export const isShowKind = (k) => typeof k === 'string' && Object.prototype.hasOwnProperty.call(SHOW_KINDS, k);

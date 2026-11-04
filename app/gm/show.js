@@ -38,7 +38,9 @@
     board: { ms: 180000, keys: { cards: ['a', 12, 1, 120], who: ['a', 12, 1, 40], kinds: ['a', 12, 1, 9], carried: ['a', 12, 1, 1], pick: ['i', [0, 11]] } },
     /* suite 3.8 and 5.4 (functions/_lib/show-castphoto.js): the cast photo (the unmet are silhouette heights) and the lair (the crew's base, as layer strings) */
     castphoto: { ms: 180000, keys: { npcIds: ['l', 30], sil: ['a', 30, 0, 3], title: ['s', 60] } },
-    lair: { ms: 180000, keys: { name: ['s', 60, 1], front: ['e', ['canal', 'street']], layers: ['a', 24, 1, 60] } }
+    lair: { ms: 180000, keys: { name: ['s', 60, 1], front: ['e', ['canal', 'street']], layers: ['a', 24, 1, 60] } },
+    /* suite 2.10 (functions/_lib/show-title.js): the score title card; floors are "x,y,w,d" strings, the building's outside from the ground up */
+    scoretitle: { ms: 6000, keys: { text: ['s', 80, 1], sub: ['s', 120], floors: ['a', 6, 0, 15] } }
   };
   /* layer path -> checker(value) -> true when the server would take it */
   var LAYERS = {

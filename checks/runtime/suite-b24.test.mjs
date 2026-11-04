@@ -291,5 +291,180 @@ await test('routes: gm/knowledge.js is in the GM bundle only, ahead of gm-page.j
   for (const k of Object.keys(B)) if (k !== 'gm') assert.ok(!B[k].includes('gm/knowledge.js'), k);
 });
 
+/* ===================================================================== 2.10 ===================================================================== */
+const { cleanShowPayload, showTexts, SHOW_KIND_IDS, isShowKind } = await import('../../functions/_lib/show.js');
+const GShow = require(path.join(APP, 'gm', 'show.js'));
+const GTC = require(path.join(APP, 'gm', 'title-card.js'));
+const TC = require(path.join(APP, 'display', 'title-card.js'));
+
+await test('map.title is registered, default off, bland, a GM switch on the map stage, Saturday off', () => {
+  const s = Features.get('map.title');
+  assert.ok(s); assert.equal(s.default, false); assert.equal(s.surface, 'gm'); assert.equal(s.stage, 'map'); assert.equal(s.saturday, 'off');
+  assert.ok(s.label && s.doc && !/GM-ONLY/.test(s.doc));
+  assert.equal(Features.valueOf({}, 'map.title'), false);
+  assert.equal(Features.valueOf({ features: { 'map.title': true } }, 'map.title'), true);
+  assert.equal(Features.valueOf({ features: { 'map.title': true } }, 'map.knowledge'), false);
+});
+
+const OK = { text: 'The Pelican Job', sub: 'Nowhere Ward', floors: ['0,0,100,72', '0,0,100,72', '24,16,52,40'] };
+await test('the server: scoretitle is a show kind, rebuilt from named keys; unknown keys are dropped; floors and sub are optional', () => {
+  assert.ok(isShowKind('scoretitle') && SHOW_KIND_IDS.includes('scoretitle'));
+  assert.deepEqual(cleanShowPayload('scoretitle', Object.assign({ extra: MARK, rooms: [MARK] }, OK)), OK);
+  assert.deepEqual(cleanShowPayload('scoretitle', { text: '  The   Pelican  Job ' }), { text: 'The Pelican Job' });
+  assert.deepEqual(cleanShowPayload('scoretitle', { text: 'A', floors: null, sub: '' }), { text: 'A' });
+  assert.deepEqual(showTexts({ kind: 'scoretitle', payload: OK }), ['The Pelican Job', 'Nowhere Ward', '0,0,100,72', '0,0,100,72', '24,16,52,40'], 'the words the handler scans for hidden names');
+});
+
+await test('the server refuses what the card cannot draw: no name, a long name or line, a bad or crowded floor list, a floor off the grid', () => {
+  const bad = (p, re) => assert.throws(() => cleanShowPayload('scoretitle', p), re);
+  bad({}, /payload\.text is required/); bad({ text: 5 }, /must be text/); bad({ text: 'x'.repeat(81) }, /too long/); bad({ text: 'A', sub: 'x'.repeat(121) }, /too long/);
+  bad({ text: 'A', floors: 'no' }, /list of 1 to 6/); bad({ text: 'A', floors: [] }, /list of 1 to 6/); bad({ text: 'A', floors: Array(7).fill('0,0,10,10') }, /list of 1 to 6/);
+  for (const f of ['1,2,3', 'a,b,c,d', '0,0,0,10', '0,0,10,0', '50,0,60,10', '0,95,10,10', '0,0,10,101', '-1,0,5,5', '1,2,3,4,5', 5, null, '0,0,10,10 ']) bad({ text: 'A', floors: [f] }, /payload\.floors/);
+  assert.deepEqual(cleanShowPayload('scoretitle', { text: 'A', floors: ['0,0,100,100', '99,99,1,1'] }).floors, ['0,0,100,100', '99,99,1,1'], 'the edges of the grid are in');
+});
+
+await test('the GM side mirrors the server: the same payloads pass and fail, the default is six seconds, and the overlay it sends is the one the server takes', () => {
+  assert.ok(GShow.has('scoretitle'));
+  const cases = [OK, { text: 'A' }, { text: 'A', floors: ['0,0,100,100'] }, { text: '' }, { text: 'x'.repeat(81) }, { text: 'A', floors: [] }, { text: 'A', floors: Array(7).fill('0,0,10,10') }, { text: 'A', sub: 'x'.repeat(121) }];
+  for (const p of cases) {
+    let server = true; try { cleanShowPayload('scoretitle', p); } catch (e) { server = false; }
+    assert.equal(GShow.payloadOk('scoretitle', p), server, JSON.stringify(p).slice(0, 60));
+  }
+  const ov = GShow.overlayFor('scoretitle', OK, { id: 'k1' }); assert.equal(ov.ms, 6000); assert.equal(ov.kind, 'scoretitle');
+});
+
+/* ---------- the display's renderer ---------- */
+await test('the display: clean takes the server\'s shape and nothing else; the look book has a fixture; a floor off the grid is no card', () => {
+  assert.deepEqual(TC.clean(OK), OK);
+  assert.equal(TC.clean({ text: '' }), null); assert.equal(TC.clean({ text: 'A', floors: ['0,0,0,1'] }), null); assert.equal(TC.clean({ text: 'A', floors: Array(7).fill('0,0,5,5') }), null); assert.equal(TC.clean({ text: 'A', sub: 5 }), null);
+  assert.deepEqual(TC.clean({ text: 'A', rooms: [MARK] }), { text: 'A' });
+  const ctx = { document: { createElement: () => ({}) } }; ctx.self = ctx; vm.createContext(ctx);
+  for (const f of ['display/shows.js', 'display/title-card.js']) vm.runInContext(fs.readFileSync(path.join(APP, f), 'utf8'), ctx, { filename: f });
+  const e = ctx.B68Shows.entry('scoretitle'); assert.ok(e && e.ms === 6000 && e.label); assert.deepEqual(ctx.B68Shows.clean('scoretitle', e.fixture), e.fixture); assert.ok(e.fixtures.length >= 2);
+  for (const f of e.fixtures) assert.ok(ctx.B68Shows.clean('scoretitle', f.fixture), f.label);
+  assert.ok(!JSON.stringify(e).includes('GM-ONLY'));
+});
+
+await test('the display: the matrix that lays each storey flat is the iso stack\'s own inverse (the plan becoming the building is one transform), and every shape sits on the stage', () => {
+  for (const floors of [OK.floors, ['0,0,100,72', '0,0,100,72', '0,0,100,72', '24,16,52,40'], ['10,5,60,90'], undefined]) {
+    const L = TC.layout(floors), fl = (floors || ['0,0,100,70']).map(TC.parseFloor);
+    assert.equal(L.tops.length, fl.length);
+    L.tops.forEach((top, i) => {
+      const m = L.mats[i], at = (q) => [m[0] * q[0] + m[2] * q[1] + m[4], m[1] * q[0] + m[3] * q[1] + m[5]];
+      top.forEach((q, j) => { const f = at(q), want = L.plan[i][j]; assert.ok(Math.abs(f[0] - want[0]) < 0.2 && Math.abs(f[1] - want[1]) < 0.2, 'storey ' + i + ' corner ' + j + ': ' + f + ' vs ' + want); });
+      for (const poly of [top, L.lefts[i], L.rights[i]]) for (const q of poly) assert.ok(q[0] >= 0 && q[0] <= 160 && q[1] >= 0 && q[1] <= 90, 'on the 160 x 90 stage: ' + q);
+    });
+    for (const poly of L.plan.flat()) assert.ok(poly[0] >= 0 && poly[0] <= 160 && poly[1] >= 0 && poly[1] <= 90, 'the flat plan is on the stage too');
+  }
+});
+
+function fakeDom() {
+  const mk = (tag) => { const e = { tag, children: [], attrs: {}, style: { props: {}, setProperty(k, v) { this.props[k] = v; } }, className: '', textContent: '', appendChild(c) { this.children.push(c); return c; }, setAttribute(k, v) { this.attrs[k] = String(v); } }; return e; };
+  return { createElement: mk, createElementNS: (ns, tag) => mk(tag) };
+}
+const walk = (n, out = []) => { out.push(n); (n.children || []).forEach((c) => walk(c, out)); return out; };
+
+await test('the display: render builds only from the checked payload with textContent; the name, the line and the storeys are on it; reduced motion is marked', () => {
+  const doc = fakeDom(), n = TC.render(TC.clean(OK), { document: doc });
+  const all = walk(n);
+  assert.equal(n.attrs['data-show'], 'scoretitle'); assert.ok(/dp-show-scoretitle/.test(n.className));
+  assert.equal(all.filter((x) => /dp-tc-floor/.test(x.className || (x.attrs && x.attrs.class) || '')).length, 3, 'one group per storey');
+  assert.ok(all.some((x) => x.textContent === 'The Pelican Job') && all.some((x) => x.textContent === 'Nowhere Ward'));
+  assert.ok(!('innerHTML' in n), 'never set as HTML');
+  assert.equal(TC.render(TC.clean(OK), { document: fakeDom(), reduced: true }).attrs['data-reduced'], '1');
+  const evil = TC.render(TC.clean({ text: '<img src=x onerror=1>' }), { document: fakeDom() });
+  assert.ok(walk(evil).some((x) => x.textContent === '<img src=x onerror=1>'), 'text stays text');
+});
+
+/* ---------- the generator: what the card is made from ---------- */
+await test('generated from the site: the Pelican Rooms with kit 1.0 gives its three storeys above the ground, set back at the top, no basement, and it validates on both sides', () => {
+  const fl = GTC.floorsOf(K, PK1, { kit1: true });
+  assert.equal(fl.length, 3, 'floors 0, 1 and 2: the basement is not seen from the street');
+  const p = fl.map(TC.parseFloor); assert.ok(p.every(Boolean));
+  assert.equal(fl[0], fl[1], 'the first two storeys share a footprint (build.floors)');
+  assert.ok(p[2].w < p[0].w && p[2].d < p[0].d, 'the top storey is set back');
+  assert.equal(Math.max(...p.map((f) => f.x + f.w), ...p.map((f) => f.y + f.d)), 100, 'scaled to the grid by the longest side');
+  const pay = GTC.payloadFor(K, PK1, { kit1: true });
+  assert.equal(pay.text, 'The Pelican Rooms'); assert.equal(pay.sub, 'Nowhere Ward');
+  assert.deepEqual(cleanShowPayload('scoretitle', pay), pay); assert.ok(GShow.payloadOk('scoretitle', pay)); assert.deepEqual(TC.clean(pay), pay);
+});
+
+await test('generated from the site: any site, plain or rolled, gives a valid card; with no layout it is a plain block (no floors), never an error', () => {
+  const L = require(path.join(APP, 'gm', 'location.js')), FIXL = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'location-pack.json'), 'utf8'));
+  for (let seed = 1; seed <= 12; seed++) {
+    const roll = L.generate(FIXL, {}, { seed, mem: {} }), p = GTC.payloadFor(K, roll, {});
+    assert.ok(p && p.text, 'seed ' + seed); assert.deepEqual(cleanShowPayload('scoretitle', p), p, 'seed ' + seed); assert.ok(GShow.payloadOk('scoretitle', p), 'seed ' + seed);
+  }
+  assert.deepEqual(GTC.floorsOf(null, PLN, {}), []); assert.deepEqual(GTC.floorsOf({ _internal: {} }, PLN, {}), []); assert.deepEqual(GTC.floorsOf(K, { rooms: [] }, {}), []);
+  assert.equal(GTC.payloadFor(K, null, {}), null); assert.equal(GTC.payloadFor(K, { name: '   ' }, {}), null);
+  assert.deepEqual(GTC.payloadFor(null, { name: 'A Place' }, {}), { text: 'A Place' });
+});
+
+await test('SECRECY: the card holds the outside only: no room name, no hidden-room detail, no GM-only marker, and a hidden room\'s words change not one byte of it', () => {
+  const marked = JSON.parse(JSON.stringify(PK1));
+  for (const r of marked.rooms) { r.detail = MARK + ' ' + r.name; r.loot = MARK + ' loot'; }
+  marked.targetWhy = MARK; marked.watcher = MARK;
+  const a = GTC.payloadFor(K, PK1, { kit1: true }), b = GTC.payloadFor(K, marked, { kit1: true });
+  assert.deepEqual(b, a, 'the card does not read what the rooms say');
+  const text = JSON.stringify(a);
+  for (const r of PK1.rooms) assert.ok(!text.includes(r.name), 'no room name: ' + r.name);
+  assert.ok(!text.includes(MARK));
+  assert.deepEqual(Object.keys(a).sort(), ['floors', 'sub', 'text']);
+  /* the same card at every reveal: nothing about what the crew knows goes in */
+  assert.equal(GTC.payloadFor.length <= 3, true);
+});
+
+/* ---------- the wiring: on GO into the Score phase, once, and never on load ---------- */
+function night(phase0) {
+  let phase = phase0 || null; const log = [];
+  return { log, phase: () => phase, enter(p) { log.push(p); if (p === 'bad') return false; phase = p; return true; }, set(p) { phase = p; } };
+}
+function wired(on, t0) {
+  const shows = [], nt = night('plan'); let now = t0 || 1e12; const toasts = [];
+  const ctl = GTC.create({ feature: (id) => on && id === 'map.title', roll: () => PK1, kit: () => K, kit1: () => true, show: (k, p, o) => { shows.push([k, p, o]); return Promise.resolve({}); }, toast: (m) => toasts.push(m), now: () => now });
+  assert.equal(ctl.wrap(nt), true);
+  return { nt, shows, ctl, toasts, tick: (ms) => { now += ms; } };
+}
+const flushP = () => new Promise((r) => setTimeout(r, 0));
+
+await test('GO: entering the Score phase from another phase puts the card up once, six seconds, with a stable key; other phases, the same phase again and a refused enter put up nothing', async () => {
+  const w = wired(true);
+  assert.equal(w.nt.enter('plan'), true); assert.equal(w.nt.enter('after'), true); assert.equal(w.shows.length, 0, 'not the score');
+  assert.equal(w.nt.enter('score'), true); await flushP();
+  assert.equal(w.shows.length, 1); const [kind, payload, opts] = w.shows[0];
+  assert.equal(kind, 'scoretitle'); assert.equal(opts.ms, 6000); assert.ok(/^tc-[a-z0-9_-]+$/.test(opts.key)); assert.deepEqual(payload, GTC.payloadFor(K, PK1, { kit1: true }));
+  assert.equal(w.nt.enter('score'), true); assert.equal(w.shows.length, 1, 'already in the score: no second card');
+  const w2 = wired(true); w2.nt.set('plan'); assert.equal(w2.nt.enter('bad'), false); assert.equal(w2.shows.length, 0);
+  assert.equal(GTC.keyFor(PK1, 1.2e12 + 5000), GTC.keyFor(PK1, 1.2e12 + 35000), 'two pages in the same minute share a key'); assert.notEqual(GTC.keyFor(PK1, 1.2e12), GTC.keyFor(PK1, 1.2e12 + 120000));
+});
+
+await test('GO: with the switch off nothing is shown and the controller answers as ever; a page loaded in the Score phase shows nothing; a second wrap is refused', async () => {
+  const off = wired(false); assert.equal(off.nt.enter('score'), true); await flushP(); assert.equal(off.shows.length, 0);
+  const loaded = night('score'), shows = []; const ctl = GTC.create({ feature: () => true, roll: () => PK1, kit: () => K, kit1: () => true, show: (k, p, o) => { shows.push(k); return Promise.resolve({}); } });
+  assert.equal(ctl.wrap(loaded), true); await flushP(); assert.equal(shows.length, 0, 'wrapping alone fires nothing');
+  assert.equal(ctl.wrap(loaded), false, 'wrapped once');
+  loaded.enter('score'); assert.equal(shows.length, 0, 'already score');
+  const noRoll = GTC.create({ feature: () => true, roll: () => null, kit: () => K, show: (k) => { shows.push(k); return Promise.resolve({}); } }), n2 = night('plan'); noRoll.wrap(n2); n2.enter('score'); await flushP(); assert.equal(shows.length, 0, 'no site, no card');
+  const failing = GTC.create({ feature: () => true, roll: () => PK1, kit: () => K, show: () => Promise.reject(new Error('no')) }), n3 = night('plan'); failing.wrap(n3);
+  assert.equal(n3.enter('score'), true, 'a card that cannot go never blocks the phase'); await flushP();
+});
+
+await test('routes: gm/title-card.js is in the GM bundle only; the renderer and its css are in the display and look book bundles only; the css has a place in the cascade', () => {
+  const B = Routes.BUNDLES;
+  assert.ok(B.gm.includes('gm/title-card.js') && B.gm.indexOf('gm/title-card.js') < B.gm.indexOf('gm-page.js'));
+  for (const f of ['display/title-card.js', 'display/title-card.css']) { assert.ok(B.display.includes(f) && B.lookbook.includes(f), f); for (const k of Object.keys(B)) if (!['display', 'lookbook'].includes(k)) assert.ok(!B[k].includes(f), k + ' has ' + f); }
+  assert.ok(B.display.indexOf('display/title-card.js') > B.display.indexOf('display/shows.js'), 'after the registry');
+  for (const k of Object.keys(B)) if (k !== 'gm') assert.ok(!B[k].includes('gm/title-card.js'), k);
+});
+
+await test('the stylesheet: the name is never under 5vmin, the card draws from the tokens (no colour of its own), and reduced motion stills it (the six-second timeline is measured in the browser: gm-title-card.e2e)', () => {
+  const css = fs.readFileSync(path.join(APP, 'display', 'title-card.css'), 'utf8');
+  assert.ok(/clamp\(5vmin,/.test(css), 'the name floor is 5vmin');
+  assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')), 'only var(--b68-*) colours');
+  const flat = css.replace(/\n/g, ' ');
+  assert.ok(/prefers-reduced-motion: reduce\)[^}]*animation: none !important/.test(flat), 'the media query stills it');
+  assert.ok(/\[data-reduced\][^{]*\{ animation: none !important/.test(flat), 'and so does the display reduced flag');
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

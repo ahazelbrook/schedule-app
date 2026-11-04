@@ -160,7 +160,9 @@
     { id: 'face.badge', label: 'A badge, a style and a motif', surface: 'display', stage: 'face', default: false, saturday: 'try',
       doc: 'A held person’s card gains a stable number and a faction glyph, the faction’s type and texture, and a three to six second motif made in the browser that plays when they appear, 12 dB down while the speech-safe mix is on. Needs a tap on the iPad first; the ring/silent switch mutes it. Off: the card as before.' },
     { id: 'map.knowledge', label: 'Dark, blueprint, seen', surface: 'gm', stage: 'map', default: false, saturday: 'try',
-      doc: 'On a run, a panel under the Map heading shows every room as dark, blueprint (known from intel) or seen: tap a room, or its row, to cycle it; Intel sets a band or a floor of dark rooms to blueprint. The iPad draws a blueprint room as linework, with its name, and a dark room not at all. Off: rooms open and close as before.' }
+      doc: 'On a run, a panel under the Map heading shows every room as dark, blueprint (known from intel) or seen: tap a room, or its row, to cycle it; Intel sets a band or a floor of dark rooms to blueprint. The iPad draws a blueprint room as linework, with its name, and a dark room not at all. Off: rooms open and close as before.' },
+    { id: 'map.title', label: 'The score title card', surface: 'gm', stage: 'map', default: false, saturday: 'off',
+      doc: 'On GO into the Score phase the iPad puts up a six-second title card made from the site: its floor plan flies in, becomes the building, and the score’s name lands on the grid. It shows the outside only: no room and no name of one. Off: nothing is put up.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

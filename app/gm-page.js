@@ -4577,7 +4577,13 @@
     var N = W.B68GmNight, me = S; if (W.B68GmSpine) W.B68GmSpine.reset(); if (!N) { me.night = null; return; }
     me.night = N.create({ doc: function () { return S === me ? S.doc : null; }, patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); }, changed: spineTick,
       prep: function () { var pk = S === me ? part('prep') : null, id = pk && W.B68GmPrep ? prepNoteId(pk) : null; return id && Array.isArray(pk.notes) ? pk.notes.filter(function (n) { return isObj(n) && n.id === id; })[0] || null : null; } });
-    spineTick();
+    spineTick(); tcWrap(me);
+  }
+  /* 2.10 the score title card (gm/title-card.js, switch map.title): on GO into the Score phase the iPad gets it; the wrap sits on the night controller's own enter() */
+  function tcWrap(me) {
+    var T = W.B68GmTitleCard; if (!T || !me.night) return;
+    T.create({ feature: function (id) { return S === me && b09On(id); }, roll: function () { return S === me ? S.locRoll : null; }, kit: function () { return W.B68Map; }, kit1: function () { return P.kit1On(); },
+      show: function (k, p, o) { var sh = shows(); return sh ? sh.show(k, p, o) : Promise.resolve(null); }, toast: toast, now: function () { return Date.now(); } }).wrap(me.night);
   }
   function mountMission() {
     var M = W.B68GmMission, B = W.B68GmBall, me = S;
