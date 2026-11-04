@@ -123,6 +123,8 @@
       doc: 'Menu then Canon queue: paste the queue note to see how many proposals are ticked and which are GM-only. Reads only; the ticked lines are filed by the laptop script gm:canon-apply, which uses no model. Off: no line.' },
     { id: 'between.frontpage', label: 'The front page', surface: 'gm', stage: 'between', default: false, saturday: 'off',
       doc: 'Menu then Front page: paste the front page note, see it drawn as a newspaper front page, print it, and put its headline on the iPad. Only the headline, standfirst, account, name and hook are used. Off: no line.' },
+    { id: 'between.absent', label: 'The absent-player packet', surface: 'phone', stage: 'between', default: false, saturday: 'off',
+      doc: 'Menu then Absent packet: for a player who missed the night, one page on their own phone with the front page, a three-line recap with the faces met, and the changes to their sheet. Nothing is pushed; they open it. Off: no line, no strip.' },
     { id: 'map.spotted', label: 'The Spotted beat', surface: 'gm', stage: 'map', default: false, saturday: 'try',
       doc: 'A Spotted button on the Run map: zoom to the room, a sting on the iPad, a yellow fill spreading from the eyes, the site’s alarm clock ticks once, then back. Off: no button.' },
     { id: 'map.flashback', label: 'The flashback filter', surface: 'display', stage: 'map', default: false, saturday: 'on',

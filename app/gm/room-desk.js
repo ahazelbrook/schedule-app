@@ -1,4 +1,4 @@
-/* gm/room-desk.js — the page's seam for the practical speaker, the ringing phone and the Trouble Engine desk (suite 4.5, 4.7, 5.3).
+/* gm/room-desk.js — the page's seam for the practical speaker, the ringing phone and the Trouble Engine desk (suite 4.5, 4.7, 5.3, B31).
 
    Plain script, UMD: window.B68GmRoomDesk in the browser, module.exports under Node. It builds the three controllers (gm/practical.js, gm/phone.js,
    gm/trouble.js) from ONE host the GM page gives it, keeps their Menu lines in step with their switches, and passes every show the page sends to the phone.
@@ -18,7 +18,11 @@
   var DEFS = [
     { which: 'practical', sw: 'room.practical', label: 'Practical speaker', title: 'Choose the second speaker for in-world sounds' },
     { which: 'phone', sw: 'room.phone', label: 'Ringing phone', title: 'Ring the practical speaker and answer with a recorded line' },
-    { which: 'trouble', sw: 'between.trouble', label: 'Trouble desk', title: 'Walk the Aftermath trouble checks; approved items feed the front page and rumours' }
+    { which: 'trouble', sw: 'between.trouble', label: 'Trouble desk', title: 'Walk the Aftermath trouble checks; approved items feed the front page and rumours' },
+    /* suite B31: the canon queue preview, the front page and the absent packet (gm/desk-b31.js builds them) */
+    { which: 'canon', sw: 'ai.canon', label: 'Canon queue', title: 'Preview the canon queue note: what ticking would file, and what stays GM-only' },
+    { which: 'frontpage', sw: 'between.frontpage', label: 'Front page', title: 'Draw, print and show the front page note' },
+    { which: 'absent', sw: 'between.absent', label: 'Absent packet', title: 'Send an absent player the front page, a recap and their sheet changes' }
   ];
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function req(name, path) { if (W && W[name]) return W[name]; try { return require(path); } catch (e) { return null; } }
@@ -49,7 +53,8 @@
         items: function () { var d = typeof h.doc === 'function' ? h.doc() : null; return isObj(d) && isObj(d.trouble) && isObj(d.trouble.items) ? d.trouble.items : {}; } });
       return inst.tr;
     }
-    var get = { practical: practical, phone: phone, trouble: trouble };
+    function b31(which, sw) { var D = req('B68GmDeskB31', './desk-b31.js'); return on(sw) && D ? D.make(which, h, inst.b31 || (inst.b31 = {})) : null; }
+    var get = { practical: practical, phone: phone, trouble: trouble, canon: function () { return b31('canon', 'ai.canon'); }, frontpage: function () { return b31('frontpage', 'between.frontpage'); }, absent: function () { return b31('absent', 'between.absent'); } };
     api.practical = practical; api.phone = phone; api.trouble = trouble;
     api.lines = function () { return DEFS.filter(function (d) { return on(d.sw); }); };
     /* the Menu lines for the switches that are on, inserted after the Print/Switchboard line and removed when the switch goes off. menu: { $q(sel), after() } */
