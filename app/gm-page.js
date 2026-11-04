@@ -2294,6 +2294,18 @@
     return S.hs;
   }
   function hsMenuLine() { return hsOn() ? '<button type="button" data-gm="hardstart" id="gm-menu-hardstart" title="The cold open on the iPad: station clock, fuse, credits, and three faces to name">Hard start</button>' : ''; }
+  /* 3.6 / 2.11 Print (gm/print.js, switches print.cards and print.blueprint): one Menu line while either is on; the blueprint goes through the player door */
+  function prOn() { return !!(S && W.B68GmPrint && W.B68Features && (W.B68Features.valueOf(S.doc, 'print.cards') || W.B68Features.valueOf(S.doc, 'print.blueprint'))); }
+  function prInst() {
+    if (!prOn()) return null;
+    if (!S.pr) S.pr = W.B68GmPrint.make({ npcs: function () { return S && isObj(S.npcs) ? S.npcs : {}; }, root: function () { return $q('#gm-root'); }, toast: toast, on: function (id) { return W.B68Features.valueOf(S.doc, id); },
+      blueprint: function () { if (!S.locRoll) return null; var d = playerDisplay(S.locRoll, Object.assign({}, mapUi(), { layer: 'player', view: 'plan', theme: 'casefile' }), W.B68Map && W.B68Map.render, null); return { title: d.title, caption: d.caption, svg: d.svg }; } });
+    return S.pr;
+  }
+  function prMenuSync() {
+    var on = prOn(), b = $q('#gm-menu-print'), after = $q('#gm-menu-switchboard') || $q('#gm-menu-live');
+    if (on && !b && after) after.insertAdjacentHTML('afterend', '<button type="button" data-gm="print" id="gm-menu-print" title="Print calling cards, tent standees and the blueprint">Print</button>'); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
+  }
   function swMenuLine() { return W.B68GmSwitchboard && W.B68Features ? '<button type="button" data-gm="switchboard" id="gm-menu-switchboard" title="Every new feature has a switch here, off until you turn it on. All off puts the app back as it was; no reload">Switchboard</button>' : ''; }
   /* 4.2 Preflight (gm/preflight.js, switch room.preflight): the Menu line exists only while the switch is on */
   function pfOn() { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, 'room.preflight') && W.B68GmPreflight); }
@@ -2346,7 +2358,7 @@
   /* the bar's live parts: the session, what is on the iPad, listening */
   function renderBar() {
     if (!S || !S.root) return;
-    renderMirror(); spineTick(); pfMenuSync();
+    renderMirror(); spineTick(); pfMenuSync(); prMenuSync();
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
@@ -6260,6 +6272,7 @@
       case 'focus': toggleFocus(); break;
       case 'hardstart': menuOpen(false); { var hsi = hsInst(); if (hsi) hsi.toggle(); } break;      /* 1.2 */
       case 'switchboard': menuOpen(false); { var sbi = swInst(); if (sbi) sbi.toggle(); } break;      /* W0.2 */
+      case 'print': menuOpen(false); { var pri = prInst(); if (pri) pri.toggle(); } break;      /* 3.6, 2.11 */
       case 'preflight': menuOpen(false); { var pfi = pfInst(); if (pfi) pfi.toggle(); } break;      /* 4.2 */
       case 'workshop': menuOpen(false); if (W.B68GmWorkshop) W.B68GmWorkshop.toggle($q('#gm-root'), { toast: toast }); break;      /* W0.5 */
       case 'drawer': drawerToggle(); break;
