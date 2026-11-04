@@ -1540,7 +1540,7 @@
     if (me.sttTimer) { W.clearInterval(me.sttTimer); me.sttTimer = null; }
     if (me.cogm) { cogmStop(me); me.cogm = null; }
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
-    b09Unmount(me); b17Unmount(me);
+    b09Unmount(me); b17Unmount(me); csUnmount(me);
     if (me.mission) { try { me.mission.flush(); } catch (e) {} me.mission.destroy(); me.mission = null; }   /* a publish that is waiting goes now */
     apUnmount(me);
     S = null;
@@ -1689,7 +1689,7 @@
     if (!W.B68GmLocation) S.locErr = 'The location module is missing.'; else if (!part('location') || !isObj(part('location').T)) S.locErr = 'The pack has no location part. Update the pack.';
     S.status = 'ready'; S.prepKey = null;
     mountAssist();
-    layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack(); apMount(); mountMission(); mountNight(); b09Mount(); b17Mount();
+    layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack(); apMount(); mountMission(); mountNight(); b09Mount(); csMount(); b17Mount();
     /* listening: every 5 s while the iPad tab is open, every 15 s otherwise (the top bar shows it) */
     if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden) { if (S.panel === 'ipad' || n2 % 3 === 0) loadStt(); renderBeat(); } }, 5000); }
     if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
@@ -2323,6 +2323,40 @@
     return S.pf;
   }
   function wsMenuLine() { return W.B68GmWorkshop ? W.B68GmWorkshop.menuLine() : ''; }
+  /* 4.1 The cue stack (gm/cue-stack.js, switch room.cues): STANDBY / GO / Bypass in a bar under the rail, Space and Esc, and "Blade, go". Every effect goes through the page's own writers
+     (patchAmbient and its gate, the show contract, the night, the cast), so a cue can show nothing that a button could not. */
+  function csNote() { var pk = part('prep'), id = pk && W.B68GmPrep ? prepNoteId(pk) : null; return id && Array.isArray(pk.notes) ? pk.notes.filter(function (n) { return isObj(n) && n.id === id; })[0] || null : null; }
+  function csNpc(name) {
+    var n = str(name).toLowerCase().replace(/\s+/g, ' ').trim(), list = Object.keys(isObj(S.npcs) ? S.npcs : {}).map(function (id) { return { id: id, d: S.npcs[id] }; }).filter(function (x) { return isObj(x.d) && !(Array.isArray(x.d.tags) && x.d.tags.indexOf('undone') >= 0); });
+    var hit = list.filter(function (x) { return str(x.d.name).toLowerCase() === n || (x.d.alias && str(x.d.alias).toLowerCase() === n); });
+    if (!hit.length) hit = list.filter(function (x) { return str(x.d.name).toLowerCase().split(' ').indexOf(n) >= 0; });
+    return hit.length === 1 ? hit[0] : null;
+  }
+  function csMount() {
+    var CS = W.B68GmCueStack, me = S; if (!CS || !W.B68Features || me.cs) return;
+    me.cs = CS.create({
+      feature: function () { return S === me && b09On('room.cues'); }, note: function () { return S === me ? csNote() : null; }, doc: function () { return S === me ? S.doc : null; },
+      patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); }, toast: toast, root: function () { return S === me ? $q('#gm-root') : null; },
+      log: function (t) { if (S === me && me.night) me.night.cue(t); },
+      scene: function (id) { return patchAmbient({ mode: 'pin', scene: id }).then(function (r) { return r !== null; }); },
+      show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
+      reveal: function (name) {
+        var x = csNpc(name), ref = x && npcRef(x.id); if (!x || !ref) return Promise.resolve({ ok: false, say: 'No NPC called ' + name + '.' });
+        if (x.d.revealed === true) return Promise.resolve({ ok: true });
+        return Promise.resolve(ref.update({ revealed: true, firstSeen: x.d.firstSeen || nowIso() })).then(function () { if (S === me && isObj(me.npcs) && isObj(me.npcs[x.id])) me.npcs[x.id].revealed = true; return { ok: true }; }, function () { return { ok: false, say: 'Could not reveal ' + name + '.' }; });
+      },
+      phase: function (p) { var nt = me.night; if (!nt || nt.enter(p) === false) return Promise.resolve(false); return b09Layer(me, 'band.phase', p).then(function (r) { return r !== null; }); },
+      ambient: function () { return isObj(AM.doc) ? { mode: AM.doc.mode, scene: AM.doc.scene } : null; },
+      escHeld: function () { var sv = S === me && me.stamp ? me.stamp.view() : null; return !!(sv && sv.active); },      /* the stamp's report card takes this Esc down first */
+      panic: function (safe) { return Promise.all([patchAmbient({ mode: 'pin', scene: safe, overlay: null, layers: null }), pushDisplay({ kind: 'blank' }).then(null, function () { return null; })]).then(function (r) { return r[0] !== null; }); },
+      resume: function (prior) { return isObj(prior) ? patchAmbient({ mode: prior.mode, scene: prior.scene }) : Promise.resolve(null); },
+      cueVerbs: function () { return W.B68CueVerbs; }, grammar: function () { return W.B68GmCueGrammar; }, grammarOn: function () { return S === me && b09On('ai.grammar'); }
+    });
+    me.cs.register(); me.cs.bind(document); me.cs.paint();
+  }
+  function csUnmount(me) { if (me && me.cs) { try { me.cs.destroy(); } catch (e) {} me.cs = null; } }
+  function csTick() { if (S && S.cs && S.status === 'ready') S.cs.tick(); }
+  function csRun(me, a) { return me.cs ? me.cs.run(a) : null; }
   /* Live sync (design 2.5): the GM state's `live`, on unless it is an explicit false. The server puts it in the data poll's answer and the
      display's, so every page follows it within one poll; only this menu item sets it. */
   function liveOn() { return !(S && S.doc && S.doc.live === false); }
@@ -2358,7 +2392,7 @@
   /* the bar's live parts: the session, what is on the iPad, listening */
   function renderBar() {
     if (!S || !S.root) return;
-    renderMirror(); spineTick(); pfMenuSync(); prMenuSync(); b17Tick();
+    renderMirror(); spineTick(); pfMenuSync(); prMenuSync(); b17Tick(); csTick();
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
@@ -4278,7 +4312,7 @@
     b19Mount();
     Object.keys(S.b19).forEach(function (k) { if (S.b19[k] && S.b19[k].paint) S.b19[k].paint(fr, svg, zoom); });
   }
-  function b09Run(me, a) { return me.cueGrammar ? me.cueGrammar.run(a) : null; }
+  function b09Run(me, a) { if (a && a.verb === 'fire') return csRun(me, a); return me.cueGrammar ? me.cueGrammar.run(a) : null; }
   function b09Toast(me, text, undo) { if (S === me && me.cueGrammar) me.cueGrammar.undoToast(text, undo); }
   function b09Unparsed(me, res) { if (S === me && me.cueGrammar && b09On('ai.grammar') && res && res.refused === 'unparsed') { me.cueGrammar.didntCatch(); return true; } return false; }
 
