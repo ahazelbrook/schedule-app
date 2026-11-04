@@ -623,7 +623,7 @@ fails and nobody is known, nothing is purged.
 
 ## The kits (`app/kits.json`, `npm run kits`)
 
-The design system's two kits are vendored: the map kit in `app/maps/map-kit.js` (`B68Map`, 0.9.0: single-room reveal, `room:<name>`) and the figure kit in
+The design system's two kits are vendored: the map kit in `app/maps/map-kit.js` (`B68Map`, 1.0.0: single-room reveal, `room:<name>`, and the grand map below) and the figure kit in
 `app/figures/figure-kit.js` (`B68Figure`, 3.0.1, which carries the arm blend `tools/ambient/motion.js` uses, so the app no longer patches it). `app/kits.json` records each one's file, version, size, sha256, where it came from
 and when; `npm run kits` prints it and says whether the files still match. To update one, download the kit from the design system
 (or build it) and run `node scripts/kits.mjs maps <map-kit.js> --source "<where it came from>"` (or `figures`): it checks the file
@@ -631,6 +631,39 @@ loads and is that kit, refuses an older version unless `--older`, copies it in a
 (in `check:runtime`) fails when a file does not match its entry, when a kit is missing from the `routes.js` bundles (the service
 worker precaches what they list, so that is what keeps a kit offline) and when the map kit lacks what the GM page asks of it. A new
 kit reaches the table only with a deploy, which stays Alex's call and never on a session day.
+
+### Map kit 1.0, the grand map (switch `map.kit1`, default off)
+
+Kit 1.0 is built app-side in the vendored kit (`src/grand.js` inside `app/maps/map-kit.js`, with hook lines in render, layout, model,
+parts, iso and themes; a TODO there says what to port to the design system). It draws only when an authored site's patch says
+`kit: 1` AND the switch is on (the GM page then passes `kit1: true` to every map it renders: the map panel, Run the site, Show on
+iPad, the score scene). Without both, every byte is 0.9's: `checks/runtime/map-kit1.test.mjs` compares 204 renders against hashes
+taken from 0.9 itself, both ways. The switch is the registry's `map.kit1` (`app/features.js`: GM only, stage Maps, Saturday
+"try"), read live from the GM state document through `B68Features.valueOf`; All off turns it off, and a flip redraws the map on screen.
+
+The fields, in the site's `patch` (feet; x runs along the front, left to right as you face the building; y runs back from the front):
+
+```text
+kit: 1
+build.style    "palazzo": parapet and cornice, arched windows, a rusticated base; no pitched roof or chimney
+build.front    "canal" | "street" (default street)
+build.floors   { "-1".."2": { x, y, w, d, h } }   each floor's footprint, h its storey height (8 to 40; default 14, basement 11)
+build.core     [x, y, w, d]                       the stairs-and-lift core, on every floor it fits
+build.stair    { room, to }                       a grand branching stair in that room, up to floor `to`
+build.faces    [{ kind, room }]                   kind: water-door | water-steps | boats | loading-door
+rooms[i].lvl   -1..2;  rooms[i].at  [x, y, w, d]  where the room stands on its floor
+rooms[i].span  2                                  double height: it rises through the floor above
+rooms[i].ring  "<spanning room>"                  on the floor above it: a gallery round its void
+rooms[i].gallery  4..20 (default 8);  rooms[i].scale  "grand" | "service"
+```
+
+A floor whose every room has `at` (inside the footprint, none overlapping) is drawn as authored; what no room covers is passage (and
+a warning). Otherwise the floor is laid out in its footprint as 0.9 lays one out, and says why. Every bad field is a warning on the
+map, never a guess. The **section** is the iPad's score view (every room a cell, front on the left); the **iso** is the planning board
+and the print. Secrecy is 0.9's: the layout never depends on the reveal, a player copy only leaves pieces out, a void is known with
+the gallery round it (else the room under it), and the chandelier and double height show only once the crew knows that room.
+One shape to avoid for now: a lone room on floor 1. `B68Map.floors` (Run the site's floor lens) still folds it onto the street
+floor as 0.9 does, while kit 1.0 draws it upstairs; give floor 1 two rooms or more.
 
 ## The display (`#display`, `app/display-page.js`, `app/display.css`)
 

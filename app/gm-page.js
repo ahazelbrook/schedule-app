@@ -196,9 +196,16 @@
     if (m.time === 'Bluetime' || m.time === 'Night') o.time = m.time;
     var w = m.weather;
     if (w === 'rolled') o.weather = true; else if (w === 'none') o.weather = false; else if (w === 'rain' || w === 'fog' || w === 'snow') o.weather = w;
+    if (P.kit1On()) o.kit1 = true;        /* 2.1: map kit 1.0 draws a site whose block says kit: 1; with the switch off, not even the key */
     return Object.assign(o, size || { width: 1400 });
   }
   P.mapOpts = mapOpts;
+  /* 2.1 · Map kit 1.0, the grand map: the switchboard's map.kit1 (app/features.js, GM only, default off), read live from this page's
+     state document. kit1Of(doc) is the read itself; P.kit1On() is what mapOpts and the score scene ask (a test can stand it in). */
+  var KIT1_SWITCH = P.KIT1_SWITCH = 'map.kit1';
+  function kit1Of(doc) { var F = W.B68Features; try { return !!(F && typeof F.valueOf === 'function' && F.valueOf(doc, KIT1_SWITCH) === true); } catch (e) { return false; } }
+  P.kit1Of = kit1Of;
+  P.kit1On = function () { return kit1Of(S && S.doc); };
   P.REVEAL0 = { public: true, working: false, controlled: false, secure: false };   /* every new roll and replay starts here */
 
   function decodeEntities(s) {
@@ -631,14 +638,14 @@
   function scoreScene(roll, map, render) {
     if (!isObj(map) || map.layer !== 'player') throw new Error('Only the player layer can be a score scene. Switch Layer to Player first.');
     if (!roll || typeof render !== 'function') throw new Error('Roll a location first.');
-    var reveal = revealList(map);
+    var reveal = revealList(map), k1 = P.kit1On() ? { kit1: true } : {};     /* 2.1: the planning board is kit 1.0's exploded iso when the switch is on */
     function leak() { var e = new Error(P.LEAK_MSG); e.leak = true; return e; }
-    var board = render(roll, { view: 'plan', theme: 'board', layer: 'player', reveal: reveal, width: 1600 }), view = 'plan';
+    var board = render(roll, Object.assign({ view: 'plan', theme: 'board', layer: 'player', reveal: reveal, width: 1600 }, k1)), view = 'plan';
     if (leaks(board.svg, roll, reveal).length) {
       board = render(roll, { view: 'rings', theme: 'board', layer: 'player', reveal: reveal, width: 1600 }); view = 'rings';
       if (leaks(board.svg, roll, reveal).length) throw leak();
     }
-    var iso = render(roll, { view: 'iso', theme: 'blueprint', legend: false, layer: 'player', reveal: reveal, width: 1600 });
+    var iso = render(roll, Object.assign({ view: 'iso', theme: 'blueprint', legend: false, layer: 'player', reveal: reveal, width: 1600 }, k1));
     var isoRings = false;
     if (leaks(iso.svg, roll, reveal).length) {
       iso = render(roll, { view: 'rings', theme: 'blueprint', legend: false, layer: 'player', reveal: reveal, width: 1600 }); isoRings = true;
@@ -2278,7 +2285,7 @@
     if (!S.sw) S.sw = W.B68GmSwitchboard.create({
       doc: function () { return S.doc; }, patch: patch, campaign: function () { return camp; }, root: function () { return $q('#gm-root'); }, toast: toast,
       publish: function (map) { var a = (S && S.api) || keptApi; return a && typeof a.publishFeatures === 'function' ? a.publishFeatures(map) : Promise.reject(new Error('The table is not available here.')); },
-      redraw: function () { if (S && S.status === 'ready') { renderBar(); renderRun(); b09Paint(); } }
+      redraw: function () { if (S && S.status === 'ready') { renderBar(); renderRun(); b09Paint(); if (S.map && S.locRoll && S.map.kit1 !== P.kit1On() && W.B68Map && W.B68Map.render) drawMap(true); } }     /* 2.1: map.kit1 flipped: the map on screen follows */
     });
     return S.sw;
   }
@@ -3197,7 +3204,7 @@
       try { r = K.render(S.locRoll, o); } catch (e) { if (!quiet) toast('The map could not be drawn: ' + errText(e), true); return; }
       if (sig) { var rc = S.runCache = S.runCache || { map: {}, keys: [] }; rc.map[sig] = r; rc.keys.push(sig); while (rc.keys.length > RUN_CACHE_MAX) delete rc.map[rc.keys.shift()]; }
     }
-    S.map = { svg: r.svg, warnings: r.warnings || [], layer: mu.layer === 'player' ? 'player' : 'gm', view: mu.view, theme: mu.theme, time: mu.time, weather: mu.weather, sig: sig, held: held };
+    S.map = { svg: r.svg, warnings: r.warnings || [], layer: mu.layer === 'player' ? 'player' : 'gm', view: mu.view, theme: mu.theme, time: mu.time, weather: mu.weather, sig: sig, held: held, kit1: !!o.kit1 };
     S.map.leak = S.map.layer === 'player' && leaks(r.svg, S.locRoll, revealEntries(mu)).length > 0;
     showMap();
   }
@@ -3298,12 +3305,12 @@
      drawing, or '' when this map is not a run (a player layer, a rolled site) */
   function runApply(o) {
     var rs = o.layer === 'gm' ? runSite() : null; if (!rs) return '';
-    if (rs.play.v === 2) { var t2 = runV2Tokens(rs); o.tokens = t2; return JSON.stringify([rollKey(S.locRoll), o.view, o.theme, o.time, o.weather, o.floor, t2.map(function (t) { return t.room + '|' + t.svg; })]); }
+    if (rs.play.v === 2) { var t2 = runV2Tokens(rs); o.tokens = t2; return JSON.stringify([rollKey(S.locRoll), o.view, o.theme, o.time, o.weather, o.floor, t2.map(function (t) { return t.room + '|' + t.svg; })].concat(o.kit1 ? ['kit1'] : [])); }
     var m = runModel(rs); if (!m) return '';
     var toks = runTokens(m);
     o.tokens = toks;
     if (m.floor !== 'all' && (o.view === 'iso' || o.view === 'plan' || o.view === 'section')) o.floor = m.floor;
-    return JSON.stringify([rollKey(S.locRoll), o.view, o.theme, o.time, o.weather, o.floor, toks.map(function (t) { return t.room + '|' + t.svg; })]);
+    return JSON.stringify([rollKey(S.locRoll), o.view, o.theme, o.time, o.weather, o.floor, toks.map(function (t) { return t.room + '|' + t.svg; })].concat(o.kit1 ? ['kit1'] : []));     /* 2.1: a switch flip redraws */
   }
   /* Names the markers on a player copy must never carry: the play's people and disguises (whole labels) and the names of hidden clocks.
      This is the ONLY use of `play.people` on the player path: it feeds tokenScreen's deny list and nothing is drawn from it. */
