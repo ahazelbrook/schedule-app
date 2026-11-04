@@ -217,7 +217,8 @@ export function validateActions(raw, { state, lines, cue }) {
         out.phase = a.phase;
       } else if (verb === 'reveal' || verb === 'spotlight' || verb === 'introduce') {
         const names = (Array.isArray(a.names) ? a.names : []).map((x) => clip(x, NAME_MAX)).filter(Boolean).slice(0, CUE_NAMES_MAX);
-        if (!names.length || (verb !== 'introduce' && names.length !== 1)) { drop(a.type, 'no name'); continue; }
+        if (verb === 'reveal' && !names.length) { /* a bare reveal sends the rooms the GM staged (suite 2.3); the page decides */ }
+        else if (!names.length || (verb !== 'introduce' && names.length !== 1)) { drop(a.type, 'no name'); continue; }
         out.names = names;
       }
     } else if (a.type === 'pc_move') {

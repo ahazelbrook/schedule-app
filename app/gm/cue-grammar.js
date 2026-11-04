@@ -95,6 +95,12 @@
     var parts = s.split(/\s*(?:,|;|\band\b|&)\s*/i).map(function (p) { return tidy(p.replace(/^(?:the|our)\s+/i, ''), 80); }).filter(Boolean);
     return parts.slice(0, max);
   }
+  /* "reveal" alone (suite 2.3) sends the staged rooms; the page says so when none are staged, or when map.stage is off */
+  function parseReveal(ctx) {
+    var p = parseNames('reveal', 1)(ctx);
+    if (p && p.action) return p;
+    return onlyFiller(ctx.words || [], null) ? act({ verb: 'reveal' }) : unparsed();
+  }
   function parseNames(verb, max) {
     return function (ctx) {
       var names = namesOf(ctx.rest, max);
@@ -107,7 +113,7 @@
   function defs() {
     return [
       { id: 'stamp', words: ['stamp', 'risky', 'controlled', 'desperate'], label: 'Stamp', parse: parseStamp },
-      { id: 'reveal', phrases: [['reveal']], label: 'Reveal', parse: parseNames('reveal', 1) },
+      { id: 'reveal', phrases: [['reveal']], label: 'Reveal', parse: parseReveal },
       { id: 'go', words: ['go'], label: 'Go to a phase', parse: parseGo },
       { id: 'flashback', words: ['flashback'], label: 'Flashback', parse: parseFlashback },
       { id: 'back', words: ['back'], label: 'Back from a flashback', parse: function (ctx) { return (ctx.words || [])[0] === 'on' ? unparsed() : parseBare('back')(ctx); } },
@@ -228,6 +234,10 @@
         });
       },
       reveal: function (a) {
+        if (!(a.names && a.names.length)) {
+          var sent = typeof host.stageSend === 'function' ? host.stageSend() : null;
+          return Promise.resolve(sent === true ? done('Sent the staged rooms.', null) : sent === false ? { ok: false, say: '' } : fail('Say who to reveal.'));
+        }
         var r = resolve(a.names || []); if (r.error) return Promise.resolve(fail(r.error));
         var p = r.npcs[0];
         if (p.revealed) return Promise.resolve(fail(p.name + ' is already revealed.'));
@@ -271,7 +281,12 @@
         });
       },
       introduce: function (a) { return beat('rolodex', a, 'Introducing '); },
-      spotlight: function (a) { return beat('spotlight', a, 'Spotlight on '); }
+      spotlight: function (a) {
+        /* face.spotlight (suite 3.1): hold the portrait still until Narrator clears it, instead of the timed beat */
+        var held = typeof host.holdSpotlight === 'function' && a.names && a.names.length === 1 ? host.holdSpotlight(a.names[0]) : null;
+        if (held) return held.then(function (r) { return r && r.ok ? done(r.say, function () { return typeof host.narrator === 'function' ? host.narrator() : null; }) : (r && r.say ? fail(r.say) : { ok: false, say: '' }); });
+        return beat('spotlight', a, 'Spotlight on ');
+      }
     };
     function beat(kind, a, lead) {
       var r = resolve(a.names || []); if (r.error) return Promise.resolve(fail(r.error));
