@@ -23,3 +23,11 @@
 .dp-pc-harm-2 { background: var(--b68-mustard); color: var(--b68-ink); }
 .dp-pc-harm-3, .dp-pc-harm-4 { background: var(--b68-alarm-lit); color: var(--b68-paper); border-color: var(--b68-alarm-lit); }
 .dp-pc-lock { padding: 0 .4em; border: .14em solid var(--b68-alarm-lit); color: var(--b68-alarm-lit); border-radius: .3em; font-size: .72em; font-weight: 900; letter-spacing: .12em; transform: rotate(-4deg); }
+
+/* face looks (suite 3.2, 3.3, 3.4; switches face.expressions, face.formats, face.badge): the signature pose, the portrait formats, and the badge, style and texture of a held spotlight. */
+.dp-fl-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+.dp-fl-pose { position: absolute; inset: 0; z-index: 2; display: flex; align-items: flex-end; justify-content: center; background: var(--b68-paper); animation: dp-fl-pose-in .35s ease both; }
+.dp-fl-pose svg { height: 100%; width: auto; max-width: 100%; }
+@keyframes dp-fl-pose-in { from { opacity: 0; transform: translateY(2vmin); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dp-fl-pose { animation: none; } }
+[data-reduced] .dp-fl-pose { animation: none; }

@@ -1,0 +1,107 @@
+/* display/face-render.js — what a held spotlight's portrait can wear (suite 3.2, 3.3, 3.4; switches face.expressions, face.formats, face.badge).
+
+   Window.B68FaceRender, and module.exports under Node. The iPad's half: the display page calls apply() once for each NPC card it draws (the `npc` overlay the stage bar holds), and with
+   all three switches off apply() returns false and touches nothing. It reads only what the server already served on that overlay: the name, alias, role, faction, the figure's spec, the NPC id and the
+   `look` (a few names, see face-look.js). It reads no other row and no notes, so the display GET costs no more.
+
+   3.2 EXPRESSIONS (face.expressions): look.expr redraws the portrait with the face's expression swapped (the kit swaps eyes, brows and mouth; nothing is rotated). `afraid` is registered here
+       through the kit's public registry, built from the kit's own surprised parts, so the vendored kit stays as it came. look.pose plays the signature pose once: a full figure in that pose for
+       about three seconds over the card, then the portrait again. A re-laid hold (look.re) keeps the expression and does not replay the pose.
+   3.3 FORMATS (face.formats): look.fmt puts the same drawn face in a licence, badge, mugshot, society page or passport (display/face-formats.js), in a duotone of the faction's colour.
+   3.4 BADGE (face.badge): a stable number and glyph, the faction's style and a three to six second motif (display/face-badge.js, face-motif.js).
+   The last two are separate files the page loads beside this one; a page without them simply draws without them.
+
+   Everything is built with createElement and textContent. The portrait nodes come from env, already through the page's SVG cleaner.
+
+   env: { document, K (the figure kit), portrait(spec, uid) -> node|null, figure(spec, uid) -> node|null, reduced, features? ({ id: bool }, the look book's way to say so), later(fn, ms) -> handle,
+          ducked() -> bool, motif? (defaults to B68FaceMotif) }
+   API   on(id, env) -> bool     active(env) -> bool     ensureAfraid(K) -> bool     apply(e, card, o, env) -> bool     unlock() -> bool     POSE_MS */
+(function (root, factory) {
+  'use strict';
+  var M = factory(root);
+  if (typeof module === 'object' && module && module.exports) module.exports = M;
+  else root.B68FaceRender = M;
+})(typeof self !== 'undefined' ? self : this, function (root) {
+  'use strict';
+
+  function tryRequire(p) { try { return require(p); } catch (e) { return null; } }
+  var FL = root.B68FaceLook || (typeof require === 'function' ? tryRequire('./face-look.js') : null);
+  function part(name, file) { return root[name] || (typeof require === 'function' ? tryRequire(file) : null); }
+  var POSE_MS = 3200;
+
+  function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+  function on(id, env) {
+    if (env && isObj(env.features) && env.features[id] === true) return true;
+    return !!(root.B68Flags && typeof root.B68Flags.on === 'function' && root.B68Flags.on(id));
+  }
+  function active(env) { return on('face.expressions', env) || on('face.formats', env) || on('face.badge', env); }
+
+  function el(doc, tag, cls, text) {
+    var e = doc.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null && text !== '') e.textContent = text;
+    return e;
+  }
+  function kids(e) { return e && e.children ? Array.prototype.slice.call(e.children) : []; }
+  function byClass(e, cls) { var k = kids(e); for (var i = 0; i < k.length; i++) if (String(k[i].className || '').split(/\s+/).indexOf(cls) >= 0) return k[i]; return null; }
+  function empty(e) { while (e.firstChild) e.removeChild(e.firstChild); }
+  function safe(s) { return String(s == null ? '' : s).replace(/[^A-Za-z0-9_-]/g, ''); }
+
+  /* 3.2: the kit's `afraid` expression, registered once from the kit's own surprised parts (raised inner brows, wide eyes, a small open mouth turned down) */
+  var AFRAID = { brow: { angle: 1.1, knit: 0.3, raise: 0.04 }, lid: { upper: -0.6, lower: -0.1 }, mouth: { curve: -0.55, width: 0.85, open: 0.55 }, gaze: [0, 0.04] };
+  function ensureAfraid(K) {
+    try {
+      var R = K && K.registry; if (!R || typeof R.get !== 'function' || typeof R.register !== 'function') return false;
+      if (R.get('expression', 'afraid')) return true;
+      var base = R.get('expression', 'surprised'); if (!base || typeof base.draw !== 'function') return false;
+      R.register({ kind: 'expression', name: 'afraid', describe: 'Afraid: inner brows raised, eyes wide, a small open mouth turned down.', example: { face: { expression: 'afraid' } },
+        draw: function (ctx) { var b = base.draw(ctx); return { expr: AFRAID, pieces: b && b.pieces ? b.pieces : [] }; } });
+      return true;
+    } catch (e) { return false; }
+  }
+
+  /* 3.2: the signature pose, once. A full figure in the named arm pose lies over the card for a few seconds and goes. */
+  function playPose(doc, e, o, look, env, spec) {
+    if (!look.pose || look.re || typeof env.figure !== 'function') return false;
+    var fig = null;
+    try { fig = env.figure(FL.poseSpec(spec, look.pose), 'dp-fl-pose-' + safe(o.id)); } catch (err) { fig = null; }
+    if (!fig) return false;
+    var layer = el(doc, 'div', 'dp-fl-pose'); layer.appendChild(fig); e.appendChild(layer);
+    var later = typeof env.later === 'function' ? env.later : function (f, ms) { return setTimeout(f, ms); };
+    later(function () { if (layer.parentNode) layer.parentNode.removeChild(layer); }, POSE_MS);
+    return true;
+  }
+
+  function apply(e, card, o, env) {
+    env = env || {};
+    if (!e || !card || card.kind !== 'npc' || !FL || !env.document) return false;
+    var doc = env.document, look = FL.clean(o && o.look), npc = o && isObj(o.npc) ? o.npc : {};
+    var FM = part('B68FaceFormats', './face-formats.js'), BD = part('B68FaceBadge', './face-badge.js');
+    var xp = on('face.expressions', env), fm = !!FM && on('face.formats', env), bd = !!BD && on('face.badge', env);
+    var expr = xp && look && look.expr ? look.expr : '', fmt = fm && look && look.fmt ? look.fmt : '', pose = xp && look && look.pose ? look.pose : '';
+    if (!expr && !fmt && !pose && !bd) return false;
+    var faction = typeof npc.faction === 'string' ? npc.faction : '', id = o && typeof o.npcId === 'string' ? o.npcId : '';
+    var uid = 'dp-fl-' + safe(o && o.id), spec = card.spec, holder = byClass(e, 'dp-ov-portrait'), done = false;
+
+    if (expr || pose) ensureAfraid(env.K);
+    if (expr && holder && spec && typeof env.portrait === 'function') {
+      var drawn = null;
+      try { drawn = env.portrait(FL.specWith(spec, { expr: expr }), uid); } catch (err) { drawn = null; }
+      if (drawn) { empty(holder); holder.appendChild(drawn); done = true; }
+    }
+    var bi = bd ? BD.info(faction, id) : null;
+    if (bi) BD.decorate(e, bi);
+    if (fmt && holder) {
+      FM.wrap(doc, e, holder, fmt, { name: card.name, role: typeof npc.role === 'string' ? npc.role : '', faction: faction, id: id, num: bi ? bi.num : '', slot: FL.slotOf(faction), uid: uid,
+        glyph: bi && bi.slot ? BD.glyph(doc, faction, bi.slot) : null });
+      done = true;
+    } else if (bi) { e.appendChild(BD.strip(doc, bi, faction)); done = true; }
+    if (pose && spec && playPose(doc, e, o, look, env, expr ? FL.specWith(spec, { expr: expr }) : spec)) done = true;
+    if (bi) BD.motif(env, id, bi.slot, look);       /* once, when the spotlight first appears (not when it is laid again) */
+    return done;
+  }
+
+  function unlock() { var BD = part('B68FaceBadge', './face-badge.js'); return !!(BD && BD.unlock()); }
+
+  return { on: on, active: active, ensureAfraid: ensureAfraid, apply: apply, unlock: unlock, POSE_MS: POSE_MS };
+});

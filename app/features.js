@@ -152,7 +152,9 @@
     { id: 'face.castphoto', label: 'A cast photo per arc', surface: 'display', stage: 'face', default: false, saturday: 'off',
       doc: 'Menu then Cast photo: one true-height line-up of the recurring cast for an arc, anyone not yet met a silhouette, put on the iPad for up to three minutes and printed on A4 at the arc’s end. Off: no menu line.' },
     { id: 'between.lair', label: 'The lair that grows', surface: 'display', stage: 'between', default: false, saturday: 'off',
-      doc: 'Menu then The lair: the crew’s base as a cut-away section on the iPad, a layer for each base upgrade, cohort and piece of flair read from the crew sheet, with extra flair you type. Off: no menu line.' }
+      doc: 'Menu then The lair: the crew’s base as a cut-away section on the iPad, a layer for each base upgrade, cohort and piece of flair read from the crew sheet, with extra flair you type. Off: no menu line.' },
+    { id: 'face.expressions', label: 'Expressions and a signature pose', surface: 'display', stage: 'face', default: false, saturday: 'try',
+      doc: 'The stage bar gains Neutral, Pleased, Hostile, Afraid and Their tell buttons for the person held on the iPad (the face swaps its eyes, brows and mouth), and a Signature button that plays their pose once. The tell and the pose come from lines in the person’s GM notes: Tell: smirk, Signature: lapel. Off: the portrait as drawn.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

@@ -801,6 +801,7 @@
     } else if (v.kind === 'npc') {
       if (typeof v.npcId !== 'string' || !O.npcId.test(v.npcId)) return null;
       out.npcId = v.npcId;
+      if (root.B68FaceLook && isObj(v.look)) { var lk = root.B68FaceLook.clean(v.look); if (lk) out.look = lk; }      /* suite 3.2-3.4: names from fixed lists only */
       /* `npc`: what the SERVER joined at read time while that NPC is revealed (GET /api/gm/display); only the fields a player may see */
       if (isObj(v.npc)) { var pn = Pure.playerNpc(v.npc); out.npc = { name: pn.name, alias: pn.alias, role: pn.role, faction: pn.faction, spec: pn.spec }; }
     } else if (show) {
@@ -1494,6 +1495,7 @@
         e.className += ' dp-t-' + card.size;
         e.appendChild(el('p', 'dp-ov-text', card.text));
       }
+      if (card.kind === 'npc' && root.B68FaceRender) { try { root.B68FaceRender.apply(e, card, o, faceEnv()); } catch (err) { /* the plain card stays */ } }     /* suite 3.2-3.4: only while a face switch is on */
       return e;
     }
     function ovDawn(o) {
@@ -1510,6 +1512,12 @@
     /* what a beat renderer is handed; portrait() draws a cleaned head-and-shoulders from the figure kit (the Rolodex card, suite 3.5), or null */
     function beatEnv() {
       return { document: document, reduced: reduced(), portrait: function (spec, id) { var r = drawPortrait(spec, 'dp-rc-' + String(id).replace(/[^A-Za-z0-9_-]/g, ''), ctx.figures); return r ? document.importNode(r.node, true) : null; } };
+    }
+    /* what the face looks (display/face-render.js) draw with: the kit, the cleaned portrait and full figure, the page's timers, and whether the speech-safe duck is up */
+    function faceEnv() {
+      return { document: document, K: ctx.figures, reduced: reduced(), later: later, ducked: function () { return !!(s.room && s.room.report && s.room.report().ducked); },
+        portrait: function (spec, id) { var r = drawPortrait(spec, id, ctx.figures); return r ? document.importNode(r.node, true) : null; },
+        figure: function (spec, id) { var r = drawFigure(spec, id, ctx.figures); return r ? document.importNode(r.node, true) : null; } };
     }
     /* a brief beat (app/display/shows.js): the registry builds the node, this page times it by the server's clock exactly like a card */
     function ovBeat(o, my) {

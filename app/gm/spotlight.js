@@ -11,18 +11,20 @@
    API
      MAX whoNames(md) -> [name]      matchNpcs(names, npcs) -> [npc]      (npc = { id, name, alias?, revealed })
      create(host) -> controller
-       host: { feature(id) -> bool, npcs() -> [npc], roomKey() -> string, roomMd() -> Markdown of the room the crew are in | '', hold(npcId, ms) -> Promise<answer | null>,
+       host: { notes(npcId) -> the NPC's GM notes (the face looks read a Tell, Signature and Relation line from them), feature(id) -> bool, npcs() -> [npc], roomKey() -> string, roomMd() -> Markdown of the room the crew are in | '', hold(npcId, ms, look?) -> Promise<answer | null>,
                clear() -> Promise, overlayId() -> the id of the overlay up now, confirm(msg) -> bool, reveal(npcId) -> Promise, toast, changed(),
                setTimeout, clearTimeout }
-       controller: seed() bar() add(name) remove(id) spotlight(id) narrator() holdByName(name) held() view() reset() */
+       controller: seed() bar() add(name) remove(id) spotlight(id) narrator() holdByName(name) held() view() reset() express(name) signature()
+       THE FACE LOOKS (suite 3.2, 3.3): with face.expressions or face.formats on, the held person may carry a `look` (gm/face-looks.js); with both off nothing is sent that was not sent before. */
 (function (root, factory) {
   'use strict';
-  var M = factory();
+  var M = factory(root);
   if (typeof module === 'object' && module && module.exports) module.exports = M;
   else root.B68GmSpotlight = M;
-})(typeof self !== 'undefined' ? self : this, function () {
+})(typeof self !== 'undefined' ? self : this, function (root_) {
   'use strict';
 
+  function req(name, path) { if (root_ && root_[name]) return root_[name]; try { return require(path); } catch (e) { return null; } }
   var MAX = 3, SWITCH = 'face.spotlight', HOLD_MS = 180000, REFRESH_MS = 170000;
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
@@ -58,7 +60,7 @@
 
   function create(host) {
     host = host || {};
-    var ids = [], seededFor = null, heldId = '', timer = null;
+    var ids = [], seededFor = null, heldId = '', timer = null, heldLook = null, FLk = req('B68GmFaceLooks', './face-looks.js'), looks = FLk ? FLk.create(host) : null;
     function on() { return typeof host.feature === 'function' ? !!host.feature(SWITCH) : false; }
     function say(m, bad) { if (typeof host.toast === 'function') host.toast(m, !!bad); }
     function changed() { if (typeof host.changed === 'function') host.changed(); }
@@ -87,7 +89,7 @@
     }
     function remove(id) { var i = ids.indexOf(id); if (i < 0) return false; ids.splice(i, 1); changed(); return true; }
 
-    function lay(id) { return Promise.resolve(host.hold(id, HOLD_MS)); }
+    function lay(id, look) { return Promise.resolve(look ? host.hold(id, HOLD_MS, look) : host.hold(id, HOLD_MS)); }
     function again(id) {
       clrT(timer);
       timer = setT(function () {
@@ -96,7 +98,7 @@
         /* only while the overlay up is still ours (a held spotlight's id starts b17sl-) */
         var up = typeof host.overlayId === 'function' ? host.overlayId() : '';
         if (up && up.indexOf('b17sl-') !== 0) { heldId = ''; changed(); return; }
-        lay(id).then(function (r) { if (r === null || r === undefined) { heldId = ''; changed(); } else again(id); });
+        lay(id, looks ? looks.relay(heldLook) : null).then(function (r) { if (r === null || r === undefined) { heldId = ''; heldLook = null; changed(); } else again(id); });
       }, REFRESH_MS);
     }
     /* hold one NPC on the iPad -> Promise<{ ok, name, say }> */
@@ -110,9 +112,10 @@
       }
       return pre.then(function (ok) {
         if (!ok) { say('Could not reveal ' + n.name + '.', true); return { ok: false, say: '' }; }
-        return lay(id).then(function (r) {
+        var look = looks ? looks.initial(id) : null;
+        return lay(id, look).then(function (r) {
           if (r === null || r === undefined) return { ok: false, say: '' };
-          heldId = id; again(id); changed();
+          heldId = id; heldLook = look; again(id); changed();
           return { ok: true, name: n.name, say: n.name + ' is held on the iPad.' };
         });
       });
@@ -120,7 +123,7 @@
     function narrator() {
       if (!on()) return Promise.resolve(false);
       clrT(timer); timer = null;
-      var had = heldId; heldId = ''; changed();
+      var had = heldId; heldId = ''; heldLook = null; changed();
       if (!had) return Promise.resolve(false);
       return Promise.resolve(host.clear()).then(function () { return true; }, function () { return false; });
     }
@@ -133,9 +136,25 @@
       return spotlight(got[0].id);
     }
     function held() { return heldId; }
-    function view() { return { on: on(), bar: bar(), held: heldId, full: ids.length >= MAX }; }
-    function reset() { ids = []; seededFor = null; heldId = ''; clrT(timer); timer = null; }
-    return { seed: seed, bar: bar, add: add, remove: remove, spotlight: spotlight, narrator: narrator, holdByName: holdByName, held: held, view: view, reset: reset, HOLD_MS: HOLD_MS };
+    function view() { return { on: on(), bar: bar(), held: heldId, full: ids.length >= MAX, faces: looks && heldId ? looks.view(heldId) : null }; }
+    function reset() { ids = []; seededFor = null; heldId = ''; heldLook = null; clrT(timer); timer = null; }
+    /* the held person's expression (neutral, pleased, hostile, afraid, or their tell) and signature pose: laid again as a new overlay, so the iPad shows it afresh */
+    function express(name) {
+      if (!on() || !heldId || !looks) return Promise.resolve(false);
+      var r = looks.express(heldLook, heldId, name);
+      if (!r.look) { if (r.say) say(r.say, true); return Promise.resolve(false); }
+      var id = heldId;
+      /* a change of face on the person already held is not a new spotlight: `re` tells the iPad not to play the motif again (heldLook keeps no `re`, so the signature that follows still plays its pose) */
+      return lay(id, Object.assign({}, r.look, { re: true })).then(function (a) { if (a === null || a === undefined || heldId !== id) return false; heldLook = r.look; again(id); changed(); return true; });
+    }
+    function signature() {
+      if (!on() || !heldId || !looks) return Promise.resolve(false);
+      var r = looks.signature(heldLook, heldId);
+      if (!r.look) { if (r.say) say(r.say, true); return Promise.resolve(false); }
+      var id = heldId;
+      return lay(id, r.look).then(function (a) { if (a === null || a === undefined || heldId !== id) return false; again(id); return true; });     /* the pose is in this overlay only: the next renewal drops it */
+    }
+    return { seed: seed, bar: bar, add: add, remove: remove, spotlight: spotlight, narrator: narrator, holdByName: holdByName, held: held, view: view, reset: reset, express: express, signature: signature, HOLD_MS: HOLD_MS };
   }
 
   function html(v, esc) {
@@ -150,6 +169,8 @@
     h += '</ul>';
     if (!v.full) h += '<form class="gm-bar-add" data-b17="bar-add"><input type="text" name="who" autocomplete="off" spellcheck="false" placeholder="Add a name" ' +
       'aria-label="Add someone to the stage bar"> <button type="submit" class="btn sm">Add</button></form>';
+    var FLh = v.faces ? req('B68GmFaceLooks', './face-looks.js') : null;
+    if (FLh) h += FLh.html(v.faces, esc);
     h += '<div class="gm-stage-acts"><button type="button" class="btn sm" data-b17="narrator"' + (v.held ? '' : ' disabled') + '>Narrator</button></div>';
     return h;
   }
