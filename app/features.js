@@ -118,7 +118,7 @@
     { id: 'face.spotlight', label: 'Stage bar and spotlight', surface: 'gm', stage: 'face', default: false, saturday: 'on',
       doc: 'A stage bar holds up to three people for the room, from its Who line. One tap holds a portrait on the iPad until Narrator clears it; a hidden person asks to be revealed first. Also by voice: spotlight and a name. Off: no bar.' },
     { id: 'room.cues', label: 'The cue stack', surface: 'gm', stage: 'room', default: false, saturday: 'try',
-      doc: 'Numbered cues from the Cues section of the prep note: the next one waits as STANDBY, Space or a page-turner key fires it, Bypass skips it, Esc sends the iPad to the safe scene and raises the work light. "Blade, go" fires only the cue in standby. Off: no cue bar and no keys.' }
+      doc: 'Numbered cues from the Cues section of the prep note: the next one waits as STANDBY, Space or a page-turner key fires it, Bypass skips it, Esc sends the iPad to the safe scene and raises the work light. "Blade, go" fires only the cue in standby. Off: no cue bar and no keys.' },
     { id: 'map.montage', label: 'Montage mode', surface: 'gm', stage: 'map', default: false, saturday: 'try',
       doc: 'Menu then Montage: one tap splits the iPad into two to four panels, one per player character, each with a figure, a place the players know and one line. A marked roll resolves its panel; one tap collapses it to a single scene. Off: no Montage line.' },
     { id: 'room.duck', label: 'A speech-safe mix', surface: 'display', stage: 'room', default: false, saturday: 'try',

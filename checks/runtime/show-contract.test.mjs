@@ -55,7 +55,7 @@ await test('the registry: the seven brief beats and the spotlight are overlay ki
   assert.deepEqual(['stamp', 'spotted', 'keyturn', 'rolodex', 'title', 'wanted', 'ring'].filter((k) => !SHOW_KIND_IDS.includes(k)), []);
   for (const k of ['clock', 'npc', 'fx', 'text', ...SHOW_KIND_IDS]) assert.ok(OVERLAY_KINDS.includes(k), k);
   assert.deepEqual(Object.keys(FIXTURES).sort(), [...SHOW_KIND_IDS].sort(), 'a fixture for every kind');
-  assert.equal(LAYER_PATHS.length, 10);
+  assert.equal(LAYER_PATHS.length, 11);
 });
 
 await test('payloads are rebuilt from named keys: strays dropped, bounds enforced with 400', () => {
@@ -73,7 +73,7 @@ await test('payloads are rebuilt from named keys: strays dropped, bounds enforce
 
 await test('layers: every path validates its value; null clears; a bad path or value is 400', () => {
   const good = { 'band.phase': 'plan', 'band.security': 3, 'band.faces': [{ npcId: 'n-mabel' }, { pcId: 'pc-nell' }], 'band.onair': true, 'scene.filter': 'flashback', 'scene.layout': 'montage', 'scene.mode': 'aftermath',
-    'data.countdown': { to: 1760000000000, label: 'Curfew' }, 'data.credits': ['n-lotte'], 'data.previously': ['n-mabel', 'n-dov'] };
+    'data.countdown': { to: 1760000000000, label: 'Curfew' }, 'data.credits': ['n-lotte'], 'data.montage': { panels: [{ pcId: 'pc-nell', name: 'Nell', room: 'The bar', line: 'A line' }, { pcId: 'pc-ivo' }] }, 'data.previously': ['n-mabel', 'n-dov'] };
   assert.deepEqual(Object.keys(good).sort(), [...LAYER_PATHS].sort());
   for (const [p, value] of Object.entries(good)) { assert.deepEqual(cleanLayerOp({ path: p, value }), { path: p, value }, p); assert.equal(cleanLayerOp({ path: p, value: null }).value, null, p + ' clears'); }
   const bad = [['band.phase', 'late'], ['band.security', 5], ['band.security', '2'], ['band.faces', []], ['band.faces', [{ npcId: 'a' }, { npcId: 'b' }, { npcId: 'c' }, { npcId: 'd' }]], ['band.faces', [{ name: 'x' }]], ['band.onair', false], ['scene.filter', 'sepia'], ['scene.mode', 'x'],
