@@ -33,7 +33,9 @@
     /* suite 1.6 (functions/_lib/show-aftermath.js): the Aftermath's steps, and the end credits (joined to revealed NPCs) */
     aftermath: { ms: 60000, keys: { step: ['e', ['payout', 'tithe', 'heat', 'status', 'harm', 'unwind', 'xp'], 1], n: ['i', [1, 8]], stacks: ['i', [0, 99]], tithe: ['i', [0, 99]], kept: ['i', [0, 99]],
       exposure: ['i', [0, 6]], mods: ['i', [-6, 6]], heat: ['i', [0, 9]], after: ['i', [0, 9]], siren: ['b'], wanted: ['i', [0, 4]], lines: ['a', 6, 0, 80], who: ['s', 60], line: ['s', 120], secs: ['i', [10, 180]] } },
-    credits: { ms: 60000, keys: { npcIds: ['l', 30, 1] } }
+    credits: { ms: 60000, keys: { npcIds: ['l', 30, 1] } },
+    /* suite 5.1 (functions/_lib/show-board.js): the opportunity board, parallel lists of plain strings */
+    board: { ms: 180000, keys: { cards: ['a', 12, 1, 120], who: ['a', 12, 1, 40], kinds: ['a', 12, 1, 9], carried: ['a', 12, 1, 1], pick: ['i', [0, 11]] } }
   };
   /* layer path -> checker(value) -> true when the server would take it */
   var LAYERS = {
