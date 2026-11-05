@@ -42,6 +42,8 @@ const tab = (key) => async (page) => { await page.evaluate(() => document.active
 const then = (...fns) => async (page, ctx) => { for (const f of fns) await f(page, ctx); };
 const LAPTOPS = [[1366, 768], [1536, 864]];
 const gmAt = (name, steps, setup) => LAPTOPS.map((size) => ({ name, size, route: '#gm', ready: GM_READY, steps, setup }));
+/* the iPad view (N5), the way the GM opens it from anywhere: a tap on the tray's live line */
+const openIpadView = async (page) => { await page.click('.gm-tray [data-tray="open"]'); await page.waitForSelector('#gm-ipad-settings [data-set-row]', { timeout: 10000 }); await page.waitForTimeout(400); };
 
 /* ---- the phones (N6, design 7): Nell's sheet as player1, at 390 x 844 and 375 x 667: the Now card, Quiet and the Between sessions fold.
    The seed gives her a key at three hits and two opportunity posts; each scenario's setup adds or takes away what the next picture needs, in order,
@@ -155,10 +157,12 @@ export const SCENARIOS = [
   { name: 'gm-run', size: [1536, 864], route: '#gm', ready: GM_READY, steps: async (page) => { await page.keyboard.press('g'); await page.waitForSelector('.rv-head', { timeout: 15000 }); } },
   /* the Menu open */
   { name: 'gm-menu', size: [1366, 768], route: '#gm', ready: GM_READY, steps: async (page) => { await page.click('[data-gm="menu"]'); await page.waitForSelector('.gm-menu-list:not([hidden])', { timeout: 5000 }); } },
-  /* Menu > Settings (N0) */
-  { name: 'gm-settings', size: [1366, 768], route: '#gm', ready: GM_READY, steps: async (page) => { await page.click('[data-gm="menu"]'); await page.click('#gm-menu-settings'); await page.waitForSelector('#gm-sheet-settings:not([hidden]) [data-set-row]', { timeout: 5000 }); } },
-  { name: 'gm-settings', size: [390, 844], route: '#gm', ready: GM_READY, context: { isMobile: true, hasTouch: true }, steps: async (page) => { await page.click('[data-gm="menu"]'); await page.click('#gm-menu-settings'); await page.waitForSelector('#gm-sheet-settings:not([hidden]) [data-set-row]', { timeout: 5000 }); } },
-  /* the display at 1024x768 (the iPad): the Location map shown from the GM page, a held NPC, the band (the phase is the score) */
+  /* the iPad view (N5): what is live, Listening, the Scenes and the Settings (N0's four, moved here from the Menu), opened from the tray's live line */
+  ...LAPTOPS.map((size) => ({ name: 'gm-ipad', size, route: '#gm', ready: GM_READY, steps: openIpadView })),
+  { name: 'gm-settings', size: [1366, 768], route: '#gm', ready: GM_READY, steps: then(openIpadView, async (page) => { await page.$eval('#gm-ipad-settings', (e) => e.scrollIntoView({ block: 'center' })); }) },
+  { name: 'gm-settings', size: [390, 844], route: '#gm', ready: GM_READY, context: { isMobile: true, hasTouch: true }, steps: then(openIpadView, async (page) => { await page.$eval('#gm-ipad-settings', (e) => e.scrollIntoView({ block: 'center' })); }) },
+  /* the display at 1024x768 (the iPad): the Location map shown from the GM page, a held NPC, the band (the phase is the score). The held card sits
+     in the band's column under its clock (N0's review: it covered the band's words) */
   { name: 'display', size: [1024, 768], route: '#display', as: 'table.ipad@example.test', ready: DISPLAY_READY, settle: 2500,
     init: () => { try { localStorage.setItem('b68.display.hint', '1'); } catch (e) { /* no storage */ } },       /* the iPad dismissed its Home Screen hint on day one */
     setup: async (ctx) => {
@@ -180,6 +184,14 @@ export const SCENARIOS = [
       await ctx.api('PATCH', '/gm/ambient', { overlay: { id: 'demo-hold-mabel', kind: 'npc', ms: 180000, npcId: 'npc-mabel' } });
     },
     steps: async (page) => { await page.waitForSelector('.dp-ov-npc', { timeout: 20000 }).catch(() => {}); } },
+  /* the same held face on the iPad stood up (portrait): the card over the band along the foot, the map clear (a new hold, so it is drawn afresh) */
+  { name: 'display', size: [768, 1024], route: '#display', as: 'table.ipad@example.test', ready: DISPLAY_READY, settle: 2500,
+    init: () => { try { localStorage.setItem('b68.display.hint', '1'); } catch (e) { /* no storage */ } },
+    setup: async (ctx) => { await ctx.api('PATCH', '/gm/ambient', { overlay: { id: 'demo-hold-mabel-2', kind: 'npc', ms: 180000, npcId: 'npc-mabel' } }); },
+    steps: async (page) => { await page.waitForSelector('.dp-ov-npc', { timeout: 20000 }).catch(() => {}); } },
+  /* the GM page while the map and the held face are up: the tray's live line in the bar (N5), on a laptop and on the GM's phone */
+  ...LAPTOPS.map((size) => ({ name: 'gm-tray-live', size, route: '#gm', ready: GM_READY, settle: 1500 })),
+  { name: 'gm-tray-live', size: [390, 844], route: '#gm', ready: GM_READY, context: { isMobile: true, hasTouch: true }, settle: 1500 },
   /* the Aftermath, last, so the shots before it are in the score: Menu > Aftermath show, where it is run today */
   ...gmAt('gm-after', then(enterPhase('after'), async (page) => { await page.evaluate(() => window.B68GmTools.get('aftermath').open()); await page.waitForSelector('#gm-sheet-aftermath:not([hidden])', { timeout: 8000 }); })),
   /* Nell's phone: her sheet as player1 */
