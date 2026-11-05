@@ -208,6 +208,7 @@ try {
   check(!n.items.includes('absent') && f.n === '2 inside', 'opened, the packet leaves the Now card for the fold: ' + JSON.stringify([n.items, f.n]));
   await a.click('.ds-now .ds-debrief [data-b68="debrief-open"]');
   await a.waitForSelector('.ds-debrief-dlg', { timeout: 4000 });
+  check(await a.evaluate(() => !!document.activeElement && document.activeElement.classList.contains('ds-debrief-card')), 'the Debrief takes focus at its top, not on its pick (no picker pops up on an iPhone)');
   const px = await a.$$eval('.ds-debrief-dlg input[type="text"], .ds-debrief-dlg select', (l) => l.map((e) => parseFloat(getComputedStyle(e).fontSize)));
   check(px.length >= 4 && px.every((x) => x >= 16), 'every Debrief field is 16 px: ' + JSON.stringify(px));
   await a.fill('.ds-debrief-dlg input[placeholder^="What are you doing"]', 'Back to the gym');
@@ -239,7 +240,7 @@ try {
   await a.click('.ds-betweenbox [data-b68="board-open"]');
   await a.waitForSelector('.ds-board-dlg', { timeout: 4000 });
   check((await a.$eval('.ds-board-dlg input[type="text"]', (e) => parseFloat(getComputedStyle(e).fontSize))) >= 16, 'the board\'s field is 16 px');
-  check(await a.evaluate(() => !!document.activeElement && document.activeElement.tagName === 'SELECT' && !!document.activeElement.closest('.ds-board-dlg')), 'focus moves into the form, on its first control (no keyboard comes up yet)');
+  check(await a.evaluate(() => !!document.activeElement && document.activeElement.classList.contains('ds-board-card')), 'focus moves to the form\'s top, never a field (on an iPhone a focused select opens its picker)');
   await a.fill('.ds-board-dlg input[type="text"]', 'A fixer wants a ledger fetched');
   await a.click('.ds-board-dlg button:has-text("Post it")');
   check(!!(await until(async () => { const r = await api('GET', '/docs?kind=opportunity&owner=' + encodeURIComponent(P1)); return r.json.docs[0] && r.json.docs[0].json.items.length === 1; }, 6000)), 'a post is the player\'s own opportunity row');

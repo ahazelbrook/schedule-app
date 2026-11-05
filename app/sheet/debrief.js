@@ -175,8 +175,9 @@
           .then(null, function () { saving = false; sv.disabled = false; msg.textContent = 'Could not send. Try again.'; });
       });
     }
+    card.setAttribute('tabindex', '-1');
     card.appendChild(row); dlg.appendChild(card); W.document.body.appendChild(dlg);
-    focusIn((fields.unwind && !ro && fields.unwind.sel) || cl);   /* the first pick (no keyboard comes up), else Close */
+    focusIn(card);   /* the form's top, so it reads from the start: never a field (on an iPhone a select focused inside the tap opens its picker) */
     return true;
   }
   function state() { return { started: started, phase: viewOf(cur, now()).phase, row: cur }; }

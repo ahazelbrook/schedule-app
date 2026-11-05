@@ -248,10 +248,12 @@ await test('routes: now.js is in the core (every route has the sheet) and index.
   for (const b of ['gm', 'display', 'table', 'lookbook']) assert.ok(!B[b].includes('sheet/now.js'), b);
   assert.match(fs.readFileSync(path.join(APP, 'index.html'), 'utf8'), /<script src="sheet\/keys\.js"><\/script>\n<script src="sheet\/now\.js"><\/script>/);
 });
-await test('css: every field of the phone forms is 16 px (iPhone Safari zooms below that); Quiet is 44 px; the Now card and the fold do not print', () => {
+await test('css: every field of the phone forms is 16 px (iPhone Safari zooms below that); Quiet is 44 px on a phone only; the forms take focus without a ring; the Now card and the fold do not print', () => {
   const css = fs.readFileSync(path.join(APP, 'tracker.css'), 'utf8');
   assert.match(css, /\.ds-dlg-card :is\(input\[type="text"\], textarea, select\) \{[^}]*font: 400 16px/);
-  assert.match(css, /#dossier \.btn\.sm\.ds-quietbtn \{ min-height: 44px; \}/, 'Quiet outranks #dossier .btn.sm (40 px on touch)');
+  assert.match(css, /@media screen and \(max-width: 760px\) \{\n  #dossier \.btn\.sm\.ds-quietbtn \{ min-height: 44px; \}/, 'on a phone Quiet outranks #dossier .btn.sm (40 px on touch)');
+  assert.equal((css.match(/\.ds-quietbtn \{ min-height/g) || []).length, 1, 'and nowhere else: on a desk or an iPad it is as tall as its row');
+  assert.match(css, /\.ds-dlg-card:focus \{ outline: none; \}/);
   assert.match(css, /@media print \{ #dossier \.ds-now, #dossier \.ds-betweenbox, #dossier \.ds-quietbtn \{ display: none !important; \} \}/);
   for (const f of ['debrief', 'board', 'absent', 'quiet']) assert.ok(!/style\.cssText/.test(fs.readFileSync(path.join(APP, 'sheet', f + '.js'), 'utf8')), f + '.js draws with the sheet\'s classes, not inline styles');
 });

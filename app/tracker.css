@@ -744,9 +744,9 @@
 #dossier .ds-betweenbox .ds-now-sm { border-top-color: var(--hair); }
 #dossier .ds-betweenbox .ds-now-sm:first-child { border-top: 0; padding-top: 2px; }
 #dossier .ds-betweenbox .ds-now-sm:last-child { padding-bottom: 2px; }
-/* Quiet: in the sticky bar, so it is in reach wherever the sheet is scrolled; 44 px to tap */
-#dossier .btn.sm.ds-quietbtn { min-height: 44px; }   /* outranks the touch rule that makes .btn.sm 40 px */
+/* Quiet: in the sticky bar, so it is in reach wherever the sheet is scrolled; on a phone 44 px to tap (on a desk or an iPad it is as tall as its row) */
 @media screen and (max-width: 760px) {
+  #dossier .btn.sm.ds-quietbtn { min-height: 44px; }   /* outranks the touch rule that makes .btn.sm 40 px */
   #dossier.ds-live .ds-nav > .ds-quietbtn { order: 4; margin-left: auto; }
   /* Back, Table, (Mission,) "…" and Quiet: Print is a line of "…" on a phone (its button would leave the status a clipped sliver) */
   #dossier.ds-live .ds-nav-q { gap: 5px; }
@@ -768,6 +768,7 @@
 .ds-dlg.ds-quiet-dlg { z-index: 70; }
 .ds-dlg-card { box-sizing: border-box; width: min(100%, 560px); max-height: 92vh; max-height: 92dvh; overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; display: grid; gap: 10px; align-content: start;
   padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px)); background: var(--card); color: var(--ink); border-top: 4px solid var(--rule); box-shadow: 0 -8px 28px rgba(20, 17, 14, .28); font: 400 15px/1.45 var(--font-text); }
+.ds-dlg-card:focus { outline: none; }   /* the form itself takes focus when it opens (so a reader starts at its top): a container, not a control, so no ring */
 .ds-dlg-card h2 { margin: 0; font: 900 30px/.95 var(--font-poster); overflow-wrap: anywhere; text-wrap: balance; }
 .ds-dlg-card h3 { margin: 4px 0 0; font: 900 13px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; }
 .ds-dlg-card p { margin: 0; overflow-wrap: anywhere; }
