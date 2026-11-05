@@ -1,4 +1,5 @@
 // The demo night's screenshots (the night rebuild, N0): `npm run demo:night -- --shots <dir>` seeds the night, then calls shoot() with this list.
+// Secrecy: the prep note's cue 6 reveals a GM-ONLY- NPC on purpose, so a secrecy scan taken after a scenario fires it will hit.
 // Later builders add their own scenarios here. A scenario:
 //   { name, size: [w, h], route, as?, setup?(ctx), ready?(page, ctx), steps?(page, ctx), settle?, fullPage?, context? }
 //     name      the file is <name>-<width>.png in the folder given (so one name can be shot at several sizes)

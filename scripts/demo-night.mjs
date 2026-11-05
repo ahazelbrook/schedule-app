@@ -17,7 +17,7 @@
 //   the table      the Dovetail Crew: Nell Arbuthnot (player1), Ray Okonjo (player2), Tam Petrakis (player3), with Stress, harm and keys (Nell's KEY-1 at
 //                  three hits); a visible table clock and the site's hidden alarm clock
 //   the cast       Mabel Quist, Dov Kessler, Ada Vell, Lotte Brand revealed (Tell:, Signature:, Relation: in their GM notes; tags major / recurring),
-//                  two hidden people with GM-ONLY- names
+//                  two hidden people with GM-ONLY- names (the prep note's cue 6 reveals one of them: after it, a secrecy scan of the iPad or a phone finds GM-ONLY- text by design)
 //   the prep note  start 19:30, curfew 22:40, a run order through the four phases, the sections the places open at (Before the night, Tonight, Titles,
 //                  Open, Downtime, Briefing, Gather information, Score, Rooms with a ### per room, Cues, Close) and a security line
 //   the GM state   the Pelican Rooms on the Location card, the Run view's night started at 21:45 with the crew placed
@@ -353,6 +353,8 @@ async function seed() {
       play: { session: 4, stress: p.stress, harm: p.harm, keys: p.keys, vice: p.vice, purveyor: p.purveyor, contacts: [], clocks: [] } };      /* joined the table's session 4 */
     await must('character ' + p.id, api('PUT', '/characters/' + p.id, doc, p.owner));
   }
+  /* the players sign in once, as their phones would: GET /api/me files each as a member (the Absent packet and the Debrief desk list members) */
+  for (const u of [P1, P2, P3]) await must('member ' + u, api('GET', '/me', undefined, u));
   /* the cast */
   for (const n of NPCS) {
     const { id, spec, ...rest } = n;
