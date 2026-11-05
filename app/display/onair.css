@@ -1,6 +1,14 @@
-/* The ON AIR lamp (suite ticket A6, app/display/onair.js). Top left of the frame, opposite the layers' strip; read from 1.5 m. */
-.dp-onair { position: absolute; top: 2vmin; left: 2.4vmin; z-index: 6; display: flex; align-items: center; gap: 1vmin; padding: .8vmin 2vmin; border-radius: 1vmin; pointer-events: none;
-  background: rgba(10, 9, 8, .82); border: .35vmin solid var(--b68-alarm-lit); color: var(--b68-alarm-lit); font: 900 var(--b68-t-label)/1 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .22em; }
-.dp-onair::before { content: ""; width: 1.6vmin; height: 1.6vmin; border-radius: 50%; background: currentColor; box-shadow: 0 0 1.6vmin currentColor; }
-.dp-onair[data-state="off"] { border-color: var(--b68-mustard); color: var(--b68-mustard); }
+/* The ON AIR lamp (suite ticket A6, app/display/onair.js). It lives in THE BAND's mic slot (app/display/layers.js, display/shows.css), so it never
+   draws over the phase, the crew or security; read from 1.5 m. A lamp with no band to sit in (a bare container) is a corner lamp of its own. */
+.dp-onair { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 1.2vmin; row-gap: 0; min-width: 0; max-width: 100%; pointer-events: none;
+  color: var(--b68-alarm-lit); font: 900 var(--b68-t-label)/1 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .16em; }
+.dp-onair::before { content: ""; grid-row: 1 / span 2; width: 1.8vmin; height: 1.8vmin; border-radius: 50%; background: currentColor; box-shadow: 0 0 1.6vmin currentColor; }
+.dp-onair-text, .dp-onair-clock { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dp-onair-clock { font: 700 var(--b68-t-label)/1 var(--b68-font-mono); letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.dp-onair-clock:empty { display: none; }
+/* off the record: mustard, the words over the countdown */
+.dp-onair[data-state="off"] { color: var(--b68-mustard); row-gap: .6vmin; }
+.dp-onair[data-state="off"] .dp-onair-text { font-family: var(--b68-font-poster); letter-spacing: .03em; }
 .dp-onair[data-state="off"]::before { box-shadow: none; opacity: .5; }
+/* a lamp with no band (the fallback): a bordered box in the corner */
+.dp-root > .dp-onair { position: absolute; top: 2vmin; left: 2.4vmin; z-index: 7; padding: .8vmin 2vmin; border-radius: 1vmin; background: rgba(10, 9, 8, .82); border: .35vmin solid currentColor; }

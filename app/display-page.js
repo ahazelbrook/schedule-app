@@ -1577,6 +1577,7 @@
     function ovPaintChip() { autoChip.hidden = !(s.ov.chip && !s.dark); }
     function ovLightsOut(dark) {
       s.dark = !!dark;
+      container.classList.toggle('dp-lights-out', s.dark);      /* the band stands down too, all but the ON AIR lamp (display/shows.css) */
       if (s.dark && s.ov.node && s.ov.auto) ovRemove(true);
       var h = s.ov.held; s.ov.held = null;
       if (h) { s.ov.seen = h.o.id; if (!s.dark && Date.now() - h.at < 8000) { ovShow(h.o); s.ov.auto = true; } }
@@ -2091,7 +2092,7 @@
     if (s.wake) { try { s.wake.release(); } catch (e) {} s.wake = null; }
     try { if ((document.fullscreenElement || document.webkitFullscreenElement) && s.enteredFs) (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch (e) {}
     document.documentElement.classList.remove('dp-active');
-    s.container.classList.remove('dp-root', 'dp-ui');
+    s.container.classList.remove('dp-root', 'dp-ui', 'dp-lights-out', 'dp-lay-on', 'dp-lay-crew');
     s.container.innerHTML = '';
   }
 

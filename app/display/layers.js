@@ -12,8 +12,21 @@
    ignores any other type. No NPC id, spec or note is in it: names and roles of revealed NPCs only.
 
    On the page: data-* attributes on the display root (data-band-phase, data-band-security, data-band-onair, data-scene-filter,
-   data-scene-layout, data-scene-mode) for CSS, and a slim strip (phase, security, faces, ON AIR) that reads those layers.
-   API: attach(container, { skew() }) -> { apply(layers), message(), sceneLoaded(id), destroy() }; clean(layers) -> the checked layers.
+   data-scene-layout, data-scene-mode) for CSS, and THE BAND: the strip that reads those layers.
+
+   THE BAND (the GM night rebuild, design section 6). Everything lasting that sits on the frame is ONE strip across the top with a FIXED SLOT each:
+       mic | phase | crew (three cells) | security          (portrait, when faces are drawn: mic | phase | security, over a row of three crew cells)
+     mic       the iPad's own ON AIR lamp (app/display/onair.js hands it over through mic(); "Off the record 4:32" while paused), else band.onair
+     phase     band.phase, named as the GM page's places name it (Personal, Planning, Score, Aftermath)
+     crew      band.faces: a PC as a first name over its marks (Stress, harm, deadlocks); a face that holds an NPC as its name. Hidden while the
+               hard start runs (scene.mode start draws its own name plates; hardstart.css)
+     security  band.security as five pips
+   A slot keeps its place when its layer is unset (it is just empty), and a long text ends in an ellipsis inside its own slot, so no layer ever
+   draws over another, in any combination, landscape or portrait. While the strip is up the root carries dp-lay-on (and dp-lay-crew while crew
+   cells are drawn) and app/display/shows.css lays everything else (the stages, the beats, the band beside the map and its countdown, the hard
+   start, the montage, the AUTO chip) out BELOW it, so the strip never covers them either. Over lights out only the lamp stays (dp-lights-out).
+   API: attach(container, { skew() }) -> { apply(layers), message(), sceneLoaded(id), mic(lamp | null), destroy() }; clean(layers) -> the checked layers;
+   mic(container, { off, text } | null) -> true when a band attached to that container took the lamp (onair.js asks before drawing a lamp of its own).
    Pure parts (clean, message) have no DOM and are also exported for node tests. */
 (function (root, factory) {
   'use strict';
@@ -27,8 +40,10 @@
   function whole(v, lo, hi) { return typeof v === 'number' && isFinite(v) && Math.floor(v) === v && v >= lo && v <= hi ? v : undefined; }
   function oneOf(v, list) { return typeof v === 'string' && list.indexOf(v) >= 0 ? v : undefined; }
   var PHASES = ['pb', 'plan', 'score', 'after'];
-  var PHASE_LABEL = { pb: 'PB', plan: 'Plan', score: 'Score', after: 'Aftermath' };
+  var PHASE_LABEL = { pb: 'Personal', plan: 'Planning', score: 'Score', after: 'Aftermath' };     /* the GM page's place names, one word each */
   var SECURITY = 5;
+  var SLOTS = ['mic', 'phase', 'crew', 'sec'];
+  var live = [];      /* the attached bands, [{ container, api }], so the lamp finds the band of its own container (mic()) */
 
   function rows(list, max) {
     if (!Array.isArray(list)) return [];
@@ -83,7 +98,7 @@
   var ATTRS = { 'data-band-phase': 'phase', 'data-band-security': 'security', 'data-scene-filter': 'filter', 'data-scene-layout': 'layout', 'data-scene-mode': 'mode' };
 
   function attach(container, opts) {
-    var doc = container.ownerDocument || root.document, state = clean(null), dead = false, strip = null;
+    var doc = container.ownerDocument || root.document, state = clean(null), dead = false, strip = null, slots = null, lamp = null;
     /* nothing set is nothing said: a scene is sent b68:data only once a layer is (or was) set, so with no layers an ambient scene's messages are exactly what they were */
     function isEmpty(s) { return s.phase === null && s.security === null && !s.onair && s.filter === null && s.layout === null && s.mode === null && !s.countdown && !s.faces.length && !s.credits.length && !s.previously.length; }
     var key = JSON.stringify(message(state));
@@ -94,30 +109,82 @@
       if (m.countdown && opts && typeof opts.skew === 'function') { var k = Number(opts.skew()); if (isFinite(k)) m.countdown = { to: m.countdown.to - Math.round(k / 250) * 250, label: m.countdown.label }; }
       return m;
     }
-    /* a PC face with its status: Stress pips, a plaster (level 1), a sling (level 2), a splint (level 3) or a cross (level 4) per harm, and a key stamp per deadlock */
-    function paintPc(f, add) {
-      var box = add('dp-lay-face dp-lay-pc', f.name || f.pcId);
-      var put = function (cls, t, label) { var e = doc.createElement('i'); e.className = cls; e.textContent = t; if (label) e.setAttribute('title', label); box.appendChild(e); };
-      if (f.stress !== undefined) put('dp-pc-stress', String(f.stress), 'Stress ' + f.stress);
-      (f.harm || []).forEach(function (h) { put('dp-pc-harm dp-pc-harm-' + h, HARM_MARK[h - 1], 'Harm ' + h); });
-      for (var i = 0; i < (f.locks || 0); i++) put('dp-pc-lock', 'LOCK', 'Key deadlocked');
+    function add(parent, tag, cls, t) { var e = doc.createElement(tag); e.className = cls; if (t !== undefined) e.textContent = t; parent.appendChild(e); return e; }
+    /* a PC's cell, two lines that fit a third of the crew slot whatever the PC carries:
+         the first name (the crew know each other by it; the full name is the cell's title) and the Stress beside it;
+         under them a mark per harm, coloured by its level (a plaster at 1, a sling at 2, a splint at 3, a cross at 4: the word is the mark's title),
+         then one padlock for its deadlocked keys (with the count when there is more than one) */
+    function paintPc(cell, f) {
+      var full = f.name || f.pcId, first = full.split(' ')[0] || full;
+      cell.setAttribute('title', full);
+      var top = add(cell, 'span', 'dp-lay-top');
+      add(top, 'b', 'dp-lay-name', first);
+      var put = function (parent, cls, t, label) { var e = add(parent, 'i', cls, t); if (label) e.setAttribute('title', label); return e; };
+      if (f.stress !== undefined) put(top, 'dp-pc-stress', String(f.stress), 'Stress ' + f.stress);
+      if (!f.harm && !f.locks) return;
+      var marks = add(cell, 'span', 'dp-lay-marks');
+      (f.harm || []).forEach(function (h) { put(marks, 'dp-pc-harm dp-pc-harm-' + h, HARM_MARK[h - 1], 'Harm ' + h + ': ' + HARM_MARK[h - 1]); });
+      if (f.locks) put(marks, 'dp-pc-lock', f.locks > 1 ? '×' + f.locks : '', f.locks > 1 ? f.locks + ' keys deadlocked' : 'Key deadlocked');
+    }
+    /* the hard start draws its own name plates (scene.mode start), so the strip's crew cells stand down while it runs */
+    function crewDrawn() { return state.faces.length > 0 && state.mode !== 'start'; }
+    function hasStrip() { return state.phase !== null || state.security !== null || state.onair || state.faces.length > 0 || lamp !== null; }
+    function paintMic() {
+      if (!slots) return;
+      var m = slots.mic, have = m.querySelector('.dp-onair');
+      if (lamp) {
+        if (!have) { m.textContent = ''; have = add(m, 'span', 'dp-onair'); add(have, 'span', 'dp-onair-text'); add(have, 'span', 'dp-onair-clock'); }
+        have.setAttribute('data-state', lamp.off ? 'off' : 'on');
+        var t = have.querySelector('.dp-onair-text'), c = have.querySelector('.dp-onair-clock');
+        if (t.textContent !== lamp.text) t.textContent = lamp.text;
+        if (c.textContent !== lamp.clock) c.textContent = lamp.clock;      /* the off-the-record countdown rewrites this one text, nothing else */
+        return;
+      }
+      m.textContent = '';
+      if (state.onair) add(m, 'span', 'dp-lay-onair', 'ON AIR');
     }
     function paintStrip() {
-      var has = state.phase !== null || state.security !== null || state.onair || state.faces.length > 0;
-      if (!has) { if (strip && strip.parentNode) strip.parentNode.removeChild(strip); strip = null; return; }
-      if (!strip) { strip = doc.createElement('div'); strip.className = 'dp-lay-strip'; strip.setAttribute('aria-hidden', 'true'); container.appendChild(strip); }
-      strip.textContent = '';
-      var add = function (cls, t) { var e = doc.createElement('span'); e.className = cls; e.textContent = t; strip.appendChild(e); return e; };
-      if (state.onair) add('dp-lay-onair', 'ON AIR');
-      if (state.phase) add('dp-lay-phase', PHASE_LABEL[state.phase]);
-      if (state.security !== null) {
-        var sec = add('dp-lay-sec', ''); sec.setAttribute('data-level', String(state.security));
-        for (var i = 0; i < SECURITY; i++) { var pip = doc.createElement('i'); pip.className = i <= state.security ? 'on' : ''; sec.appendChild(pip); }
+      if (!hasStrip()) {
+        if (strip && strip.parentNode) strip.parentNode.removeChild(strip);
+        strip = null; slots = null;
+        container.classList.remove('dp-lay-on'); container.classList.remove('dp-lay-crew');
+        return;
       }
+      if (!strip) {
+        strip = doc.createElement('div'); strip.className = 'dp-lay-strip'; strip.setAttribute('aria-hidden', 'true');
+        slots = {};
+        SLOTS.forEach(function (k) { var s = add(strip, 'div', 'dp-lay-slot dp-lay-s-' + k); s.setAttribute('data-slot', k); slots[k] = s; });
+        container.appendChild(strip);
+      }
+      paintMic();
+      slots.phase.textContent = '';
+      if (state.phase) add(slots.phase, 'span', 'dp-lay-phase', PHASE_LABEL[state.phase]);
+      slots.sec.textContent = '';
+      if (state.security !== null) {
+        var sec = add(slots.sec, 'span', 'dp-lay-sec'); sec.setAttribute('data-level', String(state.security));
+        for (var i = 0; i < SECURITY; i++) add(sec, 'i', i <= state.security ? 'on' : '');
+      }
+      slots.crew.textContent = '';
       state.faces.forEach(function (f) {
-        if (f.pcId && (f.stress !== undefined || f.harm || f.locks)) { paintPc(f, add); return; }
-        add('dp-lay-face', f.name || f.pcId);
+        var cell = add(slots.crew, 'span', 'dp-lay-face');
+        if (f.pcId) { if (f.stress !== undefined || f.harm || f.locks) cell.classList.add('dp-lay-pc'); paintPc(cell, f); return; }
+        cell.classList.add('dp-lay-npc'); cell.setAttribute('title', f.name);
+        add(cell, 'b', 'dp-lay-name', f.name);
       });
+      container.classList.add('dp-lay-on');
+      if (crewDrawn()) container.classList.add('dp-lay-crew'); else container.classList.remove('dp-lay-crew');
+    }
+    /* the lamp from app/display/onair.js: { off, text, clock } while the iPad's mic is live ('On air', or 'Off the record' over its countdown),
+       null when it is not. A new countdown repaints the lamp alone; the lamp coming or going is a change to the strip (it may be its only slot) */
+    function mic(m) {
+      if (dead) return;
+      var next = m && typeof m === 'object' ? { off: m.off === true, text: typeof m.text === 'string' ? m.text : (m.off === true ? 'Off the record' : 'On air'),
+        clock: typeof m.clock === 'string' ? m.clock : '' } : null;
+      if (next === null && lamp === null) return;
+      if (next && lamp && next.off === lamp.off && next.text === lamp.text && next.clock === lamp.clock) return;
+      var shape = (next === null) !== (lamp === null);
+      lamp = next;
+      if (shape) paintStrip(); else paintMic();
     }
     /* suite 2.9 (map.flashback): the flashback look gains grain and a caption (CSS on data-flash-look) while the switch is on; with it off the attribute is never set */
     function look() {
@@ -148,18 +215,28 @@
       for (var i = 0; i < fr.length; i++) if (fr[i].contentWindow === ev.source) { post(ev.source, msg()); return; }
     }
     if (root.addEventListener) root.addEventListener('message', onMessage);
-    return {
-      apply: apply, message: msg, sceneLoaded: sceneLoaded, state: function () { return state; },
+    var api = {
+      apply: apply, message: msg, sceneLoaded: sceneLoaded, mic: mic, state: function () { return state; },
       destroy: function () {
         dead = true;
+        for (var i = live.length - 1; i >= 0; i--) if (live[i].api === api) live.splice(i, 1);
         if (typeof offFlags === 'function') offFlags();
         container.removeAttribute('data-flash-look');
         if (root.removeEventListener) root.removeEventListener('message', onMessage);
         if (strip && strip.parentNode) strip.parentNode.removeChild(strip);
+        strip = null; slots = null; lamp = null;
+        container.classList.remove('dp-lay-on'); container.classList.remove('dp-lay-crew');
         if (root.B68DisplayMontage) root.B68DisplayMontage.paint(container, [], doc);
         Object.keys(ATTRS).forEach(function (a) { container.removeAttribute(a); }); container.removeAttribute('data-band-onair');
       }
     };
+    live.push({ container: container, api: api });
+    return api;
   }
-  return { attach: attach, clean: clean, message: message, PHASES: PHASES };
+  /* mic(container, lamp | null): the lamp goes into the band attached to that container; false when there is none (onair.js then draws its own) */
+  function micFor(container, m) {
+    for (var i = live.length - 1; i >= 0; i--) if (live[i].container === container) { live[i].api.mic(m); return true; }
+    return false;
+  }
+  return { attach: attach, clean: clean, message: message, mic: micFor, PHASES: PHASES, PHASE_LABEL: PHASE_LABEL, SLOTS: SLOTS };
 });

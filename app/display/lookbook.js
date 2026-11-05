@@ -11,7 +11,29 @@
     band: { phase: 'plan', security: 2, faces: [{ name: 'Mabel Quist', role: 'Fixer' }, { name: 'Dov Kessler', role: 'Desk sergeant' }, { pcId: 'pc-nell', name: 'Nell Arbuthnot', stress: 4, harm: [1, 2], locks: 1 }], onair: true },
     scene: { filter: 'flashback' }
   };
+  /* THE BAND (the GM night rebuild, design section 6): every slot at once, with the most marks a PC can carry and a long name, the lamp off the
+     record, the AUTO chip and a beat under it; and the hard start, whose own plates show the faces while the band keeps only the lamp */
+  var BAND_ALL = {
+    band: { phase: 'after', security: 4, onair: true, faces: [
+      { pcId: 'pc-nell', name: 'Nell Arbuthnot', stress: 9, harm: [1, 1, 2, 3], locks: 2 },
+      { pcId: 'pc-ray', name: 'Ray Okonjo', stress: 2, harm: [2] },
+      { pcId: 'pc-tam', name: 'Tamsin-Petronella Vandermeerholt', stress: 6, locks: 1 }] }
+  };
+  var BAND_START_FACES = [{ name: 'Mabel Quist', role: 'Fixer' }, { name: 'Dov Kessler', role: 'Desk sergeant' }, { name: 'Ada Vell', role: 'Croupier' }];
+  /* a hard start past its fuse and credits: the "Previously on" plates, two of three revealed */
+  function bandStart(now) {
+    return { band: { faces: BAND_START_FACES.slice(0, 2) }, scene: { mode: 'start' },
+      data: { countdown: { to: now - 60000, label: 'Station clock' }, previously: BAND_START_FACES } };
+  }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  /* a display root as the iPad page builds one: the ambient floor, the stages and the beats' layer, with the band to come over them */
+  function displayRoot(host) {
+    var box = el('div', 'dp-root'); box.style.position = 'absolute'; box.style.inset = '0';
+    var amb = el('div', 'dp-ambient'); amb.appendChild(el('div', 'lb-stage')); box.appendChild(amb);
+    box.appendChild(el('div', 'dp-stages')); box.appendChild(el('div', 'dp-overlay'));
+    host.appendChild(box);
+    return box;
+  }
 
   /* frame mode: ?frame=<kind> | layers. One beat at the viewport's own size (the card's iframe is 1024 x 768). */
   function frame(kind, host) {
@@ -26,6 +48,25 @@
       host.appendChild(box);
       if (root.B68Flags) root.B68Flags.apply({ features: { 'map.flashback': true } });     /* suite 2.9: the flashback look (grain and the Earlier caption) in the look book */
       if (root.B68Layers) root.B68Layers.attach(box, { skew: function () { return 0; } }).apply(LAYERS_DEMO);
+      return;
+    }
+    if (kind === 'band-all' || kind === 'band-start') {
+      var dr = displayRoot(host), L = root.B68Layers ? root.B68Layers.attach(dr, { skew: function () { return 0; } }) : null;
+      if (!L) return;
+      if (kind === 'band-all') {
+        L.apply(BAND_ALL);
+        var off = root.B68OnAir ? root.B68OnAir.make({}) : null;
+        if (off) { off.pause(4 * 60000 + 32000); off.paint(dr, true); }
+        var chip = el('div', 'dp-auto', 'AUTO'); chip.setAttribute('aria-hidden', 'true'); dr.appendChild(chip);
+        var rep = root.B68Shows.entry('report');
+        if (rep) root.B68Shows.mount({ kind: 'report', payload: rep.fixture }, { document: document, reduced: true }).then(function (node) {
+          if (!node) return; dr.querySelector('.dp-overlay').appendChild(node); node.classList.add('dp-ov-in');
+        });
+      } else {
+        L.apply(bandStart(Date.now()));
+        if (root.B68OnAir) root.B68OnAir.make({}).paint(dr, true);
+        if (root.B68HardStart) root.B68HardStart.attach(dr, { layers: L });
+      }
       return;
     }
     if (kind === 'montage') {      /* suite 2.8: the montage layer, drawn from the module's own fixture (invented cast) */
@@ -73,9 +114,11 @@
       else grid.appendChild(card(e.kind, e.label, e.fixture));
     });
     grid.appendChild(card('layers', 'Lasting layers', LAYERS_DEMO));
+    grid.appendChild(card('band-all', 'Band: everything on', BAND_ALL));
+    grid.appendChild(card('band-start', 'Band: hard start faces', bandStart(0)));
     if (root.B68LookbookFaces) root.B68LookbookFaces.cards().forEach(function (c) { grid.appendChild(card(c.kind, c.label, c.fixture)); });
     if (root.B68DisplayMontage) grid.appendChild(card('montage', 'Montage panels (layer data.montage)', { panels: root.B68DisplayMontage.FIXTURE }));
     host.appendChild(grid);
   }
-  root.B68Lookbook = { run: run, size: { w: W, h: H }, LAYERS_DEMO: LAYERS_DEMO };
+  root.B68Lookbook = { run: run, size: { w: W, h: H }, LAYERS_DEMO: LAYERS_DEMO, BAND_ALL: BAND_ALL, bandStart: bandStart };
 })(typeof window !== 'undefined' ? window : globalThis);
