@@ -4494,7 +4494,8 @@
     f.hidden = !(r || vo);
     if (sm) sm.textContent = (r || vo) && R ? R.rackSummary({ fitted: r && r.pre ? str(r.pre.pos) : '', pending: !!(r && r.status === 'pending'), voice: vo ? str(vo.who) : '' }) : '';
   }
-  /* N4, until the band's one Esc (N1a) sends every press through gm/esc.js: what is registered there (the stamp, for one) is reached from here */
+  /* N4, until the band's one Esc (N1a) sends every press through gm/esc.js: what is registered there (the stamp, for one) is reached from here, before
+     the staging panel's own Esc (b17Esc blanks a live map), so a stamp that is up comes down first and the next press does the rest */
   function escOne() { var E = W.B68GmEsc; return !!(E && typeof E.handle === 'function' && E.handle({}) !== 'none'); }
   /* ---------- B19: the map beats (map.spotted 2.6, map.flashback 2.9, map.threat 2.5). The logic is in gm/map-*.js; this is the seam. Each reads its own switch live. ---------- */
   function b19Room(svg, name) {
@@ -6660,7 +6661,7 @@
     if (runKey(ev)) return;
     var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target) });
     if (!a) return;
-    if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } else if (S.assist && S.assist.isOpen()) { S.assist.close(); ev.preventDefault(); } else if (S.dw && S.dw.open) { drawerSet(false); ev.preventDefault(); } else if (b17Esc()) ev.preventDefault(); else if (escOne()) ev.preventDefault(); return; }
+    if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } else if (S.assist && S.assist.isOpen()) { S.assist.close(); ev.preventDefault(); } else if (S.dw && S.dw.open) { drawerSet(false); ev.preventDefault(); } else if (escOne()) ev.preventDefault(); else if (b17Esc()) ev.preventDefault(); return; }
     if (a.type === 'reserved') return;
     if ((a.type === 'capture' || a.type === 'last') && !capBarShown()) return;      /* the bar is hidden: its keys do nothing */
     ev.preventDefault();
