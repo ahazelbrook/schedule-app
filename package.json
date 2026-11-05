@@ -35,6 +35,7 @@
     "check:e2e": "cd app/checks && node e2e.js",
     "check:e2e-all": "node checks/e2e-all.mjs",
     "gm:pacing": "node scripts/gm-pacing.mjs",
+    "demo:night": "node scripts/demo-night.mjs",
     "check:cast-distinct": "node scripts/check-cast-distinct.mjs",
     "check:sweep": "node checks/runtime/gm-figure.test.mjs --sweep=500 && node checks/runtime/gm-npc.test.mjs --sweep=500",
     "check:perf": "node checks/runtime/creator-perf.e2e.mjs",

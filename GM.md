@@ -1045,6 +1045,13 @@ Every feature the suite built is on, always. The Switchboard and the Workshop dr
 
 Checks: `checks/runtime/features.test.mjs`, `gm-tools.test.mjs`, `gm-cue-verbs.test.mjs`, `checks/api/features.mjs` (port 8951) and `checks/runtime/gm-seams.e2e.mjs` (port 8952; `--snapshot <dir>` records the page's markup and screenshots at 1280 and 390 px, to compare with another tree).
 
+## The demo night (`npm run demo:night`: `scripts/demo-night.mjs`, `scripts/demo-night-shots.mjs`)
+
+A local Worker holding one complete, invented night, for looking at the app and for design checks: every pack part the GM page reads (the Pelican Rooms as an authored v2 site drawn with map kit 1, a prep note with start, curfew, a run order through the four phases, the place sections, a `## Rooms` section, eight cues and a security line), the fixture rules, the Dovetail Crew and its three PCs (one per player), the invented cast (revealed and hidden), table and world clocks, the Run view's night started, and docs rows (a front page, opportunity posts, a debrief, a quiet-line message, an absent packet). It runs as the e2e checks do: migrations into a state folder, `wrangler dev` on loopback with `DEV_USER`, no model.
+
+- `npm run demo:night` boots on port 8890 with a fresh temp state and prints the URLs (the GM page, the display, the look book, the cast, and a player's sheet: the dev Worker honours `X-Dev-User` on loopback). `-- --port <n>` another port; `-- --state <dir>` keeps the state between runs (`--reseed` seeds it again).
+- `-- --shots <dir>` seeds, takes the screenshots listed in `scripts/demo-night-shots.mjs` (Playwright: `PW_MODULE`, and `PW_CHANNEL=msedge` on Windows) and exits; `--only <name,...>` takes some. Each scenario is `{ name, size, route, as, setup, ready, steps }`; add yours there.
+
 ## The stamp, the sizer and the strict cue grammar (suite B09: `app/gm/stamp.js`, `app/gm/cue-grammar.js`; switches `spine.stamp`, `spine.sizer`, `ai.grammar`, all off by default)
 
 - **Stamp (`spine.stamp`).** A Stamp row under Position: tap a position, then an effect (the second tap stamps), with a one-line consequence in the box. The `report` card goes up on the iPad (laid again every 170 s, because the server holds a beat for three minutes) until a 4/5 or a 1-3 is marked, Clean, or Esc; Esc only takes down the stamp's own overlay and never touches a layer. The stamp is logged to `night.log`. Nothing goes to a phone.
