@@ -1,6 +1,8 @@
-// Unit test for the stamp before the roll and the consequence sizer (suite 1.3 / 1.4, app/gm/stamp.js): the room's "If it goes wrong" lines, the stamp's two taps,
-// the report card laid and taken down, the sizer's full size and its second-tap reduce, and every switch off. A fake host stands in for the page; the Pelican Rooms
-// and the invented cast only, and every GM-only string is a GM-ONLY- marker. No network, no model.
+// Unit test for the stamp before the roll and the consequence sizer (suite 1.3 / 1.4, app/gm/stamp.js), as part of the Roll since the night rebuild (N4):
+// the room's "If it goes wrong" lines and the Roll's one line prefilled from them (seedLine), the stamp fired from what is set (the console's position, an
+// effect that never fires it, the Roll's line), the report card laid and taken down, Stamp again when what is set changed, the sizer's full size and its
+// second-tap reduce, no key listener of its own (Esc reaches it through gm/esc.js), and every switch off. A fake host stands in for the page; the Pelican
+// Rooms and the invented cast only, and every GM-only string is a GM-ONLY- marker. No network, no model.
 //   node checks/runtime/gm-stamp.test.mjs
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -12,7 +14,7 @@ const require = createRequire(import.meta.url);
 const St = require(path.join(ROOT, 'app', 'gm', 'stamp.js'));
 const Rooms = require(path.join(ROOT, 'app', 'gm', 'room-notes.js'));
 const Show = require(path.join(ROOT, 'app', 'gm', 'show.js'));
-const { MiniDoc } = await import('./minidom.mjs').then((m) => ({ MiniDoc: m.MiniDoc || m.default })).catch(() => ({ MiniDoc: null }));
+const Esc = require(path.join(ROOT, 'app', 'gm', 'esc.js'));
 
 let failed = 0, passed = 0;
 async function test(name, fn) { try { await fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); } }
@@ -37,10 +39,12 @@ const ROOM_MD = [
   '```'
 ].join('\n');
 
+/* the page's side. over.line: give the host the Roll's one line (line() / setLine()), starting with this text */
 function makeHost(over = {}) {
-  const calls = { show: [], clear: 0, log: [], pos: [], toast: [], timers: [], changed: 0 };
-  let overlay = '', cur = 'risky';
+  const calls = { show: [], clear: 0, log: [], pos: [], toast: [], timers: [], changed: 0, setLine: [], keyListeners: 0 };
+  let overlay = '', cur = over.pos === undefined ? 'risky' : over.pos, line = typeof over.line === 'string' ? over.line : null;
   const on = Object.assign({ 'spine.stamp': true, 'spine.sizer': true }, over.on || {});
+  const doc = { addEventListener: () => { calls.keyListeners++; }, removeEventListener: () => {} };
   const host = {
     feature: (id) => !!on[id], positions: () => POSITIONS, roomLines: () => over.lines || ['Wren Tully looks up from the bar.', 'A tray of glasses hits the floor'],
     currentPosition: () => cur, setPosition: (p) => { calls.pos.push(p); cur = p; },
@@ -48,9 +52,11 @@ function makeHost(over = {}) {
     keyFor: (k) => Show.idFor(k), overlayId: () => (over.overlay !== undefined ? over.overlay : overlay),
     clearOverlay: async () => { calls.clear++; overlay = ''; return {}; },
     log: (t) => calls.log.push(t), toast: (m, bad) => calls.toast.push([m, !!bad]), now: () => 1700000000000,
-    setTimeout: (fn, ms) => { calls.timers.push({ fn, ms }); return calls.timers.length; }, clearTimeout: () => {}, changed: () => { calls.changed++; }
+    setTimeout: (fn, ms) => { calls.timers.push({ fn, ms }); return calls.timers.length; }, clearTimeout: () => {}, changed: () => { calls.changed++; },
+    doc: () => doc        /* a page used to hand its document over for the Esc key: the stamp must never listen on it now */
   };
-  return { host, calls, setOverlay: (v) => { overlay = v; } };
+  if (line !== null) { host.line = () => line; host.setLine = (t) => { calls.setLine.push(t); line = t; }; }
+  return { host, calls, setOverlay: (v) => { overlay = v; }, setPos: (p) => { cur = p; }, setLineText: (t) => { line = t; }, lineNow: () => line };
 }
 
 await test('goesWrong: an inline line, a bare label with bullets under it, a quote callout form; fenced text and other lines are never read', () => {
@@ -79,39 +85,105 @@ await test('sizes come from the table the page hands over, not from this file: t
   assert.ok(!/['"](?:severe|moderate|lesser)['"]/i.test(require('node:fs').readFileSync(path.join(ROOT, 'app', 'gm', 'stamp.js'), 'utf8')), 'no rules wording in code');
 });
 
+await test('the Roll’s line, prefilled from the room (seedLine): empty takes the room’s first line; it follows the room while it is the room’s own; the GM’s own is never replaced', () => {
+  const mem = {}, SHOW = ['Dov Kessler turns round.', 'A glass breaks'], LOUNGE = ['Lotte Brand looks up from the bar.'];
+  assert.equal(St.seedLine('', 'Showroom', SHOW, mem), 'Dov Kessler turns round.', 'empty: the room’s first line');
+  assert.deepEqual(mem.seed, { room: 'Showroom', line: 'Dov Kessler turns round.' });
+  assert.equal(St.seedLine('Dov Kessler turns round.', 'Showroom', SHOW, mem), null, 'already the room’s line: nothing to do');
+  assert.equal(St.seedLine('Dov Kessler turns round.', 'Cocktail lounge', LOUNGE, mem), 'Lotte Brand looks up from the bar.', 'the crew moves: the seeded line follows the room');
+  assert.equal(St.seedLine('My own line', 'Showroom', SHOW, mem), null, 'a line the GM typed is never replaced');
+  assert.equal(St.seedLine('', 'Luxury penthouse', [], mem), null, 'a room with no line leaves an empty line empty');
+  assert.equal(St.seedLine('x', 'Showroom', SHOW, null), null, 'no memory: no change');
+  const back = {};                                   /* a reload: the memory is gone, the stored line is still this room's */
+  assert.equal(St.seedLine('Dov Kessler turns round.', 'Showroom', SHOW, back), null); assert.equal(back.seed.room, 'Showroom', 'and it is the room’s own again');
+  assert.equal(St.seedLine('  Dov   Kessler turns round. ', 'Showroom', SHOW, {}), null, 'compared as one cut line');
+});
+
+await test('a line the GM emptied stays empty in that room (lineCleared), and the next room fills it again', () => {
+  const mem = {}, SHOW = ['Dov Kessler turns round.'], LOUNGE = ['Lotte Brand looks up from the bar.'];
+  St.seedLine('', 'Showroom', SHOW, mem);
+  St.lineCleared('Showroom', mem);
+  assert.equal(St.seedLine('', 'Showroom', SHOW, mem), null, 'emptied here: stays empty');
+  assert.equal(St.seedLine('', 'Cocktail lounge', LOUNGE, mem), 'Lotte Brand looks up from the bar.', 'a new room: its line');
+  assert.equal(mem.cleared, null);
+  assert.equal(St.seedLine('', 'Showroom', SHOW, mem), 'Dov Kessler turns round.', 'and back in the first room, its line again');
+});
+
 await test('every switch off: nothing is shown, logged or set, and the view says the stamp is off', async () => {
   const { host, calls } = makeHost({ on: { 'spine.stamp': false, 'spine.sizer': false } });
   const c = St.create(host);
   assert.equal(await c.draft('pos', 'risky'), false); assert.equal(await c.draft('eff', 'standard'), false); assert.equal(await c.stampNow('risky', 'standard', 'x'), false);
-  assert.equal(await c.mark('45'), false);
+  assert.equal(await c.fire(), false); assert.equal(await c.mark('45'), false);
   assert.equal(c.seed(), false);
   assert.deepEqual([calls.show.length, calls.log.length, calls.pos.length, calls.clear, calls.timers.length], [0, 0, 0, 0, 0]);
   assert.equal(c.view().on, false);
 });
 
-await test('two taps: position then effect puts the report card up (180 s, the typed line), logs the stamp and sets the console’s Position; the second tap alone does nothing without a position', async () => {
+await test('picking never fires: position and effect are set, then fire() puts the report card up (180 s, the line), logs the stamp and keeps the console’s Position', async () => {
   const { host, calls } = makeHost({ on: { 'spine.sizer': false }, lines: [] });
   const c = St.create(host);
-  assert.equal(await c.draft('pos', 'desperate'), false, 'one tap stamps nothing');
+  assert.equal(c.view().draft.effect, 'standard', 'standard until another is picked');
+  assert.equal(await c.draft('pos', 'desperate'), false, 'a position stamps nothing');
   assert.deepEqual(calls.show, []); assert.deepEqual(calls.pos, ['desperate']);
   c.draft('text', '  The guard   turns round\n'); assert.equal(c.view().draft.text, 'The guard turns round');
-  assert.equal(await c.draft('eff', 'standard'), true);
-  assert.equal(calls.show.length, 1); assert.deepEqual(calls.show[0].payload, { position: 'desperate', effect: 'standard', text: 'The guard turns round' });
+  assert.equal(await c.draft('eff', 'great'), false, 'an effect stamps nothing either');
+  assert.deepEqual(calls.show, []); assert.equal(c.view().draft.effect, 'great');
+  assert.equal(await c.fire(), true);
+  assert.equal(calls.show.length, 1); assert.deepEqual(calls.show[0].payload, { position: 'desperate', effect: 'great', text: 'The guard turns round' });
   assert.equal(Show.payloadOk('report', calls.show[0].payload), true, 'the GM page’s own check for the kind');
-  assert.deepEqual(calls.log, ['Stamp: desperate, standard - The guard turns round']);
+  assert.deepEqual(calls.log, ['Stamp: desperate, great - The guard turns round']);
   assert.equal(calls.timers.length, 1); assert.equal(calls.timers[0].ms, 170000, 'laid again before the server’s three minutes');
-  assert.equal(c.view().active.effect, 'standard');
+  assert.equal(c.view().active.effect, 'great');
   // a bad value is no stamp
   const d = St.create(makeHost({ on: { 'spine.sizer': false } }).host);
   assert.equal(await d.stampNow('unclear', 'standard', ''), false); assert.equal(await d.stampNow('risky', 'huge', ''), false);
+  assert.equal(await d.draft('eff', 'huge'), false); assert.equal(d.view().draft.effect, 'standard', 'an unknown effect is not set');
 });
 
-await test('an effect tapped with no position uses the console’s Position when it is one of the three, else asks for one', async () => {
+await test('one position: fire() stamps the console’s Position as it is now; with none of the three it asks for one', async () => {
   const a = makeHost(); const c = St.create(a.host);
-  assert.equal(await c.draft('eff', 'limited'), true); assert.equal(a.calls.show[0].payload.position, 'risky');
-  const b = makeHost(); b.host.currentPosition = () => '';
+  assert.equal(c.view().draft.position, 'risky', 'the console’s position, untouched');
+  a.setPos('controlled'); assert.equal(c.view().draft.position, 'controlled', 'it follows the console');
+  assert.equal(await c.fire(), true); assert.equal(a.calls.show[0].payload.position, 'controlled');
+  const b = makeHost({ pos: '' });
   const d = St.create(b.host);
-  assert.equal(await d.draft('eff', 'limited'), false); assert.deepEqual(b.calls.toast[0], ['Pick a position first.', true]);
+  assert.equal(await d.fire(), false); assert.deepEqual(b.calls.toast[0], ['Pick a position first.', true]);
+});
+
+await test('the Roll’s one line (host.line): fire() and a bare cue stamp it; a cue’s own line becomes the line', async () => {
+  const m = makeHost({ line: 'Dov Kessler turns round.', on: { 'spine.sizer': false } }); const c = St.create(m.host);
+  assert.equal(c.view().draft.text, 'Dov Kessler turns round.', 'the draft is the page’s line');
+  await c.fire(); assert.equal(m.calls.show[0].payload.text, 'Dov Kessler turns round.');
+  assert.deepEqual(m.calls.setLine, [], 'stamping the line as it is writes nothing back');
+  await c.stampNow('desperate', 'limited', ''); assert.equal(m.calls.show[1].payload.text, 'Dov Kessler turns round.', '"Blade, desperate, limited": the Roll’s line');
+  await c.stampNow('risky', 'standard', 'the lights fail'); assert.equal(m.calls.show[2].payload.text, 'the lights fail');
+  assert.deepEqual(m.calls.setLine, ['the lights fail'], 'a cue’s line becomes the Roll’s line (one field, one value)');
+  c.draft('text', 'typed  here'); assert.deepEqual(m.calls.setLine.slice(-1), ['typed here'], 'a typed line goes to the page');
+  assert.equal(c.seed(), false, 'the page prefills its own line: seed() leaves it alone');
+});
+
+await test('Stamp again: the view says the stamp is stale once the position, the effect or the line set now differs from what is up', async () => {
+  const m = makeHost({ line: 'Dov Kessler turns round.' }); const c = St.create(m.host);
+  await c.fire(); assert.equal(c.view().stale, false);
+  m.setLineText('Dov Kessler shouts.'); assert.equal(c.view().stale, true, 'the line changed');
+  m.setLineText('Dov Kessler turns round.'); assert.equal(c.view().stale, false);
+  await c.draft('eff', 'limited'); assert.equal(c.view().stale, true, 'the effect changed');
+  await c.draft('eff', 'standard'); m.setPos('desperate'); assert.equal(c.view().stale, true, 'the position changed');
+  await c.fire(); assert.equal(c.view().stale, false, 'stamped again: what is up is what is set');
+  assert.equal(c.view().active.position, 'desperate');
+});
+
+await test('no key listener: Esc reaches the stamp through the page’s one Esc (gm/esc.js), registered as kind stamp', async () => {
+  const m = makeHost(); const c = St.create(m.host);
+  await c.fire(); await c.esc(); await c.fire();
+  assert.equal(m.calls.keyListeners, 0, 'the stamp never adds a document listener');
+  Esc.reset();
+  Esc.register('stamp', { priority: 10, kind: 'stamp', isOpen: () => !!c.view().active, close: () => { c.esc(); } });
+  let panics = 0; const ctx = { field: null, isField: () => false, panic: () => { panics++; } };
+  assert.equal(Esc.handle(ctx), 'stamp', 'up: Esc takes it down'); await new Promise((r) => setImmediate(r));
+  assert.equal(c.view().active, null); assert.equal(m.calls.clear, 2, 'the second card came down too');
+  assert.equal(Esc.handle(ctx), 'panic', 'down: the next Esc is PANIC'); assert.equal(panics, 1);
+  Esc.reset();
 });
 
 await test('a refused beat (a hidden name, the gate) leaves no stamp up and nothing logged', async () => {
@@ -121,15 +193,17 @@ await test('a refused beat (a hidden name, the gate) leaves no stamp up and noth
   assert.equal(c.view().active, null); assert.deepEqual(calls.log, []); assert.equal(calls.timers.length, 0);
 });
 
-await test('Esc and Clean take the card down only while the overlay up is the stamp’s own, and never touch the layers', async () => {
+await test('Esc and Clean take the card down only while the overlay up is the stamp’s own, and never touch the layers; Esc keeps what is set, a resolved roll is standard again', async () => {
   const m = makeHost(); const c = St.create(m.host);
-  await c.stampNow('risky', 'standard', 'x'); assert.equal(m.calls.clear, 0);
+  await c.draft('eff', 'great'); await c.stampNow('risky', 'great', 'x'); assert.equal(m.calls.clear, 0);
   await c.esc(); assert.equal(m.calls.clear, 1); assert.equal(c.view().active, null);
+  assert.equal(c.view().draft.effect, 'great', 'Esc: what is set stays, to go up again');
   const n = makeHost(); const e = St.create(n.host);
   await e.stampNow('risky', 'standard', 'x'); n.setOverlay('some-other-beat');
   await e.esc(); assert.equal(n.calls.clear, 0, 'someone else’s beat is left alone');
   const o = makeHost(); const f = St.create(o.host);
   await f.stampNow('controlled', 'great', ''); await f.mark('clean'); assert.equal(o.calls.clear, 1); assert.equal(f.view().sizer, null, 'clean offers no consequence');
+  assert.equal(f.view().draft.effect, 'standard', 'the roll is resolved: the effect is standard again');
 });
 
 await test('the card is laid again before the server’s three minutes while it is pending, with a new id; not once something else is up', async () => {
@@ -143,17 +217,18 @@ await test('the card is laid again before the server’s three minutes while it 
   assert.equal(m.calls.show.length, 2, 'not laid over something else');
 });
 
-await test('the sizer: a 4/5 or a 1-3 marked on a stamped roll offers the consequence at FULL size for the stamped position, seeded from the room', async () => {
+await test('the sizer: a 4/5 or a 1-3 marked on a stamped roll offers the consequence at FULL size for the stamped position, with the stamped line and the room’s', async () => {
   const m = makeHost(); const c = St.create(m.host);
-  assert.equal(c.seed(), true); assert.equal(c.view().draft.text, 'Wren Tully looks up from the bar.', '1.4 pre-fills 1.3’s line');
-  await c.draft('pos', 'desperate'); await c.draft('eff', 'limited');
+  assert.equal(c.seed(), true); assert.equal(c.view().draft.text, 'Wren Tully looks up from the bar.', 'without a line of the page’s own, 1.4 still pre-fills 1.3’s line');
+  await c.draft('pos', 'desperate'); await c.draft('eff', 'limited'); await c.fire();
   assert.equal(c.view().active.text, 'Wren Tully looks up from the bar.');
   await c.mark('13');
   assert.equal(m.calls.clear, 1, 'the card comes down');
   const z = c.view().sizer;
-  assert.deepEqual([z.stamped, z.shown, z.reduced, z.canReduce, z.result], ['desperate', 'desperate', false, true, '13']);
+  assert.deepEqual([z.stamped, z.shown, z.reduced, z.canReduce, z.result, z.text], ['desperate', 'desperate', false, true, '13', 'Wren Tully looks up from the bar.']);
   assert.deepEqual(z.size, { position: 'desperate', severity: 'severe', ticks: '4 ticks', harm: '3' });
   assert.deepEqual(z.lines, ['Wren Tully looks up from the bar.', 'A tray of glasses hits the floor']);
+  assert.equal(c.view().draft.effect, 'standard', 'the roll is resolved');
 });
 
 await test('a typed line is never replaced by the seed; the seed is not re-applied once the GM clears the box', async () => {
@@ -184,21 +259,13 @@ await test('sizer off: marking the result takes the card down and offers nothing
   assert.equal(c.seed(), false);
 });
 
-await test('marking with no stamp offers nothing; with a position set and the sizer on it offers that position’s size', async () => {
+await test('marking with no stamp up offers nothing (the Roll always has a position: the size belongs to the stamped promise); the effect is standard again', async () => {
   const m = makeHost(); const c = St.create(m.host);
-  assert.equal(await c.mark('45'), false);
-  await c.draft('pos', 'risky'); assert.equal(await c.mark('13'), true); assert.equal(c.view().sizer.size.severity, 'moderate');
+  assert.equal(await c.mark('45'), false); assert.equal(c.view().sizer, null);
+  await c.draft('pos', 'desperate'); await c.draft('eff', 'great');
+  assert.equal(await c.mark('13'), false); assert.equal(c.view().sizer, null, 'a position alone offers no size');
+  assert.equal(c.view().draft.effect, 'standard'); assert.equal(m.calls.clear, 0, 'and nothing is taken down');
 });
-
-if (MiniDoc) {
-  await test('the row draws with text set only through textContent: a consequence full of markup stays text, and Esc/Clean show only while a card is up', async () => {
-    const doc = new MiniDoc(); const box = doc.createElement('div');
-    const m = makeHost({ lines: [] }); const c = St.create(m.host);
-    c.draft('text', '<b>GM-ONLY-X</b>'); St.paint(doc, box, c);
-    const html = JSON.stringify(box.children.map((x) => x.className));
-    assert.ok(html.includes('gm-st-row'));
-  });
-}
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -1169,9 +1169,9 @@
     return h;
   }
   function chipsHtml(chips) { return chips && chips.length ? '<p class="gm-chips">' + chips.map(function (c) { return '<span class="gm-chip">' + esc(c) + '</span>'; }).join('') + '</p>' : ''; }
-  /* the merged actions (one row, each with its index into meta.actions) and Pin / Copy */
-  function actsHtml(m, tool) {
-    return '<div class="gm-card-acts">' + (m.actions || []).map(function (a, i) { return '<button type="button" class="btn sm primary" data-gm="intent" data-i="' + i + '">' + esc(a.label) + '</button>'; }).join('') +
+  /* the merged actions (one row, each with its index into meta.actions), `more` (html the page adds: the Roll's Pay the price and Harm & resist), Pin / Copy */
+  function actsHtml(m, tool, more) {
+    return '<div class="gm-card-acts">' + (m.actions || []).map(function (a, i) { return '<button type="button" class="btn sm primary" data-gm="intent" data-i="' + i + '">' + esc(a.label) + '</button>'; }).join('') + (more || '') +
       '<button type="button" class="btn sm" data-gm="pin" data-tool="' + esc(tool) + '">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="' + esc(tool) + '">Copy</button></div>';
   }
   /* The classic card (a single table), exactly as before. */
@@ -1191,12 +1191,12 @@
     return { plain: plain, coach: coach };
   }
   /* The composed card: the LEAD box (big line, the spend sentence under it, chips, its own lines under "More"), then at most three
-     one-line "Or" rows that open to their full section, then ONE merged actions row. */
-  function situationCardHtml(res, mdf) {
-    var m = res.meta || {}, secs = res.sections || [];
+     one-line "Or" rows that open to their full section, then ONE merged actions row. opts.acts: html for that row before Pin (the Roll's quick tables). */
+  function situationCardHtml(res, mdf, opts) {
+    var m = res.meta || {}, secs = res.sections || [], more = opts && opts.acts ? String(opts.acts) : '';
     var h = '<article class="gm-card gm-sit" data-tool="situation" data-sit="' + esc(m.situation) + '"><header class="gm-card-h"><kbd class="gm-card-n">' + esc(m.n) + '</kbd><div><h3>' + esc(m.title) + '</h3>' + (m.sub ? '<p class="gm-sub">' + esc(m.sub) + '</p>' : '') + '</div></header>';
     if (isObj(m.recomposed)) h += '<p class="gm-quiet" role="note">Redrawn with the current tables</p>';
-    if (!secs.length) return h + linesHtml(res.lines, mdf) + actsHtml(m, 'situation') + '</article>';
+    if (!secs.length) return h + linesHtml(res.lines, mdf) + actsHtml(m, 'situation', more) + '</article>';
     var lead = secs[0], ll = lead.lines || [], skip = leadIsLine(lead), cut = splitCoach(ll.slice(skip ? 1 : 0));
     /* the lead's first line IS the lead box (its `small`, a threat's spend sentence, sits under it); a lead cut at 120 characters keeps its full line under More */
     var small = ll[0] && ll[0].small ? '<div class="gm-lead-s">' + mdf(ll[0].small) + '</div>' : '';
@@ -1209,7 +1209,7 @@
       h += '<details class="gm-or" data-sec="' + esc(s.id) + '"><summary><span class="gm-or-k">Or</span><span class="gm-or-t"><b>' + esc(s.title) + '</b> ' + esc(s.lead) + '</span></summary><div class="gm-or-b">' +
         (s.sub ? '<p class="gm-sub">' + esc(s.sub) + '</p>' : '') + chipsHtml(s.chips) + linesHtml(c.plain, mdf) + whyHtml(c.coach, mdf) + '</div></details>';
     });
-    return h + actsHtml(m, 'situation') + '</article>';
+    return h + actsHtml(m, 'situation', more) + '</article>';
   }
   P.linesHtml = linesHtml; P.classicCardHtml = classicCardHtml; P.situationCardHtml = situationCardHtml;
 
@@ -2237,16 +2237,9 @@
     S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '">' + barHtml() +
       '<div class="seg gm-segbar" role="tablist" aria-label="Show">' + segs.map(function (s) { return '<button type="button" class="chip" role="tab" data-gm="seg" data-seg="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
       '<div class="gm-main">' +
-      /* the console column, top to bottom: Position, the Scene line (its controls fold under it), the four buttons, the card,
-         Earlier, and the nine single tables folded under "More tables". Nothing sits above the card but what rolls it. */
-      '<section class="gm-col gm-console" aria-label="Console">' +
-      '<div class="gm-pos" id="gm-pos" role="radiogroup" aria-label="Position"></div>' +
-      /* the Scene button sits in a plain div: a <button> as a direct grid item of the scrolling column collapses to its min-height once
-         the column overflows (Chromium sizes the track from the button's min-height, not its wrapped content) */
-      '<div class="gm-scenebox" id="gm-scenebox">' + '<label class="gm-nowline" for="gm-now-s"><span class="gm-lab">Now in</span><select data-now id="gm-now-s"></select></label>' +
-      '<button type="button" class="gm-scene" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-controls"' + ' title="Scene, district, who it aims at, the NPC, the threat on screen">' + '<span class="gm-lab">Scene</span><span class="gm-scene-chips" id="gm-scene-chips"></span></button></div>' +
-      '<div class="gm-mini" id="gm-mini" role="group" aria-label="Roll"></div><div class="gm-controls" id="gm-controls"></div>' + '<div class="gm-buttons" id="gm-buttons"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div><div class="gm-rack" id="gm-rack" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div>' +
-      '<details class="gm-singles" id="gm-singles"></details></section>' +
+      /* N4: the Roll (gm/roll.js, design section 5): one card (Position, Effect, the line, Stamp it on the iPad, They rolled 1-4), the result card,
+         Blade's Rack, and the folds (Scene, Earlier, More tables). The section is one block: N1b places it whole in a place's left column. */
+      '<section class="gm-col gm-console" id="gm-roll" aria-label="The roll">' + (W.B68GmRoll ? W.B68GmRoll.shell() : '<p class="gm-note bad">The roll did not load: reload the page.</p>') + '</section>' +
       '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabrow"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
       tabs.map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + (t[2] ? ' <kbd>' + t[2] + '</kbd>' : '') + '</button>'; }).join('') +
       '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div>' + '<div class="gm-pane" data-pane="score" id="gm-score"></div><div class="gm-pane" data-pane="chase" id="gm-chase"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="downtime" id="gm-dt"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div>' + '<div class="gm-pane gm-runv" data-pane="run" id="gm-runv"></div>' + ex.map(function (t) { return '<div class="gm-pane" data-pane="' + t.id + '" id="gm-x-' + t.id + '"></div>'; }).join('') + '</section>' +
@@ -2628,7 +2621,7 @@
     r.querySelectorAll('[data-gm="seg"]').forEach(function (b) { var on = b.getAttribute('data-seg') === (S.seg === 'side' ? S.panel : S.seg); b.setAttribute('aria-selected', String(on)); b.setAttribute('aria-pressed', String(on)); });
     r.querySelectorAll('[data-gm="panel"]').forEach(function (b) { b.setAttribute('aria-selected', String(b.getAttribute('data-panel') === S.panel)); });
     r.querySelectorAll('.gm-pane').forEach(function (p) { p.hidden = p.getAttribute('data-pane') !== S.panel; });
-    var sc = $q('#gm-scene'); if (sc) sc.setAttribute('aria-expanded', String(!!S.sceneOpen)); r.classList.toggle('scene-open', !!S.sceneOpen);
+    rollFoldSync(r);      /* N4: the Roll's folds (Scene, Earlier, More tables) */
     var fab = $q('.gm-fab'); if (fab) fab.setAttribute('aria-expanded', String(!!S.capOpen)); r.classList.toggle('cap-open', !!S.capOpen);
     r.classList.toggle('prep-wide', S.panel === 'prep' && !!S.prepWide);
     r.classList.toggle('focus', !!S.prepWide);       /* the laptop layout: Focus (or Prep's Wide) shrinks the console on every tab */
@@ -2667,13 +2660,16 @@
     spy(p);
   }
 
-  /* ---------- the console: the four Situations, the nine single tables under More tables ----------
-     A console part without the situations layer (a pack from before them) draws a note where the four buttons go; its single
-     tables still roll. */
+  /* ---------- the console, drawn as the Roll (N4: gm/roll.js draws, this page holds the data and the actions) ----------
+     The four Situations are the Roll's "They rolled" keys 1-4; the nine single tables fold under More tables. The Roll's one Position is the console's
+     (con.live.pos) and the stamp's; its one line, "If it goes wrong" (#gm-c-threat), is the console's Threat on screen (con.live.threat) and the
+     stamp's line. A console part without the situations layer (a pack from before them) draws a note where the four buttons go; its single tables
+     still roll. */
   function hasSit() { return !!(S && S.con && typeof S.con.situation === 'function' && Array.isArray(S.con.situationControls) && typeof S.con.situations === 'function'); }
-  function ctlList() { return !S.con ? [] : hasSit() ? S.con.situationControls.filter(function (c) { return c.id !== 'pos'; }) : S.con.controls; }
-  /* the live controls, with the district resolved (Now in, a pick of this tool's, or any): what a roll stores in its own ui */
-  function uiNow() { var u = clone(Object.assign(hasSit() ? S.con.situationDefaults() : S.con.defaults(), live())); u.district = distFor('con'); return u; }
+  /* the controls under Scene: all but Position (the Roll's switch) and the threat (the Roll's line) */
+  function ctlList() { return !S.con ? [] : (hasSit() ? S.con.situationControls : S.con.controls).filter(function (c) { return c.id !== 'threat' && (c.id !== 'pos' || !hasSit()); }); }
+  /* the live controls, with the district resolved (Now in, a pick of this tool's, or any) and the Roll's line as it is typed: what a roll stores in its own ui */
+  function uiNow() { var u = clone(Object.assign(hasSit() ? S.con.situationDefaults() : S.con.defaults(), live())); u.district = distFor('con'); u.threat = rollLine(); return u; }
   function renderControls() {
     var box = $q('#gm-controls'), chips = $q('#gm-scene-chips'); if (!box) return;
     if (!S.con) { box.innerHTML = ''; if (chips) chips.textContent = ''; return; }
@@ -2690,8 +2686,7 @@
     box.innerHTML = html;
     renderChips();
   }
-  /* the Scene line's chips: every control with its label ("District: any · Threat: 3"), since the line is all that shows until
-     the disclosure opens; an empty text control says nothing */
+  /* the Scene button's chips: the district always (Now in lives in this fold), then whatever else is set ("Aim: Nell"); the defaults say nothing */
   function chipLabel(l) { return str(l).replace(/ on screen$/i, '').replace(/^Aim at$/i, 'Aim').replace(/^NPC is$/i, 'NPC'); }
   function renderChips() {
     var chips = $q('#gm-scene-chips'); if (!chips || !S.con) return;
@@ -2699,45 +2694,39 @@
     ctlList().forEach(function (c) {
       var v = str(lv[c.id]), o = (c.options || []).filter(function (x) { return str(x.value) === v; })[0];
       var shown = o ? str(o.label) : v.length > 28 ? v.slice(0, 26) + '…' : v;
-      if (!shown && c.type === 'text') return;
+      if (!v && c.id !== 'district') return;
       bits.push('<span class="gm-chip"><span class="gm-chip-k">' + esc(chipLabel(c.label)) + ':</span> ' + esc(shown || 'any') + '</span>');
     });
     chips.innerHTML = bits.join('') || '<span class="gm-dim">any</span>';
   }
   function setLive(id, value) { var l = {}; l[id] = value; patch({ con: { live: l } }); renderChips(); if (id !== 'pos' && S && S.pre) schedulePre(1500); }
-  /* the big three-way Position switch (always on screen, the phone too) */
+  /* the Roll's Position (one switch: the console's tables and the stamp read it), the size under it, the Dots and the line; then the stamp's part (b09Paint) */
   function renderPos() {
-    b09Paint();
-    var box = $q('#gm-pos'); if (!box) return;
-    if (!hasSit()) { box.innerHTML = ''; return; }
-    var cur = str(uiNow().pos);
-    box.innerHTML = '<span class="gm-lab">Position</span><div class="gm-posb-row">' + S.con.positions.map(function (p) {
-      return '<button type="button" class="gm-posb" role="radio" aria-checked="' + (p.value === cur) + '" data-gm="pos" data-v="' + esc(p.value) + '"><b>' + esc(p.label) + '</b><small>' + esc(p.severity + ' · ' + p.ticks) + '</small><small>harm ' + esc(p.harm) + '</small></button>';
-    }).join('') + '</div><div class="gm-dots" role="radiogroup" aria-label="Dots"><span class="gm-lab">Dots</span>' + [0, 1, 2, 3, 4].map(function (d) {
-      return '<button type="button" class="gm-dotb" role="radio" aria-checked="' + (S.dots === d) + '" data-gm="dots" data-v="' + d + '">' + d + '</button>';
-    }).join('') + '</div>';
+    var R = W.B68GmRoll, box = $q('#gm-pos');
+    if (box && R) {
+      var cur = hasSit() ? str(uiNow().pos) : '', ps = hasSit() && Array.isArray(S.con.positions) ? S.con.positions : [], sz = R.sizeLine(ps, cur);
+      box.innerHTML = R.posHtml(ps, cur); box.hidden = !ps.length;
+      var szb = $q('#gm-pos-size'); if (szb) szb.textContent = sz ? '→ ' + sz : '';
+      var dt = $q('#gm-dots'); if (dt) dt.innerHTML = R.dotsHtml(S.dots);
+    }
+    b09Paint();      /* the line, then the stamp's part */
   }
   function renderButtons() {
-    var box = $q('#gm-buttons'); if (!box) return;
-    var mini = $q('#gm-mini');
-    if (mini) mini.innerHTML = !hasSit() ? '' : S.con.situations().map(function (b) { return '<button type="button" data-gm="situation" data-n="' + b.key + '" title="' + esc(b.label) + '">' + b.key + '<small>' + esc(str(b.label).slice(0, 8)) + '</small></button>'; }).join('');
+    var box = $q('#gm-buttons'), R = W.B68GmRoll; if (!box) return;
+    rollMiniPaint();
     if (!S.con) { box.innerHTML = '<p class="gm-note bad">' + esc(S.conErr || 'The console is not available.') + '</p>'; return; }
     if (!hasSit()) { box.innerHTML = '<p class="gm-note bad">The pack’s console has no Situations: update the pack. The single tables are under More tables.</p>'; return; }
-    box.innerHTML = S.con.situations().map(function (b) {
-      return '<button type="button" class="gm-btn gm-sbtn" data-gm="situation" data-n="' + b.key + '" data-sit="' + esc(b.id) + '" title="' + esc(b.hint || '') + '"><kbd>' + b.key + '</kbd><b>' + esc(b.label) + '</b><small>' + esc(b.hint || '') + '</small></button>';
-    }).join('');
+    box.innerHTML = R ? R.buttonsHtml(S.con.situations()) : '';
   }
-  /* the nine single tables (no keys), folded under "More tables" below the card and Earlier; the fold keeps its state across a redraw */
+  /* the nine single tables (no keys), under the More tables fold */
   function renderSingles() {
     var box = $q('#gm-singles'); if (!box) return;
     if (!S.con) { box.innerHTML = ''; return; }
-    var open = !!box.open;
-    box.innerHTML = '<summary><span class="gm-lab">More tables</span><span class="gm-dim">the nine single tables</span></summary><div class="gm-singles-b">' + S.con.buttons.map(function (b) {
+    box.innerHTML = '<p class="gm-dim">The nine single tables, one card each.</p><div class="gm-singles-b">' + S.con.buttons.map(function (b) {
       return '<button type="button" class="chip sm" data-gm="roll" data-n="' + b.n + '" title="' + esc(b.hint || '') + '">' + esc(b.label) + '</button>';
     }).join('') + '</div>';
-    if (open) box.open = true;
   }
-  function renderConsole() { renderPos(); renderControls(); renderButtons(); renderSingles(); drawConsoleCard(); renderRack(); }
+  function renderConsole() { rollBind(); renderPos(); renderControls(); renderButtons(); renderSingles(); drawConsoleCard(); renderRack(); rollFoldSync(); }
   function setDots(v) { if (!S) return; var n = Number(v); S.dots = (Number.isInteger(n) && n >= 0 && n <= 4 && S.dots !== n) ? n : null; renderPos(); }     /* tap again clears */
   function setPos(v) { setLive('pos', v); renderPos(); schedulePre(); }
   /* a roll is never invisible: Focus (which hides the card) goes, said once per page load, and the card's header is scrolled
@@ -2893,6 +2882,7 @@
     var r = S && S.rack, vo = S && S.voice;
     var vh = vo ? voiceHtml(vo) : '';      /* the Rack keeps the roll's own: the Fixer and Voice. What else Blade suggests is a card in the box (P4) */
     syncCards();
+    rackFoldSync(r, vo);       /* N4: the Rack is the Roll's Blade fold, there only while it holds something */
     if (!r) { box.innerHTML = vh; return; }
     var pre = r.pre, used = { one_three: pre && pre.kinds.onetothree.used, four_five: pre && pre.kinds.fourfive.used };
     var h = '<div class="gm-rack-h"><span class="gm-lab">Rack</span><span class="gm-dim">Blade, fitted to the scene · ' + esc(pre.pos) + '</span>' +
@@ -3083,13 +3073,18 @@
       res = cur ? (kind === 'situation' ? replaySituation(cur) : replayConsole(cur)) : null; S.conRes = res; S.shown = kind;
       if (res && !S.last) S.last = { text: lastText(res) };
     }
-    box.innerHTML = res ? (res.sections ? situationCardHtml(res, md) : classicCardHtml(res, md)) : S.con ? '<p class="gm-empty">Press a button, or a number key <kbd>1</kbd>–<kbd>4</kbd>.</p>' : '';
+    /* N4: a 4/5 or a 1–3 card offers Pay the price and Harm & resist on its actions row; under every card's header, the slot for the sizer's strip */
+    var sit = res && res.meta ? str(res.meta.situation) : '', R = W.B68GmRoll, quick = R && (sit === 'fourfive' || sit === 'onetothree') ? { acts: R.quickActs() } : null;
+    box.innerHTML = res ? (res.sections ? situationCardHtml(res, md, quick) : classicCardHtml(res, md)).replace('</header>', '</header><section class="gm-sz" id="gm-sz" aria-label="The consequence at full size" hidden></section>')
+      : S.con ? '<p class="gm-empty">Press a button, or a number key <kbd>1</kbd>–<kbd>4</kbd>.</p>' : '';
+    rollSizerPaint();
     var er = $q('#gm-earlier'); if (!er) return;
     var h = isObj(S.doc.hist) ? S.doc.hist : {}, list = [];
     ['situation', 'console'].forEach(function (t) { newest(h[t]).forEach(function (x) { x._tool = t; list.push(x); }); });
     list.sort(function (a, b) { return str(a.at) < str(b.at) ? 1 : str(a.at) > str(b.at) ? -1 : 0; });
     list = list.slice(0, LIMITS.hist);
-    er.innerHTML = list.length ? '<span class="gm-lab">Earlier:</span>' + list.map(function (x) { return earlierChip(x, x._tool, cards[x._tool] && cards[x._tool].hid === x._id && S.shown === x._tool); }).join('') : '';
+    er.innerHTML = list.length ? list.map(function (x) { return earlierChip(x, x._tool, cards[x._tool] && cards[x._tool].hid === x._id && S.shown === x._tool); }).join('') : '<p class="gm-dim">Nothing rolled yet.</p>';
+    var en = $q('#gm-earlier-n'); if (en) en.textContent = list.length ? String(list.length) : '';
   }
   /* an Earlier chip names what the card is; under it, small, the time it was rolled and its position (also the title, for a label
      the chip has to cut) */
@@ -3102,6 +3097,7 @@
     var res = S.conRes, a = res && res.meta && res.meta.actions && res.meta.actions[i], C = W.B68GmConsole; if (!a || !C) return;
     var it = a.intent, p; try { p = C.intentPatch(it, { date: dmy(new Date()) }); } catch (e) { toast(errText(e), true); return; }
     patch({ con: p });
+    if (it.type === 'threatSpent') rollLineEmptied();      /* N4: the Roll's line is spent: it stays empty in this room */
     var filed = !(it.capture && it.capture.text) || addCapture(it.capture.bucket || 'x', it.capture.text, true);   /* a refused line, or lines dropped to make room, say so: that toast is not covered by this one */
     try { S.con.setCampaign(part('campaign') || {}, S.doc.con || {}); } catch (e) {}
     if (filed === true) toast(a.label.replace(/:.*$/, '') + '.');
@@ -3273,6 +3269,7 @@
     Object.keys(change).forEach(function (k) { if (change[k] === null || change[k] === undefined) delete base[k]; else base[k] = change[k]; });
     var ok = patch({ ball: replacePatch(old, base) });
     if (ok && S.mission) S.mission.changed();     /* the players' mission follows the ball (debounced; a v2 night only; B68GmMission) */
+    if (ok && 'crew' in change) rollSeedSoon();   /* N4: the crew moved: the Roll's line follows their room while it is the room's own */
     if (ok && !quiet) liveTokens();         /* a marker or a pin moved, or a room opened or closed: while the map is live on the iPad, it follows (M3, M4 step 5) */
     return ok;
   }
@@ -3629,6 +3626,8 @@
       /* VV12 Reset the night: the page's confirm, and the players' mission cleared (mission-publish resetNight) */
       confirm: function (msg) { return W.confirm(msg); }, resetMission: function () { var h = missionHooks(); return h ? h.resetNight() : Promise.resolve(null); },
       /* VV5 BEGIN */ dawn: function () { return runDawn(); }, setPosition: function (pos) { if (S && hasSit()) setPos(pos); } /* VV5 END */,
+      /* N4: the Roll's line from the room card ("→ the Roll": setThreat(text) -> bool), and the room the Run view has selected ('' for none) */
+      setThreat: function (text) { return rollSetThreat(text); }, roomSelected: function (name) { rollRoomSelected(name); },
       /* the NPC cards and the prep note's rooms (the Rooms section), and the Prep decorator for the SAY callouts */
       hasNpcCard: function (names) { return !!npcCardSrc(names); },
       npcCard: function (names) { var src = npcCardSrc(names); return src ? npcCardHtml(src, 'rn-') : ''; },
@@ -4334,9 +4333,10 @@
     b19Mount();                                                                  /* B19: the map beats exist before the first stamp can drop a glyph */
     me.b09 = { layers: {} };
     me.stamp = St.create({
-      feature: function (id) { return S === me && b09On(id); }, doc: function () { return document; },
+      feature: function (id) { return S === me && b09On(id); },
       positions: function () { return S === me && S.con && Array.isArray(S.con.positions) ? S.con.positions : []; },
-      roomLines: function () { var R = W.B68GmRooms; return S === me ? St.roomLines(runRoomNotes(), St.pickRoom(runCrewRooms()), R && R.normRoom) : []; },
+      roomLines: function () { return S === me ? rollRoomLines(rollRoom()) : []; },
+      line: function () { return S === me ? rollLine() : ''; }, setLine: function (t) { if (S === me) rollSetThreat(t); },     /* N4: the Roll's one line */
       currentPosition: function () { return S === me && hasSit() ? str(uiNow().pos) : ''; }, setPosition: function (p) { if (S === me) setPos(p); },
       show: function (payload, key, ms) { var sh = shows(); return sh ? sh.show('report', payload, { key: key, ms: ms }) : Promise.resolve(null); },
       keyFor: function (key) { return W.B68Show ? W.B68Show.idFor(key) : key; }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
@@ -4364,31 +4364,137 @@
       stageSend: function () { return S === me && me.b17 && b09On('map.stage') ? me.b17.stage.send() : null; }
     });
     me.cueGrammar.register();
+    /* N4: the stamp is the page's one Esc's 'stamp' entry (gm/esc.js): Esc takes it down when nothing above it is open and no field has the focus */
+    if (W.B68GmEsc && typeof W.B68GmEsc.register === 'function') me.stampEsc = W.B68GmEsc.register('stamp', { priority: 10, kind: 'stamp',
+      isOpen: function () { var v = S === me && me.stamp ? me.stamp.view() : null; return !!(v && v.active); }, close: function () { if (S === me && me.stamp) me.stamp.esc(); } });
     b09Paint();
   }
   function b09Unmount(me) {
+    if (me.stampEsc) { try { me.stampEsc(); } catch (e) {} me.stampEsc = null; }
     if (me.stamp) { try { me.stamp.destroy(); } catch (e) {} me.stamp = null; }
-    if (me.stampUnbind) { try { me.stampUnbind(); } catch (e) {} me.stampUnbind = null; }
     if (me.cueGrammar) { try { me.cueGrammar.unregister(); me.cueGrammar.hide(); } catch (e) {} me.cueGrammar = null; }
   }
-  /* the Stamp row under Position: made on the first paint while the switch is on, taken away when it goes off */
+  /* the stamp's part of the Roll: Effect, Stamp it on the iPad (or what is up, Take it down and Stamp again), the Focus keys and the sizer's strip */
   function b09Paint() {
-    var St = W.B68GmStamp; if (!S || !S.stamp || !St) return;
-    var pos = $q('#gm-pos'), box = $q('#gm-stamp');
-    if (!b09On('spine.stamp') || !pos) { if (box && box.parentNode) box.parentNode.removeChild(box); return; }
-    if (!box) {
-      box = document.createElement('div'); box.id = 'gm-stamp'; box.className = 'gm-stamp'; pos.parentNode.insertBefore(box, pos.nextSibling);
-      if (S.stampUnbind) { try { S.stampUnbind(); } catch (e) {} }
-      S.stampUnbind = St.bind(box, S.stamp);
-    }
-    S.stamp.seed();
-    St.paint(document, box, S.stamp);
+    var R = W.B68GmRoll; if (!S || !R) return;
+    rollLinePaint();          /* the line first (it follows the room on every paint, as the stamp's own box did): the stamp's view reads it */
+    var v = S.stamp ? S.stamp.view() : null, on = !!(v && v.on);
+    var eff = $q('#gm-eff'); if (eff) { eff.hidden = !on; eff.innerHTML = on ? R.effHtml(v.draft.effect) : ''; }
+    var box = $q('#gm-stamp'); if (box) { var h = on ? R.stampHtml(v) : ''; if (box.__html !== h) { box.innerHTML = h; box.__html = h; } box.hidden = !on; }
+    rollMiniPaint(v); rollSizerPaint(v);
   }
   function b09Marked(res) {
     var sit = res && res.meta ? res.meta.situation : '';
     if (S && S.stamp && (sit === 'fourfive' || sit === 'onetothree')) S.stamp.mark(sit === 'fourfive' ? '45' : '13');
+    else if (S && S.stamp && sit) S.stamp.dismiss();          /* N4: a Before or a Someone card: the last roll's size goes with its card */
     if (S && S.mt && S.mt.active() && sit) S.mt.marked();      /* 2.8: a marked roll resolves its montage panel */
   }
+
+  /* ---------- N4: the Roll's page side (gm/roll.js draws; the data and the actions are here) ----------
+     THE ONE LINE. "If it goes wrong" (#gm-c-threat) is con.live.threat: the console's Threat on screen, and the stamp's line. It starts as the room's
+     first "If it goes wrong" line (B68GmStamp.seedLine: a line the GM typed is never replaced, a line the GM emptied stays empty in that room). The
+     room is the one the Run view has selected (its host's roomSelected(name), N3), else the room most of the crew are in. setThreat(text) (the Run
+     view's host, and B68GmPage.setThreat) puts a line there from elsewhere: the room card's "→ the Roll". Nothing new is stored: the line is the
+     console's own key, and the effect, the folds and the room's memory live in this page only. */
+  function rollMem() { return S.rollMem || (S.rollMem = {}); }
+  function rollRoom() { var St = W.B68GmStamp; return str(S && S.rollSel) || (St ? St.pickRoom(runCrewRooms()) : ''); }
+  function rollRoomLines(room) { var St = W.B68GmStamp, R = W.B68GmRooms; return St && room ? St.roomLines(runRoomNotes(), room, R && R.normRoom) : []; }
+  function rollCut(t) { var St = W.B68GmStamp; return St ? St.cutText(t, St.TEXT_MAX) : str(t).replace(/\s+/g, ' ').trim().slice(0, 100); }
+  /* the line as it stands: the field as typed (the store follows it within half a second, or at once on Enter or a stamp), else the stored line */
+  function rollLine() { var i = $q('#gm-c-threat'); return i ? str(i.value) : str(live().threat); }
+  function rollTyping(i) { return !!i && document.activeElement === i; }
+  /* the line follows the room while it is the room's own (or empty), never under the GM's typing: -> true when it changed */
+  function rollSeed() {
+    var St = W.B68GmStamp; if (!S || S.status !== 'ready' || !St || typeof St.seedLine !== 'function') return false;
+    var i = $q('#gm-c-threat'); if (rollTyping(i)) return false;
+    var room = rollRoom(), t = St.seedLine(rollLine(), room, rollRoomLines(room), rollMem());
+    if (t === null) return false;
+    if (i) { i.value = t; i.__was = t; }
+    setLive('threat', t);
+    return true;
+  }
+  var rollSeedT = null;
+  function rollSeedSoon() { clearTimeout(rollSeedT); var me = S; rollSeedT = setTimeout(function () { if (S === me && S && S.status === 'ready') b09Paint(); }, 250); }
+  /* the field from the store (never under the GM's typing), the note saying it is the room's own line, the clear button */
+  function rollLinePaint() {
+    var i = $q('#gm-c-threat'); if (!i) return;
+    rollSeed();
+    var v = str(live().threat); if (!rollTyping(i) && i.value !== v) { i.value = v; i.__was = v; }
+    var m = rollMem(), cur = rollCut(rollLine()), from = cur && m.seed && m.seed.line === cur ? str(m.seed.room) : '', R = W.B68GmRoll;
+    var n = $q('#gm-line-note'); if (n) { n.innerHTML = from && R ? R.lineNote(from) : ''; n.hidden = !from; }
+    var x = $q('[data-gm="line-clear"]'); if (x) x.hidden = !cur;
+  }
+  /* the GM emptied the line (typed it away, the ×, or "Threat spent"): it stays empty in this room */
+  function rollLineEmptied() { var St = W.B68GmStamp; if (S && St && typeof St.lineCleared === 'function') St.lineCleared(rollRoom(), rollMem()); }
+  function rollLineClear() { var i = $q('#gm-c-threat'); if (i) { i.value = ''; i.__was = ''; } rollLineEmptied(); setLive('threat', ''); b09Paint(); }
+  /* a line from elsewhere (the room card's "→ the Roll", a cue's stamp with a line): it becomes the line, as if typed (the room never replaces it) */
+  function rollSetThreat(text) {
+    if (!S || S.status !== 'ready') return false;
+    var t = rollCut(text); if (!t) return false;
+    var m = rollMem(); m.seed = null; m.cleared = null;
+    var i = $q('#gm-c-threat'); if (i) { i.value = t; i.__was = t; }
+    setLive('threat', t); b09Paint();
+    return true;
+  }
+  /* the Run view's selected room (N3 calls its host's roomSelected(name); '' for none): the line follows it while it is the room's own */
+  function rollRoomSelected(name) { if (!S) return; S.rollSel = str(name).trim(); rollSeedSoon(); }
+  /* the field's own listeners, once per drawn field: as it is typed the stamp knows (Stamp again) and the note follows, and half a second after the last key
+     it is stored (as the console's text controls were; leaving the field stores it at once: onChange); emptied, it stays empty in this room; Enter stamps
+     it (the old Stamp row's Enter), so the field never holds a second line */
+  function rollBind() {
+    var i = $q('#gm-c-threat'); if (!i || i.__roll) return; i.__roll = true;
+    i.addEventListener('input', function () {
+      if (!S) return; var v = str(i.value); if (!v.trim() && str(i.__was).trim()) rollLineEmptied(); i.__was = v; b09Paint();
+      var me = S; clearTimeout(i.__save); i.__save = setTimeout(function () { if (S === me && $q('#gm-c-threat') === i && str(i.value) !== str(live().threat)) patch({ con: { live: { threat: str(i.value) } } }); }, 500);
+    });
+    i.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' && !ev.ctrlKey && !ev.altKey && !ev.metaKey) { if (ev.preventDefault) ev.preventDefault(); rollStamp(); } });
+  }
+  /* Stamp it on the iPad (and Stamp again): the line as typed is the line stored first */
+  function rollStamp() {
+    if (!S || !S.stamp) return;
+    var i = $q('#gm-c-threat'); if (i && str(i.value) !== str(live().threat)) setLive('threat', str(i.value));
+    S.stamp.fire();
+  }
+  /* Focus: the column as its keys, with the position (and the effect, and whether the stamp is up) on top */
+  function rollMiniPaint(v) {
+    var mini = $q('#gm-mini'), R = W.B68GmRoll; if (!mini) return;
+    if (!R || !hasSit()) { mini.innerHTML = ''; mini.__html = ''; return; }
+    v = v || (S.stamp ? S.stamp.view() : null);
+    var h = R.miniHtml(S.con.situations(), str(uiNow().pos), v && v.on ? v.draft.effect : '', !!(v && v.active));
+    if (mini.__html !== h) { mini.innerHTML = h; mini.__html = h; }
+  }
+  /* the sizer's strip in its slot under the card's header (drawConsoleCard makes the slot) */
+  function rollSizerPaint(v) {
+    var b = $q('#gm-sz'), R = W.B68GmRoll; if (!b) return;
+    v = v || (S && S.stamp ? S.stamp.view() : null);
+    var h = v && v.sizer && R ? R.sizerHtml(v.sizer) : '';
+    if (b.__html !== h) { b.innerHTML = h; b.__html = h; }
+    b.hidden = !h;
+  }
+  /* Pay the price (4) and Harm & resist (7) on a 4/5 or a 1–3 card: that section of this card when it has one (opened), else that table rolled */
+  function rollQuick(n) {
+    var or = $q('#gm-card details.gm-or[data-sec="' + (n === 4 ? 'payThePrice' : 'harm') + '"]');
+    if (or) { or.open = true; try { or.scrollIntoView({ block: 'nearest' }); } catch (e) {} return; }
+    rollConsole(n);
+  }
+  /* the folds: Scene (S.sceneOpen), Earlier and More tables (S.folds), each panel under its own button */
+  function rollFoldSync(r) {
+    if (!S) return;
+    var f = S.folds || (S.folds = {});
+    [['#gm-scene', '#gm-scenebox', !!S.sceneOpen], ['#gm-earlier-b', '#gm-earlier', !!f.earlier], ['#gm-singles-b', '#gm-singles', !!f.singles]].forEach(function (x) {
+      var b = $q(x[0]), p = $q(x[1]); if (b) b.setAttribute('aria-expanded', String(x[2])); if (p) p.hidden = !x[2];
+    });
+    r = r || $q('#gm-root'); if (r) r.classList.toggle('scene-open', !!S.sceneOpen);
+  }
+  function rollFold(id) { if (!S) return; var f = S.folds || (S.folds = {}); if (id === 'earlier' || id === 'singles') f[id] = !f[id]; rollFoldSync(); }
+  /* the Rack is the Blade fold under the card: there only while it holds the Fixer's lines or Voice; its summary says which */
+  function rackFoldSync(r, vo) {
+    var f = $q('#gm-rackf'), sm = $q('#gm-rack-sum'), R = W.B68GmRoll; if (!f) return;
+    f.hidden = !(r || vo);
+    if (sm) sm.textContent = (r || vo) && R ? R.rackSummary({ fitted: r && r.pre ? str(r.pre.pos) : '', pending: !!(r && r.status === 'pending'), voice: vo ? str(vo.who) : '' }) : '';
+  }
+  /* N4, until the band's one Esc (N1a) sends every press through gm/esc.js: what is registered there (the stamp, for one) is reached from here */
+  function escOne() { var E = W.B68GmEsc; return !!(E && typeof E.handle === 'function' && E.handle({}) !== 'none'); }
   /* ---------- B19: the map beats (map.spotted 2.6, map.flashback 2.9, map.threat 2.5). The logic is in gm/map-*.js; this is the seam. Each reads its own switch live. ---------- */
   function b19Room(svg, name) {
     var m = S && S.b19Model, rooms = m && Array.isArray(m.rooms) ? m.rooms : [], r = null, i;
@@ -6553,7 +6659,7 @@
     if (runKey(ev)) return;
     var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target) });
     if (!a) return;
-    if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } else if (S.assist && S.assist.isOpen()) { S.assist.close(); ev.preventDefault(); } else if (S.dw && S.dw.open) { drawerSet(false); ev.preventDefault(); } else if (b17Esc()) ev.preventDefault(); return; }
+    if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } else if (S.assist && S.assist.isOpen()) { S.assist.close(); ev.preventDefault(); } else if (S.dw && S.dw.open) { drawerSet(false); ev.preventDefault(); } else if (b17Esc()) ev.preventDefault(); else if (escOne()) ev.preventDefault(); return; }
     if (a.type === 'reserved') return;
     if ((a.type === 'capture' || a.type === 'last') && !capBarShown()) return;      /* the bar is hidden: its keys do nothing */
     ev.preventDefault();
@@ -6629,6 +6735,17 @@
       case 'situation': rollSituation(+b.getAttribute('data-n')); break;
       case 'pos': setPos(b.getAttribute('data-v')); break;
       case 'dots': setDots(b.getAttribute('data-v')); break;
+      /* N4: the Roll */
+      case 'eff': if (S.stamp) S.stamp.draft('eff', b.getAttribute('data-v')); break;
+      case 'stamp': rollStamp(); break;
+      case 'stamp-down': if (S.stamp) S.stamp.esc(); break;
+      case 'stamp-clean': if (S.stamp) S.stamp.mark('clean'); break;
+      case 'sz-reduce': if (S.stamp) S.stamp.reduce(); break;
+      case 'sz-restore': if (S.stamp) S.stamp.restore(); break;
+      case 'sz-done': if (S.stamp) S.stamp.dismiss(); break;
+      case 'qt': rollQuick(+b.getAttribute('data-n')); break;
+      case 'fold': rollFold(b.getAttribute('data-rlfold')); break;
+      case 'line-clear': rollLineClear(); break;
       case 'rackclear': rackClear(); break;
       case 'voiceclear': S.voice = null; renderRack(); break;
       case 'ho-show': showHandout(b.getAttribute('data-id')); break;
@@ -6639,7 +6756,7 @@
         var cur = {}; Object.keys(e).forEach(function (k) { if (k !== '_id') cur[k] = e[k]; }); cur.hid = e._id;
         cur.at = nowIso();      /* the current card now: after a reload the newest of the two still shows */
         var cp = { cards: {} }; cp.cards[tool] = replacePatch(isObj(S.doc.cards) ? S.doc.cards[tool] : null, cur); patch(cp, { force: true });   /* replaces the stored card: no key of the card it was survives */
-        if (tool === 'console' || tool === 'situation') { S.conRes = null; drawConsoleCard(); }
+        if (tool === 'console' || tool === 'situation') { S.conRes = null; if (S.stamp) S.stamp.dismiss(); drawConsoleCard(); }     /* N4: the last roll's size stays with its card */
         else if (tool === 'scenes') { S.scnRoll = null; renderScenes(); }
         else if (tool === 'npc') { S.npcRoll = null; renderNpcGen(); }
         else if (tool === 'downtime') { S.dtRoll = null; S.dtSig = null; renderDowntime(); }
@@ -6883,6 +7000,8 @@
     /* the autopilot's controller state, for checks (the page's own log is S.doc.ap.log), and Voice's lines as the box would hand them over */
     _autopilot: function () { return S && S.ap ? S.ap.core.state() : null; },
     _night: function () { return S && S.night ? S.night : null; },
+    /* N4: the Roll's "If it goes wrong" line from anywhere (the Run view's room card calls its host's setThreat, the same thing) -> bool */
+    setThreat: function (text) { return rollSetThreat(text); },
     aftermath: aftermathFeed,       /* suite 1.6 */
     cast: castFeed,                 /* suites 3.8 and 5.4 */
     _voice: function (v) { if (S) setVoice(v); }
