@@ -83,7 +83,7 @@
     dlg.addEventListener('click', function (e) { if (e.target === dlg && downOn) close(); downOn = false; });
     dlg.addEventListener('keydown', function (e) { if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); e.stopPropagation(); close(); } });
     var card = el('div', 'ds-dlg-card ds-quiet-card');
-    var h = el('h3', '', 'Tell the GM quietly'); h.id = 'ds-quiet-h'; card.appendChild(h);
+    var h = el('h3', '', 'Tell the GM quietly'); h.setAttribute('id', 'ds-quiet-h'); card.appendChild(h);
     card.appendChild(el('p', 'ds-dim', 'Only the GM sees it. Nothing shows at the table.'));
     var msg = el('p', 'ds-dlg-msg'); msg.setAttribute('role', 'status');
     var note = el('textarea', 'ds-quiet-note'); note.rows = 3; note.maxLength = TEXT_MAX; note.placeholder = 'A secret note for the GM'; note.setAttribute('aria-label', 'A secret note for the GM'); note.setAttribute('hidden', '');
@@ -91,7 +91,7 @@
     var opts = el('div', 'ds-quiet-opts'), first = null;
     function done(ok) { if (ok) { msg.textContent = 'Sent quietly.'; W.setTimeout(close, 900); } else msg.textContent = 'Could not send. Try again.'; }
     OPTIONS.forEach(function (o) {
-      var b = el('button', 'btn ds-quiet-' + o.k, o.label); b.type = 'button';
+      var b = el('button', 'btn ds-quiet-opt', o.label); b.type = 'button'; b.setAttribute('data-k', o.k);
       b.addEventListener('click', function () {
         if (o.k === 'note') { note.removeAttribute('hidden'); go.removeAttribute('hidden'); b.setAttribute('aria-pressed', 'true'); try { note.focus(); } catch (e) { /* not focusable */ } return; }
         send(o.k).then(done);

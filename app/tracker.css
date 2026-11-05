@@ -745,13 +745,17 @@
 #dossier .ds-betweenbox .ds-now-sm:first-child { border-top: 0; padding-top: 2px; }
 #dossier .ds-betweenbox .ds-now-sm:last-child { padding-bottom: 2px; }
 /* Quiet: in the sticky bar, so it is in reach wherever the sheet is scrolled; 44 px to tap */
-#dossier .ds-quietbtn { min-height: 44px; }
+#dossier .btn.sm.ds-quietbtn { min-height: 44px; }   /* outranks the touch rule that makes .btn.sm 40 px */
 @media screen and (max-width: 760px) {
   #dossier.ds-live .ds-nav > .ds-quietbtn { order: 4; margin-left: auto; }
   /* Back, Table, (Mission,) "…" and Quiet: Print is a line of "…" on a phone (its button would leave the status a clipped sliver) */
   #dossier.ds-live .ds-nav-q { gap: 5px; }
   #dossier.ds-live .ds-nav-q > .btn { padding-left: 9px; padding-right: 9px; }
+  #dossier.ds-live .ds-nav-q > .btn, #dossier.ds-live .ds-nav-q .ds-morebtn { min-height: 44px; }   /* one even row, every button as tall as Quiet */
   #dossier.ds-live .ds-nav-q > [data-act="print"] { display: none; }
+  /* with Mission as well, five buttons share a 375 px row: a little less padding keeps them on one line */
+  #dossier.ds-live .ds-nav-m.ds-nav-q { gap: 4px; }
+  #dossier.ds-live .ds-nav-m.ds-nav-q > .btn { padding-left: 7px; padding-right: 7px; }
   #dossier .ds-now-acts .btn, #dossier .ds-now-html .ds-kt-btns .btn { min-height: 44px; }
   #dossier .ds-now-t { font-size: 30px; }
   #dossier .ds-now-sm .ds-now-t { font-size: 13px; }
