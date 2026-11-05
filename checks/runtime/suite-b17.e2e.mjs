@@ -112,8 +112,8 @@ try {
   check(/next level: Watchful/.test(pop) && /step the level by hand/.test(pop), 'its popover says the next level and that it is stepped by hand: ' + pop.slice(0, 120));
   await page.click(line + ' [data-site="sec-up"]'); await sleep(250);
   check(/Watchful/.test(await page.textContent(readout)), 'stepping the security level by hand moves it');
-  const amb = (await api('GET', '/gm/ambient')).json, sec = amb && amb.doc && amb.doc.layers ? amb.doc.layers['band.security'] : undefined;
-  check(sec === 1 || sec === 2 || (amb && JSON.stringify(amb).includes('band.security')), 'and the iPad\'s band.security layer follows (' + JSON.stringify(sec) + ')');
+  const secNow = async () => { const amb = (await api('GET', '/gm/ambient')).json, l = amb && amb.doc && amb.doc.layers; return l && l.band ? l.band.security : undefined; };      /* the lasting layers are nested */
+  check(await until(async () => (await secNow()) === 1, 5000), 'and the iPad\'s band follows: band.security 1 (' + JSON.stringify(await secNow()) + ')');
   await page.keyboard.press('Escape');
   check(await until(async () => (await page.$$(line + ' .rv-alarmpop')).length === 0, 3000), 'Esc shuts the popover');
   check((await page.$$(line + ' [data-site="freeze"]')).length === 0, 'nothing on the iPad from the map: no stage group');
