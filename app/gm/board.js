@@ -14,7 +14,7 @@
      post(st, key, on) -> st   pick(st, key) -> st
    create(host) -> controller. host: { enabled() -> bool, members() -> Promise<[{ id, name }]>, docs: { list(kind), put(row) }, show(kind, payload, opts) -> Promise, night() -> the B68GmNight controller | null, now() }
      refresh() -> Promise<{ cards, state }>   post(key, on) -> Promise   pick(key) -> Promise   show() -> Promise<bool>   close() -> Promise
-   sync(root, doc) draws or removes the Menu entry (only while the switch is on); open(root) opens the panel (a Workshop sheet). */
+   sync(root) takes down a stale Menu entry (N2: there is no Menu line any more); open(root) opens the panel (a Workshop sheet, or inline once the shell binds it). */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -187,16 +187,11 @@
       list.appendChild(r);
     });
   }
-  function sync(rootEl, doc) {
-    if (!W || !W.document || !rootEl || typeof rootEl.querySelector !== 'function') return false;
-    var list = rootEl.querySelector('.gm-menu-list'), cur = rootEl.querySelector('#gm-menu-board');
-    var on = !!(W.B68Features && isObj(doc) && W.B68Features.valueOf(doc, SWITCH));
-    if (!on) { if (cur && cur.parentNode) cur.parentNode.removeChild(cur); return false; }
-    if (!list || cur) return !!cur;
-    var b = el('button', '', 'Opportunity board'); b.type = 'button'; b.id = 'gm-menu-board'; b.title = 'What the players posted, and the board for the iPad';
-    b.addEventListener('click', function () { list.setAttribute('hidden', ''); open(rootEl); });
-    list.appendChild(b);
-    return true;
+  /* N2: the Menu line is gone (the shell places this tool, B68GmTools.get('board').open()); sync() only takes down a line an older page drew, and says false. */
+  function sync(rootEl) {
+    var cur = rootEl && typeof rootEl.querySelector === 'function' ? rootEl.querySelector('#gm-menu-board') : null;
+    if (cur && cur.parentNode) cur.parentNode.removeChild(cur);
+    return false;
   }
   function open(rootEl) {
     var Wk = W.B68GmWorkshop; if (!Wk || typeof Wk.sheet !== 'function') return null;

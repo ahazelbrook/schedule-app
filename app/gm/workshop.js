@@ -1,4 +1,4 @@
-/* gm/workshop.js — the right-edge sheet the Menu's tools open in (suite ticket W0.5; the night rebuild, N0).
+/* gm/workshop.js — the host the GM page's tools open in: the right-edge sheet, or INLINE in a container the shell owns (suite ticket W0.5; the night rebuild, N0 and N2).
 
    Window.B68GmWorkshop, and module.exports under Node (the pure part only; the DOM part runs only where there is a document).
 
@@ -6,8 +6,22 @@
    host every Menu tool still opens in until the shell places them inline: sheet(root, id, title), one per id, created on first use inside the GM page's
    root, so the page's own DOM is untouched until a sheet is opened. One sheet is open at a time.
 
+   N2: INLINE. The shell (N1b) gives a tool a home inside a place: inline(id, el, opts) binds sheet `id` to the container `el`. While bound, sheet(root, id, title)
+   returns an object of the SAME shape whose body sits inside `el`, whose isOpen() is true, and whose open/close/toggle never hide it (close() calls opts.onClose, so the
+   shell can leave the view). Nothing a tool does (it closes itself after an action, it re-asks for its sheet) can make it vanish. Unbound ids keep the right-edge path.
+
    API
-     sheet(root, id, title)          -> { el, body, open(), close(), isOpen(), toggle() }   (the same object each call for an id)
+     sheet(root, id, title)          -> { el, body, open(), close(), isOpen(), toggle(), inline, onUnbind(fn) }   (the same object each call for an id; while the id is bound
+                                        inline it is the inline object, see below)
+     inline(id, el, opts)            bind sheet `id` to container `el` (drawn at once: a wrapper .gm-inline-sheet with an optional heading and the body); -> the inline object,
+                                        or null when el is not an element. Binding again replaces the old binding (unbinds it first).
+                                        opts: { title: string | false (the small heading; false drops it; default: the title the tool gives), onClose: fn (called when the tool
+                                        asks to close), esc: true (register the Esc entry 'inline-<id>' with B68GmEsc at priority 40 so Esc calls onClose; needs onClose) }
+     inline(id, null)                unbind: run the tool's onUnbind hooks (a tool stops its own timers there), empty the container; -> true when it was bound
+     bound(id)                       -> true while id is bound inline         boundIds() -> [id]
+     The inline object: { el (the wrapper), body (.gm-sheet-body.gm-inline), isOpen() true, open() (no-op), close() (onClose), toggle() (onClose), inline: true,
+                          onUnbind(fn) (run once, on unbind) }. The wrapper has data-inline="<id>"; the body carries the same classes as a sheet body plus gm-inline.
+     Esc: a right-edge sheet registers 'sheet-<id>' with B68GmEsc (priority 50) when that module is there, and keeps its own keydown for focus inside it.
      _pure                           { esc } */
 (function (root, factory) {
   'use strict';
@@ -17,11 +31,13 @@
 })(typeof self !== 'undefined' ? self : this, function (W) {
   'use strict';
 
-  var sheets = {};
+  var sheets = {}, bound = {};
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 
   /* ---- the sheet (DOM) ---- */
   function sheet(rootEl, id, title) {
+    var b = bound[id];
+    if (b) { if (title && b.headEl && !b.fixedTitle && b.headEl.textContent !== title) b.headEl.textContent = title; return b.obj; }
     var d = rootEl && rootEl.ownerDocument;
     if (!d) return null;
     var cur = sheets[id];
@@ -44,9 +60,58 @@
     };
     el.addEventListener('click', function (ev) { var t = ev.target; if (t && t.closest && t.closest('[data-sheet-close]')) s.close(); });
     el.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { s.close(); ev.stopPropagation(); } });
+    var Esc = W && W.B68GmEsc;
+    if (Esc && typeof Esc.register === 'function') { try { Esc.register('sheet-' + id, { priority: 50, isOpen: function () { return !el.hidden; }, close: function () { s.close(); } }); } catch (e) { /* the id is the tool's own */ } }
     sheets[id] = s;
     return s;
   }
 
-  return { sheet: sheet, _pure: { esc: esc } };
+  /* ---- inline (N2) ---- */
+  function unbind(id) {
+    var b = bound[id]; if (!b) return false;
+    delete bound[id];
+    b.hooks.splice(0).forEach(function (fn) { try { fn(); } catch (e) { /* a tool's cleanup must not stop the unbind */ } });
+    if (b.offEsc) { try { b.offEsc(); } catch (e) { /* ignore */ } }
+    if (b.wrap && b.wrap.parentNode) b.wrap.parentNode.removeChild(b.wrap);
+    return true;
+  }
+  function inline(id, el, opts) {
+    id = String(id == null ? '' : id);
+    if (el == null) return unbind(id);
+    if (!el || el.nodeType !== 1 || !el.ownerDocument) return null;
+    unbind(id);
+    opts = opts && typeof opts === 'object' ? opts : {};
+    var d = el.ownerDocument, fixed = typeof opts.title === 'string' || opts.title === false;
+    if (sheets[id] && sheets[id].el && !sheets[id].el.hidden) sheets[id].close();      /* the right-edge copy of the same tool gives way */
+    var wrap = d.createElement('div'), bodyEl = d.createElement('div'), headEl = null;
+    wrap.className = 'gm-inline-sheet'; wrap.setAttribute('data-inline', id);
+    if (opts.title !== false) {
+      var T = W && W.B68GmTools, def = T && typeof T.get === 'function' ? T.get(id) : null;
+      headEl = d.createElement('h2'); headEl.className = 'gm-sheet-h gm-inline-h';
+      headEl.textContent = typeof opts.title === 'string' ? opts.title : def && def.label ? def.label : id;
+      wrap.appendChild(headEl);
+    }
+    bodyEl.className = 'gm-sheet-body gm-inline'; bodyEl.setAttribute('tabindex', '-1');
+    wrap.appendChild(bodyEl);
+    el.appendChild(wrap);
+    var rec = { wrap: wrap, hooks: [], headEl: headEl, fixedTitle: fixed, offEsc: null, obj: null };
+    var ask = function () { if (typeof opts.onClose === 'function') { try { opts.onClose(id); } catch (e) { /* the shell's */ } } };
+    var s = {
+      el: wrap, body: bodyEl, inline: true,
+      isOpen: function () { return bound[id] === rec; },
+      open: function () {},
+      close: ask,
+      toggle: ask,
+      onUnbind: function (fn) { if (typeof fn === 'function' && bound[id] === rec) rec.hooks.push(fn); }
+    };
+    rec.obj = s;
+    bound[id] = rec;
+    var Esc = W && W.B68GmEsc;
+    if (opts.esc === true && typeof opts.onClose === 'function' && Esc && typeof Esc.register === 'function') {
+      try { rec.offEsc = Esc.register('inline-' + id, { priority: 40, isOpen: function () { return bound[id] === rec; }, close: ask }); } catch (e) { /* ignore */ }
+    }
+    return s;
+  }
+
+  return { sheet: sheet, inline: inline, bound: function (id) { return !!bound[id]; }, boundIds: function () { return Object.keys(bound); }, _pure: { esc: esc } };
 });

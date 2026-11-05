@@ -1287,6 +1287,13 @@ body.as-tab #gm-page .gm-drawer { right: 44px; }
 #gm-page .gm-sheet .gm-dhead { display: flex; align-items: stretch; border-bottom: 2px solid var(--rule); flex: none; }
 #gm-page .gm-sheet-h { flex: 1 1 auto; margin: 0; padding: 12px; font: 900 13px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; }
 #gm-page .gm-sheet-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px; display: grid; gap: 10px; align-content: start; }
+/* N2: a tool drawn INLINE (gm/workshop.js inline()): the same body classes as a sheet, in a container the shell owns. No fixed position, no 100vh, no inner scroll of its own:
+   the place scrolls. The heading is a small label, not a sheet bar. */
+#gm-page .gm-inline-sheet { display: grid; gap: 8px; align-content: start; min-width: 0; }
+#gm-page .gm-inline-h { padding: 0; font-size: 12px; color: var(--ink-soft); }
+#gm-page .gm-sheet-body.gm-inline { flex: none; overflow: visible; padding: 0; min-width: 0; }
+#gm-page .gm-inline img, #gm-page .gm-inline svg, #gm-page .gm-inline canvas { max-width: 100%; }
+#gm-page .gm-inline select, #gm-page .gm-inline input[type="text"], #gm-page .gm-inline textarea { max-width: 100%; box-sizing: border-box; }
 /* a sheet tool's row (the Menu's tools share it) */
 #gm-page .gm-sb-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--hair); }
 #gm-page .gm-sb-row b { font: 700 13px/1.2 var(--font-text); }
