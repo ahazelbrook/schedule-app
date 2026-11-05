@@ -4,11 +4,14 @@
    from every campaign arrival, so with the switch off a phone loads nothing and makes no /api/docs call.
 
    The GM sends a player who missed the night ONE page (gm/absent.js): the row `packet` in the docs store, owner = this player, scope 'player'. This file only
-   READS it (GET /api/docs?kind=packet: the store returns this player's own row and nothing else) and draws it. bar() is a strip under the sheet's table bar
-   (tracker.js, the `bar` slot) with one button; the button opens the page: the front page, "Previously on" (faces and three lines) and what changed on the sheet.
-   Nothing is pushed to the phone; with no packet the strip is empty. Everything is drawn with textContent.
+   READS it (GET /api/docs?kind=packet: the store returns this player's own row and nothing else) and draws it. Until the player has opened it, now() is the
+   sheet's Now card item (sheet/now.js) with one button; the button opens the page: the front page, "Previously on" (faces and three lines) and what changed on
+   the sheet. Once opened it is no longer current: between() puts it in the sheet's "Between sessions" fold, to read again. Which packet was opened is kept on
+   this phone (localStorage b68.packet.seen, the packet's own time), so a reload does not bring it back to the top; a new packet does. Nothing is pushed to the
+   phone; with no packet there is nothing anywhere. Everything is drawn with textContent.
 
-   API: start() stop() bar() -> html | ''  open() close() state()      pure (Node tests): clean(rowJson) -> the packet or null */
+   API: start() stop() now() -> item | null  between() -> item | null  open() close() state()      pure (Node tests): clean(rowJson) -> the packet or null
+        seenKey(packet) -> the string kept when it is opened */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -84,10 +87,35 @@
     if (had) redraw();
   }
 
-  function bar() {
-    if (!started || !cur) return '';
-    return '<div class="ds-tablebar ds-absent" role="status"><span class="ds-tbline"><b>While you were away</b><span class="ds-dim">The GM left you the front page and a recap.</span></span>' +
-      '<button type="button" class="btn sm" data-b68="absent-open">Read it</button></div>';
+  /* which packet this phone has opened: its own time, else (an older row with none) a fingerprint of what it says */
+  var SEEN_KEY = 'b68.packet.seen', seenMem = null;
+  function seenKey(p) {
+    if (!isObj(p)) return '';
+    if (p.at > 0) return 'at:' + p.at;
+    var s = JSON.stringify([p.front, p.previously, p.changes]) || '', h = 5381;
+    for (var i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    return 'h:' + s.length + ':' + h;
+  }
+  function seenNow() {
+    if (seenMem !== null) return seenMem;
+    try { seenMem = str(W.localStorage && W.localStorage.getItem(SEEN_KEY)); } catch (e) { seenMem = ''; }
+    return seenMem;
+  }
+  function markSeen(p) {
+    var k = seenKey(p); if (!k || k === seenNow()) return false;
+    seenMem = k; try { if (W.localStorage) W.localStorage.setItem(SEEN_KEY, k); } catch (e) { /* private mode: this visit remembers it */ }
+    return true;
+  }
+  function unread() { return !!cur && seenKey(cur) !== seenNow(); }
+  /* the Now card's item until it has been opened; the fold's after that */
+  function nowItem() {
+    if (!started || !unread()) return null;
+    return { title: 'While you were away', line: 'The GM left you the front page and a recap' + (cur.changes.length ? ', and what changed on your sheet.' : '.'),
+      actions: [{ label: 'Read it', attrs: 'data-b68="absent-open" aria-haspopup="dialog"', primary: true }] };
+  }
+  function betweenItem() {
+    if (!started || !cur || unread()) return null;
+    return { title: 'While you were away', line: 'The front page and the recap from the night you missed.', actions: [{ label: 'Read it again', attrs: 'data-b68="absent-open" aria-haspopup="dialog"' }] };
   }
 
   function el(tag, cls, text) { var e = W.document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
@@ -95,11 +123,12 @@
   function open() {
     if (!W || !W.document || !started || !cur) return false;
     close();
-    dlg = el('div', 'ds-absent-dlg'); dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-label', 'While you were away');
-    dlg.style.cssText = 'position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center';
-    dlg.addEventListener('click', function (e) { if (e.target === dlg) close(); });
-    var card = el('div', 'ds-absent-card');
-    card.style.cssText = 'background:#fff;color:#111;width:min(100%,560px);max-height:92vh;overflow:auto;border-radius:12px 12px 0 0;padding:14px 16px;font:15px system-ui,sans-serif;display:grid;gap:10px';
+    dlg = el('div', 'ds-dlg ds-absent-dlg'); dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true'); dlg.setAttribute('aria-label', 'While you were away');
+    /* a tap on the dimmed page closes it: one that started there, so the tap that opened it can never close it */
+    var downOn = false;
+    dlg.addEventListener('pointerdown', function (e) { downOn = e.target === dlg; });
+    dlg.addEventListener('click', function (e) { if (e.target === dlg && downOn) close(); downOn = false; });
+    var card = el('div', 'ds-dlg-card ds-absent-card');
     var f = cur.front;
     if (f) {
       card.appendChild(el('h3', '', f.masthead || 'The front page'));
@@ -116,12 +145,13 @@
     card.appendChild(el('h3', '', 'Your sheet'));
     if (!cur.changes.length) card.appendChild(el('p', '', 'Nothing has changed on your sheet.'));
     cur.changes.forEach(function (c) { card.appendChild(el('p', '', c)); });
-    var cl = el('button', 'btn', 'Close'); cl.type = 'button'; cl.addEventListener('click', close); card.appendChild(cl);
+    var row = el('div', 'ds-dlg-row'), cl = el('button', 'btn', 'Close'); cl.type = 'button'; cl.addEventListener('click', close); row.appendChild(cl); card.appendChild(row);
     dlg.appendChild(card); W.document.body.appendChild(dlg);
     seen = Date.now();
+    if (markSeen(cur)) redraw();   /* opened: it leaves the Now card for the fold */
     return true;
   }
-  function state() { return { started: started, open: !!dlg, packet: cur, seen: seen }; }
+  function state() { return { started: started, open: !!dlg, packet: cur, seen: seen, unread: unread() }; }
 
-  return { start: start, stop: stop, bar: bar, open: open, close: close, state: state, KIND: KIND, clean: clean, _set: function (j) { apply(j); } };
+  return { start: start, stop: stop, now: nowItem, between: betweenItem, open: open, close: close, state: state, KIND: KIND, clean: clean, seenKey: seenKey, _set: function (j) { apply(j); } };
 });

@@ -7,10 +7,10 @@
    (PUT kind 'opportunity', scope 'player', owner = the signed-in player, which the store forces). { v: 1, items: [{ id, k: client|target|operation, text, at }] },
    the latest 6 kept. The store hides the row from every other player and from the table display: nothing a player posts reaches the iPad until the GM chooses
    to put it on the board (app/gm/board.js).
-   WHAT IT DRAWS. bar() is a strip the sheet puts under its table bar (tracker.js, the `bar` slot): one line and a button that opens a small form (its own
+   WHAT IT SAYS. between() is the first item of the sheet's "Between sessions" fold (sheet/now.js): one line and a button that opens a small form (its own
    dialog, so a redraw of the sheet cannot lose what is typed). The form lists the player's own cards with a Remove button each.
 
-   API: start() stop() bar() -> html | ''  open() close() state()
+   API: start() stop() between() -> item | null  open() close() state()
    pure (Node tests): KINDS  KEEP  TEXT_MAX  cleanItems(raw) -> [{ id, k, text, at }]  add(rowJson, k, text, nowMs) -> the json to write | null  remove(rowJson, id) -> json */
 (function (root, factory) {
   'use strict';
@@ -95,6 +95,7 @@
       onClick = function (e) { var t = e.target && e.target.closest ? e.target.closest('[data-b68="board-open"]') : null; if (t) { e.preventDefault(); open(); } };
       W.document.addEventListener('click', onClick);
     }
+    redraw();   /* the fold has a line for the board from now on, posted or not */
     refresh();
   }
   function stop() {
@@ -105,18 +106,19 @@
     if (vis && W.document) { W.document.removeEventListener('visibilitychange', vis); vis = null; }
     if (onClick && W.document) { W.document.removeEventListener('click', onClick); onClick = null; }
     close();
-    var had = !!cur; cur = null;
-    if (had) redraw();
+    cur = null;
+    redraw();   /* the fold loses the board's line */
   }
 
-  function bar() {
-    if (!started) return '';
+  /* the fold's first item, whenever the board is on: the count and the way in */
+  function betweenItem() {
+    if (!started) return null;
     var n = cur ? cur.items.length : 0;
-    return '<div class="ds-tablebar ds-board" role="status"><span class="ds-tbline"><b>Opportunities</b><span class="ds-dim">' + (n ? n + ' posted for the planning board.' : 'Post a client, a target or an operation.') + '</span></span>' +
-      '<button type="button" class="btn sm" data-b68="board-open">' + (n ? 'Your cards' : 'Post one') + '</button></div>';
+    return { title: 'Opportunities', line: n ? n + ' posted for the planning board.' : 'Post a client, a target or an operation for the planning board.',
+      actions: [{ label: n ? 'Your cards' : 'Post one', attrs: 'data-b68="board-open" aria-haspopup="dialog"' }] };
   }
 
-  /* ---------- the form ---------- */
+  /* ---------- the form (a bottom sheet in the sheet's paper and ink: tracker.css .ds-dlg) ---------- */
   function el(tag, cls, text) { var e = W.document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
   var listEl = null, msgEl = null;
   function close() { if (dlg && dlg.parentNode) dlg.parentNode.removeChild(dlg); dlg = null; listEl = null; msgEl = null; }
@@ -124,11 +126,11 @@
     if (!listEl) return;
     while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
     var items = cur ? cur.items : [];
-    if (!items.length) listEl.appendChild(el('p', '', 'Nothing posted yet.'));
+    if (!items.length) listEl.appendChild(el('p', 'ds-dim', 'Nothing posted yet.'));
     items.forEach(function (it) {
-      var row = el('div', ''); row.style.cssText = 'display:flex;gap:8px;align-items:baseline;margin:4px 0';
+      var row = el('div', 'ds-dlg-item');
       var lab = el('b', '', (KINDS.filter(function (x) { return x.k === it.k; })[0] || {}).label || it.k); row.appendChild(lab);
-      var t = el('span', '', it.text); t.style.flex = '1'; row.appendChild(t);
+      var t = el('span', '', it.text); row.appendChild(t);
       var rm = el('button', 'btn sm', 'Remove'); rm.type = 'button';
       rm.addEventListener('click', function () { write(remove(cur, it.id)).then(null, function () { if (msgEl) msgEl.textContent = 'Could not remove it. Try again.'; }); });
       row.appendChild(rm); listEl.appendChild(row);
@@ -137,20 +139,21 @@
   function open() {
     if (!W || !W.document || !started) return false;
     close();
-    dlg = el('div', 'ds-board-dlg'); dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-label', 'Opportunity board');
-    dlg.style.cssText = 'position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center';
-    dlg.addEventListener('click', function (e) { if (e.target === dlg) close(); });
-    var card = el('form', 'ds-board-card');
-    card.style.cssText = 'background:#fff;color:#111;width:min(100%,520px);max-height:90vh;overflow:auto;border-radius:12px 12px 0 0;padding:14px 16px;font:15px system-ui,sans-serif;display:grid;gap:10px';
+    dlg = el('div', 'ds-dlg ds-board-dlg'); dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true'); dlg.setAttribute('aria-label', 'Opportunity board');
+    /* a tap on the dimmed page closes it: one that started there, so the tap that opened it can never close it */
+    var downOn = false;
+    dlg.addEventListener('pointerdown', function (e) { downOn = e.target === dlg; });
+    dlg.addEventListener('click', function (e) { if (e.target === dlg && downOn) close(); downOn = false; });
+    var card = el('form', 'ds-dlg-card ds-board-card');
     card.appendChild(el('h3', '', 'Opportunity board'));
     card.appendChild(el('p', '', 'Only you and the GM can see these until the GM puts the board up.'));
-    var sel = el('select'); KINDS.forEach(function (x) { var o = el('option', '', x.label); o.value = x.k; sel.appendChild(o); });
+    var sel = el('select'); sel.setAttribute('aria-label', 'What it is'); KINDS.forEach(function (x) { var o = el('option', '', x.label); o.value = x.k; sel.appendChild(o); });
     var txt = el('input'); txt.type = 'text'; txt.maxLength = TEXT_MAX; txt.placeholder = 'A few words'; txt.setAttribute('aria-label', 'The opportunity');
     var go = el('button', 'btn primary', 'Post it'); go.type = 'submit';
-    msgEl = el('p', ''); msgEl.setAttribute('role', 'status');
-    listEl = el('div', '');
+    msgEl = el('p', 'ds-dlg-msg'); msgEl.setAttribute('role', 'status');
+    listEl = el('div', 'ds-dlg-list');
     card.appendChild(sel); card.appendChild(txt); card.appendChild(go); card.appendChild(msgEl); card.appendChild(listEl);
-    var cl = el('button', 'btn', 'Close'); cl.type = 'button'; cl.addEventListener('click', close); card.appendChild(cl);
+    var crow = el('div', 'ds-dlg-row'), cl = el('button', 'btn', 'Close'); cl.type = 'button'; cl.addEventListener('click', close); crow.appendChild(cl); card.appendChild(crow);
     card.addEventListener('submit', function (e) {
       e.preventDefault();
       var next = add(cur, sel.value, txt.value, now());
@@ -164,5 +167,5 @@
   }
   function state() { return { started: started, open: !!dlg, items: cur ? cur.items : [] }; }
 
-  return { start: start, stop: stop, bar: bar, open: open, close: close, state: state, KIND: KIND, KINDS: KINDS, KEEP: KEEP, TEXT_MAX: TEXT_MAX, cleanItems: cleanItems, add: add, remove: remove, _set: function (j) { apply(j); } };
+  return { start: start, stop: stop, between: betweenItem, open: open, close: close, state: state, KIND: KIND, KINDS: KINDS, KEEP: KEEP, TEXT_MAX: TEXT_MAX, cleanItems: cleanItems, add: add, remove: remove, _set: function (j) { apply(j); } };
 });

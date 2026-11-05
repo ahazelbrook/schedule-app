@@ -156,22 +156,29 @@ function fakeWin() {
   };
   return { W, calls, listeners, rows: (r) => { rows = r; }, refreshed: () => refreshed };
 }
-await test('the phone Debrief: nothing is read until started; then only its own kind; the card shows from the morning, says defaults after 48 hours, and stop() lets go', async () => {
+await test('the phone Debrief: nothing is read until started; then only its own kind; the Now card has it from the morning until it is answered or the defaults apply, then the Between fold; stop() lets go', async () => {
   const w = fakeWin(); const realNow = Date.now; let now = T0;
   Date.now = () => now;
+  const act = (it) => (it.actions || []).map((a) => a.label + ' ' + a.attrs).join(' | ');
   try {
-    assert.equal(PD.bar(), '', 'not started: no card'); assert.equal(w.calls.length, 0);
+    assert.equal(PD.now(), null, 'not started: no card'); assert.equal(PD.between(), null); assert.equal(w.calls.length, 0);
     Object.assign(globalThis, { fetch: w.W.fetch, document: w.W.document, B68Live: w.W.B68Live, B68Tracker: w.W.B68Tracker });
     PD.start(); await flush();
     assert.deepEqual(w.calls.map((c) => c.url), ['/api/docs?kind=debrief&limit=1']); assert.deepEqual(w.listeners.live.kinds, ['docs']);
     const row = D.buildRow({ steps: ['unwind', 'xp', 'credits'], nightAt: T0, sentAt: T0 });
     w.rows([{ kind: 'debrief', owner: 'alice@example.test', scope: 'player', json: row }]); w.listeners.live.fn('docs'); await flush();
-    assert.equal(PD.bar(), '', 'before the morning: nothing on the sheet');
-    now = row.from + 60000; assert.ok(PD.bar().includes('data-b68="debrief-open"') && PD.bar().includes('Answer the Debrief'), 'the next morning: the card');
-    now = row.due + 1; assert.ok(PD.bar().includes('48 hours are up'), 'after 48 hours: defaults');
+    assert.equal(PD.now(), null, 'before the morning: nothing on the sheet'); assert.equal(PD.between(), null, 'and nothing in the fold');
+    now = row.from + 60000;
+    const card = PD.now();
+    assert.ok(card && card.title === 'Debrief' && /data-b68="debrief-open"/.test(act(card)) && /Answer the Debrief/.test(act(card)), 'the next morning: the Now card: ' + JSON.stringify(card));
+    assert.match(card.line, /did not reach Unwind, Commendations and End credits/, 'it names the steps left');
+    assert.equal(PD.between(), null, 'current: not in the fold');
+    now = row.due + 1; assert.equal(PD.now(), null, 'after 48 hours: no longer current');
+    assert.ok(/48 hours are up/.test(PD.between().line) && /Open the Debrief/.test(act(PD.between())), 'after 48 hours: the fold says the defaults apply');
     w.rows([{ kind: 'debrief', owner: 'alice@example.test', scope: 'player', json: Object.assign({}, row, { reply: { at: now, xp: { ticked: true, note: '' } } }) }]); w.listeners.live.fn('docs'); await flush();
-    assert.ok(PD.bar().includes('Sent.'), 'answered'); assert.ok(w.refreshed() >= 1, 'the sheet was redrawn');
-    w.rows([]); w.listeners.live.fn('docs'); await flush(); assert.equal(PD.bar(), '', 'row gone: card gone');
+    now = row.from + 120000;
+    assert.equal(PD.now(), null, 'answered: not on the Now card'); assert.ok(/^Sent\./.test(PD.between().line), 'answered: in the fold'); assert.ok(w.refreshed() >= 1, 'the sheet was redrawn');
+    w.rows([]); w.listeners.live.fn('docs'); await flush(); assert.equal(PD.now(), null, 'row gone: card gone'); assert.equal(PD.between(), null, 'and the fold line');
     PD.stop(); assert.equal(w.listeners.live, null);
   } finally { Date.now = realNow; for (const k of ['fetch', 'document', 'B68Live', 'B68Tracker']) delete globalThis[k]; }
 });

@@ -716,3 +716,74 @@
 #dossier .ds-kc-dl { display: grid; gap: 2px; }
 #dossier .ds-kc-rm { position: absolute; top: 4px; right: 4px; }
 @media print { #dossier .ds-kt-offer, #dossier .ds-kc-rm { display: none; } }
+
+/* ---- the night rebuild (N6, design 7): the Now card at the top, the Between sessions fold at the end, the Quiet button (sheet/now.js, sheet/quiet.js) ---- */
+/* the Now card: the sheet's own box and band, the body in the caution mustard so it is the first thing seen; the rest that is due waits behind "+n more" */
+/* the sheet root is a block (index.html): its slots space themselves with margins, as the table bar and the grid do */
+#dossier .ds-now { margin: 14px 0; box-shadow: 4px 4px 0 var(--shadow-ink); }
+#dossier .ds-now > .ds-body { background: var(--mustard); color: var(--on-mustard); gap: 10px; padding: 12px 12px 12px; }
+#dossier .ds-now-item { display: grid; gap: 8px; min-width: 0; }
+#dossier .ds-now-t { margin: 0; font: 900 28px/.92 var(--font-poster); text-transform: uppercase; letter-spacing: .01em; overflow-wrap: anywhere; text-wrap: balance; }
+#dossier .ds-now-line { margin: 0; font: 400 15px/1.4 var(--font-text); }
+#dossier .ds-now-left { display: inline-block; margin-left: 2px; padding: 0 6px; border: 1.5px solid currentColor; font: 700 13px/1.5 var(--font-mono); letter-spacing: 0; white-space: nowrap; vertical-align: 1px; }
+#dossier .ds-now-left:empty { display: none; }
+#dossier .ds-now-acts, #dossier .ds-now-html .ds-kt-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+#dossier .ds-now-html .ds-kt-row { gap: 6px; padding: 8px 0 2px; border-top: 1px solid rgba(20, 17, 14, .28); }
+#dossier .ds-now-html .ds-kt-row b { font: 900 12px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; }
+#dossier .ds-now-more { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; min-height: 44px; margin: 0 0 -6px; padding: 8px 0; border: 0; border-top: 1.5px solid rgba(20, 17, 14, .35); border-radius: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; font: 900 12px/1.25 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; -webkit-appearance: none; appearance: none; }
+#dossier .ds-now-more:focus-visible, #dossier .ds-between-t:focus-visible, #dossier .ds-quietbtn:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#dossier .ds-now-rest { display: grid; }
+#dossier .ds-now-sm { gap: 6px; padding: 10px 0; border-top: 1px solid rgba(20, 17, 14, .28); }
+#dossier .ds-now-sm .ds-now-t { font: 900 13px/1.2 var(--font-cond); letter-spacing: .1em; }
+#dossier .ds-now-sm .ds-now-line { font-size: 14px; }
+/* the fold: a box whose band is the toggle; closed it is the band alone, and says how many things are inside */
+#dossier .ds-betweenbox { margin: 14px 0 4px; }
+#dossier .ds-between-t { width: 100%; min-height: 44px; border: 0; border-radius: 0; cursor: pointer; text-align: left; -webkit-appearance: none; appearance: none; }
+#dossier .ds-between-t .ds-band-r { gap: 10px; }
+#dossier .ds-between-n { font: 700 12px/1 var(--font-mono); letter-spacing: 0; text-transform: none; }
+#dossier .ds-betweenbox .ds-now-sm { border-top-color: var(--hair); }
+#dossier .ds-betweenbox .ds-now-sm:first-child { border-top: 0; padding-top: 2px; }
+#dossier .ds-betweenbox .ds-now-sm:last-child { padding-bottom: 2px; }
+/* Quiet: in the sticky bar, so it is in reach wherever the sheet is scrolled; 44 px to tap */
+#dossier .ds-quietbtn { min-height: 44px; }
+@media screen and (max-width: 760px) {
+  #dossier.ds-live .ds-nav > .ds-quietbtn { order: 4; margin-left: auto; }
+  /* Back, Table, (Mission,) "…" and Quiet: Print is a line of "…" on a phone (its button would leave the status a clipped sliver) */
+  #dossier.ds-live .ds-nav-q { gap: 5px; }
+  #dossier.ds-live .ds-nav-q > .btn { padding-left: 9px; padding-right: 9px; }
+  #dossier.ds-live .ds-nav-q > [data-act="print"] { display: none; }
+  #dossier .ds-now-acts .btn, #dossier .ds-now-html .ds-kt-btns .btn { min-height: 44px; }
+  #dossier .ds-now-t { font-size: 30px; }
+  #dossier .ds-now-sm .ds-now-t { font-size: 13px; }
+}
+@media print { #dossier .ds-now, #dossier .ds-betweenbox, #dossier .ds-quietbtn { display: none !important; } }
+
+/* the phone's small forms (the Debrief, the opportunity board, the packet, the quiet line): a bottom sheet over the page in the sheet's paper and ink.
+   On the page body, outside #dossier, like the mission card. Every field is 16 px, so iPhone Safari never zooms when one takes focus */
+.ds-dlg { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; background: rgba(20, 17, 14, .55); overscroll-behavior: contain; }
+.ds-dlg.ds-quiet-dlg { z-index: 70; }
+.ds-dlg-card { box-sizing: border-box; width: min(100%, 560px); max-height: 92vh; overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; display: grid; gap: 10px; align-content: start;
+  padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px)); background: var(--card); color: var(--ink); border-top: 4px solid var(--rule); box-shadow: 0 -8px 28px rgba(20, 17, 14, .28); font: 400 15px/1.45 var(--font-text); }
+.ds-dlg-card h2 { margin: 0; font: 900 30px/.95 var(--font-poster); overflow-wrap: anywhere; text-wrap: balance; }
+.ds-dlg-card h3 { margin: 4px 0 0; font: 900 13px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; }
+.ds-dlg-card p { margin: 0; overflow-wrap: anywhere; }
+.ds-dlg-card .ds-dim { color: var(--ink-soft); font-size: 14px; }
+.ds-dlg-card :is(input[type="text"], textarea, select) { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 9px 10px; font: 400 16px/1.35 var(--font-text); color: var(--ink); background: var(--paper); border: 2px solid var(--rule); border-radius: 0; }
+.ds-dlg-card textarea { resize: vertical; }
+.ds-dlg-card :is(input, textarea, select, .btn):focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+.ds-dlg-card input[type="checkbox"] { width: 22px; height: 22px; margin: 0; accent-color: var(--accent); }
+.ds-dlg-card fieldset { min-width: 0; margin: 0; padding: 8px 10px 12px; border: 2px solid var(--rule); display: grid; gap: 8px; }
+.ds-dlg-card legend { padding: 0 4px; font: 900 11px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; }
+.ds-dlg-card label { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; min-height: 44px; }
+.ds-dlg-card .btn { min-height: 44px; }
+.ds-dlg-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 2px; }
+.ds-dlg-msg { font-weight: 700; }
+.ds-dlg-msg:empty { display: none; }
+.ds-dlg-list { display: grid; }
+.ds-dlg-item { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--hair); }
+.ds-dlg-item b { font: 900 11px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; }
+.ds-dlg-item span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.ds-quiet-opts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ds-quiet-opts .btn { min-height: 52px; }
+.ds-quiet-opts .btn[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); box-shadow: none; transform: translate(2px, 2px); }
+@media print { .ds-dlg { display: none !important; } }
