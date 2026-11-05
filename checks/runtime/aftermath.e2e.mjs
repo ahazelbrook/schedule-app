@@ -1,7 +1,7 @@
 // The Aftermath show end to end (suite ticket 1.6, switch spine.aftermath): a real local Worker (wrangler dev, DEV_USER) on PORT (default 9110), the GM page, the table
 // iPad's display-only sign-in (1024 x 768) and a player's phone. INVENTED data only (the Pelican Rooms cast); every GM-only string is a GM-ONLY- marker.
-//   1. Switch OFF: the Menu has no Aftermath entry, the phone loads no commend file and makes no /api/docs call, the iPad draws nothing new.
-//   2. Switch ON (Menu -> Switchboard, no reload): the entry appears; Start puts scene.mode = aftermath on the iPad, and Next steps it through payout, tithe, heat (the siren),
+//   1. Everything built is on (N0): with nothing stored the Menu has the Aftermath entry, the phone loads the commend file by itself, the iPad draws nothing until the show starts.
+//   2. The show (Menu -> Aftermath show, no reload): Start puts scene.mode = aftermath on the iPad, and Next steps it through payout, tithe, heat (the siren),
 //      status, harm, unwind, xp and the credits; Back and Skip work; the numbers the GM types are what the iPad draws.
 //   3. Phones: the commendations strip stands on the player's sheet only while step 7 does (and the row is gone when the GM moves on); it opens the sheet's own End of session panel.
 //   4. The credits list revealed NPCs only (a hidden NPC is never on the iPad); finishing clears the scene mode; an unreached step is filed for the Debrief.
@@ -95,28 +95,20 @@ try {
   const press = async (label) => { await g.click('#gm-sheet-aftermath button:has-text("' + label + '")'); };
   const setField = async (label, value) => { await g.fill('#gm-sheet-aftermath label:has-text("' + label + '") input, #gm-sheet-aftermath label:has-text("' + label + '") textarea', String(value)); await g.press('#gm-sheet-aftermath label:has-text("' + label + '") >> nth=0', 'Tab').catch(() => {}); };
 
-  /* ---- 1. OFF ---- */
-  await g.click('[data-gm="menu"]');
-  check(await g.$eval('.gm-menu-list', (e) => !/ftermath/.test(e.innerHTML)), 'OFF: the Menu has no Aftermath entry');
-  check((await g.$$('#gm-menu-aftermath')).length === 0 && (await g.$$('#gm-sheet-aftermath')).length === 0, 'and no Aftermath sheet');
-  await g.click('[data-gm="menu"]');
-  await sleep(1500);
-  check((await ph.evaluate(() => typeof window.B68Commend)) === 'undefined', 'OFF: the phone has not loaded the commendations file');
-  check(!phoneUrls.some((u) => /\/api\/docs|sheet\/commend/.test(u)), 'OFF: and made no /api/docs call: ' + phoneUrls.filter((u) => /docs|commend/.test(u)).join(','));
-  check((await ip.$$('.dp-overlay .dp-show')).length === 0 && !(await ip.evaluate(() => document.querySelector('.dp-root').getAttribute('data-scene-mode'))), 'OFF: the iPad draws nothing and has no scene mode');
-
-  /* ---- 2. ON, from the Switchboard, no reload ---- */
+  /* ---- 1. everything on (N0), nothing stored ---- */
   await g.evaluate(() => { window.__gmMarker = 'same page'; });
-  await g.click('[data-gm="menu"]'); await g.click('#gm-menu-switchboard');
-  await g.click('[data-sb="spine.aftermath"]');
-  check(await g.$eval('[data-sb="spine.aftermath"]', (e) => e.getAttribute('aria-pressed') === 'true'), 'ON: the Switchboard shows Aftermath show on');
-  const camp = await until(async () => { const c = (await api('GET', '/campaign', null, PLAYER)).json.doc; return c.features && c.features['spine.aftermath'] === true ? c : null; }, 8000);
-  check(!!camp, 'the phone switch reaches the campaign document');
-  check(await until(async () => (await ph.evaluate(() => typeof window.B68Commend)) === 'object', 10000), 'ON: the phone fetches the commendations file by itself');
-  check(await until(() => phoneUrls.some((u) => /\/api\/docs\?kind=commend/.test(u)), 8000), 'and reads the commend kind, nothing else: ' + phoneUrls.filter((u) => /docs/.test(u)).join(','));
-  await g.press('body', 'Escape');
   await g.click('[data-gm="menu"]');
-  check(await g.$eval('#gm-menu-aftermath', (e) => /Aftermath/.test(e.textContent)), 'ON: the Menu has the Aftermath entry, with no reload');
+  check(!!(await until(async () => (await g.$$('#gm-menu-aftermath')).length === 1, 4000)), 'nothing stored: the Menu has the Aftermath entry');
+  await g.click('[data-gm="menu"]');
+  const camp = (await api('GET', '/campaign', null, PLAYER)).json.doc;
+  check(!!camp.features && camp.features['spine.aftermath'] === true, 'a player is told the feature is on with nothing stored');
+  check(await until(async () => (await ph.evaluate(() => typeof window.B68Commend)) === 'object', 10000), 'the phone fetches the commendations file by itself');
+  check(await until(() => phoneUrls.some((u) => /\/api\/docs\?kind=commend/.test(u)), 8000), 'and reads the commend kind: ' + phoneUrls.filter((u) => /docs/.test(u)).join(','));
+  check((await ip.$$('.dp-overlay .dp-show')).length === 0 && !(await ip.evaluate(() => document.querySelector('.dp-root').getAttribute('data-scene-mode'))), 'the iPad draws nothing and has no scene mode until the show starts');
+
+  /* ---- 2. the show, from the Menu, no reload ---- */
+  await g.click('[data-gm="menu"]');
+  check(await g.$eval('#gm-menu-aftermath', (e) => /Aftermath/.test(e.textContent)), 'the Menu has the Aftermath entry, with no reload');
   await g.click('#gm-menu-aftermath');
   check(await g.$eval('#gm-sheet-aftermath', (e) => !e.hidden && /eight steps/i.test(e.innerText) && /Start the Aftermath/i.test(e.innerText)), 'it opens the panel');
 
@@ -202,12 +194,13 @@ try {
   check(!!st && !st.night.aftermath.data.pending, 'the night document says the Aftermath is done with nothing left for the Debrief: ' + JSON.stringify(st && st.night.aftermath));
   check(await g.evaluate(() => window.__gmMarker) === 'same page', 'the GM page never reloaded');
 
-  /* ---- OFF again ---- */
-  await g.click('[data-gm="menu"]'); await g.click('#gm-menu-switchboard'); await g.click('[data-sb-alloff]');
-  await until(async () => { const c = (await api('GET', '/campaign', null, PLAYER)).json.doc; return c.features && c.features['spine.aftermath'] === false; }, 8000);
-  await g.press('body', 'Escape'); await g.click('[data-gm="menu"]');
-  check(await until(async () => (await g.$$('#gm-menu-aftermath')).length === 0, 4000), 'OFF again: the Menu entry is gone');
-  check(await until(async () => (await ph.evaluate(() => window.B68Commend.state())).started === false, 8000), 'and the phone stops reading');
+  /* ---- a stored false (the old All off, written by an older page into both documents) changes nothing ---- */
+  check((await api('PATCH', '/gm/state', { features: { 'spine.aftermath': false } })).status === 200 && (await api('PATCH', '/campaign', { features: { 'spine.aftermath': false } })).status === 200, 'a stored false is written to both documents');
+  await sleep(2500);
+  await g.click('[data-gm="menu"]');
+  check((await g.$$('#gm-menu-aftermath')).length === 1, 'and changes nothing: the Menu entry stays');
+  await g.click('[data-gm="menu"]');
+  check((await ph.evaluate(() => window.B68Commend.state())).started === true && (await ph.evaluate(() => window.B68Flags.on('spine.aftermath'))) === true, 'and the phone is still told it is on, and keeps reading');
 
   check(errors.length === 0, 'no console errors or page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
   await browser.close();

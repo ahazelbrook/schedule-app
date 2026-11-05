@@ -1,5 +1,5 @@
 // The score title card (suite 2.10, switch map.title; app/gm/title-card.js, app/display/title-card.js) in a real browser against a real local Worker, on an invented site (the Pelican
-// Rooms). Switch off: GO into the Score phase puts nothing up. Switch on: the phase rail's Score puts a scoretitle beat on the ambient document (the site's name and the building's storeys,
+// Rooms). Everything built is on (N0): with nothing stored, and with a stored false, the phase rail's Score puts a scoretitle beat on the ambient document (the site's name and the building's storeys,
 // no room name), the iPad builds the card inside six seconds with the name landing last and it goes by itself, pressing Score again while in it does nothing, reduced motion stills it.
 // GM_SHOTS=<dir> keeps four frames. Every name is invented; no model, $0.
 //   PW_MODULE=<playwright install> PW_CHANNEL=msedge [PORT=9202] node checks/runtime/gm-map-spotted.e2e.mjs
@@ -109,20 +109,22 @@ try {
 
   const card = { hid: 'h_b24t', auth: NAME2, label: NAME2 + ' · Nowhere Ward', at: new Date().toISOString() };
   check((await api('PATCH', '/gm/state', { cards: { location: card }, loc: { map: { view: 'plan', theme: 'casefile', layer: 'gm', reveal: { public: true } } },
-    ball: { site: NAME2, v: 2, start: 0, t: 100, crew: {} }, features: { 'spine.rail': true } })).status === 200, 'the site is the location card; the phase rail is on (it is how GO is pressed)');
+    ball: { site: NAME2, v: 2, start: 0, t: 100, crew: {} } })).status === 200, 'the site is the location card (nothing stored for any feature: the phase rail, how GO is pressed, is always on)');
 
   const D = await openDisplay();
   const G = await openGm();
   await G.page.waitForSelector('#gm-phaserail [data-rail="score"]', { timeout: 20000 });
   const rail = async (id) => { await G.page.$eval('#gm-phaserail [data-rail="' + id + '"]', (e) => e.click()); await sleep(900); };
 
-  /* ---- switch off: GO shows nothing ---- */
+  /* ---- everything on (N0): with NOTHING stored, GO into the Score phase puts the title card up ---- */
   await rail('plan'); await rail('score');
-  check(!(await overlay()) || (await overlay()).kind !== 'scoretitle', 'switch off: GO into the Score phase puts no title card up');
-  check((await D.page.$$('.dp-show-scoretitle')).length === 0, 'and the iPad shows none');
+  check(!!(await until(async () => ((await overlay()) || {}).kind === 'scoretitle', 6000, 50)), 'nothing stored: GO into the Score phase puts the title card up');
+  const cameAndWent = await D.page.waitForFunction(() => !!document.querySelector('.dp-overlay .dp-show-scoretitle'), null, { timeout: 15000 })
+    .then(() => D.page.waitForFunction(() => !document.querySelector('.dp-overlay .dp-show-scoretitle'), null, { timeout: 15000 })).then(() => true, () => false);
+  check(cameAndWent, 'the iPad shows it, and it goes by itself');
 
-  /* ---- switch on ---- */
-  check((await api('PATCH', '/gm/state', { features: { 'map.title': true, 'spine.rail': true } })).status === 200, 'map.title is switched on');
+  /* ---- a stored true (what the Switchboard used to write) is the same ---- */
+  check((await api('PATCH', '/gm/state', { features: { 'map.title': true, 'spine.rail': true } })).status === 200, 'a stored true is taken (and changes nothing)');
   await sleep(1500);
   await rail('plan'); await sleep(400);
   await G.page.$eval('#gm-phaserail [data-rail="score"]', (e) => e.click());
@@ -175,11 +177,13 @@ try {
   check(still.anims === 0 && still.ok, 'reduced motion: no animation runs, the card is its last frame (' + JSON.stringify(still) + ')');
   await R.close();
 
-  /* ---- off again ---- */
-  check((await api('PATCH', '/gm/state', { features: { 'map.title': false } })).status === 200, 'switched off again');
-  await sleep(1500); await rail('plan'); await sleep(7000);
-  const o1 = await overlay(); await G.page.$eval('#gm-phaserail [data-rail="score"]', (e) => e.click()); await sleep(1500);
-  check(((await overlay()) || {}).id === (o1 || {}).id, 'off again: GO puts no new beat up');
+  /* ---- a stored false (the old All off) changes nothing ---- */
+  check((await api('PATCH', '/gm/state', { features: { 'map.title': false } })).status === 200, 'a stored false is taken');
+  await sleep(1500); await rail('plan');
+  await sleep(61000 - (Date.now() % 60000));      /* the card is keyed by the site and the minute (two GM pages in one minute show it once): a new minute */
+  const o1 = await overlay(); await G.page.$eval('#gm-phaserail [data-rail="score"]', (e) => e.click());
+  const o2 = await until(async () => { const o = await overlay(); return o && o.kind === 'scoretitle' && o.id !== (o1 || {}).id ? o : null; }, 6000, 100);
+  check(!!o2, 'a stored false changes nothing: GO still puts a new title card up');
   check(errors.length === 0, 'no page errors: ' + errors.slice(0, 3).join(' | '));
   await browser.close();
 } catch (e) { failed++; console.log('FAIL ' + (e && e.stack || e)); }

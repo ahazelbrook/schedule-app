@@ -1,5 +1,5 @@
 // The threat on the map (suite 2.5, switch map.threat; app/gm/map-threat.js, the hooks in app/gm/stamp.js) in a real browser against a real local Worker, on an invented site (the Pelican Rooms).
-// Switch off: a stamp draws nothing on the Run map. Switch on: the stamp's consequence line drops a glyph (a guard turning, a door locking) inside the room the crew are in, the iPad card carries
+// Everything built is on (N0): with nothing stored, and with a stored false, the stamp's consequence line drops a glyph (a guard turning, a door locking) inside the room the crew are in, the iPad card carries
 // no glyph and no room, the glyph survives a redraw, and it clears with the stamp (Esc). Every name is invented; no model, $0.
 //   PW_MODULE=<playwright install> PW_CHANNEL=msedge [PORT=9073] node checks/runtime/gm-map-threat.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
@@ -113,7 +113,7 @@ try {
   const card = { hid: 'h_b19t', auth: NAME2, label: NAME2 + ' · Nowhere Ward', at: new Date().toISOString() };
   const OPEN_ALL = { public: true, working: true, controlled: true, secure: true };
   check((await api('PATCH', '/gm/state', { cards: { location: card }, loc: { map: { view: 'iso', theme: 'rulebook', layer: 'gm', reveal: OPEN_ALL } },
-    ball: { site: NAME2, v: 2, start: 0, t: 100, crew: { 'run-pc1': { room: 'Showroom', disguise: 'guest' } } }, features: { 'spine.stamp': true } })).status === 200, 'the v2 site, the crew in the Showroom, the stamp switched on');
+    ball: { site: NAME2, v: 2, start: 0, t: 100, crew: { 'run-pc1': { room: 'Showroom', disguise: 'guest' } } } })).status === 200, 'the v2 site, the crew in the Showroom (nothing stored for any feature)');
   const stampIt = async (page, text) => {
     await page.waitForSelector('#gm-stamp .gm-st-b', { timeout: 20000 });
     await page.fill('#gm-stamp input[data-st-text]', text);
@@ -123,20 +123,20 @@ try {
   };
   const glyph = (page) => page.evaluate(() => { const g = document.querySelector('#rv-map svg .b19-threat'); return g ? g.getAttribute('data-glyph') : null; });
 
-  /* ---- map.threat off: a stamp draws nothing on the map ---- */
+  /* ---- everything on (N0): with NOTHING stored a stamp drops its glyph on the map ---- */
   const A = await open();
   await stampIt(A.page, 'The guard turns');
   await runMap(A.page);
-  check((await glyph(A.page)) === null, 'switch off: a stamp puts no glyph on the map');
+  check(!!(await until(async () => (await glyph(A.page)) === 'guard', 6000, 100)), 'nothing stored: the stamp puts its guard glyph on the map');
   await A.c.close();
   check((await api('PATCH', '/gm/ambient', { overlay: null })).status === 200, 'the report card is taken down');
 
-  /* ---- map.threat on ---- */
-  check((await api('PATCH', '/gm/state', { features: { 'map.threat': true } })).status === 200, 'map.threat is switched on');
+  /* ---- a stored true (what the Switchboard used to write) is the same ---- */
+  check((await api('PATCH', '/gm/state', { features: { 'map.threat': true, 'spine.stamp': true } })).status === 200, 'a stored true is taken (and changes nothing)');
   const P = await open();
   await stampIt(P.page, 'The guard turns');
   await runMap(P.page);
-  check(!!(await until(async () => (await glyph(P.page)) === 'guard', 6000, 100)), 'switch on: the stamp’s guard-turning drops a guard glyph on the map');
+  check(!!(await until(async () => (await glyph(P.page)) === 'guard', 6000, 100)), 'the stamp’s guard-turning drops a guard glyph on the map');
   const inRoom = await P.page.evaluate(() => {
     const svg = document.querySelector('#rv-map svg'), g = svg.querySelector('.b19-threat'), gr = g.getBoundingClientRect();
     return Array.from(svg.querySelectorAll('[data-room]')).some((r) => { const b = r.getBoundingClientRect(); return gr.left >= b.left - 2 && gr.right <= b.right + 2 && gr.top >= b.top - 2 && gr.bottom <= b.bottom + 2; });
@@ -157,12 +157,13 @@ try {
   check(!!(await until(async () => (await glyph(Q.page)) === 'door', 6000, 100)), 'a door-locking line drops a door glyph');
   await Q.c.close();
 
-  /* ---- all off again ---- */
-  check((await api('PATCH', '/gm/state', { features: { 'map.threat': false, 'spine.stamp': false } })).status === 200, 'switched off again');
+  /* ---- a stored false (the old All off) changes nothing ---- */
+  check((await api('PATCH', '/gm/state', { features: { 'map.threat': false, 'spine.stamp': false } })).status === 200, 'a stored false is taken');
   await api('PATCH', '/gm/ambient', { overlay: null });
   const R = await open();
+  await stampIt(R.page, 'The guard turns');
   await runMap(R.page);
-  check((await glyph(R.page)) === null, 'switched off: no glyph');
+  check(!!(await until(async () => (await glyph(R.page)) === 'guard', 6000, 100)), 'a stored false changes nothing: the stamp still drops its glyph');
 
   check(!errors.length, 'no page errors: ' + errors.slice(0, 3).join(' | '));
   await browser.close();

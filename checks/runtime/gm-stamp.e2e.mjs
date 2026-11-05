@@ -1,6 +1,6 @@
 // The stamp before the roll, the consequence sizer and the strict cue grammar (suite 1.3, 1.4, A2; app/gm/stamp.js, app/gm/cue-grammar.js) on the real GM page, Worker and
-// ambient document: the Stamp row under Position, the report card on the display route, the sizer after a 4/5, a typed cue with its Undo toast, "didn't catch that", and all
-// switches off. No model, $0; only the panel's tick/cards/ask are faked. Every name is invented.
+// ambient document: the Stamp row under Position (there with nothing stored: everything built is on, N0), the report card on the display route, the sizer after a 4/5, a typed cue
+// with its Undo toast, "didn't catch that", and a stored false that changes nothing. No model, $0; only the panel's tick/cards/ask are faked. Every name is invented.
 //   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=9030] node checks/runtime/gm-stamp.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
@@ -146,12 +146,12 @@ try {
   const toasts = () => page.$$eval('.gm-ugtoast, .toast, #toast, [role="status"]', (l) => l.map((x) => x.textContent).join(' | '));
   const reopen = async () => { await page.reload(); await page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 }); };
 
-  // ============ 1. every switch off: no Stamp row ============
-  check((await page.$$('#gm-stamp')).length === 0, 'switches off: no Stamp row');
-  // ============ 2. switches on from the state document (the Switchboard writes the same) ============
+  // ============ 1. nothing stored: the Stamp row is there (N0: everything built is on) ============
+  check(!!(await until(() => page.$('#gm-stamp .gm-st-b'), 8000)), 'nothing stored: the Stamp row draws under Position');
+  // ============ 2. a stored true (what the Switchboard used to write) is the same ============
   await api('PATCH', '/gm/state', FEATS(true));
   await reopen();
-  check(!!(await until(() => page.$('#gm-stamp .gm-st-b'), 8000)), 'switches on: the Stamp row draws under Position');
+  check(!!(await until(() => page.$('#gm-stamp .gm-st-b'), 8000)), 'a stored true: the Stamp row draws under Position');
   await page.fill('#gm-stamp input[data-st-text]', 'Wren Tully turns round');
   await page.click('#gm-stamp [data-st="pos"][data-v="risky"]');
   check((await ovKind()) === '', 'one tap stamps nothing');
@@ -199,11 +199,11 @@ try {
   await type('Blade, back');
   check(!!(await until(async () => !JSON.stringify((await ambientDoc()).layers || {}).includes('flashback'), 6000)), 'back clears it');
 
-  // ============ 4. All off again ============
+  // ============ 4. a stored false (the old All off) changes nothing ============
   await api('PATCH', '/gm/state', FEATS(false));
   await reopen();
   await sleep(500);
-  check((await page.$$('#gm-stamp')).length === 0, 'All off: the Stamp row is gone');
+  check(!!(await until(() => page.$('#gm-stamp .gm-st-b'), 8000)), 'a stored false changes nothing: the Stamp row stays');
   check(errors.filter((e) => !/status of 500/.test(e)).length === 0, 'no console errors: ' + JSON.stringify(errors.slice(0, 3)));
   await c.close();
   await browser.close();

@@ -1,6 +1,6 @@
 // The cue stack (suite 4.1; app/gm/cue-stack.js, switch room.cues) on the real GM page, Worker and ambient document: a prep note's `## Cues` section through the real exporter, STANDBY in the
 // bar, Space to GO, two GOs inside 500 ms firing once, Bypass, a by-hand cue, "Blade, go" typed in the Ask bar (a reveal), "Blade, go" with nothing in standby doing nothing, Esc to the
-// safe scene inside a second (and an Esc the menu took not counting), Resume, and all switches off. No model, $0; only the panel's tick/cards/ask are faked. Every name is invented;
+// safe scene inside a second (and an Esc the menu took not counting), Resume, and a stored false that changes nothing (N0: everything built is on). No model, $0; only the panel's tick/cards/ask are faked. Every name is invented;
 // the one hidden NPC is a GM-ONLY- marker.
 //   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=9040] node checks/runtime/gm-cue-stack.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
@@ -96,17 +96,15 @@ try {
   const barState = () => page.$eval('#gm-cuebar', (e) => e.getAttribute('data-state')).catch(() => '');
   const waitSeq = (n, ms = 8000) => until(async () => (await seqOf()).length >= n, ms, 50);
 
-  // ============ 1. the switch off: nothing ============
+  // ============ 1. nothing stored (N0: everything built is on): the bar is there, nothing has fired ============
   await reopen();
-  check((await page.$$('#gm-cuebar')).length === 0, 'switch off: no cue bar');
-  const s0 = await ambientSeq();
-  await page.keyboard.press(' '); await page.keyboard.press('Escape'); await sleep(500);
-  check((await ambientSeq()) === s0 && (await seqOf()).length === 0, 'switch off: Space and Esc do nothing');
+  check(!!(await until(() => page.$('#gm-cuebar .gm-cs-go'), 10000)), 'nothing stored: the bar draws with a GO button');
+  check((await seqOf()).length === 0, 'and nothing has fired');
 
-  // ============ 2. on: STANDBY ============
+  // ============ 2. a stored true (what the Switchboard used to write) is the same: STANDBY ============
   await api('PATCH', '/gm/state', { features: { 'room.cues': true } });
   await reopen();
-  check(!!(await until(() => page.$('#gm-cuebar .gm-cs-go'), 10000)), 'switch on: the bar draws with a GO button');
+  check(!!(await until(() => page.$('#gm-cuebar .gm-cs-go'), 10000)), 'a stored true: the bar draws with a GO button');
   const b1 = await bar();
   check(/STANDBY/.test(b1) && /#1 SCENE/.test(b1) && /duskwall/.test(b1), 'STANDBY shows cue 1: ' + b1.replace(/\s+/g, ' ').slice(0, 100));
   check(/#2 SHOW/.test(b1) || /title: The Pelican Rooms/.test(b1), 'and what comes next');
@@ -171,7 +169,7 @@ try {
   await reopen();
   await page.fill('#gm-stamp input[data-st-text]', 'The guard turns');
   await page.click('#gm-stamp [data-st="pos"][data-v="risky"]'); await page.click('#gm-stamp [data-st="eff"][data-v="standard"]');
-  check(!!(await until(async () => ((await ambient()).overlay || {}).kind === 'report', 6000, 50)), 'both switches on: a stamp report card is up');
+  check(!!(await until(async () => ((await ambient()).overlay || {}).kind === 'report', 6000, 50)), 'a stamp report card is up');
   const sceneBefore = (await ambient()).scene;
   await page.waitForFunction(() => /On the iPad/.test((document.querySelector('#gm-stamp') || {}).textContent || ''), null, { timeout: 8000 });       // the page has seen its own card go up
   await page.keyboard.press('Escape');
@@ -214,13 +212,10 @@ try {
   await sleep(700); await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur()); await page.keyboard.press(' ');
   check(!!(await waitSeq(3)), 'and GO works again');
 
-  // ============ 8. All off ============
+  // ============ 8. a stored false (the old All off) changes nothing ============
   await api('PATCH', '/gm/state', { features: { 'room.cues': false } });
   await reopen(); await sleep(500);
-  check((await page.$$('#gm-cuebar')).length === 0, 'All off: the bar is gone');
-  const sOff = await ambientSeq();
-  await page.keyboard.press(' '); await page.keyboard.press('Escape'); await sleep(600);
-  check((await ambientSeq()) === sOff, 'All off: Space and Esc do nothing again');
+  check(!!(await until(() => page.$('#gm-cuebar .gm-cs-go'), 10000)), 'a stored false changes nothing: the bar and its GO stay');
   check(errors.filter((e) => !/status of 500/.test(e)).length === 0, 'no console errors: ' + JSON.stringify(errors.slice(0, 3)));
   await c.close();
   await browser.close();

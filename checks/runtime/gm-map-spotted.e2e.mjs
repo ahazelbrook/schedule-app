@@ -1,5 +1,5 @@
 // The Spotted beat on the Run map (suite 2.6, switch map.spotted; app/gm/map-spotted.js) in a real browser against a real local Worker, on an invented site (the Pelican Rooms).
-// Switch off: no button. Switch on: one tap zooms, stings (the spotted beat on the iPad), fills from the eyes, ticks the alarm clock once and returns, inside 3 seconds; with two
+// Everything built is on (N0): the button is there with nothing stored, and a stored false changes nothing. One tap zooms, stings (the spotted beat on the iPad), fills from the eyes, ticks the alarm clock once and returns, inside 3 seconds; with two
 // GM pages open a tap on both still ticks once. Every name is invented; no model, $0.
 //   PW_MODULE=<playwright install> PW_CHANNEL=msedge [PORT=9071] node checks/runtime/gm-map-spotted.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
@@ -115,13 +115,13 @@ try {
   check((await api('PATCH', '/gm/state', { cards: { location: card }, loc: { map: { view: 'iso', theme: 'rulebook', layer: 'gm', reveal: OPEN_ALL } },
     ball: { site: NAME2, v: 2, start: 0, t: 100, crew: { 'run-pc1': { room: 'Showroom', disguise: 'guest' } } } })).status === 200, 'the v2 site on the GM layer, the crew in the Showroom');
 
-  /* ---- switch off: nothing is drawn ---- */
+  /* ---- everything on (N0): with NOTHING stored the button is on the map ---- */
   const A = await open();
-  check((await A.page.$$('.b19-btn, .b19-bar')).length === 0, 'switch off: no Spotted button on the map');
+  check((await A.page.$$('[data-b19="spotted"]')).length === 1, 'nothing stored: one Spotted button on the map');
   await A.c.close();
 
-  /* ---- switch on ---- */
-  check((await api('PATCH', '/gm/state', { features: { 'map.spotted': true } })).status === 200, 'map.spotted is switched on');
+  /* ---- a stored true (what the Switchboard used to write) is the same ---- */
+  check((await api('PATCH', '/gm/state', { features: { 'map.spotted': true } })).status === 200, 'a stored true is taken (and changes nothing)');
   const P = await open();
   check((await P.page.$$('[data-b19="spotted"]')).length === 1, 'switch on: one Spotted button on the map');
   const ambientDoc = async () => { const j = (await api('GET', '/gm/ambient')).json || {}; return j.doc || (j.ambient && j.ambient.doc) || {}; };
@@ -165,10 +165,10 @@ try {
   const f2 = await fuse();
   check(!!f2 && f2.filled === 2, 'two GM pages tapped together: the Fuse is 2/6, ticked once (' + JSON.stringify(f2) + ')');
 
-  /* ---- off again: the button goes ---- */
-  check((await api('PATCH', '/gm/state', { features: { 'map.spotted': false } })).status === 200, 'switched off again');
+  /* ---- a stored false (the old All off) changes nothing ---- */
+  check((await api('PATCH', '/gm/state', { features: { 'map.spotted': false } })).status === 200, 'a stored false is taken');
   const R = await open();
-  check((await R.page.$$('[data-b19="spotted"]')).length === 0, 'switched off: no button again');
+  check((await R.page.$$('[data-b19="spotted"]')).length === 1, 'a stored false changes nothing: the button stays');
 
   check(!errors.length, 'no page errors: ' + errors.slice(0, 3).join(' | '));
   await browser.close();

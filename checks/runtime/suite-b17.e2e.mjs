@@ -1,5 +1,5 @@
-// Suite B17 smoke on the real GM page and Worker (map.stage, map.security, face.spotlight): switches off draw nothing; on, the Map box carries the panel with the security
-// line, the stage panel and the stage bar, a tap on Freeze and Blank works, and nothing throws. Every name is invented. No model, $0.
+// Suite B17 smoke on the real GM page and Worker (map.stage, map.security, face.spotlight). Everything built is on (N0): a stored false changes nothing; the Map box carries the
+// panel with the security line, the stage panel and the stage bar, a tap on Freeze and Blank works, and nothing throws. Every name is invented. No model, $0.
 //   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=8953] node checks/runtime/suite-b17.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
@@ -88,17 +88,17 @@ try {
     await page.keyboard.press('b'); await page.click('[data-gm="locroll"]'); await page.waitForSelector('#gm-loc .gm-loccard', { timeout: 10000 });
     await page.waitForSelector('#gm-loc .gm-mapbox', { timeout: 10000 });
   };
-  // 1. every switch off: nothing drawn
+  // 1. a stored false (the old All off) changes nothing: the box is drawn
   await api('PATCH', '/gm/state', FEATS(false));
-  await roll(); await sleep(600);
-  check((await page.$$('#gm-b17')).length === 0, 'switches off: no B17 box');
-  // 2. on
+  await roll();
+  check(!!(await until(() => page.$('#gm-b17'), 8000)), 'a stored false changes nothing: the B17 box is under the Map heading');
+  // 2. a stored true (what the Switchboard used to write) is the same
   await api('PATCH', '/gm/state', FEATS(true));
   await page.reload(); await page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
   await page.keyboard.press('b'); await page.waitForSelector('#gm-loc .gm-mapbox', { timeout: 10000 }).catch(() => {});
   if (!(await page.$('#gm-loc .gm-mapbox'))) { await page.click('[data-gm="locroll"]'); await page.waitForSelector('#gm-loc .gm-mapbox', { timeout: 10000 }); }
   const box = await until(() => page.$('#gm-b17'), 8000);
-  check(!!box, 'switches on: the B17 box is under the Map heading');
+  check(!!box, 'a stored true: the B17 box is under the Map heading');
   const txt = box ? await box.innerText() : '';
   check(/Stage/i.test(txt) && /Security/i.test(txt) && /Stage bar/i.test(txt), 'the stage panel, the security line and the stage bar are drawn: ' + txt.replace(/\s+/g, ' ').slice(0, 120));
   check(/next level:/.test(txt), 'the GM line says next level');

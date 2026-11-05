@@ -1,5 +1,5 @@
 // Suite B25 (3.2 expressions and a signature pose, 3.3 portrait formats, 3.4 a badge, a style and a motif) on the real display page, in a real browser.
-// A held NPC overlay may carry a look of names; with the switches off the card is the plain one; with them on it wears the expression, the pose, the format, the badge and plays its motif
+// A held NPC overlay may carry a look of names; everything built is on (N0), so with nothing stored it wears the expression, the pose, the format, the badge and plays its motif
 // (a fake AudioContext records what the page asks of it). A hidden NPC is refused and its notes never reach the page. INVENTED data only (the Pelican Rooms cast).
 //   PW_MODULE=<path to playwright-core> PW_CHANNEL=msedge node checks/runtime/suite-b25.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
@@ -118,16 +118,17 @@ try {
     expect((await gmCall('PUT', '/api/npcs/npc_pr_hid', { ...people[0][1], name: 'Hidden Person', gmNotes: 'GM-ONLY-HIDDEN', revealed: false })).status === 200, 'hidden');
   });
 
-  await step('every switch off: a look on the overlay changes nothing; the card is the plain card, byte for byte', async () => {
+  await step('nothing stored (N0: everything built is on): the iPad is told the three are on, and a look on the overlay is worn (the face changes, the format frames it); the page never reads the cast', async () => {
+    for (const id of FEATURES) await flagOn(G.page, id, true);
     await look(G.page, 'o-off-1', 'npc_pr_mabel', null);
     const plain = await portraitOf(G.page);
     expect(plain.length > 500, 'a portrait is drawn');
     await ambient({ overlay: null }); await noOverlay(G.page, 15000);
     await look(G.page, 'o-off-2', 'npc_pr_mabel', { expr: 'afraid', fmt: 'passport', pose: 'lapel' });
     const withLook = await portraitOf(G.page);
-    expect(withLook === plain, 'the portrait is identical with the switches off');
+    expect(withLook.length > 500 && withLook !== plain, 'the look changes the portrait with nothing stored');
     const info = await G.page.evaluate(() => ({ fl: !!document.querySelector('.dp-ov-npc [class*="dp-fl"]') || /dp-fl/.test(document.querySelector('.dp-ov-npc').className), name: document.querySelector('.dp-ov-npc .dp-ov-name').textContent }));
-    expect(!info.fl && info.name === 'Mabel Quist', 'no frame, no badge: ' + JSON.stringify(info));
+    expect(info.fl && info.name === 'Mabel Quist', 'the card wears its frame: ' + JSON.stringify(info));
     expect(G.seen.responses.every((r) => !/^\/api\/npcs\//.test(r.path)), 'the page never read the cast');
     await ambient({ overlay: null }); await noOverlay(G.page, 15000);
   });

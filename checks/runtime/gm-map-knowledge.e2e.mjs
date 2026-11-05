@@ -1,5 +1,5 @@
 // The three knowledge states (suite 2.2, switch map.knowledge; app/gm/knowledge.js) on the Run view and the iPad copy, in a real browser against a real local Worker, on an
-// invented site (the Pelican Rooms). Switch off: the Reveal button and nothing else. Switch on: each room card's button is its state and a tap cycles it; Intel sets a band's dark
+// invented site (the Pelican Rooms). Everything built is on (N0): with nothing stored the state button sits beside Reveal, and a stored false changes nothing. Each room card's button is its state and a tap cycles it; Intel sets a band's dark
 // rooms to blueprint; the iPad copy draws a blueprint room as linework with its name and a dark room not at all, and follows a change live. Every name is invented; no model, $0.
 //   PW_MODULE=<playwright install> PW_CHANNEL=msedge [PORT=9201] node checks/runtime/gm-map-spotted.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
@@ -108,20 +108,19 @@ try {
   const display = async () => (await api('GET', '/gm/display')).json;
   const svgOf = async () => { const d = await display(); const o = d && d.display ? d.display : null; return o && o.kind === 'svg' && typeof o.svg === 'string' ? o.svg : ''; };
 
-  /* ---- switch off: the Reveal button and nothing else ---- */
+  /* ---- everything on (N0): with NOTHING stored the room card has its state button beside Reveal on the map, and the Map heading has the panel ---- */
   const A = await open('run');
   await A.page.waitForSelector('.rv-card[data-room="Security control room"]', { timeout: 20000 });
   await A.page.click('.rv-card[data-room="Security control room"]');
-  await A.page.waitForSelector('.rv-rm[data-room="Security control room"]', { timeout: 10000 });
-  check((await A.page.$$('[data-rv="know"], .rv-know-bar')).length === 0, 'switch off: no state button and no Intel bar on the Run view');
-  check((await A.page.$$('.rv-rm[data-room="Security control room"] [data-rv="open"]')).length === 1, 'switch off: the room still has its Reveal on the map button');
+  await A.page.waitForSelector('.rv-rm[data-room="Security control room"] [data-rv="know"]', { timeout: 10000 });
+  check((await A.page.$$('.rv-rm[data-room="Security control room"] [data-rv="know"]')).length === 1, 'nothing stored: the room card has its state button');
   await A.c.close();
   const L0 = await open('location');
-  check((await L0.page.$$('#gm-b24')).length === 0, 'switch off: no knowledge panel under the Map heading');
+  check(!!(await L0.page.waitForSelector('#gm-b24', { timeout: 20000 }).catch(() => null)), 'nothing stored: the knowledge panel is under the Map heading');
   await L0.c.close();
 
-  /* ---- switch on ---- */
-  check((await api('PATCH', '/gm/state', { features: { 'map.knowledge': true } })).status === 200, 'map.knowledge is switched on');
+  /* ---- a stored true (what the Switchboard used to write) is the same ---- */
+  check((await api('PATCH', '/gm/state', { features: { 'map.knowledge': true } })).status === 200, 'a stored true is taken (and changes nothing)');
   const R = await open('run');
   await R.page.waitForSelector('.rv-card[data-room="Security control room"]', { timeout: 20000 });
   await R.page.click('.rv-card[data-room="Security control room"]');
@@ -176,11 +175,11 @@ try {
   check(!!svg4 && !/Luxury penthouse|Private card rooms/i.test(svg4) && (svg4.match(/data-know="blueprint"/g) || []).length >= 2, 'the iPad shows the two as linework and still no secure or controlled room: ' + (svg4 ? (svg4.match(/data-know="blueprint"/g) || []).length + ' linework, penthouse ' + /Luxury penthouse/i.test(svg4) + ', card rooms ' + /Private card rooms/i.test(svg4) : 'no svg'));
   check(!(await ballNow()).open, 'nothing is open to the players: a blueprint room is not a room the phones know');
 
-  /* off again */
+  /* a stored false (the old All off) changes nothing */
   await R.c.close(); await L.c.close();
-  check((await api('PATCH', '/gm/state', { features: { 'map.knowledge': false } })).status === 200, 'switched off again');
+  check((await api('PATCH', '/gm/state', { features: { 'map.knowledge': false } })).status === 200, 'a stored false is taken');
   const O = await open('location');
-  check((await O.page.$$('#gm-b24')).length === 0, 'off again: no panel');
+  check(!!(await O.page.waitForSelector('#gm-b24', { timeout: 20000 }).catch(() => null)), 'a stored false changes nothing: the panel stays');
   check(errors.length === 0, 'no page errors: ' + errors.slice(0, 3).join(' | '));
   await browser.close();
 } catch (e) { failed++; console.log('FAIL ' + (e && e.stack || e)); }

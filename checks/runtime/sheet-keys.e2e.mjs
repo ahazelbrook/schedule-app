@@ -1,8 +1,7 @@
 // Turn the Key and the Key Cabinet in a real browser (suite 1.8, 5.6): a player's phone, the GM page and the iPad against a local Worker.
-//   Switches off: the Keys box is what it was (no offer, no cards), even at three hits.
-//   spine.keyturn on: a key with three hits offers the turn; turning it deadlocks the key for good, clears Stress, the iPad shows the keyturn card with
-//   AUTOMATIC CRITICAL, and the next action roll is a critical. A key with fewer than three hits offers nothing.
-//   between.keys on: a card per key, a fill bar, a flip to both deadlocks. All off puts the box back.
+//   Everything built is on (N0): with nothing stored the Keys box is the cabinet, a card per key with a fill bar and a flip to both deadlocks.
+//   A key with three hits offers the turn; turning it deadlocks the key for good, clears Stress, the iPad shows the keyturn card with AUTOMATIC CRITICAL,
+//   and the next action roll is a critical. A key with fewer than three hits offers nothing. A stored false (the old All off) changes nothing.
 //   PW_MODULE=<playwright> PW_CHANNEL=msedge PORT=9160 node checks/runtime/sheet-keys.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
@@ -85,22 +84,17 @@ try {
   const D = await open('#display', GM, { w: 1366, h: 1024 });
   await D.page.waitForSelector('.dp-overlay', { state: 'attached', timeout: 20000 });
 
-  /* ---- switches off ---- */
-  const off0 = await keyBox(Pn.page);
-  check(off0 && off0.offer === 0 && off0.cards === 0 && /KEY-1/.test(off0.html), 'switches off: the Keys box is the old one (no offer, no cards)');
+  /* ---- everything on (N0), nothing stored: the cabinet, and no offer below three hits ---- */
+  const c0 = await until(async () => { const b = await keyBox(Pn.page); return b && b.cards === 2 ? b : null; }, 10000, 200);
+  check(!!c0 && c0.offer === 0 && /KEY-1/.test(c0.html), 'nothing stored: the Keys box is the cabinet, a card per key, and no key below three hits offers a turn');
+  check(!!c0 && /1 more hit to turn it/.test(c0.text) && /2 more hits to turn it/.test(c0.text), 'each card counts the hits it still needs');
   /* tap KEY-1's third hit */
-  await Pn.page.click('#dossier .ds-keybox .ds-key:nth-child(1) .ds-pip:nth-of-type(3)');
+  await Pn.page.click('#dossier .ds-kcard[data-key="0"] .ds-pip:nth-of-type(3)');
   await until(async () => ((charDoc((await api('GET', '/characters/' + ID, GM)).json).play || {}).keys || [])[0].hits === 3, 6000, 200);
-  const off1 = await keyBox(Pn.page);
-  check(off1.offer === 0 && off1.cards === 0, 'switches off: a key at three hits still offers nothing');
-
-  /* ---- spine.keyturn on ---- */
-  const flip = async (ids) => { await G.page.click('[data-gm="menu"]'); await G.page.click('#gm-menu-switchboard'); for (const id of ids) await G.page.click('[data-sb="' + id + '"]'); await G.page.click('.gm-sheet:not([hidden]) [data-sheet-close]'); };
-  await flip(['spine.keyturn']);
   const offered = await until(async () => (await keyBox(Pn.page)).offer === 1, 10000, 200);
   const on1 = await keyBox(Pn.page);
-  check(offered && /You can turn this key/.test(on1.text) && /KEY-1/.test(on1.text), 'spine.keyturn on: the key with three hits offers the turn; the other (one hit) offers nothing: offers=' + on1.offer);
-  check(on1.cards === 0, 'the cabinet is still off');
+  check(offered && /You can turn this key/.test(on1.text) && /KEY-1/.test(on1.html), 'the key with three hits offers the turn; the other (one hit) offers nothing: offers=' + on1.offer);
+  check(on1.cards === 2, 'inside the cabinet');
 
   await Pn.page.click('#dossier .ds-keybox [data-act="kturn"][data-dir="down"]');
   const turned = await until(async () => { const d = charDoc((await api('GET', '/characters/' + ID, GM)).json); const k = (d.play || {}).keys; return k && k[0].deadlock === 'down' ? d : null; }, 8000, 200);
@@ -125,11 +119,10 @@ try {
   check(!!stored, 'the roll is a critical and the debt is cleared (once)');
   await Pn.page.click('#dossier [data-act="rollclose"]');
 
-  /* ---- between.keys on ---- */
-  await flip(['between.keys']);
+  /* ---- the cabinet after the turn ---- */
   const cab = await until(async () => (await keyBox(Pn.page)).cards === 2, 10000, 200);
   const on2 = await keyBox(Pn.page);
-  check(cab, 'between.keys on: a card per key (' + on2.cards + ')');
+  check(cab, 'still a card per key (' + on2.cards + ')');
   check(/Deadlocked: ▼ Reversed word/.test(on2.text) && /2 more hits to turn it/.test(on2.text), 'the turned card shows its deadlock; the other counts the hits it still needs');
   await Pn.page.click('#dossier .ds-kcard[data-key="1"] [data-act="kflip"]');
   await until(async () => (await Pn.page.$('#dossier .ds-kcard[data-key="1"].back')) !== null, 3000, 100);
@@ -141,10 +134,12 @@ try {
   check(hit2 && (await Pn.page.$eval('#dossier .ds-kcard[data-key="1"] .ds-kc-bar i', (e) => e.style.width)) === '67%', 'a hit fills the card (2 of 3)');
   check(await Pn.page.evaluate(() => document.documentElement.scrollWidth <= 391), 'the cabinet fits a 390 px phone');
 
-  /* ---- all off ---- */
-  await G.page.click('[data-gm="menu"]'); await G.page.click('#gm-menu-switchboard'); await G.page.click('[data-sb-alloff]');
-  const back0 = await until(async () => { const b = await keyBox(Pn.page); return b.cards === 0 && b.offer === 0 ? b : null; }, 10000, 200);
-  check(!!back0 && /KEY-1/.test(back0.html) && !/ds-kcard|ds-kt-/.test(back0.html), 'All off: the Keys box is the old one again');
+  /* ---- a stored false (the old All off, written by an older page into both documents) changes nothing ---- */
+  check((await api('PATCH', '/gm/state', GM, { features: { 'spine.keyturn': false, 'between.keys': false } })).status === 200 && (await api('PATCH', '/campaign', GM, { features: { 'spine.keyturn': false, 'between.keys': false } })).status === 200, 'a stored false is written to both documents');
+  await sleep(2500);
+  const still = await keyBox(Pn.page);
+  check(still && still.cards === 2 && (await Pn.page.evaluate(() => window.B68Flags.on('between.keys') && window.B68Flags.on('spine.keyturn'))), 'and changes nothing: the phone is still told both are on, and the cabinet stays');
+  check((await G.page.$$('#gm-menu-switchboard')).length === 0, 'there is no Switchboard to turn them off');
   check(errors.length === 0, 'no console errors: ' + errors.slice(0, 3).join(' / '));
   await browser.close();
 } catch (e) {

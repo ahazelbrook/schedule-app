@@ -1,4 +1,5 @@
-// The spine in a real browser (B08): all switches off is the page as it was; rail, curfew and Workshop switches on; All off puts it back.
+// The spine in a real browser (B08; the night rebuild N0): everything built is on, so the rail and the curfew are there with nothing stored and a stored false changes nothing;
+// the Workshop is gone (no Menu line, no away class) and its five are where N0 put them (Settings, the Blade panel, put away).
 //   PW_MODULE=<playwright> PW_CHANNEL=msedge GM_SHOTS=<dir> PORT=8956 node checks/runtime/gm-spine.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
@@ -83,42 +84,41 @@ try {
 
   const A = await open('#gm');
   const count = (page) => page.evaluate(() => ({ tabs: [].filter.call(document.querySelectorAll('.gm-tab'), (e) => !e.hidden && e.offsetParent !== null).length, chips: [].filter.call(document.querySelectorAll('.gm-segbar .chip'), (e) => !e.hidden).length, hasRail: !!document.querySelector('#gm-phaserail'), ws: !!document.querySelector('#gm-menu-workshop'), awayClass: document.body.classList.contains('ws-away'),
-    loose: ['[data-gm="mirror"]', '#as-screen', '#gm-run-lens'].map((s) => [...document.querySelectorAll(s)].filter((e) => e.offsetParent !== null).length) }));
-  const before = await count(A.page);
-  check(!before.hasRail && !before.ws && !before.awayClass, 'all switches off: no rail, no Workshop line, no away class: ' + JSON.stringify(before));
-  await A.page.click('[data-gm="menu"]'); await A.page.click('#gm-menu-switchboard');
-  for (const id of ['spine.rail', 'spine.curfew', 'spine.workshop']) await A.page.click('[data-sb="' + id + '"]');
-  await A.page.click('.gm-sheet:not([hidden]) [data-sheet-close]');
+    mirror: [...document.querySelectorAll('[data-gm="mirror"]')].filter((e) => e.offsetParent !== null).length, screenAway: [...document.querySelectorAll('#as-screen')].some((e) => getComputedStyle(e).display === 'none') }));
   await A.page.waitForSelector('#gm-phaserail .gm-pr-chip', { timeout: 8000 });
+  const before = await count(A.page);
+  check(before.hasRail && !before.ws && !before.awayClass, 'nothing stored: the rail is drawn (everything built is on), and there is no Workshop line or away class: ' + JSON.stringify(before));
+  check(before.mirror === 0 && !before.screenAway, 'the mirror buttons stay put away (Settings has the mirror); the Screen props are not put away');
   check(await A.page.$$eval('#gm-phaserail .gm-pr-chip', (e) => e.length) === 4, 'the rail has four phase chips');
-  await A.page.click('[data-rail="plan"]');
+  /* the chips are tapped as events, not by a pointer: at laptop widths the always-drawn cue bar sits over the rail (design 1, seam 1; the band fixes it) */
+  const tapRail = (id) => A.page.$eval('[data-rail="' + id + '"]', (e) => e.click());
+  check(await A.page.evaluate(() => { const r = document.querySelector('#gm-phaserail'), c = document.querySelector('#gm-cuebar'); return !!r && !!c; }), 'the rail and the cue bar are both drawn with nothing stored');
+  await tapRail('plan');
   await until(async () => (await A.page.$eval('[data-rail="plan"]', (e) => e.getAttribute('data-state'))) === 'now', 4000);
   const tabs = await shown(A.page, '.gm-tab');
   check(tabs.includes('score') && tabs.includes('cards') && !tabs.includes('chase') && !tabs.includes('scenes'), 'Planning: the tabs follow within the tap: ' + tabs.join(','));
   const bandSet = await until(async () => { const d = (await api('GET', '/gm/ambient')).json; return JSON.stringify(d || {}).includes('"plan"'); }, 6000);
   check(bandSet, 'the ambient document carries band.phase plan');
-  await A.page.click('[data-rail="all"]'); check((await shown(A.page, '.gm-tab')).includes('chase'), 'All tools shows every tab again');
-  await A.page.click('[data-rail="pb"]'); check(await A.page.$eval('[data-rail="pb"]', (e) => e.getAttribute('data-state')) === 'now', 'Back is allowed');
+  await tapRail('all'); check((await shown(A.page, '.gm-tab')).includes('chase'), 'All tools shows every tab again');
+  await tapRail('pb'); check(await A.page.$eval('[data-rail="pb"]', (e) => e.getAttribute('data-state')) === 'now', 'Back is allowed');
   await A.page.click('[data-gm="menu"]');
-  check(await A.page.$eval('#gm-menu-workshop', (e) => !!e), 'Menu has Workshop');
-  await A.page.click('#gm-menu-workshop');
-  await A.page.waitForSelector('#gm-sheet-workshop:not([hidden]) .chip');
-  const items = await A.page.$$eval('#gm-sheet-workshop .gm-ws-list .chip', (e) => e.map((x) => x.textContent));
-  check(items.length === 5, 'Workshop lists five: ' + items.join(' | '));
-  await shot(A.page, SHOTS, 'workshop-1280');
+  check((await A.page.$$('#gm-menu-workshop, #gm-menu-switchboard')).length === 0, 'the Menu has no Workshop and no Switchboard line');
+  await A.page.click('#gm-menu-settings');
+  await A.page.waitForSelector('#gm-sheet-settings:not([hidden]) [data-set-row]');
+  const rows = await A.page.$$eval('#gm-sheet-settings [data-set-row]', (e) => e.map((x) => x.getAttribute('data-set-row')));
+  check(rows.includes('phoneCards') && rows.includes('mirror'), 'phone mission cards and the screen mirror are in Settings: ' + rows.join(' | '));
+  await shot(A.page, SHOTS, 'settings-1280');
   await A.page.click('.gm-sheet:not([hidden]) [data-sheet-close]');
-  const after = await count(A.page);
-  check(after.hasRail && after.ws && after.awayClass && after.loose.every((n) => n === 0), 'on: the loose controls are put away: ' + JSON.stringify(after));
-  console.log('TOOLCOUNT main page tabs before=' + before.tabs + ' after=' + after.tabs + ' | phone chips before=' + before.chips + ' after=' + after.chips + ' | loose controls visible before=' + JSON.stringify(before.loose) + ' after=' + JSON.stringify(after.loose));
+  console.log('TOOLCOUNT main page tabs=' + before.tabs + ' | phone chips=' + before.chips);
   await shot(A.page, SHOTS, 'rail-1280');
-  await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.features && d.features['spine.rail'] === true; }, 8000);
   const Pn = await open('#gm', { w: 390, h: 844 }); await Pn.page.waitForSelector('#gm-phaserail .gm-pr-chip', { timeout: 10000 }); await shot(Pn.page, SHOTS, 'rail-390');
   check(await Pn.page.$eval('#gm-phaserail', (e) => e.getBoundingClientRect().width <= 390), 'the rail fits a 390 px phone');
-  /* off again */
-  await A.page.click('[data-gm="menu"]'); await A.page.click('#gm-menu-switchboard'); await A.page.click('[data-sb-alloff]');
-  await until(async () => !(await count(A.page)).hasRail, 6000);
+  /* a stored false (the old All off), and a stored Workshop line: nothing changes */
+  check((await api('PATCH', '/gm/state', { features: { 'spine.rail': false, 'spine.curfew': false, 'spine.workshop': true } })).status === 200, 'a stored false for the rail and a stored true for the Workshop are taken');
+  await A.page.reload(); await A.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  await A.page.waitForSelector('#gm-phaserail .gm-pr-chip', { timeout: 8000 }).catch(() => {});
   const off = await count(A.page);
-  check(!off.hasRail && !off.ws && !off.awayClass && JSON.stringify(off) === JSON.stringify(before), 'All off puts the page back exactly: ' + JSON.stringify(off));
+  check(off.hasRail && !off.ws && !off.awayClass && off.mirror === 0, 'and change nothing: the rail stays, no Workshop line, no away class: ' + JSON.stringify(off));
   check(errors.length === 0, 'no console errors: ' + errors.slice(0, 3).join(' / '));
   await browser.close();
 

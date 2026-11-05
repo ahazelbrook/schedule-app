@@ -164,7 +164,7 @@ try {
   check((await G.page.$$('#gm-controls [data-ctl="result"]')).length === 0, 'Situations: no Result control (the button is the result)');
   check(await G.page.$eval('#gm-controls', (c) => getComputedStyle(c).display === 'none') && /District: any/.test(await G.page.textContent('#gm-scene-chips')), 'the scene controls fold under a Scene line of labelled chips');
   const colOrder = await G.page.$$eval('.gm-console > *', (ks) => ks.filter((k) => getComputedStyle(k).display !== 'none').map((k) => k.id).join());
-  check(colOrder === 'gm-pos,gm-scenebox,gm-buttons,gm-card,gm-earlier,gm-singles', 'the console column: Position, Scene, the four buttons, the card, Earlier, More tables (' + colOrder + ')');
+  check(colOrder === 'gm-pos,gm-stamp,gm-scenebox,gm-buttons,gm-card,gm-earlier,gm-singles', 'the console column: Position, the Stamp row (always on since N0), Scene, the four buttons, the card, Earlier, More tables (' + colOrder + ')');
   check(!(await G.page.$('[data-gm="view"]')) && !(await G.page.$('.gm-head')), 'one console (the four Situations) and one layout: no Situations | Classic toggle, no page heading');
   check(await G.page.$eval('#gm-menu-exp', (e) => e.classList.contains('stale') && /days old/.test(e.textContent)), 'menu: the five-day-old export is flagged');
   const cached = await G.page.evaluate(() => new Promise((res) => { const r = indexedDB.open('b68-gm'); r.onsuccess = () => { const tx = r.result.transaction('kv'); const q = tx.objectStore('kv').getAllKeys(); q.onsuccess = () => res(q.result); }; r.onerror = () => res(null); }));
@@ -567,8 +567,10 @@ try {
       check(await V.page.$eval('.gm-segbar', (s) => getComputedStyle(s).display !== 'none'), 'phone: the segmented bar shows');
       const segs = await V.page.$$eval('.gm-segbar .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return { seg: x.getAttribute('data-seg'), top: Math.round(r.top), right: Math.round(r.right) }; }));
       const segTop = await V.page.$eval('.gm-segbar', (s) => Math.round(s.getBoundingClientRect().top));
+      /* since N0 the phase rail and the cue bar are always drawn, between the bar and the segments (the shell's band replaces all of them later) */
+      const above = await V.page.evaluate(() => Math.round(Math.max(...['.gm-bar', '#gm-phaserail', '#gm-cuebar', '.gm-curfew'].map((q) => document.querySelector(q)).filter(Boolean).map((e) => e.getBoundingClientRect().bottom))));
       const rowsOf = segs.reduce((m, s) => { m[s.top] = (m[s.top] || 0) + 1; return m; }, {});
-      check(segs.length === 12 && JSON.stringify(Object.values(rowsOf)) === '[6,6]' && segs.every((s) => s.right <= w) && segTop === 44, 'phone: twelve segments in two rows of six under the bar, none off screen ' + JSON.stringify([segTop, rowsOf, segs.map((s) => s.right)]));
+      check(segs.length === 12 && JSON.stringify(Object.values(rowsOf)) === '[6,6]' && segs.every((s) => s.right <= w) && Math.abs(segTop - above) <= 1, 'phone: twelve segments in two rows of six under the bar and the spine\'s bars, none off screen ' + JSON.stringify([segTop, above, rowsOf, segs.map((s) => s.right)]));
       /* the label's own text box inside the segment's box (scrollWidth overstates on these inline-flex chips, and text-overflow does
          not reach the text inside them, so a cut label would show no ellipsis) */
       check(await V.page.$$eval('.gm-segbar .chip', (c) => c.every((x) => { const rg = document.createRange(); rg.selectNodeContents(x); const t = rg.getBoundingClientRect(), b = x.getBoundingClientRect(), s = getComputedStyle(x); return t.width > 0 && t.left >= b.left + parseFloat(s.borderLeftWidth) - 0.5 && t.right <= b.right - parseFloat(s.borderRightWidth) + 0.5 && b.height >= 40; })), 'phone: every segment label shows whole, each 40 px or taller');
@@ -597,10 +599,11 @@ try {
       check(await V.page.waitForSelector('#gm-dt [data-gm="dt-who"][data-id="dt-mags"]', { timeout: 10000 }).then(() => true, () => false), 'phone: the Downtime segment shows the panel with the PCs');
       await V.page.tap('#gm-dt [data-gm="dt-who"][data-id="dt-mags"]');
       if (await V.page.$eval('#gm-dt [data-gm="dt-act"][data-v="indulge"]', (b) => b.getAttribute('aria-pressed') !== 'true')) await V.page.tap('#gm-dt [data-gm="dt-act"][data-v="indulge"]');
-      /* how the vice roll went (Indulged · Overindulged) is the tap every indulgence needs: both on the first screen, clear of the Capture
-         button (above it, or beside it) */
+      /* how the vice roll went (Indulged · Overindulged) is the tap every indulgence needs: both in view once scrolled to, clear of the Capture
+         button (above it, or beside it). Since N0 the rail and the cue bar sit above the panel on a phone, so it is no longer the first screen */
+      await V.page.$eval('#gm-dt [data-gm="dt-roll"][data-k="res"]', (b) => b.scrollIntoView({ block: 'center' }));
       const rb = await V.page.$$eval('#gm-dt [data-gm="dt-roll"][data-k="res"]', (bs) => { const f = document.querySelector('.gm-fab').getBoundingClientRect(); return { n: bs.length, v: bs.map((b) => b.getAttribute('data-v')).join(), bottom: Math.round(Math.max(...bs.map((b) => b.getBoundingClientRect().bottom))), right: Math.round(Math.max(...bs.map((b) => b.getBoundingClientRect().right))), fab: Math.round(f.top), fabLeft: Math.round(f.left), ih: innerHeight }; });
-      check(rb.n === 2 && rb.v === 'in,over' && rb.bottom <= rb.ih && (rb.bottom <= rb.fab || rb.right <= rb.fabLeft), 'phone: after the PC, Indulged and Overindulged are on the first screen, clear of the Capture button ' + JSON.stringify(rb));
+      check(rb.n === 2 && rb.v === 'in,over' && rb.bottom <= rb.ih && (rb.bottom <= rb.fab || rb.right <= rb.fabLeft), 'phone: after the PC, Indulged and Overindulged are in view once scrolled to, clear of the Capture button ' + JSON.stringify(rb));
       const ld = await V.page.evaluate(layout);
       check(ld.scrollWidth <= ld.clientWidth + 1 && !ld.wide.length && !ld.small.length, 'phone Downtime: no overflow and every control is at least 44 px ' + JSON.stringify([ld.wide, ld.small]));
       await V.page.tap('#gm-dt [data-gm="dt-roll"][data-v="over"]'); await V.page.waitForSelector('#gm-dt-d100'); await sleep(800);
@@ -659,7 +662,15 @@ try {
     await S5.page.keyboard.press('3');
     await S5.page.waitForSelector('#gm-card .gm-lead');
     check(await S5.page.waitForFunction((m) => { const b = document.getElementById('gm-signed'); return b && !b.hidden && b.textContent === m && getComputedStyle(b).display !== 'none'; }, SO, { timeout: 8000 }).then(() => true, () => false), 'signed out mid-session: the bar says "' + SO + '"');
-    check(await S5.page.$eval('.gm-save', (s) => s.textContent === 'Signed out' && s.classList.contains('bad')) && await S5.page.$eval('.gm-bar', (b) => b.classList.contains('out') && b.getBoundingClientRect().bottom <= 120), 'and the bar\'s status reads Signed out, the message on a second row of the bar');
+    /* the message is a row of its own at the foot of the bar. With everything on (N0) the bar holds more by this point of the run, so its controls may wrap to
+       two rows at 1280 px once the status widens to Signed out: the bar stays within three rows */
+    const so5 = await S5.page.evaluate(() => {
+      const s = document.querySelector('.gm-save'), b = document.querySelector('.gm-bar'), m = document.getElementById('gm-signed');
+      const others = b ? [...b.children].filter((k) => k !== m && !k.hidden && getComputedStyle(k).display !== 'none').map((k) => k.getBoundingClientRect().bottom) : [];
+      return { save: s && s.textContent, bad: !!(s && s.classList.contains('bad')), out: !!(b && b.classList.contains('out')), bottom: b ? Math.round(b.getBoundingClientRect().bottom) : null,
+        msgTop: m ? Math.round(m.getBoundingClientRect().top) : null, controlsBottom: others.length ? Math.round(Math.max(...others)) : null };
+    });
+    check(so5.save === 'Signed out' && so5.bad && so5.out && so5.msgTop >= so5.controlsBottom - 1 && so5.bottom <= 140, 'and the bar\'s status reads Signed out, the message on a row of its own at the foot of the bar ' + JSON.stringify(so5));
     await S5.page.keyboard.press('2'); await S5.page.waitForSelector('#gm-card .gm-lead');
     const card2 = (await S5.page.textContent('#gm-card')).replace(/\s+/g, ' ');
     await S5.page.keyboard.press('p'); await S5.page.keyboard.type('Written while signed out'); await S5.page.keyboard.press('Enter'); await S5.page.keyboard.press('Escape');

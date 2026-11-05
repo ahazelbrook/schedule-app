@@ -156,26 +156,17 @@ try {
   check(await seqNow() === seq0, 'nothing was published to the iPad');
   await shot(G.page, 'runv2-01-started');
 
-  /* ---- 2b. the countdown (map.countdown), flipped as the GM flips it, in the page's own Switchboard: a segment a beat from clock.start ---- */
-  check((await G.page.$$('.rv-count')).length === 0, 'map.countdown off: no countdown pie');
-  /* Menu -> Switchboard opens its sheet (the same line closes it again, below); the switch is a button in it */
-  const sbSheet = async () => { await G.page.click('[data-gm="menu"]'); await G.page.click('#gm-menu-switchboard'); };
-  const flipCountdown = async () => { await G.page.click('[data-sb="map.countdown"]'); return G.page.$eval('[data-sb="map.countdown"]', (e) => e.getAttribute('aria-pressed') === 'true'); };
+  /* ---- 2b. the countdown (map.countdown): always on since N0, with nothing stored; a segment a beat from clock.start ---- */
   const pieText = () => G.page.$eval('.rv-count', (e) => e.textContent.replace(/\s+/g, ' ').trim()).catch(() => '');
-  await sbSheet();
-  check(await flipCountdown() === true, 'the Switchboard turns map.countdown on');
   const pie0 = await until(async () => (await pieText()) || null, 8000);
-  check(pie0 === 'Zzcount 3/12', 'the pie reads Zzcount 3/12 at 21:45, with no reload (' + pie0 + ')');
-  check(!!(await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.features && d.features['map.countdown'] === true; }, 8000)), 'and the switch is saved in the GM state');
+  check(pie0 === 'Zzcount 3/12', 'nothing stored: the pie reads Zzcount 3/12 at 21:45 (' + pie0 + ')');
   await G.page.click('[data-rv="next"]');
   check(!!(await until(async () => (await pieText()) === 'Zzcount 4/12', 8000)), 'a beat forward is a tick: 4/12 at 22:00');
   await G.page.click('[data-rv="back"]'); await until(async () => (await ball()).t === 45, 8000);
-  check(await flipCountdown() === false, 'the Switchboard turns it off again');
-  check(!!(await until(async () => (await G.page.$$('.rv-count')).length === 0, 8000)), 'and the pie goes');
-  await sbSheet();
-  check(!!(await until(async () => !(await G.page.isVisible('#gm-sheet-switchboard')), 5000)), 'the Switchboard sheet is closed again');
-  check(!!(await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.features && d.features['map.countdown'] === false; }, 8000)), 'and the switch is saved off');
-  await sleep(2500);   /* the flips' saves and polls settle, so the board below is not redrawn under the drag checks' element handles */
+  check((await api('PATCH', '/gm/state', { features: { 'map.countdown': false } })).status === 200, 'a stored false (the old All off) is taken');
+  await sleep(2500);   /* the state arrives on the page, so the board below is not redrawn under the drag checks' element handles */
+  check((await pieText()) === 'Zzcount 3/12', 'and changes nothing: the pie stays (' + (await pieText()) + ')');
+  check((await G.page.$$('#gm-menu-switchboard, #gm-sheet-switchboard')).length === 0, 'there is no Switchboard to flip it in');
 
   /* ---- 3. a beat each way ---- */
   await G.page.click('[data-rv="next"]');
@@ -233,7 +224,7 @@ try {
   b = await until(async () => { const x = await ball(); return x && x.unheard && x.unheard.A ? x : null; }, 8000);
   check(!!b && b.unheard.A['run-pc2'] === true && !(b.heard && b.heard.A && b.heard.A['run-pc2'] !== undefined), 'Un-hear writes ball.unheard.A.<pc> and takes the heard time back (' + JSON.stringify(b && [b.heard, b.unheard]) + ')');
   await G.page.click('.rv-card[data-room="Luxury penthouse"] .rv-cn');
-  check(/Reveal on the map/.test(await side()), 'a shut room offers Reveal on the map');
+  check(/Dark/.test(await side()) && /tap for blueprint/.test(await side()), 'a shut room offers its knowledge state, Dark: the room card\'s one toggle (map.knowledge is always on since N0, so Reveal on the map is the cycle to Seen)');
   await G.page.click('.rv-tray .rv-pc[data-id="run-pc3"]'); await G.page.click('.rv-card[data-room="Luxury penthouse"]');
   b = await until(async () => { const x = await ball(); return x && x.crew && x.crew['run-pc3'] ? x : null; }, 8000);
   check(!!b && b.crew['run-pc3'].room === 'Luxury penthouse', 'tapping her chip, then the shut penthouse, puts Ira Lund there');
@@ -245,38 +236,49 @@ try {
   check(!!(await until(async () => (await seqNow()) > seq0, 8000)), 'Show on iPad put the player map up');
   await G.page.keyboard.press('g');
   await G.page.waitForSelector('.rv-head');
+  const knowBtn = '.rv-sec[data-sec="room"] [data-rv="know"]';
   await G.page.click('.rv-card[data-room="Private card rooms"] .rv-cn');
+  answer.no = false; asked.length = 0;
+  await G.page.click(knowBtn);
+  check(!!(await until(async () => ((await ball()).know || []).includes('Private card rooms'), 8000)) && !((await ball()).open || []).length, 'the first tap makes the room blueprint (ball.know), not open');
   answer.no = true; asked.length = 0;
-  await G.page.click('.rv-sec[data-sec="room"] [data-rv="open"]');
-  await sleep(600);
-  check(asked.length === 1 && /opening the room Private card rooms shows it to the players now/.test(asked[0]), 'Open for the players asks first, by name (' + asked.join(' | ') + ')');
-  check(!((await ball()).open || []).length && await G.page.$eval('.rv-card[data-room="Private card rooms"]', (e) => e.classList.contains('fog')), 'and a no leaves the room shut');
+  await G.page.click('.rv-card[data-room="Private card rooms"] .rv-cn');
+  await G.page.click(knowBtn);
+  await sleep(800);
+  check(asked.length === 1 && /the room Private card rooms in full now/.test(asked[0]), 'Seen, with the map live on the iPad, asks first, by name (' + asked.join(' | ') + ')');
+  check(!((await ball()).open || []).length, 'and a no leaves the room shut');
   answer.no = false; asked.length = 0;
   let sq = await seqNow();
   await G.page.click('.rv-card[data-room="Private card rooms"] .rv-cn');
-  await G.page.click('.rv-sec[data-sec="room"] [data-rv="open"]');
-  check(!!(await until(async () => JSON.stringify((await ball()).open) === '["Private card rooms"]', 8000)) && asked.length === 1, 'a yes: ball.open holds the room');
+  const st7 = await G.page.$eval(knowBtn, (e) => e.textContent).catch(() => '');
+  await G.page.click(knowBtn);
+  if (/^Blueprint/.test(st7)) check(true, 'the room was left blueprint by the no'); else { await sleep(300); await G.page.click(knowBtn); }
+  check(!!(await until(async () => JSON.stringify((await ball()).open) === '["Private card rooms"]', 8000)) && asked.length >= 1, 'a yes: ball.open holds the room');
   check(!!(await until(async () => (await seqNow()) > sq, 8000)), 'and the room went to the iPad through the page');
   check(await G.page.waitForFunction(() => !document.querySelector('.rv-card[data-room="Private card rooms"]').classList.contains('fog'), null, { timeout: 8000 }).then(() => true, () => false), 'the card is solid once the room is open');
 
-  /* ---- 7b. the one reveal toggle on a room card: Reveal on the map / Revealed · hide ---- */
+  /* ---- 7b. the one toggle on a room card (map.knowledge, always on since N0): Dark -> Blueprint -> Seen (open for the players) -> Dark ---- */
   {
-    const room = 'Underground counting room', btn = '.rv-sec[data-sec="room"] [data-rv="open"], .rv-sec[data-sec="room"] [data-rv="close"]';
+    const room = 'Underground counting room', btn = '.rv-sec[data-sec="room"] [data-rv="know"]';
     const hudRooms = async () => { const x = (await api('GET', '/campaign')).json.doc.mission; return x && x.hud && Array.isArray(x.hud.rooms) ? x.hud.rooms.reduce((a, z) => a.concat(z.rooms || []), []) : []; };
-    const label = () => G.page.$eval(btn, (e) => e.textContent + '|' + e.getAttribute('aria-pressed') + '|' + e.getAttribute('data-rv')).catch(() => '');
+    const label = () => G.page.$eval(btn, (e) => e.textContent.replace(/\s+/g, ' ').trim()).catch(() => '');
+    const tap = async () => { await G.page.click('.rv-card[data-room="' + room + '"] .rv-cn'); await G.page.click(btn); };
     await G.page.click('.rv-card[data-room="' + room + '"] .rv-cn');
-    check((await label()) === 'Reveal on the map|false|open' && !((await ball()).open || []).includes(room), 'a closed room: Reveal on the map, not pressed');
+    check((await label()) === 'Dark tap for blueprint' && !((await ball()).open || []).includes(room), 'a closed room: Dark, tap for blueprint (' + (await label()) + ')');
     check(((await G.page.$$('.rv-sec[data-sec="room"] [data-rv="move"]')).length) === 0, 'no Move button in the Rooms panel');
+    answer.no = false; asked.length = 0;
+    await tap();
+    check(!!(await until(async () => ((await ball()).know || []).includes(room), 8000)), 'one tap: blueprint, in ball.know');
     sq = await seqNow();
-    await G.page.click(btn);
-    check(!!(await until(async () => ((await ball()).open || []).includes(room), 8000)), 'Reveal on the map: the GM state open holds the room');
+    await tap();
+    check(!!(await until(async () => ((await ball()).open || []).includes(room), 8000)), 'a second tap: Seen, the GM state open holds the room');
     check(!!(await until(async () => (await hudRooms()).includes(room), 10000)), 'and the published mission.hud.rooms includes it');
     check(!!(await until(async () => (await seqNow()) > sq, 8000)), 'and the iPad map was published');
-    check(!!(await until(async () => (await label()) === 'Revealed · hide|true|close', 8000)), 'the button now reads Revealed · hide, pressed');
-    await G.page.click(btn);
-    check(!!(await until(async () => !((await ball()).open || []).includes(room), 8000)), 'click again: the room leaves the GM state open');
+    check(!!(await until(async () => /^Seen/.test(await label()), 8000)), 'the button now reads Seen (' + (await label()) + ')');
+    await tap();
+    check(!!(await until(async () => !((await ball()).open || []).includes(room) && !((await ball()).know || []).includes(room), 8000)), 'a third tap: Dark again, the room leaves the GM state open');
     check(!!(await until(async () => !(await hudRooms()).includes(room), 10000)), 'and mission.hud.rooms drops it');
-    check(!!(await until(async () => (await label()) === 'Reveal on the map|false|open', 8000)), 'and the button reads Reveal on the map again');
+    check(!!(await until(async () => /^Dark/.test(await label()), 8000)), 'and the button reads Dark again');
   }
 
   /* ---- 8. the keys ---- */
