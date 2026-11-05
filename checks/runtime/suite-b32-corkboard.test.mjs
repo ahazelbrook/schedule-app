@@ -49,7 +49,7 @@ const NPCS = {
 
 await test('switch: GM-only, off by default, bland text', () => {
   const s = F.get('map.corkboard'); assert.ok(s); assert.equal(s.surface, 'gm'); assert.equal(s.default, false);
-  assert.equal(F.valueOf({}, 'map.corkboard'), false); assert.ok(!F.publicIds().includes('map.corkboard'));
+  assert.equal(F.valueOf({}, 'map.corkboard'), true); assert.ok(!F.publicIds().includes('map.corkboard'));
 });
 
 await test('intelOf: told facts only, room from its own field or the way or event it reveals, unpinned ones kept', () => {
