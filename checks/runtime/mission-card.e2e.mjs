@@ -195,7 +195,8 @@ try {
   // ---- idle: an open card makes no request of its own ----
   const idle0 = a.reqs.length; await sleep(1800);
   const idle = a.reqs.slice(idle0), kinds = [...new Set(idle)];
-  check(kinds.every((r) => /^GET \/api\/(characters|campaign|npcs|me)$/.test(r)), 'idle with the card open: only the page\'s own poll (' + idle.length + ' requests: ' + kinds.join(', ') + ')');
+  /* the page's own poll, and (every phone feature on since the night rebuild) the reads of the sheet's Now card sources, which poll the docs store */
+  check(kinds.every((r) => /^GET \/api\/(characters|campaign|npcs|me|docs)$/.test(r)), 'idle with the card open: only the page\'s own poll (' + idle.length + ' requests: ' + kinds.join(', ') + ')');
   check(!idle.some((r) => /\/gm\/|mission|display/i.test(r)), 'and nothing that reads the GM state');
 
   // ---- live: a change to her card arrives within a poll, in place ----
