@@ -55,6 +55,7 @@ const CHECKS = [
   ['checks/runtime/gm-cogm.e2e.mjs', 'the co-GM: switch, clock and Undo, re-sent window, 429, Do it, compare-and-swap, hidden NPC, Reveal and show (8878)'],
   ['checks/runtime/gm-assist-health.e2e.mjs', 'the Blade header: seat-health dots, reaped note, meter, live regions, focus, contrast in light and dark (8872)'],
   ['checks/runtime/mission-card.e2e.mjs', 'the phone mission card: own card only, dot, live redraw, switcher, mission null (9020)'],
+  ['checks/runtime/sheet-now.e2e.mjs', 'the phone sheet\'s Now card, Quiet and the Between fold: the order, +n more, nothing due, the long press and its lift-off, 16 px forms, read-only frames and the GM (9170)'],
   ['checks/runtime/display-ambient.e2e.mjs', 'the ambient floor on the display (8871)'],
   ['checks/runtime/display-band.e2e.mjs', 'the band beside the map: geometry at three sizes, hides over other stages, hud change within a poll, no /api/campaign (8900)'],
   ['checks/runtime/display-webkit.e2e.mjs', 'the display at iPad and iPhone sizes, with a missing-API probe: the WebKit pass harness (9150)'],

@@ -31,7 +31,7 @@
        it is there; the cast, because its "on stage" banner shows on every screen during a scene */
     core: ['tracker.css', 'schedule.css', 'rules.css', 'cast.css',
       'content.js', 'core.js', 'zoom.js', 'steps.js', 'tracker.js', 'schedule.js',
-      'markdown.js', 'rules.js', 'cast-page.js', 'name-edit.js', 'sheet/flags.js', 'sheet/keys.js', 'runtime/cf.js', 'routes.js', 'boot.js'],
+      'markdown.js', 'rules.js', 'cast-page.js', 'name-edit.js', 'sheet/flags.js', 'sheet/keys.js', 'sheet/now.js', 'runtime/cf.js', 'routes.js', 'boot.js'],
     /* the figure kit and the cast canon (about 1 MB): NOT in the core. First paint draws no figure; boot.js asks for this bundle
        once the route has rendered (B68Load.kit), every caller shows a placeholder and redraws on B68Load.onFigures. gm and
        display need it before they run (DEPS); season.js and the other callers wait for it themselves. sw.js precaches it for everyone but does not require it at install */

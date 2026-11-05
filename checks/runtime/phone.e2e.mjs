@@ -89,6 +89,31 @@ try {
   }
   const viewports = await page.evaluate(() => document.querySelectorAll('meta[name="viewport"]').length);
   check(viewports === 1, 'one viewport meta (cf.js does not add a second): ' + viewports);
+
+  /* the character sheet on a player's phone with the Now card up (commendations and a key to turn) and the Between fold open (N6): the same rules */
+  const P = 'phone.player@example.test', CID = 'char_phone1';
+  const call = (method, p, body, user = 'gm@example.test') => fetch(BASE + '/api' + p, { method, headers: { 'X-Dev-User': user, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.status);
+  check(await call('PUT', '/campaign', { v: 1, session: { number: 2, startedAt: new Date().toISOString(), endedAt: null }, crew: {}, clocks: [], log: [] }) === 200, 'a table is set up');
+  await call('PATCH', '/campaign', { features: { 'spine.keyturn': true, 'between.keys': true, 'spine.aftermath': true, 'spine.debrief': true, 'between.quiet': true, 'between.board': true, 'between.claims': true, 'between.absent': true } });
+  check(await call('PUT', '/characters/' + CID, { name: 'Tam Petrakis', playbook: 'hound', spec: { name: 'Tam Petrakis', playbook: 'hound' }, sheet: { name: 'Tam Petrakis' }, play: { stress: 2, keys: [{ name: 'KEY-1', down: 'Walk away', up: 'Burn it down', hits: 3 }] } }, P) === 200, 'a player files a character with a key at three hits');
+  await call('PUT', '/docs', { kind: 'commend', owner: '_', scope: 'public', json: { v: 1, secs: 90, until: Date.now() + 90000 } });
+  const pctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': P }, viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, serviceWorkers: 'block' });
+  const pp = await pctx.newPage();
+  pp.on('console', (m) => { if (m.type() === 'error') errors.push('sheet: ' + m.text()); });
+  pp.on('pageerror', (e) => errors.push('sheet pageerror: ' + e.message));
+  await pp.goto(BASE + '/#c/' + CID);
+  /* the key is on the card at once (it is the sheet's own); the commendations take the top when their row has been read */
+  const due = await pp.waitForFunction(() => { const c = document.querySelector('#dossier .ds-now .ds-now-item'); return c && c.dataset.now === 'commend' && document.querySelector('#dossier .ds-now-more') ? c.dataset.now : null; }, null, { timeout: 30000 }).then((h) => h.jsonValue(), () => '');
+  check(due === 'commend', 'the sheet: the commendations take the top of the Now card, the key waits behind "+1 more": ' + due);
+  await pp.click('#dossier .ds-now-more');
+  await pp.click('#dossier .ds-between-t');
+  await sleep(400);
+  const s = await pp.evaluate(layout);
+  check(s.innerWidth === 390 && s.scrollWidth <= s.clientWidth, 'the sheet with the Now card open and the fold open: no horizontal overflow (scrollWidth ' + s.scrollWidth + ')' + (s.wide.length ? ' wide: ' + s.wide.join(', ') : ''));
+  const q = await pp.$eval('#dossier .ds-quietbtn', (b) => { const r = b.getBoundingClientRect(); return r.height >= 44 && r.right <= innerWidth; }).catch(() => false);
+  check(q, 'the sheet: Quiet is in the bar, 44 px tall, on the screen');
+  await pctx.close();
+
   check(errors.length === 0, 'no console errors' + (errors.length ? ': ' + errors.join(' | ') : ''));
   await browser.close();
 } catch (e) {

@@ -8,11 +8,13 @@
    the downtime picks to offer, when the card shows (from: the next morning) and when the defaults take over (due: 48 hours after the night).
    WHAT IT WRITES. The player's reply goes into the SAME row (PUT kind 'debrief', scope 'player', the row's own fields carried forward): reply = { at, unwind:
    { pick, note }, xp: { ticked, note }, credits: { note } }. A phone writes only its own row (the store refuses anything else).
-   WHAT IT DRAWS. bar() is a strip the sheet puts under its table bar (tracker.js, the `bar` slot): one line and a button that opens a small form (its own
-   dialog, so a redraw of the sheet cannot lose what is typed). Before `from` it draws nothing; after `due` with no reply it says the defaults apply and the form
-   shows them read-only. The xp triggers are the sheet's own: the form's button clicks the sheet's End of session button. This file knows no playbook text.
+   WHAT IT SAYS. now() is the sheet's Now card item (sheet/now.js) while the Debrief is current: from the morning after until it is answered or the defaults
+   apply, one line naming the steps and a button that opens a small form (its own dialog, so a redraw of the sheet cannot lose what is typed). Once it is no
+   longer current, between() puts it in the sheet's "Between sessions" fold instead: sent (it can still be changed), or the defaults apply and the form shows
+   them read-only. Before `from` it says nothing anywhere. The xp triggers are the sheet's own: the form's button clicks the sheet's End of session button.
+   This file knows no playbook text.
 
-   API: start() stop() bar() -> html | ''  open() close() state()      pure (Node tests): viewOf(row, nowMs) -> { phase, due, from } */
+   API: start() stop() now() -> item | null  between() -> item | null  open() close() state()      pure (Node tests): viewOf(row, nowMs) -> { phase, due, from } */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -87,28 +89,50 @@
     if (had) redraw();
   }
 
-  function bar() {
-    var v = viewOf(cur, now());
-    if (v.phase === 'none' || v.phase === 'waiting') return '';
-    var line = v.phase === 'answered' ? 'Sent. You can change it until the defaults apply.' : v.phase === 'default' ? 'The 48 hours are up: the defaults apply.' : 'Steps the Aftermath did not reach.';
-    return '<div class="ds-tablebar ds-debrief" role="status"><span class="ds-tbline"><b>Debrief</b><span class="ds-dim">' + esc(line) + '</span></span>' +
-      '<button type="button" class="btn sm primary" data-b68="debrief-open">' + (v.phase === 'open' ? 'Answer the Debrief' : 'Open the Debrief') + '</button></div>';
+  /* "Unwind, Commendations and End credits" */
+  function names(steps) { var n = steps.map(function (id) { return LABEL[id] || str(id); }); return n.length < 2 ? n.join('') : n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1]; }
+  /* when the defaults apply, in the phone's own words ("Mon 11:30 pm"), or '' where the phone cannot say it */
+  function dueWords(ms) {
+    if (!whole(ms)) return '';
+    try { return new Date(ms).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }); } catch (e) { return ''; }
+  }
+  /* the Now card's item while the Debrief is current (the morning after, not answered, the defaults not yet applied) */
+  function nowItem() {
+    var v = viewOf(cur, now()); if (v.phase !== 'open') return null;
+    var by = dueWords(v.due);
+    return { title: 'Debrief', line: 'The Aftermath did not reach ' + names(cur.steps) + '. ' + (by ? 'Answer by ' + by + ', or the defaults apply.' : 'Answer before the defaults apply.'),
+      actions: [{ label: 'Answer the Debrief', attrs: 'data-b68="debrief-open"', primary: true }] };
+  }
+  /* the fold's item once it is no longer current: sent (it can still be changed), or the defaults applied */
+  function betweenItem() {
+    var v = viewOf(cur, now()); if (v.phase !== 'answered' && v.phase !== 'default') return null;
+    return { title: 'Debrief', line: v.phase === 'answered' ? 'Sent. You can change it until the defaults apply.' : 'The 48 hours are up: the defaults apply.',
+      actions: [{ label: 'Open the Debrief', attrs: 'data-b68="debrief-open"' }] };
   }
 
-  /* ---------- the form ---------- */
+  /* ---------- the form (a bottom sheet in the sheet's paper and ink: tracker.css .ds-dlg) ---------- */
   function el(tag, cls, text) { var e = W.document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
-  function close() { if (dlg && dlg.parentNode) dlg.parentNode.removeChild(dlg); dlg = null; }
+  /* focus goes into the form when it opens and back to what opened it when it closes; Esc closes it */
+  var back = null;
+  function focusIn(n) { if (n && typeof n.focus === 'function') { try { n.focus({ preventScroll: true }); } catch (e) { /* not focusable */ } } }
+  function close() {
+    var had = !!dlg, b = back; back = null;
+    if (dlg && dlg.parentNode) dlg.parentNode.removeChild(dlg);
+    dlg = null;
+    var body = W && W.document && W.document.body;
+    if (had && b && body && typeof body.contains === 'function' && body.contains(b)) focusIn(b);
+  }
   function open() {
     if (!W || !W.document || !cur) return false;
     var v = viewOf(cur, now());
     if (v.phase === 'none' || v.phase === 'waiting') return false;
-    close();
+    var opener = W.document.activeElement;
+    close(); back = opener;
     var ro = v.phase === 'default';
     var rep = isObj(cur.reply) ? cur.reply : {}, dflt = isObj(cur.defaults) ? cur.defaults : {};
-    dlg = el('div', 'ds-debrief-dlg'); dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-label', 'Debrief');
-    dlg.style.cssText = 'position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center';
-    var card = el('form', 'ds-debrief-card');
-    card.style.cssText = 'background:#fff;color:#111;width:min(100%,520px);max-height:90vh;overflow:auto;border-radius:12px 12px 0 0;padding:14px 16px;font:15px system-ui,sans-serif;display:grid;gap:10px';
+    dlg = el('div', 'ds-dlg ds-debrief-dlg'); dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true'); dlg.setAttribute('aria-label', 'Debrief');
+    dlg.addEventListener('keydown', function (e) { if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); e.stopPropagation(); close(); } });
+    var card = el('form', 'ds-dlg-card ds-debrief-card');
     card.appendChild(el('h3', '', 'Debrief'));
     card.appendChild(el('p', '', ro ? 'The 48 hours are up. These are the defaults the GM will use.' : 'Only you and the GM can see this.'));
     var fields = {};
@@ -133,8 +157,8 @@
       }
       card.appendChild(box);
     });
-    var msg = el('p', ''); msg.setAttribute('role', 'status'); card.appendChild(msg);
-    var row = el('div', ''); row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end';
+    var msg = el('p', 'ds-dlg-msg'); msg.setAttribute('role', 'status'); card.appendChild(msg);
+    var row = el('div', 'ds-dlg-row');
     var cl = el('button', 'btn', 'Close'); cl.type = 'button'; cl.addEventListener('click', close); row.appendChild(cl);
     if (!ro) {
       var sv = el('button', 'btn primary', 'Send'); sv.type = 'submit'; row.appendChild(sv);
@@ -152,9 +176,10 @@
       });
     }
     card.appendChild(row); dlg.appendChild(card); W.document.body.appendChild(dlg);
+    focusIn((fields.unwind && !ro && fields.unwind.sel) || cl);   /* the first pick (no keyboard comes up), else Close */
     return true;
   }
   function state() { return { started: started, phase: viewOf(cur, now()).phase, row: cur }; }
 
-  return { start: start, stop: stop, bar: bar, open: open, close: close, state: state, viewOf: viewOf, KIND: KIND, _set: function (row) { apply(row); } };
+  return { start: start, stop: stop, now: nowItem, between: betweenItem, open: open, close: close, state: state, viewOf: viewOf, KIND: KIND, _set: function (row) { apply(row); } };
 });

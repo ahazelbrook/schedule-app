@@ -374,19 +374,21 @@
     /* the wrappers (.ds-idrow, .ds-bar, .ds-about) only group on a phone: on a desk and in print they are display: contents,
        so the head's grid is what it was. On a phone the bar (Back, the status, Print, "…" and the vitals) sticks to the top
        and the identity folds into one closed "About" row. */
-    var mbtn = live ? missionButton() : '';
+    var mbtn = live ? missionButton() : '', qbtn = live ? quietButton() : '';
     return '<div class="ds-head">' +
       '<div class="ds-idrow">' +
         '<div class="ds-title"><h2 class="ds-name">' + esc(name) + '</h2><div class="ds-pb">' + esc(pb ? pb.name : doc.playbookName || 'Subject') + '</div><div class="ds-desc">' + desc + '</div></div>' + th +
       '</div>' +
       '<div class="ds-bar">' +
-        '<div class="ds-nav' + (mbtn ? ' ds-nav-m' : '') + '">' +
+        /* ds-nav-q: the player's own sheet has Quiet in the bar; on a phone, Print moves into "…" to make the room (tracker.css) */
+        '<div class="ds-nav' + (mbtn ? ' ds-nav-m' : '') + (qbtn ? ' ds-nav-q' : '') + '">' +
           '<button type="button" class="btn sm" data-act="back" data-always="1">← Back</button>' +
           (live ? tableButton() : '') +
           mbtn +
           '<button type="button" class="btn sm ds-wide" data-act="edit"' + (ro ? ' disabled' : '') + '>Edit figure</button>' +
           '<button type="button" class="btn sm" data-act="print" data-always="1">Print</button>' +
-          (live ? moreMenu(name) : '') +
+          (live ? moreMenu(name, !!qbtn) : '') +
+          qbtn +
           (live ? '<span class="ds-status" id="ds-status"></span>' : '<span class="ds-status' + (st.bad ? ' bad' : '') + '" id="ds-status">' + esc(st.msg) + '</span>') +   /* a live sheet's status text is written by syncStatus, never part of the compared markup */
         '</div>' +
         (live ? slotMark('vitals') : '') +   /* its own slot (see render) */
@@ -414,10 +416,12 @@
     var o = cur.doc && cur.doc.owner, me = cur.api.me || null;
     return o ? o === me : !me;   /* an unowned sheet: only where nobody is signed in (a copy of one's own) */
   }
-  function moreMenu(name) {
+  /* printq: Quiet is in the bar, so on a phone Print is a line of this menu instead of a button beside it */
+  function moreMenu(name, printq) {
     var ro = readOnly(), rm = canRemove(), open = !!cur.ui.more; if (ro && !rm) return '';
     return '<span class="ds-more"><button type="button" class="btn sm ds-morebtn' + (rm ? '' : ' ds-narrow') + '" data-act="more" data-always="1" aria-haspopup="menu" aria-expanded="' + open + '" aria-label="More" title="More">…</button>' +
       (open ? '<span class="ds-menu" role="menu">' + (ro ? '' : '<button type="button" class="ds-mi ds-narrow" role="menuitem" data-act="edit">Edit figure</button>') +
+        (printq ? '<button type="button" class="ds-mi ds-narrow" role="menuitem" data-act="print" data-always="1">Print</button>' : '') +
         (rm ? '<button type="button" class="ds-mi ds-mi-rm" role="menuitem" data-act="remove">Remove ' + esc(name) + '…</button>' : '') + '</span>' : '') + '</span>';
   }
   /* a sticky line on a phone: Stress 6/9 · Harm 1 · XP 3/8 · Load 2/3, each a jump to its box */
@@ -520,6 +524,16 @@
   function skOn(id) { return !!(window.B68SheetKeys && window.B68Flags && window.B68Flags.on(id)); }
   function skCtx() { return { esc: esc, input: input, pipRow: pipRow, play: cur.play, pb: cur.pb, ui: cur.ui, commit: commit, note: note, confirm: function (m) { return window.confirm(m); }, now: Date.now, turn: skOn('spine.keyturn') }; }
   function skAct(n, d) { if (window.B68SheetKeys) window.B68SheetKeys.act(n, d, skCtx()); }
+  /* the night rebuild (N6): the Now card at the top, the Between sessions fold at the end (sheet/now.js) and the Quiet button (sheet/quiet.js). They are
+     the player's own: never on a read-only sheet (the GM's drawer frames), never for the GM, never in print */
+  function nowOn() { return !!cur && !cur.ui.static && !readOnly() && B().isGM !== true && !!window.B68Now; }
+  function nowCtx() { var c = skCtx(); c.mission = missionData(); c.docId = cur.doc && cur.doc.id; return c; }
+  function nowCard() { if (!nowOn()) return ''; try { return window.B68Now.card(nowCtx()); } catch (e) { if (window.console) console.error(e); return ''; } }
+  function nowFold() { if (!nowOn()) return ''; try { return window.B68Now.fold({ ui: cur.ui }); } catch (e) { if (window.console) console.error(e); return ''; } }   /* the fold reads no sheet data */
+  function quietButton() {
+    var Q = window.B68Quiet; if (!nowOn() || !Q || typeof Q.state !== 'function' || !Q.state().started) return '';
+    return '<button type="button" class="btn sm ds-quietbtn" data-act="quiet" aria-haspopup="dialog" title="Tell the GM quietly: the X-card, a pause, spotlight me or a secret note">Quiet</button>';
+  }
   function keys(play, pb) {
     var cab = skOn('between.keys');
     var hull = isHull(pb), g = glitchy(pb), vamp = isVamp(pb), tt = isTT(pb), h = '', gname = glitchName(pb), glist = glitchList(pb);
@@ -1064,14 +1078,16 @@
   if (MQ) { var onMq = function () { if (cur && !cur.ui.static && !printing) render(); }; try { if (MQ.addEventListener) MQ.addEventListener('change', onMq); else if (MQ.addListener) MQ.addListener(onMq); } catch (e) {} }
   /* the sheet as [slot name, markup] pairs, in the order they are drawn (head first: it holds the vitals' slot) */
   var COLS = { c1: ['figure', 'stress', 'keys', 'strictures', 'harm', 'cohort', 'vice'], c2: ['abilities', 'contacts', 'triggers', 'session', 'downtime', 'mission', 'memories'], c3: ['stacks', 'actions', 'items'], c4: ['clocks', 'notes', 'log'] };
-  var ORDER = ['head', 'vitals', 'bar', 'figure', 'stress', 'keys', 'strictures', 'harm', 'cohort', 'vice', 'abilities', 'contacts', 'triggers', 'session', 'downtime', 'mission', 'memories', 'stacks', 'actions', 'items', 'clocks', 'notes', 'log'];
+  var ORDER = ['head', 'vitals', 'now', 'bar', 'figure', 'stress', 'keys', 'strictures', 'harm', 'cohort', 'vice', 'abilities', 'contacts', 'triggers', 'session', 'downtime', 'mission', 'memories', 'stacks', 'actions', 'items', 'clocks', 'notes', 'log', 'between'];
   /* one slot's markup (null for a slot this sheet has none of) */
   function buildPart(name) {
     var doc = cur.doc, play = cur.play, pb = cur.pb, sheet = doc.sheet || {};
     switch (name) {
       case 'head': return header(doc, play, pb, sheet);
       case 'vitals': return cur.ui.static ? null : vitals(play, pb);
-      case 'bar': return tableBar(play) + (window.B68Commend ? window.B68Commend.bar() : '') + (window.B68Debrief ? window.B68Debrief.bar() : '') + (window.B68Board ? window.B68Board.bar() : '') + (window.B68Absent ? window.B68Absent.bar() : '');   /* suite 1.6: the Aftermath's commendations, while they stand */
+      case 'now': return cur.ui.static ? null : nowCard();   /* N6: the one Now card (commendations, the Debrief, the packet, a key to turn, the mission), '' when nothing is due */
+      case 'bar': return tableBar(play);
+      case 'between': return cur.ui.static ? null : nowFold();   /* N6: the Between sessions fold after the last box */
       case 'figure': return figure(doc, pb);
       case 'stress': return stress(play, pb); case 'keys': return keys(play, pb); case 'strictures': return strictures(play, pb); case 'harm': return harm(play, pb);
       case 'cohort': return cohort(play, pb); case 'vice': return vice(play, pb); case 'abilities': return abilities(play, pb, sheet); case 'contacts': return contacts(play, pb);
@@ -1110,7 +1126,7 @@
     var parts = buildParts();
     var oldPanel = cur.root.querySelector('.ds-roll'), keepTop = oldPanel ? oldPanel.scrollTop : 0;   /* a redrawn panel starts at the top: put it back where it was */
     if (!cur.slots || !cur.slots.head || cur.root.firstChild !== cur.slots.head.anchor || !cur.slots.head.anchor.parentNode) {
-      cur.root.innerHTML = slotMark('head') + slotMark('bar') + '<div class="ds-grid">' + Object.keys(COLS).map(function (c) { return '<div class="ds-col ds-' + c + '">' + COLS[c].map(slotMark).join('') + '</div>'; }).join('') + '</div>';
+      cur.root.innerHTML = slotMark('head') + slotMark('now') + slotMark('bar') + '<div class="ds-grid">' + Object.keys(COLS).map(function (c) { return '<div class="ds-col ds-' + c + '">' + COLS[c].map(slotMark).join('') + '</div>'; }).join('') + '</div>' + slotMark('between');
       cur.slots = {}; anchorsIn(cur.root, cur.slots);
     }
     var ro = readOnly() ? '1' : '0';
@@ -1122,6 +1138,7 @@
       if (name === 'head') { delete cur.slots.vitals; var vs = {}; sl.nodes.forEach(function (n) { if (n.nodeType === 1) anchorsIn(n, vs); }); if (vs.vitals) cur.slots.vitals = vs.vitals; }
     });
     syncStatus();
+    if (!cur.ui.static && window.B68Now) { try { window.B68Now.tick(cur.root); } catch (e) { if (window.console) console.error(e); } }   /* a countdown in the Now card is written in place, never redrawn */
     if (printing) printFigure(true);
     var open = anyPanel();
     var rcls = 'dossier ds' + (cur.ui.static ? ' ds-static' : ' ds-live') + (readOnly() ? ' ds-ro' : '') + (pb && pb.id ? ' ds-pb-' + pb.id : '') + (open ? ' ds-panel-open' : '');
@@ -1200,6 +1217,10 @@
     },
     more: function () { cur.ui.more = !cur.ui.more; render(); var mi = cur.ui.more && cur.root.querySelector('.ds-menu .ds-mi'); if (mi && mi.offsetParent) try { mi.focus({ preventScroll: true }); } catch (e) {} },
     about: function () { cur.ui.about = !cur.ui.about; render(); },
+    /* N6: the Now card's "+n more", the Between sessions fold, and the Quiet button (sheet/now.js, sheet/quiet.js) */
+    nowmore: function () { cur.ui.nowMore = !cur.ui.nowMore; render(); var b = cur.root.querySelector('.ds-now-more'); if (b) try { b.focus({ preventScroll: true }); } catch (e) {} },
+    between: function () { cur.ui.between = !cur.ui.between; render(); var b = cur.root.querySelector('.ds-between-t'); if (b) try { b.focus({ preventScroll: true }); } catch (e) {} },
+    quiet: function (d, btn) { var Q = window.B68Quiet; if (Q && typeof Q.open === 'function') Q.open(btn); },
     loadout: function () { cur.ui.loadout = !cur.ui.loadout; render(); },
     /* the vitals: scroll the box to just under the sticky bar */
     jump: function (d) {

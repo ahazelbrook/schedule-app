@@ -351,13 +351,13 @@ function phone() {
   };
   return { W, calls, listeners, rows: (r) => { rows = r; }, refreshed: () => refreshed, now: (n) => { t = n; } };
 }
-await test('the phone: nothing is fetched until it is started; started, it reads only the commend row, shows the strip while it stands and clears it when the row goes', async () => {
+await test('the phone: nothing is fetched until it is started; started, it reads only the commend row, is the Now card\'s item while it stands and clears it when the row goes', async () => {
   // the module reads the global window it was loaded with: load a fresh copy against a fake one
   const p = phone();
   const realNow = Date.now; let now = 5000000; Date.now = () => now;
   try {
     const Mod = (await import('node:module')).createRequire(import.meta.url)(path.join(APP, 'sheet', 'commend.js'));
-    assert.equal(Commend.bar(), '', 'not started: no strip');
+    assert.equal(Commend.now(), null, 'not started: no item');
     assert.equal(p.calls.length, 0);
     // the module in this process is bound to globalThis; give it the fake window's parts
     Object.assign(globalThis, { fetch: p.W.fetch, document: p.W.document, B68Live: p.W.B68Live, B68Tracker: p.W.B68Tracker });
@@ -368,14 +368,17 @@ await test('the phone: nothing is fetched until it is started; started, it reads
     p.rows([{ kind: 'commend', owner: '_', scope: 'public', json: { v: 1, secs: 90, until: now + 90000 } }]);
     p.listeners.live.fn('docs');
     await new Promise((r) => setTimeout(r, 0));
-    assert.ok(Mod.bar().includes('data-act="endopen"') && Mod.bar().includes('Commendations'), 'the strip opens the sheet\'s own end-of-session panel');
+    const it = Mod.now();
+    assert.ok(it && it.actions.length === 1 && it.actions[0].attrs === 'data-act="endopen"' && it.actions[0].primary === true && /xp/.test(it.title), 'the item opens the sheet\'s own end-of-session panel: ' + JSON.stringify(it));
+    assert.equal(it.ends, now + 90000, 'it counts down to the window\'s own end');
+    now += 30000; assert.equal(Mod.now().ends, it.ends, 'the end does not move while the window stands (the card is not redrawn every second)');
     assert.ok(p.refreshed() >= 1, 'the sheet was redrawn');
-    now += 91000; assert.equal(Mod.bar(), '', 'ninety seconds on, it is gone');
+    now += 61000; assert.equal(Mod.now(), null, 'ninety seconds on, it is gone');
     p.rows([{ kind: 'commend', owner: '_', scope: 'public', json: { v: 1, secs: 90, until: now + 90000 } }]);
     p.listeners.live.fn('docs'); await new Promise((r) => setTimeout(r, 0));
-    assert.ok(Mod.bar(), 'a new row opens it again');
+    assert.ok(Mod.now(), 'a new row opens it again');
     p.rows([]); p.listeners.live.fn('docs'); await new Promise((r) => setTimeout(r, 0));
-    assert.equal(Mod.bar(), '', 'the GM took the row down: gone at once');
+    assert.equal(Mod.now(), null, 'the GM took the row down: gone at once');
     Mod.stop(); assert.equal(p.listeners.live, null, 'stop() lets go of the live socket');
     const before = p.calls.length; Mod.stop(); assert.equal(p.calls.length, before);
   } finally { Date.now = realNow; for (const k of ['fetch', 'document', 'B68Live', 'B68Tracker']) delete globalThis[k]; }

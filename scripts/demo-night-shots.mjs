@@ -43,6 +43,74 @@ const then = (...fns) => async (page, ctx) => { for (const f of fns) await f(pag
 const LAPTOPS = [[1366, 768], [1536, 864]];
 const gmAt = (name, steps, setup) => LAPTOPS.map((size) => ({ name, size, route: '#gm', ready: GM_READY, steps, setup }));
 
+/* ---- the phones (N6, design 7): Nell's sheet as player1, at 390 x 844 and 375 x 667: the Now card, Quiet and the Between sessions fold.
+   The seed gives her a key at three hits and two opportunity posts; each scenario's setup adds or takes away what the next picture needs, in order,
+   through the same API a GM page or a phone uses. They come last, so no GM picture sees what they add. ---- */
+const PHONES = [[390, 844], [375, 667]];
+const P1 = 'player1@example.test';
+/* an API call a picture depends on: a refusal fails the scenario (it is reported) rather than shooting the wrong state; a row already gone is fine to delete */
+const call = async (ctx, method, p, body, user) => {
+  const r = await ctx.api(method, p, body, user);
+  if (r.status !== 200 && !(method === 'DELETE' && r.status === 404)) throw new Error(method + ' ' + p + ' -> ' + r.status + ' ' + String(r.text || '').slice(0, 200));
+  return r;
+};
+/* the sheet is drawn and every phone module has read what it reads (the Now card and the fold follow from that) */
+const PHONE_READY = async (page) => {
+  await SHEET_READY(page);
+  await page.waitForFunction(() => ['B68Commend', 'B68Debrief', 'B68Absent', 'B68Board', 'B68Quiet'].every((k) => window[k] && window[k].state().started), null, { timeout: 30000 });
+  await page.waitForTimeout(1500);
+};
+const nellAt = (name, extra) => PHONES.map((size) => Object.assign({ name, size, route: '#c/pc-nell', as: P1, ready: PHONE_READY, context: { isMobile: true, hasTouch: true }, settle: 1200 }, extra || {}));
+const nowIs = (kind) => async (page) => { await page.waitForSelector('#dossier .ds-now .ds-now-item[data-now="' + kind + '"]', { timeout: 20000 }); };
+/* a new mission card opens by itself, as it always has: close it, so the picture is the sheet */
+const closeMission = async (page) => { const v = await page.waitForSelector('.ds-mv', { timeout: 4000 }).catch(() => null); if (v) { await page.click('.ds-mv-x'); await page.waitForTimeout(400); } };
+const toFold = async (page) => { await page.$eval('#dossier .ds-betweenbox', (b) => { const r = b.getBoundingClientRect(); window.scrollBy(0, r.bottom - innerHeight + 16); }); await page.waitForTimeout(400); };
+const COMMEND = { kind: 'commend', owner: '_', scope: 'public', json: null };   /* the Aftermath's step 7 row (app/gm/aftermath.js): 90 s; 180 here, so both sizes fit in it */
+const nellsDebrief = async (ctx) => {   /* last night's Debrief for Nell: from this morning, the defaults two days on */
+  const D = createRequire(import.meta.url)('../app/gm/debrief.js');   /* the GM page's own row builder */
+  const at = Date.now() - 30 * 3600 * 1000;
+  await call(ctx, 'PUT', '/docs', { kind: 'debrief', owner: P1, scope: 'player', json: D.buildRow({ steps: ['unwind', 'xp', 'credits'], nightAt: at, sentAt: at }) });
+};
+const nellAnswers = async (ctx) => {   /* she answers it: it leaves the Now card for the fold */
+  const r = (await call(ctx, 'GET', '/docs?kind=debrief', undefined, P1)).json, row = r && r.docs && r.docs[0];
+  if (row && !row.json.reply) await call(ctx, 'PUT', '/docs', { kind: 'debrief', scope: 'player', json: Object.assign({}, row.json, { reply: { at: Date.now(), unwind: { pick: 'train', note: 'Long walks by the quay' }, xp: { ticked: true, note: '' } } }) }, P1);
+};
+const nellsPacket = async (ctx) => {   /* she missed a night: the GM left her the front page and a recap (app/gm/absent.js builds this row) */
+  await call(ctx, 'PUT', '/docs', { kind: 'packet', owner: P1, scope: 'player', json: { v: 1, at: Date.now(), front: { masthead: 'The Pelican Post', issue: 'No. 12', date: 'Thursday', headline: 'Lights out at the Pelican Rooms',
+    standfirst: 'A power cut, a missing ledger and a doorwoman who saw nothing.', account: ['The lights went out at a quarter past eleven.', 'By the time they came back the counting room was empty.'], name: 'Mabel Quist', hook: 'The Watch wants a word.' },
+  previously: { faces: [{ name: 'Mabel Quist', role: 'Fixer' }, { name: 'Dov Kessler', role: 'Desk sergeant' }], lines: ['The crew took the job from Mabel.', 'Ray talked his way past the door.', 'Tam found the second set of books.'] }, changes: ['Stress 2 to 4'] } });
+};
+const nellsKey = (hits) => async (ctx) => {   /* KEY-1's hits on her own sheet, as her phone would save them */
+  const d = (await call(ctx, 'GET', '/characters/pc-nell', undefined, P1)).json.doc;
+  d.play.keys[0].hits = hits; await call(ctx, 'PUT', '/characters/pc-nell', d, P1);
+};
+/* the mission card (the GM's Phones setting: mission cards), as the Run view publishes it: one card for Nell */
+const NELLS_MISSION = { seq: 900, site: 'The Pelican Rooms', t: 75, hud: { time: '22:15', now: [], rooms: [{ zone: 'The floor', rooms: ['Showroom', 'Cocktail lounge'] }], showTime: false },
+  cards: { 'pc-nell': { owner: P1, name: 'Nell Arbuthnot', room: 'Cocktail lounge', costumeLine: 'Evening dress, a borrowed cufflink', here: ['A croupier calls the last spin of the wheel.'] } } };
+const PHONE_SCENARIOS = [
+  /* a key at three hits: the card offers the turn (the Keys box keeps its own) */
+  ...nellAt('phone-now-keys', { steps: nowIs('keys') }),
+  /* two due at once: the Aftermath's xp commendations first, the key behind "+1 more" */
+  ...nellAt('phone-now-commend', { setup: async (ctx) => { await call(ctx, 'PUT', '/docs', Object.assign({}, COMMEND, { json: { v: 1, secs: 180, until: Date.now() + 180000 } })); }, steps: nowIs('commend') }),
+  ...nellAt('phone-now-more', { steps: async (page) => { await nowIs('commend')(page); await page.click('#dossier .ds-now-more'); await page.waitForSelector('#ds-now-rest', { timeout: 5000 }); } }),
+  /* the morning after: the Debrief, and its form */
+  ...nellAt('phone-now-debrief', { setup: async (ctx) => { await call(ctx, 'DELETE', '/docs?kind=commend&owner=_'); await nellsDebrief(ctx); }, steps: nowIs('debrief') }),
+  ...nellAt('phone-debrief-form', { steps: async (page) => { await nowIs('debrief')(page); await page.click('#dossier .ds-now [data-b68="debrief-open"]'); await page.waitForSelector('.ds-debrief-dlg', { timeout: 5000 }); } }),
+  /* the night she missed: the packet, the page itself, and then the fold with it read and the Debrief answered */
+  ...nellAt('phone-now-absent', { setup: async (ctx) => { await nellAnswers(ctx); await nellsPacket(ctx); }, steps: nowIs('absent') }),
+  ...nellAt('phone-packet', { steps: async (page) => { await nowIs('absent')(page); await page.click('#dossier .ds-now [data-b68="absent-open"]'); await page.waitForSelector('.ds-absent-dlg', { timeout: 5000 }); } }),
+  ...nellAt('phone-between-open', { steps: async (page) => {
+    await nowIs('absent')(page); await page.click('#dossier .ds-now [data-b68="absent-open"]'); await page.waitForSelector('.ds-absent-dlg', { timeout: 5000 });
+    await page.keyboard.press('Escape'); await page.click('#dossier .ds-between-t'); await page.waitForSelector('#ds-between-b', { timeout: 5000 }); await toFold(page); } }),
+  /* the quiet line: the Quiet button in the sticky bar */
+  ...nellAt('phone-quiet', { steps: async (page) => { await page.click('#dossier .ds-quietbtn'); await page.waitForSelector('.ds-quiet-dlg', { timeout: 5000 }); } }),
+  /* the mission card alone (the key at two hits, the packet withdrawn) */
+  ...nellAt('phone-now-mission', { setup: async (ctx) => { await nellsKey(2)(ctx); await call(ctx, 'DELETE', '/docs?kind=packet&owner=' + encodeURIComponent(P1)); await call(ctx, 'PATCH', '/campaign', { mission: NELLS_MISSION }); },
+    steps: async (page) => { await closeMission(page); await nowIs('mission')(page); } }),
+  /* nothing due: no card and no gap; the fold holds the board and the answered Debrief */
+  ...nellAt('phone-nothing-due', { setup: async (ctx) => { await call(ctx, 'PATCH', '/campaign', { mission: null }); }, steps: async (page) => { await page.waitForFunction(() => !document.querySelector('#dossier .ds-now'), null, { timeout: 10000 }); } })
+];
+
 export const SCENARIOS = [
   /* the GM page before the first phase (the night has none), on the Prep tab */
   ...gmAt('gm-nophase', tab('r'), async (ctx) => { await ctx.api('PATCH', '/gm/state', { night: null }); }),
@@ -85,7 +153,9 @@ export const SCENARIOS = [
   ...gmAt('gm-after', then(enterPhase('after'), async (page) => { await page.evaluate(() => window.B68GmTools.get('aftermath').open()); await page.waitForSelector('#gm-sheet-aftermath:not([hidden])', { timeout: 8000 }); })),
   /* Nell's phone: her sheet as player1 */
   { name: 'phone-nell', size: [390, 844], route: '#c/pc-nell', as: 'player1@example.test', ready: SHEET_READY, context: { isMobile: true, hasTouch: true }, settle: 1500 },
-  { name: 'phone-nell-full', size: [390, 844], route: '#c/pc-nell', as: 'player1@example.test', ready: SHEET_READY, context: { isMobile: true, hasTouch: true }, settle: 1500, fullPage: true }
+  { name: 'phone-nell-full', size: [390, 844], route: '#c/pc-nell', as: 'player1@example.test', ready: SHEET_READY, context: { isMobile: true, hasTouch: true }, settle: 1500, fullPage: true },
+  /* the phones (N6): the Now card, Quiet and the Between sessions fold */
+  ...PHONE_SCENARIOS
 ];
 
 export async function shoot({ base, dir, only = [], api, users }) {

@@ -76,15 +76,18 @@ function loadPhone(win) {
   vm.runInContext(src.replace(/\}\)\(typeof self !== 'undefined' \? self : this,/, '})(window,'), ctx, { filename: 'sheet/board.js' });
   return win.B68Board;
 }
-await test('phone: off loads nothing and draws nothing; start reads only its own kind, bar shows the count, and stop clears it', async () => {
+await test('phone: off loads nothing and draws nothing; start reads only its own kind, the Between fold shows the count, and stop clears it', async () => {
   const rows = {}, { win, calls } = fakeWin(rows), P = loadPhone(win);
-  assert.equal(P.bar(), '', 'not started: no strip'); assert.equal(calls.length, 0, 'no request before start');
+  assert.equal(P.between(), null, 'not started: nothing in the fold'); assert.equal(calls.length, 0, 'no request before start');
+  assert.equal(typeof P.now, 'undefined', 'the board never asks for the Now card');
   P.start(); await flush(); await flush();
   assert.ok(calls.length >= 1 && calls.every((c) => /^\/api\/docs\?kind=opportunity/.test(c.url)), 'only the opportunity kind is asked for');
-  assert.match(P.bar(), /Post a client/); assert.match(P.bar(), /data-b68="board-open"/);
+  const it = P.between();
+  assert.equal(it.title, 'Opportunities'); assert.match(it.line, /Post a client/);
+  assert.ok(it.actions.length === 1 && /data-b68="board-open"/.test(it.actions[0].attrs) && it.actions[0].label === 'Post one', JSON.stringify(it.actions));
   rows.opp = PB28.add(null, 'operation', 'Lift the takings', 5);
-  P._set(rows.opp); assert.match(P.bar(), /1 posted/);
-  P.stop(); assert.equal(P.bar(), '', 'stopped: no strip');
+  P._set(rows.opp); assert.match(P.between().line, /1 posted/); assert.equal(P.between().actions[0].label, 'Your cards');
+  P.stop(); assert.equal(P.between(), null, 'stopped: nothing in the fold');
 });
 await test('phone: a post is one PUT of kind opportunity, scope player, no owner, and never another kind', async () => {
   const rows = {}, { win, calls } = fakeWin(rows), P = loadPhone(win);
