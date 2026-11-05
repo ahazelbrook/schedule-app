@@ -1298,6 +1298,7 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
    The header is one line (the time opens the night's squares and the timer's rest; the ONE alarm; the pie; Players; ⋯), the toolbar sits over the board and the map,
    the board and the map's labels show what the players' map holds of each room, and a room's card is where you act on it. The staged amber and the selected
    rules blue are the mockup's; dark and blueprint are the map kit's own (its blueprint ink and wash). */
+#gm-page { --rv-blue: #26418f; }      /* the rules blue of tokens.css, by value: this older sheet keeps to its own names */
 #gm-page .rv-headwrap { position: relative; }
 #gm-page .rv-headwrap > .rv-head { gap: 6px; }
 #gm-page .rv-head .rv-step { min-height: 34px; padding: 5px 8px; }
@@ -1373,7 +1374,7 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
 #gm-page .rv-card.k-blueprint .rv-cn { color: #2f5f8f; }
 #gm-page .rv-card.k-seen { border-style: solid; }
 #gm-page .rv-card.staged { box-shadow: inset 0 0 0 3px #f0a24e; }
-#gm-page .rv-card.sel { outline: 3px solid var(--b68-rules-blue, #26418f); outline-offset: 2px; }
+#gm-page .rv-card.sel { outline: 3px solid var(--rv-blue); outline-offset: 2px; }
 #gm-page .rv-cmarks { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: 1px; }
 #gm-page .rv-cmark { font: 700 9.5px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0; padding: 2px 4px; border-radius: 2px; }
 #gm-page .rv-cmark.pin { background: #c4361e; color: #fff4d6; }
@@ -1384,7 +1385,7 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
 #gm-page .rv-lg.k-dark::before { background: #2b2722; }
 #gm-page .rv-lg.k-blueprint::before { background: #dfe9f2; border-color: #2f5f8f; border-style: dashed; }
 #gm-page .rv-lg.staged::before { border: 3px solid #f0a24e; }
-#gm-page .rv-lg.sel::before { border: 3px solid var(--b68-rules-blue, #26418f); }
+#gm-page .rv-lg.sel::before { border: 3px solid var(--rv-blue); }
 /* the map's room labels carry the same states */
 #gm-page .rv-map .room-label.rv-mk-dark > rect:first-child { fill: #2b2722; opacity: 1; }
 #gm-page .rv-map .room-label.rv-mk-dark > text { fill: #f2ede1; }
@@ -1408,7 +1409,7 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
 #gm-page .rv-khint.staged { border-left: 4px solid #f0a24e; padding-left: 6px; }
 #gm-page .rv-ppl { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 #gm-page .rv-p { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 4px 8px; align-items: start; }
-#gm-page .rv-face { width: 40px; height: 40px; grid-row: span 2; border: 2px solid var(--rule); background: var(--b68-rules-blue, #26418f); color: #fff; display: grid; place-items: center; overflow: hidden; box-sizing: border-box; }
+#gm-page .rv-face { width: 40px; height: 40px; grid-row: span 2; border: 2px solid var(--rule); background: var(--rv-blue); color: #fff; display: grid; place-items: center; overflow: hidden; box-sizing: border-box; }
 #gm-page .rv-face svg { width: 100%; height: 100%; display: block; background: var(--card); }
 #gm-page .rv-face .rv-ini { font: 900 18px/1 var(--font-poster); }
 #gm-page .rv-p.hidden .rv-face { border-style: dashed; }
@@ -1417,8 +1418,8 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
 #gm-page .rv-pn b { font: 700 14px/1.15 var(--font-text); }
 #gm-page .rv-prole, #gm-page .rv-pmove { font: 400 12px/1.25 var(--font-text); color: var(--ink-soft); }
 #gm-page .rv-pacts { display: flex; flex-wrap: wrap; gap: 4px; grid-column: 2; }
-#gm-page .rv-btn.rv-spot.on { background: var(--b68-rules-blue, #26418f); border-color: var(--b68-rules-blue, #26418f); color: #fff; }
-#gm-page .rv-plooks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 2px 0 2px 48px; }
+#gm-page .rv-btn.rv-spot.on { background: var(--rv-blue); border-color: var(--rv-blue); color: #fff; }
+#gm-page .rv-plooks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 6px 0 2px; border-top: 1px dashed var(--hair); }
 #gm-page .rv-faces { display: flex; flex-wrap: wrap; gap: 3px; }
 #gm-page .rv-btn.rv-down { border-color: var(--alarm); color: var(--alarm); }
 #gm-page .rv-padd { display: flex; gap: 4px; margin-top: 2px; }

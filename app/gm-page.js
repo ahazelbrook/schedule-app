@@ -3633,7 +3633,7 @@
       alarmHtml: function (open) { var si = siteInst(); return si ? si.alarm(open, 'data-rv="alarm"') : ''; }, alarmPop: function () { var si = siteInst(); return si ? si.alarmPop(false) : ''; },
       toolsHtml: function () { var si = siteInst(); return si ? si.tools() : ''; }, stageHtml: function () { var si = siteInst(); return si ? si.stage() : ''; },
       roomStates: function () { var si = siteInst(); return si ? si.states() : {}; }, knowledgeSeg: function (name) { var si = siteInst(); return si ? si.seg(name) : ''; },
-      peopleHtml: function (name, here) { var si = siteInst(); return si ? si.people(name, here) : ''; }, roomWrong: function (name) { var si = siteInst(); return si ? si.wrong(name) : []; },
+      peopleHtml: function (name, here, first) { var si = siteInst(); return si ? si.people(name, here, first) : ''; }, roomWrong: function (name) { var si = siteInst(); return si ? si.wrong(name) : []; },
       roomAt: function (svg, ev) { var k = knInst(); return k ? k.roomAt(svg, ev) : ''; },
       pinned: function () { return S && S.b19 && S.b19.flashback ? S.b19.flashback.pinned() : ''; }, threat: function () { return S && S.b19 && S.b19.threat ? S.b19.threat.view() : null; },
       intelGroups: function () { var k = knInst(); return k && k.active() ? k.view().groups.map(function (g) { return { id: g.id, label: g.label }; }) : []; },

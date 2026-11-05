@@ -111,15 +111,36 @@ await test('a tap on the GM map names a room by its index in the roll; anything 
   assert.equal(c.tapRoom(null, 'r2'), false); assert.equal(c.tapRoom({ rooms: 'no' }, 'r2'), false);
 });
 
-await test('the panel: a row per room with its state, escaped; a locked room has no button; Intel buttons per group', () => {
+await test('N3, the room card\'s Players\' map: three states, one pressed, escaped; a room seen through its band is locked; Seen while staged says so; the groups for Intel', () => {
   const rooms = ROOMS.concat([{ name: '<b>' + MARK + '</b>', band: 'secure' }]);
   const c = KN.create({ feature: () => true, rooms: () => rooms, ctx: () => ({ open: [], know: ['Security control room'], bands: ['public'] }), floors: () => [] });
   const v = c.view(); assert.deepEqual(v.counts, { dark: 4, blueprint: 1, seen: 2 });
-  const h = KN.panelHtml(v);
-  assert.ok(!h.includes('<b>' + MARK) && h.includes('&lt;b&gt;' + MARK));
-  assert.equal((h.match(/data-kn="cycle"/g) || []).length, 5, 'the five rooms not seen through a band');
-  assert.ok(/data-kn="intel" data-group="band:working"/.test(h));
-  assert.ok(/Seen \(its band is open\)/.test(h));
+  const seg = (h) => [...h.matchAll(/data-k="(\w+)" aria-pressed="(true|false)"/g)].map((m) => m[1] + (m[2] === 'true' ? '*' : '')).join(',');
+  const bp = c.seg('Security control room');
+  assert.equal(seg(bp), 'dark,blueprint*,seen'); assert.ok(/data-site="kn" data-room="Security control room"/.test(bp) && !/ disabled/.test(bp));
+  const lockedH = c.seg('Showroom');
+  assert.equal(seg(lockedH), 'dark,blueprint,seen*'); assert.equal((lockedH.match(/ disabled/g) || []).length, 3, 'a room seen through its band: every state locked'); assert.ok(/its band/.test(lockedH));
+  const st = c.seg('Luxury penthouse', true);
+  assert.equal(seg(st), 'dark*,blueprint,seen*'); assert.ok(/Seen · staged/.test(st) && /Send/.test(st) && /class="chip sm rv-kseen staged"/.test(st), 'staged: Seen is lit amber and the hint says Send opens it');
+  const evil = c.seg('<b>' + MARK + '</b>');
+  assert.ok(!evil.includes('<b>' + MARK) && evil.includes('&lt;b&gt;' + MARK), 'escaped');
+  assert.equal(c.seg('Nowhere'), ''); assert.equal(KN.create({ feature: () => false, rooms: () => rooms, ctx: () => ({}) }).seg('Showroom'), '', 'switch off: no control');
+  assert.deepEqual(v.groups.map((g) => g.id).slice(0, 3), ['band:working', 'band:controlled', 'band:secure'], 'the Intel groups the site\'s ⋯ lists');
+  const want = { 'Security control room': 'blueprint', 'Showroom': 'seen', 'Luxury penthouse': 'dark' }, got = c.states();
+  Object.keys(want).forEach((n) => assert.equal(got[n], want[n], n));
+  assert.equal(Object.keys(got).length, rooms.length);
+});
+
+await test('N3, set(): Dark and Blueprint at once (one write each), a locked room says so, the same state writes nothing; stateOf and locked by name', () => {
+  const { c, st, log } = fake(true);
+  assert.equal(c.set('Private card rooms', 'blueprint'), true); assert.deepEqual(st.know, ['Private card rooms']);
+  assert.equal(c.set('Private card rooms', 'blueprint'), false, 'already blueprint');
+  assert.equal(c.set('Private card rooms', 'seen'), true); assert.deepEqual(st.open, ['Private card rooms']); assert.deepEqual(st.know, []);
+  assert.equal(c.set('Private card rooms', 'dark'), true); assert.deepEqual(st.open, []); assert.deepEqual(st.know, []);
+  assert.equal(c.set('Showroom', 'dark'), false); assert.ok(log.some((x) => x[0] === 'toast' && x[2] === true && /band is open/.test(x[1])));
+  assert.equal(c.set('Private card rooms', 'nonsense'), false); assert.equal(c.set('Nowhere', 'dark'), false);
+  assert.equal(c.stateOf('Security control room'), 'dark'); assert.equal(c.locked('Showroom'), true); assert.equal(c.locked('Security control room'), false);
+  assert.equal(fake(false).c.set('Private card rooms', 'blueprint'), false, 'switch off: nothing');
 });
 
 /* ---------- the player copy ---------- */

@@ -570,7 +570,7 @@
       list(ctx.play.people).forEach(function (p) { if (isObj(p)) byId[p.id] = p; });
       try { states = typeof host.roomStates === "function" ? host.roomStates() || {} : {}; } catch (e) { states = {}; }
       var told = isObj(ctx.st.told) ? ctx.st.told : {}, h = "";
-      shown.forEach(function (name) {
+      shown.forEach(function (name, idx) {
         var c = m.cards[name], tapped = name === ctx.sel, ppl = peopleIn(ctx.play, ctx.st, ctx.shownT, name), evs = eventsIn(ctx.play, ctx.st, ctx.shownT, name);
         var reach = reachIn(ctx.play, ctx.st, ctx.shownT, c.pcs.map(function (p) { return p.id; })), ks = isObj(states[name]) ? states[name] : null;
         var seg = ""; try { seg = typeof host.knowledgeSeg === "function" ? str(host.knowledgeSeg(name)) : ""; } catch (e) { seg = ""; }
@@ -579,7 +579,7 @@
           '<h3 class="rv-sh">' + esc(c.name) + (c.zoneLabel ? ' <small>' + esc(c.zoneLabel) + "</small>" : "") + "</h3>" +
           (seg || revealToggle(c, ctx)) +
           '<p class="rv-rmpcs"><span class="rv-lab">PCs</span> ' + (c.pcs.length ? c.pcs.map(function (p) { return "<b>" + esc(p.name) + "</b>"; }).join(", ") : '<span class="rv-dim">none</span>') + "</p>";
-        var rows = ""; try { rows = typeof host.peopleHtml === "function" ? str(host.peopleHtml(name, ppl)) : ""; } catch (e) { rows = ""; }
+        var rows = ""; try { rows = typeof host.peopleHtml === "function" ? str(host.peopleHtml(name, ppl, idx === 0)) : ""; } catch (e) { rows = ""; }      /* the first card also shows who is held, wherever they are */
         h += '<h4 class="rv-lab">Who&#39;s here</h4>' + (rows || '<ul class="rv-who">' + (ppl.length ? ppl.map(function (p) {
           return '<li class="npc">' + npcName(ctx, byId[p.id], p.label || p.npc || p.id) + " <small>" + esc(p.kind) + "</small>" + (p.moving ? " → " + esc(p.moving.to) + " in " + p.moving.inMin + " min" : "") + "</li>";
         }).join("") : '<li class="rv-dim">Nobody.</li>') + "</ul>");
@@ -739,7 +739,7 @@
         case "alarm": { var ao = !alarmOpen; closePops(); alarmOpen = ao; self.rerender(); break; }
         case "timepop": { var to = !timeOpen; closePops(); timeOpen = to; self.rerender(); break; }
         case "dawn": menuOpen = false; self.rerender(); if (typeof host.dawn === "function") host.dawn(); else host.toast("The false dawn is not wired on this page.", true); break;
-        case "tellroom": { var iid = el.getAttribute("data-intel"), cx = build().ctx; setKey(cx, "told", function (m0) { if (m0[iid] === "crew") delete m0[iid]; else m0[iid] = "crew"; }); break; }
+        case "tellroom": { var iid = str(el.getAttribute("data-intel")); if (!iid || !list(rs.play.intel).some(function (x) { return isObj(x) && x.id === iid; })) break; setKey(build().ctx, "told", function (m0) { if (m0[iid] === "crew") delete m0[iid]; else m0[iid] = "crew"; }); break; }
         case "toolx": self.toolClose(true); break;
         case "tgo": { var tst = host.state(), trun = isObj(tst) && isObj(tst.timer) && tst.timer.paused !== true && typeof tst.timer.endsAt === "number"; timerDo(trun ? "pause" : "start"); break; }
         case "tadd1": timerDo("add", 60); break;

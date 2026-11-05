@@ -91,9 +91,14 @@
       return out;
     }
     function seg(room) { var k = get('knowledge'), s = get('stage'); return k && k.active() ? k.seg(room, !!(s && s.isStaged(room))) : ''; }
-    function people(room, here) {
+    /* first: this is the top card, so whoever is held on the iPad shows here too (with Take it down) when they are not one of this room's people */
+    function people(room, here, first) {
       var sp = get('spot'); if (!sp || !Sp || !sp.view().on) return '';
-      var rows = Sp.peopleFor({ here: here, md: typeof page.roomMd === 'function' ? page.roomMd(room) : '', npcs: get('npcs') || [], extra: sp.extras(room) });
+      var npcs = get('npcs') || [], rows = Sp.peopleFor({ here: here, md: typeof page.roomMd === 'function' ? page.roomMd(room) : '', npcs: npcs, extra: sp.extras(room) }), held = sp.held();
+      if (first && held && !rows.some(function (r) { return r.id === held; })) {
+        var n = npcs.filter(function (x) { return x && x.id === held; })[0];
+        if (n) rows.unshift({ id: str(n.id), name: str(n.name), alias: str(n.alias), role: 'held on the iPad', kind: '', revealed: n.revealed === true, here: false, moving: null, added: false });
+      }
       return Sp.rowsHtml(rows, sp.view(), { room: room, introduce: true,
         face: function (r) { return r.id && typeof page.face === 'function' ? page.face(r.id) : ''; },
         card: function (r) { return typeof page.card === 'function' && !!page.card([r.name, r.alias].filter(Boolean)); } }, esc);
