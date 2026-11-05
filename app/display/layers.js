@@ -109,6 +109,8 @@
       if (m.countdown && opts && typeof opts.skew === 'function') { var k = Number(opts.skew()); if (isFinite(k)) m.countdown = { to: m.countdown.to - Math.round(k / 250) * 250, label: m.countdown.label }; }
       return m;
     }
+    /* the root's band classes (a container without classList, a bare test box, just has none) */
+    function rootClass(name, on) { var cl = container.classList; if (!cl) return; if (on) cl.add(name); else cl.remove(name); }
     function add(parent, tag, cls, t) { var e = doc.createElement(tag); e.className = cls; if (t !== undefined) e.textContent = t; parent.appendChild(e); return e; }
     /* a PC's cell, two lines that fit a third of the crew slot whatever the PC carries:
          the first name (the crew know each other by it; the full name is the cell's title) and the Stress beside it;
@@ -147,7 +149,7 @@
       if (!hasStrip()) {
         if (strip && strip.parentNode) strip.parentNode.removeChild(strip);
         strip = null; slots = null;
-        container.classList.remove('dp-lay-on'); container.classList.remove('dp-lay-crew');
+        rootClass('dp-lay-on', false); rootClass('dp-lay-crew', false);
         return;
       }
       if (!strip) {
@@ -171,8 +173,7 @@
         cell.classList.add('dp-lay-npc'); cell.setAttribute('title', f.name);
         add(cell, 'b', 'dp-lay-name', f.name);
       });
-      container.classList.add('dp-lay-on');
-      if (crewDrawn()) container.classList.add('dp-lay-crew'); else container.classList.remove('dp-lay-crew');
+      rootClass('dp-lay-on', true); rootClass('dp-lay-crew', crewDrawn());
     }
     /* the lamp from app/display/onair.js: { off, text, clock } while the iPad's mic is live ('On air', or 'Off the record' over its countdown),
        null when it is not. A new countdown repaints the lamp alone; the lamp coming or going is a change to the strip (it may be its only slot) */
@@ -225,7 +226,7 @@
         if (root.removeEventListener) root.removeEventListener('message', onMessage);
         if (strip && strip.parentNode) strip.parentNode.removeChild(strip);
         strip = null; slots = null; lamp = null;
-        container.classList.remove('dp-lay-on'); container.classList.remove('dp-lay-crew');
+        rootClass('dp-lay-on', false); rootClass('dp-lay-crew', false);
         if (root.B68DisplayMontage) root.B68DisplayMontage.paint(container, [], doc);
         Object.keys(ATTRS).forEach(function (a) { container.removeAttribute(a); }); container.removeAttribute('data-band-onair');
       }
