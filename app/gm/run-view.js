@@ -733,7 +733,7 @@
         case "start": startNight(+el.getAttribute("data-t") || 0); break;
         case "back": self.step(-1); break;
         case "next": self.step(1); break;
-        case "peek": { var i = +el.getAttribute("data-i"); self.peek(i * beatLen(rs.play)); break; }
+        case "peek": { var i = +el.getAttribute("data-i"); timeOpen = false; self.peek(i * beatLen(rs.play)); break; }      /* a beat tapped: the popover shuts, the peek bar says where you are */
         case "unpeek": { var mw = menuOpen; menuOpen = false; if (!self.unpeek() && mw) self.rerender(); break; }
         case "reset": if (menuOpen) { menuOpen = false; self.rerender(); } self.resetNight(); break;
         case "alarm": { var ao = !alarmOpen; closePops(); alarmOpen = ao; self.rerender(); break; }

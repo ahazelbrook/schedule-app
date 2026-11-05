@@ -304,12 +304,10 @@ try {
   check(!!(await until(async () => (await ball()).t === 120, 8000)), 'and again: 23:00 (a guard moves, the passage opens)');
   check(await G.page.$eval('.rv-card[data-room="Underground counting room"] .rv-route.timed', (e) => /Showroom/.test(e.textContent)), 'the Passage is drawn only now, dashed, between the counting room and the showroom');
   await G.page.click('[data-rv="timepop"]'); await G.page.click('.rv-sq[data-i="12"]');
-  check((await G.page.$$('.rv-peekbar')).length === 1, 'a peek is open');
-  /* N3: the page's ONE Esc (gm/esc.js) closes one thing a press, from the top: the squares' popover first, then the peek */
+  check((await G.page.$$('.rv-peekbar')).length === 1 && await G.page.$eval('.rv-timepop', (e) => e.hidden), 'a peek is open, and the squares\' popover shut on the tap');
+  /* N3: the page's ONE Esc (gm/esc.js) closes one thing a press, from the top */
   await G.page.keyboard.press('Escape');
-  check(await G.page.$eval('.rv-timepop', (e) => e.hidden) && (await G.page.$$('.rv-peekbar')).length === 1, 'Esc: the squares\' popover shuts first, the peek stays');
-  await G.page.keyboard.press('Escape');
-  check((await G.page.$$('.rv-peekbar')).length === 0 && (await ball()).t === 120, 'Esc again: back to now, without writing');
+  check((await G.page.$$('.rv-peekbar')).length === 0 && (await ball()).t === 120, 'Esc: back to now, without writing');
   await G.page.click('[data-rv="menu"]'); await G.page.keyboard.press('ArrowLeft'); await sleep(400);
   check((await ball()).t === 120, 'the arrows wait while a popover is open');
   await G.page.keyboard.press('Escape');
@@ -415,7 +413,7 @@ try {
   await G.page.click('[data-rv="timepop"]'); await G.page.click('.rv-sq[data-i="4"]');
   check(await G.page.$eval(BEAT + ' .rv-sh', (e) => e.textContent) === 'Looking at 22:00' && await G.page.$eval(BEAT + ' .rv-say', (e) => /SAY/.test(e.textContent) && /GM-ONLY-SAY-1/.test(e.textContent)), 'peeking at 22:00: the card for that beat, the SAY line in a band');
   check(await ballT() === 180, 'and the published time did not move');
-  await G.page.keyboard.press('Escape'); await G.page.keyboard.press('Escape');      /* the squares' popover, then the peek */
+  await G.page.keyboard.press('Escape');      /* back to now (the squares' popover shut on the tap) */
 
   /* the pacing line: wall clock, page-local */
   check(/^beat 13 · \d+ min in$/.test(await G.page.$eval('[data-pace]', (e) => e.textContent)) && !JSON.stringify(await gmState()).includes('min in'), 'the pacing line reads beat 13 · m min in, and is held nowhere shared');
@@ -694,16 +692,17 @@ try {
     await N.page.click('.rv-card[data-room="Showroom"] .rv-cn');
     check(await N.page.$eval(sec + ' .rv-rm[data-room="Showroom"] .rv-nonote', (e) => /No notes for Showroom/.test(e.textContent) && /### Showroom/.test(e.textContent)), 'a room with no section says so, and what to add');
     check(await N.page.$$eval(sec + ' .rv-rm', (l) => l.length >= 1 && l[0].getAttribute('data-room') === 'Showroom'), 'the tapped room comes first');
-    /* an NPC name opens the card */
+    /* a person with a card: their row's Card opens it (N3: the people rows of the room card) */
+    const cardBtn = sec + ' .rv-rm[data-room="' + pipRoom.room + '"] [data-site="card"][data-name="Pip Quill"]';
     await N.page.click('.rv-card[data-room="' + pipRoom.room + '"] .rv-cn');
-    await N.page.click(sec + ' .rv-rm[data-room="' + pipRoom.room + '"] .rv-npcname');
-    check(!!(await N.page.waitForSelector('.rv-npcpop', { timeout: 5000 }).then(() => true, () => false)) && await N.page.$eval('.rv-npcpop', (e) => /PIPCARD-BODY/.test(e.textContent) && /Pip Quill/.test(e.querySelector('header').textContent)), 'an NPC name opens the card in a popover');
+    await N.page.click(cardBtn);
+    check(!!(await N.page.waitForSelector('.rv-npcpop', { timeout: 5000 }).then(() => true, () => false)) && await N.page.$eval('.rv-npcpop', (e) => /PIPCARD-BODY/.test(e.textContent) && /Pip Quill/.test(e.querySelector('header').textContent)), 'Card on a person\'s row opens the card in a popover');
     await N.page.keyboard.press('Escape');
     check(!!(await until(async () => (await N.page.$$('.rv-npcpop')).length === 0, 5000, 100)), 'Esc closes the card');
-    await N.page.click(sec + ' .rv-rm[data-room="' + pipRoom.room + '"] .rv-npcname');
+    await N.page.click(cardBtn);
     await N.page.click('.rv-npcpop [data-rv="npcx"]');
     check((await N.page.$$('.rv-npcpop')).length === 0, 'the cross closes it too');
-    check(await N.page.$$eval(sec + ' .rv-npcname', (l) => l.every((b) => b.textContent === 'Pip Quill')), 'only an NPC with a card is a button (the others are plain text)');
+    check(await N.page.$$eval(sec + ' [data-site="card"]', (l) => l.length >= 1 && l.every((b) => b.getAttribute('data-name') === 'Pip Quill')), 'only a person with a card has Card (the others have none)');
     await N.page.click('.rv-card[data-room="Cocktail lounge"] .rv-cn');
     await N.page.click(lounge + ' .rv-rmnote a[href^="#pp:npc:"]');
     check(!!(await N.page.waitForSelector('.rv-npcpop', { timeout: 5000 }).then(() => true, () => false)) && await N.page.$eval('.rv-npcpop', (e) => /PIPCARD-BODY/.test(e.textContent)), 'a #pp: NPC link in a room note opens the same card');

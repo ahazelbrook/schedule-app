@@ -4691,8 +4691,9 @@
     if (view && typeof view.toolHost === 'function' && WS && typeof WS.inline === 'function' && t && typeof t.open === 'function') {
       if (view.toolOpen() === 'montage') { view.toolClose(true); return 'closed'; }
       var el = view.toolHost('montage', 'Montage'); if (!el) return '';
+      /* closing it (the × on its card, Esc through the view's rv.tool entry, or the tool asking: onClose) unbinds it, so its timers stop (N2: inline(id, null)) */
       view.toolOn(function () { try { WS.inline('montage', null); } catch (e) {} });
-      try { WS.inline('montage', el, { title: false, onClose: function () { if (S && S.rv) S.rv.toolClose(false); } }); t.open(); } catch (e) { view.toolClose(true); toast('Could not open the montage here: ' + errText(e), true); return ''; }
+      try { WS.inline('montage', el, { title: false, onClose: function () { view.toolClose(true); } }); t.open(); } catch (e) { view.toolClose(true); toast('Could not open the montage here: ' + errText(e), true); return ''; }
       return 'inline';
     }
     var mt = mtInst(); if (mt) { mt.toggle(); return 'sheet'; }
