@@ -95,8 +95,10 @@
 
   /* the Now card: the first item at full size; the rest behind "+n more" (ctx.ui.nowMore, the sheet's own toggle) */
   function card(ctx) {
-    var list = due(ctx); if (!list.length) return '';
-    var top = list[0], rest = list.slice(1), ui = isObj(ctx) && isObj(ctx.ui) ? ctx.ui : {}, more = rest.length > 0 && ui.nowMore === true;
+    var list = due(ctx), ui = isObj(ctx) && isObj(ctx.ui) ? ctx.ui : {};
+    if (list.length < 2 && ui.nowMore) ui.nowMore = false;   /* nothing waits any more: "+n more" starts folded again next time */
+    if (!list.length) return '';
+    var top = list[0], rest = list.slice(1), more = rest.length > 0 && ui.nowMore === true;
     var h = '<section class="ds-box ds-now" aria-label="Now">' +
       '<div class="ds-band"><h3 class="ds-bt">' + esc(str(top.kicker) || KICKER[top.id] || 'Now') + '</h3>' + (rest.length ? '<span class="ds-band-r">1 of ' + list.length + '</span>' : '') + '</div>' +
       '<div class="ds-body">' + itemHtml(top, false);

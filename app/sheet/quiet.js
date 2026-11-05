@@ -37,11 +37,12 @@
     return { v: 1, items: items.slice(-KEEP) };
   }
 
-  var started = false, timer = null, sx = 0, sy = 0, dlg = null, down = null, up = null, move = null, ctxm = null, styleEl = null, swallow = null, keyEsc = null;
+  var started = false, timer = null, sx = 0, sy = 0, dlg = null, down = null, up = null, move = null, ctxm = null, styleEl = null, swallow = null;
   var held = null, eatUntil = 0, from = null;   /* held: the pointer whose long press opened the menu; eatUntil: the click its lift-off makes is swallowed until then */
   function el(tag, cls, text) { var e = W.document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+  /* the header of a live sheet the player may write: not a read-only frame, not the GM (the sheet draws no Quiet button for either) */
   function headOf(target) {
-    if (!target || !target.closest) return null;
+    if (!target || !target.closest || (W.B68 && W.B68.isGM === true)) return null;
     if (target.closest('button, a, input, select, textarea, label, [contenteditable]')) return null;
     return target.closest('#dossier.ds-live:not(.ds-ro) .ds-head');
   }

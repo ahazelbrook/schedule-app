@@ -721,7 +721,7 @@
 /* the Now card: the sheet's own box and band, the body in the caution mustard so it is the first thing seen; the rest that is due waits behind "+n more" */
 /* the sheet root is a block (index.html): its slots space themselves with margins, as the table bar and the grid do */
 #dossier .ds-now { margin: 14px 0; box-shadow: 4px 4px 0 var(--shadow-ink); }
-#dossier .ds-now > .ds-body { background: var(--mustard); color: var(--on-mustard); gap: 10px; padding: 12px 12px 12px; }
+#dossier .ds-now > .ds-body { background: var(--mustard); color: var(--on-mustard); gap: 10px; padding: 12px; }
 #dossier .ds-now-item { display: grid; gap: 8px; min-width: 0; }
 #dossier .ds-now-t { margin: 0; font: 900 28px/.92 var(--font-poster); text-transform: uppercase; letter-spacing: .01em; overflow-wrap: anywhere; text-wrap: balance; }
 #dossier .ds-now-line { margin: 0; font: 400 15px/1.4 var(--font-text); }
@@ -766,7 +766,7 @@
    On the page body, outside #dossier, like the mission card. Every field is 16 px, so iPhone Safari never zooms when one takes focus */
 .ds-dlg { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; background: rgba(20, 17, 14, .55); overscroll-behavior: contain; }
 .ds-dlg.ds-quiet-dlg { z-index: 70; }
-.ds-dlg-card { box-sizing: border-box; width: min(100%, 560px); max-height: 92vh; overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; display: grid; gap: 10px; align-content: start;
+.ds-dlg-card { box-sizing: border-box; width: min(100%, 560px); max-height: 92vh; max-height: 92dvh; overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; display: grid; gap: 10px; align-content: start;
   padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0px)); background: var(--card); color: var(--ink); border-top: 4px solid var(--rule); box-shadow: 0 -8px 28px rgba(20, 17, 14, .28); font: 400 15px/1.45 var(--font-text); }
 .ds-dlg-card h2 { margin: 0; font: 900 30px/.95 var(--font-poster); overflow-wrap: anywhere; text-wrap: balance; }
 .ds-dlg-card h3 { margin: 4px 0 0; font: 900 13px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; }

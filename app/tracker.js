@@ -529,7 +529,7 @@
   function nowOn() { return !!cur && !cur.ui.static && !readOnly() && B().isGM !== true && !!window.B68Now; }
   function nowCtx() { var c = skCtx(); c.mission = missionData(); c.docId = cur.doc && cur.doc.id; return c; }
   function nowCard() { if (!nowOn()) return ''; try { return window.B68Now.card(nowCtx()); } catch (e) { if (window.console) console.error(e); return ''; } }
-  function nowFold() { if (!nowOn()) return ''; try { return window.B68Now.fold(nowCtx()); } catch (e) { if (window.console) console.error(e); return ''; } }
+  function nowFold() { if (!nowOn()) return ''; try { return window.B68Now.fold({ ui: cur.ui }); } catch (e) { if (window.console) console.error(e); return ''; } }   /* the fold reads no sheet data */
   function quietButton() {
     var Q = window.B68Quiet; if (!nowOn() || !Q || typeof Q.state !== 'function' || !Q.state().started) return '';
     return '<button type="button" class="btn sm ds-quietbtn" data-act="quiet" aria-haspopup="dialog" title="Tell the GM quietly: the X-card, a pause, spotlight me or a secret note">Quiet</button>';

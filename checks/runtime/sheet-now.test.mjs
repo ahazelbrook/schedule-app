@@ -56,6 +56,8 @@ await test('several due at once: the first in the order is the card, the rest wa
   assert.equal((open.match(/ds-now-sm/g) || []).length, 4, 'the four that wait are drawn small');
   assert.ok(/class="btn sm primary" data-go="Did you earn xp tonight\?"/.test(open) && /class="btn sm" data-go="Debrief"/.test(open), 'only the card\'s own action is primary');
   assert.equal(w.B68Now.due(ctx).length, 5);
+  const one = load(win({ B68Commend: fake(item('xp')) }), 'sheet/now.js'), ui = { nowMore: true };
+  assert.deepEqual(order(one.B68Now.card({ ui })), ['commend']); assert.equal(ui.nowMore, false, 'nothing waits: "+n more" is folded again for next time');
 });
 await test('every pair keeps the order, whichever two are due', () => {
   const ids = ['commend', 'debrief', 'absent', 'keys', 'mission'];

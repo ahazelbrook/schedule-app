@@ -18,17 +18,21 @@
     L.kit(urgent === true).then(function (ok) { if (ok === false && urgent === true) toast('The figure kit could not load. Check the connection and try again.', true); });
   }
   function needKit() { if (A.kitReady) return true; toast('The figure kit is still loading. Try again in a moment.', true); wantKit(true); return false; }
+  /* the night rebuild (N6): the phone modules that feed the sheet's Now card, its Between fold and its Quiet button run for a player only. The GM's
+     sheets never draw them (tracker.js nowOn), so the GM's pages fetch none of them and make none of their reads. Claims are the crew sheet's: everyone */
+  function forPlayer() { return A.isGM !== true; }
   /* suite 1.6: the Aftermath's xp commendations on a sheet. The phone fetches app/sheet/commend.js only while the spine.aftermath switch is on, and stops it when it goes off. */
   function commendSync() {
     var F = window.B68Flags; if (!F) return;
-    if (F.on('spine.aftermath')) { if (L && L.need) L.need('commend').then(function () { if (window.B68Commend) window.B68Commend.start(); }, function () {}); }
+    if (F.on('spine.aftermath') && forPlayer()) { if (L && L.need) L.need('commend').then(function () { if (window.B68Commend && forPlayer()) window.B68Commend.start(); }, function () {}); }
     else if (window.B68Commend) window.B68Commend.stop();
   }
   /* suite 1.7 and 5.8: the Debrief card and the quiet line, each a lazy bundle fetched only while its own switch is on */
   function betweenSync() {
     var F = window.B68Flags; if (!F) return;
     [['spine.debrief', 'debrief', 'B68Debrief'], ['between.quiet', 'quiet', 'B68Quiet'], ['between.board', 'board', 'B68Board'], ['between.claims', 'claims', 'B68Claims'], ['between.absent', 'absent', 'B68Absent']].forEach(function (x) {
-      if (F.on(x[0])) { if (L && L.need) L.need(x[1]).then(function () { if (window[x[2]]) window[x[2]].start(); }, function () {}); }
+      var mine = x[1] === 'claims' || forPlayer();
+      if (F.on(x[0]) && mine) { if (L && L.need) L.need(x[1]).then(function () { if (window[x[2]] && (x[1] === 'claims' || forPlayer())) window[x[2]].start(); }, function () {}); }
       else if (window[x[2]]) window[x[2]].stop();
     });
   }

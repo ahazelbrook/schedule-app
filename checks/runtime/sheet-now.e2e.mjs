@@ -149,14 +149,17 @@ try {
   await a.mouse.up(); await sleep(500);
   check(await quietOpen(a), 'lifting the button leaves it open');
   await a.click('.ds-quiet-dlg button:has-text("Cancel")');
-  const cdp = await A.ctx.newCDPSession(a);
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: nm.x, y: nm.y }] }); await sleep(800);
-  check(await quietOpen(a), 'a long press with a finger opens it');
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(600);
-  check(await quietOpen(a), 'and lifting the finger leaves it open (the lift-off neither closes it nor taps what is under it)');
-  check((await api('GET', '/docs?kind=quiet&owner=' + encodeURIComponent(P1))).json.docs[0].json.items.length === qi.length, 'nothing was sent by the lift-off');
-  await shot(a, 'quiet-menu');
-  await a.click('.ds-quiet-dlg button:has-text("Cancel")');
+  /* a finger: raw touch events through the DevTools protocol (Chromium; the WebKit pass has no such session, and says so) */
+  const cdp = await A.ctx.newCDPSession(a).catch(() => null);
+  if (cdp) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: nm.x, y: nm.y }] }); await sleep(800);
+    check(await quietOpen(a), 'a long press with a finger opens it');
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await sleep(600);
+    check(await quietOpen(a), 'and lifting the finger leaves it open (the lift-off neither closes it nor taps what is under it)');
+    check((await api('GET', '/docs?kind=quiet&owner=' + encodeURIComponent(P1))).json.docs[0].json.items.length === qi.length, 'nothing was sent by the lift-off');
+    await shot(a, 'quiet-menu');
+    await a.click('.ds-quiet-dlg button:has-text("Cancel")');
+  } else console.log('SKIP the finger long press: this engine has no DevTools touch input (the mouse long press above is the same code path)');
 
   /* ---------- 3. the commendations ---------- */
   await must(api('PUT', '/docs', { kind: 'commend', owner: '_', scope: 'public', json: { v: 1, secs: 90, until: Date.now() + 90000 } }), 'commend');
@@ -251,6 +254,9 @@ try {
   const G = await open(GM, '#c/' + ID);
   await G.page.waitForSelector('#dossier .ds-head', { timeout: 30000 }); await sleep(2500);
   check(await G.page.evaluate(() => !document.querySelector('#dossier .ds-now') && !document.querySelector('#dossier .ds-betweenbox') && !document.querySelector('#dossier .ds-quietbtn')), 'the GM opening a sheet sees none of the player\'s own prompts');
+  const gn = await G.page.$eval('#dossier .ds-name', (e) => { const r = e.getBoundingClientRect(); return { x: r.left + 20, y: r.top + r.height / 2 }; });
+  await G.page.mouse.move(gn.x, gn.y); await G.page.mouse.down(); await sleep(800); await G.page.mouse.up();
+  check(!(await quietOpen(G.page)), 'and a long press opens no quiet line for the GM');
   await G.ctx.close();
   await a.goto(BASE + '/#t');
   check(!!(await until(() => a.evaluate(() => !!document.querySelector('.b68-ct')), 15000)), 'claims stay on the crew sheet (the claim track)');
