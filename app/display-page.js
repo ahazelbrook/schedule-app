@@ -1479,14 +1479,15 @@
       later(function () { if (node.parentNode) node.parentNode.removeChild(node); unmark(); }, 450);
     }
     /* a side card over the band beside the map is drawn whole: one taller than the room it has (landscape: the column under the band's clock;
-       portrait: the band along the foot) is scaled to fit (--dp-ov-s, display/shows.css), never cut off. Run when a card goes up or is redrawn,
-       and when the band is fitted again (bandFit: its clock changed size, the window turned or resized). Two layout reads, no writes in a loop. */
+       portrait: the band along the foot, or the lowest 40% of the frame if the band is shorter) is scaled to fit (--dp-ov-s, display/shows.css),
+       never cut off. Run when a card goes up or is redrawn, and when the band is fitted again (bandFit: its clock changed size, the window turned
+       or resized). A few layout reads, no writes in a loop. */
     function ovFit() {
       var node = s.ov.node; if (!node || !node.classList || !node.classList.contains('dp-ov-card')) return;
       var sc = 1;
       if (container.classList.contains('dp-band-on')) {
-        var land = !!(window.matchMedia && window.matchMedia('(orientation: landscape)').matches), cs = container.style, vm = Math.min(window.innerWidth, window.innerHeight) / 100;
-        var room = (land ? ovLayer.clientHeight - (parseFloat(cs.getPropertyValue('--dp-band-time-h')) || 0) : (parseFloat(cs.getPropertyValue('--dp-band-h')) || 0)) - 6 * vm, h = node.offsetHeight;
+        var land = !!(window.matchMedia && window.matchMedia('(orientation: landscape)').matches), cs = container.style, vm = Math.min(window.innerWidth, window.innerHeight) / 100, oh = ovLayer.clientHeight;
+        var room = (land ? oh - (parseFloat(cs.getPropertyValue('--dp-band-time-h')) || 0) : Math.max(parseFloat(cs.getPropertyValue('--dp-band-h')) || 0, 0.4 * oh)) - 6 * vm, h = node.offsetHeight;
         if (h > room && room > 0) sc = Math.max(0.35, room / h);
       }
       if (sc < 1) node.style.setProperty('--dp-ov-s', sc.toFixed(3)); else node.style.removeProperty('--dp-ov-s');
