@@ -73,7 +73,8 @@
         '<label class="gm-nowline" for="gm-now-s"><span class="gm-lab">Now in</span><select data-now id="gm-now-s"></select></label>' +
         '<div class="gm-controls" id="gm-controls"></div></div>' +
       '<div class="gm-rl-fbs">' +
-        '<button type="button" class="gm-rl-fb" id="gm-earlier-b" data-gm="fold" data-rlfold="earlier" aria-expanded="false" aria-controls="gm-earlier"><span class="gm-lab">Earlier</span><span class="gm-rl-n" id="gm-earlier-n"></span></button>' +
+        '<button type="button" class="gm-rl-fb" id="gm-earlier-b" data-gm="fold" data-rlfold="earlier" aria-expanded="false" aria-controls="gm-earlier">' +
+          '<span class="gm-lab">Earlier</span><span class="gm-rl-n" id="gm-earlier-n"></span></button>' +
         '<button type="button" class="gm-rl-fb" id="gm-singles-b" data-gm="fold" data-rlfold="singles" aria-expanded="false" aria-controls="gm-singles"><span class="gm-lab">More tables</span></button></div>' +
       '<div class="gm-earlier gm-rl-panel" id="gm-earlier" hidden></div>' +
       '<div class="gm-singles gm-rl-panel" id="gm-singles" hidden></div>' +
@@ -100,7 +101,8 @@
     v = v || {};
     if (!v.on) return '';
     var a = v.active;
-    if (!a) return '<button type="button" class="btn primary gm-stampb" data-gm="stamp" title="The position, the effect and the line, as an action report on the iPad before the dice. Enter in the line does it too">Stamp it on the iPad</button>';
+    if (!a) return '<button type="button" class="btn primary gm-stampb" data-gm="stamp" ' +
+      'title="The position, the effect and the line, as an action report on the iPad before the dice. Enter in the line does it too">Stamp it on the iPad</button>';
     return '<p class="gm-rl-up" role="status"><span class="gm-dot on" aria-hidden="true"></span><b>On the iPad</b><span>' + esc(cap(a.position) + ', ' + a.effect) + '</span>' +
         (v.stale ? '<span class="gm-rl-chg">changed here</span>' : '') + '</p>' +
       '<div class="gm-rl-acts">' +

@@ -1393,10 +1393,13 @@ body.as-tab #gm-page .gm-sheet { right: 44px; }
 #gm-page .gm-earlier.gm-rl-panel > .gm-dim { margin: 0; }
 /* Focus (F): the position on top of the four keys */
 #gm-page .gm-mini-pos { margin: 0 0 2px; display: grid; justify-items: center; gap: 3px; padding: 6px 2px; border: 2px solid var(--rule); background: var(--rule); color: var(--on-ink); text-align: center; box-shadow: inset 0 -4px 0 var(--accent); }
-#gm-page .gm-mini-pos b { max-width: 100%; font: 900 9px/1 var(--font-cond); text-transform: uppercase; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; }
+#gm-page .gm-mini-pos b { max-width: 100%; font: 900 9px/1 var(--font-poster); text-transform: uppercase; letter-spacing: 0; overflow: hidden; text-overflow: ellipsis; }
 #gm-page .gm-mini-pos small { font: 700 9px/1 var(--font-mono); opacity: .85; }
 #gm-page .gm-mini-pos .gm-mini-up { color: var(--mustard); opacity: 1; }
+/* touch screens (the GM's phone, a tablet): every control of the Roll at least 44 px tall, as the rest of the page */
 @media (pointer: coarse) {
+  #gm-page .gm-rl-seg .chip, #gm-page .gm-rl-fb, #gm-page .gm-rl-fold > summary { min-height: 44px; }
+  #gm-page .gm-rl-x { width: 44px; }
   #gm-page .gm-btn { min-height: 56px; }
   #gm-page .gm-dotb { min-width: 40px; }
 }

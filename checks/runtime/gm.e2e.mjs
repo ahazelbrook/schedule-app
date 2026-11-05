@@ -160,11 +160,14 @@ try {
   check(Object.keys(idx.parts).sort().join() === 'campaign,console,location', 'server: the three parts are stored: ' + Object.keys(idx.parts));
   check((await G.page.$$('#gm-buttons .gm-btn')).length === 4 && (await G.page.$$eval('#gm-buttons .gm-btn kbd', (k) => k.map((x) => x.textContent).join(''))) === '1234', 'console: opens on the four Situations (keys 1-4)');
   check((await G.page.$$('#gm-pos [data-gm="pos"]')).length === 3 && (await G.page.$eval('#gm-pos [aria-checked="true"]', (b) => b.getAttribute('data-v'))) === 'risky', 'console: the three-way Position switch, risky by default');
-  check((await G.page.$$('#gm-singles [data-gm="roll"]')).length === 9 && (await G.page.$$('#gm-singles kbd')).length === 0 && await G.page.$eval('#gm-singles', (d) => d.tagName === 'DETAILS' && !d.open), 'console: the nine single tables fold under "More tables" below the card, without keys');
+  check((await G.page.$$('#gm-singles [data-gm="roll"]')).length === 9 && (await G.page.$$('#gm-singles kbd')).length === 0 && await G.page.$eval('#gm-singles', (d) => d.hidden) && await G.page.$eval('[data-rlfold="singles"]', (b) => b.getAttribute('aria-expanded') === 'false'), 'console: the nine single tables fold under "More tables" below the card, without keys');
   check((await G.page.$$('#gm-controls [data-ctl="result"]')).length === 0, 'Situations: no Result control (the button is the result)');
-  check(await G.page.$eval('#gm-controls', (c) => getComputedStyle(c).display === 'none') && /District: any/.test(await G.page.textContent('#gm-scene-chips')), 'the scene controls fold under a Scene line of labelled chips');
-  const colOrder = await G.page.$$eval('.gm-console > *', (ks) => ks.filter((k) => getComputedStyle(k).display !== 'none').map((k) => k.id).join());
-  check(colOrder === 'gm-pos,gm-stamp,gm-scenebox,gm-buttons,gm-card,gm-earlier,gm-singles', 'the console column: Position, the Stamp row (always on since N0), Scene, the four buttons, the card, Earlier, More tables (' + colOrder + ')');
+  check(await G.page.$eval('#gm-controls', (c) => !c.checkVisibility()) && /District: any/.test(await G.page.textContent('#gm-scene-chips')), 'the scene controls fold under a Scene button that names the district');
+  /* N4: the Roll. The column is the Roll card, the result card, then the folds (Blade's Rack shows only while it holds something); the card, top to bottom */
+  const colOrder = await G.page.$$eval('.gm-console > *', (ks) => ks.filter((k) => getComputedStyle(k).display !== 'none').map((k) => k.id || k.className.split(' ')[0]).join());
+  check(colOrder === 'gm-rl,gm-card,gm-rl-scene,gm-rl-fbs', 'the console column: the Roll card, the card, Scene, then Earlier and More tables (' + colOrder + ')');
+  const rollOrder = await G.page.$$eval('#gm-rl > *', (ks) => ks.filter((k) => getComputedStyle(k).display !== 'none').map((k) => k.id || k.className.split(' ')[0]).join());
+  check(rollOrder === 'gm-rl-h,gm-pos,gm-pos-size,gm-eff,gm-rl-line,gm-stamp,gm-rl-they,gm-buttons', 'the Roll card: Position, its size, Effect, the line, the stamp (on since N0), They rolled and the four keys (' + rollOrder + ')');
   check(!(await G.page.$('[data-gm="view"]')) && !(await G.page.$('.gm-head')), 'one console (the four Situations) and one layout: no Situations | Classic toggle, no page heading');
   check(await G.page.$eval('#gm-menu-exp', (e) => e.classList.contains('stale') && /days old/.test(e.textContent)), 'menu: the five-day-old export is flagged');
   const cached = await G.page.evaluate(() => new Promise((res) => { const r = indexedDB.open('b68-gm'); r.onsuccess = () => { const tx = r.result.transaction('kv'); const q = tx.objectStore('kv').getAllKeys(); q.onsuccess = () => res(q.result); }; r.onerror = () => res(null); }));
@@ -189,7 +192,7 @@ try {
   check((await G.page.$$('#gm-earlier [data-gm="replay"]')).length === 2, 'Earlier: two rolls');
   // the keys never fire while typing (the Scene line opens the controls)
   await G.page.click('#gm-scene');
-  check(await G.page.$eval('#gm-controls', (c) => getComputedStyle(c).display !== 'none'), 'the Scene line opens the controls');
+  check(await G.page.$eval('#gm-controls', (c) => c.checkVisibility()), 'the Scene button opens the controls');
   await G.page.click('#gm-c-threat');
   await G.page.keyboard.type('3');
   check((await cardText(G.page)) === card1 && (await G.page.$$('#gm-earlier [data-gm="replay"]')).length === 2, 'typing a digit in a text box rolls nothing');
@@ -227,7 +230,7 @@ try {
   check(/^desperate/.test(await G.page.textContent('#gm-card .gm-sub')), 'the next card is rolled at that Position');
   await until(async () => ((await gmState()).con || {}).live && (await gmState()).con.live.pos === 'desperate', 5000);
   await G.page.click('#gm-pos [data-v="risky"]');
-  await G.page.click('#gm-singles > summary');
+  await G.page.click('[data-rlfold="singles"]');
   await G.page.click('#gm-singles [data-gm="roll"][data-n="9"]');
   check(await G.page.$eval('#gm-card article', (a) => a.getAttribute('data-tool')) === 'console' && !(await G.page.$('#gm-card .gm-lead')), 'a single table from the fold: a classic card in the same box');
   await G.page.click('#gm-singles [data-gm="roll"][data-n="7"]');
@@ -380,7 +383,7 @@ try {
     const stateNow = gmState;
     const opts = await G.page.$$eval('#gm-now option', (os) => os.map((o) => o.value));
     check(opts[0] === '' && new Set(opts).size === opts.length && opts.includes('Puddleton') && opts.includes('Dockside Test') && await G.page.$eval('#gm-now', (s) => s.getBoundingClientRect().height > 0 && s.value === ''), 'Now in: a select in the bar, on anywhere, listing the console’s and the location tool’s districts once each (' + opts.length + ')');
-    check(await G.page.$eval('#gm-now-s', (s) => getComputedStyle(s.closest('.gm-nowline')).display === 'none') && await G.page.$eval('#gm-now', (s) => s.getBoundingClientRect().right <= innerWidth), 'Now in: the Scene-line copy is for the phone only; the bar’s fits the laptop');
+    check(await G.page.$eval('#gm-now-s', (s) => getComputedStyle(s.closest('.gm-nowline')).display !== 'none' && !!s.closest('#gm-scenebox')) && await G.page.$eval('#gm-now', (s) => s.getBoundingClientRect().right <= innerWidth), 'Now in: the Roll’s Scene fold holds the copy shown at every width (N4); the bar’s still fits the laptop until the band replaces it');
     check(await optText('#gm-l-district') === 'Now in: anywhere' && await optText('#gm-c-district') === 'Now in: anywhere', 'the Location and console District pickers lead with "Now in: anywhere"');
     await G.page.selectOption('#gm-now', 'Dockside Test');
     check(!!(await until(async () => { const d = await stateNow(); return d.now && d.now.district === 'Dockside Test'; }, 5000)), 'Now in: kept in the GM state (now.district)');
@@ -418,10 +421,12 @@ try {
     check((await cardText(G.page)) === cardA && /District: Crumbhall/.test(await G.page.textContent('#gm-scene-chips')), 'Now in changed: the card on screen stays, the Scene line shows what the next roll uses');
     await G.page.keyboard.press('3'); await sleep(300);
     check(!!(await until(async () => { const x = await stateNow(); return x.cards.situation.ui.district === 'Crumbhall'; }, 5000)), 'the next console roll uses Crumbhall');
+    if (await G.page.$eval('#gm-earlier', (p) => p.hidden)) await G.page.click('[data-rlfold="earlier"]');      /* N4: Earlier is a fold of the Roll */
     const olders = await G.page.$$('#gm-earlier [data-gm="replay"][data-tool="situation"]');
     await olders[1].click();
     check((await cardText(G.page)) === cardA, 'Earlier: the older console card, exactly as it was');
-    const sceneShut = () => G.page.$eval('#gm-controls', (c) => getComputedStyle(c).display === 'none');
+    await G.page.click('[data-rlfold="earlier"]');
+    const sceneShut = () => G.page.$eval('#gm-controls', (c) => !c.checkVisibility());
     if (await sceneShut()) await G.page.click('#gm-scene');
     await G.page.selectOption('#gm-c-district', 'Muddle End');
     await G.page.selectOption('#gm-now', 'Puddleton');
@@ -576,7 +581,7 @@ try {
       check(await V.page.$$eval('.gm-segbar .chip', (c) => c.every((x) => { const rg = document.createRange(); rg.selectNodeContents(x); const t = rg.getBoundingClientRect(), b = x.getBoundingClientRect(), s = getComputedStyle(x); return t.width > 0 && t.left >= b.left + parseFloat(s.borderLeftWidth) - 0.5 && t.right <= b.right - parseFloat(s.borderRightWidth) + 0.5 && b.height >= 40; })), 'phone: every segment label shows whole, each 40 px or taller');
       check(await V.page.$eval('#gm-bar-ipad', (p) => getComputedStyle(p).display !== 'none') && await V.page.$eval('#gm-bar-stt', (p) => getComputedStyle(p).display === 'none'), 'phone: the bar shows the iPad pill (no Listening pill while the transcriber was never set up)');
       const cols = await V.page.$eval('#gm-buttons', (b) => getComputedStyle(b).gridTemplateColumns.split(' ').length);
-      check(cols === 2 && (await V.page.$$('#gm-buttons .gm-btn')).length === 4, 'phone: the four situations are a 2 × 2 grid');
+      check(cols === 4 && (await V.page.$$('#gm-buttons .gm-btn')).length === 4 && await V.page.$$eval('#gm-buttons .gm-btn', (bs) => bs.every((b) => b.getBoundingClientRect().height >= 44)), 'phone: the four situations are one row of the Roll (They rolled 1-4), each 44 px or taller');
       const pr = await V.page.$$eval('#gm-pos [data-gm="pos"]', (bs) => bs.map((b) => { const r = b.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), top: Math.round(r.top), bottom: Math.round(r.bottom) }; }));
       check(pr.length === 3 && pr.every((r) => r.w >= 90 && r.h >= 44), 'phone: the Position switch is three large buttons ' + JSON.stringify(pr));
       check(pr.every((r) => r.bottom <= h), 'phone: the Position switch is on the first screen (no scrolling) ' + JSON.stringify(pr.map((r) => r.bottom)));
@@ -588,8 +593,9 @@ try {
       await shot(V.page, '03a-phone-situation');
       await V.page.click('#gm-card details.gm-or > summary'); const l3 = await V.page.evaluate(layout);
       check(l3.scrollWidth <= l3.clientWidth + 1 && !l3.wide.length, 'phone: an opened "Or" row does not overflow ' + JSON.stringify(l3.wide));
-      check(await V.page.$eval('#gm-controls', (c) => getComputedStyle(c).display === 'none'), 'phone: the controls fold into the Scene line');
-      check(await V.page.$eval('#gm-now-s', (sel) => { const r = sel.getBoundingClientRect(); return r.height >= 44 && r.right <= innerWidth && getComputedStyle(sel.closest('.gm-nowline')).display !== 'none'; }) && await V.page.$eval('#gm-now', (sel) => getComputedStyle(sel.closest('.gm-now')).display === 'none'), 'phone: Now in is a select in the Scene line (the bar keeps the session and the iPad)');
+      check(await V.page.$eval('#gm-controls', (c) => !c.checkVisibility()), 'phone: the controls fold under the Scene button');
+      await V.page.tap('#gm-scene');      /* N4: Now in lives in the Roll's Scene fold, the one copy at every width */
+      check(await V.page.$eval('#gm-now-s', (sel) => { const r = sel.getBoundingClientRect(); return r.height >= 44 && r.right <= innerWidth && sel.checkVisibility(); }) && await V.page.$eval('#gm-now', (sel) => getComputedStyle(sel.closest('.gm-now')).display === 'none'), 'phone: Now in is a select in the Scene fold (the bar keeps the session and the iPad)');
       await V.page.selectOption('#gm-now-s', 'Puddleton');
       check(await V.page.$eval('#gm-now', (sel) => sel.value === 'Puddleton') && /District: Puddleton/.test(await V.page.textContent('#gm-scene-chips')) && !!(await until(async () => { const d = await gmState(); return d.now && d.now.district === 'Puddleton'; }, 5000)), 'phone: choosing it there sets Now in (the bar’s copy follows, the Scene line shows the district)');
       await V.page.selectOption('#gm-now-s', '');

@@ -167,8 +167,8 @@ try {
   // ============ 6b. the stamp's report card and the panic key share Esc: the card comes down first ============
   await api('PATCH', '/gm/state', { features: { 'spine.stamp': true, 'spine.sizer': true } });
   await reopen();
-  await page.fill('#gm-stamp input[data-st-text]', 'The guard turns');
-  await page.click('#gm-stamp [data-st="pos"][data-v="risky"]'); await page.click('#gm-stamp [data-st="eff"][data-v="standard"]');
+  await page.fill('#gm-c-threat', 'The guard turns');      /* N4: the Roll's line, position and effect, then Stamp it on the iPad */
+  await page.click('#gm-pos [data-v="risky"]'); await page.click('#gm-eff [data-v="standard"]'); await page.click('#gm-stamp [data-gm="stamp"]');
   check(!!(await until(async () => ((await ambient()).overlay || {}).kind === 'report', 6000, 50)), 'a stamp report card is up');
   const sceneBefore = (await ambient()).scene;
   await page.waitForFunction(() => /On the iPad/.test((document.querySelector('#gm-stamp') || {}).textContent || ''), null, { timeout: 8000 });       // the page has seen its own card go up
