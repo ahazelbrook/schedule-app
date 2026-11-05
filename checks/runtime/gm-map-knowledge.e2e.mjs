@@ -2,7 +2,7 @@
 // Worker, on an invented site (the Pelican Rooms). Everything built is on (N0): a stored false changes nothing. Each room card's Players' map is Dark | Blueprint | Seen: Dark
 // and Blueprint at once, Seen stages the room and Send opens it; Intel (the ⋯) sets a band's dark rooms to blueprint; Location has no knowledge box any more; the iPad copy
 // draws a blueprint room as linework with its name and a dark room not at all, and follows a change live. Every name is invented; no model, $0.
-//   PW_MODULE=<playwright install> PW_CHANNEL=msedge [PORT=9201] node checks/runtime/gm-map-spotted.e2e.mjs
+//   PW_MODULE=<playwright install> PW_CHANNEL=msedge [PORT=9201] node checks/runtime/gm-map-knowledge.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, readFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
