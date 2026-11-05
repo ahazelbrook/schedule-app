@@ -182,7 +182,7 @@ try {
   await must(api('PUT', '/docs', { kind: 'debrief', owner: P1, scope: 'player', json: D.buildRow({ steps: ['unwind', 'xp', 'credits'], nightAt: night, sentAt: night }) }), 'debrief');
   await must(api('PUT', '/docs', { kind: 'packet', owner: P1, scope: 'player', json: PACKET() }), 'packet');
   await must(api('PATCH', '/campaign', { mission: mission('Cocktail lounge') }), 'mission');
-  check(!!(await until(async () => { const x = await nowOf(a); return x && x.of === '1 of 5'; }, 20000)), 'five due at once');
+  check(!!(await until(async () => { const x = await nowOf(a); return x && x.more && /^\+4 more/.test(x.more.text); }, 20000)), 'five due at once');
   if (await until(() => a.$('.ds-mv'), 3000)) await a.click('.ds-mv-x');   /* the mission card opens by itself on a new card, as it always has */
   n = await nowOf(a);
   check(JSON.stringify(n.items) === '["commend"]' && n.more && n.more.text === '+4 more: Debrief · your packet · a key to turn · Mission' && n.more.exp === 'false', 'the commendations first, the rest behind "+4 more", by name and in order: ' + JSON.stringify(n));

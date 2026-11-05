@@ -46,7 +46,7 @@ await test('several due at once: the first in the order is the card, the rest wa
   const ctx = keyCtx(keyPlay(3), { mission, docId: 'c1' });
   const h = w.B68Now.card(ctx);
   assert.deepEqual(order(h), ['commend'], 'one item drawn: the commendations');
-  assert.match(h, /<h3 class="ds-bt">Now · the Aftermath<\/h3><span class="ds-band-r">1 of 5<\/span>/);
+  assert.match(h, /<div class="ds-band"><h3 class="ds-bt">Now · the Aftermath<\/h3><\/div>/, 'the band names the card alone: "+n more" says how many wait');
   assert.match(h, /data-act="nowmore" aria-expanded="false"><span>\+4 more: Debrief · your packet · a key to turn · Mission<\/span>/);
   assert.ok(!/ds-now-rest/.test(h), 'the rest are not drawn while folded');
   ctx.ui.nowMore = true;

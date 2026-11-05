@@ -100,7 +100,7 @@
     if (!list.length) return '';
     var top = list[0], rest = list.slice(1), more = rest.length > 0 && ui.nowMore === true;
     var h = '<section class="ds-box ds-now" aria-label="Now">' +
-      '<div class="ds-band"><h3 class="ds-bt">' + esc(str(top.kicker) || KICKER[top.id] || 'Now') + '</h3>' + (rest.length ? '<span class="ds-band-r">1 of ' + list.length + '</span>' : '') + '</div>' +
+      '<div class="ds-band"><h3 class="ds-bt">' + esc(str(top.kicker) || KICKER[top.id] || 'Now') + '</h3></div>' +   /* how many wait, and which, is "+n more"'s to say */
       '<div class="ds-body">' + itemHtml(top, false);
     if (rest.length) {
       h += '<button type="button" class="ds-now-more" data-act="nowmore" aria-expanded="' + more + '"' + (more ? ' aria-controls="ds-now-rest"' : '') + '>' +
