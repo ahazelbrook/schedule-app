@@ -82,7 +82,7 @@ export const SCENARIOS = [
     },
     steps: async (page) => { await page.waitForSelector('.dp-ov-npc', { timeout: 20000 }).catch(() => {}); } },
   /* the Aftermath, last, so the shots before it are in the score: Menu > Aftermath show, where it is run today */
-  ...gmAt('gm-after', then(enterPhase('after'), async (page) => { await page.click('[data-gm="menu"]'); await page.waitForSelector('#gm-menu-aftermath', { timeout: 5000 }); await page.click('#gm-menu-aftermath'); await page.waitForSelector('#gm-sheet-aftermath:not([hidden])', { timeout: 8000 }); })),
+  ...gmAt('gm-after', then(enterPhase('after'), async (page) => { await page.evaluate(() => window.B68GmTools.get('aftermath').open()); await page.waitForSelector('#gm-sheet-aftermath:not([hidden])', { timeout: 8000 }); })),
   /* Nell's phone: her sheet as player1 */
   { name: 'phone-nell', size: [390, 844], route: '#c/pc-nell', as: 'player1@example.test', ready: SHEET_READY, context: { isMobile: true, hasTouch: true }, settle: 1500 },
   { name: 'phone-nell-full', size: [390, 844], route: '#c/pc-nell', as: 'player1@example.test', ready: SHEET_READY, context: { isMobile: true, hasTouch: true }, settle: 1500, fullPage: true }

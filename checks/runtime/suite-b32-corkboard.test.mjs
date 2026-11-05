@@ -175,7 +175,7 @@ await test('wiring: routes bundle (GM only), Menu hook, the player door, no API'
   assert.ok(gmLine.includes("'gm/corkboard.js'") && gmLine.indexOf("'gm/corkboard.js'") < gmLine.indexOf("'gm-page.js'"));
   assert.equal((routes.match(/corkboard/g) || []).length, 1, 'only the GM bundle names it');
   const g = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
-  assert.ok(g.includes("case 'corkboard':") && g.includes('cbMenuSync()') && g.includes("theme: 'board' }), W.B68Map && W.B68Map.render"));
+  assert.ok(g.includes("case 'corkboard':") && g.includes("reg('corkboard', cbInst)") && g.includes("theme: 'board' }), W.B68Map && W.B68Map.render"));
   assert.ok(!/anthropic/i.test(fs.readFileSync(path.join(ROOT, 'app', 'gm', 'corkboard.js'), 'utf8')));
 });
 
