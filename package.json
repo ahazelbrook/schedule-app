@@ -98,7 +98,7 @@
     "check:b28": "node checks/runtime/suite-b28.test.mjs",
     "check:b24": "node checks/runtime/suite-b24.test.mjs",
     "check:b30": "node checks/runtime/suite-b30.test.mjs",
-    "check:b25": "node checks/runtime/suite-b25.test.mjs"
+    "check:b25": "node checks/runtime/suite-b25.test.mjs && node checks/runtime/gm-esc.test.mjs"
   },
   "keywords": [],
   "author": "",
