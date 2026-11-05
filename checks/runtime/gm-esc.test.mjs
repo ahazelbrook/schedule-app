@@ -1,4 +1,4 @@
-// Unit test for the GM page's one Esc (app/gm/esc.js, the GM night rebuild, design section 6). No browser, no network.
+// Unit test for the GM page's one Esc (app/gm/esc.js, the GM night rebuild, the design's Esc order). No browser, no network.
 //   node checks/runtime/gm-esc.test.mjs
 import path from 'node:path';
 import assert from 'node:assert/strict';

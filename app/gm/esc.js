@@ -1,4 +1,4 @@
-/* gm/esc.js — the ONE Esc of the GM page (the GM night rebuild, design section 6). No DOM of its own, no clock, no network.
+/* gm/esc.js — the ONE Esc of the GM page (the GM night rebuild, the design's Esc order). No DOM of its own, no clock, no network.
 
    Window.B68GmEsc in the browser, and module.exports under Node (checks/runtime/gm-esc.test.mjs).
 
