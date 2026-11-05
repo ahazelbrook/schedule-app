@@ -68,6 +68,7 @@ function rig(opts = {}) {
     roomMd: (r) => (r === 'Showroom' ? '- **Who:** GM-ONLY-Hidden One\n- If it goes wrong: GM-ONLY-the guard turns' : ''),
     scoreOver: () => !!opts.over, montageOpen: () => false, montage: (v) => log.montage.push(v), dawn: () => { log.dawn++; }, introduce: (id) => log.intro.push(id),
     setThreat: (t) => { log.threat.push(t); return !opts.noRoll; }, lineShown: () => true };
+  if (opts.noSetThreat) delete page.setThreat;
   return { site: Site.create(page), log, ball, stage, security, spot, kn, holds, clocks };
 }
 const el = (attrs, extra) => Object.assign({ getAttribute: (k) => (k in attrs ? attrs[k] : null) }, extra || {});
@@ -129,10 +130,12 @@ await test('the people: rows with faces and Card where there is one; Spotlight t
   r.site.act('who-x', el({ 'data-room': 'Luxury penthouse', 'data-id': 'npc-od' })); assert.deepEqual(r.spot.extras('Luxury penthouse'), []);
 });
 
-await test('If it goes wrong: the room\'s lines; "→ the Roll" hands the line to the Roll, and says so; with no Roll it says that', () => {
+await test('If it goes wrong: the room\'s lines; "→ the Roll" hands the line to the Roll (the page\'s setThreat: N4\'s B68GmPage.setThreat), and says so; a Roll that declines it, or none, says which', () => {
   const r = rig(); assert.deepEqual(r.site.wrong('Showroom'), ['GM-ONLY-the guard turns']); assert.deepEqual(r.site.wrong('Luxury penthouse'), []);
-  r.site.act('threat', el({ 'data-text': 'GM-ONLY-the guard turns' })); assert.deepEqual(r.log.threat, ['GM-ONLY-the guard turns']); assert.ok(r.log.toasts.some(([m]) => /The Roll’s threat/.test(m)));
-  const n = rig({ noRoll: true }); n.site.act('threat', el({ 'data-text': 'x' })); assert.ok(n.log.toasts.some(([m, bad]) => bad && /not on this page/.test(m)));
+  r.site.act('threat', el({ 'data-text': 'GM-ONLY-the guard turns' })); assert.deepEqual(r.log.threat, ['GM-ONLY-the guard turns']);
+  assert.ok(r.log.toasts.some(([m, bad]) => !bad && m === 'On the Roll: GM-ONLY-the guard turns'), JSON.stringify(r.log.toasts));
+  const n = rig({ noRoll: true }); n.site.act('threat', el({ 'data-text': 'x' })); assert.ok(n.log.toasts.some(([m, bad]) => bad && /did not take that line/.test(m)), 'declined');
+  const z = rig({ noSetThreat: true }); z.site.act('threat', el({ 'data-text': 'x' })); assert.ok(z.log.toasts.some(([m, bad]) => bad && /not on this page/.test(m)), 'no Roll at all');
 });
 
 await test('the rest of the acts: the alarm steps by hand, Spotted, Flashback, Pin, Montage, the stage\'s Freeze and Blank, the Costume engine', async () => {

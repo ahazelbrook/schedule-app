@@ -196,7 +196,21 @@ test('the Reset the night button is absent before Start the night and present af
   assert.ok(/data-rv="reset"/.test(after.box.innerHTML.split('data-rv="next"')[1]), 'and it sits after the Next beat button, not beside it');
 });
 
-test('map.countdown: the header draws the play\'s countdown pie with the switch on, once started, and only when the play has one', () => {
+/* N4's Roll follows the selected room: every change of the selection tells the host (roomSelected(name), '' for none) */
+test('the selected room: a tap, select() and reset() each tell the host\'s roomSelected once per change (\'\' for none); a host without one, or one that throws, still selects', () => {
+  const r = viewRig({ ...FULL }), got = []; r.host.roomSelected = (n) => got.push(n);
+  const tapRoom = (name) => r.handlers.click({ target: { closest: () => ({ getAttribute: (k) => (k === 'data-rv' ? 'room' : k === 'data-room' ? name : null) }) }, preventDefault() {} });
+  tapRoom('Cocktail lounge'); tapRoom('Cocktail lounge');
+  assert.deepEqual(got, ['Cocktail lounge'], 'a tap on a room tells the host; the same room again does not');
+  r.view.select('Showroom'); r.view.reset();
+  assert.deepEqual(got, ['Cocktail lounge', 'Showroom', ''], 'select() tells it; reset() tells it there is none');
+  r.host.roomSelected = () => { throw new Error('the Roll broke'); };
+  assert.equal(r.view.select('Cocktail lounge'), 'Cocktail lounge', 'a host whose roomSelected throws: the room is still selected');
+  const q = viewRig({ ...FULL });
+  assert.equal(q.view.select('Showroom'), 'Showroom', 'a host with no roomSelected (before N4): the room is selected all the same');
+});
+
+test('map.countdown:the header draws the play\'s countdown pie with the switch on, once started, and only when the play has one', () => {
   const cdPlay = B.checkPlay(Object.assign(JSON.parse(JSON.stringify(raw)), { clock: Object.assign({}, raw.clock, { countdown: { at: '00:00', label: 'Zzcount' } }) }), ROOMS).play;
   const rig = (state, on, p) => { const r = viewRig(state); r.host.site = () => ({ name: 'The Pelican Rooms', play: p || cdPlay }); r.host.feature = (id) => !!on && id === 'map.countdown'; r.view.render(r.box); return r; };
   const at = (t) => rig({ ...FULL, start: 0, t }, true).box.innerHTML;

@@ -43,7 +43,9 @@
  *   roomWrong(room) -> [line] the room's If it goes wrong lines (each gets "→ the Roll")      pinned() -> room | ''      threat() -> { room, kind } | null
  *   roomAt(svg, event) -> room | ''   the room under a tap on the map (a tap selects it)   intelGroups() -> [{ id, label }] Intel in the ⋯
  *   costume() -> bool, the Costume engine line in the ⋯                      siteAct(action, el, view) every data-site control (and a data-site form's submit)
- *   A data-rv control is this view's own; a data-site control (the parts above) is routed to host.siteAct.
+ *   A data-rv control is this view's own; a data-site control (the parts above) is routed to host.siteAct ("→ the Roll" too: the page's
+ *   B68GmPage.setThreat, N4, the same thing as its host.setThreat).
+ *   roomSelected(name)  N4: told on every change of the selected room ('' for none), so the Roll's "If it goes wrong" line follows it.
  *   Instance: select(room) selected() -> the room in focus (the one tapped, else the first shown)    toolHost(id, title) -> an element the page binds a
  *   tool into (it survives the redraws, at the top of the right column)     toolClose()      toolOpen() -> id | ''
  *   Esc: the view registers what it opens with window.B68GmEsc (rv.menu, rv.alarm, rv.time at 70; rv.npc, rv.peek, rv.tool at 40); it has no Esc of its own.
@@ -384,12 +386,20 @@
     var timeOpen = false, menuOpen = false, tool = null, escOff = [];
     var self = { box: function () { return boxEl; } };
     function closePops() { var was = timeOpen || alarmOpen || menuOpen; timeOpen = alarmOpen = menuOpen = false; return was; }
+    /* the selected room: every change goes through here, so the Roll's "If it goes wrong" line can follow it (N4: the host's roomSelected(name),
+       '' for none, when the host has it; without one the Roll follows the crew's room) */
+    function setSel(name) {
+      name = str(name); if (name === sel) return false;
+      sel = name;
+      if (typeof host.roomSelected === "function") { try { host.roomSelected(sel); } catch (e) { /* the Roll's trouble never stops a selection */ } }
+      return true;
+    }
     var mapViewState = {}, mapZoom = null;    /* the Map view's zoom { s, cx, cy, key }, kept across redraws */
 
     function site() { return host.site(); }
     function ctxFor(rs, st, m, shownT) {
       var ctx = { play: rs.play, st: st, model: m, t: timeOf(st), shownT: shownT, peeking: peekT !== null, host: host, sel: sel, esc: esc,
-        set: function (c) { return host.set(c); }, select: function (r) { sel = r; self.rerender(); }, rerender: function () { self.rerender(); }, toast: function (a, b) { host.toast(a, b); } };
+        set: function (c) { return host.set(c); }, select: function (r) { setSel(r); self.rerender(); }, rerender: function () { self.rerender(); }, toast: function (a, b) { host.toast(a, b); } };
       return ctx;
     }
     function build() {
@@ -550,7 +560,7 @@
         if (ev.target && ev.target.closest && ev.target.closest("button, .mz-ctl")) return;
         var n = ""; try { n = str(host.roomAt(el, ev)); } catch (e) { n = ""; }
         if (!n) return;
-        if (arm) placeAt(arm, n); else { sel = n; self.rerender(); }
+        if (arm) placeAt(arm, n); else { setSel(n); self.rerender(); }
       });
     }
 
@@ -679,7 +689,7 @@
     function placeAt(pc, room) {
       var rs = site(); if (!rs) return;
       var st = host.state(), bi = B.beatOf(rs.play, timeOf(st)).i;
-      if (host.set({ crew: moveCrew(st, pc, room, bi) })) { arm = ""; sel = room; }
+      if (host.set({ crew: moveCrew(st, pc, room, bi) })) { arm = ""; setSel(room); }
       self.rerender();
     }
     self.step = function (dir) { var rs = site(); if (!rs) return false; var st = host.state(), t = stepTime(rs.play, st, dir); if (t === null) return false; peekT = null; atTime(t, "beat", restartFor(rs.play, st)); return true; };
@@ -701,7 +711,7 @@
         self.reset(); self.rerender(); return true;
       });
     };
-    self.reset = function () { peekT = null; sel = ""; arm = ""; drag = null; npcOpen = null; closePops(); };
+    self.reset = function () { peekT = null; setSel(""); arm = ""; drag = null; npcOpen = null; closePops(); };
     /* the NPC card beside the right column: a name tapped, or a #pp: link in a room note (the page) */
     self.showNpc = function (names, title) { var ns = list(names).map(str).filter(Boolean); if (!ns.length) return false; npcOpen = { names: ns, title: str(title) || ns[0] }; self.rerender(); return true; };
     self.closeNpc = function () { if (!npcOpen) return false; npcOpen = null; self.rerender(); return true; };
@@ -755,7 +765,7 @@
         case "disarm": arm = ""; self.rerender(); break;
         case "room": {
           var room = el.getAttribute("data-room");
-          if (arm) placeAt(arm, room); else { sel = room; self.rerender(); }
+          if (arm) placeAt(arm, room); else { setSel(room); self.rerender(); }
           break;
         }
         case "know": if (typeof host.knowledgeCycle === "function") host.knowledgeCycle(el.getAttribute("data-room")); self.rerender(); break;
@@ -867,7 +877,7 @@
       escOff.forEach(function (f) { try { f(); } catch (e) { /* gone already */ } }); escOff = [];
     };
     /* N3: select a room, then act */
-    self.select = function (room) { sel = str(room); self.rerender(); return sel; };
+    self.select = function (room) { setSel(room); self.rerender(); return sel; };
     self.selected = function () { if (sel) return sel; var x = build(); return x ? roomsShown(x.m, "")[0] || "" : ""; };
     self.popsOpen = function () { return timeOpen || alarmOpen || menuOpen; };
     /* a tool the page binds into the top of the right column (the montage, inline): this element outlives every redraw until toolClose */

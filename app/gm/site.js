@@ -146,8 +146,8 @@
         }
         case 'threat': {
           var t = at('data-text');
-          if (t && typeof page.setThreat === 'function' && page.setThreat(t)) toast('The Roll’s threat: ' + t);
-          else if (t) toast('The Roll is not on this page.', true);
+          if (t && typeof page.setThreat === 'function' && page.setThreat(t)) toast('On the Roll: ' + t);
+          else if (t) toast(typeof page.setThreat === 'function' ? 'The Roll did not take that line.' : 'The Roll is not on this page.', true);
           break;
         }
         case 'costume': setCostume(!costume()); redraw(); break;

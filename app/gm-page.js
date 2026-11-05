@@ -4699,12 +4699,12 @@
     var mt = mtInst(); if (mt) { mt.toggle(); return 'sheet'; }
     toast('Montage is not available on this page.', true); return '';
   }
-  /* "→ the Roll": the room's If it goes wrong line into the Roll's threat line. N4's host.setThreat when it is there; until then the stamp's own one-line threat */
+  /* "→ the Roll": the room's If it goes wrong line into the Roll's own "If it goes wrong" line: N4's B68GmPage.setThreat (the same thing as the Run
+     view's host.setThreat) -> bool when it is there; until then the stamp's own one-line threat */
   function siteThreat(text) {
     var t = str(text).trim(); if (!t || !S) return false;
-    var R = W.B68GmRoll;
-    if (R && typeof R.setThreat === 'function') return R.setThreat(t) !== false;
-    if (S.roll && typeof S.roll.setThreat === 'function') return S.roll.setThreat(t) !== false;
+    var P = W.B68GmPage;
+    if (P && typeof P.setThreat === 'function') return P.setThreat(t) === true;
     if (S.stamp && typeof S.stamp.draft === 'function') { S.stamp.draft('text', t); b09Paint(); return true; }
     return false;
   }
