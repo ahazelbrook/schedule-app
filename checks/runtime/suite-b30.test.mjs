@@ -323,7 +323,13 @@ await test('display: the cast photo kind registers with a fixture, cleans a serv
   const node = await S.mount({ kind: 'castphoto', payload: e.fixture }, { document: D.doc });
   assert.ok(node && /dp-show-castphoto/.test(node.className));
   const all = walk(node), photo = all.find((n) => /dp-cp-photo/.test(n.className));
-  assert.ok(photo && photo.innerHTML.startsWith('<svg') && photo.innerHTML.includes('Mabel Quist'));
+  assert.ok(photo && photo.innerHTML.startsWith('<svg'));
+  /* the GM night rebuild: on the iPad a name is two lines in the label face (the first name over the rest), large enough for 1 to 1.5 m */
+  assert.ok(/>MABEL<\/tspan><tspan[^>]*dy="1\.12em"[^>]*>QUIST<\/tspan>/.test(photo.innerHTML), 'the name over two lines');
+  const capSizes = [...photo.innerHTML.matchAll(/<text [^>]*font-weight="900" font-size="([\d.]+)"/g)].map((m) => Number(m[1]));
+  assert.ok(capSizes.length >= 5, 'a caption per person: ' + capSizes.length);
+  const preview = CP.compose(CP.items(e.fixture.npcs, e.fixture.sil), { kit: Fig, title: 'The Pelican Rooms' });
+  assert.ok(preview.svg.includes('>Mabel Quist</text>'), 'the GM page preview and the print keep the one-line caption');
   assert.ok(all.some((n) => n.textContent === '3 faces · 2 still unknown'));
 });
 await test('display: the lair kind is registered with a bundle, not a renderer, until the drawer loads; then it renders the section and its caption', async () => {

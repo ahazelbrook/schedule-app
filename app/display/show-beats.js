@@ -68,7 +68,9 @@
       k.appendChild(svg(b.doc, 'circle', { cx: 30, cy: 30, r: 20, class: 'dp-key-bow' }));
       k.appendChild(svg(b.doc, 'circle', { cx: 30, cy: 30, r: 8, class: 'dp-key-hole' }));
       k.appendChild(svg(b.doc, 'path', { d: 'M50 26 H150 V34 H138 V46 H128 V34 H112 V42 H102 V34 H50 Z', class: 'dp-key-shaft' }));
-      b.n.appendChild(k);
+      /* the key turns inside a box of its own, as tall as the turned key, so it never swings over the words under it (the GM night rebuild) */
+      var box = el(b.doc, 'div', 'dp-key-box'); box.setAttribute('aria-hidden', 'true'); box.appendChild(k);
+      b.n.appendChild(box);
       b.n.appendChild(el(b.doc, 'p', 'dp-show-kicker', 'Turn the key'));
       b.n.appendChild(el(b.doc, 'p', 'dp-show-head', p.label));
       if (p.pc) b.n.appendChild(el(b.doc, 'p', 'dp-show-line', p.pc));

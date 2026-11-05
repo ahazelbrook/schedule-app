@@ -31,6 +31,10 @@
 
 /* keyturn */
 .dp-key { width: 46vmin; height: auto; transform-origin: 19% 50%; }
+/* the GM night rebuild: the key turns about its bow inside a box as tall as the turned key, the bow at the box's centre, so the turned key hangs
+   in its own space and never over the words under it */
+.dp-key-box { position: relative; flex: none; width: 28vmin; height: 27vmin; }
+.dp-key-box .dp-key { position: absolute; left: calc(14vmin - 28vmin * .1875); top: 0; width: 28vmin; transform-origin: 18.75% 50%; }
 .dp-key-bow, .dp-key-shaft { fill: var(--b68-mustard); stroke: var(--b68-ink); stroke-width: 2; }
 .dp-key-hole { fill: var(--b68-ink); }
 .dp-show-keyturn.dp-ov-in .dp-key { animation: dp-key-turn 1.4s ease-in-out .3s both; }
@@ -151,3 +155,29 @@
   .dp-show-stamp .dp-stamp-word { transform: rotate(-9deg); opacity: .94; }
   .dp-show-rolodex .dp-roll-card { transform: none; opacity: 1; }
 }
+
+/* ---- THE BEAT PASS (the GM night rebuild, design section 6): the older stages and overlays (display.css: the read-aloud and text, a rules entry,
+   the map's caption bar, an NPC, a handout's caption, the side cards for a clock, an NPC or a line, the wire) take the beats' frame language: the
+   same label (the kicker: condensed, capitals, spaced, mustard, at --b68-t-label), the same type scale (nothing under --b68-t-label; names in the
+   poster face at a step of the scale) and the beats' 4vmin margin. What each one shows is unchanged. display.css stays free of the tokens; these
+   rules sit here, after it in the cascade. ---- */
+.dp-root .dp-kicker { font: 900 var(--b68-t-label)/1.1 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .18em; color: var(--b68-mustard); }
+.dp-root .dp-t-xl .dp-text-body { font-size: var(--b68-t-title); }
+.dp-root .dp-t-l .dp-text-body { font-size: var(--b68-t-lead); }
+.dp-root .dp-t-m .dp-text-body { font-size: var(--b68-t-body); }
+.dp-root .dp-t-s .dp-text-body { font-size: var(--b68-t-label); }
+.dp-root .dp-rule-title { font-size: var(--b68-t-title); letter-spacing: .01em; word-spacing: .1em; }
+.dp-root .dp-npc-alias, .dp-root .dp-npc-desc { font-size: var(--b68-t-label); }
+.dp-root .dp-handout-cap { font-size: var(--b68-t-label); padding: 1.4vmin 4vmin; }
+.dp-root .dp-strip { padding-left: 4vmin; padding-right: 4vmin; }
+.dp-root .dp-strip-title { font: 900 var(--b68-t-body)/1.1 var(--b68-font-poster); letter-spacing: .01em; }
+.dp-root .dp-strip-cap { font-size: var(--b68-t-label); line-height: 1.25; }
+.dp-root .dp-ov-card { right: 4vmin; width: calc(34% - 4vmin); gap: 1.4vmin; padding: 3vmin 2.4vmin; }
+.dp-root .dp-ov-name { font: 900 var(--b68-t-body)/1.1 var(--b68-font-poster); letter-spacing: .03em; overflow-wrap: break-word; }
+.dp-root .dp-ov-count { font: 700 var(--b68-t-label)/1 var(--b68-font-mono); }
+.dp-root .dp-ov-alias { font: italic 400 var(--b68-t-label)/1.25 var(--b68-font-text); }
+.dp-root .dp-ov-text { font: 700 var(--b68-t-body)/1.25 var(--b68-font-text); overflow-wrap: break-word; }
+.dp-root .dp-ov-card.dp-t-xl .dp-ov-text { font-size: var(--b68-t-lead); }
+.dp-root .dp-wire { left: 4vmin; right: 4vmin; bottom: 4vmin; font-size: var(--b68-t-label); }
+.dp-root .dp-wire::before { font: 900 var(--b68-t-label)/1 var(--b68-font-cond); letter-spacing: .18em; color: var(--b68-mustard); }
+@media (orientation: portrait) { .dp-root .dp-npc-name { font-size: var(--b68-t-title); } }
