@@ -1052,7 +1052,6 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 #gm-page .rv-chip { font: 700 11.5px/1 var(--font-mono); border: 1.5px solid var(--ink-soft); color: var(--ink-soft); padding: 6px 8px; white-space: nowrap; }
 #gm-page .rv-chip[data-ok="1"] { border-color: var(--ok); color: var(--ok); }
 #gm-page .rv-alarmtext { margin: 0; border: 2px solid var(--alarm); padding: 6px 10px; font-size: 13.5px; }
-#gm-page .rv-menu { position: absolute; top: 58px; right: 14px; z-index: 5; list-style: none; margin: 0; padding: 6px; background: var(--card); border: 2px solid var(--rule); display: grid; gap: 4px; }
 #gm-page .rv-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 330px); gap: 10px; align-items: start; min-height: 0; flex: 1 1 auto; }
 #gm-page .rv-main, #gm-page .rv-side { min-width: 0; min-height: 0; display: grid; gap: 6px; align-content: start; }
 #gm-page .rv-views { display: flex; gap: 6px; }
@@ -1179,7 +1178,7 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 }
 /* the Map view on the laptop: the map takes the room, the right column narrows */
 @media (min-width: 1100px) {
-  #gm-page .rv-body.mapview { grid-template-columns: minmax(0, 1fr) minmax(220px, 240px); }
+  #gm-page .rv-body.mapview { grid-template-columns: minmax(0, 1fr) minmax(280px, 300px); }      /* N3: the room card is where you act, so it keeps room for its people */
 }
 
 /* The players' mission (gm/mission-publish.js): the notice with a button, and the Players view (the band and each PC's card as last published) */
@@ -1278,31 +1277,159 @@ body.as-tab #gm-page .gm-sheet { right: 44px; }
 #gm-page .gm-curfew-snooze { min-height: 52px; padding: 0 14px; border: 2px solid var(--on-ink); background: transparent; color: var(--on-ink); font: 900 12px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
 @media (max-width: 599px) { #gm-page .gm-curfew { flex-direction: column; } }
 /* N0, the Workshop gone: the mirror buttons (the bar, the iPad tab) and the Run menu's phone-cards line stay put away, since Menu > Settings holds both; the
-   costume select (Disguise, the Run strip) stays put away until it has a toggle of its own. The Blade panel's uncued co-GM box and Screen props show as before. */
+   costume select (Disguise, the Run strip) stays put away until the site's Costume engine shows it (N3: gm/site.js, body.gm-show-costume, this device only).
+   The Blade panel's uncued co-GM box and Screen props show as before. */
 #gm-page [data-gm="mirror"], #gm-page [data-rv="menuitem"][data-mid="phone-cards"] { display: none !important; }
-#gm-page .gm-field:has(#gm-run-lens) { display: none; }
+body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none; }
 /* B09: the cue toast with Undo (gm/cue-grammar.js); the stamp and the sizer are the Roll's since N4 (the "N4: the Roll" block) */
 .gm-ugtoast { position: fixed; left: 50%; bottom: 1rem; transform: translateX(-50%); z-index: 9999; display: flex; gap: .6rem; align-items: center; max-width: 90vw; padding: .5rem .8rem; border-radius: .5rem; background: #1b1814; color: #f4ecd8; box-shadow: 0 2px 10px rgba(0,0,0,.4); }
 .gm-ugtoast-t { overflow-wrap: anywhere; }
 
-/* suite B19: the map beats on the Run map (gm/map-spotted.js, gm/map-flashback.js, gm/map-threat.js). Nothing here draws unless a switch put its element there. */
-#gm-page .rv-map .b19-bar { position: absolute; top: 8px; left: 8px; display: flex; gap: 4px; z-index: 2; }
-#gm-page .rv-map .b19-btn { min-width: 2.2rem; }
+/* suite B19: the map beats on the Run map (gm/map-spotted.js, gm/map-flashback.js, gm/map-threat.js). Their buttons are the site's toolbar's (N3). */
 #gm-page .rv-map .b19-spot-fill { transform-box: fill-box; transform-origin: center; animation: b19-spread 1.1s ease-out forwards; }
 @keyframes b19-spread { from { transform: scale(0); } to { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) { #gm-page .rv-map .b19-spot-fill { animation-duration: 1ms !important; } }
 #gm-page .rv-map.b19-flash svg { filter: sepia(.85) saturate(.7) contrast(1.05); }
-/* B17: the staging panel, the security line and the stage bar (gm/stage.js, gm/security.js, gm/spotlight.js, gm/panel17.js) */
-#gm-page .gm-b17 { display: grid; gap: .5rem; margin: .4rem 0; }
-#gm-page .gm-b17[hidden] { display: none; }
-#gm-page .gm-b17 > div { display: grid; gap: .35rem; padding: .45rem .55rem; border: 1px solid var(--line, #c9bfa9); border-radius: .5rem; }
-#gm-page .gm-stage-live { display: inline-block; margin-left: 6px; font: 900 9.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; background: var(--mustard); color: var(--on-mustard); padding: 3px 5px; }
-#gm-page .gm-stage-live.frozen { background: #3b6ea8; color: #fff; }
-#gm-page .gm-stage-live.blank { background: #111; color: #eee; }
-#gm-page .gm-stage-list, #gm-page .gm-bar-list { display: flex; flex-wrap: wrap; gap: .3rem; list-style: none; margin: 0; padding: 0; }
-#gm-page .gm-stage-list li { border: 1px solid #d99a1e; background: rgba(240, 170, 30, .22); border-radius: .4rem; padding: .1rem .3rem; }
-#gm-page .gm-stage-acts, #gm-page .gm-bar-add { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
+/* B17: a room staged from Location's Open one room list or its map tints amber there (gm/panel17.js tint); the stage, the level and the people are the site's (N3) */
 #gm-page .gm-map .gm-staged rect, #gm-page .gm-map .gm-staged path, #gm-page .gm-map .gm-staged polygon { fill: rgba(240, 170, 30, .55); stroke: #d99a1e; }
+#gm-page .gm-stageline { margin: 6px 0; display: flex; }
+
+/* ---------- N3: THE SITE (gm/site.js, gm/run-view.js): the Score place's whole score ----------
+   The header is one line (the time opens the night's squares and the timer's rest; the ONE alarm; the pie; Players; ⋯), the toolbar sits over the board and the map,
+   the board and the map's labels show what the players' map holds of each room, and a room's card is where you act on it. The staged amber and the selected
+   rules blue are the mockup's; dark and blueprint are the map kit's own (its blueprint ink and wash). */
+#gm-page .rv-headwrap { position: relative; }
+#gm-page .rv-headwrap > .rv-head { gap: 6px; }
+#gm-page .rv-head .rv-step { min-height: 34px; padding: 5px 8px; }
+#gm-page .rv-head .rv-beat { font-size: 11.5px; }
+#gm-page .rv-head .rv-tleft { min-width: 2.6em; font-size: 19px; }
+#gm-page .rv-clock { display: inline-flex; align-items: center; gap: 4px; }
+#gm-page .rv-timebtn { display: inline-flex; align-items: center; gap: 4px; border: 2px solid transparent; background: none; color: var(--ink); padding: 0 6px 0 4px; min-height: 36px; cursor: pointer; }
+#gm-page .rv-timebtn:hover, #gm-page .rv-timebtn[aria-expanded="true"] { border-color: var(--rule); background: var(--card); }
+#gm-page .rv-timebtn:focus-visible, #gm-page .rv-mi:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#gm-page .rv-caret { display: inline-block; width: 0; height: 0; border: 5px solid transparent; border-top: 6px solid currentColor; border-bottom: 0; opacity: .7; }
+#gm-page .rv-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+#gm-page .rv-hsp { flex: 1 1 0; min-width: 0; }
+#gm-page .rv-tgo { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 7px; }
+#gm-page .rv-tgo .rv-tleft { font: 900 18px/1 var(--font-cond); min-width: 2.3em; }
+#gm-page .rv-tgl { display: inline-block; width: 0; height: 0; border-style: solid; border-width: 6px 0 6px 9px; border-color: transparent transparent transparent currentColor; }
+#gm-page .rv-tgo.going .rv-tgl { width: 9px; height: 12px; border: 0; border-left: 3px solid currentColor; border-right: 3px solid currentColor; box-sizing: border-box; }
+#gm-page .rv-clab { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* on a laptop the header stays one line: the Players chip and the countdown's name give way first (their titles hold the whole text) */
+@media (min-width: 1100px) {
+  #gm-page .rv-headwrap > .rv-head { flex-wrap: nowrap; }
+  #gm-page .rv-head > * { flex: none; }
+  #gm-page .rv-head > .rv-hsp { flex: 1 1 0; }
+  #gm-page .rv-head > .rv-players { flex: 0 1 auto; min-width: 64px; overflow: hidden; text-overflow: ellipsis; }
+  #gm-page .rv-head > .rv-count { flex: 0 1 auto; min-width: 84px; }
+  #gm-page .rv-head > .rv-alarm { flex: 0 1 auto; min-width: 150px; }
+  #gm-page .rv-head .rv-alevel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #gm-page .rv-head .rv-alabel, #gm-page .rv-head .rv-count, #gm-page .rv-head .rv-alevel { letter-spacing: .05em; }
+}
+#gm-page .rv-more { padding: 4px 12px; font-size: 18px; letter-spacing: 0; line-height: 1; }
+#gm-page .rv-pop { position: absolute; top: calc(100% + 4px); z-index: 25; background: var(--card); border: 2px solid var(--rule); box-shadow: 4px 4px 0 var(--shadow-ink); padding: 8px 10px; display: grid; gap: 6px; max-width: min(560px, 92vw); }
+#gm-page .rv-pop[hidden] { display: none; }
+#gm-page .rv-timepop { left: 0; }
+#gm-page .rv-alarmpop { left: clamp(0px, 22%, 280px); width: min(400px, 92vw); }
+#gm-page .rv-alarmpop p { margin: 0; font-size: 13px; }
+#gm-page .rv-alarmpop .rv-alarmtext { border: 0; padding: 0; }
+#gm-page .rv-poph { margin: 0; font-size: 12.5px; }
+#gm-page .rv-tmore { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+#gm-page .rv-tlenl { display: inline-flex; gap: 4px; align-items: center; font: 700 11.5px/1 var(--font-mono); color: var(--ink-soft); }
+#gm-page .rv-menu { position: absolute; top: calc(100% + 4px); right: 0; left: auto; z-index: 25; min-width: 230px; padding: 4px; gap: 0; list-style: none; margin: 0; }
+#gm-page .rv-mi { display: block; width: 100%; text-align: left; font: 700 13px/1.2 var(--font-text); background: none; color: var(--ink); border: 0; padding: 8px 10px; min-height: 36px; cursor: pointer; }
+#gm-page .rv-mi:hover:not(:disabled) { background: var(--inset); }
+#gm-page .rv-mi:disabled { opacity: .45; cursor: default; }
+#gm-page .rv-mi.rv-reset { color: var(--alarm); }
+#gm-page .rv-mh { margin: 4px 6px 0; padding-top: 6px; border-top: 1px solid var(--hair); font: 900 10.5px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
+#gm-page .rv-mh:empty { margin-top: 4px; padding-top: 0; }
+#gm-page .rv-mgrid { display: grid; grid-template-columns: 1fr 1fr; }
+/* the ONE alarm: the site alarm clock's segments and the level's name */
+#gm-page .rv-alabel { font: 900 11px/1 var(--font-cond); letter-spacing: .1em; }
+#gm-page .rv-segs { display: inline-flex; gap: 2px; }
+#gm-page .rv-segs i { display: block; width: 9px; height: 13px; border: 1.5px solid var(--rule); background: var(--card); }
+#gm-page .rv-segs i.f { background: var(--alarm); }
+#gm-page .rv-alevel { font: 900 13px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .06em; }
+#gm-page .rv-acount { font: 700 11px/1 var(--font-mono); color: var(--ink-soft); }
+#gm-page .rv-alarm.quiet { border-style: dashed; }
+#gm-page .rv-alarm[aria-expanded="true"] { background: var(--inset); }
+#gm-page .rv-secstep { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* the toolbar over the board and the map */
+#gm-page .rv-tools { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+#gm-page .rv-tools .rv-views { flex: none; }
+#gm-page .rv-mtools { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; padding-left: 8px; border-left: 2px solid var(--hair); }
+#gm-page .rv-montage.glow { box-shadow: 0 0 0 3px var(--mustard); }
+#gm-page .rv-stage { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-left: auto; }
+#gm-page .rv-live { font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; padding: 7px 8px; border: 2px solid var(--rule); background: var(--inset); color: var(--ink); max-width: 26ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#gm-page .rv-live.live { background: var(--mustard); color: var(--on-mustard); }
+#gm-page .rv-live.frozen { background: #3b6ea8; border-color: #3b6ea8; color: #fff; }
+#gm-page .rv-live.blank { background: #111; border-color: #111; color: #eee; }
+#gm-page .rv-btn.rv-send { background: #f0a24e; color: #14110e; }
+#gm-page .rv-send b { font: 700 12px/1 var(--font-mono); }
+/* the board: what the players' map holds of each room (the zone stripe stays on top) */
+#gm-page .rv-card.k-dark { background: #2b2722; color: #f2ede1; }
+#gm-page .rv-card.k-dark .rv-cn small, #gm-page .rv-card.k-dark .rv-route { color: #cfc7b8; border-color: #5a544c; }
+#gm-page .rv-card.k-blueprint { background: #dfe9f2; border-color: #2f5f8f; border-style: dashed; border-top-style: solid; }
+#gm-page .rv-card.k-blueprint .rv-cn { color: #2f5f8f; }
+#gm-page .rv-card.k-seen { border-style: solid; }
+#gm-page .rv-card.staged { box-shadow: inset 0 0 0 3px #f0a24e; }
+#gm-page .rv-card.sel { outline: 3px solid var(--b68-rules-blue, #26418f); outline-offset: 2px; }
+#gm-page .rv-cmarks { display: inline-flex; gap: 3px; margin-left: 6px; vertical-align: 1px; }
+#gm-page .rv-cmark { font: 700 9.5px/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0; padding: 2px 4px; border-radius: 2px; }
+#gm-page .rv-cmark.pin { background: #c4361e; color: #fff4d6; }
+#gm-page .rv-cmark.threat { background: #b3261e; color: #fff6e8; }
+#gm-page .rv-cmark.stg { background: #f0a24e; color: #14110e; }
+#gm-page .rv-legend { margin: 2px 0 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font: 400 11px/1.2 var(--font-mono); color: var(--ink-soft); }
+#gm-page .rv-lg::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: -2px; border: 1.5px solid var(--rule); background: var(--card); box-sizing: border-box; }
+#gm-page .rv-lg.k-dark::before { background: #2b2722; }
+#gm-page .rv-lg.k-blueprint::before { background: #dfe9f2; border-color: #2f5f8f; border-style: dashed; }
+#gm-page .rv-lg.staged::before { border: 3px solid #f0a24e; }
+#gm-page .rv-lg.sel::before { border: 3px solid var(--b68-rules-blue, #26418f); }
+/* the map's room labels carry the same states */
+#gm-page .rv-map .room-label.rv-mk-dark > rect:first-child { fill: #2b2722; opacity: 1; }
+#gm-page .rv-map .room-label.rv-mk-dark > text { fill: #f2ede1; }
+#gm-page .rv-map .room-label.rv-mk-blueprint > rect:first-child { fill: #dfe9f2; stroke: #2f5f8f; stroke-width: .35; stroke-dasharray: 1.2 .8; opacity: 1; }
+#gm-page .rv-map .room-label.rv-mk-blueprint > text { fill: #2f5f8f; }
+#gm-page .rv-map .room-label.rv-mk-staged > rect:first-child { fill: #fbd9ad; stroke: #f0a24e; stroke-width: .7; stroke-dasharray: none; opacity: 1; }
+#gm-page .rv-map .room-label.rv-mk-staged > text { fill: #14110e; }
+#gm-page .rv-map .room-label.rv-mk-sel > rect:first-child { stroke: #26418f; stroke-width: .9; stroke-dasharray: none; }
+/* the room card: its state, the Players' map, the people, the intel, If it goes wrong */
+#gm-page .rv-rmk { margin: 0; font: 900 10.5px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
+#gm-page .rv-rmk b { color: var(--ink); }
+#gm-page .rv-kseg { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+#gm-page .rv-klab { font: 900 10.5px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
+#gm-page .rv-kseg .seg { display: inline-flex; }
+#gm-page .rv-kseg .chip { min-height: 32px; }
+#gm-page .rv-kseg .chip.rv-kdark[aria-pressed="true"] { background: #2b2722; color: #f2ede1; border-color: #2b2722; }
+#gm-page .rv-kseg .chip.rv-kblueprint[aria-pressed="true"] { background: #2f5f8f; color: #fff; border-color: #2f5f8f; }
+#gm-page .rv-kseg .chip.rv-kseen[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); }
+#gm-page .rv-kseg .chip.staged[aria-pressed="true"] { background: #f0a24e; color: #14110e; border-color: var(--rule); }
+#gm-page .rv-khint { margin: 0; font-size: 12px; }
+#gm-page .rv-khint.staged { border-left: 4px solid #f0a24e; padding-left: 6px; }
+#gm-page .rv-ppl { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+#gm-page .rv-p { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 4px 8px; align-items: start; }
+#gm-page .rv-face { width: 40px; height: 40px; grid-row: span 2; border: 2px solid var(--rule); background: var(--b68-rules-blue, #26418f); color: #fff; display: grid; place-items: center; overflow: hidden; box-sizing: border-box; }
+#gm-page .rv-face svg { width: 100%; height: 100%; display: block; background: var(--card); }
+#gm-page .rv-face .rv-ini { font: 900 18px/1 var(--font-poster); }
+#gm-page .rv-p.hidden .rv-face { border-style: dashed; }
+#gm-page .rv-p.nocast .rv-face { background: var(--ink-soft); }
+#gm-page .rv-pn { display: grid; gap: 1px; min-width: 0; }
+#gm-page .rv-pn b { font: 700 14px/1.15 var(--font-text); }
+#gm-page .rv-prole, #gm-page .rv-pmove { font: 400 12px/1.25 var(--font-text); color: var(--ink-soft); }
+#gm-page .rv-pacts { display: flex; flex-wrap: wrap; gap: 4px; grid-column: 2; }
+#gm-page .rv-btn.rv-spot.on { background: var(--b68-rules-blue, #26418f); border-color: var(--b68-rules-blue, #26418f); color: #fff; }
+#gm-page .rv-plooks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 2px 0 2px 48px; }
+#gm-page .rv-faces { display: flex; flex-wrap: wrap; gap: 3px; }
+#gm-page .rv-btn.rv-down { border-color: var(--alarm); color: var(--alarm); }
+#gm-page .rv-padd { display: flex; gap: 4px; margin-top: 2px; }
+#gm-page .rv-padd input { flex: 1 1 auto; min-width: 0; min-height: 30px; padding: 3px 6px; border: 2px solid var(--hair); background: var(--card); color: var(--ink); font: 13px/1.2 var(--font-text); }
+#gm-page .rv-rintel { display: flex; gap: 6px; align-items: center; justify-content: space-between; font-size: 13px; border-top: 1px solid var(--hair); padding-top: 4px; }
+#gm-page .rv-rintel .rv-btn { flex: none; white-space: nowrap; }
+#gm-page .rv-wrong { display: grid; gap: 4px; border-left: 4px solid var(--alarm); padding: 2px 0 2px 8px; margin-top: 2px; }
+#gm-page .rv-wrong p { margin: 0; font-size: 13px; }
+#gm-page .rv-wrong .rv-lab { margin: 0 4px 0 0; }
+#gm-page .rv-toolh { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+#gm-page .rv-siteline { margin-bottom: 8px; }
 /* 4.1 the cue stack bar (gm/cue-stack.js, switch room.cues): STANDBY and GO under the rail, and the red work-light banner after a panic */
 #gm-page .gm-cuebar { display: grid; gap: 4px; padding: 6px 8px; border-bottom: 2px solid var(--rule); background: var(--paper, #fff); }
 #gm-page .gm-cuebar[data-state="panic"] { background: var(--alarm); color: #fff; }

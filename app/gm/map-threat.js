@@ -13,7 +13,7 @@
      glyphFor(text) -> 'guard' | 'door' | 'alarm' | 'harm' | 'warn' | ''
      glyphSvg(doc, svg, box, kind) -> the <g> (every attribute set, no page text)       clearGlyph(svg)
      create(host) -> controller { drop(stamp), clear(), view(), paint(frame, svg, zoom) }
-       host: { feature(id), doc(), room() -> the crew's room name, roomBox(svg, name) -> box | null, log(text) } */
+       host: { feature(id), doc(), room() -> the crew's room name, roomBox(svg, name) -> box | null, log(text), changed() (N3: the site's board shows view() too) } */
 (function (root, factory) {
   'use strict';
   var M = factory();
@@ -84,7 +84,8 @@
     host = host || {};
     var cur = null, frameRef = null, svgRef = null, zoomRef = null;       /* cur: { room, kind } while a stamp's glyph is down */
     function on() { return typeof host.feature === 'function' ? !!host.feature(SWITCH) : false; }
-    function repaint() { if (frameRef && svgRef) paint(frameRef, svgRef, zoomRef); }
+    /* the glyph on the Run map, and (N3) the site's board marks the crew's room with the threat too: host.changed() redraws it */
+    function repaint() { if (frameRef && svgRef) paint(frameRef, svgRef, zoomRef); if (typeof host.changed === 'function') host.changed(); }
 
     /* the stamp went up: { position, effect, text } */
     function drop(st) {

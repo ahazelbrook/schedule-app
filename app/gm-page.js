@@ -3174,7 +3174,7 @@
     var hist = newest(isObj(S.doc.hist) ? S.doc.hist.location : null).slice(0, LIMITS.hist);
     if (hist.length) h += '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) { return earlierChip(x, 'location', cur && cur.hid === x._id); }).join('') + '</div>';
     box.innerHTML = h;
-    runPaint(); b17Paint(); knPaint();
+    runPaint();          /* N3: the stage, the security level, the people and the knowledge are the site's now (gm/site.js), no longer boxes under the Map heading */
     if (!S.map && runSite() && W.B68Map && W.B68Map.render) drawMap(true);     /* a run draws itself: its people are on the map */
     else if (S.map) showMap();
   }
@@ -3402,7 +3402,7 @@
   }
   function runBox(rs) {
     var plain = '<div class="gm-map" id="gm-map"></div>', m = rs ? runModel(rs) : null; if (!m) return plain;
-    if (rs.play.v === 2) return '<p class="gm-dim gm-runv2note">This night is built for the Run tab: press <kbd>G</kbd>.</p>' + plain;     /* a v2 block is run there (VV4); the v1 strip reads v1 state */
+    if (rs.play.v === 2) return '<p class="gm-dim gm-runv2note">This night runs on the site: its stage, alarm, people and what the players know are there (<kbd>G</kbd>).</p>' + plain;     /* a v2 block is run there (VV4, N3); the v1 strip reads v1 state */
     var label = str(rs.play.clock.label);
     return '<div class="gm-runzone" id="gm-runzone"><section class="gm-run" id="gm-run" tabindex="0" aria-label="Run the site' + (label ? ': ' + esc(label) : '') + '. Left and Right move the time by 5 minutes.">' +
       '<div class="gm-run-h"><b>Run the site</b>' + (label ? ' <span class="gm-dim">' + esc(label) + '</span>' : '') + ' <span class="gm-dim" id="gm-run-note"></span></div>' +
@@ -3628,7 +3628,16 @@
         if (isObj(change) && ('t' in change || 'crew' in change) && !('heard' in change)) { var merged = Object.assign({}, ballDoc(rs.name), change), hh = runHeard(rs, merged, +merged.t); if (hh) change = Object.assign({}, change, { heard: hh }); }
         var prev = ballDoc(rs.name).t; var ok = ballSet(rs.name, change, quiet === true); if (ok && change && 't' in change) S.rvPrevT = prev; /* VV6 */ if (ok && !quiet) runDraw(true); return !!ok; },
       pcs: runPcs, floors: function () { var rs = runV2(); return rs ? runFloors(rs) : { list: [], floorOf: {} }; }, isOpen: runIsOpen,
-      openRoom: function (name, on) { roomOpen(name, on); }, knowledgeToggle: function (name) { var k = knInst(); return k ? k.toggleHtml(name) : ''; }, knowledgeCycle: function (name) { var k = knInst(); if (k) k.cycle(name); }, mapSvg: runMapSvg, mapPaint: function (fr, svg, zoom) { b19Paint(fr, svg, zoom); },
+      openRoom: function (name, on) { roomOpen(name, on); }, mapSvg: runMapSvg, mapPaint: function (fr, svg, zoom) { b19Paint(fr, svg, zoom); },
+      /* N3, the site (gm/site.js): the ONE alarm, the toolbar and the stage, the rooms' states, each card's Players' map, people and If it goes wrong, the ⋯ parts */
+      alarmHtml: function (open) { var si = siteInst(); return si ? si.alarm(open, 'data-rv="alarm"') : ''; }, alarmPop: function () { var si = siteInst(); return si ? si.alarmPop(false) : ''; },
+      toolsHtml: function () { var si = siteInst(); return si ? si.tools() : ''; }, stageHtml: function () { var si = siteInst(); return si ? si.stage() : ''; },
+      roomStates: function () { var si = siteInst(); return si ? si.states() : {}; }, knowledgeSeg: function (name) { var si = siteInst(); return si ? si.seg(name) : ''; },
+      peopleHtml: function (name, here) { var si = siteInst(); return si ? si.people(name, here) : ''; }, roomWrong: function (name) { var si = siteInst(); return si ? si.wrong(name) : []; },
+      roomAt: function (svg, ev) { var k = knInst(); return k ? k.roomAt(svg, ev) : ''; },
+      pinned: function () { return S && S.b19 && S.b19.flashback ? S.b19.flashback.pinned() : ''; }, threat: function () { return S && S.b19 && S.b19.threat ? S.b19.threat.view() : null; },
+      intelGroups: function () { var k = knInst(); return k && k.active() ? k.view().groups.map(function (g) { return { id: g.id, label: g.label }; }) : []; },
+      costume: function () { var si = siteInst(); return si ? si.costume() : false; }, siteAct: function (a, el, view) { var si = siteInst(); if (si) si.act(a, el, view); },
       clockNamed: function (name) { var l = tableClocks().filter(function (c) { return str(c.name).trim() === name; }); return l.length ? l[0] : null; },
       publish: runPublish, toast: toast, phoneCards: phoneCardsOn, setPhoneCards: setPhoneCards,
       /* server time: the iPad corrects to it, so the beat timer's endsAt is stamped on it (the GM api's Date-header skew; 0 when unknown) */
@@ -3642,7 +3651,8 @@
       hasNpcCard: function (names) { return !!npcCardSrc(names); },
       npcCard: function (names) { var src = npcCardSrc(names); return src ? npcCardHtml(src, 'rn-') : ''; },
       decorate: function (el) { if (W.B68GmPrep && el) W.B68GmPrep.decorate(el, {}); },
-      roomNote: function (room) { var rn = runRoomNotes(), e = rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? rn.byRoom[room] : null; return e && str(e.md).trim() ? npcCardHtml(str(e.md), 'rm-') : null; },
+      roomNote: function (room) { var rn = runRoomNotes(), e = rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? rn.byRoom[room] : null, si = siteInst(), md = e ? str(e.md) : ''; if (si && md) md = si.noteMd(md);      /* N3: the If it goes wrong line is the card's action line, not the note's */
+        return e && str(e.md).trim() ? npcCardHtml(md, 'rm-') : null; },
       /* a switch's value (map.countdown: the header's countdown pie) */
       feature: function (id) { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, id)); }
     };
@@ -3666,7 +3676,13 @@
     var box = $q('#gm-runv'); if (!box || !S) return;
     var rs = runV2();
     runTabs(!!rs);
-    if (!rs) { if (S.rv) { S.rv.reset(); S.rvSite = ''; } if (box.getAttribute('data-help') !== '1') { box.innerHTML = RUN_HELP; box.setAttribute('data-help', '1'); } return; }
+    if (!rs) {
+      if (S.rv) { S.rv.reset(); S.rvSite = ''; }
+      /* N3: no v2 night, but the site line keeps the alarm readout (stepped by hand) and the stage group, so neither is lost with Location's old box */
+      var ln = siteLine();
+      if (box.getAttribute('data-help') !== '1' || box.__siteLine !== ln) { box.innerHTML = ln + RUN_HELP; box.setAttribute('data-help', '1'); box.__siteLine = ln; }
+      return;
+    }
     runFoldMoves();
     if (S.panel !== 'run') return;
     var v = rvInst(); if (!v) return;
@@ -3674,15 +3690,15 @@
     if (S.rvSite !== rs.name) { v.reset(); S.rvSite = rs.name; }
     if (!v.dragging()) v.render(box);
   }
-  /* Right and Left a beat, Shift+Right the next thing that happens, Esc back to now: only while Run is the panel on screen */
+  /* Right and Left a beat, Shift+Right the next thing that happens: only while Run is the panel on screen, and never behind an open popover, sheet, drawer or Find.
+     N3: no Esc here any more: the view's NPC card, peek, popovers and tool close by the page's ONE Esc (gm/esc.js; the view registers them) */
   function runViewKey(ev) {
     if (!S || S.panel !== 'run' || !S.rv || !runV2() || ev.ctrlKey || ev.altKey || ev.metaKey || typing(ev.target)) return false;
-    var k = ev.key;
-    if (k === 'ArrowRight') { ev.preventDefault(); if (ev.shiftKey) S.rv.jump(); else S.rv.step(1); return true; }
-    if (k === 'ArrowLeft') { ev.preventDefault(); S.rv.step(-1); return true; }
-    if (k === 'Escape' && typeof S.rv.closeNpc === 'function' && S.rv.closeNpc()) { ev.preventDefault(); return true; }
-    if (k === 'Escape' && S.rv.unpeek()) { ev.preventDefault(); return true; }
-    return false;
+    var k = ev.key; if (k !== 'ArrowRight' && k !== 'ArrowLeft') return false;
+    var E = W.B68GmEsc; if (E && typeof E.list === 'function' && E.list().some(function (x) { return x.open && x.kind === 'overlay' && x.priority > 40; })) return false;
+    ev.preventDefault();
+    if (k === 'ArrowRight') { if (ev.shiftKey) S.rv.jump(); else S.rv.step(1); return true; }
+    S.rv.step(-1); return true;
   }
 
   /* Every push to the iPad from this page goes through one queue (the secrecy review of 23/10/2026, R2): one PUT in flight at a
@@ -3811,7 +3827,7 @@
     });
     var hint = allOpen.length ? '<p class="gm-dim gm-roomhint" data-roomhint="' + esc(allOpen.join(' ')) + '">All the ' + esc(allOpen.join(' and ')) + ' rooms are open: tick the band to show its passages too.</p>' : '';
     return '<details class="gm-more gm-rooms"' + (foldOpen('rooms') ? ' open' : '') + ' data-fold="rooms"><summary>Open one room' + (open.length ? ' <span class="gm-dim">' + open.length + ' open</span>' : '') + '</summary>' +
-      '<ul class="gm-roomlist">' + rows + '</ul>' + hint + '<p class="gm-dim">Only that room, with its crew markers: not its band, not the rooms beside it, not how many are shut. ' +
+      '<ul class="gm-roomlist">' + rows + '</ul>' + siteStageLine() + hint + '<p class="gm-dim">Only that room, with its crew markers: not its band, not the rooms beside it, not how many are shut. ' +
       'Goes out with the map (at once while it is live on the iPad), and only while Layer is Player.</p></details>';
   }
   /* open or close one room for the players: the run's ball.open. The change goes out through liveReveal (ballSet -> liveTokens), which asks
@@ -3832,6 +3848,7 @@
     return entryBands(e).join(', ') + (rooms.length ? ' + ' + rooms.join(', ') : '');
   }
   function paintLive() {
+    siteLive();          /* N3: the site's LIVE line and the band's iPad tray (B68GmStage.onChange) follow what the iPad shows of the map */
     var lg = $q('.gm-reveal legend'); if (!lg || !S || !S.doc) return;
     var mu = mapUi();
     lg.innerHTML = 'Reveal to the players: ' + esc(revealText(mu)) + liveChip(mu);
@@ -3853,7 +3870,8 @@
     var open = cleanRooms(ballDoc(rs.name).open).filter(function (n) { return upg.indexOf(n) < 0; }), kn = cleanRooms(ballDoc(rs.name).know), know = kn.concat(upg.filter(function (n) { return kn.indexOf(n) < 0; }));
     ballSet(rs.name, { open: open.length ? open : null, know: know.length ? know : null }, true); if (S.map) drawMap(true); renderLocation();
   }
-  /* 2.2 The three knowledge states (gm/knowledge.js, switch map.knowledge): the panel under the Map heading, and a tap on a room of the GM map cycles it */
+  /* 2.2 The three knowledge states (gm/knowledge.js, switch map.knowledge): each room card's Players' map on the site (N3), Intel in the site's ⋯, and a tap on a room
+     of Location's GM map cycles it */
   function knInst() {
     if (!S || !W.B68GmKnowledge || !W.B68Features) return null;
     if (!S.kn) S.kn = W.B68GmKnowledge.create({ feature: function (id) { return b09On(id); }, esc: esc, toast: toast,
@@ -3862,21 +3880,10 @@
       floors: function () { var rs = runSite(); if (!rs) return []; var fl = runFloors(rs); return fl.list.map(function (f) { return { name: f.name, names: Object.keys(fl.floorOf).filter(function (n) { return fl.floorOf[n] === f.lvl; }) }; }); },
       write: function (open, know) { var rs = runSite(); return rs ? ballSet(rs.name, { open: open.length ? open : null, know: know.length ? know : null }) : false; },
       roomBox: function (svg, name) { return b19Room(svg, name); },
-      changed: function () { if (S && S.map) drawMap(); renderLocation(); if (S && S.rv && runV2()) S.rv.rerender(); } });
+      changed: function () { if (S && S.map) drawMap(); renderLocation(); siteChanged(); } });
     return S.kn;
   }
-  function knPaint() {
-    var k = S && knInst(), mb = $q('.gm-mapbox'), box = $q('#gm-b24');
-    if (!k || !mb || !k.active()) { if (box && box.parentNode) box.parentNode.removeChild(box); return; }
-    if (!box) {
-      var after = $q('#gm-b17') || mb.querySelector('h4'); box = document.createElement('div'); box.id = 'gm-b24'; box.className = 'gm-b24';
-      if (after && after.nextSibling) mb.insertBefore(box, after.nextSibling); else mb.appendChild(box);
-      if (S.knUnbind) { try { S.knUnbind(); } catch (e) {} }
-      S.knUnbind = k.bind(box);
-    }
-    k.paint(box);
-  }
-  function knUnmount(me) { if (me.knUnbind) { try { me.knUnbind(); } catch (e) {} me.knUnbind = null; } me.kn = null; }
+  function knUnmount(me) { me.kn = null; }
   function knMapTap(ev) {
     var k = S && S.kn; if (!k || !k.active()) return false;
     var m = ev.target.closest('#gm-map [data-room]'); if (!m || !S.map || S.map.layer !== 'gm') return false;
@@ -4522,10 +4529,14 @@
   function b19Room(svg, name) {
     var m = S && S.b19Model, rooms = m && Array.isArray(m.rooms) ? m.rooms : [], r = null, i;
     for (i = 0; i < rooms.length; i++) if (isObj(rooms[i]) && str(rooms[i].name) === name) { r = rooms[i]; break; }
-    var g = r && svg && svg.querySelector ? svg.querySelector('[data-room="' + str(r.id).replace(/[^A-Za-z0-9_-]/g, '') + '"]') : null;
-    if (!g || typeof g.getBoundingClientRect !== 'function' || typeof svg.getScreenCTM !== 'function') return null;
-    var ctm = svg.getScreenCTM(), rc = g.getBoundingClientRect(); if (!ctm || !(rc.width > 0)) return null;
-    var inv = ctm.inverse(), a = svg.createSVGPoint(), b = svg.createSVGPoint(); a.x = rc.left; a.y = rc.top; b.x = rc.right; b.y = rc.bottom;
+    if (!r || !svg || typeof svg.querySelectorAll !== 'function' || typeof svg.getScreenCTM !== 'function') return null;
+    /* N3: the room is every group the kit tags with its id (its floor, each piece of furniture) and its label (the number badge), not the first group alone */
+    var els = Array.prototype.slice.call(svg.querySelectorAll('[data-room="' + str(r.id).replace(/[^A-Za-z0-9_-]/g, '') + '"]'));
+    Array.prototype.forEach.call(svg.querySelectorAll('.room-label'), function (g) { var t = g.querySelector('text'); if (t && r.n != null && str(t.textContent).trim() === String(r.n)) els.push(g); });
+    var ctm = svg.getScreenCTM(), L = Infinity, T = Infinity, R = -Infinity, D = -Infinity; if (!ctm || !els.length) return null;
+    els.forEach(function (g) { if (typeof g.getBoundingClientRect !== 'function') return; var rc = g.getBoundingClientRect(); if (!(rc.width > 0) || !(rc.height > 0)) return; L = Math.min(L, rc.left); T = Math.min(T, rc.top); R = Math.max(R, rc.right); D = Math.max(D, rc.bottom); });
+    if (!(R > L) || !(D > T)) return null;
+    var inv = ctm.inverse(), a = svg.createSVGPoint(), b = svg.createSVGPoint(); a.x = L; a.y = T; b.x = R; b.y = D;
     var p = a.matrixTransform(inv), q = b.matrixTransform(inv);
     return { x: Math.min(p.x, q.x), y: Math.min(p.y, q.y), w: Math.abs(q.x - p.x), h: Math.abs(q.y - p.y) };
   }
@@ -4539,7 +4550,8 @@
       tick: function (id, to) { return me.api && typeof me.api.clockOps === 'function' ? Promise.resolve(me.api.clockOps([{ id: id, filled: to }])) : Promise.resolve(null); },
       show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
       filter: function () { return S === me && me.b09 && isObj(me.b09.layers) ? (me.b09.layers['scene.filter'] || null) : null; },
-      layer: function (path, value) { if (!me.b09) me.b09 = { layers: {} }; return b09Layer(me, path, value); }
+      layer: function (path, value) { if (!me.b09) me.b09 = { layers: {} }; return b09Layer(me, path, value); },
+      changed: function () { if (S === me) siteChanged(); }       /* N3: the site's toolbar (Flashback / Back, Pin) and the board's marks follow */
     };
   }
   function b19Mount() {
@@ -4548,47 +4560,53 @@
     if (W.B68GmMapSpotted) me.b19.spotted = W.B68GmMapSpotted.create(b19Host(me));
     if (W.B68GmMapFlashback) me.b19.flashback = W.B68GmMapFlashback.create(b19Host(me));
     if (W.B68GmMapThreat) me.b19.threat = W.B68GmMapThreat.create(b19Host(me));
-    var kn = knInst(); if (kn) me.b19.knowledge = { paint: function (fr, svg) { kn.paintRun(fr, svg); } };     /* 2.2: Intel and a tap on the Run map */
   }
   function b19Paint(fr, svg, zoom) {
     if (!S) return;
     b19Mount();
     Object.keys(S.b19).forEach(function (k) { if (S.b19[k] && S.b19[k].paint) S.b19[k].paint(fr, svg, zoom); });
+    var si = siteInst(); if (si && S.b19Model) si.mapMarks(svg, S.b19Model, S.rv ? S.rv.selected() : '');      /* N3: each room's label carries its state on the Run map */
   }
   function b09Run(me, a) { if (a && a.verb === 'fire') return csRun(me, a); return me.cueGrammar ? me.cueGrammar.run(a) : null; }
   function b09Toast(me, text, undo) { if (S === me && me.cueGrammar) me.cueGrammar.undoToast(text, undo); }
   function b09Unparsed(me, res) { if (S === me && me.cueGrammar && b09On('ai.grammar') && res && res.refused === 'unparsed') { me.cueGrammar.didntCatch(); return true; } return false; }
 
-  /* ---------- B17: stage then send (map.stage), the security level (map.security), the stage bar and spotlight (face.spotlight) ----------
-     The logic is in gm/stage.js, gm/security.js, gm/spotlight.js and gm/panel17.js; this is the seam they are given. Each part is read live from the state document, so with
-     the three switches off nothing here draws, holds, sends or writes. A staged room lives in the controller only: it is never patched into any document. */
+  /* ---------- B17: stage then send (map.stage), the security level (map.security), the people and spotlight (face.spotlight) ----------
+     The logic is in gm/stage.js, gm/security.js, gm/spotlight.js and gm/panel17.js; this is the seam they are given. N3: they are drawn by the site (gm/site.js, the Run
+     view), no longer in a box under Location's Map heading. A staged room lives in the controller only: it is never patched into any document. */
   function b17Mount() {
     var Pn = W.B68GmPanel17, me = S; if (!Pn || me.b17) return;
     function pickRoomName() { var St = W.B68GmStamp; return St && St.pickRoom ? St.pickRoom(runCrewRooms()) : ''; }
     me.b17 = Pn.create({
-      feature: function (id) { return S === me && b09On(id); }, toast: toast, esc: esc, changed: function () { if (S === me) { b17Paint(); b17Tint(); } },
+      feature: function (id) { return S === me && b09On(id); }, toast: toast, esc: esc, changed: function () { if (S === me) { siteChanged(); b17Tint(); } },
       rooms: function () { var rs = S === me ? runSite() : null; return rs && S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms.filter(isObj).map(function (r) { return { name: str(r.name), band: str(r.band) }; }) : []; },
       opened: function () { var rs = S === me ? runSite() : null; return rs ? cleanRooms(ballDoc(rs.name).open) : []; },
       shown: function (n) { var r = S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms.filter(function (x) { return isObj(x) && x.name === n; })[0] : null; return !!r && roomShown(r, revealList(mapUi())); },
       setOpen: function (names) {
         var rs = S === me ? runSite() : null; if (!rs) return false;
-        var ok = ballSet(rs.name, { open: names.length ? names : null });
+        /* N3: a room sent is seen, so it leaves the blueprint list in the same write (the two lists never share a room) */
+        var ch = { open: names.length ? names : null };
+        if (b09On('map.knowledge')) { var kn = cleanRooms(ballDoc(rs.name).know).filter(function (n) { return names.indexOf(n) < 0; }); ch.know = kn.length ? kn : null; }
+        var ok = ballSet(rs.name, ch);
         if (S.map) drawMap(); renderLocation(); return !!ok;
       },
       liveText: function () { return S === me && mapOnIpad() ? bandWords(S.mapOn.reveal) : ''; },
       dark: function () { return pushDisplay({ kind: 'dark' }, { b17: true }).then(function () { toast('Blank: the iPad is black.'); }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); }); },
+      /* N3, the ONE alarm: the TABLE clock the play names (the one the site's header reads and Spotted ticks), not ball.alarm; hidden keeps the level off the iPad */
       alarm: function () {
         var rs = S === me ? runSite() : null, al = rs && rs.play && rs.play.v === 2 && isObj(rs.play.alarm) ? rs.play.alarm : null; if (!al) return null;
-        var size = Math.max(Array.isArray(al.pub) ? al.pub.length : 0, Array.isArray(al.beats) ? al.beats.length : 0), st = ballDoc(rs.name), f = isObj(st.alarm) && typeof st.alarm.filled === 'number' ? Math.floor(st.alarm.filled) : 0;
-        return size > 0 ? { size: size, filled: Math.max(0, f) } : null;
+        var nm = str(al.clock).trim(), ck = tableClocks().filter(function (c) { return str(c.name).trim() === nm; })[0]; if (!ck || !(+ck.size > 0)) return null;
+        return { size: Math.floor(+ck.size), filled: Math.max(0, Math.floor(+ck.filled || 0)), visible: !ck.hidden };
       },
       names: function () { var Se = W.B68GmSecurity, pk = S === me ? part('prep') : null; if (!pk || !Se) return null; if (!me.b17Names || me.b17Names.pk !== pk) me.b17Names = { pk: pk, v: Se.fromPrep(pk) }; return me.b17Names.v; },
       key: function () { var rs = S === me ? runSite() : null; return S.locRoll ? rollKey(S.locRoll) + '|' + (rs ? rs.name : '') : ''; },
       layer: function (path, value) { if (me.b09) return b09Layer(me, path, value); var sh = shows(); return sh ? sh.layer(path, value) : Promise.resolve(null); },
       show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
-      npcs: function () { return S === me ? Object.keys(isObj(me.npcs) ? me.npcs : {}).map(function (id) { var d = me.npcs[id]; return isObj(d) && !(Array.isArray(d.tags) && d.tags.indexOf('undone') >= 0) ? { id: id, name: str(d.name), alias: str(d.alias), revealed: d.revealed === true } : null; }).filter(Boolean) : []; },
-      roomKey: function () { return S === me ? pickRoomName() : ''; },
-      roomMd: function () { var rn = S === me ? runRoomNotes() : null, n = pickRoomName(); return rn && n && isObj(rn.byRoom) && isObj(rn.byRoom[n]) ? str(rn.byRoom[n].md) : ''; },
+      npcs: function () { return S === me ? siteNpcs(me) : []; },
+      /* the people of a room (N3): its prep note (Who:), the play's people there at the published time; the room in focus for "Blade, spotlight <name>" */
+      roomMd: function (room) { var rn = S === me ? runRoomNotes() : null; return rn && room && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? str(rn.byRoom[room].md) : ''; },
+      here: function (room) { var rs = S === me ? runV2() : null, RV = W.B68GmRunView; if (!rs || !RV || !room) return []; var st = ballDoc(rs.name); return RV.peopleIn(rs.play, st, typeof st.t === 'number' ? st.t : 0, room); },
+      focusRoom: function () { return S === me && S.rv && runV2() ? S.rv.selected() : pickRoomName(); },
       hold: function (npcId, ms, look) { var ov = { id: 'b17sl-' + newOverlayId().slice(-8), kind: 'npc', npcId: npcId, ms: ms }; if (look) ov.look = look; return showOverlay(ov); },
       notes: function (id) { var d = S === me && isObj(me.npcs) ? me.npcs[id] : null; return isObj(d) ? str(d.gmNotes) : ''; },
       clear: function () { var up = isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; return up.indexOf('b17sl-') === 0 ? clearOverlay() : Promise.resolve(null); },
@@ -4600,29 +4618,97 @@
         return Promise.resolve(ref.update({ revealed: true, firstSeen: (isObj(d) && d.firstSeen) || nowIso() })).then(function () { if (S === me && isObj(me.npcs) && isObj(me.npcs[id])) me.npcs[id].revealed = true; });
       }
     });
-    me.b17Unbind = null;
+    /* N3: the band's iPad tray (N5) reads this page's stage through B68GmStage.state / send / onChange */
+    if (me.b17 && W.B68GmStage && typeof W.B68GmStage.provide === 'function') me.stageOff = W.B68GmStage.provide(me.b17.stage);
   }
   function b17Unmount(me) {
-    if (me.b17Unbind) { try { me.b17Unbind(); } catch (e) {} me.b17Unbind = null; }
+    if (me.stageOff) { try { me.stageOff(); } catch (e) {} me.stageOff = null; }
     if (me.b17) { try { me.b17.reset(); } catch (e) {} me.b17 = null; }
+    if (me.site) { try { me.site.destroy(); } catch (e) {} me.site = null; }
   }
   function b17Frozen() { return !!(S && S.b17 && S.b17.holding()); }
-  /* the box under the Map heading: made on a paint while any of the three switches is on, taken away when none is */
-  function b17Paint() {
-    if (!S || !S.b17) return;
-    var mb = $q('.gm-mapbox'), box = $q('#gm-b17');
-    if (!mb || !S.b17.active()) { if (box && box.parentNode) box.parentNode.removeChild(box); return; }
-    if (!box) {
-      var h4 = mb.querySelector('h4'); box = document.createElement('div'); box.id = 'gm-b17'; box.className = 'gm-b17';
-      if (h4 && h4.nextSibling) mb.insertBefore(box, h4.nextSibling); else mb.appendChild(box);
-      if (S.b17Unbind) { try { S.b17Unbind(); } catch (e) {} }
-      S.b17Unbind = S.b17.bind(box);
-    }
-    S.b17.paint(box);
-  }
   function b17Tint() { if (S && S.b17 && S.locRoll) S.b17.tint($q('#gm-map'), S.locRoll); }
-  function b17Tick() { if (S && S.b17 && S.status === 'ready') { S.b17.tick(); b17Paint(); } }
-  function b17Esc() { return !!(S && S.b17 && S.b17.esc()); }
+  function b17Tick() { if (S && S.b17 && S.status === 'ready') S.b17.tick(); }
+
+  /* ---------- N3: THE SITE (gm/site.js): the Score place's whole score, drawn by the Run view. This is the page's side of it ---------- */
+  function siteInst() {
+    var me = S; if (!me || !W.B68GmSite) return null;
+    if (!me.site) me.site = W.B68GmSite.create({
+      esc: esc, toast: toast, rerender: function () { if (S === me) siteChanged(); },
+      stage: function () { return S === me && me.b17 ? me.b17.stage : null; }, security: function () { return S === me && me.b17 ? me.b17.security : null; },
+      spot: function () { return S === me && me.b17 ? me.b17.spot : null; }, knowledge: function () { return S === me ? knInst() : null; },
+      beats: function () { if (S !== me) return null; b19Mount(); return me.b19; },
+      play: function () { var rs = S === me ? runV2() : null; return rs ? rs.play : null; },
+      siteKind: function () { var rs = S === me ? runSite() : null; return rs ? (rs.play.v === 2 ? 'v2' : 'v1') : S === me && S.locRoll ? 'roll' : ''; },
+      clock: function (name) { return tableClocks().filter(function (c) { return str(c.name).trim() === name; })[0] || null; },
+      rooms: function () { var rs = S === me ? runSite() : null; return rs && S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms.filter(isObj).map(function (r) { return { name: str(r.name), band: str(r.band) }; }) : []; },
+      npcs: function () { return S === me ? siteNpcs(me) : []; }, card: function (names) { return !!npcCardSrc(names); }, face: function (id) { return S === me ? siteFace(me, id) : ''; },
+      roomMd: function (room) { var rn = S === me ? runRoomNotes() : null; return rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? str(rn.byRoom[room].md) : ''; },
+      scoreOver: siteScoreOver, montageOpen: function () { return !!(S === me && S.rv && S.rv.toolOpen() === 'montage'); }, montage: function (view) { siteMontage(view); },
+      dawn: function () { return runDawn(); }, introduce: function (id) { npcIntroduce(id); }, setThreat: siteThreat,
+      lineShown: function () { var l = $q('#gm-runv .rv-siteline'); return !!(l && l.offsetParent !== null); }
+    });
+    return me.site;
+  }
+  /* the cast the site's people rows and the spotlight read: every NPC not undone, revealed or not (the GM screen) */
+  function siteNpcs(me) {
+    return Object.keys(isObj(me.npcs) ? me.npcs : {}).map(function (id) { var d = me.npcs[id]; return isObj(d) && !(Array.isArray(d.tags) && d.tags.indexOf('undone') >= 0) ? { id: id, name: str(d.name), alias: str(d.alias), role: str(d.role), revealed: d.revealed === true } : null; }).filter(Boolean);
+  }
+  /* a person's face on their row: the figure kit's low-detail portrait, drawn once per look (page-local), else the initials */
+  function siteFace(me, id) {
+    var d = isObj(me.npcs) ? me.npcs[id] : null, K = W.B68Figure; if (!isObj(d) || !isObj(d.spec) || !K || typeof K.portrait !== 'function') return '';
+    var key = JSON.stringify(d.spec).length + '|' + str(d.updatedAt) + '|' + str(d.name), memo = me.faceMemo = me.faceMemo || {};
+    if (memo[id] && memo[id].k === key) return memo[id].svg;
+    var svg = ''; try { svg = stripSize(K.portrait(Object.assign(clone(d.spec), { id: 'gm-sf-' + slug(id) }), { lod: 'lo' }).svg); } catch (e) { svg = ''; }
+    memo[id] = { k: key, svg: svg }; return svg;
+  }
+  /* the site follows a change of the stage, the level, the people, the flashback or the threat: the Run view if it is on screen, else the site line; the tray hears */
+  function siteChanged() {
+    if (!S) return;
+    if (W.B68GmStage && typeof W.B68GmStage.notify === 'function') W.B68GmStage.notify();
+    var box = $q('#gm-runv'), shown = !!(box && !box.hidden && box.offsetParent !== null);
+    if (!shown) return;
+    if (S.rv && runV2()) { if (!S.rv.dragging()) S.rv.rerender(); } else renderRun();
+  }
+  function siteLive() { siteChanged(); }
+  /* Location's Open one room fold: a room staged there is sent from there too (the same stage group; data-gm="site" routes it) */
+  function siteStageLine() {
+    var si = siteInst(), s = S && S.b17 ? S.b17.stage : null; if (!si || !s || !s.staged().length) return '';
+    return '<div class="gm-stageline">' + si.stage().replace(/ data-site="/g, ' data-gm="site" data-site="') + '</div>';
+  }
+  /* Montage glows while the score phase is past its budget (the night's own phases, as the band reads them) */
+  function siteScoreOver() {
+    var R = W.B68GmPhaseRail, n = S && S.night && typeof S.night.night === 'function' ? S.night.night() : null;
+    if (!R || typeof R.model !== 'function' || !isObj(n) || n.phase !== 'score') return false;
+    var m = null; try { m = R.model(n, Date.now()); } catch (e) { m = null; }
+    var it = m && Array.isArray(m.items) ? m.items.filter(function (i) { return i.id === 'score'; })[0] : null;
+    return !!(it && it.tone === 'red');
+  }
+  /* Montage on the site: INLINE in the right column through the tools registry (N2: B68GmTools.get('montage') + B68GmWorkshop.inline), else its sheet */
+  function siteMontage(view) {
+    var WS = W.B68GmWorkshop, T = W.B68GmTools, t = null;
+    try { t = T && typeof T.get === 'function' ? T.get('montage') : null; } catch (e) { t = null; }
+    if (view && typeof view.toolHost === 'function' && WS && typeof WS.inline === 'function' && t && typeof t.open === 'function') {
+      if (view.toolOpen() === 'montage') { view.toolClose(true); return 'closed'; }
+      var el = view.toolHost('montage', 'Montage'); if (!el) return '';
+      view.toolOn(function () { try { WS.inline('montage', null); } catch (e) {} });
+      try { WS.inline('montage', el, { title: false, onClose: function () { if (S && S.rv) S.rv.toolClose(false); } }); t.open(); } catch (e) { view.toolClose(true); toast('Could not open the montage here: ' + errText(e), true); return ''; }
+      return 'inline';
+    }
+    var mt = mtInst(); if (mt) { mt.toggle(); return 'sheet'; }
+    toast('Montage is not available on this page.', true); return '';
+  }
+  /* "→ the Roll": the room's If it goes wrong line into the Roll's threat line. N4's host.setThreat when it is there; until then the stamp's own one-line threat */
+  function siteThreat(text) {
+    var t = str(text).trim(); if (!t || !S) return false;
+    var R = W.B68GmRoll;
+    if (R && typeof R.setThreat === 'function') return R.setThreat(t) !== false;
+    if (S.roll && typeof S.roll.setThreat === 'function') return S.roll.setThreat(t) !== false;
+    if (S.stamp && typeof S.stamp.draft === 'function') { S.stamp.draft('text', t); b09Paint(); return true; }
+    return false;
+  }
+  /* the site line (a card with no v2 night: a rolled location or a v1 site), above the Run view's help */
+  function siteLine() { var si = siteInst(); return si ? si.line() : ''; }
   function b17StageBtn(name) { return S && S.b17 && b09On('map.stage') ? ' <button type="button" class="btn sm" data-gm="room-stage" data-room="' + esc(name) + '" aria-pressed="' + S.b17.stage.isStaged(name) + '" title="Stage this room on this screen only; Send opens it for the players">' + (S.b17.stage.isStaged(name) ? 'Staged' : 'Stage') + '</button>' : ''; }
   function b17Toggle(name) { if (S && S.b17 && name) { S.b17.stage.toggle(name); renderLocation(); } }
   /* a tap on a room of the GM map stages it (switch map.stage); the map's own pan and zoom keep their taps when the switch is off */
@@ -6682,7 +6768,7 @@
     if (runKey(ev)) return;
     var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target) });
     if (!a) return;
-    if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } else if (S.assist && S.assist.isOpen()) { S.assist.close(); ev.preventDefault(); } else if (S.dw && S.dw.open) { drawerSet(false); ev.preventDefault(); } else if (escOne()) ev.preventDefault(); else if (b17Esc()) ev.preventDefault(); return; }
+    if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } else if (S.assist && S.assist.isOpen()) { S.assist.close(); ev.preventDefault(); } else if (S.dw && S.dw.open) { drawerSet(false); ev.preventDefault(); } else if (escOne()) ev.preventDefault(); return; }
     if (a.type === 'reserved') return;
     if ((a.type === 'capture' || a.type === 'last') && !capBarShown()) return;      /* the bar is hidden: its keys do nothing */
     ev.preventDefault();
@@ -6839,6 +6925,7 @@
       case 'draw': drawMap(); break;
       case 'room-open': roomOpen(str(b.getAttribute('data-room')), true); break;
       case 'room-stage': b17Toggle(str(b.getAttribute('data-room'))); break;
+      case 'site': { var si3 = siteInst(); if (si3) si3.act(str(b.getAttribute('data-site')), b, S.rv || null); if (b.closest('#gm-loc')) renderLocation(); break; }      /* N3: the site line and Location's stage line */
       case 'room-close': roomOpen(str(b.getAttribute('data-room')), false); break;
       case 'run-floor': runSetFloor(str(b.getAttribute('data-v'))); break;
       case 'run-step': runStep(+b.getAttribute('data-d') || 0); break;
