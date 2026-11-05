@@ -1464,9 +1464,13 @@
     }
     s.offs.push(function () { if (s.hs) { s.hs.destroy(); s.hs = null; } if (s.fx) { s.fx.destroy(); s.fx = null; } });
     function ovTimer(fn, ms) { var id = later(fn, ms); s.ov.timers.push(id); return id; }
+    /* the GM night rebuild: while an overlay is up (a card, a beat, the dawn) the band beside the map stands down under it, and a side card takes the
+       band's own column (display/shows.css), so nothing is ever drawn over the band's words */
+    function ovMark(card) { container.classList.add('dp-ov-up'); container.classList.toggle('dp-ov-card-on', !!card); }
     function ovRemove(now) {
       var node = s.ov.node; s.ov.token++; s.ov.node = null;
       s.ov.timers.forEach(clearLater); s.ov.timers = [];
+      container.classList.remove('dp-ov-up'); container.classList.remove('dp-ov-card-on');
       if (!node) return;
       if (now || reduced()) { if (node.parentNode) node.parentNode.removeChild(node); return; }
       node.classList.remove('dp-ov-in'); node.classList.add('dp-ov-out');
@@ -1505,7 +1509,7 @@
       e.style.setProperty('--dp-dawn-ramp', pl.ramp + 'ms'); e.style.setProperty('--dp-dawn-fade', pl.fade + 'ms');
       e.appendChild(el('div', 'dp-ov-warm')); e.appendChild(el('div', 'dp-ov-glow'));
       e.setAttribute('data-phase', pl.init);
-      ovLayer.appendChild(e); s.ov.node = e;
+      ovLayer.appendChild(e); s.ov.node = e; ovMark(false);
       pl.steps.forEach(function (st) { ovTimer(function () { e.setAttribute('data-phase', st.phase); }, st.at); });
       ovTimer(function () { ovRemove(true); }, pl.end);
     }
@@ -1526,7 +1530,7 @@
       ovTimer(function () { ovRemove(false); }, left);
       root.B68Shows.mount(o, beatEnv()).then(function (node) {
         if (!node || s.dead || my !== s.ov.token) return;
-        ovLayer.appendChild(node); s.ov.node = node; s.ov.sig = ovSig(o);
+        ovLayer.appendChild(node); s.ov.node = node; s.ov.sig = ovSig(o); ovMark(false);
         later(function () { node.classList.add('dp-ov-in'); }, reduced() ? 0 : 30);
       });
     }
@@ -1542,7 +1546,7 @@
       function put(card) {
         if (!card || s.dead || my !== s.ov.token) return;
         var node = ovCardNode(card, o);
-        ovLayer.appendChild(node); s.ov.node = node; s.ov.sig = ovSig(o);
+        ovLayer.appendChild(node); s.ov.node = node; s.ov.sig = ovSig(o); ovMark(true);
         later(function () { node.classList.add('dp-ov-in'); }, reduced() ? 0 : 30);
       }
       /* an npc card is drawn from what the server joined to the overlay (o.npc); the page reads nothing of the cast for it */
@@ -2096,7 +2100,7 @@
     if (s.wake) { try { s.wake.release(); } catch (e) {} s.wake = null; }
     try { if ((document.fullscreenElement || document.webkitFullscreenElement) && s.enteredFs) (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch (e) {}
     document.documentElement.classList.remove('dp-active');
-    s.container.classList.remove('dp-root', 'dp-ui', 'dp-lights-out', 'dp-lay-on', 'dp-lay-crew');
+    s.container.classList.remove('dp-root', 'dp-ui', 'dp-lights-out', 'dp-lay-on', 'dp-lay-crew', 'dp-ov-up', 'dp-ov-card-on');
     s.container.innerHTML = '';
   }
 

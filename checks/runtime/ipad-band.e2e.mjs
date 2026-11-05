@@ -177,6 +177,23 @@ try {
       expect(g.fit.sh <= g.fit.ch + 1, 'the band beside the map fits its box (' + g.cls + '): ' + JSON.stringify(g.fit));
       expect(calls.every((u) => u !== '/api/campaign' && u !== '/api/npcs'), 'no new reads: ' + [...new Set(calls)].join(','));
       if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'ipad-map-band-' + w + 'x' + h + '.png') });
+      /* a held face (N0's review: the card was drawn over the band's words): it takes the band's own column, the band's words stand down, the map stays clear */
+      expect((await gm('PUT', '/api/npcs/npc_bd_lotte', { name: 'Lotte Brand', alias: 'The Latch', role: 'Doorwoman', faction: 'The Kestrel Club', gmNotes: 'GM-ONLY-note', revealed: true })).status === 200, 'a revealed NPC');
+      expect((await gm('PATCH', '/api/gm/ambient', { overlay: { id: 'b17sl-bd' + w, kind: 'npc', ms: 60000, npcId: 'npc_bd_lotte' } })).status === 200, 'held on the iPad');
+      await page.waitForFunction(() => document.querySelector('.dp-ov-card.dp-ov-in'), null, { timeout: 15000 });
+      await sleep(700);
+      const held = await page.evaluate(() => {
+        const box = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom }; };
+        const card = box(document.querySelector('.dp-ov-card')), band = document.querySelector('.dp-band');
+        const words = [...band.querySelectorAll('p, span')].filter((e) => getComputedStyle(e).visibility !== 'hidden' && e.textContent.trim() && e.getClientRects().length).map(box);
+        return { card, band: box(band), svg: box(document.querySelector('.dp-map-frame svg')), strip: box(document.querySelector('.dp-lay-strip')), words, vh: innerHeight };
+      });
+      expect(held.words.every((r) => !cut(r, held.card)), 'no word of the band beside the map is under the card: ' + held.words.filter((r) => cut(r, held.card)).length);
+      expect(!cut(held.card, held.svg) && !cut(held.card, held.strip), 'the card keeps off the map and the iPad\'s band: ' + JSON.stringify(held));
+      expect(held.card.l >= held.band.l - 0.5 && held.card.r <= held.band.r + 0.5 && held.card.t >= held.band.t - 0.5 && held.card.b <= held.vh + 0.5, 'it sits in the band\'s own column: ' + JSON.stringify([held.card, held.band]));
+      if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'ipad-held-face-band-' + w + 'x' + h + '.png') });
+      expect((await gm('PATCH', '/api/gm/ambient', { overlay: null })).status === 200, 'taken down');
+      await page.waitForFunction(() => !document.querySelector('.dp-root.dp-ov-up') && getComputedStyle(document.querySelector('.dp-band .dp-b-sec')).visibility !== 'hidden', null, { timeout: 15000 });
       /* lights out: true black, all but the lamp */
       expect((await gm('PUT', '/api/gm/display', { kind: 'dark' })).status === 200, 'lights out');
       await page.waitForFunction(() => document.querySelector('.dp-root.dp-lights-out'), null, { timeout: 15000 });

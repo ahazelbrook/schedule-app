@@ -124,9 +124,17 @@
 .dp-root.dp-lay-on .dp-stages, .dp-root.dp-lay-on .dp-overlay, .dp-root.dp-lay-on .dp-hs, .dp-root.dp-lay-on .dp-montage { top: var(--dp-lay-h); }
 .dp-root.dp-lay-on .dp-auto { top: calc(var(--dp-lay-h) + 1.2vmin); }
 .dp-root.dp-lay-on .dp-chrome { top: calc(var(--dp-lay-h) + 1.2vmin); }
+/* an overlay up (a card, a beat, the dawn) with the band beside the map: the band's words stand down under it (its ground stays), so the overlay is
+   never drawn over the band's text; a side card (a held face, a clock, a line) takes the band's own column, so the map stays clear (display-page.js
+   sets dp-ov-up and dp-ov-card-on while one is up) */
+.dp-root.dp-band-on.dp-ov-up .dp-band > * { visibility: hidden; }
 @media (orientation: landscape) {
   .dp-root.dp-lay-on .dp-band { top: var(--dp-lay-h); }
   .dp-root.dp-band-on .dp-chrome { right: calc(36% + 12px); }      /* the full-screen button keeps off the band beside the map and its countdown */
+  .dp-root.dp-band-on.dp-ov-card-on .dp-ov-card { right: 3vmin; width: calc(36% - 6vmin); max-height: calc(100% - 6vmin); }
+}
+@media (orientation: portrait) {
+  .dp-root.dp-band-on.dp-ov-card-on .dp-ov-card { top: calc(100% - var(--dp-band-h, 50%) / 2); right: 18%; width: 64%; max-height: calc(var(--dp-band-h, 50%) - 6vmin); }
 }
 @media (orientation: portrait) {
   /* three slots across, and the crew on a row of its own while there is one */
