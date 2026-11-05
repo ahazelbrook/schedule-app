@@ -119,11 +119,22 @@
   }
 
   function el(tag, cls, text) { var e = W.document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
-  function close() { if (dlg && dlg.parentNode) dlg.parentNode.removeChild(dlg); dlg = null; }
+  /* focus goes into the page when it opens (its top, so it reads from the start) and back to what opened it when it closes; Esc closes it */
+  var back = null;
+  function focusIn(n) { if (n && typeof n.focus === 'function') { try { n.focus({ preventScroll: true }); } catch (e) { /* not focusable */ } } }
+  function close() {
+    var had = !!dlg, b = back; back = null;
+    if (dlg && dlg.parentNode) dlg.parentNode.removeChild(dlg);
+    dlg = null;
+    var body = W && W.document && W.document.body;
+    if (had && b && body && typeof body.contains === 'function' && body.contains(b)) focusIn(b);
+  }
   function open() {
     if (!W || !W.document || !started || !cur) return false;
-    close();
+    var opener = W.document.activeElement;
+    close(); back = opener;
     dlg = el('div', 'ds-dlg ds-absent-dlg'); dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true'); dlg.setAttribute('aria-label', 'While you were away');
+    dlg.addEventListener('keydown', function (e) { if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); e.stopPropagation(); close(); } });
     /* a tap on the dimmed page closes it: one that started there, so the tap that opened it can never close it */
     var downOn = false;
     dlg.addEventListener('pointerdown', function (e) { downOn = e.target === dlg; });
@@ -146,7 +157,9 @@
     if (!cur.changes.length) card.appendChild(el('p', '', 'Nothing has changed on your sheet.'));
     cur.changes.forEach(function (c) { card.appendChild(el('p', '', c)); });
     var row = el('div', 'ds-dlg-row'), cl = el('button', 'btn', 'Close'); cl.type = 'button'; cl.addEventListener('click', close); row.appendChild(cl); card.appendChild(row);
+    card.setAttribute('tabindex', '-1');
     dlg.appendChild(card); W.document.body.appendChild(dlg);
+    focusIn(card);
     seen = Date.now();
     if (markSeen(cur)) redraw();   /* opened: it leaves the Now card for the fold */
     return true;

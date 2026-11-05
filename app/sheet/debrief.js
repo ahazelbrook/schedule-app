@@ -112,15 +112,26 @@
 
   /* ---------- the form (a bottom sheet in the sheet's paper and ink: tracker.css .ds-dlg) ---------- */
   function el(tag, cls, text) { var e = W.document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
-  function close() { if (dlg && dlg.parentNode) dlg.parentNode.removeChild(dlg); dlg = null; }
+  /* focus goes into the form when it opens and back to what opened it when it closes; Esc closes it */
+  var back = null;
+  function focusIn(n) { if (n && typeof n.focus === 'function') { try { n.focus({ preventScroll: true }); } catch (e) { /* not focusable */ } } }
+  function close() {
+    var had = !!dlg, b = back; back = null;
+    if (dlg && dlg.parentNode) dlg.parentNode.removeChild(dlg);
+    dlg = null;
+    var body = W && W.document && W.document.body;
+    if (had && b && body && typeof body.contains === 'function' && body.contains(b)) focusIn(b);
+  }
   function open() {
     if (!W || !W.document || !cur) return false;
     var v = viewOf(cur, now());
     if (v.phase === 'none' || v.phase === 'waiting') return false;
-    close();
+    var opener = W.document.activeElement;
+    close(); back = opener;
     var ro = v.phase === 'default';
     var rep = isObj(cur.reply) ? cur.reply : {}, dflt = isObj(cur.defaults) ? cur.defaults : {};
     dlg = el('div', 'ds-dlg ds-debrief-dlg'); dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true'); dlg.setAttribute('aria-label', 'Debrief');
+    dlg.addEventListener('keydown', function (e) { if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); e.stopPropagation(); close(); } });
     var card = el('form', 'ds-dlg-card ds-debrief-card');
     card.appendChild(el('h3', '', 'Debrief'));
     card.appendChild(el('p', '', ro ? 'The 48 hours are up. These are the defaults the GM will use.' : 'Only you and the GM can see this.'));
@@ -165,6 +176,7 @@
       });
     }
     card.appendChild(row); dlg.appendChild(card); W.document.body.appendChild(dlg);
+    focusIn((fields.unwind && !ro && fields.unwind.sel) || cl);   /* the first pick (no keyboard comes up), else Close */
     return true;
   }
   function state() { return { started: started, phase: viewOf(cur, now()).phase, row: cur }; }

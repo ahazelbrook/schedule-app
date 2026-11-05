@@ -200,7 +200,9 @@ try {
   await a.click('.ds-now-more');
   await a.click('.ds-now .ds-absent [data-b68="absent-open"]');
   check(!!(await until(() => a.evaluate(() => !!document.querySelector('.ds-absent-dlg')), 4000)), 'Read it opens the packet');
-  await a.click('.ds-absent-dlg button:has-text("Close")');
+  check(await a.evaluate(() => !!document.activeElement && document.activeElement.classList.contains('ds-absent-card')), 'focus moves to the top of the page, so it reads from the start');
+  await a.keyboard.press('Escape');
+  check(!(await a.$('.ds-absent-dlg')), 'Esc closes it');
   n = await nowOf(a); f = await foldOf(a);
   check(!n.items.includes('absent') && f.n === '2 inside', 'opened, the packet leaves the Now card for the fold: ' + JSON.stringify([n.items, f.n]));
   await a.click('.ds-now .ds-debrief [data-b68="debrief-open"]');
@@ -236,6 +238,7 @@ try {
   await a.click('.ds-betweenbox [data-b68="board-open"]');
   await a.waitForSelector('.ds-board-dlg', { timeout: 4000 });
   check((await a.$eval('.ds-board-dlg input[type="text"]', (e) => parseFloat(getComputedStyle(e).fontSize))) >= 16, 'the board\'s field is 16 px');
+  check(await a.evaluate(() => !!document.activeElement && document.activeElement.tagName === 'SELECT' && !!document.activeElement.closest('.ds-board-dlg')), 'focus moves into the form, on its first control (no keyboard comes up yet)');
   await a.fill('.ds-board-dlg input[type="text"]', 'A fixer wants a ledger fetched');
   await a.click('.ds-board-dlg button:has-text("Post it")');
   check(!!(await until(async () => { const r = await api('GET', '/docs?kind=opportunity&owner=' + encodeURIComponent(P1)); return r.json.docs[0] && r.json.docs[0].json.items.length === 1; }, 6000)), 'a post is the player\'s own opportunity row');

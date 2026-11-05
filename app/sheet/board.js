@@ -121,7 +121,16 @@
   /* ---------- the form (a bottom sheet in the sheet's paper and ink: tracker.css .ds-dlg) ---------- */
   function el(tag, cls, text) { var e = W.document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
   var listEl = null, msgEl = null;
-  function close() { if (dlg && dlg.parentNode) dlg.parentNode.removeChild(dlg); dlg = null; listEl = null; msgEl = null; }
+  /* focus goes into the form when it opens and back to what opened it when it closes; Esc closes it */
+  var back = null;
+  function focusIn(n) { if (n && typeof n.focus === 'function') { try { n.focus({ preventScroll: true }); } catch (e) { /* not focusable */ } } }
+  function close() {
+    var had = !!dlg, b = back; back = null;
+    if (dlg && dlg.parentNode) dlg.parentNode.removeChild(dlg);
+    dlg = null; listEl = null; msgEl = null;
+    var body = W && W.document && W.document.body;
+    if (had && b && body && typeof body.contains === 'function' && body.contains(b)) focusIn(b);
+  }
   function paintList() {
     if (!listEl) return;
     while (listEl.firstChild) listEl.removeChild(listEl.firstChild);
@@ -138,8 +147,10 @@
   }
   function open() {
     if (!W || !W.document || !started) return false;
-    close();
+    var opener = W.document.activeElement;
+    close(); back = opener;
     dlg = el('div', 'ds-dlg ds-board-dlg'); dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true'); dlg.setAttribute('aria-label', 'Opportunity board');
+    dlg.addEventListener('keydown', function (e) { if (e.key === 'Escape' || e.key === 'Esc') { e.preventDefault(); e.stopPropagation(); close(); } });
     /* a tap on the dimmed page closes it: one that started there, so the tap that opened it can never close it */
     var downOn = false;
     dlg.addEventListener('pointerdown', function (e) { downOn = e.target === dlg; });
@@ -163,6 +174,7 @@
     });
     dlg.appendChild(card); W.document.body.appendChild(dlg);
     paintList();
+    focusIn(sel);   /* the kind first: no keyboard comes up until the player asks for it */
     return true;
   }
   function state() { return { started: started, open: !!dlg, items: cur ? cur.items : [] }; }
