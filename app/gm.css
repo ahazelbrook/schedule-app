@@ -1550,7 +1550,7 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
 }
 
 
-/* ---- THE iPAD TRAY (gm/ipad-tray.js; the GM night rebuild, design section 6): what is live on the iPad, Send (n), Clear (0), Blank and the
+/* ---- THE iPAD TRAY (gm/ipad-tray.js; the GM night rebuild, the design's iPad part): what is live on the iPad, Send (n), Clear (0), Blank and the
    autopilot pill, in the band's second row (until the band, in the bar). The bar's own type and buttons: one app. ---- */
 #gm-page .gm-tray { display: inline-flex; align-items: center; gap: 6px; min-width: 0; flex: 0 1 auto; }
 #gm-page .gm-tray-lbl { flex: none; font: 700 10px/1 var(--font-mono); text-transform: uppercase; letter-spacing: .08em; opacity: .75; }
@@ -1571,7 +1571,7 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
   #gm-page .gm-tray-live { min-width: 44px; justify-content: center; padding: 4px; }
 }
 
-/* ---- THE iPAD VIEW (the GM night rebuild, design section 6): what is live across the top, then Listening beside the Scenes and the Settings ---- */
+/* ---- THE iPAD VIEW (the GM night rebuild, the design's iPad part): what is live across the top, then Listening beside the Scenes and the Settings ---- */
 #gm-page .gm-ipadv { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: start; }
 @media (min-width: 1100px) {
   #gm-page .gm-ipadv { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "now now" "col scenes"; }

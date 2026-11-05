@@ -14,7 +14,7 @@
    On the page: data-* attributes on the display root (data-band-phase, data-band-security, data-band-onair, data-scene-filter,
    data-scene-layout, data-scene-mode) for CSS, and THE BAND: the strip that reads those layers.
 
-   THE BAND (the GM night rebuild, design section 6). Everything lasting that sits on the frame is ONE strip across the top with a FIXED SLOT each:
+   THE BAND (the GM night rebuild, the design's iPad part). Everything lasting that sits on the frame is ONE strip across the top with a FIXED SLOT each:
        mic | phase | crew (three cells) | security          (portrait, when faces are drawn: mic | phase | security, over a row of three crew cells)
      mic       the iPad's own ON AIR lamp (app/display/onair.js hands it over through mic(); "Off the record 4:32" while paused), else band.onair
      phase     band.phase, named as the GM page's places name it (Personal, Planning, Score, Aftermath)

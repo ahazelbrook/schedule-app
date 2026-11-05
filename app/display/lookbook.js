@@ -11,7 +11,7 @@
     band: { phase: 'plan', security: 2, faces: [{ name: 'Mabel Quist', role: 'Fixer' }, { name: 'Dov Kessler', role: 'Desk sergeant' }, { pcId: 'pc-nell', name: 'Nell Arbuthnot', stress: 4, harm: [1, 2], locks: 1 }], onair: true },
     scene: { filter: 'flashback' }
   };
-  /* THE BAND (the GM night rebuild, design section 6): every slot at once, with the most marks a PC can carry and a long name, the lamp off the
+  /* THE BAND (the GM night rebuild, the design's iPad part): every slot at once, with the most marks a PC can carry and a long name, the lamp off the
      record, the AUTO chip and a beat under it; and the hard start, whose own plates show the faces while the band keeps only the lamp */
   var BAND_ALL = {
     band: { phase: 'after', security: 4, onair: true, faces: [

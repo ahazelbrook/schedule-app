@@ -1,4 +1,4 @@
-/* gm/ipad-tray.js — THE iPAD TRAY (the GM night rebuild, design section 6: one way on, one way off).
+/* gm/ipad-tray.js — THE iPAD TRAY (the GM night rebuild, the design's iPad part: one way on, one way off).
 
    Window.B68GmIpadTray in the browser, module.exports under Node (checks/runtime/gm-ipad-tray.test.mjs). GM page only.
 

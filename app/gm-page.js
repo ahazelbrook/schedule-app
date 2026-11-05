@@ -3963,7 +3963,7 @@
   function blankIpad() { pushDisplay({ kind: 'blank' }).then(function () { toast('Taken down: the iPad plays the ambient scene.'); }, function (e) { toast('Could not take it down: ' + errText(e), true); }); }
   function darkIpad() { return pushDisplay({ kind: 'dark' }).then(function () { toast('Blank: the iPad is black until the next send.'); return true; }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); return false; }); }
 
-  /* ---------- THE iPAD TRAY's Clear (0) (the GM night rebuild, design section 6: one way off) ----------
+  /* ---------- THE iPAD TRAY's Clear (0) (the GM night rebuild, the design's iPad part: one way off) ----------
      Everything down to the ambient scene, through the page's own take-downs, so nothing comes back by itself a moment later: the report card (the
      stamp would lay it again), a held face (the spotlight would), the flashback, the montage, the hard start; then the overlay up now (a clock, an
      NPC card, a line, the dawn, a show beat) and the stage, back to the ambient. NOT the band's lasting layers: the phase, the PC faces and
@@ -4930,7 +4930,7 @@
     toast: function (m) { toast(m, true); },
     sent: function (r) { if (adoptAmbient(r)) renderIpad(); }
   });
-  /* ---------- THE iPAD VIEW (the GM night rebuild, design section 6): one page, under what is live, in three sections ----------
+  /* ---------- THE iPAD VIEW (the GM night rebuild, the design's iPad part): one page, under what is live, in three sections ----------
        On the iPad now   what is shown, the overlay (with its own Take it down), what else is up (a flashback, a montage, the hard start), the
                          autopilot. Clear (0) and Blank are the band's tray: one way off, from every place.
        Listening         the transcriber, ON AIR, Who is who, the transcript (renderStt)

@@ -86,7 +86,7 @@
   color: var(--b68-paper, #f4ecd8); text-shadow: 0 .4vmin 2vmin rgba(10, 9, 8, .7); }
 @media (prefers-reduced-motion: reduce) { .dp-root[data-flash-look]::before { animation: none; } }
 @keyframes dp-grain { 0% { background-position: 0 0; } 25% { background-position: -40px 22px; } 50% { background-position: 30px -35px; } 75% { background-position: -18px -50px; } 100% { background-position: 0 0; } }
-/* THE BAND (app/display/layers.js; the GM night rebuild, design section 6): one strip across the top with a fixed slot for each lasting layer,
+/* THE BAND (app/display/layers.js; the GM night rebuild, the design's iPad part): one strip across the top with a fixed slot for each lasting layer,
    mic | phase | crew (three cells) | security. A slot keeps its place when its layer is unset, and a text too long for its slot ends in an ellipsis
    inside it, so nothing in the band ever draws over anything else in it. While it is up (dp-lay-on) everything else lays out below it. */
 .dp-root { --dp-lay-h: 10vmin; --dp-lay-row: 10vmin; }
@@ -173,7 +173,7 @@
   .dp-show-rolodex .dp-roll-card { transform: none; opacity: 1; }
 }
 
-/* ---- THE BEAT PASS (the GM night rebuild, design section 6): the older stages and overlays (display.css: the read-aloud and text, a rules entry,
+/* ---- THE BEAT PASS (the GM night rebuild, the design's iPad part): the older stages and overlays (display.css: the read-aloud and text, a rules entry,
    the map's caption bar, an NPC, a handout's caption, the side cards for a clock, an NPC or a line, the wire) take the beats' frame language: the
    same label (the kicker: condensed, capitals, spaced, mustard, at --b68-t-label), the same type scale (nothing under --b68-t-label; names in the
    poster face at a step of the scale) and the beats' 4vmin margin. What each one shows is unchanged. display.css stays free of the tokens; these

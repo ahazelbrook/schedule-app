@@ -1,4 +1,4 @@
-// The iPad tray (the GM night rebuild, design section 6; app/gm/ipad-tray.js): what is live in one line, Send (n), Clear (0), Blank and the autopilot pill.
+// The iPad tray (the GM night rebuild, the design's iPad part; app/gm/ipad-tray.js): what is live in one line, Send (n), Clear (0), Blank and the autopilot pill.
 // No browser, no network: the pure line for every kind of thing on the iPad, then a tray mounted on a small DOM against a fake page and a fake
 // W.B68GmStage. INVENTED data only (the Pelican Rooms; the cast in the fixtures).
 //   node checks/runtime/gm-ipad-tray.test.mjs

@@ -1,4 +1,4 @@
-// THE BAND on the iPad (the GM night rebuild, design section 6; app/display/layers.js, display/shows.css), end to end against a real local Worker
+// THE BAND on the iPad (the GM night rebuild, the design's iPad part; app/display/layers.js, display/shows.css), end to end against a real local Worker
 // (wrangler dev) on PORT (default 8655), with invented fixtures only.
 //   1. Every combination of the band's layers (the lamp on air or off the record, band.onair, the phase, security, three PCs at their worst, one PC,
 //      two NPC faces, the hard start) at 1024x768 and in portrait: the strip is one row of fixed slots inside the screen, no slot's contents cross
