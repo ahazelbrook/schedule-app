@@ -76,7 +76,8 @@ try {
     const ctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width: w, height: h }, isMobile: mobile, hasTouch: mobile, serviceWorkers: 'block' });
     await ctx.addInitScript(() => { window.__B68_POLL_MS = 500; });
     const page = await ctx.newPage();
-    page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(user + ' ' + route + ': ' + m.text()); });
+    /* WebKit reports the Worker's report-only Content Security Policy header as console errors: those notes are about the headers, not the page */
+    page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|Content Security Policy/.test(m.text())) errors.push(user + ' ' + route + ': ' + m.text()); });
     page.on('pageerror', (e) => errors.push(user + ' ' + route + ' pageerror: ' + e.message));
     page.on('dialog', (d) => d.accept());
     await page.goto(BASE + '/' + route);
@@ -182,7 +183,7 @@ try {
   await must(api('PUT', '/docs', { kind: 'packet', owner: P1, scope: 'player', json: PACKET() }), 'packet');
   await must(api('PATCH', '/campaign', { mission: mission('Cocktail lounge') }), 'mission');
   check(!!(await until(async () => { const x = await nowOf(a); return x && x.of === '1 of 5'; }, 20000)), 'five due at once');
-  if (await a.$('.ds-mv')) await a.click('.ds-mv-x');   /* the mission card opens by itself on a new card, as it always has */
+  if (await until(() => a.$('.ds-mv'), 3000)) await a.click('.ds-mv-x');   /* the mission card opens by itself on a new card, as it always has */
   n = await nowOf(a);
   check(JSON.stringify(n.items) === '["commend"]' && n.more && n.more.text === '+4 more: Debrief · your packet · a key to turn · Mission' && n.more.exp === 'false', 'the commendations first, the rest behind "+4 more", by name and in order: ' + JSON.stringify(n));
   await shot(a, 'now-two-due');
@@ -269,8 +270,8 @@ try {
   await S.page.waitForSelector('#dossier .ds-bar', { timeout: 30000 }); await started(S.page);
   await must(api('PUT', '/docs', { kind: 'commend', owner: '_', scope: 'public', json: { v: 1, secs: 90, until: Date.now() + 90000 } }), 'commend again');
   await must(api('PATCH', '/campaign', { mission: mission('Showroom') }), 'mission again');
-  await until(async () => { const x = await nowOf(S.page); return x && x.items[0] === 'commend' && x.more; }, 15000);
-  if (await S.page.$('.ds-mv')) await S.page.click('.ds-mv-x');
+  await until(async () => { const x = await nowOf(S.page); return x && x.items[0] === 'commend' && x.more && /Mission/.test(x.more.text); }, 15000);
+  if (await until(() => S.page.$('.ds-mv'), 3000)) await S.page.click('.ds-mv-x');   /* the mission card opens by itself on a new card */
   await S.page.click('.ds-now-more');
   const small = await S.page.evaluate(() => {
     const kids = Array.from(document.querySelectorAll('#dossier .ds-nav > *')).filter((e) => e.offsetParent).map((e) => { const r = e.getBoundingClientRect(); return { t: (e.textContent || '').trim().slice(0, 8), l: Math.round(r.left), r: Math.round(r.right), top: Math.round(r.top + r.height / 2) }; });
