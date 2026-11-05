@@ -1,9 +1,9 @@
 // The GM seams (W0.5) and the Settings that replaced the switchboard (W0.2; the night rebuild, N0) in a real browser against a real local Worker (wrangler dev, DEV_USER) on
 // PORT (default 8952).
-//   1. With no phase entered the filter is off: every tab and phone chip is there; the Menu has a Settings line and no Switchboard or Workshop line.
+//   1. With no phase entered the filter is off: every tab and phone chip is there; the Menu has no Settings, Switchboard or Workshop line.
 //   2. A test tool tagged Planning (registered before the page opens) has a tab; the phase rail (always drawn: everything built is on) hides it outside Planning, "All tools"
 //      brings everything back, the tab on screen is kept, its pane draws through mount().
-//   3. Everything on from the first request: a phone and the iPad page are told every display and phone feature is on with nothing stored. Menu -> Settings: Phones flips the
+//   3. Everything on from the first request: a phone and the iPad page are told every display and phone feature is on with nothing stored. The iPad view's Settings (N5): Phones flips the
 //      phoneCards setting into the GM state (features and the old key) and the campaign document, and a phone and the iPad learn of it on a poll, no reload; Scenes and the mirror
 //      take the same paths; a GM-only test line never reaches the campaign document, a phone's traffic or its flags. Preflight's Menu line is there from the start.
 //   SEAMS_ROOT=<another worktree> with --snapshot <dir> only records the markup and screenshots (1280 and 390 px) of the page as it is there: run it on origin/main and on
@@ -104,7 +104,7 @@ try {
     const TABS = ['prep', 'rules', 'location', 'scenes', 'score', 'chase', 'npc', 'downtime', 'cards', 'ipad'];
     const hasAll = (tabs) => TABS.every((id) => tabs.includes('data-panel="' + id + '"'));
     check(hasAll(base1280.tabs) && !/hidden/.test(base1280.tabs) && !/hidden/.test(base1280.seg), 'no phase entered: every tab and every phone chip is there and none is hidden');
-    check(/id="gm-menu-settings"/.test(base1280.menu) && />Settings</.test(base1280.menu), 'the Menu has the Settings line');
+    check(!/id="gm-menu-settings"/.test(base1280.menu), 'the Menu has no Settings line: they live in the iPad view (the GM night rebuild, N5)');
     check(!/Switchboard|gm-menu-switchboard/.test(base1280.menu) && !/Workshop|gm-menu-workshop/.test(base1280.menu), 'and no Switchboard or Workshop line (both are gone)');
     check(!/id="gm-menu-preflight"/.test(base1280.menu), 'N2: no tool has a Menu line (Preflight is reached through B68GmTools)');
     check(base1280.panes === 'prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,run', 'the panes are the page\'s own, in its order: ' + base1280.panes);
@@ -151,10 +151,10 @@ try {
     check(await until(async () => (await flag(PH.page, 'spine.aftermath')) === true && (await flag(PH.page, 'between.keys')) === true, 8000), 'everything built is on: the phone is told spine.aftermath and between.keys are on with nothing stored');
     check(await until(async () => (await flag(DS.page, 'room.preflight')) === true && (await flag(DS.page, 'map.flashback')) === true, 8000), 'and the iPad is told room.preflight and map.flashback are on');
     await PH.page.evaluate(() => { window.__phoneMarker = 'same page'; }); await DS.page.evaluate(() => { window.__dsMarker = 'same page'; }); await g.evaluate(() => { window.__gmMarker = 'same page'; });
-    await g.click('[data-gm="menu"]');
-    await g.click('#gm-menu-settings');
-    const sheet = '#gm-sheet-settings';
-    check(await g.$eval(sheet, (e) => !e.hidden && ['Scenes', 'Music', 'Phones', 'Mirror for phones'].every((l) => e.textContent.includes(l))), 'Menu -> Settings opens a sheet with Scenes, Music, Phones and Mirror for phones');
+    await g.keyboard.press('i');
+    await g.waitForSelector('#gm-ipad-settings [data-set-row]', { timeout: 10000 });
+    const sheet = '#gm-ipad-settings';
+    check(await g.$eval(sheet, (e) => ['Scenes', 'Music', 'Phones', 'Mirror for phones'].every((l) => e.textContent.includes(l))), 'the iPad view (I) holds the Settings: Scenes, Music, Phones and Mirror for phones');
     const pressed = (key) => g.$eval(sheet + ' [data-set-row="' + key + '"] [aria-pressed="true"]', (e) => e.textContent.trim());
     check(await pressed('fx.off') === 'Moving' && await pressed('room.music') === 'Scene themes' && await pressed('phoneCards') === 'Sheet only' && await pressed('mirror') === 'On', 'each row shows its current value: Moving, Scene themes, Sheet only, On');
     await shot(g, SHOTS, 'settings-1280');
@@ -167,17 +167,17 @@ try {
     check(!!camp && !('test.gm' in camp.features), 'the campaign document serves the setting to a player, and no GM-only id: ' + JSON.stringify(camp && camp.features).slice(0, 120));
     check(await until(async () => (await flag(PH.page, 'phoneCards')) === true, 8000), 'the phone learns of it within a poll');
     check(await until(async () => (await flag(DS.page, 'phoneCards')) === true, 8000), 'and so does the iPad page');
-    check(await pressed('phoneCards') === 'Mission cards', 'the sheet shows Mission cards');
+    check(await pressed('phoneCards') === 'Mission cards', 'the Settings show Mission cards');
 
     await g.click(sheet + ' [data-set="fx.off"][data-v="1"]');
     check(await until(async () => (await flag(DS.page, 'fx.off')) === true, 8000), 'Scenes: Held still reaches the iPad within a poll');
-    check(await pressed('fx.off') === 'Held still', 'and the sheet shows it');
+    check(await pressed('fx.off') === 'Held still', 'and the Settings show it');
     await g.click(sheet + ' [data-set="fx.off"][data-v="0"]');
     check(await until(async () => (await flag(DS.page, 'fx.off')) === false, 8000), 'Scenes: Moving again');
 
     await g.click(sheet + ' [data-set="mirror"][data-v="0"]');
     check(await until(async () => (await api('GET', '/gm/state')).json.doc.mirror === false, 8000), 'Mirror for phones: Off writes the GM state\'s mirror');
-    check(await pressed('mirror') === 'Off', 'and the sheet shows it');
+    check(await pressed('mirror') === 'Off', 'and the Settings show it');
     await g.click(sheet + ' [data-set="mirror"][data-v="1"]');
     check(await until(async () => (await api('GET', '/gm/state')).json.doc.mirror === true, 8000), 'Mirror for phones: On again');
 
@@ -189,8 +189,7 @@ try {
     const flags = await PH.page.evaluate(() => JSON.stringify(window.B68Flags.all()));
     check(!phoneTraffic.some((x) => x.includes('test.gm')) && !flags.includes('test.gm'), 'the GM-only id never reached the phone: not in one API answer it received, not in its flags');
     check(!JSON.stringify((await api('GET', '/campaign', null, PLAYER)).json).includes('test.gm'), 'nor in the campaign document it can read');
-    await g.click(sheet + ' [data-sheet-close]');
-    check(await g.$eval(sheet, (e) => e.hidden), 'the sheet closes');
+    check(!(await g.$('#gm-sheet-settings')), 'and no Settings sheet was made: they are part of the view');
 
     /* 4.2: Preflight's line is in the Menu with nothing stored; it opens the sheet (read-only, items green or red with a fix) */
     await g.evaluate(() => { window.B68GmTools.get('preflight').open(); });

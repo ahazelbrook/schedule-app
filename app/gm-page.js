@@ -4334,8 +4334,7 @@
     return { mode: 'auto', badge: 'Auto', action: 'Take over', bar: 'Auto', title: 'Take over: Blade is laying clocks and NPCs over the iPad. Take over stops it and takes down what it put up.' };
   }
   function apPaint() {
-    var v = apView(), b = $q('#gm-bar-ap');
-    if (b) { b.hidden = !v; if (v) { b.textContent = v.bar; b.title = v.title; b.setAttribute('aria-label', v.title); b.setAttribute('data-ap', v.mode); } }
+    var v = apView();
     if (S && S.assist && typeof S.assist.setAutopilot === 'function') S.assist.setAutopilot(v ? { label: v.badge + ' · ' + v.action, title: v.title } : null);
     var ln = $q('#gm-ipad-ap');
     if (ln) { ln.hidden = !v; if (v) { var m = ln.querySelector('[data-ap-badge]'), t = ln.querySelector('[data-gm="aptoggle"]'); if (m) m.textContent = v.badge; if (t) t.textContent = v.action; var o = ln.querySelector('[data-gm="apoff"]'); if (o) o.hidden = v.mode === 'off'; } }

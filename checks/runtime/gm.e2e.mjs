@@ -323,11 +323,11 @@ try {
   const want = await G.page.evaluate(() => { const st = window.B68GmPage._state(); return window.B68Map.render(st.locRoll, Object.assign({ view: 'iso', theme: 'rulebook', layer: 'player', reveal: ['public', 'working'] }, window.B68GmPage._pure.IPAD_MAP)).svg; });
   const ids = (s) => String(s || '').replace(/b68m\d+-/g, 'b68m-');   // the kit numbers its ids per render
   check(!!disp && disp.display.kind === 'svg' && ids(disp.display.svg) === ids(want) && /working/.test(disp.display.caption), 'Show on iPad: the display holds the player-layer render with the reveal' + (disp ? ' (' + disp.display.caption + ')' : ' (nothing sent)'));
-  await G.page.click('[data-gm="blankipad"]');
-  check(await until(async () => (await api('GET', '/gm/display', GM)).json.display.kind === 'blank', 5000), 'Clear → ambient: the display is blank');
-  check(!(await G.page.evaluate(() => /Blank the iPad/.test(document.getElementById('gm-page').textContent))) && /Clear → ambient/.test(await G.page.textContent('#gm-loc [data-gm="blankipad"]')), 'the old "Blank the iPad" name is gone');
+  await G.page.click('#gm-loc [data-gm="blankipad"]');
+  check(await until(async () => (await api('GET', '/gm/display', GM)).json.display.kind === 'blank', 5000), 'Take it down (the map\'s own): the display is blank, the ambient scene plays');
+  check(!(await G.page.evaluate(() => /Blank the iPad|Clear → ambient|Lights out/.test(document.getElementById('gm-page').textContent))) && (await G.page.textContent('#gm-loc [data-gm="blankipad"]')).trim() === 'Take it down', 'the old names (Blank the iPad, Clear → ambient, Lights out) are gone: the map\'s own button reads Take it down');
 
-  /* ---- Set as score scene (Location panel), then the iPad panel (I): Lights out, Clear, mode, scenes, the score ---- */
+  /* ---- Set as score scene (Location panel), then the iPad view (I) and the tray: Blank, Clear (and key 0), mode, scenes, the score ---- */
   const ambientDoc = async () => (await api('GET', '/gm/ambient', GM)).json;
   const rollName = await G.page.evaluate(() => window.B68GmPage._state().locRoll.name);
   check(!(await G.page.$eval('[data-gm="scorescene"]', (b) => b.disabled)), 'Set as score scene is on for the player layer, beside Show on iPad');
@@ -342,12 +342,13 @@ try {
   check(await G.page.$eval('#gm-ipad', (p) => !p.hidden) && await G.page.waitForSelector('#gm-ipad .gm-ipad-tile:not([disabled])[data-id="board"]', { timeout: 8000 }).then(() => true, () => false), 'I opens the iPad panel; the score scenes are open now that a score is set');
   check((await G.page.textContent('#gm-ipad-score')).includes(rollName), 'the score line names the roll');
   check((await G.page.$$('#gm-ipad .gm-ipad-tile')).length === 17, 'seventeen scenes in the picker');
-  await G.page.click('#gm-ipad [data-gm="darkipad"]');
-  check(await until(async () => (await api('GET', '/gm/display', GM)).json.display.kind === 'dark', 5000), 'Lights out: the display is dark');
-  check(/Lights out/.test(await G.page.textContent('#gm-ipad-now')), 'On the iPad now says so');
-  await G.page.click('#gm-ipad [data-gm="blankipad"]');
-  check(await until(async () => (await api('GET', '/gm/display', GM)).json.display.kind === 'blank', 5000), 'Clear → ambient in the panel: blank');
-  await G.page.click('#gm-ipad [data-gm="darkipad"]'); await until(async () => (await api('GET', '/gm/display', GM)).json.display.kind === 'dark', 5000);
+  check((await G.page.$$('#gm-ipad [data-gm="darkipad"], #gm-ipad .gm-ipad-now [data-gm="blankipad"]')).length === 0, 'the iPad view has no Clear or Lights out of its own: one way off, the tray\'s');
+  await G.page.click('.gm-tray [data-tray="blank"]');
+  check(await until(async () => (await api('GET', '/gm/display', GM)).json.display.kind === 'dark', 5000), 'Blank (the tray): the display is dark');
+  check(/Blank/.test(await G.page.textContent('#gm-ipad-now')) && /Blank/.test(await G.page.textContent('.gm-tray .gm-tray-text')), 'On the iPad now says so, and so does the tray\'s live line');
+  await G.page.click('.gm-tray [data-tray="clear"]');
+  check(await until(async () => (await api('GET', '/gm/display', GM)).json.display.kind === 'blank', 5000), 'Clear (the tray): blank, the ambient scene plays');
+  await G.page.click('.gm-tray [data-tray="blank"]'); await until(async () => (await api('GET', '/gm/display', GM)).json.display.kind === 'dark', 5000);
   await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
   await G.page.keyboard.press('0');
   check(await until(async () => (await api('GET', '/gm/display', GM)).json.display.kind === 'blank', 5000), 'key 0 clears to ambient');
@@ -579,7 +580,7 @@ try {
       /* the label's own text box inside the segment's box (scrollWidth overstates on these inline-flex chips, and text-overflow does
          not reach the text inside them, so a cut label would show no ellipsis) */
       check(await V.page.$$eval('.gm-segbar .chip', (c) => c.every((x) => { const rg = document.createRange(); rg.selectNodeContents(x); const t = rg.getBoundingClientRect(), b = x.getBoundingClientRect(), s = getComputedStyle(x); return t.width > 0 && t.left >= b.left + parseFloat(s.borderLeftWidth) - 0.5 && t.right <= b.right - parseFloat(s.borderRightWidth) + 0.5 && b.height >= 40; })), 'phone: every segment label shows whole, each 40 px or taller');
-      check(await V.page.$eval('#gm-bar-ipad', (p) => getComputedStyle(p).display !== 'none') && await V.page.$eval('#gm-bar-stt', (p) => getComputedStyle(p).display === 'none'), 'phone: the bar shows the iPad pill (no Listening pill while the transcriber was never set up)');
+      check(await V.page.$eval('.gm-tray', (t) => getComputedStyle(t).display !== 'none' && t.getBoundingClientRect().right <= innerWidth + 1) && await V.page.$eval('.gm-tray [data-tray="clear"]', (c) => getComputedStyle(c).display !== 'none') && await V.page.$eval('#gm-bar-stt', (p) => getComputedStyle(p).display === 'none'), 'phone: the bar shows the iPad tray, its dot and Clear (no Listening pill while the transcriber was never set up)');
       const cols = await V.page.$eval('#gm-buttons', (b) => getComputedStyle(b).gridTemplateColumns.split(' ').length);
       check(cols === 4 && (await V.page.$$('#gm-buttons .gm-btn')).length === 4 && await V.page.$$eval('#gm-buttons .gm-btn', (bs) => bs.every((b) => b.getBoundingClientRect().height >= 44)), 'phone: the four situations are one row of the Roll (They rolled 1-4), each 44 px or taller');
       const pr = await V.page.$$eval('#gm-pos [data-gm="pos"]', (bs) => bs.map((b) => { const r = b.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), top: Math.round(r.top), bottom: Math.round(r.bottom) }; }));

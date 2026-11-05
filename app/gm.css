@@ -383,8 +383,8 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 
 /* ---- the app layout (body.gm-app; gm-page.js setApp): the window is the page ----
    Every width: while the tools are open the site header and footer give way to a slim black bar (the session, Saved, a
-   stale-pack note, the beat, Find, iPad: what the players see, Listening once the transcriber has ever been used,
-   Clear → ambient, Lights out, Menu). The Menu holds what is not play: the display page, Export tonight's note, Clear the
+   stale-pack note, the beat, Find, the iPad tray (what is live, Send, Clear 0, Blank, the autopilot pill: gm/ipad-tray.js),
+   Listening once the transcriber has ever been used, Menu). The Menu holds what is not play: the display page, Export tonight's note, Clear the
    capture, Update pack, the site's pages and Forget.
    Laptop (>= 1100 px): four rows (the bar, three columns that each scroll on their own, capture at the foot), so a long Prep
    note or the GM screen never carries the console or the state rail away. Prep and Screen get their section list as an
@@ -453,7 +453,7 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
   body.gm-app #gm-page .gm-bar { height: 44px; min-height: 44px; flex-wrap: nowrap; gap: 6px; padding: 0 10px; margin-bottom: 0; z-index: 45; }
   body.gm-app #gm-page .gm-bar a.gm-bar-mark { font-size: 20px; }
   body.gm-app #gm-page .gm-bar .gm-save:not(.bad), body.gm-app #gm-page .gm-bar-exp, body.gm-app #gm-page .gm-beatbar, body.gm-app #gm-page .gm-bar [data-gm="find-open"],
-  body.gm-app #gm-page #gm-bar-stt, body.gm-app #gm-page #gm-bar-ap, body.gm-app #gm-page .gm-bar [data-gm="blankipad"], body.gm-app #gm-page .gm-bar [data-gm="darkipad"], body.gm-app #gm-page .gm-bar [data-gm="mirror"] { display: none; }
+  body.gm-app #gm-page #gm-bar-stt, body.gm-app #gm-page .gm-bar [data-gm="mirror"] { display: none; }
   body.gm-app #gm-page .gm-pill { max-width: 40vw; min-width: 0; flex: 0 1 auto; }
   body.gm-app #gm-page .gm-bar .gm-now { display: none; }
   #gm-page .gm-nowline { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; }
@@ -1564,6 +1564,7 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
 #gm-page .gm-tray-send b { font: 900 12px/1 var(--font-mono); }
 #gm-page .gm-tray-send[hidden], #gm-page .gm-tray-ap[hidden] { display: none; }
 #gm-page .gm-tray-live:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+@media (pointer: coarse) { #gm-page .gm-tray-live { min-height: 44px; } }      /* a finger's target, as the bar's pills and buttons */
 /* the GM's phone: the live dot and Clear (the view has the rest) */
 @media (max-width: 599px) {
   #gm-page .gm-tray-lbl, #gm-page .gm-tray-text, #gm-page .gm-tray-blank, #gm-page .gm-tray-ap { display: none; }

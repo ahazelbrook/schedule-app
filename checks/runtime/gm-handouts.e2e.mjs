@@ -103,7 +103,7 @@ try {
   check(JSON.stringify(titles) === JSON.stringify(['Invented brass key', 'Invented wide banner', 'Invented missing image']), 'each shows its title');
   check(/after the invented dock clue/.test(await p.textContent('#gm-ipad [data-ho="key"]')) && !/after the invented/.test(await p.textContent('#gm-ipad [data-ho="wide"]')), 'the cue shows only where the vault gave one');
   check(await p.waitForFunction(() => { const i = document.querySelector('#gm-ipad [data-ho="key"] img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 8000 }).then(() => true, () => false), 'a thumbnail loads from media/handouts/');
-  check(await p.$$eval('#gm-ipad [data-ho] [data-gm="ho-show"]', (l) => l.length) === 3 && await p.$$eval('#gm-ipad [data-ho] [data-gm="blankipad"]', (l) => l.length) === 3, 'each has Show on iPad and Clear iPad');
+  check(await p.$$eval('#gm-ipad [data-ho] [data-gm="ho-show"]', (l) => l.length) === 3 && await p.$$eval('#gm-ipad [data-ho] [data-gm="blankipad"]', (l) => l.length) === 3, 'each has Show on iPad and Take it down');
 
   await p.click('#gm-ipad [data-ho="key"] [data-gm="ho-show"]');
   check(await until(async () => (await shownDisplay()).kind === 'handout', 8000), 'Show on iPad puts a handout on the display');
@@ -117,7 +117,7 @@ try {
   d = await shownDisplay();
   check(d.showTitle === true && d.title === 'Invented wide banner', 'with the title toggle on, the title caption is on');
   await p.click('#gm-ipad [data-ho="wide"] [data-gm="blankipad"]');
-  check(await until(async () => (await shownDisplay()).kind === 'blank', 8000), 'Clear iPad blanks it');
+  check(await until(async () => (await shownDisplay()).kind === 'blank', 8000), 'Take it down blanks it');
 
   // ---- the table display ----
   await p.click('#gm-ipad [data-hotitle]');   // title off again
