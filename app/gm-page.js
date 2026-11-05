@@ -2371,17 +2371,15 @@
      once B68GmWorkshop.inline(id, el) has bound it, in the shell's container. One line per tool: the controller's getter, so an instance is still made on first use. */
   (function registerTools() {
     var T = W.B68GmTools; if (!T || typeof T.registerTool !== 'function') return;
-    function ctlOpen(get) { return function () { var c = get(); return !!(c && c.open()); }; }
-    function ctlClose(get) { return function () { var c = get(); if (c && typeof c.close === 'function') c.close(); }; }
-    function reg(id, get) { T.registerTool(id, { open: ctlOpen(get), close: ctlClose(get) }); }
+    /* close() hides the right-edge sheet, or, for a tool the shell has bound inline, asks the shell (its onClose) and hides nothing */
+    function shut(id) { return function () { var w = W.B68GmWorkshop, r = $q('#gm-root'); if (w && r) { var t = T.get(id), sh = w.sheet(r, id, t ? t.label : id); if (sh) sh.close(); } }; }
+    function reg(id, get) { T.registerTool(id, { open: function () { var c = get(); return !!(c && c.open()); }, close: shut(id) }); }
     function desk(which) { return function () { var r = rdInst(); return r ? r.desk(which) : null; }; }
-    function shut(id, title) { return function () { var w = W.B68GmWorkshop, r = $q('#gm-root'); if (w && r) { var sh = w.sheet(r, id, title); if (sh) sh.close(); } }; }
-    function mod(name, id, title) { T.registerTool(id, { open: function () { var M = W[name], r = $q('#gm-root'); return !!(M && r && S && M.open(r)); }, close: shut(id, title) }); }
+    function mod(name, id) { T.registerTool(id, { open: function () { var M = W[name], r = $q('#gm-root'); return !!(M && r && S && M.open(r)); }, close: shut(id) }); }
     function b29tool(which) { return function () { var b = b29(); return b ? b.tool(which) : null; }; }
     reg('hardstart', hsInst); reg('preflight', pfInst); reg('print', prInst); reg('corkboard', cbInst); reg('montage', mtInst);
     reg('practical', desk('practical')); reg('phone', desk('phone')); reg('trouble', desk('trouble')); reg('canon', desk('canon')); reg('frontpage', desk('frontpage')); reg('absent', desk('absent'));
-    mod('B68GmAftermath', 'aftermath', 'Aftermath'); mod('B68GmDebrief', 'debrief', 'Debrief'); mod('B68GmBoard', 'board', 'Opportunity board');
-    mod('B68GmCastPhoto', 'castphoto', 'Cast photo'); mod('B68GmLair', 'lair', 'The lair');
+    mod('B68GmAftermath', 'aftermath'); mod('B68GmDebrief', 'debrief'); mod('B68GmBoard', 'board'); mod('B68GmCastPhoto', 'castphoto'); mod('B68GmLair', 'lair');
     reg('record', b29tool('record')); reg('light', b29tool('light'));
   })();
   /* 4.1 The cue stack (gm/cue-stack.js, switch room.cues): STANDBY / GO / Bypass in a bar under the rail, Space and Esc, and "Blade, go". Every effect goes through the page's own writers
@@ -4817,7 +4815,7 @@
   function airChip(d) { return airOn() ? W.B68GmOnAir.chip(d, Date.now()) : ''; }
   function airSuffix(d) { return (airOn() ? W.B68GmOnAir.suffix(d, Date.now()) : '') + b29Suffix(); }
   /* B29 (ai.batch, room.light): the local recording and the light cue; all the behaviour is in gm/b29.js, gm/batch-record.js and gm/light.js */
-  function b29() { return S && W.B68GmB29 ? (S.b29 || (S.b29 = W.B68GmB29.create({ on: function (id) { return !!(W.B68Features && W.B68Features.valueOf(S.doc, id)); }, toast: toast, $: $q, now: Date.now, changed: renderBar, relay: 'http://127.0.0.1:9300' }, W))) : null; }
+  function b29() { return S && W.B68GmB29 ? (S.b29 || (S.b29 = W.B68GmB29.create({ on: function (id) { return !!(W.B68Features && W.B68Features.valueOf(S.doc, id)); }, toast: toast, $: $q, now: Date.now, changed: renderBar, relay: 'http://127.0.0.1:9300', root: function () { return $q('#gm-root'); } }, W))) : null; }
   function b29Suffix() { var x = b29(); return x ? x.suffix() : ''; }
   function sttPatch(p) {
     var g = gmApi(); if (!g || typeof g.patchStt !== 'function') { toast('Listening needs the hosted app.', true); return; }
