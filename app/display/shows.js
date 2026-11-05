@@ -60,8 +60,35 @@
     }).then(function (n) { return n; }, function () { return null; });
   }
 
+  /* fit(node, selector, { same }): a name never breaks inside a word (the CSS gives every match overflow-wrap: normal, so a long name wraps at its
+     spaces). A word still wider than its box shrinks the text to fit, in vmin so it follows the iPad round; with `same`, every match takes the
+     smallest size any of them needed (one size for a column of roles). It runs a frame after the renderer returns (the node is on the page by
+     then), and again once the fonts are in. Nothing happens without a layout (node tests). */
+  function fit(node, sel, opts) {
+    var W = root && root.document ? root : null, same = !!(opts && opts.same);
+    if (!W || !node || typeof W.requestAnimationFrame !== 'function' || typeof W.getComputedStyle !== 'function') return;
+    function pass() {
+      if (!node.isConnected) return;
+      var vmin = Math.min(W.innerWidth, W.innerHeight) / 100, list = node.querySelectorAll(sel), least = Infinity;
+      if (!(vmin > 0)) return;
+      for (var i = 0; i < list.length; i++) {
+        var e = list[i], base;
+        e.style.fontSize = '';
+        base = parseFloat(W.getComputedStyle(e).fontSize);
+        for (var n = 0; n < 4 && e.scrollWidth > e.clientWidth + 1 && e.clientWidth > 0; n++) {
+          var px = parseFloat(W.getComputedStyle(e).fontSize) * Math.max(0.4, (e.clientWidth - 1) / e.scrollWidth);
+          e.style.fontSize = (px / vmin).toFixed(3) + 'vmin';
+        }
+        least = Math.min(least, parseFloat(W.getComputedStyle(e).fontSize) / base);
+      }
+      if (same && least < 1) for (var j = 0; j < list.length; j++) { list[j].style.fontSize = ''; list[j].style.fontSize = (parseFloat(W.getComputedStyle(list[j]).fontSize) * least / vmin).toFixed(3) + 'vmin'; }
+    }
+    W.requestAnimationFrame(pass);
+    if (W.document.fonts && W.document.fonts.ready && typeof W.document.fonts.ready.then === 'function') W.document.fonts.ready.then(function () { W.requestAnimationFrame(pass); });
+  }
+
   return {
-    register: register, has: has, ids: function () { return order.slice(); }, entry: entry, clean: clean, mount: mount, C: C,
+    register: register, has: has, ids: function () { return order.slice(); }, entry: entry, clean: clean, mount: mount, C: C, fit: fit,
     entries: function () { return order.map(entry); },
     isObj: isObj
   };

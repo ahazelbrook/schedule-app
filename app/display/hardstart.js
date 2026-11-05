@@ -103,6 +103,8 @@
           f.appendChild(pl); row3.appendChild(f);
         });
         n.appendChild(row3);
+        /* a plate never breaks a name inside a word: it wraps at the spaces, and a word too wide for the plate shrinks to fit (display/shows.js) */
+        if (root.B68Shows && typeof root.B68Shows.fit === 'function') root.B68Shows.fit(n, '.dp-hs-pname, .dp-hs-prole');
       }
       return n;
     }
