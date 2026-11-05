@@ -136,7 +136,7 @@
     return W.fetch('/api' + path, o).then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); });
   }
   function el(tag, cls, text) { var e = W.document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
-  function btn(label, fn, cls) { var b = el('button', cls || '', label); b.type = 'button'; b.addEventListener('click', fn); return b; }
+  function btn(label, fn, cls) { var b = el('button', 'btn sm' + (cls ? ' ' + cls : ''), label); b.type = 'button'; b.addEventListener('click', fn); return b; }   /* the app's button, as every tool's */
 
   var ctl = null;
   function feed() { var P = W.B68GmPage; return P && typeof P.aftermath === 'function' ? P.aftermath() : null; }

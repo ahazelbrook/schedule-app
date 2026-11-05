@@ -17,15 +17,25 @@ const src = (f) => fs.readFileSync(path.join(APP, f), 'utf8');
 let failed = 0, passed = 0;
 async function test(name, fn) { try { await fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); } }
 
-/* a page: a window with the real tools.js, tool-registry.js, esc.js and workshop.js loaded in the order routes.js gives */
+/* a page: a window with the real tools.js, tool-registry.js, esc.js and workshop.js loaded in the order routes.js gives. Its elements have a small layout:
+   isConnected (the chain reaches the page's body) and getClientRects() (none when detached, or when it or an ancestor is [hidden] or display:none) */
 function page() {
-  const doc = { createElement: (t) => { const e = new MiniEl(t); e.ownerDocument = doc; return e; } };
+  let body = null;
+  const layout = (e) => {
+    e.ownerDocument = doc; e.style = {}; e.addEventListener = () => {};
+    Object.defineProperty(e, 'id', { get() { return e.attrs.id || ''; }, set(v) { e.attrs.id = String(v); } });
+    Object.defineProperty(e, 'isConnected', { get() { for (let x = e; x; x = x.parentNode) if (x === body) return true; return false; } });
+    e.getClientRects = () => { if (!e.isConnected) return []; for (let x = e; x; x = x.parentNode) if (x.hidden || (x.style && x.style.display === 'none')) return []; return [{ width: 1, height: 1 }]; };
+    return e;
+  };
+  const doc = { createElement: (t) => layout(new MiniEl(t)) };
+  body = doc.createElement('body');
   const win = { document: doc, console };
   win.self = win;
   vm.createContext(win);
   for (const f of ['gm/esc.js', 'gm/tools.js', 'gm/tool-registry.js', 'gm/workshop.js']) vm.runInContext(src(f), win, { filename: f });
-  const box = () => { const e = doc.createElement('div'); e.isConnected = true; return e; };
-  return { win, doc, W: win.B68GmWorkshop, T: win.B68GmTools, Esc: win.B68GmEsc, R, box };
+  const box = () => body.appendChild(doc.createElement('div'));
+  return { win, doc, body, W: win.B68GmWorkshop, T: win.B68GmTools, Esc: win.B68GmEsc, R, box };
 }
 
 await test('inline: bind gives a sheet-shaped object whose body sits inside the container, always open', () => {
@@ -93,6 +103,36 @@ await test('inline: Esc goes through B68GmEsc at priority 40, only when asked (e
   assert.deepEqual(Array.from(p.Esc.list()), [], 'esc: true without an onClose registers nothing');
 });
 
+await test('inline Esc: a bound tool is open only while it is drawn; hidden or detached it holds back no key (anyOpen) and Esc goes past it', () => {
+  const p = page(), host = p.box(), closed = [];
+  p.W.inline('print', host, { onClose: () => closed.push('print'), esc: true });
+  assert.equal(p.Esc.anyOpen(), true, 'bound and drawn: open');
+  host.hidden = true;                                                     /* the place hides the column the tool lives in */
+  assert.equal(p.Esc.anyOpen(), false, 'bound but hidden: not open');
+  let panics = 0;
+  assert.equal(p.Esc.handle({ panic: () => { panics++; } }), 'panic', 'Esc goes past a hidden tool'); assert.equal(panics, 1); assert.deepEqual(closed, []);
+  host.hidden = false; host.style.display = 'none';
+  assert.equal(p.Esc.anyOpen(), false, 'display:none on the container: not open');
+  host.style.display = '';
+  assert.equal(p.Esc.anyOpen(), true, 'drawn again: open again');
+  host.remove();                                                          /* the shell dropped the container without unbinding */
+  assert.equal(p.W.bound('print'), true, 'still bound');
+  assert.equal(p.Esc.anyOpen(), false, 'bound but detached: not open');
+  assert.equal(Array.from(p.Esc.list()).filter((e) => e.id === 'inline-print')[0].open, false);
+  assert.equal(p.W.inline('print', null), true); assert.deepEqual(Array.from(p.Esc.list()), [], 'unbinding still takes the entry down');
+});
+
+await test('sheet Esc: an open right-edge sheet counts as open only while it is in the document', () => {
+  const p = page(), root = p.box();
+  const s = p.W.sheet(root, 'lair', 'The lair'); s.open();
+  const ent = () => Array.from(p.Esc.list()).filter((e) => e.id === 'sheet-lair')[0];
+  assert.ok(ent() && ent().priority === 50 && ent().open === true, 'open and in the page');
+  root.remove();
+  assert.equal(ent().open, false, 'its root left the document: not open'); assert.equal(p.Esc.anyOpen(), false);
+  p.body.appendChild(root); assert.equal(ent().open, true, 'back in the page: open');
+  s.close(); assert.equal(ent().open, false, 'closed: not open');
+});
+
 await test('registry: get(id) answers for the 18 tools and still for the tabs; a tool id cannot shadow a tab', () => {
   const p = page(), ids = p.R.IDS;
   assert.equal(ids.length, 18); assert.equal(new Set(ids).size, 18);
@@ -108,6 +148,21 @@ await test('registry: get(id) answers for the 18 tools and still for the tabs; a
   p.T.get('print').open(); p.T.get('print').close(); assert.deepEqual(calls, ['open:print', 'close:print']);
   assert.equal(p.T.unregisterTool('print'), true); assert.equal(p.T.get('print'), null); assert.equal(p.T.unregisterTool('print'), false);
   assert.equal(p.T.table().length, p.T.list().length, 'the tab table is untouched');
+});
+
+await test('registry: a tab can never take a tool’s id (get() asks the tabs first, so the tab would hide the tool)', () => {
+  const p = page();
+  p.T.registerTool('print', { open: () => true });
+  assert.throws(() => p.T.register({ id: 'print', label: 'Print tab', phases: 'all' }), /tab print is a tool/);
+  assert.equal(p.T.get('print').kind, 'tool', 'the tool still answers'); assert.equal(p.T.list().some((t) => t.id === 'print'), false, 'and no tab was added');
+  for (const id of p.R.IDS) assert.throws(() => p.T.register({ id, label: 'X', phases: 'all' }), /is a tool/, id + ': refused, registered yet or not');
+  p.T.registerTool('zz-extra', { open: () => true });
+  assert.throws(() => p.T.register({ id: 'zz-extra', label: 'X', phases: 'all' }), /is a tool/, 'a tool registered beyond the 18 too');
+  const tab = p.T.register({ id: 'testtab', label: 'Test tab', phases: ['plan'] });
+  assert.equal(tab.id, 'testtab'); assert.equal(p.T.get('testtab').label, 'Test tab', 'any other tab registers as before');
+  assert.throws(() => p.T.register({ id: 'prep', label: 'x', phases: 'all' }), /built in/, 'the tab registry’s own checks still run');
+  assert.throws(() => p.T.register(null), /object/);
+  assert.equal(p.T.unregister('testtab'), true);
 });
 
 await test('registry: open() is true/false and never throws; mounted() follows the inline binding', () => {

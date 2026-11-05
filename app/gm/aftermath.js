@@ -265,13 +265,14 @@
   function btn(label, fn, cls) { var b = el('button', 'btn sm' + (cls ? ' ' + cls : ''), label); b.type = 'button'; b.addEventListener('click', fn); return b; }
   function mmss(s) { return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
 
-  var timer = null;
-  function stopTick(box) { if (timer) { W.clearInterval(timer); timer = null; } if (box) box.__aft = false; }
+  /* the 10 s tick lives on the box it was started for (box.__aftT), so a second box (the inline copy beside the right-edge one) never loses the first one's interval */
+  function stopTick(box) { if (!box) return; if (box.__aftT) W.clearInterval(box.__aftT); box.__aftT = null; box.__aft = false; }
   function paint(box, sh) {
     var c = controller();
     if (!box.__aft) {                  /* a live panel keeps its own ticking while it is open (inline: until the shell unbinds it) */
       box.__aft = true;
-      timer = W.setInterval(function () { if (!box.isConnected) { stopTick(box); return; } c.tick(); }, 10000);
+      /* a box that left the page, or was emptied (the right-edge copy is, when the tool binds inline), stops: one tick runs, the live panel's */
+      box.__aftT = W.setInterval(function () { if (!box.isConnected || !box.firstChild) { stopTick(box); return; } c.tick(); }, 10000);
       if (sh && typeof sh.onUnbind === 'function') sh.onUnbind(function () { stopTick(box); });
     }
     var st = c.state();

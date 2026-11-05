@@ -193,7 +193,11 @@ try {
   /* ---- a stored false (the old All off, written by an older page into both documents) changes nothing ---- */
   check((await api('PATCH', '/gm/state', { features: { 'spine.aftermath': false } })).status === 200 && (await api('PATCH', '/campaign', { features: { 'spine.aftermath': false } })).status === 200, 'a stored false is written to both documents');
   await sleep(2500);
+  check(await until(() => g.evaluate(() => { const f = window.B68GmPage.aftermath(); return !!(f && f.doc && f.doc.features && f.doc.features['spine.aftermath'] === false); }), 10000), 'the GM page has the stored false in its document');
   check(await g.evaluate(() => !!window.B68GmTools.get('aftermath') && !document.querySelector('#gm-menu-aftermath')), 'and changes nothing: the tool stays, still no Menu line');
+  check(await g.evaluate(() => window.B68GmTools.get('aftermath').open()) === true, 'the tool still opens');
+  const offText = await g.$eval('#gm-sheet-aftermath', (e) => (e.hidden ? 'HIDDEN ' : '') + e.innerText);
+  check(!/Switched off/i.test(offText) && /eight steps/i.test(offText) && /Start the Aftermath/i.test(offText), 'and its panel is the show, never "Switched off": ' + JSON.stringify(offText.replace(/\s+/g, ' ').slice(0, 140)));
   check((await ph.evaluate(() => window.B68Commend.state())).started === true && (await ph.evaluate(() => window.B68Flags.on('spine.aftermath'))) === true, 'and the phone is still told it is on, and keeps reading');
 
   check(errors.length === 0, 'no console errors or page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));

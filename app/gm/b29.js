@@ -4,7 +4,7 @@
    N2: the two Menu lines are gone. Both are tools with a small panel each, reached through B68GmTools.get('record') and .get('light'):
      tool(which) -> { open(), close(), render(box) }     which: 'record' | 'light'. open() draws the panel into the tool's sheet (Workshop.sheet(host.root(), id)), which
      is the right-edge sheet or, once the shell binds it inline, a container. Record the night: Start / Stop, on this laptop only. Light relay: whether the relay
-     answers (one GET /state, only when Refresh is pressed; never on a timer, never on open) and Light alarm (3 s).
+     answers (one GET /state each time the panel is opened and each time Refresh is pressed; never on a timer; no answer reads "not answering") and Light alarm (3 s).
 
    host: { on(id) -> bool, toast(text, bad), $(sel) -> element, now(), fetch? , relay? (base url of the light relay), env? }
    The recorder is the browser's own (microphone, MediaRecorder) and the sink a folder the GM picks once (File System Access); nothing is uploaded. */
@@ -57,6 +57,7 @@
     var recBox = null;         /* the record panel last drawn: it follows Start / Stop */
     function redraw() { if (recBox && recBox.isConnected) renderRecord(recBox); }
     var relayState = '';       /* '' not asked yet | 'up' | 'down' | 'asking' */
+    var relaySeq = 0, lightBox = null;     /* the latest question wins; its answer redraws the light panel last drawn */
     function renderRecord(box) {
       box.textContent = '';
       var st = rec() && rec().state(), on = host.on('ai.batch');
@@ -78,7 +79,9 @@
       var on = host.on('room.light');
       box.appendChild(elOf(box, 'p', 'gm-dim', 'The strip follows the iPad scene; the alarm flashes the rim lights for 3 seconds. The work light never changes.'));
       var row = elOf(box, 'div', 'gm-sb-row');
-      row.appendChild(elOf(box, 'span', '', relayState === 'up' ? 'Light relay: answering' : relayState === 'down' ? 'Light relay: not running' : relayState === 'asking' ? 'Light relay: asking' : 'Light relay: not checked yet'));
+      var said = elOf(box, 'span', '', relayState === 'up' ? 'Light relay: answering' : relayState === 'down' ? 'Light relay: not answering' : relayState === 'asking' ? 'Light relay: asking' : 'Light relay: not checked yet');
+      said.setAttribute('data-b29-relay', relayState || 'unknown');
+      row.appendChild(said);
       var rf = elOf(box, 'button', 'btn sm', 'Refresh'); rf.type = 'button'; rf.setAttribute('data-b29-refresh', '1');
       rf.addEventListener('click', function () { probe(box); });
       row.appendChild(rf);
@@ -87,20 +90,23 @@
       al.addEventListener('click', function () { click('alarm'); });
       box.appendChild(al);
     }
+    /* one GET /state to the relay: a relay that is not running, or a refusal, reads "not answering" (calmly: no toast, no warning) */
     function probe(box) {
-      var f = host.fetch || (typeof W.fetch === 'function' ? W.fetch.bind(W) : null);
-      if (!f || !host.on('room.light')) { relayState = 'down'; renderLight(box); return; }
-      relayState = 'asking'; renderLight(box);
+      if (box) lightBox = box;
+      var f = host.fetch || (typeof W.fetch === 'function' ? W.fetch.bind(W) : null), n = ++relaySeq;
+      if (!f || !host.on('room.light')) { relayState = 'down'; if (lightBox) renderLight(lightBox); return; }
+      relayState = 'asking'; if (lightBox) renderLight(lightBox);
       Promise.resolve().then(function () { return f(String(host.relay || 'http://127.0.0.1:9300') + '/state'); }).then(function (r) { return !!(r && r.ok); }, function () { return false; })
-        .then(function (ok) { relayState = ok ? 'up' : 'down'; if (box.isConnected) renderLight(box); });
+        .then(function (ok) { if (n !== relaySeq) return; relayState = ok ? 'up' : 'down'; if (lightBox && lightBox.isConnected) renderLight(lightBox); });
     }
     function tool(which) {
       var id = which === 'light' ? 'light' : 'record', title = id === 'light' ? 'Light relay' : 'Record the night';
       function sh() { var w = Ws(), r = typeof host.root === 'function' ? host.root() : null; return w && r ? w.sheet(r, id, title) : null; }
-      function draw(box) { if (id === 'light') renderLight(box); else { recBox = box; renderRecord(box); } }
+      function draw(box) { if (id === 'light') { lightBox = box; renderLight(box); } else { recBox = box; renderRecord(box); } }
       return {
         render: draw,
-        open: function () { var s = sh(); if (!s) return false; draw(s.body); s.open(); return true; },
+        /* opening the light panel asks the relay once (no timer), so it never says "not checked yet" to a GM who has not pressed Refresh */
+        open: function () { var s = sh(); if (!s) return false; draw(s.body); s.open(); if (id === 'light') probe(s.body); return true; },
         close: function () { var s = sh(); if (s) s.close(); }
       };
     }

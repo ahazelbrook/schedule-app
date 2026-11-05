@@ -15,6 +15,7 @@
      B68GmTools.registerTool(id, def)   def: { label, open(), close?(), refresh? } (the page registers each tool once; registering an id again replaces it)
      B68GmTools.unregisterTool(id)      -> true when it was there
      B68GmTools.tool(id)          -> the same entry as get(id) but only for tools (null for a tab id)
+     B68GmTools.register(def)     the tab registry's own, guarded: a def whose id is one of the 18 (or any tool registered) throws 'tab <id> is a tool'
 
    THE 18 (id -> controller -> how it opens; gm-page.js registers each next to where its instance is made)
      hardstart  B68GmHardStart.make(...)      hsInst()   .open()      preflight  B68GmPreflight.create(...)  pfInst()  .open()
@@ -62,9 +63,18 @@
   function toolIds() { var out = IDS.filter(function (id) { return tools[id]; }); Object.keys(tools).forEach(function (id) { if (out.indexOf(id) < 0) out.push(id); }); return out; }
 
   if (T && !T.__toolRegistry) {
-    var tabGet = T.get;
+    var tabGet = T.get, tabRegister = T.register;
     T.__toolRegistry = true;
     T.get = function (id) { return tabGet(id) || tools[id] || null; };
+    /* get() asks the tabs first, so a tab registered later under a tool's id would hide the tool without a word: register() refuses the 18 ids and any tool
+       registered since (the same way registerTool refuses a tab's id) */
+    if (typeof tabRegister === 'function') {
+      T.register = function (def) {
+        var id = def && typeof def === 'object' && def.id != null ? String(def.id) : '';
+        if (id && (IDS.indexOf(id) >= 0 || tools[id])) throw new Error('tab ' + id + ' is a tool');
+        return tabRegister.apply(T, arguments);
+      };
+    }
     T.tool = tool; T.toolIds = toolIds; T.registerTool = registerTool; T.unregisterTool = unregisterTool;
   }
   return { IDS: IDS, LABELS: LABELS, registerTool: registerTool, unregisterTool: unregisterTool, tool: tool, toolIds: toolIds };
