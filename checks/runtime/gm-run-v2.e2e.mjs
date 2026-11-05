@@ -251,9 +251,9 @@ try {
   let sq = await seqNow();
   await G.page.click('.rv-card[data-room="Private card rooms"] .rv-cn');
   const st7 = await G.page.$eval(knowBtn, (e) => e.textContent).catch(() => '');
+  check(/^Blueprint/.test(st7), 'the no went through knowRevert: the room is back on Blueprint, not Dark (' + st7 + ')');
   await G.page.click(knowBtn);
-  if (/^Blueprint/.test(st7)) check(true, 'the room was left blueprint by the no'); else { await sleep(300); await G.page.click(knowBtn); }
-  check(!!(await until(async () => JSON.stringify((await ball()).open) === '["Private card rooms"]', 8000)) && asked.length >= 1, 'a yes: ball.open holds the room');
+  check(!!(await until(async () => JSON.stringify((await ball()).open) === '["Private card rooms"]', 8000)) && asked.length === 1, 'a yes: one ask, and ball.open holds the room (' + asked.join(' | ') + ')');
   check(!!(await until(async () => (await seqNow()) > sq, 8000)), 'and the room went to the iPad through the page');
   check(await G.page.waitForFunction(() => !document.querySelector('.rv-card[data-room="Private card rooms"]').classList.contains('fog'), null, { timeout: 8000 }).then(() => true, () => false), 'the card is solid once the room is open');
 
