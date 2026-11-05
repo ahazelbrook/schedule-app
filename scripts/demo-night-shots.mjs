@@ -111,6 +111,37 @@ const PHONE_SCENARIOS = [
   ...nellAt('phone-nothing-due', { setup: async (ctx) => { await call(ctx, 'PATCH', '/campaign', { mission: null }); }, steps: async (page) => { await page.waitForFunction(() => !document.querySelector('#dossier .ds-now'), null, { timeout: 10000 }); } })
 ];
 
+/* ---- the site (N3, design 4 Score): the Run view as the Score place's whole score, at both laptop sizes and a phone (--only site). Staging is page-local and
+   each setup takes down a portrait an earlier picture held, so nothing leaks into the next one. The montage picture puts the night in the score, past its budget,
+   so Montage glows. Names: site[-state]-<width>.png ---- */
+const SITE_VIEW = async (page) => {
+  await page.keyboard.press('g'); await page.waitForSelector('.rv-head', { timeout: 20000 });
+  const b = await page.$('[data-rv="view"][data-v="board"][aria-pressed="false"]'); if (b) await b.click();
+  await page.waitForSelector('.rv-card[data-room="Showroom"]', { timeout: 15000 }); await page.waitForTimeout(400);
+};
+const siteRoom = (room) => async (page) => { await page.click('.rv-card[data-room="' + room + '"] .rv-cn'); await page.waitForSelector('.rv-rm.sel[data-room="' + room + '"]', { timeout: 8000 }); };
+const siteSeen = (room) => async (page) => { await siteRoom(room)(page); await page.click('.rv-rm.sel [data-site="kn"][data-k="seen"]'); await page.waitForTimeout(300); };
+const siteClear = async (ctx) => { await ctx.api('PATCH', '/gm/ambient', { overlay: null }); };
+const siteAt = (name, steps, setup) => LAPTOPS.map((size) => ({ name, size, route: '#gm', ready: GM_READY, setup: setup || siteClear, steps: then(SITE_VIEW, steps || (async () => {})) }));
+const SITE_SCENARIOS = [
+  ...siteAt('site'),                                                                                 /* nothing selected: the rooms the crew are in */
+  ...siteAt('site-room', siteRoom('Security control room')),                                         /* a dark room selected */
+  ...siteAt('site-staged', then(siteSeen('Private card rooms'), siteSeen('Underground counting room'))),       /* two staged: Send 2 */
+  ...siteAt('site-held', then(siteRoom('Showroom'), async (page) => {                                /* a person held, Pleased */
+    await page.click('.rv-rm.sel .rv-p[data-pid="npc-mabel"] [data-site="spot"]'); await page.waitForSelector('.rv-rm.sel .rv-p.held [data-site="expr"]', { timeout: 10000 });
+    await page.click('.rv-rm.sel .rv-p.held [data-expr="pleased"]'); await page.waitForTimeout(900); })),
+  ...siteAt('site-montage', async (page) => { await page.click('.rv-tools [data-site="montage"]'); await page.waitForSelector('.rv-sec[data-sec="tool"] .gm-inline', { timeout: 10000 }); },
+    async (ctx) => { await siteClear(ctx); const t = Date.now(), m = 60000;
+      await ctx.api('PATCH', '/gm/state', { night: { v: 1, phase: 'score', phases: { pb: { budget: 30, start: t - 160 * m, end: t - 130 * m }, plan: { budget: 25, start: t - 130 * m, end: t - 100 * m }, score: { budget: 90, start: t - 100 * m, end: null }, after: { budget: 20 } } } }); }),
+  ...siteAt('site-menu', async (page) => { await page.click('[data-rv="menu"]'); await page.waitForSelector('#rv-menu:not([hidden])', { timeout: 5000 }); }),
+  ...siteAt('site-alarm', async (page) => { await page.click('.rv-head .rv-alarm'); await page.waitForSelector('.rv-alarmpop', { timeout: 5000 }); }),
+  ...siteAt('site-time', async (page) => { await page.click('[data-rv="timepop"]'); await page.waitForSelector('.rv-timepop:not([hidden])', { timeout: 5000 }); }),
+  ...siteAt('site-map', async (page) => { await page.click('[data-rv="view"][data-v="map"]'); await page.waitForSelector('#rv-map svg', { timeout: 15000 }); await page.waitForTimeout(800); }),
+  { name: 'site', size: [390, 844], route: '#gm', ready: GM_READY, context: { isMobile: true, hasTouch: true }, setup: siteClear, steps: SITE_VIEW },
+  /* Location's Map section, without the boxes that went to the site */
+  ...gmAt('site-location', async (page) => { await page.keyboard.press('b'); await page.waitForSelector('#gm-loc .gm-mapbox', { timeout: 15000 }); await page.$eval('#gm-loc .gm-mapbox', (e) => e.scrollIntoView({ block: 'start' })); })
+];
+
 export const SCENARIOS = [
   /* the GM page before the first phase (the night has none), on the Prep tab */
   ...gmAt('gm-nophase', tab('r'), async (ctx) => { await ctx.api('PATCH', '/gm/state', { night: null }); }),
@@ -155,7 +186,9 @@ export const SCENARIOS = [
   { name: 'phone-nell', size: [390, 844], route: '#c/pc-nell', as: 'player1@example.test', ready: SHEET_READY, context: { isMobile: true, hasTouch: true }, settle: 1500 },
   { name: 'phone-nell-full', size: [390, 844], route: '#c/pc-nell', as: 'player1@example.test', ready: SHEET_READY, context: { isMobile: true, hasTouch: true }, settle: 1500, fullPage: true },
   /* the phones (N6): the Now card, Quiet and the Between sessions fold */
-  ...PHONE_SCENARIOS
+  ...PHONE_SCENARIOS,
+  /* the site (N3) */
+  ...SITE_SCENARIOS
 ];
 
 export async function shoot({ base, dir, only = [], api, users }) {
