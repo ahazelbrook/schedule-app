@@ -1,5 +1,5 @@
-// Unit test for the spine tickets: the phase rail (app/gm/phase-rail.js, 1.1), the curfew (app/gm/curfew.js, 1.5), the Workshop's first cuts
-// (app/gm/workshop-first.js, 1.9) and the one hook between them and the page (app/gm/spine.js). No browser, no network: a small fake page stands in for the DOM.
+// Unit test for the spine tickets: the phase rail (app/gm/phase-rail.js, 1.1), the curfew (app/gm/curfew.js, 1.5) and the one hook between them and the page
+// (app/gm/spine.js). The Workshop's first cuts (1.9) went with the Workshop in N0. No browser, no network: a small fake page stands in for the DOM.
 //   node checks/runtime/gm-spine.test.mjs
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -12,7 +12,6 @@ const Night = require(path.join(ROOT, 'app', 'gm', 'night.js'));
 const Tools = require(path.join(ROOT, 'app', 'gm', 'tools.js'));
 const Rail = require(path.join(ROOT, 'app', 'gm', 'phase-rail.js'));
 const Curfew = require(path.join(ROOT, 'app', 'gm', 'curfew.js'));
-const WSF = require(path.join(ROOT, 'app', 'gm', 'workshop-first.js'));
 const Spine = require(path.join(ROOT, 'app', 'gm', 'spine.js'));
 const WS = require(path.join(ROOT, 'app', 'gm', 'workshop.js'));
 const F = require(path.join(ROOT, 'app', 'features.js'));
@@ -110,7 +109,7 @@ await test('the bar: four chips and All tools; a tap enters the phase through th
 
 /* the rail reads gm/tools.js from the window it was built on: give it one */
 function withWindow(extra, fn) {
-  const w = Object.assign({ B68GmTools: Tools, B68GmNight: Night, B68GmWorkshop: WS, B68GmPhaseRail: Rail, B68GmCurfew: Curfew, B68GmWorkshopFirst: WSF, B68Features: F }, extra);
+  const w = Object.assign({ B68GmTools: Tools, B68GmNight: Night, B68GmWorkshop: WS, B68GmPhaseRail: Rail, B68GmCurfew: Curfew, B68Features: F }, extra);
   return fn(w);
 }
 function loadMods(w) {
@@ -119,7 +118,7 @@ function loadMods(w) {
   const make = (f, name) => { const src = fs.readFileSync(path.join(ROOT, 'app', 'gm', f), 'utf8'); const m = { exports: {} }; new Function('module', 'self', 'require', src + '\n//# sourceURL=' + f)(m, w, require); return m.exports; };
   const sp = (n) => w[n];
   void sp;
-  w.B68GmPhaseRail = make('phase-rail.js'); w.B68GmCurfew = make('curfew.js'); w.B68GmWorkshopFirst = make('workshop-first.js'); w.B68GmSpine = make('spine.js');
+  w.B68GmPhaseRail = make('phase-rail.js'); w.B68GmCurfew = make('curfew.js'); w.B68GmSpine = make('spine.js');
   return w;
 }
 
@@ -199,38 +198,23 @@ await test('curfew memory belongs to the night: the next week same curfew warns 
   n.cf.destroy();
 });
 
-/* ---- 1.9 the Workshop ---- */
-await test('workshop: off registers nothing (the Menu has no Workshop line); on registers the five and puts the originals away; off again takes it all back', () => {
-  const w = loadMods(withWindow({}, (x) => x)); const { root, doc } = page();
-  let on = false; const h = { root: () => root, on: () => on, toast() {}, phoneCards: () => false, setPhoneCards() {}, mirrorOn: () => true, toggleMirror() {} };
-  const ws = w.B68GmWorkshopFirst.create(h);
-  const before = Tools.tabs().length; ws.sync(); assert.equal(Tools.workshop().length, 0); assert.equal(WS.menuLine(), ''); assert.ok(!doc.body.classList.contains('ws-away'));
-  on = true; ws.sync(); assert.equal(Tools.workshop().length, 5); assert.ok(WS.menuLine().includes('Workshop')); assert.ok(doc.body.classList.contains('ws-away'));
-  assert.deepEqual(Tools.workshop().map((t) => t.label), ['Phone mission cards', 'Costume engine', 'Screen mirror', 'Uncued co-GM', 'Screen props']);
-  assert.equal(Tools.tabs().length, before, 'the tab bar is the same: the five were never tabs');
-  on = false; ws.sync(); assert.equal(Tools.workshop().length, 0); assert.equal(WS.menuLine(), ''); assert.ok(!doc.body.classList.contains('ws-away'));
-  const c = w.B68GmWorkshopFirst.count(before); assert.equal(c.before, before + 5); assert.equal(c.after, before);
-});
-await test('workshop tools: the toggles call the page\'s own functions; a reveal button flips the class that shows the original again', () => {
-  const w = loadMods(withWindow({}, (x) => x)); const { root, doc } = page(); const cl = doc.body.classList.s;
-  const calls = []; let pc = false;
-  const ws = w.B68GmWorkshopFirst.create({ root: () => root, on: () => true, toast() {}, phoneCards: () => pc, setPhoneCards: (v) => { calls.push(['pc', v]); pc = v; }, mirrorOn: () => true, toggleMirror: () => calls.push(['mirror']) });
-  ws.sync();
-  const box = (id) => { const b = new El('div', doc); Tools.get(id).mount(b, {}); return b; };
-  let b = box('ws-phonecards'); assert.ok(/off \(turn on\)/.test(b.innerHTML)); click(b, 'data-wsf', 'go'); assert.deepEqual(calls[0], ['pc', true]); assert.ok(/on \(turn off\)/.test(b.innerHTML));
-  b = box('ws-mirror'); click(b, 'data-wsf', 'go'); assert.deepEqual(calls[1], ['mirror']);
-  b = box('ws-screen'); click(b, 'data-wsf', 'go'); assert.ok(cl.has('ws-show-screen')); click(b, 'data-wsf', 'go'); assert.ok(!cl.has('ws-show-screen'));
-  b = box('ws-costume'); click(b, 'data-wsf', 'go'); assert.ok(cl.has('ws-show-costume'));
-  b = box('ws-cogm'); assert.ok(/Co-GM on first/.test(b.innerHTML), 'with no co-GM box on the page it says so');
-  ws.destroy(); assert.ok(!cl.has('ws-show-costume'), 'taken down: the reveal classes go too');
+/* ---- 1.9 the Workshop: gone (N0) ---- */
+await test('the Workshop\'s first cuts are gone (N0): spine.tick registers no Workshop tool and sets no class on the page, even with a stored spine.workshop', () => {
+  const w = loadMods(withWindow({ setInterval: () => 7, clearInterval() {} }, (x) => x)); const { root, doc } = page();
+  const c = ctl(), flags = { 'spine.workshop': true };
+  w.B68GmSpine.tick({ root: () => root, night: () => c.N, now: () => c.clock.t, toast() {}, on: (id) => flags[id] === true, layer: () => Promise.resolve({}) });
+  assert.equal(Tools.workshop().length, 0); assert.ok(!doc.body.classList.contains('ws-away'));
+  assert.equal(F.get('spine.workshop'), null, 'the line is gone from the registry'); assert.equal(F.valueOf({ features: { 'spine.workshop': true } }, 'spine.workshop'), false, 'and a stored value is never read');
+  assert.deepEqual(Object.keys(w.B68GmSpine._state()).sort(), ['band', 'curfew', 'rail', 'timer']);
+  w.B68GmSpine.reset();
 });
 
 /* ---- the hook ---- */
-await test('spine.tick: every switch off does nothing at all; a switch builds only its own part; turning it off takes it back, the iPad band included', async () => {
+await test('spine.tick (a host that says off, which the page no longer does: its on() is the registry, always on): every line off does nothing at all; a line builds only its own part; off takes it back, the iPad band included', async () => {
   const w = loadMods(withWindow({ setInterval: () => 7, clearInterval() {} }, (x) => x)); const { root } = page();
   const c = ctl(), layers = []; const flags = {};
-  const host = { root: () => root, night: () => c.N, now: () => c.clock.t, toast() {}, on: (id) => flags[id] === true, layer: (p, v) => { layers.push([p, v]); return Promise.resolve({}); }, phoneCards: () => false, setPhoneCards() {}, mirrorOn: () => true, toggleMirror() {} };
-  w.B68GmSpine.tick(host); assert.deepEqual(w.B68GmSpine._state(), { rail: false, curfew: false, ws: false, band: undefined, timer: false }); assert.equal(root.children.length, 2); assert.equal(layers.length, 0); assert.equal(Tools.filter().on, false); assert.equal(Tools.workshop().length, 0);
+  const host = { root: () => root, night: () => c.N, now: () => c.clock.t, toast() {}, on: (id) => flags[id] === true, layer: (p, v) => { layers.push([p, v]); return Promise.resolve({}); } };
+  w.B68GmSpine.tick(host); assert.deepEqual(w.B68GmSpine._state(), { rail: false, curfew: false, band: undefined, timer: false }); assert.equal(root.children.length, 2); assert.equal(layers.length, 0); assert.equal(Tools.filter().on, false);
   flags['spine.rail'] = true; w.B68GmSpine.tick(host);
   assert.ok(root.querySelector('#gm-phaserail')); assert.deepEqual(layers, [['band.phase', null]], 'no phase yet: the band is cleared, not lit');
   c.N.enter('plan'); w.B68GmSpine.tick(host); assert.deepEqual(layers[layers.length - 1], ['band.phase', 'plan'], 'the band is told the phase, nothing more');
@@ -241,16 +225,22 @@ await test('spine.tick: every switch off does nothing at all; a switch builds on
   flags['spine.rail'] = false; w.B68GmSpine.tick(host);
   assert.equal(root.querySelector('#gm-phaserail'), null); assert.equal(Tools.filter().on, false); assert.deepEqual(layers[layers.length - 1], ['band.phase', null], 'off: the band is cleared');
   assert.equal(w.B68GmSpine._state().timer, false);
-  flags['spine.workshop'] = true; flags['spine.curfew'] = true; w.B68GmSpine.tick(host);
-  assert.equal(Tools.workshop().length, 5); assert.equal(root.querySelector('#gm-phaserail'), null, 'the rail is not built by the other switches'); assert.equal(w.B68GmSpine._state().timer, true);
-  w.B68GmSpine.reset(); assert.equal(Tools.workshop().length, 0);
+  flags['spine.curfew'] = true; w.B68GmSpine.tick(host);
+  assert.equal(root.querySelector('#gm-phaserail'), null, 'the rail is not built by the other line'); assert.equal(w.B68GmSpine._state().timer, true);
+  w.B68GmSpine.reset();
+  /* the page's own host: on(id) is the registry, so with NOTHING stored both are built */
+  const real = { ...host, on: (id) => F.valueOf({}, id) }; const p2 = page();
+  real.root = () => p2.root; w.B68GmSpine.tick(real);
+  assert.ok(p2.root.querySelector('#gm-phaserail'), 'the page with nothing stored: the rail is drawn'); assert.equal(w.B68GmSpine._state().curfew, true, 'and the curfew is watching');
+  w.B68GmSpine.reset();
 });
-await test('the three switches are registered GM-only, off, Saturday on, in the spine stage, with bland text', () => {
-  for (const id of ['spine.rail', 'spine.curfew', 'spine.workshop']) {
+await test('spine.rail and spine.curfew are registered GM-only, in the spine stage, and ON whatever is stored (N0); spine.workshop is gone', () => {
+  for (const id of ['spine.rail', 'spine.curfew']) {
     const s = F.get(id); assert.ok(s, id); assert.equal(s.surface, 'gm'); assert.equal(s.default, false); assert.equal(s.saturday, 'on'); assert.equal(s.stage, 'spine');
-    assert.equal(F.valueOf({}, id), false); assert.equal(F.valueOf({ features: {} }, id), false);
+    assert.equal(F.valueOf({}, id), true); assert.equal(F.valueOf({ features: { [id]: false } }, id), true, id + ': a stored false is still on');
   }
-  assert.ok(!F.publicIds().some((i) => ['spine.rail', 'spine.curfew', 'spine.workshop'].includes(i)), 'none of them reaches the campaign document');
+  assert.equal(F.get('spine.workshop'), null);
+  assert.ok(!F.publicIds().some((i) => ['spine.rail', 'spine.curfew'].includes(i)), 'neither reaches the campaign document');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

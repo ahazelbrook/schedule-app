@@ -49,7 +49,7 @@
     }
     function line(id, text, title) { return '<button type="button" data-gm="b29" data-act="' + id + '" id="gm-menu-b29-' + id + '" title="' + title + '">' + text + '</button>'; }
     function menuSync() {
-      var after = host.$('#gm-menu-preflight') || host.$('#gm-menu-switchboard') || host.$('#gm-menu-live');
+      var after = host.$('#gm-menu-preflight') || host.$('#gm-menu-settings') || host.$('#gm-menu-live');
       [['batch', host.on('ai.batch'), function () { var s = rec() && rec().state(); return line('batch', s && s.recording ? 'Stop recording the night' : 'Record the night (this laptop)', 'Records the table on this laptop only; it is never uploaded live. The ON AIR lamp shows it.'); }],
        ['alarm', host.on('room.light'), function () { return line('alarm', 'Light alarm (3 s)', 'Flashes the rim lights for 3 seconds through the light relay. The work light never changes.'); }]].forEach(function (x) {
         var b = host.$('#gm-menu-b29-' + x[0]);

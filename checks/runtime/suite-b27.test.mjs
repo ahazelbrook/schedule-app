@@ -20,10 +20,10 @@ const F = require(path.join(ROOT, 'app', 'features.js'));
 const Show = require(path.join(ROOT, 'app', 'gm', 'show.js'));
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-await test('switches: three, GM-only, off by default, bland text', () => {
+await test('switches: three, GM-only, always on (N0), bland text', () => {
   for (const id of ['room.practical', 'room.phone', 'between.trouble']) {
     const s = F.get(id); assert.ok(s, id); assert.equal(s.surface, 'gm'); assert.equal(s.default, false);
-    assert.equal(F.valueOf({}, id), false); assert.ok(!F.publicIds().includes(id));
+    assert.equal(F.valueOf({}, id), true, id + ': on with nothing stored'); assert.ok(!F.publicIds().includes(id));
     assert.ok(!/\b(blades|doskvol)\b/i.test(s.label + s.doc));
   }
   assert.deepEqual(F.publicMap({}), F.publicMap({ features: { 'room.phone': true, 'between.trouble': true } }), 'nothing joins the public maps');

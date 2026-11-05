@@ -17,9 +17,9 @@ const FIX = path.join(ROOT, 'checks', 'runtime', 'fixtures', 'batch-answer.json'
 let failed = 0, passed = 0;
 async function test(name, fn) { try { await fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); } }
 
-await test('the switch is registered, GM-only, default off', () => {
+await test('the line is registered, GM-only, always on (N0)', () => {
   const s = F.get('ai.batch'); assert.ok(s); assert.equal(s.default, false); assert.equal(s.surface, 'gm');
-  assert.equal(F.valueOf({}, 'ai.batch'), false); assert.ok(!F.publicIds().includes('ai.batch'));
+  assert.equal(F.valueOf({}, 'ai.batch'), true, 'on with nothing stored'); assert.ok(!F.publicIds().includes('ai.batch'));
   assert.ok(F.valueOf({ features: { 'ai.batch': true } }, 'ai.batch'));
 });
 function rig(on = true) {

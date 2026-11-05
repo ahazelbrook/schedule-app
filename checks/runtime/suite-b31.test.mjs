@@ -29,10 +29,10 @@ const Docs = await import(pathToFileURL(path.join(ROOT, 'functions', '_lib', 'do
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 // ---------------------------------------------------------------- switches
-await test('switches: three, bland text, off by default; the phone one is public, the GM ones are not', () => {
+await test('switches: three, bland text, always on (N0); the phone one is public, the GM ones are not', () => {
   for (const [id, surface] of [['ai.canon', 'gm'], ['between.frontpage', 'gm'], ['between.absent', 'phone']]) {
     const s = F.get(id); assert.ok(s, id); assert.equal(s.surface, surface); assert.equal(s.default, false);
-    assert.equal(F.valueOf({}, id), false);
+    assert.equal(F.valueOf({}, id), true, id + ': on with nothing stored');
     assert.ok(!/\b(blades|doskvol)\b/i.test(s.label + s.doc));
     assert.equal(F.publicIds().includes(id), surface !== 'gm');
   }

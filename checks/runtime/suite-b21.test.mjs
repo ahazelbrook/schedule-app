@@ -31,16 +31,16 @@ const MARK = 'GM-ONLY-b21-marker';
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 /* ---------- the switches ---------- */
-await test('both switches are registered, default off, bland, phone-surface, and a flipped doc turns each on alone', () => {
+await test('both lines are registered, bland, phone-surface, and ON whatever is stored (N0: everything built is on)', () => {
   for (const id of ['spine.debrief', 'between.quiet']) {
     const s = Features.get(id);
     assert.ok(s, id); assert.equal(s.default, false); assert.equal(s.surface, 'phone');
     assert.ok(s.label && s.doc && !/GM-ONLY/.test(s.doc));
-    assert.equal(Features.valueOf({}, id), false);
-    assert.equal(Features.valueOf({ features: { [id]: true } }, id), true);
+    assert.equal(Features.valueOf({}, id), true, id + ': on with nothing stored');
+    assert.equal(Features.valueOf({ features: { [id]: false } }, id), true, id + ': a stored false is still on');
   }
   assert.equal(Features.get('spine.debrief').saturday, 'on'); assert.equal(Features.get('between.quiet').saturday, 'try');
-  assert.equal(Features.valueOf({ features: { 'spine.debrief': true } }, 'between.quiet'), false);
+  assert.ok(!Features.isSetting('spine.debrief') && !Features.isSetting('between.quiet'), 'neither is a setting');
   assert.ok(Features.publicIds().includes('spine.debrief') && Features.publicIds().includes('between.quiet'));
 });
 await test('routes: the two phone bundles exist alone, the GM bundle carries the GM files, and the display carries none of them', () => {

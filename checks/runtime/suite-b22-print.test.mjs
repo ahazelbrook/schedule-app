@@ -23,10 +23,10 @@ const NPCS = {
   e: { name: 'Pip Marlow', role: 'Cook', revealed: true, tags: ['Major '] }
 };
 
-await test('switches: both ship GM-only, off by default, with bland text', () => {
+await test('switches: both ship GM-only, always on (N0), with bland text', () => {
   for (const id of ['print.cards', 'print.blueprint']) {
     const s = F.get(id); assert.ok(s, id); assert.equal(s.surface, 'gm'); assert.equal(s.default, false);
-    assert.equal(F.valueOf({}, id), false);
+    assert.equal(F.valueOf({}, id), true, id + ': on with nothing stored');
   }
   assert.ok(!F.publicIds().includes('print.cards'));
 });

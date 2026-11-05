@@ -1,5 +1,5 @@
-// Unit test for the GM page's tool registry and phase filter (app/gm/tools.js) and the Workshop's shell (app/gm/workshop.js), suite ticket W0.5. No browser, no network.
-// The page-level checks (tabs hide, the layout is today's with the filter off, the Workshop sheet opens) are in checks/runtime/gm-seams.e2e.mjs.
+// Unit test for the GM page's tool registry and phase filter (app/gm/tools.js) and the right-edge sheet host (app/gm/workshop.js; the Workshop drawer itself went in N0),
+// suite ticket W0.5. No browser, no network. The page-level checks (tabs hide, the layout is today's with the filter off, the Settings sheet opens) are in checks/runtime/gm-seams.e2e.mjs.
 //   node checks/runtime/gm-tools.test.mjs
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -95,11 +95,10 @@ await test('extras are registered tools with a mount that are not behind the Wor
   assert.equal(T.visible('shop'), false, 'a workshop tool is not on the tab bar, filter or no filter');
   assert.ok(!T.tabs().some((t) => t.id === 'shop'));
 });
-await test('the Workshop\'s Menu line shows only when a tool is behind it (so the Menu is today\'s while the Workshop is empty)', () => {
-  assert.equal(WS.menuLine(), ''); assert.deepEqual(WS.list(), []);
-  T.register({ id: 'shop', label: 'Shop', phases: 'all', workshop: true });
-  assert.match(WS.menuLine(), /data-gm="workshop"/); assert.deepEqual(WS.list(), [{ id: 'shop', label: 'Shop' }]);
-  T.unregister('shop'); assert.equal(WS.menuLine(), '');
+await test('the Workshop drawer is gone (N0): workshop.js is only the sheet host the Menu\'s tools open in, with no Menu line or tool list of its own', () => {
+  assert.equal(typeof WS.sheet, 'function');
+  for (const k of ['menuLine', 'list', 'open', 'toggle', 'close', 'render']) assert.equal(WS[k], undefined, k + ' is gone');
+  assert.equal(WS.sheet(null, 'x', 'X'), null, 'no document, no sheet');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

@@ -34,16 +34,16 @@ const MARK = 'GM-ONLY-b30-marker';
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 /* ---------- the switches ---------- */
-await test('face.castphoto and between.lair are registered, default off, bland, display-surface; a flipped doc turns each on alone', () => {
+await test('face.castphoto and between.lair are registered, bland, display-surface; ON whatever is stored (N0: everything built is on)', () => {
   for (const id of ['face.castphoto', 'between.lair']) {
     const s = Features.get(id);
     assert.ok(s, id); assert.equal(s.default, false); assert.equal(s.surface, 'display');
     assert.ok(s.label && s.doc && !/GM-ONLY/.test(s.doc) && s.doc.includes('Off:'), id + ' has bland text that says what off does');
-    assert.equal(Features.valueOf({}, id), false);
-    assert.equal(Features.valueOf({ features: { [id]: true } }, id), true);
+    assert.equal(Features.valueOf({}, id), true, id + ': on with nothing stored');
+    assert.equal(Features.valueOf({ features: { [id]: false } }, id), true, id + ': a stored false is still on');
     assert.ok(Features.publicIds().includes(id));
   }
-  assert.equal(Features.valueOf({ features: { 'face.castphoto': true } }, 'between.lair'), false);
+  assert.ok(!Features.isSetting('face.castphoto') && !Features.isSetting('between.lair'), 'neither is a setting');
 });
 await test('routes: the display and look book carry the two renderers and their css, the lair bundle is the kit and its drawer, the GM bundle has the panels, no player bundle has any of it', () => {
   const B = Routes.BUNDLES;
@@ -351,19 +351,17 @@ await test('look book: both kinds are drawn from invented fixtures with no GM-on
 });
 
 /* ---------- the Menu, with the switches off ---------- */
-await test('the Menu lines exist only while their switch is on; with it off sync touches nothing', () => {
-  const lines = []; let removed = 0;
-  const b = { id: '', appendChild() {}, remove() {} };
-  const list = { setAttribute() {}, appendChild(x) { lines.push(x.id); } };
-  const rootEl = { querySelector: (sel) => (sel === '.gm-menu-list' ? list : null) };
+await test('the Menu lines are drawn whatever the state document holds (N0: everything built is on), and only once', () => {
+  const lines = [], added = {};
+  const list = { setAttribute() {}, appendChild(x) { lines.push(x.id); added['#' + x.id] = x; } };
+  const rootEl = { querySelector: (sel) => (sel === '.gm-menu-list' ? list : added[sel] || null) };
   const doc = (v) => ({ features: { 'face.castphoto': v, 'between.lair': v } });
   const dom = { createElement: () => { const e = { id: '', children: [], addEventListener() {}, set textContent(v) {}, setAttribute() {}, appendChild() {}, type: '', title: '' }; return e; } };
   const win = { document: dom, B68Features: Features };
   const C = vm.runInNewContext(fs.readFileSync(path.join(APP, 'gm', 'castphoto.js'), 'utf8') + '\n;B68GmCastPhoto', Object.assign(win, { self: win }));
   const L = vm.runInNewContext(fs.readFileSync(path.join(APP, 'gm', 'lair.js'), 'utf8') + '\n;B68GmLair', Object.assign(win, { self: win }));
-  assert.equal(C.sync(rootEl, doc(false)), false); assert.equal(L.sync(rootEl, doc(false)), false); assert.deepEqual(lines, []);
-  assert.equal(C.sync(rootEl, doc(true)), true); assert.equal(L.sync(rootEl, doc(true)), true); assert.deepEqual(lines, ['gm-menu-castphoto', 'gm-menu-lair']);
-  assert.equal(C.sync(rootEl, {}), false, 'a doc with no features is off');
+  assert.equal(C.sync(rootEl, doc(false)), true); assert.equal(L.sync(rootEl, doc(false)), true); assert.deepEqual(lines, ['gm-menu-castphoto', 'gm-menu-lair'], 'a stored false still draws them');
+  assert.equal(C.sync(rootEl, doc(true)), true); assert.equal(L.sync(rootEl, {}), true); assert.deepEqual(lines, ['gm-menu-castphoto', 'gm-menu-lair'], 'a second sync adds nothing');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

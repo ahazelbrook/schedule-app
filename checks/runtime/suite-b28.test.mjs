@@ -28,13 +28,13 @@ const MARK = 'GM-ONLY-b28-marker';
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 /* ---------- the switches ---------- */
-await test('between.board is registered, default off, bland, phone-surface; a flipped doc turns it on alone', () => {
+await test('between.board is registered, bland, phone-surface; ON whatever is stored (N0: everything built is on)', () => {
   const s = Features.get('between.board');
   assert.ok(s); assert.equal(s.default, false); assert.equal(s.surface, 'phone'); assert.equal(s.stage, 'between');
   assert.ok(s.label && s.doc && !/GM-ONLY/.test(s.doc));
-  assert.equal(Features.valueOf({}, 'between.board'), false);
-  assert.equal(Features.valueOf({ features: { 'between.board': true } }, 'between.board'), true);
-  assert.equal(Features.valueOf({ features: { 'between.board': true } }, 'between.quiet'), false);
+  assert.equal(Features.valueOf({}, 'between.board'), true, 'on with nothing stored');
+  assert.equal(Features.valueOf({ features: { 'between.board': false } }, 'between.board'), true, 'a stored false is still on');
+  assert.ok(!Features.isSetting('between.board'));
   assert.ok(Features.publicIds().includes('between.board'));
 });
 await test('routes: the board bundle is alone; the GM bundle has gm/board.js; the display and look book have the renderer and its css; no other bundle has any of them', () => {
@@ -235,12 +235,12 @@ await test('store: a player\'s opportunities are theirs alone (the other player 
 
 /* ---------- 5.5 ---------- */
 const PC = require(path.join(APP, 'sheet', 'claims.js'));
-await test('between.claims is registered, default off, bland, phone-surface; a flipped doc turns it on alone', () => {
+await test('between.claims is registered, bland, phone-surface; ON whatever is stored (N0: everything built is on)', () => {
   const s = Features.get('between.claims');
   assert.ok(s); assert.equal(s.default, false); assert.equal(s.surface, 'phone'); assert.equal(s.stage, 'between');
   assert.ok(s.label && s.doc && !/GM-ONLY/.test(s.doc));
-  assert.equal(Features.valueOf({}, 'between.claims'), false); assert.equal(Features.valueOf({ features: { 'between.claims': true } }, 'between.claims'), true);
-  assert.equal(Features.valueOf({ features: { 'between.board': true } }, 'between.claims'), false);
+  assert.equal(Features.valueOf({}, 'between.claims'), true, 'on with nothing stored'); assert.equal(Features.valueOf({ features: { 'between.claims': false } }, 'between.claims'), true, 'a stored false is still on');
+  assert.ok(!Features.isSetting('between.claims'));
 });
 await test('routes: the claims bundle is alone and the GM bundle carries the file (the crew sheet renders on the GM page); no other bundle has it', () => {
   assert.equal(JSON.stringify(Routes.BUNDLES.claims), '["sheet/claims.js"]'); assert.ok(Routes.BUNDLES.gm.includes('sheet/claims.js'));
@@ -274,12 +274,12 @@ function sheetRig(opts = {}) {
   return { render: (crew) => panel.render(crew, ctx), win };
 }
 const CREW = { playbook: 'shadows', claims: { informants: true, turf: true }, factions: [{ name: 'Kestrel Club', status: -3 }, { name: 'Tidewater Watch', status: 1 }, { name: 'Pelican Rooms', status: 0 }] };
-await test('crew sheet, switch off: the HTML is byte for byte the original, whether the module is absent, loaded and not started, or started with the flag false', () => {
+await test('crew sheet, flag off (a phone told false, which the served map no longer does): the HTML is byte for byte the original, whether the module is absent, loaded and not started, or started with the flag false', () => {
   const base = sheetRig().render(CREW);
   assert.ok(base.length > 5000 && !/b68-ct|b68-fc/.test(base));
   assert.equal(sheetRig({ claims: true }).render(CREW), base, 'loaded, not started');
   assert.equal(sheetRig({ claims: true, start: true, flags: { 'between.claims': false } }).render(CREW), base, 'started, flag off');
-  assert.equal(sheetRig({ claims: true, gm: true, gmDoc: { features: {} } }).render(CREW), sheetRig({ gm: true }).render(CREW), 'GM page, switch off');
+  assert.match(sheetRig({ claims: true, gm: true, gmDoc: { features: {} } }).render(CREW), /b68-ct/, 'the GM page with nothing stored: the claims are on (N0: everything built is on)');
 });
 await test('crew sheet, switch on (a phone): the claim track and the faction cards appear, the WAR stamp only at -3, and the rungs are the status chips of the sheet itself', () => {
   const h = sheetRig({ claims: true, start: true, flags: { 'between.claims': true } }).render(CREW);
@@ -290,11 +290,11 @@ await test('crew sheet, switch on (a phone): the claim track and the faction car
   assert.match(h, /data-act="crew.factionrm"/); assert.match(h, /data-act="crew.factionadd"/);
   assert.match(h, /b68-ct-mark turf lit/, 'a held turf cell lights its threshold');
 });
-await test('crew sheet, GM page: the switch is read from the state document, not the phone flags', () => {
+await test('crew sheet, GM page: read through the registry on the state document, so it is on whatever is stored (N0), and needs no phone flag', () => {
   const on = sheetRig({ claims: true, gm: true, gmDoc: { features: { 'between.claims': true } } }).render(CREW);
   assert.match(on, /b68-ct/); assert.match(on, /b68-fc-war/);
-  const wrong = sheetRig({ claims: true, gm: true, gmDoc: { features: { 'between.board': true } } }).render(CREW);
-  assert.ok(!/b68-ct|b68-fc/.test(wrong), 'another switch does not turn it on');
+  const stale = sheetRig({ claims: true, gm: true, gmDoc: { features: { 'between.claims': false } } }).render(CREW);
+  assert.match(stale, /b68-ct/, 'a stored false (the old All off) is still on');
 });
 await test('crew sheet: Dealers and Utopians get the track too, with no invented marks', () => {
   const rig = sheetRig({ claims: true, start: true, flags: { 'between.claims': true } });

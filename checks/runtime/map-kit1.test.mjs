@@ -260,19 +260,19 @@ test('the registry text is GM-bland: no proper name, no GM-only marker (app/feat
   assert.deepEqual(caps, [], 'capitalised words other than sentence starts');
 });
 
-test('the GM page reads map.kit1 through the registry (B68Features.valueOf on its state document), and All off turns kit 1.0 off', () => {
+test('the GM page reads map.kit1 through the registry (B68Features.valueOf on its state document): always on since N0, whatever is stored', () => {
   const key = require.resolve(path.join(ROOT, 'app', 'gm-page.js'));
   const had = Object.getOwnPropertyDescriptor(globalThis, 'self');
   globalThis.self = { B68Features: FEAT };
   delete require.cache[key];
   try {
     const Q = require(key)._pure;
-    assert.equal(Q.kit1Of({}), false, 'absent is off');
-    const on = Q.applyPatch({}, FEAT.patchFor({}, 'map.kit1', true));
-    assert.equal(Q.kit1Of(on), true, 'on through the registry\'s own patch');
-    assert.equal(Q.kit1Of({ features: { 'map.kit1': 'yes' } }), false, 'only exactly true is on');
-    assert.equal(Q.kit1Of(Q.applyPatch(on, FEAT.patchAllOff(on))), false, 'All off');
-    assert.equal(Q.kit1On(), false, 'no page open: off');
+    assert.equal(Q.kit1Of({}), true, 'nothing stored: on');
+    assert.equal(Q.kit1Of({ features: { 'map.kit1': false } }), true, 'a stored false (the old All off) is still on');
+    assert.equal(Q.kit1Of({ features: { 'map.kit1': 'yes' } }), true);
+    assert.throws(() => FEAT.patchFor({}, 'map.kit1', false), /always on/, 'and nothing can write it off');
+    assert.equal(Q.kit1Of(Q.applyPatch({ features: { 'map.kit1': false } }, FEAT.patchAllOff({}))), true, 'the settings reset leaves it on');
+    assert.equal(Q.kit1On(), true, 'no page open: still on');
     // what mapOpts and the score scene do while it is on
     Q.kit1On = () => true;
     assert.equal(Q.mapOpts({ view: 'section' }, 'player', ['public'], Q.IPAD_MAP).kit1, true);

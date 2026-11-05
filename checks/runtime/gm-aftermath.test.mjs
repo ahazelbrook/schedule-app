@@ -288,11 +288,12 @@ await test('a page reload mid-show resumes at the step the night document holds'
   const none = A.create(rig().host); assert.equal(none.resume(), false);
 });
 
-await test('the switch is a registered, default-off phone switch with bland text', () => {
+await test('the line is a registered phone line with bland text, ON whatever is stored (N0: everything built is on)', () => {
   const s = Features.get('spine.aftermath');
   assert.ok(s); assert.equal(s.default, false); assert.equal(s.surface, 'phone'); assert.equal(s.stage, 'spine');
   assert.ok(!/Kestrel|Pelican|Tidewater|Mabel|Nell/.test(s.label + s.doc), 'bland text: no names');
-  assert.equal(Features.valueOf({}, 'spine.aftermath'), false);
+  assert.equal(Features.valueOf({}, 'spine.aftermath'), true, 'on with nothing stored');
+  assert.equal(Features.valueOf({ features: { 'spine.aftermath': false } }, 'spine.aftermath'), true, 'a stored false is still on');
 });
 
 /* ---------- the display ---------- */

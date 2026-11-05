@@ -28,13 +28,13 @@ const S = sites(), PLN = S.pelican, PK1 = S.pelicanK1;
 const MARK = 'GM-ONLY-b24-marker';
 
 /* ====================================================================== 2.2 ====================================================================== */
-await test('map.knowledge is registered, default off, bland, a GM switch on the map stage; a flipped doc turns it on alone', () => {
+await test('map.knowledge is registered, bland, a GM line on the map stage; ON whatever is stored (N0: everything built is on)', () => {
   const s = Features.get('map.knowledge');
   assert.ok(s); assert.equal(s.default, false); assert.equal(s.surface, 'gm'); assert.equal(s.stage, 'map');
   assert.ok(s.label && s.doc && !/GM-ONLY/.test(s.doc));
-  assert.equal(Features.valueOf({}, 'map.knowledge'), false);
-  assert.equal(Features.valueOf({ features: { 'map.knowledge': true } }, 'map.knowledge'), true);
-  assert.equal(Features.valueOf({ features: { 'map.knowledge': true } }, 'map.kit1'), false);
+  assert.equal(Features.valueOf({}, 'map.knowledge'), true, 'on with nothing stored');
+  assert.equal(Features.valueOf({ features: { 'map.knowledge': false } }, 'map.knowledge'), true, 'a stored false is still on');
+  assert.ok(!Features.isSetting('map.knowledge'));
 });
 
 const ROOMS = [{ name: 'Showroom', band: 'public' }, { name: 'Cocktail lounge', band: 'public' }, { name: 'Security control room', band: 'working' },
@@ -297,13 +297,13 @@ const GShow = require(path.join(APP, 'gm', 'show.js'));
 const GTC = require(path.join(APP, 'gm', 'title-card.js'));
 const TC = require(path.join(APP, 'display', 'title-card.js'));
 
-await test('map.title is registered, default off, bland, a GM switch on the map stage, Saturday off', () => {
+await test('map.title is registered, bland, a GM line on the map stage (its old Saturday wish was off); ON whatever is stored (N0)', () => {
   const s = Features.get('map.title');
   assert.ok(s); assert.equal(s.default, false); assert.equal(s.surface, 'gm'); assert.equal(s.stage, 'map'); assert.equal(s.saturday, 'off');
   assert.ok(s.label && s.doc && !/GM-ONLY/.test(s.doc));
-  assert.equal(Features.valueOf({}, 'map.title'), false);
-  assert.equal(Features.valueOf({ features: { 'map.title': true } }, 'map.title'), true);
-  assert.equal(Features.valueOf({ features: { 'map.title': true } }, 'map.knowledge'), false);
+  assert.equal(Features.valueOf({}, 'map.title'), true, 'on with nothing stored');
+  assert.equal(Features.valueOf({ features: { 'map.title': false } }, 'map.title'), true, 'a stored false is still on');
+  assert.ok(!Features.isSetting('map.title'));
 });
 
 const OK = { text: 'The Pelican Job', sub: 'Nowhere Ward', floors: ['0,0,100,72', '0,0,100,72', '24,16,52,40'] };

@@ -212,8 +212,8 @@
     return Object.assign(o, size || { width: 1400 });
   }
   P.mapOpts = mapOpts;
-  /* 2.1 · Map kit 1.0, the grand map: the switchboard's map.kit1 (app/features.js, GM only, default off), read live from this page's
-     state document. kit1Of(doc) is the read itself; P.kit1On() is what mapOpts and the score scene ask (a test can stand it in). */
+  /* 2.1 · Map kit 1.0, the grand map: map.kit1 (app/features.js, GM only; always on since N0), read through the registry.
+     kit1Of(doc) is the read itself; P.kit1On() is what mapOpts and the score scene ask (a test can stand it in). */
   var KIT1_SWITCH = P.KIT1_SWITCH = 'map.kit1';
   function kit1Of(doc) { var F = W.B68Features; try { return !!(F && typeof F.valueOf === 'function' && F.valueOf(doc, KIT1_SWITCH) === true); } catch (e) { return false; } }
   P.kit1Of = kit1Of;
@@ -2282,7 +2282,7 @@
       '<a href="#display" title="The players’ screen: open this on the iPad">Open the display page (for the iPad)</a>' +
       '<button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="clearcap">Clear tonight’s capture</button><button type="button" data-gm="update">Update pack</button>' +
       '<button type="button" data-gm="capbar" id="gm-menu-capbar" title="The bottom bar that files a roll, a name or a moment"></button>' +
-      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' + swMenuLine() + hsMenuLine() + wsMenuLine() + pfMenuLine() +
+      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' + setMenuLine() + hsMenuLine() + pfMenuLine() +
       '<a href="#t">The table</a><a href="#rules">Rules</a><a href="#cast">The cast</a><a href="#">Home</a>' +
       '<button type="button" class="bad" data-gm="forget">Forget GM data on this device</button></span></span>' +
       '<div class="gm-signed" id="gm-signed" role="alert" hidden>' + esc(SIGNED_OUT_MSG) + '</div></div>';
@@ -2291,16 +2291,19 @@
     var m = $q('.gm-menu-list'), b = $q('[data-gm="menu"]'); if (!m) return;
     if (on) { renderLiveItem(); syncCapBar(); if (W.B68GmAftermath && S) W.B68GmAftermath.sync($q('#gm-root'), S.doc); if (W.B68GmDebrief && S) W.B68GmDebrief.sync($q('#gm-root'), S.doc); if (W.B68GmBoard && S) W.B68GmBoard.sync($q('#gm-root'), S.doc); if (W.B68GmCastPhoto && S) W.B68GmCastPhoto.sync($q('#gm-root'), S.doc); if (W.B68GmLair && S) W.B68GmLair.sync($q('#gm-root'), S.doc); m.removeAttribute('hidden'); } else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
   }
-  /* W0.2: the switchboard (gm/switchboard.js): one per page session, made on first use. Its host is this page's own patch, campaign and api. */
-  function swInst() {
-    if (!S || !W.B68GmSwitchboard || !W.B68Features) return null;
-    if (!S.sw) S.sw = W.B68GmSwitchboard.create({
+  /* N0: the Settings (gm/settings.js), the four choices left after the Switchboard went: one per page session, made on first use. Its host is this page's own
+     patch, campaign and api (the Switchboard's), its phone-cards write and its mirror toggle, so a change takes the same paths and redraws the same way. */
+  function setInst() {
+    if (!S || !W.B68GmSettings || !W.B68Features) return null;
+    if (!S.st) S.st = W.B68GmSettings.create({
       doc: function () { return S.doc; }, patch: patch, campaign: function () { return camp; }, root: function () { return $q('#gm-root'); }, toast: toast,
       publish: function (map) { var a = (S && S.api) || keptApi; return a && typeof a.publishFeatures === 'function' ? a.publishFeatures(map) : Promise.reject(new Error('The table is not available here.')); },
-      redraw: function () { if (S && S.status === 'ready') { renderBar(); renderRun(); b09Paint(); if (S.map && S.locRoll && S.map.kit1 !== P.kit1On() && W.B68Map && W.B68Map.render) drawMap(true); } }     /* 2.1: map.kit1 flipped: the map on screen follows */
+      redraw: function () { if (S && S.status === 'ready') { renderBar(); renderRun(); b09Paint(); } },
+      setPhoneCards: function (on) { return setPhoneCards(on); }, mirrorOn: mirrorOn, toggleMirror: toggleMirror
     });
-    return S.sw;
+    return S.st;
   }
+  function setMenuLine() { return W.B68GmSettings && W.B68Features ? '<button type="button" data-gm="settings" id="gm-menu-settings" title="Scenes, music, the phones and the mirror: the choices for the night. Everything else is always on">Settings</button>' : ''; }
   /* 1.2 (spine.start): the hard start's sheet (gm/hardstart.js); its layers go through the show contract's own writer */
   function hsOn() { return !!(S && W.B68GmHardStart && W.B68Features && W.B68Features.valueOf(S.doc, 'spine.start')); }
   function hsInst() {
@@ -2322,7 +2325,7 @@
     return S.pr;
   }
   function prMenuSync() {
-    var on = prOn(), b = $q('#gm-menu-print'), after = $q('#gm-menu-switchboard') || $q('#gm-menu-live');
+    var on = prOn(), b = $q('#gm-menu-print'), after = $q('#gm-menu-settings') || $q('#gm-menu-live');
     if (on && !b && after) after.insertAdjacentHTML('afterend', '<button type="button" data-gm="print" id="gm-menu-print" title="Print calling cards, tent standees and the blueprint">Print</button>'); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
   }
   /* 2.7 Intel corkboard (gm/corkboard.js, switch map.corkboard): one Menu line while the switch is on; the board is drawn through playerDisplay, the one player door */
@@ -2338,7 +2341,7 @@
     return S.cb;
   }
   function cbMenuSync() {
-    var on = cbOn(), b = $q('#gm-menu-corkboard'), after = $q('#gm-menu-print') || $q('#gm-menu-switchboard') || $q('#gm-menu-live');
+    var on = cbOn(), b = $q('#gm-menu-corkboard'), after = $q('#gm-menu-print') || $q('#gm-menu-settings') || $q('#gm-menu-live');
     if (on && !b && after) after.insertAdjacentHTML('afterend', '<button type="button" data-gm="corkboard" id="gm-menu-corkboard" title="The Planning board: the site on cork, intel Polaroids pinned to their rooms, mugshots on their posts">Corkboard</button>'); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
   }
   /* 2.8 Montage (gm/montage.js, switch map.montage): one Menu line while the switch is on; the panels ride the data.montage layer */
@@ -2358,7 +2361,7 @@
     return S.mt;
   }
   function mtMenuSync() {
-    var on = mtOn(), b = $q('#gm-menu-montage'), after = $q('#gm-menu-print') || $q('#gm-menu-switchboard') || $q('#gm-menu-live');
+    var on = mtOn(), b = $q('#gm-menu-montage'), after = $q('#gm-menu-print') || $q('#gm-menu-settings') || $q('#gm-menu-live');
     if (on && !b && after) after.insertAdjacentHTML('afterend', '<button type="button" data-gm="montage" id="gm-menu-montage" title="Split the iPad into one panel per character">Montage</button>'); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
   }
   /* 4.5 / 4.7 / 5.3 the practical speaker, the ringing phone and the Trouble desk (gm/room-desk.js; switches room.practical, room.phone, between.trouble): one Menu line each while its switch is on */
@@ -2368,14 +2371,13 @@
       save: function (id, item) { var it = {}; it[id] = item; patch({ trouble: { items: it } }); }, show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); } });
     return S.rd;
   }
-  function rdMenuSync() { var r = rdInst(); if (r) r.menuSync({ $q: $q, after: function () { return $q('#gm-menu-print') || $q('#gm-menu-switchboard') || $q('#gm-menu-live'); } }); }
-  function swMenuLine() { return W.B68GmSwitchboard && W.B68Features ? '<button type="button" data-gm="switchboard" id="gm-menu-switchboard" title="Every new feature has a switch here, off until you turn it on. All off puts the app back as it was; no reload">Switchboard</button>' : ''; }
+  function rdMenuSync() { var r = rdInst(); if (r) r.menuSync({ $q: $q, after: function () { return $q('#gm-menu-print') || $q('#gm-menu-settings') || $q('#gm-menu-live'); } }); }
   /* 4.2 Preflight (gm/preflight.js, switch room.preflight): the Menu line exists only while the switch is on */
   function pfOn() { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, 'room.preflight') && W.B68GmPreflight); }
   function pfMenuLine() { return pfOn() ? '<button type="button" data-gm="preflight" id="gm-menu-preflight" title="Is the room ready: green or red for the iPad sound, files, the transcriber, the sign-in and the pack. Read-only">Preflight</button>' : ''; }
   /* the Menu is drawn once, so a flip of the switch adds or takes away the line in place */
   function pfMenuSync() {
-    var on = pfOn(), b = $q('#gm-menu-preflight'), after = $q('#gm-menu-switchboard') || $q('#gm-menu-live');
+    var on = pfOn(), b = $q('#gm-menu-preflight'), after = $q('#gm-menu-settings') || $q('#gm-menu-live');
     if (on && !b && after) after.insertAdjacentHTML('afterend', pfMenuLine()); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
   }
   function pfInst() {
@@ -2385,7 +2387,6 @@
       startMs: function () { var N = W.B68GmNight, n = N && S ? N.clean(S.doc.night) : null; return n && n.startAt ? N.clockMs(n.startAt, Date.now()) : null; } });
     return S.pf;
   }
-  function wsMenuLine() { return W.B68GmWorkshop ? W.B68GmWorkshop.menuLine() : ''; }
   /* 4.1 The cue stack (gm/cue-stack.js, switch room.cues): STANDBY / GO / Bypass in a bar under the rail, Space and Esc, and "Blade, go". Every effect goes through the page's own writers
      (patchAmbient and its gate, the show contract, the night, the cast), so a cue can show nothing that a button could not. */
   function csNote() { var pk = part('prep'), id = pk && W.B68GmPrep ? prepNoteId(pk) : null; return id && Array.isArray(pk.notes) ? pk.notes.filter(function (n) { return isObj(n) && n.id === id; })[0] || null : null; }
@@ -2455,7 +2456,7 @@
   /* the bar's live parts: the session, what is on the iPad, listening */
   function renderBar() {
     if (!S || !S.root) return;
-    renderMirror(); spineTick(); pfMenuSync(); prMenuSync(); cbMenuSync(); rdMenuSync(); mtMenuSync(); b17Tick(); csTick(); if (b29()) b29().menuSync();
+    renderMirror(); spineTick(); pfMenuSync(); prMenuSync(); cbMenuSync(); rdMenuSync(); mtMenuSync(); b17Tick(); csTick(); if (b29()) b29().menuSync(); if (S.st) S.st.sync();
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
@@ -4517,10 +4518,10 @@
      The deny list is the map's hidden names (tokenHidden: hidden rooms, threats, the watcher), the hidden NPCs and clocks
      (hiddenSecretNames) and play.secret. The people's and costumes' labels are NOT in it: a card names its own costume. */
   /* Phone cards (ticket P): the GM state's phoneCards, OFF unless an explicit true (the inverse of mirror). While off the published mission carries no cards. */
-  function phoneCardsOn() { var sb = swInst(); return sb ? sb.on('phoneCards') : !!(S && S.doc && S.doc.phoneCards === true); }     /* W0.2: the switch lives in the switchboard (features.js); the old key is its fallback */
+  function phoneCardsOn() { var st = setInst(); return st ? st.on('phoneCards') : !!(S && S.doc && S.doc.phoneCards === true); }     /* N0: a setting (features.js, Menu > Settings); the old key is its fallback */
   function setPhoneCards(on) {
-    var sb = swInst();
-    if (!(sb ? sb.set('phoneCards', on === true) : patch({ phoneCards: on === true }, { force: true }))) return false;
+    var st = setInst();
+    if (!(st ? st.set('phoneCards', on === true) : patch({ phoneCards: on === true }, { force: true }))) return false;
     if (S.saver && S.saver.flush) S.saver.flush();
     if (S.mission) S.mission.publishNow({ force: true });       /* the stored cards go (or come back) at once; the server replaces the mission whole */
     toast(on ? 'Phone cards are on: each phone gets its Mission card.' : 'Phone cards are off: phones are character sheets only.');
@@ -4570,13 +4571,12 @@
     Promise.resolve().then(function () { return spec.run(); }).then(null, function (e) { toast('Could not do that: ' + errText(e), true); });
   }
   /* W0.4 the night contract (gm/night.js): the controller for this page. It writes nothing until a phase is entered or a stamp or cue is logged; the iPad band (band.phase) is wired by the show contract, from night.band() */
-  /* B08 the spine (gm/spine.js): the phase rail, the curfew and the first Workshop cuts, each behind its own switch (features.js spine.*); with all three off this does nothing */
+  /* B08 the spine (gm/spine.js): the phase rail and the curfew (features.js spine.rail, spine.curfew: always on since N0) */
   function spineTick() {
     var Sp = W.B68GmSpine, F = W.B68Features; if (!Sp || !F || !S || S.status !== 'ready' || !$q('#gm-root')) return;
     { var pfi = pfInst(); if (pfi) pfi.tick(); }
     Sp.tick({ root: function () { return $q('#gm-root'); }, night: function () { return S ? S.night : null; }, now: function () { return Date.now(); }, toast: toast,
-      on: function (id) { return !!S && F.valueOf(S.doc, id); }, layer: function (p, v) { var c = shows(); return c ? c.layer(p, v) : Promise.resolve(null); },
-      phoneCards: phoneCardsOn, setPhoneCards: setPhoneCards, mirrorOn: mirrorOn, toggleMirror: toggleMirror });
+      on: function (id) { return !!S && F.valueOf(S.doc, id); }, layer: function (p, v) { var c = shows(); return c ? c.layer(p, v) : Promise.resolve(null); } });
   }
   function mountNight() {
     var N = W.B68GmNight, me = S; if (W.B68GmSpine) W.B68GmSpine.reset(); if (!N) { me.night = null; return; }
@@ -6592,14 +6592,13 @@
       case 'menu': { var ml2 = $q('.gm-menu-list'); menuOpen(!!(ml2 && ml2.hasAttribute('hidden'))); break; }
       case 'focus': toggleFocus(); break;
       case 'hardstart': menuOpen(false); { var hsi = hsInst(); if (hsi) hsi.toggle(); } break;      /* 1.2 */
-      case 'switchboard': menuOpen(false); { var sbi = swInst(); if (sbi) sbi.toggle(); } break;      /* W0.2 */
+      case 'settings': menuOpen(false); { var sti = setInst(); if (sti) sti.toggle(); } break;      /* N0 */
       case 'montage': menuOpen(false); { var mti = mtInst(); if (mti) mti.toggle(); } break;      /* 2.8 */
       case 'practical': case 'phone': case 'trouble': case 'canon': case 'frontpage': case 'absent': menuOpen(false); { var rdi = rdInst(); if (rdi) rdi.toggle(a); } break;      /* 4.5, 4.7, 5.3 */
       case 'print': menuOpen(false); { var pri = prInst(); if (pri) pri.toggle(); } break;      /* 3.6, 2.11 */
       case 'corkboard': menuOpen(false); { var cbi = cbInst(); if (cbi) cbi.toggle(); } break;      /* 2.7 */
       case 'b29': menuOpen(false); if (b29()) b29().click(b.getAttribute('data-act')); break;      /* B29 */
       case 'preflight': menuOpen(false); { var pfi = pfInst(); if (pfi) pfi.toggle(); } break;      /* 4.2 */
-      case 'workshop': menuOpen(false); if (W.B68GmWorkshop) W.B68GmWorkshop.toggle($q('#gm-root'), { toast: toast }); break;      /* W0.5 */
       case 'drawer': drawerToggle(); break;
       case 'dtab': drawerTab(b.getAttribute('data-tab')); break;
       case 'dpc': drawerPc(b.getAttribute('data-id')); break;
@@ -6839,7 +6838,7 @@
       renderRail(); renderBar(); scMaybeRedraw(); runStale();
       apClocksFeed(); apSubjects();
       if (S.mission) S.mission.noteClocks();      /* the alarm clock's fill or visibility is on the players' band */
-      { var swc = swInst(); if (swc) swc.heal(); }      /* W0.2: the campaign document's switch copy follows the GM state's, on every arrival */
+      { var stc = setInst(); if (stc) stc.heal(); }      /* W0.2 / N0: the campaign document's copy of the settings follows the GM state's, on every arrival */
       /* the stage changed: the NPC tab's buttons follow */
       if ((isObj(camp) && isObj(camp.scene) ? JSON.stringify(camp.scene.npcs || {}) : '') !== before) {
         [].forEach.call(S.root.querySelectorAll('[data-gm="npcstage"]'), function (b) { var on = staged(b.getAttribute('data-id')); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Off stage' : 'Put on stage'; b.classList.toggle('primary', !on); });
