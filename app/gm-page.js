@@ -3197,7 +3197,7 @@
     }).join('');
     return '<section class="gm-glance gm-secret" data-sec="glance"><div class="gm-glance-h"><h3 class="gm-locname">' + esc(g.title) + '</h3></div>' +
       '<p class="gm-glance-place">' + esc(g.place) + '</p>' +
-      '<div class="gm-say"><span class="gm-lab">Say' + (S.locSent === rollKey(roll) ? ' ' + SEEN : '') + '</span><p>“' + esc(g.say) + '”</p><button type="button" class="btn sm" data-gm="pushtext" title="The description goes up on the iPad as words; the map stays here">Show the description on iPad</button></div>' +
+      '<div class="gm-say"><span class="gm-lab">Say' + (S.locSent === rollKey(roll) ? ' ' + SEEN : '') + '</span><p>“' + esc(g.say) + '”</p><button type="button" class="btn sm" data-gm="pushtext" title="The description goes up on the iPad as words; the map stays here">Show on iPad</button></div>' +
       /* the plan names the target room and its locks: GM only. It sits outside the Say box on purpose (that box is what the players
          see once the street description is sent), and no push (pushText, the score scene, Show on iPad) ever reads it */
       (g.plan ? '<p class="gm-plan"><span class="gm-lab">Plan</span> ' + esc(g.plan) + '</p>' : '') +
