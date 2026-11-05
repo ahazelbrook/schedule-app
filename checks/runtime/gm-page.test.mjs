@@ -15,6 +15,7 @@ const require = createRequire(import.meta.url);
 const P = require(path.join(ROOT, 'app', 'gm-page.js'))._pure;
 const C = require(path.join(ROOT, 'app', 'gm', 'console.js'));
 const L = require(path.join(ROOT, 'app', 'gm', 'location.js'));
+const RL = require(path.join(ROOT, 'app', 'gm', 'roll.js'));      // N4: the Roll draws the console column
 const M = require(path.join(ROOT, 'app', 'maps', 'map-kit.js'));
 const { checkSvg } = await import(pathToFileURL(path.join(ROOT, 'functions', '_lib', 'gm.js')).href);
 
@@ -356,7 +357,7 @@ function fakeBrowser(over) {
   const ls = new Map([['b68.gm.capbar', '1']]), toasts = [];     // the capture bar is off by default; its keys work only while it shows
   const W = { document: doc, localStorage: { getItem: (k) => (ls.has(k) ? ls.get(k) : null), setItem: (k, v) => { ls.set(k, String(v)); }, removeItem: (k) => { ls.delete(k); } },
     matchMedia: () => ({ matches: false }), addEventListener() {}, confirm: () => true, open() {}, B68: { toast: (m, bad) => toasts.push([m, !!bad]) },
-    B68GmConsole: C, B68GmLocation: L, B68GmScenes: SC, B68GmScore: SCM, B68GmDowntime: DT, B68DowntimeTables: DTT, B68GmChase: CH, B68Content: CT, setTimeout, clearTimeout, console };
+    B68GmConsole: C, B68GmRoll: RL, B68GmLocation: L, B68GmScenes: SC, B68GmScore: SCM, B68GmDowntime: DT, B68DowntimeTables: DTT, B68GmChase: CH, B68Content: CT, setTimeout, clearTimeout, console };
   W.self = W; Object.assign(W, over || {});
   return { W, doc, ls, toasts };
 }
@@ -405,15 +406,27 @@ await test('6a. the console is the four Situations: a big Position switch, the s
   assert.deepEqual(pos.map((b) => b.getAttribute('aria-checked')), ['false', 'true', 'false'], 'risky by default');
   assert.equal(h.qa('#gm-controls [data-ctl="result"]').length, 0, 'no Result in Situations');
   assert.equal(h.qa('#gm-controls [data-ctl="pos"]').length, 0, 'Position is the big switch, not a select');
-  assert.ok(h.qa('#gm-controls [data-ctl]').length >= 4, 'scene, district, PC, NPC, threat stay');
+  assert.ok(h.qa('#gm-controls [data-ctl]').length >= 4, 'scene, district, PC, NPC stay under Scene');
+  assert.equal(h.qa('#gm-controls [data-ctl="threat"]').length, 0, 'the threat is the Roll’s line, not a Scene control (one field)');
+  assert.equal(h.qa('[data-ctl="threat"]').length, 1); assert.equal(h.q('#gm-c-threat').closest('#gm-rl'), h.q('#gm-rl'), 'the one line is in the Roll card');
   assert.equal(h.qa('#gm-singles [data-gm="roll"]').length, 9, 'nine single tables');
   assert.equal(h.qa('#gm-singles kbd').length, 0, 'no keys on the single tables');
   assert.equal(h.qa('[data-gm="view"]').length, 0, 'no Situations | Classic toggle anywhere'); assert.ok(!h.q('.gm-conhead') && !h.q('.gm-head'), 'no console header, no page heading');
-  const col = [...h.q('.gm-console').kids].filter((k) => k.nodeType === 1).map((k) => k.id);
-  assert.deepEqual(col, ['gm-pos', 'gm-scenebox', 'gm-mini', 'gm-controls', 'gm-buttons', 'gm-card', 'gm-rack', 'gm-earlier', 'gm-singles'], 'the column: Position, Scene, the buttons, the card, the Rack (empty), Earlier, More tables');
-  assert.equal(h.q('#gm-scenebox > #gm-scene') || h.q('#gm-scenebox').querySelector('#gm-scene'), h.q('#gm-scene'), 'the Scene button sits in its box');
-  assert.equal(h.q('#gm-singles').tagName, 'DETAILS', 'the single tables are folded');
-  assert.match(h.q('#gm-scene-chips').textContent, /District: any/, 'the Scene line labels its chips');
+  /* N4: the Roll. One card (Position, the size, Effect, the line, the stamp, They rolled with the Dots and the four keys), then the card, the Blade fold, the folds */
+  const col = [...h.q('.gm-console').kids].filter((k) => k.nodeType === 1).map((k) => k.id || k.className);
+  assert.deepEqual(col, ['gm-rl', 'gm-card', 'gm-rackf', 'gm-rl-scene', 'gm-scenebox', 'gm-rl-fbs', 'gm-earlier', 'gm-singles', 'gm-mini'], 'the column: the Roll card, the result card, Blade (the Rack), Scene, Earlier and More tables, the Focus keys');
+  const card = [...h.q('#gm-rl').kids].filter((k) => k.nodeType === 1).map((k) => k.id || k.className);
+  assert.deepEqual(card, ['gm-rl-h', 'gm-pos', 'gm-pos-size', 'gm-eff', 'gm-rl-line', 'gm-stamp', 'gm-rl-they', 'gm-buttons'], 'the Roll card, top to bottom');
+  assert.ok(h.q('.gm-rl-they #gm-dots'), 'the Dots sit beside They rolled, small');
+  assert.equal(h.q('.gm-console').id, 'gm-roll', 'the column is one block (N1b places it whole)');
+  assert.equal(h.q('#gm-scene').getAttribute('aria-expanded'), 'false'); assert.equal(h.q('#gm-scenebox').hidden, true, 'Scene is folded');
+  assert.ok(h.q('#gm-scenebox #gm-now-s') && h.q('#gm-scenebox #gm-controls'), 'Now in and the controls are in the Scene fold');
+  for (const f of ['earlier', 'singles']) { assert.equal(h.q('[data-rlfold="' + f + '"]').getAttribute('aria-expanded'), 'false'); assert.equal(h.q('#gm-' + f).hidden, true, f + ' is folded'); }
+  h.q('#gm-scene').click(); assert.equal(h.q('#gm-scenebox').hidden, false); assert.equal(h.q('#gm-scene').getAttribute('aria-expanded'), 'true', 'a tap opens Scene');
+  h.q('[data-rlfold="singles"]').click(); assert.equal(h.q('#gm-singles').hidden, false, 'and More tables, independently'); assert.equal(h.q('#gm-scenebox').hidden, false);
+  h.q('[data-rlfold="singles"]').click(); assert.equal(h.q('#gm-singles').hidden, true, 'a second tap folds it');
+  assert.match(h.q('#gm-scene-chips').textContent, /District: any/, 'the Scene button names the district (and anything else set)');
+  assert.ok(!/Aim:|NPC:|Scene:/.test(h.q('#gm-scene-chips').textContent), 'the defaults say nothing: ' + h.q('#gm-scene-chips').textContent);
   await h.save();
 });
 
@@ -508,7 +521,7 @@ await test('6h2. L files an outcome card with the Position set on the page in br
 
 await test('6h3. Dots chip: one tap selects, tap again clears, default unset; L files "(risky, 2d)" only when set; resets once the roll is filed; no new key', async () => {
   const h = await openPage({ camp: { session: { number: 5 }, crew: {}, log: [] } });
-  const dots = () => h.qa('#gm-pos [data-gm="dots"]');
+  const dots = () => h.qa('#gm-dots [data-gm="dots"]');      /* N4: in the Roll card, beside They rolled */
   assert.equal(dots().length, 5);
   assert.ok(dots().every((b) => b.getAttribute('aria-checked') === 'false'), 'unset by default');
   dots()[2].click();
@@ -576,6 +589,40 @@ await test('6j. Copy and Pin work on a composed card (plain text, filed under si
   assert.ok(/^A 1–3 \(/.test(h.br.copied) && /\nOr /.test(h.br.copied), h.br.copied);
   h.q('#gm-card [data-gm="pin"]').click(); await h.save();
   const pins = Object.values(h.fg.server.doc.pins); assert.equal(pins.length, 1); assert.equal(pins[0].tool, 'situation'); assert.ok(pins[0].text.length > 20);
+});
+
+await test('6j2. N4 the Roll: one line ("If it goes wrong" is the console’s Threat on screen): setThreat fills it, the next 4/5 spends it, a roll right after typing uses it as typed; Threat spent and × empty it', async () => {
+  const h = await openPage();
+  assert.equal(h.q('#gm-eff').hidden, true, 'no stamp module in this page: no Effect row'); assert.equal(h.q('#gm-stamp').hidden, true, 'and no Stamp button');
+  assert.equal(h.page.setThreat('  the dog   is waking up '), true, 'B68GmPage.setThreat (what the room card’s "→ the Roll" calls)');
+  assert.equal(h.q('#gm-c-threat').value, 'the dog is waking up', 'the field shows it, as one line');
+  assert.equal(h.page._state().doc.con.live.threat, 'the dog is waking up', 'stored as the console’s Threat on screen: one field, one value');
+  assert.equal(h.page.setThreat('   '), false, 'an empty line is not set');
+  h.press('2');
+  assert.match((h.q('#gm-card .gm-lead-s') || { textContent: '' }).textContent, /the dog is waking up/, 'a 4/5 spends the line');
+  assert.ok(h.q('#gm-card [data-gm="qt"][data-n="4"]') && h.q('#gm-card [data-gm="qt"][data-n="7"]'), 'a 4/5 card offers Pay the price and Harm & resist');
+  assert.equal(h.qa('#gm-card .gm-card-acts').length, 1, 'on its one actions row');
+  h.press('1'); assert.ok(!h.q('#gm-card [data-gm="qt"]'), 'a Before card does not');
+  h.press('3');
+  const or = h.q('#gm-card details.gm-or[data-sec="payThePrice"]'); assert.ok(or && !or.open, 'a 1–3 card has a shut Pay the price row');
+  h.q('#gm-card [data-gm="qt"][data-n="4"]').click(); assert.equal(or.open, true, 'Pay the price opens this card’s own row (no new roll)');
+  assert.equal(h.q('#gm-card article').getAttribute('data-tool'), 'situation');
+  h.q('#gm-card [data-gm="qt"][data-n="7"]').click();
+  const hr = h.q('#gm-card details.gm-or[data-sec="harm"]');
+  assert.ok((hr && hr.open) || (h.q('#gm-card article').getAttribute('data-tool') === 'console' && /Harm/.test(h.q('#gm-card h3').textContent)), 'Harm & resist: its row on the card, else its table rolled');
+  h.press('2');
+  const spent = h.qa('#gm-card [data-gm="intent"]').find((b) => /Threat spent/.test(b.textContent));
+  assert.ok(spent, 'a card that spends the line offers Threat spent'); spent.click();
+  assert.equal(h.q('#gm-c-threat').value, '', 'Threat spent empties the Roll’s line'); assert.equal(h.page._state().doc.con.live.threat, '');
+  const f = h.q('#gm-c-threat'); f.focus(); f.value = 'the lamp\n gutters'; dispatch(f, 'input');
+  assert.equal(f.value, 'the lamp gutters', 'a pasted line break becomes a space: it stays one line'); f.blur();
+  h.press('2');
+  assert.match((h.q('#gm-card .gm-lead-s') || { textContent: '' }).textContent, /the lamp gutters/, 'a roll right after typing uses the line as typed');
+  assert.equal(h.q('[data-gm="line-clear"]').hidden, false, 'a line shows its clear button');
+  h.q('[data-gm="line-clear"]').click();
+  assert.equal(h.q('#gm-c-threat').value, ''); assert.equal(h.page._state().doc.con.live.threat, ''); assert.equal(h.q('[data-gm="line-clear"]').hidden, true, '× empties it');
+  assert.match(h.q('#gm-mini .gm-mini-pos').textContent, /Risky/, 'Focus’s keys show the position too');
+  await h.save();
 });
 
 await test('6k. no window.claude.gm (the claude.ai artifact): a one-line message and nothing drawn', async () => {
@@ -1657,7 +1704,7 @@ await test('12a. Now in: a select in the bar (and the phone’s Scene line) list
   assert.equal(opts[0], '', 'anywhere first'); assert.equal(new Set(opts).size, opts.length, 'each district once');
   for (const d of ['Puddleton', 'Testfield', 'Alder Quay', 'Puddle End', NOWD]) assert.ok(opts.includes(d), d + ' is listed');
   const key = (s) => s.toLowerCase().replace(/^the\s+/, ''), rest = opts.slice(1); assert.deepEqual(rest, [...rest].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0)), 'alphabetical (a leading "The" does not count)');
-  assert.equal(h.qa('select[data-now]').length, 2, 'one in the bar, one in the Scene line (the phone shows that one)'); assert.ok(h.q('.gm-bar #gm-now') && h.q('#gm-scenebox #gm-now-s'));
+  assert.equal(h.qa('select[data-now]').length, 2, 'one in the bar (until the band takes its place: N1a), one in the Roll’s Scene fold (shown at every width since N4)'); assert.ok(h.q('.gm-bar #gm-now') && h.q('#gm-scenebox #gm-now-s'));
   assert.equal(optSel(h, '#gm-now').getAttribute('value'), '', 'on anywhere');
   for (const s of ['#gm-c-district', '#gm-l-district', '#gm-s-sel', '#gm-n-district']) {
     assert.equal(h.q(s + ' option').textContent, 'Now in: anywhere', s + ' leads with Now in'); assert.equal(optSel(h, s).textContent, 'Now in: anywhere', s + ' follows by default');

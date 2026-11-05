@@ -114,11 +114,13 @@ try {
   const OPEN_ALL = { public: true, working: true, controlled: true, secure: true };
   check((await api('PATCH', '/gm/state', { cards: { location: card }, loc: { map: { view: 'iso', theme: 'rulebook', layer: 'gm', reveal: OPEN_ALL } },
     ball: { site: NAME2, v: 2, start: 0, t: 100, crew: { 'run-pc1': { room: 'Showroom', disguise: 'guest' } } } })).status === 200, 'the v2 site, the crew in the Showroom (nothing stored for any feature)');
+  /* N4: the Roll: the one line, the position and the effect, then Stamp it on the iPad */
   const stampIt = async (page, text) => {
-    await page.waitForSelector('#gm-stamp .gm-st-b', { timeout: 20000 });
-    await page.fill('#gm-stamp input[data-st-text]', text);
-    await page.click('#gm-stamp [data-st="pos"][data-v="risky"]');
-    await page.click('#gm-stamp [data-st="eff"][data-v="standard"]');
+    await page.waitForSelector('#gm-stamp [data-gm="stamp"]', { timeout: 20000 });
+    await page.fill('#gm-c-threat', text);
+    await page.click('#gm-pos [data-v="risky"]');
+    await page.click('#gm-eff [data-v="standard"]');
+    await page.click('#gm-stamp [data-gm="stamp"]');
     await until(async () => ((await ambientDoc()).overlay || {}).kind === 'report', 8000, 100);
   };
   const glyph = (page) => page.evaluate(() => { const g = document.querySelector('#rv-map svg .b19-threat'); return g ? g.getAttribute('data-glyph') : null; });
