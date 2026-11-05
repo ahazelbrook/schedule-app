@@ -4440,11 +4440,12 @@
   function rollRoomSelected(name) { if (!S) return; S.rollSel = str(name).trim(); rollSeedSoon(); }
   /* the field's own listeners, once per drawn field: as it is typed the stamp knows (Stamp again) and the note follows, and half a second after the last key
      it is stored (as the console's text controls were; leaving the field stores it at once: onChange); emptied, it stays empty in this room; Enter stamps
-     it (the old Stamp row's Enter), so the field never holds a second line */
+     it (the old Stamp row's Enter), and a pasted line break becomes a space, so the field never holds a second line */
   function rollBind() {
     var i = $q('#gm-c-threat'); if (!i || i.__roll) return; i.__roll = true;
     i.addEventListener('input', function () {
-      if (!S) return; var v = str(i.value); if (!v.trim() && str(i.__was).trim()) rollLineEmptied(); i.__was = v; b09Paint();
+      if (!S) return; if (/[\r\n]/.test(str(i.value))) i.value = str(i.value).replace(/\s*[\r\n]+\s*/g, ' ');
+      var v = str(i.value); if (!v.trim() && str(i.__was).trim()) rollLineEmptied(); i.__was = v; b09Paint();
       var me = S; clearTimeout(i.__save); i.__save = setTimeout(function () { if (S === me && $q('#gm-c-threat') === i && str(i.value) !== str(live().threat)) patch({ con: { live: { threat: str(i.value) } } }); }, 500);
     });
     i.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' && !ev.ctrlKey && !ev.altKey && !ev.metaKey) { if (ev.preventDefault) ev.preventDefault(); rollStamp(); } });

@@ -614,7 +614,8 @@ await test('6j2. N4 the Roll: one line ("If it goes wrong" is the console’s Th
   const spent = h.qa('#gm-card [data-gm="intent"]').find((b) => /Threat spent/.test(b.textContent));
   assert.ok(spent, 'a card that spends the line offers Threat spent'); spent.click();
   assert.equal(h.q('#gm-c-threat').value, '', 'Threat spent empties the Roll’s line'); assert.equal(h.page._state().doc.con.live.threat, '');
-  const f = h.q('#gm-c-threat'); f.focus(); f.value = 'the lamp gutters'; dispatch(f, 'input'); f.blur();
+  const f = h.q('#gm-c-threat'); f.focus(); f.value = 'the lamp\n gutters'; dispatch(f, 'input');
+  assert.equal(f.value, 'the lamp gutters', 'a pasted line break becomes a space: it stays one line'); f.blur();
   h.press('2');
   assert.match((h.q('#gm-card .gm-lead-s') || { textContent: '' }).textContent, /the lamp gutters/, 'a roll right after typing uses the line as typed');
   assert.equal(h.q('[data-gm="line-clear"]').hidden, false, 'a line shows its clear button');
