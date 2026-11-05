@@ -63,7 +63,10 @@ test('the stamp: Stamp it on the iPad when nothing is up; while up, On the iPad 
   assert.match(up, /<b>On the iPad<\/b><span>Risky, great<\/span>/); assert.match(up, /data-gm="stamp-down"[^>]*>Take it down <kbd>Esc<\/kbd>/);
   assert.match(up, /data-gm="stamp-clean"[^>]*>Clean \(no card\)</); assert.ok(!/Stamp again/.test(up));
   const stale = R.stampHtml({ on: true, active: { position: 'risky', effect: 'great', text: 'x' }, stale: true });
-  assert.match(stale, /data-gm="stamp"[^>]*>Stamp again</); assert.match(stale, /changed here/);
+  assert.match(stale, /<button type="button" class="btn primary gm-stampb" data-gm="stamp"[^>]*>Stamp again</, 'Stamp again is the one full-width button, as Stamp it on the iPad was');
+  assert.match(stale, /Changed since it went up/);
+  assert.match(stale, /<\/button><div class="gm-rl-acts"><button[^>]*data-gm="stamp-down"/, 'Take it down and Clean share the row under it');
+  assert.ok(!/<div class="gm-rl-acts">[^]*data-gm="stamp"[^-]/.test(stale), 'and Stamp again is not in that row');
 });
 
 test('They rolled: the four keys (1-4) with their labels, each hint in its title; Focus shows the position, the effect and a stamp that is up', () => {
@@ -77,18 +80,30 @@ test('They rolled: the four keys (1-4) with their labels, each hint in its title
   assert.ok(!/<p class="gm-mini-pos/.test(R.miniHtml(SITS, '', '', false)), 'no position: just the keys');
 });
 
-test('the sizer’s strip: full size for the stamped position (its words for the old checks), the stamped line, the room’s other lines, Reduce in two taps, Restore, Done', () => {
+test('the sizer’s strip: full size for the stamped position (its words for the old checks), the stamped line unless the card shows it, the room’s other lines; no buttons of its own', () => {
   assert.equal(R.sizerHtml(null), '');
   const z = { stamped: 'risky', shown: 'risky', reduced: false, armed: false, canReduce: true, size: { severity: 'middling', ticks: '2 ticks', harm: '2' }, lines: ['Dov Kessler turns round.', 'A glass breaks'], text: 'Dov Kessler turns round.', result: '13' };
   const h = R.sizerHtml(z), text = h.replace(/<[^>]+>/g, '');
   assert.match(text, /Full size for risky · a 1–3/); assert.match(text, /middling · 2 ticks · harm 2/);
   assert.match(h, /If it goes wrong<\/span>Dov Kessler turns round\./); assert.match(h, /Or, from the room<\/span><ul><li>A glass breaks<\/li><\/ul>/, 'the stamped line is not listed twice');
-  assert.match(h, /data-gm="sz-reduce"[^>]*>Reduce</); assert.match(h, /data-gm="sz-done"/);
-  assert.match(R.sizerHtml(Object.assign({}, z, { armed: true })), />Tap again to reduce one step</);
+  assert.ok(!/<button/.test(h), 'the strip holds no button: its Reduce and Hide size are on the card’s actions row');
+  const shown = R.sizerHtml(z, { lineShown: true });
+  assert.ok(!/Dov Kessler turns round/.test(shown) && /A glass breaks/.test(shown), 'the card’s lead shows the promised line already: the strip leaves it out, keeps the room’s other line');
   const red = R.sizerHtml(Object.assign({}, z, { reduced: true, shown: 'controlled', canReduce: false, size: { severity: 'mild', ticks: '1 tick', harm: '1 (lesser)' }, result: '45' })).replace(/<[^>]+>/g, '');
-  assert.match(red, /Reduced to controlled \(stamped risky\) · a 4\/5/); assert.match(red, /Restore full size/);
+  assert.match(red, /Reduced to controlled \(stamped risky\) · a 4\/5/);
   const bare = R.sizerHtml(Object.assign({}, z, { lines: [], text: '', size: null, canReduce: false }));
-  assert.match(bare, /No "If it goes wrong" line for this room\./); assert.match(bare, /The pack has no size for risky\./); assert.ok(!/sz-reduce/.test(bare), 'the smallest has nothing to reduce to');
+  assert.match(bare, /No "If it goes wrong" line for this room\./); assert.match(bare, /The pack has no size for risky\./);
+});
+
+test('the strip’s buttons for the card’s actions row: Reduce in two taps, Restore once reduced, Hide size; nothing to reduce at the smallest', () => {
+  const z = { stamped: 'risky', shown: 'risky', reduced: false, armed: false, canReduce: true, result: '13' };
+  assert.equal(R.sizerActs(null), '');
+  const a = R.sizerActs(z);
+  assert.match(a, /data-gm="sz-reduce"[^>]*>Reduce</); assert.match(a, /data-gm="sz-done"[^>]*>Hide size</);
+  assert.match(R.sizerActs(Object.assign({}, z, { armed: true })), /class="btn sm primary" data-gm="sz-reduce"[^>]*>Tap again to reduce</, 'armed: the second tap is the strong one');
+  const red = R.sizerActs(Object.assign({}, z, { reduced: true, canReduce: false }));
+  assert.match(red, /data-gm="sz-restore"[^>]*>Restore full size</); assert.ok(!/sz-reduce/.test(red));
+  assert.ok(!/sz-reduce/.test(R.sizerActs(Object.assign({}, z, { canReduce: false }))), 'the smallest has nothing to reduce to');
 });
 
 test('every string the page hands over is escaped (a line full of markup stays text)', () => {
@@ -101,9 +116,11 @@ test('every string the page hands over is escaped (a line full of markup stays t
   assert.equal(R.lineNote(''), ''); assert.equal(R.lineNote('Showroom'), 'From the room: Showroom');
 });
 
-test('the quick tables and the Blade fold’s summary', () => {
+test('the quick tables (each only where the card has no such section) and the Blade fold’s summary', () => {
   const q = R.quickActs();
   assert.match(q, /data-gm="qt" data-n="4"[^>]*>Pay the price</); assert.match(q, /data-gm="qt" data-n="7"[^>]*>Harm &amp; resist</);
+  assert.ok(!/data-n="4"/.test(R.quickActs({ pay: false })) && /data-n="7"/.test(R.quickActs({ pay: false })), 'pay: false leaves Pay the price out');
+  assert.equal(R.quickActs({ pay: false, harm: false }), '', 'a card with both sections offers neither');
   assert.equal(C.BUTTONS.find((b) => b.n === 4).id, 'payThePrice'); assert.equal(C.BUTTONS.find((b) => b.n === 7).id, 'harm', 'the numbers are the console’s own tables');
   assert.equal(R.rackSummary({ fitted: 'risky' }), 'fitted for risky'); assert.equal(R.rackSummary({ fitted: 'risky', pending: true, voice: 'Mabel Quist' }), 'fitting… · Voice: Mabel Quist');
   assert.equal(R.rackSummary(null), '');

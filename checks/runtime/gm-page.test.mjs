@@ -600,20 +600,25 @@ await test('6j2. N4 the Roll: one line ("If it goes wrong" is the console’s Th
   assert.equal(h.page.setThreat('   '), false, 'an empty line is not set');
   h.press('2');
   assert.match((h.q('#gm-card .gm-lead-s') || { textContent: '' }).textContent, /the dog is waking up/, 'a 4/5 spends the line');
-  assert.ok(h.q('#gm-card [data-gm="qt"][data-n="4"]') && h.q('#gm-card [data-gm="qt"][data-n="7"]'), 'a 4/5 card offers Pay the price and Harm & resist');
+  /* N4-fix: Pay the price and Harm & resist join the actions row only where the card has no such section (an Or row; a Harm lead carries its resist rows) */
+  const quickOk = () => {
+    const pay = !!h.q('#gm-card details.gm-or[data-sec="payThePrice"]'), harm = !!h.q('#gm-card details.gm-or[data-sec="harm"]') || /^Harm\b/.test((h.q('#gm-card .gm-lead-t') || { textContent: '' }).textContent);
+    return !!h.q('#gm-card [data-gm="qt"][data-n="4"]') === !pay && !!h.q('#gm-card [data-gm="qt"][data-n="7"]') === !harm;
+  };
+  for (let k = 0; k < 6; k++) { h.press(k % 2 ? '3' : '2'); assert.ok(quickOk(), 'a quick table shows exactly when the card lacks that section (' + h.q('#gm-card h3').textContent + ')'); }
   assert.equal(h.qa('#gm-card .gm-card-acts').length, 1, 'on its one actions row');
-  h.press('1'); assert.ok(!h.q('#gm-card [data-gm="qt"]'), 'a Before card does not');
-  h.press('3');
-  const or = h.q('#gm-card details.gm-or[data-sec="payThePrice"]'); assert.ok(or && !or.open, 'a 1–3 card has a shut Pay the price row');
-  h.q('#gm-card [data-gm="qt"][data-n="4"]').click(); assert.equal(or.open, true, 'Pay the price opens this card’s own row (no new roll)');
-  assert.equal(h.q('#gm-card article').getAttribute('data-tool'), 'situation');
-  h.q('#gm-card [data-gm="qt"][data-n="7"]').click();
-  const hr = h.q('#gm-card details.gm-or[data-sec="harm"]');
-  assert.ok((hr && hr.open) || (h.q('#gm-card article').getAttribute('data-tool') === 'console' && /Harm/.test(h.q('#gm-card h3').textContent)), 'Harm & resist: its row on the card, else its table rolled');
+  h.press('1'); assert.ok(!h.q('#gm-card [data-gm="qt"]'), 'a Before card offers neither');
+  let rolled = false;
+  for (let k = 0; k < 12 && !rolled; k++) {
+    h.press('2'); const q4 = h.q('#gm-card [data-gm="qt"][data-n="4"]');
+    if (q4) { q4.click(); rolled = h.q('#gm-card article').getAttribute('data-tool') === 'console' && /Pay the price/.test(h.q('#gm-card h3').textContent); }
+  }
+  assert.ok(rolled, 'Pay the price on a card without that section rolls its table (a classic card)');
   h.press('2');
   const spent = h.qa('#gm-card [data-gm="intent"]').find((b) => /Threat spent/.test(b.textContent));
   assert.ok(spent, 'a card that spends the line offers Threat spent'); spent.click();
   assert.equal(h.q('#gm-c-threat').value, '', 'Threat spent empties the Roll’s line'); assert.equal(h.page._state().doc.con.live.threat, '');
+  assert.ok(!h.qa('#gm-card [data-gm="intent"]').some((b) => /Threat spent/.test(b.textContent)), 'and leaves the card’s row: nothing is left to clear');
   const f = h.q('#gm-c-threat'); f.focus(); f.value = 'the lamp\n gutters'; dispatch(f, 'input');
   assert.equal(f.value, 'the lamp gutters', 'a pasted line break becomes a space: it stays one line'); f.blur();
   h.press('2');

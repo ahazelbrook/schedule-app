@@ -1169,16 +1169,17 @@
     return h;
   }
   function chipsHtml(chips) { return chips && chips.length ? '<p class="gm-chips">' + chips.map(function (c) { return '<span class="gm-chip">' + esc(c) + '</span>'; }).join('') + '</p>' : ''; }
-  /* the merged actions (one row, each with its index into meta.actions), `more` (html the page adds: the Roll's Pay the price and Harm & resist), Pin / Copy */
-  function actsHtml(m, tool, more) {
-    return '<div class="gm-card-acts">' + (m.actions || []).map(function (a, i) { return '<button type="button" class="btn sm primary" data-gm="intent" data-i="' + i + '">' + esc(a.label) + '</button>'; }).join('') + (more || '') +
+  /* the merged actions (one row, each with its index into meta.actions), `more` (html the page adds: the Roll's quick tables and its size buttons), Pin / Copy.
+     hide(action) -> true leaves an action off the row (the Roll: "Threat spent" once the line is already spent); the others keep their index */
+  function actsHtml(m, tool, more, hide) {
+    return '<div class="gm-card-acts">' + (m.actions || []).map(function (a, i) { return typeof hide === 'function' && hide(a) ? '' : '<button type="button" class="btn sm primary" data-gm="intent" data-i="' + i + '">' + esc(a.label) + '</button>'; }).join('') + (more || '') +
       '<button type="button" class="btn sm" data-gm="pin" data-tool="' + esc(tool) + '">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="' + esc(tool) + '">Copy</button></div>';
   }
-  /* The classic card (a single table), exactly as before. */
-  function classicCardHtml(res, mdf) {
+  /* The classic card (a single table), as before. opts: { acts, hide } for the actions row (situationCardHtml's) */
+  function classicCardHtml(res, mdf, opts) {
     var m = res.meta || {};
     return '<article class="gm-card" data-tool="console"><header class="gm-card-h"><kbd class="gm-card-n">' + esc(m.n) + '</kbd><div><h3>' + esc(m.title) + '</h3>' + (m.sub ? '<p class="gm-sub">' + esc(m.sub) + '</p>' : '') + '</div></header>' +
-      chipsHtml(m.chips) + linesHtml(res.lines, mdf) + actsHtml(m, 'console') + '</article>';
+      chipsHtml(m.chips) + linesHtml(res.lines, mdf) + actsHtml(m, 'console', opts && opts.acts, opts && opts.hide) + '</article>';
   }
   /* The coaching lines of a section ("Say it before the dice...": recurring guidance, flagged `coach` by the console) fold under a
      closed "Why", so a card reads as the draw and its numbers and the reasons are one tap away. */
@@ -1191,12 +1192,13 @@
     return { plain: plain, coach: coach };
   }
   /* The composed card: the LEAD box (big line, the spend sentence under it, chips, its own lines under "More"), then at most three
-     one-line "Or" rows that open to their full section, then ONE merged actions row. opts.acts: html for that row before Pin (the Roll's quick tables). */
+     one-line "Or" rows that open to their full section, then ONE merged actions row. opts.acts: html for that row before Pin (the Roll's quick tables and its
+     size buttons); opts.hide(action) leaves an action off it. */
   function situationCardHtml(res, mdf, opts) {
-    var m = res.meta || {}, secs = res.sections || [], more = opts && opts.acts ? String(opts.acts) : '';
+    var m = res.meta || {}, secs = res.sections || [], more = opts && opts.acts ? String(opts.acts) : '', hide = opts && opts.hide;
     var h = '<article class="gm-card gm-sit" data-tool="situation" data-sit="' + esc(m.situation) + '"><header class="gm-card-h"><kbd class="gm-card-n">' + esc(m.n) + '</kbd><div><h3>' + esc(m.title) + '</h3>' + (m.sub ? '<p class="gm-sub">' + esc(m.sub) + '</p>' : '') + '</div></header>';
     if (isObj(m.recomposed)) h += '<p class="gm-quiet" role="note">Redrawn with the current tables</p>';
-    if (!secs.length) return h + linesHtml(res.lines, mdf) + actsHtml(m, 'situation', more) + '</article>';
+    if (!secs.length) return h + linesHtml(res.lines, mdf) + actsHtml(m, 'situation', more, hide) + '</article>';
     var lead = secs[0], ll = lead.lines || [], skip = leadIsLine(lead), cut = splitCoach(ll.slice(skip ? 1 : 0));
     /* the lead's first line IS the lead box (its `small`, a threat's spend sentence, sits under it); a lead cut at 120 characters keeps its full line under More */
     var small = ll[0] && ll[0].small ? '<div class="gm-lead-s">' + mdf(ll[0].small) + '</div>' : '';
@@ -1209,7 +1211,7 @@
       h += '<details class="gm-or" data-sec="' + esc(s.id) + '"><summary><span class="gm-or-k">Or</span><span class="gm-or-t"><b>' + esc(s.title) + '</b> ' + esc(s.lead) + '</span></summary><div class="gm-or-b">' +
         (s.sub ? '<p class="gm-sub">' + esc(s.sub) + '</p>' : '') + chipsHtml(s.chips) + linesHtml(c.plain, mdf) + whyHtml(c.coach, mdf) + '</div></details>';
     });
-    return h + actsHtml(m, 'situation', more) + '</article>';
+    return h + actsHtml(m, 'situation', more, hide) + '</article>';
   }
   P.linesHtml = linesHtml; P.classicCardHtml = classicCardHtml; P.situationCardHtml = situationCardHtml;
 
@@ -2722,7 +2724,7 @@
   function renderSingles() {
     var box = $q('#gm-singles'); if (!box) return;
     if (!S.con) { box.innerHTML = ''; return; }
-    box.innerHTML = '<p class="gm-dim">The nine single tables, one card each.</p><div class="gm-singles-b">' + S.con.buttons.map(function (b) {
+    box.innerHTML = '<p class="gm-rl-cap"><span class="gm-lab">More tables</span><span class="gm-dim">the nine single tables, one card each</span></p><div class="gm-singles-b">' + S.con.buttons.map(function (b) {
       return '<button type="button" class="chip sm" data-gm="roll" data-n="' + b.n + '" title="' + esc(b.hint || '') + '">' + esc(b.label) + '</button>';
     }).join('') + '</div>';
   }
@@ -3073,9 +3075,15 @@
       res = cur ? (kind === 'situation' ? replaySituation(cur) : replayConsole(cur)) : null; S.conRes = res; S.shown = kind;
       if (res && !S.last) S.last = { text: lastText(res) };
     }
-    /* N4: a 4/5 or a 1–3 card offers Pay the price and Harm & resist on its actions row; under every card's header, the slot for the sizer's strip */
-    var sit = res && res.meta ? str(res.meta.situation) : '', R = W.B68GmRoll, quick = R && (sit === 'fourfive' || sit === 'onetothree') ? { acts: R.quickActs() } : null;
-    box.innerHTML = res ? (res.sections ? situationCardHtml(res, md, quick) : classicCardHtml(res, md)).replace('</header>', '</header><section class="gm-sz" id="gm-sz" aria-label="The consequence at full size" hidden></section>')
+    /* N4: under every card's header, the slot for the sizer's strip, and on its actions row the slot for its Reduce and Done. A 4/5 or a 1–3 card also offers
+       Pay the price and Harm & resist, each only when the card has no such section of its own (an Or row; a Harm lead carries its resist rows). Once the
+       Roll's line is spent, the card's "Threat spent" has nothing left to clear and stays off the row */
+    var sit = res && res.meta ? str(res.meta.situation) : '', R = W.B68GmRoll, secs = res && Array.isArray(res.sections) ? res.sections : [];
+    var has = function (id) { return secs.some(function (x) { return x && x.id === id; }); };
+    var harmLead = !!(secs[0] && secs[0].detail && secs[0].detail.kind === 'Harm');
+    var acts = (R && (sit === 'fourfive' || sit === 'onetothree') ? R.quickActs({ pay: !has('payThePrice'), harm: !has('harm') && !harmLead }) : '') + '<span class="gm-sz-acts" id="gm-sz-acts"></span>';
+    var opts = { acts: acts, hide: function (a) { return !!(a && a.intent && a.intent.type === 'threatSpent') && !rollCut(rollLine()); } };
+    box.innerHTML = res ? (res.sections ? situationCardHtml(res, md, opts) : classicCardHtml(res, md, opts)).replace('</header>', '</header><section class="gm-sz" id="gm-sz" aria-label="The consequence at full size" hidden></section>')
       : S.con ? '<p class="gm-empty">Press a button, or a number key <kbd>1</kbd>–<kbd>4</kbd>.</p>' : '';
     rollSizerPaint();
     var er = $q('#gm-earlier'); if (!er) return;
@@ -3083,7 +3091,8 @@
     ['situation', 'console'].forEach(function (t) { newest(h[t]).forEach(function (x) { x._tool = t; list.push(x); }); });
     list.sort(function (a, b) { return str(a.at) < str(b.at) ? 1 : str(a.at) > str(b.at) ? -1 : 0; });
     list = list.slice(0, LIMITS.hist);
-    er.innerHTML = list.length ? list.map(function (x) { return earlierChip(x, x._tool, cards[x._tool] && cards[x._tool].hid === x._id && S.shown === x._tool); }).join('') : '<p class="gm-dim">Nothing rolled yet.</p>';
+    er.innerHTML = '<p class="gm-rl-cap"><span class="gm-lab">Earlier</span><span class="gm-dim">' + (list.length ? 'tap one to bring it back' : 'nothing rolled yet') + '</span></p>' +
+      list.map(function (x) { return earlierChip(x, x._tool, cards[x._tool] && cards[x._tool].hid === x._id && S.shown === x._tool); }).join('');
     var en = $q('#gm-earlier-n'); if (en) en.textContent = list.length ? String(list.length) : '';
   }
   /* an Earlier chip names what the card is; under it, small, the time it was rolled and its position (also the title, for a label
@@ -3102,6 +3111,7 @@
     try { S.con.setCampaign(part('campaign') || {}, S.doc.con || {}); } catch (e) {}
     if (filed === true) toast(a.label.replace(/:.*$/, '') + '.');
     renderControls(); renderPos(); renderRail();
+    if (it.type === 'threatSpent') drawConsoleCard(S.conRes);      /* N4-fix: the line is spent, so the card's "Threat spent" goes from its row */
   }
 
   /* ---------- the location generator ---------- */
@@ -4385,7 +4395,13 @@
   }
   function b09Marked(res) {
     var sit = res && res.meta ? res.meta.situation : '';
-    if (S && S.stamp && (sit === 'fourfive' || sit === 'onetothree')) S.stamp.mark(sit === 'fourfive' ? '45' : '13');
+    if (S && S.stamp && (sit === 'fourfive' || sit === 'onetothree')) {
+      var landed = !!S.stamp.view().active;
+      S.stamp.mark(sit === 'fourfive' ? '45' : '13');
+      /* N4-fix: on a stamped roll the threat has landed: the line is spent (it stays empty in this room), so a later bare "Blade, risky, standard" cannot put
+         it back on the iPad; the card is drawn again without its now-empty "Threat spent" */
+      if (landed) { rollLineClear(); drawConsoleCard(S.conRes); }
+    }
     else if (S && S.stamp && sit) S.stamp.dismiss();          /* N4: a Before or a Someone card: the last roll's size goes with its card */
     if (S && S.mt && S.mt.active() && sit) S.mt.marked();      /* 2.8: a marked roll resolves its montage panel */
   }
@@ -4464,13 +4480,16 @@
     var h = R.miniHtml(S.con.situations(), str(uiNow().pos), v && v.on ? v.draft.effect : '', !!(v && v.active));
     if (mini.__html !== h) { mini.innerHTML = h; mini.__html = h; }
   }
-  /* the sizer's strip in its slot under the card's header (drawConsoleCard makes the slot) */
+  /* the sizer's strip in its slot under the card's header, and its Reduce and Done in their slot on the card's actions row (drawConsoleCard makes both).
+     The strip leaves out the promised line when the card already shows it (a roll made with that threat spends it in its lead) */
   function rollSizerPaint(v) {
-    var b = $q('#gm-sz'), R = W.B68GmRoll; if (!b) return;
+    var b = $q('#gm-sz'), a = $q('#gm-sz-acts'), R = W.B68GmRoll; if (!b) return;
     v = v || (S && S.stamp ? S.stamp.view() : null);
-    var h = v && v.sizer && R ? R.sizerHtml(v.sizer) : '';
+    var z = v && v.sizer && R ? v.sizer : null, ui = S && S.conRes && S.conRes.replay && isObj(S.conRes.replay.ui) ? S.conRes.replay.ui : null;
+    var h = z ? R.sizerHtml(z, { lineShown: !!(ui && z.text && rollCut(ui.threat) === rollCut(z.text)) }) : '';
     if (b.__html !== h) { b.innerHTML = h; b.__html = h; }
     b.hidden = !h;
+    if (a) { var ah = z ? R.sizerActs(z) : ''; if (a.__html !== ah) { a.innerHTML = ah; a.__html = ah; } }
   }
   /* Pay the price (4) and Harm & resist (7) on a 4/5 or a 1–3 card: that section of this card when it has one (opened), else that table rolled */
   function rollQuick(n) {
@@ -4478,13 +4497,15 @@
     if (or) { or.open = true; try { or.scrollIntoView({ block: 'nearest' }); } catch (e) {} return; }
     rollConsole(n);
   }
-  /* the folds: Scene (S.sceneOpen), Earlier and More tables (S.folds), each panel under its own button */
+  /* the folds: Scene (S.sceneOpen), Earlier and More tables (S.folds), each panel under its own button and captioned with its name; with both of the pair
+     open, More tables stands as its own box under Earlier's (gm-rl-sep) instead of hanging on it */
   function rollFoldSync(r) {
     if (!S) return;
     var f = S.folds || (S.folds = {});
     [['#gm-scene', '#gm-scenebox', !!S.sceneOpen], ['#gm-earlier-b', '#gm-earlier', !!f.earlier], ['#gm-singles-b', '#gm-singles', !!f.singles]].forEach(function (x) {
       var b = $q(x[0]), p = $q(x[1]); if (b) b.setAttribute('aria-expanded', String(x[2])); if (p) p.hidden = !x[2];
     });
+    var sg = $q('#gm-singles'); if (sg) sg.classList.toggle('gm-rl-sep', !!f.earlier && !!f.singles);
     r = r || $q('#gm-root'); if (r) r.classList.toggle('scene-open', !!S.sceneOpen);
   }
   function rollFold(id) { if (!S) return; var f = S.folds || (S.folds = {}); if (id === 'earlier' || id === 'singles') f[id] = !f[id]; rollFoldSync(); }
