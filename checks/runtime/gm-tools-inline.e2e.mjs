@@ -1,6 +1,8 @@
 // The 18 tools INLINE (the night rebuild, N2): against the demo night (scripts/demo-night.mjs), bind each tool to a container in the GM page in turn,
 // open it through B68GmTools.get(id).open(), assert it drew real content (a known element per tool), that nothing is logged as an error, that it
-// kept its place after an action, and that unbinding it stops its timers: no request leaves the page for 10 s after the unbind.
+// kept its place after an action, and that unbinding it stops its timers: no request leaves the page for 10 s after the unbind that the page did not
+// already make by itself in an 11 s window before any tool was opened. (N2-fix) Also: the Light relay panel asks the relay once on open; a bound tool
+// that is hidden or detached is not open for Esc; binding inline empties the right-edge copy (no SVG id twice in the page).
 //   PW_MODULE=<playwright-core> PW_CHANNEL=msedge [PORT=8951] [DEMO_URL=http://127.0.0.1:8950] [GM_SHOTS=<dir>] node checks/runtime/gm-tools-inline.e2e.mjs
 // With DEMO_URL the check uses a demo night that is already running (npm run demo:night -- --port 8950) and starts none; otherwise it starts its own on PORT.
 // With GM_SHOTS it keeps a picture of every tool at 330 px (a left column) and at 900 px (a view) in <dir> (<id>-330.png, <id>-900.png).
@@ -56,10 +58,20 @@ try {
   const browser = await chromium.launch({ channel: process.env.PW_CHANNEL || undefined });
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 900 }, extraHTTPHeaders: { 'X-Dev-User': GM }, reducedMotion: 'reduce' });
   const page = await ctx.newPage();
-  const errors = [], reqs = [];
+  const errors = [], reqs = [], relay = [];
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
-  page.on('console', (m) => { if (m.type() === 'error' && !/light relay|9300|ERR_CONNECTION_REFUSED|Failed to load resource/i.test(m.text())) errors.push('console: ' + m.text()); });
-  page.on('request', (r) => { if (/\/api\//.test(r.url())) reqs.push({ t: Date.now(), url: r.url() }); });
+  /* the light relay (127.0.0.1:9300) is not running here: the browser logs each refused request to it as "Failed to load resource", with the relay's url as the
+     message's location. Those, and only those, are not the page's errors (any other failed load still counts) */
+  page.on('console', (m) => {
+    if (m.type() !== 'error') return;
+    const at = (m.location() && m.location().url) || '';
+    if (at.includes(':9300')) return;
+    errors.push('console: ' + m.text() + (at ? ' @ ' + at : ''));
+  });
+  page.on('request', (r) => {
+    if (/\/api\//.test(r.url())) reqs.push({ t: Date.now(), url: r.url() });
+    if (r.url().includes(':9300/')) relay.push({ t: Date.now(), m: r.method(), p: new URL(r.url()).pathname });
+  });
   await page.goto(BASE + '/#gm', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me && document.querySelector('#gm-buttons .gm-btn'), null, { timeout: 60000 });
   await page.waitForTimeout(1500);
@@ -68,6 +80,13 @@ try {
   const ids = await page.evaluate(() => Array.from(window.B68GmTools.toolIds()));
   check(JSON.stringify(ids) === JSON.stringify(TOOLS.map((t) => t[0])), 'the registry holds all 18 tools, in order: ' + ids.join(','));
   check(await page.evaluate(() => !document.querySelector('#gm-menu-print, #gm-menu-preflight, #gm-menu-hardstart, #gm-menu-aftermath, #gm-menu-b29-batch, #gm-menu-trouble')), 'no tool has a Menu line of its own');
+
+  /* timers: a control window BEFORE any tool is opened shows what the page itself asks for. (Taken after the loop below, a timer a tool leaked there would be
+     counted as the page's own.) */
+  const key = (u) => new URL(u).pathname;
+  const c0 = Date.now(); await sleep(11000);
+  const control = new Set(reqs.filter((r) => r.t > c0).map((r) => key(r.url)));
+  console.log('     (what the page asks for by itself in 11 s: ' + ([...control].join(', ') || 'nothing') + ')');
 
   /* a container the shell would own: inside #gm-page so the page's CSS applies */
   const mount = (id, w) => page.evaluate(({ id, w }) => {
@@ -83,6 +102,7 @@ try {
   for (const [id, sel] of TOOLS) {
     for (const w of [330, 900]) {
       errors.length = 0;
+      const relay0 = relay.length;
       const opened = await mount(id, w);
       await page.waitForTimeout(900);
       const info = await page.evaluate(({ id, sel }) => {
@@ -92,12 +112,20 @@ try {
           sheet: !!document.getElementById('gm-sheet-' + id) && !document.getElementById('gm-sheet-' + id).hidden, fixed: body ? getComputedStyle(body).position : '', over, w: Math.round(r.width), h: Math.round(r.height) };
       }, { id, sel });
       const tag = id + ' at ' + w;
-      check(opened === true || id === 'trouble' || id === 'phone', tag + ': open() answers');
+      check(opened === true, tag + ': open() answers true');
       check(info.has && info.open && info.mounted, tag + ': bound inline, mounted() is true');
       check(info.text > 0 && info.known, tag + ': it drew real content (' + sel + ', ' + info.text + ' characters)');
       check(!info.sheet, tag + ': no right-edge sheet is shown behind it');
       check(info.over <= 0, tag + ': nothing sticks out of the container (' + info.over + ')');
       check(errors.length === 0, tag + ': no console or page error' + (errors.length ? ' ' + errors[0] : ''));
+      if (id === 'light') {
+        /* opening the panel asks the relay once (no timer), so it never says "not checked yet"; with no relay running it reads, calmly, "not answering" */
+        const said = await page.waitForFunction(() => { const e = document.querySelector('#n2-host [data-b29-relay]'); return e && e.getAttribute('data-b29-relay') !== 'asking' ? e.textContent : null; }, null, { timeout: 10000 })
+          .then((h) => h.jsonValue(), () => '(still asking)');
+        const asked = relay.slice(relay0);
+        check(said === 'Light relay: not answering' && asked.length === 1 && asked[0].m === 'GET' && asked[0].p === '/state' && !(await page.$('#n2-host .gm-warn')),
+          tag + ': open() asks the relay once (' + asked.map((a) => a.m + ' ' + a.p).join(', ') + ') and, with none running, says "' + said + '" without a warning');
+      }
       if (SHOTS) { const h = await page.$('#n2-host'); await h.scrollIntoViewIfNeeded(); await h.screenshot({ path: path.join(SHOTS, id + '-' + w + '.png') }); }
       /* an action that makes the tool redraw or close itself must leave it where it is */
       if (w === 330) {
@@ -105,21 +133,55 @@ try {
         const after = await page.evaluate((id) => ({ closed: window.__closed, still: window.B68GmWorkshop.bound(id), vis: !!document.querySelector('#n2-host .gm-sheet-body.gm-inline') }), id);
         check(after.closed >= 1 && after.still && after.vis, id + ': close() asks the shell (onClose) and hides nothing');
         const again = await page.evaluate((id) => window.B68GmTools.get(id).open(), id);
-        check(again === true || id === 'trouble' || id === 'phone', id + ': open() again redraws it');
+        check(again === true, id + ': open() again redraws it');
       }
       await unmount(id);
     }
     check(await unmount(id) === false, id + ': unbound');
   }
 
+  /* Esc: the band gates its keys on B68GmEsc.anyOpen(), so a bound tool counts as open only while it is drawn. Hidden (its place hid the column) or detached
+     (the container went without an unbind), it holds back no key */
+  const escSeen = await page.evaluate(() => {
+    const W = window.B68GmWorkshop, E = window.B68GmEsc, host = document.createElement('div');
+    host.id = 'n2-esc'; (document.getElementById('gm-page') || document.body).appendChild(host);
+    W.inline('record', host, { onClose: () => {}, esc: true }); window.B68GmTools.get('record').open();
+    const mine = () => { const e = E.list().filter((x) => x.id === 'inline-record')[0]; return e ? e.open : null; };
+    const r = { drawn: mine(), any: E.anyOpen(), others: E.list().filter((x) => x.id !== 'inline-record' && x.open && x.kind !== 'stamp').map((x) => x.id) };
+    host.style.display = 'none'; r.hidden = mine(); r.anyHidden = E.anyOpen();
+    host.style.display = ''; r.back = mine();
+    host.remove(); r.detached = mine(); r.anyDetached = E.anyOpen(); r.stillBound = W.bound('record');
+    W.inline('record', null); r.gone = !E.list().some((x) => x.id === 'inline-record');
+    return r;
+  });
+  check(escSeen.drawn === true && escSeen.any === true && escSeen.others.length === 0 && escSeen.hidden === false && escSeen.anyHidden === false && escSeen.back === true &&
+    escSeen.detached === false && escSeen.anyDetached === false && escSeen.stillBound === true && escSeen.gone === true,
+  'Esc: a bound tool is open only while it is drawn; hidden or detached it holds back no key (' + JSON.stringify(escSeen) + ')');
+
+  /* binding a tool inline closes AND empties its right-edge copy: two copies of one drawing share their SVG ids (the cast photo drew bare rectangles) */
+  const dup = await page.evaluate(async () => {
+    const T = window.B68GmTools, W = window.B68GmWorkshop, wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    T.get('castphoto').open(); await wait(1500);
+    const sheetBody = document.querySelector('#gm-sheet-castphoto .gm-sheet-body');
+    const r = { sheetSvg: sheetBody ? sheetBody.querySelectorAll('svg').length : -1 };
+    const host = document.createElement('div'); host.id = 'n2-dup'; host.style.width = '900px';
+    (document.getElementById('gm-page') || document.body).appendChild(host);
+    W.inline('castphoto', host); T.get('castphoto').open(); await wait(1500);
+    r.sheetLeft = sheetBody ? sheetBody.childNodes.length : -1; r.sheetHidden = document.getElementById('gm-sheet-castphoto').hidden;
+    r.inlineSvg = host.querySelectorAll('svg').length;
+    const ids = Array.from(host.querySelectorAll('[id]')).map((e) => e.id);
+    r.ids = ids.length; r.twice = ids.filter((id) => document.querySelectorAll('[id="' + CSS.escape(id) + '"]').length > 1).slice(0, 3);
+    W.inline('castphoto', null); host.remove();
+    return r;
+  });
+  check(dup.sheetSvg >= 1 && dup.sheetLeft === 0 && dup.sheetHidden === true && dup.inlineSvg >= 1 && dup.ids > 0 && dup.twice.length === 0,
+    'binding inline closes and empties the right-edge copy: the drawing is in the page once, no SVG id twice (' + JSON.stringify(dup) + ')');
+
   /* the right-edge path still works for an unbound tool, and its sheet is in the one Esc (priority 50) */
   const sh = await page.evaluate(() => { window.B68GmTools.get('print').open(); const e = window.B68GmEsc.list().filter((x) => x.id === 'sheet-print')[0]; const r = { shown: !document.getElementById('gm-sheet-print').hidden, esc: e ? e.priority + ':' + e.open : '' }; window.B68GmTools.get('print').close(); r.hidden = document.getElementById('gm-sheet-print').hidden; return r; });
   check(sh.shown && sh.esc === '50:true' && sh.hidden, 'unbound, a tool opens in the right-edge sheet and the sheet is registered with B68GmEsc at 50 (' + JSON.stringify(sh) + ')');
-  /* timers: a control window with nothing bound shows what the page itself asks for; then every tool is bound and opened together, unbound together, and the next 11 s
-     (past the Aftermath's 10 s tick) must hold no request the control did not have */
-  const key = (u) => new URL(u).pathname;
-  const c0 = Date.now(); await sleep(11000);
-  const control = new Set(reqs.filter((r) => r.t > c0).map((r) => key(r.url)));
+  /* timers: every tool is bound and opened together, unbound together, and the next 11 s (past the Aftermath's 10 s tick) must hold no request the control window
+     before the loop did not have, and nothing to the light relay */
   await page.evaluate((ids) => {
     const root = document.getElementById('gm-page') || document.body;
     ids.forEach((id) => { const h = document.createElement('div'); h.className = 'n2-all'; root.appendChild(h); window.B68GmWorkshop.inline(id, h); window.B68GmTools.get(id).open(); });
@@ -129,7 +191,7 @@ try {
   await page.evaluate((ids) => { ids.forEach((id) => window.B68GmWorkshop.inline(id, null)); document.querySelectorAll('.n2-all').forEach((e) => e.remove()); }, TOOLS.map((t) => t[0]));
   await page.waitForTimeout(500);
   const t1 = Date.now(); await sleep(11000);
-  const late = reqs.filter((r) => r.t > t1).map((r) => key(r.url)).filter((u) => !control.has(u));
+  const late = reqs.filter((r) => r.t > t1).map((r) => key(r.url)).filter((u) => !control.has(u)).concat(relay.filter((r) => r.t > t1).map((r) => 'relay ' + r.m + ' ' + r.p));
   check(late.length === 0, 'no request from any tool in the 11 s after every one is unbound' + (late.length ? ' (' + late.slice(0, 3).join(', ') + ')' : ''));
   check(await page.evaluate(() => window.B68GmWorkshop.boundIds().length) === 0, 'nothing is left bound');
   check(errors.length === 0, 'no console or page error through the unbind' + (errors.length ? ' ' + errors[0] : ''));
