@@ -194,10 +194,11 @@ try {
   answer.no = false;
   await noLeak('the people');
 
-  /* ---- 4. If it goes wrong -> the Roll: N4's B68GmPage.setThreat and its line (#gm-c-threat) when the page has them; until then the stamp's own line ---- */
+  /* ---- 4. If it goes wrong -> the Roll: with N4's B68GmPage.setThreat, its one line (#gm-c-threat, the console's Threat, which is on the page before N4
+     too); until then the stamp's own line ---- */
   const n4 = await G.page.evaluate(() => !!(window.B68GmPage && typeof window.B68GmPage.setThreat === 'function'));
   await G.page.click('.rv-rm.sel .rv-wrong [data-site="threat"]');
-  check(!!(await until(() => G.page.evaluate(() => { const i = document.querySelector('#gm-c-threat') || document.querySelector('#gm-stamp input, #gm-stamp .gm-st-text'); return !!i && i.value === 'GM-ONLY-the guard turns'; }), 5000)),
+  check(!!(await until(() => G.page.evaluate((withN4) => { const i = withN4 ? document.querySelector('#gm-c-threat') : document.querySelector('#gm-stamp input, #gm-stamp .gm-st-text'); return !!i && i.value === 'GM-ONLY-the guard turns'; }, n4), 5000)),
     '"→ the Roll" puts the room\'s line in the Roll\'s line (' + (n4 ? 'B68GmPage.setThreat, N4' : 'no N4 yet: the stamp\'s own line') + ')');
   check(!(await G.page.$eval('.rv-rm.sel .rv-rmnote', (e) => /the guard turns/.test(e.textContent))), 'and the note no longer repeats it');
 
