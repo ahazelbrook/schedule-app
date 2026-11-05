@@ -728,6 +728,8 @@
 #dossier .ds-now-left { display: inline-block; margin-left: 2px; padding: 0 6px; border: 1.5px solid currentColor; font: 700 13px/1.5 var(--font-mono); letter-spacing: 0; white-space: nowrap; vertical-align: 1px; }
 #dossier .ds-now-left:empty { display: none; }
 #dossier .ds-now-acts, #dossier .ds-now-html .ds-kt-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+/* "Not now": puts the card away on this phone; a quiet text button, not a third choice beside the turn */
+#dossier .ds-now .btn.ds-now-not, #dossier .ds-now .btn.ds-now-not:hover { background: transparent; color: inherit; border-color: transparent; box-shadow: none; text-decoration: underline; text-underline-offset: 3px; padding-left: 4px; padding-right: 4px; }
 #dossier .ds-now-html .ds-kt-row { gap: 6px; padding: 8px 0 2px; border-top: 1px solid rgba(20, 17, 14, .28); }
 #dossier .ds-now-html .ds-kt-row b { font: 900 12px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; }
 #dossier .ds-now-more { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; min-height: 44px; margin: 0 0 -6px; padding: 8px 0; border: 0; border-top: 1.5px solid rgba(20, 17, 14, .35); border-radius: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; font: 900 12px/1.25 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; -webkit-appearance: none; appearance: none; }

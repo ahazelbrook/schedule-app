@@ -229,6 +229,21 @@ try {
   check(!!(await until(async () => { const x = await nowOf(a); const y = await foldOf(a); return x && !x.items.includes('debrief') && y.n === '3 inside'; }, 6000)), 'answered, the Debrief leaves the Now card for the fold');
   n = await nowOf(a);
   check(n.items[0] === 'keys', 'the key is the card now: ' + JSON.stringify(n.items));
+  check(!!(await a.$('.ds-now .ds-keyturn [data-act="nownot"]')), 'the key card has "Not now"');
+  /* "Not now" is per phone: a second phone of the same player puts the key card away; this one still offers it */
+  const B2 = await open(P1, '#c/' + ID);
+  await B2.page.waitForSelector('#dossier .ds-bar', { timeout: 30000 }); await started(B2.page);
+  await closeCard(B2.page);
+  check(!!(await until(async () => { const x = await nowOf(B2.page); return x && x.more && /a key to turn/.test(x.more.text); }, 15000)), 'a second phone has the key waiting too (behind its unread packet)');
+  await B2.page.click('#dossier .ds-now-more');
+  await B2.page.click('#dossier .ds-now .ds-keyturn [data-act="nownot"]');
+  const gone = async () => { const x = await nowOf(B2.page); return !!x && !x.items.includes('keys') && !(x.more && /a key to turn/.test(x.more.text)); };
+  check(!!(await until(gone, 4000)), '"Not now" puts the key card away on that phone');
+  check(await B2.page.evaluate(() => !!document.querySelector('#dossier .ds-keybox [data-act="kturn"]')), 'and its Keys box still offers the turn');
+  await B2.page.reload(); await B2.page.waitForSelector('#dossier .ds-bar', { timeout: 30000 }); await started(B2.page); await sleep(800);
+  check(await gone(), 'a reload of that phone keeps it put away');
+  await B2.ctx.close();
+  check((await nowOf(a)).items[0] === 'keys', 'the first phone still has the key card: "Not now" is per phone');
   await a.click('.ds-now .ds-keyturn [data-act="kturn"][data-dir="down"]');
   const turned = await until(async () => { const d = charDoc((await api('GET', '/characters/' + ID)).json); return d && d.play && d.play.keys[0].deadlock === 'down' ? d : null; }, 8000);
   check(!!turned && turned.play.stress === 0 && !!turned.play.autoCrit, 'turning it from the card deadlocks the key, clears Stress and owes a critical');
