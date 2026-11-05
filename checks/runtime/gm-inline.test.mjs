@@ -133,6 +133,40 @@ await test('sheet Esc: an open right-edge sheet counts as open only while it is 
   s.close(); assert.equal(ent().open, false, 'closed: not open');
 });
 
+await test('aftermath: its 10 s tick lives on its own box: the right-edge copy a bind emptied stops (one tick while bound), the unbind stops the inline one, and a box that leaves stops only its own', () => {
+  const p = page(), timers = new Map();
+  let seq = 0, bound = false;
+  const hooks = [], sheetBody = p.box(), inlineHost = p.box(), inlineBody = inlineHost.appendChild(p.doc.createElement('div'));
+  const win = {
+    document: p.doc, console,
+    setInterval: (fn, ms) => { const id = ++seq; timers.set(id, { fn, ms, live: true }); return id; },
+    clearInterval: (id) => { const t = timers.get(id); if (t) t.live = false; },
+    B68Features: { valueOf: () => true },
+    B68GmPage: { aftermath: () => ({ doc: {}, night: null, npcs: [], crew: {}, toast() {} }), show: () => Promise.resolve(null), layer: () => Promise.resolve(null), clearShow: () => Promise.resolve(null) },
+    /* the host as the tool sees it: the right-edge sheet's body, or (bound) the inline body with its onUnbind */
+    B68GmWorkshop: { sheet: () => (bound ? { body: inlineBody, inline: true, open() {}, close() {}, isOpen: () => true, onUnbind: (fn) => hooks.push(fn) } : { body: sheetBody, open() {}, close() {}, isOpen: () => true }) }
+  };
+  win.self = win;
+  vm.createContext(win);
+  vm.runInContext(src('gm/aftermath.js'), win, { filename: 'gm/aftermath.js' });
+  const A = win.B68GmAftermath, live = () => [...timers.entries()].filter(([, t]) => t.live).map(([id]) => id), tick = (id) => timers.get(id).fn();
+  A.open(p.body);
+  assert.deepEqual(live(), [1], 'the right-edge sheet ticks'); assert.equal(timers.get(1).ms, 10000);
+  bound = true; A.open(p.body);
+  assert.deepEqual(live(), [1, 2], 'bound inline, the inline copy has its own tick');
+  sheetBody.textContent = '';                              /* what workshop.inline() does to the right-edge copy */
+  tick(1); tick(2);
+  assert.deepEqual(live(), [2], 'the emptied copy stopped itself: one tick runs while bound');
+  hooks.splice(0).forEach((fn) => fn());                   /* the shell unbinds */
+  assert.deepEqual(live(), [], 'the unbind stopped the inline tick: nothing is left running');
+  bound = false; A.open(p.body); bound = true; A.open(p.body);
+  assert.deepEqual(live(), [3, 4], 'both copies drawn again: one tick each');
+  sheetBody.remove(); tick(3);                             /* the OLDER box leaves the page */
+  assert.deepEqual(live(), [4], 'the box that left stopped its own interval and left the live one alone');
+  hooks.splice(0).forEach((fn) => fn());
+  assert.deepEqual(live(), []);
+});
+
 await test('registry: get(id) answers for the 18 tools and still for the tabs; a tool id cannot shadow a tab', () => {
   const p = page(), ids = p.R.IDS;
   assert.equal(ids.length, 18); assert.equal(new Set(ids).size, 18);
