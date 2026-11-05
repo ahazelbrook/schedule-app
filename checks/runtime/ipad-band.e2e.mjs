@@ -158,6 +158,7 @@ try {
     const portrait = h > w;
     await step('the iPad at ' + w + 'x' + h + ' with a map, the band beside it and every layer: the strip covers none of them, and the band beside the map fits', async () => {
       const ctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: w, height: h } });
+      await ctx.addInitScript(() => { try { localStorage.setItem('b68.display.hint', '1'); } catch (e) { /* the hint shows */ } });      /* the Add to Home Screen hint seen: the shots show the band */
       const page = await ctx.newPage(); const calls = []; page.on('request', (r) => { const u = new URL(r.url()); if (u.pathname.startsWith('/api/')) calls.push(u.pathname); });
       await page.goto(BASE + '/');
       await page.waitForFunction(() => document.body.dataset.mode === 'display' && document.querySelector('.dp-lay-strip') && document.querySelector('.dp-band:not([hidden])'), null, { timeout: 20000 });
@@ -186,9 +187,14 @@ try {
         const box = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom }; };
         const card = box(document.querySelector('.dp-ov-card')), band = document.querySelector('.dp-band');
         const words = [...band.querySelectorAll('p, span')].filter((e) => getComputedStyle(e).visibility !== 'hidden' && e.textContent.trim() && e.getClientRects().length).map(box);
-        return { card, band: box(band), svg: box(document.querySelector('.dp-map-frame svg')), strip: box(document.querySelector('.dp-lay-strip')), words, vh: innerHeight };
+        const ck = band.querySelector('.dp-b-clock'), cn = document.querySelector('.dp-ov-card');
+        return { card, band: box(band), svg: box(document.querySelector('.dp-map-frame svg')), strip: box(document.querySelector('.dp-lay-strip')), words, vh: innerHeight,
+          whole: cn.scrollHeight <= cn.clientHeight + 1, scale: cn.style.getPropertyValue('--dp-ov-s') || '1',
+          clock: ck && getComputedStyle(ck).visibility !== 'hidden' ? ck.textContent : '', others: [...band.children].filter((e) => !e.classList.contains('dp-b-time') && getComputedStyle(e).visibility !== 'hidden').length };
       });
       expect(held.words.every((r) => !cut(r, held.card)), 'no word of the band beside the map is under the card: ' + held.words.filter((r) => cut(r, held.card)).length);
+      expect(held.whole, 'the card is drawn whole, nothing of it cut off (scale ' + held.scale + ')');
+      expect(held.others === 0 && (portrait || held.clock === '22:30'), (portrait ? 'portrait: the band\'s words all stand down under the card' : 'the band\'s clock stays readable above the card (' + JSON.stringify(held.clock) + '), the rest stands down') + ' (' + held.others + ' left up)');
       expect(!cut(held.card, held.svg) && !cut(held.card, held.strip), 'the card keeps off the map and the iPad\'s band: ' + JSON.stringify(held));
       expect(held.card.l >= held.band.l - 0.5 && held.card.r <= held.band.r + 0.5 && held.card.t >= held.band.t - 0.5 && held.card.b <= held.vh + 0.5, 'it sits in the band\'s own column: ' + JSON.stringify([held.card, held.band]));
       if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'ipad-held-face-band-' + w + 'x' + h + '.png') });

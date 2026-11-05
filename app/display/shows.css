@@ -126,15 +126,24 @@
 .dp-root.dp-lay-on .dp-chrome { top: calc(var(--dp-lay-h) + 1.2vmin); }
 /* an overlay up (a card, a beat, the dawn) with the band beside the map: the band's words stand down under it (its ground stays), so the overlay is
    never drawn over the band's text; a side card (a held face, a clock, a line) takes the band's own column, so the map stays clear (display-page.js
-   sets dp-ov-up and dp-ov-card-on while one is up) */
+   sets dp-ov-up and dp-ov-card-on while one is up). In landscape the band's clock stays over a side card: the card is centred in the column below it
+   (--dp-band-time-h, measured by display-page.js; the overlay and the band share their top); in portrait it is centred on the band along the
+   foot. A card taller than that room is drawn whole and smaller (--dp-ov-s, display-page.js ovFit), never cut off. */
 .dp-root.dp-band-on.dp-ov-up .dp-band > * { visibility: hidden; }
+.dp-root.dp-band-on.dp-ov-card-on .dp-ov-card { max-height: none; transform-origin: 50% 50%; transform: translateY(-50%) translateX(3vmin) scale(var(--dp-ov-s, 1)); }
+.dp-root.dp-band-on.dp-ov-card-on .dp-ov-card.dp-ov-in { transform: translateY(-50%) scale(var(--dp-ov-s, 1)); }
+.dp-root.dp-band-on.dp-ov-card-on .dp-ov-card.dp-ov-out { transform: translateY(-50%) translateX(3vmin) scale(var(--dp-ov-s, 1)); }
+@media (prefers-reduced-motion: reduce) {
+  .dp-root.dp-band-on.dp-ov-card-on .dp-ov-card, .dp-root.dp-band-on.dp-ov-card-on .dp-ov-card.dp-ov-in, .dp-root.dp-band-on.dp-ov-card-on .dp-ov-card.dp-ov-out { transform: translateY(-50%) scale(var(--dp-ov-s, 1)); }
+}
 @media (orientation: landscape) {
   .dp-root.dp-lay-on .dp-band { top: var(--dp-lay-h); }
   .dp-root.dp-band-on .dp-chrome { right: calc(36% + 12px); }      /* the full-screen button keeps off the band beside the map and its countdown */
-  .dp-root.dp-band-on.dp-ov-card-on .dp-ov-card { right: 3vmin; width: calc(36% - 6vmin); max-height: calc(100% - 6vmin); }
+  .dp-root.dp-band-on.dp-ov-card-on .dp-band > .dp-b-time { visibility: visible; }
+  .dp-root.dp-band-on.dp-ov-card-on .dp-ov-card { top: calc(var(--dp-band-time-h, 0px) + (100% - var(--dp-band-time-h, 0px)) / 2); right: 3vmin; width: calc(36% - 6vmin); }
 }
 @media (orientation: portrait) {
-  .dp-root.dp-band-on.dp-ov-card-on .dp-ov-card { top: calc(100% - var(--dp-band-h, 50%) / 2); right: 18%; width: 64%; max-height: calc(var(--dp-band-h, 50%) - 6vmin); }
+  .dp-root.dp-band-on.dp-ov-card-on .dp-ov-card { top: calc(100% - var(--dp-band-h, 50%) / 2); right: 18%; width: 64%; }
 }
 @media (orientation: portrait) {
   /* three slots across, and the crew on a row of its own while there is one */
