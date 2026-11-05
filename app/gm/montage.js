@@ -135,7 +135,7 @@
           '<input type="text" maxlength="' + LINE_MAX + '" data-mt-line="' + esc(c.id) + '" value="' + esc(c.line) + '" placeholder="one line" aria-label="Line for ' + esc(c.name) + '">' +
           (v.live ? ' <button type="button" class="btn sm' + (c.rolling ? ' primary' : '') + '" data-mt="rolling" data-id="' + esc(c.id) + '">Rolling</button> <button type="button" class="btn sm" data-mt="resolve" data-id="' + esc(c.id) + '"' + (c.done || !c.picked ? ' disabled' : '') + '>' + (c.done ? 'Resolved' : 'Resolve') + '</button>' : '') + '</div>';
       }).join('') : '<p class="gm-empty">No characters on the table.</p>';
-      html += '<div class="gm-sb-row">' + (v.live ? '<button type="button" class="btn sm primary" data-mt="collapse">Collapse to one panel</button> <button type="button" class="btn sm" data-mt="split">Send changes</button>'
+      html += '<div class="gm-sb-row">' + (v.live ? '<button type="button" class="btn sm primary" data-mt="collapse" title="The panels come down: back to one scene">Take it down</button> <button type="button" class="btn sm" data-mt="split">Send changes</button>'
         : '<button type="button" class="btn sm primary" data-mt="split"' + (v.count < MIN ? ' disabled' : '') + '>' + (v.over === false ? 'Split anyway' : 'Split the iPad') + '</button>') + '</div>';
       box.innerHTML = html;
       var sh = box.parentNode;

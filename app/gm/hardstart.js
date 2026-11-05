@@ -123,7 +123,7 @@
       var h2 = '<p class="gm-dim">' + (s.armed ? (s.test ? 'Test armed' : 'Armed') + ' for ' + esc(hhmm(s.at)) + '.' : 'Not armed. The iPad shows the test card and a station clock once you arm it.') + '</p>' +
         '<div class="gm-sb-row"><button type="button" class="btn sm primary" data-hs="arm"' + (start ? '' : ' disabled') + ' title="' + (start ? 'Counts down to the night’s start time' : 'The night has no start: line in its Run sheet') + '">Arm for ' + (start ? esc(hhmm(start)) : 'the night’s start') + '</button> ' +
         '<button type="button" class="btn sm" data-hs="test">Test: start in 2 minutes</button> <button type="button" class="btn sm" data-hs="go"' + (s.armed ? '' : ' disabled') + '>GO now</button> ' +
-        '<button type="button" class="btn sm" data-hs="end"' + (s.armed ? '' : ' disabled') + '>End the hard start</button></div>' +
+        '<button type="button" class="btn sm" data-hs="end"' + (s.armed ? '' : ' disabled') + ' title="End the hard start: its card, clock, credits and faces come off the iPad">Take it down</button></div>' +
         '<h3>Previously on: three faces from the people the table has met</h3>';
       for (var i = 0; i < SLOTS; i++) {
         h2 += '<div class="gm-sb-row"><label>Face ' + (i + 1) + ' <select data-hs-pick="' + i + '">' + opts(picks[i] || '') + '</select></label> ' +

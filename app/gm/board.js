@@ -167,7 +167,7 @@
     var f = feed(), phase = f && f.night && typeof f.night.phase === 'function' ? str(f.night.phase()) : '';
     box.appendChild(el('p', 'gm-dim', (phase === 'plan' ? 'Planning phase: put the board up for the table. ' : '') + 'Players post from their sheets. Only the cards you post here go on the iPad.'));
     var row = el('div', 'seg');
-    row.appendChild(btn('Put the board on the iPad', function () { c.show().then(function (ok) { if (!ok) box.appendChild(el('p', 'gm-warn', 'Post at least one card first.')); }); }, 'primary'));
+    row.appendChild(btn('Show the board on iPad', function () { c.show().then(function (ok) { if (!ok) box.appendChild(el('p', 'gm-warn', 'Post at least one card first.')); }); }, 'primary'));
     row.appendChild(btn('Refresh', function () { c.refresh().then(function () { paint(box); }); }));
     row.appendChild(btn('Close the board (picked is done, the rest carry over)', function () {
       if (W.confirm && !W.confirm('Close the board? The picked card is done and every other posted card carries over.')) return;

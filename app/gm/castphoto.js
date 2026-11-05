@@ -2,7 +2,7 @@
 
    WHAT IT DOES. Menu then Cast photo: one true-height line-up of an arc's recurring cast. The cast is every NPC tagged `recurring` or `major` (the tag the standees
    already use), or the list the GM chose for the arc. An NPC the crew has met (revealed) is drawn in full with a caption; one they have not is a silhouette at their
-   true height, captioned "?". "Put it on the iPad" sends the show kind `castphoto` for up to three minutes (the server's overlay cap); "Print" opens the browser's print
+   true height, captioned "?". "Show on iPad" sends the show kind `castphoto` for up to three minutes (the server's overlay cap); "Print" opens the browser's print
    dialog for an A4 landscape page, for the end of the arc. Both are drawn from the figure kit's own renderer: nothing is generated.
 
    SECRECY. The roster names hidden NPCs, so it is a GM-scope row of the docs store (kind `castphoto`, owner = the arc's slug, scope gm): { v: 1, title, ids: [npcId] }. What
@@ -188,7 +188,7 @@
     if (!list.firstChild) list.appendChild(el('p', 'gm-dim', 'No NPCs yet.'));
     box.appendChild(list);
     var row = el('div', 'seg');
-    row.appendChild(btn('Put it on the iPad (three minutes)', function () { c.show().then(function (ok) { if (!ok) box.appendChild(el('p', 'gm-warn', 'Choose at least one person first.')); }); }, 'primary'));
+    row.appendChild(btn('Show on iPad', function () { c.show().then(function (ok) { if (!ok) box.appendChild(el('p', 'gm-warn', 'Choose at least one person first.')); }); }, 'primary')).title = 'The photo stays up on the iPad for three minutes';
     row.appendChild(btn('Print (A4)', function () { if (!c.print()) box.appendChild(el('p', 'gm-warn', 'Nothing to print yet.')); }));
     box.appendChild(row);
     var pv = c.preview();
