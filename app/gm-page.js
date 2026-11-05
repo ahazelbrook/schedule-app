@@ -4018,7 +4018,7 @@
   }
   var ipadTrayApi = {
     snapshot: ipadSnapshot, clear: clearIpad, blank: darkIpad, busy: function () { return AM.busy > 0; },
-    openView: function () { setPanel('ipad'); },
+    openView: function () { showPanel('ipad'); },      /* as the I key does: on a phone the segment follows */
     ap: { view: function () { var v = apView(); return v ? { badge: v.bar, title: v.title, mode: v.mode } : null; }, toggle: function () { apToggle(); } }
   };
   /* mount the tray in the bar (the band mounts one of its own); the page's iPad is provided to every tray on the page */

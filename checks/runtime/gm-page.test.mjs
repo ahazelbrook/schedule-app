@@ -981,6 +981,19 @@ await test('9i. the tray: Clear (and key 0) is everything down to the ambient; B
   await h.save();
 });
 
+await test('9i2. a tap on the tray\'s live line opens the iPad view: on a laptop the panel, on a phone the segment with it (as the I key does)', async () => {
+  for (const phone of [false, true]) {
+    const br = fakeBrowser({ matchMedia: (q) => ({ matches: phone && /max-width: 599px/.test(String(q)) }) });
+    const h = await openPage({ fg: addAmbient(fakeGm()), br, camp: CAMP3 });
+    h.q('.gm-tray [data-tray="open"]').click(); await tick();
+    const st = h.page._state();
+    assert.equal(st.panel, 'ipad', (phone ? 'phone' : 'laptop') + ': the iPad view is the panel');
+    if (phone) assert.equal(st.seg, 'side', 'phone: the segment follows, so the view is on screen and not the console');
+    assert.ok(h.q('#gm-ipad-settings [data-set-row]'), 'and its Settings are drawn');
+    await h.save();
+  }
+});
+
 await test('9j. Off / Auto / Pin, a scene, the interval, Next scene and Clear score patch the server and draw its answer', async () => {
   const fg = addAmbient(fakeGm(), { doc: { score: SCORE0 } }), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
   await openIpad(h);
