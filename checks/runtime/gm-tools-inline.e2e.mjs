@@ -1,7 +1,7 @@
 // The 18 tools INLINE (the night rebuild, N2): against the demo night (scripts/demo-night.mjs), bind each tool to a container in the GM page in turn,
 // open it through B68GmTools.get(id).open(), assert it drew real content (a known element per tool), that nothing is logged as an error, that it
 // kept its place after an action, and that unbinding it stops its timers: no request leaves the page for 10 s after the unbind that the page did not
-// already make by itself in an 11 s window before any tool was opened. (N2-fix) Also: the Light relay panel asks the relay once on open; a bound tool
+// already make by itself in a 16 s window before any tool was opened. (N2-fix) Also: the Light relay panel asks the relay once on open; a bound tool
 // that is hidden or detached is not open for Esc; binding inline empties the right-edge copy (no SVG id twice in the page).
 //   PW_MODULE=<playwright-core> PW_CHANNEL=msedge [PORT=8951] [DEMO_URL=http://127.0.0.1:8950] [GM_SHOTS=<dir>] node checks/runtime/gm-tools-inline.e2e.mjs
 // With DEMO_URL the check uses a demo night that is already running (npm run demo:night -- --port 8950) and starts none; otherwise it starts its own on PORT.
@@ -82,11 +82,12 @@ try {
   check(await page.evaluate(() => !document.querySelector('#gm-menu-print, #gm-menu-preflight, #gm-menu-hardstart, #gm-menu-aftermath, #gm-menu-b29-batch, #gm-menu-trouble')), 'no tool has a Menu line of its own');
 
   /* timers: a control window BEFORE any tool is opened shows what the page itself asks for. (Taken after the loop below, a timer a tool leaked there would be
-     counted as the page's own.) */
-  const key = (u) => new URL(u).pathname;
-  const c0 = Date.now(); await sleep(11000);
+     counted as the page's own.) It lasts 16 s, past the page's slowest poll (the listening document, every 15 s: gm-page.js), and a docs request is told
+     apart by its kind (the Quiet line polls /docs?kind=quiet every 8 s; a tool that kept polling its own kind must still show) */
+  const key = (u) => { const x = new URL(u), k = x.searchParams.get('kind'); return x.pathname + (k ? '?kind=' + k : ''); };
+  const c0 = Date.now(); await sleep(16000);
   const control = new Set(reqs.filter((r) => r.t > c0).map((r) => key(r.url)));
-  console.log('     (what the page asks for by itself in 11 s: ' + ([...control].join(', ') || 'nothing') + ')');
+  console.log('     (what the page asks for by itself in 16 s: ' + ([...control].join(', ') || 'nothing') + ')');
 
   /* a container the shell would own: inside #gm-page so the page's CSS applies */
   const mount = (id, w) => page.evaluate(({ id, w }) => {
@@ -192,7 +193,7 @@ try {
   await page.waitForTimeout(500);
   const t1 = Date.now(); await sleep(11000);
   const late = reqs.filter((r) => r.t > t1).map((r) => key(r.url)).filter((u) => !control.has(u)).concat(relay.filter((r) => r.t > t1).map((r) => 'relay ' + r.m + ' ' + r.p));
-  check(late.length === 0, 'no request from any tool in the 11 s after every one is unbound' + (late.length ? ' (' + late.slice(0, 3).join(', ') + ')' : ''));
+  check(late.length === 0, 'no request from any tool in the 11 s after every one is unbound' + (late.length ? ' (' + late.slice(0, 5).join(', ') + ')' : ''));
   check(await page.evaluate(() => window.B68GmWorkshop.boundIds().length) === 0, 'nothing is left bound');
   check(errors.length === 0, 'no console or page error through the unbind' + (errors.length ? ' ' + errors[0] : ''));
   await browser.close();
