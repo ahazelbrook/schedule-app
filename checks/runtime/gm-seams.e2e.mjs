@@ -106,7 +106,7 @@ try {
     check(hasAll(base1280.tabs) && !/hidden/.test(base1280.tabs) && !/hidden/.test(base1280.seg), 'no phase entered: every tab and every phone chip is there and none is hidden');
     check(/id="gm-menu-settings"/.test(base1280.menu) && />Settings</.test(base1280.menu), 'the Menu has the Settings line');
     check(!/Switchboard|gm-menu-switchboard/.test(base1280.menu) && !/Workshop|gm-menu-workshop/.test(base1280.menu), 'and no Switchboard or Workshop line (both are gone)');
-    check(/id="gm-menu-preflight"/.test(base1280.menu), 'everything built is on: the Preflight line is there with nothing stored');
+    check(!/id="gm-menu-preflight"/.test(base1280.menu), 'N2: no tool has a Menu line (Preflight is reached through B68GmTools)');
     check(base1280.panes === 'prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,run', 'the panes are the page\'s own, in its order: ' + base1280.panes);
 
     /* ---- 2. a test tool and the phase filter, driven by the phase rail ---- */
@@ -193,7 +193,7 @@ try {
     check(await g.$eval(sheet, (e) => e.hidden), 'the sheet closes');
 
     /* 4.2: Preflight's line is in the Menu with nothing stored; it opens the sheet (read-only, items green or red with a fix) */
-    await g.evaluate(() => { var b = document.querySelector('#gm-menu-preflight'); if (b) b.click(); });
+    await g.evaluate(() => { window.B68GmTools.get('preflight').open(); });
     check(await until(async () => g.$eval('#gm-sheet-preflight', (e) => !e.hidden && /iPad sound/.test(e.textContent) && /Deepgram/.test(e.textContent) && /Pack version/.test(e.textContent) && /Access session/.test(e.textContent)).catch(() => false), 10000), 'Preflight: the sheet lists the items');
     check(await g.$eval('#gm-sheet-preflight', (e) => /Fix:/.test(e.textContent)), 'Preflight: a red item carries a Fix line');
     await G.c.close(); await PH.c.close(); await DS.c.close();

@@ -30,7 +30,7 @@
      start() next() back() skip() go(i) finish() stop()   -> Promise<bool>
      set(patch)           the numbers and lines the GM typed -> re-sends the step on screen        pick(npcId, on)   credits: tick or untick an NPC
      tick()               re-send the step when it has been up for RESEND_MS                       state() -> the panel's model       resume()   pick up a run in the night document
-   sync(root, doc) draws or removes the Menu entry (only while the switch is on); open(root) opens the panel. */
+   sync(root) takes down a stale Menu entry (N2: no Menu line any more); open(root) opens the panel (a sheet, or inline once the shell binds it). */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -266,11 +266,13 @@
   function mmss(s) { return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
 
   var timer = null;
-  function paint(box) {
+  function stopTick(box) { if (timer) { W.clearInterval(timer); timer = null; } if (box) box.__aft = false; }
+  function paint(box, sh) {
     var c = controller();
-    if (!box.__aft) {                  /* a live panel keeps its own ticking while it is open */
+    if (!box.__aft) {                  /* a live panel keeps its own ticking while it is open (inline: until the shell unbinds it) */
       box.__aft = true;
-      timer = W.setInterval(function () { if (!box.isConnected) { W.clearInterval(timer); timer = null; box.__aft = false; return; } c.tick(); }, 10000);
+      timer = W.setInterval(function () { if (!box.isConnected) { stopTick(box); return; } c.tick(); }, 10000);
+      if (sh && typeof sh.onUnbind === 'function') sh.onUnbind(function () { stopTick(box); });
     }
     var st = c.state();
     box.textContent = '';
@@ -341,24 +343,18 @@
   }
 
   /* the Menu entry: present only while the switch is on, so with it off the Menu is what it was. The page calls sync() when the Menu opens. */
-  function sync(rootEl, doc) {
-    if (!W || !W.document || !rootEl || typeof rootEl.querySelector !== 'function') return false;
-    var list = rootEl.querySelector('.gm-menu-list'), cur = rootEl.querySelector('#gm-menu-aftermath');
-    var on = !!(W.B68Features && isObj(doc) && W.B68Features.valueOf(doc, SWITCH));
-    if (!on) { if (cur && cur.parentNode) cur.parentNode.removeChild(cur); return false; }
-    if (!list || cur) return !!cur;
-    var b = el('button', '', 'Aftermath show');
-    b.type = 'button'; b.id = 'gm-menu-aftermath'; b.title = 'Run the Aftermath on the iPad, step by step';
-    b.addEventListener('click', function () { list.setAttribute('hidden', ''); open(rootEl); });
-    list.appendChild(b);
-    return true;
+  /* N2: the Menu line is gone (the shell places this tool, B68GmTools.get('aftermath').open()); sync() only takes down a line an older page drew, and says false. */
+  function sync(rootEl) {
+    var cur = rootEl && typeof rootEl.querySelector === 'function' ? rootEl.querySelector('#gm-menu-aftermath') : null;
+    if (cur && cur.parentNode) cur.parentNode.removeChild(cur);
+    return false;
   }
   function open(rootEl) {
     var Wk = W.B68GmWorkshop; if (!Wk || typeof Wk.sheet !== 'function') return null;
     var sh = Wk.sheet(rootEl, 'aftermath', 'Aftermath');
     if (!sh) return null;
     controller().resume();
-    paint(sh.body); sh.open();
+    paint(sh.body, sh); sh.open();
     return sh;
   }
 

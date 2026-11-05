@@ -97,9 +97,7 @@ try {
 
   /* ---- 1. everything on (N0), nothing stored ---- */
   await g.evaluate(() => { window.__gmMarker = 'same page'; });
-  await g.click('[data-gm="menu"]');
-  check(!!(await until(async () => (await g.$$('#gm-menu-aftermath')).length === 1, 4000)), 'nothing stored: the Menu has the Aftermath entry');
-  await g.click('[data-gm="menu"]');
+  check(await g.evaluate(() => !!(window.B68GmTools && window.B68GmTools.get('aftermath'))), 'nothing stored: the Aftermath is a registered tool (N2: no Menu line)');
   const camp = (await api('GET', '/campaign', null, PLAYER)).json.doc;
   check(!!camp.features && camp.features['spine.aftermath'] === true, 'a player is told the feature is on with nothing stored');
   check(await until(async () => (await ph.evaluate(() => typeof window.B68Commend)) === 'object', 10000), 'the phone fetches the commendations file by itself');
@@ -107,9 +105,7 @@ try {
   check((await ip.$$('.dp-overlay .dp-show')).length === 0 && !(await ip.evaluate(() => document.querySelector('.dp-root').getAttribute('data-scene-mode'))), 'the iPad draws nothing and has no scene mode until the show starts');
 
   /* ---- 2. the show, from the Menu, no reload ---- */
-  await g.click('[data-gm="menu"]');
-  check(await g.$eval('#gm-menu-aftermath', (e) => /Aftermath/.test(e.textContent)), 'the Menu has the Aftermath entry, with no reload');
-  await g.click('#gm-menu-aftermath');
+  await g.evaluate(() => window.B68GmTools.get('aftermath').open());
   check(await g.$eval('#gm-sheet-aftermath', (e) => !e.hidden && /eight steps/i.test(e.innerText) && /Start the Aftermath/i.test(e.innerText)), 'it opens the panel');
 
   /* ---- the show ---- */
@@ -197,9 +193,7 @@ try {
   /* ---- a stored false (the old All off, written by an older page into both documents) changes nothing ---- */
   check((await api('PATCH', '/gm/state', { features: { 'spine.aftermath': false } })).status === 200 && (await api('PATCH', '/campaign', { features: { 'spine.aftermath': false } })).status === 200, 'a stored false is written to both documents');
   await sleep(2500);
-  await g.click('[data-gm="menu"]');
-  check((await g.$$('#gm-menu-aftermath')).length === 1, 'and changes nothing: the Menu entry stays');
-  await g.click('[data-gm="menu"]');
+  check(await g.evaluate(() => !!window.B68GmTools.get('aftermath') && !document.querySelector('#gm-menu-aftermath')), 'and changes nothing: the tool stays, still no Menu line');
   check((await ph.evaluate(() => window.B68Commend.state())).started === true && (await ph.evaluate(() => window.B68Flags.on('spine.aftermath'))) === true, 'and the phone is still told it is on, and keeps reading');
 
   check(errors.length === 0, 'no console errors or page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));

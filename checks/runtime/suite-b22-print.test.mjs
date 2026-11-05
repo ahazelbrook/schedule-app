@@ -90,7 +90,7 @@ await test('wiring: routes bundle, Menu hook, and the page hook goes through the
   assert.ok(gmLine.includes("'gm/print.js'") && gmLine.includes("'gm-page.js'"), 'print.js is in the gm bundle');
   assert.ok(!/display:\s*\[[^\]]*gm\/print\.js/.test(routes), 'players and the display never fetch it');
   const g = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
-  assert.ok(g.includes("case 'print':") && g.includes('prMenuSync()') && /theme: 'casefile'[^}]*\}\), W\.B68Map/.test(g) && g.includes("layer: 'player', view: 'plan'"));
+  assert.ok(g.includes("case 'print':") && g.includes("reg('print', prInst)") && /theme: 'casefile'[^}]*\}\), W\.B68Map/.test(g) && g.includes("layer: 'player', view: 'plan'"));
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

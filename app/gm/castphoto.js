@@ -18,7 +18,7 @@
      printHtml(svg, title) -> the A4 landscape page
    create(host) -> controller. host: { enabled(), npcs() -> { id: npcDoc }, docs: { list(kind), put(row) }, show(kind, payload, opts), night(), now(), print(html) -> bool, kit() }
      refresh() -> Promise  arcs() -> [{ slug, arc }]  current() -> { slug, arc, chosen }  pick(slug) newArc(title) setTitle(title) toggle(id) show() print() preview() -> { svg, count }
-   sync(root, doc) draws or removes the Menu entry (only while the switch is on); open(root) opens the panel (a Workshop sheet). */
+   sync(root) takes down a stale Menu entry (N2: there is no Menu line any more); open(root) opens the panel (a Workshop sheet, or inline once the shell binds it). */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -194,16 +194,11 @@
     var pv = c.preview();
     if (pv.svg) { var holder = el('div', 'gm-cp-preview'); holder.style.cssText = 'margin-top:10px;max-width:100%;overflow:auto'; holder.innerHTML = pv.svg; box.appendChild(holder); }
   }
-  function sync(rootEl, doc) {
-    if (!W || !W.document || !rootEl || typeof rootEl.querySelector !== 'function') return false;
-    var list = rootEl.querySelector('.gm-menu-list'), cur = rootEl.querySelector('#gm-menu-castphoto');
-    var on = !!(W.B68Features && isObj(doc) && W.B68Features.valueOf(doc, SWITCH));
-    if (!on) { if (cur && cur.parentNode) cur.parentNode.removeChild(cur); return false; }
-    if (!list || cur) return !!cur;
-    var b = el('button', '', 'Cast photo'); b.type = 'button'; b.id = 'gm-menu-castphoto'; b.title = 'A true-height line-up of the recurring cast, for the iPad and for print';
-    b.addEventListener('click', function () { list.setAttribute('hidden', ''); open(rootEl); });
-    list.appendChild(b);
-    return true;
+  /* N2: the Menu line is gone (the shell places this tool, B68GmTools.get('castphoto').open()); sync() only takes down a line an older page drew, and says false. */
+  function sync(rootEl) {
+    var cur = rootEl && typeof rootEl.querySelector === 'function' ? rootEl.querySelector('#gm-menu-castphoto') : null;
+    if (cur && cur.parentNode) cur.parentNode.removeChild(cur);
+    return false;
   }
   function open(rootEl) {
     var Wk = W.B68GmWorkshop; if (!Wk || typeof Wk.sheet !== 'function') return null;

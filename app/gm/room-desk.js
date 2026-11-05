@@ -1,12 +1,12 @@
 /* gm/room-desk.js — the page's seam for the practical speaker, the ringing phone and the Trouble Engine desk (suite 4.5, 4.7, 5.3, B31).
 
    Plain script, UMD: window.B68GmRoomDesk in the browser, module.exports under Node. It builds the three controllers (gm/practical.js, gm/phone.js,
-   gm/trouble.js) from ONE host the GM page gives it, keeps their Menu lines in step with their switches, and passes every show the page sends to the phone.
+   gm/trouble.js) from ONE host the GM page gives it, passes every show the page sends to the phone.
    Each part exists only while its own switch is on: with all three off nothing here draws, plays, writes or sends.
 
-   create(host) -> { lines(), menuSync(menu), toggle(which), onShow(kind, payload), practical(), phone(), trouble() }
+   create(host) -> { lines(), desk(which), toggle(which), onShow(kind, payload), practical(), phone(), trouble() }   (N2: no Menu lines; desk(which) -> the controller or null)
      host: { feature(id) -> bool, doc(): the GM state document, save(id, item|null), show(kind, payload, opts), toast(msg, bad?), root(), part(name), now?(), browser?: window-like }
-     which: 'practical' | 'phone' | 'trouble' */
+     which: 'practical' | 'phone' | 'trouble' | 'canon' | 'frontpage' | 'absent' */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -57,15 +57,7 @@
     var get = { practical: practical, phone: phone, trouble: trouble, canon: function () { return b31('canon', 'ai.canon'); }, frontpage: function () { return b31('frontpage', 'between.frontpage'); }, absent: function () { return b31('absent', 'between.absent'); } };
     api.practical = practical; api.phone = phone; api.trouble = trouble;
     api.lines = function () { return DEFS.filter(function (d) { return on(d.sw); }); };
-    /* the Menu lines for the switches that are on, inserted after the Print/Switchboard line and removed when the switch goes off. menu: { $q(sel), after() } */
-    api.menuSync = function (menu) {
-      if (!menu || typeof menu.$q !== 'function') return;
-      DEFS.forEach(function (d) {
-        var id = 'gm-menu-' + d.which, b = menu.$q('#' + id), want = on(d.sw), anchor = menu.after();
-        if (want && !b && anchor) anchor.insertAdjacentHTML('afterend', '<button type="button" data-gm="' + d.which + '" id="' + id + '" title="' + d.title + '">' + d.label + '</button>');
-        else if (!want && b && b.parentNode) b.parentNode.removeChild(b);
-      });
-    };
+    api.desk = function (which) { return get[which] ? get[which]() : null; };
     api.toggle = function (which) { var c = get[which] ? get[which]() : null; return c ? c.toggle() : false; };
     api.onShow = function (kind) { var p = phone(); if (p) p.onShow(kind); };
     api.reset = function () { if (inst.ph) inst.ph.hangup(); if (inst.pr) inst.pr.stopAll(); inst = {}; };

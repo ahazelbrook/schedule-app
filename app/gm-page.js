@@ -2282,14 +2282,14 @@
       '<a href="#display" title="The players’ screen: open this on the iPad">Open the display page (for the iPad)</a>' +
       '<button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="clearcap">Clear tonight’s capture</button><button type="button" data-gm="update">Update pack</button>' +
       '<button type="button" data-gm="capbar" id="gm-menu-capbar" title="The bottom bar that files a roll, a name or a moment"></button>' +
-      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' + setMenuLine() + hsMenuLine() + pfMenuLine() +
+      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' + setMenuLine() +
       '<a href="#t">The table</a><a href="#rules">Rules</a><a href="#cast">The cast</a><a href="#">Home</a>' +
       '<button type="button" class="bad" data-gm="forget">Forget GM data on this device</button></span></span>' +
       '<div class="gm-signed" id="gm-signed" role="alert" hidden>' + esc(SIGNED_OUT_MSG) + '</div></div>';
   }
   function menuOpen(on) {
     var m = $q('.gm-menu-list'), b = $q('[data-gm="menu"]'); if (!m) return;
-    if (on) { renderLiveItem(); syncCapBar(); if (W.B68GmAftermath && S) W.B68GmAftermath.sync($q('#gm-root'), S.doc); if (W.B68GmDebrief && S) W.B68GmDebrief.sync($q('#gm-root'), S.doc); if (W.B68GmBoard && S) W.B68GmBoard.sync($q('#gm-root'), S.doc); if (W.B68GmCastPhoto && S) W.B68GmCastPhoto.sync($q('#gm-root'), S.doc); if (W.B68GmLair && S) W.B68GmLair.sync($q('#gm-root'), S.doc); m.removeAttribute('hidden'); } else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
+    if (on) { renderLiveItem(); syncCapBar(); m.removeAttribute('hidden'); } else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
   }
   /* N0: the Settings (gm/settings.js), the four choices left after the Switchboard went: one per page session, made on first use. Its host is this page's own
      patch, campaign and api (the Switchboard's), its phone-cards write and its mirror toggle, so a change takes the same paths and redraws the same way. */
@@ -2315,7 +2315,6 @@
     });
     return S.hs;
   }
-  function hsMenuLine() { return hsOn() ? '<button type="button" data-gm="hardstart" id="gm-menu-hardstart" title="The cold open on the iPad: station clock, fuse, credits, and three faces to name">Hard start</button>' : ''; }
   /* 3.6 / 2.11 Print (gm/print.js, switches print.cards and print.blueprint): one Menu line while either is on; the blueprint goes through the player door */
   function prOn() { return !!(S && W.B68GmPrint && W.B68Features && (W.B68Features.valueOf(S.doc, 'print.cards') || W.B68Features.valueOf(S.doc, 'print.blueprint'))); }
   function prInst() {
@@ -2323,10 +2322,6 @@
     if (!S.pr) S.pr = W.B68GmPrint.make({ npcs: function () { return S && isObj(S.npcs) ? S.npcs : {}; }, root: function () { return $q('#gm-root'); }, toast: toast, on: function (id) { return W.B68Features.valueOf(S.doc, id); },
       blueprint: function () { if (!S.locRoll) return null; var d = playerDisplay(S.locRoll, Object.assign({}, mapUi(), { layer: 'player', view: 'plan', theme: 'casefile' }), W.B68Map && W.B68Map.render, null); return { title: d.title, caption: d.caption, svg: d.svg }; } });
     return S.pr;
-  }
-  function prMenuSync() {
-    var on = prOn(), b = $q('#gm-menu-print'), after = $q('#gm-menu-settings') || $q('#gm-menu-live');
-    if (on && !b && after) after.insertAdjacentHTML('afterend', '<button type="button" data-gm="print" id="gm-menu-print" title="Print calling cards, tent standees and the blueprint">Print</button>'); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
   }
   /* 2.7 Intel corkboard (gm/corkboard.js, switch map.corkboard): one Menu line while the switch is on; the board is drawn through playerDisplay, the one player door */
   function cbOn() { return !!(S && W.B68GmCorkboard && W.B68Features && W.B68Features.valueOf(S.doc, 'map.corkboard')); }
@@ -2339,10 +2334,6 @@
       portrait: function (id) { var d = S.npcs && S.npcs[id], K = W.B68Figure; try { return d && isObj(d.spec) && K && K.portrait ? stripSize(K.portrait(Object.assign(clone(d.spec), { id: 'gm-cb-' + slug(id) }), { lod: 'lo' }).svg) : ''; } catch (e) { return ''; } },
       board: function (tokens, hide) { var r = P.playerDisplay(S.locRoll, Object.assign({}, mapUi(), { layer: 'player', view: 'plan', theme: 'board' }), W.B68Map && W.B68Map.render, { tokens: tokens, hide: hide }); return { title: r.title, caption: r.caption, svg: r.svg, tokens: r.tokens, tokensRefused: r.tokensRefused }; } });
     return S.cb;
-  }
-  function cbMenuSync() {
-    var on = cbOn(), b = $q('#gm-menu-corkboard'), after = $q('#gm-menu-print') || $q('#gm-menu-settings') || $q('#gm-menu-live');
-    if (on && !b && after) after.insertAdjacentHTML('afterend', '<button type="button" data-gm="corkboard" id="gm-menu-corkboard" title="The Planning board: the site on cork, intel Polaroids pinned to their rooms, mugshots on their posts">Corkboard</button>'); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
   }
   /* 2.8 Montage (gm/montage.js, switch map.montage): one Menu line while the switch is on; the panels ride the data.montage layer */
   function mtOn() { return !!(S && W.B68GmMontage && W.B68Features && W.B68Features.valueOf(S.doc, 'map.montage')); }
@@ -2360,10 +2351,6 @@
     }
     return S.mt;
   }
-  function mtMenuSync() {
-    var on = mtOn(), b = $q('#gm-menu-montage'), after = $q('#gm-menu-print') || $q('#gm-menu-settings') || $q('#gm-menu-live');
-    if (on && !b && after) after.insertAdjacentHTML('afterend', '<button type="button" data-gm="montage" id="gm-menu-montage" title="Split the iPad into one panel per character">Montage</button>'); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
-  }
   /* 4.5 / 4.7 / 5.3 the practical speaker, the ringing phone and the Trouble desk (gm/room-desk.js; switches room.practical, room.phone, between.trouble): one Menu line each while its switch is on */
   function rdInst() {
     if (!S || !W.B68GmRoomDesk || !W.B68Features) return null;
@@ -2371,15 +2358,8 @@
       save: function (id, item) { var it = {}; it[id] = item; patch({ trouble: { items: it } }); }, show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); } });
     return S.rd;
   }
-  function rdMenuSync() { var r = rdInst(); if (r) r.menuSync({ $q: $q, after: function () { return $q('#gm-menu-print') || $q('#gm-menu-settings') || $q('#gm-menu-live'); } }); }
   /* 4.2 Preflight (gm/preflight.js, switch room.preflight): the Menu line exists only while the switch is on */
   function pfOn() { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, 'room.preflight') && W.B68GmPreflight); }
-  function pfMenuLine() { return pfOn() ? '<button type="button" data-gm="preflight" id="gm-menu-preflight" title="Is the room ready: green or red for the iPad sound, files, the transcriber, the sign-in and the pack. Read-only">Preflight</button>' : ''; }
-  /* the Menu is drawn once, so a flip of the switch adds or takes away the line in place */
-  function pfMenuSync() {
-    var on = pfOn(), b = $q('#gm-menu-preflight'), after = $q('#gm-menu-settings') || $q('#gm-menu-live');
-    if (on && !b && after) after.insertAdjacentHTML('afterend', pfMenuLine()); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
-  }
   function pfInst() {
     if (!pfOn()) return null;
     if (!S.pf) S.pf = W.B68GmPreflight.create({ root: function () { return $q('#gm-root'); }, toast: toast, fetchFacts: function () { var a = gmApi(); return a && typeof a.preflight === 'function' ? a.preflight() : Promise.reject(new Error('no server')); },
@@ -2387,6 +2367,21 @@
       startMs: function () { var N = W.B68GmNight, n = N && S ? N.clean(S.doc.night) : null; return n && n.startAt ? N.clockMs(n.startAt, Date.now()) : null; } });
     return S.pf;
   }
+  /* N2: the tool registry (gm/tool-registry.js). The Menu lines are gone; the shell reaches every tool through B68GmTools.get(id).open(), which draws it in the right-edge sheet or,
+     once B68GmWorkshop.inline(id, el) has bound it, in the shell's container. One line per tool: the controller's getter, so an instance is still made on first use. */
+  (function registerTools() {
+    var T = W.B68GmTools; if (!T || typeof T.registerTool !== 'function') return;
+    /* close() hides the right-edge sheet, or, for a tool the shell has bound inline, asks the shell (its onClose) and hides nothing */
+    function shut(id) { return function () { var w = W.B68GmWorkshop, r = $q('#gm-root'); if (w && r) { var t = T.get(id), sh = w.sheet(r, id, t ? t.label : id); if (sh) sh.close(); } }; }
+    function reg(id, get) { T.registerTool(id, { open: function () { var c = get(); return !!(c && c.open()); }, close: shut(id) }); }
+    function desk(which) { return function () { var r = rdInst(); return r ? r.desk(which) : null; }; }
+    function mod(name, id) { T.registerTool(id, { open: function () { var M = W[name], r = $q('#gm-root'); return !!(M && r && S && M.open(r)); }, close: shut(id) }); }
+    function b29tool(which) { return function () { var b = b29(); return b ? b.tool(which) : null; }; }
+    reg('hardstart', hsInst); reg('preflight', pfInst); reg('print', prInst); reg('corkboard', cbInst); reg('montage', mtInst);
+    reg('practical', desk('practical')); reg('phone', desk('phone')); reg('trouble', desk('trouble')); reg('canon', desk('canon')); reg('frontpage', desk('frontpage')); reg('absent', desk('absent'));
+    mod('B68GmAftermath', 'aftermath'); mod('B68GmDebrief', 'debrief'); mod('B68GmBoard', 'board'); mod('B68GmCastPhoto', 'castphoto'); mod('B68GmLair', 'lair');
+    reg('record', b29tool('record')); reg('light', b29tool('light'));
+  })();
   /* 4.1 The cue stack (gm/cue-stack.js, switch room.cues): STANDBY / GO / Bypass in a bar under the rail, Space and Esc, and "Blade, go". Every effect goes through the page's own writers
      (patchAmbient and its gate, the show contract, the night, the cast), so a cue can show nothing that a button could not. */
   function csNote() { var pk = part('prep'), id = pk && W.B68GmPrep ? prepNoteId(pk) : null; return id && Array.isArray(pk.notes) ? pk.notes.filter(function (n) { return isObj(n) && n.id === id; })[0] || null : null; }
@@ -2456,7 +2451,7 @@
   /* the bar's live parts: the session, what is on the iPad, listening */
   function renderBar() {
     if (!S || !S.root) return;
-    renderMirror(); spineTick(); pfMenuSync(); prMenuSync(); cbMenuSync(); rdMenuSync(); mtMenuSync(); b17Tick(); csTick(); if (b29()) b29().menuSync(); if (S.st) S.st.sync();
+    renderMirror(); spineTick(); b17Tick(); csTick(); if (S.st) S.st.sync();
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
@@ -4820,7 +4815,7 @@
   function airChip(d) { return airOn() ? W.B68GmOnAir.chip(d, Date.now()) : ''; }
   function airSuffix(d) { return (airOn() ? W.B68GmOnAir.suffix(d, Date.now()) : '') + b29Suffix(); }
   /* B29 (ai.batch, room.light): the local recording and the light cue; all the behaviour is in gm/b29.js, gm/batch-record.js and gm/light.js */
-  function b29() { return S && W.B68GmB29 ? (S.b29 || (S.b29 = W.B68GmB29.create({ on: function (id) { return !!(W.B68Features && W.B68Features.valueOf(S.doc, id)); }, toast: toast, $: $q, now: Date.now, changed: renderBar, relay: 'http://127.0.0.1:9300' }, W))) : null; }
+  function b29() { return S && W.B68GmB29 ? (S.b29 || (S.b29 = W.B68GmB29.create({ on: function (id) { return !!(W.B68Features && W.B68Features.valueOf(S.doc, id)); }, toast: toast, $: $q, now: Date.now, changed: renderBar, relay: 'http://127.0.0.1:9300', root: function () { return $q('#gm-root'); } }, W))) : null; }
   function b29Suffix() { var x = b29(); return x ? x.suffix() : ''; }
   function sttPatch(p) {
     var g = gmApi(); if (!g || typeof g.patchStt !== 'function') { toast('Listening needs the hosted app.', true); return; }

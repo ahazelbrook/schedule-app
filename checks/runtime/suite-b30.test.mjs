@@ -351,17 +351,15 @@ await test('look book: both kinds are drawn from invented fixtures with no GM-on
 });
 
 /* ---------- the Menu, with the switches off ---------- */
-await test('the Menu lines are drawn whatever the state document holds (N0: everything built is on), and only once', () => {
-  const lines = [], added = {};
-  const list = { setAttribute() {}, appendChild(x) { lines.push(x.id); added['#' + x.id] = x; } };
-  const rootEl = { querySelector: (sel) => (sel === '.gm-menu-list' ? list : added[sel] || null) };
-  const doc = (v) => ({ features: { 'face.castphoto': v, 'between.lair': v } });
-  const dom = { createElement: () => { const e = { id: '', children: [], addEventListener() {}, set textContent(v) {}, setAttribute() {}, appendChild() {}, type: '', title: '' }; return e; } };
-  const win = { document: dom, B68Features: Features };
+await test('N2: there is no Menu line any more; sync() only takes down a stale one, and says false', () => {
+  const removed = [];
+  const stale = { parentNode: { removeChild: (n) => removed.push(n) } };
+  const rootEl = { querySelector: (sel) => (sel === '#gm-menu-castphoto' || sel === '#gm-menu-lair' ? stale : null) };
+  const win = { document: {}, B68Features: Features };
   const C = vm.runInNewContext(fs.readFileSync(path.join(APP, 'gm', 'castphoto.js'), 'utf8') + '\n;B68GmCastPhoto', Object.assign(win, { self: win }));
   const L = vm.runInNewContext(fs.readFileSync(path.join(APP, 'gm', 'lair.js'), 'utf8') + '\n;B68GmLair', Object.assign(win, { self: win }));
-  assert.equal(C.sync(rootEl, doc(false)), true); assert.equal(L.sync(rootEl, doc(false)), true); assert.deepEqual(lines, ['gm-menu-castphoto', 'gm-menu-lair'], 'a stored false still draws them');
-  assert.equal(C.sync(rootEl, doc(true)), true); assert.equal(L.sync(rootEl, {}), true); assert.deepEqual(lines, ['gm-menu-castphoto', 'gm-menu-lair'], 'a second sync adds nothing');
+  assert.equal(C.sync(rootEl, {}), false); assert.equal(L.sync(rootEl, {}), false); assert.equal(removed.length, 2, 'a line an older page drew is taken down');
+  assert.equal(C.sync({ querySelector: () => null }), false);
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
