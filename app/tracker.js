@@ -1221,6 +1221,11 @@
     nowmore: function () { cur.ui.nowMore = !cur.ui.nowMore; render(); var b = cur.root.querySelector('.ds-now-more'); if (b) try { b.focus({ preventScroll: true }); } catch (e) {} },
     between: function () { cur.ui.between = !cur.ui.between; render(); var b = cur.root.querySelector('.ds-between-t'); if (b) try { b.focus({ preventScroll: true }); } catch (e) {} },
     quiet: function (d, btn) { var Q = window.B68Quiet; if (Q && typeof Q.open === 'function') Q.open(btn); },
+    /* "Not now" on a Now card item (the key card): put away on this phone until the offer changes; focus goes to what the card shows next */
+    nownot: function (d) {
+      var N = window.B68Now; if (!N || typeof N.notNow !== 'function' || !N.notNow(d.k, d.snooze)) return;
+      render(); var b = cur.root.querySelector('.ds-now .btn, .ds-now-more'); if (b) try { b.focus({ preventScroll: true }); } catch (e) {}
+    },
     loadout: function () { cur.ui.loadout = !cur.ui.loadout; render(); },
     /* the vitals: scroll the box to just under the sticky bar */
     jump: function (d) {

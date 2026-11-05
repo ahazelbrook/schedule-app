@@ -125,6 +125,36 @@ await test('the key item (keys.js now): one key by name with its two turn button
   assert.equal(K.now(null), null);
   assert.ok(!/<script/.test(K.now(keyCtx({ keys: [{ name: '<script>x</script>', down: '<b>', up: 'u', hits: 3 }] })).html), 'names are escaped');
 });
+await test('"Not now" on the key card: put away on this phone until the offer changes (another key at three hits, the next session); the Keys box is not touched', () => {
+  const ls = store();
+  const w = load(win({ localStorage: ls }), 'sheet/now.js'); load(w, 'sheet/keys.js');
+  const play = keyPlay(3); play.session = 4;
+  const ctx = (p, over) => keyCtx(p, Object.assign({ docId: 'pc-nell', ui: {} }, over || {}));
+  const it = w.B68SheetKeys.now(ctx(play));
+  assert.equal(it.snooze, 'pc-nell|session 4|0:KEY-1', 'the offer is named by the sheet, the session and the keys that can turn');
+  const h = w.B68Now.card(ctx(play));
+  const m = /<button type="button" class="btn sm ds-now-not" data-act="nownot" data-k="keys" data-snooze="([^"]+)">Not now<\/button>/.exec(h);
+  assert.ok(m && m[1] === 'pc-nell|session 4|0:KEY-1', 'the card has "Not now", carrying the offer: ' + h.slice(0, 160));
+  assert.equal(w.B68Now.notNow('keys', m[1]), true);
+  assert.equal(w.B68Now.card(ctx(play)), '', 'put away: no card');
+  assert.deepEqual(JSON.parse(ls.m.get('b68.now.notnow')), { keys: 'pc-nell|session 4|0:KEY-1' }, 'kept on this phone');
+  const w2 = load(win({ localStorage: ls }), 'sheet/now.js'); load(w2, 'sheet/keys.js');
+  assert.equal(w2.B68Now.card(ctx(play)), '', 'a reload remembers it');
+  const two = keyPlay(3, [{ name: 'KEY-2', down: 'd', up: 'u', hits: 3 }]); two.session = 4;
+  assert.deepEqual(order(w2.B68Now.card(ctx(two))), ['keys'], 'another key at three hits is a new offer: the card is back');
+  const next = keyPlay(3); next.session = 5;
+  assert.deepEqual(order(w2.B68Now.card(ctx(next))), ['keys'], 'and so is the next session');
+  assert.deepEqual(order(w2.B68Now.card(ctx(play, { docId: 'pc-ray' }))), ['keys'], 'and another of the player\'s sheets');
+  const w3 = load(win({ localStorage: store(true) }), 'sheet/now.js'); load(w3, 'sheet/keys.js');
+  w3.B68Now.notNow('keys', 'pc-nell|session 4|0:KEY-1');
+  assert.equal(w3.B68Now.card(ctx(play)), '', 'private mode: put away for this visit');
+  assert.equal(w3.B68Now.notNow('', 'x'), false); assert.equal(w3.B68Now.notNow('keys', ''), false);
+  const kb = w.B68SheetKeys.cards(Object.assign(ctx(play), { input: (p, v) => '<input>', pipRow: () => '' }));
+  assert.match(kb, /data-act="kturn"/, 'the Keys box still offers the turn');
+  const with2 = load(win({ localStorage: store(), B68Commend: fake(item('xp')) }), 'sheet/now.js'); load(with2, 'sheet/keys.js');
+  const mc = ctx(play); mc.ui.nowMore = true;
+  assert.match(with2.B68Now.card(mc), /class="ds-now-item ds-keyturn ds-now-sm"[\s\S]*data-act="nownot"/, 'behind "+n more" it has "Not now" too');
+});
 
 /* ---------- the fold ---------- */
 await test('the Between fold: closed by default with a count; open it lists the board, then the packet and the Debrief once they are not current', () => {
@@ -248,10 +278,12 @@ await test('routes: now.js is in the core (every route has the sheet) and index.
   for (const b of ['gm', 'display', 'table', 'lookbook']) assert.ok(!B[b].includes('sheet/now.js'), b);
   assert.match(fs.readFileSync(path.join(APP, 'index.html'), 'utf8'), /<script src="sheet\/keys\.js"><\/script>\n<script src="sheet\/now\.js"><\/script>/);
 });
-await test('css: every field of the phone forms is 16 px (iPhone Safari zooms below that); Quiet is 44 px; the Now card and the fold do not print', () => {
+await test('css: every field of the phone forms is 16 px (iPhone Safari zooms below that); Quiet is 44 px on a phone only; the forms take focus without a ring; the Now card and the fold do not print', () => {
   const css = fs.readFileSync(path.join(APP, 'tracker.css'), 'utf8');
   assert.match(css, /\.ds-dlg-card :is\(input\[type="text"\], textarea, select\) \{[^}]*font: 400 16px/);
-  assert.match(css, /#dossier \.btn\.sm\.ds-quietbtn \{ min-height: 44px; \}/, 'Quiet outranks #dossier .btn.sm (40 px on touch)');
+  assert.match(css, /@media screen and \(max-width: 760px\) \{\n  #dossier \.btn\.sm\.ds-quietbtn \{ min-height: 44px; \}/, 'on a phone Quiet outranks #dossier .btn.sm (40 px on touch)');
+  assert.equal((css.match(/\.ds-quietbtn \{ min-height/g) || []).length, 1, 'and nowhere else: on a desk or an iPad it is as tall as its row');
+  assert.match(css, /\.ds-dlg-card:focus \{ outline: none; \}/);
   assert.match(css, /@media print \{ #dossier \.ds-now, #dossier \.ds-betweenbox, #dossier \.ds-quietbtn \{ display: none !important; \} \}/);
   for (const f of ['debrief', 'board', 'absent', 'quiet']) assert.ok(!/style\.cssText/.test(fs.readFileSync(path.join(APP, 'sheet', f + '.js'), 'utf8')), f + '.js draws with the sheet\'s classes, not inline styles');
 });

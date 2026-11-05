@@ -78,20 +78,23 @@
     if (!ctx.turn || !canTurn(k, ctx.pb)) return '';
     return '<div class="ds-kt-offer"><span class="ds-kt-say">You can turn this key</span>' + turnPair(ctx, k, i) + '</div>';
   }
-  /* the sheet's Now card item (sheet/now.js), while a key can be turned: each such key by name with its two buttons, the same kturn the Keys box has */
+  /* the sheet's Now card item (sheet/now.js), while a key can be turned: each such key by name with its two buttons, the same kturn the Keys box has.
+     snooze names this offer (the sheet, its session, the keys that can turn): a player who holds a key at three hits on purpose puts the card away with
+     "Not now" (sheet/now.js keeps that per phone), and a new key at three hits, or the next session, brings it back. The Keys box always offers the turn */
   function now(ctx) {
     if (!isObj(ctx) || !ctx.turn || !isObj(ctx.play) || typeof ctx.esc !== 'function') return null;
-    var rows = '', pair = '', n = 0, one = '';
+    var rows = '', pair = '', n = 0, one = '', which = [];
     (Array.isArray(ctx.play.keys) ? ctx.play.keys : []).forEach(function (k, i) {
       if (!canTurn(k, ctx.pb)) return;
-      n++; one = str(k.name) || 'Your key'; pair = turnPair(ctx, k, i);
+      n++; one = str(k.name) || 'Your key'; pair = turnPair(ctx, k, i); which.push(i + ':' + (str(k.name) || 'Key'));
       rows += '<div class="ds-kt-row"><b>' + ctx.esc(str(k.name) || 'Key') + '</b>' + pair + '</div>';
     });
     if (!n) return null;
     /* one key: its name is in the line and its two buttons follow; more: a row per key, by name */
     return { title: n === 1 ? 'You can turn this key' : 'You can turn a key',
       line: (n === 1 ? one + ' has three hits.' : n + ' keys have three hits.') + ' Decide before you roll: it deadlocks for good, your Stress clears and your next action roll is an automatic critical.',
-      html: '<div class="ds-kt-now">' + (n === 1 ? pair : rows) + '</div>' };
+      html: '<div class="ds-kt-now">' + (n === 1 ? pair : rows) + '</div>',
+      snooze: str(ctx.docId) + '|session ' + (Math.floor(+ctx.play.session || 0) || 0) + '|' + which.join(',') };
   }
   /* spine.keyturn alone: a quiet line under the keys that have three hits (nothing for any other key) */
   function offer(ctx) {

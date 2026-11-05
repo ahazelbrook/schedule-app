@@ -74,7 +74,8 @@ try {
   const errors = [];
   async function open(user, route, { w = 390, h = 844, mobile = true } = {}) {
     const ctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width: w, height: h }, isMobile: mobile, hasTouch: mobile, serviceWorkers: 'block' });
-    await ctx.addInitScript(() => { window.__B68_POLL_MS = 500; });
+    /* both polls fast: with the live socket healthy the page polls every 15 s (runtime/cf.js), so a missed poke would leave a step waiting a poll */
+    await ctx.addInitScript(() => { window.__B68_POLL_MS = 500; window.__B68_HEALTHY_POLL_MS = 500; });
     const page = await ctx.newPage();
     /* WebKit reports the Worker's report-only Content Security Policy header as console errors: those notes are about the headers, not the page */
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|Content Security Policy/.test(m.text())) errors.push(user + ' ' + route + ': ' + m.text()); });
@@ -99,6 +100,17 @@ try {
     return { n: (f.querySelector('.ds-between-n') || {}).textContent, exp: t.getAttribute('aria-expanded'), items: Array.from(f.querySelectorAll('.ds-now-item')).map((e) => e.dataset.now), last: !f.nextElementSibling, h: Math.round(t.getBoundingClientRect().height) };
   });
   const quietOpen = (pg) => pg.evaluate(() => !!document.querySelector('.ds-quiet-dlg'));
+  /* a new mission card opens by itself, as it always has: wait for it, then close it until it stays closed (a second arrival of the same card can
+     open it again straight after the ×) */
+  const closeCard = async (pg) => {
+    await pg.waitForSelector('.ds-mv', { timeout: 10000 }).catch(() => null);
+    for (let i = 0; i < 8; i++) {
+      if (await pg.$('.ds-mv')) { await pg.click('.ds-mv-x').catch(() => {}); await sleep(300); continue; }
+      await sleep(500);
+      if (!(await pg.$('.ds-mv'))) return true;
+    }
+    return !(await pg.$('.ds-mv'));
+  };
 
   /* ---------- 1. nothing due ---------- */
   const A = await open(P1, '#c/' + ID), a = A.page;
@@ -183,7 +195,7 @@ try {
   await must(api('PUT', '/docs', { kind: 'packet', owner: P1, scope: 'player', json: PACKET() }), 'packet');
   await must(api('PATCH', '/campaign', { mission: mission('Cocktail lounge') }), 'mission');
   check(!!(await until(async () => { const x = await nowOf(a); return x && x.more && /^\+4 more/.test(x.more.text); }, 20000)), 'five due at once');
-  if (await until(() => a.$('.ds-mv'), 3000)) await a.click('.ds-mv-x');   /* the mission card opens by itself on a new card, as it always has */
+  check(await closeCard(a), 'the new mission card opened by itself, as it always has, and closes');
   n = await nowOf(a);
   check(JSON.stringify(n.items) === '["commend"]' && n.more && n.more.text === '+4 more: Debrief · your packet · a key to turn · Mission' && n.more.exp === 'false', 'the commendations first, the rest behind "+4 more", by name and in order: ' + JSON.stringify(n));
   await shot(a, 'now-two-due');
@@ -208,6 +220,7 @@ try {
   check(!n.items.includes('absent') && f.n === '2 inside', 'opened, the packet leaves the Now card for the fold: ' + JSON.stringify([n.items, f.n]));
   await a.click('.ds-now .ds-debrief [data-b68="debrief-open"]');
   await a.waitForSelector('.ds-debrief-dlg', { timeout: 4000 });
+  check(await a.evaluate(() => !!document.activeElement && document.activeElement.classList.contains('ds-debrief-card')), 'the Debrief takes focus at its top, not on its pick (no picker pops up on an iPhone)');
   const px = await a.$$eval('.ds-debrief-dlg input[type="text"], .ds-debrief-dlg select', (l) => l.map((e) => parseFloat(getComputedStyle(e).fontSize)));
   check(px.length >= 4 && px.every((x) => x >= 16), 'every Debrief field is 16 px: ' + JSON.stringify(px));
   await a.fill('.ds-debrief-dlg input[placeholder^="What are you doing"]', 'Back to the gym');
@@ -216,6 +229,21 @@ try {
   check(!!(await until(async () => { const x = await nowOf(a); const y = await foldOf(a); return x && !x.items.includes('debrief') && y.n === '3 inside'; }, 6000)), 'answered, the Debrief leaves the Now card for the fold');
   n = await nowOf(a);
   check(n.items[0] === 'keys', 'the key is the card now: ' + JSON.stringify(n.items));
+  check(!!(await a.$('.ds-now .ds-keyturn [data-act="nownot"]')), 'the key card has "Not now"');
+  /* "Not now" is per phone: a second phone of the same player puts the key card away; this one still offers it */
+  const B2 = await open(P1, '#c/' + ID);
+  await B2.page.waitForSelector('#dossier .ds-bar', { timeout: 30000 }); await started(B2.page);
+  await closeCard(B2.page);
+  check(!!(await until(async () => { const x = await nowOf(B2.page); return x && x.more && /a key to turn/.test(x.more.text); }, 15000)), 'a second phone has the key waiting too (behind its unread packet)');
+  await B2.page.click('#dossier .ds-now-more');
+  await B2.page.click('#dossier .ds-now .ds-keyturn [data-act="nownot"]');
+  const gone = async () => { const x = await nowOf(B2.page); return !!x && !x.items.includes('keys') && !(x.more && /a key to turn/.test(x.more.text)); };
+  check(!!(await until(gone, 4000)), '"Not now" puts the key card away on that phone');
+  check(await B2.page.evaluate(() => !!document.querySelector('#dossier .ds-keybox [data-act="kturn"]')), 'and its Keys box still offers the turn');
+  await B2.page.reload(); await B2.page.waitForSelector('#dossier .ds-bar', { timeout: 30000 }); await started(B2.page); await sleep(800);
+  check(await gone(), 'a reload of that phone keeps it put away');
+  await B2.ctx.close();
+  check((await nowOf(a)).items[0] === 'keys', 'the first phone still has the key card: "Not now" is per phone');
   await a.click('.ds-now .ds-keyturn [data-act="kturn"][data-dir="down"]');
   const turned = await until(async () => { const d = charDoc((await api('GET', '/characters/' + ID)).json); return d && d.play && d.play.keys[0].deadlock === 'down' ? d : null; }, 8000);
   check(!!turned && turned.play.stress === 0 && !!turned.play.autoCrit, 'turning it from the card deadlocks the key, clears Stress and owes a critical');
@@ -239,7 +267,7 @@ try {
   await a.click('.ds-betweenbox [data-b68="board-open"]');
   await a.waitForSelector('.ds-board-dlg', { timeout: 4000 });
   check((await a.$eval('.ds-board-dlg input[type="text"]', (e) => parseFloat(getComputedStyle(e).fontSize))) >= 16, 'the board\'s field is 16 px');
-  check(await a.evaluate(() => !!document.activeElement && document.activeElement.tagName === 'SELECT' && !!document.activeElement.closest('.ds-board-dlg')), 'focus moves into the form, on its first control (no keyboard comes up yet)');
+  check(await a.evaluate(() => !!document.activeElement && document.activeElement.classList.contains('ds-board-card')), 'focus moves to the form\'s top, never a field (on an iPhone a focused select opens its picker)');
   await a.fill('.ds-board-dlg input[type="text"]', 'A fixer wants a ledger fetched');
   await a.click('.ds-board-dlg button:has-text("Post it")');
   check(!!(await until(async () => { const r = await api('GET', '/docs?kind=opportunity&owner=' + encodeURIComponent(P1)); return r.json.docs[0] && r.json.docs[0].json.items.length === 1; }, 6000)), 'a post is the player\'s own opportunity row');
@@ -270,8 +298,8 @@ try {
   await S.page.waitForSelector('#dossier .ds-bar', { timeout: 30000 }); await started(S.page);
   await must(api('PUT', '/docs', { kind: 'commend', owner: '_', scope: 'public', json: { v: 1, secs: 90, until: Date.now() + 90000 } }), 'commend again');
   await must(api('PATCH', '/campaign', { mission: mission('Showroom') }), 'mission again');
-  await until(async () => { const x = await nowOf(S.page); return x && x.items[0] === 'commend' && x.more && /Mission/.test(x.more.text); }, 15000);
-  if (await until(() => S.page.$('.ds-mv'), 3000)) await S.page.click('.ds-mv-x');   /* the mission card opens by itself on a new card */
+  check(!!(await until(async () => { const x = await nowOf(S.page); return x && x.items[0] === 'commend' && x.more && /Mission/.test(x.more.text); }, 15000)), 'at 375 px: the commendations, with the mission behind "+n more"');
+  check(await closeCard(S.page), 'the mission card that opened by itself is closed, and stays closed');
   await S.page.click('.ds-now-more');
   const small = await S.page.evaluate(() => {
     const kids = Array.from(document.querySelectorAll('#dossier .ds-nav > *')).filter((e) => e.offsetParent).map((e) => { const r = e.getBoundingClientRect(); return { t: (e.textContent || '').trim().slice(0, 8), l: Math.round(r.left), r: Math.round(r.right), top: Math.round(r.top + r.height / 2) }; });

@@ -1,8 +1,9 @@
 /* sheet/now.js — the phone's "Now" card and the "Between sessions" fold (the night rebuild, N6; design section 7).
 
    Window.B68Now, and module.exports under Node. In the core bundle (the sheet is on every route). The sheet (tracker.js) gives it two slots and one call:
-   card(ctx) right under the head, fold(ctx) at the very end, and tick(root) after every redraw. Nothing here fetches, stores or pushes anything: each phone
+   card(ctx) right under the head, fold(ctx) at the very end, and tick(root) after every redraw. Nothing here fetches or pushes anything: each phone
    module keeps its own reading and its own data and only says what it has (now() and between(): an item, or null); this file decides where it goes.
+   The one thing it keeps is "Not now" (below), on this phone only.
 
    THE NOW CARD. One card at the top of the sheet, only while something is due, in this order (the first that has something wins):
      commend   the Aftermath's xp commendations, while the 90-second window is open             sheet/commend.js
@@ -15,11 +16,17 @@
    THE FOLD. "Between sessions", closed by default, after the last box: the opportunity board's posting line, and the packet and the last Debrief once
    they are no longer current. Its band says how many things are inside. Nothing inside: no fold.
 
-   ctx (built by the sheet): the keys ctx (esc, play, pb, ui, turn, ...) plus mission (api.mission() or null) and docId (this sheet's character).
-   item: { id, kicker?, title, line?, ends? (ms, a countdown "Closes in m:ss"), actions?: [{ label, attrs, primary? }], html? (markup the module built
-   with ctx.esc) }. Titles, lines and labels are text (escaped here); attrs and html are the module's own markup.
+   NOT NOW. An item that carries a snooze (a string naming this offer: "You can turn this key" names the sheet, the session and the keys that can
+   turn) gets a "Not now" button. The tap keeps that string on this phone (localStorage b68.now.notnow, { id: snooze }) and the item is not due while
+   its snooze is the one kept, so a player holding a key at three hits on purpose is not shown the card all night; a new offer (another key at
+   three hits, the next session) is due again. Private mode: kept for this visit.
 
-   API: ORDER  SHORT  due(ctx) -> [item]   between(ctx) -> [item]   card(ctx) -> html | ''   fold(ctx) -> html | ''   tick(scope?)   left(endsMs, nowMs) */
+   ctx (built by the sheet): the keys ctx (esc, play, pb, ui, turn, ...) plus mission (api.mission() or null) and docId (this sheet's character).
+   item: { id, kicker?, title, line?, ends? (ms, a countdown "Closes in m:ss"), actions?: [{ label, attrs, primary?, cls? }], html? (markup the module
+   built with ctx.esc), snooze? }. Titles, lines and labels are text (escaped here); attrs and html are the module's own markup.
+
+   API: ORDER  SHORT  due(ctx) -> [item]   between(ctx) -> [item]   card(ctx) -> html | ''   fold(ctx) -> html | ''   tick(scope?)   left(endsMs, nowMs)
+        notNow(id, snooze) -> bool (the sheet's "Not now" button) */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -60,11 +67,31 @@
     return { title: 'Mission', line: line, actions: [{ label: 'Open the mission card', attrs: 'data-act="missionscreen" data-always="1" aria-haspopup="dialog"', primary: true }] };
   }
 
+  /* "Not now", kept on this phone: { id: the snooze put away } */
+  var NOTNOW_KEY = 'b68.now.notnow', notNowMem = null;
+  function notNowMap() {
+    if (notNowMem) return notNowMem;
+    var m = null; try { m = JSON.parse((W && W.localStorage && W.localStorage.getItem(NOTNOW_KEY)) || 'null'); } catch (e) { m = null; }
+    notNowMem = isObj(m) ? m : {};
+    return notNowMem;
+  }
+  function notNow(id, snooze) {
+    if (!str(id) || !str(snooze)) return false;
+    var m = notNowMap(); m[str(id)] = str(snooze);
+    try { if (W && W.localStorage) W.localStorage.setItem(NOTNOW_KEY, JSON.stringify(m)); } catch (e) { /* private mode: this visit remembers it */ }
+    return true;
+  }
+  function putAway(it) { return !!str(it.snooze) && notNowMap()[it.id] === str(it.snooze); }
+
   function due(ctx) {
     var out = [];
     ORDER.forEach(function (id) {
       var it = id === 'keys' ? ask(W && W.B68SheetKeys, 'now', ctx) : id === 'mission' ? missionItem(ctx) : ask(mod(id), 'now');
-      if (it) { it.id = id; out.push(it); }
+      if (!it) return;
+      it.id = id;
+      if (putAway(it)) return;
+      if (str(it.snooze)) it.actions = (Array.isArray(it.actions) ? it.actions : []).concat([{ label: 'Not now', cls: 'ds-now-not', attrs: 'data-act="nownot" data-k="' + esc(id) + '" data-snooze="' + esc(it.snooze) + '"' }]);
+      out.push(it);
     });
     return out;
   }
@@ -79,7 +106,7 @@
     var h = '';
     (Array.isArray(it.actions) ? it.actions : []).forEach(function (a) {
       if (!isObj(a) || !str(a.label)) return;
-      h += '<button type="button" class="btn sm' + (a.primary && !small ? ' primary' : '') + '" ' + str(a.attrs) + '>' + esc(a.label) + '</button>';
+      h += '<button type="button" class="btn sm' + (a.primary && !small ? ' primary' : '') + (str(a.cls) ? ' ' + esc(a.cls) : '') + '" ' + str(a.attrs) + '>' + esc(a.label) + '</button>';
     });
     return h;
   }
@@ -138,5 +165,5 @@
     else if (!any && tickT && !scope) { W.clearInterval(tickT); tickT = null; }
   }
 
-  return { ORDER: ORDER, FOLD: FOLD, SHORT: SHORT, due: due, between: between, card: card, fold: fold, tick: tick, left: left };
+  return { ORDER: ORDER, FOLD: FOLD, SHORT: SHORT, due: due, between: between, card: card, fold: fold, tick: tick, left: left, notNow: notNow };
 });

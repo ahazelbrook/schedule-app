@@ -172,9 +172,10 @@
       go.disabled = true;
       write(next).then(function () { txt.value = ''; msgEl.textContent = 'Posted.'; go.disabled = false; }, function () { go.disabled = false; msgEl.textContent = 'Could not post. Try again.'; });
     });
+    card.setAttribute('tabindex', '-1');
     dlg.appendChild(card); W.document.body.appendChild(dlg);
     paintList();
-    focusIn(sel);   /* the kind first: no keyboard comes up until the player asks for it */
+    focusIn(card);   /* the form's top: never a field (on an iPhone a select focused inside the tap opens its picker, a text box its keyboard) */
     return true;
   }
   function state() { return { started: started, open: !!dlg, items: cur ? cur.items : [] }; }

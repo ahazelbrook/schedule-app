@@ -99,7 +99,8 @@ try {
     await ctx.addInitScript((ms) => { window.__B68_POLL_MS = ms; }, pollMs);
     const page = await ctx.newPage();
     const reqs = [], patches = [];
-    page.on('request', (r) => { if (!/\/api\//.test(r.url())) return; const p = new URL(r.url()).pathname; reqs.push(r.method() + ' ' + p); if (r.method() !== 'GET' && /^\/api\/characters\//.test(p)) patches.push({ method: r.method(), path: p, body: r.postData() }); });
+    /* a docs read is recorded with its kind (?kind=), so a check can tell the Now card's sources from anything else */
+    page.on('request', (r) => { if (!/\/api\//.test(r.url())) return; const u = new URL(r.url()), p = u.pathname; reqs.push(r.method() + ' ' + p + (p === '/api/docs' && u.searchParams.has('kind') ? '?kind=' + u.searchParams.get('kind') : '')); if (r.method() !== 'GET' && /^\/api\/characters\//.test(p)) patches.push({ method: r.method(), path: p, body: r.postData() }); });
     page.on('console', (m) => { if (m.type() === 'error') errors.push(user + ': ' + m.text()); });
     page.on('pageerror', (e) => errors.push(user + ' pageerror: ' + e.message));
     page.on('dialog', (d) => d.accept());
@@ -195,8 +196,9 @@ try {
   // ---- idle: an open card makes no request of its own ----
   const idle0 = a.reqs.length; await sleep(1800);
   const idle = a.reqs.slice(idle0), kinds = [...new Set(idle)];
-  /* the page's own poll, and (every phone feature on since the night rebuild) the reads of the sheet's Now card sources, which poll the docs store */
-  check(kinds.every((r) => /^GET \/api\/(characters|campaign|npcs|me|docs)$/.test(r)), 'idle with the card open: only the page\'s own poll (' + idle.length + ' requests: ' + kinds.join(', ') + ')');
+  /* the page's own poll, and (every phone feature on since the night rebuild) the reads of the sheet's Now card sources, which poll the docs store:
+     the commendations, the Debrief, the packet and the board's own posts, by kind; any other docs read (the GM's kinds, quiet rows) is not idle traffic */
+  check(kinds.every((r) => /^GET \/api\/(characters|campaign|npcs|me|docs\?kind=(commend|debrief|packet|opportunity))$/.test(r)), 'idle with the card open: only the page\'s own poll (' + idle.length + ' requests: ' + kinds.join(', ') + ')');
   check(!idle.some((r) => /\/gm\/|mission|display/i.test(r)), 'and nothing that reads the GM state');
 
   // ---- live: a change to her card arrives within a poll, in place ----
