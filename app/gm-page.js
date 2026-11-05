@@ -515,7 +515,9 @@
   function overlayLine(o, clockOf) {
     if (!isObj(o) || !Object.prototype.hasOwnProperty.call(OV_FIELDS, o.kind)) return '';
     var ck = o.kind === 'clock' && typeof clockOf === 'function' ? clockOf(o.clockId) : null;
-    var what = W.B68Show && W.B68Show.has(o.kind) ? 'a ' + o.kind + ' on the iPad' : o.kind === 'fx' ? 'dawn' : o.kind === 'clock' ? (ck ? 'clock ' + str(ck.name) + ' ' + ck.filled + '/' + ck.size : 'a table clock') : o.kind === 'npc' ? 'an NPC card' : 'a line of text';
+    /* a show beat in the tray's words (gm/ipad-tray.js: "Action report: risky, standard"), so the band and the iPad view say the same thing */
+    var beat = W.B68Show && W.B68Show.has(o.kind) ? (W.B68GmIpadTray ? W.B68GmIpadTray.overlayText(o) : 'a ' + o.kind + ' on the iPad') : '';
+    var what = beat || (o.kind === 'fx' ? 'dawn' : o.kind === 'clock' ? (ck ? 'clock ' + str(ck.name) + ' ' + ck.filled + '/' + ck.size : 'a table clock') : o.kind === 'npc' ? 'an NPC card' : 'a line of text');
     return what + ' · ' + Math.round((Number(o.ms) || 0) / 1000) + ' s';
   }
   P.overlayLine = overlayLine;
@@ -587,7 +589,7 @@
   function displayLine(d) {
     if (!isObj(d)) return '';
     var t = str(d.title).slice(0, 80);
-    if (d.kind === 'dark') return 'Lights out' + (t ? ' · ' + t : '');
+    if (d.kind === 'dark') return 'Blank (lights out)' + (t ? ' · ' + t : '');
     if (d.kind === 'svg') return 'Map' + (t ? ' · ' + t : '');
     if (d.kind === 'npc') return 'NPC' + (t ? ' · ' + t : '');
     if (d.kind === 'text') return 'Text' + (t ? ' · ' + t : '');
@@ -1274,7 +1276,7 @@
   var kvDel = function (k) { return idbDo('readwrite', function (s) { s.delete(k); }); };
   /* every pack:* key, whoever cached it; the database is only opened if it exists (no empty database for a player) */
   function purge() {
-    keptApi = null; AM.doc = null; AM.shown = null; AM.loaded = false; AM.seq = null;
+    keptApi = null; AM.doc = null; AM.shown = null; AM.loaded = false; AM.seq = null; AM.peeked = false;
     try { W.localStorage.removeItem(STICKY); } catch (e) {}
     if (!W.indexedDB) return Promise.resolve(0);
     var exists = typeof W.indexedDB.databases === 'function'
@@ -2230,6 +2232,18 @@
       if (r && isObj(r.display)) { AM.displayRead = true; apSeed(!AM.shown, r.display.kind); AM.shown = AM.shown || { kind: str(r.display.kind), title: str(r.display.title) }; }
       if (S === me) renderBar();
     }, function () {});
+    peekAmbient();
+  }
+  /* the iPad tray's first look at the ambient document (the overlay, the layers, the scene: what is live), read once at the start. It is a look only:
+     AM.loaded and the heat sync still wait for the iPad view (loadAmbient), as before; this page's own changes keep AM.doc current after it. */
+  function peekAmbient() {
+    var g = gmApi(), me = S; if (!g || typeof g.ambient !== 'function' || AM.loaded || AM.peeked) return;
+    AM.peeked = true;
+    Promise.resolve().then(function () { return g.ambient(); }).then(function (r) {
+      if (S !== me || AM.loaded || !isObj(r) || !isObj(r.doc)) return;
+      AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null;
+      renderBar();
+    }, function () { AM.peeked = false; });
   }
   function layout() {
     var segs = [['console', 'Console'], ['prep', 'Prep'], ['location', 'Location'], ['scenes', 'Street'], ['score', 'Score'], ['chase', 'Chase'], ['npc', 'NPC'], ['downtime', 'Downtime'], ['cards', 'Cards'], ['rules', 'GM screen'], ['ipad', 'iPad'], ['state', 'State']];
@@ -2253,10 +2267,11 @@
       '<ol class="gm-find-list" id="gm-find-list"></ol><p class="gm-find-help"><kbd>↑</kbd> <kbd>↓</kbd> choose · <kbd>Enter</kbd> go (or copy) · <kbd>Esc</kbd> close</p></div></div></div>';
     renderRules();
     setApp(true);
+    ipadTrayMount();
     if (S.assist && typeof S.assist.relayout === 'function') S.assist.relayout();   /* the Blade panel sits between this bar and the capture bar */
   }
   /* the top bar of the app layout (every width): the session, saving, what the iPad shows, listening (once the transcriber has
-     ever been used), Clear and Lights out, and a menu with what is not play: the display page, the note, the capture, the pack,
+     ever been used), the iPad tray (gm/ipad-tray.js: what is live, Clear, Blank), and a menu with what is not play: the display page, the note, the capture, the pack,
      the site's pages, Forget. On a phone the bar is ’68 GM · Session · iPad · Menu (gm.css) */
   function barHtml() {
     return '<div class="gm-bar"><a class="gm-bar-mark" href="#" title="Home">’68 <b>GM</b></a><span class="gm-bar-sess" id="gm-bar-sess"></span>' +
@@ -2267,17 +2282,15 @@
       '<button type="button" class="gm-bb" data-gm="beat-next" title="Start the next beat in the run order">Next beat</button></span><span class="gm-grow"></span>' +
       '<button type="button" class="gm-bb gm-dwbtn" data-gm="drawer" id="gm-bar-drawer" aria-expanded="false" aria-controls="gm-drawer" ' + 'title="The drawer: the table, the crew and each character\u2019s sheet (W)">Drawer</button>' +
       '<button type="button" class="gm-bb" data-gm="find-open" title="Find anything: prep, the screen, NPCs, clocks, what you filed (Ctrl+K or /)">Find <kbd>Ctrl K</kbd></button>' +
-      '<button type="button" class="gm-pill" data-gm="panel" data-panel="ipad" id="gm-bar-ipad" title="What the players see (the iPad tab)"></button>' +
-      '<button type="button" class="gm-pill gm-ap" data-gm="aptoggle" id="gm-bar-ap" data-ap="auto" hidden></button>' +
-      '<button type="button" class="gm-pill" data-gm="panel" data-panel="ipad" id="gm-bar-stt" title="The transcriber (the iPad tab)" hidden></button>' +
-      '<button type="button" class="gm-bb" data-gm="blankipad" title="Back to the ambient scene">Clear → ambient <kbd>0</kbd></button>' + '<button type="button" class="gm-bb" data-gm="darkipad" title="True black until you push something">Lights out</button>' +
-      mirrorButton('gm-bb', 'bar') +
+      /* the iPad tray (gm/ipad-tray.js: what is live, Send, Clear 0, Blank, the autopilot pill), mounted here until the band holds it */
+      '<span class="gm-bar-tray" id="gm-bar-tray"></span>' +
+      '<button type="button" class="gm-pill" data-gm="panel" data-panel="ipad" id="gm-bar-stt" title="The transcriber (the iPad view)" hidden></button>' +
       '<span class="gm-menu"><button type="button" class="gm-bb" data-gm="menu" aria-expanded="false" aria-haspopup="true">Menu</button><span class="gm-menu-list" hidden>' +
       '<p class="gm-menu-h"><span><b>GM tools</b> · The console</span><span class="gm-exp" id="gm-menu-exp"></span></p>' + '<div class="gm-menu-warn" id="gm-menu-warn" hidden></div>' +
       '<a href="#display" title="The players’ screen: open this on the iPad">Open the display page (for the iPad)</a>' +
       '<button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="clearcap">Clear tonight’s capture</button><button type="button" data-gm="update">Update pack</button>' +
       '<button type="button" data-gm="capbar" id="gm-menu-capbar" title="The bottom bar that files a roll, a name or a moment"></button>' +
-      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' + setMenuLine() +
+      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' +
       '<a href="#t">The table</a><a href="#rules">Rules</a><a href="#cast">The cast</a><a href="#">Home</a>' +
       '<button type="button" class="bad" data-gm="forget">Forget GM data on this device</button></span></span>' +
       '<div class="gm-signed" id="gm-signed" role="alert" hidden>' + esc(SIGNED_OUT_MSG) + '</div></div>';
@@ -2298,7 +2311,6 @@
     });
     return S.st;
   }
-  function setMenuLine() { return W.B68GmSettings && W.B68Features ? '<button type="button" data-gm="settings" id="gm-menu-settings" title="Scenes, music, the phones and the mirror: the choices for the night. Everything else is always on">Settings</button>' : ''; }
   /* 1.2 (spine.start): the hard start's sheet (gm/hardstart.js); its layers go through the show contract's own writer */
   function hsOn() { return !!(S && W.B68GmHardStart && W.B68Features && W.B68Features.valueOf(S.doc, 'spine.start')); }
   function hsInst() {
@@ -2435,6 +2447,7 @@
   function renderMirror() {
     if (!S || !S.root || !S.root.querySelectorAll) return;
     Array.prototype.forEach.call(S.root.querySelectorAll('[data-gm="mirror"]'), function (b) { b.setAttribute('aria-pressed', String(mirrorOn())); b.textContent = mirrorLabel(b.getAttribute('data-mir') || 'panel'); });
+    renderIpadSettings(true);
   }
   function toggleMirror() {
     var next = !mirrorOn();
@@ -2450,12 +2463,7 @@
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
-    var ip = $q('#gm-bar-ipad');
-    if (ip) {
-      var shown = AM.shown ? (AM.shown.kind === 'blank' || !AM.shown.kind ? 'ambient' : displayLine(AM.shown)) : 'not known yet';
-      ip.innerHTML = '<span class="gm-dot' + (AM.shown && AM.shown.kind && AM.shown.kind !== 'blank' ? ' on' : '') + '"></span>iPad: ' + esc(shown);
-      ip.title = 'What the players see: ' + (AM.shown ? displayLine(AM.shown) : 'not known yet') + '. Opens the iPad tab.';
-    }
+    if (W.B68GmIpadTray) W.B68GmIpadTray.refresh();      /* what is live on the iPad (gm/ipad-tray.js) */
     apPaint();
     var sp = $q('#gm-bar-stt'); if (!sp) return;
     var d = STT.doc, on = !!(d && d.want === 'on'), st = d && isObj(d.status) ? d.status : {}, age = st.at ? (Date.now() - Date.parse(st.at)) / 1000 : null;
@@ -3165,12 +3173,12 @@
         '<p class="gm-warn" id="gm-mapwarn" role="status"></p>' +
         '<div class="gm-map-acts"><button type="button" class="btn sm primary" data-gm="ipad"' + (mu.layer === 'player' ? '' : ' disabled title="Switch Layer to Player: only the player layer goes to the iPad"') + '>Show on iPad</button>' +
         '<button type="button" class="btn sm" data-gm="scorescene"' + (mu.layer === 'player' ? '' : ' disabled title="Switch Layer to Player: only the player layer goes to the iPad"') + (mu.layer === 'player' ? ' title="The planning board and the exploded site on the iPad, from this roll at these bands"' : '') + '>Set as score scene</button>' +
-        '<button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button></div>' +
+        '<button type="button" class="btn sm" data-gm="blankipad" title="What is shown comes off the iPad: the ambient scene plays. Clear (0) takes everything down">Take it down</button></div>' +
         (sceneBehind(mu) ? '<p class="gm-dim gm-scene-behind">The score scene shows ' + esc(sceneBehind(mu).join(', ')) + ': press Set as score scene to bring it up to date.</p>' : '') +
         runBox(runSite()) +
         '<details class="gm-more gm-mapopts"' + (foldOpen('mapopts') ? ' open' : '') + ' data-fold="mapopts"><summary>View &amp; theme <span class="gm-dim">' + esc(mapLine(mu)) + '</span></summary>' + '<div class="gm-map-ctl">' + sel('view', 'View', VIEWS, mu.view) + sel('theme', 'Theme', THEMES, mu.theme) + sel('time', 'Time', P.TIMES, mu.time) + sel('weather', 'Weather', P.WEATHERS, mu.weather) + '</div></details>' +
         '<details class="gm-more gm-dl"' + (foldOpen('dl') ? ' open' : '') + ' data-fold="dl"><summary>Downloads</summary><div class="gm-map-acts">' + '<button type="button" class="btn sm" data-gm="dlsvg">Download SVG</button><button type="button" class="btn sm" data-gm="dlnote">Download note (.md)</button>' + '<button type="button" class="btn sm" data-gm="dlcanvas">Download canvas</button></div></details>' + '</section>';
-    } else h += '<p class="gm-empty">Choose what you know (or leave it on any) and roll. The card marks what the players can see.</p>' + '<p><button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button></p>';
+    } else h += '<p class="gm-empty">Choose what you know (or leave it on any) and roll. The card marks what the players can see.</p>' + '<p><button type="button" class="btn sm" data-gm="blankipad" title="What is shown comes off the iPad: the ambient scene plays. Clear (0) takes everything down">Take it down</button></p>';
     var hist = newest(isObj(S.doc.hist) ? S.doc.hist.location : null).slice(0, LIMITS.hist);
     if (hist.length) h += '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) { return earlierChip(x, 'location', cur && cur.hid === x._id); }).join('') + '</div>';
     box.innerHTML = h;
@@ -3189,7 +3197,7 @@
     }).join('');
     return '<section class="gm-glance gm-secret" data-sec="glance"><div class="gm-glance-h"><h3 class="gm-locname">' + esc(g.title) + '</h3></div>' +
       '<p class="gm-glance-place">' + esc(g.place) + '</p>' +
-      '<div class="gm-say"><span class="gm-lab">Say' + (S.locSent === rollKey(roll) ? ' ' + SEEN : '') + '</span><p>“' + esc(g.say) + '”</p><button type="button" class="btn sm" data-gm="pushtext">Street description on iPad</button></div>' +
+      '<div class="gm-say"><span class="gm-lab">Say' + (S.locSent === rollKey(roll) ? ' ' + SEEN : '') + '</span><p>“' + esc(g.say) + '”</p><button type="button" class="btn sm" data-gm="pushtext" title="The description goes up on the iPad as words; the map stays here">Show the description on iPad</button></div>' +
       /* the plan names the target room and its locks: GM only. It sits outside the Say box on purpose (that box is what the players
          see once the street description is sent), and no push (pushText, the score scene, Show on iPad) ever reads it */
       (g.plan ? '<p class="gm-plan"><span class="gm-lab">Plan</span> ' + esc(g.plan) + '</p>' : '') +
@@ -3911,7 +3919,7 @@
       if (!fewer.length) { toast('Not sent: ' + errText(e) + ' The iPad still shows ' + entryBands(on.reveal).join(', ') + (entryRooms(on.reveal).length ? ' + ' + entryRooms(on.reveal).join(', ') : '') + '.', true); dropBands(want, more); return; }
       endLive();
       pushDisplay({ kind: 'blank' }).then(function () { toast('The iPad was cleared: without ' + bandWords(fewer) + ' this map would name a hidden room, so it could not be sent. Show it again from another view.', true); },
-        function (e2) { if (!e2.superseded) toast('Could not clear the iPad: ' + errText(e2) + '. It may still show ' + bandWords(fewer) + ': press Clear → ambient.', true); });
+        function (e2) { if (!e2.superseded) toast('Could not clear the iPad: ' + errText(e2) + '. It may still show ' + bandWords(fewer) + ': press Clear (0).', true); });
       return;
     }
     gate.mark(d.svg);
@@ -3951,9 +3959,75 @@
       if (S === me && S.locRoll && rollKey(S.locRoll) === seed) { S.locSent = seed; renderLocation(); }   /* the Say box: Players see */
     }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
   }
-  /* Clear -> ambient: nothing spotlit, the ambient scene plays. Lights out: true black. */
-  function blankIpad() { pushDisplay({ kind: 'blank' }).then(function () { toast('Cleared: the iPad plays the ambient scene.'); }, function (e) { toast('Could not clear the iPad: ' + errText(e), true); }); }
-  function darkIpad() { pushDisplay({ kind: 'dark' }).then(function () { toast('Lights out on the iPad.'); }, function (e) { toast('Could not turn the lights out: ' + errText(e), true); }); }
+  /* Take it down (a tool's own button): what is shown goes, the ambient scene plays. Blank (lights out): true black until the next send. */
+  function blankIpad() { pushDisplay({ kind: 'blank' }).then(function () { toast('Taken down: the iPad plays the ambient scene.'); }, function (e) { toast('Could not take it down: ' + errText(e), true); }); }
+  function darkIpad() { return pushDisplay({ kind: 'dark' }).then(function () { toast('Blank: the iPad is black until the next send.'); return true; }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); return false; }); }
+
+  /* ---------- THE iPAD TRAY's Clear (0) (the GM night rebuild, design section 6: one way off) ----------
+     Everything down to the ambient scene, through the page's own take-downs, so nothing comes back by itself a moment later: the report card (the
+     stamp would lay it again), a held face (the spotlight would), the flashback, the montage, the hard start; then the overlay up now (a clock, an
+     NPC card, a line, the dawn, a show beat) and the stage, back to the ambient. NOT the band's lasting layers: the phase, the PC faces and
+     security stay, and so do the ambient mode and the score scene (a panic's safe scene with them, so Resume still brings the night back).
+     Each step is guarded: one that fails or is missing leaves the rest to run. The tools' own Take it down buttons stay where they are. */
+  function ipadLayers() { return isObj(AM.doc) && isObj(AM.doc.layers) ? AM.doc.layers : {}; }
+  function ipadLayerSet(path) {
+    var L = ipadLayers(), p = path.split('.'), g = isObj(L[p[0]]) ? L[p[0]] : null;
+    return !!g && g[p[1]] !== undefined && g[p[1]] !== null;
+  }
+  function clearIpad() {
+    var me = S; if (!me) return Promise.resolve(false);
+    var L = ipadLayers(), sc = isObj(L.scene) ? L.scene : {}, band = isObj(L.band) ? L.band : {}, steps = [];
+    /* a layer still set comes off through the show contract (gm/show.js), else through the same ambient PATCH that contract writes with */
+    function layerOff(path) { return function () { if (!ipadLayerSet(path)) return null; var sh = shows(); return sh ? sh.layer(path, null) : patchAmbient({ layer: { path: path, value: null } }); }; }
+    if (me.stamp && typeof me.stamp.esc === 'function') steps.push(function () { return me.stamp.esc(); });
+    var spot = me.b17 && me.b17.spot;
+    if (spot && typeof spot.held === 'function' && spot.held() && typeof spot.narrator === 'function') steps.push(function () { return spot.narrator(); });
+    var fb = me.b19 && me.b19.flashback;
+    if (sc.filter === 'flashback') steps.push(fb && typeof fb.end === 'function' ? function () { return Promise.resolve(fb.end()).then(function () { if (typeof fb.refresh === 'function') fb.refresh(); }); } : layerOff('scene.filter'));
+    var mt = mtInst();
+    if (mt && typeof mt.active === 'function' && mt.active()) steps.push(function () { return mt.collapse(); });
+    steps.push(layerOff('scene.layout')); steps.push(layerOff('data.montage'));
+    if (sc.mode === 'start') {
+      var hs = hsInst(), npcFaces = Array.isArray(band.faces) && band.faces.some(function (f) { return isObj(f) && f.npcId; });
+      if (hs && typeof hs.end === 'function') steps.push(function () { return hs.end(); });
+      else { ['scene.mode', 'data.countdown', 'data.credits', 'data.previously'].forEach(function (p) { steps.push(layerOff(p)); }); if (npcFaces) steps.push(layerOff('band.faces')); }
+    }
+    steps.push(function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? patchAmbient({ overlay: null }) : null; });
+    steps.push(function () { return pushDisplay({ kind: 'blank' }); });
+    var failed = '';
+    return steps.reduce(function (p, step) {
+      return p.then(function () { return Promise.resolve().then(step).then(null, function (e) { if (!failed && !(e && e.superseded)) failed = errText(e); }); });
+    }, Promise.resolve()).then(function () {
+      if (S !== me) return false;
+      if (failed) { toast('Could not clear all of it: ' + failed, true); return false; }
+      toast('Cleared: the iPad plays the ambient scene.');
+      if (W.B68GmIpadTray) W.B68GmIpadTray.refresh();
+      return true;
+    });
+  }
+  /* the page's iPad, for the tray: what it knows, and its one way off and its blank */
+  function ipadSnapshot() {
+    return {
+      shown: AM.shown, doc: AM.doc, now: Date.now(),
+      names: {
+        npc: function (id) { var d = S && isObj(S.npcs) ? S.npcs[id] : null; return isObj(d) ? str(d.name) : ''; },
+        clock: function (id) { var c = tableClocks().filter(function (x) { return str(x.id) === str(id); })[0]; return c ? str(c.name) : ''; },
+        scene: function (id) { var s = P.IPAD_SCENES.filter(function (x) { return x.id === id; })[0]; return s ? s.label : ''; }
+      }
+    };
+  }
+  var ipadTrayApi = {
+    snapshot: ipadSnapshot, clear: clearIpad, blank: darkIpad, busy: function () { return AM.busy > 0; },
+    openView: function () { setPanel('ipad'); },
+    ap: { view: function () { var v = apView(); return v ? { badge: v.bar, title: v.title, mode: v.mode } : null; }, toggle: function () { apToggle(); } }
+  };
+  /* mount the tray in the bar (the band mounts one of its own); the page's iPad is provided to every tray on the page */
+  function ipadTrayMount() {
+    var T = W.B68GmIpadTray; if (!T || !S) return;
+    T.provide(ipadTrayApi);
+    if (S.tray) { S.tray.destroy(); S.tray = null; }
+    var slot = $q('#gm-bar-tray'); if (slot) S.tray = T.create({ document: document }).mount(slot);
+  }
 
   /* ---------- score sites (GM.md, "Score sites"): a location roll saved against a score card; the Prep tab's site strip ----------
      The scores are the prep part's embedded score cards (gm/prep.js scores()). S.siteFor is the score the save row points at on
@@ -4265,6 +4339,7 @@
     if (S && S.assist && typeof S.assist.setAutopilot === 'function') S.assist.setAutopilot(v ? { label: v.badge + ' · ' + v.action, title: v.title } : null);
     var ln = $q('#gm-ipad-ap');
     if (ln) { ln.hidden = !v; if (v) { var m = ln.querySelector('[data-ap-badge]'), t = ln.querySelector('[data-gm="aptoggle"]'); if (m) m.textContent = v.badge; if (t) t.textContent = v.action; var o = ln.querySelector('[data-gm="apoff"]'); if (o) o.hidden = v.mode === 'off'; } }
+    if (W.B68GmIpadTray) W.B68GmIpadTray.refresh();      /* the tray's autopilot pill (gm/ipad-tray.js) */
   }
   /* Take over (or Hand back, or Switch on): the top bar's pill, the Blade panel's header and the iPad tab all call this */
   function apToggle() {
@@ -4856,50 +4931,83 @@
     toast: function (m) { toast(m, true); },
     sent: function (r) { if (adoptAmbient(r)) renderIpad(); }
   });
+  /* ---------- THE iPAD VIEW (the GM night rebuild, design section 6): one page, under what is live, in three sections ----------
+       On the iPad now   what is shown, the overlay (with its own Take it down), what else is up (a flashback, a montage, the hard start), the
+                         autopilot. Clear (0) and Blank are the band's tray: one way off, from every place.
+       Listening         the transcriber, ON AIR, Who is who, the transcript (renderStt)
+       Scenes            the ambient scenes (off, auto with its interval and Next scene, or one pinned), the theme, the score scene, the handouts
+       Settings          the night's choices (Scenes moving / held still, Music, Phones, Mirror for phones): each takes effect at once, no reload */
+  function ipadAlsoUp() {
+    var T = W.B68GmIpadTray; if (!T) return [];
+    return T.liveItems(ipadSnapshot()).filter(function (x) { return x.key !== 'stage' && x.key !== 'overlay'; }).map(function (x) { return x.text; });
+  }
   function renderIpad() {
     var box = $q('#gm-ipad'); if (!box) return;
     var v = ipadView(AM.doc, function (id) { var c = tableClocks().filter(function (x) { return str(x.id) === id; })[0]; return c ? { name: c.name, size: c.size, filled: c.filled } : null; }), busy = AM.busy > 0, off = !AM.loaded;
     function seg(k, label) { return '<button type="button" class="chip" data-gm="ambmode" data-v="' + k + '" aria-pressed="' + (v.mode === k) + '"' + (off || busy ? ' disabled' : '') + '>' + label + '</button>'; }
-    var h = '<section class="gm-box gm-ipad-now"><h3 class="gm-band">On the iPad now</h3><p class="gm-ipad-line" id="gm-ipad-now">' + (AM.shown ? esc(displayLine(AM.shown)) : '<span class="gm-dim">Not known yet: push something, or clear it.</span>') + '</p>' +
-      (v.overlayLine ? '<p class="gm-ipad-line" id="gm-ipad-overlay">Overlay sent: ' + esc(v.overlayLine) + (v.auto ? ' · AUTO' : '') + '</p>' : '') +
+    var also = ipadAlsoUp();
+    var now = '<section class="gm-box gm-ipad-now"><h3 class="gm-band">On the iPad now</h3><div class="gm-ipad-body"><p class="gm-ipad-line" id="gm-ipad-now">' + (AM.shown ? esc(displayLine(AM.shown)) : '<span class="gm-dim">Not known yet: push something, or clear it.</span>') + '</p>' +
+      (v.overlayLine ? '<p class="gm-ipad-line gm-ipad-ov"><span id="gm-ipad-overlay">Overlay sent: ' + esc(v.overlayLine) + (v.auto ? ' · AUTO' : '') + '</span>' +
+        '<button type="button" class="btn sm" data-gm="clearoverlay"' + (busy ? ' disabled' : '') + ' title="Take the overlay (a clock, an NPC, a line, the dawn or a beat) off the iPad; what is under it stays">Take it down</button></p>' : '') +
+      (also.length ? '<p class="gm-ipad-line" id="gm-ipad-also">Also up: ' + esc(also.join(' · ')) + '</p>' : '') +
       '<p class="gm-ipad-line" id="gm-ipad-ap" hidden>Autopilot: <b data-ap-badge></b> <button type="button" class="btn sm" data-gm="aptoggle"></button> ' +
       '<button type="button" class="btn sm" data-gm="apoff" title="Blade stops laying anything over the iPad until you switch it on">Switch off</button></p>' +
-      '<div class="gm-ipad-acts"><button type="button" class="btn primary" data-gm="blankipad" title="Back to the ambient scene">Clear → ambient <kbd>0</kbd></button>' +
-      '<button type="button" class="btn" data-gm="darkipad" title="True black until you push something">Lights out</button>' +
-      mirrorButton('btn', 'panel') +
-      '<button type="button" class="btn" data-gm="clearoverlay"' + (busy ? ' disabled' : '') + ' title="Take the overlay (a clock, an NPC, a line or the dawn) off the iPad; what is under it stays">Clear overlay</button></div></section>';
-    h += '<section class="gm-box gm-ipad-amb"><h3 class="gm-band">Ambient scenes</h3><div class="gm-ipad-body">';
+      '<p class="gm-dim gm-ipad-way">Clear <kbd>0</kbd> takes all of it back to the ambient scene and Blank makes the iPad black: both sit with the iPad line in the band, in every place.</p></div></section>';
+    var h = '<section class="gm-box gm-ipad-scenes"><h3 class="gm-band">Scenes</h3><div class="gm-ipad-body">';
     if (!AM.loaded) h += '<p class="gm-dim" role="status">' + (AM.error ? 'Could not read the settings: ' + esc(AM.error) : 'Loading the iPad settings…') + '</p>' + (AM.error ? '<p><button type="button" class="btn sm" data-gm="ambretry">Try again</button></p>' : '');
-    h += '<div class="gm-field"><span class="gm-lab">When nothing is spotlit</span><div class="seg" role="group" aria-label="Ambient mode">' + seg('off', 'Off') + seg('auto', 'Auto') + seg('pin', 'Pin') + '</div></div>' +
+    h += '<div class="gm-field"><span class="gm-lab">When nothing is shown</span><div class="seg" role="group" aria-label="Ambient mode">' + seg('off', 'Off') + seg('auto', 'Auto') + seg('pin', 'Pin') + '</div></div>' +
       '<div class="gm-field"><span class="gm-lab">Scene' + (v.mode === 'pin' ? '' : ' (tap one to pin it)') + '</span><div class="gm-ipad-tiles" role="group" aria-label="Scenes">' + v.tiles.map(function (s) {
         return '<button type="button" class="gm-ipad-tile" data-gm="ambscene" data-id="' + esc(s.id) + '" aria-pressed="' + s.pressed + '"' + (s.disabled || off || busy ? ' disabled' : '') + '><b>' + esc(s.label) + '</b>' + (s.note ? '<small>' + esc(s.note) + '</small>' : '') + '</button>';
       }).join('') + '</div></div>' +
       '<div class="gm-row"><label class="gm-field" for="gm-amb-int"><span class="gm-lab">Auto changes every</span><select id="gm-amb-int" data-ambint="1"' + (off || busy ? ' disabled' : '') + '>' + v.intervals.map(function (n) { return '<option value="' + n + '"' + (n === v.intervalMin ? ' selected' : '') + '>' + n + ' min</option>'; }).join('') + '</select></label>' +
       '<button type="button" class="btn" data-gm="ambskip"' + (off || busy || v.mode !== 'auto' ? ' disabled' : '') + ' title="Auto mode only">Next scene</button></div>' +
-      '<p class="gm-dim gm-ipad-theme" id="gm-ipad-theme" role="status">' + esc(P.themeLine(THEME.state, THEME.http)) + '</p></div></section>';
-    h += '<section class="gm-box gm-ipad-score"><h3 class="gm-band">Score scene</h3><div class="gm-ipad-body"><p class="gm-ipad-line" id="gm-ipad-score">' + (v.hasScore ? esc(v.scoreLine) : '<span class="gm-dim">None set. Use Set as score scene in the Location panel.</span>') + '</p>' +
-      '<button type="button" class="btn sm" data-gm="clearscore"' + (!v.hasScore || off || busy ? ' disabled' : '') + '>Clear score</button></div></section>';
-    box.innerHTML = '<div id="gm-stt"></div>' + h + handoutsHtml();
+      '<p class="gm-dim gm-ipad-theme" id="gm-ipad-theme" role="status">' + esc(P.themeLine(THEME.state, THEME.http)) + '</p>' +
+      '<div class="gm-ipad-sub gm-ipad-score"><h4 class="gm-ipad-h">Score scene</h4><p class="gm-ipad-line" id="gm-ipad-score">' + (v.hasScore ? esc(v.scoreLine) : '<span class="gm-dim">None set. Use Set as score scene with the site’s map.</span>') + '</p>' +
+      '<button type="button" class="btn sm" data-gm="clearscore"' + (!v.hasScore || off || busy ? ' disabled' : '') + ' title="The score scene comes out of the ambient scenes">Take it down</button></div>' +
+      handoutsHtml() + '</div></section>';
+    var set = '<section class="gm-box gm-ipad-settings"><h3 class="gm-band">Settings</h3><div class="gm-ipad-body" id="gm-ipad-settings"></div></section>';
+    /* a grid: what is live across the top; Listening and the Settings in one column beside the Scenes (one column below 1100 px) */
+    box.innerHTML = '<div class="gm-ipadv">' + now + '<div class="gm-ipadv-col"><div class="gm-ipadv-listen" id="gm-stt"></div>' + set + '</div>' + h + '</div>';
+    renderIpadSettings(false);
     renderStt(true);
     renderBar();
     probeTheme();
+  }
+  /* the iPad view's Settings section: gm/settings.js draws its four rows into it (a tap there chooses, at once, no reload); a page without that module
+     still has the one choice it holds itself (Mirror for phones). ifMoved: redraw only when a value moved (another device's change), so focus stays */
+  function ipadSettingsKey() { var st = setInst(); return st && typeof st.state === 'function' ? st.state() : String(mirrorOn()); }
+  function renderIpadSettings(ifMoved) {
+    var sb = $q('#gm-ipad-settings'); if (!sb) return;
+    var k = ipadSettingsKey();
+    if (ifMoved && sb.getAttribute('data-k') === k) return;
+    var st = setInst();
+    if (st) { if (ifMoved) st.sync(true); else st.render(sb); } else sb.innerHTML = ipadSettingsHtml();     /* sync keeps the focused choice */
+    sb.setAttribute('data-k', k);
+  }
+  function ipadSettingsHtml() {
+    var on = mirrorOn();
+    return '<div class="gm-set-row" data-set-row="mirror"><span class="gm-lab" id="gm-set-l-mirror">Mirror for phones</span>' +
+      '<div class="seg" role="group" aria-labelledby="gm-set-l-mirror"><button type="button" class="chip" data-gm="mirror-set" data-v="0" aria-pressed="' + !on + '">Off</button>' +
+      '<button type="button" class="chip" data-gm="mirror-set" data-v="1" aria-pressed="' + on + '">On</button></div>' +
+      '<small>While on, a map or a handout on the iPad also shows on the players’ phones (their Table button). Nothing else ever does.</small></div>';
   }
   /* ---------- Handouts: the list in the iPad tab, and the Rack's "Show handout?" offer ---------- */
   function handouts() { return P.handoutList(part('handouts')); }
   function handoutById(id) { return handouts().filter(function (x) { return x.id === id; })[0] || null; }
   function handoutsHtml() {
     var list = handouts(), me = S, tt = !!(me && me.hoTitle);
-    var h = '<section class="gm-box gm-ipad-handouts"><h3 class="gm-band">Handouts' + (list.length ? ' <span class="gm-dim">' + list.length + '</span>' : '') + '</h3><div class="gm-ipad-body">';
-    if (!list.length) return h + '<p class="gm-dim">' + (part('handouts') ? 'The handouts part has nothing to show.' : 'No handouts in the pack. Put the prop images in the vault, run npm run gm:handouts and npm run gm:pack, then Update pack.') + '</p></div></section>';
+    /* a part of the Scenes section (the iPad view): the props the GM shows by hand */
+    var h = '<div class="gm-ipad-sub gm-ipad-handouts"><h4 class="gm-ipad-h">Handouts' + (list.length ? ' <span class="gm-dim">' + list.length + '</span>' : '') + '</h4>';
+    if (!list.length) return h + '<p class="gm-dim">' + (part('handouts') ? 'The handouts part has nothing to show.' : 'No handouts in the pack. Put the prop images in the vault, run npm run gm:handouts and npm run gm:pack, then Update pack.') + '</p></div>';
     h += '<div class="gm-ipad-acts"><label class="gm-check"><input type="checkbox" data-hotitle="1"' + (tt ? ' checked' : '') + '> Title on the iPad</label>' +
-      '<button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene">Clear iPad</button></div><ul class="gm-handouts">';
+      '<button type="button" class="btn sm" data-gm="blankipad" title="The handout comes off the iPad: the ambient scene plays">Take it down</button></div><ul class="gm-handouts">';
     list.forEach(function (x) {
       h += '<li class="gm-handout" data-ho="' + esc(x.id) + '"><img class="gm-handout-thumb" src="' + esc(P.HANDOUT_DIR + x.file) + '" alt="" loading="lazy" decoding="async" width="72" height="72">' +
         '<div class="gm-handout-t"><b>' + esc(x.title) + '</b>' + (x.when ? '<span class="gm-dim">' + esc(x.when) + '</span>' : '') +
         '<div class="gm-ipad-acts"><button type="button" class="btn sm primary" data-gm="ho-show" data-id="' + esc(x.id) + '">Show on iPad</button>' +
-        '<button type="button" class="btn sm" data-gm="blankipad">Clear iPad</button></div></div></li>';
+        '<button type="button" class="btn sm" data-gm="blankipad">Take it down</button></div></div></li>';
     });
-    return h + '</ul></div></section>';
+    return h + '</ul></div>';
   }
   function showHandout(id) {
     var x = handoutById(id); if (!x) { toast('That handout is not in the pack any more.', true); return Promise.resolve(false); }
@@ -5180,7 +5288,7 @@
       var m = roll.meta;
       h += '<article class="gm-card gm-scncard" data-tool="scenes"><header class="gm-card-h"><div><h3>' + esc(m.title) + '</h3><p class="gm-sub">' + esc(m.sub) + '</p></div></header>' + genLinesHtml(roll.lines) +
         '<div class="gm-card-acts"><button type="button" class="btn sm" data-gm="pin" data-tool="scenes">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="scenes">Copy</button>' +
-        '<button type="button" class="btn sm" data-gm="scnipad" title="Only the three read-aloud paragraphs go to the iPad">Read-aloud to the iPad</button></div></article>';
+        '<button type="button" class="btn sm" data-gm="scnipad" title="Only the three read-aloud paragraphs go to the iPad">Show on iPad</button></div></article>';
     } else h += '<p class="gm-empty">Pick a district, or leave it on anywhere, and roll. The grid under the read-aloud is for you, not the table.</p>';
     box.innerHTML = h + earlierHtml('scenes', cur);
   }
@@ -6149,7 +6257,7 @@
     var names = pcs.map(function (p) { return str(p.first || p.name); }).filter(Boolean).concat(['GM']);
     var h = '<div class="gm-cardsbar"><button type="button" class="btn sm primary" data-gm="opp-add"' + (list.length >= OPP_MAX ? ' disabled' : '') + '>Add a card</button>' +
       '<button type="button" class="btn sm" data-gm="opp-show" data-mode="carousel"' + (list.length ? '' : ' disabled') + '>Show on iPad</button>' +
-      '<button type="button" class="btn sm" data-gm="opp-show" data-mode="spread"' + (list.length ? '' : ' disabled') + '>Spread on iPad</button>' +
+      '<button type="button" class="btn sm" data-gm="opp-show" data-mode="spread"' + (list.length ? '' : ' disabled') + ' title="Every card at once, spread across the iPad">Show all on iPad</button>' +
       '<label class="gm-field" for="gm-opp-iv"><span class="gm-lab">Turns</span><select id="gm-opp-iv">' + [[0, 'when tapped'], [8, 'every 8 s'], [12, 'every 12 s'], [20, 'every 20 s']].map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === iv ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label></div>' +
       '<datalist id="gm-opp-from">' + names.map(function (n) { return '<option value="' + esc(n) + '">'; }).join('') + '</datalist>';
     if (!list.length) h += '<p class="gm-empty">One card per pitch at the planning meeting: each player’s, then yours. Type on the card, then Show on iPad. Each card names a client, a target or an operation type (the others stay blank).</p>';
@@ -6268,7 +6376,7 @@
         (lg ? '<p class="gm-ch-leg"><span class="gm-lab">Ticks ' + esc(lg.name) + ' · ' + (lg.size - lg.filled) + ' to go</span></p>' : '<p class="gm-note warn">The crew’s clock is full. Add a leg, or end the chase.</p>') +
         '<div class="gm-ch-ticks">' + [[1, 'Limited'], [2, 'Standard'], [3, 'Great']].map(function (t) { return '<button type="button" class="btn primary gm-ch-plus" data-gm="ch-tick" data-n="' + t[0] + '"' + (lg && K ? '' : ' disabled') + '><b>+' + t[0] + '</b><small>' + t[1] + '</small></button>'; }).join('') + '</div></div>' +
         '<div class="gm-map-acts"><button type="button" class="btn sm primary" data-gm="ch-ipad"' + (K ? '' : ' disabled') + ' title="The player copy at the iPad’s size: no roll lines, no hidden clock. It follows the chase while it is up">Show on iPad</button>' +
-        '<button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button>' +
+        '<button type="button" class="btn sm" data-gm="blankipad" title="The chase comes off the iPad: the ambient scene plays. Clear (0) takes everything down">Take it down</button>' +
         '<button type="button" class="btn sm" data-gm="ch-undo"' + (cur.panels.length ? '' : ' disabled') + '>Undo last panel</button>' +
         '<label class="gm-field gm-ch-outf" for="gm-ch-outcome"><span class="sr">How it ended</span><select id="gm-ch-outcome" data-choutcome>' + chOutcomeOpts(cur) + '</select></label>' +
         '<button type="button" class="btn sm bad" data-gm="ch-end">End chase</button></div>' +
@@ -6780,7 +6888,7 @@
     else if (a.type === 'last') fileLast();
     else if (a.type === 'blank') blank();
     else if (a.type === 'blank-tap') blankTap();
-    else if (a.type === 'clear') blankIpad();
+    else if (a.type === 'clear') clearIpad();            /* 0: the tray's Clear, everything down to the ambient scene */
     else if (a.type === 'focus') toggleFocus();
     else if (a.type === 'drawer') drawerToggle();
     else if (a.type === 'find') findOpen();
@@ -6804,7 +6912,6 @@
       case 'menu': { var ml2 = $q('.gm-menu-list'); menuOpen(!!(ml2 && ml2.hasAttribute('hidden'))); break; }
       case 'focus': toggleFocus(); break;
       case 'hardstart': menuOpen(false); { var hsi = hsInst(); if (hsi) hsi.toggle(); } break;      /* 1.2 */
-      case 'settings': menuOpen(false); { var sti = setInst(); if (sti) sti.toggle(); } break;      /* N0 */
       case 'montage': menuOpen(false); { var mti = mtInst(); if (mti) mti.toggle(); } break;      /* 2.8 */
       case 'practical': case 'phone': case 'trouble': case 'canon': case 'frontpage': case 'absent': menuOpen(false); { var rdi = rdInst(); if (rdi) rdi.toggle(a); } break;      /* 4.5, 4.7, 5.3 */
       case 'print': menuOpen(false); { var pri = prInst(); if (pri) pri.toggle(); } break;      /* 3.6, 2.11 */
@@ -6973,6 +7080,7 @@
       case 'livesync': toggleLive(); break;
       case 'capbar': toggleCapBar(); break;
       case 'mirror': toggleMirror(); break;
+      case 'mirror-set': if ((b.getAttribute('data-v') === '1') !== mirrorOn()) toggleMirror(); renderIpadSettings(); break;   /* the iPad view's Settings row */
     }
   }
   function onChange(ev) {

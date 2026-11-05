@@ -17,6 +17,7 @@ const C = require(path.join(ROOT, 'app', 'gm', 'console.js'));
 const L = require(path.join(ROOT, 'app', 'gm', 'location.js'));
 const RL = require(path.join(ROOT, 'app', 'gm', 'roll.js'));      // N4: the Roll draws the console column
 const M = require(path.join(ROOT, 'app', 'maps', 'map-kit.js'));
+const TRAY = require(path.join(ROOT, 'app', 'gm', 'ipad-tray.js'));      /* the iPad tray (the GM night rebuild, N5): mounted in the bar, so the page's Clear and Blank are on it */
 const { checkSvg } = await import(pathToFileURL(path.join(ROOT, 'functions', '_lib', 'gm.js')).href);
 
 let failed = 0, passed = 0;
@@ -357,7 +358,7 @@ function fakeBrowser(over) {
   const ls = new Map([['b68.gm.capbar', '1']]), toasts = [];     // the capture bar is off by default; its keys work only while it shows
   const W = { document: doc, localStorage: { getItem: (k) => (ls.has(k) ? ls.get(k) : null), setItem: (k, v) => { ls.set(k, String(v)); }, removeItem: (k) => { ls.delete(k); } },
     matchMedia: () => ({ matches: false }), addEventListener() {}, confirm: () => true, open() {}, B68: { toast: (m, bad) => toasts.push([m, !!bad]) },
-    B68GmConsole: C, B68GmRoll: RL, B68GmLocation: L, B68GmScenes: SC, B68GmScore: SCM, B68GmDowntime: DT, B68DowntimeTables: DTT, B68GmChase: CH, B68Content: CT, setTimeout, clearTimeout, console };
+    B68GmConsole: C, B68GmRoll: RL, B68GmLocation: L, B68GmScenes: SC, B68GmScore: SCM, B68GmDowntime: DT, B68DowntimeTables: DTT, B68GmChase: CH, B68Content: CT, B68GmIpadTray: TRAY, setTimeout, clearTimeout, console };
   W.self = W; Object.assign(W, over || {});
   return { W, doc, ls, toasts };
 }
@@ -851,7 +852,7 @@ await test('9b. crewOf: whole numbers clamped to 0-9 / 0-4; null without a numbe
   assert.equal(P.themeLine('unknown', 0), 'Theme for the credits: not checked yet.');
   assert.ok(P.themeType('audio/mpeg') && P.themeType('') && P.themeType('application/octet-stream') && !P.themeType('text/html; charset=utf-8'), 'only audio counts as the theme');
   assert.equal(P.ipadView({ mode: 'auto', scene: 'board' }).tiles.filter((x) => x.pressed).length, 0, 'only a pin presses a tile');
-  assert.equal(P.displayLine({ kind: 'svg', title: 'Invented Mill' }), 'Map · Invented Mill'); assert.equal(P.displayLine({ kind: 'dark' }), 'Lights out');
+  assert.equal(P.displayLine({ kind: 'svg', title: 'Invented Mill' }), 'Map · Invented Mill'); assert.equal(P.displayLine({ kind: 'dark' }), 'Blank (lights out)', 'the word the tray uses');
   assert.equal(P.displayLine({ kind: 'rule', title: 'Invented rule' }), 'Rule · Invented rule');
   assert.match(P.displayLine({ kind: 'blank' }), /ambient/);
 });
@@ -933,13 +934,14 @@ await test('9g. the gate lets a score patch through only when both svgs were mar
   assert.equal(g.allowsAmbient({ score: { board: 5, iso: 6 } }), false);
 });
 
-await test('9h. the iPad panel: a tab (I), On the iPad now, Clear and Lights out, the mode, seventeen scenes, the interval; the server document is drawn', async () => {
+await test('9h. the iPad view: a tab (I); On the iPad now, then Listening, Scenes and Settings; the mode, seventeen scenes, the interval; the server document is drawn; Clear and Blank are the tray\'s', async () => {
   const fg = addAmbient(fakeGm(), { doc: { mode: 'pin', scene: 'duskwall', intervalMin: 10 }, shown: { kind: 'svg', title: 'Invented Mill' } });
   const h = await openPage({ fg, camp: CAMP3 });
   assert.ok(h.q('#gm-ipad') && h.q('[data-pane="ipad"]') && h.q('.gm-tab[data-panel="ipad"]').textContent.includes('iPad'));
   assert.ok(h.qa('[data-gm="seg"]').some((b) => b.getAttribute('data-seg') === 'ipad'), 'the phone bar has it too');
   h.press('i'); assert.equal(h.page._state().panel, 'ipad');
   await until(() => h.page._ambient().loaded);
+  assert.deepEqual(h.qa('#gm-ipad .gm-band').map((x) => x.textContent.replace(/\s+/g, ' ').trim().split(' ')[0]), ['On', 'Listening', 'Settings', 'Scenes'], 'the view\'s sections (the grid sets Listening and Settings beside the Scenes)');
   assert.equal(h.qa('#gm-ipad .gm-ipad-tile').length, 17); assert.equal(h.qa('#gm-ipad [data-gm="ambmode"]').length, 3);
   assert.equal(h.q('#gm-ipad-now').textContent, 'Map · Invented Mill', 'what the display holds, read once');
   assert.deepEqual(h.qa('#gm-ipad [data-gm="ambmode"]').map((b) => [b.getAttribute('data-v'), b.getAttribute('aria-pressed')]), [['off', 'false'], ['auto', 'false'], ['pin', 'true']]);
@@ -947,23 +949,35 @@ await test('9h. the iPad panel: a tab (I), On the iPad now, Clear and Lights out
   assert.deepEqual(h.qa('#gm-ipad .gm-ipad-tile').filter((b) => b.hasAttribute('disabled')).map((b) => b.getAttribute('data-id')), ['board', 'exploded'], 'score scenes wait for a score');
   assert.deepEqual(h.qa('#gm-amb-int option').map((o) => o.textContent), ['4 min', '7 min', '10 min', '15 min']); assert.equal(h.q('#gm-ipad [data-gm="ambskip"]').hasAttribute('disabled'), true, 'Next scene is Auto only');
   assert.match(h.q('#gm-ipad-score').textContent, /None set/); assert.equal(h.q('#gm-ipad [data-gm="clearscore"]').hasAttribute('disabled'), true);
-  assert.deepEqual(h.qa('#gm-ipad [data-gm="blankipad"], #gm-ipad [data-gm="darkipad"]').map((b) => b.textContent.replace(/\s+/g, ' ').trim()), ['Clear → ambient 0', 'Lights out']);
+  assert.equal(h.q('#gm-ipad [data-gm="clearscore"]').textContent, 'Take it down', 'the score scene\'s own take-down reads Take it down');
+  assert.equal(h.qa('#gm-ipad .gm-ipad-now [data-gm="blankipad"], #gm-ipad [data-gm="darkipad"]').length, 0, 'no Clear or Lights out of its own: one way off, the tray\'s');
+  assert.deepEqual(h.qa('.gm-tray [data-tray]').map((b) => b.getAttribute('data-tray')), ['open', 'send', 'clear', 'blank', 'ap'], 'the tray: what is live, Send, Clear, Blank, the autopilot');
+  assert.deepEqual(['clear', 'blank'].map((k) => h.q('.gm-tray [data-tray="' + k + '"]').textContent.replace(/\s+/g, ' ').trim()), ['Clear 0', 'Blank']);
+  assert.ok(h.q('#gm-ipad-settings [data-set-row="mirror"]'), 'the Settings section holds Mirror for phones');
   const fetches = fg.server.ambGets; h.press('i'); await until(() => fg.server.ambGets > fetches); assert.ok(fg.server.ambGets > fetches, 'opening the panel reads the document');
   await h.save();
 });
 
-await test('9i. Clear → ambient (button and key 0) sends blank; Lights out sends dark; every "Blank the iPad" button is renamed; errors are toasts', async () => {
-  const fg = addAmbient(fakeGm()), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
+await test('9i. the tray: Clear (and key 0) is everything down to the ambient; Blank sends dark; the tools\' own buttons read Take it down; errors are toasts', async () => {
+  const fg = addAmbient(fakeGm(), { doc: { overlay: { id: 'o1', kind: 'text', ms: 60000, text: 'An invented line', at: new Date().toISOString() }, layers: { band: { phase: 'score', security: 2 }, scene: { filter: 'flashback', layout: 'montage' } } } });
+  const br = fakeBrowser({ B68Show: require(path.join(ROOT, 'app', 'gm', 'show.js')) });      /* the show contract: a layer comes off through it, as on the real page */
+  const h = await openPage({ fg, br, camp: CAMP3 });
   await openIpad(h);
-  h.q('#gm-ipad [data-gm="darkipad"]').click(); await until(() => fg.server.displays.length === 1); eqj(fg.server.displays[0], { kind: 'dark' });
-  await until(() => h.q('#gm-ipad-now').textContent === 'Lights out'); assert.equal(h.q('#gm-ipad-now').textContent, 'Lights out');
-  h.q('#gm-ipad [data-gm="blankipad"]').click(); await until(() => fg.server.displays.length === 2); eqj(fg.server.displays[1], { kind: 'blank' });
-  h.press('0'); await until(() => fg.server.displays.length === 3); eqj(fg.server.displays[2], { kind: 'blank' }, 'key 0');
+  h.q('.gm-tray [data-tray="blank"]').click(); await until(() => fg.server.displays.length === 1); eqj(fg.server.displays[0], { kind: 'dark' });
+  await until(() => h.q('#gm-ipad-now').textContent === 'Blank (lights out)'); assert.equal(h.q('#gm-ipad-now').textContent, 'Blank (lights out)');
+  assert.match(h.q('.gm-tray-text').textContent, /^Blank \(lights out\)/, 'the tray says so too');
+  const p0 = fg.server.ambPatches.length;
+  h.q('.gm-tray [data-tray="clear"]').click(); await until(() => fg.server.displays.length === 2); eqj(fg.server.displays[1], { kind: 'blank' });
+  const sent = fg.server.ambPatches.slice(p0).map((p) => JSON.stringify(p)).join(' ');
+  assert.ok(/"overlay":null/.test(sent), 'Clear takes the overlay down: ' + sent);
+  assert.ok(/"layer":\{"path":"scene\.filter","value":null\}/.test(sent) && /"layer":\{"path":"scene\.layout","value":null\}/.test(sent), 'and the flashback and the montage: ' + sent);
+  assert.ok(!/band\.phase|band\.security|band\.faces/.test(sent), 'never the band\'s lasting layers (the phase, the PC faces, security)');
+  h.press('0'); await until(() => fg.server.displays.length === 3); eqj(fg.server.displays[2], { kind: 'blank' }, 'key 0 is the same Clear');
   h.press('0', { ctrlKey: true }); await tick(); assert.equal(fg.server.displays.length, 3, 'not with a modifier');
-  h.press('b'); assert.ok(h.qa('[data-gm="blankipad"]').every((b) => /Clear → ambient/.test(b.textContent)), 'the location panel button too');
-  assert.ok(!/Blank the iPad/.test(h.root.textContent), 'no old name left');
+  h.press('b'); assert.ok(h.qa('#gm-loc [data-gm="blankipad"]').every((b) => b.textContent === 'Take it down'), 'the location panel\'s own button reads Take it down');
+  assert.ok(!/Blank the iPad|Clear → ambient|Lights out/.test(h.root.textContent), 'no old name left');
   fg.gm.setDisplay = async () => { throw new Error('refused'); }; br.toasts.length = 0;
-  h.press('0'); await until(() => br.toasts.length); assert.deepEqual(br.toasts[0], ['Could not clear the iPad: refused', true]);
+  h.press('0'); await until(() => br.toasts.length); assert.deepEqual(br.toasts[0], ['Could not clear all of it: refused', true]);
   await h.save();
 });
 
@@ -1066,8 +1080,8 @@ await test('9j3. showOverlay and clearOverlay go through the ambient PATCH (so t
   }
   assert.equal(await h.page.showOverlay(null), null); assert.equal(await h.page.showOverlay('dawn'), null);
   assert.equal(fg.server.ambPatches.length, n0 + 4, 'nothing was sent for them'); assert.equal(br.toasts.length, 5);
-  /* the Clear overlay control */
-  const btn = h.q('#gm-ipad [data-gm="clearoverlay"]'); assert.ok(btn && /Clear overlay/.test(btn.textContent), 'the iPad panel has Clear overlay');
+  /* the overlay's own take-down (the old Clear overlay), beside its line in the iPad view */
+  const btn = h.q('#gm-ipad [data-gm="clearoverlay"]'); assert.ok(btn && btn.textContent === 'Take it down' && btn.parentNode.querySelector('#gm-ipad-overlay'), 'the overlay line has its own Take it down');
   btn.click(); await until(() => fg.server.ambPatches.length === n0 + 5);
   assert.deepEqual(fg.server.ambPatches[n0 + 4], { overlay: null }); await until(() => !h.q('#gm-ipad-overlay'));
   assert.equal(fg.server.amb.doc.overlay, undefined);
@@ -1325,8 +1339,8 @@ await test('10a. the laptop layout: body.gm-app while open, the top bar (session
   const fg = fakeGm(), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
   assert.ok(br.doc.body.classList.contains('gm-app'), 'on while the tools are open');
   assert.equal(h.q('#gm-bar-sess').textContent, 'Session 3');
-  await until(() => /^iPad: /.test(h.q('#gm-bar-ipad').textContent)); assert.match(h.q('#gm-bar-ipad').textContent, /^iPad: /);
-  assert.ok(/Clear → ambient/.test(h.q('.gm-bar [data-gm="blankipad"]').textContent) && h.q('.gm-bar [data-gm="darkipad"]'), 'Clear and Lights out in the bar');
+  await until(() => h.q('.gm-bar .gm-tray-text') && h.q('.gm-bar .gm-tray-text').textContent); assert.ok(h.q('.gm-bar .gm-tray .gm-tray-lbl').textContent === 'iPad' && h.q('.gm-bar .gm-tray-text').textContent, 'the iPad tray in the bar says what is live: ' + h.q('.gm-bar .gm-tray-text').textContent);
+  assert.ok(h.q('.gm-bar .gm-tray [data-tray="clear"]') && h.q('.gm-bar .gm-tray [data-tray="blank"]'), 'Clear and Blank in the bar, on the tray');
   assert.equal(h.qa('.gm-bar .gm-save').length, 1, 'saving shows in the bar');
   assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'the menu starts shut');
   h.q('[data-gm="menu"]').click(); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), false); assert.equal(h.q('[data-gm="menu"]').getAttribute('aria-expanded'), 'true');
@@ -1371,20 +1385,18 @@ await test('10b2. Live sync is a menu item (MD1b): on until the GM turns it off;
   assert.strictEqual(fg.server.doc.live, true, 'the state ends on');
   assert.ok(sent.every((p) => typeof p.live === 'boolean'), 'only booleans are sent');
 });
-await test('10b4. Phones mirror the iPad (MM1) sits beside the iPad controls, in the bar and the iPad tab: on until the GM turns it off; one press sends { mirror: false }, the next { mirror: true }; both buttons follow', async () => {
+await test('10b4. Mirror for phones (MM1) is a row of the iPad view\'s Settings (the GM night rebuild): on until the GM turns it off; Off sends { mirror: false }, On { mirror: true }; the row follows; nothing in the bar', async () => {
   const fg = fakeGm(), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
-  const bar = () => h.q('.gm-bar [data-gm="mirror"]');
-  assert.ok(bar() && bar().getAttribute('aria-pressed') === 'true' && /^Phones: see it/.test(bar().textContent), 'on by default, in the bar: ' + (bar() && bar().textContent));
-  { const sib = bar().parentNode.children, i = sib.indexOf(bar()); assert.ok(i > 0 && sib[i - 1].getAttribute('data-gm') === 'darkipad', 'right beside Lights out'); }
+  assert.equal(h.q('.gm-bar [data-gm="mirror"]'), null, 'the bar has no mirror button of its own any more');
   await openIpad(h);
-  const panel = () => h.q('#gm-ipad [data-gm="mirror"]');
-  assert.ok(panel() && panel().getAttribute('aria-pressed') === 'true' && /^Phones mirror the iPad: on/.test(panel().textContent), 'and in the iPad tab: ' + (panel() && panel().textContent));
-  { const sib = panel().parentNode.children, i = sib.indexOf(panel()); assert.ok(i > 0 && sib[i - 1].getAttribute('data-gm') === 'darkipad', 'beside Lights out there too'); }
-  panel().click();
-  assert.ok(bar().getAttribute('aria-pressed') === 'false' && /^Phones: off/.test(bar().textContent) && panel().textContent.includes('off (turn on)'), 'one press turns it off, and both buttons follow: ' + bar().textContent + ' / ' + panel().textContent);
+  const pressed = () => { const b = h.q('#gm-ipad-settings [data-set-row="mirror"] [aria-pressed="true"]'); return b ? b.textContent : null; };
+  assert.equal(pressed(), 'On', 'on by default: the row shows On');
+  h.q('#gm-ipad-settings [data-set-row="mirror"] [data-v="0"]').click();
+  assert.equal(pressed(), 'Off', 'one press turns it off, and the row follows');
   assert.ok(br.toasts.some((x) => /no longer mirror/.test(x[0])), 'a toast says what it did');
-  bar().click();
-  assert.ok(bar().getAttribute('aria-pressed') === 'true' && panel().textContent.includes('on (turn off)'), 'and back on from the bar');
+  h.q('#gm-ipad-settings [data-set-row="mirror"] [data-v="0"]').click();      /* the value it already has: nothing is sent (the two flips are all) */
+  h.q('#gm-ipad-settings [data-set-row="mirror"] [data-v="1"]').click();
+  assert.equal(pressed(), 'On', 'and back on');
   await h.save();
   const sent = fg.server.patches.filter((p) => 'mirror' in p);
   assert.deepEqual(sent.map((p) => p.mirror), [false, true], 'exactly the two flips went out, as booleans: ' + JSON.stringify(sent));
@@ -1393,9 +1405,13 @@ await test('10b4. Phones mirror the iPad (MM1) sits beside the iPad controls, in
 });
 await test('10b5. Phones mirror off reaches the server as an explicit false; a page opened on that state shows it off', async () => {
   const fg = fakeGm(), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
-  h.q('.gm-bar [data-gm="mirror"]').click();
+  await openIpad(h);
+  h.q('#gm-ipad-settings [data-set-row="mirror"] [data-v="0"]').click();
   await h.save();
   assert.strictEqual(fg.server.doc.mirror, false, 'an explicit false (the server treats anything else as on)');
+  const h2 = await openPage({ fg, br: fakeBrowser(), camp: CAMP3 }); await openIpad(h2);
+  assert.equal(h2.q('#gm-ipad-settings [data-set-row="mirror"] [aria-pressed="true"]').textContent, 'Off', 'a page opened on that state shows it off');
+  await h2.save();
 });
 await test('10b3. Live sync off reaches the server: the state holds an explicit false until it is turned on again', async () => {
   const fg = fakeGm(), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
@@ -4232,11 +4248,11 @@ await test('A2c. Switch off then on: off writes auto false, shows nothing while 
   const n0 = setPatches(fg).length;
   h.page.campaign(apCamp([CLK('c_a1', 'Invented Fuse', 2)])); await sleepMs(1500);
   assert.equal(setPatches(fg).length, n0, 'nothing is shown while off'); assert.deepEqual(h.page._autopilot().pending, {}, 'and nothing queues');
-  assert.equal(h.q('#gm-bar-ap').textContent, 'Auto off');
+  assert.equal(h.q('.gm-tray-ap').textContent, 'Auto off');
   h.q('[data-gm="aptoggle"]').click();
   assert.equal(h.page._autopilot().mode, 'ready'); assert.equal(h.br.ls.has('b68.gm.autopilot'), false, 'the memory is cleared');
   assert.ok(await until(() => fg.server.ambPatches.some((p) => p.auto === true && !p.overlay), 400), 'auto true is written');
-  assert.equal(h.q('#gm-bar-ap').textContent, 'Auto');
+  assert.equal(h.q('.gm-tray-ap').textContent, 'Auto');
   h.page.campaign(apCamp([CLK('c_a1', 'Invented Fuse', 3)]));
   assert.ok(await until(() => setPatches(fg).length === n0 + 1, 800), 'and it shows again');
   await h.save();
@@ -4270,10 +4286,10 @@ await test('A2e. start() running again on the same page (Update pack, then Cance
   h.q('[data-gm="update"]').click();
   assert.ok(await until(() => h.q('[data-gm="cancel-import"]')), 'the import screen is up');
   h.q('[data-gm="cancel-import"]').click();
-  assert.ok(await until(() => h.page._state().status === 'ready' && h.q('#gm-root') && h.q('#gm-bar-ap')), 'and the page is ready again');
+  assert.ok(await until(() => h.page._state().status === 'ready' && h.q('#gm-root') && h.q('.gm-tray-ap')), 'and the page is ready again');
   assert.equal(r.calls.set, 1, 'no second timer'); assert.equal(r.live(), 1);
   assert.equal(h.page._autopilot().showing && h.page._autopilot().showing.id, id, 'the overlay it is showing is still its own');
-  assert.equal(h.q('#gm-bar-ap').textContent, 'Auto', 'and the bar is painted again');
+  assert.equal(h.q('.gm-tray-ap').textContent, 'Auto', 'and the bar is painted again');
   await h.save();
 });
 

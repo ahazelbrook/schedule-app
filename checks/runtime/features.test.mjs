@@ -299,9 +299,12 @@ await test('bundles: flags.js is in the core (every route); the registry, the sh
   for (const n of ['gm', 'display']) { assert.ok(B[n].includes('cue-verbs.js') && B[n].indexOf('cue-verbs.js') < B[n].indexOf('cue.js'), n); }
   for (const n of ['core', 'table', 'print', 'crews', 'figures']) assert.ok(!B[n].includes('cue-verbs.js') && !B[n].includes('features.js'), n + ' has no registry');
 });
-await test('the GM page: a Settings line in the Menu, no Switchboard or Workshop line, and no CSS left that keys off the Workshop', async () => {
+await test('the GM page: the Settings live in the iPad view (no Menu line, no sheet: N5), no Switchboard or Workshop line, and no CSS left that keys off the Workshop', async () => {
   const gp = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8'), css = fs.readFileSync(path.join(ROOT, 'app', 'gm.css'), 'utf8');
-  assert.ok(gp.includes('id="gm-menu-settings"') && gp.includes("case 'settings':"));
+  assert.ok(gp.includes('id="gm-ipad-settings"') && /setInst\(\)/.test(gp) && /st\.render\(sb\)/.test(gp), 'the iPad view draws the Settings');
+  assert.ok(!gp.includes('id="gm-menu-settings"') && !gp.includes("case 'settings':"), 'no Menu line for them any more');
+  assert.equal(require(path.join(ROOT, 'app', 'gm', 'ipad-tray.js')).settingsInView, true, 'the tray says so, so the band\'s Menu has no Settings line');
+  assert.ok(!/gm-sheet-settings|Sheet\.sheet/.test(fs.readFileSync(path.join(ROOT, 'app', 'gm', 'settings.js'), 'utf8')), 'and settings.js makes no sheet');
   assert.ok(!/gm-menu-switchboard|data-gm="switchboard"|case 'switchboard'|case 'workshop'|B68GmSwitchboard|B68GmWorkshopFirst|menuLine\(\)/.test(gp));
   assert.ok(!/ws-away|ws-show-|gm-sb-stage|gm-ws-list/.test(css));
   assert.ok(!/#as-cogm-also-row|#as-screen/.test(css), 'the uncued co-GM box and the Screen props show as before the Workshop');

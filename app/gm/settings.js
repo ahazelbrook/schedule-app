@@ -1,11 +1,11 @@
-/* gm/settings.js — Menu > Settings: the four choices left once the Switchboard went (the night rebuild, N0).
+/* gm/settings.js — the Settings: the four choices left once the Switchboard went (the night rebuild, N0), in the iPad view (N5).
 
    Everything built is on (app/features.js). What is left are modes, not features, each a two-way choice with the current value shown:
      Scenes              moving / held still          fx.off       a display setting: the iPad reads it on its next poll
      Music               scene themes / heat music    room.music   a display setting
      Phones              sheet only / mission cards   phoneCards   a phone setting; the page republishes the mission at once (its own setPhoneCards)
      Mirror for phones   off / on                     the GM state's `mirror` (not a registry line: the server reads it beside Live sync)
-   A temporary home in the Menu: a later ticket moves these into the iPad view.
+   Their home is the iPad view's Settings section (gm-page.js renderIpad renders them with render(box)); the Menu's sheet that held them first is gone.
 
    Window.B68GmSettings, and module.exports under Node. gm-page.js makes one per page session with create(host) and calls heal() on every campaign arrival.
 
@@ -21,14 +21,15 @@
      root()              the #gm-root element                    toast(msg, bad)        redraw()   after a change, so what shows follows
      setPhoneCards(on)   -> bool: the page's own write (the setting, a flush, the mission republished, a toast); without it set('phoneCards', on)
      mirrorOn() -> bool  toggleMirror()   the page's own mirror toggle (the GM state's `mirror`)
-     F, Sheet            the registry and the sheet builder (default window.B68Features, window.B68GmWorkshop)
+     F                   the registry (default window.B68Features)
    controller
      on(id) -> bool                  a setting's value (valueOf)
      set(id, on) -> bool             write a setting (the GM state, then the campaign copy), redraw; false for an id that is not a setting
      rows() -> [{ key, label, what, value, options: [{ v, label }] }]       choose(key, v) -> bool   a row's choice (nothing happens when it is the value already)
      syncPublic() / heal()           copy the settings into the campaign document when its copy differs: a copy just sent is not sent again for 4 s,
                                      and the same copy at most three times (a page newer than the Worker)
-     render(box)  open()  close()  toggle()  isOpen()  sync()   sync(): redraw the open sheet when a value moved (another device's change) */
+     render(box)                     draw the rows into box (the iPad view's Settings) and keep it: a tap on a choice there chooses it
+     sync(force)                     redraw the kept box when a value moved (force: now), the focused choice kept; nothing while it is off the page */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -55,8 +56,7 @@
 
   function create(host) {
     var F = host.F || (W && W.B68Features) || null;
-    var Sheet = host.Sheet || (W && W.B68GmWorkshop) || null;
-    var sent = { key: '', at: 0, n: 0 }, drawn = '';
+    var sent = { key: '', at: 0, n: 0 }, drawn = '', bound = null, wired = [];
     var ctl = {};
     function now() { return typeof host.now === 'function' ? host.now() : Date.now(); }
     function doc() { return F ? host.doc() : {}; }
@@ -120,33 +120,27 @@
         }).join('');
     }
     function state() { return ctl.rows().map(function (r) { return r.value ? '1' : '0'; }).join(''); }
+    ctl.state = state;
+    /* the iPad view's Settings: the rows drawn into box, kept so a choice (here or on another device) redraws them; one listener per box */
     ctl.render = function (box) {
       if (!box) return;
-      box.innerHTML = html(); drawn = state();
-      var sh = box.parentNode;
-      if (sh && !sh.__set) {
-        sh.__set = true;
-        sh.addEventListener('click', function (ev) {
-          var t = ev.target && ev.target.closest ? ev.target.closest('[data-set]') : null; if (!t) return;
+      box.innerHTML = html(); drawn = state(); bound = box;
+      if (typeof box.addEventListener === 'function' && wired.indexOf(box) < 0) {
+        wired.push(box); if (wired.length > 8) wired.shift();
+        box.addEventListener('click', function (ev) {
+          var t = ev.target && ev.target.closest ? ev.target.closest('[data-set]') : null; if (!t || !box.contains(t)) return;
           ctl.choose(t.getAttribute('data-set'), t.getAttribute('data-v') === '1');
         });
       }
     };
-    function sheet() { var r = typeof host.root === 'function' ? host.root() : null; return Sheet && r ? Sheet.sheet(r, 'settings', 'Settings') : null; }
-    ctl.isOpen = function () { var r = typeof host.root === 'function' ? host.root() : null, el = r && r.querySelector ? r.querySelector('#gm-sheet-settings') : null; return !!(el && !el.hidden); };
-    ctl.open = function () { var s = sheet(); if (!s) return false; ctl.render(s.body); s.open(); return true; };
-    ctl.close = function () { var s = sheet(); if (s) s.close(); };
-    ctl.toggle = function () { var s = sheet(); if (s && s.isOpen()) { s.close(); return false; } return ctl.open(); };
-    /* the open sheet follows a value that moved (a change from another device arrives with the state); force: redraw now. A sheet never opened is not
-       made here (the page's DOM is untouched until the Menu line is used) */
+    /* the kept box follows a value that moved; force: redraw now. A box taken off the page is let go (the view draws a new one when it opens) */
     ctl.sync = function (force) {
-      var r = typeof host.root === 'function' ? host.root() : null; if (!r || !Sheet || !r.querySelector) return;
-      var el = r.querySelector('#gm-sheet-settings'); if (!el || el.hidden) return;
-      var s = Sheet.sheet(r, 'settings', 'Settings'); if (!s || !s.isOpen()) return;
+      var b = bound; if (!b) return;
+      if (b.isConnected === false) { bound = null; return; }
       if (force || state() !== drawn) {
-        var f = s.body.ownerDocument && s.body.ownerDocument.activeElement, k = f && f.getAttribute ? f.getAttribute('data-set') : null, v = k ? f.getAttribute('data-v') : null;
-        ctl.render(s.body);
-        if (k) { var b = s.body.querySelector('[data-set="' + k + '"][data-v="' + v + '"]'); if (b && b.focus) try { b.focus(); } catch (e) {} }
+        var d = b.ownerDocument, f = d && d.activeElement, k = f && f.getAttribute && b.contains && b.contains(f) ? f.getAttribute('data-set') : null, v = k ? f.getAttribute('data-v') : null;
+        ctl.render(b);
+        if (k) { var btn = b.querySelector('[data-set="' + k + '"][data-v="' + v + '"]'); if (btn && btn.focus) try { btn.focus(); } catch (e) {} }
       }
     };
     return ctl;
