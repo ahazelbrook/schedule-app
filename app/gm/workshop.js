@@ -22,6 +22,9 @@
      The inline object: { el (the wrapper), body (.gm-sheet-body.gm-inline), isOpen() true, open() (no-op), close() (onClose), toggle() (onClose), inline: true,
                           onUnbind(fn) (run once, on unbind) }. The wrapper has data-inline="<id>"; the body carries the same classes as a sheet body plus gm-inline.
      Esc: a right-edge sheet registers 'sheet-<id>' with B68GmEsc (priority 50) when that module is there, and keeps its own keydown for focus inside it.
+          An Esc entry counts as open only while its sheet or wrapper is in the document (an inline wrapper must also be laid out: a place that hides its
+          column, or drops the container without unbinding, leaves no open tool behind, so the page's keys are not held back by B68GmEsc.anyOpen()).
+     Binding a tool inline closes and EMPTIES its right-edge copy (two copies of a drawing would share their SVG ids); the next open() of the unbound tool redraws it.
      _pure                           { esc } */
 (function (root, factory) {
   'use strict';
@@ -33,6 +36,8 @@
 
   var sheets = {}, bound = {};
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  /* in the document and laid out: not detached, and neither it nor an ancestor is display:none (a hidden place, a [hidden] column) */
+  function laidOut(el) { return !!(el && el.isConnected && typeof el.getClientRects === 'function' && el.getClientRects().length); }
 
   /* ---- the sheet (DOM) ---- */
   function sheet(rootEl, id, title) {
@@ -61,7 +66,7 @@
     el.addEventListener('click', function (ev) { var t = ev.target; if (t && t.closest && t.closest('[data-sheet-close]')) s.close(); });
     el.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') { s.close(); ev.stopPropagation(); } });
     var Esc = W && W.B68GmEsc;
-    if (Esc && typeof Esc.register === 'function') { try { Esc.register('sheet-' + id, { priority: 50, isOpen: function () { return !el.hidden; }, close: function () { s.close(); } }); } catch (e) { /* the id is the tool's own */ } }
+    if (Esc && typeof Esc.register === 'function') { try { Esc.register('sheet-' + id, { priority: 50, isOpen: function () { return !el.hidden && !!el.isConnected; }, close: function () { s.close(); } }); } catch (e) { /* the id is the tool's own */ } }
     sheets[id] = s;
     return s;
   }
@@ -82,7 +87,10 @@
     unbind(id);
     opts = opts && typeof opts === 'object' ? opts : {};
     var d = el.ownerDocument, fixed = typeof opts.title === 'string' || opts.title === false;
-    if (sheets[id] && sheets[id].el && !sheets[id].el.hidden) sheets[id].close();      /* the right-edge copy of the same tool gives way */
+    if (sheets[id]) {                    /* the right-edge copy of the same tool gives way, and is emptied: its SVG ids would clash with the inline copy's */
+      if (sheets[id].el && !sheets[id].el.hidden) sheets[id].close();
+      if (sheets[id].body) sheets[id].body.textContent = '';
+    }
     var wrap = d.createElement('div'), bodyEl = d.createElement('div'), headEl = null;
     wrap.className = 'gm-inline-sheet'; wrap.setAttribute('data-inline', id);
     if (opts.title !== false) {
@@ -108,7 +116,7 @@
     bound[id] = rec;
     var Esc = W && W.B68GmEsc;
     if (opts.esc === true && typeof opts.onClose === 'function' && Esc && typeof Esc.register === 'function') {
-      try { rec.offEsc = Esc.register('inline-' + id, { priority: 40, isOpen: function () { return bound[id] === rec; }, close: ask }); } catch (e) { /* ignore */ }
+      try { rec.offEsc = Esc.register('inline-' + id, { priority: 40, isOpen: function () { return bound[id] === rec && laidOut(rec.wrap); }, close: ask }); } catch (e) { /* ignore */ }
     }
     return s;
   }

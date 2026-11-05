@@ -1293,7 +1293,16 @@ body.as-tab #gm-page .gm-drawer { right: 44px; }
 #gm-page .gm-inline-h { padding: 0; font-size: 12px; color: var(--ink-soft); }
 #gm-page .gm-sheet-body.gm-inline { flex: none; overflow: visible; padding: 0; min-width: 0; }
 #gm-page .gm-inline img, #gm-page .gm-inline svg, #gm-page .gm-inline canvas { max-width: 100%; }
+/* a drawing scales with its box (max-width alone keeps the svg's height attribute and leaves a tall empty box); the right-edge sheet gets the same */
+#gm-page .gm-cb-board > svg, #gm-page .gm-lair-preview > svg, #gm-page .gm-cp-preview > svg { width: 100%; height: auto; }
+/* a tool's row of buttons (aftermath, board, debrief, cast photo, lair) wraps, in a 330 px column and in the 440 px sheet alike (the app's buttons are wider than
+   the bare ones were: Refresh clipped). A row of buttons drops the seg's frame, which around wrapped buttons left empty cells; a seg of chips keeps it */
+#gm-page .gm-sheet-body .seg { flex-wrap: wrap; max-width: 100%; }
+#gm-page .gm-sheet-body .seg:not(:has(> .chip)) { border: 0; gap: 6px; }
 #gm-page .gm-inline select, #gm-page .gm-inline input[type="text"], #gm-page .gm-inline textarea { max-width: 100%; box-sizing: border-box; }
+/* Hard start in a 330 px column: the face picker takes the row, its Reveal button goes under it (a long name is never clipped) */
+#gm-page .gm-inline .gm-sb-row:has(> label > select[data-hs-pick]) { grid-template-columns: minmax(0, 1fr); }
+#gm-page .gm-inline select[data-hs-pick] { width: 100%; }
 /* a sheet tool's row (the Menu's tools share it) */
 #gm-page .gm-sb-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--hair); }
 #gm-page .gm-sb-row b { font: 700 13px/1.2 var(--font-text); }
