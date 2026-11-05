@@ -120,7 +120,10 @@
 .dp-root.dp-lay-on .dp-stages, .dp-root.dp-lay-on .dp-overlay, .dp-root.dp-lay-on .dp-hs, .dp-root.dp-lay-on .dp-montage { top: var(--dp-lay-h); }
 .dp-root.dp-lay-on .dp-auto { top: calc(var(--dp-lay-h) + 1.2vmin); }
 .dp-root.dp-lay-on .dp-chrome { top: calc(var(--dp-lay-h) + 1.2vmin); }
-@media (orientation: landscape) { .dp-root.dp-lay-on .dp-band { top: var(--dp-lay-h); } }
+@media (orientation: landscape) {
+  .dp-root.dp-lay-on .dp-band { top: var(--dp-lay-h); }
+  .dp-root.dp-band-on .dp-chrome { right: calc(36% + 12px); }      /* the full-screen button keeps off the band beside the map and its countdown */
+}
 @media (orientation: portrait) {
   /* three slots across, and the crew on a row of its own while there is one */
   .dp-root { --dp-lay-h: 8vmin; --dp-lay-row: 8vmin; }
@@ -128,6 +131,7 @@
   .dp-lay-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-areas: "mic phase sec" "crew crew crew"; grid-template-rows: var(--dp-lay-row) minmax(0, 1fr); }
   .dp-lay-s-crew { border-top: .3vmin solid #3a352f; }
   .dp-lay-slot + .dp-lay-s-crew { border-left: 0; }
+  .dp-root:not(.dp-lay-crew) .dp-lay-s-crew { display: none; }      /* no crew drawn: no second row at all */
   .dp-lay-phase { font-size: var(--b68-t-body); }
 }
 

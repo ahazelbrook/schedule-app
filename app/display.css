@@ -293,3 +293,6 @@ html.dp-active, html.dp-active body { overflow: hidden; overscroll-behavior: non
   .dp-root.dp-band-on .dp-stage.dp-map { right: 0; bottom: var(--dp-band-h, 0px); }
 }
 .dp-band.dp-b-no-ways .dp-b-ways, .dp-band.dp-b-no-rooms .dp-b-room { display: none; }
+/* the GM night rebuild: with the iPad's own band across the top (display/shows.css) this one is shorter in landscape; the last two cuts */
+.dp-band.dp-b-no-label .dp-b-label { display: none; }
+.dp-band.dp-b-compact .dp-b-clock, .dp-band.dp-b-compact .dp-b-timer { font-size: clamp(64px, 9vmin, 112px); }

@@ -1918,12 +1918,13 @@
       if (tt && tt.textContent !== v.text) tt.textContent = v.text;
       n.className = 'dp-b-timer' + (v.state === 'run' ? '' : ' dp-b-t-' + v.state);
     }
-    /* When the night's content is more than the band can hold, cut in the design's order: the ways found first (P1), then the crew's rooms. */
+    /* When the night's content is more than the band can hold, cut in the design's order: the ways found first (P1), then the crew's rooms; and
+       (the GM night rebuild: the iPad's own band across the top leaves this one shorter) then the clock's label, then the time comes down in size. */
+    var SHRINK = ['dp-b-no-ways', 'dp-b-no-rooms', 'dp-b-no-label', 'dp-b-compact'];
     function bandShrink() {
-      band.classList.remove('dp-b-no-ways', 'dp-b-no-rooms');
+      SHRINK.forEach(function (c) { band.classList.remove(c); });
       var over = function () { return band.scrollHeight > band.clientHeight + 1; };
-      if (over()) band.classList.add('dp-b-no-ways');
-      if (over()) band.classList.add('dp-b-no-rooms');
+      for (var i = 0; i < SHRINK.length && over(); i++) band.classList.add(SHRINK[i]);
     }
     function bandFit() { try { container.style.setProperty('--dp-band-h', Math.ceil(band.getBoundingClientRect().height) + 'px'); } catch (e) { /* the map keeps its frame */ } }
     function paintBand() {
@@ -1939,7 +1940,10 @@
       bandFit();
     }
     function applyBand(hud) { s.bandModel = Pure.bandModel(hud); if (!s.bandModel) s.bandSig = ''; paintBand(); }
-    if (window.ResizeObserver) { var bandRo = new ResizeObserver(function () { bandFit(); }); bandRo.observe(band); s.offs.push(function () { bandRo.disconnect(); }); }
+    /* landscape: the band's box is set by its top and bottom, so a new size comes from outside (the iPad's band coming or going over it) and the cut
+       is worked out again; in portrait its height follows its content, so only bandFit runs (a re-cut there would chase its own size) */
+    var landscape = window.matchMedia ? window.matchMedia('(orientation: landscape)') : null;
+    if (window.ResizeObserver) { var bandRo = new ResizeObserver(function () { if (!band.hidden && landscape && landscape.matches) bandShrink(); bandFit(); }); bandRo.observe(band); s.offs.push(function () { bandRo.disconnect(); }); }
     s.offs.push(on(window, 'resize', function () { if (!band.hidden) bandShrink(); bandFit(); }));
     var bandTick = setInterval(bandTimer, 1000); s.offs.push(function () { clearInterval(bandTick); });
     s.offs.push(on(document, 'visibilitychange', function () { if (!document.hidden) bandTimer(); }));

@@ -116,11 +116,12 @@ try {
       const A = window.B68OnAir; if (!A || !window.B68Flags.on('ai.onair')) return { err: 'switch not on' };
       const a = A.shared(), root = document.getElementById('display-page'), out = {};
       a.paint(root, true); out.on = (document.querySelector('.dp-onair') || {}).innerText;
-      out.cmd = a.filter('Blade, off the record'); a.paint(root, true); out.off = (document.querySelector('.dp-onair') || {}).innerText;
+      out.cmd = a.filter('Blade, off the record'); a.paint(root, true); out.off = (document.querySelector('.dp-onair') || {}).innerText; out.inBand = !!document.querySelector('.dp-lay-strip .dp-lay-s-mic .dp-onair') && !document.querySelector('#display-page > .dp-onair');
       out.kept = a.filter('private chatter'); a.filter('Blade, back on'); a.paint(root, false); out.gone = !document.querySelector('.dp-onair');
       return out;
     });
-    expect(!r.err, r.err); expect(/on air/i.test(r.on), 'lamp: ' + r.on); expect(r.cmd.drop === true && /off the record 5:00|off the record 4:5/i.test(r.off), 'paused with countdown: ' + r.off);
+    expect(!r.err, r.err); expect(/on air/i.test(r.on), 'lamp: ' + r.on); expect(r.cmd.drop === true && /off the record\s+(5:00|4:5)/i.test(r.off), 'paused with countdown: ' + r.off);
+    expect(r.inBand === true, 'the lamp is the mic slot of the band (the GM night rebuild), not a corner lamp over it');
     expect(r.kept.drop === true && r.gone === true, 'private chatter dropped; lamp gone when the mic is not live');
   });
   await step('a stored false (the old All off) changes nothing: the hard start still runs; no page errors', async () => {
