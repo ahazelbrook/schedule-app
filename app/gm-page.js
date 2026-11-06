@@ -3961,21 +3961,32 @@
      is not up yet, and entering the Score puts it up by itself when the iPad is only playing the ambient (or is black). It is Location's own Show on iPad: the
      Location card's roll, the PLAYER layer (switched to Player first, as only that layer may go), the bands ticked and the rooms opened, the same render, leak
      scan, gate and confirm; from then on the map is live, so Seen + Send update it at once. quiet: no toast for "nothing to show" (the automatic paths). */
-  function siteMapUp(quiet) {
+  /* PANIC holds the safe scene: nothing automatic replaces it (the review of #194) */
+  function panicOn() { try { return !!(S && S.cs && typeof S.cs.view === 'function' && (S.cs.view() || {}).panic); } catch (e) { return false; } }
+  /* an automatic path never asks: a map that would need the confirm (bands beyond public, rooms opened on their own) waits for the GM's own Show on iPad */
+  function needsConfirm() {
+    try {
+      var mu = mapUi(), d = playerDisplay(S.locRoll, mu, W.B68Map && W.B68Map.render, playerTokenSet(revealEntries(mu)));
+      return entryBands(d.reveal).some(function (b) { return b !== 'public'; }) || entryRooms(d.reveal).length > 0;
+    } catch (e) { return true; }
+  }
+  function siteMapUp(quiet, auto) {
     if (!S || !S.locRoll) { if (!quiet) toast('There is no map to show yet: open the site on the Location card first.', true); return Promise.resolve(false); }
     if (b17Frozen()) { if (!quiet) toast('The iPad is frozen: unfreeze it first.', true); return Promise.resolve(false); }
+    if (auto && panicOn()) return Promise.resolve(false);
     if (mapUi().layer !== 'player') setMap('layer', 'player');
+    if (auto && needsConfirm()) { toast('Map not shown on the iPad: press Show on iPad on the site when ready.'); if (S) siteChanged(); return Promise.resolve(false); }
     return Promise.resolve(showOnIpad()).then(function (ok) { if (S) siteChanged(); return ok; });
   }
   /* entering the Score: the map goes up unless the GM has something else on the iPad (a map already live, a handout, a rule, a face card held as the display) */
   function scoreMapDefault() {
-    if (!S || !S.locRoll || mapOnIpad() || b17Frozen()) return;
+    if (!S || !S.locRoll || mapOnIpad() || b17Frozen() || panicOn()) return;
     var me = S, g = gmApi(), free = function (k) { k = str(k); return !k || k === 'blank' || k === 'dark'; };
     /* what the iPad shows is read fresh (another device, or Clear on the phone, may have changed it since this page last pushed; the ambient seq is sent so the big
        ambient part is not); without the call, this page's own record */
     var look = g && typeof g.display === 'function' ? Promise.resolve().then(function () { return g.display(undefined, typeof AM.seq === 'number' ? AM.seq : undefined); }).then(function (r) { return r && isObj(r.display) ? r.display.kind : ''; }, function () { return AM.shown ? AM.shown.kind : ''; })
       : Promise.resolve(AM.shown ? AM.shown.kind : '');
-    look.then(function (k) { if (S === me && free(k) && !mapOnIpad()) siteMapUp(true); });
+    look.then(function (k) { if (S === me && free(k) && !mapOnIpad()) siteMapUp(true, true); });
   }
   function scoreMapWrap(me) {
     var nt = me.night; if (!nt || typeof nt.enter !== 'function' || typeof nt.phase !== 'function' || nt.__r1map) return;
@@ -4915,7 +4926,7 @@
         if (b09On('map.knowledge')) { var kn = cleanRooms(ballDoc(rs.name).know).filter(function (n) { return names.indexOf(n) < 0; }); ch.know = kn.length ? kn : null; }
         var ok = ballSet(rs.name, ch);
         if (S.map) drawMap(); renderLocation();
-        if (ok && !mapOnIpad()) siteMapUp(true);      /* T5: Send puts the map on the iPad when it is not up yet (live, the open rooms go at once) */
+        if (ok && !mapOnIpad() && !panicOn()) siteMapUp(true);      /* T5: Send puts the map on the iPad when it is not up yet (live, the open rooms go at once); never over PANIC */
         return !!ok;
       },
       liveText: function () { return S === me && mapOnIpad() ? bandWords(S.mapOn.reveal) : ''; },
