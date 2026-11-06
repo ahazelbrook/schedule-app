@@ -167,6 +167,24 @@ try {
   check(!!(await until(async () => (await filterNow()) === null, 6000, 100)), 'a tap on Back clears the layer');
   await I0.page.waitForFunction(() => { const r = document.querySelector('.dp-root'); return !!r && !r.hasAttribute('data-flash-look'); }, null, { timeout: 25000 }).then(() => check(true, 'and the iPad look goes'), () => check(false, 'and the iPad look goes'));
 
+  /* F4: a reload mid-flashback: the toolbar reads Back from the ambient document (this page laid nothing since the reload), and ONE tap ends it */
+  await P.page.click('.rv-tools [data-site="flashback"]');
+  check(!!(await until(async () => (await filterNow()) === 'flashback', 6000, 100)), 'a flashback again, then the GM page reloads');
+  await P.page.reload();
+  await P.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  await P.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+  await P.page.keyboard.press('b'); await P.page.keyboard.press('g');
+  await P.page.waitForSelector('.rv-head', { timeout: 20000 });
+  if (!(await P.page.$('#rv-map svg'))) { await P.page.click('[data-rv="view"][data-v="map"]'); await P.page.waitForSelector('#rv-map svg', { timeout: 20000 }); }
+  const fbBtn = () => P.page.$eval('.rv-tools [data-site="flashback"]', (b) => b.textContent + '|' + b.getAttribute('aria-pressed')).catch(() => '');
+  const backAfter = await until(async () => (await fbBtn()) === 'Back|true', 10000, 100);
+  check(!!backAfter, 'after the reload the button reads Back, pressed (' + (await fbBtn()) + ')');
+  check(!!(await until(() => P.page.evaluate(() => document.querySelector('#rv-map').classList.contains('b19-flash')), 6000, 100)), 'and the GM map is sepia again');
+  await P.page.click('.rv-tools [data-site="flashback"]');
+  check(!!(await until(async () => (await filterNow()) === null, 6000, 100)), 'ONE tap on Back ends it: the layer is cleared');
+  check(!!(await until(async () => (await fbBtn()) === 'Flashback|false', 6000, 100)), 'and the button reads Flashback again');
+  await I0.page.waitForFunction(() => { const r = document.querySelector('.dp-root'); return !!r && !r.hasAttribute('data-flash-look'); }, null, { timeout: 25000 }).then(() => check(true, 'and the iPad look goes after the reload too'), () => check(false, 'and the iPad look goes after the reload too'));
+
   /* ---- a stored false (the old All off) changes nothing ---- */
   check((await api('PATCH', '/gm/state', { features: { 'map.flashback': false } })).status === 200, 'a stored false is taken');
   const R = await open();
