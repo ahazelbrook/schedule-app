@@ -17,4 +17,10 @@
 .dp-bd-tag { position: absolute; top: -1.4vmin; right: -1vmin; margin: 0; padding: .3vmin 1vmin; background: var(--b68-mustard); color: var(--b68-ink); font: 900 var(--b68-t-label)/1.1 var(--b68-font-cond); text-transform: uppercase; transform: rotate(4deg); }
 .dp-bd-picked { box-shadow: 0 0 0 .8vmin var(--b68-mustard), .8vmin .8vmin 0 rgba(0, 0, 0, .35); }
 .dp-bd-stamp { position: absolute; right: 1vmin; bottom: 1vmin; margin: 0; padding: .2em .5em; border: .5vmin solid var(--b68-alarm-lit); color: var(--b68-alarm-lit); font: 900 var(--b68-t-lead)/1 var(--b68-font-poster); text-transform: uppercase; letter-spacing: .08em; transform: rotate(-9deg); opacity: .9; }
+/* the GM night rebuild: nothing on a card lies over its words. The pin has its own strip at the top; the carried-over tag is a line of the card
+   (first, under the pin) instead of a label laid over the kind; the picked card keeps a foot of its own for the stamp. */
+.dp-bd-card { display: flex; flex-direction: column; align-items: flex-start; padding-top: 3.8vmin; }
+.dp-bd-card > p { align-self: stretch; }
+.dp-bd-tag { position: relative; top: auto; right: auto; order: -1; align-self: flex-end; max-width: calc(100% + 1.6vmin); margin: -.6vmin -1.6vmin 1vmin 0; }
+.dp-bd-picked { padding-bottom: 9vmin; }
 @media (prefers-reduced-motion: reduce) { .dp-bd-card { opacity: 1; transform: none !important; transition: none !important; } }

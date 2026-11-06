@@ -12,6 +12,7 @@
   var C = S.C;
 
   var STEPS = ['payout', 'tithe', 'heat', 'status', 'harm', 'unwind', 'xp'];
+  var HEAT_READ_MS = 3400;      /* the heat step stays up this long (the meter fills in about 1.3 s) before WANTED takes the screen */
   var HEAD = { payout: 'The payout', tithe: 'The tithe', heat: 'Heat', status: 'Status', harm: 'Harm', unwind: 'Unwind', xp: 'Commendations' };
   var BARS = ['blue', 'mustard', 'alarm', 'green'];
 
@@ -79,13 +80,15 @@
       if (parts.length) b.n.appendChild(el(b.doc, 'p', 'dp-aft-big', parts.join('  ')));
       if (p.heat !== undefined) b.n.appendChild(el(b.doc, 'p', 'dp-show-line', 'Heat was ' + p.heat + (p.siren ? ', now 9' : p.after !== undefined ? ', now ' + p.after : '')));
       if (p.siren && S.has('wanted')) {
-        /* the siren, then WANTED: the existing beat laid over this card after the meter fills */
+        /* the siren, then WANTED as its own beat AFTER the heat step (the GM night rebuild): the step is read first (the meter fills, the
+           numbers stand), then it steps out and the poster comes in alone, so two texts are never on the screen on top of each other
+           (aftermath.css: dp-aft-to-wanted). With reduced motion the swap is a cut at the same moment. */
         S.mount({ kind: 'wanted', payload: { level: p.wanted === undefined ? 1 : p.wanted, heat: 9, siren: true } }, env).then(function (w) {
           if (!w) return;
           w.classList.add('dp-aft-siren');
           b.n.appendChild(w);
-          var show = function () { w.classList.add('dp-ov-in'); };
-          if (env.reduced || typeof root.setTimeout !== 'function') show(); else root.setTimeout(show, 1600);
+          var show = function () { b.n.classList.add('dp-aft-to-wanted'); w.classList.add('dp-ov-in'); };
+          if (typeof root.setTimeout !== 'function') show(); else root.setTimeout(show, HEAT_READ_MS);
         });
       }
     },
@@ -145,7 +148,8 @@
       { npcId: 'n-dov', name: 'Dov Kessler', role: 'Desk sergeant', faction: 'The Tidewater Watch' },
       { npcId: 'n-ada', name: 'Ada Vell', role: 'Croupier', faction: 'The Kestrel Club' },
       { npcId: 'n-lotte', name: 'Lotte Brand', role: 'Doorwoman', faction: 'The Kestrel Club' },
-      { npcId: 'n-hob', name: 'Hob Tamsin', role: 'Cloakroom attendant', faction: '' }] },
+      { npcId: 'n-hob', name: 'Hob Tamsin', role: 'Cloakroom attendant', faction: '' },
+      { npcId: 'n-otto', name: 'Ottilie Vandermeerholt', role: 'Bandleader', faction: 'The Kestrel Club' }] },     /* a 14-letter surname: it shrinks to fit, never breaks */
     clean: function (p) {
       if (!Array.isArray(p.npcs)) return null;
       var l = p.npcs.map(C.card).filter(Boolean).slice(0, 30);
@@ -164,11 +168,13 @@
       p.npcs.forEach(function (c, i) {
         var row = el(doc, 'div', 'dp-cr-row dp-cr-' + BARS[i % BARS.length]); row.style.setProperty('--i', String(i));
         row.appendChild(el(doc, 'p', 'dp-cr-name', c.name));
-        var sub = [c.role, c.faction].filter(Boolean).join(' · ');
-        if (sub) row.appendChild(el(doc, 'p', 'dp-cr-role', sub));
+        /* the role over the faction, as a film's credits set them (no dot left hanging at a line's start) */
+        [c.role, c.faction].filter(Boolean).forEach(function (t, k) { row.appendChild(el(doc, 'p', 'dp-cr-role' + (k ? ' dp-cr-faction' : ''), t)); });
         cols.appendChild(row);
       });
       n.appendChild(cols);
+      /* a name never breaks inside a word ("KESSLE / R"): it wraps at its spaces, and a surname too wide for its column shrinks to fit (shows.js fit) */
+      if (typeof S.fit === 'function') { S.fit(n, '.dp-cr-name'); S.fit(n, '.dp-cr-role', { same: true }); }
       return n;
     }
   });

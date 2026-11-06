@@ -140,7 +140,7 @@
         return '<div class="gm-sb-row"><b>' + esc(i.headline) + '</b> <span class="gm-dim">' + esc(i.check) + (i.roll === null ? '' : ' · ' + i.roll) + ' · ' + i.status + '</span> ' +
           '<button type="button" class="btn sm' + (i.status === 'approved' ? '' : ' primary') + '" data-tr-ap="' + esc(i.id) + '">' + (i.status === 'approved' ? 'Unapprove' : 'Approve') + '</button> <button type="button" class="btn sm" data-tr-drop="' + esc(i.id) + '">Drop</button></div>';
       }).join('') : '<p class="gm-empty">No items yet.</p>');
-      out += '<h3>Front page</h3><div class="gm-tr-front">' + frontHtml(items()) + '</div><div class="gm-sb-row"><button type="button" class="btn sm" data-tr="rumour"' + (rumours(items()).length ? '' : ' disabled') + '>Show the next rumour on the iPad</button></div>';
+      out += '<h3>Front page</h3><div class="gm-tr-front">' + frontHtml(items()) + '</div><div class="gm-sb-row"><button type="button" class="btn sm" data-tr="rumour"' + (rumours(items()).length ? '' : ' disabled') + '>Show on iPad</button></div>';
       return out;
     };
     ctl.render = function (box) {

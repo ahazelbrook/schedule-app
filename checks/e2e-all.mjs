@@ -58,6 +58,7 @@ const CHECKS = [
   ['checks/runtime/sheet-now.e2e.mjs', 'the phone sheet\'s Now card, Quiet and the Between fold: the order, +n more, nothing due, the long press and its lift-off, 16 px forms, read-only frames and the GM (9170)'],
   ['checks/runtime/display-ambient.e2e.mjs', 'the ambient floor on the display (8871)'],
   ['checks/runtime/display-band.e2e.mjs', 'the band beside the map: geometry at three sizes, hides over other stages, hud change within a poll, no /api/campaign (8900)'],
+  ['checks/runtime/ipad-band.e2e.mjs', 'the iPad band: every layer combination in fixed slots at 1024x768, portrait and 1180x820, nothing over the map or the band beside it, lights out, the look book cards (8655)'],
   ['checks/runtime/display-webkit.e2e.mjs', 'the display at iPad and iPhone sizes, with a missing-API probe: the WebKit pass harness (9150)'],
   ['checks/runtime/display-overlay.e2e.mjs', 'overlays on the display: a clock, an NPC, a line, the dawn (8874)'],
   ['checks/runtime/sheet-keys.e2e.mjs', 'turn the key and the key cabinet: the offer at three hits, the deadlock, Stress clear, the iPad card, the automatic critical, the cabinet, All off (9160)'],

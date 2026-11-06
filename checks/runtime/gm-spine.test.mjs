@@ -234,6 +234,17 @@ await test('spine.tick (a host that says off, which the page no longer does: its
   assert.ok(p2.root.querySelector('#gm-phaserail'), 'the page with nothing stored: the rail is drawn'); assert.equal(w.B68GmSpine._state().curfew, true, 'and the curfew is watching');
   w.B68GmSpine.reset();
 });
+await test('a reload never takes the iPad\'s phase down: before the page\'s night controller is there nothing is written; then the band follows night.phase', async () => {
+  const w = loadMods(withWindow({ setInterval: () => 7, clearInterval() {} }, (x) => x)); const { root } = page();
+  const c = ctl(), layers = []; let night = null;
+  c.N.enter('score');
+  const host = { root: () => root, night: () => night, now: () => c.clock.t, toast() {}, on: (id) => id === 'spine.rail', layer: (p, v) => { layers.push([p, v]); return Promise.resolve({}); } };
+  w.B68GmSpine.reset(); w.B68GmSpine.tick(host);
+  assert.deepEqual(layers, [], 'the first tick after a load, with no night controller yet: no band.phase write (it used to send null)');
+  night = c.N; w.B68GmSpine.tick(host);
+  assert.deepEqual(layers, [['band.phase', 'score']], 'the night is known: the band says its phase, and nothing was cleared first');
+  w.B68GmSpine.reset();
+});
 await test('spine.rail and spine.curfew are registered GM-only, in the spine stage, and ON whatever is stored (N0); spine.workshop is gone', () => {
   for (const id of ['spine.rail', 'spine.curfew']) {
     const s = F.get(id); assert.ok(s, id); assert.equal(s.surface, 'gm'); assert.equal(s.default, false); assert.equal(s.saturday, 'on'); assert.equal(s.stage, 'spine');

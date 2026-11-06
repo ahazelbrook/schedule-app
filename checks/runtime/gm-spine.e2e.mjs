@@ -103,12 +103,13 @@ try {
   await tapRail('pb'); check(await A.page.$eval('[data-rail="pb"]', (e) => e.getAttribute('data-state')) === 'now', 'Back is allowed');
   await A.page.click('[data-gm="menu"]');
   check((await A.page.$$('#gm-menu-workshop, #gm-menu-switchboard')).length === 0, 'the Menu has no Workshop and no Switchboard line');
-  await A.page.click('#gm-menu-settings');
-  await A.page.waitForSelector('#gm-sheet-settings:not([hidden]) [data-set-row]');
-  const rows = await A.page.$$eval('#gm-sheet-settings [data-set-row]', (e) => e.map((x) => x.getAttribute('data-set-row')));
-  check(rows.includes('phoneCards') && rows.includes('mirror'), 'phone mission cards and the screen mirror are in Settings: ' + rows.join(' | '));
+  check((await A.page.$$('#gm-menu-settings')).length === 0, 'and no Settings line: the Settings are in the iPad view (N5)');
+  await A.page.click('[data-gm="menu"]');
+  await A.page.keyboard.press('i');
+  await A.page.waitForSelector('#gm-ipad-settings [data-set-row]');
+  const rows = await A.page.$$eval('#gm-ipad-settings [data-set-row]', (e) => e.map((x) => x.getAttribute('data-set-row')));
+  check(rows.includes('phoneCards') && rows.includes('mirror'), 'phone mission cards and the screen mirror are in the iPad view\'s Settings: ' + rows.join(' | '));
   await shot(A.page, SHOTS, 'settings-1280');
-  await A.page.click('.gm-sheet:not([hidden]) [data-sheet-close]');
   console.log('TOOLCOUNT main page tabs=' + before.tabs + ' | phone chips=' + before.chips);
   await shot(A.page, SHOTS, 'rail-1280');
   const Pn = await open('#gm', { w: 390, h: 844 }); await Pn.page.waitForSelector('#gm-phaserail .gm-pr-chip', { timeout: 10000 }); await shot(Pn.page, SHOTS, 'rail-390');

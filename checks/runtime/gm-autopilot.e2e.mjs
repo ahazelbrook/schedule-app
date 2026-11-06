@@ -87,7 +87,7 @@ try {
   check((await api('PUT', '/npcs/npc_hid', { name: 'Hidden Mystery Person', alias: 'Shade', role: 'Courier', faction: 'The Invented Guild', gmNotes: 'HIDDEN-MARKER', revealed: false, spec })).status === 200, 'a hidden NPC');
   await gp.evaluate(() => { window.__toasts = []; const t = window.B68.toast; window.B68.toast = function (m) { window.__toasts.push(String(m)); return t.apply(this, arguments); }; });
   const ap = () => gp.evaluate(() => window.B68GmPage._autopilot());
-  const barText = () => gp.$eval('#gm-bar-ap', (b) => b.textContent.trim());
+  const barText = () => gp.$eval('.gm-tray .gm-tray-ap', (b) => b.textContent.trim());
 
   const D = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1366, height: 1024 }, serviceWorkers: 'block' });
   const dp = await D.newPage();
@@ -99,7 +99,7 @@ try {
   const chipShown = () => dp.$eval('.dp-auto', (e) => !e.hidden && getComputedStyle(e).display !== 'none');
 
   /* ---------- opening writes nothing; a hidden clock never shows ---------- */
-  check(await barText() === 'Auto' && /Take over/.test(await gp.$eval('#gm-bar-ap', (b) => b.title)), 'the top bar reads Auto, and its tooltip says Take over');
+  check(await barText() === 'Auto' && /Take over/.test(await gp.$eval('.gm-tray .gm-tray-ap', (b) => b.title)), 'the iPad tray\'s autopilot pill reads Auto, and its tooltip says Take over');
   const a0 = await amb();
   check(!a0.doc.overlay && !('auto' in a0.doc), 'opening the page wrote no overlay and no auto flag (' + JSON.stringify(Object.keys(a0.doc)) + ')');
   check((await api('PATCH', '/campaign', { clockOps: [{ id: 'c_x9k', filled: 2 }] })).status === 200, 'the hidden clock is ticked');
@@ -162,7 +162,7 @@ try {
     check((await amb()).doc.auto === false, 'and auto is false');
     check(await noCard(12000), 'the card leaves the iPad');
     check(!(await chipShown()), 'and the AUTO chip');
-    check(await barText() === 'GM' && /Hand back/.test(await gp.$eval('#gm-bar-ap', (b) => b.title)) && /GM · Hand back/.test(await gp.$eval('#as-ap', (b) => b.textContent)), 'the bar badge reads GM (Hand back in its tooltip) and the panel header reads GM · Hand back');
+    check(await barText() === 'GM' && /Hand back/.test(await gp.$eval('.gm-tray .gm-tray-ap', (b) => b.title)) && /GM · Hand back/.test(await gp.$eval('#as-ap', (b) => b.textContent)), 'the tray\'s badge reads GM (Hand back in its tooltip) and the panel header reads GM · Hand back');
   }
   check((await ap()).mode === 'hold', 'the controller is on Hold');
   check((await bump('c_x2k')).status === 200 && (await bump('c_x2k')).status === 200, 'ticks while on Hold');
@@ -199,8 +199,8 @@ try {
   check((await amb()).doc.ifOverlay === undefined, 'and the key is never stored in the document');
 
   /* ---------- Hand back resumes ---------- */
-  await gp.click('#gm-bar-ap');
-  check(await barText() === 'Auto' && (await ap()).mode === 'ready', 'Hand back (the top bar): Auto again');
+  await gp.click('.gm-tray .gm-tray-ap');
+  check(await barText() === 'Auto' && (await ap()).mode === 'ready', 'Hand back (the iPad tray\'s pill): Auto again');
   const o5 = await until(ovOf, 1500).catch(() => null);
   check(!o5, 'handing back does not replay what happened on Hold');
   check((await bump('c_x2k')).status === 200, 'a tick after handing back');
@@ -259,9 +259,9 @@ try {
   check(!(await ovOf()) && !(await card('npc')), 'it does not come back by itself');
   check((await api('PATCH', '/campaign', { scene: { npcs: { npc_seen: false, npc_hid: false } } })).status === 200, 'both off stage');
 
-  /* ---------- Lights out: nothing autopilot-driven lights a blacked-out screen ---------- */
+  /* ---------- Lights out (the tray's Blank): nothing autopilot-driven lights a blacked-out screen ---------- */
   await sleep(1500);
-  await gp.click('#gm-page [data-gm="darkipad"]');
+  await gp.click('.gm-tray [data-tray="blank"]');
   check(await until(async () => (await ipadDisplay()).display.kind === 'dark', 8000), 'lights out is on the iPad');
   check((await ap()).guards.lights === true, 'the autopilot knows (a guard)');
   check((await bump('c_x3k')).status === 200, 'a clock ticks under lights out');
@@ -269,8 +269,8 @@ try {
   check(!(await ovOf()) && !!(await ap()).pending.clock, 'the autopilot holds it back (one waiting, nothing sent)');
   const refused = await api('PATCH', '/gm/ambient', { overlay: { id: 'lo1', kind: 'clock', ms: 20000, clockId: 'c_x3k' }, auto: true });
   check(refused.status === 409 && /lights out/.test(refused.json && refused.json.error) && !(await ovOf()), 'and the server refuses an autopilot overlay under lights out (409, nothing stored)');
-  /* the lights come back: the one that waited shows (positive control) */
-  await gp.click('#gm-page [data-gm="blankipad"]');
+  /* the lights come back (the tray's Clear): the one that waited shows (positive control) */
+  await gp.click('.gm-tray [data-tray="clear"]');
   const lo2 = await until(async () => { const o = await ovOf(); return o && o.clockId === 'c_x3k' ? o : null; }, 25000);
   check(!!lo2 && lo2.auto === true, 'when the lights come back the held overlay shows (' + (lo2 && lo2.id) + ')');
   check(await dp.waitForSelector('.dp-overlay .dp-ov-clock', { timeout: 15000 }).then(() => true, () => false), 'and the iPad draws it');

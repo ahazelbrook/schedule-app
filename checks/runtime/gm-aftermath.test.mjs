@@ -2,6 +2,7 @@
 // (app/display/aftermath.js), and the phone's commendations window (app/sheet/commend.js). No browser, no network, no clock: the host is a recorder and the time
 // is a number the test moves. INVENTED data only (the Pelican Rooms); every GM-only string is a GM-ONLY- marker.
 //   node checks/runtime/gm-aftermath.test.mjs
+import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -315,9 +316,33 @@ await test('the display draws each step from its fixture by textContent only, an
   const none = await S.mount({ kind: 'aftermath', payload: { step: 'harm' } }, { document: doc, reduced: true });
   assert.ok(none.outerHTML.includes('No harm complications'));
   const cr = await S.mount({ kind: 'credits', payload: S.entry('credits').fixture }, { document: doc, reduced: true });
-  assert.equal(cr.querySelectorAll('.dp-cr-row').length, 5); assert.equal(cr.querySelectorAll('.dp-cr-bar').length, 4, 'four bars, as the opening card has');
+  assert.equal(cr.querySelectorAll('.dp-cr-row').length, 6); assert.equal(cr.querySelectorAll('.dp-cr-bar').length, 4, 'four bars, as the opening card has');
   assert.ok(cr.outerHTML.includes('Mabel Quist'));
+  /* the GM night rebuild: the fixture carries a 14-letter surname; a name is one text, never split, and the role and the faction are lines of their own */
+  const names = cr.querySelectorAll('.dp-cr-name').map((n) => n.textContent);
+  assert.ok(names.includes('Ottilie Vandermeerholt') && 'Vandermeerholt'.length === 14, 'a 14-letter surname in the fixture: ' + names.join(', '));
+  assert.deepEqual(cr.querySelectorAll('.dp-cr-row')[1].querySelectorAll('.dp-cr-role').map((n) => n.textContent), ['Desk sergeant', 'The Tidewater Watch'], 'the role over the faction, no dot');
   assert.deepEqual(writes, [], 'nothing written as HTML');
+});
+
+await test('the GM night rebuild: the heat step is read first and WANTED follows it as its own beat, never on top of it; the credits never break a name inside a word', async () => {
+  const css = fs.readFileSync(path.join(APP, 'display', 'aftermath.css'), 'utf8');
+  assert.match(css, /\.dp-aft-heat\.dp-aft-to-wanted > :not\(\.dp-show-wanted\) \{ opacity: 0; visibility: hidden;/, 'the heat step steps out before WANTED comes in');
+  assert.match(css, /\.dp-show-credits \.dp-cr-name, \.dp-show-credits \.dp-cr-role \{ overflow-wrap: normal; word-break: normal;/, 'names and roles wrap at spaces only');
+  assert.match(css, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/, 'four equal columns, one per bar, whatever a name holds');
+  const timers = []; const realSet = globalThis.setTimeout;
+  globalThis.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return 0; };
+  try {
+    const heat = await S.mount({ kind: 'aftermath', payload: { step: 'heat', exposure: 4, mods: 2, heat: 5, after: 0, siren: true, wanted: 2 } }, { document: doc, reduced: false });
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    const w = heat.querySelector('.dp-show-wanted');
+    assert.ok(w, 'the WANTED beat is ready inside the heat card');
+    assert.ok(!heat.classList.contains('dp-aft-to-wanted') && !w.classList.contains('dp-ov-in'), 'at first only the heat step shows');
+    const swap = timers.find((t) => t.ms >= 3000);
+    assert.ok(swap, 'the swap waits until the step has been read: ' + timers.map((t) => t.ms).join(','));
+    swap.fn();
+    assert.ok(heat.classList.contains('dp-aft-to-wanted') && w.classList.contains('dp-ov-in'), 'then the step steps out and WANTED comes in');
+  } finally { globalThis.setTimeout = realSet; }
 });
 
 await test('the end credits draw only the cards the Worker joined, no hidden key, at most 30', () => {

@@ -121,7 +121,7 @@
         box.innerHTML = '<p class="gm-dim">Paste the note <code>/blade front page</code> wrote (after you have edited it). Only the headline, standfirst, Account, Name and Hook are used.</p>' +
           '<div class="gm-sb-row"><textarea data-fp-text rows="8" style="width:100%"></textarea></div>' +
           '<div class="gm-sb-row"><button type="button" class="btn sm primary" data-fp="save">Save and preview</button> <button type="button" class="btn sm" data-fp="print"' + (fp ? '' : ' disabled') + '>Print</button> ' +
-          '<button type="button" class="btn sm" data-fp="show"' + (fp ? '' : ' disabled') + '>Headline on the iPad</button></div><style>' + css() + '</style><div data-fp-view>' + html(fp) + '</div>';
+          '<button type="button" class="btn sm" data-fp="show"' + (fp ? '' : ' disabled') + ' title="The headline goes up on the iPad">Show on iPad</button></div><style>' + css() + '</style><div data-fp-view>' + html(fp) + '</div>';
         var sh = box.parentNode;
         if (sh && !sh.__fp) {
           sh.__fp = true;

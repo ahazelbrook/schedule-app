@@ -2,7 +2,7 @@
 
    Plain script, UMD: window.B68GmMontage in the browser, module.exports under Node.
 
-   WHAT IT DOES. When the score has passed its time budget, one tap (Menu -> Montage -> Split the iPad) splits the iPad into one panel per player character, two to four of
+   WHAT IT DOES. When the score has passed its time budget, one tap (Montage -> Show on iPad) splits the iPad into one panel per player character, two to four of
    them. Each panel has a figure (the character's initial), a place and one line. A marked roll resolves a panel (a stamp on it). One tap collapses it back to the single scene.
    THE WIRE. A lasting layer, never an overlay, so a stamp's report card can stand over the panels while a roll is resolved: data.montage { panels: [{ pcId, name, room, line, done }] }
    (functions/_lib/show-montage.js) and scene.layout montage (the contract already had it). Both are cleared on Collapse. The iPad draws it in app/display/montage.js.
@@ -135,8 +135,8 @@
           '<input type="text" maxlength="' + LINE_MAX + '" data-mt-line="' + esc(c.id) + '" value="' + esc(c.line) + '" placeholder="one line" aria-label="Line for ' + esc(c.name) + '">' +
           (v.live ? ' <button type="button" class="btn sm' + (c.rolling ? ' primary' : '') + '" data-mt="rolling" data-id="' + esc(c.id) + '">Rolling</button> <button type="button" class="btn sm" data-mt="resolve" data-id="' + esc(c.id) + '"' + (c.done || !c.picked ? ' disabled' : '') + '>' + (c.done ? 'Resolved' : 'Resolve') + '</button>' : '') + '</div>';
       }).join('') : '<p class="gm-empty">No characters on the table.</p>';
-      html += '<div class="gm-sb-row">' + (v.live ? '<button type="button" class="btn sm primary" data-mt="collapse">Collapse to one panel</button> <button type="button" class="btn sm" data-mt="split">Send changes</button>'
-        : '<button type="button" class="btn sm primary" data-mt="split"' + (v.count < MIN ? ' disabled' : '') + '>' + (v.over === false ? 'Split anyway' : 'Split the iPad') + '</button>') + '</div>';
+      html += '<div class="gm-sb-row">' + (v.live ? '<button type="button" class="btn sm primary" data-mt="collapse" title="The panels come down: back to one scene">Take it down</button> <button type="button" class="btn sm" data-mt="split">Send changes</button>'
+        : '<button type="button" class="btn sm primary" data-mt="split"' + (v.count < MIN ? ' disabled' : '') + '>' + (v.over === false ? 'Show on iPad anyway' : 'Show on iPad') + '</button>') + '</div>';
       box.innerHTML = html;
       var sh = box.parentNode;
       if (sh && !sh.__mt) {

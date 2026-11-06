@@ -1464,13 +1464,33 @@
     }
     s.offs.push(function () { if (s.hs) { s.hs.destroy(); s.hs = null; } if (s.fx) { s.fx.destroy(); s.fx = null; } });
     function ovTimer(fn, ms) { var id = later(fn, ms); s.ov.timers.push(id); return id; }
+    /* the GM night rebuild: while an overlay is up (a card, a beat, the dawn) the band beside the map stands down under it, and a side card takes the
+       band's own column under the band's clock, which stays (display/shows.css), so nothing is ever drawn over the band's words. The marks go when
+       the overlay has gone, not as it starts to fade, so the card does not jump back to its old place on the way out (a newer overlay owns them). */
+    function ovMark(card) { container.classList.add('dp-ov-up'); container.classList.toggle('dp-ov-card-on', !!card); }
     function ovRemove(now) {
       var node = s.ov.node; s.ov.token++; s.ov.node = null;
+      var tok = s.ov.token;
       s.ov.timers.forEach(clearLater); s.ov.timers = [];
-      if (!node) return;
-      if (now || reduced()) { if (node.parentNode) node.parentNode.removeChild(node); return; }
+      function unmark() { if (s.ov.token === tok) { container.classList.remove('dp-ov-up'); container.classList.remove('dp-ov-card-on'); } }
+      if (!node) { unmark(); return; }
+      if (now || reduced()) { if (node.parentNode) node.parentNode.removeChild(node); unmark(); return; }
       node.classList.remove('dp-ov-in'); node.classList.add('dp-ov-out');
-      later(function () { if (node.parentNode) node.parentNode.removeChild(node); }, 450);
+      later(function () { if (node.parentNode) node.parentNode.removeChild(node); unmark(); }, 450);
+    }
+    /* a side card over the band beside the map is drawn whole: one taller than the room it has (landscape: the column under the band's clock;
+       portrait: the band along the foot, or the lowest 40% of the frame if the band is shorter) is scaled to fit (--dp-ov-s, display/shows.css),
+       never cut off. Run when a card goes up or is redrawn, and when the band is fitted again (bandFit: its clock changed size, the window turned
+       or resized). A few layout reads, no writes in a loop. */
+    function ovFit() {
+      var node = s.ov.node; if (!node || !node.classList || !node.classList.contains('dp-ov-card')) return;
+      var sc = 1;
+      if (container.classList.contains('dp-band-on')) {
+        var land = !!(window.matchMedia && window.matchMedia('(orientation: landscape)').matches), cs = container.style, vm = Math.min(window.innerWidth, window.innerHeight) / 100, oh = ovLayer.clientHeight;
+        var room = (land ? oh - (parseFloat(cs.getPropertyValue('--dp-band-time-h')) || 0) : Math.max(parseFloat(cs.getPropertyValue('--dp-band-h')) || 0, 0.4 * oh)) - 6 * vm, h = node.offsetHeight;
+        if (h > room && room > 0) sc = Math.max(0.35, room / h);
+      }
+      if (sc < 1) node.style.setProperty('--dp-ov-s', sc.toFixed(3)); else node.style.removeProperty('--dp-ov-s');
     }
     function svgEl(tag, attrs) {
       var e = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -1505,7 +1525,7 @@
       e.style.setProperty('--dp-dawn-ramp', pl.ramp + 'ms'); e.style.setProperty('--dp-dawn-fade', pl.fade + 'ms');
       e.appendChild(el('div', 'dp-ov-warm')); e.appendChild(el('div', 'dp-ov-glow'));
       e.setAttribute('data-phase', pl.init);
-      ovLayer.appendChild(e); s.ov.node = e;
+      ovLayer.appendChild(e); s.ov.node = e; ovMark(false);
       pl.steps.forEach(function (st) { ovTimer(function () { e.setAttribute('data-phase', st.phase); }, st.at); });
       ovTimer(function () { ovRemove(true); }, pl.end);
     }
@@ -1526,7 +1546,7 @@
       ovTimer(function () { ovRemove(false); }, left);
       root.B68Shows.mount(o, beatEnv()).then(function (node) {
         if (!node || s.dead || my !== s.ov.token) return;
-        ovLayer.appendChild(node); s.ov.node = node; s.ov.sig = ovSig(o);
+        ovLayer.appendChild(node); s.ov.node = node; s.ov.sig = ovSig(o); ovMark(false);
         later(function () { node.classList.add('dp-ov-in'); }, reduced() ? 0 : 30);
       });
     }
@@ -1542,7 +1562,7 @@
       function put(card) {
         if (!card || s.dead || my !== s.ov.token) return;
         var node = ovCardNode(card, o);
-        ovLayer.appendChild(node); s.ov.node = node; s.ov.sig = ovSig(o);
+        ovLayer.appendChild(node); s.ov.node = node; s.ov.sig = ovSig(o); ovMark(true); ovFit();
         later(function () { node.classList.add('dp-ov-in'); }, reduced() ? 0 : 30);
       }
       /* an npc card is drawn from what the server joined to the overlay (o.npc); the page reads nothing of the cast for it */
@@ -1566,7 +1586,7 @@
       var old = s.ov.node, node = ovCardNode(card, o);
       node.classList.add('dp-ov-in');
       if (old.parentNode) old.parentNode.replaceChild(node, old);
-      s.ov.node = node; s.ov.sig = ovSig(o);
+      s.ov.node = node; s.ov.sig = ovSig(o); ovFit();
     }
     /* Lights out (a spotlight of kind dark): nothing the autopilot sent is drawn over it, and neither is the AUTO chip. One that is up when the
        lights go out is taken off at once and its id stays seen, so it does not come back when the lights do (the server leaves it out of the answer
@@ -1577,6 +1597,7 @@
     function ovPaintChip() { autoChip.hidden = !(s.ov.chip && !s.dark); }
     function ovLightsOut(dark) {
       s.dark = !!dark;
+      container.classList.toggle('dp-lights-out', s.dark);      /* the band stands down too, all but the ON AIR lamp (display/shows.css) */
       if (s.dark && s.ov.node && s.ov.auto) ovRemove(true);
       var h = s.ov.held; s.ov.held = null;
       if (h) { s.ov.seen = h.o.id; if (!s.dark && Date.now() - h.at < 8000) { ovShow(h.o); s.ov.auto = true; } }
@@ -1917,14 +1938,25 @@
       if (tt && tt.textContent !== v.text) tt.textContent = v.text;
       n.className = 'dp-b-timer' + (v.state === 'run' ? '' : ' dp-b-t-' + v.state);
     }
-    /* When the night's content is more than the band can hold, cut in the design's order: the ways found first (P1), then the crew's rooms. */
+    /* When the night's content is more than the band can hold, cut in the design's order: the ways found first (P1), then the crew's rooms; and
+       (the GM night rebuild: the iPad's own band across the top leaves this one shorter) then the time comes down in size, and only then does the
+       clock's label go, so a smaller clock keeps saying what it counts */
+    var SHRINK = ['dp-b-no-ways', 'dp-b-no-rooms', 'dp-b-compact', 'dp-b-no-label'];
     function bandShrink() {
-      band.classList.remove('dp-b-no-ways', 'dp-b-no-rooms');
+      SHRINK.forEach(function (c) { band.classList.remove(c); });
       var over = function () { return band.scrollHeight > band.clientHeight + 1; };
-      if (over()) band.classList.add('dp-b-no-ways');
-      if (over()) band.classList.add('dp-b-no-rooms');
+      for (var i = 0; i < SHRINK.length && over(); i++) band.classList.add(SHRINK[i]);
     }
-    function bandFit() { try { container.style.setProperty('--dp-band-h', Math.ceil(band.getBoundingClientRect().height) + 'px'); } catch (e) { /* the map keeps its frame */ } }
+    /* --dp-band-h: the band's height (portrait: the map stops above it); --dp-band-time-h: from the band's top to the foot of its clock, where a side
+       card starts in landscape (display/shows.css) so the time stays readable over a held face */
+    function bandFit() {
+      try {
+        var r = band.getBoundingClientRect(), tb = band.querySelector('.dp-b-time');
+        container.style.setProperty('--dp-band-h', Math.ceil(r.height) + 'px');
+        container.style.setProperty('--dp-band-time-h', (tb ? Math.max(0, Math.ceil(tb.getBoundingClientRect().bottom - r.top)) : 0) + 'px');
+        ovFit();      /* a side card up over it fits the room it now has */
+      } catch (e) { /* the map keeps its frame */ }
+    }
     function paintBand() {
       var m = s.bandModel, show = !!m && !!s.current && !!s.current.el && s.current.el.classList.contains('dp-map');
       if (!show) { if (!band.hidden) band.hidden = true; container.classList.remove('dp-band-on'); return; }
@@ -1938,7 +1970,10 @@
       bandFit();
     }
     function applyBand(hud) { s.bandModel = Pure.bandModel(hud); if (!s.bandModel) s.bandSig = ''; paintBand(); }
-    if (window.ResizeObserver) { var bandRo = new ResizeObserver(function () { bandFit(); }); bandRo.observe(band); s.offs.push(function () { bandRo.disconnect(); }); }
+    /* landscape: the band's box is set by its top and bottom, so a new size comes from outside (the iPad's band coming or going over it) and the cut
+       is worked out again; in portrait its height follows its content, so only bandFit runs (a re-cut there would chase its own size) */
+    var landscape = window.matchMedia ? window.matchMedia('(orientation: landscape)') : null;
+    if (window.ResizeObserver) { var bandRo = new ResizeObserver(function () { if (!band.hidden && landscape && landscape.matches) bandShrink(); bandFit(); }); bandRo.observe(band); s.offs.push(function () { bandRo.disconnect(); }); }
     s.offs.push(on(window, 'resize', function () { if (!band.hidden) bandShrink(); bandFit(); }));
     var bandTick = setInterval(bandTimer, 1000); s.offs.push(function () { clearInterval(bandTick); });
     s.offs.push(on(document, 'visibilitychange', function () { if (!document.hidden) bandTimer(); }));
@@ -2091,7 +2126,7 @@
     if (s.wake) { try { s.wake.release(); } catch (e) {} s.wake = null; }
     try { if ((document.fullscreenElement || document.webkitFullscreenElement) && s.enteredFs) (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch (e) {}
     document.documentElement.classList.remove('dp-active');
-    s.container.classList.remove('dp-root', 'dp-ui');
+    s.container.classList.remove('dp-root', 'dp-ui', 'dp-lights-out', 'dp-lay-on', 'dp-lay-crew', 'dp-ov-up', 'dp-ov-card-on');
     s.container.innerHTML = '';
   }
 

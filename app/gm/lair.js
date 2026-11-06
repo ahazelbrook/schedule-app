@@ -1,7 +1,7 @@
 /* gm/lair.js — the lair that grows (suite ticket 5.4, switch between.lair): the GM's side. Plain script, UMD: window.B68GmLair in the browser, module.exports under Node.
 
    WHAT IT DOES. Menu then The lair: the crew's base as a cut-away section (map kit 1.0's section, drawn by display/lair-draw.js). Each base upgrade, cohort and piece of
-   flair on the crew sheet adds a layer; "Put it on the iPad" sends the show kind `lair` for up to three minutes (the server's overlay cap). Flair is not a field of the
+   flair on the crew sheet adds a layer; "Show on iPad" sends the show kind `lair` for up to three minutes (the server's overlay cap). Flair is not a field of the
    crew sheet, so the GM types it here, and may hold any layer back from the iPad. The pure rules (which layer adds which room) are in display/lair.js, shared with the iPad.
 
    PERSISTENCE. One GM-scope row of the docs store (kind `lair`, owner `_`): { v: 1, name, front, flair: [text], hide: [layer] }. The layers themselves are never stored: they are
@@ -115,7 +115,7 @@
     while (box.firstChild) box.removeChild(box.firstChild);
     box.appendChild(el('p', 'gm-dim', 'The base, drawn from the crew sheet: a layer for each base upgrade, cohort and piece of flair. Flair is typed here. Hold a layer back and it stays off the iPad.'));
     var top = el('div', 'seg');
-    top.appendChild(btn('Put it on the iPad (three minutes)', function () { c.show(); }, 'primary'));
+    top.appendChild(btn('Show on iPad', function () { c.show(); }, 'primary')).title = 'The lair stays up on the iPad for three minutes';
     ['', 'canal', 'street'].forEach(function (f) { top.appendChild(btn(f ? 'Front: ' + f : 'Front: automatic', function () { c.setFront(f).then(function () { paint(box); }); }, (st.front === f ? 'primary' : ''))); });
     box.appendChild(top);
     var nm = el('input'); nm.type = 'text'; nm.maxLength = 60; nm.placeholder = 'Name of the base (the crew name by default)'; nm.value = st.name; nm.setAttribute('aria-label', 'Name of the base');

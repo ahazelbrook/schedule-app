@@ -69,7 +69,10 @@
       var left = Math.max(-r.viewBox[0], 6 * U, sh), right = Math.max(r.viewBox[0] + r.viewBox[2], 6 * U, sh);
       x += left; groups.push('<g transform="translate(' + f1(x) + ' 0)">' + r.inner + '</g>'); centres.push(x); x += right + gap;
     });
-    var W = x - gap + side, titleH = o.title ? 34 / scale : 0, capH = 26 / scale;
+    /* o.big (the iPad, read from 1 to 1.5 m; the GM night rebuild): the names in the label face at 24 px on two lines (the first name over the rest),
+       each as large as its own space allows, and the title at 24 px. The GM page's preview and the print keep the small captions. */
+    var big = o.big === true, capPx = big ? 24 : 12, titlePx = big ? 24 : 17;
+    var W = x - gap + side, titleH = o.title ? (titlePx + 17) / scale : 0, capH = (big ? capPx * 2.4 + 8 : 26) / scale;
     var minY = -topIn * U - Math.max(20, 18 / scale) - titleH, bottom = 1.5 * U + capH;
     var ground = '<rect x="0" y="' + f1(minY) + '" width="' + f1(W) + '" height="' + f1(-minY + bottom) + '" fill="#e8e2d4"/>';
     var rule = '';
@@ -79,9 +82,18 @@
       rule += '<line x1="0" x2="' + f1(W) + '" y1="' + f1(y) + '" y2="' + f1(y) + '" stroke="#8e8880" stroke-width="' + f1(0.8 / scale) + '" opacity="0.7"/>' +
         '<text x="' + f1(6 / scale) + '" y="' + f1(y - 3 / scale) + '" font-family="Space Mono, monospace" font-size="' + f1(11 / scale) + '" fill="#55504a">' + t + '</text>';
     });
-    var head = o.title ? '<text x="' + f1(W / 2) + '" y="' + f1(minY + 24 / scale) + '" text-anchor="middle" font-family="Space Mono, monospace" font-weight="700" font-size="' + f1(17 / scale) + '" letter-spacing="' + f1(2 / scale) + '" fill="#2a2620">' + esc(String(o.title).toUpperCase()) + '</text>' : '';
+    var face = big ? 'Archivo Condensed, Arial Narrow, sans-serif' : 'Space Mono, monospace';
+    var head = o.title ? '<text x="' + f1(W / 2) + '" y="' + f1(minY + (titlePx + 7) / scale) + '" text-anchor="middle" font-family="' + face + '" font-weight="' + (big ? 900 : 700) + '" font-size="' + f1(titlePx / scale) + '" letter-spacing="' + f1((big ? 4 : 2) / scale) + '" fill="#2a2620">' + esc(String(o.title).toUpperCase()) + '</text>' : '';
     var caps = list.map(function (it, i) {
-      return '<text x="' + f1(centres[i]) + '" y="' + f1(1.5 * U + 16 / scale) + '" text-anchor="middle" font-family="Space Mono, monospace" font-size="' + f1(12 / scale) + '" fill="#3a352d">' + esc(it.name ? it.name.slice(0, 18) : '?') + '</text>';
+      var name = it.name ? it.name.slice(0, big ? 40 : 18) : '?';
+      if (!big) return '<text x="' + f1(centres[i]) + '" y="' + f1(1.5 * U + 16 / scale) + '" text-anchor="middle" font-family="Space Mono, monospace" font-size="' + f1(12 / scale) + '" fill="#3a352d">' + esc(name) + '</text>';
+      /* the space this name has: the way to its neighbours' centres (or twice the way to the edge), and never a break inside a word */
+      var room = Math.min(i > 0 ? centres[i] - centres[i - 1] : 2 * centres[i], i < centres.length - 1 ? centres[i + 1] - centres[i] : 2 * (W - centres[i])) * scale * 0.9;
+      var words = name.split(' '), lines = words.length > 1 ? [words[0], words.slice(1).join(' ')] : [name];
+      var longest = Math.max.apply(null, lines.map(function (l) { return l.length; }));
+      var px = Math.max(10, Math.min(capPx, room / (longest * 0.74)));
+      return '<text x="' + f1(centres[i]) + '" y="' + f1(1.5 * U + (px + 4) / scale) + '" text-anchor="middle" font-family="' + face + '" font-weight="900" font-size="' + f1(px / scale) + '" letter-spacing="' + f1(0.6 / scale) + '" fill="#2a2620">' +
+        lines.map(function (l, k) { return '<tspan x="' + f1(centres[i]) + '"' + (k ? ' dy="1.12em"' : '') + '>' + esc(l.toUpperCase()) + '</tspan>'; }).join('') + '</text>';
     }).join('');
     var vb = [0, minY, W, -minY + bottom], count = list.length;
     var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="' + vb.map(f1).join(' ') + '" width="' + f1(vb[2] * scale) + '" height="' + f1(vb[3] * scale) + '" role="img" aria-label="' + esc((o.title || 'Cast photo') + ': ' + count + ' people') + '">' + ground + rule + head + groups.join('') + caps + '</svg>';
@@ -104,7 +116,7 @@
     n.setAttribute('data-show', 'castphoto');
     if (env && env.reduced) n.setAttribute('data-reduced', '1');
     var list = items(p.npcs, p.sil);
-    var d = compose(list, { height: 520, suffix: '-ov', title: p.title || '' });
+    var d = compose(list, { height: 520, suffix: '-ov', title: p.title || '', big: true });
     if (d.svg) {
       var holder = el(doc, 'div', 'dp-cp-photo');
       holder.innerHTML = scrub(d.svg);

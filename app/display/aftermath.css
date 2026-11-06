@@ -19,6 +19,10 @@
 .dp-show-aftermath.dp-ov-in .dp-aft-pip.on { animation: dp-aft-pip .35s ease-out both; animation-delay: calc(var(--i, 0) * 110ms); }
 @keyframes dp-aft-pip { 0% { transform: scale(.4); } 70% { transform: scale(1.25); } 100% { transform: scale(1); } }
 .dp-aft-siren { z-index: 3; }
+/* heat at 9 (the GM night rebuild): WANTED is its own beat AFTER the heat step, never laid over it. The step steps out, then the poster comes in alone. */
+.dp-aft-heat > * { transition: opacity .35s ease, visibility 0s linear 0s; }
+.dp-aft-heat.dp-aft-to-wanted > :not(.dp-show-wanted) { opacity: 0; visibility: hidden; transition: opacity .35s ease, visibility 0s linear .35s; }
+.dp-aft-heat > .dp-show-wanted { transition: opacity .35s ease .35s; }
 
 /* status and harm: lines */
 .dp-aft-lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1.6vmin; align-items: center; max-width: 90%; }
@@ -33,7 +37,7 @@
 @keyframes dp-aft-run { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 
 /* the end credits: the opening card's layout, a dark ground and four coloured bars, names set in the poster face */
-.dp-show-credits { justify-content: flex-start; padding-top: 12vmin; }
+.dp-show-credits { justify-content: flex-start; padding: 12vmin 0 4vmin; }      /* no side padding: each column of names sits on its own bar */
 .dp-cr-bars { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(4, 1fr); pointer-events: none; }
 .dp-cr-bar { display: block; height: 100%; transform-origin: top center; transform: scaleY(0); opacity: .9; }
 .dp-show-credits.dp-ov-in .dp-cr-bar { transform: scaleY(1); transition: transform .8s ease-out; }
@@ -43,13 +47,17 @@
 .dp-cr-alarm { background: var(--b68-alarm-lit); }
 .dp-cr-green { background: var(--b68-faction-3); }
 .dp-show-credits .dp-show-kicker { position: relative; background: var(--b68-ink); color: var(--b68-paper); padding: .6vmin 2vmin; }
-.dp-cr-cols { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; gap: 0; align-content: start; flex: 1; overflow: hidden; }
-.dp-cr-row { padding: 1.6vmin 2vmin; text-align: left; background: none; opacity: 0; }
+.dp-cr-cols { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; gap: 0; align-content: start; flex: 1; overflow: hidden; }
+.dp-cr-row { min-width: 0; padding: 1.6vmin 3vmin; text-align: left; background: none; opacity: 0; }
 .dp-show-credits.dp-ov-in .dp-cr-row { opacity: 1; transition: opacity .5s ease; transition-delay: calc(.9s + var(--i, 0) * 140ms); }
 .dp-cr-name { font: 900 var(--b68-t-title)/1 var(--b68-font-poster); text-transform: uppercase; letter-spacing: .01em; color: var(--b68-ink); }
+/* never a break inside a word ("KESSLE / R"): a name wraps at its spaces, and a word too wide for its column shrinks to fit (display/shows.js fit) */
+.dp-show-credits .dp-cr-name, .dp-show-credits .dp-cr-role { overflow-wrap: normal; word-break: normal; hyphens: manual; }
 .dp-cr-blue .dp-cr-name, .dp-cr-alarm .dp-cr-name { color: var(--b68-paper-light); }
 .dp-cr-role { font: 700 var(--b68-t-label)/1.2 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .1em; color: var(--b68-ink); }
 .dp-cr-blue .dp-cr-role, .dp-cr-alarm .dp-cr-role { color: var(--b68-paper-dark); }
+.dp-cr-name + .dp-cr-role { margin-top: .4vmin; }
+@media (orientation: portrait) { .dp-cr-row { padding: 1.6vmin 2.4vmin; } .dp-cr-role { letter-spacing: .04em; } }
 .dp-show-credits.dp-count-9 .dp-cr-name, .dp-show-credits.dp-count-10 .dp-cr-name, .dp-show-credits.dp-count-11 .dp-cr-name, .dp-show-credits.dp-count-12 .dp-cr-name { font-size: var(--b68-t-lead); }
 
 @media (prefers-reduced-motion: reduce) {
