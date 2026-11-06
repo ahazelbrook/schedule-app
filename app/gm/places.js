@@ -655,9 +655,9 @@
     function redecorate() { var e = els(); if (e && e.pane) decorate(e.pane); }
     function later(fn) { if (W && typeof W.setTimeout === 'function') W.setTimeout(function () { if (!st.gone) fn(); }, 0); else fn(); }
     function endNight() {
-      call('exportTonight');
-      if (call('recording')) call('stopRecording');
-      Promise.resolve(call('endNight')).then(function () {}, function () {});
+      call('exportTonight');      /* first: harmless, and it keeps the click's activation for the save picker */
+      /* the mission's End the night asks first; the recording stops only once the GM has said yes (a No leaves the night running and recording) */
+      Promise.resolve(call('endNight')).then(function (r) { if (r && r.skipped === 'declined') return; if (call('recording')) call('stopRecording'); }, function () {});
     }
 
     /* Esc (gm/esc.js): an open desk is an in-view panel; Esc goes back to the desks */

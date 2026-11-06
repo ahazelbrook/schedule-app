@@ -1504,6 +1504,7 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
 #gm-page .gm-vfall .gm-dim { margin: 0; max-width: 60ch; }
 #gm-page .gm-vgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; align-items: start; }
 #gm-page .gm-vcell-body { padding: 10px; display: grid; gap: 8px; min-width: 0; }
+#gm-page .gm-vcell-body .gm-sb-row { flex-wrap: wrap; }   /* a desk cell's rows wrap rather than cut a word (the room at 1366) */
 #gm-page .gm-tonight { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: start; }
 #gm-page .gm-tn-body { padding: 10px; display: grid; gap: 10px; }
 #gm-page .gm-tn-body > * { margin: 0; }
