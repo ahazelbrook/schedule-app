@@ -219,6 +219,17 @@
     out.rooms = roomsOf(note).length;
     return out;
   }
+  /* F3: the Tonight box refuses a start and curfew that cannot be one night: the curfew must come after the start, within 12 hours (so a
+     curfew past midnight, 20:00 to 00:30, is fine; 23:00 to 22:00 is not). key is the field just written; '' when the pair is fine or a time is missing */
+  var NIGHT_MAX_MIN = 12 * 60;
+  function hm(v) { var m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(str(v).slice(0, 5)); return m ? +m[1] * 60 + +m[2] : null; }
+  function timesClash(key, start, curfew) {
+    var s = hm(start), c = hm(curfew); if (s === null || c === null) return '';
+    var d = (c - s + 1440) % 1440; if (d > 0 && d <= NIGHT_MAX_MIN) return '';
+    var S = str(start).slice(0, 5), C = str(curfew).slice(0, 5);
+    return key === 'startAt' ? 'Not saved: a ' + S + ' start is after the ' + C + ' curfew. Set the curfew first.'
+      : 'Not saved: a ' + C + ' curfew is before the ' + S + ' start (one after midnight is fine).';
+  }
 
   /* ---------- Find ---------- */
   function homeOf(id) {
@@ -259,7 +270,7 @@
      ===================================================================================================================== */
   function create(host) {
     host = host || {};
-    var st = { place: 'before', views: {}, extra: '', prior: '', desk: '', rollHere: false, phase: '', els: null, bound: {}, busy: 0, sigs: {}, gone: false, escOff: null, flashT: null };
+    var st = { place: 'before', views: {}, extra: '', prior: '', desk: '', rollHere: false, phase: '', els: null, bound: {}, busy: 0, sigs: {}, gone: false, escOff: null, flashT: null, tnMsg: '', tnHold: 0, tnFocus: null };
     function call(name) { var f = host[name]; if (typeof f !== 'function') return undefined; try { return f.apply(host, [].slice.call(arguments, 1)); } catch (e) { if (W && W.console) W.console.error('places: ' + name, e); return undefined; } }
     function phaseNow() { return str(call('phase') || ''); }
     function toast(m, bad) { call('toast', m, bad); }
@@ -285,7 +296,7 @@
       st.els = { root: r, row: r.querySelector('.gm-views'), chips: r.querySelector('.gm-vchips'), left: r.querySelector('#gm-left'), head: r.querySelector('#gm-vhead'), pane: r.querySelector('#gm-vpane') };
       Object.keys(st.bound).forEach(function (id) { var Wk = inlineHost(); if (Wk) { try { Wk.inline(id, null); } catch (e) { /* gone with the old page */ } } });
       st.bound = {}; st.sigs = {};          /* a relayout replaced the containers: nothing is bound any more */
-      if (!r.__places) { r.__places = true; r.addEventListener('click', onClick); r.addEventListener('change', onChange); r.addEventListener('keydown', onKeyIn); }
+      if (!r.__places) { r.__places = true; r.addEventListener('click', onClick); r.addEventListener('change', onChange); r.addEventListener('keydown', onKeyIn); r.addEventListener('focusin', onFocusIn); r.addEventListener('focusout', onFocusOut); }
       return st.els;
     }
 
@@ -396,6 +407,7 @@
       if (!f.title) return '<p class="gm-dim">No prep note in the pack: Tonight reads the open note’s start, curfew, cues and rooms.</p>';
       var t = call('nightTimes') || {};
       return '<p class="gm-tn-title">' + esc(f.title) + '</p>' + timeHtml('startAt', 'Start', t.startAt, f.start) + timeHtml('curfewAt', 'Curfew', t.curfewAt, f.curfew) +
+        '<p class="gm-warn bad gm-tn-msg" data-tn-msg role="alert"' + (st.tnMsg ? '' : ' hidden') + '>' + esc(st.tnMsg) + '</p>' +
         '<p class="gm-tn-line"><b>' + f.cues + '</b> cue' + (f.cues === 1 ? '' : 's') + ' · <b>' + f.rooms + '</b> room' + (f.rooms === 1 ? '' : 's') + '</p>';
     }
     function leftHtml() {
@@ -422,6 +434,7 @@
       e.left.setAttribute('aria-label', placeLabel(st.place) + ': ' + d.leftLabel);
       var shell = st.place + '|' + st.desk + '|' + (st.rollHere ? 'roll' : 'own');
       if (st.sigs.left !== shell) {
+        flushTimes(e.left);      /* F3: a time being typed when the column is rebuilt (a phase moved elsewhere) is written first, not lost */
         unbindWhere('left');
         st.sigs.left = shell; st.sigs.slot = '';
         e.left.innerHTML = st.rollHere ? '<button type="button" class="gm-left-back" data-left-back="1" title="Back to ' + esc(d.leftLabel) + ' (the Roll stays a key away: 1 to 4)">◂ ' + esc(d.leftLabel) + '</button>' : leftHtml();
@@ -429,8 +442,38 @@
       }
       if (!st.rollHere) {
         var slot = e.left.querySelector('[data-left-slot]');
-        if (slot) { var h = slot.getAttribute('data-left-slot') === 'facts' ? factsHtml(factsNow()) : crewHtml(); if (st.sigs.slot !== h) { st.sigs.slot = h; slot.innerHTML = h; } }
+        if (slot) {
+          var h = slot.getAttribute('data-left-slot') === 'facts' ? factsHtml(factsNow()) : crewHtml();
+          /* F3: never under the GM's cursor: while a field in the slot has the focus (or is being left) it is patched in place, and the whole slot
+             is drawn again once the focus has gone (st.sigs.slot is left stale for that) */
+          if (st.sigs.slot !== h) { if (st.tnHold || focusIn(slot) || tnIn(slot)) patchTimes(slot); else { st.sigs.slot = h; slot.innerHTML = h; } }
+        }
       }
+    }
+    /* ---- F3: the Tonight box's Start and Curfew. A time is written on Enter or when its field is left, never per keystroke (Edge's time field
+       fires change on every segment typed; each write redrew the field and put the cursor back on the hour). A pair that cannot be one night
+       (timesClash) is refused with a line under the fields. Which field the GM is in is kept from focusin/focusout (st.tnFocus), not read from
+       document.activeElement: Edge fires change while the focus moves between the field's own hour and minute parts, and at that moment the
+       document's active element is the body, so a check of it let the write through and the field was redrawn out from under the GM ---- */
+    function tnIn(box) { var f = st.tnFocus; return !!(f && box && box.contains && box.contains(f)); }
+    function shownTime(key) { var nt = call('nightTimes') || {}, f = factsNow(); return str(key === 'startAt' ? (nt.startAt || f.start) : (nt.curfewAt || f.curfew)); }
+    function patchTimes(slot) {
+      var d = W && W.document, a = d && d.activeElement;
+      Array.prototype.forEach.call(slot.querySelectorAll('[data-tn-time]'), function (f) { if (f !== a && f !== st.tnFocus) { var v = shownTime(f.getAttribute('data-tn-time')); if (f.value !== v) f.value = v; } });
+      var m = slot.querySelector('[data-tn-msg]'); if (m) { if (m.textContent !== st.tnMsg) m.textContent = st.tnMsg; m.hidden = !st.tnMsg; }
+    }
+    function commitTime(t) {
+      var key = t.getAttribute('data-tn-time'), v = str(t.value).slice(0, 5), was = shownTime(key);
+      if (v === was) { st.tnMsg = ''; return false; }
+      if (!v) { st.tnMsg = ''; call('usePrep', key); st.sigs.slot = ''; return true; }      /* an emptied field puts the note's back */
+      var clash = timesClash(key, key === 'startAt' ? v : shownTime('startAt'), key === 'curfewAt' ? v : shownTime('curfewAt'));
+      if (clash) { st.tnMsg = clash; return false; }
+      st.tnMsg = ''; call('setTime', key, v); st.sigs.slot = '';
+      return true;
+    }
+    function flushTimes(box) {
+      var f = st.tnFocus;
+      if (f && tnIn(box)) { st.tnFocus = null; st.tnHold++; try { commitTime(f); } finally { st.tnHold--; } }
     }
 
     /* ---- T10: the foot of the left column (Next and ← Back): the last child of whichever column shows, the Roll's (#gm-roll) or the place's own ---- */
@@ -691,7 +734,7 @@
     function onClick(ev) {
       var t = ev.target; if (!t || !t.closest) return;
       var b, row;
-      if ((b = t.closest('[data-tn-prep]'))) { ev.preventDefault(); call('usePrep', b.getAttribute('data-tn-prep')); st.sigs.slot = ''; later(function () { render(); }); return; }
+      if ((b = t.closest('[data-tn-prep]'))) { ev.preventDefault(); if (b.blur) b.blur(); call('usePrep', b.getAttribute('data-tn-prep'));      /* blurred first: a focused button would hold the slot's redraw */ st.sigs.slot = ''; later(function () { render(); }); return; }
       if ((b = t.closest('[data-pvx]'))) { ev.preventDefault(); dropExtra(); return; }
       if ((b = t.closest('[data-place-next]'))) { ev.preventDefault(); next(); return; }
       if ((b = t.closest('[data-place-back]'))) { ev.preventDefault(); back(); return; }
@@ -711,16 +754,29 @@
     function onChange(ev) {
       var t = ev.target;
       var key = t && t.getAttribute ? t.getAttribute('data-tn-time') : '';
-      if (key) {      /* the Tonight box: a time written to the night; an emptied field puts the note's back */
-        if (t.value) call('setTime', key, t.value); else call('usePrep', key);
-        st.sigs.slot = ''; later(function () { render(); var n = els(), f = n && n.left && n.left.querySelector('[data-tn-time="' + key + '"]'); if (f && f.focus && !focusIn(n.left)) { try { f.focus(); } catch (x) {} } });
+      if (key) {      /* the Tonight box (F3): a field the GM is in waits for Enter or for being left (onFocusOut); a change without the focus writes now */
+        if (st.tnFocus === t) return;
+        commitTime(t); later(function () { render(); });
         return;
       }
       if (!t || !t.getAttribute || !t.getAttribute('data-pv-note')) return;
       call('setPrepNote', t.value); st.sigs.pane = ''; st.sigs.slot = '';
       later(function () { render(); });
     }
-    function onKeyIn(ev) { if ((ev.key === ' ' || ev.key === 'Enter') && ev.target && ev.target.closest && ev.target.closest('#gm-vpane')) later(redecorate); }
+    function onKeyIn(ev) {
+      var t = ev.target;
+      if (ev.key === 'Enter' && t && t.getAttribute && t.getAttribute('data-tn-time')) { if (ev.preventDefault) ev.preventDefault(); commitTime(t); later(function () { render(); }); return; }      /* F3: Enter writes the time; the field keeps the focus */
+      if ((ev.key === ' ' || ev.key === 'Enter') && t && t.closest && t.closest('#gm-vpane')) later(redecorate);
+    }
+    /* F3: leaving a Start or Curfew field writes it. The write is held off the slot while the focus is between two elements (st.tnHold), so a Tab
+       to the other field is never redrawn out from under the GM; the slot is drawn again a moment later, once the focus has landed */
+    function onFocusIn(ev) { var t = ev.target; if (t && t.getAttribute && t.getAttribute('data-tn-time')) st.tnFocus = t; }
+    function onFocusOut(ev) {
+      var t = ev.target; if (!t || !t.getAttribute || !t.getAttribute('data-tn-time')) return;
+      if (st.tnFocus === t) st.tnFocus = null;
+      st.tnHold++; try { commitTime(t); } finally { st.tnHold--; }
+      later(function () { render(); });
+    }
     function redecorate() { var e = els(); if (e && e.pane) decorate(e.pane); }
     function later(fn) { if (W && typeof W.setTimeout === 'function') W.setTimeout(function () { if (!st.gone) fn(); }, 0); else fn(); }
     function endNight() {
@@ -754,5 +810,5 @@
 
   return { KEY: KEY, PLACES: PLACES, BETWEEN: BETWEEN, PINNED: PINNED, VIEWS: VIEWS, DESKS: DESKS, LEFT_TOOL: LEFT_TOOL,
     list: list, between: between, place: place, view: view, viewsOf: viewsOf, lists: lists, forPhase: forPhase, step: step, nextOf: nextOf, backOf: backOf, ahead: ahead, prepTarget: prepTarget,
-    placeOfText: placeOfText, roomsOf: roomsOf, facts: facts, findEntries: findEntries, homeOf: homeOf, restore: restore, create: create };
+    placeOfText: placeOfText, roomsOf: roomsOf, facts: facts, timesClash: timesClash, findEntries: findEntries, homeOf: homeOf, restore: restore, create: create };
 });
