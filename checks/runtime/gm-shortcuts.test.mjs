@@ -187,7 +187,7 @@ const VIA = {
   'ctrl-k': () => /\(ev\.ctrlKey \|\| ev\.metaKey\) && !ev\.altKey && str\(ev\.key\)\.toLowerCase\(\) === 'k'\) \{[^}]*findOpen\(\)/.test(onKey),
   site: (h) => onKey.includes('if (runViewKey(ev)) return;') && /k !== 'ArrowRight' && k !== 'ArrowLeft'/.test(runViewKey) &&
     (h.shift ? /ev\.shiftKey\) S\.rv\.jump\(\)/.test(runViewKey) : h.key === 'ArrowRight' ? /S\.rv\.step\(1\)/.test(runViewKey) : /S\.rv\.step\(-1\)/.test(runViewKey)),
-  panel: (h) => (h.key === 'u' ? /kl === 'u'\) \{[^}]*undoNewest\(\)/ : /kl === 'j' \|\| kl === 'k'\) \{[^}]*moveFocus/).test(panelKey) && /pel\.contains\(ev\.target\)[^\n]*\/\^\[jku\]\$\/i/.test(onKey),
+  panel: (h) => (h.key === 'u' ? /kl === 'u'\) \{[^}]*undoNewest\(\)/ : /kl === 'j' \|\| kl === 'k'\) \{[^}]*moveFocus/).test(panelKey) && /\.contains\(ev\.target\) && !ev\.ctrlKey[^\n]*\/\^\[jku\]\$\/i/.test(onKey),
   find: (h) => (h.key === 'Enter' ? /ev\.key === 'Enter' && tg && tg\.id === 'gm-find-q'\) \{[^}]*findGo/ : /if \(findOn\(\)\) \{\s*if \(ev\.key === 'ArrowDown' \|\| ev\.key === 'ArrowUp'\)/).test(onKey)
 };
 
@@ -246,7 +246,7 @@ await test('the markup: every row drawn in its section, keys as <kbd>, fill-ins 
   assert.ok(h.includes('<kbd>Ctrl K</kbd>') && h.includes('<kbd>?</kbd>') && h.includes('<kbd>Esc</kbd>'));
   assert.ok(h.includes('Blade, tick <var>Alarm</var> <var>two</var>'), 'a fill-in is a <var>');
   assert.ok(!/<(?!\/?(div|p|section|h3|dl|dt|dd|kbd|span|var|code|b)\b)[a-z]/i.test(h), 'only the card\'s own tags');
-  assert.ok(!/[{}]/.test(h.replace(/<[^>]+>/g, '')), 'no brace reaches the screen');
+  assert.ok(!/[{}]/.test(h.replace(/<[^>]+>/g, '')), 'no { or } reaches the screen');
   assert.ok(h.includes('data-how="mic"') && (h.match(/class="gm-sc-or"/g) || []).length === sayRows.filter((r) => r.typed).length, 'the iPad-mic lines are marked, and each typed form is drawn after its line');
   assert.ok(h.includes('or type <code class="gm-sc-typed">/clock <var>6</var> <var>Alarm</var></code>'), 'a typed form, fill-ins and all');
   for (let c = 1; c <= SC.COLS; c++) assert.ok(h.includes('data-sc-col="' + c + '"'), 'stack ' + c);
