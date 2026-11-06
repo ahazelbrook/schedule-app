@@ -1415,7 +1415,8 @@ body.as-tab #gm-page .gm-sheet { right: 44px; }
   #gm-page .gm-btn { min-height: 56px; }
   #gm-page .gm-dotb { min-width: 40px; }
 }
-/* a phone: the Dots stay narrow enough to end left of the floating Capture button (right: 16 px, about 110 px wide) */
+/* a phone: the Dots take a line of their own, from the left, narrow enough to end left of the floating Capture button (right: 16 px, about 110 px wide) */
 @media (max-width: 599px) {
+  #gm-page .gm-rl-they .gm-rl-dots { flex-basis: 100%; }
   #gm-page .gm-dots .gm-dotb { min-width: 34px; padding-left: 2px; padding-right: 2px; }
 }

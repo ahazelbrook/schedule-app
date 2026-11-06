@@ -99,7 +99,8 @@ try {
   check(/^desperate/.test(await page.textContent('#gm-card .gm-sub')), 'key 3: a 1–3 rolled at that Position');
   check(new RegExp(SHOW_LINE).test(await page.textContent('#gm-card .gm-lead')), 'and its consequence spends the Roll’s line');
   check(!(await page.$('#gm-card #gm-sz:not([hidden])')), 'no stamp, no sizer strip (the size belongs to the stamped promise)');
-  check(!!(await page.$('#gm-card [data-gm="qt"][data-n="4"]')) && !!(await page.$('#gm-card [data-gm="qt"][data-n="7"]')), 'a 1–3 card offers Pay the price and Harm & resist');
+  { const pay = !!(await page.$('#gm-card details.gm-or[data-sec="payThePrice"]')), harm = !!(await page.$('#gm-card details.gm-or[data-sec="harm"]')) || /^Harm\b/.test(await page.textContent('#gm-card .gm-lead-t'));
+    check(!!(await page.$('#gm-card [data-gm="qt"][data-n="4"]')) === !pay && !!(await page.$('#gm-card [data-gm="qt"][data-n="7"]')) === !harm, 'a 1–3 card offers Pay the price and Harm & resist only where it has no such section ' + JSON.stringify({ pay, harm })); }
 
   /* ---- Stamp it on the iPad, Stamp again, Take it down ---- */
   await page.click('#gm-eff [data-v="great"]');
@@ -111,6 +112,10 @@ try {
   check(/On the iPad/.test(await page.textContent('#gm-stamp')) && !(await page.$('#gm-stamp [data-gm="stamp"]')), 'the Roll says it is on the iPad (and offers no second stamp while nothing changed)');
   await page.click('#gm-eff [data-v="limited"]');
   check(!!(await page.waitForSelector('#gm-stamp [data-gm="stamp"]', { timeout: 3000 }).catch(() => null)) && /Stamp again/.test(await page.textContent('#gm-stamp')), 'a changed effect offers Stamp again');
+  const again = await page.$eval('#gm-stamp', (s) => { const b = s.querySelector('[data-gm="stamp"]').getBoundingClientRect(), w = s.getBoundingClientRect(), d = s.querySelector('[data-gm="stamp-down"]').getBoundingClientRect(), c = s.querySelector('[data-gm="stamp-clean"]').getBoundingClientRect();
+    return { full: b.width >= w.width - 2, row: Math.abs(d.top - c.top) < 2, text: s.querySelector('.gm-rl-up').textContent };
+  });
+  check(again.full && again.row && /Changed since it went up/.test(again.text), 'Stamp again is the full-width button, plainly worded, and Take it down with Clean share one row ' + JSON.stringify(again));
   await page.click('#gm-stamp [data-gm="stamp"]');
   check(!!(await until(async () => { const o = await overlay(); return o && o.payload && o.payload.effect === 'limited'; }, 6000)), 'Stamp again puts what is set now on the iPad');
   await page.click('#gm-stamp [data-gm="stamp-down"]');
@@ -144,25 +149,26 @@ try {
   const order = await page.$eval('#gm-card article', (a) => [...a.children].map((k) => k.className.split(' ')[0]).slice(0, 3));
   check(order[0] === 'gm-card-h' && order[1] === 'gm-sz', 'header, then the strip, then the card ' + JSON.stringify(order));
   const sz = await page.textContent('#gm-card #gm-sz');
-  check(/Full size for risky/.test(sz) && /harm 2/.test(sz) && new RegExp(SHOW_LINE).test(sz), 'full size for the stamped position, with the promised line: ' + sz.replace(/\s+/g, ' ').slice(0, 140));
+  check(/Full size for risky/.test(sz) && /harm 2/.test(sz), 'full size for the stamped position: ' + sz.replace(/\s+/g, ' ').slice(0, 140));
+  check(new RegExp(SHOW_LINE).test(await page.textContent('#gm-card .gm-lead')) && !new RegExp(SHOW_LINE).test(sz), 'the lead spends the promised line, so the strip does not repeat it');
+  check(!!(await until(async () => (await lineVal()) === '' && (await gmState()).con.live.threat === '', 4000)), 'the threat landed: the Roll’s line is spent (field and store), so a later bare cue cannot put it back');
+  check(!(await page.$$eval('#gm-card [data-gm="intent"]', (b) => b.some((x) => /Threat spent/.test(x.textContent)))), 'and the card offers no "Threat spent": nothing is left to clear');
   check(/standard/i.test(await page.$eval('#gm-eff [aria-checked="true"]', (b) => b.textContent)), 'the roll is resolved: the effect is standard again');
+  const acts = await page.$eval('#gm-card .gm-card-acts', (r) => ({ bottom: Math.round(r.getBoundingClientRect().bottom), ids: [...r.querySelectorAll('button')].map((b) => b.getAttribute('data-gm') + (b.getAttribute('data-n') || '')), vh: innerHeight }));
+  check(acts.bottom <= acts.vh && acts.ids.includes('sz-reduce') && acts.ids.includes('sz-done') && !(await page.$('#gm-card #gm-sz button')), 'at 1366x768 the whole actions row (with Reduce and Hide size) is on screen; the strip holds no button ' + JSON.stringify(acts));
+  const hasPay = !!(await page.$('#gm-card details.gm-or[data-sec="payThePrice"]')), hasHarm = !!(await page.$('#gm-card details.gm-or[data-sec="harm"]')) || /^Harm\b/.test(await page.textContent('#gm-card .gm-lead-t'));
+  check(acts.ids.includes('qt4') === !hasPay && acts.ids.includes('qt7') === !hasHarm, 'Pay the price and Harm & resist only where the card has no such section ' + JSON.stringify({ hasPay, hasHarm }));
   await page.click('#gm-card [data-gm="sz-reduce"]');
-  check(/Full size for risky/.test(await page.textContent('#gm-card #gm-sz')) && /Tap again/.test(await page.textContent('#gm-card #gm-sz')), 'one tap only arms Reduce');
+  check(/Full size for risky/.test(await page.textContent('#gm-card #gm-sz')) && /Tap again/.test(await page.textContent('#gm-card .gm-card-acts')), 'one tap only arms Reduce');
   await page.click('#gm-card [data-gm="sz-reduce"]');
-  check(/Reduced to controlled/.test(await page.textContent('#gm-card #gm-sz')), 'the second tap reduces one step');
-  const hadPay = !!(await page.$('#gm-card details.gm-or[data-sec="payThePrice"]'));
-  await page.click('#gm-card [data-gm="qt"][data-n="4"]');
-  check(hadPay ? await page.$eval('#gm-card details.gm-or[data-sec="payThePrice"]', (d) => d.open) : /Pay the price/.test(await page.textContent('#gm-card h3')), 'Pay the price: this card’s own row opens (no new roll)');
-  check(!!(await page.$('#gm-card #gm-sz:not([hidden])')), 'and the strip stays with its card');
+  check(/Reduced to controlled/.test(await page.textContent('#gm-card #gm-sz')) && !!(await page.$('#gm-card [data-gm="sz-restore"]')), 'the second tap reduces one step, and Restore is offered');
   await blur(page); await page.keyboard.press('1');
-  check(!!(await until(async () => !(await page.$('#gm-card #gm-sz:not([hidden])')), 3000)), 'a Before card: the last roll’s size goes with its card');
+  check(!!(await until(async () => !(await page.$('#gm-card #gm-sz:not([hidden])')) && !(await page.$('#gm-card [data-gm="sz-reduce"], #gm-card [data-gm="sz-restore"]')), 3000)), 'a Before card: the last roll’s size and its buttons go with its card');
 
   /* ---- the line follows the crew, stays empty once emptied, and setThreat fills it ---- */
-  await page.click('[data-gm="line-clear"]');
-  check((await lineVal()) === '' && !!(await until(async () => (await gmState()).con.live.threat === '', 5000)), '× empties the line (the store too)');
   await page.click('#gm-pos [data-v="controlled"]');
   await sleep(500);
-  check((await lineVal()) === '', 'emptied in the Showroom, it stays empty there');
+  check((await lineVal()) === '', 'spent in the Showroom, the line stays empty there');
   const crew = (await gmState()).ball.crew, moved = {};
   for (const [id, v] of Object.entries(crew)) moved[id] = Object.assign({}, v, { room: 'Cocktail lounge' });
   check(await page.evaluate((c) => window.B68GmPage._ballSet({ crew: c }), moved), 'the crew moves to the Cocktail lounge');
@@ -173,6 +179,8 @@ try {
   const back = {}; for (const [id, v] of Object.entries(crew)) back[id] = Object.assign({}, v, { room: 'Showroom' });
   await page.evaluate((c) => window.B68GmPage._ballSet({ crew: c }), back); await sleep(800);
   check((await lineVal()) === 'A waiter drops a tray of glasses', 'a line set on purpose is never replaced by the room');
+  await page.click('[data-gm="line-clear"]');
+  check((await lineVal()) === '' && !!(await until(async () => (await gmState()).con.live.threat === '', 5000)), '× empties the line (the store too)');
 
   /* ---- the folds ---- */
   check(await page.$eval('#gm-scenebox', (p) => p.hidden) && await page.$eval('#gm-earlier', (p) => p.hidden) && await page.$eval('#gm-singles', (p) => p.hidden), 'Scene, Earlier and More tables start folded');
@@ -185,6 +193,9 @@ try {
   check((await page.$$('#gm-singles [data-gm="roll"]')).length === 9, 'More tables: the nine single tables');
   const fb = await page.$eval('#gm-roll', (s) => s.scrollWidth <= s.clientWidth + 1);
   check(fb, 'the open folds fit the column');
+  const pan = await page.evaluate(() => { const e = document.querySelector('#gm-earlier'), s = document.querySelector('#gm-singles');
+    return { e: e.querySelector('.gm-rl-cap').textContent, s: s.querySelector('.gm-rl-cap').textContent, gap: Math.round(s.getBoundingClientRect().top - e.getBoundingClientRect().bottom), top: getComputedStyle(s).borderTopWidth }; });
+  check(/^Earlier/.test(pan.e) && /^More tables/.test(pan.s) && pan.gap >= 6 && pan.top !== '0px', 'both open: each panel names itself, and More tables is its own box under Earlier’s ' + JSON.stringify(pan));
   for (const s of ['#gm-scene', '[data-rlfold="earlier"]', '[data-rlfold="singles"]']) await page.click(s);
 
   /* ---- Focus: the keys and the position ---- */
@@ -204,6 +215,8 @@ try {
   const keys = await Ph.page.$$eval('#gm-buttons .gm-btn', (b) => b.map((x) => Math.round(x.getBoundingClientRect().top)));
   check(keys.length === 4 && new Set(keys).size === 1, 'the four keys in one row on the phone');
   check(await Ph.page.$eval('#gm-buttons .gm-btn', (b) => b.getBoundingClientRect().height >= 44), 'tall enough to tap');
+  const fab = await Ph.page.evaluate(() => { const d = document.querySelector('#gm-dots').getBoundingClientRect(), f = document.querySelector('.gm-fab').getBoundingClientRect(); return { dotsRight: Math.round(d.right), fabLeft: Math.round(f.left) }; });
+  check(fab.dotsRight <= fab.fabLeft, 'the Dots end left of the floating Capture button, wherever the page is scrolled ' + JSON.stringify(fab));
   await Ph.c.close();
 
   check(errors.length === 0, 'no console errors: ' + JSON.stringify(errors.slice(0, 3)));
