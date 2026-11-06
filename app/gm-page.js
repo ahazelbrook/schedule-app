@@ -6286,7 +6286,9 @@
   /* "Introduce" (suite 3.5, switch face.rolodex): the NPC's Rolodex card as a lower third on the iPad for about 20 seconds; revealed NPCs only (the server joins to them anyway) */
   function introHtml(id, rev) { return rev && b09On('face.rolodex') ? '<button type="button" class="btn sm" data-gm="npcintro" data-id="' + esc(id) + '" title="Flip their card up as a lower third on the iPad">Introduce</button>' : ''; }
   function npcIntroduce(id) {
-    var d = S.npcs[id], sh = shows(); if (!d || !sh) return;
+    var d = S.npcs[id], sh = shows();
+    if (!d) { toast('That person is not in the cast (yet): the cast is still loading, or they were taken out.', true); return; }      /* tech run: never a silent no */
+    if (!sh) { toast('Introduce needs the hosted app.', true); return; }
     if (d.revealed !== true) { toast('Reveal ' + (d.name || 'them') + ' first.', true); return; }
     sh.show('rolodex', { npcIds: [id] }, { key: 'intro-' + id, ms: 20000 }).then(function (r) { if (r !== null && r !== undefined) toast('Introducing ' + (d.name || 'them') + '.'); }, function () { toast('Could not introduce them on the iPad.', true); });
   }

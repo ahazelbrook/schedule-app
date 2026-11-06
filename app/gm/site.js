@@ -141,7 +141,7 @@
           redraw(); break;
         }
         case 'intel': if (k) k.intel(at('data-group')); redraw(); break;
-        case 'spot': { if (!sp) break; var id = at('data-id'); if (sp.held() === id) sp.narrator(); else Promise.resolve(sp.spotlight(id)).then(function (r) { if (r && r.ok && r.say) toast(r.say); }); break; }
+        case 'spot': { if (!sp) break; var id = at('data-id'); if (sp.held() === id) sp.narrator(); else Promise.resolve(sp.spotlight(id)).then(function (r) { if (r && r.say) toast(r.say, !r.ok); });      /* tech run: a refusal says why, never nothing */ break; }
         case 'down': if (sp) sp.narrator(); break;
         case 'expr': if (sp) sp.express(at('data-expr')); break;
         case 'sig': if (sp) sp.signature(); break;

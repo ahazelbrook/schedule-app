@@ -796,6 +796,19 @@ await test('reloader: after a jump of the clock back the wake-up finds the ten m
   await w.c.advance(9 * MIN); assert.deepEqual(w.ev, [], 'at the wake-up the wall clock says five minutes have gone, not ten');
   await w.c.advance(5 * MIN - 1); assert.deepEqual(w.ev, []); await w.c.advance(1); assert.deepEqual(w.ev, [['kept', 15 * MIN], ['reload', 15 * MIN]]);
 });
+await test('a new deploy: reloadForBuild reloads once the server names another build, at a quiet moment, at most once per half hour (tech run T2)', () => {
+  const T = 1800000000000, GAP = P.RELOAD.gapMs;
+  assert.equal(P.reloadForBuild(null, null, T, false), false, 'same build: never');
+  assert.equal(P.reloadForBuild('', null, T, false), false);
+  assert.equal(P.reloadForBuild('2026-11-07-abc1234', null, T, false), true, 'a new build, never reloaded: now');
+  assert.equal(P.reloadForBuild('2026-11-07-abc1234', null, T, true), false, 'not while something is laid over the picture or the theme plays');
+  assert.equal(P.reloadForBuild('2026-11-07-abc1234', T - 60000, T, false), false, 'a reload a minute ago (it came back on the old build): no loop');
+  assert.equal(P.reloadForBuild('2026-11-07-abc1234', T - GAP, T, false), true, 'half an hour on: again');
+  assert.equal(P.reloadForBuild('2026-11-07-abc1234', T + 60000, T, false), false, 'a stored time in the future (a clock set back): wait');
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'display-page.js'), 'utf8');
+  assert.ok(/on\(window, 'b68:runtime', buildCheck\)/.test(src) && /setInterval\(buildCheck, 30000\)/.test(src), 'the page checks on each runtime event and every 30 s');
+  assert.ok(/reloads\.remember\(now\)\) return;/.test(src), 'the time is stored before the reload, or there is no reload');
+});
 await test('reload store: both storages are written, the newer time wins, a blocked one is skipped, and nothing kept says so', () => {
   const KEY = P.RELOAD.key, mem = () => { const m = {}; return { m, getItem: (k) => (k in m ? m[k] : null), setItem: (k, v) => { m[k] = String(v); } }; };
   const boom = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };

@@ -600,6 +600,18 @@
       remember: function (ms) { var kept = false; each(function (st) { st.setItem(Pure.RELOAD.key, String(ms)); kept = true; }); return kept; }
     };
   };
+  /* ---------- a new deploy reaches the iPad by itself (tech run 06/11, T2) ----------
+     The server names its build on every answer (X-B68-Build; app/runtime/cf.js sets B68Runtime.status.newBuild when it is not this page's). The GM page
+     shows "Updated: reload", but the display covers the whole screen and nobody touches the iPad on its stand, so it ran the old build all night. It now
+     reloads itself, at a quiet moment (nothing laid over the picture, the theme not playing), and at most once per gapMs, the same stored time as the
+     signed-out reload (Pure.reloadStore), so a reload that comes back on the old build (a slow network, the cache) never loops.
+     reloadForBuild(newBuild, last, now, busy, gapMs) -> bool. Pure. */
+  Pure.reloadForBuild = function (newBuild, last, now, busy, gapMs) {
+    var gap = typeof gapMs === 'number' ? gapMs : Pure.RELOAD.gapMs;
+    if (!newBuild || busy) return false;
+    if (last === null || last === undefined) return true;
+    return now >= last && now - last >= gap;
+  };
 
   /* ---------- the ambient floor (GM.md, "Ambient scenes"; the plan: docs/history/AMBIENT-PLAN.md) ----------
      When no spotlight is up the display plays a self-contained scene full screen and rotates it. The registry below is the only
@@ -2039,6 +2051,17 @@
     } else {
       /* signed out for good (the adapter refuses every call once Access has ended the session): reload, once in a while (Pure.createReloader) */
       var reloads = Pure.reloadStore(window);
+      /* T2: a new deploy (the runtime's newBuild) reloads this page at a quiet moment, at most once per half hour (Pure.reloadForBuild) */
+      var buildCheck = function () {
+        if (s.dead) return;
+        var st = window.B68Runtime && window.B68Runtime.status, now = Date.now();
+        var busy = !!(s.ov && s.ov.node) || !!(s.music && s.music.state === 'playing');
+        if (!Pure.reloadForBuild(st && st.newBuild, reloads.last(), now, busy)) return;
+        if (!reloads.remember(now)) return;                       /* nowhere to note it: stay on this build rather than risk a loop */
+        try { window.location.reload(); } catch (e) { /* the page stays as it is */ }
+      };
+      s.offs.push(on(window, 'b68:runtime', buildCheck));
+      var buildTick = setInterval(buildCheck, 30000); s.offs.push(function () { clearInterval(buildTick); });
       s.reloader = Pure.createReloader({
         timers: { setTimeout: later, clearTimeout: clearLater },
         now: function () { return Date.now(); },
@@ -2083,6 +2106,8 @@
       if (!document.hidden) { acquireWake(); paintStatus(); }
     }));
     s.offs.push(on(window, 'online', function () { if (s.poller) { s.poller.reset(); s.poller.kick(); } }));
+    /* T2: Safari brings a page back from its back-forward cache, or the iPad wakes, without a visibilitychange: look at once, and forget the backoff */
+    s.offs.push(on(window, 'pageshow', function () { if (s.poller) { s.poller.reset(); s.poller.kick(); } }), on(window, 'focus', function () { if (s.poller) s.poller.kick(); }));
     acquireWake();
     /* the first tap or touch is also the user gesture the wake lock sometimes wants */
     s.offs.push(on(container, 'pointerdown', acquireWake, { passive: true }));
