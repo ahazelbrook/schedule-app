@@ -242,8 +242,11 @@ try {
   await shot(C.page, 'band-curfew-call-1366');
   await C.page.click('#gm-band [data-band="call"]');
   check(await until(async () => ((await gmState()).night || {}).phase === 'after', 5000), 'Call the Aftermath moves the night to the Aftermath');
-  const places = await C.page.evaluate(() => !!(window.B68GmPlaces && typeof window.B68GmPlaces.goPlace === 'function'));
-  if (places) check(await until(async () => C.page.$eval('#gm-band [data-band-place="after"]', (e) => e.getAttribute('aria-current') === 'true'), 4000), 'and the page goes to the Aftermath place');
+  const places = await C.page.evaluate(() => !!(window.B68GmPage && typeof window.B68GmPage._places === 'function' && window.B68GmPage._places()));
+  if (places) {
+    check(await until(async () => C.page.$eval('#gm-band [data-band-place="after"]', (e) => e.getAttribute('aria-current') === 'true'), 4000) && await C.page.$eval('#gm-root', (r) => r.getAttribute('data-place')) === 'after', 'and the page goes to the Aftermath place (the places, N1b), its chip selected in the band');
+    check(await until(async () => !!(await C.page.$('#gm-sheet-aftermath:not([hidden]), [data-inline="aftermath"]')), 5000), 'where the Aftermath show is open');
+  }
   else check(await until(async () => !!(await C.page.$('#gm-sheet-aftermath:not([hidden]), .gm-inline [data-tool="aftermath"], .gm-inline .gm-aft')), 5000), 'and the Aftermath show opens (no places registry on this page)');
   check(await until(async () => (await C.page.$eval('#gm-band .gm-band-r2', (e) => e.getAttribute('data-alarm'))) === '', 4000), 'the row is calm again');
   await C.c.close();
