@@ -6172,7 +6172,7 @@
       pre = typeof ref.update === 'function' ? Promise.resolve().then(function () { return ref.update(clone(p)); }) : Promise.resolve().then(function () { return ref.set(Object.assign({}, clone(d), clone(p))); });
     }
     pre.then(function () { var o = {}; o[id] = on; return api.saveScene({ npcs: o, at: nowIso() }); })
-      .then(function () { if (S === me) toast(on ? name + ' is on stage.' : name + ' is off the stage.'); }, function (e) { toast('Could not change the stage for ' + name + ': ' + errText(e), true); });
+      .then(function () { if (S === me) toast(on ? name + ' is on stage: on the players’ phones, not the iPad. Show on iPad puts them up there.' : name + ' is off the stage.'); }, function (e) { toast('Could not change the stage for ' + name + ': ' + errText(e), true); });
   }
 
   /* ---------- the NPC generator: a roll is a seed and the repeat-guard memory, so it replays after a reload ---------- */
@@ -6292,8 +6292,16 @@
   }
   function npcToIpad(id) {
     var d = S.npcs[id]; if (!d) return;
-    if (d.revealed !== true && !W.confirm((d.name || 'This NPC') + ' is hidden from the players. Show them on the iPad anyway?')) return;
-    pushDisplay({ kind: 'npc', npcId: id, title: str(d.name).slice(0, 2000) }).then(function () { toast('On the iPad: ' + (d.name || 'the NPC') + '.'); }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
+    /* tech run T3: a hidden person is revealed first, as the site's Spotlight does it ("Reveal and show?"): the iPad's own sign-in is served a pushed NPC only
+       once revealed (the display GET joins it), so showing a hidden one "anyway" drew "Not found" there */
+    var pre = Promise.resolve();
+    if (d.revealed !== true) {
+      if (!W.confirm('Reveal and show? ' + (d.name || 'This NPC') + ' is hidden from the players. This reveals them to everyone and shows them on the iPad.')) return;
+      var ref = npcRef(id); if (!ref) { toast('The cast is not available here.', true); return; }
+      pre = Promise.resolve().then(function () { return ref.update({ revealed: true, firstSeen: d.firstSeen || nowIso() }); });
+    }
+    pre.then(function () { return pushDisplay({ kind: 'npc', npcId: id, title: str(d.name).slice(0, 2000) }); })
+      .then(function () { toast('On the iPad: ' + (d.name || 'the NPC') + '.'); }, function (e) { if (!e || !e.superseded) toast('Could not show ' + (d.name || 'them') + ' on the iPad: ' + errText(e), true); });
   }
 
   /* ---------- the Prep tab (gm/prep.js; GM.md "Prep"): the prep notes from the pack, ticks and beats in the GM state ---------- */

@@ -2014,6 +2014,9 @@
       ovLightsOut(vm.kind === 'dark');                                          /* lights out: no autopilot overlay, no AUTO chip */
       wireSync();
       if (vm.kind === 'npc') {
+        /* tech run T3: the server joins a revealed NPC's player view to the display it serves (display.npc), which the display-only sign-in needs: it
+           cannot read the cast, so it drew "Not found". Without it (a hidden NPC, an older server) the page reads the cast as before. */
+        if (display && isObj(display.npc)) { swap(buildStage(Pure.viewModel(display, display.npc), seq, ctx)); return; }
         loadNpc(ctx, vm.npcId).then(function (doc) {
           if (s.dead || my !== s.token) return;                       /* a newer push arrived while the cast was loading */
           swap(buildStage(Pure.viewModel(display, doc), seq, ctx));
