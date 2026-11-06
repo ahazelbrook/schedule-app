@@ -70,7 +70,7 @@ const CHECKS = [
   ['checks/runtime/aftermath.e2e.mjs', 'the Aftermath show: Menu entry, the eight steps on the iPad, the phone commendations, the credits, off again (9110)'],
   ['checks/runtime/gm-autopilot.e2e.mjs', 'the iPad autopilot: a clock overlay, Take over, secrecy, lights out, display-only expiry (8879)'],
   ['checks/runtime/hard-start.e2e.mjs', 'the hard start and the ON AIR lamp on the iPad, switches off and on (9060)'],
-  ['checks/runtime/gm-tools-inline.e2e.mjs', 'the 18 tools inline: bound to a container at 330 and 900 px, real content, close asks the shell, no request after unbind (8951; starts its own demo night)'],
+  ['checks/runtime/gm-tools-inline.e2e.mjs', 'the 18 tools and the Music inline: bound to a container at 330 and 900 px, real content, close asks the shell, no request after unbind (8951; starts its own demo night)'],
   ['checks/runtime/gm-places.e2e.mjs', 'the places of the night: Before, Ctrl+arrows, entering and following the phase, extra views, Prep at the heading, Find, the desks, Call the Aftermath, the memory, the phone (8860; starts its own demo night)'],
   ['checks/runtime/gm-map-spotted.e2e.mjs', 'the Spotted beat on the Run map: zoom, sting, fill, one alarm tick, back, inside 3 seconds; two GM pages tick once (9071)'],
   ['checks/runtime/gm-map-flashback.e2e.mjs', 'the flashback filter: Flashback and Pin on the site\'s toolbar, grain and the Earlier caption on the iPad, a tap on Back clears it, switch off and on (9072)'],
@@ -80,6 +80,7 @@ const CHECKS = [
   ['checks/runtime/gm-title-card.e2e.mjs', 'the score title card: GO into the Score phase puts a six-second scoretitle beat on the iPad (the site and its storeys, no room name), the name lands last, reduced motion stills it, switch off and on (9202)'],
   ['checks/runtime/gm-cue-stack.e2e.mjs', 'the cue stack on the real GM page: STANDBY, Space and Bypass, two GOs within 500 ms fire once, Esc to the safe scene inside a second and Resume, a typed "Blade, go", All off (9040)'],
   ['checks/runtime/gm-band.e2e.mjs', 'the band (N1a): four widths in three states with no overlap and nothing off the screen, the places enter phases, Ctrl+arrows, Call the Aftermath, Esc in order, keys held behind an open thing, PANIC without cues, the quiet badge (8810)'],
+  ['checks/runtime/music.e2e.mjs', 'the Music desk (M1): three playlists filled through the picker, Play on a tap, Tension in the Score, Action on a Desperate 1–3, a held mood and Auto, PANIC and Resume, Stop, a reload waits, Esc, no audio sent, fit at 1366/1536/390 (8601; starts its own demo night)'],
 ];
 
 const want = process.argv.slice(2);

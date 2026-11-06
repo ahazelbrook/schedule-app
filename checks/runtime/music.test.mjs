@@ -3,6 +3,7 @@
 //   node checks/runtime/music.test.mjs
 import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const M = require('../../app/gm/music.js');
@@ -294,10 +295,11 @@ await test('the player: a track that ends goes to the next in the same mood; Nex
   assert.notEqual(r.ctl.state().trackId, second);
   await r.run(2100);
   const b = live(r)[0];
-  r.ctl.pause(); await r.run(500);
-  assert.ok(b.paused && b.src, 'paused, the track still loaded');
-  r.ctl.play(); await r.flush(); await r.run(1600);
-  assert.ok(!b.paused && b.volume > 0.5, 'the same element plays on');
+  r.ctl.toggle(); await r.run(500);      /* the popover's ▶/❚❚ */
+  assert.ok(b.paused && b.src, 'paused, the track still loaded'); assert.equal(r.ctl.state().playing, false);
+  r.ctl.toggle(); await r.flush(); await r.run(1600);
+  assert.ok(!b.paused && b.volume > 0.5, 'the same element plays on'); assert.equal(r.ctl.state().playing, true);
+  assert.equal(typeof r.ctl.toggleSheet, 'function', 'the sheet has its own toggle (it must never shadow ▶/❚❚)');
 });
 
 await test('the library: add (audio only), remove, clear asks first; the volume and the output are remembered', async () => {
@@ -335,6 +337,12 @@ await test('cue GO: a music cue calls the host with the mood and fails softly wi
   const none = mk(undefined);
   const r2 = await none.go('button');
   assert.equal(r2.ok, false);
+});
+
+await test('the iPad view’s Music setting says it is the iPad’s own sound and points to the laptop’s playlists', () => {
+  const src = readFileSync(new URL('../../app/gm/settings.js', import.meta.url), 'utf8');
+  const line = src.split(/\r?\n/).filter((l) => l.includes("key: 'room.music'"))[0] || '';
+  assert.match(line, /The iPad’s own sound/); assert.match(line, /Before > The room > Music/);
 });
 
 console.log((failed ? failed + ' FAILED' : 'ALL PASSED') + ' (' + passed + ' passed)');

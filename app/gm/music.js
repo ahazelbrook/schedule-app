@@ -33,7 +33,7 @@
      ctl.load() -> Promise          ctl.tick()  (the page calls it each second; also every(…) when given)
      ctl.play() ctl.pause() ctl.toggle() ctl.next() ctl.setMode('auto' | mood | 'off') ctl.stop() ctl.setVol(0..100) ctl.cue(word) -> bool
      ctl.add(files, list) -> Promise<n>   ctl.remove(id)   ctl.clear(list)   ctl.tracks() -> [track]   ctl.state() -> { mode, mood, playing, ... }
-     ctl.open() ctl.render(box)  the Music tool (the library, the output, the storage)
+     ctl.open() ctl.toggleSheet() ctl.render(box)  the Music tool (the library, the output, the storage)
      ctl.mountPill(slot) ctl.paintPill() ctl.popOpen() ctl.closePop()   the band's pill and its popover (B68GmEsc, priority 70)
      ctl.destroy() */
 (function (root, factory) {
@@ -435,7 +435,8 @@
     /* ---- the Music tool (Before > The room, and Find) ---- */
     function libHtml() {
       var st = ctl.state(), c = counts();
-      var head = '<p class="gm-dim gm-mu-about">Three playlists on this laptop. On <b>Auto</b> Blade cuts between them: Hanging around outside the Score, Tension in it, Action when the alarm is near the top, a chase runs, Spotted ticks it or a Desperate 1–3 lands. The files stay in this browser and are never uploaded.</p>';
+      var head = '<p class="gm-dim gm-mu-about">Three playlists on this laptop. On <b>Auto</b> Blade cuts between them: Hanging around outside the Score, Tension in it, ' +
+        'Action when the alarm is near the top, a chase runs, Spotted ticks it or a Desperate 1–3 lands. The files stay in this browser and are never uploaded.</p>';
       var lists = MOODS.map(function (l) {
         var ts = tracks.filter(function (t) { return t.list === l; }), sm = summary(tracks, l), on = st.playing && st.list === l;
         var fb = !c[l] && pick(l, c) ? '<p class="gm-dim gm-mu-fb">Empty: ' + esc(LABEL[l]) + ' plays ' + esc(LABEL[pick(l, c)]) + ' instead.</p>' : '';
@@ -493,7 +494,7 @@
     };
     function sheet() { var Wk = W && W.B68GmWorkshop, r = typeof h.root === 'function' ? h.root() : null; return Wk && r ? Wk.sheet(r, 'music', 'Music') : null; }
     ctl.open = function () { var s = sheet(); if (!s) return false; ctl.render(s.body); s.open(); estimate(); return true; };
-    ctl.toggle = function () { var s = sheet(); if (s && s.isOpen()) { s.close(); return false; } return ctl.open(); };
+    ctl.toggleSheet = function () { var s = sheet(); if (s && s.isOpen()) { s.close(); return false; } return ctl.open(); };
 
     /* ---- the band's pill and its popover ---- */
     function pillText() {

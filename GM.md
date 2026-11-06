@@ -1088,6 +1088,25 @@ A local Worker holding one complete, invented night, for looking at the app and 
 - **"Blade, go."** Fires only the cue in standby. With nothing in standby it does nothing but say so. `go planning` (and the other phases) is still the cue grammar's, while `ai.grammar` is on.
 - **PANIC (the band's last button, or Esc).** The button, or an Esc with nothing open, no field and no stamp up (Esc closes those first, one per press: see Keys), clears every beat, layer and spotlight on the iPad and pins the safe scene (which plays no music, so the theme stops with its scene), all in parallel, with or without cues in the note; the band's second row turns red with WORK LIGHT UP. GO is refused until **Resume**, which puts the previous scene back. The position and the panic live in the GM state document (`cues`), so a reload or a second GM page follows.
 - **Tests.** `npm run check:cue-stack` (unit, in `check:runtime`) and `npm run check:cue-stack-e2e` (port 9040).
+- **`music:` cues (M1).** `7. music: action` (also `tension`, `calm` or `hanging around`, `auto`, `off`): GO sets the laptop's music exactly as a tap on that mood in the band's music popover would (a mood holds until Auto; `off` fades it out). See "The music" below.
+
+## The music (M1: `app/gm/music.js`; the laptop's playlists that Blade cuts between)
+
+The room's music plays from the **GM laptop** to the speaker chosen here (the Bluetooth speaker), never from the iPad (the iPad cannot set a volume, needs a tap first, and its Bluetooth is busy with the mic). The iPad keeps its own sound (`theme.mp3` under the Opening credits, `app/display/room-audio.js`); the iPad view's Settings row "Music" is about that sound only.
+
+- **The library: Before › The room › Music** (also in Find). Three playlists: **Hanging around** (`calm`), **Tension** and **Action**. **Add tracks** opens a picker for many files at once (mp3, m4a, aac, ogg, wav, flac); dropping files on a playlist adds them too. Each track is kept in IndexedDB `b68-gm-music` **in this browser on this laptop only**: never uploaded, never in the pack, never precached, never in git. Each playlist shows `n tracks · m min`; × removes one; **Clear** asks first. The page asks the browser once to keep the files (`navigator.storage.persist()`) and shows the storage used. Keep the originals: a browser that clears its site data clears them too.
+- **The output.** "This laptop's default output", then the named outputs (pair the speaker first; Find speakers lists them again). **Test** plays 3 s on it (the first track, or a soft chord). The choices live in localStorage `b68.gm.music` = `{ sink, vol, auto, mood }`.
+- **The band.** A pill beside the mic in row 2: `♪ Tension`, an **A** while on Auto, ▶ while playing or ❚❚ while paused. A tap opens its popover (Esc closes it, priority 70): **▶ Play / ❚❚ Pause**, **Next track**, the one segmented control **Hanging around · Tension · Action · Auto · Stop**, the volume (default 60), what is playing, and **Library…**. Hidden on a phone: the phone is not the player.
+- **It never starts by itself.** The first Play is a GM tap (▶, a mood, Auto, or GO on a `music:` cue). After a reload it waits, paused, until one.
+- **The player.** Two `<audio>` elements on the chosen output, crossfaded. Each playlist is a shuffle bag (no repeats until all have played; never the same track twice running). A track's end goes to the next of the same mood (2 s crossfade); a mood change crossfades in 4 s. An empty playlist falls back (Action → Tension → Hanging around; Tension → Hanging around → Action; Hanging around → Tension → Action); with no tracks at all it is silent and the pill says where to add them.
+- **Auto: when Blade cuts** (`moodOf`, every rule unit-tested with a fake clock):
+  - the Score is **Tension**; any other phase, or none, is **Hanging around**;
+  - **Action**, in the Score only, while the site's ONE alarm is at its top two levels or a chase runs, and when the alarm gains a tick (Spotted) or a Desperate 1–3 is marked; it holds 90 s after the last of these, then back to Tension;
+  - stepping up is at once; stepping down waits until 60 s after the last cut (no flapping);
+  - a tapped mood holds until **Auto** is tapped; the night is still followed underneath, so Auto takes over at once. **Stop** fades out.
+- **PANIC** fades the music to silence in 1 s while the work light is up (the tracks keep their place); **Resume** brings it back. While the iPad shows the **Opening credits** scene (it plays the theme), the laptop music fades down, and comes back after.
+- **Not built (M1):** the dip for "Blade" (the GM page reads the transcript only on the cue lane's poll, seconds late) and the voice verb "Blade, music action". Both are on the list for after the first night.
+- **Tests.** `checks/runtime/music.test.mjs` (in `check:runtime`) and `checks/runtime/music.e2e.mjs` (its own demo night, port 8601; in `check:e2e-all`): `npm run check:music` runs both.
 
 ## Live sync (`functions/_lib/live.js`, `worker/live.js`, `functions/api/live.js`)
 
