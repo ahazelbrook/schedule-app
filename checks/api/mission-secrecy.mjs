@@ -16,6 +16,7 @@ import { memoryExec, asD1 } from '../../scripts/lib/d1.mjs';
 import { worker } from '../../worker/app.js';
 import { MISSION_LIMITS as L } from '../../functions/_lib/campaign.js';
 import * as SEC from '../runtime/fixtures/gm/mission-secrecy-lib.mjs';
+import Features from '../../app/features.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const req = createRequire(import.meta.url);
@@ -57,7 +58,8 @@ const ST = { v: 2, site: 'The Pelican Rooms', start: 45, t: 135, crew: { pc_a: {
   told: { I1: ['pc_a'], I2: ['pc_a'], I3: ['pc_b'] }, heard: { A: { pc_a: 90 }, B: { pc_b: 95 } }, steps: {}, ways: {}, over: {} };
 const CLOCKS = [{ name: 'Fuse', filled: 2, hidden: false }];
 const NOTES = Object.fromEntries(ROOMS.map((r) => [r, { costume: 'A grey uniform', say: ['Monitors flicker'] }]));   // a room note for every room: the card's costume line and here lines
-const build = (st, seq, pcs = PCS) => PUB.buildMission(BALL, { play: mkPlay(), state: st, clocks: CLOCKS, pcs, open: ROOMS, rooms: NOTES }, seq);
+/* phoneCards: the page builds the cards only while the GM has phone cards on (ticket P; Menu > Settings > Phones since N0), which is what this check is about */
+const build = (st, seq, pcs = PCS) => PUB.buildMission(BALL, { play: mkPlay(), state: st, clocks: CLOCKS, pcs, open: ROOMS, rooms: NOTES, phoneCards: true }, seq);
 const clone = (x) => JSON.parse(JSON.stringify(x));
 
 // string leaves of a mission, as paths (arrays), the card ids included as { id }
@@ -113,7 +115,8 @@ await step('the display GET, in every form: no answer holds a card\'s own string
   const never = [...own, ...SEC.cardPool(FX), ...SEC.markers(FX), 'pc_a', 'pc_b', ALEX, BEA];
   const hseqs = [null, '0', '7', '6', '8', '1', '99999', '-1', 'abc', '', '7.0', '07x', '9'.repeat(30), '%00', '0x7', '7%20', '7&hseq=8'];
   const bases = ['', 'seq=0', 'seq=99999', 'seq=0&aseq=0', 'seq=0&aseq=0&sseq=0', 'seq=99999&aseq=99999&sseq=99999'];
-  const KNOWN = new Set(['seq', 'display', 'updatedAt', 'ambient', 'stt', 'overlay', 'live', 'unchanged', 'mission', 'now']);
+  const KNOWN = new Set(['seq', 'display', 'updatedAt', 'ambient', 'stt', 'overlay', 'live', 'unchanged', 'mission', 'now', 'features']);
+  const PUBLIC = new Set(Features.publicIds());      /* N0: the served map (every display and phone line, a setting as stored) rides beside the band: only public ids, only booleans */
   let served = 0, unchanged = 0, absent = 0, asked = 0, answers = 0;
   for (const user of [IPAD, GM]) for (const b of bases) for (const h of hseqs) {
     const qs = [b, h === null ? '' : 'hseq=' + h].filter(Boolean).join('&');
@@ -123,6 +126,7 @@ await step('the display GET, in every form: no answer holds a card\'s own string
     for (const w of never) expect(!r.text.toLowerCase().includes(w.toLowerCase()), user + ' ' + qs + ': "' + w + '" is in the display answer: ' + r.text.slice(0, 200));
     expect(!deepKeys(r.json).includes('cards'), qs + ': a cards key');
     for (const k of Object.keys(r.json)) expect(KNOWN.has(k), qs + ': an unexpected top-level key ' + k);
+    if ('features' in r.json) expect(Object.entries(r.json.features).every(([k, v]) => PUBLIC.has(k) && typeof v === 'boolean'), qs + ': features holds a non-public id or a non-boolean: ' + JSON.stringify(r.json.features));
     if (h === null) { expect(!('mission' in r.json), qs + ': a mission without hseq'); absent++; continue; }
     asked++;
     const part = r.json.mission;

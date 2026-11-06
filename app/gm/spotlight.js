@@ -1,21 +1,28 @@
-/* gm/spotlight.js — the stage bar and the held spotlight (suite 3.1, switch face.spotlight).
+/* gm/spotlight.js — the people in a room, and the held spotlight (suite 3.1; the GM night rebuild, N3: the site).
 
    Plain script, UMD: window.B68GmSpotlight in the browser, module.exports under Node. GM side only; create(host) reaches the page only through its host.
 
-   THE STAGE BAR. Up to three NPCs held ready for this room, on the GM screen. They are taken from the room's "Who:" line in the prep note (whoNames), matched to the
-   cast by name or alias, and editable: add one by name, take one off. The bar is page-local; nothing about it reaches the iPad or a phone.
-   SPOTLIGHT. One tap holds that NPC's portrait on the iPad: the `npc` overlay, laid for the longest time the server allows and laid again before it runs out, so it
-   stays still. "Narrator" clears it (only while the overlay up is still this one). "Blade, spotlight <name>" does the same by voice (holdByName).
-   A HIDDEN NPC asks "Reveal and show?" first; a no leaves them hidden and shows nothing. The server drops a hidden NPC's overlay anyway.
+   WHO'S HERE. A room's card on the site lists its people, each a row: the play's people the night places there at the time shown, then the names on the room's
+   "Who:" line in the prep note (whoNames), then anyone the GM added to that room on this page. Names are matched to the cast by name or alias (an ambiguous or
+   unknown name is left out). The rows are page-local; nothing about them reaches the iPad or a phone. (They replace the old stage bar box.)
+   SPOTLIGHT. One tap holds that person's portrait on the iPad: the `npc` overlay, laid for the longest time the server allows and laid again before it runs out, so
+   it stays still. "Take it down" clears it (only while the overlay up is still this one). "Blade, spotlight <name>" does the same by voice (holdByName: the people of
+   the room in focus first, then the whole cast). A HIDDEN person asks "Reveal and show?" first; a no leaves them hidden and shows nothing. The server drops a hidden
+   person's overlay anyway.
+   THE FACE LOOKS (suite 3.2, 3.3): while someone is held, their row offers the expressions and the signature pose (gm/face-looks.js); only NAMES are sent.
 
    API
-     MAX whoNames(md) -> [name]      matchNpcs(names, npcs) -> [npc]      (npc = { id, name, alias?, revealed })
+     MAX whoNames(md) -> [name]      matchNpcs(names, npcs) -> [npc]      (npc = { id, name, alias?, role?, revealed })
+     peopleFor({ here, md, npcs, extra }) -> [row]       here: [{ label, kind, npc, moving }] the play's people in the room now; extra: [npc id]
+       row = { id (the cast id, '' for a play person the cast lacks), name, alias, role, kind, revealed, here, moving, added }
+     rowsHtml(rows, view, opts, esc) -> HTML the rows and the Add field; opts: { room, face(row) -> html | '', card(row) -> bool, introduce: bool }
      create(host) -> controller
-       host: { notes(npcId) -> the NPC's GM notes (the face looks read a Tell, Signature and Relation line from them), feature(id) -> bool, npcs() -> [npc], roomKey() -> string, roomMd() -> Markdown of the room the crew are in | '', hold(npcId, ms, look?) -> Promise<answer | null>,
-               clear() -> Promise, overlayId() -> the id of the overlay up now, confirm(msg) -> bool, reveal(npcId) -> Promise, toast, changed(),
+       host: { feature(id) -> bool, npcs() -> [npc], roomMd(room) -> Markdown, here(room) -> [play person], focusRoom() -> room name,
+               hold(npcId, ms, look?) -> Promise<answer | null>, clear() -> Promise, overlayId() -> the id of the overlay up now, confirm(msg) -> bool,
+               reveal(npcId) -> Promise, notes(npcId) -> the person's GM notes (the face looks read Tell, Signature and Relation), toast, changed(),
                setTimeout, clearTimeout }
-       controller: seed() bar() add(name) remove(id) spotlight(id) narrator() holdByName(name) held() view() reset() express(name) signature()
-       THE FACE LOOKS (suite 3.2, 3.3): with face.expressions or face.formats on, the held person may carry a `look` (gm/face-looks.js); with both off nothing is sent that was not sent before. */
+       controller: people(room) add(room, name) remove(room, id) spotlight(id) narrator() holdByName(name) held() view() reset() express(name) signature()
+   Every action is a data-site button (spot, intro, card, expr, sig, down, who-x) or the form data-site="who-add"; the page routes them. */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -29,6 +36,7 @@
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
   function fold(s) { return str(s).toLowerCase().replace(/[‘’]/g, "'").replace(/\s+/g, ' ').trim(); }
+  function esc0(s) { return str(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function plain(s) {
     return str(s).replace(/!?\[\[([^\]|]*)\|([^\]]*)\]\]/g, '$2').replace(/!?\[\[([^\]]*)\]\]/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*_`~=]+/g, '').replace(/\s+/g, ' ').trim();
   }
@@ -57,10 +65,60 @@
     });
     return out;
   }
+  function castRow(n, extra) {
+    return Object.assign({ id: str(n.id), name: str(n.name), alias: str(n.alias), role: str(n.role), kind: '', revealed: n.revealed === true, here: false, moving: null, added: false }, extra || {});
+  }
+  /* the room's people: the play's people placed here now, then the Who line, then the GM's own additions; one row a person */
+  function peopleFor(src) {
+    src = isObj(src) ? src : {};
+    var npcs = Array.isArray(src.npcs) ? src.npcs.filter(isObj) : [], out = [], seen = {};
+    function has(r) { var k = r.id ? 'n:' + r.id : 'p:' + fold(r.name); if (seen[k]) return true; seen[k] = 1; return false; }
+    (Array.isArray(src.here) ? src.here : []).forEach(function (p) {
+      if (!isObj(p)) return;
+      var hit = matchNpcs([p.npc], npcs)[0] || matchNpcs([p.label], npcs)[0] || null;
+      var mv = isObj(p.moving) ? { to: str(p.moving.to), inMin: p.moving.inMin } : null;
+      var r = hit ? castRow(hit, { kind: str(p.kind), here: true, moving: mv }) : { id: '', name: str(p.label) || str(p.npc), alias: '', role: '', kind: str(p.kind), revealed: false, here: true, moving: mv, added: false };
+      if (r.name && !has(r)) out.push(r);
+    });
+    matchNpcs(whoNames(src.md), npcs).forEach(function (n) { var r = castRow(n); if (!has(r)) out.push(r); });
+    (Array.isArray(src.extra) ? src.extra : []).forEach(function (id) { var n = npcs.filter(function (x) { return str(x.id) === id; })[0]; if (n) { var r = castRow(n, { added: true }); if (!has(r)) out.push(r); } });
+    return out;
+  }
+  function initials(name) { var o = ''; str(name).trim().split(/\s+/).filter(Boolean).slice(0, 2).forEach(function (w) { o += Array.from(w)[0].toUpperCase(); }); return o || '?'; }
+
+  function rowsHtml(rows, v, o, esc) {
+    esc = esc || esc0; o = o || {}; v = v || {};
+    var FL = req('B68GmFaceLooks', './face-looks.js'), room = str(o.room);
+    var h = '<ul class="rv-ppl">' + (rows.length ? rows.map(function (r) {
+      var held = !!r.id && v.held === r.id, face = typeof o.face === 'function' ? str(o.face(r)) : '';
+      var role = [r.kind, r.role].filter(Boolean).join(' · ');
+      var acts = '';
+      if (r.id) {
+        acts += '<button type="button" class="rv-btn sm rv-spot' + (held ? ' on' : '') + '" data-site="spot" data-id="' + esc(r.id) + '" aria-pressed="' + held + '" title="' +
+          (held ? 'Held on the iPad: Take it down below' : r.revealed ? 'Hold their portrait on the iPad' : 'Hidden from the players: asks Reveal and show? first') + '">' + (held ? '● On the iPad' : 'Spotlight') + '</button>';
+        if (o.introduce !== false) acts += '<button type="button" class="rv-btn sm" data-site="intro" data-id="' + esc(r.id) + '"' + (r.revealed ? ' title="Flip their card up as a lower third on the iPad"' : ' disabled title="Hidden from the players: reveal them first (Spotlight asks)"') + '>Introduce</button>';
+      }
+      if (typeof o.card === 'function' && o.card(r)) acts += '<button type="button" class="rv-btn sm" data-site="card" data-name="' + esc(r.name) + '"' + (r.alias ? ' data-alias="' + esc(r.alias) + '"' : '') + ' title="Their card, here on this screen">Card</button>';
+      if (r.added) acts += '<button type="button" class="rv-btn sm rv-px" data-site="who-x" data-id="' + esc(r.id) + '" data-room="' + esc(room) + '" aria-label="Take ' + esc(r.name) + ' off this room">×</button>';
+      var looks = '';
+      if (held) {
+        if (FL && v.faces) looks += FL.html(v.faces, esc);
+        looks += '<button type="button" class="rv-btn sm rv-down" data-site="down" title="Their portrait comes off the iPad">Take it down</button>';
+      }
+      return '<li class="rv-p' + (held ? ' held' : '') + (r.id && !r.revealed ? ' hidden' : '') + (r.id ? '' : ' nocast') + '" data-pid="' + esc(r.id) + '">' +
+        '<span class="rv-face" aria-hidden="true">' + (face || '<span class="rv-ini">' + esc(initials(r.name)) + '</span>') + '</span>' +
+        '<span class="rv-pn"><b>' + esc(r.name) + '</b>' + (r.id && !r.revealed ? ' <small class="rv-hid">hidden</small>' : '') +
+        (role ? '<span class="rv-prole">' + esc(role) + '</span>' : '') +
+        (r.moving ? '<span class="rv-pmove">→ ' + esc(r.moving.to) + ' in ' + esc(r.moving.inMin) + ' min</span>' : '') + '</span>' +
+        (acts ? '<span class="rv-pacts">' + acts + '</span>' : '') + (looks ? '<div class="rv-plooks">' + looks + '</div>' : '') + '</li>';
+    }).join('') : '<li class="rv-dim rv-pnone">Nobody here.</li>') + '</ul>';
+    if (room && o.add !== false) h += '<form class="rv-padd" data-site="who-add" data-room="' + esc(room) + '"><input type="text" name="who" autocomplete="off" spellcheck="false" placeholder="Add someone from the cast" aria-label="Add someone from the cast to ' + esc(room) + '"><button type="submit" class="rv-btn sm">Add</button></form>';
+    return h;
+  }
 
   function create(host) {
     host = host || {};
-    var ids = [], seededFor = null, heldId = '', timer = null, heldLook = null, FLk = req('B68GmFaceLooks', './face-looks.js'), looks = FLk ? FLk.create(host) : null;
+    var extra = {}, heldId = '', timer = null, heldLook = null, FLk = req('B68GmFaceLooks', './face-looks.js'), looks = FLk ? FLk.create(host) : null;
     function on() { return typeof host.feature === 'function' ? !!host.feature(SWITCH) : false; }
     function say(m, bad) { if (typeof host.toast === 'function') host.toast(m, !!bad); }
     function changed() { if (typeof host.changed === 'function') host.changed(); }
@@ -69,25 +127,21 @@
     function setT(fn, ms) { return typeof host.setTimeout === 'function' ? host.setTimeout(fn, ms) : setTimeout(fn, ms); }
     function clrT(h) { if (h == null) return; if (typeof host.clearTimeout === 'function') host.clearTimeout(h); else clearTimeout(h); }
 
-    /* fill the bar from the room's Who line when the room changes (and only then, so the GM's edits stay) */
-    function seed() {
-      if (!on()) return;
-      var key = typeof host.roomKey === 'function' ? str(host.roomKey()) : '';
-      if (key === seededFor) return;
-      seededFor = key;
-      ids = matchNpcs(whoNames(typeof host.roomMd === 'function' ? host.roomMd() : ''), npcs()).slice(0, MAX).map(function (n) { return n.id; });
-      changed();
+    function people(room) {
+      var r = str(room); if (!r) return [];
+      return peopleFor({ here: typeof host.here === 'function' ? host.here(r) : [], md: typeof host.roomMd === 'function' ? host.roomMd(r) : '', npcs: npcs(), extra: extra[r] || [] });
     }
-    function bar() { return ids.map(byId).filter(Boolean); }
-    function add(name) {
-      if (!on()) return false;
+    function add(room, name) {
+      var r = str(room); if (!on() || !r) return false;
       var got = matchNpcs([name], npcs());
       if (!got.length) { say('No one in the cast is called that, or more than one is.', true); return false; }
-      if (ids.indexOf(got[0].id) >= 0) return true;
-      if (ids.length >= MAX) { say('The stage bar holds three: take someone off first.', true); return false; }
-      ids.push(got[0].id); changed(); return true;
+      if (people(r).some(function (p) { return p.id === got[0].id; })) return true;
+      var l = extra[r] = extra[r] || [];
+      if (l.length >= MAX) { say('A room takes three more people at most: take someone off first.', true); return false; }
+      l.push(got[0].id); changed(); return true;
     }
-    function remove(id) { var i = ids.indexOf(id); if (i < 0) return false; ids.splice(i, 1); changed(); return true; }
+    function remove(room, id) { var l = extra[str(room)] || [], i = l.indexOf(id); if (i < 0) return false; l.splice(i, 1); changed(); return true; }
+    function extras(room) { return (extra[str(room)] || []).slice(); }
 
     function lay(id, look) { return Promise.resolve(look ? host.hold(id, HOLD_MS, look) : host.hold(id, HOLD_MS)); }
     function again(id) {
@@ -101,7 +155,7 @@
         lay(id, looks ? looks.relay(heldLook) : null).then(function (r) { if (r === null || r === undefined) { heldId = ''; heldLook = null; changed(); } else again(id); });
       }, REFRESH_MS);
     }
-    /* hold one NPC on the iPad -> Promise<{ ok, name, say }> */
+    /* hold one person on the iPad -> Promise<{ ok, name, say }> */
     function spotlight(id) {
       if (!on()) return Promise.resolve({ ok: false, say: '' });
       var n = byId(id); if (!n) return Promise.resolve({ ok: false, say: 'That person is not in the cast.' });
@@ -120,6 +174,7 @@
         });
       });
     }
+    /* Take it down (the old Narrator) */
     function narrator() {
       if (!on()) return Promise.resolve(false);
       clrT(timer); timer = null;
@@ -127,17 +182,18 @@
       if (!had) return Promise.resolve(false);
       return Promise.resolve(host.clear()).then(function () { return true; }, function () { return false; });
     }
-    /* "Blade, spotlight <name>": the bar first, then the whole cast; two of the same name are not guessed */
+    /* "Blade, spotlight <name>": the people of the room in focus first, then the whole cast; two of the same name are not guessed */
     function holdByName(name) {
       if (!on()) return null;
-      var f = fold(name), inBar = bar().filter(function (n) { return fold(n.name) === f || fold(n.alias) === f; });
-      var got = inBar.length === 1 ? inBar : matchNpcs([name], npcs());
+      var f = fold(name), room = typeof host.focusRoom === 'function' ? str(host.focusRoom()) : '';
+      var inRoom = people(room).filter(function (p) { return p.id && (fold(p.name) === f || fold(p.alias) === f); });
+      var got = inRoom.length === 1 ? [byId(inRoom[0].id)].filter(Boolean) : matchNpcs([name], npcs());
       if (got.length !== 1) return Promise.resolve({ ok: false, say: 'Which ' + name + '? Not found, or more than one.' });
       return spotlight(got[0].id);
     }
     function held() { return heldId; }
-    function view() { return { on: on(), bar: bar(), held: heldId, full: ids.length >= MAX, faces: looks && heldId ? looks.view(heldId) : null }; }
-    function reset() { ids = []; seededFor = null; heldId = ''; heldLook = null; clrT(timer); timer = null; }
+    function view() { var fv = looks && heldId ? looks.view(heldId) : null; if (fv) fv.cur = heldLook && heldLook.expr ? heldLook.expr : ''; return { on: on(), held: heldId, faces: fv }; }
+    function reset() { extra = {}; heldId = ''; heldLook = null; clrT(timer); timer = null; }
     /* the held person's expression (neutral, pleased, hostile, afraid, or their tell) and signature pose: laid again as a new overlay, so the iPad shows it afresh */
     function express(name) {
       if (!on() || !heldId || !looks) return Promise.resolve(false);
@@ -154,26 +210,9 @@
       var id = heldId;
       return lay(id, r.look).then(function (a) { if (a === null || a === undefined || heldId !== id) return false; again(id); return true; });     /* the pose is in this overlay only: the next renewal drops it */
     }
-    return { seed: seed, bar: bar, add: add, remove: remove, spotlight: spotlight, narrator: narrator, holdByName: holdByName, held: held, view: view, reset: reset, express: express, signature: signature, HOLD_MS: HOLD_MS };
+    function expression() { return heldLook && heldLook.expr ? heldLook.expr : ''; }
+    return { people: people, add: add, remove: remove, extras: extras, spotlight: spotlight, narrator: narrator, holdByName: holdByName, held: held, view: view, reset: reset, express: express, signature: signature, expression: expression, HOLD_MS: HOLD_MS };
   }
 
-  function html(v, esc) {
-    esc = esc || function (s) { return str(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
-    if (!v || !v.on) return '';
-    var h = '<div class="gm-bar-h"><span class="gm-lab">Stage bar</span> <span class="gm-dim">up to three, from this room’s Who line</span></div><ul class="gm-bar-list">';
-    h += v.bar.map(function (n) {
-      var held = v.held === n.id;
-      return '<li><button type="button" class="btn sm' + (held ? ' primary' : '') + '" data-b17="spot" data-id="' + esc(n.id) + '" aria-pressed="' + held + '">' + esc(n.name) + (n.revealed ? '' : ' (hidden)') + '</button> ' +
-        '<button type="button" class="btn sm" data-b17="bar-x" data-id="' + esc(n.id) + '" aria-label="Take ' + esc(n.name) + ' off the bar">×</button></li>';
-    }).join('');
-    h += '</ul>';
-    if (!v.full) h += '<form class="gm-bar-add" data-b17="bar-add"><input type="text" name="who" autocomplete="off" spellcheck="false" placeholder="Add a name" ' +
-      'aria-label="Add someone to the stage bar"> <button type="submit" class="btn sm">Add</button></form>';
-    var FLh = v.faces ? req('B68GmFaceLooks', './face-looks.js') : null;
-    if (FLh) h += FLh.html(v.faces, esc);
-    h += '<div class="gm-stage-acts"><button type="button" class="btn sm" data-b17="narrator"' + (v.held ? '' : ' disabled') + '>Narrator</button></div>';
-    return h;
-  }
-
-  return { SWITCH: SWITCH, MAX: MAX, HOLD_MS: HOLD_MS, REFRESH_MS: REFRESH_MS, whoNames: whoNames, matchNpcs: matchNpcs, create: create, html: html };
+  return { SWITCH: SWITCH, MAX: MAX, HOLD_MS: HOLD_MS, REFRESH_MS: REFRESH_MS, whoNames: whoNames, matchNpcs: matchNpcs, peopleFor: peopleFor, rowsHtml: rowsHtml, initials: initials, create: create };
 });

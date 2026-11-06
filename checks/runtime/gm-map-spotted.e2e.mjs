@@ -1,5 +1,5 @@
 // The Spotted beat on the Run map (suite 2.6, switch map.spotted; app/gm/map-spotted.js) in a real browser against a real local Worker, on an invented site (the Pelican Rooms).
-// Switch off: no button. Switch on: one tap zooms, stings (the spotted beat on the iPad), fills from the eyes, ticks the alarm clock once and returns, inside 3 seconds; with two
+// Everything built is on (N0): the button is there with nothing stored, and a stored false changes nothing. One tap zooms, stings (the spotted beat on the iPad), fills from the eyes, ticks the alarm clock once and returns, inside 3 seconds; with two
 // GM pages open a tap on both still ticks once. Every name is invented; no model, $0.
 //   PW_MODULE=<playwright install> PW_CHANNEL=msedge [PORT=9071] node checks/runtime/gm-map-spotted.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -88,6 +89,7 @@ try {
   const errors = [];
   async function open(run = true, w = 1366, h = 900) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: w, height: h }, serviceWorkers: 'block' });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -115,15 +117,15 @@ try {
   check((await api('PATCH', '/gm/state', { cards: { location: card }, loc: { map: { view: 'iso', theme: 'rulebook', layer: 'gm', reveal: OPEN_ALL } },
     ball: { site: NAME2, v: 2, start: 0, t: 100, crew: { 'run-pc1': { room: 'Showroom', disguise: 'guest' } } } })).status === 200, 'the v2 site on the GM layer, the crew in the Showroom');
 
-  /* ---- switch off: nothing is drawn ---- */
+  /* ---- everything on (N0): with NOTHING stored the button is on the map ---- */
   const A = await open();
-  check((await A.page.$$('.b19-btn, .b19-bar')).length === 0, 'switch off: no Spotted button on the map');
+  check((await A.page.$$('.rv-tools [data-site="spotted"]')).length === 1, 'nothing stored: one Spotted button, in the site\'s toolbar over the map (N3)');
   await A.c.close();
 
-  /* ---- switch on ---- */
-  check((await api('PATCH', '/gm/state', { features: { 'map.spotted': true } })).status === 200, 'map.spotted is switched on');
+  /* ---- a stored true (what the Switchboard used to write) is the same ---- */
+  check((await api('PATCH', '/gm/state', { features: { 'map.spotted': true } })).status === 200, 'a stored true is taken (and changes nothing)');
   const P = await open();
-  check((await P.page.$$('[data-b19="spotted"]')).length === 1, 'switch on: one Spotted button on the map');
+  check((await P.page.$$('.rv-tools [data-site="spotted"]')).length === 1, 'switch on: one Spotted button in the toolbar');
   const ambientDoc = async () => { const j = (await api('GET', '/gm/ambient')).json || {}; return j.doc || (j.ambient && j.ambient.doc) || {}; };
   await P.page.evaluate(() => {
     const w = (window.__b19 = { t0: 0, zoomedAt: 0, fillAt: 0, goneAt: 0, backAt: 0 });
@@ -140,7 +142,7 @@ try {
     w.start();
   });
   const tClick = Date.now();
-  await P.page.click('[data-b19="spotted"]');
+  await P.page.click('.rv-tools [data-site="spotted"]');
   const f3 = await until(async () => { const f = await fuse(); return f && f.filled === 3 ? f : null; }, 4000, 40);
   check(!!f3, 'the Fuse ticks to 3/6 (' + (Date.now() - tClick) + ' ms after the tap)');
   const m = await until(() => P.page.evaluate(() => (window.__b19.backAt ? window.__b19 : null)), 5000, 50);
@@ -158,17 +160,17 @@ try {
   /* ---- two GM pages open: a tap on each at once, still one tick ---- */
   check((await putClocks(1)).status === 200, 'the Fuse is put back to 1/6');
   const Q = await open();
-  await P.page.waitForSelector('[data-b19="spotted"]', { timeout: 20000 });
+  await P.page.waitForSelector('.rv-tools [data-site="spotted"]', { timeout: 20000 });
   await sleep(1500);
-  await Promise.all([P.page.click('[data-b19="spotted"]'), Q.page.click('[data-b19="spotted"]')]);
+  await Promise.all([P.page.click('.rv-tools [data-site="spotted"]'), Q.page.click('.rv-tools [data-site="spotted"]')]);
   await sleep(3500);
   const f2 = await fuse();
   check(!!f2 && f2.filled === 2, 'two GM pages tapped together: the Fuse is 2/6, ticked once (' + JSON.stringify(f2) + ')');
 
-  /* ---- off again: the button goes ---- */
-  check((await api('PATCH', '/gm/state', { features: { 'map.spotted': false } })).status === 200, 'switched off again');
+  /* ---- a stored false (the old All off) changes nothing ---- */
+  check((await api('PATCH', '/gm/state', { features: { 'map.spotted': false } })).status === 200, 'a stored false is taken');
   const R = await open();
-  check((await R.page.$$('[data-b19="spotted"]')).length === 0, 'switched off: no button again');
+  check((await R.page.$$('.rv-tools [data-site="spotted"]')).length === 1, 'a stored false changes nothing: the button stays');
 
   check(!errors.length, 'no page errors: ' + errors.slice(0, 3).join(' | '));
   await browser.close();

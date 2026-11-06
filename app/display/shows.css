@@ -31,6 +31,10 @@
 
 /* keyturn */
 .dp-key { width: 46vmin; height: auto; transform-origin: 19% 50%; }
+/* the GM night rebuild: the key turns about its bow inside a box as tall as the turned key, the bow at the box's centre, so the turned key hangs
+   in its own space and never over the words under it */
+.dp-key-box { position: relative; flex: none; width: 28vmin; height: 27vmin; }
+.dp-key-box .dp-key { position: absolute; left: calc(14vmin - 28vmin * .1875); top: 0; width: 28vmin; transform-origin: 18.75% 50%; }
 .dp-key-bow, .dp-key-shaft { fill: var(--b68-mustard); stroke: var(--b68-ink); stroke-width: 2; }
 .dp-key-hole { fill: var(--b68-ink); }
 .dp-show-keyturn.dp-ov-in .dp-key { animation: dp-key-turn 1.4s ease-in-out .3s both; }
@@ -82,16 +86,78 @@
   color: var(--b68-paper, #f4ecd8); text-shadow: 0 .4vmin 2vmin rgba(10, 9, 8, .7); }
 @media (prefers-reduced-motion: reduce) { .dp-root[data-flash-look]::before { animation: none; } }
 @keyframes dp-grain { 0% { background-position: 0 0; } 25% { background-position: -40px 22px; } 50% { background-position: 30px -35px; } 75% { background-position: -18px -50px; } 100% { background-position: 0 0; } }
-.dp-lay-strip { position: absolute; top: 2vmin; left: 50%; transform: translateX(-50%); z-index: 4; display: flex; align-items: center; gap: 2vmin; padding: .8vmin 2.4vmin;
-  background: rgba(10, 9, 8, .78); color: var(--b68-paper); border-radius: 99vmin; font: 900 var(--b68-t-label)/1.1 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .14em; pointer-events: none; white-space: nowrap; }
-.dp-lay-onair { color: var(--b68-alarm-lit); }
+/* THE BAND (app/display/layers.js; the GM night rebuild, the design's iPad part): one strip across the top with a fixed slot for each lasting layer,
+   mic | phase | crew (three cells) | security. A slot keeps its place when its layer is unset, and a text too long for its slot ends in an ellipsis
+   inside it, so nothing in the band ever draws over anything else in it. While it is up (dp-lay-on) everything else lays out below it. */
+.dp-root { --dp-lay-h: 10vmin; --dp-lay-row: 10vmin; }
+.dp-lay-strip { position: absolute; left: 0; right: 0; top: 0; z-index: 7; height: var(--dp-lay-h); display: grid; grid-template-columns: 29vmin 20vmin minmax(0, 1fr) 17vmin;
+  grid-template-areas: "mic phase crew sec"; grid-template-rows: var(--dp-lay-row); overflow: hidden; background: var(--b68-ink); border-bottom: .3vmin solid #3a352f; color: var(--b68-paper);
+  font: 900 var(--b68-t-label)/1.1 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .08em; text-align: left; pointer-events: none; white-space: nowrap; }
+.dp-lay-slot { position: relative; min-width: 0; min-height: 0; display: flex; align-items: center; gap: 1.2vmin; padding: 0 1.6vmin; overflow: hidden; }
+.dp-lay-slot + .dp-lay-slot { border-left: .3vmin solid #3a352f; }
+/* an empty slot keeps its place but draws no rule beside it (the crew slot is empty while the hard start runs) */
+.dp-lay-slot:empty + .dp-lay-slot, .dp-lay-slot + .dp-lay-slot:empty,
+[data-scene-mode="start"] .dp-lay-s-crew, [data-scene-mode="start"] .dp-lay-s-crew + .dp-lay-slot { border-left-color: transparent; }
+.dp-lay-s-mic { grid-area: mic; }
+.dp-lay-s-phase { grid-area: phase; }
+.dp-lay-s-crew { grid-area: crew; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; gap: 0; padding: 0; }
+.dp-lay-s-sec { grid-area: sec; }
+.dp-lay-onair { color: var(--b68-alarm-lit); letter-spacing: .16em; }
 .dp-lay-onair::before { content: ""; display: inline-block; width: .7em; height: .7em; margin-right: .5em; border-radius: 50%; background: currentColor; }
-.dp-lay-phase { color: var(--b68-mustard); }
-.dp-lay-sec { display: inline-flex; gap: .35em; }
-.dp-lay-sec i { display: block; width: .9em; height: .9em; border: .12em solid var(--b68-paper-dark); border-radius: 50%; }
+.dp-lay-phase { min-width: 0; overflow: hidden; text-overflow: ellipsis; font: 900 var(--b68-t-label)/1 var(--b68-font-poster); letter-spacing: .03em; color: var(--b68-mustard); }
+.dp-lay-sec { display: inline-flex; align-items: center; gap: .7vmin; }
+.dp-lay-sec i { display: block; flex: none; width: 2.2vmin; height: 2.2vmin; border: .35vmin solid var(--b68-paper-dark); border-radius: 50%; }
 .dp-lay-sec i.on { background: var(--b68-orange); border-color: var(--b68-orange); }
 .dp-lay-sec[data-level="4"] i.on { background: var(--b68-alarm-lit); border-color: var(--b68-alarm-lit); }
-.dp-lay-face { color: var(--b68-paper-dark); letter-spacing: .06em; }
+/* a crew cell: the name and the Stress, over the harm marks and the deadlocks; three cells share the crew slot equally, each clips its own overflow */
+.dp-lay-face { min-width: 0; display: flex; flex-direction: column; justify-content: center; align-items: stretch; gap: .8vmin; padding: 0 1.6vmin; overflow: hidden; color: var(--b68-paper); letter-spacing: .06em; }
+.dp-lay-face + .dp-lay-face { border-left: .3vmin solid #2a2621; }
+.dp-lay-top { display: flex; align-items: center; gap: .6vmin; min-width: 0; }
+.dp-lay-top .dp-pc-lock { font-size: .8em; padding-left: 2.6vmin; }      /* the padlock beside the Stress: its count smaller, so the name keeps its letters */
+.dp-lay-name { display: block; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 900; }
+.dp-lay-npc .dp-lay-name { color: var(--b68-paper-dark); }
+.dp-lay-marks { display: flex; align-items: center; gap: .8vmin; min-width: 0; overflow: hidden; }
+/* lights out is true black: the band stands down too, all but the lamp (the table is told when the mic is live) */
+.dp-root.dp-lights-out .dp-lay-strip { background: #000; border-bottom-color: #000; }
+.dp-root.dp-lights-out .dp-lay-slot:not(.dp-lay-s-mic) { visibility: hidden; }
+.dp-root.dp-lights-out .dp-lay-slot + .dp-lay-slot { border-left-color: transparent; }
+/* below the band: the stages (and the map's caption bar inside them), the beats, the band beside the map with its countdown, the hard start, the montage */
+.dp-root.dp-lay-on .dp-stages, .dp-root.dp-lay-on .dp-overlay, .dp-root.dp-lay-on .dp-hs, .dp-root.dp-lay-on .dp-montage { top: var(--dp-lay-h); }
+.dp-root.dp-lay-on .dp-auto { top: calc(var(--dp-lay-h) + 1.2vmin); }
+.dp-root.dp-lay-on .dp-chrome { top: calc(var(--dp-lay-h) + 1.2vmin); }
+/* an overlay up (a card, a beat, the dawn) with the band beside the map: the band's words stand down under it (its ground stays), so the overlay is
+   never drawn over the band's text; a side card (a held face, a clock, a line) takes the band's own column, so the map stays clear (display-page.js
+   sets dp-ov-up and dp-ov-card-on while one is up). In landscape the band's clock stays over a side card: the card is centred in the column below it
+   (--dp-band-time-h, measured by display-page.js; the overlay and the band share their top); in portrait it is centred on the band along the
+   foot, or on the lowest 40% of the frame when the band is shorter than that (over the foot of the map then, never its centre), so a face
+   stays big enough to read across the table. A card
+   taller than that room is drawn whole and smaller (--dp-ov-s, display-page.js ovFit), never cut off. */
+.dp-root.dp-band-on.dp-ov-up .dp-band > * { visibility: hidden; }
+.dp-root.dp-band-on.dp-ov-card-on .dp-ov-card { max-height: none; transform-origin: 50% 50%; transform: translateY(-50%) translateX(3vmin) scale(var(--dp-ov-s, 1)); }
+.dp-root.dp-band-on.dp-ov-card-on .dp-ov-card.dp-ov-in { transform: translateY(-50%) scale(var(--dp-ov-s, 1)); }
+.dp-root.dp-band-on.dp-ov-card-on .dp-ov-card.dp-ov-out { transform: translateY(-50%) translateX(3vmin) scale(var(--dp-ov-s, 1)); }
+@media (prefers-reduced-motion: reduce) {
+  .dp-root.dp-band-on.dp-ov-card-on .dp-ov-card, .dp-root.dp-band-on.dp-ov-card-on .dp-ov-card.dp-ov-in, .dp-root.dp-band-on.dp-ov-card-on .dp-ov-card.dp-ov-out { transform: translateY(-50%) scale(var(--dp-ov-s, 1)); }
+}
+@media (orientation: landscape) {
+  .dp-root.dp-lay-on .dp-band { top: var(--dp-lay-h); }
+  .dp-root.dp-band-on .dp-chrome { right: calc(36% + 12px); }      /* the full-screen button keeps off the band beside the map and its countdown */
+  .dp-root.dp-band-on.dp-ov-card-on .dp-band > .dp-b-time { visibility: visible; }
+  .dp-root.dp-band-on.dp-ov-card-on .dp-ov-card { top: calc(var(--dp-band-time-h, 0px) + (100% - var(--dp-band-time-h, 0px)) / 2); right: 3vmin; width: calc(36% - 6vmin); }
+}
+@media (orientation: portrait) {
+  .dp-root.dp-band-on.dp-ov-card-on .dp-ov-card { top: calc(100% - max(var(--dp-band-h, 50%), 40%) / 2); right: 18%; width: 64%; }
+}
+@media (orientation: portrait) {
+  /* three slots across, and the crew on a row of its own while there is one */
+  .dp-root { --dp-lay-h: 8vmin; --dp-lay-row: 8vmin; }
+  .dp-root.dp-lay-crew { --dp-lay-h: 18vmin; }
+  .dp-lay-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-areas: "mic phase sec" "crew crew crew"; grid-template-rows: var(--dp-lay-row) minmax(0, 1fr); }
+  .dp-lay-s-crew { border-top: .3vmin solid #3a352f; }
+  .dp-lay-slot + .dp-lay-s-crew { border-left: 0; }
+  .dp-root:not(.dp-lay-crew) .dp-lay-s-crew { display: none; }      /* no crew drawn: no second row at all */
+  .dp-lay-phase { font-size: var(--b68-t-body); }
+}
 
 /* report (B09): the action report card, held until the result is marked */
 .dp-show-report { background: rgba(10, 9, 8, .86); }
@@ -109,3 +175,29 @@
   .dp-show-stamp .dp-stamp-word { transform: rotate(-9deg); opacity: .94; }
   .dp-show-rolodex .dp-roll-card { transform: none; opacity: 1; }
 }
+
+/* ---- THE BEAT PASS (the GM night rebuild, the design's iPad part): the older stages and overlays (display.css: the read-aloud and text, a rules entry,
+   the map's caption bar, an NPC, a handout's caption, the side cards for a clock, an NPC or a line, the wire) take the beats' frame language: the
+   same label (the kicker: condensed, capitals, spaced, mustard, at --b68-t-label), the same type scale (nothing under --b68-t-label; names in the
+   poster face at a step of the scale) and the beats' 4vmin margin. What each one shows is unchanged. display.css stays free of the tokens; these
+   rules sit here, after it in the cascade. ---- */
+.dp-root .dp-kicker { font: 900 var(--b68-t-label)/1.1 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .18em; color: var(--b68-mustard); }
+.dp-root .dp-t-xl .dp-text-body { font-size: var(--b68-t-title); }
+.dp-root .dp-t-l .dp-text-body { font-size: var(--b68-t-lead); }
+.dp-root .dp-t-m .dp-text-body { font-size: var(--b68-t-body); }
+.dp-root .dp-t-s .dp-text-body { font-size: var(--b68-t-label); }
+.dp-root .dp-rule-title { font-size: var(--b68-t-title); letter-spacing: .01em; word-spacing: .1em; }
+.dp-root .dp-npc-alias, .dp-root .dp-npc-desc { font-size: var(--b68-t-label); }
+.dp-root .dp-handout-cap { font-size: var(--b68-t-label); padding: 1.4vmin 4vmin; }
+.dp-root .dp-strip { padding-left: 4vmin; padding-right: 4vmin; }
+.dp-root .dp-strip-title { font: 900 var(--b68-t-body)/1.1 var(--b68-font-poster); letter-spacing: .01em; }
+.dp-root .dp-strip-cap { font-size: var(--b68-t-label); line-height: 1.25; }
+.dp-root .dp-ov-card { right: 4vmin; width: calc(34% - 4vmin); gap: 1.4vmin; padding: 3vmin 2.4vmin; }
+.dp-root .dp-ov-name { font: 900 var(--b68-t-body)/1.1 var(--b68-font-poster); letter-spacing: .03em; overflow-wrap: break-word; }
+.dp-root .dp-ov-count { font: 700 var(--b68-t-label)/1 var(--b68-font-mono); }
+.dp-root .dp-ov-alias { font: italic 400 var(--b68-t-label)/1.25 var(--b68-font-text); }
+.dp-root .dp-ov-text { font: 700 var(--b68-t-body)/1.25 var(--b68-font-text); overflow-wrap: break-word; }
+.dp-root .dp-ov-card.dp-t-xl .dp-ov-text { font-size: var(--b68-t-lead); }
+.dp-root .dp-wire { left: 4vmin; right: 4vmin; bottom: 4vmin; font-size: var(--b68-t-label); }
+.dp-root .dp-wire::before { font: 900 var(--b68-t-label)/1 var(--b68-font-cond); letter-spacing: .18em; color: var(--b68-mustard); }
+@media (orientation: portrait) { .dp-root .dp-npc-name { font-size: var(--b68-t-title); } }

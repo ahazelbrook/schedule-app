@@ -29,10 +29,10 @@ const Docs = await import(pathToFileURL(path.join(ROOT, 'functions', '_lib', 'do
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 // ---------------------------------------------------------------- switches
-await test('switches: three, bland text, off by default; the phone one is public, the GM ones are not', () => {
+await test('switches: three, bland text, always on (N0); the phone one is public, the GM ones are not', () => {
   for (const [id, surface] of [['ai.canon', 'gm'], ['between.frontpage', 'gm'], ['between.absent', 'phone']]) {
     const s = F.get(id); assert.ok(s, id); assert.equal(s.surface, surface); assert.equal(s.default, false);
-    assert.equal(F.valueOf({}, id), false);
+    assert.equal(F.valueOf({}, id), true, id + ': on with nothing stored');
     assert.ok(!/\b(blades|doskvol)\b/i.test(s.label + s.doc));
     assert.equal(F.publicIds().includes(id), surface !== 'gm');
   }
@@ -334,11 +334,15 @@ await test('phone: clean() keeps only what the page draws; start/stop fetch only
   const file = path.join(ROOT, 'app', 'sheet', 'absent.js');
   delete require.cache[require.resolve(file)]; globalThis.self = W;
   const P = require(file); delete globalThis.self; delete require.cache[require.resolve(file)];
-  assert.equal(P.bar(), '', 'not started: nothing'); assert.equal(calls.length, 0);
+  assert.equal(P.now(), null, 'not started: nothing'); assert.equal(P.between(), null); assert.equal(calls.length, 0);
   P.start(); await tick(); await tick();
-  assert.deepEqual(calls, ['/api/docs?kind=packet&limit=1']); assert.match(P.bar(), /While you were away/);
-  P.stop(); assert.equal(P.bar(), '');
-  P.start(); P._set(null); assert.equal(P.bar(), '', 'no packet: no strip'); P.stop();
+  assert.deepEqual(calls, ['/api/docs?kind=packet&limit=1']);
+  const it = P.now();
+  assert.ok(it && it.title === 'While you were away' && /data-b68="absent-open"/.test(it.actions[0].attrs) && it.actions[0].label === 'Read it', 'an unread packet is on the Now card: ' + JSON.stringify(it));
+  assert.equal(P.between(), null, 'unread: not in the fold yet');
+  assert.equal(P.seenKey(PhoneAb.clean(j)), 'at:1', 'a packet is known by its own time');
+  P.stop(); assert.equal(P.now(), null); assert.equal(P.between(), null);
+  P.start(); P._set(null); assert.equal(P.now(), null, 'no packet: no card'); assert.equal(P.between(), null, 'and nothing in the fold'); P.stop();
 });
 
 // ---------------------------------------------------------------- the seam, routes and hooks
@@ -367,7 +371,8 @@ await test('routes, hooks and the leak check: files are bundled where they belon
   assert.equal(absent.trim(), "'sheet/absent.js'"); assert.ok(!gm.includes('sheet/absent.js'), 'the phone file is not in the GM bundle');
   for (const b of ['table', 'core', 'figures', 'print']) assert.ok(!new RegExp(b + ": \\[[^\\]]*absent").test(routes));
   assert.match(fs.readFileSync(path.join(ROOT, 'app', 'boot.js'), 'utf8'), /'between\.absent', 'absent', 'B68Absent'/);
-  assert.match(fs.readFileSync(path.join(ROOT, 'app', 'tracker.js'), 'utf8'), /window\.B68Absent \? window\.B68Absent\.bar\(\)/);
+  assert.match(fs.readFileSync(path.join(ROOT, 'app', 'sheet', 'now.js'), 'utf8'), /absent: 'B68Absent'/, 'the Now card asks the packet module');
+  assert.match(fs.readFileSync(path.join(ROOT, 'app', 'tracker.js'), 'utf8'), /case 'now': return cur\.ui\.static \? null : nowCard\(\)/, 'the sheet draws the Now card');
   assert.match(fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8'), /case 'canon': case 'frontpage': case 'absent':/);
   const feats = fs.readFileSync(path.join(ROOT, 'app', 'features.js'), 'utf8');
   for (const id of ['ai.canon', 'between.frontpage', 'between.absent']) assert.ok(feats.includes("id: '" + id + "'"));

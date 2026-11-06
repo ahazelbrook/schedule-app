@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -66,6 +67,7 @@ try {
   const errors = [];
   async function open(hash, { width = 1280, height = 900, mobile = false } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block', isMobile: mobile, hasTouch: mobile });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -94,8 +96,9 @@ try {
      (The ambient part of that document is not compared: the page's heat and wanted sync writes it after any table save.) */
   const onIpad = async () => { const d = (await api('GET', '/gm/display')).json; return JSON.stringify([d.seq, d.display]); };
   const display0 = await onIpad();
-  check((await p.$$eval('.gm-tab', (t) => t.map((x) => x.getAttribute('data-panel')).join()))  === 'prep,rules,location,scenes,score,chase,npc,downtime,cards,ipad', 'the side tabs: Prep, Screen, Location, Street, Score, Chase, NPC, Downtime, Cards, iPad');
-  check(await p.$eval('.gm-tab[data-panel="score"]', (t) => /^Score\s*J$/.test(t.textContent.trim()) && !!t.querySelector('kbd')), 'the Score tab shows its key, J');
+  await p.evaluate(() => window.B68GmPage.goPlace('plan', { navigateOnly: true }));      /* N1b: the Score generator is a view of Planning */
+  check((await p.$$eval('.gm-views [data-pv]', (t) => t.map((x) => x.getAttribute('data-pv')).join())) === 'cards,corkboard,run,score,prep,rules,npc,ipad', 'Planning\'s views: Opportunities, Intel, The site, the Score generator, then the pinned four');
+  check(await p.$eval('.gm-views [data-pv="score"]', (t) => /^Score generator\s*J$/.test(t.textContent.trim()) && !!t.querySelector('kbd')), 'the Score generator shows its key, J');
   await p.keyboard.press('j');
   check(await panelOf(p) === 'score' && await p.$eval('#gm-score', (e) => !e.closest('[hidden]') && !e.hidden), 'key J opens the Score panel');
   await p.keyboard.press('e');
@@ -228,10 +231,11 @@ try {
   await api('PATCH', '/gm/state', { sc: { ui: { client: null, who: null, target: null, job: null } } });          /* every row free to roll again */
   const M = await open('#gm', { width: 390, height: 844, mobile: true });
   const mp = M.page;
-  const segs = await mp.$$eval('.gm-segbar .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return { seg: x.getAttribute('data-seg'), top: Math.round(r.top), right: Math.round(r.right) }; }));
+  await mp.evaluate(() => window.B68GmPage.goPlace('plan', { navigateOnly: true }));
+  const segs = await mp.$$eval('.gm-vchips .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return { seg: x.getAttribute('data-pv') || x.getAttribute('data-seg'), top: Math.round(r.top), right: Math.round(r.right) }; }));
   const perRow = segs.reduce((m, s) => { m[s.top] = (m[s.top] || 0) + 1; return m; }, {});
-  check(segs.map((s) => s.seg).join() === 'console,prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,state' && JSON.stringify(Object.values(perRow)) === '[6,6]' && segs.every((s) => s.right <= 390), 'phone: twelve segments in two rows of six, Score after Street ' + JSON.stringify(perRow));
-  await mp.click('.gm-segbar [data-seg="score"]');
+  check(segs.map((s) => s.seg).join() === 'console,cards,corkboard,run,score,prep,rules,npc,ipad,state' && JSON.stringify(Object.values(perRow)) === '[5,5]' && segs.every((s) => s.right <= 390), 'phone: Planning\'s chips in two rows of five, the Score generator among them ' + JSON.stringify(perRow));
+  await mp.click('.gm-vchips [data-pv="score"]');
   await mp.waitForSelector('#gm-score [data-gm="scoreroll"]', { state: 'visible', timeout: 5000 });
   await mp.click('[data-gm="scoreroll"]');
   await mp.waitForSelector('#gm-score .gm-sccard', { timeout: 15000 });

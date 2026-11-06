@@ -16,7 +16,7 @@
                  express(cur, id, name) -> { look } | { say }     name: neutral | pleased | hostile | afraid | tell
                  signature(cur, id) -> { look } | { say }        the pose goes in this one overlay only: cur is not changed
                  relay(cur) -> look | null                       the look for a renewed hold: the expression and format kept, the pose dropped, `re` set so the iPad does not replay the motif
-                 view(id) -> { on, names, tell, signature } | null       html(v, esc) -> the buttons
+                 view(id) -> { on, names, tell, signature } | null       html(v, esc) -> the buttons (data-site="expr" | "sig", for the site's people rows; v.cur presses one)
    BUTTONS = [ [name, label] ... ] the five expression buttons. */
 (function (root, factory) {
   'use strict';
@@ -33,12 +33,14 @@
   function html(v, esc) {
     esc = esc || function (s) { return str(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
     if (!v || !v.on) return '';
-    var h = '<div class="gm-bar-faces" role="group" aria-label="Expression of the person held">';
+    /* the site's people rows (N3): data-site buttons, the expression up now pressed (v.cur: the expression name the held overlay carries, '' for the face as drawn) */
+    var h = '<div class="rv-faces" role="group" aria-label="Expression of the person held">', cur = str(v.cur);
     BUTTONS.forEach(function (b) {
-      var off = b[0] === 'tell' && !v.tell;
-      h += '<button type="button" class="btn sm" data-b17="expr" data-expr="' + esc(b[0]) + '"' + (off ? ' disabled title="Write a line Tell: smirk in this person’s GM notes"' : '') + '>' + esc(b[1]) + '</button> ';
+      var plainFace = BUTTONS.some(function (x) { return x[0] === cur; });       /* a tell that is one of the plain faces presses that face, not Their tell */
+      var off = b[0] === 'tell' && !v.tell, on = !!cur && (b[0] === 'tell' ? cur === str(v.tell) && !plainFace : cur === b[0]);
+      h += '<button type="button" class="rv-btn sm rv-tog" data-site="expr" data-expr="' + esc(b[0]) + '" aria-pressed="' + on + '"' + (off ? ' disabled title="Write a line Tell: smirk in this person’s GM notes"' : '') + '>' + esc(b[1]) + '</button>';
     });
-    h += '<button type="button" class="btn sm" data-b17="sig"' + (v.signature ? '' : ' disabled title="Write a line Signature: lapel in this person’s GM notes"') + '>Signature</button></div>';
+    h += '<button type="button" class="rv-btn sm" data-site="sig"' + (v.signature ? ' title="Plays their signature pose once"' : ' disabled title="Write a line Signature: lapel in this person’s GM notes"') + '>Signature</button></div>';
     return h;
   }
 

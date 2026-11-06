@@ -1,12 +1,15 @@
-// The GM seams (W0.5) and the switchboard (W0.2) in a real browser against a real local Worker (wrangler dev, DEV_USER) on PORT (default 8952).
-//   1. With every switch off and the filter off the GM page is today's: the tab strip and the phone segment bar are exactly the markup the page always had; the Menu holds no
-//      Workshop line; the Switchboard line is the only addition.
-//   2. A test tool tagged Planning (registered before the page opens) hides outside Planning when the filter is on, "All tools" and off bring it back, the tab on screen is kept,
-//      its pane draws through mount(); a Workshop tool shows Menu -> Workshop and opens in the sheet.
-//   3. Menu -> Switchboard: Phone mission cards flips, lands in the GM state (features and the old key) and in the campaign document; a phone and the iPad page learn of it
-//      on a poll, no reload; All off puts them back, no reload; a GM-only test switch never reaches the campaign document, a phone's network traffic or its flags.
+// The GM seams (W0.5) and the Settings that replaced the switchboard (W0.2; the night rebuild, N0) in a real browser against a real local Worker (wrangler dev, DEV_USER) on
+// PORT (default 8952).
+//   1. The page (started in the Score through its place memory, gm/places.js) lays out the Score's views and the four pinned ones, none hidden; the phone's chip
+//      row the same; the Menu has no Settings (the iPad view has them, N5), Switchboard or Workshop line.
+//   2. A test tool registered with a mount before the page opens has no tab of its own: Find lists it, and it opens as an extra view of the place the GM is
+//      in, drawn by its mount(). The phase rail moves the night and the page follows it to the place; nothing is hidden by the phase (a key brings any view),
+//      and there is no "All tools".
+//   3. Everything on from the first request: a phone and the iPad page are told every display and phone feature is on with nothing stored. The iPad view's Settings (N5): Phones flips the
+//      phoneCards setting into the GM state (features and the old key) and the campaign document, and a phone and the iPad learn of it on a poll, no reload; Scenes and the mirror
+//      take the same paths; a GM-only test line never reaches the campaign document, a phone's traffic or its flags. Preflight's Menu line is there from the start.
 //   SEAMS_ROOT=<another worktree> with --snapshot <dir> only records the markup and screenshots (1280 and 390 px) of the page as it is there: run it on origin/main and on
-//   this branch and compare (the W0.5 "screenshots match today's" check).
+//   this branch and compare.
 //   PW_MODULE=<playwright install> PW_CHANNEL=msedge node checks/runtime/gm-seams.e2e.mjs      (GM_SHOTS=<dir> keeps screenshots)
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
@@ -14,6 +17,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const HERE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -70,6 +74,7 @@ try {
   const errors = [];
   async function open(route, { w = 1280, h = 800, user = GM, init = null, record = null } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width: w, height: h }, serviceWorkers: 'block' });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
     if (init) await c.addInitScript(init);
     const page = await c.newPage();
@@ -82,12 +87,15 @@ try {
     return { c, page };
   }
   const shot = async (page, dir, name) => { if (dir) { mkdirSync(dir, { recursive: true }); await page.screenshot({ path: path.join(dir, name + '.png'), animations: 'disabled' }); } };
-  const strip = (page) => page.evaluate(() => ({
-    tabs: document.querySelector('.gm-tabrow').outerHTML, seg: document.querySelector('.gm-segbar').outerHTML,
-    menu: document.querySelector('.gm-menu-list').innerHTML, panes: [].map.call(document.querySelectorAll('.gm-pane'), (e) => e.getAttribute('data-pane')).join(',')
-  }));
-  const chips = (page) => page.$$eval('.gm-segbar .chip', (els) => els.filter((e) => !e.hidden).map((e) => e.getAttribute('data-seg')));   /* the phone bar is display:none at 1280 px, so [hidden] is what the filter sets */
-  const shown = (page, sel) => page.$$eval(sel, (els) => els.filter((e) => !e.hidden && e.offsetParent !== null).map((e) => e.getAttribute('data-panel') || e.getAttribute('data-seg')));
+  const strip = (page) => page.evaluate(() => {
+    const q = (sel) => document.querySelector(sel);
+    return { views: q('.gm-views') ? q('.gm-views').outerHTML : q('.gm-tabrow') ? q('.gm-tabrow').outerHTML : '', chips: q('.gm-segbar') ? q('.gm-segbar').outerHTML : '',
+      menu: q('.gm-menu-list').innerHTML, panes: [].map.call(document.querySelectorAll('.gm-pane'), (e) => e.getAttribute('data-pane')).join(',') };
+  });
+  /* the view switcher's ids, in order, and the chip row's (the phone's; display:none at 1280 px, so only [hidden] would hide one) */
+  const views = (page) => page.$$eval('.gm-views [data-pv]', (els) => els.filter((e) => !e.hidden && e.offsetParent !== null).map((e) => e.getAttribute('data-pv')));
+  const chips = (page) => page.$$eval('.gm-vchips .chip', (els) => els.filter((e) => !e.hidden).map((e) => e.getAttribute('data-pv') || e.getAttribute('data-seg')));
+  const placeOf = (page) => page.$eval('#gm-root', (r) => r.getAttribute('data-place'));
 
   /* ---- the snapshot of the page as it is in this tree (also what origin/main is compared with) ---- */
   const A = await open('#gm');
@@ -99,107 +107,96 @@ try {
   await P0.c.close();
   if (snapAt) { writeFileSync(path.join(snapAt, 'markup.json'), JSON.stringify(base1280, null, 1)); console.log('snapshot written to ' + snapAt); }
   else if (HAS_SEAMS) {
-    /* ---- 1. today's page ---- */
-    const TABS = ['prep', 'rules', 'location', 'scenes', 'score', 'chase', 'npc', 'downtime', 'cards', 'ipad'];
-    const hasAll = (tabs) => TABS.every((id) => tabs.includes('data-panel="' + id + '"'));
-    check(hasAll(base1280.tabs) && !/hidden/.test(base1280.tabs) && !/hidden/.test(base1280.seg), 'filter off, no switch on: every tab and every phone chip is there and none is hidden');
-    check(/Phone|Switchboard/.test(base1280.menu) && /id="gm-menu-switchboard"/.test(base1280.menu), 'Menu has the Switchboard line');
-    check(!/Workshop/.test(base1280.menu), 'and no Workshop line while nothing is behind it');
-    check(base1280.panes === 'prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,run', 'the panes are the page\'s own, in its order: ' + base1280.panes);
+    /* ---- 1. the page in the Score (its place memory): the place's views and the pinned four, none hidden ---- */
+    const SCORE = ['run', 'chase', 'scenes', 'location', 'prep', 'rules', 'npc', 'ipad'];
+    const ids = (html, attr) => (html.match(new RegExp(attr + '="([a-z]+)"', 'g')) || []).map((m) => m.split('"')[1]);
+    check(JSON.stringify(ids(base1280.views, 'data-pv')) === JSON.stringify(SCORE) && !/\shidden/.test(base1280.views), 'the Score\'s views, then Prep, Rules, Cast and iPad, none hidden: ' + ids(base1280.views, 'data-pv').join(','));
+    check(JSON.stringify(ids(base1280.chips, 'data-pv')) === JSON.stringify(SCORE) && /data-seg="console"/.test(base1280.chips) && /data-seg="state"/.test(base1280.chips), 'the phone\'s chip row: the Roll, the same views, and the drawer');
+    check(!/id="gm-menu-settings"/.test(base1280.menu), 'the Menu has no Settings line: they live in the iPad view (the GM night rebuild, N5)');
+    check(!/Switchboard|gm-menu-switchboard/.test(base1280.menu) && !/Workshop|gm-menu-workshop/.test(base1280.menu), 'and no Switchboard or Workshop line (both are gone)');
+    check(!/id="gm-menu-preflight"/.test(base1280.menu), 'N2: no tool has a Menu line (Preflight is reached through B68GmTools)');
+    check(base1280.panes === 'prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,run,view', 'the panes are the page\'s own, in its order, and the places\' view pane: ' + base1280.panes);
 
-    /* ---- 2. a test tool, the phase filter, the Workshop ---- */
+    /* ---- 2. a registered tool comes to the GM (Find, an extra view); the band's places move the night and the page follows; nothing hides ---- */
     const INIT = () => {
       function hook(name, fn) { let v; Object.defineProperty(window, name, { configurable: true, get() { return v; }, set(x) { v = x; try { fn(x); } catch (e) { console.error('hook ' + name + ': ' + e.message); } } }); }
-      hook('B68GmTools', (T) => {
-        T.register({ id: 'testtool', label: 'Test tool', phases: ['plan'], key: 'Q', mount(box) { box.textContent = 'TESTTOOL-BODY'; } });
-        T.register({ id: 'shopper', label: 'Shopper', phases: 'all', workshop: true, mount(box) { box.textContent = 'SHOPPER-BODY'; } });
-      });
-      hook('B68Features', (F) => { F.register({ id: 'test.gm', label: 'Test GM-only switch', surface: 'gm', stage: 'spine', default: false, saturday: 'off', doc: 'A GM-only test switch.' }); });
+      hook('B68GmTools', (T) => { T.register({ id: 'testtool', label: 'Test tool', key: 'Q', words: 'probe', mount(box) { box.textContent = 'TESTTOOL-BODY'; } }); });
+      hook('B68Features', (F) => { F.register({ id: 'test.gm', label: 'Test GM-only line', surface: 'gm', stage: 'spine', default: false, saturday: 'off', doc: 'A GM-only test line.' }); });
     };
     const G = await open('#gm', { init: INIT });
     const g = G.page;
-    let t = await shown(g, '.gm-tab');
-    check(t.includes('testtool') && TABS.every((id) => t.includes(id)), 'the registered test tool has a tab beside today\'s: ' + t.join(','));
-    check((await chips(g)).includes('testtool'), 'and a phone chip');
-    await g.click('.gm-tab[data-panel="testtool"]');
-    check(await g.$eval('#gm-x-testtool', (e) => !e.hidden && e.textContent === 'TESTTOOL-BODY'), 'its pane is drawn by mount()');
-    await g.click('.gm-tab[data-panel="location"]');
-    await g.evaluate(() => window.B68GmTools.setFilter({ on: true, phase: 'score' }));
-    t = await shown(g, '.gm-tab');
-    check(!t.includes('testtool') && !t.includes('score') && !t.includes('downtime') && !t.includes('cards') && t.includes('location') && t.includes('scenes') && t.includes('chase') && t.includes('npc') && t.includes('prep'), 'filter on, phase Score: the planning and downtime tools are gone, the Score tools stay: ' + t.join(','));
-    check(!(await chips(g)).includes('testtool') && !(await chips(g)).includes('score') && (await chips(g)).includes('console') && (await chips(g)).includes('state'), 'and the phone chip goes too (Console and State are not tools: they stay)');
-    await g.evaluate(() => window.B68GmTools.setFilter({ phase: 'plan' }));
-    t = await shown(g, '.gm-tab');
-    check(t.includes('testtool') && t.includes('score') && t.includes('cards') && !t.includes('chase') && !t.includes('scenes') && !t.includes('downtime'), 'phase Planning: the test tool, Score and Cards are shown: ' + t.join(','));
-    await g.evaluate(() => window.B68GmTools.setFilter({ phase: 'pb' }));
-    t = await shown(g, '.gm-tab');
-    check(t.includes('location') && t.includes('downtime') && !t.includes('scenes') && !t.includes('testtool'), 'phase Personal Business: Downtime is shown, and the tab on screen (Location) is kept: ' + t.join(','));
-    await g.evaluate(() => window.B68GmTools.setFilter({ all: true }));
-    t = await shown(g, '.gm-tab');
-    check(t.includes('testtool') && TABS.every((id) => t.includes(id)), 'All tools overrides the phase');
-    await g.evaluate(() => window.B68GmTools.setFilter({ all: false, on: false }));
-    t = await shown(g, '.gm-tab');
-    check(t.includes('testtool') && TABS.every((id) => t.includes(id)), 'filter off: everything is back');
-    const withTool = await strip(g);
-    check(withTool.tabs.replace(/<button[^>]*data-panel="testtool"[\s\S]*?<\/button>/, '') === base1280.tabs, 'with the test tool\'s tab taken out the strip is byte for byte the same as without it');
+    check(!(await views(g)).includes('testtool') && !(await chips(g)).includes('testtool'), 'the registered tool has no tab or chip of its own');
+    await g.keyboard.press('Control+k'); await g.fill('#gm-find-q', 'test tool');
+    check(await g.waitForFunction(() => [...document.querySelectorAll('.gm-find-hit')].some((h) => /Tool/.test(h.textContent) && /Test tool/.test(h.textContent)), null, { timeout: 5000 }).then(() => true, () => false), 'Find lists it as a tool');
+    await g.keyboard.press('Enter');
+    check(await g.waitForFunction(() => { const p = document.querySelector('#gm-vpane'); return p && !p.hidden && p.textContent === 'TESTTOOL-BODY'; }, null, { timeout: 5000 }).then(() => true, () => false), 'Enter opens it here, drawn by its mount()');
+    check((await views(g)).join() === 'run,chase,scenes,location,testtool,prep,rules,npc,ipad' && await placeOf(g) === 'score', 'as an extra view at the end of the Score\'s own: ' + (await views(g)).join(','));
+    check(!!(await g.$('.gm-views [data-pvx="testtool"]')), 'with a × to drop it');
+    await g.waitForSelector('#gm-band [data-band-place="score"]', { timeout: 10000 });
+    check(!(await g.$('#gm-phaserail, [data-rail="all"]')), 'there is no rail and no All tools');
+    const tap = async (id) => { await g.click('#gm-band [data-band-place="' + id + '"]'); await sleep(400); };      /* the band's chips, clicked for real (N1a) */
+    await tap('plan');
+    check(await placeOf(g) === 'plan' && (await views(g)).join() === 'cards,corkboard,run,score,prep,rules,npc,ipad', 'the band\'s Planning moves the night, and the page follows it: Planning\'s views (the extra view stayed in the Score) ' + (await views(g)).join(','));
+    await g.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    await g.keyboard.press('c');
+    check(await g.$eval('#gm-chase', (e) => !e.hidden) && (await views(g)).includes('chase') && await placeOf(g) === 'plan', 'C in Planning: the Chase comes here as an extra view (nothing is hidden by the phase)');
+    await tap('pb');
+    check(await placeOf(g) === 'pb' && (await views(g)).join() === 'downtime,debrief,trouble,prep,rules,npc,ipad', 'Personal business: its views ' + (await views(g)).join(','));
+    check(!/\shidden/.test((await strip(g)).views), 'and none of them is hidden');
 
-    await g.click('[data-gm="menu"]');
-    check(await g.$eval('#gm-menu-workshop', (e) => e.textContent === 'Workshop'), 'a tool behind the Workshop puts Workshop in the Menu');
-    await g.click('#gm-menu-workshop');
-    check(await g.$eval('#gm-sheet-workshop', (e) => !e.hidden && /Shopper/.test(e.textContent)), 'Menu -> Workshop opens the sheet and lists the tool');
-    await g.click('#gm-sheet-workshop [data-ws="shopper"]');
-    check(await g.$eval('#gm-ws-tool', (e) => e.textContent === 'SHOPPER-BODY'), 'a tool opens in the sheet');
-    await g.click('#gm-sheet-workshop [data-sheet-close]');
-    check(await g.$eval('#gm-sheet-workshop', (e) => e.hidden), 'and the sheet closes');
-    check(!(await shown(g, '.gm-tab')).includes('shopper'), 'a Workshop tool has no tab');
-
-    /* ---- 3. the switchboard ---- */
+    /* ---- 3. everything on, and the Settings ---- */
     const phoneTraffic = [];
     const PH = await open('#t', { user: PLAYER, record: phoneTraffic });
     const DS = await open('#display');
     const flag = (p, id) => p.evaluate((i) => (window.B68Flags ? window.B68Flags.on(i) : null), id);
-    check((await flag(PH.page, 'phoneCards')) === false && (await flag(DS.page, 'phoneCards')) === false, 'a phone and the iPad page start with the switch off');
+    check((await flag(PH.page, 'phoneCards')) === false && (await flag(DS.page, 'phoneCards')) === false, 'a phone and the iPad page start with phone cards off (a setting, nothing stored)');
+    check(await until(async () => (await flag(PH.page, 'spine.aftermath')) === true && (await flag(PH.page, 'between.keys')) === true, 8000), 'everything built is on: the phone is told spine.aftermath and between.keys are on with nothing stored');
+    check(await until(async () => (await flag(DS.page, 'room.preflight')) === true && (await flag(DS.page, 'map.flashback')) === true, 8000), 'and the iPad is told room.preflight and map.flashback are on');
     await PH.page.evaluate(() => { window.__phoneMarker = 'same page'; }); await DS.page.evaluate(() => { window.__dsMarker = 'same page'; }); await g.evaluate(() => { window.__gmMarker = 'same page'; });
-    await g.click('[data-gm="menu"]');
-    await g.click('#gm-menu-switchboard');
-    check(await g.$eval('#gm-sheet-switchboard', (e) => !e.hidden && /Phone mission cards/.test(e.textContent) && /Test GM-only switch/.test(e.textContent) && /All off/.test(e.textContent)), 'Menu -> Switchboard lists the switches by stage, with All off');
-    check(await g.$eval('#gm-sheet-switchboard', (e) => /Already in the app/.test(e.textContent) && /Stage 1: the spine/.test(e.textContent)), 'grouped by stage');
-    await g.click('[data-sb="phoneCards"]');
-    await g.click('[data-sb="test.gm"]');
-    await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.features && d.features['test.gm'] === true && d.features.phoneCards === true; }, 8000);
+    await g.keyboard.press('i');
+    await g.waitForSelector('#gm-ipad-settings [data-set-row]', { timeout: 10000 });
+    const sheet = '#gm-ipad-settings';
+    check(await g.$eval(sheet, (e) => ['Scenes', 'Music', 'Phones', 'Mirror for phones'].every((l) => e.textContent.includes(l))), 'the iPad view (I) holds the Settings: Scenes, Music, Phones and Mirror for phones');
+    const pressed = (key) => g.$eval(sheet + ' [data-set-row="' + key + '"] [aria-pressed="true"]', (e) => e.textContent.trim());
+    check(await pressed('fx.off') === 'Moving' && await pressed('room.music') === 'Scene themes' && await pressed('phoneCards') === 'Sheet only' && await pressed('mirror') === 'On', 'each row shows its current value: Moving, Scene themes, Sheet only, On');
+    await shot(g, SHOTS, 'settings-1280');
+
+    await g.click(sheet + ' [data-set="phoneCards"][data-v="1"]');
+    await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.features && d.features.phoneCards === true; }, 8000);
     const st2 = (await api('GET', '/gm/state')).json.doc;
-    check(st2.features && st2.features.phoneCards === true && st2.features['test.gm'] === true && st2.phoneCards === true, 'the GM state holds both switches (and the old phoneCards key): ' + JSON.stringify(st2.features) + ' ' + st2.phoneCards);
+    check(st2.features && st2.features.phoneCards === true && st2.phoneCards === true, 'Phones: Mission cards: the GM state holds the setting (and the old phoneCards key): ' + JSON.stringify(st2.features) + ' ' + st2.phoneCards);
     const camp = await until(async () => { const c = (await api('GET', '/campaign', null, PLAYER)).json.doc; return c.features && c.features.phoneCards === true ? c : null; }, 8000);
-    check(!!camp && JSON.stringify(camp.features) === '{"phoneCards":true}', 'the campaign document holds the phone switch only: ' + JSON.stringify(camp && camp.features));
+    check(!!camp && !('test.gm' in camp.features), 'the campaign document serves the setting to a player, and no GM-only id: ' + JSON.stringify(camp && camp.features).slice(0, 120));
     check(await until(async () => (await flag(PH.page, 'phoneCards')) === true, 8000), 'the phone learns of it within a poll');
     check(await until(async () => (await flag(DS.page, 'phoneCards')) === true, 8000), 'and so does the iPad page');
-    check(await g.$eval('[data-sb="phoneCards"]', (e) => e.getAttribute('aria-pressed') === 'true' && e.textContent === 'On'), 'the sheet shows it on');
-    check((await g.evaluate(() => window.B68GmPage && 1)) !== undefined, 'the GM page is up');
+    check(await pressed('phoneCards') === 'Mission cards', 'the Settings show Mission cards');
 
-    await g.click('[data-sb-alloff]');
-    await until(async () => (await api('GET', '/gm/state')).json.doc.features['test.gm'] === false, 8000);      /* the page saves its state a moment after the click */
-    const st3 = (await api('GET', '/gm/state')).json.doc;
-    await until(async () => { const c = (await api('GET', '/campaign', null, PLAYER)).json.doc; return c.features && c.features.phoneCards === false; }, 8000);
-    check(Object.values(st3.features).every((v) => v === false) && st3.phoneCards === false, 'All off: every switch is false in the GM state, the old key too: ' + JSON.stringify(st3.features));
-    check(await until(async () => (await flag(PH.page, 'phoneCards')) === false, 8000) && await until(async () => (await flag(DS.page, 'phoneCards')) === false, 8000), 'the phone and the iPad are off again within a poll');
+    await g.click(sheet + ' [data-set="fx.off"][data-v="1"]');
+    check(await until(async () => (await flag(DS.page, 'fx.off')) === true, 8000), 'Scenes: Held still reaches the iPad within a poll');
+    check(await pressed('fx.off') === 'Held still', 'and the Settings show it');
+    await g.click(sheet + ' [data-set="fx.off"][data-v="0"]');
+    check(await until(async () => (await flag(DS.page, 'fx.off')) === false, 8000), 'Scenes: Moving again');
+
+    await g.click(sheet + ' [data-set="mirror"][data-v="0"]');
+    check(await until(async () => (await api('GET', '/gm/state')).json.doc.mirror === false, 8000), 'Mirror for phones: Off writes the GM state\'s mirror');
+    check(await pressed('mirror') === 'Off', 'and the Settings show it');
+    await g.click(sheet + ' [data-set="mirror"][data-v="1"]');
+    check(await until(async () => (await api('GET', '/gm/state')).json.doc.mirror === true, 8000), 'Mirror for phones: On again');
+
+    await g.click(sheet + ' [data-set="phoneCards"][data-v="0"]');
+    check(await until(async () => (await flag(PH.page, 'phoneCards')) === false, 8000) && await until(async () => (await flag(DS.page, 'phoneCards')) === false, 8000), 'Phones: Sheet only reaches the phone and the iPad within a poll');
     check((await PH.page.evaluate(() => window.__phoneMarker)) === 'same page' && (await DS.page.evaluate(() => window.__dsMarker)) === 'same page' && (await g.evaluate(() => window.__gmMarker)) === 'same page', 'no page reloaded');
-    check(await g.$eval('[data-sb="test.gm"]', (e) => e.getAttribute('aria-pressed') === 'false'), 'the GM-only switch is off too');
+    check(await flag(PH.page, 'spine.aftermath') === true, 'and the features stayed on throughout');
 
-    const all = (await api('GET', '/campaign', null, PLAYER)).text;
     const flags = await PH.page.evaluate(() => JSON.stringify(window.B68Flags.all()));
     check(!phoneTraffic.some((x) => x.includes('test.gm')) && !flags.includes('test.gm'), 'the GM-only id never reached the phone: not in one API answer it received, not in its flags');
     check(!JSON.stringify((await api('GET', '/campaign', null, PLAYER)).json).includes('test.gm'), 'nor in the campaign document it can read');
-    void all;
-    /* 4.2: with room.preflight on, Menu has a Preflight line that opens the sheet (read-only, items green or red with a fix); the iPad is told the switch, and off takes the line away */
-    check(await g.$('#gm-menu-preflight') === null, 'Preflight: no Menu line while the switch is off');
-    await g.click('[data-sb="room.preflight"]');
-    await until(async () => { const c = (await api('GET', '/campaign', null, PLAYER)).json.doc; return c.features && c.features['room.preflight'] === true; }, 8000);
-    check(await until(async () => (await flag(DS.page, 'room.preflight')) === true, 8000), 'Preflight: the iPad is told the switch within a poll');
-    check(await until(async () => (await g.$('#gm-menu-preflight')) !== null, 8000), 'Preflight: the Menu line appears');
-    await g.evaluate(() => { var b = document.querySelector('#gm-menu-preflight'); if (b) b.click(); });
+    check(!(await g.$('#gm-sheet-settings')), 'and no Settings sheet was made: they are part of the view');
+
+    /* 4.2: Preflight's line is in the Menu with nothing stored; it opens the sheet (read-only, items green or red with a fix) */
+    await g.evaluate(() => { window.B68GmTools.get('preflight').open(); });
     check(await until(async () => g.$eval('#gm-sheet-preflight', (e) => !e.hidden && /iPad sound/.test(e.textContent) && /Deepgram/.test(e.textContent) && /Pack version/.test(e.textContent) && /Access session/.test(e.textContent)).catch(() => false), 10000), 'Preflight: the sheet lists the items');
     check(await g.$eval('#gm-sheet-preflight', (e) => /Fix:/.test(e.textContent)), 'Preflight: a red item carries a Fix line');
-    await g.click('[data-sb-alloff]').catch(() => {});
     await G.c.close(); await PH.c.close(); await DS.c.close();
   } else console.log('SKIP the seams are not in ' + ROOT + ' (a snapshot of main?)');
 

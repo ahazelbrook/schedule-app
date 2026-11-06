@@ -14,7 +14,7 @@
      post(st, key, on) -> st   pick(st, key) -> st
    create(host) -> controller. host: { enabled() -> bool, members() -> Promise<[{ id, name }]>, docs: { list(kind), put(row) }, show(kind, payload, opts) -> Promise, night() -> the B68GmNight controller | null, now() }
      refresh() -> Promise<{ cards, state }>   post(key, on) -> Promise   pick(key) -> Promise   show() -> Promise<bool>   close() -> Promise
-   sync(root, doc) draws or removes the Menu entry (only while the switch is on); open(root) opens the panel (a Workshop sheet). */
+   sync(root) takes down a stale Menu entry (N2: there is no Menu line any more); open(root) opens the panel (a Workshop sheet, or inline once the shell binds it). */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -136,7 +136,7 @@
     return W.fetch('/api' + path, o).then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); });
   }
   function el(tag, cls, text) { var e = W.document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
-  function btn(label, fn, cls) { var b = el('button', cls || '', label); b.type = 'button'; b.addEventListener('click', fn); return b; }
+  function btn(label, fn, cls) { var b = el('button', 'btn sm' + (cls ? ' ' + cls : ''), label); b.type = 'button'; b.addEventListener('click', fn); return b; }   /* the app's button, as every tool's */
 
   var ctl = null;
   function feed() { var P = W.B68GmPage; return P && typeof P.aftermath === 'function' ? P.aftermath() : null; }
@@ -167,7 +167,7 @@
     var f = feed(), phase = f && f.night && typeof f.night.phase === 'function' ? str(f.night.phase()) : '';
     box.appendChild(el('p', 'gm-dim', (phase === 'plan' ? 'Planning phase: put the board up for the table. ' : '') + 'Players post from their sheets. Only the cards you post here go on the iPad.'));
     var row = el('div', 'seg');
-    row.appendChild(btn('Put the board on the iPad', function () { c.show().then(function (ok) { if (!ok) box.appendChild(el('p', 'gm-warn', 'Post at least one card first.')); }); }, 'primary'));
+    row.appendChild(btn('Show on iPad', function () { c.show().then(function (ok) { if (!ok) box.appendChild(el('p', 'gm-warn', 'Post at least one card first.')); }); }, 'primary'));
     row.appendChild(btn('Refresh', function () { c.refresh().then(function () { paint(box); }); }));
     row.appendChild(btn('Close the board (picked is done, the rest carry over)', function () {
       if (W.confirm && !W.confirm('Close the board? The picked card is done and every other posted card carries over.')) return;
@@ -182,21 +182,16 @@
       r.appendChild(el('b', '', LABEL[k.k] + ' (' + k.name + ')'));
       var t = el('span', '', k.text); t.style.flex = '1'; r.appendChild(t);
       if (k.carried) r.appendChild(el('span', 'gm-dim', 'carried ×' + k.carried));
-      r.appendChild(btn(k.shown ? 'Take down' : 'Post', function () { c.post(k.key, !k.shown).then(function () { paint(box); }); }));
+      r.appendChild(btn(k.shown ? 'Take it down' : 'Post', function () { c.post(k.key, !k.shown).then(function () { paint(box); }); }));
       if (k.shown) r.appendChild(btn(k.picked ? 'Unpick' : 'Pick', function () { c.pick(k.key).then(function () { paint(box); }); }));
       list.appendChild(r);
     });
   }
-  function sync(rootEl, doc) {
-    if (!W || !W.document || !rootEl || typeof rootEl.querySelector !== 'function') return false;
-    var list = rootEl.querySelector('.gm-menu-list'), cur = rootEl.querySelector('#gm-menu-board');
-    var on = !!(W.B68Features && isObj(doc) && W.B68Features.valueOf(doc, SWITCH));
-    if (!on) { if (cur && cur.parentNode) cur.parentNode.removeChild(cur); return false; }
-    if (!list || cur) return !!cur;
-    var b = el('button', '', 'Opportunity board'); b.type = 'button'; b.id = 'gm-menu-board'; b.title = 'What the players posted, and the board for the iPad';
-    b.addEventListener('click', function () { list.setAttribute('hidden', ''); open(rootEl); });
-    list.appendChild(b);
-    return true;
+  /* N2: the Menu line is gone (the shell places this tool, B68GmTools.get('board').open()); sync() only takes down a line an older page drew, and says false. */
+  function sync(rootEl) {
+    var cur = rootEl && typeof rootEl.querySelector === 'function' ? rootEl.querySelector('#gm-menu-board') : null;
+    if (cur && cur.parentNode) cur.parentNode.removeChild(cur);
+    return false;
   }
   function open(rootEl) {
     var Wk = W.B68GmWorkshop; if (!Wk || typeof Wk.sheet !== 'function') return null;

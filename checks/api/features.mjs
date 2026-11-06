@@ -1,6 +1,9 @@
-// W0.2 against a real `wrangler dev` (local D1, workerd): the switchboard's server half. The campaign document's `features` is the GM's alone (a player's PATCH is 403),
-// is cleaned on write (a GM-only id, an unknown id and a non-boolean are dropped, never stored), is kept by a whole-document PUT, is cleaned again on a player's read,
-// and reaches the iPad on the display poll (hseq present) without a second D1 call. Invented ids only.
+// W0.2 and N0 against a real `wrangler dev` (local D1, workerd): the registry's server half after the night rebuild. Everything built is ON: what a phone, the iPad
+// and the GM's own devices are told is made on every read from the registry (every display and phone feature ON, the three settings as stored), from the very
+// first request, with no GM page ever opened. The campaign document's stored `features` is the GM's alone (a player's PATCH is 403), is cleaned on write (a GM-only
+// id, an unknown id and a non-boolean are dropped), is kept by a whole-document PUT, and is NEVER rewritten by a read or by a write that does not name it (checked
+// through /api/export, which returns the document as stored). The iPad reads the served map on the display poll (hseq present) without a second D1 call.
+// Invented ids only.
 //   node checks/api/features.mjs        (Windows: wrangler is started with a shell)
 //
 // Applies migrations/ to a throwaway local D1, then starts the Worker on PORT (default 8951, lane G's range 8950-8999).
@@ -11,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Features from '../../app/features.js';
-import { cleanFeatures, forPlayer, parseFeatures } from '../../functions/_lib/features.js';
+import { cleanFeatures, forPlayer, parseFeatures, servedFeatures } from '../../functions/_lib/features.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const PORT = Number(process.env.PORT || 8951);
@@ -51,19 +54,25 @@ async function step(name, fn) {
 }
 function expect(cond, msg) { if (!cond) throw new Error(msg); }
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+const sorted = (o) => Object.fromEntries(Object.keys(o || {}).sort().map((k) => [k, o[k]]));
+const sameMap = (a, b) => same(sorted(a), sorted(b));
+const NON_SETTINGS = Features.publicIds().filter((i) => !Features.isSetting(i));
 
 async function main() {
   // in-process: the registry the Worker bundles is the one the page reads
-  await step('the Worker\'s door to the registry: only display and phone ids, only booleans', async () => {
+  await step('the Worker\'s door to the registry: the write side cleans to display and phone ids; the read side serves every one of them ON, a setting as stored', async () => {
     const real = Features.publicIds();
-    expect(real.includes('phoneCards'), 'phoneCards is a public id: ' + real);
+    expect(real.includes('phoneCards') && real.includes('fx.off') && real.includes('room.music'), 'the settings are public ids: ' + real);
     expect(same(cleanFeatures({ phoneCards: true, 'gm.secret': true, nope: true, bad: 'yes' }), { phoneCards: true }), 'cleaned');
     expect(same(cleanFeatures(null), {}) && same(cleanFeatures([true]), {}) && same(cleanFeatures('x'), {}), 'junk is empty');
-    expect(same(parseFeatures('{"phoneCards":false,"zzz":true}'), { phoneCards: false }) && same(parseFeatures('{not json'), {}) && same(parseFeatures(null), {}), 'parse');
+    for (const m of [parseFeatures('{not json'), parseFeatures(null), servedFeatures({})]) {
+      expect(NON_SETTINGS.every((i) => m[i] === true) && !('phoneCards' in m), 'nothing stored: every non-setting ON, no setting: ' + JSON.stringify(m));
+    }
+    expect(parseFeatures('{"phoneCards":false,"zzz":true}').phoneCards === false && !('zzz' in parseFeatures('{"zzz":true}')), 'a stored setting is served as it is; junk never');
     Features.register({ id: 'test.gmonly', label: 'T', surface: 'gm', stage: 'spine', default: false, saturday: 'off', doc: 'd' });
     try {
       expect(same(cleanFeatures({ 'test.gmonly': true, phoneCards: true }), { phoneCards: true }), 'a registered GM-only id is dropped too');
-      expect(same(forPlayer({ a: 1, features: { 'test.gmonly': true } }), { a: 1 }), 'forPlayer leaves features out when nothing player-safe is left');
+      expect(!('test.gmonly' in forPlayer({ a: 1, features: { 'test.gmonly': true } }).features), 'and never served');
     } finally { Features.unregister('test.gmonly'); }
   });
 
@@ -81,68 +90,90 @@ async function main() {
   console.log('server up on ' + PORT);
 
   const poll = (user, hseq = 0) => call('GET', '/api/gm/display?seq=0&aseq=0&sseq=0&hseq=' + hseq, { user });
+  /* the campaign document AS STORED: /api/export (GM only) returns it untouched by the served view */
+  const stored = async () => { const r = await call('GET', '/api/export', { user: GM }); expect(r.status === 200, 'export ' + r.status); return r.json.campaign.doc.features; };
 
-  await step('nothing stored: the campaign has no `features`, a player reads none, and the iPad poll carries no `features` key (the answer is main\'s)', async () => {
+  await step('nothing stored, no GM page ever opened: a player, the GM and the iPad poll are each told every display and phone feature ON from the first request; the settings are absent (off); nothing is written', async () => {
+    const want = servedFeatures({});
+    expect(NON_SETTINGS.every((i) => want[i] === true) && Features.settings().every((s) => !(s.id in want)), 'the served map with nothing stored');
     const g = await call('GET', '/api/campaign', { user: PLAYER });
-    expect(g.status === 200 && !('features' in g.json.doc), 'player doc has no features: ' + g.text.slice(0, 160));
+    expect(g.status === 200 && sameMap(g.json.doc.features, want), 'player: ' + g.text.slice(0, 300));
+    const gm = await call('GET', '/api/campaign', { user: GM });
+    expect(gm.status === 200 && sameMap(gm.json.doc.features, want), 'the GM reads the same served map: ' + gm.text.slice(0, 200));
     const p = await poll(IPAD);
-    expect(p.status === 200 && p.json.mission && !('features' in p.json), 'poll: ' + p.text.slice(0, 200));
+    expect(p.status === 200 && p.json.mission && sameMap(p.json.features, want), 'poll: ' + p.text.slice(0, 300));
+    expect((await stored()) === undefined, 'and the stored document still has no `features`');
   });
 
-  await step('the GM writes the switch map: only registered display and phone ids are stored; a GM-only, an unknown and a non-boolean value are dropped', async () => {
-    const r = await call('PATCH', '/api/campaign', { user: GM, body: { features: { phoneCards: true, 'spine.rail': true, 'gm.private': true, junk: 'yes', bad: 1 } } });
+  await step('the GM writes a map (an older page might): only registered display and phone ids are stored; a GM-only, an unknown and a non-boolean value are dropped', async () => {
+    const r = await call('PATCH', '/api/campaign', { user: GM, body: { features: { phoneCards: true, 'map.flashback': false, 'spine.rail': true, 'gm.private': true, junk: 'yes', bad: 1 } } });
     expect(r.status === 200, 'PATCH ' + r.status + ' ' + r.text.slice(0, 200));
-    expect(same(r.json.doc.features, { phoneCards: true }), 'stored ' + JSON.stringify(r.json.doc.features));
+    expect(same(await stored(), { phoneCards: true, 'map.flashback': false }), 'stored ' + JSON.stringify(await stored()));
+    expect(sameMap(r.json.doc.features, servedFeatures({ phoneCards: true })), 'the answer is served: a stored false for a feature reads ON: ' + JSON.stringify(r.json.doc.features));
     const g = await call('GET', '/api/campaign', { user: GM });
-    expect(same(g.json.doc.features, { phoneCards: true }), 'GM reads ' + JSON.stringify(g.json.doc.features));
+    expect(g.json.doc.features.phoneCards === true && g.json.doc.features['map.flashback'] === true && !('spine.rail' in g.json.doc.features), 'GM reads ' + JSON.stringify(g.json.doc.features));
   });
 
-  await step('a player reads the map but can never write it (403), and a GM-only id is nowhere in what a player is sent', async () => {
+  await step('a player reads the served map but can never write it (403), and a GM-only id is nowhere in what a player is sent', async () => {
     const g = await call('GET', '/api/campaign', { user: PLAYER });
-    expect(g.status === 200 && same(g.json.doc.features, { phoneCards: true }), 'player reads ' + g.text.slice(0, 200));
+    expect(g.status === 200 && g.json.doc.features.phoneCards === true && g.json.doc.features['map.flashback'] === true, 'player reads ' + g.text.slice(0, 200));
     for (const id of ['spine.rail', 'gm.private', 'junk']) expect(!g.text.includes(id), 'the id ' + id + ' reached a player');
     const w = await call('PATCH', '/api/campaign', { user: PLAYER, body: { features: { phoneCards: false } } });
     expect(w.status === 403, 'player PATCH ' + w.status);
-    const g2 = await call('GET', '/api/campaign', { user: GM });
-    expect(g2.json.doc.features.phoneCards === true, 'unchanged after the refused write');
+    expect(same(await stored(), { phoneCards: true, 'map.flashback': false }), 'unchanged after the refused write');
   });
 
   await step('features must be an object (or null): a string, an array or a number is 400', async () => {
     for (const bad of ['on', [true], 5]) { const r = await call('PATCH', '/api/campaign', { user: GM, body: { features: bad } }); expect(r.status === 400, JSON.stringify(bad) + ' -> ' + r.status); }
   });
 
-  await step('a whole-document PUT keeps the stored switches (a stale copy cannot flip one), and a player cannot PUT at all', async () => {
+  await step('nothing rewrites a stored value: a whole-document PUT of the served copy (every feature ON) or of a stale one keeps the stored map; a PATCH that does not name it leaves it; a player cannot PUT', async () => {
     const cur = (await call('GET', '/api/campaign', { user: GM })).json.doc;
-    const stale = { ...cur, features: { phoneCards: false } };
-    const r = await call('PUT', '/api/campaign', { user: GM, body: stale });
-    expect(r.status === 200 && same(r.json.doc.features, { phoneCards: true }), 'PUT ' + r.status + ' ' + JSON.stringify(r.json && r.json.doc && r.json.doc.features));
-    const w = await call('PUT', '/api/campaign', { user: PLAYER, body: stale });
+    expect(NON_SETTINGS.every((i) => cur.features[i] === true), 'the GM holds the served copy');
+    const r1 = await call('PUT', '/api/campaign', { user: GM, body: cur });
+    expect(r1.status === 200 && same(await stored(), { phoneCards: true, 'map.flashback': false }), 'PUT of the served copy: stored ' + JSON.stringify(await stored()));
+    const r2 = await call('PUT', '/api/campaign', { user: GM, body: { ...cur, features: { phoneCards: false } } });
+    expect(r2.status === 200 && same(await stored(), { phoneCards: true, 'map.flashback': false }), 'PUT of a stale copy: stored ' + JSON.stringify(await stored()));
+    const r3 = await call('PATCH', '/api/campaign', { user: GM, body: { session: { number: 3 } } });
+    expect(r3.status === 200 && same(await stored(), { phoneCards: true, 'map.flashback': false }), 'a PATCH without features: stored ' + JSON.stringify(await stored()));
+    const w = await call('PUT', '/api/campaign', { user: PLAYER, body: cur });
     expect(w.status === 403, 'player PUT ' + w.status);
   });
 
-  await step('the iPad poll (hseq sent) carries the same map as `features`, on a full answer and on an unchanged one', async () => {
+  await step('the iPad poll (hseq sent) carries the served map as `features`, on a full answer and on an unchanged one; a call without hseq is answered as before', async () => {
+    const want = servedFeatures(await stored());
     const p = await poll(IPAD);
-    expect(p.status === 200 && same(p.json.features, { phoneCards: true }), 'full: ' + p.text.slice(0, 240));
+    expect(p.status === 200 && sameMap(p.json.features, want), 'full: ' + p.text.slice(0, 240));
     const seq = p.json.seq, aseq = p.json.ambient && p.json.ambient.seq;
     const u = await call('GET', '/api/gm/display?seq=' + seq + '&aseq=' + aseq + '&sseq=' + (p.json.stt ? p.json.stt.seq : 0) + '&hseq=' + (p.json.mission ? p.json.mission.hseq : 0), { user: IPAD });
-    expect(u.status === 200 && same(u.json.features, { phoneCards: true }), 'unchanged: ' + u.text.slice(0, 240));
+    expect(u.status === 200 && sameMap(u.json.features, want), 'unchanged: ' + u.text.slice(0, 240));
     const old = await call('GET', '/api/gm/display?seq=0', { user: IPAD });
     expect(old.status === 200 && !('features' in old.json), 'a call without hseq is answered as before');
   });
 
-  await step('All off: the GM writes every id false; a player and the iPad read false at their next poll, and null removes the map', async () => {
+  await step('the settings (what the GM page copies): fx.off and room.music land as stored and a phone and the iPad read each as stored; turning one off lands', async () => {
+    let r = await call('PATCH', '/api/campaign', { user: GM, body: { features: { 'fx.off': true, 'room.music': true } } });
+    expect(r.status === 200 && same(sorted(await stored()), sorted({ phoneCards: true, 'map.flashback': false, 'fx.off': true, 'room.music': true })), 'stored ' + JSON.stringify(await stored()));
+    const g = await call('GET', '/api/campaign', { user: PLAYER }), p = await poll(IPAD);
+    expect(g.json.doc.features['fx.off'] === true && g.json.doc.features['room.music'] === true && p.json.features['fx.off'] === true && p.json.features['room.music'] === true, 'both read on: ' + JSON.stringify(p.json.features));
+    r = await call('PATCH', '/api/campaign', { user: GM, body: { features: { 'fx.off': false } } });
+    const p2 = await poll(IPAD);
+    expect(p2.json.features['fx.off'] === false && p2.json.features['room.music'] === true, 'fx.off off, room.music on: ' + JSON.stringify(p2.json.features));
+  });
+
+  await step('the old All off (an older page writing every id false): the settings read off and every other display and phone feature is still ON; null removes the stored map and the served one stays', async () => {
     const ids = Features.publicIds();
     const off = {}; ids.forEach((i) => { off[i] = false; });
     const r = await call('PATCH', '/api/campaign', { user: GM, body: { features: off } });
-    expect(r.status === 200 && same(r.json.doc.features, off), 'off ' + r.text.slice(0, 200));
-    const g = await call('GET', '/api/campaign', { user: PLAYER });
-    expect(Object.values(g.json.doc.features).every((v) => v === false), 'player reads all false');
-    const p = await poll(IPAD);
-    expect(Object.values(p.json.features).every((v) => v === false), 'iPad reads all false');
+    expect(r.status === 200 && sameMap(await stored(), off), 'stored all false ' + JSON.stringify(await stored()));
+    const g = await call('GET', '/api/campaign', { user: PLAYER }), p = await poll(IPAD);
+    for (const m of [g.json.doc.features, p.json.features]) {
+      expect(NON_SETTINGS.every((i) => m[i] === true) && Features.settings().every((s) => m[s.id] === false), 'served: ' + JSON.stringify(m));
+    }
     const n = await call('PATCH', '/api/campaign', { user: GM, body: { features: null } });
-    expect(n.status === 200 && !('features' in n.json.doc), 'null removes ' + n.text.slice(0, 160));
-    const p2 = await poll(IPAD);
-    expect(!('features' in p2.json), 'and the poll is main\'s again');
+    expect(n.status === 200 && (await stored()) === undefined, 'null removes the stored map');
+    const p2 = await poll(IPAD), g2 = await call('GET', '/api/campaign', { user: PLAYER });
+    expect(sameMap(p2.json.features, servedFeatures({})) && sameMap(g2.json.doc.features, servedFeatures({})), 'and the served map is the one with nothing stored');
   });
 }
 

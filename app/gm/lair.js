@@ -1,7 +1,7 @@
 /* gm/lair.js — the lair that grows (suite ticket 5.4, switch between.lair): the GM's side. Plain script, UMD: window.B68GmLair in the browser, module.exports under Node.
 
    WHAT IT DOES. Menu then The lair: the crew's base as a cut-away section (map kit 1.0's section, drawn by display/lair-draw.js). Each base upgrade, cohort and piece of
-   flair on the crew sheet adds a layer; "Put it on the iPad" sends the show kind `lair` for up to three minutes (the server's overlay cap). Flair is not a field of the
+   flair on the crew sheet adds a layer; "Show on iPad" sends the show kind `lair` for up to three minutes (the server's overlay cap). Flair is not a field of the
    crew sheet, so the GM types it here, and may hold any layer back from the iPad. The pure rules (which layer adds which room) are in display/lair.js, shared with the iPad.
 
    PERSISTENCE. One GM-scope row of the docs store (kind `lair`, owner `_`): { v: 1, name, front, flair: [text], hide: [layer] }. The layers themselves are never stored: they are
@@ -13,7 +13,7 @@
      addFlair(st, text) -> st    removeFlair(st, text) -> st    toggleHide(st, layer) -> st
    create(host) -> controller. host: { enabled(), crew() -> the crew sheet document, docs: { list(kind), put(row) }, show(kind, payload, opts), night(), now(), kit() }
      refresh() -> Promise  state() view() -> as above  addFlair(text) removeFlair(text) toggleHide(layer) setName(text) setFront('canal'|'street'|'') show() preview() -> { svg, caption, warnings }
-   sync(root, doc) draws or removes the Menu entry (only while the switch is on); open(root) opens the panel (a Workshop sheet). */
+   sync(root) takes down a stale Menu entry (N2: there is no Menu line any more); open(root) opens the panel (a Workshop sheet, or inline once the shell binds it). */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -89,7 +89,7 @@
     return W.fetch('/api' + path, o).then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); });
   }
   function el(tag, cls, text) { var e = W.document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
-  function btn(label, fn, cls) { var b = el('button', cls || '', label); b.type = 'button'; b.addEventListener('click', fn); return b; }
+  function btn(label, fn, cls) { var b = el('button', 'btn sm' + (cls ? ' ' + cls : ''), label); b.type = 'button'; b.addEventListener('click', fn); return b; }   /* the app's button, as every tool's */
 
   var ctl = null;
   function feed() { var P = W.B68GmPage; return P && typeof P.cast === 'function' ? P.cast() : null; }
@@ -115,7 +115,7 @@
     while (box.firstChild) box.removeChild(box.firstChild);
     box.appendChild(el('p', 'gm-dim', 'The base, drawn from the crew sheet: a layer for each base upgrade, cohort and piece of flair. Flair is typed here. Hold a layer back and it stays off the iPad.'));
     var top = el('div', 'seg');
-    top.appendChild(btn('Put it on the iPad (three minutes)', function () { c.show(); }, 'primary'));
+    top.appendChild(btn('Show on iPad', function () { c.show(); }, 'primary')).title = 'The lair stays up on the iPad for three minutes';
     ['', 'canal', 'street'].forEach(function (f) { top.appendChild(btn(f ? 'Front: ' + f : 'Front: automatic', function () { c.setFront(f).then(function () { paint(box); }); }, (st.front === f ? 'primary' : ''))); });
     box.appendChild(top);
     var nm = el('input'); nm.type = 'text'; nm.maxLength = 60; nm.placeholder = 'Name of the base (the crew name by default)'; nm.value = st.name; nm.setAttribute('aria-label', 'Name of the base');
@@ -138,16 +138,11 @@
     pv.caption.forEach(function (t) { box.appendChild(el('p', 'gm-dim', t)); });
     if (pv.svg) { var holder = el('div', 'gm-lair-preview'); holder.style.cssText = 'margin-top:10px;max-width:100%;overflow:auto'; holder.innerHTML = pv.svg; box.appendChild(holder); }
   }
-  function sync(rootEl, doc) {
-    if (!W || !W.document || !rootEl || typeof rootEl.querySelector !== 'function') return false;
-    var list = rootEl.querySelector('.gm-menu-list'), cur = rootEl.querySelector('#gm-menu-lair');
-    var on = !!(W.B68Features && isObj(doc) && W.B68Features.valueOf(doc, SWITCH));
-    if (!on) { if (cur && cur.parentNode) cur.parentNode.removeChild(cur); return false; }
-    if (!list || cur) return !!cur;
-    var b = el('button', '', 'The lair'); b.type = 'button'; b.id = 'gm-menu-lair'; b.title = 'The crew base as a cut-away section, a layer for each upgrade, cohort and piece of flair';
-    b.addEventListener('click', function () { list.setAttribute('hidden', ''); open(rootEl); });
-    list.appendChild(b);
-    return true;
+  /* N2: the Menu line is gone (the shell places this tool, B68GmTools.get('lair').open()); sync() only takes down a line an older page drew, and says false. */
+  function sync(rootEl) {
+    var cur = rootEl && typeof rootEl.querySelector === 'function' ? rootEl.querySelector('#gm-menu-lair') : null;
+    if (cur && cur.parentNode) cur.parentNode.removeChild(cur);
+    return false;
   }
   function open(rootEl) {
     var Wk = W.B68GmWorkshop; if (!Wk || typeof Wk.sheet !== 'function') return null;

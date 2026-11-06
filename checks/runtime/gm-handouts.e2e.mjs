@@ -1,6 +1,6 @@
 // Handouts on the real GM page and the real table display, in a real browser, against a local wrangler dev. Invented fixtures: two tiny
 // generated images written into the git-ignored app/media/handouts/ for the run (and removed after), an invented manifest posted as the
-// pack's `handouts` part. Checks: the list in the iPad tab (titles, cues, thumbnails), Show on iPad posts exactly one item, Clear iPad,
+// pack's `handouts` part. Checks: the list in the iPad tab (titles, cues, thumbnails), Show on iPad posts exactly one item, Take it down,
 // the title toggle, the display draws the image fitted on black (and says so when the file is missing), the iPad is never sent the
 // manifest, suggestHandout puts a "Show handout?" idea card in the Blade box (Show posts it and drops it; Dismiss just drops it).
 //   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] node checks/runtime/gm-handouts.e2e.mjs
@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -82,6 +83,7 @@ try {
   const errors = [];
   async function open(hash, { width = 1280, height = 800 } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block' });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     const page = await c.newPage();
     const reqs = [];
     page.on('request', (r) => reqs.push(r.url()));
@@ -96,14 +98,14 @@ try {
   const G = await open('#gm');
   const p = G.page;
   await p.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
-  await p.click('.gm-tab[data-panel="ipad"]');
+  await p.click('.gm-views [data-pv="ipad"]');      /* N1b: iPad, a pinned view in every place */
   check(await p.waitForSelector('#gm-ipad .gm-handout', { timeout: 15000 }).then(() => true, () => false), 'the iPad tab lists the handouts');
   check((await p.$$('#gm-ipad .gm-handout')).length === 3, 'three entries, as in the pack');
   const titles = await p.$$eval('#gm-ipad .gm-handout b', (l) => l.map((e) => e.textContent));
   check(JSON.stringify(titles) === JSON.stringify(['Invented brass key', 'Invented wide banner', 'Invented missing image']), 'each shows its title');
   check(/after the invented dock clue/.test(await p.textContent('#gm-ipad [data-ho="key"]')) && !/after the invented/.test(await p.textContent('#gm-ipad [data-ho="wide"]')), 'the cue shows only where the vault gave one');
   check(await p.waitForFunction(() => { const i = document.querySelector('#gm-ipad [data-ho="key"] img'); return i && i.complete && i.naturalWidth > 0; }, null, { timeout: 8000 }).then(() => true, () => false), 'a thumbnail loads from media/handouts/');
-  check(await p.$$eval('#gm-ipad [data-ho] [data-gm="ho-show"]', (l) => l.length) === 3 && await p.$$eval('#gm-ipad [data-ho] [data-gm="blankipad"]', (l) => l.length) === 3, 'each has Show on iPad and Clear iPad');
+  check(await p.$$eval('#gm-ipad [data-ho] [data-gm="ho-show"]', (l) => l.length) === 3 && await p.$$eval('#gm-ipad [data-ho] [data-gm="blankipad"]', (l) => l.length) === 3, 'each has Show on iPad and Take it down');
 
   await p.click('#gm-ipad [data-ho="key"] [data-gm="ho-show"]');
   check(await until(async () => (await shownDisplay()).kind === 'handout', 8000), 'Show on iPad puts a handout on the display');
@@ -117,7 +119,7 @@ try {
   d = await shownDisplay();
   check(d.showTitle === true && d.title === 'Invented wide banner', 'with the title toggle on, the title caption is on');
   await p.click('#gm-ipad [data-ho="wide"] [data-gm="blankipad"]');
-  check(await until(async () => (await shownDisplay()).kind === 'blank', 8000), 'Clear iPad blanks it');
+  check(await until(async () => (await shownDisplay()).kind === 'blank', 8000), 'Take it down blanks it');
 
   // ---- the table display ----
   await p.click('#gm-ipad [data-hotitle]');   // title off again

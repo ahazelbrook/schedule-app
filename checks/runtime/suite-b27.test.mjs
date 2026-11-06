@@ -20,10 +20,10 @@ const F = require(path.join(ROOT, 'app', 'features.js'));
 const Show = require(path.join(ROOT, 'app', 'gm', 'show.js'));
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-await test('switches: three, GM-only, off by default, bland text', () => {
+await test('switches: three, GM-only, always on (N0), bland text', () => {
   for (const id of ['room.practical', 'room.phone', 'between.trouble']) {
     const s = F.get(id); assert.ok(s, id); assert.equal(s.surface, 'gm'); assert.equal(s.default, false);
-    assert.equal(F.valueOf({}, id), false); assert.ok(!F.publicIds().includes(id));
+    assert.equal(F.valueOf({}, id), true, id + ': on with nothing stored'); assert.ok(!F.publicIds().includes(id));
     assert.ok(!/\b(blades|doskvol)\b/i.test(s.label + s.doc));
   }
   assert.deepEqual(F.publicMap({}), F.publicMap({ features: { 'room.phone': true, 'between.trouble': true } }), 'nothing joins the public maps');
@@ -197,27 +197,22 @@ await test('trouble: secrecy: GM-only fields never reach a show payload or the f
   assert.ok(!JSON.stringify(Tr.cleanItem(doc.trouble.items.z)).includes('GM-ONLY'));
 });
 
-function menuRig() {
-  const btns = new Map(); const anchor = { insertAdjacentHTML(_w, html) { const id = /id="([^"]+)"/.exec(html)[1]; btns.set(id, { parentNode: { removeChild: () => btns.delete(id) } }); } };
-  return { btns, menu: { $q: (sel) => btns.get(sel.slice(1)) || null, after: () => anchor } };
-}
-
-await test('room-desk: with every switch off nothing exists, draws or plays; each Menu line follows its own switch', () => {
+await test('room-desk: with every switch off nothing exists, draws or plays; each desk follows its own switch (N2: no Menu lines)', () => {
   const state = { features: {} }, shows = [];
   const d = RD.create({ feature: (id) => state.features[id] === true, doc: () => ({}), show: (k) => { shows.push(k); return Promise.resolve(1); }, toast: () => {}, save: () => {} });
-  const { btns, menu } = menuRig();
-  d.menuSync(menu); assert.equal(btns.size, 0); assert.equal(d.practical(), null); assert.equal(d.phone(), null); assert.equal(d.trouble(), null);
+  assert.equal(d.menuSync, undefined, 'the Menu lines are gone');
+  assert.equal(d.practical(), null); assert.equal(d.phone(), null); assert.equal(d.trouble(), null); assert.equal(d.desk('practical'), null); assert.equal(d.desk('nope'), null);
   d.onShow('ring'); assert.equal(d.toggle('trouble'), false);
-  state.features['between.trouble'] = true; d.menuSync(menu); assert.deepEqual([...btns.keys()], ['gm-menu-trouble']);
-  state.features['room.phone'] = true; state.features['room.practical'] = true; d.menuSync(menu); assert.equal(btns.size, 3);
-  state.features['room.phone'] = false; d.menuSync(menu); assert.deepEqual([...btns.keys()].sort(), ['gm-menu-practical', 'gm-menu-trouble']);
+  state.features['between.trouble'] = true; assert.deepEqual(d.lines().map((x) => x.which), ['trouble']); assert.ok(d.desk('trouble'));
+  state.features['room.phone'] = true; state.features['room.practical'] = true; assert.equal(d.lines().length, 3);
+  state.features['room.phone'] = false;
   assert.deepEqual(d.lines().map((x) => x.which), ['practical', 'trouble']);
-  assert.ok(d.trouble() && d.practical());
+  assert.ok(d.trouble() && d.practical() && d.desk('practical') === d.practical());
 });
 
 await test('seam: the page hooks are single lines, the files are routed, and the sources carry no campaign names', () => {
   const page = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
-  assert.ok(page.includes('rdMenuSync()') && page.includes("case 'practical': case 'phone': case 'trouble'"));
+  assert.ok(page.includes("reg('practical', desk('practical'))") && page.includes("case 'practical': case 'phone': case 'trouble'"));
   const routes = fs.readFileSync(path.join(ROOT, 'app', 'routes.js'), 'utf8');
   for (const f of ['gm/practical.js', 'gm/phone.js', 'gm/trouble.js', 'gm/room-desk.js']) assert.ok(routes.includes("'" + f + "'"), f);
   const display = routes.split('\n').find((l) => /^\s*display:/.test(l)); assert.ok(!/room-desk|practical|phone\.js|trouble/.test(display), 'players and the display never fetch GM files');

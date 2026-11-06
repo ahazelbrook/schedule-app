@@ -17,7 +17,7 @@
      pickClock(clocks, name) -> { id, from, to, size } | null      the table clock called `name`, one segment further; null when none or full
      beatKey(clock, now) -> the show key        eyeFor(box) -> { x, y }     the point the fill spreads from (the top middle of a room's box)
      fillSvg(doc, svg, box, id) -> the <g> it drew (every attribute set, no text from the page)      clearFill(svg)
-     create(host) -> controller { run() -> Promise<result>, busy(), paint(frame, svg, zoom) }
+     create(host) -> controller { run() -> Promise<result>, busy(), on(), paint(frame, svg, zoom) }     (the button: the site's toolbar, data-site="spotted", N3)
        host: { feature(id), doc(), room() -> name, roomBox(svg, name) -> { x, y, w, h } | null, clockName() -> name | '', clocks() -> [clock],
                tick(id, to) -> Promise, show(kind, payload, { key, ms }) -> Promise<answer | null>, toast(msg, bad), log(text), now(),
                setTimeout/clearTimeout }
@@ -133,27 +133,14 @@
       }, function () { fx = null; if (svgRef) clearFill(svgRef); running = false; return finish('error'); });
     }
 
-    /* the Run view's map was drawn: remember it, and put the button on it (or take it away while the switch is off) */
+    /* the Run view's map was drawn: remember it (the zoom and the fill need it), and carry on a fill the redraw wiped. The Spotted button itself is in the
+       site's toolbar (N3), over the board and the map alike: on the board the beat still stings and ticks, it just has no map to zoom. */
     function paint(frame, svg, zoom) {
       svgRef = svg; zoomRef = zoom || null;
       var doc = frame && frame.ownerDocument; if (!doc) return;
       if (fx && running && svg) fillSvg(doc, svg, fx.box, fx.key, now() - fx.at);
-      var bar = frame.querySelector('.b19-bar'), mine = frame.querySelector('[data-b19="spotted"]');
-      if (!on()) {
-        if (mine && mine.parentNode) mine.parentNode.removeChild(mine);
-        if (bar && !bar.firstChild && bar.parentNode) bar.parentNode.removeChild(bar);
-        return;
-      }
-      if (!bar) { bar = doc.createElement('div'); bar.className = 'b19-bar'; frame.appendChild(bar); }
-      if (!mine) {
-        var b = doc.createElement('button'); b.type = 'button'; b.className = 'mz-btn b19-btn'; b.setAttribute('data-b19', 'spotted'); b.textContent = 'Spotted';
-        b.title = 'Zoom to the room, sting, fill from the eyes, tick the alarm';
-        b.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); });
-        b.addEventListener('click', function (ev) { ev.stopPropagation(); run(); });
-        bar.appendChild(b);
-      }
     }
-    return { run: run, busy: function () { return running; }, paint: paint };
+    return { run: run, busy: function () { return running; }, paint: paint, on: on };
   }
 
   return { SWITCH: SWITCH, STEPS_MS: STEPS_MS, DONE_MS: DONE_MS, pickClock: pickClock, beatKey: beatKey, eyeFor: eyeFor, fillSvg: fillSvg, clearFill: clearFill, create: create };

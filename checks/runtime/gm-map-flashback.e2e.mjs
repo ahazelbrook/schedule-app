@@ -1,5 +1,5 @@
 // The flashback filter on the map (suite 2.9, switch map.flashback; app/gm/map-flashback.js, app/display/layers.js, app/display/shows.css) in a real browser against a real local Worker, an invented site
-// (the Pelican Rooms) and the table iPad signed in as the display role. Switch off: no buttons, the iPad gets the plain sepia and no grain or caption. Switch on: the Flashback button sets the
+// (the Pelican Rooms) and the table iPad signed in as the display role. Everything built is on (N0): with nothing stored the buttons are there and the iPad's filter layer comes with the grain and caption; a stored false changes nothing. The Flashback button sets the
 // scene.filter layer, the GM map goes sepia, the iPad gains the grain and the "Earlier" caption, a Pin sits on the crew's room (GM page only), and a tap on Back clears it all.
 //   PW_MODULE=<playwright install> PW_CHANNEL=msedge [PORT=9072] node checks/runtime/gm-map-flashback.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -88,6 +89,7 @@ try {
   const errors = [];
   async function open(run = true, w = 1366, h = 900) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: w, height: h }, serviceWorkers: 'block' });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -107,6 +109,7 @@ try {
   }
   async function openDisplay() {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1366, height: 1024 } });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     const page = await c.newPage();
     page.on('pageerror', (e) => errors.push('ipad pageerror: ' + e.message));
     await page.goto(BASE + '/#display');
@@ -125,49 +128,49 @@ try {
   const lookOn = (page) => page.evaluate(() => { const r = document.querySelector('.dp-root'); return !!r && r.hasAttribute('data-flash-look'); });
   const filt = (page) => page.evaluate(() => { const r = document.querySelector('.dp-root'); return r ? r.getAttribute('data-scene-filter') : null; });
 
-  /* ---- switch off: no button; the filter layer alone gives the plain sepia, with no grain or caption ---- */
+  /* ---- everything on (N0): with NOTHING stored, the buttons are on the map and the filter layer alone brings the grain and the caption on the iPad ---- */
   const A = await open();
-  check((await A.page.$$('[data-b19="flashback"], [data-b19="flash-pin"]')).length === 0, 'switch off: no Flashback or Pin button on the map');
+  check((await A.page.$$('.rv-tools [data-site="flashback"]')).length === 1 && (await A.page.$$('.rv-tools [data-site="pin"]')).length === 1, 'nothing stored: a Flashback and a Pin button, in the site\'s toolbar over the map (N3)');
   const I0 = await openDisplay();
-  check((await api('PATCH', '/gm/ambient', { layer: { path: 'scene.filter', value: 'flashback' } })).status === 200, 'the filter layer is set from outside the switch');
+  check((await api('PATCH', '/gm/ambient', { layer: { path: 'scene.filter', value: 'flashback' } })).status === 200, 'the filter layer is set from outside the page');
   await I0.page.waitForFunction(() => { const r = document.querySelector('.dp-root'); return !!r && r.getAttribute('data-scene-filter') === 'flashback'; }, null, { timeout: 20000 });
-  check(!(await lookOn(I0.page)), 'switch off: the iPad has the plain sepia filter and no flash look');
-  check(await I0.page.evaluate(() => getComputedStyle(document.querySelector('.dp-root'), '::after').content === 'none' || getComputedStyle(document.querySelector('.dp-root'), '::after').content === 'normal'), 'switch off: no caption');
+  check(!!(await until(() => lookOn(I0.page), 15000, 200)), 'nothing stored: the iPad has the flash look with the filter (the served map says map.flashback is on)');
   await api('PATCH', '/gm/ambient', { layer: { path: 'scene.filter', value: null } });
+  await I0.page.waitForFunction(() => { const r = document.querySelector('.dp-root'); return !!r && !r.hasAttribute('data-flash-look'); }, null, { timeout: 20000 });
   await A.c.close();
 
-  /* ---- switch on ---- */
-  check((await api('PATCH', '/gm/state', { features: { 'map.flashback': true } })).status === 200, 'map.flashback is switched on');
+  /* ---- a stored true (what the Switchboard used to write) is the same ---- */
+  check((await api('PATCH', '/gm/state', { features: { 'map.flashback': true } })).status === 200, 'a stored true is taken (and changes nothing)');
   const P = await open();
-  check((await P.page.$$('[data-b19="flashback"]')).length === 1 && (await P.page.$$('[data-b19="flash-pin"]')).length === 1, 'switch on: a Flashback button and a Pin button on the map');
+  check((await P.page.$$('.rv-tools [data-site="flashback"]')).length === 1 && (await P.page.$$('.rv-tools [data-site="pin"]')).length === 1, 'switch on: a Flashback button and a Pin button in the toolbar');
   await I0.page.reload();
   await I0.page.waitForSelector('.dp-overlay', { state: 'attached', timeout: 20000 });
-  await P.page.click('[data-b19="flashback"]');
+  await P.page.click('.rv-tools [data-site="flashback"]');
   check(!!(await until(async () => (await filterNow()) === 'flashback', 6000, 100)), 'the Flashback button sets the scene.filter layer');
-  check(await P.page.$eval('[data-b19="flashback"]', (b) => b.textContent === 'Back'), 'and reads Back while it is up');
+  check(await P.page.$eval('.rv-tools [data-site="flashback"]', (b) => b.textContent === 'Back'), 'and reads Back while it is up');
   check(!!(await until(() => P.page.evaluate(() => document.querySelector('#rv-map').classList.contains('b19-flash')), 6000, 100)), 'the GM map goes sepia');
   await I0.page.waitForFunction(() => { const r = document.querySelector('.dp-root'); return !!r && r.hasAttribute('data-flash-look'); }, null, { timeout: 25000 }).then(() => check(true, 'the iPad has the flash look'), () => check(false, 'the iPad has the flash look'));
   check(await I0.page.evaluate(() => { const r = document.querySelector('.dp-root'); return getComputedStyle(r, '::after').content === '"Earlier' + String.fromCharCode(0x2026) + '"'; }), 'the iPad caption reads Earlier…');
   check(await I0.page.evaluate(() => { const r = document.querySelector('.dp-root'); return /url\(/.test(getComputedStyle(r, '::before').backgroundImage); }), 'and the grain layer is drawn');
 
   /* the pin goes on the crew's room and comes up again */
-  await P.page.click('[data-b19="flash-pin"]');
+  await P.page.click('.rv-tools [data-site="pin"]');
   check(!!(await until(() => P.page.evaluate(() => !!document.querySelector('#rv-map svg .b19-pin')), 4000, 100)), 'Pin drops a pin on the room');
   await sleep(1500);
   check(await P.page.evaluate(() => !!document.querySelector('#rv-map svg .b19-pin')), 'the pin survives the map being redrawn');
   check(!/Showroom/.test(await I0.page.evaluate(() => document.body.innerText)), 'and the pin’s room is named nowhere on the iPad');
-  await P.page.click('[data-b19="flash-pin"]');
+  await P.page.click('.rv-tools [data-site="pin"]');
   check(!!(await until(() => P.page.evaluate(() => !document.querySelector('#rv-map svg .b19-pin')), 4000, 100)), 'a second tap takes the pin up');
 
   /* a tap ends it */
-  await P.page.click('[data-b19="flashback"]');
+  await P.page.click('.rv-tools [data-site="flashback"]');
   check(!!(await until(async () => (await filterNow()) === null, 6000, 100)), 'a tap on Back clears the layer');
   await I0.page.waitForFunction(() => { const r = document.querySelector('.dp-root'); return !!r && !r.hasAttribute('data-flash-look'); }, null, { timeout: 25000 }).then(() => check(true, 'and the iPad look goes'), () => check(false, 'and the iPad look goes'));
 
-  /* ---- off again ---- */
-  check((await api('PATCH', '/gm/state', { features: { 'map.flashback': false } })).status === 200, 'switched off again');
+  /* ---- a stored false (the old All off) changes nothing ---- */
+  check((await api('PATCH', '/gm/state', { features: { 'map.flashback': false } })).status === 200, 'a stored false is taken');
   const R = await open();
-  check((await R.page.$$('[data-b19="flashback"], [data-b19="flash-pin"]')).length === 0, 'switched off: no buttons again');
+  check((await R.page.$$('.rv-tools [data-site="flashback"]')).length === 1 && (await R.page.$$('.rv-tools [data-site="pin"]')).length === 1, 'a stored false changes nothing: both buttons stay');
 
   check(!errors.length, 'no page errors: ' + errors.slice(0, 3).join(' | '));
   await browser.close();

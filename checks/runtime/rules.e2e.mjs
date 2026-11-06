@@ -328,7 +328,7 @@ try {
   check(sc === 'auto', 'the entry scrolls on the iPad: ' + sc);
   await G.page.click('.rl-entry [data-rl="ipadclear"]');
   await G.page.waitForFunction(() => /Cleared/.test(document.getElementById('rl-ipadmsg').textContent), null, { timeout: 10000 });
-  check((await api(GM, 'GET', '/gm/display')).json.display.kind === 'blank', 'Clear iPad puts the ambient back');
+  check((await api(GM, 'GET', '/gm/display')).json.display.kind === 'blank', 'Take it down puts the ambient back');
   await G.page.evaluate(() => window.claude.rules.deleteHouse('ipad-probe'));
   check((await api(GM, 'GET', '/rules')).json.books.house === 0, 'the probe house rule is gone again');
 

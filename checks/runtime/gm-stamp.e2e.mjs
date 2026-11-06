@@ -1,6 +1,7 @@
 // The stamp before the roll, the consequence sizer and the strict cue grammar (suite 1.3, 1.4, A2; app/gm/stamp.js, app/gm/cue-grammar.js) on the real GM page, Worker and
-// ambient document: the Stamp row under Position, the report card on the display route, the sizer after a 4/5, a typed cue with its Undo toast, "didn't catch that", and all
-// switches off. No model, $0; only the panel's tick/cards/ask are faked. Every name is invented.
+// ambient document: the Roll's stamp (N4: position, effect and the line set, then Stamp it on the iPad; there with nothing stored: everything built is on, N0), the report card
+// on the display route, the sizer's strip under the card after a 4/5, Esc one thing per press through gm/esc.js, a typed cue with its Undo toast, "didn't catch that", and a
+// stored false that changes nothing. No model, $0; only the panel's tick/cards/ask are faked. Every name is invented.
 //   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=9030] node checks/runtime/gm-stamp.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
@@ -8,6 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -80,6 +82,7 @@ try {
   const display0 = (await api('GET', '/gm/display')).json.display.kind;
   const errors = [];
   const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' });
+  await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
   const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
   // the panel's own tick and cards have no model here; /act is the REAL Worker for a parsed cue, and a fake only for the model path (a cue the page could not parse)
   await c.route('**/api/gm/assist/tick', (route) => json(route, { cards: [], updates: [], flags: [], spend: seen.capped ? Object.assign({}, SPEND, { tonight: 20, tier: 'off' }) : SPEND, last: 9 }));
@@ -146,33 +149,51 @@ try {
   const toasts = () => page.$$eval('.gm-ugtoast, .toast, #toast, [role="status"]', (l) => l.map((x) => x.textContent).join(' | '));
   const reopen = async () => { await page.reload(); await page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 }); };
 
-  // ============ 1. every switch off: no Stamp row ============
-  check((await page.$$('#gm-stamp')).length === 0, 'switches off: no Stamp row');
-  // ============ 2. switches on from the state document (the Switchboard writes the same) ============
+  // ============ 1. nothing stored: the Roll's stamp is there (N0: everything built is on) ============
+  const STAMP = '#gm-stamp [data-gm="stamp"]', SIZER = '#gm-card #gm-sz:not([hidden])';
+  check(!!(await until(() => page.$(STAMP), 8000)), 'nothing stored: the Roll offers Stamp it on the iPad');
+  // ============ 2. a stored true (what the Switchboard used to write) is the same ============
   await api('PATCH', '/gm/state', FEATS(true));
   await reopen();
-  check(!!(await until(() => page.$('#gm-stamp .gm-st-b'), 8000)), 'switches on: the Stamp row draws under Position');
-  await page.fill('#gm-stamp input[data-st-text]', 'Wren Tully turns round');
-  await page.click('#gm-stamp [data-st="pos"][data-v="risky"]');
-  check((await ovKind()) === '', 'one tap stamps nothing');
-  await page.click('#gm-stamp [data-st="eff"][data-v="standard"]');
-  check(!!(await until(async () => (await ovKind()) === 'report', 6000)), 'the second tap puts the report card on the display route');
+  check(!!(await until(() => page.$(STAMP), 8000)), 'a stored true: the same');
+  await page.fill('#gm-c-threat', 'Wren Tully turns round');
+  await page.click('#gm-pos [data-v="risky"]');
+  check((await ovKind()) === '', 'a position stamps nothing');
+  await page.click('#gm-eff [data-v="standard"]');
+  await sleep(400);
+  check((await ovKind()) === '', 'and nor does an effect (since N4 the effect is picked, never a trigger)');
+  await page.click(STAMP);
+  check(!!(await until(async () => (await ovKind()) === 'report', 6000)), 'Stamp it on the iPad puts the report card on the display route');
   const od = (await ambientDoc()).overlay || {};
   check(od.payload && od.payload.position === 'risky' && od.payload.effect === 'standard' && od.payload.text === 'Wren Tully turns round' && od.ms === 180000, 'its payload: ' + JSON.stringify(od.payload));
   check(!!(await until(async () => Object.values((((await api('GET', '/gm/state')).json.doc || {}).night || {}).log || {}).some((e) => e.k === 'stamp' && /^Stamp: risky, standard - Wren Tully turns round/.test(e.text)), 6000)), 'the stamp is in night.log');
+  check(/On the iPad/.test(await page.textContent('#gm-stamp')) && !!(await page.$('#gm-stamp [data-gm="stamp-down"]')), 'the Roll says it is on the iPad, with Take it down');
+  check(((await api('GET', '/gm/state')).json.doc.con || {}).live.threat === 'Wren Tully turns round', 'the line is the console’s Threat on screen: one value');
   await page.click('#gm-buttons [data-gm="situation"][data-n="2"]');
   check(!!(await until(async () => (await ovKind()) === '', 6000)), 'a 4/5 marked: the card comes down');
-  check(!!(await until(() => page.$('#gm-stamp .gm-st-sizer'), 4000)), 'and the sizer card is offered');
-  const full = await page.$eval('#gm-stamp .gm-st-sizer', (e) => e.textContent);
-  check(/Full size for risky/.test(full), 'at full size for the stamped position: ' + full.slice(0, 90));
-  await page.click('#gm-stamp [data-st="reduce"]');
-  check(/Full size for risky/.test(await page.$eval('#gm-stamp .gm-st-sizer', (e) => e.textContent)), 'one tap does not reduce');
-  await page.click('#gm-stamp [data-st="reduce"]');
-  check(/Reduced to controlled/.test(await page.$eval('#gm-stamp .gm-st-sizer', (e) => e.textContent)), 'the second tap reduces one step');
-  await page.click('#gm-stamp [data-st="dismiss"]');
+  check(!!(await until(() => page.$(SIZER), 4000)), 'and the sizer’s strip is offered under the card’s header');
+  const full = await page.$eval('#gm-card #gm-sz', (e) => e.textContent);
+  check(/Full size for risky/.test(full), 'at full size for the stamped position: ' + full.slice(0, 120));
+  check(/Wren Tully turns round/.test(await page.textContent('#gm-card .gm-lead')) && !/Wren Tully turns round/.test(full), 'the card’s lead spends the line, so the strip does not say it again');
+  check(!!(await until(async () => (await page.inputValue('#gm-c-threat')) === '' && ((await api('GET', '/gm/state')).json.doc.con || {}).live.threat === '', 4000)), 'the threat landed: the Roll’s line is spent (field and store)');
+  check(!!(await page.$('#gm-card .gm-card-acts [data-gm="sz-reduce"]')) && !(await page.$('#gm-card #gm-sz button')), 'Reduce is on the card’s actions row, the strip holds no button');
+  await page.click('#gm-card [data-gm="sz-reduce"]');
+  check(/Full size for risky/.test(await page.$eval('#gm-card #gm-sz', (e) => e.textContent)), 'one tap does not reduce');
+  await page.click('#gm-card [data-gm="sz-reduce"]');
+  check(/Reduced to controlled/.test(await page.$eval('#gm-card #gm-sz', (e) => e.textContent)), 'the second tap reduces one step');
+  await page.click('#gm-card [data-gm="sz-done"]');
+  check(!(await page.$(SIZER)) && !(await page.$('#gm-card [data-gm="sz-done"]')), 'Hide size puts the strip and its buttons away');
   await api('PATCH', '/gm/ambient', { layer: { path: 'band.phase', value: 'plan' } });
-  await page.click('#gm-stamp [data-st="pos"][data-v="desperate"]'); await page.click('#gm-stamp [data-st="eff"][data-v="limited"]');
+  await page.click('#gm-pos [data-v="desperate"]'); await page.click('#gm-eff [data-v="limited"]'); await page.click(STAMP);
   check(!!(await until(async () => (await ovKind()) === 'report', 6000)), 'a second stamp is up');
+  check(await page.evaluate(() => !!window.B68GmEsc && window.B68GmEsc.list().some((e) => e.id === 'stamp' && e.kind === 'stamp' && e.open)), 'the stamp is the one Esc’s stamp entry (gm/esc.js), open while it is up');
+  /* one Esc, one thing (the night design's one Esc): an open Blade panel closes first, and only the next press takes the stamp down */
+  const panelOpen = () => page.evaluate(() => document.querySelector('#as-panel').getBoundingClientRect().left < innerWidth - 100);
+  await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+  if (await panelOpen()) {
+    await page.keyboard.press('Escape'); await sleep(600);
+    check(!(await panelOpen()) && (await ovKind()) === 'report', 'the first Esc closes the Blade panel and leaves the stamp up');
+  }
   await page.keyboard.press('Escape');
   check(!!(await until(async () => (await ovKind()) === '', 6000)), 'Esc takes it down');
   check(JSON.stringify((await ambientDoc()).layers || {}).includes('plan'), 'and leaves the band layer as it was');
@@ -180,10 +201,19 @@ try {
   // ============ 3. the cue grammar, typed in the Ask bar ============
   await page.keyboard.press('a');
   await page.waitForFunction(() => document.querySelector('#as-panel').getBoundingClientRect().left < innerWidth - 100, null, { timeout: 4000 });
+  /* N4-fix: the 4/5 above spent the line, so a bare cue puts no old threat back on the iPad */
+  await type('Blade, risky, standard');
+  const bare = await until(async () => { const d = await ambientDoc(); return d.overlay && d.overlay.kind === 'report' ? d.overlay : null; }, 8000);
+  check(!!bare && bare.payload.position === 'risky' && !bare.payload.text, 'after a landed threat, a bare "Blade, risky, standard" stamps no old line: ' + JSON.stringify(bare && bare.payload));
+  await until(() => page.$('.gm-ugtoast [data-ug="undo"]'), 4000);
+  await page.click('.gm-ugtoast [data-ug="undo"]');
+  check(!!(await until(async () => (await ovKind()) === '', 6000)), 'and its Undo takes it down');
+  await sleep(2300);
   await type('Blade, desperate, great, the lights fail');
   check(!!(await until(async () => (await ovKind()) === 'report', 8000)), 'typed "Blade, desperate, great, the lights fail" stamps through the grammar');
   const t1 = await until(async () => { const t = await toasts(); return /Stamped desperate, great/.test(t) ? t : ''; }, 4000);
   check(!!t1, 'a toast names it: ' + t1);
+  check(!!(await until(async () => (await page.inputValue('#gm-c-threat')) === 'the lights fail', 3000)) && (await page.$eval('#gm-pos [aria-checked="true"]', (b) => b.getAttribute('data-v'))) === 'desperate', 'the cue’s line and position are the Roll’s now (one field, one value)');
   check(!!(await page.$('.gm-ugtoast [data-ug="undo"]')), 'the toast has an Undo button');
   await page.click('.gm-ugtoast [data-ug="undo"]');
   check(!!(await until(async () => (await ovKind()) === '', 6000)), 'Undo takes the card down');
@@ -199,11 +229,11 @@ try {
   await type('Blade, back');
   check(!!(await until(async () => !JSON.stringify((await ambientDoc()).layers || {}).includes('flashback'), 6000)), 'back clears it');
 
-  // ============ 4. All off again ============
+  // ============ 4. a stored false (the old All off) changes nothing ============
   await api('PATCH', '/gm/state', FEATS(false));
   await reopen();
   await sleep(500);
-  check((await page.$$('#gm-stamp')).length === 0, 'All off: the Stamp row is gone');
+  check(!!(await until(() => page.$(STAMP), 8000)), 'a stored false changes nothing: the Roll’s stamp stays');
   check(errors.filter((e) => !/status of 500/.test(e)).length === 0, 'no console errors: ' + JSON.stringify(errors.slice(0, 3)));
   await c.close();
   await browser.close();

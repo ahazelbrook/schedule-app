@@ -23,8 +23,10 @@
 .dp-hs-face { display: flex; flex-direction: column; align-items: stretch; width: 22vmin; background: var(--b68-paper-dark); border: .6vmin solid var(--b68-paper); padding: 1.2vmin; gap: 1vmin; }
 .dp-hs-sil { width: 100%; height: auto; fill: var(--b68-ink-soft); background: var(--b68-paper); }
 .dp-hs-name { display: flex; flex-direction: column; align-items: center; min-height: 9vmin; padding: .8vmin; background: var(--b68-ink); border: .3vmin solid var(--b68-ink-faint); }
-.dp-hs-pname { font: 900 var(--b68-t-lead)/1.1 var(--b68-font-poster); text-transform: uppercase; color: var(--b68-paper); text-align: center; overflow-wrap: anywhere; }
+.dp-hs-pname { font: 900 var(--b68-t-lead)/1.1 var(--b68-font-poster); text-transform: uppercase; color: var(--b68-paper); text-align: center; }
 .dp-hs-prole { font: 700 var(--b68-t-label)/1.1 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .1em; color: var(--b68-mustard); text-align: center; }
+/* a plate never breaks a name inside a word: it wraps at the spaces, and a word too wide for the plate shrinks to fit (display/shows.js fit) */
+.dp-hs-pname, .dp-hs-prole { align-self: stretch; min-width: 0; overflow-wrap: normal; word-break: normal; hyphens: manual; }
 .dp-hs-revealed .dp-hs-name { animation: dp-hs-plate .5s ease-out; }
 @keyframes dp-hs-plate { from { opacity: 0; transform: translateY(1vmin); } to { opacity: 1; transform: none; } }
 /* the strip's names would give a plate away twice */

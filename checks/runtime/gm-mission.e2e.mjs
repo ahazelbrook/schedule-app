@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -84,6 +85,7 @@ try {
   const errors = [], asked = [], answer = { no: false };
   async function open(w = 1366, h = 768) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: w, height: h }, serviceWorkers: 'block' });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -97,7 +99,7 @@ try {
   }
   const shot = async (page, name) => { if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: path.join(SHOTS, name + '.png') }); } };
   const setCard = (name) => api('PATCH', '/gm/state', { cards: { location: { hid: 'h_' + name.length, auth: name, label: name + ' · Nowhere Ward', at: new Date().toISOString() } }, loc: { map: { view: 'iso', theme: 'rulebook', layer: 'gm', reveal: { public: true, working: false, controlled: false, secure: false } } } });
-  const tabShown = (page) => page.evaluate(() => { const b = document.querySelector('.gm-tab[data-panel="run"]'); return !!b && !b.hidden && b.offsetParent !== null; });
+  const tabShown = (page) => page.evaluate(() => { const b = document.querySelector('.gm-views [data-pv="run"]'); return !!b && b.offsetParent !== null; });      /* N1b: The site, a fixed view of the Score */
   const timeText = (page) => page.$eval('#rv-time', (e) => e.textContent.trim());
 
   /* the GM's laptop opens first, so characters can be filed by the page's own adapter */
@@ -157,12 +159,12 @@ try {
   await G.page.click('[data-rv="back"]');
   check(!!(await until(async () => (await mission()).t === 60, 10000)) && (await ambOverlay()).id === ov1.id, 'Back: the mission is at 22:00 again and lays no overlay');
   const seqBefore = (await mission()).seq;
-  await G.page.click('.rv-sq[data-i="10"]');
+  await G.page.click('[data-rv="timepop"]'); await G.page.click('.rv-sq[data-i="10"]');      /* N3: the night's squares are in the time's popover */
   check(await G.page.$eval('.rv-peekbar', (e) => /23:30/.test(e.textContent)), 'a peek at 23:30 is up');
   await sleep(1800);
   check((await mission()).seq === seqBefore && (await mission()).t === 60 && await chipText() === 'Players: 22:00 ✓', 'the peek published nothing: same seq, same time, same chip');
   check((await ambOverlay()).id === ov1.id, 'and laid no overlay');
-  await G.page.click('[data-rv="unpeek"]');
+  await G.page.click('.rv-peekbar [data-rv="unpeek"]');
   await G.page.click('[data-rv="back"]');
   check(!!(await until(async () => (await mission()).t === 45, 10000)), 'Back to 21:45');
   const seqJ = (await mission()).seq;

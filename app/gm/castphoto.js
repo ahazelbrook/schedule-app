@@ -2,7 +2,7 @@
 
    WHAT IT DOES. Menu then Cast photo: one true-height line-up of an arc's recurring cast. The cast is every NPC tagged `recurring` or `major` (the tag the standees
    already use), or the list the GM chose for the arc. An NPC the crew has met (revealed) is drawn in full with a caption; one they have not is a silhouette at their
-   true height, captioned "?". "Put it on the iPad" sends the show kind `castphoto` for up to three minutes (the server's overlay cap); "Print" opens the browser's print
+   true height, captioned "?". "Show on iPad" sends the show kind `castphoto` for up to three minutes (the server's overlay cap); "Print" opens the browser's print
    dialog for an A4 landscape page, for the end of the arc. Both are drawn from the figure kit's own renderer: nothing is generated.
 
    SECRECY. The roster names hidden NPCs, so it is a GM-scope row of the docs store (kind `castphoto`, owner = the arc's slug, scope gm): { v: 1, title, ids: [npcId] }. What
@@ -18,7 +18,7 @@
      printHtml(svg, title) -> the A4 landscape page
    create(host) -> controller. host: { enabled(), npcs() -> { id: npcDoc }, docs: { list(kind), put(row) }, show(kind, payload, opts), night(), now(), print(html) -> bool, kit() }
      refresh() -> Promise  arcs() -> [{ slug, arc }]  current() -> { slug, arc, chosen }  pick(slug) newArc(title) setTitle(title) toggle(id) show() print() preview() -> { svg, count }
-   sync(root, doc) draws or removes the Menu entry (only while the switch is on); open(root) opens the panel (a Workshop sheet). */
+   sync(root) takes down a stale Menu entry (N2: there is no Menu line any more); open(root) opens the panel (a Workshop sheet, or inline once the shell binds it). */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -137,7 +137,7 @@
     return W.fetch('/api' + path, o).then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); });
   }
   function el(tag, cls, text) { var e = W.document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
-  function btn(label, fn, cls) { var b = el('button', cls || '', label); b.type = 'button'; b.addEventListener('click', fn); return b; }
+  function btn(label, fn, cls) { var b = el('button', 'btn sm' + (cls ? ' ' + cls : ''), label); b.type = 'button'; b.addEventListener('click', fn); return b; }   /* the app's button, as every tool's */
   function printFrame(html) {
     var d = W && W.document; if (!d || !d.body) return false;
     var f = d.createElement('iframe'); f.setAttribute('aria-hidden', 'true'); f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
@@ -188,22 +188,17 @@
     if (!list.firstChild) list.appendChild(el('p', 'gm-dim', 'No NPCs yet.'));
     box.appendChild(list);
     var row = el('div', 'seg');
-    row.appendChild(btn('Put it on the iPad (three minutes)', function () { c.show().then(function (ok) { if (!ok) box.appendChild(el('p', 'gm-warn', 'Choose at least one person first.')); }); }, 'primary'));
+    row.appendChild(btn('Show on iPad', function () { c.show().then(function (ok) { if (!ok) box.appendChild(el('p', 'gm-warn', 'Choose at least one person first.')); }); }, 'primary')).title = 'The photo stays up on the iPad for three minutes';
     row.appendChild(btn('Print (A4)', function () { if (!c.print()) box.appendChild(el('p', 'gm-warn', 'Nothing to print yet.')); }));
     box.appendChild(row);
     var pv = c.preview();
     if (pv.svg) { var holder = el('div', 'gm-cp-preview'); holder.style.cssText = 'margin-top:10px;max-width:100%;overflow:auto'; holder.innerHTML = pv.svg; box.appendChild(holder); }
   }
-  function sync(rootEl, doc) {
-    if (!W || !W.document || !rootEl || typeof rootEl.querySelector !== 'function') return false;
-    var list = rootEl.querySelector('.gm-menu-list'), cur = rootEl.querySelector('#gm-menu-castphoto');
-    var on = !!(W.B68Features && isObj(doc) && W.B68Features.valueOf(doc, SWITCH));
-    if (!on) { if (cur && cur.parentNode) cur.parentNode.removeChild(cur); return false; }
-    if (!list || cur) return !!cur;
-    var b = el('button', '', 'Cast photo'); b.type = 'button'; b.id = 'gm-menu-castphoto'; b.title = 'A true-height line-up of the recurring cast, for the iPad and for print';
-    b.addEventListener('click', function () { list.setAttribute('hidden', ''); open(rootEl); });
-    list.appendChild(b);
-    return true;
+  /* N2: the Menu line is gone (the shell places this tool, B68GmTools.get('castphoto').open()); sync() only takes down a line an older page drew, and says false. */
+  function sync(rootEl) {
+    var cur = rootEl && typeof rootEl.querySelector === 'function' ? rootEl.querySelector('#gm-menu-castphoto') : null;
+    if (cur && cur.parentNode) cur.parentNode.removeChild(cur);
+    return false;
   }
   function open(rootEl) {
     var Wk = W.B68GmWorkshop; if (!Wk || typeof Wk.sheet !== 'function') return null;

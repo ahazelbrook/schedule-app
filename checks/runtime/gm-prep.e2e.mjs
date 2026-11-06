@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { buildPrep } from '../../scripts/lib/prep-export.mjs';
 import { buildScreen } from '../../scripts/lib/screen-export.mjs';
 import { basenames } from '../../scripts/lib/vault.mjs';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -98,6 +99,7 @@ try {
   const errors = [];
   async function open(hash, { width = 1440, height = 900, mobile = false } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block', isMobile: mobile, hasTouch: mobile, deviceScaleFactor: mobile ? 2 : 1 });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -118,7 +120,7 @@ try {
   await page.waitForSelector('#gm-root', { timeout: 30000 });
   await page.keyboard.press('r');
   check(await page.waitForSelector('#gm-prep .pp-doc', { timeout: 10000 }).then(() => true, () => false), 'R opens Prep and the note renders');
-  check(await page.$eval('[data-gm="panel"][data-panel="prep"]', (b) => b.getAttribute('aria-selected')) === 'true', 'the Prep tab is selected');
+  check(await page.$eval('.gm-views [data-pv="prep"]', (b) => b.getAttribute('aria-selected')) === 'true', 'the Prep view is selected');
   check(await page.evaluate(() => document.activeElement && document.activeElement.id === 'gm-prep-q'), 'R focuses the note’s find box, so typing is safe');
   await page.keyboard.type('2');
   check((await page.$$('#gm-earlier [data-gm="replay"]')).length === 0, 'a digit typed there rolls nothing');
@@ -128,22 +130,26 @@ try {
   check(await page.$$eval('#gm-prep .pp-rail .chip', (cs) => cs.every((c) => !c.hidden)), 'cleared: every section is listed again');
   /* spine.find: Enter lands on the heading that matches, in a piece after a transclusion too; Find (Ctrl+K) lists it as "Section › Heading" */
   const flashed = () => page.evaluate(() => { const f = document.querySelector('#gm-prep .gm-flash'); return f ? f.id : ''; });
-  check(!/--f-the-heron-job$/.test(await (async () => { await page.fill('#gm-prep-q', 'heron'); await page.press('#gm-prep-q', 'Enter'); return flashed(); })()), 'spine.find off: Enter goes to the section, not the heading');
-  check((await api('PATCH', '/gm/state', { features: { 'spine.find': true } })).status === 200, 'spine.find is switched on');
+  check(!!(await until(async () => { await page.fill('#gm-prep-q', 'heron'); await page.press('#gm-prep-q', 'Enter'); return /--f-the-heron-job$/.test(await flashed()); }, 8000, 400)), 'nothing stored: spine.find is on (N0), so Enter lands on the heading');
+  await page.fill('#gm-prep-q', ''); await page.keyboard.press('Escape');
+  check((await api('PATCH', '/gm/state', { features: { 'spine.find': true } })).status === 200, 'a stored true is taken (and changes nothing)');
   const landed = await until(async () => {
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await page.fill('#gm-prep-q', 'heron'); await page.press('#gm-prep-q', 'Enter');
     const id = await flashed(); return /--f-the-heron-job$/.test(id) ? id : null;
   }, 15000, 600);
-  check(!!landed, 'spine.find on: Enter lands on the heading itself, F · The heron job (' + landed + ')');
+  check(!!landed, 'Enter lands on the heading itself, F · The heron job (' + landed + ')');
   await page.fill('#gm-prep-q', ''); await page.keyboard.press('Escape');
   await page.keyboard.press('Control+k'); await page.fill('#gm-find-q', 'heron');
   const hitTitles = await page.$$eval('.gm-find-hit b', (bs) => bs.map((b) => b.textContent));
   check(hitTitles.some((t) => t === 'Cast › F · The heron job'), 'Find lists the heading as "Cast › F · The heron job" (' + hitTitles.join(' | ') + ')');
   await page.evaluate(() => { const b = [...document.querySelectorAll('.gm-find-hit')].find((x) => (x.querySelector('b') || {}).textContent === 'Cast › F · The heron job'); if (b) b.click(); });
   check(!!(await until(async () => /--f-the-heron-job$/.test(await flashed()), 3000, 100)), 'choosing it lands on the heading');
-  check((await api('PATCH', '/gm/state', { features: { 'spine.find': false } })).status === 200, 'spine.find off again');
+  check((await api('PATCH', '/gm/state', { features: { 'spine.find': false } })).status === 200, 'a stored false is taken');
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await sleep(1500);
+  check(await (async () => { await page.fill('#gm-prep-q', 'heron'); await page.press('#gm-prep-q', 'Enter'); return /--f-the-heron-job$/.test(await flashed()); })(), 'a stored false changes nothing: Enter still lands on the heading');
+  await page.fill('#gm-prep-q', ''); await page.keyboard.press('Escape');
   const boxes = await page.$$eval('#gm-prep .pp-box', (bs) => bs.map((b) => ({ a: b.getAttribute('data-task'), locked: b.getAttribute('aria-disabled') === 'true' })));
   check(boxes.length > 0 && boxes.some((b) => b.locked) === !!boxes.find((b) => b.locked), 'task boxes are tickable checkboxes (' + boxes.length + ')');
   check((await page.$$('#gm-prep .pp-sec')).length > 1 && (await page.$$('#gm-prep .pp-rail .chip')).length > 1, 'sections and a section rail');
@@ -173,9 +179,14 @@ try {
     await page.reload(); await page.waitForSelector('#gm-prep .pp-doc', { timeout: 20000 });
     check(await page.$eval('#gm-prep .pp-box[data-task="' + open1.a + '"]', (b) => b.classList.contains('here')), 'reload: the tick is still there');
   }
-  /* 1280 wide with a beat running (and the iPad showing something): the bar, which now carries Now in, still holds every item on one row */
+  /* 1280 wide with a beat running (and the iPad showing something): the band holds every item in its two rows */
   await page.setViewportSize({ width: 1280, height: 900 }); await sleep(400);
-  check(await page.evaluate(() => { const b = document.querySelector('.gm-bar'), r = b.getBoundingClientRect(); return r.height < 60 && b.scrollWidth <= b.clientWidth + 1 && [...b.querySelectorAll('.gm-now, .gm-beatbar, [data-gm="find-open"], #gm-bar-ipad, [data-gm="menu"]')].every((c) => { const q = c.getBoundingClientRect(); return q.width > 0 && q.right <= innerWidth + 1; }); }), 'laptop 1280: with a beat running, the bar holds Now in, the beat, Find, the iPad pill and the Menu on one row');
+  const b1280 = await page.evaluate(() => {
+    const b = document.querySelector('#gm-band'), r = b.getBoundingClientRect();
+    const parts = ['#gm-bar-beat', '.gm-band-r1 > [data-gm="find-open"]', '#gm-bar-tray .gm-tray', '[data-gm="menu"]', '[data-band="panic"]'].map((s) => { const e = b.querySelector(s), q = e ? e.getBoundingClientRect() : null; return [s, q ? Math.round(q.width) : -1, q ? Math.round(q.right) : -1]; });
+    return { h: Math.round(r.height), sw: b.scrollWidth, cw: b.clientWidth, vw: innerWidth, parts };
+  });
+  check(b1280.h <= 92 && b1280.sw <= b1280.cw + 1 && b1280.parts.every((p) => p[1] > 0 && p[2] <= b1280.vw + 1), 'laptop 1280: with a beat running, the band holds the beat, Find, the iPad tray, the Menu and PANIC in its two rows ' + JSON.stringify(b1280));
   await shot(page, 'bar-1280-beat');
   await page.setViewportSize({ width: 1440, height: 900 }); await sleep(300);
   /* the laptop layout: one window tall, the outline follows the reading, Focus shrinks the console to its keys */
@@ -203,7 +214,7 @@ try {
 
   /* ---- score sites (GM.md "Score sites"): Roll a site from the score card, save it, see it on the card, open it after another roll ---- */
   if (!REAL) {
-    const SLOT = '#gm-prep .pp-site[data-score="b68g-score-heron"]', tab = (p) => page.click('[data-gm="panel"][data-panel="' + p + '"]');
+    const SLOT = '#gm-prep .pp-site[data-score="b68g-score-heron"]', tab = (p) => page.click('.gm-views [data-pv="' + p + '"]');
     await tab('prep');
     check(await page.waitForSelector(SLOT + ' [data-gm="siteroll"]', { timeout: 5000 }).then(() => true, () => false) && /None yet/.test(await page.textContent(SLOT)), 'a score card in Prep has a Site strip: none yet, and Roll a site');
     await page.click(SLOT + ' [data-gm="siteroll"]');
@@ -227,7 +238,7 @@ try {
   /* ---- the phone ---- */
   const ph = await open('#gm', { width: 390, height: 844, mobile: true });
   await ph.page.waitForSelector('#gm-root', { timeout: 30000 });
-  await ph.page.click('.gm-segbar [data-seg="prep"]');
+  await ph.page.click('.gm-vchips [data-pv="prep"]');
   await ph.page.waitForSelector('#gm-prep .pp-doc', { timeout: 10000 });
   const over = await ph.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check(over <= 1, 'phone: the note does not overflow the screen (' + over + ' px)');
@@ -266,7 +277,7 @@ try {
   /* ---- the Screen tab (T) ---- */
   await page.keyboard.press('t');
   check(await page.waitForSelector('#gm-rules .gs-sec', { timeout: 5000 }).then(() => true, () => false), 'T opens the Screen and its sections render');
-  check(await page.$eval('[data-gm="panel"][data-panel="rules"]', (b) => /GM screen/.test(b.textContent)), 'the tab is called GM screen');
+  check(await page.$eval('.gm-views [data-pv="rules"]', (b) => /^Rules\s*T$/.test(b.textContent.trim())), 'the GM screen is the pinned Rules view (T)');
   check(await page.evaluate(() => document.activeElement && document.activeElement.id === 'gm-gs-q'), 'T focuses the screen’s find box, so typing is safe');
   if (!REAL) {
     check(JSON.stringify(await page.$$eval('#gm-rules .gs-sec .gs-h span', (s) => s.map((x) => x.textContent))) === '["Rolling","Weather","Canals"]', 'one section per ## heading, Related left in the vault');
@@ -318,7 +329,7 @@ try {
     await page.fill('#gm-gs-q', '');
   } else check(/not available/.test(await page.textContent('#gm-rules .gs-rules')), 'no rules runtime here: the pane says so');
   await shot(page, 'screen-desktop');
-  await ph.page.click('.gm-segbar [data-seg="rules"]');
+  await ph.page.click('.gm-vchips [data-pv="rules"]');
   check(await ph.page.waitForSelector('#gm-rules .gs-sec', { state: 'visible', timeout: 10000 }).then(() => true, () => false), 'phone: Screen is a segment');
   if (await ph.page.$('#gm-rq')) {
     await ph.page.fill('#gm-rq', 'goose'); await ph.page.press('#gm-rq', 'Enter');

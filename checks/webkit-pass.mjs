@@ -24,6 +24,8 @@ const SUITES = [
     .map((n) => ({ name: 'app/checks/' + n + '.js', file: n + '.js', cwd: path.join(ROOT, 'app', 'checks') })),
   { name: 'checks/runtime/display-webkit.e2e.mjs', file: 'display-webkit.e2e.mjs', cwd: ROOT, rel: 'checks/runtime/display-webkit.e2e.mjs', port: 9150 },
   { name: 'checks/runtime/display-band.e2e.mjs', file: 'display-band.e2e.mjs', cwd: ROOT, rel: 'checks/runtime/display-band.e2e.mjs', port: 9151 },
+  /* the phone sheet's Now card, Quiet button and Between fold (N6): iPhone Safari is the phones' real browser */
+  { name: 'checks/runtime/sheet-now.e2e.mjs', file: 'sheet-now.e2e.mjs', cwd: ROOT, rel: 'checks/runtime/sheet-now.e2e.mjs', port: 9170 },
 ];
 
 const rows = [];

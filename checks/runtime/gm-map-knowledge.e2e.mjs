@@ -1,13 +1,15 @@
-// The three knowledge states (suite 2.2, switch map.knowledge; app/gm/knowledge.js) on the Run view and the iPad copy, in a real browser against a real local Worker, on an
-// invented site (the Pelican Rooms). Switch off: the Reveal button and nothing else. Switch on: each room card's button is its state and a tap cycles it; Intel sets a band's dark
-// rooms to blueprint; the iPad copy draws a blueprint room as linework with its name and a dark room not at all, and follows a change live. Every name is invented; no model, $0.
-//   PW_MODULE=<playwright install> PW_CHANNEL=msedge [PORT=9201] node checks/runtime/gm-map-spotted.e2e.mjs
+// The three knowledge states (suite 2.2, switch map.knowledge; app/gm/knowledge.js) on the site (the Run view, N3) and the iPad copy, in a real browser against a real local
+// Worker, on an invented site (the Pelican Rooms). Everything built is on (N0): a stored false changes nothing. Each room card's Players' map is Dark | Blueprint | Seen: Dark
+// and Blueprint at once, Seen stages the room and Send opens it; Intel (the ⋯) sets a band's dark rooms to blueprint; Location has no knowledge box any more; the iPad copy
+// draws a blueprint room as linework with its name and a dark room not at all, and follows a change live. Every name is invented; no model, $0.
+//   PW_MODULE=<playwright install> PW_CHANNEL=msedge [PORT=9201] node checks/runtime/gm-map-knowledge.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, readFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -84,6 +86,7 @@ try {
   const errors = [];
   async function open(view = 'location') {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 1366, height: 900 }, serviceWorkers: 'block' });
+    await c.addInitScript(atPlace('score', view === 'location' ? { score: 'location' } : undefined));      /* N1b: start in the Score (a page with no phase opens in Before), on the Location roller where the card is */
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -108,41 +111,47 @@ try {
   const display = async () => (await api('GET', '/gm/display')).json;
   const svgOf = async () => { const d = await display(); const o = d && d.display ? d.display : null; return o && o.kind === 'svg' && typeof o.svg === 'string' ? o.svg : ''; };
 
-  /* ---- switch off: the Reveal button and nothing else ---- */
+  /* N3: the knowledge states are the site's. Each room card has its Players' map (Dark | Blueprint | Seen); Seen stages the room and Send opens it; Intel is in the ⋯ */
+  const seg = (k) => '.rv-rm.sel [data-site="kn"][data-k="' + k + '"]';
+  const pressed = (page) => page.$$eval('.rv-rm.sel [data-site="kn"][aria-pressed="true"]', (l) => l.map((e) => e.getAttribute('data-k')).join()).catch(() => '');
+  const pick = async (page, room) => { await page.click('.rv-card[data-room="' + room + '"] .rv-cn'); await page.waitForSelector('.rv-rm.sel[data-room="' + room + '"] [data-site="kn"]', { timeout: 10000 }); };
+
+  /* ---- everything on (N0): with NOTHING stored, each room card on the site has its Players' map; Location's Map section has no knowledge box any more ---- */
   const A = await open('run');
   await A.page.waitForSelector('.rv-card[data-room="Security control room"]', { timeout: 20000 });
-  await A.page.click('.rv-card[data-room="Security control room"]');
-  await A.page.waitForSelector('.rv-rm[data-room="Security control room"]', { timeout: 10000 });
-  check((await A.page.$$('[data-rv="know"], .rv-know-bar')).length === 0, 'switch off: no state button and no Intel bar on the Run view');
-  check((await A.page.$$('.rv-rm[data-room="Security control room"] [data-rv="open"]')).length === 1, 'switch off: the room still has its Reveal on the map button');
+  await pick(A.page, 'Security control room');
+  check((await A.page.$$('.rv-rm.sel [data-site="kn"]')).length === 3, 'nothing stored: the room card has its Players\' map, three states');
   await A.c.close();
   const L0 = await open('location');
-  check((await L0.page.$$('#gm-b24')).length === 0, 'switch off: no knowledge panel under the Map heading');
+  await L0.page.waitForSelector('#gm-loc .gm-mapbox', { timeout: 20000 });
+  check((await L0.page.$$('#gm-b24, #gm-b17')).length === 0 && (await L0.page.$$('#gm-loc [data-kn]')).length === 0, 'N3: Location\'s Map section has no knowledge box (it is the site\'s)');
   await L0.c.close();
 
-  /* ---- switch on ---- */
-  check((await api('PATCH', '/gm/state', { features: { 'map.knowledge': true } })).status === 200, 'map.knowledge is switched on');
+  /* ---- a stored true (what the Switchboard used to write) is the same ---- */
+  check((await api('PATCH', '/gm/state', { features: { 'map.knowledge': true } })).status === 200, 'a stored true is taken (and changes nothing)');
   const R = await open('run');
   await R.page.waitForSelector('.rv-card[data-room="Security control room"]', { timeout: 20000 });
-  await R.page.click('.rv-card[data-room="Security control room"]');
-  await R.page.waitForSelector('.rv-rm[data-room="Security control room"] [data-rv="know"]', { timeout: 10000 });
-  const btn = '.rv-rm[data-room="Security control room"] [data-rv="know"]';
-  const txt = async () => (await R.page.textContent(btn) || '').trim();
-  check(/^Dark/.test(await txt()), 'a room starts dark: ' + (await txt()));
-  await R.page.click(btn);
-  check(await until(async () => JSON.stringify((await ballNow()).know) === JSON.stringify(KNOW), 5000, 100), 'a tap makes it blueprint: ball.know holds it');
+  await pick(R.page, 'Security control room');
+  check((await pressed(R.page)) === 'dark', 'a room starts dark: ' + (await pressed(R.page)));
+  await R.page.click(seg('blueprint'));
+  check(await until(async () => JSON.stringify((await ballNow()).know) === JSON.stringify(KNOW), 5000, 100), 'Blueprint at once: ball.know holds it');
   check(!(await ballNow()).open, 'and it is not open: ball.open is untouched (phones read that)');
-  check(await until(async () => /^Blueprint/.test(await txt()), 4000, 100), 'the button says Blueprint');
+  check(await until(async () => (await pressed(R.page)) === 'blueprint', 4000, 100), 'Blueprint is pressed');
+  check(await R.page.$eval('.rv-card[data-room="Security control room"]', (e) => e.classList.contains('k-blueprint')), 'and the board shows the room as blueprint');
 
-  /* the Intel bar sits under the Run map */
+  /* Intel is in the site's ⋯ (bands, floors), and the map's labels carry the states */
+  await R.page.click('[data-rv="menu"]');
+  check(await until(async () => (await R.page.$$('#rv-menu [data-site="intel"]')).length >= 2, 5000, 100), 'the ⋯ menu offers Intel by band and by floor');
+  await R.page.click('[data-rv="menu"]');
   await R.page.click('[data-rv="view"][data-v="map"]');
   await R.page.waitForSelector('#rv-map svg', { timeout: 20000 });
-  check(await until(async () => (await R.page.$$('.rv-know-bar [data-kn="intel"]')).length >= 2, 5000, 100), 'the Intel bar is under the Run map (bands, floors)');
+  check(await until(async () => (await R.page.$$('#rv-map .room-label.rv-mk-blueprint')).length >= 1, 5000, 100), 'the Run map marks the blueprint room\'s label');
+  await R.page.click('[data-rv="view"][data-v="board"]');
+  await R.c.close();
 
-  /* the iPad copy: the Location card's Show on iPad, then the live follow */
+  /* the iPad copy: Location's Show on iPad, then the live follow, from the site on the same page (as at the table) */
   const L = await open('location');
-  await L.page.waitForSelector('#gm-b24', { timeout: 20000 });
-  check((await L.page.$$('#gm-b24 [data-kn="cycle"]')).length >= 4, 'the Location card has the knowledge panel, a button per room not seen through a band');
+  await L.page.waitForSelector('#gm-loc [data-gm="ipad"]', { timeout: 20000 });
   await L.page.click('[data-gm="ipad"]');
   const t0 = Date.now();
   const svg1 = await until(async () => { const v = await svgOf(); return /data-know="blueprint"/.test(v) ? v : ''; }, 8000, 100);
@@ -150,37 +159,48 @@ try {
   check(!!svg1 && /Security control room/.test(svg1) && !DARK.some((n) => new RegExp(n, 'i').test(svg1)) && !/GM-ONLY/.test(svg1), 'the copy names the blueprint room and no dark room, and no GM-only marker');
   const live = await until(() => L.page.evaluate(() => /Live on the iPad/.test(document.body.textContent)), 5000, 100);
   check(!!live, 'the map is live on the iPad');
+  await L.page.keyboard.press('g'); await L.page.waitForSelector('.rv-head', { timeout: 20000 });
+  check(await until(() => L.page.evaluate(() => /^LIVE/.test((document.querySelector('.rv-live') || {}).textContent || '') && window.B68GmStage.state().live !== ''), 5000, 100), 'the site\'s stage group says LIVE, and so does B68GmStage.state()');
 
-  /* blueprint to seen: the live follow asks first (the dialog is accepted), then redraws; the room is no longer linework */
+  /* blueprint to seen: Seen stages it (nothing goes yet), Send opens it; the live follow asks first (the dialog is accepted), then redraws without linework */
+  await pick(L.page, 'Security control room');
+  await L.page.click(seg('seen'));
+  await sleep(600);
+  check(/data-know="blueprint"/.test(await svgOf()) && !(await ballNow()).open, 'staged: the iPad still shows it as linework, nothing is open');
   const tSeen = Date.now();
-  await L.page.click('#gm-b24 [data-kn="cycle"][data-room="Security control room"]');
+  await L.page.click('.rv-tools [data-site="send"]');
   const svg2 = await until(async () => { const v = await svgOf(); return v && !/data-know="blueprint"/.test(v) && v !== svg1 ? v : ''; }, 8000, 50);
   const dt = Date.now() - tSeen;
-  check(!!svg2, 'blueprint to seen: the iPad redraws without linework (' + dt + ' ms)');
+  check(!!svg2, 'Send: the iPad redraws without linework (' + dt + ' ms)');
   check(dt < 3000, 'inside the page budget with polling: ' + dt + ' ms (the render itself is under 600 ms: suite-b24)');
   let b2 = {};
   await until(async () => { b2 = await ballNow(); return JSON.stringify(b2.open) === JSON.stringify(KNOW); }, 5000, 100);
   check(JSON.stringify(b2.open) === JSON.stringify(KNOW) && !b2.know, 'seen is ball.open, and it left ball.know: ' + JSON.stringify(b2));
 
-  /* seen to dark: gone from the iPad */
-  await L.page.click('#gm-b24 [data-kn="cycle"][data-room="Security control room"]');
+  /* seen to dark, at once: gone from the iPad */
+  await pick(L.page, 'Security control room');
+  await L.page.click(seg('dark'));
   const svg3 = await until(async () => { const v = await svgOf(); return v && !/Security control room/i.test(v) ? v : ''; }, 8000, 100);
-  check(!!svg3, 'seen to dark: the room and its name are gone from the iPad copy');
+  check(!!svg3, 'Dark: the room and its name are gone from the iPad copy');
   await until(async () => { const b = await ballNow(); return !b.open && !b.know; }, 5000, 100);
   check(!(await ballNow()).open && !(await ballNow()).know, 'both lists are empty again: ' + JSON.stringify(await ballNow()));
 
-  /* Intel on the working band: its dark rooms become blueprint, the others stay dark */
-  await L.page.click('#gm-b24 [data-kn="intel"][data-group="band:working"]');
+  /* Intel on the working band (the ⋯): its dark rooms become blueprint, the others stay dark */
+  await L.page.click('[data-rv="menu"]');
+  await L.page.click('#rv-menu [data-site="intel"][data-group="band:working"]');
   check(await until(async () => { const k = (await ballNow()).know || []; return k.length === 2 && k.includes('Security control room') && k.includes('Underground counting room'); }, 5000, 100), 'Intel: the working band is blueprint, both of its rooms');
+  check(await L.page.$eval('#rv-menu', (e) => e.hidden), 'and the menu shuts');
   const svg4 = await until(async () => { const v = await svgOf(); return (v.match(/data-know="blueprint"/g) || []).length >= 2 ? v : ''; }, 8000, 100);
   check(!!svg4 && !/Luxury penthouse|Private card rooms/i.test(svg4) && (svg4.match(/data-know="blueprint"/g) || []).length >= 2, 'the iPad shows the two as linework and still no secure or controlled room: ' + (svg4 ? (svg4.match(/data-know="blueprint"/g) || []).length + ' linework, penthouse ' + /Luxury penthouse/i.test(svg4) + ', card rooms ' + /Private card rooms/i.test(svg4) : 'no svg'));
   check(!(await ballNow()).open, 'nothing is open to the players: a blueprint room is not a room the phones know');
 
-  /* off again */
-  await R.c.close(); await L.c.close();
-  check((await api('PATCH', '/gm/state', { features: { 'map.knowledge': false } })).status === 200, 'switched off again');
-  const O = await open('location');
-  check((await O.page.$$('#gm-b24')).length === 0, 'off again: no panel');
+  /* a stored false (the old All off) changes nothing */
+  await L.c.close();
+  check((await api('PATCH', '/gm/state', { features: { 'map.knowledge': false } })).status === 200, 'a stored false is taken');
+  const O = await open('run');
+  await O.page.waitForSelector('.rv-card[data-room="Private card rooms"]', { timeout: 20000 });
+  await pick(O.page, 'Private card rooms');
+  check((await O.page.$$('.rv-rm.sel [data-site="kn"]')).length === 3, 'a stored false changes nothing: the Players\' map stays');
   check(errors.length === 0, 'no page errors: ' + errors.slice(0, 3).join(' | '));
   await browser.close();
 } catch (e) { failed++; console.log('FAIL ' + (e && e.stack || e)); }

@@ -127,7 +127,7 @@
       var st = typeof host.startMs === 'function' ? host.startMs() : null, t = now();
       if (!due(t, st) || toasted === st || busy) return;
       toasted = st;
-      ctl.run().then(function (list) { var sm = summary(list); if (sm.red && typeof host.toast === 'function') host.toast('Preflight: ' + sm.red + ' to fix before the start (Menu, Preflight).', true); });
+      ctl.run().then(function (list) { var sm = summary(list); if (sm.red && typeof host.toast === 'function') host.toast('Preflight: ' + sm.red + ' to fix before the start (Before, Preflight).', true); });
     };
     return ctl;
   }

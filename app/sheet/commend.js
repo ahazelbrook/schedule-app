@@ -8,11 +8,12 @@
    20-second poll while the page is visible. The window is open while the row stands AND this phone's own clock is before `until` AND less than `secs` has passed since
    this phone first saw the row, so a row left behind by a closed GM page, or a clock that is minutes off, cannot hold the card up.
 
-   WHAT IT DRAWS. bar() is a strip the sheet puts under its table bar (tracker.js, the `bar` slot) while the window is open: one line and a button that opens the
-   sheet's own End of session panel (data-act="endopen"), where the player ticks the playbook's xp triggers. It is '' otherwise, so the sheet is what it was.
+   WHAT IT SAYS. now() is the sheet's Now card item (sheet/now.js draws it, first of all while it stands) while the window is open: a line, the time left (the
+   card counts it down from `ends`, the window's own end, so the markup does not change every second) and a button that opens the sheet's own End of session
+   panel (data-act="endopen"), where the player ticks the playbook's xp triggers. It is null otherwise, so the sheet is what it was.
    The triggers themselves are the sheet's (tracker.js sessionTriggers): this file knows no playbook text.
 
-   API: start() stop() bar() -> html | ''  open() -> bool  state()      pure (Node tests): windowOf(row, nowMs, seenMs) -> { open, left } */
+   API: start() stop() now() -> item | null  open() -> bool  state()      pure (Node tests): windowOf(row, nowMs, seenMs) -> { open, left } */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -91,12 +92,13 @@
     if (had) redraw();
   }
   function open() { return !!cur && windowOf(cur, now(), cur.seen).open; }
-  function bar() {
-    if (!open()) return '';
-    return '<div class="ds-tablebar ds-commend" role="status"><span class="ds-tbline"><b>Commendations</b><span class="ds-dim">Tick the xp triggers that happened tonight.</span></span>' +
-      '<button type="button" class="btn sm primary" data-act="endopen">Open the xp triggers</button></div>';
+  /* the Now card's item while the window is open; ends is when it shuts on this phone (the same sum windowOf makes), fixed for the whole window */
+  function nowItem() {
+    if (!open()) return null;
+    return { title: 'Did you earn xp tonight?', line: 'Tick the xp triggers that happened tonight.', ends: Math.min(cur.until, cur.seen + cur.secs * 1000),
+      actions: [{ label: 'Open the xp triggers', attrs: 'data-act="endopen"', primary: true }] };
   }
   function state() { return { started: started, open: open(), left: cur ? windowOf(cur, now(), cur.seen).left : 0 }; }
 
-  return { start: start, stop: stop, bar: bar, open: open, state: state, windowOf: windowOf, KIND: KIND, _set: function (row) { apply(row); } };
+  return { start: start, stop: stop, now: nowItem, open: open, state: state, windowOf: windowOf, KIND: KIND, _set: function (row) { apply(row); } };
 });

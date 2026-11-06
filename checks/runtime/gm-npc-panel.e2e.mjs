@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -19,6 +20,11 @@ const SHOTS = process.env.GM_SHOTS || '';
 const { chromium } = require(process.env.PW_MODULE || '/opt/node-tools/node_modules/playwright');
 const N = require(path.join(ROOT, 'app', 'gm', 'npc.js'));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/* Now in: its one select is in the Roll's Scene fold (N4; the band has no copy), so the fold is opened first where the Roll shows */
+const nowIn = async (p, v) => {
+  if (!(await p.isVisible('#gm-now-s')) && await p.isVisible('#gm-scene')) await p.click('#gm-scene');
+  await p.selectOption('#gm-now-s', v, { force: !(await p.isVisible('#gm-now-s')) });      /* a panel without the Roll: set as the fold would */
+};
 const WIN = process.platform === 'win32';
 const FIX = path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm');
 const fx = (f) => JSON.parse(readFileSync(path.join(FIX, f), 'utf8'));
@@ -62,6 +68,7 @@ try {
   const errors = [];
   async function open(hash, { width = 1280, height = 900, mobile = false } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block', isMobile: mobile, hasTouch: mobile });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -155,7 +162,7 @@ try {
   await p.waitForSelector('#gm-npc .gm-npccard', { timeout: 15000 });
   check(await sub() === chosen && await p.$eval('#gm-n-faction', (s) => s.value) === 'Teapot Union' && await p.$eval('#gm-n-place', (s) => s.value) === 'Test shop', 'reload: the same NPC, and the pickers as they were');
   // Now in (A7): the District picker follows the bar; a pick of its own wins; the card records the district it resolved to; a stored card never moves
-  await p.selectOption('#gm-now', 'The Wobbles');
+  await nowIn(p, 'The Wobbles');
   check(await p.$eval('#gm-n-district', (s) => s.value === '' && s.options[0].textContent === 'Now in: The Wobbles'), 'NPC: the District picker leads with "Now in: The Wobbles" and follows it');
   await p.click('[data-gm="npcroll"]');
   check(await p.waitForFunction(() => { const s = document.querySelector('#gm-npc .gm-npccard .gm-sub'); return s && / · The Wobbles · Test shop$/.test(s.textContent.trim()); }, null, { timeout: 15000 }).then(() => true, () => false), 'a roll lands in Now in: ' + await sub());
@@ -168,12 +175,12 @@ try {
   check(await p.waitForFunction(() => { const s = document.querySelector('#gm-npc .gm-npccard .gm-sub'); return s && / · Gnome Hill · Test shop$/.test(s.textContent.trim()); }, null, { timeout: 15000 }).then(() => true, () => false), 'a pick of its own wins over Now in (Gnome Hill)');
   const stG = await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.cards.npc.ui.district === 'Gnome Hill' && d.npc.ui.district === 'Gnome Hill' ? d : null; }, 8000);
   const hidG = stG && stG.cards.npc.hid;
-  await p.selectOption('#gm-now', 'Puddle End');
+  await nowIn(p, 'Puddle End');
   check(await p.$eval('#gm-n-district', (s) => s.value === 'Gnome Hill' && s.options[0].textContent === 'Now in: Puddle End'), 'it stays through a change of Now in, and the first choice names the new one');
   await p.click('#gm-npc [data-gm="replay"][data-h="' + hidW + '"]');
   await p.waitForFunction((t) => document.querySelector('#gm-npc .gm-npccard').textContent.replace(/\s+/g, ' ').trim() === t, wob, { timeout: 8000 });
   check((await text(p, '#gm-npc .gm-npccard')) === wob, 'Earlier: the NPC rolled in The Wobbles comes back card for card, whatever Now in is now');
-  await p.selectOption('#gm-n-district', ''); await p.selectOption('#gm-now', '');
+  await p.selectOption('#gm-n-district', ''); await nowIn(p, '');
   await p.click('[data-gm="npcroll"]');
   const stA = await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.cards.npc.hid !== hidG && d.cards.npc.hid !== hidW && d.cards.npc.ui.district === '' ? d : null; }, 8000);
   check(!!stA && await p.$eval('#gm-n-district', (s) => s.value === '' && s.options[0].textContent === 'Now in: anywhere'), 'back to anywhere: the picker follows it again, and a roll stores no district');
@@ -203,7 +210,7 @@ try {
   // a phone
   const M = await open('#gm', { width: 390, height: 844, mobile: true });
   const mp = M.page;
-  await mp.click('.gm-segbar [data-seg="npc"]');
+  await mp.click('.gm-vchips [data-pv="npc"]');      /* N1b: Cast, a pinned chip */
   await mp.waitForSelector('#gm-npc [data-gm="npcroll"]', { state: 'visible', timeout: 5000 });
   await mp.click('[data-gm="npcroll"]');
   await mp.waitForSelector('#gm-npc .gm-npccard', { timeout: 15000 });

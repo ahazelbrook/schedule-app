@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -91,6 +92,7 @@ try {
   const errors = [], asked = [], answer = { no: false };
   async function open(w = 1366, h = 768) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: w, height: h }, serviceWorkers: 'block' });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -104,7 +106,7 @@ try {
   }
   const shot = async (page, name) => { if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: path.join(SHOTS, name + '.png') }); } };
   const setCard = (name) => api('PATCH', '/gm/state', { cards: { location: { hid: 'h_' + name.length, auth: name, label: name + ' · Nowhere Ward', at: new Date().toISOString() } }, loc: { map: { view: 'iso', theme: 'rulebook', layer: 'gm', reveal: { public: true, working: false, controlled: false, secure: false } } } });
-  const tabShown = (page) => page.evaluate(() => { const b = document.querySelector('.gm-tab[data-panel="run"]'); return !!b && !b.hidden && b.offsetParent !== null; });
+  const tabShown = (page) => page.evaluate(() => { const b = document.querySelector('.gm-views [data-pv="run"]'); return !!b && b.offsetParent !== null; });      /* N1b: The site, a fixed view of the Score */
   const timeText = (page) => page.$eval('#rv-time', (e) => e.textContent.trim());
 
   /* the GM's laptop opens first, so characters can be filed by the page's own adapter */
@@ -114,12 +116,12 @@ try {
   for (const [id, n] of [['run-pc1', 'Cass Fenn'], ['run-pc2', 'Dov Ketch'], ['run-pc3', 'Ira Lund']]) check((await api('PUT', '/characters/' + id, pcDoc(n))).status === 200, 'an invented PC is filed: ' + n);
   await G0.c.close();
 
-  /* ---- 1. the tab appears for a v2 site only; a v1 site keeps its strip ---- */
+  /* ---- 1. The site is a fixed view of the Score (N1b): a v1 site keeps its strip in the Location roller, and The site says how to get a v2 night ---- */
   check((await setCard(NAME1)).status === 200, 'the Location card is the v1 site');
   const V1 = await open();
   await V1.page.keyboard.press('b');
   await V1.page.waitForSelector('#gm-run', { timeout: 20000 });
-  check(!(await tabShown(V1.page)), 'a v1 site: the Run tab is not shown');
+  check(await tabShown(V1.page), 'a v1 site: The site is still a view of the Score (it no longer comes and goes)');
   check(await V1.page.$eval('#gm-run', (e) => /Run the site/.test(e.textContent)) && (await V1.page.$$('.gm-runv2note')).length === 0, 'and Location keeps its Run the site strip, as today');
   await V1.page.keyboard.press('g');
   check(await V1.page.waitForSelector('.gm-runhelp', { timeout: 5000 }).then(() => true, () => false) && await V1.page.$eval('.gm-runhelp', (e) => /"v": 2/.test(e.textContent)), 'G on a v1 site says how to get a v2 night');
@@ -129,7 +131,7 @@ try {
   check((await api('PATCH', '/gm/state', { phoneCards: true })).status === 200, 'Phone cards are on (they are off by default)');
   const seq0 = await seqNow();
   const G = await open();
-  check(await until(() => tabShown(G.page), 15000), 'a v2 site: the Run tab is shown');
+  check(await until(() => tabShown(G.page), 15000), 'a v2 site: The site is a view of the Score');
   await G.page.keyboard.press('b');
   await G.page.waitForSelector('.gm-runv2note', { timeout: 10000 });
   check((await G.page.$$('#gm-run')).length === 0, 'and Location does not show the v1 strip for it');
@@ -148,34 +150,27 @@ try {
   check(await G.page.$eval('.rv-beat', (e) => e.textContent) === 'beat 4 of 16', 'beat 4 of 16, counted from clock.start');
   check(await G.page.$$eval('.rv-sq.before', (q) => q.length) === 3 && await G.page.$$eval('.rv-sq', (q) => q.length) === 16, 'sixteen squares, the three before the start shaded');
   check(await G.page.$$eval('.rv-sq .rv-ic[data-icon="star"]', (q) => q.length) === 2 && await G.page.$$eval('.rv-sq .rv-ic[data-icon="diamond"]', (q) => q.length) === 1 && await G.page.$$eval('.rv-sq .rv-ic[data-icon="skull"]', (q) => q.length) === 1, 'event icons on the track: two stars, a diamond, a skull');
-  check(await G.page.$eval('.rv-alarm', (e) => /Fuse/.test(e.textContent) && /2\/6/.test(e.textContent)), 'the alarm is the table clock Fuse, 2/6');
+  /* N3: ONE alarm readout: the table clock Fuse's segments and the level they reach (no security: line in this prep: the six default names) */
+  check(await G.page.$eval('.rv-alarm', (e) => /2\/6/.test(e.textContent) && /Watchful/.test(e.textContent) && /^Fuse 2 of 6/.test(e.title) && e.querySelectorAll('.rv-segs i.f').length === 2 && e.querySelectorAll('.rv-segs i').length === 6), 'the alarm is the table clock Fuse, 2/6, and its level, Watchful');
+  check((await G.page.$$('.rv-alarm')).length === 1, 'one alarm readout on the line');
   await G.page.click('.rv-alarm');
-  check(await G.page.$eval('.rv-alarmtext', (e) => /GM-ONLY-BEAT-2/.test(e.textContent)), 'tapping the alarm shows its beat 2 (beats[filled-1])');
+  check(await G.page.$eval('.rv-alarmtext', (e) => /GM-ONLY-BEAT-2/.test(e.textContent)) && await G.page.$eval('.rv-alarmpop', (e) => /Security Watchful/.test(e.textContent.replace(/\s+/g, ' '))), 'tapping the alarm shows its beat 2 (beats[filled-1]) and the level');
   await G.page.click('.rv-alarm');
   check(await G.page.$eval('.rv-players', (e) => /Players/.test(e.textContent)), 'the Players chip is in the header (VV6 fills it)');
   check(await seqNow() === seq0, 'nothing was published to the iPad');
   await shot(G.page, 'runv2-01-started');
 
-  /* ---- 2b. the countdown (map.countdown), flipped as the GM flips it, in the page's own Switchboard: a segment a beat from clock.start ---- */
-  check((await G.page.$$('.rv-count')).length === 0, 'map.countdown off: no countdown pie');
-  /* Menu -> Switchboard opens its sheet (the same line closes it again, below); the switch is a button in it */
-  const sbSheet = async () => { await G.page.click('[data-gm="menu"]'); await G.page.click('#gm-menu-switchboard'); };
-  const flipCountdown = async () => { await G.page.click('[data-sb="map.countdown"]'); return G.page.$eval('[data-sb="map.countdown"]', (e) => e.getAttribute('aria-pressed') === 'true'); };
+  /* ---- 2b. the countdown (map.countdown): always on since N0, with nothing stored; a segment a beat from clock.start ---- */
   const pieText = () => G.page.$eval('.rv-count', (e) => e.textContent.replace(/\s+/g, ' ').trim()).catch(() => '');
-  await sbSheet();
-  check(await flipCountdown() === true, 'the Switchboard turns map.countdown on');
   const pie0 = await until(async () => (await pieText()) || null, 8000);
-  check(pie0 === 'Zzcount 3/12', 'the pie reads Zzcount 3/12 at 21:45, with no reload (' + pie0 + ')');
-  check(!!(await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.features && d.features['map.countdown'] === true; }, 8000)), 'and the switch is saved in the GM state');
+  check(pie0 === 'Zzcount 3/12', 'nothing stored: the pie reads Zzcount 3/12 at 21:45 (' + pie0 + ')');
   await G.page.click('[data-rv="next"]');
   check(!!(await until(async () => (await pieText()) === 'Zzcount 4/12', 8000)), 'a beat forward is a tick: 4/12 at 22:00');
   await G.page.click('[data-rv="back"]'); await until(async () => (await ball()).t === 45, 8000);
-  check(await flipCountdown() === false, 'the Switchboard turns it off again');
-  check(!!(await until(async () => (await G.page.$$('.rv-count')).length === 0, 8000)), 'and the pie goes');
-  await sbSheet();
-  check(!!(await until(async () => !(await G.page.isVisible('#gm-sheet-switchboard')), 5000)), 'the Switchboard sheet is closed again');
-  check(!!(await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.features && d.features['map.countdown'] === false; }, 8000)), 'and the switch is saved off');
-  await sleep(2500);   /* the flips' saves and polls settle, so the board below is not redrawn under the drag checks' element handles */
+  check((await api('PATCH', '/gm/state', { features: { 'map.countdown': false } })).status === 200, 'a stored false (the old All off) is taken');
+  await sleep(2500);   /* the state arrives on the page, so the board below is not redrawn under the drag checks' element handles */
+  check((await pieText()) === 'Zzcount 3/12', 'and changes nothing: the pie stays (' + (await pieText()) + ')');
+  check((await G.page.$$('#gm-menu-switchboard, #gm-sheet-switchboard')).length === 0, 'there is no Switchboard to flip it in');
 
   /* ---- 3. a beat each way ---- */
   await G.page.click('[data-rv="next"]');
@@ -185,13 +180,14 @@ try {
   check(await G.page.$eval('[data-rv="back"]', (e) => e.disabled), 'back is disabled at the start: never before ball.start');
   check((await ball()).start === 45, 'and ball.start stays');
 
-  /* ---- 4. a peek is page-local ---- */
+  /* ---- 4. a peek is page-local (N3: the night's squares are in the time's popover) ---- */
+  await G.page.click('[data-rv="timepop"]');
   await G.page.click('.rv-sq[data-i="10"]');
   check(await G.page.$eval('.rv-peekbar', (e) => /23:30/.test(e.textContent) && /Back to now/.test(e.textContent)) && await G.page.$eval('.rv-main', (e) => e.classList.contains('peeking')), 'tapping a square shows 23:30 in a dashed frame with Back to now');
   check(await timeText(G.page) === '21:45' && await G.page.$eval('.rv-card[data-room="Private card rooms"] .rv-npc.k-target', (e) => !!e), 'the published time still reads 21:45, while the board shows Odette in the card rooms');
   await sleep(1200);
   check((await ball()).t === 45 && await seqNow() === seq0, 'a peek wrote no ball.t and published nothing');
-  await G.page.click('[data-rv="unpeek"]');
+  await G.page.click('.rv-peekbar [data-rv="unpeek"]');
   check((await G.page.$$('.rv-peekbar')).length === 0 && await G.page.$eval('.rv-card[data-room="Showroom"] .rv-npc.k-target', (e) => !!e), 'Back to now returns the board to 21:45');
 
   /* ---- 5. moving PCs: a tap on the chip then the room; a drag ---- */
@@ -202,7 +198,10 @@ try {
   b = await until(async () => { const x = await ball(); return x && x.crew && x.crew['run-pc1'] ? x : null; }, 8000);
   check(!!b && b.crew['run-pc1'].room === 'Showroom' && b.crew['run-pc1'].moved === 3, 'tap then room: ball.crew has the PC in the Showroom, moved in beat index 3 (' + JSON.stringify(b && b.crew) + ')');
   check(await G.page.$eval('.rv-card[data-room="Showroom"] .rv-pc[data-id="run-pc1"]', (e) => !!e), 'and the chip sits on that card');
-  const chip = await G.page.$('.rv-tray .rv-pc[data-id="run-pc2"]'), cardBox = await (await G.page.waitForSelector('.rv-card[data-room="Cocktail lounge"]', { timeout: 10000 })).boundingBox(), cb = await chip.boundingBox();
+  /* the selection redraws the view (the Roll follows the selected room, N4's roomSelected, a beat later): read both boxes after it settles, through
+     locators, so no handle is left pointing at a node the redraw replaced */
+  await G.page.waitForSelector('.rv-card[data-room="Cocktail lounge"]', { timeout: 10000 }); await sleep(600);
+  const cardBox = await G.page.locator('.rv-card[data-room="Cocktail lounge"]').boundingBox(), cb = await G.page.locator('.rv-tray .rv-pc[data-id="run-pc2"]').boundingBox();
   await G.page.mouse.move(cb.x + cb.width / 2, cb.y + cb.height / 2);
   await G.page.mouse.down();
   await G.page.mouse.move(cb.x + cb.width / 2 + 20, cb.y + cb.height / 2 + 20, { steps: 4 });
@@ -233,50 +232,68 @@ try {
   b = await until(async () => { const x = await ball(); return x && x.unheard && x.unheard.A ? x : null; }, 8000);
   check(!!b && b.unheard.A['run-pc2'] === true && !(b.heard && b.heard.A && b.heard.A['run-pc2'] !== undefined), 'Un-hear writes ball.unheard.A.<pc> and takes the heard time back (' + JSON.stringify(b && [b.heard, b.unheard]) + ')');
   await G.page.click('.rv-card[data-room="Luxury penthouse"] .rv-cn');
-  check(/Reveal on the map/.test(await side()), 'a shut room offers Reveal on the map');
+  /* N3: the room card's Players' map, Dark | Blueprint | Seen (map.knowledge is always on since N0) */
+  const kPressed = () => G.page.$$eval('.rv-rm.sel [data-site="kn"][aria-pressed="true"]', (l) => l.map((e) => e.getAttribute('data-k')).join()).catch(() => '');
+  check(await kPressed() === 'dark' && /Players’ map/.test(await side()), 'a shut room offers its Players\' map, on Dark');
   await G.page.click('.rv-tray .rv-pc[data-id="run-pc3"]'); await G.page.click('.rv-card[data-room="Luxury penthouse"]');
   b = await until(async () => { const x = await ball(); return x && x.crew && x.crew['run-pc3'] ? x : null; }, 8000);
   check(!!b && b.crew['run-pc3'].room === 'Luxury penthouse', 'tapping her chip, then the shut penthouse, puts Ira Lund there');
 
-  /* ---- 7. Open for the players asks: the map is live on the iPad first ---- */
+  /* ---- 7. the Players' map with the map live on the iPad (N3): Blueprint at once; Seen stages the room, Send opens it, and the live reveal asks first ---- */
   await G.page.keyboard.press('b');
   await G.page.click('[data-gm="layer"][data-v="player"]');
   await G.page.click('[data-gm="ipad"]');
   check(!!(await until(async () => (await seqNow()) > seq0, 8000)), 'Show on iPad put the player map up');
   await G.page.keyboard.press('g');
   await G.page.waitForSelector('.rv-head');
+  const seg = (k) => '.rv-rm.sel [data-site="kn"][data-k="' + k + '"]', send = '.rv-tools [data-site="send"]';
+  const staged = () => G.page.evaluate(() => window.B68GmStage.state().staged);
   await G.page.click('.rv-card[data-room="Private card rooms"] .rv-cn');
+  answer.no = false; asked.length = 0;
+  await G.page.click(seg('blueprint'));
+  check(!!(await until(async () => ((await ball()).know || []).includes('Private card rooms'), 8000)) && !((await ball()).open || []).length, 'Blueprint applies at once: the room is in ball.know, not open');
   answer.no = true; asked.length = 0;
-  await G.page.click('.rv-sec[data-sec="room"] [data-rv="open"]');
-  await sleep(600);
-  check(asked.length === 1 && /opening the room Private card rooms shows it to the players now/.test(asked[0]), 'Open for the players asks first, by name (' + asked.join(' | ') + ')');
-  check(!((await ball()).open || []).length && await G.page.$eval('.rv-card[data-room="Private card rooms"]', (e) => e.classList.contains('fog')), 'and a no leaves the room shut');
+  await G.page.click(seg('seen'));
+  check(await staged() === 1 && asked.length === 0 && !((await ball()).open || []).length && /Seen · staged/.test(await G.page.$eval(seg('seen'), (e) => e.textContent)) && await G.page.$eval('.rv-card[data-room="Private card rooms"]', (e) => e.classList.contains('staged')),
+    'Seen stages the room on this screen: amber, nothing asked, nothing open yet');
+  await G.page.click(send);
+  await sleep(800);
+  check(asked.length === 1 && /the room Private card rooms in full now/.test(asked[0]), 'Send, with the map live on the iPad, asks first, by name (' + asked.join(' | ') + ')');
+  check(!((await ball()).open || []).length, 'and a no leaves the room shut');
   answer.no = false; asked.length = 0;
   let sq = await seqNow();
   await G.page.click('.rv-card[data-room="Private card rooms"] .rv-cn');
-  await G.page.click('.rv-sec[data-sec="room"] [data-rv="open"]');
-  check(!!(await until(async () => JSON.stringify((await ball()).open) === '["Private card rooms"]', 8000)) && asked.length === 1, 'a yes: ball.open holds the room');
+  const st7 = await G.page.$eval('.rv-rm.sel [data-site="kn"][aria-pressed="true"]', (e) => e.textContent).catch(() => '');
+  check(/^Blueprint/.test(st7), 'the no went through knowRevert: the room is back on Blueprint, not Dark (' + st7 + ')');
+  await G.page.click(seg('seen')); await G.page.click(send);
+  check(!!(await until(async () => JSON.stringify((await ball()).open) === '["Private card rooms"]', 8000)) && asked.length === 1, 'a yes: one ask, and ball.open holds the room (' + asked.join(' | ') + ')');
+  check(!((await ball()).know || []).includes('Private card rooms'), 'and it left the blueprint list in the same write');
   check(!!(await until(async () => (await seqNow()) > sq, 8000)), 'and the room went to the iPad through the page');
   check(await G.page.waitForFunction(() => !document.querySelector('.rv-card[data-room="Private card rooms"]').classList.contains('fog'), null, { timeout: 8000 }).then(() => true, () => false), 'the card is solid once the room is open');
 
-  /* ---- 7b. the one reveal toggle on a room card: Reveal on the map / Revealed · hide ---- */
+  /* ---- 7b. the Players' map on a room card (map.knowledge, always on since N0): Dark -> Blueprint -> Seen (staged, then sent: open for the players) -> Dark ---- */
   {
-    const room = 'Underground counting room', btn = '.rv-sec[data-sec="room"] [data-rv="open"], .rv-sec[data-sec="room"] [data-rv="close"]';
+    const room = 'Underground counting room';
     const hudRooms = async () => { const x = (await api('GET', '/campaign')).json.doc.mission; return x && x.hud && Array.isArray(x.hud.rooms) ? x.hud.rooms.reduce((a, z) => a.concat(z.rooms || []), []) : []; };
-    const label = () => G.page.$eval(btn, (e) => e.textContent + '|' + e.getAttribute('aria-pressed') + '|' + e.getAttribute('data-rv')).catch(() => '');
+    const pick = async (k) => { await G.page.click('.rv-card[data-room="' + room + '"] .rv-cn'); await G.page.click(seg(k)); };
     await G.page.click('.rv-card[data-room="' + room + '"] .rv-cn');
-    check((await label()) === 'Reveal on the map|false|open' && !((await ball()).open || []).includes(room), 'a closed room: Reveal on the map, not pressed');
+    check((await kPressed()) === 'dark' && !((await ball()).open || []).includes(room), 'a closed room: Dark pressed (' + (await kPressed()) + ')');
     check(((await G.page.$$('.rv-sec[data-sec="room"] [data-rv="move"]')).length) === 0, 'no Move button in the Rooms panel');
+    answer.no = false; asked.length = 0;
+    await pick('blueprint');
+    check(!!(await until(async () => ((await ball()).know || []).includes(room), 8000)), 'Blueprint: in ball.know');
     sq = await seqNow();
-    await G.page.click(btn);
-    check(!!(await until(async () => ((await ball()).open || []).includes(room), 8000)), 'Reveal on the map: the GM state open holds the room');
+    await pick('seen');
+    check(!!(await until(async () => (await kPressed()) === 'blueprint,seen', 8000)) && !((await ball()).open || []).includes(room), 'Seen: staged (Seen lit), still blueprint for the players until Send');
+    await G.page.click(send);
+    check(!!(await until(async () => ((await ball()).open || []).includes(room), 8000)), 'Send: the GM state open holds the room');
     check(!!(await until(async () => (await hudRooms()).includes(room), 10000)), 'and the published mission.hud.rooms includes it');
     check(!!(await until(async () => (await seqNow()) > sq, 8000)), 'and the iPad map was published');
-    check(!!(await until(async () => (await label()) === 'Revealed · hide|true|close', 8000)), 'the button now reads Revealed · hide, pressed');
-    await G.page.click(btn);
-    check(!!(await until(async () => !((await ball()).open || []).includes(room), 8000)), 'click again: the room leaves the GM state open');
+    check(!!(await until(async () => (await kPressed()) === 'seen', 8000)), 'Seen is pressed (' + (await kPressed()) + ')');
+    await pick('dark');
+    check(!!(await until(async () => !((await ball()).open || []).includes(room) && !((await ball()).know || []).includes(room), 8000)), 'Dark at once: the room leaves the GM state open');
     check(!!(await until(async () => !(await hudRooms()).includes(room), 10000)), 'and mission.hud.rooms drops it');
-    check(!!(await until(async () => (await label()) === 'Reveal on the map|false|open', 8000)), 'and the button reads Reveal on the map again');
+    check(!!(await until(async () => (await kPressed()) === 'dark', 8000)), 'and Dark is pressed again');
   }
 
   /* ---- 8. the keys ---- */
@@ -291,10 +308,15 @@ try {
   await G.page.keyboard.press('Shift+ArrowRight');
   check(!!(await until(async () => (await ball()).t === 120, 8000)), 'and again: 23:00 (a guard moves, the passage opens)');
   check(await G.page.$eval('.rv-card[data-room="Underground counting room"] .rv-route.timed', (e) => /Showroom/.test(e.textContent)), 'the Passage is drawn only now, dashed, between the counting room and the showroom');
-  await G.page.click('.rv-sq[data-i="12"]');
-  check((await G.page.$$('.rv-peekbar')).length === 1, 'a peek is open');
+  await G.page.click('[data-rv="timepop"]'); await G.page.click('.rv-sq[data-i="12"]');
+  check((await G.page.$$('.rv-peekbar')).length === 1 && await G.page.$eval('.rv-timepop', (e) => e.hidden), 'a peek is open, and the squares\' popover shut on the tap');
+  /* N3: the page's ONE Esc (gm/esc.js) closes one thing a press, from the top */
   await G.page.keyboard.press('Escape');
   check((await G.page.$$('.rv-peekbar')).length === 0 && (await ball()).t === 120, 'Esc: back to now, without writing');
+  await G.page.click('[data-rv="menu"]'); await G.page.keyboard.press('ArrowLeft'); await sleep(400);
+  check((await ball()).t === 120, 'the arrows wait while a popover is open');
+  await G.page.keyboard.press('Escape');
+  check(await G.page.$eval('#rv-menu', (e) => e.hidden), 'and Esc shuts the menu');
   await G.page.keyboard.press('ArrowLeft'); await G.page.keyboard.press('ArrowLeft'); await G.page.keyboard.press('ArrowLeft');
   check(!!(await until(async () => (await ball()).t === 75, 8000)), 'three Lefts go back three beats');
   /* the keys belong to the Run tab alone */
@@ -312,7 +334,7 @@ try {
   check(!!(await until(async () => (await ball()).view === 'map', 8000)), 'the view is kept in ball.view');
   await shot(G.page, 'runv2-03-map');
   { const g = await G.page.evaluate(() => { const m = document.querySelector('#rv-map').getBoundingClientRect(), s = document.querySelector('#rv-map svg').getBoundingClientRect(), a = document.querySelector('.rv-side').getBoundingClientRect(); return { mh: m.height, aw: a.width, vh: innerHeight, inside: s.bottom <= m.bottom + 1 && s.right <= m.right + 1 && s.top >= m.top - 1 }; });
-    check(g.inside && g.mh >= g.vh * 0.6 && g.aw <= 250, 'Map view: the map frame fills the column height (' + Math.round(g.mh) + ' of ' + g.vh + '), the svg fits inside it, the side panel narrows (' + Math.round(g.aw) + ' px)'); }
+    check(g.inside && g.mh >= g.vh * 0.6 && g.aw <= 310, 'Map view: the map frame fills the column height (' + Math.round(g.mh) + ' of ' + g.vh + '), the svg fits inside it, the side panel narrows (' + Math.round(g.aw) + ' px; N3 keeps it wide enough for the room card\'s people)'); }
   { /* E1: zoom and pan on the Map view */
     const vbw = () => G.page.$eval('#rv-map svg', (e) => +e.getAttribute('viewBox').split(' ')[2]), vbs = () => G.page.$eval('#rv-map svg', (e) => e.getAttribute('viewBox'));
     const w0 = await vbw(), r = await G.page.$eval('#rv-map', (m) => { const b = m.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2 }; });
@@ -393,10 +415,10 @@ try {
   await api('PATCH', '/gm/ambient', { overlay: null });
 
   /* a peek reads as the beat that ends there, and writes nothing */
-  await G.page.click('.rv-sq[data-i="4"]');
+  await G.page.click('[data-rv="timepop"]'); await G.page.click('.rv-sq[data-i="4"]');
   check(await G.page.$eval(BEAT + ' .rv-sh', (e) => e.textContent) === 'Looking at 22:00' && await G.page.$eval(BEAT + ' .rv-say', (e) => /SAY/.test(e.textContent) && /GM-ONLY-SAY-1/.test(e.textContent)), 'peeking at 22:00: the card for that beat, the SAY line in a band');
   check(await ballT() === 180, 'and the published time did not move');
-  await G.page.keyboard.press('Escape');
+  await G.page.keyboard.press('Escape');      /* back to now (the squares' popover shut on the tap) */
 
   /* the pacing line: wall clock, page-local */
   check(/^beat 13 · \d+ min in$/.test(await G.page.$eval('[data-pace]', (e) => e.textContent)) && !JSON.stringify(await gmState()).includes('min in'), 'the pacing line reads beat 13 · m min in, and is held nowhere shared');
@@ -532,7 +554,7 @@ try {
 
   /* ---- 11. a reload: the same ---- */
     const R = await open();
-  check(await until(() => tabShown(R.page), 15000), 'after a reload the tab is there');
+  check(await until(() => tabShown(R.page), 15000), 'after a reload The site is there');
   await R.page.keyboard.press('g');
   await R.page.waitForSelector('.rv-head');
   check(await timeText(R.page) === '22:15' && await R.page.$eval('.rv-card[data-room="Cocktail lounge"] .rv-pc[data-id="run-pc2"]', (e) => !!e), 'the same time and the same crew');
@@ -564,19 +586,21 @@ try {
     await Z.page.waitForSelector('.rv-head');
     const mission = async () => (await api('GET', '/campaign')).json.doc.mission || null;
     const onlyKept = (x) => !!x && Object.keys(x).every((k) => ['site', 'floor', 'open'].includes(k)) && x.site === NAME2;
-    check(await Z.page.$eval('.rv-head .rv-reset', (e) => e.textContent.trim() === 'Reset the night' && !e.matches('[data-rv="next"], [data-rv="back"]')), 'a started night shows Reset the night in the header, apart from the beat buttons');
+    /* N3: Reset the night is the ⋯ menu's last line, apart from everything else */
+    const resetIt = async (page) => { await page.click('[data-rv="menu"]'); await page.click('#rv-menu [data-rv="reset"]'); };
+    check(await Z.page.$eval('#rv-menu [data-rv="reset"]', (e) => e.textContent.trim() === 'Reset the night' && !e.nextElementSibling) && (await Z.page.$$('.rv-head > [data-rv="reset"]')).length === 0, 'a started night offers Reset the night as the ⋯ menu\'s last line, not on the header');
     /* a no changes nothing */
     const before = JSON.stringify(await ball()), mBefore = JSON.stringify(await mission());
     check(before.length > 80 && !!(await mission()), 'positive control: the night carries state and a published mission');
     answer.no = true; const n0 = asked.length;
-    await Z.page.click('.rv-head .rv-reset'); await sleep(1500);
+    await resetIt(Z.page); await sleep(1500);
     answer.no = false;
     check(asked.length === n0 + 1 && /^Reset the night\? The clock goes back to Start the night/.test(asked[n0]) && /table clocks stay as they are/.test(asked[n0]), 'Reset the night asks first, in plain words');
     check(JSON.stringify(await ball()) === before && JSON.stringify(await mission()) === mBefore && (await Z.page.$$('.rv-start')).length === 0, 'a no: the ball, the mission and the view are exactly as they were');
     /* a yes resets the night as it stands (whatever the earlier sections left) */
-    await Z.page.click('.rv-head .rv-reset');
+    await resetIt(Z.page);
     check(!!(await until(async () => onlyKept(await ball()) && !(await mission()), 10000)), 'a yes: the ball holds only site/floor/open and the campaign document has no mission (' + JSON.stringify(await ball()) + ')');
-    check(!!(await Z.page.waitForSelector('.rv-start [data-rv="start"]', { timeout: 8000 }).then(() => true, () => false)) && (await Z.page.$$('.rv-head .rv-reset')).length === 0, 'Start the night is offered again, and the reset button is gone');
+    check(!!(await Z.page.waitForSelector('.rv-start [data-rv="start"]', { timeout: 8000 }).then(() => true, () => false)) && (await Z.page.$$('#rv-menu [data-rv="reset"]')).length === 0, 'Start the night is offered again, and Reset the night is gone from the menu');
     let disp = (await api('GET', '/gm/display?hseq=999999')).json;
     check(!!disp.mission && disp.mission.hud === null && typeof disp.mission.hseq === 'number' && !disp.mission.unchanged, 'the display answer\'s mission part is { hseq, hud: null } (' + JSON.stringify(disp.mission) + ')');
     check(JSON.stringify((await ball()).open) !== undefined && (await ball()).site === NAME2, 'the map\'s open rooms and the site stay');
@@ -597,7 +621,7 @@ try {
     check(!!mid && !!mid.heard.A, 'two beats, a PC placed and a lead heard are in the ball');
     check(!!(await until(async () => { const m = await mission(); return m && m.hud && m.hud.time === '22:15' ? m : null; }, 10000)), 'and the band follows to 22:15');
     const seqBefore = (await mission()).seq;
-    await Z.page.click('.rv-head .rv-reset');
+    await resetIt(Z.page);
     check(!!(await until(async () => onlyKept(await ball()) && !(await mission()), 10000)), 'Reset the night: the ball is down to site/floor/open and the mission is gone');
     disp = (await api('GET', '/gm/display?hseq=999999')).json;
     check(!!disp.mission && disp.mission.hud === null, 'the display GET\'s mission part is { hseq, hud: null }');
@@ -664,25 +688,26 @@ try {
       check(l0.length === 1 && l0[0].startsWith(lab(bt)), 'the room note lights the segment holding the shown beat time (' + lab(bt) + '): ' + JSON.stringify(l0));
       check(await N.page.$eval(sec + ' .rv-nowkey', (e) => e.textContent) === 'Lit: this beat, ' + lab(bt) + '–' + lab(bt + BL), 'the legend names the beat');
       check(await N.page.$eval(sec + ' .rv-nowkey', (e) => !!e.previousElementSibling && e.previousElementSibling.classList.contains('rv-sh')), 'the legend follows a heading');
-      await N.page.click('.rv-sq[data-i="' + (bt / BL + 1) + '"]');
+      await N.page.click('[data-rv="timepop"]'); await N.page.click('.rv-sq[data-i="' + (bt / BL + 1) + '"]');
       const l1 = await lit();
       check(l1.length === 1 && l1[0].startsWith(lab(bt + BL)) && l1[0] !== l0[0], 'peeking a beat later moves the light: ' + JSON.stringify(l1));
-      await N.page.click('[data-rv="unpeek"]');
+      await N.page.click('.rv-peekbar [data-rv="unpeek"]');
       check(JSON.stringify(await lit()) === JSON.stringify(l0), 'Back to now returns it');
     }
     await N.page.click('.rv-card[data-room="Showroom"] .rv-cn');
     check(await N.page.$eval(sec + ' .rv-rm[data-room="Showroom"] .rv-nonote', (e) => /No notes for Showroom/.test(e.textContent) && /### Showroom/.test(e.textContent)), 'a room with no section says so, and what to add');
     check(await N.page.$$eval(sec + ' .rv-rm', (l) => l.length >= 1 && l[0].getAttribute('data-room') === 'Showroom'), 'the tapped room comes first');
-    /* an NPC name opens the card */
+    /* a person with a card: their row's Card opens it (N3: the people rows of the room card) */
+    const cardBtn = sec + ' .rv-rm[data-room="' + pipRoom.room + '"] [data-site="card"][data-name="Pip Quill"]';
     await N.page.click('.rv-card[data-room="' + pipRoom.room + '"] .rv-cn');
-    await N.page.click(sec + ' .rv-rm[data-room="' + pipRoom.room + '"] .rv-npcname');
-    check(!!(await N.page.waitForSelector('.rv-npcpop', { timeout: 5000 }).then(() => true, () => false)) && await N.page.$eval('.rv-npcpop', (e) => /PIPCARD-BODY/.test(e.textContent) && /Pip Quill/.test(e.querySelector('header').textContent)), 'an NPC name opens the card in a popover');
+    await N.page.click(cardBtn);
+    check(!!(await N.page.waitForSelector('.rv-npcpop', { timeout: 5000 }).then(() => true, () => false)) && await N.page.$eval('.rv-npcpop', (e) => /PIPCARD-BODY/.test(e.textContent) && /Pip Quill/.test(e.querySelector('header').textContent)), 'Card on a person\'s row opens the card in a popover');
     await N.page.keyboard.press('Escape');
     check(!!(await until(async () => (await N.page.$$('.rv-npcpop')).length === 0, 5000, 100)), 'Esc closes the card');
-    await N.page.click(sec + ' .rv-rm[data-room="' + pipRoom.room + '"] .rv-npcname');
+    await N.page.click(cardBtn);
     await N.page.click('.rv-npcpop [data-rv="npcx"]');
     check((await N.page.$$('.rv-npcpop')).length === 0, 'the cross closes it too');
-    check(await N.page.$$eval(sec + ' .rv-npcname', (l) => l.every((b) => b.textContent === 'Pip Quill')), 'only an NPC with a card is a button (the others are plain text)');
+    check(await N.page.$$eval(sec + ' [data-site="card"]', (l) => l.length >= 1 && l.every((b) => b.getAttribute('data-name') === 'Pip Quill')), 'only a person with a card has Card (the others have none)');
     await N.page.click('.rv-card[data-room="Cocktail lounge"] .rv-cn');
     await N.page.click(lounge + ' .rv-rmnote a[href^="#pp:npc:"]');
     check(!!(await N.page.waitForSelector('.rv-npcpop', { timeout: 5000 }).then(() => true, () => false)) && await N.page.$eval('.rv-npcpop', (e) => /PIPCARD-BODY/.test(e.textContent)), 'a #pp: NPC link in a room note opens the same card');
@@ -726,7 +751,7 @@ try {
     const seq3 = seq2 + 1;
     await api('PATCH', '/characters/run-pc1', { moveReq: { room: 'Showroom', seq: seq3 } });
     await until(async () => (await crewOf('run-pc1')).mseq === seq3, 20000, 200);
-    await N.page.click('.rv-head .rv-reset');
+    await N.page.click('[data-rv="menu"]'); await N.page.click('#rv-menu [data-rv="reset"]');
     const rb = await until(async () => { const x = await ball(); return x && !x.start && x.crew && x.crew['run-pc1'] ? x : null; }, 15000, 200);
     check(!!rb && JSON.stringify(rb.crew['run-pc1']) === JSON.stringify({ mseq: seq3 }), 'Reset the night leaves each pending request consumed (crew entry holds only mseq: ' + JSON.stringify(rb && rb.crew) + ')');
     await N.c.close();

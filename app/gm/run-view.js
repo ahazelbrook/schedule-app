@@ -16,6 +16,7 @@
  *   resetChange(st) -> the ball change that un-starts the night: every key but site, floor and open set to null (VV12).
  *   startMinutes(play) -> [{ key, label, at, t }] the engagement results play.clock.starts offers, in minutes from clock.start.
  *   roomsShown(model, sel) -> [room]: the room tapped, then every room a PC is in, top floor down.   personNames(person) -> [npc, label] (the names a card is filed under)
+ *   intelFor(play, room) -> [intel item] the intel that tells of the room: an event in it, a way whose lead or window is in it, a route from or to it
  *   peopleIn(play, st, t, room) -> [{ id, label, kind, npc, moving }] everyone placed there.   eventsIn(play, st, t, room) -> the beat's events in the room
  *   reachIn(play, st, t, pcIds) -> [{ way, line, who, name, pcs: [{ id, heard, unheard, at }] }] the leads in reach of those PCs, heard or not
  *   heardChange(st, way, pc, t) -> { heard, unheard }: hear, or take it back (ball.unheard keeps the auto-hear off that pair)
@@ -33,6 +34,21 @@
  *   OPTIONAL (check typeof; the tests build a bare host): hasNpcCard(names) -> bool (cheap)    npcCard(names) -> html | "" (the NPC card, rendered)
  *   feature(id) -> bool  a switch's value (map.countdown: the header's countdown pie, from ball.js countdownOf)
  *   decorate(el)  the Prep decorator on a node (SAY callouts become read-aloud cards)       roomNote(room) -> html | null (null: the prep note has no section for it)
+ *
+ * THE SITE (the GM night rebuild, N3: this view is the Score place's whole score). OPTIONAL host parts, each drawn only when the host has it:
+ *   alarmHtml(open) -> the ONE alarm readout (gm/security.js readoutHtml)      alarmPop() -> its popover body (the beat's text, the level, the hand steps)
+ *   toolsHtml() -> the map toolbar's tools (Spotted, Flashback, Pin, Montage)  stageHtml() -> the stage group (LIVE, Send (n), Freeze, Blank; gm/stage.js)
+ *   roomStates() -> { room: { k: 'dark' | 'blueprint' | 'seen', staged } }     the board's tints and the legend
+ *   knowledgeSeg(room) -> the room card's Players' map control                peopleHtml(room, people) -> the room card's Who's here rows
+ *   roomWrong(room) -> [line] the room's If it goes wrong lines (each gets "→ the Roll")      pinned() -> room | ''      threat() -> { room, kind } | null
+ *   roomAt(svg, event) -> room | ''   the room under a tap on the map (a tap selects it)   intelGroups() -> [{ id, label }] Intel in the ⋯
+ *   costume() -> bool, the Costume engine line in the ⋯                      siteAct(action, el, view) every data-site control (and a data-site form's submit)
+ *   A data-rv control is this view's own; a data-site control (the parts above) is routed to host.siteAct ("→ the Roll" too: the page's
+ *   B68GmPage.setThreat, N4, the same thing as its host.setThreat).
+ *   roomSelected(name)  N4: told on every change of the selected room ('' for none), so the Roll's "If it goes wrong" line follows it.
+ *   Instance: select(room) selected() -> the room in focus (the one tapped, else the first shown)    toolHost(id, title) -> an element the page binds a
+ *   tool into (it survives the redraws, at the top of the right column)     toolClose()      toolOpen() -> id | ''
+ *   Esc: the view registers what it opens with window.B68GmEsc (rv.menu, rv.alarm, rv.time at 70; rv.npc, rv.peek, rv.tool at 40); it has no Esc of its own.
  *
  * SEAMS for the tickets that build on this view (module-level, shared by every instance):
  *   setPlayersChip(text, ok)  the "Players: HH:MM" chip in the header (VV6)
@@ -251,7 +267,7 @@
   var live = [];                       /* instances with a box on screen, so setPlayersChip reaches the chip without a redraw */
   function paintChip(box) {
     var c = box && box.querySelector ? box.querySelector(".rv-players") : null; if (!c) return;
-    c.textContent = players.text; c.setAttribute("data-ok", players.ok ? "1" : "0");
+    c.textContent = players.text; c.setAttribute("data-ok", players.ok ? "1" : "0"); c.setAttribute("title", players.text);
   }
   function setPlayersChip(text, ok) { players = { text: str(text), ok: !!ok }; live.forEach(function (v) { paintChip(v.box()); }); }
   var menuItems = [], views = [], sections = [], hooks = { heard: null };
@@ -297,6 +313,17 @@
     return out;
   }
   function eventsIn(play, st, t, room) { return list(B.beatCard(play, isObj(st) ? st : {}, t, t).items).filter(function (it) { return isObj(it) && it.type === "event" && it.room === room; }); }
+  /* N3: the intel that tells of a room (what "Tell the crew" on its card offers): an item whose reveals name an event in the room, a way whose lead is said
+     there or whose window is there, or a route from or to it. Play order; each item once. */
+  function intelFor(play, room) {
+    var r = str(room); if (!isObj(play) || !r) return [];
+    var ev = {}, wy = {}, rt = {};
+    list(play.events).forEach(function (e) { if (isObj(e) && e.room === r) ev[e.id] = 1; });
+    list(play.ways).forEach(function (w) { if (isObj(w) && ((isObj(w.lead) && w.lead.room === r) || (isObj(w.window) && w.window.room === r))) wy[w.id] = 1; });
+    list(play.routes).forEach(function (x) { if (isObj(x) && (x.from === r || x.to === r)) rt[x.id] = 1; });
+    var hit = function (ids, set) { return list(ids).some(function (id) { return set[id] === 1; }); };
+    return list(play.intel).filter(function (x) { return isObj(x) && isObj(x.reveals) && (hit(x.reveals.events, ev) || hit(x.reveals.ways, wy) || hit(x.reveals.routes, rt)); });
+  }
   /* the leads in reach of these PCs, heard or not (so the GM can take one back), by way in play order */
   function reachIn(play, st, t, pcIds) {
     st = isObj(st) ? st : {};
@@ -355,13 +382,24 @@
   /* ---- the view ---------------------------------------------------------------------------------------------- */
   function create(host) {
     var boxEl = null, peekT = null, sel = "", arm = "", drag = null, noClick = false, alarmOpen = false, mq = null, npcOpen = null;
+    /* N3: the header's popovers (the time and the night's squares, the alarm, the ⋯), and the tool bound into the right column (the page's: the montage) */
+    var timeOpen = false, menuOpen = false, tool = null, escOff = [];
     var self = { box: function () { return boxEl; } };
+    function closePops() { var was = timeOpen || alarmOpen || menuOpen; timeOpen = alarmOpen = menuOpen = false; return was; }
+    /* the selected room: every change goes through here, so the Roll's "If it goes wrong" line can follow it (N4: the host's roomSelected(name),
+       '' for none, when the host has it; without one the Roll follows the crew's room) */
+    function setSel(name) {
+      name = str(name); if (name === sel) return false;
+      sel = name;
+      if (typeof host.roomSelected === "function") { try { host.roomSelected(sel); } catch (e) { /* the Roll's trouble never stops a selection */ } }
+      return true;
+    }
     var mapViewState = {}, mapZoom = null;    /* the Map view's zoom { s, cx, cy, key }, kept across redraws */
 
     function site() { return host.site(); }
     function ctxFor(rs, st, m, shownT) {
       var ctx = { play: rs.play, st: st, model: m, t: timeOf(st), shownT: shownT, peeking: peekT !== null, host: host, sel: sel, esc: esc,
-        set: function (c) { return host.set(c); }, select: function (r) { sel = r; self.rerender(); }, rerender: function () { self.rerender(); }, toast: function (a, b) { host.toast(a, b); } };
+        set: function (c) { return host.set(c); }, select: function (r) { setSel(r); self.rerender(); }, rerender: function () { self.rerender(); }, toast: function (a, b) { host.toast(a, b); } };
       return ctx;
     }
     function build() {
@@ -380,16 +418,23 @@
       var l = B.timerLeft(tm, now), paused = !(tm.paused !== true && typeof tm.endsAt === "number");
       return { l: l, paused: paused, cls: "rv-tleft" + (l <= 0 ? " zero" : l < 60 ? " warn" : "") + (paused ? " paused" : "") };
     }
+    /* the beat timer: its time and Start / Pause on the header's line; the rest (+1, +5, Reset, the length) in the time popover */
     function timerHtml(p, st) {
       var tm = timerShown(p, st), v = timerLook(tm, nowMs());
-      return '<span class="rv-timer" role="group" aria-label="The beat timer"><output class="' + v.cls + '" data-rvtimer aria-label="Time left in this beat">' + B.timerText(v.l) + '</output>' +
-        '<button type="button" class="rv-btn sm" data-rv="tgo">' + (v.paused ? "Start" : "Pause") + '</button>' +
+      return '<span class="rv-timer" role="group" aria-label="The beat timer"><button type="button" class="rv-btn sm rv-tgo' + (v.paused ? "" : " going") + '" data-rv="tgo" title="' + (v.paused ? "Start the beat timer: at zero the night steps a beat" : "Pause the beat timer") + '">' +
+        '<span class="rv-tgl" aria-hidden="true"></span><span class="rv-sr">' + (v.paused ? "Start" : "Pause") + ' </span><output class="' + v.cls + '" data-rvtimer aria-label="Time left in this beat">' + B.timerText(v.l) + '</output></button></span>';
+    }
+    function timerMoreHtml(p, st) {
+      var tm = timerShown(p, st);
+      return '<span class="rv-tmore" role="group" aria-label="The beat timer">' +
         '<button type="button" class="rv-btn sm" data-rv="tadd1">+1 min</button><button type="button" class="rv-btn sm" data-rv="tadd5">+5 min</button>' +
         '<button type="button" class="rv-btn sm" data-rv="treset" title="Back to the full length, paused">Reset</button>' +
-        '<input class="rv-tlen" type="number" min="1" max="120" data-rv="tlen" value="' + Math.round(tm.len / 60) + '" aria-label="Timer length in minutes" title="Timer length in minutes. Default is the play\'s clock.real, else 6."></span>';
+        '<label class="rv-tlenl">length <input class="rv-tlen" type="number" min="1" max="120" data-rv="tlen" value="' + Math.round(tm.len / 60) + '" aria-label="Timer length in minutes" title="Timer length in minutes. Default is the play\'s clock.real, else 6."> min</label></span>';
     }
+    /* THE HEADER (N3): one line. The time and the beat (◀ ▶, the time opens the night's squares and the timer's rest), the beat timer, the ONE alarm
+       readout, the countdown pie, Players, and ⋯. Before the night starts, the engagement roll row (crit / 6 / 4-5 / 1-3) in place of the time. */
     function headHtml(x) {
-      var m = x.m, p = x.rs.play, st = x.st, nowT = timeOf(st), nowBeat = B.beatOf(p, nowT), h = '<div class="rv-head">';
+      var m = x.m, p = x.rs.play, st = x.st, nowT = timeOf(st), nowBeat = B.beatOf(p, nowT), h = '<div class="rv-headwrap"><div class="rv-head">';
       if (!m.started) {
         var opts = startMinutes(p);
         h += '<div class="rv-start" role="group" aria-label="Start the night"><b>Start the night</b> <span class="rv-dim">the engagement result sets the clock</span><span class="rv-startbtns">';
@@ -397,35 +442,79 @@
         else h += '<button type="button" class="rv-btn" data-rv="start" data-key="open" data-t="0">Start at ' + esc(p.clock.start) + '</button>';
         h += '</span></div>';
       } else {
-        h += '<button type="button" class="rv-btn rv-step" data-rv="back" aria-label="Back a beat" title="Back a beat (Left)"' + (stepTime(p, st, -1) === null ? " disabled" : "") + '>◀</button>' +
-          '<output class="rv-time" id="rv-time" aria-label="Published time">' + esc(B.timeLabel(p, nowT)) + '</output>' +
-          '<button type="button" class="rv-btn rv-step" data-rv="next" aria-label="Next beat" title="Next beat (Right)"' + (stepTime(p, st, 1) === null ? " disabled" : "") + '>▶</button>' +
-          '<span class="rv-beat">beat ' + nowBeat.n + ' of ' + nowBeat.of + '</span>' + timerHtml(p, st);
+        h += '<span class="rv-clock" role="group" aria-label="The night’s time">' +
+          '<button type="button" class="rv-btn rv-step" data-rv="back" aria-label="Back a beat" title="Back a beat (Left)"' + (stepTime(p, st, -1) === null ? " disabled" : "") + '>◀</button>' +
+          '<button type="button" class="rv-timebtn" data-rv="timepop" aria-haspopup="dialog" aria-expanded="' + timeOpen + '" title="The night, a square a beat (look ahead or back), and the beat timer">' +
+          '<output class="rv-time" id="rv-time" aria-label="Published time">' + esc(B.timeLabel(p, nowT)) + '</output><span class="rv-caret" aria-hidden="true"></span></button>' +
+          '<button type="button" class="rv-btn rv-step" data-rv="next" aria-label="Next beat" title="Next beat (Right; Shift+Right: the next thing that happens)"' + (stepTime(p, st, 1) === null ? " disabled" : "") + '>▶</button>' +
+          '<span class="rv-beat">beat ' + nowBeat.n + ' of ' + nowBeat.of + '</span></span>' + timerHtml(p, st);
       }
-      h += '<div class="rv-track" role="group" aria-label="The night, a square a beat">' + m.track.map(function (q) {
+      h += alarmHtml(x);
+      /* the countdown (map.countdown): play.clock.countdown filled a segment a beat from the clock's start, at the time the night is at */
+      var cd = m.started && typeof host.feature === "function" && host.feature("map.countdown") && B.countdownOf ? B.countdownOf(p, nowT) : null;
+      if (cd) h += '<span class="rv-count' + (cd.full ? " full" : "") + '" role="img" aria-label="' + esc(cd.label + ": " + cd.n + " of " + cd.of) + '" title="' + esc(cd.label + ": one segment a beat, full at " + cd.at) + '">' +
+        '<span class="rv-pie" style="--f:' + Math.round(cd.n / cd.of * 100) + '%"></span> <span class="rv-clab">' + esc(cd.label) + "</span> <b>" + cd.n + "/" + cd.of + "</b></span>";
+      h += '<span class="rv-hsp" aria-hidden="true"></span><span class="rv-chip rv-players" data-ok="' + (players.ok ? 1 : 0) + '" title="' + esc(players.text) + '">' + esc(players.text) + "</span>";
+      h += '<button type="button" class="rv-btn rv-more" data-rv="menu" aria-haspopup="menu" aria-expanded="' + menuOpen + '" aria-label="More for the night" title="More: Back to now, False dawn, Intel, End the night">⋯</button>';
+      h += "</div>";
+      if (m.started) h += timePopHtml(x);
+      if (alarmOpen) h += alarmPopHtml(x);
+      h += menuHtml(x);
+      return h + "</div>";
+    }
+    /* the night's squares (a tap looks at that beat: the players are not told) and the timer's +1, +5, Reset and length; drawn shut, so the controls are always there */
+    function timePopHtml(x) {
+      var m = x.m, nowT = timeOf(x.st);
+      var track = '<div class="rv-track" role="group" aria-label="The night, a square a beat">' + m.track.map(function (q) {
         var cls = "rv-sq" + (q.before ? " before" : "") + (q.cur ? " cur" : "") + (peekT !== null && q.t === peekT ? " peek" : "") + (q.i * m.beatLen < nowT && !q.cur && m.started && !q.before ? " done" : "");
         var glyph = q.icon === "skull" ? "☠" : q.icon === "star" ? "★" : q.icon === "diamond" ? "◆" : "";
         return '<button type="button" class="' + cls + '" data-rv="peek" data-i="' + q.i + '"' + (q.before || !m.started ? " disabled" : "") + ' title="' + esc(q.label + (q.text ? " · " + q.text : "")) + '" aria-label="Look at ' + esc(q.label) + (q.text ? ", " + esc(q.text) : "") + '">' +
           '<span class="rv-ic" data-icon="' + esc(q.icon) + '">' + glyph + '</span></button>';
       }).join("") + "</div>";
-      /* the countdown (switch map.countdown): play.clock.countdown filled a segment a beat from the clock's start, at the time the night is at */
-      var cd = m.started && typeof host.feature === "function" && host.feature("map.countdown") && B.countdownOf ? B.countdownOf(p, nowT) : null;
-      if (cd) h += '<span class="rv-count' + (cd.full ? " full" : "") + '" role="img" aria-label="' + esc(cd.label + ": " + cd.n + " of " + cd.of) + '" title="' + esc(cd.label + ": one segment a beat, full at " + cd.at) + '">' +
-        '<span class="rv-pie" style="--f:' + Math.round(cd.n / cd.of * 100) + '%"></span> ' + esc(cd.label) + " <b>" + cd.n + "/" + cd.of + "</b></span>";
-      if (m.alarm) {
-        var ck = host.clockNamed(m.alarm.name), filled = ck ? Math.max(0, +ck.filled || 0) : 0, size = ck && +ck.size > 0 ? +ck.size : m.alarm.size;
-        h += '<button type="button" class="rv-alarm" data-rv="alarm" aria-expanded="' + alarmOpen + '" title="' + esc(ck ? "Tap for what this beat of the alarm does" : "No table clock is named " + m.alarm.name) + '">' +
-          '<span class="rv-pie" style="--f:' + (size ? Math.round(filled / size * 100) : 0) + '%"></span> ' + esc(m.alarm.name) + ' <b>' + filled + "/" + size + "</b></button>";
-      }
-      h += '<span class="rv-chip rv-players" data-ok="' + (players.ok ? 1 : 0) + '">' + esc(players.text) + "</span>";
-      if (m.started) h += '<button type="button" class="rv-btn sm rv-reset" data-rv="reset" title="Back to Start the night; asks first">Reset the night</button>';
-      if (menuItems.length) h += '<button type="button" class="rv-btn" data-rv="menu" aria-haspopup="true" aria-label="Run menu">⋯</button>';
-      h += "</div>";
-      if (m.alarm && alarmOpen) {
-        var f2 = host.clockNamed(m.alarm.name), n2 = f2 ? Math.max(0, +f2.filled || 0) : 0, bt = n2 > 0 ? str(list(x.rs.play.alarm.beats)[n2 - 1]) : "";
-        h += '<p class="rv-alarmtext" role="status">' + (n2 > 0 ? "<b>" + esc(m.alarm.name) + " " + n2 + ":</b> " + esc(bt || "(nothing written for this beat)") : esc(m.alarm.name) + " has not started.") + "</p>";
-      }
-      return h;
+      return '<div class="rv-pop rv-timepop" role="dialog" aria-label="The night and the beat timer"' + (timeOpen ? "" : " hidden") + '>' +
+        '<p class="rv-poph"><b>The night</b> <span class="rv-dim">a square a beat: tap one to look at it (the players are not told)</span></p>' + track +
+        '<p class="rv-poph"><b>The beat timer</b></p>' + timerMoreHtml(x.rs.play, x.st) + '</div>';
+    }
+    /* the ONE alarm readout: the page's (the site alarm clock and the security level, gm/security.js); a bare host gets the site alarm clock alone */
+    function alarmHtml(x) {
+      if (typeof host.alarmHtml === "function") { var a = ""; try { a = str(host.alarmHtml(alarmOpen)); } catch (e) { a = ""; } return a; }
+      var m = x.m; if (!m.alarm) return "";
+      var ck = host.clockNamed(m.alarm.name), filled = ck ? Math.max(0, +ck.filled || 0) : 0, size = ck && +ck.size > 0 ? +ck.size : m.alarm.size;
+      return '<button type="button" class="rv-alarm" data-rv="alarm" aria-expanded="' + alarmOpen + '" title="' + esc(ck ? "Tap for what this beat of the alarm does" : "No table clock is named " + m.alarm.name) + '">' +
+        '<span class="rv-pie" style="--f:' + (size ? Math.round(filled / size * 100) : 0) + '%"></span> ' + esc(m.alarm.name) + ' <b>' + filled + "/" + size + "</b></button>";
+    }
+    function alarmPopHtml(x) {
+      if (typeof host.alarmPop === "function") { var a = ""; try { a = str(host.alarmPop()); } catch (e) { a = ""; } return a; }
+      var m = x.m; if (!m.alarm) return "";
+      var f2 = host.clockNamed(m.alarm.name), n2 = f2 ? Math.max(0, +f2.filled || 0) : 0, bt = n2 > 0 ? str(list(x.rs.play.alarm.beats)[n2 - 1]) : "";
+      return '<div class="rv-pop rv-alarmpop" role="dialog" aria-label="The alarm"><p class="rv-alarmtext" role="status">' + (n2 > 0 ? "<b>" + esc(m.alarm.name) + " " + n2 + ":</b> " + esc(bt || "(nothing written for this beat)") : esc(m.alarm.name) + " has not started.") + "</p></div>";
+    }
+    /* ⋯: Back to now, False dawn, Intel (a band or a floor of dark rooms to blueprint), the seam's items (the time toggle, End the night), the Costume engine, Reset the night */
+    function menuHtml(x) {
+      var ctx = x.ctx, it = '';
+      it += '<button type="button" class="rv-mi" data-rv="unpeek" role="menuitem"' + (peekT === null ? ' disabled title="You are looking at now"' : ' title="Back to the published time"') + '>Back to now</button>';
+      if (typeof host.dawn === "function") it += '<button type="button" class="rv-mi" data-rv="dawn" role="menuitem" title="The iPad goes white for 30 seconds; asks first">False dawn</button>';
+      var gs = []; try { gs = typeof host.intelGroups === "function" ? list(host.intelGroups()) : []; } catch (e) { gs = []; }
+      if (gs.length) it += '<p class="rv-mh">Intel: set dark rooms to blueprint</p><div class="rv-mgrid">' + gs.map(function (g) { return '<button type="button" class="rv-mi" data-site="intel" data-group="' + esc(g.id) + '" role="menuitem" title="Every dark room of it becomes blueprint">' + esc(g.label) + '</button>'; }).join("") + "</div>";
+      if (menuItems.length) it += '<p class="rv-mh"></p>' + menuItems.map(function (q, i) { return '<button type="button" class="rv-mi" data-rv="menuitem" data-i="' + i + '" data-mid="' + esc(q.id) + '" role="menuitem"' + (q.title ? ' title="' + esc(q.title) + '"' : "") + ">" + esc(typeof q.label === "function" ? q.label(ctx) : q.label) + "</button>"; }).join("");
+      if (typeof host.costume === "function") { var cs = !!host.costume(); it += '<button type="button" class="rv-mi" data-site="costume" role="menuitemcheckbox" aria-checked="' + cs + '" title="The Disguise select in a v1 site’s Run the site strip (Location)">Costume engine: ' + (cs ? "shown" : "hidden") + '</button>'; }
+      if (x.m.started) it += '<p class="rv-mh"></p><button type="button" class="rv-mi rv-reset" data-rv="reset" role="menuitem" title="Back to Start the night; asks first">Reset the night</button>';
+      return '<div class="rv-pop rv-menu" id="rv-menu" role="menu" aria-label="More for the night"' + (menuOpen ? "" : " hidden") + ">" + it + "</div>";
+    }
+    /* the toolbar over the board and the map: the views, the map tools (the page's), and the stage group while it has something to say */
+    function toolbarHtml(vs, v) {
+      var tools = "", stg = "";
+      try { tools = typeof host.toolsHtml === "function" ? str(host.toolsHtml()) : ""; } catch (e) { tools = ""; }
+      try { stg = typeof host.stageHtml === "function" ? str(host.stageHtml()) : ""; } catch (e) { stg = ""; }
+      return '<div class="rv-tools" role="toolbar" aria-label="The site">' +
+        '<div class="rv-views" role="group" aria-label="View">' + vs.map(function (q) { return '<button type="button" class="chip sm" data-rv="view" data-v="' + esc(q.id) + '" aria-pressed="' + (q.id === v.id) + '">' + esc(q.label) + "</button>"; }).join("") + "</div>" +
+        (tools ? '<span class="rv-mtools" role="group" aria-label="Map tools">' + tools + "</span>" : "") + stg + "</div>";
+    }
+    /* what the board's tints mean (only when the page gives the states) */
+    function legendHtml(v) {
+      if (typeof host.roomStates !== "function" || (v.id !== "board" && v.id !== "map")) return "";
+      return '<p class="rv-legend" aria-label="What the players’ map shows of each room"><span class="rv-lg k-dark">dark</span><span class="rv-lg k-blueprint">blueprint</span><span class="rv-lg k-seen">seen</span>' +
+        '<span class="rv-lg staged">staged</span><span class="rv-lg sel">selected</span></p>';
     }
 
     /* the board view */
@@ -436,15 +525,19 @@
         (inTray ? '<span class="rv-nm">' + esc(c.name) + "</span>" : "") + "</button>";
     }
     function boardView(box, ctx) {
-      var m = ctx.model, h = "", byId = {};
+      var m = ctx.model, h = "", byId = {}, states = {}, pin = "", thr = null;
+      try { states = typeof host.roomStates === "function" ? host.roomStates() || {} : {}; } catch (e) { states = {}; }
+      try { pin = typeof host.pinned === "function" ? str(host.pinned()) : ""; thr = typeof host.threat === "function" ? host.threat() : null; } catch (e) { pin = ""; thr = null; }
       list(ctx.play.people).forEach(function (p) { if (isObj(p)) byId[p.id] = p; });
       if (m.tray.length) h += '<div class="rv-tray" data-room="" role="group" aria-label="Crew not on the board"><span class="rv-lab">Not placed</span>' + m.tray.map(function (c) { return chipHtml(c, true); }).join("") + "</div>";
       if (arm) h += '<p class="rv-arm" role="status">Tap a room to move ' + esc(nameOfPc(arm, ctx)) + ' there. <button type="button" class="rv-btn sm" data-rv="disarm">Cancel</button></p>';
       m.rows.forEach(function (row) {
         h += '<div class="rv-row"><div class="rv-floor">' + esc(row.name) + '</div><div class="rv-cards">' + row.cards.map(function (c) {
-          var cls = "rv-card z" + (c.zone < 0 ? "x" : c.zone % 6) + (c.open ? " open" : " fog") + (sel === c.name ? " sel" : "");
-          return '<div class="' + cls + '" data-rv="room" data-room="' + esc(c.name) + '" role="button" tabindex="0" aria-label="' + esc(c.name + (c.open ? "" : ", not open to the players")) + '">' +
-            '<div class="rv-cn">' + esc(c.name) + (c.zoneLabel ? ' <small>' + esc(c.zoneLabel) + "</small>" : "") + "</div>" +
+          var ks = isObj(states[c.name]) ? states[c.name] : null, kw = ks && ks.k ? ks.k : "";
+          var cls = "rv-card z" + (c.zone < 0 ? "x" : c.zone % 6) + (c.open ? " open" : " fog") + (kw ? " k-" + kw : "") + (ks && ks.staged ? " staged" : "") + (sel === c.name ? " sel" : "");
+          var marks = (pin && pin === c.name ? '<span class="rv-cmark pin" title="The flashback pin">Pin</span>' : "") + (isObj(thr) && thr.room === c.name ? '<span class="rv-cmark threat" title="The stamp’s threat">' + esc(thr.kind) + "</span>" : "") + (ks && ks.staged ? '<span class="rv-cmark stg" title="Staged: Send opens it for the players">staged</span>' : "");
+          return '<div class="' + cls + '" data-rv="room" data-room="' + esc(c.name) + '" role="button" tabindex="0" aria-pressed="' + (sel === c.name) + '" aria-label="' + esc(c.name + (kw ? ", players’ map " + kw + (ks.staged ? ", staged" : "") : c.open ? "" : ", not open to the players")) + '">' +
+            '<div class="rv-cn">' + esc(c.name) + (c.zoneLabel ? ' <small>' + esc(c.zoneLabel) + "</small>" : "") + (marks ? '<span class="rv-cmarks">' + marks + "</span>" : "") + "</div>" +
             '<div class="rv-chips">' + c.pcs.map(function (p) { return chipHtml(p, false); }).join("") +
             c.npcs.map(function (n) { var tag = hasCard(ctx, byId[n.id]) ? "button" : "span"; return "<" + tag + (tag === "button" ? ' type="button" data-rv="npc" data-id="' + esc(n.id) + '"' : "") + ' class="rv-npc k-' + esc(n.kind) + '" title="' + esc(n.label + " (" + n.kind + ")" + (n.moving ? " → " + n.moving.to + " in " + n.moving.inMin + " min" : "")) + '"><span class="rv-ini">' + esc(n.ini) + "</span>" + (n.kind === "target" ? "★" : n.kind === "rival" ? "☠" : "") + "</" + tag + ">"; }).join("") + "</div>" +
             (c.routes.length ? '<div class="rv-routes">' + c.routes.map(function (r) { return '<span class="rv-route' + (r.timed ? " timed" : "") + '" title="' + esc(r.timed ? "A passage" + (r.until ? ", open until " + r.until : "") : "A route") + '">' + (r.timed ? "⏱ " : "") + esc(r.mark) + " " + esc(r.to) + (r.until ? " <small>to " + esc(r.until) + "</small>" : "") + "</span>"; }).join("") + "</div>" : "") +
@@ -462,6 +555,13 @@
       var MZ = typeof window !== "undefined" ? window.B68MapZoom : null, fr = box.querySelector("#rv-map"), el = fr && fr.querySelector("svg");
       if (MZ && el) { try { mapZoom = MZ.attach(fr, el, { store: mapViewState }); } catch (e) { mapZoom = null; /* the map still reads, unzoomed */ } }
       if (el && typeof host.mapPaint === "function") { try { host.mapPaint(fr, el, mapZoom); } catch (e) { /* the map's extras are optional */ } }
+      /* N3: select a room, then act. A tap on a room of the map selects it (its card opens on the right), or puts the armed PC there; a pan is not a tap (mapzoom) */
+      if (fr && el && typeof host.roomAt === "function") fr.addEventListener("click", function (ev) {
+        if (ev.target && ev.target.closest && ev.target.closest("button, .mz-ctl")) return;
+        var n = ""; try { n = str(host.roomAt(el, ev)); } catch (e) { n = ""; }
+        if (!n) return;
+        if (arm) placeAt(arm, n); else { setSel(n); self.rerender(); }
+      });
     }
 
     /* the one toggle on a room card: Reveal on the map / Revealed · hide (the Run view's own list), or plain text when a band or survey opened it */
@@ -475,19 +575,28 @@
     }
     /* the rooms (the top of the right column): the room tapped, then every room a PC is in; who is there, what happens, the leads in reach, the prep note */
     function roomsSection(box, ctx) {
-      var m = ctx.model, shown = roomsShown(m, ctx.sel), byId = {};
-      if (!shown.length) { box.innerHTML = '<h3 class="rv-sh">Rooms</h3><p class="rv-dim">Nobody is placed yet. Tap a room to see it.</p>'; return; }
+      var m = ctx.model, shown = roomsShown(m, ctx.sel), byId = {}, states = {};
+      if (!shown.length) { box.innerHTML = '<h3 class="rv-sh">Rooms</h3><p class="rv-dim">Nobody is placed yet. Tap a room on the board or the map to see it, and act on it.</p>'; return; }
       list(ctx.play.people).forEach(function (p) { if (isObj(p)) byId[p.id] = p; });
-      var h = "";
-      shown.forEach(function (name) {
+      try { states = typeof host.roomStates === "function" ? host.roomStates() || {} : {}; } catch (e) { states = {}; }
+      var told = isObj(ctx.st.told) ? ctx.st.told : {}, h = "";
+      shown.forEach(function (name, idx) {
         var c = m.cards[name], tapped = name === ctx.sel, ppl = peopleIn(ctx.play, ctx.st, ctx.shownT, name), evs = eventsIn(ctx.play, ctx.st, ctx.shownT, name);
-        var reach = reachIn(ctx.play, ctx.st, ctx.shownT, c.pcs.map(function (p) { return p.id; }));
-        h += '<div class="rv-rm' + (tapped ? " sel" : "") + '" data-room="' + esc(name) + '"><h3 class="rv-sh">' + esc(c.name) + (c.zoneLabel ? ' <small>' + esc(c.zoneLabel) + "</small>" : "") + "</h3>" +
-          revealToggle(c, ctx) +
+        var reach = reachIn(ctx.play, ctx.st, ctx.shownT, c.pcs.map(function (p) { return p.id; })), ks = isObj(states[name]) ? states[name] : null;
+        var seg = ""; try { seg = typeof host.knowledgeSeg === "function" ? str(host.knowledgeSeg(name)) : ""; } catch (e) { seg = ""; }
+        /* the room's If it goes wrong line(s), each with "→ the Roll" (it becomes the Roll's line: B68GmPage.setThreat, through the page): high on the card,
+           just under the Players' map, so it is on screen at 768 px without a scroll */
+        var wl = []; try { wl = typeof host.roomWrong === "function" ? list(host.roomWrong(name)) : []; } catch (e) { wl = []; }
+        var wrong = wl.length ? '<div class="rv-wrong">' + wl.map(function (l) { return '<p><span class="rv-lab">If it goes wrong</span> <span class="rv-wrongt">' + esc(l) + '</span> <button type="button" class="rv-btn sm rv-toroll" data-site="threat" data-text="' + esc(l) + '" title="Put this line in the Roll’s If it goes wrong line">→ the Roll</button></p>'; }).join("") + "</div>" : "";
+        h += '<div class="rv-rm' + (tapped ? " sel" : "") + '" data-room="' + esc(name) + '">' +
+          (ks ? '<p class="rv-rmk">' + (ks.band ? esc(ks.band) + " · " : "") + "<b>" + esc(ks.staged && ks.k !== "seen" ? ks.k + ", staged" : ks.k) + "</b></p>" : "") +
+          '<h3 class="rv-sh">' + esc(c.name) + (c.zoneLabel ? ' <small>' + esc(c.zoneLabel) + "</small>" : "") + "</h3>" +
+          (seg || revealToggle(c, ctx)) + wrong +
           '<p class="rv-rmpcs"><span class="rv-lab">PCs</span> ' + (c.pcs.length ? c.pcs.map(function (p) { return "<b>" + esc(p.name) + "</b>"; }).join(", ") : '<span class="rv-dim">none</span>') + "</p>";
-        h += '<h4 class="rv-lab">Who&#39;s here</h4><ul class="rv-who">' + (ppl.length ? ppl.map(function (p) {
+        var rows = ""; try { rows = typeof host.peopleHtml === "function" ? str(host.peopleHtml(name, ppl, idx === 0)) : ""; } catch (e) { rows = ""; }      /* the first card also shows who is held, wherever they are */
+        h += '<h4 class="rv-lab">Who&#39;s here</h4>' + (rows || '<ul class="rv-who">' + (ppl.length ? ppl.map(function (p) {
           return '<li class="npc">' + npcName(ctx, byId[p.id], p.label || p.npc || p.id) + " <small>" + esc(p.kind) + "</small>" + (p.moving ? " → " + esc(p.moving.to) + " in " + p.moving.inMin + " min" : "") + "</li>";
-        }).join("") : '<li class="rv-dim">Nobody.</li>') + "</ul>";
+        }).join("") : '<li class="rv-dim">Nobody.</li>') + "</ul>");
         if (evs.length) h += '<h4 class="rv-lab">Happening</h4>' + evs.map(function (e) { return '<div class="rv-hap"><b>' + esc(e.at) + "</b> " + esc(e.label || e.pub) + (e.say ? sayBox(e.say) : "") + "</div>"; }).join("");
         if (reach.length) {
           h += '<h4 class="rv-lab">In reach</h4>';
@@ -498,6 +607,12 @@
             }).join(" ") + "</div>";
           });
         }
+        /* the intel that tells of this room: Tell the crew (ball.told, as the Intel fold does) */
+        var ri = intelFor(ctx.play, name);
+        if (ri.length) h += '<h4 class="rv-lab">Intel here</h4>' + ri.map(function (x) {
+          var v = told[x.id], crew = v === "crew", some = Array.isArray(v) && v.length > 0;
+          return '<div class="rv-rintel" data-intel="' + esc(x.id) + '"><span>' + esc(x.text) + (some ? ' <small class="rv-dim">told to ' + v.length + "</small>" : "") + '</span><button type="button" class="rv-btn sm rv-tog" data-rv="tellroom" data-intel="' + esc(x.id) + '" aria-pressed="' + crew + '" title="' + (crew ? "Told to the crew: tap to take it back" : "Every PC’s phone learns it") + '">Tell the crew</button></div>';
+        }).join("");
         if (typeof host.roomNote === "function") {
           var note = null; try { note = host.roomNote(name); } catch (e) { note = null; }
           h += typeof note === "string" ? '<div class="rv-rmnote pp-doc pp-cardbody">' + note + "</div>"       /* the page's renderer made it from the prep note */
@@ -521,12 +636,27 @@
       var v = vs.filter(function (q) { return q.id === vid; })[0] || vs[0];
       var secs = [{ id: "room", order: -10, render: roomsSection }].concat(sections).sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
       var peekBar = peekT !== null ? '<div class="rv-peekbar" role="status">Looking at <b>' + esc(B.timeLabel(x.rs.play, peekT)) + '</b> <button type="button" class="rv-btn sm" data-rv="unpeek">Back to now</button> <span class="rv-dim">The players are not told.</span></div>' : "";
+      /* a tool bound into the right column (the montage, inline) keeps its element across the redraw: it is lifted out first and put back after */
+      var keep = tool && tool.el && tool.el.parentNode ? tool.el : null, refocus = null;
+      if (keep) {
+        /* a field the GM is in (a montage line half typed) keeps its focus and caret through a redraw from another device or the beat timer */
+        var fa = keep.ownerDocument ? keep.ownerDocument.activeElement : null;
+        if (fa && fa !== keep && typeof keep.contains === "function" && keep.contains(fa)) {
+          refocus = { el: fa, s: null, e: null };
+          try { if (typeof fa.selectionStart === "number") { refocus.s = fa.selectionStart; refocus.e = fa.selectionEnd; } } catch (e) { /* a select or a button has no caret */ }
+        }
+        keep.parentNode.removeChild(keep);
+      }
       box.innerHTML = headHtml(x) + (warnText ? '<p class="rv-warn rv-dim" role="status">' + esc(warnText) + "</p>" : "") +
         '<div class="rv-body' + (v.id === "map" ? " mapview" : "") + '"><div class="rv-main' + (peekT !== null ? " peeking" : "") + '">' +
-        '<div class="rv-views" role="group" aria-label="View">' + vs.map(function (q) { return '<button type="button" class="chip sm" data-rv="view" data-v="' + esc(q.id) + '" aria-pressed="' + (q.id === v.id) + '">' + esc(q.label) + "</button>"; }).join("") + "</div>" + peekBar +
-        '<div class="rv-view" id="rv-view" data-view="' + esc(v.id) + '"></div></div>' +
-        '<aside class="rv-side" aria-label="The room and the beat">' + secs.map(function (s) { return '<section class="rv-sec" data-sec="' + esc(s.id) + '"></section>'; }).join("") + "</aside></div>" +
-        '<ul class="rv-menu" id="rv-menu" hidden>' + menuItems.map(function (it, i) { return '<li><button type="button" class="rv-btn" data-rv="menuitem" data-i="' + i + '" data-mid="' + esc(it.id) + '"' + (it.title ? ' title="' + esc(it.title) + '"' : "") + ">" + esc(typeof it.label === "function" ? it.label(ctx) : it.label) + "</button></li>"; }).join("") + "</ul>" + npcPop();
+        toolbarHtml(vs, v) + peekBar + '<div class="rv-view" id="rv-view" data-view="' + esc(v.id) + '"></div>' + legendHtml(v) + "</div>" +
+        '<aside class="rv-side" aria-label="The room and the beat">' +
+        (tool ? '<section class="rv-sec rv-toolsec" data-sec="tool" aria-label="' + esc(tool.title) + '"><header class="rv-toolh"><h3 class="rv-sh">' + esc(tool.title) + '</h3><button type="button" class="rv-btn sm" data-rv="toolx" aria-label="Close ' + esc(tool.title) + '" title="Close (Esc)">×</button></header></section>' : "") +
+        secs.map(function (s) { return '<section class="rv-sec" data-sec="' + esc(s.id) + '"></section>'; }).join("") + "</aside></div>" + npcPop();
+      if (tool && tool.el && typeof box.querySelector === "function") { var ts = box.querySelector('.rv-sec[data-sec="tool"]'); if (ts && typeof ts.appendChild === "function") ts.appendChild(tool.el); }
+      if (refocus && typeof refocus.el.focus === "function" && tool && tool.el && typeof tool.el.contains === "function" && tool.el.contains(refocus.el)) {
+        try { refocus.el.focus({ preventScroll: true }); if (refocus.s !== null && typeof refocus.el.setSelectionRange === "function") refocus.el.setSelectionRange(refocus.s, refocus.e); } catch (e) { /* focus is a courtesy */ }
+      }
       if (v.id !== "map" && mapZoom) { mapZoom.destroy(); mapZoom = null; }
       try { v.render(box.querySelector("#rv-view"), ctx); } catch (e) { box.querySelector("#rv-view").textContent = "This view could not be drawn: " + (e && e.message || e); }
       secs.forEach(function (s) {
@@ -534,6 +664,8 @@
         try { s.render(el, ctx); } catch (e) { el.textContent = "This section could not be drawn: " + (e && e.message || e); }
       });
       paintChip(box);
+      /* the alarm's popover hangs under its readout */
+      try { var ab = box.querySelector('.rv-head [data-rv="alarm"]'), ap = box.querySelector(".rv-alarmpop"); if (ab && ap && typeof ab.offsetLeft === "number" && ap.style) ap.style.left = Math.max(0, ab.offsetLeft - 2) + "px"; } catch (e) { /* the CSS places it */ }
       var pop = box.querySelector(".rv-npcpop");
       if (pop) {
         if (typeof host.decorate === "function") { try { host.decorate(pop.querySelector(".rv-npcbody")); } catch (e) { /* the card still reads */ } }
@@ -569,7 +701,7 @@
     function placeAt(pc, room) {
       var rs = site(); if (!rs) return;
       var st = host.state(), bi = B.beatOf(rs.play, timeOf(st)).i;
-      if (host.set({ crew: moveCrew(st, pc, room, bi) })) { arm = ""; sel = room; }
+      if (host.set({ crew: moveCrew(st, pc, room, bi) })) { arm = ""; setSel(room); }
       self.rerender();
     }
     self.step = function (dir) { var rs = site(); if (!rs) return false; var st = host.state(), t = stepTime(rs.play, st, dir); if (t === null) return false; peekT = null; atTime(t, "beat", restartFor(rs.play, st)); return true; };
@@ -591,7 +723,7 @@
         self.reset(); self.rerender(); return true;
       });
     };
-    self.reset = function () { peekT = null; sel = ""; arm = ""; drag = null; npcOpen = null; };
+    self.reset = function () { peekT = null; setSel(""); arm = ""; drag = null; npcOpen = null; closePops(); };
     /* the NPC card beside the right column: a name tapped, or a #pp: link in a room note (the page) */
     self.showNpc = function (names, title) { var ns = list(names).map(str).filter(Boolean); if (!ns.length) return false; npcOpen = { names: ns, title: str(title) || ns[0] }; self.rerender(); return true; };
     self.closeNpc = function () { if (!npcOpen) return false; npcOpen = null; self.rerender(); return true; };
@@ -604,17 +736,33 @@
 
     function onClick(ev) {
       if (noClick) { noClick = false; ev.preventDefault(); return; }
-      var el = ev.target.closest ? ev.target.closest("[data-rv]") : null;
-      if (!el || !boxEl.contains(el)) return;
+      if (!site()) return;          /* the box without a v2 night holds the page's site line (data-gm="site"): the page's, not this view's */
+      var tg = ev.target, inPop = tg && tg.closest ? tg.closest('.rv-pop, [data-rv="menu"], [data-rv="alarm"], [data-rv="timepop"]') : null;
+      var shut = !inPop && (timeOpen || alarmOpen || menuOpen) ? closePops() : false;      /* a tap outside an open popover shuts it, and still does what it tapped */
+      /* N3: a data-site control (the alarm's steps, the tools, the stage, the Players' map, the people, → the Roll, Intel, the Costume engine) is the page's */
+      var se = tg && tg.closest ? tg.closest("[data-site]") : null, sa = se && typeof se.getAttribute === "function" ? se.getAttribute("data-site") : null;
+      if (sa && boxEl.contains(se) && str(se.tagName).toUpperCase() !== "FORM") {
+        if (typeof se.closest === "function" && se.closest("#rv-menu")) { menuOpen = false; shut = true; }
+        if (shut) self.rerender();
+        if (typeof host.siteAct === "function") host.siteAct(sa, se, self);
+        return;
+      }
+      var el = tg && tg.closest ? tg.closest("[data-rv]") : null;
+      if (!el || !boxEl.contains(el)) { if (shut) self.rerender(); return; }
       var a = el.getAttribute("data-rv"), rs = site(); if (!rs) return;
+      if (shut && ["alarm", "timepop", "menu"].indexOf(a) < 0) self.rerender();
       switch (a) {
         case "start": startNight(+el.getAttribute("data-t") || 0); break;
         case "back": self.step(-1); break;
         case "next": self.step(1); break;
-        case "peek": { var i = +el.getAttribute("data-i"); self.peek(i * beatLen(rs.play)); break; }
-        case "unpeek": self.unpeek(); break;
-        case "reset": self.resetNight(); break;
-        case "alarm": alarmOpen = !alarmOpen; self.rerender(); break;
+        case "peek": { var i = +el.getAttribute("data-i"); timeOpen = false; self.peek(i * beatLen(rs.play)); break; }      /* a beat tapped: the popover shuts, the peek bar says where you are */
+        case "unpeek": { var mw = menuOpen; menuOpen = false; if (!self.unpeek() && mw) self.rerender(); break; }
+        case "reset": if (menuOpen) { menuOpen = false; self.rerender(); } self.resetNight(); break;
+        case "alarm": { var ao = !alarmOpen; closePops(); alarmOpen = ao; self.rerender(); break; }
+        case "timepop": { var to = !timeOpen; closePops(); timeOpen = to; self.rerender(); break; }
+        case "dawn": menuOpen = false; self.rerender(); if (typeof host.dawn === "function") host.dawn(); else host.toast("The false dawn is not wired on this page.", true); break;
+        case "tellroom": { var iid = str(el.getAttribute("data-intel")); if (!iid || !list(rs.play.intel).some(function (x) { return isObj(x) && x.id === iid; })) break; setKey(build().ctx, "told", function (m0) { if (m0[iid] === "crew") delete m0[iid]; else m0[iid] = "crew"; }); break; }
+        case "toolx": self.toolClose(true); break;
         case "tgo": { var tst = host.state(), trun = isObj(tst) && isObj(tst.timer) && tst.timer.paused !== true && typeof tst.timer.endsAt === "number"; timerDo(trun ? "pause" : "start"); break; }
         case "tadd1": timerDo("add", 60); break;
         case "tadd5": timerDo("add", 300); break;
@@ -629,7 +777,7 @@
         case "disarm": arm = ""; self.rerender(); break;
         case "room": {
           var room = el.getAttribute("data-room");
-          if (arm) placeAt(arm, room); else { sel = room; self.rerender(); }
+          if (arm) placeAt(arm, room); else { setSel(room); self.rerender(); }
           break;
         }
         case "know": if (typeof host.knowledgeCycle === "function") host.knowledgeCycle(el.getAttribute("data-room")); self.rerender(); break;
@@ -646,8 +794,8 @@
           break;
         }
         case "npcx": npcOpen = null; self.rerender(); break;
-        case "menu": { var mu = boxEl.querySelector("#rv-menu"); if (mu) mu.hidden = !mu.hidden; break; }
-        case "menuitem": { var it = menuItems[+el.getAttribute("data-i")]; var mu2 = boxEl.querySelector("#rv-menu"); if (mu2) mu2.hidden = true; if (it && typeof it.run === "function") it.run(build().ctx); break; }
+        case "menu": { var mo = !menuOpen; closePops(); menuOpen = mo; self.rerender(); break; }
+        case "menuitem": { var it = menuItems[+el.getAttribute("data-i")]; menuOpen = false; self.rerender(); if (it && typeof it.run === "function") it.run(build().ctx); break; }
       }
     }
     function onKeyCard(ev) {
@@ -703,9 +851,31 @@
       try { crewSection(box, ctx); } catch (e) { box.textContent = "The crew could not be drawn: " + (e && e.message || e); }
       return true;
     };
+    /* a data-site form (Add someone to a room) is the page's too */
+    function onSubmit(ev) {
+      var f = ev.target && ev.target.closest ? ev.target.closest("form[data-site]") : null;
+      if (!f || !boxEl.contains(f)) return;
+      ev.preventDefault();
+      if (typeof host.siteAct === "function") host.siteAct(f.getAttribute("data-site"), f, self);
+    }
+    /* N3: what this view opens closes by the page's ONE Esc (gm/esc.js); only while the view is on screen */
+    function onScreen() { return !!boxEl && boxEl.isConnected !== false && boxEl.offsetParent !== null; }
+    function escRegister() {
+      var E = typeof window !== "undefined" ? window.B68GmEsc : null;
+      if (!E || typeof E.register !== "function" || escOff.length) return;
+      var pop = function (open, shut) { return { priority: 70, isOpen: function () { return open() && onScreen(); }, close: function () { shut(); self.rerender(); } }; };
+      escOff.push(E.register("rv.menu", pop(function () { return menuOpen; }, function () { menuOpen = false; })));
+      escOff.push(E.register("rv.alarm", pop(function () { return alarmOpen; }, function () { alarmOpen = false; })));
+      escOff.push(E.register("rv.time", pop(function () { return timeOpen; }, function () { timeOpen = false; })));
+      escOff.push(E.register("rv.npc", { priority: 40, isOpen: function () { return !!npcOpen && onScreen(); }, close: function () { self.closeNpc(); } }));
+      escOff.push(E.register("rv.tool", { priority: 40, isOpen: function () { return !!tool && onScreen(); }, close: function () { self.toolClose(true); } }));
+      escOff.push(E.register("rv.peek", { priority: 40, isOpen: function () { return peekT !== null && onScreen(); }, close: function () { self.unpeek(); } }));
+    }
     self.attach = function (box) {
       boxEl = box;
       box.addEventListener("click", onClick); box.addEventListener("change", onTimerLen); box.addEventListener("keydown", onKeyCard); box.addEventListener("pointerdown", onDown);
+      box.addEventListener("submit", onSubmit);
+      escRegister();
       /* the beat timer's tick; visibilitychange catches up after a sleep (the tests build a fake box, so both are guarded) */
       if (typeof setInterval === "function" && timerId === null) { timerId = setInterval(timerTick, 1000); if (timerId && timerId.unref) timerId.unref(); }
       if (typeof document !== "undefined") document.addEventListener("visibilitychange", timerTick);
@@ -716,7 +886,29 @@
       var i = live.indexOf(self); if (i >= 0) live.splice(i, 1);
       if (timerId !== null) { clearInterval(timerId); timerId = null; }
       if (typeof document !== "undefined") document.removeEventListener("visibilitychange", timerTick);
+      escOff.forEach(function (f) { try { f(); } catch (e) { /* gone already */ } }); escOff = [];
     };
+    /* N3: select a room, then act */
+    self.select = function (room) { setSel(room); self.rerender(); return sel; };
+    self.selected = function () { if (sel) return sel; var x = build(); return x ? roomsShown(x.m, "")[0] || "" : ""; };
+    self.popsOpen = function () { return timeOpen || alarmOpen || menuOpen; };
+    /* a tool the page binds into the top of the right column (the montage, inline): this element outlives every redraw until toolClose */
+    self.toolHost = function (id, title) {
+      var doc = boxEl && boxEl.ownerDocument; if (!doc || typeof doc.createElement !== "function") return null;
+      if (tool && tool.id !== str(id)) self.toolClose(true);
+      if (!tool) { tool = { id: str(id), title: str(title) || str(id), el: doc.createElement("div"), onClose: null }; tool.el.className = "rv-toolbody"; }
+      self.rerender();
+      return tool.el;
+    };
+    self.toolOn = function (fn) { if (tool) tool.onClose = typeof fn === "function" ? fn : null; };
+    self.toolClose = function (tell) {
+      if (!tool) return false;
+      var t = tool; tool = null;
+      if (tell && typeof t.onClose === "function") { try { t.onClose(); } catch (e) { /* the page's unbind */ } }
+      if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el);
+      self.rerender(); return true;
+    };
+    self.toolOpen = function () { return tool ? tool.id : ""; };
     return self;
   }
 
@@ -1032,5 +1224,6 @@
   return { create: create, model: model, moveCrew: moveCrew, resetChange: resetChange, resetAsk: RESET_ASK, stepTime: stepTime, jumpTime: jumpTime, startMinutes: startMinutes, initials: initials, normRoomName: normRoomName,
     setPlayersChip: setPlayersChip, menuItems: menuItems, views: views, sections: sections, hooks: hooks,
     sortedStops: sortedStops, scanChanges: scanChanges, crewOrder: crewOrder, skipTarget: skipTarget, waySummary: waySummary,
-    nowSegments: nowSegments, setWarnings: setWarnings, sayBox: sayBox, roomsShown: roomsShown, peopleIn: peopleIn, eventsIn: eventsIn, reachIn: reachIn, personNames: personNames, npcName: npcName, heardChange: heardChange, foldMoves: foldMoves };
+    nowSegments: nowSegments, setWarnings: setWarnings, sayBox: sayBox, roomsShown: roomsShown, peopleIn: peopleIn, eventsIn: eventsIn, reachIn: reachIn, personNames: personNames, npcName: npcName, heardChange: heardChange, foldMoves: foldMoves,
+    intelFor: intelFor };
 });

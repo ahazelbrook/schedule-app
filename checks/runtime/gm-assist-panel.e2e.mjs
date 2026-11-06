@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -84,6 +85,7 @@ try {
   const errors = [];
   async function open(hash, { width = 1280, height = 800, mobile = false, tickReply, mode } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block', isMobile: mobile, hasTouch: mobile });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     const page = await c.newPage();
     const seen = { tick: [], fit: [], another: [] };
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -282,8 +284,9 @@ try {
   const Mw = await open('#gm', { mode: 'meanwhile' });
   Mw.seen.mode = 'meanwhile';
   const mp = Mw.page, mwSent = [];
-  mp.on('request', (rq) => { if (rq.method() !== 'GET' && /\/api\//.test(rq.url()) && !/\/gm\/assist\//.test(rq.url()) && !crewSyncOnly(rq)) mwSent.push(rq.method() + ' ' + rq.url()); });
   await mp.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  /* the window opens once the page is drawn: what a page writes as it loads (since N0 everything is on, so the band's faces too) is not the cutaway's */
+  mp.on('request', (rq) => { if (rq.method() !== 'GET' && /\/api\//.test(rq.url()) && !/\/gm\/assist\//.test(rq.url()) && !crewSyncOnly(rq)) mwSent.push(rq.method() + ' ' + rq.url()); });
   await mp.click('.gm-assist .as-launch, #as-launch');
   const mwCard = '#as-list .as-card[data-seat="meanwhile"]';
   check(await mp.waitForSelector(mwCard, { timeout: 15000 }).then(() => true, () => false), 'Meanwhile: the cutaway is a card in the box');

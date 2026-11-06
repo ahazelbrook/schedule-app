@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -100,6 +101,7 @@ try {
   const errors = [], asked = [];
   async function openPage(user, w, h, url, opts = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width: w, height: h }, serviceWorkers: 'block', ...(opts.touch ? { isMobile: true, hasTouch: true } : {}) });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(user + ': ' + m.text()); });
     page.on('pageerror', (e) => errors.push(user + ' pageerror: ' + e.message));
@@ -172,7 +174,8 @@ try {
     check(!!t0 && ms.every((x) => x !== null && x >= 0), 'beat ' + n + ': Next to ' + want + ': the band and both cards changed (band ' + ms[0] + ' ms, card A ' + ms[1] + ' ms, card B ' + ms[2] + ' ms)');
     if (ms[0] !== null) lat.band.push(ms[0]); if (ms[1] !== null) lat.phone1.push(ms[1]); if (ms[2] !== null) lat.phone2.push(ms[2]);
     check(ms.every((x) => x !== null && x < GATE_MS), 'beat ' + n + ': inside the gate\'s 3 s');
-    check((await bandText()).includes(want) && (await mission()).hud.time === want, 'beat ' + n + ': the band says ' + want + ' and so does the stored mission');
+    const up = await D.page.evaluate(() => { const r = document.querySelector('.dp-root'), o = document.querySelector('.dp-overlay > *'); return r && r.classList.contains('dp-ov-up') ? (o ? o.className + ' ' + (o.textContent || '').slice(0, 60) : 'dp-ov-up') : ''; });
+    check((await bandText()).includes(want) && (await mission()).hud.time === want, 'beat ' + n + ': the band says ' + want + ' and so does the stored mission' + (up ? ' [overlay up: ' + up + ']' : ''));
   }
   const ownCardsOnly = async (n) => {
     const ta = await cardText(P.a.page), tb = await cardText(P.b.page);
@@ -253,22 +256,28 @@ try {
   await ownCardsOnly(4);
   await G.page.screenshot({ path: path.join(ROOT, 'gm-private', 'loop-gm.png') }).catch(() => {});
 
-  /* ---- Phone cards off: the cards go from the phones and the stored mission, the iPad band stays ---- */
+  /* ---- Phone cards off, from the iPad view's Settings (their home since N5; the Run menu's line is put away): the cards go from the phones and the stored mission, the iPad band stays ---- */
   {
-    const hud0 = JSON.stringify((await mission()).hud), pcSel = '#rv-menu [data-rv="menuitem"]:has-text("Phone cards")', pcLabel = () => G.page.$eval(pcSel, (e) => e.textContent.trim());
+    const hud0 = JSON.stringify((await mission()).hud), pcSel = '#rv-menu [data-rv="menuitem"]:has-text("Phone cards")';
     await G.page.click('[data-rv="menu"]');
-    check(await pcLabel() === 'Phone cards: on', 'the Run menu shows Phone cards: on');
-    check(/character sheets only/.test(await G.page.$eval(pcSel, (e) => e.getAttribute('title') || '')), 'and its title says what off does');
-    await G.page.click(pcSel);
-    check(!!(await until(async () => { const m = await mission(); return m && Object.keys(m.cards).length === 0 ? m : null; }, 10000)), 'Phone cards off: the stored mission holds cards {}');
+    check(await G.page.$eval(pcSel, (e) => getComputedStyle(e).display === 'none').catch(() => true), 'the Run menu\'s Phone cards line is put away');
+    await G.page.click('[data-rv="menu"]');
+    const row = '#gm-ipad-settings [data-set-row="phoneCards"]', pressed = () => G.page.$eval(row + ' [aria-pressed="true"]', (e) => e.textContent.trim());
+    await G.page.keyboard.press('i');                     // the iPad view (i): its Settings section
+    await G.page.waitForSelector(row, { timeout: 8000 });
+    check(await pressed() === 'Mission cards', 'the iPad view\'s Settings show Phones: Mission cards');
+    check(/character sheet only/.test(await G.page.$eval(row, (e) => e.textContent)), 'and the row says what Sheet only does');
+    await G.page.click(row + ' [data-v="0"]');
+    check(!!(await until(async () => { const m = await mission(); return m && Object.keys(m.cards).length === 0 ? m : null; }, 10000)), 'Phones: Sheet only: the stored mission holds cards {}');
     check(!!(await until(async () => (await P.a.page.$$('.ds-missionbtn')).length === 0 && (await P.b.page.$$('.ds-missionbtn')).length === 0 && (await P.a.page.$$('.ds-mv')).length === 0, 8000)), 'and no phone shows a Mission button or card');
     check(JSON.stringify((await mission()).hud) === hud0, 'and the iPad band (hud) is unchanged');
     check((await bandText()) !== '', 'and the band is still on the iPad');
-    await G.page.click('[data-rv="menu"]');
-    check(await pcLabel() === 'Phone cards: off', 'the menu now reads Phone cards: off');
-    await G.page.click(pcSel);
-    check(!!(await until(async () => { const m = await mission(); return m && Object.keys(m.cards).length === 2 ? m : null; }, 10000)), 'Phone cards on again: the cards are published again');
+    check(await pressed() === 'Sheet only', 'the row now shows Sheet only');
+    await G.page.click(row + ' [data-v="1"]');
+    check(!!(await until(async () => { const m = await mission(); return m && Object.keys(m.cards).length === 2 ? m : null; }, 10000)), 'Phones: Mission cards again: the cards are published again');
     check(!!(await until(async () => (await P.a.page.$$('.ds-missionbtn')).length === 1 && (await P.b.page.$$('.ds-missionbtn')).length === 1, 8000)), 'and each phone has its Mission button back');
+    await G.page.keyboard.press('g');                     // back to the Run view (g)
+    await G.page.waitForSelector('[data-rv="menu"]', { state: 'visible', timeout: 8000 });
   }
 
   /* ---- End the night ---- */

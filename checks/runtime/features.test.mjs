@@ -1,6 +1,8 @@
-// Unit test for the switchboard (suite ticket W0.2; no browser, no network): the registry (app/features.js), the surfaces' reader (app/sheet/flags.js), the iPad's
-// features part (app/display-page.js Pure.featuresPart and the poller's onFeatures), the GM controller (app/gm/switchboard.js) against a fake host, the Worker's door
-// (functions/_lib/features.js), and where each file is bundled (routes.js). Test switches are registered by the test and removed again: none ships.
+// Unit test for the registry after the night rebuild (N0; first written for suite ticket W0.2). No browser, no network: the registry (app/features.js), the
+// surfaces' reader (app/sheet/flags.js), the iPad's features part (app/display-page.js Pure.featuresPart and the poller's onFeatures), the Settings controller
+// (app/gm/settings.js) against a fake host, the Worker's door (functions/_lib/features.js), and where each file is bundled (routes.js).
+// The new truth: everything built is ON whatever is stored; three lines are settings, read as stored; nothing can turn a feature off; the Switchboard and the
+// Workshop are gone. Test lines are registered by the test and removed again: none ships.
 //   node checks/runtime/features.test.mjs
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,7 +14,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const require = createRequire(import.meta.url);
 const F = require(path.join(ROOT, 'app', 'features.js'));
 const Flags = require(path.join(ROOT, 'app', 'sheet', 'flags.js'));
-const SB = require(path.join(ROOT, 'app', 'gm', 'switchboard.js'));
+const SET = require(path.join(ROOT, 'app', 'gm', 'settings.js'));
 const D = require(path.join(ROOT, 'app', 'display-page.js'));
 const Door = await import(pathToFileURL(path.join(ROOT, 'functions', '_lib', 'features.js')).href);
 
@@ -20,42 +22,45 @@ let failed = 0, passed = 0;
 async function test(name, fn) {
   try { await fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); }
 }
-const sw = (id, surface, extra = {}) => Object.assign({ id, label: 'Test ' + id, surface, stage: 'spine', default: false, saturday: 'off', doc: 'A test switch.' }, extra);
+const sw = (id, surface, extra = {}) => Object.assign({ id, label: 'Test ' + id, surface, stage: 'spine', default: false, saturday: 'off', doc: 'A test line.' }, extra);
 async function withSwitches(list, fn) {
   list.forEach((d) => F.register(d));
   try { return await fn(); } finally { list.forEach((d) => F.unregister(d.id)); }
 }
-const GMX = sw('test.gm', 'gm'), DISP = sw('test.disp', 'display'), PH = sw('test.phone', 'phone');
+const GMX = sw('test.gm', 'gm'), DISP = sw('test.disp', 'display'), PH = sw('test.phone', 'phone'), DSET = sw('test.dset', 'display', { setting: true });
+const SETTINGS = ['phoneCards', 'fx.off', 'room.music'];
 
-// Every ticket adds its own line to the registry. Whatever lines ship beside phoneCards are read from the registry itself (none is named here, so a
-// new line needs no edit to this file): each is checked as a registry line, then set aside, so the rest of this file tests the switchboard against
-// phoneCards alone, as it was written.
-const SHIPPED = F.list().filter((s) => s.id !== 'phoneCards');
-await test('the tickets\' switches: each a well-formed registry line, default off, after phoneCards', async () => {
+// ---------- the shipped registry ----------
+await test('the shipped lines: each well-formed, default false, phoneCards first; the settings are exactly phoneCards, fx.off and room.music; spine.workshop is gone', async () => {
   assert.equal(F.list()[0].id, 'phoneCards');
-  for (const s of SHIPPED) {
+  for (const s of F.list()) {
     assert.equal(s.default, false, s.id); assert.ok(s.label && s.doc, s.id);
     F.unregister(s.id); assert.doesNotThrow(() => F.register(s), s.id + ' registers again as it stands');
   }
+  F.reset();
+  assert.deepEqual(F.settings().map((s) => s.id), SETTINGS);
+  assert.deepEqual(F.list().filter((s) => s.setting).map((s) => s.id), SETTINGS);
+  assert.equal(F.get('spine.workshop'), null, 'the Workshop line is gone');
+  assert.ok(F.isSetting('fx.off') && F.isSetting('room.music') && F.isSetting('phoneCards'));
+  assert.ok(!F.isSetting('spine.rail') && !F.isSetting('nope'));
+  const p = F.get('phoneCards');
+  assert.equal(p.surface, 'phone'); assert.equal(p.legacy, 'phoneCards'); assert.equal(p.stage, 'existing'); assert.equal(p.setting, true);
+  assert.equal(F.get('fx.off').surface, 'display'); assert.equal(F.get('room.music').surface, 'display');
 });
-SHIPPED.forEach((s) => F.unregister(s.id));
-
-await test('the registry ships phoneCards and nothing else: a phone switch, default off, Saturday off, with the old key as its fallback', async () => {
-  assert.deepEqual(F.list().map((s) => s.id), ['phoneCards']);
-  const s = F.get('phoneCards');
-  assert.equal(s.surface, 'phone'); assert.equal(s.default, false); assert.equal(s.saturday, 'off'); assert.equal(s.legacy, 'phoneCards'); assert.equal(s.stage, 'existing');
-  assert.ok(s.label && s.doc);
+await test('everything built is on: with NOTHING stored every line but a setting reads ON, and a setting reads off', async () => {
+  for (const doc of [{}, null, undefined, { features: {} }]) {
+    for (const s of F.list()) assert.equal(F.valueOf(doc, s.id), !s.setting, s.id + ' in ' + JSON.stringify(doc));
+  }
 });
-await test('every switch has an id, a label, a surface, a default of off, a line on what it does and its Saturday default; bad ones are refused', async () => {
-  const bad = [
-    [{}, /switch id/], [sw('1x', 'gm'), /switch id/], [sw('a b', 'gm'), /switch id/], [sw('t.a', 'tv'), /surface/], [sw('t.a', 'gm', { default: true }), /default is off/],
-    [sw('t.a', 'gm', { default: undefined }), /default is off/], [sw('t.a', 'gm', { stage: 'nope' }), /stage/], [sw('t.a', 'gm', { saturday: 'yes' }), /saturday/],
-    [sw('t.a', 'gm', { label: '' }), /label/], [sw('t.a', 'gm', { doc: ' ' }), /label and a line/], [sw('phoneCards', 'phone'), /already registered/]
-  ];
-  for (const [d, re] of bad) assert.throws(() => F.register(d), re, JSON.stringify(d).slice(0, 80));
-  assert.deepEqual(F.list().map((s) => s.id), ['phoneCards'], 'a refused switch is not left behind');
+await test('nothing can turn a feature off: a stored false (the Switchboard\'s All off) still reads ON; a setting follows its stored value', async () => {
+  const allOff = { features: Object.fromEntries(F.list().map((s) => [s.id, false])), phoneCards: false };
+  for (const s of F.list()) assert.equal(F.valueOf(allOff, s.id), !s.setting, s.id);
+  const v = F.values(allOff);
+  assert.equal(Object.values(v).filter((x) => x === false).length, SETTINGS.length);
+  assert.equal(F.valueOf({ features: { 'fx.off': true } }, 'fx.off'), true);
+  assert.equal(F.valueOf({ features: { 'room.music': true } }, 'room.music'), true);
 });
-await test('values: ON only when exactly true; features beats the legacy key; the legacy key is the fallback; unknown ids are off', async () => {
+await test('a setting: ON only when exactly true; features beats the legacy key; the legacy key is the fallback; unknown ids are off', async () => {
   assert.equal(F.valueOf({}, 'phoneCards'), false); assert.equal(F.valueOf(null, 'phoneCards'), false);
   assert.equal(F.valueOf({ phoneCards: true }, 'phoneCards'), true, 'the old key still reads');
   assert.equal(F.valueOf({ phoneCards: 'yes' }, 'phoneCards'), false);
@@ -63,36 +68,75 @@ await test('values: ON only when exactly true; features beats the legacy key; th
   assert.equal(F.valueOf({ features: { phoneCards: false }, phoneCards: true }, 'phoneCards'), false, 'features wins');
   assert.equal(F.valueOf({ features: { phoneCards: 1 } }, 'phoneCards'), false);
   assert.equal(F.valueOf({ features: { zzz: true } }, 'zzz'), false, 'not registered');
+  assert.equal(F.valueOf({ features: { 'fx.off': 'true' } }, 'fx.off'), false);
 });
-await test('patches: a flip writes features and the old key; All off writes every id false, GM-only ones too', async () => {
+await test('a line is checked when registered: bad ones are refused (setting must be a boolean; only a setting keeps a legacy key)', async () => {
+  const bad = [
+    [{}, /switch id/], [sw('1x', 'gm'), /switch id/], [sw('a b', 'gm'), /switch id/], [sw('t.a', 'tv'), /surface/], [sw('t.a', 'gm', { default: true }), /default is off/],
+    [sw('t.a', 'gm', { default: undefined }), /default is off/], [sw('t.a', 'gm', { stage: 'nope' }), /stage/], [sw('t.a', 'gm', { saturday: 'yes' }), /saturday/],
+    [sw('t.a', 'gm', { label: '' }), /label/], [sw('t.a', 'gm', { doc: ' ' }), /label and a line/], [sw('phoneCards', 'phone'), /already registered/],
+    [sw('t.a', 'gm', { setting: 'yes' }), /setting is true or false/], [sw('t.a', 'phone', { legacy: 'oldKey' }), /only a setting keeps a legacy key/]
+  ];
+  const n = F.list().length;
+  for (const [d, re] of bad) assert.throws(() => F.register(d), re, JSON.stringify(d).slice(0, 80));
+  assert.equal(F.list().length, n, 'a refused line is not left behind');
+  await withSwitches([sw('t.ok', 'phone', { setting: true, legacy: 'oldKey' })], () => { assert.equal(F.valueOf({ oldKey: true }, 't.ok'), true); });
+});
+await test('patches: only a setting can change (features and the old key); any other id throws; patchAllOff touches the settings only', async () => {
   assert.deepEqual(F.patchFor({}, 'phoneCards', true), { features: { phoneCards: true }, phoneCards: true });
   assert.deepEqual(F.patchFor({}, 'phoneCards', 'yes'), { features: { phoneCards: false }, phoneCards: false });
+  assert.deepEqual(F.patchFor({}, 'fx.off', true), { features: { 'fx.off': true } });
   assert.throws(() => F.patchFor({}, 'nope', true), /unknown switch/);
+  assert.throws(() => F.patchFor({}, 'spine.rail', false), /always on/);
+  await withSwitches([GMX, DISP], () => { assert.throws(() => F.patchFor({}, 'test.disp', false), /always on/); });
+  assert.deepEqual(F.patchAllOff({}), { features: { phoneCards: false, 'fx.off': false, 'room.music': false }, phoneCards: false });
+});
+await test('publicMap: the display and phone lines, complete, as the GM page sees them (a setting as stored, the rest ON); never a GM-only id', async () => {
   await withSwitches([GMX, DISP, PH], () => {
-    const p = F.patchAllOff({});
-    assert.deepEqual(p, { features: { phoneCards: false, 'test.gm': false, 'test.disp': false, 'test.phone': false }, phoneCards: false });
+    const m = F.publicMap({ features: { 'test.gm': false, 'test.disp': false, 'fx.off': true } });
+    assert.equal(m['test.disp'], true); assert.equal(m['test.phone'], true); assert.equal(m['fx.off'], true); assert.equal(m['room.music'], false); assert.equal(m.phoneCards, false);
+    assert.ok(!('test.gm' in m), 'a GM-only id is not in the public map');
+    assert.deepEqual(Object.keys(m).sort(), F.publicIds().sort());
+    assert.ok(F.idsFor('gm').includes('test.gm') && !F.publicIds().includes('test.gm'));
   });
 });
-await test('where values live: publicMap is the display and phone switches only (a complete map); cleanPublic drops a GM-only id, an unknown id and a non-boolean', async () => {
+await test('publishMap: what the GM page copies is the SETTINGS only; the legacy one always, any other only while on or where the document holds it; never a non-setting', async () => {
   await withSwitches([GMX, DISP, PH], () => {
-    const doc = { features: { 'test.gm': true, 'test.disp': true } };
-    assert.deepEqual(F.publicMap(doc), { phoneCards: false, 'test.disp': true, 'test.phone': false });
-    assert.ok(!('test.gm' in F.publicMap(doc)), 'a GM-only id is not in the map that is copied to the campaign');
-    assert.deepEqual(F.publicIds(), ['phoneCards', 'test.disp', 'test.phone']);
-    assert.deepEqual(F.idsFor('gm'), ['test.gm']);
+    assert.deepEqual(F.publishMap({}, undefined), { phoneCards: false }, 'all off, nothing stored: what main wrote');
+    assert.deepEqual(F.publishMap({ phoneCards: true }, {}), { phoneCards: true });
+    assert.deepEqual(F.publishMap({ features: { 'test.disp': true, 'test.phone': false, 'fx.off': true } }, {}), { phoneCards: false, 'fx.off': true });
+    assert.deepEqual(F.publishMap({}, { 'fx.off': true, 'test.disp': false, phoneCards: true }), { phoneCards: false, 'fx.off': false }, 'it was on, now off: false is written; a non-setting is never written');
+    for (const m of [F.publishMap({ features: Object.fromEntries(F.list().map((s) => [s.id, true])) }, {}), F.publishMap({}, Object.fromEntries(F.publicIds().map((i) => [i, false])))]) {
+      assert.ok(Object.keys(m).every((k) => F.isSetting(k)), 'only settings: ' + Object.keys(m));
+    }
+  });
+});
+await test('publicView (what a phone or the iPad is told): every display and phone line ON, a setting as stored, absent stays absent, never a GM-only id', async () => {
+  await withSwitches([GMX, DISP, PH, DSET], () => {
+    const v = F.publicView({ 'test.gm': true, 'test.disp': false, 'test.phone': 'no', 'test.dset': true, phoneCards: false, junk: true });
+    assert.equal(v['test.disp'], true, 'a stored false is ON'); assert.equal(v['test.phone'], true); assert.equal(v['test.dset'], true); assert.equal(v.phoneCards, false);
+    assert.ok(!('test.gm' in v) && !('junk' in v) && !('fx.off' in v) && !('room.music' in v), JSON.stringify(v));
+    const none = F.publicView(null);
+    for (const s of F.list()) if (s.surface !== 'gm') assert.equal(none[s.id], s.setting ? undefined : true, s.id);
+    assert.deepEqual(F.publicView({ 'test.dset': 'yes' })['test.dset'], undefined, 'a setting that is not a boolean is not served');
+  });
+});
+await test('cleanPublic (what may be STORED) is as before: only registered display and phone ids, only booleans', async () => {
+  await withSwitches([GMX, DISP, PH], () => {
     assert.deepEqual(F.cleanPublic({ 'test.gm': true, 'test.disp': true, nope: true, 'test.phone': 'on', phoneCards: false }), { 'test.disp': true, phoneCards: false });
   });
   assert.deepEqual(F.cleanPublic(null), {}); assert.deepEqual(F.cleanPublic([true]), {}); assert.deepEqual(F.cleanPublic('x'), {});
 });
-await test('sameOn: absent is off, so a missing map equals an all-off one', async () => {
+await test('sameOn: absent is off; sameSettings compares only the settings', async () => {
   assert.ok(F.sameOn(undefined, {})); assert.ok(F.sameOn({}, { phoneCards: false })); assert.ok(F.sameOn({ a: true }, { a: true, b: false }));
   assert.ok(!F.sameOn({ a: true }, {})); assert.ok(!F.sameOn({}, { a: true })); assert.ok(!F.sameOn({ a: 'true' }, { a: true }));
+  assert.ok(F.sameSettings({ phoneCards: false }, { 'spine.start': true, 'map.flashback': true }), 'non-settings are not compared');
+  assert.ok(!F.sameSettings({ 'fx.off': true }, {})); assert.ok(F.sameSettings(undefined, { phoneCards: false }));
 });
-await test('the Switchboard\'s groups follow the stages, in order, and only groups that have a switch', async () => {
-  assert.deepEqual(F.byStage().map((g) => g.stage.id), ['existing']);
-  await withSwitches([sw('test.a', 'gm', { stage: 'map' }), sw('test.b', 'gm', { stage: 'spine' })], () => {
-    assert.deepEqual(F.byStage().map((g) => g.stage.id), ['existing', 'spine', 'map']);
-  });
+await test('the stages still label every line, in order', async () => {
+  const ids = F.STAGES.map((s) => s.id);
+  for (const g of F.byStage()) assert.ok(ids.includes(g.stage.id) && g.switches.length);
+  assert.equal(F.byStage().reduce((n, g) => n + g.switches.length, 0), F.list().length);
 });
 
 // ---------- the surfaces' reader ----------
@@ -116,11 +160,17 @@ await test('flags: subscribers hear what changed, once per change; one that thro
   off(); Flags.apply({ features: {} }); assert.deepEqual(heard.slice(4), ['b0']);
   Flags.reset();
 });
+await test('the served map reaches the flags as every feature ON: a phone that applies a served document sees each display and phone line on, a setting as stored', async () => {
+  Flags.reset();
+  Flags.apply(Door.forPlayer({ crew: {}, features: { phoneCards: true } }));
+  for (const s of F.list()) if (s.surface !== 'gm') assert.equal(Flags.on(s.id), s.setting ? s.id === 'phoneCards' : true, s.id);
+  Flags.reset();
+});
 await test('the iPad: Pure.featuresPart keeps booleans only, and is {} for an answer with none', async () => {
   assert.deepEqual(D.Pure.featuresPart({ features: { a: true, b: false, c: 'x', d: 1, e: null } }), { a: true, b: false });
   assert.deepEqual(D.Pure.featuresPart({}), {}); assert.deepEqual(D.Pure.featuresPart(null), {}); assert.deepEqual(D.Pure.featuresPart({ features: [true] }), {});
 });
-await test('the iPad: the poller hands onFeatures the answer\'s switches on EVERY successful answer (a full one, an unchanged one, one without), never on a failure', async () => {
+await test('the iPad: the poller hands onFeatures the answer\'s map on EVERY successful answer (a full one, an unchanged one, one without), never on a failure', async () => {
   let now = 0; const timers = { setTimeout: (fn, ms) => { timers.q.push({ fn, at: now + ms }); return timers.q.length; }, clearTimeout: () => {}, q: [] };
   const got = [], answers = [
     { seq: 1, display: { kind: 'blank', title: '', caption: '' }, updatedAt: 'x', features: { 'test.disp': true } },
@@ -137,116 +187,130 @@ await test('the iPad: the poller hands onFeatures the answer\'s switches on EVER
 });
 
 // ---------- the Worker's door ----------
-await test('the Worker: cleanFeatures / forPlayer / parseFeatures use the registry; a player\'s document never carries a GM-only id', async () => {
-  await withSwitches([GMX, DISP], () => {
+await test('the Worker: cleanFeatures cleans what may be stored; servedFeatures, forPlayer, parseFeatures and featuresOfDoc serve every display and phone line ON', async () => {
+  await withSwitches([GMX, DISP, DSET], () => {
     assert.deepEqual(Door.cleanFeatures({ 'test.gm': true, 'test.disp': true, phoneCards: true, q: true }), { 'test.disp': true, phoneCards: true });
-    assert.deepEqual(Door.forPlayer({ v: 1, features: { 'test.gm': true, 'test.disp': false } }), { v: 1, features: { 'test.disp': false } });
-    assert.deepEqual(Door.forPlayer({ v: 1, features: { 'test.gm': true } }), { v: 1 });
-    assert.deepEqual(Door.forPlayer({ v: 1 }), { v: 1 });
-    assert.deepEqual(Door.parseFeatures('{"test.gm":true,"test.disp":true}'), { 'test.disp': true });
-    assert.deepEqual(Door.featuresOfDoc({ features: { 'test.gm': true, phoneCards: false } }), { phoneCards: false });
+    const served = Door.forPlayer({ v: 1, features: { 'test.gm': true, 'test.disp': false, 'test.dset': false } });
+    assert.equal(served.v, 1); assert.equal(served.features['test.disp'], true); assert.equal(served.features['test.dset'], false); assert.ok(!('test.gm' in served.features));
+    const bare = Door.forPlayer({ v: 1 });
+    assert.equal(bare.features['test.disp'], true, 'nothing stored: still ON'); assert.ok(!('test.dset' in bare.features) && !('phoneCards' in bare.features), 'a setting never stored is absent (off)');
+    assert.deepEqual(Door.parseFeatures('{"test.gm":true,"test.disp":false}'), Door.servedFeatures({ 'test.disp': false }));
+    assert.equal(Door.parseFeatures('{not json')['test.disp'], true); assert.equal(Door.parseFeatures(null)['test.disp'], true);
+    assert.deepEqual(Door.featuresOfDoc({ features: { 'test.gm': true, phoneCards: false } }), Door.servedFeatures({ phoneCards: false }));
+    for (const m of [served.features, bare.features, Door.parseFeatures('{"test.gm":true}')]) assert.ok(!('test.gm' in m), 'never a GM-only id');
+    assert.equal(Door.forPlayer(null), null); assert.deepEqual(Door.forPlayer([1]), [1]);
   });
 });
 
-// ---------- the GM controller ----------
-function rig(state = {}, camp = {}) {
-  const calls = { patch: [], publish: [], toast: [], redraw: 0 };
+// ---------- the Settings controller (gm/settings.js) ----------
+function rig(state = {}, camp = {}, extra = {}) {
+  const calls = { patch: [], publish: [], toast: [], redraw: 0, mirror: 0 };
   const host = {
     doc: () => state, campaign: () => camp, F, Sheet: null, root: () => null, now: () => host.t,
     patch(p) { calls.patch.push(p); state.features = Object.assign({}, state.features, p.features); for (const k of Object.keys(p)) if (k !== 'features') state[k] = p[k]; return true; },
-    publish(map) { calls.publish.push(map); camp.features = Object.assign({}, map); return Promise.resolve(true); },
-    toast(m, bad) { calls.toast.push([m, !!bad]); }, redraw() { calls.redraw++; }, t: 1000
+    publish(map) { calls.publish.push(map); camp.features = Object.assign({}, camp.features, map); return Promise.resolve(true); },
+    toast(m, bad) { calls.toast.push([m, !!bad]); }, redraw() { calls.redraw++; }, t: 1000,
+    mirrorOn: () => state.mirror !== false, toggleMirror() { calls.mirror++; state.mirror = state.mirror === false; },
+    ...extra
   };
-  return { ctl: SB.create(host), calls, state, camp, host };
+  return { ctl: SET.create(host), calls, state, camp, host };
 }
-await test('switchboard: with every switch off and nothing stored, heal writes nothing at all (main\'s traffic)', async () => {
+await test('settings: with every setting off and nothing stored, heal writes nothing at all; nor before the campaign arrives', async () => {
   const r = rig({}, { v: 1 });
   assert.equal(r.ctl.heal(), false); assert.deepEqual(r.calls.publish, []);
   const r2 = rig({}, { v: 1, features: { phoneCards: false } }); assert.equal(r2.ctl.heal(), false);
   assert.equal(rig({}, null).ctl.heal(), false, 'the campaign has not arrived: nothing to compare');
 });
-await test('publishMap: all off publishes exactly what main did (the legacy key only); a flip off lands as false only where the document holds the id', async () => {
-  await withSwitches([GMX, DISP, PH], () => {
-    assert.deepEqual(F.publishMap({}, undefined), { phoneCards: false });
-    assert.deepEqual(F.publishMap({ phoneCards: true }, {}), { phoneCards: true });
-    assert.deepEqual(F.publishMap({ features: { 'test.disp': true, 'test.phone': true, 'test.gm': true } }, {}), { phoneCards: false, 'test.disp': true, 'test.phone': true });
-    assert.deepEqual(F.publishMap({}, { 'test.disp': true, phoneCards: true }), { phoneCards: false, 'test.disp': false }, 'it was on, now off: false is written');
-  });
+await test('settings: heal never writes for a non-setting, whatever the campaign holds (the served map has them ON, the stored one may hold false)', async () => {
+  const camp = { features: Object.fromEntries(F.publicIds().filter((i) => !F.isSetting(i)).map((i) => [i, false])) };
+  const r = rig({ features: Object.fromEntries(F.list().map((s) => [s.id, false])) }, camp);
+  assert.equal(r.ctl.heal(), false); assert.deepEqual(r.calls.publish, []);
 });
-await test('switchboard: set writes the GM state (features and the old key) and copies only what is ON (plus the legacy phone key) to the campaign; GM-only ids stay out of it', async () => {
-  await withSwitches([GMX, DISP, PH], async () => {
-    const r = rig({}, { v: 1 });
-    assert.equal(r.ctl.set('test.disp', true), true); await Promise.resolve();
-    assert.deepEqual(r.calls.patch[0], { features: { 'test.disp': true } });
-    assert.deepEqual(r.calls.publish, [{ phoneCards: false, 'test.disp': true }]);
-    assert.equal(r.ctl.set('test.gm', true), true); await Promise.resolve();
-    assert.equal(r.calls.publish.length, 1, 'a GM-only flip changes nothing public, so nothing is written to the campaign');
-    assert.ok(r.calls.publish.every((m) => !('test.gm' in m)));
-    assert.equal(r.ctl.set('phoneCards', true), true);
-    assert.deepEqual(r.calls.patch[2], { features: { phoneCards: true }, phoneCards: true });
-    assert.equal(r.ctl.on('phoneCards'), true); assert.equal(r.ctl.set('nope', true), false);
-    assert.ok(r.calls.redraw >= 3, 'the page redraws after a flip');
-  });
+await test('settings: set writes the GM state (features and the old key) and copies the settings to the campaign; a non-setting is refused and nothing is written', async () => {
+  const r = rig({}, { v: 1 });
+  assert.equal(r.ctl.set('fx.off', true), true); await Promise.resolve();
+  assert.deepEqual(r.calls.patch[0], { features: { 'fx.off': true } });
+  assert.deepEqual(r.calls.publish, [{ phoneCards: false, 'fx.off': true }]);
+  assert.equal(r.ctl.set('spine.rail', false), false); assert.equal(r.ctl.set('nope', true), false);
+  assert.equal(r.calls.patch.length, 1, 'nothing written for a non-setting');
+  assert.equal(r.ctl.set('phoneCards', true), true);
+  assert.deepEqual(r.calls.patch[1], { features: { phoneCards: true }, phoneCards: true });
+  assert.equal(r.ctl.on('phoneCards'), true); assert.equal(r.ctl.on('spine.rail'), false, 'on() answers for settings only');
+  assert.ok(r.calls.redraw >= 2, 'the page redraws after a change');
 });
-await test('switchboard: All off turns every switch off, GM-only too, copies all-false to the campaign, and says how many were on', async () => {
-  await withSwitches([GMX, DISP], async () => {
-    const r = rig({ features: { 'test.gm': true, 'test.disp': true, phoneCards: true }, phoneCards: true }, { features: { 'test.disp': true, phoneCards: true } });
-    assert.equal(r.ctl.counts().on, 3);
-    assert.equal(r.ctl.allOff(), 3); await Promise.resolve();
-    assert.equal(r.ctl.counts().on, 0); assert.equal(r.state.phoneCards, false, 'the old key goes false too');
-    assert.deepEqual(r.calls.publish.pop(), { phoneCards: false, 'test.disp': false });
-    assert.match(r.calls.toast.pop()[0], /3 were on/);
-    assert.equal(r.ctl.allOff(), 0); assert.match(r.calls.toast.pop()[0], /already off/);
-  });
-});
-await test('switchboard: heal puts a stale campaign copy right, and does not resend a copy just sent (4 s), but does after', async () => {
+await test('settings: heal puts a stale campaign copy right, does not resend a copy just sent (4 s) but does after, and gives up after three tries of the same copy', async () => {
   const r = rig({ features: { phoneCards: true } }, { features: { phoneCards: false } });
   assert.equal(r.ctl.heal(), true); await Promise.resolve(); assert.equal(r.calls.publish.length, 1);
   r.camp.features = { phoneCards: false };       // the server has not reflected it yet
   assert.equal(r.ctl.heal(), false); r.host.t += 5000; assert.equal(r.ctl.heal(), true); await Promise.resolve(); assert.equal(r.calls.publish.length, 2);
-});
-await test('switchboard: a copy the server never takes (a page newer than the Worker) is sent three times, then left alone until the map changes', async () => {
-  const r = rig({ features: { phoneCards: true } }, { features: {} });
-  let sends = 0; r.host.publish = () => { sends++; return Promise.resolve(true); };     // and the campaign never reflects it
-  for (let i = 0; i < 8; i++) { r.ctl.heal(); await Promise.resolve(); r.host.t += 5000; }
+  const r2 = rig({ features: { 'room.music': true } }, { features: {} });
+  let sends = 0; r2.host.publish = () => { sends++; return Promise.resolve(true); };     // and the campaign never reflects it
+  for (let i = 0; i < 8; i++) { r2.ctl.heal(); await Promise.resolve(); r2.host.t += 5000; }
   assert.equal(sends, 3);
-  r.state.features.phoneCards = false; r.state.phoneCards = false; r.camp.features = { phoneCards: true };      // a different map is a new copy
-  assert.equal(r.ctl.heal(), true); await Promise.resolve(); assert.equal(sends, 4);
 });
-await test('switchboard: a failed copy says so and is tried again at the next arrival', async () => {
+await test('settings: a failed copy says so and is tried again at the next arrival', async () => {
   const r = rig({ features: { phoneCards: true } }, { features: {} });
   r.host.publish = () => Promise.reject(new Error('offline'));
   assert.equal(r.ctl.heal(), true); await new Promise((x) => setImmediate(x));
-  assert.match(r.calls.toast[0][0], /Could not copy the switches/); assert.equal(r.calls.toast[0][1], true);
+  assert.match(r.calls.toast[0][0], /Could not copy the settings/); assert.equal(r.calls.toast[0][1], true);
   assert.equal(r.ctl.heal(), true, 'tried again at once');
 });
-await test('switchboard: the sheet draws the groups, a line per switch with its surface and Saturday default, and All off', async () => {
-  await withSwitches([sw('test.disp', 'display', { stage: 'map', saturday: 'try' })], () => {
-    const r = rig({ features: { 'test.disp': true } }, {}); const box = { parentNode: null, innerHTML: '' };
-    r.ctl.render(box);
-    const h = box.innerHTML;
-    assert.match(h, /Already in the app/); assert.match(h, /Stage 2: the maps/); assert.match(h, /data-sb="phoneCards" aria-pressed="false">Off/); assert.match(h, /data-sb="test.disp" aria-pressed="true">On/);
-    assert.match(h, /data-sb-alloff/); assert.match(h, /1 of 2 on/); assert.match(h, /the iPad/); assert.match(h, /your call on Friday/); assert.match(h, /phones/);
-    assert.ok(F.byStage().length === 2);
-  });
+await test('settings: four rows (Scenes, Music, Phones, Mirror for phones), each a two-way choice showing the current value', async () => {
+  const r = rig({ features: { 'room.music': true }, mirror: false }, { v: 1 });
+  const rows = r.ctl.rows();
+  assert.deepEqual(rows.map((x) => x.label), ['Scenes', 'Music', 'Phones', 'Mirror for phones']);
+  assert.deepEqual(rows.map((x) => x.key), ['fx.off', 'room.music', 'phoneCards', 'mirror']);
+  assert.deepEqual(rows.map((x) => x.options.map((o) => o.label)), [['Moving', 'Held still'], ['Scene themes', 'Heat music'], ['Sheet only', 'Mission cards'], ['Off', 'On']]);
+  assert.deepEqual(rows.map((x) => x.value), [false, true, false, false]);
+  const box = { parentNode: null, innerHTML: '' }; r.ctl.render(box);
+  assert.match(box.innerHTML, /data-set="room\.music" data-v="1" aria-pressed="true">Heat music/);
+  assert.match(box.innerHTML, /data-set="fx\.off" data-v="0" aria-pressed="true">Moving/);
+  assert.match(box.innerHTML, /data-set="mirror" data-v="0" aria-pressed="true">Off/);
+  assert.equal((box.innerHTML.match(/aria-pressed="true"/g) || []).length, 4, 'one value pressed per row');
+});
+await test('settings: choose takes the page\'s own paths (phone cards: setPhoneCards; mirror: toggleMirror; scenes and music: set, with a toast) and does nothing for the value already chosen', async () => {
+  const phone = [];
+  const r = rig({ mirror: true }, { v: 1 }, { setPhoneCards(on) { phone.push(on); return true; } });
+  assert.equal(r.ctl.choose('phoneCards', false), false, 'already off: nothing'); assert.deepEqual(phone, []);
+  assert.equal(r.ctl.choose('phoneCards', true), true); assert.deepEqual(phone, [true]);
+  assert.equal(r.ctl.choose('mirror', true), false, 'already on'); assert.equal(r.calls.mirror, 0);
+  assert.equal(r.ctl.choose('mirror', false), true); assert.equal(r.calls.mirror, 1); assert.equal(r.state.mirror, false);
+  assert.equal(r.ctl.choose('fx.off', true), true); assert.equal(r.state.features['fx.off'], true); assert.match(r.calls.toast.pop()[0], /held still/);
+  assert.equal(r.ctl.choose('room.music', true), true); assert.match(r.calls.toast.pop()[0], /heat music/);
+  assert.equal(r.ctl.choose('nope', true), false);
 });
 
 // ---------- where each file is bundled ----------
-await test('bundles: flags.js is in the core (every route) and index.html loads it; the registry and the GM files are gm-only; cue-verbs ride with cue.js', async () => {
+await test('bundles: flags.js is in the core (every route); the registry, the sheet host and the Settings are gm-only; the Switchboard and the Workshop are gone', async () => {
   const src = fs.readFileSync(path.join(ROOT, 'app', 'routes.js'), 'utf8');
   const g = {}; new Function('self', 'globalThis', src)(g, g);   // routes.js defines B68Load on the root it is given
   const B = g.B68Load.BUNDLES;
   assert.ok(B.core.includes('sheet/flags.js')); assert.ok(fs.readFileSync(path.join(ROOT, 'app', 'index.html'), 'utf8').includes('<script src="sheet/flags.js"></script>'));
-  for (const f of ['features.js', 'gm/tools.js', 'gm/workshop.js', 'gm/switchboard.js']) {
+  for (const f of ['features.js', 'gm/tools.js', 'gm/workshop.js', 'gm/settings.js']) {
     assert.ok(B.gm.includes(f), f + ' is in the gm bundle');
     for (const n of Object.keys(B)) if (n !== 'gm') assert.ok(!B[n].includes(f), f + ' must not be in ' + n + ': players and the iPad never fetch GM files');
     assert.ok(fs.existsSync(path.join(ROOT, 'app', f)));
   }
-  assert.ok(B.gm.indexOf('gm/workshop.js') < B.gm.indexOf('gm/switchboard.js') && B.gm.indexOf('features.js') < B.gm.indexOf('gm/switchboard.js') && B.gm.indexOf('gm/switchboard.js') < B.gm.indexOf('gm-page.js'));
+  for (const f of ['gm/switchboard.js', 'gm/workshop-first.js']) {
+    for (const n of Object.keys(B)) assert.ok(!B[n].includes(f), f + ' is gone from ' + n);
+    assert.ok(!fs.existsSync(path.join(ROOT, 'app', f)), f + ' is gone');
+  }
+  assert.ok(B.gm.indexOf('gm/workshop.js') < B.gm.indexOf('gm/settings.js') && B.gm.indexOf('features.js') < B.gm.indexOf('gm/settings.js') && B.gm.indexOf('gm/settings.js') < B.gm.indexOf('gm-page.js'));
   for (const n of ['gm', 'display']) { assert.ok(B[n].includes('cue-verbs.js') && B[n].indexOf('cue-verbs.js') < B[n].indexOf('cue.js'), n); }
   for (const n of ['core', 'table', 'print', 'crews', 'figures']) assert.ok(!B[n].includes('cue-verbs.js') && !B[n].includes('features.js'), n + ' has no registry');
 });
-await test('the files a player or the iPad fetches never name a GM-only switch: the core holds no registry, and flags.js knows no ids', async () => {
+await test('the GM page: the Settings live in the iPad view (no Menu line, no sheet: N5), no Switchboard or Workshop line, and no CSS left that keys off the Workshop', async () => {
+  const gp = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8'), css = fs.readFileSync(path.join(ROOT, 'app', 'gm.css'), 'utf8');
+  assert.ok(gp.includes('id="gm-ipad-settings"') && /setInst\(\)/.test(gp) && /st\.render\(sb\)/.test(gp), 'the iPad view draws the Settings');
+  assert.ok(!gp.includes('id="gm-menu-settings"') && !gp.includes("case 'settings':"), 'no Menu line for them any more');
+  assert.equal(require(path.join(ROOT, 'app', 'gm', 'ipad-tray.js')).settingsInView, true, 'the tray says so, so the band\'s Menu has no Settings line');
+  assert.ok(!/gm-sheet-settings|Sheet\.sheet/.test(fs.readFileSync(path.join(ROOT, 'app', 'gm', 'settings.js'), 'utf8')), 'and settings.js makes no sheet');
+  assert.ok(!/gm-menu-switchboard|data-gm="switchboard"|case 'switchboard'|case 'workshop'|B68GmSwitchboard|B68GmWorkshopFirst|menuLine\(\)/.test(gp));
+  assert.ok(!/ws-away|ws-show-|gm-sb-stage|gm-ws-list/.test(css));
+  assert.ok(!/#as-cogm-also-row|#as-screen/.test(css), 'the uncued co-GM box and the Screen props show as before the Workshop');
+  assert.ok(/\[data-gm="mirror"\]/.test(css) && /data-mid="phone-cards"/.test(css) && /gm-run-lens/.test(css), 'the mirror buttons, the Run menu\'s phone cards and the costume select stay put away');
+});
+await test('the files a player or the iPad fetches never name a GM-only line: the core holds no registry, and flags.js knows no ids', async () => {
   const flags = fs.readFileSync(path.join(ROOT, 'app', 'sheet', 'flags.js'), 'utf8');
   assert.ok(!/B68Features|phoneCards|spine\./.test(flags.replace(/\/\*[\s\S]*?\*\//g, '')));
   for (const s of F.list()) if (s.surface === 'gm') for (const f of ['sheet/flags.js', 'display-page.js', 'tracker.js', 'boot.js']) assert.ok(!fs.readFileSync(path.join(ROOT, 'app', f), 'utf8').includes(s.id), f + ' names ' + s.id);

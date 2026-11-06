@@ -212,8 +212,8 @@
     return Object.assign(o, size || { width: 1400 });
   }
   P.mapOpts = mapOpts;
-  /* 2.1 · Map kit 1.0, the grand map: the switchboard's map.kit1 (app/features.js, GM only, default off), read live from this page's
-     state document. kit1Of(doc) is the read itself; P.kit1On() is what mapOpts and the score scene ask (a test can stand it in). */
+  /* 2.1 · Map kit 1.0, the grand map: map.kit1 (app/features.js, GM only; always on since N0), read through the registry.
+     kit1Of(doc) is the read itself; P.kit1On() is what mapOpts and the score scene ask (a test can stand it in). */
   var KIT1_SWITCH = P.KIT1_SWITCH = 'map.kit1';
   function kit1Of(doc) { var F = W.B68Features; try { return !!(F && typeof F.valueOf === 'function' && F.valueOf(doc, KIT1_SWITCH) === true); } catch (e) { return false; } }
   P.kit1Of = kit1Of;
@@ -515,7 +515,9 @@
   function overlayLine(o, clockOf) {
     if (!isObj(o) || !Object.prototype.hasOwnProperty.call(OV_FIELDS, o.kind)) return '';
     var ck = o.kind === 'clock' && typeof clockOf === 'function' ? clockOf(o.clockId) : null;
-    var what = W.B68Show && W.B68Show.has(o.kind) ? 'a ' + o.kind + ' on the iPad' : o.kind === 'fx' ? 'dawn' : o.kind === 'clock' ? (ck ? 'clock ' + str(ck.name) + ' ' + ck.filled + '/' + ck.size : 'a table clock') : o.kind === 'npc' ? 'an NPC card' : 'a line of text';
+    /* a show beat in the tray's words (gm/ipad-tray.js: "Action report: risky, standard"), so the band and the iPad view say the same thing */
+    var beat = W.B68Show && W.B68Show.has(o.kind) ? (W.B68GmIpadTray ? W.B68GmIpadTray.overlayText(o) : 'a ' + o.kind + ' on the iPad') : '';
+    var what = beat || (o.kind === 'fx' ? 'dawn' : o.kind === 'clock' ? (ck ? 'clock ' + str(ck.name) + ' ' + ck.filled + '/' + ck.size : 'a table clock') : o.kind === 'npc' ? 'an NPC card' : 'a line of text');
     return what + ' · ' + Math.round((Number(o.ms) || 0) / 1000) + ' s';
   }
   P.overlayLine = overlayLine;
@@ -587,7 +589,7 @@
   function displayLine(d) {
     if (!isObj(d)) return '';
     var t = str(d.title).slice(0, 80);
-    if (d.kind === 'dark') return 'Lights out' + (t ? ' · ' + t : '');
+    if (d.kind === 'dark') return 'Blank (lights out)' + (t ? ' · ' + t : '');
     if (d.kind === 'svg') return 'Map' + (t ? ' · ' + t : '');
     if (d.kind === 'npc') return 'NPC' + (t ? ' · ' + t : '');
     if (d.kind === 'text') return 'Text' + (t ? ' · ' + t : '');
@@ -853,10 +855,14 @@
 
   /* a key press on #gm -> an action, or null. ev: { key, ctrlKey, altKey, metaKey, typing }
      1-4 roll a situation; 5-9 do nothing (the nine single tables have no keys: More tables, under the card). Blanking the
-     laptop takes Shift+H (`blank`), or a plain H twice within a second (`blank-tap`): a stray key never blacks it out. */
+     laptop takes Shift+H (`blank`), or a plain H twice within a second (`blank-tap`): a stray key never blacks it out.
+     A view key (R T N I G B S J C D O) is { type: 'panel', panel }: the page opens that view in the place on screen (openView).
+     Ctrl+Left / Ctrl+Right is { type: 'place', d: -1 | 1 }: the place before or after, to look at (never a phase change).
+     Space and PageDown are the cue stack's (GO); Esc goes to gm/esc.js (the one Esc). */
   function keyAction(ev) {
-    if (!ev || ev.ctrlKey || ev.altKey || ev.metaKey) return null;
+    if (!ev || ev.altKey || ev.metaKey) return null;
     var k = str(ev.key);
+    if (ev.ctrlKey) return !ev.typing && (k === 'ArrowLeft' || k === 'ArrowRight') ? { type: 'place', d: k === 'ArrowLeft' ? -1 : 1 } : null;
     if (ev.typing) return k === 'Escape' ? { type: 'esc' } : null;
     if (/^[1-4]$/.test(k)) return { type: 'situation', n: +k };
     if (/^[5-9]$/.test(k)) return null;
@@ -1169,16 +1175,17 @@
     return h;
   }
   function chipsHtml(chips) { return chips && chips.length ? '<p class="gm-chips">' + chips.map(function (c) { return '<span class="gm-chip">' + esc(c) + '</span>'; }).join('') + '</p>' : ''; }
-  /* the merged actions (one row, each with its index into meta.actions) and Pin / Copy */
-  function actsHtml(m, tool) {
-    return '<div class="gm-card-acts">' + (m.actions || []).map(function (a, i) { return '<button type="button" class="btn sm primary" data-gm="intent" data-i="' + i + '">' + esc(a.label) + '</button>'; }).join('') +
+  /* the merged actions (one row, each with its index into meta.actions), `more` (html the page adds: the Roll's quick tables and its size buttons), Pin / Copy.
+     hide(action) -> true leaves an action off the row (the Roll: "Threat spent" once the line is already spent); the others keep their index */
+  function actsHtml(m, tool, more, hide) {
+    return '<div class="gm-card-acts">' + (m.actions || []).map(function (a, i) { return typeof hide === 'function' && hide(a) ? '' : '<button type="button" class="btn sm primary" data-gm="intent" data-i="' + i + '">' + esc(a.label) + '</button>'; }).join('') + (more || '') +
       '<button type="button" class="btn sm" data-gm="pin" data-tool="' + esc(tool) + '">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="' + esc(tool) + '">Copy</button></div>';
   }
-  /* The classic card (a single table), exactly as before. */
-  function classicCardHtml(res, mdf) {
+  /* The classic card (a single table), as before. opts: { acts, hide } for the actions row (situationCardHtml's) */
+  function classicCardHtml(res, mdf, opts) {
     var m = res.meta || {};
     return '<article class="gm-card" data-tool="console"><header class="gm-card-h"><kbd class="gm-card-n">' + esc(m.n) + '</kbd><div><h3>' + esc(m.title) + '</h3>' + (m.sub ? '<p class="gm-sub">' + esc(m.sub) + '</p>' : '') + '</div></header>' +
-      chipsHtml(m.chips) + linesHtml(res.lines, mdf) + actsHtml(m, 'console') + '</article>';
+      chipsHtml(m.chips) + linesHtml(res.lines, mdf) + actsHtml(m, 'console', opts && opts.acts, opts && opts.hide) + '</article>';
   }
   /* The coaching lines of a section ("Say it before the dice...": recurring guidance, flagged `coach` by the console) fold under a
      closed "Why", so a card reads as the draw and its numbers and the reasons are one tap away. */
@@ -1191,12 +1198,13 @@
     return { plain: plain, coach: coach };
   }
   /* The composed card: the LEAD box (big line, the spend sentence under it, chips, its own lines under "More"), then at most three
-     one-line "Or" rows that open to their full section, then ONE merged actions row. */
-  function situationCardHtml(res, mdf) {
-    var m = res.meta || {}, secs = res.sections || [];
+     one-line "Or" rows that open to their full section, then ONE merged actions row. opts.acts: html for that row before Pin (the Roll's quick tables and its
+     size buttons); opts.hide(action) leaves an action off it. */
+  function situationCardHtml(res, mdf, opts) {
+    var m = res.meta || {}, secs = res.sections || [], more = opts && opts.acts ? String(opts.acts) : '', hide = opts && opts.hide;
     var h = '<article class="gm-card gm-sit" data-tool="situation" data-sit="' + esc(m.situation) + '"><header class="gm-card-h"><kbd class="gm-card-n">' + esc(m.n) + '</kbd><div><h3>' + esc(m.title) + '</h3>' + (m.sub ? '<p class="gm-sub">' + esc(m.sub) + '</p>' : '') + '</div></header>';
     if (isObj(m.recomposed)) h += '<p class="gm-quiet" role="note">Redrawn with the current tables</p>';
-    if (!secs.length) return h + linesHtml(res.lines, mdf) + actsHtml(m, 'situation') + '</article>';
+    if (!secs.length) return h + linesHtml(res.lines, mdf) + actsHtml(m, 'situation', more, hide) + '</article>';
     var lead = secs[0], ll = lead.lines || [], skip = leadIsLine(lead), cut = splitCoach(ll.slice(skip ? 1 : 0));
     /* the lead's first line IS the lead box (its `small`, a threat's spend sentence, sits under it); a lead cut at 120 characters keeps its full line under More */
     var small = ll[0] && ll[0].small ? '<div class="gm-lead-s">' + mdf(ll[0].small) + '</div>' : '';
@@ -1209,7 +1217,7 @@
       h += '<details class="gm-or" data-sec="' + esc(s.id) + '"><summary><span class="gm-or-k">Or</span><span class="gm-or-t"><b>' + esc(s.title) + '</b> ' + esc(s.lead) + '</span></summary><div class="gm-or-b">' +
         (s.sub ? '<p class="gm-sub">' + esc(s.sub) + '</p>' : '') + chipsHtml(s.chips) + linesHtml(c.plain, mdf) + whyHtml(c.coach, mdf) + '</div></details>';
     });
-    return h + actsHtml(m, 'situation') + '</article>';
+    return h + actsHtml(m, 'situation', more, hide) + '</article>';
   }
   P.linesHtml = linesHtml; P.classicCardHtml = classicCardHtml; P.situationCardHtml = situationCardHtml;
 
@@ -1272,7 +1280,7 @@
   var kvDel = function (k) { return idbDo('readwrite', function (s) { s.delete(k); }); };
   /* every pack:* key, whoever cached it; the database is only opened if it exists (no empty database for a player) */
   function purge() {
-    keptApi = null; AM.doc = null; AM.shown = null; AM.loaded = false; AM.seq = null;
+    keptApi = null; AM.doc = null; AM.shown = null; AM.loaded = false; AM.seq = null; AM.peeked = false;
     try { W.localStorage.removeItem(STICKY); } catch (e) {}
     if (!W.indexedDB) return Promise.resolve(0);
     var exists = typeof W.indexedDB.databases === 'function'
@@ -1385,8 +1393,8 @@
       n.classList.toggle('bad', !!st.hold || !!st.parked || st.error === 'retrying');
       if (st.hold) n.title = SIGNED_OUT_MSG; else if (st.parked) n.title = 'The server refused a change: ' + st.error;
     });
-    /* signed out: a plain message across the bar (a full-width second row of it, so it never squeezes the bar's buttons) */
-    var bar = $q('.gm-bar'), msg = $q('#gm-signed');
+    /* signed out: the band's second row says so, in alarm red (#gm-signed) */
+    var bar = $q('#gm-band'), msg = $q('#gm-signed');
     if (bar) bar.classList.toggle('out', !!st.hold);
     if (msg) { msg.hidden = !st.hold; if (st.hold) msg.removeAttribute('hidden'); else msg.setAttribute('hidden', ''); }
     var rt = S.root.querySelector && S.root.querySelector('#gm-root');
@@ -1559,9 +1567,11 @@
     if (me.sttTimer) { W.clearInterval(me.sttTimer); me.sttTimer = null; }
     if (me.cogm) { cogmStop(me); me.cogm = null; }
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
-    b09Unmount(me); b17Unmount(me); knUnmount(me); csUnmount(me);
+    b09Unmount(me); b17Unmount(me); knUnmount(me); csUnmount(me); bandUnmount(me);
+    if (me.places) { try { me.places.destroy(); } catch (e) {} me.places = null; }      /* N1b: its inline tools unbound, its listeners gone */
     if (me.mission) { try { me.mission.flush(); } catch (e) {} me.mission.destroy(); me.mission = null; }   /* a publish that is waiting goes now */
     apUnmount(me);
+    ipadTrayUnmount(me);       /* the tray's timer and its place in the module's list, and the live-sync listener */
     S = null;
     setApp(false);
     if (me.root) { me.root.innerHTML = ''; }
@@ -1709,6 +1719,7 @@
     S.status = 'ready'; S.prepKey = null;
     mountAssist();
     layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack(); apMount(); mountMission(); mountNight(); b09Mount(); csMount(); b17Mount();
+    placesMount();      /* N1b: the place and its view, once the panes are drawn and the night controller is there */
     /* listening: every 5 s while the iPad tab is open, every 15 s otherwise (the top bar shows it) */
     if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden) { if (S.panel === 'ipad' || n2 % 3 === 0) loadStt(); renderBeat(); } }, 5000); }
     if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
@@ -2228,28 +2239,40 @@
       if (r && isObj(r.display)) { AM.displayRead = true; apSeed(!AM.shown, r.display.kind); AM.shown = AM.shown || { kind: str(r.display.kind), title: str(r.display.title) }; }
       if (S === me) renderBar();
     }, function () {});
+    peekAmbient();
   }
+  /* the iPad tray's first look at the ambient document (the overlay, the layers, the scene: what is live), read once at the start. It is a look only:
+     AM.loaded and the heat sync still wait for the iPad view (loadAmbient), as before; this page's own changes keep AM.doc current after it. */
+  function peekAmbient() {
+    var g = gmApi(), me = S; if (!g || typeof g.ambient !== 'function' || AM.loaded || AM.peeked) return;
+    AM.peeked = true;
+    Promise.resolve().then(function () { return g.ambient(); }).then(function (r) {
+      if (S !== me || AM.loaded || !isObj(r) || !isObj(r.doc)) return;
+      AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null;
+      renderBar();
+    }, function () { AM.peeked = false; });
+  }
+  /* N1b: the places of the night (gm/places.js) draw the view switcher (.gm-views), the chip row below 1100 px (.gm-vchips, in the old segbar's
+     place), the place's own left column (#gm-left, beside the console: #gm-root[data-left] says which of the two shows), the strip over a view
+     (#gm-vhead) and the pane that holds tools and built views (#gm-vpane). Without the module the switcher lists every pane, as the tabs did. */
+  var PANE_TABS = [['prep', 'Prep', 'R'], ['rules', 'Rules', 'T'], ['location', 'Location roller', 'B'], ['scenes', 'Street', 'S'], ['score', 'Score generator', 'J'], ['chase', 'Chase', 'C'], ['npc', 'Cast', 'N'], ['downtime', 'Downtime', 'D'], ['cards', 'Opportunities', 'O'], ['ipad', 'iPad', 'I'], ['run', 'The site', 'G']];
   function layout() {
-    var segs = [['console', 'Console'], ['prep', 'Prep'], ['location', 'Location'], ['scenes', 'Street'], ['score', 'Score'], ['chase', 'Chase'], ['npc', 'NPC'], ['downtime', 'Downtime'], ['cards', 'Cards'], ['rules', 'GM screen'], ['ipad', 'iPad'], ['state', 'State']];
-    var tabs = [['prep', 'Prep', 'R'], ['rules', 'GM screen', 'T'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['score', 'Score', 'J'], ['chase', 'Chase', 'C'], ['npc', 'NPC', 'N'], ['downtime', 'Downtime', 'D'], ['cards', 'Cards', 'O'], ['ipad', 'iPad', 'I']];
-    var TL = W.B68GmTools, ex = TL ? TL.extras() : [];   /* W0.5: the tool registry (gm/tools.js) adds tools registered after the built-ins */
-    if (ex.length) { segs = segs.concat(ex.map(function (t) { return [t.id, t.label]; })); tabs = tabs.concat(ex.map(function (t) { return [t.id, t.label, t.key]; })); }   /* the phase filter hides tabs in syncPanels, never here */
-    S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '">' + barHtml() +
-      '<div class="seg gm-segbar" role="tablist" aria-label="Show">' + segs.map(function (s) { return '<button type="button" class="chip" role="tab" data-gm="seg" data-seg="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
+    var bare = W.B68GmPlaces ? '' : PANE_TABS.map(function (t) { return '<button type="button" class="gm-vt" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('');
+    S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '">' + '<header id="gm-band" aria-label="The band"></header>' +
+      '<div class="seg gm-segbar gm-vchips" role="tablist" aria-label="Views"></div>' +
       '<div class="gm-main">' +
-      /* the console column, top to bottom: Position, the Scene line (its controls fold under it), the four buttons, the card,
-         Earlier, and the nine single tables folded under "More tables". Nothing sits above the card but what rolls it. */
-      '<section class="gm-col gm-console" aria-label="Console">' +
-      '<div class="gm-pos" id="gm-pos" role="radiogroup" aria-label="Position"></div>' +
-      /* the Scene button sits in a plain div: a <button> as a direct grid item of the scrolling column collapses to its min-height once
-         the column overflows (Chromium sizes the track from the button's min-height, not its wrapped content) */
-      '<div class="gm-scenebox" id="gm-scenebox">' + '<label class="gm-nowline" for="gm-now-s"><span class="gm-lab">Now in</span><select data-now id="gm-now-s"></select></label>' +
-      '<button type="button" class="gm-scene" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-controls"' + ' title="Scene, district, who it aims at, the NPC, the threat on screen">' + '<span class="gm-lab">Scene</span><span class="gm-scene-chips" id="gm-scene-chips"></span></button></div>' +
-      '<div class="gm-mini" id="gm-mini" role="group" aria-label="Roll"></div><div class="gm-controls" id="gm-controls"></div>' + '<div class="gm-buttons" id="gm-buttons"></div><div class="gm-cardbox" id="gm-card" aria-live="polite"></div><div class="gm-rack" id="gm-rack" aria-live="polite"></div>' + '<div class="gm-earlier" id="gm-earlier"></div>' +
-      '<details class="gm-singles" id="gm-singles"></details></section>' +
-      '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabrow"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
-      tabs.map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + (t[2] ? ' <kbd>' + t[2] + '</kbd>' : '') + '</button>'; }).join('') +
-      '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div>' + '<div class="gm-pane" data-pane="score" id="gm-score"></div><div class="gm-pane" data-pane="chase" id="gm-chase"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="downtime" id="gm-dt"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div>' + '<div class="gm-pane gm-runv" data-pane="run" id="gm-runv"></div>' + ex.map(function (t) { return '<div class="gm-pane" data-pane="' + t.id + '" id="gm-x-' + t.id + '"></div>'; }).join('') + '</section>' +
+      /* N4: the Roll (gm/roll.js, design section 5): one card (Position, Effect, the line, Stamp it on the iPad, They rolled 1-4), the result card,
+         Blade's Rack, and the folds (Scene, Earlier, More tables). The section is one block: N1b places it whole in a place's left column. */
+      '<section class="gm-col gm-console" id="gm-roll" aria-label="The roll">' + (W.B68GmRoll ? W.B68GmRoll.shell() : '<p class="gm-note bad">The roll did not load: reload the page.</p>') + '</section>' +
+      '<section class="gm-col gm-left" id="gm-left" aria-label="The place" hidden></section>' +
+      '<section class="gm-col gm-side" aria-label="The place’s work"><div class="gm-viewrow"><div class="gm-views" role="tablist" aria-label="Views">' + bare + '</div>' +
+      '<button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the left column to the roll keys, to read (F)">Focus <kbd>F</kbd></button></div>' +
+      '<div class="gm-vhead" id="gm-vhead" hidden></div>' +
+      '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div>' + '<div class="gm-pane" data-pane="score" id="gm-score"></div><div class="gm-pane" data-pane="chase" id="gm-chase"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="downtime" id="gm-dt"></div>' +
+      /* Opportunities: the players' board (bound here by the places) over the GM's own cards (renderCards) */
+      '<div class="gm-pane" data-pane="cards" id="gm-cards"><section class="gm-opps-part"><h3 class="gm-opps-h">From the players</h3><div class="gm-opps-players" id="gm-opps-players"></div></section>' +
+      '<section class="gm-opps-part"><h3 class="gm-opps-h">From the GM</h3><div class="gm-opps-gm" id="gm-opps-gm"></div></section></div>' +
+      '<div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div>' + '<div class="gm-pane gm-runv" data-pane="run" id="gm-runv"></div>' + '<div class="gm-pane gm-vpane" data-pane="view" id="gm-vpane"></div></section>' +
       '</div>' + drawerHtml() +
       '<div class="gm-foot" id="gm-foot"></div>' +
       '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button>' +
@@ -2258,48 +2281,111 @@
       '<ol class="gm-find-list" id="gm-find-list"></ol><p class="gm-find-help"><kbd>↑</kbd> <kbd>↓</kbd> choose · <kbd>Enter</kbd> go (or copy) · <kbd>Esc</kbd> close</p></div></div></div>';
     renderRules();
     setApp(true);
-    if (S.assist && typeof S.assist.relayout === 'function') S.assist.relayout();   /* the Blade panel sits between this bar and the capture bar */
+    ipadTrayMount(); bandMount(); escWire();      /* the page's iPad goes to the trays first; the band mounts its own in row 2 */
+    if (S.assist && typeof S.assist.relayout === 'function') S.assist.relayout();   /* the Blade panel sits between the band and the capture bar */
   }
-  /* the top bar of the app layout (every width): the session, saving, what the iPad shows, listening (once the transcriber has
-     ever been used), Clear and Lights out, and a menu with what is not play: the display page, the note, the capture, the pack,
-     the site's pages, Forget. On a phone the bar is ’68 GM · Session · iPad · Menu (gm.css) */
-  function barHtml() {
-    return '<div class="gm-bar"><a class="gm-bar-mark" href="#" title="Home">’68 <b>GM</b></a><span class="gm-bar-sess" id="gm-bar-sess"></span>' +
-      '<label class="gm-now" title="The district the tools start from: the console, Street, Location and NPC pickers follow it until you pick one there">' +
-      '<span class="gm-nowk">Now in</span><select data-now id="gm-now" aria-label="Now in: the district the tools start from"></select></label>' +
-      '<span class="gm-save" role="status"></span><span class="gm-bar-exp" id="gm-bar-exp"></span>' +
-      '<span class="gm-beatbar" id="gm-bar-beat" hidden><button type="button" class="gm-pill gm-beat" data-gm="beat-go" id="gm-bar-beatgo" title="The beat running (the Prep tab’s run order)"></button>' +
-      '<button type="button" class="gm-bb" data-gm="beat-next" title="Start the next beat in the run order">Next beat</button></span><span class="gm-grow"></span>' +
-      '<button type="button" class="gm-bb gm-dwbtn" data-gm="drawer" id="gm-bar-drawer" aria-expanded="false" aria-controls="gm-drawer" ' + 'title="The drawer: the table, the crew and each character\u2019s sheet (W)">Drawer</button>' +
-      '<button type="button" class="gm-bb" data-gm="find-open" title="Find anything: prep, the screen, NPCs, clocks, what you filed (Ctrl+K or /)">Find <kbd>Ctrl K</kbd></button>' +
-      '<button type="button" class="gm-pill" data-gm="panel" data-panel="ipad" id="gm-bar-ipad" title="What the players see (the iPad tab)"></button>' +
-      '<button type="button" class="gm-pill gm-ap" data-gm="aptoggle" id="gm-bar-ap" data-ap="auto" hidden></button>' +
-      '<button type="button" class="gm-pill" data-gm="panel" data-panel="ipad" id="gm-bar-stt" title="The transcriber (the iPad tab)" hidden></button>' +
-      '<button type="button" class="gm-bb" data-gm="blankipad" title="Back to the ambient scene">Clear → ambient <kbd>0</kbd></button>' + '<button type="button" class="gm-bb" data-gm="darkipad" title="True black until you push something">Lights out</button>' +
-      mirrorButton('gm-bb', 'bar') +
-      '<span class="gm-menu"><button type="button" class="gm-bb" data-gm="menu" aria-expanded="false" aria-haspopup="true">Menu</button><span class="gm-menu-list" hidden>' +
-      '<p class="gm-menu-h"><span><b>GM tools</b> · The console</span><span class="gm-exp" id="gm-menu-exp"></span></p>' + '<div class="gm-menu-warn" id="gm-menu-warn" hidden></div>' +
+  /* ---------- THE BAND (gm/band.js; the GM night rebuild: the frame): one element on top, two rows, never scrolling ----------
+     Row 1 is where you are (the places, Between, Find, Crew, the Menu), row 2 what is live (the clock and the curfew, the beat, the iPad tray, the mic,
+     the cue, the quiet line, PANIC). The band draws itself; this page paints the parts it always painted, by id (the session, saving, the beat, the
+     iPad pill, the mic, the Menu's lines), and hands it the host below. The places (goPlace, openView, callAftermath, currentPlace, currentView) are
+     the places registry's when it is on the page (S.places, or W.B68GmPlaces); until then the stand-ins here keep every chip and key working: a phase
+     chip enters the phase on the night as the old rail did, a view key opens its panel, and Call the Aftermath enters it and opens its show. */
+  function placesCtl() { var p = S && S.places; if (p && typeof p.goPlace === 'function') return p; var R = W.B68GmPlaces; return R && typeof R.goPlace === 'function' ? R : null; }
+  function bandPlaces() { return W.B68GmBand ? W.B68GmBand.placeList() : { list: [], between: { id: 'between', label: 'Between', phase: null } }; }
+  function phaseOfPlace(id) { var p = bandPlaces().list.filter(function (x) { return x.id === id; })[0]; return p ? p.phase : null; }
+  function currentPlace() {
+    var pc = placesCtl(); if (pc && typeof pc.currentPlace === 'function') { var c = pc.currentPlace(); if (c) return str(c); }
+    if (S && S.bandPlace) return S.bandPlace;
+    return (S && S.night && S.night.phase()) || 'before';
+  }
+  function goPlace(id, o) {
+    var pc = placesCtl(); if (pc) { var moved = pc.goPlace(id, o || {}); bandUpdate(); return moved; }
+    if (!S) return false;
+    var ph = phaseOfPlace(id);
+    if (ph && !(o && o.navigateOnly)) { S.bandPlace = null; if (S.night && S.night.phase() !== ph) S.night.enter(ph); }
+    else S.bandPlace = id;
+    bandUpdate();
+    return true;
+  }
+  function openView(id, o) {
+    var pc = placesCtl(); if (pc && typeof pc.openView === 'function') return pc.openView(id, o);
+    if (!S || !isSide(id)) return false;
+    setPanel(id); if (isPhone()) { S.seg = 'side'; syncPanels(); }
+    return true;
+  }
+  function currentView() { var pc = placesCtl(); return pc && typeof pc.currentView === 'function' ? pc.currentView() : S ? S.panel : ''; }
+  function callAftermath() {
+    var pc = placesCtl(); if (pc && typeof pc.callAftermath === 'function') { var r = pc.callAftermath(); bandUpdate(); return r; }
+    if (!S || !S.night) return false;
+    if (S.night.phase() !== 'after') S.night.enter('after');
+    S.bandPlace = null;
+    var A = W.B68GmAftermath; if (A && typeof A.open === 'function') { try { A.open($q('#gm-root')); } catch (e) { /* the phase moved; the show opens from its place */ } }
+    bandUpdate();
+    return true;
+  }
+  /* Ctrl+Left / Ctrl+Right: the place before or after this one, to look at it (never a phase change) */
+  function placeStep(d) { var B = W.B68GmBand; if (!B || !S) return; var cur = currentPlace(), next = B.step(B.placeList(), cur, d); if (next && next !== cur) goPlace(next, { navigateOnly: true }); }
+  function bandHost(me) {
+    return {
+      root: function () { return S === me ? $q('#gm-root') : null; },
+      night: function () { return S === me ? me.night : null; },
+      prep: function () { return S === me ? csNote() : null; },
+      now: function () { return Date.now(); },
+      currentPlace: function () { return S === me ? currentPlace() : ''; },
+      currentView: function () { return S === me ? currentView() : ''; },
+      goPlace: function (id, o) { return S === me ? goPlace(id, o) : false; },
+      openView: function (id) { return S === me ? openView(id) : false; },
+      callAftermath: function () { return S === me ? callAftermath() : false; },
+      curfew: function () { var Sp = W.B68GmSpine; return S === me && Sp && typeof Sp.curfew === 'function' ? Sp.curfew() : null; },
+      cue: function () { return S === me ? me.cs || null : null; },
+      panic: function () { if (S === me) bandPanic('button'); },
+      menuHtml: menuHtml, signedOut: function () { return SIGNED_OUT_MSG; }, toast: toast,
+      document: document      /* the iPad tray makes its nodes with it (gm/ipad-tray.js: a page whose elements do not carry their document) */
+    };
+  }
+  function bandMount() {
+    var B = W.B68GmBand, me = S, h = $q('#gm-band'); if (!B || !h || !me) return;
+    if (me.band) { try { me.band.destroy(); } catch (e) {} }
+    me.band = B.create(bandHost(me)); me.band.mount(h);
+  }
+  function bandUnmount(me) { if (me && me.band) { try { me.band.destroy(); } catch (e) {} me.band = null; } }
+  function bandUpdate() { if (S && S.band && S.status === 'ready') S.band.update(); }
+  /* PANIC (the band's last button, and Esc when nothing else is open): the cue stack's panic, with or without cues in the note (the safe scene, the iPad's
+     sound down, the work light); a page without the cue stack still sends the iPad to the safe scene */
+  function panicEffect(safe) { return Promise.all([patchAmbient({ mode: 'pin', scene: safe, overlay: null, layers: null }), pushDisplay({ kind: 'blank' }).then(null, function () { return null; })]).then(function (r) { return r[0] !== null; }); }
+  function bandPanic(src) {
+    if (!S) return;
+    if (S.cs) { S.cs.panic(src || 'button'); bandUpdate(); return; }
+    panicEffect('testcard').then(function (ok) { toast(ok ? 'PANIC: the iPad is on the safe scene with its sound down. Put the work light on.' : 'The iPad could not be reached: press Clear (0).', !ok); }, function () { toast('The iPad could not be reached: press Clear (0).', true); });
+  }
+  /* the Menu (the night design: Menu, Find and keys): housekeeping only; the Settings are in the iPad view (N5, gm/ipad-tray.js settingsInView). On a phone, Find and
+     Crew are lines here too: the band's first row there is the mark, the places and the Menu */
+  function menuHtml() {
+    return '<button type="button" class="gm-menu-ph" data-gm="find-open">Find</button><button type="button" class="gm-menu-ph" data-gm="drawer">Crew: the clocks, the crew and the sheets</button>' +
+      '<p class="gm-menu-h"><span class="gm-exp" id="gm-menu-exp"></span></p>' + '<div class="gm-menu-warn" id="gm-menu-warn" hidden></div>' +
       '<a href="#display" title="The players’ screen: open this on the iPad">Open the display page (for the iPad)</a>' +
-      '<button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="clearcap">Clear tonight’s capture</button><button type="button" data-gm="update">Update pack</button>' +
+      '<button type="button" data-gm="update">Update pack</button><button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="clearcap">Clear tonight’s capture</button>' +
       '<button type="button" data-gm="capbar" id="gm-menu-capbar" title="The bottom bar that files a roll, a name or a moment"></button>' +
-      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' + swMenuLine() + hsMenuLine() + wsMenuLine() + pfMenuLine() +
+      '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' +
       '<a href="#t">The table</a><a href="#rules">Rules</a><a href="#cast">The cast</a><a href="#">Home</a>' +
-      '<button type="button" class="bad" data-gm="forget">Forget GM data on this device</button></span></span>' +
-      '<div class="gm-signed" id="gm-signed" role="alert" hidden>' + esc(SIGNED_OUT_MSG) + '</div></div>';
+      '<button type="button" class="bad gm-menu-sep" data-gm="forget">Forget GM data on this device</button>';
   }
   function menuOpen(on) {
     var m = $q('.gm-menu-list'), b = $q('[data-gm="menu"]'); if (!m) return;
-    if (on) { renderLiveItem(); syncCapBar(); if (W.B68GmAftermath && S) W.B68GmAftermath.sync($q('#gm-root'), S.doc); if (W.B68GmDebrief && S) W.B68GmDebrief.sync($q('#gm-root'), S.doc); if (W.B68GmBoard && S) W.B68GmBoard.sync($q('#gm-root'), S.doc); if (W.B68GmCastPhoto && S) W.B68GmCastPhoto.sync($q('#gm-root'), S.doc); if (W.B68GmLair && S) W.B68GmLair.sync($q('#gm-root'), S.doc); m.removeAttribute('hidden'); } else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
+    if (on) { renderLiveItem(); syncCapBar(); m.removeAttribute('hidden'); } else m.setAttribute('hidden', '');
+    if (b) b.setAttribute('aria-expanded', String(!!on));
   }
-  /* W0.2: the switchboard (gm/switchboard.js): one per page session, made on first use. Its host is this page's own patch, campaign and api. */
-  function swInst() {
-    if (!S || !W.B68GmSwitchboard || !W.B68Features) return null;
-    if (!S.sw) S.sw = W.B68GmSwitchboard.create({
+  /* N0: the Settings (gm/settings.js), the four choices left after the Switchboard went: one per page session, made on first use. Its host is this page's own
+     patch, campaign and api (the Switchboard's), its phone-cards write and its mirror toggle, so a change takes the same paths and redraws the same way. */
+  function setInst() {
+    if (!S || !W.B68GmSettings || !W.B68Features) return null;
+    if (!S.st) S.st = W.B68GmSettings.create({
       doc: function () { return S.doc; }, patch: patch, campaign: function () { return camp; }, root: function () { return $q('#gm-root'); }, toast: toast,
       publish: function (map) { var a = (S && S.api) || keptApi; return a && typeof a.publishFeatures === 'function' ? a.publishFeatures(map) : Promise.reject(new Error('The table is not available here.')); },
-      redraw: function () { if (S && S.status === 'ready') { renderBar(); renderRun(); b09Paint(); if (S.map && S.locRoll && S.map.kit1 !== P.kit1On() && W.B68Map && W.B68Map.render) drawMap(true); } }     /* 2.1: map.kit1 flipped: the map on screen follows */
+      redraw: function () { if (S && S.status === 'ready') { renderBar(); renderRun(); b09Paint(); } },
+      setPhoneCards: function (on) { return setPhoneCards(on); }, mirrorOn: mirrorOn, toggleMirror: toggleMirror
     });
-    return S.sw;
+    return S.st;
   }
   /* 1.2 (spine.start): the hard start's sheet (gm/hardstart.js); its layers go through the show contract's own writer */
   function hsOn() { return !!(S && W.B68GmHardStart && W.B68Features && W.B68Features.valueOf(S.doc, 'spine.start')); }
@@ -2312,7 +2398,6 @@
     });
     return S.hs;
   }
-  function hsMenuLine() { return hsOn() ? '<button type="button" data-gm="hardstart" id="gm-menu-hardstart" title="The cold open on the iPad: station clock, fuse, credits, and three faces to name">Hard start</button>' : ''; }
   /* 3.6 / 2.11 Print (gm/print.js, switches print.cards and print.blueprint): one Menu line while either is on; the blueprint goes through the player door */
   function prOn() { return !!(S && W.B68GmPrint && W.B68Features && (W.B68Features.valueOf(S.doc, 'print.cards') || W.B68Features.valueOf(S.doc, 'print.blueprint'))); }
   function prInst() {
@@ -2320,10 +2405,6 @@
     if (!S.pr) S.pr = W.B68GmPrint.make({ npcs: function () { return S && isObj(S.npcs) ? S.npcs : {}; }, root: function () { return $q('#gm-root'); }, toast: toast, on: function (id) { return W.B68Features.valueOf(S.doc, id); },
       blueprint: function () { if (!S.locRoll) return null; var d = playerDisplay(S.locRoll, Object.assign({}, mapUi(), { layer: 'player', view: 'plan', theme: 'casefile' }), W.B68Map && W.B68Map.render, null); return { title: d.title, caption: d.caption, svg: d.svg }; } });
     return S.pr;
-  }
-  function prMenuSync() {
-    var on = prOn(), b = $q('#gm-menu-print'), after = $q('#gm-menu-switchboard') || $q('#gm-menu-live');
-    if (on && !b && after) after.insertAdjacentHTML('afterend', '<button type="button" data-gm="print" id="gm-menu-print" title="Print calling cards, tent standees and the blueprint">Print</button>'); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
   }
   /* 2.7 Intel corkboard (gm/corkboard.js, switch map.corkboard): one Menu line while the switch is on; the board is drawn through playerDisplay, the one player door */
   function cbOn() { return !!(S && W.B68GmCorkboard && W.B68Features && W.B68Features.valueOf(S.doc, 'map.corkboard')); }
@@ -2336,10 +2417,6 @@
       portrait: function (id) { var d = S.npcs && S.npcs[id], K = W.B68Figure; try { return d && isObj(d.spec) && K && K.portrait ? stripSize(K.portrait(Object.assign(clone(d.spec), { id: 'gm-cb-' + slug(id) }), { lod: 'lo' }).svg) : ''; } catch (e) { return ''; } },
       board: function (tokens, hide) { var r = P.playerDisplay(S.locRoll, Object.assign({}, mapUi(), { layer: 'player', view: 'plan', theme: 'board' }), W.B68Map && W.B68Map.render, { tokens: tokens, hide: hide }); return { title: r.title, caption: r.caption, svg: r.svg, tokens: r.tokens, tokensRefused: r.tokensRefused }; } });
     return S.cb;
-  }
-  function cbMenuSync() {
-    var on = cbOn(), b = $q('#gm-menu-corkboard'), after = $q('#gm-menu-print') || $q('#gm-menu-switchboard') || $q('#gm-menu-live');
-    if (on && !b && after) after.insertAdjacentHTML('afterend', '<button type="button" data-gm="corkboard" id="gm-menu-corkboard" title="The Planning board: the site on cork, intel Polaroids pinned to their rooms, mugshots on their posts">Corkboard</button>'); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
   }
   /* 2.8 Montage (gm/montage.js, switch map.montage): one Menu line while the switch is on; the panels ride the data.montage layer */
   function mtOn() { return !!(S && W.B68GmMontage && W.B68Features && W.B68Features.valueOf(S.doc, 'map.montage')); }
@@ -2357,10 +2434,6 @@
     }
     return S.mt;
   }
-  function mtMenuSync() {
-    var on = mtOn(), b = $q('#gm-menu-montage'), after = $q('#gm-menu-print') || $q('#gm-menu-switchboard') || $q('#gm-menu-live');
-    if (on && !b && after) after.insertAdjacentHTML('afterend', '<button type="button" data-gm="montage" id="gm-menu-montage" title="Split the iPad into one panel per character">Montage</button>'); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
-  }
   /* 4.5 / 4.7 / 5.3 the practical speaker, the ringing phone and the Trouble desk (gm/room-desk.js; switches room.practical, room.phone, between.trouble): one Menu line each while its switch is on */
   function rdInst() {
     if (!S || !W.B68GmRoomDesk || !W.B68Features) return null;
@@ -2368,16 +2441,8 @@
       save: function (id, item) { var it = {}; it[id] = item; patch({ trouble: { items: it } }); }, show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); } });
     return S.rd;
   }
-  function rdMenuSync() { var r = rdInst(); if (r) r.menuSync({ $q: $q, after: function () { return $q('#gm-menu-print') || $q('#gm-menu-switchboard') || $q('#gm-menu-live'); } }); }
-  function swMenuLine() { return W.B68GmSwitchboard && W.B68Features ? '<button type="button" data-gm="switchboard" id="gm-menu-switchboard" title="Every new feature has a switch here, off until you turn it on. All off puts the app back as it was; no reload">Switchboard</button>' : ''; }
   /* 4.2 Preflight (gm/preflight.js, switch room.preflight): the Menu line exists only while the switch is on */
   function pfOn() { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, 'room.preflight') && W.B68GmPreflight); }
-  function pfMenuLine() { return pfOn() ? '<button type="button" data-gm="preflight" id="gm-menu-preflight" title="Is the room ready: green or red for the iPad sound, files, the transcriber, the sign-in and the pack. Read-only">Preflight</button>' : ''; }
-  /* the Menu is drawn once, so a flip of the switch adds or takes away the line in place */
-  function pfMenuSync() {
-    var on = pfOn(), b = $q('#gm-menu-preflight'), after = $q('#gm-menu-switchboard') || $q('#gm-menu-live');
-    if (on && !b && after) after.insertAdjacentHTML('afterend', pfMenuLine()); else if (!on && b && b.parentNode) b.parentNode.removeChild(b);
-  }
   function pfInst() {
     if (!pfOn()) return null;
     if (!S.pf) S.pf = W.B68GmPreflight.create({ root: function () { return $q('#gm-root'); }, toast: toast, fetchFacts: function () { var a = gmApi(); return a && typeof a.preflight === 'function' ? a.preflight() : Promise.reject(new Error('no server')); },
@@ -2385,8 +2450,22 @@
       startMs: function () { var N = W.B68GmNight, n = N && S ? N.clean(S.doc.night) : null; return n && n.startAt ? N.clockMs(n.startAt, Date.now()) : null; } });
     return S.pf;
   }
-  function wsMenuLine() { return W.B68GmWorkshop ? W.B68GmWorkshop.menuLine() : ''; }
-  /* 4.1 The cue stack (gm/cue-stack.js, switch room.cues): STANDBY / GO / Bypass in a bar under the rail, Space and Esc, and "Blade, go". Every effect goes through the page's own writers
+  /* N2: the tool registry (gm/tool-registry.js). The Menu lines are gone; the shell reaches every tool through B68GmTools.get(id).open(), which draws it in the right-edge sheet or,
+     once B68GmWorkshop.inline(id, el) has bound it, in the shell's container. One line per tool: the controller's getter, so an instance is still made on first use. */
+  (function registerTools() {
+    var T = W.B68GmTools; if (!T || typeof T.registerTool !== 'function') return;
+    /* close() hides the right-edge sheet, or, for a tool the shell has bound inline, asks the shell (its onClose) and hides nothing */
+    function shut(id) { return function () { var w = W.B68GmWorkshop, r = $q('#gm-root'); if (w && r) { var t = T.get(id), sh = w.sheet(r, id, t ? t.label : id); if (sh) sh.close(); } }; }
+    function reg(id, get) { T.registerTool(id, { open: function () { var c = get(); return !!(c && c.open()); }, close: shut(id) }); }
+    function desk(which) { return function () { var r = rdInst(); return r ? r.desk(which) : null; }; }
+    function mod(name, id) { T.registerTool(id, { open: function () { var M = W[name], r = $q('#gm-root'); return !!(M && r && S && M.open(r)); }, close: shut(id) }); }
+    function b29tool(which) { return function () { var b = b29(); return b ? b.tool(which) : null; }; }
+    reg('hardstart', hsInst); reg('preflight', pfInst); reg('print', prInst); reg('corkboard', cbInst); reg('montage', mtInst);
+    reg('practical', desk('practical')); reg('phone', desk('phone')); reg('trouble', desk('trouble')); reg('canon', desk('canon')); reg('frontpage', desk('frontpage')); reg('absent', desk('absent'));
+    mod('B68GmAftermath', 'aftermath'); mod('B68GmDebrief', 'debrief'); mod('B68GmBoard', 'board'); mod('B68GmCastPhoto', 'castphoto'); mod('B68GmLair', 'lair');
+    reg('record', b29tool('record')); reg('light', b29tool('light'));
+  })();
+  /* 4.1 The cue stack (gm/cue-stack.js): STANDBY / GO / Bypass in the band's cue slot, Space and PageDown (asked by onKey), and "Blade, go". Every effect goes through the page's own writers
      (patchAmbient and its gate, the show contract, the night, the cast), so a cue can show nothing that a button could not. */
   function csNote() { var pk = part('prep'), id = pk && W.B68GmPrep ? prepNoteId(pk) : null; return id && Array.isArray(pk.notes) ? pk.notes.filter(function (n) { return isObj(n) && n.id === id; })[0] || null : null; }
   function csNpc(name) {
@@ -2395,11 +2474,21 @@
     if (!hit.length) hit = list.filter(function (x) { return str(x.d.name).toLowerCase().split(' ').indexOf(n) >= 0; });
     return hit.length === 1 ? hit[0] : null;
   }
+  /* a `phase:` cue: enter the phase on the night and tell the iPad's band. A phase already in play (a band chip entered it first) is done at once:
+     GO moves on instead of stalling until Bypass */
+  function cuePhase(me, p) {
+    var nt = me && me.night; if (!nt) return Promise.resolve(false);
+    var cur = typeof nt.phase === 'function' ? nt.phase() : (typeof nt.night === 'function' && nt.night() ? nt.night().phase : '');
+    if (cur === p) return Promise.resolve(true);
+    if (nt.enter(p) === false) return Promise.resolve(false);
+    return b09Layer(me, 'band.phase', p).then(function (r) { return r !== null; });
+  }
   function csMount() {
     var CS = W.B68GmCueStack, me = S; if (!CS || !W.B68Features || me.cs) return;
     me.cs = CS.create({
       feature: function () { return S === me && b09On('room.cues'); }, note: function () { return S === me ? csNote() : null; }, doc: function () { return S === me ? S.doc : null; },
-      patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); }, toast: toast, root: function () { return S === me ? $q('#gm-root') : null; },
+      patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); }, toast: toast,
+      cueSlot: function () { return S === me && me.band ? me.band.cueSlot() : null; }, changed: function () { if (S === me && me.band) me.band.update(); },
       log: function (t) { if (S === me && me.night) me.night.cue(t); },
       scene: function (id) { return patchAmbient({ mode: 'pin', scene: id }).then(function (r) { return r !== null; }); },
       show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
@@ -2408,14 +2497,13 @@
         if (x.d.revealed === true) return Promise.resolve({ ok: true });
         return Promise.resolve(ref.update({ revealed: true, firstSeen: x.d.firstSeen || nowIso() })).then(function () { if (S === me && isObj(me.npcs) && isObj(me.npcs[x.id])) me.npcs[x.id].revealed = true; return { ok: true }; }, function () { return { ok: false, say: 'Could not reveal ' + name + '.' }; });
       },
-      phase: function (p) { var nt = me.night; if (!nt || nt.enter(p) === false) return Promise.resolve(false); return b09Layer(me, 'band.phase', p).then(function (r) { return r !== null; }); },
+      phase: function (p) { return cuePhase(me, p); },
       ambient: function () { return isObj(AM.doc) ? { mode: AM.doc.mode, scene: AM.doc.scene } : null; },
-      escHeld: function () { var sv = S === me && me.stamp ? me.stamp.view() : null; return !!(sv && sv.active); },      /* the stamp's report card takes this Esc down first */
-      panic: function (safe) { return Promise.all([patchAmbient({ mode: 'pin', scene: safe, overlay: null, layers: null }), pushDisplay({ kind: 'blank' }).then(null, function () { return null; })]).then(function (r) { return r[0] !== null; }); },
+      panic: function (safe) { return panicEffect(safe); },
       resume: function (prior) { return isObj(prior) ? patchAmbient({ mode: prior.mode, scene: prior.scene }) : Promise.resolve(null); },
       cueVerbs: function () { return W.B68CueVerbs; }, grammar: function () { return W.B68GmCueGrammar; }, grammarOn: function () { return S === me && b09On('ai.grammar'); }
     });
-    me.cs.register(); me.cs.bind(document); me.cs.paint();
+    me.cs.register(); me.cs.paint();
   }
   function csUnmount(me) { if (me && me.cs) { try { me.cs.destroy(); } catch (e) {} me.cs = null; } }
   function csTick() { if (S && S.cs && S.status === 'ready') S.cs.tick(); }
@@ -2444,6 +2532,7 @@
   function renderMirror() {
     if (!S || !S.root || !S.root.querySelectorAll) return;
     Array.prototype.forEach.call(S.root.querySelectorAll('[data-gm="mirror"]'), function (b) { b.setAttribute('aria-pressed', String(mirrorOn())); b.textContent = mirrorLabel(b.getAttribute('data-mir') || 'panel'); });
+    renderIpadSettings(true);
   }
   function toggleMirror() {
     var next = !mirrorOn();
@@ -2452,30 +2541,35 @@
     renderMirror();
     toast(next ? 'Phones mirror the iPad: a map or a handout on the iPad also shows on their Table button.' : 'Phones no longer mirror the iPad: their Table button shows nothing within a few seconds.');
   }
-  /* the bar's live parts: the session, what is on the iPad, listening */
+  /* the band's live parts (gm/band.js draws the rest): the session, what is on the iPad, the mic. The Menu is housekeeping only, so nothing adds lines to it */
   function renderBar() {
     if (!S || !S.root) return;
-    renderMirror(); spineTick(); pfMenuSync(); prMenuSync(); cbMenuSync(); rdMenuSync(); mtMenuSync(); b17Tick(); csTick(); if (b29()) b29().menuSync();
+    renderMirror(); spineTick(); b17Tick(); csTick(); if (S.st) S.st.sync();
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
-    var ip = $q('#gm-bar-ipad');
+    if (W.B68GmIpadTray) W.B68GmIpadTray.refresh();      /* what is live on the iPad (gm/ipad-tray.js) */
+    var ip = $q('#gm-bar-ipad');      /* the band's stand-in pill, only when gm/ipad-tray.js is not on the page */
     if (ip) {
       var shown = AM.shown ? (AM.shown.kind === 'blank' || !AM.shown.kind ? 'ambient' : displayLine(AM.shown)) : 'not known yet';
-      ip.innerHTML = '<span class="gm-dot' + (AM.shown && AM.shown.kind && AM.shown.kind !== 'blank' ? ' on' : '') + '"></span>iPad: ' + esc(shown);
-      ip.title = 'What the players see: ' + (AM.shown ? displayLine(AM.shown) : 'not known yet') + '. Opens the iPad tab.';
+      ip.innerHTML = '<span class="gm-dot' + (AM.shown && AM.shown.kind && AM.shown.kind !== 'blank' ? ' on' : '') + '"></span><span class="gm-pill-t">iPad: ' + esc(shown) + '</span>';
+      ip.title = 'What the players see: ' + (AM.shown ? displayLine(AM.shown) : 'not known yet') + '. Opens the iPad view.';
     }
     apPaint();
-    var sp = $q('#gm-bar-stt'); if (!sp) return;
-    var d = STT.doc, on = !!(d && d.want === 'on'), st = d && isObj(d.status) ? d.status : {}, age = st.at ? (Date.now() - Date.parse(st.at)) / 1000 : null;
-    var pc = d && isObj(d.copier) && d.copier.at ? (Date.now() - Date.parse(d.copier.at)) / 1000 : null;
-    var text = !on ? 'Not listening' : st.state === 'listening' && age !== null && age < 40 ? 'Listening' + (pc !== null && pc < 180 ? ' · PC copying' : ' · PC not copying') : 'Listening: waiting for the iPad';
-    var warn = on && !(st.state === 'listening' && age !== null && age < 40 && pc !== null && pc < 180);
-    sp.innerHTML = '<span class="gm-dot' + (on ? warn ? ' warn' : ' on' : '') + '"></span>' + esc(text) + airSuffix(d); airSync();
-    sp.classList.toggle('warn', warn);
-    /* the pill only once the transcriber has ever been set up (the stt document written), or while it is on */
-    var show = STT.loaded && (!!STT.at || on);
-    sp.hidden = !show; if (show) sp.removeAttribute('hidden'); else sp.setAttribute('hidden', '');
+    var sp = $q('#gm-bar-stt');
+    if (sp) {
+      var d = STT.doc, on = !!(d && d.want === 'on'), st = d && isObj(d.status) ? d.status : {}, age = st.at ? (Date.now() - Date.parse(st.at)) / 1000 : null;
+      var pc = d && isObj(d.copier) && d.copier.at ? (Date.now() - Date.parse(d.copier.at)) / 1000 : null;
+      var text = !on ? 'Not listening' : st.state === 'listening' && age !== null && age < 40 ? 'Listening' + (pc !== null && pc < 180 ? ' · PC copying' : ' · PC not copying') : 'Listening: waiting for the iPad';
+      var warn = on && !(st.state === 'listening' && age !== null && age < 40 && pc !== null && pc < 180);
+      sp.innerHTML = '<span class="gm-dot' + (on ? warn ? ' warn' : ' on' : '') + '"></span><span class="gm-pill-t">' + esc(text) + airSuffix(d) + '</span>'; airSync();
+      sp.classList.toggle('warn', warn);
+      sp.title = 'The mic: ' + text + '. Opens the iPad view.';
+      /* the pill only once the transcriber has ever been set up (the stt document written), or while it is on */
+      var show = STT.loaded && (!!STT.at || on);
+      sp.hidden = !show; if (show) sp.removeAttribute('hidden'); else sp.setAttribute('hidden', '');
+    }
+    bandUpdate();
   }
   /* the open Prep note's session ('' without one): the bar's stand-in while the table's counter is 0 */
   function prepNoteSession() {
@@ -2501,7 +2595,7 @@
     var r = S && S.doc ? runningBeat() : null; if (!r) { box.hidden = true; return; }
     var btn = beatButton(r.key), tr = btn && btn.closest ? btn.closest('tr') : null, min = tr ? +tr.getAttribute('data-min') || 0 : 0;
     var m = Math.max(0, Math.floor((Date.now() - Date.parse(r.at)) / 60000)), over = min ? m / min : 0;
-    go.innerHTML = '<span class="gm-dot on"></span>' + esc(shortLabel(r.label, 40)) + ' · <b>' + m + (min ? ' / ' + min : '') + ' min</b>';
+    go.innerHTML = '<span class="gm-dot on"></span><span class="gm-pill-t">' + esc(shortLabel(r.label, 40)) + ' · <b>' + m + (min ? ' / ' + min : '') + ' min</b></span>';
     go.className = 'gm-pill gm-beat' + (over >= 1.5 ? ' late' : over >= 1 ? ' due' : '');
     go.title = 'Running since ' + hm(r.at) + (min ? ', budget ' + min + ' min' : '') + '. Opens it in the Prep tab.';
     var nx = $q('[data-gm="beat-next"]'); if (nx) nx.hidden = !nextBeatButton(btn);
@@ -2520,7 +2614,8 @@
 
   /* ---------- Find (Ctrl+K or /): an overlay over the page ---------- */
   function findIndex() {
-    var out = [], c = part('campaign') || {}, lc = function (x) { return str(x).toLowerCase(); }, known = {}, v = S.prepView;
+    /* N1b: every place ("Go to Planning") and every view and tool first, so a word that names one of them lands there before a line of the notes */
+    var out = S.places ? S.places.findEntries() : [], c = part('campaign') || {}, lc = function (x) { return str(x).toLowerCase(); }, known = {}, v = S.prepView;
     if (v && v.note) {
       Object.keys(v.secs || {}).forEach(function (id) { var x = v.secs[id]; out.push({ kind: 'Prep', title: x.head || v.note.title, text: findText(x.src), go: { t: 'prep', id: id } }); });
       (v.note.blocks || []).forEach(function (b) { if (isObj(b) && b.k === 'embed') out.push({ kind: 'Prep', title: str(b.from).split('/').pop().replace(/\.md$/i, '') + (b.heading ? ' › ' + b.heading : ''), text: findText(b.src), go: { t: 'embed', from: str(b.from) } }); });
@@ -2553,7 +2648,7 @@
   function findRender(q) {
     var list = $q('#gm-find-list'); if (!list) return;
     var hits = S.findHits = findHits(S.findIdx || [], q, 30).concat(rulesFindHits(q)); S.findSel = 0;
-    list.innerHTML = !str(q).trim() ? '<li class="gm-find-none">Prep, the screen, the rules, NPCs, PCs, factions, clocks, callbacks, the chase, and what you filed tonight.</li>'
+    list.innerHTML = !str(q).trim() ? '<li class="gm-find-none">The places and every tool, Prep, the screen, the rules, NPCs, PCs, factions, clocks, callbacks, the chase, and what you filed tonight.</li>'
       : !hits.length ? '<li class="gm-find-none">Nothing matches “' + esc(q) + '”.</li>'
       : hits.map(function (h, i) {
         return '<li><button type="button" class="gm-find-hit" data-gm="find-go" data-i="' + i + '" aria-selected="' + (i === 0) + '"><span class="gm-find-kind">' + esc(h.kind) + '</span><b>' + esc(h.title) + '</b>' +
@@ -2574,7 +2669,9 @@
     var g = h.go;
     if (!g) { if (S.api && S.api.copy) S.api.copy(str(h.title), 'Copied.'); return; }
     findClose();
-    if (g.t === 'prep') { prepGo(g.id); flash($q('#' + g.id)); }
+    if (g.t === 'place') goPlace(g.id);                       /* N1b: a place moves the night there, as its chip in the band does */
+    else if (g.t === 'view') openView(g.id);                  /* a view or a tool: in the place the GM is in */
+    else if (g.t === 'prep') { prepGo(g.id); flash($q('#' + g.id)); }
     else if (g.t === 'embed') { setPanel('prep'); var em = $q('#gm-prep .pp-embed[data-from="' + g.from.replace(/"/g, '') + '"]'); if (em) { try { em.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) {} flash(em); } }
     else if (g.t === 'heading') { setPanel('prep'); var hd = prepPartEl(g); if (hd) { prepScroll(hd); flash(hd); } else toast('That heading is not in this note.', true); }
     else if (g.t === 'screen') { setPanel('rules'); var fq = $q('#gm-gs-q'); if (fq && fq.value) { fq.value = ''; filterScreen(''); } screenJump(g.id); flash($q('#gm-rules [data-gs="' + str(g.id).replace(/"/g, '') + '"]')); }
@@ -2614,7 +2711,7 @@
 
   function redrawAll() {
     if (!S || S.status !== 'ready' || !$q('#gm-root')) return;
-    syncHead(); renderBar(); syncPanels(); renderConsole(); renderPrep(); renderRules(); renderLocation(); renderRun(); renderScenes(); renderNpcs(); renderScore(); renderChase(); renderDowntime(); renderCards(); renderIpad(); renderRail(); renderCapture(); extraSync(); syncSave();
+    syncHead(); renderBar(); syncPanels(); renderConsole(); renderPrep(); renderRules(); renderLocation(); renderRun(); renderScenes(); renderNpcs(); renderScore(); renderChase(); renderDowntime(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
   }
   /* the pack's export date: in the Menu in full, in the bar only when stale or an offline copy */
   function syncHead() {
@@ -2623,8 +2720,8 @@
     var age = ageDays(at);
     e.textContent = at ? 'Campaign data exported ' + dmy(at) + (age != null && age > LIMITS.staleDays ? ' · ' + Math.floor(age) + ' days old: rebuild the pack' : '') + (S.offline ? ' · offline copy' : '') : 'Campaign data: no export date';
     e.classList.toggle('stale', age != null && age > LIMITS.staleDays);
-    var be = $q('#gm-bar-exp');
-    if (be) be.textContent = (at && age != null && age > LIMITS.staleDays ? 'Pack ' + Math.floor(age) + ' days old' : '') + (S.offline ? (at && age > LIMITS.staleDays ? ' · ' : '') + 'offline copy' : '');
+    var be = $q('#gm-bar-exp'), bt = (at && age != null && age > LIMITS.staleDays ? 'Pack ' + Math.floor(age) + ' days old' : '') + (S.offline ? (at && age > LIMITS.staleDays ? ' · ' : '') + 'offline copy' : '');
+    if (be) { be.hidden = !bt; if (bt) { be.removeAttribute('hidden'); be.title = bt + ': the Menu says more'; be.setAttribute('aria-label', bt); } else be.setAttribute('hidden', ''); }
   }
   function syncPanels() {
     var r = $q('#gm-root'); if (!r) return;
@@ -2632,52 +2729,86 @@
     r.querySelectorAll('[data-gm="seg"]').forEach(function (b) { var on = b.getAttribute('data-seg') === (S.seg === 'side' ? S.panel : S.seg); b.setAttribute('aria-selected', String(on)); b.setAttribute('aria-pressed', String(on)); });
     r.querySelectorAll('[data-gm="panel"]').forEach(function (b) { b.setAttribute('aria-selected', String(b.getAttribute('data-panel') === S.panel)); });
     r.querySelectorAll('.gm-pane').forEach(function (p) { p.hidden = p.getAttribute('data-pane') !== S.panel; });
-    var sc = $q('#gm-scene'); if (sc) sc.setAttribute('aria-expanded', String(!!S.sceneOpen)); r.classList.toggle('scene-open', !!S.sceneOpen);
+    rollFoldSync(r);      /* N4: the Roll's folds (Scene, Earlier, More tables) */
     var fab = $q('.gm-fab'); if (fab) fab.setAttribute('aria-expanded', String(!!S.capOpen)); r.classList.toggle('cap-open', !!S.capOpen);
     r.classList.toggle('prep-wide', S.panel === 'prep' && !!S.prepWide);
-    r.classList.toggle('focus', !!S.prepWide);       /* the laptop layout: Focus (or Prep's Wide) shrinks the console on every tab */
-    toolsSync(r);
+    r.classList.toggle('focus', !!S.prepWide);       /* the laptop layout: Focus (or Prep's Wide) shrinks the left column to the roll keys in every place */
     r.querySelectorAll('[data-gm="prep-wide"], [data-gm="focus"]').forEach(function (b) { b.setAttribute('aria-pressed', String(!!S.prepWide)); });
     drawerSync();
+    if (S.places) S.places.sync();       /* N1b: the switcher, the chips and the left column follow; so does the page, when the night's phase moved */
   }
-  /* W0.5: the phase filter (gm/tools.js) hides the tabs of other phases; off, nothing is hidden. The tab on screen is always kept. */
-  var toolsOff = null;
-  function toolsSync(r) {
-    var T = W.B68GmTools; if (!T) return;
-    if (!toolsOff && typeof T.onChange === 'function') toolsOff = T.onChange(function () { if (S && S.status === 'ready' && $q('#gm-root')) syncPanels(); });
-    var cur = S.seg === 'side' ? S.panel : S.seg;
-    r.querySelectorAll('.gm-tab, .gm-segbar .chip').forEach(function (b) {
-      var id = b.getAttribute('data-panel') || b.getAttribute('data-seg');
-      if (!T.get(id)) return;
-      var show = T.visible(id, { current: id === S.panel || id === cur ? id : '' });
-      if (b.hidden === !show) return;
-      b.hidden = !show;
-    });
-  }
-  /* a tool registered after the built-ins (gm/tools.js, with a mount): drawn into its pane whenever its tab is the one on screen */
-  function extraSync() {
-    var T = W.B68GmTools, t = T && S ? T.get(S.panel) : null; if (!t || t.builtin || typeof t.mount !== 'function') return;
-    var box = $q('[data-pane="' + t.id + '"]'); if (!box) return;
-    try { t.mount(box, { toast: toast }); } catch (e) { box.textContent = t.label + ' could not open: ' + errText(e); }
-  }
-  function setPanel(p) {
-    S.panel = p; if (S.seg !== 'console') S.seg = 'side';
-    try { W.localStorage.setItem('b68.gm.panel', p); } catch (e) {}
+  /* the pane on screen: S.panel, the panes' hidden flags and a pane's own first-show work. The places (gm/places.js) choose it; everything else
+     in the page asks through setPanel, so the view switcher always says what is showing */
+  function paneShow(p) {
+    S.panel = p;
     syncPanels();
     if (p === 'ipad') { loadAmbient(); loadStt(); }
     if (p === 'run') renderRun();
-    extraSync();
     if (p === 'chase') renderChase();      /* the start form offers the Location roll or Street scene made since it was drawn */
     spy(p);
   }
+  /* a pane, from anywhere in the page (Find, a link, a generator's cross-link, the iPad pill): shown as a view of the place the GM is in, an extra
+     view where the place does not lay it out (tools come to you: nothing here sends the GM to another place) */
+  function setPanel(p) {
+    if (S.places && S.places.openView(p, { jump: false })) return;
+    if (S.seg !== 'console') S.seg = 'side';
+    paneShow(p);
+  }
 
-  /* ---------- the console: the four Situations, the nine single tables under More tables ----------
-     A console part without the situations layer (a pack from before them) draws a note where the four buttons go; its single
-     tables still roll. */
+  /* ---------- N1b: the places of the night (gm/places.js) ----------
+     The host the controller works through. The names the band calls (goPlace, openView, callAftermath, currentPlace, currentView) are with the band's
+     host above: they go to S.places and redraw the band. The page's night controller enters a phase exactly as the rail does; the panes are shown by paneShow. */
+  function placesPhase() { var nt = S && S.night; if (nt) return nt.phase(); var N = W.B68GmNight; return N && S && S.doc ? N.clean(S.doc.night).phase : ''; }
+  function placesSync() { if (S && S.places && S.status === 'ready') S.places.sync(); }
+  function placesHost() {
+    var me = S;
+    return {
+      root: function () { return S === me ? $q('#gm-root') : null; },
+      phase: function () { return S === me ? placesPhase() : ''; },
+      enter: function (p) { var nt = S === me && me.night; return !!(nt && nt.enter(p) !== false); },
+      showPane: function (p) { if (S === me) paneShow(p); },
+      seg: function (which) { if (S !== me || S.seg === which) return; S.seg = which; syncPanels(); },
+      prepNote: function () { return S === me ? csNote() : null; },
+      prepNotes: function () { var pk = part('prep'), B = W.B68GmPrep; return pk && B ? B.notes(pk) : []; },
+      setPrepNote: function (id) { if (S !== me) return; try { W.localStorage.setItem(PREP_NOTE, id); } catch (e) {} renderPrep(true); renderBar(); },
+      prepSecs: function () {
+        var v = S === me ? S.prepView : null, pk = part('prep'), B = W.B68GmPrep; if (!v || !v.note || !pk || !B) return [];
+        return (v.rail || []).map(function (r) { return { id: r.id, head: r.text, html: function () { return B.section(pk, v.note.id, r.id, { M: W.B68Markdown, view: v }); } }; });
+      },
+      decorate: function (el) { if (S === me) decoratePrep(el); },
+      crew: function () {
+        return S === me ? dtPcs().map(function (c) { var s = isObj(c.status) ? c.status : {}; return { id: str(c.id), name: pcName(c), stress: typeof s.stress === 'number' ? s.stress : null, harm: Array.isArray(s.harm) ? s.harm : [], locks: +s.locks || 0, turn: Array.isArray(s.turn) ? s.turn : [] }; }) : [];
+      },
+      sheetOpen: function (id) { return S === me ? sheetOpen(id) : false; },
+      exportTonight: function () { if (S === me) exportTonight(); },
+      endNight: function () { var h = S === me ? missionHooks() : null; return h ? h.endNight() : Promise.resolve(null); },
+      recording: function () { return S === me && /REC/.test(b29Suffix()); },
+      stopRecording: function () { if (S === me && b29()) b29().click('batch'); },
+      toast: function (m, bad) { toast(m, bad); }
+    };
+  }
+  function placesMount() {
+    var PL = W.B68GmPlaces; if (!PL || !S) return;
+    if (!S.places) S.places = PL.create(placesHost());
+    S.places.mount();
+  }
+  /* a tool in its right-edge sheet: the registry's open() (gm/tool-registry.js) of a tool no place has bound inline. The places fall back to it
+     where they cannot draw a tool inline */
+  function sheetOpen(id) {
+    var T = W.B68GmTools, t = T && typeof T.get === 'function' ? T.get(id) : null;
+    return !!(t && typeof t.open === 'function' && t.open() !== false);
+  }
+
+  /* ---------- the console, drawn as the Roll (N4: gm/roll.js draws, this page holds the data and the actions) ----------
+     The four Situations are the Roll's "They rolled" keys 1-4; the nine single tables fold under More tables. The Roll's one Position is the console's
+     (con.live.pos) and the stamp's; its one line, "If it goes wrong" (#gm-c-threat), is the console's Threat on screen (con.live.threat) and the
+     stamp's line. A console part without the situations layer (a pack from before them) draws a note where the four buttons go; its single tables
+     still roll. */
   function hasSit() { return !!(S && S.con && typeof S.con.situation === 'function' && Array.isArray(S.con.situationControls) && typeof S.con.situations === 'function'); }
-  function ctlList() { return !S.con ? [] : hasSit() ? S.con.situationControls.filter(function (c) { return c.id !== 'pos'; }) : S.con.controls; }
-  /* the live controls, with the district resolved (Now in, a pick of this tool's, or any): what a roll stores in its own ui */
-  function uiNow() { var u = clone(Object.assign(hasSit() ? S.con.situationDefaults() : S.con.defaults(), live())); u.district = distFor('con'); return u; }
+  /* the controls under Scene: all but Position (the Roll's switch) and the threat (the Roll's line) */
+  function ctlList() { return !S.con ? [] : (hasSit() ? S.con.situationControls : S.con.controls).filter(function (c) { return c.id !== 'threat' && (c.id !== 'pos' || !hasSit()); }); }
+  /* the live controls, with the district resolved (Now in, a pick of this tool's, or any) and the Roll's line as it is typed: what a roll stores in its own ui */
+  function uiNow() { var u = clone(Object.assign(hasSit() ? S.con.situationDefaults() : S.con.defaults(), live())); u.district = distFor('con'); u.threat = rollLine(); return u; }
   function renderControls() {
     var box = $q('#gm-controls'), chips = $q('#gm-scene-chips'); if (!box) return;
     if (!S.con) { box.innerHTML = ''; if (chips) chips.textContent = ''; return; }
@@ -2694,8 +2825,7 @@
     box.innerHTML = html;
     renderChips();
   }
-  /* the Scene line's chips: every control with its label ("District: any · Threat: 3"), since the line is all that shows until
-     the disclosure opens; an empty text control says nothing */
+  /* the Scene button's chips: the district always (Now in lives in this fold), then whatever else is set ("Aim: Nell"); the defaults say nothing */
   function chipLabel(l) { return str(l).replace(/ on screen$/i, '').replace(/^Aim at$/i, 'Aim').replace(/^NPC is$/i, 'NPC'); }
   function renderChips() {
     var chips = $q('#gm-scene-chips'); if (!chips || !S.con) return;
@@ -2703,45 +2833,39 @@
     ctlList().forEach(function (c) {
       var v = str(lv[c.id]), o = (c.options || []).filter(function (x) { return str(x.value) === v; })[0];
       var shown = o ? str(o.label) : v.length > 28 ? v.slice(0, 26) + '…' : v;
-      if (!shown && c.type === 'text') return;
+      if (!v && c.id !== 'district') return;
       bits.push('<span class="gm-chip"><span class="gm-chip-k">' + esc(chipLabel(c.label)) + ':</span> ' + esc(shown || 'any') + '</span>');
     });
     chips.innerHTML = bits.join('') || '<span class="gm-dim">any</span>';
   }
   function setLive(id, value) { var l = {}; l[id] = value; patch({ con: { live: l } }); renderChips(); if (id !== 'pos' && S && S.pre) schedulePre(1500); }
-  /* the big three-way Position switch (always on screen, the phone too) */
+  /* the Roll's Position (one switch: the console's tables and the stamp read it), the size under it, the Dots and the line; then the stamp's part (b09Paint) */
   function renderPos() {
-    b09Paint();
-    var box = $q('#gm-pos'); if (!box) return;
-    if (!hasSit()) { box.innerHTML = ''; return; }
-    var cur = str(uiNow().pos);
-    box.innerHTML = '<span class="gm-lab">Position</span><div class="gm-posb-row">' + S.con.positions.map(function (p) {
-      return '<button type="button" class="gm-posb" role="radio" aria-checked="' + (p.value === cur) + '" data-gm="pos" data-v="' + esc(p.value) + '"><b>' + esc(p.label) + '</b><small>' + esc(p.severity + ' · ' + p.ticks) + '</small><small>harm ' + esc(p.harm) + '</small></button>';
-    }).join('') + '</div><div class="gm-dots" role="radiogroup" aria-label="Dots"><span class="gm-lab">Dots</span>' + [0, 1, 2, 3, 4].map(function (d) {
-      return '<button type="button" class="gm-dotb" role="radio" aria-checked="' + (S.dots === d) + '" data-gm="dots" data-v="' + d + '">' + d + '</button>';
-    }).join('') + '</div>';
+    var R = W.B68GmRoll, box = $q('#gm-pos');
+    if (box && R) {
+      var cur = hasSit() ? str(uiNow().pos) : '', ps = hasSit() && Array.isArray(S.con.positions) ? S.con.positions : [], sz = R.sizeLine(ps, cur);
+      box.innerHTML = R.posHtml(ps, cur); box.hidden = !ps.length;
+      var szb = $q('#gm-pos-size'); if (szb) szb.textContent = sz ? '→ ' + sz : '';
+      var dt = $q('#gm-dots'); if (dt) dt.innerHTML = R.dotsHtml(S.dots);
+    }
+    b09Paint();      /* the line, then the stamp's part */
   }
   function renderButtons() {
-    var box = $q('#gm-buttons'); if (!box) return;
-    var mini = $q('#gm-mini');
-    if (mini) mini.innerHTML = !hasSit() ? '' : S.con.situations().map(function (b) { return '<button type="button" data-gm="situation" data-n="' + b.key + '" title="' + esc(b.label) + '">' + b.key + '<small>' + esc(str(b.label).slice(0, 8)) + '</small></button>'; }).join('');
+    var box = $q('#gm-buttons'), R = W.B68GmRoll; if (!box) return;
+    rollMiniPaint();
     if (!S.con) { box.innerHTML = '<p class="gm-note bad">' + esc(S.conErr || 'The console is not available.') + '</p>'; return; }
     if (!hasSit()) { box.innerHTML = '<p class="gm-note bad">The pack’s console has no Situations: update the pack. The single tables are under More tables.</p>'; return; }
-    box.innerHTML = S.con.situations().map(function (b) {
-      return '<button type="button" class="gm-btn gm-sbtn" data-gm="situation" data-n="' + b.key + '" data-sit="' + esc(b.id) + '" title="' + esc(b.hint || '') + '"><kbd>' + b.key + '</kbd><b>' + esc(b.label) + '</b><small>' + esc(b.hint || '') + '</small></button>';
-    }).join('');
+    box.innerHTML = R ? R.buttonsHtml(S.con.situations()) : '';
   }
-  /* the nine single tables (no keys), folded under "More tables" below the card and Earlier; the fold keeps its state across a redraw */
+  /* the nine single tables (no keys), under the More tables fold */
   function renderSingles() {
     var box = $q('#gm-singles'); if (!box) return;
     if (!S.con) { box.innerHTML = ''; return; }
-    var open = !!box.open;
-    box.innerHTML = '<summary><span class="gm-lab">More tables</span><span class="gm-dim">the nine single tables</span></summary><div class="gm-singles-b">' + S.con.buttons.map(function (b) {
+    box.innerHTML = '<p class="gm-rl-cap"><span class="gm-lab">More tables</span><span class="gm-dim">the nine single tables, one card each</span></p><div class="gm-singles-b">' + S.con.buttons.map(function (b) {
       return '<button type="button" class="chip sm" data-gm="roll" data-n="' + b.n + '" title="' + esc(b.hint || '') + '">' + esc(b.label) + '</button>';
     }).join('') + '</div>';
-    if (open) box.open = true;
   }
-  function renderConsole() { renderPos(); renderControls(); renderButtons(); renderSingles(); drawConsoleCard(); renderRack(); }
+  function renderConsole() { rollBind(); renderPos(); renderControls(); renderButtons(); renderSingles(); drawConsoleCard(); renderRack(); rollFoldSync(); }
   function setDots(v) { if (!S) return; var n = Number(v); S.dots = (Number.isInteger(n) && n >= 0 && n <= 4 && S.dots !== n) ? n : null; renderPos(); }     /* tap again clears */
   function setPos(v) { setLive('pos', v); renderPos(); schedulePre(); }
   /* a roll is never invisible: Focus (which hides the card) goes, said once per page load, and the card's header is scrolled
@@ -2751,6 +2875,7 @@
     S.conRes = res; S.shown = kind; S.last = { text: lastText(res, S.dots) }; drawConsoleCard(res);
     if (res && res.meta && (res.meta.situation === 'fourfive' || res.meta.situation === 'onetothree') && S.dots != null) { S.dots = null; renderPos(); }     /* the roll is resolved: the dots reset, like the pre-rolled draws */
     if (S.prepWide) { toggleFocus(); if (!focusLeftToasted) { focusLeftToasted = true; toast('Focus off so the card shows. F brings it back.'); } }
+    if (S.places) S.places.rolled();      /* N1b: a place whose left column is its own takes the Roll in, for the stay */
     showCard();
   }
   /* the card into view in its scroller (the console column on a laptop, the page on a phone), by the least scroll that shows
@@ -2897,6 +3022,7 @@
     var r = S && S.rack, vo = S && S.voice;
     var vh = vo ? voiceHtml(vo) : '';      /* the Rack keeps the roll's own: the Fixer and Voice. What else Blade suggests is a card in the box (P4) */
     syncCards();
+    rackFoldSync(r, vo);       /* N4: the Rack is the Roll's Blade fold, there only while it holds something */
     if (!r) { box.innerHTML = vh; return; }
     var pre = r.pre, used = { one_three: pre && pre.kinds.onetothree.used, four_five: pre && pre.kinds.fourfive.used };
     var h = '<div class="gm-rack-h"><span class="gm-lab">Rack</span><span class="gm-dim">Blade, fitted to the scene · ' + esc(pre.pos) + '</span>' +
@@ -3087,13 +3213,25 @@
       res = cur ? (kind === 'situation' ? replaySituation(cur) : replayConsole(cur)) : null; S.conRes = res; S.shown = kind;
       if (res && !S.last) S.last = { text: lastText(res) };
     }
-    box.innerHTML = res ? (res.sections ? situationCardHtml(res, md) : classicCardHtml(res, md)) : S.con ? '<p class="gm-empty">Press a button, or a number key <kbd>1</kbd>–<kbd>4</kbd>.</p>' : '';
+    /* N4: under every card's header, the slot for the sizer's strip, and on its actions row the slot for its Reduce and Done. A 4/5 or a 1–3 card also offers
+       Pay the price and Harm & resist, each only when the card has no such section of its own (an Or row; a Harm lead carries its resist rows). Once the
+       Roll's line is spent, the card's "Threat spent" has nothing left to clear and stays off the row */
+    var sit = res && res.meta ? str(res.meta.situation) : '', R = W.B68GmRoll, secs = res && Array.isArray(res.sections) ? res.sections : [];
+    var has = function (id) { return secs.some(function (x) { return x && x.id === id; }); };
+    var harmLead = !!(secs[0] && secs[0].detail && secs[0].detail.kind === 'Harm');
+    var acts = (R && (sit === 'fourfive' || sit === 'onetothree') ? R.quickActs({ pay: !has('payThePrice'), harm: !has('harm') && !harmLead }) : '') + '<span class="gm-sz-acts" id="gm-sz-acts"></span>';
+    var opts = { acts: acts, hide: function (a) { return !!(a && a.intent && a.intent.type === 'threatSpent') && !rollCut(rollLine()); } };
+    box.innerHTML = res ? (res.sections ? situationCardHtml(res, md, opts) : classicCardHtml(res, md, opts)).replace('</header>', '</header><section class="gm-sz" id="gm-sz" aria-label="The consequence at full size" hidden></section>')
+      : S.con ? '<p class="gm-empty">Press a button, or a number key <kbd>1</kbd>–<kbd>4</kbd>.</p>' : '';
+    rollSizerPaint();
     var er = $q('#gm-earlier'); if (!er) return;
     var h = isObj(S.doc.hist) ? S.doc.hist : {}, list = [];
     ['situation', 'console'].forEach(function (t) { newest(h[t]).forEach(function (x) { x._tool = t; list.push(x); }); });
     list.sort(function (a, b) { return str(a.at) < str(b.at) ? 1 : str(a.at) > str(b.at) ? -1 : 0; });
     list = list.slice(0, LIMITS.hist);
-    er.innerHTML = list.length ? '<span class="gm-lab">Earlier:</span>' + list.map(function (x) { return earlierChip(x, x._tool, cards[x._tool] && cards[x._tool].hid === x._id && S.shown === x._tool); }).join('') : '';
+    er.innerHTML = '<p class="gm-rl-cap"><span class="gm-lab">Earlier</span><span class="gm-dim">' + (list.length ? 'tap one to bring it back' : 'nothing rolled yet') + '</span></p>' +
+      list.map(function (x) { return earlierChip(x, x._tool, cards[x._tool] && cards[x._tool].hid === x._id && S.shown === x._tool); }).join('');
+    var en = $q('#gm-earlier-n'); if (en) en.textContent = list.length ? String(list.length) : '';
   }
   /* an Earlier chip names what the card is; under it, small, the time it was rolled and its position (also the title, for a label
      the chip has to cut) */
@@ -3106,10 +3244,12 @@
     var res = S.conRes, a = res && res.meta && res.meta.actions && res.meta.actions[i], C = W.B68GmConsole; if (!a || !C) return;
     var it = a.intent, p; try { p = C.intentPatch(it, { date: dmy(new Date()) }); } catch (e) { toast(errText(e), true); return; }
     patch({ con: p });
+    if (it.type === 'threatSpent') rollLineEmptied();      /* N4: the Roll's line is spent: it stays empty in this room */
     var filed = !(it.capture && it.capture.text) || addCapture(it.capture.bucket || 'x', it.capture.text, true);   /* a refused line, or lines dropped to make room, say so: that toast is not covered by this one */
     try { S.con.setCampaign(part('campaign') || {}, S.doc.con || {}); } catch (e) {}
     if (filed === true) toast(a.label.replace(/:.*$/, '') + '.');
     renderControls(); renderPos(); renderRail();
+    if (it.type === 'threatSpent') drawConsoleCard(S.conRes);      /* N4-fix: the line is spent, so the card's "Threat spent" goes from its row */
   }
 
   /* ---------- the location generator ---------- */
@@ -3163,16 +3303,16 @@
         '<p class="gm-warn" id="gm-mapwarn" role="status"></p>' +
         '<div class="gm-map-acts"><button type="button" class="btn sm primary" data-gm="ipad"' + (mu.layer === 'player' ? '' : ' disabled title="Switch Layer to Player: only the player layer goes to the iPad"') + '>Show on iPad</button>' +
         '<button type="button" class="btn sm" data-gm="scorescene"' + (mu.layer === 'player' ? '' : ' disabled title="Switch Layer to Player: only the player layer goes to the iPad"') + (mu.layer === 'player' ? ' title="The planning board and the exploded site on the iPad, from this roll at these bands"' : '') + '>Set as score scene</button>' +
-        '<button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button></div>' +
+        '<button type="button" class="btn sm" data-gm="blankipad" title="What is shown comes off the iPad: the ambient scene plays. Clear (0) takes everything down">Take it down</button></div>' +
         (sceneBehind(mu) ? '<p class="gm-dim gm-scene-behind">The score scene shows ' + esc(sceneBehind(mu).join(', ')) + ': press Set as score scene to bring it up to date.</p>' : '') +
         runBox(runSite()) +
         '<details class="gm-more gm-mapopts"' + (foldOpen('mapopts') ? ' open' : '') + ' data-fold="mapopts"><summary>View &amp; theme <span class="gm-dim">' + esc(mapLine(mu)) + '</span></summary>' + '<div class="gm-map-ctl">' + sel('view', 'View', VIEWS, mu.view) + sel('theme', 'Theme', THEMES, mu.theme) + sel('time', 'Time', P.TIMES, mu.time) + sel('weather', 'Weather', P.WEATHERS, mu.weather) + '</div></details>' +
         '<details class="gm-more gm-dl"' + (foldOpen('dl') ? ' open' : '') + ' data-fold="dl"><summary>Downloads</summary><div class="gm-map-acts">' + '<button type="button" class="btn sm" data-gm="dlsvg">Download SVG</button><button type="button" class="btn sm" data-gm="dlnote">Download note (.md)</button>' + '<button type="button" class="btn sm" data-gm="dlcanvas">Download canvas</button></div></details>' + '</section>';
-    } else h += '<p class="gm-empty">Choose what you know (or leave it on any) and roll. The card marks what the players can see.</p>' + '<p><button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button></p>';
+    } else h += '<p class="gm-empty">Choose what you know (or leave it on any) and roll. The card marks what the players can see.</p>' + '<p><button type="button" class="btn sm" data-gm="blankipad" title="What is shown comes off the iPad: the ambient scene plays. Clear (0) takes everything down">Take it down</button></p>';
     var hist = newest(isObj(S.doc.hist) ? S.doc.hist.location : null).slice(0, LIMITS.hist);
     if (hist.length) h += '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) { return earlierChip(x, 'location', cur && cur.hid === x._id); }).join('') + '</div>';
     box.innerHTML = h;
-    runPaint(); b17Paint(); knPaint();
+    runPaint();          /* N3: the stage, the security level, the people and the knowledge are the site's now (gm/site.js), no longer boxes under the Map heading */
     if (!S.map && runSite() && W.B68Map && W.B68Map.render) drawMap(true);     /* a run draws itself: its people are on the map */
     else if (S.map) showMap();
   }
@@ -3187,7 +3327,7 @@
     }).join('');
     return '<section class="gm-glance gm-secret" data-sec="glance"><div class="gm-glance-h"><h3 class="gm-locname">' + esc(g.title) + '</h3></div>' +
       '<p class="gm-glance-place">' + esc(g.place) + '</p>' +
-      '<div class="gm-say"><span class="gm-lab">Say' + (S.locSent === rollKey(roll) ? ' ' + SEEN : '') + '</span><p>“' + esc(g.say) + '”</p><button type="button" class="btn sm" data-gm="pushtext">Street description on iPad</button></div>' +
+      '<div class="gm-say"><span class="gm-lab">Say' + (S.locSent === rollKey(roll) ? ' ' + SEEN : '') + '</span><p>“' + esc(g.say) + '”</p><button type="button" class="btn sm" data-gm="pushtext" title="The description goes up on the iPad as words; the map stays here">Show on iPad</button></div>' +
       /* the plan names the target room and its locks: GM only. It sits outside the Say box on purpose (that box is what the players
          see once the street description is sent), and no push (pushText, the score scene, Show on iPad) ever reads it */
       (g.plan ? '<p class="gm-plan"><span class="gm-lab">Plan</span> ' + esc(g.plan) + '</p>' : '') +
@@ -3277,6 +3417,7 @@
     Object.keys(change).forEach(function (k) { if (change[k] === null || change[k] === undefined) delete base[k]; else base[k] = change[k]; });
     var ok = patch({ ball: replacePatch(old, base) });
     if (ok && S.mission) S.mission.changed();     /* the players' mission follows the ball (debounced; a v2 night only; B68GmMission) */
+    if (ok && 'crew' in change) rollSeedSoon();   /* N4: the crew moved: the Roll's line follows their room while it is the room's own */
     if (ok && !quiet) liveTokens();         /* a marker or a pin moved, or a room opened or closed: while the map is live on the iPad, it follows (M3, M4 step 5) */
     return ok;
   }
@@ -3399,7 +3540,7 @@
   }
   function runBox(rs) {
     var plain = '<div class="gm-map" id="gm-map"></div>', m = rs ? runModel(rs) : null; if (!m) return plain;
-    if (rs.play.v === 2) return '<p class="gm-dim gm-runv2note">This night is built for the Run tab: press <kbd>G</kbd>.</p>' + plain;     /* a v2 block is run there (VV4); the v1 strip reads v1 state */
+    if (rs.play.v === 2) return '<p class="gm-dim gm-runv2note">This night runs on the site: its stage, alarm, people and what the players know are there (<kbd>G</kbd>).</p>' + plain;     /* a v2 block is run there (VV4, N3); the v1 strip reads v1 state */
     var label = str(rs.play.clock.label);
     return '<div class="gm-runzone" id="gm-runzone"><section class="gm-run" id="gm-run" tabindex="0" aria-label="Run the site' + (label ? ': ' + esc(label) : '') + '. Left and Right move the time by 5 minutes.">' +
       '<div class="gm-run-h"><b>Run the site</b>' + (label ? ' <span class="gm-dim">' + esc(label) + '</span>' : '') + ' <span class="gm-dim" id="gm-run-note"></span></div>' +
@@ -3625,7 +3766,16 @@
         if (isObj(change) && ('t' in change || 'crew' in change) && !('heard' in change)) { var merged = Object.assign({}, ballDoc(rs.name), change), hh = runHeard(rs, merged, +merged.t); if (hh) change = Object.assign({}, change, { heard: hh }); }
         var prev = ballDoc(rs.name).t; var ok = ballSet(rs.name, change, quiet === true); if (ok && change && 't' in change) S.rvPrevT = prev; /* VV6 */ if (ok && !quiet) runDraw(true); return !!ok; },
       pcs: runPcs, floors: function () { var rs = runV2(); return rs ? runFloors(rs) : { list: [], floorOf: {} }; }, isOpen: runIsOpen,
-      openRoom: function (name, on) { roomOpen(name, on); }, knowledgeToggle: function (name) { var k = knInst(); return k ? k.toggleHtml(name) : ''; }, knowledgeCycle: function (name) { var k = knInst(); if (k) k.cycle(name); }, mapSvg: runMapSvg, mapPaint: function (fr, svg, zoom) { b19Paint(fr, svg, zoom); },
+      openRoom: function (name, on) { roomOpen(name, on); }, mapSvg: runMapSvg, mapPaint: function (fr, svg, zoom) { b19Paint(fr, svg, zoom); },
+      /* N3, the site (gm/site.js): the ONE alarm, the toolbar and the stage, the rooms' states, each card's Players' map, people and If it goes wrong, the ⋯ parts */
+      alarmHtml: function (open) { var si = siteInst(); return si ? si.alarm(open, 'data-rv="alarm"') : ''; }, alarmPop: function () { var si = siteInst(); return si ? si.alarmPop(false) : ''; },
+      toolsHtml: function () { var si = siteInst(); return si ? si.tools() : ''; }, stageHtml: function () { var si = siteInst(); return si ? si.stage() : ''; },
+      roomStates: function () { var si = siteInst(); return si ? si.states() : {}; }, knowledgeSeg: function (name) { var si = siteInst(); return si ? si.seg(name) : ''; },
+      peopleHtml: function (name, here, first) { var si = siteInst(); return si ? si.people(name, here, first) : ''; }, roomWrong: function (name) { var si = siteInst(); return si ? si.wrong(name) : []; },
+      roomAt: function (svg, ev) { var k = knInst(); return k ? k.roomAt(svg, ev) : ''; },
+      pinned: function () { return S && S.b19 && S.b19.flashback ? S.b19.flashback.pinned() : ''; }, threat: function () { return S && S.b19 && S.b19.threat ? S.b19.threat.view() : null; },
+      intelGroups: function () { var k = knInst(); return k && k.active() ? k.view().groups.map(function (g) { return { id: g.id, label: g.label }; }) : []; },
+      costume: function () { var si = siteInst(); return si ? si.costume() : false; }, siteAct: function (a, el, view) { var si = siteInst(); if (si) si.act(a, el, view); },
       clockNamed: function (name) { var l = tableClocks().filter(function (c) { return str(c.name).trim() === name; }); return l.length ? l[0] : null; },
       publish: runPublish, toast: toast, phoneCards: phoneCardsOn, setPhoneCards: setPhoneCards,
       /* server time: the iPad corrects to it, so the beat timer's endsAt is stamped on it (the GM api's Date-header skew; 0 when unknown) */
@@ -3633,11 +3783,14 @@
       /* VV12 Reset the night: the page's confirm, and the players' mission cleared (mission-publish resetNight) */
       confirm: function (msg) { return W.confirm(msg); }, resetMission: function () { var h = missionHooks(); return h ? h.resetNight() : Promise.resolve(null); },
       /* VV5 BEGIN */ dawn: function () { return runDawn(); }, setPosition: function (pos) { if (S && hasSit()) setPos(pos); } /* VV5 END */,
+      /* N4: the Roll's line from the room card ("→ the Roll": setThreat(text) -> bool), and the room the Run view has selected ('' for none) */
+      setThreat: function (text) { return rollSetThreat(text); }, roomSelected: function (name) { rollRoomSelected(name); },
       /* the NPC cards and the prep note's rooms (the Rooms section), and the Prep decorator for the SAY callouts */
       hasNpcCard: function (names) { return !!npcCardSrc(names); },
       npcCard: function (names) { var src = npcCardSrc(names); return src ? npcCardHtml(src, 'rn-') : ''; },
       decorate: function (el) { if (W.B68GmPrep && el) W.B68GmPrep.decorate(el, {}); },
-      roomNote: function (room) { var rn = runRoomNotes(), e = rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? rn.byRoom[room] : null; return e && str(e.md).trim() ? npcCardHtml(str(e.md), 'rm-') : null; },
+      roomNote: function (room) { var rn = runRoomNotes(), e = rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? rn.byRoom[room] : null, si = siteInst(), md = e ? str(e.md) : ''; if (si && md) md = si.noteMd(md);      /* N3: the If it goes wrong line is the card's action line, not the note's */
+        return e && str(e.md).trim() ? npcCardHtml(md, 'rm-') : null; },
       /* a switch's value (map.countdown: the header's countdown pie) */
       feature: function (id) { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, id)); }
     };
@@ -3647,21 +3800,21 @@
     if (!S.rv || S.rvBox !== box) { if (S.rv) S.rv.detach(); S.rv = W.B68GmRunView.create(rvHost()); S.rv.attach(box); S.rvBox = box; S.rvSite = ''; }
     return S.rv;
   }
-  /* the Run tab and its phone segment exist only while the Location card holds a v2 night (the others are always there) */
-  function runTabs(on) {
-    var tab = $q('.gm-tab[data-panel="run"]'), sg = $q('[data-gm="seg"][data-seg="run"]'), bar = $q('.gm-tabs'), sb = $q('.gm-segbar');
-    if (!on) { if (tab) tab.remove(); if (sg) sg.remove(); return; }
-    var changed = false;
-    if (!tab && bar) { bar.insertAdjacentHTML('beforeend', '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="run">Run <kbd>G</kbd></button>'); changed = true; }
-    if (!sg && sb) { sb.insertAdjacentHTML('beforeend', '<button type="button" class="chip" role="tab" data-gm="seg" data-seg="run">Run</button>'); changed = true; }
-    if (changed) syncPanels();
-  }
-  var RUN_HELP = '<div class="gm-empty gm-runhelp"><b>Run</b> runs a night built on a v2 play block. ' + 'Roll or pick an authored site in Location whose <code>b68-site</code> block has a <code>play</code> with <code>"v": 2</code>, then rebuild the pack. ' + 'A v1 block keeps its Run the site strip in Location.</div>';
+  /* The site (the Run pane) is a fixed view of Planning and the Score (N1b: it no longer comes and goes). With no v2 night it says how to get one */
+  var RUN_HELP = '<div class="gm-empty gm-runhelp"><p><b>The site</b> runs a night built on a v2 play block. ' +
+    'Pick an authored site in the Location roller whose <code>b68-site</code> block has a <code>play</code> with <code>"v": 2</code>, then rebuild the pack. ' +
+    'A v1 block keeps its Run the site strip in the Location roller.</p>' +
+    '<p><button type="button" class="btn sm" data-pv="location">Pick a site: the Location roller <kbd>B</kbd></button></p></div>';
   function renderRun() {
     var box = $q('#gm-runv'); if (!box || !S) return;
     var rs = runV2();
-    runTabs(!!rs);
-    if (!rs) { if (S.rv) { S.rv.reset(); S.rvSite = ''; } if (box.getAttribute('data-help') !== '1') { box.innerHTML = RUN_HELP; box.setAttribute('data-help', '1'); } return; }
+    if (!rs) {
+      if (S.rv) { S.rv.reset(); S.rvSite = ''; }
+      /* N3: no v2 night, but the site line keeps the alarm readout (stepped by hand) and the stage group, so neither is lost with Location's old box */
+      var ln = siteLine();
+      if (box.getAttribute('data-help') !== '1' || box.__siteLine !== ln) { box.innerHTML = ln + RUN_HELP; box.setAttribute('data-help', '1'); box.__siteLine = ln; }
+      return;
+    }
     runFoldMoves();
     if (S.panel !== 'run') return;
     var v = rvInst(); if (!v) return;
@@ -3669,15 +3822,15 @@
     if (S.rvSite !== rs.name) { v.reset(); S.rvSite = rs.name; }
     if (!v.dragging()) v.render(box);
   }
-  /* Right and Left a beat, Shift+Right the next thing that happens, Esc back to now: only while Run is the panel on screen */
+  /* Right and Left a beat, Shift+Right the next thing that happens: only while Run is the panel on screen, and never behind an open popover, sheet, drawer or Find.
+     N3: no Esc here any more: the view's NPC card, peek, popovers and tool close by the page's ONE Esc (gm/esc.js; the view registers them) */
   function runViewKey(ev) {
     if (!S || S.panel !== 'run' || !S.rv || !runV2() || ev.ctrlKey || ev.altKey || ev.metaKey || typing(ev.target)) return false;
-    var k = ev.key;
-    if (k === 'ArrowRight') { ev.preventDefault(); if (ev.shiftKey) S.rv.jump(); else S.rv.step(1); return true; }
-    if (k === 'ArrowLeft') { ev.preventDefault(); S.rv.step(-1); return true; }
-    if (k === 'Escape' && typeof S.rv.closeNpc === 'function' && S.rv.closeNpc()) { ev.preventDefault(); return true; }
-    if (k === 'Escape' && S.rv.unpeek()) { ev.preventDefault(); return true; }
-    return false;
+    var k = ev.key; if (k !== 'ArrowRight' && k !== 'ArrowLeft') return false;
+    var E = W.B68GmEsc; if (E && typeof E.list === 'function' && E.list().some(function (x) { return x.open && x.kind === 'overlay' && x.priority > 40; })) return false;
+    ev.preventDefault();
+    if (k === 'ArrowRight') { if (ev.shiftKey) S.rv.jump(); else S.rv.step(1); return true; }
+    S.rv.step(-1); return true;
   }
 
   /* Every push to the iPad from this page goes through one queue (the secrecy review of 23/10/2026, R2): one PUT in flight at a
@@ -3710,6 +3863,7 @@
     DQ.busy = job; paintLive();
     Promise.resolve().then(function () { return job.g.setDisplay(body); }).then(function (r) {
       DQ.busy = null;
+      if (body.kind !== 'dark' && S && S.b17 && S.b17.stage && typeof S.b17.stage.unblank === 'function') S.b17.stage.unblank();     /* N3: anything but the dark on the iPad ends Blank */
       try { if (job.opts.done) job.opts.done(r || {}); } catch (e) {}
       noteShown(job.d, job.opts); job.res(r); pumpDisplay(); paintLive();
     }, function (e) {
@@ -3806,7 +3960,7 @@
     });
     var hint = allOpen.length ? '<p class="gm-dim gm-roomhint" data-roomhint="' + esc(allOpen.join(' ')) + '">All the ' + esc(allOpen.join(' and ')) + ' rooms are open: tick the band to show its passages too.</p>' : '';
     return '<details class="gm-more gm-rooms"' + (foldOpen('rooms') ? ' open' : '') + ' data-fold="rooms"><summary>Open one room' + (open.length ? ' <span class="gm-dim">' + open.length + ' open</span>' : '') + '</summary>' +
-      '<ul class="gm-roomlist">' + rows + '</ul>' + hint + '<p class="gm-dim">Only that room, with its crew markers: not its band, not the rooms beside it, not how many are shut. ' +
+      '<ul class="gm-roomlist">' + rows + '</ul>' + siteStageLine() + hint + '<p class="gm-dim">Only that room, with its crew markers: not its band, not the rooms beside it, not how many are shut. ' +
       'Goes out with the map (at once while it is live on the iPad), and only while Layer is Player.</p></details>';
   }
   /* open or close one room for the players: the run's ball.open. The change goes out through liveReveal (ballSet -> liveTokens), which asks
@@ -3827,6 +3981,7 @@
     return entryBands(e).join(', ') + (rooms.length ? ' + ' + rooms.join(', ') : '');
   }
   function paintLive() {
+    siteLive();          /* N3: the site's LIVE line and the band's iPad tray (B68GmStage.onChange) follow what the iPad shows of the map */
     var lg = $q('.gm-reveal legend'); if (!lg || !S || !S.doc) return;
     var mu = mapUi();
     lg.innerHTML = 'Reveal to the players: ' + esc(revealText(mu)) + liveChip(mu);
@@ -3848,7 +4003,8 @@
     var open = cleanRooms(ballDoc(rs.name).open).filter(function (n) { return upg.indexOf(n) < 0; }), kn = cleanRooms(ballDoc(rs.name).know), know = kn.concat(upg.filter(function (n) { return kn.indexOf(n) < 0; }));
     ballSet(rs.name, { open: open.length ? open : null, know: know.length ? know : null }, true); if (S.map) drawMap(true); renderLocation();
   }
-  /* 2.2 The three knowledge states (gm/knowledge.js, switch map.knowledge): the panel under the Map heading, and a tap on a room of the GM map cycles it */
+  /* 2.2 The three knowledge states (gm/knowledge.js, switch map.knowledge): each room card's Players' map on the site (N3), Intel in the site's ⋯, and a tap on a room
+     of Location's GM map cycles it */
   function knInst() {
     if (!S || !W.B68GmKnowledge || !W.B68Features) return null;
     if (!S.kn) S.kn = W.B68GmKnowledge.create({ feature: function (id) { return b09On(id); }, esc: esc, toast: toast,
@@ -3857,21 +4013,10 @@
       floors: function () { var rs = runSite(); if (!rs) return []; var fl = runFloors(rs); return fl.list.map(function (f) { return { name: f.name, names: Object.keys(fl.floorOf).filter(function (n) { return fl.floorOf[n] === f.lvl; }) }; }); },
       write: function (open, know) { var rs = runSite(); return rs ? ballSet(rs.name, { open: open.length ? open : null, know: know.length ? know : null }) : false; },
       roomBox: function (svg, name) { return b19Room(svg, name); },
-      changed: function () { if (S && S.map) drawMap(); renderLocation(); if (S && S.rv && runV2()) S.rv.rerender(); } });
+      changed: function () { if (S && S.map) drawMap(); renderLocation(); siteChanged(); } });
     return S.kn;
   }
-  function knPaint() {
-    var k = S && knInst(), mb = $q('.gm-mapbox'), box = $q('#gm-b24');
-    if (!k || !mb || !k.active()) { if (box && box.parentNode) box.parentNode.removeChild(box); return; }
-    if (!box) {
-      var after = $q('#gm-b17') || mb.querySelector('h4'); box = document.createElement('div'); box.id = 'gm-b24'; box.className = 'gm-b24';
-      if (after && after.nextSibling) mb.insertBefore(box, after.nextSibling); else mb.appendChild(box);
-      if (S.knUnbind) { try { S.knUnbind(); } catch (e) {} }
-      S.knUnbind = k.bind(box);
-    }
-    k.paint(box);
-  }
-  function knUnmount(me) { if (me.knUnbind) { try { me.knUnbind(); } catch (e) {} me.knUnbind = null; } me.kn = null; }
+  function knUnmount(me) { me.kn = null; }
   function knMapTap(ev) {
     var k = S && S.kn; if (!k || !k.active()) return false;
     var m = ev.target.closest('#gm-map [data-room]'); if (!m || !S.map || S.map.layer !== 'gm') return false;
@@ -3898,7 +4043,7 @@
       if (!fewer.length) { toast('Not sent: ' + errText(e) + ' The iPad still shows ' + entryBands(on.reveal).join(', ') + (entryRooms(on.reveal).length ? ' + ' + entryRooms(on.reveal).join(', ') : '') + '.', true); dropBands(want, more); return; }
       endLive();
       pushDisplay({ kind: 'blank' }).then(function () { toast('The iPad was cleared: without ' + bandWords(fewer) + ' this map would name a hidden room, so it could not be sent. Show it again from another view.', true); },
-        function (e2) { if (!e2.superseded) toast('Could not clear the iPad: ' + errText(e2) + '. It may still show ' + bandWords(fewer) + ': press Clear → ambient.', true); });
+        function (e2) { if (!e2.superseded) toast('Could not clear the iPad: ' + errText(e2) + '. It may still show ' + bandWords(fewer) + ': press Clear (0).', true); });
       return;
     }
     gate.mark(d.svg);
@@ -3938,9 +4083,115 @@
       if (S === me && S.locRoll && rollKey(S.locRoll) === seed) { S.locSent = seed; renderLocation(); }   /* the Say box: Players see */
     }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
   }
-  /* Clear -> ambient: nothing spotlit, the ambient scene plays. Lights out: true black. */
-  function blankIpad() { pushDisplay({ kind: 'blank' }).then(function () { toast('Cleared: the iPad plays the ambient scene.'); }, function (e) { toast('Could not clear the iPad: ' + errText(e), true); }); }
-  function darkIpad() { pushDisplay({ kind: 'dark' }).then(function () { toast('Lights out on the iPad.'); }, function (e) { toast('Could not turn the lights out: ' + errText(e), true); }); }
+  /* Take it down (a tool's own button): what is shown goes, the ambient scene plays. Blank (lights out): true black until the next send. */
+  function blankIpad() { pushDisplay({ kind: 'blank' }).then(function () { toast('Taken down: the iPad plays the ambient scene.'); }, function (e) { toast('Could not take it down: ' + errText(e), true); }); }
+  function darkIpad() { return pushDisplay({ kind: 'dark' }).then(function () { toast('Blank: the iPad is black until the next send.'); return true; }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); return false; }); }
+
+  /* ---------- THE iPAD TRAY's Clear (0) (the GM night rebuild, the design's iPad part: one way off) ----------
+     Everything down to the ambient scene, through the page's own take-downs, so nothing comes back by itself a moment later: the report card (the
+     stamp would lay it again), a held face (the spotlight would), the flashback, the montage, the hard start; then the overlay up now (a clock, an
+     NPC card, a line, the dawn, a show beat) and the stage, back to the ambient. NOT the band's lasting layers: the phase, the PC faces and
+     security stay, and so do the ambient mode and the score scene (a panic's safe scene with them, so Resume still brings the night back).
+     It reads the ambient document first, so what another device laid (an NPC card, a flashback) is known and comes down too, and the overlay is
+     sent down whatever this page last knew. Two things it leaves, and says so: a frozen iPad (Freeze holds it: nothing is touched), and the
+     Aftermath show's step (the show would lay it again within its beat; End now in its panel ends the show). The Roll's stamp comes down only
+     while one is up, so the sizer, the effect and the line stay. Each step is guarded: one that fails or is missing leaves the rest to run. */
+  function ipadLayers() { return isObj(AM.doc) && isObj(AM.doc.layers) ? AM.doc.layers : {}; }
+  function ipadLayerSet(path) {
+    var L = ipadLayers(), p = path.split('.'), g = isObj(L[p[0]]) ? L[p[0]] : null;
+    return !!g && g[p[1]] !== undefined && g[p[1]] !== null;
+  }
+  function clearIpad() {
+    var me = S; if (!me) return Promise.resolve(false);
+    if (b17Frozen()) { toast('The iPad is frozen: unfreeze it first.', true); return Promise.resolve(false); }      /* Freeze holds the iPad: Clear changes nothing */
+    var g = gmApi();
+    var fresh = g && typeof g.ambient === 'function' ? Promise.resolve().then(function () { return g.ambient(); }).then(function (r) { if (S === me) adoptAmbient(r); }, function () { /* the cached document will do */ }) : Promise.resolve();
+    return fresh.then(function () { return S === me ? clearSteps(me) : false; });
+  }
+  function clearSteps(me) {
+    var L = ipadLayers(), sc = isObj(L.scene) ? L.scene : {}, band = isObj(L.band) ? L.band : {}, steps = [];
+    var ov = isObj(AM.doc) && isObj(AM.doc.overlay) ? AM.doc.overlay : null, aft = sc.mode === 'aftermath', keepAft = aft && !!ov && ov.kind === 'aftermath';
+    /* a layer still set comes off through the show contract (gm/show.js), else through the same ambient PATCH that contract writes with */
+    function layerOff(path) { return function () { if (!ipadLayerSet(path)) return null; var sh = shows(); return sh ? sh.layer(path, null) : patchAmbient({ layer: { path: path, value: null } }); }; }
+    var sv = me.stamp && typeof me.stamp.view === 'function' ? me.stamp.view() : null;
+    if (sv && sv.active && typeof me.stamp.esc === 'function') steps.push(function () { return me.stamp.esc(); });      /* only a stamp that is up: the Roll keeps its sizer, effect and line */
+    var spot = me.b17 && me.b17.spot;
+    if (spot && typeof spot.held === 'function' && spot.held() && typeof spot.narrator === 'function') steps.push(function () { return spot.narrator(); });
+    var fb = me.b19 && me.b19.flashback;
+    /* the flashback's own end runs its Stress and log; one this page did not lay (another device, or before a reload) is not its own, so the layer comes off directly */
+    if (sc.filter === 'flashback') steps.push(fb && typeof fb.end === 'function' ? function () { return Promise.resolve(fb.end()).then(function (done) { if (typeof fb.refresh === 'function') fb.refresh(); return done ? null : layerOff('scene.filter')(); }); } : layerOff('scene.filter'));
+    var mt = mtInst();
+    if (mt && typeof mt.active === 'function' && mt.active()) steps.push(function () { return mt.collapse(); });
+    steps.push(layerOff('scene.layout')); steps.push(layerOff('data.montage'));
+    if (sc.mode === 'start') {
+      var hs = hsInst(), npcFaces = Array.isArray(band.faces) && band.faces.some(function (f) { return isObj(f) && f.npcId; });
+      if (hs && typeof hs.end === 'function') steps.push(function () { return hs.end(); });
+      else { ['scene.mode', 'data.countdown', 'data.credits', 'data.previously'].forEach(function (p) { steps.push(layerOff(p)); }); if (npcFaces) steps.push(layerOff('band.faces')); }
+    }
+    if (!keepAft) steps.push(function () { return patchAmbient({ overlay: null }); });      /* whatever this page knew: one laid a moment ago elsewhere comes down too */
+    steps.push(function () { return pushDisplay({ kind: 'blank' }); });
+    var failed = '';
+    return steps.reduce(function (p, step) {
+      return p.then(function () { return Promise.resolve().then(step).then(null, function (e) { if (!failed && !(e && e.superseded)) failed = errText(e); }); });
+    }, Promise.resolve()).then(function () {
+      if (S !== me) return false;
+      if (failed) { toast('Could not clear all of it: ' + failed, true); return false; }
+      toast(aft ? 'Cleared, but the Aftermath show is still on: End now in its panel takes it down.' : 'Cleared: the iPad plays the ambient scene.');
+      if (W.B68GmIpadTray) W.B68GmIpadTray.refresh();
+      return true;
+    });
+  }
+  /* the page's iPad, for the tray: what it knows, and its one way off and its blank */
+  function ipadSnapshot() {
+    return {
+      shown: AM.shown, doc: AM.doc, now: Date.now(),
+      names: {
+        npc: function (id) { var d = S && isObj(S.npcs) ? S.npcs[id] : null; return isObj(d) ? str(d.name) : ''; },
+        clock: function (id) { var c = tableClocks().filter(function (x) { return str(x.id) === str(id); })[0]; return c ? str(c.name) : ''; },
+        scene: function (id) { var s = P.IPAD_SCENES.filter(function (x) { return x.id === id; })[0]; return s ? s.label : ''; }
+      }
+    };
+  }
+  var ipadTrayApi = {
+    snapshot: ipadSnapshot, clear: clearIpad, blank: darkIpad, busy: function () { return AM.busy > 0; },
+    openView: function () { showPanel('ipad'); },      /* as the I key does: on a phone the segment follows */
+    ap: { view: function () { var v = apView(); return v ? { badge: v.bar, title: v.title, mode: v.mode } : null; }, toggle: function () { apToggle(); } }
+  };
+  /* the page's iPad is provided to every tray on the page; the band mounts the tray in its row 2 slot (#gm-bar-tray, gm/band.js), so nothing is mounted here */
+  function ipadTrayMount() {
+    var T = W.B68GmIpadTray; if (!T || !S) return;
+    T.provide(ipadTrayApi);
+    if (S.tray) { S.tray.destroy(); S.tray = null; }
+    ipadLiveWire();
+  }
+  function ipadTrayUnmount(me) {
+    if (me.tray) { try { me.tray.destroy(); } catch (e) {} me.tray = null; }
+    if (me.ipadLiveOff) { try { me.ipadLiveOff(); } catch (e) {} me.ipadLiveOff = null; }
+    if (me.ipadReT) { W.clearTimeout(me.ipadReT); me.ipadReT = null; }
+  }
+  /* live sync (design 2.5): another device's change to the iPad (a poke of kind ambient or display, or the socket opening again) is read at once, so
+     the tray and the iPad view say what is live without a poll of their own; a burst of pokes is one read, and a read that changes nothing redraws nothing */
+  function ipadLiveWire() {
+    var me = S; if (!me || me.ipadLiveOff || !W.B68Live || typeof W.B68Live.on !== 'function') return;
+    try { me.ipadLiveOff = W.B68Live.on(['ambient', 'display'], function (k) { if (k === 'ambient' || k === 'display' || k === 'hello') ipadReread(me); }); } catch (e) { me.ipadLiveOff = null; }
+  }
+  function ipadReread(me) {
+    if (S !== me) return;
+    if (me.ipadReT) W.clearTimeout(me.ipadReT);
+    me.ipadReT = W.setTimeout(function () {
+      me.ipadReT = null;
+      var g = gmApi(); if (S !== me || !g) return;
+      var amb = typeof g.ambient === 'function' ? Promise.resolve().then(function () { return g.ambient(); }).then(null, function () { return null; }) : null;
+      var dsp = typeof g.display === 'function' ? Promise.resolve().then(function () { return g.display(); }).then(null, function () { return null; }) : null;
+      Promise.all([amb, dsp]).then(function (res) {
+        if (S !== me) return;
+        var seq0 = AM.seq, shown0 = JSON.stringify(AM.shown || null), d = res[1] && isObj(res[1].display) ? res[1].display : null;
+        if (res[0]) adoptAmbient(res[0]);
+        if (d) { AM.displayRead = true; AM.shown = { kind: str(d.kind), title: str(d.title) }; }
+        if (AM.seq !== seq0 || JSON.stringify(AM.shown || null) !== shown0) { if ($q('#gm-ipad')) renderIpad(); else renderBar(); }      /* the view redraws the bar, and the bar the tray */
+      });
+    }, 400);
+  }
 
   /* ---------- score sites (GM.md, "Score sites"): a location roll saved against a score card; the Prep tab's site strip ----------
      The scores are the prep part's embedded score cards (gm/prep.js scores()). S.siteFor is the score the save row points at on
@@ -4247,11 +4498,11 @@
     return { mode: 'auto', badge: 'Auto', action: 'Take over', bar: 'Auto', title: 'Take over: Blade is laying clocks and NPCs over the iPad. Take over stops it and takes down what it put up.' };
   }
   function apPaint() {
-    var v = apView(), b = $q('#gm-bar-ap');
-    if (b) { b.hidden = !v; if (v) { b.textContent = v.bar; b.title = v.title; b.setAttribute('aria-label', v.title); b.setAttribute('data-ap', v.mode); } }
+    var v = apView();
     if (S && S.assist && typeof S.assist.setAutopilot === 'function') S.assist.setAutopilot(v ? { label: v.badge + ' · ' + v.action, title: v.title } : null);
     var ln = $q('#gm-ipad-ap');
     if (ln) { ln.hidden = !v; if (v) { var m = ln.querySelector('[data-ap-badge]'), t = ln.querySelector('[data-gm="aptoggle"]'); if (m) m.textContent = v.badge; if (t) t.textContent = v.action; var o = ln.querySelector('[data-gm="apoff"]'); if (o) o.hidden = v.mode === 'off'; } }
+    if (W.B68GmIpadTray) W.B68GmIpadTray.refresh();      /* the tray's autopilot pill (gm/ipad-tray.js) */
   }
   /* Take over (or Hand back, or Switch on): the top bar's pill, the Blade panel's header and the iPad tab all call this */
   function apToggle() {
@@ -4338,9 +4589,10 @@
     b19Mount();                                                                  /* B19: the map beats exist before the first stamp can drop a glyph */
     me.b09 = { layers: {} };
     me.stamp = St.create({
-      feature: function (id) { return S === me && b09On(id); }, doc: function () { return document; },
+      feature: function (id) { return S === me && b09On(id); },
       positions: function () { return S === me && S.con && Array.isArray(S.con.positions) ? S.con.positions : []; },
-      roomLines: function () { var R = W.B68GmRooms; return S === me ? St.roomLines(runRoomNotes(), St.pickRoom(runCrewRooms()), R && R.normRoom) : []; },
+      roomLines: function () { return S === me ? rollRoomLines(rollRoom()) : []; },
+      line: function () { return S === me ? rollLine() : ''; }, setLine: function (t) { if (S === me) rollSetThreat(t); },     /* N4: the Roll's one line */
       currentPosition: function () { return S === me && hasSit() ? str(uiNow().pos) : ''; }, setPosition: function (p) { if (S === me) setPos(p); },
       show: function (payload, key, ms) { var sh = shows(); return sh ? sh.show('report', payload, { key: key, ms: ms }) : Promise.resolve(null); },
       keyFor: function (key) { return W.B68Show ? W.B68Show.idFor(key) : key; }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
@@ -4368,39 +4620,159 @@
       stageSend: function () { return S === me && me.b17 && b09On('map.stage') ? me.b17.stage.send() : null; }
     });
     me.cueGrammar.register();
+    /* N4: the stamp is the page's one Esc's 'stamp' entry (gm/esc.js): Esc takes it down when nothing above it is open and no field has the focus */
+    if (W.B68GmEsc && typeof W.B68GmEsc.register === 'function') me.stampEsc = W.B68GmEsc.register('stamp', { priority: 10, kind: 'stamp',
+      isOpen: function () { var v = S === me && me.stamp ? me.stamp.view() : null; return !!(v && v.active); }, close: function () { if (S === me && me.stamp) me.stamp.esc(); } });
     b09Paint();
   }
   function b09Unmount(me) {
+    if (me.stampEsc) { try { me.stampEsc(); } catch (e) {} me.stampEsc = null; }
     if (me.stamp) { try { me.stamp.destroy(); } catch (e) {} me.stamp = null; }
-    if (me.stampUnbind) { try { me.stampUnbind(); } catch (e) {} me.stampUnbind = null; }
     if (me.cueGrammar) { try { me.cueGrammar.unregister(); me.cueGrammar.hide(); } catch (e) {} me.cueGrammar = null; }
   }
-  /* the Stamp row under Position: made on the first paint while the switch is on, taken away when it goes off */
+  /* the stamp's part of the Roll: Effect, Stamp it on the iPad (or what is up, Take it down and Stamp again), the Focus keys and the sizer's strip */
   function b09Paint() {
-    var St = W.B68GmStamp; if (!S || !S.stamp || !St) return;
-    var pos = $q('#gm-pos'), box = $q('#gm-stamp');
-    if (!b09On('spine.stamp') || !pos) { if (box && box.parentNode) box.parentNode.removeChild(box); return; }
-    if (!box) {
-      box = document.createElement('div'); box.id = 'gm-stamp'; box.className = 'gm-stamp'; pos.parentNode.insertBefore(box, pos.nextSibling);
-      if (S.stampUnbind) { try { S.stampUnbind(); } catch (e) {} }
-      S.stampUnbind = St.bind(box, S.stamp);
-    }
-    S.stamp.seed();
-    St.paint(document, box, S.stamp);
+    var R = W.B68GmRoll; if (!S || !R) return;
+    rollLinePaint();          /* the line first (it follows the room on every paint, as the stamp's own box did): the stamp's view reads it */
+    var v = S.stamp ? S.stamp.view() : null, on = !!(v && v.on);
+    var eff = $q('#gm-eff'); if (eff) { eff.hidden = !on; eff.innerHTML = on ? R.effHtml(v.draft.effect) : ''; }
+    var box = $q('#gm-stamp'); if (box) { var h = on ? R.stampHtml(v) : ''; if (box.__html !== h) { box.innerHTML = h; box.__html = h; } box.hidden = !on; }
+    rollMiniPaint(v); rollSizerPaint(v);
   }
   function b09Marked(res) {
     var sit = res && res.meta ? res.meta.situation : '';
-    if (S && S.stamp && (sit === 'fourfive' || sit === 'onetothree')) S.stamp.mark(sit === 'fourfive' ? '45' : '13');
+    if (S && S.stamp && (sit === 'fourfive' || sit === 'onetothree')) {
+      var landed = !!S.stamp.view().active;
+      S.stamp.mark(sit === 'fourfive' ? '45' : '13');
+      /* N4-fix: on a stamped roll the threat has landed: the line is spent (it stays empty in this room), so a later bare "Blade, risky, standard" cannot put
+         it back on the iPad; the card is drawn again without its now-empty "Threat spent" */
+      if (landed) { rollLineClear(); drawConsoleCard(S.conRes); }
+    }
+    else if (S && S.stamp && sit) S.stamp.dismiss();          /* N4: a Before or a Someone card: the last roll's size goes with its card */
     if (S && S.mt && S.mt.active() && sit) S.mt.marked();      /* 2.8: a marked roll resolves its montage panel */
+  }
+
+  /* ---------- N4: the Roll's page side (gm/roll.js draws; the data and the actions are here) ----------
+     THE ONE LINE. "If it goes wrong" (#gm-c-threat) is con.live.threat: the console's Threat on screen, and the stamp's line. It starts as the room's
+     first "If it goes wrong" line (B68GmStamp.seedLine: a line the GM typed is never replaced, a line the GM emptied stays empty in that room). The
+     room is the one the Run view has selected (its host's roomSelected(name), N3), else the room most of the crew are in. setThreat(text) (the Run
+     view's host, and B68GmPage.setThreat) puts a line there from elsewhere: the room card's "→ the Roll". Nothing new is stored: the line is the
+     console's own key, and the effect, the folds and the room's memory live in this page only. */
+  function rollMem() { return S.rollMem || (S.rollMem = {}); }
+  function rollRoom() { var St = W.B68GmStamp; return str(S && S.rollSel) || (St ? St.pickRoom(runCrewRooms()) : ''); }
+  function rollRoomLines(room) { var St = W.B68GmStamp, R = W.B68GmRooms; return St && room ? St.roomLines(runRoomNotes(), room, R && R.normRoom) : []; }
+  function rollCut(t) { var St = W.B68GmStamp; return St ? St.cutText(t, St.TEXT_MAX) : str(t).replace(/\s+/g, ' ').trim().slice(0, 100); }
+  /* the line as it stands: the field as typed (the store follows it within half a second, or at once on Enter or a stamp), else the stored line */
+  function rollLine() { var i = $q('#gm-c-threat'); return i ? str(i.value) : str(live().threat); }
+  function rollTyping(i) { return !!i && document.activeElement === i; }
+  /* the line follows the room while it is the room's own (or empty), never under the GM's typing: -> true when it changed */
+  function rollSeed() {
+    var St = W.B68GmStamp; if (!S || S.status !== 'ready' || !St || typeof St.seedLine !== 'function') return false;
+    var i = $q('#gm-c-threat'); if (rollTyping(i)) return false;
+    var room = rollRoom(), t = St.seedLine(rollLine(), room, rollRoomLines(room), rollMem());
+    if (t === null) return false;
+    if (i) { i.value = t; i.__was = t; }
+    setLive('threat', t);
+    return true;
+  }
+  var rollSeedT = null;
+  function rollSeedSoon() { clearTimeout(rollSeedT); var me = S; rollSeedT = setTimeout(function () { if (S === me && S && S.status === 'ready') b09Paint(); }, 250); }
+  /* the field from the store (never under the GM's typing), the note saying it is the room's own line, the clear button */
+  function rollLinePaint() {
+    var i = $q('#gm-c-threat'); if (!i) return;
+    rollSeed();
+    var v = str(live().threat); if (!rollTyping(i) && i.value !== v) { i.value = v; i.__was = v; }
+    var m = rollMem(), cur = rollCut(rollLine()), from = cur && m.seed && m.seed.line === cur ? str(m.seed.room) : '', R = W.B68GmRoll;
+    var n = $q('#gm-line-note'); if (n) { n.innerHTML = from && R ? R.lineNote(from) : ''; n.hidden = !from; }
+    var x = $q('[data-gm="line-clear"]'); if (x) x.hidden = !cur;
+  }
+  /* the GM emptied the line (typed it away, the ×, or "Threat spent"): it stays empty in this room */
+  function rollLineEmptied() { var St = W.B68GmStamp; if (S && St && typeof St.lineCleared === 'function') St.lineCleared(rollRoom(), rollMem()); }
+  function rollLineClear() { var i = $q('#gm-c-threat'); if (i) { i.value = ''; i.__was = ''; } rollLineEmptied(); setLive('threat', ''); b09Paint(); }
+  /* a line from elsewhere (the room card's "→ the Roll", a cue's stamp with a line): it becomes the line, as if typed (the room never replaces it) */
+  function rollSetThreat(text) {
+    if (!S || S.status !== 'ready') return false;
+    var t = rollCut(text); if (!t) return false;
+    var m = rollMem(); m.seed = null; m.cleared = null;
+    var i = $q('#gm-c-threat'); if (i) { i.value = t; i.__was = t; }
+    setLive('threat', t); b09Paint();
+    return true;
+  }
+  /* the Run view's selected room (N3 calls its host's roomSelected(name); '' for none): the line follows it while it is the room's own */
+  function rollRoomSelected(name) { if (!S) return; S.rollSel = str(name).trim(); rollSeedSoon(); }
+  /* the field's own listeners, once per drawn field: as it is typed the stamp knows (Stamp again) and the note follows, and half a second after the last key
+     it is stored (as the console's text controls were; leaving the field stores it at once: onChange); emptied, it stays empty in this room; Enter stamps
+     it (the old Stamp row's Enter), and a pasted line break becomes a space, so the field never holds a second line */
+  function rollBind() {
+    var i = $q('#gm-c-threat'); if (!i || i.__roll) return; i.__roll = true;
+    i.addEventListener('input', function () {
+      if (!S) return; if (/[\r\n]/.test(str(i.value))) i.value = str(i.value).replace(/\s*[\r\n]+\s*/g, ' ');
+      var v = str(i.value); if (!v.trim() && str(i.__was).trim()) rollLineEmptied(); i.__was = v; b09Paint();
+      var me = S; clearTimeout(i.__save); i.__save = setTimeout(function () { if (S === me && $q('#gm-c-threat') === i && str(i.value) !== str(live().threat)) patch({ con: { live: { threat: str(i.value) } } }); }, 500);
+    });
+    i.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' && !ev.ctrlKey && !ev.altKey && !ev.metaKey) { if (ev.preventDefault) ev.preventDefault(); rollStamp(); } });
+  }
+  /* Stamp it on the iPad (and Stamp again): the line as typed is the line stored first */
+  function rollStamp() {
+    if (!S || !S.stamp) return;
+    var i = $q('#gm-c-threat'); if (i && str(i.value) !== str(live().threat)) setLive('threat', str(i.value));
+    S.stamp.fire();
+  }
+  /* Focus: the column as its keys, with the position (and the effect, and whether the stamp is up) on top */
+  function rollMiniPaint(v) {
+    var mini = $q('#gm-mini'), R = W.B68GmRoll; if (!mini) return;
+    if (!R || !hasSit()) { mini.innerHTML = ''; mini.__html = ''; return; }
+    v = v || (S.stamp ? S.stamp.view() : null);
+    var h = R.miniHtml(S.con.situations(), str(uiNow().pos), v && v.on ? v.draft.effect : '', !!(v && v.active));
+    if (mini.__html !== h) { mini.innerHTML = h; mini.__html = h; }
+  }
+  /* the sizer's strip in its slot under the card's header, and its Reduce and Done in their slot on the card's actions row (drawConsoleCard makes both).
+     The strip leaves out the promised line when the card already shows it (a roll made with that threat spends it in its lead) */
+  function rollSizerPaint(v) {
+    var b = $q('#gm-sz'), a = $q('#gm-sz-acts'), R = W.B68GmRoll; if (!b) return;
+    v = v || (S && S.stamp ? S.stamp.view() : null);
+    var z = v && v.sizer && R ? v.sizer : null, ui = S && S.conRes && S.conRes.replay && isObj(S.conRes.replay.ui) ? S.conRes.replay.ui : null;
+    var h = z ? R.sizerHtml(z, { lineShown: !!(ui && z.text && rollCut(ui.threat) === rollCut(z.text)) }) : '';
+    if (b.__html !== h) { b.innerHTML = h; b.__html = h; }
+    b.hidden = !h;
+    if (a) { var ah = z ? R.sizerActs(z) : ''; if (a.__html !== ah) { a.innerHTML = ah; a.__html = ah; } }
+  }
+  /* Pay the price (4) and Harm & resist (7) on a 4/5 or a 1–3 card: that section of this card when it has one (opened), else that table rolled */
+  function rollQuick(n) {
+    var or = $q('#gm-card details.gm-or[data-sec="' + (n === 4 ? 'payThePrice' : 'harm') + '"]');
+    if (or) { or.open = true; try { or.scrollIntoView({ block: 'nearest' }); } catch (e) {} return; }
+    rollConsole(n);
+  }
+  /* the folds: Scene (S.sceneOpen), Earlier and More tables (S.folds), each panel under its own button and captioned with its name; with both of the pair
+     open, More tables stands as its own box under Earlier's (gm-rl-sep) instead of hanging on it */
+  function rollFoldSync(r) {
+    if (!S) return;
+    var f = S.folds || (S.folds = {});
+    [['#gm-scene', '#gm-scenebox', !!S.sceneOpen], ['#gm-earlier-b', '#gm-earlier', !!f.earlier], ['#gm-singles-b', '#gm-singles', !!f.singles]].forEach(function (x) {
+      var b = $q(x[0]), p = $q(x[1]); if (b) b.setAttribute('aria-expanded', String(x[2])); if (p) p.hidden = !x[2];
+    });
+    var sg = $q('#gm-singles'); if (sg) sg.classList.toggle('gm-rl-sep', !!f.earlier && !!f.singles);
+    r = r || $q('#gm-root'); if (r) r.classList.toggle('scene-open', !!S.sceneOpen);
+  }
+  function rollFold(id) { if (!S) return; var f = S.folds || (S.folds = {}); if (id === 'earlier' || id === 'singles') f[id] = !f[id]; rollFoldSync(); }
+  /* the Rack is the Blade fold under the card: there only while it holds the Fixer's lines or Voice; its summary says which */
+  function rackFoldSync(r, vo) {
+    var f = $q('#gm-rackf'), sm = $q('#gm-rack-sum'), R = W.B68GmRoll; if (!f) return;
+    f.hidden = !(r || vo);
+    if (sm) sm.textContent = (r || vo) && R ? R.rackSummary({ fitted: r && r.pre ? str(r.pre.pos) : '', pending: !!(r && r.status === 'pending'), voice: vo ? str(vo.who) : '' }) : '';
   }
   /* ---------- B19: the map beats (map.spotted 2.6, map.flashback 2.9, map.threat 2.5). The logic is in gm/map-*.js; this is the seam. Each reads its own switch live. ---------- */
   function b19Room(svg, name) {
     var m = S && S.b19Model, rooms = m && Array.isArray(m.rooms) ? m.rooms : [], r = null, i;
     for (i = 0; i < rooms.length; i++) if (isObj(rooms[i]) && str(rooms[i].name) === name) { r = rooms[i]; break; }
-    var g = r && svg && svg.querySelector ? svg.querySelector('[data-room="' + str(r.id).replace(/[^A-Za-z0-9_-]/g, '') + '"]') : null;
-    if (!g || typeof g.getBoundingClientRect !== 'function' || typeof svg.getScreenCTM !== 'function') return null;
-    var ctm = svg.getScreenCTM(), rc = g.getBoundingClientRect(); if (!ctm || !(rc.width > 0)) return null;
-    var inv = ctm.inverse(), a = svg.createSVGPoint(), b = svg.createSVGPoint(); a.x = rc.left; a.y = rc.top; b.x = rc.right; b.y = rc.bottom;
+    if (!r || !svg || typeof svg.querySelectorAll !== 'function' || typeof svg.getScreenCTM !== 'function') return null;
+    /* N3: the room is every group the kit tags with its id (its floor, each piece of furniture) and its label (the number badge), not the first group alone */
+    var els = Array.prototype.slice.call(svg.querySelectorAll('[data-room="' + str(r.id).replace(/[^A-Za-z0-9_-]/g, '') + '"]'));
+    Array.prototype.forEach.call(svg.querySelectorAll('.room-label'), function (g) { var t = g.querySelector('text'); if (t && r.n != null && str(t.textContent).trim() === String(r.n)) els.push(g); });
+    var ctm = svg.getScreenCTM(), L = Infinity, T = Infinity, R = -Infinity, D = -Infinity; if (!ctm || !els.length) return null;
+    els.forEach(function (g) { if (typeof g.getBoundingClientRect !== 'function') return; var rc = g.getBoundingClientRect(); if (!(rc.width > 0) || !(rc.height > 0)) return; L = Math.min(L, rc.left); T = Math.min(T, rc.top); R = Math.max(R, rc.right); D = Math.max(D, rc.bottom); });
+    if (!(R > L) || !(D > T)) return null;
+    var inv = ctm.inverse(), a = svg.createSVGPoint(), b = svg.createSVGPoint(); a.x = L; a.y = T; b.x = R; b.y = D;
     var p = a.matrixTransform(inv), q = b.matrixTransform(inv);
     return { x: Math.min(p.x, q.x), y: Math.min(p.y, q.y), w: Math.abs(q.x - p.x), h: Math.abs(q.y - p.y) };
   }
@@ -4414,7 +4786,8 @@
       tick: function (id, to) { return me.api && typeof me.api.clockOps === 'function' ? Promise.resolve(me.api.clockOps([{ id: id, filled: to }])) : Promise.resolve(null); },
       show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
       filter: function () { return S === me && me.b09 && isObj(me.b09.layers) ? (me.b09.layers['scene.filter'] || null) : null; },
-      layer: function (path, value) { if (!me.b09) me.b09 = { layers: {} }; return b09Layer(me, path, value); }
+      layer: function (path, value) { if (!me.b09) me.b09 = { layers: {} }; return b09Layer(me, path, value); },
+      changed: function () { if (S === me) siteChanged(); }       /* N3: the site's toolbar (Flashback / Back, Pin) and the board's marks follow */
     };
   }
   function b19Mount() {
@@ -4423,47 +4796,53 @@
     if (W.B68GmMapSpotted) me.b19.spotted = W.B68GmMapSpotted.create(b19Host(me));
     if (W.B68GmMapFlashback) me.b19.flashback = W.B68GmMapFlashback.create(b19Host(me));
     if (W.B68GmMapThreat) me.b19.threat = W.B68GmMapThreat.create(b19Host(me));
-    var kn = knInst(); if (kn) me.b19.knowledge = { paint: function (fr, svg) { kn.paintRun(fr, svg); } };     /* 2.2: Intel and a tap on the Run map */
   }
   function b19Paint(fr, svg, zoom) {
     if (!S) return;
     b19Mount();
     Object.keys(S.b19).forEach(function (k) { if (S.b19[k] && S.b19[k].paint) S.b19[k].paint(fr, svg, zoom); });
+    var si = siteInst(); if (si && S.b19Model) si.mapMarks(svg, S.b19Model, S.rv ? S.rv.selected() : '');      /* N3: each room's label carries its state on the Run map */
   }
   function b09Run(me, a) { if (a && a.verb === 'fire') return csRun(me, a); return me.cueGrammar ? me.cueGrammar.run(a) : null; }
   function b09Toast(me, text, undo) { if (S === me && me.cueGrammar) me.cueGrammar.undoToast(text, undo); }
   function b09Unparsed(me, res) { if (S === me && me.cueGrammar && b09On('ai.grammar') && res && res.refused === 'unparsed') { me.cueGrammar.didntCatch(); return true; } return false; }
 
-  /* ---------- B17: stage then send (map.stage), the security level (map.security), the stage bar and spotlight (face.spotlight) ----------
-     The logic is in gm/stage.js, gm/security.js, gm/spotlight.js and gm/panel17.js; this is the seam they are given. Each part is read live from the state document, so with
-     the three switches off nothing here draws, holds, sends or writes. A staged room lives in the controller only: it is never patched into any document. */
+  /* ---------- B17: stage then send (map.stage), the security level (map.security), the people and spotlight (face.spotlight) ----------
+     The logic is in gm/stage.js, gm/security.js, gm/spotlight.js and gm/panel17.js; this is the seam they are given. N3: they are drawn by the site (gm/site.js, the Run
+     view), no longer in a box under Location's Map heading. A staged room lives in the controller only: it is never patched into any document. */
   function b17Mount() {
     var Pn = W.B68GmPanel17, me = S; if (!Pn || me.b17) return;
     function pickRoomName() { var St = W.B68GmStamp; return St && St.pickRoom ? St.pickRoom(runCrewRooms()) : ''; }
     me.b17 = Pn.create({
-      feature: function (id) { return S === me && b09On(id); }, toast: toast, esc: esc, changed: function () { if (S === me) { b17Paint(); b17Tint(); } },
+      feature: function (id) { return S === me && b09On(id); }, toast: toast, esc: esc, changed: function () { if (S === me) { siteChanged(); b17Tint(); } },
       rooms: function () { var rs = S === me ? runSite() : null; return rs && S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms.filter(isObj).map(function (r) { return { name: str(r.name), band: str(r.band) }; }) : []; },
       opened: function () { var rs = S === me ? runSite() : null; return rs ? cleanRooms(ballDoc(rs.name).open) : []; },
       shown: function (n) { var r = S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms.filter(function (x) { return isObj(x) && x.name === n; })[0] : null; return !!r && roomShown(r, revealList(mapUi())); },
       setOpen: function (names) {
         var rs = S === me ? runSite() : null; if (!rs) return false;
-        var ok = ballSet(rs.name, { open: names.length ? names : null });
+        /* N3: a room sent is seen, so it leaves the blueprint list in the same write (the two lists never share a room) */
+        var ch = { open: names.length ? names : null };
+        if (b09On('map.knowledge')) { var kn = cleanRooms(ballDoc(rs.name).know).filter(function (n) { return names.indexOf(n) < 0; }); ch.know = kn.length ? kn : null; }
+        var ok = ballSet(rs.name, ch);
         if (S.map) drawMap(); renderLocation(); return !!ok;
       },
       liveText: function () { return S === me && mapOnIpad() ? bandWords(S.mapOn.reveal) : ''; },
       dark: function () { return pushDisplay({ kind: 'dark' }, { b17: true }).then(function () { toast('Blank: the iPad is black.'); }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); }); },
+      /* N3, the ONE alarm: the TABLE clock the play names (the one the site's header reads and Spotted ticks), not ball.alarm; hidden keeps the level off the iPad */
       alarm: function () {
         var rs = S === me ? runSite() : null, al = rs && rs.play && rs.play.v === 2 && isObj(rs.play.alarm) ? rs.play.alarm : null; if (!al) return null;
-        var size = Math.max(Array.isArray(al.pub) ? al.pub.length : 0, Array.isArray(al.beats) ? al.beats.length : 0), st = ballDoc(rs.name), f = isObj(st.alarm) && typeof st.alarm.filled === 'number' ? Math.floor(st.alarm.filled) : 0;
-        return size > 0 ? { size: size, filled: Math.max(0, f) } : null;
+        var nm = str(al.clock).trim(), ck = tableClocks().filter(function (c) { return str(c.name).trim() === nm; })[0]; if (!ck || !(+ck.size > 0)) return null;
+        return { size: Math.floor(+ck.size), filled: Math.max(0, Math.floor(+ck.filled || 0)), visible: !ck.hidden };
       },
       names: function () { var Se = W.B68GmSecurity, pk = S === me ? part('prep') : null; if (!pk || !Se) return null; if (!me.b17Names || me.b17Names.pk !== pk) me.b17Names = { pk: pk, v: Se.fromPrep(pk) }; return me.b17Names.v; },
       key: function () { var rs = S === me ? runSite() : null; return S.locRoll ? rollKey(S.locRoll) + '|' + (rs ? rs.name : '') : ''; },
       layer: function (path, value) { if (me.b09) return b09Layer(me, path, value); var sh = shows(); return sh ? sh.layer(path, value) : Promise.resolve(null); },
       show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
-      npcs: function () { return S === me ? Object.keys(isObj(me.npcs) ? me.npcs : {}).map(function (id) { var d = me.npcs[id]; return isObj(d) && !(Array.isArray(d.tags) && d.tags.indexOf('undone') >= 0) ? { id: id, name: str(d.name), alias: str(d.alias), revealed: d.revealed === true } : null; }).filter(Boolean) : []; },
-      roomKey: function () { return S === me ? pickRoomName() : ''; },
-      roomMd: function () { var rn = S === me ? runRoomNotes() : null, n = pickRoomName(); return rn && n && isObj(rn.byRoom) && isObj(rn.byRoom[n]) ? str(rn.byRoom[n].md) : ''; },
+      npcs: function () { return S === me ? siteNpcs(me) : []; },
+      /* the people of a room (N3): its prep note (Who:), the play's people there at the published time; the room in focus for "Blade, spotlight <name>" */
+      roomMd: function (room) { var rn = S === me ? runRoomNotes() : null; return rn && room && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? str(rn.byRoom[room].md) : ''; },
+      here: function (room) { var rs = S === me ? runV2() : null, RV = W.B68GmRunView; if (!rs || !RV || !room) return []; var st = ballDoc(rs.name); return RV.peopleIn(rs.play, st, typeof st.t === 'number' ? st.t : 0, room); },
+      focusRoom: function () { return S === me && S.rv && runV2() ? S.rv.selected() : pickRoomName(); },
       hold: function (npcId, ms, look) { var ov = { id: 'b17sl-' + newOverlayId().slice(-8), kind: 'npc', npcId: npcId, ms: ms }; if (look) ov.look = look; return showOverlay(ov); },
       notes: function (id) { var d = S === me && isObj(me.npcs) ? me.npcs[id] : null; return isObj(d) ? str(d.gmNotes) : ''; },
       clear: function () { var up = isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; return up.indexOf('b17sl-') === 0 ? clearOverlay() : Promise.resolve(null); },
@@ -4475,29 +4854,98 @@
         return Promise.resolve(ref.update({ revealed: true, firstSeen: (isObj(d) && d.firstSeen) || nowIso() })).then(function () { if (S === me && isObj(me.npcs) && isObj(me.npcs[id])) me.npcs[id].revealed = true; });
       }
     });
-    me.b17Unbind = null;
+    /* N3: the band's iPad tray (N5) reads this page's stage through B68GmStage.state / send / onChange */
+    if (me.b17 && W.B68GmStage && typeof W.B68GmStage.provide === 'function') me.stageOff = W.B68GmStage.provide(me.b17.stage);
   }
   function b17Unmount(me) {
-    if (me.b17Unbind) { try { me.b17Unbind(); } catch (e) {} me.b17Unbind = null; }
+    if (me.stageOff) { try { me.stageOff(); } catch (e) {} me.stageOff = null; }
     if (me.b17) { try { me.b17.reset(); } catch (e) {} me.b17 = null; }
+    if (me.site) { try { me.site.destroy(); } catch (e) {} me.site = null; }
   }
   function b17Frozen() { return !!(S && S.b17 && S.b17.holding()); }
-  /* the box under the Map heading: made on a paint while any of the three switches is on, taken away when none is */
-  function b17Paint() {
-    if (!S || !S.b17) return;
-    var mb = $q('.gm-mapbox'), box = $q('#gm-b17');
-    if (!mb || !S.b17.active()) { if (box && box.parentNode) box.parentNode.removeChild(box); return; }
-    if (!box) {
-      var h4 = mb.querySelector('h4'); box = document.createElement('div'); box.id = 'gm-b17'; box.className = 'gm-b17';
-      if (h4 && h4.nextSibling) mb.insertBefore(box, h4.nextSibling); else mb.appendChild(box);
-      if (S.b17Unbind) { try { S.b17Unbind(); } catch (e) {} }
-      S.b17Unbind = S.b17.bind(box);
-    }
-    S.b17.paint(box);
-  }
   function b17Tint() { if (S && S.b17 && S.locRoll) S.b17.tint($q('#gm-map'), S.locRoll); }
-  function b17Tick() { if (S && S.b17 && S.status === 'ready') { S.b17.tick(); b17Paint(); } }
-  function b17Esc() { return !!(S && S.b17 && S.b17.esc()); }
+  function b17Tick() { if (S && S.b17 && S.status === 'ready') S.b17.tick(); }
+
+  /* ---------- N3: THE SITE (gm/site.js): the Score place's whole score, drawn by the Run view. This is the page's side of it ---------- */
+  function siteInst() {
+    var me = S; if (!me || !W.B68GmSite) return null;
+    if (!me.site) me.site = W.B68GmSite.create({
+      esc: esc, toast: toast, rerender: function () { if (S === me) siteChanged(); },
+      stage: function () { return S === me && me.b17 ? me.b17.stage : null; }, security: function () { return S === me && me.b17 ? me.b17.security : null; },
+      spot: function () { return S === me && me.b17 ? me.b17.spot : null; }, knowledge: function () { return S === me ? knInst() : null; },
+      beats: function () { if (S !== me) return null; b19Mount(); return me.b19; },
+      play: function () { var rs = S === me ? runV2() : null; return rs ? rs.play : null; },
+      siteKind: function () { var rs = S === me ? runSite() : null; return rs ? (rs.play.v === 2 ? 'v2' : 'v1') : S === me && S.locRoll ? 'roll' : ''; },
+      clock: function (name) { return tableClocks().filter(function (c) { return str(c.name).trim() === name; })[0] || null; },
+      rooms: function () { var rs = S === me ? runSite() : null; return rs && S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms.filter(isObj).map(function (r) { return { name: str(r.name), band: str(r.band) }; }) : []; },
+      npcs: function () { return S === me ? siteNpcs(me) : []; }, card: function (names) { return !!npcCardSrc(names); }, face: function (id) { return S === me ? siteFace(me, id) : ''; },
+      roomMd: function (room) { var rn = S === me ? runRoomNotes() : null; return rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? str(rn.byRoom[room].md) : ''; },
+      scoreOver: siteScoreOver, montageOpen: function () { return !!(S === me && S.rv && S.rv.toolOpen() === 'montage'); }, montage: function (view) { siteMontage(view); },
+      dawn: function () { return runDawn(); }, introduce: function (id) { npcIntroduce(id); }, setThreat: siteThreat,
+      lineShown: function () { var l = $q('#gm-runv .rv-siteline'); return !!(l && l.offsetParent !== null); }
+    });
+    return me.site;
+  }
+  /* the cast the site's people rows and the spotlight read: every NPC not undone, revealed or not (the GM screen) */
+  function siteNpcs(me) {
+    return Object.keys(isObj(me.npcs) ? me.npcs : {}).map(function (id) { var d = me.npcs[id]; return isObj(d) && !(Array.isArray(d.tags) && d.tags.indexOf('undone') >= 0) ? { id: id, name: str(d.name), alias: str(d.alias), role: str(d.role), revealed: d.revealed === true } : null; }).filter(Boolean);
+  }
+  /* a person's face on their row: the figure kit's low-detail portrait, drawn once per look (page-local), else the initials */
+  function siteFace(me, id) {
+    var d = isObj(me.npcs) ? me.npcs[id] : null, K = W.B68Figure; if (!isObj(d) || !isObj(d.spec) || !K || typeof K.portrait !== 'function') return '';
+    var key = JSON.stringify(d.spec).length + '|' + str(d.updatedAt) + '|' + str(d.name), memo = me.faceMemo = me.faceMemo || {};
+    if (memo[id] && memo[id].k === key) return memo[id].svg;
+    var svg = ''; try { svg = stripSize(K.portrait(Object.assign(clone(d.spec), { id: 'gm-sf-' + slug(id) }), { lod: 'lo' }).svg); } catch (e) { svg = ''; }
+    memo[id] = { k: key, svg: svg }; return svg;
+  }
+  /* the site follows a change of the stage, the level, the people, the flashback or the threat: the Run view if it is on screen, else the site line; the tray hears */
+  function siteChanged() {
+    if (!S) return;
+    if (W.B68GmStage && typeof W.B68GmStage.notify === 'function') W.B68GmStage.notify();
+    var box = $q('#gm-runv'), shown = !!(box && !box.hidden && box.offsetParent !== null);
+    if (!shown) return;
+    if (S.rv && runV2()) { if (!S.rv.dragging()) S.rv.rerender(); } else renderRun();
+  }
+  function siteLive() { siteChanged(); }
+  /* Location's Open one room fold: a room staged there is sent from there too (the same stage group; data-gm="site" routes it) */
+  function siteStageLine() {
+    var si = siteInst(), s = S && S.b17 ? S.b17.stage : null; if (!si || !s || !s.staged().length) return '';
+    return '<div class="gm-stageline">' + si.stage().replace(/ data-site="/g, ' data-gm="site" data-site="') + '</div>';
+  }
+  /* Montage glows while the score phase is past its budget (the night's own phases, as the band reads them) */
+  function siteScoreOver() {
+    var R = W.B68GmPhaseRail, n = S && S.night && typeof S.night.night === 'function' ? S.night.night() : null;
+    if (!R || typeof R.model !== 'function' || !isObj(n) || n.phase !== 'score') return false;
+    var m = null; try { m = R.model(n, Date.now()); } catch (e) { m = null; }
+    var it = m && Array.isArray(m.items) ? m.items.filter(function (i) { return i.id === 'score'; })[0] : null;
+    return !!(it && it.tone === 'red');
+  }
+  /* Montage on the site: INLINE in the right column through the tools registry (N2: B68GmTools.get('montage') + B68GmWorkshop.inline), else its sheet */
+  function siteMontage(view) {
+    var WS = W.B68GmWorkshop, T = W.B68GmTools, t = null;
+    try { t = T && typeof T.get === 'function' ? T.get('montage') : null; } catch (e) { t = null; }
+    if (view && typeof view.toolHost === 'function' && WS && typeof WS.inline === 'function' && t && typeof t.open === 'function') {
+      if (view.toolOpen() === 'montage') { view.toolClose(true); return 'closed'; }
+      var el = view.toolHost('montage', 'Montage'); if (!el) return '';
+      /* closing it (the × on its card, Esc through the view's rv.tool entry, or the tool asking: onClose) unbinds it, so its timers stop (N2: inline(id, null)) */
+      view.toolOn(function () { try { WS.inline('montage', null); } catch (e) {} });
+      try { WS.inline('montage', el, { title: false, onClose: function () { view.toolClose(true); } }); t.open(); } catch (e) { view.toolClose(true); toast('Could not open the montage here: ' + errText(e), true); return ''; }
+      return 'inline';
+    }
+    var mt = mtInst(); if (mt) { mt.toggle(); return 'sheet'; }
+    toast('Montage is not available on this page.', true); return '';
+  }
+  /* "→ the Roll": the room's If it goes wrong line into the Roll's own "If it goes wrong" line: N4's B68GmPage.setThreat (the same thing as the Run
+     view's host.setThreat) -> bool when it is there; until then the stamp's own one-line threat */
+  function siteThreat(text) {
+    var t = str(text).trim(); if (!t || !S) return false;
+    var P = W.B68GmPage;
+    if (P && typeof P.setThreat === 'function') return P.setThreat(t) === true;
+    if (S.stamp && typeof S.stamp.draft === 'function') { S.stamp.draft('text', t); b09Paint(); return true; }
+    return false;
+  }
+  /* the site line (a card with no v2 night: a rolled location or a v1 site), above the Run view's help */
+  function siteLine() { var si = siteInst(); return si ? si.line() : ''; }
   function b17StageBtn(name) { return S && S.b17 && b09On('map.stage') ? ' <button type="button" class="btn sm" data-gm="room-stage" data-room="' + esc(name) + '" aria-pressed="' + S.b17.stage.isStaged(name) + '" title="Stage this room on this screen only; Send opens it for the players">' + (S.b17.stage.isStaged(name) ? 'Staged' : 'Stage') + '</button>' : ''; }
   function b17Toggle(name) { if (S && S.b17 && name) { S.b17.stage.toggle(name); renderLocation(); } }
   /* a tap on a room of the GM map stages it (switch map.stage); the map's own pan and zoom keep their taps when the switch is off */
@@ -4517,10 +4965,10 @@
      The deny list is the map's hidden names (tokenHidden: hidden rooms, threats, the watcher), the hidden NPCs and clocks
      (hiddenSecretNames) and play.secret. The people's and costumes' labels are NOT in it: a card names its own costume. */
   /* Phone cards (ticket P): the GM state's phoneCards, OFF unless an explicit true (the inverse of mirror). While off the published mission carries no cards. */
-  function phoneCardsOn() { var sb = swInst(); return sb ? sb.on('phoneCards') : !!(S && S.doc && S.doc.phoneCards === true); }     /* W0.2: the switch lives in the switchboard (features.js); the old key is its fallback */
+  function phoneCardsOn() { var st = setInst(); return st ? st.on('phoneCards') : !!(S && S.doc && S.doc.phoneCards === true); }     /* N0: a setting (features.js, Menu > Settings); the old key is its fallback */
   function setPhoneCards(on) {
-    var sb = swInst();
-    if (!(sb ? sb.set('phoneCards', on === true) : patch({ phoneCards: on === true }, { force: true }))) return false;
+    var st = setInst();
+    if (!(st ? st.set('phoneCards', on === true) : patch({ phoneCards: on === true }, { force: true }))) return false;
     if (S.saver && S.saver.flush) S.saver.flush();
     if (S.mission) S.mission.publishNow({ force: true });       /* the stored cards go (or come back) at once; the server replaces the mission whole */
     toast(on ? 'Phone cards are on: each phone gets its Mission card.' : 'Phone cards are off: phones are character sheets only.');
@@ -4570,17 +5018,16 @@
     Promise.resolve().then(function () { return spec.run(); }).then(null, function (e) { toast('Could not do that: ' + errText(e), true); });
   }
   /* W0.4 the night contract (gm/night.js): the controller for this page. It writes nothing until a phase is entered or a stamp or cue is logged; the iPad band (band.phase) is wired by the show contract, from night.band() */
-  /* B08 the spine (gm/spine.js): the phase rail, the curfew and the first Workshop cuts, each behind its own switch (features.js spine.*); with all three off this does nothing */
+  /* B08 the spine (gm/spine.js): the phase on the iPad's band and the curfew's rules (features.js spine.rail, spine.curfew: always on since N0); their face is the band */
   function spineTick() {
     var Sp = W.B68GmSpine, F = W.B68Features; if (!Sp || !F || !S || S.status !== 'ready' || !$q('#gm-root')) return;
     { var pfi = pfInst(); if (pfi) pfi.tick(); }
     Sp.tick({ root: function () { return $q('#gm-root'); }, night: function () { return S ? S.night : null; }, now: function () { return Date.now(); }, toast: toast,
-      on: function (id) { return !!S && F.valueOf(S.doc, id); }, layer: function (p, v) { var c = shows(); return c ? c.layer(p, v) : Promise.resolve(null); },
-      phoneCards: phoneCardsOn, setPhoneCards: setPhoneCards, mirrorOn: mirrorOn, toggleMirror: toggleMirror });
+      on: function (id) { return !!S && F.valueOf(S.doc, id); }, layer: function (p, v) { var c = shows(); return c ? c.layer(p, v) : Promise.resolve(null); }, callAftermath: callAftermath });
   }
   function mountNight() {
     var N = W.B68GmNight, me = S; if (W.B68GmSpine) W.B68GmSpine.reset(); if (!N) { me.night = null; return; }
-    me.night = N.create({ doc: function () { return S === me ? S.doc : null; }, patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); }, changed: spineTick,
+    me.night = N.create({ doc: function () { return S === me ? S.doc : null; }, patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); }, changed: function () { spineTick(); placesSync(); bandUpdate(); },
       prep: function () { var pk = S === me ? part('prep') : null, id = pk && W.B68GmPrep ? prepNoteId(pk) : null; return id && Array.isArray(pk.notes) ? pk.notes.filter(function (n) { return isObj(n) && n.id === id; })[0] || null : null; } });
     spineTick(); tcWrap(me);
   }
@@ -4644,50 +5091,84 @@
     toast: function (m) { toast(m, true); },
     sent: function (r) { if (adoptAmbient(r)) renderIpad(); }
   });
+  /* ---------- THE iPAD VIEW (the GM night rebuild, the design's iPad part): one page, under what is live, in three sections ----------
+       On the iPad now   what is shown, the overlay (with its own Take it down), what else is up (a flashback, a montage, the hard start), the
+                         autopilot. Clear (0) and Blank are the band's tray: one way off, from every place.
+       Listening         the transcriber, ON AIR, Who is who, the transcript (renderStt)
+       Scenes            the ambient scenes (off, auto with its interval and Next scene, or one pinned), the theme, the score scene, the handouts
+       Settings          the night's choices (Scenes moving / held still, Music, Phones, Mirror for phones): each takes effect at once, no reload */
+  function ipadAlsoUp() {
+    var T = W.B68GmIpadTray; if (!T) return [];
+    return T.liveItems(ipadSnapshot()).filter(function (x) { return x.key !== 'stage' && x.key !== 'overlay'; }).map(function (x) { return x.text; });
+  }
   function renderIpad() {
     var box = $q('#gm-ipad'); if (!box) return;
     var v = ipadView(AM.doc, function (id) { var c = tableClocks().filter(function (x) { return str(x.id) === id; })[0]; return c ? { name: c.name, size: c.size, filled: c.filled } : null; }), busy = AM.busy > 0, off = !AM.loaded;
     function seg(k, label) { return '<button type="button" class="chip" data-gm="ambmode" data-v="' + k + '" aria-pressed="' + (v.mode === k) + '"' + (off || busy ? ' disabled' : '') + '>' + label + '</button>'; }
-    var h = '<section class="gm-box gm-ipad-now"><h3 class="gm-band">On the iPad now</h3><p class="gm-ipad-line" id="gm-ipad-now">' + (AM.shown ? esc(displayLine(AM.shown)) : '<span class="gm-dim">Not known yet: push something, or clear it.</span>') + '</p>' +
-      (v.overlayLine ? '<p class="gm-ipad-line" id="gm-ipad-overlay">Overlay sent: ' + esc(v.overlayLine) + (v.auto ? ' · AUTO' : '') + '</p>' : '') +
+    var also = ipadAlsoUp();
+    var now = '<section class="gm-box gm-ipad-now"><h3 class="gm-band">On the iPad now</h3><div class="gm-ipad-body"><p class="gm-ipad-line" id="gm-ipad-now">' + (AM.shown ? esc(displayLine(AM.shown)) : '<span class="gm-dim">Not known yet: push something, or clear it.</span>') + '</p>' +
+      (v.overlayLine ? '<p class="gm-ipad-line gm-ipad-ov"><span id="gm-ipad-overlay">Overlay sent: ' + esc(v.overlayLine) + (v.auto ? ' · AUTO' : '') + '</span>' +
+        '<button type="button" class="btn sm" data-gm="clearoverlay"' + (busy ? ' disabled' : '') + ' title="Take the overlay (a clock, an NPC, a line, the dawn or a beat) off the iPad; what is under it stays">Take it down</button></p>' : '') +
+      (also.length ? '<p class="gm-ipad-line" id="gm-ipad-also">Also up: ' + esc(also.join(' · ')) + '</p>' : '') +
       '<p class="gm-ipad-line" id="gm-ipad-ap" hidden>Autopilot: <b data-ap-badge></b> <button type="button" class="btn sm" data-gm="aptoggle"></button> ' +
       '<button type="button" class="btn sm" data-gm="apoff" title="Blade stops laying anything over the iPad until you switch it on">Switch off</button></p>' +
-      '<div class="gm-ipad-acts"><button type="button" class="btn primary" data-gm="blankipad" title="Back to the ambient scene">Clear → ambient <kbd>0</kbd></button>' +
-      '<button type="button" class="btn" data-gm="darkipad" title="True black until you push something">Lights out</button>' +
-      mirrorButton('btn', 'panel') +
-      '<button type="button" class="btn" data-gm="clearoverlay"' + (busy ? ' disabled' : '') + ' title="Take the overlay (a clock, an NPC, a line or the dawn) off the iPad; what is under it stays">Clear overlay</button></div></section>';
-    h += '<section class="gm-box gm-ipad-amb"><h3 class="gm-band">Ambient scenes</h3><div class="gm-ipad-body">';
+      '<p class="gm-ipad-line gm-ipad-way"><button type="button" class="btn sm" data-gm="darkipad" title="True black on the iPad until the next send (lights out)">Blank</button> ' +
+      '<span class="gm-dim">Clear <kbd>0</kbd> takes all of it back to the ambient scene; it and Blank also sit with the iPad line in the band, in every place.</span></p></div></section>';
+    var h = '<section class="gm-box gm-ipad-scenes"><h3 class="gm-band">Scenes</h3><div class="gm-ipad-body">';
     if (!AM.loaded) h += '<p class="gm-dim" role="status">' + (AM.error ? 'Could not read the settings: ' + esc(AM.error) : 'Loading the iPad settings…') + '</p>' + (AM.error ? '<p><button type="button" class="btn sm" data-gm="ambretry">Try again</button></p>' : '');
-    h += '<div class="gm-field"><span class="gm-lab">When nothing is spotlit</span><div class="seg" role="group" aria-label="Ambient mode">' + seg('off', 'Off') + seg('auto', 'Auto') + seg('pin', 'Pin') + '</div></div>' +
+    h += '<div class="gm-field"><span class="gm-lab">When nothing is shown</span><div class="seg" role="group" aria-label="Ambient mode">' + seg('off', 'Off') + seg('auto', 'Auto') + seg('pin', 'Pin') + '</div></div>' +
       '<div class="gm-field"><span class="gm-lab">Scene' + (v.mode === 'pin' ? '' : ' (tap one to pin it)') + '</span><div class="gm-ipad-tiles" role="group" aria-label="Scenes">' + v.tiles.map(function (s) {
         return '<button type="button" class="gm-ipad-tile" data-gm="ambscene" data-id="' + esc(s.id) + '" aria-pressed="' + s.pressed + '"' + (s.disabled || off || busy ? ' disabled' : '') + '><b>' + esc(s.label) + '</b>' + (s.note ? '<small>' + esc(s.note) + '</small>' : '') + '</button>';
       }).join('') + '</div></div>' +
       '<div class="gm-row"><label class="gm-field" for="gm-amb-int"><span class="gm-lab">Auto changes every</span><select id="gm-amb-int" data-ambint="1"' + (off || busy ? ' disabled' : '') + '>' + v.intervals.map(function (n) { return '<option value="' + n + '"' + (n === v.intervalMin ? ' selected' : '') + '>' + n + ' min</option>'; }).join('') + '</select></label>' +
       '<button type="button" class="btn" data-gm="ambskip"' + (off || busy || v.mode !== 'auto' ? ' disabled' : '') + ' title="Auto mode only">Next scene</button></div>' +
-      '<p class="gm-dim gm-ipad-theme" id="gm-ipad-theme" role="status">' + esc(P.themeLine(THEME.state, THEME.http)) + '</p></div></section>';
-    h += '<section class="gm-box gm-ipad-score"><h3 class="gm-band">Score scene</h3><div class="gm-ipad-body"><p class="gm-ipad-line" id="gm-ipad-score">' + (v.hasScore ? esc(v.scoreLine) : '<span class="gm-dim">None set. Use Set as score scene in the Location panel.</span>') + '</p>' +
-      '<button type="button" class="btn sm" data-gm="clearscore"' + (!v.hasScore || off || busy ? ' disabled' : '') + '>Clear score</button></div></section>';
-    box.innerHTML = '<div id="gm-stt"></div>' + h + handoutsHtml();
+      '<p class="gm-dim gm-ipad-theme" id="gm-ipad-theme" role="status">' + esc(P.themeLine(THEME.state, THEME.http)) + '</p>' +
+      '<div class="gm-ipad-sub gm-ipad-score"><h4 class="gm-ipad-h">Score scene</h4><p class="gm-ipad-line" id="gm-ipad-score">' + (v.hasScore ? esc(v.scoreLine) : '<span class="gm-dim">None set. Use Set as score scene with the site’s map.</span>') + '</p>' +
+      '<button type="button" class="btn sm" data-gm="clearscore"' + (!v.hasScore || off || busy ? ' disabled' : '') + ' title="The score scene comes out of the ambient scenes">Take it down</button></div>' +
+      handoutsHtml() + '</div></section>';
+    var set = '<section class="gm-box gm-ipad-settings"><h3 class="gm-band">Settings</h3><div class="gm-ipad-body" id="gm-ipad-settings"></div></section>';
+    /* a grid: what is live across the top; Listening and the Settings in one column beside the Scenes (one column below 1100 px) */
+    box.innerHTML = '<div class="gm-ipadv">' + now + '<div class="gm-ipadv-col"><div class="gm-ipadv-listen" id="gm-stt"></div>' + set + '</div>' + h + '</div>';
+    renderIpadSettings(false);
     renderStt(true);
     renderBar();
     probeTheme();
+  }
+  /* the iPad view's Settings section: gm/settings.js draws its four rows into it (a tap there chooses, at once, no reload); a page without that module
+     still has the one choice it holds itself (Mirror for phones). ifMoved: redraw only when a value moved (another device's change), so focus stays */
+  function ipadSettingsKey() { var st = setInst(); return st && typeof st.state === 'function' ? st.state() : String(mirrorOn()); }
+  function renderIpadSettings(ifMoved) {
+    var sb = $q('#gm-ipad-settings'); if (!sb) return;
+    var k = ipadSettingsKey();
+    if (ifMoved && sb.getAttribute('data-k') === k) return;
+    var st = setInst();
+    if (st) { if (ifMoved) st.sync(true); else st.render(sb); } else sb.innerHTML = ipadSettingsHtml();     /* sync keeps the focused choice */
+    sb.setAttribute('data-k', k);
+  }
+  function ipadSettingsHtml() {
+    var on = mirrorOn();
+    return '<div class="gm-set-row" data-set-row="mirror"><span class="gm-lab" id="gm-set-l-mirror">Mirror for phones</span>' +
+      '<div class="seg" role="group" aria-labelledby="gm-set-l-mirror"><button type="button" class="chip" data-gm="mirror-set" data-v="0" aria-pressed="' + !on + '">Off</button>' +
+      '<button type="button" class="chip" data-gm="mirror-set" data-v="1" aria-pressed="' + on + '">On</button></div>' +
+      '<small>While on, a map or a handout on the iPad also shows on the players’ phones (their Table button). Nothing else ever does.</small></div>';
   }
   /* ---------- Handouts: the list in the iPad tab, and the Rack's "Show handout?" offer ---------- */
   function handouts() { return P.handoutList(part('handouts')); }
   function handoutById(id) { return handouts().filter(function (x) { return x.id === id; })[0] || null; }
   function handoutsHtml() {
     var list = handouts(), me = S, tt = !!(me && me.hoTitle);
-    var h = '<section class="gm-box gm-ipad-handouts"><h3 class="gm-band">Handouts' + (list.length ? ' <span class="gm-dim">' + list.length + '</span>' : '') + '</h3><div class="gm-ipad-body">';
-    if (!list.length) return h + '<p class="gm-dim">' + (part('handouts') ? 'The handouts part has nothing to show.' : 'No handouts in the pack. Put the prop images in the vault, run npm run gm:handouts and npm run gm:pack, then Update pack.') + '</p></div></section>';
+    /* a part of the Scenes section (the iPad view): the props the GM shows by hand */
+    var h = '<div class="gm-ipad-sub gm-ipad-handouts"><h4 class="gm-ipad-h">Handouts' + (list.length ? ' <span class="gm-dim">' + list.length + '</span>' : '') + '</h4>';
+    if (!list.length) return h + '<p class="gm-dim">' + (part('handouts') ? 'The handouts part has nothing to show.' : 'No handouts in the pack. Put the prop images in the vault, run npm run gm:handouts and npm run gm:pack, then Update pack.') + '</p></div>';
     h += '<div class="gm-ipad-acts"><label class="gm-check"><input type="checkbox" data-hotitle="1"' + (tt ? ' checked' : '') + '> Title on the iPad</label>' +
-      '<button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene">Clear iPad</button></div><ul class="gm-handouts">';
+      '<button type="button" class="btn sm" data-gm="blankipad" title="The handout comes off the iPad: the ambient scene plays">Take it down</button></div><ul class="gm-handouts">';
     list.forEach(function (x) {
       h += '<li class="gm-handout" data-ho="' + esc(x.id) + '"><img class="gm-handout-thumb" src="' + esc(P.HANDOUT_DIR + x.file) + '" alt="" loading="lazy" decoding="async" width="72" height="72">' +
         '<div class="gm-handout-t"><b>' + esc(x.title) + '</b>' + (x.when ? '<span class="gm-dim">' + esc(x.when) + '</span>' : '') +
         '<div class="gm-ipad-acts"><button type="button" class="btn sm primary" data-gm="ho-show" data-id="' + esc(x.id) + '">Show on iPad</button>' +
-        '<button type="button" class="btn sm" data-gm="blankipad">Clear iPad</button></div></div></li>';
+        '<button type="button" class="btn sm" data-gm="blankipad">Take it down</button></div></div></li>';
     });
-    return h + '</ul></div></section>';
+    return h + '</ul></div>';
   }
   function showHandout(id) {
     var x = handoutById(id); if (!x) { toast('That handout is not in the pack any more.', true); return Promise.resolve(false); }
@@ -4820,7 +5301,7 @@
   function airChip(d) { return airOn() ? W.B68GmOnAir.chip(d, Date.now()) : ''; }
   function airSuffix(d) { return (airOn() ? W.B68GmOnAir.suffix(d, Date.now()) : '') + b29Suffix(); }
   /* B29 (ai.batch, room.light): the local recording and the light cue; all the behaviour is in gm/b29.js, gm/batch-record.js and gm/light.js */
-  function b29() { return S && W.B68GmB29 ? (S.b29 || (S.b29 = W.B68GmB29.create({ on: function (id) { return !!(W.B68Features && W.B68Features.valueOf(S.doc, id)); }, toast: toast, $: $q, now: Date.now, changed: renderBar, relay: 'http://127.0.0.1:9300' }, W))) : null; }
+  function b29() { return S && W.B68GmB29 ? (S.b29 || (S.b29 = W.B68GmB29.create({ on: function (id) { return !!(W.B68Features && W.B68Features.valueOf(S.doc, id)); }, toast: toast, $: $q, now: Date.now, changed: renderBar, relay: 'http://127.0.0.1:9300', root: function () { return $q('#gm-root'); } }, W))) : null; }
   function b29Suffix() { var x = b29(); return x ? x.suffix() : ''; }
   function sttPatch(p) {
     var g = gmApi(); if (!g || typeof g.patchStt !== 'function') { toast('Listening needs the hosted app.', true); return; }
@@ -4915,8 +5396,9 @@
   }
   function save(name, data) { if (S.api && S.api.saveFile) S.api.saveFile(name, data); }
 
-  var SIDE = ['prep', 'location', 'scenes', 'score', 'chase', 'npc', 'downtime', 'cards', 'rules', 'ipad', 'run'];
-  function isSide(id) { var T = W.B68GmTools, t = T ? T.get(id) : null; return SIDE.indexOf(id) >= 0 || !!(t && !t.builtin && !t.workshop && typeof t.mount === 'function'); }
+  /* the panes of the work column (and the places' view pane, #gm-vpane, where tools and built views are drawn) */
+  var SIDE = ['prep', 'location', 'scenes', 'score', 'chase', 'npc', 'downtime', 'cards', 'rules', 'ipad', 'run', 'view'];
+  function isSide(id) { return SIDE.indexOf(id) >= 0; }
   /* ---------- the street scene roller (S): a side panel ---------- */
   function genLinesHtml(lines) {
     return (lines || []).map(function (l) { return l.kind === 'chips' ? chipsHtml(l.chips) : linesHtml([l], md); }).join('');
@@ -4968,7 +5450,7 @@
       var m = roll.meta;
       h += '<article class="gm-card gm-scncard" data-tool="scenes"><header class="gm-card-h"><div><h3>' + esc(m.title) + '</h3><p class="gm-sub">' + esc(m.sub) + '</p></div></header>' + genLinesHtml(roll.lines) +
         '<div class="gm-card-acts"><button type="button" class="btn sm" data-gm="pin" data-tool="scenes">Pin</button><button type="button" class="btn sm" data-gm="copy" data-tool="scenes">Copy</button>' +
-        '<button type="button" class="btn sm" data-gm="scnipad" title="Only the three read-aloud paragraphs go to the iPad">Read-aloud to the iPad</button></div></article>';
+        '<button type="button" class="btn sm" data-gm="scnipad" title="Only the three read-aloud paragraphs go to the iPad">Show on iPad</button></div></article>';
     } else h += '<p class="gm-empty">Pick a district, or leave it on anywhere, and roll. The grid under the read-aloud is for you, not the table.</p>';
     box.innerHTML = h + earlierHtml('scenes', cur);
   }
@@ -5930,14 +6412,14 @@
       .sort(function (a, b) { return (+a.order || 0) - (+b.order || 0) || (a._id < b._id ? -1 : 1); });
   }
   function renderCards(force) {
-    var box = $q('#gm-cards'); if (!box) return;
+    var box = $q('#gm-opps-gm') || $q('#gm-cards'); if (!box) return;      /* N1b: the GM's own cards, under the players' board in Opportunities */
     var act = document.activeElement;
     if (!force && act && box.contains(act) && act.classList && act.classList.contains('oc-in')) return;   /* not while typing on a card */
     var list = oppList(), iv = Math.floor(+oppDoc().interval || 0), pcs = (part('campaign') || {}).pcs || [];
     var names = pcs.map(function (p) { return str(p.first || p.name); }).filter(Boolean).concat(['GM']);
     var h = '<div class="gm-cardsbar"><button type="button" class="btn sm primary" data-gm="opp-add"' + (list.length >= OPP_MAX ? ' disabled' : '') + '>Add a card</button>' +
       '<button type="button" class="btn sm" data-gm="opp-show" data-mode="carousel"' + (list.length ? '' : ' disabled') + '>Show on iPad</button>' +
-      '<button type="button" class="btn sm" data-gm="opp-show" data-mode="spread"' + (list.length ? '' : ' disabled') + '>Spread on iPad</button>' +
+      '<button type="button" class="btn sm" data-gm="opp-show" data-mode="spread"' + (list.length ? '' : ' disabled') + ' title="Every card at once, spread across the iPad">Show all on iPad</button>' +
       '<label class="gm-field" for="gm-opp-iv"><span class="gm-lab">Turns</span><select id="gm-opp-iv">' + [[0, 'when tapped'], [8, 'every 8 s'], [12, 'every 12 s'], [20, 'every 20 s']].map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === iv ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label></div>' +
       '<datalist id="gm-opp-from">' + names.map(function (n) { return '<option value="' + esc(n) + '">'; }).join('') + '</datalist>';
     if (!list.length) h += '<p class="gm-empty">One card per pitch at the planning meeting: each player’s, then yours. Type on the card, then Show on iPad. Each card names a client, a target or an operation type (the others stay blank).</p>';
@@ -6056,7 +6538,7 @@
         (lg ? '<p class="gm-ch-leg"><span class="gm-lab">Ticks ' + esc(lg.name) + ' · ' + (lg.size - lg.filled) + ' to go</span></p>' : '<p class="gm-note warn">The crew’s clock is full. Add a leg, or end the chase.</p>') +
         '<div class="gm-ch-ticks">' + [[1, 'Limited'], [2, 'Standard'], [3, 'Great']].map(function (t) { return '<button type="button" class="btn primary gm-ch-plus" data-gm="ch-tick" data-n="' + t[0] + '"' + (lg && K ? '' : ' disabled') + '><b>+' + t[0] + '</b><small>' + t[1] + '</small></button>'; }).join('') + '</div></div>' +
         '<div class="gm-map-acts"><button type="button" class="btn sm primary" data-gm="ch-ipad"' + (K ? '' : ' disabled') + ' title="The player copy at the iPad’s size: no roll lines, no hidden clock. It follows the chase while it is up">Show on iPad</button>' +
-        '<button type="button" class="btn sm" data-gm="blankipad" title="Back to the ambient scene (0)">Clear → ambient</button>' +
+        '<button type="button" class="btn sm" data-gm="blankipad" title="The chase comes off the iPad: the ambient scene plays. Clear (0) takes everything down">Take it down</button>' +
         '<button type="button" class="btn sm" data-gm="ch-undo"' + (cur.panels.length ? '' : ' disabled') + '>Undo last panel</button>' +
         '<label class="gm-field gm-ch-outf" for="gm-ch-outcome"><span class="sr">How it ended</span><select id="gm-ch-outcome" data-choutcome>' + chOutcomeOpts(cur) + '</select></label>' +
         '<button type="button" class="btn sm bad" data-gm="ch-end">End chase</button></div>' +
@@ -6381,8 +6863,9 @@
     fr.src = W.location.pathname + (d.edit ? '' : '?ro=1') + w.hash;
     host.appendChild(fr); d.frame = fr; d.frameKey = w.key;
   }
-  function drawerTop() {      /* the drawer sits under the header; the header's height changes with the window */
-    try { var r = $q('#gm-root'), br = $q('.gm-bar'); if (r && br && S && S.dw && S.dw.open) r.style.setProperty('--dw-top', Math.round(br.getBoundingClientRect().bottom) + 'px'); } catch (e) {}
+  function drawerTop() {      /* the drawer and the sheets sit under the band; its height changes with the window */
+    if (S && S.band) { S.band.place(); return; }
+    try { var r = $q('#gm-root'), br = $q('#gm-band'); if (r && br && r.style && S && S.dw && S.dw.open) r.style.setProperty('--dw-top', Math.round(br.getBoundingClientRect().bottom) + 'px'); } catch (e) {}
   }
   function drawerSync() {
     var r = $q('#gm-root'); if (!r || !S.dw) return;
@@ -6528,10 +7011,48 @@
 
   /* ---------- events ---------- */
   function typing(t) { if (!t || t === document.body) return false; var n = (t.tagName || '').toLowerCase(); return n === 'input' || n === 'textarea' || n === 'select' || !!t.isContentEditable; }
+  /* THE ONE ESC (gm/esc.js, the night design's Esc): the topmost open thing closes, else a field is left, else the stamp comes down, else PANIC. One of those
+     per press, never two: nothing else on the page hears this Esc (it stops here), and every closable thing is registered (escWire, the band, the modules) */
+  function escPress(ev) {
+    var E = W.B68GmEsc, t = ev && ev.target, field = t && t !== document.body && typing(t) ? t : null, r;
+    if (ev) { ev.preventDefault(); if (typeof ev.stopPropagation === 'function') ev.stopPropagation(); }
+    if (E && typeof E.handle === 'function') r = E.handle({ field: field, isField: typing, blur: function (el) { try { el.blur(); } catch (e) {} }, panic: function () { bandPanic('key'); } });
+    else if (field) { try { field.blur(); } catch (e) {} r = 'blur'; }
+    else { bandPanic('key'); r = 'panic'; }
+    if (S) S.escLast = r;
+    bandUpdate();
+    return r;
+  }
+  /* what Esc closes, highest first (gm/esc.js's scale): Find, the Menu, the Blade panel (sliding over the page; a pinned column only while the focus is
+     in it), the drawer. The band registers its own popovers, gm/workshop.js each right-edge sheet and inline tool. The stamp and the Run view's pop-up
+     and peek stand here until their own modules register them: two entries for one thing still close it once. */
+  var escWired = false;
+  function bladeOpen() {
+    var a = S && S.assist; if (!a || typeof a.isOpen !== 'function' || !a.isOpen()) return false;
+    if (typeof a.isPinned === 'function' && a.isPinned()) { var el = typeof a.el === 'function' ? a.el() : null, f = document.activeElement; return !!(el && f && el.contains && el.contains(f)); }
+    return true;
+  }
+  /* after Esc shuts the Menu or the drawer nothing keeps the focus, so the next Space is GO rather than its button again */
+  function escBlur() { var a = document.activeElement; if (a && a !== document.body && typeof a.blur === 'function') { try { a.blur(); } catch (e) {} } }
+  function escWire() {
+    var E = W.B68GmEsc; if (!E || typeof E.register !== 'function' || escWired) return;
+    escWired = true;
+    E.register('find', { priority: 90, isOpen: function () { return findOn(); }, close: function () { findClose(); } });
+    E.register('menu', { priority: 80, isOpen: function () { var m = S && $q('.gm-menu-list'); return !!(m && !m.hasAttribute('hidden')); },
+      close: function () { menuOpen(false); escBlur(); } });
+    E.register('blade', { priority: 60, isOpen: bladeOpen, close: function () { if (S && S.assist) S.assist.close(); } });
+    E.register('drawer', { priority: 50, isOpen: function () { return !!(S && S.dw && S.dw.open); }, close: function () { drawerSet(false); escBlur(); } });
+    /* the stamp's entry ('stamp', kind stamp, 10) is N4's, made with the stamp in b09Mount; the Run view's NPC card, tool and peek (rv.*, 40) and the
+       site's popovers (70) are N3's */
+  }
+  /* the topmost open thing that holds the keys ('' when none): an overlay above priority 40 (Find, the Menu, a popover, the Blade panel, the drawer,
+     a sheet). The Run view's NPC card, tool and peek and an inline tool (40) hold nothing: the Run view's own keys (arrows step the beats) work behind them */
+  function escTop() { var E = W.B68GmEsc, l = E && typeof E.list === 'function' ? E.list() : []; for (var i = 0; i < l.length; i++) if (l[i].open && l[i].kind === 'overlay' && l[i].priority > 40) return l[i].id; return ''; }
   function onKey(ev) {
     if (blankEl) { ev.preventDefault(); ev.stopPropagation(); unblank(); return; }
     if (!S || S.status !== 'ready' || document.body.dataset.mode !== 'gm') return;
     var dlg = document.querySelector('dialog[open]'); if (dlg) return;
+    if (ev.key === 'Escape' || ev.key === 'Esc') { escPress(ev); return; }
     /* with the focus inside the Blade panel, J and K move between its cards and U undoes: the panel's own keys, not Score or anything else */
     var pel = S.assist && typeof S.assist.el === 'function' ? S.assist.el() : null;
     if (pel && ev.target && pel.contains && pel.contains(ev.target) && !ev.ctrlKey && !ev.metaKey && !ev.altKey && /^[jku]$/i.test(str(ev.key))) return;
@@ -6543,7 +7064,6 @@
     /* Find: Ctrl+K (or Cmd+K) anywhere opens and shuts it; while open, its own keys only */
     if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && str(ev.key).toLowerCase() === 'k') { ev.preventDefault(); if (findOn()) findClose(); else findOpen(); return; }
     if (findOn()) {
-      if (ev.key === 'Escape') { ev.preventDefault(); findClose(); return; }
       if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') { ev.preventDefault(); findMove(ev.key === 'ArrowDown' ? 1 : -1); return; }
       if (ev.key === 'Enter' && tg && tg.id === 'gm-find-q') { ev.preventDefault(); findGo(S.findSel || 0); }
       return;
@@ -6553,22 +7073,31 @@
     if (ev.key === 'Enter' && tg && tg.id === 'gm-prep-q') { ev.preventDefault(); prepFindGo(); return; }
     if (ev.key === 'Enter' && tg && tg.id === 'gm-gs-q') { ev.preventDefault(); screenFindGo(); return; }
     if (ev.key === 'Enter' && tg && tg.id === 'gm-dt-d100') { ev.preventDefault(); dtD100(tg.value); return; }     /* the morning's d100 */
-    var ml = $q('.gm-menu-list'); if (ml && !ml.hasAttribute('hidden') && ev.key === 'Escape') { menuOpen(false); var mb = $q('[data-gm="menu"]'); if (mb) mb.focus(); ev.preventDefault(); return; }
+    /* keys never fire behind an open thing (the Menu, the drawer, the Blade panel, a popover, a sheet): only its own. W shuts the drawer and A the Blade
+       panel when that is the top one; GO (Space, PageDown) still fires behind the Blade panel; everything else waits until it is closed (Esc) */
+    var top = escTop();
+    if (top) {
+      var k0 = str(ev.key).toLowerCase();
+      if (!typing(tg) && !ev.ctrlKey && !ev.metaKey && !ev.altKey && ((k0 === 'w' && top === 'drawer') || (k0 === 'a' && top === 'blade'))) { ev.preventDefault(); if (k0 === 'w') drawerToggle(); else if (S.assist) S.assist.toggle(); return; }
+      if (top === 'blade' && (ev.key === ' ' || ev.key === 'PageDown') && S.cs && typeof S.cs.key === 'function') S.cs.key(ev, document);
+      return;
+    }
     if (runViewKey(ev)) return;
     if (runKey(ev)) return;
+    /* GO: Space (the page's own focus, or the cue's place) and PageDown (the page-turner), asked of the cue stack */
+    if (S.cs && typeof S.cs.key === 'function' && S.cs.key(ev, document)) return;
     var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target) });
-    if (!a) return;
-    if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } else if (S.assist && S.assist.isOpen()) { S.assist.close(); ev.preventDefault(); } else if (S.dw && S.dw.open) { drawerSet(false); ev.preventDefault(); } else if (b17Esc()) ev.preventDefault(); return; }
-    if (a.type === 'reserved') return;
+    if (!a || a.type === 'esc' || a.type === 'reserved') return;
     if ((a.type === 'capture' || a.type === 'last') && !capBarShown()) return;      /* the bar is hidden: its keys do nothing */
     ev.preventDefault();
     if (a.type === 'situation') rollSituation(a.n);
-    else if (a.type === 'panel') { setPanel(a.panel); if (isPhone()) { S.seg = 'side'; syncPanels(); } else focusPane(a.panel); }
+    else if (a.type === 'panel') { if (!openView(a.panel)) setPanel(a.panel); if (isPhone()) { S.seg = 'side'; syncPanels(); } else focusPane(a.panel); }      /* N1b: the view, in the place the GM is in */
+    else if (a.type === 'place') placeStep(a.d);
     else if (a.type === 'capture') arm(a.bucket, true);
     else if (a.type === 'last') fileLast();
     else if (a.type === 'blank') blank();
     else if (a.type === 'blank-tap') blankTap();
-    else if (a.type === 'clear') blankIpad();
+    else if (a.type === 'clear') clearIpad();            /* 0: the tray's Clear, everything down to the ambient scene */
     else if (a.type === 'focus') toggleFocus();
     else if (a.type === 'drawer') drawerToggle();
     else if (a.type === 'find') findOpen();
@@ -6592,14 +7121,12 @@
       case 'menu': { var ml2 = $q('.gm-menu-list'); menuOpen(!!(ml2 && ml2.hasAttribute('hidden'))); break; }
       case 'focus': toggleFocus(); break;
       case 'hardstart': menuOpen(false); { var hsi = hsInst(); if (hsi) hsi.toggle(); } break;      /* 1.2 */
-      case 'switchboard': menuOpen(false); { var sbi = swInst(); if (sbi) sbi.toggle(); } break;      /* W0.2 */
       case 'montage': menuOpen(false); { var mti = mtInst(); if (mti) mti.toggle(); } break;      /* 2.8 */
       case 'practical': case 'phone': case 'trouble': case 'canon': case 'frontpage': case 'absent': menuOpen(false); { var rdi = rdInst(); if (rdi) rdi.toggle(a); } break;      /* 4.5, 4.7, 5.3 */
       case 'print': menuOpen(false); { var pri = prInst(); if (pri) pri.toggle(); } break;      /* 3.6, 2.11 */
       case 'corkboard': menuOpen(false); { var cbi = cbInst(); if (cbi) cbi.toggle(); } break;      /* 2.7 */
       case 'b29': menuOpen(false); if (b29()) b29().click(b.getAttribute('data-act')); break;      /* B29 */
       case 'preflight': menuOpen(false); { var pfi = pfInst(); if (pfi) pfi.toggle(); } break;      /* 4.2 */
-      case 'workshop': menuOpen(false); if (W.B68GmWorkshop) W.B68GmWorkshop.toggle($q('#gm-root'), { toast: toast }); break;      /* W0.5 */
       case 'drawer': drawerToggle(); break;
       case 'dtab': drawerTab(b.getAttribute('data-tab')); break;
       case 'dpc': drawerPc(b.getAttribute('data-id')); break;
@@ -6629,12 +7156,24 @@
       case 'note': exportTonight(); break;
       case 'seg': { var sg = b.getAttribute('data-seg'); if (sg === 'state') { drawerTab('table'); drawerSet(true); break; } if (isSide(sg)) { S.seg = 'side'; setPanel(sg); } else { S.seg = sg; syncPanels(); } break; }
       case 'panel': setPanel(b.getAttribute('data-panel')); break;
+      case 'ipadview': openView('ipad'); break;      /* the band's iPad pill and mic */
       case 'scene': S.sceneOpen = !S.sceneOpen; syncPanels(); break;
       case 'capopen': S.capOpen = !S.capOpen; syncPanels(); if (S.capOpen) { var ci = $q('#gm-cap-in'); if (ci) ci.focus(); } break;
       case 'roll': rollConsole(+b.getAttribute('data-n')); break;
       case 'situation': rollSituation(+b.getAttribute('data-n')); break;
       case 'pos': setPos(b.getAttribute('data-v')); break;
       case 'dots': setDots(b.getAttribute('data-v')); break;
+      /* N4: the Roll */
+      case 'eff': if (S.stamp) S.stamp.draft('eff', b.getAttribute('data-v')); break;
+      case 'stamp': rollStamp(); break;
+      case 'stamp-down': if (S.stamp) S.stamp.esc(); break;
+      case 'stamp-clean': if (S.stamp) S.stamp.mark('clean'); break;
+      case 'sz-reduce': if (S.stamp) S.stamp.reduce(); break;
+      case 'sz-restore': if (S.stamp) S.stamp.restore(); break;
+      case 'sz-done': if (S.stamp) S.stamp.dismiss(); break;
+      case 'qt': rollQuick(+b.getAttribute('data-n')); break;
+      case 'fold': rollFold(b.getAttribute('data-rlfold')); break;
+      case 'line-clear': rollLineClear(); break;
       case 'rackclear': rackClear(); break;
       case 'voiceclear': S.voice = null; renderRack(); break;
       case 'ho-show': showHandout(b.getAttribute('data-id')); break;
@@ -6645,7 +7184,7 @@
         var cur = {}; Object.keys(e).forEach(function (k) { if (k !== '_id') cur[k] = e[k]; }); cur.hid = e._id;
         cur.at = nowIso();      /* the current card now: after a reload the newest of the two still shows */
         var cp = { cards: {} }; cp.cards[tool] = replacePatch(isObj(S.doc.cards) ? S.doc.cards[tool] : null, cur); patch(cp, { force: true });   /* replaces the stored card: no key of the card it was survives */
-        if (tool === 'console' || tool === 'situation') { S.conRes = null; drawConsoleCard(); }
+        if (tool === 'console' || tool === 'situation') { S.conRes = null; if (S.stamp) S.stamp.dismiss(); drawConsoleCard(); }     /* N4: the last roll's size stays with its card */
         else if (tool === 'scenes') { S.scnRoll = null; renderScenes(); }
         else if (tool === 'npc') { S.npcRoll = null; renderNpcGen(); }
         else if (tool === 'downtime') { S.dtRoll = null; S.dtSig = null; renderDowntime(); }
@@ -6705,6 +7244,7 @@
       case 'draw': drawMap(); break;
       case 'room-open': roomOpen(str(b.getAttribute('data-room')), true); break;
       case 'room-stage': b17Toggle(str(b.getAttribute('data-room'))); break;
+      case 'site': { var si3 = siteInst(); if (si3) si3.act(str(b.getAttribute('data-site')), b, S.rv || null); if (b.closest('#gm-loc')) renderLocation(); break; }      /* N3: the site line and Location's stage line */
       case 'room-close': roomOpen(str(b.getAttribute('data-room')), false); break;
       case 'run-floor': runSetFloor(str(b.getAttribute('data-v'))); break;
       case 'run-step': runStep(+b.getAttribute('data-d') || 0); break;
@@ -6750,6 +7290,7 @@
       case 'livesync': toggleLive(); break;
       case 'capbar': toggleCapBar(); break;
       case 'mirror': toggleMirror(); break;
+      case 'mirror-set': if ((b.getAttribute('data-v') === '1') !== mirrorOn()) toggleMirror(); renderIpadSettings(); break;   /* the iPad view's Settings row */
     }
   }
   function onChange(ev) {
@@ -6839,7 +7380,7 @@
       renderRail(); renderBar(); scMaybeRedraw(); runStale();
       apClocksFeed(); apSubjects();
       if (S.mission) S.mission.noteClocks();      /* the alarm clock's fill or visibility is on the players' band */
-      { var swc = swInst(); if (swc) swc.heal(); }      /* W0.2: the campaign document's switch copy follows the GM state's, on every arrival */
+      { var stc = setInst(); if (stc) stc.heal(); }      /* W0.2 / N0: the campaign document's copy of the settings follows the GM state's, on every arrival */
       /* the stage changed: the NPC tab's buttons follow */
       if ((isObj(camp) && isObj(camp.scene) ? JSON.stringify(camp.scene.npcs || {}) : '') !== before) {
         [].forEach.call(S.root.querySelectorAll('[data-gm="npcstage"]'), function (b) { var on = staged(b.getAttribute('data-id')); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Off stage' : 'Put on stage'; b.classList.toggle('primary', !on); });
@@ -6889,6 +7430,12 @@
     /* the autopilot's controller state, for checks (the page's own log is S.doc.ap.log), and Voice's lines as the box would hand them over */
     _autopilot: function () { return S && S.ap ? S.ap.core.state() : null; },
     _night: function () { return S && S.night ? S.night : null; },
+    _cuePhase: function (p) { return S ? cuePhase(S, p) : Promise.resolve(false); },     /* for checks: what a `phase:` cue does */
+    /* N1b: the places of the night (gm/places.js), for the band (N1a: the same names its host carries) and the checks */
+    goPlace: goPlace, openView: openView, callAftermath: callAftermath, currentPlace: currentPlace, currentView: currentView,
+    _places: function () { return S && S.places ? S.places : null; },
+    /* N4: the Roll's "If it goes wrong" line from anywhere (the Run view's room card calls its host's setThreat, the same thing) -> bool */
+    setThreat: function (text) { return rollSetThreat(text); },
     aftermath: aftermathFeed,       /* suite 1.6 */
     cast: castFeed,                 /* suites 3.8 and 5.4 */
     _voice: function (v) { if (S) setVoice(v); }

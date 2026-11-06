@@ -42,7 +42,7 @@
   function clock(ms) { var s = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(s / 60) + ':' + (s % 60 < 10 ? '0' : '') + (s % 60); }
 
   function make(o) {
-    var now = o && typeof o.now === 'function' ? o.now : Date.now, until = 0, lamp = null, text = null, seen = false;
+    var now = o && typeof o.now === 'function' ? o.now : Date.now, until = 0, lamp = null, text = null, seen = false, banded = null;
     function paused() { if (until && now() >= until) until = 0; return until > 0; }
     var air = {
       paused: paused,
@@ -62,6 +62,14 @@
         var doc = container && container.ownerDocument;
         if (!doc) return;
         var p = paused();
+        /* the GM night rebuild: on the display the lamp is the band's mic slot (app/display/layers.js), so it never draws over the phase, the crew
+           or security; a container without a band (a bare test box) still gets a lamp of its own */
+        var L = root && root.B68Layers;
+        if (L && typeof L.mic === 'function' && L.mic(container, live ? { off: p, text: p ? 'Off the record' : 'On air', clock: p ? clock(until - now()) : '' } : null)) {
+          banded = live ? container : null;
+          if (lamp && lamp.parentNode) lamp.parentNode.removeChild(lamp); lamp = null; text = null;
+          return;
+        }
         if (!live) { if (lamp && lamp.parentNode) lamp.parentNode.removeChild(lamp); lamp = null; text = null; return; }
         if (!lamp || lamp.parentNode !== container) {
           lamp = doc.createElement('div'); lamp.className = 'dp-onair'; lamp.setAttribute('role', 'status'); lamp.setAttribute('aria-live', 'polite');
@@ -71,7 +79,11 @@
         var t = p ? 'Off the record ' + clock(until - now()) : 'On air';
         if (text.textContent !== t) text.textContent = t;
       },
-      destroy: function () { if (lamp && lamp.parentNode) lamp.parentNode.removeChild(lamp); lamp = null; until = 0; }
+      destroy: function () {
+        if (lamp && lamp.parentNode) lamp.parentNode.removeChild(lamp); lamp = null; until = 0;
+        if (banded && root && root.B68Layers && typeof root.B68Layers.mic === 'function') root.B68Layers.mic(banded, null);
+        banded = null;
+      }
     };
     return air;
   }

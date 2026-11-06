@@ -52,10 +52,10 @@ async function withCast() { const db = await freshDb(); for (const [id, d] of Ob
 const POLL = '?seq=-1&aseq=-1&sseq=-1';
 
 /* ---- the switches ---- */
-await test('switches: three, off by default, bland GM-only text, the right surfaces; the iPad switches are display switches', () => {
+await test('switches: three, bland text, the right surfaces; the iPad ones are display lines; room.music is a setting (off until chosen), the other two always on (N0)', () => {
   const want = { 'map.montage': 'gm', 'room.duck': 'display', 'room.music': 'display' };
   for (const [id, surface] of Object.entries(want)) {
-    const s = F.get(id); assert.ok(s, id); assert.equal(s.surface, surface); assert.equal(s.default, false); assert.equal(F.valueOf({}, id), false);
+    const s = F.get(id); assert.ok(s, id); assert.equal(s.surface, surface); assert.equal(s.default, false); assert.equal(F.valueOf({}, id), id !== 'room.music', id + (id === 'room.music' ? ': a setting, off until chosen' : ': on with nothing stored')); assert.equal(F.isSetting(id), id === 'room.music', id);
     assert.ok(s.doc.length > 40 && s.label.length > 3);
   }
   assert.equal(F.get('map.montage').saturday, 'try'); assert.equal(F.get('room.duck').saturday, 'try'); assert.equal(F.get('room.music').saturday, 'off');

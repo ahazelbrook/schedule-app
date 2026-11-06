@@ -22,18 +22,24 @@
    once). Bypass marks it skipped without firing it. Back re-arms the last one (it undoes nothing on the iPad). "Blade, go" with nothing in standby does nothing but say so.
    The position lives in the GM state document (`cues`: { note, seq: [[n, 'f'|'b'] ...], panic, prior }), so a reload keeps it and another GM page follows it.
 
-   PANIC. Esc, when nothing else on the page has claimed it (a dialog, the menu, Find, the Blade panel and the drawer all mark their Esc as handled): the host clears every beat,
-   layer and spotlight on the iPad, pins the safe scene (which plays no music, so the theme stops with it), and this bar goes red as the WORK LIGHT banner. The app has no
-   lamp or sound channel of its own: the lights and the practical sound are the GM's, and the banner is the prompt to put the work light up. Resume puts the iPad's scene back.
+   PANIC. The band's last button, and Esc when nothing else is open (gm/esc.js decides; this file has no key listener of its own): the host clears every beat,
+   layer and spotlight on the iPad, pins the safe scene (which plays no music, so the theme stops with it), and the cue's place in the band shows WORK LIGHT UP with
+   Resume (the band turns its row red). It works with or without cues in the note. The app has no lamp or sound channel of its own: the lights and the practical
+   sound are the GM's, and the banner is the prompt to put the work light up. Resume puts the iPad's scene back.
+
+   THE FACE. The cue draws itself into the slot the band gives it (host.cueSlot(), gm/band.js), never anywhere else: STANDBY "#n KIND text", GO (Space), Bypass,
+   and a ⋯ popover holding Back, Start again, the "Then:" list and the last line fired; NO CUES and ALL DONE when there is nothing to fire.
 
    API
      parse(note) -> { cues: [{ n, kind, arg, text, show? }], safe, skipped: [line] }        note = { blocks: [{ k, src }] } or a string
      create(host) -> controller
        host: { feature() -> bool, note() -> the prep note | null, doc() -> the GM state document, patch(p) -> bool, now() -> ms, toast(msg, bad), log(text),
                scene(id) -> Promise<bool>, show(kind, payload, { key }) -> Promise<answer | null>, reveal(name) -> Promise<{ ok, say }>, phase(p) -> Promise<bool>,
-               escHeld() -> bool (another control is about to use this Esc: the stamp's report card is up), ambient() -> { mode, scene }, panic(safeScene) -> Promise, resume(prior) -> Promise, root() -> the element the bar goes in, cueVerbs(), grammar() -> B68GmCueGrammar | null,
-               grammarOn() -> bool, setTimeout }
-       controller: view() go(src) bypass() back() reset() panic(src) resume() paint() tick() bind(document) -> unbind  register() unregister() destroy()
+               ambient() -> { mode, scene }, panic(safeScene) -> Promise, resume(prior) -> Promise, cueSlot() -> the band's element for the cue | null,
+               changed() (optional: what the cue shows moved, so the band can follow), cueVerbs(), grammar() -> B68GmCueGrammar | null, grammarOn() -> bool, setTimeout }
+       controller: view() go(src) bypass() back() reset() panic(src) resume() paint() tick() key(ev, doc) -> bool  moreOpen() closeMore()
+                   register() unregister() destroy()
+         key(ev, doc): the page's one key handler asks this for Space and PageDown (GO); true when it was a GO (fired, or locked out)
      LOCK_MS (500) */
 (function (root, factory) {
   'use strict';
@@ -138,7 +144,7 @@
   /* ---------- 3. the controller ---------- */
   function create(host) {
     host = host || {};
-    var lastAt = -1e12, busy = false, busyAt = 0, last = '', bar = null, sig = '', parsed = null, parsedFor = null, registered = [], unbinders = [], alive = true;
+    var lastAt = -1e12, busy = false, busyAt = 0, last = '', slot = null, sig = '', parsed = null, parsedFor = null, registered = [], alive = true, more = false;
     function on() { return alive && typeof host.feature === 'function' ? !!host.feature() : false; }
     function now() { return typeof host.now === 'function' ? host.now() : Date.now(); }
     function say(m, bad) { if (typeof host.toast === 'function') host.toast(m, !!bad); }
@@ -212,16 +218,16 @@
       var v = view(); save(v, [], { panic: null, prior: null }); last = ''; paint(); return { ok: true };
     }
 
-    /* PANIC: no lock, nothing waits on it. The bar goes red at once; the iPad is cleared and the safe scene pinned in parallel. */
+    /* PANIC: no lock, nothing waits on it. The cue's place goes red at once; the iPad is cleared and the safe scene pinned in parallel. */
     function panic(src) {
       if (!on()) return Promise.resolve({ ok: false, reason: 'off' });
       var t = now(), v = view(), prior = v.panic && v.prior ? v.prior : (typeof host.ambient === 'function' ? host.ambient() : null);
-      busy = false;
+      busy = false; more = false;
       save(v, v.seq, { panic: t, prior: isObj(prior) ? { mode: prior.mode === 'pin' || prior.mode === 'off' ? prior.mode : 'auto', scene: SCENE_RE.test(str(prior.scene)) ? prior.scene : null } : null });
       paint();
       return Promise.resolve().then(function () { return host.panic(v.safe); }).then(function (r) {
         var ms = now() - t; return { ok: r !== false, ms: ms, safe: v.safe, src: src };
-      }, function () { say('The iPad could not be reached: use Clear on the iPad panel.', true); return { ok: false, safe: v.safe, src: src }; });
+      }, function () { say('The iPad could not be reached: press Clear (0) in the band.', true); return { ok: false, safe: v.safe, src: src }; });
     }
     function resume() {
       if (!on()) return Promise.resolve({ ok: false, reason: 'off' });
@@ -230,89 +236,94 @@
       return Promise.resolve().then(function () { return typeof host.resume === 'function' ? host.resume(v.prior) : null; }).then(function () { return { ok: true }; }, function () { return { ok: false }; });
     }
 
-    /* ---------- the bar ---------- */
-    function rootEl() { var r = typeof host.root === 'function' ? host.root() : null; return r && r.ownerDocument ? r : null; }
-    function drop() { if (bar && bar.parentNode) bar.parentNode.removeChild(bar); bar = null; sig = ''; }
-    function ensure() {
-      var r = rootEl(); if (!r) return null;
-      if (bar && bar.parentNode === r) return bar;
-      drop();
-      var doc = r.ownerDocument, rail = r.querySelector('#gm-phaserail') || r.querySelector('.gm-bar');
-      bar = doc.createElement('section'); bar.className = 'gm-cuebar'; bar.id = 'gm-cuebar'; bar.setAttribute('aria-label', 'Cue stack');
-      if (rail && rail.nextSibling) r.insertBefore(bar, rail.nextSibling); else r.insertBefore(bar, r.firstChild);
-      bar.addEventListener('click', function (ev) {
-        var b = ev.target && ev.target.closest ? ev.target.closest('[data-cs]') : null; if (!b || !alive) return;
-        var w = b.getAttribute('data-cs');
-        if (w === 'go') go('button'); else if (w === 'bypass') bypass(); else if (w === 'back') back(); else if (w === 'reset') reset(); else if (w === 'panic') panic('button'); else if (w === 'resume') resume();
-      });
-      sig = '';
-      return bar;
+    /* ---------- the face: the band's cue slot ---------- */
+    var slotOff = null;
+    function slotEl() { var s = typeof host.cueSlot === 'function' ? host.cueSlot() : null; return s && typeof s.querySelector === 'function' ? s : null; }
+    function onSlotClick(ev) {
+      var b = ev && ev.target && ev.target.closest ? ev.target.closest('[data-cs]') : null; if (!b || !alive) return;
+      var w = b.getAttribute('data-cs');
+      if (w === 'more') { more = !more; sig = ''; paint(); return; }
+      if (w === 'go') go('button');
+      else if (w === 'bypass') bypass();
+      else if (w === 'resume') resume();
+      else if (w === 'back' || w === 'reset') { more = false; if (w === 'back') back(); else reset(); }
+    }
+    function bindSlot(s) {
+      if (slot === s) return;
+      if (slotOff) { try { slotOff(); } catch (e) {} slotOff = null; }
+      slot = s; sig = ''; more = false;
+      if (typeof s.addEventListener === 'function') {
+        s.addEventListener('click', onSlotClick);
+        slotOff = function () { if (typeof s.removeEventListener === 'function') s.removeEventListener('click', onSlotClick); };
+      }
+    }
+    /* the ⋯ popover: the standby in full, what comes next, the last line fired, Back and Start again */
+    function popHtml(v) {
+      var h = '<div class="gm-cs-pop" data-cs-pop role="dialog" aria-label="The cue stack"' + (more ? '' : ' hidden') + '>';
+      if (v.standby) h += '<p class="gm-cs-full"><b>STANDBY</b> ' + esc(label(v.standby)) + (MANUAL[v.standby.kind] ? ' <span class="gm-cs-hand">by hand</span>' : '') + '</p>';
+      if (v.next.length) h += '<p class="gm-cs-next"><b>Then:</b> ' + v.next.map(function (x) { return esc('#' + x.n + ' ' + x.kind + ': ' + x.text); }).join(' &middot; ') + '</p>';
+      if (v.last) h += '<p class="gm-cs-last">' + esc(v.last) + '</p>';
+      if (!v.total) h += '<p class="gm-cs-last">This note has no Cues section: a "## Cues" heading with numbered lines makes one.</p>';
+      else if (!v.standby) h += '<p class="gm-cs-last">Every cue in this note has been fired or bypassed.</p>';
+      h += '<div class="gm-cs-popacts">' + (v.seq.length ? '<button type="button" class="btn sm" data-cs="back" title="Put the last cue back in standby (it undoes nothing on the iPad)">Back</button>' +
+        '<button type="button" class="btn sm" data-cs="reset" title="Every cue back in standby, from the first">Start again</button>' : '<span class="gm-cs-dim">Nothing fired yet.</span>') + '</div>';
+      return h + '</div>';
     }
     function html(v) {
-      var h = '';
       if (v.panic) {
-        h += '<div class="gm-cs-panic" role="alert"><b>WORK LIGHT UP</b><span>The iPad is on the safe scene (' + esc(v.safe) + ') and its sound is down. Put the work light on in the room.</span>' +
-          '<button type="button" class="btn sm" data-cs="resume">Resume</button></div>';
+        var say2 = 'The iPad is on the safe scene (' + v.safe + ') and its sound is down. Put the work light on in the room.';
+        return '<span class="gm-cs-tag gm-cs-alarm" role="alert">WORK LIGHT UP</span><span class="gm-cs-txt" title="' + esc(say2) + '">' + esc(say2) + '</span>' +
+          '<button type="button" class="gm-cs-resume" data-cs="resume" title="Put the iPad’s scene back">Resume</button>';
       }
+      var dots = '<button type="button" class="gm-cs-more" data-cs="more" aria-haspopup="dialog" aria-expanded="' + more + '" aria-label="The cue stack: Back, Start again, what comes next" title="Back, Start again, what comes next and the last cue fired">⋯</button>';
       if (v.standby) {
         var c = v.standby;
-        h += '<div class="gm-cs-row"><span class="gm-cs-tag">STANDBY</span><span class="gm-cs-n">#' + c.n + ' ' + esc(c.kind.toUpperCase()) + '</span><span class="gm-cs-txt">' + esc(c.text) + '</span>' +
+        return '<span class="gm-cs-tag">STANDBY</span>' +
+          '<button type="button" class="gm-cs-what" data-cs="more" aria-expanded="' + more + '" title="' + esc(label(c)) + '"><b>#' + c.n + '</b> ' + esc(c.kind.toUpperCase()) + ' ' + esc(c.text) + '</button>' +
           (MANUAL[c.kind] ? '<span class="gm-cs-hand">by hand</span>' : '') +
-          '<button type="button" class="btn primary gm-cs-go" data-cs="go" title="Fire the cue in standby (Space)">GO <kbd>Space</kbd></button>' +
-          '<button type="button" class="btn sm" data-cs="bypass" title="Skip this cue without firing it">Bypass</button>' +
-          (v.seq.length ? '<button type="button" class="btn sm" data-cs="back" title="Put the last cue back in standby (it undoes nothing on the iPad)">Back</button>' : '') +
-          '<button type="button" class="btn sm gm-cs-panicbtn" data-cs="panic" title="Panic: the safe scene on the iPad, sound down, work light up (Esc)">Panic <kbd>Esc</kbd></button></div>';
-        if (v.next.length) h += '<div class="gm-cs-next">Then: ' + v.next.map(function (x) { return esc('#' + x.n + ' ' + x.kind + ': ' + x.text); }).join(' &middot; ') + '</div>';
-      } else {
-        h += '<div class="gm-cs-row"><span class="gm-cs-tag gm-cs-idle">' + (v.total ? 'ALL DONE' : 'NO CUES') + '</span><span class="gm-cs-txt">' +
-          (v.total ? 'Every cue in this note has been fired or bypassed.' : 'This note has no Cues section.') + '</span>' +
-          (v.seq.length ? '<button type="button" class="btn sm" data-cs="back">Back</button><button type="button" class="btn sm" data-cs="reset">Start again</button>' : '') +
-          '<button type="button" class="btn sm gm-cs-panicbtn" data-cs="panic" title="Panic: the safe scene on the iPad, sound down, work light up (Esc)">Panic <kbd>Esc</kbd></button></div>';
+          '<button type="button" class="gm-cs-go" data-cs="go" title="Fire the cue in standby (Space)">GO <kbd>Space</kbd></button>' +
+          '<button type="button" class="gm-cs-soft" data-cs="bypass" title="Skip this cue without firing it">Bypass</button>' + dots + popHtml(v);
       }
-      if (v.last) h += '<div class="gm-cs-last">' + esc(v.last) + '</div>';
-      return h;
+      return '<span class="gm-cs-tag gm-cs-idle">' + (v.total ? 'ALL DONE' : 'NO CUES') + '</span>' +
+        '<span class="gm-cs-txt gm-cs-dim">' + (v.total ? 'Every cue fired or bypassed' : 'No Cues in this note') + '</span>' + dots + popHtml(v);
     }
     function paint() {
       if (!alive) return;
-      if (!on()) { drop(); return; }
-      var r = rootEl(); if (!r) return;
-      var v = view(), s = JSON.stringify([v.noteId, v.seq, v.panic, v.safe, v.standby && v.standby.n, v.next.map(function (x) { return x.n; }), v.total, v.last]);
-      var el = ensure(); if (!el) return;
-      if (s !== sig) { sig = s; el.innerHTML = html(v); el.setAttribute('data-state', v.panic ? 'panic' : v.standby ? 'standby' : 'idle'); }
+      var s = slotEl();
+      if (!on()) { if (s && s === slot) { s.innerHTML = ''; s.removeAttribute('data-state'); } sig = ''; return; }
+      if (!s) return;
+      bindSlot(s);
+      var v = view(), k = JSON.stringify([v.noteId, v.seq, v.panic, v.safe, v.standby && v.standby.n, v.next.map(function (x) { return x.n; }), v.total, v.last, more]);
+      if (k !== sig) {
+        sig = k; s.innerHTML = html(v); s.setAttribute('data-state', v.panic ? 'panic' : v.standby ? 'standby' : 'idle');
+        if (typeof host.changed === 'function') { try { host.changed(); } catch (e) { /* the band follows on its next tick */ } }
+      }
     }
     function tick() { paint(); }
+    function moreOpen() { return !!(alive && more && slot); }
+    function closeMore() { if (!more) return; more = false; sig = ''; paint(); }
 
-    /* ---------- the keys ---------- */
+    /* ---------- the keys: asked by the page's one key handler (no listener of its own) ---------- */
     function typing(t) {
       if (!t || !t.tagName) return false;
       var tn = str(t.tagName).toUpperCase();
       return tn === 'INPUT' || tn === 'TEXTAREA' || tn === 'SELECT' || t.isContentEditable === true;
     }
     function dialogOpen(doc) { return !!(doc && doc.querySelector && doc.querySelector('dialog[open]')); }
-    function bind(doc) {
-      if (!doc || typeof doc.addEventListener !== 'function') return function () {};
-      function onKey(ev) {
-        if (!alive || !on() || !ev || ev.ctrlKey || ev.altKey || ev.metaKey) return;
-        var k = ev.key, tg = ev.target;
-        if (dialogOpen(doc) || typing(tg)) return;
-        if (k === 'Escape') {                                                                    /* an Esc another handler took (menu, Find, Blade panel, drawer, peek) is not a panic, nor is the one that takes the stamp's report card down */
-          if (ev.defaultPrevented || (typeof host.escHeld === 'function' && host.escHeld())) return;
-          panic('key'); return;
-        }
-        if (k === ' ' || k === 'Spacebar' || k === 'PageDown') {
-          var tn = tg && tg.tagName ? str(tg.tagName).toUpperCase() : '', inBar = !!(tg && tg.closest && tg.closest('#gm-cuebar'));
-          /* Space is GO only when the focus is on the page itself (or the bar): on any other button, link or task box it is that control's own press. PageDown is the page-turner's key and works anywhere */
-          if (k !== 'PageDown' && tg && tn !== 'BODY' && tn !== 'HTML' && !inBar) return;
-          if (k !== 'PageDown' && inBar && tn === 'BUTTON') return;                              /* a focused bar button: the browser's click does it */
-          var v = view(); if (!v.total && !v.panic) return;                                      /* no cues in this note: the keys are the page's own */
-          if (ev.preventDefault) ev.preventDefault();
-          if (!ev.repeat) go('key');
-        }
-      }
-      doc.addEventListener('keydown', onKey);
-      var off = function () { doc.removeEventListener('keydown', onKey); };
-      unbinders.push(off);
-      return off;
+    /* Space is GO only when the focus is on the page itself (or the cue's own place, not one of its buttons): on any other button, link or task box it is that
+       control's own press. PageDown is the page-turner's key and works anywhere but a field. With no cues in the note, the keys are the page's own. */
+    function key(ev, doc) {
+      if (!alive || !on() || !ev || ev.ctrlKey || ev.altKey || ev.metaKey) return false;
+      var k = ev.key, tg = ev.target;
+      if (k !== ' ' && k !== 'Spacebar' && k !== 'PageDown') return false;
+      if (dialogOpen(doc) || typing(tg)) return false;
+      var tn = tg && tg.tagName ? str(tg.tagName).toUpperCase() : '', inSlot = !!(tg && slot && typeof slot.contains === 'function' && slot.contains(tg));
+      if (k !== 'PageDown' && tg && tn !== 'BODY' && tn !== 'HTML' && !inSlot) return false;
+      if (k !== 'PageDown' && inSlot && tn === 'BUTTON') return false;                       /* a focused cue button: the browser's click does it */
+      var v = view(); if (!v.total && !v.panic) return false;
+      if (ev.preventDefault) ev.preventDefault();
+      if (!ev.repeat) go('key');
+      return true;
     }
 
     /* ---------- "Blade, go" ---------- */
@@ -339,10 +350,15 @@
       if (!on() || !isObj(action) || action.type !== 'cue_do' || action.verb !== 'fire') return Promise.resolve({ ok: false });
       return go('voice');
     }
-    function destroy() { alive = false; unbinders.forEach(function (f) { try { f(); } catch (e) {} }); unbinders = []; unregister(); drop(); }
+    function destroy() {
+      alive = false; more = false; unregister();
+      if (slotOff) { try { slotOff(); } catch (e) {} slotOff = null; }
+      if (slot) { try { slot.innerHTML = ''; slot.removeAttribute('data-state'); } catch (e) {} }
+      slot = null; sig = '';
+    }
 
-    return { view: view, go: go, bypass: bypass, back: back, reset: reset, panic: panic, resume: resume, paint: paint, tick: tick, bind: bind, run: run, register: register, unregister: unregister,
-      destroy: destroy, parseSpoken: parseSpoken };
+    return { view: view, go: go, bypass: bypass, back: back, reset: reset, panic: panic, resume: resume, paint: paint, tick: tick, key: key, moreOpen: moreOpen, closeMore: closeMore,
+      run: run, register: register, unregister: unregister, destroy: destroy, parseSpoken: parseSpoken };
   }
 
   return { LOCK_MS: LOCK_MS, KINDS: KINDS, DEFAULT_SAFE: DEFAULT_SAFE, parse: parse, cleanState: cleanState, standbyOf: standbyOf, create: create };

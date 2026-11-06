@@ -14,15 +14,20 @@
 @media (prefers-reduced-motion: reduce) { .dp-rc-card { transform: none; opacity: 1; } }
 [data-reduced] .dp-rc-card { transform: none; opacity: 1; }
 
-/* a PC's status on the band (switch face.pcstatus): Stress, harm marks and a stamp per deadlocked key */
-.dp-lay-pc { display: inline-flex; align-items: center; gap: .5em; }
+/* a PC's status in its cell of the band (face.pcstatus; the cell itself is display/shows.css): the Stress beside the name, and under them one mark
+   per harm, drawn as the thing it is and coloured by its level (a plaster at 1, a sling at 2, a splint at 3, a cross at 4; the word is the mark's
+   title), then a padlock for the deadlocked keys (with a count past one). Marks, not words, so three PCs fit across the band at 1024 px. */
 .dp-lay-pc i { font-style: normal; }
-.dp-pc-stress { min-width: 1.5em; text-align: center; padding: 0 .3em; border-radius: .3em; background: var(--b68-orange); color: var(--b68-ink); font-weight: 900; }
-.dp-pc-harm { padding: 0 .4em; border: .12em solid var(--b68-paper-dark); border-radius: .3em; font-size: .72em; text-transform: uppercase; letter-spacing: .1em; }
-.dp-pc-harm-1 { background: var(--b68-paper); color: var(--b68-ink); }
-.dp-pc-harm-2 { background: var(--b68-mustard); color: var(--b68-ink); }
-.dp-pc-harm-3, .dp-pc-harm-4 { background: var(--b68-alarm-lit); color: var(--b68-paper); border-color: var(--b68-alarm-lit); }
-.dp-pc-lock { padding: 0 .4em; border: .14em solid var(--b68-alarm-lit); color: var(--b68-alarm-lit); border-radius: .3em; font-size: .72em; font-weight: 900; letter-spacing: .12em; transform: rotate(-4deg); }
+.dp-pc-stress { flex: none; min-width: 1.6em; text-align: center; padding: 0 .3em; border-radius: .3em; background: var(--b68-orange); color: var(--b68-ink); font-weight: 900; letter-spacing: 0; }
+.dp-pc-harm { flex: none; display: block; font-size: 0; color: transparent; overflow: hidden; }
+.dp-pc-harm-1 { width: 3.4vmin; height: 1.9vmin; border-radius: 1vmin; background: linear-gradient(90deg, var(--b68-paper) 0 32%, var(--b68-paper-dark) 32% 68%, var(--b68-paper) 68%); }
+.dp-pc-harm-2 { width: 2.8vmin; height: 2.6vmin; background: var(--b68-mustard); clip-path: polygon(0 0, 100% 0, 50% 100%); }
+.dp-pc-harm-3 { width: 2.4vmin; height: 2.8vmin; background: repeating-linear-gradient(90deg, var(--b68-alarm-lit) 0 .6vmin, transparent .6vmin .9vmin); }
+.dp-pc-harm-4 { width: 2.8vmin; height: 2.8vmin; background: var(--b68-alarm-lit); clip-path: polygon(35% 0, 65% 0, 65% 35%, 100% 35%, 100% 65%, 65% 65%, 65% 100%, 35% 100%, 35% 65%, 0 65%, 0 35%, 35% 35%); }
+.dp-pc-lock { position: relative; flex: none; display: inline-flex; align-items: center; min-height: 2.8vmin; padding-left: 2.8vmin; color: var(--b68-alarm-lit); font-weight: 900; letter-spacing: 0; }
+.dp-pc-lock::before { content: ""; position: absolute; left: 0; bottom: 0; width: 2.4vmin; height: 1.7vmin; border-radius: .3vmin; background: currentColor; }
+.dp-pc-lock::after { content: ""; position: absolute; left: .45vmin; bottom: 1.3vmin; width: 1.5vmin; height: 1.5vmin; box-sizing: border-box; border: .4vmin solid currentColor; border-bottom: 0; border-radius: .9vmin .9vmin 0 0; }
+.dp-pc-lock:empty { padding-left: 2.4vmin; }
 
 /* face looks (suite 3.2, 3.3, 3.4; switches face.expressions, face.formats, face.badge): the signature pose, the portrait formats, and the badge, style and texture of a held spotlight. */
 .dp-fl-defs { position: absolute; width: 0; height: 0; overflow: hidden; }

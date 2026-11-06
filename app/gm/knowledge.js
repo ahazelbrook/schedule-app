@@ -1,4 +1,4 @@
-/* gm/knowledge.js — the three knowledge states of a room (suite ticket 2.2, switch map.knowledge).
+/* gm/knowledge.js — the three knowledge states of a room (suite ticket 2.2; the GM night rebuild, N3: the site's Players' map).
 
    Plain script, UMD: window.B68GmKnowledge in the browser, module.exports under Node. GM side only. The controller reaches the page only through
    the host it is given, so a node test can drive it with a fake.
@@ -8,32 +8,29 @@
      blueprint  known from intel: the player copy shows its outline and its name as blue linework, no furniture and no icons.
      seen       opened for the players: drawn in full, as the map kit has always drawn a room the crew has been in.
    WHERE THEY LIVE. Seen is the run's ball.open (as before, #135). Blueprint is a new list on the same ball, ball.know. The two lists never share
-   a room: seen beats blueprint. A room whose band is ticked is seen, and cannot be cycled until the band is closed. With the switch off this file
-   writes nothing and the page never reads ball.know.
+   a room: seen beats blueprint. A room whose band is ticked is seen, and cannot be changed until the band is closed.
    WHAT REACHES THE PLAYERS. The page folds ball.know into the player copy's reveal as "room:<name>" entries beside ball.open, so every check the page
    already runs on the player copy (the hidden-name scan, the token screen, the live follow's ask) treats a blueprint room as a room the crew knows,
    and a dark room as one they do not. Phones and the players' mission card read ball.open only: a blueprint room is never "open".
-   THE TAP. A tap on a room of the GM map (or on its row here) cycles dark -> blueprint -> seen -> dark. "Intel" sets every dark room of a group
-   (a band, or a floor) to blueprint and never lowers a room that is already known.
+   ON THE SITE (N3). A room's card has ONE control for it, the Players' map: Dark | Blueprint | Seen (segHtml). Dark and Blueprint apply at once (set);
+   Seen stages the room, and Send opens it (gm/stage.js: the page does that part). "Intel" (the site's ⋯) sets every dark room of a group (a band, or a
+   floor) to blueprint and never lowers a room that is already known. A tap on a room of Location's GM map still cycles it (tapRoom).
 
    API
-     STATES, SWITCH
+     STATES, SWITCH, LABEL
      cleanNames(list, rooms) -> names that are rooms of the roll, once each (at most 80), in the order given
      stateOf(room, ctx) -> 'dark' | 'blueprint' | 'seen'      room { name, band }; ctx { open: [name], know: [name], bands: [band] }
-     locked(room, ctx) -> true when the room's band is ticked (it is seen, and a tap cannot change it)
-     next(state) -> the state a tap gives
+     locked(room, ctx) -> true when the room's band is ticked (it is seen, and nothing here can change it)
+     next(state) -> the state a tap on Location's map gives
      setState(name, state, ctx) -> { open, know }             new lists, disjoint, order kept; the lists are the only thing a state is
      intel(rooms, names, ctx) -> { open, know }               every dark room of `names` becomes blueprint
      groups(rooms, floors) -> [{ id, label, names }]          the bands that hold a room (not public), then the floors
      signature(names) -> string                               what the live follow compares: the blueprint set, order-free
-     panelHtml(view, esc) -> HTML
-     toggleHtml(name, esc) -> the Run view's one button on a room card: its state, and what a tap makes it; '' when the room is seen through a band
-     create(host) -> controller { active(), view(), cycle(name), intel(groupId), tapRoom(roll, dataRoom), bind(box) -> unbind, paint(box),
-                                  toggleHtml(name), paintRun(frame, svg, zoom) }
+     segHtml(info, esc) -> the Players' map control           info { name, state, locked, staged }; buttons data-site="kn" data-room data-k
+     create(host) -> controller { active(), view(), states(), stateOf(name), locked(name), set(name, state), cycle(name), intel(groupId), tapRoom(roll, dataRoom),
+                                  roomAt(svg, event) -> name | '', seg(name, staged) -> HTML }
        host: { feature(id) -> bool, rooms() -> [{ name, band }], ctx() -> { open, know, bands }, floors() -> [{ name, names }], write(open, know) -> bool,
-               toast(msg, bad), changed(), roomBox(svg, name) -> { x, y, w, h } | null (the Run map's rooms, in the svg's own units) }
-   THE RUN VIEW. The Run map gets a bar under it with the Intel buttons, and a tap on a room of it cycles that room (the room whose box holds the tap, the smallest
-   first); each room card's Reveal button becomes its state button. All of it only while the switch is on. */
+               toast(msg, bad), changed(), roomBox(svg, name) -> { x, y, w, h } | null (the Run map's rooms, in the svg's own units), esc } */
 (function (root, factory) {
   'use strict';
   var M = factory();
@@ -99,21 +96,21 @@
   }
   function signature(list) { return names(list).slice().sort().join('\n'); }
 
-  function panelHtml(v, esc) {
-    esc = esc || esc0;
-    var rooms = Array.isArray(v && v.rooms) ? v.rooms : [], gs = Array.isArray(v && v.groups) ? v.groups : [];
-    var h = '<details class="gm-more gm-know" open><summary>What the players know <span class="gm-dim">' + v.counts.blueprint + ' blueprint, ' + v.counts.seen + ' seen, ' + v.counts.dark + ' dark</span></summary>';
-    h += '<ul class="gm-roomlist gm-know-list">' + rooms.map(function (r) {
-      return '<li class="gm-roomrow gm-know-' + esc(r.state) + '"><span class="gm-roomname">' + esc(r.name) + '</span> <small class="gm-dim">' + esc(r.band) + '</small> ' +
-        (r.locked
-          ? '<span class="gm-dim">Seen (its band is open)</span>'
-          : '<button type="button" class="btn sm" data-kn="cycle" data-room="' + esc(r.name) + '" aria-label="' + esc(r.name) + ': ' + esc(LABEL[r.state]) + '. Tap for ' + esc(LABEL[next(r.state)]) + '" title="Tap for ' + esc(LABEL[next(r.state)]) + '">' + esc(LABEL[r.state]) + '</button>') + '</li>';
-    }).join('') + '</ul>';
-    if (gs.length) h += '<p class="gm-know-intel"><span class="gm-lab">Intel</span> ' + gs.map(function (g) {
-      return '<button type="button" class="btn sm" data-kn="intel" data-group="' + esc(g.id) + '" title="Set every dark room of this group to blueprint">' + esc(g.label) + '</button>';
-    }).join(' ') + '</p>';
-    h += '<p class="gm-dim">Dark: nothing of the room reaches the iPad. Blueprint: its outline and name, as linework. Seen: drawn in full. ' +
-      'Goes out with the map (at once while it is live on the iPad), and only while Layer is Player.</p></details>';
+  /* the Players' map control on a room's card: three states, one pressed; Seen while staged says so (Send opens it) */
+  function segHtml(info, esc) {
+    esc = esc || esc0; info = isObj(info) ? info : {};
+    var n = str(info.name), st = STATES.indexOf(info.state) >= 0 ? info.state : 'dark', lock = !!info.locked, staged = !!info.staged && st !== 'seen';
+    var h = '<div class="rv-kseg" role="group" aria-label="' + esc('Players’ map: ' + n) + '"><span class="rv-klab">Players’ map</span><span class="seg">';
+    STATES.forEach(function (k) {
+      var pressed = k === st || (k === 'seen' && staged), lab = k === 'seen' && staged ? 'Seen · staged' : LABEL[k];
+      var tip = lock ? 'Seen: its band is open. Close the band on Location to change it.'
+        : k === 'dark' ? 'The players’ map shows nothing of it' : k === 'blueprint' ? 'Its outline and name, as linework, at once'
+        : staged ? 'Staged on this screen: Send opens it for the players. Tap again to unstage' : st === 'seen' ? 'Open for the players' : 'Stage it: Send opens it for the players';
+      h += '<button type="button" class="chip sm rv-k' + k + (k === 'seen' && staged ? ' staged' : '') + '" data-site="kn" data-room="' + esc(n) + '" data-k="' + k + '" aria-pressed="' + pressed + '"' + (lock ? ' disabled' : '') + ' title="' + esc(tip) + '">' + esc(lab) + '</button>';
+    });
+    h += '</span></div>';
+    if (lock) h += '<p class="rv-khint rv-dim">Seen through its band (open on Location).</p>';
+    else if (staged) h += '<p class="rv-khint staged">Staged on this screen only. <b>Send</b> opens it for the players.</p>';
     return h;
   }
 
@@ -121,6 +118,7 @@
     host = host || {};
     function on() { return typeof host.feature === 'function' && host.feature(SWITCH) === true; }
     function rooms() { var r = typeof host.rooms === 'function' ? host.rooms() : []; return Array.isArray(r) ? r.filter(function (x) { return isObj(x) && str(x.name); }) : []; }
+    function room(name) { var n = str(name); return rooms().filter(function (x) { return str(x.name) === n; })[0] || null; }
     function ctx() { return ctxOf(typeof host.ctx === 'function' ? host.ctx() : null); }
     function say(m, bad) { if (typeof host.toast === 'function') host.toast(m, bad); }
     function done() { if (typeof host.changed === 'function') host.changed(); }
@@ -134,14 +132,26 @@
       var floors = typeof host.floors === 'function' ? host.floors() : [];
       return { rooms: list, counts: counts, groups: groups(rs, floors) };
     }
-    function cycle(name) {
-      if (!on()) return false;
-      var n = str(name), r = rooms().filter(function (x) { return str(x.name) === n; })[0], c = ctx();
+    /* every room's state, by name ({} while the switch is off) */
+    function states() { var out = {}; if (!active()) return out; var c = ctx(); rooms().forEach(function (r) { out[str(r.name)] = stateOf(r, c); }); return out; }
+    function stateOfName(name) { var r = room(name); return r ? stateOf(r, ctx()) : 'dark'; }
+    function lockedName(name) { var r = room(name); return !!r && locked(r, ctx()); }
+    /* a room to a state at once (the site applies Dark and Blueprint this way; Seen is staged by the page instead, then sent) */
+    function set(name, to) {
+      if (!on() || STATES.indexOf(to) < 0) return false;
+      var n = str(name), r = room(n), c = ctx();
       if (!r) return false;
       if (locked(r, c)) { say(n + ' is seen because its band is open. Close the band to change it.', true); return false; }
-      var to = next(stateOf(r, c));
+      if (stateOf(r, c) === to) return false;
       if (!write(setState(n, to, c))) return false;
       say(n + ': ' + LABEL[to].toLowerCase() + '.'); done(); return true;
+    }
+    function cycle(name) {
+      if (!on()) return false;
+      var n = str(name), r = room(n), c = ctx();
+      if (!r) return false;
+      if (locked(r, c)) { say(n + ' is seen because its band is open. Close the band to change it.', true); return false; }
+      return set(n, next(stateOf(r, c)));
     }
     function intelGroup(id) {
       if (!on()) return false;
@@ -151,20 +161,12 @@
       if (!write(l)) return false;
       say('Intel: ' + g.label.toLowerCase() + ' is known as blueprint.'); done(); return true;
     }
-    /* a tap on the GM map: data-room="r<index>", the room's index in the roll. false when it names no room (the page's other taps go on) */
+    /* a tap on Location's GM map: data-room="r<index>", the room's index in the roll. false when it names no room (the page's other taps go on) */
     function tapRoom(roll, dataRoom) {
       if (!active() || !isObj(roll) || !Array.isArray(roll.rooms)) return false;
       var m = /^r(\d+)$/.exec(str(dataRoom)), r = m ? roll.rooms[+m[1]] : null;
       if (!isObj(r) || !str(r.name)) return false;
       cycle(str(r.name)); return true;
-    }
-    function paint(box) { if (box) box.innerHTML = panelHtml(view(), host.esc || esc0); }
-    function toggleHtml(name) {
-      if (!active()) return '';
-      var n = str(name), r = rooms().filter(function (x) { return str(x.name) === n; })[0], c = ctx(); if (!r || locked(r, c)) return '';
-      var st = stateOf(r, c), e = host.esc || esc0;
-      return '<p class="rv-open ' + (st === 'dark' ? 'no' : 'yes') + ' rv-know"><button type="button" class="rv-btn sm rv-tog" data-rv="know" data-room="' + e(n) + '" aria-label="' + e(n + ': ' + LABEL[st] + '. Tap for ' + LABEL[next(st)]) + '">' +
-        e(LABEL[st]) + ' <small>tap for ' + e(LABEL[next(st)].toLowerCase()) + '</small></button></p>';
     }
     /* the room under a tap on the Run map: of the rooms whose box holds the point, the smallest */
     function roomAt(svg, ev) {
@@ -178,28 +180,15 @@
       });
       return best;
     }
-    function paintRun(fr, svg) {
-      if (!fr || !active() || !fr.parentNode) return;
-      var doc = fr.ownerDocument, bar = fr.nextSibling && fr.nextSibling.getAttribute && fr.nextSibling.getAttribute('data-b24') ? fr.nextSibling : null;
-      if (!bar) { bar = doc.createElement('div'); bar.className = 'rv-know-bar'; bar.setAttribute('data-b24', 'bar'); fr.parentNode.insertBefore(bar, fr.nextSibling); }
-      var gs = view().groups, e = host.esc || esc0;
-      bar.innerHTML = '<span class="rv-lab">Intel</span> ' + (gs.length ? gs.map(function (g) { return '<button type="button" class="rv-btn sm" data-kn="intel" data-group="' + e(g.id) + '">' + e(g.label) + '</button>'; }).join(' ') : '<span class="rv-dim">no group to set</span>') +
-        ' <small class="rv-dim">Tap a room on the map to cycle it: dark, blueprint, seen.</small>';
-      bar.onclick = function (ev) { var b = ev.target && ev.target.closest ? ev.target.closest('[data-kn="intel"]') : null; if (b) intelGroup(b.getAttribute('data-group')); };
-      fr.addEventListener('click', function (ev) { var n = roomAt(svg, ev); if (n) cycle(n); });
+    function seg(name, staged) {
+      if (!active()) return '';
+      var r = room(name); if (!r) return '';
+      var c = ctx();
+      return segHtml({ name: str(r.name), state: stateOf(r, c), locked: locked(r, c), staged: !!staged }, host.esc || esc0);
     }
-    function bind(box) {
-      function onClick(ev) {
-        var b = ev.target && ev.target.closest ? ev.target.closest('[data-kn]') : null; if (!b || !box.contains(b)) return;
-        var a = b.getAttribute('data-kn');
-        if (a === 'cycle') cycle(b.getAttribute('data-room')); else if (a === 'intel') intelGroup(b.getAttribute('data-group'));
-      }
-      box.addEventListener('click', onClick);
-      return function () { box.removeEventListener('click', onClick); };
-    }
-    return { active: active, view: view, cycle: cycle, intel: intelGroup, tapRoom: tapRoom, paint: paint, bind: bind, toggleHtml: toggleHtml, paintRun: paintRun };
+    return { active: active, view: view, states: states, stateOf: stateOfName, locked: lockedName, set: set, cycle: cycle, intel: intelGroup, tapRoom: tapRoom, roomAt: roomAt, seg: seg };
   }
 
-  return { SWITCH: SWITCH, STATES: STATES, cleanNames: cleanNames, stateOf: stateOf, locked: locked, next: next, setState: setState, intel: intel, groups: groups,
-    signature: signature, panelHtml: panelHtml, create: create };
+  return { SWITCH: SWITCH, STATES: STATES, LABEL: LABEL, cleanNames: cleanNames, stateOf: stateOf, locked: locked, next: next, setState: setState, intel: intel, groups: groups,
+    signature: signature, segHtml: segHtml, create: create };
 });

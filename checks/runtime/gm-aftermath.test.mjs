@@ -2,6 +2,7 @@
 // (app/display/aftermath.js), and the phone's commendations window (app/sheet/commend.js). No browser, no network, no clock: the host is a recorder and the time
 // is a number the test moves. INVENTED data only (the Pelican Rooms); every GM-only string is a GM-ONLY- marker.
 //   node checks/runtime/gm-aftermath.test.mjs
+import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
@@ -288,11 +289,12 @@ await test('a page reload mid-show resumes at the step the night document holds'
   const none = A.create(rig().host); assert.equal(none.resume(), false);
 });
 
-await test('the switch is a registered, default-off phone switch with bland text', () => {
+await test('the line is a registered phone line with bland text, ON whatever is stored (N0: everything built is on)', () => {
   const s = Features.get('spine.aftermath');
   assert.ok(s); assert.equal(s.default, false); assert.equal(s.surface, 'phone'); assert.equal(s.stage, 'spine');
   assert.ok(!/Kestrel|Pelican|Tidewater|Mabel|Nell/.test(s.label + s.doc), 'bland text: no names');
-  assert.equal(Features.valueOf({}, 'spine.aftermath'), false);
+  assert.equal(Features.valueOf({}, 'spine.aftermath'), true, 'on with nothing stored');
+  assert.equal(Features.valueOf({ features: { 'spine.aftermath': false } }, 'spine.aftermath'), true, 'a stored false is still on');
 });
 
 /* ---------- the display ---------- */
@@ -314,9 +316,33 @@ await test('the display draws each step from its fixture by textContent only, an
   const none = await S.mount({ kind: 'aftermath', payload: { step: 'harm' } }, { document: doc, reduced: true });
   assert.ok(none.outerHTML.includes('No harm complications'));
   const cr = await S.mount({ kind: 'credits', payload: S.entry('credits').fixture }, { document: doc, reduced: true });
-  assert.equal(cr.querySelectorAll('.dp-cr-row').length, 5); assert.equal(cr.querySelectorAll('.dp-cr-bar').length, 4, 'four bars, as the opening card has');
+  assert.equal(cr.querySelectorAll('.dp-cr-row').length, 6); assert.equal(cr.querySelectorAll('.dp-cr-bar').length, 4, 'four bars, as the opening card has');
   assert.ok(cr.outerHTML.includes('Mabel Quist'));
+  /* the GM night rebuild: the fixture carries a 14-letter surname; a name is one text, never split, and the role and the faction are lines of their own */
+  const names = cr.querySelectorAll('.dp-cr-name').map((n) => n.textContent);
+  assert.ok(names.includes('Ottilie Vandermeerholt') && 'Vandermeerholt'.length === 14, 'a 14-letter surname in the fixture: ' + names.join(', '));
+  assert.deepEqual(cr.querySelectorAll('.dp-cr-row')[1].querySelectorAll('.dp-cr-role').map((n) => n.textContent), ['Desk sergeant', 'The Tidewater Watch'], 'the role over the faction, no dot');
   assert.deepEqual(writes, [], 'nothing written as HTML');
+});
+
+await test('the GM night rebuild: the heat step is read first and WANTED follows it as its own beat, never on top of it; the credits never break a name inside a word', async () => {
+  const css = fs.readFileSync(path.join(APP, 'display', 'aftermath.css'), 'utf8');
+  assert.match(css, /\.dp-aft-heat\.dp-aft-to-wanted > :not\(\.dp-show-wanted\) \{ opacity: 0; visibility: hidden;/, 'the heat step steps out before WANTED comes in');
+  assert.match(css, /\.dp-show-credits \.dp-cr-name, \.dp-show-credits \.dp-cr-role \{ overflow-wrap: normal; word-break: normal;/, 'names and roles wrap at spaces only');
+  assert.match(css, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/, 'four equal columns, one per bar, whatever a name holds');
+  const timers = []; const realSet = globalThis.setTimeout;
+  globalThis.setTimeout = (fn, ms) => { timers.push({ fn, ms }); return 0; };
+  try {
+    const heat = await S.mount({ kind: 'aftermath', payload: { step: 'heat', exposure: 4, mods: 2, heat: 5, after: 0, siren: true, wanted: 2 } }, { document: doc, reduced: false });
+    for (let i = 0; i < 5; i++) await Promise.resolve();
+    const w = heat.querySelector('.dp-show-wanted');
+    assert.ok(w, 'the WANTED beat is ready inside the heat card');
+    assert.ok(!heat.classList.contains('dp-aft-to-wanted') && !w.classList.contains('dp-ov-in'), 'at first only the heat step shows');
+    const swap = timers.find((t) => t.ms >= 3000);
+    assert.ok(swap, 'the swap waits until the step has been read: ' + timers.map((t) => t.ms).join(','));
+    swap.fn();
+    assert.ok(heat.classList.contains('dp-aft-to-wanted') && w.classList.contains('dp-ov-in'), 'then the step steps out and WANTED comes in');
+  } finally { globalThis.setTimeout = realSet; }
 });
 
 await test('the end credits draw only the cards the Worker joined, no hidden key, at most 30', () => {
@@ -350,13 +376,13 @@ function phone() {
   };
   return { W, calls, listeners, rows: (r) => { rows = r; }, refreshed: () => refreshed, now: (n) => { t = n; } };
 }
-await test('the phone: nothing is fetched until it is started; started, it reads only the commend row, shows the strip while it stands and clears it when the row goes', async () => {
+await test('the phone: nothing is fetched until it is started; started, it reads only the commend row, is the Now card\'s item while it stands and clears it when the row goes', async () => {
   // the module reads the global window it was loaded with: load a fresh copy against a fake one
   const p = phone();
   const realNow = Date.now; let now = 5000000; Date.now = () => now;
   try {
     const Mod = (await import('node:module')).createRequire(import.meta.url)(path.join(APP, 'sheet', 'commend.js'));
-    assert.equal(Commend.bar(), '', 'not started: no strip');
+    assert.equal(Commend.now(), null, 'not started: no item');
     assert.equal(p.calls.length, 0);
     // the module in this process is bound to globalThis; give it the fake window's parts
     Object.assign(globalThis, { fetch: p.W.fetch, document: p.W.document, B68Live: p.W.B68Live, B68Tracker: p.W.B68Tracker });
@@ -367,14 +393,17 @@ await test('the phone: nothing is fetched until it is started; started, it reads
     p.rows([{ kind: 'commend', owner: '_', scope: 'public', json: { v: 1, secs: 90, until: now + 90000 } }]);
     p.listeners.live.fn('docs');
     await new Promise((r) => setTimeout(r, 0));
-    assert.ok(Mod.bar().includes('data-act="endopen"') && Mod.bar().includes('Commendations'), 'the strip opens the sheet\'s own end-of-session panel');
+    const it = Mod.now();
+    assert.ok(it && it.actions.length === 1 && it.actions[0].attrs === 'data-act="endopen"' && it.actions[0].primary === true && /xp/.test(it.title), 'the item opens the sheet\'s own end-of-session panel: ' + JSON.stringify(it));
+    assert.equal(it.ends, now + 90000, 'it counts down to the window\'s own end');
+    now += 30000; assert.equal(Mod.now().ends, it.ends, 'the end does not move while the window stands (the card is not redrawn every second)');
     assert.ok(p.refreshed() >= 1, 'the sheet was redrawn');
-    now += 91000; assert.equal(Mod.bar(), '', 'ninety seconds on, it is gone');
+    now += 61000; assert.equal(Mod.now(), null, 'ninety seconds on, it is gone');
     p.rows([{ kind: 'commend', owner: '_', scope: 'public', json: { v: 1, secs: 90, until: now + 90000 } }]);
     p.listeners.live.fn('docs'); await new Promise((r) => setTimeout(r, 0));
-    assert.ok(Mod.bar(), 'a new row opens it again');
+    assert.ok(Mod.now(), 'a new row opens it again');
     p.rows([]); p.listeners.live.fn('docs'); await new Promise((r) => setTimeout(r, 0));
-    assert.equal(Mod.bar(), '', 'the GM took the row down: gone at once');
+    assert.equal(Mod.now(), null, 'the GM took the row down: gone at once');
     Mod.stop(); assert.equal(p.listeners.live, null, 'stop() lets go of the live socket');
     const before = p.calls.length; Mod.stop(); assert.equal(p.calls.length, before);
   } finally { Date.now = realNow; for (const k of ['fetch', 'document', 'B68Live', 'B68Tracker']) delete globalThis[k]; }

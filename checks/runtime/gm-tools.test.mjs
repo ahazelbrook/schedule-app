@@ -1,5 +1,6 @@
-// Unit test for the GM page's tool registry and phase filter (app/gm/tools.js) and the Workshop's shell (app/gm/workshop.js), suite ticket W0.5. No browser, no network.
-// The page-level checks (tabs hide, the layout is today's with the filter off, the Workshop sheet opens) are in checks/runtime/gm-seams.e2e.mjs.
+// Unit test for the GM page's tool registry (app/gm/tools.js) and the right-edge sheet host (app/gm/workshop.js; the Workshop drawer itself went in N0),
+// suite ticket W0.5. The phase filter went in the night rebuild (N1b): the places (app/gm/places.js, checks/runtime/gm-places.test.mjs) lay out each phase's tools,
+// so nothing here hides anything. No browser, no network. The page-level checks are in checks/runtime/gm-places.e2e.mjs and gm-seams.e2e.mjs.
 //   node checks/runtime/gm-tools.test.mjs
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -10,6 +11,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const require = createRequire(import.meta.url);
 const T = require(path.join(ROOT, 'app', 'gm', 'tools.js'));
 const WS = require(path.join(ROOT, 'app', 'gm', 'workshop.js'));
+const Places = require(path.join(ROOT, 'app', 'gm', 'places.js'));
 
 let failed = 0, passed = 0;
 async function test(name, fn) {
@@ -17,89 +19,45 @@ async function test(name, fn) {
   try { await fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); }
 }
 
-await test('the phases are the Run Sheet\'s four, in order', () => {
-  assert.deepEqual(T.PHASES.map((p) => p.label), ['Personal Business', 'Planning', 'Score', 'Aftermath']);
-  assert.deepEqual(T.ALL, ['pb', 'plan', 'score', 'after']);
-  const night = require(path.join(ROOT, 'app', 'gm', 'night.js'));
-  assert.deepEqual(T.PHASES.map((p) => [p.id, p.label]), night.PHASES.map((p) => [p.id, p.label]), 'the same ids and labels as night.phase (W0.4), so the rail needs no translation');
-});
-await test('today\'s tabs and panels carry the phase tags the ticket asks for (the table in the report)', () => {
-  const want = {
-    console: 'all', prep: 'all', rules: 'all', npc: 'all', ipad: 'all',
-    run: ['score'], score: ['plan'], downtime: ['pb', 'after'], location: ['plan', 'score'], scenes: ['score'], chase: ['score'], cards: ['plan']
-  };
-  for (const [id, ph] of Object.entries(want)) assert.deepEqual(T.phasesOf(id), ph === 'all' ? T.ALL : ph, id);
-  assert.deepEqual(Object.keys(want).sort(), T.list().map((t) => t.id).sort(), 'every built-in tool is tagged, and nothing else is built in');
+await test('the built-ins are the page\'s panes (and the console), with the labels and keys the places give them', () => {
+  assert.deepEqual(T.list().map((t) => t.id), ['console', 'prep', 'rules', 'location', 'scenes', 'score', 'chase', 'npc', 'downtime', 'cards', 'ipad', 'run']);
+  assert.ok(T.list().every((t) => t.builtin === true));
   assert.deepEqual(T.list().filter((t) => t.key).map((t) => t.id + ':' + t.key).sort(), ['cards:O', 'chase:C', 'downtime:D', 'ipad:I', 'location:B', 'npc:N', 'prep:R', 'rules:T', 'run:G', 'scenes:S', 'score:J']);
-  assert.ok(T.list().every((t) => t.workshop === false), 'nothing is behind the Workshop yet');
-  const tb = T.table(); assert.deepEqual(tb.find((r) => r.id === 'downtime').phases, ['Personal Business', 'Aftermath']); assert.deepEqual(tb.find((r) => r.id === 'prep').phases, ['every phase']);
+  for (const t of T.list().filter((x) => x.id !== 'console')) { const v = Places.view(t.id); assert.ok(v && v.pane === t.id, t.id + ' is a pane view'); assert.equal(v.label, t.label, t.id); assert.equal(v.key || '', t.key, t.id); }
+  assert.deepEqual(T.table().find((r) => r.id === 'run'), { id: 'run', label: 'The site', key: 'G' });
 });
-await test('with the filter off (the default) every tab is visible: the page is today\'s', () => {
-  assert.deepEqual(T.filter(), { on: false, phase: '', all: false });
-  for (const t of T.tabs()) assert.equal(T.visible(t.id), true, t.id);
-  T.setFilter({ phase: 'plan' });                    // a phase chosen but the filter not on
-  for (const t of T.tabs()) assert.equal(T.visible(t.id), true, t.id);
-  T.setFilter({ on: true, all: true });                  // "All tools" overrides the phase
-  for (const t of T.tabs()) assert.equal(T.visible(t.id), true, t.id);
+await test('the phase filter and the Workshop flag are gone: nothing here can hide a tool', () => {
+  for (const k of ['setFilter', 'filter', 'onChange', 'visible', 'phasesOf', 'inPhase', 'tabs', 'workshop', 'PHASES', 'ALL']) assert.equal(T[k], undefined, k);
+  const t = T.register({ id: 'old', label: 'An older def', phases: ['plan'], workshop: true });
+  assert.ok(!('phases' in t) && !('workshop' in t), 'an older def\'s phases and workshop are ignored, not refused');
 });
-await test('a test tool tagged Planning hides outside Planning when the filter is on, and shows inside it', () => {
-  T.register({ id: 'testtool', label: 'Test tool', phases: ['plan'], mount() {} });
-  assert.equal(T.visible('testtool'), true, 'filter off');
-  T.setFilter({ on: true, phase: 'plan' }); assert.equal(T.visible('testtool'), true);
-  for (const ph of ['pb', 'score', 'after']) { T.setFilter({ phase: ph }); assert.equal(T.visible('testtool'), false, ph); }
-  T.setFilter({ phase: 'plan' }); assert.equal(T.visible('testtool'), true);
-  T.setFilter({ on: false }); T.setFilter({ phase: 'score' }); assert.equal(T.visible('testtool'), true, 'off again: back to today\'s');
-});
-await test('the filter shows each built-in only in its phases (Run in the Score, Score in Planning, Downtime in Personal Business and the Aftermath)', () => {
-  T.setFilter({ on: true, phase: 'score' });
-  assert.deepEqual(T.tabs().filter((t) => T.visible(t.id)).map((t) => t.id).sort(), ['chase', 'console', 'ipad', 'location', 'npc', 'prep', 'rules', 'run', 'scenes']);
-  T.setFilter({ phase: 'plan' });
-  assert.deepEqual(T.tabs().filter((t) => T.visible(t.id)).map((t) => t.id).sort(), ['cards', 'console', 'ipad', 'location', 'npc', 'prep', 'rules', 'score']);
-  T.setFilter({ phase: 'pb' });
-  assert.deepEqual(T.tabs().filter((t) => T.visible(t.id)).map((t) => t.id).sort(), ['console', 'downtime', 'ipad', 'npc', 'prep', 'rules']);
-  T.setFilter({ phase: 'after' });
-  assert.deepEqual(T.tabs().filter((t) => T.visible(t.id)).map((t) => t.id).sort(), ['console', 'downtime', 'ipad', 'npc', 'prep', 'rules']);
-});
-await test('the tab on screen is always kept, whatever the phase', () => {
-  T.setFilter({ on: true, phase: 'plan' });
-  assert.equal(T.visible('run'), false); assert.equal(T.visible('run', { current: 'run' }), true); assert.equal(T.visible('chase', { current: 'run' }), false);
-});
-await test('a filter with no phase chosen hides nothing; a bad phase is ignored', () => {
-  T.setFilter({ on: true }); for (const t of T.tabs()) assert.equal(T.visible(t.id), true);
-  T.setFilter({ phase: 'nonsense' }); assert.equal(T.filter().phase, '');
-});
-await test('onChange fires when the filter moves or a tool is registered, not when nothing changed; off() stops it', () => {
-  const heard = []; const off = T.onChange((f) => heard.push(JSON.stringify(f)));
-  T.setFilter({ on: true, phase: 'score' }); T.setFilter({ on: true, phase: 'score' }); T.setFilter({ phase: 'plan' });
-  assert.deepEqual(heard, ['{"on":true,"phase":"score","all":false}', '{"on":true,"phase":"plan","all":false}']);
-  T.register({ id: 'x1', label: 'X', phases: 'all' }); assert.equal(heard.length, 3);
-  off(); T.setFilter({ phase: 'after' }); assert.equal(heard.length, 3);
-});
-await test('register checks its tool: ids, labels, phases; a built-in cannot be replaced; the same id replaces a registered one', () => {
-  assert.throws(() => T.register({ id: 'Bad Id', label: 'x', phases: 'all' }), /tool id/);
-  assert.throws(() => T.register({ id: 'ok', label: '', phases: 'all' }), /label/);
-  assert.throws(() => T.register({ id: 'ok', label: 'x', phases: ['nope'] }), /unknown phase/);
-  assert.throws(() => T.register({ id: 'ok', label: 'x', phases: [] }), /empty/);
-  assert.throws(() => T.register({ id: 'prep', label: 'x', phases: 'all' }), /built in/);
+await test('register checks its tool: ids and labels; a built-in cannot be replaced; the same id replaces a registered one', () => {
+  assert.throws(() => T.register({ id: 'Bad Id', label: 'x' }), /tool id/);
+  assert.throws(() => T.register({ id: 'ok', label: '' }), /label/);
+  assert.throws(() => T.register({ id: 'prep', label: 'x' }), /built in/);
   assert.throws(() => T.register(null), /object/);
-  T.register({ id: 'ok', label: 'One', phases: ['score'] }); T.register({ id: 'ok', label: 'Two', phases: ['plan', 'plan'] });
-  assert.equal(T.get('ok').label, 'Two'); assert.deepEqual(T.phasesOf('ok'), ['plan']); assert.equal(T.list().filter((t) => t.id === 'ok').length, 1);
+  T.register({ id: 'ok', label: 'One' }); T.register({ id: 'ok', label: 'Two', key: 'q', words: '  probe words ' });
+  assert.equal(T.get('ok').label, 'Two'); assert.equal(T.get('ok').key, 'Q'); assert.equal(T.get('ok').words, 'probe words'); assert.equal(T.list().filter((t) => t.id === 'ok').length, 1);
   assert.equal(T.unregister('ok'), true); assert.equal(T.unregister('ok'), false); assert.equal(T.unregister('prep'), false);
+  assert.equal(T.get('nothing'), null);
 });
-await test('extras are registered tools with a mount that are not behind the Workshop: the page gives each a tab; a workshop tool never has a tab', () => {
-  T.register({ id: 'ex', label: 'Ex', phases: ['plan'], key: 'q', mount() {} });
-  T.register({ id: 'nomount', label: 'No mount', phases: 'all' });
-  T.register({ id: 'shop', label: 'Shop', phases: 'all', workshop: true, mount() {} });
-  assert.deepEqual(T.extras().map((t) => t.id), ['ex']); assert.equal(T.get('ex').key, 'Q');
-  assert.deepEqual(T.workshop().map((t) => t.id), ['shop']);
-  assert.equal(T.visible('shop'), false, 'a workshop tool is not on the tab bar, filter or no filter');
-  assert.ok(!T.tabs().some((t) => t.id === 'shop'));
+await test('extras: registered tools with a mount, which the places open as a view (an extra view of the place the GM is in) and Find lists', () => {
+  T.register({ id: 'ex', label: 'Ex', key: 'q', mount() {} });
+  T.register({ id: 'nomount', label: 'No mount' });
+  assert.deepEqual(T.extras().map((t) => t.id), ['ex']);
+  assert.ok(Places.findEntries(T.extras()).some((r) => r.title === 'Ex' && r.go.t === 'view' && r.go.id === 'ex'));
+  T.reset(); assert.deepEqual(T.extras(), [], 'reset drops them');
 });
-await test('the Workshop\'s Menu line shows only when a tool is behind it (so the Menu is today\'s while the Workshop is empty)', () => {
-  assert.equal(WS.menuLine(), ''); assert.deepEqual(WS.list(), []);
-  T.register({ id: 'shop', label: 'Shop', phases: 'all', workshop: true });
-  assert.match(WS.menuLine(), /data-gm="workshop"/); assert.deepEqual(WS.list(), [{ id: 'shop', label: 'Shop' }]);
-  T.unregister('shop'); assert.equal(WS.menuLine(), '');
+await test('the object is the one a later module extends (gm/tool-registry.js wraps get): it keeps get and list as plain properties', () => {
+  const was = T.get;
+  T.get = function (id) { return was(id) || (id === 'probe' ? { id: 'probe', open() { return true; } } : null); };
+  assert.equal(T.get('prep').builtin, true); assert.equal(typeof T.get('probe').open, 'function');
+  T.get = was;
+});
+await test('the Workshop drawer is gone (N0): workshop.js is only the sheet host the tools open in, with no Menu line or tool list of its own', () => {
+  assert.equal(typeof WS.sheet, 'function');
+  for (const k of ['menuLine', 'list', 'open', 'toggle', 'close', 'render']) assert.equal(WS[k], undefined, k + ' is gone');
+  assert.equal(WS.sheet(null, 'x', 'X'), null, 'no document, no sheet');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

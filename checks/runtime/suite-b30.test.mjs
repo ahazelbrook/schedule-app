@@ -34,16 +34,16 @@ const MARK = 'GM-ONLY-b30-marker';
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 /* ---------- the switches ---------- */
-await test('face.castphoto and between.lair are registered, default off, bland, display-surface; a flipped doc turns each on alone', () => {
+await test('face.castphoto and between.lair are registered, bland, display-surface; ON whatever is stored (N0: everything built is on)', () => {
   for (const id of ['face.castphoto', 'between.lair']) {
     const s = Features.get(id);
     assert.ok(s, id); assert.equal(s.default, false); assert.equal(s.surface, 'display');
     assert.ok(s.label && s.doc && !/GM-ONLY/.test(s.doc) && s.doc.includes('Off:'), id + ' has bland text that says what off does');
-    assert.equal(Features.valueOf({}, id), false);
-    assert.equal(Features.valueOf({ features: { [id]: true } }, id), true);
+    assert.equal(Features.valueOf({}, id), true, id + ': on with nothing stored');
+    assert.equal(Features.valueOf({ features: { [id]: false } }, id), true, id + ': a stored false is still on');
     assert.ok(Features.publicIds().includes(id));
   }
-  assert.equal(Features.valueOf({ features: { 'face.castphoto': true } }, 'between.lair'), false);
+  assert.ok(!Features.isSetting('face.castphoto') && !Features.isSetting('between.lair'), 'neither is a setting');
 });
 await test('routes: the display and look book carry the two renderers and their css, the lair bundle is the kit and its drawer, the GM bundle has the panels, no player bundle has any of it', () => {
   const B = Routes.BUNDLES;
@@ -323,7 +323,13 @@ await test('display: the cast photo kind registers with a fixture, cleans a serv
   const node = await S.mount({ kind: 'castphoto', payload: e.fixture }, { document: D.doc });
   assert.ok(node && /dp-show-castphoto/.test(node.className));
   const all = walk(node), photo = all.find((n) => /dp-cp-photo/.test(n.className));
-  assert.ok(photo && photo.innerHTML.startsWith('<svg') && photo.innerHTML.includes('Mabel Quist'));
+  assert.ok(photo && photo.innerHTML.startsWith('<svg'));
+  /* the GM night rebuild: on the iPad a name is two lines in the label face (the first name over the rest), large enough for 1 to 1.5 m */
+  assert.ok(/>MABEL<\/tspan><tspan[^>]*dy="1\.12em"[^>]*>QUIST<\/tspan>/.test(photo.innerHTML), 'the name over two lines');
+  const capSizes = [...photo.innerHTML.matchAll(/<text [^>]*font-weight="900" font-size="([\d.]+)"/g)].map((m) => Number(m[1]));
+  assert.ok(capSizes.length >= 5, 'a caption per person: ' + capSizes.length);
+  const preview = CP.compose(CP.items(e.fixture.npcs, e.fixture.sil), { kit: Fig, title: 'The Pelican Rooms' });
+  assert.ok(preview.svg.includes('>Mabel Quist</text>'), 'the GM page preview and the print keep the one-line caption');
   assert.ok(all.some((n) => n.textContent === '3 faces · 2 still unknown'));
 });
 await test('display: the lair kind is registered with a bundle, not a renderer, until the drawer loads; then it renders the section and its caption', async () => {
@@ -351,19 +357,15 @@ await test('look book: both kinds are drawn from invented fixtures with no GM-on
 });
 
 /* ---------- the Menu, with the switches off ---------- */
-await test('the Menu lines exist only while their switch is on; with it off sync touches nothing', () => {
-  const lines = []; let removed = 0;
-  const b = { id: '', appendChild() {}, remove() {} };
-  const list = { setAttribute() {}, appendChild(x) { lines.push(x.id); } };
-  const rootEl = { querySelector: (sel) => (sel === '.gm-menu-list' ? list : null) };
-  const doc = (v) => ({ features: { 'face.castphoto': v, 'between.lair': v } });
-  const dom = { createElement: () => { const e = { id: '', children: [], addEventListener() {}, set textContent(v) {}, setAttribute() {}, appendChild() {}, type: '', title: '' }; return e; } };
-  const win = { document: dom, B68Features: Features };
+await test('N2: there is no Menu line any more; sync() only takes down a stale one, and says false', () => {
+  const removed = [];
+  const stale = { parentNode: { removeChild: (n) => removed.push(n) } };
+  const rootEl = { querySelector: (sel) => (sel === '#gm-menu-castphoto' || sel === '#gm-menu-lair' ? stale : null) };
+  const win = { document: {}, B68Features: Features };
   const C = vm.runInNewContext(fs.readFileSync(path.join(APP, 'gm', 'castphoto.js'), 'utf8') + '\n;B68GmCastPhoto', Object.assign(win, { self: win }));
   const L = vm.runInNewContext(fs.readFileSync(path.join(APP, 'gm', 'lair.js'), 'utf8') + '\n;B68GmLair', Object.assign(win, { self: win }));
-  assert.equal(C.sync(rootEl, doc(false)), false); assert.equal(L.sync(rootEl, doc(false)), false); assert.deepEqual(lines, []);
-  assert.equal(C.sync(rootEl, doc(true)), true); assert.equal(L.sync(rootEl, doc(true)), true); assert.deepEqual(lines, ['gm-menu-castphoto', 'gm-menu-lair']);
-  assert.equal(C.sync(rootEl, {}), false, 'a doc with no features is off');
+  assert.equal(C.sync(rootEl, {}), false); assert.equal(L.sync(rootEl, {}), false); assert.equal(removed.length, 2, 'a line an older page drew is taken down');
+  assert.equal(C.sync({ querySelector: () => null }), false);
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

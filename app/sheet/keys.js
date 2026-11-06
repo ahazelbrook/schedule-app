@@ -1,8 +1,9 @@
 /* sheet/keys.js — turning a key (suite ticket 1.8, switch spine.keyturn) and the key cabinet (5.6, switch between.keys).
 
-   Window.B68SheetKeys, and module.exports under Node. In the core bundle (the sheet is on every route). The sheet (tracker.js) calls three hooks and does
+   Window.B68SheetKeys, and module.exports under Node. In the core bundle (the sheet is on every route). The sheet (tracker.js) calls these hooks and does
    nothing else for keys: offer(ctx) / cards(ctx) draw into its Keys box, act(name, d, ctx) handles the buttons these draw, and autoCrit(res, play) is read
-   by its action roll. With both switches off none of them is called and the Keys box is exactly what it was.
+   by its action roll. now(ctx) is the Now card's item (sheet/now.js) while a key can be turned: the same two buttons, at the top of the sheet. With both
+   switches off none of them is called and the Keys box is exactly what it was.
 
    Turning a key (the rule book's "turn a key"): once a key has three hits it can be turned. The player decides BEFORE the roll: the key deadlocks (the
    player picks reversed or intensified), Stress clears, and the next action roll is an automatic critical (no dice are read, the roll panel says so).
@@ -67,12 +68,33 @@
     if (!isObj(a)) return '';
     return '<p class="hint ds-kt-auto">Automatic critical waiting' + (a.name ? ' (' + ctx.esc(a.name) + ' turned)' : '') + ': your next action roll is a critical, no dice.</p>';
   }
+  function turnPair(ctx, k, i) {
+    var e = ctx.esc;
+    return '<span class="ds-kt-btns">' +
+      '<button type="button" class="btn sm" data-act="kturn" data-i="' + i + '" data-dir="down" title="Deadlock it as reversed, clear Stress, next action is an automatic critical">▼ ' + e(k.down || 'reversed') + '</button>' +
+      '<button type="button" class="btn sm" data-act="kturn" data-i="' + i + '" data-dir="up" title="Deadlock it as intensified, clear Stress, next action is an automatic critical">▲ ' + e(k.up || 'intensified') + '</button></span>';
+  }
   function turnButtons(ctx, k, i) {
     if (!ctx.turn || !canTurn(k, ctx.pb)) return '';
-    var e = ctx.esc;
-    return '<div class="ds-kt-offer"><span class="ds-kt-say">You can turn this key</span><span class="ds-kt-btns">' +
-      '<button type="button" class="btn sm" data-act="kturn" data-i="' + i + '" data-dir="down" title="Deadlock it as reversed, clear Stress, next action is an automatic critical">▼ ' + e(k.down || 'reversed') + '</button>' +
-      '<button type="button" class="btn sm" data-act="kturn" data-i="' + i + '" data-dir="up" title="Deadlock it as intensified, clear Stress, next action is an automatic critical">▲ ' + e(k.up || 'intensified') + '</button></span></div>';
+    return '<div class="ds-kt-offer"><span class="ds-kt-say">You can turn this key</span>' + turnPair(ctx, k, i) + '</div>';
+  }
+  /* the sheet's Now card item (sheet/now.js), while a key can be turned: each such key by name with its two buttons, the same kturn the Keys box has.
+     snooze names this offer (the sheet, its session, the keys that can turn): a player who holds a key at three hits on purpose puts the card away with
+     "Not now" (sheet/now.js keeps that per phone), and a new key at three hits, or the next session, brings it back. The Keys box always offers the turn */
+  function now(ctx) {
+    if (!isObj(ctx) || !ctx.turn || !isObj(ctx.play) || typeof ctx.esc !== 'function') return null;
+    var rows = '', pair = '', n = 0, one = '', which = [];
+    (Array.isArray(ctx.play.keys) ? ctx.play.keys : []).forEach(function (k, i) {
+      if (!canTurn(k, ctx.pb)) return;
+      n++; one = str(k.name) || 'Your key'; pair = turnPair(ctx, k, i); which.push(i + ':' + (str(k.name) || 'Key'));
+      rows += '<div class="ds-kt-row"><b>' + ctx.esc(str(k.name) || 'Key') + '</b>' + pair + '</div>';
+    });
+    if (!n) return null;
+    /* one key: its name is in the line and its two buttons follow; more: a row per key, by name */
+    return { title: n === 1 ? 'You can turn this key' : 'You can turn a key',
+      line: (n === 1 ? one + ' has three hits.' : n + ' keys have three hits.') + ' Decide before you roll: it deadlocks for good, your Stress clears and your next action roll is an automatic critical.',
+      html: '<div class="ds-kt-now">' + (n === 1 ? pair : rows) + '</div>',
+      snooze: str(ctx.docId) + '|session ' + (Math.floor(+ctx.play.session || 0) || 0) + '|' + which.join(',') };
   }
   /* spine.keyturn alone: a quiet line under the keys that have three hits (nothing for any other key) */
   function offer(ctx) {
@@ -126,5 +148,5 @@
     return false;
   }
 
-  return { NEED: NEED, struck: struck, hitsOf: hitsOf, canTurn: canTurn, turn: turn, autoCrit: autoCrit, offer: offer, cards: cards, act: act, banner: banner };
+  return { NEED: NEED, struck: struck, hitsOf: hitsOf, canTurn: canTurn, turn: turn, autoCrit: autoCrit, offer: offer, cards: cards, act: act, banner: banner, now: now };
 });

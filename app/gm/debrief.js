@@ -168,7 +168,7 @@
     });
   }
   function el(tag, cls, text) { var e = W.document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
-  function btn(label, fn, cls) { var b = el('button', cls || '', label); b.type = 'button'; b.addEventListener('click', fn); return b; }
+  function btn(label, fn, cls) { var b = el('button', 'btn sm' + (cls ? ' ' + cls : ''), label); b.type = 'button'; b.addEventListener('click', fn); return b; }   /* the app's button, as every tool's */
 
   var ctl = null;
   function feed() { var P = W.B68GmPage; return P && typeof P.aftermath === 'function' ? P.aftermath() : null; }
@@ -221,16 +221,11 @@
       });
     }, function (e) { list.appendChild(el('p', 'gm-warn', 'Could not read the Debrief: ' + (e && e.message || 'try again'))); });
   }
-  function sync(rootEl, doc) {
-    if (!W || !W.document || !rootEl || typeof rootEl.querySelector !== 'function') return false;
-    var list = rootEl.querySelector('.gm-menu-list'), cur = rootEl.querySelector('#gm-menu-debrief');
-    var on = !!(W.B68Features && isObj(doc) && W.B68Features.valueOf(doc, SWITCH));
-    if (!on) { if (cur && cur.parentNode) cur.parentNode.removeChild(cur); return false; }
-    if (!list || cur) return !!cur;
-    var b = el('button', '', 'Debrief'); b.type = 'button'; b.id = 'gm-menu-debrief'; b.title = 'The steps the Aftermath did not reach, and the players’ replies';
-    b.addEventListener('click', function () { list.setAttribute('hidden', ''); open(rootEl); });
-    list.appendChild(b);
-    return true;
+  /* N2: the Menu line is gone (the shell places this tool, B68GmTools.get('debrief').open()); sync() only takes down a line an older page drew, and says false. */
+  function sync(rootEl) {
+    var cur = rootEl && typeof rootEl.querySelector === 'function' ? rootEl.querySelector('#gm-menu-debrief') : null;
+    if (cur && cur.parentNode) cur.parentNode.removeChild(cur);
+    return false;
   }
   function open(rootEl) {
     var Wk = W.B68GmWorkshop; if (!Wk || typeof Wk.sheet !== 'function') return null;

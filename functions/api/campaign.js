@@ -37,7 +37,9 @@ export async function onRequest({ request, env, data, waitUntil }) {
   if (method === 'GET') {
     const row = await loadCampaignRow(db, id);
     const stored = campaignDoc(row);
-    return json({ doc: gm ? stored : forPlayer(stored), updatedAt: row ? row.updated_at : null });   // W0.2: a player is never sent an id that is not a display or phone switch
+    // N0: everyone (the GM's own devices too, so a sheet the GM opens agrees with the players') reads the served map: every display and phone feature ON,
+    // a setting as stored. Never a GM-only id. Only the read is made: the stored map is left exactly as it is.
+    return json({ doc: forPlayer(stored), updatedAt: row ? row.updated_at : null });
   }
 
   if (method === 'PUT' && !gm) throw new HttpError(403, GM_ONLY);
@@ -65,7 +67,7 @@ export async function onRequest({ request, env, data, waitUntil }) {
     const { log, clockOps, ...rest } = body;
     if (setsMission) delete rest.mission;
     const next = deepMerge(current, rest);
-    if (gm && 'features' in rest) {      // W0.2: the GM page copies the display and phone switches here; anything else in the map is dropped, never stored
+    if (gm && 'features' in rest) {      // W0.2: the GM page copies the display and phone settings here; anything else in the map is dropped, never stored
       const clean = cleanFeatures(next.features);
       if (Object.keys(clean).length) next.features = clean; else delete next.features;
     }
@@ -78,7 +80,7 @@ export async function onRequest({ request, env, data, waitUntil }) {
     if (setsMission) { if (mission) next.mission = mission; else delete next.mission; }     // replaced whole: a deep merge would keep a card the page dropped
     return next;
   });
-  if (setsMission || (gm && method === 'PATCH' && 'features' in body)) pokeLive({ env, waitUntil }, ['campaign', 'display']);     // the iPad polls for the band, or for its switches, at once
+  if (setsMission || (gm && method === 'PATCH' && 'features' in body)) pokeLive({ env, waitUntil }, ['campaign', 'display']);     // the iPad polls for the band, or for its settings, at once
   else pokeLive({ env, waitUntil }, ['campaign']);
-  return json({ doc, updatedAt: doc.updatedAt });
+  return json({ doc: forPlayer(doc), updatedAt: doc.updatedAt });      // N0: the answer a page caches is the served view, as a GET gives it
 }

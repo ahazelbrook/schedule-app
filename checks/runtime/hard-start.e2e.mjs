@@ -1,5 +1,5 @@
-// The hard start (1.2, spine.start) and the ON AIR lamp (A6, ai.onair) on the table display, against a real local Worker: switches off draw nothing; on, the countdown, fuse, credits,
-// three blank plates and three reveals run on the iPad. Invented data only.
+// The hard start (1.2, spine.start) and the ON AIR lamp (A6, ai.onair) on the table display, against a real local Worker. Everything built is on (N0): with nothing stored, and with
+// a stored false, the start layers run the hard start; the countdown, fuse, credits, three blank plates and three reveals run on the iPad. Invented data only.
 //   PW_MODULE=<path to playwright-core> PW_CHANNEL=msedge PORT=9060 node checks/runtime/hard-start.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -78,15 +78,16 @@ try {
     await layer('data.credits', ['n_d', 'n_c']); await layer('data.previously', ['n_d', 'n_c', 'n_b']);
     await layer('data.countdown', { to, label: 'Station clock' }); await layer('scene.mode', 'start');
   };
-  await step('switches off: the start layers draw nothing and the campaign document gains nothing', async () => {
-    await startLayers(Date.now() + 2000); await sleep(7000);
-    expect((await hs(I.page)) === null, 'no hard start on the iPad: ' + JSON.stringify(await hs(I.page)));
-    expect((await I.page.evaluate(() => !!document.querySelector('.dp-onair'))) === false, 'no lamp');
-    const c = await (await gmCall('GET', '/api/campaign')).json();
-    expect(!c.doc.features || Object.keys(c.doc.features).every((k) => k === 'phoneCards'), 'campaign features untouched: ' + JSON.stringify(c.doc.features));
+  await step('nothing stored (N0: everything built is on): the start layers run the hard start on the iPad, and the stored campaign document gains nothing', async () => {
+    await startLayers(Date.now() + 2000);
+    await I.page.waitForFunction(() => !!document.querySelector('.dp-hs'), null, { timeout: 15000 });
+    expect((await hs(I.page)) !== null, 'the hard start is on the iPad: ' + JSON.stringify(await hs(I.page)));
+    const ex = await (await gmCall('GET', '/api/export')).json();
+    expect(!ex.campaign.doc.features, 'the stored campaign features are untouched: ' + JSON.stringify(ex.campaign.doc.features));
     await ambient({ layers: null });
+    await I.page.waitForFunction(() => !document.querySelector('.dp-hs'), null, { timeout: 12000 });
   });
-  await step('switches on: countdown, fuse, credits, three blank plates, three reveals, end', async () => {
+  await step('a stored true (what an older page wrote) is the same: countdown, fuse, credits, three blank plates, three reveals, end', async () => {
     const r = await gmCall('PATCH', '/api/campaign', { features: { 'spine.start': true, 'ai.onair': true } });
     expect(r.status === 200, 'features written: ' + r.status);
     await sleep(6000);
@@ -115,17 +116,20 @@ try {
       const A = window.B68OnAir; if (!A || !window.B68Flags.on('ai.onair')) return { err: 'switch not on' };
       const a = A.shared(), root = document.getElementById('display-page'), out = {};
       a.paint(root, true); out.on = (document.querySelector('.dp-onair') || {}).innerText;
-      out.cmd = a.filter('Blade, off the record'); a.paint(root, true); out.off = (document.querySelector('.dp-onair') || {}).innerText;
+      out.cmd = a.filter('Blade, off the record'); a.paint(root, true); out.off = (document.querySelector('.dp-onair') || {}).innerText; out.inBand = !!document.querySelector('.dp-lay-strip .dp-lay-s-mic .dp-onair') && !document.querySelector('#display-page > .dp-onair');
       out.kept = a.filter('private chatter'); a.filter('Blade, back on'); a.paint(root, false); out.gone = !document.querySelector('.dp-onair');
       return out;
     });
-    expect(!r.err, r.err); expect(/on air/i.test(r.on), 'lamp: ' + r.on); expect(r.cmd.drop === true && /off the record 5:00|off the record 4:5/i.test(r.off), 'paused with countdown: ' + r.off);
+    expect(!r.err, r.err); expect(/on air/i.test(r.on), 'lamp: ' + r.on); expect(r.cmd.drop === true && /off the record\s+(5:00|4:5)/i.test(r.off), 'paused with countdown: ' + r.off);
+    expect(r.inBand === true, 'the lamp is the mic slot of the band (the GM night rebuild), not a corner lamp over it');
     expect(r.kept.drop === true && r.gone === true, 'private chatter dropped; lamp gone when the mic is not live');
   });
-  await step('switches off again: the hard start is gone, no page errors', async () => {
+  await step('a stored false (the old All off) changes nothing: the hard start still runs; no page errors', async () => {
     expect((await gmCall('PATCH', '/api/campaign', { features: { 'spine.start': false, 'ai.onair': false } })).status === 200, 'written');
-    await sleep(6000); await startLayers(Date.now() + 1000); await sleep(6000);
-    expect((await hs(I.page)) === null, 'no hard start with the switch off'); await ambient({ layers: null });
+    await sleep(6000); await startLayers(Date.now() + 1000);
+    await I.page.waitForFunction(() => !!document.querySelector('.dp-hs'), null, { timeout: 15000 }).catch(() => {});
+    expect((await hs(I.page)) !== null, 'the hard start runs with a stored false'); await ambient({ layers: null });
+    expect(await I.page.evaluate(() => window.B68Flags.on('spine.start') && window.B68Flags.on('ai.onair')), 'the iPad is told both are on');
     expect(I.seen.errors.length === 0, 'page errors: ' + I.seen.errors.join(' | '));
   });
 } finally { await browser.close(); }

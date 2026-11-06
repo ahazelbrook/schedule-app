@@ -105,12 +105,13 @@ try {
     expect(r.status === 200, 'accepted: ' + r.status);
     expect(JSON.stringify((await r.json()).doc.overlay.payload.npcIds) === '["n_mabel","n_dov"]', 'stored without the hidden one');
     await showIn(I.page, 'rolodex', 12000);
-    let cards = await I.page.evaluate(() => Array.from(document.querySelectorAll('.dp-roll-card .dp-roll-name')).map((e) => e.textContent));
+    /* since N0 (everything on: face.rolodex) the rolodex draws as the lower third (display/rolodex-card.js: .dp-rc-card / .dp-rc-name); the old cards still count */
+    let cards = await I.page.evaluate(() => Array.from(document.querySelectorAll('.dp-roll-card .dp-roll-name, .dp-rc-card .dp-rc-name')).map((e) => e.textContent));
     expect(cards.join('|') === 'Mabel Quist|Dov Kessler', 'two cards: ' + cards.join('|'));
     expect(!/GM-ONLY|DESC-MARKER|GMNOTES-MARKER/.test(await pageText(I.page)), 'no hidden marker on the iPad');
     expect((await gmCall('PATCH', '/api/npcs/n_dov', { revealed: false })).status === 200, 'Dov hidden afterwards');
-    await I.page.waitForFunction(() => document.querySelectorAll('.dp-roll-card').length === 1, null, { timeout: 15000 });
-    cards = await I.page.evaluate(() => Array.from(document.querySelectorAll('.dp-roll-card .dp-roll-name')).map((e) => e.textContent));
+    await I.page.waitForFunction(() => document.querySelectorAll('.dp-roll-card, .dp-rc-card').length === 1, null, { timeout: 15000 });
+    cards = await I.page.evaluate(() => Array.from(document.querySelectorAll('.dp-roll-card .dp-roll-name, .dp-rc-card .dp-rc-name')).map((e) => e.textContent));
     expect(cards.join('|') === 'Mabel Quist', 'the hidden NPC\'s card went off in place: ' + cards.join('|'));
     expect((await gmCall('PATCH', '/api/npcs/n_mabel', { revealed: false })).status === 200, 'Mabel hidden afterwards');
     await noShow(I.page, 15000);

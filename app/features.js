@@ -1,41 +1,51 @@
-/* features.js — the switchboard's registry (suite ticket W0.2, no switch of its own).
+/* features.js — the registry of the suite's features (suite ticket W0.2; the night rebuild, N0).
 
-   Every new feature of the suite ships behind a switch, default OFF. This file is the one list of them: the GM page's Menu -> Switchboard draws it, the
-   Worker reads it to know which ids a phone or the iPad may be told, and the tests read it. Pure: no DOM, no clock, no network.
+   EVERYTHING BUILT IS ON. The Switchboard is gone and nothing can turn a feature off any more. Three lines are SETTINGS, real choices the GM makes
+   (Menu > Settings, gm/settings.js): phoneCards (Phones: sheet only / mission cards), fx.off (Scenes: moving / held still) and room.music
+   (Music: scene themes / heat music). A setting reads its stored value exactly as before; every other line reads ON whatever a document holds.
+   The values stored before stay where they are, untouched and unread, so a rollback to the build with the Switchboard finds them as they were.
+   This file is the one list: the GM page reads it, the Worker reads it to know what a phone or the iPad is told, and the tests read it. Pure: no DOM,
+   no clock, no network.
 
    Window.B68Features, and module.exports under Node (functions/_lib/features.js imports it for the Worker).
 
-   A switch: { id, label, surface, stage, default: false, doc, saturday, legacy? }
+   A line: { id, label, surface, stage, default: false, doc, saturday, setting?, legacy? }
      id         letters, digits, dots and dashes ("spine.rail", "phoneCards"); the id is the key everywhere
-     label      the Switchboard's line            doc   one line on what it does
-     surface    'gm'       GM-only: lives in the GM state document (`features`), never copied anywhere a player can read
-                'display'  the iPad: copied into the campaign document's `features`
-                'phone'    a player's phone: copied into the campaign document's `features`
-     stage      the Switchboard's group (STAGES)
-     default    always false: nothing is on until the GM turns it on, and All off puts everything back
-     saturday   what it should be on Saturday: 'on', 'try' (the GM's call on Friday) or 'off'
-     legacy     (optional) a top-level key of the GM state document that held this switch before the registry (phoneCards); read as a fallback and kept in step on a write
+     label      a name for it                     doc   one line on what it does
+     surface    'gm'       GM-only: never copied anywhere a player can read
+                'display'  the iPad: what it is told rides in the display poll's `features`
+                'phone'    a player's phone: what it is told rides in the campaign document's `features`
+     stage      the build stage it came from (STAGES); a label only
+     default    false: what a SETTING reads while nothing is stored
+     saturday   the suite plan's wish for the first night ('on', 'try' or 'off'): history only, nothing reads it
+     setting    (optional) true for the three settings; any other line is always on
+     legacy     (optional) a top-level key of the GM state document that held this setting before the registry (phoneCards); read as a fallback and kept in step on a write
 
-   Where the values live
-     GM state document    features: { <id>: true | false }      every switch, whatever its surface (the source of truth)
-     campaign document    features: { <id>: true | false }      the display and phone switches only, a complete map; written by the GM page (the server cleans it again)
-   A value is ON only when it is exactly true; absent, false or anything else is off.
+   Where the values live (settings only; every other line is ON and its stored value, if any, is never read)
+     GM state document    features: { <id>: true | false }      the source of truth for a setting (and phoneCards' old key beside it)
+     campaign document    features: { <id>: true | false }      the display and phone settings, copied by the GM page (publishMap); the server cleans it again
+   A setting is ON only when it is exactly true; absent, false or anything else is off.
 
    How a surface reads
-     the GM page    valueOf(S.doc, id), live, on every use (it is the only writer of its state document)
+     the GM page    valueOf(S.doc, id), live, on every use
      a phone        B68Flags.apply(campaignDoc) on every campaign arrival (app/sheet/flags.js, hooked in boot.js), then B68Flags.on(id)
      the iPad       B68Flags.apply(answer) on every display poll (the answer's `features`), then B68Flags.on(id)
+     The Worker serves both through publicView: every display and phone line ON, a setting as stored. So a phone and the iPad see every feature ON
+     from their first request, whether or not the GM page has been opened since the deploy.
 
    API
      STAGES SURFACES SATURDAY
-     register(def) -> def        add a switch (a later ticket adds its line to SWITCHES below; tests use register/unregister)
-     unregister(id) -> bool      reset()
+     register(def) -> def        add a line (tests use register/unregister)                          unregister(id) -> bool      reset()
      get(id) list() byStage() -> [{ stage: {id,label}, switches }]      idsFor(surface) -> [id]      publicIds() -> display and phone ids
-     valueOf(stateDoc, id) -> bool                                       values(stateDoc) -> { id: bool }
-     publicMap(stateDoc) -> { id: bool }   the display and phone switches, complete (what the campaign document should hold)
-     patchFor(stateDoc, id, on) -> a GM state patch                      patchAllOff(stateDoc) -> a GM state patch
-     cleanPublic(raw) -> { id: bool }      only display and phone ids that are registered, only booleans: a GM-only or unknown id is dropped
-     sameOn(a, b) -> bool                  the two maps turn on the same switches (absent is off) */
+     settings() -> [line]        isSetting(id) -> bool
+     valueOf(stateDoc, id) -> bool        true for every line but a setting; a setting reads the stored value     values(stateDoc) -> { id: bool }
+     publicMap(stateDoc) -> { id: bool }  the display and phone lines, complete, as the GM page sees them
+     publishMap(stateDoc, current) -> { id: bool }   what the GM page copies into the campaign document: the display and phone SETTINGS only
+     publicView(raw) -> { id: bool }      what a phone or the iPad is told, from the campaign document's stored map: every display and phone line ON, a setting as stored (cleanPublic)
+     patchFor(stateDoc, id, on) -> a GM state patch, for a setting (any other id throws: it cannot be turned off)      patchAllOff() -> every setting off
+     cleanPublic(raw) -> { id: bool }     only display and phone ids that are registered, only booleans: a GM-only or unknown id is dropped (what may be STORED)
+     sameOn(a, b) -> bool                 the two maps turn on the same ids (absent is off)
+     sameSettings(a, b) -> bool           the two maps agree on every display and phone setting (absent is off) */
 (function (root, factory) {
   'use strict';
   var M = factory();
@@ -46,7 +56,7 @@
 
   var SURFACES = ['gm', 'display', 'phone'];
   var SATURDAY = ['on', 'try', 'off'];
-  /* the groups the Switchboard draws, in order (the plan's stages; `existing` is what the app already had behind a toggle) */
+  /* the build stages, in order (`existing` is what the app already had behind a toggle): a label for each line, nothing else */
   var STAGES = [
     { id: 'existing', label: 'Already in the app' },
     { id: 'spine', label: 'Stage 1: the spine' },
@@ -59,16 +69,15 @@
   ];
   var ID_RE = /^[A-Za-z][A-Za-z0-9.-]{0,39}$/;
 
-  /* THE SWITCHES. A ticket adds its own line here, default false. Keep the order: it is the order of the Switchboard. */
+  /* THE LINES. Every one is ON except the three marked setting: true. (spine.workshop, the Workshop drawer, is gone with the Workshop: its stored value
+     is left where it is, and nothing reads it.) */
   var SWITCHES = [
-    { id: 'phoneCards', label: 'Phone mission cards', surface: 'phone', stage: 'existing', default: false, saturday: 'off', legacy: 'phoneCards',
+    { id: 'phoneCards', label: 'Phone mission cards', surface: 'phone', stage: 'existing', default: false, saturday: 'off', setting: true, legacy: 'phoneCards',
       doc: 'Phones show a mission card and a Move row while a night runs. Off: phones are character sheets only and the published mission carries no cards (the iPad is unchanged).' },
     { id: 'spine.rail', label: 'Phase rail', surface: 'gm', stage: 'spine', default: false, saturday: 'on',
       doc: 'Four phases across the page header, tap to move between them, time against budget; drives the tool filter ("All tools" overrides) and lights the iPad band. Off: the header and tabs as before.' },
     { id: 'spine.curfew', label: 'Curfew', surface: 'gm', stage: 'spine', default: false, saturday: 'on',
       doc: 'A warning thirty minutes before the curfew, then a full-width "Call the Aftermath" that moves to the Aftermath; can be snoozed once for ten minutes. Off: no curfew bar.' },
-    { id: 'spine.workshop', label: 'Workshop drawer, first cuts', surface: 'gm', stage: 'spine', default: false, saturday: 'on',
-      doc: 'Phone cards, the costume select, the screen mirror, the uncued co-GM and the Screen props move behind Menu then Workshop. Off: they stay where they were.' },
     { id: 'spine.stamp', label: 'The stamp before the roll', surface: 'gm', stage: 'spine', default: false, saturday: 'on',
       doc: 'A Stamp row under Position: set position and effect, add a one-line threatened consequence, and an action report card goes up on the iPad until the result is marked or Esc. Also by cue ("Blade, risky, standard").' },
     { id: 'spine.sizer', label: 'The consequence sizer', surface: 'gm', stage: 'spine', default: false, saturday: 'on',
@@ -83,7 +92,7 @@
       doc: 'Menu then Record the night: records the table on this laptop only, never uploaded live, shown on the ON AIR lamp as REC. After the night a script turns the file into a transcript with speaker labels. Off: no recording line.' },
     { id: 'fx.pause', label: 'Pause hidden scenes', surface: 'display', stage: 'fx', default: false, saturday: 'on',
       doc: 'An ambient scene that is not on show (page hidden, covered or faded out) stops moving until it is. Off: scenes run as they always did.' },
-    { id: 'fx.off', label: 'Hold scenes still', surface: 'display', stage: 'fx', default: false, saturday: 'try',
+    { id: 'fx.off', label: 'Hold scenes still', surface: 'display', stage: 'fx', default: false, saturday: 'try', setting: true,
       doc: 'Holds every ambient scene as a still picture, to save the battery and heat. On: no animation in the scenes. Off: scenes animate as they always did.' },
     { id: 'spine.keyturn', label: 'Turn the key', surface: 'phone', stage: 'spine', default: false, saturday: 'on',
       doc: 'A key with three hits offers "You can turn this key" on its sheet; turning it deadlocks the key, clears Stress, makes the next action roll an automatic critical, and lays a card over the iPad. Off: keys behave as before.' },
@@ -143,7 +152,7 @@
       doc: 'Menu then Montage: one tap splits the iPad into two to four panels, one per player character, each with a figure, a place the players know and one line. A marked roll resolves its panel; one tap collapses it to a single scene. Off: no Montage line.' },
     { id: 'room.duck', label: 'A speech-safe mix', surface: 'display', stage: 'room', default: false, saturday: 'try',
       doc: 'When the iPad hears “Blade”, the music ducks by 12 dB for 6 seconds. Setup: point the speaker away from the puck. Only where the iPad lets the page change the volume; otherwise it says so and does nothing. Off: the music is never touched.' },
-    { id: 'room.music', label: 'Heat-state music', surface: 'display', stage: 'room', default: false, saturday: 'off',
+    { id: 'room.music', label: 'Heat-state music', surface: 'display', stage: 'room', default: false, saturday: 'off', setting: true,
       doc: 'The engine only: ambient, tension, alert, evasion and resolved follow the security level and heat, a change lands on the bar from the track tempo, a flashback muffles it. Ships with one layer per state from today’s track. Off: the scene themes play as before.' },
     { id: 'map.kit1', label: 'The grand map (map kit 1.0)', surface: 'gm', stage: 'map', default: false, saturday: 'try',
       doc: 'A site whose block says kit: 1 draws with map kit 1.0: floors of their own, double-height rooms, its faces, a grand stair, the palazzo section. Off: every map as before.' },
@@ -185,7 +194,8 @@
     var label = str(d.label).trim(), doc = str(d.doc).trim();
     if (!label || !doc) throw new Error('switch ' + id + ': a label and a line on what it does');
     var out = { id: id, label: label, surface: d.surface, stage: d.stage, default: false, doc: doc, saturday: d.saturday };
-    if (d.legacy !== undefined) { if (!ID_RE.test(str(d.legacy))) throw new Error('switch ' + id + ': legacy key'); out.legacy = str(d.legacy); }
+    if (d.setting !== undefined) { if (typeof d.setting !== 'boolean') throw new Error('switch ' + id + ': setting is true or false'); if (d.setting) out.setting = true; }
+    if (d.legacy !== undefined) { if (!ID_RE.test(str(d.legacy))) throw new Error('switch ' + id + ': legacy key'); if (!out.setting) throw new Error('switch ' + id + ': only a setting keeps a legacy key'); out.legacy = str(d.legacy); }
     return out;
   }
   function seed() { list = SWITCHES.map(build); ids(); }
@@ -207,38 +217,58 @@
   }
   function idsFor(surface) { return list.filter(function (s) { return s.surface === surface; }).map(function (s) { return s.id; }); }
   function publicIds() { return list.filter(function (s) { return s.surface !== 'gm'; }).map(function (s) { return s.id; }); }
+  function settings() { return list.filter(function (s) { return s.setting === true; }); }
+  function isSetting(id) { var s = get(id); return !!(s && s.setting === true); }
 
+  /* everything built is on: a line that is not a setting reads true whatever is stored (or nothing at all); a setting reads its stored value, the
+     legacy key as its fallback, exactly as the Switchboard read it. An id nobody registered is off. */
   function valueOf(doc, id) {
-    var s = get(id); if (!s || !isObj(doc)) return false;
+    var s = get(id); if (!s) return false;
+    if (s.setting !== true) return true;
+    if (!isObj(doc)) return false;
     if (isObj(doc.features) && typeof doc.features[id] === 'boolean') return doc.features[id];
     return !!s.legacy && doc[s.legacy] === true;
   }
   function values(doc) { var o = {}; list.forEach(function (s) { o[s.id] = valueOf(doc, s.id); }); return o; }
   function publicMap(doc) { var o = {}; list.forEach(function (s) { if (s.surface !== 'gm') o[s.id] = valueOf(doc, s.id); }); return o; }
 
-  /* publishMap(stateDoc, current) -> what the GM page writes into the campaign document: the phone switch with a legacy key exactly as before, every other display or
-     phone switch only while it is ON, and a plain false only for one the document already holds (so turning it off lands). With everything off the document is
-     byte-for-byte what it was before the suite: absent means off. `current` is the campaign document's features. */
+  /* publishMap(stateDoc, current) -> what the GM page writes into the campaign document: the display and phone SETTINGS only (no other line is ever written,
+     so the values stored before stay as they were): the one with a legacy key always, as before; any other only while it is ON, and a plain false only for
+     one the document already holds (so turning it off lands). `current` is the campaign document's features. */
   function publishMap(doc, current) {
     var o = {}, cur = isObj(current) ? current : {};
     list.forEach(function (s) {
-      if (s.surface === 'gm') return;
+      if (s.surface === 'gm' || s.setting !== true) return;
       var v = valueOf(doc, s.id);
       if (s.legacy || v) o[s.id] = v; else if (has(cur, s.id)) o[s.id] = false;
     });
     return o;
   }
+  /* publicView(raw) -> what a phone or the iPad is told, made from the campaign document's stored map on every read (functions/_lib/features.js): every display
+     and phone line ON, a setting as stored (cleaned; absent stays absent, which reads off). Never a GM-only id. */
+  function publicView(raw) {
+    var stored = cleanPublic(raw), out = {};
+    list.forEach(function (s) {
+      if (s.surface === 'gm') return;
+      if (s.setting !== true) out[s.id] = true;
+      else if (has(stored, s.id)) out[s.id] = stored[s.id];
+    });
+    return out;
+  }
 
+  /* only a setting can change: the GM state patch for it (features and its legacy key) */
   function patchFor(doc, id, on) {
     var s = get(id); if (!s) throw new Error('unknown switch: ' + str(id));
+    if (s.setting !== true) throw new Error(id + ' is always on: only a setting can change');
     var f = {}, p = { features: f };
     f[id] = on === true;
     if (s.legacy) p[s.legacy] = on === true;
     return p;
   }
+  /* every setting back to off (nothing else can be turned off) */
   function patchAllOff() {
     var f = {}, p = { features: f };
-    list.forEach(function (s) { f[s.id] = false; if (s.legacy) p[s.legacy] = false; });
+    settings().forEach(function (s) { f[s.id] = false; if (s.legacy) p[s.legacy] = false; });
     return p;
   }
 
@@ -253,8 +283,12 @@
     var k = {}; Object.keys(a).forEach(function (x) { k[x] = 1; }); Object.keys(b).forEach(function (x) { k[x] = 1; });
     return Object.keys(k).every(function (x) { return (a[x] === true) === (b[x] === true); });
   }
+  function sameSettings(a, b) {
+    a = isObj(a) ? a : {}; b = isObj(b) ? b : {};
+    return settings().every(function (s) { return s.surface === 'gm' || (a[s.id] === true) === (b[s.id] === true); });
+  }
 
   return { STAGES: STAGES, SURFACES: SURFACES, SATURDAY: SATURDAY, register: register, unregister: unregister, reset: reset, get: get, list: all, byStage: byStage,
-    idsFor: idsFor, publicIds: publicIds, valueOf: valueOf, values: values, publicMap: publicMap, publishMap: publishMap, patchFor: patchFor, patchAllOff: patchAllOff,
-    cleanPublic: cleanPublic, sameOn: sameOn };
+    idsFor: idsFor, publicIds: publicIds, settings: settings, isSetting: isSetting, valueOf: valueOf, values: values, publicMap: publicMap, publishMap: publishMap,
+    publicView: publicView, patchFor: patchFor, patchAllOff: patchAllOff, cleanPublic: cleanPublic, sameOn: sameOn, sameSettings: sameSettings };
 });

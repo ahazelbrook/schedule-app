@@ -18,17 +18,21 @@
     L.kit(urgent === true).then(function (ok) { if (ok === false && urgent === true) toast('The figure kit could not load. Check the connection and try again.', true); });
   }
   function needKit() { if (A.kitReady) return true; toast('The figure kit is still loading. Try again in a moment.', true); wantKit(true); return false; }
+  /* the night rebuild (N6): the phone modules that feed the sheet's Now card, its Between fold and its Quiet button run for a player only. The GM's
+     sheets never draw them (tracker.js nowOn), so the GM's pages fetch none of them and make none of their reads. Claims are the crew sheet's: everyone */
+  function forPlayer() { return A.isGM !== true; }
   /* suite 1.6: the Aftermath's xp commendations on a sheet. The phone fetches app/sheet/commend.js only while the spine.aftermath switch is on, and stops it when it goes off. */
   function commendSync() {
     var F = window.B68Flags; if (!F) return;
-    if (F.on('spine.aftermath')) { if (L && L.need) L.need('commend').then(function () { if (window.B68Commend) window.B68Commend.start(); }, function () {}); }
+    if (F.on('spine.aftermath') && forPlayer()) { if (L && L.need) L.need('commend').then(function () { if (window.B68Commend && forPlayer()) window.B68Commend.start(); }, function () {}); }
     else if (window.B68Commend) window.B68Commend.stop();
   }
   /* suite 1.7 and 5.8: the Debrief card and the quiet line, each a lazy bundle fetched only while its own switch is on */
   function betweenSync() {
     var F = window.B68Flags; if (!F) return;
     [['spine.debrief', 'debrief', 'B68Debrief'], ['between.quiet', 'quiet', 'B68Quiet'], ['between.board', 'board', 'B68Board'], ['between.claims', 'claims', 'B68Claims'], ['between.absent', 'absent', 'B68Absent']].forEach(function (x) {
-      if (F.on(x[0])) { if (L && L.need) L.need(x[1]).then(function () { if (window[x[2]]) window[x[2]].start(); }, function () {}); }
+      var mine = x[1] === 'claims' || forPlayer();
+      if (F.on(x[0]) && mine) { if (L && L.need) L.need(x[1]).then(function () { if (window[x[2]] && (x[1] === 'claims' || forPlayer())) window[x[2]].start(); }, function () {}); }
       else if (window[x[2]]) window[x[2]].stop();
     });
   }
@@ -748,9 +752,12 @@
        change signature, and a tick of Stress must not redraw it, so with the switch off nothing here is seen */
     var harm = [], hm = isObj(p.harm) ? p.harm : {};
     [['l4', 4], ['l3', 3], ['l2', 2], ['l1', 1]].forEach(function (k) { var v = hm[k[0]]; (Array.isArray(v) ? v : [v]).forEach(function (x) { if (x != null && String(x).trim() && harm.length < 4) harm.push(k[1]); }); });
+    /* the night rebuild (N1b): the keys the player could turn now (three hits, not struck: sheet/keys.js canTurn), named, for the Aftermath's crew list */
+    var SK = window.B68SheetKeys, pbDef = window.B68Content && window.B68Content.byId ? window.B68Content.byId[t(d.playbook)] : null;
+    var turn = (Array.isArray(p.keys) ? p.keys : []).filter(function (k) { return isObj(k) && (SK && typeof SK.canTurn === 'function' ? SK.canTurn(k, pbDef) : false); }).map(function (k) { return t(k.name).trim().slice(0, 40) || 'A key'; }).slice(0, 6);
     Object.defineProperty(out, 'status', { enumerable: false, value: {
       stress: typeof p.stress === 'number' && isFinite(p.stress) ? Math.max(0, Math.min(9, Math.floor(p.stress))) : null, harm: harm,
-      locks: Math.min(6, (Array.isArray(p.keys) ? p.keys : []).filter(function (k) { return isObj(k) && k.deadlock; }).length) } });
+      locks: Math.min(6, (Array.isArray(p.keys) ? p.keys : []).filter(function (k) { return isObj(k) && k.deadlock; }).length), turn: turn } });
     return out;
   }
   function gmCharacters() {

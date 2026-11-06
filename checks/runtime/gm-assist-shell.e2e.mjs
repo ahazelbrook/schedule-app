@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -77,6 +78,7 @@ try {
   const errors = [];
   async function open(width, height, { reduced = false, cards = CARDS, capbar = true } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block', reducedMotion: reduced ? 'reduce' : 'no-preference' });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     if (capbar) await c.addInitScript(() => { try { localStorage.setItem('b68.gm.capbar', '1'); } catch (e) { /* the capture bar is off by default */ } });
     const page = await c.newPage();
     const seen = { ask: [] };
@@ -94,7 +96,7 @@ try {
   // geometry helpers, in the page
   const rectOf = (page, sel) => page.$eval(sel, (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; });
   const edges = (page) => page.evaluate(() => {
-    const bar = document.querySelector('.gm-bar').getBoundingClientRect(), foot = document.querySelector('#gm-foot').getBoundingClientRect();
+    const bar = document.querySelector('#gm-band').getBoundingClientRect(), foot = document.querySelector('#gm-foot').getBoundingClientRect();
     return { barB: bar.bottom, footT: foot.height > 0 ? foot.top : innerHeight };
   });
   const settle = (page) => page.waitForTimeout(320);                    // the 180 ms slide, and the 1.5 s Now timer is longer on purpose
@@ -153,7 +155,7 @@ try {
       check(clicked, tag + 'the console is still clickable with the panel open (no forced click)');
       await p.click('[data-gm="menu"]');
       const menuOk = await p.evaluate(() => { const l = document.querySelector('.gm-menu-list'); if (!l || l.hasAttribute('hidden')) return 'not open'; const r = l.getBoundingClientRect(); const el = document.elementFromPoint(r.left + r.width / 2, r.top + 20); return !!el && l.contains(el) ? 'ok' : 'covered by ' + (el && el.outerHTML.slice(0, 90)) + ' ctx=' + (() => { const o = []; for (let n = document.querySelector('.gm-bar'); n && n !== document.documentElement; n = n.parentElement) { const c = getComputedStyle(n); if (c.zIndex !== 'auto' || c.transform !== 'none' || c.isolation === 'isolate' || +c.opacity < 1 || c.filter !== 'none' || c.contain !== 'none') o.push((n.id || n.className || n.tagName) + ':z=' + c.zIndex + ',pos=' + c.position); } return o.join(' > '); })() + ' at ' + Math.round(r.left) + ',' + Math.round(r.top); });
-      check(menuOk === 'ok', tag + 'the top bar Menu drops over the open panel (' + menuOk + ')');
+      check(menuOk === 'ok', tag + 'the band\'s Menu drops over the open panel (' + menuOk + ')');
       await p.keyboard.press('Escape'); await p.evaluate(() => { const b = document.querySelector('[data-gm="menu"]'); const l = document.querySelector('.gm-menu-list'); if (l && !l.hasAttribute('hidden')) b.click(); });
       await p.waitForTimeout(150);
       if (await p.$eval('#as-panel', (el) => el.hidden)) { await p.keyboard.press('a'); await settle(p); }
@@ -212,12 +214,10 @@ try {
     await p.click('#as-chips [data-k="rule"]');
     const rc = await p.evaluate(() => ({ n: document.querySelectorAll('#as-list .as-card').length, pr: document.querySelector('#as-chips [data-k="rule"]').getAttribute('aria-pressed'), kinds: [...document.querySelectorAll('#as-list .as-card')].map((x) => x.dataset.kind).join() })); check(rc.n === 2 && rc.pr === 'true', tag + 'the Rule chip shows only rule cards, even with the Ask field focused when it was pressed ' + JSON.stringify(rc));
     await p.click('#as-chips [data-k="all"]');
-    // Esc: first blurs the field, second closes
+    // Esc (the one Esc, gm/esc.js): the panel is the open thing, so it closes even with the focus in its Ask box; the next Esc is not spent on it
     await p.click('#as-ask-q');
-    await p.keyboard.press('Escape');
-    check(await p.$eval('.gm-assist', (h) => h.getAttribute('data-state')) === 'open', tag + 'Esc while typing only leaves the field');
     await p.keyboard.press('Escape'); await settle(p);
-    check(await p.$eval('.gm-assist', (h) => h.getAttribute('data-state')) === 'closed' && await p.$eval('#as-panel', (el) => getComputedStyle(el).visibility) === 'hidden', tag + 'Esc closes the panel');
+    check(await p.$eval('.gm-assist', (h) => h.getAttribute('data-state')) === 'closed' && await p.$eval('#as-panel', (el) => getComputedStyle(el).visibility) === 'hidden', tag + 'Esc closes the panel, typing or not');
     await p.keyboard.press('a'); await settle(p);
     await p.click('#as-panel [data-as="close"]'); await settle(p);
     check(await p.$eval('.gm-assist', (h) => h.getAttribute('data-state')) === 'closed', tag + 'the close button closes it');
@@ -273,6 +273,7 @@ try {
   // ---- a phone: no panel, nothing reserved ----
   {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 390, height: 844 }, serviceWorkers: 'block', isMobile: true, hasTouch: true });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     const p = await c.newPage();
     p.on('pageerror', (er) => errors.push('pageerror: ' + er.message));
     await p.goto(BASE + '/#gm');

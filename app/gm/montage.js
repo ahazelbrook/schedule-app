@@ -2,12 +2,12 @@
 
    Plain script, UMD: window.B68GmMontage in the browser, module.exports under Node.
 
-   WHAT IT DOES. When the score has passed its time budget, one tap (Menu -> Montage -> Split the iPad) splits the iPad into one panel per player character, two to four of
+   WHAT IT DOES. When the score has passed its time budget, one tap (Montage -> Show on iPad) splits the iPad into one panel per player character, two to four of
    them. Each panel has a figure (the character's initial), a place and one line. A marked roll resolves a panel (a stamp on it). One tap collapses it back to the single scene.
    THE WIRE. A lasting layer, never an overlay, so a stamp's report card can stand over the panels while a roll is resolved: data.montage { panels: [{ pcId, name, room, line, done }] }
    (functions/_lib/show-montage.js) and scene.layout montage (the contract already had it). Both are cleared on Collapse. The iPad draws it in app/display/montage.js.
    SECRECY. A place is offered, and sent, only if it is one of the rooms the players already know (host.rooms()); a typed line is scanned for hidden names by the server on write.
-   THE BUDGET. host.over() says whether the score is past its budget: true / false, or null when the phase rail (spine.rail) is off and there is no budget to pass. The tap is
+   THE BUDGET. host.over() says whether the score is past its budget: true / false, or null when no phase is running and so there is no budget yet. The tap is
    always there; when the score is still within its budget (or there is no budget) the button says so and still works.
    WHICH PANEL A MARKED ROLL RESOLVES. The one the GM last tapped "Rolling" on; else the unresolved panel whose place is the crew's room; else the only unresolved one.
 
@@ -127,7 +127,7 @@
       st.box = box;
       var v = ctl.view();
       if (!v.on) { box.innerHTML = '<p class="gm-empty">Montage is off.</p>'; return; }
-      var note = v.over === true ? 'The score is past its budget.' : v.over === false ? 'The score is still within its budget.' : 'No budget to pass (the phase rail is off).';
+      var note = v.over === true ? 'The score is past its budget.' : v.over === false ? 'The score is still within its budget.' : 'No budget yet: no phase is running.';
       var html = '<p class="gm-dim">' + esc(note) + ' Pick two to four characters; each gets a panel with a place and a line.</p>';
       html += v.pcs.length ? v.pcs.map(function (c) {
         return '<div class="gm-sb-row" data-mt-row="' + esc(c.id) + '"><label><input type="checkbox" data-mt-pick="' + esc(c.id) + '"' + (c.picked ? ' checked' : '') + '> <b>' + esc(c.name) + '</b></label> ' +
@@ -135,8 +135,8 @@
           '<input type="text" maxlength="' + LINE_MAX + '" data-mt-line="' + esc(c.id) + '" value="' + esc(c.line) + '" placeholder="one line" aria-label="Line for ' + esc(c.name) + '">' +
           (v.live ? ' <button type="button" class="btn sm' + (c.rolling ? ' primary' : '') + '" data-mt="rolling" data-id="' + esc(c.id) + '">Rolling</button> <button type="button" class="btn sm" data-mt="resolve" data-id="' + esc(c.id) + '"' + (c.done || !c.picked ? ' disabled' : '') + '>' + (c.done ? 'Resolved' : 'Resolve') + '</button>' : '') + '</div>';
       }).join('') : '<p class="gm-empty">No characters on the table.</p>';
-      html += '<div class="gm-sb-row">' + (v.live ? '<button type="button" class="btn sm primary" data-mt="collapse">Collapse to one panel</button> <button type="button" class="btn sm" data-mt="split">Send changes</button>'
-        : '<button type="button" class="btn sm primary" data-mt="split"' + (v.count < MIN ? ' disabled' : '') + '>' + (v.over === false ? 'Split anyway' : 'Split the iPad') + '</button>') + '</div>';
+      html += '<div class="gm-sb-row">' + (v.live ? '<button type="button" class="btn sm primary" data-mt="collapse" title="The panels come down: back to one scene">Take it down</button> <button type="button" class="btn sm" data-mt="split">Send changes</button>'
+        : '<button type="button" class="btn sm primary" data-mt="split"' + (v.count < MIN ? ' disabled' : '') + '>' + (v.over === false ? 'Show on iPad anyway' : 'Show on iPad') + '</button>') + '</div>';
       box.innerHTML = html;
       var sh = box.parentNode;
       if (sh && !sh.__mt) {

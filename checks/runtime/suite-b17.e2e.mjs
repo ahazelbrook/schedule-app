@@ -1,5 +1,6 @@
-// Suite B17 smoke on the real GM page and Worker (map.stage, map.security, face.spotlight): switches off draw nothing; on, the Map box carries the panel with the security
-// line, the stage panel and the stage bar, a tap on Freeze and Blank works, and nothing throws. Every name is invented. No model, $0.
+// Suite B17 smoke on the real GM page and Worker (map.stage, map.security, face.spotlight). Everything built is on (N0): a stored false changes nothing. N3: Location has no
+// box; a rolled location's site line (the site, G) carries the ONE alarm readout, stepped by hand in its popover, and while the map is on the iPad the stage group (LIVE,
+// Freeze, Blank); Freeze holds the iPad, Esc shuts the popover, and nothing throws. Every name is invented. No model, $0.
 //   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=8953] node checks/runtime/suite-b17.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
@@ -7,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -77,6 +79,7 @@ try {
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   const errors = [];
   const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 1440, height: 900 }, serviceWorkers: 'block' });
+  await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
   const page = await c.newPage();
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -88,25 +91,46 @@ try {
     await page.keyboard.press('b'); await page.click('[data-gm="locroll"]'); await page.waitForSelector('#gm-loc .gm-loccard', { timeout: 10000 });
     await page.waitForSelector('#gm-loc .gm-mapbox', { timeout: 10000 });
   };
-  // 1. every switch off: nothing drawn
+  /* N3: the box under Location's Map heading is gone. A rolled location has no v2 night, so the site (G) is the help plus THE SITE LINE: the ONE alarm readout,
+     stepped by hand in its popover, and, while the map is on the iPad, the stage group (LIVE, Freeze, Blank) */
+  const line = '#gm-runv .rv-siteline', readout = line + ' .rv-alarm';
+  const toSite = async () => { await page.keyboard.press('g'); await page.waitForSelector(readout, { timeout: 10000 }); };
+  // 1. a stored false (the old All off) changes nothing
   await api('PATCH', '/gm/state', FEATS(false));
-  await roll(); await sleep(600);
-  check((await page.$$('#gm-b17')).length === 0, 'switches off: no B17 box');
-  // 2. on
+  await roll();
+  check((await page.$$('#gm-b17, #gm-b24, #gm-loc [data-b17]')).length === 0, 'N3: no box under Location\'s Map heading');
+  await toSite();
+  check(/Quiet/.test(await page.textContent(readout)), 'a stored false changes nothing: the site line has the alarm readout, at the first level');
+  // 2. a stored true (what the Switchboard used to write) is the same
   await api('PATCH', '/gm/state', FEATS(true));
   await page.reload(); await page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
   await page.keyboard.press('b'); await page.waitForSelector('#gm-loc .gm-mapbox', { timeout: 10000 }).catch(() => {});
   if (!(await page.$('#gm-loc .gm-mapbox'))) { await page.click('[data-gm="locroll"]'); await page.waitForSelector('#gm-loc .gm-mapbox', { timeout: 10000 }); }
-  const box = await until(() => page.$('#gm-b17'), 8000);
-  check(!!box, 'switches on: the B17 box is under the Map heading');
-  const txt = box ? await box.innerText() : '';
-  check(/Stage/i.test(txt) && /Security/i.test(txt) && /Stage bar/i.test(txt), 'the stage panel, the security line and the stage bar are drawn: ' + txt.replace(/\s+/g, ' ').slice(0, 120));
-  check(/next level:/.test(txt), 'the GM line says next level');
-  await page.click('[data-b17="sec-up"]'); await sleep(200);
-  check(/Watchful/.test(await (await page.$('#gm-b17')).innerText()), 'stepping the security level by hand moves it');
-  await page.click('[data-b17="freeze"]'); await sleep(200);
-  check(/FROZEN/.test(await (await page.$('#gm-b17')).innerText()), 'Freeze shows FROZEN');
-  await page.click('[data-b17="freeze"]');
+  await toSite();
+  check(/Alarm/.test(await page.textContent(readout)) && /Quiet/.test(await page.textContent(readout)) && (await page.$$(line + ' .rv-segs i')).length === 4, 'a stored true: the readout, Alarm and the level, a box per level above the first');
+  await page.click(readout);
+  await page.waitForSelector(line + ' .rv-alarmpop', { timeout: 5000 });
+  const pop = (await page.textContent(line + ' .rv-alarmpop')).replace(/\s+/g, ' ');
+  check(/next level: Watchful/.test(pop) && /step the level by hand/.test(pop), 'its popover says the next level and that it is stepped by hand: ' + pop.slice(0, 120));
+  await page.click(line + ' [data-site="sec-up"]'); await sleep(250);
+  check(/Watchful/.test(await page.textContent(readout)), 'stepping the security level by hand moves it');
+  const secNow = async () => { const amb = (await api('GET', '/gm/ambient')).json, l = amb && amb.doc && amb.doc.layers; return l && l.band ? l.band.security : undefined; };      /* the lasting layers are nested */
+  check(await until(async () => (await secNow()) === 1, 5000), 'and the iPad\'s band follows: band.security 1 (' + JSON.stringify(await secNow()) + ')');
+  await page.keyboard.press('Escape');
+  check(await until(async () => (await page.$$(line + ' .rv-alarmpop')).length === 0, 3000), 'Esc shuts the popover');
+  check((await page.$$(line + ' [data-site="freeze"]')).length === 0, 'nothing on the iPad from the map: no stage group');
+  // 3. the map on the iPad: the site line's stage group says LIVE, and Freeze holds the iPad
+  await page.keyboard.press('b');
+  await page.click('[data-gm="layer"][data-v="player"]');
+  await page.click('[data-gm="ipad"]');
+  await sleep(1200);
+  await toSite();
+  await page.waitForSelector(line + ' [data-site="freeze"]', { timeout: 8000 });
+  check(/^LIVE/.test(await page.textContent(line + ' .rv-live')), 'the map is live: the site line says LIVE');
+  await page.click(line + ' [data-site="freeze"]'); await sleep(250);
+  check(/FROZEN/.test(await page.textContent(line + ' .rv-live')) && await page.evaluate(() => window.B68GmStage.state().frozen === true), 'Freeze shows FROZEN, and B68GmStage says frozen');
+  await page.click(line + ' [data-site="freeze"]'); await sleep(250);
+  check(!/FROZEN/.test(await page.textContent(line + ' .rv-live')), 'and Unfreeze lets it follow again');
   const disp0 = JSON.stringify((await api('GET', '/gm/display')).json.display || {});
   check(disp0.indexOf('GM-ONLY') < 0, 'nothing staged or secret in the display GET');
   check(errors.length === 0, 'no console errors: ' + JSON.stringify(errors.slice(0, 3)));

@@ -51,8 +51,13 @@ async function seed(db, on) {
   await writeNpc(db, 'default', 'n_hidden', mk('GM-ONLY-Hidden Row Npc', false));
   if (on !== undefined) await patchState(db, 'default', { features: { 'ai.keyterms': on } });
 }
-await test('token: switch off or never set is exactly { token, expiresIn }', async () => {
-  for (const on of [undefined, false]) { const db = await newDb(); await seed(db, on); assert.deepEqual(await post(mkEnv(db), 'display'), { token: 'jwt', expiresIn: 30 }); }
+await test('token: the key terms come whatever is stored (N0: everything built is on): never set, or a stored false, still adds them (revealed NPCs only)', async () => {
+  for (const on of [undefined, false]) {
+    const db = await newDb(); await seed(db, on); const out = await post(mkEnv(db), 'display');
+    assert.equal(out.token, 'jwt'); assert.equal(out.expiresIn, 30);
+    assert.ok(Array.isArray(out.keyterms) && out.keyterms.includes('Blade') && out.keyterms.includes('Rook Vance'), String(on) + ': ' + JSON.stringify(out.keyterms));
+    assert.ok(!JSON.stringify(out).includes('GM-ONLY'), 'a hidden NPC is never a key term');
+  }
 });
 await test('token: switch on adds keyterms, revealed NPCs only; a hidden NPC (row or pack) is absent, for the iPad and the GM', async () => {
   const db = await newDb(); await seed(db, true);
