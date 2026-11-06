@@ -260,6 +260,37 @@ try {
   await n.click('.gm-pnext [data-place-back]'); await sleep(300); await n.click('.gm-pnext [data-place-back]'); await sleep(300);
   await n.click('.gm-pnext [data-place-next]'); await sleep(500);
   check((await st(n)).place === 'pb' && await nightPhase() === 'plan', 'T10 Back, Back, Next: a look at Personal, never a rewind of the night');
+
+  /* T13: Prep's index has a second level: each section's ### headings under its ## chip, folded but for the section in view; each a jump that
+     lands below the top; the ▸ folds them by hand; the find box and Find (Ctrl K) still work */
+  await n.evaluate(() => window.B68GmPage.goPlace('score', { navigateOnly: true })); await sleep(300);
+  await key(n, 'r'); await sleep(600);
+  const idx = () => n.evaluate(() => ({ chips: document.querySelectorAll('#gm-prep .pp-rail > [data-gm="prep-go"]').length, heads: document.querySelectorAll('#gm-prep .pp-doc > .pp-sec > h3').length,
+    subs: [...document.querySelectorAll('#gm-prep .pp-subs')].map((g) => ({ of: g.getAttribute('data-subs'), open: !g.hidden && g.getBoundingClientRect().height > 0, n: g.querySelectorAll('[data-gm="prep-sub"]').length, cur: (g.querySelector('[aria-current="true"]') || {}).textContent || '' })),
+    cur: (document.querySelector('#gm-prep .pp-rail [data-gm="prep-go"][aria-current="true"]') || {}).textContent || '' }));
+  await n.evaluate(() => { document.querySelector('#gm-prep').scrollTop = 0; }); await sleep(400);
+  let ix = await idx();
+  check(ix.subs.length === 1 && ix.subs[0].of === 'pp-rooms' && ix.subs[0].n === 6 && !ix.subs[0].open, 'T13 the index: Rooms holds its six ### rooms, folded while Rooms is not in view; sections with no ### have none ' + JSON.stringify(ix.subs));
+  await n.click('#gm-prep .pp-rail [data-gm="prep-go"][data-id="pp-rooms"]');
+  check(await until(async () => { const x = await idx(); return x.cur === 'Rooms' && x.subs[0].open; }, 5000), 'T13 Rooms in view: its rooms open under it');
+  await n.click('#gm-prep .pp-subs [data-gm="prep-sub"]:nth-child(4)');
+  const landed = await until(() => n.evaluate(() => { const b = document.querySelector('#gm-prep .pp-subs [data-gm="prep-sub"]:nth-child(4)'), h = document.getElementById(b.getAttribute('data-id')), p = document.querySelector('#gm-prep'); const t = Math.round(h.getBoundingClientRect().top - p.getBoundingClientRect().top); return t >= 0 && t <= 60 && b.getAttribute('aria-current') === 'true' ? { t, text: b.textContent } : null; }), 5000);
+  check(!!landed, 'T13 a room in the index jumps to its heading, just under the top of the pane, and is marked ' + JSON.stringify(landed));
+  await n.click('#gm-prep .pp-subt[data-subt="pp-rooms"]'); await sleep(200);
+  await n.evaluate(() => { document.querySelector('#gm-prep').scrollTop += 40; }); await sleep(400);
+  check(!(await idx()).subs[0].open, 'T13 the ▸ folds them by hand, and they stay folded while Rooms is read');
+  await n.click('#gm-prep .pp-subt[data-subt="pp-rooms"]'); await sleep(200);
+  check((await idx()).subs[0].open, 'T13 and opens them again');
+  ix = await idx();
+  check(ix.chips === ix.heads && ix.chips >= 10, 'T13 the ## rail is as it was: one chip per section (' + ix.chips + ')');
+  await n.fill('#gm-prep-q', 'zzqqnothing'); await sleep(300);
+  check(await n.evaluate(() => { const g = document.querySelector('#gm-prep .pp-subs'), t = document.querySelector('#gm-prep .pp-subt'); return g.hidden && t.hidden; }), 'T13 a section the find box filters out takes its headings and its ▸ with it');
+  await n.fill('#gm-prep-q', ''); await sleep(300);
+  await blur(n); await n.keyboard.press('Control+k'); await n.fill('#gm-find-q', 'counting room'); await sleep(400);
+  const hit = await n.$eval('.gm-find-hit[aria-selected="true"]', (e) => e.textContent).catch(() => '');
+  await n.keyboard.press('Enter'); await sleep(900);
+  const fpos = await n.evaluate(() => { const h = [...document.querySelectorAll('#gm-prep .pp-doc h4')].find((e) => /counting room/i.test(e.textContent)), p = document.querySelector('#gm-prep'); return h && !p.hidden ? Math.round(h.getBoundingClientRect().top - p.getBoundingClientRect().top) : null; });
+  check(/counting room/i.test(hit) && fpos !== null && fpos >= -2 && fpos <= 80, 'T13 Find (Ctrl K) still finds a room and lands on it in Prep (' + hit.replace(/\s+/g, ' ').slice(0, 60) + ', top ' + fpos + ')');
   await N.c.close();
   await api('PATCH', '/gm/state', { night: { phase: 'pb' } });       /* the phone below opens in the night's place */
 

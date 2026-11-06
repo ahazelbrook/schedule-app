@@ -10,6 +10,7 @@
 #gm-page .pp-bar { position: sticky; top: 0; z-index: 3; display: flex; gap: 8px; align-items: center; background: var(--paper); border-bottom: 2px solid var(--rule); padding: 6px 0 8px; }
 #gm-page .pp-rail { display: flex; gap: 6px; overflow-x: auto; flex: 1 1 auto; min-width: 0; scrollbar-width: thin; padding-bottom: 2px; }
 #gm-page .pp-rail .chip { white-space: nowrap; flex: 0 0 auto; }
+#gm-page .pp-subt, #gm-page .pp-subs { display: none; }   /* T13: the second level is the laptop outline's (gm.css); a chip row has no room for it */
 #gm-page .pp-pick, #gm-page .pp-widebtn { flex: 0 0 auto; }
 #gm-page .pp-widebtn[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); }
 #gm-page .pp-stale { border-left: 6px solid var(--mustard); }

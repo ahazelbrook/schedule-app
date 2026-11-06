@@ -6416,8 +6416,50 @@
         '<button type="button" class="btn sm pp-widebtn" data-gm="prep-wide" aria-pressed="' + !!S.prepWide + '" title="Hide the console while you read">Wide</button></div>' +
         (age != null && age > 1 ? '<p class="gm-note pp-stale">Exported ' + Math.floor(age) + ' day' + (age >= 2 ? 's' : '') + ' ago. Edits made in Obsidian since then are not here: run <code>npm run gm:pack</code> and push the pack.</p>' : '') +
         '<div class="pp-peek" id="gm-prep-peek" hidden></div><article class="pp-doc">' + v.html + '</article>';
+      prepSubsBuild(box);
     }
     decoratePrep(box);
+  }
+  /* T13: the index's second level. Under each ## chip of the rail, the ### headings of its section (the section's own h4s; #### and
+     deeper are left out), each a jump; a ▸ beside the chip folds them. Only the section in view is open, unless the GM opened or shut one
+     (S.prepSubOpen, this page only). The ## chips are the rail as before: Find, the filter and the spy read them unchanged */
+  function prepSubsBuild(box) {
+    var rail = box.querySelector('.pp-rail'); if (!rail) return;
+    [].slice.call(rail.querySelectorAll('[data-gm="prep-go"]')).forEach(function (c) {
+      var id = c.getAttribute('data-id'), sec = prepSectionEl(id); if (!sec) return;
+      var hs = [].filter.call(sec.children, function (e) { return e.tagName === 'H4' && e.id; }); if (!hs.length) return;
+      var head = c.textContent, t = document.createElement('button'), g = document.createElement('div');
+      t.type = 'button'; t.className = 'pp-subt'; t.setAttribute('data-gm', 'prep-subt'); t.setAttribute('data-subt', id); t.setAttribute('aria-expanded', 'false');
+      t.setAttribute('aria-label', 'The headings in ' + head); t.title = 'Show or hide the headings in ' + head; t.textContent = '▸';
+      g.className = 'pp-subs'; g.setAttribute('data-subs', id); g.setAttribute('role', 'group'); g.setAttribute('aria-label', 'In ' + head); g.hidden = true;
+      g.innerHTML = hs.map(function (h) { return '<button type="button" class="pp-subgo" data-gm="prep-sub" data-id="' + esc(h.id) + '">' + esc(h.textContent.replace(/\s+/g, ' ').trim()) + '</button>'; }).join('');
+      c.classList.add('pp-has-subs');
+      rail.insertBefore(t, c.nextSibling); rail.insertBefore(g, t.nextSibling);
+    });
+    prepSubSync(box);
+  }
+  function prepSubOpen(id, cur) { var m = S.prepSubOpen || {}; return Object.prototype.hasOwnProperty.call(m, id) ? !!m[id] : id === cur; }
+  function prepSubSync(pane) {
+    var rail = pane && pane.querySelector('.pp-rail'); if (!rail) return;
+    var cc = rail.querySelector('[data-gm="prep-go"][aria-current="true"]'), cur = cc ? cc.getAttribute('data-id') : '', top = pane.getBoundingClientRect().top;
+    [].forEach.call(rail.querySelectorAll('.pp-subs'), function (g) {
+      var id = g.getAttribute('data-subs'), c = rail.querySelector('[data-gm="prep-go"][data-id="' + id.replace(/"/g, '') + '"]'), t = rail.querySelector('[data-subt="' + id.replace(/"/g, '') + '"]');
+      var gone = !!(c && c.hidden), open = !gone && prepSubOpen(id, cur);
+      g.hidden = !open; if (t) { t.hidden = gone; t.setAttribute('aria-expanded', String(open)); t.textContent = open ? '▾' : '▸'; }
+      var on = null;
+      if (open && id === cur) [].forEach.call(g.querySelectorAll('[data-gm="prep-sub"]'), function (b) { var h = prepSectionEl(b.getAttribute('data-id')); if (h && h.getBoundingClientRect().top - top <= 90) on = b; });
+      [].forEach.call(g.querySelectorAll('[data-gm="prep-sub"]'), function (b) { if (b === on) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current'); });
+    });
+  }
+  function prepSubToggle(id) {
+    var pane = $q('#gm-prep'), cc = pane && pane.querySelector('.pp-rail [data-gm="prep-go"][aria-current="true"]'), cur = cc ? cc.getAttribute('data-id') : '';
+    S.prepSubOpen = S.prepSubOpen || {}; S.prepSubOpen[id] = !prepSubOpen(id, cur);
+    prepSubSync(pane);
+  }
+  function prepSubGo(id) {
+    var el = prepSectionEl(id); if (!el) return;
+    if (S.panel !== 'prep') setPanel('prep');
+    prepScroll(el); flash(el);
   }
   function decoratePrep(el) {
     if (!el || !W.B68GmPrep) return;
@@ -6436,6 +6478,7 @@
       var hit = words.every(function (w) { return t.indexOf(w) >= 0; });
       c.hidden = !hit; if (hit) { c.removeAttribute('hidden'); if (!first) first = c; } else c.setAttribute('hidden', '');
     });
+    prepSubSync($q('#gm-prep'));      /* T13: a section filtered out takes its headings with it */
     return first;
   }
   function prepFindGo() {
@@ -7388,6 +7431,8 @@
       case 'opp-move': oppMove(b.getAttribute('data-id'), +b.getAttribute('data-d')); break;
       case 'opp-del': oppDel(b.getAttribute('data-id')); break;
       case 'prep-go': prepGo(b.getAttribute('data-id')); break;
+      case 'prep-sub': prepSubGo(b.getAttribute('data-id')); break;      /* T13: a ### heading in the index */
+      case 'prep-subt': prepSubToggle(b.getAttribute('data-subt')); break;
       case 'prep-pin': prepPin(b.getAttribute('data-sec')); break;
       case 'prep-beat': prepBeat(b); break;
       case 'prep-wide': toggleFocus(); break;
@@ -7538,6 +7583,7 @@
     });
     if (!cur && pane.scrollTop < 40) cur = null;
     chips.forEach(function (c) { if (c === cur) c.setAttribute('aria-current', 'true'); else c.removeAttribute('aria-current'); });
+    if (panel === 'prep') prepSubSync(pane);      /* T13: the section in view opens its headings */
   }
   function onSubmit(ev) {
     var f = ev.target; if (!S || !f || !f.getAttribute) return;
