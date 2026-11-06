@@ -122,12 +122,8 @@ try {
 
   /* ---- 4. follow the night ---- */
   /* the note's cues: 1 scene, 2 show, 3 light, 4 phase: pb, 5 phase: plan. GO (Space) until the fifth has fired. Personal is in play already (goPlace
-     entered it), and a phase: cue for the phase in play does not fire (the cue stack's own rule), so the GM bypasses the fourth */
-  const standby = () => a.$eval('#gm-cuebar .gm-cs-row', (e) => e.textContent).catch(() => '');
-  for (let i = 0; i < 12 && (await attr(a, 'data-place')) !== 'plan'; i++) {
-    if (/#4\s*PHASE/i.test(await standby())) { await a.$eval('#gm-cuebar [data-cs="bypass"]', (e) => e.click()); await sleep(400); continue; }
-    await key(a, 'Space'); await sleep(900);
-  }
+     entered it): a phase: cue for the phase in play is done at once (N1a), so GO goes straight on past the fourth, no Bypass */
+  for (let i = 0; i < 12 && (await attr(a, 'data-place')) !== 'plan'; i++) { await key(a, 'Space'); await sleep(900); }
   check(await until(async () => (await attr(a, 'data-place')) === 'plan', 8000) && await nightPhase() === 'plan', 'a phase: cue (GO on the note\'s "phase: plan") moves the night, and the page follows it to Planning');
   check(JSON.stringify(await views(a)) === JSON.stringify(['cards', 'corkboard', 'run', 'score', 'prep', 'rules', 'npc', 'ipad']) && await attr(a, 'data-panel') === 'cards', 'Planning: Opportunities first, Intel, The site, the Score generator');
   check(await until(() => a.$eval('#gm-opps-players [data-inline="board"]', (e) => !!e), 6000) && await a.$eval('#gm-opps-gm', (e) => e.querySelectorAll('.oc-card').length >= 1), 'Opportunities: the players\' board over the GM\'s own cards');
