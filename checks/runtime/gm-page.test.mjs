@@ -3586,6 +3586,62 @@ await test('S6f. the GM layer and the other roads are untouched: the GM copy dra
 });
 function RUN_SITE_ROLL(h) { return h.page._state().locRoll; }
 
+/* F4: a roll over tonight's site (an authored site with a play) asks first, and the site is never lost: it is in Earlier, whichever way it became the card */
+const F4_ASK = 'Replace tonight’s site with a rolled location? You can bring it back from Earlier.';
+const f4SiteEntries = (h) => Object.entries((stateDoc(h).hist || {}).location || {}).filter(([, x]) => x && x.auth === 'The Pelican Rooms');
+const f4Chip = (h) => h.qa('#gm-loc .gm-earlier [data-gm="replay"]').find((b) => /The Pelican Rooms/.test(b.textContent));
+await test('F4a. tonight\'s site: Open map files it in Earlier; a roll asks first (No keeps it, strip and all); Yes rolls, and the Earlier chip brings it back', async () => {
+  const h = await openRun();
+  const card0 = stateDoc(h).cards.location;
+  assert.equal(card0.auth, 'The Pelican Rooms');
+  assert.deepEqual(f4SiteEntries(h).map(([id]) => id), [card0.hid], 'Open map files the site in Earlier, under the card\'s own id');
+  const asked = []; h.br.W.confirm = (m) => { asked.push(m); return false; };
+  h.q('[data-gm="locroll"]').click();
+  assert.deepEqual(asked, [F4_ASK], 'the roll asks, once, in these words');
+  assert.equal(stateDoc(h).cards.location.auth, 'The Pelican Rooms', 'a No keeps the site on the card');
+  assert.equal(h.page._state().locRoll.name, 'The Pelican Rooms'); assert.ok(h.q('#gm-run'), 'and its strip');
+  h.br.W.confirm = (m) => { asked.push(m); return true; };
+  h.q('[data-gm="locroll"]').click();
+  const card1 = stateDoc(h).cards.location;
+  assert.equal(asked.length, 2); assert.equal(card1.auth, undefined, 'a Yes rolls: no auth survives'); assert.equal(typeof card1.seed, 'number');
+  assert.ok(!h.q('#gm-run'), 'a rolled site has no strip');
+  assert.ok(f4Chip(h), 'the site is an Earlier chip');
+  f4Chip(h).click();
+  assert.equal(stateDoc(h).cards.location.auth, 'The Pelican Rooms', 'the chip brings the site back'); assert.equal(h.page._state().locRoll.name, 'The Pelican Rooms');
+  assert.ok(h.q('#gm-run'), 'with its strip'); assert.equal(f4SiteEntries(h).length, 1, 'one entry for the site');
+  h.press('r'); h.q('.pp-site[data-score="b68g-score-goose"] [data-gm="siteauth"]').click();
+  assert.equal(f4SiteEntries(h).length, 1, 'Open map again reuses its entry');
+  /* Roll a site on another score asks too, BEFORE its pickers change: a No changes nothing */
+  const ui0 = JSON.stringify((stateDoc(h).loc || {}).ui || null); asked.length = 0; h.br.W.confirm = (m) => { asked.push(m); return false; };
+  h.press('r'); h.q('.pp-site[data-score="b68g-score-plain"] [data-gm="siteroll"]').click();
+  assert.deepEqual(asked, [F4_ASK], 'Roll a site asks the same');
+  assert.equal(stateDoc(h).cards.location.auth, 'The Pelican Rooms'); assert.equal(JSON.stringify((stateDoc(h).loc || {}).ui || null), ui0, 'and a No leaves the pickers as they were');
+  await h.save();
+});
+await test('F4b. an authored card set from outside (no Earlier entry): the roll files it on its way out, and the chip brings it back', async () => {
+  const g = fakeGm(undefined, Object.assign({}, prepPart, runPack(RUN_SITE(RUN_PLAY))));
+  g.server.doc = { cards: { location: { hid: 'h_out', auth: 'The Pelican Rooms', label: 'The Pelican Rooms · Nowhere Ward', at: '2030-01-01T20:00:00Z' } } };
+  const h = await openPage({ fg: g, camp: RUN_CAMP, over: { B68GmPrep: PR, B68Markdown: MDN, B68Map: spyKit().K, B68GmBall: BALL }, api: { characters: () => RUN_PCS } });
+  h.press('b');
+  assert.equal(h.page._state().locRoll.name, 'The Pelican Rooms'); assert.equal(f4SiteEntries(h).length, 0, 'nothing in Earlier yet');
+  const asked = []; h.br.W.confirm = (m) => { asked.push(m); return true; };
+  h.q('[data-gm="locroll"]').click();
+  assert.deepEqual(asked, [F4_ASK]);
+  assert.equal(f4SiteEntries(h).length, 1, 'the site going out is in Earlier'); assert.ok(f4Chip(h));
+  f4Chip(h).click();
+  assert.equal(stateDoc(h).cards.location.auth, 'The Pelican Rooms'); assert.ok(h.q('#gm-run'), 'back, with its strip');
+  await h.save();
+});
+await test('F4c. only tonight\'s site asks: an authored site with no play, and a rolled card, are replaced without a word (the site still goes in Earlier)', async () => {
+  const h = await openRun({ site: RUN_SITE(null) });
+  const asked = []; h.br.W.confirm = (m) => { asked.push(m); return true; };
+  h.q('[data-gm="locroll"]').click();
+  assert.equal(stateDoc(h).cards.location.auth, undefined); assert.ok(f4Chip(h), 'in Earlier');
+  h.q('[data-gm="locroll"]').click();
+  assert.deepEqual(asked, [], 'no confirm for a site with no play, nor for a rolled card');
+  await h.save();
+});
+
 /* =====================================================================================================================
    18. Score (J): the outline of a heist, rolled for inspiration (app/gm/score.js; GM.md "Score (J)")
    ===================================================================================================================== */

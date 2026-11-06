@@ -18,7 +18,7 @@
      groupHtml(view, esc) -> HTML           the site toolbar's stage group: the LIVE line, Send (n), Freeze, Blank (data-site="send" | "freeze" | "blank")
      create(host) -> controller
        host: { feature(id) -> bool, rooms() -> [{ name, band }], opened() -> [name] open for the players already, shown(name) -> bool its band already shows it,
-               setOpen(names) -> bool, liveText() -> string what the iPad shows, dark() -> Promise, toast(msg, bad), changed() }
+               setOpen(names) -> bool (null: the GM declined the map going up, nothing changed), liveText() -> string what the iPad shows, dark() -> Promise, toast(msg, bad), changed() }
        controller: toggle(name) stage(name) unstage(name) staged() isStaged(name) canStage(name) send() freeze(on?) blank() unblank() holding() view() reset()
                    (unblank: the page, when anything but the dark reaches the iPad; view() never says BLANK while a map is live)
 
@@ -96,7 +96,7 @@
       var names = staged();
       if (!names.length) { say('Nothing is staged.', true); list = []; changed(); return false; }
       var cur0 = typeof host.opened === 'function' ? host.opened() : [], ok = typeof host.setOpen === 'function' ? host.setOpen(cur0.concat(names.filter(function (n) { return cur0.indexOf(n) < 0; }))) : false;
-      if (!ok) { say('Could not send the staged rooms.', true); return false; }
+      if (!ok) { if (ok !== null) say('Could not send the staged rooms.', true); return false; }      /* null: the GM said No to the map going up; the rooms stay staged */
       list = []; blanked = false; changed();
       return true;
     }
