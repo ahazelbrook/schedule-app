@@ -2273,7 +2273,7 @@
       /* Opportunities: the players' board (bound here by the places) over the GM's own cards (renderCards) */
       '<div class="gm-pane" data-pane="cards" id="gm-cards"><section class="gm-opps-part"><h3 class="gm-opps-h">From the players</h3><div class="gm-opps-players" id="gm-opps-players"></div></section>' +
       '<section class="gm-opps-part"><h3 class="gm-opps-h">From the GM</h3><div class="gm-opps-gm" id="gm-opps-gm"></div></section></div>' +
-      '<div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div>' + '<div class="gm-pane gm-runv" data-pane="run" id="gm-runv"></div>' + '<div class="gm-pane gm-vpane" data-pane="view" id="gm-vpane"></div></section>' +
+      '<div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div><div class="gm-pane" data-pane="handouts" id="gm-hand"></div>' + '<div class="gm-pane gm-runv" data-pane="run" id="gm-runv"></div>' + '<div class="gm-pane gm-vpane" data-pane="view" id="gm-vpane"></div></section>' +
       '</div>' + drawerHtml() +
       '<div class="gm-foot" id="gm-foot"></div>' +
       '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button>' +
@@ -2797,6 +2797,7 @@
     if (p === 'ipad') { loadAmbient(); loadStt(); }
     if (p === 'run') renderRun();
     if (p === 'chase') renderChase();      /* the start form offers the Location roll or Street scene made since it was drawn */
+    if (p === 'handouts') { loadShown(); renderHandPane(); }      /* T12: Planning's Handouts */
     spy(p);
   }
   /* a pane, from anywhere in the page (Find, a link, a generator's cross-link, the iPad pill): shown as a view of the place the GM is in, an extra
@@ -5230,6 +5231,7 @@
     return T.liveItems(ipadSnapshot()).filter(function (x) { return x.key !== 'stage' && x.key !== 'overlay'; }).map(function (x) { return x.text; });
   }
   function renderIpad() {
+    renderHandPane();      /* T12: Planning's Handouts says what is on the iPad too */
     var box = $q('#gm-ipad'); if (!box) return;
     var v = ipadView(AM.doc, function (id) { var c = tableClocks().filter(function (x) { return str(x.id) === id; })[0]; return c ? { name: c.name, size: c.size, filled: c.filled } : null; }), busy = AM.busy > 0, off = !AM.loaded;
     function seg(k, label) { return '<button type="button" class="chip" data-gm="ambmode" data-v="' + k + '" aria-pressed="' + (v.mode === k) + '"' + (off || busy ? ' disabled' : '') + '>' + label + '</button>'; }
@@ -5285,14 +5287,20 @@
   function handoutById(id) { return handouts().filter(function (x) { return x.id === id; })[0] || null; }
   function handoutsHtml() {
     var list = handouts(), me = S, tt = !!(me && me.hoTitle);
-    /* a part of the Scenes section (the iPad view): the props the GM shows by hand */
+    /* a part of the Scenes section (the iPad view), and the whole of Planning's Handouts view (T12): the props the GM shows by hand */
     var h = '<div class="gm-ipad-sub gm-ipad-handouts"><h4 class="gm-ipad-h">Handouts' + (list.length ? ' <span class="gm-dim">' + list.length + '</span>' : '') + '</h4>';
     if (!list.length) return h + '<p class="gm-dim">' + (part('handouts') ? 'The handouts part has nothing to show.' : 'No handouts in the pack. Put the prop images in the vault, run npm run gm:handouts and npm run gm:pack, then Update pack.') + '</p></div>';
-    h += '<div class="gm-ipad-acts"><label class="gm-check"><input type="checkbox" data-hotitle="1"' + (tt ? ' checked' : '') + '> Title on the iPad</label>' +
-      '<button type="button" class="btn sm" data-gm="blankipad" title="The handout comes off the iPad: the ambient scene plays">Take it down</button></div><ul class="gm-handouts">';
+    /* T12: a deck in list order (a briefing's slides sit together): Previous and Next step from the one on the iPad; with none up, Next shows the first */
+    var cur = hoCurrent(), ci = hoIndex(list, cur), prev = ci > 0 ? list[ci - 1] : null, nxt = ci < 0 ? list[0] : list[ci + 1] || null;
+    h += '<p class="gm-ho-now">' + (cur ? 'On the iPad: <b>' + esc(cur.title) + '</b> <span class="gm-dim">(' + (ci + 1) + ' of ' + list.length + ')</span>' : '<span class="gm-dim">No handout on the iPad.</span>') + '</p>' +
+      '<div class="gm-ipad-acts gm-ho-deck"><button type="button" class="btn sm" data-gm="ho-step" data-d="-1"' + (prev ? ' title="' + esc('Show ' + prev.title) + '"' : ' disabled') + '>◀ Previous</button>' +
+      '<button type="button" class="btn sm primary" data-gm="ho-step" data-d="1"' + (nxt ? ' title="' + esc('Show ' + nxt.title) + '"' : ' disabled') + '>Next ▶</button>' +
+      '<button type="button" class="btn sm" data-gm="blankipad" title="The handout comes off the iPad: the ambient scene plays">Take it down</button>' +
+      '<label class="gm-check"><input type="checkbox" data-hotitle="1"' + (tt ? ' checked' : '') + '> Title on the iPad</label></div><ul class="gm-handouts">';
     list.forEach(function (x) {
-      h += '<li class="gm-handout" data-ho="' + esc(x.id) + '"><img class="gm-handout-thumb" src="' + esc(P.HANDOUT_DIR + x.file) + '" alt="" loading="lazy" decoding="async" width="72" height="72">' +
-        '<div class="gm-handout-t"><b>' + esc(x.title) + '</b>' + (x.when ? '<span class="gm-dim">' + esc(x.when) + '</span>' : '') +
+      var on = !!cur && x.id === cur.id;
+      h += '<li class="gm-handout' + (on ? ' gm-handout-on' : '') + '" data-ho="' + esc(x.id) + '"' + (on ? ' aria-current="true"' : '') + '><img class="gm-handout-thumb" src="' + esc(P.HANDOUT_DIR + x.file) + '" alt="" loading="lazy" decoding="async" width="72" height="72">' +
+        '<div class="gm-handout-t"><b>' + esc(x.title) + '</b>' + (on ? '<span class="gm-ho-tag">On the iPad</span>' : '') + (x.when ? '<span class="gm-dim">' + esc(x.when) + '</span>' : '') +
         '<div class="gm-ipad-acts"><button type="button" class="btn sm primary" data-gm="ho-show" data-id="' + esc(x.id) + '">Show on iPad</button>' +
         '<button type="button" class="btn sm" data-gm="blankipad">Take it down</button></div></div></li>';
     });
@@ -5300,7 +5308,27 @@
   }
   function showHandout(id) {
     var x = handoutById(id); if (!x) { toast('That handout is not in the pack any more.', true); return Promise.resolve(false); }
-    return pushDisplay(P.handoutDisplay(x, !!(S && S.hoTitle))).then(function () { hoDone(x.id); toast('On the iPad: ' + x.title + '.'); return true; }, function (e) { toast('Could not send the handout: ' + errText(e), true); return false; });
+    var me = S;
+    return pushDisplay(P.handoutDisplay(x, !!(S && S.hoTitle))).then(function () { if (S === me) { S.hoCur = x.id; renderHandPane(); } hoDone(x.id); toast('On the iPad: ' + x.title + '.'); return true; }, function (e) { toast('Could not send the handout: ' + errText(e), true); return false; });
+  }
+  /* T12: the handout on the iPad now: the iPad shows a handout and its title is the one this page last sent (else the first with that title) */
+  function hoCurrent() {
+    var sh = AM.shown; if (!isObj(sh) || sh.kind !== 'handout') return null;
+    var list = handouts(), t = str(sh.title), same = function (x) { return str(x.title).slice(0, 2000) === t; };
+    return list.filter(function (x) { return x.id === (S && S.hoCur) && same(x); })[0] || list.filter(same)[0] || null;
+  }
+  function hoIndex(list, cur) { if (!cur) return -1; for (var i = 0; i < list.length; i++) if (list[i].id === cur.id) return i; return -1; }      /* handouts() makes new rows on each call: by id */
+  function hoStep(d) {
+    var list = handouts(), i = hoIndex(list, hoCurrent()), j = i < 0 ? (d > 0 ? 0 : -1) : i + (d > 0 ? 1 : -1);
+    if (j < 0 || j >= list.length) return Promise.resolve(false);
+    return showHandout(list[j].id);
+  }
+  /* T12: Planning's Handouts view (gm/places.js, pane 'handouts'): the same list, drawn by the same handoutsHtml, redrawn with the iPad view */
+  function renderHandPane() {
+    var box = $q('#gm-hand'); if (!box || box.hidden) return;
+    var h = '<div class="gm-hand">' + handoutsHtml() + '</div>';
+    if (box.__sig === h) return;      /* the iPad view redraws often: the thumbnails are drawn again only when something changed */
+    var keep = box.scrollTop; box.__sig = h; box.innerHTML = h; box.scrollTop = keep;
   }
   /* handouts shown or dismissed tonight (kept 12 h in localStorage so a reload does not offer them again): the box's suggestions skip these */
   var HO_KEY = 'b68.gm.hodone', HO_TTL = 12 * 3600 * 1000;
@@ -7335,6 +7363,7 @@
       case 'rackclear': rackClear(); break;
       case 'voiceclear': S.voice = null; renderRack(); break;
       case 'ho-show': showHandout(b.getAttribute('data-id')); break;
+      case 'ho-step': hoStep(+b.getAttribute('data-d')); break;      /* T12: the deck's Previous / Next */
       case 'another': voiceAnother(); break;
       case 'intent': doIntent(+b.getAttribute('data-i')); break;
       case 'replay': {

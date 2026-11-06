@@ -121,6 +121,28 @@ try {
   await p.click('#gm-ipad [data-ho="wide"] [data-gm="blankipad"]');
   check(await until(async () => (await shownDisplay()).kind === 'blank', 8000), 'Take it down blanks it');
 
+  // ---- T12: Planning's Handouts view: the same list (one implementation), with the deck's Previous / Next and Take it down ----
+  await p.evaluate(() => window.B68GmPage.goPlace('plan', { navigateOnly: true }));
+  await p.click('.gm-views [data-pv="handouts"]');
+  check(await p.waitForSelector('#gm-hand .gm-handout', { timeout: 10000 }).then(() => true, () => false) && (await p.$$('#gm-hand .gm-handout')).length === 3, 'T12 Planning has a Handouts view: the same three');
+  const deck = () => p.evaluate(() => ({ on: (document.querySelector('#gm-hand .gm-handout-on') || { getAttribute: () => '' }).getAttribute('data-ho'), now: (document.querySelector('#gm-hand .gm-ho-now') || {}).textContent || '',
+    prev: (document.querySelector('#gm-hand [data-gm="ho-step"][data-d="-1"]') || {}).disabled, next: (document.querySelector('#gm-hand [data-gm="ho-step"][data-d="1"]') || {}).disabled }));
+  let k = await deck();
+  check(k.prev === true && k.next === false && /No handout on the iPad/.test(k.now) && !k.on, 'T12 nothing up: Previous is off, Next is on, and it says so ' + JSON.stringify(k));
+  await p.click('#gm-hand [data-gm="ho-step"][data-d="1"]');
+  check(await until(async () => (await shownDisplay()).file === MINE[0], 8000), 'T12 Next with nothing up shows the first');
+  check(await until(async () => (await deck()).on === 'key', 5000) && /1 of 3/.test((await deck()).now), 'T12 the first is marked as on the iPad (1 of 3)');
+  await p.click('#gm-hand [data-gm="ho-step"][data-d="1"]');
+  check(await until(async () => (await shownDisplay()).file === MINE[1], 8000) && await until(async () => (await deck()).on === 'wide', 5000), 'T12 Next: the second');
+  await p.click('#gm-hand [data-gm="ho-step"][data-d="1"]');
+  check(await until(async () => (await deck()).on === 'gone', 8000) && (await deck()).next === true, 'T12 Next: the third, and Next is off at the end');
+  await p.click('#gm-hand [data-gm="ho-step"][data-d="-1"]');
+  check(await until(async () => (await shownDisplay()).file === MINE[1], 8000) && await until(async () => (await deck()).on === 'wide', 5000), 'T12 Previous: back to the second');
+  await p.click('#gm-hand .gm-ho-deck [data-gm="blankipad"]');
+  check(await until(async () => (await shownDisplay()).kind === 'blank', 8000) && await until(async () => !(await deck()).on, 5000), 'T12 Take it down: the iPad is clear and nothing is marked');
+  await p.click('.gm-views [data-pv="ipad"]');
+  check(await p.$('#gm-ipad .gm-ho-deck [data-gm="ho-step"]') !== null, 'T12 the iPad view keeps the same list, with the same Previous / Next');
+
   // ---- the table display ----
   await p.click('#gm-ipad [data-hotitle]');   // title off again
   const D = await open('#display', { width: 1180, height: 820 });

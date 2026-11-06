@@ -668,6 +668,18 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 .gm-handout-thumb { flex: none; width: 72px; height: 72px; object-fit: cover; background: #000; border-radius: 4px; }
 .gm-handout-t { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
 .gm-handout-t b { overflow-wrap: anywhere; }
+/* T12: the deck (Previous / Next from the one on the iPad), the one on the iPad marked; Planning's Handouts view lays the list out wider */
+#gm-page .gm-ho-now { margin: 0; font: 400 13px/1.4 var(--font-text); }
+#gm-page .gm-ho-deck { align-items: center; }
+#gm-page .gm-ho-deck .btn { flex: 0 1 auto; }
+#gm-page .gm-ho-deck .gm-check { flex: none; margin-left: auto; }
+#gm-page .gm-handout-on { outline: 3px solid var(--accent); outline-offset: 3px; }
+#gm-page .gm-ho-tag { align-self: flex-start; font: 900 10px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; background: var(--accent); color: var(--on-accent); padding: 4px 6px; }
+#gm-page #gm-hand .gm-ipad-handouts { border-top: 0; padding-top: 0; }
+#gm-page #gm-hand .gm-ipad-h { font-size: 13px; color: var(--ink); }
+#gm-page #gm-hand .gm-handouts { grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; margin-top: 4px; }
+#gm-page #gm-hand .gm-handout { padding: 8px; border: 1.5px solid var(--hair); background: var(--card); }
+#gm-page #gm-hand .gm-handout-thumb { width: 120px; height: 90px; object-fit: contain; }
 .gm-check { display: inline-flex; gap: .35rem; align-items: center; }
 
 /* The Screen (GM.md, "The Screen"): the box's four buttons; what Blade made is a card in the box (P4), see .as-body and .as-tone-* below */

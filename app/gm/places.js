@@ -80,7 +80,7 @@
     before: { left: 'own', leftLabel: 'Preflight', views: ['tonight', 'room', 'print', 'ipadscenes'], words: ['before the night', 'tonight', 'index'], about: 'until the Opening: preflight, the room, print' },
     opening: { left: 'own', leftLabel: 'Hard start', views: ['titles', 'frontpage'], words: ['titles', 'open'], about: 'the hard start, Previously on, the titles' },
     pb: { left: 'roll', views: ['downtime', ['debrief', 'Debrief replies'], 'trouble'], words: ['downtime', 'personal'], about: 'personal business: downtime, vices, the morning after' },
-    plan: { left: 'roll', views: ['cards', 'corkboard', 'run', 'score'], words: ['briefing', 'planning', 'gather information', 'engagement'], about: 'opportunities, intel, the site, the engagement roll' },
+    plan: { left: 'roll', views: ['cards', 'corkboard', 'run', 'score', 'handouts'], words: ['briefing', 'planning', 'gather information', 'engagement'], about: 'opportunities, intel, the site, the engagement roll, the handouts' },
     score: { left: 'roll', views: ['run', 'chase', 'scenes', 'location'], words: ['score', 'rooms', 'must land'], about: 'the site, the chase, the street' },
     after: { left: 'own', leftLabel: 'The crew', short: 'Crew', views: ['aftermath', 'downtime'], words: ['close', 'aftermath', 'payout'], about: 'the show, the debrief, end the night' },
     between: { left: 'slim', leftLabel: 'Desks', views: ['desks'], words: ['index'], about: 'the days between sessions: the desks' }
@@ -108,6 +108,8 @@
     score: { label: 'Score generator', short: 'Score gen', key: 'J', pane: 'score', words: 'score generator heist job planner client target' },
     chase: { label: 'Chase', key: 'C', pane: 'chase', words: 'chase pursuit strip' },
     downtime: { label: 'Downtime', key: 'D', pane: 'downtime', words: 'downtime vice morning after activities' },
+    /* T12: the handouts (a briefing's slides among them) with the deck's Previous / Next: the iPad view's own list, also a view of Planning */
+    handouts: { label: 'Handouts', short: 'Props', pane: 'handouts', words: 'handouts slides deck briefing props pictures images show on ipad next previous' },
     cards: { label: 'Opportunities', short: 'Opps', key: 'O', pane: 'cards', slot: { tool: 'board', sel: '#gm-opps-players' }, words: 'opportunities opportunity cards pitches board posts players' },
     tonight: { label: 'Tonight', build: 'tonight', words: 'tonight session note run order start curfew cues before the night' },
     room: { label: 'The room', short: 'Room', tools: ['music', 'practical', 'phone', 'light', 'record'], words: 'the room music playlists practical speaker ringing phone light relay record' },

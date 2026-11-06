@@ -94,7 +94,7 @@ try {
   await until(async () => (await A.page.$eval('[data-band-place="plan"]', (e) => e.getAttribute('data-state'))) === 'now', 4000);
   check(await A.page.$eval('[data-band-place="plan"]', (e) => e.getAttribute('data-state')) === 'now', 'a tap on the band\'s Planning enters the phase');
   check(await until(async () => (await placeOf(A.page)) === 'plan', 4000), 'the page follows the night to Planning');
-  check((await views(A.page)).join() === 'cards,corkboard,run,score,prep,rules,npc,ipad', 'Planning\'s views: ' + (await views(A.page)).join(','));
+  check((await views(A.page)).join() === 'cards,corkboard,run,score,handouts,prep,rules,npc,ipad', 'Planning\'s views: ' + (await views(A.page)).join(','));
   const bandSet = await until(async () => { const d = (await api('GET', '/gm/ambient')).json; return JSON.stringify(d || {}).includes('"plan"'); }, 6000);
   check(bandSet, 'the ambient document carries band.phase plan');
   check(!(await A.page.$('#gm-phaserail, [data-rail="all"]')), 'there is no rail and no All tools: nothing is hidden by the phase (a key brings any view to the place)');

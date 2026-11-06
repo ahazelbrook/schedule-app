@@ -42,13 +42,13 @@ await test('the views each place lays out (the brief\'s list), first is the defa
   assert.deepEqual(own('before'), ['tonight', 'room', 'print', 'ipadscenes']);
   assert.deepEqual(own('opening'), ['titles', 'frontpage']);
   assert.deepEqual(own('pb'), ['downtime', 'debrief', 'trouble']);
-  assert.deepEqual(own('plan'), ['cards', 'corkboard', 'run', 'score']);
+  assert.deepEqual(own('plan'), ['cards', 'corkboard', 'run', 'score', 'handouts']);
   assert.deepEqual(own('score'), ['run', 'chase', 'scenes', 'location']);
   assert.deepEqual(own('after'), ['aftermath', 'downtime']);
   assert.deepEqual(own('between'), ['desks']);
   for (const p of P.list().concat([P.between()])) assert.deepEqual(P.viewsOf(p.id).slice(-4), ['prep', 'rules', 'npc', 'ipad'], p.id);
   assert.deepEqual(P.place('pb').views.map((v) => v.label), ['Downtime', 'Debrief replies', 'Trouble desk'], 'a place may name a view its own way');
-  assert.deepEqual(P.place('plan').views.map((v) => v.label), ['Opportunities', 'Intel', 'The site', 'Score generator']);
+  assert.deepEqual(P.place('plan').views.map((v) => v.label), ['Opportunities', 'Intel', 'The site', 'Score generator', 'Handouts']);
   assert.deepEqual(P.PINNED.map((id) => P.view(id).label + ' ' + P.view(id).key), ['Prep R', 'Rules T', 'Cast N', 'iPad I']);
   assert.ok(P.lists('score', 'chase') && !P.lists('plan', 'chase') && P.lists('plan', 'prep'));
 });

@@ -97,7 +97,7 @@ try {
   const onIpad = async () => { const d = (await api('GET', '/gm/display')).json; return JSON.stringify([d.seq, d.display]); };
   const display0 = await onIpad();
   await p.evaluate(() => window.B68GmPage.goPlace('plan', { navigateOnly: true }));      /* N1b: the Score generator is a view of Planning */
-  check((await p.$$eval('.gm-views [data-pv]', (t) => t.map((x) => x.getAttribute('data-pv')).join())) === 'cards,corkboard,run,score,prep,rules,npc,ipad', 'Planning\'s views: Opportunities, Intel, The site, the Score generator, then the pinned four');
+  check((await p.$$eval('.gm-views [data-pv]', (t) => t.map((x) => x.getAttribute('data-pv')).join())) === 'cards,corkboard,run,score,handouts,prep,rules,npc,ipad', 'Planning\'s views: Opportunities, Intel, The site, the Score generator, the Handouts, then the pinned four');
   check(await p.$eval('.gm-views [data-pv="score"]', (t) => /^Score generator\s*J$/.test(t.textContent.trim()) && !!t.querySelector('kbd')), 'the Score generator shows its key, J');
   await p.keyboard.press('j');
   check(await panelOf(p) === 'score' && await p.$eval('#gm-score', (e) => !e.closest('[hidden]') && !e.hidden), 'key J opens the Score panel');
@@ -234,7 +234,7 @@ try {
   await mp.evaluate(() => window.B68GmPage.goPlace('plan', { navigateOnly: true }));
   const segs = await mp.$$eval('.gm-vchips .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return { seg: x.getAttribute('data-pv') || x.getAttribute('data-seg'), top: Math.round(r.top), right: Math.round(r.right) }; }));
   const perRow = segs.reduce((m, s) => { m[s.top] = (m[s.top] || 0) + 1; return m; }, {});
-  check(segs.map((s) => s.seg).join() === 'console,cards,corkboard,run,score,prep,rules,npc,ipad,state' && JSON.stringify(Object.values(perRow)) === '[5,5]' && segs.every((s) => s.right <= 390), 'phone: Planning\'s chips in two rows of five, the Score generator among them ' + JSON.stringify(perRow));
+  check(segs.map((s) => s.seg).join() === 'console,cards,corkboard,run,score,handouts,prep,rules,npc,ipad,state' && JSON.stringify(Object.values(perRow)) === '[6,5]' && segs.every((s) => s.right <= 390), 'phone: Planning\'s chips in two rows (six and five), the Score generator and the Handouts among them ' + JSON.stringify(perRow));
   await mp.click('.gm-vchips [data-pv="score"]');
   await mp.waitForSelector('#gm-score [data-gm="scoreroll"]', { state: 'visible', timeout: 5000 });
   await mp.click('[data-gm="scoreroll"]');

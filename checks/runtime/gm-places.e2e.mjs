@@ -125,7 +125,7 @@ try {
      entered it): a phase: cue for the phase in play is done at once (N1a), so GO goes straight on past the fourth, no Bypass */
   for (let i = 0; i < 12 && (await attr(a, 'data-place')) !== 'plan'; i++) { await key(a, 'Space'); await sleep(900); }
   check(await until(async () => (await attr(a, 'data-place')) === 'plan', 8000) && await nightPhase() === 'plan', 'a phase: cue (GO on the note\'s "phase: plan") moves the night, and the page follows it to Planning');
-  check(JSON.stringify(await views(a)) === JSON.stringify(['cards', 'corkboard', 'run', 'score', 'prep', 'rules', 'npc', 'ipad']) && await attr(a, 'data-panel') === 'cards', 'Planning: Opportunities first, Intel, The site, the Score generator');
+  check(JSON.stringify(await views(a)) === JSON.stringify(['cards', 'corkboard', 'run', 'score', 'handouts', 'prep', 'rules', 'npc', 'ipad']) && await attr(a, 'data-panel') === 'cards', 'Planning: Opportunities first, Intel, The site, the Score generator, the Handouts');
   check(await until(() => a.$eval('#gm-opps-players [data-inline="board"]', (e) => !!e), 6000) && await a.$eval('#gm-opps-gm', (e) => e.querySelectorAll('.oc-card').length >= 1), 'Opportunities: the players\' board over the GM\'s own cards');
   await shot(a, 'plan-1366');
   const B = await open({ w: 1280, h: 800 });
@@ -147,7 +147,7 @@ try {
   /* ---- 5. tools come to you ---- */
   await a.evaluate(() => window.B68GmPage.goPlace('plan', { navigateOnly: true }));
   await key(a, 'c');
-  check(await attr(a, 'data-panel') === 'chase' && await attr(a, 'data-place') === 'plan' && JSON.stringify(await views(a)) === JSON.stringify(['cards', 'corkboard', 'run', 'score', 'chase', 'prep', 'rules', 'npc', 'ipad']), 'C in Planning: the Chase comes to Planning as an extra view, at the end of its own');
+  check(await attr(a, 'data-panel') === 'chase' && await attr(a, 'data-place') === 'plan' && JSON.stringify(await views(a)) === JSON.stringify(['cards', 'corkboard', 'run', 'score', 'handouts', 'chase', 'prep', 'rules', 'npc', 'ipad']), 'C in Planning: the Chase comes to Planning as an extra view, at the end of its own');
   check(!!(await a.$('.gm-views [data-pvx="chase"]')) && await nightPhase() === 'after', 'with a × to drop it; the night stays where it was');
   await a.click('.gm-views [data-pvx="chase"]');
   check(!(await views(a)).includes('chase') && await attr(a, 'data-panel') === 'cards', '× drops it: back to the view before it');

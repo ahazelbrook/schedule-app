@@ -136,7 +136,7 @@ try {
     check(!(await g.$('#gm-phaserail, [data-rail="all"]')), 'there is no rail and no All tools');
     const tap = async (id) => { await g.click('#gm-band [data-band-place="' + id + '"]'); await sleep(400); };      /* the band's chips, clicked for real (N1a) */
     await tap('plan');
-    check(await placeOf(g) === 'plan' && (await views(g)).join() === 'cards,corkboard,run,score,prep,rules,npc,ipad', 'the band\'s Planning moves the night, and the page follows it: Planning\'s views (the extra view stayed in the Score) ' + (await views(g)).join(','));
+    check(await placeOf(g) === 'plan' && (await views(g)).join() === 'cards,corkboard,run,score,handouts,prep,rules,npc,ipad', 'the band\'s Planning moves the night, and the page follows it: Planning\'s views (the extra view stayed in the Score) ' + (await views(g)).join(','));
     await g.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     await g.keyboard.press('c');
     check(await g.$eval('#gm-chase', (e) => !e.hidden) && (await views(g)).includes('chase') && await placeOf(g) === 'plan', 'C in Planning: the Chase comes here as an extra view (nothing is hidden by the phase)');
