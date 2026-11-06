@@ -734,7 +734,7 @@
     function onClick(ev) {
       var t = ev.target; if (!t || !t.closest) return;
       var b, row;
-      if ((b = t.closest('[data-tn-prep]'))) { ev.preventDefault(); call('usePrep', b.getAttribute('data-tn-prep')); st.sigs.slot = ''; later(function () { render(); }); return; }
+      if ((b = t.closest('[data-tn-prep]'))) { ev.preventDefault(); if (b.blur) b.blur(); call('usePrep', b.getAttribute('data-tn-prep'));      /* blurred first: a focused button would hold the slot's redraw */ st.sigs.slot = ''; later(function () { render(); }); return; }
       if ((b = t.closest('[data-pvx]'))) { ev.preventDefault(); dropExtra(); return; }
       if ((b = t.closest('[data-place-next]'))) { ev.preventDefault(); next(); return; }
       if ((b = t.closest('[data-place-back]'))) { ev.preventDefault(); back(); return; }

@@ -185,7 +185,7 @@
     function drawSig() { return JSON.stringify([st.armed, st.at, st.test, st.shown, st.rolled, ctl.picks(), live().pool.map(function (p) { return p.id + ':' + p.name + ':' + p.role; })]); }
     ctl.render = function (box) {
       if (!box) return;
-      var L = live(), picks = ctl.picks(), s = ctl.state(), start = typeof h.startAt === 'function' ? +h.startAt() || 0 : 0;
+      var s = ctl.state(), L = live(), picks = s.picks, start = typeof h.startAt === 'function' ? +h.startAt() || 0 : 0;      /* state() first: it adopts the iPad's faces, so the picks drawn are the ones laid */
       st.drawn = drawSig();
       var opts = function (cur) { return '<option value="">(none)</option>' + L.pool.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === cur ? ' selected' : '') + '>' + esc(p.name) + (p.role ? ' (' + esc(p.role) + ')' : '') + '</option>'; }).join(''); };
       /* after Roll the opening credits the line says what is on the iPad now (the tray's live line, host.onIpad), until the next arm */
