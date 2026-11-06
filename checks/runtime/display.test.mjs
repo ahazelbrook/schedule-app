@@ -869,7 +869,7 @@ await test('scoreMessage: board and iso are re-sanitised (script gone), the fiel
   assert.equal(P.scoreMessage(null, [], ENV), null); assert.equal(P.scoreMessage('x', [], ENV), null);
   assert.equal(P.scoreMessage({ board: GOOD, iso: GOOD }, [], ENV).view, 'plan');
   assert.equal(P.isScoreScene('board'), true); assert.equal(P.isScoreScene('exploded'), true); assert.equal(P.isScoreScene('watch'), false); assert.equal(P.isScoreScene('nope'), false);
-  assert.deepEqual(P.POLAROIDS.map((p) => [p.id, p.cap]), [['booker', 'Babel'], ['alfie', 'Ashtray & Buck'], ['stacey', 'Stacey'], ['loader', '99.47']]);
+  assert.deepEqual(P.POLAROIDS.map((p) => [p.id, p.cap]), [['booker', 'Babel'], ['alfie', 'Ashtray & Buck']]);
 });
 
 /* ---------- the ambient floor: registry, plan and rotation ---------- */

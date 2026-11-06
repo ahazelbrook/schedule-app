@@ -756,8 +756,9 @@
     if (!isObj(next)) return false;
     return !isObj(prev) || prev.heat !== next.heat || prev.wanted !== next.wanted;
   };
-  /* the four crew polaroids on the score scenes: cast id -> caption (the generator's constant; docs/history/AMBIENT-PLAN.md 4.3) */
-  Pure.POLAROIDS = [{ id: 'booker', cap: 'Babel' }, { id: 'alfie', cap: 'Ashtray & Buck' }, { id: 'stacey', cap: 'Stacey' }, { id: 'loader', cap: '99.47' }];
+  /* the crew polaroids on the score scenes: cast id -> caption (the generator's constant; docs/history/AMBIENT-PLAN.md 4.3). Only the crew at the
+     table: two of the original four are not playing (tech run, 06/11), and a crew member with no figure in the cast canon gets no polaroid */
+  Pure.POLAROIDS = [{ id: 'booker', cap: 'Babel' }, { id: 'alfie', cap: 'Ashtray & Buck' }];
   /* scoreMessage(score, polaroids, env) -> the message a score scene is sent in reply to its b68:ready, or null with no score.
      `board` and `iso` are the score's svgs run through the sanitiser again here (normal cap) and sent as its markup, '' when one
      will not clean; `polaroids` are [{ svg, cap }] already cleaned by the caller (the figure kit's output, big cap). Nothing but

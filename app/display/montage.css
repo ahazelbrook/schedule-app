@@ -25,7 +25,7 @@
 .dp-mt-name { margin: 0; font: 900 var(--b68-t-lead)/1.05 var(--b68-font-poster); text-transform: uppercase; overflow-wrap: break-word; }
 .dp-mt-room { margin: 0; font: 700 var(--b68-t-label)/1.2 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .04em; color: var(--b68-ink-soft); }
 .dp-mt-line { margin: 0; font: 400 var(--b68-t-body)/1.25 var(--b68-font-text); overflow-wrap: break-word; }
-.dp-mt-stamp { position: absolute; right: 2.5vmin; top: 5vmin; margin: 0; padding: .4vmin 1.6vmin; border: .6vmin solid var(--b68-alarm); color: var(--b68-alarm);
+.dp-mt-stamp { position: absolute; right: 2.5vmin; top: auto; bottom: 2.5vmin; margin: 0; padding: .4vmin 1.6vmin; border: .6vmin solid var(--b68-alarm); color: var(--b68-alarm);
   font: 900 var(--b68-t-body)/1 var(--b68-font-poster); letter-spacing: .08em; transform: rotate(-8deg); background: var(--b68-paper); z-index: 1; }
 .dp-mt-done .dp-mt-line, .dp-mt-done .dp-mt-fig, .dp-mt-done .dp-mt-pic svg { opacity: .55; }
 .dp-montage-4 .dp-mt-txt { flex-basis: 52%; }
