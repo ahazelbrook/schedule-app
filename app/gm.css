@@ -1579,6 +1579,8 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
 }
 @media (pointer: coarse) {
   #gm-page .gm-vchips .chip, #gm-page .gm-desklink, #gm-page .gm-left-back { min-height: 44px; }
+  /* The site is the Score's first view now: its line (N3, gm/site.js: the alarm readout, the stage group) is on screen on a tablet with no v2 night */
+  #gm-page .rv-siteline button { min-height: 44px; }
 }
 /* ---------- N4: the Roll (gm/roll.js; design section 5): one card in the left column of Personal, Planning and Score ----------
    Position and Effect as two segmented rows (the size of a consequence under Position), the one "If it goes wrong" line, Stamp it on the iPad
