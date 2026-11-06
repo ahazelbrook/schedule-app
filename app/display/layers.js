@@ -14,15 +14,17 @@
    On the page: data-* attributes on the display root (data-band-phase, data-band-security, data-band-onair, data-scene-filter,
    data-scene-layout, data-scene-mode) for CSS, and THE BAND: the strip that reads those layers.
 
-   THE BAND (the GM night rebuild, the design's iPad part). Everything lasting that sits on the frame is ONE strip across the top with a FIXED SLOT each:
-       mic | phase | crew (three cells) | security          (portrait, when faces are drawn: mic | phase | security, over a row of three crew cells)
+   THE BAND (the GM night rebuild, the design's iPad part). Everything lasting that sits on the frame is ONE strip across the top with a slot each, in this order:
+       mic | phase | crew (a cell per face) | security          (portrait, when faces are drawn: mic | phase | security, over a row of crew cells)
      mic       the iPad's own ON AIR lamp (app/display/onair.js hands it over through mic(); "Off the record 4:32" while paused), else band.onair
-     phase     band.phase, named as the GM page's places name it (Personal, Planning, Score, Aftermath)
-     crew      band.faces: a PC as a first name over its marks (Stress, harm, deadlocks); a face that holds an NPC as its name. Hidden while the
-               hard start runs (scene.mode start draws its own name plates; hardstart.css)
+     phase     band.phase, named as the GM page's places name it (Personal, Planning, Score, Aftermath); none before the night's first phase (Before
+               and the Opening are not phases), so the hard start's band has no phase
+     crew      band.faces: a PC as its first name over its named marks (STRESS 9, the padlock and its count, HARM and its marks); a face that holds
+               an NPC as its name. Hidden while the hard start runs (scene.mode start draws its own name plates; hardstart.css)
      security  band.security as five pips
-   A slot keeps its place when its layer is unset (it is just empty), and a long text ends in an ellipsis inside its own slot, so no layer ever
-   draws over another, in any combination, landscape or portrait. While the strip is up the root carries dp-lay-on (and dp-lay-crew while crew
+   An unset layer's slot is no width (F1: the crew cells take the room; portrait drops its top row when only the crew is up, dp-lay-solo), a first
+   name shrinks before it is cut, and a long text ends in an ellipsis inside its own slot, so no layer ever draws over another, in any
+   combination, landscape or portrait. While the strip is up the root carries dp-lay-on (and dp-lay-crew while crew
    cells are drawn) and app/display/shows.css lays everything else (the stages, the beats, the band beside the map and its countdown, the hard
    start, the montage, the AUTO chip) out BELOW it, so the strip never covers them either. Over lights out only the lamp stays (dp-lights-out).
    API: attach(container, { skew() }) -> { apply(layers), message(), sceneLoaded(id), mic(lamp | null), destroy() }; clean(layers) -> the checked layers;
@@ -124,22 +126,58 @@
     /* the root's band classes (a container without classList, a bare test box, just has none) */
     function rootClass(name, on) { var cl = container.classList; if (!cl) return; if (on) cl.add(name); else cl.remove(name); }
     function add(parent, tag, cls, t) { var e = doc.createElement(tag); e.className = cls; if (t !== undefined) e.textContent = t; parent.appendChild(e); return e; }
-    /* a PC's cell, two lines that fit a third of the crew slot whatever the PC carries:
-         the first name (the crew know each other by it; the full name is the cell's title), the Stress beside it and one padlock for its deadlocked
-         keys (with the count when there is more than one): the name gives way first, so the count is never cut;
-         under them a mark per harm, coloured by its level (a plaster at 1, a sling at 2, a splint at 3, a cross at 4: the word is the mark's title) */
+    /* a PC's cell, two lines a player across the table can read and name (F1, after the real iPad):
+         the first name on a line of its own, the whole width of the cell (the crew know each other by it; the full name is the cell's title). It is
+         never cut while there is room: too long, its type shrinks first (fitNames), and only then does it end in an ellipsis;
+         under it the marks, each named: "STRESS 9"; "HARM" and a mark per harm, coloured by its level (a plaster at 1, a sling at 2, a splint at 3,
+         a cross at 4: the word is the mark's title); a padlock with the count of its deadlocked keys */
     function paintPc(cell, f) {
       var full = f.name || f.pcId, first = full.split(' ')[0] || full;
       cell.setAttribute('title', full);
-      var top = add(cell, 'span', 'dp-lay-top');
-      add(top, 'b', 'dp-lay-name', first);
+      add(cell, 'b', 'dp-lay-name', first);
+      var harm = f.harm && f.harm.length ? f.harm : null;
       var put = function (parent, cls, t, label) { var e = add(parent, 'i', cls, t); if (label) e.setAttribute('title', label); return e; };
-      if (f.stress !== undefined) put(top, 'dp-pc-stress', String(f.stress), 'Stress ' + f.stress);
-      if (f.locks) put(top, 'dp-pc-lock', f.locks > 1 ? '×' + f.locks : '', f.locks > 1 ? f.locks + ' keys deadlocked' : 'Key deadlocked');
-      if (!f.harm || !f.harm.length) return;
-      var marks = add(cell, 'span', 'dp-lay-marks');
-      f.harm.forEach(function (h) { put(marks, 'dp-pc-harm dp-pc-harm-' + h, HARM_MARK[h - 1], 'Harm ' + h + ': ' + HARM_MARK[h - 1]); });
+      if (f.stress !== undefined || f.locks) {
+        var marks = add(cell, 'span', 'dp-lay-marks');
+        if (f.stress !== undefined) { var s = put(marks, 'dp-lay-mark dp-pc-stress', undefined, 'Stress ' + f.stress); add(s, 'span', 'dp-lay-cap', 'Stress'); add(s, 'b', 'dp-lay-num', String(f.stress)); }
+        if (f.locks) { var lk = put(marks, 'dp-lay-mark dp-pc-locks', undefined, f.locks > 1 ? f.locks + ' keys deadlocked' : 'Key deadlocked'); add(lk, 'i', 'dp-pc-lock', ''); add(lk, 'b', 'dp-lay-num', String(f.locks)); }
+      }
+      if (harm) {      /* a line of its own: the marks never push the Stress or the padlock out of the cell */
+        var hm = put(add(cell, 'span', 'dp-lay-marks dp-lay-hurt'), 'dp-lay-mark dp-pc-hurt', undefined, 'Harm: ' + harm.map(function (h) { return HARM_MARK[h - 1]; }).join(', '));
+        add(hm, 'span', 'dp-lay-cap', 'Harm');
+        harm.forEach(function (h) { put(hm, 'dp-pc-harm dp-pc-harm-' + h, HARM_MARK[h - 1], 'Harm ' + h + ': ' + HARM_MARK[h - 1]); });
+      }
     }
+    /* a first name too wide for its cell shrinks its type (down to FIT_MIN of the band's), and only then ends in an ellipsis; run after a paint and on a resize */
+    var FIT_MIN = 0.7, fitQueued = false;
+    function fitNames() {
+      fitQueued = false;
+      var W = root, list = strip && strip.querySelectorAll ? strip.querySelectorAll('.dp-lay-face .dp-lay-name') : [];
+      if (!W || typeof W.getComputedStyle !== 'function') return;
+      for (var i = 0; i < list.length; i++) {
+        var e = list[i]; e.style.fontSize = '';
+        var base = parseFloat(W.getComputedStyle(e).fontSize), px = base;
+        for (var n = 0; n < 4 && e.clientWidth > 0 && e.scrollWidth > e.clientWidth + 1 && px > base * FIT_MIN + 0.1; n++) {
+          px = Math.max(base * FIT_MIN, px * (e.clientWidth - 1) / e.scrollWidth);
+          e.style.fontSize = px.toFixed(2) + 'px';
+        }
+        e.setAttribute('data-fit', px < base - 0.1 ? (px / base).toFixed(2) : '1');
+      }
+      /* a marks row too wide for a narrow cell (every slot up, off the record) draws a little smaller, never cut: its labels and counts stay whole */
+      var rowsOf = strip && strip.querySelectorAll ? strip.querySelectorAll('.dp-lay-face .dp-lay-marks') : [];
+      for (var j = 0; j < rowsOf.length; j++) {
+        var r = rowsOf[j]; r.style.zoom = '';
+        if (r.clientWidth > 0 && r.scrollWidth > r.clientWidth + 1) r.style.zoom = Math.max(MARKS_MIN, (r.clientWidth - 1) / r.scrollWidth).toFixed(3);
+      }
+    }
+    var MARKS_MIN = 0.8;
+    function fitSoon() {
+      if (fitQueued || !root || typeof root.requestAnimationFrame !== 'function') return;
+      fitQueued = true; root.requestAnimationFrame(fitNames);
+      if (root.document && root.document.fonts && root.document.fonts.ready && typeof root.document.fonts.ready.then === 'function') root.document.fonts.ready.then(function () { if (!dead) root.requestAnimationFrame(fitNames); });
+    }
+    function onResize() { if (!dead && strip) fitSoon(); }
+    if (root && typeof root.addEventListener === 'function') root.addEventListener('resize', onResize);
     /* the hard start draws its own name plates (scene.mode start), so the strip's crew cells stand down while it runs */
     function crewDrawn() { return state.faces.length > 0 && state.mode !== 'start'; }
     function hasStrip() { return state.phase !== null || state.security !== null || state.onair || state.faces.length > 0 || lamp !== null; }
@@ -161,7 +199,7 @@
       if (!hasStrip()) {
         if (strip && strip.parentNode) strip.parentNode.removeChild(strip);
         strip = null; slots = null;
-        rootClass('dp-lay-on', false); rootClass('dp-lay-crew', false);
+        rootClass('dp-lay-on', false); rootClass('dp-lay-crew', false); rootClass('dp-lay-solo', false);
         return;
       }
       if (!strip) {
@@ -185,7 +223,10 @@
         cell.classList.add('dp-lay-npc'); cell.setAttribute('title', f.name);
         add(cell, 'b', 'dp-lay-name', f.name);
       });
-      rootClass('dp-lay-on', true); rootClass('dp-lay-crew', crewDrawn());
+      /* an empty slot gives its width to the others (display/shows.css: an empty slot is no width); with nothing but the crew, portrait drops its top row */
+      var solo = crewDrawn() && !lamp && !state.onair && state.phase === null && state.security === null;
+      rootClass('dp-lay-on', true); rootClass('dp-lay-crew', crewDrawn()); rootClass('dp-lay-solo', solo);
+      if (crewDrawn()) fitSoon();
     }
     /* the lamp from app/display/onair.js: { off, text, clock } while the iPad's mic is live ('On air', or 'Off the record' over its countdown),
        null when it is not. A new countdown repaints the lamp alone; the lamp coming or going is a change to the strip (it may be its only slot) */
@@ -235,10 +276,10 @@
         for (var i = live.length - 1; i >= 0; i--) if (live[i].api === api) live.splice(i, 1);
         if (typeof offFlags === 'function') offFlags();
         container.removeAttribute('data-flash-look');
-        if (root.removeEventListener) root.removeEventListener('message', onMessage);
+        if (root.removeEventListener) { root.removeEventListener('message', onMessage); root.removeEventListener('resize', onResize); }
         if (strip && strip.parentNode) strip.parentNode.removeChild(strip);
         strip = null; slots = null; lamp = null;
-        rootClass('dp-lay-on', false); rootClass('dp-lay-crew', false);
+        rootClass('dp-lay-on', false); rootClass('dp-lay-crew', false); rootClass('dp-lay-solo', false);
         if (root.B68DisplayMontage) root.B68DisplayMontage.paint(container, [], doc);
         Object.keys(ATTRS).forEach(function (a) { container.removeAttribute(a); }); container.removeAttribute('data-band-onair');
       }
