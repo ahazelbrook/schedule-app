@@ -63,6 +63,7 @@
     "check:cue": "node checks/runtime/gm-cue.test.mjs",
     "check:features": "node checks/runtime/features.test.mjs && node checks/api/features.mjs",
     "check:gm-tools": "node checks/runtime/gm-tools.test.mjs && node checks/runtime/gm-cue-verbs.test.mjs",
+    "check:gm-times": "node checks/runtime/gm-times.e2e.mjs",
     "check:gm-seams": "node checks/runtime/gm-seams.e2e.mjs",
     "check:cogm-e2e": "node checks/runtime/gm-cogm.e2e.mjs",
     "check:cue-e2e": "node checks/runtime/gm-cue.e2e.mjs",

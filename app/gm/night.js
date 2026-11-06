@@ -17,10 +17,11 @@
    document's 240 KiB soft line (checks/runtime/gm-night.test.mjs holds it to that).
 
    PATCHES (every writer returns a state-document patch, `{ night: { ... } }`, or null when there is nothing to write; none writes on its own)
-     enter(night, phase, nowMs, prep)   end the phase that is current, start this one, log it; prep (parsePrep's answer) seeds the budgets and times it has
+     enter(night, phase, nowMs, prep)   end the phase that is current, start this one, log it; prep (parsePrep's answer) seeds the budgets it has and any time that is still empty
      stamp(night, text, nowMs)          a table stamp into the log        cue(night, text, nowMs)   a cue into the log
      setAfter(night, step, data)         the Aftermath's step and data (data replaces: keys it no longer has are nulled)
      reset()                             { night: null }: the next night starts clean
+     setTime(night, key, hhmm)           the GM's own startAt / curfewAt (enter() only fills one that is empty)      usePrep(night, key, prep)   the note's back
    READERS
      clean(raw) -> night      bandPhase(night) -> id | ""      logList(night) -> entries, oldest first      clockMs(hhmm, nowMs) -> ms | null
    THE PREP NOTE
@@ -33,7 +34,7 @@
        A row that names none is not counted. The two times are body lines of the note, outside code fences: `start: 19:30` and `curfew: 22:40`
        (a leading "- " or bold marks are fine). No lines, no times: a note without them gives nulls and changes nothing.
    create(host) -> controller. host: { doc() -> the GM state document, patch(p) -> bool, prep() -> note | null, now() -> ms, changed() }
-     enter(phase) stamp(text) cue(text) setAfter(step, data) reset() phase() night() band() -> as above, written through host.patch */
+     enter(phase) stamp(text) cue(text) setAfter(step, data) reset() setTime(key, hhmm) usePrep(key) phase() night() band() -> as above, written through host.patch */
 (function (root, factory) {
   'use strict';
   var M = factory(typeof module === 'object' && module && module.exports ? require('./prep.js') : root.B68GmPrep);
@@ -176,8 +177,8 @@
         var b = prep.budgets && mins(prep.budgets[i]);
         if (b && b !== n.phases[i].budget) phases[i] = Object.assign(phases[i] || {}, { budget: b });
       });
-      if (hhmm(prep.start) && hhmm(prep.start) !== n.startAt) out.startAt = hhmm(prep.start);
-      if (hhmm(prep.curfew) && hhmm(prep.curfew) !== n.curfewAt) out.curfewAt = hhmm(prep.curfew);
+      if (hhmm(prep.start) && !n.startAt) out.startAt = hhmm(prep.start);          /* the times only fill a gap: the GM's own (setTime) are never overwritten */
+      if (hhmm(prep.curfew) && !n.curfewAt) out.curfewAt = hhmm(prep.curfew);
     }
     return { night: Object.assign({ v: 1 }, out) };
   }
@@ -196,6 +197,18 @@
     return { night: { v: 1, aftermath: { step: cut(step, LIMITS.step), data: out } } };
   }
   function reset() { return { night: null }; }
+  /* the GM's own start and curfew: setTime writes one ("" or a bad time clears it, so the next enter() seeds it from the note again);
+     usePrep puts the note's back (or clears it when the note gave none). Both return null for a key that is not a time. */
+  var TIMES = { startAt: 'start', curfewAt: 'curfew' };
+  function setTime(night, key, value) {
+    if (!has(TIMES, key)) return null;
+    var out = { v: 1 }; out[key] = hhmm(value) || null;
+    return { night: out };
+  }
+  function usePrep(night, key, prep) {
+    if (!has(TIMES, key)) return null;
+    return setTime(night, key, isObj(prep) ? prep[TIMES[key]] : null);
+  }
 
   /* ---------- the controller one GM page holds ---------- */
   function create(host) {
@@ -211,10 +224,12 @@
       stamp: function (text) { return send(stamp(night(), text, nowMs())); },
       cue: function (text) { return send(cue(night(), text, nowMs())); },
       setAfter: function (step, data) { return send(setAfter(night(), step, data)); },
-      reset: function () { return send(reset()); }
+      reset: function () { return send(reset()); },
+      setTime: function (key, value) { return send(setTime(night(), key, value)); },
+      usePrep: function (key) { var pn = typeof host.prep === 'function' ? host.prep() : null; return send(usePrep(night(), key, pn ? parsePrep(pn) : null)); }
     };
   }
 
-  return { PHASES: PHASES, LIMITS: LIMITS, parsePrep: parsePrep, clean: clean, enter: enter, stamp: stamp, cue: cue, setAfter: setAfter, reset: reset,
+  return { PHASES: PHASES, LIMITS: LIMITS, parsePrep: parsePrep, clean: clean, enter: enter, stamp: stamp, cue: cue, setAfter: setAfter, reset: reset, setTime: setTime, usePrep: usePrep,
     bandPhase: bandPhase, logList: logList, clockMs: clockMs, create: create };
 });

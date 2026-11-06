@@ -48,7 +48,8 @@
                'side': the phone's one column), prepNote() -> the open note | null, prepNotes() -> [{ id, title }], setPrepNote(id),
                prepSecs() -> [{ id, head, html() }] the open note's ## sections, decorate(el) (ticks, cells), crew() -> [{ id, name, stress,
                harm: [1-4], locks, turn: [key names] }], sheetOpen(id) -> bool, exportTonight(), endNight() -> Promise, recording() -> bool,
-               stopRecording(), toast(msg, bad) }
+               stopRecording(), toast(msg, bad),
+               nightTimes() -> { startAt, curfewAt } (the night's own, "HH:MM" | null), setTime(key, hhmm), usePrep(key) (the Tonight box's fields) }
        Every host function is optional: a missing one costs only its own feature. The page calls mount() after each layout() (and once its
        panes are drawn) and sync() from its pane switch, which runs on every state arrival. */
 (function (root, factory) {
@@ -369,9 +370,17 @@
       }).join('') + '</ul>';
     }
     function factsNow() { return facts(call('prepNote'), W && W.B68GmNight, W && W.B68GmCueStack); }
+    /* one time field: the night's own time (or the note's, until the GM sets one), and the note's under it while the two differ */
+    function timeHtml(key, label, mine, noteAt) {
+      var shown = mine || noteAt || '', differs = !!mine && mine !== noteAt;
+      return '<div class="gm-tn-time"><label class="gm-lab">' + label + '<input type="time" class="gm-tn-input" data-tn-time="' + key + '" value="' + esc(shown) + '"></label>' +
+        (differs ? '<span class="gm-dim gm-tn-from">' + (noteAt ? 'from the prep note: ' + esc(noteAt) : 'the prep note has none') + '</span><button type="button" class="btn sm" data-tn-prep="' + key + '">Use the prep’s</button>'
+          : (shown ? '' : '<span class="gm-dim gm-tn-from">no ' + label.toLowerCase() + ' line in the note</span>')) + '</div>';
+    }
     function factsHtml(f) {
       if (!f.title) return '<p class="gm-dim">No prep note in the pack: Tonight reads the open note’s start, curfew, cues and rooms.</p>';
-      return '<p class="gm-tn-title">' + esc(f.title) + '</p><p class="gm-tn-line">' + (f.start ? 'Start <b>' + esc(f.start) + '</b>' : 'No start line') + ' · ' + (f.curfew ? 'curfew <b>' + esc(f.curfew) + '</b>' : 'no curfew line') + '</p>' +
+      var t = call('nightTimes') || {};
+      return '<p class="gm-tn-title">' + esc(f.title) + '</p>' + timeHtml('startAt', 'Start', t.startAt, f.start) + timeHtml('curfewAt', 'Curfew', t.curfewAt, f.curfew) +
         '<p class="gm-tn-line"><b>' + f.cues + '</b> cue' + (f.cues === 1 ? '' : 's') + ' · <b>' + f.rooms + '</b> room' + (f.rooms === 1 ? '' : 's') + '</p>';
     }
     function leftHtml() {
@@ -438,7 +447,12 @@
       if (!note) return '<p class="gm-empty">No prep notes in the pack yet. In Obsidian, add the property <code>gm_prep: true</code> to a session note, then run <code>npm run gm:pack</code> and push the pack (or Update pack).</p>';
       var pick = notes.length > 1 ? '<label class="gm-field gm-tn-pick"><span class="gm-lab">The night’s note</span><select data-pv-note="1">' + notes.map(function (n) { return '<option value="' + esc(n.id) + '"' + (n.id === note.id ? ' selected' : '') + '>' + esc(n.title) + '</option>'; }).join('') + '</select></label>'
         : '<p class="gm-tn-title">' + esc(note.title) + '</p>';
-      var times = '<p class="gm-tn-line">' + [f.start ? 'Start <b>' + esc(f.start) + '</b>' : 'No <code>start:</code> line', f.curfew ? 'curfew <b>' + esc(f.curfew) + '</b>' : 'no <code>curfew:</code> line', '<b>' + f.cues + '</b> cue' + (f.cues === 1 ? '' : 's'), '<b>' + f.rooms + '</b> room' + (f.rooms === 1 ? '' : 's')].join(' · ') + '</p>';
+      /* tonight's times: the GM's own (the Tonight box) where set, else the note's; the note's in brackets while they differ */
+      var nt = call('nightTimes') || {}, tm = function (word, mine, noteAt, none) {
+        var shown = mine || noteAt; if (!shown) return none;
+        return word + ' <b>' + esc(shown) + '</b>' + (mine && noteAt && mine !== noteAt ? ' <span class="gm-dim">(the note: ' + esc(noteAt) + ')</span>' : '');
+      };
+      var times = '<p class="gm-tn-line">' + [tm('Start', nt.startAt, f.start, 'No <code>start:</code> line'), tm('curfew', nt.curfewAt, f.curfew, 'no <code>curfew:</code> line'), '<b>' + f.cues + '</b> cue' + (f.cues === 1 ? '' : 's'), '<b>' + f.rooms + '</b> room' + (f.rooms === 1 ? '' : 's')].join(' · ') + '</p>';
       var rows = f.rows.length ? '<table class="gm-tbl gm-tn-run"><thead><tr><th>#</th><th>Beat</th><th>Place</th><th class="num">Min</th></tr></thead><tbody>' + f.rows.map(function (r, i) {
         return '<tr><td>' + (i + 1) + '</td><td>' + esc(r.beat) + '</td><td>' + esc(placeLabel(r.place) || '—') + '</td><td class="num">' + (r.min || '') + '</td></tr>';
       }).join('') + '</tbody></table>' : '<p class="gm-dim">No run order in the note: a table with a <code>#</code> column and an About, Time, Budget or Length column.</p>';
@@ -450,7 +464,7 @@
       return '<div class="gm-tonight"><section class="gm-box gm-tn-note"><h3 class="gm-band">The night’s note</h3><div class="gm-tn-body">' + pick + times + rows +
         '<p class="gm-tn-acts"><button type="button" class="btn sm" data-pv="prep">The whole note in Prep <kbd>R</kbd></button></p></div></section><div class="gm-tn-secs">' + secHtml + '</div></div>';
     }
-    function tonightSig() { var n = call('prepNote'); return JSON.stringify([n ? n.id : '', (call('prepSecs') || []).map(function (s) { return s.id; }), factsNow()]); }
+    function tonightSig() { var n = call('prepNote'), nt = call('nightTimes') || {}; return JSON.stringify([n ? n.id : '', (call('prepSecs') || []).map(function (s) { return s.id; }), factsNow(), nt.startAt || '', nt.curfewAt || '']); }
     function fillPane(e, id) {
       var v = VIEWS[id], x = !v ? extraTool(id) : null;
       unbindWhere('view', v && v.tool ? [v.tool] : v && v.tools ? v.tools : []);
@@ -632,6 +646,7 @@
     function onClick(ev) {
       var t = ev.target; if (!t || !t.closest) return;
       var b, row;
+      if ((b = t.closest('[data-tn-prep]'))) { ev.preventDefault(); call('usePrep', b.getAttribute('data-tn-prep')); st.sigs.slot = ''; later(function () { render(); }); return; }
       if ((b = t.closest('[data-pvx]'))) { ev.preventDefault(); dropExtra(); return; }
       if ((b = t.closest('[data-pv]'))) {
         ev.preventDefault();
@@ -647,7 +662,14 @@
       if (t.closest('.rl-task[data-task], td[data-cell]') && t.closest('#gm-vpane')) later(redecorate);
     }
     function onChange(ev) {
-      var t = ev.target; if (!t || !t.getAttribute || !t.getAttribute('data-pv-note')) return;
+      var t = ev.target;
+      var key = t && t.getAttribute ? t.getAttribute('data-tn-time') : '';
+      if (key) {      /* the Tonight box: a time written to the night; an emptied field puts the note's back */
+        if (t.value) call('setTime', key, t.value); else call('usePrep', key);
+        st.sigs.slot = ''; later(function () { render(); var n = els(), f = n && n.left && n.left.querySelector('[data-tn-time="' + key + '"]'); if (f && f.focus && !focusIn(n.left)) { try { f.focus(); } catch (x) {} } });
+        return;
+      }
+      if (!t || !t.getAttribute || !t.getAttribute('data-pv-note')) return;
       call('setPrepNote', t.value); st.sigs.pane = ''; st.sigs.slot = '';
       later(function () { render(); });
     }
