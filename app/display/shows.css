@@ -112,7 +112,8 @@
 /* a crew cell: the name and the Stress, over the harm marks and the deadlocks; three cells share the crew slot equally, each clips its own overflow */
 .dp-lay-face { min-width: 0; display: flex; flex-direction: column; justify-content: center; align-items: stretch; gap: .8vmin; padding: 0 1.6vmin; overflow: hidden; color: var(--b68-paper); letter-spacing: .06em; }
 .dp-lay-face + .dp-lay-face { border-left: .3vmin solid #2a2621; }
-.dp-lay-top { display: flex; align-items: center; gap: 1vmin; min-width: 0; }
+.dp-lay-top { display: flex; align-items: center; gap: .6vmin; min-width: 0; }
+.dp-lay-top .dp-pc-lock { font-size: .8em; padding-left: 2.6vmin; }      /* the padlock beside the Stress: its count smaller, so the name keeps its letters */
 .dp-lay-name { display: block; flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 900; }
 .dp-lay-npc .dp-lay-name { color: var(--b68-paper-dark); }
 .dp-lay-marks { display: flex; align-items: center; gap: .8vmin; min-width: 0; overflow: hidden; }

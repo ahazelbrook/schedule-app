@@ -211,7 +211,7 @@ try {
       await page.waitForFunction(() => document.querySelector('.dp-root.dp-lights-out'), null, { timeout: 15000 });
       const dark = await page.evaluate(() => ({ shown: [...document.querySelectorAll('.dp-lay-slot')].filter((s) => getComputedStyle(s).visibility !== 'hidden' && s.textContent.trim()).map((s) => s.getAttribute('data-slot')), bg: getComputedStyle(document.querySelector('.dp-lay-strip')).backgroundColor }));
       expect(dark.shown.join() === 'mic' && /rgb\(0, 0, 0\)/.test(dark.bg), 'only the mic slot (ON AIR) over lights out: ' + JSON.stringify(dark));
-      if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'ipad-lights-out-' + w + 'x' + h + '.png') });
+      if (SHOTS) { await sleep(3500); await page.screenshot({ path: path.join(SHOTS, 'ipad-lights-out-' + w + 'x' + h + '.png') }); }      /* past the stage's fade: true black */
       expect((await gm('PUT', '/api/gm/display', { kind: 'svg', title: 'The Pelican Rooms', caption: 'Ground floor', svg: SVG })).status === 200, 'the map again');
       await page.waitForFunction(() => !document.querySelector('.dp-root.dp-lights-out'), null, { timeout: 15000 });
       await ctx.close();
