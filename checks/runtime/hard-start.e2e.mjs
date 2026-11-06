@@ -88,7 +88,7 @@ try {
     await I.page.waitForFunction(() => !document.querySelector('.dp-hs'), null, { timeout: 12000 });
   });
   await step('a stored true (what an older page wrote) is the same: countdown, fuse, credits, three blank plates, three reveals, end', async () => {
-    const r = await gmCall('PATCH', '/api/campaign', { features: { 'spine.start': true, 'ai.onair': true } });
+    const r = await gmCall('PATCH', '/api/campaign', { features: { 'spine.start': true, 'ai.onair': true, 'display.band': true } });      /* display.band: the lamp goes in the band's mic slot (the tech run: the band is a setting, off by default) */
     expect(r.status === 200, 'features written: ' + r.status);
     await sleep(6000);
     await startLayers(Date.now() + 10000);

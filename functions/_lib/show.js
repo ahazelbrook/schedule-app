@@ -208,6 +208,26 @@ export async function revealedCards(db, campaign, idList, withSpec) {
   return out;
 }
 
+/**
+ * { pcId: drawing } for the montage's player characters (the tech run, 06/11: the iPad drew each panel as a blank card with an initial). ONE read, only
+ * while a montage is up. A player character is not a secret (every player sees the crew), but only the figure is served: never a sheet field.
+ */
+async function pcDrawings(db, campaign, idList) {
+  const list = [...new Set(idList.filter((x) => typeof x === 'string' && ID_RE.test(x)))].slice(0, 4);
+  if (!list.length) return {};
+  const marks = list.map((_, i) => '?' + (i + 2)).join(',');
+  let rows = null;
+  try { rows = await db.prepare('SELECT id, doc FROM characters WHERE campaign = ?1 AND deleted = 0 AND id IN (' + marks + ')').bind(campaign, ...list).all(); } catch (_) { return {}; }
+  const out = {};
+  for (const r of (rows && rows.results) || []) {
+    let d = null;
+    try { d = JSON.parse(r.doc); } catch (_) { d = null; }
+    const fig = isPlainObject(d) ? drawing(d.spec) : null;
+    if (fig && Object.keys(fig).length) out[r.id] = fig;
+  }
+  return out;
+}
+
 function liveIds(stored) {
   const o = stored.overlay, l = stored.layers, out = [];
   if (isPlainObject(o) && isShowKind(o.kind) && isPlainObject(o.payload)) {
@@ -248,6 +268,7 @@ export async function joinShows(db, campaign, overlay, layers) {
   if (ov) { try { payload = cleanShowPayload(ov.kind, ov.payload); } catch (_) { payload = null; } }
   const names = liveIds({ overlay: payload ? { kind: ov.kind, payload } : null, layers: clean });
   const cards = names.length ? await revealedCards(db, campaign, names, true) : {};
+  const mt = clean.data && clean.data.montage, figs = mt && Array.isArray(mt.panels) && mt.panels.length ? await pcDrawings(db, campaign, mt.panels.map((p) => p.pcId)) : {};
   const plain = (c) => ({ npcId: c.npcId, name: c.name, role: c.role });
   const outLay = {};
   const add = (g, k, v) => { (outLay[g] = outLay[g] || {})[k] = v; };
@@ -262,6 +283,9 @@ export async function joinShows(db, campaign, overlay, layers) {
         const row = (c) => (k === 'previously' && c.spec ? { ...plain(c), spec: c.spec } : plain(c));
         const rows = v.map((id) => (cards[id] ? row(cards[id]) : null)).filter(Boolean);
         if (rows.length) add(g, k, rows);
+      } else if (g === 'data' && k === 'montage') {
+        // each panel carries its character's figure, so the iPad draws the PC rather than a blank card (an optional key: an older page ignores it)
+        add(g, k, { panels: v.panels.map((p) => (figs[p.pcId] ? { ...p, spec: figs[p.pcId] } : p)) });
       } else add(g, k, v);
     }
   }

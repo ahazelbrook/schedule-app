@@ -768,8 +768,9 @@
     if (!isObj(next)) return false;
     return !isObj(prev) || prev.heat !== next.heat || prev.wanted !== next.wanted;
   };
-  /* the four crew polaroids on the score scenes: cast id -> caption (the generator's constant; docs/history/AMBIENT-PLAN.md 4.3) */
-  Pure.POLAROIDS = [{ id: 'booker', cap: 'Babel' }, { id: 'alfie', cap: 'Ashtray & Buck' }, { id: 'stacey', cap: 'Stacey' }, { id: 'loader', cap: '99.47' }];
+  /* the crew polaroids on the score scenes: cast id -> caption (the generator's constant; docs/history/AMBIENT-PLAN.md 4.3). Only the crew at the
+     table: two of the original four are not playing (tech run, 06/11), and a crew member with no figure in the cast canon gets no polaroid */
+  Pure.POLAROIDS = [{ id: 'booker', cap: 'Babel' }, { id: 'alfie', cap: 'Ashtray & Buck' }];
   /* scoreMessage(score, polaroids, env) -> the message a score scene is sent in reply to its b68:ready, or null with no score.
      `board` and `iso` are the score's svgs run through the sanitiser again here (normal cap) and sent as its markup, '' when one
      will not clean; `polaroids` are [{ svg, cap }] already cleaned by the caller (the figure kit's output, big cap). Nothing but
@@ -1469,7 +1470,9 @@
        frame and the dawn the whole of it. Everything is drawn from the validated fields as text or as an svg built node by node. */
     s.ov = { seen: '', node: null, token: 0, timers: [], applied: false };
     /* the show contract's lasting layers and the data channel to the HTML scenes (app/display/layers.js) */
-    s.layers = root.B68Layers ? root.B68Layers.attach(container, { skew: function () { return s.skew || 0; } }) : null;
+    /* the band across the top is a setting (display.band, the iPad view's Settings), off unless the GM turns it on (the tech run, 06/11) */
+    s.layers = root.B68Layers ? root.B68Layers.attach(container, { skew: function () { return s.skew || 0; }, band: function () { return swOn('display.band'); },
+      figure: function (spec, id) { var r = drawFigure(spec, 'dp-mt-' + String(id).replace(/[^A-Za-z0-9_-]/g, ''), ctx.figures || root.B68Figure); return r ? document.importNode(r.node, true) : null; } }) : null;      /* the montage draws each PC (the tech run) */
     if (s.layers) s.offs.push(function () { s.layers.destroy(); });
     /* the suite's display switches (each does nothing while its switch is off): the hard start (1.2, spine.start) and the FX budget (F7, fx.pause / fx.off) */
     function swOn(id) { return !!(root.B68Flags && root.B68Flags.on(id)); }

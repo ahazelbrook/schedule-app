@@ -9,9 +9,9 @@
 @font-face{font-family:"Space Mono";src:url(../fonts/SpaceMono-Bold.woff2) format("woff2");font-weight:700;font-display:block}
 html,body{margin:0;height:100%;background:#1d4f9c;overflow:hidden}
 body{container-type:size}
-/* the scene is 4:3 and always covers its frame */
-.stage{position:absolute;left:50%;top:50%;width:max(100%,133.334vh);aspect-ratio:4/3;transform:translate(-50%,-50%);min-height:100%;overflow:hidden}
-@supports (width:1cqw){.stage{width:max(100cqw,133.334cqh)}}
+/* the scene fills its frame; the drawing is fitted whole inside it, any shape of frame (the tech run, 06/11: the 4:3 cover and the floor-by-floor pan
+   showed only part of the site at a time) */
+.stage{position:absolute;inset:0;overflow:hidden}
 .layer{position:absolute;inset:0;width:100%;height:100%;display:block}
 #grain{position:absolute;inset:0;background-size:224px;opacity:.1;mix-blend-mode:overlay;pointer-events:none}
 #vig{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 46%,transparent 55%,rgba(8,7,10,.6) 100%);pointer-events:none}
@@ -22,17 +22,17 @@ body{container-type:size}
 </style></head>
 <body>
 <div class="stage" id="stage">
-<svg class="layer" viewBox="0 0 1600 1200" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<svg class="layer" viewBox="0 0 1600 1200" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
   <defs>
     <linearGradient id="scan" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#cfe3ff" stop-opacity="0"/><stop offset=".5" stop-color="#cfe3ff" stop-opacity=".16"/><stop offset="1" stop-color="#cfe3ff" stop-opacity="0"/></linearGradient>
     <radialGradient id="lampB" cx="800" cy="520" r="900" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff" stop-opacity=".07"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
   </defs>
-  <rect id="bgRect" width="1600" height="1200" fill="#1d4f9c"/>
+  <rect id="bgRect" x="-600" y="-900" width="2800" height="3000" fill="#1d4f9c"/>
   <g id="cam">
     <g id="drawing"></g>
     <rect id="scanBar" x="-100" y="-260" width="1800" height="260" fill="url(#scan)" opacity="0"/>
   </g>
-  <rect width="1600" height="1200" fill="url(#lampB)"/>
+  <rect x="-600" y="-900" width="2800" height="3000" fill="url(#lampB)"/>
 </svg>
 <div class="plate" id="plate" hidden><span class="k">Score site</span><b id="pName"></b><span id="pSub"></span></div>
 <div id="vig"></div>
@@ -88,15 +88,26 @@ function nest(node,vb,x,y,w,h,parent){
 }
 const clear=n=>{while(n.firstChild)n.removeChild(n.firstChild);};
 
-const H=1200,cam=$("cam"),bar=$("scanBar"),drawing=$("drawing");
-let WH=H,travel=0,has=false;
+const cam=$("cam"),bar=$("scanBar"),drawing=$("drawing");
+let WH=1200,TOP=0,has=false,nested=null,ivb=null;
 
-// the camera eases down the building and back up, floor by floor, with a little sideways drift
-loop((dt,t)=>{const p=.5-.5*Math.cos(t*2*Math.PI/150);const y=-p*travel+40, x=Math.sin(t*2*Math.PI/61)*40, s=1.08+Math.sin(t*2*Math.PI/89)*.04;
+// the whole building in view (the tech run, 06/11): the drawing is fitted inside the frame, whatever its shape, with room for a little sideways
+// drift and a breathing zoom, and fitted again on a resize. The plate keeps the foot of the frame.
+const AX=30,AY=16,WOB=.02;
+function visible(){const w=innerWidth||4,h=innerHeight||3,a=w/h;return a>=4/3?{hw:600*a,hh:600}:{hw:800,hh:800/a};}
+function layout(){
+ if(!nested||!ivb)return;
+ const v=visible(),top=600-v.hh+v.hh*2*.06,foot=600+v.hh-v.hh*2*.15,aw=(2*v.hw*.92-2*AX)/(1+WOB),ah=(foot-top-2*AY)/(1+WOB);
+ const k=Math.min(aw/ivb[2],ah/ivb[3]),ww=ivb[2]*k,wh=ivb[3]*k,cy=(top+foot)/2;
+ nested.setAttribute("x",(800-ww/2).toFixed(1));nested.setAttribute("y",(cy-wh/2).toFixed(1));nested.setAttribute("width",ww.toFixed(1));nested.setAttribute("height",wh.toFixed(1));
+ WH=wh;TOP=cy-wh/2;
+}
+addEventListener("resize",layout);
+loop((dt,t)=>{const y=Math.sin(t*2*Math.PI/71+1)*AY, x=Math.sin(t*2*Math.PI/61)*AX, s=1+Math.sin(t*2*Math.PI/89)*WOB;
  cam.setAttribute("transform","translate(800 600) scale("+s.toFixed(4)+") translate("+(-800+x).toFixed(1)+" "+(-600+y).toFixed(1)+")");});
 // a copier's light passes over the drawing now and then
 let sT=-1,sNext=R(8,16);
-loop((dt)=>{if(!has)return;if(sT<0){sNext-=dt;if(sNext<=0)sT=0;return;}sT+=dt;const k=sT/9;bar.setAttribute("y",(-260+k*(WH+520)).toFixed(1));
+loop((dt)=>{if(!has)return;if(sT<0){sNext-=dt;if(sNext<=0)sT=0;return;}sT+=dt;const k=sT/9;bar.setAttribute("y",(TOP-260+k*(WH+520)).toFixed(1));
  bar.setAttribute("opacity",Math.sin(Math.min(1,k)*Math.PI).toFixed(3));if(k>=1){sT=-1;sNext=R(40,80);bar.setAttribute("opacity",0);}});
 
 const str=(v,m)=>typeof v==="string"?v.trim().slice(0,m):"";
@@ -104,17 +115,15 @@ function show(d){
  const iso=parseSvg(d.iso),vb=iso&&viewBox(iso);
  if(!iso||!vb)return;
  clear(drawing);
- const ww=1600,wh=ww*vb[3]/vb[2];   // the drawing at full stage width; taller than the stage
  // the blueprint's own paper colour, from its first full-size rect
  let bg="#1d4f9c";
  for(const r of iso.querySelectorAll("rect")){
   const f=r.getAttribute("fill");
   if(r.getAttribute("width")==="100%"&&f&&/^#[0-9a-f]+$/i.test(f)){bg=f;break;}
  }
- nest(iso,vb,0,0,ww,wh,drawing);
+ nested=nest(iso,vb,0,0,vb[2],vb[3],drawing);ivb=vb;layout();
  $("bgRect").setAttribute("fill",bg);
  document.documentElement.style.background=bg;document.body.style.background=bg;
- WH=wh;travel=Math.max(0,WH-H*.92);
  sT=-1;sNext=R(8,16);bar.setAttribute("opacity",0);has=true;
  $("pName").textContent=str(d.name,120)||"Score site";
  $("pSub").textContent=[str(d.target,120),str(d.district,120)].filter(Boolean).join(" · ");

@@ -27,8 +27,12 @@
    combination, landscape or portrait. While the strip is up the root carries dp-lay-on (and dp-lay-crew while crew
    cells are drawn) and app/display/shows.css lays everything else (the stages, the beats, the band beside the map and its countdown, the hard
    start, the montage, the AUTO chip) out BELOW it, so the strip never covers them either. Over lights out only the lamp stays (dp-lights-out).
-   API: attach(container, { skew() }) -> { apply(layers), message(), sceneLoaded(id), mic(lamp | null), destroy() }; clean(layers) -> the checked layers;
+   API: attach(container, { skew(), band?(), figure?(spec, id) -> node | null (the montage's PC figures) }) -> { apply(layers), message(), sceneLoaded(id), mic(lamp | null), banded(), destroy() }; clean(layers) -> the checked layers;
    mic(container, { off, text } | null) -> true when a band attached to that container took the lamp (onair.js asks before drawing a lamp of its own).
+   THE TECH RUN (06/11): the strip is a choice. opts.band() says whether it is drawn (the display page reads the display.band setting, off unless the GM
+   turns it on in the iPad view's Settings); without opts.band it is drawn as before. While it is off there is no strip and no dp-lay-on, so the stages,
+   the map, the beats and the montage take the whole frame, and mic() answers false, so the lamp draws in its own corner (onair.js). The data-* attributes
+   and the scenes' b68:data message are the same either way. A change to the setting repaints at once (the B68Flags subscription).
    Pure parts (clean, message) have no DOM and are also exported for node tests. */
 (function (root, factory) {
   'use strict';
@@ -70,6 +74,7 @@
       if (!isObj(p) || typeof p.pcId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(p.pcId)) return;
       var o = { pcId: p.pcId, name: text(p.name, 40), room: text(p.room, 60), line: text(p.line, 100) };
       if (p.done === true) o.done = true;
+      if (isObj(p.spec)) o.spec = p.spec;      /* the tech run: the server joins the character's figure (functions/_lib/show.js); never sent to a scene */
       out.push(o);
     });
     return out.length >= 2 ? out : [];
@@ -180,7 +185,8 @@
     if (root && typeof root.addEventListener === 'function') root.addEventListener('resize', onResize);
     /* the hard start draws its own name plates (scene.mode start), so the strip's crew cells stand down while it runs */
     function crewDrawn() { return state.faces.length > 0 && state.mode !== 'start'; }
-    function hasStrip() { return state.phase !== null || state.security !== null || state.onair || state.faces.length > 0 || lamp !== null; }
+    function banded() { return !(opts && typeof opts.band === 'function') || opts.band() === true; }
+    function hasStrip() { return banded() && (state.phase !== null || state.security !== null || state.onair || state.faces.length > 0 || lamp !== null); }
     function paintMic() {
       if (!slots) return;
       var m = slots.mic, have = m.querySelector('.dp-onair');
@@ -245,7 +251,7 @@
       var yes = state.filter === 'flashback' && !!(root.B68Flags && root.B68Flags.on('map.flashback'));
       if (yes) container.setAttribute('data-flash-look', '1'); else container.removeAttribute('data-flash-look');
     }
-    var offFlags = root.B68Flags && typeof root.B68Flags.subscribe === 'function' ? root.B68Flags.subscribe(function () { if (!dead) look(); }) : null;
+    var offFlags = root.B68Flags && typeof root.B68Flags.subscribe === 'function' ? root.B68Flags.subscribe(function () { if (dead) return; look(); if (opts && typeof opts.band === 'function') { if (!banded()) lamp = null; paintStrip(); } }) : null;
     function apply(layers) {
       if (dead) return;
       state = clean(layers);
@@ -253,7 +259,7 @@
       Object.keys(ATTRS).forEach(function (a) { var v = state[ATTRS[a]]; if (v === null || v === undefined) container.removeAttribute(a); else container.setAttribute(a, String(v)); });
       if (state.onair) container.setAttribute('data-band-onair', '1'); else container.removeAttribute('data-band-onair');
       paintStrip();
-      if (root.B68DisplayMontage) root.B68DisplayMontage.paint(container, state.montage, doc);      /* suite 2.8: nothing is drawn (or removed) while the layer is unset */
+      if (root.B68DisplayMontage) root.B68DisplayMontage.paint(container, state.montage, doc, opts && typeof opts.figure === 'function' ? { figure: opts.figure } : null);      /* suite 2.8: nothing is drawn (or removed) while the layer is unset */
       var m = msg(), k = JSON.stringify(m);
       if (k === key) return;
       key = k;
@@ -270,7 +276,7 @@
     }
     if (root.addEventListener) root.addEventListener('message', onMessage);
     var api = {
-      apply: apply, message: msg, sceneLoaded: sceneLoaded, mic: mic, state: function () { return state; },
+      apply: apply, message: msg, sceneLoaded: sceneLoaded, mic: mic, banded: banded, state: function () { return state; },
       destroy: function () {
         dead = true;
         for (var i = live.length - 1; i >= 0; i--) if (live[i].api === api) live.splice(i, 1);
@@ -289,7 +295,10 @@
   }
   /* mic(container, lamp | null): the lamp goes into the band attached to that container; false when there is none (onair.js then draws its own) */
   function micFor(container, m) {
-    for (var i = live.length - 1; i >= 0; i--) if (live[i].container === container) { live[i].api.mic(m); return true; }
+    for (var i = live.length - 1; i >= 0; i--) if (live[i].container === container) {
+      if (!live[i].api.banded()) { live[i].api.mic(null); return false; }      /* the band is off: the lamp draws in its own corner */
+      live[i].api.mic(m); return true;
+    }
     return false;
   }
   return { attach: attach, clean: clean, message: message, mic: micFor, PHASES: PHASES, PHASE_LABEL: PHASE_LABEL, SLOTS: SLOTS };

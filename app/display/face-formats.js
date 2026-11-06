@@ -96,7 +96,12 @@
     var sib = e.children ? Array.prototype.slice.call(e.children) : [], ref = sib[sib.indexOf(holder) + 1] || null;
     if (holder.parentNode) holder.parentNode.removeChild(holder);
     var d = duotone(doc, parts.slot, parts.uid), fr = frame(doc, fmt, Object.assign({ holder: holder }, parts));
-    if (holder.style) holder.style.filter = 'url(#' + d.id + ')';
+    /* the tech run (06/11, "faces are blurred"): the duotone goes INSIDE the portrait's svg, on a group round its drawing. A CSS filter: url(#…) on the HTML
+       holder is drawn by Safari at one pixel per CSS pixel, so on the iPad's retina screen the face came out soft; inside the svg it is drawn at the screen's
+       own resolution. A holder with no svg (a monogram) keeps the CSS filter. */
+    var sv = holder.querySelector ? holder.querySelector('svg') : null;
+    if (sv && sv.firstChild) { var g = svgEl(doc, 'g', { filter: 'url(#' + d.id + ')', class: 'dp-fl-duo' }); while (sv.firstChild) g.appendChild(sv.firstChild); sv.appendChild(g); }
+    else if (holder.style) holder.style.filter = 'url(#' + d.id + ')';
     fr.appendChild(d.svg);
     if (parts.glyph) fr.appendChild(parts.glyph);
     if (ref) e.insertBefore(fr, ref); else e.appendChild(fr);       /* the frame goes where the holder was (the holder now sits inside it) */

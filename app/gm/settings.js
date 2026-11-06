@@ -5,6 +5,7 @@
      Music               scene themes / heat music    room.music   a display setting
      Phones              sheet only / mission cards   phoneCards   a phone setting; the page republishes the mission at once (its own setPhoneCards)
      Mirror for phones   off / on                     the GM state's `mirror` (not a registry line: the server reads it beside Live sync)
+     Band                off / on                     display.band  a display setting (the tech run, 06/11: the strip across the top of the iPad starts off)
    Their home is the iPad view's Settings section (gm-page.js renderIpad renders them with render(box)); the Menu's sheet that held them first is gone.
 
    Window.B68GmSettings, and module.exports under Node. gm-page.js makes one per page session with create(host) and calls heal() on every campaign arrival.
@@ -49,7 +50,10 @@
     { key: 'phoneCards', label: 'Phones', what: 'While a night runs: the character sheet only, or a mission card and a Move row as well.',
       options: [{ v: false, label: 'Sheet only' }, { v: true, label: 'Mission cards' }] },
     { key: 'mirror', label: 'Mirror for phones', what: 'While on, a map or a handout on the iPad also shows on the players’ phones (their Table button). Nothing else ever does.',
-      options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }] }
+      options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }] },
+    { key: 'display.band', label: 'Band', what: 'The strip across the top of the iPad: the ON AIR lamp, the phase, the crew’s Stress and harm, and security. Off: the map and every scene take the whole screen; the lamp sits in its corner.',
+      options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
+      said: { 'false': 'Band: off. The iPad follows within a few seconds.', 'true': 'Band: on. The iPad follows within a few seconds.' } }
   ];
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
@@ -111,7 +115,7 @@
     };
 
     function html() {
-      return '<p class="gm-dim">Everything built is on. These four are choices for the night; each one changes at once, with no reload.</p>' +
+      return '<p class="gm-dim">Everything built is on. These five are choices for the night; each one changes at once, with no reload.</p>' +
         ctl.rows().map(function (r) {
           return '<div class="gm-set-row" data-set-row="' + esc(r.key) + '"><span class="gm-lab" id="gm-set-l-' + esc(r.key.replace(/\W/g, '-')) + '">' + esc(r.label) + '</span>' +
             '<div class="seg" role="group" aria-labelledby="gm-set-l-' + esc(r.key.replace(/\W/g, '-')) + '">' + r.options.map(function (o) {

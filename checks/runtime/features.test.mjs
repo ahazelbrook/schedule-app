@@ -28,10 +28,10 @@ async function withSwitches(list, fn) {
   try { return await fn(); } finally { list.forEach((d) => F.unregister(d.id)); }
 }
 const GMX = sw('test.gm', 'gm'), DISP = sw('test.disp', 'display'), PH = sw('test.phone', 'phone'), DSET = sw('test.dset', 'display', { setting: true });
-const SETTINGS = ['phoneCards', 'fx.off', 'room.music'];
+const SETTINGS = ['phoneCards', 'fx.off', 'room.music', 'display.band'];      /* display.band: the tech run (06/11), the iPad's strip across the top, off until chosen */
 
 // ---------- the shipped registry ----------
-await test('the shipped lines: each well-formed, default false, phoneCards first; the settings are exactly phoneCards, fx.off and room.music; spine.workshop is gone', async () => {
+await test('the shipped lines: each well-formed, default false, phoneCards first; the settings are exactly phoneCards, fx.off, room.music and display.band; spine.workshop is gone', async () => {
   assert.equal(F.list()[0].id, 'phoneCards');
   for (const s of F.list()) {
     assert.equal(s.default, false, s.id); assert.ok(s.label && s.doc, s.id);
@@ -89,7 +89,7 @@ await test('patches: only a setting can change (features and the old key); any o
   assert.throws(() => F.patchFor({}, 'nope', true), /unknown switch/);
   assert.throws(() => F.patchFor({}, 'spine.rail', false), /always on/);
   await withSwitches([GMX, DISP], () => { assert.throws(() => F.patchFor({}, 'test.disp', false), /always on/); });
-  assert.deepEqual(F.patchAllOff({}), { features: { phoneCards: false, 'fx.off': false, 'room.music': false }, phoneCards: false });
+  assert.deepEqual(F.patchAllOff({}), { features: { phoneCards: false, 'fx.off': false, 'room.music': false, 'display.band': false }, phoneCards: false });
 });
 await test('publicMap: the display and phone lines, complete, as the GM page sees them (a setting as stored, the rest ON); never a GM-only id', async () => {
   await withSwitches([GMX, DISP, PH], () => {
@@ -255,18 +255,18 @@ await test('settings: a failed copy says so and is tried again at the next arriv
   assert.match(r.calls.toast[0][0], /Could not copy the settings/); assert.equal(r.calls.toast[0][1], true);
   assert.equal(r.ctl.heal(), true, 'tried again at once');
 });
-await test('settings: four rows (Scenes, Music, Phones, Mirror for phones), each a two-way choice showing the current value', async () => {
+await test('settings: five rows (Scenes, Music, Phones, Mirror for phones, Band), each a two-way choice showing the current value', async () => {
   const r = rig({ features: { 'room.music': true }, mirror: false }, { v: 1 });
   const rows = r.ctl.rows();
-  assert.deepEqual(rows.map((x) => x.label), ['Scenes', 'Music', 'Phones', 'Mirror for phones']);
-  assert.deepEqual(rows.map((x) => x.key), ['fx.off', 'room.music', 'phoneCards', 'mirror']);
-  assert.deepEqual(rows.map((x) => x.options.map((o) => o.label)), [['Moving', 'Held still'], ['Scene themes', 'Heat music'], ['Sheet only', 'Mission cards'], ['Off', 'On']]);
-  assert.deepEqual(rows.map((x) => x.value), [false, true, false, false]);
+  assert.deepEqual(rows.map((x) => x.label), ['Scenes', 'Music', 'Phones', 'Mirror for phones', 'Band']);
+  assert.deepEqual(rows.map((x) => x.key), ['fx.off', 'room.music', 'phoneCards', 'mirror', 'display.band']);
+  assert.deepEqual(rows.map((x) => x.options.map((o) => o.label)), [['Moving', 'Held still'], ['Scene themes', 'Heat music'], ['Sheet only', 'Mission cards'], ['Off', 'On'], ['Off', 'On']]);
+  assert.deepEqual(rows.map((x) => x.value), [false, true, false, false, false]);
   const box = { parentNode: null, innerHTML: '' }; r.ctl.render(box);
   assert.match(box.innerHTML, /data-set="room\.music" data-v="1" aria-pressed="true">Heat music/);
   assert.match(box.innerHTML, /data-set="fx\.off" data-v="0" aria-pressed="true">Moving/);
   assert.match(box.innerHTML, /data-set="mirror" data-v="0" aria-pressed="true">Off/);
-  assert.equal((box.innerHTML.match(/aria-pressed="true"/g) || []).length, 4, 'one value pressed per row');
+  assert.equal((box.innerHTML.match(/aria-pressed="true"/g) || []).length, 5, 'one value pressed per row');
 });
 await test('settings: choose takes the page\'s own paths (phone cards: setPhoneCards; mirror: toggleMirror; scenes and music: set, with a toast) and does nothing for the value already chosen', async () => {
   const phone = [];

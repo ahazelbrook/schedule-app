@@ -167,6 +167,12 @@
       var cols = el(doc, 'div', 'dp-cr-cols');
       p.npcs.forEach(function (c, i) {
         var row = el(doc, 'div', 'dp-cr-row dp-cr-' + BARS[i % BARS.length]); row.style.setProperty('--i', String(i));
+        /* the tech run (06/11, "we should see the portraits of the NPCs"): each face over its name, drawn with the Introduce card's renderer (env.portrait,
+           the page's cleaned head-and-shoulders). The server joins revealed NPCs only and serves their figure on the card, so a hidden person never
+           reaches this list; a card with no figure, or a page with no renderer, is the name alone as before */
+        var face = null;
+        if (c.spec && typeof env.portrait === 'function') { try { face = env.portrait(c.spec, 'cr-' + c.npcId); } catch (e) { face = null; } }
+        if (face) { var fb = el(doc, 'div', 'dp-cr-face'); fb.setAttribute('aria-hidden', 'true'); fb.appendChild(face); row.appendChild(fb); }
         row.appendChild(el(doc, 'p', 'dp-cr-name', c.name));
         /* the role over the faction, as a film's credits set them (no dot left hanging at a line's start) */
         [c.role, c.faction].filter(Boolean).forEach(function (t, k) { row.appendChild(el(doc, 'p', 'dp-cr-role' + (k ? ' dp-cr-faction' : ''), t)); });

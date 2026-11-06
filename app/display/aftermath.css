@@ -57,6 +57,12 @@
 .dp-cr-role { font: 700 var(--b68-t-label)/1.2 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .1em; color: var(--b68-ink); }
 .dp-cr-blue .dp-cr-role, .dp-cr-alarm .dp-cr-role { color: var(--b68-paper-dark); }
 .dp-cr-name + .dp-cr-role { margin-top: .4vmin; }
+/* each face over its name (the tech run, 06/11): the Introduce card's frame, smaller as the list grows; a long list (12 or more) is names only */
+.dp-cr-face { width: 22vmin; height: 22vmin; margin-bottom: 1.2vmin; border: .4vmin solid var(--b68-ink); border-radius: .8vmin; overflow: hidden; background: var(--b68-paper-dark); }
+.dp-cr-face svg { display: block; width: 100%; height: 100%; }
+.dp-show-credits.dp-count-5 .dp-cr-face, .dp-show-credits.dp-count-6 .dp-cr-face, .dp-show-credits.dp-count-7 .dp-cr-face, .dp-show-credits.dp-count-8 .dp-cr-face { width: 13vmin; height: 13vmin; }
+.dp-show-credits.dp-count-9 .dp-cr-face, .dp-show-credits.dp-count-10 .dp-cr-face, .dp-show-credits.dp-count-11 .dp-cr-face { width: 9vmin; height: 9vmin; margin-bottom: .8vmin; }
+.dp-show-credits.dp-count-12 .dp-cr-face { display: none; }
 @media (orientation: portrait) { .dp-cr-row { padding: 1.6vmin 2.4vmin; } .dp-cr-role { letter-spacing: .04em; } }
 .dp-show-credits.dp-count-9 .dp-cr-name, .dp-show-credits.dp-count-10 .dp-cr-name, .dp-show-credits.dp-count-11 .dp-cr-name, .dp-show-credits.dp-count-12 .dp-cr-name { font-size: var(--b68-t-lead); }
 
