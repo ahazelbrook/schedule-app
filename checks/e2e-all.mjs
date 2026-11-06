@@ -79,6 +79,7 @@ const CHECKS = [
   ['checks/runtime/gm-site.e2e.mjs', 'the site: the ONE alarm, select a room and its card, the Players\' map and Send, the people rows, → the Roll, the ⋯, the Montage inline and its glow, Location without the boxes, no GM-ONLY text in the display GET (8760)'],
   ['checks/runtime/gm-title-card.e2e.mjs', 'the score title card: GO into the Score phase puts a six-second scoretitle beat on the iPad (the site and its storeys, no room name), the name lands last, reduced motion stills it, switch off and on (9202)'],
   ['checks/runtime/gm-cue-stack.e2e.mjs', 'the cue stack on the real GM page: STANDBY, Space and Bypass, two GOs within 500 ms fire once, Esc to the safe scene inside a second and Resume, a typed "Blade, go", All off (9040)'],
+  ['checks/runtime/gm-band.e2e.mjs', 'the band (N1a): four widths in three states with no overlap and nothing off the screen, the places enter phases, Ctrl+arrows, Call the Aftermath, Esc in order, keys held behind an open thing, PANIC without cues, the quiet badge (8810)'],
 ];
 
 const want = process.argv.slice(2);

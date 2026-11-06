@@ -1,4 +1,4 @@
-// The spine in a real browser (B08; the night rebuild N0): everything built is on, so the rail and the curfew are there with nothing stored and a stored false changes nothing;
+// The spine in a real browser (B08; the night rebuild N0, N1a): everything built is on, so the band's places and the curfew are there with nothing stored and a stored false changes nothing;
 // the Workshop is gone (no Menu line, no away class) and its five are where N0 put them (Settings, the Blade panel, put away).
 //   PW_MODULE=<playwright> PW_CHANNEL=msedge GM_SHOTS=<dir> PORT=8956 node checks/runtime/gm-spine.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
@@ -82,24 +82,23 @@ try {
   const placeOf = (page) => page.$eval('#gm-root', (r) => r.getAttribute('data-place'));
 
   const A = await open('#gm');
-  const count = (page) => page.evaluate(() => ({ tabs: [].filter.call(document.querySelectorAll('.gm-views [data-pv]'), (e) => !e.hidden && e.offsetParent !== null).length, chips: [].filter.call(document.querySelectorAll('.gm-vchips .chip'), (e) => !e.hidden).length, hasRail: !!document.querySelector('#gm-phaserail'), ws: !!document.querySelector('#gm-menu-workshop'), awayClass: document.body.classList.contains('ws-away'),
+  const count = (page) => page.evaluate(() => ({ tabs: [].filter.call(document.querySelectorAll('.gm-views [data-pv]'), (e) => !e.hidden && e.offsetParent !== null).length, chips: [].filter.call(document.querySelectorAll('.gm-vchips .chip'), (e) => !e.hidden).length, places: document.querySelectorAll('#gm-band [data-band-place]').length, rail: !!document.querySelector('#gm-phaserail'), ws: !!document.querySelector('#gm-menu-workshop'), awayClass: document.body.classList.contains('ws-away'),
     mirror: [...document.querySelectorAll('[data-gm="mirror"]')].filter((e) => e.offsetParent !== null).length, screenAway: [...document.querySelectorAll('#as-screen')].some((e) => getComputedStyle(e).display === 'none') }));
-  await A.page.waitForSelector('#gm-phaserail .gm-pr-chip', { timeout: 8000 });
+  await A.page.waitForSelector('#gm-band [data-band-place="plan"]', { timeout: 8000 });
   const before = await count(A.page);
-  check(before.hasRail && !before.ws && !before.awayClass, 'nothing stored: the rail is drawn (everything built is on), and there is no Workshop line or away class: ' + JSON.stringify(before));
+  check(before.places === 7 && !before.rail && !before.ws && !before.awayClass, 'nothing stored: the band\'s six places and Between are drawn (everything built is on); no rail, no Workshop line or away class: ' + JSON.stringify(before));
   check(before.mirror === 0 && !before.screenAway, 'the mirror buttons stay put away (Settings has the mirror); the Screen props are not put away');
-  check(await A.page.$$eval('#gm-phaserail .gm-pr-chip', (e) => e.length) === 4, 'the rail has four phase chips');
-  /* the chips are tapped as events, not by a pointer: at laptop widths the always-drawn cue bar sits over the rail (design 1, seam 1; the band fixes it) */
-  const tapRail = (id) => A.page.$eval('[data-rail="' + id + '"]', (e) => e.click());
-  check(await A.page.evaluate(() => { const r = document.querySelector('#gm-phaserail'), c = document.querySelector('#gm-cuebar'); return !!r && !!c; }), 'the rail and the cue bar are both drawn with nothing stored');
-  await tapRail('plan');
-  await until(async () => (await A.page.$eval('[data-rail="plan"]', (e) => e.getAttribute('data-state'))) === 'now', 4000);
-  check(await until(async () => (await placeOf(A.page)) === 'plan', 4000), 'the rail\'s Planning: the page follows the night to Planning');
+  /* the chips are clicked as the GM clicks them: nothing sits over the band (design 1, seam 1, fixed) */
+  const tapPlace = async (id) => { await A.page.click('#gm-band [data-band-place="' + id + '"]'); };
+  await tapPlace('plan');
+  await until(async () => (await A.page.$eval('[data-band-place="plan"]', (e) => e.getAttribute('data-state'))) === 'now', 4000);
+  check(await A.page.$eval('[data-band-place="plan"]', (e) => e.getAttribute('data-state')) === 'now', 'a tap on the band\'s Planning enters the phase');
+  check(await until(async () => (await placeOf(A.page)) === 'plan', 4000), 'the page follows the night to Planning');
   check((await views(A.page)).join() === 'cards,corkboard,run,score,prep,rules,npc,ipad', 'Planning\'s views: ' + (await views(A.page)).join(','));
   const bandSet = await until(async () => { const d = (await api('GET', '/gm/ambient')).json; return JSON.stringify(d || {}).includes('"plan"'); }, 6000);
   check(bandSet, 'the ambient document carries band.phase plan');
-  check(!(await A.page.$('#gm-phaserail [data-rail="all"]')), 'there is no All tools: nothing is hidden by the phase (a key brings any view to the place)');
-  await tapRail('pb'); check(await A.page.$eval('[data-rail="pb"]', (e) => e.getAttribute('data-state')) === 'now' && await until(async () => (await placeOf(A.page)) === 'pb', 4000), 'Back is allowed, and the page follows it to Personal');
+  check(!(await A.page.$('#gm-phaserail, [data-rail="all"]')), 'there is no rail and no All tools: nothing is hidden by the phase (a key brings any view to the place)');
+  await tapPlace('pb'); check(await until(async () => (await A.page.$eval('[data-band-place="pb"]', (e) => e.getAttribute('data-state'))) === 'now', 4000) && await until(async () => (await placeOf(A.page)) === 'pb', 4000), 'Back is allowed, and the page follows it to Personal');
   await A.page.click('[data-gm="menu"]');
   check((await A.page.$$('#gm-menu-workshop, #gm-menu-switchboard')).length === 0, 'the Menu has no Workshop and no Switchboard line');
   check((await A.page.$$('#gm-menu-settings')).length === 0, 'and no Settings line: the Settings are in the iPad view (N5)');
@@ -110,15 +109,15 @@ try {
   check(rows.includes('phoneCards') && rows.includes('mirror'), 'phone mission cards and the screen mirror are in the iPad view\'s Settings: ' + rows.join(' | '));
   await shot(A.page, SHOTS, 'settings-1280');
   console.log('VIEWCOUNT main page views=' + before.tabs + ' | phone chips=' + before.chips);
-  await shot(A.page, SHOTS, 'rail-1280');
-  const Pn = await open('#gm', { w: 390, h: 844 }); await Pn.page.waitForSelector('#gm-phaserail .gm-pr-chip', { timeout: 10000 }); await shot(Pn.page, SHOTS, 'rail-390');
-  check(await Pn.page.$eval('#gm-phaserail', (e) => e.getBoundingClientRect().width <= 390), 'the rail fits a 390 px phone');
+  await shot(A.page, SHOTS, 'band-1280');
+  const Pn = await open('#gm', { w: 390, h: 844 }); await Pn.page.waitForSelector('#gm-band [data-band-place]', { timeout: 10000 }); await shot(Pn.page, SHOTS, 'band-390');
+  check(await Pn.page.$eval('#gm-band', (e) => e.getBoundingClientRect().width <= 390) && await Pn.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'the band fits a 390 px phone');
   /* a stored false (the old All off), and a stored Workshop line: nothing changes */
   check((await api('PATCH', '/gm/state', { features: { 'spine.rail': false, 'spine.curfew': false, 'spine.workshop': true } })).status === 200, 'a stored false for the rail and a stored true for the Workshop are taken');
   await A.page.reload(); await A.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
-  await A.page.waitForSelector('#gm-phaserail .gm-pr-chip', { timeout: 8000 }).catch(() => {});
+  await A.page.waitForSelector('#gm-band [data-band-place]', { timeout: 8000 }).catch(() => {});
   const off = await count(A.page);
-  check(off.hasRail && !off.ws && !off.awayClass && off.mirror === 0, 'and change nothing: the rail stays, no Workshop line, no away class: ' + JSON.stringify(off));
+  check(off.places === 7 && !off.ws && !off.awayClass && off.mirror === 0, 'and change nothing: the band\'s places stay, no Workshop line, no away class: ' + JSON.stringify(off));
   check(errors.length === 0, 'no console errors: ' + errors.slice(0, 3).join(' / '));
   await browser.close();
 

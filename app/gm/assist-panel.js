@@ -520,13 +520,13 @@
       var pin = q('#as-pin');
       if (pin) { pin.setAttribute('aria-pressed', String(!!st.pinned)); pin.hidden = !dockable(); pin.title = st.pinned ? 'Unpin: Blade slides over the page again' : 'Pin: dock Blade as a column beside the page'; }
     }
-    /* the bar's bottom and the capture bar's top, as custom properties on the host: the tab and the panel sit between them whatever their height */
+    /* the band's bottom and the capture bar's top, as custom properties on the host: the tab and the panel sit between them whatever their height */
     var lay = { bar: null, foot: null, ro: null, raf: false };
     function relayout() {
       if (!host || gone) return;
       var top = 0, bot = 0, bar = null, foot = null;
       try {
-        bar = doc.querySelector ? doc.querySelector('.gm-bar') : null; foot = doc.querySelector ? doc.querySelector('#gm-foot') : null;
+        bar = doc.querySelector ? doc.querySelector('#gm-band') || doc.querySelector('.gm-bar') : null; foot = doc.querySelector ? doc.querySelector('#gm-foot') : null;
         if (bar && bar.getBoundingClientRect) top = Math.max(0, Math.round(bar.getBoundingClientRect().bottom));
         var vh = (win && win.innerHeight) || 0;
         if (foot && foot.getBoundingClientRect && vh) { var r = foot.getBoundingClientRect(); if (r.height > 0 && r.top < vh && r.bottom > 0) bot = Math.max(0, Math.round(vh - r.top)); }

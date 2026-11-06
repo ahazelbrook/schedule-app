@@ -381,22 +381,24 @@ try {
   check(!!rv && !(await G.page.isChecked('[data-reveal="working"]')) && await G.page.isVisible('[data-reveal="working"]'), 'a new roll resets the reveal to public only (the ticks stay visible)');
   await shot(G.page, '02-gm-location');
 
-  /* ---- Now in (A7): one district in the bar; the pickers follow it; a pick of their own wins; a stored card never moves ---- */
+  /* ---- Now in (A7): one district, in the console's Scene line (the band has no copy); the pickers follow it; a pick of their own wins; a stored card never moves ---- */
   {
     const optText = (sel) => G.page.$eval(sel + ' option', (o) => o.textContent);
     const stateNow = gmState;
-    const opts = await G.page.$$eval('#gm-now option', (os) => os.map((o) => o.value));
-    check(opts[0] === '' && new Set(opts).size === opts.length && opts.includes('Puddleton') && opts.includes('Dockside Test') && await G.page.$eval('#gm-now', (s) => s.getBoundingClientRect().height > 0 && s.value === ''), 'Now in: a select in the bar, on anywhere, listing the console’s and the location tool’s districts once each (' + opts.length + ')');
-    check(await G.page.$eval('#gm-now-s', (s) => getComputedStyle(s.closest('.gm-nowline')).display !== 'none' && !!s.closest('#gm-scenebox')) && await G.page.$eval('#gm-now', (s) => s.getBoundingClientRect().right <= innerWidth), 'Now in: the Roll’s Scene fold holds the copy shown at every width (N4); the bar’s still fits the laptop until the band replaces it');
+    const sceneOn = () => G.page.$eval('#gm-root', (r) => r.classList.contains('scene-open'));
+    if (!(await sceneOn())) await G.page.click('#gm-scene');      /* N4: Now in lives in the Roll's Scene fold, the one copy at every width */
+    const opts = await G.page.$$eval('#gm-now-s option', (os) => os.map((o) => o.value));
+    check(opts[0] === '' && new Set(opts).size === opts.length && opts.includes('Puddleton') && opts.includes('Dockside Test') && await G.page.$eval('#gm-now-s', (s) => s.getBoundingClientRect().height > 0 && s.value === ''), 'Now in: one select, on anywhere, listing the console’s and the location tool’s districts once each (' + opts.length + ')');
+    check(await G.page.$eval('#gm-now-s', (s) => getComputedStyle(s.closest('.gm-nowline')).display !== 'none' && !!s.closest('#gm-scenebox') && s.getBoundingClientRect().right <= innerWidth) && (await G.page.$$('#gm-band select[data-now]')).length === 0, 'Now in: the Roll’s Scene fold holds the one copy (N4); the band has none');
     check(await optText('#gm-l-district') === 'Now in: anywhere' && await optText('#gm-c-district') === 'Now in: anywhere', 'the Location and console District pickers lead with "Now in: anywhere"');
-    await G.page.selectOption('#gm-now', 'Dockside Test');
+    await G.page.selectOption('#gm-now-s', 'Dockside Test');
     check(!!(await until(async () => { const d = await stateNow(); return d.now && d.now.district === 'Dockside Test'; }, 5000)), 'Now in: kept in the GM state (now.district)');
     check(await G.page.$eval('#gm-l-district', (s) => s.value === '' && s.options[0].textContent === 'Now in: Dockside Test') && /^Now in: any \(no Dockside Test here\)$/.test(await optText('#gm-c-district')), 'the Location picker follows it; the console, whose list lacks it, says so and stays on any');
     await G.page.click('[data-gm="locroll"]'); await G.page.waitForSelector('#gm-loc .gm-loccard');
     let st = await until(async () => { const x = await stateNow(); return x.cards && x.cards.location && x.cards.location.ui && x.cards.location.ui.district === 'Dockside Test' ? x : null; }, 5000);
     check(!!st && /Dockside Test/.test(await G.page.textContent('#gm-loc .gm-glance-place')), 'a location roll uses it, and stores the district in the roll’s own ui');
     const first = st ? { hid: st.cards.location.hid, place: await G.page.textContent('#gm-loc .gm-glance-place') } : null;
-    await G.page.selectOption('#gm-now', 'Quietside Test');
+    await G.page.selectOption('#gm-now-s', 'Quietside Test');
     check((await G.page.textContent('#gm-loc .gm-glance-place')) === (first && first.place), 'Now in changed: the location card on screen does not move');
     await G.page.click('[data-gm="locroll"]'); await G.page.waitForFunction((p) => document.querySelector('#gm-loc .gm-glance-place').textContent !== p, first && first.place, { timeout: 5000 });
     st = await until(async () => { const x = await stateNow(); return x.cards.location.ui.district === 'Quietside Test' ? x : null; }, 5000);
@@ -407,21 +409,21 @@ try {
     await G.page.selectOption('#gm-l-district', 'Hightown Test');
     await G.page.click('[data-gm="locroll"]');
     check(!!(await until(async () => { const x = await stateNow(); return x.cards.location.ui.district === 'Hightown Test' && x.loc.ui.district === 'Hightown Test' ? x : null; }, 5000)), 'the Location picker’s own pick wins over Now in (Quietside Test)');
-    await G.page.selectOption('#gm-now', 'Lowmarsh Test');
+    await G.page.selectOption('#gm-now-s', 'Lowmarsh Test');
     check(await G.page.$eval('#gm-l-district', (s) => s.value === 'Hightown Test') && await G.page.$eval('#gm-l-district', (s) => s.options[0].textContent === 'Now in: Lowmarsh Test'), 'Now in changed: the pick stays, and the picker’s first choice names the new Now in');
     await G.page.selectOption('#gm-l-district', ''); await G.page.click('[data-gm="locroll"]');
     check(!!(await until(async () => { const x = await stateNow(); return x.cards.location.ui.district === 'Lowmarsh Test' && x.loc.ui.district === '' ? x : null; }, 5000)), 'the first choice ("Now in: …") gives the tool back to Now in');
-    await G.page.selectOption('#gm-l-district', '*'); await G.page.selectOption('#gm-now', 'Dockside Test'); await G.page.click('[data-gm="locroll"]');
+    await G.page.selectOption('#gm-l-district', '*'); await G.page.selectOption('#gm-now-s', 'Dockside Test'); await G.page.click('[data-gm="locroll"]');
     check(!!(await until(async () => { const x = await stateNow(); return x.cards.location.ui.district === '' && x.loc.ui.district === '*' ? x : null; }, 5000)), '"any" is a pick too: the tool rolls on any whatever Now in says, and no "*" reaches the roll');
     await G.page.selectOption('#gm-l-district', '');
     /* the console: the same default, an own pick, a replay that does not move */
-    await G.page.selectOption('#gm-now', 'Puddleton');
+    await G.page.selectOption('#gm-now-s', 'Puddleton');
     check(/District: Puddleton/.test(await G.page.textContent('#gm-scene-chips')) && /^Now in: Puddleton$/.test(await optText('#gm-c-district')), 'the console’s Scene line and picker follow Now in (Puddleton)');
     await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     await G.page.keyboard.press('3'); await G.page.waitForSelector('#gm-card .gm-lead');
     const cardA = await cardText(G.page);
     check(!!(await until(async () => { const x = await stateNow(); return x.cards.situation.ui.district === 'Puddleton'; }, 5000)), 'a console roll stores Puddleton in its own ui');
-    await G.page.selectOption('#gm-now', 'Crumbhall');
+    await G.page.selectOption('#gm-now-s', 'Crumbhall');
     check((await cardText(G.page)) === cardA && /District: Crumbhall/.test(await G.page.textContent('#gm-scene-chips')), 'Now in changed: the card on screen stays, the Scene line shows what the next roll uses');
     await G.page.keyboard.press('3'); await sleep(300);
     check(!!(await until(async () => { const x = await stateNow(); return x.cards.situation.ui.district === 'Crumbhall'; }, 5000)), 'the next console roll uses Crumbhall');
@@ -433,17 +435,18 @@ try {
     const sceneShut = () => G.page.$eval('#gm-controls', (c) => !c.checkVisibility());
     if (await sceneShut()) await G.page.click('#gm-scene');
     await G.page.selectOption('#gm-c-district', 'Muddle End');
-    await G.page.selectOption('#gm-now', 'Puddleton');
+    await G.page.selectOption('#gm-now-s', 'Puddleton');
     await G.page.keyboard.press('3'); await sleep(300);
     check(!!(await until(async () => { const x = await stateNow(); return x.cards.situation.ui.district === 'Muddle End' && x.con.live.district === 'Muddle End'; }, 5000)) && /District: Muddle End/.test(await G.page.textContent('#gm-scene-chips')), 'the console’s own pick wins (Muddle End), and its chip says so');
     await G.page.selectOption('#gm-c-district', '');
     if (!(await sceneShut())) await G.page.click('#gm-scene');
     await G.page.reload(); await G.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
-    check(await G.page.$eval('#gm-now', (s) => s.value === 'Puddleton') && await G.page.$eval('#gm-now-s', (s) => s.value === 'Puddleton'), 'reload: Now in is still Puddleton (the GM state), in both selects');
+    check(await G.page.$eval('#gm-now-s', (s) => s.value === 'Puddleton'), 'reload: Now in is still Puddleton (the GM state)');
     await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     await G.page.keyboard.press('3'); await sleep(700);
     await shot(G.page, '01d-gm-now-in');
-    await G.page.selectOption('#gm-now', '');
+    if (await sceneShut()) await G.page.click('#gm-scene');      /* Now in is in the Roll's Scene fold (the band has no copy) */
+    await G.page.selectOption('#gm-now-s', '');
     check(!!(await until(async () => { const x = await stateNow(); return x.now && x.now.district === ''; }, 5000)) && await optText('#gm-l-district') === 'Now in: anywhere', 'Now in: back to anywhere, and the pickers say so');
     await G.page.keyboard.press('b');
   }
@@ -555,8 +558,8 @@ try {
   check(await G.page.waitForFunction(() => /Mira/.test(document.getElementById('display-page').textContent), null, { timeout: 15000 }).then(() => true, () => false), '#display: it shows the NPC last pushed (Mira, from the cast)');
   check(await G.page.$$eval('#display-page a, #display-page [href]', (xs) => xs.filter((x) => x.tagName.toLowerCase() === 'a' || /gm/i.test(x.getAttribute('href') || '')).length) === 0, '#display: no link anywhere in the display (no way to the GM page)');
   await G.page.goto(BASE + '/#gm'); await G.page.waitForSelector('#gm-buttons .gm-btn', { timeout: 20000 });
-  /* on a laptop the GM page brings its own top bar instead of the site header (the laptop layout) */
-  check(await G.page.evaluate(() => getComputedStyle(document.querySelector('header.top')).display !== 'none' || (document.body.classList.contains('gm-app') && getComputedStyle(document.querySelector('.gm-bar')).display !== 'none')) && (await G.page.$eval('#display-page', (d) => d.hidden && d.childElementCount === 0)), 'leaving #display: unmounted, the header (or the GM bar) is back');
+  /* on a laptop the GM page brings its own band instead of the site header (the laptop layout) */
+  check(await G.page.evaluate(() => getComputedStyle(document.querySelector('header.top')).display !== 'none' || (document.body.classList.contains('gm-app') && getComputedStyle(document.querySelector('#gm-band')).display !== 'none')) && (await G.page.$eval('#display-page', (d) => d.hidden && d.childElementCount === 0)), 'leaving #display: unmounted, the header (or the GM bar) is back');
 
   /* ---- layouts: the phone at 360 px, the iPad both ways ---- */
   for (const [w, h, name] of [[360, 740, 'phone'], [768, 1024, 'iPad portrait'], [1024, 768, 'iPad landscape']]) {
@@ -565,21 +568,22 @@ try {
     const l = await V.page.evaluate(layout);
     check(l.scrollWidth <= l.clientWidth + 1 && !l.wide.length, name + ': no sideways overflow ' + JSON.stringify(l.wide));
     check(!l.small.length, name + ': every visible control is at least 44 px tall ' + JSON.stringify(l.small));
-    /* every width: the site header gives way to the GM bar while the tools are open; the admin buttons and the display link are in the Menu */
+    /* every width: the site header gives way to the band while the tools are open; the admin buttons and the display link are in the Menu */
     check(await V.page.$eval('header.top', (h) => getComputedStyle(h).display === 'none') && !(await V.page.$('.gm-head')), name + ': no site header and no "The console" header while the tools are open');
-    const bar = await V.page.$eval('.gm-bar', (b) => { const r = b.getBoundingClientRect(); return { top: Math.round(r.top), h: Math.round(r.height), pos: getComputedStyle(b).position }; });
-    check(bar.top === 0 && bar.h >= 44 && (w >= 600 || bar.h === 44) && bar.pos === 'sticky', name + ': a sticky bar at the top ' + JSON.stringify(bar));
+    const bar = await V.page.$eval('#gm-band', (b) => { const r = b.getBoundingClientRect(); return { top: Math.round(r.top), h: Math.round(r.height), pos: getComputedStyle(b).position }; });
+    check(bar.top === 0 && bar.h >= 88 && bar.h <= 92 && bar.pos === 'sticky', name + ': a sticky band of two rows at the top ' + JSON.stringify(bar));
     await V.page.click('[data-gm="menu"]');
-    check(await V.page.$eval('.gm-menu-list', (m) => !m.hidden && m.getBoundingClientRect().right <= innerWidth + 1) && (await V.page.$$eval('.gm-menu-list [data-gm]', (xs) => xs.map((x) => x.getAttribute('data-gm')))).join().includes('note,clearcap,update') && !!(await V.page.$('.gm-menu-list a[href="#display"]')), name + ': the Menu holds the display page, the note, the capture, the pack, Forget');
+    const xs0 = await V.page.$$eval('.gm-menu-list [data-gm]', (xs) => xs.map((x) => x.getAttribute('data-gm')));
+    check(await V.page.$eval('.gm-menu-list', (m) => !m.hidden && m.getBoundingClientRect().right <= innerWidth + 1) && ['update', 'note', 'clearcap', 'forget'].every((a) => xs0.includes(a)) && !!(await V.page.$('.gm-menu-list a[href="#display"]')), name + ': the Menu holds the display page, the note, the capture, the pack, Forget');
     await V.page.click('[data-gm="menu"]');
     if (w < 600) {
       check(await V.page.$eval('.gm-segbar', (s) => getComputedStyle(s).display !== 'none'), 'phone: the segmented bar shows');
       const segs = await V.page.$$eval('.gm-vchips .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return { seg: x.getAttribute('data-pv') || x.getAttribute('data-seg'), top: Math.round(r.top), right: Math.round(r.right) }; }));
       const segTop = await V.page.$eval('.gm-segbar', (s) => Math.round(s.getBoundingClientRect().top));
-      /* since N0 the phase rail and the cue bar are always drawn, between the bar and the segments (the shell's band replaces all of them later) */
-      const above = await V.page.evaluate(() => Math.round(Math.max(...['.gm-bar', '#gm-phaserail', '#gm-cuebar', '.gm-curfew'].map((q) => document.querySelector(q)).filter(Boolean).map((e) => e.getBoundingClientRect().bottom))));
+      /* the band is the one thing above the segments: nothing inserts itself between them any more */
+      const above = await V.page.evaluate(() => Math.round(document.querySelector('#gm-band').getBoundingClientRect().bottom));
       const rowsOf = segs.reduce((m, s) => { m[s.top] = (m[s.top] || 0) + 1; return m; }, {});
-      check(segs.map((x) => x.seg).join() === 'console,run,chase,scenes,location,prep,rules,npc,ipad,state' && JSON.stringify(Object.values(rowsOf)) === '[5,5]' && segs.every((s) => s.right <= w) && Math.abs(segTop - above) <= 1, 'phone: the Score\'s chips (the Roll, its views; the pinned four and the drawer) in two rows under the bar and the spine\'s bars, none off screen ' + JSON.stringify([segTop, above, rowsOf, segs.map((s) => s.right)]));
+      check(segs.map((x) => x.seg).join() === 'console,run,chase,scenes,location,prep,rules,npc,ipad,state' && JSON.stringify(Object.values(rowsOf)) === '[5,5]' && segs.every((s) => s.right <= w) && Math.abs(segTop - above) <= 1, 'phone: the Score\'s chips (the Roll, its views; the pinned four and the drawer) in two rows right under the band, none off screen ' + JSON.stringify([segTop, above, rowsOf, segs.map((s) => s.right)]));
       /* the label's own text box inside the segment's box (scrollWidth overstates on these inline-flex chips, and text-overflow does
          not reach the text inside them, so a cut label would show no ellipsis) */
       check(await V.page.$$eval('.gm-vchips .chip', (c) => c.every((x) => { const rg = document.createRange(); rg.selectNodeContents(x); const t = rg.getBoundingClientRect(), b = x.getBoundingClientRect(), s = getComputedStyle(x); return t.width > 0 && t.left >= b.left + parseFloat(s.borderLeftWidth) - 0.5 && t.right <= b.right - parseFloat(s.borderRightWidth) + 0.5 && b.height >= 40; })), 'phone: every segment label shows whole, each 40 px or taller');
@@ -599,9 +603,9 @@ try {
       check(l3.scrollWidth <= l3.clientWidth + 1 && !l3.wide.length, 'phone: an opened "Or" row does not overflow ' + JSON.stringify(l3.wide));
       check(await V.page.$eval('#gm-controls', (c) => !c.checkVisibility()), 'phone: the controls fold under the Scene button');
       await V.page.tap('#gm-scene');      /* N4: Now in lives in the Roll's Scene fold, the one copy at every width */
-      check(await V.page.$eval('#gm-now-s', (sel) => { const r = sel.getBoundingClientRect(); return r.height >= 44 && r.right <= innerWidth && sel.checkVisibility(); }) && await V.page.$eval('#gm-now', (sel) => getComputedStyle(sel.closest('.gm-now')).display === 'none'), 'phone: Now in is a select in the Scene fold (the bar keeps the session and the iPad)');
+      check(await V.page.$eval('#gm-now-s', (sel) => { const r = sel.getBoundingClientRect(); return r.height >= 44 && r.right <= innerWidth && sel.checkVisibility(); }) && (await V.page.$$('#gm-band select[data-now]')).length === 0, 'phone: Now in is a select in the Scene fold (the band has none)');
       await V.page.selectOption('#gm-now-s', 'Puddleton');
-      check(await V.page.$eval('#gm-now', (sel) => sel.value === 'Puddleton') && /District: Puddleton/.test(await V.page.textContent('#gm-scene-chips')) && !!(await until(async () => { const d = await gmState(); return d.now && d.now.district === 'Puddleton'; }, 5000)), 'phone: choosing it there sets Now in (the bar’s copy follows, the Scene line shows the district)');
+      check(await V.page.$eval('#gm-now-s', (sel) => sel.value === 'Puddleton') && /District: Puddleton/.test(await V.page.textContent('#gm-scene-chips')) && !!(await until(async () => { const d = await gmState(); return d.now && d.now.district === 'Puddleton'; }, 5000)), 'phone: choosing it there sets Now in (the bar’s copy follows, the Scene line shows the district)');
       await V.page.selectOption('#gm-now-s', '');
       /* the Downtime segment: the PC and the two vice buttons on the first screen (clear of the Capture button), the card's d100 box on
          screen after the tap, then the two cards; nothing too wide or too small (taps, not clicks: a touch screen) */
@@ -674,15 +678,14 @@ try {
     await S5.page.keyboard.press('3');
     await S5.page.waitForSelector('#gm-card .gm-lead');
     check(await S5.page.waitForFunction((m) => { const b = document.getElementById('gm-signed'); return b && !b.hidden && b.textContent === m && getComputedStyle(b).display !== 'none'; }, SO, { timeout: 8000 }).then(() => true, () => false), 'signed out mid-session: the bar says "' + SO + '"');
-    /* the message is a row of its own at the foot of the bar. With everything on (N0) the bar holds more by this point of the run, so its controls may wrap to
-       two rows at 1280 px once the status widens to Signed out: the bar stays within three rows */
+    /* the message is the band's second row, in alarm red (the clock and PANIC beside it); the first row keeps its controls */
     const so5 = await S5.page.evaluate(() => {
-      const s = document.querySelector('.gm-save'), b = document.querySelector('.gm-bar'), m = document.getElementById('gm-signed');
-      const others = b ? [...b.children].filter((k) => k !== m && !k.hidden && getComputedStyle(k).display !== 'none').map((k) => k.getBoundingClientRect().bottom) : [];
+      const s = document.querySelector('.gm-save'), b = document.querySelector('#gm-band'), m = document.getElementById('gm-signed'), r1 = b && b.querySelector('.gm-band-r1');
+      const others = r1 ? [...r1.children].filter((k) => !k.hidden && getComputedStyle(k).display !== 'none').map((k) => k.getBoundingClientRect().bottom) : [];
       return { save: s && s.textContent, bad: !!(s && s.classList.contains('bad')), out: !!(b && b.classList.contains('out')), bottom: b ? Math.round(b.getBoundingClientRect().bottom) : null,
         msgTop: m ? Math.round(m.getBoundingClientRect().top) : null, controlsBottom: others.length ? Math.round(Math.max(...others)) : null };
     });
-    check(so5.save === 'Signed out' && so5.bad && so5.out && so5.msgTop >= so5.controlsBottom - 1 && so5.bottom <= 140, 'and the bar\'s status reads Signed out, the message on a row of its own at the foot of the bar ' + JSON.stringify(so5));
+    check(so5.save === 'Signed out' && so5.bad && so5.out && so5.msgTop >= so5.controlsBottom - 1 && so5.bottom <= 140, 'and the band\'s status reads Signed out, the message on its second row, under the controls ' + JSON.stringify(so5));
     await S5.page.keyboard.press('2'); await S5.page.waitForSelector('#gm-card .gm-lead');
     const card2 = (await S5.page.textContent('#gm-card')).replace(/\s+/g, ' ');
     await S5.page.keyboard.press('p'); await S5.page.keyboard.type('Written while signed out'); await S5.page.keyboard.press('Enter'); await S5.page.keyboard.press('Escape');

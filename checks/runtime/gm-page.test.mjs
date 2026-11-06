@@ -366,6 +366,8 @@ function loadPage(W) {
   const ctx = vm.createContext(W);
   /* the places of the night (gm/places.js, N1b) run in the same window, as the GM bundle loads them before the page */
   if (!W.__noPlaces) vm.runInContext(fs.readFileSync(path.join(ROOT, 'app', 'gm', 'places.js'), 'utf8'), ctx, { filename: 'gm/places.js' });
+  /* the band (gm/band.js) and the one Esc (gm/esc.js) load before the page, as the GM bundle has them */
+  for (const f of ['gm/esc.js', 'gm/band.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, 'app', f), 'utf8'), ctx, { filename: f });
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8'), ctx, { filename: 'gm-page.js' });
   return W.B68GmPage;
 }
@@ -577,9 +579,25 @@ await test('6h4. the capture bar is off by default: its keys do nothing until th
   assert.equal(br.W.localStorage.getItem('b68.gm.capbar'), '1'); assert.ok(h.q('#gm-root').classList.contains('capbar'));
   h.q('[data-gm="menu"]').click();
   assert.equal(h.q('#gm-menu-capbar').textContent, 'Hide the capture bar');
+  h.press('m'); assert.equal(h.q('[data-gm="arm"][data-b="m"]').getAttribute('aria-pressed'), 'false', 'no key fires behind the open Menu');
+  h.press('Escape'); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'Esc shuts the Menu');
   h.press('m'); assert.equal(h.q('[data-gm="arm"][data-b="m"]').getAttribute('aria-pressed'), 'true', 'with the bar showing the key arms the bucket');
   h.q('.gm-menu-list [data-gm="capbar"]').click();
   assert.equal(br.W.localStorage.getItem('b68.gm.capbar'), '0'); assert.ok(!h.q('#gm-root').classList.contains('capbar'));
+});
+
+await test('6h5. Esc has four meanings (an open thing, a field, the stamp, PANIC) and blanking the iPad is not one: the staging panel is never asked, even when it would blank', async () => {
+  const p17 = { escs: 0 };
+  const panel = { create: () => ({ esc: () => { p17.escs++; return true; }, active: () => false, bind: () => () => {}, holding: () => false, paint() {}, tick() {}, tint() {}, reset() {},
+    stage: { isStaged: () => false, toggle() {}, send: () => null }, spot: { holdByName: () => null, narrator: () => Promise.resolve(false) } }) };
+  const fg = fakeGm(), h = await openPage({ fg, br: fakeBrowser({ B68GmPanel17: panel }), camp: { session: { number: 3 }, crew: {} } });
+  h.q('[data-gm="menu"]').click(); h.press('Escape');
+  assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'Esc shuts the open Menu');
+  assert.equal(fg.server.displays.length, 0, 'and that is all the press did');
+  h.press('Escape');
+  assert.ok(await until(() => fg.server.displays.some((d) => d && d.kind === 'blank')), 'with nothing open, Esc is PANIC (the display is cleared)');
+  assert.equal(p17.escs, 0, 'the staging panel\'s Esc (which blanks the display) is never asked');
+  assert.ok(!fg.server.displays.some((d) => d && d.kind === 'dark'), 'nothing sent the display dark');
 });
 
 await test('6i. captures record their session (numbers only): typed lines and L-filed rolls; absent when the campaign has none; text never in the campaign', async () => {
@@ -1421,17 +1439,24 @@ await test('9t. (R4) live reveal follows the display seq, not a title: anything 
   await h.save();
 });
 
-await test('10a. the laptop layout: body.gm-app while open, the top bar (session, iPad, listening), the menu, F for Focus with the console as its keys, Classic layout on this device', async () => {
+await test('10a. the laptop layout: body.gm-app while open, the band (session, iPad, the mic), the menu (housekeeping only), F for Focus with the console as its keys, Classic layout on this device', async () => {
   const fg = fakeGm(), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
   assert.ok(br.doc.body.classList.contains('gm-app'), 'on while the tools are open');
   assert.equal(h.q('#gm-bar-sess').textContent, 'Session 3');
-  await until(() => h.q('.gm-bar .gm-tray-text') && h.q('.gm-bar .gm-tray-text').textContent); assert.ok(h.q('.gm-bar .gm-tray .gm-tray-lbl').textContent === 'iPad' && h.q('.gm-bar .gm-tray-text').textContent, 'the iPad tray in the bar says what is live: ' + h.q('.gm-bar .gm-tray-text').textContent);
-  assert.ok(h.q('.gm-bar .gm-tray [data-tray="clear"]') && h.q('.gm-bar .gm-tray [data-tray="blank"]'), 'Clear and Blank in the bar, on the tray');
-  assert.equal(h.qa('.gm-bar .gm-save').length, 1, 'saving shows in the bar');
+  await until(() => h.q('#gm-band .gm-tray-text') && h.q('#gm-band .gm-tray-text').textContent); assert.ok(h.q('#gm-band .gm-tray .gm-tray-lbl').textContent === 'iPad' && h.q('#gm-band .gm-tray-text').textContent, 'the iPad tray in the band says what is live: ' + h.q('#gm-band .gm-tray-text').textContent);
+  assert.ok(h.q('#gm-band .gm-tray [data-tray="clear"]') && h.q('#gm-band .gm-tray [data-tray="blank"]'), 'Clear and Blank in the band, on the tray');
+  assert.equal(h.qa('#gm-band .gm-save').length, 1, 'saving shows in the band');
+  assert.ok(!h.q('.gm-bar') && !h.q('#gm-phaserail') && !h.q('.gm-curfew'), 'no top bar, rail or curfew bar: the band holds them');
+  assert.ok(h.q('#gm-band #gm-cuebar') && h.q('#gm-band [data-band="panic"]'), 'the cue and PANIC are in the band');
   assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'the menu starts shut');
   h.q('[data-gm="menu"]').click(); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), false); assert.equal(h.q('[data-gm="menu"]').getAttribute('aria-expanded'), 'true');
   assert.ok(['note', 'clearcap', 'update', 'forget'].every((a) => h.q('.gm-menu-list [data-gm="' + a + '"]')), 'export, clear the capture, update and forget are in it');
-  assert.ok(h.q('.gm-menu-list a[href="#display"]') && h.qa('.gm-bar a[href="#display"]').every((a) => a.closest('.gm-menu-list')), 'the display page opens from the Menu, not the bar');
+  assert.ok(h.q('.gm-menu-list a[href="#display"]') && h.qa('#gm-band a[href="#display"]').every((a) => a.closest('.gm-menu-list')), 'the display page opens from the Menu, not the band');
+  { const menu = h.q('.gm-menu-list'), lines = menu.children.filter((x) => (x.tagName === 'A' || x.tagName === 'BUTTON') && !x.className.includes('gm-menu-ph')).map((x) => x.textContent.replace(/\s+/g, ' ').trim());
+    assert.deepEqual(lines.map((t) => t.replace(/^(Show|Hide) the capture bar$/, 'capture bar').replace(/^Live sync: .*/, 'Live sync')),
+      ['Open the display page (for the iPad)', 'Update pack', 'Export tonight’s note', 'Clear tonight’s capture', 'capture bar', 'Live sync', 'The table', 'Rules', 'The cast', 'Home', 'Forget GM data on this device'],
+      'housekeeping only, in order, Forget last: ' + JSON.stringify(lines));
+    assert.ok(menu.children[menu.children.length - 1].className.includes('gm-menu-sep'), 'Forget is set apart'); }
   assert.ok(!h.q('.gm-capacts [data-gm="note"]') && !h.q('.gm-capacts [data-gm="clearcap"]') && h.q('.gm-capacts [data-gm="last"]'), 'the capture bar keeps File last roll only');
   assert.equal(h.q('#gm-bar-stt').hasAttribute('hidden'), true, 'no Listening pill while the transcriber has never been set up');
   assert.ok(/^Rules T$/.test(h.q('.gm-views [data-pv="rules"]').textContent) && /Rules/.test(h.q('.gm-vchips [data-pv="rules"]').textContent), 'the GM screen is the pinned Rules view (T), in the switcher and the chip row');
@@ -1471,9 +1496,9 @@ await test('10b2. Live sync is a menu item (MD1b): on until the GM turns it off;
   assert.strictEqual(fg.server.doc.live, true, 'the state ends on');
   assert.ok(sent.every((p) => typeof p.live === 'boolean'), 'only booleans are sent');
 });
-await test('10b4. Mirror for phones (MM1) is a row of the iPad view\'s Settings (the GM night rebuild): on until the GM turns it off; Off sends { mirror: false }, On { mirror: true }; the row follows; nothing in the bar', async () => {
+await test('10b4. Mirror for phones (MM1) is a row of the iPad view\'s Settings (the GM night rebuild): on until the GM turns it off; Off sends { mirror: false }, On { mirror: true }; the row follows; nothing in the band', async () => {
   const fg = fakeGm(), br = fakeBrowser(); const h = await openPage({ fg, br, camp: CAMP3 });
-  assert.equal(h.q('.gm-bar [data-gm="mirror"]'), null, 'the bar has no mirror button of its own any more');
+  assert.equal(h.q('#gm-band [data-gm="mirror"]'), null, 'the band has no mirror button');
   await openIpad(h);
   const pressed = () => { const b = h.q('#gm-ipad-settings [data-set-row="mirror"] [aria-pressed="true"]'); return b ? b.textContent : null; };
   assert.equal(pressed(), 'On', 'on by default: the row shows On');
@@ -1659,7 +1684,7 @@ await test('11d. Find: Ctrl+K and / open it, typing lists hits, arrows choose, E
   h.press('Escape', { target: q }); assert.ok(h.q('#gm-find').hasAttribute('hidden'), 'Esc shuts it');
   h.press('/'); assert.ok(!h.q('#gm-find').hasAttribute('hidden'), '/ opens it');
   h.press('k', { ctrlKey: true }); assert.ok(h.q('#gm-find').hasAttribute('hidden'), 'Ctrl+K again shuts it');
-  h.q('.gm-bar [data-gm="find-open"]').click(); assert.ok(!h.q('#gm-find').hasAttribute('hidden'), 'the bar button opens it');
+  h.q('#gm-band [data-gm="find-open"]').click(); assert.ok(!h.q('#gm-find').hasAttribute('hidden'), 'the band\'s button opens it');
   dispatch(h.q('#gm-find'), 'click'); assert.ok(h.q('#gm-find').hasAttribute('hidden'), 'a click around it shuts it');
   await h.save();
 });
@@ -1807,30 +1832,30 @@ const nowPage = (over, parts) => openPage({ br: fakeBrowser(Object.assign({ B68G
 
 await test('12a. Now in: a select in the bar (and the phone’s Scene line) lists every tool’s districts once; the four pickers lead with "Now in: …"; it is kept in the GM state', async () => {
   const h = await nowPage();
-  const opts = h.qa('#gm-now option').map((o) => o.getAttribute('value'));
+  const opts = h.qa('#gm-now-s option').map((o) => o.getAttribute('value'));
   assert.equal(opts[0], '', 'anywhere first'); assert.equal(new Set(opts).size, opts.length, 'each district once');
   for (const d of ['Puddleton', 'Testfield', 'Alder Quay', 'Puddle End', NOWD]) assert.ok(opts.includes(d), d + ' is listed');
   const key = (s) => s.toLowerCase().replace(/^the\s+/, ''), rest = opts.slice(1); assert.deepEqual(rest, [...rest].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0)), 'alphabetical (a leading "The" does not count)');
-  assert.equal(h.qa('select[data-now]').length, 2, 'one in the bar (until the band takes its place: N1a), one in the Roll’s Scene fold (shown at every width since N4)'); assert.ok(h.q('.gm-bar #gm-now') && h.q('#gm-scenebox #gm-now-s'));
-  assert.equal(optSel(h, '#gm-now').getAttribute('value'), '', 'on anywhere');
+  assert.equal(h.qa('select[data-now]').length, 1, 'one select, in the Roll’s Scene fold (the band has no copy)'); assert.ok(!h.q('#gm-band select') && h.q('#gm-scenebox #gm-now-s'));
+  assert.equal(optSel(h, '#gm-now-s').getAttribute('value'), '', 'on anywhere');
   for (const s of ['#gm-c-district', '#gm-l-district', '#gm-s-sel', '#gm-n-district']) {
     assert.equal(h.q(s + ' option').textContent, 'Now in: anywhere', s + ' leads with Now in'); assert.equal(optSel(h, s).textContent, 'Now in: anywhere', s + ' follows by default');
     assert.equal(h.qa(s + ' option').filter((o) => o.getAttribute('value') === '*').length, 1, s + ' keeps an any of its own');
   }
-  pick(h, '#gm-now', NOWD);
+  pick(h, '#gm-now-s', NOWD);
   assert.equal(stateDoc(h).now.district, NOWD, 'kept in the GM state as now.district');
   for (const s of ['#gm-c-district', '#gm-l-district', '#gm-s-sel', '#gm-n-district']) assert.equal(optSel(h, s).textContent, 'Now in: ' + NOWD, s + ' says what it follows');
   assert.equal(optSel(h, '#gm-now-s').getAttribute('value'), NOWD, 'the Scene line’s copy shows it too'); assert.match(h.q('#gm-scene-chips').textContent, new RegExp('District: ' + NOWD));
   await h.save();
   assert.equal(h.fg.server.doc.now.district, NOWD, 'saved');
   const h2 = await openPage({ fg: h.fg, br: fakeBrowser({ B68GmNpc: NPCM }), camp: CAMP3 });
-  assert.equal(optSel(h2, '#gm-now').getAttribute('value'), NOWD, 'a reload keeps it'); assert.equal(optSel(h2, '#gm-l-district').textContent, 'Now in: ' + NOWD);
+  assert.equal(optSel(h2, '#gm-now-s').getAttribute('value'), NOWD, 'a reload keeps it'); assert.equal(optSel(h2, '#gm-l-district').textContent, 'Now in: ' + NOWD);
   await h2.save();
 });
 
 await test('12b. the four tools roll on Now in, and store the district they resolved to in the roll’s own ui', async () => {
   const h = await nowPage();
-  pick(h, '#gm-now', NOWD);
+  pick(h, '#gm-now-s', NOWD);
   h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, NOWD, 'console');
   h.q('[data-gm="locroll"]').click(); assert.equal(stateDoc(h).cards.location.ui.district, NOWD, 'location'); assert.match(h.q('#gm-loc .gm-glance-place').textContent, new RegExp(NOWD));
   h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, NOWD, 'street'); assert.match(h.q('#gm-scn .gm-card-h').textContent, new RegExp(NOWD));
@@ -1843,43 +1868,43 @@ await test('12b. the four tools roll on Now in, and store the district they reso
 
 await test('12c. a tool’s own pick wins, stays through a change of Now in, and "Now in" in the picker gives it back; "any" is a pick too', async () => {
   const h = await nowPage();
-  pick(h, '#gm-now', NOWD);
+  pick(h, '#gm-now-s', NOWD);
   pick(h, '#gm-s-sel', 'Brindle Row');
   assert.equal(stateDoc(h).scn.ui.sel, 'Brindle Row'); assert.equal(h.q('#gm-s-sel').value, 'Brindle Row', 'the picker shows its own pick');
   h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, 'Brindle Row', 'the tool’s own pick wins over Now in');
   h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, NOWD, 'the others still follow');
-  pick(h, '#gm-now', 'Puddleton');
+  pick(h, '#gm-now-s', 'Puddleton');
   assert.equal(optSel(h, '#gm-s-sel').textContent, 'Brindle Row', 'a change of Now in leaves a pick alone'); assert.match(h.q('#gm-s-sel option').textContent, /^Now in: any \(no Puddleton here\)$/, 'its first choice still says what Now in is, and that this tool lacks it');
   h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, 'Brindle Row');
   h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Puddleton', 'the console follows the new Now in');
   pick(h, '#gm-s-sel', ''); assert.equal(stateDoc(h).scn.ui.sel, '', 'the first choice gives it back'); assert.equal(h.q('#gm-s-sel').value, '');
   h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, '', 'a tool whose list lacks Now in rolls on any');
-  pick(h, '#gm-now', NOWD); pick(h, '#gm-s-sel', '*');
+  pick(h, '#gm-now-s', NOWD); pick(h, '#gm-s-sel', '*');
   assert.equal(stateDoc(h).scn.ui.sel, '*'); assert.equal(h.q('#gm-s-sel').value, '*', 'any is picked');
   h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, '', 'a tool on any rolls on any whatever Now in says, and no sentinel ever reaches a roll');
   pick(h, '#gm-c-district', 'Muddle End'); h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Muddle End', 'the console’s own pick wins');
   pick(h, '#gm-l-district', 'Testfield'); h.q('[data-gm="locroll"]').click(); assert.equal(stateDoc(h).cards.location.ui.district, 'Testfield', 'the location’s own pick wins');
   pick(h, '#gm-n-district', 'Gnome Hill'); h.q('[data-gm="npcroll"]').click(); assert.equal(stateDoc(h).cards.npc.ui.district, 'Gnome Hill', 'the NPC’s own pick wins');
-  pick(h, '#gm-now', ''); assert.equal(optSel(h, '#gm-now').getAttribute('value'), ''); assert.equal(h.q('#gm-c-district option').textContent, 'Now in: anywhere');
+  pick(h, '#gm-now-s', ''); assert.equal(optSel(h, '#gm-now-s').getAttribute('value'), ''); assert.equal(h.q('#gm-c-district option').textContent, 'Now in: anywhere');
   await h.save();
 });
 
 await test('12d. Now in never moves a stored card: Earlier and a reload redraw each tool’s card as it was rolled', async () => {
   const h = await nowPage();
-  pick(h, '#gm-now', 'Puddleton'); h.press('3');
+  pick(h, '#gm-now-s', 'Puddleton'); h.press('3');
   const A = cardTxt(h); assert.equal(stateDoc(h).cards.situation.ui.district, 'Puddleton');
-  pick(h, '#gm-now', NOWD);
+  pick(h, '#gm-now-s', NOWD);
   assert.equal(cardTxt(h), A, 'the card on screen stays as rolled'); assert.match(h.q('#gm-scene-chips').textContent, new RegExp('District: ' + NOWD), 'the Scene line shows what the next roll uses');
   h.press('3'); const B = cardTxt(h); assert.equal(stateDoc(h).cards.situation.ui.district, NOWD); assert.notEqual(B, A);
   h.qa('#gm-earlier [data-gm="replay"]')[1].click(); assert.equal(cardTxt(h), A, 'Earlier: the older card, exactly as it was, whatever Now in is'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Puddleton');
   h.q('[data-gm="locroll"]').click(); const L1 = h.q('#gm-loc .gm-glance-place').textContent, L1name = h.q('#gm-loc .gm-locname').textContent;
   h.q('[data-gm="scnroll"]').click(); const S1 = h.q('#gm-scn .gm-card-h').textContent;
   h.q('[data-gm="npcroll"]').click(); const N1 = h.q('#gm-npc .gm-npccard .gm-card-h').textContent;
-  pick(h, '#gm-now', 'Testfield');                  /* a district only the location lists */
+  pick(h, '#gm-now-s', 'Testfield');                  /* a district only the location lists */
   assert.equal(h.q('#gm-loc .gm-glance-place').textContent, L1, 'the location card does not move'); assert.equal(h.q('#gm-scn .gm-card-h').textContent, S1, 'nor the street scene'); assert.equal(h.q('#gm-npc .gm-npccard .gm-card-h').textContent, N1, 'nor the NPC');
   await h.save();
   const h2 = await openPage({ fg: h.fg, br: fakeBrowser({ B68GmNpc: NPCM }), camp: CAMP3 });
-  assert.equal(optSel(h2, '#gm-now').getAttribute('value'), 'Testfield'); assert.equal(cardTxt(h2), A, 'a reload redraws the console card as rolled');
+  assert.equal(optSel(h2, '#gm-now-s').getAttribute('value'), 'Testfield'); assert.equal(cardTxt(h2), A, 'a reload redraws the console card as rolled');
   assert.equal(h2.q('#gm-loc .gm-glance-place').textContent, L1); assert.equal(h2.q('#gm-loc .gm-locname').textContent, L1name); assert.equal(h2.q('#gm-scn .gm-card-h').textContent, S1); assert.equal(h2.q('#gm-npc .gm-npccard .gm-card-h').textContent, N1, 'and the other three');
   h2.q('[data-gm="locroll"]').click(); assert.equal(stateDoc(h2).cards.location.ui.district, 'Testfield', 'the next roll uses the new Now in');
   await h2.save();
@@ -1888,16 +1913,16 @@ await test('12d. Now in never moves a stored card: Earlier and a reload redraw e
 await test('12e. districts are matched without case, "the" or punctuation (each tool keeps its own spelling); the bar lists a name once; a Now in the packs no longer hold stays visible', async () => {
   const scn = cl(FIXS.parts.scenes); const d0 = cl(scn.T.district[0]); d0.n = 'puddle-TON'; scn.T.district.push(d0);
   const h = await nowPage(null, { scenes: { version: 's8', src: {}, body: { T: scn.T } } });
-  const opts = h.qa('#gm-now option').map((o) => o.getAttribute('value'));
+  const opts = h.qa('#gm-now-s option').map((o) => o.getAttribute('value'));
   assert.equal(opts.filter((o) => /^puddle-?ton$/i.test(o)).length, 1, 'one entry for the two spellings'); assert.ok(opts.includes('Puddleton'), 'the first tool’s spelling (the console)');
-  pick(h, '#gm-now', 'Puddleton');
+  pick(h, '#gm-now-s', 'Puddleton');
   assert.equal(h.q('#gm-s-sel option').textContent, 'Now in: puddle-TON', 'the Street picker names its own spelling');
   h.q('[data-gm="scnroll"]').click(); assert.equal(stateDoc(h).cards.scenes.ui.sel, 'puddle-TON', 'and rolls on it');
   h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Puddleton');
   await h.save();
   const fg = h.fg; fg.server.doc.now = { district: 'Gone Wharf' };
   const h2 = await openPage({ fg, br: fakeBrowser({ B68GmNpc: NPCM }), camp: CAMP3 });
-  assert.equal(optSel(h2, '#gm-now').getAttribute('value'), 'Gone Wharf', 'a district no pack lists is still what the select shows');
+  assert.equal(optSel(h2, '#gm-now-s').getAttribute('value'), 'Gone Wharf', 'a district no pack lists is still what the select shows');
   assert.match(h2.q('#gm-l-district option').textContent, /^Now in: any \(no Gone Wharf here\)$/); h2.press('3'); assert.equal(stateDoc(h2).cards.situation.ui.district, '', 'and rolls on any');
   await h2.save();
 });
@@ -1906,7 +1931,7 @@ await test('12f. an old state with a tool’s district already set keeps it as t
   const fg = fakeGm(NPCFIX.parts.campaign, nowParts()); fg.server.doc = { con: { live: { district: 'Muddle End' } }, scn: { ui: { sel: 'Alder Quay' } } };
   const h = await openPage({ fg, br: fakeBrowser({ B68GmNpc: NPCM }), camp: CAMP3 });
   assert.equal(optSel(h, '#gm-c-district').textContent, 'Muddle End'); assert.equal(optSel(h, '#gm-s-sel').textContent, 'Alder Quay'); assert.equal(optSel(h, '#gm-l-district').textContent, 'Now in: anywhere');
-  pick(h, '#gm-now', NOWD); h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Muddle End', 'an older pick is that tool’s own');
+  pick(h, '#gm-now-s', NOWD); h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, 'Muddle End', 'an older pick is that tool’s own');
   pick(h, '#gm-c-district', ''); h.press('3'); assert.equal(stateDoc(h).cards.situation.ui.district, NOWD);
   for (const t of Object.keys(stateDoc(h).cards)) assert.ok(!JSON.stringify(stateDoc(h).cards[t].ui || {}).includes('"*"'), t + ': no sentinel in a roll’s ui');
   await h.save();
@@ -1914,11 +1939,11 @@ await test('12f. an old state with a tool’s district already set keeps it as t
 
 await test('12g. Now in is in the sticky copy: with the GM state unreachable, a reload still shows it and the pickers follow it', async () => {
   const br = fakeBrowser({ B68GmNpc: NPCM }), fg = fakeGm(NPCFIX.parts.campaign, nowParts());
-  const h = await openPage({ br, fg, camp: CAMP3 }); pick(h, '#gm-now', NOWD); await h.save();
+  const h = await openPage({ br, fg, camp: CAMP3 }); pick(h, '#gm-now-s', NOWD); await h.save();
   assert.equal(JSON.parse(br.ls.get('b68.gm.sticky')).now.district, NOWD, 'mirrored for a reload');
   const fg2 = fakeGm(NPCFIX.parts.campaign, nowParts()); fg2.gm.state = async () => { throw new Error('offline'); };
   const h2 = await openPage({ br, fg: fg2, camp: CAMP3 });
-  assert.equal(optSel(h2, '#gm-now').getAttribute('value'), NOWD, 'drawn from the sticky copy while the notes are offline');
+  assert.equal(optSel(h2, '#gm-now-s').getAttribute('value'), NOWD, 'drawn from the sticky copy while the notes are offline');
   assert.equal(optSel(h2, '#gm-l-district').textContent, 'Now in: ' + NOWD);
   await h2.save();
 });
@@ -2241,7 +2266,7 @@ await test('15c. the page: a 401 mid-session puts a plain message in the bar, ke
   h1.q('#gm-cap-in').value = 'The goose, again'; dispatch(h1.q('[data-gm-form="capture"]'), 'submit');
   assert.ok(await until(() => h1.q('#gm-signed') && !h1.q('#gm-signed').hasAttribute('hidden') && h1.page._state(), 400), 'the bar message appears (the saver tried, got a 401)');
   const bar = h1.q('#gm-signed');
-  assert.equal(bar.textContent, SO_MSG); assert.ok(bar.closest('.gm-bar'), 'it is in the bar'); assert.ok(h1.q('.gm-bar').className.split(/\s+/).includes('out'), 'the bar is marked');
+  assert.equal(bar.textContent, SO_MSG); assert.ok(bar.closest('.gm-band-r2'), 'it is in the band\'s second row'); assert.ok(h1.q('#gm-band').className.split(/\s+/).includes('out'), 'the band is marked');
   assert.equal(h1.q('.gm-save').textContent, 'Signed out'); assert.ok(h1.q('.gm-save').className.includes('bad'));
   assert.equal(br.toasts.filter((t) => t[0] === SO_MSG).length, 1, 'one toast, said once');
   assert.ok(!/Not saved|It is kept on this device; later changes still save/.test(h1.root.textContent + JSON.stringify(br.toasts)), 'the old "later changes still save" line is not said');
@@ -2731,8 +2756,8 @@ await test('17h. Project, Friend or rival, Train and the bands: the selects come
 
 await test('17i. Copy and Pin are the card as plain lines; L files "Downtime: <label>"; Now in is the card\'s district (the scroll is gm.e2e.mjs\'s)', async () => {
   const fg = fakeGm(undefined, nowParts()), br = fakeBrowser(), h = await dtPage(undefined, { fg, br });
-  const now = h.qa('#gm-now option').map((o) => o.getAttribute('value')).filter(Boolean)[0]; assert.ok(now, 'a Now in to pick');
-  pick(h, '#gm-now', now);
+  const now = h.qa('#gm-now-s option').map((o) => o.getAttribute('value')).filter(Boolean)[0]; assert.ok(now, 'a Now in to pick');
+  pick(h, '#gm-now-s', now);
   h.press('d'); dtWho(h, 'c-mags'); dtAct(h, 'heat');
   dtRoll(h, '45');
   assert.equal(dtStored(h).ui.district, now, 'Now in, stored in the card\'s own ui');
@@ -3656,19 +3681,19 @@ await test('18d. the pickers shape the next roll and are kept; Now in follows th
   eqj(stateDoc(h).sc.ui, { target: '', job: 'Lift', district: '' });
   // Now in: the Where picker names it and follows it; 'now' rolls there; the card keeps the district it resolved
   assert.deepEqual(scOpts(h, 'district').slice(0, 3), ['', 'now', '*']); assert.equal(h.q('#gm-sc-district option[value="now"]').textContent, 'Now in: anywhere');
-  pick(h, '#gm-now', SDIST[2]);
+  pick(h, '#gm-now-s', SDIST[2]);
   assert.equal(h.q('#gm-sc-district option[value="now"]').textContent, 'Now in: ' + SDIST[2], 'the picker follows Now in');
   pick(h, '#gm-sc-district', 'now'); pick(h, '#gm-sc-target', 'fac:' + SFAC[5]); scRoll(h);
   assert.match(scRows(h)['Where'], new RegExp(SDIST[2] + '$')); const stored = scStored(h); assert.equal(stored.ui.district, 'now'); assert.equal(stored.ui.nowIn, SDIST[2]);
   const rolled = scText(h);
-  pick(h, '#gm-now', SDIST[0]);
+  pick(h, '#gm-now-s', SDIST[0]);
   assert.equal(scText(h), rolled, 'Now in changed: the card on screen stays as rolled'); assert.equal(h.q('#gm-sc-district option[value="now"]').textContent, 'Now in: ' + SDIST[0]);
   await h.save();
   const h2 = await scPage({ fg, br }); h2.press('j');
   assert.equal(scText(h2), rolled, 'and so does a reload'); assert.equal(optSel(h2, '#gm-sc-job').getAttribute('value'), 'Lift', 'the pickers came back');
   assert.equal(optSel(h2, '#gm-sc-target').getAttribute('value'), 'fac:' + SFAC[5]); assert.equal(optSel(h2, '#gm-sc-district').getAttribute('value'), 'now');
   // a Now in the score tables do not hold: the picker says so, and 'now' rolls where the target is
-  pick(h2, '#gm-now', ''); assert.equal(h2.q('#gm-sc-district option[value="now"]').textContent, 'Now in: anywhere');
+  pick(h2, '#gm-now-s', ''); assert.equal(h2.q('#gm-sc-district option[value="now"]').textContent, 'Now in: anywhere');
   await h2.save();
 });
 

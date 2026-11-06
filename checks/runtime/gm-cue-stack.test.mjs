@@ -51,7 +51,7 @@ function fakeEl(doc, tag) {
   return e;
 }
 function makeHost(over = {}) {
-  const log = { scenes: [], shows: [], revealed: [], phases: [], panics: [], resumes: [], toasts: [], cues: [], patches: 0 };
+  const log = { scenes: [], shows: [], revealed: [], phases: [], panics: [], resumes: [], toasts: [], cues: [], patches: 0, changed: 0 };
   const flags = Object.assign({ 'room.cues': true, 'ai.grammar': false }, over.on || {});
   const clock = { t: 1_000_000 };
   const state = { doc: {} };
@@ -60,7 +60,7 @@ function makeHost(over = {}) {
   const npcs = [{ name: 'Ada Quill', revealed: false }];
   const host = {
     feature: () => !!flags['room.cues'], note: () => (over.noNote ? null : (over.note || NOTE)), doc: () => state.doc,
-    patch: (p) => { log.patches++; state.doc = merge(state.doc, p); return true; }, now: () => clock.t, toast: (m, bad) => log.toasts.push([m, !!bad]), root: () => root,
+    patch: (p) => { log.patches++; state.doc = merge(state.doc, p); return true; }, now: () => clock.t, toast: (m, bad) => log.toasts.push([m, !!bad]), cueSlot: () => root, changed: () => { log.changed = (log.changed || 0) + 1; },
     log: (t) => log.cues.push(t),
     scene: async (id) => { log.scenes.push(id); return !over.failScene; },
     show: async (kind, payload, o) => { log.shows.push([kind, payload, o.key]); return over.failShow ? null : {}; },
@@ -90,21 +90,23 @@ await test('the Cues section: numbered lines in order; the safe scene; show payl
   assert.deepEqual(CS.parse(null).cues, []); assert.deepEqual(CS.parse({}).cues, []);
 });
 
-await test('the switch is registered, GM-only, default off; and with it off nothing is built: no bar, no keys, GO and Esc do nothing, the spoken verb is not heard', async () => {
+await test('the switch is registered, GM-only, default off; and with it off nothing is drawn: an empty slot, no keys, GO and PANIC do nothing, the spoken verb is not heard', async () => {
   const s = F.get('room.cues'); assert.ok(s); assert.equal(s.surface, 'gm'); assert.equal(s.default, false); assert.equal(s.stage, 'room');
   assert.ok(!/[A-Z][a-z]+ [A-Z][a-z]+ (night|ball)/.test(s.doc), 'bland text');
-  const m = makeHost({ on: { 'room.cues': false } }); const c = CS.create(m.host); c.register(); c.bind(m.doc); c.paint();
-  assert.equal(m.root.children.length, 0, 'no bar'); assert.equal(V.phraseAt(['go']), null); assert.equal(V.has('cuego'), false);
+  const m = makeHost({ on: { 'room.cues': false } }); const c = CS.create(m.host); c.register(); c.paint();
+  assert.equal(m.root.innerHTML, '', 'an empty slot'); assert.equal(V.phraseAt(['go']), null); assert.equal(V.has('cuego'), false);
   assert.equal((await c.go('key')).reason, 'off'); assert.equal((await c.panic('key')).reason, 'off'); assert.equal(c.bypass().reason, 'off');
-  m.doc.listeners.keydown({ key: ' ', target: { tagName: 'BODY' }, preventDefault() { assert.fail('Space is the page\'s own'); } });
-  m.doc.listeners.keydown({ key: 'Escape', target: { tagName: 'BODY' } });
+  assert.equal(c.key({ key: ' ', target: { tagName: 'BODY' }, preventDefault() { assert.fail('Space is the page\'s own'); } }, m.doc), false);
+  assert.equal(c.key({ key: 'Escape', target: { tagName: 'BODY' } }, m.doc), false);
+  assert.equal(Object.keys(m.doc.listeners).length, 0, 'no key listener of its own');
   assert.deepEqual(m.log.scenes.concat(m.log.panics), []); assert.equal(m.log.patches, 0, 'nothing written');
   assert.equal(Cue.find('Blade, go', { clocks: [], pcs: [], rooms: [] }), null, 'and "Blade, go" is not a cue');
 });
 
 await test('STANDBY is the first cue not done; GO fires it through the host and the position is kept in the state document (a new controller on the same document picks it up)', async () => {
   const m = makeHost(); const c = CS.create(m.host); c.paint();
-  assert.equal(c.view().standby.n, 1); assert.match(m.root.children[0].innerHTML, /STANDBY/); assert.match(m.root.children[0].innerHTML, /#1 SCENE/);
+  assert.equal(c.view().standby.n, 1); assert.match(m.root.innerHTML, /STANDBY/); assert.match(m.root.innerHTML, /#1<\/b> SCENE harvest/); assert.match(m.root.innerHTML, /data-cs="go"[^>]*>GO <kbd>Space<\/kbd>/);
+  assert.ok(!/data-cs="panic"/.test(m.root.innerHTML), 'PANIC is the band\'s own button, not the cue\'s'); assert.ok(m.log.changed >= 1, 'the band is told it changed');
   assert.equal((await c.go('key')).n, 1); assert.deepEqual(m.log.scenes, ['harvest']);
   assert.deepEqual(m.state.doc.cues.seq, [[1, 'f']]); assert.equal(c.view().standby.n, 2);
   advance(m); assert.equal((await c.go('button')).n, 2);
@@ -113,7 +115,7 @@ await test('STANDBY is the first cue not done; GO fires it through the host and 
   advance(m); assert.equal((await c.go('key')).kind, 'sound');
   advance(m); await c.go('key'); advance(m); await c.go('key'); assert.deepEqual(m.log.revealed, ['Ada Quill']); assert.deepEqual(m.log.phases, ['score']);
   advance(m); await c.go('key'); advance(m); await c.go('key');
-  assert.equal(c.view().standby, null); assert.match(m.root.children[0].innerHTML, /ALL DONE/);
+  assert.equal(c.view().standby, null); assert.match(m.root.innerHTML, /ALL DONE/);
   advance(m); assert.equal((await c.go('key')).reason, 'none', 'nothing left: nothing happens');
   assert.ok(m.log.cues.some((t) => /^Cue 1 scene: harvest/.test(t)), 'each fired cue is in the night log');
 });
@@ -153,15 +155,15 @@ await test('Bypass skips the cue in standby without firing it; Back puts the las
 
 await test('light, sound and practical cues are by hand: GO logs them and moves on, nothing is sent to the iPad', async () => {
   const m = makeHost({ note: { id: 'h', blocks: [{ k: 'md', src: '## Cues\n1. light: Lamps down\n2. sound: Rain\n3. practical: Knock' }] } }); const c = CS.create(m.host); c.paint();
-  assert.match(m.root.children[0].innerHTML, /by hand/);
+  assert.match(m.root.innerHTML, /by hand/);
   for (let i = 0; i < 3; i++) { advance(m); assert.equal((await c.go('key')).ok, true); }
   assert.deepEqual([m.log.scenes, m.log.shows, m.log.panics], [[], [], []]); assert.equal(c.view().standby, null);
 });
 
-await test('PANIC: the bar goes red at once, every iPad write goes out in parallel and settles inside a second, GO is refused until Resume, and Resume puts the scene back', async () => {
+await test('PANIC: the cue\'s place goes red at once (WORK LIGHT UP, Resume), every iPad write goes out in parallel and settles inside a second, GO is refused until Resume, and Resume puts the scene back', async () => {
   const m = makeHost({ panicMs: 250 }); const c = CS.create(m.host); c.paint();
   const t0 = Date.now(), p = c.panic('key');
-  assert.equal(m.root.children[0].getAttribute('data-state'), 'panic', 'red before anything has come back'); assert.match(m.root.children[0].innerHTML, /WORK LIGHT UP/);
+  assert.equal(m.root.getAttribute('data-state'), 'panic', 'red before anything has come back'); assert.match(m.root.innerHTML, /WORK LIGHT UP/); assert.match(m.root.innerHTML, /data-cs="resume"/);
   const r = await p; assert.ok(Date.now() - t0 < 1000, 'within 1 second: ' + (Date.now() - t0)); assert.equal(r.ok, true);
   assert.deepEqual(m.log.panics, ['testcard']); assert.ok(m.state.doc.cues.panic > 0); assert.deepEqual(m.state.doc.cues.prior, { mode: 'pin', scene: 'harvest' });
   advance(m, 1000); assert.equal((await c.go('key')).reason, 'panic'); assert.deepEqual(m.log.scenes, [], 'no cue fires in a panic');
@@ -180,20 +182,19 @@ await test('PANIC is not rate-limited and works mid-fire; a safe: line in the no
   assert.equal(rb.ok, false); assert.ok(bad.log.toasts.some(([t, b]) => b && /could not be reached/.test(t)));
 });
 
-await test('the keys: Space (page focus) and PageDown (the page-turner) are GO; Esc is panic only when nothing else took it; typing, a dialog, repeat and other controls are left alone', async () => {
-  const m = makeHost(); const c = CS.create(m.host); c.bind(m.doc); const key = m.doc.listeners.keydown;
-  const press = (ev) => { const o = { prevented: false, key: ev.key, target: ev.target || { tagName: 'BODY' }, repeat: !!ev.repeat, defaultPrevented: !!ev.defaultPrevented, preventDefault() { o.prevented = true; } }; key(o); return o; };
+await test('the keys (asked by the page\'s one handler, no listener of its own): Space (page focus) and PageDown (the page-turner) are GO; Esc is never the cue\'s; typing, a dialog, repeat and other controls are left alone', async () => {
+  const m = makeHost(); const c = CS.create(m.host); c.paint();
+  const press = (ev) => { const o = { prevented: false, key: ev.key, target: ev.target || { tagName: 'BODY' }, repeat: !!ev.repeat, defaultPrevented: !!ev.defaultPrevented, preventDefault() { o.prevented = true; } }; o.took = c.key(o, m.doc); return o; };
   press({ key: ' ' }); await sleep(5); assert.deepEqual(m.log.scenes, ['harvest'], 'Space on the page fires the cue'); assert.equal(press({ key: ' ' }).prevented, true, 'and the page does not scroll');
   advance(m); press({ key: ' ', repeat: true }); await sleep(5); assert.equal(m.log.shows.length, 0, 'a held key does not repeat the GO');
   advance(m); press({ key: ' ', target: { tagName: 'BUTTON', closest: () => null } }); await sleep(5); assert.equal(m.log.shows.length, 0, 'Space on another button is that button\'s press');
   press({ key: ' ', target: { tagName: 'INPUT' } }); press({ key: 'Escape', target: { tagName: 'TEXTAREA' } }); await sleep(5); assert.equal(m.log.shows.length + m.log.panics.length, 0, 'typing is left alone');
   press({ key: 'PageDown', target: { tagName: 'BUTTON', closest: () => null } }); await sleep(5); assert.equal(m.log.shows.length, 1, 'PageDown fires from anywhere');
-  m.doc.dialog = true; advance(m); press({ key: ' ' }); press({ key: 'Escape' }); await sleep(5); assert.equal(m.log.panics.length, 0, 'an open dialog keeps its own Esc'); m.doc.dialog = false;
-  press({ key: 'Escape', defaultPrevented: true }); await sleep(5); assert.equal(m.log.panics.length, 0, 'an Esc the menu, Find or the Blade panel took is not a panic');
-  press({ key: 'Escape' }); await sleep(5); assert.deepEqual(m.log.panics, ['testcard'], 'a bare Esc is');
-  m.flags.held = true; m.host.escHeld = () => !!m.flags.held; press({ key: 'Escape' }); await sleep(5); assert.equal(m.log.panics.length, 1, 'the Esc that takes the stamp report card down is not a panic'); m.flags.held = false; press({ key: 'Escape' }); await sleep(5); assert.equal(m.log.panics.length, 2, 'and the next one is');
-  const e = makeHost({ noNote: true }); const ce = CS.create(e.host); ce.bind(e.doc); e.doc.listeners.keydown({ key: ' ', target: { tagName: 'BODY' }, preventDefault() { assert.fail('no cues: Space is the page\'s'); } });
-  c.destroy(); assert.equal(m.doc.listeners.keydown, undefined, 'destroy unbinds');
+  m.doc.dialog = true; advance(m); assert.equal(press({ key: ' ' }).took, false, 'an open dialog keeps its keys'); m.doc.dialog = false;
+  const n = m.log.shows.length; assert.equal(press({ key: 'Escape' }).took, false); await sleep(5); assert.equal(m.log.panics.length, 0, 'Esc is never the cue\'s (gm/esc.js decides; PANIC is its last step)'); assert.equal(m.log.shows.length, n);
+  assert.equal(press({ key: 'a' }).took, false, 'other keys are the page\'s');
+  const e = makeHost({ noNote: true }); const ce = CS.create(e.host); assert.equal(ce.key({ key: ' ', target: { tagName: 'BODY' }, preventDefault() { assert.fail('no cues: Space is the page\'s'); } }, e.doc), false);
+  c.destroy(); assert.equal(m.root.innerHTML, '', 'destroy empties the slot'); assert.equal(c.key({ key: 'PageDown', target: { tagName: 'BODY' }, preventDefault() {} }, m.doc), false, 'and hears nothing');
 });
 
 await test('"Blade, go": the real cue.js hears it only while the switch is on; a bare go becomes cue_do fire, which the Worker takes as a parsed cue and never from the model; go with a phase is A2\'s, while ai.grammar is on', async () => {

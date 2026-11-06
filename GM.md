@@ -108,14 +108,22 @@ fails and nobody is known, nothing is purged.
   console column on a laptop, the page on a phone), so Position stays on screen when there is room: a roll is never below the fold.
 - **The app layout** (`body.gm-app`, 16/10/2026; the only layout, at every width, since 18/10: the "Classic layout" switch and
   the `b68.gm.layout` preference went): the window is the page. While the tools are open the
-  site header and footer give way to a slim top bar (the session, **Now in**, Saved, a
-  stale-pack note, the beat, **Find**, the **iPad tray** (see The iPad tray below: what is live on the iPad in one line, **Send (n)**
-  while rooms are staged, **Clear** `0`, **Blank** and the autopilot pill), **Listening** with whether the PC is copying (only once
-  the transcriber has ever been set up: the pill is hidden while `gm_stt` has never been written),
-  and a **Menu** with what is not play: the pack's export date, the **Pack check** (the table entries the pack lacks, only when it lacks
-  some), **Open the display page (for the iPad)**, Export tonight's note,
-  Clear tonight's capture (it confirms), Update pack, the site's pages and Forget GM data). When the Access session has ended a red
-  **Signed out: reload to sign in. Your notes are kept on this device.** strip runs across a second row of the bar (see Saving).
+  site header and footer give way to **the band** (`app/gm/band.js`, the GM night rebuild, 06/11/2026): one black header, two rows,
+  never scrolling, and nothing is inserted between it and the work any more. Row 1 is where you are: the mark and the session, the six
+  **places** of the night (Before, Opening, Personal, Planning, Score, Aftermath: each phase with its minutes against its budget, amber at
+  80% and red once over; the place on screen is mustard, the night's phase has an orange bar and a dot), **Between**, the save mark,
+  **Find**, **Crew** (the drawer) and the **Menu** (a dot on it when the pack is old or an offline copy). A tap on a phase's chip enters
+  that phase. Row 2 is what is live: the clock and the curfew, the running beat (**Next ▸**), the **iPad tray** (see The iPad tray below: what is live
+  on the iPad in one line, **Send (n)** while rooms are staged, **Clear** `0`, **Blank** and the autopilot pill), the mic (**Listening** with ON AIR, REC and the light state, only once the transcriber has
+  ever been set up), the cue (STANDBY, **GO**, **Bypass**, and a ⋯ with Back, Start again, what comes next and the last cue), the quiet
+  line's badge, and **PANIC**, always last. At the curfew row 2 turns red with **Call the Aftermath**, **Keep running** and **Snooze 10
+  min**; after a PANIC it is red with WORK LIGHT UP and **Resume**. The **Menu** is housekeeping only: the pack's export date, the **Pack
+  check** (only when the pack lacks something), **Open the display page (for the iPad)**, Update pack, Export tonight's note, Clear
+  tonight's capture (it confirms), the capture bar, Live sync, the site's pages and, last and set apart, Forget GM data (on a
+  phone, Find and Crew are lines in it too). Long words in the band end in an ellipsis and carry their whole text in a tooltip. Below
+  1100 px the band sticks to the top and the places scroll sideways; on a phone row 1 is the mark, the places and the Menu and row 2 the
+  iPad, GO and PANIC. When the Access session has ended row 2 turns red with **Signed out: reload to sign in. Your notes are kept on
+  this device.** (see Saving).
   On a laptop the three columns each
   scroll on their own and capture sits fixed at the foot, so a
   long Prep note or the GM screen never carries the console or the rail away; toasts sit above the capture bar, never over its
@@ -152,12 +160,16 @@ fails and nobody is known, nothing is purged.
   - **Update pack asks first** when the file would lose prep the app has (a part gone, a prep note gone or much
     shorter): the button reads **Upload anyway** and confirms (the same guard as `gm:pack` and `gm:push`, SYNC.md). A part the app
     retired on purpose (`engagement`, Engage's) is not a loss, in either guard (`RETIRED_PARTS`).
-- **The drawer** (header button **Drawer**, key `W`, Esc or × shuts it): one right-edge panel, shut by default and remembered per browser (`b68.gm.drawer`). Under 600 px it is a full-screen sheet, opened by the **State** segment. Three tabs. **Table**: what the right column used to carry (crew heat, wanted, rep, stacks and vault from the table, read only; table clocks; the pack's world clocks; bargains owed with **Collect**; pins; who is on stage). **Crew**: the Run view's crew lines (room, moved, busy, items) while a v2 night is running, then the live crew sheet. **Players**: one sub-tab per character, each the live sheet. The sheets are same-origin frames of the app's own routes (`#t`, `#c/<id>`), **one frame at most**: made when its tab opens, taken down (src blank, then the node) when the tab or the drawer closes. They open **read only** (`?ro=1` on the app URL makes boot.js treat the viewer as unable to write) until you press **Edit**, which reloads the frame without it; leaving the tab or closing the drawer goes back to read only. The worker now sends `X-Frame-Options: SAMEORIGIN` and `frame-ancestors 'self'` (it was DENY / 'none').
+- **The drawer** (the band's **Crew**, key `W`, Esc or × shuts it): one right-edge panel, shut by default and remembered per browser (`b68.gm.drawer`). Under 600 px it is a full-screen sheet, opened by the **State** segment. Three tabs. **Table**: what the right column used to carry (crew heat, wanted, rep, stacks and vault from the table, read only; table clocks; the pack's world clocks; bargains owed with **Collect**; pins; who is on stage). **Crew**: the Run view's crew lines (room, moved, busy, items) while a v2 night is running, then the live crew sheet. **Players**: one sub-tab per character, each the live sheet. The sheets are same-origin frames of the app's own routes (`#t`, `#c/<id>`), **one frame at most**: made when its tab opens, taken down (src blank, then the node) when the tab or the drawer closes. They open **read only** (`?ro=1` on the app URL makes boot.js treat the viewer as unable to write) until you press **Edit**, which reloads the frame without it; leaving the tab or closing the drawer goes back to read only. The worker now sends `X-Frame-Options: SAMEORIGIN` and `frame-ancestors 'self'` (it was DENY / 'none').
 - **Keys** (only on `#gm`; never while typing, never with Ctrl/Alt/Cmd but `Ctrl+K`): `1`–`4` roll a situation (`5`–`9` do nothing: the single tables have no keys), `R` `B` `N` `S` `J` `C` `D` `O` `T` `I` switch the panel
   (Prep, Location, NPC, Street scene, Score, Chase, Downtime, Cards, GM screen, iPad; `R` and `T` also put the cursor in that pane's find box, so typing
   lands there and not on the shortcuts), `F` Focus, `W` the drawer (open or shut), `/` or `Ctrl+K` Find, `P` `X` `M` open capture as Name / Loose end / Moment (Enter files, Esc leaves), `L` files
   the last roll under "Rolled at the table", `Shift+H`, or `H` twice within a second, blanks the screen until any key or tap (one stray `H` does
-  nothing; the first alone says how, once per page load), `0` clears the iPad to its ambient scene (the tray's **Clear**).
+  nothing; the first alone says how, once per page load), `0` clears the iPad to its ambient scene (the tray's **Clear**),
+  `Ctrl+←` / `Ctrl+→` look at the place before or after (never a phase change), `Space` and `PageDown` are GO. **Esc** does one thing per
+  press (`app/gm/esc.js`): it closes the topmost open thing (Find, the Menu, a popover in the band, the Blade panel sliding over the page,
+  the drawer, a sheet, a Run view pop-up or peek), else leaves the field you are typing in, else takes the stamp down, else it is
+  **PANIC**. While something is open no other key fires behind it, except its own: `W` shuts the drawer, `A` the Blade panel, `Ctrl+K` Find.
 - **Situations.** The console is the four Situations, one mode only (the Classic nine-button view, its toggle, the `b68.gm.view`
   preference and the `SITUATIONS_DEFAULT` switch went on 18/10/2026): four buttons, each a moment in the roll: `1` **Before** (a Devil's
   Bargain), `2` **4/5**, `3` **1–3**, `4` **Someone**. A large three-way **Position** switch (controlled / risky / desperate, with what
@@ -178,8 +190,8 @@ fails and nobody is known, nothing is purged.
   Earlier lists the last five across both; the newer of the two cards is the one on screen. An **Earlier** chip names what the
   card is (the NPC for a Someone, Contact or Face card; a Devil's Bargain without its "Want +1d?" lead-in), with the time it was rolled and its
   position (`21:14 · risky`) in small type under it and in its tooltip; the other tools' chips carry the time.
-- **Now in** (the district every tool starts from, 18/10/2026). One select in the top bar (on a phone, where the bar has no room, in the
-  Scene line), kept in the GM state as `now: { district }` (`''`: anywhere). The console's **District**, the Street scene's, the
+- **Now in** (the district every tool starts from, 18/10/2026). One select, in the Roll's Scene fold at every width (the band has no
+  copy since 06/11/2026), kept in the GM state as `now: { district }` (`''`: anywhere). The console's **District**, the Street scene's, the
   Location's and the NPC generator's pickers each lead with **Now in: <district>**, which follows it; picking a district there is that
   tool's own and stays through a change of Now in, **any** keeps a tool on any, and the first choice gives the tool back to Now in.
   Each tool has its own district list (its pack part's), so a name is matched without case, a leading "the" or punctuation (the
@@ -1071,10 +1083,10 @@ A local Worker holding one complete, invented night, for looking at the app and 
 ## The cue stack (suite 4.1, switch `room.cues`: `app/gm/cue-stack.js`; off by default)
 
 - **Writing cues.** A prep note's own `## Cues` section (outside code fences and outside a transcluded section; the prep part already carries the note's Markdown). One numbered line per cue, one kind each: `1. scene: <ambient scene id>`, `2. show: title: <text> | <sub>` (also `ring`, `spotted`, `stamp`), `3. sound: <text>`, `4. reveal: <NPC name>`, `5. phase: pb|plan|score|after`, `6. light: <text>`, `7. practical: <text>`. An optional `safe: <scene id>` line names the scene Esc sends the iPad to (default `testcard`). A line that is not a cue is ignored.
-- **Running them.** A bar under the phase rail shows the next cue as STANDBY. **Space** (with the focus on the page, not on another control), **PageDown** (a Bluetooth page-turner) or the GO button fires it; **Bypass** skips it without firing; **Back** puts the last one in standby again (it undoes nothing on the iPad); **Start again** clears the stack. One 500 ms lock is shared by GO, Bypass and Back, whichever way they arrive, so two GOs inside 500 ms fire once. A cue fires only when the GM presses GO or says "Blade, go"; nothing fires on a phone, and Blade the model never fires one (the spoken verb is parsed by the page and sent as a parsed `cue_do` verb `fire`; the model's own lane has no `cue_do`).
+- **Running them.** The band's second row shows the next cue as STANDBY (its ⋯ holds Back, Start again, what comes next and the last cue fired). **Space** (with the focus on the page, not on another control), **PageDown** (a Bluetooth page-turner) or the GO button fires it; **Bypass** skips it without firing; **Back** puts the last one in standby again (it undoes nothing on the iPad); **Start again** clears the stack. One 500 ms lock is shared by GO, Bypass and Back, whichever way they arrive, so two GOs inside 500 ms fire once. A cue fires only when the GM presses GO or says "Blade, go"; nothing fires on a phone, and Blade the model never fires one (the spoken verb is parsed by the page and sent as a parsed `cue_do` verb `fire`; the model's own lane has no `cue_do`).
 - **By hand.** `light`, `sound` and `practical` cues have no channel in the app: GO shows and logs them and moves on. The room's lamps and any practical sound are the GM's.
 - **"Blade, go."** Fires only the cue in standby. With nothing in standby it does nothing but say so. `go planning` (and the other phases) is still the cue grammar's, while `ai.grammar` is on.
-- **Panic (Esc).** An Esc that nothing else on the page has taken (an open dialog, the menu, Find, the Blade panel, the drawer and the Run view's peek all take theirs, and so does the stamp's report card; closing one is not a panic, and the next Esc is) clears every beat, layer and spotlight on the iPad and pins the safe scene (which plays no music, so the theme stops with its scene), all in parallel; the bar turns into a red WORK LIGHT UP banner. GO is refused until **Resume**, which puts the previous scene back. The position and the panic live in the GM state document (`cues`), so a reload or a second GM page follows.
+- **PANIC (the band's last button, or Esc).** The button, or an Esc with nothing open, no field and no stamp up (Esc closes those first, one per press: see Keys), clears every beat, layer and spotlight on the iPad and pins the safe scene (which plays no music, so the theme stops with its scene), all in parallel, with or without cues in the note; the band's second row turns red with WORK LIGHT UP. GO is refused until **Resume**, which puts the previous scene back. The position and the panic live in the GM state document (`cues`), so a reload or a second GM page follows.
 - **Tests.** `npm run check:cue-stack` (unit, in `check:runtime`) and `npm run check:cue-stack-e2e` (port 9040).
 
 ## Live sync (`functions/_lib/live.js`, `worker/live.js`, `functions/api/live.js`)

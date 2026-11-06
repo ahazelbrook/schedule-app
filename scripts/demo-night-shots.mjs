@@ -12,12 +12,14 @@
 //     settle    milliseconds to wait before the shot (default 800)       fullPage   the whole scrolling page       context   extra Playwright context options
 //     keepToasts   take the shot without waiting for the toasts to clear (by default it waits up to 8 s, so a toast does not hide the layout)
 //     init      a function run in the page before its own scripts (a Playwright init script: localStorage a real device would already hold)
+//     routes    async (context) => {}: Playwright routes on the browser context, set before the page opens (a 401, a part changed on the way)
 // The scenarios run in order and share the server's state, so a phase entered in one is the phase of the next until another is entered.
 // Every shot is taken with animations disabled and the mouse parked in a corner. A page error is printed beside the file name; a scenario that
 // fails is reported and the rest go on. The pages run on the real clock: after the prep note's curfew (22:40) a phase shows the curfew bar.
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { BAND_SCENARIOS } from './demo-night-band-shots.mjs';
 
 const GM_READY = async (page) => {
   await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
@@ -30,11 +32,11 @@ const SHEET_READY = async (page) => {
   await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
   await page.waitForSelector('#dossier .ds-keybox', { timeout: 30000 });
 };
-/* enter a phase as the GM does: a tap on the phase rail (the night controller's enter); going back is allowed, the same phase again is a no-op */
+/* enter a phase as the GM does: a tap on the place's chip in the band (gm/band.js: the night controller's enter); going back is allowed, the same phase again is a no-op */
 const enterPhase = (id) => async (page) => {
-  await page.waitForSelector('#gm-phaserail [data-rail="' + id + '"]', { timeout: 15000 });
-  await page.$eval('#gm-phaserail [data-rail="' + id + '"]', (e) => { if (e.getAttribute('data-state') !== 'now') e.click(); });
-  await page.waitForSelector('#gm-phaserail [data-rail="' + id + '"][data-state="now"]', { timeout: 10000 });
+  await page.waitForSelector('#gm-band [data-band-place="' + id + '"]', { timeout: 15000 });
+  if (await page.$eval('#gm-band [data-band-place="' + id + '"]', (e) => e.getAttribute('data-state') !== 'now')) await page.click('#gm-band [data-band-place="' + id + '"]');
+  await page.waitForSelector('#gm-band [data-band-place="' + id + '"][data-state="now"]', { timeout: 10000 });
   await page.waitForTimeout(500);
 };
 /* a tab by its key (R T B S J C N D O I G), as the GM opens it */
@@ -221,6 +223,8 @@ export const SCENARIOS = [
   ...LAPTOPS.map((size) => ({ name: 'gm-tray-live', size, route: '#gm', ready: GM_READY, settle: 1500 })),
   { name: 'gm-tray-live', size: [390, 844], route: '#gm', ready: GM_READY, context: { isMobile: true, hasTouch: true }, settle: 1500 },
   /* the Aftermath, last, so the shots before it are in the score: Menu > Aftermath show, where it is run today */
+  /* the band's every state (N1a: scripts/demo-night-band-shots.mjs) */
+  ...BAND_SCENARIOS,
   ...gmAt('gm-after', then(enterPhase('after'), async (page) => { await page.evaluate(() => window.B68GmTools.get('aftermath').open()); await page.waitForSelector('#gm-sheet-aftermath:not([hidden]), #gm-vpane [data-inline="aftermath"]', { timeout: 8000 }); })),
   /* Nell's phone: her sheet as player1 */
   { name: 'phone-nell', size: [390, 844], route: '#c/pc-nell', as: 'player1@example.test', ready: SHEET_READY, context: { isMobile: true, hasTouch: true }, settle: 1500 },
@@ -238,8 +242,9 @@ export async function shoot({ base, dir, only = [], api, users }) {
   const { chromium } = require(process.env.PW_MODULE || 'playwright');
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   mkdirSync(dir, { recursive: true });
-  async function open(route, user, size, extra = {}, init = null) {
+  async function open(route, user, size, extra = {}, init = null, routes = null) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width: size[0], height: size[1] }, serviceWorkers: 'block', ...extra });
+    if (routes) await routes(c);
     await c.addInitScript(() => { window.__B68_POLL_MS = 1000; });
     if (init) await c.addInitScript(init);
     const page = await c.newPage();
@@ -259,7 +264,7 @@ export async function shoot({ base, dir, only = [], api, users }) {
       let P = null;
       try {
         if (s.setup) await s.setup(ctx);
-        P = await open(s.route, s.as || users.GM, s.size, s.context || {}, s.init || null);
+        P = await open(s.route, s.as || users.GM, s.size, s.context || {}, s.init || null, s.routes || null);
         if (s.ready) await s.ready(P.page, ctx);
         if (s.steps) await s.steps(P.page, ctx);
         await P.page.mouse.move(1, s.size[1] - 2);       /* no hover state in the picture */

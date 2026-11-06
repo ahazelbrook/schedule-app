@@ -98,7 +98,7 @@ try {
   const barState = () => page.$eval('#gm-cuebar', (e) => e.getAttribute('data-state')).catch(() => '');
   const waitSeq = (n, ms = 8000) => until(async () => (await seqOf()).length >= n, ms, 50);
 
-  // ============ 1. nothing stored (N0: everything built is on): the bar is there, nothing has fired ============
+  // ============ 1. nothing stored (N0: everything built is on): the cue is in the band (#gm-cuebar is its slot), nothing has fired ============
   await reopen();
   check(!!(await until(() => page.$('#gm-cuebar .gm-cs-go'), 10000)), 'nothing stored: the bar draws with a GO button');
   check((await seqOf()).length === 0, 'and nothing has fired');
@@ -152,6 +152,12 @@ try {
   await page.keyboard.press(' ');                                                       // cue 6: the phase
   check(!!(await waitSeq(6)), 'Space fires cue 6 (the phase)');
   check(!!(await until(async () => JSON.stringify((await ambient()).layers || {}).includes('plan'), 6000, 100)), 'and the iPad band shows the phase');
+  /* a phase cue for the phase already in play (a band chip entered it first) counts as done: GO moves on rather than stalling until Bypass */
+  await sleep(700); await page.click('#gm-cuebar .gm-cs-more'); await page.click('#gm-cuebar [data-cs="back"]');
+  check(!!(await until(async () => (await seqOf()).length === 5, 6000, 50)), 'Back: cue 6 (phase: plan) is in standby again, with plan in play');
+  await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+  await sleep(700); await page.keyboard.press(' ');
+  check(!!(await waitSeq(6)) && ((await seqOf())[5] || [])[1] === 'f', 'GO on a phase cue for the phase in play fires it as done and moves on');
   await sleep(700); await page.keyboard.press(' ');
   check(!!(await waitSeq(7)), 'cue 7 (a practical sound) by hand');
   check(/ALL DONE/.test(await bar()), 'the bar says ALL DONE');
@@ -182,6 +188,7 @@ try {
   await reopen();
 
   // ============ 7. Esc: the safe scene inside a second, and Resume ============
+  await page.click('#gm-cuebar .gm-cs-more');                                          // Back and Start again live in the cue's popover (the band, N1a)
   await page.click('#gm-cuebar [data-cs="reset"]');
   check(!!(await until(async () => (await seqOf()).length === 0, 6000, 50)), 'Start again clears the stack');
   await sleep(700); await page.keyboard.press(' ');
@@ -204,7 +211,7 @@ try {
   }, 3000, 20);
   const ms = Date.now() - t0;
   check(!!settled && ms < 1000, 'Esc: the safe scene, no beat, no layers, lights back, all within 1 second (' + ms + ' ms)');
-  check((await barState()) === 'panic' && /WORK LIGHT UP/.test(await bar()), 'the bar is the red work-light banner');
+  check((await barState()) === 'panic' && /WORK LIGHT UP/.test(await bar()) && await page.$eval('#gm-band .gm-band-r2', (e) => e.getAttribute('data-alarm') === 'panic'), 'the cue\'s place says WORK LIGHT UP and the band\'s second row is red');
   const seqNow = JSON.stringify(await seqOf());
   await sleep(700); await page.keyboard.press(' '); await sleep(700);
   check(JSON.stringify(await seqOf()) === seqNow && (await ambient()).scene === 'testcard', 'GO does nothing while the work light is up');
