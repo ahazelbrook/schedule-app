@@ -1478,7 +1478,7 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
 #gm-page .gm-lnote { margin: 0; font-size: 12.5px; }
 #gm-page .gm-tn-time { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
 #gm-page .gm-tn-time .gm-lab { display: flex; align-items: center; gap: 8px; margin: 0; flex-basis: 100%; }
-#gm-page .gm-tn-input { font: 700 15px/1.2 var(--font-text); min-height: 36px; padding: 2px 6px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); }
+#gm-page .gm-tn-input { font: 700 15px/1.2 var(--font-text); min-height: 36px; padding: 2px 6px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); scroll-margin-bottom: 84px; }      /* F3: scrolled to (Tab, focus), it stops clear of the column's sticky Next */
 #gm-page .gm-tn-from { font-size: 12px; }
 @media (pointer: coarse) { #gm-page .gm-tn-input { min-height: 44px; } }
 
