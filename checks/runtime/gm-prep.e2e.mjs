@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { buildPrep } from '../../scripts/lib/prep-export.mjs';
 import { buildScreen } from '../../scripts/lib/screen-export.mjs';
 import { basenames } from '../../scripts/lib/vault.mjs';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -98,6 +99,7 @@ try {
   const errors = [];
   async function open(hash, { width = 1440, height = 900, mobile = false } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block', isMobile: mobile, hasTouch: mobile, deviceScaleFactor: mobile ? 2 : 1 });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -118,7 +120,7 @@ try {
   await page.waitForSelector('#gm-root', { timeout: 30000 });
   await page.keyboard.press('r');
   check(await page.waitForSelector('#gm-prep .pp-doc', { timeout: 10000 }).then(() => true, () => false), 'R opens Prep and the note renders');
-  check(await page.$eval('[data-gm="panel"][data-panel="prep"]', (b) => b.getAttribute('aria-selected')) === 'true', 'the Prep tab is selected');
+  check(await page.$eval('.gm-views [data-pv="prep"]', (b) => b.getAttribute('aria-selected')) === 'true', 'the Prep view is selected');
   check(await page.evaluate(() => document.activeElement && document.activeElement.id === 'gm-prep-q'), 'R focuses the note’s find box, so typing is safe');
   await page.keyboard.type('2');
   check((await page.$$('#gm-earlier [data-gm="replay"]')).length === 0, 'a digit typed there rolls nothing');
@@ -207,7 +209,7 @@ try {
 
   /* ---- score sites (GM.md "Score sites"): Roll a site from the score card, save it, see it on the card, open it after another roll ---- */
   if (!REAL) {
-    const SLOT = '#gm-prep .pp-site[data-score="b68g-score-heron"]', tab = (p) => page.click('[data-gm="panel"][data-panel="' + p + '"]');
+    const SLOT = '#gm-prep .pp-site[data-score="b68g-score-heron"]', tab = (p) => page.click('.gm-views [data-pv="' + p + '"]');
     await tab('prep');
     check(await page.waitForSelector(SLOT + ' [data-gm="siteroll"]', { timeout: 5000 }).then(() => true, () => false) && /None yet/.test(await page.textContent(SLOT)), 'a score card in Prep has a Site strip: none yet, and Roll a site');
     await page.click(SLOT + ' [data-gm="siteroll"]');
@@ -231,7 +233,7 @@ try {
   /* ---- the phone ---- */
   const ph = await open('#gm', { width: 390, height: 844, mobile: true });
   await ph.page.waitForSelector('#gm-root', { timeout: 30000 });
-  await ph.page.click('.gm-segbar [data-seg="prep"]');
+  await ph.page.click('.gm-vchips [data-pv="prep"]');
   await ph.page.waitForSelector('#gm-prep .pp-doc', { timeout: 10000 });
   const over = await ph.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check(over <= 1, 'phone: the note does not overflow the screen (' + over + ' px)');
@@ -270,7 +272,7 @@ try {
   /* ---- the Screen tab (T) ---- */
   await page.keyboard.press('t');
   check(await page.waitForSelector('#gm-rules .gs-sec', { timeout: 5000 }).then(() => true, () => false), 'T opens the Screen and its sections render');
-  check(await page.$eval('[data-gm="panel"][data-panel="rules"]', (b) => /GM screen/.test(b.textContent)), 'the tab is called GM screen');
+  check(await page.$eval('.gm-views [data-pv="rules"]', (b) => /^Rules\s*T$/.test(b.textContent.trim())), 'the GM screen is the pinned Rules view (T)');
   check(await page.evaluate(() => document.activeElement && document.activeElement.id === 'gm-gs-q'), 'T focuses the screen’s find box, so typing is safe');
   if (!REAL) {
     check(JSON.stringify(await page.$$eval('#gm-rules .gs-sec .gs-h span', (s) => s.map((x) => x.textContent))) === '["Rolling","Weather","Canals"]', 'one section per ## heading, Related left in the vault');
@@ -322,7 +324,7 @@ try {
     await page.fill('#gm-gs-q', '');
   } else check(/not available/.test(await page.textContent('#gm-rules .gs-rules')), 'no rules runtime here: the pane says so');
   await shot(page, 'screen-desktop');
-  await ph.page.click('.gm-segbar [data-seg="rules"]');
+  await ph.page.click('.gm-vchips [data-pv="rules"]');
   check(await ph.page.waitForSelector('#gm-rules .gs-sec', { state: 'visible', timeout: 10000 }).then(() => true, () => false), 'phone: Screen is a segment');
   if (await ph.page.$('#gm-rq')) {
     await ph.page.fill('#gm-rq', 'goose'); await ph.page.press('#gm-rq', 'Enter');

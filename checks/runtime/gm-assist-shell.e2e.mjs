@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -77,6 +78,7 @@ try {
   const errors = [];
   async function open(width, height, { reduced = false, cards = CARDS, capbar = true } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block', reducedMotion: reduced ? 'reduce' : 'no-preference' });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     if (capbar) await c.addInitScript(() => { try { localStorage.setItem('b68.gm.capbar', '1'); } catch (e) { /* the capture bar is off by default */ } });
     const page = await c.newPage();
     const seen = { ask: [] };
@@ -273,6 +275,7 @@ try {
   // ---- a phone: no panel, nothing reserved ----
   {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 390, height: 844 }, serviceWorkers: 'block', isMobile: true, hasTouch: true });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     const p = await c.newPage();
     p.on('pageerror', (er) => errors.push('pageerror: ' + er.message));
     await p.goto(BASE + '/#gm');

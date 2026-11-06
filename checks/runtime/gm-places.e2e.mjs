@@ -1,0 +1,269 @@
+// The places of the night (app/gm/places.js; the night rebuild N1b) on the real GM page, against the demo night (scripts/demo-night.mjs, a local Worker holding
+// one complete invented night) on PORT (default 8860; its inspector takes PORT + 20000).
+//   1. Before: a page with no phase opens there; its left column is Preflight (the tool, drawn inline) and Tonight; Tonight, The room, Print and iPad scenes.
+//   2. Ctrl+Left / Ctrl+Right walk the places without changing the phase; Opening's Hard start and Titles (Prep at the place's heading).
+//   3. A place of the night entered through the page's host (as the band does) enters the phase; the Roll is the left column there; each place's first view.
+//   4. Follow the night: a phase entered by a cue (GO on the note's "phase:" cue), by the night controller, or on another GM device takes the page there; not
+//      out of Between.
+//   5. Tools come to you: a key for a view the place does not lay out opens it as an extra view (with a ×); a tool the place holds is shown where it is.
+//   6. Prep opens at the place's heading, and turns to the new place's when the place changes while it shows.
+//   7. Find: places and tools ("go to planning", "front page", "montage").
+//   8. Between's desks: a desk opens its tool inline with "← Desks"; Esc goes back; a generator desk shows its pane.
+//   9. The Aftermath: the crew, callAftermath (the curfew's Call the Aftermath) enters the phase, goes there and starts the show.
+//  10. A roll in a place whose column is its own brings the Roll in; the memory survives a reload; the GM's phone (390 x 844) end to end.
+//   PW_MODULE=<playwright> PW_CHANNEL=msedge PORT=8860 node checks/runtime/gm-places.e2e.mjs      (GM_SHOTS=<dir> keeps screenshots)
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+
+const require = createRequire(import.meta.url);
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const PORT = Number(process.env.PORT || 8860);
+const BASE = 'http://127.0.0.1:' + PORT;
+const GM = 'gm@example.test';
+const SHOTS = process.env.GM_SHOTS || '';
+const WIN = process.platform === 'win32';
+const { chromium } = require(process.env.PW_MODULE || '/opt/node-tools/node_modules/playwright');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+let failed = 0, passed = 0;
+function check(cond, msg) { console.log((cond ? 'PASS ' : 'FAIL ') + msg); if (cond) passed++; else failed++; }
+async function until(fn, ms, step = 150) { const t0 = Date.now(); for (;;) { let v; try { v = await fn(); } catch (_) { v = null; } if (v || Date.now() - t0 > ms) return v; await sleep(step); } }
+
+/* the demo night, in a state folder of our own */
+if (await fetch(BASE + '/api/me', { signal: AbortSignal.timeout(1500) }).then(() => true, () => false)) { console.log('FAIL port ' + PORT + ' is already in use: stop what is on it, or set PORT'); process.exit(1); }
+const stateDir = mkdtempSync(path.join(tmpdir(), 'b68-places-e2e-'));
+const env = { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' };
+delete env.ANTHROPIC_API_KEY; delete env.B68_ANTHROPIC_KEY;
+const demo = spawn(process.execPath, [path.join(ROOT, 'scripts', 'demo-night.mjs'), '--port', String(PORT), '--state', stateDir], { cwd: ROOT, env, detached: !WIN, stdio: ['ignore', 'pipe', 'pipe'] });
+let demoLog = '';
+demo.stdout.on('data', (d) => { demoLog += d; }); demo.stderr.on('data', (d) => { demoLog += d; });
+function stopDemo() { if (WIN) spawnSync('taskkill', ['/pid', String(demo.pid), '/T', '/F'], { stdio: 'ignore' }); else { try { process.kill(-demo.pid, 'SIGKILL'); } catch (_) {} } }
+process.on('exit', () => { stopDemo(); try { rmSync(stateDir, { recursive: true, force: true }); } catch (_) {} });
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130));
+const timeout = setTimeout(() => { console.log('FAIL timed out\n' + demoLog.slice(-2000)); process.exit(1); }, 600000);
+const api = (method, p, body, user = GM) => fetch(BASE + '/api' + p, { method, headers: { 'X-Dev-User': user, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) })
+  .then(async (r) => ({ status: r.status, json: await r.json().catch(() => null) }));
+const nightPhase = async () => { const d = (await api('GET', '/gm/state')).json; return d && d.doc && d.doc.night ? d.doc.night.phase || '' : ''; };
+
+try {
+  const up = await until(() => /Ctrl\+C stops it/.test(demoLog) || demo.exitCode !== null, 300000, 500);
+  if (!up || demo.exitCode !== null) throw new Error('the demo night did not come up:\n' + demoLog.slice(-2000));
+  const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
+  const errors = [];
+  async function open({ w = 1366, h = 768, mobile = false, ctx = null } = {}) {
+    const c = ctx || await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: w, height: h }, serviceWorkers: 'block', ...(mobile ? { isMobile: true, hasTouch: true } : {}) });
+    if (!ctx) await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
+    const page = await c.newPage();
+    page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
+    page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+    page.on('dialog', (d) => d.accept());
+    await page.goto(BASE + '/#gm');
+    await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me && window.B68GmPage && window.B68GmPage._places && window.B68GmPage._places(), null, { timeout: 40000 });
+    await page.waitForSelector('#gm-buttons .gm-btn', { state: 'attached', timeout: 30000 });
+    await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    await sleep(500);
+    return { c, page };
+  }
+  const shot = async (page, name) => { if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: path.join(SHOTS, name + '.png'), animations: 'disabled' }); } };
+  const st = (page) => page.evaluate(() => window.B68GmPage._places()._state());
+  const attr = (page, a) => page.$eval('#gm-root', (r, x) => r.getAttribute(x), a);
+  const views = (page) => page.$$eval('.gm-views [data-pv]', (els) => els.map((e) => e.getAttribute('data-pv')));
+  const visible = (page, sel) => page.$eval(sel, (e) => !!e && !e.closest('[hidden]') && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().height > 0).catch(() => false);
+  const blur = (page) => page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+  const key = async (page, k) => { await blur(page); await page.keyboard.press(k); await sleep(250); };
+  /* a heading's top against its pane's (the laptop: each view scrolls on its own) */
+  const headTop = (page, id) => page.evaluate((i) => { const p = document.querySelector('#gm-prep'), e = document.getElementById(i); return p && e ? Math.round(e.getBoundingClientRect().top - p.getBoundingClientRect().top) : null; }, id);
+
+  /* ---- 1. Before ---- */
+  check(await nightPhase() === '', 'the demo night has no phase in play yet');
+  const A = await open();
+  const a = A.page;
+  check(await attr(a, 'data-place') === 'before' && await attr(a, 'data-left') === 'own', 'a page with no phase opens in Before, with a left column of its own');
+  check(!(await visible(a, '#gm-buttons')) && await visible(a, '#gm-left'), 'Before\'s column is its own, not the Roll');
+  check(await until(() => a.$eval('#gm-left [data-inline="preflight"]', (e) => /iPad sound/.test(e.textContent)), 10000), 'Preflight is drawn inline in the column (N2\'s inline host)');
+  check(await a.$eval('#gm-left', (e) => /Tonight/.test(e.textContent) && /Start\s*19:30/.test(e.textContent) && /curfew\s*22:40/.test(e.textContent) && /8\s*cues/.test(e.textContent) && /6\s*rooms/.test(e.textContent)), 'and Tonight: the start, the curfew, eight cues and six rooms, read from the prep note');
+  check(JSON.stringify(await views(a)) === JSON.stringify(['tonight', 'room', 'print', 'ipadscenes', 'prep', 'rules', 'npc', 'ipad']), 'Before\'s views: Tonight, The room, Print, iPad scenes, then Prep, Rules, Cast and iPad');
+  check(await a.$eval('.gm-views [data-pv="tonight"]', (e) => e.getAttribute('aria-selected')) === 'true' && await visible(a, '#gm-vpane'), 'Tonight is the first view');
+  check(await a.$eval('#gm-vpane', (e) => e.querySelectorAll('.gm-tn-run tbody tr').length === 5 && /Before the night/.test(e.textContent) && /Charge the iPad/.test(e.textContent) && /Tonight/.test(e.textContent)), 'Tonight: the note\'s run order (five beats) and its Before the night and Tonight sections');
+  check(await a.$$eval('#gm-vpane .gm-tn-run tbody tr td:nth-child(3)', (td) => td.map((x) => x.textContent).join()) === 'Opening,Personal,Planning,Score,Aftermath', 'each beat named by its place');
+  await shot(a, 'before-1366');
+  await a.click('.gm-views [data-pv="room"]');
+  check(await until(() => a.$eval('#gm-vpane', (e) => ['practical', 'phone', 'light', 'record'].every((t) => e.querySelector('[data-vcell="' + t + '"] [data-inline="' + t + '"]'))), 6000), 'The room: the practical speaker, the ringing phone, the light relay and the recording, each drawn inline');
+  await a.click('.gm-views [data-pv="print"]');
+  check(await until(() => a.$eval('#gm-vpane [data-inline="print"]', (e) => !!e), 5000) && !(await a.$('#gm-vpane [data-inline="practical"]')), 'Print: its tool inline, and The room\'s four unbound');
+  await a.click('.gm-views [data-pv="ipadscenes"]');
+  check(await attr(a, 'data-panel') === 'ipad' && await visible(a, '#gm-ipad'), 'iPad scenes: the iPad view');
+
+  /* ---- 2. Ctrl+arrows: navigation only ---- */
+  await key(a, 'Control+ArrowRight');
+  check(await attr(a, 'data-place') === 'opening' && await nightPhase() === '', 'Ctrl+Right: the Opening, and the night has no phase still');
+  check(await until(() => a.$eval('#gm-left [data-inline="hardstart"]', (e) => /GO now|Arm|start/i.test(e.textContent)), 8000), 'the Opening\'s column is the Hard start, inline');
+  check(await attr(a, 'data-panel') === 'prep' && await a.$eval('.gm-views [data-pv="titles"]', (e) => e.getAttribute('aria-selected')) === 'true', 'its first view is Titles: Prep');
+  const tt = await headTop(a, 'pp-titles');
+  check(tt !== null && tt >= -4 && tt <= 60, 'at the note\'s "Titles" heading (' + tt + ' px from the top of the view)');
+  await shot(a, 'opening-1366');
+  await key(a, 'Control+ArrowRight');
+  check(await attr(a, 'data-place') === 'pb' && await nightPhase() === '', 'Ctrl+Right again: Personal, still no phase (no phase change until the GM goes into it)');
+  await key(a, 'Control+ArrowLeft'); await key(a, 'Control+ArrowLeft'); await key(a, 'Control+ArrowLeft');
+  check(await attr(a, 'data-place') === 'before', 'Ctrl+Left walks back and stops at Before');
+
+  /* ---- 3. a place of the night entered as the band does: the phase, the Roll, its first view ---- */
+  await a.evaluate(() => window.B68GmPage.goPlace('pb'));
+  check(await until(async () => (await nightPhase()) === 'pb', 8000), 'goPlace(Personal) enters the phase (the night controller, as the rail did)');
+  check(await attr(a, 'data-left') === 'roll' && await visible(a, '#gm-buttons') && !(await visible(a, '#gm-left')), 'Personal\'s column is the Roll');
+  check(JSON.stringify(await views(a)) === JSON.stringify(['downtime', 'debrief', 'trouble', 'prep', 'rules', 'npc', 'ipad']) && await attr(a, 'data-panel') === 'downtime', 'Personal: Downtime first, Debrief replies, Trouble desk');
+  await a.click('.gm-views [data-pv="debrief"]');
+  check(await until(() => a.$eval('#gm-vpane [data-inline="debrief"]', (e) => !!e), 5000), 'Debrief replies: the debrief tool, inline');
+  await shot(a, 'pb-1366');
+
+  /* ---- 4. follow the night ---- */
+  /* the note's cues: 1 scene, 2 show, 3 light, 4 phase: pb, 5 phase: plan. GO (Space) until the fifth has fired. Personal is in play already (goPlace
+     entered it), and a phase: cue for the phase in play does not fire (the cue stack's own rule), so the GM bypasses the fourth */
+  const standby = () => a.$eval('#gm-cuebar .gm-cs-row', (e) => e.textContent).catch(() => '');
+  for (let i = 0; i < 12 && (await attr(a, 'data-place')) !== 'plan'; i++) {
+    if (/#4\s*PHASE/i.test(await standby())) { await a.$eval('#gm-cuebar [data-cs="bypass"]', (e) => e.click()); await sleep(400); continue; }
+    await key(a, 'Space'); await sleep(900);
+  }
+  check(await until(async () => (await attr(a, 'data-place')) === 'plan', 8000) && await nightPhase() === 'plan', 'a phase: cue (GO on the note\'s "phase: plan") moves the night, and the page follows it to Planning');
+  check(JSON.stringify(await views(a)) === JSON.stringify(['cards', 'corkboard', 'run', 'score', 'prep', 'rules', 'npc', 'ipad']) && await attr(a, 'data-panel') === 'cards', 'Planning: Opportunities first, Intel, The site, the Score generator');
+  check(await until(() => a.$eval('#gm-opps-players [data-inline="board"]', (e) => !!e), 6000) && await a.$eval('#gm-opps-gm', (e) => e.querySelectorAll('.oc-card').length >= 1), 'Opportunities: the players\' board over the GM\'s own cards');
+  await shot(a, 'plan-1366');
+  const B = await open({ w: 1280, h: 800 });
+  check(await attr(B.page, 'data-place') === 'plan', 'a second GM device opens in the night\'s place');
+  await B.page.evaluate(() => window.B68GmPage._night().enter('score'));
+  /* the GM page takes another device's changes when it comes back into focus (refetch): the GM puts the phone down and looks at the laptop */
+  await until(async () => (await nightPhase()) === 'score', 8000);
+  await a.evaluate(() => window.dispatchEvent(new Event('focus')));
+  check(await until(async () => (await attr(a, 'data-place')) === 'score', 12000), 'a phase entered on another GM device: this page follows it to the Score (when it is looked at again)');
+  check(await attr(a, 'data-panel') === 'run' && await until(() => a.$eval('#gm-runv .rv-head', (e) => !!e), 8000), 'the Score opens at The site');
+  await shot(a, 'score-1366');
+  await B.page.evaluate(() => window.B68GmPage.goPlace('between'));
+  await a.evaluate(() => window.B68GmPage._night().enter('after'));
+  await sleep(2500);
+  check(await attr(B.page, 'data-place') === 'between', 'the GM in Between is not taken out of it');
+  check(await attr(a, 'data-place') === 'after', 'the night controller moving the phase takes this page with it (the Aftermath)');
+  await B.c.close();
+
+  /* ---- 5. tools come to you ---- */
+  await a.evaluate(() => window.B68GmPage.goPlace('plan', { navigateOnly: true }));
+  await key(a, 'c');
+  check(await attr(a, 'data-panel') === 'chase' && await attr(a, 'data-place') === 'plan' && JSON.stringify(await views(a)) === JSON.stringify(['cards', 'corkboard', 'run', 'score', 'chase', 'prep', 'rules', 'npc', 'ipad']), 'C in Planning: the Chase comes to Planning as an extra view, at the end of its own');
+  check(!!(await a.$('.gm-views [data-pvx="chase"]')) && await nightPhase() === 'after', 'with a × to drop it; the night stays where it was');
+  await a.click('.gm-views [data-pvx="chase"]');
+  check(!(await views(a)).includes('chase') && await attr(a, 'data-panel') === 'cards', '× drops it: back to the view before it');
+  await key(a, 'g');
+  check(await attr(a, 'data-panel') === 'run', 'G: The site, Planning\'s own view');
+  await a.evaluate(() => window.B68GmPage.openView('board'));
+  check(await attr(a, 'data-panel') === 'cards' && !(await views(a)).includes('board'), 'the board, which Opportunities holds, opens there and not as a second copy');
+  await a.evaluate(() => window.B68GmPage.goPlace('before', { navigateOnly: true }));
+  await a.evaluate(() => window.B68GmPage.openView('practical'));
+  check((await st(a)).view === 'room', 'the practical speaker in Before: The room');
+
+  /* ---- 6. Prep at the place's heading ---- */
+  await a.evaluate(() => window.B68GmPage.goPlace('plan', { navigateOnly: true }));
+  await key(a, 'r');
+  const br = await headTop(a, 'pp-briefing');
+  check(await attr(a, 'data-panel') === 'prep' && br !== null && br >= -4 && br <= 60, 'R in Planning: Prep at "Briefing" (' + br + ' px)');
+  await blur(a);
+  await key(a, 'Control+ArrowRight');
+  const sc = await headTop(a, 'pp-score');
+  check(await attr(a, 'data-place') === 'score' && await attr(a, 'data-panel') === 'prep' && sc !== null && sc >= -4 && sc <= 60, 'moving to the Score while Prep shows: Prep stays, at "Score" (' + sc + ' px)');
+
+  /* ---- 7. Find: places and tools ---- */
+  const find = async (q) => { await blur(a); await a.keyboard.press('Control+k'); await a.fill('#gm-find-q', q); await sleep(300); const first = await a.$eval('.gm-find-hit[aria-selected="true"]', (e) => e.textContent).catch(() => ''); await a.keyboard.press('Enter'); await sleep(500); return first; };
+  const f1 = await find('front page');
+  check(/Front page/.test(f1) && (await st(a)).view === 'frontpage' && await attr(a, 'data-place') === 'score', 'Find "front page": the tool, in the place the GM is in (' + f1.replace(/\s+/g, ' ').slice(0, 60) + ')');
+  check(await until(() => a.$eval('#gm-vpane [data-inline="frontpage"]', (e) => !!e), 5000), 'drawn inline as an extra view');
+  const f2 = await find('montage');
+  check(/Montage/.test(f2) && (await st(a)).view === 'montage', 'Find "montage" opens the montage');
+  const f3 = await find('go to planning');
+  check(/Go to Planning/.test(f3) && await attr(a, 'data-place') === 'plan' && await until(async () => (await nightPhase()) === 'plan', 8000), 'Find "go to planning": the place, the night moved there as the band\'s chip would');
+
+  /* ---- 8. Between's desks ---- */
+  await a.evaluate(() => window.B68GmPage.goPlace('between'));
+  check(await nightPhase() === 'plan' && await attr(a, 'data-left') === 'slim', 'Between never changes the phase; its column is the list of the desks');
+  check(await a.$$eval('#gm-vpane .gm-desk', (d) => d.length) === 10, 'Desks: ten desks, the generators among them');
+  await shot(a, 'between-1366');
+  await a.click('#gm-vpane .gm-desk[data-desk="frontpage"]');
+  check(await until(() => a.$eval('#gm-vpane [data-inline="frontpage"]', (e) => !!e), 5000) && await a.$eval('#gm-vhead', (e) => !e.hidden && /← Desks/.test(e.textContent) && /Front page/.test(e.textContent)), 'a desk opens its tool inline, under "← Desks"');
+  check(await a.$eval('#gm-left [data-desk="frontpage"]', (e) => e.getAttribute('aria-current')) === 'true', 'the column marks the open desk');
+  await blur(a); await a.keyboard.press('Escape'); await sleep(300);
+  /* the page's one Esc (B68GmEsc.handle in onKey) is N1a's wiring: in a tree without it the cue stack takes Esc as PANIC, so Resume, and ask the contract itself */
+  let escVia = '';
+  if (await a.$('#gm-cuebar .gm-cs-panic')) {
+    await a.$eval('#gm-cuebar [data-cs="resume"]', (e) => e.click()).catch(() => {});
+    await a.evaluate(() => window.B68GmEsc.handle({ panic() {} }));
+    escVia = ' (through B68GmEsc.handle: this tree has no one-Esc wiring yet)';
+    await sleep(300);
+  }
+  check(await a.$$eval('#gm-vpane .gm-desk', (d) => d.length) === 10 && await a.$eval('#gm-vhead', (e) => e.hidden), 'Esc goes back to the desks' + escVia);
+  await a.click('#gm-vpane [data-desk="gen:score"]');
+  check(await attr(a, 'data-panel') === 'score' && await a.$eval('#gm-vhead', (e) => /Score generator/.test(e.textContent)), 'Generators › Score: the score generator, under "← Desks"');
+  await a.click('#gm-vhead [data-pv-desks]');
+  check(await attr(a, 'data-panel') === 'view' && await a.$$eval('#gm-vpane .gm-desk', (d) => d.length) === 10, '← Desks');
+
+  /* ---- 9. the Aftermath: the crew, and Call the Aftermath ---- */
+  await a.evaluate(() => window.B68GmPage.goPlace('score'));
+  await until(async () => (await nightPhase()) === 'score', 8000);
+  await a.evaluate(() => window.B68GmPage.callAftermath());
+  check(await attr(a, 'data-place') === 'after' && await until(async () => (await nightPhase()) === 'after', 8000), 'callAftermath (the curfew\'s Call the Aftermath): the night enters the Aftermath and the page is there');
+  check(await until(async () => { const d = (await api('GET', '/gm/state')).json; return d && d.doc && d.doc.night && d.doc.night.aftermath && d.doc.night.aftermath.step === 'payout'; }, 10000), 'and the show is started: its first step, the payout, is on');
+  check(await until(() => a.$eval('#gm-vpane [data-inline="aftermath"]', (e) => /Payout/.test(e.textContent) && /Next/.test(e.textContent)), 6000), 'the show inline, at its first step, with Next');
+  check(await a.$eval('#gm-left', (e) => /Nell Arbuthnot/.test(e.textContent) && /Stress/.test(e.textContent) && /Can turn: KEY-1/.test(e.textContent) && /Debrief: send to phones/.test(e.textContent) && /End the night/.test(e.textContent)), 'the column: the crew (Stress, harm, the key Nell can turn), Debrief, Cast photo, End the night');
+  await shot(a, 'after-1366');
+  await a.click('#gm-left [data-pv="castphoto"]');
+  check((await st(a)).extra === 'castphoto' && await until(() => a.$eval('#gm-vpane [data-inline="castphoto"]', (e) => !!e), 5000), 'Cast photo opens beside the show as an extra view');
+
+  /* ---- 10. a roll in a column of its own; the memory; the phone ---- */
+  await a.evaluate(() => window.B68GmPage.goPlace('opening', { navigateOnly: true }));
+  await key(a, '2');
+  check(await until(async () => (await attr(a, 'data-left')) === 'roll', 4000) && await visible(a, '#gm-card') && await visible(a, '#gm-left [data-left-back]'), 'a roll in the Opening brings the Roll into the column, under a strip back to the Hard start');
+  await a.click('#gm-left [data-left-back]');
+  check(await attr(a, 'data-left') === 'own' && await until(() => a.$eval('#gm-left [data-inline="hardstart"]', (e) => !!e), 5000), 'the strip puts the Hard start back');
+  await a.evaluate(() => window.B68GmPage.goPlace('before', { navigateOnly: true }));
+  await a.click('.gm-views [data-pv="print"]');
+  await a.evaluate(() => window.B68GmPage.goPlace('plan', { navigateOnly: true }));
+  await key(a, 's');
+  await a.reload(); await a.waitForFunction(() => window.B68GmPage && window.B68GmPage._places && window.B68GmPage._places(), null, { timeout: 30000 }); await sleep(800);
+  check(await attr(a, 'data-place') === 'plan' && (await st(a)).view === 'scenes' && (await views(a)).includes('scenes'), 'a reload keeps the place, its view and its extra view (the phase has not moved)');
+  await a.evaluate(() => window.B68GmPage.goPlace('before', { navigateOnly: true }));
+  check((await st(a)).view === 'print', 'and each place\'s last view (Before: Print)');
+  await A.c.close();
+  await api('PATCH', '/gm/state', { night: { phase: 'pb' } });       /* the night moved while no page was open */
+  const C = await open();
+  check(await attr(C.page, 'data-place') === 'pb', 'a phase that moved while the page was shut: the page opens in its place');
+  await C.c.close();
+
+  const M = await open({ w: 390, h: 844, mobile: true });
+  const m = M.page;
+  check(await attr(m, 'data-place') === 'pb', 'the GM\'s phone opens in the night\'s place');
+  const chips = await m.$$eval('.gm-vchips .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return { id: x.getAttribute('data-pv') || x.getAttribute('data-seg'), h: Math.round(r.height), right: Math.round(r.right) }; }));
+  check(chips.map((x) => x.id).join() === 'console,downtime,debrief,trouble,prep,rules,npc,ipad,state' && chips.every((x) => x.h >= 44 && x.right <= 390), 'phone: the chip row under the bar: the Roll, the place\'s views, the pinned four, the drawer; all on screen, each 44 px tall ' + JSON.stringify(chips.map((x) => x.right)));
+  await m.tap('.gm-vchips [data-seg="console"]');
+  check(await visible(m, '#gm-buttons') && !(await visible(m, '#gm-dt')), 'the Roll chip shows the column (the console), and not the view');
+  await m.tap('.gm-vchips [data-pv="downtime"]');
+  check(await visible(m, '#gm-dt') && !(await visible(m, '#gm-buttons')), 'a view chip shows the view');
+  await m.evaluate(() => window.B68GmPage.goPlace('before', { navigateOnly: true }));
+  await m.tap('.gm-vchips [data-seg="console"]');
+  check(await until(() => m.$eval('#gm-left [data-inline="preflight"]', (e) => e.getBoundingClientRect().height > 0), 6000), 'phone: Before\'s chip shows Preflight');
+  await m.tap('.gm-vchips [data-pv="tonight"]');
+  check(await visible(m, '#gm-vpane .gm-tn-run'), 'and Tonight');
+  const over = await m.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  check(over <= 1, 'phone: nothing wider than the screen (' + over + ' px)');
+  await shot(m, 'before-390');
+  await m.evaluate(() => window.B68GmPage.goPlace('between'));
+  check(!(await m.$('.gm-vchips [data-seg="console"]')) && await visible(m, '#gm-vpane .gm-desks') && !(await visible(m, '#gm-left')), 'phone, Between: the desks are the view (no column chip)');
+  await M.c.close();
+
+  check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 4).join(' | ') : ''));
+  await browser.close();
+} catch (e) {
+  failed++; console.log('FAIL ' + (e && e.stack || e) + '\n' + demoLog.slice(-1500));
+}
+clearTimeout(timeout);
+console.log('\n' + passed + ' passed, ' + failed + ' failed');
+process.exit(failed ? 1 : 0);

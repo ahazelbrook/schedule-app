@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -85,6 +86,7 @@ try {
   const errors = [];
   async function open(view = 'location') {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 1366, height: 900 }, serviceWorkers: 'block' });
+    await c.addInitScript(atPlace('score', view === 'location' ? { score: 'location' } : undefined));      /* N1b: start in the Score (a page with no phase opens in Before), on the Location roller where the card is */
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });

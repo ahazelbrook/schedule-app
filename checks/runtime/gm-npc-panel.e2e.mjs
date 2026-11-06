@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -62,6 +63,7 @@ try {
   const errors = [];
   async function open(hash, { width = 1280, height = 900, mobile = false } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block', isMobile: mobile, hasTouch: mobile });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -203,7 +205,7 @@ try {
   // a phone
   const M = await open('#gm', { width: 390, height: 844, mobile: true });
   const mp = M.page;
-  await mp.click('.gm-segbar [data-seg="npc"]');
+  await mp.click('.gm-vchips [data-pv="npc"]');      /* N1b: Cast, a pinned chip */
   await mp.waitForSelector('#gm-npc [data-gm="npcroll"]', { state: 'visible', timeout: 5000 });
   await mp.click('[data-gm="npcroll"]');
   await mp.waitForSelector('#gm-npc .gm-npccard', { timeout: 15000 });

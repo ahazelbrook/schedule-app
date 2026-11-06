@@ -9,6 +9,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -55,6 +56,7 @@ try {
   const errors = [];
   const openGm = async (size, extra = {}) => {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: size[0], height: size[1] }, serviceWorkers: 'block', ...extra });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     await c.addInitScript(() => { window.__B68_POLL_MS = 1000; });
     const page = await c.newPage();
     page.on('pageerror', (e) => errors.push(e.message));

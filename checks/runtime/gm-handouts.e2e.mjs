@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -82,6 +83,7 @@ try {
   const errors = [];
   async function open(hash, { width = 1280, height = 800 } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block' });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     const page = await c.newPage();
     const reqs = [];
     page.on('request', (r) => reqs.push(r.url()));
@@ -96,7 +98,7 @@ try {
   const G = await open('#gm');
   const p = G.page;
   await p.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
-  await p.click('.gm-tab[data-panel="ipad"]');
+  await p.click('.gm-views [data-pv="ipad"]');      /* N1b: iPad, a pinned view in every place */
   check(await p.waitForSelector('#gm-ipad .gm-handout', { timeout: 15000 }).then(() => true, () => false), 'the iPad tab lists the handouts');
   check((await p.$$('#gm-ipad .gm-handout')).length === 3, 'three entries, as in the pack');
   const titles = await p.$$eval('#gm-ipad .gm-handout b', (l) => l.map((e) => e.textContent));

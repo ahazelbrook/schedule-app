@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -52,6 +53,7 @@ if (put.status !== 200) { console.log('FAIL could not push a display as the GM: 
 const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
 try {
   const ctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1180, height: 820 } });
+  await ctx.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
   const page = await ctx.newPage();
   const calls = [], reads = [];
   page.on('response', (r) => { const u = new URL(r.url()); if (u.pathname.startsWith('/api/')) calls.push(r.request().method() + ' ' + u.pathname + ' ' + r.status()); });
@@ -120,6 +122,7 @@ try {
   /* E14: when the Access sign-in ends, every call is refused for good and the page used to say "Not signed in" for ever.
      Access answers a fetch with a redirect to its sign-in page; the adapter calls that signed out. */
   const octx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1180, height: 820 } });
+  await octx.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
   const opage = await octx.newPage();
   await opage.clock.install();                                  // time flows as usual until a test jumps it
   let signedIn = true, loads = 0;
@@ -158,6 +161,7 @@ try {
 
   await step('with no storage to note the time in, a signed-out display does not reload', async () => {
     const sctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1180, height: 820 } });
+    await sctx.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     const spage = await sctx.newPage();
     await spage.addInitScript(() => {
       const refuse = () => { throw new DOMException('blocked', 'SecurityError'); };
@@ -178,6 +182,7 @@ try {
   /* E4: nothing changes for two hours and the display looks every 15 s instead of every 4 s, until the GM pushes something */
   await step('two hours with nothing new: it looks every 15 s; a push shows within one beat and brings the 4 s beat back', async () => {
     const ictx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1180, height: 820 } });
+    await ictx.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     const ipg = await ictx.newPage();
     await ipg.clock.install();
     const at = []; ipg.on('request', (r) => { if (new URL(r.url()).pathname === '/api/gm/display') at.push(Date.now()); });
@@ -202,6 +207,7 @@ try {
 
   // and the GM is unchanged: the same browser as the GM still gets the GM page
   const gctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 1180, height: 820 } });
+  await gctx.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
   const gpage = await gctx.newPage();
   await step('the GM is unchanged: #gm opens the GM page, not the display', async () => {
     await gpage.goto(BASE + '/#gm');

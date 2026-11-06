@@ -21,7 +21,7 @@ import { createRequire } from 'node:module';
 
 const GM_READY = async (page) => {
   await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
-  await page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  await page.waitForSelector('#gm-buttons .gm-btn', { state: 'attached', timeout: 30000 });      /* attached: Before's left column is Preflight, not the Roll (N1b) */
   await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
   await page.waitForTimeout(600);
 };
@@ -143,6 +143,34 @@ const SITE_SCENARIOS = [
   /* Location's Map section, without the boxes that went to the site */
   ...gmAt('site-location', async (page) => { await page.keyboard.press('b'); await page.waitForSelector('#gm-loc .gm-mapbox', { timeout: 15000 }); await page.$eval('#gm-loc .gm-mapbox', (e) => e.scrollIntoView({ block: 'start' })); })
 ];
+/* ---- the places of the night (N1b, design 4): each place at its first view and each of its views at the two laptop sizes, every place on the GM's phone.
+   A place of the night is gone to as the band does (goPlace: the phase is entered); Before, Opening and Between are navigation only. Files:
+   place-<place>-<w>, view-<place>-<view>-<w>, and a few states: an extra view, a desk opened, the Roll brought into Before, Call the Aftermath. ---- */
+const toPlace = (id, view) => async (page) => {
+  await page.waitForFunction(() => window.B68GmPage && window.B68GmPage._places && window.B68GmPage._places(), null, { timeout: 20000 });
+  await page.evaluate(([p, v]) => { const P = window.B68GmPage; P.goPlace(p); if (v) P.openView(v); }, [id, view || '']);
+  await page.waitForTimeout(900);
+};
+const PLACE_VIEWS = { before: ['tonight', 'room', 'print', 'ipadscenes'], opening: ['titles', 'frontpage'], pb: ['downtime', 'debrief', 'trouble'], plan: ['cards', 'corkboard', 'run', 'score'],
+  score: ['run', 'chase', 'scenes', 'location'], after: ['aftermath', 'downtime'], between: ['desks'] };
+const PLACE_SCENARIOS = [];
+for (const [place, vs] of Object.entries(PLACE_VIEWS)) {
+  PLACE_SCENARIOS.push(...gmAt('place-' + place, toPlace(place)));
+  for (const v of vs.slice(1)) PLACE_SCENARIOS.push(...gmAt('view-' + place + '-' + v, toPlace(place, v)));
+}
+for (const v of ['prep', 'rules', 'npc', 'ipad']) PLACE_SCENARIOS.push(...gmAt('view-pinned-' + v, toPlace('score', v)));
+PLACE_SCENARIOS.push(
+  ...gmAt('state-extra-view', toPlace('score', 'downtime')),
+  ...gmAt('state-desk-open', then(toPlace('between'), async (page) => { await page.click('#gm-vpane .gm-desk[data-desk="frontpage"]'); await page.waitForTimeout(800); })),
+  ...gmAt('state-roll-in-before', then(toPlace('before'), async (page) => { await page.keyboard.press('2'); await page.waitForTimeout(800); })),
+  ...gmAt('state-find-places', then(toPlace('score'), async (page) => { await page.keyboard.press('Control+k'); await page.fill('#gm-find-q', 'go to'); await page.waitForTimeout(500); })),
+  ...gmAt('state-call-aftermath', then(toPlace('score'), async (page) => { await page.evaluate(() => window.B68GmPage.callAftermath()); await page.waitForTimeout(1500); }))
+);
+for (const place of Object.keys(PLACE_VIEWS)) PLACE_SCENARIOS.push({ name: 'place-' + place, size: [390, 844], route: '#gm', ready: GM_READY, context: { isMobile: true, hasTouch: true }, steps: toPlace(place) });
+PLACE_SCENARIOS.push({ name: 'place-before-left', size: [390, 844], route: '#gm', ready: GM_READY, context: { isMobile: true, hasTouch: true },
+  steps: then(toPlace('before'), async (page) => { await page.tap('.gm-vchips [data-seg="console"]'); await page.waitForTimeout(600); }) });
+PLACE_SCENARIOS.push({ name: 'place-score-roll', size: [390, 844], route: '#gm', ready: GM_READY, context: { isMobile: true, hasTouch: true },
+  steps: then(toPlace('score'), async (page) => { await page.tap('.gm-vchips [data-seg="console"]'); await page.waitForTimeout(600); }) });
 
 export const SCENARIOS = [
   /* the GM page before the first phase (the night has none), on the Prep tab */
@@ -193,14 +221,16 @@ export const SCENARIOS = [
   ...LAPTOPS.map((size) => ({ name: 'gm-tray-live', size, route: '#gm', ready: GM_READY, settle: 1500 })),
   { name: 'gm-tray-live', size: [390, 844], route: '#gm', ready: GM_READY, context: { isMobile: true, hasTouch: true }, settle: 1500 },
   /* the Aftermath, last, so the shots before it are in the score: Menu > Aftermath show, where it is run today */
-  ...gmAt('gm-after', then(enterPhase('after'), async (page) => { await page.evaluate(() => window.B68GmTools.get('aftermath').open()); await page.waitForSelector('#gm-sheet-aftermath:not([hidden])', { timeout: 8000 }); })),
+  ...gmAt('gm-after', then(enterPhase('after'), async (page) => { await page.evaluate(() => window.B68GmTools.get('aftermath').open()); await page.waitForSelector('#gm-sheet-aftermath:not([hidden]), #gm-vpane [data-inline="aftermath"]', { timeout: 8000 }); })),
   /* Nell's phone: her sheet as player1 */
   { name: 'phone-nell', size: [390, 844], route: '#c/pc-nell', as: 'player1@example.test', ready: SHEET_READY, context: { isMobile: true, hasTouch: true }, settle: 1500 },
   { name: 'phone-nell-full', size: [390, 844], route: '#c/pc-nell', as: 'player1@example.test', ready: SHEET_READY, context: { isMobile: true, hasTouch: true }, settle: 1500, fullPage: true },
   /* the phones (N6): the Now card, Quiet and the Between sessions fold */
   ...PHONE_SCENARIOS,
   /* the site (N3) */
-  ...SITE_SCENARIOS
+  ...SITE_SCENARIOS,
+  /* the places of the night (N1b), last: they move the night's phase, so every shot above keeps the state it was taken in (--only place-,view-,state- takes just these) */
+  ...PLACE_SCENARIOS
 ];
 
 export async function shoot({ base, dir, only = [], api, users }) {

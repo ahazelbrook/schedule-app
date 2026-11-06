@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -72,6 +73,7 @@ try {
   const errors = [];
   async function open(hash, { width = 1440, height = 900, mobile = false, ready = '#gm-buttons .gm-btn' } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block', isMobile: mobile, hasTouch: mobile });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
     await c.route('**/maps/map-kit.js*', async (route) => {
       const res = await route.fetch(), body = await res.text();
@@ -99,11 +101,11 @@ try {
   /* ---- the laptop: the tab, the key, a chase from the Location roll's street ---- */
   const G = await open('#gm');
   const p = G.page;
-  check((await p.$$eval('.gm-tab', (t) => t.map((x) => x.getAttribute('data-panel')).join())) === 'prep,rules,location,scenes,score,chase,npc,downtime,cards,ipad', 'the side tabs: Chase after Score');
+  check((await p.$$eval('.gm-views [data-pv]', (t) => t.map((x) => x.getAttribute('data-pv')).join())) === 'run,chase,scenes,location,prep,rules,npc,ipad', 'the Score\'s views: Chase after The site, the pinned four at the end');
   for (const w of [1280, 1440]) {
     await p.setViewportSize({ width: w, height: 900 }); await sleep(200);
-    const fit = await p.$eval('.gm-tabs', (t) => ({ over: t.scrollWidth - t.clientWidth, ok: t.scrollWidth <= t.clientWidth + 1 && [...t.querySelectorAll('.gm-tab')].every((x) => x.getBoundingClientRect().right <= t.getBoundingClientRect().right + 1 && !!x.querySelector('kbd')) }));
-    check(fit.ok, 'the ten side tabs fit one row at ' + w + ' px, each with its key (' + fit.over + ' px over)');
+    const fit = await p.$eval('.gm-views', (t) => ({ over: t.scrollWidth - t.clientWidth, ok: t.scrollWidth <= t.clientWidth + 1 && [...t.querySelectorAll('.gm-vt')].every((x) => x.getBoundingClientRect().right <= t.getBoundingClientRect().right + 1 && !!x.querySelector('kbd')) }));
+    check(fit.ok, 'the Score\'s eight views fit one row at ' + w + ' px, each with its key (' + fit.over + ' px over)');
   }
   await p.keyboard.press('b');
   await p.click('[data-gm="locroll"]');
@@ -180,13 +182,13 @@ try {
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
   await D.c.close(); await G.c.close();
 
-  /* ---- a phone: two rows of six, the Chase segment, every control 44 px, nothing wider than the screen ---- */
+  /* ---- a phone: the Score's chips in two rows (the Roll and its views, then the pinned and the drawer), the Chase chip, every control 44 px, nothing wider than the screen ---- */
   const M = await open('#gm', { width: 390, height: 844, mobile: true });
   const mp = M.page;
-  const segs = await mp.$$eval('.gm-segbar .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return { seg: x.getAttribute('data-seg'), top: Math.round(r.top), right: Math.round(r.right) }; }));
+  const segs = await mp.$$eval('.gm-vchips .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return { seg: x.getAttribute('data-pv') || x.getAttribute('data-seg'), top: Math.round(r.top), right: Math.round(r.right) }; }));
   const perRow = segs.reduce((m, s) => { m[s.top] = (m[s.top] || 0) + 1; return m; }, {});
-  check(segs.map((s) => s.seg).join() === 'console,prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,state' && JSON.stringify(Object.values(perRow)) === '[6,6]' && segs.every((s) => s.right <= 390), 'phone: twelve segments in two rows of six ' + JSON.stringify(perRow));
-  await mp.click('.gm-segbar [data-seg="chase"]');
+  check(segs.map((s) => s.seg).join() === 'console,run,chase,scenes,location,prep,rules,npc,ipad,state' && JSON.stringify(Object.values(perRow)) === '[5,5]' && segs.every((s) => s.right <= 390), 'phone: the Score\'s chips in two rows of five ' + JSON.stringify(perRow));
+  await mp.click('.gm-vchips [data-pv="chase"]');
   await mp.waitForSelector('#gm-chase [data-gm="ch-start"]', { state: 'visible', timeout: 5000 });
   await mp.click('#gm-chase [data-k="opp"][data-v="shown"]');
   await mp.click('#gm-chase [data-gm="ch-start"]');

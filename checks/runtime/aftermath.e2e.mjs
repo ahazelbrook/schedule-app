@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -71,6 +72,7 @@ try {
   const errors = [];
   async function open(route, { w = 1280, h = 800, user = GM, record = null } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width: w, height: h }, serviceWorkers: 'block' });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; try { if (window === window.top) localStorage.setItem('b68.display.ambientTiming', JSON.stringify({ intervalMs: 600000, graceMs: 60000 })); } catch (e) { /* no storage */ } });
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(route + ': ' + m.text()); });
@@ -91,9 +93,12 @@ try {
   const step = () => ip.evaluate(() => { const n = document.querySelector('.dp-overlay .dp-show-aftermath'); return n ? n.getAttribute('data-step') : ''; });
   const iPadText = () => ip.evaluate(() => (document.querySelector('.dp-overlay') || {}).innerText || '');
   const onStep = (id, t = 15000) => ip.waitForFunction((s) => !!document.querySelector('.dp-overlay .dp-show-aftermath.dp-ov-in[data-step="' + s + '"]'), id, { timeout: t });
-  const panel = () => g.$eval('#gm-sheet-aftermath', (e) => e.innerText);
-  const press = async (label) => { await g.click('#gm-sheet-aftermath button:has-text("' + label + '")'); };
-  const setField = async (label, value) => { await g.fill('#gm-sheet-aftermath label:has-text("' + label + '") input, #gm-sheet-aftermath label:has-text("' + label + '") textarea', String(value)); await g.press('#gm-sheet-aftermath label:has-text("' + label + '") >> nth=0', 'Tab').catch(() => {}); };
+  /* N1b: the show is opened in its sheet from the Score; Start enters the Aftermath, the page follows the night there, and the place draws the same
+     show inline as its first view (#gm-vpane). AFT is the show wherever it is */
+  const AFT = ':is(#gm-sheet-aftermath:not([hidden]), #gm-vpane [data-inline="aftermath"])';
+  const panel = () => g.$eval(AFT, (e) => e.innerText);
+  const press = async (label) => { await g.click(AFT + ' button:has-text("' + label + '")'); };
+  const setField = async (label, value) => { await g.fill(AFT + ' label:has-text("' + label + '") input, ' + AFT + ' label:has-text("' + label + '") textarea', String(value)); await g.press(AFT + ' label:has-text("' + label + '") >> nth=0', 'Tab').catch(() => {}); };
 
   /* ---- 1. everything on (N0), nothing stored ---- */
   await g.evaluate(() => { window.__gmMarker = 'same page'; });
@@ -128,7 +133,7 @@ try {
 
   await press('Next'); await onStep('heat');
   check(/Heat 6\./.test(await panel()) || /Heat 5\./.test(await panel()), 'step 3: the panel starts from the crew sheet\'s heat (5): ' + (await panel()).match(/Heat \d+[^.]*\./));
-  await g.click('#gm-sheet-aftermath .chip:has-text("4")');
+  await g.click(AFT + ' .chip:has-text("4")');
   await setField('Modifiers', 2);
   await ip.waitForFunction(() => document.querySelectorAll('.dp-show-aftermath .dp-aft-pip.on').length === 9, null, { timeout: 15000 });
   await ip.waitForFunction(() => !!document.querySelector('.dp-show-aftermath .dp-show-wanted.dp-ov-in'), null, { timeout: 15000 });
@@ -197,11 +202,11 @@ try {
   /* an open GM page only changes its document by its own patches, so the false reaches it on a load: reload, and the panel must still be the show */
   await g.reload();
   await g.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
-  await g.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  await g.waitForSelector('#gm-buttons .gm-btn', { state: 'attached', timeout: 30000 });      /* N1b: the page reopens in the Aftermath, whose left column is the crew, not the Roll */
   check(await until(() => g.evaluate(() => { const f = window.B68GmPage && window.B68GmPage.aftermath(); return !!(f && f.doc && f.doc.features && f.doc.features['spine.aftermath'] === false); }), 15000), 'reloaded, the GM page holds the stored false in its document');
   check(await g.evaluate(() => !!window.B68GmTools.get('aftermath') && !document.querySelector('#gm-menu-aftermath')), 'the tool is still registered, still no Menu line');
   check(await g.evaluate(() => window.B68GmTools.get('aftermath').open()) === true, 'the tool still opens');
-  const offText = await g.$eval('#gm-sheet-aftermath', (e) => (e.hidden ? 'HIDDEN ' : '') + e.innerText);
+  const offText = await g.$eval(AFT, (e) => (e.hidden ? 'HIDDEN ' : '') + e.innerText);      /* N1b: in the Aftermath place the show is its view, inline */
   check(!/Switched off/i.test(offText) && /eight steps/i.test(offText) && /Start the Aftermath/i.test(offText), 'and its panel is the show, never "Switched off": ' + JSON.stringify(offText.replace(/\s+/g, ' ').slice(0, 140)));
   check((await ph.evaluate(() => window.B68Commend.state())).started === true && (await ph.evaluate(() => window.B68Flags.on('spine.aftermath'))) === true, 'and the phone is still told it is on, and keeps reading');
 

@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -91,6 +92,7 @@ try {
   const errors = [], asked = [], answer = { no: false };
   async function open(w = 1366, h = 768) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: w, height: h }, serviceWorkers: 'block' });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -104,7 +106,7 @@ try {
   }
   const shot = async (page, name) => { if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: path.join(SHOTS, name + '.png') }); } };
   const setCard = (name) => api('PATCH', '/gm/state', { cards: { location: { hid: 'h_' + name.length, auth: name, label: name + ' · Nowhere Ward', at: new Date().toISOString() } }, loc: { map: { view: 'iso', theme: 'rulebook', layer: 'gm', reveal: { public: true, working: false, controlled: false, secure: false } } } });
-  const tabShown = (page) => page.evaluate(() => { const b = document.querySelector('.gm-tab[data-panel="run"]'); return !!b && !b.hidden && b.offsetParent !== null; });
+  const tabShown = (page) => page.evaluate(() => { const b = document.querySelector('.gm-views [data-pv="run"]'); return !!b && b.offsetParent !== null; });      /* N1b: The site, a fixed view of the Score */
   const timeText = (page) => page.$eval('#rv-time', (e) => e.textContent.trim());
 
   /* the GM's laptop opens first, so characters can be filed by the page's own adapter */
@@ -114,12 +116,12 @@ try {
   for (const [id, n] of [['run-pc1', 'Cass Fenn'], ['run-pc2', 'Dov Ketch'], ['run-pc3', 'Ira Lund']]) check((await api('PUT', '/characters/' + id, pcDoc(n))).status === 200, 'an invented PC is filed: ' + n);
   await G0.c.close();
 
-  /* ---- 1. the tab appears for a v2 site only; a v1 site keeps its strip ---- */
+  /* ---- 1. The site is a fixed view of the Score (N1b): a v1 site keeps its strip in the Location roller, and The site says how to get a v2 night ---- */
   check((await setCard(NAME1)).status === 200, 'the Location card is the v1 site');
   const V1 = await open();
   await V1.page.keyboard.press('b');
   await V1.page.waitForSelector('#gm-run', { timeout: 20000 });
-  check(!(await tabShown(V1.page)), 'a v1 site: the Run tab is not shown');
+  check(await tabShown(V1.page), 'a v1 site: The site is still a view of the Score (it no longer comes and goes)');
   check(await V1.page.$eval('#gm-run', (e) => /Run the site/.test(e.textContent)) && (await V1.page.$$('.gm-runv2note')).length === 0, 'and Location keeps its Run the site strip, as today');
   await V1.page.keyboard.press('g');
   check(await V1.page.waitForSelector('.gm-runhelp', { timeout: 5000 }).then(() => true, () => false) && await V1.page.$eval('.gm-runhelp', (e) => /"v": 2/.test(e.textContent)), 'G on a v1 site says how to get a v2 night');
@@ -129,7 +131,7 @@ try {
   check((await api('PATCH', '/gm/state', { phoneCards: true })).status === 200, 'Phone cards are on (they are off by default)');
   const seq0 = await seqNow();
   const G = await open();
-  check(await until(() => tabShown(G.page), 15000), 'a v2 site: the Run tab is shown');
+  check(await until(() => tabShown(G.page), 15000), 'a v2 site: The site is a view of the Score');
   await G.page.keyboard.press('b');
   await G.page.waitForSelector('.gm-runv2note', { timeout: 10000 });
   check((await G.page.$$('#gm-run')).length === 0, 'and Location does not show the v1 strip for it');
@@ -552,7 +554,7 @@ try {
 
   /* ---- 11. a reload: the same ---- */
     const R = await open();
-  check(await until(() => tabShown(R.page), 15000), 'after a reload the tab is there');
+  check(await until(() => tabShown(R.page), 15000), 'after a reload The site is there');
   await R.page.keyboard.press('g');
   await R.page.waitForSelector('.rv-head');
   check(await timeText(R.page) === '22:15' && await R.page.$eval('.rv-card[data-room="Cocktail lounge"] .rv-pc[data-id="run-pc2"]', (e) => !!e), 'the same time and the same crew');

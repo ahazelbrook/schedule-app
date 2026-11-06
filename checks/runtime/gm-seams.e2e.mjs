@@ -1,8 +1,10 @@
 // The GM seams (W0.5) and the Settings that replaced the switchboard (W0.2; the night rebuild, N0) in a real browser against a real local Worker (wrangler dev, DEV_USER) on
 // PORT (default 8952).
-//   1. With no phase entered the filter is off: every tab and phone chip is there; the Menu has no Settings, Switchboard or Workshop line.
-//   2. A test tool tagged Planning (registered before the page opens) has a tab; the phase rail (always drawn: everything built is on) hides it outside Planning, "All tools"
-//      brings everything back, the tab on screen is kept, its pane draws through mount().
+//   1. The page (started in the Score through its place memory, gm/places.js) lays out the Score's views and the four pinned ones, none hidden; the phone's chip
+//      row the same; the Menu has no Settings (the iPad view has them, N5), Switchboard or Workshop line.
+//   2. A test tool registered with a mount before the page opens has no tab of its own: Find lists it, and it opens as an extra view of the place the GM is
+//      in, drawn by its mount(). The phase rail moves the night and the page follows it to the place; nothing is hidden by the phase (a key brings any view),
+//      and there is no "All tools".
 //   3. Everything on from the first request: a phone and the iPad page are told every display and phone feature is on with nothing stored. The iPad view's Settings (N5): Phones flips the
 //      phoneCards setting into the GM state (features and the old key) and the campaign document, and a phone and the iPad learn of it on a poll, no reload; Scenes and the mirror
 //      take the same paths; a GM-only test line never reaches the campaign document, a phone's traffic or its flags. Preflight's Menu line is there from the start.
@@ -15,6 +17,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const HERE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -71,6 +74,7 @@ try {
   const errors = [];
   async function open(route, { w = 1280, h = 800, user = GM, init = null, record = null } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width: w, height: h }, serviceWorkers: 'block' });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
     if (init) await c.addInitScript(init);
     const page = await c.newPage();
@@ -83,12 +87,15 @@ try {
     return { c, page };
   }
   const shot = async (page, dir, name) => { if (dir) { mkdirSync(dir, { recursive: true }); await page.screenshot({ path: path.join(dir, name + '.png'), animations: 'disabled' }); } };
-  const strip = (page) => page.evaluate(() => ({
-    tabs: document.querySelector('.gm-tabrow').outerHTML, seg: document.querySelector('.gm-segbar').outerHTML,
-    menu: document.querySelector('.gm-menu-list').innerHTML, panes: [].map.call(document.querySelectorAll('.gm-pane'), (e) => e.getAttribute('data-pane')).join(',')
-  }));
-  const chips = (page) => page.$$eval('.gm-segbar .chip', (els) => els.filter((e) => !e.hidden).map((e) => e.getAttribute('data-seg')));   /* the phone bar is display:none at 1280 px, so [hidden] is what the filter sets */
-  const shown = (page, sel) => page.$$eval(sel, (els) => els.filter((e) => !e.hidden && e.offsetParent !== null).map((e) => e.getAttribute('data-panel') || e.getAttribute('data-seg')));
+  const strip = (page) => page.evaluate(() => {
+    const q = (sel) => document.querySelector(sel);
+    return { views: q('.gm-views') ? q('.gm-views').outerHTML : q('.gm-tabrow') ? q('.gm-tabrow').outerHTML : '', chips: q('.gm-segbar') ? q('.gm-segbar').outerHTML : '',
+      menu: q('.gm-menu-list').innerHTML, panes: [].map.call(document.querySelectorAll('.gm-pane'), (e) => e.getAttribute('data-pane')).join(',') };
+  });
+  /* the view switcher's ids, in order, and the chip row's (the phone's; display:none at 1280 px, so only [hidden] would hide one) */
+  const views = (page) => page.$$eval('.gm-views [data-pv]', (els) => els.filter((e) => !e.hidden && e.offsetParent !== null).map((e) => e.getAttribute('data-pv')));
+  const chips = (page) => page.$$eval('.gm-vchips .chip', (els) => els.filter((e) => !e.hidden).map((e) => e.getAttribute('data-pv') || e.getAttribute('data-seg')));
+  const placeOf = (page) => page.$eval('#gm-root', (r) => r.getAttribute('data-place'));
 
   /* ---- the snapshot of the page as it is in this tree (also what origin/main is compared with) ---- */
   const A = await open('#gm');
@@ -100,47 +107,42 @@ try {
   await P0.c.close();
   if (snapAt) { writeFileSync(path.join(snapAt, 'markup.json'), JSON.stringify(base1280, null, 1)); console.log('snapshot written to ' + snapAt); }
   else if (HAS_SEAMS) {
-    /* ---- 1. the page with no phase entered ---- */
-    const TABS = ['prep', 'rules', 'location', 'scenes', 'score', 'chase', 'npc', 'downtime', 'cards', 'ipad'];
-    const hasAll = (tabs) => TABS.every((id) => tabs.includes('data-panel="' + id + '"'));
-    check(hasAll(base1280.tabs) && !/hidden/.test(base1280.tabs) && !/hidden/.test(base1280.seg), 'no phase entered: every tab and every phone chip is there and none is hidden');
+    /* ---- 1. the page in the Score (its place memory): the place's views and the pinned four, none hidden ---- */
+    const SCORE = ['run', 'chase', 'scenes', 'location', 'prep', 'rules', 'npc', 'ipad'];
+    const ids = (html, attr) => (html.match(new RegExp(attr + '="([a-z]+)"', 'g')) || []).map((m) => m.split('"')[1]);
+    check(JSON.stringify(ids(base1280.views, 'data-pv')) === JSON.stringify(SCORE) && !/\shidden/.test(base1280.views), 'the Score\'s views, then Prep, Rules, Cast and iPad, none hidden: ' + ids(base1280.views, 'data-pv').join(','));
+    check(JSON.stringify(ids(base1280.chips, 'data-pv')) === JSON.stringify(SCORE) && /data-seg="console"/.test(base1280.chips) && /data-seg="state"/.test(base1280.chips), 'the phone\'s chip row: the Roll, the same views, and the drawer');
     check(!/id="gm-menu-settings"/.test(base1280.menu), 'the Menu has no Settings line: they live in the iPad view (the GM night rebuild, N5)');
     check(!/Switchboard|gm-menu-switchboard/.test(base1280.menu) && !/Workshop|gm-menu-workshop/.test(base1280.menu), 'and no Switchboard or Workshop line (both are gone)');
     check(!/id="gm-menu-preflight"/.test(base1280.menu), 'N2: no tool has a Menu line (Preflight is reached through B68GmTools)');
-    check(base1280.panes === 'prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,run', 'the panes are the page\'s own, in its order: ' + base1280.panes);
+    check(base1280.panes === 'prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,run,view', 'the panes are the page\'s own, in its order, and the places\' view pane: ' + base1280.panes);
 
-    /* ---- 2. a test tool and the phase filter, driven by the phase rail ---- */
+    /* ---- 2. a registered tool comes to the GM (Find, an extra view); the rail moves the night and the page follows; nothing hides ---- */
     const INIT = () => {
       function hook(name, fn) { let v; Object.defineProperty(window, name, { configurable: true, get() { return v; }, set(x) { v = x; try { fn(x); } catch (e) { console.error('hook ' + name + ': ' + e.message); } } }); }
-      hook('B68GmTools', (T) => { T.register({ id: 'testtool', label: 'Test tool', phases: ['plan'], key: 'Q', mount(box) { box.textContent = 'TESTTOOL-BODY'; } }); });
+      hook('B68GmTools', (T) => { T.register({ id: 'testtool', label: 'Test tool', key: 'Q', words: 'probe', mount(box) { box.textContent = 'TESTTOOL-BODY'; } }); });
       hook('B68Features', (F) => { F.register({ id: 'test.gm', label: 'Test GM-only line', surface: 'gm', stage: 'spine', default: false, saturday: 'off', doc: 'A GM-only test line.' }); });
     };
     const G = await open('#gm', { init: INIT });
     const g = G.page;
-    let t = await shown(g, '.gm-tab');
-    check(t.includes('testtool') && TABS.every((id) => t.includes(id)), 'the registered test tool has a tab beside today\'s: ' + t.join(','));
-    check((await chips(g)).includes('testtool'), 'and a phone chip');
-    await g.click('.gm-tab[data-panel="testtool"]');
-    check(await g.$eval('#gm-x-testtool', (e) => !e.hidden && e.textContent === 'TESTTOOL-BODY'), 'its pane is drawn by mount()');
-    await g.click('.gm-tab[data-panel="location"]');
+    check(!(await views(g)).includes('testtool') && !(await chips(g)).includes('testtool'), 'the registered tool has no tab or chip of its own');
+    await g.keyboard.press('Control+k'); await g.fill('#gm-find-q', 'test tool');
+    check(await g.waitForFunction(() => [...document.querySelectorAll('.gm-find-hit')].some((h) => /Tool/.test(h.textContent) && /Test tool/.test(h.textContent)), null, { timeout: 5000 }).then(() => true, () => false), 'Find lists it as a tool');
+    await g.keyboard.press('Enter');
+    check(await g.waitForFunction(() => { const p = document.querySelector('#gm-vpane'); return p && !p.hidden && p.textContent === 'TESTTOOL-BODY'; }, null, { timeout: 5000 }).then(() => true, () => false), 'Enter opens it here, drawn by its mount()');
+    check((await views(g)).join() === 'run,chase,scenes,location,testtool,prep,rules,npc,ipad' && await placeOf(g) === 'score', 'as an extra view at the end of the Score\'s own: ' + (await views(g)).join(','));
+    check(!!(await g.$('.gm-views [data-pvx="testtool"]')), 'with a × to drop it');
     await g.waitForSelector('#gm-phaserail [data-rail="score"]', { timeout: 10000 });
-    const tap = async (id) => { await g.$eval('#gm-phaserail [data-rail="' + id + '"]', (e) => e.click()); await sleep(300); };
-    await tap('score');
-    t = await shown(g, '.gm-tab');
-    check(!t.includes('testtool') && !t.includes('score') && !t.includes('downtime') && !t.includes('cards') && t.includes('location') && t.includes('scenes') && t.includes('chase') && t.includes('npc') && t.includes('prep'), 'the rail\'s Score: the planning and downtime tools are gone, the Score tools stay: ' + t.join(','));
-    check(!(await chips(g)).includes('testtool') && !(await chips(g)).includes('score') && (await chips(g)).includes('console') && (await chips(g)).includes('state'), 'and the phone chip goes too (Console and State are not tools: they stay)');
+    check(!(await g.$('#gm-phaserail [data-rail="all"]')), 'the rail has no All tools');
+    const tap = async (id) => { await g.$eval('#gm-phaserail [data-rail="' + id + '"]', (e) => e.click()); await sleep(400); };
     await tap('plan');
-    t = await shown(g, '.gm-tab');
-    check(t.includes('testtool') && t.includes('score') && t.includes('cards') && !t.includes('chase') && !t.includes('scenes') && !t.includes('downtime'), 'Planning: the test tool, Score and Cards are shown: ' + t.join(','));
+    check(await placeOf(g) === 'plan' && (await views(g)).join() === 'cards,corkboard,run,score,prep,rules,npc,ipad', 'the rail\'s Planning moves the night, and the page follows it: Planning\'s views (the extra view stayed in the Score) ' + (await views(g)).join(','));
+    await g.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    await g.keyboard.press('c');
+    check(await g.$eval('#gm-chase', (e) => !e.hidden) && (await views(g)).includes('chase') && await placeOf(g) === 'plan', 'C in Planning: the Chase comes here as an extra view (nothing is hidden by the phase)');
     await tap('pb');
-    t = await shown(g, '.gm-tab');
-    check(t.includes('location') && t.includes('downtime') && !t.includes('scenes') && !t.includes('testtool'), 'Personal Business: Downtime is shown, and the tab on screen (Location) is kept: ' + t.join(','));
-    await tap('all');
-    t = await shown(g, '.gm-tab');
-    check(t.includes('testtool') && TABS.every((id) => t.includes(id)), 'All tools brings every tab back');
-    const withTool = await strip(g);
-    check(hasAll(withTool.tabs) && /data-panel="testtool"/.test(withTool.tabs) && !/ hidden/.test(withTool.tabs.replace(/aria-hidden="[^"]*"/g, '')), 'and none of them is hidden');
-    await tap('all');
+    check(await placeOf(g) === 'pb' && (await views(g)).join() === 'downtime,debrief,trouble,prep,rules,npc,ipad', 'Personal business: its views ' + (await views(g)).join(','));
+    check(!/\shidden/.test((await strip(g)).views), 'and none of them is hidden');
 
     /* ---- 3. everything on, and the Settings ---- */
     const phoneTraffic = [];

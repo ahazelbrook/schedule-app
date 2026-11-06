@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -62,6 +63,7 @@ try {
   const errors = [];
   async function open(hash, { width = 1280, height = 900, mobile = false } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width, height }, serviceWorkers: 'block', isMobile: mobile, hasTouch: mobile });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -75,7 +77,7 @@ try {
 
   const G = await open('#gm');
   const p = G.page;
-  check((await p.$$eval('.gm-tab', (t) => t.map((x) => x.getAttribute('data-panel')).join())) === 'prep,rules,location,scenes,score,chase,npc,downtime,cards,ipad', 'the side tabs: Prep, Screen, Location, Street, Score, Chase, NPC, Downtime, Cards, iPad');
+  check((await p.$$eval('.gm-views [data-pv]', (t) => t.map((x) => x.getAttribute('data-pv')).join())) === 'run,chase,scenes,location,prep,rules,npc,ipad', 'the Score\'s views: The site, Chase, Street, Location roller, then Prep, Rules, Cast, iPad');
   await p.keyboard.press('s');
   check(await p.$eval('#gm-root', (r) => r.getAttribute('data-panel')) === 'scenes' && await p.$eval('#gm-scn', (e) => !e.closest('[hidden]') && !e.hidden), 'key S opens the street scene panel');
   await p.click('[data-gm="scnroll"]');
@@ -144,15 +146,15 @@ try {
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
   await G.c.close();
 
-  // a phone: twelve segments, nothing wider than the screen, every control 44 px or more
+  // a phone: the Score's chips in two rows, nothing wider than the screen, every control 44 px or more
   const M = await open('#gm', { width: 390, height: 844, mobile: true });
   const mp = M.page;
-  check((await mp.$$eval('.gm-segbar .chip', (c) => c.map((x) => x.getAttribute('data-seg')).join())) === 'console,prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,state', 'phone: the bar is Console, Prep, Location, Street, Score, Chase, NPC, Downtime, Cards, GM screen, iPad, State');
-  const segRows = await mp.$$eval('.gm-segbar .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.right)]; }));
+  check((await mp.$$eval('.gm-vchips .chip', (c) => c.map((x) => x.getAttribute('data-pv') || x.getAttribute('data-seg')).join())) === 'console,run,chase,scenes,location,prep,rules,npc,ipad,state', 'phone: the chips are the Roll, The site, Chase, Street, the Location roller, then Prep, Rules, Cast, iPad and the drawer');
+  const segRows = await mp.$$eval('.gm-vchips .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return [Math.round(r.top), Math.round(r.right)]; }));
   const perRow = segRows.reduce((m, r) => { m[r[0]] = (m[r[0]] || 0) + 1; return m; }, {});
   check(Object.values(perRow).length === 2 && segRows.every((r) => r[1] <= 390), 'phone: two rows, every segment on screen (' + JSON.stringify(perRow) + ' ' + JSON.stringify(segRows) + ')');
   for (const seg of ['scenes']) {
-    await mp.click('.gm-segbar [data-seg="' + seg + '"]');
+    await mp.click('.gm-vchips [data-pv="' + seg + '"]');
     await mp.waitForSelector('#gm-scn select', { state: 'visible', timeout: 5000 });
     await mp.click('[data-gm="scnroll"]'); await mp.waitForSelector('#gm-scn .gm-scncard');
     const lay = await mp.evaluate(() => {

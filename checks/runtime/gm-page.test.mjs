@@ -364,9 +364,13 @@ function fakeBrowser(over) {
 }
 function loadPage(W) {
   const ctx = vm.createContext(W);
+  /* the places of the night (gm/places.js, N1b) run in the same window, as the GM bundle loads them before the page */
+  if (!W.__noPlaces) vm.runInContext(fs.readFileSync(path.join(ROOT, 'app', 'gm', 'places.js'), 'utf8'), ctx, { filename: 'gm/places.js' });
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8'), ctx, { filename: 'gm-page.js' });
   return W.B68GmPage;
 }
+/* the view switcher's ids, in its order (the place's own views, an extra view, then the four pinned) */
+const viewIds = (h) => h.qa('.gm-views [data-pv]').map((t) => t.getAttribute('data-pv'));
 /* a fake server for the GM state: the real merge, one document */
 function fakeGm(camp, extra) {
   const server = { doc: {}, at: 0, patches: [], displays: [] };
@@ -395,6 +399,24 @@ async function openPage({ br, fg, camp, over, api } = {}) {
     save: async () => { await page.close(); await new Promise((r) => setTimeout(r, 20)); } };
 }
 const cardTxt = (h) => (h.q('#gm-card').textContent || '').replace(/\s+/g, ' ').trim();
+
+await test('6.0 the places (N1b): a page with no phase opens in Before, its own left column in place of the console; a roll there brings the Roll in; the page without gm/places.js still reaches every pane', async () => {
+  const h = await openPage();
+  assert.equal(h.q('#gm-root').getAttribute('data-place'), 'before'); assert.equal(h.q('#gm-root').getAttribute('data-left'), 'own');
+  assert.equal(h.q('#gm-left').hidden, false); assert.ok(/Preflight/.test(h.q('#gm-left').textContent) && /Tonight/.test(h.q('#gm-left').textContent), 'Preflight and Tonight');
+  assert.equal(h.page._state().panel, 'view', 'Tonight is drawn in the view pane'); assert.equal(h.q('#gm-vpane').hidden, false);
+  assert.equal(h.q('.gm-views [data-pv="tonight"]').getAttribute('aria-selected'), 'true');
+  h.press('2'); await until(() => h.q('#gm-root').classList.contains('roll-here'));
+  assert.equal(h.q('#gm-root').getAttribute('data-left'), 'roll', 'the card is never rolled into a hidden column'); assert.ok(h.q('#gm-left [data-left-back]'), 'with a strip back to Preflight');
+  h.q('#gm-left [data-left-back]').click(); assert.equal(h.q('#gm-root').getAttribute('data-left'), 'own');
+  h.page.goPlace('score', { navigateOnly: true }); assert.equal(h.q('#gm-root').getAttribute('data-left'), 'roll'); assert.equal(h.q('#gm-left').hidden, true);
+  assert.equal(h.page._state().panel, 'run', 'the Score opens at The site');
+  await h.save();
+  const br = fakeBrowser({ __noPlaces: true }), h2 = await openPage({ br });
+  assert.deepEqual(h2.qa('.gm-views [data-gm="panel"]').map((t) => t.getAttribute('data-panel')), ['prep', 'rules', 'location', 'scenes', 'score', 'chase', 'npc', 'downtime', 'cards', 'ipad', 'run'], 'without the module the switcher lists every pane');
+  h2.press('n'); assert.equal(h2.page._state().panel, 'npc'); h2.q('.gm-views [data-panel="chase"]').click(); assert.equal(h2.page._state().panel, 'chase');
+  await h2.save();
+});
 
 await test('6a. the console is the four Situations: a big Position switch, the single tables folded under the card, no Result control, no toggle', async () => {
   const h = await openPage();
@@ -693,8 +715,9 @@ await test('8a. keyAction: S opens the street scene panel; E opens nothing any m
 await test('8b. S opens the panel; Roll files the card (seed, controls, memory BEFORE the roll) and a history entry; the card has the read-aloud, ratings and grid', async () => {
   const fg = fakeGm(), h = await openPage({ fg });
   assert.ok(h.q('[data-pane="scenes"]') && h.q('#gm-scn') && h.q('[data-pane="score"]') && h.q('#gm-score') && !h.q('[data-pane="engagement"]') && !h.q('#gm-eng'));
-  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,score,chase,npc,downtime,cards,ipad');
+  assert.deepEqual(viewIds(h), ['tonight', 'room', 'print', 'ipadscenes', 'prep', 'rules', 'npc', 'ipad'], 'a page with no phase opens in Before: its views, then the pinned');
   h.press('s'); assert.equal(h.page._state().panel, 'scenes');
+  assert.deepEqual(viewIds(h), ['tonight', 'room', 'print', 'ipadscenes', 'scenes', 'prep', 'rules', 'npc', 'ipad'], 'S brings Street to Before as an extra view');
   assert.ok(!h.q('#gm-scn .gm-scncard'), 'nothing before the first roll');
   h.q('[data-gm="scnroll"]').click();
   const card = h.q('#gm-scn .gm-scncard'); assert.ok(card, 'a card');
@@ -937,8 +960,8 @@ await test('9g. the gate lets a score patch through only when both svgs were mar
 await test('9h. the iPad view: a tab (I); On the iPad now, then Listening, Scenes and Settings; the mode, seventeen scenes, the interval; the server document is drawn; Clear and Blank are the tray\'s', async () => {
   const fg = addAmbient(fakeGm(), { doc: { mode: 'pin', scene: 'duskwall', intervalMin: 10 }, shown: { kind: 'svg', title: 'Invented Mill' } });
   const h = await openPage({ fg, camp: CAMP3 });
-  assert.ok(h.q('#gm-ipad') && h.q('[data-pane="ipad"]') && h.q('.gm-tab[data-panel="ipad"]').textContent.includes('iPad'));
-  assert.ok(h.qa('[data-gm="seg"]').some((b) => b.getAttribute('data-seg') === 'ipad'), 'the phone bar has it too');
+  assert.ok(h.q('#gm-ipad') && h.q('[data-pane="ipad"]') && h.q('.gm-views [data-pv="ipad"]').textContent.includes('iPad'), 'a pinned view in every place');
+  assert.ok(h.q('.gm-vchips [data-pv="ipad"]'), 'the chip row has it too');
   h.press('i'); assert.equal(h.page._state().panel, 'ipad');
   await until(() => h.page._ambient().loaded);
   assert.deepEqual(h.qa('#gm-ipad .gm-band').map((x) => x.textContent.replace(/\s+/g, ' ').trim().split(' ')[0]), ['On', 'Listening', 'Settings', 'Scenes'], 'the view\'s sections (the grid sets Listening and Settings beside the Scenes)');
@@ -1411,7 +1434,7 @@ await test('10a. the laptop layout: body.gm-app while open, the top bar (session
   assert.ok(h.q('.gm-menu-list a[href="#display"]') && h.qa('.gm-bar a[href="#display"]').every((a) => a.closest('.gm-menu-list')), 'the display page opens from the Menu, not the bar');
   assert.ok(!h.q('.gm-capacts [data-gm="note"]') && !h.q('.gm-capacts [data-gm="clearcap"]') && h.q('.gm-capacts [data-gm="last"]'), 'the capture bar keeps File last roll only');
   assert.equal(h.q('#gm-bar-stt').hasAttribute('hidden'), true, 'no Listening pill while the transcriber has never been set up');
-  assert.ok(/GM screen/.test(h.q('.gm-tab[data-panel="rules"]').textContent) && /GM screen/.test(h.q('[data-gm="seg"][data-seg="rules"]').textContent), 'the Screen tab is called GM screen');
+  assert.ok(/^Rules T$/.test(h.q('.gm-views [data-pv="rules"]').textContent) && /Rules/.test(h.q('.gm-vchips [data-pv="rules"]').textContent), 'the GM screen is the pinned Rules view (T), in the switcher and the chip row');
   h.q('[data-gm="menu"]').click(); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'a second press shuts it');
   h.q('[data-gm="menu"]').click(); h.press('Escape'); assert.equal(h.q('.gm-menu-list').hasAttribute('hidden'), true, 'Escape shuts it');
   assert.equal(h.qa('#gm-mini button').length, 4, 'the console as its four keys');
@@ -2460,9 +2483,10 @@ await test('17a. D opens the Downtime panel (a side tab after NPC, with its key;
   assert.deepEqual([P.keyAction({ key: 'd' }), P.keyAction({ key: 'D' })], [{ type: 'panel', panel: 'downtime' }, { type: 'panel', panel: 'downtime' }]);
   assert.deepEqual([P.keyAction({ key: 'd', typing: true }), P.keyAction({ key: 'd', ctrlKey: true }), P.keyAction({ key: 'd', metaKey: true })], [null, null, null]);
   const h = await dtPage();
-  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,score,chase,npc,downtime,cards,ipad', 'Downtime sits after NPC in the generator group');
-  assert.match(h.q('.gm-tab[data-panel="downtime"]').textContent, /^Downtime D$/);
-  assert.equal(h.qa('[data-gm="seg"]').map((b) => b.getAttribute('data-seg')).join(), 'console,prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,state', 'and a phone segment after NPC');
+  h.page.goPlace('pb');
+  assert.deepEqual(viewIds(h), ['downtime', 'debrief', 'trouble', 'prep', 'rules', 'npc', 'ipad'], 'Personal business lays Downtime out first');
+  assert.match(h.q('.gm-views [data-pv="downtime"]').textContent, /^Downtime D$/);
+  assert.deepEqual(h.qa('.gm-vchips .chip').map((b) => b.getAttribute('data-pv') || b.getAttribute('data-seg')), ['console', 'downtime', 'debrief', 'trouble', 'prep', 'rules', 'npc', 'ipad', 'state'], 'and the chip row: the Roll, the place\'s views, the pinned, the drawer');
   h.press('b'); assert.equal(h.page._state().panel, 'location');
   h.press('d', { target: h.q('#gm-dt-purveyor') });
   assert.equal(h.page._state().panel, 'location', 'D typed into a box is a letter, not the panel');
@@ -2470,7 +2494,9 @@ await test('17a. D opens the Downtime panel (a side tab after NPC, with its key;
   h.press('d');
   assert.equal(h.page._state().panel, 'downtime'); assert.equal(h.q('[data-pane="downtime"]').hidden, false);
   assert.equal(h.q('#gm-dt .gm-band').textContent, 'Downtime · personal business', 'the heading');
-  h.q('[data-gm="seg"][data-seg="downtime"]').click(); assert.equal(h.page._state().seg, 'side', 'the phone segment opens it as a side panel');
+  h.q('.gm-vchips [data-seg="console"]').click(); assert.equal(h.page._state().seg, 'console', 'the Roll chip shows the left column');
+  h.q('.gm-vchips [data-pv="downtime"]').click(); assert.equal(h.page._state().seg, 'side', 'a view chip shows the view again');
+  assert.equal(h.page._state().panel, 'downtime');
   await h.save();
 });
 
@@ -3542,14 +3568,14 @@ await test('18a. J opens the Score panel (a side tab after Street with its key, 
   assert.deepEqual([P.keyAction({ key: 'j' }), P.keyAction({ key: 'J' })], [{ type: 'panel', panel: 'score' }, { type: 'panel', panel: 'score' }]);
   assert.deepEqual([P.keyAction({ key: 'j', typing: true }), P.keyAction({ key: 'j', ctrlKey: true }), P.keyAction({ key: 'j', metaKey: true }), P.keyAction({ key: 'e' })], [null, null, null, null]);
   const h = await scPage();
-  assert.equal(h.qa('.gm-tab').map((t) => t.getAttribute('data-panel')).join(), 'prep,rules,location,scenes,score,chase,npc,downtime,cards,ipad', 'the tab sits in the slot Engage had, after Street');
-  assert.match(h.q('.gm-tab[data-panel="score"]').textContent, /^Score J$/);
-  assert.equal(h.qa('[data-gm="seg"]').map((b) => b.getAttribute('data-seg')).join(), 'console,prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,state');
-  assert.equal(h.q('[data-gm="seg"][data-seg="score"]').textContent, 'Score');
+  h.page.goPlace('plan');
+  assert.deepEqual(viewIds(h), ['cards', 'corkboard', 'run', 'score', 'prep', 'rules', 'npc', 'ipad'], 'the Score generator is a view of Planning');
+  assert.match(h.q('.gm-views [data-pv="score"]').textContent, /^Score generator J$/);
+  assert.equal(h.q('.gm-vchips [data-pv="score"]').textContent, 'Score gen', 'its chip is short');
   h.press('j'); assert.equal(h.page._state().panel, 'score');
   h.press('b'); h.press('j', { target: h.q('#gm-cap-in') }); assert.equal(h.page._state().panel, 'location', 'J typed into a box is a letter, not the panel');
   h.press('e'); assert.equal(h.page._state().panel, 'location', 'E does nothing');
-  h.q('[data-gm="seg"][data-seg="score"]').click(); assert.equal(h.page._state().panel, 'score'); assert.equal(h.page._state().seg, 'side');
+  h.q('.gm-vchips [data-pv="score"]').click(); assert.equal(h.page._state().panel, 'score'); assert.equal(h.page._state().seg, 'side');
   await h.save();
 });
 
@@ -4057,7 +4083,8 @@ function chTickIt(h, n, cap, roll, between) {
 
 await test('19a. C opens the Chase panel, the tab after Score; without map kit 0.6 the panel says so and cannot start; without the module it says that', async () => {
   const h = await openPage();
-  assert.match(h.q('.gm-tab[data-panel="chase"]').textContent, /^Chase C$/); assert.equal(h.q('[data-gm="seg"][data-seg="chase"]').textContent, 'Chase');
+  h.page.goPlace('score', { navigateOnly: true });
+  assert.match(h.q('.gm-views [data-pv="chase"]').textContent, /^Chase C$/); assert.equal(h.q('.gm-vchips [data-pv="chase"]').textContent, 'Chase');
   h.press('c'); assert.equal(h.page._state().panel, 'chase'); assert.ok(!h.q('#gm-chase').hidden);
   assert.match(h.q('#gm-chase .gm-note').textContent, /needs map kit 0\.6; this build has none/); assert.ok(h.q('#gm-chase [data-gm="ch-start"]').disabled || h.q('#gm-chase [data-gm="ch-start"]').hasAttribute('disabled'));
   assert.deepEqual(h.qa('#gm-chase [data-k="from"]').map((b) => [b.getAttribute('data-v'), b.getAttribute('aria-pressed'), b.hasAttribute('disabled')]), [['location', 'false', true], ['scene', 'false', true], ['ground', 'true', false]], 'no roll yet: a street type it is');

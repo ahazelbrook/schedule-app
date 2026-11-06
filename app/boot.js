@@ -752,9 +752,12 @@
        change signature, and a tick of Stress must not redraw it, so with the switch off nothing here is seen */
     var harm = [], hm = isObj(p.harm) ? p.harm : {};
     [['l4', 4], ['l3', 3], ['l2', 2], ['l1', 1]].forEach(function (k) { var v = hm[k[0]]; (Array.isArray(v) ? v : [v]).forEach(function (x) { if (x != null && String(x).trim() && harm.length < 4) harm.push(k[1]); }); });
+    /* the night rebuild (N1b): the keys the player could turn now (three hits, not struck: sheet/keys.js canTurn), named, for the Aftermath's crew list */
+    var SK = window.B68SheetKeys, pbDef = window.B68Content && window.B68Content.byId ? window.B68Content.byId[t(d.playbook)] : null;
+    var turn = (Array.isArray(p.keys) ? p.keys : []).filter(function (k) { return isObj(k) && (SK && typeof SK.canTurn === 'function' ? SK.canTurn(k, pbDef) : false); }).map(function (k) { return t(k.name).trim().slice(0, 40) || 'A key'; }).slice(0, 6);
     Object.defineProperty(out, 'status', { enumerable: false, value: {
       stress: typeof p.stress === 'number' && isFinite(p.stress) ? Math.max(0, Math.min(9, Math.floor(p.stress))) : null, harm: harm,
-      locks: Math.min(6, (Array.isArray(p.keys) ? p.keys : []).filter(function (k) { return isObj(k) && k.deadlock; }).length) } });
+      locks: Math.min(6, (Array.isArray(p.keys) ? p.keys : []).filter(function (k) { return isObj(k) && k.deadlock; }).length), turn: turn } });
     return out;
   }
   function gmCharacters() {
