@@ -175,7 +175,11 @@
     { id: 'map.countdown', label: 'A countdown clock in the Run view', surface: 'gm', stage: 'map', default: false, saturday: 'on',
       doc: 'When the site’s play has a countdown (clock.countdown: a time and a name), the Run view’s header shows it as a pie beside the alarm, one segment filled for each beat since the clock’s start: each beat forward is a tick, and it is full at the countdown’s time. GM only. Off: no pie.' },
     { id: 'spine.find', label: 'Find lands on the heading', surface: 'gm', stage: 'spine', default: false, saturday: 'on',
-      doc: 'Find (Ctrl+K) lists each room, scene and way of the prep note under its own heading, and Enter in the Prep tab’s find box goes to the next heading that matches, a room or a scene rather than the whole section. Off: both find whole sections, as before.' }
+      doc: 'Find (Ctrl+K) lists each room, scene and way of the prep note under its own heading, and Enter in the Prep tab’s find box goes to the next heading that matches, a room or a scene rather than the whole section. Off: both find whole sections, as before.' },
+    /* the tech run (06/11): the strip across the top of the iPad got in the way, so it is a choice and starts off (absent reads off, so a campaign
+       document that never stored it, and an older page that never writes it, both leave the band down) */
+    { id: 'display.band', label: 'The band across the top of the iPad', surface: 'display', stage: 'spine', default: false, saturday: 'off', setting: true,
+      doc: 'The strip across the top of the iPad: the ON AIR lamp, the phase, the crew’s first names with Stress and harm, and security. Off: no strip; the map and every scene take the whole screen and the lamp sits in its own corner.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

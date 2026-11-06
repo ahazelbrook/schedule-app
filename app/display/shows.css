@@ -131,6 +131,8 @@
 .dp-root.dp-lights-out .dp-lay-slot + .dp-lay-slot { border-left-color: transparent; }
 /* below the band: the stages (and the map's caption bar inside them), the beats, the band beside the map with its countdown, the hard start, the montage */
 .dp-root.dp-lay-on .dp-stages, .dp-root.dp-lay-on .dp-overlay, .dp-root.dp-lay-on .dp-hs, .dp-root.dp-lay-on .dp-montage { top: var(--dp-lay-h); }
+/* the tech run (06/11): the ambient scenes too, so a score site fitted whole inside its frame is never under the strip */
+.dp-root.dp-lay-on .dp-ambient { top: var(--dp-lay-h); }
 .dp-root.dp-lay-on .dp-auto { top: calc(var(--dp-lay-h) + 1.2vmin); }
 .dp-root.dp-lay-on .dp-chrome { top: calc(var(--dp-lay-h) + 1.2vmin); }
 /* an overlay up (a card, a beat, the dawn) with the band beside the map: the band's words stand down under it (its ground stays), so the overlay is

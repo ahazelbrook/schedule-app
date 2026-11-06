@@ -1450,7 +1450,8 @@
        frame and the dawn the whole of it. Everything is drawn from the validated fields as text or as an svg built node by node. */
     s.ov = { seen: '', node: null, token: 0, timers: [], applied: false };
     /* the show contract's lasting layers and the data channel to the HTML scenes (app/display/layers.js) */
-    s.layers = root.B68Layers ? root.B68Layers.attach(container, { skew: function () { return s.skew || 0; } }) : null;
+    /* the band across the top is a setting (display.band, the iPad view's Settings), off unless the GM turns it on (the tech run, 06/11) */
+    s.layers = root.B68Layers ? root.B68Layers.attach(container, { skew: function () { return s.skew || 0; }, band: function () { return swOn('display.band'); } }) : null;
     if (s.layers) s.offs.push(function () { s.layers.destroy(); });
     /* the suite's display switches (each does nothing while its switch is off): the hard start (1.2, spine.start) and the FX budget (F7, fx.pause / fx.off) */
     function swOn(id) { return !!(root.B68Flags && root.B68Flags.on(id)); }

@@ -13,9 +13,8 @@
 @font-face{font-family:"Yellowtail";src:url(../fonts/Yellowtail-Regular.woff2) format("woff2");font-weight:400;font-display:block}
 html,body{margin:0;height:100%;background:#3a2a18;overflow:hidden}
 body{container-type:size}
-/* the scene is 4:3 and always covers its frame */
-.stage{position:absolute;left:50%;top:50%;width:max(100%,133.334vh);aspect-ratio:4/3;transform:translate(-50%,-50%);min-height:100%;overflow:hidden}
-@supports (width:1cqw){.stage{width:max(100cqw,133.334cqh)}}
+/* the scene fills its frame; the board is drawn whole inside it, any shape of frame (the tech run, 06/11: the 4:3 cover cut a portrait iPad's site in half) */
+.stage{position:absolute;inset:0;overflow:hidden}
 .layer{position:absolute;inset:0;width:100%;height:100%;display:block}
 #grain{position:absolute;inset:0;background-size:224px;opacity:.12;mix-blend-mode:overlay;pointer-events:none}
 #vig{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 46%,transparent 55%,rgba(8,7,10,.55) 100%);pointer-events:none}
@@ -23,16 +22,16 @@ body{container-type:size}
 </style></head>
 <body>
 <div class="stage" id="stage">
-<svg class="layer" id="world" viewBox="0 0 1600 1200" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+<svg class="layer" id="world" viewBox="0 0 1600 1200" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
   <defs>
     <filter id="cork" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.13" numOctaves="3" seed="11"/><feColorMatrix values="0 0 0 0 0.22  0 0 0 0 0.12  0 0 0 0 0.05  0 0 0 -2.2 1.25"/></filter>
     <radialGradient id="lamp" cx="760" cy="460" r="900" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffd27a" stop-opacity=".12"/><stop offset=".55" stop-color="#1a1208" stop-opacity=".25"/><stop offset="1" stop-color="#0d0905" stop-opacity=".72"/></radialGradient>
   </defs>
   <g id="cam">
-    <rect x="-200" y="-200" width="2000" height="1600" fill="#a27445"/>
-    <rect x="-200" y="-200" width="2000" height="1600" filter="url(#cork)" opacity=".9"/>
+    <rect x="-600" y="-900" width="2800" height="3000" fill="#a27445"/>
+    <rect x="-600" y="-900" width="2800" height="3000" filter="url(#cork)" opacity=".9"/>
     <g id="content"></g>
-    <rect x="-200" y="-200" width="2000" height="1600" fill="url(#lamp)"/>
+    <rect x="-600" y="-900" width="2800" height="3000" fill="url(#lamp)"/>
   </g>
 </svg>
 <div id="vig"></div>
@@ -92,9 +91,14 @@ const W=1600,H=1200,content=$("content"),cam=$("cam");
 let pols=[],strings=[],timers=[],gen=0;
 const T=(fn,ms)=>{const id=setTimeout(fn,ms);timers.push(id);return id;};
 
-// a slow drift across the board: never still, never fast
-loop((dt,t)=>{const x=Math.sin(t*2*Math.PI/97)*70+Math.sin(t*2*Math.PI/41)*18, y=Math.sin(t*2*Math.PI/73+1)*45+Math.cos(t*2*Math.PI/37)*12, s=1.16+Math.sin(t*2*Math.PI/131)*.05;
- cam.setAttribute("transform","translate(800 600) scale("+s.toFixed(4)+") translate("+(-800+x).toFixed(1)+" "+(-600+y).toFixed(1)+")");});
+// a slow drift across the board: never still, never fast. The camera keeps the whole sheet (and the crew's polaroids) in view: its scale comes from the
+// frame's shape and what is pinned up, with room for the drift and the breathing zoom (the tech run, 06/11), and is worked out again on a resize
+const AX=44,AY=28,WOB=.03;let box={x:800,y:600,w:1220,h:864},base=1.1;
+function visible(){const w=innerWidth||4,h=innerHeight||3,a=w/h;return a>=4/3?{hw:600*a,hh:600}:{hw:800,hh:800/a};}
+function fit(){const v=visible();base=Math.min(1.16,.96*v.hw/(box.w/2+AX),.96*v.hh/(box.h/2+AY))/(1+WOB);}
+addEventListener("resize",fit);fit();
+loop((dt,t)=>{const x=Math.sin(t*2*Math.PI/97)*AX*.8+Math.sin(t*2*Math.PI/41)*AX*.2, y=Math.sin(t*2*Math.PI/73+1)*AY*.8+Math.cos(t*2*Math.PI/37)*AY*.2, s=base*(1+Math.sin(t*2*Math.PI/131)*WOB);
+ cam.setAttribute("transform","translate(800 600) scale("+s.toFixed(4)+") translate("+(-box.x+x).toFixed(1)+" "+(-box.y+y).toFixed(1)+")");});
 // polaroids lift a little in a draught
 loop((dt,t)=>{for(const p of pols){const a=Math.sin(t*p.sp+p.ph)*.6+Math.sin(t*p.sp*2.3+p.ph)*.25;p.e.setAttribute("transform",p.base.replace(/rotate\([^)]*\)/,"rotate("+(p.rot+a).toFixed(2)+")"));}});
 
@@ -150,6 +154,9 @@ function show(d){
   el("circle",{cx:-2.5,cy:7.5,r:3,fill:"#e03a20"},g);
   pols.push({e:g,base:tf,rot:rot,ph:R(0,6),sp:R(.5,.8)});
  });
+ // what the camera keeps in view: the sheet, and the polaroids hanging off its foot
+ const foot=crew.length?Math.max(by+bh,by+bh-70+16+9+ph):by+bh;
+ box={x:bx+bw/2,y:(by+foot)/2,w:bw+40,h:foot-by};fit();
  strings=[...content.querySelectorAll(".string")];
  const g0=gen;
  strings.forEach((s,i)=>T(()=>{if(g0===gen)pin(s,2600);},1500+i*2200));
