@@ -342,7 +342,7 @@ try {
   check(await G.page.$eval('#gm-ipad', (p) => !p.hidden) && await G.page.waitForSelector('#gm-ipad .gm-ipad-tile:not([disabled])[data-id="board"]', { timeout: 8000 }).then(() => true, () => false), 'I opens the iPad panel; the score scenes are open now that a score is set');
   check((await G.page.textContent('#gm-ipad-score')).includes(rollName), 'the score line names the roll');
   check((await G.page.$$('#gm-ipad .gm-ipad-tile')).length === 17, 'seventeen scenes in the picker');
-  check((await G.page.$$('#gm-ipad [data-gm="darkipad"], #gm-ipad .gm-ipad-now [data-gm="blankipad"]')).length === 0, 'the iPad view has no Clear or Lights out of its own: one way off, the tray\'s');
+  check((await G.page.$$('#gm-ipad .gm-ipad-now [data-gm="blankipad"]')).length === 0 && (await G.page.$$('#gm-ipad .gm-ipad-now [data-gm="darkipad"]')).length === 1, 'the iPad view has no Clear of its own (one way off, the tray\'s) and one Blank, for the phone whose tray has none');
   await G.page.click('.gm-tray [data-tray="blank"]');
   check(await until(async () => (await api('GET', '/gm/display', GM)).json.display.kind === 'dark', 5000), 'Blank (the tray): the display is dark');
   check(/Blank/.test(await G.page.textContent('#gm-ipad-now')) && /Blank/.test(await G.page.textContent('.gm-tray .gm-tray-text')), 'On the iPad now says so, and so does the tray\'s live line');

@@ -950,7 +950,8 @@ await test('9h. the iPad view: a tab (I); On the iPad now, then Listening, Scene
   assert.deepEqual(h.qa('#gm-amb-int option').map((o) => o.textContent), ['4 min', '7 min', '10 min', '15 min']); assert.equal(h.q('#gm-ipad [data-gm="ambskip"]').hasAttribute('disabled'), true, 'Next scene is Auto only');
   assert.match(h.q('#gm-ipad-score').textContent, /None set/); assert.equal(h.q('#gm-ipad [data-gm="clearscore"]').hasAttribute('disabled'), true);
   assert.equal(h.q('#gm-ipad [data-gm="clearscore"]').textContent, 'Take it down', 'the score scene\'s own take-down reads Take it down');
-  assert.equal(h.qa('#gm-ipad .gm-ipad-now [data-gm="blankipad"], #gm-ipad [data-gm="darkipad"]').length, 0, 'no Clear or Lights out of its own: one way off, the tray\'s');
+  assert.equal(h.qa('#gm-ipad .gm-ipad-now [data-gm="blankipad"]').length, 0, 'no Clear of its own: one way off, the tray\'s');
+  assert.deepEqual(h.qa('#gm-ipad .gm-ipad-now [data-gm="darkipad"]').map((b) => b.textContent), ['Blank'], 'but a Blank in On the iPad now: the phone\'s tray has none (the review\'s B4)');
   assert.deepEqual(h.qa('.gm-tray [data-tray]').map((b) => b.getAttribute('data-tray')), ['open', 'send', 'clear', 'blank', 'ap'], 'the tray: what is live, Send, Clear, Blank, the autopilot');
   assert.deepEqual(['clear', 'blank'].map((k) => h.q('.gm-tray [data-tray="' + k + '"]').textContent.replace(/\s+/g, ' ').trim()), ['Clear 0', 'Blank']);
   assert.ok(h.q('#gm-ipad-settings [data-set-row="mirror"]'), 'the Settings section holds Mirror for phones');
@@ -978,6 +979,55 @@ await test('9i. the tray: Clear (and key 0) is everything down to the ambient; B
   assert.ok(!/Blank the iPad|Clear → ambient|Lights out/.test(h.root.textContent), 'no old name left');
   fg.gm.setDisplay = async () => { throw new Error('refused'); }; br.toasts.length = 0;
   h.press('0'); await until(() => br.toasts.length); assert.deepEqual(br.toasts[0], ['Could not clear all of it: refused', true]);
+  await h.save();
+});
+
+await test('9i3. (review B2, B4) a card another device lays: 0 reads the iPad first and takes it down though this page never knew of it; a live poke puts one in the tray; the view\'s Blank sends dark', async () => {
+  const fg = addAmbient(fakeGm(), { doc: {} }); let poke = null;
+  const br = fakeBrowser({ B68Live: { on: (kinds, fn) => { if (kinds.includes('ambient')) poke = fn; return () => { poke = null; }; } } });
+  const h = await openPage({ fg, br, camp: CAMP3 });
+  await until(() => fg.server.ambGets > 0);
+  /* another device lays a line; this page is not told (its copy has no overlay) */
+  fg.server.amb.doc.overlay = { id: 'other-1', kind: 'text', text: 'An invented line', ms: 60000, at: new Date().toISOString() }; fg.server.amb.seq++;
+  const g0 = fg.server.ambGets, p0 = fg.server.ambPatches.length;
+  h.press('0'); await until(() => fg.server.displays.length === 1);
+  assert.ok(fg.server.ambGets > g0, 'Clear read the ambient document first');
+  assert.ok(fg.server.ambPatches.slice(p0).some((p) => 'overlay' in p && p.overlay === null), 'and sent the overlay down');
+  assert.ok(!fg.server.amb.doc.overlay, 'the server holds no overlay');
+  /* a card from another device, and a live poke: the tray lists it at once */
+  assert.ok(typeof poke === 'function', 'the page listens for the iPad\'s live pokes');
+  fg.server.amb.doc.overlay = { id: 'other-2', kind: 'npc', npcId: 'npc_x', ms: 60000, at: new Date().toISOString() }; fg.server.amb.seq++;
+  poke('ambient');
+  assert.ok(await until(() => /An NPC \(card\)/.test(h.q('.gm-tray-text').textContent), 3000), 'the tray lists the card laid elsewhere: ' + h.q('.gm-tray-text').textContent);
+  h.press('0'); await until(() => fg.server.displays.length === 2);
+  assert.ok(!fg.server.amb.doc.overlay, 'and 0 takes it down');
+  await openIpad(h);
+  h.q('#gm-ipad .gm-ipad-now [data-gm="darkipad"]').click(); await until(() => fg.server.displays.length === 3);
+  eqj(fg.server.displays[2], { kind: 'dark' }, 'the view\'s Blank is lights out');
+  await h.save();
+});
+
+await test('9i4. (review B1, B3) 0 with a flashback another page laid: its layer comes off though the flashback was not this page\'s; the Roll\'s stamp is taken down only while one is up', async () => {
+  let up = false, escs = 0, ends = 0;
+  const stampCtl = { view: () => ({ on: true, draft: { position: 'risky', effect: 'standard', text: '' }, active: up ? { position: 'risky', effect: 'standard', text: '' } : null, stale: false, sizer: null }),
+    esc: () => { escs++; up = false; return Promise.resolve(); }, clear: () => Promise.resolve(), mark: () => Promise.resolve(false), dismiss() {}, fire: () => Promise.resolve(false), draft: () => Promise.resolve(false), seed() {}, destroy() {} };
+  const STAMP = { create: () => stampCtl, pickRoom: () => '', roomLines: () => [], seedLine: () => null, lineCleared() {}, cutText: (t) => String(t || ''), TEXT_MAX: 100 };
+  /* the real flashback controller: end() only ends a flashback this page laid (its own record), so one laid elsewhere answers false */
+  const FB = require(path.join(ROOT, 'app', 'gm', 'map-flashback.js'));
+  const fbMod = { SWITCH: FB.SWITCH, create: (host) => { const c = FB.create(host); const end = c.end; c.end = () => { ends++; return end(); }; return c; } };
+  const fg = addAmbient(fakeGm(), { doc: { layers: { scene: { filter: 'flashback' } } } });
+  const br = fakeBrowser({ B68Features: require(path.join(ROOT, 'app', 'features.js')), B68GmCueGrammar: { create: () => ({ run() { return null; }, register() {}, unregister() {}, hide() {}, didntCatch() {}, undoToast() {} }) }, B68GmStamp: STAMP, B68GmMapFlashback: fbMod,
+    B68Show: require(path.join(ROOT, 'app', 'gm', 'show.js')) });
+  const h = await openPage({ fg, br, camp: CAMP3 });
+  let p0 = fg.server.ambPatches.length;
+  h.press('0'); await until(() => fg.server.displays.length === 1);
+  assert.ok(ends >= 1, 'the flashback\'s own end ran first');
+  const sent = fg.server.ambPatches.slice(p0).map((p) => JSON.stringify(p)).join(' ');
+  assert.ok(/"layer":\{"path":"scene\.filter","value":null\}/.test(sent), 'and, as it was not this page\'s, the layer came off directly: ' + sent);
+  assert.equal(escs, 0, 'no stamp up: the Roll\'s sizer, effect and line are left alone');
+  up = true; p0 = fg.server.ambPatches.length;
+  h.press('0'); await until(() => fg.server.displays.length === 2);
+  assert.equal(escs, 1, 'a stamp up: it comes down');
   await h.save();
 });
 
