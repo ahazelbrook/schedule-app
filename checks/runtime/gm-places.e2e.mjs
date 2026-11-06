@@ -92,7 +92,7 @@ try {
   check(await a.$$eval('#gm-vpane .gm-tn-run tbody tr td:nth-child(3)', (td) => td.map((x) => x.textContent).join()) === 'Opening,Personal,Planning,Score,Aftermath', 'each beat named by its place');
   await shot(a, 'before-1366');
   await a.click('.gm-views [data-pv="room"]');
-  check(await until(() => a.$eval('#gm-vpane', (e) => ['practical', 'phone', 'light', 'record'].every((t) => e.querySelector('[data-vcell="' + t + '"] [data-inline="' + t + '"]'))), 6000), 'The room: the practical speaker, the ringing phone, the light relay and the recording, each drawn inline');
+  check(await until(() => a.$eval('#gm-vpane', (e) => ['music', 'practical', 'phone', 'light', 'record'].every((t) => e.querySelector('[data-vcell="' + t + '"] [data-inline="' + t + '"]'))), 6000), 'The room: the music, the practical speaker, the ringing phone, the light relay and the recording, each drawn inline');
   await a.click('.gm-views [data-pv="print"]');
   check(await until(() => a.$eval('#gm-vpane [data-inline="print"]', (e) => !!e), 5000) && !(await a.$('#gm-vpane [data-inline="practical"]')), 'Print: its tool inline, and The room\'s four unbound');
   await a.click('.gm-views [data-pv="ipadscenes"]');

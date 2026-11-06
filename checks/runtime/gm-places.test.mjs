@@ -62,7 +62,7 @@ await test('the one table: every pane is a view, every key of the design opens o
   const homes = Object.fromEntries(TOOLS.map((id) => [id, P.homeOf(id)]));
   assert.deepEqual(homes, { hardstart: 'opening', preflight: 'before', print: 'before', corkboard: 'plan', montage: '', practical: 'before', phone: 'before', trouble: 'pb', canon: 'between',
     frontpage: 'opening', absent: 'between', aftermath: 'after', debrief: 'pb', board: 'plan', castphoto: 'between', lair: 'between', record: 'before', light: 'before' }, 'montage has no home: it opens where the GM is (the site has it too)');
-  assert.deepEqual(P.view('room').tools, ['practical', 'phone', 'light', 'record']);
+  assert.deepEqual(P.view('room').tools, ['music', 'practical', 'phone', 'light', 'record']);
   assert.equal(P.view('cards').slot.tool, 'board', 'Opportunities holds the players\' board over the GM\'s cards');
   assert.deepEqual(P.DESKS.map((d) => d.id), ['frontpage', 'absent', 'canon', 'debrief', 'board', 'lair', 'castphoto', 'trouble', 'print', 'gen']);
   assert.deepEqual(P.DESKS.find((d) => d.id === 'gen').panes.map((p) => p[0]), ['npc', 'score', 'location']);

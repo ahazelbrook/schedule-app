@@ -156,6 +156,7 @@
       '<span class="gm-band-tray" id="gm-bar-tray" data-band-slot="tray"></span>' +
       '<span class="gm-band-sep gm-band-sep-mic" aria-hidden="true"></span>' +
       '<span class="gm-band-mic"><button type="button" class="gm-pill" data-gm="ipadview" id="gm-bar-stt" title="The mic: listening (opens the iPad view)" hidden></button></span>' +
+      '<span class="gm-band-music" data-band-slot="music"></span>' +
       '<span class="gm-band-sep" aria-hidden="true"></span>' +
       '<span class="gm-band-cue" id="gm-cuebar" data-band-slot="cue" role="group" aria-label="Cue stack"></span>' +
       '<span class="gm-band-quiet" data-band-slot="quiet"></span>' +
@@ -185,6 +186,8 @@
     function show(n, on) { if (!n) return; n.hidden = !on; if (on) n.removeAttribute('hidden'); else n.setAttribute('hidden', ''); }
     function cueCtl() { var c = call('cue'); return c && typeof c.view === 'function' ? c : null; }
     function quiet() { var Q = W && W.B68GmQuiet; return Q && typeof Q.mount === 'function' ? Q : null; }
+    /* M1: the music's pill (gm/music.js draws it and its popover, and registers the popover with B68GmEsc itself) */
+    function music() { var m = call('music'); return m && typeof m.mountPill === 'function' ? m : null; }
     function nightNow() { var N = call('night'); try { return N && typeof N.night === 'function' ? N.night() : null; } catch (e) { return null; } }
     function prepFacts() {
       var NM = mod('B68GmNight', './night.js'), note = call('prep');
@@ -244,6 +247,7 @@
         else slot.innerHTML = trayFallback();
       }
       var Q = quiet(), qs = q('[data-band-slot="quiet"]'); if (Q && qs) { try { Q.mount(qs); } catch (e) {} }
+      var mu = music(), ms = q('[data-band-slot="music"]'); if (mu && ms) { try { mu.mountPill(ms); } catch (e) {} }
       if (clickOff) { try { clickOff(); } catch (e) {} clickOff = null; }
       if (typeof el.addEventListener === 'function') { var hd = el; hd.addEventListener('click', onClick); clickOff = function () { if (typeof hd.removeEventListener === 'function') hd.removeEventListener('click', onClick); }; }
       var doc = W && W.document;
@@ -289,6 +293,7 @@
       setAttr(q('.gm-band-r2'), 'data-alarm', panic ? 'panic' : due ? 'curfew' : '');
       setAttr(q('[data-band="panic"]'), 'aria-pressed', panic ? 'true' : 'false');
       if (tray && typeof tray.update === 'function') { try { tray.update(); } catch (e) {} }
+      var mu = music(); if (mu && typeof mu.tick === 'function') { try { mu.tick(); } catch (e) {} }      /* PANIC, Resume and a phase move reach the music at once */
       place();
     }
     /* where the band ends: the drawer and the sheets open under it, and the phone's chips stick under it */
@@ -312,6 +317,7 @@
       if (clickOff) { try { clickOff(); } catch (e) {} clickOff = null; }
       if (tray && typeof tray.destroy === 'function') { try { tray.destroy(); } catch (e) {} }
       tray = null;
+      var mu = music(); if (mu && typeof mu.unmountPill === 'function') { try { mu.unmountPill(); } catch (e) {} }
     }
 
     return {

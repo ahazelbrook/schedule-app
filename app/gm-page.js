@@ -2339,6 +2339,7 @@
       curfew: function () { var Sp = W.B68GmSpine; return S === me && Sp && typeof Sp.curfew === 'function' ? Sp.curfew() : null; },
       cue: function () { return S === me ? me.cs || null : null; },
       panic: function () { if (S === me) bandPanic('button'); },
+      music: function () { return S === me ? muInst() : null; },      /* M1: the band's music pill (gm/music.js) */
       menuHtml: menuHtml, signedOut: function () { return SIGNED_OUT_MSG; }, toast: toast,
       document: document      /* the iPad tray makes its nodes with it (gm/ipad-tray.js: a page whose elements do not carry their document) */
     };
@@ -2441,6 +2442,26 @@
       save: function (id, item) { var it = {}; it[id] = item; patch({ trouble: { items: it } }); }, show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); } });
     return S.rd;
   }
+  /* M1 the Music desk (gm/music.js): the laptop's three playlists that Blade cuts between. ONE controller for the page (the tracks are this laptop's, not a
+     session's), made on first use; it reads the night each second through muInputs and never starts by itself. Nothing it keeps is on the server */
+  var MU = null;
+  function muInputs() {
+    if (!S || S.status !== 'ready') return { phase: '' };
+    var sec = null; try { sec = S.b17 && S.b17.security ? S.b17.security.view() : null; } catch (e) { sec = null; }
+    var v = null; try { v = S.cs ? S.cs.view() : null; } catch (e) { v = null; }
+    var ch = false; try { ch = !!chCur(); } catch (e) { ch = false; }
+    return { phase: placesPhase() || '', alarm: isObj(sec) ? { index: sec.index, n: sec.n, filled: sec.site ? sec.filled : null } : null, chase: ch, desperate: S.muDesp || 0,
+      panic: !!(v && v.panic), credits: !!(isObj(AM.doc) && AM.doc.mode === 'pin' && AM.doc.scene === 'credits') };
+  }
+  function muInst() {
+    if (MU || !W.B68GmMusic) return MU;
+    try {
+      MU = W.B68GmMusic.make(W.B68GmMusic.browserHost({ inputs: muInputs, toast: toast, root: function () { return $q('#gm-root'); },
+        openLibrary: function () { var T = W.B68GmTools, t = T && T.get ? T.get('music') : null; if (!openView('music') && t) t.open(); } }));
+      MU.load(); MU.start();
+    } catch (e) { MU = null; if (W.console) W.console.error('music', e); }
+    return MU;
+  }
   /* 4.2 Preflight (gm/preflight.js, switch room.preflight): the Menu line exists only while the switch is on */
   function pfOn() { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, 'room.preflight') && W.B68GmPreflight); }
   function pfInst() {
@@ -2464,6 +2485,7 @@
     reg('practical', desk('practical')); reg('phone', desk('phone')); reg('trouble', desk('trouble')); reg('canon', desk('canon')); reg('frontpage', desk('frontpage')); reg('absent', desk('absent'));
     mod('B68GmAftermath', 'aftermath'); mod('B68GmDebrief', 'debrief'); mod('B68GmBoard', 'board'); mod('B68GmCastPhoto', 'castphoto'); mod('B68GmLair', 'lair');
     reg('record', b29tool('record')); reg('light', b29tool('light'));
+    T.registerTool('music', { label: 'Music', open: function () { var m = muInst(); return !!(m && m.open()); }, close: shut('music') });      /* M1 */
   })();
   /* 4.1 The cue stack (gm/cue-stack.js): STANDBY / GO / Bypass in the band's cue slot, Space and PageDown (asked by onKey), and "Blade, go". Every effect goes through the page's own writers
      (patchAmbient and its gate, the show contract, the night, the cast), so a cue can show nothing that a button could not. */
@@ -2498,6 +2520,7 @@
         return Promise.resolve(ref.update({ revealed: true, firstSeen: x.d.firstSeen || nowIso() })).then(function () { if (S === me && isObj(me.npcs) && isObj(me.npcs[x.id])) me.npcs[x.id].revealed = true; return { ok: true }; }, function () { return { ok: false, say: 'Could not reveal ' + name + '.' }; });
       },
       phase: function (p) { return cuePhase(me, p); },
+      music: function (word) { var m = S === me ? muInst() : null; return Promise.resolve(!!(m && m.cue(word))); },      /* M1: a `music:` cue */
       ambient: function () { return isObj(AM.doc) ? { mode: AM.doc.mode, scene: AM.doc.scene } : null; },
       panic: function (safe) { return panicEffect(safe); },
       resume: function (prior) { return isObj(prior) ? patchAmbient({ mode: prior.mode, scene: prior.scene }) : Promise.resolve(null); },
@@ -4644,6 +4667,8 @@
   }
   function b09Marked(res) {
     var sit = res && res.meta ? res.meta.situation : '';
+    /* M1: a Desperate 1–3 is one of the music's Action triggers (gm/music.js moodOf counts them) */
+    if (S && sit === 'onetothree' && isObj(res.meta.position) && str(res.meta.position.pos).toLowerCase() === 'desperate') S.muDesp = (S.muDesp || 0) + 1;
     if (S && S.stamp && (sit === 'fourfive' || sit === 'onetothree')) {
       var landed = !!S.stamp.view().active;
       S.stamp.mark(sit === 'fourfive' ? '45' : '13');

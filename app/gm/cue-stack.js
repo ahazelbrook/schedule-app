@@ -15,6 +15,7 @@
        5. phase: score                      enter pb | plan | score | after on the night (and the iPad band)
        6. light: Lamps down, amber          by hand, as sound
        7. practical: Three knocks at the door     a practical sound, by hand
+       8. music: action                     the laptop's music (gm/music.js): action | tension | calm | hanging around | auto | off
    One cue per numbered line (1. or 1) ), one kind each, in the order they are numbered in the list. A line that is not a cue is ignored and listed in
    parse().skipped. A repeated number keeps the first. The prep part already carries the section: it is the note's own Markdown (scripts/lib/prep-export.mjs).
 
@@ -50,7 +51,10 @@
   'use strict';
 
   var LOCK_MS = 500, BUSY_MS = 4000, SEQ_MAX = 200, DEFAULT_SAFE = 'testcard';
-  var KINDS = ['scene', 'sound', 'show', 'reveal', 'phase', 'light', 'practical'];
+  var KINDS = ['scene', 'sound', 'show', 'reveal', 'phase', 'light', 'practical', 'music'];
+  /* M1: `music: action | tension | calm | hanging around | auto | off` (gm/music.js plays it on the laptop) */
+  var MUSIC_W = { action: 'action', tension: 'tension', tense: 'tension', calm: 'calm', 'hanging around': 'calm', hanging: 'calm', auto: 'auto', off: 'off', stop: 'off' };
+  var MUSIC_LABEL = { action: 'Action', tension: 'Tension', calm: 'Hanging around', auto: 'Auto', off: 'Off' };
   var MANUAL = { sound: 1, light: 1, practical: 1 };
   var SHOW_KINDS = ['title', 'ring', 'spotted', 'stamp'];
   var PHASE_W = { pb: 'pb', personal: 'pb', downtime: 'pb', plan: 'plan', planning: 'plan', briefing: 'plan', score: 'score', heist: 'score', after: 'after', aftermath: 'after', payout: 'after' };
@@ -102,6 +106,9 @@
       c.arg = p; c.text = PHASE_LABEL[p];
     } else if (kind === 'reveal') {
       if (arg.length < 2) return null;
+    } else if (kind === 'music') {
+      var mw = MUSIC_W[arg.toLowerCase().replace(/[^a-z ]+/g, ' ').replace(/\s+/g, ' ').trim()]; if (!mw) return null;
+      c.arg = mw; c.text = MUSIC_LABEL[mw];
     } else if (!arg) return null;
     return c;
   }
@@ -175,6 +182,7 @@
         if (c.kind === 'show') return Promise.resolve(host.show(c.show.kind, c.show.payload, { key: 'cue-' + v.noteId + '-' + c.n })).then(function (r) { return ok(r !== null && r !== undefined); });
         if (c.kind === 'reveal') return Promise.resolve(host.reveal(c.arg)).then(function (r) { return r && r.ok ? { ok: true } : { ok: false, say: (r && r.say) || 'Could not reveal ' + c.arg + '.' }; });
         if (c.kind === 'phase') return Promise.resolve(host.phase(c.arg)).then(ok);
+        if (c.kind === 'music') return Promise.resolve(typeof host.music === 'function' ? host.music(c.arg) : false).then(function (r) { return r ? { ok: true } : { ok: false, say: 'Cue ' + c.n + ': the music is not on this page.' }; });
       } catch (e) { /* falls through to a failure */ }
       return Promise.resolve({ ok: false, say: 'Cue ' + c.n + ' did not fire.' });
     }
