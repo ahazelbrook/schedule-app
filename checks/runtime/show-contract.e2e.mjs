@@ -123,6 +123,7 @@ try {
   });
 
   await step('lasting layers: set, they stay past any beat, reach the iPad and the scene frame, and clear', async () => {
+    expect((await gmCall('PATCH', '/api/campaign', { features: { 'display.band': true } })).status === 200, 'the band turned on (the tech run: a setting, off by default)');
     await ambient({ layer: { path: 'band.phase', value: 'plan' } });
     await ambient({ layer: { path: 'band.security', value: 2 } });
     await ambient({ layer: { path: 'band.onair', value: true } });

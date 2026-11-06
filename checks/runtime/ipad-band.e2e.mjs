@@ -185,6 +185,19 @@ try {
   expect((await gm('PATCH', '/api/campaign', { mission: { v: 1, site: 'The Pelican Rooms', t: 90, seq: 1, hud: HUD } })).status === 200, 'a mission');
   for (const [p, v] of [['band.phase', 'score'], ['band.security', 3], ['band.onair', true], ['band.faces', PCS]]) expect((await gm('PATCH', '/api/gm/ambient', { layer: { path: p, value: v } })).status === 200, 'layer ' + p);
 
+  /* the tech run (06/11): the strip is a setting (display.band) that starts off. Off, every layer set: no strip, and the map takes the whole frame */
+  await step('the band off (the default): every layer set, yet no strip, no dp-lay-on, and the stages start at the very top of the iPad', async () => {
+    const ctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1024, height: 768 } });
+    const page = await ctx.newPage();
+    await page.goto(BASE + '/');
+    await page.waitForFunction(() => document.body.dataset.mode === 'display' && document.querySelector('.dp-root') && document.querySelector('.dp-root').getAttribute('data-band-phase') === 'score', null, { timeout: 20000 });
+    await sleep(800);
+    const r = await page.evaluate(() => ({ strip: !!document.querySelector('.dp-lay-strip'), on: document.querySelector('.dp-root').classList.contains('dp-lay-on'), top: document.querySelector('.dp-stages').getBoundingClientRect().top }));
+    expect(!r.strip && !r.on && r.top === 0, JSON.stringify(r));
+    await ctx.close();
+  });
+  expect((await gm('PATCH', '/api/campaign', { features: { 'display.band': true } })).status === 200, 'the band turned on (iPad view > Settings > Band: On)');
+
   for (const [w, h] of [[1024, 768], [768, 1024], [1180, 820], [1366, 1024]]) {
     const portrait = h > w;
     await step('the iPad at ' + w + 'x' + h + ' with a map, the band beside it and every layer: the strip covers none of them, and the band beside the map fits', async () => {
