@@ -33,7 +33,7 @@ const TOOLS = [
   ['hardstart', '[data-hs="arm"]'], ['preflight', '[data-pf-run]'], ['print', '[data-pr]'], ['corkboard', '[data-cb]'], ['montage', '[data-mt]'],
   ['practical', '[data-pq]'], ['phone', '[data-ph]'], ['trouble', '[data-tr]'], ['canon', '[data-cq]'], ['frontpage', '[data-fp]'], ['absent', '[data-ab]'],
   ['aftermath', '.gm-aft-steps, .gm-aft-start, button'], ['debrief', '.gm-debrief-list'], ['board', '.gm-board-list, .gm-board-card, button'], ['castphoto', 'button'],
-  ['lair', 'input, button'], ['record', '[data-b29-rec]'], ['light', '[data-b29-alarm]']
+  ['lair', 'input, button'], ['record', '[data-b29-rec]'], ['light', '[data-b29-alarm]'], ['music', '[data-mu-list]']
 ];
 
 let demo = null, tmp = '';
@@ -80,7 +80,7 @@ try {
 
   check(await page.evaluate(() => !!(window.B68GmTools && window.B68GmWorkshop && window.B68GmTools.toolIds)), 'the page has the registry and the inline host');
   const ids = await page.evaluate(() => Array.from(window.B68GmTools.toolIds()));
-  check(JSON.stringify(ids) === JSON.stringify(TOOLS.map((t) => t[0])), 'the registry holds all 18 tools, in order: ' + ids.join(','));
+  check(JSON.stringify(ids) === JSON.stringify(TOOLS.map((t) => t[0])), 'the registry holds all 19 tools (the 18 and the Music, M1), in order: ' + ids.join(','));
   check(await page.evaluate(() => !document.querySelector('#gm-menu-print, #gm-menu-preflight, #gm-menu-hardstart, #gm-menu-aftermath, #gm-menu-b29-batch, #gm-menu-trouble')), 'no tool has a Menu line of its own');
 
   /* timers: a control window BEFORE any tool is opened shows what the page itself asks for. (Taken after the loop below, a timer a tool leaked there would be
@@ -190,7 +190,7 @@ try {
     ids.forEach((id) => { const h = document.createElement('div'); h.className = 'n2-all'; root.appendChild(h); window.B68GmWorkshop.inline(id, h); window.B68GmTools.get(id).open(); });
   }, TOOLS.map((t) => t[0]));
   await page.waitForTimeout(2500);
-  check(await page.evaluate(() => window.B68GmWorkshop.boundIds().length) === 18, 'all 18 tools bound and open together');
+  check(await page.evaluate(() => window.B68GmWorkshop.boundIds().length) === TOOLS.length, 'all ' + TOOLS.length + ' tools bound and open together');
   await page.evaluate((ids) => { ids.forEach((id) => window.B68GmWorkshop.inline(id, null)); document.querySelectorAll('.n2-all').forEach((e) => e.remove()); }, TOOLS.map((t) => t[0]));
   await page.waitForTimeout(500);
   const t1 = Date.now(); await sleep(11000);

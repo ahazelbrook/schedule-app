@@ -1775,6 +1775,68 @@ body.gm-app #gm-page #gm-band { display: grid; grid-template-rows: auto auto; ba
 #gm-page .gm-quiet-when { font: 400 11px/1 var(--font-mono); color: var(--ink-soft); }
 #gm-page .gm-quiet-text { flex: 1 1 100%; overflow-wrap: anywhere; }
 #gm-page .gm-quiet-row .btn { margin-left: auto; }
+/* M1 the music (gm/music.js draws it here): a compact pill beside the mic (♪ Tension, an A on Auto, ▶ or ❚❚) and its popover; the phone is not the player */
+#gm-page .gm-band-music { position: relative; display: inline-flex; align-items: center; flex: 0 1 auto; min-width: 0; align-self: stretch; gap: 8px; }
+/* its own separator, like the band's: the pill is not part of the iPad tray */
+#gm-page .gm-band-music::before { content: ""; flex: none; align-self: stretch; width: 1px; margin: 9px 0; background: color-mix(in srgb, var(--on-ink) 22%, transparent); }
+#gm-page .gm-band-music:empty { display: none; }
+#gm-page #gm-band .gm-mu-pill { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 170px; }
+#gm-page .gm-mu-pill .gm-mu-note { flex: none; font: 700 13px/1 var(--font-text); }
+#gm-page .gm-mu-pill .gm-mu-a { flex: none; padding: 2px 3px; font: 900 9px/1 var(--font-cond); font-style: normal; letter-spacing: .06em; background: var(--on-ink); color: var(--rule); }
+#gm-page .gm-mu-pill .gm-mu-st { flex: none; font: 700 9px/1 var(--font-mono); opacity: .8; }
+#gm-page .gm-mu-pill[data-state="play"] .gm-mu-st { color: var(--mustard); opacity: 1; }
+#gm-page .gm-mu-pill[data-mood="action"][data-state="play"] { box-shadow: inset 0 0 0 1.5px var(--accent); }
+#gm-page .gm-mu-pill[aria-expanded="true"] { background: var(--on-ink); color: var(--rule); }
+#gm-page .gm-mu-pill[aria-expanded="true"] .gm-mu-a { background: var(--rule); color: var(--on-ink); }
+#gm-page .gm-mu-pop { left: 0; right: auto; width: min(440px, calc(100vw - 24px)); }
+#gm-page .gm-mu-seg { display: flex; flex-wrap: wrap; border: 1.5px solid var(--rule); }
+#gm-page .gm-mu-seg button { flex: 1 1 auto; min-height: 32px; padding: 0 9px; border: 0; border-left: 1px solid var(--hair); background: none; color: var(--ink); font: 900 11px/1 var(--font-cond); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+#gm-page .gm-mu-seg button:first-child { border-left: 0; }
+#gm-page .gm-mu-seg button:hover { background: color-mix(in srgb, var(--mustard) 35%, transparent); }
+#gm-page .gm-mu-seg button[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); }
+#gm-page .gm-mu-seg button[data-auto="true"] { box-shadow: inset 0 -3px 0 var(--accent); }
+#gm-page .gm-mu-vol { display: flex; align-items: center; gap: 8px; font: 900 11px/1 var(--font-cond); letter-spacing: .1em; text-transform: uppercase; }
+#gm-page .gm-mu-vol input { flex: 1 1 auto; min-width: 0; accent-color: var(--accent); }
+#gm-page .gm-mu-vol span { flex: none; min-width: 2.2em; font: 700 12px/1 var(--font-mono); text-align: right; }
+#gm-page .gm-mu-np b { margin-right: 4px; }
+#gm-page .gm-mu-err { color: var(--alarm); font-weight: 700; }
+#gm-page .gm-mu-seg button:focus-visible, #gm-page .gm-mu-pill:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+/* the Music tool (Before > The room, and Find): three playlists side by side, the output, the storage */
+#gm-page .gm-vgrid > .gm-vcell[data-vcell="music"] { grid-column: 1 / -1; }
+#gm-page .gm-mu { display: grid; gap: 10px; min-width: 0; }
+#gm-page .gm-mu-deck { display: grid; gap: 7px; max-width: 560px; padding: 10px 12px; border: 2px solid var(--rule); background: var(--card); }
+#gm-page .gm-mu-deck p { overflow-wrap: anywhere; }
+#gm-page .gm-mu p { margin: 0; }
+#gm-page .gm-mu-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 10px; }
+#gm-page .gm-mu-list { display: grid; align-content: start; gap: 6px; min-width: 0; padding: 8px 10px; border: 1.5px solid var(--hair); background: var(--card); }
+#gm-page .gm-mu-list[data-on="true"] { border-color: var(--rule); box-shadow: inset 4px 0 0 var(--accent); }
+#gm-page .gm-mu-list[data-drop="true"] { border: 2px dashed var(--accent); background: color-mix(in srgb, var(--mustard) 18%, var(--card)); }
+#gm-page .gm-mu-lh { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+#gm-page .gm-mu-lh b { font: 900 13px/1.1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; }
+#gm-page .gm-mu-sum { font: 400 11px/1 var(--font-mono); color: var(--ink-soft); }
+#gm-page .gm-mu-on { margin-left: auto; font: 700 10px/1 var(--font-mono); text-transform: uppercase; color: var(--accent); }
+#gm-page .gm-mu-tracks { margin: 0; padding: 0; list-style: none; max-height: 240px; overflow: auto; display: grid; }
+#gm-page .gm-mu-tracks li { display: flex; align-items: center; gap: 6px; min-height: 28px; border-bottom: 1px solid var(--hair); font: 400 13px/1.3 var(--font-text); }
+#gm-page .gm-mu-tracks li:last-child { border-bottom: 0; }
+#gm-page .gm-mu-tracks li[data-now="true"] { font-weight: 700; }
+#gm-page .gm-mu-tracks li[data-bad="true"] .gm-mu-tn { text-decoration: line-through; opacity: .6; }
+#gm-page .gm-mu-tn { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#gm-page .gm-mu-td { flex: none; font: 400 11px/1 var(--font-mono); color: var(--ink-soft); }
+#gm-page .gm-mu-x { flex: none; width: 28px; height: 28px; border: 0; background: none; color: var(--ink-soft); font: 700 16px/1 var(--font-text); cursor: pointer; }
+#gm-page .gm-mu-x:hover { background: var(--alarm); color: #fbf8f1; }
+#gm-page .gm-mu-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#gm-page .gm-mu-add { display: inline-flex; align-items: center; cursor: pointer; }
+#gm-page .gm-mu-acts > .btn { flex: none; width: auto; }
+#gm-page .gm-mu-out { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+#gm-page .gm-mu-out label { display: inline-flex; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0; font: 900 11px/1 var(--font-cond); letter-spacing: .1em; text-transform: uppercase; }
+#gm-page .gm-mu-out select { min-width: 0; max-width: min(100%, 320px); font: 400 14px/1.2 var(--font-text); letter-spacing: 0; text-transform: none; }
+@media (pointer: coarse) { #gm-page .gm-mu-seg button, #gm-page .gm-mu-x { min-height: 44px; } #gm-page .gm-mu-x { width: 44px; } }
+/* the pill is the laptop's: the due curfew needs row 2 for Call the Aftermath, and under 1100 px (a tablet, a phone) there is no room and no player. The
+   music plays on; Before > The room > Music and Find still reach every control */
+#gm-page .gm-band-r2[data-alarm="curfew"] .gm-band-music { display: none; }
+@media (max-width: 1099px) { #gm-page .gm-band-music { display: none; } }
+/* a phone: the mood control as a 3 + 2 grid, no lone Stop on a row of its own */
+@media (max-width: 599px) { #gm-page .gm-mu-seg { display: grid; grid-template-columns: repeat(3, 1fr); } #gm-page .gm-mu-seg button { padding: 6px 4px; white-space: normal; border-top: 1px solid var(--hair); } #gm-page .gm-mu-seg button:nth-child(-n+3) { border-top: 0; } #gm-page .gm-mu-seg button:nth-child(4) { border-left: 0; } }
 /* PANIC: always the last thing in the row */
 #gm-page .gm-band-panic { flex: none; display: inline-flex; align-items: center; gap: 6px; align-self: stretch; margin: 5px 0 5px auto; padding: 0 14px; border: 0; background: var(--alarm); color: #fbf8f1; font: 900 13px/1 var(--font-cond); letter-spacing: .1em; cursor: pointer; }
 #gm-page .gm-band-panic kbd { font-size: 9px; letter-spacing: 0; }
