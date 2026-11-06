@@ -24,6 +24,9 @@
      bagNext(bag, ids, last, rand?) -> { id, bag }    a shuffle bag: no repeat until every track has played, never the same track twice running
      prefsOf(raw) -> { sink, vol (0..100, default 60), auto (default true), mood }       trackOf(meta) -> a clean track | null
      summary(tracks, list) -> { n, ms, text: 'n tracks · m min' }       durText(ms) -> 'm:ss'       isAudio(file) -> bool
+     folderMood(name) -> 'calm' | 'tension' | 'action' | ''   a folder's name, loosely ('Hanging around', 'Lounging', 'Calm'; 'Tension', 'Tense'; 'Action', 'Chase')
+     folderFiles(files) -> [file]   a picked or dropped folder's files in path order, without hidden ones (.DS_Store, a Mac's ._ copies)
+     byFolder(files) -> { calm, tension, action, none }   one folder for all three: each file goes where its nearest named folder says
      toneWav(secs) -> Uint8Array    a soft chord (the Test with no tracks yet; the tests' tracks)
    memStore() / idbStore(win) -> { list(), get(id), put(id, meta, blob), del(id) }   (all promises; idbStore over database b68-gm-music, or null)
    make(host) -> ctl
@@ -32,7 +35,10 @@
              storage: navigator.storage-like | null, duration(blob) -> Promise<ms>, every(fn, ms) -> id, stop(id), document }
      ctl.load() -> Promise          ctl.tick()  (the page calls it each second; also every(…) when given)
      ctl.play() ctl.pause() ctl.toggle() ctl.next() ctl.setMode('auto' | mood | 'off') ctl.stop() ctl.setVol(0..100) ctl.cue(word) -> bool
-     ctl.add(files, list) -> Promise<n>   ctl.remove(id)   ctl.clear(list)   ctl.tracks() -> [track]   ctl.state() -> { mode, mood, playing, ... }
+     ctl.add(files, list, { folder }?) -> Promise<n>   a track already in that playlist (the same name and size) is skipped, so a folder can be added again;
+       a folder holding two or more of the three named folders goes to addAll; in a folder only EXT_RE's file types count; adds run one at a time
+     ctl.addAll(files) -> Promise<n>   a folder holding a folder per playlist (Add a folder of all three, or that folder dropped on the tool)
+     ctl.remove(id)   ctl.clear(list)   ctl.tracks() -> [track]   ctl.state() -> { mode, mood, playing, ... }
      ctl.open() ctl.toggleSheet() ctl.render(box)  the Music tool (the library, the output, the storage)
      ctl.mountPill(slot) ctl.paintPill() ctl.popOpen() ctl.closePop()   the band's pill and its popover (B68GmEsc, priority 70)
      ctl.destroy() */
@@ -144,6 +150,37 @@
     return { n: ts.length, ms: ms, text: ts.length + (ts.length === 1 ? ' track' : ' tracks') + ' · ' + min + ' min' };
   }
   function isAudio(f) { return !!f && (/^audio\//i.test(str(f.type)) || EXT_RE.test(str(f.name))); }
+  function cleanName(s) { return str(s).replace(/\s+/g, ' ').trim().slice(0, NAME_MAX) || 'Track'; }
+  /* a folder's name -> the playlist it fills */
+  function folderMood(name, exact) {
+    var s = str(name).toLowerCase().replace(/[_.\-–—]+/g, ' ').replace(/\s+/g, ' ').trim(), w = moodWord(s);
+    if (w === 'calm' || w === 'tension' || w === 'action') return w;
+    if (exact) return '';
+    if (/\b(hang|loung|calm|chill|ambient)/.test(s)) return 'calm';
+    if (/\b(tens|suspense|sneak|stealth)/.test(s)) return 'tension';
+    if (/\b(action|chase|combat|fight)/.test(s)) return 'action';
+    return '';
+  }
+  /* in a folder only the audio file types play here: a playlist file (.m3u, which Edge calls audio) or a .wma would sit in the list as "cannot play" */
+  function folderAudio(f) { return !!f && EXT_RE.test(str(f.name)); }
+  /* where a file sits in the folder that was picked (the picker's webkitRelativePath) or dropped (the walk's b68Path), with / between */
+  function pathOf(f) { return str(f && (f.b68Path || f.webkitRelativePath || f.name)).replace(/\\/g, '/').replace(/^\/+/, ''); }
+  function folderFiles(files) {
+    return Array.prototype.slice.call(files || []).filter(function (f) { return f && !/^\./.test(str(f.name)) && !/(^|\/)\.[^/]*\//.test(pathOf(f)); })
+      .sort(function (a, b) { return pathOf(a).localeCompare(pathOf(b), undefined, { numeric: true, sensitivity: 'base' }); });
+  }
+  function byFolder(files, exactOnly) {
+    var out = { calm: [], tension: [], action: [], none: [] };
+    /* the nearest folder with an exact name (Hanging around, Tension, Action and moodWord's words) wins; failing that the nearest loose name below the
+       picked folder (Lounging, Tense, Chase…), so "Tension/Lounge Lizards OST" stays Tension and loose files in "Action scores" are left out */
+    folderFiles(files).forEach(function (f) {
+      var segs = pathOf(f).split('/').slice(0, -1), m = '', i;
+      for (i = segs.length - 1; i >= 0 && !m; i--) m = folderMood(segs[i], true);
+      for (i = segs.length - 1; i >= 1 && !m && !exactOnly; i--) m = folderMood(segs[i], false);
+      out[m || 'none'].push(f);
+    });
+    return out;
+  }
   function bytesText(n) { n = num(n) || 0; return n >= 1e9 ? (n / 1e9).toFixed(1) + ' GB' : n >= 1e6 ? Math.round(n / 1e6) + ' MB' : n >= 1e3 ? Math.round(n / 1e3) + ' KB' : n + ' B'; }
 
   /* a soft A-major chord with a slow swell, 8 kHz mono 8-bit PCM: the Test before any track is in, and the tests' tracks (no audio file in the repo) */
@@ -389,27 +426,70 @@
       return Promise.resolve(0);
     }
     ctl.tracks = function () { return tracks.slice(); };
-    ctl.add = function (files, l) {
-      if (!has(RANK, l)) return Promise.resolve(0);
-      var fs = Array.prototype.slice.call(files || []).filter(isAudio), n = 0, skipped = (files ? files.length : 0) - fs.length;
-      persist();
+    /* the files into one playlist, quietly: { n added, dup already there, other (a folder's files that are not audio), skipped (refused) } */
+    function addSome(files, l, folder) {
+      var all = folder ? folderFiles(files) : Array.prototype.slice.call(files || []);
+      var fs = all.filter(folder ? folderAudio : isAudio), r = { n: 0, dup: 0, other: folder ? all.length - fs.length : 0, skipped: folder ? 0 : all.length - fs.length };
       return fs.reduce(function (p, f) {
         return p.then(function () {
-          if (tracks.length >= MAX_TRACKS) { skipped++; return null; }
+          var name = cleanName(str(f.name).replace(/\.[^.]+$/, '')), size = num(f.size) !== null && f.size > 0 ? Math.round(f.size) : 0;
+          if (tracks.some(function (t) { return t.list === l && t.name === name && t.size === size; })) { r.dup++; return null; }
+          if (tracks.length >= MAX_TRACKS) { r.skipped++; return null; }
           return durOf(f).then(function (ms) {
             var id = 't' + now().toString(36) + (++seq).toString(36) + Math.floor(Math.random() * 1e4).toString(36);
-            var meta = trackOf({ id: id, list: l, name: str(f.name).replace(/\.[^.]+$/, ''), ms: ms, size: f.size, at: now() + n });
-            return Promise.resolve(store.put(id, meta, f)).then(function () { tracks.push(meta); n++; }, function () { skipped++; });
+            var meta = trackOf({ id: id, list: l, name: name, ms: ms, size: f.size, at: now() + r.n });
+            return Promise.resolve(store.put(id, meta, f)).then(function () { tracks.push(meta); r.n++; }, function () { r.skipped++; });
           });
         });
-      }, Promise.resolve()).then(function () {
-        if (skipped) say(skipped + (skipped === 1 ? ' file was' : ' files were') + ' not added (not audio, or the browser refused to keep it).', true);
-        if (n) say(n + (n === 1 ? ' track' : ' tracks') + ' added to ' + LABEL[l] + '. They stay on this laptop.');
-        estimate(); paintAll();
-        if (n && playing) retarget();
-        return n;
+      }, Promise.resolve()).then(function () { return r; });
+    }
+    /* one toast for the whole add (the page shows one at a time, the newest): red when anything was refused or left out */
+    function added(rs, loose) {
+      var n = 0, dup = 0, other = 0, skipped = 0, where = [];
+      rs.forEach(function (x) { n += x.r.n; dup += x.r.dup; other += x.r.other; skipped += x.r.skipped; if (x.r.n) where.push(LABEL[x.l] + ' ' + x.r.n); });
+      loose = loose || 0;
+      var bits = [];
+      if (n) bits.push(rs.length > 1 ? 'Added: ' + where.join(', ') + '.' : n + (n === 1 ? ' track' : ' tracks') + ' added to ' + LABEL[rs[0].l] + '.');
+      if (dup) bits.push(dup + (dup === 1 ? ' was' : ' were') + ' already there.');
+      if (other) bits.push(other + (other === 1 ? ' file is' : ' files are') + ' not audio.');
+      if (skipped) bits.push(skipped + (skipped === 1 ? ' file was' : ' files were') + ' not added (not audio, the library is full at ' + MAX_TRACKS + ', or the browser refused to keep it).');
+      if (loose) bits.push(loose + (loose === 1 ? ' track was' : ' tracks were') + ' left out: not inside a folder named Hanging around, Tension or Action.');
+      if (n) bits.push('They stay on this laptop.');
+      if (bits.length) say(bits.join(' '), !!skipped || !!loose || (!n && !dup));
+      estimate(); paintAll();
+      if (n && playing) retarget();
+      return n;
+    }
+    /* one add at a time: two overlapping adds would both pass the already-there check before either is stored */
+    var addQ = Promise.resolve();
+    function queued(fn) { var p = addQ.then(fn, fn); addQ = p.then(function () {}, function () {}); return p; }
+    function moodsIn(g) { return MOODS.filter(function (l) { return g[l].some(folderAudio); }).length; }
+    function addAllNow(files) {
+      var g = byFolder(files), loose = g.none.filter(folderAudio).length, k = 0;
+      MOODS.forEach(function (l) { k += g[l].filter(folderAudio).length; });
+      if (!k) { say('No audio in a folder named Hanging around, Tension or Action. Add a folder to one playlist with its own Add a folder.', true); return Promise.resolve(0); }
+      if (k > 5) say('Adding ' + k + ' tracks…');
+      persist();
+      var rs = [];
+      return MOODS.reduce(function (p, l) {
+        return p.then(function () { return g[l].length ? addSome(g[l], l, true).then(function (r) { rs.push({ l: l, r: r }); }) : null; });
+      }, Promise.resolve()).then(function () { return added(rs, loose); });
+    }
+    ctl.add = function (files, l, opts) {
+      if (!has(RANK, l)) return Promise.resolve(0);
+      var folder = isObj(opts) && opts.folder === true;
+      return queued(function () {
+        /* a folder holding two or more of the three by their exact names (the parent "Blades music" picked on one playlist) fills each from its own;
+           loose names (an album's "Ambient Works", "Fight Scene") never take a folder away from the playlist the GM chose */
+        if (folder && moodsIn(byFolder(files, true)) >= 2) return addAllNow(files);
+        var k = (folder ? folderFiles(files).filter(folderAudio) : Array.prototype.slice.call(files || []).filter(isAudio)).length;
+        if (folder && !k) { say('No audio files in that folder.', true); return 0; }
+        if (k > 5) say('Adding ' + k + ' tracks to ' + LABEL[l] + '…');
+        persist();
+        return addSome(files, l, folder).then(function (r) { return added([{ l: l, r: r }]); });
       });
     };
+    ctl.addAll = function (files) { return queued(function () { return addAllNow(files); }); };
     ctl.remove = function (id) {
       id = str(id);
       return Promise.resolve(store.del(id)).then(function () {
@@ -450,8 +530,9 @@
             return '<li' + (playingNow ? ' data-now="true"' : '') + (t.bad ? ' data-bad="true"' : '') + '><span class="gm-mu-tn" title="' + esc(t.name) + '">' + (playingNow ? '♪ ' : '') + esc(t.name) + '</span>' +
               '<span class="gm-mu-td">' + (t.bad ? 'cannot play' : t.ms ? durText(t.ms) : '') + '</span>' +
               '<button type="button" class="gm-mu-x" data-mu-del="' + esc(t.id) + '" aria-label="Remove ' + esc(t.name) + '" title="Remove from this laptop">×</button></li>';
-          }).join('') + '</ol>' : '<p class="gm-empty gm-mu-empty">No tracks yet. Add some, or drop audio files here.</p>') + fb +
+          }).join('') + '</ol>' : '<p class="gm-empty gm-mu-empty">No tracks yet. Add some, or drop audio files or a folder here.</p>') + fb +
           '<div class="gm-mu-acts"><label class="btn sm primary gm-mu-add">Add tracks<input type="file" multiple accept="' + ACCEPT + '" data-mu-file="' + l + '" hidden></label>' +
+          '<label class="btn sm gm-mu-add" title="Every audio file in a folder (and the folders inside it)">Add a folder<input type="file" webkitdirectory multiple data-mu-dir="' + l + '" hidden></label>' +
           (ts.length ? '<button type="button" class="btn sm" data-mu-clear="' + l + '">Clear</button>' : '') + '</div></section>';
       }).join('');
       var cur0 = prefs.sink, known = outs.some(function (d) { return d.id === cur0; });
@@ -464,7 +545,26 @@
       var store0 = '<p class="gm-dim gm-mu-store" data-mu-store>' + (used !== null ? 'Stored in this browser: ' + bytesText(used) + '. ' : '') +
         (persisted === true ? 'The browser keeps them (persistent storage is on).' : persisted === false ? 'The browser may clear them if the disk runs short: keep the originals.' : '') + '</p>';
       var deck = '<div class="gm-mu-deck" data-mu-deck role="group" aria-label="Play the music">' + deckHtml() + '</div>';
-      return '<div class="gm-mu">' + head + deck + '<div class="gm-mu-lists">' + lists + '</div>' + out + (note ? '<p class="gm-dim" role="status">' + esc(note) + '</p>' : '') + (sup ? '' : '') + store0 + '</div>';
+      var all = '<div class="gm-mu-acts gm-mu-all"><label class="btn sm gm-mu-add">Add a folder of all three<input type="file" webkitdirectory multiple data-mu-dir="all" hidden></label>' +
+        '<span class="gm-dim">One folder with three inside it: Hanging around, Tension and Action. Adding it again skips the tracks already here. ' +
+        'The browser asks to “upload”: the files stay on this laptop.</span></div>';
+      return '<div class="gm-mu">' + head + deck + all + '<div class="gm-mu-lists">' + lists + '</div>' + out + (note ? '<p class="gm-dim" role="status">' + esc(note) + '</p>' : '') + (sup ? '' : '') + store0 + '</div>';
+    }
+    /* a drop's files; a dropped folder is walked (the entries API, read during the drop event), each file carrying its path in b68Path */
+    function dropFiles(dt) {
+      var items = dt && dt.items ? Array.prototype.slice.call(dt.items) : [], ents = [], out = [];
+      items.forEach(function (it) { var e = null; try { e = it && typeof it.webkitGetAsEntry === 'function' ? it.webkitGetAsEntry() : null; } catch (x) { e = null; } if (e) ents.push(e); });
+      if (!ents.some(function (e) { return e.isDirectory; })) return Promise.resolve({ files: dt && dt.files ? Array.prototype.slice.call(dt.files) : [], folder: false });
+      function walk(e) {
+        if (out.length >= MAX_TRACKS * 4) return Promise.resolve();
+        if (e.isFile) return new Promise(function (res) { e.file(function (f) { try { f.b68Path = str(e.fullPath).replace(/^\/+/, ''); } catch (x) {} out.push(f); res(); }, function () { res(); }); });
+        if (!e.isDirectory) return Promise.resolve();
+        var rd = e.createReader(), kids = [];
+        return new Promise(function (res) {
+          (function more() { rd.readEntries(function (b) { if (!b || !b.length) { res(); return; } kids = kids.concat(Array.prototype.slice.call(b)); more(); }, function () { res(); }); })();
+        }).then(function () { return kids.reduce(function (p, k) { return p.then(function () { return walk(k); }); }, Promise.resolve()); });
+      }
+      return ents.reduce(function (p, e) { return p.then(function () { return walk(e); }); }, Promise.resolve()).then(function () { return { files: out, folder: true }; }, function () { return { files: out, folder: true }; });
     }
     function paintLib() { if (box && box.isConnected !== false && !busyRange(box)) { box.innerHTML = libHtml(); var dk = box.querySelector('[data-mu-deck]'); if (dk) dk.__h = deckHtml(); } }
     function wireLib(sh) {
@@ -482,6 +582,13 @@
       sh.addEventListener('change', function (ev) {
         var t = ev.target; if (!t || !t.getAttribute) return;
         if (t.getAttribute('data-mu') === 'sink') { ctl.setSink(t.value); return; }
+        var dl = t.getAttribute('data-mu-dir');
+        if (dl) {
+          if (!t.files || !t.files.length) return;
+          var ds = Array.prototype.slice.call(t.files); t.value = '';
+          if (dl === 'all') ctl.addAll(ds); else ctl.add(ds, dl, { folder: true });
+          return;
+        }
         var l = t.getAttribute('data-mu-file'); if (!l || !t.files || !t.files.length) return;
         var fs = Array.prototype.slice.call(t.files); t.value = '';
         ctl.add(fs, l);
@@ -494,17 +601,21 @@
       sh.addEventListener('dragover', function (ev) {
         ev.preventDefault();
         var s = ev.target && ev.target.closest ? ev.target.closest('[data-mu-list]') : null;
-        if (ev.dataTransfer) { try { ev.dataTransfer.dropEffect = s ? 'copy' : 'none'; } catch (e) {} }
+        /* anywhere on the tool takes a drop: a playlist takes files or a folder, the rest of the tool a folder of all three */
+        if (ev.dataTransfer) { try { ev.dataTransfer.dropEffect = 'copy'; } catch (e) {} }
         if (s) s.setAttribute('data-drop', 'true');
       });
       sh.addEventListener('dragleave', function (ev) { var s = ev.target && ev.target.closest ? ev.target.closest('[data-mu-list]') : null; if (s) s.removeAttribute('data-drop'); });
       sh.addEventListener('drop', function (ev) {
         ev.preventDefault();
         var s = ev.target && ev.target.closest ? ev.target.closest('[data-mu-list]') : null;
-        if (!s) { say('Drop the files on a playlist: Hanging around, Tension or Action.'); return; }
-        s.removeAttribute('data-drop');
-        var fs = ev.dataTransfer && ev.dataTransfer.files ? Array.prototype.slice.call(ev.dataTransfer.files) : [];
-        if (fs.length) ctl.add(fs, s.getAttribute('data-mu-list'));
+        if (s) s.removeAttribute('data-drop');
+        dropFiles(ev.dataTransfer).then(function (d) {
+          if (!d.files.length) { if (d.folder) say('That folder is empty.', true); return; }
+          if (s) ctl.add(d.files, s.getAttribute('data-mu-list'), { folder: d.folder });
+          else if (d.folder) ctl.addAll(d.files);
+          else say('Drop the files on a playlist: Hanging around, Tension or Action.');
+        });
       });
     }
     ctl.render = function (b) {
@@ -651,5 +762,6 @@
 
   return { MOODS: MOODS, LABEL: LABEL, FALL: FALL, HOLD_MS: HOLD_MS, DWELL_MS: DWELL_MS, TRACK_FADE: TRACK_FADE, CUT_FADE: CUT_FADE, PANIC_FADE: PANIC_FADE, KEY: KEY, DB: DB, ACCEPT: ACCEPT,
     moodWord: moodWord, moodOf: moodOf, pick: pick, bagNext: bagNext, prefsOf: prefsOf, trackOf: trackOf, summary: summary, durText: durText, isAudio: isAudio, toneWav: toneWav,
+    folderMood: folderMood, folderFiles: folderFiles, byFolder: byFolder,
     memStore: memStore, idbStore: idbStore, deviceList: deviceList, make: make, browserHost: browserHost };
 });
