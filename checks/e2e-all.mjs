@@ -80,6 +80,7 @@ const CHECKS = [
   ['checks/runtime/gm-title-card.e2e.mjs', 'the score title card: GO into the Score phase puts a six-second scoretitle beat on the iPad (the site and its storeys, no room name), the name lands last, reduced motion stills it, switch off and on (9202)'],
   ['checks/runtime/gm-cue-stack.e2e.mjs', 'the cue stack on the real GM page: STANDBY, Space and Bypass, two GOs within 500 ms fire once, Esc to the safe scene inside a second and Resume, a typed "Blade, go", All off (9040)'],
   ['checks/runtime/gm-band.e2e.mjs', 'the band (N1a): four widths in three states with no overlap and nothing off the screen, the places enter phases, Ctrl+arrows, Call the Aftermath, Esc in order, keys held behind an open thing, PANIC without cues, the quiet badge (8810)'],
+  ['checks/runtime/gm-shortcuts.e2e.mjs', 'the Shortcuts card (K1): ? opens it at 1366 and 1536 with nothing overflowing, ? and Esc shut it, Find and the Menu open it, a ? typed in a field or behind an open box is not it, the phone\'s Menu, the iPad never has it (8765; starts its own demo night)'],
   ['checks/runtime/music.e2e.mjs', 'the Music desk (M1): three playlists filled through the picker, Play on a tap, Tension in the Score, Action on a Desperate 1–3, a held mood and Auto, PANIC and Resume, Stop, a reload waits, Esc, no audio sent, fit at 1366/1536/390 (8601; starts its own demo night)'],
 ];
 

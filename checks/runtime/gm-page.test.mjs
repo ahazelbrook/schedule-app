@@ -1479,7 +1479,7 @@ await test('10a. the laptop layout: body.gm-app while open, the band (session, i
   assert.ok(h.q('.gm-menu-list a[href="#display"]') && h.qa('#gm-band a[href="#display"]').every((a) => a.closest('.gm-menu-list')), 'the display page opens from the Menu, not the band');
   { const menu = h.q('.gm-menu-list'), lines = menu.children.filter((x) => (x.tagName === 'A' || x.tagName === 'BUTTON') && !x.className.includes('gm-menu-ph')).map((x) => x.textContent.replace(/\s+/g, ' ').trim());
     assert.deepEqual(lines.map((t) => t.replace(/^(Show|Hide) the capture bar$/, 'capture bar').replace(/^Live sync: .*/, 'Live sync')),
-      ['Open the display page (for the iPad)', 'Update pack', 'Export tonight’s note', 'Clear tonight’s capture', 'capture bar', 'Live sync', 'The table', 'Rules', 'The cast', 'Home', 'Forget GM data on this device'],
+      ['Shortcuts ?', 'Open the display page (for the iPad)', 'Update pack', 'Export tonight’s note', 'Clear tonight’s capture', 'capture bar', 'Live sync', 'The table', 'Rules', 'The cast', 'Home', 'Forget GM data on this device'],
       'housekeeping only, in order, Forget last: ' + JSON.stringify(lines));
     assert.ok(menu.children[menu.children.length - 1].className.includes('gm-menu-sep'), 'Forget is set apart'); }
   assert.ok(!h.q('.gm-capacts [data-gm="note"]') && !h.q('.gm-capacts [data-gm="clearcap"]') && h.q('.gm-capacts [data-gm="last"]'), 'the capture bar keeps File last roll only');

@@ -1211,6 +1211,39 @@ body.as-tab #gm-page .gm-drawer { right: 44px; }
 body.as-tab #gm-page .gm-sheet { right: 44px; }
 @media (min-width: 1600px) { body.as-dock #gm-page .gm-sheet { right: var(--as-w); } }
 @media (max-width: 599px) { body.as-tab #gm-page .gm-sheet { right: 0; } }
+/* K1: the Shortcuts card (gm/shortcuts.js) in its right-edge sheet: nearly the width of the laptop, four stacks of sections (the data says which stack),
+   two under 1250 px, one on a phone; big enough to read at arm's length. A key or a term sits beside what it does; a "Blade, …" line and a cue line over it */
+#gm-page #gm-sheet-shortcuts { width: min(1480px, calc(100vw - 48px)); }
+body.as-tab #gm-page #gm-sheet-shortcuts { width: min(1480px, calc(100vw - 92px)); }
+@media (min-width: 1600px) { body.as-dock #gm-page #gm-sheet-shortcuts { width: min(1480px, calc(100vw - var(--as-w) - 48px)); } }
+@media (max-width: 599px) { body #gm-page #gm-sheet-shortcuts, body.as-tab #gm-page #gm-sheet-shortcuts { width: 100vw; } }
+#gm-page #gm-sheet-shortcuts .gm-sheet-body:focus { outline: none; }
+#gm-page .gm-sc { display: grid; gap: 10px; min-width: 0; }
+#gm-page .gm-sc-lead { margin: 0; font: 500 13px/1.35 var(--font-text); color: var(--ink-soft); }
+#gm-page .gm-sc-cols { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: start; }
+#gm-page .gm-sc-col { display: grid; gap: 12px; align-content: start; min-width: 0; }
+@media (max-width: 1249px) { #gm-page .gm-sc-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 699px) { #gm-page .gm-sc-cols { grid-template-columns: minmax(0, 1fr); } }
+#gm-page .gm-sc-sec { margin: 0; min-width: 0; }
+#gm-page .gm-sc-note { margin: 8px 10px 0; font: 500 12.5px/1.4 var(--font-text); color: var(--ink-soft); }
+#gm-page .gm-sc-list { margin: 0; padding: 2px 10px 6px; }
+#gm-page .gm-sc-row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px 10px; padding: 5px 0; border-top: 1px solid var(--hair); }
+#gm-page .gm-sc-row:first-child { border-top: 0; }
+#gm-page .gm-sc-key, #gm-page .gm-sc-term { grid-template-columns: 6.6em minmax(0, 1fr); align-items: baseline; }
+#gm-page .gm-sc-row > dt, #gm-page .gm-sc-row > dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+#gm-page .gm-sc-row > dd { font: 400 13px/1.35 var(--font-text); color: var(--ink); }
+#gm-page .gm-sc-say > dd, #gm-page .gm-sc-line > dd { color: var(--ink-soft); }
+#gm-page .gm-sc kbd { display: inline-block; margin: 0 1px 2px 0; padding: 1px 5px; font-size: 12px; line-height: 1.2; opacity: 1; background: var(--card); white-space: nowrap; }
+#gm-page .gm-sc-t { font: 900 12px/1.25 var(--font-cond); text-transform: uppercase; letter-spacing: .06em; }
+#gm-page .gm-sc-q { font: 700 14.5px/1.3 var(--font-text); }
+#gm-page .gm-sc-q + .gm-sc-q { margin-left: 8px; }
+#gm-page .gm-sc-typed, #gm-page .gm-sc-line { font: 700 13px/1.3 var(--font-mono); }
+#gm-page .gm-sc-line { display: block; background: none; padding: 0; }
+#gm-page .gm-sc var { font-style: italic; font-weight: 500; color: var(--ink-soft); }
+#gm-page .gm-sc code:not(.gm-sc-line) { font: 400 12px/1.3 var(--font-mono); background: var(--inset); padding: 0 3px; }
+#gm-page .gm-sc-or { color: var(--ink-soft); }
+#gm-page .gm-sc-or code { white-space: nowrap; }
+#gm-page .gm-sc-how { display: inline-block; margin-left: 4px; padding: 2px 4px; font: 900 10px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; background: var(--inset); color: var(--ink); white-space: nowrap; vertical-align: 1px; }
 
 /* N0, the Workshop gone: the mirror buttons (the bar, the iPad tab) and the Run menu's phone-cards line stay put away, since Menu > Settings holds both; the
    costume select (Disguise, the Run strip) stays put away until the site's Costume engine shows it (N3: gm/site.js, body.gm-show-costume, this device only).
