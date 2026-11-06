@@ -352,6 +352,27 @@ await test('the library: a folder adds its audio only, a second add of the same 
   assert.equal(await r.ctl.addAll([f('M/Hanging around/h1.mp3')]), 0, 'adding the same folder again adds nothing');
 });
 
+await test('folders: the parent folder picked on one playlist fills all three; exact names beat loose ones; .m3u is not a track; overlapping adds do not duplicate; one toast says it all', async () => {
+  const f = (p, type = 'audio/mpeg', size = 1000) => ({ name: p.split('/').pop(), webkitRelativePath: p, type, size });
+  const r = rig();
+  assert.equal(await r.ctl.add([f('B/Hanging around/h.mp3'), f('B/Tension/t.mp3'), f('B/list.m3u', 'audio/x-mpegurl')], 'calm', { folder: true }), 2);
+  const c = (l) => r.ctl.tracks().filter((t) => t.list === l).length;
+  assert.deepEqual([c('calm'), c('tension')], [1, 1], 'each to its own, not all into Hanging around');
+  assert.equal(await r.ctl.add([f('T/a.mp3'), f('T/b.m3u', 'audio/x-mpegurl')], 'action', { folder: true }), 1, 'a playlist file is not a track');
+  const o = rig();
+  assert.equal(await o.ctl.add([f('OST/CD1/01.mp3'), f('OST/CD1/02.mp3'), f('OST/Ambient Works/a.mp3'), f('OST/Fight Scene/b.mp3')], 'tension', { folder: true }), 4);
+  assert.equal(o.ctl.tracks().filter((t) => t.list === 'tension').length, 4, 'an album with loosely named subfolders stays in the playlist chosen');
+  const g = M.byFolder([f('M/Tension/Lounge Lizards OST/x.mp3'), f('M/Hanging around/Chase the Sun/y.mp3'), f('Action scores/z.mp3'), f('M/Suspense/s.mp3')]);
+  assert.deepEqual([g.calm.length, g.tension.length, g.action.length, g.none.length], [1, 2, 0, 1]);
+  const q = rig();
+  const [n1, n2] = await Promise.all([q.ctl.add([f('T/a.mp3'), f('T/b.mp3')], 'tension', { folder: true }), q.ctl.add([f('T/a.mp3'), f('T/b.mp3')], 'tension', { folder: true })]);
+  assert.equal(n1 + n2, 2); assert.equal(q.ctl.tracks().length, 2, 'two at once still adds each file once');
+  const s = rig();
+  await s.ctl.addAll([f('M/Action/a.mp3'), f('M/stray.mp3')]);
+  const last = s.said[s.said.length - 1];
+  assert.ok(last[1] && /1 track added to Action/.test(last[0]) && /1 track was left out/.test(last[0]), 'the last toast carries both, in red: ' + JSON.stringify(last));
+});
+
 await test('cue lines: music: action | tension | calm | hanging around | auto | off, and a bad word is skipped', () => {
   const p = CS.parse('## Cues\n\n1. music: action\n2. music: Hanging around\n3. music: calm\n4. music: auto\n5. music: off\n6. music: tension\n7. music: louder\n');
   assert.deepEqual(p.cues.map((c) => [c.n, c.kind, c.arg, c.text]), [[1, 'music', 'action', 'Action'], [2, 'music', 'calm', 'Hanging around'], [3, 'music', 'calm', 'Hanging around'],

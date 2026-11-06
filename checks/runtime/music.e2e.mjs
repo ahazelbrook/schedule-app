@@ -227,8 +227,8 @@ try {
     await page.$eval('[data-inline="music"] [data-mu-sum="tension"]', (e) => /^3 tracks/.test(e.textContent)), 'a folder of all three: one more track in each playlist (the cover and the Mac’s ._ copy left out)');
   await page.waitForTimeout(800);
   await page.setInputFiles('[data-inline="music"] [data-mu-dir="all"]', dir);
-  await page.waitForTimeout(1500);
-  check(await page.$$eval('[data-inline="music"] .gm-mu-tracks li', (a) => a.length) === 9, 'the same folder again adds nothing (already there)');
+  check(await until(() => page.$eval('#toastMsg', (e) => /3 were already there/.test(e.textContent)), 6000) &&
+    await page.$$eval('[data-inline="music"] .gm-mu-tracks li', (a) => a.length) === 9, 'the same folder again adds nothing: the toast says 3 were already there');
   if (SHOTS) { await page.waitForTimeout(4000); const el = await page.$('[data-inline="music"]'); if (el) await el.screenshot({ path: path.join(SHOTS, 'tool-1366.png') }); }
   /* ---- 390: no overflow, the pill hidden (the phone is not the player), the tool stacks ---- */
   const ph = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, extraHTTPHeaders: { 'X-Dev-User': GM }, reducedMotion: 'reduce' });
