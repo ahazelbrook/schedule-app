@@ -7,7 +7,11 @@
    every poll (functions/_lib/show.js), so a stale pick still never reaches the iPad.
 
    make(host) -> ctl, with host = { layer(path, value) -> Promise, npcs() -> { id: npcDoc }, now() -> ms, startAt() -> ms | 0, toast?(msg, bad?),
-     onTitles?() -> Promise<bool> (pin the credits), onIpad?() -> text (what is on the iPad) }
+     onTitles?() -> Promise<bool> (pin the credits), onIpad?() -> text (what is on the iPad),
+     onAir?() -> { start, to, label, previously, faces, seq } | null (F3: what the ambient document holds: the start scene, its countdown, the faces
+     laid; null before the page has read it) }
+     ctl.sync()              F3: adopt what the iPad shows (after a reload the start scene arms the sheet again; one taken down elsewhere disarms it), and
+                             draw the sheet again if that changed -> bool. state() adopts too.
      ctl.pool()              revealed NPCs, most recently revealed first: [{ id, name, role, firstSeen }]  (the three picks default to its first three)
      ctl.picks()             the three chosen ids now (a pick that is no longer revealed drops out and the next in the pool fills the slot)
      ctl.setPick(slot, id)   -> bool        false for an unknown or hidden NPC, or a slot outside 0..2, or an id already in another slot
@@ -50,13 +54,48 @@
   }
   function hhmm(ms) { var d = new Date(ms); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
 
+  /* F3: what the ambient document says is on the iPad (host.onAir(), read from the layers this file writes): null when the page has not read it yet */
+  function idOf(x) { return typeof x === 'string' ? x : isObj(x) ? str(x.npcId || x.id) : ''; }
+  function airOf(a) {
+    if (!isObj(a)) return null;
+    var to = Math.floor(Number(a.to));
+    return { start: a.start === true && isFinite(to) && to > 0, to: isFinite(to) ? to : 0, label: str(a.label), seq: typeof a.seq === 'number' && isFinite(a.seq) ? a.seq : null,
+      previously: (Array.isArray(a.previously) ? a.previously : []).map(idOf).filter(Boolean), faces: (Array.isArray(a.faces) ? a.faces : []).map(idOf).filter(Boolean) };
+  }
+
   function make(host) {
     var h = host || {};
-    var st = { armed: false, at: 0, test: false, shown: [], chosen: [null, null, null] };
+    /* busy: one of this page's own writes is under way (its document is half written: nothing is adopted from it). mark: the ambient seq (and the
+       time) at this page's last arm or end, so an ambient document no newer than that cannot undo it (a stale read re-arming right after End) */
+    var st = { armed: false, at: 0, test: false, shown: [], chosen: [null, null, null], busy: 0, mark: null };
+    var MARK_MS = 5000;
     function npcs() { return typeof h.npcs === 'function' ? h.npcs() : {}; }
     function now() { return typeof h.now === 'function' ? h.now() : Date.now(); }
     function say(m, bad) { if (typeof h.toast === 'function') h.toast(m, bad === true); }
     function layer(path, v) { return typeof h.layer === 'function' ? Promise.resolve(h.layer(path, v)) : Promise.resolve(null); }
+    function air() { if (typeof h.onAir !== 'function') return null; try { return airOf(h.onAir()); } catch (e) { return null; } }
+    /* the writes AND the state they settle, as one: busy until both are done */
+    function held(fn) { st.busy++; var p; try { p = Promise.resolve(fn()); } catch (e) { p = Promise.reject(e); } return p.then(function (r) { st.busy--; return r; }, function (e) { st.busy--; throw e; }); }
+    function markNow() { var a = air(); st.mark = { seq: a ? a.seq : null, at: now() }; }
+    function newer(a) {
+      if (!st.mark) return true;
+      if (a.seq !== null && st.mark.seq !== null) return a.seq > st.mark.seq;
+      return now() - st.mark.at > MARK_MS;
+    }
+    /* F3: the source of truth is what the iPad shows. After a reload this page knows nothing of its own arm; the ambient document does: the start
+       scene and its countdown arm the sheet again (the time, Test, the three faces laid and the names shown); a start taken down elsewhere (the
+       tray's Clear on another device) disarms it. Never while one of this page's own writes is under way, nor from a document no newer than it */
+    function adopt() {
+      if (st.busy) return false;
+      var a = air(); if (!a || a.start === st.armed || !newer(a)) return false;
+      if (!a.start) { st.armed = false; st.test = false; st.shown = []; return true; }
+      /* the faces laid, by slot, kept as ids even before the cast has arrived after a reload (picks() resolves them against the revealed cast) */
+      var prev = a.previously.slice(0, SLOTS);
+      if (prev.length) { var ch = prev.slice(); while (ch.length < SLOTS) ch.push(null); st.chosen = ch; }
+      st.armed = true; st.at = a.to; st.test = a.label === 'Test'; st.rolled = false;
+      st.shown = []; prev.forEach(function (id, i) { if (a.faces.indexOf(id) >= 0) st.shown.push(i); });
+      return true;
+    }
     function seq(steps) {   /* in order, stopping at the first the page refused (a refused write answers null) */
       var ok = true;
       return steps.reduce(function (p, s) { return p.then(function () { if (!ok) return null; return s().then(function (r) { if (r === null || r === undefined) ok = false; return r; }); }); }, Promise.resolve()).then(function () { return ok; });
@@ -85,35 +124,41 @@
         if (!Object.keys(npcs() || {}).length) { say('The cast is still loading: arm again in a moment.', true); return Promise.resolve(false); }
         var L = live(), picks = ctl.picks(), credits = L.pool.slice(0, CREDITS_MAX).map(function (p) { return p.id; });
         st.shown = [];
-        return seq([
-          function () { return layer('band.faces', null); },
-          function () { return layer('data.credits', credits.length ? credits : null); },
-          function () { return layer('data.previously', picks.length ? picks : null); },
-          function () { return layer('data.countdown', { to: t, label: str(label).trim().slice(0, 40) || 'Station clock' }); },
-          function () { return layer('scene.mode', 'start'); }
-        ]).then(function (ok) { if (ok) { st.armed = true; st.at = t; st.test = false; st.rolled = false; } return ok; });
+        return held(function () {
+          return seq([
+            function () { return layer('band.faces', null); },
+            function () { return layer('data.credits', credits.length ? credits : null); },
+            function () { return layer('data.previously', picks.length ? picks : null); },
+            function () { return layer('data.countdown', { to: t, label: str(label).trim().slice(0, 40) || 'Station clock' }); },
+            function () { return layer('scene.mode', 'start'); }
+          ]).then(function (ok) { if (ok) { st.armed = true; st.at = t; st.test = false; st.rolled = false; markNow(); } return ok; });
+        });
       },
       armTest: function (minutes) {
         var m = Number(minutes); if (!(m > 0)) m = TEST_MIN;
         return ctl.arm(now() + Math.round(m * 60000), 'Test').then(function (ok) { if (ok) st.test = true; return ok; });
       },
       go: function () {
+        adopt();      /* F3: just after a reload, the iPad's start scene is the arm */
         if (!st.armed) { say('Arm the hard start first.', true); return Promise.resolve(false); }
         var t = now();
-        return layer('data.countdown', { to: t, label: 'Station clock' }).then(function (r) { if (r === null || r === undefined) return false; st.at = t; return true; });
+        return held(function () { return layer('data.countdown', { to: t, label: 'Station clock' }).then(function (r) { if (r === null || r === undefined) return false; st.at = t; return true; }); });
       },
       reveal: function (slot) {
+        adopt();
         slot = +slot;
         var picks = ctl.picks();
         if (!st.armed || !(slot >= 0 && slot < picks.length) || Math.floor(slot) !== slot) return Promise.resolve(false);
         if (st.shown.indexOf(slot) < 0) st.shown = st.shown.concat([slot]).sort();
         var ids = st.shown.map(function (s) { return picks[s]; }).filter(function (x) { return !!x; });
-        return layer('band.faces', ids.map(function (id) { return { npcId: id }; })).then(function (r) { return r !== null && r !== undefined; });
+        return held(function () { return layer('band.faces', ids.map(function (id) { return { npcId: id }; })).then(function (r) { return r !== null && r !== undefined; }); });
       },
       end: function () {
-        return seq(PATHS.slice().reverse().map(function (p) { return function () { return layer(p, null); }; })).then(function (ok) {
-          if (ok) { st.armed = false; st.test = false; st.shown = []; st.rolled = false; }
-          return ok;
+        return held(function () {
+          return seq(PATHS.slice().reverse().map(function (p) { return function () { return layer(p, null); }; })).then(function (ok) {
+            if (ok) { st.armed = false; st.test = false; st.shown = []; st.rolled = false; markNow(); }
+            return ok;
+          });
         });
       },
       /* Roll the opening credits: end() (every layer it set comes off), then host.onTitles() pins the Opening credits scene (the GM picks the moment) */
@@ -124,7 +169,9 @@
           return Promise.resolve().then(function () { return h.onTitles(); }).then(function (r) { if (r === false || r === null) return false; st.rolled = true; return true; }, function () { return false; });
         });
       },
-      state: function () { return { armed: st.armed, at: st.at, test: st.test, shown: st.shown.slice(), picks: ctl.picks(), rolled: !!st.rolled }; }
+      state: function () { adopt(); return { armed: st.armed, at: st.at, test: st.test, shown: st.shown.slice(), picks: ctl.picks(), rolled: !!st.rolled }; },
+      /* F3: the page calls this when its copy of the ambient document changes: the sheet is drawn again only when the arm it shows has changed */
+      sync: function () { if (!adopt()) return false; var b = sheet(); if (b && b.isOpen()) ctl.render(b.body); return true; }
     };
 
     /* ---- the sheet ---- */

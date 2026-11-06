@@ -2250,7 +2250,7 @@
     Promise.resolve().then(function () { return g.ambient(); }).then(function (r) {
       if (S !== me || AM.loaded || !isObj(r) || !isObj(r.doc)) return;
       AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null;
-      renderBar();
+      renderBar(); hsSync();
     }, function () { AM.peeked = false; });
   }
   /* N1b: the places of the night (gm/places.js) draw the view switcher (.gm-views), the chip row below 1100 px (.gm-vchips, in the old segbar's
@@ -2406,10 +2406,18 @@
           return k && k !== 'blank' ? pushDisplay({ kind: 'blank' }).then(function () { return true; }, function () { return true; }) : true;
         }).then(function (ok) { if (W.B68GmIpadTray) W.B68GmIpadTray.refresh(); return ok; });
       },
-      onIpad: function () { var T = W.B68GmIpadTray; return T && T.liveLine ? T.liveLine(T.liveItems(ipadSnapshot())).text : ''; }
+      onIpad: function () { var T = W.B68GmIpadTray; return T && T.liveLine ? T.liveLine(T.liveItems(ipadSnapshot())).text : ''; },
+      /* F3: the start as the ambient document holds it (null until this page has read it), so a reload finds the hard start still armed */
+      onAir: function () {
+        if (!isObj(AM.doc)) return null;
+        var L = ipadLayers(), sc = isObj(L.scene) ? L.scene : {}, d = isObj(L.data) ? L.data : {}, b = isObj(L.band) ? L.band : {}, cd = isObj(d.countdown) ? d.countdown : {};
+        return { start: sc.mode === 'start', to: cd.to, label: cd.label, previously: d.previously, faces: b.faces, seq: typeof AM.seq === 'number' ? AM.seq : null };
+      }
     });
     return S.hs;
   }
+  /* F3: the ambient document changed: the hard start's sheet follows what the iPad shows (only a controller already made; it redraws only on a change) */
+  function hsSync() { if (S && S.hs && typeof S.hs.sync === 'function') { try { S.hs.sync(); } catch (e) { /* the sheet keeps what it had */ } } }
   /* 3.6 / 2.11 Print (gm/print.js, switches print.cards and print.blueprint): one Menu line while either is on; the blueprint goes through the player door */
   function prOn() { return !!(S && W.B68GmPrint && W.B68Features && (W.B68Features.valueOf(S.doc, 'print.cards') || W.B68Features.valueOf(S.doc, 'print.blueprint'))); }
   function prInst() {
@@ -4427,7 +4435,7 @@
     if (!isObj(r) || !isObj(r.doc)) return false;
     if (typeof r.seq === 'number' && typeof AM.seq === 'number' && r.seq < AM.seq) return false;     /* an older answer landing late */
     AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null; AM.loaded = true; AM.error = '';
-    apSync();
+    apSync(); hsSync();
     return true;
   }
   /* GET the ambient document (and, the first time, what the iPad shows). Also corrects a stale crew once the truth is known. */
