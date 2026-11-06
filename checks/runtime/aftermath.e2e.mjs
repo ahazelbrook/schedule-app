@@ -139,6 +139,11 @@ try {
   await ip.waitForFunction(() => !!document.querySelector('.dp-show-aftermath .dp-show-wanted.dp-ov-in'), null, { timeout: 15000 });
   await shot(ip, '3-heat-siren');
   check(/siren/i.test(await panel()) && /WANTED/.test(await iPadText()), 'at 9 the siren and WANTED: the panel says so and the iPad shows the poster');
+  /* H5: a field's change repaints the panel; the box the GM Tabbed into keeps the focus (it used to fall to the page body) */
+  await g.focus(AFT + ' input[type=number] >> nth=0');
+  await g.keyboard.type('1'); await g.keyboard.press('Tab'); await g.keyboard.type('1');
+  await g.waitForTimeout(1500);
+  check(await g.evaluate(() => { const a = document.activeElement, all = [...document.querySelectorAll('#gm-sheet-aftermath input[type=number], [data-inline="aftermath"] input[type=number]')]; return !!a && a.tagName === 'INPUT' && all.indexOf(a) === 1; }), 'the repaint after a field change keeps the focus in the box the GM Tabbed to');
 
   await press('Next'); await onStep('status');
   check(/No status changes/i.test(await iPadText()), 'step 4 with nothing typed: "No status changes"');

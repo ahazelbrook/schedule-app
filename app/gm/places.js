@@ -422,7 +422,7 @@
         '<button type="button" class="btn primary" data-pv-end="1" title="Exports tonight’s note, stops the recording, then ends the night for the players (it asks first)">End the night</button></div>';
       if (id === 'between') return '<nav class="gm-desklist" aria-label="Desks">' + DESKS.map(function (d) {
         var on = st.desk === d.id || st.desk.indexOf(d.id + ':') === 0;
-        return '<button type="button" class="gm-desklink" data-desk="' + d.id + '"' + (on ? ' aria-current="true"' : '') + '>' + esc(d.label || (VIEWS[d.id] || {}).label || d.id) + '</button>';
+        return '<button type="button" class="gm-desklink" data-desk="' + (d.panes ? d.id + ':' + d.panes[0][0] : d.id) + '"' + (on ? ' aria-current="true"' : '') + '>' + esc(d.label || (VIEWS[d.id] || {}).label || d.id) + '</button>';
       }).join('') + '</nav>';
       return '';
     }

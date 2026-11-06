@@ -162,7 +162,20 @@ try {
   check((await stage()).staged === 2 && /Send 2/.test(await G.page.textContent('.rv-tools [data-site="send"]')), 'a second room staged: Send 2 in the toolbar');
   await shot(G.page, 'site-02-staged');
   await noLeak('staging');
+  /* F4: Send with the map not on the iPad asks about the map BEFORE anything is written: a No leaves the rooms staged, Send 2 there, nothing open */
+  check(/Not on the iPad/.test(await G.page.textContent('.rv-tools [data-site-live]')), 'the map is not on the iPad yet');
+  answer.no = true; asked.length = 0;
+  await G.page.click('.rv-tools [data-site="send"]');
+  await sleep(1200);
+  check(asked.length === 1 && /^This map will show the players the rooms .*opened on their own\. Go ahead\?$/.test(asked[0]), 'Send asks about the map going up: ' + JSON.stringify(asked));
+  const afterNo = await ball();
+  check(!(afterNo.open || []).length && (afterNo.know || []).includes('Private card rooms'), 'a No writes nothing: no room open, the blueprint room still known (' + JSON.stringify({ open: afterNo.open, know: afterNo.know }) + ')');
+  check((await stage()).staged === 2 && /Send 2/.test(await G.page.textContent('.rv-tools [data-site="send"]')), 'the rooms stay staged and Send 2 stays');
+  check(!/Could not send/.test(await G.page.evaluate(() => document.body.innerText)), 'and no "Could not send" toast');
+  check(!/"kind":"svg"/.test(await displayText()), 'nothing went to the iPad');
+  answer.no = false; asked.length = 0;
   check(await G.page.evaluate(() => window.B68GmStage.send()) === true, 'B68GmStage.send() (what the band\'s iPad tray calls) sends them');
+  check(!!(await until(() => asked.length >= 1, 5000)) && asked.length === 1, 'a Yes is asked once, not again by Show on iPad (' + asked.length + ')');
   check(!!(await until(async () => { const b = await ball(); return (b.open || []).includes('Private card rooms') && (b.open || []).includes('Luxury penthouse') && !(b.know || []).length ? b : null; }, 8000)), 'both rooms are open, and the blueprint one left ball.know');
   check((await stage()).staged === 0 && (await pressed()) === 'seen', 'nothing staged; the selected room reads Seen');
   await G.page.click(seg('dark'));
@@ -232,7 +245,11 @@ try {
   /* a line half typed keeps its focus and caret when the site redraws under it from elsewhere (here the band's tray freezing the iPad through
      B68GmStage: no click, so the focus stays where the GM left it) */
   const mtLine = '.rv-sec[data-sec="tool"] .gm-inline [data-mt-line]';
+  /* F4: the line takes the row's width (it was the input's own ~140 px: "A very lor…") */
+  const mtW = await G.page.$eval(mtLine, (i) => { const r = i.closest('.gm-sb-row').getBoundingClientRect(); return { line: Math.round(i.getBoundingClientRect().width), row: Math.round(r.width) }; });
+  check(mtW.line >= mtW.row - 2 && mtW.line > 200, 'the montage line takes the row\'s width (' + JSON.stringify(mtW) + ')');
   await G.page.click(mtLine); await G.page.keyboard.type('a half typed line'); await G.page.keyboard.press('ArrowLeft');
+  await shot(G.page, 'site-05b-montage-line-1366');
   await G.page.evaluate(() => { document.querySelector('.rv-head').__before = true; window.B68GmStage.freeze(true); });
   const redrawn = await until(() => G.page.evaluate(() => { const h = document.querySelector('.rv-head'); return !!h && !h.__before; }), 5000);
   const kept = await G.page.evaluate((q) => { const a = document.activeElement, f = document.querySelector(q); return { same: !!f && a === f, value: f ? f.value : '', caret: f ? f.selectionStart : -1 }; }, mtLine);
@@ -246,6 +263,29 @@ try {
   await G.page.keyboard.press('b');
   await G.page.waitForSelector('#gm-loc .gm-mapbox', { timeout: 10000 });
   check((await G.page.$$('#gm-b17, #gm-b24')).length === 0 && (await G.page.$$('#gm-loc [data-gm="ipad"]')).length === 1 && (await G.page.$$('#gm-loc [data-gm="scorescene"]')).length === 1, 'Location: Show on iPad and Set as score scene stay; the stage and knowledge boxes are gone');
+
+  /* ---- 8. F4: Roll a location over tonight's site asks first; a No keeps it; a Yes rolls, and an Earlier chip brings it back with its night ---- */
+  const card = async () => (((await api('GET', '/gm/state')).json.doc || {}).cards || {}).location || {};
+  const night0 = JSON.stringify(await ball());
+  answer.no = true; asked.length = 0;
+  await G.page.click('#gm-loc [data-gm="locroll"]');
+  await sleep(800);
+  check(asked.length === 1 && asked[0] === 'Replace tonight' + String.fromCharCode(0x2019) + 's site with a rolled location? You can bring it back from Earlier.', 'Roll a location over tonight\'s site asks first: ' + JSON.stringify(asked));
+  check((await card()).auth === NAME && /Pelican Rooms/.test(await G.page.textContent('#gm-loc .gm-locname')), 'a No keeps the site on the card');
+  answer.no = false; asked.length = 0;
+  await G.page.click('#gm-loc [data-gm="locroll"]');
+  check(!!(await until(async () => { const c = await card(); return !c.auth && typeof c.seed === 'number'; }, 8000)), 'a Yes rolls a location in its place');
+  const CHIP = '#gm-loc .gm-earlier [data-gm="replay"]';
+  const chips = await G.page.$$eval(CHIP, (l) => l.map((b) => b.textContent));
+  check(chips.some((t) => /The Pelican Rooms/.test(t)), 'the site it replaced is an Earlier chip: ' + chips.join(' | '));
+  await G.page.$eval('#gm-loc .gm-earlier', (e) => e.scrollIntoView({ block: 'center' }));
+  await shot(G.page, 'location-earlier-1366');
+  await G.page.click(CHIP + ':has-text("The Pelican Rooms")');
+  check(!!(await until(async () => (await card()).auth === NAME, 8000)), 'the chip brings the site back');
+  check(JSON.stringify(await ball()) === night0, 'with its night as it was (the roll never touched the ball)');
+  await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+  await G.page.keyboard.press('g');
+  check(!!(await G.page.waitForSelector('.rv-head', { timeout: 15000 }).then(() => true, () => false)) && !!(await G.page.waitForSelector('.rv-tools [data-site="spotted"]', { timeout: 15000 }).then(() => true, () => false)), 'and The site runs it again');
   await noLeak('the end');
   check(secret.every((t) => !/GM-ONLY/.test(t)), 'no display GET taken in this run held GM-only text');
   check(!errors.length, 'no page errors: ' + errors.slice(0, 3).join(' | '));

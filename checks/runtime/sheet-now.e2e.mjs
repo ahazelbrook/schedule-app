@@ -223,6 +223,8 @@ try {
   check(await a.evaluate(() => !!document.activeElement && document.activeElement.classList.contains('ds-debrief-card')), 'the Debrief takes focus at its top, not on its pick (no picker pops up on an iPhone)');
   const px = await a.$$eval('.ds-debrief-dlg input[type="text"], .ds-debrief-dlg select', (l) => l.map((e) => parseFloat(getComputedStyle(e).fontSize)));
   check(px.length >= 4 && px.every((x) => x >= 16), 'every Debrief field is 16 px: ' + JSON.stringify(px));
+  const pick0 = await a.$eval('.ds-debrief-dlg select', (e) => e.value);
+  check(pick0 === 'heat', 'an unanswered Debrief preselects the GM default (Lay low), not the first option: ' + pick0);
   await a.fill('.ds-debrief-dlg input[placeholder^="What are you doing"]', 'Back to the gym');
   await a.click('.ds-debrief-dlg button:has-text("Send")');
   check(!!(await until(async () => { const r = await api('GET', '/docs?kind=debrief&owner=' + encodeURIComponent(P1)); return r.json.docs[0] && r.json.docs[0].json.reply; }, 6000)), 'the reply is in the player\'s own Debrief row');

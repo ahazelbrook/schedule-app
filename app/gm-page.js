@@ -3330,16 +3330,31 @@
     var mem = {}; try { mem = JSON.parse(e.mem || '{}'); } catch (x) {}
     try { return L.generate(pk, e.ui || {}, { seed: e.seed, mem: mem }); } catch (x) { return null; }
   }
-  function rollLocation() {
+  /* F4: an authored site with a play block on the card is tonight's site (what runSite runs; read from the pack, so it holds before the
+     roller has drawn it): a roll asks before it replaces it. Every other card is replaced without a word, as ever */
+  var ROLL_OVER_SITE = 'Replace tonight’s site with a rolled location? You can bring it back from Earlier.';
+  function siteTonight(cur) {
+    var site = isObj(cur) && cur.auth ? authoredOf(part('location')).sites[str(cur.auth)] : null;
+    return isObj(site) && isObj(site.play) && isObj(site.play.clock);
+  }
+  function rollOverOk() { var cur = isObj(S.doc.cards) ? S.doc.cards.location : null; return !siteTonight(cur) || W.confirm(ROLL_OVER_SITE); }
+  /* the history entry of an authored site already in Earlier (one per site), or null */
+  function authHistOf(hist, name) { return newest(hist).filter(function (x) { return x.auth && str(x.auth) === str(name); })[0] || null; }
+  function rollLocation(asked) {
     var L = W.B68GmLocation, pk = part('location'); if (!L || !pk) return;
+    if (asked !== true && !rollOverOk()) return;
     var opts = locUi(), before = JSON.stringify(S.locMem), roll;
     try { roll = L.generate(pk, opts, { mem: S.locMem }); } catch (e) { toast('The location roll failed: ' + errText(e), true); return; }
     var entry = { seed: roll.seed, ui: opts, mem: before, label: str(roll.name) + (roll.district ? ' · ' + roll.district : ''), at: nowIso() };
     var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.location) ? S.doc.hist.location : {};
+    /* F4: an authored card going out is kept in Earlier (a card opened before openAuthored filed it, or set from outside), so a chip brings it back */
+    var out = isObj(S.doc.cards) ? S.doc.cards.location : null, after = Object.assign({}, hist), kid = '', ke = null;
+    if (isObj(out) && out.auth && !authHistOf(hist, out.auth)) { kid = uid('h'); ke = { auth: str(out.auth), label: str(out.label) || str(out.auth), at: str(out.at) || nowIso() }; after[kid] = ke; }
+    var hp = addCapped(after, hid, entry, LIMITS.hist); if (kid && hp[kid] === undefined) hp[kid] = ke;
     /* a new site starts from the public band only, on the GM layer, as rings: the map draws at once (Draw stays for another
        view, theme or layer; the theme is kept) */
     /* replaces the stored card: an authored card's `auth` must not survive a roll */
-    patch({ cards: { location: replacePatch(isObj(S.doc.cards) ? S.doc.cards.location : null, Object.assign({ hid: hid }, entry)) }, mem: { location: clone(S.locMem) }, hist: { location: addCapped(hist, hid, entry, LIMITS.hist) }, loc: { map: { reveal: clone(P.REVEAL0), view: P.MAP0.view, layer: 'gm' } } }, { force: true });
+    patch({ cards: { location: replacePatch(out, Object.assign({ hid: hid }, entry)) }, mem: { location: clone(S.locMem) }, hist: { location: hp }, loc: { map: { reveal: clone(P.REVEAL0), view: P.MAP0.view, layer: 'gm' } } }, { force: true });
     S.locRoll = roll; S.map = null; S.last = { text: 'Location: ' + entry.label };
     renderLocation(true);
     if (W.B68Map && W.B68Map.render) drawMap(true);
@@ -3949,10 +3964,11 @@
     var r = mapUi().reveal;
     if (BANDS.some(function (b) { return !!r[b] !== !!P.REVEAL0[b]; })) patch({ loc: { map: { reveal: clone(P.REVEAL0) } } });
   }
-  function showOnIpad() {
+  /* okd: a reveal list the GM has just said yes to (Send, F4): the same list is not asked about twice; any other list still asks */
+  function showOnIpad(okd) {
     var mu = mapUi(), d, tk = playerTokenSet(revealEntries(mu));
     try { d = playerDisplay(S.locRoll, mu, W.B68Map && W.B68Map.render, tk); } catch (e) { toast(errText(e), true); return Promise.resolve(false); }
-    if (!confirmReveal(d.reveal, 'This map')) return Promise.resolve(false);
+    if (!(Array.isArray(okd) && JSON.stringify(okd) === JSON.stringify(d.reveal)) && !confirmReveal(d.reveal, 'This map')) return Promise.resolve(false);
     gate.mark(d.svg);
     var me = S, key = rollKey(S.locRoll), on = { key: key, reveal: d.reveal.slice(), know: knowRooms(mu), view: mu.view, theme: mu.theme, time: mu.time, weather: mu.weather, title: d.title, tok: tk.sig, tokQ: tk.sig, tokToast: d.tokensRefused ? tk.sig : null };
     endLive();            /* nothing is live until this map has landed */
@@ -3980,13 +3996,13 @@
       return entryBands(d.reveal).some(function (b) { return b !== 'public'; }) || entryRooms(d.reveal).length > 0;
     } catch (e) { return true; }
   }
-  function siteMapUp(quiet, auto) {
+  function siteMapUp(quiet, auto, okd) {
     if (!S || !S.locRoll) { if (!quiet) toast('There is no map to show yet: open the site on the Location card first.', true); return Promise.resolve(false); }
     if (b17Frozen()) { if (!quiet) toast('The iPad is frozen: unfreeze it first.', true); return Promise.resolve(false); }
     if (auto && panicOn()) return Promise.resolve(false);
     if (mapUi().layer !== 'player') setMap('layer', 'player');
     if (auto && needsConfirm()) { toast('Map not shown on the iPad: press Show on iPad on the site when ready.'); if (S) siteChanged(); return Promise.resolve(false); }
-    return Promise.resolve(showOnIpad()).then(function (ok) { if (S) siteChanged(); return ok; });
+    return Promise.resolve(showOnIpad(okd)).then(function (ok) { if (S) siteChanged(); return ok; });
   }
   /* entering the Score: the map goes up unless the GM has something else on the iPad (a map already live, a handout, a rule, a face card held as the display) */
   function scoreMapDefault() {
@@ -4379,8 +4395,10 @@
     var A = authoredOf(part('location')), name = str(A.bind[key]), site = name ? A.sites[name] : null;
     if (!isObj(site)) { toast('That authored site is not in the pack any more. Update the pack.', true); return; }
     var dist = isObj(site.patch) ? str(site.patch.district) : '', m = isObj(site.map) ? site.map : {};
-    var cur = { hid: uid('h'), auth: name, label: name + (dist ? ' · ' + dist : ''), at: nowIso() };
-    patch({ cards: { location: replacePatch(isObj(S.doc.cards) ? S.doc.cards.location : null, cur) }, loc: { map: { reveal: clone(P.REVEAL0), view: VIEWS.indexOf(m.view) >= 0 ? m.view : 'iso', theme: THEMES.indexOf(m.theme) >= 0 ? m.theme : 'rulebook', layer: 'gm' } } }, { force: true });
+    /* F4: the site goes in Earlier too (its one entry, reused), so a roll over it can be undone with a chip */
+    var hist = isObj(S.doc.hist) && isObj(S.doc.hist.location) ? S.doc.hist.location : {}, had = authHistOf(hist, name);
+    var cur = { hid: had ? had._id : uid('h'), auth: name, label: name + (dist ? ' · ' + dist : ''), at: nowIso() };
+    patch({ cards: { location: replacePatch(isObj(S.doc.cards) ? S.doc.cards.location : null, cur) }, hist: { location: addCapped(hist, cur.hid, { auth: name, label: cur.label, at: cur.at }, LIMITS.hist) }, loc: { map: { reveal: clone(P.REVEAL0), view: VIEWS.indexOf(m.view) >= 0 ? m.view : 'iso', theme: THEMES.indexOf(m.theme) >= 0 ? m.theme : 'rulebook', layer: 'gm' } } }, { force: true });
     S.locRoll = null; S.map = null; S.siteFor = key; S.last = { text: 'Location: ' + cur.label };
     showPanel('location');
     renderLocation();
@@ -4390,11 +4408,12 @@
   /* Roll a site / Roll another: the Location pickers from the card's hints, then a roll; the save row points at the score */
   function rollSite(key) {
     var L = W.B68GmLocation, pk = part('location'), sc = scoreOf(key); if (!L || !pk || !sc) { if (!sc) toast('That score is not in the pack any more.', true); return; }
+    if (!rollOverOk()) return;      /* F4: asked before the pickers change, so a No changes nothing */
     var r; try { r = siteUi(L.controls(pk).controls, sc.site); } catch (e) { r = { ui: {}, missed: [] }; }
     patch({ loc: { ui: r.ui } });
     S.siteFor = key;
     showPanel('location');
-    rollLocation();
+    rollLocation(true);
     if (r.missed.length) toast('Not in the generator, so rolled on any: ' + r.missed.map(function (m) { return m[0] + ' “' + m[1] + '”'; }).join(', ') + '. Fix the card’s site_ properties in Obsidian.', true);
   }
   function clearSite(key) {
@@ -4434,8 +4453,11 @@
   function adoptAmbient(r) {
     if (!isObj(r) || !isObj(r.doc)) return false;
     if (typeof r.seq === 'number' && typeof AM.seq === 'number' && r.seq < AM.seq) return false;     /* an older answer landing late */
+    var fl0 = ipadLayerSet('scene.filter') ? ipadLayers().scene.filter : null;
     AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null; AM.loaded = true; AM.error = '';
     apSync(); hsSync();
+    /* F4: the site's Flashback / Back follows a filter it learns of here (a reload mid-flashback draws the toolbar before this GET lands) */
+    if ((ipadLayerSet('scene.filter') ? ipadLayers().scene.filter : null) !== fl0 && S) { var fb = S.b19 && S.b19.flashback; if (fb && typeof fb.refresh === 'function') fb.refresh(); else siteChanged(); }
     return true;
   }
   /* GET the ambient document (and, the first time, what the iPad shows). Also corrects a stale crew once the truth is known. */
@@ -4715,6 +4737,14 @@
     var sh = shows(); if (!sh) return Promise.resolve(null);
     return sh.layer(path, value).then(function (r) { if (r !== null && S === me) { me.b09.layers[path] = value; } return r; });
   }
+  /* F4: a layer's value as this page knows it: what it laid last, else the ambient document's (a flashback laid before a reload, or by another device),
+     so the toolbar reads Back and one tap (or "Blade, back") ends it */
+  function b09LayerNow(me, path) {
+    if (S !== me) return null;
+    if (me.b09 && isObj(me.b09.layers) && Object.prototype.hasOwnProperty.call(me.b09.layers, path)) return me.b09.layers[path] || null;
+    var p = str(path).split('.'), L = ipadLayers(), g = isObj(L[p[0]]) ? L[p[0]] : null;
+    return g && g[p[1]] !== undefined && g[p[1]] !== null ? g[p[1]] : null;
+  }
   function b09Mount() {
     var St = W.B68GmStamp, Gr = W.B68GmCueGrammar, me = S; if (!St || !Gr || !W.B68Features || me.stamp) return;
     b19Mount();                                                                  /* B19: the map beats exist before the first stamp can drop a glyph */
@@ -4736,7 +4766,7 @@
       night: function () { return S === me ? me.night : null; }, doc: function () { return document; }, toast: toast,
       flashbackNote: function (cost) { var f = S === me && me.b19 && me.b19.flashback; if (f) { f.note(cost); f.refresh(); } },
       flashbackEnd: function () { var f = S === me && me.b19 && me.b19.flashback; if (f) { f.noteEnd(); f.refresh(); } },
-      layer: function (path, value) { return b09Layer(me, path, value); }, layerValue: function (path) { return S === me && isObj(me.b09.layers) ? (me.b09.layers[path] || null) : null; },
+      layer: function (path, value) { return b09Layer(me, path, value); }, layerValue: function (path) { return b09LayerNow(me, path); },
       npcs: function () { return S === me ? Object.keys(isObj(me.npcs) ? me.npcs : {}).map(function (id) { var d = me.npcs[id]; return isObj(d) && !(Array.isArray(d.tags) && d.tags.indexOf('undone') >= 0) ? { id: id, name: str(d.name), alias: str(d.alias), revealed: d.revealed === true } : null; }).filter(Boolean) : []; },
       reveal: function (id, yes) {
         var ref = S === me ? npcRef(id) : null; if (!ref) return Promise.reject(new Error('The cast is not available here.'));
@@ -4918,7 +4948,7 @@
       clocks: function () { return S === me ? tableClocks() : []; },
       tick: function (id, to) { return me.api && typeof me.api.clockOps === 'function' ? Promise.resolve(me.api.clockOps([{ id: id, filled: to }])) : Promise.resolve(null); },
       show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
-      filter: function () { return S === me && me.b09 && isObj(me.b09.layers) ? (me.b09.layers['scene.filter'] || null) : null; },
+      filter: function () { return b09LayerNow(me, 'scene.filter'); },
       layer: function (path, value) { if (!me.b09) me.b09 = { layers: {} }; return b09Layer(me, path, value); },
       changed: function () { if (S === me) siteChanged(); }       /* N3: the site's toolbar (Flashback / Back, Pin) and the board's marks follow */
     };
@@ -4956,9 +4986,17 @@
         /* N3: a room sent is seen, so it leaves the blueprint list in the same write (the two lists never share a room) */
         var ch = { open: names.length ? names : null };
         if (b09On('map.knowledge')) { var kn = cleanRooms(ballDoc(rs.name).know).filter(function (n) { return names.indexOf(n) < 0; }); ch.know = kn.length ? kn : null; }
+        /* T5: Send puts the map on the iPad when it is not up yet (live, the open rooms go at once); never over PANIC. F4: its confirm is settled BEFORE the
+           rooms are written, on the reveal they will make, so a No changes nothing (null: the stage keeps its rooms, Send (n) stays, no toast) */
+        var up = !mapOnIpad() && !panicOn() && !b17Frozen() && !!S.locRoll, okd = null;
+        if (up) {
+          var mu1 = mapUi(); mu1.layer = 'player'; mu1.open = cleanRooms(names); if ('know' in ch) mu1.know = ch.know || [];
+          okd = revealEntries(mu1);
+          if (!confirmReveal(okd, 'This map')) return null;
+        }
         var ok = ballSet(rs.name, ch);
         if (S.map) drawMap(); renderLocation();
-        if (ok && !mapOnIpad() && !panicOn()) siteMapUp(true);      /* T5: Send puts the map on the iPad when it is not up yet (live, the open rooms go at once); never over PANIC */
+        if (ok && up) siteMapUp(true, false, okd);
         return !!ok;
       },
       liveText: function () { return S === me && mapOnIpad() ? bandWords(S.mapOn.reveal) : ''; },
@@ -5754,10 +5792,11 @@
   function scRollSite() {
     var r = S.scRoll, M = W.B68GmScore, L = W.B68GmLocation, pk = part('location'); if (!r || !M) return;
     if (!L || !pk) { toast('The location generator is not available.', true); return; }
+    if (!rollOverOk()) return;      /* F4: asked before the pickers change, so a No changes nothing */
     var x; try { x = siteUi(L.controls(pk).controls, M.siteHints(r.score)); } catch (e) { x = { ui: {}, missed: [] }; }
     patch({ loc: { ui: x.ui } });
     showPanel('location');
-    rollLocation();
+    rollLocation(true);
     if (x.missed.length) toast('Not in the generator, so rolled on any: ' + x.missed.map(function (m) { return m[0] + ' “' + m[1] + '”'; }).join(', ') + '.', true);
   }
   /* A face: the NPC pickers from the score (the client's faction, or the target's when nobody asks, and the district) */
@@ -7452,7 +7491,13 @@
         var tool = b.getAttribute('data-tool'), e = newest(isObj(S.doc.hist) ? S.doc.hist[tool] : null).filter(function (x) { return x._id === b.getAttribute('data-h'); })[0]; if (!e) break;
         var cur = {}; Object.keys(e).forEach(function (k) { if (k !== '_id') cur[k] = e[k]; }); cur.hid = e._id;
         cur.at = nowIso();      /* the current card now: after a reload the newest of the two still shows */
-        var cp = { cards: {} }; cp.cards[tool] = replacePatch(isObj(S.doc.cards) ? S.doc.cards[tool] : null, cur); patch(cp, { force: true });   /* replaces the stored card: no key of the card it was survives */
+        var cp = { cards: {} }; cp.cards[tool] = replacePatch(isObj(S.doc.cards) ? S.doc.cards[tool] : null, cur);
+        /* an authored site brought back from Earlier comes back in its own view and theme, as Open map sets them (a roll had reset them to iso) */
+        if (tool === 'location' && str(e.auth)) {
+          var aS = authoredOf(part('location')).sites[str(e.auth)], am = isObj(aS) && isObj(aS.map) ? aS.map : null;
+          if (am) cp.loc = { map: { view: VIEWS.indexOf(am.view) >= 0 ? am.view : 'iso', theme: THEMES.indexOf(am.theme) >= 0 ? am.theme : 'rulebook' } };
+        }
+        patch(cp, { force: true });   /* replaces the stored card: no key of the card it was survives */
         if (tool === 'console' || tool === 'situation') { S.conRes = null; if (S.stamp) S.stamp.dismiss(); drawConsoleCard(); }     /* N4: the last roll's size stays with its card */
         else if (tool === 'scenes') { S.scnRoll = null; renderScenes(); }
         else if (tool === 'npc') { S.npcRoll = null; renderNpcGen(); }

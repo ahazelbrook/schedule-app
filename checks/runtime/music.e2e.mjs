@@ -105,10 +105,13 @@ try {
   await page.click('[data-band-place="score"]');
   check(await until(async () => (await attr(page, 'data-mood')) === 'tension' && (await attr(page, 'data-list')) === 'tension', 8000), 'the Score: Tension, at once (a step up)');
   /* ---- the demo night's site alarm is HIDDEN from the players: Spotted ticks it, and the music must not tell the room ---- */
-  const spot = await until(() => page.$('[data-site="spotted"]:not([disabled])'), 8000);
+  /* entering the Score puts the map on the iPad (#194), and the site's toolbar redraws once or twice as it lands: wait until the same Spotted button
+     has stood for a second, then click it by its selector (a handle taken earlier can be detached by that redraw) */
+  const SPOT = '[data-site="spotted"]:not([disabled])';
+  const spot = await until(() => page.evaluate((q) => { const e = document.querySelector(q); if (!e) return false; e.__seen = e.__seen || Date.now(); return Date.now() - e.__seen > 1000; }, SPOT), 10000);
   const alarmNow = () => page.evaluate(() => { const e = document.querySelector('[data-site="alarm"], [data-rv="alarm"]'); return e ? e.innerHTML : ''; });
   const al0 = await alarmNow();
-  if (spot) await spot.click();
+  if (spot) await page.click(SPOT);
   const ticked = await until(async () => (await alarmNow()) !== al0, 5000);
   await page.waitForTimeout(2500);
   check(!!spot && !!ticked && await attr(page, 'data-mood') === 'tension', 'Spotted ticks the hidden site alarm (its readout moved: ' + !!ticked + '): no Action, the players would hear what the GM hid');
