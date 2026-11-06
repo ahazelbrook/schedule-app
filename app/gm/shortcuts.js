@@ -181,7 +181,7 @@
   }
 
   var WORDS = 'shortcuts keys keyboard commands help cheat sheet blade lines voice say type typed cue lines cues';
-  function findEntry() { return { kind: 'Tool', title: TITLE, sub: 'keys, “Blade, …” lines, clocks, music, cue lines · ?', text: WORDS }; }
+  function findEntry() { return { kind: 'Tool', title: TITLE, sub: 'keys, “Blade, …” lines, cue lines · ?', text: WORDS }; }
 
   /* ---------- the sheet (DOM) ---------- */
   function make(host) {

@@ -2654,6 +2654,7 @@
   function findIndex() {
     /* N1b: every place ("Go to Planning") and every view and tool first, so a word that names one of them lands there before a line of the notes */
     var out = S.places ? S.places.findEntries() : [], c = part('campaign') || {}, lc = function (x) { return str(x).toLowerCase(); }, known = {}, v = S.prepView;
+    if (W.B68GmShortcuts && typeof W.B68GmShortcuts.findEntry === 'function') out.push(Object.assign(W.B68GmShortcuts.findEntry(), { go: { t: 'shortcuts' } }));      /* K1: "keys", "commands", "help" */
     if (v && v.note) {
       Object.keys(v.secs || {}).forEach(function (id) { var x = v.secs[id]; out.push({ kind: 'Prep', title: x.head || v.note.title, text: findText(x.src), go: { t: 'prep', id: id } }); });
       (v.note.blocks || []).forEach(function (b) { if (isObj(b) && b.k === 'embed') out.push({ kind: 'Prep', title: str(b.from).split('/').pop().replace(/\.md$/i, '') + (b.heading ? ' › ' + b.heading : ''), text: findText(b.src), go: { t: 'embed', from: str(b.from) } }); });
@@ -2671,7 +2672,6 @@
     (c.cast || []).forEach(function (x) { if (isObj(x) && x.text) out.push({ kind: 'Cast', title: x.text, sub: x.src, go: null }); });
     var chc = chCur(), CG = W.B68GmChase; if (chc && CG) CG.findEntries(chc).forEach(function (x) { out.push({ kind: x.kind, title: x.title, sub: x.sub, text: x.text, go: { t: 'chase' } }); });
     newest(S.doc.capture).forEach(function (e) { var b = BUCKETS.filter(function (x) { return x.k === e.bucket; })[0]; if (str(e.text).trim()) out.push({ kind: (b ? b.label : 'Filed') + ' · filed', title: e.text, sub: hm(e.at), go: null }); });
-    if (W.B68GmShortcuts && typeof W.B68GmShortcuts.findEntry === 'function') out.push(Object.assign(W.B68GmShortcuts.findEntry(), { go: { t: 'shortcuts' } }));      /* K1: "keys", "commands", "help"; last, so a tie ("clock", "panic") lands on the real thing first */
     return out;
   }
   function findOn() { return !!(S && S.findIdx); }
