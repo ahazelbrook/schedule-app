@@ -127,7 +127,7 @@ try {
     await page.goto(BASE + '/#gm');
     await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
     await page.waitForSelector('#gm-band [data-band-place]', { timeout: 30000 });
-    await page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+    await page.waitForSelector('#gm-buttons .gm-btn', { state: 'attached', timeout: 30000 });      /* the Roll is drawn; it shows only in the places that roll (N1b) */
     await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     await page.waitForTimeout(500);
     return { c, page };
@@ -185,6 +185,8 @@ try {
   await A.page.keyboard.press('Control+ArrowLeft'); await A.page.keyboard.press('Control+ArrowLeft');
   check(await until(async () => (await chip('opening')).sel === 'true', 3000), 'Ctrl+Left twice: back past Personal to Opening');
   await shot(A.page, 'band-places-1366');
+  await A.page.click('#gm-band [data-band-place="pb"]');      /* back to Personal: a place with the Roll (its line is the field below) */
+  check(await until(async () => (await chip('pb')).sel === 'true', 3000), 'a tap on Personal puts it back on screen');
 
   /* ---- 3. Esc, one thing per press; keys never fire behind an open thing ---- */
   const panicked = async () => !!((await gmState()).cues || {}).panic;
