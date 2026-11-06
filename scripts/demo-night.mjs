@@ -219,6 +219,10 @@ const PREP_NOTE = [
   'Cold open on the quay: rain, a ferry horn, and [[Lotte Brand]] at the door of the Pelican Rooms with her list.', '',
   '## Downtime', '',
   '- Nell: KEY-1 is at three hits. If she leans on it tonight, offer the turn.', '- Ray: the dressmaker on the quay wants paying.', '- Tam: the bandstand needs a singer for the gala.', '',
+  /* a ### per PC with #### scenes under it: the Prep index's second and third levels (T13) */
+  '### Nell', '', '#### The late table', '', 'A marker comes due at the late table.', '', '#### The long way round', '', 'She walks the quay before the gala.', '',
+  '### Ray', '', '#### The dressmaker', '', 'A fitting, and the bill on the quay.', '',
+  '### Tam', '', 'The bandstand wants a singer by nine.', '',
   '## Briefing', '',
   'The marker is in the strongbox in the penthouse. [[Mabel Quist]] carries the lift key until midnight.', '',
   '## Gather information', '',

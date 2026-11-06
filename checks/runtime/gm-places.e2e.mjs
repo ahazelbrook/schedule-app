@@ -239,7 +239,7 @@ try {
   const N = await open();
   const n = N.page;
   const foot = (pg) => pg.evaluate(() => { const f = document.querySelector('.gm-pnext'); if (!f) return null; const r = f.getBoundingClientRect(); return { col: f.parentElement.id, last: f.parentElement.lastElementChild === f, text: f.innerText.replace(/\s+/g, ' ').trim(), top: Math.round(r.top), bottom: Math.round(r.bottom), vh: innerHeight, count: document.querySelectorAll('.gm-pnext').length }; });
-  const WANT = { before: ['gm-left', 'Next: Opening →'], opening: ['gm-left', 'Next: Personal → ← Back'], pb: ['gm-roll', 'Next: Planning → ← Back'], plan: ['gm-roll', 'Next: Score → ← Back'], score: ['gm-roll', 'Next: Aftermath → ← Back'], after: ['gm-left', '← Back'] };
+  const WANT = { before: ['gm-left', 'Next: Opening →'], opening: ['gm-left', 'Start Personal → ends the hard start ← Back'], pb: ['gm-roll', 'Start Planning → ← Back'], plan: ['gm-roll', 'Start Score → ← Back'], score: ['gm-roll', 'Start Aftermath → ← Back'], after: ['gm-left', '← Back'] };      /* no phase yet: each phase place's Next starts it, and says so */
   for (const id of Object.keys(WANT)) {
     await n.evaluate((i) => window.B68GmPage.goPlace(i, { navigateOnly: true }), id); await sleep(300);
     const f = await foot(n);
@@ -254,33 +254,64 @@ try {
   check(!!offAir && offAir.mode === 'auto', 'T10 Opening\'s Next: the hard start\'s layers came off and the credits pin went back to Auto ' + JSON.stringify(offAir && { mode: offAir.mode, scene: offAir.scene }));
   await n.click('.gm-pnext [data-place-back]'); await sleep(400);
   check((await st(n)).place === 'opening' && await nightPhase() === 'pb', 'T10 ← Back looks at the Opening; the night stays in Personal business');
-  await n.click('.gm-pnext [data-place-next]'); await sleep(400);
+  check(/^Next: Personal/i.test((await foot(n)).text), 'T10 a Next that only looks says Next:, not Start ' + JSON.stringify((await foot(n)).text));
+  await sleep(1000); await n.click('.gm-pnext [data-place-next]'); await sleep(1000);      /* Nexts a second apart: past the double-tap guard */
   await n.click('.gm-pnext [data-place-next]');
   check(await until(async () => (await st(n)).place === 'plan' && await nightPhase() === 'plan', 8000), 'T10 Next from Personal starts Planning, as its chip does');
-  await n.click('.gm-pnext [data-place-back]'); await sleep(300); await n.click('.gm-pnext [data-place-back]'); await sleep(300);
+  await n.click('.gm-pnext [data-place-back]'); await sleep(300); await n.click('.gm-pnext [data-place-back]'); await sleep(1000);
   await n.click('.gm-pnext [data-place-next]'); await sleep(500);
   check((await st(n)).place === 'pb' && await nightPhase() === 'plan', 'T10 Back, Back, Next: a look at Personal, never a rewind of the night');
+  /* a double click on Next is one Next: from Planning it starts the Score, never the Aftermath */
+  await sleep(1000); await n.click('.gm-pnext [data-place-next]'); await sleep(400);
+  check((await st(n)).place === 'plan', 'T10 (to Planning, for the double click)');
+  await sleep(1000); await n.dblclick('.gm-pnext [data-place-next]'); await sleep(1200);
+  check((await st(n)).place === 'score' && await nightPhase() === 'score', 'T10 a double click on Start Score from Planning: the Score, not the Aftermath (' + (await st(n)).place + ', ' + await nightPhase() + ')');
 
   /* T13: Prep's index has a second level: each section's ### headings under its ## chip, folded but for the section in view; each a jump that
      lands below the top; the ▸ folds them by hand; the find box and Find (Ctrl K) still work */
   await n.evaluate(() => window.B68GmPage.goPlace('score', { navigateOnly: true })); await sleep(300);
   await key(n, 'r'); await sleep(600);
   const idx = () => n.evaluate(() => ({ chips: document.querySelectorAll('#gm-prep .pp-rail > [data-gm="prep-go"]').length, heads: document.querySelectorAll('#gm-prep .pp-doc > .pp-sec > h3').length,
-    subs: [...document.querySelectorAll('#gm-prep .pp-subs')].map((g) => ({ of: g.getAttribute('data-subs'), open: !g.hidden && g.getBoundingClientRect().height > 0, n: g.querySelectorAll('[data-gm="prep-sub"]').length, cur: (g.querySelector('[aria-current="true"]') || {}).textContent || '' })),
+    subs: [...document.querySelectorAll('#gm-prep .pp-subs')].map((g) => ({ of: g.getAttribute('data-subs'), open: !g.hidden && g.getBoundingClientRect().height > 0, n: [...g.children].filter((b) => b.getAttribute('data-gm') === 'prep-sub').length, n3: g.querySelectorAll('.pp-subs3 [data-gm="prep-sub"]').length,
+      open3: [...g.querySelectorAll('.pp-subs3')].filter((x) => !x.hidden && x.getBoundingClientRect().height > 0).map((x) => x.querySelectorAll('button').length), cur: [...g.querySelectorAll('[aria-current="true"]')].map((b) => b.textContent).join(' > ') })),
     cur: (document.querySelector('#gm-prep .pp-rail [data-gm="prep-go"][aria-current="true"]') || {}).textContent || '' }));
+  const grp = (x, of) => x.subs.find((g) => g.of === of) || {};
   await n.evaluate(() => { document.querySelector('#gm-prep').scrollTop = 0; }); await sleep(400);
   let ix = await idx();
-  check(ix.subs.length === 1 && ix.subs[0].of === 'pp-rooms' && ix.subs[0].n === 6 && !ix.subs[0].open, 'T13 the index: Rooms holds its six ### rooms, folded while Rooms is not in view; sections with no ### have none ' + JSON.stringify(ix.subs));
+  check(ix.subs.length === 2 && grp(ix, 'pp-rooms').n === 6 && !grp(ix, 'pp-rooms').open && grp(ix, 'pp-downtime').n === 3 && grp(ix, 'pp-downtime').n3 === 3, 'T13 the index: Rooms holds six ###, Downtime three ### with three #### under them; folded while not in view; sections with neither have none ' + JSON.stringify(ix.subs));
   await n.click('#gm-prep .pp-rail [data-gm="prep-go"][data-id="pp-rooms"]');
-  check(await until(async () => { const x = await idx(); return x.cur === 'Rooms' && x.subs[0].open; }, 5000), 'T13 Rooms in view: its rooms open under it');
-  await n.click('#gm-prep .pp-subs [data-gm="prep-sub"]:nth-child(4)');
-  const landed = await until(() => n.evaluate(() => { const b = document.querySelector('#gm-prep .pp-subs [data-gm="prep-sub"]:nth-child(4)'), h = document.getElementById(b.getAttribute('data-id')), p = document.querySelector('#gm-prep'); const t = Math.round(h.getBoundingClientRect().top - p.getBoundingClientRect().top); return t >= 0 && t <= 60 && b.getAttribute('aria-current') === 'true' ? { t, text: b.textContent } : null; }), 5000);
+  check(await until(async () => { const x = await idx(); return x.cur === 'Rooms' && grp(x, 'pp-rooms').open && !grp(x, 'pp-downtime').open; }, 5000), 'T13 Rooms in view: its rooms open under it, and only its');
+  const rooms = '#gm-prep .pp-subs[data-subs="pp-rooms"] > [data-gm="prep-sub"]';
+  await n.click(rooms + ':nth-child(4)');
+  const landed = await until(() => n.evaluate((sel) => { const b = document.querySelector(sel), h = document.getElementById(b.getAttribute('data-id')), p = document.querySelector('#gm-prep'); const t = Math.round(h.getBoundingClientRect().top - p.getBoundingClientRect().top); return t >= 0 && t <= 60 && b.getAttribute('aria-current') === 'true' ? { t, text: b.textContent } : null; }, rooms + ':nth-child(4)'), 5000);
   check(!!landed, 'T13 a room in the index jumps to its heading, just under the top of the pane, and is marked ' + JSON.stringify(landed));
   await n.click('#gm-prep .pp-subt[data-subt="pp-rooms"]'); await sleep(200);
   await n.evaluate(() => { document.querySelector('#gm-prep').scrollTop += 40; }); await sleep(400);
-  check(!(await idx()).subs[0].open, 'T13 the ▸ folds them by hand, and they stay folded while Rooms is read');
+  check(!grp(await idx(), 'pp-rooms').open, 'T13 the ▸ folds them by hand, and they stay folded while Rooms is read');
   await n.click('#gm-prep .pp-subt[data-subt="pp-rooms"]'); await sleep(200);
-  check((await idx()).subs[0].open, 'T13 and opens them again');
+  check(grp(await idx(), 'pp-rooms').open, 'T13 and opens them again');
+  /* the third level: within Downtime, a PC's ### opens its #### scenes while it is read; a scene is a jump and is marked under its PC */
+  await n.click('#gm-prep .pp-rail [data-gm="prep-go"][data-id="pp-downtime"]');
+  check(await until(async () => { const x = await idx(); return x.cur === 'Downtime' && grp(x, 'pp-downtime').open; }, 5000), 'T13 Downtime in view: its three PCs open under it (Rooms stays open: the GM opened it by hand)');
+  const dt = '#gm-prep .pp-subs[data-subs="pp-downtime"]';
+  await n.click(dt + ' > [data-gm="prep-sub"]:first-child');
+  check(await until(async () => JSON.stringify(grp(await idx(), 'pp-downtime').open3) === '[2]', 5000), 'T13 the first PC read: its two #### scenes open under it, the others stay shut ' + JSON.stringify(grp(await idx(), 'pp-downtime')));
+  await n.click(dt + ' .pp-subs3 [data-gm="prep-sub"]:nth-child(2)');
+  const scn = await until(() => n.evaluate((sel) => { const b = document.querySelector(sel), h = document.getElementById(b.getAttribute('data-id')), p = document.querySelector('#gm-prep'); const t = Math.round(h.getBoundingClientRect().top - p.getBoundingClientRect().top); return t >= 0 && t <= 60 && b.getAttribute('aria-current') === 'true' ? { t, text: b.textContent } : null; }, dt + ' .pp-subs3 [data-gm="prep-sub"]:nth-child(2)'), 5000);
+  check(!!scn && /long way round/i.test(scn.text) && /Nell > The long way round/.test(grp(await idx(), 'pp-downtime').cur), 'T13 a #### scene jumps under the top and is marked, under its PC ' + JSON.stringify([scn, grp(await idx(), 'pp-downtime').cur]));
+  /* the entry being read stays in sight inside the index, which overflows at 768 px once a long section is open */
+  await n.evaluate(() => { const p = document.querySelector('#gm-prep'); p.scrollTop = p.scrollHeight; }); await sleep(300);
+  await n.click('#gm-prep .pp-rail [data-gm="prep-go"][data-id="pp-rooms"]'); await sleep(900);
+  await n.click(rooms + ':nth-child(6)'); await sleep(1200);
+  const seen = await n.evaluate(() => { const bar = document.querySelector('#gm-prep .pp-bar'), b = document.querySelector('#gm-prep .pp-subs [aria-current="true"]'); if (!bar || !b) return null; const br = bar.getBoundingClientRect(), r = b.getBoundingClientRect(); return { over: bar.scrollHeight > bar.clientHeight, inside: r.top >= br.top - 1 && r.bottom <= br.bottom + 1, text: b.textContent }; });
+  check(!!seen && seen.inside, 'T13 the room being read is in sight inside the index ' + JSON.stringify(seen));
+  /* a short window, where the open index overflows: the index scrolls itself to the entry being read */
+  await n.setViewportSize({ width: 1366, height: 520 }); await sleep(400);
+  await n.evaluate(() => { const bar = document.querySelector('#gm-prep .pp-bar'); if (bar) bar.scrollTop = 0; });
+  await n.click(rooms + ':nth-child(5)'); await sleep(1400);
+  const seen2 = await n.evaluate(() => { const bar = document.querySelector('#gm-prep .pp-bar'), b = document.querySelector('#gm-prep .pp-subs [aria-current="true"]'); if (!bar || !b) return null; const br = bar.getBoundingClientRect(), r = b.getBoundingClientRect(); return { over: bar.scrollHeight > bar.clientHeight, inside: r.top >= br.top - 1 && r.bottom <= br.bottom + 1, scrolled: bar.scrollTop, text: b.textContent }; });
+  check(!!seen2 && seen2.over && seen2.inside && seen2.scrolled > 0, 'T13 at 520 px high the index overflows and scrolls itself to the room being read ' + JSON.stringify(seen2));
+  await n.setViewportSize({ width: 1366, height: 768 }); await sleep(400);
   ix = await idx();
   check(ix.chips === ix.heads && ix.chips >= 10, 'T13 the ## rail is as it was: one chip per section (' + ix.chips + ')');
   await n.fill('#gm-prep-q', 'zzqqnothing'); await sleep(300);

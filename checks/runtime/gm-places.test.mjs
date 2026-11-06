@@ -219,6 +219,8 @@ await test('T10: the way forward: Next and ← Back go along the night (Before t
   assert.equal(P.ahead('opening', ''), false, 'Opening is no phase'); assert.equal(P.ahead('nowhere', ''), false);
 });
 await test('T10 controller: Next does what the chip does (Opening also ends the hard start and the credits); ← Back only looks; Back then Next never winds the night back', () => {
+  const realNow = Date.now; let clock = 1e12; Date.now = () => (clock += 1000);      /* each Next a second after the last: past the double-tap guard */
+  try {
   const h = harness(); h.ctl.mount();
   assert.equal(h.ctl.back(), false, 'Before has nothing before it');
   h.ctl.next(); assert.equal(h.ctl.currentPlace(), 'opening'); assert.equal(h.night.phase, '', 'Opening is no phase'); assert.ok(!h.calls.includes('endOpening'), 'only the Opening’s Next ends the Opening');
@@ -231,6 +233,16 @@ await test('T10 controller: Next does what the chip does (Opening also ends the 
   h.ctl.next(); assert.equal(h.ctl.currentPlace(), 'score'); assert.equal(h.calls.filter((c) => c.startsWith('enter:')).length, 3, 'pb, plan, score: each entered once');
   h.ctl.next(); assert.equal(h.ctl.currentPlace(), 'after'); assert.equal(h.night.phase, 'after', 'the Aftermath started');
   assert.equal(h.ctl.next(), false, 'nothing after the Aftermath');
+  } finally { Date.now = realNow; }
+});
+await test('T10 controller: a double tap on Next is one Next (900 ms guard): one place, one phase', () => {
+  const realNow = Date.now; let clock = 2e12; Date.now = () => clock;
+  try {
+    const h = harness({ phase: 'plan' }); h.ctl.mount(); h.ctl.goPlace('plan');
+    assert.equal(h.ctl.next(), true); clock += 250; assert.equal(h.ctl.next(), false, 'the second tap 250 ms later does nothing');
+    assert.equal(h.ctl.currentPlace(), 'score'); assert.equal(h.night.phase, 'score', 'the Score started, not the Aftermath');
+    clock += 1000; h.ctl.next(); assert.equal(h.night.phase, 'after', 'a deliberate tap a second later goes on');
+  } finally { Date.now = realNow; }
 });
 await test('tools.js: the pane registry without the phase filter or the Workshop flag; the same object a later module can extend', () => {
   Tools.reset();

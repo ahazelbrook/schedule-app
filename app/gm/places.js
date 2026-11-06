@@ -439,7 +439,9 @@
       var starts = ahead(nx, ph), lab = placeLabel(nx);
       var tip = !nx ? '' : (starts ? 'Start ' + (nx === 'pb' ? 'Personal business' : lab) + ', as its place in the band does' : base(nx).phase ? 'Go to ' + lab + ': the night is past it, so its phase is not started again' : 'Go to ' + lab) +
         (st.place === 'opening' ? '. The hard start and the opening credits come off the iPad if they are up' : '');
-      return (nx ? '<button type="button" class="btn primary gm-pnext-go" data-place-next="' + nx + '" title="' + esc(tip) + '">Next: ' + esc(lab) + ' <span aria-hidden="true">→</span></button>' : '') +
+      /* the label says what a tap does: Start <place> when it starts the phase, Next: <place> when it only goes there; the Opening's also ends the hard start */
+      var say = (starts ? 'Start ' : 'Next: ') + esc(lab) + ' <span aria-hidden="true">→</span>' + (st.place === 'opening' ? '<small class="gm-pnext-sub">ends the hard start</small>' : '');
+      return (nx ? '<button type="button" class="btn primary gm-pnext-go' + (starts ? ' gm-pnext-start' : '') + '" data-place-next="' + nx + '" title="' + esc(tip) + '">' + say + '</button>' : '') +
         (bk ? '<button type="button" class="gm-pnext-back" data-place-back="' + bk + '" title="' + esc('Look at ' + placeLabel(bk) + ': the night stays where it is (Ctrl+←)') + '" aria-label="' + esc('Back: look at ' + placeLabel(bk)) + '"><span aria-hidden="true">←</span> Back</button>' : '');
     }
     function kids(el) { return el && el.children ? [].slice.call(el.children) : []; }
@@ -454,6 +456,7 @@
     }
     /* Next: the chip's tap (the phase started where the night has not reached it); Opening's also ends the hard start and the credits */
     function next() {
+      var t = Date.now(); if (t - (st.nextAt || 0) < 900) return false; st.nextAt = t;      /* a double tap is one Next: the button sits where the next place's is */
       var to = nextOf(st.place); if (!to) return false;
       if (st.place === 'opening') call('endOpening');
       return goPlace(to, { navigateOnly: !ahead(to, phaseNow()) });

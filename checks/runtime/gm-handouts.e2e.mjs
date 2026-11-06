@@ -125,21 +125,22 @@ try {
   await p.evaluate(() => window.B68GmPage.goPlace('plan', { navigateOnly: true }));
   await p.click('.gm-views [data-pv="handouts"]');
   check(await p.waitForSelector('#gm-hand .gm-handout', { timeout: 10000 }).then(() => true, () => false) && (await p.$$('#gm-hand .gm-handout')).length === 3, 'T12 Planning has a Handouts view: the same three');
-  const deck = () => p.evaluate(() => ({ on: (document.querySelector('#gm-hand .gm-handout-on') || { getAttribute: () => '' }).getAttribute('data-ho'), now: (document.querySelector('#gm-hand .gm-ho-now') || {}).textContent || '',
-    prev: (document.querySelector('#gm-hand [data-gm="ho-step"][data-d="-1"]') || {}).disabled, next: (document.querySelector('#gm-hand [data-gm="ho-step"][data-d="1"]') || {}).disabled }));
+  const deck = () => p.evaluate(() => { const pv = document.querySelector('#gm-hand [data-gm="ho-step"][data-d="-1"]') || {}, nx = document.querySelector('#gm-hand [data-gm="ho-step"][data-d="1"]') || {};
+    return { on: (document.querySelector('#gm-hand .gm-handout-on') || { getAttribute: () => '' }).getAttribute('data-ho'), now: (document.querySelector('#gm-hand .gm-ho-now') || {}).textContent || '', prev: pv.disabled, next: nx.disabled, prevT: pv.textContent || '', nextT: nx.textContent || '' }; });
   let k = await deck();
-  check(k.prev === true && k.next === false && /No handout on the iPad/.test(k.now) && !k.on, 'T12 nothing up: Previous is off, Next is on, and it says so ' + JSON.stringify(k));
+  check(!k.on && /No handout on the iPad/.test(k.now) && k.now.includes('Last shown: Invented wide banner (2 of 3)'), 'T12 nothing up: it says so, and which one this page last sent ' + JSON.stringify(k.now));
+  check(k.prev === false && /Invented brass key/.test(k.prevT) && k.next === false && /Next: Invented missing image/.test(k.nextT), 'T12 the deck buttons name what they will show ' + JSON.stringify([k.prevT, k.nextT]));
   await p.click('#gm-hand [data-gm="ho-step"][data-d="1"]');
-  check(await until(async () => (await shownDisplay()).file === MINE[0], 8000), 'T12 Next with nothing up shows the first');
-  check(await until(async () => (await deck()).on === 'key', 5000) && /1 of 3/.test((await deck()).now), 'T12 the first is marked as on the iPad (1 of 3)');
-  await p.click('#gm-hand [data-gm="ho-step"][data-d="1"]');
-  check(await until(async () => (await shownDisplay()).file === MINE[1], 8000) && await until(async () => (await deck()).on === 'wide', 5000), 'T12 Next: the second');
-  await p.click('#gm-hand [data-gm="ho-step"][data-d="1"]');
-  check(await until(async () => (await deck()).on === 'gone', 8000) && (await deck()).next === true, 'T12 Next: the third, and Next is off at the end');
+  check(await until(async () => (await shownDisplay()).file === 'ho-test-missing.png', 8000) && await until(async () => (await deck()).on === 'gone', 5000), 'T12 #2 sent, Take it down, then Next: #3, not #1');
+  k = await deck();
+  check(k.next === true && /3 of 3/.test(k.now), 'T12 Next is off at the end (3 of 3)');
   await p.click('#gm-hand [data-gm="ho-step"][data-d="-1"]');
   check(await until(async () => (await shownDisplay()).file === MINE[1], 8000) && await until(async () => (await deck()).on === 'wide', 5000), 'T12 Previous: back to the second');
+  await p.click('#gm-hand [data-gm="ho-step"][data-d="-1"]');
+  check(await until(async () => (await shownDisplay()).file === MINE[0], 8000) && await until(async () => (await deck()).on === 'key', 5000) && (await deck()).prev === true, 'T12 Previous: the first, and Previous is off there');
   await p.click('#gm-hand .gm-ho-deck [data-gm="blankipad"]');
   check(await until(async () => (await shownDisplay()).kind === 'blank', 8000) && await until(async () => !(await deck()).on, 5000), 'T12 Take it down: the iPad is clear and nothing is marked');
+  check(/Next: Invented wide banner/.test((await deck()).nextT), 'T12 and Next goes on from the one taken down');
   await p.click('.gm-views [data-pv="ipad"]');
   check(await p.$('#gm-ipad .gm-ho-deck [data-gm="ho-step"]') !== null, 'T12 the iPad view keeps the same list, with the same Previous / Next');
 

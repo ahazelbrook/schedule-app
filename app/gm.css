@@ -499,6 +499,8 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
   body.gm-app #gm-prep .pp-subgo { display: block; width: 100%; text-align: left; border: 0; border-left: 3px solid transparent; background: none; color: var(--ink-soft); padding: 4px 8px; font: 400 12px/1.25 var(--font-text); cursor: pointer; }
   body.gm-app #gm-prep .pp-subgo:hover { background: var(--inset); color: var(--ink); }
   body.gm-app #gm-prep .pp-subgo[aria-current="true"] { border-left-color: var(--accent); color: var(--ink); font-weight: 700; }
+  body.gm-app #gm-prep .pp-subs3 { display: grid; margin: 0 0 2px 12px; border-left: 1.5px dotted var(--hair); }
+  body.gm-app #gm-prep .pp-subgo3 { padding: 3px 8px; font-size: 11.5px; }
   body.gm-app #gm-prep .pp-subt:focus-visible, body.gm-app #gm-prep .pp-subgo:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
   body.gm-app #gm-prep .pp-sec, body.gm-app #gm-prep .pp-doc h3, body.gm-app #gm-prep .pp-doc h4, body.gm-app #gm-prep .pp-doc h5, body.gm-app #gm-prep .pp-doc h6, body.gm-app #gm-prep .pp-embed, body.gm-app #gm-rules .gs-sec { scroll-margin-top: 8px; }
   body.gm-app #gm-prep .pp-peek { top: 0; }
@@ -682,7 +684,9 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 /* T12: the deck (Previous / Next from the one on the iPad), the one on the iPad marked; Planning's Handouts view lays the list out wider */
 #gm-page .gm-ho-now { margin: 0; font: 400 13px/1.4 var(--font-text); }
 #gm-page .gm-ho-deck { align-items: center; }
-#gm-page .gm-ho-deck .btn { flex: 0 1 auto; }
+#gm-page .gm-ho-deck .btn { flex: 0 1 auto; min-width: 0; }
+#gm-page .gm-ho-step { display: inline-flex; align-items: center; gap: 4px; max-width: 34ch; white-space: nowrap; }
+#gm-page .gm-ho-step-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; text-transform: none; letter-spacing: 0; font-weight: 700; }
 #gm-page .gm-ho-deck .gm-check { flex: none; margin-left: auto; }
 #gm-page .gm-handout-on { outline: 3px solid var(--accent); outline-offset: 3px; }
 #gm-page .gm-ho-tag { align-self: flex-start; font: 900 10px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; background: var(--accent); color: var(--on-accent); padding: 4px 6px; }
@@ -1498,7 +1502,8 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
 /* T10: the way forward, the last thing in every place's left column: Next: <place> → and a quiet ← Back. On a laptop it stays at the column's foot
    while the column scrolls */
 #gm-page .gm-pnext { display: flex; align-items: stretch; gap: 8px; margin-top: 4px; padding-top: 10px; border-top: 2px solid var(--rule); }
-#gm-page .gm-pnext-go { flex: 1 1 auto; min-height: 44px; display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; font-size: 12.5px; }
+#gm-page .gm-pnext-go { flex: 1 1 auto; min-height: 44px; display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 8px; text-align: left; font-size: 12.5px; }
+#gm-page .gm-pnext-sub { flex: 1 0 100%; font: 700 9.5px/1.2 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; opacity: .8; }
 #gm-page .gm-pnext-back { flex: none; min-height: 44px; padding: 0 12px; border: 1.5px solid var(--hair); background: none; color: var(--ink-soft); font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; cursor: pointer; }
 #gm-page .gm-pnext-back:hover { background: var(--inset); color: var(--ink); border-color: var(--rule); }
 #gm-page .gm-pnext-go:focus-visible, #gm-page .gm-pnext-back:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }

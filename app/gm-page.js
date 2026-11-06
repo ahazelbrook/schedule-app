@@ -5290,11 +5290,13 @@
     /* a part of the Scenes section (the iPad view), and the whole of Planning's Handouts view (T12): the props the GM shows by hand */
     var h = '<div class="gm-ipad-sub gm-ipad-handouts"><h4 class="gm-ipad-h">Handouts' + (list.length ? ' <span class="gm-dim">' + list.length + '</span>' : '') + '</h4>';
     if (!list.length) return h + '<p class="gm-dim">' + (part('handouts') ? 'The handouts part has nothing to show.' : 'No handouts in the pack. Put the prop images in the vault, run npm run gm:handouts and npm run gm:pack, then Update pack.') + '</p></div>';
-    /* T12: a deck in list order (a briefing's slides sit together): Previous and Next step from the one on the iPad; with none up, Next shows the first */
-    var cur = hoCurrent(), ci = hoIndex(list, cur), prev = ci > 0 ? list[ci - 1] : null, nxt = ci < 0 ? list[0] : list[ci + 1] || null;
-    h += '<p class="gm-ho-now">' + (cur ? 'On the iPad: <b>' + esc(cur.title) + '</b> <span class="gm-dim">(' + (ci + 1) + ' of ' + list.length + ')</span>' : '<span class="gm-dim">No handout on the iPad.</span>') + '</p>' +
-      '<div class="gm-ipad-acts gm-ho-deck"><button type="button" class="btn sm" data-gm="ho-step" data-d="-1"' + (prev ? ' title="' + esc('Show ' + prev.title) + '"' : ' disabled') + '>◀ Previous</button>' +
-      '<button type="button" class="btn sm primary" data-gm="ho-step" data-d="1"' + (nxt ? ' title="' + esc('Show ' + nxt.title) + '"' : ' disabled') + '>Next ▶</button>' +
+    /* T12: a deck in list order (a briefing's slides sit together): Previous and Next step from the one on the iPad, else from the one this page last
+       sent (a Take it down mid-briefing goes on from there, never back to the first); only with neither does Next show the first. Each names its target */
+    var cur = hoCurrent(), base = cur || hoLast(), bi = hoIndex(list, base), prev = bi > 0 ? list[bi - 1] : null, nxt = bi < 0 ? list[0] : list[bi + 1] || null;
+    var pos = function (i) { return ' <span class="gm-dim">(' + (i + 1) + ' of ' + list.length + ')</span>'; };
+    h += '<p class="gm-ho-now">' + (cur ? 'On the iPad: <b>' + esc(cur.title) + '</b>' + pos(bi) : '<span class="gm-dim">No handout on the iPad.</span>' + (bi >= 0 ? ' Last shown: <b>' + esc(base.title) + '</b>' + pos(bi) : '')) + '</p>' +
+      '<div class="gm-ipad-acts gm-ho-deck"><button type="button" class="btn sm gm-ho-step" data-gm="ho-step" data-d="-1"' + (prev ? ' title="' + esc('Show ' + prev.title) + '">◀ <span class="gm-ho-step-t">' + esc(prev.title) + '</span>' : ' disabled>◀ Previous') + '</button>' +
+      '<button type="button" class="btn sm primary gm-ho-step" data-gm="ho-step" data-d="1"' + (nxt ? ' title="' + esc('Show ' + nxt.title) + '">Next: <span class="gm-ho-step-t">' + esc(nxt.title) + '</span> ▶' : ' disabled>Next ▶') + '</button>' +
       '<button type="button" class="btn sm" data-gm="blankipad" title="The handout comes off the iPad: the ambient scene plays">Take it down</button>' +
       '<label class="gm-check"><input type="checkbox" data-hotitle="1"' + (tt ? ' checked' : '') + '> Title on the iPad</label></div><ul class="gm-handouts">';
     list.forEach(function (x) {
@@ -5309,7 +5311,7 @@
   function showHandout(id) {
     var x = handoutById(id); if (!x) { toast('That handout is not in the pack any more.', true); return Promise.resolve(false); }
     var me = S;
-    return pushDisplay(P.handoutDisplay(x, !!(S && S.hoTitle))).then(function () { if (S === me) { S.hoCur = x.id; renderHandPane(); } hoDone(x.id); toast('On the iPad: ' + x.title + '.'); return true; }, function (e) { toast('Could not send the handout: ' + errText(e), true); return false; });
+    return pushDisplay(P.handoutDisplay(x, !!(S && S.hoTitle))).then(function () { if (S === me) { S.hoCur = x.id; try { W.localStorage.setItem(HO_LAST, x.id); } catch (e) { /* this page remembers it anyway */ } renderHandPane(); } hoDone(x.id); toast('On the iPad: ' + x.title + '.'); return true; }, function (e) { toast('Could not send the handout: ' + errText(e), true); return false; });
   }
   /* T12: the handout on the iPad now: the iPad shows a handout and its title is the one this page last sent (else the first with that title) */
   function hoCurrent() {
@@ -5317,9 +5319,12 @@
     var list = handouts(), t = str(sh.title), same = function (x) { return str(x.title).slice(0, 2000) === t; };
     return list.filter(function (x) { return x.id === (S && S.hoCur) && same(x); })[0] || list.filter(same)[0] || null;
   }
+  /* the handout this page last sent (kept on this laptop, so a reload mid-briefing goes on from it), whether or not it is still up */
+  var HO_LAST = 'b68.gm.holast';
+  function hoLast() { var id = S && S.hoCur; if (!id) { try { id = W.localStorage.getItem(HO_LAST); } catch (e) { id = null; } } return id ? handoutById(id) : null; }
   function hoIndex(list, cur) { if (!cur) return -1; for (var i = 0; i < list.length; i++) if (list[i].id === cur.id) return i; return -1; }      /* handouts() makes new rows on each call: by id */
   function hoStep(d) {
-    var list = handouts(), i = hoIndex(list, hoCurrent()), j = i < 0 ? (d > 0 ? 0 : -1) : i + (d > 0 ? 1 : -1);
+    var list = handouts(), i = hoIndex(list, hoCurrent() || hoLast()), j = i < 0 ? (d > 0 ? 0 : -1) : i + (d > 0 ? 1 : -1);
     if (j < 0 || j >= list.length) return Promise.resolve(false);
     return showHandout(list[j].id);
   }
@@ -6345,7 +6350,7 @@
   function npcFold() { var on = !npcFolded(); try { if (on) W.localStorage.setItem(NPC_FOLD, '1'); else W.localStorage.removeItem(NPC_FOLD); } catch (e) { /* private mode: it folds for this page only */ } renderNpcGen(); var b = $q('#gm-npcgen [data-gm="npcfold"]'); if (b) b.focus(); }
   function npcClear() {
     if (!S.npcRoll && !(isObj(S.doc.cards) && isObj(S.doc.cards.npc))) return;
-    patch({ cards: { npc: null } }, { force: true });
+    if (!patch({ cards: { npc: null } }, { force: true })) return;      /* refused (the notes are full): patch has said so, and the card stays */
     S.npcRoll = null; renderNpcGen();
     toast('Cleared the rolled NPC. Earlier brings it back.');
   }
@@ -6420,36 +6425,62 @@
     }
     decoratePrep(box);
   }
-  /* T13: the index's second level. Under each ## chip of the rail, the ### headings of its section (the section's own h4s; #### and
-     deeper are left out), each a jump; a ▸ beside the chip folds them. Only the section in view is open, unless the GM opened or shut one
-     (S.prepSubOpen, this page only). The ## chips are the rail as before: Find, the filter and the spy read them unchanged */
+  /* T13: the index's second and third levels. Under each ## chip of the rail, the ### headings of its section (the section's own h4s), and
+     under each of those its #### (h5s; a #### before any ### sits with the ###s); deeper ones are left out. Each is a jump. A ▸ beside the chip
+     folds a section's list: only the section in view is open, unless the GM opened or shut one (S.prepSubOpen, this page only); a ###'s ####
+     open only while that ### is the one being read. The entry being read is kept in sight in the index. The ## chips are the rail as before:
+     Find, the filter and the spy read them unchanged */
+  function prepSubBtn(h, lv) { return '<button type="button" class="pp-subgo' + (lv > 3 ? ' pp-subgo3' : '') + '" data-gm="prep-sub" data-id="' + esc(h.id) + '">' + esc(h.textContent.replace(/\s+/g, ' ').trim()) + '</button>'; }
   function prepSubsBuild(box) {
     var rail = box.querySelector('.pp-rail'); if (!rail || typeof rail.insertBefore !== 'function' || typeof document.createElement !== 'function') return;      /* a page with no DOM to build in: the ## rail alone */
+    S.prepSubLast = '';
     [].slice.call(rail.querySelectorAll('[data-gm="prep-go"]')).forEach(function (c) {
       var id = c.getAttribute('data-id'), sec = prepSectionEl(id); if (!sec) return;
-      var hs = [].filter.call(sec.children, function (e) { return e.tagName === 'H4' && e.id; }); if (!hs.length) return;
+      var out = [], last = null;
+      [].forEach.call(sec.children, function (e) {
+        if (!e.id) return;
+        if (e.tagName === 'H4') { last = { h: e, kids: [] }; out.push(last); }
+        else if (e.tagName === 'H5') { if (last) last.kids.push(e); else out.push({ h: e, kids: [], lv: 4 }); }
+      });
+      if (!out.length) return;
       var head = c.textContent, t = document.createElement('button'), g = document.createElement('div');
       t.setAttribute('type', 'button'); t.className = 'pp-subt'; t.setAttribute('data-gm', 'prep-subt'); t.setAttribute('data-subt', id); t.setAttribute('aria-expanded', 'false');
       t.setAttribute('aria-label', 'The headings in ' + head); t.setAttribute('title', 'Show or hide the headings in ' + head); t.textContent = '▸';
       g.className = 'pp-subs'; g.setAttribute('data-subs', id); g.setAttribute('role', 'group'); g.setAttribute('aria-label', 'In ' + head); g.hidden = true;
-      g.innerHTML = hs.map(function (h) { return '<button type="button" class="pp-subgo" data-gm="prep-sub" data-id="' + esc(h.id) + '">' + esc(h.textContent.replace(/\s+/g, ' ').trim()) + '</button>'; }).join('');
+      g.innerHTML = out.map(function (x) {
+        return prepSubBtn(x.h, x.lv || 3) + (x.kids.length ? '<div class="pp-subs3" data-subs3="' + esc(x.h.id) + '" role="group" hidden>' + x.kids.map(function (k) { return prepSubBtn(k, 4); }).join('') + '</div>' : '');
+      }).join('');
       c.classList.add('pp-has-subs');
       rail.insertBefore(t, c.nextSibling); rail.insertBefore(g, t.nextSibling);
     });
     prepSubSync(box);
   }
   function prepSubOpen(id, cur) { var m = S.prepSubOpen || {}; return Object.prototype.hasOwnProperty.call(m, id) ? !!m[id] : id === cur; }
+  /* the last of these buttons whose heading has reached the top of the pane (within 24 px: the headings land at 8, and a short scene must not hand the mark to the next heading) */
+  function prepSubAt(btns, top) { var on = null; btns.forEach(function (b) { var h = prepSectionEl(b.getAttribute('data-id')); if (h && h.getBoundingClientRect().top - top <= 24) on = b; }); return on; }
   function prepSubSync(pane) {
     var rail = pane && pane.querySelector('.pp-rail'); if (!rail) return;
-    var cc = rail.querySelector('[data-gm="prep-go"][aria-current="true"]'), cur = cc ? cc.getAttribute('data-id') : '', top = pane.getBoundingClientRect().top;
+    var cc = rail.querySelector('[data-gm="prep-go"][aria-current="true"]'), cur = cc ? cc.getAttribute('data-id') : '', top = pane.getBoundingClientRect().top, deep = cc;
     [].forEach.call(rail.querySelectorAll('.pp-subs'), function (g) {
       var id = g.getAttribute('data-subs'), c = rail.querySelector('[data-gm="prep-go"][data-id="' + id.replace(/"/g, '') + '"]'), t = rail.querySelector('[data-subt="' + id.replace(/"/g, '') + '"]');
-      var gone = !!(c && c.hidden), open = !gone && prepSubOpen(id, cur);
+      var gone = !!(c && c.hidden), open = !gone && prepSubOpen(id, cur), reading = open && id === cur;
       g.hidden = !open; if (t) { t.hidden = gone; t.setAttribute('aria-expanded', String(open)); t.textContent = open ? '▾' : '▸'; }
-      var on = null;
-      if (open && id === cur) [].forEach.call(g.querySelectorAll('[data-gm="prep-sub"]'), function (b) { var h = prepSectionEl(b.getAttribute('data-id')); if (h && h.getBoundingClientRect().top - top <= 90) on = b; });
-      [].forEach.call(g.querySelectorAll('[data-gm="prep-sub"]'), function (b) { if (b === on) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current'); });
+      var mine = [].filter.call(g.children, function (b) { return b.getAttribute('data-gm') === 'prep-sub'; }), on = reading ? prepSubAt(mine, top) : null, on3 = null;
+      [].forEach.call(g.querySelectorAll('.pp-subs3'), function (g3) {
+        var open3 = !!on && g3.getAttribute('data-subs3') === on.getAttribute('data-id');
+        g3.hidden = !open3;
+        if (open3) on3 = prepSubAt([].slice.call(g3.querySelectorAll('[data-gm="prep-sub"]')), top);
+      });
+      [].forEach.call(g.querySelectorAll('[data-gm="prep-sub"]'), function (b) { if (b === on || b === on3) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current'); });
+      if (reading) deep = on3 || on || deep;
     });
+    /* the entry being read stays in sight in the index (a long section open overflows it at 768 px): moved only when that entry changes */
+    var bar = pane.querySelector('.pp-bar'), key = deep ? deep.getAttribute('data-id') : '';
+    if (!deep || !bar || key === S.prepSubLast || !(bar.scrollHeight > bar.clientHeight)) { if (deep) S.prepSubLast = key; return; }
+    S.prepSubLast = key;
+    var br = bar.getBoundingClientRect(), er = deep.getBoundingClientRect();
+    if (er.bottom > br.bottom - 8) bar.scrollTop += er.bottom - br.bottom + 40;
+    else if (er.top < br.top + 8) bar.scrollTop -= br.top - er.top + 40;
   }
   function prepSubToggle(id) {
     var pane = $q('#gm-prep'), cc = pane && pane.querySelector('.pp-rail [data-gm="prep-go"][aria-current="true"]'), cur = cc ? cc.getAttribute('data-id') : '';
