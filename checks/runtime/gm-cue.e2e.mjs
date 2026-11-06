@@ -105,13 +105,17 @@ try {
     let b = null; try { b = JSON.parse(rq.postData() || 'null'); } catch (_) { return false; }
     return !!b && typeof b === 'object' && Object.keys(b).join() === 'crew' && !!b.crew && Object.keys(b.crew).every((k) => (k === 'heat' || k === 'wanted') && typeof b.crew[k] === 'number');
   };
+  // The ledger counts a page's writes from the moment it is ready (open() below): what a GM page writes as it loads is not the cue lane's. Since N0 (everything on)
+  // that includes the spine's band.phase on its first tick (gm/spine.js, from mountNight); those load writes are kept apart in loadWrites, for the log.
+  const ready = {}, loadWrites = [];
   const wire = (page, n) => {
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('p' + n + ': ' + m.text()); });
     page.on('pageerror', (e) => errors.push('p' + n + ' pageerror: ' + e.message));
     page.on('request', (r) => {
       if (!r.url().startsWith(BASE + '/api/')) return;
       if (r.method() === 'GET' && r.url().includes('/api/gm/transcript?after=')) trReads.push(Date.now());
-      if (!crewSyncOnly(r)) seen.requests.push(n + ' ' + r.method() + ' ' + r.url().slice(BASE.length));
+      if (!ready[n] && r.method() !== 'GET') loadWrites.push(n + ' ' + r.method() + ' ' + r.url().slice(BASE.length));
+      else if (!crewSyncOnly(r)) seen.requests.push(n + ' ' + r.method() + ' ' + r.url().slice(BASE.length));
       if (r.method() === 'POST' && /\/api\/gm\/assist\/act$/.test(r.url())) seen.act.push({ page: n, body: JSON.parse(r.postData() || '{}'), at: Date.now() });
     });
     page.on('response', async (r) => {
@@ -128,6 +132,7 @@ try {
     await page.goto(BASE + '/#gm');
     await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
     await page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+    await sleep(1500); ready[n] = true;          /* drawn, and its load writes sent: from here the ledger counts */
     await page.keyboard.press('a');
     await page.waitForFunction(() => document.querySelector('#as-panel').getBoundingClientRect().left < innerWidth - 100, null, { timeout: 4000 });
     return page;
@@ -436,6 +441,7 @@ try {
   check(!(await npcsNow()).some((n) => /cogm/.test(JSON.stringify(n.doc.tags)) && n.doc.revealed === true), 'every NPC a cue made is still revealed: false');
   check((await api('GET', '/gm/display')).json.display.kind === display0, 'the iPad display is as it was (' + display0 + ')');
   await pc.close();
+  console.log('writes as the GM pages loaded (not counted): ' + (loadWrites.join('; ') || 'none'));
   const writes = seen.requests.filter((r) => /^\d (PUT|POST|PATCH|DELETE) /.test(r));
   check(!writes.some((r) => /\/api\/gm\/(display|ambient)/.test(r)), 'no request wrote the display or the ambient document (nothing reached the iPad): ' + writes.filter((r) => /gm\/(display|ambient)/.test(r)).join('; '));
   check(!writes.some((r) => /\/api\/characters/.test(r)), 'no request wrote a player\'s sheet');

@@ -282,8 +282,9 @@ try {
   const Mw = await open('#gm', { mode: 'meanwhile' });
   Mw.seen.mode = 'meanwhile';
   const mp = Mw.page, mwSent = [];
-  mp.on('request', (rq) => { if (rq.method() !== 'GET' && /\/api\//.test(rq.url()) && !/\/gm\/assist\//.test(rq.url()) && !crewSyncOnly(rq)) mwSent.push(rq.method() + ' ' + rq.url()); });
   await mp.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  /* the window opens once the page is drawn: what a page writes as it loads (since N0 everything is on, so the band's faces too) is not the cutaway's */
+  mp.on('request', (rq) => { if (rq.method() !== 'GET' && /\/api\//.test(rq.url()) && !/\/gm\/assist\//.test(rq.url()) && !crewSyncOnly(rq)) mwSent.push(rq.method() + ' ' + rq.url()); });
   await mp.click('.gm-assist .as-launch, #as-launch');
   const mwCard = '#as-list .as-card[data-seat="meanwhile"]';
   check(await mp.waitForSelector(mwCard, { timeout: 15000 }).then(() => true, () => false), 'Meanwhile: the cutaway is a card in the box');

@@ -171,13 +171,16 @@ try {
   check(!!(await until(async () => (await ovKind()) === '', 6000)), 'a 4/5 marked: the card comes down');
   check(!!(await until(() => page.$(SIZER), 4000)), 'and the sizer’s strip is offered under the card’s header');
   const full = await page.$eval('#gm-card #gm-sz', (e) => e.textContent);
-  check(/Full size for risky/.test(full) && /Wren Tully turns round/.test(full), 'at full size for the stamped position, with the line: ' + full.slice(0, 120));
+  check(/Full size for risky/.test(full), 'at full size for the stamped position: ' + full.slice(0, 120));
+  check(/Wren Tully turns round/.test(await page.textContent('#gm-card .gm-lead')) && !/Wren Tully turns round/.test(full), 'the card’s lead spends the line, so the strip does not say it again');
+  check(!!(await until(async () => (await page.inputValue('#gm-c-threat')) === '' && ((await api('GET', '/gm/state')).json.doc.con || {}).live.threat === '', 4000)), 'the threat landed: the Roll’s line is spent (field and store)');
+  check(!!(await page.$('#gm-card .gm-card-acts [data-gm="sz-reduce"]')) && !(await page.$('#gm-card #gm-sz button')), 'Reduce is on the card’s actions row, the strip holds no button');
   await page.click('#gm-card [data-gm="sz-reduce"]');
   check(/Full size for risky/.test(await page.$eval('#gm-card #gm-sz', (e) => e.textContent)), 'one tap does not reduce');
   await page.click('#gm-card [data-gm="sz-reduce"]');
   check(/Reduced to controlled/.test(await page.$eval('#gm-card #gm-sz', (e) => e.textContent)), 'the second tap reduces one step');
   await page.click('#gm-card [data-gm="sz-done"]');
-  check(!(await page.$(SIZER)), 'Done puts the strip away');
+  check(!(await page.$(SIZER)) && !(await page.$('#gm-card [data-gm="sz-done"]')), 'Hide size puts the strip and its buttons away');
   await api('PATCH', '/gm/ambient', { layer: { path: 'band.phase', value: 'plan' } });
   await page.click('#gm-pos [data-v="desperate"]'); await page.click('#gm-eff [data-v="limited"]'); await page.click(STAMP);
   check(!!(await until(async () => (await ovKind()) === 'report', 6000)), 'a second stamp is up');
@@ -196,6 +199,14 @@ try {
   // ============ 3. the cue grammar, typed in the Ask bar ============
   await page.keyboard.press('a');
   await page.waitForFunction(() => document.querySelector('#as-panel').getBoundingClientRect().left < innerWidth - 100, null, { timeout: 4000 });
+  /* N4-fix: the 4/5 above spent the line, so a bare cue puts no old threat back on the iPad */
+  await type('Blade, risky, standard');
+  const bare = await until(async () => { const d = await ambientDoc(); return d.overlay && d.overlay.kind === 'report' ? d.overlay : null; }, 8000);
+  check(!!bare && bare.payload.position === 'risky' && !bare.payload.text, 'after a landed threat, a bare "Blade, risky, standard" stamps no old line: ' + JSON.stringify(bare && bare.payload));
+  await until(() => page.$('.gm-ugtoast [data-ug="undo"]'), 4000);
+  await page.click('.gm-ugtoast [data-ug="undo"]');
+  check(!!(await until(async () => (await ovKind()) === '', 6000)), 'and its Undo takes it down');
+  await sleep(2300);
   await type('Blade, desperate, great, the lights fail');
   check(!!(await until(async () => (await ovKind()) === 'report', 8000)), 'typed "Blade, desperate, great, the lights fail" stamps through the grammar');
   const t1 = await until(async () => { const t = await toasts(); return /Stamped desperate, great/.test(t) ? t : ''; }, 4000);
