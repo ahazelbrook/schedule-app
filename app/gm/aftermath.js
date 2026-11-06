@@ -273,6 +273,20 @@
     var d = box.ownerDocument, b = d && typeof d.querySelector === 'function' ? d.querySelector('[data-inline="aftermath"] .gm-inline') : null;
     return b || box;
   }
+  /* the field of the panel that has the focus (its place among the fields, its text and caret), given back to the same field after a repaint */
+  function keepFocus(box) {
+    var d = box.ownerDocument, a = d && d.activeElement, i;
+    if (!a || !box.contains || !box.contains(a) || !/^(INPUT|TEXTAREA)$/.test(a.tagName || '')) return function () {};
+    i = Array.prototype.indexOf.call(box.querySelectorAll('input,textarea'), a);
+    if (i < 0) return function () {};
+    var v = a.value, s0 = a.selectionStart, s1 = a.selectionEnd;
+    return function () {
+      var n = box.querySelectorAll('input,textarea')[i];
+      if (!n) return;
+      if (n.type !== 'checkbox') n.value = v;
+      try { n.focus(); if (s0 !== null && s0 !== undefined && n.setSelectionRange) n.setSelectionRange(s0, s1); } catch (e) { /* a field with no caret */ }
+    };
+  }
   function paint(box, sh) {
     var c = controller();
     if (!box.__aft) {                  /* a live panel keeps its own ticking while it is open (inline: until the shell unbinds it) */
@@ -282,6 +296,7 @@
       if (sh && typeof sh.onUnbind === 'function') sh.onUnbind(function () { stopTick(box); });
     }
     var st = c.state();
+    var keep = keepFocus(box);      /* a repaint after a field's change must not drop the box the GM has Tabbed into */
     box.textContent = '';
     box.appendChild(el('p', 'gm-dim', 'The Aftermath, eight steps, about ' + mmss(st.secsTotal) + ' (the Run Sheet allows 12:00). Steer from here; the iPad follows. Every step can be skipped.'));
     if (!st.enabled) { box.appendChild(el('p', 'gm-empty', 'Switched off. Turn on Aftermath show in Menu, Switchboard.')); return; }
@@ -349,6 +364,7 @@
     row.appendChild(btn('End now', function () { c.finish().then(function () { paint(box); }); }));
     box.appendChild(row);
     if (st.pending.length) box.appendChild(el('p', 'gm-dim', 'Not done yet (goes to the Debrief if left): ' + st.pending.join(', ') + '.'));
+    keep();
   }
 
   /* the Menu entry: present only while the switch is on, so with it off the Menu is what it was. The page calls sync() when the Menu opens. */
