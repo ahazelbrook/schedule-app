@@ -113,9 +113,9 @@
     function rootClass(name, on) { var cl = container.classList; if (!cl) return; if (on) cl.add(name); else cl.remove(name); }
     function add(parent, tag, cls, t) { var e = doc.createElement(tag); e.className = cls; if (t !== undefined) e.textContent = t; parent.appendChild(e); return e; }
     /* a PC's cell, two lines that fit a third of the crew slot whatever the PC carries:
-         the first name (the crew know each other by it; the full name is the cell's title) and the Stress beside it;
-         under them a mark per harm, coloured by its level (a plaster at 1, a sling at 2, a splint at 3, a cross at 4: the word is the mark's title),
-         then one padlock for its deadlocked keys (with the count when there is more than one) */
+         the first name (the crew know each other by it; the full name is the cell's title), the Stress beside it and one padlock for its deadlocked
+         keys (with the count when there is more than one): the name gives way first, so the count is never cut;
+         under them a mark per harm, coloured by its level (a plaster at 1, a sling at 2, a splint at 3, a cross at 4: the word is the mark's title) */
     function paintPc(cell, f) {
       var full = f.name || f.pcId, first = full.split(' ')[0] || full;
       cell.setAttribute('title', full);
@@ -123,10 +123,10 @@
       add(top, 'b', 'dp-lay-name', first);
       var put = function (parent, cls, t, label) { var e = add(parent, 'i', cls, t); if (label) e.setAttribute('title', label); return e; };
       if (f.stress !== undefined) put(top, 'dp-pc-stress', String(f.stress), 'Stress ' + f.stress);
-      if (!f.harm && !f.locks) return;
+      if (f.locks) put(top, 'dp-pc-lock', f.locks > 1 ? '×' + f.locks : '', f.locks > 1 ? f.locks + ' keys deadlocked' : 'Key deadlocked');
+      if (!f.harm || !f.harm.length) return;
       var marks = add(cell, 'span', 'dp-lay-marks');
-      (f.harm || []).forEach(function (h) { put(marks, 'dp-pc-harm dp-pc-harm-' + h, HARM_MARK[h - 1], 'Harm ' + h + ': ' + HARM_MARK[h - 1]); });
-      if (f.locks) put(marks, 'dp-pc-lock', f.locks > 1 ? '×' + f.locks : '', f.locks > 1 ? f.locks + ' keys deadlocked' : 'Key deadlocked');
+      f.harm.forEach(function (h) { put(marks, 'dp-pc-harm dp-pc-harm-' + h, HARM_MARK[h - 1], 'Harm ' + h + ': ' + HARM_MARK[h - 1]); });
     }
     /* the hard start draws its own name plates (scene.mode start), so the strip's crew cells stand down while it runs */
     function crewDrawn() { return state.faces.length > 0 && state.mode !== 'start'; }

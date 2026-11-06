@@ -1939,8 +1939,9 @@
       n.className = 'dp-b-timer' + (v.state === 'run' ? '' : ' dp-b-t-' + v.state);
     }
     /* When the night's content is more than the band can hold, cut in the design's order: the ways found first (P1), then the crew's rooms; and
-       (the GM night rebuild: the iPad's own band across the top leaves this one shorter) then the clock's label, then the time comes down in size. */
-    var SHRINK = ['dp-b-no-ways', 'dp-b-no-rooms', 'dp-b-no-label', 'dp-b-compact'];
+       (the GM night rebuild: the iPad's own band across the top leaves this one shorter) then the time comes down in size, and only then does the
+       clock's label go, so a smaller clock keeps saying what it counts */
+    var SHRINK = ['dp-b-no-ways', 'dp-b-no-rooms', 'dp-b-compact', 'dp-b-no-label'];
     function bandShrink() {
       SHRINK.forEach(function (c) { band.classList.remove(c); });
       var over = function () { return band.scrollHeight > band.clientHeight + 1; };

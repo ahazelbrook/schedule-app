@@ -28,7 +28,11 @@
   };
 
   function band(on) {
-    var N = mod('B68GmNight'), n = cur.night(), want = on && N && n ? N.bandPhase(n.night ? n.night() : null) : null;
+    var N = mod('B68GmNight'), n = cur.night();
+    /* after a load the page's night controller comes a moment after the first tick: until it is there the night is not known, so nothing is written
+       (a null then took the iPad's phase down on every reload); from the first tick that knows it, band.phase follows night.phase */
+    if (on && (!N || !n)) return;
+    var want = on ? N.bandPhase(n.night ? n.night() : null) : null;
     if (!on) { if (lastBand !== undefined) { var was = lastBand; lastBand = undefined; if (was) send(null); } return; }
     if (want === lastBand) return;
     lastBand = want;

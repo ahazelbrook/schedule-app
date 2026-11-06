@@ -493,7 +493,7 @@
       (e._ch ? '<span class="rl-chap">' + (e._ch.num ? '<b>' + esc(e._ch.num) + '</b> ' : '') + esc(e._ch.name) + '</span>' : '') + '</p>' +
       '<h1 class="rl-title" id="rulesTitle" tabindex="-1">' + esc(e.t) + '</h1>' +
       (parents.length ? '<p class="rl-parent">in ' + parents.map(esc).join(' › ') + '</p>' : '') + '</header>';
-    if (canShow()) h += '<p class="rl-gmtools rl-ipad"><button type="button" class="btn sm" data-rl="ipad" data-id="' + esc(e.book + '/' + e.slug) + '" title="Put this entry on the table’s iPad">Show on iPad</button> <button type="button" class="btn sm" data-rl="ipadclear" title="Back to the ambient scene">Clear iPad</button> <span class="rl-dim" id="rl-ipadmsg" role="status"></span></p>';
+    if (canShow()) h += '<p class="rl-gmtools rl-ipad"><button type="button" class="btn sm" data-rl="ipad" data-id="' + esc(e.book + '/' + e.slug) + '" title="Put this entry on the table’s iPad">Show on iPad</button> <button type="button" class="btn sm" data-rl="ipadclear" title="What is shown comes off the iPad: the ambient scene plays">Take it down</button> <span class="rl-dim" id="rl-ipadmsg" role="status"></span></p>';
     if (first && first !== e) h += '<p class="rl-alsonote">There is also a ' + esc(BOOKS[first.book]) + ' entry with this title: <a href="' + hrefOf(first) + '">open it</a>.</p>';
     h += '<div class="rl-body">' + (body || '<p class="rl-dim">This entry has no text of its own. Look under it in the index.</p>') + '</div>';
     group.forEach(function (t) {

@@ -121,6 +121,12 @@ const measure = (list) => {
       const cells = strip.querySelectorAll('.dp-lay-face');
       if (cells.length !== faces.length) bad.push(tag + ': ' + cells.length + ' crew cells for ' + faces.length + ' faces');
       for (const cell of cells) { const cr = rect(cell); if (!cr.w || !inside(cr, slots[2].r)) bad.push(tag + ': a crew cell outside the crew slot'); }
+      /* a cell's marks never run past it (a cut row hid the deadlock count), and the padlock and the Stress are drawn whole beside the name */
+      for (const row of strip.querySelectorAll('.dp-lay-face .dp-lay-marks')) if (row.scrollWidth > row.clientWidth + 1) bad.push(tag + ': a harm row is cut (' + row.scrollWidth + ' > ' + row.clientWidth + ')');
+      for (const e of strip.querySelectorAll('.dp-lay-face .dp-pc-lock, .dp-lay-face .dp-pc-stress')) {
+        const er = rect(e), cr = rect(e.closest('.dp-lay-face'));
+        if (e.getClientRects().length && (er.l < cr.l - 0.5 || er.r > cr.r + 0.5)) bad.push(tag + ': ' + e.className + ' runs out of its cell');
+      }
     }
     if (c.m === 'start' && [...strip.querySelectorAll('.dp-lay-face')].some((e) => e.getClientRects().length)) bad.push(tag + ': a face shows in the strip during the hard start');
     if (c.l && !strip.querySelector('.dp-lay-s-mic .dp-onair')) bad.push(tag + ': the lamp is not in the mic slot');

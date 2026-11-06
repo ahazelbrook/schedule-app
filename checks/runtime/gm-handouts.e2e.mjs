@@ -1,6 +1,6 @@
 // Handouts on the real GM page and the real table display, in a real browser, against a local wrangler dev. Invented fixtures: two tiny
 // generated images written into the git-ignored app/media/handouts/ for the run (and removed after), an invented manifest posted as the
-// pack's `handouts` part. Checks: the list in the iPad tab (titles, cues, thumbnails), Show on iPad posts exactly one item, Clear iPad,
+// pack's `handouts` part. Checks: the list in the iPad tab (titles, cues, thumbnails), Show on iPad posts exactly one item, Take it down,
 // the title toggle, the display draws the image fitted on black (and says so when the file is missing), the iPad is never sent the
 // manifest, suggestHandout puts a "Show handout?" idea card in the Blade box (Show posts it and drops it; Dismiss just drops it).
 //   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] node checks/runtime/gm-handouts.e2e.mjs

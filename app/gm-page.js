@@ -1566,6 +1566,7 @@
     b09Unmount(me); b17Unmount(me); knUnmount(me); csUnmount(me);
     if (me.mission) { try { me.mission.flush(); } catch (e) {} me.mission.destroy(); me.mission = null; }   /* a publish that is waiting goes now */
     apUnmount(me);
+    ipadTrayUnmount(me);       /* the tray's timer and its place in the module's list, and the live-sync listener */
     S = null;
     setApp(false);
     if (me.root) { me.root.innerHTML = ''; }
@@ -3968,7 +3969,10 @@
      stamp would lay it again), a held face (the spotlight would), the flashback, the montage, the hard start; then the overlay up now (a clock, an
      NPC card, a line, the dawn, a show beat) and the stage, back to the ambient. NOT the band's lasting layers: the phase, the PC faces and
      security stay, and so do the ambient mode and the score scene (a panic's safe scene with them, so Resume still brings the night back).
-     Each step is guarded: one that fails or is missing leaves the rest to run. The tools' own Take it down buttons stay where they are. */
+     It reads the ambient document first, so what another device laid (an NPC card, a flashback) is known and comes down too, and the overlay is
+     sent down whatever this page last knew. Two things it leaves, and says so: a frozen iPad (Freeze holds it: nothing is touched), and the
+     Aftermath show's step (the show would lay it again within its beat; End now in its panel ends the show). The Roll's stamp comes down only
+     while one is up, so the sizer, the effect and the line stay. Each step is guarded: one that fails or is missing leaves the rest to run. */
   function ipadLayers() { return isObj(AM.doc) && isObj(AM.doc.layers) ? AM.doc.layers : {}; }
   function ipadLayerSet(path) {
     var L = ipadLayers(), p = path.split('.'), g = isObj(L[p[0]]) ? L[p[0]] : null;
@@ -3976,14 +3980,23 @@
   }
   function clearIpad() {
     var me = S; if (!me) return Promise.resolve(false);
+    if (b17Frozen()) { toast('The iPad is frozen: unfreeze it first.', true); return Promise.resolve(false); }      /* Freeze holds the iPad: Clear changes nothing */
+    var g = gmApi();
+    var fresh = g && typeof g.ambient === 'function' ? Promise.resolve().then(function () { return g.ambient(); }).then(function (r) { if (S === me) adoptAmbient(r); }, function () { /* the cached document will do */ }) : Promise.resolve();
+    return fresh.then(function () { return S === me ? clearSteps(me) : false; });
+  }
+  function clearSteps(me) {
     var L = ipadLayers(), sc = isObj(L.scene) ? L.scene : {}, band = isObj(L.band) ? L.band : {}, steps = [];
+    var ov = isObj(AM.doc) && isObj(AM.doc.overlay) ? AM.doc.overlay : null, aft = sc.mode === 'aftermath', keepAft = aft && !!ov && ov.kind === 'aftermath';
     /* a layer still set comes off through the show contract (gm/show.js), else through the same ambient PATCH that contract writes with */
     function layerOff(path) { return function () { if (!ipadLayerSet(path)) return null; var sh = shows(); return sh ? sh.layer(path, null) : patchAmbient({ layer: { path: path, value: null } }); }; }
-    if (me.stamp && typeof me.stamp.esc === 'function') steps.push(function () { return me.stamp.esc(); });
+    var sv = me.stamp && typeof me.stamp.view === 'function' ? me.stamp.view() : null;
+    if (sv && sv.active && typeof me.stamp.esc === 'function') steps.push(function () { return me.stamp.esc(); });      /* only a stamp that is up: the Roll keeps its sizer, effect and line */
     var spot = me.b17 && me.b17.spot;
     if (spot && typeof spot.held === 'function' && spot.held() && typeof spot.narrator === 'function') steps.push(function () { return spot.narrator(); });
     var fb = me.b19 && me.b19.flashback;
-    if (sc.filter === 'flashback') steps.push(fb && typeof fb.end === 'function' ? function () { return Promise.resolve(fb.end()).then(function () { if (typeof fb.refresh === 'function') fb.refresh(); }); } : layerOff('scene.filter'));
+    /* the flashback's own end runs its Stress and log; one this page did not lay (another device, or before a reload) is not its own, so the layer comes off directly */
+    if (sc.filter === 'flashback') steps.push(fb && typeof fb.end === 'function' ? function () { return Promise.resolve(fb.end()).then(function (done) { if (typeof fb.refresh === 'function') fb.refresh(); return done ? null : layerOff('scene.filter')(); }); } : layerOff('scene.filter'));
     var mt = mtInst();
     if (mt && typeof mt.active === 'function' && mt.active()) steps.push(function () { return mt.collapse(); });
     steps.push(layerOff('scene.layout')); steps.push(layerOff('data.montage'));
@@ -3992,7 +4005,7 @@
       if (hs && typeof hs.end === 'function') steps.push(function () { return hs.end(); });
       else { ['scene.mode', 'data.countdown', 'data.credits', 'data.previously'].forEach(function (p) { steps.push(layerOff(p)); }); if (npcFaces) steps.push(layerOff('band.faces')); }
     }
-    steps.push(function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? patchAmbient({ overlay: null }) : null; });
+    if (!keepAft) steps.push(function () { return patchAmbient({ overlay: null }); });      /* whatever this page knew: one laid a moment ago elsewhere comes down too */
     steps.push(function () { return pushDisplay({ kind: 'blank' }); });
     var failed = '';
     return steps.reduce(function (p, step) {
@@ -4000,7 +4013,7 @@
     }, Promise.resolve()).then(function () {
       if (S !== me) return false;
       if (failed) { toast('Could not clear all of it: ' + failed, true); return false; }
-      toast('Cleared: the iPad plays the ambient scene.');
+      toast(aft ? 'Cleared, but the Aftermath show is still on: End now in its panel takes it down.' : 'Cleared: the iPad plays the ambient scene.');
       if (W.B68GmIpadTray) W.B68GmIpadTray.refresh();
       return true;
     });
@@ -4027,6 +4040,35 @@
     T.provide(ipadTrayApi);
     if (S.tray) { S.tray.destroy(); S.tray = null; }
     var slot = $q('#gm-bar-tray'); if (slot) S.tray = T.create({ document: document }).mount(slot);
+    ipadLiveWire();
+  }
+  function ipadTrayUnmount(me) {
+    if (me.tray) { try { me.tray.destroy(); } catch (e) {} me.tray = null; }
+    if (me.ipadLiveOff) { try { me.ipadLiveOff(); } catch (e) {} me.ipadLiveOff = null; }
+    if (me.ipadReT) { W.clearTimeout(me.ipadReT); me.ipadReT = null; }
+  }
+  /* live sync (design 2.5): another device's change to the iPad (a poke of kind ambient or display, or the socket opening again) is read at once, so
+     the tray and the iPad view say what is live without a poll of their own; a burst of pokes is one read, and a read that changes nothing redraws nothing */
+  function ipadLiveWire() {
+    var me = S; if (!me || me.ipadLiveOff || !W.B68Live || typeof W.B68Live.on !== 'function') return;
+    try { me.ipadLiveOff = W.B68Live.on(['ambient', 'display'], function (k) { if (k === 'ambient' || k === 'display' || k === 'hello') ipadReread(me); }); } catch (e) { me.ipadLiveOff = null; }
+  }
+  function ipadReread(me) {
+    if (S !== me) return;
+    if (me.ipadReT) W.clearTimeout(me.ipadReT);
+    me.ipadReT = W.setTimeout(function () {
+      me.ipadReT = null;
+      var g = gmApi(); if (S !== me || !g) return;
+      var amb = typeof g.ambient === 'function' ? Promise.resolve().then(function () { return g.ambient(); }).then(null, function () { return null; }) : null;
+      var dsp = typeof g.display === 'function' ? Promise.resolve().then(function () { return g.display(); }).then(null, function () { return null; }) : null;
+      Promise.all([amb, dsp]).then(function (res) {
+        if (S !== me) return;
+        var seq0 = AM.seq, shown0 = JSON.stringify(AM.shown || null), d = res[1] && isObj(res[1].display) ? res[1].display : null;
+        if (res[0]) adoptAmbient(res[0]);
+        if (d) { AM.displayRead = true; AM.shown = { kind: str(d.kind), title: str(d.title) }; }
+        if (AM.seq !== seq0 || JSON.stringify(AM.shown || null) !== shown0) { if ($q('#gm-ipad')) renderIpad(); else renderBar(); }      /* the view redraws the bar, and the bar the tray */
+      });
+    }, 400);
   }
 
   /* ---------- score sites (GM.md, "Score sites"): a location roll saved against a score card; the Prep tab's site strip ----------
@@ -4951,7 +4993,8 @@
       (also.length ? '<p class="gm-ipad-line" id="gm-ipad-also">Also up: ' + esc(also.join(' · ')) + '</p>' : '') +
       '<p class="gm-ipad-line" id="gm-ipad-ap" hidden>Autopilot: <b data-ap-badge></b> <button type="button" class="btn sm" data-gm="aptoggle"></button> ' +
       '<button type="button" class="btn sm" data-gm="apoff" title="Blade stops laying anything over the iPad until you switch it on">Switch off</button></p>' +
-      '<p class="gm-dim gm-ipad-way">Clear <kbd>0</kbd> takes all of it back to the ambient scene and Blank makes the iPad black: both sit with the iPad line in the band, in every place.</p></div></section>';
+      '<p class="gm-ipad-line gm-ipad-way"><button type="button" class="btn sm" data-gm="darkipad" title="True black on the iPad until the next send (lights out)">Blank</button> ' +
+      '<span class="gm-dim">Clear <kbd>0</kbd> takes all of it back to the ambient scene; it and Blank also sit with the iPad line in the band, in every place.</span></p></div></section>';
     var h = '<section class="gm-box gm-ipad-scenes"><h3 class="gm-band">Scenes</h3><div class="gm-ipad-body">';
     if (!AM.loaded) h += '<p class="gm-dim" role="status">' + (AM.error ? 'Could not read the settings: ' + esc(AM.error) : 'Loading the iPad settings…') + '</p>' + (AM.error ? '<p><button type="button" class="btn sm" data-gm="ambretry">Try again</button></p>' : '');
     h += '<div class="gm-field"><span class="gm-lab">When nothing is shown</span><div class="seg" role="group" aria-label="Ambient mode">' + seg('off', 'Off') + seg('auto', 'Auto') + seg('pin', 'Pin') + '</div></div>' +

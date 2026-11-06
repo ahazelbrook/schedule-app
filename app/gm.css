@@ -1583,7 +1583,7 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
 #gm-page .gm-ipadv-listen > .gm-box, #gm-page .gm-ipadv-col > .gm-box { margin: 0; }
 #gm-page .gm-ipadv > .gm-box { margin: 0; }
 #gm-page .gm-ipad-ov { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-#gm-page .gm-ipad-way { font-size: 12px; }
+#gm-page .gm-ipad-way { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; }      /* Blank, then how Clear works: the GM's phone has no Blank in its tray */
 #gm-page .gm-ipad-sub { display: grid; gap: 8px; padding-top: 10px; border-top: 1.5px solid var(--hair); }
 #gm-page .gm-ipad-h { margin: 0; font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
 #gm-page .gm-ipad-sub .gm-ipad-acts { margin: 0; }
