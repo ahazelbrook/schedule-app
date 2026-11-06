@@ -64,7 +64,7 @@
     { id: 'esc', col: 1, title: 'Esc and PANIC', rows: [
       { k: 'key', keys: ['Esc'], does: 'One thing per press: shuts the top box (this card too), else leaves the field, else takes the stamp down, else PANIC',
         hits: [{ key: 'Escape', act: { type: 'esc' } }] },
-      { k: 'term', term: 'PANIC', does: 'The band’s last button: the iPad to the safe scene, sound and music down, WORK LIGHT UP. **Resume** puts it back.' },
+      { k: 'term', term: 'PANIC', does: 'The band’s last button: the iPad to the safe scene, sound and music down, and the band says WORK LIGHT UP (put the work light on). **Resume** puts it back.' },
       { k: 'key', keys: ['0'], does: 'Clear the iPad: back to the ambient scene', hits: [{ key: '0', act: { type: 'clear' } }] },
       { k: 'key', keys: ['Shift H', 'H H'], does: 'Blank this laptop; any key brings it back',
         hits: [{ key: 'H', shift: true, act: { type: 'blank' } }, { key: 'h', act: { type: 'blank-tap' } }] }
@@ -180,7 +180,7 @@
     }).join('\n\n');
   }
 
-  var WORDS = 'shortcuts keys keyboard commands help cheat sheet blade lines voice say type typed music playlists clocks clock tick cue lines cues go esc panic';
+  var WORDS = 'shortcuts keys keyboard commands help cheat sheet blade lines voice say type typed cue lines cues';
   function findEntry() { return { kind: 'Tool', title: TITLE, sub: 'keys, “Blade, …” lines, clocks, music, cue lines · ?', text: WORDS }; }
 
   /* ---------- the sheet (DOM) ---------- */

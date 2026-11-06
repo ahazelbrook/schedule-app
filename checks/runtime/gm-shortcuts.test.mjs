@@ -253,7 +253,7 @@ await test('the markup: every row drawn in its section, keys as <kbd>, fill-ins 
   const f = SC.findEntry();
   assert.equal(f.title, 'Shortcuts'); assert.equal(f.kind, 'Tool');
   const hits = (q) => GP.findHits([{ kind: 'Place', title: 'Go to Before', text: 'before the night' }, { ...f, go: { t: 'shortcuts' } }], q, 10).filter((x) => x.go && x.go.t === 'shortcuts').length;
-  for (const q of ['Shortcuts', 'short', 'keys', 'commands', 'help', 'cheat sheet', 'blade lines', 'clock']) assert.equal(hits(q), 1, 'Find "' + q + '"');
+  for (const q of ['Shortcuts', 'short', 'keys', 'commands', 'help', 'cheat sheet', 'blade lines', 'clocks']) assert.equal(hits(q), 1, 'Find "' + q + '"');
   assert.ok(/'shortcuts'\) shortcutsOpen\(\);/.test(SRC.page) && /out\.push\(Object\.assign\(W\.B68GmShortcuts\.findEntry\(\), \{ go: \{ t: 'shortcuts' \} \}\)\)/.test(SRC.page), 'the page puts it in Find and opens it from there');
   assert.ok(/data-gm="shortcuts" id="gm-menu-shortcuts"[^>]*>Shortcuts <kbd>\?<\/kbd><\/button>/.test(SRC.page) && /case 'shortcuts': menuOpen\(false\); shortcutsOpen\(\); break;/.test(SRC.page), 'and in the Menu');
 });
