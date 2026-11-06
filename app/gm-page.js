@@ -3970,9 +3970,12 @@
   /* entering the Score: the map goes up unless the GM has something else on the iPad (a map already live, a handout, a rule, a face card held as the display) */
   function scoreMapDefault() {
     if (!S || !S.locRoll || mapOnIpad() || b17Frozen()) return;
-    var k = AM.shown ? str(AM.shown.kind) : '';
-    if (k && k !== 'blank' && k !== 'dark') return;
-    siteMapUp(true);
+    var me = S, g = gmApi(), free = function (k) { k = str(k); return !k || k === 'blank' || k === 'dark'; };
+    /* what the iPad shows is read fresh (another device, or Clear on the phone, may have changed it since this page last pushed; the ambient seq is sent so the big
+       ambient part is not); without the call, this page's own record */
+    var look = g && typeof g.display === 'function' ? Promise.resolve().then(function () { return g.display(undefined, typeof AM.seq === 'number' ? AM.seq : undefined); }).then(function (r) { return r && isObj(r.display) ? r.display.kind : ''; }, function () { return AM.shown ? AM.shown.kind : ''; })
+      : Promise.resolve(AM.shown ? AM.shown.kind : '');
+    look.then(function (k) { if (S === me && free(k) && !mapOnIpad()) siteMapUp(true); });
   }
   function scoreMapWrap(me) {
     var nt = me.night; if (!nt || typeof nt.enter !== 'function' || typeof nt.phase !== 'function' || nt.__r1map) return;
