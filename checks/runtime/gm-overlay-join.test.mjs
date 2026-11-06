@@ -293,14 +293,20 @@ await test('T15 joinOverlayNpc: a known-as NPC\'s card is the alias, no alias li
   assert.deepEqual([plain.amb.doc.overlay.npc.name, plain.amb.doc.overlay.npc.alias], ['Ada Vell', 'Vell'], 'the control: unmarked, unchanged');
 });
 
-await test('T15 joinDisplayNpc: an NPC card on the display is titled by the alias while that NPC is live, here and known-as; anything else is the same object, and a non-npc display costs no read', async () => {
+await test('T15 joinDisplayNpc (R1\'s T3 join): an NPC card on the display is titled by the alias and its joined npc is the player view, nothing of the first name; a hidden known-as NPC still gets the title; gone is the same object; a non-npc display costs no read', async () => {
   const cur = (display) => ({ seq: 9, display, updatedAt: 'x' });
   const card = cur({ kind: 'npc', npcId: 'npc_a', title: 'Ada Vell' });
   const db = fakeDb(npcRow(KA_DOC));
   const r = await joinDisplayNpc(db, 'camp', card);
-  assert.deepEqual(r, { seq: 9, display: { kind: 'npc', npcId: 'npc_a', title: 'Vell' }, updatedAt: 'x' });
+  assert.deepEqual(r, { seq: 9, display: { kind: 'npc', npcId: 'npc_a', title: 'Vell', npc: { name: 'Vell', alias: '', role: 'Fixer', faction: 'The Invented Guild', description: 'A woman at the bar.', spec: { seed: 7, figure: 'fem', heightIn: 64, outfit: { base: { type: 'dress' } } } } }, updatedAt: 'x' });
+  assert.ok(!FIRST.test(JSON.stringify(r)), 'no first name in the served display: ' + JSON.stringify(r));
   assert.equal(card.display.title, 'Ada Vell', 'the stored display is not mutated'); assert.equal(db.reads, 1);
-  for (const [why, row] of [['unmarked', npcRow({ ...KA_DOC, tags: [] })], ['another campaign', npcRow(KA_DOC, { campaign: 'other' })], ['deleted', npcRow(KA_DOC, { deleted: 1 })], ['no row', null]]) {
+  const hid = await joinDisplayNpc(fakeDb(npcRow({ ...KA_DOC, revealed: false })), 'camp', card);
+  assert.deepEqual(hid.display, { kind: 'npc', npcId: 'npc_a', title: 'Vell' }, 'hidden: the title is the alias, and no npc is joined');
+  const plain = await joinDisplayNpc(fakeDb(npcRow({ ...KA_DOC, tags: [] })), 'camp', card);
+  assert.deepEqual([plain.display.title, plain.display.npc.name, plain.display.npc.alias], ['Ada Vell', 'Ada Vell', 'Vell'], 'the control: unmarked, the title and the card as stored');
+  assert.equal(await joinDisplayNpc(fakeDb(npcRow({ ...KA_DOC, tags: [], revealed: false })), 'camp', card), card, 'unmarked and hidden: as it came');
+  for (const [why, row] of [['another campaign', npcRow(KA_DOC, { campaign: 'other' })], ['deleted', npcRow(KA_DOC, { deleted: 1 })], ['no row', null]]) {
     assert.equal(await joinDisplayNpc(fakeDb(row), 'camp', card), card, why + ': as it came');
   }
   for (const d of [{ kind: 'dark', title: 'Ada Vell' }, { kind: 'svg', svg: '<svg/>' }, { kind: 'npc', npcId: 'bad id!' }, null]) {

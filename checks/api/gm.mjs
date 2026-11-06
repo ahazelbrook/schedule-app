@@ -893,7 +893,17 @@ async function main() {
     status(await A({ overlay: null }), 200);
     // the display's own NPC card: the GM page stores the full name as its title
     status(await gm('PUT', '/api/gm/display', { kind: 'npc', npcId: ID, title: 'Ada Vell' }), 200);
-    await clean('the NPC card on the display', (j, w) => expect(j.display && j.display.kind === 'npc' && j.display.title === 'Vell', w + ': ' + JSON.stringify(j.display)));
+    await clean('the NPC card on the display', (j, w) => expect(j.display && j.display.kind === 'npc' && j.display.title === 'Vell' && j.display.npc && j.display.npc.name === 'Vell' && j.display.npc.alias === '', w + ': ' + JSON.stringify(j.display)));
+    // at the SAME display seq, with the ambient or transcriber part stale, the display still goes out: it must be the joined copy too
+    const dseq = (await gm('GET', '/api/gm/display')).json.seq;
+    for (const p of ['?seq=' + dseq + '&aseq=-1', '?seq=' + dseq + '&aseq=-1&sseq=-1', '?seq=' + dseq + '&aseq=-1&sseq=-1&hseq=-1']) {
+      const d = await call('GET', '/api/gm/display' + p, { user: IPAD }); status(d, 200);
+      expect(d.json.display && d.json.display.title === 'Vell' && !FIRST.test(d.text), 'same seq ' + p + ': ' + d.text.slice(0, 240));
+    }
+    status(await gm('PATCH', '/api/npcs/' + ID, { revealed: false }), 200);
+    const hid = await call('GET', '/api/gm/display', { user: IPAD });
+    expect(hid.json.display.title === 'Vell' && !hid.json.display.npc && !FIRST.test(hid.text), 'hidden: the title is still the alias, and no card is joined: ' + hid.text.slice(0, 240));
+    status(await gm('PATCH', '/api/npcs/' + ID, { revealed: true }), 200);
     const scr = await player('GET', '/api/table/screen'); status(scr, 200); expect(!FIRST.test(scr.text), 'the phones\' Table copy: ' + scr.text.slice(0, 200));
     // a rolodex and the credits ("Seen tonight")
     status(await gm('PUT', '/api/gm/display', { kind: 'blank' }), 200);
