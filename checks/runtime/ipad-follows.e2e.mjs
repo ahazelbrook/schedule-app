@@ -8,7 +8,7 @@
 //   - entering the Score puts the players' map on the iPad by itself, and the site's toolbar has Show on iPad / Take it down (T5); the map is the player
 //     layer only: nothing GM-only in the display GET or the DOM.
 // Screenshots (GM_SHOTS=<dir>): ipad-spotlight-pinned-1024.png, ipad-map-score-1024.png, site-show-on-ipad-1366.png. No model, $0. Every name is invented.
-//   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=9310] [GM_SHOTS=<dir>] node checks/runtime/ipad-follows.e2e.mjs
+//   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=9310] [GM_SHOTS=<dir>] [PW_DISPLAY_ENGINE=webkit] node checks/runtime/ipad-follows.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -22,7 +22,8 @@ const PORT = Number(process.env.PORT || 9310);
 const BASE = 'http://127.0.0.1:' + PORT;
 const GM = 'gm@example.test', IPAD = 'table.ipad@example.test';
 const SHOTS = process.env.GM_SHOTS || '';
-const { chromium } = require(process.env.PW_MODULE || '/opt/node-tools/node_modules/playwright');
+const PW = require(process.env.PW_MODULE || '/opt/node-tools/node_modules/playwright'), { chromium } = PW;
+const DISPLAY_ENGINE = process.env.PW_DISPLAY_ENGINE === 'webkit' ? 'webkit' : 'chromium';      /* PW_DISPLAY_ENGINE=webkit: the iPad page in WebKit (Safari's engine), the GM page as ever */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const WIN = process.platform === 'win32';
 
@@ -57,7 +58,9 @@ try {
   check((await api('PUT', '/gm/display', { kind: 'blank' })).status === 200, 'nothing is on the iPad: the pinned scene plays');
 
   /* the iPad: the display page, signed in as the table's display login */
-  const dc = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
+  const dbrowser = DISPLAY_ENGINE === 'webkit' ? await PW.webkit.launch() : browser;
+  console.log('INFO the iPad page runs in ' + DISPLAY_ENGINE);
+  const dc = await dbrowser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
   const dp = await dc.newPage();
   dp.on('pageerror', (e) => errors.push('display: ' + e.message));
   await dp.goto(BASE + '/#display');
@@ -143,6 +146,7 @@ try {
   check(!!(await until(async () => { const s = await stageEl(); return s && /dp-map/.test(s.cls); }, 8000)), 'Show on iPad: the players’ map is back on the iPad');
   check(/LIVE/.test(await gp.textContent('.rv-tools')), 'and the site says it is LIVE, so Seen + Send update it');
   check(!errors.length, 'no page errors: ' + errors.slice(0, 3).join(' | '));
+  if (dbrowser !== browser) await dbrowser.close();
   await browser.close();
 } catch (e) { failed++; console.log('FAIL ' + (e && e.stack || e)); }
 clearTimeout(timeout);
