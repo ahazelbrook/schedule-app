@@ -27,7 +27,7 @@
    combination, landscape or portrait. While the strip is up the root carries dp-lay-on (and dp-lay-crew while crew
    cells are drawn) and app/display/shows.css lays everything else (the stages, the beats, the band beside the map and its countdown, the hard
    start, the montage, the AUTO chip) out BELOW it, so the strip never covers them either. Over lights out only the lamp stays (dp-lights-out).
-   API: attach(container, { skew(), band?() }) -> { apply(layers), message(), sceneLoaded(id), mic(lamp | null), banded(), destroy() }; clean(layers) -> the checked layers;
+   API: attach(container, { skew(), band?(), figure?(spec, id) -> node | null (the montage's PC figures) }) -> { apply(layers), message(), sceneLoaded(id), mic(lamp | null), banded(), destroy() }; clean(layers) -> the checked layers;
    mic(container, { off, text } | null) -> true when a band attached to that container took the lamp (onair.js asks before drawing a lamp of its own).
    THE TECH RUN (06/11): the strip is a choice. opts.band() says whether it is drawn (the display page reads the display.band setting, off unless the GM
    turns it on in the iPad view's Settings); without opts.band it is drawn as before. While it is off there is no strip and no dp-lay-on, so the stages,
@@ -74,6 +74,7 @@
       if (!isObj(p) || typeof p.pcId !== 'string' || !/^[A-Za-z0-9_-]{1,80}$/.test(p.pcId)) return;
       var o = { pcId: p.pcId, name: text(p.name, 40), room: text(p.room, 60), line: text(p.line, 100) };
       if (p.done === true) o.done = true;
+      if (isObj(p.spec)) o.spec = p.spec;      /* the tech run: the server joins the character's figure (functions/_lib/show.js); never sent to a scene */
       out.push(o);
     });
     return out.length >= 2 ? out : [];
@@ -258,7 +259,7 @@
       Object.keys(ATTRS).forEach(function (a) { var v = state[ATTRS[a]]; if (v === null || v === undefined) container.removeAttribute(a); else container.setAttribute(a, String(v)); });
       if (state.onair) container.setAttribute('data-band-onair', '1'); else container.removeAttribute('data-band-onair');
       paintStrip();
-      if (root.B68DisplayMontage) root.B68DisplayMontage.paint(container, state.montage, doc);      /* suite 2.8: nothing is drawn (or removed) while the layer is unset */
+      if (root.B68DisplayMontage) root.B68DisplayMontage.paint(container, state.montage, doc, opts && typeof opts.figure === 'function' ? { figure: opts.figure } : null);      /* suite 2.8: nothing is drawn (or removed) while the layer is unset */
       var m = msg(), k = JSON.stringify(m);
       if (k === key) return;
       key = k;

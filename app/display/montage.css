@@ -10,13 +10,33 @@
 .dp-mt-mustard { box-shadow: inset 0 2vmin 0 var(--b68-mustard); }
 .dp-mt-alarm { box-shadow: inset 0 2vmin 0 var(--b68-alarm); }
 .dp-mt-green { box-shadow: inset 0 2vmin 0 #3f7a4f; }
+/* the picture (the tech run, 06/11): the top of the panel is the PC's figure standing on the panel's own colour, never a blank card */
+.dp-mt-pic { flex: 1 1 0; min-height: 12vmin; margin: -3vmin -3vmin .4vmin; display: flex; align-items: flex-end; justify-content: center; overflow: hidden;
+  background: var(--b68-rules-blue); border-bottom: .5vmin solid var(--b68-ink); }
+.dp-mt-mustard .dp-mt-pic { background: var(--b68-mustard); }
+.dp-mt-alarm .dp-mt-pic { background: var(--b68-alarm); }
+.dp-mt-green .dp-mt-pic { background: #3f7a4f; }
+.dp-mt-pic-fig { padding-top: 3.4vmin; }
+.dp-mt-txt { flex: 0 0 36%; min-height: 0; display: flex; flex-direction: column; justify-content: flex-start; gap: 1.4vmin; overflow: hidden; }
+.dp-mt-pic svg { display: block; height: 100%; width: auto; max-width: 100%; }
+.dp-mt-pic .dp-mt-fig { align-self: center; }
 .dp-mt-fig { flex: none; align-self: flex-start; width: 16vmin; height: 16vmin; border-radius: 50%; border: .5vmin solid var(--b68-ink); background: var(--b68-paper-dark);
   display: flex; align-items: center; justify-content: center; font: 900 var(--b68-t-lead)/1 var(--b68-font-poster); color: var(--b68-rules-blue); }
 .dp-mt-name { margin: 0; font: 900 var(--b68-t-lead)/1.05 var(--b68-font-poster); text-transform: uppercase; overflow-wrap: break-word; }
 .dp-mt-room { margin: 0; font: 700 var(--b68-t-label)/1.2 var(--b68-font-cond); text-transform: uppercase; letter-spacing: .04em; color: var(--b68-ink-soft); }
 .dp-mt-line { margin: 0; font: 400 var(--b68-t-body)/1.25 var(--b68-font-text); overflow-wrap: break-word; }
 .dp-mt-stamp { position: absolute; right: 2.5vmin; top: 5vmin; margin: 0; padding: .4vmin 1.6vmin; border: .6vmin solid var(--b68-alarm); color: var(--b68-alarm);
-  font: 900 var(--b68-t-body)/1 var(--b68-font-poster); letter-spacing: .08em; transform: rotate(-8deg); }
-.dp-mt-done .dp-mt-line, .dp-mt-done .dp-mt-fig { opacity: .55; }
+  font: 900 var(--b68-t-body)/1 var(--b68-font-poster); letter-spacing: .08em; transform: rotate(-8deg); background: var(--b68-paper); z-index: 1; }
+.dp-mt-done .dp-mt-line, .dp-mt-done .dp-mt-fig, .dp-mt-done .dp-mt-pic svg { opacity: .55; }
+.dp-montage-4 .dp-mt-txt { flex-basis: 52%; }
+@media (orientation: landscape) { .dp-montage-2 .dp-mt-txt, .dp-montage-3 .dp-mt-txt { flex-basis: 42%; } }
+/* four panels in landscape are wide and short: the figure stands at the left of its panel, the words beside it */
+@media (orientation: landscape) {
+  .dp-montage-4 .dp-mt-panel { flex-direction: row; align-items: stretch; }
+  .dp-montage-4 .dp-mt-pic { flex: 0 0 32%; margin: -3vmin 2.6vmin -3vmin -3vmin; border-bottom: 0; border-right: .5vmin solid var(--b68-ink); }
+  .dp-montage-4 .dp-mt-txt { flex: 1 1 0; justify-content: center; }
+}
+/* three panels side by side in portrait are narrow: the name comes down a size so a surname is not broken mid-word */
+@media (orientation: portrait) { .dp-montage-3 .dp-mt-name { font-size: 4.6vw; } .dp-montage-3 .dp-mt-line { font-size: 3.4vw; } }
 @keyframes dp-mt-in { from { opacity: 0; transform: translateY(3vmin); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .dp-mt-panel { animation: none; } }
