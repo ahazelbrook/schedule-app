@@ -18,7 +18,7 @@ const F = require(path.join(ROOT, 'app', 'features.js'));
 
 let failed = 0, passed = 0;
 async function test(name, fn) {
-  Tools.reset(); Rail._setAll(false);
+  Tools.reset();
   try { await fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); }
 }
 
@@ -90,18 +90,16 @@ await test('model: Back is a plain move: the earlier phase is "now" again, the l
   const night = { phase: 'pb', phases: { pb: { start: T0 + 50 * MIN, end: null, budget: 30 }, plan: { start: T0 + 30 * MIN, end: T0 + 50 * MIN } } };
   assert.deepEqual(Rail.model(night, T0 + 55 * MIN).items.map((i) => i.state), ['now', 'next', 'next', 'next']);
 });
-await test('filterFor: on only with a phase in play; "All tools" is the same as off for the tool registry', () => {
-  assert.deepEqual(Rail.filterFor('plan', true, false), { on: true, phase: 'plan', all: false });
-  assert.deepEqual(Rail.filterFor('', true, false), { on: false, phase: '', all: false });
-  Tools.setFilter(Rail.filterFor('plan', true, false)); assert.equal(Tools.visible('score'), true); assert.equal(Tools.visible('chase'), false);
-  Tools.setFilter(Rail.filterFor('plan', true, true)); assert.equal(Tools.visible('chase'), true, 'All tools overrides');
+await test('the rail filters nothing (N1b: the places lay out each phase\'s tools): no filterFor, no All tools, nothing set on the tool registry', () => {
+  assert.equal(Rail.filterFor, undefined); assert.equal(Rail._setAll, undefined);
+  assert.equal(Tools.setFilter, undefined, 'the registry has no filter to set');
 });
-await test('the bar: four chips and All tools; a tap enters the phase through the night controller; the phase filter follows within the same sync', () => {
+await test('the bar: four chips; a tap enters the phase through the night controller', () => {
   const { root } = page(), c = ctl();
   const rail = Rail.create({ root: () => root, night: () => c.N, now: () => c.clock.t });
   rail.sync();
   const el = rail.el(); assert.equal(root.children[1], el, 'inserted right after the top bar');
-  assert.equal((el.innerHTML.match(/data-rail="(pb|plan|score|after)"/g) || []).length, 4); assert.ok(/data-rail="all"/.test(el.innerHTML));
+  assert.equal((el.innerHTML.match(/data-rail="(pb|plan|score|after)"/g) || []).length, 4); assert.ok(!/data-rail="all"|All tools/.test(el.innerHTML), 'no All tools');
   click(el, 'data-rail', 'plan'); assert.equal(c.N.phase(), 'plan');
   c.clock.t += 5 * MIN; rail.sync(); assert.ok(/data-state="now"/.test(el.innerHTML));
   click(el, 'data-rail', 'pb'); assert.equal(c.N.phase(), 'pb', 'Back is allowed');
@@ -122,23 +120,22 @@ function loadMods(w) {
   return w;
 }
 
-await test('the bar through the window: tapping a phase hides the other phases\' tabs (the tool filter), All tools brings them back', () => {
+await test('the bar through the window: a tap enters the phase and touches nothing else (the page follows the phase to its place, gm/places.js)', () => {
   const w = loadMods(withWindow({}, (x) => x)); const { root } = page(), c = ctl();
   const rail = w.B68GmPhaseRail.create({ root: () => root, night: () => c.N, now: () => c.clock.t });
+  const before = JSON.stringify(Tools.list());
   rail.sync(); click(rail.el(), 'data-rail', 'plan'); rail.sync();
-  assert.equal(Tools.visible('score'), true); assert.equal(Tools.visible('chase'), false, 'Chase is a Score tool');
-  assert.equal(Tools.visible('chase', { current: 'chase' }), true, 'the tab on screen is kept');
-  click(rail.el(), 'data-rail', 'all'); assert.equal(Tools.visible('chase'), true);
-  click(rail.el(), 'data-rail', 'all'); assert.equal(Tools.visible('chase'), false);
-  rail.destroy(); assert.equal(Tools.filter().on, false, 'taken down: the filter is off again'); assert.equal(root.querySelector('#gm-phaserail'), null);
+  assert.equal(c.N.phase(), 'plan'); assert.ok(/data-rail="plan"[^>]*data-state="now"/.test(rail.el().innerHTML));
+  click(rail.el(), 'data-rail', 'all'); assert.equal(c.N.phase(), 'plan', 'there is no All tools: a stray "all" enters nothing');
+  assert.equal(JSON.stringify(Tools.list()), before, 'the tool registry is untouched');
+  rail.destroy(); assert.equal(root.querySelector('#gm-phaserail'), null);
 });
 await test('a phase another GM device entered shows here on the next sync (the night is read live)', () => {
   const w = loadMods(withWindow({}, (x) => x)); const { root } = page(), c = ctl();
   const rail = w.B68GmPhaseRail.create({ root: () => root, night: () => c.N, now: () => c.clock.t });
-  rail.sync(); assert.equal(Tools.filter().on, false);
+  rail.sync(); assert.ok(!/data-state="now"/.test(rail.el().innerHTML));
   c.state.doc = { night: Night.enter({}, 'score', T0).night };
-  rail.sync(); assert.deepEqual(Tools.filter(), { on: true, phase: 'score', all: false });
-  assert.ok(/data-rail="score"[^>]*data-state="now"/.test(rail.el().innerHTML));
+  rail.sync(); assert.ok(/data-rail="score"[^>]*data-state="now"/.test(rail.el().innerHTML));
 });
 
 /* ---- 1.5 the curfew ---- */
@@ -203,7 +200,7 @@ await test('the Workshop\'s first cuts are gone (N0): spine.tick registers no Wo
   const w = loadMods(withWindow({ setInterval: () => 7, clearInterval() {} }, (x) => x)); const { root, doc } = page();
   const c = ctl(), flags = { 'spine.workshop': true };
   w.B68GmSpine.tick({ root: () => root, night: () => c.N, now: () => c.clock.t, toast() {}, on: (id) => flags[id] === true, layer: () => Promise.resolve({}) });
-  assert.equal(Tools.workshop().length, 0); assert.ok(!doc.body.classList.contains('ws-away'));
+  assert.equal(Tools.workshop, undefined, 'no Workshop list in the registry'); assert.ok(!doc.body.classList.contains('ws-away'));
   assert.equal(F.get('spine.workshop'), null, 'the line is gone from the registry'); assert.equal(F.valueOf({ features: { 'spine.workshop': true } }, 'spine.workshop'), false, 'and a stored value is never read');
   assert.deepEqual(Object.keys(w.B68GmSpine._state()).sort(), ['band', 'curfew', 'rail', 'timer']);
   w.B68GmSpine.reset();
@@ -214,16 +211,15 @@ await test('spine.tick (a host that says off, which the page no longer does: its
   const w = loadMods(withWindow({ setInterval: () => 7, clearInterval() {} }, (x) => x)); const { root } = page();
   const c = ctl(), layers = []; const flags = {};
   const host = { root: () => root, night: () => c.N, now: () => c.clock.t, toast() {}, on: (id) => flags[id] === true, layer: (p, v) => { layers.push([p, v]); return Promise.resolve({}); } };
-  w.B68GmSpine.tick(host); assert.deepEqual(w.B68GmSpine._state(), { rail: false, curfew: false, band: undefined, timer: false }); assert.equal(root.children.length, 2); assert.equal(layers.length, 0); assert.equal(Tools.filter().on, false);
+  w.B68GmSpine.tick(host); assert.deepEqual(w.B68GmSpine._state(), { rail: false, curfew: false, band: undefined, timer: false }); assert.equal(root.children.length, 2); assert.equal(layers.length, 0);
   flags['spine.rail'] = true; w.B68GmSpine.tick(host);
   assert.ok(root.querySelector('#gm-phaserail')); assert.deepEqual(layers, [['band.phase', null]], 'no phase yet: the band is cleared, not lit');
   c.N.enter('plan'); w.B68GmSpine.tick(host); assert.deepEqual(layers[layers.length - 1], ['band.phase', 'plan'], 'the band is told the phase, nothing more');
   assert.ok(!JSON.stringify(layers).match(/\d{6,}/), 'no time goes to the iPad');
   const n = layers.length; w.B68GmSpine.tick(host); assert.equal(layers.length, n, 'unchanged: nothing is sent again');
   c.N.enter('score'); w.B68GmSpine.tick(host); assert.deepEqual(layers[layers.length - 1], ['band.phase', 'score']);
-  assert.equal(Tools.filter().phase, 'score');
   flags['spine.rail'] = false; w.B68GmSpine.tick(host);
-  assert.equal(root.querySelector('#gm-phaserail'), null); assert.equal(Tools.filter().on, false); assert.deepEqual(layers[layers.length - 1], ['band.phase', null], 'off: the band is cleared');
+  assert.equal(root.querySelector('#gm-phaserail'), null); assert.deepEqual(layers[layers.length - 1], ['band.phase', null], 'off: the band is cleared');
   assert.equal(w.B68GmSpine._state().timer, false);
   flags['spine.curfew'] = true; w.B68GmSpine.tick(host);
   assert.equal(root.querySelector('#gm-phaserail'), null, 'the rail is not built by the other line'); assert.equal(w.B68GmSpine._state().timer, true);

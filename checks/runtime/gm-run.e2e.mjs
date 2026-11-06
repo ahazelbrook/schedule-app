@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -90,6 +91,7 @@ try {
   const errors = [], asked = [], answer = { no: false };
   async function open() {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 1366, height: 1024 }, serviceWorkers: 'block', isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -258,6 +260,7 @@ try {
   await R.page.evaluate(() => { const sl = document.getElementById('gm-run-t'); sl.value = '150'; sl.dispatchEvent(new Event('input', { bubbles: true })); sl.dispatchEvent(new Event('change', { bubbles: true })); });
   await R.page.waitForSelector('#gm-run-side [data-gm="run-dawn"]', { timeout: 5000 });
   const D = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 1366, height: 1024 }, serviceWorkers: 'block' });
+  await D.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
   const dp = await D.newPage();
   dp.on('pageerror', (e) => errors.push('display pageerror: ' + e.message));
   await dp.goto(BASE + '/#display'); await dp.waitForSelector('.dp-overlay', { state: 'attached', timeout: 20000 });

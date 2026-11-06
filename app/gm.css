@@ -97,10 +97,6 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .chip[aria-current="true"] { background: var(--rule); color: var(--on-ink); }
 
 /* the side panel */
-#gm-page .gm-tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 2px solid var(--rule); }
-#gm-page .gm-tab { font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; padding: 10px 8px; border: 2px solid var(--rule); border-bottom: 0; background: var(--inset); color: var(--ink-soft); cursor: pointer; min-height: 38px; }
-#gm-page .gm-tab[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }
-#gm-page .gm-tab:hover { background: var(--accent); color: var(--on-accent); }
 #gm-page .gm-pane { display: grid; gap: 10px; }
 #gm-page .gm-loc-ctl { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; border: 2px solid var(--rule); background: var(--card); padding: 10px; }
 #gm-page .gm-loc-ctl .gm-roll { flex: 1 1 100%; }
@@ -261,7 +257,7 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 }
 /* touch screens: 44 px targets */
 @media (pointer: coarse) {
-  #gm-page .btn, #gm-page .chip, #gm-page .gm-tab, #gm-page select, #gm-page input[type="text"], #gm-page input[type="search"] { min-height: 44px; }
+  #gm-page .btn, #gm-page .chip, #gm-page .gm-vt, #gm-page select, #gm-page input[type="text"], #gm-page input[type="search"] { min-height: 44px; }
   #gm-page .btn.sm, #gm-page .chip.sm { min-height: 44px; padding-left: 10px; padding-right: 10px; }
   #gm-page .gm-x { width: 44px; height: 44px; }
   #gm-page .gm-check { min-height: 44px; }
@@ -271,15 +267,9 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 @media (max-width: 599px) {
   #gm-page .gm-head { padding: 8px 0; }
   #gm-page .gm-h { font-size: 34px; }
-  /* the twelve segments as two full rows of six (30 columns, each segment spans 5): all of them in reach, nothing to drag sideways */
-  #gm-page .gm-segbar { display: grid; grid-template-columns: repeat(30, minmax(0, 1fr)); width: 100%; position: sticky; top: 0; z-index: 4; background: var(--paper); margin-bottom: 10px; }
-  #gm-page .gm-segbar .chip { grid-column: span 5; min-width: 0; min-height: 44px; padding: 8px 2px; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; letter-spacing: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #gm-page .gm-segbar .chip:nth-child(6) { border-right: 0; }
-  #gm-page .gm-segbar .chip:nth-child(-n+6) { border-bottom: 2px solid var(--rule); }
-  #gm-page .gm-segbar .chip[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }
+  /* the place's chip row (N1b, gm/places.js; its rules are with the places at the end of this file) sticks under the bar; one column at a time */
   #gm-page .gm-main { grid-template-columns: minmax(0, 1fr); }
-  #gm-page .gm-tabs { display: none; }
-  #gm-root[data-seg="console"] .gm-side, #gm-root[data-seg="side"] .gm-console { display: none; }
+  #gm-root[data-seg="console"] .gm-side, #gm-root[data-seg="side"] .gm-console, #gm-root[data-seg="side"] .gm-left { display: none; }
   #gm-page .gm-cardbox, #gm-page .gm-cardbox .gm-lead, #gm-page .gm-cardbox .gm-want, #gm-page .gm-cardbox .gm-card-h, #gm-page .gm-cardbox .gm-dt-morning, #gm-page .gm-cardbox .gm-dt-mh { scroll-margin-top: 140px; scroll-margin-bottom: 84px; }   /* under the sticky bar and the two-row segmented bar, above the capture button */
   #gm-page .gs-rules { scroll-margin-top: 140px; }
   #gm-page .gm-ch-tick .gm-ch-row > .gm-field { flex-basis: 100%; }       /* Level and Time each on a row of their own: a switch never wraps */
@@ -476,15 +466,11 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
   body.gm-app #gm-page .gm-main { min-height: 0; gap: 0; align-items: stretch; grid-template-columns: clamp(300px, 26vw, 400px) minmax(0, 1fr); }
   body.gm-app #gm-page .gm-col { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px; border-right: 2px solid var(--rule); scrollbar-width: thin; }
   body.gm-app #gm-page .gm-side { border-right: 0; }
-  body.gm-app #gm-page .gm-side { padding: 0; overflow: hidden; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 0; }
-  body.gm-app #gm-page .gm-tabrow { display: flex; align-items: stretch; border-bottom: 2px solid var(--rule); background: var(--paper); }
-  body.gm-app #gm-page .gm-tabs { flex: 1 1 auto; flex-wrap: nowrap; overflow-x: auto; gap: 0; border-bottom: 0; scrollbar-width: none; }
-  /* one row of tabs with their keys showing at 1280 px (ten of them since Chase): tight padding, the key small */
-  body.gm-app #gm-page .gm-tab { flex: 0 0 auto; border: 0; border-right: 1.5px solid var(--hair); background: none; color: var(--ink); white-space: nowrap; padding: 10px 3px; font-size: 10px; letter-spacing: .02em; }
-  body.gm-app #gm-page .gm-tab kbd { font-size: 9px; padding: 1px 2px; }
-  body.gm-app #gm-page .gm-tab[data-panel="location"], body.gm-app #gm-page .gm-tab[data-panel="cards"] { border-left: 2px solid var(--rule); margin-left: 4px; }
-  body.gm-app #gm-page .gm-tab[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }
-  body.gm-app #gm-page .gm-tab:hover { background: var(--accent); color: var(--on-accent); }
+  /* the place's work: the view switcher, the strip over a view (Between's open desk), the view; each view scrolls on its own */
+  body.gm-app #gm-page .gm-side { padding: 0; overflow: hidden; display: grid; grid-template-rows: auto auto minmax(0, 1fr); gap: 0; }
+  body.gm-app #gm-page .gm-side > .gm-viewrow { grid-row: 1; }
+  body.gm-app #gm-page .gm-side > .gm-vhead { grid-row: 2; }
+  body.gm-app #gm-page .gm-side > .gm-pane { grid-row: 3; }
   body.gm-app #gm-page .gm-focusbtn { display: inline-flex; align-items: center; gap: 5px; flex: none; border: 0; border-left: 2px solid var(--rule); background: var(--card); color: var(--ink); padding: 0 10px; font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; cursor: pointer; }
   body.gm-app #gm-page .gm-focusbtn kbd { font-size: 9px; padding: 1px 3px; }
   body.gm-app #gm-page .gm-focusbtn[aria-pressed="true"] { background: var(--mustard); color: var(--on-mustard); }
@@ -1253,8 +1239,6 @@ body.as-tab #gm-page .gm-drawer { right: 44px; }
 #gm-page .gm-set-row .seg .chip { flex: 1 1 0; min-height: 44px; }
 #gm-page .gm-set-row small { font: 500 12px/1.35 var(--font-text); color: var(--ink-soft); }
 @media (max-width: 599px) { body #gm-page .gm-sheet { top: 0; right: 0; width: 100vw; border-left: 0; box-shadow: none; z-index: 60; } }
-/* the phase filter (gm/tools.js, W0.5) hides a tab with [hidden]; off, no tab has it */
-#gm-page .gm-tab[hidden], #gm-page .gm-segbar .chip[hidden] { display: none; }
 body.as-tab #gm-page .gm-sheet { right: 44px; }
 @media (min-width: 1600px) { body.as-dock #gm-page .gm-sheet { right: var(--as-w); } }
 @media (max-width: 599px) { body.as-tab #gm-page .gm-sheet { right: 0; } }
@@ -1448,6 +1432,154 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
 #gm-page .gm-cs-panic span { flex: 1 1 14rem; }
 #gm-page .gm-cuebar button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 
+/* ---------- N1b: the places of the night (gm/places.js; design sections 3 and 4) ----------
+   The work column: a view switcher (the place's own views, then Prep · Rules · Cast · iPad pinned at its right end), the view under it. The left
+   column: the Roll (the console) in Personal, Planning and the Score; the place's own column (#gm-left) in Before, Opening and the Aftermath; a
+   slim list of the desks Between. #gm-root[data-place] names the place and [data-left] which column shows; .roll-here: a roll was made in a place
+   whose column is its own, so the Roll joins the column, under a strip back to it. Below 1100 px the views are a chip row under the bar
+   (.gm-vchips: the place's row, then the pinned row), and on a phone the left column is a chip of its own. */
+#gm-page .gm-viewrow { display: none; }
+#gm-page .gm-left { display: grid; gap: 10px; align-content: start; }
+#gm-root[data-left="own"] .gm-console, #gm-root[data-left="slim"] .gm-console { display: none; }
+#gm-page .gm-vchips { display: none; }
+
+/* the view switcher (a laptop) */
+#gm-page .gm-views { display: flex; align-items: stretch; flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+/* a tight row gives way in the place's long labels (cut with an ellipsis, the whole name on hover), never in the keys, the short labels or the
+   pinned four, so no view is ever scrolled out of sight */
+#gm-page .gm-vt { flex: 0 0 auto; min-width: 0; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 11px; border: 0; border-right: 1.5px solid var(--hair); background: none; color: var(--ink); font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .07em; white-space: nowrap; cursor: pointer; }
+#gm-page .gm-vt.gm-vt-long { flex-shrink: 1; }
+#gm-page .gm-vt-l { min-width: 3em; overflow: hidden; text-overflow: ellipsis; }
+#gm-page .gm-vt kbd { flex: none; font-size: 9px; padding: 1px 3px; }
+#gm-page .gm-vt-pin { color: var(--ink-soft); }
+@media (max-width: 1440px) { #gm-page .gm-vt { padding: 0 8px; gap: 5px; } }
+#gm-page .gm-vt[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }
+#gm-page .gm-vt:hover { background: var(--accent); color: var(--on-accent); }
+#gm-page .gm-vt:focus-visible, #gm-page .gm-vt-x:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+#gm-page .gm-vsep { flex: 1 1 0; min-width: 6px; border-right: 1.5px solid var(--hair); }
+/* a view brought from another place: a dashed frame, and its × */
+#gm-page .gm-vt-xw { flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: stretch; border-right: 1.5px solid var(--hair); outline: 1.5px dashed var(--ink-soft); outline-offset: -5px; }
+#gm-page .gm-vt-xw .gm-vt { border-right: 0; padding-right: 4px; }
+#gm-page .gm-vt-x { border: 0; background: none; color: var(--ink-soft); padding: 0 10px 0 4px; font: 700 15px/1 var(--font-mono); cursor: pointer; }
+#gm-page .gm-vt-x:hover { background: var(--accent); color: var(--on-accent); }
+#gm-page .gm-vt-xw:has(.gm-vt[aria-selected="true"]) { outline-color: var(--on-ink); background: var(--rule); }
+#gm-page .gm-vt-xw:has(.gm-vt[aria-selected="true"]) .gm-vt-x { color: var(--on-ink); }
+
+/* the strip over a view: Between's open desk */
+#gm-page .gm-vhead { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-bottom: 2px solid var(--rule); background: var(--inset); }
+#gm-page .gm-vhead-t { font: 900 13px/1.1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; }
+
+/* the left column's own pieces */
+#gm-page .gm-lbody { padding: 10px; display: grid; gap: 8px; }
+#gm-page .gm-lbody > p { margin: 0; }
+#gm-page .gm-lnote { margin: 0; font-size: 12.5px; }
+#gm-page .gm-lnote code { font: 400 11.5px/1.3 var(--font-mono); background: var(--inset); padding: 0 3px; }
+#gm-page .gm-tn-title { margin: 0; font: 900 15px/1.15 var(--font-cond); text-transform: uppercase; letter-spacing: .04em; }
+#gm-page .gm-tn-line { margin: 0; font: 400 13px/1.45 var(--font-text); color: var(--ink-soft); }
+#gm-page .gm-tn-line b { color: var(--ink); font-weight: 700; }
+#gm-page .gm-tn-line code { font: 400 11.5px/1.3 var(--font-mono); background: var(--inset); padding: 0 3px; }
+#gm-page .gm-crew { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; }
+#gm-page .gm-crew-pc { display: grid; gap: 3px; padding: 8px 0; border-bottom: 1px solid var(--hair); }
+#gm-page .gm-crew-pc:first-child { padding-top: 0; }
+#gm-page .gm-crew-pc:last-child { border-bottom: 0; padding-bottom: 0; }
+#gm-page .gm-crew-n { font: 900 15px/1.1 var(--font-cond); letter-spacing: .02em; }
+#gm-page .gm-crew-st { font: 400 13px/1.4 var(--font-text); }
+#gm-page .gm-crew-k { font: 900 10px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; color: var(--ink-soft); }
+#gm-page .gm-crew-turn { justify-self: start; font: 900 10px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .1em; background: var(--mustard); color: var(--on-mustard); padding: 4px 6px; }
+#gm-page .gm-lacts { display: grid; gap: 8px; }
+#gm-page .gm-lacts .btn { width: 100%; text-align: left; }
+#gm-page .gm-left-back { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border: 2px solid var(--rule); background: var(--inset); color: var(--ink); font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; cursor: pointer; }
+#gm-page .gm-left-back:hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+/* Between: the slim list of the desks */
+#gm-page .gm-desklist { display: grid; gap: 0; align-content: start; }
+#gm-page .gm-desklink { display: block; width: 100%; text-align: left; border: 0; border-left: 3px solid transparent; background: none; color: var(--ink); padding: 7px 8px; font: 700 13px/1.25 var(--font-text); cursor: pointer; }
+#gm-page .gm-desklink:hover { background: var(--inset); }
+#gm-page .gm-desklink[aria-current="true"] { border-left-color: var(--accent); background: var(--inset); font-weight: 900; }
+#gm-page .gm-desklink:focus-visible, #gm-page .gm-desk:focus-visible, #gm-page .gm-left-back:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+
+/* the views built here */
+#gm-page .gm-vpane { align-content: start; }
+#gm-page .gm-vtool { display: grid; gap: 10px; align-content: start; min-width: 0; max-width: 1000px; }
+#gm-page .gm-vfall { display: grid; gap: 10px; justify-items: start; padding: 4px 0; }
+#gm-page .gm-vfall .gm-dim { margin: 0; max-width: 60ch; }
+#gm-page .gm-vgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; align-items: start; }
+#gm-page .gm-vcell-body { padding: 10px; display: grid; gap: 8px; min-width: 0; }
+#gm-page .gm-tonight { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: start; }
+#gm-page .gm-tn-body { padding: 10px; display: grid; gap: 10px; }
+#gm-page .gm-tn-body > * { margin: 0; }
+#gm-page .gm-tn-pick { max-width: 420px; }
+#gm-page .gm-tn-run { width: 100%; margin: 0; }
+#gm-page .gm-tn-run td:nth-child(2) { font-family: var(--font-text); }
+#gm-page .gm-tn-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+#gm-page .gm-tn-secs { display: grid; gap: 12px; align-content: start; }
+#gm-page .gm-tn-doc { padding: 4px 12px 2px; font-size: 14.5px; }
+#gm-page .gm-tn-doc > h3:first-child { display: none; }       /* the box's band already names the section */
+#gm-page .gm-desks { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); gap: 12px; align-items: stretch; }
+#gm-page .gm-desk { display: grid; gap: 6px; align-content: start; text-align: left; padding: 12px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); box-shadow: 3px 3px 0 var(--shadow-ink); cursor: pointer; font: inherit; }
+#gm-page button.gm-desk:hover { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+#gm-page button.gm-desk:hover .gm-desk-d { color: inherit; }
+#gm-page .gm-desk-t { font: 900 15px/1.1 var(--font-cond); text-transform: uppercase; letter-spacing: .05em; }
+#gm-page .gm-desk-d { font: 400 13px/1.4 var(--font-text); color: var(--ink-soft); }
+#gm-page .gm-desk-gen { cursor: default; }
+#gm-page .gm-desk-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+/* Opportunities: the players' board over the GM's own cards */
+#gm-page .gm-opps-part { display: grid; gap: 8px; align-content: start; }
+#gm-page .gm-opps-h { margin: 0; font: 900 11px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .14em; color: var(--ink-soft); border-bottom: 2px solid var(--rule); padding-bottom: 4px; }
+#gm-page .gm-opps-gm { display: grid; gap: 10px; }
+/* the GM's cards are the book's ruled index card, typed onto (prep.css .oc-edit). display.css draws that card on the iPad and the GM bundle does not
+   load it, so the card's base is here too, with the same values: without it the card fell apart into loose lines on the GM page */
+#gm-page .gm-opps .oc-card { --oc-stock: #fbf3ea; --oc-rule: #c9ddd6; --oc-margin: #dfa0a6; --oc-lab: #9b3a3a; --oc-ink: #3b3592; background: var(--oc-stock); color: var(--oc-ink); font-family: "Courier Prime", "Courier New", monospace; box-sizing: border-box; }
+#gm-page .gm-opps .oc-row { display: grid; grid-template-columns: 24% 1.4em minmax(0, 1fr); align-items: end; border-bottom: 2px solid var(--oc-rule); min-height: 1.95em; }
+#gm-page .gm-opps .oc-row.oc-head { border-bottom: 5px double var(--oc-margin); min-height: 2.3em; }
+#gm-page .gm-opps .oc-lab { font-size: .58em; letter-spacing: .04em; color: var(--oc-lab); text-align: right; padding: 0 .7em .35em 0; white-space: nowrap; overflow: hidden; }
+#gm-page .gm-opps .oc-colon { align-self: stretch; display: flex; align-items: flex-end; justify-content: center; border-left: 1.5px solid var(--oc-margin); border-right: 1.5px solid var(--oc-margin); font-size: .58em; color: var(--oc-lab); padding-bottom: .35em; }
+#gm-page .gm-opps .oc-val { padding: 0 .6em .18em; font-size: 1em; line-height: 1.25; overflow-wrap: anywhere; min-width: 0; }
+#gm-page .gm-opps .oc-title { font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: #14110e; font-size: .74em; padding-bottom: .4em; }
+@media (min-width: 900px) { #gm-page .gm-opps { grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); align-items: start; } }
+
+@media (min-width: 1366px) {
+  #gm-page .gm-tonight { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+}
+/* a laptop: the switcher above the work; the left column is the place's */
+@media (min-width: 1100px) {
+  body.gm-app #gm-page .gm-viewrow { display: flex; align-items: stretch; min-width: 0; border-bottom: 2px solid var(--rule); background: var(--paper); }
+  body.gm-app #gm-page #gm-root[data-left="slim"]:not(.focus) .gm-main { grid-template-columns: clamp(170px, 14vw, 220px) minmax(0, 1fr); }
+  body.gm-app #gm-root.focus .gm-left { display: none; }
+  /* the Roll brought into a place whose column is its own: the strip back to the column on top, the Roll under it */
+  body.gm-app #gm-page #gm-root.roll-here:not(.focus) .gm-main { grid-template-rows: auto minmax(0, 1fr); }
+  body.gm-app #gm-page #gm-root.roll-here:not(.focus) .gm-main > .gm-left { grid-column: 1; grid-row: 1; overflow: visible; padding-bottom: 0; }
+  body.gm-app #gm-page #gm-root.roll-here:not(.focus) .gm-main > .gm-console { grid-column: 1; grid-row: 2; }
+  body.gm-app #gm-page #gm-root.roll-here:not(.focus) .gm-main > .gm-side { grid-column: 2; grid-row: 1 / span 2; }
+}
+@media (min-width: 1600px) {
+  body.as-dock.gm-app #gm-page #gm-root[data-left="slim"]:not(.focus) .gm-main { grid-template-columns: clamp(170px, 14vw, 220px) minmax(0, 1fr) var(--as-w); }
+}
+/* below a laptop: the views as a chip row stuck under the bar, the place's on top and the pinned under it */
+@media (max-width: 1099px) {
+  body.gm-app #gm-page .gm-vchips { display: grid; justify-self: stretch; position: sticky; top: var(--gm-bar-h, 46px); z-index: 4; margin: 0 calc(-1 * clamp(16px, 3vw, 36px)) 10px; border-left: 0; border-right: 0; background: var(--paper); }
+  #gm-page .gm-vc-own, #gm-page .gm-vc-pin { display: flex; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  #gm-page .gm-vc-pin { border-top: 1.5px solid var(--rule); }
+  #gm-page .gm-vchips .chip { flex: 1 0 auto; display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 6px 10px; font-size: 10.5px; letter-spacing: .04em; white-space: nowrap; }
+  #gm-page .gm-vchips .chip[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }
+  #gm-page .gm-vchips .gm-vc-left { flex: 0 0 auto; background: var(--inset); }
+  #gm-page .gm-vchips .gm-vc-left[aria-selected="true"] { background: var(--rule); color: var(--on-ink); }
+  #gm-page .gm-vchips .gm-vc-drawer { flex: 0 0 auto; color: var(--ink-soft); }
+  #gm-page .gm-vc-xw { flex: 1 0 auto; display: inline-flex; outline: 1.5px dashed var(--ink-soft); outline-offset: -5px; }
+  #gm-page .gm-vc-xw .gm-vc { flex: 1 0 auto; border-right: 0; }
+  #gm-page .gm-vchips .gm-vc-x { flex: 0 0 auto; padding: 6px 8px; font: 700 15px/1 var(--font-mono); }
+  #gm-root[data-left="slim"] .gm-main { grid-template-columns: minmax(150px, .32fr) minmax(0, 1fr); }
+}
+@media (min-width: 600px) and (max-width: 1099px) {
+  #gm-page .gm-vchips .gm-vc-left { display: none; }      /* both columns show: the left needs no chip */
+}
+@media (max-width: 599px) {
+  #gm-root[data-left="slim"] .gm-left { display: none; }   /* a phone: the desks are the view */
+  #gm-root[data-left="slim"] .gm-main { grid-template-columns: minmax(0, 1fr); }
+  #gm-page .gm-tn-pick { max-width: none; }
+}
+@media (pointer: coarse) {
+  #gm-page .gm-vchips .chip, #gm-page .gm-desklink, #gm-page .gm-left-back { min-height: 44px; }
+}
 /* ---------- N4: the Roll (gm/roll.js; design section 5): one card in the left column of Personal, Planning and Score ----------
    Position and Effect as two segmented rows (the size of a consequence under Position), the one "If it goes wrong" line, Stamp it on the iPad
    (or what is up, Take it down and Stamp again), They rolled 1-4 with the Dots beside the heading; under it the result card (the sizer's strip

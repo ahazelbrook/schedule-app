@@ -71,6 +71,7 @@ const CHECKS = [
   ['checks/runtime/gm-autopilot.e2e.mjs', 'the iPad autopilot: a clock overlay, Take over, secrecy, lights out, display-only expiry (8879)'],
   ['checks/runtime/hard-start.e2e.mjs', 'the hard start and the ON AIR lamp on the iPad, switches off and on (9060)'],
   ['checks/runtime/gm-tools-inline.e2e.mjs', 'the 18 tools inline: bound to a container at 330 and 900 px, real content, close asks the shell, no request after unbind (8951; starts its own demo night)'],
+  ['checks/runtime/gm-places.e2e.mjs', 'the places of the night: Before, Ctrl+arrows, entering and following the phase, extra views, Prep at the heading, Find, the desks, Call the Aftermath, the memory, the phone (8860; starts its own demo night)'],
   ['checks/runtime/gm-map-spotted.e2e.mjs', 'the Spotted beat on the Run map: zoom, sting, fill, one alarm tick, back, inside 3 seconds; two GM pages tick once (9071)'],
   ['checks/runtime/gm-map-flashback.e2e.mjs', 'the flashback filter: Flashback and Pin on the site\'s toolbar, grain and the Earlier caption on the iPad, a tap on Back clears it, switch off and on (9072)'],
   ['checks/runtime/gm-map-threat.e2e.mjs', 'the threat on the map: a stamp drops a guard or door glyph inside the crew room, none on the iPad card, it clears with the stamp (9073)'],

@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -95,6 +96,7 @@ try {
   const errors = [];
   async function open(user, hash, { width = 1280, height = 900, mobile = false, ctx = null } = {}) {
     const c = ctx || await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width, height }, serviceWorkers: 'block', isMobile: mobile, hasTouch: mobile, deviceScaleFactor: mobile ? 2 : 1, acceptDownloads: true });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
     await c.addInitScript(() => { try { localStorage.setItem('b68.gm.capbar', '1'); } catch (e) { /* the capture bar is off by default; these tests use it */ } });
     const page = await c.newPage();
@@ -115,6 +117,7 @@ try {
     const LAZY = ['gm-page.js', 'gm/console.js', 'gm.css', 'maps/map-kit.js', 'display-page.js', 'stt.js', 'campaign.js', 'crewsheet.js', 'season.js'];
     for (const user of [GM, PLAYER]) {
       const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, serviceWorkers: 'block' });
+      await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
       const page = await c.newPage(), asked = [];
       page.on('request', (r) => { const u = new URL(r.url()); if (u.origin === BASE) asked.push(u.pathname.slice(1)); });
       page.on('pageerror', (e) => errors.push(user + ' lazy pageerror: ' + e.message));
@@ -484,7 +487,7 @@ try {
     await G.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     await G.page.keyboard.press('d');
     check(await G.page.$eval('#gm-dt', (p) => !p.hidden && /Downtime · personal business/.test(p.querySelector('.gm-band').textContent)), 'D opens the Downtime panel');
-    check(await G.page.$eval('.gm-tabs', (t) => t.scrollWidth <= t.clientWidth + 1 && [...t.querySelectorAll('.gm-tab')].every((x) => x.getBoundingClientRect().right <= t.getBoundingClientRect().right + 1 && !!x.querySelector('kbd'))), 'the ten side tabs fit one row at 1280 px, each with its key');
+    check(await G.page.$eval('.gm-views', (t) => t.scrollWidth <= t.clientWidth + 1 && [...t.querySelectorAll('.gm-vt')].every((x) => x.getBoundingClientRect().right <= t.getBoundingClientRect().right + 1 && !!x.querySelector('kbd'))), 'the Score\'s views and Downtime (brought in by D, with its ×) fit one row, each with its key');
     check(await G.page.waitForSelector('#gm-dt [data-gm="dt-who"][data-id="dt-mags"]', { timeout: 15000 }).then(() => true, () => false), 'the PCs filed a moment ago appear as chips (the characters snapshot reaches the open panel)');
     await G.page.click('#gm-dt [data-gm="dt-who"][data-id="dt-mags"]');
     check(await G.page.$eval('#gm-dt-vice', (s) => s.value) === 'Gambling' && await G.page.$eval('#gm-dt-purveyor', (i) => i.value) === 'Old Mo, Mo’s Bar', 'picking the PC prefills the vice and purveyor from their sheet');
@@ -571,15 +574,15 @@ try {
     await V.page.click('[data-gm="menu"]');
     if (w < 600) {
       check(await V.page.$eval('.gm-segbar', (s) => getComputedStyle(s).display !== 'none'), 'phone: the segmented bar shows');
-      const segs = await V.page.$$eval('.gm-segbar .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return { seg: x.getAttribute('data-seg'), top: Math.round(r.top), right: Math.round(r.right) }; }));
+      const segs = await V.page.$$eval('.gm-vchips .chip', (c) => c.map((x) => { const r = x.getBoundingClientRect(); return { seg: x.getAttribute('data-pv') || x.getAttribute('data-seg'), top: Math.round(r.top), right: Math.round(r.right) }; }));
       const segTop = await V.page.$eval('.gm-segbar', (s) => Math.round(s.getBoundingClientRect().top));
       /* since N0 the phase rail and the cue bar are always drawn, between the bar and the segments (the shell's band replaces all of them later) */
       const above = await V.page.evaluate(() => Math.round(Math.max(...['.gm-bar', '#gm-phaserail', '#gm-cuebar', '.gm-curfew'].map((q) => document.querySelector(q)).filter(Boolean).map((e) => e.getBoundingClientRect().bottom))));
       const rowsOf = segs.reduce((m, s) => { m[s.top] = (m[s.top] || 0) + 1; return m; }, {});
-      check(segs.length === 12 && JSON.stringify(Object.values(rowsOf)) === '[6,6]' && segs.every((s) => s.right <= w) && Math.abs(segTop - above) <= 1, 'phone: twelve segments in two rows of six under the bar and the spine\'s bars, none off screen ' + JSON.stringify([segTop, above, rowsOf, segs.map((s) => s.right)]));
+      check(segs.map((x) => x.seg).join() === 'console,run,chase,scenes,location,prep,rules,npc,ipad,state' && JSON.stringify(Object.values(rowsOf)) === '[5,5]' && segs.every((s) => s.right <= w) && Math.abs(segTop - above) <= 1, 'phone: the Score\'s chips (the Roll, its views; the pinned four and the drawer) in two rows under the bar and the spine\'s bars, none off screen ' + JSON.stringify([segTop, above, rowsOf, segs.map((s) => s.right)]));
       /* the label's own text box inside the segment's box (scrollWidth overstates on these inline-flex chips, and text-overflow does
          not reach the text inside them, so a cut label would show no ellipsis) */
-      check(await V.page.$$eval('.gm-segbar .chip', (c) => c.every((x) => { const rg = document.createRange(); rg.selectNodeContents(x); const t = rg.getBoundingClientRect(), b = x.getBoundingClientRect(), s = getComputedStyle(x); return t.width > 0 && t.left >= b.left + parseFloat(s.borderLeftWidth) - 0.5 && t.right <= b.right - parseFloat(s.borderRightWidth) + 0.5 && b.height >= 40; })), 'phone: every segment label shows whole, each 40 px or taller');
+      check(await V.page.$$eval('.gm-vchips .chip', (c) => c.every((x) => { const rg = document.createRange(); rg.selectNodeContents(x); const t = rg.getBoundingClientRect(), b = x.getBoundingClientRect(), s = getComputedStyle(x); return t.width > 0 && t.left >= b.left + parseFloat(s.borderLeftWidth) - 0.5 && t.right <= b.right - parseFloat(s.borderRightWidth) + 0.5 && b.height >= 40; })), 'phone: every segment label shows whole, each 40 px or taller');
       check(await V.page.$eval('.gm-tray', (t) => getComputedStyle(t).display !== 'none' && t.getBoundingClientRect().right <= innerWidth + 1) && await V.page.$eval('.gm-tray [data-tray="clear"]', (c) => getComputedStyle(c).display !== 'none') && await V.page.$eval('#gm-bar-stt', (p) => getComputedStyle(p).display === 'none'), 'phone: the bar shows the iPad tray, its dot and Clear (no Listening pill while the transcriber was never set up)');
       const cols = await V.page.$eval('#gm-buttons', (b) => getComputedStyle(b).gridTemplateColumns.split(' ').length);
       check(cols === 4 && (await V.page.$$('#gm-buttons .gm-btn')).length === 4 && await V.page.$$eval('#gm-buttons .gm-btn', (bs) => bs.every((b) => b.getBoundingClientRect().height >= 44)), 'phone: the four situations are one row of the Roll (They rolled 1-4), each 44 px or taller');
@@ -602,7 +605,8 @@ try {
       await V.page.selectOption('#gm-now-s', '');
       /* the Downtime segment: the PC and the two vice buttons on the first screen (clear of the Capture button), the card's d100 box on
          screen after the tap, then the two cards; nothing too wide or too small (taps, not clicks: a touch screen) */
-      await V.page.tap('[data-gm="seg"][data-seg="downtime"]'); await V.page.evaluate(() => scrollTo(0, 0));
+      await V.page.evaluate(() => window.B68GmPage.goPlace('pb', { navigateOnly: true }));      /* Downtime is Personal's first view */
+      await V.page.tap('.gm-vchips [data-pv="downtime"]'); await V.page.evaluate(() => scrollTo(0, 0));
       check(await V.page.waitForSelector('#gm-dt [data-gm="dt-who"][data-id="dt-mags"]', { timeout: 10000 }).then(() => true, () => false), 'phone: the Downtime segment shows the panel with the PCs');
       await V.page.tap('#gm-dt [data-gm="dt-who"][data-id="dt-mags"]');
       if (await V.page.$eval('#gm-dt [data-gm="dt-act"][data-v="indulge"]', (b) => b.getAttribute('aria-pressed') !== 'true')) await V.page.tap('#gm-dt [data-gm="dt-act"][data-v="indulge"]');
@@ -647,6 +651,7 @@ try {
   /* ---- the identity unknown (/api/me fails): nothing is purged; known as a player: purged ---- */
   {
     const U = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': PLAYER }, serviceWorkers: 'block' });
+    await U.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     const up = await U.newPage();
     up.on('pageerror', (e) => errors.push('unknown pageerror: ' + e.message));
     await up.route('**/api/me', (r) => r.abort());

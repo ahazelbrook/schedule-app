@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -57,6 +58,7 @@ try {
   if (SHOTS) mkdirSync(SHOTS, { recursive: true });
   const browser = await chromium.launch({ channel: process.env.PW_CHANNEL || undefined });
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 900 }, extraHTTPHeaders: { 'X-Dev-User': GM }, reducedMotion: 'reduce' });
+  await ctx.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
   const page = await ctx.newPage();
   const errors = [], reqs = [], relay = [];
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));

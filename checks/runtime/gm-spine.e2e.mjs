@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const HERE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -63,6 +64,7 @@ try {
   const errors = [];
   async function open(route, { w = 1280, h = 800, user = GM, init = null, record = null } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width: w, height: h }, serviceWorkers: 'block' });
+    await c.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
     await c.addInitScript(() => { window.__B68_POLL_MS = 700; });
     if (init) await c.addInitScript(init);
     const page = await c.newPage();
@@ -75,15 +77,12 @@ try {
     return { c, page };
   }
   const shot = async (page, dir, name) => { if (dir) { mkdirSync(dir, { recursive: true }); await page.screenshot({ path: path.join(dir, name + '.png'), animations: 'disabled' }); } };
-  const strip = (page) => page.evaluate(() => ({
-    tabs: document.querySelector('.gm-tabrow').outerHTML, seg: document.querySelector('.gm-segbar').outerHTML,
-    menu: document.querySelector('.gm-menu-list').innerHTML, panes: [].map.call(document.querySelectorAll('.gm-pane'), (e) => e.getAttribute('data-pane')).join(',')
-  }));
-  const chips = (page) => page.$$eval('.gm-segbar .chip', (els) => els.filter((e) => !e.hidden).map((e) => e.getAttribute('data-seg')));   /* the phone bar is display:none at 1280 px, so [hidden] is what the filter sets */
-  const shown = (page, sel) => page.$$eval(sel, (els) => els.filter((e) => !e.hidden && e.offsetParent !== null).map((e) => e.getAttribute('data-panel') || e.getAttribute('data-seg')));
+  /* the view switcher's ids, in order (N1b: the places of the night; the page follows the night's phase to its place) */
+  const views = (page) => page.$$eval('.gm-views [data-pv]', (els) => els.filter((e) => !e.hidden && e.offsetParent !== null).map((e) => e.getAttribute('data-pv')));
+  const placeOf = (page) => page.$eval('#gm-root', (r) => r.getAttribute('data-place'));
 
   const A = await open('#gm');
-  const count = (page) => page.evaluate(() => ({ tabs: [].filter.call(document.querySelectorAll('.gm-tab'), (e) => !e.hidden && e.offsetParent !== null).length, chips: [].filter.call(document.querySelectorAll('.gm-segbar .chip'), (e) => !e.hidden).length, hasRail: !!document.querySelector('#gm-phaserail'), ws: !!document.querySelector('#gm-menu-workshop'), awayClass: document.body.classList.contains('ws-away'),
+  const count = (page) => page.evaluate(() => ({ tabs: [].filter.call(document.querySelectorAll('.gm-views [data-pv]'), (e) => !e.hidden && e.offsetParent !== null).length, chips: [].filter.call(document.querySelectorAll('.gm-vchips .chip'), (e) => !e.hidden).length, hasRail: !!document.querySelector('#gm-phaserail'), ws: !!document.querySelector('#gm-menu-workshop'), awayClass: document.body.classList.contains('ws-away'),
     mirror: [...document.querySelectorAll('[data-gm="mirror"]')].filter((e) => e.offsetParent !== null).length, screenAway: [...document.querySelectorAll('#as-screen')].some((e) => getComputedStyle(e).display === 'none') }));
   await A.page.waitForSelector('#gm-phaserail .gm-pr-chip', { timeout: 8000 });
   const before = await count(A.page);
@@ -95,12 +94,12 @@ try {
   check(await A.page.evaluate(() => { const r = document.querySelector('#gm-phaserail'), c = document.querySelector('#gm-cuebar'); return !!r && !!c; }), 'the rail and the cue bar are both drawn with nothing stored');
   await tapRail('plan');
   await until(async () => (await A.page.$eval('[data-rail="plan"]', (e) => e.getAttribute('data-state'))) === 'now', 4000);
-  const tabs = await shown(A.page, '.gm-tab');
-  check(tabs.includes('score') && tabs.includes('cards') && !tabs.includes('chase') && !tabs.includes('scenes'), 'Planning: the tabs follow within the tap: ' + tabs.join(','));
+  check(await until(async () => (await placeOf(A.page)) === 'plan', 4000), 'the rail\'s Planning: the page follows the night to Planning');
+  check((await views(A.page)).join() === 'cards,corkboard,run,score,prep,rules,npc,ipad', 'Planning\'s views: ' + (await views(A.page)).join(','));
   const bandSet = await until(async () => { const d = (await api('GET', '/gm/ambient')).json; return JSON.stringify(d || {}).includes('"plan"'); }, 6000);
   check(bandSet, 'the ambient document carries band.phase plan');
-  await tapRail('all'); check((await shown(A.page, '.gm-tab')).includes('chase'), 'All tools shows every tab again');
-  await tapRail('pb'); check(await A.page.$eval('[data-rail="pb"]', (e) => e.getAttribute('data-state')) === 'now', 'Back is allowed');
+  check(!(await A.page.$('#gm-phaserail [data-rail="all"]')), 'there is no All tools: nothing is hidden by the phase (a key brings any view to the place)');
+  await tapRail('pb'); check(await A.page.$eval('[data-rail="pb"]', (e) => e.getAttribute('data-state')) === 'now' && await until(async () => (await placeOf(A.page)) === 'pb', 4000), 'Back is allowed, and the page follows it to Personal');
   await A.page.click('[data-gm="menu"]');
   check((await A.page.$$('#gm-menu-workshop, #gm-menu-switchboard')).length === 0, 'the Menu has no Workshop and no Switchboard line');
   check((await A.page.$$('#gm-menu-settings')).length === 0, 'and no Settings line: the Settings are in the iPad view (N5)');
@@ -110,7 +109,7 @@ try {
   const rows = await A.page.$$eval('#gm-ipad-settings [data-set-row]', (e) => e.map((x) => x.getAttribute('data-set-row')));
   check(rows.includes('phoneCards') && rows.includes('mirror'), 'phone mission cards and the screen mirror are in the iPad view\'s Settings: ' + rows.join(' | '));
   await shot(A.page, SHOTS, 'settings-1280');
-  console.log('TOOLCOUNT main page tabs=' + before.tabs + ' | phone chips=' + before.chips);
+  console.log('VIEWCOUNT main page views=' + before.tabs + ' | phone chips=' + before.chips);
   await shot(A.page, SHOTS, 'rail-1280');
   const Pn = await open('#gm', { w: 390, h: 844 }); await Pn.page.waitForSelector('#gm-phaserail .gm-pr-chip', { timeout: 10000 }); await shot(Pn.page, SHOTS, 'rail-390');
   check(await Pn.page.$eval('#gm-phaserail', (e) => e.getBoundingClientRect().width <= 390), 'the rail fits a 390 px phone');

@@ -1564,6 +1564,7 @@
     if (me.cogm) { cogmStop(me); me.cogm = null; }
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
     b09Unmount(me); b17Unmount(me); knUnmount(me); csUnmount(me);
+    if (me.places) { try { me.places.destroy(); } catch (e) {} me.places = null; }      /* N1b: its inline tools unbound, its listeners gone */
     if (me.mission) { try { me.mission.flush(); } catch (e) {} me.mission.destroy(); me.mission = null; }   /* a publish that is waiting goes now */
     apUnmount(me);
     ipadTrayUnmount(me);       /* the tray's timer and its place in the module's list, and the live-sync listener */
@@ -1714,6 +1715,7 @@
     S.status = 'ready'; S.prepKey = null;
     mountAssist();
     layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack(); apMount(); mountMission(); mountNight(); b09Mount(); csMount(); b17Mount();
+    placesMount();      /* N1b: the place and its view, once the panes are drawn and the night controller is there */
     /* listening: every 5 s while the iPad tab is open, every 15 s otherwise (the top bar shows it) */
     if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden) { if (S.panel === 'ipad' || n2 % 3 === 0) loadStt(); renderBeat(); } }, 5000); }
     if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
@@ -2246,20 +2248,27 @@
       renderBar();
     }, function () { AM.peeked = false; });
   }
+  /* N1b: the places of the night (gm/places.js) draw the view switcher (.gm-views), the chip row below 1100 px (.gm-vchips, in the old segbar's
+     place), the place's own left column (#gm-left, beside the console: #gm-root[data-left] says which of the two shows), the strip over a view
+     (#gm-vhead) and the pane that holds tools and built views (#gm-vpane). Without the module the switcher lists every pane, as the tabs did. */
+  var PANE_TABS = [['prep', 'Prep', 'R'], ['rules', 'Rules', 'T'], ['location', 'Location roller', 'B'], ['scenes', 'Street', 'S'], ['score', 'Score generator', 'J'], ['chase', 'Chase', 'C'], ['npc', 'Cast', 'N'], ['downtime', 'Downtime', 'D'], ['cards', 'Opportunities', 'O'], ['ipad', 'iPad', 'I'], ['run', 'The site', 'G']];
   function layout() {
-    var segs = [['console', 'Console'], ['prep', 'Prep'], ['location', 'Location'], ['scenes', 'Street'], ['score', 'Score'], ['chase', 'Chase'], ['npc', 'NPC'], ['downtime', 'Downtime'], ['cards', 'Cards'], ['rules', 'GM screen'], ['ipad', 'iPad'], ['state', 'State']];
-    var tabs = [['prep', 'Prep', 'R'], ['rules', 'GM screen', 'T'], ['location', 'Location', 'B'], ['scenes', 'Street', 'S'], ['score', 'Score', 'J'], ['chase', 'Chase', 'C'], ['npc', 'NPC', 'N'], ['downtime', 'Downtime', 'D'], ['cards', 'Cards', 'O'], ['ipad', 'iPad', 'I']];
-    var TL = W.B68GmTools, ex = TL ? TL.extras() : [];   /* W0.5: the tool registry (gm/tools.js) adds tools registered after the built-ins */
-    if (ex.length) { segs = segs.concat(ex.map(function (t) { return [t.id, t.label]; })); tabs = tabs.concat(ex.map(function (t) { return [t.id, t.label, t.key]; })); }   /* the phase filter hides tabs in syncPanels, never here */
+    var bare = W.B68GmPlaces ? '' : PANE_TABS.map(function (t) { return '<button type="button" class="gm-vt" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('');
     S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '">' + barHtml() +
-      '<div class="seg gm-segbar" role="tablist" aria-label="Show">' + segs.map(function (s) { return '<button type="button" class="chip" role="tab" data-gm="seg" data-seg="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
+      '<div class="seg gm-segbar gm-vchips" role="tablist" aria-label="Views"></div>' +
       '<div class="gm-main">' +
       /* N4: the Roll (gm/roll.js, design section 5): one card (Position, Effect, the line, Stamp it on the iPad, They rolled 1-4), the result card,
          Blade's Rack, and the folds (Scene, Earlier, More tables). The section is one block: N1b places it whole in a place's left column. */
       '<section class="gm-col gm-console" id="gm-roll" aria-label="The roll">' + (W.B68GmRoll ? W.B68GmRoll.shell() : '<p class="gm-note bad">The roll did not load: reload the page.</p>') + '</section>' +
-      '<section class="gm-col gm-side" aria-label="Side panel"><div class="gm-tabrow"><div class="gm-tabs" role="tablist" aria-label="Side panel">' +
-      tabs.map(function (t) { return '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + (t[2] ? ' <kbd>' + t[2] + '</kbd>' : '') + '</button>'; }).join('') +
-      '</div><button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the console to its keys, to read (F)">Focus <kbd>F</kbd></button></div>' + '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div>' + '<div class="gm-pane" data-pane="score" id="gm-score"></div><div class="gm-pane" data-pane="chase" id="gm-chase"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="downtime" id="gm-dt"></div>' + '<div class="gm-pane" data-pane="cards" id="gm-cards"></div><div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div>' + '<div class="gm-pane gm-runv" data-pane="run" id="gm-runv"></div>' + ex.map(function (t) { return '<div class="gm-pane" data-pane="' + t.id + '" id="gm-x-' + t.id + '"></div>'; }).join('') + '</section>' +
+      '<section class="gm-col gm-left" id="gm-left" aria-label="The place" hidden></section>' +
+      '<section class="gm-col gm-side" aria-label="The place’s work"><div class="gm-viewrow"><div class="gm-views" role="tablist" aria-label="Views">' + bare + '</div>' +
+      '<button type="button" class="gm-focusbtn" data-gm="focus" aria-pressed="false" title="Shrinks the left column to the roll keys, to read (F)">Focus <kbd>F</kbd></button></div>' +
+      '<div class="gm-vhead" id="gm-vhead" hidden></div>' +
+      '<div class="gm-pane" data-pane="prep" id="gm-prep"></div>' + '<div class="gm-pane" data-pane="location" id="gm-loc"></div><div class="gm-pane" data-pane="scenes" id="gm-scn"></div>' + '<div class="gm-pane" data-pane="score" id="gm-score"></div><div class="gm-pane" data-pane="chase" id="gm-chase"></div>' + '<div class="gm-pane" data-pane="npc" id="gm-npc"></div><div class="gm-pane" data-pane="downtime" id="gm-dt"></div>' +
+      /* Opportunities: the players' board (bound here by the places) over the GM's own cards (renderCards) */
+      '<div class="gm-pane" data-pane="cards" id="gm-cards"><section class="gm-opps-part"><h3 class="gm-opps-h">From the players</h3><div class="gm-opps-players" id="gm-opps-players"></div></section>' +
+      '<section class="gm-opps-part"><h3 class="gm-opps-h">From the GM</h3><div class="gm-opps-gm" id="gm-opps-gm"></div></section></div>' +
+      '<div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div>' + '<div class="gm-pane gm-runv" data-pane="run" id="gm-runv"></div>' + '<div class="gm-pane gm-vpane" data-pane="view" id="gm-vpane"></div></section>' +
       '</div>' + drawerHtml() +
       '<div class="gm-foot" id="gm-foot"></div>' +
       '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button>' +
@@ -2520,7 +2529,8 @@
 
   /* ---------- Find (Ctrl+K or /): an overlay over the page ---------- */
   function findIndex() {
-    var out = [], c = part('campaign') || {}, lc = function (x) { return str(x).toLowerCase(); }, known = {}, v = S.prepView;
+    /* N1b: every place ("Go to Planning") and every view and tool first, so a word that names one of them lands there before a line of the notes */
+    var out = S.places ? S.places.findEntries() : [], c = part('campaign') || {}, lc = function (x) { return str(x).toLowerCase(); }, known = {}, v = S.prepView;
     if (v && v.note) {
       Object.keys(v.secs || {}).forEach(function (id) { var x = v.secs[id]; out.push({ kind: 'Prep', title: x.head || v.note.title, text: findText(x.src), go: { t: 'prep', id: id } }); });
       (v.note.blocks || []).forEach(function (b) { if (isObj(b) && b.k === 'embed') out.push({ kind: 'Prep', title: str(b.from).split('/').pop().replace(/\.md$/i, '') + (b.heading ? ' › ' + b.heading : ''), text: findText(b.src), go: { t: 'embed', from: str(b.from) } }); });
@@ -2553,7 +2563,7 @@
   function findRender(q) {
     var list = $q('#gm-find-list'); if (!list) return;
     var hits = S.findHits = findHits(S.findIdx || [], q, 30).concat(rulesFindHits(q)); S.findSel = 0;
-    list.innerHTML = !str(q).trim() ? '<li class="gm-find-none">Prep, the screen, the rules, NPCs, PCs, factions, clocks, callbacks, the chase, and what you filed tonight.</li>'
+    list.innerHTML = !str(q).trim() ? '<li class="gm-find-none">The places and every tool, Prep, the screen, the rules, NPCs, PCs, factions, clocks, callbacks, the chase, and what you filed tonight.</li>'
       : !hits.length ? '<li class="gm-find-none">Nothing matches “' + esc(q) + '”.</li>'
       : hits.map(function (h, i) {
         return '<li><button type="button" class="gm-find-hit" data-gm="find-go" data-i="' + i + '" aria-selected="' + (i === 0) + '"><span class="gm-find-kind">' + esc(h.kind) + '</span><b>' + esc(h.title) + '</b>' +
@@ -2574,7 +2584,9 @@
     var g = h.go;
     if (!g) { if (S.api && S.api.copy) S.api.copy(str(h.title), 'Copied.'); return; }
     findClose();
-    if (g.t === 'prep') { prepGo(g.id); flash($q('#' + g.id)); }
+    if (g.t === 'place') goPlace(g.id);                       /* N1b: a place moves the night there, as its chip in the band does */
+    else if (g.t === 'view') openView(g.id);                  /* a view or a tool: in the place the GM is in */
+    else if (g.t === 'prep') { prepGo(g.id); flash($q('#' + g.id)); }
     else if (g.t === 'embed') { setPanel('prep'); var em = $q('#gm-prep .pp-embed[data-from="' + g.from.replace(/"/g, '') + '"]'); if (em) { try { em.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) {} flash(em); } }
     else if (g.t === 'heading') { setPanel('prep'); var hd = prepPartEl(g); if (hd) { prepScroll(hd); flash(hd); } else toast('That heading is not in this note.', true); }
     else if (g.t === 'screen') { setPanel('rules'); var fq = $q('#gm-gs-q'); if (fq && fq.value) { fq.value = ''; filterScreen(''); } screenJump(g.id); flash($q('#gm-rules [data-gs="' + str(g.id).replace(/"/g, '') + '"]')); }
@@ -2614,7 +2626,7 @@
 
   function redrawAll() {
     if (!S || S.status !== 'ready' || !$q('#gm-root')) return;
-    syncHead(); renderBar(); syncPanels(); renderConsole(); renderPrep(); renderRules(); renderLocation(); renderRun(); renderScenes(); renderNpcs(); renderScore(); renderChase(); renderDowntime(); renderCards(); renderIpad(); renderRail(); renderCapture(); extraSync(); syncSave();
+    syncHead(); renderBar(); syncPanels(); renderConsole(); renderPrep(); renderRules(); renderLocation(); renderRun(); renderScenes(); renderNpcs(); renderScore(); renderChase(); renderDowntime(); renderCards(); renderIpad(); renderRail(); renderCapture(); syncSave();
   }
   /* the pack's export date: in the Menu in full, in the bar only when stale or an offline copy */
   function syncHead() {
@@ -2635,40 +2647,76 @@
     rollFoldSync(r);      /* N4: the Roll's folds (Scene, Earlier, More tables) */
     var fab = $q('.gm-fab'); if (fab) fab.setAttribute('aria-expanded', String(!!S.capOpen)); r.classList.toggle('cap-open', !!S.capOpen);
     r.classList.toggle('prep-wide', S.panel === 'prep' && !!S.prepWide);
-    r.classList.toggle('focus', !!S.prepWide);       /* the laptop layout: Focus (or Prep's Wide) shrinks the console on every tab */
-    toolsSync(r);
+    r.classList.toggle('focus', !!S.prepWide);       /* the laptop layout: Focus (or Prep's Wide) shrinks the left column to the roll keys in every place */
     r.querySelectorAll('[data-gm="prep-wide"], [data-gm="focus"]').forEach(function (b) { b.setAttribute('aria-pressed', String(!!S.prepWide)); });
     drawerSync();
+    if (S.places) S.places.sync();       /* N1b: the switcher, the chips and the left column follow; so does the page, when the night's phase moved */
   }
-  /* W0.5: the phase filter (gm/tools.js) hides the tabs of other phases; off, nothing is hidden. The tab on screen is always kept. */
-  var toolsOff = null;
-  function toolsSync(r) {
-    var T = W.B68GmTools; if (!T) return;
-    if (!toolsOff && typeof T.onChange === 'function') toolsOff = T.onChange(function () { if (S && S.status === 'ready' && $q('#gm-root')) syncPanels(); });
-    var cur = S.seg === 'side' ? S.panel : S.seg;
-    r.querySelectorAll('.gm-tab, .gm-segbar .chip').forEach(function (b) {
-      var id = b.getAttribute('data-panel') || b.getAttribute('data-seg');
-      if (!T.get(id)) return;
-      var show = T.visible(id, { current: id === S.panel || id === cur ? id : '' });
-      if (b.hidden === !show) return;
-      b.hidden = !show;
-    });
-  }
-  /* a tool registered after the built-ins (gm/tools.js, with a mount): drawn into its pane whenever its tab is the one on screen */
-  function extraSync() {
-    var T = W.B68GmTools, t = T && S ? T.get(S.panel) : null; if (!t || t.builtin || typeof t.mount !== 'function') return;
-    var box = $q('[data-pane="' + t.id + '"]'); if (!box) return;
-    try { t.mount(box, { toast: toast }); } catch (e) { box.textContent = t.label + ' could not open: ' + errText(e); }
-  }
-  function setPanel(p) {
-    S.panel = p; if (S.seg !== 'console') S.seg = 'side';
-    try { W.localStorage.setItem('b68.gm.panel', p); } catch (e) {}
+  /* the pane on screen: S.panel, the panes' hidden flags and a pane's own first-show work. The places (gm/places.js) choose it; everything else
+     in the page asks through setPanel, so the view switcher always says what is showing */
+  function paneShow(p) {
+    S.panel = p;
     syncPanels();
     if (p === 'ipad') { loadAmbient(); loadStt(); }
     if (p === 'run') renderRun();
-    extraSync();
     if (p === 'chase') renderChase();      /* the start form offers the Location roll or Street scene made since it was drawn */
     spy(p);
+  }
+  /* a pane, from anywhere in the page (Find, a link, a generator's cross-link, the iPad pill): shown as a view of the place the GM is in, an extra
+     view where the place does not lay it out (tools come to you: nothing here sends the GM to another place) */
+  function setPanel(p) {
+    if (S.places && S.places.openView(p, { jump: false })) return;
+    if (S.seg !== 'console') S.seg = 'side';
+    paneShow(p);
+  }
+
+  /* ---------- N1b: the places of the night (gm/places.js) ----------
+     The host the controller works through, and the names the band calls (N1a's brief): goPlace(id, { navigateOnly }), openView(id), callAftermath(),
+     currentPlace(), currentView(). The page's night controller enters a phase exactly as the rail does; the panes are shown by paneShow. */
+  function goPlace(id, o) { return !!(S && S.places && S.places.goPlace(id, o)); }
+  function openView(id, o) { if (S && S.places) return S.places.openView(id, o); if (S && isSide(id)) { setPanel(id); return true; } return false; }
+  function callAftermath() { if (S && S.places) return S.places.callAftermath(); var nt = S && S.night; if (nt && nt.phase() !== 'after') nt.enter('after'); return false; }
+  function currentPlace() { return S && S.places ? S.places.currentPlace() : ''; }
+  function currentView() { return S && S.places ? S.places.currentView() : S ? S.panel : ''; }
+  function placesPhase() { var nt = S && S.night; if (nt) return nt.phase(); var N = W.B68GmNight; return N && S && S.doc ? N.clean(S.doc.night).phase : ''; }
+  function placesSync() { if (S && S.places && S.status === 'ready') S.places.sync(); }
+  function placesHost() {
+    var me = S;
+    return {
+      root: function () { return S === me ? $q('#gm-root') : null; },
+      phase: function () { return S === me ? placesPhase() : ''; },
+      enter: function (p) { var nt = S === me && me.night; return !!(nt && nt.enter(p) !== false); },
+      showPane: function (p) { if (S === me) paneShow(p); },
+      seg: function (which) { if (S !== me || S.seg === which) return; S.seg = which; syncPanels(); },
+      prepNote: function () { return S === me ? csNote() : null; },
+      prepNotes: function () { var pk = part('prep'), B = W.B68GmPrep; return pk && B ? B.notes(pk) : []; },
+      setPrepNote: function (id) { if (S !== me) return; try { W.localStorage.setItem(PREP_NOTE, id); } catch (e) {} renderPrep(true); renderBar(); },
+      prepSecs: function () {
+        var v = S === me ? S.prepView : null, pk = part('prep'), B = W.B68GmPrep; if (!v || !v.note || !pk || !B) return [];
+        return (v.rail || []).map(function (r) { return { id: r.id, head: r.text, html: function () { return B.section(pk, v.note.id, r.id, { M: W.B68Markdown, view: v }); } }; });
+      },
+      decorate: function (el) { if (S === me) decoratePrep(el); },
+      crew: function () {
+        return S === me ? dtPcs().map(function (c) { var s = isObj(c.status) ? c.status : {}; return { id: str(c.id), name: pcName(c), stress: typeof s.stress === 'number' ? s.stress : null, harm: Array.isArray(s.harm) ? s.harm : [], locks: +s.locks || 0, turn: Array.isArray(s.turn) ? s.turn : [] }; }) : [];
+      },
+      sheetOpen: function (id) { return S === me ? sheetOpen(id) : false; },
+      exportTonight: function () { if (S === me) exportTonight(); },
+      endNight: function () { var h = S === me ? missionHooks() : null; return h ? h.endNight() : Promise.resolve(null); },
+      recording: function () { return S === me && /REC/.test(b29Suffix()); },
+      stopRecording: function () { if (S === me && b29()) b29().click('batch'); },
+      toast: function (m, bad) { toast(m, bad); }
+    };
+  }
+  function placesMount() {
+    var PL = W.B68GmPlaces; if (!PL || !S) return;
+    if (!S.places) S.places = PL.create(placesHost());
+    S.places.mount();
+  }
+  /* a tool in its right-edge sheet: the registry's open() (gm/tool-registry.js) of a tool no place has bound inline. The places fall back to it
+     where they cannot draw a tool inline */
+  function sheetOpen(id) {
+    var T = W.B68GmTools, t = T && typeof T.get === 'function' ? T.get(id) : null;
+    return !!(t && typeof t.open === 'function' && t.open() !== false);
   }
 
   /* ---------- the console, drawn as the Roll (N4: gm/roll.js draws, this page holds the data and the actions) ----------
@@ -2747,6 +2795,7 @@
     S.conRes = res; S.shown = kind; S.last = { text: lastText(res, S.dots) }; drawConsoleCard(res);
     if (res && res.meta && (res.meta.situation === 'fourfive' || res.meta.situation === 'onetothree') && S.dots != null) { S.dots = null; renderPos(); }     /* the roll is resolved: the dots reset, like the pre-rolled draws */
     if (S.prepWide) { toggleFocus(); if (!focusLeftToasted) { focusLeftToasted = true; toast('Focus off so the card shows. F brings it back.'); } }
+    if (S.places) S.places.rolled();      /* N1b: a place whose left column is its own takes the Roll in, for the stay */
     showCard();
   }
   /* the card into view in its scroller (the console column on a laptop, the page on a phone), by the least scroll that shows
@@ -3671,20 +3720,14 @@
     if (!S.rv || S.rvBox !== box) { if (S.rv) S.rv.detach(); S.rv = W.B68GmRunView.create(rvHost()); S.rv.attach(box); S.rvBox = box; S.rvSite = ''; }
     return S.rv;
   }
-  /* the Run tab and its phone segment exist only while the Location card holds a v2 night (the others are always there) */
-  function runTabs(on) {
-    var tab = $q('.gm-tab[data-panel="run"]'), sg = $q('[data-gm="seg"][data-seg="run"]'), bar = $q('.gm-tabs'), sb = $q('.gm-segbar');
-    if (!on) { if (tab) tab.remove(); if (sg) sg.remove(); return; }
-    var changed = false;
-    if (!tab && bar) { bar.insertAdjacentHTML('beforeend', '<button type="button" class="gm-tab" role="tab" data-gm="panel" data-panel="run">Run <kbd>G</kbd></button>'); changed = true; }
-    if (!sg && sb) { sb.insertAdjacentHTML('beforeend', '<button type="button" class="chip" role="tab" data-gm="seg" data-seg="run">Run</button>'); changed = true; }
-    if (changed) syncPanels();
-  }
-  var RUN_HELP = '<div class="gm-empty gm-runhelp"><b>Run</b> runs a night built on a v2 play block. ' + 'Roll or pick an authored site in Location whose <code>b68-site</code> block has a <code>play</code> with <code>"v": 2</code>, then rebuild the pack. ' + 'A v1 block keeps its Run the site strip in Location.</div>';
+  /* The site (the Run pane) is a fixed view of Planning and the Score (N1b: it no longer comes and goes). With no v2 night it says how to get one */
+  var RUN_HELP = '<div class="gm-empty gm-runhelp"><p><b>The site</b> runs a night built on a v2 play block. ' +
+    'Pick an authored site in the Location roller whose <code>b68-site</code> block has a <code>play</code> with <code>"v": 2</code>, then rebuild the pack. ' +
+    'A v1 block keeps its Run the site strip in the Location roller.</p>' +
+    '<p><button type="button" class="btn sm" data-pv="location">Pick a site: the Location roller <kbd>B</kbd></button></p></div>';
   function renderRun() {
     var box = $q('#gm-runv'); if (!box || !S) return;
     var rs = runV2();
-    runTabs(!!rs);
     if (!rs) {
       if (S.rv) { S.rv.reset(); S.rvSite = ''; }
       /* N3: no v2 night, but the site line keeps the alarm readout (stepped by hand) and the stage group, so neither is lost with Location's old box */
@@ -4908,7 +4951,7 @@
   }
   function mountNight() {
     var N = W.B68GmNight, me = S; if (W.B68GmSpine) W.B68GmSpine.reset(); if (!N) { me.night = null; return; }
-    me.night = N.create({ doc: function () { return S === me ? S.doc : null; }, patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); }, changed: spineTick,
+    me.night = N.create({ doc: function () { return S === me ? S.doc : null; }, patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); }, changed: function () { spineTick(); placesSync(); },
       prep: function () { var pk = S === me ? part('prep') : null, id = pk && W.B68GmPrep ? prepNoteId(pk) : null; return id && Array.isArray(pk.notes) ? pk.notes.filter(function (n) { return isObj(n) && n.id === id; })[0] || null : null; } });
     spineTick(); tcWrap(me);
   }
@@ -5277,8 +5320,9 @@
   }
   function save(name, data) { if (S.api && S.api.saveFile) S.api.saveFile(name, data); }
 
-  var SIDE = ['prep', 'location', 'scenes', 'score', 'chase', 'npc', 'downtime', 'cards', 'rules', 'ipad', 'run'];
-  function isSide(id) { var T = W.B68GmTools, t = T ? T.get(id) : null; return SIDE.indexOf(id) >= 0 || !!(t && !t.builtin && !t.workshop && typeof t.mount === 'function'); }
+  /* the panes of the work column (and the places' view pane, #gm-vpane, where tools and built views are drawn) */
+  var SIDE = ['prep', 'location', 'scenes', 'score', 'chase', 'npc', 'downtime', 'cards', 'rules', 'ipad', 'run', 'view'];
+  function isSide(id) { return SIDE.indexOf(id) >= 0; }
   /* ---------- the street scene roller (S): a side panel ---------- */
   function genLinesHtml(lines) {
     return (lines || []).map(function (l) { return l.kind === 'chips' ? chipsHtml(l.chips) : linesHtml([l], md); }).join('');
@@ -6292,7 +6336,7 @@
       .sort(function (a, b) { return (+a.order || 0) - (+b.order || 0) || (a._id < b._id ? -1 : 1); });
   }
   function renderCards(force) {
-    var box = $q('#gm-cards'); if (!box) return;
+    var box = $q('#gm-opps-gm') || $q('#gm-cards'); if (!box) return;      /* N1b: the GM's own cards, under the players' board in Opportunities */
     var act = document.activeElement;
     if (!force && act && box.contains(act) && act.classList && act.classList.contains('oc-in')) return;   /* not while typing on a card */
     var list = oppList(), iv = Math.floor(+oppDoc().interval || 0), pcs = (part('campaign') || {}).pcs || [];
@@ -6918,6 +6962,8 @@
     var ml = $q('.gm-menu-list'); if (ml && !ml.hasAttribute('hidden') && ev.key === 'Escape') { menuOpen(false); var mb = $q('[data-gm="menu"]'); if (mb) mb.focus(); ev.preventDefault(); return; }
     if (runViewKey(ev)) return;
     if (runKey(ev)) return;
+    /* N1b: Ctrl+← / Ctrl+→ the place before or after, navigation only (the night's phase stays). N1a's band owns the key map; this is its stand-in */
+    if (ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') && !typing(ev.target) && S.places) { ev.preventDefault(); S.places.stepPlace(ev.key === 'ArrowRight' ? 1 : -1); return; }
     var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target) });
     if (!a) return;
     if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } else if (S.assist && S.assist.isOpen()) { S.assist.close(); ev.preventDefault(); } else if (S.dw && S.dw.open) { drawerSet(false); ev.preventDefault(); } else if (escOne()) ev.preventDefault(); return; }
@@ -6925,7 +6971,7 @@
     if ((a.type === 'capture' || a.type === 'last') && !capBarShown()) return;      /* the bar is hidden: its keys do nothing */
     ev.preventDefault();
     if (a.type === 'situation') rollSituation(a.n);
-    else if (a.type === 'panel') { setPanel(a.panel); if (isPhone()) { S.seg = 'side'; syncPanels(); } else focusPane(a.panel); }
+    else if (a.type === 'panel') { if (!openView(a.panel)) setPanel(a.panel); if (isPhone()) { S.seg = 'side'; syncPanels(); } else focusPane(a.panel); }      /* N1b: the view, in the place the GM is in */
     else if (a.type === 'capture') arm(a.bucket, true);
     else if (a.type === 'last') fileLast();
     else if (a.type === 'blank') blank();
@@ -7262,6 +7308,9 @@
     /* the autopilot's controller state, for checks (the page's own log is S.doc.ap.log), and Voice's lines as the box would hand them over */
     _autopilot: function () { return S && S.ap ? S.ap.core.state() : null; },
     _night: function () { return S && S.night ? S.night : null; },
+    /* N1b: the places of the night (gm/places.js), for the band (N1a: the same names its host carries) and the checks */
+    goPlace: goPlace, openView: openView, callAftermath: callAftermath, currentPlace: currentPlace, currentView: currentView,
+    _places: function () { return S && S.places ? S.places : null; },
     /* N4: the Roll's "If it goes wrong" line from anywhere (the Run view's room card calls its host's setThreat, the same thing) -> bool */
     setThreat: function (text) { return rollSetThreat(text); },
     aftermath: aftermathFeed,       /* suite 1.6 */

@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { atPlace } from './fixtures/gm/places.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -73,6 +74,7 @@ try {
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   const errors = [];
   const G = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 1366, height: 1024 }, serviceWorkers: 'block' });
+  await G.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
   await G.addInitScript(() => { window.__B68_POLL_MS = 700; });
   const gp = await G.newPage();
   gp.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -90,6 +92,7 @@ try {
   const barText = () => gp.$eval('.gm-tray .gm-tray-ap', (b) => b.textContent.trim());
 
   const D = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1366, height: 1024 }, serviceWorkers: 'block' });
+  await D.addInitScript(atPlace('score'));      /* N1b: start in the Score (a page with no phase opens in Before) */
   const dp = await D.newPage();
   dp.on('pageerror', (e) => errors.push('display pageerror: ' + e.message));
   await dp.goto(BASE + '/#display'); await dp.waitForSelector('.dp-overlay', { state: 'attached', timeout: 20000 });
