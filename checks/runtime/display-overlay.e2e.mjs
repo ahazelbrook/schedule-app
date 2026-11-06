@@ -328,6 +328,52 @@ try {
     await D.ctx.close();
   });
 
+  await step('T15 known-as: a revealed NPC tagged known-as is the alias alone in every DOM: the overlay card and the NPC card on the iPad (GM and display-only sign-ins) and a phone\'s cast page', async () => {
+    const FIRST = /\bAda\b/, base = await G.page.evaluate(() => window.B68 && window.B68.BASE_FIGURE);
+    const spec = { ...base, id: 'ada-vell', name: 'Ada Vell', plate: 'Ada Vell', code: 'NPC-968-1234' };
+    expect((await gmCall('PUT', '/api/npcs/npc_ov_known', { name: 'Ada Vell', alias: 'Vell', role: 'Fixer', faction: 'The Invented Guild', description: 'A woman at the bar.', gmNotes: 'GMNOTES-MARKER', tags: ['known-as'], revealed: true, spec })).status === 200, 'created');
+    const SHOTS = process.env.T15_SHOTS || '';
+    const shot = async (page, name) => { if (SHOTS) { const { mkdirSync } = await import('node:fs'); mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: path.join(SHOTS, name + '.png'), animations: 'disabled' }); } };
+    const dom = (page) => page.evaluate(() => document.documentElement.outerHTML);
+    const D = await openDisplay(browser, { user: IPAD });
+    for (const [who, X] of [['GM sign-in', G], ['display sign-in', D]]) {
+      const nid = uid('kn');
+      await ambient({ overlay: { id: nid, kind: 'npc', ms: 60000, npcId: 'npc_ov_known' } });
+      await cardIn(X.page, 'npc', nid);
+      const name = await X.page.evaluate(() => (document.querySelector('.dp-ov-npc .dp-ov-name') || {}).textContent);
+      expect(name === 'Vell', who + ', the overlay card names the alias: ' + name);
+      expect(!(await X.page.$('.dp-ov-npc .dp-ov-alias')), who + ', no quoted alias line');
+      const html = await dom(X.page); expect(!FIRST.test(html) && !html.includes('ada-vell'), who + ', the first name is nowhere in the DOM (svg titles included)');
+      if (who === 'display sign-in') await shot(X.page, 'ipad-overlay-1366');
+      await ambient({ overlay: null });
+      await noOverlay(X.page, 15000);
+    }
+    await push({ kind: 'npc', npcId: 'npc_ov_known', title: 'Ada Vell' });                 // the GM page stores the full name as the card's title
+    for (const [who, X] of [['GM sign-in', G], ['display sign-in', D]]) {
+      await X.page.waitForFunction(() => { const n = document.querySelector('#display-page .dp-npc-name'); return !!n && n.textContent === 'Vell'; }, null, { timeout: 20000 });
+      const html = await dom(X.page); expect(!FIRST.test(html) && !html.includes('ada-vell'), who + ', the NPC card holds no first name: ' + (await stageText(X.page)).slice(0, 160));
+      expect(!(await X.page.$('#display-page .dp-npc-alias')), who + ', no quoted alias line on the card');
+      await shot(X.page, 'ipad-card-' + (who === 'GM sign-in' ? 'gm' : 'display') + '-1366');
+    }
+    await D.ctx.close();
+    // a phone: the cast page and the NPC's own page
+    const pctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': 'player@example.test' }, viewport: { width: 390, height: 844 } });
+    const P = await pctx.newPage();
+    await P.goto(BASE + '/#cast/npc_ov_known');
+    await P.waitForFunction(() => { const h = document.querySelector('#cast-page .cp-dname'); return !!h && h.textContent === 'Vell'; }, null, { timeout: 20000 });
+    await P.waitForFunction(() => { const h = [...document.querySelectorAll('#cast-page [data-fig]')]; return h.length > 0 && h.every((x) => x.querySelector('svg')); }, null, { timeout: 20000 });
+    const phtml = await dom(P);
+    expect(!FIRST.test(phtml) && !phtml.includes('ada-vell') && !phtml.includes('known-as'), 'the phone\'s DOM holds no first name and no marker chip');
+    expect(!(await P.$('#cast-page .cp-alias')), 'no quoted alias line on the phone');
+    await shot(P, 'phone-cast-390');
+    await pctx.close();
+    // the control: without the marker the same card names the full name, so the scans above would have seen it
+    expect((await gmCall('PATCH', '/api/npcs/npc_ov_known', { tags: [] })).status === 200, 'unmarked');
+    await push({ kind: 'npc', npcId: 'npc_ov_known', title: 'Ada Vell' });
+    await G.page.waitForFunction(() => { const n = document.querySelector('#display-page .dp-npc-name'); return !!n && n.textContent === 'Ada Vell'; }, null, { timeout: 20000 });
+    await push(SPOT);
+  });
+
   await step('a bump of the document (the same id, other fields) mid-overlay does not restart it, and the server holds one overlay for one ms', async () => {
     const id = uid('s');
     await ambient({ overlay: { id, kind: 'clock', ms: 60000, clockId: 'c_steady' } });
