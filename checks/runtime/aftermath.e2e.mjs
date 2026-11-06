@@ -202,11 +202,11 @@ try {
   /* an open GM page only changes its document by its own patches, so the false reaches it on a load: reload, and the panel must still be the show */
   await g.reload();
   await g.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
-  await g.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  await g.waitForSelector('#gm-buttons .gm-btn', { state: 'attached', timeout: 30000 });      /* N1b: the page reopens in the Aftermath, whose left column is the crew, not the Roll */
   check(await until(() => g.evaluate(() => { const f = window.B68GmPage && window.B68GmPage.aftermath(); return !!(f && f.doc && f.doc.features && f.doc.features['spine.aftermath'] === false); }), 15000), 'reloaded, the GM page holds the stored false in its document');
   check(await g.evaluate(() => !!window.B68GmTools.get('aftermath') && !document.querySelector('#gm-menu-aftermath')), 'the tool is still registered, still no Menu line');
   check(await g.evaluate(() => window.B68GmTools.get('aftermath').open()) === true, 'the tool still opens');
-  const offText = await g.$eval('#gm-sheet-aftermath', (e) => (e.hidden ? 'HIDDEN ' : '') + e.innerText);
+  const offText = await g.$eval(AFT, (e) => (e.hidden ? 'HIDDEN ' : '') + e.innerText);      /* N1b: in the Aftermath place the show is its view, inline */
   check(!/Switched off/i.test(offText) && /eight steps/i.test(offText) && /Start the Aftermath/i.test(offText), 'and its panel is the show, never "Switched off": ' + JSON.stringify(offText.replace(/\s+/g, ' ').slice(0, 140)));
   check((await ph.evaluate(() => window.B68Commend.state())).started === true && (await ph.evaluate(() => window.B68Flags.on('spine.aftermath'))) === true, 'and the phone is still told it is on, and keeps reading');
 
