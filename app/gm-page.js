@@ -858,7 +858,7 @@
      laptop takes Shift+H (`blank`), or a plain H twice within a second (`blank-tap`): a stray key never blacks it out.
      A view key (R T N I G B S J C D O) is { type: 'panel', panel }: the page opens that view in the place on screen (openView).
      Ctrl+Left / Ctrl+Right is { type: 'place', d: -1 | 1 }: the place before or after, to look at (never a phase change).
-     Space and PageDown are the cue stack's (GO); Esc goes to gm/esc.js (the one Esc). */
+     Space and PageDown are the cue stack's (GO); Esc goes to gm/esc.js (the one Esc). ? (Shift+/) is { type: 'shortcuts' }: the Shortcuts card (gm/shortcuts.js, K1). */
   function keyAction(ev) {
     if (!ev || ev.altKey || ev.metaKey) return null;
     var k = str(ev.key);
@@ -889,6 +889,7 @@
       case 'f': return { type: 'focus' };
       case 'w': return { type: 'drawer' };
       case '/': return { type: 'find' };
+      case '?': return { type: 'shortcuts' };
       case '0': return { type: 'clear' };
       case 'escape': return { type: 'esc' };
     }
@@ -2364,6 +2365,7 @@
   function menuHtml() {
     return '<button type="button" class="gm-menu-ph" data-gm="find-open">Find</button><button type="button" class="gm-menu-ph" data-gm="drawer">Crew: the clocks, the crew and the sheets</button>' +
       '<p class="gm-menu-h"><span class="gm-exp" id="gm-menu-exp"></span></p>' + '<div class="gm-menu-warn" id="gm-menu-warn" hidden></div>' +
+      '<button type="button" data-gm="shortcuts" id="gm-menu-shortcuts" title="The keys, the “Blade, …” lines, clocks, music and cue lines on one card (?)">Shortcuts <kbd>?</kbd></button>' +      /* K1 */
       '<a href="#display" title="The players’ screen: open this on the iPad">Open the display page (for the iPad)</a>' +
       '<button type="button" data-gm="update">Update pack</button><button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="clearcap">Clear tonight’s capture</button>' +
       '<button type="button" data-gm="capbar" id="gm-menu-capbar" title="The bottom bar that files a roll, a name or a moment"></button>' +
@@ -2652,6 +2654,7 @@
   function findIndex() {
     /* N1b: every place ("Go to Planning") and every view and tool first, so a word that names one of them lands there before a line of the notes */
     var out = S.places ? S.places.findEntries() : [], c = part('campaign') || {}, lc = function (x) { return str(x).toLowerCase(); }, known = {}, v = S.prepView;
+    if (W.B68GmShortcuts && typeof W.B68GmShortcuts.findEntry === 'function') out.push(Object.assign(W.B68GmShortcuts.findEntry(), { go: { t: 'shortcuts' } }));      /* K1: "keys", "commands", "help" */
     if (v && v.note) {
       Object.keys(v.secs || {}).forEach(function (id) { var x = v.secs[id]; out.push({ kind: 'Prep', title: x.head || v.note.title, text: findText(x.src), go: { t: 'prep', id: id } }); });
       (v.note.blocks || []).forEach(function (b) { if (isObj(b) && b.k === 'embed') out.push({ kind: 'Prep', title: str(b.from).split('/').pop().replace(/\.md$/i, '') + (b.heading ? ' › ' + b.heading : ''), text: findText(b.src), go: { t: 'embed', from: str(b.from) } }); });
@@ -2719,7 +2722,20 @@
     else if (g.t === 'chase') { setPanel('chase'); if (isPhone()) { S.seg = 'side'; syncPanels(); } }
     else if (g.t === 'rule') { setPanel('rules'); if (isPhone()) { S.seg = 'side'; syncPanels(); } rulesSearch(g.q, g.id); }
     else if (g.t === 'rail') { drawerTab('table'); drawerSet(true); flash($q('#gm-rail .gm-clocks')); }
+    else if (g.t === 'shortcuts') shortcutsOpen();
   }
+
+  /* K1: the Shortcuts card (gm/shortcuts.js): the keys, the "Blade, …" lines, the clocks, the music, the cue lines and Esc, in the right-edge sheet (its B68GmEsc
+     entry closes it). ? opens and shuts it (keyAction 'shortcuts'; onKey lets ? through only when the card is the top box), as do Find and the Menu. GM laptop only:
+     nothing is stored or sent */
+  var SC_SHEET = 'shortcuts';
+  function shortcutsInst() {
+    if (!S || !W.B68GmShortcuts || typeof W.B68GmShortcuts.make !== 'function') return null;
+    if (!S.shortcuts) S.shortcuts = W.B68GmShortcuts.make({ root: function () { return $q('#gm-root'); } });
+    return S.shortcuts;
+  }
+  function shortcutsOpen() { var c = shortcutsInst(); if (!c || !c.open()) toast('The Shortcuts card is not on this page: reload it.', true); }
+  function shortcutsToggle() { var c = shortcutsInst(); if (!c) { shortcutsOpen(); return; } if (c.isOpen()) { c.close(); escBlur(); } else shortcutsOpen(); }
 
   /* the table clocks to the iPad (an svg made here; the server checks it like any map). While the iPad shows them, a change
      to a clock on the table sends them again. As the chase strip: S.clOn = { seq } is the display seq the server answered when
@@ -7115,11 +7131,12 @@
     if (ev.key === 'Enter' && tg && tg.id === 'gm-prep-q') { ev.preventDefault(); prepFindGo(); return; }
     if (ev.key === 'Enter' && tg && tg.id === 'gm-gs-q') { ev.preventDefault(); screenFindGo(); return; }
     if (ev.key === 'Enter' && tg && tg.id === 'gm-dt-d100') { ev.preventDefault(); dtD100(tg.value); return; }     /* the morning's d100 */
-    /* keys never fire behind an open thing (the Menu, the drawer, the Blade panel, a popover, a sheet): only its own. W shuts the drawer and A the Blade
-       panel when that is the top one; GO (Space, PageDown) still fires behind the Blade panel; everything else waits until it is closed (Esc) */
+    /* keys never fire behind an open thing (the Menu, the drawer, the Blade panel, a popover, a sheet): only its own. W shuts the drawer, A the Blade
+       panel and ? the Shortcuts card when that is the top one; GO (Space, PageDown) still fires behind the Blade panel; everything else waits until it is closed (Esc) */
     var top = escTop();
     if (top) {
       var k0 = str(ev.key).toLowerCase();
+      if (!typing(tg) && !ev.ctrlKey && !ev.metaKey && !ev.altKey && k0 === '?' && top === 'sheet-' + SC_SHEET) { ev.preventDefault(); shortcutsToggle(); return; }
       if (!typing(tg) && !ev.ctrlKey && !ev.metaKey && !ev.altKey && ((k0 === 'w' && top === 'drawer') || (k0 === 'a' && top === 'blade'))) { ev.preventDefault(); if (k0 === 'w') drawerToggle(); else if (S.assist) S.assist.toggle(); return; }
       if (top === 'blade' && (ev.key === ' ' || ev.key === 'PageDown') && S.cs && typeof S.cs.key === 'function') S.cs.key(ev, document);
       return;
@@ -7143,6 +7160,7 @@
     else if (a.type === 'focus') toggleFocus();
     else if (a.type === 'drawer') drawerToggle();
     else if (a.type === 'find') findOpen();
+    else if (a.type === 'shortcuts') shortcutsToggle();
     else if (a.type === 'assist') { if (S.assist) S.assist.toggle(); else toast('Blade is not available on this page.', true); }
     else if (a.type === 'undo') { if (S.assist && typeof S.assist.undoNewest === 'function') S.assist.undoNewest(); }
   }
@@ -7174,6 +7192,7 @@
       case 'dpc': drawerPc(b.getAttribute('data-id')); break;
       case 'dedit': S.dw.edit = !S.dw.edit; drawerSync(); break;
       case 'find-open': findOpen(); break;
+      case 'shortcuts': menuOpen(false); shortcutsOpen(); break;      /* K1: the Menu's Shortcuts line */
       case 'find-go': findGo(+b.getAttribute('data-i')); break;
       case 'beat-go': beatGo(); break;
       case 'beat-next': beatNext(); break;
