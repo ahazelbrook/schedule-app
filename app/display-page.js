@@ -826,6 +826,13 @@
     if (o.id === seenId) return { seen: seenId, action: 'keep', overlay: o };
     return { seen: o.id, action: 'show', overlay: o };
   };
+  /* seenAfter(before, step, dark, wasAuto) -> the id the page keeps as seen after a step. A hide while lights out keeps the old id ONLY when the overlay that
+     went was the autopilot's (taken off at lights out, it must not come back when the lights do and the server serves it again). A GM-pressed one that ran out
+     or was taken down in the dark is forgotten like any other, so the same id shows again: a keyed show beat (Introduce) has the same id every time, and
+     keeping it made a second Introduce of the same person never show while the iPad was blank (tech run 06/11, T4). */
+  Pure.seenAfter = function (before, step, dark, wasAuto) {
+    return step && step.action === 'hide' && dark && wasAuto ? before : (step ? step.seen : before);
+  };
   /* the clock face: one wedge per segment from 12 o'clock, clockwise, in a 100 x 100 box; the first `filled` are on */
   Pure.clockWedges = function (size, filled) {
     var out = [], r = 46, cx = 50, cy = 50;
@@ -1621,7 +1628,7 @@
         s.ov.held = { o: step.overlay, at: Date.now() };
         ovRemove(true); s.ov.auto = false;
       } else {
-        s.ov.seen = step.action === 'hide' && s.dark ? before : step.seen;
+        s.ov.seen = Pure.seenAfter(before, step, s.dark, s.ov.auto);
         if (step.action === 'show') { ovShow(step.overlay); s.ov.auto = !!step.overlay.auto; }
         else if (step.action === 'hide') ovRemove(false);
         else ovRefresh(step.overlay);

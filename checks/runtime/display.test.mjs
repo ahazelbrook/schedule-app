@@ -1033,6 +1033,16 @@ await test('overlay: cleanOverlay refuses (null) anything outside the bounds, ra
   [4, 6, 8, 10, 12].forEach((size) => { assert.ok(P.cleanOverlay({ ...OVC, size, filled: 0 })); assert.ok(P.cleanOverlay({ ...OVC, size, filled: size })); });
   assert.ok(P.cleanOverlay({ id: 't', kind: 'text', ms: 5000, text: 't'.repeat(120) }));
 });
+await test('overlay: seenAfter forgets a GM-pressed overlay that went in the dark, so the same id (a keyed beat: Introduce) shows again (tech run T4)', () => {
+  const show = P.overlayStep('', { ...OVC, id: 'k-intro' });
+  assert.equal(P.seenAfter('', show, true, false), 'k-intro', 'a show is remembered, dark or not');
+  const gone = P.overlayStep('k-intro', null);
+  assert.equal(P.seenAfter('k-intro', gone, true, false), '', 'a GM-pressed overlay that ran out while the iPad is blank is forgotten');
+  assert.equal(P.overlayStep(P.seenAfter('k-intro', gone, true, false), { ...OVC, id: 'k-intro' }).action, 'show', 'so the same Introduce shows again in the dark');
+  assert.equal(P.seenAfter('k-auto', P.overlayStep('k-auto', null), true, true), 'k-auto', 'an autopilot overlay taken off at lights out stays seen: it does not come back with the lights');
+  assert.equal(P.seenAfter('k-auto', P.overlayStep('k-auto', null), false, true), '', 'lights on: any hide forgets the id');
+  assert.equal(P.seenAfter('x', P.overlayStep('x', { ...OVC, id: 'x' }), true, true), 'x', 'a keep keeps');
+});
 await test('overlay: overlayStep shows a new id once, keeps the same id, hides on null, and a cleared id can be shown afresh', () => {
   let r = P.overlayStep('', OVC);
   assert.equal(r.action, 'show'); assert.equal(r.seen, 'ov-1'); assert.deepEqual(r.overlay, OVC);
