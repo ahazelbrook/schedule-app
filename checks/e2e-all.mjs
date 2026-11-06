@@ -61,6 +61,7 @@ const CHECKS = [
   ['checks/runtime/ipad-band.e2e.mjs', 'the iPad band: every layer combination in fixed slots at 1024x768, portrait and 1180x820, nothing over the map or the band beside it, lights out, the look book cards (8655)'],
   ['checks/runtime/display-webkit.e2e.mjs', 'the display at iPad and iPhone sizes, with a missing-API probe: the WebKit pass harness (9150)'],
   ['checks/runtime/display-overlay.e2e.mjs', 'overlays on the display: a clock, an NPC, a line, the dawn (8874)'],
+  ['checks/runtime/ipad-follows.e2e.mjs', 'the iPad follows the GM (tech run 06/11): Spotlight over a pinned scene, Introduce twice in lights out, the Cast view’s Show on iPad on the display login, the Score puts the players’ map up, the site’s Show on iPad / Take it down, secrecy (9310)'],
   ['checks/runtime/sheet-keys.e2e.mjs', 'turn the key and the key cabinet: the offer at three hits, the deadlock, Stress clear, the iPad card, the automatic critical, the cabinet, All off (9160)'],
   ['checks/runtime/show-contract.e2e.mjs', 'the show contract: every brief beat on the GM display and the iPad within a poll, a hidden NPC dropped, the layers and the scene data channel, the look book (9050)'],
   ['checks/runtime/suite-b17.e2e.mjs', 'the site line of a rolled location on the real GM page: no box under Location, the ONE alarm readout stepped by hand and the iPad\'s band following, the stage group while the map is live, Freeze, no secret in the display GET (8953)'],
