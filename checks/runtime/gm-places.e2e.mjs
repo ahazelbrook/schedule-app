@@ -195,6 +195,10 @@ try {
   check(await attr(a, 'data-panel') === 'score' && await a.$eval('#gm-vhead', (e) => /Score generator/.test(e.textContent)), 'Generators › Score: the score generator, under "← Desks"');
   await a.click('#gm-vhead [data-pv-desks]');
   check(await attr(a, 'data-panel') === 'view' && await a.$$eval('#gm-vpane .gm-desk', (d) => d.length) === 10, '← Desks');
+  /* H5: the column's Generators link opens the first generator, not a bare desk with a stub button */
+  await a.click('#gm-left [data-desk^="gen"]'); await sleep(300);
+  check(await attr(a, 'data-panel') === 'npc' && await a.$eval('#gm-vhead', (e) => /NPC generator/.test(e.textContent)), 'the column Generators link opens the NPC generator');
+  await a.click('#gm-vhead [data-pv-desks]');
 
   /* ---- 9. the Aftermath: the crew, and Call the Aftermath ---- */
   await a.evaluate(() => window.B68GmPage.goPlace('score'));
