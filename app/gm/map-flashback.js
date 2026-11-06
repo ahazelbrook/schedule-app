@@ -14,9 +14,10 @@
    API
      SWITCH  parseStress(words) -> { stress: n | null, ok: bool }       the words after "flashback" (lowercase), see below
      pinSvg(doc, svg, box) -> the <g>      clearPin(svg)
-     create(host) -> controller { start(stress), end(), toggle(), pin(), unpin(), pinned(), note(stress), noteEnd(), paint(frame, svg, zoom) }
+     create(host) -> controller { start(stress), end(), toggle(), pin(), unpin(), pinned(), up(), on(), note(stress), noteEnd(), paint(frame, svg, zoom) }
        host: { feature(id), doc(), filter() -> 'flashback' | null, layer(path, value) -> Promise<answer | null>, room() -> name, roomBox(svg, name) -> box | null,
-               toast(msg, bad), log(text) } */
+               toast(msg, bad), log(text), changed() (the site's toolbar redraws its Flashback and Pin buttons) }
+   THE BUTTONS (N3) are the site's toolbar's, over the board and the map alike: data-site="flashback" (Back while it is up) and "pin". */
 (function (root, factory) {
   'use strict';
   var M = factory();
@@ -106,35 +107,18 @@
     }
     function unpin() { if (!pinRoom) return false; pinRoom = ''; repaint(); return true; }
 
-    function repaint() { if (frameRef && svgRef) paint(frameRef, svgRef, zoomRef); }
-    function btn(doc, label, act, pressed, title) {
-      var b = doc.createElement('button'); b.type = 'button'; b.className = 'mz-btn b19-btn'; b.setAttribute('data-b19', act); b.textContent = label;
-      if (pressed !== undefined) b.setAttribute('aria-pressed', pressed ? 'true' : 'false');
-      if (title) b.title = title;
-      b.addEventListener('pointerdown', function (ev) { ev.stopPropagation(); });
-      b.addEventListener('click', function (ev) { ev.stopPropagation(); if (act === 'flashback') toggle(); else if (act === 'flash-pin') pin(); });
-      return b;
-    }
+    /* the toolbar's buttons (the site's, N3) follow the flashback and the pin: the page redraws them on changed() */
+    function repaint() { if (frameRef && svgRef) paint(frameRef, svgRef, zoomRef); if (typeof host.changed === 'function') host.changed(); }
+    /* the Run view's map was drawn: the sepia while the flashback is up, and the pin on its room. The buttons are in the site's toolbar (data-site="flashback", "pin") */
     function paint(frame, svg, zoom) {
       frameRef = frame; svgRef = svg; zoomRef = zoom || null;
-      var doc = frame && frame.ownerDocument; if (!doc) return;
-      var bar = frame.querySelector('.b19-bar'), a = frame.querySelector('[data-b19="flashback"]'), p = frame.querySelector('[data-b19="flash-pin"]');
-      if (!on()) {
-        [a, p].forEach(function (x) { if (x && x.parentNode) x.parentNode.removeChild(x); });
-        frame.classList.remove('b19-flash'); clearPin(svg);
-        if (bar && !bar.firstChild && bar.parentNode) bar.parentNode.removeChild(bar);
-        return;
-      }
-      if (!bar) { bar = doc.createElement('div'); bar.className = 'b19-bar'; frame.appendChild(bar); }
-      if (!a) { a = btn(doc, 'Flashback', 'flashback', false, 'Sepia, grain and “Earlier…” on the iPad until you tap again or say “Blade, back”'); bar.appendChild(a); }
-      a.setAttribute('aria-pressed', up() ? 'true' : 'false'); a.textContent = up() ? 'Back' : 'Flashback';
-      if (!p) { p = btn(doc, 'Pin', 'flash-pin', false, 'Drop a pin on the room where the flashback pays off (tap again to take it up)'); bar.appendChild(p); }
-      p.setAttribute('aria-pressed', pinRoom ? 'true' : 'false');
+      if (!frame || !frame.classList) return;
+      if (!on()) { frame.classList.remove('b19-flash'); clearPin(svg); return; }
       frame.classList.toggle('b19-flash', up());
       var box = pinRoom && typeof host.roomBox === 'function' ? host.roomBox(svg, pinRoom) : null;
       if (box && typeof host.doc === 'function') pinSvg(host.doc(), svg, box); else clearPin(svg);
     }
-    return { start: start, end: end, toggle: toggle, pin: pin, unpin: unpin, pinned: function () { return pinRoom; }, stress: function () { return stress; }, note: note, noteEnd: noteEnd, paint: paint, refresh: repaint };
+    return { start: start, end: end, toggle: toggle, pin: pin, unpin: unpin, pinned: function () { return pinRoom; }, up: up, on: on, stress: function () { return stress; }, note: note, noteEnd: noteEnd, paint: paint, refresh: repaint };
   }
 
   return { SWITCH: SWITCH, parseStress: parseStress, pinSvg: pinSvg, clearPin: clearPin, create: create };

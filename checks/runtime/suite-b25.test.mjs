@@ -261,14 +261,19 @@ await test('GM: with every face switch off the held overlay is sent exactly as b
   await log.timers.shift()(); assert.equal(log.holds[1].args, 2, 'the renewal is as before too');
 });
 
-await test('GM: five expression buttons on the spotlight bar; each lays the held person again with that look; the tell comes from the notes', async () => {
+/* N3: the held person's row on the site's room card (gm/spotlight.js rowsHtml) carries the face looks */
+const DOV_ROW = [{ id: 'npc_pr_dov', name: 'Dov Kessler', alias: '', role: '', kind: '', revealed: true, here: true, moving: null, added: false }];
+await test('GM: five expression buttons on the held person\'s row; each lays the held person again with that look, and that face is pressed; the tell comes from the notes', async () => {
   const log = { holds: [], toasts: [], timers: [] }, c = Spot.create(spotHost(['face.spotlight', 'face.expressions', 'face.formats'], NOTES, log));
   await c.spotlight('npc_pr_dov'); assert.deepEqual(log.holds[0].look, { fmt: 'badge' }, 'the format from the Relation line, no expression yet');
-  const v = c.view(); assert.ok(v.faces && v.faces.on); const html = Spot.html(v);
-  assert.deepEqual([...html.matchAll(/data-b17="expr" data-expr="(\w+)"/g)].map((m) => m[1]), ['neutral', 'pleased', 'hostile', 'afraid', 'tell']);
-  assert.ok(/data-b17="sig"/.test(html) && !/data-b17="sig" disabled/.test(html), 'Signature is on: the notes name one');
+  const v = c.view(); assert.ok(v.faces && v.faces.on); const html = Spot.rowsHtml(DOV_ROW, v, {});
+  assert.deepEqual([...html.matchAll(/data-site="expr" data-expr="(\w+)"/g)].map((m) => m[1]), ['neutral', 'pleased', 'hostile', 'afraid', 'tell']);
+  assert.ok(/data-site="sig"/.test(html) && !/data-site="sig" disabled/.test(html), 'Signature is on: the notes name one');
+  assert.ok(/data-site="down"[^>]*>Take it down</.test(html) && /aria-pressed="false"[^>]*>Neutral</.test(html), 'Take it down, and no face pressed while the portrait is as drawn');
   for (const [name, want] of [['neutral', 'neutral'], ['pleased', 'pleased'], ['hostile', 'hostile'], ['afraid', 'afraid'], ['tell', 'smirk']]) {
     assert.equal(await c.express(name), true, name); assert.equal(log.holds[log.holds.length - 1].look.expr, want, name); assert.equal(log.holds[log.holds.length - 1].look.re, true, name + ': a change of face is not a new spotlight (no motif replay)'); assert.equal(log.holds[log.holds.length - 1].look.fmt, 'badge', 'the format stays');
+    const pressed = [...Spot.rowsHtml(DOV_ROW, c.view(), {}).matchAll(/data-expr="(\w+)" aria-pressed="true"/g)].map((m) => m[1]);
+    assert.deepEqual(pressed, [name], name + ' is the face pressed');
   }
   /* the signature goes in one overlay only, and the renewal after it drops it but keeps the expression and says it is a renewal */
   await c.signature(); assert.equal(log.holds[log.holds.length - 1].look.pose, 'lapel'); assert.ok(!log.holds[log.holds.length - 1].look.re, 'the signature is not marked a renewal, so its pose plays'); assert.equal(log.holds[log.holds.length - 1].look.expr, 'smirk');
@@ -279,8 +284,8 @@ await test('GM: five expression buttons on the spotlight bar; each lays the held
 
 await test('GM: a person with no tell or signature line gets a disabled button and a toast saying where to write it; no hidden-NPC shortcut: the server still decides', async () => {
   const log = { holds: [], toasts: [], timers: [] }, c = Spot.create(spotHost(['face.spotlight', 'face.expressions'], { npc_pr_dov: 'Plays dumb.' }, log));
-  await c.spotlight('npc_pr_dov'); const html = Spot.html(c.view());
-  assert.ok(/data-expr="tell" disabled/.test(html) && /data-b17="sig" disabled/.test(html));
+  await c.spotlight('npc_pr_dov'); const html = Spot.rowsHtml(DOV_ROW, c.view(), {});
+  assert.ok(/data-expr="tell" aria-pressed="false" disabled/.test(html) && /data-site="sig" disabled/.test(html));
   const n = log.holds.length; assert.equal(await c.express('tell'), false); assert.equal(await c.signature(), false); assert.equal(log.holds.length, n); assert.ok(log.toasts.some((t) => /Tell: smirk/.test(t)) && log.toasts.some((t) => /Signature: lapel/.test(t)));
   assert.equal(log.holds[0].args, 2, 'with no format asked for and no expression yet the overlay is the plain one');
 });

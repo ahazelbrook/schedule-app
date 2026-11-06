@@ -127,7 +127,7 @@ try {
 
   /* ---- everything on (N0): with NOTHING stored, the buttons are on the map and the filter layer alone brings the grain and the caption on the iPad ---- */
   const A = await open();
-  check((await A.page.$$('[data-b19="flashback"]')).length === 1 && (await A.page.$$('[data-b19="flash-pin"]')).length === 1, 'nothing stored: a Flashback and a Pin button on the map');
+  check((await A.page.$$('.rv-tools [data-site="flashback"]')).length === 1 && (await A.page.$$('.rv-tools [data-site="pin"]')).length === 1, 'nothing stored: a Flashback and a Pin button, in the site\'s toolbar over the map (N3)');
   const I0 = await openDisplay();
   check((await api('PATCH', '/gm/ambient', { layer: { path: 'scene.filter', value: 'flashback' } })).status === 200, 'the filter layer is set from outside the page');
   await I0.page.waitForFunction(() => { const r = document.querySelector('.dp-root'); return !!r && r.getAttribute('data-scene-filter') === 'flashback'; }, null, { timeout: 20000 });
@@ -139,35 +139,35 @@ try {
   /* ---- a stored true (what the Switchboard used to write) is the same ---- */
   check((await api('PATCH', '/gm/state', { features: { 'map.flashback': true } })).status === 200, 'a stored true is taken (and changes nothing)');
   const P = await open();
-  check((await P.page.$$('[data-b19="flashback"]')).length === 1 && (await P.page.$$('[data-b19="flash-pin"]')).length === 1, 'switch on: a Flashback button and a Pin button on the map');
+  check((await P.page.$$('.rv-tools [data-site="flashback"]')).length === 1 && (await P.page.$$('.rv-tools [data-site="pin"]')).length === 1, 'switch on: a Flashback button and a Pin button in the toolbar');
   await I0.page.reload();
   await I0.page.waitForSelector('.dp-overlay', { state: 'attached', timeout: 20000 });
-  await P.page.click('[data-b19="flashback"]');
+  await P.page.click('.rv-tools [data-site="flashback"]');
   check(!!(await until(async () => (await filterNow()) === 'flashback', 6000, 100)), 'the Flashback button sets the scene.filter layer');
-  check(await P.page.$eval('[data-b19="flashback"]', (b) => b.textContent === 'Back'), 'and reads Back while it is up');
+  check(await P.page.$eval('.rv-tools [data-site="flashback"]', (b) => b.textContent === 'Back'), 'and reads Back while it is up');
   check(!!(await until(() => P.page.evaluate(() => document.querySelector('#rv-map').classList.contains('b19-flash')), 6000, 100)), 'the GM map goes sepia');
   await I0.page.waitForFunction(() => { const r = document.querySelector('.dp-root'); return !!r && r.hasAttribute('data-flash-look'); }, null, { timeout: 25000 }).then(() => check(true, 'the iPad has the flash look'), () => check(false, 'the iPad has the flash look'));
   check(await I0.page.evaluate(() => { const r = document.querySelector('.dp-root'); return getComputedStyle(r, '::after').content === '"Earlier' + String.fromCharCode(0x2026) + '"'; }), 'the iPad caption reads Earlier…');
   check(await I0.page.evaluate(() => { const r = document.querySelector('.dp-root'); return /url\(/.test(getComputedStyle(r, '::before').backgroundImage); }), 'and the grain layer is drawn');
 
   /* the pin goes on the crew's room and comes up again */
-  await P.page.click('[data-b19="flash-pin"]');
+  await P.page.click('.rv-tools [data-site="pin"]');
   check(!!(await until(() => P.page.evaluate(() => !!document.querySelector('#rv-map svg .b19-pin')), 4000, 100)), 'Pin drops a pin on the room');
   await sleep(1500);
   check(await P.page.evaluate(() => !!document.querySelector('#rv-map svg .b19-pin')), 'the pin survives the map being redrawn');
   check(!/Showroom/.test(await I0.page.evaluate(() => document.body.innerText)), 'and the pin’s room is named nowhere on the iPad');
-  await P.page.click('[data-b19="flash-pin"]');
+  await P.page.click('.rv-tools [data-site="pin"]');
   check(!!(await until(() => P.page.evaluate(() => !document.querySelector('#rv-map svg .b19-pin')), 4000, 100)), 'a second tap takes the pin up');
 
   /* a tap ends it */
-  await P.page.click('[data-b19="flashback"]');
+  await P.page.click('.rv-tools [data-site="flashback"]');
   check(!!(await until(async () => (await filterNow()) === null, 6000, 100)), 'a tap on Back clears the layer');
   await I0.page.waitForFunction(() => { const r = document.querySelector('.dp-root'); return !!r && !r.hasAttribute('data-flash-look'); }, null, { timeout: 25000 }).then(() => check(true, 'and the iPad look goes'), () => check(false, 'and the iPad look goes'));
 
   /* ---- a stored false (the old All off) changes nothing ---- */
   check((await api('PATCH', '/gm/state', { features: { 'map.flashback': false } })).status === 200, 'a stored false is taken');
   const R = await open();
-  check((await R.page.$$('[data-b19="flashback"]')).length === 1 && (await R.page.$$('[data-b19="flash-pin"]')).length === 1, 'a stored false changes nothing: both buttons stay');
+  check((await R.page.$$('.rv-tools [data-site="flashback"]')).length === 1 && (await R.page.$$('.rv-tools [data-site="pin"]')).length === 1, 'a stored false changes nothing: both buttons stay');
 
   check(!errors.length, 'no page errors: ' + errors.slice(0, 3).join(' | '));
   await browser.close();

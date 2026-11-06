@@ -157,12 +157,12 @@ try {
   await G.page.click('[data-rv="back"]');
   check(!!(await until(async () => (await mission()).t === 60, 10000)) && (await ambOverlay()).id === ov1.id, 'Back: the mission is at 22:00 again and lays no overlay');
   const seqBefore = (await mission()).seq;
-  await G.page.click('.rv-sq[data-i="10"]');
+  await G.page.click('[data-rv="timepop"]'); await G.page.click('.rv-sq[data-i="10"]');      /* N3: the night's squares are in the time's popover */
   check(await G.page.$eval('.rv-peekbar', (e) => /23:30/.test(e.textContent)), 'a peek at 23:30 is up');
   await sleep(1800);
   check((await mission()).seq === seqBefore && (await mission()).t === 60 && await chipText() === 'Players: 22:00 ✓', 'the peek published nothing: same seq, same time, same chip');
   check((await ambOverlay()).id === ov1.id, 'and laid no overlay');
-  await G.page.click('[data-rv="unpeek"]');
+  await G.page.click('.rv-peekbar [data-rv="unpeek"]');
   await G.page.click('[data-rv="back"]');
   check(!!(await until(async () => (await mission()).t === 45, 10000)), 'Back to 21:45');
   const seqJ = (await mission()).seq;

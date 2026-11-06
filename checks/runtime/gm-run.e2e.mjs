@@ -149,6 +149,16 @@ try {
   /* the disguise: Cook; the control room is desperate, and Ivo (whom a cook sees through) is in it. The Disguise select is put away since N0 (until it has a toggle of
      its own): the engine still runs, so the check drives the select as the page's own change handler hears it */
   check(await G.page.$eval('#gm-run-lens', (s) => s.offsetParent === null), 'the Disguise select is put away (N0)');
+  /* N3: the Costume engine (the Workshop's old item) is on the site: for a v1 site, its site line (G); it shows the select on this device only */
+  await G.page.keyboard.press('g');
+  await G.page.waitForSelector('#gm-runv .rv-siteline [data-site="costume"]', { timeout: 10000 });
+  check(/Costume engine: hidden/.test(await G.page.textContent('#gm-runv .rv-siteline [data-site="costume"]')), 'a v1 site\'s site line offers the Costume engine, hidden');
+  await G.page.click('#gm-runv .rv-siteline [data-site="costume"]');
+  await G.page.keyboard.press('b'); await G.page.waitForSelector('#gm-run-lens', { state: 'attached', timeout: 10000 });
+  check(await G.page.$eval('#gm-run-lens', (s) => s.offsetParent !== null) && await G.page.evaluate(() => localStorage.getItem('b68.gm.costume') === '1'), 'the Costume engine shows the Disguise select (this device only)');
+  await G.page.keyboard.press('g'); await G.page.click('#gm-runv .rv-siteline [data-site="costume"]');
+  await G.page.keyboard.press('b'); await G.page.waitForSelector('#gm-run-lens', { state: 'attached', timeout: 10000 });
+  check(await G.page.$eval('#gm-run-lens', (s) => s.offsetParent === null), 'and puts it away again');
   await G.page.$eval('#gm-run-lens', (s) => { s.value = 'cook'; s.dispatchEvent(new Event('change', { bubbles: true })); });
   check(await until(async () => await G.page.$eval('#gm-map', (m) => m.innerHTML.includes('#d11')), 5000), 'the red ring is on the map for the one room where Ivo stands');
   check(await G.page.$eval('#gm-run-rooms [data-room="Security control room"]', (b) => b.className.includes('pos-desperate') && b.className.includes('danger')), 'and the room chip says desperate and danger');

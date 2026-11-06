@@ -117,13 +117,13 @@ try {
 
   /* ---- everything on (N0): with NOTHING stored the button is on the map ---- */
   const A = await open();
-  check((await A.page.$$('[data-b19="spotted"]')).length === 1, 'nothing stored: one Spotted button on the map');
+  check((await A.page.$$('.rv-tools [data-site="spotted"]')).length === 1, 'nothing stored: one Spotted button, in the site\'s toolbar over the map (N3)');
   await A.c.close();
 
   /* ---- a stored true (what the Switchboard used to write) is the same ---- */
   check((await api('PATCH', '/gm/state', { features: { 'map.spotted': true } })).status === 200, 'a stored true is taken (and changes nothing)');
   const P = await open();
-  check((await P.page.$$('[data-b19="spotted"]')).length === 1, 'switch on: one Spotted button on the map');
+  check((await P.page.$$('.rv-tools [data-site="spotted"]')).length === 1, 'switch on: one Spotted button in the toolbar');
   const ambientDoc = async () => { const j = (await api('GET', '/gm/ambient')).json || {}; return j.doc || (j.ambient && j.ambient.doc) || {}; };
   await P.page.evaluate(() => {
     const w = (window.__b19 = { t0: 0, zoomedAt: 0, fillAt: 0, goneAt: 0, backAt: 0 });
@@ -140,7 +140,7 @@ try {
     w.start();
   });
   const tClick = Date.now();
-  await P.page.click('[data-b19="spotted"]');
+  await P.page.click('.rv-tools [data-site="spotted"]');
   const f3 = await until(async () => { const f = await fuse(); return f && f.filled === 3 ? f : null; }, 4000, 40);
   check(!!f3, 'the Fuse ticks to 3/6 (' + (Date.now() - tClick) + ' ms after the tap)');
   const m = await until(() => P.page.evaluate(() => (window.__b19.backAt ? window.__b19 : null)), 5000, 50);
@@ -158,9 +158,9 @@ try {
   /* ---- two GM pages open: a tap on each at once, still one tick ---- */
   check((await putClocks(1)).status === 200, 'the Fuse is put back to 1/6');
   const Q = await open();
-  await P.page.waitForSelector('[data-b19="spotted"]', { timeout: 20000 });
+  await P.page.waitForSelector('.rv-tools [data-site="spotted"]', { timeout: 20000 });
   await sleep(1500);
-  await Promise.all([P.page.click('[data-b19="spotted"]'), Q.page.click('[data-b19="spotted"]')]);
+  await Promise.all([P.page.click('.rv-tools [data-site="spotted"]'), Q.page.click('.rv-tools [data-site="spotted"]')]);
   await sleep(3500);
   const f2 = await fuse();
   check(!!f2 && f2.filled === 2, 'two GM pages tapped together: the Fuse is 2/6, ticked once (' + JSON.stringify(f2) + ')');
@@ -168,7 +168,7 @@ try {
   /* ---- a stored false (the old All off) changes nothing ---- */
   check((await api('PATCH', '/gm/state', { features: { 'map.spotted': false } })).status === 200, 'a stored false is taken');
   const R = await open();
-  check((await R.page.$$('[data-b19="spotted"]')).length === 1, 'a stored false changes nothing: the button stays');
+  check((await R.page.$$('.rv-tools [data-site="spotted"]')).length === 1, 'a stored false changes nothing: the button stays');
 
   check(!errors.length, 'no page errors: ' + errors.slice(0, 3).join(' | '));
   await browser.close();
