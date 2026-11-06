@@ -228,6 +228,9 @@ await test('the toolbar, the board\'s tints and the legend; the room card: the P
   assert.ok(/SEG:Private card rooms/.test(h) && /PEOPLE:Private card rooms:\d+:first/.test(h) && /PEOPLE:Showroom:\d+:</.test(h) && !/PEOPLE:Showroom:\d+:first/.test(h), 'the people of each card; the first card is told it is first');
   assert.ok(/data-rv="tellroom" data-intel="I2" aria-pressed="false"/.test(h) && /data-rv="tellroom" data-intel="I4"/.test(h), 'the card rooms\' intel');
   assert.ok(/data-site="threat" data-text="GM-ONLY-wrong"[^>]*>→ the Roll</.test(h), 'the Showroom\'s If it goes wrong');
+  const at = h.indexOf('<div class="rv-rm" data-room="Showroom"'), show = at >= 0 ? h.slice(at) : '';
+  assert.ok(show.indexOf('SEG:Showroom') >= 0 && show.indexOf('SEG:Showroom') < show.indexOf('class="rv-wrong"') && show.indexOf('class="rv-wrong"') < show.indexOf('PEOPLE:Showroom'),
+    '"→ the Roll" sits just under the Players\' map, above the people (on screen at 768 px)');
   const n0 = r.sets.length; r.click('tellroom'); assert.equal(r.sets.length, n0, 'a Tell the crew with no intel id (or one the play lacks) writes nothing');
 });
 

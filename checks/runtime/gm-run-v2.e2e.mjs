@@ -196,7 +196,10 @@ try {
   b = await until(async () => { const x = await ball(); return x && x.crew && x.crew['run-pc1'] ? x : null; }, 8000);
   check(!!b && b.crew['run-pc1'].room === 'Showroom' && b.crew['run-pc1'].moved === 3, 'tap then room: ball.crew has the PC in the Showroom, moved in beat index 3 (' + JSON.stringify(b && b.crew) + ')');
   check(await G.page.$eval('.rv-card[data-room="Showroom"] .rv-pc[data-id="run-pc1"]', (e) => !!e), 'and the chip sits on that card');
-  const chip = await G.page.$('.rv-tray .rv-pc[data-id="run-pc2"]'), cardBox = await (await G.page.waitForSelector('.rv-card[data-room="Cocktail lounge"]', { timeout: 10000 })).boundingBox(), cb = await chip.boundingBox();
+  /* the selection redraws the view (the Roll follows the selected room, N4's roomSelected, a beat later): read both boxes after it settles, through
+     locators, so no handle is left pointing at a node the redraw replaced */
+  await G.page.waitForSelector('.rv-card[data-room="Cocktail lounge"]', { timeout: 10000 }); await sleep(600);
+  const cardBox = await G.page.locator('.rv-card[data-room="Cocktail lounge"]').boundingBox(), cb = await G.page.locator('.rv-tray .rv-pc[data-id="run-pc2"]').boundingBox();
   await G.page.mouse.move(cb.x + cb.width / 2, cb.y + cb.height / 2);
   await G.page.mouse.down();
   await G.page.mouse.move(cb.x + cb.width / 2 + 20, cb.y + cb.height / 2 + 20, { steps: 4 });

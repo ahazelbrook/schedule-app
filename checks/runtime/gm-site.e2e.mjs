@@ -216,6 +216,7 @@ try {
   check(await G.page.$eval('#rv-menu', (e) => e.hidden), 'Esc shuts the menu');
 
   /* ---- 6. Montage, inline (N2's registry), glowing past the budget ---- */
+  await sleep(1500);      /* the page stores the Roll's line half a second after "→ the Roll" (N4): let that save land before this check's own write to the state */
   check((await api('PATCH', '/gm/state', { night: { v: 1, phase: 'score', phases: { pb: {}, plan: {}, score: { budget: 1, start: Date.now() - 10 * 60000, end: null }, after: {} } } })).status === 200, 'the night is in the score, ten minutes into a one-minute budget');
   await G.page.evaluate(() => window.dispatchEvent(new Event('focus')));
   check(!!(await until(() => G.page.$eval('.rv-tools [data-site="montage"]', (e) => e.classList.contains('glow')).catch(() => false), 15000)), 'Montage glows: the score is past its budget');
@@ -226,6 +227,16 @@ try {
   await G.page.click('[data-rv="next"]');
   check(!!(await until(() => G.page.evaluate(() => !!document.querySelector('.rv-sec[data-sec="tool"] .gm-inline [data-mt-pick]')), 5000)), 'it stays through a redraw of the site');
   await G.page.click('[data-rv="back"]');
+  /* a line half typed keeps its focus and caret when the site redraws under it (a change from another device, here the night's budget) */
+  const mtLine = '.rv-sec[data-sec="tool"] .gm-inline [data-mt-line]';
+  await G.page.click(mtLine); await G.page.keyboard.type('a half typed line'); await G.page.keyboard.press('ArrowLeft');
+  await G.page.evaluate(() => { document.querySelector('.rv-head').__before = true; });
+  await api('PATCH', '/gm/state', { night: { v: 1, phase: 'score', phases: { pb: {}, plan: {}, score: { budget: 2, start: Date.now() - 10 * 60000, end: null }, after: {} } } });
+  await G.page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  const redrawn = await until(() => G.page.evaluate(() => { const h = document.querySelector('.rv-head'); return !!h && !h.__before; }), 15000);
+  const kept = await G.page.evaluate((q) => { const a = document.activeElement, f = document.querySelector(q); return { same: !!f && a === f, value: f ? f.value : '', caret: f ? f.selectionStart : -1 }; }, mtLine);
+  check(!!redrawn && kept.same && kept.value === 'a half typed line' && kept.caret === 16, 'a redraw from elsewhere keeps the montage line focused, its text and its caret (' + JSON.stringify(kept) + ', redrawn ' + !!redrawn + ')');
+  await G.page.fill(mtLine, ''); await G.page.evaluate(() => document.activeElement && document.activeElement.blur());      /* Esc in a field only leaves the field */
   await G.page.keyboard.press('Escape');
   check(!!(await until(() => G.page.evaluate(() => !document.querySelector('.rv-sec[data-sec="tool"]') && !window.B68GmWorkshop.bound('montage')), 5000)), 'Esc closes it and unbinds it');
 

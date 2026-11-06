@@ -584,10 +584,14 @@
         var c = m.cards[name], tapped = name === ctx.sel, ppl = peopleIn(ctx.play, ctx.st, ctx.shownT, name), evs = eventsIn(ctx.play, ctx.st, ctx.shownT, name);
         var reach = reachIn(ctx.play, ctx.st, ctx.shownT, c.pcs.map(function (p) { return p.id; })), ks = isObj(states[name]) ? states[name] : null;
         var seg = ""; try { seg = typeof host.knowledgeSeg === "function" ? str(host.knowledgeSeg(name)) : ""; } catch (e) { seg = ""; }
+        /* the room's If it goes wrong line(s), each with "→ the Roll" (it becomes the Roll's line: B68GmPage.setThreat, through the page): high on the card,
+           just under the Players' map, so it is on screen at 768 px without a scroll */
+        var wl = []; try { wl = typeof host.roomWrong === "function" ? list(host.roomWrong(name)) : []; } catch (e) { wl = []; }
+        var wrong = wl.length ? '<div class="rv-wrong">' + wl.map(function (l) { return '<p><span class="rv-lab">If it goes wrong</span> <span class="rv-wrongt">' + esc(l) + '</span> <button type="button" class="rv-btn sm rv-toroll" data-site="threat" data-text="' + esc(l) + '" title="Put this line in the Roll’s If it goes wrong line">→ the Roll</button></p>'; }).join("") + "</div>" : "";
         h += '<div class="rv-rm' + (tapped ? " sel" : "") + '" data-room="' + esc(name) + '">' +
           (ks ? '<p class="rv-rmk">' + (ks.band ? esc(ks.band) + " · " : "") + "<b>" + esc(ks.staged && ks.k !== "seen" ? ks.k + ", staged" : ks.k) + "</b></p>" : "") +
           '<h3 class="rv-sh">' + esc(c.name) + (c.zoneLabel ? ' <small>' + esc(c.zoneLabel) + "</small>" : "") + "</h3>" +
-          (seg || revealToggle(c, ctx)) +
+          (seg || revealToggle(c, ctx)) + wrong +
           '<p class="rv-rmpcs"><span class="rv-lab">PCs</span> ' + (c.pcs.length ? c.pcs.map(function (p) { return "<b>" + esc(p.name) + "</b>"; }).join(", ") : '<span class="rv-dim">none</span>') + "</p>";
         var rows = ""; try { rows = typeof host.peopleHtml === "function" ? str(host.peopleHtml(name, ppl, idx === 0)) : ""; } catch (e) { rows = ""; }      /* the first card also shows who is held, wherever they are */
         h += '<h4 class="rv-lab">Who&#39;s here</h4>' + (rows || '<ul class="rv-who">' + (ppl.length ? ppl.map(function (p) {
@@ -614,9 +618,6 @@
           h += typeof note === "string" ? '<div class="rv-rmnote pp-doc pp-cardbody">' + note + "</div>"       /* the page's renderer made it from the prep note */
             : '<p class="rv-dim rv-nonote">No notes for ' + esc(name) + ': add <code>### ' + esc(name) + "</code> under <code>## Rooms</code> in the prep note.</p>";
         }
-        /* the room's If it goes wrong line(s), each with "→ the Roll": it becomes the Roll's threat line (host.setThreat, through the page) */
-        var wl = []; try { wl = typeof host.roomWrong === "function" ? list(host.roomWrong(name)) : []; } catch (e) { wl = []; }
-        if (wl.length) h += '<div class="rv-wrong">' + wl.map(function (l) { return '<p><span class="rv-lab">If it goes wrong</span> <span class="rv-wrongt">' + esc(l) + '</span> <button type="button" class="rv-btn sm rv-toroll" data-site="threat" data-text="' + esc(l) + '" title="Put this line in the Roll’s threat line">→ the Roll</button></p>'; }).join("") + "</div>";
         h += "</div>";
       });
       box.innerHTML = h;
@@ -636,8 +637,16 @@
       var secs = [{ id: "room", order: -10, render: roomsSection }].concat(sections).sort(function (a, b) { return (a.order || 0) - (b.order || 0); });
       var peekBar = peekT !== null ? '<div class="rv-peekbar" role="status">Looking at <b>' + esc(B.timeLabel(x.rs.play, peekT)) + '</b> <button type="button" class="rv-btn sm" data-rv="unpeek">Back to now</button> <span class="rv-dim">The players are not told.</span></div>' : "";
       /* a tool bound into the right column (the montage, inline) keeps its element across the redraw: it is lifted out first and put back after */
-      var keep = tool && tool.el && tool.el.parentNode ? tool.el : null;
-      if (keep) keep.parentNode.removeChild(keep);
+      var keep = tool && tool.el && tool.el.parentNode ? tool.el : null, refocus = null;
+      if (keep) {
+        /* a field the GM is in (a montage line half typed) keeps its focus and caret through a redraw from another device or the beat timer */
+        var fa = keep.ownerDocument ? keep.ownerDocument.activeElement : null;
+        if (fa && fa !== keep && typeof keep.contains === "function" && keep.contains(fa)) {
+          refocus = { el: fa, s: null, e: null };
+          try { if (typeof fa.selectionStart === "number") { refocus.s = fa.selectionStart; refocus.e = fa.selectionEnd; } } catch (e) { /* a select or a button has no caret */ }
+        }
+        keep.parentNode.removeChild(keep);
+      }
       box.innerHTML = headHtml(x) + (warnText ? '<p class="rv-warn rv-dim" role="status">' + esc(warnText) + "</p>" : "") +
         '<div class="rv-body' + (v.id === "map" ? " mapview" : "") + '"><div class="rv-main' + (peekT !== null ? " peeking" : "") + '">' +
         toolbarHtml(vs, v) + peekBar + '<div class="rv-view" id="rv-view" data-view="' + esc(v.id) + '"></div>' + legendHtml(v) + "</div>" +
@@ -645,6 +654,9 @@
         (tool ? '<section class="rv-sec rv-toolsec" data-sec="tool" aria-label="' + esc(tool.title) + '"><header class="rv-toolh"><h3 class="rv-sh">' + esc(tool.title) + '</h3><button type="button" class="rv-btn sm" data-rv="toolx" aria-label="Close ' + esc(tool.title) + '" title="Close (Esc)">×</button></header></section>' : "") +
         secs.map(function (s) { return '<section class="rv-sec" data-sec="' + esc(s.id) + '"></section>'; }).join("") + "</aside></div>" + npcPop();
       if (tool && tool.el && typeof box.querySelector === "function") { var ts = box.querySelector('.rv-sec[data-sec="tool"]'); if (ts && typeof ts.appendChild === "function") ts.appendChild(tool.el); }
+      if (refocus && typeof refocus.el.focus === "function" && tool && tool.el && typeof tool.el.contains === "function" && tool.el.contains(refocus.el)) {
+        try { refocus.el.focus({ preventScroll: true }); if (refocus.s !== null && typeof refocus.el.setSelectionRange === "function") refocus.el.setSelectionRange(refocus.s, refocus.e); } catch (e) { /* focus is a courtesy */ }
+      }
       if (v.id !== "map" && mapZoom) { mapZoom.destroy(); mapZoom = null; }
       try { v.render(box.querySelector("#rv-view"), ctx); } catch (e) { box.querySelector("#rv-view").textContent = "This view could not be drawn: " + (e && e.message || e); }
       secs.forEach(function (s) {

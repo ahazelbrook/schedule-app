@@ -19,7 +19,8 @@
      create(host) -> controller
        host: { feature(id) -> bool, rooms() -> [{ name, band }], opened() -> [name] open for the players already, shown(name) -> bool its band already shows it,
                setOpen(names) -> bool, liveText() -> string what the iPad shows, dark() -> Promise, toast(msg, bad), changed() }
-       controller: toggle(name) stage(name) unstage(name) staged() isStaged(name) canStage(name) send() freeze(on?) blank() holding() view() reset()
+       controller: toggle(name) stage(name) unstage(name) staged() isStaged(name) canStage(name) send() freeze(on?) blank() unblank() holding() view() reset()
+                   (unblank: the page, when anything but the dark reaches the iPad; view() never says BLANK while a map is live)
 
    THE PAGE'S STAGE (what the band's iPad tray reads, N5; keep the names)
      provide(controller) -> unprovide()     the GM page hands over its controller (one at a time; a second provide replaces the first)
@@ -110,13 +111,15 @@
       if (!on()) return Promise.resolve(false);
       return Promise.resolve(typeof host.dark === 'function' ? host.dark() : null).then(function () { blanked = true; changed(); return true; }, function () { return false; });
     }
+    /* the page calls this when anything but the dark reaches the iPad (Show on iPad from Location, a scene, a handout): Blank is over */
+    function unblank() { if (!blanked) return false; blanked = false; changed(); return true; }
     function holding() { return on() && frozen; }
     function view() {
-      var live = typeof host.liveText === 'function' ? str(host.liveText()) : '';
-      return { on: on(), staged: staged(), frozen: frozen, blanked: blanked, live: live, badge: frozen ? 'FROZEN: ' + (live || 'nothing') : blanked ? 'BLANK' : live ? 'LIVE: ' + live : 'Not on the iPad' };
+      var live = typeof host.liveText === 'function' ? str(host.liveText()) : '', bl = blanked && !live;     /* a map live on the iPad is never blank */
+      return { on: on(), staged: staged(), frozen: frozen, blanked: bl, live: live, badge: frozen ? 'FROZEN: ' + (live || 'nothing') : bl ? 'BLANK' : live ? 'LIVE: ' + live : 'Not on the iPad' };
     }
     function reset() { list = []; frozen = false; blanked = false; }
-    ctl = { toggle: toggle, stage: stage, unstage: unstage, staged: staged, isStaged: isStaged, canStage: canStage, send: send, freeze: freeze, blank: blank, holding: holding, view: view, reset: reset };
+    ctl = { toggle: toggle, stage: stage, unstage: unstage, staged: staged, isStaged: isStaged, canStage: canStage, send: send, freeze: freeze, blank: blank, unblank: unblank, holding: holding, view: view, reset: reset };
     return ctl;
   }
 

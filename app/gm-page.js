@@ -3731,6 +3731,7 @@
     DQ.busy = job; paintLive();
     Promise.resolve().then(function () { return job.g.setDisplay(body); }).then(function (r) {
       DQ.busy = null;
+      if (body.kind !== 'dark' && S && S.b17 && S.b17.stage && typeof S.b17.stage.unblank === 'function') S.b17.stage.unblank();     /* N3: anything but the dark on the iPad ends Blank */
       try { if (job.opts.done) job.opts.done(r || {}); } catch (e) {}
       noteShown(job.d, job.opts); job.res(r); pumpDisplay(); paintLive();
     }, function (e) {
@@ -4522,8 +4523,8 @@
     f.hidden = !(r || vo);
     if (sm) sm.textContent = (r || vo) && R ? R.rackSummary({ fitted: r && r.pre ? str(r.pre.pos) : '', pending: !!(r && r.status === 'pending'), voice: vo ? str(vo.who) : '' }) : '';
   }
-  /* N4, until the band's one Esc (N1a) sends every press through gm/esc.js: what is registered there (the stamp, for one) is reached from here, before
-     the staging panel's own Esc (b17Esc blanks a live map), so a stamp that is up comes down first and the next press does the rest */
+  /* N4, until the band's one Esc (N1a) sends every press through gm/esc.js: what is registered there (the stamp, the site's popovers, its NPC card, a
+     peek, an inline tool) is reached from here, one thing per press. Esc never blanks the map any more (N3: Blank is a button) */
   function escOne() { var E = W.B68GmEsc; return !!(E && typeof E.handle === 'function' && E.handle({}) !== 'none'); }
   /* ---------- B19: the map beats (map.spotted 2.6, map.flashback 2.9, map.threat 2.5). The logic is in gm/map-*.js; this is the seam. Each reads its own switch live. ---------- */
   function b19Room(svg, name) {

@@ -31,7 +31,7 @@ function stageHost(over = {}) {
   const host = {
     feature: (id) => state.on && id === 'map.stage', rooms: () => ROOMS, opened: () => state.opened.slice(), shown: (n) => n === 'Pelican Lobby',
     setOpen: (names) => { log.open.push(names.slice()); state.opened = names.slice(); log.sent.push(['open', names.slice()]); return true; },
-    liveText: () => state.live, dark: () => { log.dark++; log.sent.push(['dark']); return Promise.resolve(); }, toast: (m, bad) => log.toasts.push([m, !!bad]), changed: () => {},
+    liveText: () => state.live, dark: () => { log.dark++; log.sent.push(['dark']); state.live = ''; return Promise.resolve(); }, toast:      /* the dark: no map on the iPad */ (m, bad) => log.toasts.push([m, !!bad]), changed: () => {},
     ...over
   };
   return { host, log, state };
@@ -66,6 +66,11 @@ await test('2.3 send keeps rooms already open, refuses when frozen; freeze(on) s
   assert.equal(typeof c.esc, 'undefined', 'the stage has no Esc of its own'); state.live = 'the public band';
   assert.match(c.view().badge, /^LIVE: the public band/);
   assert.equal(await c.blank(), true); assert.equal(log.dark, 1); assert.equal(c.view().badge, 'BLANK');
+  /* the review's stale BLANK: Blank, then the map goes up again another way (Show on iPad from Location) */
+  state.live = 'the public band';
+  assert.equal(c.view().blanked, false, 'a map live on the iPad is never blank'); assert.match(c.view().badge, /^LIVE: the public band/);
+  state.live = ''; assert.equal(c.view().badge, 'BLANK', 'still blank while nothing else is up');
+  assert.equal(c.unblank(), true, 'the page says something else reached the iPad'); assert.equal(c.view().badge, 'Not on the iPad'); assert.equal(c.unblank(), false, 'once');
 });
 
 await test('2.3 off: every call does nothing', async () => {
