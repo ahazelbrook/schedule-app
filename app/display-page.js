@@ -2106,8 +2106,9 @@
       if (!document.hidden) { acquireWake(); paintStatus(); }
     }));
     s.offs.push(on(window, 'online', function () { if (s.poller) { s.poller.reset(); s.poller.kick(); } }));
-    /* T2: Safari brings a page back from its back-forward cache, or the iPad wakes, without a visibilitychange: look at once, and forget the backoff */
-    s.offs.push(on(window, 'pageshow', function () { if (s.poller) { s.poller.reset(); s.poller.kick(); } }), on(window, 'focus', function () { if (s.poller) s.poller.kick(); }));
+    /* T2: Safari brings a page back from its back-forward cache (pageshow, persisted) with its timers stale: look at once, and forget the backoff. Not on the
+       first load's own pageshow, which would put a second look right after the first and break the beat. */
+    s.offs.push(on(window, 'pageshow', function (ev) { if (ev && ev.persisted && s.poller) { s.poller.reset(); s.poller.kick(); } }));
     acquireWake();
     /* the first tap or touch is also the user gesture the wake lock sometimes wants */
     s.offs.push(on(container, 'pointerdown', acquireWake, { passive: true }));
