@@ -6416,7 +6416,7 @@
         '<button type="button" class="btn sm pp-widebtn" data-gm="prep-wide" aria-pressed="' + !!S.prepWide + '" title="Hide the console while you read">Wide</button></div>' +
         (age != null && age > 1 ? '<p class="gm-note pp-stale">Exported ' + Math.floor(age) + ' day' + (age >= 2 ? 's' : '') + ' ago. Edits made in Obsidian since then are not here: run <code>npm run gm:pack</code> and push the pack.</p>' : '') +
         '<div class="pp-peek" id="gm-prep-peek" hidden></div><article class="pp-doc">' + v.html + '</article>';
-      prepSubsBuild(box);
+      try { prepSubsBuild(box); } catch (e) { if (W.console) W.console.error('prep: the index headings', e); }      /* T13: never at the cost of the note */
     }
     decoratePrep(box);
   }
@@ -6424,13 +6424,13 @@
      deeper are left out), each a jump; a ▸ beside the chip folds them. Only the section in view is open, unless the GM opened or shut one
      (S.prepSubOpen, this page only). The ## chips are the rail as before: Find, the filter and the spy read them unchanged */
   function prepSubsBuild(box) {
-    var rail = box.querySelector('.pp-rail'); if (!rail) return;
+    var rail = box.querySelector('.pp-rail'); if (!rail || typeof rail.insertBefore !== 'function' || typeof document.createElement !== 'function') return;      /* a page with no DOM to build in: the ## rail alone */
     [].slice.call(rail.querySelectorAll('[data-gm="prep-go"]')).forEach(function (c) {
       var id = c.getAttribute('data-id'), sec = prepSectionEl(id); if (!sec) return;
       var hs = [].filter.call(sec.children, function (e) { return e.tagName === 'H4' && e.id; }); if (!hs.length) return;
       var head = c.textContent, t = document.createElement('button'), g = document.createElement('div');
-      t.type = 'button'; t.className = 'pp-subt'; t.setAttribute('data-gm', 'prep-subt'); t.setAttribute('data-subt', id); t.setAttribute('aria-expanded', 'false');
-      t.setAttribute('aria-label', 'The headings in ' + head); t.title = 'Show or hide the headings in ' + head; t.textContent = '▸';
+      t.setAttribute('type', 'button'); t.className = 'pp-subt'; t.setAttribute('data-gm', 'prep-subt'); t.setAttribute('data-subt', id); t.setAttribute('aria-expanded', 'false');
+      t.setAttribute('aria-label', 'The headings in ' + head); t.setAttribute('title', 'Show or hide the headings in ' + head); t.textContent = '▸';
       g.className = 'pp-subs'; g.setAttribute('data-subs', id); g.setAttribute('role', 'group'); g.setAttribute('aria-label', 'In ' + head); g.hidden = true;
       g.innerHTML = hs.map(function (h) { return '<button type="button" class="pp-subgo" data-gm="prep-sub" data-id="' + esc(h.id) + '">' + esc(h.textContent.replace(/\s+/g, ' ').trim()) + '</button>'; }).join('');
       c.classList.add('pp-has-subs');
@@ -6478,7 +6478,7 @@
       var hit = words.every(function (w) { return t.indexOf(w) >= 0; });
       c.hidden = !hit; if (hit) { c.removeAttribute('hidden'); if (!first) first = c; } else c.setAttribute('hidden', '');
     });
-    prepSubSync($q('#gm-prep'));      /* T13: a section filtered out takes its headings with it */
+    try { prepSubSync($q('#gm-prep')); } catch (e) { /* T13: the headings stay as they were */ }      /* T13: a section filtered out takes its headings with it */
     return first;
   }
   function prepFindGo() {
@@ -7583,7 +7583,7 @@
     });
     if (!cur && pane.scrollTop < 40) cur = null;
     chips.forEach(function (c) { if (c === cur) c.setAttribute('aria-current', 'true'); else c.removeAttribute('aria-current'); });
-    if (panel === 'prep') prepSubSync(pane);      /* T13: the section in view opens its headings */
+    if (panel === 'prep') { try { prepSubSync(pane); } catch (e) { /* T13: the index headings follow on the next scroll */ } }      /* T13: the section in view opens its headings */
   }
   function onSubmit(ev) {
     var f = ev.target; if (!S || !f || !f.getAttribute) return;
