@@ -19,6 +19,7 @@ import { montageLayer, montageTexts } from './show-montage.js';
 import { BOARD_KINDS } from './show-board.js';
 import { CASTPHOTO_KINDS } from './show-castphoto.js';
 import { TITLE_KINDS } from './show-title.js';
+import { knownAs } from './known-as.js';
 
 const TONES = ['ink', 'orange', 'blue', 'red'];
 const REPORT_POSITIONS = ['controlled', 'risky', 'desperate'], REPORT_EFFECTS = ['limited', 'standard', 'great'];   // the action report card (B09 spine.stamp): report { position, effect, text? (100) }
@@ -201,6 +202,7 @@ export async function revealedCards(db, campaign, idList, withSpec) {
     let d = null;
     try { d = JSON.parse(r.doc); } catch (_) { d = null; }
     if (!isPlainObject(d) || d.revealed !== true) continue;
+    d = knownAs(d);      // a known-as NPC by its alias alone (known-as.js)
     out[r.id] = { npcId: r.id, name: s(d.name), alias: s(d.alias), role: s(d.role), faction: s(d.faction) };
     if (withSpec) out[r.id].spec = drawing(d.spec);
     if (!out[r.id].name) delete out[r.id];

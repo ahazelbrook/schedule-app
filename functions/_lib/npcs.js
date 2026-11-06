@@ -6,6 +6,7 @@
 
 import { HttpError, ID_RE, MAX_BODY_BYTES, isPlainObject, nowIso } from './http.js';
 import FaceLook from '../../app/display/face-look.js';
+import { isKnownAs, knownAs } from './known-as.js';
 
 export const GM_ONLY_NPC = 'only the GM can change the cast';
 const MAX_ATTEMPTS = 5;
@@ -90,11 +91,11 @@ export function parseNpc(row) {
   }
 }
 
-/** What a player may see of a document: nothing unless it is revealed, and never `gmNotes`. */
+/** What a player may see of a document: nothing unless it is revealed, never `gmNotes`, and a known-as NPC by its alias alone (known-as.js). */
 export function playerView(doc) {
   if (!doc || doc.revealed !== true) return null;
   const { gmNotes: _hidden, ...rest } = doc;
-  return rest;
+  return knownAs(rest);
 }
 
 /** The document as `me` may see it: the GM's whole, a player's playerView (or null). */
@@ -141,8 +142,9 @@ export async function joinOverlayNpc(db, campaign, amb) {
   const next = { ...amb.doc };
   if (!doc || doc.revealed !== true) { delete next.overlay; return { amb: { ...amb, doc: next }, dropped: true }; }
   const text = (v) => (typeof v === 'string' ? v : '');
+  const v = knownAs(doc);      // a known-as NPC by its alias alone
   // built from named keys, never by spreading the stored overlay: whatever else a stored row holds (an old shape, a stray key) is not served
-  next.overlay = { id: o.id, kind: o.kind, ms: o.ms, at: o.at, age: o.age, auto: o.auto, npcId: o.npcId, look: FaceLook.clean(o.look) || undefined, npc: { name: text(doc.name), alias: text(doc.alias), role: text(doc.role), faction: text(doc.faction), spec: drawingSpec(doc.spec) } };
+  next.overlay = { id: o.id, kind: o.kind, ms: o.ms, at: o.at, age: o.age, auto: o.auto, npcId: o.npcId, look: FaceLook.clean(o.look) || undefined, npc: { name: text(v.name), alias: text(v.alias), role: text(v.role), faction: text(v.faction), spec: drawingSpec(v.spec) } };
   for (const k of Object.keys(next.overlay)) if (next.overlay[k] === undefined) delete next.overlay[k];       // absent stays absent
   return { amb: { ...amb, doc: next }, dropped: false };
 }
@@ -151,18 +153,22 @@ export async function joinOverlayNpc(db, campaign, amb) {
  * The display as the display is served it, with a display of kind 'npc' joined to its row at READ time (GET /api/gm/display; tech run T3).
  * The table's display-only sign-in cannot read the cast (403), so without this a pushed NPC drew "Not found" on the iPad. While that NPC is
  * live, in this campaign and `revealed: true`, a copy of the display gains `npc`: exactly what a player's own cast page shows of a revealed
- * NPC that the stage draws (name, alias, role, faction, description) and the drawing keys of the spec, each copied by name. A hidden,
- * missing or deleted NPC gains nothing (the display then reads the cast itself, as before). Response only: nothing is stored.
- * `cur` is loadDisplay's { seq, display, updatedAt }; one read by primary key, and only for an npc display.
+ * NPC that the stage draws (name, alias, role, faction, description; playerView, so a known-as NPC by its alias alone) and the drawing keys
+ * of the spec, each copied by name. A hidden, missing or deleted NPC gains nothing (the display then reads the cast itself, as before).
+ * T15: the GM page stores the NPC's full name as the display's title, and the iPad shows it, so for a live known-as NPC (known-as.js) the
+ * title served is the alias, revealed or not. Response only: nothing is stored. `cur` is loadDisplay's { seq, display, updatedAt }; one read
+ * by primary key, and only for an npc display; anything else is `cur` as it came (the same object).
  */
 export async function joinDisplayNpc(db, campaign, cur) {
   const d = cur && cur.display;
   if (!d || typeof d !== 'object' || d.kind !== 'npc' || typeof d.npcId !== 'string' || !ID_RE.test(d.npcId)) return cur;
   const row = await loadNpcRow(db, d.npcId);
   const doc = row && isLiveNpc(row, campaign) ? parseNpc(row) : null;
-  if (!doc || doc.revealed !== true) return cur;
-  const text = (v) => (typeof v === 'string' ? v : '');
-  return { ...cur, display: { ...d, npc: { name: text(doc.name), alias: text(doc.alias), role: text(doc.role), faction: text(doc.faction), description: text(doc.description), spec: drawingSpec(doc.spec) } } };
+  const shown = isKnownAs(doc) ? { ...d, title: doc.alias.trim() } : d;
+  const v = playerView(doc);      // null unless revealed; never gmNotes; a known-as NPC by its alias
+  if (!v) return shown === d ? cur : { ...cur, display: shown };
+  const text = (x) => (typeof x === 'string' ? x : '');
+  return { ...cur, display: { ...shown, npc: { name: text(v.name), alias: text(v.alias), role: text(v.role), faction: text(v.faction), description: text(v.description), spec: drawingSpec(v.spec) } } };
 }
 
 /**

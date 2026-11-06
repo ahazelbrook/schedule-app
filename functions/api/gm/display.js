@@ -77,8 +77,10 @@ export async function onRequest({ request, env, data, waitUntil }) {
     const cur0 = await loadDisplay(db, campaign);
     const same = seq !== null && seq === String(cur0.seq);
     // tech run T3: a pushed NPC (display kind 'npc') carries the revealed NPC's player view as display.npc, since the display-only sign-in cannot read
-    // the cast; read only when the display goes out (not on an unchanged answer), one primary-key read, nothing stored (joinDisplayNpc)
-    const cur = same ? cur0 : await joinDisplayNpc(db, campaign, cur0);
+    // the cast; one primary-key read, nothing stored (joinDisplayNpc). T15: it also titles a known-as NPC's card by the alias, so it runs whenever the
+    // display can go out: a call with aseq or sseq sends the display beside a changed ambient or transcriber part even at the same seq, and an unjoined
+    // copy would carry the full name. Only the oldest call's unchanged answer skips the read.
+    const cur = same && aseq === null && sseq === null ? cur0 : await joinDisplayNpc(db, campaign, cur0);
     // THE OVERLAY, served on its own: a small top-level `overlay` on every answer (null when none), made on each poll from the stored overlay
     // alone (the ambient row's overlay cut out in SQL, never the whole document): the server's expiry (left out once its clock passes at + ms,
     // else with `age`), lights out (an autopilot overlay is left out while the display is dark), an npc overlay joined to its row (name, alias,
