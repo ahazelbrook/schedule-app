@@ -316,6 +316,63 @@ await test('the library: add (audio only), remove, clear asks first; the volume 
   const outs = await r.ctl.refresh(); assert.deepEqual(outs, [{ id: 'bt', label: 'Speaker' }]);
 });
 
+await test('folders: a folder name picks its playlist, loosely; hidden files are dropped; the order is the path order', () => {
+  assert.equal(M.folderMood('Hanging around'), 'calm'); assert.equal(M.folderMood('01 - Lounging'), 'calm'); assert.equal(M.folderMood('calm'), 'calm');
+  assert.equal(M.folderMood('Tension'), 'tension'); assert.equal(M.folderMood('tense_stuff'), 'tension');
+  assert.equal(M.folderMood('Blades 68 - Action'), 'action'); assert.equal(M.folderMood('Chase'), 'action');
+  assert.equal(M.folderMood('Music'), ''); assert.equal(M.folderMood('Exchange'), ''); assert.equal(M.folderMood('Attention'), '');
+  const f = (p, type = 'audio/mpeg', size = 1000) => ({ name: p.split('/').pop(), webkitRelativePath: p, type, size });
+  const got = M.folderFiles([f('B/10 x.mp3'), f('B/.DS_Store', ''), f('B/._2 y.mp3'), f('B/2 y.mp3'), f('B/.hidden/z.mp3')]).map((x) => x.webkitRelativePath);
+  assert.deepEqual(got, ['B/2 y.mp3', 'B/10 x.mp3']);
+  const g = M.byFolder([f('Music/Hanging around/a.mp3'), f('Music/Tension/b.mp3'), f('Music/Tension/sub/c.mp3'), f('Music/Action/d.mp3'), f('Music/loose.mp3'),
+    { name: 'e.mp3', b68Path: 'Tension/e.mp3', type: 'audio/mpeg', size: 9 }, f('Action/cover.jpg', 'image/jpeg')]);
+  assert.deepEqual([g.calm.length, g.tension.length, g.action.length, g.none.length], [1, 3, 2, 1]);
+  assert.equal(M.byFolder([f('Tension/x.mp3')]).tension.length, 1, 'the picked folder itself can name the playlist');
+});
+
+await test('the library: a folder adds its audio only, a second add of the same folder skips what is there, and all three fill from one folder', async () => {
+  const r = rig();
+  const f = (p, type = 'audio/mpeg', size = 1000) => ({ name: p.split('/').pop(), webkitRelativePath: p, type, size });
+  const n = await r.ctl.add([f('T/one.mp3'), f('T/two.mp3'), f('T/cover.jpg', 'image/jpeg'), f('T/._one.mp3')], 'tension', { folder: true });
+  assert.equal(n, 2);
+  assert.ok(r.said.some(([m, bad]) => !bad && /2 tracks added to Tension/.test(m) && /1 file is not audio/.test(m)), JSON.stringify(r.said));
+  assert.equal(await r.ctl.add([f('T/one.mp3'), f('T/two.mp3'), f('T/three.mp3')], 'tension', { folder: true }), 1, 'only the new one');
+  assert.ok(r.said.some(([m]) => /2 were already there/.test(m)));
+  assert.equal(await r.ctl.add([f('T/one.mp3')], 'calm', { folder: true }), 1, 'the same file may sit in another playlist');
+  assert.equal(await r.ctl.add([f('E/notes.txt', 'text/plain')], 'calm', { folder: true }), 0);
+  assert.ok(r.said.some(([m, bad]) => bad && /No audio files in that folder/.test(m)));
+  const all = await r.ctl.addAll([f('M/Hanging around/h1.mp3'), f('M/Tension/t9.mp3'), f('M/Action/a1.mp3'), f('M/Action/a2.mp3'), f('M/stray.mp3')]);
+  assert.equal(all, 4);
+  const c = (l) => r.ctl.tracks().filter((t) => t.list === l).length;
+  assert.deepEqual([c('calm'), c('tension'), c('action')], [2, 4, 2]);
+  assert.ok(r.said.some(([m]) => /Added: Hanging around 1, Tension 1, Action 2/.test(m)), JSON.stringify(r.said.slice(-3)));
+  assert.ok(r.said.some(([m, bad]) => bad && /1 track was left out/.test(m)));
+  assert.equal(await r.ctl.addAll([f('M/Other/x.mp3')]), 0);
+  assert.ok(r.said.some(([m, bad]) => bad && /No audio in a folder named/.test(m)));
+  assert.equal(await r.ctl.addAll([f('M/Hanging around/h1.mp3')]), 0, 'adding the same folder again adds nothing');
+});
+
+await test('folders: the parent folder picked on one playlist fills all three; exact names beat loose ones; .m3u is not a track; overlapping adds do not duplicate; one toast says it all', async () => {
+  const f = (p, type = 'audio/mpeg', size = 1000) => ({ name: p.split('/').pop(), webkitRelativePath: p, type, size });
+  const r = rig();
+  assert.equal(await r.ctl.add([f('B/Hanging around/h.mp3'), f('B/Tension/t.mp3'), f('B/list.m3u', 'audio/x-mpegurl')], 'calm', { folder: true }), 2);
+  const c = (l) => r.ctl.tracks().filter((t) => t.list === l).length;
+  assert.deepEqual([c('calm'), c('tension')], [1, 1], 'each to its own, not all into Hanging around');
+  assert.equal(await r.ctl.add([f('T/a.mp3'), f('T/b.m3u', 'audio/x-mpegurl')], 'action', { folder: true }), 1, 'a playlist file is not a track');
+  const o = rig();
+  assert.equal(await o.ctl.add([f('OST/CD1/01.mp3'), f('OST/CD1/02.mp3'), f('OST/Ambient Works/a.mp3'), f('OST/Fight Scene/b.mp3')], 'tension', { folder: true }), 4);
+  assert.equal(o.ctl.tracks().filter((t) => t.list === 'tension').length, 4, 'an album with loosely named subfolders stays in the playlist chosen');
+  const g = M.byFolder([f('M/Tension/Lounge Lizards OST/x.mp3'), f('M/Hanging around/Chase the Sun/y.mp3'), f('Action scores/z.mp3'), f('M/Suspense/s.mp3')]);
+  assert.deepEqual([g.calm.length, g.tension.length, g.action.length, g.none.length], [1, 2, 0, 1]);
+  const q = rig();
+  const [n1, n2] = await Promise.all([q.ctl.add([f('T/a.mp3'), f('T/b.mp3')], 'tension', { folder: true }), q.ctl.add([f('T/a.mp3'), f('T/b.mp3')], 'tension', { folder: true })]);
+  assert.equal(n1 + n2, 2); assert.equal(q.ctl.tracks().length, 2, 'two at once still adds each file once');
+  const s = rig();
+  await s.ctl.addAll([f('M/Action/a.mp3'), f('M/stray.mp3')]);
+  const last = s.said[s.said.length - 1];
+  assert.ok(last[1] && /1 track added to Action/.test(last[0]) && /1 track was left out/.test(last[0]), 'the last toast carries both, in red: ' + JSON.stringify(last));
+});
+
 await test('cue lines: music: action | tension | calm | hanging around | auto | off, and a bad word is skipped', () => {
   const p = CS.parse('## Cues\n\n1. music: action\n2. music: Hanging around\n3. music: calm\n4. music: auto\n5. music: off\n6. music: tension\n7. music: louder\n');
   assert.deepEqual(p.cues.map((c) => [c.n, c.kind, c.arg, c.text]), [[1, 'music', 'action', 'Action'], [2, 'music', 'calm', 'Hanging around'], [3, 'music', 'calm', 'Hanging around'],

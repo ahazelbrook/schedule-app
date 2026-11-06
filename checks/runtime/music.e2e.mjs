@@ -6,7 +6,7 @@
 //   - nothing overflows at 1366, 1536 or 390 (the pill hides on a phone), and there are no console errors
 //   PW_MODULE=<playwright-core> PW_CHANNEL=msedge [PORT=8601] [GM_SHOTS=<dir>] node checks/runtime/music.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -217,6 +217,18 @@ try {
   check(!!stray && stray.over === false && stray.drop === false && /#gm/.test(stray.href), 'a file dropped beside a playlist is caught, never opened by the tab (' + JSON.stringify(stray) + ')');
   await page.waitForTimeout(500);
   check(await page.$$eval('[data-inline="music"] .gm-mu-tracks li', (a) => a.length) === 6, 'and adds nothing');
+  /* ---- a folder of all three: one pick fills the playlists its folders name; picking it again adds nothing ---- */
+  const dir = path.join(tmp, 'Blades music');
+  for (const [sub, n] of [['Hanging around', 'm1-calm-c'], ['Tension', 'm1-tension-c'], ['Action', 'm1-action-c']]) { mkdirSync(path.join(dir, sub), { recursive: true }); writeFileSync(path.join(dir, sub, n + '.wav'), wav(12)); }
+  writeFileSync(path.join(dir, 'Action', 'cover.jpg'), Buffer.from('not audio')); writeFileSync(path.join(dir, 'Tension', '._m1-tension-c.wav'), Buffer.from('mac'));
+  check(await page.$eval('[data-inline="music"] [data-mu-dir="all"]', (e) => e.webkitdirectory === true) && await page.$$eval('[data-inline="music"] [data-mu-dir]', (a) => a.length) === 4, 'Add a folder: one for all three, and one on each playlist');
+  await page.setInputFiles('[data-inline="music"] [data-mu-dir="all"]', dir);
+  check(await until(() => page.$$eval('[data-inline="music"] .gm-mu-tracks li', (a) => a.length === 9), 10000) &&
+    await page.$eval('[data-inline="music"] [data-mu-sum="tension"]', (e) => /^3 tracks/.test(e.textContent)), 'a folder of all three: one more track in each playlist (the cover and the Mac’s ._ copy left out)');
+  await page.waitForTimeout(800);
+  await page.setInputFiles('[data-inline="music"] [data-mu-dir="all"]', dir);
+  check(await until(() => page.$eval('#toastMsg', (e) => /3 were already there/.test(e.textContent)), 6000) &&
+    await page.$$eval('[data-inline="music"] .gm-mu-tracks li', (a) => a.length) === 9, 'the same folder again adds nothing: the toast says 3 were already there');
   if (SHOTS) { await page.waitForTimeout(4000); const el = await page.$('[data-inline="music"]'); if (el) await el.screenshot({ path: path.join(SHOTS, 'tool-1366.png') }); }
   /* ---- 390: no overflow, the pill hidden (the phone is not the player), the tool stacks ---- */
   const ph = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, extraHTTPHeaders: { 'X-Dev-User': GM }, reducedMotion: 'reduce' });
@@ -246,7 +258,7 @@ try {
   await ph.close();
 
   /* ---- nothing audio left the laptop ---- */
-  const names = Object.values(TRACKS).flat();
+  const names = Object.values(TRACKS).flat().concat(['m1-calm-c', 'm1-tension-c', 'm1-action-c']);
   const bad = sent.filter((r) => /^audio\//i.test(r.type) || (r.body && (r.body.includes('RIFF') || r.body.includes('WAVE'))) || names.some((n) => r.url.includes(n) || (r.body && r.body.includes(n))));
   check(bad.length === 0, 'no request carries audio or a track’s name (' + sent.length + ' requests; ' + bad.slice(0, 3).map((r) => r.method + ' ' + r.url).join(', ') + ')');
   check(errors.length === 0, 'no console or page error' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));

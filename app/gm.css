@@ -1860,6 +1860,7 @@ body.gm-app #gm-page #gm-band { display: grid; grid-template-rows: auto auto; ba
 #gm-page .gm-mu-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 #gm-page .gm-mu-add { display: inline-flex; align-items: center; cursor: pointer; }
 #gm-page .gm-mu-acts > .btn { flex: none; width: auto; }
+#gm-page .gm-mu-all > .gm-dim { flex: 1 1 220px; min-width: 0; font-size: 12px; }
 #gm-page .gm-mu-out { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 #gm-page .gm-mu-out label { display: inline-flex; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0; font: 900 11px/1 var(--font-cond); letter-spacing: .1em; text-transform: uppercase; }
 #gm-page .gm-mu-out select { min-width: 0; max-width: min(100%, 320px); font: 400 14px/1.2 var(--font-text); letter-spacing: 0; text-transform: none; }
