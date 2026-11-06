@@ -43,7 +43,7 @@
     { key: 'fx.off', label: 'Scenes', what: 'The ambient scenes on the iPad: moving, or held as stills to save the battery and the heat.',
       options: [{ v: false, label: 'Moving' }, { v: true, label: 'Held still' }],
       said: { 'false': 'Scenes: moving. The iPad follows within a few seconds.', 'true': 'Scenes: held still. The iPad follows within a few seconds.' } },
-    { key: 'room.music', label: 'Music', what: 'What the iPad plays: each scene’s own theme, or music that follows the security level and the heat.',
+    { key: 'room.music', label: 'Music', what: 'The iPad’s own sound: each scene’s own theme, or music that follows the security level and the heat. The room’s playlists are on the laptop: Before > The room > Music.',
       options: [{ v: false, label: 'Scene themes' }, { v: true, label: 'Heat music' }],
       said: { 'false': 'Music: scene themes. The iPad follows within a few seconds.', 'true': 'Music: heat music. The iPad follows within a few seconds.' } },
     { key: 'phoneCards', label: 'Phones', what: 'While a night runs: the character sheet only, or a mission card and a Move row as well.',

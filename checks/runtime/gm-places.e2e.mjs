@@ -85,14 +85,14 @@ try {
   check(await attr(a, 'data-place') === 'before' && await attr(a, 'data-left') === 'own', 'a page with no phase opens in Before, with a left column of its own');
   check(!(await visible(a, '#gm-buttons')) && await visible(a, '#gm-left'), 'Before\'s column is its own, not the Roll');
   check(await until(() => a.$eval('#gm-left [data-inline="preflight"]', (e) => /iPad sound/.test(e.textContent)), 10000), 'Preflight is drawn inline in the column (N2\'s inline host)');
-  check(await a.$eval('#gm-left', (e) => /Tonight/.test(e.textContent) && /Start\s*19:30/.test(e.textContent) && /curfew\s*22:40/.test(e.textContent) && /8\s*cues/.test(e.textContent) && /6\s*rooms/.test(e.textContent)), 'and Tonight: the start, the curfew, eight cues and six rooms, read from the prep note');
+  check(await a.$eval('#gm-left', (e) => /Tonight/.test(e.textContent) && e.querySelector('[data-tn-time=startAt]').value === '19:30' && e.querySelector('[data-tn-time=curfewAt]').value === '22:40' && /8\s*cues/.test(e.textContent) && /6\s*rooms/.test(e.textContent)), 'and Tonight: the start, the curfew, eight cues and six rooms, read from the prep note');
   check(JSON.stringify(await views(a)) === JSON.stringify(['tonight', 'room', 'print', 'ipadscenes', 'prep', 'rules', 'npc', 'ipad']), 'Before\'s views: Tonight, The room, Print, iPad scenes, then Prep, Rules, Cast and iPad');
   check(await a.$eval('.gm-views [data-pv="tonight"]', (e) => e.getAttribute('aria-selected')) === 'true' && await visible(a, '#gm-vpane'), 'Tonight is the first view');
   check(await a.$eval('#gm-vpane', (e) => e.querySelectorAll('.gm-tn-run tbody tr').length === 5 && /Before the night/.test(e.textContent) && /Charge the iPad/.test(e.textContent) && /Tonight/.test(e.textContent)), 'Tonight: the note\'s run order (five beats) and its Before the night and Tonight sections');
   check(await a.$$eval('#gm-vpane .gm-tn-run tbody tr td:nth-child(3)', (td) => td.map((x) => x.textContent).join()) === 'Opening,Personal,Planning,Score,Aftermath', 'each beat named by its place');
   await shot(a, 'before-1366');
   await a.click('.gm-views [data-pv="room"]');
-  check(await until(() => a.$eval('#gm-vpane', (e) => ['practical', 'phone', 'light', 'record'].every((t) => e.querySelector('[data-vcell="' + t + '"] [data-inline="' + t + '"]'))), 6000), 'The room: the practical speaker, the ringing phone, the light relay and the recording, each drawn inline');
+  check(await until(() => a.$eval('#gm-vpane', (e) => ['music', 'practical', 'phone', 'light', 'record'].every((t) => e.querySelector('[data-vcell="' + t + '"] [data-inline="' + t + '"]'))), 6000), 'The room: the music, the practical speaker, the ringing phone, the light relay and the recording, each drawn inline');
   await a.click('.gm-views [data-pv="print"]');
   check(await until(() => a.$eval('#gm-vpane [data-inline="print"]', (e) => !!e), 5000) && !(await a.$('#gm-vpane [data-inline="practical"]')), 'Print: its tool inline, and The room\'s four unbound');
   await a.click('.gm-views [data-pv="ipadscenes"]');

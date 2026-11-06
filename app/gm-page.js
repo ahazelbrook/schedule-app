@@ -2339,6 +2339,7 @@
       curfew: function () { var Sp = W.B68GmSpine; return S === me && Sp && typeof Sp.curfew === 'function' ? Sp.curfew() : null; },
       cue: function () { return S === me ? me.cs || null : null; },
       panic: function () { if (S === me) bandPanic('button'); },
+      music: function () { return S === me ? muInst() : null; },      /* M1: the band's music pill (gm/music.js) */
       menuHtml: menuHtml, signedOut: function () { return SIGNED_OUT_MSG; }, toast: toast,
       document: document      /* the iPad tray makes its nodes with it (gm/ipad-tray.js: a page whose elements do not carry their document) */
     };
@@ -2393,7 +2394,7 @@
     if (!hsOn()) return null;
     if (!S.hs) S.hs = W.B68GmHardStart.make({
       layer: function (p, v) { var c = shows(); return c ? c.layer(p, v) : Promise.resolve(null); }, npcs: function () { return S && isObj(S.npcs) ? S.npcs : {}; }, now: function () { return Date.now(); },
-      startAt: function () { var n = S && S.night && typeof S.night.night === 'function' ? S.night.night() : null; return n && W.B68GmNight ? W.B68GmNight.clockMs(n.startAt, Date.now()) || 0 : 0; },
+      startAt: function () { var n = S && S.night && typeof S.night.night === 'function' ? S.night.night() : null, N = W.B68GmNight, pn = n && !n.startAt && N ? csNote() : null; return n && N ? N.clockMs(n.startAt || (pn ? N.parsePrep(pn).start : null), Date.now()) || 0 : 0; },     /* the GM's own start; until one is set (or a phase seeds it), the note's */
       root: function () { return $q('#gm-root'); }, toast: toast,
       /* Roll the opening credits (F1): the iPad view's own pin of the Opening credits scene, with the stage blanked if a stage is up (the scene plays under a blank) */
       onTitles: function () {
@@ -2450,6 +2451,30 @@
       save: function (id, item) { var it = {}; it[id] = item; patch({ trouble: { items: it } }); }, show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); } });
     return S.rd;
   }
+  /* M1 the Music desk (gm/music.js): the laptop's three playlists that Blade cuts between. ONE controller for the page (the tracks are this laptop's, not a
+     session's), made on first use; it reads the night each second through muInputs and never starts by itself. Nothing it keeps is on the server */
+  var MU = null, MU_FAILED = false;
+  /* the last inputs read while the GM page was up: the music plays on while Rules, the cast, the table or Home is open (S is null there), and must
+     not take that for "no PANIC, no phase" (the work light would lift itself, and Tension would step down) */
+  var MU_LAST = { phase: '' };
+  function muInputs() {
+    if (!S || S.status !== 'ready') return MU_LAST;
+    var sec = null; try { sec = S.b17 && S.b17.security ? S.b17.security.view() : null; } catch (e) { sec = null; }
+    var v = null; try { v = S.cs ? S.cs.view() : null; } catch (e) { v = null; }
+    var ch = false; try { ch = !!chCur(); } catch (e) { ch = false; }
+    /* a site alarm the GM keeps hidden from the players (security's quiet) is no trigger: the room would hear what the GM hid */
+    return (MU_LAST = { phase: placesPhase() || '', alarm: isObj(sec) && !sec.quiet ? { index: sec.index, n: sec.n, filled: sec.site ? sec.filled : null } : null, chase: ch,
+      desperate: S.muDesp || 0, panic: !!(v && v.panic), credits: !!(isObj(AM.doc) && AM.doc.mode === 'pin' && AM.doc.scene === 'credits') });
+  }
+  function muInst() {
+    if (MU || MU_FAILED || !W.B68GmMusic) return MU;
+    try {
+      MU = W.B68GmMusic.make(W.B68GmMusic.browserHost({ inputs: muInputs, toast: toast, root: function () { return $q('#gm-root'); },
+        openLibrary: function () { var T = W.B68GmTools, t = T && T.get ? T.get('music') : null; if (!openView('music') && t) t.open(); } }));
+      MU.load(); MU.start();
+    } catch (e) { MU = null; MU_FAILED = true; if (W.console) W.console.error('music: the Music desk could not start on this page', e); }
+    return MU;
+  }
   /* 4.2 Preflight (gm/preflight.js, switch room.preflight): the Menu line exists only while the switch is on */
   function pfOn() { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, 'room.preflight') && W.B68GmPreflight); }
   function pfInst() {
@@ -2473,6 +2498,7 @@
     reg('practical', desk('practical')); reg('phone', desk('phone')); reg('trouble', desk('trouble')); reg('canon', desk('canon')); reg('frontpage', desk('frontpage')); reg('absent', desk('absent'));
     mod('B68GmAftermath', 'aftermath'); mod('B68GmDebrief', 'debrief'); mod('B68GmBoard', 'board'); mod('B68GmCastPhoto', 'castphoto'); mod('B68GmLair', 'lair');
     reg('record', b29tool('record')); reg('light', b29tool('light'));
+    T.registerTool('music', { label: 'Music', open: function () { var m = muInst(); return !!(m && m.open()); }, close: shut('music') });      /* M1 */
   })();
   /* 4.1 The cue stack (gm/cue-stack.js): STANDBY / GO / Bypass in the band's cue slot, Space and PageDown (asked by onKey), and "Blade, go". Every effect goes through the page's own writers
      (patchAmbient and its gate, the show contract, the night, the cast), so a cue can show nothing that a button could not. */
@@ -2507,6 +2533,7 @@
         return Promise.resolve(ref.update({ revealed: true, firstSeen: x.d.firstSeen || nowIso() })).then(function () { if (S === me && isObj(me.npcs) && isObj(me.npcs[x.id])) me.npcs[x.id].revealed = true; return { ok: true }; }, function () { return { ok: false, say: 'Could not reveal ' + name + '.' }; });
       },
       phase: function (p) { return cuePhase(me, p); },
+      music: function (word) { var m = S === me ? muInst() : null; return Promise.resolve(!!(m && m.cue(word))); },      /* M1: a `music:` cue */
       ambient: function () { return isObj(AM.doc) ? { mode: AM.doc.mode, scene: AM.doc.scene } : null; },
       panic: function (safe) { return panicEffect(safe); },
       resume: function (prior) { return isObj(prior) ? patchAmbient({ mode: prior.mode, scene: prior.scene }) : Promise.resolve(null); },
@@ -2778,6 +2805,9 @@
       showPane: function (p) { if (S === me) paneShow(p); },
       seg: function (which) { if (S !== me || S.seg === which) return; S.seg = which; syncPanels(); },
       prepNote: function () { return S === me ? csNote() : null; },
+      nightTimes: function () { var n = S === me && me.night ? me.night.night() : null; return n ? { startAt: n.startAt, curfewAt: n.curfewAt } : {}; },
+      setTime: function (k, v) { if (S === me && me.night) me.night.setTime(k, v); },
+      usePrep: function (k) { if (S === me && me.night) me.night.usePrep(k); },
       prepNotes: function () { var pk = part('prep'), B = W.B68GmPrep; return pk && B ? B.notes(pk) : []; },
       setPrepNote: function (id) { if (S !== me) return; try { W.localStorage.setItem(PREP_NOTE, id); } catch (e) {} renderPrep(true); renderBar(); },
       prepSecs: function () {
@@ -3413,7 +3443,8 @@
   /* the authored site on the card, with a usable play block: { name, play, B }, else null (a rolled site never has one) */
   function runSite() {
     var B = W.B68GmBall, cur = S && isObj(S.doc.cards) ? S.doc.cards.location : null;
-    if (!B || !S.locRoll || !isObj(cur) || !cur.auth || rollKey(S.locRoll) !== locKey(cur)) return null;
+    /* !S: the Run view's beat timer can still tick once the GM page has closed (Rules or the cast opened over it) */
+    if (!B || !S || !S.locRoll || !isObj(cur) || !cur.auth || rollKey(S.locRoll) !== locKey(cur)) return null;
     var site = authoredOf(part('location')).sites[str(cur.auth)];
     if (!isObj(site) || !isObj(site.play) || !isObj(site.play.clock)) return null;
     return { name: str(cur.auth), play: site.play, B: B };
@@ -4650,6 +4681,8 @@
   }
   function b09Marked(res) {
     var sit = res && res.meta ? res.meta.situation : '';
+    /* M1: a Desperate 1–3 is one of the music's Action triggers (gm/music.js moodOf counts them) */
+    if (S && sit === 'onetothree' && isObj(res.meta.position) && str(res.meta.position.pos).toLowerCase() === 'desperate') S.muDesp = (S.muDesp || 0) + 1;
     if (S && S.stamp && (sit === 'fourfive' || sit === 'onetothree')) {
       var landed = !!S.stamp.view().active;
       S.stamp.mark(sit === 'fourfive' ? '45' : '13');
@@ -7418,6 +7451,8 @@
     open: open, close: close, campaign: campaign, characters: charactersChanged, purge: purge,
     available: function () { return !!(W.claude && W.claude.gm); },
     _pure: P,
+    /* for checks (music.e2e.mjs): the music's state, also while another page (Rules, the cast, Home) is open over the GM page */
+    _music: function () { return MU ? MU.state() : null; },
     /* for checks (gm.e2e.mjs): the current roll, and the display gate */
     _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer, svg: S.map.svg }, panel: S.panel, seg: S.seg, doc: S.doc, runCacheN: S.runCache ? S.runCache.keys.length : 0 } : null; },
     _pushDisplay: function (d) { return pushDisplay(d); },
