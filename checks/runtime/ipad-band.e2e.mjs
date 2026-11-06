@@ -1,8 +1,9 @@
 // THE BAND on the iPad (the GM night rebuild, the design's iPad part; app/display/layers.js, display/shows.css), end to end against a real local Worker
 // (wrangler dev) on PORT (default 8655), with invented fixtures only.
 //   1. Every combination of the band's layers (the lamp on air or off the record, band.onair, the phase, security, three PCs at their worst, one PC,
-//      two NPC faces, the hard start) at 1024x768 and in portrait: the strip is one row of fixed slots inside the screen, no slot's contents cross
-//      into another slot, a slot holds its place whatever else is set, and the beats, the AUTO chip and the hard start lay out below it.
+//      two NPC faces, the hard start) at 1024x768, 1180x820, 1194x834, 1366x1024 and in portrait: the strip is inside the screen, no slot's contents
+//      cross into another slot, an empty slot gives its width to the others, the beats, the AUTO chip and the hard start lay out below it; and (F1)
+//      with three invented long names no first name is cut while there is room (never below 6 letters), STRESS, HARM and the padlock are labelled.
 //   2. The real iPad page with a map, the band beside it (its countdown) and every layer: the strip never covers the map, its caption bar, the band
 //      beside the map, the AUTO chip or the corner status, and the band beside the map still fits its box. Lights out leaves only the lamp.
 //   3. The look book's two band cards draw; the display GET with every layer set stays quick and adds no request.
@@ -67,15 +68,16 @@ const combos = () => {
   }
   return out;
 };
-const measure = (list) => {
+const measure = async (list) => {
+  const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   const host = document.createElement('div'); host.style.cssText = 'position:fixed;inset:0'; document.body.appendChild(host);
-  const PCS = [{ pcId: 'pc-nell', name: 'Nell Arbuthnot', stress: 9, harm: [1, 1, 2, 3], locks: 2 }, { pcId: 'pc-ray', name: 'Ray Okonjo', stress: 2, harm: [4] }, { pcId: 'pc-tam', name: 'Tamsin-Petronella Vandermeerholt', stress: 6, locks: 1 }];
+  /* F1: invented long names (a call sign among them), every mark at its worst on one of them */
+  const PCS = [{ pcId: 'pc-bart', name: 'Bartholomew Okonjo', stress: 9, harm: [1, 2, 3], locks: 2 }, { pcId: 'pc-con', name: 'Constance Vell-Petrakis', stress: 0 }, { pcId: 'pc-sig', name: 'Signalman 44.2.7', stress: 5, harm: [4], locks: 1 }];
   const NPCS = [{ name: 'Mabel Quist', role: 'Fixer' }, { name: 'Dov Kessler', role: 'Desk sergeant' }];
   const vw = innerWidth, vh = innerHeight, bad = [];
   const rect = (e) => { const r = e.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height }; };
   const inside = (a, b) => a.l >= b.l - 0.5 && a.t >= b.t - 0.5 && a.r <= b.r + 0.5 && a.b <= b.b + 0.5;
   const cut = (a, b) => Math.max(a.l, b.l) < Math.min(a.r, b.r) - 0.5 && Math.max(a.t, b.t) < Math.min(a.b, b.b) - 0.5;
-  let slotsSeen = null;
   for (const c of list) {
     const root = document.createElement('div'); root.className = 'dp-root'; root.style.position = 'absolute'; root.style.inset = '0';
     root.appendChild(Object.assign(document.createElement('div'), { className: 'dp-ambient' })); root.appendChild(Object.assign(document.createElement('div'), { className: 'dp-stages' }));
@@ -89,6 +91,7 @@ const measure = (list) => {
     if (c.m) { layers.scene.mode = c.m; layers.data.countdown = { to: Date.now() - 60000 }; layers.data.previously = NPCS; }
     L.apply(layers);
     if (c.l) { const a = window.B68OnAir.make({}); if (c.l.off) a.pause(272000); a.paint(root, true); }
+    await frame();      /* the names are fitted on the next frame (layers.js fitNames) */
     const tag = JSON.stringify(c);
     const strip = root.querySelector('.dp-lay-strip');
     const any = !!(c.l || c.o || c.p || c.s !== null || faces);
@@ -99,9 +102,14 @@ const measure = (list) => {
     if (strip.scrollWidth > strip.clientWidth + 1) bad.push(tag + ': the strip is wider than the screen');
     const slots = [...strip.querySelectorAll(':scope > .dp-lay-slot')].map((s) => ({ k: s.getAttribute('data-slot'), r: rect(s), el: s }));
     if (slots.map((s) => s.k).join() !== 'mic,phase,crew,sec') bad.push(tag + ': slots ' + slots.map((s) => s.k).join());
-    /* fixed slots: the same place whatever is set (portrait moves the crew to its own row only while it is drawn) */
-    const key = slots.filter((s) => s.k !== 'crew').map((s) => s.k + Math.round(s.r.l) + ',' + Math.round(s.r.w)).join(' ');
-    if (slotsSeen === null) slotsSeen = key; else if (slotsSeen !== key) bad.push(tag + ': a slot moved: ' + key + ' vs ' + slotsSeen);
+    /* F1: in landscape an empty slot gives its width to the others (none of its own), and the slots keep their order across the strip; in portrait
+       the top row's empty slots are empty space, and with nothing but the crew there is no top row at all */
+    const empty = (s) => !s.el.children.length && !s.el.textContent.trim();
+    if (vw > vh) {
+      for (const s of slots) if (empty(s) && s.k !== 'crew' && s.r.w > 1) bad.push(tag + ': the empty ' + s.k + ' slot takes ' + Math.round(s.r.w) + ' px');
+      const row1 = slots.filter((s) => s.r.w > 1);
+      for (let i = 1; i < row1.length; i++) if (row1[i].r.l < row1[i - 1].r.r - 1) bad.push(tag + ': ' + row1[i].k + ' is not after ' + row1[i - 1].k);
+    } else if (faces && c.m !== 'start' && !c.l && !c.o && !c.p && c.s === null && slots.some((s) => s.k !== 'crew' && s.r.h > 1)) bad.push(tag + ': portrait keeps an empty top row over the crew');
     for (let i = 0; i < slots.length; i++) for (let j = i + 1; j < slots.length; j++) if (slots[i].r.w && slots[j].r.w && cut(slots[i].r, slots[j].r)) bad.push(tag + ': slots ' + slots[i].k + ' and ' + slots[j].k + ' overlap');
     for (const s of slots) {
       if (!inside(s.r, sr)) bad.push(tag + ': slot ' + s.k + ' outside the strip');
@@ -122,7 +130,24 @@ const measure = (list) => {
       if (cells.length !== faces.length) bad.push(tag + ': ' + cells.length + ' crew cells for ' + faces.length + ' faces');
       for (const cell of cells) { const cr = rect(cell); if (!cr.w || !inside(cr, slots[2].r)) bad.push(tag + ': a crew cell outside the crew slot'); }
       /* a cell's marks never run past it (a cut row hid the deadlock count), and the padlock and the Stress are drawn whole beside the name */
-      for (const row of strip.querySelectorAll('.dp-lay-face .dp-lay-marks')) if (row.scrollWidth > row.clientWidth + 1) bad.push(tag + ': a harm row is cut (' + row.scrollWidth + ' > ' + row.clientWidth + ')');
+      for (const row of strip.querySelectorAll('.dp-lay-face .dp-lay-marks')) if (row.scrollWidth > row.clientWidth + 1) bad.push(tag + ': a marks row is cut (' + row.scrollWidth + ' > ' + row.clientWidth + ')');
+      /* F1: a first name is never cut (it shrinks first) while there is room, and never shows fewer than 6 letters; the numbers say what they are */
+      for (const cell of strip.querySelectorAll('.dp-lay-face')) {
+        const n = cell.querySelector('.dp-lay-name'), cr = rect(cell), nr = rect(n), nm = n.textContent;
+        if (nr.r > cr.r + 0.5 || nr.l < cr.l - 0.5) bad.push(tag + ': the name ' + nm + ' runs out of its cell');
+        if (n.scrollWidth > n.clientWidth + 1) {
+          const rg = document.createRange(), t = n.firstChild; let seen = 0;
+          for (let i = 1; i <= nm.length; i++) { rg.setStart(t, 0); rg.setEnd(t, i); if (rg.getBoundingClientRect().right <= nr.r - parseFloat(getComputedStyle(n).fontSize) * 0.6) seen = i; }
+          if (seen < Math.min(6, nm.length)) bad.push(tag + ': the name ' + nm + ' shows only ' + seen + ' letters');
+          if (cr.w > 150) bad.push(tag + ': the name ' + nm + ' is cut in a ' + Math.round(cr.w) + ' px cell (shrunk to ' + n.getAttribute('data-fit') + ')');
+        }
+        const f = faces.find((x) => (x.name || '').split(' ')[0] === nm) || {};
+        if (f.stress !== undefined && !/^Stress\s*\d$/i.test(((cell.querySelector('.dp-pc-stress') || {}).textContent || '').trim())) bad.push(tag + ': ' + nm + ': no STRESS label on its number');
+        if (f.harm && !/^Harm/i.test(((cell.querySelector('.dp-pc-hurt') || {}).textContent || '').trim())) bad.push(tag + ': ' + nm + ': no HARM label on its marks');
+        if (f.locks && !(cell.querySelector('.dp-pc-locks .dp-pc-lock') && (cell.querySelector('.dp-pc-locks .dp-lay-num') || {}).textContent === String(f.locks))) bad.push(tag + ': ' + nm + ': the padlock has no count');
+        for (const e of cell.querySelectorAll('.dp-lay-mark')) { const er = rect(e); if (er.r > cr.r + 0.5 || er.b > cr.b + 0.5 || er.t < cr.t - 0.5) bad.push(tag + ': ' + nm + ': ' + e.className + ' runs out of its cell'); }
+        const lines = [...cell.children].map(rect); for (let i = 1; i < lines.length; i++) if (lines[i].t < lines[i - 1].b - 0.5) bad.push(tag + ': ' + nm + ': two lines of its cell overlap');
+      }
       for (const e of strip.querySelectorAll('.dp-lay-face .dp-pc-lock, .dp-lay-face .dp-pc-stress')) {
         const er = rect(e), cr = rect(e.closest('.dp-lay-face'));
         if (e.getClientRects().length && (er.l < cr.l - 0.5 || er.r > cr.r + 0.5)) bad.push(tag + ': ' + e.className + ' runs out of its cell');
@@ -139,8 +164,8 @@ const measure = (list) => {
 
 const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
 try {
-  for (const [w, h] of [[1024, 768], [768, 1024], [1180, 820]]) {
-    await step('every layer combination at ' + w + 'x' + h + ': one strip, fixed slots, nothing in one slot crosses into another, everything else below it', async () => {
+  for (const [w, h] of [[1024, 768], [768, 1024], [1180, 820], [1194, 834], [1366, 1024]]) {
+    await step('every layer combination at ' + w + 'x' + h + ': one strip, an empty slot gives way, nothing in one slot crosses into another, names whole and labelled, everything else below it', async () => {
       const ctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: w, height: h } });
       const p = await ctx.newPage(); const errs = []; p.on('pageerror', (e) => errs.push(String(e && e.message || e)));
       await p.goto(BASE + '/lookbook.html?frame=band-all');

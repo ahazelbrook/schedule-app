@@ -181,6 +181,75 @@ await test('the strip does not give a plate away: names are hidden in start mode
   assert.deepEqual(HS.plates(st).map((p) => p.revealed), [false, true]);
 });
 
+await test('"Previously on" draws each face\'s portrait from its served spec (plates still blank); a silhouette with no spec or before the kit; the kit arriving redraws', () => {
+  const doc = fakeDoc(), box = new MiniEl('div'); box.ownerDocument = doc; box.querySelectorAll = () => []; box.setAttribute = () => {}; box.removeAttribute = () => {};
+  const layers = Layers.attach(box, { skew: () => 0 });
+  let kit = false; const drawnFor = [];
+  const portrait = (spec, id) => { drawnFor.push([spec.figure, id]); const n = doc.createElement('svg'); n.className = 'fake-portrait'; return n; };
+  const hs = HS.attach(box, { layers, now: () => 10_000_000, kitIn: () => kit, portrait });
+  const served = { scene: { mode: 'start' }, data: { countdown: { to: 1_000 }, previously: [
+    { npcId: 'n1', name: 'Mabel Quist', role: 'Fixer', spec: { v: 1, figure: 'femme' } }, { npcId: 'n2', name: 'Dov Kessler', role: 'Desk sergeant' }, { npcId: 'n3', name: 'Ada Vell', role: 'Croupier', spec: { v: 1, figure: 'masc' } }] } };
+  layers.apply(served); hs.update();
+  const faces = () => box.children.find((c) => c.className.includes('dp-hs ')).children.find((c) => c.className.includes('dp-hs-faces')).children;
+  const pics = () => faces().map((f) => f.children.find((c) => c.className.startsWith('dp-hs-pic')).children[0].className);
+  assert.deepEqual(pics(), ['dp-hs-sil', 'dp-hs-sil', 'dp-hs-sil'], 'no kit yet: three silhouettes');
+  assert.equal(drawnFor.length, 0);
+  kit = true; hs.update();
+  assert.deepEqual(pics(), ['fake-portrait', 'dp-hs-sil', 'fake-portrait'], 'the kit came: the two with a figure are drawn, the one without stays a silhouette');
+  assert.deepEqual(drawnFor.map((d) => d[0]), ['femme', 'masc']); assert.ok(drawnFor.every(([, id]) => /^dp-hs-\d-n\d$/.test(id)), 'each drawn with its own id');
+  assert.ok(faces().every((f) => f.children.find((c) => c.className === 'dp-hs-name').children.length === 0), 'the name plates stay blank until revealed');
+  assert.doesNotMatch(box.textContent, /Mabel|Dov|Ada/, 'no name on the page');
+  const msg = JSON.stringify(layers.message());
+  assert.ok(!/"spec"|npcId|femme/.test(msg), 'the scenes\' b68:data message still carries no spec or id');
+  /* a revealed plate keeps its portrait */
+  layers.apply({ ...served, band: { faces: [{ npcId: 'n1', name: 'Mabel Quist', role: 'Fixer' }] } }); hs.update();
+  assert.equal(pics()[0], 'fake-portrait'); assert.match(box.textContent, /Mabel Quist/);
+  /* the renderer failing is a silhouette, never an empty frame or a throw */
+  const hs2 = HS.attach(box, { layers, now: () => 10_000_000, kitIn: () => true, portrait: () => { throw new Error('kit broke'); } });
+  hs.destroy(); hs2.update();
+  assert.ok(pics().every((c) => c === 'dp-hs-sil'));
+  hs2.destroy(); layers.destroy();
+});
+
+await test('Roll the opening credits: end() takes every layer off, then the host\'s onTitles pins the credits; End without credits (and Clear) never call it', async () => {
+  const table = fakeTable(NPCS), log = [];
+  const layer = (p, v) => { log.push('layer ' + p + ' ' + (v === null ? 'off' : 'on')); return table.layer(p, v); };
+  let ipad = 'Ambient scenes';
+  const host = { layer, npcs: () => NPCS, now: () => 1_000, startAt: () => 0, onTitles: () => { log.push('onTitles'); ipad = 'Opening credits (pinned)'; return Promise.resolve(true); }, onIpad: () => ipad };
+  const ctl = GHS.make(host);
+  assert.equal(await ctl.armTest(), true);
+  log.length = 0;
+  assert.equal(await ctl.roll(), true);
+  assert.deepEqual(log, [...GHS.PATHS.slice().reverse().map((p) => 'layer ' + p + ' off'), 'onTitles'], 'every layer off first, then the pin');
+  assert.equal(table.served(), null, 'nothing of the hard start is left');
+  assert.equal(ctl.state().rolled, true); assert.equal(ctl.state().armed, false);
+  /* End without credits: today's end(), no pin */
+  assert.equal(await ctl.armTest(), true); log.length = 0;
+  assert.equal(ctl.state().rolled, false, 'a new arm starts again');
+  assert.equal(await ctl.end(), true);
+  assert.ok(!log.includes('onTitles'), 'End without credits never pins the credits'); assert.equal(ctl.state().rolled, false);
+  /* a refused end pins nothing; a refused pin is false */
+  const refuse = GHS.make({ ...host, layer: () => Promise.resolve(null) }); log.length = 0;
+  assert.equal(await refuse.roll(), false); assert.ok(!log.includes('onTitles'), 'the hard start did not come off: no credits over it');
+  const noPin = GHS.make({ ...host, onTitles: () => Promise.resolve(false) }); await noPin.armTest();
+  assert.equal(await noPin.roll(), false); assert.equal(noPin.state().rolled, false);
+  /* the sheet: both buttons only once armed, with the tap line; afterwards it says what is on the iPad */
+  const box = { innerHTML: '', parentNode: { __hs: true } };
+  ctl.render(box);
+  assert.doesNotMatch(box.innerHTML, /data-hs="roll"|data-hs="end"/, 'not armed: no way to end it');
+  await ctl.armTest(); ctl.render(box);
+  assert.match(box.innerHTML, /data-hs="roll"[^>]*>Roll the opening credits</); assert.match(box.innerHTML, /data-hs="end"[^>]*>End without credits</);
+  assert.match(box.innerHTML, /sound only after a tap/); assert.match(box.innerHTML, /Tap for sound/);
+  await ctl.roll(); ctl.render(box);
+  assert.match(box.innerHTML, /On the iPad: Opening credits \(pinned\)\./); assert.match(box.innerHTML, /pin the next scene \(iPad view, Scenes\) or fire a cue\. Clear keeps the credits’ title card\./);
+  /* the page wires the seam: the host it makes has onTitles, which pins the credits scene through the iPad view's own ambient PATCH */
+  const page = fs.readFileSync(path.join(APP, 'gm-page.js'), 'utf8'), at = page.indexOf('S.hs = W.B68GmHardStart.make(');
+  const made = page.slice(at, page.indexOf('return S.hs;', at));
+  assert.match(made, /onTitles: function \(\) \{\s*return patchAmbient\(\{ mode: 'pin', scene: 'credits' \}\)/);
+  assert.match(made, /onIpad: function/);
+  assert.match(page, /if \(hs && typeof hs\.end === 'function'\) steps\.push\(function \(\) \{ return hs\.end\(\); \}\)/, 'Clear calls end(), not roll()');
+});
+
 
 /* ================= the switch, the wiring, the leaks ================= */
 await test('spine.start is a display switch, default off, Saturday on; the code asks for that id', () => {

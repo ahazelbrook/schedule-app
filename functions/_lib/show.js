@@ -258,7 +258,9 @@ export async function joinShows(db, campaign, overlay, layers) {
         const faces = v.map((f) => (f.npcId ? (cards[f.npcId] ? { npcId: f.npcId, name: cards[f.npcId].name, role: cards[f.npcId].role, spec: cards[f.npcId].spec } : null) : f)).filter(Boolean);
         if (faces.length) add(g, k, faces);
       } else if (g === 'data' && (k === 'credits' || k === 'previously')) {
-        const rows = v.map((id) => (cards[id] ? plain(cards[id]) : null)).filter(Boolean);
+        // the credits roll names only; "Previously on" draws each face, so its rows carry the revealed NPC's figure spec, as band.faces does
+        const row = (c) => (k === 'previously' && c.spec ? { ...plain(c), spec: c.spec } : plain(c));
+        const rows = v.map((id) => (cards[id] ? row(cards[id]) : null)).filter(Boolean);
         if (rows.length) add(g, k, rows);
       } else add(g, k, v);
     }

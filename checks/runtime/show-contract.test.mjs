@@ -175,6 +175,30 @@ await test('secrecy at read: served from the NPC rows as they are NOW; hiding an
   assert.ok(!JSON.stringify(g).includes('GM-ONLY'), 'no GM-ONLY marker anywhere in the display GET');
 });
 
+await test('"Previously on" rows carry the revealed NPC\'s figure spec (drawn keys only); the credits stay names only; a pick hidden after the write serves nothing, not even a spec', async () => {
+  const db = await withCast();
+  await addNpc(db, 'n-ada', { name: 'Ada Vell', role: 'Croupier', revealed: true, gmNotes: 'GM-ONLY-NOTES-ADA', spec: { v: 1, figure: 'femme', hair: 'GM-ONLY-HAIR-ADA', secretField: 'GM-ONLY-SPEC-ADA' } });
+  await patch(db, { layer: { path: 'data.credits', value: ['n-mabel', 'n-dov'] } });
+  await patch(db, { layer: { path: 'data.previously', value: ['n-mabel', 'n-ada', 'n-dov'] } });
+  let g = (await getDisplay(db, POLL)).body;
+  const [mabel, ada, dov] = g.layers.data.previously;
+  assert.deepEqual(Object.keys(mabel).sort(), ['name', 'npcId', 'role', 'spec']);
+  assert.deepEqual(mabel.spec, { v: 1, figure: 'femme' }, 'only the drawn keys of the spec: no label name, no unknown field');
+  assert.equal(ada.spec.hair, 'GM-ONLY-HAIR-ADA', 'a revealed NPC\'s face is served while she is revealed');
+  assert.ok(!('secretField' in ada.spec));
+  assert.deepEqual(Object.keys(dov).sort(), ['name', 'npcId', 'role'], 'no spec: none is made up');
+  assert.ok(g.layers.data.credits.every((c) => !('spec' in c)), 'the credits roll names only');
+  assert.ok(!/GMNOTES|NOTES-ADA|"gmNotes"|"revealed"/.test(JSON.stringify(g)));
+  await setRevealed(db, 'n-ada', false);
+  g = (await getDisplay(db, POLL)).body;
+  assert.deepEqual(g.layers.data.previously.map((n) => n.npcId), ['n-mabel', 'n-dov'], 'the hidden pick is dropped');
+  assert.ok(!/n-ada|Ada Vell|Croupier|GM-ONLY/.test(JSON.stringify(g)), 'nothing of the hidden pick: no id, name, role or spec');
+  await setRevealed(db, 'n-mabel', false); await setRevealed(db, 'n-dov', false);
+  g = (await getDisplay(db, POLL)).body;
+  assert.ok(!g.layers || !g.layers.data || !g.layers.data.previously, 'every pick hidden: no "previously" at all');
+  assert.ok(!/LABEL-NAME|UNKNOWN-MARKER|femme/.test(JSON.stringify(g)), 'and no spec of any of them');
+});
+
 await test('a player cannot write the ambient document or read the display; the display sign-in cannot write', async () => {
   const db = await withCast();
   const player = { me: { role: 'player' } };

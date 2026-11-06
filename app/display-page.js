@@ -1456,7 +1456,10 @@
     function swOn(id) { return !!(root.B68Flags && root.B68Flags.on(id)); }
     function suiteSync() {
       var hs = !!(root.B68HardStart && s.layers && swOn('spine.start'));
-      if (hs && !s.hs) s.hs = root.B68HardStart.attach(container, { layers: s.layers }); else if (!hs && s.hs) { s.hs.destroy(); s.hs = null; }
+      /* "Previously on" draws each face with the Rolodex card's renderer: the kit as it is now (it may arrive after the mount), a silhouette until then */
+      if (hs && !s.hs) s.hs = root.B68HardStart.attach(container, { layers: s.layers, kitIn: function () { return !!(ctx.figures || root.B68Figure); },
+        portrait: function (spec, id) { var r = drawPortrait(spec, id, ctx.figures || root.B68Figure); return r ? document.importNode(r.node, true) : null; } });
+      else if (!hs && s.hs) { s.hs.destroy(); s.hs = null; }
       if (s.hs) s.hs.apply();
       if (s.roomSync) s.roomSync();      /* 4.4 / 4.3: the room's sound follows the switches and the layers */
       var fx = !!(root.B68Fx && (swOn('fx.pause') || swOn('fx.off')));

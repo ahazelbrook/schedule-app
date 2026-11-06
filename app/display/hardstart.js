@@ -4,7 +4,8 @@
      scene.mode  'start'                       the hard start is up (absent: nothing here draws)
      data.countdown { to, label? }              the station clock counts down to `to` (the iPad's own clock: layers.message() has already taken the skew off)
      data.credits   [{ name, role }]            the opening credits (revealed NPCs only: the server joins and drops hidden ones)
-     data.previously [{ name, role }]           "Previously on": the first three, as faces with BLANK name plates
+     data.previously [{ name, role, spec? }]    "Previously on": the first three, as faces with BLANK name plates (each its portrait from the figure kit
+                                                when the served row has a spec and the kit is here, else a silhouette)
      band.faces     [{ name, role }]            the faces whose plates are shown: one tap by the GM reveals one
 
    The phases follow from the clock alone, so a reloaded iPad lands in the right one and two iPads agree:
@@ -51,19 +52,28 @@
     function two(n) { return (n < 10 ? '0' : '') + n; }
     return h ? h + ':' + two(m) + ':' + two(r) : m + ':' + two(r);
   }
-  /* the three plates: { name, role, revealed }. A plate is revealed when band.faces holds a face with the same name and role. */
+  /* the three plates: { name, role, revealed, npcId, spec }. A plate is revealed when band.faces holds a face with the same name and role. The face's
+     figure (npcId, spec) comes from st.prevFaces (B68Layers.clean: the served row's spec, revealed NPCs only); spec is null when there is none. */
   function plates(st) {
-    var shown = list(st && st.faces);
-    return list(st && st.previously).slice(0, FACES).map(function (p) {
+    var shown = list(st && st.faces), figs = list(st && st.prevFaces);
+    return list(st && st.previously).slice(0, FACES).map(function (p, i) {
       var name = isObj(p) && typeof p.name === 'string' ? p.name : '', role = isObj(p) && typeof p.role === 'string' ? p.role : '';
       var rv = shown.some(function (f) { return isObj(f) && f.name === name && (f.role || '') === role; });
-      return { name: name, role: role, revealed: rv };
+      var fig = isObj(figs[i]) && isObj(figs[i].spec) ? figs[i] : null;
+      return { name: name, role: role, revealed: rv, npcId: fig && typeof fig.npcId === 'string' ? fig.npcId : '', spec: fig ? fig.spec : null };
     });
   }
 
   function attach(container, opts) {
     var doc = container.ownerDocument || root.document, L = opts && opts.layers, now = opts && typeof opts.now === 'function' ? opts.now : Date.now;
     var node = null, key = '', clockEl = null, dead = false, timer = null;
+    /* opts.portrait(spec, uid) -> a cleaned head-and-shoulders node or null (display-page.js, the Rolodex card's renderer); opts.kitIn() -> the figure
+       kit is here. Until it is, a face is a silhouette; the kit arriving is a new key, so the faces are drawn again (B68Load.onFigures, and the 250 ms tick) */
+    function kitIn() { return !!(opts && typeof opts.kitIn === 'function' && opts.kitIn()); }
+    function portrait(p, i) {
+      if (!p.spec || !opts || typeof opts.portrait !== 'function' || !kitIn()) return null;
+      try { return opts.portrait(p.spec, 'dp-hs-' + i + '-' + String(p.npcId || 'x').replace(/[^A-Za-z0-9_-]/g, '')) || null; } catch (e) { return null; }
+    }
 
     function el(tag, cls, text) { var e = doc.createElement(tag); if (cls) e.className = cls; if (text != null && text !== '') e.textContent = text; return e; }
     function silhouette() {
@@ -96,8 +106,10 @@
       } else if (ph.phase === 'previously') {
         n.appendChild(el('p', 'dp-hs-kicker', 'Previously on'));
         var row3 = el('div', 'dp-hs-faces');
-        plates(st).forEach(function (p) {
-          var f = el('div', 'dp-hs-face' + (p.revealed ? ' dp-hs-revealed' : '')); f.appendChild(silhouette());
+        plates(st).forEach(function (p, i) {
+          var f = el('div', 'dp-hs-face' + (p.revealed ? ' dp-hs-revealed' : '')), pic = el('div', 'dp-hs-pic'), drawn = portrait(p, i);
+          if (drawn) { if (drawn.setAttribute) drawn.setAttribute('preserveAspectRatio', 'xMidYMin slice'); pic.className += ' dp-hs-drawn'; pic.appendChild(drawn); } else pic.appendChild(silhouette());
+          f.appendChild(pic);
           var pl = el('div', 'dp-hs-name');
           if (p.revealed) { pl.appendChild(el('span', 'dp-hs-pname', p.name)); if (p.role) pl.appendChild(el('span', 'dp-hs-prole', p.role)); }
           f.appendChild(pl); row3.appendChild(f);
@@ -109,7 +121,11 @@
       return n;
     }
     /* what the node shows: one key per phase (and, in "previously", per set of revealed plates) so it is rebuilt only when it changes */
-    function keyOf(ph, st) { return ph.phase + (ph.phase === 'previously' ? ':' + plates(st).map(function (p) { return p.revealed ? p.name + '|' + p.role : '-'; }).join(',') : ph.phase === 'card' ? ':' + (ph.left === null) : ''); }
+    function keyOf(ph, st) {
+      if (ph.phase !== 'previously') return ph.phase + (ph.phase === 'card' ? ':' + (ph.left === null) : '');
+      var kit = kitIn();
+      return ph.phase + ':' + plates(st).map(function (p) { return (p.revealed ? p.name + '|' + p.role : '-') + (p.spec && kit ? '*' + p.npcId : ''); }).join(',');
+    }
     function drop() { if (node && node.parentNode) node.parentNode.removeChild(node); node = null; key = ''; clockEl = null; }
     function update() {
       if (dead || !L) return;
@@ -122,6 +138,7 @@
       if (clockEl && ph.left !== null) clockEl.textContent = clockText(ph.left);
     }
     timer = root.setInterval ? root.setInterval(update, 250) : null;
+    if (root.B68Load && typeof root.B68Load.onFigures === 'function') root.B68Load.onFigures(function () { update(); });      /* the kit came: the faces at once */
     return {
       apply: update, update: update, phase: function () { var st = L.state(), m = L.message(); return phaseAt(Object.assign({}, st, { countdown: m && m.countdown ? m.countdown : st.countdown }), now()); },
       destroy: function () { dead = true; if (timer !== null && root.clearInterval) root.clearInterval(timer); drop(); }

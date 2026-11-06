@@ -6,7 +6,8 @@
    A hidden NPC cannot be picked: pool() lists revealed NPCs only, setPick refuses any other id, and the server drops a hidden one on write and again on
    every poll (functions/_lib/show.js), so a stale pick still never reaches the iPad.
 
-   make(host) -> ctl, with host = { layer(path, value) -> Promise, npcs() -> { id: npcDoc }, now() -> ms, startAt() -> ms | 0, toast?(msg, bad?), onTitles?() }
+   make(host) -> ctl, with host = { layer(path, value) -> Promise, npcs() -> { id: npcDoc }, now() -> ms, startAt() -> ms | 0, toast?(msg, bad?),
+     onTitles?() -> Promise<bool> (pin the credits), onIpad?() -> text (what is on the iPad) }
      ctl.pool()              revealed NPCs, most recently revealed first: [{ id, name, role, firstSeen }]  (the three picks default to its first three)
      ctl.picks()             the three chosen ids now (a pick that is no longer revealed drops out and the next in the pool fills the slot)
      ctl.setPick(slot, id)   -> bool        false for an unknown or hidden NPC, or a slot outside 0..2, or an id already in another slot
@@ -14,9 +15,12 @@
                              it never reads or writes the night's startAt
      ctl.go()                the clock to now: the same path as zero -> Promise<bool>
      ctl.reveal(slot)        show the name plate of that face (one tap) -> Promise<bool>; a face already shown stays shown
-     ctl.end()               take the hard start off the iPad (every layer it set) and hand over to the cold open -> Promise<bool>. The hard start ends where the
-                             Opening Titles begin: host.onTitles is the seam the run-order ticket (V1) fills; nothing here plays the Titles.
-     ctl.state()             { armed, at, test, shown: [slot], picks }
+     ctl.end()               End without credits: take the hard start off the iPad (every layer it set) -> Promise<bool>; the ambient scene plays. The page's
+                             Clear calls this one too, so it never plays the credits.
+     ctl.roll()              Roll the opening credits: end(), then host.onTitles() (gm-page.js pins the ambient Opening credits scene, with the theme) -> Promise<bool>.
+                             The GM presses it when Previously on is done: the hard start ends where the Opening Titles begin.
+     ctl.state()             { armed, at, test, shown: [slot], picks, rolled }      (rolled: the last end was Roll the opening credits; the sheet then reads
+                             host.onIpad() -> the tray's live line, so it says what is on the iPad)
    The sheet (open/toggle/render) is drawn in the right-edge sheet shared with the Switchboard (B68GmWorkshop.sheet). */
 (function (root, factory) {
   'use strict';
@@ -77,6 +81,8 @@
       arm: function (at, label) {
         var t = Math.floor(Number(at));
         if (!isFinite(t) || t < 1) { say('Pick a start time first.', true); return Promise.resolve(false); }
+        /* just after a reload the cast has not arrived yet: arming now would lay no credits and no faces */
+        if (!Object.keys(npcs() || {}).length) { say('The cast is still loading: arm again in a moment.', true); return Promise.resolve(false); }
         var L = live(), picks = ctl.picks(), credits = L.pool.slice(0, CREDITS_MAX).map(function (p) { return p.id; });
         st.shown = [];
         return seq([
@@ -85,7 +91,7 @@
           function () { return layer('data.previously', picks.length ? picks : null); },
           function () { return layer('data.countdown', { to: t, label: str(label).trim().slice(0, 40) || 'Station clock' }); },
           function () { return layer('scene.mode', 'start'); }
-        ]).then(function (ok) { if (ok) { st.armed = true; st.at = t; st.test = false; } return ok; });
+        ]).then(function (ok) { if (ok) { st.armed = true; st.at = t; st.test = false; st.rolled = false; } return ok; });
       },
       armTest: function (minutes) {
         var m = Number(minutes); if (!(m > 0)) m = TEST_MIN;
@@ -106,11 +112,19 @@
       },
       end: function () {
         return seq(PATHS.slice().reverse().map(function (p) { return function () { return layer(p, null); }; })).then(function (ok) {
-          if (ok) { st.armed = false; st.test = false; st.shown = []; if (typeof h.onTitles === 'function') { try { h.onTitles(); } catch (e) { /* the seam is the next ticket's */ } } }
+          if (ok) { st.armed = false; st.test = false; st.shown = []; st.rolled = false; }
           return ok;
         });
       },
-      state: function () { return { armed: st.armed, at: st.at, test: st.test, shown: st.shown.slice(), picks: ctl.picks() }; }
+      /* Roll the opening credits: end() (every layer it set comes off), then host.onTitles() pins the Opening credits scene (the GM picks the moment) */
+      roll: function () {
+        return ctl.end().then(function (ok) {
+          if (!ok) return false;
+          if (typeof h.onTitles !== 'function') { say('The opening credits cannot be pinned from here.', true); return false; }
+          return Promise.resolve().then(function () { return h.onTitles(); }).then(function (r) { if (r === false || r === null) return false; st.rolled = true; return true; }, function () { return false; });
+        });
+      },
+      state: function () { return { armed: st.armed, at: st.at, test: st.test, shown: st.shown.slice(), picks: ctl.picks(), rolled: !!st.rolled }; }
     };
 
     /* ---- the sheet ---- */
@@ -120,11 +134,19 @@
       if (!box) return;
       var L = live(), picks = ctl.picks(), s = ctl.state(), start = typeof h.startAt === 'function' ? +h.startAt() || 0 : 0;
       var opts = function (cur) { return '<option value="">(none)</option>' + L.pool.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === cur ? ' selected' : '') + '>' + esc(p.name) + (p.role ? ' (' + esc(p.role) + ')' : '') + '</option>'; }).join(''); };
-      var h2 = '<p class="gm-dim">' + (s.armed ? (s.test ? 'Test armed' : 'Armed') + ' for ' + esc(hhmm(s.at)) + '.' : 'Not armed. The iPad shows the test card and a station clock once you arm it.') + '</p>' +
-        '<div class="gm-sb-row"><button type="button" class="btn sm primary" data-hs="arm"' + (start ? '' : ' disabled') + ' title="' + (start ? 'Counts down to the night’s start time' : 'The night has no start: line in its Run sheet') + '">Arm for ' + (start ? esc(hhmm(start)) : 'the night’s start') + '</button> ' +
-        '<button type="button" class="btn sm" data-hs="test">Test: start in 2 minutes</button> <button type="button" class="btn sm" data-hs="go"' + (s.armed ? '' : ' disabled') + '>GO now</button> ' +
-        '<button type="button" class="btn sm" data-hs="end"' + (s.armed ? '' : ' disabled') + ' title="End the hard start: its card, clock, credits and faces come off the iPad">Take it down</button></div>' +
-        '<h3>Previously on: three faces from the people the table has met</h3>';
+      /* after Roll the opening credits the line says what is on the iPad now (the tray's live line, host.onIpad), until the next arm */
+      var onIpad = !s.armed && s.rolled && typeof h.onIpad === 'function' ? str(h.onIpad()) : '';
+      var status = s.armed ? (s.test ? 'Test armed' : 'Armed') + ' for ' + esc(hhmm(s.at)) + '.'
+        : s.rolled ? '<b>On the iPad: ' + esc(onIpad || 'Opening credits') + '.</b> To move on, pin the next scene (iPad view, Scenes) or fire a cue. Clear keeps the credits’ title card.'
+        : 'Not armed. The iPad shows the test card and a station clock once you arm it.';
+      var h2 = '<p class="gm-dim" data-hs-status>' + status + '</p>' +
+        '<div class="gm-sb-row"><button type="button" class="btn sm' + (s.armed ? '' : ' primary') + '" data-hs="arm"' + (start ? '' : ' disabled') + ' title="' + (start ? 'Counts down to the night’s start time' : 'The night has no start: line in its Run sheet') + '">Arm for ' + (start ? esc(hhmm(start)) : 'the night’s start') + '</button> ' +
+        '<button type="button" class="btn sm" data-hs="test">Test: start in 2 minutes</button> <button type="button" class="btn sm" data-hs="go"' + (s.armed ? '' : ' disabled') + '>GO now</button></div>';
+      /* once it is armed: how it ends. The GM picks the moment for the credits (after Previously on), or ends without them */
+      if (s.armed) h2 += '<div class="gm-sb-row gm-hs-end"><button type="button" class="btn sm primary" data-hs="roll" title="End the hard start, then play the Opening credits scene on the iPad, with the theme">Roll the opening credits</button> ' +
+        '<button type="button" class="btn sm" data-hs="end" title="End the hard start: its card, clock, credits and faces come off the iPad; the ambient scene plays">End without credits</button></div>' +
+        '<p class="gm-dim gm-hs-tap">The iPad plays sound only after a tap on it: if it shows “Tap for sound”, tap the iPad first.</p>';
+      h2 += '<h3>Previously on: three faces from the people the table has met</h3>';
       for (var i = 0; i < SLOTS; i++) {
         h2 += '<div class="gm-sb-row"><label>Face ' + (i + 1) + ' <select data-hs-pick="' + i + '">' + opts(picks[i] || '') + '</select></label> ' +
           '<button type="button" class="btn sm" data-hs-reveal="' + i + '"' + (s.armed && picks[i] ? '' : ' disabled') + ' aria-pressed="' + (s.shown.indexOf(i) >= 0) + '">' + (s.shown.indexOf(i) >= 0 ? 'Name shown' : 'Reveal the name') + '</button></div>';
@@ -142,6 +164,7 @@
           else if (a === 'test') p = ctl.armTest(TEST_MIN);
           else if (a === 'go') p = ctl.go();
           else if (a === 'end') p = ctl.end();
+          else if (a === 'roll') p = ctl.roll();
           if (p) p.then(function () { var b = sheet(); if (b && b.isOpen()) ctl.render(b.body); });
         });
         sh.addEventListener('change', function (ev) {

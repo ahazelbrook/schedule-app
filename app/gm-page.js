@@ -2395,7 +2395,16 @@
     if (!S.hs) S.hs = W.B68GmHardStart.make({
       layer: function (p, v) { var c = shows(); return c ? c.layer(p, v) : Promise.resolve(null); }, npcs: function () { return S && isObj(S.npcs) ? S.npcs : {}; }, now: function () { return Date.now(); },
       startAt: function () { var n = S && S.night && typeof S.night.night === 'function' ? S.night.night() : null, N = W.B68GmNight, pn = n && !n.startAt && N ? csNote() : null; return n && N ? N.clockMs(n.startAt || (pn ? N.parsePrep(pn).start : null), Date.now()) || 0 : 0; },     /* the GM's own start; until one is set (or a phase seeds it), the note's */
-      root: function () { return $q('#gm-root'); }, toast: toast
+      root: function () { return $q('#gm-root'); }, toast: toast,
+      /* Roll the opening credits (F1): the iPad view's own pin of the Opening credits scene, with the stage blanked if a stage is up (the scene plays under a blank) */
+      onTitles: function () {
+        return patchAmbient({ mode: 'pin', scene: 'credits' }).then(function (r) {
+          if (r === null) return false;
+          var k = isObj(AM.shown) ? str(AM.shown.kind) : '';
+          return k && k !== 'blank' ? pushDisplay({ kind: 'blank' }).then(function () { return true; }, function () { return true; }) : true;
+        }).then(function (ok) { if (W.B68GmIpadTray) W.B68GmIpadTray.refresh(); return ok; });
+      },
+      onIpad: function () { var T = W.B68GmIpadTray; return T && T.liveLine ? T.liveLine(T.liveItems(ipadSnapshot())).text : ''; }
     });
     return S.hs;
   }
