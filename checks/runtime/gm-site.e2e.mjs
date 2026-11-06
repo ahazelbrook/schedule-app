@@ -227,14 +227,14 @@ try {
   await G.page.click('[data-rv="next"]');
   check(!!(await until(() => G.page.evaluate(() => !!document.querySelector('.rv-sec[data-sec="tool"] .gm-inline [data-mt-pick]')), 5000)), 'it stays through a redraw of the site');
   await G.page.click('[data-rv="back"]');
-  /* a line half typed keeps its focus and caret when the site redraws under it (a change from another device, here the night's budget) */
+  /* a line half typed keeps its focus and caret when the site redraws under it from elsewhere (here the band's tray freezing the iPad through
+     B68GmStage: no click, so the focus stays where the GM left it) */
   const mtLine = '.rv-sec[data-sec="tool"] .gm-inline [data-mt-line]';
   await G.page.click(mtLine); await G.page.keyboard.type('a half typed line'); await G.page.keyboard.press('ArrowLeft');
-  await G.page.evaluate(() => { document.querySelector('.rv-head').__before = true; });
-  await api('PATCH', '/gm/state', { night: { v: 1, phase: 'score', phases: { pb: {}, plan: {}, score: { budget: 2, start: Date.now() - 10 * 60000, end: null }, after: {} } } });
-  await G.page.evaluate(() => window.dispatchEvent(new Event('focus')));
-  const redrawn = await until(() => G.page.evaluate(() => { const h = document.querySelector('.rv-head'); return !!h && !h.__before; }), 15000);
+  await G.page.evaluate(() => { document.querySelector('.rv-head').__before = true; window.B68GmStage.freeze(true); });
+  const redrawn = await until(() => G.page.evaluate(() => { const h = document.querySelector('.rv-head'); return !!h && !h.__before; }), 5000);
   const kept = await G.page.evaluate((q) => { const a = document.activeElement, f = document.querySelector(q); return { same: !!f && a === f, value: f ? f.value : '', caret: f ? f.selectionStart : -1 }; }, mtLine);
+  await G.page.evaluate(() => window.B68GmStage.freeze(false));
   check(!!redrawn && kept.same && kept.value === 'a half typed line' && kept.caret === 16, 'a redraw from elsewhere keeps the montage line focused, its text and its caret (' + JSON.stringify(kept) + ', redrawn ' + !!redrawn + ')');
   await G.page.fill(mtLine, ''); await G.page.evaluate(() => document.activeElement && document.activeElement.blur());      /* Esc in a field only leaves the field */
   await G.page.keyboard.press('Escape');
