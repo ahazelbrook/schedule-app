@@ -87,8 +87,20 @@
     return {
       phase: oneOf(b.phase, PHASES) || null, security: whole(b.security, 0, SECURITY - 1) === undefined ? null : b.security, onair: b.onair === true,
       filter: oneOf(s.filter, ['flashback']) || null, layout: oneOf(s.layout, ['montage']) || null, mode: oneOf(s.mode, ['start', 'aftermath']) || null,
-      countdown: cd, faces: faces, credits: rows(d.credits, 30), previously: rows(d.previously, 12), montage: montagePanels(d.montage)
+      countdown: cd, faces: faces, credits: rows(d.credits, 30), previously: rows(d.previously, 12), prevFaces: prevFaces(d.previously), montage: montagePanels(d.montage)
     };
+  }
+  /* "Previously on" draws each face (app/display/hardstart.js): one { npcId, spec } per row of `previously` (in its order; null where a row has no
+     figure). The server serves a spec on a revealed NPC's row only (functions/_lib/show.js). It stays on the page: message() never sends it to a scene. */
+  function prevFaces(list) {
+    if (!Array.isArray(list)) return [];
+    var out = [];
+    list.slice(0, 12).forEach(function (c) {
+      if (!isObj(c) || !text(c.name, 120)) return;
+      var id = typeof c.npcId === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(c.npcId) ? c.npcId : '';
+      out.push(isObj(c.spec) ? { npcId: id, spec: c.spec } : null);
+    });
+    return out;
   }
   /* the message a scene receives (`countdown.to` is already in THIS page's clock: the server's epoch less its skew, rounded to 250 ms so a jittery skew does not re-post; a scene computes to - Date.now()) */
   function message(state) {
