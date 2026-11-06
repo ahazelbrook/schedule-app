@@ -191,16 +191,10 @@ try {
   await a.click('#gm-vpane .gm-desk[data-desk="frontpage"]');
   check(await until(() => a.$eval('#gm-vpane [data-inline="frontpage"]', (e) => !!e), 5000) && await a.$eval('#gm-vhead', (e) => !e.hidden && /← Desks/.test(e.textContent) && /Front page/.test(e.textContent)), 'a desk opens its tool inline, under "← Desks"');
   check(await a.$eval('#gm-left [data-desk="frontpage"]', (e) => e.getAttribute('aria-current')) === 'true', 'the column marks the open desk');
+  /* a real Esc press: the page's one Esc (onKey -> B68GmEsc.handle, N1a) closes the open desk, and it is not a PANIC */
   await blur(a); await a.keyboard.press('Escape'); await sleep(300);
-  /* the page's one Esc (B68GmEsc.handle in onKey) is N1a's wiring: in a tree without it the cue stack takes Esc as PANIC, so Resume, and ask the contract itself */
-  let escVia = '';
-  if (await a.$('#gm-cuebar .gm-cs-panic')) {
-    await a.$eval('#gm-cuebar [data-cs="resume"]', (e) => e.click()).catch(() => {});
-    await a.evaluate(() => window.B68GmEsc.handle({ panic() {} }));
-    escVia = ' (through B68GmEsc.handle: this tree has no one-Esc wiring yet)';
-    await sleep(300);
-  }
-  check(await a.$$eval('#gm-vpane .gm-desk', (d) => d.length) === 10 && await a.$eval('#gm-vhead', (e) => e.hidden), 'Esc goes back to the desks' + escVia);
+  check(await a.$$eval('#gm-vpane .gm-desk', (d) => d.length) === 10 && await a.$eval('#gm-vhead', (e) => e.hidden), 'Esc goes back to the desks');
+  check(!(await a.$('#gm-band .gm-band-r2[data-alarm="panic"]')), 'and the press was not a PANIC');
   await a.click('#gm-vpane [data-desk="gen:score"]');
   check(await attr(a, 'data-panel') === 'score' && await a.$eval('#gm-vhead', (e) => /Score generator/.test(e.textContent)), 'Generators › Score: the score generator, under "← Desks"');
   await a.click('#gm-vhead [data-pv-desks]');
