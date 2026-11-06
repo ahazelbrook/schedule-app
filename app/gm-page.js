@@ -3941,12 +3941,12 @@
   }
   function showOnIpad() {
     var mu = mapUi(), d, tk = playerTokenSet(revealEntries(mu));
-    try { d = playerDisplay(S.locRoll, mu, W.B68Map && W.B68Map.render, tk); } catch (e) { toast(errText(e), true); return; }
-    if (!confirmReveal(d.reveal, 'This map')) return;
+    try { d = playerDisplay(S.locRoll, mu, W.B68Map && W.B68Map.render, tk); } catch (e) { toast(errText(e), true); return Promise.resolve(false); }
+    if (!confirmReveal(d.reveal, 'This map')) return Promise.resolve(false);
     gate.mark(d.svg);
     var me = S, key = rollKey(S.locRoll), on = { key: key, reveal: d.reveal.slice(), know: knowRooms(mu), view: mu.view, theme: mu.theme, time: mu.time, weather: mu.weather, title: d.title, tok: tk.sig, tokQ: tk.sig, tokToast: d.tokensRefused ? tk.sig : null };
     endLive();            /* nothing is live until this map has landed */
-    pushDisplay({ kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }, {
+    return pushDisplay({ kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }, {
       map: true,
       done: function (r) { if (S === me && S.locRoll && rollKey(S.locRoll) === key && mapUi().layer === 'player' && typeof r.seq === 'number') S.mapOn = Object.assign(on, { seq: r.seq }); }
     }).then(function () {
@@ -3954,7 +3954,36 @@
       toast('On the iPad: ' + d.title + ' (' + d.caption + '). Bands you open or close now go to the iPad at once.');
       if (d.tokensRefused) toast(P.TOKEN_LEAK_MSG, true);
       if (S === me) liveTokens();          /* a marker moved while this was on its way */
-    }, function (e) { if (!e.superseded) toast('Could not send to the iPad: ' + errText(e), true); });
+      return true;
+    }, function (e) { if (!e.superseded) toast('Could not send to the iPad: ' + errText(e), true); return false; });
+  }
+  /* Tech run T5: the players' map on the iPad from the site. The site's toolbar has Show on iPad (and Take it down while the map is up), Send puts it up when it
+     is not up yet, and entering the Score puts it up by itself when the iPad is only playing the ambient (or is black). It is Location's own Show on iPad: the
+     Location card's roll, the PLAYER layer (switched to Player first, as only that layer may go), the bands ticked and the rooms opened, the same render, leak
+     scan, gate and confirm; from then on the map is live, so Seen + Send update it at once. quiet: no toast for "nothing to show" (the automatic paths). */
+  function siteMapUp(quiet) {
+    if (!S || !S.locRoll) { if (!quiet) toast('There is no map to show yet: open the site on the Location card first.', true); return Promise.resolve(false); }
+    if (b17Frozen()) { if (!quiet) toast('The iPad is frozen: unfreeze it first.', true); return Promise.resolve(false); }
+    if (mapUi().layer !== 'player') setMap('layer', 'player');
+    return Promise.resolve(showOnIpad()).then(function (ok) { if (S) siteChanged(); return ok; });
+  }
+  /* entering the Score: the map goes up unless the GM has something else on the iPad (a map already live, a handout, a rule, a face card held as the display) */
+  function scoreMapDefault() {
+    if (!S || !S.locRoll || mapOnIpad() || b17Frozen()) return;
+    var k = AM.shown ? str(AM.shown.kind) : '';
+    if (k && k !== 'blank' && k !== 'dark') return;
+    siteMapUp(true);
+  }
+  function scoreMapWrap(me) {
+    var nt = me.night; if (!nt || typeof nt.enter !== 'function' || typeof nt.phase !== 'function' || nt.__r1map) return;
+    var enter0 = nt.enter;
+    nt.enter = function (phase) {
+      var was = null; try { was = nt.phase(); } catch (e) { was = null; }
+      var r = enter0.apply(nt, arguments);
+      if (r !== false && phase === 'score' && was !== 'score' && S === me) scoreMapDefault();
+      return r;
+    };
+    nt.__r1map = true;
   }
   /* Live reveal (GM.md, "Location"; Alex, 22/10/2026: the GM opens bands and the iPad updates at once; the secrecy review of
      23/10/2026). S.mapOn is what Show on iPad (or the last live push) actually put on the iPad: the roll's key, the bands, the view,
@@ -4882,7 +4911,9 @@
         var ch = { open: names.length ? names : null };
         if (b09On('map.knowledge')) { var kn = cleanRooms(ballDoc(rs.name).know).filter(function (n) { return names.indexOf(n) < 0; }); ch.know = kn.length ? kn : null; }
         var ok = ballSet(rs.name, ch);
-        if (S.map) drawMap(); renderLocation(); return !!ok;
+        if (S.map) drawMap(); renderLocation();
+        if (ok && !mapOnIpad()) siteMapUp(true);      /* T5: Send puts the map on the iPad when it is not up yet (live, the open rooms go at once) */
+        return !!ok;
       },
       liveText: function () { return S === me && mapOnIpad() ? bandWords(S.mapOn.reveal) : ''; },
       dark: function () { return pushDisplay({ kind: 'dark' }, { b17: true }).then(function () { toast('Blank: the iPad is black.'); }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); }); },
@@ -4940,6 +4971,8 @@
       roomMd: function (room) { var rn = S === me ? runRoomNotes() : null; return rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? str(rn.byRoom[room].md) : ''; },
       scoreOver: siteScoreOver, montageOpen: function () { return !!(S === me && S.rv && S.rv.toolOpen() === 'montage'); }, montage: function (view) { siteMontage(view); },
       dawn: function () { return runDawn(); }, introduce: function (id) { npcIntroduce(id); }, setThreat: siteThreat,
+      /* T5: Show on iPad / Take it down for the players' map, in the site's toolbar */
+      mapLive: function () { return S === me && mapOnIpad(); }, mapShow: function () { return S === me ? siteMapUp(false) : Promise.resolve(false); }, mapDown: function () { if (S === me) blankIpad(); },
       lineShown: function () { var l = $q('#gm-runv .rv-siteline'); return !!(l && l.offsetParent !== null); }
     });
     return me.site;
@@ -5087,7 +5120,7 @@
     var N = W.B68GmNight, me = S; if (W.B68GmSpine) W.B68GmSpine.reset(); if (!N) { me.night = null; return; }
     me.night = N.create({ doc: function () { return S === me ? S.doc : null; }, patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); }, changed: function () { spineTick(); placesSync(); bandUpdate(); },
       prep: function () { var pk = S === me ? part('prep') : null, id = pk && W.B68GmPrep ? prepNoteId(pk) : null; return id && Array.isArray(pk.notes) ? pk.notes.filter(function (n) { return isObj(n) && n.id === id; })[0] || null : null; } });
-    spineTick(); tcWrap(me);
+    spineTick(); tcWrap(me); scoreMapWrap(me);
   }
   /* 2.10 the score title card (gm/title-card.js, switch map.title): on GO into the Score phase the iPad gets it; the wrap sits on the night controller's own enter() */
   function tcWrap(me) {

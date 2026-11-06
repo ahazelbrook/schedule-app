@@ -1335,6 +1335,7 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
 #gm-page .rv-live.frozen { background: #3b6ea8; border-color: #3b6ea8; color: #fff; }
 #gm-page .rv-live.blank { background: #111; border-color: #111; color: #eee; }
 #gm-page .rv-btn.rv-send { background: #f0a24e; color: #14110e; }
+#gm-page .rv-btn.rv-ipad { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }      /* tech run T5: Show on iPad, the players' map */
 #gm-page .rv-send b { font: 700 12px/1 var(--font-mono); }
 /* the board: what the players' map holds of each room (the zone stripe stays on top) */
 #gm-page .rv-card.k-dark { background: #2b2722; color: #f2ede1; }
