@@ -447,7 +447,12 @@
       if (!note) return '<p class="gm-empty">No prep notes in the pack yet. In Obsidian, add the property <code>gm_prep: true</code> to a session note, then run <code>npm run gm:pack</code> and push the pack (or Update pack).</p>';
       var pick = notes.length > 1 ? '<label class="gm-field gm-tn-pick"><span class="gm-lab">The night’s note</span><select data-pv-note="1">' + notes.map(function (n) { return '<option value="' + esc(n.id) + '"' + (n.id === note.id ? ' selected' : '') + '>' + esc(n.title) + '</option>'; }).join('') + '</select></label>'
         : '<p class="gm-tn-title">' + esc(note.title) + '</p>';
-      var times = '<p class="gm-tn-line">' + [f.start ? 'Start <b>' + esc(f.start) + '</b>' : 'No <code>start:</code> line', f.curfew ? 'curfew <b>' + esc(f.curfew) + '</b>' : 'no <code>curfew:</code> line', '<b>' + f.cues + '</b> cue' + (f.cues === 1 ? '' : 's'), '<b>' + f.rooms + '</b> room' + (f.rooms === 1 ? '' : 's')].join(' · ') + '</p>';
+      /* tonight's times: the GM's own (the Tonight box) where set, else the note's; the note's in brackets while they differ */
+      var nt = call('nightTimes') || {}, tm = function (word, mine, noteAt, none) {
+        var shown = mine || noteAt; if (!shown) return none;
+        return word + ' <b>' + esc(shown) + '</b>' + (mine && noteAt && mine !== noteAt ? ' <span class="gm-dim">(the note: ' + esc(noteAt) + ')</span>' : '');
+      };
+      var times = '<p class="gm-tn-line">' + [tm('Start', nt.startAt, f.start, 'No <code>start:</code> line'), tm('curfew', nt.curfewAt, f.curfew, 'no <code>curfew:</code> line'), '<b>' + f.cues + '</b> cue' + (f.cues === 1 ? '' : 's'), '<b>' + f.rooms + '</b> room' + (f.rooms === 1 ? '' : 's')].join(' · ') + '</p>';
       var rows = f.rows.length ? '<table class="gm-tbl gm-tn-run"><thead><tr><th>#</th><th>Beat</th><th>Place</th><th class="num">Min</th></tr></thead><tbody>' + f.rows.map(function (r, i) {
         return '<tr><td>' + (i + 1) + '</td><td>' + esc(r.beat) + '</td><td>' + esc(placeLabel(r.place) || '—') + '</td><td class="num">' + (r.min || '') + '</td></tr>';
       }).join('') + '</tbody></table>' : '<p class="gm-dim">No run order in the note: a table with a <code>#</code> column and an About, Time, Budget or Length column.</p>';
@@ -459,7 +464,7 @@
       return '<div class="gm-tonight"><section class="gm-box gm-tn-note"><h3 class="gm-band">The night’s note</h3><div class="gm-tn-body">' + pick + times + rows +
         '<p class="gm-tn-acts"><button type="button" class="btn sm" data-pv="prep">The whole note in Prep <kbd>R</kbd></button></p></div></section><div class="gm-tn-secs">' + secHtml + '</div></div>';
     }
-    function tonightSig() { var n = call('prepNote'); return JSON.stringify([n ? n.id : '', (call('prepSecs') || []).map(function (s) { return s.id; }), factsNow()]); }
+    function tonightSig() { var n = call('prepNote'), nt = call('nightTimes') || {}; return JSON.stringify([n ? n.id : '', (call('prepSecs') || []).map(function (s) { return s.id; }), factsNow(), nt.startAt || '', nt.curfewAt || '']); }
     function fillPane(e, id) {
       var v = VIEWS[id], x = !v ? extraTool(id) : null;
       unbindWhere('view', v && v.tool ? [v.tool] : v && v.tools ? v.tools : []);
