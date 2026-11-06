@@ -102,7 +102,7 @@
     cards: { label: 'Opportunities', short: 'Opps', key: 'O', pane: 'cards', slot: { tool: 'board', sel: '#gm-opps-players' }, words: 'opportunities opportunity cards pitches board posts players' },
     tonight: { label: 'Tonight', build: 'tonight', words: 'tonight session note run order start curfew cues before the night' },
     room: { label: 'The room', short: 'Room', tools: ['practical', 'phone', 'light', 'record'], words: 'the room practical speaker ringing phone light relay record' },
-    ipadscenes: { label: 'iPad scenes', short: 'Scenes', pane: 'ipad', anchor: ['#gm-ipad [data-ipad-sec="scenes"]', '#gm-ipad-scenes', '#gm-ipad .gm-ipad-amb'], words: 'ipad scenes ambient playlist theme' },
+    ipadscenes: { label: 'iPad scenes', short: 'Scenes', pane: 'ipad', anchor: ['#gm-ipad .gm-ipad-scenes', '#gm-ipad [data-ipad-sec="scenes"]', '#gm-ipad-scenes', '#gm-ipad .gm-ipad-amb'], words: 'ipad scenes ambient playlist theme' },
     titles: { label: 'Titles', pane: 'prep', prepWords: ['titles', 'open'], words: 'titles opening previously on' },
     desks: { label: 'Desks', build: 'desks', words: 'desks between sessions' },
     preflight: { label: 'Preflight', tool: 'preflight', words: 'preflight checks ready sound files sign in pack', desc: 'Is the room ready: the iPad sound, its files, the transcriber, the sign-in and the pack, green or red, each red with its fix.' },
