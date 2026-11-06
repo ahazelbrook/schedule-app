@@ -209,10 +209,28 @@
      figure's spec. Nothing else is copied, so gmNotes, tags, revealed and any future field cannot reach the screen. */
   Pure.playerNpc = function (doc) {
     if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return null;
+    doc = Pure.knownAs(doc);
     return {
       name: str(doc.name, 200), alias: str(doc.alias, 200), role: str(doc.role, 200), faction: str(doc.faction, 200),
       description: str(doc.description), spec: doc.spec && typeof doc.spec === 'object' && !Array.isArray(doc.spec) ? doc.spec : null
     };
+  };
+  /* T15 known-as: the server serves an NPC tagged 'known-as' (with an alias) by its alias alone (functions/_lib/known-as.js). An iPad on the
+     GM's own sign-in reads the cast as the GM, so the same swap is made here: name := alias, no alias line, the spec's name and plate := alias,
+     its id, notes and $comment left out. An unmarked doc comes back as it was. */
+  Pure.knownAs = function (doc) {
+    var mark = function (t) { return typeof t === 'string' && t.trim().toLowerCase() === 'known-as'; };
+    var tags = doc && Array.isArray(doc.tags) ? doc.tags : [], alias = doc && typeof doc.alias === 'string' ? doc.alias.trim() : '';
+    if (!alias || !tags.some(mark)) return doc;
+    var out = {}, sp = doc.spec;
+    Object.keys(doc).forEach(function (k) { out[k] = doc[k]; });
+    out.name = alias; out.alias = ''; out.tags = tags.filter(function (t) { return !mark(t); });
+    if (sp && typeof sp === 'object' && !Array.isArray(sp)) {
+      out.spec = {};
+      Object.keys(sp).forEach(function (k) { if (k !== 'id' && k !== 'notes' && k !== '$comment') out.spec[k] = sp[k]; });
+      out.spec.name = alias; if (out.spec.plate) out.spec.plate = alias;
+    }
+    return out;
   };
   /* npcDoc: undefined (not looked up), null (not found) or the doc as the cast holds it. Unknown kinds draw as blank. */
   Pure.viewModel = function (display, npcDoc) {

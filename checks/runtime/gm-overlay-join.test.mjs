@@ -9,7 +9,10 @@ import { fileURLToPath } from 'node:url';
 import { joinOverlayClock, assertOverlayClock } from '../../functions/_lib/campaign.js';
 import { namesHit as serverNamesHit, loadHiddenNames, patchAmbient, loadAmbient, cleanIfOverlay } from '../../functions/_lib/gm.js';
 import { memoryExec, asD1 } from '../../scripts/lib/d1.mjs';
-import { joinOverlayNpc, drawingSpec, FIGURE_SPEC_KEYS, FIGURE_SPEC_LABELS } from '../../functions/_lib/npcs.js';
+import { joinOverlayNpc, drawingSpec, FIGURE_SPEC_KEYS, FIGURE_SPEC_LABELS, playerView, listNpcs, writeNpc, joinDisplayNpc } from '../../functions/_lib/npcs.js';
+import { knownAs, isKnownAs } from '../../functions/_lib/known-as.js';
+import { joinShows } from '../../functions/_lib/show.js';
+import { buildKeyterms } from '../../functions/_lib/keyterms.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(import.meta.url);
@@ -225,6 +228,110 @@ await test('loadHiddenNames: hidden clocks, and NPCs that are not revealed (name
   assert.deepEqual([calls.batch, calls.stmts], [1, 2], 'one batch of two statements');
   assert.deepEqual(await loadHiddenNames({ prepare: () => ({ bind: () => ({}) }), batch: async () => [{ results: [] }, { results: [] }] }, 'camp'), [], 'nothing hidden');
   assert.deepEqual(await loadHiddenNames({ prepare: () => ({ bind: () => ({}) }), batch: async () => [{ results: [{ clocks: '{bad' }] }, { results: [] }] }, 'camp'), [], 'unreadable clocks');
+});
+
+/* ---------- T15: a known-as NPC reaches the table by its alias alone (functions/_lib/known-as.js) ---------- */
+const FIRST = /\bAda\b/;                 // the first name the table must never meet, as a whole word
+const KA_SPEC = { id: 'ada-vell', name: 'Ada Vell', plate: 'Ada Vell', code: 'NPC-968-1234', halo: 'slate-500', notes: 'Ada keeps a knife', $comment: 'Ada', seed: 7, figure: 'fem', heightIn: 64, outfit: { base: { type: 'dress' } } };
+const KA_DOC = { name: 'Ada Vell', alias: 'Vell', role: 'Fixer', faction: 'The Invented Guild', description: 'A woman at the bar.', gmNotes: 'GMNOTES-MARKER', tags: ['bar', 'known-as'], spec: KA_SPEC, revealed: true };
+
+await test('T15 knownAs: a marked NPC is served by its alias, no alias line, the marker gone, the spec\'s name and plate the alias and its id/notes/$comment left out; the input is untouched', () => {
+  const before = JSON.stringify(KA_DOC);
+  const v = knownAs(KA_DOC);
+  assert.equal(JSON.stringify(KA_DOC), before, 'the stored document is not mutated');
+  assert.deepEqual([v.name, v.alias, v.role, v.faction, v.description], ['Vell', '', 'Fixer', 'The Invented Guild', 'A woman at the bar.']);
+  assert.deepEqual(v.tags, ['bar'], 'the marker tag is dropped, the others kept');
+  assert.deepEqual(Object.keys(v.spec).sort(), ['code', 'figure', 'halo', 'heightIn', 'name', 'outfit', 'plate', 'seed']);
+  assert.deepEqual([v.spec.name, v.spec.plate, v.spec.code, v.spec.seed], ['Vell', 'Vell', 'NPC-968-1234', 7]);
+  assert.deepEqual(v.spec.outfit, KA_SPEC.outfit, 'drawing keys are kept whole');
+  const { gmNotes: _g, ...rest } = v;
+  assert.ok(!FIRST.test(JSON.stringify(rest)) && !JSON.stringify(rest).includes('ada-vell'), 'the first name is nowhere: ' + JSON.stringify(rest));
+  assert.ok(isKnownAs(KA_DOC) && !isKnownAs(v), 'once swapped it is no longer marked (the swap is idempotent)');
+  assert.deepEqual(knownAs({ ...KA_DOC, tags: [' Known-As '] }).name, 'Vell', 'the tag in any case, padded');
+  assert.equal(knownAs({ ...KA_DOC, alias: '  Vell  ' }).name, 'Vell', 'the alias trimmed');
+  assert.equal(knownAs({ ...KA_DOC, spec: { figure: 'fem' } }).spec.plate, undefined, 'no plate stays no plate');
+  assert.equal(knownAs({ ...KA_DOC, spec: 'junk' }).spec, 'junk', 'a spec that is not an object is left as it was');
+  for (const d of [{ ...KA_DOC, tags: ['bar'] }, { ...KA_DOC, alias: '' }, { ...KA_DOC, alias: '   ' }, { ...KA_DOC, alias: 5 }, { ...KA_DOC, tags: 'known-as' }, { ...KA_DOC, tags: undefined }, { ...KA_DOC, tags: ['known as'] }]) {
+    assert.equal(knownAs(d), d, 'not marked (or nothing to be known by): the same object back: ' + JSON.stringify([d.tags, d.alias]));
+  }
+  for (const x of [null, undefined, 'x', 5, []]) assert.equal(knownAs(x), x);
+});
+
+await test('T15 playerView: a revealed known-as NPC by its alias and without gmNotes; a hidden one is still null; an unmarked one keeps its name (the control)', () => {
+  const v = playerView(KA_DOC);
+  assert.equal(v.name, 'Vell'); assert.equal(v.alias, ''); assert.ok(!('gmNotes' in v));
+  assert.ok(!FIRST.test(JSON.stringify(v)), 'no first name in what a player gets: ' + JSON.stringify(v));
+  assert.equal(playerView({ ...KA_DOC, revealed: false }), null, 'hidden is hidden');
+  const plain = playerView({ ...KA_DOC, tags: ['bar'] });
+  assert.deepEqual([plain.name, plain.alias, plain.spec.name], ['Ada Vell', 'Vell', 'Ada Vell'], 'without the marker nothing changes');
+});
+
+await test('T15 the cast list and the transcriber\'s key terms: a player\'s list carries the alias alone, the GM\'s the whole row', async () => {
+  const db = asD1(await memoryExec({ schemaFile: path.join(ROOT, 'schema.sql') }));
+  await writeNpc(db, 'camp', 'npc_kv1', () => ({ ...KA_DOC }));
+  await writeNpc(db, 'camp', 'npc_kv2', () => ({ ...KA_DOC, name: 'Mabel Quist', alias: 'Mabs', tags: [], spec: {} }));
+  const players = await listNpcs(db, 'camp', { role: 'player' });
+  const pk = players.find((n) => n.id === 'npc_kv1');
+  assert.equal(pk.doc.name, 'Vell'); assert.ok(!FIRST.test(JSON.stringify(players)), 'no first name anywhere in the player list');
+  assert.equal(players.find((n) => n.id === 'npc_kv2').doc.name, 'Mabel Quist', 'an unmarked NPC is unchanged');
+  const terms = buildKeyterms(null, players.map((n) => n.doc));
+  assert.ok(terms.includes('Vell') && !terms.some((t) => FIRST.test(t)), 'key terms (they reach the iPad): ' + terms.join());
+  const gms = await listNpcs(db, 'camp', { role: 'gm' });
+  const g = gms.find((n) => n.id === 'npc_kv1').doc;
+  assert.deepEqual([g.name, g.alias, g.tags, g.spec.name, g.gmNotes], ['Ada Vell', 'Vell', ['bar', 'known-as'], 'Ada Vell', 'GMNOTES-MARKER'], 'the GM gets the whole stored row');
+});
+
+await test('T15 joinOverlayNpc: a known-as NPC\'s card is the alias, no alias line, nothing of the first name; one read', async () => {
+  const db = fakeDb(npcRow(KA_DOC));
+  const r = await joinOverlayNpc(db, 'camp', amb(NPCO));
+  const n = r.amb.doc.overlay.npc;
+  assert.deepEqual([n.name, n.alias, n.role, n.faction], ['Vell', '', 'Fixer', 'The Invented Guild']);
+  assert.ok(!FIRST.test(JSON.stringify(r.amb)), 'no first name on the display: ' + JSON.stringify(r.amb).slice(0, 240));
+  assert.deepEqual(Object.keys(n.spec).sort(), ['figure', 'heightIn', 'outfit', 'seed'], 'the drawing keys only, as before');
+  assert.equal(db.reads, 1);
+  const plain = await joinOverlayNpc(fakeDb(npcRow({ ...KA_DOC, tags: [] })), 'camp', amb(NPCO));
+  assert.deepEqual([plain.amb.doc.overlay.npc.name, plain.amb.doc.overlay.npc.alias], ['Ada Vell', 'Vell'], 'the control: unmarked, unchanged');
+});
+
+await test('T15 joinDisplayNpc: an NPC card on the display is titled by the alias while that NPC is live, here and known-as; anything else is the same object, and a non-npc display costs no read', async () => {
+  const cur = (display) => ({ seq: 9, display, updatedAt: 'x' });
+  const card = cur({ kind: 'npc', npcId: 'npc_a', title: 'Ada Vell' });
+  const db = fakeDb(npcRow(KA_DOC));
+  const r = await joinDisplayNpc(db, 'camp', card);
+  assert.deepEqual(r, { seq: 9, display: { kind: 'npc', npcId: 'npc_a', title: 'Vell' }, updatedAt: 'x' });
+  assert.equal(card.display.title, 'Ada Vell', 'the stored display is not mutated'); assert.equal(db.reads, 1);
+  for (const [why, row] of [['unmarked', npcRow({ ...KA_DOC, tags: [] })], ['another campaign', npcRow(KA_DOC, { campaign: 'other' })], ['deleted', npcRow(KA_DOC, { deleted: 1 })], ['no row', null]]) {
+    assert.equal(await joinDisplayNpc(fakeDb(row), 'camp', card), card, why + ': as it came');
+  }
+  for (const d of [{ kind: 'dark', title: 'Ada Vell' }, { kind: 'svg', svg: '<svg/>' }, { kind: 'npc', npcId: 'bad id!' }, null]) {
+    const db2 = fakeDb(npcRow(KA_DOC)), c = cur(d);
+    assert.equal(await joinDisplayNpc(db2, 'camp', c), c); assert.equal(db2.reads, 0, 'no read for ' + JSON.stringify(d));
+  }
+});
+
+await test('T15 the show joins (rolodex, spotlight, credits, faces, "Previously on"): a known-as NPC by its alias alone', async () => {
+  const rows = [{ id: 'npc_kv1', doc: JSON.stringify(KA_DOC) }, { id: 'npc_kv2', doc: JSON.stringify({ ...KA_DOC, name: 'Dov Kessler', alias: 'Dov', tags: [] }) }];
+  const db = { reads: 0, prepare() { return { bind: () => ({ all: async () => { db.reads++; return { results: rows }; } }) }; } };
+  const at = '2026-11-06T00:00:00.000Z';
+  const ro = await joinShows(db, 'camp', { id: 'r1', kind: 'rolodex', ms: 20000, at, payload: { npcIds: ['npc_kv1', 'npc_kv2'] } },
+    { band: { faces: [{ npcId: 'npc_kv1' }] }, data: { credits: ['npc_kv1', 'npc_kv2'], previously: ['npc_kv1'] } });
+  const text = JSON.stringify(ro);
+  assert.ok(!FIRST.test(text), 'no first name in any beat or layer: ' + text.slice(0, 300));
+  assert.deepEqual(ro.overlay.payload.npcs.map((c) => [c.name, c.alias]), [['Vell', ''], ['Dov Kessler', 'Dov']], 'the rolodex: the alias, and the control unchanged');
+  assert.deepEqual([ro.layers.band.faces[0].name, ro.layers.data.credits[0].name, ro.layers.data.previously[0].name, ro.layers.data.credits[1].name], ['Vell', 'Vell', 'Vell', 'Dov Kessler']);
+  const sp = await joinShows(db, 'camp', { id: 's1', kind: 'spotlight', ms: 20000, at, payload: { npcId: 'npc_kv1' } }, null);
+  assert.deepEqual([sp.overlay.payload.npc.name, sp.overlay.payload.npc.alias], ['Vell', '']);
+  assert.ok(!('name' in sp.overlay.payload.npc.spec) && !('plate' in sp.overlay.payload.npc.spec), 'the spec carries the drawing keys only');
+});
+
+await test('T15 the iPad\'s own fallback (display-page.js Pure.knownAs, for an iPad on the GM sign-in) makes the same swap as the server on shared cases', () => {
+  const D = require(path.join(ROOT, 'app', 'display-page.js'));
+  const cases = [KA_DOC, { ...KA_DOC, tags: ['KNOWN-AS'] }, { ...KA_DOC, alias: ' Vell ' }, { ...KA_DOC, tags: ['bar'] }, { ...KA_DOC, alias: '' }, { ...KA_DOC, spec: { figure: 'fem' } }, { ...KA_DOC, spec: null }, { ...KA_DOC, tags: null }];
+  for (const d of cases) assert.deepEqual(D.Pure.knownAs(d), knownAs(d), JSON.stringify([d.tags, d.alias, d.spec && Object.keys(d.spec)]));
+  const p = D.Pure.playerNpc(KA_DOC);
+  assert.deepEqual([p.name, p.alias, p.spec.name, p.spec.plate], ['Vell', '', 'Vell', 'Vell']); assert.ok(!('id' in p.spec));
+  assert.ok(!FIRST.test(JSON.stringify(D.Pure.viewModel({ kind: 'npc', npcId: 'npc_a', title: 'Vell' }, KA_DOC))), 'the iPad\'s card view model holds no first name');
+  assert.deepEqual([D.Pure.playerNpc({ ...KA_DOC, tags: [] }).name, D.Pure.playerNpc({ ...KA_DOC, tags: [] }).alias], ['Ada Vell', 'Vell'], 'the control: unmarked, unchanged');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
