@@ -2474,6 +2474,15 @@
     if (!hit.length) hit = list.filter(function (x) { return str(x.d.name).toLowerCase().split(' ').indexOf(n) >= 0; });
     return hit.length === 1 ? hit[0] : null;
   }
+  /* a `phase:` cue: enter the phase on the night and tell the iPad's band. A phase already in play (a band chip entered it first) is done at once:
+     GO moves on instead of stalling until Bypass */
+  function cuePhase(me, p) {
+    var nt = me && me.night; if (!nt) return Promise.resolve(false);
+    var cur = typeof nt.phase === 'function' ? nt.phase() : (typeof nt.night === 'function' && nt.night() ? nt.night().phase : '');
+    if (cur === p) return Promise.resolve(true);
+    if (nt.enter(p) === false) return Promise.resolve(false);
+    return b09Layer(me, 'band.phase', p).then(function (r) { return r !== null; });
+  }
   function csMount() {
     var CS = W.B68GmCueStack, me = S; if (!CS || !W.B68Features || me.cs) return;
     me.cs = CS.create({
@@ -2488,13 +2497,7 @@
         if (x.d.revealed === true) return Promise.resolve({ ok: true });
         return Promise.resolve(ref.update({ revealed: true, firstSeen: x.d.firstSeen || nowIso() })).then(function () { if (S === me && isObj(me.npcs) && isObj(me.npcs[x.id])) me.npcs[x.id].revealed = true; return { ok: true }; }, function () { return { ok: false, say: 'Could not reveal ' + name + '.' }; });
       },
-      phase: function (p) {
-        var nt = me.night; if (!nt) return Promise.resolve(false);
-        var cur = typeof nt.night === 'function' ? nt.night() : null;
-        if (cur && cur.phase === p) return Promise.resolve(true);      /* already in play (a band chip entered it first): the cue is done, GO moves on */
-        if (nt.enter(p) === false) return Promise.resolve(false);
-        return b09Layer(me, 'band.phase', p).then(function (r) { return r !== null; });
-      },
+      phase: function (p) { return cuePhase(me, p); },
       ambient: function () { return isObj(AM.doc) ? { mode: AM.doc.mode, scene: AM.doc.scene } : null; },
       panic: function (safe) { return panicEffect(safe); },
       resume: function (prior) { return isObj(prior) ? patchAmbient({ mode: prior.mode, scene: prior.scene }) : Promise.resolve(null); },
@@ -7029,19 +7032,22 @@
     if (typeof a.isPinned === 'function' && a.isPinned()) { var el = typeof a.el === 'function' ? a.el() : null, f = document.activeElement; return !!(el && f && el.contains && el.contains(f)); }
     return true;
   }
+  /* after Esc shuts the Menu or the drawer nothing keeps the focus, so the next Space is GO rather than its button again */
+  function escBlur() { var a = document.activeElement; if (a && a !== document.body && typeof a.blur === 'function') { try { a.blur(); } catch (e) {} } }
   function escWire() {
     var E = W.B68GmEsc; if (!E || typeof E.register !== 'function' || escWired) return;
     escWired = true;
     E.register('find', { priority: 90, isOpen: function () { return findOn(); }, close: function () { findClose(); } });
     E.register('menu', { priority: 80, isOpen: function () { var m = S && $q('.gm-menu-list'); return !!(m && !m.hasAttribute('hidden')); },
-      close: function () { menuOpen(false); var mb = $q('[data-gm="menu"]'); if (mb) { try { mb.focus(); } catch (e) {} } } });
+      close: function () { menuOpen(false); escBlur(); } });
     E.register('blade', { priority: 60, isOpen: bladeOpen, close: function () { if (S && S.assist) S.assist.close(); } });
-    E.register('drawer', { priority: 50, isOpen: function () { return !!(S && S.dw && S.dw.open); }, close: function () { drawerSet(false); } });
+    E.register('drawer', { priority: 50, isOpen: function () { return !!(S && S.dw && S.dw.open); }, close: function () { drawerSet(false); escBlur(); } });
     /* the stamp's entry ('stamp', kind stamp, 10) is N4's, made with the stamp in b09Mount; the Run view's NPC card, tool and peek (rv.*, 40) and the
        site's popovers (70) are N3's */
   }
-  /* the topmost open thing's id ('' when none): its own toggle key still works behind the gate in onKey */
-  function escTop() { var E = W.B68GmEsc, l = E && typeof E.list === 'function' ? E.list() : []; for (var i = 0; i < l.length; i++) if (l[i].open && l[i].kind === 'overlay') return l[i].id; return ''; }
+  /* the topmost open thing that holds the keys ('' when none): an overlay above priority 40 (Find, the Menu, a popover, the Blade panel, the drawer,
+     a sheet). The Run view's NPC card, tool and peek and an inline tool (40) hold nothing: the Run view's own keys (arrows step the beats) work behind them */
+  function escTop() { var E = W.B68GmEsc, l = E && typeof E.list === 'function' ? E.list() : []; for (var i = 0; i < l.length; i++) if (l[i].open && l[i].kind === 'overlay' && l[i].priority > 40) return l[i].id; return ''; }
   function onKey(ev) {
     if (blankEl) { ev.preventDefault(); ev.stopPropagation(); unblank(); return; }
     if (!S || S.status !== 'ready' || document.body.dataset.mode !== 'gm') return;
@@ -7068,11 +7074,12 @@
     if (ev.key === 'Enter' && tg && tg.id === 'gm-gs-q') { ev.preventDefault(); screenFindGo(); return; }
     if (ev.key === 'Enter' && tg && tg.id === 'gm-dt-d100') { ev.preventDefault(); dtD100(tg.value); return; }     /* the morning's d100 */
     /* keys never fire behind an open thing (the Menu, the drawer, the Blade panel, a popover, a sheet): only its own. W shuts the drawer and A the Blade
-       panel when that is the top one; everything else waits until it is closed (Esc) */
-    var E = W.B68GmEsc;
-    if (E && typeof E.anyOpen === 'function' && E.anyOpen()) {
-      var top = escTop(), k0 = str(ev.key).toLowerCase();
-      if (!typing(tg) && !ev.ctrlKey && !ev.metaKey && !ev.altKey && ((k0 === 'w' && top === 'drawer') || (k0 === 'a' && top === 'blade'))) { ev.preventDefault(); if (k0 === 'w') drawerToggle(); else if (S.assist) S.assist.toggle(); }
+       panel when that is the top one; GO (Space, PageDown) still fires behind the Blade panel; everything else waits until it is closed (Esc) */
+    var top = escTop();
+    if (top) {
+      var k0 = str(ev.key).toLowerCase();
+      if (!typing(tg) && !ev.ctrlKey && !ev.metaKey && !ev.altKey && ((k0 === 'w' && top === 'drawer') || (k0 === 'a' && top === 'blade'))) { ev.preventDefault(); if (k0 === 'w') drawerToggle(); else if (S.assist) S.assist.toggle(); return; }
+      if (top === 'blade' && (ev.key === ' ' || ev.key === 'PageDown') && S.cs && typeof S.cs.key === 'function') S.cs.key(ev, document);
       return;
     }
     if (runViewKey(ev)) return;
@@ -7423,6 +7430,7 @@
     /* the autopilot's controller state, for checks (the page's own log is S.doc.ap.log), and Voice's lines as the box would hand them over */
     _autopilot: function () { return S && S.ap ? S.ap.core.state() : null; },
     _night: function () { return S && S.night ? S.night : null; },
+    _cuePhase: function (p) { return S ? cuePhase(S, p) : Promise.resolve(false); },     /* for checks: what a `phase:` cue does */
     /* N1b: the places of the night (gm/places.js), for the band (N1a: the same names its host carries) and the checks */
     goPlace: goPlace, openView: openView, callAftermath: callAftermath, currentPlace: currentPlace, currentView: currentView,
     _places: function () { return S && S.places ? S.places : null; },

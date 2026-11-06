@@ -257,6 +257,15 @@
       return el;
     }
 
+    /* a row of places wider than the screen (a phone, a tablet) scrolls so the place on screen (else the night's phase) sits in view: at 390 px the row
+       would otherwise show Before, Opening and Personal while the night is in the Score. Sideways only, never the page */
+    function reveal(nav) {
+      var c = nav.querySelector('[aria-current="true"]') || nav.querySelector('[data-state="now"]');
+      if (!c || typeof c.getBoundingClientRect !== 'function' || typeof nav.getBoundingClientRect !== 'function' || !(nav.scrollWidth > nav.clientWidth)) return;
+      var nr = nav.getBoundingClientRect(), cr = c.getBoundingClientRect();
+      nav.scrollLeft = Math.max(0, nav.scrollLeft + (cr.left - nr.left) - (nr.width - cr.width) / 2);
+    }
+
     function update() {
       if (!alive || !el) return;
       var now = num(call('now')) || Date.now(), night = nightNow(), pp = prepFacts();
@@ -266,7 +275,7 @@
       var begun = !!(night && night.phase) || (sms !== null && sms <= now);      /* a night past midnight began yesterday: its phase says so */
       var cs = chips({ places: placeList(), night: night, budgets: pp && pp.budgets, start: start, started: begun, now: now, current: current });
       var s1 = JSON.stringify(cs), nav = q('[data-band-places]');
-      if (nav && s1 !== sig.places) { sig.places = s1; nav.innerHTML = cs.map(chipHtml).join(''); }
+      if (nav && s1 !== sig.places) { sig.places = s1; nav.innerHTML = cs.map(chipHtml).join(''); reveal(nav); }
       /* row 2: the clock, the curfew, and what turns the row red */
       setText(q('[data-band-clock]'), clockText(now));
       var at = (night && night.curfewAt) || (pp && pp.curfew) || '', cms = at ? curfewMs(night, at, now) : null, ct = curfewText(at, cms, now);

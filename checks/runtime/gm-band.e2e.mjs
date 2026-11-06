@@ -151,6 +151,14 @@ try {
       if (!phone && wd >= 1100) check(m.gap !== null && Math.abs(m.gap) <= 1 && m.between.length === 0, wd + 'x' + ht + ' ' + state + ': nothing between the band and the main area (gap ' + m.gap + ', ' + m.between.join(',') + ')');
       if (wd >= 1366 && state !== 'panic') check(m.bandH <= 92, wd + 'x' + ht + ' ' + state + ': two rows (' + m.bandH + ' px)');
       if (phone) check(m.bandH <= (state === 'curfew' ? 150 : 92), '390 ' + state + ': the band leaves the phone\'s first screen to the work (' + m.bandH + ' px' + (state === 'curfew' ? ', the due buttons on a line of their own' : '') + ')');
+      if (phone && state === 'plain') {
+        const inView = await page.evaluate(() => {
+          const n = document.querySelector('#gm-band [data-band-places]'), c = n && (n.querySelector('[aria-current="true"]') || n.querySelector('[data-state="now"]'));
+          if (!c) return 'no chip'; const a = c.getBoundingClientRect(), b = n.getBoundingClientRect();
+          return a.left >= b.left - 1 && a.right <= b.right + 1 ? '' : c.getAttribute('data-band-place') + ' at ' + Math.round(a.left) + '-' + Math.round(a.right) + ' in ' + Math.round(b.left) + '-' + Math.round(b.right);
+        });
+        check(inView === '', '390: the place on screen (the Score) is scrolled into view in the row of places' + (inView ? ' (' + inView + ')' : ''));
+      }
       await shot(page, 'band-' + state + '-' + wd);
       if (state === 'panic') await page.click('#gm-cuebar [data-cs="resume"]').catch(() => {});
       await c.close();

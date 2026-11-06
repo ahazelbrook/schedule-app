@@ -600,6 +600,31 @@ await test('6h5. Esc has four meanings (an open thing, a field, the stamp, PANIC
   assert.ok(!fg.server.displays.some((d) => d && d.kind === 'dark'), 'nothing sent the display dark');
 });
 
+await test('6h6. a `phase:` cue for the phase already in play is done at once (GO moves on); another phase is entered', async () => {
+  const NIGHT = require(path.join(ROOT, 'app', 'gm', 'night.js'));      /* the night contract, as the GM bundle has it */
+  const h = await openPage({ br: fakeBrowser({ B68GmNight: NIGHT }), camp: { session: { number: 3 }, crew: {} } });
+  const nt = h.page._night(); assert.ok(nt, 'the night controller is there');
+  nt.enter('plan'); assert.equal(nt.phase(), 'plan');
+  let entered = 0; const enter = nt.enter; nt.enter = function (x) { entered++; return enter.call(nt, x); };
+  assert.equal(await h.page._cuePhase('plan'), true, 'the phase in play: the cue fired');
+  assert.equal(entered, 0, 'without entering it again'); assert.equal(nt.phase(), 'plan');
+  await h.page._cuePhase('score');
+  assert.equal(entered, 1, 'another phase is entered'); assert.equal(nt.phase(), 'score');
+  nt.enter = enter;
+});
+
+await test('6h7. keys are held only behind an open thing above priority 40: a Run view card (40) holds nothing, a drawer-level overlay (50) holds the rest', async () => {
+  const fg = fakeGm(), h = await openPage({ fg, camp: { session: { number: 3 }, crew: {} } }), E = h.br.W.B68GmEsc;
+  const off40 = E.register('rv.test', { priority: 40, isOpen: () => true, close() {} });
+  h.press('2');
+  assert.ok(await until(() => fg.server.patches.some((p) => p.cards && p.cards.situation)), 'behind a priority-40 entry, 2 rolls the situation');
+  off40();
+  const n = fg.server.patches.length, off50 = E.register('test.sheet', { priority: 50, isOpen: () => true, close() {} });
+  h.press('3'); await new Promise((r) => setTimeout(r, 300));
+  assert.ok(!fg.server.patches.slice(n).some((p) => p.cards && p.cards.situation), 'behind a priority-50 overlay, 3 does nothing');
+  off50();
+});
+
 await test('6i. captures record their session (numbers only): typed lines and L-filed rolls; absent when the campaign has none; text never in the campaign', async () => {
   const h = await openPage({ camp: { session: { number: 5 }, crew: {}, log: [] } });
   const form = h.q('[data-gm-form="capture"]'), input = h.q('#gm-cap-in');
