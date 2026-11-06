@@ -117,7 +117,7 @@ try {
     check(!/id="gm-menu-preflight"/.test(base1280.menu), 'N2: no tool has a Menu line (Preflight is reached through B68GmTools)');
     check(base1280.panes === 'prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,run,view', 'the panes are the page\'s own, in its order, and the places\' view pane: ' + base1280.panes);
 
-    /* ---- 2. a registered tool comes to the GM (Find, an extra view); the rail moves the night and the page follows; nothing hides ---- */
+    /* ---- 2. a registered tool comes to the GM (Find, an extra view); the band's places move the night and the page follows; nothing hides ---- */
     const INIT = () => {
       function hook(name, fn) { let v; Object.defineProperty(window, name, { configurable: true, get() { return v; }, set(x) { v = x; try { fn(x); } catch (e) { console.error('hook ' + name + ': ' + e.message); } } }); }
       hook('B68GmTools', (T) => { T.register({ id: 'testtool', label: 'Test tool', key: 'Q', words: 'probe', mount(box) { box.textContent = 'TESTTOOL-BODY'; } }); });
@@ -132,11 +132,11 @@ try {
     check(await g.waitForFunction(() => { const p = document.querySelector('#gm-vpane'); return p && !p.hidden && p.textContent === 'TESTTOOL-BODY'; }, null, { timeout: 5000 }).then(() => true, () => false), 'Enter opens it here, drawn by its mount()');
     check((await views(g)).join() === 'run,chase,scenes,location,testtool,prep,rules,npc,ipad' && await placeOf(g) === 'score', 'as an extra view at the end of the Score\'s own: ' + (await views(g)).join(','));
     check(!!(await g.$('.gm-views [data-pvx="testtool"]')), 'with a × to drop it');
-    await g.waitForSelector('#gm-phaserail [data-rail="score"]', { timeout: 10000 });
-    check(!(await g.$('#gm-phaserail [data-rail="all"]')), 'the rail has no All tools');
-    const tap = async (id) => { await g.$eval('#gm-phaserail [data-rail="' + id + '"]', (e) => e.click()); await sleep(400); };
+    await g.waitForSelector('#gm-band [data-band-place="score"]', { timeout: 10000 });
+    check(!(await g.$('#gm-phaserail, [data-rail="all"]')), 'there is no rail and no All tools');
+    const tap = async (id) => { await g.click('#gm-band [data-band-place="' + id + '"]'); await sleep(400); };      /* the band's chips, clicked for real (N1a) */
     await tap('plan');
-    check(await placeOf(g) === 'plan' && (await views(g)).join() === 'cards,corkboard,run,score,prep,rules,npc,ipad', 'the rail\'s Planning moves the night, and the page follows it: Planning\'s views (the extra view stayed in the Score) ' + (await views(g)).join(','));
+    check(await placeOf(g) === 'plan' && (await views(g)).join() === 'cards,corkboard,run,score,prep,rules,npc,ipad', 'the band\'s Planning moves the night, and the page follows it: Planning\'s views (the extra view stayed in the Score) ' + (await views(g)).join(','));
     await g.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     await g.keyboard.press('c');
     check(await g.$eval('#gm-chase', (e) => !e.hidden) && (await views(g)).includes('chase') && await placeOf(g) === 'plan', 'C in Planning: the Chase comes here as an extra view (nothing is hidden by the phase)');

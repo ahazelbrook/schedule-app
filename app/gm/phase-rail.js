@@ -1,31 +1,26 @@
-/* gm/phase-rail.js — the phase rail (suite ticket 1.1, switch spine.rail).
+/* gm/phase-rail.js — the night's phases in minutes (suite ticket 1.1): the arithmetic behind the band's place chips (gm/band.js).
 
-   Personal Business, Planning, Score and Aftermath across the GM page's header. A tap moves the night to that phase (Back is allowed); the phase in play
-   shows the time spent against its budget (amber from 80%, red once over). The iPad band is told the phase and nothing else (band.phase: an id, never a
-   time). It hides nothing: the places (gm/places.js, the night rebuild) lay out each phase's tools, and the page follows the phase to its place.
+   Personal Business, Planning, Score and Aftermath: each phase's time against its budget (amber from 80%, red once over), and whether it is done,
+   now or next. The chips themselves, and the tap that moves the night, are the band's; this file draws nothing. (The rail it was named after, a
+   row of chips under the old top bar with an "All tools" filter, went with the night rebuild: the band holds the places now.)
 
-   Window.B68GmPhaseRail, and module.exports under Node (the pure part).
+   Window.B68GmPhaseRail, and module.exports under Node. The montage's "over budget" reads model() too.
 
    PURE
+     PHASES   [{ id, label }] in night order
      model(night, nowMs) -> { phase, items: [{ id, label, state: 'done' | 'now' | 'next', mins, budget, tone: '' | 'amber' | 'red', text }] }
-         mins: minutes in the phase (so far, or in total once it is done); budget: minutes or null; text: what the chip says
-     toneOf(mins, budget) -> '' | 'amber' | 'red'          amber at 80% of the budget, red when over it
-   DOM
-     create(host) -> { sync(force?), destroy(), el(), mounted() }
-       host: { root() -> #gm-root, night() -> the night contract's controller (gm/night.js create), now() -> ms }
-       The bar is one element inserted after the page's top bar; sync() redraws it only when what it shows changed. */
+         mins: minutes in the phase (so far, or in total once it is done); budget: minutes or null; text: "12 / 30 min" for the phase in play
+     toneOf(mins, budget) -> '' | 'amber' | 'red'          amber at 80% of the budget, red when over it */
 (function (root, factory) {
   'use strict';
-  var M = factory(root);
+  var M = factory();
   if (typeof module === 'object' && module && module.exports) module.exports = M;
   else root.B68GmPhaseRail = M;
-})(typeof self !== 'undefined' ? self : this, function (W) {
+})(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
   var PHASES = [{ id: 'pb', label: 'Personal Business' }, { id: 'plan', label: 'Planning' }, { id: 'score', label: 'Score' }, { id: 'after', label: 'Aftermath' }];
-  var SHORT = { pb: 'Personal', plan: 'Planning', score: 'Score', after: 'Aftermath' };
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
-  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function num(v) { return typeof v === 'number' && isFinite(v) ? v : null; }
 
   function toneOf(mins, budget) {
@@ -48,43 +43,5 @@
     return { phase: cur, items: items };
   }
 
-  /* ---- the bar (DOM) ---- */
-  function create(host) {
-    var el = null, sig = '', alive = true;
-    function rootEl() { var r = host && typeof host.root === 'function' ? host.root() : null; return r && r.ownerDocument ? r : null; }
-    function ensure() {
-      var r = rootEl(); if (!r) return null;
-      if (el && el.parentNode === r) return el;
-      var doc = r.ownerDocument, bar = r.querySelector('.gm-bar');
-      el = doc.createElement('nav'); el.className = 'gm-phaserail'; el.id = 'gm-phaserail'; el.setAttribute('aria-label', 'Phase of the night');
-      if (bar && bar.nextSibling) r.insertBefore(el, bar.nextSibling); else r.insertBefore(el, r.firstChild);
-      sig = '';
-      el.addEventListener('click', function (ev) {
-        var b = ev.target && ev.target.closest ? ev.target.closest('[data-rail]') : null; if (!b || !alive) return;
-        var id = b.getAttribute('data-rail');
-        var N = host.night && host.night(); if (N && typeof N.enter === 'function') N.enter(id);
-      });
-      return el;
-    }
-    function nightNow() { var N = host.night && host.night(); return N && typeof N.night === 'function' ? N.night() : null; }
-    function sync(force) {
-      var e = ensure(); if (!e) return;
-      var n = nightNow(), now = typeof host.now === 'function' ? host.now() : Date.now(), m = model(n, now);
-      var s = JSON.stringify(m);
-      if (!force && s === sig) return;
-      sig = s;
-      e.innerHTML = '<div class="gm-pr-row" role="group">' + m.items.map(function (i) {
-        return '<button type="button" class="gm-pr-chip" data-rail="' + i.id + '" data-state="' + i.state + '"' + (i.tone ? ' data-tone="' + i.tone + '"' : '') + ' aria-pressed="' + (i.state === 'now') + '"' +
-          ' title="' + esc(i.label) + (i.state === 'now' ? ' (now)' : ': tap to move the night here') + '"><span class="gm-pr-l">' + esc(SHORT[i.id]) + '</span>' + (i.text ? '<span class="gm-pr-t">' + esc(i.text) + '</span>' : '') + '</button>';
-      }).join('') + '</div>';
-    }
-    function destroy() {
-      alive = false;
-      if (el && el.parentNode) el.parentNode.removeChild(el);
-      el = null; sig = '';
-    }
-    return { sync: sync, destroy: destroy, el: function () { return el; }, mounted: function () { return !!el; } };
-  }
-
-  return { PHASES: PHASES, model: model, toneOf: toneOf, create: create };
+  return { PHASES: PHASES, model: model, toneOf: toneOf };
 });

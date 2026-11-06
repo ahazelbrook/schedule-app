@@ -18,6 +18,11 @@ const GM = 'gm@example.test';
 const SHOTS = process.env.GM_SHOTS || '';
 const { chromium } = require(process.env.PW_MODULE || '/opt/node-tools/node_modules/playwright');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/* Now in: its one select is in the Roll's Scene fold (N4; the band has no copy), so the fold is opened first where the Roll shows */
+const nowIn = async (p, v) => {
+  if (!(await p.isVisible('#gm-now-s')) && await p.isVisible('#gm-scene')) await p.click('#gm-scene');
+  await p.selectOption('#gm-now-s', v, { force: !(await p.isVisible('#gm-now-s')) });      /* a panel without the Roll: set as the fold would */
+};
 const WIN = process.platform === 'win32';
 const FIX = path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm');
 const fx = (f) => JSON.parse(readFileSync(path.join(FIX, f), 'utf8'));
@@ -110,7 +115,7 @@ try {
 
   // Now in (A7): one district in the bar; the Street picker and the console follow it, a pick of its own wins, a stored card never moves
   await p.selectOption('#gm-s-sel', '');                      // its own pick (Cobb Hill) given back to Now in
-  await p.selectOption('#gm-now', 'Brindle Row');
+  await nowIn(p, 'Brindle Row');
   check(await p.$eval('#gm-s-sel', (s) => s.value === '' && s.options[0].textContent === 'Now in: Brindle Row'), 'Street: the District picker leads with "Now in: Brindle Row" and follows it');
   await p.click('[data-gm="scnroll"]');
   await p.waitForFunction(() => document.querySelector('#gm-scn .gm-scncard h3').textContent === 'Brindle Row', null, { timeout: 8000 });
@@ -118,17 +123,17 @@ try {
   const stB = await until(async () => { const d = (await api('GET', '/gm/state')).json.doc; return d.now && d.now.district === 'Brindle Row' && d.cards.scenes.ui.sel === 'Brindle Row' ? d : null; }, 8000);
   check(!!stB && !(stB.scn && stB.scn.ui && stB.scn.ui.sel), 'Street: a roll uses Now in; the card stores the district it resolved to, the picker stores nothing (it follows)');
   const hidB = stB && stB.cards.scenes.hid;
-  await p.selectOption('#gm-now', 'Alder Quay');
+  await nowIn(p, 'Alder Quay');
   check((await text(p, '#gm-scn .gm-scncard')) === brindle, 'Now in changed: the street scene on screen stays as rolled');
   await p.selectOption('#gm-s-sel', 'Cobb Hill');             // a pick of its own
   await p.click('[data-gm="scnroll"]');
   await p.waitForFunction(() => document.querySelector('#gm-scn .gm-scncard h3').textContent === 'Cobb Hill', null, { timeout: 8000 });
-  await p.selectOption('#gm-now', 'Brindle Row');
+  await nowIn(p, 'Brindle Row');
   check(await p.$eval('#gm-s-sel', (s) => s.value === 'Cobb Hill' && s.options[0].textContent === 'Now in: Brindle Row'), 'a pick of its own stays through a change of Now in, and the first choice names the new Now in');
   await p.click('[data-gm="scnroll"]');
   await p.waitForFunction(() => document.querySelector('#gm-scn .gm-scncard h3').textContent === 'Cobb Hill', null, { timeout: 8000 });
   check(await text(p, '#gm-scn .gm-scncard h3') === 'Cobb Hill', 'and a roll still uses the pick (Cobb Hill) while Now in is Brindle Row');
-  await p.selectOption('#gm-s-sel', ''); await p.selectOption('#gm-now', 'Cobb Hill');
+  await p.selectOption('#gm-s-sel', ''); await nowIn(p, 'Cobb Hill');
   await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
   await p.keyboard.press('3');                                // the console follows the same Now in
   await p.waitForSelector('#gm-card .gm-lead');
@@ -139,8 +144,8 @@ try {
   await p.click('#gm-scn [data-gm="replay"][data-h="' + hidB + '"]');
   check((await text(p, '#gm-scn .gm-scncard')) === brindle && (await text(p, '#gm-scn .gm-scncard h3')) === 'Brindle Row', 'Earlier: the Brindle Row card comes back exactly as rolled, whatever Now in is (Cobb Hill)');
   await p.reload(); await p.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
-  check(await p.$eval('#gm-now', (s) => s.value === 'Cobb Hill') && await text(p, '#gm-scn .gm-scncard h3') === 'Brindle Row', 'reload: Now in is kept, and the street card is still the one that was on screen');
-  await p.selectOption('#gm-now', '');
+  check(await p.$eval('#gm-now-s', (s) => s.value === 'Cobb Hill') && await text(p, '#gm-scn .gm-scncard h3') === 'Brindle Row', 'reload: Now in is kept, and the street card is still the one that was on screen');
+  await nowIn(p, '');
   await p.keyboard.press('s');
 
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));

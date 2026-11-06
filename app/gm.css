@@ -372,29 +372,18 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 @media (pointer: coarse) { #gm-page .gm-ipad-tile { min-height: 64px; } }
 
 /* ---- the app layout (body.gm-app; gm-page.js setApp): the window is the page ----
-   Every width: while the tools are open the site header and footer give way to a slim black bar (the session, Saved, a
-   stale-pack note, the beat, Find, the iPad tray (what is live, Send, Clear 0, Blank, the autopilot pill: gm/ipad-tray.js),
-   Listening once the transcriber has ever been used, Menu). The Menu holds what is not play: the display page, Export tonight's note, Clear the
-   capture, Update pack, the site's pages and Forget.
-   Laptop (>= 1100 px): four rows (the bar, three columns that each scroll on their own, capture at the foot), so a long Prep
+   Every width: while the tools are open the site header and footer give way to the band (gm/band.js, its rules at the end of this
+   file): where you are and what is live, with a Menu that holds only housekeeping.
+   Laptop (>= 1100 px): three rows (the band, the columns that each scroll on their own, capture at the foot), so a long Prep
    note or the GM screen never carries the console or the state rail away. Prep and Screen get their section list as an
    outline beside the text, the current section marked. Focus (F, or Prep's Wide) shrinks the console to its keys on any tab.
-   Below 1100 px the page scrolls under the sticky bar; on a phone the two-row segmented bar sticks under it. It is the only
+   Below 1100 px the page scrolls under the sticky band; on a phone the two-row segmented bar sticks under it. It is the only
    layout; the loading and import screens (gm-page.js screen()) keep the site header and the .gm-head heading. */
-#gm-page .gm-bar, #gm-page .gm-mini, #gm-page .gm-focusbtn { display: none; }
+#gm-page .gm-mini, #gm-page .gm-focusbtn { display: none; }
 body.gm-app[data-mode="gm"] .wrap > .top, body.gm-app[data-mode="gm"] .wrap > footer { display: none; }
 #gm-page .gm-box-empty { border-style: dashed; border-color: var(--hair); background: none; }
 #gm-page .gm-box-empty .gm-band { background: none; color: var(--ink-soft); padding: 5px 10px; }
 
-/* the top bar */
-body.gm-app #gm-page .gm-bar { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 6px 12px; background: var(--rule); color: var(--on-ink); position: relative; z-index: 20; }
-#gm-page .gm-bar a.gm-bar-mark { font: 900 24px/1 var(--font-poster); color: inherit; text-decoration: none; white-space: nowrap; }
-#gm-page .gm-bar-mark b { font: 900 12px/1 var(--font-cond); letter-spacing: .14em; vertical-align: 4px; }
-#gm-page .gm-bar-sess, #gm-page .gm-bar .gm-save { font: 700 11px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; color: inherit; opacity: .8; margin: 0; }
-#gm-page .gm-bar .gm-save.bad { opacity: 1; background: var(--alarm); color: #fbf8f1; padding: 3px 5px; }
-#gm-page .gm-bar-exp { font: 700 11px/1 var(--font-mono); background: var(--mustard); color: var(--on-mustard); padding: 4px 6px; white-space: nowrap; }
-#gm-page .gm-bar-exp:empty { display: none; }
-#gm-page .gm-grow { flex: 1 1 auto; }
 #gm-page .gm-pill { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; max-width: 280px; padding: 4px 9px; border: 1.5px solid currentColor; background: none; color: inherit; font: 700 11px/1.2 var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 #gm-page .gm-pill.warn { border-color: var(--mustard); }
 #gm-page .gm-pill:hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
@@ -404,13 +393,8 @@ body.gm-app #gm-page .gm-bar { display: flex; align-items: center; gap: 8px; min
 #gm-page .gm-bb { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 0 10px; border: 0; background: var(--on-ink); color: var(--rule); font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; text-decoration: none; white-space: nowrap; cursor: pointer; }
 #gm-page .gm-bb:hover, #gm-page .gm-bb[aria-expanded="true"] { background: var(--accent); color: var(--on-accent); }
 #gm-page .gm-bb kbd { font-size: 9.5px; }
-#gm-page .gm-pill:focus-visible, #gm-page .gm-bb:focus-visible, #gm-page .gm-bar-mark:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-/* Now in: the one district the tools start from. A select in the bar (a laptop, a tablet); on a phone it sits in the Scene line */
-#gm-page .gm-now { display: inline-flex; align-items: center; gap: 6px; margin: 0; min-width: 0; }
-#gm-page .gm-nowk { font: 900 10.5px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; opacity: .8; white-space: nowrap; }
-#gm-page .gm-bar .gm-now select { width: auto; min-width: 0; max-width: 170px; min-height: 32px; padding: 0 6px; border: 0; background: var(--on-ink); color: var(--rule); font: 900 11px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; cursor: pointer; }
-#gm-page .gm-bar .gm-now select:hover { background: var(--accent); color: var(--on-accent); }
-#gm-page .gm-bar .gm-now select:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+#gm-page .gm-pill:focus-visible, #gm-page .gm-bb:focus-visible, #gm-page .gm-band-mark:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+/* Now in: the one district the tools start from. Its one select is in the Roll's Scene fold at every width (.gm-scenebox .gm-nowline below); the band has no copy */
 #gm-page .gm-nowline { display: none; }
 #gm-page .gm-menu { position: relative; display: inline-flex; }
 #gm-page .gm-menu-list { position: absolute; right: 0; top: calc(100% + 6px); z-index: 60; display: grid; min-width: 260px; max-width: calc(100vw - 24px); background: var(--card); color: var(--ink); border: 2px solid var(--rule); box-shadow: 4px 4px 0 var(--shadow-ink); }
@@ -425,36 +409,30 @@ body.gm-app #gm-page .gm-bar { display: flex; align-items: center; gap: 8px; min
 /* the toast sits above the capture bar, never over its input */
 body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bottom, 0px)); }
 @media (pointer: coarse) {
-  #gm-page .gm-bb, #gm-page .gm-pill, #gm-page .gm-menu-list > a, #gm-page .gm-menu-list > button, #gm-page .gm-bar .gm-now select { min-height: 44px; }
+  #gm-page .gm-bb, #gm-page .gm-pill, #gm-page .gm-menu-list > a, #gm-page .gm-menu-list > button { min-height: 44px; }
   body.gm-app #gm-prep .pp-rail .chip, body.gm-app #gm-rules .gs-jump .chip { min-height: 44px; }
 }
 
-/* below a laptop: the page scrolls under a sticky bar */
+/* below a laptop: the page scrolls under the sticky band */
 @media (max-width: 1099px) {
   body.gm-app[data-mode="gm"] .wrap { padding-top: 0; }
   body.gm-app #gm-page { padding-top: 0; }
-  body.gm-app #gm-page .gm-bar { position: sticky; top: 0; flex-wrap: wrap; margin: 0 calc(-1 * clamp(16px, 3vw, 36px)) 12px; padding: 4px clamp(16px, 3vw, 36px); }
   body.gm-app #gm-page .gm-bb kbd { display: none; }
   body.gm-app #gm-page .gm-pill { max-width: 220px; }
   body.gm-app[data-mode="gm"] .toast { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); }
 }
-/* a phone: a 44 px bar ('68 GM · Session · ● iPad · Menu) with the two-row segmented bar stuck under it */
+/* a phone: the band (gm/band.js's rules) with the two-row segmented bar stuck under it */
 @media (max-width: 599px) {
-  body.gm-app #gm-page .gm-bar { height: 44px; min-height: 44px; flex-wrap: nowrap; gap: 6px; padding: 0 10px; margin-bottom: 0; z-index: 45; }
-  body.gm-app #gm-page .gm-bar a.gm-bar-mark { font-size: 20px; }
-  body.gm-app #gm-page .gm-bar .gm-save:not(.bad), body.gm-app #gm-page .gm-bar-exp, body.gm-app #gm-page .gm-beatbar, body.gm-app #gm-page .gm-bar [data-gm="find-open"],
-  body.gm-app #gm-page #gm-bar-stt, body.gm-app #gm-page .gm-bar [data-gm="mirror"] { display: none; }
   body.gm-app #gm-page .gm-pill { max-width: 40vw; min-width: 0; flex: 0 1 auto; }
-  body.gm-app #gm-page .gm-bar .gm-now { display: none; }
   #gm-page .gm-nowline { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; }
   #gm-page .gm-nowline .gm-lab { flex: none; }
   #gm-page .gm-nowline select { flex: 1 1 auto; min-height: 44px; }
   body.gm-app #gm-page .gm-bb { padding: 0 8px; }
-  body.gm-app #gm-page .gm-segbar { top: 44px; margin: 0 calc(-1 * clamp(16px, 3vw, 36px)) 10px; width: auto; border-left: 0; border-right: 0; }
+  body.gm-app #gm-page .gm-segbar { top: var(--gm-bar-h, 88px); margin: 0 calc(-1 * clamp(16px, 3vw, 36px)) 10px; width: auto; border-left: 0; border-right: 0; }
   body.gm-app[data-mode="gm"] .toast { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
 }
 
-/* ---- the laptop (>= 1100 px): four rows, three scrollers ---- */
+/* ---- the laptop (>= 1100 px): three rows (the band, the main area, capture), the columns each a scroller ---- */
 @media (min-width: 1100px) {
   body.gm-app[data-mode="gm"] { overflow: hidden; }
   body.gm-app[data-mode="gm"] .wrap { max-width: none; height: 100vh; height: 100dvh; padding: 0; display: flex; flex-direction: column; }
@@ -576,15 +554,6 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
    redraws the chips under the finger: the press started on a chip that is gone by the release, so the browser dropped the tap and the
    controls stayed open. The chips never take the press (the button does), so the tap folds them at once. */
 #gm-page .gm-scene-chips { pointer-events: none; }
-/* signed out (E5, gm-page.js SIGNED_OUT_MSG): a plain message in the bar, on a second full-width row so the bar's buttons keep their room */
-#gm-page .gm-signed { display: none; }
-#gm-page .gm-bar.out { flex-wrap: wrap; }
-#gm-page .gm-bar.out .gm-signed { display: block; order: 99; flex: 1 1 100%; margin: 2px 0; padding: 7px 10px; background: var(--alarm); color: #fbf8f1; font: 700 13px/1.35 var(--font-text); }
-@media (max-width: 599px) {
-  body.gm-app #gm-page .gm-bar.out { height: auto; flex-wrap: wrap; row-gap: 0; padding-bottom: 4px; }
-  body.gm-app #gm-page .gm-bar.out .gm-save { display: none; }
-  body.gm-app #gm-page .gm-segbar { top: var(--gm-bar-h, 44px); }
-}
 /* ---------- the Score panel (J): the outline of a heist (gm-page.js renderScore; GM.md "Score (J)") ----------
    Six pickers and Roll a score in the same wrapping row as the other generators. On the card every row that can be rolled again
    has a small ↻ at its right (44 px on a touch screen), and the pitch one in its corner; the cloud folds away. On a phone the
@@ -1243,23 +1212,6 @@ body.as-tab #gm-page .gm-sheet { right: 44px; }
 @media (min-width: 1600px) { body.as-dock #gm-page .gm-sheet { right: var(--as-w); } }
 @media (max-width: 599px) { body.as-tab #gm-page .gm-sheet { right: 0; } }
 
-/* the spine (gm/phase-rail.js, gm/curfew.js): always drawn since N0 (everything built is on) */
-#gm-page .gm-phaserail { background: var(--paper); border-bottom: 2px solid var(--rule); padding: 4px 52px 4px 8px; }
-@media (max-width: 599px) { #gm-page .gm-phaserail { padding-right: 8px; } }
-#gm-page .gm-pr-row { display: flex; gap: 6px; align-items: stretch; }
-#gm-page .gm-pr-chip, #gm-page .gm-pr-all { display: flex; flex-direction: column; justify-content: center; gap: 1px; min-height: 44px; min-width: 0; padding: 4px 6px; text-align: center; align-items: center; border: 2px solid var(--rule); background: var(--card); color: var(--ink); font: 900 11px/1.1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; flex: 1 1 0; white-space: nowrap; }
-#gm-page .gm-pr-all { flex: 0 0 auto; min-width: 0; border-style: dashed; }
-#gm-page .gm-pr-all[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); border-style: solid; }
-#gm-page .gm-pr-t { font: 700 11px/1 var(--font-mono); letter-spacing: 0; text-transform: none; opacity: .85; }
-#gm-page .gm-pr-chip[data-state="now"] { background: var(--rule); color: var(--on-ink); }
-#gm-page .gm-pr-chip[data-state="done"] { opacity: .6; }
-#gm-page .gm-pr-chip[data-state="now"][data-tone="amber"] { background: #b97a00; color: #fff; }
-#gm-page .gm-pr-chip[data-state="now"][data-tone="red"] { background: var(--alarm); color: #fff; }
-#gm-page .gm-pr-chip:focus-visible, #gm-page .gm-pr-all:focus-visible, #gm-page .gm-curfew button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-#gm-page .gm-curfew { display: flex; gap: 6px; padding: 6px 8px; background: var(--alarm); }
-#gm-page .gm-curfew-call { flex: 1 1 auto; min-height: 52px; border: 2px solid var(--on-ink); background: var(--on-ink); color: var(--alarm); font: 900 18px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
-#gm-page .gm-curfew-snooze { min-height: 52px; padding: 0 14px; border: 2px solid var(--on-ink); background: transparent; color: var(--on-ink); font: 900 12px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
-@media (max-width: 599px) { #gm-page .gm-curfew { flex-direction: column; } }
 /* N0, the Workshop gone: the mirror buttons (the bar, the iPad tab) and the Run menu's phone-cards line stay put away, since Menu > Settings holds both; the
    costume select (Disguise, the Run strip) stays put away until the site's Costume engine shows it (N3: gm/site.js, body.gm-show-costume, this device only).
    The Blade panel's uncued co-GM box and Screen props show as before. */
@@ -1415,23 +1367,6 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
 #gm-page .rv-wrong .rv-lab { margin: 0 4px 0 0; }
 #gm-page .rv-toolh { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 #gm-page .rv-siteline { margin-bottom: 8px; }
-/* 4.1 the cue stack bar (gm/cue-stack.js, switch room.cues): STANDBY and GO under the rail, and the red work-light banner after a panic */
-#gm-page .gm-cuebar { display: grid; gap: 4px; padding: 6px 8px; border-bottom: 2px solid var(--rule); background: var(--paper, #fff); }
-#gm-page .gm-cuebar[data-state="panic"] { background: var(--alarm); color: #fff; }
-#gm-page .gm-cs-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-#gm-page .gm-cs-tag { font: 900 12px/1 var(--font-cond); letter-spacing: .12em; padding: 4px 8px; background: var(--rule); color: var(--on-ink); }
-#gm-page .gm-cs-idle { opacity: .6; }
-#gm-page .gm-cs-n { font: 900 13px/1 var(--font-cond); letter-spacing: .06em; }
-#gm-page .gm-cs-txt { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
-#gm-page .gm-cs-hand { font: 700 11px/1 var(--font-mono); text-transform: uppercase; opacity: .8; }
-#gm-page .gm-cs-go { min-height: 52px; min-width: 96px; font: 900 20px/1 var(--font-cond); letter-spacing: .1em; }
-#gm-page .gm-cs-go kbd, #gm-page .gm-cs-panicbtn kbd { font-size: 10px; opacity: .8; }
-#gm-page .gm-cs-next, #gm-page .gm-cs-last { font-size: .85em; opacity: .8; }
-#gm-page .gm-cs-panic { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 6px 8px; border: 2px solid #fff; font-weight: 700; }
-#gm-page .gm-cs-panic b { font: 900 16px/1 var(--font-cond); letter-spacing: .1em; }
-#gm-page .gm-cs-panic span { flex: 1 1 14rem; }
-#gm-page .gm-cuebar button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-
 /* ---------- N1b: the places of the night (gm/places.js; design sections 3 and 4) ----------
    The work column: a view switcher (the place's own views, then Prep · Rules · Cast · iPad pinned at its right end), the view under it. The left
    column: the Roll (the console) in Personal, Planning and the Score; the place's own column (#gm-left) in Before, Opening and the Aftermath; a
@@ -1726,3 +1661,175 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
 #gm-page .gm-set-row { display: grid; gap: 6px; }
 #gm-page .gm-set-row + .gm-set-row { padding-top: 10px; border-top: 1.5px solid var(--hair); }
 #gm-page .gm-set-row small { font: 500 12px/1.35 var(--font-text); color: var(--ink-soft); }
+/* ---------- THE BAND (gm/band.js; the GM night rebuild: the frame) ----------
+   One black element on top, two rows, never scrolling: row 1 is where you are (the mark and the session, the places, Between, the save mark, Find, Crew,
+   the Menu), row 2 what is live (the clock and the curfew, the beat, the iPad tray, the mic, the cue, the quiet line, PANIC last). Long texts end in an
+   ellipsis and carry their whole text in a title. Nothing is inserted between the band and the main area: the laptop grid is band / main / foot.
+   Below 1100 px the band sticks to the top and the places scroll sideways; on a phone row 1 is the mark, the places and the Menu, row 2 the iPad, GO
+   and PANIC (a due curfew takes a line of its own above them). */
+#gm-page #gm-band { display: none; }
+body.gm-app #gm-page #gm-band { display: grid; grid-template-rows: auto auto; background: var(--rule); color: var(--on-ink); position: relative; z-index: 20; }
+#gm-page .gm-band-r { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 44px; padding: 0 10px; }
+#gm-page .gm-band-r2 { flex-wrap: wrap; row-gap: 0; border-top: 1px solid color-mix(in srgb, var(--on-ink) 22%, transparent); padding-right: 8px; }
+#gm-page .gm-band-grow { flex: 1 1 0; min-width: 0; }
+#gm-page #gm-band a.gm-band-mark { flex: none; font: 900 24px/1 var(--font-poster); color: inherit; text-decoration: none; white-space: nowrap; }
+#gm-page .gm-band-mark b { font: 900 12px/1 var(--font-cond); letter-spacing: .14em; vertical-align: 4px; }
+#gm-page #gm-band .gm-bar-sess { flex: none; font: 700 11px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; opacity: .8; }
+#gm-page #gm-band .gm-save { flex: none; margin: 0; font: 700 10px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; opacity: .7; }
+#gm-page #gm-band .gm-save:empty { display: none; }
+#gm-page #gm-band .gm-save.bad { opacity: 1; background: var(--alarm); color: #fbf8f1; padding: 3px 5px; }
+#gm-page .gm-bb-ghost { background: none; color: inherit; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--on-ink) 45%, transparent); }
+#gm-page .gm-bb-ghost:hover, #gm-page .gm-bb-ghost[aria-expanded="true"], #gm-page .gm-bb-ghost[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); box-shadow: none; }
+#gm-page #gm-band .gm-bb, #gm-page #gm-band .gm-pill, #gm-page .gm-band-r1 > .gm-menu { flex: none; }
+/* a pill's words end in an ellipsis (the pill is a flex box: the words are their own box) */
+#gm-page .gm-pill-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the places: the place on screen is mustard; the night's phase carries an orange bar and a dot; a done phase is struck through; the minutes against the
+   budget go amber at 80% and red once over */
+#gm-page .gm-band-places { display: flex; align-items: stretch; min-width: 0; flex: 0 1 auto; overflow-x: auto; scrollbar-width: none; }
+#gm-page .gm-band-places::-webkit-scrollbar { display: none; }
+#gm-page .gm-place { flex: none; display: grid; align-content: center; justify-items: start; gap: 3px; height: 40px; min-width: 0; padding: 2px 11px; border: 0; border-left: 1px solid color-mix(in srgb, var(--on-ink) 22%, transparent); background: none; color: inherit; text-align: left; white-space: nowrap; cursor: pointer; }
+#gm-page .gm-place:last-of-type { border-right: 1px solid color-mix(in srgb, var(--on-ink) 22%, transparent); }
+#gm-page .gm-place-n { font: 900 12.5px/1 var(--font-cond); letter-spacing: .06em; text-transform: uppercase; }
+#gm-page .gm-place-t { min-height: 10px; font: 400 10px/1 var(--font-mono); opacity: .72; }
+#gm-page .gm-place:hover { background: color-mix(in srgb, var(--on-ink) 12%, transparent); }
+#gm-page .gm-place[aria-current="true"], #gm-page .gm-place[aria-current="true"]:hover { background: var(--mustard); color: var(--on-mustard); }
+#gm-page .gm-place[aria-current="true"] .gm-place-t { opacity: 1; }
+#gm-page .gm-place[data-state="done"] .gm-place-n { text-decoration: line-through 1.5px; opacity: .62; }
+#gm-page .gm-place[data-state="now"] { box-shadow: inset 0 -4px 0 var(--accent); }
+#gm-page .gm-place[data-state="now"] .gm-place-n::before { content: "\25CF\00a0"; color: var(--accent); }
+#gm-page .gm-place[data-tone] .gm-place-t { opacity: 1; padding: 1px 3px; margin-left: -3px; font-weight: 700; }
+#gm-page .gm-place[data-tone="amber"] .gm-place-t { background: var(--mustard); color: var(--on-mustard); }
+#gm-page .gm-place[aria-current="true"][data-tone="amber"] .gm-place-t { background: var(--rule); color: var(--mustard); }
+#gm-page .gm-place[data-tone="red"] .gm-place-t { background: var(--alarm); color: #fbf8f1; }
+#gm-page .gm-place-btw { margin-left: 8px; border: 1.5px dashed color-mix(in srgb, var(--on-ink) 45%, transparent); }
+#gm-page .gm-place-btw[aria-current="true"] { border-color: var(--mustard); }
+/* the Menu: a dot when the pack is old or an offline copy; the phone's Find and Crew lines; Forget set apart */
+#gm-page .gm-band-menu { position: relative; }
+#gm-page .gm-band-mdot { position: absolute; top: 3px; right: 3px; width: 8px; height: 8px; border-radius: 50%; background: var(--mustard); box-shadow: 0 0 0 2px var(--rule); }
+#gm-page .gm-band-mdot[hidden] { display: none; }
+#gm-page .gm-menu-list > .gm-menu-ph { display: none; }
+#gm-page .gm-menu-list > .gm-menu-sep { border-top: 3px double var(--hair); }
+#gm-page .gm-menu-h:has(.gm-exp:empty) { display: none; }
+/* row 2 */
+#gm-page .gm-band-clock { display: inline-flex; align-items: baseline; gap: 7px; flex: 0 0 auto; min-width: 0; white-space: nowrap; overflow: hidden; }
+#gm-page .gm-band-clock b { flex: none; font: 700 13px/1 var(--font-mono); }
+#gm-page .gm-band-clock small { flex: 0 1 auto; min-width: 0; font: 400 11px/1 var(--font-mono); opacity: .78; overflow: hidden; text-overflow: ellipsis; }
+#gm-page .gm-band-clock small:empty { display: none; }
+#gm-page .gm-band-sep { flex: none; width: 1px; align-self: stretch; margin: 9px 0; background: color-mix(in srgb, var(--on-ink) 22%, transparent); }
+#gm-page .gm-band-r2:has(#gm-bar-stt[hidden]) .gm-band-sep-mic, #gm-page .gm-band-r2:has(#gm-bar-stt[hidden]) .gm-band-mic { display: none; }
+#gm-page .gm-band-tray, #gm-page .gm-band-mic, #gm-page .gm-band-cue { display: inline-flex; align-items: center; gap: 6px; max-width: max-content; }
+#gm-page .gm-band-tray { flex: 2 1 170px; }
+#gm-page .gm-band-mic { flex: 1 1 70px; }
+#gm-page .gm-band-cue { flex: 3 1 230px; }
+#gm-page #gm-band .gm-beatbar { flex: 1 1 110px; max-width: max-content; gap: 4px; }
+#gm-page #gm-band .gm-pill.gm-beat { flex: 1 1 auto; min-width: 64px; max-width: 220px; }
+#gm-page #gm-band .gm-band-live { flex: 1 1 auto; min-width: 84px; max-width: 300px; }
+#gm-page .gm-band-mic .gm-pill { flex: 1 1 auto; min-width: 64px; max-width: 240px; }
+#gm-page .gm-band-tray .gm-pill.gm-ap[hidden], #gm-page .gm-band-mic .gm-pill[hidden] { display: none; }
+/* the curfew is due (or the work light is up, or the page is signed out): the row turns alarm red */
+#gm-page .gm-band-due { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+#gm-page .gm-band-due[hidden], #gm-page .gm-band-due [hidden] { display: none; }
+#gm-page .gm-band-call, #gm-page .gm-cs-resume { flex: none; min-height: 32px; padding: 0 11px; border: 0; background: #fbf8f1; color: var(--alarm); font: 900 12.5px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+#gm-page .gm-band-soft { flex: none; min-height: 32px; padding: 0 9px; border: 0; box-shadow: inset 0 0 0 1.5px currentColor; background: none; color: inherit; font: 900 11px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+#gm-page .gm-band-r2[data-alarm="curfew"], #gm-page .gm-band-r2[data-alarm="panic"], #gm-page #gm-band.out .gm-band-r2 { background: var(--alarm); color: #fbf8f1; border-top-color: transparent; }
+#gm-page .gm-band-r2[data-alarm="curfew"] .gm-beatbar, #gm-page .gm-band-r2[data-alarm="curfew"] .gm-cs-soft { display: none; }
+#gm-page .gm-band-r2[data-alarm="curfew"] .gm-band-sep, #gm-page .gm-band-r2[data-alarm="panic"] .gm-band-sep { background: color-mix(in srgb, #fbf8f1 40%, transparent); }
+/* the cue (gm/cue-stack.js draws it here): STANDBY, the cue, GO, Bypass and its popover */
+#gm-page .gm-band-cue { position: relative; }
+#gm-page .gm-cs-tag { flex: none; padding: 4px 6px; background: var(--on-ink); color: var(--rule); font: 900 10px/1 var(--font-cond); letter-spacing: .12em; }
+#gm-page .gm-cs-idle { opacity: .55; }
+#gm-page .gm-cs-alarm { background: #fbf8f1; color: var(--alarm); }
+#gm-page .gm-cs-what { flex: 1 1 auto; min-width: 64px; max-width: 280px; padding: 4px 2px; border: 0; background: none; color: inherit; font: 600 12px/1.2 var(--font-text); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+#gm-page .gm-cs-what b { font: 700 11px/1 var(--font-mono); }
+#gm-page .gm-cs-what:hover { text-decoration: underline; text-underline-offset: 3px; }
+#gm-page .gm-cs-txt { flex: 1 1 auto; min-width: 0; max-width: 380px; font: 600 12px/1.2 var(--font-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#gm-page .gm-cs-dim { opacity: .7; font-weight: 400; }
+#gm-page .gm-cs-hand { flex: none; font: 700 10px/1 var(--font-mono); text-transform: uppercase; opacity: .75; }
+#gm-page .gm-cs-go { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 12px; border: 0; background: var(--on-ink); color: var(--rule); font: 900 19px/1 var(--font-poster); letter-spacing: .04em; cursor: pointer; }
+#gm-page .gm-cs-go kbd { font-size: 9px; letter-spacing: 0; }
+#gm-page .gm-cs-go:hover { background: var(--accent); color: var(--on-accent); }
+#gm-page .gm-cs-soft, #gm-page .gm-cs-more { flex: none; min-height: 32px; padding: 0 9px; border: 0; box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--on-ink) 45%, transparent); background: none; color: inherit; font: 900 11px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+#gm-page .gm-cs-more { min-width: 32px; padding: 0 6px; font: 900 15px/1 var(--font-text); letter-spacing: 0; }
+#gm-page .gm-cs-soft:hover, #gm-page .gm-cs-more:hover, #gm-page .gm-cs-more[aria-expanded="true"] { background: var(--accent); color: var(--on-accent); box-shadow: none; }
+#gm-page .gm-cs-pop { position: absolute; top: calc(100% + 7px); right: 0; z-index: 60; width: min(420px, calc(100vw - 24px)); display: grid; gap: 7px; padding: 10px 12px; background: var(--card); color: var(--ink); border: 2px solid var(--rule); box-shadow: 4px 4px 0 var(--shadow-ink); font: 400 13px/1.4 var(--font-text); white-space: normal; text-align: left; }
+#gm-page .gm-cs-pop[hidden] { display: none; }
+#gm-page .gm-cs-pop p { margin: 0; overflow-wrap: anywhere; }
+#gm-page .gm-cs-pop b { font: 900 11px/1 var(--font-cond); letter-spacing: .1em; }
+#gm-page .gm-cs-popacts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#gm-page .gm-cs-pop .gm-cs-dim { font-size: 12px; color: var(--ink-soft); }
+/* the quiet line (gm/quiet.js draws it here): a badge, and its list under it */
+#gm-page .gm-band-quiet { position: relative; display: inline-flex; align-items: center; flex: none; margin-left: auto; }
+#gm-page .gm-band-quiet:empty { display: none; }
+#gm-page .gm-quiet-badge { min-height: 30px; padding: 0 10px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--on-ink) 20%, transparent); color: inherit; font: 700 12px/1 var(--font-mono); white-space: nowrap; cursor: pointer; }
+#gm-page .gm-quiet-badge:hover, #gm-page .gm-quiet-badge[aria-expanded="true"] { background: var(--on-ink); color: var(--rule); }
+#gm-page .gm-quiet-list { position: absolute; top: calc(100% + 8px); right: 0; z-index: 60; width: min(380px, calc(100vw - 24px)); max-height: 50vh; overflow: auto; display: grid; gap: 2px; padding: 6px 10px; background: var(--card); color: var(--ink); border: 2px solid var(--rule); box-shadow: 4px 4px 0 var(--shadow-ink); font: 400 13px/1.35 var(--font-text); }
+#gm-page .gm-quiet-list[hidden] { display: none; }
+#gm-page .gm-quiet-row { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--hair); }
+#gm-page .gm-quiet-row:last-child { border-bottom: 0; }
+#gm-page .gm-quiet-when { font: 400 11px/1 var(--font-mono); color: var(--ink-soft); }
+#gm-page .gm-quiet-text { flex: 1 1 100%; overflow-wrap: anywhere; }
+#gm-page .gm-quiet-row .btn { margin-left: auto; }
+/* PANIC: always the last thing in the row */
+#gm-page .gm-band-panic { flex: none; display: inline-flex; align-items: center; gap: 6px; align-self: stretch; margin: 5px 0 5px auto; padding: 0 14px; border: 0; background: var(--alarm); color: #fbf8f1; font: 900 13px/1 var(--font-cond); letter-spacing: .1em; cursor: pointer; }
+#gm-page .gm-band-panic kbd { font-size: 9px; letter-spacing: 0; }
+#gm-page .gm-band-panic:hover { filter: brightness(1.15); }
+#gm-page .gm-band-r2[data-alarm="curfew"] .gm-band-panic, #gm-page .gm-band-r2[data-alarm="panic"] .gm-band-panic, #gm-page #gm-band.out .gm-band-panic { background: #fbf8f1; color: var(--alarm); }
+/* signed out: the row says so, in alarm red (only the clock and PANIC stay beside it) */
+#gm-page #gm-band .gm-signed { display: none; }
+#gm-page #gm-band.out .gm-signed { display: block; flex: 1 1 auto; min-width: 0; padding: 4px 0; font: 700 13px/1.3 var(--font-text); }
+#gm-page #gm-band.out .gm-band-r2 > :not(.gm-band-clock):not(.gm-signed):not(.gm-band-panic) { display: none; }
+#gm-page .gm-place:focus-visible, #gm-page .gm-band-call:focus-visible, #gm-page .gm-band-soft:focus-visible, #gm-page .gm-band-panic:focus-visible, #gm-page .gm-cs-what:focus-visible,
+#gm-page .gm-cs-go:focus-visible, #gm-page .gm-cs-soft:focus-visible, #gm-page .gm-cs-more:focus-visible, #gm-page .gm-cs-resume:focus-visible, #gm-page .gm-quiet-badge:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+/* a touch screen: every target 44 px tall; the band's rows stay 44 px, the buttons fill them */
+@media (pointer: coarse) {
+  #gm-page .gm-place { height: 44px; }
+  #gm-page .gm-band-call, #gm-page .gm-band-soft, #gm-page .gm-cs-go, #gm-page .gm-cs-soft, #gm-page .gm-cs-more, #gm-page .gm-cs-resume, #gm-page .gm-cs-what, #gm-page .gm-quiet-badge { min-height: 44px; }
+  #gm-page .gm-band-panic { margin-top: 0; margin-bottom: 0; min-height: 44px; }
+}
+@media (min-width: 1100px) {
+  body.gm-app #gm-root > #gm-band { grid-row: 1; }
+  body.gm-app #gm-root > .gm-main { grid-row: 2; }
+  body.gm-app #gm-root > .gm-foot { grid-row: 3; }
+}
+/* a tablet: the same two rows; the places scroll sideways; the mic and the cue's words go first when the row is short */
+@media (max-width: 1099px) {
+  body.gm-app #gm-page #gm-band { position: sticky; top: 0; margin: 0 calc(-1 * clamp(16px, 3vw, 36px)) 12px; }
+  #gm-page .gm-band-r { padding: 0 clamp(10px, 2vw, 20px); }
+  #gm-page .gm-band-clock { flex: 1 1 46px; max-width: max-content; }
+  #gm-page .gm-cs-go kbd { display: none; }
+  #gm-page .gm-band-r2 { gap: 6px; }
+  #gm-page .gm-band-call, #gm-page .gm-band-soft { padding: 0 8px; font-size: 11px; letter-spacing: .05em; }
+  #gm-page .gm-band-panic { padding: 0 10px; }
+  #gm-page .gm-band-r2[data-alarm="curfew"] [data-gm="darkipad"], #gm-page .gm-band-r2[data-alarm="curfew"] #gm-bar-ap, #gm-page .gm-band-r2[data-alarm="curfew"] .gm-cs-tag,
+  #gm-page .gm-band-r2[data-alarm="curfew"] .gm-cs-what, #gm-page .gm-band-r2[data-alarm="curfew"] .gm-cs-hand, #gm-page .gm-band-r2[data-alarm="curfew"] .gm-cs-more, #gm-page .gm-band-r2[data-alarm="curfew"] .gm-band-clock small { display: none; }
+  #gm-page .gm-band-places { flex: 1 1 auto; -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent); }
+  #gm-page #gm-band .gm-pill.gm-beat { max-width: 150px; }
+  #gm-page .gm-cs-what { max-width: 170px; }
+}
+@media (max-width: 959px) {
+  #gm-page #gm-band .gm-bar-sess, #gm-page .gm-band-r2 .gm-band-mic, #gm-page .gm-band-r2 .gm-band-sep-mic, #gm-page #gm-band .gm-beatbar, #gm-page .gm-cs-hand { display: none; }
+  #gm-page .gm-cs-what { max-width: 120px; }
+}
+@media (max-width: 759px) {
+  #gm-page .gm-cs-what, #gm-page .gm-cs-txt, #gm-page .gm-band-clock small { display: none; }
+  #gm-page #gm-band .gm-band-live { max-width: 150px; }
+}
+/* a phone: row 1 the mark, the places and the Menu; row 2 the iPad (its dot and Clear), GO and PANIC */
+@media (max-width: 599px) {
+  body.gm-app #gm-page #gm-band { margin-bottom: 0; z-index: 45; }
+  #gm-page .gm-band-r { gap: 6px; padding: 0 8px; }
+  #gm-page #gm-band a.gm-band-mark { font-size: 20px; }
+  #gm-page .gm-band-find, #gm-page #gm-band .gm-dwbtn, #gm-page #gm-band .gm-save:not(.bad), #gm-page .gm-band-r1 > .gm-band-grow { display: none; }
+  #gm-page .gm-menu-list > .gm-menu-ph { display: block; }
+  #gm-page .gm-place { height: 44px; padding: 2px 9px; }
+  #gm-page .gm-band-clock, #gm-page .gm-band-r2 .gm-band-sep, #gm-page .gm-cs-tag.gm-cs-idle, #gm-page .gm-cs-soft, #gm-page .gm-cs-more, #gm-page #gm-band [data-gm="darkipad"], #gm-page #gm-band #gm-bar-ap { display: none; }
+  #gm-page .gm-cs-tag:not(.gm-cs-alarm) { display: none; }
+  #gm-page #gm-band .gm-band-live { min-width: 64px; max-width: 92px; }
+  #gm-page .gm-quiet-badge { padding: 0 8px; font-size: 11px; }
+  #gm-page .gm-cs-go kbd { display: none; }
+  #gm-page .gm-band-due { order: -1; flex: 1 1 100%; padding: 6px 0 2px; }
+  #gm-page .gm-band-due [data-band="snooze"], #gm-page .gm-band-r2[data-alarm="panic"] .gm-band-tray { display: none; }
+  #gm-page .gm-band-panic { padding: 0 12px; }
+  #gm-page .gm-band-panic kbd { display: none; }
+  #gm-page .gm-cs-pop, #gm-page .gm-quiet-list { position: fixed; top: var(--dw-top, 88px); left: 8px; right: 8px; width: auto; }
+}

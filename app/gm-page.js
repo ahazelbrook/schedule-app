@@ -855,10 +855,14 @@
 
   /* a key press on #gm -> an action, or null. ev: { key, ctrlKey, altKey, metaKey, typing }
      1-4 roll a situation; 5-9 do nothing (the nine single tables have no keys: More tables, under the card). Blanking the
-     laptop takes Shift+H (`blank`), or a plain H twice within a second (`blank-tap`): a stray key never blacks it out. */
+     laptop takes Shift+H (`blank`), or a plain H twice within a second (`blank-tap`): a stray key never blacks it out.
+     A view key (R T N I G B S J C D O) is { type: 'panel', panel }: the page opens that view in the place on screen (openView).
+     Ctrl+Left / Ctrl+Right is { type: 'place', d: -1 | 1 }: the place before or after, to look at (never a phase change).
+     Space and PageDown are the cue stack's (GO); Esc goes to gm/esc.js (the one Esc). */
   function keyAction(ev) {
-    if (!ev || ev.ctrlKey || ev.altKey || ev.metaKey) return null;
+    if (!ev || ev.altKey || ev.metaKey) return null;
     var k = str(ev.key);
+    if (ev.ctrlKey) return !ev.typing && (k === 'ArrowLeft' || k === 'ArrowRight') ? { type: 'place', d: k === 'ArrowLeft' ? -1 : 1 } : null;
     if (ev.typing) return k === 'Escape' ? { type: 'esc' } : null;
     if (/^[1-4]$/.test(k)) return { type: 'situation', n: +k };
     if (/^[5-9]$/.test(k)) return null;
@@ -1389,8 +1393,8 @@
       n.classList.toggle('bad', !!st.hold || !!st.parked || st.error === 'retrying');
       if (st.hold) n.title = SIGNED_OUT_MSG; else if (st.parked) n.title = 'The server refused a change: ' + st.error;
     });
-    /* signed out: a plain message across the bar (a full-width second row of it, so it never squeezes the bar's buttons) */
-    var bar = $q('.gm-bar'), msg = $q('#gm-signed');
+    /* signed out: the band's second row says so, in alarm red (#gm-signed) */
+    var bar = $q('#gm-band'), msg = $q('#gm-signed');
     if (bar) bar.classList.toggle('out', !!st.hold);
     if (msg) { msg.hidden = !st.hold; if (st.hold) msg.removeAttribute('hidden'); else msg.setAttribute('hidden', ''); }
     var rt = S.root.querySelector && S.root.querySelector('#gm-root');
@@ -1563,7 +1567,7 @@
     if (me.sttTimer) { W.clearInterval(me.sttTimer); me.sttTimer = null; }
     if (me.cogm) { cogmStop(me); me.cogm = null; }
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
-    b09Unmount(me); b17Unmount(me); knUnmount(me); csUnmount(me);
+    b09Unmount(me); b17Unmount(me); knUnmount(me); csUnmount(me); bandUnmount(me);
     if (me.places) { try { me.places.destroy(); } catch (e) {} me.places = null; }      /* N1b: its inline tools unbound, its listeners gone */
     if (me.mission) { try { me.mission.flush(); } catch (e) {} me.mission.destroy(); me.mission = null; }   /* a publish that is waiting goes now */
     apUnmount(me);
@@ -2254,7 +2258,7 @@
   var PANE_TABS = [['prep', 'Prep', 'R'], ['rules', 'Rules', 'T'], ['location', 'Location roller', 'B'], ['scenes', 'Street', 'S'], ['score', 'Score generator', 'J'], ['chase', 'Chase', 'C'], ['npc', 'Cast', 'N'], ['downtime', 'Downtime', 'D'], ['cards', 'Opportunities', 'O'], ['ipad', 'iPad', 'I'], ['run', 'The site', 'G']];
   function layout() {
     var bare = W.B68GmPlaces ? '' : PANE_TABS.map(function (t) { return '<button type="button" class="gm-vt" role="tab" data-gm="panel" data-panel="' + t[0] + '">' + t[1] + ' <kbd>' + t[2] + '</kbd></button>'; }).join('');
-    S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '">' + barHtml() +
+    S.root.innerHTML = '<div class="gm" id="gm-root" data-seg="' + esc(S.seg) + '" data-panel="' + esc(S.panel) + '">' + '<header id="gm-band" aria-label="The band"></header>' +
       '<div class="seg gm-segbar gm-vchips" role="tablist" aria-label="Views"></div>' +
       '<div class="gm-main">' +
       /* N4: the Roll (gm/roll.js, design section 5): one card (Position, Effect, the line, Stamp it on the iPad, They rolled 1-4), the result card,
@@ -2277,37 +2281,99 @@
       '<ol class="gm-find-list" id="gm-find-list"></ol><p class="gm-find-help"><kbd>↑</kbd> <kbd>↓</kbd> choose · <kbd>Enter</kbd> go (or copy) · <kbd>Esc</kbd> close</p></div></div></div>';
     renderRules();
     setApp(true);
-    ipadTrayMount();
-    if (S.assist && typeof S.assist.relayout === 'function') S.assist.relayout();   /* the Blade panel sits between this bar and the capture bar */
+    ipadTrayMount(); bandMount(); escWire();      /* the page's iPad goes to the trays first; the band mounts its own in row 2 */
+    if (S.assist && typeof S.assist.relayout === 'function') S.assist.relayout();   /* the Blade panel sits between the band and the capture bar */
   }
-  /* the top bar of the app layout (every width): the session, saving, what the iPad shows, listening (once the transcriber has
-     ever been used), the iPad tray (gm/ipad-tray.js: what is live, Clear, Blank), and a menu with what is not play: the display page, the note, the capture, the pack,
-     the site's pages, Forget. On a phone the bar is ’68 GM · Session · iPad · Menu (gm.css) */
-  function barHtml() {
-    return '<div class="gm-bar"><a class="gm-bar-mark" href="#" title="Home">’68 <b>GM</b></a><span class="gm-bar-sess" id="gm-bar-sess"></span>' +
-      '<label class="gm-now" title="The district the tools start from: the console, Street, Location and NPC pickers follow it until you pick one there">' +
-      '<span class="gm-nowk">Now in</span><select data-now id="gm-now" aria-label="Now in: the district the tools start from"></select></label>' +
-      '<span class="gm-save" role="status"></span><span class="gm-bar-exp" id="gm-bar-exp"></span>' +
-      '<span class="gm-beatbar" id="gm-bar-beat" hidden><button type="button" class="gm-pill gm-beat" data-gm="beat-go" id="gm-bar-beatgo" title="The beat running (the Prep tab’s run order)"></button>' +
-      '<button type="button" class="gm-bb" data-gm="beat-next" title="Start the next beat in the run order">Next beat</button></span><span class="gm-grow"></span>' +
-      '<button type="button" class="gm-bb gm-dwbtn" data-gm="drawer" id="gm-bar-drawer" aria-expanded="false" aria-controls="gm-drawer" ' + 'title="The drawer: the table, the crew and each character\u2019s sheet (W)">Drawer</button>' +
-      '<button type="button" class="gm-bb" data-gm="find-open" title="Find anything: prep, the screen, NPCs, clocks, what you filed (Ctrl+K or /)">Find <kbd>Ctrl K</kbd></button>' +
-      /* the iPad tray (gm/ipad-tray.js: what is live, Send, Clear 0, Blank, the autopilot pill), mounted here until the band holds it */
-      '<span class="gm-bar-tray" id="gm-bar-tray"></span>' +
-      '<button type="button" class="gm-pill" data-gm="panel" data-panel="ipad" id="gm-bar-stt" title="The transcriber (the iPad view)" hidden></button>' +
-      '<span class="gm-menu"><button type="button" class="gm-bb" data-gm="menu" aria-expanded="false" aria-haspopup="true">Menu</button><span class="gm-menu-list" hidden>' +
-      '<p class="gm-menu-h"><span><b>GM tools</b> · The console</span><span class="gm-exp" id="gm-menu-exp"></span></p>' + '<div class="gm-menu-warn" id="gm-menu-warn" hidden></div>' +
+  /* ---------- THE BAND (gm/band.js; the GM night rebuild: the frame): one element on top, two rows, never scrolling ----------
+     Row 1 is where you are (the places, Between, Find, Crew, the Menu), row 2 what is live (the clock and the curfew, the beat, the iPad tray, the mic,
+     the cue, the quiet line, PANIC). The band draws itself; this page paints the parts it always painted, by id (the session, saving, the beat, the
+     iPad pill, the mic, the Menu's lines), and hands it the host below. The places (goPlace, openView, callAftermath, currentPlace, currentView) are
+     the places registry's when it is on the page (S.places, or W.B68GmPlaces); until then the stand-ins here keep every chip and key working: a phase
+     chip enters the phase on the night as the old rail did, a view key opens its panel, and Call the Aftermath enters it and opens its show. */
+  function placesCtl() { var p = S && S.places; if (p && typeof p.goPlace === 'function') return p; var R = W.B68GmPlaces; return R && typeof R.goPlace === 'function' ? R : null; }
+  function bandPlaces() { return W.B68GmBand ? W.B68GmBand.placeList() : { list: [], between: { id: 'between', label: 'Between', phase: null } }; }
+  function phaseOfPlace(id) { var p = bandPlaces().list.filter(function (x) { return x.id === id; })[0]; return p ? p.phase : null; }
+  function currentPlace() {
+    var pc = placesCtl(); if (pc && typeof pc.currentPlace === 'function') { var c = pc.currentPlace(); if (c) return str(c); }
+    if (S && S.bandPlace) return S.bandPlace;
+    return (S && S.night && S.night.phase()) || 'before';
+  }
+  function goPlace(id, o) {
+    var pc = placesCtl(); if (pc) { var moved = pc.goPlace(id, o || {}); bandUpdate(); return moved; }
+    if (!S) return false;
+    var ph = phaseOfPlace(id);
+    if (ph && !(o && o.navigateOnly)) { S.bandPlace = null; if (S.night && S.night.phase() !== ph) S.night.enter(ph); }
+    else S.bandPlace = id;
+    bandUpdate();
+    return true;
+  }
+  function openView(id, o) {
+    var pc = placesCtl(); if (pc && typeof pc.openView === 'function') return pc.openView(id, o);
+    if (!S || !isSide(id)) return false;
+    setPanel(id); if (isPhone()) { S.seg = 'side'; syncPanels(); }
+    return true;
+  }
+  function currentView() { var pc = placesCtl(); return pc && typeof pc.currentView === 'function' ? pc.currentView() : S ? S.panel : ''; }
+  function callAftermath() {
+    var pc = placesCtl(); if (pc && typeof pc.callAftermath === 'function') { var r = pc.callAftermath(); bandUpdate(); return r; }
+    if (!S || !S.night) return false;
+    if (S.night.phase() !== 'after') S.night.enter('after');
+    S.bandPlace = null;
+    var A = W.B68GmAftermath; if (A && typeof A.open === 'function') { try { A.open($q('#gm-root')); } catch (e) { /* the phase moved; the show opens from its place */ } }
+    bandUpdate();
+    return true;
+  }
+  /* Ctrl+Left / Ctrl+Right: the place before or after this one, to look at it (never a phase change) */
+  function placeStep(d) { var B = W.B68GmBand; if (!B || !S) return; var cur = currentPlace(), next = B.step(B.placeList(), cur, d); if (next && next !== cur) goPlace(next, { navigateOnly: true }); }
+  function bandHost(me) {
+    return {
+      root: function () { return S === me ? $q('#gm-root') : null; },
+      night: function () { return S === me ? me.night : null; },
+      prep: function () { return S === me ? csNote() : null; },
+      now: function () { return Date.now(); },
+      currentPlace: function () { return S === me ? currentPlace() : ''; },
+      currentView: function () { return S === me ? currentView() : ''; },
+      goPlace: function (id, o) { return S === me ? goPlace(id, o) : false; },
+      openView: function (id) { return S === me ? openView(id) : false; },
+      callAftermath: function () { return S === me ? callAftermath() : false; },
+      curfew: function () { var Sp = W.B68GmSpine; return S === me && Sp && typeof Sp.curfew === 'function' ? Sp.curfew() : null; },
+      cue: function () { return S === me ? me.cs || null : null; },
+      panic: function () { if (S === me) bandPanic('button'); },
+      menuHtml: menuHtml, signedOut: function () { return SIGNED_OUT_MSG; }, toast: toast,
+      document: document      /* the iPad tray makes its nodes with it (gm/ipad-tray.js: a page whose elements do not carry their document) */
+    };
+  }
+  function bandMount() {
+    var B = W.B68GmBand, me = S, h = $q('#gm-band'); if (!B || !h || !me) return;
+    if (me.band) { try { me.band.destroy(); } catch (e) {} }
+    me.band = B.create(bandHost(me)); me.band.mount(h);
+  }
+  function bandUnmount(me) { if (me && me.band) { try { me.band.destroy(); } catch (e) {} me.band = null; } }
+  function bandUpdate() { if (S && S.band && S.status === 'ready') S.band.update(); }
+  /* PANIC (the band's last button, and Esc when nothing else is open): the cue stack's panic, with or without cues in the note (the safe scene, the iPad's
+     sound down, the work light); a page without the cue stack still sends the iPad to the safe scene */
+  function panicEffect(safe) { return Promise.all([patchAmbient({ mode: 'pin', scene: safe, overlay: null, layers: null }), pushDisplay({ kind: 'blank' }).then(null, function () { return null; })]).then(function (r) { return r[0] !== null; }); }
+  function bandPanic(src) {
+    if (!S) return;
+    if (S.cs) { S.cs.panic(src || 'button'); bandUpdate(); return; }
+    panicEffect('testcard').then(function (ok) { toast(ok ? 'PANIC: the iPad is on the safe scene with its sound down. Put the work light on.' : 'The iPad could not be reached: press Clear (0).', !ok); }, function () { toast('The iPad could not be reached: press Clear (0).', true); });
+  }
+  /* the Menu (the night design: Menu, Find and keys): housekeeping only; the Settings are in the iPad view (N5, gm/ipad-tray.js settingsInView). On a phone, Find and
+     Crew are lines here too: the band's first row there is the mark, the places and the Menu */
+  function menuHtml() {
+    return '<button type="button" class="gm-menu-ph" data-gm="find-open">Find</button><button type="button" class="gm-menu-ph" data-gm="drawer">Crew: the clocks, the crew and the sheets</button>' +
+      '<p class="gm-menu-h"><span class="gm-exp" id="gm-menu-exp"></span></p>' + '<div class="gm-menu-warn" id="gm-menu-warn" hidden></div>' +
       '<a href="#display" title="The players’ screen: open this on the iPad">Open the display page (for the iPad)</a>' +
-      '<button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="clearcap">Clear tonight’s capture</button><button type="button" data-gm="update">Update pack</button>' +
+      '<button type="button" data-gm="update">Update pack</button><button type="button" data-gm="note">Export tonight’s note</button><button type="button" data-gm="clearcap">Clear tonight’s capture</button>' +
       '<button type="button" data-gm="capbar" id="gm-menu-capbar" title="The bottom bar that files a roll, a name or a moment"></button>' +
       '<button type="button" data-gm="livesync" id="gm-menu-live" title="Live sync: a page hears of a change at once instead of on its next poll. Off sends every page back to polling; no deploy needed"></button>' +
       '<a href="#t">The table</a><a href="#rules">Rules</a><a href="#cast">The cast</a><a href="#">Home</a>' +
-      '<button type="button" class="bad" data-gm="forget">Forget GM data on this device</button></span></span>' +
-      '<div class="gm-signed" id="gm-signed" role="alert" hidden>' + esc(SIGNED_OUT_MSG) + '</div></div>';
+      '<button type="button" class="bad gm-menu-sep" data-gm="forget">Forget GM data on this device</button>';
   }
   function menuOpen(on) {
     var m = $q('.gm-menu-list'), b = $q('[data-gm="menu"]'); if (!m) return;
-    if (on) { renderLiveItem(); syncCapBar(); m.removeAttribute('hidden'); } else m.setAttribute('hidden', ''); if (b) b.setAttribute('aria-expanded', String(!!on));
+    if (on) { renderLiveItem(); syncCapBar(); m.removeAttribute('hidden'); } else m.setAttribute('hidden', '');
+    if (b) b.setAttribute('aria-expanded', String(!!on));
   }
   /* N0: the Settings (gm/settings.js), the four choices left after the Switchboard went: one per page session, made on first use. Its host is this page's own
      patch, campaign and api (the Switchboard's), its phone-cards write and its mirror toggle, so a change takes the same paths and redraws the same way. */
@@ -2399,7 +2465,7 @@
     mod('B68GmAftermath', 'aftermath'); mod('B68GmDebrief', 'debrief'); mod('B68GmBoard', 'board'); mod('B68GmCastPhoto', 'castphoto'); mod('B68GmLair', 'lair');
     reg('record', b29tool('record')); reg('light', b29tool('light'));
   })();
-  /* 4.1 The cue stack (gm/cue-stack.js, switch room.cues): STANDBY / GO / Bypass in a bar under the rail, Space and Esc, and "Blade, go". Every effect goes through the page's own writers
+  /* 4.1 The cue stack (gm/cue-stack.js): STANDBY / GO / Bypass in the band's cue slot, Space and PageDown (asked by onKey), and "Blade, go". Every effect goes through the page's own writers
      (patchAmbient and its gate, the show contract, the night, the cast), so a cue can show nothing that a button could not. */
   function csNote() { var pk = part('prep'), id = pk && W.B68GmPrep ? prepNoteId(pk) : null; return id && Array.isArray(pk.notes) ? pk.notes.filter(function (n) { return isObj(n) && n.id === id; })[0] || null : null; }
   function csNpc(name) {
@@ -2408,11 +2474,21 @@
     if (!hit.length) hit = list.filter(function (x) { return str(x.d.name).toLowerCase().split(' ').indexOf(n) >= 0; });
     return hit.length === 1 ? hit[0] : null;
   }
+  /* a `phase:` cue: enter the phase on the night and tell the iPad's band. A phase already in play (a band chip entered it first) is done at once:
+     GO moves on instead of stalling until Bypass */
+  function cuePhase(me, p) {
+    var nt = me && me.night; if (!nt) return Promise.resolve(false);
+    var cur = typeof nt.phase === 'function' ? nt.phase() : (typeof nt.night === 'function' && nt.night() ? nt.night().phase : '');
+    if (cur === p) return Promise.resolve(true);
+    if (nt.enter(p) === false) return Promise.resolve(false);
+    return b09Layer(me, 'band.phase', p).then(function (r) { return r !== null; });
+  }
   function csMount() {
     var CS = W.B68GmCueStack, me = S; if (!CS || !W.B68Features || me.cs) return;
     me.cs = CS.create({
       feature: function () { return S === me && b09On('room.cues'); }, note: function () { return S === me ? csNote() : null; }, doc: function () { return S === me ? S.doc : null; },
-      patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); }, toast: toast, root: function () { return S === me ? $q('#gm-root') : null; },
+      patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); }, toast: toast,
+      cueSlot: function () { return S === me && me.band ? me.band.cueSlot() : null; }, changed: function () { if (S === me && me.band) me.band.update(); },
       log: function (t) { if (S === me && me.night) me.night.cue(t); },
       scene: function (id) { return patchAmbient({ mode: 'pin', scene: id }).then(function (r) { return r !== null; }); },
       show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
@@ -2421,14 +2497,13 @@
         if (x.d.revealed === true) return Promise.resolve({ ok: true });
         return Promise.resolve(ref.update({ revealed: true, firstSeen: x.d.firstSeen || nowIso() })).then(function () { if (S === me && isObj(me.npcs) && isObj(me.npcs[x.id])) me.npcs[x.id].revealed = true; return { ok: true }; }, function () { return { ok: false, say: 'Could not reveal ' + name + '.' }; });
       },
-      phase: function (p) { var nt = me.night; if (!nt || nt.enter(p) === false) return Promise.resolve(false); return b09Layer(me, 'band.phase', p).then(function (r) { return r !== null; }); },
+      phase: function (p) { return cuePhase(me, p); },
       ambient: function () { return isObj(AM.doc) ? { mode: AM.doc.mode, scene: AM.doc.scene } : null; },
-      escHeld: function () { var sv = S === me && me.stamp ? me.stamp.view() : null; return !!(sv && sv.active); },      /* the stamp's report card takes this Esc down first */
-      panic: function (safe) { return Promise.all([patchAmbient({ mode: 'pin', scene: safe, overlay: null, layers: null }), pushDisplay({ kind: 'blank' }).then(null, function () { return null; })]).then(function (r) { return r[0] !== null; }); },
+      panic: function (safe) { return panicEffect(safe); },
       resume: function (prior) { return isObj(prior) ? patchAmbient({ mode: prior.mode, scene: prior.scene }) : Promise.resolve(null); },
       cueVerbs: function () { return W.B68CueVerbs; }, grammar: function () { return W.B68GmCueGrammar; }, grammarOn: function () { return S === me && b09On('ai.grammar'); }
     });
-    me.cs.register(); me.cs.bind(document); me.cs.paint();
+    me.cs.register(); me.cs.paint();
   }
   function csUnmount(me) { if (me && me.cs) { try { me.cs.destroy(); } catch (e) {} me.cs = null; } }
   function csTick() { if (S && S.cs && S.status === 'ready') S.cs.tick(); }
@@ -2466,7 +2541,7 @@
     renderMirror();
     toast(next ? 'Phones mirror the iPad: a map or a handout on the iPad also shows on their Table button.' : 'Phones no longer mirror the iPad: their Table button shows nothing within a few seconds.');
   }
-  /* the bar's live parts: the session, what is on the iPad, listening */
+  /* the band's live parts (gm/band.js draws the rest): the session, what is on the iPad, the mic. The Menu is housekeeping only, so nothing adds lines to it */
   function renderBar() {
     if (!S || !S.root) return;
     renderMirror(); spineTick(); b17Tick(); csTick(); if (S.st) S.st.sync();
@@ -2474,17 +2549,27 @@
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
     if (W.B68GmIpadTray) W.B68GmIpadTray.refresh();      /* what is live on the iPad (gm/ipad-tray.js) */
+    var ip = $q('#gm-bar-ipad');      /* the band's stand-in pill, only when gm/ipad-tray.js is not on the page */
+    if (ip) {
+      var shown = AM.shown ? (AM.shown.kind === 'blank' || !AM.shown.kind ? 'ambient' : displayLine(AM.shown)) : 'not known yet';
+      ip.innerHTML = '<span class="gm-dot' + (AM.shown && AM.shown.kind && AM.shown.kind !== 'blank' ? ' on' : '') + '"></span><span class="gm-pill-t">iPad: ' + esc(shown) + '</span>';
+      ip.title = 'What the players see: ' + (AM.shown ? displayLine(AM.shown) : 'not known yet') + '. Opens the iPad view.';
+    }
     apPaint();
-    var sp = $q('#gm-bar-stt'); if (!sp) return;
-    var d = STT.doc, on = !!(d && d.want === 'on'), st = d && isObj(d.status) ? d.status : {}, age = st.at ? (Date.now() - Date.parse(st.at)) / 1000 : null;
-    var pc = d && isObj(d.copier) && d.copier.at ? (Date.now() - Date.parse(d.copier.at)) / 1000 : null;
-    var text = !on ? 'Not listening' : st.state === 'listening' && age !== null && age < 40 ? 'Listening' + (pc !== null && pc < 180 ? ' · PC copying' : ' · PC not copying') : 'Listening: waiting for the iPad';
-    var warn = on && !(st.state === 'listening' && age !== null && age < 40 && pc !== null && pc < 180);
-    sp.innerHTML = '<span class="gm-dot' + (on ? warn ? ' warn' : ' on' : '') + '"></span>' + esc(text) + airSuffix(d); airSync();
-    sp.classList.toggle('warn', warn);
-    /* the pill only once the transcriber has ever been set up (the stt document written), or while it is on */
-    var show = STT.loaded && (!!STT.at || on);
-    sp.hidden = !show; if (show) sp.removeAttribute('hidden'); else sp.setAttribute('hidden', '');
+    var sp = $q('#gm-bar-stt');
+    if (sp) {
+      var d = STT.doc, on = !!(d && d.want === 'on'), st = d && isObj(d.status) ? d.status : {}, age = st.at ? (Date.now() - Date.parse(st.at)) / 1000 : null;
+      var pc = d && isObj(d.copier) && d.copier.at ? (Date.now() - Date.parse(d.copier.at)) / 1000 : null;
+      var text = !on ? 'Not listening' : st.state === 'listening' && age !== null && age < 40 ? 'Listening' + (pc !== null && pc < 180 ? ' · PC copying' : ' · PC not copying') : 'Listening: waiting for the iPad';
+      var warn = on && !(st.state === 'listening' && age !== null && age < 40 && pc !== null && pc < 180);
+      sp.innerHTML = '<span class="gm-dot' + (on ? warn ? ' warn' : ' on' : '') + '"></span><span class="gm-pill-t">' + esc(text) + airSuffix(d) + '</span>'; airSync();
+      sp.classList.toggle('warn', warn);
+      sp.title = 'The mic: ' + text + '. Opens the iPad view.';
+      /* the pill only once the transcriber has ever been set up (the stt document written), or while it is on */
+      var show = STT.loaded && (!!STT.at || on);
+      sp.hidden = !show; if (show) sp.removeAttribute('hidden'); else sp.setAttribute('hidden', '');
+    }
+    bandUpdate();
   }
   /* the open Prep note's session ('' without one): the bar's stand-in while the table's counter is 0 */
   function prepNoteSession() {
@@ -2510,7 +2595,7 @@
     var r = S && S.doc ? runningBeat() : null; if (!r) { box.hidden = true; return; }
     var btn = beatButton(r.key), tr = btn && btn.closest ? btn.closest('tr') : null, min = tr ? +tr.getAttribute('data-min') || 0 : 0;
     var m = Math.max(0, Math.floor((Date.now() - Date.parse(r.at)) / 60000)), over = min ? m / min : 0;
-    go.innerHTML = '<span class="gm-dot on"></span>' + esc(shortLabel(r.label, 40)) + ' · <b>' + m + (min ? ' / ' + min : '') + ' min</b>';
+    go.innerHTML = '<span class="gm-dot on"></span><span class="gm-pill-t">' + esc(shortLabel(r.label, 40)) + ' · <b>' + m + (min ? ' / ' + min : '') + ' min</b></span>';
     go.className = 'gm-pill gm-beat' + (over >= 1.5 ? ' late' : over >= 1 ? ' due' : '');
     go.title = 'Running since ' + hm(r.at) + (min ? ', budget ' + min + ' min' : '') + '. Opens it in the Prep tab.';
     var nx = $q('[data-gm="beat-next"]'); if (nx) nx.hidden = !nextBeatButton(btn);
@@ -2635,8 +2720,8 @@
     var age = ageDays(at);
     e.textContent = at ? 'Campaign data exported ' + dmy(at) + (age != null && age > LIMITS.staleDays ? ' · ' + Math.floor(age) + ' days old: rebuild the pack' : '') + (S.offline ? ' · offline copy' : '') : 'Campaign data: no export date';
     e.classList.toggle('stale', age != null && age > LIMITS.staleDays);
-    var be = $q('#gm-bar-exp');
-    if (be) be.textContent = (at && age != null && age > LIMITS.staleDays ? 'Pack ' + Math.floor(age) + ' days old' : '') + (S.offline ? (at && age > LIMITS.staleDays ? ' · ' : '') + 'offline copy' : '');
+    var be = $q('#gm-bar-exp'), bt = (at && age != null && age > LIMITS.staleDays ? 'Pack ' + Math.floor(age) + ' days old' : '') + (S.offline ? (at && age > LIMITS.staleDays ? ' · ' : '') + 'offline copy' : '');
+    if (be) { be.hidden = !bt; if (bt) { be.removeAttribute('hidden'); be.title = bt + ': the Menu says more'; be.setAttribute('aria-label', bt); } else be.setAttribute('hidden', ''); }
   }
   function syncPanels() {
     var r = $q('#gm-root'); if (!r) return;
@@ -2671,13 +2756,8 @@
   }
 
   /* ---------- N1b: the places of the night (gm/places.js) ----------
-     The host the controller works through, and the names the band calls (N1a's brief): goPlace(id, { navigateOnly }), openView(id), callAftermath(),
-     currentPlace(), currentView(). The page's night controller enters a phase exactly as the rail does; the panes are shown by paneShow. */
-  function goPlace(id, o) { return !!(S && S.places && S.places.goPlace(id, o)); }
-  function openView(id, o) { if (S && S.places) return S.places.openView(id, o); if (S && isSide(id)) { setPanel(id); return true; } return false; }
-  function callAftermath() { if (S && S.places) return S.places.callAftermath(); var nt = S && S.night; if (nt && nt.phase() !== 'after') nt.enter('after'); return false; }
-  function currentPlace() { return S && S.places ? S.places.currentPlace() : ''; }
-  function currentView() { return S && S.places ? S.places.currentView() : S ? S.panel : ''; }
+     The host the controller works through. The names the band calls (goPlace, openView, callAftermath, currentPlace, currentView) are with the band's
+     host above: they go to S.places and redraw the band. The page's night controller enters a phase exactly as the rail does; the panes are shown by paneShow. */
   function placesPhase() { var nt = S && S.night; if (nt) return nt.phase(); var N = W.B68GmNight; return N && S && S.doc ? N.clean(S.doc.night).phase : ''; }
   function placesSync() { if (S && S.places && S.status === 'ready') S.places.sync(); }
   function placesHost() {
@@ -4077,12 +4157,11 @@
     openView: function () { showPanel('ipad'); },      /* as the I key does: on a phone the segment follows */
     ap: { view: function () { var v = apView(); return v ? { badge: v.bar, title: v.title, mode: v.mode } : null; }, toggle: function () { apToggle(); } }
   };
-  /* mount the tray in the bar (the band mounts one of its own); the page's iPad is provided to every tray on the page */
+  /* the page's iPad is provided to every tray on the page; the band mounts the tray in its row 2 slot (#gm-bar-tray, gm/band.js), so nothing is mounted here */
   function ipadTrayMount() {
     var T = W.B68GmIpadTray; if (!T || !S) return;
     T.provide(ipadTrayApi);
     if (S.tray) { S.tray.destroy(); S.tray = null; }
-    var slot = $q('#gm-bar-tray'); if (slot) S.tray = T.create({ document: document }).mount(slot);
     ipadLiveWire();
   }
   function ipadTrayUnmount(me) {
@@ -4682,9 +4761,6 @@
     f.hidden = !(r || vo);
     if (sm) sm.textContent = (r || vo) && R ? R.rackSummary({ fitted: r && r.pre ? str(r.pre.pos) : '', pending: !!(r && r.status === 'pending'), voice: vo ? str(vo.who) : '' }) : '';
   }
-  /* N4, until the band's one Esc (N1a) sends every press through gm/esc.js: what is registered there (the stamp, the site's popovers, its NPC card, a
-     peek, an inline tool) is reached from here, one thing per press. Esc never blanks the map any more (N3: Blank is a button) */
-  function escOne() { var E = W.B68GmEsc; return !!(E && typeof E.handle === 'function' && E.handle({}) !== 'none'); }
   /* ---------- B19: the map beats (map.spotted 2.6, map.flashback 2.9, map.threat 2.5). The logic is in gm/map-*.js; this is the seam. Each reads its own switch live. ---------- */
   function b19Room(svg, name) {
     var m = S && S.b19Model, rooms = m && Array.isArray(m.rooms) ? m.rooms : [], r = null, i;
@@ -4942,16 +5018,16 @@
     Promise.resolve().then(function () { return spec.run(); }).then(null, function (e) { toast('Could not do that: ' + errText(e), true); });
   }
   /* W0.4 the night contract (gm/night.js): the controller for this page. It writes nothing until a phase is entered or a stamp or cue is logged; the iPad band (band.phase) is wired by the show contract, from night.band() */
-  /* B08 the spine (gm/spine.js): the phase rail and the curfew (features.js spine.rail, spine.curfew: always on since N0) */
+  /* B08 the spine (gm/spine.js): the phase on the iPad's band and the curfew's rules (features.js spine.rail, spine.curfew: always on since N0); their face is the band */
   function spineTick() {
     var Sp = W.B68GmSpine, F = W.B68Features; if (!Sp || !F || !S || S.status !== 'ready' || !$q('#gm-root')) return;
     { var pfi = pfInst(); if (pfi) pfi.tick(); }
     Sp.tick({ root: function () { return $q('#gm-root'); }, night: function () { return S ? S.night : null; }, now: function () { return Date.now(); }, toast: toast,
-      on: function (id) { return !!S && F.valueOf(S.doc, id); }, layer: function (p, v) { var c = shows(); return c ? c.layer(p, v) : Promise.resolve(null); } });
+      on: function (id) { return !!S && F.valueOf(S.doc, id); }, layer: function (p, v) { var c = shows(); return c ? c.layer(p, v) : Promise.resolve(null); }, callAftermath: callAftermath });
   }
   function mountNight() {
     var N = W.B68GmNight, me = S; if (W.B68GmSpine) W.B68GmSpine.reset(); if (!N) { me.night = null; return; }
-    me.night = N.create({ doc: function () { return S === me ? S.doc : null; }, patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); }, changed: function () { spineTick(); placesSync(); },
+    me.night = N.create({ doc: function () { return S === me ? S.doc : null; }, patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); }, changed: function () { spineTick(); placesSync(); bandUpdate(); },
       prep: function () { var pk = S === me ? part('prep') : null, id = pk && W.B68GmPrep ? prepNoteId(pk) : null; return id && Array.isArray(pk.notes) ? pk.notes.filter(function (n) { return isObj(n) && n.id === id; })[0] || null : null; } });
     spineTick(); tcWrap(me);
   }
@@ -6787,8 +6863,9 @@
     fr.src = W.location.pathname + (d.edit ? '' : '?ro=1') + w.hash;
     host.appendChild(fr); d.frame = fr; d.frameKey = w.key;
   }
-  function drawerTop() {      /* the drawer sits under the header; the header's height changes with the window */
-    try { var r = $q('#gm-root'), br = $q('.gm-bar'); if (r && br && S && S.dw && S.dw.open) r.style.setProperty('--dw-top', Math.round(br.getBoundingClientRect().bottom) + 'px'); } catch (e) {}
+  function drawerTop() {      /* the drawer and the sheets sit under the band; its height changes with the window */
+    if (S && S.band) { S.band.place(); return; }
+    try { var r = $q('#gm-root'), br = $q('#gm-band'); if (r && br && r.style && S && S.dw && S.dw.open) r.style.setProperty('--dw-top', Math.round(br.getBoundingClientRect().bottom) + 'px'); } catch (e) {}
   }
   function drawerSync() {
     var r = $q('#gm-root'); if (!r || !S.dw) return;
@@ -6934,10 +7011,48 @@
 
   /* ---------- events ---------- */
   function typing(t) { if (!t || t === document.body) return false; var n = (t.tagName || '').toLowerCase(); return n === 'input' || n === 'textarea' || n === 'select' || !!t.isContentEditable; }
+  /* THE ONE ESC (gm/esc.js, the night design's Esc): the topmost open thing closes, else a field is left, else the stamp comes down, else PANIC. One of those
+     per press, never two: nothing else on the page hears this Esc (it stops here), and every closable thing is registered (escWire, the band, the modules) */
+  function escPress(ev) {
+    var E = W.B68GmEsc, t = ev && ev.target, field = t && t !== document.body && typing(t) ? t : null, r;
+    if (ev) { ev.preventDefault(); if (typeof ev.stopPropagation === 'function') ev.stopPropagation(); }
+    if (E && typeof E.handle === 'function') r = E.handle({ field: field, isField: typing, blur: function (el) { try { el.blur(); } catch (e) {} }, panic: function () { bandPanic('key'); } });
+    else if (field) { try { field.blur(); } catch (e) {} r = 'blur'; }
+    else { bandPanic('key'); r = 'panic'; }
+    if (S) S.escLast = r;
+    bandUpdate();
+    return r;
+  }
+  /* what Esc closes, highest first (gm/esc.js's scale): Find, the Menu, the Blade panel (sliding over the page; a pinned column only while the focus is
+     in it), the drawer. The band registers its own popovers, gm/workshop.js each right-edge sheet and inline tool. The stamp and the Run view's pop-up
+     and peek stand here until their own modules register them: two entries for one thing still close it once. */
+  var escWired = false;
+  function bladeOpen() {
+    var a = S && S.assist; if (!a || typeof a.isOpen !== 'function' || !a.isOpen()) return false;
+    if (typeof a.isPinned === 'function' && a.isPinned()) { var el = typeof a.el === 'function' ? a.el() : null, f = document.activeElement; return !!(el && f && el.contains && el.contains(f)); }
+    return true;
+  }
+  /* after Esc shuts the Menu or the drawer nothing keeps the focus, so the next Space is GO rather than its button again */
+  function escBlur() { var a = document.activeElement; if (a && a !== document.body && typeof a.blur === 'function') { try { a.blur(); } catch (e) {} } }
+  function escWire() {
+    var E = W.B68GmEsc; if (!E || typeof E.register !== 'function' || escWired) return;
+    escWired = true;
+    E.register('find', { priority: 90, isOpen: function () { return findOn(); }, close: function () { findClose(); } });
+    E.register('menu', { priority: 80, isOpen: function () { var m = S && $q('.gm-menu-list'); return !!(m && !m.hasAttribute('hidden')); },
+      close: function () { menuOpen(false); escBlur(); } });
+    E.register('blade', { priority: 60, isOpen: bladeOpen, close: function () { if (S && S.assist) S.assist.close(); } });
+    E.register('drawer', { priority: 50, isOpen: function () { return !!(S && S.dw && S.dw.open); }, close: function () { drawerSet(false); escBlur(); } });
+    /* the stamp's entry ('stamp', kind stamp, 10) is N4's, made with the stamp in b09Mount; the Run view's NPC card, tool and peek (rv.*, 40) and the
+       site's popovers (70) are N3's */
+  }
+  /* the topmost open thing that holds the keys ('' when none): an overlay above priority 40 (Find, the Menu, a popover, the Blade panel, the drawer,
+     a sheet). The Run view's NPC card, tool and peek and an inline tool (40) hold nothing: the Run view's own keys (arrows step the beats) work behind them */
+  function escTop() { var E = W.B68GmEsc, l = E && typeof E.list === 'function' ? E.list() : []; for (var i = 0; i < l.length; i++) if (l[i].open && l[i].kind === 'overlay' && l[i].priority > 40) return l[i].id; return ''; }
   function onKey(ev) {
     if (blankEl) { ev.preventDefault(); ev.stopPropagation(); unblank(); return; }
     if (!S || S.status !== 'ready' || document.body.dataset.mode !== 'gm') return;
     var dlg = document.querySelector('dialog[open]'); if (dlg) return;
+    if (ev.key === 'Escape' || ev.key === 'Esc') { escPress(ev); return; }
     /* with the focus inside the Blade panel, J and K move between its cards and U undoes: the panel's own keys, not Score or anything else */
     var pel = S.assist && typeof S.assist.el === 'function' ? S.assist.el() : null;
     if (pel && ev.target && pel.contains && pel.contains(ev.target) && !ev.ctrlKey && !ev.metaKey && !ev.altKey && /^[jku]$/i.test(str(ev.key))) return;
@@ -6949,7 +7064,6 @@
     /* Find: Ctrl+K (or Cmd+K) anywhere opens and shuts it; while open, its own keys only */
     if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && str(ev.key).toLowerCase() === 'k') { ev.preventDefault(); if (findOn()) findClose(); else findOpen(); return; }
     if (findOn()) {
-      if (ev.key === 'Escape') { ev.preventDefault(); findClose(); return; }
       if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') { ev.preventDefault(); findMove(ev.key === 'ArrowDown' ? 1 : -1); return; }
       if (ev.key === 'Enter' && tg && tg.id === 'gm-find-q') { ev.preventDefault(); findGo(S.findSel || 0); }
       return;
@@ -6959,19 +7073,26 @@
     if (ev.key === 'Enter' && tg && tg.id === 'gm-prep-q') { ev.preventDefault(); prepFindGo(); return; }
     if (ev.key === 'Enter' && tg && tg.id === 'gm-gs-q') { ev.preventDefault(); screenFindGo(); return; }
     if (ev.key === 'Enter' && tg && tg.id === 'gm-dt-d100') { ev.preventDefault(); dtD100(tg.value); return; }     /* the morning's d100 */
-    var ml = $q('.gm-menu-list'); if (ml && !ml.hasAttribute('hidden') && ev.key === 'Escape') { menuOpen(false); var mb = $q('[data-gm="menu"]'); if (mb) mb.focus(); ev.preventDefault(); return; }
+    /* keys never fire behind an open thing (the Menu, the drawer, the Blade panel, a popover, a sheet): only its own. W shuts the drawer and A the Blade
+       panel when that is the top one; GO (Space, PageDown) still fires behind the Blade panel; everything else waits until it is closed (Esc) */
+    var top = escTop();
+    if (top) {
+      var k0 = str(ev.key).toLowerCase();
+      if (!typing(tg) && !ev.ctrlKey && !ev.metaKey && !ev.altKey && ((k0 === 'w' && top === 'drawer') || (k0 === 'a' && top === 'blade'))) { ev.preventDefault(); if (k0 === 'w') drawerToggle(); else if (S.assist) S.assist.toggle(); return; }
+      if (top === 'blade' && (ev.key === ' ' || ev.key === 'PageDown') && S.cs && typeof S.cs.key === 'function') S.cs.key(ev, document);
+      return;
+    }
     if (runViewKey(ev)) return;
     if (runKey(ev)) return;
-    /* N1b: Ctrl+← / Ctrl+→ the place before or after, navigation only (the night's phase stays). N1a's band owns the key map; this is its stand-in */
-    if (ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.shiftKey && (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') && !typing(ev.target) && S.places) { ev.preventDefault(); S.places.stepPlace(ev.key === 'ArrowRight' ? 1 : -1); return; }
+    /* GO: Space (the page's own focus, or the cue's place) and PageDown (the page-turner), asked of the cue stack */
+    if (S.cs && typeof S.cs.key === 'function' && S.cs.key(ev, document)) return;
     var a = keyAction({ key: ev.key, ctrlKey: ev.ctrlKey, altKey: ev.altKey, metaKey: ev.metaKey, typing: typing(ev.target) });
-    if (!a) return;
-    if (a.type === 'esc') { var t = ev.target; if (t && t.blur && typing(t)) { t.blur(); ev.preventDefault(); } else if (S.assist && S.assist.isOpen()) { S.assist.close(); ev.preventDefault(); } else if (S.dw && S.dw.open) { drawerSet(false); ev.preventDefault(); } else if (escOne()) ev.preventDefault(); return; }
-    if (a.type === 'reserved') return;
+    if (!a || a.type === 'esc' || a.type === 'reserved') return;
     if ((a.type === 'capture' || a.type === 'last') && !capBarShown()) return;      /* the bar is hidden: its keys do nothing */
     ev.preventDefault();
     if (a.type === 'situation') rollSituation(a.n);
     else if (a.type === 'panel') { if (!openView(a.panel)) setPanel(a.panel); if (isPhone()) { S.seg = 'side'; syncPanels(); } else focusPane(a.panel); }      /* N1b: the view, in the place the GM is in */
+    else if (a.type === 'place') placeStep(a.d);
     else if (a.type === 'capture') arm(a.bucket, true);
     else if (a.type === 'last') fileLast();
     else if (a.type === 'blank') blank();
@@ -7035,6 +7156,7 @@
       case 'note': exportTonight(); break;
       case 'seg': { var sg = b.getAttribute('data-seg'); if (sg === 'state') { drawerTab('table'); drawerSet(true); break; } if (isSide(sg)) { S.seg = 'side'; setPanel(sg); } else { S.seg = sg; syncPanels(); } break; }
       case 'panel': setPanel(b.getAttribute('data-panel')); break;
+      case 'ipadview': openView('ipad'); break;      /* the band's iPad pill and mic */
       case 'scene': S.sceneOpen = !S.sceneOpen; syncPanels(); break;
       case 'capopen': S.capOpen = !S.capOpen; syncPanels(); if (S.capOpen) { var ci = $q('#gm-cap-in'); if (ci) ci.focus(); } break;
       case 'roll': rollConsole(+b.getAttribute('data-n')); break;
@@ -7308,6 +7430,7 @@
     /* the autopilot's controller state, for checks (the page's own log is S.doc.ap.log), and Voice's lines as the box would hand them over */
     _autopilot: function () { return S && S.ap ? S.ap.core.state() : null; },
     _night: function () { return S && S.night ? S.night : null; },
+    _cuePhase: function (p) { return S ? cuePhase(S, p) : Promise.resolve(false); },     /* for checks: what a `phase:` cue does */
     /* N1b: the places of the night (gm/places.js), for the band (N1a: the same names its host carries) and the checks */
     goPlace: goPlace, openView: openView, callAftermath: callAftermath, currentPlace: currentPlace, currentView: currentView,
     _places: function () { return S && S.places ? S.places : null; },

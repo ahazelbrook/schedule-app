@@ -179,9 +179,14 @@ try {
     await page.reload(); await page.waitForSelector('#gm-prep .pp-doc', { timeout: 20000 });
     check(await page.$eval('#gm-prep .pp-box[data-task="' + open1.a + '"]', (b) => b.classList.contains('here')), 'reload: the tick is still there');
   }
-  /* 1280 wide with a beat running (and the iPad showing something): the bar, which now carries Now in, still holds every item on one row */
+  /* 1280 wide with a beat running (and the iPad showing something): the band holds every item in its two rows */
   await page.setViewportSize({ width: 1280, height: 900 }); await sleep(400);
-  check(await page.evaluate(() => { const b = document.querySelector('.gm-bar'), r = b.getBoundingClientRect(); return r.height < 60 && b.scrollWidth <= b.clientWidth + 1 && [...b.querySelectorAll('.gm-now, .gm-beatbar, [data-gm="find-open"], .gm-tray, [data-gm="menu"]')].every((c) => { const q = c.getBoundingClientRect(); return q.width > 0 && q.right <= innerWidth + 1; }); }), 'laptop 1280: with a beat running, the bar holds Now in, the beat, Find, the iPad tray and the Menu on one row');
+  const b1280 = await page.evaluate(() => {
+    const b = document.querySelector('#gm-band'), r = b.getBoundingClientRect();
+    const parts = ['#gm-bar-beat', '.gm-band-r1 > [data-gm="find-open"]', '#gm-bar-tray .gm-tray', '[data-gm="menu"]', '[data-band="panic"]'].map((s) => { const e = b.querySelector(s), q = e ? e.getBoundingClientRect() : null; return [s, q ? Math.round(q.width) : -1, q ? Math.round(q.right) : -1]; });
+    return { h: Math.round(r.height), sw: b.scrollWidth, cw: b.clientWidth, vw: innerWidth, parts };
+  });
+  check(b1280.h <= 92 && b1280.sw <= b1280.cw + 1 && b1280.parts.every((p) => p[1] > 0 && p[2] <= b1280.vw + 1), 'laptop 1280: with a beat running, the band holds the beat, Find, the iPad tray, the Menu and PANIC in its two rows ' + JSON.stringify(b1280));
   await shot(page, 'bar-1280-beat');
   await page.setViewportSize({ width: 1440, height: 900 }); await sleep(300);
   /* the laptop layout: one window tall, the outline follows the reading, Focus shrinks the console to its keys */

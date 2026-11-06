@@ -122,12 +122,8 @@ try {
 
   /* ---- 4. follow the night ---- */
   /* the note's cues: 1 scene, 2 show, 3 light, 4 phase: pb, 5 phase: plan. GO (Space) until the fifth has fired. Personal is in play already (goPlace
-     entered it), and a phase: cue for the phase in play does not fire (the cue stack's own rule), so the GM bypasses the fourth */
-  const standby = () => a.$eval('#gm-cuebar .gm-cs-row', (e) => e.textContent).catch(() => '');
-  for (let i = 0; i < 12 && (await attr(a, 'data-place')) !== 'plan'; i++) {
-    if (/#4\s*PHASE/i.test(await standby())) { await a.$eval('#gm-cuebar [data-cs="bypass"]', (e) => e.click()); await sleep(400); continue; }
-    await key(a, 'Space'); await sleep(900);
-  }
+     entered it): a phase: cue for the phase in play is done at once (N1a), so GO goes straight on past the fourth, no Bypass */
+  for (let i = 0; i < 12 && (await attr(a, 'data-place')) !== 'plan'; i++) { await key(a, 'Space'); await sleep(900); }
   check(await until(async () => (await attr(a, 'data-place')) === 'plan', 8000) && await nightPhase() === 'plan', 'a phase: cue (GO on the note\'s "phase: plan") moves the night, and the page follows it to Planning');
   check(JSON.stringify(await views(a)) === JSON.stringify(['cards', 'corkboard', 'run', 'score', 'prep', 'rules', 'npc', 'ipad']) && await attr(a, 'data-panel') === 'cards', 'Planning: Opportunities first, Intel, The site, the Score generator');
   check(await until(() => a.$eval('#gm-opps-players [data-inline="board"]', (e) => !!e), 6000) && await a.$eval('#gm-opps-gm', (e) => e.querySelectorAll('.oc-card').length >= 1), 'Opportunities: the players\' board over the GM\'s own cards');
@@ -191,16 +187,10 @@ try {
   await a.click('#gm-vpane .gm-desk[data-desk="frontpage"]');
   check(await until(() => a.$eval('#gm-vpane [data-inline="frontpage"]', (e) => !!e), 5000) && await a.$eval('#gm-vhead', (e) => !e.hidden && /← Desks/.test(e.textContent) && /Front page/.test(e.textContent)), 'a desk opens its tool inline, under "← Desks"');
   check(await a.$eval('#gm-left [data-desk="frontpage"]', (e) => e.getAttribute('aria-current')) === 'true', 'the column marks the open desk');
+  /* a real Esc press: the page's one Esc (onKey -> B68GmEsc.handle, N1a) closes the open desk, and it is not a PANIC */
   await blur(a); await a.keyboard.press('Escape'); await sleep(300);
-  /* the page's one Esc (B68GmEsc.handle in onKey) is N1a's wiring: in a tree without it the cue stack takes Esc as PANIC, so Resume, and ask the contract itself */
-  let escVia = '';
-  if (await a.$('#gm-cuebar .gm-cs-panic')) {
-    await a.$eval('#gm-cuebar [data-cs="resume"]', (e) => e.click()).catch(() => {});
-    await a.evaluate(() => window.B68GmEsc.handle({ panic() {} }));
-    escVia = ' (through B68GmEsc.handle: this tree has no one-Esc wiring yet)';
-    await sleep(300);
-  }
-  check(await a.$$eval('#gm-vpane .gm-desk', (d) => d.length) === 10 && await a.$eval('#gm-vhead', (e) => e.hidden), 'Esc goes back to the desks' + escVia);
+  check(await a.$$eval('#gm-vpane .gm-desk', (d) => d.length) === 10 && await a.$eval('#gm-vhead', (e) => e.hidden), 'Esc goes back to the desks');
+  check(!(await a.$('#gm-band .gm-band-r2[data-alarm="panic"]')), 'and the press was not a PANIC');
   await a.click('#gm-vpane [data-desk="gen:score"]');
   check(await attr(a, 'data-panel') === 'score' && await a.$eval('#gm-vhead', (e) => /Score generator/.test(e.textContent)), 'Generators › Score: the score generator, under "← Desks"');
   await a.click('#gm-vhead [data-pv-desks]');

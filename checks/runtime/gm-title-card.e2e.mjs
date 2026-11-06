@@ -112,12 +112,12 @@ try {
 
   const card = { hid: 'h_b24t', auth: NAME2, label: NAME2 + ' · Nowhere Ward', at: new Date().toISOString() };
   check((await api('PATCH', '/gm/state', { cards: { location: card }, loc: { map: { view: 'plan', theme: 'casefile', layer: 'gm', reveal: { public: true } } },
-    ball: { site: NAME2, v: 2, start: 0, t: 100, crew: {} } })).status === 200, 'the site is the location card (nothing stored for any feature: the phase rail, how GO is pressed, is always on)');
+    ball: { site: NAME2, v: 2, start: 0, t: 100, crew: {} } })).status === 200, 'the site is the location card (nothing stored for any feature: the places in the band, how GO is pressed, are always there)');
 
   const D = await openDisplay();
   const G = await openGm();
-  await G.page.waitForSelector('#gm-phaserail [data-rail="score"]', { timeout: 20000 });
-  const rail = async (id) => { await G.page.$eval('#gm-phaserail [data-rail="' + id + '"]', (e) => e.click()); await sleep(900); };
+  await G.page.waitForSelector('#gm-band [data-band-place="score"]', { timeout: 20000 });
+  const rail = async (id) => { await G.page.click('#gm-band [data-band-place="' + id + '"]'); await sleep(900); };
 
   /* ---- everything on (N0): with NOTHING stored, GO into the Score phase puts the title card up ---- */
   await rail('plan'); await rail('score');
@@ -130,7 +130,7 @@ try {
   check((await api('PATCH', '/gm/state', { features: { 'map.title': true, 'spine.rail': true } })).status === 200, 'a stored true is taken (and changes nothing)');
   await sleep(1500);
   await rail('plan'); await sleep(400);
-  await G.page.$eval('#gm-phaserail [data-rail="score"]', (e) => e.click());
+  await G.page.click('#gm-band [data-band-place="score"]');
   const t0 = Date.now();
   const ov = await until(async () => { const o = await overlay(); return o && o.kind === 'scoretitle' ? o : null; }, 6000, 50);
   check(!!ov, 'GO into the Score phase: a scoretitle beat is on the ambient document (' + (Date.now() - t0) + ' ms)');
@@ -166,7 +166,7 @@ try {
   /* ---- twice in the same phase, or GO again: not again; two GM pages in the same minute: once ---- */
   const seq = async () => ((await api('GET', '/gm/ambient')).json || {}).seq;
   const s1 = await seq();
-  await G.page.$eval('#gm-phaserail [data-rail="score"]', (e) => e.click()); await sleep(1200);
+  await G.page.click('#gm-band [data-band-place="score"]'); await sleep(1200);
   check((await seq()) === s1, 'pressing the Score phase while already in it puts nothing up');
 
   /* ---- reduced motion: a still card ---- */
@@ -175,7 +175,7 @@ try {
   const rp = await R.newPage();
   await rp.addInitScript(() => { try { if (window === window.top) localStorage.setItem('b68.display.ambientTiming', JSON.stringify({ intervalMs: 600000, graceMs: 60000 })); } catch (e) { /* no storage */ } });
   await rp.goto(BASE + '/#display'); await rp.waitForSelector('.dp-overlay', { state: 'attached', timeout: 20000 });
-  await rail('plan'); await G.page.$eval('#gm-phaserail [data-rail="score"]', (e) => e.click());
+  await rail('plan'); await G.page.click('#gm-band [data-band-place="score"]');
   await rp.waitForSelector('.dp-overlay .dp-show-scoretitle.dp-ov-in', { timeout: 15000 });
   const still = await rp.evaluate(() => { const node = document.querySelector('.dp-overlay .dp-show-scoretitle'); return { anims: node.getAnimations({ subtree: true }).filter((a) => a.playState === 'running').length, ok: !!node.querySelector('.dp-tc-title') }; });
   check(still.anims === 0 && still.ok, 'reduced motion: no animation runs, the card is its last frame (' + JSON.stringify(still) + ')');
@@ -185,7 +185,7 @@ try {
   check((await api('PATCH', '/gm/state', { features: { 'map.title': false } })).status === 200, 'a stored false is taken');
   await sleep(1500); await rail('plan');
   await sleep(61000 - (Date.now() % 60000));      /* the card is keyed by the site and the minute (two GM pages in one minute show it once): a new minute */
-  const o1 = await overlay(); await G.page.$eval('#gm-phaserail [data-rail="score"]', (e) => e.click());
+  const o1 = await overlay(); await G.page.click('#gm-band [data-band-place="score"]');
   const o2 = await until(async () => { const o = await overlay(); return o && o.kind === 'scoretitle' && o.id !== (o1 || {}).id ? o : null; }, 6000, 100);
   check(!!o2, 'a stored false changes nothing: GO still puts a new title card up');
   check(errors.length === 0, 'no page errors: ' + errors.slice(0, 3).join(' | '));

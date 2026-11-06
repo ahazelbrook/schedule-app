@@ -1,5 +1,5 @@
-// Unit test for the spine tickets: the phase rail (app/gm/phase-rail.js, 1.1), the curfew (app/gm/curfew.js, 1.5) and the one hook between them and the page
-// (app/gm/spine.js). The Workshop's first cuts (1.9) went with the Workshop in N0. No browser, no network: a small fake page stands in for the DOM.
+// Unit test for the spine tickets: the phases in minutes (app/gm/phase-rail.js, 1.1), the curfew's rules (app/gm/curfew.js, 1.5) and the one hook between them and
+// the page (app/gm/spine.js). Their face is the band (app/gm/band.js, checks/runtime/gm-band.test.mjs). The Workshop's first cuts (1.9) went with the Workshop in N0. No browser, no network: a small fake page stands in for the DOM.
 //   node checks/runtime/gm-spine.test.mjs
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -22,7 +22,7 @@ async function test(name, fn) {
   try { await fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); }
 }
 
-/* ---- a fake page: just enough element for the rail and the curfew bar ---- */
+/* ---- a fake page: just enough element for the curfew's Next ▸ watch ---- */
 function cls() { const s = new Set(); return { s, add: (c) => s.add(c), remove: (c) => s.delete(c), contains: (c) => s.has(c), toggle: (c) => (s.has(c) ? s.delete(c) : s.add(c)) }; }
 class El {
   constructor(tag, doc) { this.tagName = tag; this.ownerDocument = doc; this.attrs = {}; this.children = []; this.parentNode = null; this.html = ''; this.listeners = {}; this.classList = cls(); }
@@ -73,7 +73,7 @@ function mergeNight(a, b) {
   m(out, b); return out;
 }
 
-/* ---- 1.1 the rail ---- */
+/* ---- 1.1 the phases in minutes (the band's chips draw them: checks/runtime/gm-band.test.mjs) ---- */
 await test('model: four phases in order; the one in play shows minutes against its budget; amber at 80%, red when over', () => {
   const night = { phase: 'plan', phases: { pb: { budget: 40, start: T0, end: T0 + 40 * MIN }, plan: { budget: 20, start: T0 + 40 * MIN, end: null }, score: { budget: 90 }, after: {} } };
   const at = (m) => Rail.model(night, T0 + (40 + m) * MIN);
@@ -94,51 +94,26 @@ await test('the rail filters nothing (N1b: the places lay out each phase\'s tool
   assert.equal(Rail.filterFor, undefined); assert.equal(Rail._setAll, undefined);
   assert.equal(Tools.setFilter, undefined, 'the registry has no filter to set');
 });
-await test('the bar: four chips; a tap enters the phase through the night controller', () => {
-  const { root } = page(), c = ctl();
-  const rail = Rail.create({ root: () => root, night: () => c.N, now: () => c.clock.t });
-  rail.sync();
-  const el = rail.el(); assert.equal(root.children[1], el, 'inserted right after the top bar');
-  assert.equal((el.innerHTML.match(/data-rail="(pb|plan|score|after)"/g) || []).length, 4); assert.ok(!/data-rail="all"|All tools/.test(el.innerHTML), 'no All tools');
-  click(el, 'data-rail', 'plan'); assert.equal(c.N.phase(), 'plan');
-  c.clock.t += 5 * MIN; rail.sync(); assert.ok(/data-state="now"/.test(el.innerHTML));
-  click(el, 'data-rail', 'pb'); assert.equal(c.N.phase(), 'pb', 'Back is allowed');
+await test('the rail draws nothing any more: the band holds the places (no bar, no "All tools", no tool filter of its own)', () => {
+  assert.deepEqual(Object.keys(Rail).sort(), ['PHASES', 'model', 'toneOf']);
+  const src = require('node:fs').readFileSync(path.join(ROOT, 'app', 'gm', 'phase-rail.js'), 'utf8');
+  assert.ok(!/createElement|insertBefore|innerHTML|setFilter/.test(src), 'no DOM and no filter in the file');
 });
 
-/* the rail reads gm/tools.js from the window it was built on: give it one */
+/* the modules read their neighbours from the window they were built on: give them one */
 function withWindow(extra, fn) {
   const w = Object.assign({ B68GmTools: Tools, B68GmNight: Night, B68GmWorkshop: WS, B68GmPhaseRail: Rail, B68GmCurfew: Curfew, B68Features: F }, extra);
   return fn(w);
 }
 function loadMods(w) {
-  /* the factories take the window: re-evaluate each file against it so its DOM and registry reads go to the fake */
+  /* the factories take the window: re-evaluate each file against it so its registry reads go to the fake */
   const fs = require('node:fs');
-  const make = (f, name) => { const src = fs.readFileSync(path.join(ROOT, 'app', 'gm', f), 'utf8'); const m = { exports: {} }; new Function('module', 'self', 'require', src + '\n//# sourceURL=' + f)(m, w, require); return m.exports; };
-  const sp = (n) => w[n];
-  void sp;
+  const make = (f) => { const src = fs.readFileSync(path.join(ROOT, 'app', 'gm', f), 'utf8'); const m = { exports: {} }; new Function('module', 'self', 'require', src + '\n//# sourceURL=' + f)(m, w, require); return m.exports; };
   w.B68GmPhaseRail = make('phase-rail.js'); w.B68GmCurfew = make('curfew.js'); w.B68GmSpine = make('spine.js');
   return w;
 }
 
-await test('the bar through the window: a tap enters the phase and touches nothing else (the page follows the phase to its place, gm/places.js)', () => {
-  const w = loadMods(withWindow({}, (x) => x)); const { root } = page(), c = ctl();
-  const rail = w.B68GmPhaseRail.create({ root: () => root, night: () => c.N, now: () => c.clock.t });
-  const before = JSON.stringify(Tools.list());
-  rail.sync(); click(rail.el(), 'data-rail', 'plan'); rail.sync();
-  assert.equal(c.N.phase(), 'plan'); assert.ok(/data-rail="plan"[^>]*data-state="now"/.test(rail.el().innerHTML));
-  click(rail.el(), 'data-rail', 'all'); assert.equal(c.N.phase(), 'plan', 'there is no All tools: a stray "all" enters nothing');
-  assert.equal(JSON.stringify(Tools.list()), before, 'the tool registry is untouched');
-  rail.destroy(); assert.equal(root.querySelector('#gm-phaserail'), null);
-});
-await test('a phase another GM device entered shows here on the next sync (the night is read live)', () => {
-  const w = loadMods(withWindow({}, (x) => x)); const { root } = page(), c = ctl();
-  const rail = w.B68GmPhaseRail.create({ root: () => root, night: () => c.N, now: () => c.clock.t });
-  rail.sync(); assert.ok(!/data-state="now"/.test(rail.el().innerHTML));
-  c.state.doc = { night: Night.enter({}, 'score', T0).night };
-  rail.sync(); assert.ok(/data-rail="score"[^>]*data-state="now"/.test(rail.el().innerHTML));
-});
-
-/* ---- 1.5 the curfew ---- */
+/* ---- 1.5 the curfew (its face is the band's second row: gm-band.test.mjs) ---- */
 await test('curfew state: warn from 30 minutes before, due at the curfew, snoozed ten minutes once, idle without a phase, in the Aftermath or with no curfew', () => {
   const n = (extra) => Object.assign({ phase: 'score', curfewAt: '22:40', phases: { score: { start: T0 } } }, extra);
   const at = (h, m) => new Date(2026, 10, 7, h, m, 0).getTime();
@@ -151,21 +126,30 @@ await test('curfew state: warn from 30 minutes before, due at the curfew, snooze
   const late = n({ curfewAt: '00:30', phases: { score: { start: at(21, 0) } } });
   assert.equal(Curfew.state(late, at(22, 0), null), 'idle'); assert.equal(Curfew.state(late, new Date(2026, 10, 8, 0, 31).getTime(), null), 'due', 'a curfew after midnight is the next day\'s');
 });
-await test('curfew bar: one toast at curfew minus 30; "Call the Aftermath" at the curfew; snooze once; the call moves to the Aftermath and tells the page', () => {
+await test('curfew controller: one toast at curfew minus 30; view() says due at the curfew; snooze once; Call the Aftermath goes through the places (host.callAftermath), and no event is fired that nothing hears', () => {
   const sent = []; const w = loadMods(withWindow({ dispatchEvent: (e) => sent.push(e), CustomEvent: class { constructor(t, o) { this.type = t; this.detail = o.detail; } } }, (x) => x));
-  const { root } = page(), c = ctl({ phase: 'score', curfewAt: '22:40', phases: { score: { start: T0 } } }), toasts = []; let mem = null;
-  const cf = w.B68GmCurfew.create({ root: () => root, night: () => c.N, now: () => c.clock.t, toast: (m) => toasts.push(m), store: { get: () => mem, set: (v) => { mem = v; } } });
+  const { root } = page(), c = ctl({ phase: 'score', curfewAt: '22:40', phases: { score: { start: T0 } } }), toasts = [], calls = []; let mem = null;
+  const cf = w.B68GmCurfew.create({ root: () => root, night: () => c.N, now: () => c.clock.t, toast: (m) => toasts.push(m), store: { get: () => mem, set: (v) => { mem = v; } },
+    callAftermath: () => { calls.push(c.clock.t); c.N.enter('after'); return true; } });
   const at = (h, m) => new Date(2026, 10, 7, h, m, 0).getTime();
-  c.clock.t = at(22, 5); cf.sync(); assert.equal(toasts.length, 0); assert.equal(root.querySelector('.gm-curfew'), null);
-  c.clock.t = at(22, 12); cf.sync(); cf.sync(); assert.equal(toasts.length, 1, 'the warning is said once'); assert.ok(/22:40/.test(toasts[0]));
-  c.clock.t = at(22, 40); cf.sync(); const bar = root.querySelector('.gm-curfew'); assert.ok(bar); assert.ok(/Call the Aftermath/.test(bar.innerHTML)); assert.ok(/Snooze/.test(bar.innerHTML));
-  click(bar, 'data-curfew', 'snooze'); assert.equal(root.querySelector('.gm-curfew'), null, 'snoozed: the bar goes');
-  c.clock.t = at(22, 51); cf.sync(); const again = root.querySelector('.gm-curfew'); assert.ok(again); assert.ok(!/Snooze/.test(again.innerHTML), 'only one snooze');
-  click(again, 'data-curfew', 'call'); assert.equal(c.N.phase(), 'after'); assert.equal(sent.length, 1); assert.equal(sent[0].type, 'b68:aftermath');
-  assert.equal(root.querySelector('.gm-curfew'), null);
+  c.clock.t = at(22, 5); cf.sync(); assert.equal(toasts.length, 0); assert.equal(cf.view().state, 'idle'); assert.equal(cf.view().at, '22:40');
+  c.clock.t = at(22, 12); cf.sync(); cf.sync(); assert.equal(toasts.length, 1, 'the warning is said once'); assert.ok(/22:40/.test(toasts[0])); assert.equal(cf.view().state, 'warn');
+  c.clock.t = at(22, 40); cf.sync(); assert.equal(cf.view().state, 'due'); assert.equal(cf.view().used, false); assert.equal(root.children.length, 2, 'nothing is drawn into the page: the band draws it');
+  assert.equal(cf.snooze(), true); assert.equal(cf.view().state, 'snoozed');
+  c.clock.t = at(22, 51); assert.equal(cf.view().state, 'due'); assert.equal(cf.view().used, true, 'only one snooze'); assert.equal(cf.snooze(), false);
+  assert.equal(cf.call(), true); assert.deepEqual(calls, [at(22, 51)], 'the places\' call'); assert.equal(c.N.phase(), 'after'); assert.equal(sent.length, 0, 'no b68:aftermath event');
+  assert.equal(cf.view().state, 'idle', 'in the Aftermath the curfew is done'); assert.ok(toasts.includes('Aftermath.'));
   cf.destroy();
 });
-await test('curfew: the next Next-beat press, while the bar is up, moves to the Aftermath instead; before the curfew it is left alone', () => {
+await test('curfew: without the places, Call the Aftermath enters it on the night alone; a refused call changes nothing', () => {
+  const w = loadMods(withWindow({}, (x) => x)); const { root } = page(), c = ctl({ phase: 'score', curfewAt: '22:40', phases: { score: { start: T0 } } });
+  const cf = w.B68GmCurfew.create({ root: () => root, night: () => c.N, now: () => new Date(2026, 10, 7, 22, 45).getTime(), toast() {}, store: { get: () => null, set() {} } });
+  assert.equal(cf.view().state, 'due'); assert.equal(cf.call(), true); assert.equal(c.N.phase(), 'after');
+  const c2 = ctl({ phase: 'score', curfewAt: '22:40', phases: { score: { start: T0 } } });
+  const cf2 = w.B68GmCurfew.create({ root: () => root, night: () => c2.N, now: () => new Date(2026, 10, 7, 22, 45).getTime(), toast() {}, store: { get: () => null, set() {} }, callAftermath: () => false });
+  assert.equal(cf2.call(), false); assert.equal(c2.N.phase(), 'score');
+});
+await test('curfew: the next Next ▸ press, while the curfew is due, moves to the Aftermath instead; before the curfew it is left alone', () => {
   const w = loadMods(withWindow({}, (x) => x)); const { root } = page(), c = ctl({ phase: 'score', curfewAt: '22:40', phases: { score: { start: T0 } } });
   const cf = w.B68GmCurfew.create({ root: () => root, night: () => c.N, now: () => c.clock.t, toast() {}, store: { get: () => null, set() {} } });
   c.clock.t = new Date(2026, 10, 7, 22, 20).getTime(); cf.sync();
@@ -174,7 +158,7 @@ await test('curfew: the next Next-beat press, while the bar is up, moves to the 
   ev = click(root, null, null, { beat: true }); assert.equal(ev.prevented, true); assert.equal(ev.stopped, true); assert.equal(c.N.phase(), 'after');
 });
 
-await test('curfew memory belongs to the night: the next week same curfew warns again and has its snooze back; Keep running lets Next beat through', () => {
+await test('curfew memory belongs to the night: the next week same curfew warns again and has its snooze back; Keep running lets Next ▸ through', () => {
   const w = loadMods(withWindow({}, (x) => x)); let mem = null; const toasts = [];
   const store = { get: () => mem, set: (v) => { mem = v; } };
   const run = (day) => {
@@ -184,14 +168,13 @@ await test('curfew memory belongs to the night: the next week same curfew warns 
     return { root, clock, c, cf, at: (h, m) => new Date(2026, 10, day, h, m).getTime() };
   };
   let n = run(7); n.clock.t = n.at(22, 12); n.cf.sync(); assert.equal(toasts.length, 1);
-  n.clock.t = n.at(22, 41); n.cf.sync(); click(n.root.querySelector('.gm-curfew'), 'data-curfew', 'snooze');
-  n.clock.t = n.at(22, 55); n.cf.sync(); assert.ok(!/Snooze 10/.test(n.root.querySelector('.gm-curfew').innerHTML), 'used tonight');
+  n.clock.t = n.at(22, 41); n.cf.sync(); assert.equal(n.cf.snooze(), true);
+  n.clock.t = n.at(22, 55); n.cf.sync(); assert.equal(n.cf.view().used, true, 'used tonight');
   n.cf.destroy();
   n = run(14); n.clock.t = n.at(22, 12); n.cf.sync(); assert.equal(toasts.length, 2, 'warned again a week later');
-  n.clock.t = n.at(22, 41); n.cf.sync(); assert.ok(/Snooze 10/.test(n.root.querySelector('.gm-curfew').innerHTML), 'a fresh snooze');
-  click(n.root.querySelector('.gm-curfew'), 'data-curfew', 'keep');
-  assert.equal(n.root.querySelector('.gm-curfew'), null);
-  const ev = click(n.root, null, null, { beat: true }); assert.equal(ev.prevented, false, 'Next beat works as normal after Keep running'); assert.equal(n.c.N.phase(), 'score');
+  n.clock.t = n.at(22, 41); n.cf.sync(); assert.equal(n.cf.view().used, false, 'a fresh snooze');
+  assert.equal(n.cf.keep(), true); assert.equal(n.cf.view().state, 'kept', 'Keep running: not due any more');
+  const ev = click(n.root, null, null, { beat: true }); assert.equal(ev.prevented, false, 'Next ▸ works as normal after Keep running'); assert.equal(n.c.N.phase(), 'score');
   n.cf.destroy();
 });
 
@@ -202,32 +185,32 @@ await test('the Workshop\'s first cuts are gone (N0): spine.tick registers no Wo
   w.B68GmSpine.tick({ root: () => root, night: () => c.N, now: () => c.clock.t, toast() {}, on: (id) => flags[id] === true, layer: () => Promise.resolve({}) });
   assert.equal(Tools.workshop, undefined, 'no Workshop list in the registry'); assert.ok(!doc.body.classList.contains('ws-away'));
   assert.equal(F.get('spine.workshop'), null, 'the line is gone from the registry'); assert.equal(F.valueOf({ features: { 'spine.workshop': true } }, 'spine.workshop'), false, 'and a stored value is never read');
-  assert.deepEqual(Object.keys(w.B68GmSpine._state()).sort(), ['band', 'curfew', 'rail', 'timer']);
+  assert.deepEqual(Object.keys(w.B68GmSpine._state()).sort(), ['band', 'curfew', 'timer']);
   w.B68GmSpine.reset();
 });
 
 /* ---- the hook ---- */
-await test('spine.tick (a host that says off, which the page no longer does: its on() is the registry, always on): every line off does nothing at all; a line builds only its own part; off takes it back, the iPad band included', async () => {
+await test('spine.tick (a host that says off, which the page no longer does: its on() is the registry, always on): every line off does nothing at all; a line runs only its own part; off takes it back, the iPad band included; nothing is drawn into the page', async () => {
   const w = loadMods(withWindow({ setInterval: () => 7, clearInterval() {} }, (x) => x)); const { root } = page();
   const c = ctl(), layers = []; const flags = {};
   const host = { root: () => root, night: () => c.N, now: () => c.clock.t, toast() {}, on: (id) => flags[id] === true, layer: (p, v) => { layers.push([p, v]); return Promise.resolve({}); } };
-  w.B68GmSpine.tick(host); assert.deepEqual(w.B68GmSpine._state(), { rail: false, curfew: false, band: undefined, timer: false }); assert.equal(root.children.length, 2); assert.equal(layers.length, 0);
+  w.B68GmSpine.tick(host); assert.deepEqual(w.B68GmSpine._state(), { curfew: false, band: undefined, timer: false }); assert.equal(root.children.length, 2); assert.equal(layers.length, 0);
   flags['spine.rail'] = true; w.B68GmSpine.tick(host);
-  assert.ok(root.querySelector('#gm-phaserail')); assert.deepEqual(layers, [['band.phase', null]], 'no phase yet: the band is cleared, not lit');
+  assert.equal(root.children.length, 2, 'nothing drawn into the page'); assert.deepEqual(layers, [['band.phase', null]], 'no phase yet: the band is cleared, not lit');
   c.N.enter('plan'); w.B68GmSpine.tick(host); assert.deepEqual(layers[layers.length - 1], ['band.phase', 'plan'], 'the band is told the phase, nothing more');
   assert.ok(!JSON.stringify(layers).match(/\d{6,}/), 'no time goes to the iPad');
   const n = layers.length; w.B68GmSpine.tick(host); assert.equal(layers.length, n, 'unchanged: nothing is sent again');
   c.N.enter('score'); w.B68GmSpine.tick(host); assert.deepEqual(layers[layers.length - 1], ['band.phase', 'score']);
   flags['spine.rail'] = false; w.B68GmSpine.tick(host);
-  assert.equal(root.querySelector('#gm-phaserail'), null); assert.deepEqual(layers[layers.length - 1], ['band.phase', null], 'off: the band is cleared');
+  assert.deepEqual(layers[layers.length - 1], ['band.phase', null], 'off: the band is cleared');
   assert.equal(w.B68GmSpine._state().timer, false);
   flags['spine.curfew'] = true; w.B68GmSpine.tick(host);
-  assert.equal(root.querySelector('#gm-phaserail'), null, 'the rail is not built by the other line'); assert.equal(w.B68GmSpine._state().timer, true);
+  assert.equal(w.B68GmSpine._state().timer, true); assert.ok(w.B68GmSpine.curfew() && typeof w.B68GmSpine.curfew().view === 'function', 'the band reads the curfew from here');
   w.B68GmSpine.reset();
   /* the page's own host: on(id) is the registry, so with NOTHING stored both are built */
   const real = { ...host, on: (id) => F.valueOf({}, id) }; const p2 = page();
   real.root = () => p2.root; w.B68GmSpine.tick(real);
-  assert.ok(p2.root.querySelector('#gm-phaserail'), 'the page with nothing stored: the rail is drawn'); assert.equal(w.B68GmSpine._state().curfew, true, 'and the curfew is watching');
+  assert.equal(w.B68GmSpine._state().curfew, true, 'the page with nothing stored: the curfew is watching'); assert.equal(w.B68GmSpine._state().band, 'score', 'and the iPad band is told the night\'s phase');
   w.B68GmSpine.reset();
 });
 await test('a reload never takes the iPad\'s phase down: before the page\'s night controller is there nothing is written; then the band follows night.phase', async () => {
