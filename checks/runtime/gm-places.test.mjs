@@ -42,13 +42,13 @@ await test('the views each place lays out (the brief\'s list), first is the defa
   assert.deepEqual(own('before'), ['tonight', 'room', 'print', 'ipadscenes']);
   assert.deepEqual(own('opening'), ['titles', 'frontpage']);
   assert.deepEqual(own('pb'), ['downtime', 'debrief', 'trouble']);
-  assert.deepEqual(own('plan'), ['cards', 'corkboard', 'run', 'score']);
+  assert.deepEqual(own('plan'), ['cards', 'corkboard', 'run', 'score', 'handouts']);
   assert.deepEqual(own('score'), ['run', 'chase', 'scenes', 'location']);
   assert.deepEqual(own('after'), ['aftermath', 'downtime']);
   assert.deepEqual(own('between'), ['desks']);
   for (const p of P.list().concat([P.between()])) assert.deepEqual(P.viewsOf(p.id).slice(-4), ['prep', 'rules', 'npc', 'ipad'], p.id);
   assert.deepEqual(P.place('pb').views.map((v) => v.label), ['Downtime', 'Debrief replies', 'Trouble desk'], 'a place may name a view its own way');
-  assert.deepEqual(P.place('plan').views.map((v) => v.label), ['Opportunities', 'Intel', 'The site', 'Score generator']);
+  assert.deepEqual(P.place('plan').views.map((v) => v.label), ['Opportunities', 'Intel', 'The site', 'Score generator', 'Handouts']);
   assert.deepEqual(P.PINNED.map((id) => P.view(id).label + ' ' + P.view(id).key), ['Prep R', 'Rules T', 'Cast N', 'iPad I']);
   assert.ok(P.lists('score', 'chase') && !P.lists('plan', 'chase') && P.lists('plan', 'prep'));
 });
@@ -126,7 +126,8 @@ function harness(o = {}) {
   const host = {
     root: () => rootEl, phase: () => night.phase,
     enter: (p) => { calls.push('enter:' + p); night.phase = p; ctl && ctl.sync(); return true; },
-    showPane: (p) => { calls.push('pane:' + p); ctl && ctl.sync(); }, seg: (s) => calls.push('seg:' + s), sheetOpen: (id) => { calls.push('sheet:' + id); return true; }, toast() {}
+    showPane: (p) => { calls.push('pane:' + p); ctl && ctl.sync(); }, seg: (s) => calls.push('seg:' + s), sheetOpen: (id) => { calls.push('sheet:' + id); return true; }, toast() {},
+    endOpening: () => { calls.push('endOpening'); return Promise.resolve(true); }
   };
   const M = require(path.join(ROOT, 'app', 'gm', 'places.js'));   /* the module's factory took the real global; create() reads W through the closure, so give it ours */
   let ctl = null;
@@ -209,6 +210,39 @@ await test('controller: a roll in a place whose column is its own brings the Rol
   h.ctl.rolled(); assert.equal(h.ctl._state().rollHere, true);
   h.ctl.goPlace('opening'); assert.equal(h.ctl._state().rollHere, false, 'leaving takes it back');
   h.ctl.goPlace('plan', { navigateOnly: true }); h.ctl.rolled(); assert.equal(h.ctl._state().rollHere, false, 'the Roll is the column already');
+});
+await test('T10: the way forward: Next and ← Back go along the night (Before to the Aftermath); ahead() says when Next starts a phase', () => {
+  assert.deepEqual(['before', 'opening', 'pb', 'plan', 'score', 'after', 'between'].map(P.nextOf), ['opening', 'pb', 'plan', 'score', 'after', '', '']);
+  assert.deepEqual(['before', 'opening', 'pb', 'plan', 'score', 'after', 'between'].map(P.backOf), ['', 'before', 'opening', 'pb', 'plan', 'score', '']);
+  assert.equal(P.ahead('pb', ''), true, 'no phase yet: Personal starts it'); assert.equal(P.ahead('plan', 'pb'), true); assert.equal(P.ahead('after', 'score'), true);
+  assert.equal(P.ahead('plan', 'plan'), false, 'the phase the night is in'); assert.equal(P.ahead('pb', 'score'), false, 'a phase the night is past');
+  assert.equal(P.ahead('opening', ''), false, 'Opening is no phase'); assert.equal(P.ahead('nowhere', ''), false);
+});
+await test('T10 controller: Next does what the chip does (Opening also ends the hard start and the credits); ← Back only looks; Back then Next never winds the night back', () => {
+  const realNow = Date.now; let clock = 1e12; Date.now = () => (clock += 1000);      /* each Next a second after the last: past the double-tap guard */
+  try {
+  const h = harness(); h.ctl.mount();
+  assert.equal(h.ctl.back(), false, 'Before has nothing before it');
+  h.ctl.next(); assert.equal(h.ctl.currentPlace(), 'opening'); assert.equal(h.night.phase, '', 'Opening is no phase'); assert.ok(!h.calls.includes('endOpening'), 'only the Opening’s Next ends the Opening');
+  h.ctl.next(); assert.equal(h.ctl.currentPlace(), 'pb'); assert.equal(h.night.phase, 'pb', 'Personal business started, as its chip does');
+  assert.equal(h.calls.filter((c) => c === 'endOpening').length, 1, 'the Opening’s Next took the hard start and the credits down');
+  h.ctl.next(); assert.equal(h.night.phase, 'plan'); h.ctl.next(); assert.equal(h.night.phase, 'score'); assert.equal(h.ctl.currentPlace(), 'score');
+  h.ctl.back(); assert.equal(h.ctl.currentPlace(), 'plan'); assert.equal(h.night.phase, 'score', '← Back only looks');
+  h.ctl.back(); assert.equal(h.ctl.currentPlace(), 'pb'); assert.equal(h.night.phase, 'score');
+  h.ctl.next(); assert.equal(h.ctl.currentPlace(), 'plan'); assert.equal(h.night.phase, 'score', 'Next to a phase the night is past: a look, not a rewind');
+  h.ctl.next(); assert.equal(h.ctl.currentPlace(), 'score'); assert.equal(h.calls.filter((c) => c.startsWith('enter:')).length, 3, 'pb, plan, score: each entered once');
+  h.ctl.next(); assert.equal(h.ctl.currentPlace(), 'after'); assert.equal(h.night.phase, 'after', 'the Aftermath started');
+  assert.equal(h.ctl.next(), false, 'nothing after the Aftermath');
+  } finally { Date.now = realNow; }
+});
+await test('T10 controller: a double tap on Next is one Next (900 ms guard): one place, one phase', () => {
+  const realNow = Date.now; let clock = 2e12; Date.now = () => clock;
+  try {
+    const h = harness({ phase: 'plan' }); h.ctl.mount(); h.ctl.goPlace('plan');
+    assert.equal(h.ctl.next(), true); clock += 250; assert.equal(h.ctl.next(), false, 'the second tap 250 ms later does nothing');
+    assert.equal(h.ctl.currentPlace(), 'score'); assert.equal(h.night.phase, 'score', 'the Score started, not the Aftermath');
+    clock += 1000; h.ctl.next(); assert.equal(h.night.phase, 'after', 'a deliberate tap a second later goes on');
+  } finally { Date.now = realNow; }
 });
 await test('tools.js: the pane registry without the phase filter or the Workshop flag; the same object a later module can extend', () => {
   Tools.reset();

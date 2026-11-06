@@ -143,6 +143,36 @@ try {
   check(await p.waitForFunction((n) => [].some.call(document.querySelectorAll('#gm-npc .gm-npcrow b'), (b) => b.textContent === n), a.name, { timeout: 8000 }).then(() => true, () => false), 'the cast list below shows them');
   check(/Hidden/.test(await text(p, '#gm-npc .gm-npcrow[data-id="' + added[0].id + '"]')), 'and marks them hidden from the players');
 
+  // T11: Collapse folds the rolled card to one line (kept on this laptop through a reload); Clear discards the roll, never the cast
+  const cardH = () => p.$eval('#gm-npc .gm-npccard', (e) => Math.round(e.getBoundingClientRect().height)).catch(() => 0);
+  const fullH = await cardH();
+  await p.click('#gm-npc [data-gm="npcfold"]');
+  check(await p.$('#gm-npc .gm-npccard-fold') !== null && (await cardH()) < 80 && fullH > 200 && /Expand/i.test(await text(p, '#gm-npc [data-gm="npcfold"]')), 'T11 Collapse: the card is one line (' + fullH + ' px to ' + (await cardH()) + ' px), with Expand');
+  check(await p.evaluate(() => localStorage.getItem('b68.gm.npcgen.fold')) === '1', 'T11 the fold is kept in localStorage');
+  await p.reload();
+  await p.waitForSelector('#gm-buttons .gm-btn', { state: 'attached', timeout: 30000 });
+  await p.keyboard.press('n');
+  await p.waitForSelector('#gm-npc .gm-npccard', { timeout: 15000 });
+  check(await p.$('#gm-npc .gm-npccard-fold') !== null, 'T11 a reload keeps it folded');
+  await p.click('#gm-npc [data-gm="npcfold"]');
+  check(await p.$('#gm-npc .gm-npccard-fold') === null && (await cardH()) > 200, 'T11 Expand: the whole card is back');
+  await p.click('#gm-npc [data-gm="npcfold"]');
+  const castCount = (await api('GET', '/npcs')).json.docs.length;
+  await p.click('#gm-npc [data-gm="npcclear"]');
+  check(await p.waitForFunction(() => !document.querySelector('#gm-npc .gm-npccard'), null, { timeout: 5000 }).then(() => true, () => false), 'T11 Clear: the rolled card is gone');
+  check(await p.$('#gm-npc .gm-earlier [data-gm="replay"]') !== null, 'T11 Clear keeps the Earlier chips (a roll cleared by mistake comes back)');
+  await sleep(1200);
+  const stc = (await api('GET', '/gm/state')).json.doc;
+  check(!(stc.cards && stc.cards.npc && stc.cards.npc.seed), 'T11 server: the current card is empty');
+  check((await api('GET', '/npcs')).json.docs.length === castCount && !!(stc.npcgen && stc.npcgen[gid]), 'T11 the cast and the filed roll\'s seed are untouched');
+  await p.reload();
+  await p.waitForSelector('#gm-buttons .gm-btn', { state: 'attached', timeout: 30000 });
+  await p.keyboard.press('n'); await sleep(800);
+  check(!(await p.$('#gm-npc .gm-npccard')), 'T11 a reload does not bring the cleared roll back');
+  await p.click('[data-gm="npcroll"]');
+  await p.waitForSelector('#gm-npc .gm-npccard', { timeout: 15000 });
+  check(await p.$('#gm-npc .gm-npccard-fold') === null, 'T11 a fresh roll opens whole, to be read');
+
   // the choices: faction, district and place
   const sub = () => text(p, '#gm-npc .gm-npccard .gm-sub');
   check((await p.$$eval('#gm-npc select[data-npcui]', (s) => s.map((x) => x.getAttribute('data-npcui')))).join() === 'faction,district,place', 'the panel has Faction, District and Place pickers');

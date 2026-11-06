@@ -2273,7 +2273,7 @@
       /* Opportunities: the players' board (bound here by the places) over the GM's own cards (renderCards) */
       '<div class="gm-pane" data-pane="cards" id="gm-cards"><section class="gm-opps-part"><h3 class="gm-opps-h">From the players</h3><div class="gm-opps-players" id="gm-opps-players"></div></section>' +
       '<section class="gm-opps-part"><h3 class="gm-opps-h">From the GM</h3><div class="gm-opps-gm" id="gm-opps-gm"></div></section></div>' +
-      '<div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div>' + '<div class="gm-pane gm-runv" data-pane="run" id="gm-runv"></div>' + '<div class="gm-pane gm-vpane" data-pane="view" id="gm-vpane"></div></section>' +
+      '<div class="gm-pane" data-pane="rules" id="gm-rules"></div><div class="gm-pane" data-pane="ipad" id="gm-ipad"></div><div class="gm-pane" data-pane="handouts" id="gm-hand"></div>' + '<div class="gm-pane gm-runv" data-pane="run" id="gm-runv"></div>' + '<div class="gm-pane gm-vpane" data-pane="view" id="gm-vpane"></div></section>' +
       '</div>' + drawerHtml() +
       '<div class="gm-foot" id="gm-foot"></div>' +
       '<button type="button" class="gm-fab" data-gm="capopen" aria-expanded="false" aria-controls="gm-foot">Capture</button>' +
@@ -2797,6 +2797,7 @@
     if (p === 'ipad') { loadAmbient(); loadStt(); }
     if (p === 'run') renderRun();
     if (p === 'chase') renderChase();      /* the start form offers the Location roll or Street scene made since it was drawn */
+    if (p === 'handouts') { loadShown(); renderHandPane(); }      /* T12: Planning's Handouts */
     spy(p);
   }
   /* a pane, from anywhere in the page (Find, a link, a generator's cross-link, the iPad pill): shown as a view of the place the GM is in, an extra
@@ -2824,6 +2825,7 @@
       nightTimes: function () { var n = S === me && me.night ? me.night.night() : null; return n ? { startAt: n.startAt, curfewAt: n.curfewAt } : {}; },
       setTime: function (k, v) { if (S === me && me.night) me.night.setTime(k, v); },
       usePrep: function (k) { if (S === me && me.night) me.night.usePrep(k); },
+      endOpening: function () { return S === me ? endOpening() : Promise.resolve(false); },      /* T10: the Opening's Next */
       prepNotes: function () { var pk = part('prep'), B = W.B68GmPrep; return pk && B ? B.notes(pk) : []; },
       setPrepNote: function (id) { if (S !== me) return; try { W.localStorage.setItem(PREP_NOTE, id); } catch (e) {} renderPrep(true); renderBar(); },
       prepSecs: function () {
@@ -4240,6 +4242,28 @@
       return true;
     });
   }
+  /* T10: the Opening's Next (gm/places.js): the hard start comes off the way its End without credits does (hs.end: every layer it laid), and the
+     Opening credits pin goes back to Auto, the iPad view's own mode switch. Nothing else on the iPad is touched; nothing up, nothing written */
+  function endOpening() {
+    var me = S; if (!me) return Promise.resolve(false);
+    var g = gmApi();
+    var fresh = g && typeof g.ambient === 'function' ? Promise.resolve().then(function () { return g.ambient(); }).then(function (r) { if (S === me) adoptAmbient(r); }, function () { /* the cached document will do */ }) : Promise.resolve();
+    return fresh.then(function () {
+      if (S !== me) return false;
+      var sc = isObj(ipadLayers().scene) ? ipadLayers().scene : {}, steps = [];
+      if (sc.mode === 'start') {
+        var hs = hsInst(), sh = shows();
+        if (hs && typeof hs.end === 'function') steps.push(function () { return hs.end(); });
+        else if (sh) ['band.faces', 'data.previously', 'data.credits', 'data.countdown', 'scene.mode'].forEach(function (p) { if (ipadLayerSet(p)) steps.push(function () { return sh.layer(p, null); }); });
+      }
+      if (isObj(AM.doc) && AM.doc.mode === 'pin' && AM.doc.scene === 'credits') steps.push(function () { return patchAmbient({ mode: 'auto' }); });
+      if (!steps.length) return false;
+      return steps.reduce(function (p, step) { return p.then(function () { return Promise.resolve().then(step).then(null, function () { return null; }); }); }, Promise.resolve()).then(function () {
+        if (S === me && W.B68GmIpadTray) W.B68GmIpadTray.refresh();
+        return true;
+      });
+    });
+  }
   /* the page's iPad, for the tray: what it knows, and its one way off and its blank */
   function ipadSnapshot() {
     return {
@@ -5207,6 +5231,7 @@
     return T.liveItems(ipadSnapshot()).filter(function (x) { return x.key !== 'stage' && x.key !== 'overlay'; }).map(function (x) { return x.text; });
   }
   function renderIpad() {
+    renderHandPane();      /* T12: Planning's Handouts says what is on the iPad too */
     var box = $q('#gm-ipad'); if (!box) return;
     var v = ipadView(AM.doc, function (id) { var c = tableClocks().filter(function (x) { return str(x.id) === id; })[0]; return c ? { name: c.name, size: c.size, filled: c.filled } : null; }), busy = AM.busy > 0, off = !AM.loaded;
     function seg(k, label) { return '<button type="button" class="chip" data-gm="ambmode" data-v="' + k + '" aria-pressed="' + (v.mode === k) + '"' + (off || busy ? ' disabled' : '') + '>' + label + '</button>'; }
@@ -5262,14 +5287,22 @@
   function handoutById(id) { return handouts().filter(function (x) { return x.id === id; })[0] || null; }
   function handoutsHtml() {
     var list = handouts(), me = S, tt = !!(me && me.hoTitle);
-    /* a part of the Scenes section (the iPad view): the props the GM shows by hand */
+    /* a part of the Scenes section (the iPad view), and the whole of Planning's Handouts view (T12): the props the GM shows by hand */
     var h = '<div class="gm-ipad-sub gm-ipad-handouts"><h4 class="gm-ipad-h">Handouts' + (list.length ? ' <span class="gm-dim">' + list.length + '</span>' : '') + '</h4>';
     if (!list.length) return h + '<p class="gm-dim">' + (part('handouts') ? 'The handouts part has nothing to show.' : 'No handouts in the pack. Put the prop images in the vault, run npm run gm:handouts and npm run gm:pack, then Update pack.') + '</p></div>';
-    h += '<div class="gm-ipad-acts"><label class="gm-check"><input type="checkbox" data-hotitle="1"' + (tt ? ' checked' : '') + '> Title on the iPad</label>' +
-      '<button type="button" class="btn sm" data-gm="blankipad" title="The handout comes off the iPad: the ambient scene plays">Take it down</button></div><ul class="gm-handouts">';
+    /* T12: a deck in list order (a briefing's slides sit together): Previous and Next step from the one on the iPad, else from the one this page last
+       sent (a Take it down mid-briefing goes on from there, never back to the first); only with neither does Next show the first. Each names its target */
+    var cur = hoCurrent(), base = cur || hoLast(), bi = hoIndex(list, base), prev = bi > 0 ? list[bi - 1] : null, nxt = bi < 0 ? list[0] : list[bi + 1] || null;
+    var pos = function (i) { return ' <span class="gm-dim">(' + (i + 1) + ' of ' + list.length + ')</span>'; };
+    h += '<p class="gm-ho-now">' + (cur ? 'On the iPad: <b>' + esc(cur.title) + '</b>' + pos(bi) : '<span class="gm-dim">No handout on the iPad.</span>' + (bi >= 0 ? ' Last shown: <b>' + esc(base.title) + '</b>' + pos(bi) : '')) + '</p>' +
+      '<div class="gm-ipad-acts gm-ho-deck"><button type="button" class="btn sm gm-ho-step" data-gm="ho-step" data-d="-1"' + (prev ? ' title="' + esc('Show ' + prev.title) + '">◀ <span class="gm-ho-step-t">' + esc(prev.title) + '</span>' : ' disabled>◀ Previous') + '</button>' +
+      '<button type="button" class="btn sm primary gm-ho-step" data-gm="ho-step" data-d="1"' + (nxt ? ' title="' + esc('Show ' + nxt.title) + '">Next: <span class="gm-ho-step-t">' + esc(nxt.title) + '</span> ▶' : ' disabled>Next ▶') + '</button>' +
+      '<button type="button" class="btn sm" data-gm="blankipad" title="The handout comes off the iPad: the ambient scene plays">Take it down</button>' +
+      '<label class="gm-check"><input type="checkbox" data-hotitle="1"' + (tt ? ' checked' : '') + '> Title on the iPad</label></div><ul class="gm-handouts">';
     list.forEach(function (x) {
-      h += '<li class="gm-handout" data-ho="' + esc(x.id) + '"><img class="gm-handout-thumb" src="' + esc(P.HANDOUT_DIR + x.file) + '" alt="" loading="lazy" decoding="async" width="72" height="72">' +
-        '<div class="gm-handout-t"><b>' + esc(x.title) + '</b>' + (x.when ? '<span class="gm-dim">' + esc(x.when) + '</span>' : '') +
+      var on = !!cur && x.id === cur.id;
+      h += '<li class="gm-handout' + (on ? ' gm-handout-on' : '') + '" data-ho="' + esc(x.id) + '"' + (on ? ' aria-current="true"' : '') + '><img class="gm-handout-thumb" src="' + esc(P.HANDOUT_DIR + x.file) + '" alt="" loading="lazy" decoding="async" width="72" height="72">' +
+        '<div class="gm-handout-t"><b>' + esc(x.title) + '</b>' + (on ? '<span class="gm-ho-tag">On the iPad</span>' : '') + (x.when ? '<span class="gm-dim">' + esc(x.when) + '</span>' : '') +
         '<div class="gm-ipad-acts"><button type="button" class="btn sm primary" data-gm="ho-show" data-id="' + esc(x.id) + '">Show on iPad</button>' +
         '<button type="button" class="btn sm" data-gm="blankipad">Take it down</button></div></div></li>';
     });
@@ -5277,7 +5310,30 @@
   }
   function showHandout(id) {
     var x = handoutById(id); if (!x) { toast('That handout is not in the pack any more.', true); return Promise.resolve(false); }
-    return pushDisplay(P.handoutDisplay(x, !!(S && S.hoTitle))).then(function () { hoDone(x.id); toast('On the iPad: ' + x.title + '.'); return true; }, function (e) { toast('Could not send the handout: ' + errText(e), true); return false; });
+    var me = S;
+    return pushDisplay(P.handoutDisplay(x, !!(S && S.hoTitle))).then(function () { if (S === me) { S.hoCur = x.id; try { W.localStorage.setItem(HO_LAST, x.id); } catch (e) { /* this page remembers it anyway */ } renderHandPane(); } hoDone(x.id); toast('On the iPad: ' + x.title + '.'); return true; }, function (e) { toast('Could not send the handout: ' + errText(e), true); return false; });
+  }
+  /* T12: the handout on the iPad now: the iPad shows a handout and its title is the one this page last sent (else the first with that title) */
+  function hoCurrent() {
+    var sh = AM.shown; if (!isObj(sh) || sh.kind !== 'handout') return null;
+    var list = handouts(), t = str(sh.title), same = function (x) { return str(x.title).slice(0, 2000) === t; };
+    return list.filter(function (x) { return x.id === (S && S.hoCur) && same(x); })[0] || list.filter(same)[0] || null;
+  }
+  /* the handout this page last sent (kept on this laptop, so a reload mid-briefing goes on from it), whether or not it is still up */
+  var HO_LAST = 'b68.gm.holast';
+  function hoLast() { var id = S && S.hoCur; if (!id) { try { id = W.localStorage.getItem(HO_LAST); } catch (e) { id = null; } } return id ? handoutById(id) : null; }
+  function hoIndex(list, cur) { if (!cur) return -1; for (var i = 0; i < list.length; i++) if (list[i].id === cur.id) return i; return -1; }      /* handouts() makes new rows on each call: by id */
+  function hoStep(d) {
+    var list = handouts(), i = hoIndex(list, hoCurrent() || hoLast()), j = i < 0 ? (d > 0 ? 0 : -1) : i + (d > 0 ? 1 : -1);
+    if (j < 0 || j >= list.length) return Promise.resolve(false);
+    return showHandout(list[j].id);
+  }
+  /* T12: Planning's Handouts view (gm/places.js, pane 'handouts'): the same list, drawn by the same handoutsHtml, redrawn with the iPad view */
+  function renderHandPane() {
+    var box = $q('#gm-hand'); if (!box || box.hidden) return;
+    var h = '<div class="gm-hand">' + handoutsHtml() + '</div>';
+    if (box.__sig === h) return;      /* the iPad view redraws often: the thumbnails are drawn again only when something changed */
+    var keep = box.scrollTop; box.__sig = h; box.innerHTML = h; box.scrollTop = keep;
   }
   /* handouts shown or dismissed tonight (kept 12 h in localStorage so a reload does not offer them again): the box's suggestions skip these */
   var HO_KEY = 'b68.gm.hodone', HO_TTL = 12 * 3600 * 1000;
@@ -6243,6 +6299,7 @@
     var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.npc) ? S.doc.hist.npc : {};
     patch({ cards: { npc: Object.assign({ hid: hid }, entry) }, mem: { npc: clone(S.npcMem) }, hist: { npc: addCapped(hist, hid, entry, LIMITS.hist) } }, { force: true });
     S.npcRoll = npcWithFigure(g, roll); S.last = { text: 'NPC: ' + entry.label };
+    try { W.localStorage.removeItem(NPC_FOLD); } catch (e) { /* private mode */ }      /* T11: a fresh roll opens, to be read */
     renderNpcGen(true);
   }
   /* in the cast already: a generated doc with this name (so the button does not file the same roll twice) */
@@ -6268,9 +6325,14 @@
     var r = S.npcRoll, h = '<div class="gm-loc-ctl">' + g.controls.map(function (x) { return selectHtml('gm-n-' + x.id, 'data-npcui', x.id, x.label, x.options, ui[x.id], x.id === 'district' ? distOptionsHtml('npc') : null); }).join('') +
       (hasLoc ? '<button type="button" class="btn" data-gm="npcloc" title="Sets the faction, district and place from the location card">Use the location</button>' : '') +
       '<button type="button" class="btn primary gm-roll" data-gm="npcroll">Roll an NPC</button></div>';
-    if (r) {
+    /* T11: the rolled card folds to one line (kept on this laptop) and Clear discards it (the cast is never touched; Earlier brings it back) */
+    var folded = r && npcFolded(), npcBar = r ? '<span class="gm-npc-bar"><button type="button" class="btn sm" data-gm="npcfold" aria-expanded="' + !folded + '" title="' + (folded ? 'Show the whole card' : 'Fold the card to one line') + '">' + (folded ? 'Expand ▾' : 'Collapse ▴') + '</button>' +
+      '<button type="button" class="btn sm" data-gm="npcclear" title="Discard this roll (anyone already added to the cast stays there; Earlier brings the roll back)">Clear</button></span>' : '';
+    if (r && folded) {
+      h += '<article class="gm-card gm-npccard gm-npccard-fold" data-tool="npc"><header class="gm-card-h"><div class="gm-npc-one"><h3>' + esc(r.roll.card.meta.title) + '</h3><p class="gm-sub">' + esc(r.roll.card.meta.sub) + '</p></div>' + npcBar + '</header></article>';
+    } else if (r) {
       var c = r.roll.card, m = c.meta, inCast = npcInCast(r.roll.npc.name);
-      h += '<article class="gm-card gm-npccard" data-tool="npc"><header class="gm-card-h">' + (r.svg ? '<div class="gm-thumb gm-npcfig" aria-hidden="true">' + r.svg + '</div>' : '') + '<div><h3>' + esc(m.title) + '</h3><p class="gm-sub">' + esc(m.sub) + '</p></div></header>' +
+      h += '<article class="gm-card gm-npccard" data-tool="npc"><header class="gm-card-h">' + (r.svg ? '<div class="gm-thumb gm-npcfig" aria-hidden="true">' + r.svg + '</div>' : '') + '<div class="gm-npc-one"><h3>' + esc(m.title) + '</h3><p class="gm-sub">' + esc(m.sub) + '</p></div>' + npcBar + '</header>' +
         (m.figureNote ? '<p class="gm-note">' + esc(m.figureNote) + '</p>' : '') + (r.note ? '<p class="gm-note gm-fignote">' + esc(r.note) + '</p>' : '') +
         npcGenLinesHtml(c.lines) +
         '<div class="gm-card-acts"><button type="button" class="btn sm primary" data-gm="npcfile"' + (inCast ? ' disabled' : '') + ' title="Adds them to the cast, hidden from the players">' + (inCast ? 'In the cast' : 'Add to the cast') + '</button>' +
@@ -6280,6 +6342,17 @@
       'Pick a faction, district or place to fit the scene, or leave them on any. They stay in this tab until you add them to the cast.</p>';
     box.innerHTML = h + earlierHtml('npc', cur);
     scMaybeRedraw();
+  }
+  /* T11: the fold is this laptop's (localStorage), never a stored document; Clear empties the current card (cards.npc, as a site's Clear empties its
+     key) and keeps the Earlier chips, so a roll cleared by mistake comes back in one tap */
+  var NPC_FOLD = 'b68.gm.npcgen.fold';
+  function npcFolded() { try { return W.localStorage.getItem(NPC_FOLD) === '1'; } catch (e) { return false; } }
+  function npcFold() { var on = !npcFolded(); try { if (on) W.localStorage.setItem(NPC_FOLD, '1'); else W.localStorage.removeItem(NPC_FOLD); } catch (e) { /* private mode: it folds for this page only */ } renderNpcGen(); var b = $q('#gm-npcgen [data-gm="npcfold"]'); if (b) b.focus(); }
+  function npcClear() {
+    if (!S.npcRoll && !(isObj(S.doc.cards) && isObj(S.doc.cards.npc))) return;
+    if (!patch({ cards: { npc: null } }, { force: true })) return;      /* refused (the notes are full): patch has said so, and the card stays */
+    S.npcRoll = null; renderNpcGen();
+    toast('Cleared the rolled NPC. Earlier brings it back.');
   }
   /* the roll into the cast: a hidden doc, plus the roll's seed in the GM state so the vault note can be rebuilt from it (SYNC.md) */
   function fileNpc() {
@@ -6348,8 +6421,76 @@
         '<button type="button" class="btn sm pp-widebtn" data-gm="prep-wide" aria-pressed="' + !!S.prepWide + '" title="Hide the console while you read">Wide</button></div>' +
         (age != null && age > 1 ? '<p class="gm-note pp-stale">Exported ' + Math.floor(age) + ' day' + (age >= 2 ? 's' : '') + ' ago. Edits made in Obsidian since then are not here: run <code>npm run gm:pack</code> and push the pack.</p>' : '') +
         '<div class="pp-peek" id="gm-prep-peek" hidden></div><article class="pp-doc">' + v.html + '</article>';
+      try { prepSubsBuild(box); } catch (e) { if (W.console) W.console.error('prep: the index headings', e); }      /* T13: never at the cost of the note */
     }
     decoratePrep(box);
+  }
+  /* T13: the index's second and third levels. Under each ## chip of the rail, the ### headings of its section (the section's own h4s), and
+     under each of those its #### (h5s; a #### before any ### sits with the ###s); deeper ones are left out. Each is a jump. A ▸ beside the chip
+     folds a section's list: only the section in view is open, unless the GM opened or shut one (S.prepSubOpen, this page only); a ###'s ####
+     open only while that ### is the one being read. The entry being read is kept in sight in the index. The ## chips are the rail as before:
+     Find, the filter and the spy read them unchanged */
+  function prepSubBtn(h, lv) { return '<button type="button" class="pp-subgo' + (lv > 3 ? ' pp-subgo3' : '') + '" data-gm="prep-sub" data-id="' + esc(h.id) + '">' + esc(h.textContent.replace(/\s+/g, ' ').trim()) + '</button>'; }
+  function prepSubsBuild(box) {
+    var rail = box.querySelector('.pp-rail'); if (!rail || typeof rail.insertBefore !== 'function' || typeof document.createElement !== 'function') return;      /* a page with no DOM to build in: the ## rail alone */
+    S.prepSubLast = '';
+    [].slice.call(rail.querySelectorAll('[data-gm="prep-go"]')).forEach(function (c) {
+      var id = c.getAttribute('data-id'), sec = prepSectionEl(id); if (!sec) return;
+      var out = [], last = null;
+      [].forEach.call(sec.children, function (e) {
+        if (!e.id) return;
+        if (e.tagName === 'H4') { last = { h: e, kids: [] }; out.push(last); }
+        else if (e.tagName === 'H5') { if (last) last.kids.push(e); else out.push({ h: e, kids: [], lv: 4 }); }
+      });
+      if (!out.length) return;
+      var head = c.textContent, t = document.createElement('button'), g = document.createElement('div');
+      t.setAttribute('type', 'button'); t.className = 'pp-subt'; t.setAttribute('data-gm', 'prep-subt'); t.setAttribute('data-subt', id); t.setAttribute('aria-expanded', 'false');
+      t.setAttribute('aria-label', 'The headings in ' + head); t.setAttribute('title', 'Show or hide the headings in ' + head); t.textContent = '▸';
+      g.className = 'pp-subs'; g.setAttribute('data-subs', id); g.setAttribute('role', 'group'); g.setAttribute('aria-label', 'In ' + head); g.hidden = true;
+      g.innerHTML = out.map(function (x) {
+        return prepSubBtn(x.h, x.lv || 3) + (x.kids.length ? '<div class="pp-subs3" data-subs3="' + esc(x.h.id) + '" role="group" hidden>' + x.kids.map(function (k) { return prepSubBtn(k, 4); }).join('') + '</div>' : '');
+      }).join('');
+      c.classList.add('pp-has-subs');
+      rail.insertBefore(t, c.nextSibling); rail.insertBefore(g, t.nextSibling);
+    });
+    prepSubSync(box);
+  }
+  function prepSubOpen(id, cur) { var m = S.prepSubOpen || {}; return Object.prototype.hasOwnProperty.call(m, id) ? !!m[id] : id === cur; }
+  /* the last of these buttons whose heading has reached the top of the pane (within 24 px: the headings land at 8, and a short scene must not hand the mark to the next heading) */
+  function prepSubAt(btns, top) { var on = null; btns.forEach(function (b) { var h = prepSectionEl(b.getAttribute('data-id')); if (h && h.getBoundingClientRect().top - top <= 24) on = b; }); return on; }
+  function prepSubSync(pane) {
+    var rail = pane && pane.querySelector('.pp-rail'); if (!rail) return;
+    var cc = rail.querySelector('[data-gm="prep-go"][aria-current="true"]'), cur = cc ? cc.getAttribute('data-id') : '', top = pane.getBoundingClientRect().top, deep = cc;
+    [].forEach.call(rail.querySelectorAll('.pp-subs'), function (g) {
+      var id = g.getAttribute('data-subs'), c = rail.querySelector('[data-gm="prep-go"][data-id="' + id.replace(/"/g, '') + '"]'), t = rail.querySelector('[data-subt="' + id.replace(/"/g, '') + '"]');
+      var gone = !!(c && c.hidden), open = !gone && prepSubOpen(id, cur), reading = open && id === cur;
+      g.hidden = !open; if (t) { t.hidden = gone; t.setAttribute('aria-expanded', String(open)); t.textContent = open ? '▾' : '▸'; }
+      var mine = [].filter.call(g.children, function (b) { return b.getAttribute('data-gm') === 'prep-sub'; }), on = reading ? prepSubAt(mine, top) : null, on3 = null;
+      [].forEach.call(g.querySelectorAll('.pp-subs3'), function (g3) {
+        var open3 = !!on && g3.getAttribute('data-subs3') === on.getAttribute('data-id');
+        g3.hidden = !open3;
+        if (open3) on3 = prepSubAt([].slice.call(g3.querySelectorAll('[data-gm="prep-sub"]')), top);
+      });
+      [].forEach.call(g.querySelectorAll('[data-gm="prep-sub"]'), function (b) { if (b === on || b === on3) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current'); });
+      if (reading) deep = on3 || on || deep;
+    });
+    /* the entry being read stays in sight in the index (a long section open overflows it at 768 px): moved only when that entry changes */
+    var bar = pane.querySelector('.pp-bar'), key = deep ? deep.getAttribute('data-id') : '';
+    if (!deep || !bar || key === S.prepSubLast || !(bar.scrollHeight > bar.clientHeight)) { if (deep) S.prepSubLast = key; return; }
+    S.prepSubLast = key;
+    var br = bar.getBoundingClientRect(), er = deep.getBoundingClientRect();
+    if (er.bottom > br.bottom - 8) bar.scrollTop += er.bottom - br.bottom + 40;
+    else if (er.top < br.top + 8) bar.scrollTop -= br.top - er.top + 40;
+  }
+  function prepSubToggle(id) {
+    var pane = $q('#gm-prep'), cc = pane && pane.querySelector('.pp-rail [data-gm="prep-go"][aria-current="true"]'), cur = cc ? cc.getAttribute('data-id') : '';
+    S.prepSubOpen = S.prepSubOpen || {}; S.prepSubOpen[id] = !prepSubOpen(id, cur);
+    prepSubSync(pane);
+  }
+  function prepSubGo(id) {
+    var el = prepSectionEl(id); if (!el) return;
+    if (S.panel !== 'prep') setPanel('prep');
+    prepScroll(el); flash(el);
   }
   function decoratePrep(el) {
     if (!el || !W.B68GmPrep) return;
@@ -6368,6 +6509,7 @@
       var hit = words.every(function (w) { return t.indexOf(w) >= 0; });
       c.hidden = !hit; if (hit) { c.removeAttribute('hidden'); if (!first) first = c; } else c.setAttribute('hidden', '');
     });
+    try { prepSubSync($q('#gm-prep')); } catch (e) { /* T13: the headings stay as they were */ }      /* T13: a section filtered out takes its headings with it */
     return first;
   }
   function prepFindGo() {
@@ -7295,6 +7437,7 @@
       case 'rackclear': rackClear(); break;
       case 'voiceclear': S.voice = null; renderRack(); break;
       case 'ho-show': showHandout(b.getAttribute('data-id')); break;
+      case 'ho-step': hoStep(+b.getAttribute('data-d')); break;      /* T12: the deck's Previous / Next */
       case 'another': voiceAnother(); break;
       case 'intent': doIntent(+b.getAttribute('data-i')); break;
       case 'replay': {
@@ -7319,6 +7462,8 @@
       case 'opp-move': oppMove(b.getAttribute('data-id'), +b.getAttribute('data-d')); break;
       case 'opp-del': oppDel(b.getAttribute('data-id')); break;
       case 'prep-go': prepGo(b.getAttribute('data-id')); break;
+      case 'prep-sub': prepSubGo(b.getAttribute('data-id')); break;      /* T13: a ### heading in the index */
+      case 'prep-subt': prepSubToggle(b.getAttribute('data-subt')); break;
       case 'prep-pin': prepPin(b.getAttribute('data-sec')); break;
       case 'prep-beat': prepBeat(b); break;
       case 'prep-wide': toggleFocus(); break;
@@ -7338,6 +7483,8 @@
       case 'npcroll': rollNpc(); break;
       case 'npcloc': npcFromLocation(); break;
       case 'npcfile': fileNpc(); break;
+      case 'npcfold': npcFold(); break;      /* T11 */
+      case 'npcclear': npcClear(); break;
       case 'scnipad': scenesToIpad(); break;
       case 'scoreroll': rollScore(); break;
       case 'scorebump': scBump(str(b.getAttribute('data-row'))); break;
@@ -7467,6 +7614,7 @@
     });
     if (!cur && pane.scrollTop < 40) cur = null;
     chips.forEach(function (c) { if (c === cur) c.setAttribute('aria-current', 'true'); else c.removeAttribute('aria-current'); });
+    if (panel === 'prep') { try { prepSubSync(pane); } catch (e) { /* T13: the index headings follow on the next scroll */ } }      /* T13: the section in view opens its headings */
   }
   function onSubmit(ev) {
     var f = ev.target; if (!S || !f || !f.getAttribute) return;

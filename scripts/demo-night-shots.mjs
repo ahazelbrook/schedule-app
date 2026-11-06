@@ -153,7 +153,7 @@ const toPlace = (id, view) => async (page) => {
   await page.evaluate(([p, v]) => { const P = window.B68GmPage; P.goPlace(p); if (v) P.openView(v); }, [id, view || '']);
   await page.waitForTimeout(900);
 };
-const PLACE_VIEWS = { before: ['tonight', 'room', 'print', 'ipadscenes'], opening: ['titles', 'frontpage'], pb: ['downtime', 'debrief', 'trouble'], plan: ['cards', 'corkboard', 'run', 'score'],
+const PLACE_VIEWS = { before: ['tonight', 'room', 'print', 'ipadscenes'], opening: ['titles', 'frontpage'], pb: ['downtime', 'debrief', 'trouble'], plan: ['cards', 'corkboard', 'run', 'score', 'handouts'],
   score: ['run', 'chase', 'scenes', 'location'], after: ['aftermath', 'downtime'], between: ['desks'] };
 const PLACE_SCENARIOS = [];
 for (const [place, vs] of Object.entries(PLACE_VIEWS)) {

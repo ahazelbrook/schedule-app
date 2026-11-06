@@ -3619,7 +3619,7 @@ await test('18a. J opens the Score panel (a side tab after Street with its key, 
   assert.deepEqual([P.keyAction({ key: 'j', typing: true }), P.keyAction({ key: 'j', ctrlKey: true }), P.keyAction({ key: 'j', metaKey: true }), P.keyAction({ key: 'e' })], [null, null, null, null]);
   const h = await scPage();
   h.page.goPlace('plan');
-  assert.deepEqual(viewIds(h), ['cards', 'corkboard', 'run', 'score', 'prep', 'rules', 'npc', 'ipad'], 'the Score generator is a view of Planning');
+  assert.deepEqual(viewIds(h), ['cards', 'corkboard', 'run', 'score', 'handouts', 'prep', 'rules', 'npc', 'ipad'], 'the Score generator is a view of Planning');
   assert.match(h.q('.gm-views [data-pv="score"]').textContent, /^Score generator J$/);
   assert.equal(h.q('.gm-vchips [data-pv="score"]').textContent, 'Score gen', 'its chip is short');
   h.press('j'); assert.equal(h.page._state().panel, 'score');

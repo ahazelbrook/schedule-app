@@ -115,7 +115,7 @@ try {
     check(!/id="gm-menu-settings"/.test(base1280.menu), 'the Menu has no Settings line: they live in the iPad view (the GM night rebuild, N5)');
     check(!/Switchboard|gm-menu-switchboard/.test(base1280.menu) && !/Workshop|gm-menu-workshop/.test(base1280.menu), 'and no Switchboard or Workshop line (both are gone)');
     check(!/id="gm-menu-preflight"/.test(base1280.menu), 'N2: no tool has a Menu line (Preflight is reached through B68GmTools)');
-    check(base1280.panes === 'prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,run,view', 'the panes are the page\'s own, in its order, and the places\' view pane: ' + base1280.panes);
+    check(base1280.panes === 'prep,location,scenes,score,chase,npc,downtime,cards,rules,ipad,handouts,run,view', 'the panes are the page\'s own, in its order, and the places\' view pane: ' + base1280.panes);
 
     /* ---- 2. a registered tool comes to the GM (Find, an extra view); the band's places move the night and the page follows; nothing hides ---- */
     const INIT = () => {
@@ -136,7 +136,7 @@ try {
     check(!(await g.$('#gm-phaserail, [data-rail="all"]')), 'there is no rail and no All tools');
     const tap = async (id) => { await g.click('#gm-band [data-band-place="' + id + '"]'); await sleep(400); };      /* the band's chips, clicked for real (N1a) */
     await tap('plan');
-    check(await placeOf(g) === 'plan' && (await views(g)).join() === 'cards,corkboard,run,score,prep,rules,npc,ipad', 'the band\'s Planning moves the night, and the page follows it: Planning\'s views (the extra view stayed in the Score) ' + (await views(g)).join(','));
+    check(await placeOf(g) === 'plan' && (await views(g)).join() === 'cards,corkboard,run,score,handouts,prep,rules,npc,ipad', 'the band\'s Planning moves the night, and the page follows it: Planning\'s views (the extra view stayed in the Score) ' + (await views(g)).join(','));
     await g.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     await g.keyboard.press('c');
     check(await g.$eval('#gm-chase', (e) => !e.hidden) && (await views(g)).includes('chase') && await placeOf(g) === 'plan', 'C in Planning: the Chase comes here as an extra view (nothing is hidden by the phase)');
