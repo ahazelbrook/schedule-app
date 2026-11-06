@@ -141,7 +141,8 @@
       if (id === 'unwind') {
         var sel = el('select'); sel.disabled = ro;
         (Array.isArray(cur.options) ? cur.options : []).forEach(function (o) { var op = el('option', '', str(o.label)); op.value = str(o.id); sel.appendChild(op); });
-        var want = ro ? str(dflt.unwind) : rep.unwind ? str(rep.unwind.pick) : ''; if (want) sel.value = want;
+        /* untouched, the pick is the GM's default (what applies if the player does nothing), not whichever option is listed first */
+        var want = rep.unwind && !ro ? str(rep.unwind.pick) : str(dflt.unwind); if (want) sel.value = want; if (sel.selectedIndex < 0) sel.selectedIndex = 0;
         var note = el('input'); note.type = 'text'; note.maxLength = NOTE_MAX; note.placeholder = 'What are you doing? (optional)'; note.disabled = ro; note.value = rep.unwind ? str(rep.unwind.note) : '';
         box.appendChild(el('label', '', 'Downtime pick ')); box.lastChild.appendChild(sel); box.appendChild(note); fields.unwind = { sel: sel, note: note };
       } else if (id === 'xp') {
