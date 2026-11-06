@@ -2824,6 +2824,7 @@
       nightTimes: function () { var n = S === me && me.night ? me.night.night() : null; return n ? { startAt: n.startAt, curfewAt: n.curfewAt } : {}; },
       setTime: function (k, v) { if (S === me && me.night) me.night.setTime(k, v); },
       usePrep: function (k) { if (S === me && me.night) me.night.usePrep(k); },
+      endOpening: function () { return S === me ? endOpening() : Promise.resolve(false); },      /* T10: the Opening's Next */
       prepNotes: function () { var pk = part('prep'), B = W.B68GmPrep; return pk && B ? B.notes(pk) : []; },
       setPrepNote: function (id) { if (S !== me) return; try { W.localStorage.setItem(PREP_NOTE, id); } catch (e) {} renderPrep(true); renderBar(); },
       prepSecs: function () {
@@ -4238,6 +4239,28 @@
       toast(aft ? 'Cleared, but the Aftermath show is still on: End now in its panel takes it down.' : 'Cleared: the iPad plays the ambient scene.');
       if (W.B68GmIpadTray) W.B68GmIpadTray.refresh();
       return true;
+    });
+  }
+  /* T10: the Opening's Next (gm/places.js): the hard start comes off the way its End without credits does (hs.end: every layer it laid), and the
+     Opening credits pin goes back to Auto, the iPad view's own mode switch. Nothing else on the iPad is touched; nothing up, nothing written */
+  function endOpening() {
+    var me = S; if (!me) return Promise.resolve(false);
+    var g = gmApi();
+    var fresh = g && typeof g.ambient === 'function' ? Promise.resolve().then(function () { return g.ambient(); }).then(function (r) { if (S === me) adoptAmbient(r); }, function () { /* the cached document will do */ }) : Promise.resolve();
+    return fresh.then(function () {
+      if (S !== me) return false;
+      var sc = isObj(ipadLayers().scene) ? ipadLayers().scene : {}, steps = [];
+      if (sc.mode === 'start') {
+        var hs = hsInst(), sh = shows();
+        if (hs && typeof hs.end === 'function') steps.push(function () { return hs.end(); });
+        else if (sh) ['band.faces', 'data.previously', 'data.credits', 'data.countdown', 'scene.mode'].forEach(function (p) { if (ipadLayerSet(p)) steps.push(function () { return sh.layer(p, null); }); });
+      }
+      if (isObj(AM.doc) && AM.doc.mode === 'pin' && AM.doc.scene === 'credits') steps.push(function () { return patchAmbient({ mode: 'auto' }); });
+      if (!steps.length) return false;
+      return steps.reduce(function (p, step) { return p.then(function () { return Promise.resolve().then(step).then(null, function () { return null; }); }); }, Promise.resolve()).then(function () {
+        if (S === me && W.B68GmIpadTray) W.B68GmIpadTray.refresh();
+        return true;
+      });
     });
   }
   /* the page's iPad, for the tray: what it knows, and its one way off and its blank */

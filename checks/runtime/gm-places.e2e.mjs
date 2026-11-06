@@ -228,6 +228,41 @@ try {
   check(await attr(C.page, 'data-place') === 'pb', 'a phase that moved while the page was shut: the page opens in its place');
   await C.c.close();
 
+  /* T10: the way forward. Every place's left column ends in Next: <place> → (and ← Back), on screen at 1366 x 768; the Opening's Next takes the hard
+     start and the opening credits off the iPad and starts Personal business; ← Back only looks */
+  await api('PATCH', '/gm/state', { night: { phase: '' } });
+  await api('PATCH', '/gm/ambient', { mode: 'pin', scene: 'credits' });
+  await api('PATCH', '/gm/ambient', { layer: { path: 'scene.mode', value: 'start' } });
+  await api('PATCH', '/gm/ambient', { layer: { path: 'data.countdown', value: { to: Date.now() + 600000, label: 'Station clock' } } });
+  const pre = (await api('GET', '/gm/ambient')).json, preL = (pre && pre.doc && pre.doc.layers) || {};
+  check(pre && pre.doc && pre.doc.mode === 'pin' && pre.doc.scene === 'credits' && preL.scene && preL.scene.mode === 'start', 'T10 setup: the hard start and the credits pin are up ' + JSON.stringify(preL.scene || null));
+  const N = await open();
+  const n = N.page;
+  const foot = (pg) => pg.evaluate(() => { const f = document.querySelector('.gm-pnext'); if (!f) return null; const r = f.getBoundingClientRect(); return { col: f.parentElement.id, last: f.parentElement.lastElementChild === f, text: f.innerText.replace(/\s+/g, ' ').trim(), top: Math.round(r.top), bottom: Math.round(r.bottom), vh: innerHeight, count: document.querySelectorAll('.gm-pnext').length }; });
+  const WANT = { before: ['gm-left', 'Next: Opening →'], opening: ['gm-left', 'Next: Personal → ← Back'], pb: ['gm-roll', 'Next: Planning → ← Back'], plan: ['gm-roll', 'Next: Score → ← Back'], score: ['gm-roll', 'Next: Aftermath → ← Back'], after: ['gm-left', '← Back'] };
+  for (const id of Object.keys(WANT)) {
+    await n.evaluate((i) => window.B68GmPage.goPlace(i, { navigateOnly: true }), id); await sleep(300);
+    const f = await foot(n);
+    check(!!f && f.count === 1 && f.col === WANT[id][0] && f.last && f.text.toUpperCase() === WANT[id][1].toUpperCase() && f.top >= 0 && f.bottom <= f.vh, 'T10 ' + id + ': the column ends in "' + WANT[id][1] + '", on screen at 1366 x 768 ' + JSON.stringify(f));
+  }
+  await n.evaluate(() => window.B68GmPage.goPlace('between'));
+  check(!(await foot(n)), 'T10 Between: no Next (it is not the night)');
+  await n.evaluate(() => window.B68GmPage.goPlace('opening', { navigateOnly: true })); await sleep(300);
+  await n.click('.gm-pnext [data-place-next]');
+  check(await until(async () => (await st(n)).place === 'pb' && await nightPhase() === 'pb', 8000), 'T10 Opening\'s Next: the page is in Personal and the night in Personal business');
+  const offAir = await until(async () => { const a = (await api('GET', '/gm/ambient')).json, d = a && a.doc, L = (d && d.layers) || {}; return d && d.mode !== 'pin' && !(L.scene && L.scene.mode) && !(L.data && L.data.countdown) ? d : null; }, 10000);
+  check(!!offAir && offAir.mode === 'auto', 'T10 Opening\'s Next: the hard start\'s layers came off and the credits pin went back to Auto ' + JSON.stringify(offAir && { mode: offAir.mode, scene: offAir.scene }));
+  await n.click('.gm-pnext [data-place-back]'); await sleep(400);
+  check((await st(n)).place === 'opening' && await nightPhase() === 'pb', 'T10 ← Back looks at the Opening; the night stays in Personal business');
+  await n.click('.gm-pnext [data-place-next]'); await sleep(400);
+  await n.click('.gm-pnext [data-place-next]');
+  check(await until(async () => (await st(n)).place === 'plan' && await nightPhase() === 'plan', 8000), 'T10 Next from Personal starts Planning, as its chip does');
+  await n.click('.gm-pnext [data-place-back]'); await sleep(300); await n.click('.gm-pnext [data-place-back]'); await sleep(300);
+  await n.click('.gm-pnext [data-place-next]'); await sleep(500);
+  check((await st(n)).place === 'pb' && await nightPhase() === 'plan', 'T10 Back, Back, Next: a look at Personal, never a rewind of the night');
+  await N.c.close();
+  await api('PATCH', '/gm/state', { night: { phase: 'pb' } });       /* the phone below opens in the night's place */
+
   const M = await open({ w: 390, h: 844, mobile: true });
   const m = M.page;
   check(await attr(m, 'data-place') === 'pb', 'the GM\'s phone opens in the night\'s place');

@@ -33,6 +33,7 @@
      place(id) -> { id, label, phase, left, leftLabel, views: [{ id, label }], words, about } | null     view(id) -> a VIEWS row | null
      viewsOf(placeId) -> [view id]  own then pinned      lists(placeId, viewId) -> bool      forPhase(phase) -> place id | ''
      step(placeId, dir) -> the place before (-1) or after (+1), Between after the Aftermath; the ends stay put
+     nextOf(placeId) / backOf(placeId) -> where the column's Next and ← Back go ('' at the ends)    ahead(placeId, phase) -> Next there starts its phase
      prepTarget(placeId, headings, words?) -> the index of the first heading holding one of the place's words (or of `words`), or -1
      placeOfText(text) -> the first place (night order) whose words a run-order beat names, or ''
      roomsOf(note) -> the ### headings under the note's own "## Rooms"
@@ -41,7 +42,7 @@
      homeOf(viewId) -> the place that lays a view or tool out first ('' for the pinned)       restore(stored, phase) -> { place, views, extra }
      KEY PLACES BETWEEN PINNED VIEWS DESKS LEFT_TOOL
    DOM
-     create(host) -> { mount(), sync(), goPlace(id, o), openView(id, o), dropExtra(), callAftermath(), stepPlace(dir), rolled(),
+     create(host) -> { mount(), sync(), goPlace(id, o), openView(id, o), dropExtra(), callAftermath(), stepPlace(dir), rolled(), next(), back(),
                        currentPlace(), currentView(), findEntries(), destroy(), _state() }
        host: { root() -> #gm-root, phase() -> the night's phase id | '', enter(phase) -> bool (the night controller, as the rail),
                showPane(id) (the page's pane switch: S.panel, the panes' hidden flags, a pane's first-show work), seg(which) ('console' |
@@ -49,7 +50,8 @@
                prepSecs() -> [{ id, head, html() }] the open note's ## sections, decorate(el) (ticks, cells), crew() -> [{ id, name, stress,
                harm: [1-4], locks, turn: [key names] }], sheetOpen(id) -> bool, exportTonight(), endNight() -> Promise, recording() -> bool,
                stopRecording(), toast(msg, bad),
-               nightTimes() -> { startAt, curfewAt } (the night's own, "HH:MM" | null), setTime(key, hhmm), usePrep(key) (the Tonight box's fields) }
+               nightTimes() -> { startAt, curfewAt } (the night's own, "HH:MM" | null), setTime(key, hhmm), usePrep(key) (the Tonight box's fields),
+               endOpening() (Opening's Next: the hard start and the opening credits off the iPad, if they are up) }
        Every host function is optional: a missing one costs only its own feature. The page calls mount() after each layout() (and once its
        panes are drawn) and sync() from its pane switch, which runs on every state arrival. */
 (function (root, factory) {
@@ -85,6 +87,12 @@
   };
   /* the left column's tool, where the place draws one there */
   var LEFT_TOOL = { before: 'preflight', opening: 'hardstart' };
+  /* T10, THE WAY FORWARD: at the foot of every place's left column, Next: <the next place> → and a quiet ← Back (a look at the place before). Next does
+     what the band's chip for that place does (a phase place enters its phase), except that a phase the night is already past is only looked at, so
+     ← Back then Next never winds the night back. Opening's Next also takes the hard start and the opening credits off the iPad (host.endOpening) */
+  var NEXT = { before: 'opening', opening: 'pb', pb: 'plan', plan: 'score', score: 'after' };
+  var BACK = { opening: 'before', pb: 'opening', plan: 'pb', score: 'plan', after: 'score' };
+  var PHASE_ORDER = ['pb', 'plan', 'score', 'after'];
 
   /* THE ONE TABLE of views and tools. label: the switcher's; short: a phone chip's; title: Find's when the label alone is not enough; key: the
      key that opens it from anywhere (design section 8); words: what Find matches besides the title; desc: what a tool is, said on its desk and
@@ -162,6 +170,10 @@
     var i = ORDER.indexOf(id); if (i < 0) return 'before';
     return ORDER[Math.max(0, Math.min(ORDER.length - 1, i + (dir < 0 ? -1 : 1)))];
   }
+  /* T10: the places Next and ← Back go to ('' at the ends and Between); ahead(): Next to that place starts its phase (a phase the night has not reached) */
+  function nextOf(id) { return has(NEXT, id) ? NEXT[id] : ''; }
+  function backOf(id) { return has(BACK, id) ? BACK[id] : ''; }
+  function ahead(placeId, phase) { var b = base(placeId); return !!(b && b.phase) && PHASE_ORDER.indexOf(b.phase) > PHASE_ORDER.indexOf(str(phase)); }
   /* a place's word at the start of a word of the text: "Open" finds "Open" and "Opening", never "Reopen" */
   function holds(text, w) { var t = ' ' + fold(text) + ' ', k = fold(w); return !!k && t.indexOf(' ' + k) >= 0; }
   function prepTarget(placeId, heads, wordList) {
@@ -389,7 +401,7 @@
       if (id === 'before') return '<section class="gm-box gm-lbox"><h3 class="gm-band">Preflight</h3><div class="gm-lbody gm-ltool" data-left-tool="preflight"></div></section>' +
         '<section class="gm-box gm-lbox"><h3 class="gm-band">Tonight</h3><div class="gm-lbody" data-left-slot="facts"></div></section>';
       if (id === 'opening') return '<section class="gm-box gm-lbox"><h3 class="gm-band">Hard start</h3><div class="gm-lbody gm-ltool" data-left-tool="hardstart"></div></section>' +
-        '<p class="gm-dim gm-lnote">Personal business ends the Opening: the next place in the band, or a <code>phase:</code> cue.</p>';
+        '<p class="gm-dim gm-lnote">Next: Personal, below, takes the hard start and the opening credits off the iPad and starts Personal business (a <code>phase:</code> cue starts it too).</p>';
       if (id === 'after') return '<section class="gm-box gm-lbox"><h3 class="gm-band">The crew</h3><div class="gm-lbody" data-left-slot="crew"></div></section>' +
         '<div class="gm-lacts"><button type="button" class="btn" data-pv="debrief" title="The steps not reached go to each phone as a card the next morning">Debrief: send to phones</button>' +
         '<button type="button" class="btn" data-pv="castphoto" title="The cast line-up, at the end of an arc">Cast photo</button>' +
@@ -418,6 +430,33 @@
         if (slot) { var h = slot.getAttribute('data-left-slot') === 'facts' ? factsHtml(factsNow()) : crewHtml(); if (st.sigs.slot !== h) { st.sigs.slot = h; slot.innerHTML = h; } }
       }
     }
+
+    /* ---- T10: the foot of the left column (Next and ← Back): the last child of whichever column shows, the Roll's (#gm-roll) or the place's own ---- */
+    function footHtml() {
+      var nx = nextOf(st.place), bk = backOf(st.place), ph = phaseNow(); if (!nx && !bk) return '';
+      var starts = ahead(nx, ph), lab = placeLabel(nx);
+      var tip = !nx ? '' : (starts ? 'Start ' + (nx === 'pb' ? 'Personal business' : lab) + ', as its place in the band does' : base(nx).phase ? 'Go to ' + lab + ': the night is past it, so its phase is not started again' : 'Go to ' + lab) +
+        (st.place === 'opening' ? '. The hard start and the opening credits come off the iPad if they are up' : '');
+      return (nx ? '<button type="button" class="btn primary gm-pnext-go" data-place-next="' + nx + '" title="' + esc(tip) + '">Next: ' + esc(lab) + ' <span aria-hidden="true">→</span></button>' : '') +
+        (bk ? '<button type="button" class="gm-pnext-back" data-place-back="' + bk + '" title="' + esc('Look at ' + placeLabel(bk) + ': the night stays where it is (Ctrl+←)') + '" aria-label="' + esc('Back: look at ' + placeLabel(bk)) + '"><span aria-hidden="true">←</span> Back</button>' : '');
+    }
+    function kids(el) { return el && el.children ? [].slice.call(el.children) : []; }
+    function paintFoot(e) {
+      var roll = e.root.querySelector('#gm-roll'), at = leftKind() === 'roll' ? roll : e.left, h = footHtml(), doc = W && W.document;
+      [roll, e.left].forEach(function (col) { kids(col).forEach(function (n) { if (n.className === 'gm-pnext' && (col !== at || !h)) col.removeChild(n); }); });
+      if (!at || !h || !doc || typeof doc.createElement !== 'function' || typeof at.appendChild !== 'function') return;
+      var f = kids(at).filter(function (n) { return n.className === 'gm-pnext'; })[0];
+      if (!f) { f = doc.createElement('div'); f.className = 'gm-pnext'; f.setAttribute('role', 'group'); f.setAttribute('aria-label', 'Where the night goes next'); }
+      if (at.lastElementChild !== f) at.appendChild(f);
+      if (f.__sig !== h) { f.__sig = h; f.innerHTML = h; }
+    }
+    /* Next: the chip's tap (the phase started where the night has not reached it); Opening's also ends the hard start and the credits */
+    function next() {
+      var to = nextOf(st.place); if (!to) return false;
+      if (st.place === 'opening') call('endOpening');
+      return goPlace(to, { navigateOnly: !ahead(to, phaseNow()) });
+    }
+    function back() { var to = backOf(st.place); return to ? goPlace(to, { navigateOnly: true }) : false; }
 
     /* ---- the strip over a view: Between's open desk ---- */
     function deskOf(id) { var k = str(id).split(':')[0]; return DESKS.filter(function (d) { return d.id === k; })[0] || null; }
@@ -530,7 +569,7 @@
     function render(o) {
       var e = els(); if (!e) return;
       st.busy++;
-      try { paintRoot(e); paintLeft(e); paintHead(e); showView(o || {}); paintRow(e); } finally { st.busy--; }
+      try { paintRoot(e); paintLeft(e); paintFoot(e); paintHead(e); showView(o || {}); paintRow(e); } finally { st.busy--; }
     }
 
     /* ---- the contract: the band (N1a), the keys, Find ---- */
@@ -635,7 +674,7 @@
       }
       st.busy++;
       try {
-        paintRoot(e); paintLeft(e); paintHead(e); paintRow(e);
+        paintRoot(e); paintLeft(e); paintFoot(e); paintHead(e); paintRow(e);
         if (current() === 'tonight' && e.pane && !e.pane.hidden) {
           if (st.sigs.pane !== 'tonight|' + tonightSig() && !focusIn(e.pane)) fillPane(e, 'tonight'); else decorate(e.pane);
         }
@@ -649,6 +688,8 @@
       var b, row;
       if ((b = t.closest('[data-tn-prep]'))) { ev.preventDefault(); call('usePrep', b.getAttribute('data-tn-prep')); st.sigs.slot = ''; later(function () { render(); }); return; }
       if ((b = t.closest('[data-pvx]'))) { ev.preventDefault(); dropExtra(); return; }
+      if ((b = t.closest('[data-place-next]'))) { ev.preventDefault(); next(); return; }
+      if ((b = t.closest('[data-place-back]'))) { ev.preventDefault(); back(); return; }
       if ((b = t.closest('[data-pv]'))) {
         ev.preventDefault();
         var id = b.getAttribute('data-pv'); row = !!b.closest('.gm-views, .gm-vchips');
@@ -698,7 +739,7 @@
     }
 
     return {
-      mount: mount, sync: sync, goPlace: goPlace, openView: openView, dropExtra: dropExtra, callAftermath: callAftermath, stepPlace: stepPlace, rolled: rolled,
+      mount: mount, sync: sync, goPlace: goPlace, openView: openView, dropExtra: dropExtra, callAftermath: callAftermath, stepPlace: stepPlace, rolled: rolled, next: next, back: back,
       currentPlace: function () { return st.place; }, currentView: function () { return current(); },
       findEntries: function () { var T = W && W.B68GmTools, ex = []; try { ex = T && typeof T.extras === 'function' ? T.extras() : []; } catch (e) { ex = []; } return findEntries(ex); },
       destroy: destroy,
@@ -707,6 +748,6 @@
   }
 
   return { KEY: KEY, PLACES: PLACES, BETWEEN: BETWEEN, PINNED: PINNED, VIEWS: VIEWS, DESKS: DESKS, LEFT_TOOL: LEFT_TOOL,
-    list: list, between: between, place: place, view: view, viewsOf: viewsOf, lists: lists, forPhase: forPhase, step: step, prepTarget: prepTarget,
+    list: list, between: between, place: place, view: view, viewsOf: viewsOf, lists: lists, forPhase: forPhase, step: step, nextOf: nextOf, backOf: backOf, ahead: ahead, prepTarget: prepTarget,
     placeOfText: placeOfText, roomsOf: roomsOf, facts: facts, findEntries: findEntries, homeOf: homeOf, restore: restore, create: create };
 });
