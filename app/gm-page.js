@@ -6197,7 +6197,7 @@
       S.npcUnsub = db.collection('npcs').onSnapshot(function (snap) {
         if (S !== me) return;
         var m = {}; (snap && snap.docs || []).forEach(function (d) { var x = d && typeof d.data === 'function' ? d.data() : null; if (isObj(x)) m[d.id] = x; });
-        me.npcs = m; renderNpcs(); renderRail(); apSubjects(); liveTokens();        /* VV8: revealing (or filing) an NPC can show or hide the target's marker */
+        me.npcs = m; renderNpcs(); renderRail(); apSubjects(); liveTokens(); hsSync();        /* VV8: revealing (or filing) an NPC can show or hide the target's marker; F3: the hard start's faces */
       }, function () {});
     } catch (e) { S.npcUnsub = null; }
   }

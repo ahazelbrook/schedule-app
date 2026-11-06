@@ -164,6 +164,7 @@ try {
       await g.waitForSelector(panel + ' [data-hs="roll"]', { timeout: 15000 });
       await g.click(panel + ' [data-hs-reveal="0"]');
       expect(await until(async () => { const L = await layers(); return L.band && Array.isArray(L.band.faces) && L.band.faces.some((f) => f.npcId); }, 10000), 'the reveal reached the ambient document');
+      const laid = ((await layers()).data || {}).previously || [];
       await g.reload();
       await g.waitForSelector(panel + ' [data-hs="test"]', { timeout: 40000 });
       await g.waitForSelector(panel + ' [data-hs="roll"]', { timeout: 15000 }).catch(() => {});
@@ -171,6 +172,10 @@ try {
       expect(s.roll && s.end && s.go, 'armed again after the reload: ' + JSON.stringify(s).slice(0, 300));
       expect(/Test armed for \d\d:\d\d/.test(s.text), 'the status line: ' + s.text.slice(0, 160));
       expect(s.shown0 === 'true', 'the name shown before the reload is still marked shown: ' + s.shown0);
+      /* the cast arrives after the first draw: the sheet is drawn again with the faces laid (not "(none)"), and the next Reveal is live */
+      const faces = await until(() => g.$eval(panel, (p) => { const v = [0, 1, 2].map((i) => (p.querySelector('[data-hs-pick="' + i + '"]') || {}).value || ''); return v.every(Boolean) ? v : null; }), 10000);
+      expect(faces && JSON.stringify(faces) === JSON.stringify(laid.slice(0, 3)), 'the faces after the reload: ' + JSON.stringify(faces) + ' laid: ' + JSON.stringify(laid));
+      expect(await g.$eval(panel + ' [data-hs-reveal="1"]', (e) => !e.disabled), 'Reveal the name (face 2) is live after the reload');
       if (SHOTS) { await g.locator(panel).scrollIntoViewIfNeeded(); await g.screenshot({ path: path.join(SHOTS, 'opening-hardstart-after-reload-1366.png') }); }
     });
 

@@ -171,15 +171,22 @@
       },
       state: function () { adopt(); return { armed: st.armed, at: st.at, test: st.test, shown: st.shown.slice(), picks: ctl.picks(), rolled: !!st.rolled }; },
       /* F3: the page calls this when its copy of the ambient document changes: the sheet is drawn again only when the arm it shows has changed */
-      sync: function () { if (!adopt()) return false; var b = sheet(); if (b && b.isOpen()) ctl.render(b.body); return true; }
+      sync: function () {
+        var ch = adopt(), b = sheet();
+        /* also when what it would draw has changed under it: after a reload the cast arrives after the first draw, so the faces read (none) until then */
+        if (b && b.isOpen() && (ch || (st.drawn && drawSig() !== st.drawn))) ctl.render(b.body);
+        return ch;
+      }
     };
 
     /* ---- the sheet ---- */
     function Sheet() { return W && W.B68GmWorkshop ? W.B68GmWorkshop : null; }
     function sheet() { var S = Sheet(), r = typeof h.root === 'function' ? h.root() : null; return S && r ? S.sheet(r, 'hardstart', 'Hard start') : null; }
+    function drawSig() { return JSON.stringify([st.armed, st.at, st.test, st.shown, st.rolled, ctl.picks(), live().pool.map(function (p) { return p.id + ':' + p.name + ':' + p.role; })]); }
     ctl.render = function (box) {
       if (!box) return;
       var L = live(), picks = ctl.picks(), s = ctl.state(), start = typeof h.startAt === 'function' ? +h.startAt() || 0 : 0;
+      st.drawn = drawSig();
       var opts = function (cur) { return '<option value="">(none)</option>' + L.pool.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === cur ? ' selected' : '') + '>' + esc(p.name) + (p.role ? ' (' + esc(p.role) + ')' : '') + '</option>'; }).join(''); };
       /* after Roll the opening credits the line says what is on the iPad now (the tray's live line, host.onIpad), until the next arm */
       var onIpad = !s.armed && s.rolled && typeof h.onIpad === 'function' ? str(h.onIpad()) : '';
