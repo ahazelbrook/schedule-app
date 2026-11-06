@@ -7483,7 +7483,13 @@
         var tool = b.getAttribute('data-tool'), e = newest(isObj(S.doc.hist) ? S.doc.hist[tool] : null).filter(function (x) { return x._id === b.getAttribute('data-h'); })[0]; if (!e) break;
         var cur = {}; Object.keys(e).forEach(function (k) { if (k !== '_id') cur[k] = e[k]; }); cur.hid = e._id;
         cur.at = nowIso();      /* the current card now: after a reload the newest of the two still shows */
-        var cp = { cards: {} }; cp.cards[tool] = replacePatch(isObj(S.doc.cards) ? S.doc.cards[tool] : null, cur); patch(cp, { force: true });   /* replaces the stored card: no key of the card it was survives */
+        var cp = { cards: {} }; cp.cards[tool] = replacePatch(isObj(S.doc.cards) ? S.doc.cards[tool] : null, cur);
+        /* an authored site brought back from Earlier comes back in its own view and theme, as Open map sets them (a roll had reset them to iso) */
+        if (tool === 'location' && str(e.auth)) {
+          var aS = authoredOf(part('location')).sites[str(e.auth)], am = isObj(aS) && isObj(aS.map) ? aS.map : null;
+          if (am) cp.loc = { map: { view: VIEWS.indexOf(am.view) >= 0 ? am.view : 'iso', theme: THEMES.indexOf(am.theme) >= 0 ? am.theme : 'rulebook' } };
+        }
+        patch(cp, { force: true });   /* replaces the stored card: no key of the card it was survives */
         if (tool === 'console' || tool === 'situation') { S.conRes = null; if (S.stamp) S.stamp.dismiss(); drawConsoleCard(); }     /* N4: the last roll's size stays with its card */
         else if (tool === 'scenes') { S.scnRoll = null; renderScenes(); }
         else if (tool === 'npc') { S.npcRoll = null; renderNpcGen(); }
