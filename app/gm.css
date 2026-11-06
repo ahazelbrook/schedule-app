@@ -88,6 +88,13 @@ body[data-mode="gm"] .nx, body[data-mode="gm"] #stageBanner { display: none !imp
 #gm-page .gm-card-acts { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 4px; }
 #gm-page .gm-npccard .gm-card-h { align-items: flex-start; }
 #gm-page .gm-npcfig { width: 88px; height: 88px; flex: none; }
+/* T11: the rolled NPC's Collapse / Clear sit top right; folded, the card is its one header line */
+#gm-page .gm-npc-one { flex: 1 1 auto; min-width: 0; }
+#gm-page .gm-npc-bar { flex: none; display: flex; gap: 6px; margin-left: auto; }
+#gm-page .gm-npc-bar .btn { box-shadow: none; }
+#gm-page .gm-npccard-fold { padding-bottom: 0; }
+#gm-page .gm-npccard-fold .gm-card-h { align-items: center; }
+#gm-page .gm-npccard-fold h3, #gm-page .gm-npccard-fold .gm-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #gm-page .gm-gridh { margin: 10px 12px 2px; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); }
 #gm-page .gm-fold { margin: 8px 12px; border: 1px solid var(--hair); padding: 6px 10px; }
 #gm-page .gm-fold > summary { cursor: pointer; font-weight: 700; min-height: 44px; display: flex; align-items: center; }

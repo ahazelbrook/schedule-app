@@ -6266,6 +6266,7 @@
     var hid = uid('h'), hist = isObj(S.doc.hist) && isObj(S.doc.hist.npc) ? S.doc.hist.npc : {};
     patch({ cards: { npc: Object.assign({ hid: hid }, entry) }, mem: { npc: clone(S.npcMem) }, hist: { npc: addCapped(hist, hid, entry, LIMITS.hist) } }, { force: true });
     S.npcRoll = npcWithFigure(g, roll); S.last = { text: 'NPC: ' + entry.label };
+    try { W.localStorage.removeItem(NPC_FOLD); } catch (e) { /* private mode */ }      /* T11: a fresh roll opens, to be read */
     renderNpcGen(true);
   }
   /* in the cast already: a generated doc with this name (so the button does not file the same roll twice) */
@@ -6291,9 +6292,14 @@
     var r = S.npcRoll, h = '<div class="gm-loc-ctl">' + g.controls.map(function (x) { return selectHtml('gm-n-' + x.id, 'data-npcui', x.id, x.label, x.options, ui[x.id], x.id === 'district' ? distOptionsHtml('npc') : null); }).join('') +
       (hasLoc ? '<button type="button" class="btn" data-gm="npcloc" title="Sets the faction, district and place from the location card">Use the location</button>' : '') +
       '<button type="button" class="btn primary gm-roll" data-gm="npcroll">Roll an NPC</button></div>';
-    if (r) {
+    /* T11: the rolled card folds to one line (kept on this laptop) and Clear discards it (the cast is never touched; Earlier brings it back) */
+    var folded = r && npcFolded(), npcBar = r ? '<span class="gm-npc-bar"><button type="button" class="btn sm" data-gm="npcfold" aria-expanded="' + !folded + '" title="' + (folded ? 'Show the whole card' : 'Fold the card to one line') + '">' + (folded ? 'Expand ▾' : 'Collapse ▴') + '</button>' +
+      '<button type="button" class="btn sm" data-gm="npcclear" title="Discard this roll (anyone already added to the cast stays there; Earlier brings the roll back)">Clear</button></span>' : '';
+    if (r && folded) {
+      h += '<article class="gm-card gm-npccard gm-npccard-fold" data-tool="npc"><header class="gm-card-h"><div class="gm-npc-one"><h3>' + esc(r.roll.card.meta.title) + '</h3><p class="gm-sub">' + esc(r.roll.card.meta.sub) + '</p></div>' + npcBar + '</header></article>';
+    } else if (r) {
       var c = r.roll.card, m = c.meta, inCast = npcInCast(r.roll.npc.name);
-      h += '<article class="gm-card gm-npccard" data-tool="npc"><header class="gm-card-h">' + (r.svg ? '<div class="gm-thumb gm-npcfig" aria-hidden="true">' + r.svg + '</div>' : '') + '<div><h3>' + esc(m.title) + '</h3><p class="gm-sub">' + esc(m.sub) + '</p></div></header>' +
+      h += '<article class="gm-card gm-npccard" data-tool="npc"><header class="gm-card-h">' + (r.svg ? '<div class="gm-thumb gm-npcfig" aria-hidden="true">' + r.svg + '</div>' : '') + '<div class="gm-npc-one"><h3>' + esc(m.title) + '</h3><p class="gm-sub">' + esc(m.sub) + '</p></div>' + npcBar + '</header>' +
         (m.figureNote ? '<p class="gm-note">' + esc(m.figureNote) + '</p>' : '') + (r.note ? '<p class="gm-note gm-fignote">' + esc(r.note) + '</p>' : '') +
         npcGenLinesHtml(c.lines) +
         '<div class="gm-card-acts"><button type="button" class="btn sm primary" data-gm="npcfile"' + (inCast ? ' disabled' : '') + ' title="Adds them to the cast, hidden from the players">' + (inCast ? 'In the cast' : 'Add to the cast') + '</button>' +
@@ -6303,6 +6309,17 @@
       'Pick a faction, district or place to fit the scene, or leave them on any. They stay in this tab until you add them to the cast.</p>';
     box.innerHTML = h + earlierHtml('npc', cur);
     scMaybeRedraw();
+  }
+  /* T11: the fold is this laptop's (localStorage), never a stored document; Clear empties the current card (cards.npc, as a site's Clear empties its
+     key) and keeps the Earlier chips, so a roll cleared by mistake comes back in one tap */
+  var NPC_FOLD = 'b68.gm.npcgen.fold';
+  function npcFolded() { try { return W.localStorage.getItem(NPC_FOLD) === '1'; } catch (e) { return false; } }
+  function npcFold() { var on = !npcFolded(); try { if (on) W.localStorage.setItem(NPC_FOLD, '1'); else W.localStorage.removeItem(NPC_FOLD); } catch (e) { /* private mode: it folds for this page only */ } renderNpcGen(); var b = $q('#gm-npcgen [data-gm="npcfold"]'); if (b) b.focus(); }
+  function npcClear() {
+    if (!S.npcRoll && !(isObj(S.doc.cards) && isObj(S.doc.cards.npc))) return;
+    patch({ cards: { npc: null } }, { force: true });
+    S.npcRoll = null; renderNpcGen();
+    toast('Cleared the rolled NPC. Earlier brings it back.');
   }
   /* the roll into the cast: a hidden doc, plus the roll's seed in the GM state so the vault note can be rebuilt from it (SYNC.md) */
   function fileNpc() {
@@ -7361,6 +7378,8 @@
       case 'npcroll': rollNpc(); break;
       case 'npcloc': npcFromLocation(); break;
       case 'npcfile': fileNpc(); break;
+      case 'npcfold': npcFold(); break;      /* T11 */
+      case 'npcclear': npcClear(); break;
       case 'scnipad': scenesToIpad(); break;
       case 'scoreroll': rollScore(); break;
       case 'scorebump': scBump(str(b.getAttribute('data-row'))); break;
