@@ -1776,7 +1776,9 @@ body.gm-app #gm-page #gm-band { display: grid; grid-template-rows: auto auto; ba
 #gm-page .gm-quiet-text { flex: 1 1 100%; overflow-wrap: anywhere; }
 #gm-page .gm-quiet-row .btn { margin-left: auto; }
 /* M1 the music (gm/music.js draws it here): a compact pill beside the mic (♪ Tension, an A on Auto, ▶ or ❚❚) and its popover; the phone is not the player */
-#gm-page .gm-band-music { position: relative; display: inline-flex; align-items: center; flex: 0 1 auto; min-width: 0; }
+#gm-page .gm-band-music { position: relative; display: inline-flex; align-items: center; flex: 0 1 auto; min-width: 0; align-self: stretch; gap: 8px; }
+/* its own separator, like the band's: the pill is not part of the iPad tray */
+#gm-page .gm-band-music::before { content: ""; flex: none; align-self: stretch; width: 1px; margin: 9px 0; background: color-mix(in srgb, var(--on-ink) 22%, transparent); }
 #gm-page .gm-band-music:empty { display: none; }
 #gm-page #gm-band .gm-mu-pill { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 170px; }
 #gm-page .gm-mu-pill .gm-mu-note { flex: none; font: 700 13px/1 var(--font-text); }
@@ -1802,6 +1804,8 @@ body.gm-app #gm-page #gm-band { display: grid; grid-template-rows: auto auto; ba
 /* the Music tool (Before > The room, and Find): three playlists side by side, the output, the storage */
 #gm-page .gm-vgrid > .gm-vcell[data-vcell="music"] { grid-column: 1 / -1; }
 #gm-page .gm-mu { display: grid; gap: 10px; min-width: 0; }
+#gm-page .gm-mu-deck { display: grid; gap: 7px; max-width: 560px; padding: 10px 12px; border: 2px solid var(--rule); background: var(--card); }
+#gm-page .gm-mu-deck p { overflow-wrap: anywhere; }
 #gm-page .gm-mu p { margin: 0; }
 #gm-page .gm-mu-lists { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 10px; }
 #gm-page .gm-mu-list { display: grid; align-content: start; gap: 6px; min-width: 0; padding: 8px 10px; border: 1.5px solid var(--hair); background: var(--card); }
@@ -1831,6 +1835,8 @@ body.gm-app #gm-page #gm-band { display: grid; grid-template-rows: auto auto; ba
    music plays on; Before > The room > Music and Find still reach every control */
 #gm-page .gm-band-r2[data-alarm="curfew"] .gm-band-music { display: none; }
 @media (max-width: 1099px) { #gm-page .gm-band-music { display: none; } }
+/* a phone: the mood control as a 3 + 2 grid, no lone Stop on a row of its own */
+@media (max-width: 599px) { #gm-page .gm-mu-seg { display: grid; grid-template-columns: repeat(3, 1fr); } #gm-page .gm-mu-seg button { padding: 6px 4px; white-space: normal; border-top: 1px solid var(--hair); } #gm-page .gm-mu-seg button:nth-child(-n+3) { border-top: 0; } #gm-page .gm-mu-seg button:nth-child(4) { border-left: 0; } }
 /* PANIC: always the last thing in the row */
 #gm-page .gm-band-panic { flex: none; display: inline-flex; align-items: center; gap: 6px; align-self: stretch; margin: 5px 0 5px auto; padding: 0 14px; border: 0; background: var(--alarm); color: #fbf8f1; font: 900 13px/1 var(--font-cond); letter-spacing: .1em; cursor: pointer; }
 #gm-page .gm-band-panic kbd { font-size: 9px; letter-spacing: 0; }

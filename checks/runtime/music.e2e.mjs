@@ -84,7 +84,7 @@ try {
   check(await page.$eval('[data-vcell="music"] [data-mu-store]', (e) => /Stored in this browser/.test(e.textContent)), 'the storage used is shown');
   const box = await page.$eval('[data-vcell="music"]', (e) => { const r = e.getBoundingClientRect(); return { w: r.width, sw: e.scrollWidth, cw: e.clientWidth }; });
   check(box.sw <= box.cw + 1, 'the Music tool does not overflow at 1366 (' + JSON.stringify(box) + ')');
-  if (SHOTS) { const el = await page.$('[data-vcell="music"]'); await el.screenshot({ path: path.join(SHOTS, 'tool-1366.png') }); }
+  /* (the tool's picture is taken later, with the music playing) */
 
   /* ---- never by itself: waits for a tap ---- */
   await page.waitForTimeout(1500);
@@ -104,6 +104,14 @@ try {
   /* ---- a phase change brings Tension ---- */
   await page.click('[data-band-place="score"]');
   check(await until(async () => (await attr(page, 'data-mood')) === 'tension' && (await attr(page, 'data-list')) === 'tension', 8000), 'the Score: Tension, at once (a step up)');
+  /* ---- the demo night's site alarm is HIDDEN from the players: Spotted ticks it, and the music must not tell the room ---- */
+  const spot = await until(() => page.$('[data-site="spotted"]:not([disabled])'), 8000);
+  const alarmNow = () => page.evaluate(() => { const e = document.querySelector('[data-site="alarm"], [data-rv="alarm"]'); return e ? e.innerHTML : ''; });
+  const al0 = await alarmNow();
+  if (spot) await spot.click();
+  const ticked = await until(async () => (await alarmNow()) !== al0, 5000);
+  await page.waitForTimeout(2500);
+  check(!!spot && !!ticked && await attr(page, 'data-mood') === 'tension', 'Spotted ticks the hidden site alarm (its readout moved: ' + !!ticked + '): no Action, the players would hear what the GM hid');
   /* ---- a trigger brings Action: a Desperate 1–3 ---- */
   await until(() => page.$('[data-gm="pos"][data-v="desperate"]'), 8000);
   await page.click('[data-gm="pos"][data-v="desperate"]');
@@ -113,9 +121,11 @@ try {
   if (!(await page.$eval(POP, (e) => !e.hidden))) await page.click(PILL);
   await page.click(POP + ' [data-mu-mode="calm"]');
   check(await until(async () => (await attr(page, 'data-mode')) === 'calm' && (await attr(page, 'data-list')) === 'calm', 6000), 'a tap on Hanging around holds it (no A)');
+  check(await page.$eval(POP, (e) => e.hidden) && !(await page.evaluate(() => window.B68GmEsc && window.B68GmEsc.anyOpen())), 'a mood tap closes the popover, so the page’s keys (Space for GO, 1–4) work again');
   check(await page.$eval(PILL, (e) => !e.querySelector('.gm-mu-a')), 'the pill drops the A while a mood is held');
   await page.waitForTimeout(1500);
   check(await attr(page, 'data-list') === 'calm', 'the held mood stays while the Score holds Action');
+  await page.click(PILL);
   await page.click(POP + ' [data-mu-mode="auto"]');
   check(await until(async () => (await attr(page, 'data-mode')) === 'auto' && (await attr(page, 'data-list')) === 'action', 6000), 'Auto takes back over: Action (still inside its 90 s)');
   check(await page.evaluate(() => { try { const p = JSON.parse(localStorage.getItem('b68.gm.music')); return p && p.auto === true && typeof p.vol === 'number'; } catch (e) { return false; } }), 'the choices are in localStorage b68.gm.music');
@@ -132,7 +142,17 @@ try {
   await page.click('[data-band="panic"]');
   check(await until(async () => (await attr(page, 'data-gate')) === 'down', 4000), 'PANIC: the music fades to silence (within a second of the work light)');
   check(await attr(page, 'data-state') === 'play', 'it keeps its place under the work light');
-  const resume = await until(() => page.$('.gm-cs-resume'), 4000);
+  /* the GM opens Rules over the GM page for over a minute: the work light stays up for the music, and the Score's mood does not step down */
+  const moodBefore = await attr(page, 'data-mood');
+  await page.evaluate(() => { location.hash = '#rules'; });
+  await page.waitForTimeout(66000);
+  const away = await page.evaluate(() => window.B68GmPage && window.B68GmPage._music ? window.B68GmPage._music() : null);
+  check(!!away && away.gate < 0.02 && away.playing, 'PANIC, then Rules for 66 s: the music stays silent (' + JSON.stringify(away && { gate: away.gate, mood: away.mood }) + ')');
+  check(!!away && away.mood !== 'calm' && moodBefore !== 'calm', 'and the Score’s mood does not step down to Hanging around while the GM page is away (' + moodBefore + ' -> ' + (away && away.mood) + ')');
+  await page.evaluate(() => { location.hash = '#gm'; });
+  await page.waitForFunction(() => document.querySelector('[data-band-slot="music"] [data-mu-pill]'), null, { timeout: 60000 });
+  const resume = await until(() => page.$('.gm-cs-resume'), 8000);
+  check(!!resume && await attr(page, 'data-gate') === 'down', 'back on the GM page, still down under the work light');
   if (resume) await resume.click();
   check(!!resume && await until(async () => (await attr(page, 'data-gate')) === 'up', 6000), 'Resume brings it back');
 
@@ -162,6 +182,7 @@ try {
   await page.click(PILL);
   await page.click(POP + ' [data-mu-mode="off"]');
   check(await until(async () => (await attr(page, 'data-mode')) === 'off' && (await attr(page, 'data-state')) === 'pause', 4000), 'Stop: the music fades out and the pill reads Off');
+  await page.click(PILL);
   await page.click(POP + ' [data-mu-mode="auto"]');
   check(await until(async () => (await attr(page, 'data-state')) === 'play', 4000), 'Auto after Stop plays again');
 
@@ -176,6 +197,27 @@ try {
   await page.click(POP + ' [data-mu-act="library"]');
   check(await until(() => page.$$eval('[data-inline="music"] .gm-mu-tracks li', (a) => a.length === 6), 8000), 'Library… opens the Music tool, all six tracks still there (IndexedDB)');
   check(await page.$eval(POP, (e) => e.hidden), 'Library… closes the popover');
+  /* the tool carries the controls too: the way in while the pill is hidden (under 1100 px, a due curfew) */
+  const deck = '[data-inline="music"] [data-mu-deck]';
+  check(await page.$$eval(deck + ' [data-mu-mode]', (a) => a.map((b) => b.textContent).join('|')) === 'Hanging around|Tension|Action|Auto|Stop' &&
+    !!(await page.$(deck + ' [data-mu-act="toggle"]')) && !!(await page.$(deck + ' [data-mu-act="next"]')) && !!(await page.$(deck + ' [data-mu-vol]')), 'the Music tool has the controls too: ▶/❚❚, Next track, the moods, Auto, Stop and the volume');
+  await page.click(deck + ' [data-mu-act="toggle"]');
+  check(await until(async () => (await attr(page, 'data-state')) === 'play', 5000), 'the tool’s ▶ plays');
+  await page.click(deck + ' [data-mu-mode="tension"]');
+  check(await until(async () => (await attr(page, 'data-mode')) === 'tension' && (await attr(page, 'data-list')) === 'tension', 5000) &&
+    await until(() => page.$eval(deck + ' [data-mu-mode="tension"]', (b) => b.getAttribute('aria-pressed') === 'true'), 3000), 'the tool’s Tension holds it, and the pill and the tool both show it');
+  /* a file dropped beside a playlist (not on one) is the tool's: no navigation to it, nothing added */
+  const stray = await page.evaluate(() => {
+    const el = document.querySelector('[data-inline="music"] .gm-mu-about'); if (!el) return null;
+    const dt = new DataTransfer(); dt.items.add(new File(['x'], 'stray.mp3', { type: 'audio/mpeg' }));
+    const over = el.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    const drop = el.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+    return { over, drop, href: location.href };
+  });
+  check(!!stray && stray.over === false && stray.drop === false && /#gm/.test(stray.href), 'a file dropped beside a playlist is caught, never opened by the tab (' + JSON.stringify(stray) + ')');
+  await page.waitForTimeout(500);
+  check(await page.$$eval('[data-inline="music"] .gm-mu-tracks li', (a) => a.length) === 6, 'and adds nothing');
+  if (SHOTS) { await page.waitForTimeout(4000); const el = await page.$('[data-inline="music"]'); if (el) await el.screenshot({ path: path.join(SHOTS, 'tool-1366.png') }); }
   /* ---- 390: no overflow, the pill hidden (the phone is not the player), the tool stacks ---- */
   const ph = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, extraHTTPHeaders: { 'X-Dev-User': GM }, reducedMotion: 'reduce' });
   await ph.addInitScript(atPlace('before', { before: 'room' }));
@@ -196,6 +238,8 @@ try {
   });
   check(p390.scroll && p390.pillHidden && p390.n >= 3 && p390.fit, 'at 390: nothing overflows, the band pill is hidden, the three playlists fit (' + JSON.stringify(p390) + ')');
   if (SHOTS) {
+    /* a tall window, so the whole tool is on screen at once, and after the "tracks added" toast has gone (3.6 s) */
+    await pp.setViewportSize({ width: 390, height: 2200 }); await pp.waitForTimeout(4200);
     const m = await pp.$('.gm-mu');
     if (m) { await m.scrollIntoViewIfNeeded(); await m.screenshot({ path: path.join(SHOTS, 'tool-390.png') }); }
   }

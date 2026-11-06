@@ -2444,22 +2444,26 @@
   }
   /* M1 the Music desk (gm/music.js): the laptop's three playlists that Blade cuts between. ONE controller for the page (the tracks are this laptop's, not a
      session's), made on first use; it reads the night each second through muInputs and never starts by itself. Nothing it keeps is on the server */
-  var MU = null;
+  var MU = null, MU_FAILED = false;
+  /* the last inputs read while the GM page was up: the music plays on while Rules, the cast, the table or Home is open (S is null there), and must
+     not take that for "no PANIC, no phase" (the work light would lift itself, and Tension would step down) */
+  var MU_LAST = { phase: '' };
   function muInputs() {
-    if (!S || S.status !== 'ready') return { phase: '' };
+    if (!S || S.status !== 'ready') return MU_LAST;
     var sec = null; try { sec = S.b17 && S.b17.security ? S.b17.security.view() : null; } catch (e) { sec = null; }
     var v = null; try { v = S.cs ? S.cs.view() : null; } catch (e) { v = null; }
     var ch = false; try { ch = !!chCur(); } catch (e) { ch = false; }
-    return { phase: placesPhase() || '', alarm: isObj(sec) ? { index: sec.index, n: sec.n, filled: sec.site ? sec.filled : null } : null, chase: ch, desperate: S.muDesp || 0,
-      panic: !!(v && v.panic), credits: !!(isObj(AM.doc) && AM.doc.mode === 'pin' && AM.doc.scene === 'credits') };
+    /* a site alarm the GM keeps hidden from the players (security's quiet) is no trigger: the room would hear what the GM hid */
+    return (MU_LAST = { phase: placesPhase() || '', alarm: isObj(sec) && !sec.quiet ? { index: sec.index, n: sec.n, filled: sec.site ? sec.filled : null } : null, chase: ch,
+      desperate: S.muDesp || 0, panic: !!(v && v.panic), credits: !!(isObj(AM.doc) && AM.doc.mode === 'pin' && AM.doc.scene === 'credits') });
   }
   function muInst() {
-    if (MU || !W.B68GmMusic) return MU;
+    if (MU || MU_FAILED || !W.B68GmMusic) return MU;
     try {
       MU = W.B68GmMusic.make(W.B68GmMusic.browserHost({ inputs: muInputs, toast: toast, root: function () { return $q('#gm-root'); },
         openLibrary: function () { var T = W.B68GmTools, t = T && T.get ? T.get('music') : null; if (!openView('music') && t) t.open(); } }));
       MU.load(); MU.start();
-    } catch (e) { MU = null; if (W.console) W.console.error('music', e); }
+    } catch (e) { MU = null; MU_FAILED = true; if (W.console) W.console.error('music: the Music desk could not start on this page', e); }
     return MU;
   }
   /* 4.2 Preflight (gm/preflight.js, switch room.preflight): the Menu line exists only while the switch is on */
@@ -3430,7 +3434,8 @@
   /* the authored site on the card, with a usable play block: { name, play, B }, else null (a rolled site never has one) */
   function runSite() {
     var B = W.B68GmBall, cur = S && isObj(S.doc.cards) ? S.doc.cards.location : null;
-    if (!B || !S.locRoll || !isObj(cur) || !cur.auth || rollKey(S.locRoll) !== locKey(cur)) return null;
+    /* !S: the Run view's beat timer can still tick once the GM page has closed (Rules or the cast opened over it) */
+    if (!B || !S || !S.locRoll || !isObj(cur) || !cur.auth || rollKey(S.locRoll) !== locKey(cur)) return null;
     var site = authoredOf(part('location')).sites[str(cur.auth)];
     if (!isObj(site) || !isObj(site.play) || !isObj(site.play.clock)) return null;
     return { name: str(cur.auth), play: site.play, B: B };
@@ -7437,6 +7442,8 @@
     open: open, close: close, campaign: campaign, characters: charactersChanged, purge: purge,
     available: function () { return !!(W.claude && W.claude.gm); },
     _pure: P,
+    /* for checks (music.e2e.mjs): the music's state, also while another page (Rules, the cast, Home) is open over the GM page */
+    _music: function () { return MU ? MU.state() : null; },
     /* for checks (gm.e2e.mjs): the current roll, and the display gate */
     _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer, svg: S.map.svg }, panel: S.panel, seg: S.seg, doc: S.doc, runCacheN: S.runCache ? S.runCache.keys.length : 0 } : null; },
     _pushDisplay: function (d) { return pushDisplay(d); },

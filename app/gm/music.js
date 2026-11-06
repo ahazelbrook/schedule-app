@@ -285,8 +285,11 @@
       var nx = bagNext(bags[l], idsOf(l), last), id = nx.id; bags[l] = nx.bag;
       if (!id) return Promise.resolve(false);
       var my = ++seq, ni = 1 - cur, d = decks[ni], old = decks[cur];
-      return Promise.resolve(store.get(id)).then(function (rec) {
-        if (my !== seq || !alive) return false;
+      return Promise.resolve().then(function () { return store.get(id); }).then(null, function () {
+        if (my === seq) { err = 'The music library could not be read on this browser.'; paintAll(); }
+        return { failed: true };
+      }).then(function (rec) {
+        if (my !== seq || !alive || (rec && rec.failed)) return false;
         if (!rec || !rec.blob) { markBad(id); return start(l, ms); }
         release(d);
         var a = elOf(d); if (!a) return false;
@@ -360,14 +363,14 @@
       var a = typeof h.audio === 'function' ? h.audio() : null; if (!a) return Promise.resolve(false);
       tester = a;
       var t = tracks.filter(function (x) { return !x.bad; })[0];
-      return Promise.resolve(t ? store.get(t.id) : null).then(function (rec) {
+      return Promise.resolve().then(function () { return t ? store.get(t.id) : null; }).then(null, function () { return null; }).then(function (rec) {
         var blob = rec && rec.blob ? rec.blob : null, url = typeof h.url === 'function' ? h.url(blob || toneWav(3)) : '';
+        var stop = function () { try { a.pause(); } catch (e) {} if (url && typeof h.revoke === 'function') h.revoke(url); url = ''; if (tester === a) tester = null; };
         a.src = url; try { a.volume = clamp(prefs.vol / 100, 0, 1); } catch (e) {}
         return route(a).then(function () { return a.play(); }).then(function () {
-          var stop = function () { try { a.pause(); } catch (e) {} if (typeof h.revoke === 'function') h.revoke(url); if (tester === a) tester = null; };
           if (typeof h.later === 'function') h.later(stop, TEST_MS); else if (W && typeof W.setTimeout === 'function') W.setTimeout(stop, TEST_MS);
           return true;
-        }, function () { say('The test could not play (the browser may need a tap first).', true); return false; });
+        }, function () { stop(); say('The test could not play (the browser may need a tap first).', true); return false; });
       });
     };
 
@@ -460,14 +463,18 @@
       var sup = decks[0].el || (typeof h.audio === 'function' ? true : false);
       var store0 = '<p class="gm-dim gm-mu-store" data-mu-store>' + (used !== null ? 'Stored in this browser: ' + bytesText(used) + '. ' : '') +
         (persisted === true ? 'The browser keeps them (persistent storage is on).' : persisted === false ? 'The browser may clear them if the disk runs short: keep the originals.' : '') + '</p>';
-      return '<div class="gm-mu">' + head + '<div class="gm-mu-lists">' + lists + '</div>' + out + (note ? '<p class="gm-dim" role="status">' + esc(note) + '</p>' : '') + (sup ? '' : '') + store0 + '</div>';
+      var deck = '<div class="gm-mu-deck" data-mu-deck role="group" aria-label="Play the music">' + deckHtml() + '</div>';
+      return '<div class="gm-mu">' + head + deck + '<div class="gm-mu-lists">' + lists + '</div>' + out + (note ? '<p class="gm-dim" role="status">' + esc(note) + '</p>' : '') + (sup ? '' : '') + store0 + '</div>';
     }
-    function paintLib() { if (box && box.isConnected !== false) { box.innerHTML = libHtml(); } }
+    function paintLib() { if (box && box.isConnected !== false && !busyRange(box)) { box.innerHTML = libHtml(); var dk = box.querySelector('[data-mu-deck]'); if (dk) dk.__h = deckHtml(); } }
     function wireLib(sh) {
       if (!sh || sh.__mu) return; sh.__mu = true;
       sh.addEventListener('click', function (ev) {
-        var t = ev.target && ev.target.closest ? ev.target.closest('[data-mu],[data-mu-del],[data-mu-clear]') : null; if (!t || t.tagName === 'SELECT') return;
-        if (t.hasAttribute('data-mu-del')) ctl.remove(t.getAttribute('data-mu-del'));
+        var t = ev.target && ev.target.closest ? ev.target.closest('[data-mu],[data-mu-del],[data-mu-clear],[data-mu-act],[data-mu-mode]') : null; if (!t || t.tagName === 'SELECT') return;
+        if (t.hasAttribute('data-mu-mode')) { ctl.setMode(t.getAttribute('data-mu-mode')); paintAll(); }
+        else if (t.getAttribute('data-mu-act') === 'toggle') { ctl.toggle(); paintAll(); }
+        else if (t.getAttribute('data-mu-act') === 'next') { ctl.next(); paintAll(); }
+        else if (t.hasAttribute('data-mu-del')) ctl.remove(t.getAttribute('data-mu-del'));
         else if (t.hasAttribute('data-mu-clear')) ctl.clear(t.getAttribute('data-mu-clear'));
         else if (t.getAttribute('data-mu') === 'test') ctl.test();
         else if (t.getAttribute('data-mu') === 'refresh') ctl.refresh().then(paintLib);
@@ -479,11 +486,23 @@
         var fs = Array.prototype.slice.call(t.files); t.value = '';
         ctl.add(fs, l);
       });
-      sh.addEventListener('dragover', function (ev) { var s = ev.target && ev.target.closest ? ev.target.closest('[data-mu-list]') : null; if (!s) return; ev.preventDefault(); s.setAttribute('data-drop', 'true'); });
+      sh.addEventListener('input', function (ev) {
+        var t = ev.target; if (!t || !t.hasAttribute || !t.hasAttribute('data-mu-vol')) return;
+        ctl.setVol(t.value); var n = t.parentNode && t.parentNode.querySelector ? t.parentNode.querySelector('[data-mu-voln]') : null; if (n) n.textContent = String(prefs.vol);
+      });
+      /* every drag over the tool is the tool's: a file dropped beside a playlist must never navigate the GM tab to it */
+      sh.addEventListener('dragover', function (ev) {
+        ev.preventDefault();
+        var s = ev.target && ev.target.closest ? ev.target.closest('[data-mu-list]') : null;
+        if (ev.dataTransfer) { try { ev.dataTransfer.dropEffect = s ? 'copy' : 'none'; } catch (e) {} }
+        if (s) s.setAttribute('data-drop', 'true');
+      });
       sh.addEventListener('dragleave', function (ev) { var s = ev.target && ev.target.closest ? ev.target.closest('[data-mu-list]') : null; if (s) s.removeAttribute('data-drop'); });
       sh.addEventListener('drop', function (ev) {
-        var s = ev.target && ev.target.closest ? ev.target.closest('[data-mu-list]') : null; if (!s) return;
-        ev.preventDefault(); s.removeAttribute('data-drop');
+        ev.preventDefault();
+        var s = ev.target && ev.target.closest ? ev.target.closest('[data-mu-list]') : null;
+        if (!s) { say('Drop the files on a playlist: Hanging around, Tension or Action.'); return; }
+        s.removeAttribute('data-drop');
         var fs = ev.dataTransfer && ev.dataTransfer.files ? Array.prototype.slice.call(ev.dataTransfer.files) : [];
         if (fs.length) ctl.add(fs, s.getAttribute('data-mu-list'));
       });
@@ -516,7 +535,8 @@
       }).join('') + '<button type="button" data-mu-mode="auto" aria-pressed="' + (st.mode === 'auto') + '" title="Blade cuts between the three by the night">Auto</button>' +
         '<button type="button" data-mu-mode="off" aria-pressed="' + (st.mode === 'off') + '" title="Fade the music out">Stop</button></div>';
     }
-    function popHtml() {
+    /* the playback controls: the band's popover and the Music tool draw the same ones (the tool is the way in while the pill is hidden) */
+    function deckHtml() {
       var st = ctl.state();
       var now0 = st.playing && st.track ? '<b>Now playing</b> ' + esc(st.track) + ' <span class="gm-cs-dim">· ' + esc(LABEL[st.list] || '') + (st.list && st.mood && st.list !== st.mood ? ' (for ' + esc(LABEL[st.mood]) + ': its playlist is empty)' : '') + '</span>'
         : !st.total ? 'No tracks yet. Add them in <b>Before › The room › Music</b>.' : st.mode === 'off' ? 'Stopped.' : st.tapped ? 'Paused.' : 'Waiting for a tap on ▶ (the browser plays nothing until you press it).';
@@ -524,10 +544,17 @@
       return '<div class="gm-cs-popacts"><button type="button" class="btn sm primary gm-mu-pp" data-mu-act="toggle"' + (st.total ? '' : ' disabled') + '>' + (st.playing ? '❚❚ Pause' : '▶ Play') + '</button>' +
         '<button type="button" class="btn sm" data-mu-act="next"' + (st.total && st.playing ? '' : ' disabled') + '>Next track</button>' + why + '</div>' + segHtml() +
         '<label class="gm-mu-vol">Volume <input type="range" min="0" max="100" step="5" value="' + st.vol + '" data-mu-vol aria-label="Music volume"> <span data-mu-voln>' + st.vol + '</span></label>' +
-        '<p class="gm-mu-np" data-mu-np>' + now0 + '</p>' + (st.err ? '<p class="gm-mu-err" role="status">' + esc(st.err) + '</p>' : '') + (st.ducked ? '<p class="gm-cs-dim">Faded down: the work light or the Opening credits are up.</p>' : '') +
-        '<div class="gm-cs-popacts"><button type="button" class="btn sm" data-mu-act="library">Library…</button></div>';
+        '<p class="gm-mu-np" data-mu-np>' + now0 + '</p>' + (st.err ? '<p class="gm-mu-err" role="status">' + esc(st.err) + '</p>' : '') + (st.ducked ? '<p class="gm-cs-dim">Faded down: the work light or the Opening credits are up.</p>' : '');
+    }
+    function popHtml() { return deckHtml() + '<div class="gm-cs-popacts"><button type="button" class="btn sm" data-mu-act="library">Library…</button></div>'; }
+    function busyRange(el) { var vf = el && el.querySelector('[data-mu-vol]'); return !!(vf && h.document && h.document.activeElement === vf); }
+    /* the tool's copy of the controls follows each tick too (never while its volume is being dragged) */
+    function paintDeck() {
+      var dk = box && box.querySelector ? box.querySelector('[data-mu-deck]') : null; if (!dk) return;
+      var hh = deckHtml(); if (dk.__h !== hh && !busyRange(dk)) { dk.innerHTML = hh; dk.__h = hh; }
     }
     function paintPill() {
+      paintDeck();
       if (!slot) return;
       var b = slot.querySelector('[data-mu-pill]'), p = slot.querySelector('.gm-mu-pop'); if (!b) return;
       var t = pillText(), sig = JSON.stringify([t, pillTitle()]);
@@ -556,7 +583,7 @@
         var t = ev.target && ev.target.closest ? ev.target.closest('[data-mu-pill],[data-mu-act],[data-mu-mode]') : null; if (!t) return;
         if (t.hasAttribute('data-mu-pill')) { popOpen = !popOpen; paintPill(); return; }
         var a = t.getAttribute('data-mu-act'), m = t.getAttribute('data-mu-mode');
-        if (m) ctl.setMode(m);
+        if (m) { ctl.setMode(m); popOpen = false; }      /* a mood, Auto or Stop closes it: an open popover holds the page's keys (Space is GO) */
         else if (a === 'toggle') ctl.toggle();
         else if (a === 'next') ctl.next();
         else if (a === 'library') { popOpen = false; paintPill(); if (typeof h.openLibrary === 'function') h.openLibrary(); else ctl.open(); }
