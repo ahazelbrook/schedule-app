@@ -80,9 +80,16 @@
         var over = !!get('scoreOver'), open = !!get('montageOpen');
         h += '<button type="button" class="rv-btn sm rv-tog rv-montage' + (over ? ' glow' : '') + '" data-site="montage" aria-pressed="' + open + '" title="' + (over ? 'The score is past its budget: s' : 'S') + 'plit the iPad into a panel per character">Montage</button>';
       }
-      return h;
+      return h + ipad();
     }
     function stage() { var s = get('stage'); return s && St ? St.groupHtml(s.view(), esc) : ''; }
+    /* tech run T5: the players' map on the iPad: Show on iPad, or Take it down while it is up (the page's mapShow / mapDown / mapLive) */
+    function ipad() {
+      if (typeof page.mapShow !== 'function' || !get('siteKind')) return '';      /* no site and no roll: no map to show */
+      return get('mapLive')
+        ? '<button type="button" class="rv-btn sm" data-site="ipad-down" title="The map comes off the iPad: the ambient scene plays">Take it down</button>'
+        : '<button type="button" class="rv-btn sm rv-ipad" data-site="ipad" title="The players’ map on the iPad now: the player layer, only the bands and rooms they know. Seen + Send then update it at once">Show on iPad</button>';
+    }
 
     /* ---- the rooms ---- */
     function states() {
@@ -123,6 +130,8 @@
         case 'send': if (s) s.send(); break;
         case 'freeze': if (s) s.freeze(); break;
         case 'blank': if (s) s.blank(); break;
+        case 'ipad': if (typeof page.mapShow === 'function') page.mapShow(); break;
+        case 'ipad-down': if (typeof page.mapDown === 'function') page.mapDown(); break;
         case 'kn': {
           var room = at('data-room'), want = at('data-k'); if (!k || !room) break;
           if (want === 'seen') {
@@ -132,7 +141,7 @@
           redraw(); break;
         }
         case 'intel': if (k) k.intel(at('data-group')); redraw(); break;
-        case 'spot': { if (!sp) break; var id = at('data-id'); if (sp.held() === id) sp.narrator(); else Promise.resolve(sp.spotlight(id)).then(function (r) { if (r && r.ok && r.say) toast(r.say); }); break; }
+        case 'spot': { if (!sp) break; var id = at('data-id'); if (sp.held() === id) sp.narrator(); else Promise.resolve(sp.spotlight(id)).then(function (r) { if (r && r.say) toast(r.say, !r.ok); });      /* tech run: a refusal says why, never nothing */ break; }
         case 'down': if (sp) sp.narrator(); break;
         case 'expr': if (sp) sp.express(at('data-expr')); break;
         case 'sig': if (sp) sp.signature(); break;
@@ -162,7 +171,7 @@
 
     /* ---- the site line: the site has no v2 night (a rolled location, a v1 site), so the readout and the stage live here ---- */
     function line() {
-      var a = alarmInfo(), sg = stage(), kind = get('siteKind');
+      var a = alarmInfo(), sg = stage() + ipad(), kind = get('siteKind');
       if (!a && !sg) return '';
       var h = '<div class="rv-siteline" role="group" aria-label="The site"><div class="rv-headwrap"><div class="rv-head">';
       if (a) h += Se.readoutHtml(a.v, { open: lineAlarm, attr: 'data-gm="site" data-site="alarm"', clock: a.clock }, esc);

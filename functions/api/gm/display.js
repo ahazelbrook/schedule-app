@@ -47,7 +47,7 @@
 import { getDb } from '../../_lib/db.js';
 import { json, methodNotAllowed, readJsonObject, campaignOf, HttpError } from '../../_lib/http.js';
 import { LIMITS, requireGm, cleanDisplay, loadDisplay, putDisplay, loadAmbient, loadAmbientLite, liveAmbient } from '../../_lib/gm.js';
-import { joinOverlayNpc } from '../../_lib/npcs.js';
+import { joinOverlayNpc, joinDisplayNpc } from '../../_lib/npcs.js';
 import { joinOverlayClock, loadMissionPart } from '../../_lib/campaign.js';
 import { loadSttPart } from '../../_lib/stt.js';
 import { joinShows } from '../../_lib/show.js';
@@ -74,8 +74,11 @@ export async function onRequest({ request, env, data, waitUntil }) {
       if (wantHud) { const r = await loadMissionPart(db, campaign, hseq, needLive); feats = r.features && Object.keys(r.features).length ? r.features : null; return r; }
       return { part: undefined, live: needLive ? await liveFlag(db, campaign) : true };
     };
-    const cur = await loadDisplay(db, campaign);
-    const same = seq !== null && seq === String(cur.seq);
+    const cur0 = await loadDisplay(db, campaign);
+    const same = seq !== null && seq === String(cur0.seq);
+    // tech run T3: a pushed NPC (display kind 'npc') carries the revealed NPC's player view as display.npc, since the display-only sign-in cannot read
+    // the cast; read only when the display goes out (not on an unchanged answer), one primary-key read, nothing stored (joinDisplayNpc)
+    const cur = same ? cur0 : await joinDisplayNpc(db, campaign, cur0);
     // THE OVERLAY, served on its own: a small top-level `overlay` on every answer (null when none), made on each poll from the stored overlay
     // alone (the ambient row's overlay cut out in SQL, never the whole document): the server's expiry (left out once its clock passes at + ms,
     // else with `age`), lights out (an autopilot overlay is left out while the display is dark), an npc overlay joined to its row (name, alias,

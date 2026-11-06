@@ -148,6 +148,24 @@ export async function joinOverlayNpc(db, campaign, amb) {
 }
 
 /**
+ * The display as the display is served it, with a display of kind 'npc' joined to its row at READ time (GET /api/gm/display; tech run T3).
+ * The table's display-only sign-in cannot read the cast (403), so without this a pushed NPC drew "Not found" on the iPad. While that NPC is
+ * live, in this campaign and `revealed: true`, a copy of the display gains `npc`: exactly what a player's own cast page shows of a revealed
+ * NPC that the stage draws (name, alias, role, faction, description) and the drawing keys of the spec, each copied by name. A hidden,
+ * missing or deleted NPC gains nothing (the display then reads the cast itself, as before). Response only: nothing is stored.
+ * `cur` is loadDisplay's { seq, display, updatedAt }; one read by primary key, and only for an npc display.
+ */
+export async function joinDisplayNpc(db, campaign, cur) {
+  const d = cur && cur.display;
+  if (!d || typeof d !== 'object' || d.kind !== 'npc' || typeof d.npcId !== 'string' || !ID_RE.test(d.npcId)) return cur;
+  const row = await loadNpcRow(db, d.npcId);
+  const doc = row && isLiveNpc(row, campaign) ? parseNpc(row) : null;
+  if (!doc || doc.revealed !== true) return cur;
+  const text = (v) => (typeof v === 'string' ? v : '');
+  return { ...cur, display: { ...d, npc: { name: text(doc.name), alias: text(doc.alias), role: text(doc.role), faction: text(doc.faction), description: text(doc.description), spec: drawingSpec(doc.spec) } } };
+}
+
+/**
  * The top-level keys of a figure spec that draw the figure (the figure kit's normalise() and rig read exactly these). The join below
  * copies only them, so a label (name, plate, code, halo, id) or any key someone added to a spec never reaches the display. The
  * unit test checks every key the kit's normalise() produces is here or is one of the labels left out.

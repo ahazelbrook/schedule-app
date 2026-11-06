@@ -3941,12 +3941,12 @@
   }
   function showOnIpad() {
     var mu = mapUi(), d, tk = playerTokenSet(revealEntries(mu));
-    try { d = playerDisplay(S.locRoll, mu, W.B68Map && W.B68Map.render, tk); } catch (e) { toast(errText(e), true); return; }
-    if (!confirmReveal(d.reveal, 'This map')) return;
+    try { d = playerDisplay(S.locRoll, mu, W.B68Map && W.B68Map.render, tk); } catch (e) { toast(errText(e), true); return Promise.resolve(false); }
+    if (!confirmReveal(d.reveal, 'This map')) return Promise.resolve(false);
     gate.mark(d.svg);
     var me = S, key = rollKey(S.locRoll), on = { key: key, reveal: d.reveal.slice(), know: knowRooms(mu), view: mu.view, theme: mu.theme, time: mu.time, weather: mu.weather, title: d.title, tok: tk.sig, tokQ: tk.sig, tokToast: d.tokensRefused ? tk.sig : null };
     endLive();            /* nothing is live until this map has landed */
-    pushDisplay({ kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }, {
+    return pushDisplay({ kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }, {
       map: true,
       done: function (r) { if (S === me && S.locRoll && rollKey(S.locRoll) === key && mapUi().layer === 'player' && typeof r.seq === 'number') S.mapOn = Object.assign(on, { seq: r.seq }); }
     }).then(function () {
@@ -3954,7 +3954,50 @@
       toast('On the iPad: ' + d.title + ' (' + d.caption + '). Bands you open or close now go to the iPad at once.');
       if (d.tokensRefused) toast(P.TOKEN_LEAK_MSG, true);
       if (S === me) liveTokens();          /* a marker moved while this was on its way */
-    }, function (e) { if (!e.superseded) toast('Could not send to the iPad: ' + errText(e), true); });
+      return true;
+    }, function (e) { if (!e.superseded) toast('Could not send to the iPad: ' + errText(e), true); return false; });
+  }
+  /* Tech run T5: the players' map on the iPad from the site. The site's toolbar has Show on iPad (and Take it down while the map is up), Send puts it up when it
+     is not up yet, and entering the Score puts it up by itself when the iPad is only playing the ambient (or is black). It is Location's own Show on iPad: the
+     Location card's roll, the PLAYER layer (switched to Player first, as only that layer may go), the bands ticked and the rooms opened, the same render, leak
+     scan, gate and confirm; from then on the map is live, so Seen + Send update it at once. quiet: no toast for "nothing to show" (the automatic paths). */
+  /* PANIC holds the safe scene: nothing automatic replaces it (the review of #194) */
+  function panicOn() { try { return !!(S && S.cs && typeof S.cs.view === 'function' && (S.cs.view() || {}).panic); } catch (e) { return false; } }
+  /* an automatic path never asks: a map that would need the confirm (bands beyond public, rooms opened on their own) waits for the GM's own Show on iPad */
+  function needsConfirm() {
+    try {
+      var mu = mapUi(), d = playerDisplay(S.locRoll, mu, W.B68Map && W.B68Map.render, playerTokenSet(revealEntries(mu)));
+      return entryBands(d.reveal).some(function (b) { return b !== 'public'; }) || entryRooms(d.reveal).length > 0;
+    } catch (e) { return true; }
+  }
+  function siteMapUp(quiet, auto) {
+    if (!S || !S.locRoll) { if (!quiet) toast('There is no map to show yet: open the site on the Location card first.', true); return Promise.resolve(false); }
+    if (b17Frozen()) { if (!quiet) toast('The iPad is frozen: unfreeze it first.', true); return Promise.resolve(false); }
+    if (auto && panicOn()) return Promise.resolve(false);
+    if (mapUi().layer !== 'player') setMap('layer', 'player');
+    if (auto && needsConfirm()) { toast('Map not shown on the iPad: press Show on iPad on the site when ready.'); if (S) siteChanged(); return Promise.resolve(false); }
+    return Promise.resolve(showOnIpad()).then(function (ok) { if (S) siteChanged(); return ok; });
+  }
+  /* entering the Score: the map goes up unless the GM has something else on the iPad (a map already live, a handout, a rule, a face card held as the display) */
+  function scoreMapDefault() {
+    if (!S || !S.locRoll || mapOnIpad() || b17Frozen() || panicOn()) return;
+    var me = S, g = gmApi(), free = function (k) { k = str(k); return !k || k === 'blank' || k === 'dark'; };
+    /* what the iPad shows is read fresh (another device, or Clear on the phone, may have changed it since this page last pushed; the ambient seq is sent so the big
+       ambient part is not); without the call, this page's own record */
+    var look = g && typeof g.display === 'function' ? Promise.resolve().then(function () { return g.display(undefined, typeof AM.seq === 'number' ? AM.seq : undefined); }).then(function (r) { return r && isObj(r.display) ? r.display.kind : ''; }, function () { return AM.shown ? AM.shown.kind : ''; })
+      : Promise.resolve(AM.shown ? AM.shown.kind : '');
+    look.then(function (k) { if (S === me && free(k) && !mapOnIpad()) siteMapUp(true, true); });
+  }
+  function scoreMapWrap(me) {
+    var nt = me.night; if (!nt || typeof nt.enter !== 'function' || typeof nt.phase !== 'function' || nt.__r1map) return;
+    var enter0 = nt.enter;
+    nt.enter = function (phase) {
+      var was = null; try { was = nt.phase(); } catch (e) { was = null; }
+      var r = enter0.apply(nt, arguments);
+      if (r !== false && phase === 'score' && was !== 'score' && S === me) scoreMapDefault();
+      return r;
+    };
+    nt.__r1map = true;
   }
   /* Live reveal (GM.md, "Location"; Alex, 22/10/2026: the GM opens bands and the iPad updates at once; the secrecy review of
      23/10/2026). S.mapOn is what Show on iPad (or the last live push) actually put on the iPad: the roll's key, the bands, the view,
@@ -4882,7 +4925,9 @@
         var ch = { open: names.length ? names : null };
         if (b09On('map.knowledge')) { var kn = cleanRooms(ballDoc(rs.name).know).filter(function (n) { return names.indexOf(n) < 0; }); ch.know = kn.length ? kn : null; }
         var ok = ballSet(rs.name, ch);
-        if (S.map) drawMap(); renderLocation(); return !!ok;
+        if (S.map) drawMap(); renderLocation();
+        if (ok && !mapOnIpad() && !panicOn()) siteMapUp(true);      /* T5: Send puts the map on the iPad when it is not up yet (live, the open rooms go at once); never over PANIC */
+        return !!ok;
       },
       liveText: function () { return S === me && mapOnIpad() ? bandWords(S.mapOn.reveal) : ''; },
       dark: function () { return pushDisplay({ kind: 'dark' }, { b17: true }).then(function () { toast('Blank: the iPad is black.'); }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); }); },
@@ -4940,6 +4985,8 @@
       roomMd: function (room) { var rn = S === me ? runRoomNotes() : null; return rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? str(rn.byRoom[room].md) : ''; },
       scoreOver: siteScoreOver, montageOpen: function () { return !!(S === me && S.rv && S.rv.toolOpen() === 'montage'); }, montage: function (view) { siteMontage(view); },
       dawn: function () { return runDawn(); }, introduce: function (id) { npcIntroduce(id); }, setThreat: siteThreat,
+      /* T5: Show on iPad / Take it down for the players' map, in the site's toolbar */
+      mapLive: function () { return S === me && mapOnIpad(); }, mapShow: function () { return S === me ? siteMapUp(false) : Promise.resolve(false); }, mapDown: function () { if (S === me) blankIpad(); },
       lineShown: function () { var l = $q('#gm-runv .rv-siteline'); return !!(l && l.offsetParent !== null); }
     });
     return me.site;
@@ -5087,7 +5134,7 @@
     var N = W.B68GmNight, me = S; if (W.B68GmSpine) W.B68GmSpine.reset(); if (!N) { me.night = null; return; }
     me.night = N.create({ doc: function () { return S === me ? S.doc : null; }, patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); }, changed: function () { spineTick(); placesSync(); bandUpdate(); },
       prep: function () { var pk = S === me ? part('prep') : null, id = pk && W.B68GmPrep ? prepNoteId(pk) : null; return id && Array.isArray(pk.notes) ? pk.notes.filter(function (n) { return isObj(n) && n.id === id; })[0] || null : null; } });
-    spineTick(); tcWrap(me);
+    spineTick(); tcWrap(me); scoreMapWrap(me);
   }
   /* 2.10 the score title card (gm/title-card.js, switch map.title): on GO into the Score phase the iPad gets it; the wrap sits on the night controller's own enter() */
   function tcWrap(me) {
@@ -6139,7 +6186,7 @@
       pre = typeof ref.update === 'function' ? Promise.resolve().then(function () { return ref.update(clone(p)); }) : Promise.resolve().then(function () { return ref.set(Object.assign({}, clone(d), clone(p))); });
     }
     pre.then(function () { var o = {}; o[id] = on; return api.saveScene({ npcs: o, at: nowIso() }); })
-      .then(function () { if (S === me) toast(on ? name + ' is on stage.' : name + ' is off the stage.'); }, function (e) { toast('Could not change the stage for ' + name + ': ' + errText(e), true); });
+      .then(function () { if (S === me) toast(on ? name + ' is on stage: on the players’ phones, not the iPad. Show on iPad puts them up there.' : name + ' is off the stage.'); }, function (e) { toast('Could not change the stage for ' + name + ': ' + errText(e), true); });
   }
 
   /* ---------- the NPC generator: a roll is a seed and the repeat-guard memory, so it replays after a reload ---------- */
@@ -6253,14 +6300,24 @@
   /* "Introduce" (suite 3.5, switch face.rolodex): the NPC's Rolodex card as a lower third on the iPad for about 20 seconds; revealed NPCs only (the server joins to them anyway) */
   function introHtml(id, rev) { return rev && b09On('face.rolodex') ? '<button type="button" class="btn sm" data-gm="npcintro" data-id="' + esc(id) + '" title="Flip their card up as a lower third on the iPad">Introduce</button>' : ''; }
   function npcIntroduce(id) {
-    var d = S.npcs[id], sh = shows(); if (!d || !sh) return;
+    var d = S.npcs[id], sh = shows();
+    if (!d) { toast('That person is not in the cast (yet): the cast is still loading, or they were taken out.', true); return; }      /* tech run: never a silent no */
+    if (!sh) { toast('Introduce needs the hosted app.', true); return; }
     if (d.revealed !== true) { toast('Reveal ' + (d.name || 'them') + ' first.', true); return; }
     sh.show('rolodex', { npcIds: [id] }, { key: 'intro-' + id, ms: 20000 }).then(function (r) { if (r !== null && r !== undefined) toast('Introducing ' + (d.name || 'them') + '.'); }, function () { toast('Could not introduce them on the iPad.', true); });
   }
   function npcToIpad(id) {
     var d = S.npcs[id]; if (!d) return;
-    if (d.revealed !== true && !W.confirm((d.name || 'This NPC') + ' is hidden from the players. Show them on the iPad anyway?')) return;
-    pushDisplay({ kind: 'npc', npcId: id, title: str(d.name).slice(0, 2000) }).then(function () { toast('On the iPad: ' + (d.name || 'the NPC') + '.'); }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
+    /* tech run T3: a hidden person is revealed first, as the site's Spotlight does it ("Reveal and show?"): the iPad's own sign-in is served a pushed NPC only
+       once revealed (the display GET joins it), so showing a hidden one "anyway" drew "Not found" there */
+    var pre = Promise.resolve();
+    if (d.revealed !== true) {
+      if (!W.confirm('Reveal and show? ' + (d.name || 'This NPC') + ' is hidden from the players. This reveals them to everyone and shows them on the iPad.')) return;
+      var ref = npcRef(id); if (!ref) { toast('The cast is not available here.', true); return; }
+      pre = Promise.resolve().then(function () { return ref.update({ revealed: true, firstSeen: d.firstSeen || nowIso() }); });
+    }
+    pre.then(function () { return pushDisplay({ kind: 'npc', npcId: id, title: str(d.name).slice(0, 2000) }); })
+      .then(function () { toast('On the iPad: ' + (d.name || 'the NPC') + '.'); }, function (e) { if (!e || !e.superseded) toast('Could not show ' + (d.name || 'them') + ' on the iPad: ' + errText(e), true); });
   }
 
   /* ---------- the Prep tab (gm/prep.js; GM.md "Prep"): the prep notes from the pack, ticks and beats in the GM state ---------- */

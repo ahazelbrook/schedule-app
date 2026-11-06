@@ -600,6 +600,18 @@
       remember: function (ms) { var kept = false; each(function (st) { st.setItem(Pure.RELOAD.key, String(ms)); kept = true; }); return kept; }
     };
   };
+  /* ---------- a new deploy reaches the iPad by itself (tech run 06/11, T2) ----------
+     The server names its build on every answer (X-B68-Build; app/runtime/cf.js sets B68Runtime.status.newBuild when it is not this page's). The GM page
+     shows "Updated: reload", but the display covers the whole screen and nobody touches the iPad on its stand, so it ran the old build all night. It now
+     reloads itself, at a quiet moment (nothing laid over the picture, the theme not playing), and at most once per gapMs, the same stored time as the
+     signed-out reload (Pure.reloadStore), so a reload that comes back on the old build (a slow network, the cache) never loops.
+     reloadForBuild(newBuild, last, now, busy, gapMs) -> bool. Pure. */
+  Pure.reloadForBuild = function (newBuild, last, now, busy, gapMs) {
+    var gap = typeof gapMs === 'number' ? gapMs : Pure.RELOAD.gapMs;
+    if (!newBuild || busy) return false;
+    if (last === null || last === undefined) return true;
+    return now >= last && now - last >= gap;
+  };
 
   /* ---------- the ambient floor (GM.md, "Ambient scenes"; the plan: docs/history/AMBIENT-PLAN.md) ----------
      When no spotlight is up the display plays a self-contained scene full screen and rotates it. The registry below is the only
@@ -825,6 +837,13 @@
     if (!o) return { seen: '', action: seenId ? 'hide' : 'keep', overlay: null };
     if (o.id === seenId) return { seen: seenId, action: 'keep', overlay: o };
     return { seen: o.id, action: 'show', overlay: o };
+  };
+  /* seenAfter(before, step, dark, wasAuto) -> the id the page keeps as seen after a step. A hide while lights out keeps the old id ONLY when the overlay that
+     went was the autopilot's (taken off at lights out, it must not come back when the lights do and the server serves it again). A GM-pressed one that ran out
+     or was taken down in the dark is forgotten like any other, so the same id shows again: a keyed show beat (Introduce) has the same id every time, and
+     keeping it made a second Introduce of the same person never show while the iPad was blank (tech run 06/11, T4). */
+  Pure.seenAfter = function (before, step, dark, wasAuto) {
+    return step && step.action === 'hide' && dark && wasAuto ? before : (step ? step.seen : before);
   };
   /* the clock face: one wedge per segment from 12 o'clock, clockwise, in a 100 x 100 box; the first `filled` are on */
   Pure.clockWedges = function (size, filled) {
@@ -1621,7 +1640,7 @@
         s.ov.held = { o: step.overlay, at: Date.now() };
         ovRemove(true); s.ov.auto = false;
       } else {
-        s.ov.seen = step.action === 'hide' && s.dark ? before : step.seen;
+        s.ov.seen = Pure.seenAfter(before, step, s.dark, s.ov.auto);
         if (step.action === 'show') { ovShow(step.overlay); s.ov.auto = !!step.overlay.auto; }
         else if (step.action === 'hide') ovRemove(false);
         else ovRefresh(step.overlay);
@@ -2007,6 +2026,9 @@
       ovLightsOut(vm.kind === 'dark');                                          /* lights out: no autopilot overlay, no AUTO chip */
       wireSync();
       if (vm.kind === 'npc') {
+        /* tech run T3: the server joins a revealed NPC's player view to the display it serves (display.npc), which the display-only sign-in needs: it
+           cannot read the cast, so it drew "Not found". Without it (a hidden NPC, an older server) the page reads the cast as before. */
+        if (display && isObj(display.npc)) { swap(buildStage(Pure.viewModel(display, display.npc), seq, ctx)); return; }
         loadNpc(ctx, vm.npcId).then(function (doc) {
           if (s.dead || my !== s.token) return;                       /* a newer push arrived while the cast was loading */
           swap(buildStage(Pure.viewModel(display, doc), seq, ctx));
@@ -2029,6 +2051,17 @@
     } else {
       /* signed out for good (the adapter refuses every call once Access has ended the session): reload, once in a while (Pure.createReloader) */
       var reloads = Pure.reloadStore(window);
+      /* T2: a new deploy (the runtime's newBuild) reloads this page at a quiet moment, at most once per half hour (Pure.reloadForBuild) */
+      var buildCheck = function () {
+        if (s.dead) return;
+        var st = window.B68Runtime && window.B68Runtime.status, now = Date.now();
+        var busy = !!(s.ov && s.ov.node) || !!(s.music && s.music.state === 'playing');
+        if (!Pure.reloadForBuild(st && st.newBuild, reloads.last(), now, busy)) return;
+        if (!reloads.remember(now)) return;                       /* nowhere to note it: stay on this build rather than risk a loop */
+        try { window.location.reload(); } catch (e) { /* the page stays as it is */ }
+      };
+      s.offs.push(on(window, 'b68:runtime', buildCheck));
+      var buildTick = setInterval(buildCheck, 30000); s.offs.push(function () { clearInterval(buildTick); });
       s.reloader = Pure.createReloader({
         timers: { setTimeout: later, clearTimeout: clearLater },
         now: function () { return Date.now(); },
@@ -2073,6 +2106,9 @@
       if (!document.hidden) { acquireWake(); paintStatus(); }
     }));
     s.offs.push(on(window, 'online', function () { if (s.poller) { s.poller.reset(); s.poller.kick(); } }));
+    /* T2: Safari brings a page back from its back-forward cache (pageshow, persisted) with its timers stale: look at once, and forget the backoff. Not on the
+       first load's own pageshow, which would put a second look right after the first and break the beat. */
+    s.offs.push(on(window, 'pageshow', function (ev) { if (ev && ev.persisted && s.poller) { s.poller.reset(); s.poller.kick(); } }));
     acquireWake();
     /* the first tap or touch is also the user gesture the wake lock sometimes wants */
     s.offs.push(on(container, 'pointerdown', acquireWake, { passive: true }));
