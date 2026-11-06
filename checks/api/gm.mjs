@@ -867,6 +867,48 @@ async function main() {
     status(await A({ overlay: null }), 200);
   });
 
+  await step('T15 known-as: a revealed NPC tagged known-as reaches a phone and the iPad by its alias alone (cast GETs, npc overlay, an NPC card on the display, a rolodex, the credits); the GM\'s cast GET keeps the whole row', async () => {
+    const IPAD = 'table.ipad@example.test', FIRST = /\bAda\b/, ID = 'npc_known';
+    const row = { name: 'Ada Vell', alias: 'Vell', role: 'Fixer', faction: 'The Invented Guild', description: 'A woman at the bar.', gmNotes: 'GMNOTES-MARKER', tags: ['bar', 'known-as'],
+      spec: { id: 'ada-vell', name: 'Ada Vell', plate: 'Ada Vell', code: 'NPC-968-1234', figure: 'fem', heightIn: 64, seed: 7 }, revealed: true };
+    status(await gm('PUT', '/api/npcs/' + ID, row), 200);
+    // the phones: the list and the one row, by the alias, no alias line, no marker, nothing of the first name (the spec's label keys included)
+    const list = await player('GET', '/api/npcs'); status(list, 200);
+    const mine = list.json.docs.find((x) => x.id === ID);
+    expect(mine && mine.doc.name === 'Vell' && mine.doc.alias === '' && !mine.doc.tags.includes('known-as') && mine.doc.spec.name === 'Vell' && mine.doc.spec.plate === 'Vell' && !('id' in mine.doc.spec), 'a player\'s list: ' + JSON.stringify(mine));
+    expect(!FIRST.test(list.text) && !list.text.includes('ada-vell') && !list.text.includes('GMNOTES-MARKER'), 'no first name anywhere in a player\'s list');
+    const one = await player('GET', '/api/npcs/' + ID); status(one, 200);
+    expect(one.json.doc.name === 'Vell' && !FIRST.test(one.text), 'a player\'s one row: ' + one.text.slice(0, 300));
+    // the GM: the whole stored row, unchanged (the joins by exact name keep working)
+    const g = await gm('GET', '/api/npcs/' + ID); status(g, 200);
+    expect(g.json.doc.name === 'Ada Vell' && g.json.doc.alias === 'Vell' && g.json.doc.tags.includes('known-as') && g.json.doc.spec.name === 'Ada Vell' && g.json.doc.gmNotes === 'GMNOTES-MARKER', 'the GM\'s row: ' + g.text.slice(0, 300));
+    expect((await gm('GET', '/api/npcs')).json.docs.find((x) => x.id === ID).doc.name === 'Ada Vell', 'the GM\'s list keeps the full name');
+    const shapes = async (user) => { const q = (p) => call('GET', '/api/gm/display' + p, { user }); return [await q(''), await q('?seq=-1&aseq=-1'), await q('?seq=-1&aseq=-1&sseq=-1'), await q('?seq=-1&aseq=-1&sseq=-1&hseq=-1')]; };
+    const clean = async (why, check) => {
+      for (const user of [GM, IPAD]) for (const [i, d] of (await shapes(user)).entries()) { status(d, 200); expect(!FIRST.test(d.text), why + ', ' + user + ' shape ' + i + ' names the first name: ' + d.text.slice(0, 300)); if (check) check(d.json, user + ' shape ' + i); }
+    };
+    // an npc overlay
+    status(await A({ overlay: { id: 'ka-ov', kind: 'npc', ms: 60000, npcId: ID } }), 200);
+    await clean('the npc overlay', (j, w) => expect(j.overlay && j.overlay.npc && j.overlay.npc.name === 'Vell' && j.overlay.npc.alias === '', w + ': ' + JSON.stringify(j.overlay)));
+    status(await A({ overlay: null }), 200);
+    // the display's own NPC card: the GM page stores the full name as its title
+    status(await gm('PUT', '/api/gm/display', { kind: 'npc', npcId: ID, title: 'Ada Vell' }), 200);
+    await clean('the NPC card on the display', (j, w) => expect(j.display && j.display.kind === 'npc' && j.display.title === 'Vell', w + ': ' + JSON.stringify(j.display)));
+    const scr = await player('GET', '/api/table/screen'); status(scr, 200); expect(!FIRST.test(scr.text), 'the phones\' Table copy: ' + scr.text.slice(0, 200));
+    // a rolodex and the credits ("Seen tonight")
+    status(await gm('PUT', '/api/gm/display', { kind: 'blank' }), 200);
+    status(await A({ overlay: { id: 'ka-ro', kind: 'rolodex', ms: 60000, payload: { npcIds: [ID] } } }), 200);
+    status(await A({ layer: { path: 'data.credits', value: [ID] } }), 200);
+    await clean('the rolodex and the credits', (j, w) => expect(j.overlay.payload.npcs[0].name === 'Vell' && j.layers.data.credits[0].name === 'Vell', w + ': ' + JSON.stringify([j.overlay, j.layers]).slice(0, 300)));
+    // the control: the same row without the marker shows the full name, so the scans above would have seen a leak
+    status(await gm('PATCH', '/api/npcs/' + ID, { tags: ['bar'] }), 200);
+    const ctl = await call('GET', '/api/gm/display', { user: IPAD });
+    expect(FIRST.test(ctl.text) && ctl.json.overlay.payload.npcs[0].name === 'Ada Vell' && ctl.json.overlay.payload.npcs[0].alias === 'Vell', 'unmarked, the iPad gets the full name and the alias: ' + ctl.text.slice(0, 200));
+    expect((await player('GET', '/api/npcs/' + ID)).json.doc.name === 'Ada Vell', 'unmarked, a player gets the full name');
+    status(await A({ overlay: null, layers: null }), 200);
+    status(await gm('DELETE', '/api/npcs/' + ID), 200);
+  });
+
   await step('ambient: every display svg refusal is replayed against score.board and score.iso', async () => {
     expect(SVG_CASES.length >= 30, 'the display step collected its svg cases: ' + SVG_CASES.length);
     const seq0 = await ambSeq();
