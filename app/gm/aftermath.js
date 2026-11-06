@@ -267,6 +267,12 @@
 
   /* the 10 s tick lives on the box it was started for (box.__aftT), so a second box (the inline copy beside the right-edge one) never loses the first one's interval */
   function stopTick(box) { if (!box) return; if (box.__aftT) W.clearInterval(box.__aftT); box.__aftT = null; box.__aft = false; }
+  /* this box while it still holds the panel; else the inline copy the shell bound in its place (the right-edge copy gives way emptied) */
+  function liveBox(box) {
+    if (!box || (box.isConnected && box.firstChild)) return box;
+    var d = box.ownerDocument, b = d && typeof d.querySelector === 'function' ? d.querySelector('[data-inline="aftermath"] .gm-inline') : null;
+    return b || box;
+  }
   function paint(box, sh) {
     var c = controller();
     if (!box.__aft) {                  /* a live panel keeps its own ticking while it is open (inline: until the shell unbinds it) */
@@ -280,7 +286,9 @@
     box.appendChild(el('p', 'gm-dim', 'The Aftermath, eight steps, about ' + mmss(st.secsTotal) + ' (the Run Sheet allows 12:00). Steer from here; the iPad follows. Every step can be skipped.'));
     if (!st.enabled) { box.appendChild(el('p', 'gm-empty', 'Switched off. Turn on Aftermath show in Menu, Switchboard.')); return; }
     if (!st.open) {
-      var go = btn('Start the Aftermath', function () { c.resume(); c.start().then(function () { paint(box); }); }, 'primary');
+      /* Start enters the Aftermath; the page follows the night to its place, which binds the show inline and empties this right-edge copy (N1b):
+         the step is then painted into the copy that is live */
+      var go = btn('Start the Aftermath', function () { c.resume(); c.start().then(function () { paint(liveBox(box)); }); }, 'primary');
       box.appendChild(go);
       return;
     }
