@@ -208,5 +208,44 @@ await test('the controller writes nothing until it is asked, then goes through t
   const dead = N.create({}); assert.equal(dead.enter('pb'), false); assert.equal(dead.phase(), '');
 });
 
+/* ---------- the GM's own start and curfew (F2) ---------- */
+await test('enter() fills an empty start and curfew from the note but never overwrites one the GM set', async () => {
+  const s = store(), prep = N.parsePrep(WITH), id = gen(0);
+  let doc = (await s.write(N.setTime({}, 'startAt', '18:30'))).doc;
+  doc = (await s.write(N.enter(doc.night, 'pb', at(0), prep, id()))).doc;
+  let n = N.clean(doc.night);
+  assert.equal(n.startAt, '18:30', 'the GM own start stays'); assert.equal(n.curfewAt, '22:40', 'an empty curfew is filled from the note');
+  doc = (await s.write(N.setTime(doc.night, 'curfewAt', '22:00'))).doc;
+  doc = (await s.write(N.enter(doc.night, 'plan', at(10), prep, id()))).doc;
+  n = N.clean(doc.night);
+  assert.equal(n.startAt, '18:30'); assert.equal(n.curfewAt, '22:00', 'a later phase leaves both alone');
+  assert.ok(!('startAt' in N.enter(doc.night, 'score', at(20), prep, id()).night) && !('curfewAt' in N.enter(doc.night, 'score', at(20), prep, id()).night), 'no times in the patch');
+});
+await test('setTime rejects a bad key and clears on a bad or empty time; usePrep puts the note time back (or clears)', async () => {
+  const s = store(), prep = N.parsePrep(WITH);
+  assert.equal(N.setTime({}, 'phase', '18:30'), null); assert.equal(N.usePrep({}, '__proto__', prep), null);
+  let doc = (await s.write(N.setTime({}, 'startAt', '18:30'))).doc;
+  assert.equal(N.clean(doc.night).startAt, '18:30');
+  doc = (await s.write(N.usePrep(doc.night, 'startAt', prep))).doc;
+  assert.equal(N.clean(doc.night).startAt, '19:30', 'Use the prep');
+  doc = (await s.write(N.setTime(doc.night, 'startAt', '25:99'))).doc;
+  assert.equal(N.clean(doc.night).startAt, null, 'a bad time clears');
+  doc = (await s.write(N.setTime(doc.night, 'curfewAt', '22:00'))).doc;
+  doc = (await s.write(N.usePrep(doc.night, 'curfewAt', N.parsePrep(WITHOUT)))).doc;
+  assert.equal(N.clean(doc.night).curfewAt, null, 'a note with no line: cleared');
+});
+await test('a reset night seeds from the note again; the controller setTime and usePrep write through the host', () => {
+  let doc = {}, clock = T0;
+  const merge = (a, b) => { const o = JSON.parse(JSON.stringify(a)); for (const k of Object.keys(b)) { if (b[k] === null) delete o[k]; else if (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k])) o[k] = merge(o[k] || {}, b[k]); else o[k] = b[k]; } return o; };
+  const c = N.create({ doc: () => doc, patch: (p) => { doc = merge(doc, p); return true; }, now: () => clock, prep: () => WITH });
+  assert.equal(c.setTime('startAt', '18:30'), true); assert.equal(c.night().startAt, '18:30');
+  assert.equal(c.enter('pb'), true); assert.equal(c.night().startAt, '18:30'); assert.equal(c.night().curfewAt, '22:40');
+  assert.equal(c.setTime('curfewAt', '22:00'), true); assert.equal(c.enter('plan'), true); assert.equal(c.night().curfewAt, '22:00'); assert.equal(c.night().startAt, '18:30');
+  assert.equal(c.usePrep('startAt'), true); assert.equal(c.night().startAt, '19:30');
+  assert.equal(c.setTime('bogus', '18:00'), false);
+  assert.equal(c.reset(), true); assert.equal(c.night().startAt, null);
+  assert.equal(c.enter('pb'), true); assert.equal(c.night().startAt, '19:30'); assert.equal(c.night().curfewAt, '22:40', 'a reset night seeds from the note again');
+});
+
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

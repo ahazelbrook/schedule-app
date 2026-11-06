@@ -48,7 +48,8 @@
                'side': the phone's one column), prepNote() -> the open note | null, prepNotes() -> [{ id, title }], setPrepNote(id),
                prepSecs() -> [{ id, head, html() }] the open note's ## sections, decorate(el) (ticks, cells), crew() -> [{ id, name, stress,
                harm: [1-4], locks, turn: [key names] }], sheetOpen(id) -> bool, exportTonight(), endNight() -> Promise, recording() -> bool,
-               stopRecording(), toast(msg, bad) }
+               stopRecording(), toast(msg, bad),
+               nightTimes() -> { startAt, curfewAt } (the night's own, "HH:MM" | null), setTime(key, hhmm), usePrep(key) (the Tonight box's fields) }
        Every host function is optional: a missing one costs only its own feature. The page calls mount() after each layout() (and once its
        panes are drawn) and sync() from its pane switch, which runs on every state arrival. */
 (function (root, factory) {
@@ -369,9 +370,17 @@
       }).join('') + '</ul>';
     }
     function factsNow() { return facts(call('prepNote'), W && W.B68GmNight, W && W.B68GmCueStack); }
+    /* one time field: the night's own time (or the note's, until the GM sets one), and the note's under it while the two differ */
+    function timeHtml(key, label, mine, noteAt) {
+      var shown = mine || noteAt || '', differs = !!mine && mine !== noteAt;
+      return '<div class="gm-tn-time"><label class="gm-lab">' + label + '<input type="time" class="gm-tn-input" data-tn-time="' + key + '" value="' + esc(shown) + '"></label>' +
+        (differs ? '<span class="gm-dim gm-tn-from">' + (noteAt ? 'from the prep note: ' + esc(noteAt) : 'the prep note has none') + '</span><button type="button" class="btn sm" data-tn-prep="' + key + '">Use the prep’s</button>'
+          : (shown ? '' : '<span class="gm-dim gm-tn-from">no ' + label.toLowerCase() + ' line in the note</span>')) + '</div>';
+    }
     function factsHtml(f) {
       if (!f.title) return '<p class="gm-dim">No prep note in the pack: Tonight reads the open note’s start, curfew, cues and rooms.</p>';
-      return '<p class="gm-tn-title">' + esc(f.title) + '</p><p class="gm-tn-line">' + (f.start ? 'Start <b>' + esc(f.start) + '</b>' : 'No start line') + ' · ' + (f.curfew ? 'curfew <b>' + esc(f.curfew) + '</b>' : 'no curfew line') + '</p>' +
+      var t = call('nightTimes') || {};
+      return '<p class="gm-tn-title">' + esc(f.title) + '</p>' + timeHtml('startAt', 'Start', t.startAt, f.start) + timeHtml('curfewAt', 'Curfew', t.curfewAt, f.curfew) +
         '<p class="gm-tn-line"><b>' + f.cues + '</b> cue' + (f.cues === 1 ? '' : 's') + ' · <b>' + f.rooms + '</b> room' + (f.rooms === 1 ? '' : 's') + '</p>';
     }
     function leftHtml() {
@@ -632,6 +641,7 @@
     function onClick(ev) {
       var t = ev.target; if (!t || !t.closest) return;
       var b, row;
+      if ((b = t.closest('[data-tn-prep]'))) { ev.preventDefault(); call('usePrep', b.getAttribute('data-tn-prep')); st.sigs.slot = ''; later(function () { render(); }); return; }
       if ((b = t.closest('[data-pvx]'))) { ev.preventDefault(); dropExtra(); return; }
       if ((b = t.closest('[data-pv]'))) {
         ev.preventDefault();
@@ -647,7 +657,14 @@
       if (t.closest('.rl-task[data-task], td[data-cell]') && t.closest('#gm-vpane')) later(redecorate);
     }
     function onChange(ev) {
-      var t = ev.target; if (!t || !t.getAttribute || !t.getAttribute('data-pv-note')) return;
+      var t = ev.target;
+      var key = t && t.getAttribute ? t.getAttribute('data-tn-time') : '';
+      if (key) {      /* the Tonight box: a time written to the night; an emptied field puts the note's back */
+        if (t.value) call('setTime', key, t.value); else call('usePrep', key);
+        st.sigs.slot = ''; later(function () { render(); var n = els(), f = n && n.left && n.left.querySelector('[data-tn-time="' + key + '"]'); if (f && f.focus && !focusIn(n.left)) { try { f.focus(); } catch (x) {} } });
+        return;
+      }
+      if (!t || !t.getAttribute || !t.getAttribute('data-pv-note')) return;
       call('setPrepNote', t.value); st.sigs.pane = ''; st.sigs.slot = '';
       later(function () { render(); });
     }

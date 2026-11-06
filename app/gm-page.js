@@ -2393,7 +2393,7 @@
     if (!hsOn()) return null;
     if (!S.hs) S.hs = W.B68GmHardStart.make({
       layer: function (p, v) { var c = shows(); return c ? c.layer(p, v) : Promise.resolve(null); }, npcs: function () { return S && isObj(S.npcs) ? S.npcs : {}; }, now: function () { return Date.now(); },
-      startAt: function () { var n = S && S.night && typeof S.night.night === 'function' ? S.night.night() : null; return n && W.B68GmNight ? W.B68GmNight.clockMs(n.startAt, Date.now()) || 0 : 0; },
+      startAt: function () { var n = S && S.night && typeof S.night.night === 'function' ? S.night.night() : null, N = W.B68GmNight, pn = n && !n.startAt && N ? csNote() : null; return n && N ? N.clockMs(n.startAt || (pn ? N.parsePrep(pn).start : null), Date.now()) || 0 : 0; },     /* the GM's own start; until one is set (or a phase seeds it), the note's */
       root: function () { return $q('#gm-root'); }, toast: toast
     });
     return S.hs;
@@ -2769,6 +2769,9 @@
       showPane: function (p) { if (S === me) paneShow(p); },
       seg: function (which) { if (S !== me || S.seg === which) return; S.seg = which; syncPanels(); },
       prepNote: function () { return S === me ? csNote() : null; },
+      nightTimes: function () { var n = S === me && me.night ? me.night.night() : null; return n ? { startAt: n.startAt, curfewAt: n.curfewAt } : {}; },
+      setTime: function (k, v) { if (S === me && me.night) me.night.setTime(k, v); },
+      usePrep: function (k) { if (S === me && me.night) me.night.usePrep(k); },
       prepNotes: function () { var pk = part('prep'), B = W.B68GmPrep; return pk && B ? B.notes(pk) : []; },
       setPrepNote: function (id) { if (S !== me) return; try { W.localStorage.setItem(PREP_NOTE, id); } catch (e) {} renderPrep(true); renderBar(); },
       prepSecs: function () {
