@@ -81,6 +81,8 @@
       arm: function (at, label) {
         var t = Math.floor(Number(at));
         if (!isFinite(t) || t < 1) { say('Pick a start time first.', true); return Promise.resolve(false); }
+        /* just after a reload the cast has not arrived yet: arming now would lay no credits and no faces */
+        if (!Object.keys(npcs() || {}).length) { say('The cast is still loading: arm again in a moment.', true); return Promise.resolve(false); }
         var L = live(), picks = ctl.picks(), credits = L.pool.slice(0, CREDITS_MAX).map(function (p) { return p.id; });
         st.shown = [];
         return seq([
@@ -135,7 +137,7 @@
       /* after Roll the opening credits the line says what is on the iPad now (the tray's live line, host.onIpad), until the next arm */
       var onIpad = !s.armed && s.rolled && typeof h.onIpad === 'function' ? str(h.onIpad()) : '';
       var status = s.armed ? (s.test ? 'Test armed' : 'Armed') + ' for ' + esc(hhmm(s.at)) + '.'
-        : s.rolled ? '<b>On the iPad: ' + esc(onIpad || 'Opening credits') + '.</b> Move on as usual: pin another scene, Clear, or a cue.'
+        : s.rolled ? '<b>On the iPad: ' + esc(onIpad || 'Opening credits') + '.</b> To move on, pin the next scene (iPad view, Scenes) or fire a cue. Clear keeps the credits’ title card.'
         : 'Not armed. The iPad shows the test card and a station clock once you arm it.';
       var h2 = '<p class="gm-dim" data-hs-status>' + status + '</p>' +
         '<div class="gm-sb-row"><button type="button" class="btn sm' + (s.armed ? '' : ' primary') + '" data-hs="arm"' + (start ? '' : ' disabled') + ' title="' + (start ? 'Counts down to the night’s start time' : 'The night has no start: line in its Run sheet') + '">Arm for ' + (start ? esc(hhmm(start)) : 'the night’s start') + '</button> ' +

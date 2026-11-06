@@ -204,7 +204,12 @@ await test('tokens: app/tokens.css and app/tokens.js carry the same values; ever
   assert.deepEqual(Tok.faction(2), { fill: '#3f62c4', ink: '#fbf8f1' }); assert.equal(Tok.faction(7), null);
   assert.ok(Tok.css().includes('--b68-paper: #f2ede1;'));
   for (const f of fs.readdirSync(APP).filter((x) => x.endsWith('.css') && !['tokens.css', 'lookbook.css'].includes(x))) assert.ok(!fs.readFileSync(path.join(APP, f), 'utf8').includes('--b68-'), f + ' is old CSS and stays untouched');
-  const sizes = [...fs.readFileSync(path.join(APP, 'display', 'shows.css'), 'utf8').matchAll(/font(?:-size)?:[^;]*?(\d+(?:\.\d+)?)vmin/g)].map((m) => Number(m[1]));
+  /* the band's two small captions (STRESS / HARM and their numbers) are the one allowed exception: three crew cells must fit at 1024, so they
+     sit at 2.5vmin or more; everything else on a show stays at the label size */
+  const sc = fs.readFileSync(path.join(APP, 'display', 'shows.css'), 'utf8');
+  const cap = [...sc.matchAll(/\.dp-lay-(?:cap|num) \{ font: 900 (\d+(?:\.\d+)?)vmin/g)].map((m) => Number(m[1]));
+  assert.ok(cap.length === 2 && Math.min(...cap) >= 2.5, 'the band captions stay at 2.5vmin or more: ' + cap.join(', '));
+  const sizes = [...sc.replace(/\.dp-lay-(?:cap|num) \{[^}]*\}/g, '').matchAll(/font(?:-size)?:[^;]*?(\d+(?:\.\d+)?)vmin/g)].map((m) => Number(m[1]));
   assert.ok(sizes.length === 0 || Math.min(...sizes) >= 3.4, 'no text on a show is set below the label size');
 });
 

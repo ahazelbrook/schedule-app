@@ -241,7 +241,7 @@ await test('Roll the opening credits: end() takes every layer off, then the host
   assert.match(box.innerHTML, /data-hs="roll"[^>]*>Roll the opening credits</); assert.match(box.innerHTML, /data-hs="end"[^>]*>End without credits</);
   assert.match(box.innerHTML, /sound only after a tap/); assert.match(box.innerHTML, /Tap for sound/);
   await ctl.roll(); ctl.render(box);
-  assert.match(box.innerHTML, /On the iPad: Opening credits \(pinned\)\./); assert.match(box.innerHTML, /pin another scene, Clear, or a cue/);
+  assert.match(box.innerHTML, /On the iPad: Opening credits \(pinned\)\./); assert.match(box.innerHTML, /pin the next scene \(iPad view, Scenes\) or fire a cue\. Clear keeps the credits’ title card\./);
   /* the page wires the seam: the host it makes has onTitles, which pins the credits scene through the iPad view's own ambient PATCH */
   const page = fs.readFileSync(path.join(APP, 'gm-page.js'), 'utf8'), at = page.indexOf('S.hs = W.B68GmHardStart.make(');
   const made = page.slice(at, page.indexOf('return S.hs;', at));
