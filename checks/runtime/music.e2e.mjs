@@ -152,7 +152,7 @@ try {
     check(fit.inWin && fit.popIn && !fit.hitPanic && !fit.hitMic && !fit.hitCue && !fit.hitTray && fit.panicIn && fit.scroll, 'at ' + w + ': the pill sits in row 2 beside the mic, overlaps nothing, PANIC stays in the window, the popover fits (' + JSON.stringify(fit) + ')');
     if (SHOTS) {
       await page.screenshot({ path: path.join(SHOTS, 'popover-' + w + '.png'), clip: { x: 0, y: 0, width: w, height: 430 } });
-      await page.click(PILL); await page.waitForTimeout(250);
+      await page.click(PILL); await page.mouse.move(w / 2, 600); await page.waitForTimeout(250);
       await page.screenshot({ path: path.join(SHOTS, 'band-pill-' + w + '.png'), clip: { x: 0, y: 0, width: w, height: 100 } });
     } else await page.click(PILL);
   }
@@ -185,6 +185,9 @@ try {
   await pp.goto(BASE + '/#gm', { waitUntil: 'domcontentloaded' });
   await pp.waitForFunction(() => window.B68GmMusic && document.querySelector('[data-band-slot="music"] [data-mu-pill]'), null, { timeout: 60000 });
   await pp.evaluate(() => { const T = window.B68GmTools; const t = T && T.get('music'); if (t) t.open(); });
+  await until(() => pp.$('[data-mu-file="action"]'), 8000);
+  /* a fresh browser has its own library: fill it here too, so the phone's picture shows three filled playlists */
+  for (const l of ['calm', 'tension', 'action']) { await pp.setInputFiles('[data-mu-file="' + l + '"]', files(l)); await until(() => pp.$eval('[data-mu-sum="' + l + '"]', (e) => /^2 tracks/.test(e.textContent)), 8000); }
   await until(() => pp.$eval('[data-mu-list="action"] .gm-mu-tracks li', () => true), 8000);
   const p390 = await pp.evaluate(() => {
     const vw = document.documentElement.clientWidth, slot = document.querySelector('[data-band-slot="music"]');
@@ -193,8 +196,8 @@ try {
   });
   check(p390.scroll && p390.pillHidden && p390.n >= 3 && p390.fit, 'at 390: nothing overflows, the band pill is hidden, the three playlists fit (' + JSON.stringify(p390) + ')');
   if (SHOTS) {
-    const m = await pp.$('[data-inline="music"]') || await pp.$('[data-mu-list="calm"]');
-    if (m) await m.screenshot({ path: path.join(SHOTS, 'tool-390.png') });
+    const m = await pp.$('.gm-mu');
+    if (m) { await m.scrollIntoViewIfNeeded(); await m.screenshot({ path: path.join(SHOTS, 'tool-390.png') }); }
   }
   await ph.close();
 

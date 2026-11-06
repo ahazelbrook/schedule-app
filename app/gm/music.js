@@ -452,10 +452,11 @@
           (ts.length ? '<button type="button" class="btn sm" data-mu-clear="' + l + '">Clear</button>' : '') + '</div></section>';
       }).join('');
       var cur0 = prefs.sink, known = outs.some(function (d) { return d.id === cur0; });
-      var out = '<div class="gm-sb-row gm-mu-out"><label>Output: <select data-mu="sink"><option value="">This laptop’s default output</option>' +
+      var out = '<div class="gm-mu-out"><label>Output <select data-mu="sink"><option value="">This laptop’s default output</option>' +
         outs.map(function (d) { return '<option value="' + esc(d.id) + '"' + (d.id === cur0 ? ' selected' : '') + '>' + esc(d.label) + '</option>'; }).join('') +
-        (cur0 && !known ? '<option value="' + esc(cur0) + '" selected>The speaker chosen before</option>' : '') + '</select></label> ' +
-        '<button type="button" class="btn sm" data-mu="refresh">Find speakers</button> <button type="button" class="btn sm primary" data-mu="test" title="Plays 3 s on this output">Test</button></div>';
+        (cur0 && !known ? '<option value="' + esc(cur0) + '" selected>The speaker chosen before</option>' : '') + '</select></label>' +
+        '<span class="gm-mu-acts"><button type="button" class="btn sm" data-mu="refresh">Find speakers</button>' +
+        '<button type="button" class="btn sm primary" data-mu="test" title="Plays 3 s on this output">Test</button></span></div>';
       var sup = decks[0].el || (typeof h.audio === 'function' ? true : false);
       var store0 = '<p class="gm-dim gm-mu-store" data-mu-store>' + (used !== null ? 'Stored in this browser: ' + bytesText(used) + '. ' : '') +
         (persisted === true ? 'The browser keeps them (persistent storage is on).' : persisted === false ? 'The browser may clear them if the disk runs short: keep the originals.' : '') + '</p>';
@@ -519,7 +520,7 @@
       var st = ctl.state();
       var now0 = st.playing && st.track ? '<b>Now playing</b> ' + esc(st.track) + ' <span class="gm-cs-dim">· ' + esc(LABEL[st.list] || '') + (st.list && st.mood && st.list !== st.mood ? ' (for ' + esc(LABEL[st.mood]) + ': its playlist is empty)' : '') + '</span>'
         : !st.total ? 'No tracks yet. Add them in <b>Before › The room › Music</b>.' : st.mode === 'off' ? 'Stopped.' : st.tapped ? 'Paused.' : 'Waiting for a tap on ▶ (the browser plays nothing until you press it).';
-      var why = st.mode === 'auto' && st.mode !== 'off' ? '<span class="gm-cs-dim">Auto: ' + esc(LABEL[st.auto] || '') + ', ' + esc(WHY[st.why] || '') + '</span>' : st.mode !== 'off' ? '<span class="gm-cs-dim">Held on ' + esc(LABEL[st.mode] || '') + ' until Auto</span>' : '';
+      var why = st.mode === 'auto' ? '<span class="gm-cs-dim">Auto: ' + esc(WHY[st.why] || LABEL[st.auto] || '') + '</span>' : st.mode !== 'off' ? '<span class="gm-cs-dim">Held on ' + esc(LABEL[st.mode] || '') + ' until Auto</span>' : '';
       return '<div class="gm-cs-popacts"><button type="button" class="btn sm primary gm-mu-pp" data-mu-act="toggle"' + (st.total ? '' : ' disabled') + '>' + (st.playing ? '❚❚ Pause' : '▶ Play') + '</button>' +
         '<button type="button" class="btn sm" data-mu-act="next"' + (st.total && st.playing ? '' : ' disabled') + '>Next track</button>' + why + '</div>' + segHtml() +
         '<label class="gm-mu-vol">Volume <input type="range" min="0" max="100" step="5" value="' + st.vol + '" data-mu-vol aria-label="Music volume"> <span data-mu-voln>' + st.vol + '</span></label>' +

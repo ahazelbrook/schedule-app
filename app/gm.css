@@ -1821,11 +1821,16 @@ body.gm-app #gm-page #gm-band { display: grid; grid-template-rows: auto auto; ba
 #gm-page .gm-mu-x { flex: none; width: 28px; height: 28px; border: 0; background: none; color: var(--ink-soft); font: 700 16px/1 var(--font-text); cursor: pointer; }
 #gm-page .gm-mu-x:hover { background: var(--alarm); color: #fbf8f1; }
 #gm-page .gm-mu-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-#gm-page .gm-mu-add { cursor: pointer; }
-#gm-page .gm-mu-out select { max-width: min(100%, 320px); }
+#gm-page .gm-mu-add { display: inline-flex; align-items: center; cursor: pointer; }
+#gm-page .gm-mu-acts > .btn { flex: none; width: auto; }
+#gm-page .gm-mu-out { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+#gm-page .gm-mu-out label { display: inline-flex; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0; font: 900 11px/1 var(--font-cond); letter-spacing: .1em; text-transform: uppercase; }
+#gm-page .gm-mu-out select { min-width: 0; max-width: min(100%, 320px); font: 400 14px/1.2 var(--font-text); letter-spacing: 0; text-transform: none; }
 @media (pointer: coarse) { #gm-page .gm-mu-seg button, #gm-page .gm-mu-x { min-height: 44px; } #gm-page .gm-mu-x { width: 44px; } }
-@media (max-width: 1099px) { #gm-page #gm-band .gm-mu-pill { max-width: 130px; } }
-@media (max-width: 599px) { #gm-page .gm-band-music { display: none; } }
+/* the pill is the laptop's: the due curfew needs row 2 for Call the Aftermath, and under 1100 px (a tablet, a phone) there is no room and no player. The
+   music plays on; Before > The room > Music and Find still reach every control */
+#gm-page .gm-band-r2[data-alarm="curfew"] .gm-band-music { display: none; }
+@media (max-width: 1099px) { #gm-page .gm-band-music { display: none; } }
 /* PANIC: always the last thing in the row */
 #gm-page .gm-band-panic { flex: none; display: inline-flex; align-items: center; gap: 6px; align-self: stretch; margin: 5px 0 5px auto; padding: 0 14px; border: 0; background: var(--alarm); color: #fbf8f1; font: 900 13px/1 var(--font-cond); letter-spacing: .1em; cursor: pointer; }
 #gm-page .gm-band-panic kbd { font-size: 9px; letter-spacing: 0; }
