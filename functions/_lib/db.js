@@ -83,6 +83,7 @@ const SCHEMA = [
     PRIMARY KEY (campaign, seq)
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS gm_transcript_id ON gm_transcript (campaign, id)`,
+  `CREATE INDEX IF NOT EXISTS gm_transcript_at ON gm_transcript (campaign, at)`,   // migration 0010: the assist seats read by time
   `CREATE TABLE IF NOT EXISTS gm_stt (
     campaign TEXT PRIMARY KEY,
     updated_at TEXT NOT NULL,

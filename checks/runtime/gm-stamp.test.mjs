@@ -59,6 +59,27 @@ function makeHost(over = {}) {
   return { host, calls, setOverlay: (v) => { overlay = v; }, setPos: (p) => { cur = p; }, setLineText: (t) => { line = t; }, lineNow: () => line };
 }
 
+await test('08/11: every stamp that goes up calls host.stamped once with its position, effect and line (fire, Stamp again, a cue); a refused one and a draft never do', async () => {
+  const m = makeHost({ line: 'Wren Tully looks up' }), got = [];
+  m.host.stamped = (st) => got.push(st);
+  const c = St.create(m.host);
+  await c.draft('pos', 'desperate'); await c.draft('eff', 'great'); await c.draft('text', 'the floor gives way');
+  assert.equal(got.length, 0, 'setting what goes up asks nothing');
+  assert.equal(await c.fire(), true);
+  assert.equal(got.length, 1); assert.equal(got[0].position, 'desperate'); assert.equal(got[0].effect, 'great'); assert.equal(got[0].text, 'the floor gives way'); assert.equal(typeof got[0].at, 'number');
+  await c.draft('text', 'the guard turns');
+  assert.equal(await c.fire(), true, 'Stamp again');
+  assert.equal(got.length, 2); assert.equal(got[1].text, 'the guard turns');
+  assert.equal(await c.stampNow('risky', 'standard', ''), true, 'a cue with no text stamps the Roll\'s line');
+  assert.equal(got.length, 3); assert.equal(got[2].position, 'risky'); assert.equal(got[2].text, 'the guard turns');
+  const r = makeHost({ refuse: true }), none = [];
+  r.host.stamped = (st) => none.push(st);
+  assert.equal(await St.create(r.host).fire(), false);
+  assert.equal(none.length, 0, 'refused: nothing went up, nothing is asked');
+  const b = makeHost(); b.host.stamped = () => { throw new Error('a broken page'); };
+  assert.equal(await St.create(b.host).fire(), true, 'a page that throws never stops the stamp');
+});
+
 await test('goesWrong: an inline line, a bare label with bullets under it, a quote callout form; fenced text and other lines are never read', () => {
   assert.deepEqual(St.goesWrong(ROOM_MD), ['Wren Tully looks up from the bar.', 'A tray of glasses hits the floor', 'The band stops mid-song']);
   assert.deepEqual(St.goesWrong('> **If it goes wrong:** the lights fail\n> - and the door sticks'), ['the lights fail']);

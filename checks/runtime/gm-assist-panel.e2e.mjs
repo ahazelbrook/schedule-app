@@ -156,7 +156,6 @@ try {
   check(await p.$eval('.gm-assist .as-banner', (b) => b.hidden), 'the banner goes when the box opens');
   check((await p.$$('#as-list .as-card')).length === 1 && /p\. 12/.test(await p.$eval('#as-list .as-card', (e) => e.textContent)), 'the card in the feed carries the page cite');
   check(await p.$$eval('.gm-assist .as-up', (l) => l.length) === 1, 'the Ledger update is listed');
-  await p.click('#gm-page .gm-dotb[data-v="2"]');
   await p.click('#as-tools > summary');                 // Fit it, the Screen and the Ledger live in the Tools drawer
   await p.fill('#as-eff', 'standard');
   await p.click('.gm-assist .as-pos label:nth-child(3)');
@@ -165,12 +164,11 @@ try {
   check((await p.$$('.gm-assist .as-lines li')).length === 5, 'five lines: 1-3, 4-5, 6, crit, bargain');
   const fr = G.seen.fit[0] || {};
   check(fr.position === 'desperate' && fr.effect === 'standard' && fr.draws && /^A 1–3/.test(fr.draws.low) && /^A 4[/]5/.test(fr.draws.mid), 'the fit request carried the position, the effect and the console draws');
-  check(fr.dots === 2, 'the Dots chip is set to 2: the first fit request carried dots: 2 (' + JSON.stringify(fr) + ')');
+  check(!('dots' in fr), 'no dots (08/11: the Dots are gone): ' + JSON.stringify(fr).slice(0, 80));
   await shot(p, 'expanded');
-  await p.click('#gm-page .gm-dotb[data-v="2"]');      // tap again clears the chip
   await p.click('#as-go');
   check(await until(async () => G.seen.fit.length >= 2, 10000), 'a second fit was asked');
-  check(G.seen.fit[1] && !('dots' in G.seen.fit[1]) && G.seen.fit[1].position === 'desperate', 'with the chip cleared the request has no dots field');
+  check(G.seen.fit[1] && !('dots' in G.seen.fit[1]) && G.seen.fit[1].position === 'desperate', 'the second request is the same Position, and no dots');
   await p.keyboard.press('Escape');
   check(await p.$eval('#as-panel', (e) => e.hidden), 'Escape closes the box');
   await p.keyboard.press('a'); await p.keyboard.press('a');

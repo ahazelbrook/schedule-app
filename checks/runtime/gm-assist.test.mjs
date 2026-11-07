@@ -13,7 +13,7 @@ import { followsThrough, FOLLOW_WINDOW_MS, decide, budgetTier, canRun, isRepeatS
 import { toCandidate, toVoice, toAnother, toStall, toHandout, handoutIds, merge, pendingRefs, isRepeatRef, CARD_GAP_MS, STALE_MS } from '../../functions/_lib/assist/editor.js';
 import { callSeat, countTokens } from '../../functions/_lib/assist/claude.js';
 import { SEATS, WAKES } from '../../functions/_lib/assist/seats.js';
-import { makeHandler, cleanDots, cleanDraws, cleanNpc, cleanShown, DRAW_MAX, onRequest as realHandler } from '../../functions/api/gm/assist.js';
+import { makeHandler, cleanDots, cleanDraws, cleanFitContext, cleanNpc, cleanShown, DRAW_MAX, onRequest as realHandler } from '../../functions/api/gm/assist.js';
 import { matchApi } from '../../worker/app.js';
 import { gmNotFound } from '../../functions/_lib/gm.js';
 
@@ -663,8 +663,35 @@ await test('fit: the draws reach the prompt, the call is capped at 8k tokens, an
   assert.equal(out.cards.length, 1);
   assert.equal(s.calls[0].max, 8000, 'the Fixer asks for 8k output tokens');
   assert.match(s.calls[0].user, /1-3 draw:\nLost opportunity:\nthe way in is shut\.\n4-5 draw:\nComplication: a second watcher arrives\./);
-  assert.match(s.calls[0].ins, /draws are fixed/); assert.match(s.calls[0].ins, /never change the kind of outcome/);
+  assert.match(s.calls[0].ins, /draws are given and fixed/); assert.match(s.calls[0].ins, /keeping what it says happens and its kind and severity/);
+  assert.match(s.calls[0].user, /No threat was stamped\./, 'no threat: the draws are the outcomes');
   assert.deepEqual(Object.keys(SEATS.fixer.schema.properties), ['read', 'one_three', 'four_five', 'six', 'crit', 'bargain']);
+});
+
+await test('fit (08/11): a stamped threat drives both outcomes: no draws needed, the threat, size, room, PC and on-stage names reach the turn, and the row keeps the threat', async () => {
+  clock.t = Date.parse('2030-01-01T18:05:00.000Z');
+  const s = await setup();
+  await s.lines(2);
+  const out = await body(await s.post('fit', { position: 'risky', effect: 'standard', threat: '  Either you or the other one\ngets crushed ', size: 'standard · 2 ticks · harm 2', room: 'The back yard', pc: 'Quill', onStage: ['Mabel Quist', 'Mabel Quist', 'Tobin Rake'] }));
+  assert.equal(out.cards.length, 1);
+  const u = s.calls[0].user;
+  assert.match(u, /Size at this position: standard · 2 ticks · harm 2\./); assert.match(u, /\nRoom: The back yard\nRolling: Quill\nOn stage: Mabel Quist, Tobin Rake\n/, 'one line each; a repeated name once');
+  assert.match(u, /Threat stamped on the players' screen \(they have read it: it is the promise\): Either you or the other one gets crushed\n/);
+  assert.doesNotMatch(u, /1-3 draw:/, 'no draws in the turn');
+  assert.match(s.calls[0].ins, /four_five: they get what they were going for, and the same threat still lands at the same size/, 'Alex 08/11: a 4/5 bites at full size');
+  assert.match(s.calls[0].ins, /lead is 2 to 5 words/); assert.match(s.calls[0].ins, /at most 14 words/);
+  for (const k of ['one_three', 'four_five']) assert.deepEqual(SEATS.fixer.schema.properties[k].required, ['lead', 'say', 'size'], k);
+  for (const k of ['six', 'crit', 'bargain']) assert.deepEqual(SEATS.fixer.schema.properties[k].required, ['lead', 'say'], k);
+  const fx = JSON.parse(s.rows().find((r) => r.seat === 'fixer').card);
+  assert.equal(fx.threat, 'Either you or the other one gets crushed'); assert.equal(fx.draws, null);
+  /* bad context is a 400 and calls nothing */
+  const n = s.calls.length;
+  for (const bad of [{ threat: 7 }, { threat: 'x'.repeat(141) }, { size: [] }, { room: 'r'.repeat(81) }, { pc: {} }, { onStage: 'Mabel' }, { onStage: ['a', 'b', 'c', 'd', 'e', 'f', 'g'] }, { onStage: [3] }])
+    await assert.rejects(s.post('fit', { position: 'risky', threat: 'the guard turns', ...bad }), (e) => e.status === 400, JSON.stringify(bad).slice(0, 40));
+  assert.equal(s.calls.length, n);
+  /* a blank threat is no threat: the draws are needed again */
+  await assert.rejects(s.post('fit', { position: 'risky', threat: '   ' }), (e) => e.status === 400);
+  assert.deepEqual(cleanFitContext({}), { threat: '', size: '', room: '', pc: '', onStage: [] });
 });
 
 await test('fit: the endpoint rejects missing, malformed and over-long draws with 400 and never calls the model', async () => {
@@ -754,7 +781,7 @@ await test('replay draws: from a JSON file, or drawn from a pack\'s console part
     assert.equal(a('22:12').position, 'desperate'); assert.equal(a('22:09').position, 'risky');
     assert.throws(() => makeDrawsFor({ packFile: path.join(dir, 'missing.json') }), /no draws/);
     const user = fitUser({ position: 'risky', effect: 'limited', draws: { low: 'L', mid: 'M' }, stamp: '22:09', talk: '[22:08] A: x' });
-    assert.equal(user, 'A roll is about to be made. The GM names the position: risky. Effect: limited.\nThe console has drawn these. Fit them to the scene and keep what each one says happens.\n1-3 draw:\nL\n4-5 draw:\nM\nLast five minutes, up to 22:09:\n[22:08] A: x');
+    assert.equal(user, 'A roll is about to be made. The GM names the position: risky. Effect: limited.\nNo threat was stamped. The console has drawn these. Fit them to the scene and keep what each one says happens.\n1-3 draw:\nL\n4-5 draw:\nM\nLast five minutes, up to 22:09:\n[22:08] A: x');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
   const src = fs.readFileSync(path.join(ROOT, 'scripts', 'gm-assist-replay.mjs'), 'utf8');
   assert.ok(/arg\('fixer-at'\)/.test(src) && /fixer-moments\.md/.test(src) && /--draws-file/.test(src), 'the script takes --fixer-at with draws and writes fixer-moments.md');
@@ -1502,7 +1529,7 @@ await test('fit: dots reach the Fixer turn when set; without dots the turn is as
   clock.t += 60 * 60_000; s.calls.length = 0;
   await body(await s.post('fit', { position: 'risky', effect: 'standard', draws: DRAWS }));
   assert.ok(!/Dots/.test(s.calls[0].user), 'no dots, no mention');
-  assert.match(s.calls[0].user, /The GM names the position: risky\. Effect: standard\.\nThe console has drawn/);
+  assert.match(s.calls[0].user, /The GM names the position: risky\. Effect: standard\.\nNo threat was stamped\. The console has drawn/);
   for (const dots of [5, -1, 1.5, '2', null, true, [2]]) await assert.rejects(s.post('fit', { position: 'risky', dots, draws: DRAWS }), (e) => e.status === 400 && /dots/.test(e.message), JSON.stringify(dots));
   assert.equal(cleanDots(undefined), undefined); assert.equal(cleanDots(4), 4); assert.equal(cleanDots(0), 0); assert.equal(cleanDots(5), null);
 });

@@ -182,11 +182,11 @@ if (arg('fixer-at') || arg('fixer')) {
     used[hhmm] = d;
     const before = total, n0 = secsLog.length;
     const j = await run('fixer', hhmm, fitUser({ position: d.position, draws: d, stamp: hhmm, talk: textFor(t - 4, t) }));
-    out.push(`## ${hhmm}\n` + (j ? Object.entries(j).map(([k, v]) => `- **${k}:** ${v}`).join('\n') : '(no JSON)'));
+    out.push(`## ${hhmm}\n` + (j ? Object.entries(j).map(([k, v]) => `- **${k}:** ${flat(v)}`).join('\n') : '(no JSON)'));
     mom.push([`## ${hhmm}  (${d.position}; ${secsLog[n0]} s, stop ${stopLog[n0]}, $${(total - before).toFixed(3)})`, '',
       '| | Console draw | Fitted line |', '|---|---|---|',
       `| 1-3 | ${cell(d.low)} | ${cell(j && j.one_three)} |`, `| 4-5 | ${cell(d.mid)} | ${cell(j && j.four_five)} |`, '',
-      ...(j ? [`- **read:** ${j.read}`, `- **6:** ${j.six}`, `- **crit:** ${j.crit}`, `- **bargain:** ${j.bargain}`] : ['(no JSON)']), ''].join('\n'));
+      ...(j ? [`- **read:** ${j.read}`, `- **6:** ${flat(j.six)}`, `- **crit:** ${flat(j.crit)}`, `- **bargain:** ${flat(j.bargain)}`] : ['(no JSON)']), ''].join('\n'));
   }
   fs.writeFileSync(path.join(outDir, 'fixer.md'), out.join('\n\n') + '\n');
   fs.writeFileSync(path.join(outDir, 'fixer-moments.md'), '# The Fixer fitting the console draws\n\n' + mom.join('\n') + '\n');
@@ -197,7 +197,9 @@ if (arg('fixer-at') || arg('fixer')) {
   console.log(stats + `\nwritten to ${outDir}`);     // the text itself stays in the files
   process.exit(0);
 }
-function cell(x) { return String(x == null ? '' : x).replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>'); }
+// an outcome is a string, or since 08/11 the Fixer's { lead, say, size }
+function flat(x) { return x && typeof x === 'object' && !Array.isArray(x) ? [x.lead, x.say].filter(Boolean).join(': ') + (x.size ? ' (' + x.size + ')' : '') : x; }
+function cell(x) { return String(x == null ? '' : flat(x)).replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>'); }
 
 // --voice-at HH:MM[=NPC],... : Voice as the table agent runs it. At each moment the Conductor decides (as the tick does, with the
 // Tripwire's npc_change flag set) whether Voice wakes: it does only when an NPC name is given for that moment (the name the GM's page

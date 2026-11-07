@@ -39,7 +39,10 @@
 //        `updates` are the Ledger's entries (stress, harm, Heat, xp...), one-tap state updates outside the card gap:
 //        [{ seat: 'ledger', at, key, text }].
 //        The Tap seats read the last four MINUTES of talk (not a fixed count of lines).
-//   POST /api/gm/assist/fit { position, effect?, dots?, draws: { low, mid } } -> { cards: [fixer card], flags: [], spend, last }
+//   POST /api/gm/assist/fit { position, effect?, dots?, threat?, size?, room?, pc?, onStage?, draws?: { low, mid } } -> { cards: [fixer card], flags: [], spend, last }
+//        Since 08/11/2026 the GM's stamp on the iPad asks for it (vault Projects/blades-68-fixer-on-the-stamp). threat is the stamped line: with it the
+//        line drives both outcomes (the 1-3 in full, the 4/5 a success at the same size) and draws may be left out; size, room, pc and onStage
+//        (at most 6 names) ground it. Each outcome comes back as { lead, say } (+ size on one_three and four_five).
 //        The Fixer for a position the GM names. `draws` are the console's OWN pre-rolled 1-3 and 4-5 cards (plain text, at most
 //        1500 characters each); the Fixer fits them to the scene (it keeps the kind of outcome each names) and writes the 6, the
 //        crit and a Devil's Bargain. `dots` (optional, a whole number 0-4) is the dice the GM has set for the roll; anything else is a 400, and
@@ -144,7 +147,8 @@ import { checkNpc, newNpcId, writeNpc } from '../../_lib/npcs.js';
 import { toPortrait, toProp, toWire, buildBoard, boardSource, cleanName, cleanAsk, cleanVocab } from '../../_lib/assist/screen.js';
 import { handsUser, portraitUser, propUser, wireUser, SCREEN_WINDOW_MIN, SCREEN_NAME_MAX, askUser, cleanAskFields, clerkUser, CLERK_KNOWN_MAX, CLERK_NAME_MAX, ASK_MAX, ASK_WINDOW_MIN, ASK_HISTORY, ASK_HISTORY_MIN, ASK_HISTORY_ANSWER_MAX } from '../../_lib/assist/prompts.js';
 import { gatekeeperUser, ITEM_MAX, fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, NPC_MAX, SHOWN_MAX, SHOWN_LINE_MAX, SHOWRUNNER_MIN, MYSTERY_MIN, KNOWN_MAX, KNOWN_ITEM_MAX,
-  STORY_SEATS, storyBlock, scribeUser, SCRIBE_SLICE_MAX, SCRIBE_FIRST_MIN, MEANWHILE_MIN, meanwhileUser, cleanClocks, silenceUser } from '../../_lib/assist/prompts.js';
+  STORY_SEATS, storyBlock, scribeUser, SCRIBE_SLICE_MAX, SCRIBE_FIRST_MIN, MEANWHILE_MIN, meanwhileUser, cleanClocks, silenceUser,
+  FIT_THREAT_MAX, FIT_SIZE_MAX, FIT_ROOM_MAX, FIT_STAGE_MAX } from '../../_lib/assist/prompts.js';
 import { DEFAULT_CAP, COOLDOWN_MS, budgetTier, canRun, decide, followsThrough, FOLLOW_WINDOW_MS, isListening, silenceFlag } from '../../_lib/assist/conductor.js';
 import { ledgerGlance, fixerGlance, restoreGlance } from '../../_lib/assist/glance.js';
 import { toCandidate, toVoice, toAnother, toStall, toScribe, toMeanwhile, toHandout, handoutIds, handoutTitles, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
@@ -213,6 +217,25 @@ export function cleanDraws(d) {
     out[k] = t;
   }
   return out;
+}
+
+/** The stamp's context on a fit request (08/11/2026): { threat, size, room, pc, onStage } with '' / [] for what is absent, or null when a field
+ *  is the wrong type or too long. threat is the line the GM stamped on the iPad; with it, the draws are optional (the line drives both outcomes). */
+export function cleanFitContext(b) {
+  const one = (v, max) => {
+    if (v === undefined || v === null) return '';
+    if (typeof v !== 'string') return null;
+    const t = v.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+    return t.length > max ? null : t;
+  };
+  const threat = one(b.threat, FIT_THREAT_MAX), size = one(b.size, FIT_SIZE_MAX), room = one(b.room, FIT_ROOM_MAX), pc = one(b.pc, FIT_ROOM_MAX);
+  if (threat === null || size === null || room === null || pc === null) return null;
+  let onStage = [];
+  if (b.onStage !== undefined && b.onStage !== null) {
+    if (!Array.isArray(b.onStage) || b.onStage.length > FIT_STAGE_MAX) return null;
+    for (const n of b.onStage) { const t = one(n, NPC_MAX); if (t === null) return null; if (t && !onStage.includes(t)) onStage.push(t); }
+  }
+  return { threat, size, room, pc, onStage };
 }
 
 /** The on-stage NPC's name the page sends: '' when none; null when it is not a short string. */
@@ -733,20 +756,22 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       if (!position || position.length > 400 || effect.length > 200) throw new HttpError(400, 'position is required (at most 400 characters); effect at most 200');
       const dots = cleanDots(body.dots);
       if (dots === null) throw new HttpError(400, 'dots must be a whole number from 0 to 4');
-      const draws = cleanDraws(body.draws);                // no fallback: a client without the console's draws gets a 400
-      if (!draws) throw new HttpError(400, 'draws is required: { low, mid }, each a text of at most ' + DRAW_MAX + ' characters');
+      const ctx = cleanFitContext(body);
+      if (!ctx) throw new HttpError(400, 'threat, size, room and pc are short texts (threat at most ' + FIT_THREAT_MAX + ' characters); onStage at most ' + FIT_STAGE_MAX + ' names');
+      const draws = body.draws === undefined && ctx.threat ? null : cleanDraws(body.draws);   // a stamped threat drives both outcomes; without one, no fallback: no draws is a 400
+      if (!draws && !ctx.threat) throw new HttpError(400, 'draws is required: { low, mid }, each a text of at most ' + DRAW_MAX + ' characters (or a stamped threat)');
       if (legacy) return done([], [], null);
       const gate = canRun('fixer', { now: t0, lastRun: await lastRuns(db, campaign, t0), inFlight: live(), tier });
       if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? "tonight's cap is reached" : 'the fixer is busy');
       const { lines: recent, last } = await readLines(db, campaign, { since: new Date(t0 - FIT_WINDOW_MS).toISOString() });
       const lines = recent;
-      const user = fitUser({ position, effect, ...(dots !== undefined ? { dots } : {}), draws, stamp: hhmm(t0), talk: formatLines(recent, speakers) });
+      const user = fitUser({ position, effect, ...(dots !== undefined ? { dots } : {}), ...ctx, draws, stamp: hhmm(t0), talk: formatLines(recent, speakers) });
       const { cfg, r, timing } = await run('fixer', user);
       const at = new Date(now()).toISOString();
       const session = lines.length ? lines[lines.length - 1].session : '';
       const out = r && r.json ? r.json : null;
       await logRow(db, campaign, { at, session, seat: 'fixer', cfg, usage: r && r.usage, cost: r && r.cost, flags: ['fit'], timing,
-        card: out ? { out, shown: 0, draws } : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : 'no JSON', draws } }).run();
+        card: out ? { out, shown: 0, draws, ...(ctx.threat ? { threat: ctx.threat } : {}) } : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : 'no JSON', draws, ...(ctx.threat ? { threat: ctx.threat } : {}) } }).run();
       return done(out ? [{ seat: 'fixer', at, text: out.read, ...out, ...fixerGlance(out.read) }] : [], [], last);
     }
 

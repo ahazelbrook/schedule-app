@@ -152,20 +152,28 @@ It must not state or hint at anything the never-reveal list in your context mark
 
   fixer: {
     model: 'claude-opus-5-5', effort: 'low', maxTokens: 8000,
-    instructions: `You are the GM's fixer for a Blades '68 game. A roll is about to be made. The GM's console has already drawn what happens on a 1-3 and on a 4-5, and you are given both draws. The draws are fixed: you fit them to the scene, you do not replace them. From the last few minutes of the live transcript and the cast and rules in your context, work out who is acting, where, what is at stake, and the position (controlled, risky, desperate) and effect the table has set. If the message gives Dots, that is the number of dice the GM has set for this roll (0 to 4): context for how hard the roll is, never a reason to change the draws. Then write lines the GM could say aloud in one breath each, plain and concrete, no stage directions.
-one_three: the 1-3 draw fitted to this scene. Keep what the draw says happens and its kind and severity (a harm stays a harm, a lost opportunity stays a lost opportunity, a price stays a price, a complication stays a complication, a worse position stays a worse position); you may name who or where from the scene and make it specific, but never change the kind of outcome or swap in a different one.
-four_five: the 4-5 draw fitted the same way, as a success with a cost.
-six: the clean success on a 6, vivid but not over-explained.
-crit: the better-than-clean result on a critical.
-bargain: a Devil's Bargain the GM could offer before the roll.
-Tie each to the named people, places and running clocks of the scene. Never decide what a player character does or feels. If a draw is empty or cannot be fitted to anything in the scene, restate it plainly rather than invent a different outcome. Reply with JSON only.`,
+    // 08/11/2026: the GM's stamp on the iPad asks for this (vault Projects/blades-68-fixer-on-the-stamp). The stamped threat drives both outcomes; the
+    // console's draws are used only for a roll with no threat. Each outcome is a lead and one sentence, for a glance at the table.
+    instructions: `You are the GM's fixer for a Blades '68 game. A roll is about to be made. Write what the GM says on each result, fitted to this exact moment.
+WHO AND WHERE. From the last few minutes of the live transcript, the Room, Rolling and On stage lines in the message, and the cast and rules in your context, work out who is acting, where, and what they are trying to do. Name NPCs only from the On stage list, the talk, or the cast as the scene has them; never bring in someone who is not in this scene. If the message gives Dots, that is the dice the GM set (0 to 4): context only.
+WITH A STAMPED THREAT (the message gives "Threat stamped"). The players have read that line on their screen before the dice, so it is a promise:
+- one_three: the threat lands in full, and they do not get what they were going for.
+- four_five: they get what they were going for, and the same threat still lands at the same size. A 4-5 costs as much as a 1-3 at this position; the difference is only that they succeed.
+- The size is the position's (the message gives "Size at this position"): harm at that level, that many ticks on a named clock, a worse position, or a lost opportunity, whichever the threat is.
+WITHOUT A THREAT the console's 1-3 and 4-5 draws are given and fixed: fit each to the scene, keeping what it says happens and its kind and severity (a harm stays a harm, a complication stays a complication, a worse position stays a worse position); the 4-5 is a success with that cost. If a draw cannot be fitted, restate it plainly rather than invent a different outcome.
+ALWAYS: six is the clean success; crit is better than clean; bargain is a Devil's Bargain the GM could offer before the roll (tied to the threat when there is one).
+SHAPE. Every outcome is { lead, say }: lead is 2 to 5 words, what the GM glances at; say is ONE short plain sentence the GM could say aloud, at most 14 words, that adds to the lead rather than repeating it. Who is rolling comes from the talk: the player character the action was described for, never a guess. one_three and four_five also carry size: a few words such as "harm 2", "2 ticks on the alarm clock", "worse position". read is at most 15 words: who, where, position, effect. No stage directions. Never decide what a player character does, says or feels. Reply with JSON only.`,
     schema: {
       type: 'object', additionalProperties: false,
       properties: {
-        read: { type: 'string', description: 'one line: who, where, position, effect' },
-        one_three: { type: 'string', description: 'the 1-3 draw, fitted to the scene; same kind of outcome as the draw' },
-        four_five: { type: 'string', description: 'the 4-5 draw, fitted to the scene; same kind of outcome as the draw' },
-        six: { type: 'string' }, crit: { type: 'string' }, bargain: { type: 'string' },
+        read: { type: 'string', description: 'at most 15 words: who, where, position, effect' },
+        one_three: { type: 'object', additionalProperties: false, description: 'the 1-3: the stamped threat in full (or the 1-3 draw, fitted)',
+          properties: { lead: { type: 'string' }, say: { type: 'string' }, size: { type: 'string' } }, required: ['lead', 'say', 'size'] },
+        four_five: { type: 'object', additionalProperties: false, description: 'the 4-5: success, and the threat at the same size (or the 4-5 draw, fitted)',
+          properties: { lead: { type: 'string' }, say: { type: 'string' }, size: { type: 'string' } }, required: ['lead', 'say', 'size'] },
+        six: { type: 'object', additionalProperties: false, properties: { lead: { type: 'string' }, say: { type: 'string' } }, required: ['lead', 'say'] },
+        crit: { type: 'object', additionalProperties: false, properties: { lead: { type: 'string' }, say: { type: 'string' } }, required: ['lead', 'say'] },
+        bargain: { type: 'object', additionalProperties: false, properties: { lead: { type: 'string' }, say: { type: 'string' } }, required: ['lead', 'say'] },
       },
       required: ['read', 'one_three', 'four_five', 'six', 'crit', 'bargain'],
     },

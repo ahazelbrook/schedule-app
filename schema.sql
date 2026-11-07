@@ -137,6 +137,7 @@ CREATE TABLE IF NOT EXISTS gm_transcript (
   PRIMARY KEY (campaign, seq)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS gm_transcript_id ON gm_transcript (campaign, id);
+CREATE INDEX IF NOT EXISTS gm_transcript_at ON gm_transcript (campaign, at);
 
 -- The control document, one row per campaign: { want, session, speakers, status }.
 CREATE TABLE IF NOT EXISTS gm_stt (

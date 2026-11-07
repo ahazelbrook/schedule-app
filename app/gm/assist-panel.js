@@ -60,7 +60,8 @@
      ctl.another({ npc, shown }) -> Promise<{ voice } | { error } | null>   one more Voice line (POST /gm/assist/another); null when the box cannot
      ctl.canAnother() as canFit(), and the runtime offers assistAnother
      ctl.canFit()    false on a phone, with the cap reached, or when the box is not set up: no fit call is made
-     ctl.autoFit({ position, effect?, draws }, onStart?) -> Promise<{ card } | { error } | null>
+     ctl.autoFit({ position, effect?, draws?, threat?, size?, room?, pc?, onStage?, dots? }, onStart?) -> Promise<{ card } | { error } | null>: draws, or a threat (the stamped
+                                      line, 08/11); { error: 'listening' } when Listening is off; null only when the box cannot fit at all
                      the console's own fit, asked when the GM sets the Position. Makes NO call (resolves null) when the box cannot
                      fit, or when Listening is off (asked of the server just before, so a stale page is not fooled)
      ctl.ready       a promise: tonight's cards have been restored (or could not be)
@@ -250,10 +251,16 @@
   P.headline = headline;
 
   /* the Fixer's answer as the five lines the GM reads aloud, in the order the dice are read */
+  /* one outcome as text: since 08/11 the Fixer answers { lead, say, size? } per outcome; an older answer is a plain string */
+  function fitText(v) {
+    if (isObj(v)) return [str(v.lead).trim(), str(v.say).trim()].filter(Boolean).join(': ') + (str(v.size).trim() ? ' (' + str(v.size).trim() + ')' : '');
+    return str(v).trim();
+  }
   function fitLines(card) {
     var c = isObj(card) ? card : {};
-    return [['1–3', 'one_three'], ['4–5', 'four_five'], ['6', 'six'], ['Crit', 'crit'], ['Bargain', 'bargain']].map(function (r) { return { label: r[0], text: str(c[r[1]]).trim() }; }).filter(function (l) { return l.text; });
+    return [['1–3', 'one_three'], ['4–5', 'four_five'], ['6', 'six'], ['Crit', 'crit'], ['Bargain', 'bargain']].map(function (r) { return { label: r[0], text: fitText(c[r[1]]) }; }).filter(function (l) { return l.text; });
   }
+  P.fitText = fitText;
   P.fitLines = fitLines;
 
   /* ---------- a card, as the panel holds it (design 3.6) ----------
@@ -1288,11 +1295,11 @@
     /* the console's own fit: no UI of its own here (the page draws the Rack); this only decides whether to call, and folds the spend in */
     function canFit() { return !gone && !isPhone() && st.paused !== 'cap' && st.paused !== 'setup' && !(st.spend && st.spend.tier === 'off'); }
     function autoFit(req, onStart) {
-      if (!canFit() || !gm || typeof gm.assistFit !== 'function' || typeof gm.stt !== 'function' || !isObj(req) || !isObj(req.draws)) return Promise.resolve(null);
+      if (!canFit() || !gm || typeof gm.assistFit !== 'function' || typeof gm.stt !== 'function' || !isObj(req) || !(isObj(req.draws) || (typeof req.threat === 'string' && req.threat))) return Promise.resolve(null);
       return Promise.resolve().then(function () { return gm.stt(); }).then(function (r) {
         var on = !!(r && isObj(r.doc) && r.doc.want === 'on');
         st.listening = on;
-        if (!on || gone) { render(); return null; }
+        if (!on || gone) { render(); return gone ? null : { error: 'listening' }; }      /* 08/11: the page says so on the Roll */
         if (typeof onStart === 'function') onStart();
         return Promise.resolve().then(function () { return gm.assistFit(req); }).then(function (res) {
           if (gone) return null;
@@ -1304,7 +1311,7 @@
           if (k === 'cap') { st.paused = 'cap'; render(); }
           return { error: k };
         });
-      }, function () { return null; });
+      }, function () { return { error: 'other' }; });
     }
 
     /* ---------- events ---------- */

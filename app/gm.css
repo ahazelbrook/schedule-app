@@ -674,6 +674,31 @@ body.gm-app[data-mode="gm"] .toast { bottom: calc(72px + env(safe-area-inset-bot
 #gm-page .gm-rack > .gm-voice:not(:first-child) { border-top: 1.5px solid var(--rule); padding-top: 6px; }
 #gm-page .gm-voice-lines b { overflow-wrap: anywhere; }
 #gm-page .gm-another { justify-self: start; }
+/* 08/11/2026, the Fixer on the stamp: Blade's lines on the Roll, one coloured row per result in the Roll's button order (the bargain, 4/5, 1–3, then 6
+   and crit), a bold lead and one sentence, the size as a chip; the line that hit heads the result card (#gm-fxhit). Each label is a faction swatch with
+   its own ink pair (the tokens.css values, written out: this old sheet takes no token names), so the text stays readable; the colour is only there to skim by. */
+#gm-page .gm-fx-for { overflow-wrap: anywhere; }
+#gm-page .gm-fx-lines li { grid-template-columns: 64px 1fr; align-items: start; padding: 5px 0 5px 6px; border-left: 5px solid var(--fx, var(--rule)); }
+#gm-page .gm-fx-lines .gm-fx-k { justify-self: start; padding: 1px 5px; background: var(--fx); color: var(--fx-ink); border-radius: 2px; }
+#gm-page .gm-fx-t { font-size: 13px; line-height: 1.35; }
+#gm-page .gm-rack-lines b.gm-fx-lead { font: 800 13px/1.35 var(--font-text); text-transform: none; letter-spacing: 0; }
+#gm-page .gm-fx-size { font: 700 11px/1.5 var(--font-mono); white-space: nowrap; padding: 0 4px; border: 1px solid currentColor; border-radius: 2px; }
+#gm-page .gm-fx-deal { --fx: #c9348c; --fx-ink: #fbf8f1; }
+#gm-page .gm-fx-mid { --fx: #e0691e; --fx-ink: #14110e; }
+#gm-page .gm-fx-low { --fx: #a8210f; --fx-ink: #fbf8f1; }
+#gm-page .gm-fx-six { --fx: #6e8f6a; --fx-ink: #14110e; }
+#gm-page .gm-fx-crit { --fx: #e8c33c; --fx-ink: #14110e; }
+#gm-page .gm-fx-err { color: #a8210f; }
+#gm-page .gm-fx-err .chip { margin-left: 6px; }
+#gm-page .gm-fxhitbox[hidden] { display: none; }
+#gm-page .gm-fx-hit { border: 1.5px solid var(--fx); border-left-width: 8px; background: var(--paper); padding: 8px 12px; display: grid; gap: 4px; }
+#gm-page .gm-fx-hit .gm-lab { margin: 0; }
+#gm-page .gm-fx-big { margin: 0; font: 400 19px/1.3 var(--font-text); }
+#gm-page .gm-fx-big b { font-weight: 800; }
+#gm-page .gm-fx-hit .gm-fx-size { justify-self: start; margin: 0; }
+#gm-page .gm-fitb[hidden] { display: none; }
+#gm-page .gm-rl-they .gm-fitb { margin-left: 6px; }
+
 
 /* Handouts (iPad tab) and the Rack's handout offer */
 .gm-handouts { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .5rem; }
@@ -1615,7 +1640,7 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
 #gm-page .gm-rl-seg { display: flex; width: 100%; justify-self: stretch; }
 #gm-page .gm-rl-seg .chip { flex: 1 1 0; min-width: 0; min-height: 36px; padding: 6px 2px; font-size: 11px; letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
 #gm-page .gm-rl-seg .chip[aria-checked="true"] { background: var(--rule); color: var(--on-ink); box-shadow: inset 0 -5px 0 var(--accent); }
-#gm-page .gm-rl-seg .chip:focus-visible, #gm-page .gm-dotb:focus-visible, #gm-page .gm-rl-x:focus-visible, #gm-page .gm-rl-fb:focus-visible, #gm-page .gm-rl-fold > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
+#gm-page .gm-rl-seg .chip:focus-visible, #gm-page .gm-whob:focus-visible, #gm-page .gm-rl-x:focus-visible, #gm-page .gm-rl-fb:focus-visible, #gm-page .gm-rl-fold > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
 #gm-page .gm-rl-size { margin: -3px 0 0; min-height: 1.3em; font: 700 11px/1.3 var(--font-mono); color: var(--ink-soft); overflow-wrap: anywhere; }
 #gm-page .gm-rl-line { display: grid; gap: 3px; }
 #gm-page .gm-rl-in { display: flex; min-width: 0; }
@@ -1634,11 +1659,14 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
 #gm-page .gm-rl-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 #gm-page .gm-rl-they { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; margin-top: 2px; }
 #gm-page .gm-rl-they .gm-lab { display: inline; }
-#gm-page .gm-rl-dots { display: inline-flex; align-items: center; gap: 6px; }
-#gm-page .gm-dots { display: inline-flex; border: 2px solid var(--rule); background: var(--card); }
-#gm-page .gm-dotb { min-width: 24px; min-height: 24px; padding: 2px 4px; border: 0; border-right: 1.5px solid var(--rule); font: 900 12px/1 var(--font-mono); letter-spacing: 0; }
-#gm-page .gm-dotb:last-child { border-right: 0; }
-#gm-page .gm-dotb[aria-checked="true"] { background: var(--rule); color: var(--on-ink); }
+/* Who (08/11/2026, in place of the Dots): the PCs as one segmented row above the stamp; one optional tap */
+#gm-page .gm-rl-who { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+#gm-page .gm-rl-who[hidden] { display: none; }
+#gm-page .gm-rl-who .gm-lab { display: inline; }
+#gm-page .gm-who { display: inline-flex; flex-wrap: wrap; border: 2px solid var(--rule); background: var(--card); }
+#gm-page .gm-whob { min-height: 28px; padding: 3px 8px; border: 0; border-right: 1.5px solid var(--rule); font: 800 11.5px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .06em; }
+#gm-page .gm-whob:last-child { border-right: 0; }
+#gm-page .gm-whob[aria-checked="true"] { background: var(--rule); color: var(--on-ink); }
 #gm-page .gm-buttons { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
 #gm-page .gm-btn { display: grid; justify-items: center; align-content: center; gap: 4px; min-width: 0; min-height: 50px; padding: 5px 2px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); cursor: pointer; box-shadow: 2px 2px 0 var(--shadow-ink); transition: background-color .16s var(--ease), color .16s var(--ease), transform .09s var(--ease), box-shadow .09s var(--ease); }
 #gm-page .gm-btn kbd { font-size: 11px; padding: 1px 5px; }
@@ -1698,12 +1726,12 @@ body:not(.gm-show-costume) #gm-page .gm-field:has(#gm-run-lens) { display: none;
   #gm-page .gm-rl-seg .chip, #gm-page .gm-rl-fb, #gm-page .gm-rl-fold > summary { min-height: 44px; }
   #gm-page .gm-rl-x { width: 44px; }
   #gm-page .gm-btn { min-height: 56px; }
-  #gm-page .gm-dotb { min-width: 40px; }
+  #gm-page .gm-whob { min-height: 40px; }
 }
-/* a phone: the Dots take a line of their own, from the left, narrow enough to end left of the floating Capture button (right: 16 px, about 110 px wide) */
+/* a phone: Who stays narrow enough to end left of the floating Capture button (right: 16 px, about 110 px wide); its chips wrap */
 @media (max-width: 599px) {
-  #gm-page .gm-rl-they .gm-rl-dots { flex-basis: 100%; }
-  #gm-page .gm-dots .gm-dotb { min-width: 34px; padding-left: 2px; padding-right: 2px; }
+  #gm-page .gm-rl-who { max-width: calc(100% - 130px); }
+  #gm-page .gm-who .gm-whob { padding-left: 5px; padding-right: 5px; }
 }
 
 

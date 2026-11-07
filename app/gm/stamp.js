@@ -37,7 +37,8 @@
        host: { feature(id) -> bool, positions() -> [{ value, severity, ticks, harm }], roomLines() -> [line], currentPosition() -> pos | '',
                setPosition(pos), show(payload, key, ms) -> Promise<answer | null>, overlayId() -> id the iPad is showing, clearOverlay() -> Promise,
                log(text), toast(msg, bad), now() -> ms, keyFor(key) -> overlay id the show will have, setTimeout/clearTimeout, changed(),
-               threat(stamp) and threatClear() (optional: the map.threat glyph, gm/map-threat.js),
+               threat(stamp) and threatClear() (optional: the map.threat glyph, gm/map-threat.js), stamped({ position, effect, text, at }) (optional:
+               called once each time a stamp goes up, by fire, Stamp again or a cue: the page asks Blade for the fit, vault Projects/blades-68-fixer-on-the-stamp),
                line() and setLine(text) (optional: the Roll's one line; without them the controller keeps its own draft text, as before N4) }
        controller: view() draft(pos|eff|text) fire() stampNow(pos, eff, text) mark(result) esc() clear() reduce() restore() dismiss() seed() destroy()
                    result is '45', '13' or 'clean'. view() -> { on, draft: { position, effect, text }, active, stale, sizer }: stale is true while the
@@ -205,6 +206,7 @@
         if (typeof host.setPosition === 'function' && typeof host.currentPosition === 'function' && host.currentPosition() !== pos) host.setPosition(pos);
         schedule(); changed();
         if (typeof host.threat === 'function') host.threat(st);               /* suite 2.5: the glyph drops on the room before the dice */
+        if (typeof host.stamped === 'function') { try { host.stamped({ position: st.position, effect: st.effect, text: st.text, at: st.at }); } catch (e) {} }   /* 08/11: asks Blade for the fit */
         return true;
       }, function () { active = prevActive; return false; });
     }

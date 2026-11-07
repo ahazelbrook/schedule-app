@@ -217,8 +217,8 @@ try {
   const keys = await Ph.page.$$eval('#gm-buttons .gm-btn', (b) => b.map((x) => Math.round(x.getBoundingClientRect().top)));
   check(keys.length === 4 && new Set(keys).size === 1, 'the four keys in one row on the phone');
   check(await Ph.page.$eval('#gm-buttons .gm-btn', (b) => b.getBoundingClientRect().height >= 44), 'tall enough to tap');
-  const fab = await Ph.page.evaluate(() => { const d = document.querySelector('#gm-dots').getBoundingClientRect(), f = document.querySelector('.gm-fab').getBoundingClientRect(); return { dotsRight: Math.round(d.right), fabLeft: Math.round(f.left) }; });
-  check(fab.dotsRight <= fab.fabLeft, 'the Dots end left of the floating Capture button, wherever the page is scrolled ' + JSON.stringify(fab));
+  const fab = await Ph.page.evaluate(() => { const w = document.querySelector('#gm-who-row'), f = document.querySelector('.gm-fab'); const d = w && !w.hidden ? w.getBoundingClientRect() : null, r = f.getBoundingClientRect(); return { whoRight: d ? Math.round(d.right) : 0, fabLeft: Math.round(r.left) }; });
+  check(fab.whoRight <= fab.fabLeft, 'Who (08/11, in place of the Dots) ends left of the floating Capture button, wherever the page is scrolled ' + JSON.stringify(fab));
   await Ph.c.close();
 
   check(errors.length === 0, 'no console errors: ' + JSON.stringify(errors.slice(0, 3)));
