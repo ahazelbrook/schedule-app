@@ -82,10 +82,12 @@ export async function lastSeq(db, campaign) {
 }
 
 const COLS = 'seq, id, session, at, conn, speaker, kind, text';
-/** The statement behind readLines' `since` (when given) and `after` modes: its rows are the lines, oldest first. */
+/** The statement behind readLines' `since` (when given) and `after` modes: its rows are the lines, oldest first.
+ *  `since` orders the page by `at` (then seq) so it reads through gm_transcript_at (migration 0010): ordered by seq alone, SQLite
+ *  with table stats walks the primary key instead, every line ever kept, which cost 12k rows a read on 07/11. */
 export function linesStmt(db, campaign, { after = 0, since = '' } = {}) {
   return since
-    ? db.prepare('SELECT ' + COLS + ' FROM (SELECT ' + COLS + ' FROM gm_transcript WHERE campaign = ?1 AND at >= ?2 ORDER BY seq DESC LIMIT ?3) ORDER BY seq').bind(campaign, since, STT_LIMITS.page)
+    ? db.prepare('SELECT ' + COLS + ' FROM (SELECT ' + COLS + ' FROM gm_transcript WHERE campaign = ?1 AND at >= ?2 ORDER BY at DESC, seq DESC LIMIT ?3) ORDER BY seq').bind(campaign, since, STT_LIMITS.page)
     : db.prepare('SELECT ' + COLS + ' FROM gm_transcript WHERE campaign = ?1 AND seq > ?2 ORDER BY seq LIMIT ?3').bind(campaign, Math.max(0, after), STT_LIMITS.page);
 }
 /** after: the lines with seq > after (oldest first, a page at most); tail: the newest n, oldest first; since: the newest page of

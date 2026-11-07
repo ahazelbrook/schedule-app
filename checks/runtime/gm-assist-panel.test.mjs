@@ -360,13 +360,17 @@ await test('autoFit: asks Listening first, then makes the call with the draws; t
   assert.equal(r.ctl.state().spend.tonight, 0.4, 'the spend is folded in');
 });
 
-await test('autoFit: no call at all with Listening off, with the cap reached, on a phone, or without draws', async () => {
+await test('autoFit: no call at all with Listening off, with the cap reached, on a phone, or without draws (or a threat)', async () => {
   let r = rig(); r.gm.want = 'off'; r.gm.fitReply = FITOK;
-  assert.equal(await r.ctl.autoFit({ position: 'risky', draws: DRAWS2 }), null); assert.equal(r.calls.fit.length, 0);
+  assert.deepEqual(await r.ctl.autoFit({ position: 'risky', draws: DRAWS2 }), { error: 'listening' }, '08/11: Listening off says so (the page shows it on the Roll)'); assert.equal(r.calls.fit.length, 0);
   r = rig({}, { phone: true }); r.gm.fitReply = FITOK;
   assert.equal(r.ctl.canFit(), false); assert.equal(await r.ctl.autoFit({ position: 'risky', draws: DRAWS2 }), null); assert.equal(r.calls.fit.length, 0);
   r = rig(); r.gm.fitReply = FITOK;
   assert.equal(await r.ctl.autoFit({ position: 'risky' }), null, 'no draws, no call'); assert.equal(r.calls.fit.length, 0);
+  assert.equal(await r.ctl.autoFit({ position: 'risky', threat: '' }), null, 'a blank threat is no threat'); assert.equal(r.calls.fit.length, 0);
+  r = rig(); r.gm.fitReply = FITOK;
+  assert.ok((await r.ctl.autoFit({ position: 'risky', threat: 'the guard turns' })).card, '08/11: a stamped threat needs no draws'); assert.equal(r.calls.fit.length, 1);
+  assert.equal(r.calls.fit[0].threat, 'the guard turns');
   r = rig(); r.gm.fitReply = { ...FITOK, spend: { tonight: 20, cap: 20, tier: 'off', tick: 0 } };
   await r.ctl.autoFit({ position: 'risky', draws: DRAWS2 });
   assert.equal(r.ctl.canFit(), false, 'tier off: the cap is reached');

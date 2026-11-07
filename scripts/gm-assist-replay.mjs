@@ -197,7 +197,9 @@ if (arg('fixer-at') || arg('fixer')) {
   console.log(stats + `\nwritten to ${outDir}`);     // the text itself stays in the files
   process.exit(0);
 }
-function cell(x) { return String(x == null ? '' : x).replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>'); }
+// an outcome is a string, or since 08/11 the Fixer's { lead, say, size }
+function flat(x) { return x && typeof x === 'object' && !Array.isArray(x) ? [x.lead, x.say].filter(Boolean).join(': ') + (x.size ? ' (' + x.size + ')' : '') : x; }
+function cell(x) { return String(x == null ? '' : flat(x)).replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>'); }
 
 // --voice-at HH:MM[=NPC],... : Voice as the table agent runs it. At each moment the Conductor decides (as the tick does, with the
 // Tripwire's npc_change flag set) whether Voice wakes: it does only when an NPC name is given for that moment (the name the GM's page

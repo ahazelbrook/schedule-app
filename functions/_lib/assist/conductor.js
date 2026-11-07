@@ -28,13 +28,13 @@ export const CORE_SEATS = ['fixer', 'ref', 'ledger', 'voice_plus', 'gatekeeper',
 export const REPEAT_WINDOW_MS = 10 * 60 * 1000;
 
 // Minimum gap between two runs of one seat. The Tap seats read the last few minutes raw, so a minute-by-minute re-run only
-// repeats itself. The Fixer's gap is short because the GM presses it on purpose.
+// repeats itself. The Fixer's gap is short because the GM stamps (or presses Fit) on purpose.
 export const COOLDOWN_MS = {
   tripwire: 45 * 1000,
   ref: 60 * 1000,
   clerk: 120 * 1000,
   ledger: 120 * 1000,
-  fixer: 10 * 1000,
+  fixer: 2 * 1000,                 // 08/11: the stamp asks for it, once per stamp, and the page holds one fit at a time (latest wins): the gap only stops a runaway
   stall: 5 * 60 * 1000,             // a stall flag that stays set must not offer a new idea every minute
   voice: 45 * 1000,                 // the tick comes about once a minute; the gap must be shorter than that
   voice_plus: 10 * 1000,

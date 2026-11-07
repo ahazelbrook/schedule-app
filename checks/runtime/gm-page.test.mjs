@@ -439,7 +439,7 @@ await test('6a. the console is the four Situations: a big Position switch, the s
   assert.equal(h.qa('[data-gm="view"]').length, 0, 'no Situations | Classic toggle anywhere'); assert.ok(!h.q('.gm-conhead') && !h.q('.gm-head'), 'no console header, no page heading');
   /* N4: the Roll. One card (Position, the size, Effect, the line, the stamp, They rolled with the Dots and the four keys), then the card, the Blade fold, the folds */
   const col = [...h.q('.gm-console').kids].filter((k) => k.nodeType === 1).map((k) => k.id || k.className);
-  assert.deepEqual(col, ['gm-rl', 'gm-card', 'gm-rackf', 'gm-rl-scene', 'gm-scenebox', 'gm-rl-fbs', 'gm-earlier', 'gm-singles', 'gm-mini'], 'the column: the Roll card, the result card, Blade (the Rack), Scene, Earlier and More tables, the Focus keys');
+  assert.deepEqual(col, ['gm-rl', 'gm-rackf', 'gm-fxhit', 'gm-card', 'gm-rl-scene', 'gm-scenebox', 'gm-rl-fbs', 'gm-earlier', 'gm-singles', 'gm-mini'], 'the column: the Roll card, Blade (the Rack) and the line that hit, the result card, Scene, Earlier and More tables, the Focus keys');
   const card = [...h.q('#gm-rl').kids].filter((k) => k.nodeType === 1).map((k) => k.id || k.className);
   assert.deepEqual(card, ['gm-rl-h', 'gm-pos', 'gm-pos-size', 'gm-eff', 'gm-rl-line', 'gm-stamp', 'gm-rl-they', 'gm-buttons'], 'the Roll card, top to bottom');
   assert.ok(h.q('.gm-rl-they #gm-dots'), 'the Dots sit beside They rolled, small');
@@ -3992,27 +3992,34 @@ await test('18n. the cloud stays as the GM left it (open or shut) through a ↻ 
 });
 
 /* =====================================================================================================================
-   WP2. The console pre-rolls its 1-3 and 4/5 draws when the Position is set, sends them to the Fixer, and replays them
+   WP2 (rebuilt 08/11/2026: the Fixer on the stamp). A stamp that goes up asks Blade for ONE fit; nothing else does. With a line, the line drives
+   both outcomes and no draws are sent; without one the console's own 1-3 and 4/5 are pre-rolled, sent and replayed. The lines show under the Roll
+   in button order, the hit line heads the card, and every miss says why.
    ===================================================================================================================== */
-/* a fake Claude box: records the fit asks; `hold` keeps an answer pending until released */
+/* a fake Claude box: records the fit asks; `hold` keeps an answer pending until released; `obj` answers in the { lead, say, size } shape */
 const FITCARD = (tag) => ({ seat: 'fixer', at: '2030-01-01T00:00:00.000Z', text: 'r', read: 'read ' + tag, one_three: 'low ' + tag, four_five: 'mid ' + tag, six: 'six ' + tag, crit: 'crit ' + tag, bargain: 'bargain ' + tag });
+const FITOBJ = (tag) => ({ seat: 'fixer', at: '2030-01-01T00:00:00.000Z', text: 'r', read: 'read ' + tag,
+  one_three: { lead: 'Lead low ' + tag, say: 'say low.', size: 'harm 2' }, four_five: { lead: 'Lead mid ' + tag, say: 'say mid.', size: 'harm 2' },
+  six: { lead: 'Lead six', say: 'say six.' }, crit: { lead: 'Lead crit', say: 'say crit.' }, bargain: { lead: 'Lead deal', say: 'say deal.' } });
 function fakeAssist(over) {
-  const log = Object.assign({ fits: [], starts: 0, canFit: true, listening: true, hold: false, held: [], created: 0, opts: null, err: null }, over || {});
+  const log = Object.assign({ fits: [], starts: 0, canFit: true, listening: true, hold: false, held: [], created: 0, opts: null, err: null, obj: false }, over || {});
   const A = { create(o) {
     log.created++; log.opts = o;
     return { destroy() {}, toggle() {}, isOpen: () => false, close() {}, canFit: () => log.canFit,
       autoFit(req, onStart) {
-        if (!log.canFit || !log.listening) return Promise.resolve(null);   /* what the real box does: no call at all */
+        if (!log.canFit) return Promise.resolve(null);                         /* what the real box does: no call at all */
+        if (!log.listening) return Promise.resolve({ error: 'listening' });   /* ... and since 08/11 it says why */
         if (typeof onStart === 'function') onStart(); log.starts++;
         log.fits.push(req);
+        const card = () => (log.obj ? FITOBJ : FITCARD)(String(log.fits.length));
         if (log.err) return Promise.resolve({ error: log.err });
-        if (log.hold) return new Promise((res) => log.held.push(() => res({ card: FITCARD(String(log.fits.length)) })));
-        return Promise.resolve({ card: FITCARD(String(log.fits.length)) });
+        if (log.hold) { const c = card(); return new Promise((res) => log.held.push(() => res({ card: c }))); }
+        return Promise.resolve({ card: card() });
       } };
   } };
   return { A, log };
 }
-const PRE_WAIT = 700;
+const FIT_WAIT = 1700;            /* the page waits 1.5 s after a stamp before it asks (the player's last line lands) */
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function openWithAssist(over) {
   const fa = fakeAssist(over), fg = fakeGm();
@@ -4025,114 +4032,145 @@ async function openWithAssist(over) {
   const seedOf = (u) => (u * 4294967296) >>> 0;
   const entry = () => { const st = h.page._state(); return st && st.doc.cards && st.doc.cards.situation; };
   const entryText = () => { const e = entry(); const res = P.replaySituationEntry(C, FIXC.console.T, FIXC.campaign, e, {}); return P.drawTextOf(res); };
-  const setPos = async (v, wait = PRE_WAIT) => { h.qa('#gm-pos [data-v="' + v + '"]')[0].click(); await sleep(wait); };
-  return { h, fa, log: fa.log, queue, seedOf, entry, entryText, setPos };
+  const setPos = async (v, wait = 50) => { h.qa('#gm-pos [data-v="' + v + '"]')[0].click(); await sleep(wait); };
+  /* what gm/stamp.js does once a stamp is on the iPad: host.stamped (the rig has no iPad, so the page's seam stands in) */
+  const stamp = async (position, text = '', effect = 'standard', wait = FIT_WAIT) => { h.qa('#gm-pos [data-v="' + position + '"]')[0].click(); h.page._stamped({ position, effect, text }); await sleep(wait); };
+  return { h, fa, log: fa.log, queue, seedOf, entry, entryText, setPos, stamp };
 }
 const rackTxt = (h) => (h.q('#gm-rack').textContent || '').replace(/\s+/g, ' ').trim();
+/* the headline's paragraphs, one space between them (the rig's textContent runs them together) */
+const hitTxt = (h) => [...h.q('#gm-fxhit').kids].map((k) => (k.nodeType === 1 ? [...k.kids].map((p) => p.textContent).join(' ') : '')).join(' ').replace(/\s+/g, ' ').trim();
 
-await test('W1. setting Position pre-rolls the 1-3 and 4/5 draws once and sends them, with the position, to the Fixer; the Rack shows the answer', async () => {
+await test('W1. setting Position asks nothing; a stamp with a line asks ONE fit with the line, the size, the room and who is on stage, and no draws; the lines show in the Roll\'s button order', async () => {
   const t = await openWithAssist();
   assert.equal(t.log.created, 1);
-  assert.equal(t.log.fits.length, 0, 'nothing is asked until the Position is set');
-  await t.setPos('desperate');
+  await t.setPos('desperate'); await t.setPos('risky', 300);
+  assert.equal(t.log.fits.length, 0, '08/11: a Position is not a roll');
+  assert.equal(rackTxt(t.h), '');
+  t.h.page._stamped({ position: 'risky', effect: 'great', text: 'the guard turns' });
+  assert.match(rackTxt(t.h), /Fitting…/, 'the Roll says so the moment the stamp is up');
+  assert.match(rackTxt(t.h), /the guard turns · risky, great/, 'and names the stamp it is for');
+  assert.equal(t.log.fits.length, 0, 'the ask waits for the last line to land');
+  await sleep(FIT_WAIT);
   assert.equal(t.log.fits.length, 1);
   const req = t.log.fits[0];
-  assert.equal(req.position, 'desperate');
-  assert.ok(req.draws.low.startsWith('A 1–3 (') && req.draws.mid.startsWith('A 4/5 ('), req.draws.low.slice(0, 30) + ' | ' + req.draws.mid.slice(0, 30));
-  assert.ok(req.draws.low.length <= P.DRAW_CLIP && req.draws.mid.length <= P.DRAW_CLIP);
-  assert.match(rackTxt(t.h), /Rack/); assert.match(rackTxt(t.h), /low 1/); assert.match(rackTxt(t.h), /mid 1/); assert.match(rackTxt(t.h), /bargain 1/);
+  assert.equal(req.position, 'risky'); assert.equal(req.effect, 'great'); assert.equal(req.threat, 'the guard turns');
+  assert.equal(req.draws, undefined, 'a line drives both outcomes: no draws sent');
+  assert.equal(typeof req.size, 'string'); assert.equal(typeof req.room, 'string'); assert.ok(Array.isArray(req.onStage));
+  const txt = rackTxt(t.h);
+  assert.match(txt, /^for \d\d:\d\d · the guard turns/, 'the block names its stamp first'); assert.match(txt, /read 1/);
+  const at = (s) => txt.indexOf(s);
+  assert.ok(at('bargain 1') < at('mid 1') && at('mid 1') < at('low 1') && at('low 1') < at('six 1') && at('six 1') < at('crit 1'), 'Bargain, 4/5, 1–3, 6, Crit: ' + txt);
+  assert.equal(t.h.qa('#gm-rack li.gm-fx-low').length, 1); assert.equal(t.h.qa('#gm-rack li.gm-fx-deal').length, 1, 'each row has its colour');
   assert.equal(t.h.q('#gm-card .gm-lead'), null, 'the card area is untouched: nothing was rolled on screen');
-  assert.equal(t.h.fg.server.doc.cards, undefined, 'pre-rolling stores nothing: page state only');
+  assert.equal(t.h.fg.server.doc.cards, undefined, 'a fit stores nothing: page state only');
+  assert.ok(!t.h.q('#gm-rackf').hidden && t.h.q('#gm-rackf').hasAttribute('open'), 'the Blade fold is open');
   await t.h.save();
+  /* the { lead, say, size } shape: the lead in bold, the size as a chip */
+  const o = await openWithAssist({ obj: true });
+  await o.stamp('desperate', 'the floor gives way');
+  assert.equal(o.h.qa('#gm-rack .gm-fx-low .gm-fx-lead')[0].textContent, 'Lead low 1');
+  assert.match(rackTxt(o.h), /Lead low 1 say low\. harm 2/);
+  assert.equal(o.h.qa('#gm-rack .gm-fx-size').length, 2, 'the size on the 1–3 and the 4/5 only');
+  await o.h.save();
 });
 
-await test('W2. the result uses the SAME draw (same seed, same text) and never re-rolls; no second fit call; a used draw is not served twice', async () => {
+await test('W2. a stamp with no line pre-rolls and sends the draws; the result uses the SAME draw and never re-rolls; the hit line heads the card; a used draw is not served twice', async () => {
   const t = await openWithAssist();
   t.queue.push(0.25, 0.75);                     /* the two pre-rolled seeds: 1-3 first, then 4/5 */
-  await t.setPos('risky');
+  await t.stamp('risky');
   const req = t.log.fits[0];
+  assert.equal(req.threat, undefined);
+  assert.ok(req.draws.low.startsWith('A 1–3 (') && req.draws.mid.startsWith('A 4/5 ('), req.draws.low.slice(0, 30) + ' | ' + req.draws.mid.slice(0, 30));
+  assert.ok(req.draws.low.length <= P.DRAW_CLIP && req.draws.mid.length <= P.DRAW_CLIP);
+  assert.match(rackTxt(t.h), /stamped, no line · risky, standard/);
   t.h.press('3');                               /* tap 1-3 */
   let e = t.entry(); assert.equal(e.situation, 'onetothree'); assert.equal(e.seed, t.seedOf(0.25), 'the pre-rolled seed, not a new one');
   assert.equal(t.entryText(), req.draws.low, 'the card IS the fitted draw');
+  assert.equal(t.h.qa('#gm-rack li.hit').length, 1); assert.match(t.h.qa('#gm-rack li.hit')[0].textContent, /1–3/);
+  assert.match(hitTxt(t.h), /^Blade · 1–3 low 1$/, 'the hit line heads the card: ' + hitTxt(t.h)); assert.ok(!t.h.q('#gm-fxhit').hidden);
+  assert.ok(!t.h.q('#gm-rackf').hasAttribute('open'), 'the fold closes to its summary'); assert.match(t.h.q('#gm-rack-sum').textContent, /1–3 · low 1/);
+  t.h.press('3');
+  assert.notEqual(t.entry().seed, t.seedOf(0.25), 'a used draw is not served twice');
+  assert.equal(hitTxt(t.h), '', 'the next card is a plain roll: no headline'); assert.ok(t.h.q('#gm-fxhit').hidden);
+  assert.equal(t.log.fits.length, 1, 'rolling the result asks nothing more');
+  await t.h.save();
   const t2 = await openWithAssist();
   t2.queue.push(0.25, 0.75);
-  await t2.setPos('risky');
-  const req2 = t2.log.fits[0];
+  await t2.stamp('risky');
   t2.h.press('2');                              /* tap 4/5 */
   e = t2.entry(); assert.equal(e.situation, 'fourfive'); assert.equal(e.seed, t2.seedOf(0.75));
-  assert.equal(t2.entryText(), req2.draws.mid);
-  assert.equal(t2.log.fits.length, 1, 'rolling the result asks nothing more');
-  await t.h.save(); await t2.h.save();
-  /* the hit line is marked in the Rack, and a second tap is a fresh roll (the draw was used) */
-  const t3 = await openWithAssist();
-  t3.queue.push(0.25, 0.75);
-  await t3.setPos('risky');
-  t3.h.press('3');
-  assert.equal(t3.h.qa('#gm-rack li.hit').length, 1); assert.match(t3.h.qa('#gm-rack li.hit')[0].textContent, /1–3/);
-  const first = t3.entry().seed; assert.equal(first, t3.seedOf(0.25));
-  t3.h.press('3');
-  assert.notEqual(t3.entry().seed, first, 'a used draw is not served twice');
-  assert.equal(t3.log.fits.length, 1);
-  await t3.h.save();
+  assert.equal(t2.entryText(), t2.log.fits[0].draws.mid);
+  assert.match(hitTxt(t2.h), /4\/5 mid 1/);
+  await t2.h.save();
 });
 
-await test('W3. changing Position re-rolls and re-fits; a late answer for the old Position never lands; the same Position again asks nothing new', async () => {
+await test('W3. the newest stamp wins: one fit at a time, a late answer for an older stamp never lands; the same Position stamped again is a new roll', async () => {
   const t = await openWithAssist({ hold: true });
-  await t.setPos('controlled');
+  await t.stamp('controlled', 'a door bangs');
   assert.equal(t.log.fits.length, 1);
-  assert.match(rackTxt(t.h), /Fitting/, 'pending shows only once the call is made');
-  await t.setPos('desperate');
-  assert.equal(t.log.fits.length, 2); assert.equal(t.log.fits[1].position, 'desperate');
+  assert.match(rackTxt(t.h), /Fitting/);
+  await t.stamp('desperate', 'the floor gives way');
+  assert.equal(t.log.fits.length, 1, 'the newer ask waits for the one in flight');
+  assert.match(rackTxt(t.h), /the floor gives way/, 'the Roll already names the newer stamp'); assert.match(rackTxt(t.h), /Fitting/);
   t.log.held[0]();                              /* the answer for "controlled" arrives late */
-  await sleep(10);
-  assert.doesNotMatch(rackTxt(t.h), /low 1/, 'dropped: its draws are gone');
+  await sleep(20);
+  assert.doesNotMatch(rackTxt(t.h), /low 1/, 'dropped: its stamp is gone');
+  assert.equal(t.log.fits.length, 2, 'then the newer one is asked'); assert.equal(t.log.fits[1].position, 'desperate'); assert.equal(t.log.fits[1].threat, 'the floor gives way');
   t.log.held[1]();
-  await sleep(10);
+  await sleep(20);
   assert.match(rackTxt(t.h), /low 2/);
-  await t.setPos('desperate');                  /* tapped again: same Position, draws unused */
-  assert.equal(t.log.fits.length, 2);
+  await t.setPos('controlled', 300); await t.setPos('desperate', 300);
+  assert.equal(t.log.fits.length, 2, 'moving the Position asks nothing');
+  await t.stamp('desperate', 'the floor gives way');
+  assert.equal(t.log.fits.length, 3, 'the same stamp again is a new roll, and a new fit');
+  assert.doesNotMatch(rackTxt(t.h), /low 2/, 'the last roll\'s lines go at once');
+  t.log.held[2](); await sleep(20);
   await t.h.save();
 });
 
-await test('W4. dice that land before the Fixer answers show the raw draw; the late answer appears in the Rack and does not replace the card', async () => {
+await test('W4. dice that land before Blade answers show the raw draw; the late answer appears under the Roll and heads the card without replacing it', async () => {
   const t = await openWithAssist({ hold: true });
   t.queue.push(0.25, 0.75);
-  await t.setPos('risky');
+  await t.stamp('risky');
   t.h.press('3');
   const before = cardTxt(t.h);
   assert.ok(before.includes('A 1–3'), before.slice(0, 60));
   assert.match(rackTxt(t.h), /Fitting/);
   t.log.held[0]();
-  await sleep(10);
+  await sleep(20);
   assert.equal(cardTxt(t.h), before, 'the card is as it was');
   assert.match(rackTxt(t.h), /low 1/);
   assert.equal(t.h.qa('#gm-rack li.hit').length, 1, 'and the line for the result is marked');
+  assert.match(hitTxt(t.h), /1–3 low 1/, 'and heads the card');
   await t.h.save();
 });
 
-await test('W5. no fit call, no pre-roll and no Rack when the box is off, Listening is off or the cap is reached; the console rolls exactly as today', async () => {
-  for (const over of [{ listening: false }, { canFit: false }]) {
+await test('W5. Listening off and the cap say so on the Roll and ask nothing; with no box at all (a phone) the Roll is as it always was', async () => {
+  for (const [over, re] of [[{ listening: false }, /Listening is off/], [{ canFit: false }, /Blade is off here tonight/]]) {
     const t = await openWithAssist(over);
-    await t.setPos('desperate');
+    await t.stamp('desperate', 'the floor gives way');
     assert.equal(t.log.fits.length, 0, JSON.stringify(over));
-    assert.equal(rackTxt(t.h), '');
-    t.queue.push(0.25, 0.75);                   /* nobody pre-rolled, so the queue is not read by a pre-roll */
+    assert.match(rackTxt(t.h), re, JSON.stringify(over) + ': ' + rackTxt(t.h));
+    assert.equal(t.h.qa('#gm-rack [data-gm="rackfit"]').length, 1, 'with Fit again');
+    t.queue.push(0.25, 0.75);
     t.h.press('3');
     assert.ok(cardTxt(t.h).includes('A 1–3'));
-    assert.notEqual(t.entry().seed, t.seedOf(0.25), 'a plain roll: its own seed');
+    assert.notEqual(t.entry().seed, t.seedOf(0.25), 'a plain roll: its own seed (draws never fitted are dropped)');
     await t.h.save();
   }
   /* no box at all (no B68GmAssist on the page, as on a phone) */
   const fg = fakeGm(); const h = await openPage({ fg });
-  h.qa('#gm-pos [data-v="desperate"]')[0].click(); await sleep(PRE_WAIT);
-  assert.equal(rackTxt(h), ''); h.press('3'); assert.ok(cardTxt(h).includes('A 1–3'));
+  h.page._stamped({ position: 'desperate', effect: 'standard', text: 'the floor gives way' }); await sleep(FIT_WAIT);
+  assert.equal(rackTxt(h), ''); assert.ok(h.q('#gm-fitnow').hidden, 'no Fit button either');
+  h.press('3'); assert.ok(cardTxt(h).includes('A 1–3'));
   await h.save();
 });
 
-await test('W6. Clear on the Rack discards the stored draws: the next roll is a plain one; an error from the Fixer shows nothing', async () => {
+await test('W6. Clear drops the lines and the draws (the next roll is plain); a failed fit says so, and Fit again asks once more with the same stamp', async () => {
   const t = await openWithAssist();
   t.queue.push(0.25, 0.75);
-  await t.setPos('risky');
+  await t.stamp('risky');
   assert.match(rackTxt(t.h), /low 1/);
   t.h.q('[data-gm="rackclear"]').click();
   assert.equal(rackTxt(t.h), '');
@@ -4140,35 +4178,55 @@ await test('W6. Clear on the Rack discards the stored draws: the next roll is a 
   assert.notEqual(t.entry().seed, t.seedOf(0.25));
   await t.h.save();
   const e = await openWithAssist({ err: 'other' });
-  await e.setPos('risky');
-  assert.equal(rackTxt(e.h), ''); assert.equal(e.log.fits.length, 1);
+  await e.stamp('risky', 'the guard turns');
+  assert.equal(e.log.fits.length, 1);
+  assert.match(rackTxt(e.h), /Blade couldn’t fit this one\. Fit again/, rackTxt(e.h));
+  e.log.err = null;
+  e.h.q('[data-gm="rackfit"]').click();
+  await sleep(FIT_WAIT);
+  assert.equal(e.log.fits.length, 2); assert.equal(e.log.fits[1].threat, 'the guard turns'); assert.equal(e.log.fits[1].position, 'risky');
+  assert.match(rackTxt(e.h), /low 2/);
   await e.h.save();
 });
 
-await test('W7. changing a control the draw reads (not Position) re-rolls and re-fits once a Position has been set; before that nothing happens', async () => {
+await test('W7. changing a control asks nothing; one changed after the stamp drops the draws (the roll is plain) but keeps the lines', async () => {
   const t = await openWithAssist();
   const sel = t.h.q('#gm-controls select[data-ctl="scene"]') || t.h.qa('#gm-controls select')[0];
-  const fire = async (el, v) => { el.value = v; dispatch(el, 'change'); await sleep(1700); };
+  const fire = async (el, v) => { el.value = v; dispatch(el, 'change'); await sleep(300); };
   const opt = (el) => { const kids = el.querySelectorAll('option'); return kids.length > 1 ? kids[1].getAttribute('value') : null; };
   const v = opt(sel);
   assert.ok(v !== null, 'the fixture has a scene to pick');
   await fire(sel, v);
-  assert.equal(t.log.fits.length, 0, 'no Position set yet: nothing pre-rolled');
-  await t.setPos('risky');
+  assert.equal(t.log.fits.length, 0, 'a control is not a roll');
+  t.queue.push(0.25, 0.75);
+  await t.stamp('risky');
   assert.equal(t.log.fits.length, 1);
   await fire(sel, '');
-  assert.equal(t.log.fits.length, 2, 'the scene changed under the draws: re-rolled and re-fitted');
+  assert.equal(t.log.fits.length, 1, 'the scene changed: nothing asked');
+  t.h.press('3');
+  assert.notEqual(t.entry().seed, t.seedOf(0.25), 'the controls moved under the draws: a plain roll');
+  assert.match(rackTxt(t.h), /low 1/, 'the lines stay');
   await t.h.save();
 });
 
-await test('W8. the box\'s own "Fit it" form gets the console\'s draws for its Position (and the Position follows it)', async () => {
+await test('W8. the Fit button asks for an unstamped roll with the console\'s draws; the box\'s own "Fit it" form still gets the draws for its Position', async () => {
   const t = await openWithAssist();
-  const d = t.log.opts.draws('desperate');
-  assert.ok(d && d.low.startsWith('A 1–3') && d.mid.startsWith('A 4/5'));
-  assert.equal(t.h.qa('#gm-pos [data-v="desperate"]')[0].getAttribute('aria-checked'), 'true');
-  assert.equal(t.log.opts.draws('nonsense'), null);
-  assert.equal(t.log.fits.length, 0, 'no automatic fit: the form makes its own call');
+  assert.ok(!t.h.q('#gm-fitnow').hidden, 'shown where a box can fit');
+  await t.setPos('desperate');
+  t.h.q('#gm-fitnow').click();
+  await sleep(FIT_WAIT);
+  assert.equal(t.log.fits.length, 1);
+  const req = t.log.fits[0];
+  assert.equal(req.position, 'desperate'); assert.equal(req.threat, undefined); assert.ok(req.draws && req.draws.low.startsWith('A 1–3'));
+  assert.match(rackTxt(t.h), /not stamped · desperate/);
   await t.h.save();
+  const u = await openWithAssist();
+  const d = u.log.opts.draws('desperate');
+  assert.ok(d && d.low.startsWith('A 1–3') && d.mid.startsWith('A 4/5'));
+  assert.equal(u.h.qa('#gm-pos [data-v="desperate"]')[0].getAttribute('aria-checked'), 'true');
+  assert.equal(u.log.opts.draws('nonsense'), null);
+  assert.equal(u.log.fits.length, 0, 'no automatic fit: the form makes its own call');
+  await u.h.save();
 });
 
 /* =====================================================================================================================

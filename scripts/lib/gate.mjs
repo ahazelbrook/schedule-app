@@ -17,7 +17,9 @@ export const DRY_OUT_TOKENS = { tripwire: 150, ref: 500, clerk: 300, ledger: 500
 
 const sortNum = (a) => [...a].sort((x, y) => x - y);
 export const median = (a) => { const s = sortNum(a); return s.length ? s[Math.floor((s.length - 1) / 2)] : 0; };
-const cell = (x) => String(x == null ? '' : x).replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
+// an outcome is a string, or since 08/11 the Fixer's { lead, say, size }
+const flat = (x) => (x && typeof x === 'object' && !Array.isArray(x) ? [x.lead, x.say].filter(Boolean).join(': ') + (x.size ? ' (' + x.size + ')' : '') : x);
+const cell = (x) => String(x == null ? '' : flat(x)).replace(/\|/g, '\\|').replace(/\r?\n/g, '<br>');
 const usd = (x) => '$' + (Math.round(x * 1000) / 1000).toFixed(3);
 
 /** "22:14,~22:24" -> [{ spec: '22:14', approx: false, t }, ...]. Throws on a stamp that is not HH:MM. */

@@ -2903,7 +2903,7 @@
     });
     chips.innerHTML = bits.join('') || '<span class="gm-dim">any</span>';
   }
-  function setLive(id, value) { var l = {}; l[id] = value; patch({ con: { live: l } }); renderChips(); if (id !== 'pos' && S && S.pre) schedulePre(1500); }
+  function setLive(id, value) { var l = {}; l[id] = value; patch({ con: { live: l } }); renderChips(); }   /* 08/11: a control no longer asks for a fit; the stamp does */
   /* the Roll's Position (one switch: the console's tables and the stamp read it), the size under it, the Dots and the line; then the stamp's part (b09Paint) */
   function renderPos() {
     var R = W.B68GmRoll, box = $q('#gm-pos');
@@ -2932,7 +2932,7 @@
   }
   function renderConsole() { rollBind(); renderPos(); renderControls(); renderButtons(); renderSingles(); drawConsoleCard(); renderRack(); rollFoldSync(); }
   function setDots(v) { if (!S) return; var n = Number(v); S.dots = (Number.isInteger(n) && n >= 0 && n <= 4 && S.dots !== n) ? n : null; renderPos(); }     /* tap again clears */
-  function setPos(v) { setLive('pos', v); renderPos(); schedulePre(); }
+  function setPos(v) { setLive('pos', v); renderPos(); }
   /* a roll is never invisible: Focus (which hides the card) goes, said once per page load, and the card's header is scrolled
      into view in the console column */
   var focusLeftToasted = false;
@@ -2983,21 +2983,31 @@
     var ok = patch({ cards: { situation: Object.assign({ hid: hid }, entry) }, mem: { console: clone(S.con.mem()) }, hist: { situation: addCapped(hist, hid, entry, LIMITS.hist) } }, { force: true });
     if (!ok) return;
     if (use) preUsed(use, res);
+    if (res && res.meta && FX_HIT[res.meta.situation]) rackHit(FX_HIT[res.meta.situation], hid);     /* 08/11: its line heads the card */
     stamp('situation', res);
     if (res && res.meta && (res.meta.situation === 'fourfive' || res.meta.situation === 'onetothree')) assistRolled();     /* a 4/5 or a 1-3 result; Before (a Devil's Bargain) and Someone are not rolls */
     b09Marked(res);
   }
 
-  /* ---------- Claude at the table: the console's own 1-3 and 4/5 draws, pre-rolled for the Position ----------
-     When the GM sets Position (or a control the draw reads, once a Position has been set), the console rolls its 1-3 and 4/5 cards
-     ONCE with its own function (con.situation) and keeps each one's seed and the memory it was drawn from. It sends the two
-     cards' text to the Fixer (POST /api/gm/assist/fit). Tapping 1-3 or 4/5 later replays that very draw (same seed, same memory),
-     so the card and the fitted line cannot differ; changing Position re-rolls and re-fits; Clear on the Rack drops both.
-     The draws live in this page's state only (a reload forgets them and the next roll draws as it always did). Nothing is pre-rolled,
-     and no fit call is made, when the box cannot fit (a phone, no box, the cap reached) or Listening is off. The Fixer's answer
-     shows in the Rack under the card; it never replaces the card, and a late answer still lands there. */
+  /* ---------- Claude at the table: the Fixer on the stamp (08/11/2026; vault Projects/blades-68-fixer-on-the-stamp) ----------
+     A stamp that goes up on the iPad (Stamp it, Stamp again, or the cue "Blade, stamp ...": all go through gm/stamp.js stampNow, which calls
+     host.stamped) asks Blade for ONE fit for that roll. Nothing else fires one: setting the Position, the effect, the dots, the line or a control
+     does not (on 07/11 the fit followed a Position CHANGE, so a second risky roll kept the last roll's lines: 6 of 13 stamps were fitted).
+     The Fit button (data-gm="fitnow") asks for a roll that is not stamped. Each ask:
+       - rolls the console's own 1-3 and 4/5 cards afresh for the controls as they are (con.situation, with each seed and the memory it was drawn
+         from), so tapping 1-3 or 4/5 replays that very draw: the card and the fitted line cannot differ;
+       - sends the stamped line (the threat), the position's size, the room, the rolling PC and the NPCs on stage. With a line, the line drives both
+         outcomes and the draws are not sent; without one (the Fit button, a stamp with no line) the draws are, as before;
+       - drops the last roll's lines at once and shows "Fitting…" on the Roll (a fit is never shown under a newer roll than its own).
+     One fit runs at a time and the newest ask wins: an ask made while one runs waits for it, and the older answer is dropped. Every outcome is
+     visible on the Roll: the lines, or why there are none (Listening off, the cap, a failure), with Fit again. When the result is marked, its line
+     heads the result card (#gm-fxhit) and the Blade fold closes to its summary. The draws and lines live in this page's state only (a reload
+     forgets them and the next roll draws as it always did). Nothing is asked from a phone or with no box. */
   var PRE_KINDS = [['low', 'onetothree'], ['mid', 'fourfive']];
-  var PRE_MS = 500, FIT_RETRY_MS = 11000;
+  var FIT_SETTLE_MS = 1500, FIT_RETRY_MS = 4000, FIT_STAGE = 6;
+  /* the Blade rows, in the order of the Roll's buttons (Before is the bargain), then the 6 and the crit; the third item is the colour */
+  var FX_ROWS = [['bargain', 'Bargain', 'deal'], ['four_five', '4/5', 'mid'], ['one_three', '1–3', 'low'], ['six', '6', 'six'], ['crit', 'Crit', 'crit']];
+  var FX_HIT = { fourfive: 'four_five', onetothree: 'one_three' };      /* Before (the bargain) is offered before the dice: not a result */
   var preTok = 0;
   function newSeedNow() { return (Math.random() * 4294967296) >>> 0; }
   function sitIdOf(n) { var x = S.con.situations().filter(function (b) { return b.id === n || b.key === Number(n); })[0]; return x ? x.id : ''; }
@@ -3005,14 +3015,12 @@
     if (!S) return;
     if (S.preTimer) { W.clearTimeout(S.preTimer); S.preTimer = null; }
     if (S.preRetry) { W.clearTimeout(S.preRetry); S.preRetry = null; }
-    S.pre = null; S.rack = null; S.fitTok = ++preTok;     /* a late answer for the old draws is dropped */
+    S.pre = null; S.rack = null; S.fitWant = null; S.fitTok = ++preTok;     /* a late answer for the old draws is dropped */
   }
-  /* roll the pair for the controls as they are now; returns { pre, fresh } (the pair already held is kept while the controls and its draws are unchanged) */
+  /* roll the pair afresh for the controls as they are now -> pre | null */
   function preroll() {
     if (!S || !hasSit()) return null;
-    var ui = uiNow(), sig = preSig(ui), cur = S.pre;
-    if (cur && cur.sig === sig && PRE_KINDS.every(function (k) { return !cur.kinds[k[1]].used; })) return { pre: cur, fresh: false };
-    var memBefore = clone(S.con.mem()), pre = { tok: ++preTok, sig: sig, pos: str(ui.pos), mem: memBefore, kinds: {}, text: {}, stale: false };
+    var ui = uiNow(), memBefore = clone(S.con.mem()), pre = { tok: ++preTok, sig: preSig(ui), pos: str(ui.pos), mem: memBefore, kinds: {}, text: {}, stale: false };
     try {
       PRE_KINDS.forEach(function (k) {
         var seed = newSeedNow();
@@ -3020,44 +3028,74 @@
         pre.text[k[0]] = drawTextOf(S.con.situation(k[1], ui, { seed: seed, mem: clone(memBefore) }));   /* a copy of the memory: the console's own stays as it was */
       });
     } catch (e) { return null; }
-    return { pre: pre, fresh: true };
+    return pre;
   }
-  /* Position (or a control) changed: after a short pause, re-roll the pair and ask the Fixer to fit it. A box that cannot fit leaves the console as it was. */
-  function schedulePre(ms) {
+  function fitWhy(k) {
+    return k === 'listening' ? 'Listening is off: Blade isn’t fitting.' : k === 'cap' ? 'Cap reached for tonight: the Fixer is off.' : k === 'off' ? 'Blade is off here tonight (the cap, or not set up).'
+      : k === 'busy' ? 'Blade was busy and couldn’t fit this one.' : k === 'none' ? 'Blade had nothing to fit this time.' : 'Blade couldn’t fit this one.';
+  }
+  function fitBox() { var a = S && S.assist; return a && typeof a.canFit === 'function' && typeof a.autoFit === 'function' ? a : null; }
+  function fitPc() { var ui = uiNow(); return str(ui.pc).replace(/[(),:]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80); }
+  function fitSize(pos) { var R = W.B68GmRoll; return R && S && S.con ? str(R.sizeLine(S.con.positions, pos)).slice(0, 80) : ''; }
+  /* ask for a fit. st: { position, effect, text } (the stamp that went up, or what is set for the Fit button); stamped: it is on the iPad */
+  function fitAsk(st, stamped) {
     if (!S || !hasSit()) return;
-    var me = S;
-    if (me.preTimer) W.clearTimeout(me.preTimer);
-    me.preTimer = W.setTimeout(function () {
-      me.preTimer = null;
+    var me = S, a = fitBox(); if (!a) return;                 /* no box (a phone): the Roll is as it always was */
+    if (me.preTimer) { W.clearTimeout(me.preTimer); me.preTimer = null; }
+    if (me.preRetry) { W.clearTimeout(me.preRetry); me.preRetry = null; }
+    var pre = preroll(); if (!pre) return;
+    var threat = rollCut(st && st.text), pos = str(st && st.position) || pre.pos, at = new Date();
+    var ask = { position: pos, effect: str(st && st.effect), threat: threat, stamped: !!stamped, hhmm: ('0' + at.getHours()).slice(-2) + ':' + ('0' + at.getMinutes()).slice(-2) };
+    me.pre = pre; me.fitTok = pre.tok; me.fitWant = null;
+    me.rack = { tok: pre.tok, pre: pre, ask: ask, status: 'pending', card: null, why: '', hit: '', hitHid: '' };
+    if (!a.canFit()) { me.rack.status = 'error'; me.rack.why = fitWhy('off'); me.pre = null; me.rack.pre = null; rackFold(true); renderRack(); return; }
+    var req = { position: pos, size: fitSize(pos), room: rollRoom().slice(0, 80), onStage: stageNames().slice(0, FIT_STAGE).map(function (n) { return n.slice(0, 80); }) };
+    if (ask.effect) req.effect = ask.effect;
+    if (threat) req.threat = threat; else req.draws = { low: pre.text.low, mid: pre.text.mid };
+    var pc = fitPc(); if (pc) req.pc = pc;
+    if (me.dots != null) req.dots = me.dots;
+    me.fitWant = { tok: pre.tok, req: req, tries: 0 };
+    rackFold(true); renderRack();
+    me.preTimer = W.setTimeout(function () { me.preTimer = null; if (S === me) fitPump(me); }, FIT_SETTLE_MS);   /* lets the player's last line land */
+  }
+  /* one fit at a time; the newest ask waiting runs when the one in flight returns */
+  function fitPump(me) {
+    if (S !== me || me.fitBusy || !me.fitWant) return;
+    var job = me.fitWant; me.fitWant = null; me.fitBusy = true;
+    Promise.resolve().then(function () { return me.assist.autoFit(job.req); }).then(null, function () { return { error: 'other' }; }).then(function (r) {
+      me.fitBusy = false;
       if (S !== me) return;
-      var a = me.assist;
-      if (!a || typeof a.canFit !== 'function' || typeof a.autoFit !== 'function' || !a.canFit()) { preReset(); renderRack(); return; }
-      var r = preroll(); if (!r) return;
-      if (!r.fresh && r.pre.fitted) return;                 /* the same Position again, draws unused and already fitted: nothing to do */
-      if (me.preRetry) { W.clearTimeout(me.preRetry); me.preRetry = null; }
-      me.pre = r.pre; me.fitTok = r.pre.tok; if (r.fresh) me.rack = null; renderRack();
-      r.pre.fitted = true;
-      fitPre(r.pre, 0);
-    }, ms == null ? PRE_MS : ms);
+      var rk = me.rack;
+      if (rk && rk.tok === job.tok) {
+        if (r && r.card) { rk.status = 'ready'; rk.card = r.card; }
+        else if (r && r.error === 'busy' && !job.tries && !me.fitWant) {
+          job.tries = 1;
+          me.preRetry = W.setTimeout(function () { me.preRetry = null; if (S === me && !me.fitWant && me.rack && me.rack.tok === job.tok) { me.fitWant = job; fitPump(me); } }, FIT_RETRY_MS);
+        } else { rk.status = 'error'; rk.why = fitWhy(r ? r.error : 'listening'); if (me.pre === rk.pre) me.pre = null; rk.pre = null; }   /* draws never fitted are dropped: the roll is a plain one */
+        renderRack();
+      }
+      fitPump(me);                                            /* a newer ask waiting: its turn */
+    });
   }
-  function fitPre(pre, tries) {
-    var me = S, tok = pre.tok;
-    me.assist.autoFit(Object.assign({ position: pre.pos, draws: { low: pre.text.low, mid: pre.text.mid } }, me.dots != null ? { dots: me.dots } : {}), function () {
-      if (S === me && me.fitTok === tok) { me.rack = { tok: tok, pre: pre, status: 'pending', card: null }; renderRack(); }
-    }).then(function (r) {
-      if (S !== me || me.fitTok !== tok) return;             /* the Position moved on, or the Rack was cleared: this answer is for draws that are gone */
-      if (r && r.card) { me.rack = { tok: tok, pre: pre, status: 'ready', card: r.card }; renderRack(); return; }
-      if (r && r.error === 'busy' && !tries) { me.preRetry = W.setTimeout(function () { me.preRetry = null; if (S === me && me.fitTok === tok) fitPre(pre, 1); }, FIT_RETRY_MS); return; }
-      me.rack = null;                                       /* Listening off, the cap, a failure: nothing shows, and draws never fitted are dropped so the roll is a plain one */
-      if (me.pre === pre) me.pre = null;
-      renderRack();
-    }, function () { if (S === me && me.fitTok === tok) { me.rack = null; if (me.pre === pre) me.pre = null; renderRack(); } });
+  /* the stamp went up (gm/stamp.js host.stamped) */
+  function fitStamped(st) { if (S && isObj(st)) fitAsk({ position: st.position, effect: st.effect, text: st.text }, true); }
+  /* the Fit button: the roll as set, not stamped (no line: the console's draws) */
+  function fitNow() { if (!S || !hasSit()) return; var v = S.stamp ? S.stamp.view() : null; fitAsk({ position: str(uiNow().pos), effect: v && v.on ? str(v.draft.effect) : '', text: '' }, false); }
+  /* Fit again: the same ask */
+  function fitAgain() { var r = S && S.rack; if (!r || !r.ask) return; fitAsk({ position: r.ask.position, effect: r.ask.effect, text: r.ask.threat }, r.ask.stamped); }
+  /* the result was marked on the Roll: its row is the hit (only the first result after a fit; hid: the card it heads) */
+  function rackHit(kind, hid) {
+    var r = S && S.rack; if (!r || r.hit || !kind) return;
+    r.hit = kind; r.hitHid = str(hid);
+    rackFold(false); renderRack();
   }
+  /* the Blade fold: open with a new fit, closed to its summary once the result is marked */
+  function rackFold(open) { var f = $q('#gm-rackf'); if (f) { f.open = !!open; if (open) f.setAttribute('open', ''); else f.removeAttribute('open'); } }
   /* the pair held for these controls, if the button pressed has an unused draw in it (otherwise the roll is a plain one) */
   function takePre(n, ui) {
     var pre = S.pre; if (!pre) return null;
     var kind = sitIdOf(n); if (!pre.kinds[kind]) return null;
-    if (pre.sig !== preSig(ui)) { preReset(); renderRack(); return null; }   /* the controls moved under the draws (the Now district, say): roll afresh */
+    if (pre.sig !== preSig(ui)) { S.pre = null; if (S.rack) S.rack.pre = null; return null; }   /* the controls moved under the draws (the Now district, say): roll afresh; the lines stay */
     return pre.kinds[kind].used ? null : { pre: pre, kind: kind };
   }
   /* the roll options that replay the draw: its seed, and the console's memory set back to what it was when the draw was made */
@@ -3070,37 +3108,65 @@
     pre.kinds[use.kind].used = true;
     if (drawTextOf(res) !== pre.text[key]) pre.stale = true;     /* the console's state moved since the draw (a bargain collected, say): the Rack says so */
     if (PRE_KINDS.every(function (k) { return pre.kinds[k[1]].used; }) && S.pre === pre) S.pre = null;
-    renderRack();
   }
   function rackClear() { preReset(); if (S) { S.dots = null; renderPos(); } renderRack(); }
   /* the box's own "Fit it" form asks for draws too: the console's pair for that Position (the Position follows the form, quietly) */
   function drawsFor(position) {
     if (!S || !hasSit() || S.con.positions.every(function (p) { return p.value !== position; })) return null;
     if (str(uiNow().pos) !== position) { setLive('pos', position); renderPos(); }
-    var r = preroll(); if (!r) return null;
-    if (r.fresh) { S.pre = r.pre; S.rack = null; S.fitTok = r.pre.tok; renderRack(); }
-    return { low: r.pre.text.low, mid: r.pre.text.mid };
+    var cur = S.pre;
+    if (!(cur && cur.sig === preSig(uiNow()) && PRE_KINDS.every(function (k) { return !cur.kinds[k[1]].used; }))) {
+      cur = preroll(); if (!cur) return null;
+      S.pre = cur; S.rack = null; S.fitTok = cur.tok; renderRack();
+    }
+    return { low: cur.text.low, mid: cur.text.mid };
   }
-  var RACK_ROWS = [['1–3', 'one_three'], ['4–5', 'four_five'], ['6', 'six'], ['Crit', 'crit'], ['Bargain', 'bargain']];
+  /* one outcome as { lead, say, size }: the Fixer's shape since 08/11, or a plain string from an older answer (all of it is the say) */
+  function fxOf(v) {
+    if (isObj(v)) return { lead: str(v.lead).replace(/\s+/g, ' ').trim(), say: str(v.say).replace(/\s+/g, ' ').trim(), size: str(v.size).replace(/\s+/g, ' ').trim() };
+    return { lead: '', say: str(v).replace(/\s+/g, ' ').trim(), size: '' };
+  }
+  P.fxOf = fxOf; P.FX_ROWS = FX_ROWS;
+  function fxRowHtml(row, c, hit) {
+    var o = fxOf(c[row[0]]); if (!o.lead && !o.say) return '';
+    return '<li class="gm-fx gm-fx-' + row[2] + (hit ? ' hit' : '') + '"><b class="gm-fx-k">' + esc(row[1]) + '</b><span class="gm-fx-t">' +
+      (o.lead ? '<b class="gm-fx-lead">' + esc(o.lead) + '</b> ' : '') + esc(o.say) + (o.size ? ' <span class="gm-fx-size">' + esc(o.size) + '</span>' : '') + '</span></li>';
+  }
   function renderRack() {
     var box = $q('#gm-rack'); if (!box) return;
     var r = S && S.rack, vo = S && S.voice;
     var vh = vo ? voiceHtml(vo) : '';      /* the Rack keeps the roll's own: the Fixer and Voice. What else Blade suggests is a card in the box (P4) */
     syncCards();
-    rackFoldSync(r, vo);       /* N4: the Rack is the Roll's Blade fold, there only while it holds something */
+    rackFoldSync(r, vo);       /* the Blade fold, under the Roll: there only while it holds something */
+    rackHeadPaint();
+    var fb = $q('#gm-fitnow'); if (fb) fb.hidden = !(fitBox() && hasSit());     /* the Fit button: only where a box can fit */
     if (!r) { box.innerHTML = vh; return; }
-    var pre = r.pre, used = { one_three: pre && pre.kinds.onetothree.used, four_five: pre && pre.kinds.fourfive.used };
-    var h = '<div class="gm-rack-h"><span class="gm-lab">Rack</span><span class="gm-dim">Blade, fitted to the scene · ' + esc(pre.pos) + '</span>' +
-      '<button type="button" class="chip sm" data-gm="rackclear" title="Drops the fitted lines and the draws held for this Position">Clear</button></div>';
-    if (r.status === 'pending') h += '<p class="gm-dim gm-rack-w">Fitting…</p>';
+    var a = r.ask || { position: r.pre ? r.pre.pos : '', threat: '' };
+    var forWhat = (a.hhmm ? 'for ' + a.hhmm + ' · ' : '') + (a.threat ? a.threat : (a.stamped ? 'stamped, no line' : 'not stamped')) + ' · ' + a.position + (a.effect ? ', ' + a.effect : '');
+    var h = '<div class="gm-rack-h"><span class="gm-dim gm-fx-for">' + esc(forWhat) + '</span>' +     /* the fold's summary already says Blade */
+      '<button type="button" class="chip sm" data-gm="rackclear" title="Drops the fitted lines and the draws held for this roll">Clear</button></div>';
+    if (r.status === 'pending') h += '<p class="gm-dim gm-rack-w gm-fx-wait" role="status">Fitting…</p>';
+    else if (r.status === 'error') h += '<p class="gm-rack-w gm-fx-err" role="status">' + esc(r.why || fitWhy('other')) + (r.ask ? ' <button type="button" class="chip sm" data-gm="rackfit">Fit again</button>' : '') + '</p>';
     else {
       var c = isObj(r.card) ? r.card : {};
       if (str(c.read)) h += '<p class="gm-rack-read">' + esc(str(c.read)) + '</p>';
-      h += '<ol class="gm-rack-lines">' + RACK_ROWS.filter(function (x) { return str(c[x[1]]).trim(); }).map(function (x) {
-        return '<li' + (used[x[1]] ? ' class="hit"' : '') + '><b>' + esc(x[0]) + '</b><span>' + esc(str(c[x[1]]).trim()) + '</span></li>'; }).join('') + '</ol>';
-      if (pre && pre.stale) h += '<p class="gm-dim gm-rack-w">The card was drawn before something changed here; the lines above may not match it.</p>';
+      h += '<ol class="gm-rack-lines gm-fx-lines">' + FX_ROWS.map(function (x) { return fxRowHtml(x, c, r.hit === x[0]); }).join('') + '</ol>';
+      if (r.pre && r.pre.stale) h += '<p class="gm-dim gm-rack-w">The card was drawn before something changed here; the lines above may not match it.</p>';
     }
     box.innerHTML = h + vh;
+  }
+  /* the hit line, heading the result card (#gm-fxhit sits right above #gm-card): only for the card the hit was marked on */
+  function rackHeadPaint() {
+    var hb = $q('#gm-fxhit'); if (!hb) return;
+    var r = S && S.rack, cur = S && isObj(S.doc.cards) && S.shown === 'situation' ? S.doc.cards.situation : null, h = '';
+    if (r && r.status === 'ready' && isObj(r.card) && r.hit && (r.hit === 'six' || (cur && r.hitHid && cur.hid === r.hitHid))) {
+      var row = FX_ROWS.filter(function (x) { return x[0] === r.hit; })[0], o = fxOf(r.card[r.hit]);
+      if (row && (o.lead || o.say)) h = '<p class="gm-lab">Blade · ' + esc(row[1]) + '</p><p class="gm-fx-big">' + (o.lead ? '<b>' + esc(o.lead) + '</b> ' : '') + esc(o.say) + '</p>' +
+        (o.size ? '<p class="gm-fx-size">' + esc(o.size) + '</p>' : '');
+      if (h) h = '<div class="gm-fx-hit gm-fx-' + row[2] + '">' + h + '</div>';
+    }
+    if (hb.__html !== h) { hb.innerHTML = h; hb.__html = h; }
+    hb.hidden = !h;
   }
   /* ---------- Voice: the NPC on stage, in the Rack ----------
      The page sends the on-stage NPC's name with each tick (the first NPC the campaign's scene has on stage; the server cannot tell
@@ -3288,7 +3354,7 @@
     var opts = { acts: acts, hide: function (a) { return !!(a && a.intent && a.intent.type === 'threatSpent') && !rollCut(rollLine()); } };
     box.innerHTML = res ? (res.sections ? situationCardHtml(res, md, opts) : classicCardHtml(res, md, opts)).replace('</header>', '</header><section class="gm-sz" id="gm-sz" aria-label="The consequence at full size" hidden></section>')
       : S.con ? '<p class="gm-empty">Press a button, or a number key <kbd>1</kbd>–<kbd>4</kbd>.</p>' : '';
-    rollSizerPaint();
+    rollSizerPaint(); rackHeadPaint();
     var er = $q('#gm-earlier'); if (!er) return;
     var h = isObj(S.doc.hist) ? S.doc.hist : {}, list = [];
     ['situation', 'console'].forEach(function (t) { newest(h[t]).forEach(function (x) { x._tool = t; list.push(x); }); });
@@ -4759,7 +4825,8 @@
       keyFor: function (key) { return W.B68Show ? W.B68Show.idFor(key) : key; }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
       clearOverlay: function () { return patchAmbient({ overlay: null }); },
       log: function (text) { if (S === me && me.night) me.night.stamp(text); }, toast: toast, changed: function () { if (S === me) { b09Paint(); pcStatusSync(); } },
-      threat: function (st) { var t = S === me && me.b19 && me.b19.threat; if (t) t.drop(st); }, threatClear: function () { var t = S === me && me.b19 && me.b19.threat; if (t) t.clear(); }
+      threat: function (st) { var t = S === me && me.b19 && me.b19.threat; if (t) t.drop(st); }, threatClear: function () { var t = S === me && me.b19 && me.b19.threat; if (t) t.clear(); },
+      stamped: function (st) { if (S === me) fitStamped(st); }     /* 08/11: the stamp is what asks Blade for the fit */
     });
     me.cueGrammar = Gr.create({
       feature: function (id) { return S === me && b09On(id); }, cueVerbs: function () { return W.B68CueVerbs; }, stamp: function () { return S === me ? me.stamp : null; },
@@ -4922,7 +4989,9 @@
   function rackFoldSync(r, vo) {
     var f = $q('#gm-rackf'), sm = $q('#gm-rack-sum'), R = W.B68GmRoll; if (!f) return;
     f.hidden = !(r || vo);
-    if (sm) sm.textContent = (r || vo) && R ? R.rackSummary({ fitted: r && r.pre ? str(r.pre.pos) : '', pending: !!(r && r.status === 'pending'), voice: vo ? str(vo.who) : '' }) : '';
+    var hitRow = r && r.hit && r.status === 'ready' && isObj(r.card) ? FX_ROWS.filter(function (x) { return x[0] === r.hit; })[0] : null, hitO = hitRow ? fxOf(r.card[r.hit]) : null;
+    if (sm) sm.textContent = (r || vo) && R ? R.rackSummary({ fitted: r && r.status === 'ready' && r.ask ? str(r.ask.position) : '', pending: !!(r && r.status === 'pending'), error: !!(r && r.status === 'error'),
+      hit: hitRow ? hitRow[1] + ' · ' + (hitO.lead || hitO.say) : '', voice: vo ? str(vo.who) : '' }) : '';
   }
   /* ---------- B19: the map beats (map.spotted 2.6, map.flashback 2.9, map.threat 2.5). The logic is in gm/map-*.js; this is the seam. Each reads its own switch live. ---------- */
   function b19Room(svg, name) {
@@ -7474,7 +7543,7 @@
       case 'eff': if (S.stamp) S.stamp.draft('eff', b.getAttribute('data-v')); break;
       case 'stamp': rollStamp(); break;
       case 'stamp-down': if (S.stamp) S.stamp.esc(); break;
-      case 'stamp-clean': if (S.stamp) S.stamp.mark('clean'); break;
+      case 'stamp-clean': if (S.stamp) S.stamp.mark('clean'); rackHit('six', ''); break;
       case 'sz-reduce': if (S.stamp) S.stamp.reduce(); break;
       case 'sz-restore': if (S.stamp) S.stamp.restore(); break;
       case 'sz-done': if (S.stamp) S.stamp.dismiss(); break;
@@ -7482,6 +7551,8 @@
       case 'fold': rollFold(b.getAttribute('data-rlfold')); break;
       case 'line-clear': rollLineClear(); break;
       case 'rackclear': rackClear(); break;
+      case 'rackfit': fitAgain(); break;
+      case 'fitnow': fitNow(); break;
       case 'voiceclear': S.voice = null; renderRack(); break;
       case 'ho-show': showHandout(b.getAttribute('data-id')); break;
       case 'ho-step': hoStep(+b.getAttribute('data-d')); break;      /* T12: the deck's Previous / Next */
@@ -7731,6 +7802,7 @@
     /* for checks (music.e2e.mjs): the music's state, also while another page (Rules, the cast, Home) is open over the GM page */
     _music: function () { return MU ? MU.state() : null; },
     /* for checks (gm.e2e.mjs): the current roll, and the display gate */
+    _stamped: function (st) { fitStamped(st); },     /* tests: what the stamp's host.stamped does (the node rig has no iPad to stamp on) */
     _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer, svg: S.map.svg }, panel: S.panel, seg: S.seg, doc: S.doc, runCacheN: S.runCache ? S.runCache.keys.length : 0 } : null; },
     _pushDisplay: function (d) { return pushDisplay(d); },
     _setPhoneCards: function (on) { return setPhoneCards(on === true); },     /* for checks: the Run menu's Phone cards toggle */

@@ -2,14 +2,27 @@
 // replay reads exactly what the table agent would. Generic text only: the draws and the talk arrive as arguments.
 
 /**
- * position, effect, dots: what the GM set (dots: the dice for the roll, 0-4; left out when the GM has not set them). draws: { low, mid }, the console's own 1-3 and 4-5 draws as text.
+ * position, effect, dots: what the GM set (dots: the dice for the roll, 0-4; left out when the GM has not set them).
+ * threat: the line the GM stamped on the players' screen ('' for none). size: the stamped position's size, e.g. "standard · 2 ticks · harm 2" ('' for none).
+ * room, pc: where the crew are and who is rolling, as the GM's page has them ('' for none). onStage: the NPCs the page has on stage ([] for none).
+ * draws: { low, mid }, the console's own 1-3 and 4-5 draws as text: given (and used) only when there is no threat.
  * stamp: "HH:MM" the talk runs up to. talk: the last five minutes as "[HH:MM] Name: text" lines.
+ * (Since 08/11/2026 the stamp on the iPad is what asks for a fit: vault Projects/blades-68-fixer-on-the-stamp.)
  */
-export function fitUser({ position, effect = '', dots, draws, stamp, talk }) {
-  const named = 'The GM names the position: ' + position + (effect ? '. Effect: ' + effect : '') + '.' + (Number.isInteger(dots) ? ' Dots: ' + dots + '.' : '');
-  return 'A roll is about to be made. ' + named + '\nThe console has drawn these. Fit them to the scene and keep what each one says happens.\n1-3 draw:\n' + draws.low +
-    '\n4-5 draw:\n' + draws.mid + '\nLast five minutes, up to ' + stamp + ':\n' + talk;
+export function fitUser({ position, effect = '', dots, threat = '', size = '', room = '', pc = '', onStage = [], draws, stamp, talk }) {
+  const named = 'The GM names the position: ' + position + (effect ? '. Effect: ' + effect : '') + '.' + (Number.isInteger(dots) ? ' Dots: ' + dots + '.' : '') +
+    (size ? ' Size at this position: ' + size + '.' : '');
+  const where = (room ? '\nRoom: ' + room : '') + (pc ? '\nRolling: ' + pc : '') + (onStage && onStage.length ? '\nOn stage: ' + onStage.join(', ') : '');
+  const what = threat
+    ? '\nThreat stamped on the players\' screen (they have read it: it is the promise): ' + threat
+    : '\nNo threat was stamped. The console has drawn these. Fit them to the scene and keep what each one says happens.\n1-3 draw:\n' + (draws ? draws.low : '') +
+      '\n4-5 draw:\n' + (draws ? draws.mid : '');
+  return 'A roll is about to be made. ' + named + where + what + '\nLast five minutes, up to ' + stamp + ':\n' + talk;
 }
+export const FIT_THREAT_MAX = 140;          // characters in the stamped line (the stamp keeps 100)
+export const FIT_SIZE_MAX = 80;             // characters in the size
+export const FIT_ROOM_MAX = 80;             // characters in the room, and in the rolling PC's name
+export const FIT_STAGE_MAX = 6;             // NPCs on stage the page sends
 
 export const NPC_MAX = 80;                  // characters in the on-stage NPC's name the page sends
 export const SHOWN_MAX = 6;                 // lines already shown that Another is told about

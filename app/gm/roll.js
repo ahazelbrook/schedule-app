@@ -7,7 +7,7 @@
      textarea so it shows whole in the column, never more than one line)
      Stamp it on the iPad  ->  while up: ● On the iPad, Take it down (Esc), Clean (no card), and Stamp again once what is set has changed
      They rolled [1 Before] [2 4/5] [3 1–3] [4 Someone] (keys 1-4), with the Dots (0-4) small beside the heading
-   Under the card the result card (the consequence at full size for the stamped position sits under its header; Reduce and Hide size join its actions
+   Under the card, Blade's lines (#gm-rackf: since 08/11 they open there the moment a stamp goes up) and the line that hit (#gm-fxhit); then the result card (the consequence at full size for the stamped position sits under its header; Reduce and Hide size join its actions
    row, with Pay the price and Harm & resist where the card has no such section of its own), Blade's Rack folded under it, and the folds: Scene (Now in,
    the scene, the district, who it aims at, the NPC), Earlier, More tables. Focus (F) collapses the column to #gm-mini: the position, then the four keys.
 
@@ -29,7 +29,7 @@
      sizerHtml(z, { lineShown }) -> the strip under the result card's header (z: the stamp view's sizer) | ''; lineShown leaves the promised line out
      sizerActs(z) -> its Reduce (or Restore) and Hide size, for the card's actions row | ''
      quickActs({ pay, harm }) -> Pay the price and Harm & resist (false leaves one out), for the actions row of a 4/5 or a 1–3 card
-     rackSummary(r) -> the Blade fold's summary text. r = { fitted: position | '', pending, voice: name | '' }
+     rackSummary(r) -> the Blade fold's summary text. r = { fitted: position | '', pending, error, hit: 'label · lead' | '', voice: name | '' }
      EFFECTS, cap(s), esc(s) */
 (function (root, factory) {
   'use strict';
@@ -59,13 +59,16 @@
         '<p class="gm-rl-note" id="gm-line-note" hidden></p></div>' +
       '<div class="gm-stamp" id="gm-stamp"></div>' +
       '<div class="gm-rl-they"><span class="gm-lab" id="gm-they-l">They rolled</span>' +
+        '<button type="button" class="chip sm gm-fitb" id="gm-fitnow" data-gm="fitnow" hidden title="Ask Blade to fit this roll without stamping it (a stamp asks by itself)">Fit</button>' +
         '<span class="gm-rl-dots"><span class="gm-lab" id="gm-dots-l" title="The dice in the pool: L files it with the roll (tap again to clear)">Dots</span>' +
         '<span class="gm-dots" id="gm-dots" role="radiogroup" aria-labelledby="gm-dots-l"></span></span></div>' +
       '<div class="gm-buttons" id="gm-buttons" role="group" aria-labelledby="gm-they-l"></div>' +
       '</div>' +
-      '<div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' +
+      /* 08/11: Blade's lines open under They rolled the moment a stamp goes up; the hit line heads the result card (gm-page.js renderRack, rackHeadPaint) */
       '<details class="gm-rl-fold gm-rackf" id="gm-rackf" open hidden><summary><span class="gm-lab">Blade</span><span class="gm-rl-sum" id="gm-rack-sum"></span></summary>' +
         '<div class="gm-rack" id="gm-rack" aria-live="polite"></div></details>' +
+      '<div class="gm-fxhitbox" id="gm-fxhit" aria-live="polite" hidden></div>' +
+      '<div class="gm-cardbox" id="gm-card" aria-live="polite"></div>' +
       /* the Scene button sits in a plain div: a <button> as a direct grid item of the scrolling column collapses to its min-height once the column
          overflows (Chromium sizes the track from the button's min-height, not its wrapped content) */
       '<div class="gm-rl-scene"><button type="button" class="gm-scene gm-rl-fb" id="gm-scene" data-gm="scene" aria-expanded="false" aria-controls="gm-scenebox" title="Now in, the scene, the district, who it aims at, the NPC">' +
@@ -152,7 +155,7 @@
   function rackSummary(r) {
     r = r || {};
     var bits = [];
-    if (r.pending) bits.push('fitting…'); else if (r.fitted) bits.push('fitted for ' + str(r.fitted));
+    if (r.pending) bits.push('fitting…'); else if (r.error) bits.push('not fitted'); else if (r.hit) bits.push(str(r.hit)); else if (r.fitted) bits.push('fitted for ' + str(r.fitted));
     if (r.voice) bits.push('Voice: ' + str(r.voice));
     return bits.join(' · ');
   }
