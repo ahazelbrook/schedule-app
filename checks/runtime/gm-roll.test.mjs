@@ -24,7 +24,7 @@ const SITS = C.SITUATIONS;
 
 test('shell: one block whose parts the page fills, in the design’s order (the Roll card, Blade and the line that hit, the result card, Scene, Earlier, More tables, the Focus keys)', () => {
   const h = R.shell();
-  assert.deepEqual(ids(h), ['gm-rl', 'gm-rl-h', 'gm-pos', 'gm-pos-size', 'gm-eff', 'gm-c-threat', 'gm-line-note', 'gm-stamp', 'gm-they-l', 'gm-fitnow', 'gm-dots-l', 'gm-dots', 'gm-buttons',
+  assert.deepEqual(ids(h), ['gm-rl', 'gm-rl-h', 'gm-pos', 'gm-pos-size', 'gm-eff', 'gm-c-threat', 'gm-line-note', 'gm-who-row', 'gm-who-l', 'gm-who', 'gm-stamp', 'gm-they-l', 'gm-fitnow', 'gm-buttons',
     'gm-rackf', 'gm-rack-sum', 'gm-rack', 'gm-fxhit', 'gm-card', 'gm-scene', 'gm-scene-chips', 'gm-scenebox', 'gm-now-s', 'gm-controls', 'gm-earlier-b', 'gm-earlier-n', 'gm-singles-b', 'gm-earlier', 'gm-singles', 'gm-mini']);
   assert.match(h, /<textarea id="gm-c-threat" data-ctl="threat"[^>]*maxlength="100"/, 'the one line is the console’s threat control, at most 100 characters');
   assert.match(h, /<label class="gm-lab" for="gm-c-threat">If it goes wrong<\/label>/);
@@ -51,8 +51,13 @@ test('Position: three radios, the current one checked, each titled with its size
 test('Effect: three radios, standard checked by default the page passes; Dots 0-4, none checked when unset', () => {
   const e = R.effHtml('standard');
   assert.equal((e.match(/data-gm="eff"/g) || []).length, 3); assert.match(e, /aria-checked="true" data-gm="eff" data-v="standard">Standard</);
-  assert.equal((R.dotsHtml(null).match(/aria-checked="true"/g) || []).length, 0);
-  assert.match(R.dotsHtml(2), /aria-checked="true" data-gm="dots" data-v="2"/); assert.match(R.dotsHtml(0), /aria-checked="true" data-gm="dots" data-v="0" aria-label="0 dots"/);
+  /* Who (08/11, in place of the Dots): a chip per PC, the current one checked, 'anyone' left out, every value escaped */
+  const PCSO = [{ value: '', label: 'anyone' }, { value: 'Pippa Quince', label: 'Pippa' }, { value: 'Hugo "Hook" Pell', label: 'Hugo' }];
+  assert.equal((R.whoHtml(PCSO, '').match(/data-gm="who"/g) || []).length, 2, 'anyone is not a chip');
+  assert.equal((R.whoHtml(PCSO, '').match(/aria-checked="true"/g) || []).length, 0);
+  assert.match(R.whoHtml(PCSO, 'Pippa Quince'), /aria-checked="true" data-gm="who" data-v="Pippa Quince"[^>]*>Pippa</);
+  assert.match(R.whoHtml(PCSO, ''), /data-v="Hugo &quot;Hook&quot; Pell"/);
+  assert.equal(R.whoHtml(null, ''), ''); assert.equal(R.dotsHtml, undefined, 'the Dots are gone');
 });
 
 test('the stamp: Stamp it on the iPad when nothing is up; while up, On the iPad with Take it down (Esc) and Clean, and Stamp again only once what is set has changed', () => {

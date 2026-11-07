@@ -6,7 +6,8 @@
      If it goes wrong: one line (the console's Threat on screen and the stamp's line: one field, one value, prefilled from the room; a two-row
      textarea so it shows whole in the column, never more than one line)
      Stamp it on the iPad  ->  while up: ● On the iPad, Take it down (Esc), Clean (no card), and Stamp again once what is set has changed
-     They rolled [1 Before] [2 4/5] [3 1–3] [4 Someone] (keys 1-4), with the Dots (0-4) small beside the heading
+     Who: the PCs as chips, one optional tap (the console's Aim at: who is rolling, for Blade and L; 08/11/2026 it replaced the Dots)
+     They rolled [1 Before] [2 4/5] [3 1–3] [4 Someone] (keys 1-4)
    Under the card, Blade's lines (#gm-rackf: since 08/11 they open there the moment a stamp goes up) and the line that hit (#gm-fxhit); then the result card (the consequence at full size for the stamped position sits under its header; Reduce and Hide size join its actions
    row, with Pay the price and Harm & resist where the card has no such section of its own), Blade's Rack folded under it, and the folds: Scene (Now in,
    the scene, the district, who it aims at, the NPC), Earlier, More tables. Focus (F) collapses the column to #gm-mini: the position, then the four keys.
@@ -21,7 +22,7 @@
      posHtml(positions, cur) -> #gm-pos: three radios (data-gm="pos"). positions: the console's [{ value, label, severity, ticks, harm }]
      sizeText(p) -> "severity · ticks · harm n"      sizeLine(positions, cur) -> the line under Position ('' when the pack has no size for it)
      effHtml(cur) -> #gm-eff: three radios (data-gm="eff")
-     dotsHtml(dots) -> #gm-dots: 0-4 (data-gm="dots"; a second tap clears; null = unset)
+     whoHtml(pcs, cur) -> #gm-who: a chip per PC (data-gm="who"; a second tap clears). pcs: [{ value, label }] (the console's Aim at options, 'anyone' left out)
      stampHtml(v) -> #gm-stamp. v = { on, active: { position, effect, text } | null, stale }
      lineNote(room) -> the note under the line while it is the room's own ('' for none)
      buttonsHtml(sits) -> #gm-buttons: four .gm-btn with keys 1-4 (sits: con.situations())
@@ -57,11 +58,12 @@
         '<div class="gm-rl-in"><textarea id="gm-c-threat" data-ctl="threat" rows="2" maxlength="100" autocomplete="off" spellcheck="false" placeholder="One line the players see before the dice"></textarea>' +
         '<button type="button" class="gm-rl-x" data-gm="line-clear" title="Clear the line" aria-label="Clear the line">×</button></div>' +
         '<p class="gm-rl-note" id="gm-line-note" hidden></p></div>' +
+      /* 08/11: who is rolling, set before the stamp (the stamp sends what is set); one optional tap, cleared once the roll resolves */
+      '<div class="gm-rl-who" id="gm-who-row" hidden><span class="gm-lab" id="gm-who-l" title="Who is rolling: Blade and L get the name. Optional; cleared once the roll resolves">Who</span>' +
+        '<span class="gm-who" id="gm-who" role="radiogroup" aria-labelledby="gm-who-l"></span></div>' +
       '<div class="gm-stamp" id="gm-stamp"></div>' +
       '<div class="gm-rl-they"><span class="gm-lab" id="gm-they-l">They rolled</span>' +
-        '<button type="button" class="chip sm gm-fitb" id="gm-fitnow" data-gm="fitnow" hidden title="Ask Blade to fit this roll without stamping it (a stamp asks by itself)">Fit</button>' +
-        '<span class="gm-rl-dots"><span class="gm-lab" id="gm-dots-l" title="The dice in the pool: L files it with the roll (tap again to clear)">Dots</span>' +
-        '<span class="gm-dots" id="gm-dots" role="radiogroup" aria-labelledby="gm-dots-l"></span></span></div>' +
+        '<button type="button" class="chip sm gm-fitb" id="gm-fitnow" data-gm="fitnow" hidden title="Ask Blade to fit this roll without stamping it (a stamp asks by itself)">Fit</button></div>' +
       '<div class="gm-buttons" id="gm-buttons" role="group" aria-labelledby="gm-they-l"></div>' +
       '</div>' +
       /* 08/11: Blade's lines open under They rolled the moment a stamp goes up; the hit line heads the result card (gm-page.js renderRack, rackHeadPaint) */
@@ -98,8 +100,11 @@
   function effHtml(cur) {
     return EFFECTS.map(function (e) { return '<button type="button" class="chip gm-effb" role="radio" aria-checked="' + (e === cur) + '" data-gm="eff" data-v="' + e + '">' + cap(e) + '</button>'; }).join('');
   }
-  function dotsHtml(dots) {
-    return [0, 1, 2, 3, 4].map(function (n) { return '<button type="button" class="chip sm gm-dotb" role="radio" aria-checked="' + (dots === n) + '" data-gm="dots" data-v="' + n + '" aria-label="' + n + (n === 1 ? ' dot' : ' dots') + '">' + n + '</button>'; }).join('');
+  function whoHtml(pcs, cur) {
+    return (Array.isArray(pcs) ? pcs : []).filter(function (p) { return p && str(p.value); }).map(function (p) {
+      var v = str(p.value);
+      return '<button type="button" class="chip sm gm-whob" role="radio" aria-checked="' + (v === str(cur)) + '" data-gm="who" data-v="' + esc(v) + '" title="' + esc(v) + '">' + esc(p.label || v) + '</button>';
+    }).join('');
   }
   function stampHtml(v) {
     v = v || {};
@@ -160,6 +165,6 @@
     return bits.join(' · ');
   }
 
-  return { EFFECTS: EFFECTS.slice(), cap: cap, esc: esc, shell: shell, posHtml: posHtml, sizeText: sizeText, sizeLine: sizeLine, effHtml: effHtml, dotsHtml: dotsHtml,
+  return { EFFECTS: EFFECTS.slice(), cap: cap, esc: esc, shell: shell, posHtml: posHtml, sizeText: sizeText, sizeLine: sizeLine, effHtml: effHtml, whoHtml: whoHtml,
     stampHtml: stampHtml, lineNote: lineNote, buttonsHtml: buttonsHtml, miniHtml: miniHtml, sizerHtml: sizerHtml, sizerActs: sizerActs, quickActs: quickActs, rackSummary: rackSummary };
 });

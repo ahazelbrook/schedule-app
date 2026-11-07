@@ -182,11 +182,11 @@ if (arg('fixer-at') || arg('fixer')) {
     used[hhmm] = d;
     const before = total, n0 = secsLog.length;
     const j = await run('fixer', hhmm, fitUser({ position: d.position, draws: d, stamp: hhmm, talk: textFor(t - 4, t) }));
-    out.push(`## ${hhmm}\n` + (j ? Object.entries(j).map(([k, v]) => `- **${k}:** ${v}`).join('\n') : '(no JSON)'));
+    out.push(`## ${hhmm}\n` + (j ? Object.entries(j).map(([k, v]) => `- **${k}:** ${flat(v)}`).join('\n') : '(no JSON)'));
     mom.push([`## ${hhmm}  (${d.position}; ${secsLog[n0]} s, stop ${stopLog[n0]}, $${(total - before).toFixed(3)})`, '',
       '| | Console draw | Fitted line |', '|---|---|---|',
       `| 1-3 | ${cell(d.low)} | ${cell(j && j.one_three)} |`, `| 4-5 | ${cell(d.mid)} | ${cell(j && j.four_five)} |`, '',
-      ...(j ? [`- **read:** ${j.read}`, `- **6:** ${j.six}`, `- **crit:** ${j.crit}`, `- **bargain:** ${j.bargain}`] : ['(no JSON)']), ''].join('\n'));
+      ...(j ? [`- **read:** ${j.read}`, `- **6:** ${flat(j.six)}`, `- **crit:** ${flat(j.crit)}`, `- **bargain:** ${flat(j.bargain)}`] : ['(no JSON)']), ''].join('\n'));
   }
   fs.writeFileSync(path.join(outDir, 'fixer.md'), out.join('\n\n') + '\n');
   fs.writeFileSync(path.join(outDir, 'fixer-moments.md'), '# The Fixer fitting the console draws\n\n' + mom.join('\n') + '\n');

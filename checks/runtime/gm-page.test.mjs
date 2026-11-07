@@ -441,8 +441,8 @@ await test('6a. the console is the four Situations: a big Position switch, the s
   const col = [...h.q('.gm-console').kids].filter((k) => k.nodeType === 1).map((k) => k.id || k.className);
   assert.deepEqual(col, ['gm-rl', 'gm-rackf', 'gm-fxhit', 'gm-card', 'gm-rl-scene', 'gm-scenebox', 'gm-rl-fbs', 'gm-earlier', 'gm-singles', 'gm-mini'], 'the column: the Roll card, Blade (the Rack) and the line that hit, the result card, Scene, Earlier and More tables, the Focus keys');
   const card = [...h.q('#gm-rl').kids].filter((k) => k.nodeType === 1).map((k) => k.id || k.className);
-  assert.deepEqual(card, ['gm-rl-h', 'gm-pos', 'gm-pos-size', 'gm-eff', 'gm-rl-line', 'gm-stamp', 'gm-rl-they', 'gm-buttons'], 'the Roll card, top to bottom');
-  assert.ok(h.q('.gm-rl-they #gm-dots'), 'the Dots sit beside They rolled, small');
+  assert.deepEqual(card, ['gm-rl-h', 'gm-pos', 'gm-pos-size', 'gm-eff', 'gm-rl-line', 'gm-who-row', 'gm-stamp', 'gm-rl-they', 'gm-buttons'], 'the Roll card, top to bottom (Who above the stamp, 08/11)');
+  assert.equal(h.q('#gm-dots'), null, 'the Dots are gone (08/11)');
   assert.equal(h.q('.gm-console').id, 'gm-roll', 'the column is one block (N1b places it whole)');
   assert.equal(h.q('#gm-scene').getAttribute('aria-expanded'), 'false'); assert.equal(h.q('#gm-scenebox').hidden, true, 'Scene is folded');
   assert.ok(h.q('#gm-scenebox #gm-now-s') && h.q('#gm-scenebox #gm-controls'), 'Now in and the controls are in the Scene fold');
@@ -544,28 +544,25 @@ await test('6h2. L files an outcome card with the Position set on the page in br
   assert.ok(lines.some((t) => /^Before the roll: /.test(t)), 'a Before card keeps the plain line: ' + JSON.stringify(lines));
 });
 
-await test('6h3. Dots chip: one tap selects, tap again clears, default unset; L files "(risky, 2d)" only when set; resets once the roll is filed; no new key', async () => {
+await test('6h3. Who (08/11, in place of the Dots): a chip per PC above the stamp; one tap sets Aim at, a second clears; L files the PC; a 4/5 or 1–3 clears it, a Before card does not', async () => {
   const h = await openPage({ camp: { session: { number: 5 }, crew: {}, log: [] } });
-  const dots = () => h.qa('#gm-dots [data-gm="dots"]');      /* N4: in the Roll card, beside They rolled */
-  assert.equal(dots().length, 5);
-  assert.ok(dots().every((b) => b.getAttribute('aria-checked') === 'false'), 'unset by default');
-  dots()[2].click();
-  assert.deepEqual(dots().map((b) => b.getAttribute('aria-checked')), ['false', 'false', 'true', 'false', 'false']);
-  dots()[2].click();
-  assert.ok(dots().every((b) => b.getAttribute('aria-checked') === 'false'), 'a second tap clears');
-  h.press('2'); h.press('l');                                    /* no dots set: the line is as before */
-  dots()[0].click(); h.press('3'); h.press('l');                  /* zero shows as 0d */
-  assert.ok(dots().every((b) => b.getAttribute('aria-checked') === 'false'), 'filing the roll resets the dots');
-  dots()[2].click(); h.press('Q');                                /* an unbound key does nothing to it */
-  assert.equal(dots()[2].getAttribute('aria-checked'), 'true');
-  h.press('2'); h.press('l');
-  dots()[1].click(); h.press('1'); h.press('l');                  /* a Before card is not an outcome: dots stay */
-  assert.equal(dots()[1].getAttribute('aria-checked'), 'true');
+  const who = () => h.qa('#gm-who [data-gm="who"]');
+  const aim = () => h.page._state().doc.con.live.pc;
+  assert.ok(who().length >= 2, 'the fixture has PCs: ' + who().length); assert.ok(!h.q('#gm-who-row').hidden);
+  assert.ok(who().every((b) => b.getAttribute('aria-checked') === 'false'), 'unset by default');
+  const name = who()[1].getAttribute('data-v');
+  who()[1].click();
+  assert.equal(aim(), name, 'the tap is the console\'s Aim at'); assert.equal(who()[1].getAttribute('aria-checked'), 'true');
+  who()[1].click();
+  assert.equal(aim() || '', '', 'a second tap clears'); assert.ok(who().every((b) => b.getAttribute('aria-checked') === 'false'));
+  who()[0].click(); const first = who()[0].getAttribute('data-v');
+  h.press('1');                                                   /* a Before card is not an outcome: Who stays */
+  assert.equal(aim(), first);
+  h.press('3'); h.press('l');                                     /* the 1–3 resolves the roll: L files the PC, then Who clears */
+  assert.equal(aim() || '', '', 'a resolved roll clears Who');
   await h.save();
   const lines = Object.values(h.fg.server.doc.capture).filter((e) => e.bucket === 'r').map((e) => e.text);
-  assert.ok(lines.some((t) => /^A 4\/5 \(risky\): /.test(t)), JSON.stringify(lines));
-  assert.ok(lines.some((t) => /^A 1–3 \(risky, 0d\): /.test(t)), JSON.stringify(lines));
-  assert.ok(lines.some((t) => /^A 4\/5 \(risky, 2d\): /.test(t)), JSON.stringify(lines));
+  assert.ok(lines.some((t) => t.startsWith('A 1–3 (risky, ') && t.includes(first.replace(/[(),:]/g, ' ').replace(/\s+/g, ' ').trim())), JSON.stringify(lines));
 });
 
 await test('6h4. the capture bar is off by default: its keys do nothing until the Menu turns it on; the Menu item flips it and keeps it', async () => {
@@ -4047,6 +4044,7 @@ await test('W1. setting Position asks nothing; a stamp with a line asks ONE fit 
   await t.setPos('desperate'); await t.setPos('risky', 300);
   assert.equal(t.log.fits.length, 0, '08/11: a Position is not a roll');
   assert.equal(rackTxt(t.h), '');
+  const pc0 = t.h.qa('#gm-who [data-gm="who"]')[0]; pc0.click();          /* Who, before the stamp */
   t.h.page._stamped({ position: 'risky', effect: 'great', text: 'the guard turns' });
   assert.match(rackTxt(t.h), /Fitting…/, 'the Roll says so the moment the stamp is up');
   assert.match(rackTxt(t.h), /the guard turns · risky, great/, 'and names the stamp it is for');
@@ -4056,6 +4054,7 @@ await test('W1. setting Position asks nothing; a stamp with a line asks ONE fit 
   const req = t.log.fits[0];
   assert.equal(req.position, 'risky'); assert.equal(req.effect, 'great'); assert.equal(req.threat, 'the guard turns');
   assert.equal(req.draws, undefined, 'a line drives both outcomes: no draws sent');
+  assert.ok(req.pc && pc0.getAttribute('data-v').replace(/[(),:]/g, ' ').replace(/\s+/g, ' ').trim() === req.pc, 'Who goes with the fit: ' + req.pc);
   assert.equal(typeof req.size, 'string'); assert.equal(typeof req.room, 'string'); assert.ok(Array.isArray(req.onStage));
   const txt = rackTxt(t.h);
   assert.match(txt, /^for \d\d:\d\d · the guard turns/, 'the block names its stamp first'); assert.match(txt, /read 1/);
@@ -4116,7 +4115,9 @@ await test('W3. the newest stamp wins: one fit at a time, a late answer for an o
   t.log.held[0]();                              /* the answer for "controlled" arrives late */
   await sleep(20);
   assert.doesNotMatch(rackTxt(t.h), /low 1/, 'dropped: its stamp is gone');
-  assert.equal(t.log.fits.length, 2, 'then the newer one is asked'); assert.equal(t.log.fits[1].position, 'desperate'); assert.equal(t.log.fits[1].threat, 'the floor gives way');
+  assert.equal(t.log.fits.length, 1, 'the newer one waits out the Worker\'s 2 s gap');
+  await sleep(2400);
+  assert.equal(t.log.fits.length, 2, 'then it is asked'); assert.equal(t.log.fits[1].position, 'desperate'); assert.equal(t.log.fits[1].threat, 'the floor gives way');
   t.log.held[1]();
   await sleep(20);
   assert.match(rackTxt(t.h), /low 2/);
@@ -4183,7 +4184,7 @@ await test('W6. Clear drops the lines and the draws (the next roll is plain); a 
   assert.match(rackTxt(e.h), /Blade couldn’t fit this one\. Fit again/, rackTxt(e.h));
   e.log.err = null;
   e.h.q('[data-gm="rackfit"]').click();
-  await sleep(FIT_WAIT);
+  await sleep(FIT_WAIT + 900);                    /* the settle, then what is left of the Worker's 2 s gap since the failed answer */
   assert.equal(e.log.fits.length, 2); assert.equal(e.log.fits[1].threat, 'the guard turns'); assert.equal(e.log.fits[1].position, 'risky');
   assert.match(rackTxt(e.h), /low 2/);
   await e.h.save();
@@ -4206,6 +4207,19 @@ await test('W7. changing a control asks nothing; one changed after the stamp dro
   t.h.press('3');
   assert.notEqual(t.entry().seed, t.seedOf(0.25), 'the controls moved under the draws: a plain roll');
   assert.match(rackTxt(t.h), /low 1/, 'the lines stay');
+  await t.h.save();
+});
+
+await test('W9. a fit heads only the roll it was fitted for: a Position moved after the stamp makes a plain roll with no headline and no hit', async () => {
+  const t = await openWithAssist();
+  t.queue.push(0.25, 0.75);
+  await t.stamp('risky');
+  assert.match(rackTxt(t.h), /low 1/);
+  await t.setPos('desperate');
+  t.h.press('3');
+  assert.notEqual(t.entry().seed, t.seedOf(0.25), 'a plain desperate roll');
+  assert.equal(hitTxt(t.h), '', 'no risky line above a desperate card'); assert.ok(t.h.q('#gm-fxhit').hidden);
+  assert.equal(t.h.qa('#gm-rack li.hit').length, 0, 'and no row marked');
   await t.h.save();
 });
 

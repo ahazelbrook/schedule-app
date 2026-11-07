@@ -95,13 +95,19 @@ try {
   await sleep(2200);
   check(fits.length === 0, 'Position, effect and the line ask nothing (' + fits.length + ')');
 
-  // 2. the stamp asks once, with the line and no draws
+  // 2. Who, then the stamp: it asks once, with the line, the PC and no draws
+  const whoName = await page.$eval('#gm-who [data-gm="who"]', (b) => b.getAttribute('data-v'));
+  await page.click('#gm-who [data-gm="who"]');
+  check(await page.$eval('#gm-who [data-gm="who"]', (b) => b.getAttribute('aria-checked') === 'true'), 'Who: one tap on a PC, above the stamp');
+  await sleep(1800);
+  check(fits.length === 0, 'and Who asks nothing either');
   await page.click(STAMP);
   check(!!(await until(async () => /Fitting…/.test(await page.textContent('#gm-rack')), 3000)), 'the Roll says Fitting… the moment the stamp is up');
   check(!!(await until(async () => fits.length === 1 && /The cars come down/.test(await page.textContent('#gm-rack')), 8000)), 'one fit, and its lines show');
   const f1 = fits[0] || {};
   check(f1.position === 'risky' && f1.effect === 'standard' && f1.threat === 'Either you or the guard gets crushed' && f1.draws === undefined, 'the ask: ' + JSON.stringify({ p: f1.position, e: f1.effect, t: f1.threat, d: !!f1.draws }));
   check(typeof f1.size === 'string' && /harm 2/.test(f1.size) && Array.isArray(f1.onStage), 'the size for risky (' + f1.size + ') and who is on stage');
+  check(f1.pc === whoName, 'Who goes with the fit: ' + f1.pc);
   const rows = await page.$$eval('#gm-rack li.gm-fx', (l) => l.map((x) => x.className.replace('gm-fx ', '') + ':' + x.querySelector('.gm-fx-k').textContent));
   check(rows.join('|') === 'gm-fx-deal:Bargain|gm-fx-mid:4/5|gm-fx-low:1–3|gm-fx-six:6|gm-fx-crit:Crit', 'five coloured rows in the Roll\'s order: ' + rows.join('|'));
   const kbg = await page.$eval('#gm-rack li.gm-fx-low .gm-fx-k', (e) => getComputedStyle(e).backgroundColor);
@@ -118,6 +124,7 @@ try {
   check(!!(await until(async () => /The cars come down/.test(await page.$eval('#gm-fxhit', (e) => (e.hidden ? '' : e.textContent))), 4000)), 'the 1–3 line heads the result card');
   check(await page.$eval('#gm-rackf', (d) => !d.open) && /1–3 · The cars come down/.test(await page.textContent('#gm-rack-sum')), 'and Blade folds to its summary');
   check(await page.$eval('#gm-rack li.gm-fx-low', (e) => e.classList.contains('hit')), 'the 1–3 row is marked');
+  check(await page.$$eval('#gm-who [data-gm="who"]', (l) => l.every((b) => b.getAttribute('aria-checked') === 'false')), 'and the resolved roll clears Who');
   if (process.env.SHOTS) await (await page.$('#gm-roll')).screenshot({ path: path.join(process.env.SHOTS, 'fixer-2-result.png') });
 
   // 5. a new stamp asks again; the Fit button asks for an unstamped roll with the draws
@@ -128,6 +135,15 @@ try {
   await page.click('#gm-fitnow');
   check(!!(await until(() => fits.length === 3, 6000)) && fits[2].threat === undefined && !!(fits[2].draws && /^A 1–3/.test(fits[2].draws.low)), 'the Fit button: the console\'s draws, no line');
   check(!!(await until(async () => /not stamped/.test(await page.textContent('#gm-rack')), 4000)), 'and the Roll says it was not stamped');
+  // 6. Clean (no card) is the 6: its row and the fold say so, and it never heads a card (the next plain roll has no headline)
+  await page.fill('#gm-c-threat', 'The lamp goes out');
+  await page.click(STAMP);
+  check(!!(await until(async () => fits.length === 4 && /fit 4/.test(await page.textContent('#gm-rack')), 9000)), 'a fourth stamp, fitted');
+  await page.click('#gm-stamp [data-gm="stamp-clean"]');
+  check(!!(await until(async () => /6 · Clean drop/.test(await page.textContent('#gm-rack-sum')), 4000)) && await page.$eval('#gm-fxhit', (e) => e.hidden), 'Clean marks the 6 in the fold, with no headline');
+  await page.click('#gm-buttons [data-gm="situation"][data-n="3"]');
+  await sleep(300);
+  check(await page.$eval('#gm-fxhit', (e) => e.hidden), 'and the next roll, a plain one, has no headline');
   check(errors.length === 0, 'no console errors: ' + JSON.stringify(errors.slice(0, 3)));
   await c.close();
   await browser.close();

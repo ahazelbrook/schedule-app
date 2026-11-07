@@ -1735,7 +1735,7 @@
     var g = gmApi(), A = W.B68GmAssist, me = S;
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
     if (!A || !g || typeof g.assistTick !== 'function' || typeof g.stt !== 'function') return;
-    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onTyped: function (text) { return S === me ? cogmTyped(me, text) : null; }, onAutopilot: function () { if (S === me) apToggle(); }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onWhois: function (w) { if (S === me) whoisIn(w); }, onStall: function (v) { if (S === me) setStall(v); }, onMeanwhile: function (v) { if (S === me) setMeanwhile(v); }, onHandout: function (h) { if (S === me) offerHandoutFromBox(h); }, dots: function () { return S === me && S.dots != null ? S.dots : null; }, onNote: function (text) { return S === me && !!addCapture('m', text, true); },
+    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onTyped: function (text) { return S === me ? cogmTyped(me, text) : null; }, onAutopilot: function () { if (S === me) apToggle(); }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onWhois: function (w) { if (S === me) whoisIn(w); }, onStall: function (v) { if (S === me) setStall(v); }, onMeanwhile: function (v) { if (S === me) setMeanwhile(v); }, onHandout: function (h) { if (S === me) offerHandoutFromBox(h); },  onNote: function (text) { return S === me && !!addCapture('m', text, true); },
       screen: { vocab: screenVocab, cleanSpec: screenCleanSpec }, onScreen: function (item) { if (S === me) setScreenItem(item); } }); } catch (e) { me.assist = null; }
   }
 
@@ -2904,14 +2904,16 @@
     chips.innerHTML = bits.join('') || '<span class="gm-dim">any</span>';
   }
   function setLive(id, value) { var l = {}; l[id] = value; patch({ con: { live: l } }); renderChips(); }   /* 08/11: a control no longer asks for a fit; the stamp does */
-  /* the Roll's Position (one switch: the console's tables and the stamp read it), the size under it, the Dots and the line; then the stamp's part (b09Paint) */
+  /* the Roll's Position (one switch: the console's tables and the stamp read it), the size under it, Who and the line; then the stamp's part (b09Paint) */
   function renderPos() {
     var R = W.B68GmRoll, box = $q('#gm-pos');
     if (box && R) {
       var cur = hasSit() ? str(uiNow().pos) : '', ps = hasSit() && Array.isArray(S.con.positions) ? S.con.positions : [], sz = R.sizeLine(ps, cur);
       box.innerHTML = R.posHtml(ps, cur); box.hidden = !ps.length;
       var szb = $q('#gm-pos-size'); if (szb) szb.textContent = sz ? '→ ' + sz : '';
-      var dt = $q('#gm-dots'); if (dt) dt.innerHTML = R.dotsHtml(S.dots);
+      var pcs = whoList(), wr = $q('#gm-who-row'), wb = $q('#gm-who');
+      if (wb) { var wh = R.whoHtml(pcs, hasSit() ? str(uiNow().pc) : ''); if (wb.__html !== wh) { wb.innerHTML = wh; wb.__html = wh; } }
+      if (wr) wr.hidden = !pcs.length;
     }
     b09Paint();      /* the line, then the stamp's part */
   }
@@ -2931,14 +2933,22 @@
     }).join('') + '</div>';
   }
   function renderConsole() { rollBind(); renderPos(); renderControls(); renderButtons(); renderSingles(); drawConsoleCard(); renderRack(); rollFoldSync(); }
-  function setDots(v) { if (!S) return; var n = Number(v); S.dots = (Number.isInteger(n) && n >= 0 && n <= 4 && S.dots !== n) ? n : null; renderPos(); }     /* tap again clears */
+  /* Who (08/11/2026, in place of the Dots): the console's Aim at, the PC who is rolling. One tap sets it, a second clears it; it clears itself once the
+     roll resolves (a 4/5, a 1–3 or Clean). Blade's fit and L's filed line read it; the console's own cards lean on that PC's hooks, as Aim at always did */
+  function whoList() {
+    if (!S || !hasSit() || !Array.isArray(S.con.situationControls)) return [];
+    var c = S.con.situationControls.filter(function (x) { return x && x.id === 'pc'; })[0];
+    return c && Array.isArray(c.options) ? c.options.filter(function (o) { return o && str(o.value); }) : [];
+  }
+  function setWho(v) { if (!S || !hasSit()) return; v = str(v); setLive('pc', str(uiNow().pc) === v ? '' : v); renderPos(); renderControls(); }
+  function whoClear() { if (S && hasSit() && str(uiNow().pc)) { setLive('pc', ''); renderPos(); renderControls(); } }
   function setPos(v) { setLive('pos', v); renderPos(); }
   /* a roll is never invisible: Focus (which hides the card) goes, said once per page load, and the card's header is scrolled
      into view in the console column */
   var focusLeftToasted = false;
   function stamp(kind, res) {
-    S.conRes = res; S.shown = kind; S.last = { text: lastText(res, S.dots) }; drawConsoleCard(res);
-    if (res && res.meta && (res.meta.situation === 'fourfive' || res.meta.situation === 'onetothree') && S.dots != null) { S.dots = null; renderPos(); }     /* the roll is resolved: the dots reset, like the pre-rolled draws */
+    S.conRes = res; S.shown = kind; S.last = { text: lastText(res) }; drawConsoleCard(res);
+    if (res && res.meta && (res.meta.situation === 'fourfive' || res.meta.situation === 'onetothree')) whoClear();     /* the roll is resolved: Who clears (the filed line has it) */
     if (S.prepWide) { toggleFocus(); if (!focusLeftToasted) { focusLeftToasted = true; toast('Focus off so the card shows. F brings it back.'); } }
     if (S.places) S.places.rolled();      /* N1b: a place whose left column is its own takes the Roll in, for the stay */
     showCard();
@@ -2983,7 +2993,7 @@
     var ok = patch({ cards: { situation: Object.assign({ hid: hid }, entry) }, mem: { console: clone(S.con.mem()) }, hist: { situation: addCapped(hist, hid, entry, LIMITS.hist) } }, { force: true });
     if (!ok) return;
     if (use) preUsed(use, res);
-    if (res && res.meta && FX_HIT[res.meta.situation]) rackHit(FX_HIT[res.meta.situation], hid);     /* 08/11: its line heads the card */
+    if (res && res.meta && FX_HIT[res.meta.situation] && use && S.rack && use.pre === S.rack.pre) rackHit(FX_HIT[res.meta.situation], hid);     /* 08/11: its line heads the card, only when this roll IS the fitted one (a moved control is a plain roll) */
     stamp('situation', res);
     if (res && res.meta && (res.meta.situation === 'fourfive' || res.meta.situation === 'onetothree')) assistRolled();     /* a 4/5 or a 1-3 result; Before (a Devil's Bargain) and Someone are not rolls */
     b09Marked(res);
@@ -3004,7 +3014,7 @@
      heads the result card (#gm-fxhit) and the Blade fold closes to its summary. The draws and lines live in this page's state only (a reload
      forgets them and the next roll draws as it always did). Nothing is asked from a phone or with no box. */
   var PRE_KINDS = [['low', 'onetothree'], ['mid', 'fourfive']];
-  var FIT_SETTLE_MS = 1500, FIT_RETRY_MS = 4000, FIT_STAGE = 6;
+  var FIT_SETTLE_MS = 1500, FIT_RETRY_MS = 2500, FIT_GAP_MS = 2200, FIT_STAGE = 6;
   /* the Blade rows, in the order of the Roll's buttons (Before is the bargain), then the 6 and the crit; the third item is the colour */
   var FX_ROWS = [['bargain', 'Bargain', 'deal'], ['four_five', '4/5', 'mid'], ['one_three', '1–3', 'low'], ['six', '6', 'six'], ['crit', 'Crit', 'crit']];
   var FX_HIT = { fourfive: 'four_five', onetothree: 'one_three' };      /* Before (the bargain) is offered before the dice: not a result */
@@ -3041,9 +3051,9 @@
   function fitAsk(st, stamped) {
     if (!S || !hasSit()) return;
     var me = S, a = fitBox(); if (!a) return;                 /* no box (a phone): the Roll is as it always was */
+    var pre = preroll(); if (!pre) return;                    /* the console could not draw: what is asked already stays asked */
     if (me.preTimer) { W.clearTimeout(me.preTimer); me.preTimer = null; }
     if (me.preRetry) { W.clearTimeout(me.preRetry); me.preRetry = null; }
-    var pre = preroll(); if (!pre) return;
     var threat = rollCut(st && st.text), pos = str(st && st.position) || pre.pos, at = new Date();
     var ask = { position: pos, effect: str(st && st.effect), threat: threat, stamped: !!stamped, hhmm: ('0' + at.getHours()).slice(-2) + ':' + ('0' + at.getMinutes()).slice(-2) };
     me.pre = pre; me.fitTok = pre.tok; me.fitWant = null;
@@ -3053,7 +3063,6 @@
     if (ask.effect) req.effect = ask.effect;
     if (threat) req.threat = threat; else req.draws = { low: pre.text.low, mid: pre.text.mid };
     var pc = fitPc(); if (pc) req.pc = pc;
-    if (me.dots != null) req.dots = me.dots;
     me.fitWant = { tok: pre.tok, req: req, tries: 0 };
     rackFold(true); renderRack();
     me.preTimer = W.setTimeout(function () { me.preTimer = null; if (S === me) fitPump(me); }, FIT_SETTLE_MS);   /* lets the player's last line land */
@@ -3061,20 +3070,21 @@
   /* one fit at a time; the newest ask waiting runs when the one in flight returns */
   function fitPump(me) {
     if (S !== me || me.fitBusy || !me.fitWant) return;
+    var wait = me.fitDoneAt ? FIT_GAP_MS - (Date.now() - me.fitDoneAt) : 0;          /* the Worker holds the Fixer to one call per 2 s from the last answer */
+    if (wait > 0) { if (!me.preTimer) me.preTimer = W.setTimeout(function () { me.preTimer = null; if (S === me) fitPump(me); }, wait); return; }
     var job = me.fitWant; me.fitWant = null; me.fitBusy = true;
     Promise.resolve().then(function () { return me.assist.autoFit(job.req); }).then(null, function () { return { error: 'other' }; }).then(function (r) {
-      me.fitBusy = false;
+      me.fitBusy = false; me.fitDoneAt = Date.now();
       if (S !== me) return;
       var rk = me.rack;
-      if (rk && rk.tok === job.tok) {
+      try { if (rk && rk.tok === job.tok) {
         if (r && r.card) { rk.status = 'ready'; rk.card = r.card; }
         else if (r && r.error === 'busy' && !job.tries && !me.fitWant) {
           job.tries = 1;
           me.preRetry = W.setTimeout(function () { me.preRetry = null; if (S === me && !me.fitWant && me.rack && me.rack.tok === job.tok) { me.fitWant = job; fitPump(me); } }, FIT_RETRY_MS);
-        } else { rk.status = 'error'; rk.why = fitWhy(r ? r.error : 'listening'); if (me.pre === rk.pre) me.pre = null; rk.pre = null; }   /* draws never fitted are dropped: the roll is a plain one */
+        } else { rk.status = 'error'; rk.why = fitWhy(r ? r.error : 'off'); if (me.pre === rk.pre) me.pre = null; rk.pre = null; }   /* draws never fitted are dropped: the roll is a plain one */
         renderRack();
-      }
-      fitPump(me);                                            /* a newer ask waiting: its turn */
+      } } finally { fitPump(me); }                          /* a newer ask waiting: its turn, whatever the paint did */
     });
   }
   /* the stamp went up (gm/stamp.js host.stamped) */
@@ -3109,7 +3119,7 @@
     if (drawTextOf(res) !== pre.text[key]) pre.stale = true;     /* the console's state moved since the draw (a bargain collected, say): the Rack says so */
     if (PRE_KINDS.every(function (k) { return pre.kinds[k[1]].used; }) && S.pre === pre) S.pre = null;
   }
-  function rackClear() { preReset(); if (S) { S.dots = null; renderPos(); } renderRack(); }
+  function rackClear() { preReset(); renderRack(); }
   /* the box's own "Fit it" form asks for draws too: the console's pair for that Position (the Position follows the form, quietly) */
   function drawsFor(position) {
     if (!S || !hasSit() || S.con.positions.every(function (p) { return p.value !== position; })) return null;
@@ -3117,7 +3127,9 @@
     var cur = S.pre;
     if (!(cur && cur.sig === preSig(uiNow()) && PRE_KINDS.every(function (k) { return !cur.kinds[k[1]].used; }))) {
       cur = preroll(); if (!cur) return null;
-      S.pre = cur; S.rack = null; S.fitTok = cur.tok; renderRack();
+      if (S.preTimer) { W.clearTimeout(S.preTimer); S.preTimer = null; }
+      if (S.preRetry) { W.clearTimeout(S.preRetry); S.preRetry = null; }
+      S.pre = cur; S.rack = null; S.fitTok = cur.tok; S.fitWant = null; renderRack();
     }
     return { low: cur.text.low, mid: cur.text.mid };
   }
@@ -3159,7 +3171,7 @@
   function rackHeadPaint() {
     var hb = $q('#gm-fxhit'); if (!hb) return;
     var r = S && S.rack, cur = S && isObj(S.doc.cards) && S.shown === 'situation' ? S.doc.cards.situation : null, h = '';
-    if (r && r.status === 'ready' && isObj(r.card) && r.hit && (r.hit === 'six' || (cur && r.hitHid && cur.hid === r.hitHid))) {
+    if (r && r.status === 'ready' && isObj(r.card) && r.hit && cur && r.hitHid && cur.hid === r.hitHid) {     /* a 6 has no card: its row and the fold say it */
       var row = FX_ROWS.filter(function (x) { return x[0] === r.hit; })[0], o = fxOf(r.card[r.hit]);
       if (row && (o.lead || o.say)) h = '<p class="gm-lab">Blade · ' + esc(row[1]) + '</p><p class="gm-fx-big">' + (o.lead ? '<b>' + esc(o.lead) + '</b> ' : '') + esc(o.say) + '</p>' +
         (o.size ? '<p class="gm-fx-size">' + esc(o.size) + '</p>' : '');
@@ -7538,12 +7550,12 @@
       case 'roll': rollConsole(+b.getAttribute('data-n')); break;
       case 'situation': rollSituation(+b.getAttribute('data-n')); break;
       case 'pos': setPos(b.getAttribute('data-v')); break;
-      case 'dots': setDots(b.getAttribute('data-v')); break;
+      case 'who': setWho(b.getAttribute('data-v')); break;
       /* N4: the Roll */
       case 'eff': if (S.stamp) S.stamp.draft('eff', b.getAttribute('data-v')); break;
       case 'stamp': rollStamp(); break;
       case 'stamp-down': if (S.stamp) S.stamp.esc(); break;
-      case 'stamp-clean': if (S.stamp) S.stamp.mark('clean'); rackHit('six', ''); break;
+      case 'stamp-clean': if (S.stamp) S.stamp.mark('clean'); if (S.rack && S.rack.ask && S.rack.ask.stamped) rackHit('six', ''); whoClear(); break;
       case 'sz-reduce': if (S.stamp) S.stamp.reduce(); break;
       case 'sz-restore': if (S.stamp) S.stamp.restore(); break;
       case 'sz-done': if (S.stamp) S.stamp.dismiss(); break;
