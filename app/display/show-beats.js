@@ -160,6 +160,7 @@
     label: 'Spotlight', ms: 8000, fixture: { npc: { npcId: 'n-lotte', name: 'Lotte Brand', role: 'Doorwoman', faction: 'The Kestrel Club' } },
     clean: function (p) { var c = C.card(p.npc); return c ? { npc: c } : null; },
     render: function (p, env) {
+      var K = root.B68StageScene; if (K && K.on()) { var kn = K.speak(p, env); if (kn) return kn; }      /* KS16 (kit.stage): the timed "who's speaking" bar */
       var b = base(env, 'spotlight'), c = p.npc;
       b.n.appendChild(el(b.doc, 'div', 'dp-spot-beam'));
       b.n.appendChild(el(b.doc, 'p', 'dp-roll-mono dp-spot-mono', c.name.charAt(0)));

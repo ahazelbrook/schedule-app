@@ -255,7 +255,7 @@
       var vm = { kind: 'npc', npcId: typeof d.npcId === 'string' ? d.npcId : '', title: title, found: !!n };
       if (n) {
         vm.name = n.name || title; vm.alias = n.alias; vm.sub = [n.role, n.faction].filter(Boolean).join(' · ');
-        vm.description = n.description; vm.spec = n.spec;
+        vm.description = n.description; vm.spec = n.spec; vm.faction = n.faction;      /* KS16: the nameplate's faction stripe (a player field, already in sub) */
       }
       return vm;
     }
@@ -1072,6 +1072,7 @@
       e.appendChild(box);
       return { el: e, destroy: function () {} };
     }
+    if (root.B68StageScene && root.B68StageScene.on()) { var k16 = root.B68StageScene.npcStage(vm, seq, { document: document, figure: function (sp, id) { var r = drawFigure(sp, id, ctx.figures); return r ? document.importNode(r.node, true) : null; } }); if (k16) return k16; }   /* KS16 (kit.stage): over the dimmed scene */
     var fig = drawFigure(vm.spec, 'dp-npc-' + seq, ctx.figures);
     if (fig) {
       var holder = el('div', 'dp-npc-fig'); holder.setAttribute('aria-hidden', 'true');
@@ -1544,7 +1545,7 @@
     }
     function ovCardNode(card, o) {
       var e = el('div', 'dp-ov-card dp-ov-' + card.kind); e.setAttribute('data-ov-id', o.id);
-      if (card.kind === 'clock') {
+      if (s.stage && root.B68StageScene && root.B68StageScene.card(e, card, o, beatEnv(o), s.ov.node)) { /* KS16 (kit.stage): the clock docks, the NPC speaks (display/kit/scene.js) */ } else if (card.kind === 'clock') {
         var svg = svgEl('svg', { viewBox: '0 0 100 100', class: 'dp-ov-face' });
         card.wedges.forEach(function (w) { svg.appendChild(svgEl('path', { d: w.d, class: 'dp-ov-seg' + (w.on ? ' dp-ov-seg-on' : '') })); });
         e.appendChild(svg);
@@ -2004,6 +2005,7 @@
       } catch (e) { /* the map keeps its frame */ }
     }
     function paintBand() {
+      if (s.stage && root.B68StageScene && root.B68StageScene.band(s.stage, s.current, s.bandModel, { document: document, band: band, container: container, skew: function () { return s.skew || 0; } })) { s.bandSig = ''; return; }   /* KS16 (kit.stage): the band is a plate over the full-bleed map */
       var m = s.bandModel, show = !!m && !!s.current && !!s.current.el && s.current.el.classList.contains('dp-map');
       if (!show) { if (!band.hidden) band.hidden = true; container.classList.remove('dp-band-on'); return; }
       var sig = Pure.bandSig(m), was = !band.hidden;
@@ -2048,7 +2050,7 @@
     function show(display, seq) {
       var my = ++s.token, vm = Pure.viewModel(display);
       s.lastShow = [display, seq]; if (s.stage) s.stage.next(vm);           /* KS13: a redraw when the new stage comes or goes; what the swap brings */
-      if (vm.kind === 'blank') amb.uncover(); else amb.cover();                 /* a spotlight covers the ambient; blank lets it through */
+      if (vm.kind === 'blank' || (vm.kind === 'npc' && s.stage && root.B68StageScene && root.B68StageScene.on())) amb.uncover(); else amb.cover();   /* a spotlight covers the ambient; blank lets it through (KS16: and the NPC stands over the dimmed scene) */
       ovLightsOut(vm.kind === 'dark');                                          /* lights out: no autopilot overlay, no AUTO chip */
       wireSync();
       if (vm.kind === 'npc') {
