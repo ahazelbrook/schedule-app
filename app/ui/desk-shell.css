@@ -74,6 +74,9 @@
 :root[data-kit~="desk"] .kshell-mlink:hover { background: var(--ui-sunk); color: var(--ui-ink); }
 :root[data-kit~="desk"] .kshell-mbox .kshell-menu-end .ui-menu-item { border: 0; }
 @media (min-width: 1100px) { :root[data-kit~="desk"] .kshell-mbox .gm-menu-ph { display: none; } }
+/* below 1100 px the band wraps and the Menu sits at the start of its line: the box opens to the right of it */
+@media (max-width: 1099px) { :root[data-kit~="desk"] .kband-menu > .gm-menu-list { left: 0; right: auto; } }
+@media (max-width: 599px) { :root[data-kit~="desk"] .kband-menu > .gm-menu-list { position: fixed; left: 12px; right: 12px; top: var(--dw-top, 120px); width: auto; min-width: 0; max-width: none; max-height: calc(100dvh - var(--dw-top, 120px) - 12px); } }
 
 /* ---------- KS09.2 Find: a dialog over a dimmed page ---------- */
 :root[data-kit~="desk"] .kshell-find { padding: 10vh var(--ui-space-4) var(--ui-space-4); background: color-mix(in srgb, var(--ui-on-accent, canvastext) 55%, transparent); }      /* the kit dialog's own scrim */
