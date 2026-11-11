@@ -34,7 +34,10 @@ export const KEYS_EXEMPT = [
   { name: 'KS06: the pinned stamp', reason: 'KS06 (PR #216) pins the stamped line above the Blade fold with kit.desk on, so leaving the Score (Ctrl+Right, F, a Find result) no longer hides #gm-stamp. Ruled intended 12/11',
     hit: /\[(place Control\+ArrowRight|focus f|find Enter)\]$/, off: /^hidden #gm-stamp$/ },
   { name: 'KS07: the Screen, the Now zone and the tab put away', reason: 'KS07 (PR #214, ccd1010) hides the right-edge tab (#as-launch), the Now zone (#as-nowz, #as-now) and the Screen section (#as-screen, #as-sc-*) with kit.desk on, so A opens Blade without hiding the tab or showing them. Ruled intended 12/11',
-    hit: /\[assist a\]$/, off: /^(hidden #as-launch|shown #as-(nowz|now|screen|sc-[a-z]+))$/ }
+    hit: /\[assist a\]$/, off: /^(hidden #as-launch|shown #as-(nowz|now|screen|sc-[a-z]+))$/ },
+  /* `loadOn`: a pattern on the writes ONLY the kit-on page makes while it loads (never a key's write, never a kit-off one). Any hit: a load lands on whichever is first */
+  { name: 'KS12.5: the polaroid list on load', reason: 'KS12.5: night.who clears the stored polaroid list on load (and writes the playing characters\' list while a session is open; disclosed in #212). Ruled intended 12/11',
+    hit: /./, loadOn: /^[+~-] \/ambient\/doc\/polaroids(?:\/[^\s]*)?(?: |$)/ }
 ];
 
 /* what a page line is about: an id (shown/hidden #id) or a state key (an id, or a short path from the nearest id) */
@@ -53,7 +56,9 @@ export function judge(o, n, exempt = KEYS_EXEMPT) {
   let offOnly = po.filter((l) => !pn.includes(l)); const onOnly = pn.filter((l) => !po.includes(l));
   offOnly = offOnly.filter((l) => { const x = okOff(l); if (x) { used.add(x.name); return false; } return true; });
   const sv = (a, b) => a.filter((l) => !b.includes(l));
-  const sOff = sv(o.server, n.server).concat(sv(o.load || [], n.load || []).map((l) => 'load ' + l)), sOn = sv(n.server, o.server).concat(sv(n.load || [], o.load || []).map((l) => 'load ' + l));
+  const loadOnOk = (l) => ex.find((x) => x.loadOn && x.loadOn.test(l));
+  const lOn = sv(n.load || [], o.load || []).filter((l) => { const x = loadOnOk(l); if (x) { used.add(x.name); return false; } return true; });
+  const sOff = sv(o.server, n.server).concat(sv(o.load || [], n.load || []).map((l) => 'load ' + l)), sOn = sv(n.server, o.server).concat(lOn.map((l) => 'load ' + l));
   const ok = !lost.length && !offOnly.length && !onOnly.length && !sOff.length && !sOn.length;
   return { ok, lost, offOnly: offOnly.concat(sOff), onOnly: onOnly.concat(sOn), extra, exempted: [...used] };
 }
@@ -75,6 +80,15 @@ export function judge(o, n, exempt = KEYS_EXEMPT) {
   check(exA.ok && exA.exempted.length === 1, 'judge: a named exemption lets its own line go (KS07, A)');
   check(!judge(r('A [assist a]', ['shown #as-feed'], K(['as-feed'])), r('A [assist a]', [], K(['as-feed']))).ok, 'judge: the exemption lets nothing else go (A: #as-feed not shown)');
   check(!judge(r('Q [t q]', ['shown #as-screen'], K(['as-screen'])), r('Q [t q]', [], K(['as-screen']))).ok, 'judge: the exemption holds for its own key only');
+  /* KS12.5: only the kit-on page's load writes under /ambient/doc/polaroids go; nothing else does */
+  const pol = ['+ /ambient/doc/polaroids/0/id = "x"', '+ /ambient/doc/polaroids/0/cap = "X"'];
+  const p1 = judge(r('1 [situation 1]', [], K([]), [], []), r('1 [situation 1]', [], K([]), [], pol));
+  check(p1.ok && p1.exempted.includes('KS12.5: the polaroid list on load'), 'judge: the kit-on page writing the polaroid list while it loads is let go (KS12.5), and says so');
+  check(!judge(r('1 [situation 1]', [], K([]), [], []), r('1 [situation 1]', [], K([]), [], pol.concat(['+ /ambient/doc/shown = "x"']))).ok, 'judge: KS12.5 lets no other load write go (/ambient/doc/shown)');
+  check(!judge(r('1 [situation 1]', [], K([]), [], []), r('1 [situation 1]', [], K([]), [], ['+ /ambient/doc/polaroidsx = 1'])).ok, 'judge: KS12.5 lets no look-alike path go (/ambient/doc/polaroidsx)');
+  check(!judge(r('1 [situation 1]', [], K([]), [], []), r('1 [situation 1]', [], K([]), [], ['+ /campaign/doc/polaroids/0/id = "x"'])).ok, 'judge: KS12.5 lets no polaroids write elsewhere go (the campaign)');
+  check(!judge(r('1 [situation 1]', [], K([]), [], []), r('1 [situation 1]', [], K([]), pol, [])).ok, 'judge: KS12.5 lets no KEY write go (a press that writes the polaroids is a failure)');
+  check(!judge(r('1 [situation 1]', [], K([]), [], pol), r('1 [situation 1]', [], K([]), [], [])).ok, 'judge: KS12.5 lets no kit-off-only load write go');
 }
 if (process.env.KIT_KEYS_SELF_ONLY === '1') { console.log(failed ? 'FAIL kit-keys (self-checks only)' : 'PASS kit-keys (self-checks only)'); process.exit(failed ? 1 : 0); }
 if (!process.env.PW_MODULE) { console.log('SKIP kit-keys: PW_MODULE is not set (it needs Playwright)'); process.exit(0); }
