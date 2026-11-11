@@ -4856,9 +4856,10 @@
       roomLines: function () { return S === me ? rollRoomLines(rollRoom()) : []; },
       line: function () { return S === me ? rollLine() : ''; }, setLine: function (t) { if (S === me) rollSetThreat(t); },     /* N4: the Roll's one line */
       currentPosition: function () { return S === me && hasSit() ? str(uiNow().pos) : ''; }, setPosition: function (p) { if (S === me) setPos(p); },
-      show: function (payload, key, ms) { var sh = shows(); return sh ? sh.show('report', payload, { key: key, ms: ms }) : Promise.resolve(null); },
+      show: function (payload, key, ms, o) { var sh = shows(); return sh ? sh.show('report', payload, { key: key, ms: ms, replace: !!(o && o.replace) }) : Promise.resolve(null); },
       keyFor: function (key) { return W.B68Show ? W.B68Show.idFor(key) : key; }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
       clearOverlay: function () { return patchAmbient({ overlay: null }); },
+      who: function () { return S === me ? fitPc() : ''; }, covered: function () { return S === me && ((isObj(AM.shown) && AM.shown.kind === 'dark') || panicOn()); },     /* KS15 (kit.stage only): the roll as beats */
       log: function (text) { if (S === me && me.night) me.night.stamp(text); }, toast: toast, changed: function () { if (S === me) { b09Paint(); pcStatusSync(); } },
       threat: function (st) { var t = S === me && me.b19 && me.b19.threat; if (t) t.drop(st); }, threatClear: function () { var t = S === me && me.b19 && me.b19.threat; if (t) t.clear(); },
       stamped: function (st) { if (S === me) fitStamped(st); }     /* 08/11: the stamp is what asks Blade for the fit */
@@ -4899,7 +4900,7 @@
     rollLinePaint();          /* the line first (it follows the room on every paint, as the stamp's own box did): the stamp's view reads it */
     var v = S.stamp ? S.stamp.view() : null, on = !!(v && v.on);
     var eff = $q('#gm-eff'); if (eff) { eff.hidden = !on; eff.innerHTML = on ? R.effHtml(v.draft.effect) : ''; }
-    var box = $q('#gm-stamp'); if (box) { var h = on ? R.stampHtml(v) : ''; if (box.__html !== h) { box.innerHTML = h; box.__html = h; } box.hidden = !on; }
+    var box = $q('#gm-stamp'); if (box) { var h = on ? R.stampHtml(v) : ''; if (box.__html !== h) { var kc = v && v.cost && R.costKeep ? R.costKeep(box) : null; box.innerHTML = h; box.__html = h; if (kc) kc(); } box.hidden = !on; if (v && v.cost && R.costBind) R.costBind(box, function () { return S && S.stamp; }); }     /* KS15: the cost field keeps its focus */
     rollMiniPaint(v); rollSizerPaint(v);
   }
   function b09Marked(res) {

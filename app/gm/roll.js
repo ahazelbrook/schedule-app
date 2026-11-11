@@ -23,7 +23,9 @@
      sizeText(p) -> "severity · ticks · harm n"      sizeLine(positions, cur) -> the line under Position ('' when the pack has no size for it)
      effHtml(cur) -> #gm-eff: three radios (data-gm="eff")
      whoHtml(pcs, cur) -> #gm-who: a chip per PC (data-gm="who"; a second tap clears). pcs: [{ value, label }] (the console's Aim at options, 'anyone' left out)
-     stampHtml(v) -> #gm-stamp. v = { on, active: { position, effect, text } | null, stale }
+     stampHtml(v) -> #gm-stamp. v = { on, active: { position, effect, text, result?, cost? } | null, stale, cost? }
+     KS15 (kit.stage): costHtml(v.cost) the "Cost on the iPad" field (only when the stamp view carries cost); costBind(box, stamp|getter) and
+       costKeep(box), the field's DOM side; RESULT_WORDS
      lineNote(room) -> the note under the line while it is the room's own ('' for none)
      buttonsHtml(sits) -> #gm-buttons: four .gm-btn with keys 1-4 (sits: con.situations())
      miniHtml(sits, pos, eff, up) -> #gm-mini (Focus): the position (and the effect, and whether the stamp is up), then the four keys
@@ -111,14 +113,46 @@
     if (!v.on) return '';
     var a = v.active;
     if (!a) return '<button type="button" class="btn primary gm-stampb" data-gm="stamp" ' +
-      'title="The position, the effect and the line, as an action report on the iPad before the dice. Enter in the line does it too">Stamp it on the iPad</button>';
+      'title="The position, the effect and the line, as an action report on the iPad before the dice. Enter in the line does it too">Stamp it on the iPad</button>' + costHtml(v.cost);
     /* what is set now differs from what is up: Stamp again is the one full-width button (as Stamp it on the iPad was), so the row under it never wraps */
     return '<p class="gm-rl-up" role="status"><span class="gm-dot on" aria-hidden="true"></span><b>On the iPad</b><span>' + esc(cap(a.position) + ', ' + a.effect) + '</span>' +
+        (a.result ? '<span>' + esc(RESULT_WORDS[a.result] || '') + (a.cost ? ' ' + esc(a.cost) : '') + '</span>' : '') +
         (v.stale ? '<span class="gm-rl-chg">Changed since it went up</span>' : '') + '</p>' +
       (v.stale ? '<button type="button" class="btn primary gm-stampb" data-gm="stamp" title="Puts what is set now on the iPad in its place">Stamp again</button>' : '') +
       '<div class="gm-rl-acts">' +
         '<button type="button" class="btn sm" data-gm="stamp-down" title="Takes the action report off the iPad">Take it down <kbd>Esc</kbd></button>' +
-        '<button type="button" class="chip sm" data-gm="stamp-clean" title="Take the card down; the roll needs no consequence">Clean (no card)</button></div>';
+        '<button type="button" class="chip sm" data-gm="stamp-clean" title="Take the card down; the roll needs no consequence">Clean (no card)</button></div>' + costHtml(v.cost);
+  }
+  /* KS15 (kit.stage): the words the iPad shows for a result (display/kit/roll.js says the same), and the Roll's one cost field after a 4/5 or a 1-3.
+     Only a stamp view made with the setting on carries `cost`, so with it off stampHtml is what it was */
+  var RESULT_WORDS = { clean: 'You do it.', '45': 'You do it. It costs.', '13': 'It goes wrong.' };
+  function costHtml(c) {
+    if (!c || typeof c !== 'object') return '';
+    var sent = str(c.sent);
+    return '<div class="gm-rl-line gm-rl-cost"><label class="gm-lab" for="gm-stamp-cost">Cost on the iPad</label>' +
+      '<div class="gm-rl-in"><textarea id="gm-stamp-cost" data-gm="stamp-cost" rows="1" maxlength="60" autocomplete="off" spellcheck="false" ' +
+        'placeholder="What it cost, in plain words">' + esc(c.draft) + '</textarea></div>' +
+      '<p class="gm-rl-chg">' + (sent ? 'On the iPad: ' + esc(sent) + '. Enter sends a change.' : 'Optional. Enter sends it; nothing goes until then.') + '</p></div>';
+  }
+  /* the field's DOM side (the one part of this file that touches the page): costBind listens once per box (typing is kept by the stamp, Enter sends),
+     costKeep(box) before a redraw -> a function that puts the focus and the caret back after it, or null when the field does not have the focus */
+  function costBind(box, stamp) {
+    if (!box || box.__ks15cost || typeof box.addEventListener !== 'function') return;
+    box.__ks15cost = true;
+    function ctl() { var s = typeof stamp === 'function' ? stamp() : stamp; return s && typeof s.sendCost === 'function' ? s : null; }
+    function isCost(t) { return !!t && t.getAttribute && t.getAttribute('data-gm') === 'stamp-cost'; }
+    box.addEventListener('input', function (ev) { var c = ctl(); if (c && isCost(ev.target)) c.costDraft(ev.target.value); });
+    box.addEventListener('keydown', function (ev) {
+      var c = ctl(); if (!c || !isCost(ev.target) || ev.key !== 'Enter' || ev.shiftKey || ev.ctrlKey || ev.altKey || ev.metaKey) return;
+      if (ev.preventDefault) ev.preventDefault();
+      c.sendCost(ev.target.value);
+    });
+  }
+  function costKeep(box) {
+    var doc = box && box.ownerDocument, f = doc && doc.activeElement;
+    if (!f || f.id !== 'gm-stamp-cost' || !box.contains(f)) return null;
+    var a = f.selectionStart, b = f.selectionEnd;
+    return function () { var n = box.querySelector('#gm-stamp-cost'); if (!n) return; try { n.focus(); n.setSelectionRange(a, b); } catch (e) {} };
   }
   function lineNote(room) { return str(room) ? 'From the room: ' + esc(room) : ''; }
   function buttonsHtml(sits) {
@@ -166,5 +200,6 @@
   }
 
   return { EFFECTS: EFFECTS.slice(), cap: cap, esc: esc, shell: shell, posHtml: posHtml, sizeText: sizeText, sizeLine: sizeLine, effHtml: effHtml, whoHtml: whoHtml,
-    stampHtml: stampHtml, lineNote: lineNote, buttonsHtml: buttonsHtml, miniHtml: miniHtml, sizerHtml: sizerHtml, sizerActs: sizerActs, quickActs: quickActs, rackSummary: rackSummary };
+    stampHtml: stampHtml, lineNote: lineNote, buttonsHtml: buttonsHtml, miniHtml: miniHtml, sizerHtml: sizerHtml, sizerActs: sizerActs, quickActs: quickActs, rackSummary: rackSummary,
+    costHtml: costHtml, costBind: costBind, costKeep: costKeep, RESULT_WORDS: RESULT_WORDS };
 });
