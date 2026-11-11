@@ -4,7 +4,7 @@
   "style": 3680,
   "important": 69,
   "button": 623,
-  "confirm": 58,
+  "confirm": 56,
   "prompt": 12
  },
  "kitDebt": [],
@@ -93,7 +93,7 @@
   "app/gm-page.js": {
    "button": 162,
    "style": 2,
-   "confirm": 22,
+   "confirm": 20,
    "prompt": 2
   },
   "app/gm.css": {

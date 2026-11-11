@@ -161,7 +161,11 @@
   function sync() {
     var d = doc(); if (!d) return;
     var root = d.getElementById('gm-root'); if (!root) return;
-    if (on()) dress(root); else undress(root);
+    if (on()) { dress(root); adopt(d); } else undress(root);
+  }
+  /* a line the page said before this bundle arrived went to the old #toast region: it joins the stack, and the old line is emptied */
+  function adopt(d) {
+    [['toastMsg', false], ['toastErr', true]].forEach(function (p) { var e = d.getElementById(p[0]), t = e ? str(e.textContent).trim() : ''; if (t && toast(t, p[1])) e.textContent = ''; });
   }
 
   /* ---------- KS09.3 one toast stack ---------- */

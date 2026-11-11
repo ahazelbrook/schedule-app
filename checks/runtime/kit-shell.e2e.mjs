@@ -9,7 +9,8 @@
 //   3. Esc in today's order: the Menu, then the drawer; Find over the drawer, then the drawer; a toast takes no Esc
 //   4. the toasts (KS09.3): the page's toast() speaks through the stack, #toastMsg stays empty; an error stays until X; signed out is said once;
 //      the cue's Undo (a typed "Blade, risky, standard") undoes from the stack; the cue's Reveal question: Cancel reveals no one, Reveal does
-//   5. the dialogs (KS09.4): every converted native confirm, Yes and Cancel (see DIALOGS below)
+//   5. the dialogs (KS09.4): the three converted native confirms (Clear tonight's capture, Remove a card, Clear a beat's start time), each with
+//      Cancel (one by Esc, which is not PANIC) and Yes; no native dialog opens
 //   6. the layers (KS09.5): the ladder in the six tokens (drawer < band < popover < Find < toast < Blank); Blank covers the band, a toast and the
 //      capture bar; PANIC's row stays on top of an open drawer
 //   7. the setting off mid-session: the old row, Menu and toast without a reload; no class the shell added is left on the page
@@ -53,8 +54,6 @@ const PARTS = {
   prep
 };
 const SPEND = { tonight: 0.4, cap: 20, tier: 'all' };
-/* KS09.4: the native confirm sites this bundle converted (the last thing their handler does), each tested for Yes and for Cancel in section 5 */
-const DIALOGS = [];
 
 const WRANGLER = path.join(ROOT, 'node_modules', '.bin', 'wrangler');
 const env = { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' };
@@ -146,6 +145,21 @@ try {
   }
   check((await feats({ 'kit.desk': true, 'ai.grammar': true, 'spine.stamp': true })).status === 200, 'kit.desk is on (and the cue grammar and the stamp, for the cue toasts)');
 
+  /* ---- pictures: Paper and Night, 1366 and 1536 (before PANIC is pressed below) ---- */
+  if (SHOTS) {
+    for (const [wd, ht] of [[1366, 768], [1536, 864]]) for (const theme of ['paper', 'night']) {
+      const { c, page } = await open({ w: wd, h: ht, theme });
+      await goPlace(page, 'score'); await shot(page, 'desk-' + theme + '-' + wd);
+      await goPlace(page, 'plan'); await page.click('[data-gm="menu"]'); await page.waitForTimeout(300); await shot(page, 'menu-' + theme + '-' + wd); await page.keyboard.press('Escape');
+      await blur(page); await page.keyboard.press('w'); await page.waitForTimeout(400);
+      await page.evaluate(() => { window.B68KitShell.toast('Sent to the iPad: the card rooms'); window.B68KitShell.toast('Preflight: 2 to fix before the start (Before, Preflight).', true); });
+      await shot(page, 'drawer-' + theme + '-' + wd);
+      await page.keyboard.press('Escape'); await blur(page); await page.keyboard.press('Control+k'); await page.keyboard.type('ma'); await page.waitForTimeout(400); await shot(page, 'find-' + theme + '-' + wd);
+      await page.keyboard.press('Escape'); await page.keyboard.press('a'); await page.waitForTimeout(600); await shot(page, 'blade-toasts-' + theme + '-' + wd);
+      await c.close();
+    }
+  }
+
   /* ---- 1. the tabs ---- */
   {
     const { c, page } = await open();
@@ -190,10 +204,6 @@ try {
     check(!!(await until(() => page.evaluate(() => !document.querySelector('#gm-find').hidden), 3000)), '/ opens Find');
     await page.keyboard.press('Escape');
     check(!!(await until(() => page.evaluate(() => document.querySelector('#gm-find').hidden), 3000)), 'Esc closes Find');
-    if (SHOTS) {
-      await blur(page); await page.keyboard.press('Control+k'); await page.keyboard.type('ma'); await page.waitForTimeout(500);
-      await shot(page, 'find-paper-1366'); await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
-    }
 
     /* 2b. the Menu: every old id and hook */
     await page.click('[data-gm="menu"]');
@@ -202,7 +212,6 @@ try {
       capbar: (document.getElementById('gm-menu-capbar').textContent || '').trim(), red: [...l.querySelectorAll('.ui-menu-item--danger')].map((b) => b.getAttribute('data-gm')), danger: document.querySelectorAll('.ui-btn--danger').length }; }, [MENU_IDS, MENU_GM, MENU_HREF]);
     check(m.open && m.box && !m.ids.length && !m.gm.length && !m.href.length && !!m.capbar, 'the Menu is the kit\'s rows with every old id, data-gm and link ' + JSON.stringify(m));
     check(m.red.join() === 'forget' && m.danger === 1, 'one red line in the Menu (Forget), and PANIC is still the one Danger on the page');
-    await shot(page, 'menu-paper-1366');
     await page.keyboard.press('Escape');
     check(!!(await until(() => page.evaluate(() => document.querySelector('.gm-menu-list').hidden), 2000)), 'Esc closes the Menu');
 
@@ -271,7 +280,6 @@ try {
       const r = r2.getBoundingClientRect(), e = document.elementFromPoint(r.right - 200, r.top + r.height / 2); return !!e && !!e.closest('#gm-band'); }), 5000);
     check(!!pan, 'PANIC with the drawer open: the band\'s alarm row is on top');
     if (await page.$('[data-cs="resume"]')) await page.click('[data-cs="resume"]');
-    await page.keyboard.press('Escape');
     await c.close();
   }
 
@@ -302,26 +310,50 @@ try {
     q = await until(() => page.$('.ui-toast[role="alertdialog"] [data-ug="confirm"]'), 6000);
     if (q) await q.click();
     check(!!(await until(async () => (await hiddenNow()) === true, 6000)), 'Reveal: the person is revealed');
-    if (SHOTS) { await page.evaluate(() => window.B68KitShell.toast('Preflight: 2 to fix before the start (Before, Preflight).', true)); await shot(page, 'toasts-paper-1366'); }
     await api('PUT', '/npcs/npc_hidden', { name: 'GM-ONLY-Lotte Brand', role: 'invented', revealed: false });
     await c.close();
   }
 
-  /* ---- 5. the dialogs (KS09.4) ---- */
-  for (const d of DIALOGS) await d.run({ open, check, until, api, blur, sleep, dialogs });
-
-  /* ---- pictures: Paper and Night, 1366 and 1536 ---- */
-  if (SHOTS) {
-    for (const [wd, ht] of [[1366, 768], [1536, 864]]) for (const theme of ['paper', 'night']) {
-      const { c, page } = await open({ w: wd, h: ht, theme });
-      await goPlace(page, 'score'); await shot(page, 'desk-' + theme + '-' + wd);
-      await goPlace(page, 'plan'); await page.click('[data-gm="menu"]'); await page.waitForTimeout(300); await shot(page, 'menu-' + theme + '-' + wd); await page.keyboard.press('Escape');
-      await blur(page); await page.keyboard.press('w'); await page.waitForTimeout(400);
-      await page.evaluate(() => { window.B68KitShell.toast('Sent to the iPad: the card rooms'); window.B68KitShell.toast('Preflight: 2 to fix before the start (Before, Preflight).', true); });
-      await shot(page, 'drawer-' + theme + '-' + wd);
-      await page.keyboard.press('Escape'); await blur(page); await page.keyboard.press('Control+k'); await page.keyboard.type('ma'); await page.waitForTimeout(400); await shot(page, 'find-' + theme + '-' + wd);
-      await c.close();
-    }
+  /* ---- 5. the dialogs (KS09.4): each converted site, Cancel (or Esc) and Yes; no native dialog opens ---- */
+  {
+    await api('PATCH', '/gm/state', { opps: { list: { o_ks09: { from: 'GM', client: 'A porter on the quay', target: 'The house ledger', type: '', note: '', payout: '', order: 1, at: new Date().toISOString() } } } });
+    const { c, page } = await open();
+    await goPlace(page, 'score');
+    const doc = async () => ((await api('GET', '/gm/state')).json || {}).doc || {};
+    const live = (o) => Object.keys(o || {}).filter((k) => o[k]);
+    const dlg = () => page.$('dialog.ui-dialog[open]');
+    const answer = async (act) => { if (!(await until(dlg, 3000))) return false; await until(() => page.evaluate(() => !!document.activeElement && !!document.activeElement.closest('dialog[open]')), 2000); await sleep(150); if (act === 'esc') await page.keyboard.press('Escape'); else await page.click('dialog.ui-dialog[open] [data-ui-act="' + act + '"]'); return !!(await until(async () => !(await dlg()), 3000)); };
+    const n0 = dialogs.length;
+    /* a. the Menu's Clear tonight's capture */
+    await page.click('[data-gm="menu"]'); await page.click('[data-gm="capbar"]');
+    await blur(page); await page.keyboard.press('m'); await page.keyboard.type('Ray Okonjo pockets the marker'); await page.keyboard.press('Enter');
+    await until(async () => live((await doc()).capture).length > 0, 4000);
+    const caps = live((await doc()).capture).length;
+    await page.click('[data-gm="menu"]'); await page.click('[data-gm="clearcap"]');
+    check(await answer('cancel') && live((await doc()).capture).length === caps, 'Clear tonight\'s capture asks in the kit\'s Dialog; Cancel keeps the ' + caps + ' lines');
+    await page.click('[data-gm="menu"]'); await page.click('[data-gm="clearcap"]');
+    check(await answer('confirm') && !!(await until(async () => live((await doc()).capture).length === 0, 4000)), 'and Clear clears them');
+    /* b. Opportunities: Remove a card that has words on it */
+    await blur(page); await page.keyboard.press('o'); await until(() => paneOn(page, 'cards'), 4000);
+    await page.waitForSelector('[data-gm="opp-del"][data-id="o_ks09"]', { timeout: 5000 });
+    await page.click('[data-gm="opp-del"][data-id="o_ks09"]');
+    const escd = await answer('esc'), kept = live(((await doc()).opps || {}).list).includes('o_ks09'), alarm = await page.evaluate(() => document.querySelector('#gm-band .gm-band-r2').getAttribute('data-alarm'));
+    check(escd && kept && alarm !== 'panic', 'Remove this card asks in the Dialog; Esc is its Cancel (the card stays, and that Esc was not PANIC) ' + JSON.stringify({ escd, kept, alarm }));
+    await page.click('[data-gm="opp-del"][data-id="o_ks09"]');
+    check(await answer('confirm') && !!(await until(async () => !live(((await doc()).opps || {}).list).includes('o_ks09'), 4000)), 'and Remove removes it');
+    /* c. Prep: clear a beat's start time */
+    await blur(page); await page.keyboard.press('r'); await until(() => paneOn(page, 'prep'), 4000);
+    await page.waitForSelector('#gm-prep .pp-beat[data-beat]', { timeout: 5000 });
+    const beat = await page.$eval('#gm-prep .pp-beat[data-beat]', (b) => b.getAttribute('data-beat'));
+    const started = async () => { const b = ((await doc()).prep || {}).beats || {}; return !!b[beat]; };
+    await page.click('#gm-prep .pp-beat[data-beat="' + beat + '"]');
+    await until(started, 4000);
+    await page.click('#gm-prep .pp-beat[data-beat="' + beat + '"]');
+    check(await answer('cancel') && await started(), 'Clear this beat\'s start time asks in the Dialog; Cancel keeps the time');
+    await page.click('#gm-prep .pp-beat[data-beat="' + beat + '"]');
+    check(await answer('confirm') && !!(await until(async () => !(await started()), 4000)), 'and Clear clears it');
+    check(dialogs.length === n0, 'no native dialog opened for the three converted sites');
+    await c.close();
   }
 
   /* ---- 7. off mid-session: back to the old shell without a reload ---- */

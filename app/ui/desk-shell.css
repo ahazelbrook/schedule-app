@@ -54,6 +54,10 @@
   top: calc(100% + var(--ui-space-1)); right: 0; display: block; width: max-content; min-width: 16em; max-width: min(24em, calc(100vw - 24px)); max-height: calc(100dvh - 104px); overflow-y: auto; margin: 0; padding: 0;
   border: 0; border-radius: var(--ui-radius); background: transparent; box-shadow: none; color: var(--ui-ink);
 }
+/* the box keeps the band's dark look, and its own ink even under the band's red alarm row (curfew due, PANIC), which recolours what it holds */
+:root[data-kit~="desk"] { --kshell-ink: var(--ui-ink); --kshell-ink-soft: var(--ui-ink-soft); --kshell-ink-faint: var(--ui-ink-faint); --kshell-line: var(--ui-line); --kshell-sunk: var(--ui-sunk); }
+:root[data-kit~="desk"] .kshell-mbox { color-scheme: dark; --ui-ink: var(--kshell-ink); --ui-ink-soft: var(--kshell-ink-soft); --ui-ink-faint: var(--kshell-ink-faint); --ui-line: var(--kshell-line); --ui-sunk: var(--kshell-sunk); }
+:root[data-kit~="desk"] .kband-r2:is([data-alarm="curfew"], [data-alarm="panic"]) .kband-tools .gm-bb[aria-expanded="true"] { background: transparent; color: var(--ui-on-alarm); text-decoration: underline; text-underline-offset: 3px; }
 :root[data-kit~="desk"] .kshell-mbox { display: grid; padding: var(--ui-space-1); border: var(--ui-rule); border-radius: var(--ui-radius); background: var(--ui-raised); color: var(--ui-ink); }
 :root[data-kit~="desk"] .kshell-mbox .kshell-menu { position: static; min-width: 0; padding: 0; border: 0; background: transparent; }
 :root[data-kit~="desk"] .kshell-mbox .ui-menu-item { min-height: 36px; font: 700 var(--ui-type-body)/1.25 var(--ui-font-text); letter-spacing: 0; text-transform: none; white-space: normal; }
@@ -128,8 +132,12 @@
 :root[data-kit~="desk"] .kshell-fab { border: var(--ui-rule); border-radius: var(--ui-radius-pill); background: var(--ui-accent); color: var(--ui-on-accent); box-shadow: none; font: 700 var(--ui-type-body)/1 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase; }
 :root[data-kit~="desk"] .kshell-fab[aria-expanded="true"] { background: var(--ui-ink); color: var(--ui-on-ink); }
 
-/* the stack stands above the capture bar while the bar shows */
+/* the stack stands above the capture bar while the bar shows, and beside the drawer or the Blade panel (its Ask box) while one is open */
 :root[data-kit~="desk"]:has(#gm-root:is(.capbar, .cap-open)) .ui-toast-stack { bottom: calc(var(--ui-space-4) + 64px); }
+@media (min-width: 600px) {
+  :root[data-kit~="desk"]:has(#gm-root.dw-open) .ui-toast-stack { right: calc(min(440px, 100vw) + var(--ui-space-4)); }
+  :root[data-kit~="desk"]:has(#as-launch[aria-expanded="true"]) .ui-toast-stack { right: calc(max(360px, min(400px, 33vw)) + var(--ui-space-4)); }
+}
 
 /* ---------- KS09.3 the cue's toasts in the stack: the old .gm-ugtoast placement (fixed, centred) is not theirs any more ---------- */
 :root[data-kit~="desk"] .ui-toast.kshell-cue { left: auto; bottom: auto; transform: none; z-index: auto; max-width: none; }

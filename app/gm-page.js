@@ -1249,6 +1249,8 @@
      The panel asks the server (HEAD, same origin) when it opens, and says so, because a silent iPad is otherwise a mystery. */
   var THEME = { state: 'unknown', http: 0, at: 0, busy: false };
 
+  /* KS09.4 (kit.desk): a native confirm that is the last thing its handler does becomes the kit's Dialog; with the kit off the old W.confirm, then go(), at once */
+  function asked(msg, go, o) { var K = W.B68KitShell, me = S, q = K && K.on() ? K.ask(Object.assign({ body: msg }, o)) : null; if (q) { q.then(function (y) { if (y && S === me) go(); }, function () {}); return; } if (W.confirm(msg)) go(); }
   function toast(msg, bad) { var K = W.B68KitShell; if (K && K.on() && K.toast(msg, !!bad)) return; var A = W.B68; if (A && A.toast) A.toast(msg, !!bad); }      /* KS09.3 (kit.desk): the one toast stack */
   function errText(e) { return e && e.message || String(e || 'unknown error'); }
   function md(s) { var R = W.B68Markdown; return R && R.render ? R.render(str(s)) : '<p>' + esc(s) + '</p>'; }
@@ -6760,9 +6762,8 @@
   }
   function prepBeat(b) {
     var k = b.getAttribute('data-beat'), on = isObj(prepDoc().beats) && isObj(prepDoc().beats[k]), x = {};
-    if (on && !W.confirm('Clear this beat’s start time?')) return;
-    x[k] = on ? null : { at: nowIso(), s: prepSession(), label: str(b.getAttribute('data-label')).slice(0, 200) };
-    if (patch({ prep: { beats: x } })) prepRedecorate();
+    var go = function () { x[k] = on ? null : { at: nowIso(), s: prepSession(), label: str(b.getAttribute('data-label')).slice(0, 200) }; if (patch({ prep: { beats: x } })) prepRedecorate(); };
+    if (on) asked('Clear this beat’s start time?', go, { confirm: 'Clear' }); else go();
   }
   function prepPin(sec) {
     var pins = isObj(prepDoc().pins) ? prepDoc().pins : {}, x = {};
@@ -6896,8 +6897,8 @@
   }
   function oppDel(id) {
     var c = oppList().filter(function (o) { return o._id === id; })[0]; if (!c) return;
-    if ((c.from || c.client || c.target || c.type || c.note || c.payout) && !W.confirm('Remove this card?')) return;
-    var x = {}; x[id] = null; if (patch({ opps: { list: x } }, { force: true })) renderCards(true);
+    var go = function () { var x = {}; x[id] = null; if (patch({ opps: { list: x } }, { force: true })) renderCards(true); };
+    if (c.from || c.client || c.target || c.type || c.note || c.payout) asked('Remove this card?', go, { confirm: 'Remove', danger: true }); else go();
   }
   function oppShow(mode, oneId) {
     var list = oppList(); if (oneId) list = list.filter(function (c) { return c._id === oneId; });
@@ -7400,8 +7401,8 @@
   /* in the Menu (and the old header): the capture bar keeps only File and File last roll */
   function clearCapture() {
     var all = newest(S.doc.capture); if (!all.length) { toast('Nothing filed tonight.'); return; }
-    if (!W.confirm('Clear all ' + all.length + ' captured lines? Export tonight’s note first if you want them.')) return;
-    var p = {}; all.forEach(function (e) { p[e._id] = null; }); patch({ capture: p }, { force: true }); renderCapture();
+    asked('Clear all ' + all.length + ' captured lines? Export tonight’s note first if you want them.', function () {
+      var p = {}; all.forEach(function (e) { p[e._id] = null; }); patch({ capture: p }, { force: true }); renderCapture(); }, { title: 'Clear tonight’s capture?', confirm: 'Clear', danger: true });
   }
   function exportTonight() {
     var n = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, x = exportNote(S.doc, { session: n });
