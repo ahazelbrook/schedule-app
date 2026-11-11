@@ -107,5 +107,96 @@ await test('shared client: overlapping calls each carry their own timeout and si
   assert.equal(requestOptions(30000, ctl2.signal).timeout, 30000);
 });
 
+// ---------- KS18: the pitch seat's paths (blade.pitches) on Workers Free's 10 ms ----------
+// CPU on the tick is the JSON work plus about 0.2 ms per D1 round trip. The pitch wake path and the pitchNow path must add no round trip to the
+// tick they ride (a woken pitch reads the clocks and the story inside the existing pre-seat batch, as Meanwhile did), and the pitch code itself
+// must be cheap. Counted on an in-memory D1 with a fake client; no key, no network.
+const P = await import('../../functions/_lib/assist/pitch.js');
+const { SEATS } = await import('../../functions/_lib/assist/seats.js');
+const { cleanLines, addLines } = await import('../../functions/_lib/stt.js');
+async function pitchWorld({ listening = false, tripwire = null, seed = [] } = {}) {
+  const exec = await memoryExec({ schemaFile: path.join(ROOT, 'schema.sql') });
+  const db = asD1(exec), clock = { t: Date.parse('2030-04-01T09:00:00.000Z') };
+  const iso = (ms) => new Date(ms).toISOString();
+  exec.db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES ('c', 'assist', 'v', '{}', 0, ?)").run(JSON.stringify({ file_id: 'file_test000001' }));
+  if (listening) exec.db.prepare('INSERT INTO gm_stt (campaign, updated_at, doc) VALUES (?, ?, ?)').run('c', iso(clock.t), JSON.stringify({ want: 'on', session: '3', speakers: {}, status: { state: 'listening', at: iso(clock.t), lines: 5, error: '' } }));
+  const NONE = Object.fromEntries(['roll_talk', 'harm', 'npc_change', 'new_name', 'clue_mention', 'xp_trigger', 'scene_change', 'stall', 'downtime'].map((f) => [f, false]));
+  // seed: [seat, ms ago] rows, so those seats are cooling down (their lastRun) and do not wake
+  for (const [seat, ago] of seed) exec.db.prepare("INSERT INTO gm_assist_log (campaign, at, session, seat, model, effort, cents, flags, card) VALUES ('c', ?, '3', ?, 'm', 'low', 0, '', ?)").run(iso(clock.t - ago), seat, JSON.stringify({ out: {} }));
+  const replies = { tripwire: tripwire || { ...NONE, scene_change: true }, stall: { stalled: true, kind: 'clue', offer: 'A runner arrives.', why_now: 'quiet' }, meanwhile: { faction: 'F', cutaway: 'A lamp is lit.', clock: '', suggest_ticks: 0, why: '' },
+    showrunner: { spotlight: [], needs_spotlight: '', beat: 'rising', elapsed_minutes: 1, advice: '', speak: false }, scribe: { story: 'S.', corrections: [] }, whois: { guesses: [] },
+    pitch: { pitches: [{ kind: 'clue', line: 'A page is missing', why_now: 'x', uses: '' }, { kind: 'direction', line: 'Cut to the stairs', why_now: 'x', uses: '' }] } };
+  const client = { messages: { async create(req) {
+    const ins = req.messages[0].content.filter((b) => b.type === 'text').map((b) => b.text)[0];
+    const seat = Object.keys(SEATS).find((k) => ins.startsWith(SEATS[k].instructions));
+    return { content: [{ type: 'text', text: JSON.stringify(replies[seat] || {}) }], usage: { input_tokens: 10, output_tokens: 5 }, stop_reason: 'end_turn' };
+  } } };
+  const h = makeHandler({ clientFor: () => client, now: () => clock.t });
+  const env = { DB: db, CAMPAIGN: 'c', ANTHROPIC_API_KEY: 'sk-test-pitch-0001' };
+  const lines = (n, ago) => addLines(db, 'c', cleanLines({ lines: Array.from({ length: n }, (_, i) => ({ id: 'q' + clock.t + '-' + i, at: iso(clock.t - ago + i * 100), session: '3', conn: 'x', speaker: 0, text: 'we talk on the stairs ' + i, kind: 'line' })) }));
+  const post = (b) => h({ request: new Request('https://blades.example.test/api/gm/assist/tick', { method: 'POST', body: JSON.stringify(b) }), env, data: { me: { role: 'gm', id: 'gm@example.test' } } });
+  await h({ request: new Request('https://blades.example.test/api/gm/assist/cards'), env, data: { me: { role: 'gm', id: 'gm@example.test' } } });   // the once-per-isolate schema batch
+  const trips = async (b) => { const t0 = exec.calls; const res = await post(b); assert.equal(res.status, 200); return { trips: exec.calls - t0, json: await res.json() }; };
+  return { clock, lines, trips, exec };
+}
+
+await test('KS18 pitch wake path: a scene change with pitch: true makes the same D1 round trips as the same tick today (pitch takes Meanwhile\'s reads)', async () => {
+  const off = await pitchWorld(); await off.lines(20, 50_000);
+  const a = await off.trips({});
+  const on = await pitchWorld(); await on.lines(20, 50_000);
+  const b = await on.trips({ pitch: true, seen: ['an old line'] });
+  assert.ok(a.json.meanwhile && !a.json.pitch, 'today: Meanwhile'); assert.ok(b.json.pitch && !b.json.meanwhile, 'pitches: a set');
+  assert.equal(b.trips, a.trips, 'round trips: pitches ' + b.trips + ', today ' + a.trips);
+});
+
+await test('KS18 pitchNow path: three D1 round trips (the opening batch, story and clocks in one batch, the row), no Tripwire', async () => {
+  const w = await pitchWorld(); await w.lines(20, 50_000);
+  const r = await w.trips({ pitch: true, pitchNow: true });
+  assert.equal(r.json.pitch.wake, 'asked');
+  assert.equal(r.trips, 3);
+});
+
+await test('KS18 quiet path: with pitch: true the silence costs no more round trips than today\'s Stall on the silence', async () => {
+  const run = async (b) => { const w = await pitchWorld({ listening: true }); await w.lines(5, 5 * 60_000); return w.trips(b); };
+  const today = await run({ after: 999 }), pitched = await run({ after: 999, pitch: true });
+  assert.ok(today.json.stall && pitched.json.pitch, 'both offered something');
+  assert.ok(pitched.trips <= today.trips, 'pitches ' + pitched.trips + ' vs today ' + today.trips);
+});
+
+// a tick where the Tripwire flags nothing and the 'tick' seats (Showrunner, Scribe, Who is who) ran a minute ago, so nothing else wakes
+const CALM = ['showrunner', 'scribe', 'whois'].map((s) => [s, 60_000]);
+const QUIET_TW = Object.fromEntries(['roll_talk', 'harm', 'npc_change', 'new_name', 'clue_mention', 'xp_trigger', 'scene_change', 'stall', 'downtime'].map((f) => [f, false]));
+
+await test('KS18 the 6-minute idle wake, with no other seat woken: two D1 round trips more than the same tick today (the seat\'s reads and its row, in place of the held-card read)', async () => {
+  const off = await pitchWorld({ tripwire: QUIET_TW, seed: CALM }); await off.lines(20, 50_000);
+  const a = await off.trips({});
+  const on = await pitchWorld({ tripwire: QUIET_TW, seed: CALM.concat([['pitch', 7 * 60_000]]) }); await on.lines(20, 50_000);
+  const b = await on.trips({ pitch: true });
+  assert.ok(!a.json.pitch && b.json.pitch && b.json.pitch.wake === 'idle', 'today nothing; pitches: the idle wake');
+  assert.deepEqual(b.json.health.ran.sort(), ['pitch', 'tripwire'], 'no other seat woke');
+  assert.equal(b.trips, a.trips + 2, 'round trips: idle pitch ' + b.trips + ', today ' + a.trips);
+});
+
+await test('KS18 an ordinary pitch: true tick where pitch does not wake (cooling down, no scene change): the same D1 round trips as today', async () => {
+  const tw = { ...QUIET_TW, roll_talk: true };
+  const off = await pitchWorld({ tripwire: tw, seed: CALM }); await off.lines(20, 50_000);
+  const a = await off.trips({});
+  const on = await pitchWorld({ tripwire: tw, seed: CALM.concat([['pitch', 60_000]]) }); await on.lines(20, 50_000);
+  const b = await on.trips({ pitch: true, seen: ['an old line'] });
+  assert.ok(!b.json.pitch && !b.json.health.ran.includes('pitch'), 'pitch did not wake');
+  assert.equal(b.trips, a.trips, 'round trips: pitches on ' + b.trips + ', today ' + a.trips);
+});
+
+await test('KS18 the pitch code is cheap: body check, wake, turn (four minutes of talk) and answer under 0.5 ms a tick on this machine', () => {
+  const talk = Array.from({ length: 80 }, (_, i) => '[21:0' + (i % 10) + '] Speaker ' + (i % 4) + ': a line of table talk about the stairs and the ledger ' + i).join('\n');
+  const seen = Array.from({ length: 12 }, (_, i) => 'a line shown earlier tonight ' + i);
+  const reply = { pitches: [{ kind: 'clue', line: 'A page is missing from the book', why_now: 'the ledger came up', uses: '' }, { kind: 'direction', line: 'Cut to the stairs', why_now: 'x', uses: '' }, { kind: 'npc_move', line: 'Someone stops pouring', why_now: 'x', uses: '' }] };
+  const once = () => { const b = P.cleanPitchBody({ pitch: true, seen }); P.decidePitch({ flags: ['scene_change', 'tick'], now: 1e12, lastRun: { pitch: 1e12 - 600000 }, tier: 'all' }); P.pitchUser({ wake: 'scene', npc: 'N', clocks: [{ name: 'C', filled: 1, size: 4 }], seen: b.seen, stamp: '21:09', talk }); P.toPitches(reply, { seen: b.seen }); };
+  for (let i = 0; i < 200; i++) once();
+  const N = 2000, c0 = process.cpuUsage(); for (let i = 0; i < N; i++) once(); const c = process.cpuUsage(c0);
+  const ms = (c.user + c.system) / 1000 / N;
+  assert.ok(ms < 0.5, ms.toFixed(4) + ' ms a tick');
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

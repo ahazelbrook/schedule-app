@@ -2,6 +2,8 @@
 // one-line change. These instructions are generic on purpose: this repository is public, so nothing campaign-specific
 // goes in them. Names, NPC cards and prep arrive in the cached prefix, which the replay reads from the GM's vault.
 
+import { PITCH_SEAT, PITCH_WAKES } from './pitch.js';
+
 const FLAGS = ['roll_talk', 'harm', 'npc_change', 'new_name', 'clue_mention', 'xp_trigger', 'scene_change', 'stall', 'downtime'];
 
 // One action roll, as the Night Shift records it (the sorters and the single-call variant share it). Every roll keeps its
@@ -481,6 +483,8 @@ Reply with JSON only.`,
       required: ['rolls', 'session_log', 'xp_per_pc', 'feedback_card', 'group_chat', 'previously_on', 'prep_skeleton'],
     },
   },
+
+  pitch: PITCH_SEAT,   // Blade's pitches (blade.pitches, the kit and stage build): up to three at a time, in place of Stall and Meanwhile (functions/_lib/assist/pitch.js)
 };
 
 // Which flags wake which seats (the Conductor's table).
@@ -495,4 +499,5 @@ export const WAKES = {
   scribe: ['tick'],                 // every tick that has new talk; the 5-minute cooldown makes it "every five minutes of new talk"
   meanwhile: ['scene_change'],      // its offer goes to the Rack; the 20-minute cooldown paces it
   whois: ['tick'],                  // not a Tripwire flag: the endpoint adds 'tick'; the Worker drops it unless an unnamed speaker has enough lines (whois.js); the 3-minute cooldown paces it
+  pitch: PITCH_WAKES,               // blade.pitches only (the page sends pitch: true): the Conductor never wakes it through this loop; decidePitch (pitch.js) adds the idle and pitchNow wakes
 };
