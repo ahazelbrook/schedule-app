@@ -1,1 +1,135 @@
-/* ui/desk-shell.css: the new desk: the shell (kit.desk). Registered as an empty stub by KS01.1 of the kit and stage build; KS09 fills it. In the kit-desk bundle, fetched only while its setting is on. */
+/* ui/desk-shell.css: the shell of the new desk (kit.desk, KS09 of the kit and stage build). In the kit-desk bundle: fetched only while its setting is on.
+   Every rule sits under :root[data-kit~="desk"] and starts from a kshell- class (or the overlay kit's ui-toast), which only gm/kit/shell.js puts on
+   the page; the old classes inside keep their old rules for anything not set here, so each element below sets every property it shows. Unlayered:
+   the old sheets sit in the layer `old` while the kit is on. No important flags. Sizes: 12 px labels, 14 px to read, nothing smaller.
+   KS09.5, the layers: the page's z-index ladder in the six layer tokens (base, sticky, popover, dialog, toast, alarm). The work is the base; the
+   chrome at its edges (the band, the drawer, a tool's sheet, the Blade panel, the capture bar) sits a step above sticky, in today's order; a
+   popover (the Menu, the cue's ⋯, the quiet list, the site's popovers) over that; a dialog (Find) over that; the toast stack over that; and the
+   alarm (Blank) over everything. Nothing else sits over the work. */
+
+/* ---------- KS09.5 the ladder ---------- */
+:root[data-kit~="desk"] :is(.gs-top, .pp-bar, .pp-peek, .gm-pnext, .gm-vchips, .gm-offer) { z-index: var(--ui-layer-sticky); }
+:root[data-kit~="desk"] .gm-drawer { z-index: calc(var(--ui-layer-sticky) + 1); }
+:root[data-kit~="desk"] :is(.gm-sheet, .gm-assist) { z-index: calc(var(--ui-layer-sticky) + 2); }
+:root[data-kit~="desk"] #gm-band { z-index: calc(var(--ui-layer-sticky) + 3); }
+:root[data-kit~="desk"] .gm-foot { z-index: calc(var(--ui-layer-sticky) + 4); }
+:root[data-kit~="desk"] .gm-fab { z-index: calc(var(--ui-layer-sticky) + 5); }
+:root[data-kit~="desk"] :is(.gm-menu-list, .gm-cs-pop, .gm-quiet-list, .rv-pop, .rv-menu, .rv-npcpop) { z-index: var(--ui-layer-popover); }
+:root[data-kit~="desk"] .gm-find { z-index: var(--ui-layer-dialog); }
+:root[data-kit~="desk"] :is(.toast, .gm-ugtoast, .rv-ghost) { z-index: var(--ui-layer-toast); }
+:root[data-kit~="desk"] .gm-blank { z-index: var(--ui-layer-alarm); }
+/* a phone: the band rides over the capture bar, and a drawer or a sheet takes the whole screen (a popover, as today) */
+@media (max-width: 599px) {
+  :root[data-kit~="desk"] #gm-band { z-index: calc(var(--ui-layer-sticky) + 6); }
+  :root[data-kit~="desk"] :is(.gm-drawer, .gm-sheet) { z-index: var(--ui-layer-popover); }
+}
+
+/* ---------- KS09.1 the view tabs: an underline, the place's own views first, the four every place has at the right ---------- */
+:root[data-kit~="desk"] .kshell-viewrow { align-items: flex-end; gap: var(--ui-space-3); padding: 0 var(--ui-space-2) 0 var(--ui-space-4); border-bottom: var(--ui-hairline); background: var(--ui-surface); }
+:root[data-kit~="desk"] .kshell-tabs { flex: 1 1 auto; flex-wrap: nowrap; align-items: flex-end; gap: 0 var(--ui-space-4); min-width: 0; overflow-x: auto; scrollbar-width: none; border-bottom: 0; }
+:root[data-kit~="desk"] .kshell-tabs > .kshell-vt, :root[data-kit~="desk"] .kshell-vt-xw > .kshell-vt {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--ui-space-1); min-width: 0; min-height: 40px; padding: 0 var(--ui-space-1);
+  border: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--ui-ink-soft); box-shadow: none;
+  font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap;
+}
+:root[data-kit~="desk"] .kshell-tabs .kshell-vt:hover { background: transparent; color: var(--ui-ink); border-bottom-color: var(--ui-line); }
+:root[data-kit~="desk"] .kshell-tabs .kshell-vt[aria-selected="true"] { background: transparent; color: var(--ui-ink); border-bottom-color: var(--ui-accent); }
+:root[data-kit~="desk"] .kshell-tabs .kshell-vt:focus-visible { outline: var(--ui-focus-ring); outline-offset: -2px; }
+:root[data-kit~="desk"] .kshell-tabs .kshell-vt.gm-vt-long { flex-shrink: 1; }
+:root[data-kit~="desk"] .kshell-tabs .gm-vt-l { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+:root[data-kit~="desk"] .kshell-tabs .kshell-vt .ui-key { flex: none; }
+:root[data-kit~="desk"] .kshell-vsep { flex: 1 1 0; min-width: var(--ui-space-3); align-self: stretch; border: 0; }
+/* a view brought from another place: a dashed underline and its ×; a view put away (C S J O, Find) shows only while it is open */
+:root[data-kit~="desk"] .kshell-vt-xw { flex: 0 1 auto; display: inline-flex; align-items: flex-end; min-width: 0; border: 0; outline: 0; background: transparent; }
+:root[data-kit~="desk"] .kshell-vt-xw > .kshell-vt { padding-right: 0; }
+:root[data-kit~="desk"] .kshell-tabs :is(.gm-vt-extra, .kshell-vt-away)[aria-selected="true"] { border-bottom-style: dashed; }
+:root[data-kit~="desk"] .kshell-vt-x { min-height: 40px; min-width: 28px; padding: 0 var(--ui-space-1); border: 0; border-bottom: 3px solid transparent; background: transparent; box-shadow: none; color: var(--ui-ink-soft); font: 700 var(--ui-type-lead)/1 var(--ui-font-text); }
+:root[data-kit~="desk"] .kshell-vt-x:hover { background: transparent; color: var(--ui-alarm); }
+:root[data-kit~="desk"] .kshell-focus { flex: none; align-self: center; gap: 0; border-radius: var(--ui-radius); min-height: 32px; padding: 0 var(--ui-space-2); border: 0; background: transparent; box-shadow: none; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1 var(--ui-font-text); letter-spacing: .12em; text-transform: uppercase; }
+:root[data-kit~="desk"] .kshell-focus[aria-pressed="true"] { background: var(--ui-sunk); color: var(--ui-ink); }
+:root[data-kit~="desk"] .kshell-focus kbd { margin-left: var(--ui-space-1); padding: 1px 4px; border: var(--ui-hairline); border-radius: var(--ui-radius); background: transparent; color: inherit; font: 700 var(--ui-type-label)/1 var(--ui-font-mono); }
+
+/* ---------- KS09.2 the Menu: one box of rows under the band's Menu button ---------- */
+:root[data-kit~="desk"] .kband-menu > .gm-menu-list {
+  top: calc(100% + var(--ui-space-1)); right: 0; display: block; width: max-content; min-width: 16em; max-width: min(24em, calc(100vw - 24px)); max-height: calc(100dvh - 104px); overflow-y: auto; margin: 0; padding: 0;
+  border: 0; border-radius: var(--ui-radius); background: transparent; box-shadow: none; color: var(--ui-ink);
+}
+:root[data-kit~="desk"] .kshell-mbox { display: grid; padding: var(--ui-space-1); border: var(--ui-rule); border-radius: var(--ui-radius); background: var(--ui-raised); color: var(--ui-ink); }
+:root[data-kit~="desk"] .kshell-mbox .kshell-menu { position: static; min-width: 0; padding: 0; border: 0; background: transparent; }
+:root[data-kit~="desk"] .kshell-mbox .ui-menu-item { min-height: 36px; font: 700 var(--ui-type-body)/1.25 var(--ui-font-text); letter-spacing: 0; text-transform: none; white-space: normal; }
+:root[data-kit~="desk"] .kshell-mbox .ui-menu-item:empty { display: none; }
+:root[data-kit~="desk"] .kshell-menu-h { margin: 0 0 var(--ui-space-1); padding: var(--ui-space-2) var(--ui-space-3); border-bottom: var(--ui-hairline); color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .kshell-menu-h:has(.gm-exp:empty) { display: none; }
+:root[data-kit~="desk"] .kshell-menu-warn { margin: 0 0 var(--ui-space-1); padding: var(--ui-space-2) var(--ui-space-3); border: 0; border-left: 4px solid var(--ui-caution); background: var(--ui-sunk); color: var(--ui-ink); font: 400 var(--ui-type-label)/1.4 var(--ui-font-text); }
+:root[data-kit~="desk"] .kshell-menu-warn[hidden] { display: none; }
+:root[data-kit~="desk"] .kshell-mlinks { display: grid; margin: var(--ui-space-1) 0; padding: var(--ui-space-1) 0; border-top: var(--ui-hairline); border-bottom: var(--ui-hairline); }
+:root[data-kit~="desk"] .kshell-mlink {
+  justify-content: flex-start; min-height: 32px; padding: var(--ui-space-1) var(--ui-space-3); border: 0; border-radius: var(--ui-radius); background: transparent; box-shadow: none;
+  color: var(--ui-ink-soft); font: 400 var(--ui-type-body)/1.2 var(--ui-font-text); letter-spacing: 0; text-transform: none; text-decoration: none;
+}
+:root[data-kit~="desk"] .kshell-mlink:hover { background: var(--ui-sunk); color: var(--ui-ink); }
+:root[data-kit~="desk"] .kshell-mbox .kshell-menu-end .ui-menu-item { border: 0; }
+@media (min-width: 1100px) { :root[data-kit~="desk"] .kshell-mbox .gm-menu-ph { display: none; } }
+
+/* ---------- KS09.2 Find: a dialog over a dimmed page ---------- */
+:root[data-kit~="desk"] .kshell-find { padding: 10vh var(--ui-space-4) var(--ui-space-4); background: color-mix(in srgb, var(--ui-on-accent, canvastext) 55%, transparent); }      /* the kit dialog's own scrim */
+:root[data-kit~="desk"] .kshell-findbox { width: min(720px, 100%); max-height: 78vh; border: var(--ui-rule); border-radius: var(--ui-radius); background: var(--ui-raised); color: var(--ui-ink); box-shadow: none; overflow: hidden; }
+:root[data-kit~="desk"] .kshell-findq { flex: none; width: auto; min-height: 52px; margin: var(--ui-space-3); padding: 0 var(--ui-space-3); font: 400 var(--ui-type-lead)/1.3 var(--ui-font-text); }
+:root[data-kit~="desk"] .kshell-find .gm-find-list { margin: 0; padding: 0 var(--ui-space-2) var(--ui-space-2); }
+:root[data-kit~="desk"] .kshell-find .gm-find-hit {
+  display: grid; grid-template-columns: 7.5em minmax(0, 1fr); column-gap: var(--ui-space-3); align-items: baseline; padding: var(--ui-space-2) var(--ui-space-3);
+  border: 0; border-left: 4px solid transparent; border-radius: var(--ui-radius); background: transparent; color: var(--ui-ink); font: 400 var(--ui-type-body)/1.35 var(--ui-font-text);
+}
+:root[data-kit~="desk"] .kshell-find .gm-find-hit > b { grid-column: 2; font-weight: 700; }
+:root[data-kit~="desk"] .kshell-find .gm-find-hit > small { grid-column: 2; color: var(--ui-ink-soft); font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .kshell-find .gm-find-hit:hover { background: var(--ui-sunk); color: var(--ui-ink); }
+:root[data-kit~="desk"] .kshell-find .gm-find-hit[aria-selected="true"] { border-left-color: var(--ui-accent); background: var(--ui-sunk); color: var(--ui-ink); }
+:root[data-kit~="desk"] .kshell-find .gm-find-hit:is(:hover, [aria-selected="true"]) small { color: var(--ui-ink-soft); }
+:root[data-kit~="desk"] .kshell-find .gm-find-kind { grid-column: 1; grid-row: 1 / span 3; min-width: 0; margin: 0; color: var(--ui-ink-soft); opacity: 1; font: 700 var(--ui-type-label)/1.3 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase; }
+:root[data-kit~="desk"] .kshell-find .gm-find-snip { grid-column: 2; margin: 2px 0 0; color: var(--ui-ink-soft); opacity: 1; font-size: var(--ui-type-body); }
+:root[data-kit~="desk"] .kshell-find .gm-find-none { padding: var(--ui-space-3); color: var(--ui-ink-soft); font: 400 var(--ui-type-body)/1.4 var(--ui-font-text); }
+:root[data-kit~="desk"] .kshell-find .gm-find-help { padding: var(--ui-space-2) var(--ui-space-3); border-top: var(--ui-hairline); color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.4 var(--ui-font-text); }
+:root[data-kit~="desk"] .kshell-find kbd { padding: 1px 5px; border: var(--ui-hairline); border-radius: var(--ui-radius); background: var(--ui-surface); color: var(--ui-ink); font: 700 var(--ui-type-label)/1 var(--ui-font-mono); }
+
+/* ---------- KS09.2 the drawer (W): a quiet head with tabs as an underline, the close as a quiet button ---------- */
+:root[data-kit~="desk"] .kshell-drawer { border-left: var(--ui-rule); background: var(--ui-surface); color: var(--ui-ink); box-shadow: none; }
+:root[data-kit~="desk"] .kshell-drawer .gm-dhead { align-items: flex-end; gap: var(--ui-space-2); padding: 0 var(--ui-space-2) 0 var(--ui-space-4); border-bottom: var(--ui-hairline); background: var(--ui-surface); }
+:root[data-kit~="desk"] .kshell-dtabs { flex-wrap: nowrap; gap: 0 var(--ui-space-4); border-bottom: 0; }
+:root[data-kit~="desk"] .kshell-dtabs > .ui-tab { flex: 0 0 auto; min-height: 44px; padding: 0 var(--ui-space-1); border: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .12em; text-transform: uppercase; }
+:root[data-kit~="desk"] .kshell-dtabs > .ui-tab[aria-selected="true"] { background: transparent; color: var(--ui-ink); border-bottom-color: var(--ui-accent); }
+:root[data-kit~="desk"] .kshell-dtabs > .ui-tab:hover { color: var(--ui-ink); border-bottom-color: var(--ui-line); }
+:root[data-kit~="desk"] .kshell-x { flex: none; align-self: center; width: auto; min-width: 36px; height: auto; min-height: 36px; padding: 0 var(--ui-space-2); border: 0; background: transparent; box-shadow: none; color: var(--ui-ink-soft); font: 700 var(--ui-type-lead)/1 var(--ui-font-text); }
+:root[data-kit~="desk"] .kshell-x:hover { background: var(--ui-sunk); color: var(--ui-ink); border: 0; }
+:root[data-kit~="desk"] .kshell-drawer .gm-dframebar { padding: var(--ui-space-2) var(--ui-space-3); border-top: var(--ui-hairline); background: var(--ui-surface); color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.3 var(--ui-font-text); }
+:root[data-kit~="desk"] .kshell-dedit[aria-pressed="true"] { border-color: var(--ui-accent); background: var(--ui-accent); color: var(--ui-on-accent); }
+
+/* ---------- KS09.2 the capture bar (p, x, m, the Menu's "Show the capture bar") and the phone's Capture button ---------- */
+:root[data-kit~="desk"] .kshell-foot { gap: var(--ui-space-2); padding: var(--ui-space-2) var(--ui-space-4); border: 0; border-top: var(--ui-hairline); border-left: 4px solid var(--ui-accent); background: var(--ui-surface); color: var(--ui-ink); box-shadow: none; font: 400 var(--ui-type-body)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .kshell-foot .gm-cap { gap: var(--ui-space-2) var(--ui-space-3); }
+:root[data-kit~="desk"] .kshell-foot .gm-capb { display: inline-flex; gap: 0; padding: 2px; border: var(--ui-hairline); border-radius: var(--ui-radius); background: var(--ui-sunk); }
+:root[data-kit~="desk"] .kshell-foot .gm-capb .chip {
+  min-height: 32px; padding: 0 var(--ui-space-3); border: 0; border-radius: var(--ui-radius); background: transparent; box-shadow: none; color: var(--ui-ink-soft);
+  font: 700 var(--ui-type-label)/1 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase;
+}
+:root[data-kit~="desk"] .kshell-foot .gm-capb .chip[aria-pressed="true"] { background: var(--ui-ink); color: var(--ui-on-ink); }
+:root[data-kit~="desk"] .kshell-foot .gm-capb .chip kbd { margin-left: var(--ui-space-1); padding: 0 3px; border: var(--ui-hairline); border-radius: var(--ui-radius); background: transparent; color: inherit; font: 700 var(--ui-type-label)/1.2 var(--ui-font-mono); }
+:root[data-kit~="desk"] .kshell-foot input[type="text"] {
+  min-height: 36px; box-sizing: border-box; padding: 0 var(--ui-space-3); border: var(--ui-hairline); border-radius: var(--ui-radius); background: var(--ui-raised); color: var(--ui-ink);
+  font: 400 var(--ui-type-body)/1.3 var(--ui-font-text);
+}
+:root[data-kit~="desk"] .kshell-foot input[type="text"]:focus-visible { border-color: var(--ui-ink); outline: var(--ui-focus-ring); outline-offset: 1px; }
+:root[data-kit~="desk"] .kshell-foot .btn {
+  min-height: 36px; padding: 0 var(--ui-space-3); border: var(--ui-hairline); border-color: var(--ui-ink); border-radius: var(--ui-radius); background: var(--ui-raised); box-shadow: none; color: var(--ui-ink);
+  font: 700 var(--ui-type-label)/1 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase;
+}
+:root[data-kit~="desk"] .kshell-foot .btn:hover { background: var(--ui-sunk); }
+:root[data-kit~="desk"] .kshell-foot :is(.gm-dim, .gm-caplist) { color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .kshell-foot .gm-lab { color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase; }
+:root[data-kit~="desk"] .kshell-fab { border: var(--ui-rule); border-radius: var(--ui-radius-pill); background: var(--ui-accent); color: var(--ui-on-accent); box-shadow: none; font: 700 var(--ui-type-body)/1 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase; }
+:root[data-kit~="desk"] .kshell-fab[aria-expanded="true"] { background: var(--ui-ink); color: var(--ui-on-ink); }
+
+/* the stack stands above the capture bar while the bar shows */
+:root[data-kit~="desk"]:has(#gm-root:is(.capbar, .cap-open)) .ui-toast-stack { bottom: calc(var(--ui-space-4) + 64px); }
+
+/* ---------- KS09.3 the cue's toasts in the stack: the old .gm-ugtoast placement (fixed, centred) is not theirs any more ---------- */
+:root[data-kit~="desk"] .ui-toast.kshell-cue { left: auto; bottom: auto; transform: none; z-index: auto; max-width: none; }
