@@ -1,9 +1,9 @@
 // kit-accept (KS04.4 of the kit and stage build): the acceptance numbers, measured in a real browser against the demo night (scripts/demo-night.mjs).
 //   1. boxed controls on the Run view at 1366x768            target 25 or fewer
-//   2. the smallest text on the GM page                      target 12 px or more
+//   2. the smallest GM text (the Run view; and the Blade panel)  target 12 px or more
 //   3. Blade cards visible at once (1366x768, panel open)    target 4 or more
 //   4. the iPad's text height (1024x768): the share of the screen's height   target 3.3% or more
-//   5. plate contrast on the iPad: text against what is behind it            target 4.5:1 or more
+//   5. the lowest iPad text contrast: text against what is behind it (not plates alone)   target 4.5:1 or more
 //   (the design's "idle stage: nothing moving" is KS13's, measured when that stage exists)
 // REPORTS ONLY, until KS20 makes it a hard check: it prints the numbers (today's, for the old desk) and passes if every page could be measured. KIT_ACCEPT_HARD=1 turns
 // the targets into failures (KS20). KIT_ACCEPT_KIT=desk,stage,... starts the demo night with those settings on, so a bundle can see its own numbers.
@@ -141,7 +141,7 @@ try {
     minPx = minAll;
     note('1. Run at 1366x768: ' + boxed.boxedOnScreen + ' boxed controls in the window (' + boxed.onScreen + ' controls in the window, ' + boxed.visible + ' on the page, ' + boxed.boxedTotal + ' of those boxed)   target 25 or fewer');
     note('   boxed, for example: ' + boxed.sample.join(', '));
-    note('2. smallest text on the GM page (Run view): ' + minAll + ' px   ' + small.length + ' of ' + t.length + ' text elements under 12 px   target 12 px or more');
+    note('2. smallest GM text (the Run view only): ' + minAll + ' px   ' + small.length + ' of ' + t.length + ' text elements under 12 px   target 12 px or more');
     const byName = new Map(); for (const x of small) byName.set(x.name, (byName.get(x.name) || 0) + 1);
     note('   under 12 px, by element: ' + ([...byName.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([n, k]) => n + ' x' + k).join(', ') || 'none'));
     /* the panel too, with cards */
@@ -198,10 +198,10 @@ try {
   console.log('targets: ' + (HARD ? 'HARD (a miss fails)' : 'reports only until KS20 makes them hard (KIT_ACCEPT_HARD=1)'));
   const targets = [
     ['boxed controls on Run, 1366x768', boxed.boxedOnScreen <= 25, boxed.boxedOnScreen + ' (25 or fewer)'],
-    ['smallest text on the GM page', Math.min(minPx, minBlade) >= 12, Math.min(minPx, minBlade) + ' px (12 or more)'],
+    ['smallest GM text (Run view, Blade panel)', Math.min(minPx, minBlade) >= 12, Math.min(minPx, minBlade) + ' px (12 or more)'],
     ['Blade cards visible at once', blade.whole >= 4, blade.whole + ' (4 or more)'],
     ['iPad text height (median)', rows.every((r) => r.med / 768 >= 0.033), rows.map((r) => num((r.med / 768) * 100) + '% ' + r.state).join(', ') + ' (3.3% or more)'],
-    ['plate contrast', rows.every((r) => r.low.length === 0), rows.map((r) => r.low.length + ' under 4.5:1 ' + r.state).join(', ')]
+    ['lowest iPad text contrast', rows.every((r) => r.low.length === 0), rows.map((r) => r.low.length + ' under 4.5:1 ' + r.state).join(', ')]
   ];
   for (const [name, ok, what] of targets) { console.log((ok ? 'MET  ' : 'MISS ') + name + ': ' + what); if (HARD && !ok) failed++; }
 } catch (e) {

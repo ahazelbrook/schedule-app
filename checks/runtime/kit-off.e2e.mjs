@@ -198,6 +198,8 @@ if (!KEEP) fs.rmSync(dir, { recursive: true, force: true });
     const shoot = async (name) => { await toastsGone(); await page.evaluate(() => { window.scrollTo(0, 0); document.querySelectorAll('*').forEach((e) => { if (e.scrollTop) e.scrollTop = 0; if (e.scrollLeft) e.scrollLeft = 0; }); }); await page.mouse.move(1, 766); await page.waitForTimeout(400); return fingerprint(page, name, 1366); };
     await page.waitForTimeout(9000);        /* the players' presence (the Run view's chip) arrives with the polls: let it settle before the all-off picture */
     const A0 = await shoot('all-off'), attrsA = await kitAttrs();
+    const kitKey = () => page.evaluate(() => { try { return localStorage.getItem('b68.kit'); } catch (e) { return 'blocked'; } });
+    check((await kitKey()) === null, 'with all five off the page wrote no b68.kit key (KIT-REVIEW 11)');
     console.log('mid-game: the page with all five off has ' + A0.els.length + ' elements, data-kit: ' + (attrsA.filter((x) => !/=null$/.test(x)).join(', ') || 'none'));
     const rounds = KIT_SETTING_KEYS.map((k) => [k]).concat([KIT_SETTING_KEYS]);
     for (const ids of rounds) {
@@ -217,6 +219,7 @@ if (!KEEP) fs.rmSync(dir, { recursive: true, force: true });
     }
     await page.reload(); await ready();
     check(JSON.stringify(await kitAttrs()) === JSON.stringify(attrsA), 'mid-game off: and the same data-kit attributes after the reload');
+    check((await kitKey()) === null, 'mid-game off: after the last setting went off, and the reload, no b68.kit key is left');
     check(!errors.length, 'mid-game off: no page error' + (errors.length ? ': ' + errors[0] : ''));
     await c.close();
   } catch (e) { check(false, 'mid-game off ran: ' + String(e && e.stack || e).split(String.fromCharCode(10)).slice(0, 3).join(' | ')); }
