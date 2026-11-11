@@ -169,7 +169,7 @@
       } else if (p.states && p.states.length) {
         var base = ex[ex.length - 1].opts, sts = p.states.filter(function (s) { return STATE[s]; });
         if (p.fn === 'chip') base = { label: 'Ray', button: true, pressed: false };
-        if (p.fn === 'row' || p.fn === 'field') base = ex[0].opts;
+        if (p.fn === 'row' || p.fn === 'field' || p.fn === 'link') base = ex[0].opts;     /* a link's last example is the Disabled one: its hover would look disabled */
         if (sts.length) {
           h += '<div class="lb-ex ' + wide + '" data-lb-states="' + U.esc(p.fn) + '">';
           sts.forEach(function (s) { var o = withState(p.fn, reid(base, '-' + s), s); if (o) h += fig(U[p.fn](o), s); });

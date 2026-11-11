@@ -4,7 +4,10 @@
    data-ui-scope (KS02b): a container that opts its whole subtree into the kit on a screen whose kit is off (night.who's sheet, blade.pitches'
    cards put it on their root). The tokens are defined on it, and parts.css styles the ui-* parts under it, and nowhere outside it and the kit's
    root: a page with no data-kit and no data-ui-scope paints as it did, and index.html's .btn is never touched. A scope on a page with no kit is
-   Paper unless it (or a container in it) says data-ui-theme="night"; on a kit page it takes that page's theme and density.
+   Paper unless it (or a container in it) says data-ui-theme="night". On a kit page the scope defines NOTHING itself (the token block and the
+   reduced-motion block name it only as :where(:root:not([data-kit])) [data-ui-scope]): it inherits the kit root's tokens, so it follows that page's
+   Paper or Night (data-theme) and density (data-density) like any other part. Only an explicit data-ui-theme or data-density on the scope
+   (or a container in it) overrides. Do not nest scopes: a scope inside a scope on a page with no kit starts from Paper and desk density again.
 
    Themes are written ONCE. Every colour that changes with the theme is one line, light-dark(<Paper>, <Night>), and the theme is only
    color-scheme: the device's preference by default, a stored data-theme ("light" Paper, "dark" Night) when there is one, and a local
@@ -16,7 +19,7 @@
    Density: px for the desk (the default), the iPad's own vmin steps for data-density="distance" (on <html> or any container).
    Every colour is one the app already has (index.html's inline block, app/tokens.css, gm.css's Fixer rows): kit-ui.test.mjs checks it. */
 
-:root[data-kit~="desk"], :root[data-kit~="stage"], :root[data-kit~="phone"], [data-ui-scope] {
+:root[data-kit~="desk"], :root[data-kit~="stage"], :root[data-kit~="phone"], :where(:root:not([data-kit])) [data-ui-scope] {
   color-scheme: light dark;
 
   /* ground and ink (index.html's --paper, --card, --inset, --ink, --ink-soft, --ink-faint, --on-ink, --hair) */
@@ -149,7 +152,7 @@
 
 /* reduced motion means a cut */
 @media (prefers-reduced-motion: reduce) {
-  :root[data-kit~="desk"], :root[data-kit~="stage"], :root[data-kit~="phone"], [data-ui-scope] {
+  :root[data-kit~="desk"], :root[data-kit~="stage"], :root[data-kit~="phone"], :where(:root:not([data-kit])) [data-ui-scope] {
     --ui-motion-quick: 0ms;
     --ui-motion-base: 0ms;
     --ui-motion-slow: 0ms;

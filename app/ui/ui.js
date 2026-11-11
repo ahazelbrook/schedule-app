@@ -46,11 +46,14 @@
                                    nothing): Left/Right (Up/Down on an aria-orientation="vertical" list), Home and End move focus to the next
                                    enabled tab, wrap round, set the roving tabindex and click() it, so the caller's own click handler selects it
                                    (the WAI-ARIA tabs pattern, automatic activation). It never listens on Escape. If your click handler redraws
-                                   the row, put focus back on the selected tab there. Call it on a container, not on document
+                                   the row, put focus back on the selected tab there. Call it on a container, not on document. Roots may nest: a tablist
+                                   is answered by the NEAREST wired root above it only, so a tab never activates twice
      B68Ui.guardBusy(root) -> root (KS02b) ONE capture-phase listener on root, added once per root: a click, or an Enter or Space press, on a
                                    button or link with aria-busy="true" is cancelled before any handler under root sees it. The helper only emits
                                    markup, so a handler that is bound ABOVE root, or in a capture listener on document, must still check
-                                   aria-busy itself. The CSS gives a busy button pointer-events: none
+                                   aria-busy itself. Use this guard rather than pointer-events: the sheet leaves a busy button clickable on
+                                   purpose, because with pointer-events: none a real mouse click lands on the container beneath (a backdrop,
+                                   a row-select handler) and fires that instead
      B68Ui.esc(s) -> string        & < > " ' as entities
      B68Ui.PARTS                   the manifest, app/ui/parts.json mirrored here (that file is in no bundle, so it is not precached):
                                    { version, radii, parts: [{ name, fn, class, variants, states, do, dont, examples: [{ caption, opts }] }] }.
@@ -312,10 +315,13 @@
   };
   /* an <a> that looks like a button: the same ranks; the href is checked (http, https, mailto, obsidian, relative, #...) */
   function safeHref(h) {
-    var c = str(h).replace(/[\u0000- ]/g, '');
-    if (!c) return '';
+    /* the FINAL value first: C0 controls (tab and newline among them) out, then trimmed (trim also takes Unicode space and the BOM), and only
+       then judged, so what is tested is exactly what is emitted. A backslash is dropped outright (a browser reads \host as //host) */
+    var v = str(h).replace(/[\u0000-\u001f\u007f]/g, '').trim();
+    if (!v || v.indexOf('\\') >= 0) return '';
+    var c = v.replace(/[\s\u0000- \u007f-\u009f­​-‏⁠﻿]/g, '');     /* belt and braces: no invisible can hide a scheme */
     if (HREF_SCHEME.test(c) && !HREF_OK.test(c)) return '';
-    return str(h).replace(/[\u0000-\u001f]/g, '').trim();
+    return v;
   }
   T.link = function (o) {
     var rank = RANKS[o.rank] ? o.rank : 'standard';
@@ -566,6 +572,11 @@
     var t = e.target && typeof e.target.closest === 'function' ? e.target.closest('[role="tab"]') : null;
     var list = t && t.closest('[role="tablist"]');
     if (!list) return;
+    if (e.currentTarget) {          /* nested wired roots: only the nearest one above this tablist answers */
+      var own = list;
+      while (own && !own[WIRED_TABS]) own = own.parentNode;
+      if (own && own !== e.currentTarget) return;
+    }
     var vertical = list.getAttribute('aria-orientation') === 'vertical';
     var prev = vertical ? 'ArrowUp' : 'ArrowLeft', next = vertical ? 'ArrowDown' : 'ArrowRight';
     if (k !== prev && k !== next && k !== 'Home' && k !== 'End') return;

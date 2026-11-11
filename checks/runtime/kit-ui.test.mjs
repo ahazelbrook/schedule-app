@@ -248,13 +248,29 @@ function fakeTabs(n, opts) {
     list.tabs.push(t);
   }
   const listeners = [], root = { addEventListener(type, fn, cap) { listeners.push({ type, fn, cap }); } };
+  list.parentNode = root;
   const press = (i, key, extra) => {
-    const e = Object.assign({ key, target: list.tabs[i], prevented: false, preventDefault() { this.prevented = true; } }, extra);
+    const e = Object.assign({ key, target: list.tabs[i], currentTarget: root, prevented: false, preventDefault() { this.prevented = true; } }, extra);
     listeners.filter((l) => l.type === 'keydown').forEach((l) => l.fn(e));
     return e;
   };
   return { list, root, log, listeners, press };
 }
+test('wireTabs on nested roots: the nearest wired root above a tablist answers, so a tab activates once', () => {
+  const t = fakeTabs(3);
+  const outerListeners = [], outer = { addEventListener(type, fn, cap) { outerListeners.push({ type, fn, cap }); } };
+  t.root.parentNode = outer;
+  U.wireTabs(outer); U.wireTabs(t.root);
+  const e = { key: 'ArrowRight', target: t.list.tabs[0], prevented: false, preventDefault() { this.prevented = true; } };
+  t.listeners.forEach((l) => l.fn(Object.assign(e, { currentTarget: t.root })));         /* the event bubbles: the inner root first ... */
+  outerListeners.forEach((l) => l.fn(Object.assign(e, { currentTarget: outer })));       /* ... then the outer one */
+  assert.deepEqual(t.log, ['focus 1', 'click 1'], 'one activation, not two');
+  /* a tablist with only the outer root wired is still answered by it */
+  const u = fakeTabs(3), outer2L = [], outer2 = { addEventListener(type, fn, cap) { outer2L.push({ type, fn, cap }); } };
+  u.root.parentNode = outer2; U.wireTabs(outer2);
+  outer2L.forEach((l) => l.fn({ key: 'End', target: u.list.tabs[0], currentTarget: outer2, preventDefault() {} }));
+  assert.deepEqual(u.log, ['focus 2', 'click 2'], 'the outer root answers a tablist no inner root claims');
+});
 test('wireTabs: ONE delegated keydown listener per root; arrows, Home and End move focus, set the roving tabindex and activate', () => {
   const t = fakeTabs(4);
   assert.equal(U.wireTabs(t.root), t.root);
@@ -297,7 +313,14 @@ test('guardBusy: ONE capture listener per root cancels a click or Enter or Space
   for (const k of ['Enter', ' ']) { fire(ev('keydown', true, k)); assert.equal(calls.length, 3, k + ' on a busy button is cancelled'); calls.length = 0; }
   fire(ev('keydown', true, 'Tab')); fire(ev('keydown', true, 'Escape')); fire(ev('keydown', false, 'Enter'));
   assert.deepEqual(calls, [], 'Tab and Escape still work on a busy button; Enter elsewhere is left alone');
-  assert.ok(/\.ui-btn\[aria-busy="true"\]\s*\{[^}]*pointer-events:\s*none/.test(PARTS_CSS), 'the sheet stops the pointer too');
+  /* a real mouse click lands ON the busy button (the sheet leaves it clickable), so the guard sees it; pointer-events: none would send it to the container beneath */
+  assert.ok(!/pointer-events:\s*none/.test(PARTS_CSS.replace(/\/\*[\s\S]*?\*\//g, '')), 'no pointer-events: none on a busy button: the guard cancels the click where it starts');
+  assert.ok(/\.ui-btn\[aria-busy="true"\]\s*\{[^}]*cursor:\s*progress/.test(PARTS_CSS), 'a busy button still shows its progress cursor');
+  const clicked = [], lst = [], r2 = { addEventListener(type, fn, cap) { lst.push({ type, fn, cap }); } };
+  U.guardBusy(r2);
+  const inner = { closest(sel) { return sel.includes('[aria-busy="true"]') ? btn : null; } }, btn = {};      /* a click on a child of a busy button */
+  lst.filter((l) => l.type === 'click').forEach((l) => l.fn({ type: 'click', target: inner, preventDefault() { clicked.push('prevent'); }, stopPropagation() { clicked.push('stop'); } }));
+  assert.deepEqual(clicked, ['prevent', 'stop'], 'a click that starts on a child of a busy control is cancelled');
 });
 
 test('the card keeps an inline part its own width: a chip in a card is not a full-width bar', () => {
@@ -332,7 +355,20 @@ test('link: an <a> with the button ranks; the href is checked; escaped; the key 
   for (const h of good) assert.ok(U.link({ label: 'A', href: h }).includes('href="' + escT(h) + '"'), h + ' passes');
   warnings.length = 0;
   const bad = ['javascript:alert(1)', 'JaVaScRiPt:alert(1)', ' javascript:alert(1)', 'java\nscript:alert(1)', 'java\tscript:alert(1)', '\u0000javascript:x', 'data:text/html,<b>', 'vbscript:x', 'file:///c/x', 'ftp://a.test', 'blob:x'];
-  for (const h of bad) assert.ok(!/href/.test(U.link({ label: 'A', href: h })), JSON.stringify(h) + ' is dropped');
+  /* KS02b review: what is judged is what is emitted. A leading or trailing newline, BOM, NBSP and other Unicode space (which trim() takes), and backslash paths */
+  bad.push('\njavascript:alert(1)', '\ufeffjavascript:alert(1)', '\u00a0javascript:alert(1)', '\u2028javascript:alert(1)', '\u3000javascript:alert(1)', 'javascript:alert(1)\n',
+    '\r\n\t javascript:alert(1)', '\ufeff\njavascript:alert(1)', 'java\u200bscript:alert(1)', '\u0001javascript:x', '\\\\host/x', '\\host/x', 'a\\b', '/ok\\x');
+  const dn = fakeDoc();
+  for (const h of bad) {
+    assert.ok(!/href/.test(U.link({ label: 'A', href: h })), JSON.stringify(h) + ' is dropped by link()');
+    assert.equal(U.node('link', { label: 'A', href: h }, dn).getAttribute('href'), null, JSON.stringify(h) + ' is dropped by node(link)');
+  }
+  for (const h of ['  #top  ', '\n/ok/path\n', '\ufeffhttps://a.test/x']) {          /* judged and emitted as the same trimmed value */
+    const want = h.replace(/[\u0000-\u001f]/g, '').trim();
+    assert.ok(U.link({ label: 'A', href: h }).includes('href="' + escT(want) + '"'), JSON.stringify(h) + ' is emitted trimmed');
+    assert.equal(U.node('link', { label: 'A', href: h }, dn).getAttribute('href'), want);
+  }
+  for (const out of [U.link({ label: 'A', href: '\ufeffjavascript:x' }), U.link({ label: 'A', href: ' java\tscript:x' })]) assert.ok(!/javascript/i.test(out), 'no javascript: anywhere in ' + out);
   assert.ok(warnings.length >= 1 && warnings.every((w) => w.startsWith('B68Ui: dropped href')), 'a dropped href warns');
   assert.ok(!/href/.test(U.link({ label: 'A', attrs: { href: 'javascript:x' } })), 'attrs cannot smuggle an href in');
   assert.ok(!/href/.test(U.link({ label: 'A' })), 'no href given: none drawn');
@@ -390,6 +426,7 @@ test('the look book draws every part from the manifest, in both themes and both 
   assert.ok(/data-ui-theme/.test(lb) && /paper/.test(lb) && /night/.test(lb), 'both themes');
   assert.ok(/data-density/.test(lb) && /distance/.test(lb), 'both densities');
   assert.ok(!/<button/.test(lb), 'the look book builds its controls with B68Ui');
+  assert.ok(/p\.fn === 'link'\) base = ex\[0\]/.test(lb), 'a link\'s hover and focus are drawn on its first example, not the Disabled one');
 });
 
 /* ---------- the sheets ---------- */
@@ -443,7 +480,27 @@ test('data-ui-scope (KS02b): parts and tokens work under :root[data-kit] and ins
   assert.deepEqual(reachesBare, [], 'no parts.css rule can match outside the kit root and a scope');
   /* the tokens: on the kit's root and on a scope, never on :root alone, *, or body */
   const tsel = selectors(TOKENS);
-  assert.ok(tsel.includes('[data-ui-scope]'), 'the tokens are defined on [data-ui-scope]');
+  /* KS02b review: on a kit page the scope defines NOTHING itself (it would override the page's Night and density). It names itself in the token block
+     and the reduced-motion block only as :where(:root:not([data-kit])) [data-ui-scope]; only an explicit data-ui-theme or data-density reaches it everywhere */
+  const NOKIT = ':where(:root:not([data-kit])) [data-ui-scope]';
+  assert.deepEqual(tsel.filter((x) => x === '[data-ui-scope]'), [], 'no rule of its own on a bare [data-ui-scope]');
+  const css = stripComments(TOKENS);
+  const listOf = (re) => { const m = re.exec(css); return m ? splitTop(m[1].trim()).map((x) => x.trim()) : null; };
+  const block = listOf(/([^{}]+)\{\s*color-scheme:\s*light dark;/), reduced = listOf(/prefers-reduced-motion:\s*reduce\)\s*\{([^{}]+)\{/);
+  assert.ok(block && block.includes(NOKIT) && block.every((x) => x === NOKIT || /^:root\[data-kit~=/.test(x)), 'the token block: the kit root, and the scope only on a page with no kit: ' + block);
+  assert.ok(reduced && reduced.includes(NOKIT) && reduced.every((x) => x === NOKIT || /^:root\[data-kit~=/.test(x)), 'the reduced-motion block: the same: ' + reduced);
+  /* every rule that sets the theme or a size on a scope is either the off-kit one or an explicit data-ui-theme / data-density rule: a scope on a kit page inherits the page's Night and distance density */
+  let seen = 0;
+  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const sels = splitTop(m[1].trim()).map((y) => y.trim()).filter((y) => y.includes('[data-ui-scope]'));
+    if (!sels.length || !/color-scheme\s*:|--ui-(type|space|control|motion)/.test(m[2])) continue;
+    for (const x of sels) {
+      seen++;
+      assert.ok(x === NOKIT || /\[data-ui-theme="(paper|night)"\]|\[data-density="(desk|distance)"\]/.test(x), 'a rule that sets the theme or a size on a scope and is neither off-kit nor explicit: ' + x);
+    }
+  }
+  assert.ok(seen >= 8, 'the scope rules were found: ' + seen);
+  assert.ok(/:where\(:root:not\(\[data-kit\]\)\) \[data-ui-scope\]\s*\{\s*color-scheme:\s*light;\s*\}/.test(css), 'Paper by default on a page with no kit');
   assert.ok(tsel.every((s) => TOKEN_SCOPE.test(s)), 'and only on the kit root or a scope');
   assert.ok(tsel.includes(':where(:root:not([data-kit])) [data-ui-scope]'), 'Paper by default in a scope on a page with no kit');
   for (const t of ['paper', 'night']) {

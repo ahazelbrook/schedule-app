@@ -39,7 +39,7 @@
   border-style: dashed; border-color: var(--ui-ink-faint); background: transparent; color: var(--ui-ink-faint); box-shadow: none; transform: none; cursor: not-allowed;
 }
 :where(:root[data-kit], [data-ui-scope]) .ui-btn--quiet:disabled { border-color: transparent; }
-:where(:root[data-kit], [data-ui-scope]) .ui-btn[aria-busy="true"] { cursor: progress; pointer-events: none; }
+:where(:root[data-kit], [data-ui-scope]) .ui-btn[aria-busy="true"] { cursor: progress; }
 :where(:root[data-kit], [data-ui-scope]) .ui-btn[aria-busy="true"]::after {
   content: ""; flex: 0 0 auto; width: .75em; height: .75em; border: 2px solid currentColor; border-right-color: transparent; border-radius: var(--ui-radius-pill);
   animation: ui-spin 800ms linear infinite;
