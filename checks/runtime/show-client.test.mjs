@@ -193,6 +193,31 @@ await test('the GM page gate takes the new commands and refuses what names a hid
   assert.match(GP.overlayLine({ id: 'a', kind: 'stamp', ms: 4000, payload: { word: 'X' } }), /stamp/);
 });
 
+await test('KS15 the roll as beats: the GM check, the display check and the server agree on report\'s who, result and cost; replace lays the key\'s id again without ifNotOverlay; the gate refuses a hidden name in them', async () => {
+  const { cleanShowPayload } = await import('../../functions/_lib/show.js');
+  const base = { position: 'risky', effect: 'standard', text: 'She calls the desk.' };
+  const server = (p) => { try { return cleanShowPayload('report', p); } catch (e) { return null; } };
+  const cases = [base, { ...base, who: 'Ray' }, { ...base, result: 'clean' }, { ...base, result: '45' }, { ...base, result: '13', cost: 'Lotte remembers your face.' },
+    { ...base, who: 'x'.repeat(40), cost: 'y'.repeat(60) }, { ...base, who: 'x'.repeat(41) }, { ...base, cost: 'y'.repeat(61) }, { ...base, result: '6' }, { ...base, result: 45 }, { ...base, who: 3 }];
+  for (const p of cases) {
+    const s = server(p), d = S.clean('report', p), g = Show.payloadOk('report', p);
+    assert.equal(!!s, !!d, 'server and display agree: ' + JSON.stringify(p)); assert.equal(!!s, g, 'server and GM agree: ' + JSON.stringify(p));
+    if (s) assert.deepEqual(d, s, 'the display keeps what the server keeps: ' + JSON.stringify(p));
+  }
+  assert.deepEqual(S.clean('report', base), base, 'a report without the new fields is unchanged');
+  assert.equal(S.clean('report', { ...base, stray: 'GM-ONLY-STRAY' }).stray, undefined);
+  for (const f of S.entry('report').fixtures) assert.ok(server(f.fixture) && S.clean('report', f.fixture), f.label + ' passes both');
+  const sent = []; const c = Show.make({ send: (p) => { sent.push(p); return Promise.resolve({ ok: 1 }); }, toast: () => {} });
+  await c.show('report', { ...base, who: 'Ray' }, { key: 'stamp-1-9', ms: 180000 });
+  await c.show('report', { ...base, who: 'Ray', result: '45' }, { key: 'stamp-1-9', ms: 8000, replace: true });
+  assert.equal(sent[0].ifNotOverlay, sent[0].overlay.id); assert.equal(sent[1].overlay.id, sent[0].overlay.id, 'the same id'); assert.ok(!('ifNotOverlay' in sent[1]), 'replace sends no ifNotOverlay');
+  const gate = GP.makeGate(() => ['GM-ONLY-NPC-1', 'GM-ONLY-ALIAS-1']);
+  const ov = (payload) => ({ overlay: { id: 'a', kind: 'report', ms: 8000, payload } });
+  assert.equal(gate.allowsAmbient(ov({ ...base, who: 'Ray', result: '45', cost: 'Lotte remembers your face.' })), true);
+  assert.equal(gate.allowsAmbient(ov({ ...base, result: '13', cost: 'GM-ONLY-ALIAS-1 saw it' })), false, 'a hidden name in the cost');
+  assert.equal(gate.allowsAmbient(ov({ ...base, who: 'gm-only-npc-1' })), false, 'a hidden name in who');
+});
+
 /* ---- tokens and the look book ---- */
 await test('tokens: app/tokens.css and app/tokens.js carry the same values; every name is --b68-; the old stylesheets use none of them', () => {
   const css = fs.readFileSync(path.join(APP, 'tokens.css'), 'utf8');

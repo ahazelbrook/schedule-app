@@ -1,1 +1,152 @@
-/* ui/desk-roll.css: the new desk: the Roll (kit.desk). Registered as an empty stub by KS01.1 of the kit and stage build; KS06 fills it. In the kit-desk bundle, fetched only while its setting is on. */
+/* ui/desk-roll.css: the Roll on the new desk (kit.desk, KS06 of the kit and stage build; gm/kit/roll.js draws it). In the kit-desk bundle, fetched
+   only while the setting is on. Unlayered (the old sheets sit in layer old while the kit is on); no important flags. Every rule is under
+   :root[data-kit~="desk"] and names a kr- class, which only the kit puts on the page (its own card, and the page's #gm-roll, #gm-rack, #gm-rackf,
+   #gm-fxhit and #gm-mini while that card is in), so with the kit off nothing here can match.
+   The kit card keeps the hook classes the old one carried (gm-rl, gm-btn, gm-fx-*...), so an old rule still matches them from layer old: every
+   property such a rule sets is set again here. No rule here sets display on #gm-rl or #gm-mini themselves: Focus (F) hides and shows them with the
+   old rules, as today. Alex, 07/11: "More dot points and text colour to help me skim it". */
+
+/* ---------- the card ---------- */
+:root[data-kit~="desk"] .kr-roll {
+  gap: var(--ui-space-2); padding: var(--ui-space-3); border: var(--ui-hairline); border-radius: var(--ui-radius); background: var(--ui-raised);
+  color: var(--ui-ink); box-shadow: none; font: 400 var(--ui-type-body)/1.35 var(--ui-font-text);
+}
+:root[data-kit~="desk"] .kr-title { margin: 0; color: var(--ui-ink); font: 400 var(--ui-type-title)/1 var(--ui-font-poster); letter-spacing: .01em; text-transform: uppercase; }
+:root[data-kit~="desk"] .kr-lab { margin: 0; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.25 var(--ui-font-text); letter-spacing: .12em; text-transform: uppercase; }
+:root[data-kit~="desk"] .kr-they { margin-top: var(--ui-space-1); }
+
+/* Who: the PCs as chips beside the word */
+:root[data-kit~="desk"] .kr-who { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-1) var(--ui-space-3); }
+:root[data-kit~="desk"] .kr-chips { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); min-width: 0; border: 0; background: transparent; }
+:root[data-kit~="desk"] .kr-whob { min-height: 28px; padding: .3em .8em; border: 1px solid var(--ui-line); font-size: var(--ui-type-label); letter-spacing: .06em; }
+:root[data-kit~="desk"] .kr-whob[aria-checked="true"] { border-color: var(--ui-ink); background: var(--ui-ink); color: var(--ui-on-ink); box-shadow: 0 0 0 2px var(--ui-raised), 0 0 0 4px var(--ui-accent); }
+
+/* Position and Effect: two full-width segmented controls */
+:root[data-kit~="desk"] .kr-segbox { display: grid; gap: var(--ui-space-1); min-width: 0; }
+:root[data-kit~="desk"] .kr-seg { display: flex; width: 100%; }
+:root[data-kit~="desk"] .kr-seg .ui-seg-opt { flex: 1 1 0; min-width: 0; padding: 0 var(--ui-space-1); font-size: var(--ui-type-label); letter-spacing: .06em; overflow: hidden; text-overflow: ellipsis; }
+:root[data-kit~="desk"] .kr-size { margin: 0; min-height: 1.3em; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.3 var(--ui-font-mono); letter-spacing: 0; overflow-wrap: anywhere; }
+
+/* If it goes wrong: the field, its x at the right of the box, the room's note under them */
+:root[data-kit~="desk"] .kr-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--ui-space-1); }
+:root[data-kit~="desk"] .kr-line > .ui-field { min-width: 0; }
+:root[data-kit~="desk"] .kr-in { min-height: calc(2.7em + 2 * var(--ui-space-2)); max-height: calc(5.4em + 2 * var(--ui-space-2)); padding: var(--ui-space-2); resize: none; field-sizing: content; overflow-wrap: anywhere; line-height: 1.35; }
+:root[data-kit~="desk"] .kr-x { width: var(--ui-control); min-width: var(--ui-control); padding: 0; font: 400 20px/1 var(--ui-font-text); letter-spacing: 0; }
+:root[data-kit~="desk"] .kr-note { grid-column: 1 / -1; margin: 0; color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.35 var(--ui-font-text); }
+
+/* STAMP, the Roll's one Primary, with a quiet Fit beside it; once stamped, what is up and its actions */
+/* the row is a grid and #gm-stamp lends it its children (display: contents), so Fit sits beside the first of them (STAMP, or what is up) and the rest
+   (Stamp again, Take it down and Clean) take the whole width under them */
+:root[data-kit~="desk"] .kr-stamprow { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--ui-space-2); margin: var(--ui-space-1) 0 4px; }
+:root[data-kit~="desk"] .kr-stamp { display: contents; }
+:root[data-kit~="desk"] .kr-stamp > * { grid-column: 1 / -1; }
+:root[data-kit~="desk"] .kr-stamp > :first-child { grid-column: 1; }
+:root[data-kit~="desk"] .kr-stampb { width: 100%; min-height: 40px; font-size: var(--ui-type-body); }
+:root[data-kit~="desk"] .kr-fit { grid-column: 2; grid-row: 1; min-height: 40px; }
+:root[data-kit~="desk"] .kr-up {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-1) var(--ui-space-2); margin: 0; padding: 0; background: transparent; color: var(--ui-ink);
+  font: 700 var(--ui-type-body)/1.3 var(--ui-font-text);
+}
+:root[data-kit~="desk"] .kr-chg { flex-basis: 100%; color: var(--ui-accent-ink); font: 700 var(--ui-type-label)/1.3 var(--ui-font-text); }
+:root[data-kit~="desk"] .kr-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-2); }
+:root[data-kit~="desk"] .kr-acts .ui-btn { padding: 0 var(--ui-space-2); font-size: var(--ui-type-label); letter-spacing: .04em; }
+/* KS15 (kit.stage): the result's words beside On the iPad, and the one "Cost on the iPad" field after a 4/5 or a 1-3, the width of the column */
+:root[data-kit~="desk"] .kr-upres { color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.3 var(--ui-font-text); overflow-wrap: anywhere; }
+:root[data-kit~="desk"] .kr-costline { display: grid; grid-template-columns: minmax(0, 1fr); margin-top: var(--ui-space-1); }
+:root[data-kit~="desk"] .kr-costline > .ui-field { min-width: 0; }
+:root[data-kit~="desk"] .kr-costin { min-height: calc(1.35em + 2 * var(--ui-space-2)); max-height: calc(2.7em + 2 * var(--ui-space-2)); }
+
+/* They rolled: the four keys as rows, the outcome colour on the left edge beside the word, the key at the right */
+:root[data-kit~="desk"] .kr-sits { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; }
+:root[data-kit~="desk"] .kr-sit {
+  justify-content: space-between; width: 100%; min-width: 0; min-height: 34px; padding: 0 var(--ui-space-3) 0 var(--ui-space-3);
+  border: var(--ui-hairline); border-left: 6px solid var(--ui-edge, var(--ui-line)); background: var(--ui-raised); box-shadow: none; text-align: left;
+}
+:root[data-kit~="desk"] .kr-sit:hover { border-color: var(--ui-ink-faint); border-left-color: var(--ui-edge, var(--ui-line)); background: var(--ui-sunk); }
+:root[data-kit~="desk"] .kr-sit:active { border-left-color: var(--ui-edge, var(--ui-ink)); }
+:root[data-kit~="desk"] .kr-sit .ui-key { margin-left: auto; }
+
+/* the stamp's one line, pinned above the Blade fold (sticky at the top of the column), so what is up stays in sight beside the Fixer's answer */
+:root[data-kit~="desk"] .kr-pin {
+  position: sticky; top: -12px; z-index: var(--ui-layer-sticky); margin: 0; padding: var(--ui-space-2) var(--ui-space-3); border: var(--ui-hairline); border-left: 4px solid var(--ui-accent); border-radius: var(--ui-radius);
+  background: var(--ui-raised); color: var(--ui-ink); font: 700 var(--ui-type-label)/1.3 var(--ui-font-text);
+}
+/* no display on .kr-pin itself: Focus (F) folds it with the old rule, as it folds the card */
+:root[data-kit~="desk"] .kr-pinrow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-1) var(--ui-space-2); }
+:root[data-kit~="desk"] .kr-pinwhat { flex: 1 1 6em; min-width: 0; overflow-wrap: anywhere; }
+:root[data-kit~="desk"] .kr-pindown { min-height: 28px; padding: 0 var(--ui-space-2); font-size: var(--ui-type-label); letter-spacing: .04em; }
+
+/* ---------- the Rack: the Fixer's answer and Voice, in the Blade fold under the card ---------- */
+:root[data-kit~="desk"] .kr-rackf > summary {
+  display: flex; align-items: center; gap: var(--ui-space-2); min-height: 32px; padding: 0 var(--ui-space-3); border: var(--ui-hairline); border-radius: var(--ui-radius);
+  background: var(--ui-raised); color: var(--ui-ink); font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .12em; text-transform: uppercase;
+}
+:root[data-kit~="desk"] .kr-rackf > summary::after { color: var(--ui-ink-soft); font: 700 16px/1 var(--ui-font-mono); }
+:root[data-kit~="desk"] .kr-rackf > summary .gm-lab { color: var(--ui-ink); font: inherit; letter-spacing: inherit; }
+:root[data-kit~="desk"] .kr-rackf > summary .gm-rl-sum { color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.2 var(--ui-font-mono); letter-spacing: 0; text-transform: none; }
+:root[data-kit~="desk"] .kr-rackf[open] > summary { border-bottom-color: transparent; }
+:root[data-kit~="desk"] .kr-rackbox { display: grid; gap: var(--ui-space-2); margin: 0; padding: 0; border: 0; background: transparent; }
+
+:root[data-kit~="desk"] .kr-rack, :root[data-kit~="desk"] .kr-voice { gap: var(--ui-space-2); padding: var(--ui-space-2) var(--ui-space-3) var(--ui-space-3); border-top: 0; }
+/* the dice in one small mono line, Clear at its right, the line it was fitted for under them */
+:root[data-kit~="desk"] .kr-rack-h { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px var(--ui-space-2); }
+:root[data-kit~="desk"] .kr-dice { margin: 0; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.3 var(--ui-font-mono); letter-spacing: 0; text-transform: uppercase; overflow-wrap: anywhere; }
+:root[data-kit~="desk"] .kr-rclear { min-height: 28px; padding: 0 var(--ui-space-2); font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .kr-for { grid-column: 1 / -1; margin: 0; color: var(--ui-ink); font: 400 var(--ui-type-body)/1.35 var(--ui-font-text); overflow-wrap: anywhere; }
+:root[data-kit~="desk"] .kr-read { margin: 0; color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.4 var(--ui-font-text); }
+:root[data-kit~="desk"] .kr-wait, :root[data-kit~="desk"] .kr-stale { margin: 0; color: var(--ui-ink-soft); font: 400 var(--ui-type-body)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .kr-err { margin: 0; color: var(--ui-alarm); font: 700 var(--ui-type-body)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .kr-again { justify-self: start; }
+
+/* each outcome: one row, its colour as the left edge, the word, the lead in bold, the points as bullets, the cost in the outcome's colour */
+:root[data-kit~="desk"] .kr-fxs { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+:root[data-kit~="desk"] .kr-fx {
+  display: grid; grid-template-columns: none; gap: 2px; margin: 0; padding: 4px var(--ui-space-2) 5px var(--ui-space-3);
+  border: 0; border-left: 6px solid var(--ui-edge, var(--ui-line)); background: transparent;
+}
+:root[data-kit~="desk"] .kr-fx.hit { background: var(--ui-sunk); }
+:root[data-kit~="desk"] .kr-fx-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--ui-space-2); margin: 0; }
+:root[data-kit~="desk"] .kr-fx-k {
+  flex: none; min-width: 5.4em; padding: 0; background: transparent; color: var(--ui-ink-soft);
+  font: 700 var(--ui-type-label)/1.35 var(--ui-font-text); letter-spacing: .06em; text-transform: uppercase;
+}
+:root[data-kit~="desk"] .kr-fx-lead { min-width: 0; color: var(--ui-ink); font: 700 var(--ui-type-body)/1.35 var(--ui-font-text); letter-spacing: 0; text-transform: none; }
+:root[data-kit~="desk"] .kr-rolled { align-self: center; padding: .1em .6em; }
+:root[data-kit~="desk"] .kr-pts { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; color: var(--ui-ink); font: 400 var(--ui-type-body)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .kr-pts > li { display: block; position: relative; margin: 0; padding: 0 0 0 1em; border: 0; background: transparent; }
+:root[data-kit~="desk"] .kr-pts > li::before { content: ""; position: absolute; left: .2em; top: .62em; width: .32em; height: .32em; border-radius: var(--ui-radius-pill); background: var(--ui-ink-soft); }
+:root[data-kit~="desk"] .kr-pts > li.kr-pt-cost::before { content: none; }
+:root[data-kit~="desk"] .kr-pts b { color: var(--ui-ink); font: 700 var(--ui-type-body)/1.35 var(--ui-font-text); letter-spacing: 0; text-transform: none; }
+:root[data-kit~="desk"] .kr-tail { white-space: nowrap; }
+:root[data-kit~="desk"] .kr-cost {
+  margin-left: var(--ui-space-1); padding: 0 .5em; border: 0; border-radius: var(--ui-radius); vertical-align: 1px;
+  font: 700 var(--ui-type-label)/1.5 var(--ui-font-mono); letter-spacing: 0; text-transform: none;
+}
+:root[data-kit~="desk"] .kr-cost-deal { background: var(--ui-out-deal); color: var(--ui-out-deal-ink); }
+:root[data-kit~="desk"] .kr-cost-mid { background: var(--ui-out-mid); color: var(--ui-out-mid-ink); }
+:root[data-kit~="desk"] .kr-cost-low { background: var(--ui-out-low); color: var(--ui-out-low-ink); }
+:root[data-kit~="desk"] .kr-cost-six { background: var(--ui-out-six); color: var(--ui-out-six-ink); }
+:root[data-kit~="desk"] .kr-cost-crit { background: var(--ui-out-crit); color: var(--ui-out-crit-ink); }
+:root[data-kit~="desk"] .kr-another { justify-self: start; }
+
+/* the line that hit, heading the result card: a Card with the outcome's edge */
+:root[data-kit~="desk"] .kr-hitcard { gap: var(--ui-space-1); padding: var(--ui-space-2) var(--ui-space-3); border: var(--ui-hairline); border-left: 6px solid var(--ui-edge, var(--ui-line)); background: var(--ui-raised); }
+:root[data-kit~="desk"] .kr-hitcard .ui-card-head { flex-direction: row-reverse; justify-content: flex-end; }
+:root[data-kit~="desk"] .kr-hitcard .ui-card-title { font-size: var(--ui-type-lead); }
+:root[data-kit~="desk"] .kr-hitcard .ui-card-body { font-size: var(--ui-type-lead); line-height: 1.35; }
+:root[data-kit~="desk"] .kr-hitcard > .kr-cost { margin-left: 0; }
+
+/* ---------- Focus (F): the position, then the four keys with their edges (the column is 74 px) ---------- */
+:root[data-kit~="desk"] .kr-mini-pos {
+  margin: 0 0 2px; padding: var(--ui-space-2) 2px; border: 0; border-radius: var(--ui-radius); background: var(--ui-ink); color: var(--ui-on-ink); box-shadow: inset 0 -4px 0 var(--ui-accent);
+  display: grid; justify-items: center; gap: 3px; text-align: center;
+}
+:root[data-kit~="desk"] .kr-mini-pos b { max-width: 100%; font: 700 var(--ui-type-label)/1 var(--ui-font-text); letter-spacing: 0; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; }
+:root[data-kit~="desk"] .kr-mini-pos small { max-width: 100%; font: 400 var(--ui-type-label)/1 var(--ui-font-text); letter-spacing: 0; opacity: .85; overflow: hidden; text-overflow: ellipsis; }
+:root[data-kit~="desk"] .kr-mini-pos .gm-mini-up { color: var(--ui-caution); opacity: 1; }
+:root[data-kit~="desk"] .kr-mini-b {
+  flex-direction: column-reverse; gap: 3px; width: 100%; min-height: 54px; padding: 4px 0; border: var(--ui-hairline); border-left: 4px solid var(--ui-edge, var(--ui-line));
+  font-size: var(--ui-type-label); letter-spacing: 0; text-transform: none; white-space: nowrap;
+}
+:root[data-kit~="desk"] .kr-mini-b .ui-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-family: var(--ui-font-cond); letter-spacing: -.02em; }
+:root[data-kit~="desk"] .kr-mini-b .ui-key { font-size: var(--ui-type-lead); border: 0; background: transparent; opacity: 1; }

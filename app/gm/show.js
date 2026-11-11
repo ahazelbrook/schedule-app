@@ -1,6 +1,8 @@
 /* B68Show: the GM's side of the show contract (suite W0.3). Three commands, all through the GM page's own ambient writer (so the gate and the
    hidden-name scan run), and each one idempotent:
-     show(kind, payload, { ms, key, auto }) -> Promise     lay a brief beat over the iPad (stamp, spotted, keyturn, rolodex, title, wanted, ring, spotlight)
+     show(kind, payload, { ms, key, auto, replace }) -> Promise     lay a brief beat over the iPad (stamp, spotted, keyturn, rolodex, title, wanted, ring, spotlight)
+                                                            replace: true (with a key) lays it again under the key's id, in place of what is up
+                                                            (no ifNotOverlay): the roll's result and cost (KS15)
      layer(path, value) -> Promise                          set one lasting layer (band.phase ... data.previously); value null clears that layer
      clear({ layers: false }) -> Promise                    take the beat off, and (unless layers is false) every layer
    IDEMPOTENCE. A command that comes from something with an id of its own (a cue, a beat of the run sheet) passes it as `key`: the overlay id is a
@@ -26,7 +28,8 @@
     keyturn: { ms: 6000, keys: { label: ['s', 60, 1], pc: ['s', 60], to: ['s', 60], crit: ['b'] } },
     title: { ms: 6000, keys: { text: ['s', 80, 1], sub: ['s', 120] } },
     wanted: { ms: 7000, keys: { level: ['i', [0, 4], 1], heat: ['i', [0, 9]], siren: ['b'] } },
-    report: { ms: 180000, keys: { position: ['e', ['controlled', 'risky', 'desperate'], 1], effect: ['e', ['limited', 'standard', 'great'], 1], text: ['s', 100] } },
+    report: { ms: 180000, keys: { position: ['e', ['controlled', 'risky', 'desperate'], 1], effect: ['e', ['limited', 'standard', 'great'], 1], text: ['s', 100],
+      who: ['s', 40], result: ['e', ['clean', '45', '13']], cost: ['s', 60] } },      /* KS15: who, result and cost are optional (the roll as beats) */
     ring: { ms: 5000, keys: { text: ['s', 60] } },
     rolodex: { ms: 10000, keys: { npcIds: ['l', 12, 1] } },
     spotlight: { ms: 8000, keys: { npcId: ['d', 0, 1] } },
@@ -129,7 +132,7 @@
         var ov = overlayFor(kind, payload, { ms: opts && opts.ms, auto: opts && opts.auto, id: id });
         if (!ov) return refuse('That is not a show the iPad can put up.');
         var patch = { overlay: ov };
-        if (key !== null) patch.ifNotOverlay = id;
+        if (key !== null && !(opts && opts.replace === true)) patch.ifNotOverlay = id;      /* KS15: replace lays the key's beat again in place (a result) */
         return send(patch);
       },
       layer: function (path, value) {
