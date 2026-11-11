@@ -58,8 +58,8 @@ const Tabs = require(path.join(ROOT, 'app', 'sheet', 'kit', 'tabs.js'));
   const head = CSS.replace(/\/\*[\s\S]*?\*\//g, '').split('@media')[0];
   check(/@media screen and \(max-width: 760px\)/.test(CSS) && !/data-ks17-off/.test(head), 'the split is in the phone\'s media query only: the wide layout and print hide nothing');
   const code = JS.replace(/\/\*[\s\S]*?\*\//g, '');
-  check(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|createContextualFragment/.test(code) && !/fetch\(|XMLHttpRequest|sendBeacon|WebSocket/.test(code) && !/<button/.test(code) && !/'keydown'/.test(code),
-    'tabs.js: no markup sink, no request, no hand-built button, no key listener of its own');
+  check(!/innerHTML|outerHTML|insertAdjacentHTML|document\.write|createContextualFragment/.test(code) && !/fetch\(|XMLHttpRequest|sendBeacon|WebSocket/.test(code) && !/<button/.test(code) && !/document\.addEventListener/.test(code) && !/Escape|'Esc'/.test(code) && (code.match(/'keydown'/g) || []).length === 1 && /addEventListener\('keydown', busy, true\)/.test(code),
+    'tabs.js: no markup sink, no request, no hand-built button; no document listener, and its one keydown (on the sheet) only drops a held move');
   const seams = TRACKER.split('\n').filter((l) => /B68SheetTabs/.test(l));
   check(seams.length === 1 && /B68Kit\.ready\('phone'\)/.test(seams[0]), 'tracker.js meets it in one line, behind B68Kit.ready(\'phone\')');
   const P = Tabs.Pure;
@@ -216,10 +216,39 @@ try {
   check(!!link && link.href === '#t' && /crew sheet/i.test(link.text) && link.h >= 44, 'Crew: a link to the crew sheet: ' + JSON.stringify(link));
 
   /* ---------- the night starts ---------- */
+  await A.ctx.close();
   const B = await open(), b = B.page;   /* a second phone, left on Crew, open while the GM starts the session */
   await barOn(b); await tap(b, 'crew');
+  /* the guards: a phone typing in Notes, and a phone with a roll open on Sheet, when the session starts */
+  const D = await open(), dd = D.page; await barOn(dd); await tap(dd, 'notes');
+  await dd.click('#dossier .ds-ta[data-path="notes"]'); await dd.keyboard.type(' And a key.');
+  const E = await open(), e = E.page; await barOn(e); await tap(e, 'sheet');
+  await e.click('#dossier .ds-actbox .ds-actbtn[data-a="Finesse"]');
+  await until(() => e.evaluate(() => !!document.querySelector('#dossier .ds-roll')), 4000);
   await must(api('PATCH', '/campaign', { session: { number: 3, startedAt: new Date().toISOString(), endedAt: null } }), 'the night starts');
   check(!!(await until(async () => (await screen(b)) === 'now', 15000)), 'the session starts: an open sheet moves to Now');
+  await until(() => dd.evaluate(() => /session 3/i.test((document.querySelector('#dossier .ds-sessbox') || {}).textContent || '')), 10000);
+  await sleep(1500);
+  const typingNow = await dd.evaluate(() => ({ s: document.querySelector('#dossier').getAttribute('data-ks17-screen'), focus: !!document.activeElement && document.activeElement.matches('.ds-ta[data-path="notes"]') }));
+  check(typingNow.s === 'notes' && typingNow.focus, 'the focus guard: typing in Notes when the session starts, she stays on Notes with her field: ' + JSON.stringify(typingNow));
+  const rollNow = await e.evaluate(() => ({ s: document.querySelector('#dossier').getAttribute('data-ks17-screen'), roll: !!document.querySelector('#dossier .ds-roll') }));
+  check(rollNow.s === 'sheet' && rollNow.roll, 'the panel guard: a roll open on Sheet when the session starts, she stays on Sheet with it: ' + JSON.stringify(rollNow));
+  await e.keyboard.press('Escape'); await sleep(2500);
+  check((await screen(e)) === 'sheet' && !(await e.$('#dossier .ds-roll')), 'closing that roll leaves her on Sheet (the held move is dropped, not made)');
+  await E.ctx.close();
+  /* the reviewer's case: blur, pick Sheet, tap a dot: she stays; and a reload keeps her pick for this session */
+  await dd.evaluate(() => document.activeElement && document.activeElement.blur());
+  await tap(dd, 'sheet'); await sleep(300);
+  const pip = '#dossier .ds-actbox .ds-pip[data-a="Command"][data-n="1"]';
+  await dd.$eval(pip, (p) => p.scrollIntoView({ block: 'center' }));
+  const y0 = await dd.evaluate(() => Math.round(scrollY));
+  await dd.click(pip);
+  await sleep(3000);
+  const kept = await dd.evaluate((a) => ({ s: document.querySelector('#dossier').getAttribute('data-ks17-screen'), y0: a, y: Math.round(scrollY), on: document.querySelector('#dossier .ds-actbox .ds-pip[data-a="Command"][data-n="1"]').classList.contains('on'), mem: localStorage.getItem('b68.sheetTab') }), y0);
+  check(kept.s === 'sheet' && kept.on && kept.y0 > 200 && Math.abs(kept.y - kept.y0) < 60 && /"t":"sheet","k":"play:3"/.test(kept.mem || ''),'after typing through the start: blur, pick Sheet, tap a dot: she stays on Sheet where she was, her pick kept with the session: ' + JSON.stringify(kept));
+  await dd.reload(); await dd.waitForSelector('#dossier .ds-bar'); await barOn(dd);
+  check((await screen(dd)) === 'sheet', 'a reload in the same session opens on her Sheet');
+  await D.ctx.close();
   await B.ctx.close();
   const C = await open(), c = C.page;
   await barOn(c);
@@ -320,7 +349,7 @@ try {
   const gone = await until(() => c.evaluate(() => !document.documentElement.getAttribute('data-kit') && !document.querySelector('.ks17-bar, .ks17-top, .ks17-crew, [data-ks17], [data-ks17-off], [data-ks17-n], [data-ks17-screen]')), 15000);
   v = await view(c);
   check(!!gone && v.boxes.filter((x) => !x.fig).every((x) => x.on), 'kit.phone off mid-session: every mark and every added piece go, the long page is back without a reload');
-  await A.ctx.close(); await C.ctx.close();
+  await C.ctx.close();
 
   check(errors.length === 0, 'no console errors' + (errors.length ? ': ' + errors.slice(0, 4).join(' | ') : ''));
   await browser.close();

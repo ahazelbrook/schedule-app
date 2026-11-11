@@ -19,14 +19,17 @@
    Which screen opens (KS17.3): Now while a session is open at the table (started, not ended: api.table().inPlay), otherwise Sheet; after that, the last
    screen used on this phone. Kept per sheet in localStorage b68.sheetTab ({ <sheet id>: { t: screen, k: 'play:<n>' | 'idle' } }, the last 12), written
    only when a screen is picked. A remembered screen holds while the table is as it was when it was picked; a session that STARTS while the sheet is
-   open moves it to Now (unless a field has the focus or a panel is open: then on a later draw); a session that ends moves nothing.
+   open moves it to Now. If a field has the focus or a panel is open then, the move is held: it is made on a later draw
+   only if she left that field with no tap, key or scroll (the phone keyboard's Done), on a draw within 10 s; a tap, a key, a scroll or a screen she
+   picks drops it, and so does a panel she closes. A session that ends moves nothing.
+   A screen she picks is kept with the table as it is at that moment, so a reload in the same session opens on it.
 
    Turning the setting off mid-session (B68Kit.onChange) takes every mark and every added node away: the sheet is the long page again at once. The
    bundle arriving after the sheet's first draw asks the sheet to draw again (B68Tracker.refresh), which calls apply().
 
    The one seam: tracker.js render() calls apply(root, ctx) after every draw, while B68Kit.ready('phone') and the sheet is live (not a print copy).
      ctx { slots: { name: { anchor, nodes } }, table: { session, inPlay } | null, id: the sheet's id, dots: { action: n }, actions: [[attr, [action…]]] }
-   No request, no markup sink, no new key, no Escape listener. Window.B68SheetTabs, and module.exports under Node (checks/runtime/kit-phone.e2e.mjs
+   No request, no markup sink, no new key, no Escape listener (the root's pointerdown, keydown and focusout capture only drop or time a held move). Window.B68SheetTabs, and module.exports under Node (checks/runtime/kit-phone.e2e.mjs
    reads TABLE against tracker.js's ORDER, and the pure parts). ES5. */
 (function (root, factory) {
   'use strict';
@@ -47,17 +50,17 @@
   };
   /* the order of the grid's boxes on each screen (data-ks17-n; tabs.css turns it into order). '@top' is the top actions. Sheet in play order */
   var PLACE = {
-    now: ['stress', 'keys', 'harm', '@top'],
+    now: ['@top', 'stress', 'keys', 'harm'],
     sheet: ['actions', 'abilities', 'triggers', 'items', 'stacks', 'vice', 'strictures', 'contacts', 'mission', 'figure'],
     crew: ['cohort', 'clocks', 'session', 'downtime'],
     notes: ['memories', 'notes', 'log']
   };
   /* the vitals' boxes (tracker.js jump) and the part each one is */
   var JUMP = { 'ds-stressbox': 'stress', 'ds-harmbox': 'harm', 'ds-xpbox': 'triggers', 'ds-itembox': 'items' };
-  var KEY = 'b68.sheetTab', KEEP = 12, TOP = 4;
+  var KEY = 'b68.sheetTab', KEEP = 12, TOP = 4, HOLD_MS = 10000;
   var WORDS = { 12: 'twelve' };
 
-  var st = { root: null, id: null, tab: null, k: null, ctx: null };
+  var st = { root: null, id: null, tab: null, k: null, ctx: null, pend: false, leftAt: 0 };
 
   function U() { return W && W.B68Ui; }
   function store() { try { return W && W.localStorage ? W.localStorage : null; } catch (e) { return null; } }
@@ -167,14 +170,19 @@
     var a = W.document.activeElement;
     return !!(a && st.root && st.root.contains(a) && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT'));
   }
+  /* the player's pick (a tab, "All twelve", a vital's jump): it cancels a held move to Now, and is kept with the table as it is now */
   function select(tab, user) {
     if (SCREENS.indexOf(tab) < 0 || !st.root || !st.ctx) return;
     var moved = tab !== st.tab;
     st.tab = tab;
-    if (user) remember(st.id, tab, st.k);
+    if (user) { st.pend = false; st.k = tableKey(st.ctx.table); remember(st.id, tab, st.k); }
     paint();
     if (moved && user) { try { W.scrollTo(0, 0); } catch (e) { /* no window to scroll */ } }
   }
+  /* the player is doing something on the sheet (a tap, a key, a scroll): a move to Now that waited for her is dropped, never made later */
+  function busy() { st.pend = false; }
+  /* she left the field she was in (a blur with no tap or key: the phone keyboard's Done): the held move may be made on a draw soon after */
+  function left() { if (st.pend) st.leftAt = Date.now(); }
   function onClick(e) {
     if (!st.ctx) return;
     var t = e.target && e.target.closest ? e.target.closest('[data-ks17-tab], [data-ks17-go], [data-act="jump"]') : null;
@@ -194,6 +202,9 @@
     if (r.__ks17) return;
     r.__ks17 = true;
     r.addEventListener('click', onClick, true);
+    /* only to drop a held move (busy): on the sheet's own root, never on the document, and they answer no key */
+    r.addEventListener('pointerdown', busy, true); r.addEventListener('keydown', busy, true); r.addEventListener('focusout', left, true);
+    if (W.addEventListener) W.addEventListener('scroll', function () { if (st.pend) busy(); }, { passive: true });
     if (typeof U().wireTabs === 'function') U().wireTabs(r);   /* the arrow keys along the bar (one listener per root, added once) */
   }
 
@@ -201,10 +212,21 @@
   function apply(rootEl, ctx) {
     if (!rootEl || !ctx || !W || !W.document || !U()) return;
     var id = ctx.id == null ? '' : String(ctx.id), k = tableKey(ctx.table);
-    if (st.root !== rootEl || st.id !== id || !st.tab) { st.root = rootEl; st.id = id; st.tab = opening(remembered(id), ctx.table); st.k = k; }
+    var calm = !typing() && !rootEl.querySelector('.ds-roll');
+    if (st.root !== rootEl || st.id !== id || !st.tab) { st.root = rootEl; st.id = id; st.tab = opening(remembered(id), ctx.table); st.k = k; st.pend = false; st.leftAt = 0; }
     else if (st.k !== k) {
-      if (k.indexOf('play:') !== 0) st.k = k;                                                       /* a session ended: nothing moves */
-      else if (!typing() && !rootEl.querySelector('.ds-roll')) { st.k = k; st.tab = 'now'; }        /* a session started: Now */
+      /* the table moved. A session that started: Now, at once if she is not typing and no panel is open; else the move is held (pend) */
+      st.k = k; st.pend = false; st.leftAt = 0;
+      var mem = remembered(id);
+      if (mem && mem.k === k) st.tab = mem.t;   /* the table arrived after a reload (a sheet draws before the campaign is in): her pick for this very session */
+      else if (k.indexOf('play:') === 0) { if (calm) st.tab = 'now'; else st.pend = true; }           /* a session that ended moves nothing */
+    }
+    else if (st.pend && calm) {
+      /* held, and now let go. Made only when she left her field without a tap, key or scroll since, and only on a draw within HOLD_MS of
+         that: otherwise dropped, so a held move never lands on her later at some random draw */
+      st.pend = false;
+      if (st.leftAt && Date.now() - st.leftAt <= HOLD_MS) st.tab = 'now';
+      st.leftAt = 0;
     }
     st.ctx = ctx;
     wire(rootEl);
@@ -213,7 +235,7 @@
   }
   /* the setting turned off: every mark and every added node goes */
   function teardown() {
-    var r = st.root; st.ctx = null; st.tab = null; st.k = null;
+    var r = st.root; st.ctx = null; st.tab = null; st.k = null; st.pend = false;
     if (!r) return;
     Array.prototype.forEach.call(r.querySelectorAll('.ks17-bar, .ks17-top, .ks17-crew'), function (n) { if (n.parentNode) n.parentNode.removeChild(n); });
     Array.prototype.forEach.call(r.querySelectorAll('[data-ks17], [data-ks17-off], [data-ks17-n]'), function (n) { n.removeAttribute('data-ks17'); n.removeAttribute('data-ks17-off'); n.removeAttribute('data-ks17-n'); });
