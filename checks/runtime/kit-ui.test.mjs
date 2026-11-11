@@ -30,7 +30,7 @@ const warnings = [];
 console.warn = (...a) => { warnings.push(a.join(' ')); };
 
 const EVIL = '<img src=x onerror=alert(1)>';
-const FNS = ['button', 'seg', 'tabs', 'chip', 'card', 'row', 'field', 'meter', 'key', 'dot', 'link', 'menu'];
+const FNS = ['button', 'seg', 'tabs', 'chip', 'card', 'row', 'field', 'meter', 'key', 'dot', 'link', 'menu', 'bottombar'];   /* bottombar: KS17 */
 
 /* a tiny document: elements with ordered attributes and children, and a serialiser in the same form as the helper's markup */
 const VOID = new Set(['input']);
@@ -604,6 +604,21 @@ test('a stored theme wins on the desk; Paper by default touches no other screen 
   const off = flagPage('#gm');
   off.K.set('desk', false);
   assert.ok(!off.log.some((l) => /data-theme|data-kit-paper/.test(l)), 'kit off: no theme write at all');
+});
+
+/* ---------- the Bottom bar (KS17) ---------- */
+test('the Bottom bar: a nav round one tab row, the one shown selected, the hooks on the nav; fixed sits clear of the home indicator', () => {
+  const items = [{ label: 'Now', value: 'now' }, { label: 'Sheet', value: 'sheet' }, { label: 'Crew', value: 'crew' }, { label: 'Notes', value: 'notes' }];
+  const html = U.bottombar({ label: 'Sheet screens', value: 'crew', items, fixed: true, id: 'ks-bar', cls: 'ks17-bar', data: { ks17: 'bar' } });
+  assert.ok(/^<nav class="ui-bottombar ui-bottombar--fixed ks17-bar" id="ks-bar" data-ks17="bar" aria-label="Sheet screens"><div class="ui-tabs ui-bottombar-tabs" role="tablist">/.test(html), html);
+  const sel = [...html.matchAll(/aria-selected="(true|false)"/g)].map((m) => m[1]);
+  assert.deepEqual(sel, ['false', 'false', 'true', 'false'], 'Crew is the one shown');
+  assert.equal((html.match(/tabindex="0"/g) || []).length, 1, 'one tab in the tab order (the roving tabindex)');
+  assert.ok(!U.bottombar({ items }).includes('ui-bottombar--fixed'), 'in the flow unless asked (the look book)');
+  const css = PARTS_CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.ok(/\.ui-bottombar--fixed\s*\{[^}]*position:\s*fixed[^}]*bottom:\s*0[^}]*padding-bottom:\s*env\(safe-area-inset-bottom/.test(css), 'fixed to the foot, padded by the safe area');
+  assert.ok(/\.ui-bottombar \.ui-tab\s*\{[^}]*min-height:\s*48px/.test(css), 'each screen is a 44 px target or more');
+  assert.ok(/\.ui-bottombar\[hidden\]/.test(css), 'hidden stays hidden');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

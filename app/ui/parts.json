@@ -709,6 +709,73 @@
           }
         }
       ]
+    },
+    {
+      "name": "Bottom bar",
+      "fn": "bottombar",
+      "class": "ui-bottombar",
+      "variants": [
+        "fixed"
+      ],
+      "states": [
+        "hover",
+        "focus-visible",
+        "pressed"
+      ],
+      "do": "A phone's few screens, one word each, the one shown marked. Fixed to the foot, clear of the home indicator.",
+      "dont": "More than five places. An action in the bar: it only moves between screens.",
+      "examples": [
+        {
+          "caption": "Now",
+          "opts": {
+            "label": "Sheet screens",
+            "value": "now",
+            "items": [
+              {
+                "label": "Now",
+                "value": "now"
+              },
+              {
+                "label": "Sheet",
+                "value": "sheet"
+              },
+              {
+                "label": "Crew",
+                "value": "crew"
+              },
+              {
+                "label": "Notes",
+                "value": "notes"
+              }
+            ]
+          }
+        },
+        {
+          "caption": "Notes",
+          "opts": {
+            "label": "Sheet screens",
+            "value": "notes",
+            "items": [
+              {
+                "label": "Now",
+                "value": "now"
+              },
+              {
+                "label": "Sheet",
+                "value": "sheet"
+              },
+              {
+                "label": "Crew",
+                "value": "crew"
+              },
+              {
+                "label": "Notes",
+                "value": "notes"
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }
