@@ -1,1 +1,47 @@
-/* display/kit/roll.css: the new stage: the roll as beats (kit.stage). Registered as an empty stub by KS01.1 of the kit and stage build; KS15 fills it. In the kit-stage and kit-lookbook bundles, fetched only while its setting is on. */
+/* display/kit/roll.css: the new stage: the roll as beats (KS15, S4), behind the setting kit.stage. In the kit-stage and kit-lookbook bundles:
+   fetched only while the setting is on. Unlayered, every rule under :root[data-kit~="stage"] and on markup only display/kit/roll.js draws
+   (ks15-*), no important flags. The beat keeps the old hooks (dp-show dp-show-report, data-show="report"); this sheet gives it the stage's
+   look instead of the old card's (the old sheets are layered, so these rules win). Sizes in vh: every line at least 3.3% of the screen's
+   height. Colours are the kit's tokens: an outcome colour for an outcome alone, always with its words. */
+
+/* the beat: full frame, see-through, the plate in the lower third (where the frame's own lower plate sits) */
+:root[data-kit~="stage"] .ks15-beat.dp-show { display: block; background: transparent; gap: 0; text-align: left; pointer-events: none; }
+:root[data-kit~="stage"] .ks15-beat[hidden] { display: none; }
+:root[data-kit~="stage"] .ks15-lower { position: absolute; left: 5vw; right: 5vw; bottom: 5vh; display: flex; align-items: flex-end; }
+:root[data-kit~="stage"] .ks15-lower .stage-plate { width: 100%; }
+:root[data-kit~="stage"] .ks15-beat[data-ks15-beat="stakes"] .stage-plate-title { color: var(--stage-kick); }
+:root[data-kit~="stage"] .ks15-beat[data-ks15-beat="cost"] .stage-plate-title { font-size: 5.4vh; }
+/* the side block: the position big, the effect under it */
+:root[data-kit~="stage"] .ks15-plate .stage-plate-side { align-content: center; gap: 1.4vh; text-align: center; }
+:root[data-kit~="stage"] .ks15-eff { display: block; font: 800 3.6vh/1 var(--ui-font-cond); letter-spacing: .14em; text-transform: uppercase; }
+
+/* the result: a rubber stamp, slammed once, in the outcome's colour with its words */
+:root[data-kit~="stage"] .ks15-slam {
+  position: absolute; left: 50%; top: 38%; box-sizing: border-box; max-width: 86vw; padding: 2.4vh 4vw;
+  transform: translate(-50%, -50%) rotate(-5deg); background: var(--ui-edge); color: var(--ui-ink);
+  outline: .7vh solid var(--ui-edge); outline-offset: .9vh; box-shadow: 0 0 0 .9vh light-dark(var(--ui-raised), var(--ui-sunk));
+}
+:root[data-kit~="stage"] .ks15-slam[data-ks15-result="clean"] { color: var(--ui-out-six-ink); }
+:root[data-kit~="stage"] .ks15-slam[data-ks15-result="45"] { color: var(--ui-out-mid-ink); }
+:root[data-kit~="stage"] .ks15-slam[data-ks15-result="13"] { color: var(--ui-out-low-ink); }
+:root[data-kit~="stage"] .ks15-slam-word { margin: 0; font: 900 9vh/1.02 var(--ui-font-poster); letter-spacing: .02em; text-transform: uppercase; text-align: center; overflow-wrap: normal; }
+:root[data-kit~="stage"] .ks15-beat:not([data-reduced]) .ks15-slam:not([data-ks15-still]) { animation: ks15-slam 260ms cubic-bezier(.2, 1.3, .4, 1) both; }
+@keyframes ks15-slam {
+  from { transform: translate(-50%, -50%) rotate(-11deg) scale(1.9); opacity: 0; }
+  to { transform: translate(-50%, -50%) rotate(-5deg) scale(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-kit~="stage"] .ks15-beat .ks15-slam { animation: none; }
+}
+/* portrait: the stamp sits higher, so it never meets the plate */
+@media (orientation: portrait) {
+  :root[data-kit~="stage"] .ks15-slam { top: 34%; }
+  :root[data-kit~="stage"] .ks15-slam-word { font-size: 6.4vh; }
+}
+
+/* the last roll, in the idle stage's foot-left place (stage.css hides it while an overlay is up) */
+:root[data-kit~="stage"] .ks15-chip.ui-card {
+  display: block; margin: 0; padding: 1.4vh 2.4vw; border: 0; border-left: 1.4vh solid var(--ui-edge); border-radius: 0;
+  background: light-dark(var(--ui-raised), var(--ui-sunk)); color: var(--ui-ink); box-shadow: none;
+}
+:root[data-kit~="stage"] .ks15-chip .ui-card-body { margin: 0; color: var(--ui-ink); font: 800 3.4vh/1.15 var(--ui-font-cond); letter-spacing: .1em; text-transform: uppercase; }

@@ -43,6 +43,7 @@
       return out;
     },
     render: function (p, env) {
+      var K = root.B68StageRoll; if (K && K.on()) { var kn = K.render(p, env); if (kn) return kn; }      /* KS15 (kit.stage): the roll as beats */
       var doc = env.document || root.document;
       var n = el(doc, 'div', 'dp-show dp-show-report dp-pos-' + p.position);
       n.setAttribute('data-show', 'report');
