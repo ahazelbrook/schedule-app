@@ -96,6 +96,7 @@ async function pass(port, kit) {
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   const api = (p) => fetch(demo.base + '/api' + p, { headers: { 'X-Dev-User': GM } }).then((r) => r.json().catch(() => null), () => null);
   const server = async () => ({ state: await api('/gm/state'), ambient: await api('/gm/ambient'), display: await api('/gm/display'), campaign: await api('/campaign') });
+  await fetch(demo.base + '/api/gm/stt', { method: 'PATCH', headers: { 'X-Dev-User': GM, 'Content-Type': 'application/json' }, body: '{"want":"on"}' });      /* Blade's tick runs while Listening is wanted */
   const res = [];
   try {
     for (const h of hits) {

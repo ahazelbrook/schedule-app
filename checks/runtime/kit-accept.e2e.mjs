@@ -147,6 +147,7 @@ try {
     /* the panel too, with cards */
     await c.close();
   }
+  await api('PATCH', '/gm/stt', { want: 'on' });      /* Blade's tick runs while Listening is wanted */
   let tickReply = CARDS.slice();
   {
     const { c, page } = await open('#gm', GM, 1366, 768, async (p) => {
