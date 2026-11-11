@@ -1722,7 +1722,7 @@
     mountAssist();
     layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack(); apMount(); mountMission(); mountNight(); b09Mount(); csMount(); b17Mount();
     placesMount();      /* N1b: the place and its view, once the panes are drawn and the night controller is there */
-    who();      /* KS12 (night.who): the roster's reader, in whatever place the page opens (nothing while the setting is off) */
+    who(); whoPolaroids();      /* KS12 (night.who): the roster's reader, in whatever place the page opens (nothing while the setting is off); a stored polaroid list read already */
     /* listening: every 5 s while the iPad tab is open, every 15 s otherwise (the top bar shows it) */
     if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden) { if (S.panel === 'ipad' || n2 % 3 === 0) loadStt(); renderBeat(); } }, 5000); }
     if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
@@ -2885,11 +2885,11 @@
   /* KS12.5: the score scenes' polaroids (ambient `polaroids`, KS12-contract): the playing characters while a session is open; null otherwise,
      and null once from a page with the setting off that finds a list (it can only be there from a night with it on) */
   function whoPolaroids() {
-    var g = gmApi(), Wh = W.B68GmWho; if (!S || S.status !== 'ready' || !g || typeof g.patchAmbient !== 'function') return;
-    var have = isObj(AM.doc) && Array.isArray(AM.doc.polaroids) ? AM.doc.polaroids : null, want = null;
+    var g = gmApi(), Wh = W.B68GmWho; if (!S || S.status !== 'ready' || !g || typeof g.patchAmbient !== 'function' || !isObj(AM.doc)) return;      /* the ambient not read yet: its first look calls again */
+    var have = Array.isArray(AM.doc.polaroids) ? AM.doc.polaroids : null, want = null;
     if (!S.who) { if (!have || whoOn()) return; }      /* off: only a stored list is cleared (on, with the bundle still coming: wait for it) */
     else if (Wh && Wh.isOpen(camp)) { want = Wh.polaroidsOf(herePcs().map(function (c) { return { name: pcName(c), alias: str(c.alias) }; })); if (!want.length) want = null; }
-    if (want === null && !have) return;      /* nothing wanted and none stored (or the ambient not read yet: its first look calls again) */
+    if (want === null && !have) return;      /* nothing wanted and none stored */
     var k = JSON.stringify(want); if (k === JSON.stringify(have) || k === S.polSent) return;
     var me = S; S.polSent = k;
     Promise.resolve().then(function () { return g.patchAmbient({ polaroids: want }); }).then(function (r) { if (S === me && adoptAmbient(r)) renderIpad(); }, function () { if (S === me) S.polSent = ''; });
@@ -4586,6 +4586,7 @@
     var fl0 = ipadLayerSet('scene.filter') ? ipadLayers().scene.filter : null;
     AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null; AM.loaded = true; AM.error = '';
     apSync(); hsSync();
+    if (Array.isArray(r.doc.polaroids) || (S && S.who)) whoPolaroids();      /* KS12.5: a stored list follows the session (or goes, with night.who off), whichever read lands first */
     /* F4: the site's Flashback / Back follows a filter it learns of here (a reload mid-flashback draws the toolbar before this GET lands) */
     if ((ipadLayerSet('scene.filter') ? ipadLayers().scene.filter : null) !== fl0 && S) { var fb = S.b19 && S.b19.flashback; if (fb && typeof fb.refresh === 'function') fb.refresh(); else siteChanged(); }
     return true;

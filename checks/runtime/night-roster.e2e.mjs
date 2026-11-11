@@ -100,7 +100,7 @@ try {
   check((await api('PATCH', '/gm/state', { features: { 'night.who': true, phoneCards: true }, cards: { location: { hid: 'h_who', auth: SITE, label: SITE + ' · Nowhere Ward', at: NOW } } })).status === 200, 'night.who and phone cards are on');
 
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
-  const errors = [];
+  const errors = [], ambPatches = [];      /* every PATCH /api/gm/ambient body a GM page sends */
   async function open(w = 1366, h = 768, theme = '', place = 'before') {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: w, height: h }, serviceWorkers: 'block', acceptDownloads: true, colorScheme: theme === 'night' ? 'dark' : 'light' });
     await c.addInitScript(atPlace(place));
@@ -110,6 +110,7 @@ try {
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
+    page.on('request', (r) => { if (r.method() === 'PATCH' && r.url().includes('/api/gm/ambient')) { try { ambPatches.push(JSON.parse(r.postData() || '{}')); } catch (e) { /* not json */ } } });
     page.on('dialog', (d) => d.accept());
     await page.goto(BASE + '/#gm');
     await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
@@ -315,6 +316,40 @@ try {
   check(!!m4 && JSON.stringify(cardIds(m4)) === '["ch-nell","ch-ray","ch-tam"]', 'off: the iPad\'s crew and the cards are all three, as today: ' + JSON.stringify(hudNames(m4)));
   await O.c.close();
   await I.close();
+
+  /* ---- 11. never stale (review of #212): a stored polaroid list goes when the page loads with the setting off, or on with the session ended,
+     in a polaroids-only PATCH; a reload mid-session sends nothing when the stored list is already right ---- */
+  const LEFT = [{ id: 'nell', cap: 'Left over' }, { id: 'tam', cap: 'Left over too' }];
+  const polOnly = () => ambPatches.filter((b) => 'polaroids' in b);
+  const storedPol = async () => { const a = await ambient(); return Array.isArray(a.polaroids) ? a.polaroids : null; };
+  for (const [label, setup] of [
+    ['setting off', async () => { await api('PATCH', '/gm/state', { features: { 'night.who': false } }); }],
+    ['setting on, the session ended (as an older release ends it)', async () => { await api('PATCH', '/gm/state', { features: { 'night.who': true } });
+      await api('PATCH', '/campaign', { session: { number: 5, startedAt: d1.session.startedAt, endedAt: new Date().toISOString() } }); }]]) {
+    await setup();
+    check((await api('PATCH', '/gm/ambient', { polaroids: LEFT })).status === 200 && JSON.stringify(await storedPol()) === JSON.stringify(LEFT), label + ': a list is left stored');
+    ambPatches.length = 0;
+    for (const place of ['before', 'score']) {
+      if (place === 'score') check((await api('PATCH', '/gm/ambient', { polaroids: LEFT })).status === 200, label + ': and stored again');
+      ambPatches.length = 0;
+      const P = await open(1366, 768, '', place);
+      const gone = await until(async () => (await storedPol()) === null, 12000, 300);
+      check(!!gone && polOnly().length >= 1 && polOnly().every((b) => Object.keys(b).join() === 'polaroids' && b.polaroids === null), label + ', a load in ' + place + ': the page clears it, in a polaroids-only PATCH: ' + JSON.stringify(polOnly()));
+      await P.c.close();
+    }
+  }
+  /* on, the session open again with Nell and Ray: the stored list is already the right one, so a reload sends no polaroids PATCH */
+  await api('PATCH', '/campaign', { session: { number: 5, startedAt: d1.session.startedAt, endedAt: null } });
+  const RIGHT = [{ id: 'nell', cap: 'Nell Arbuthnot' }, { id: 'ray', cap: 'Ray Okonjo' }];
+  check((await api('PATCH', '/gm/ambient', { polaroids: RIGHT })).status === 200, 'the session open again; the right list stored');
+  for (let i = 0; i < 2; i++) {
+    ambPatches.length = 0;
+    const P = await open(1366, 768, '', 'score');
+    await P.page.waitForSelector('#gm-bar-who', { timeout: 15000 });
+    await sleep(5000);
+    check(polOnly().length === 0 && JSON.stringify(await storedPol()) === JSON.stringify(RIGHT), 'a reload mid-session (' + (i + 1) + ' of 2) re-sends no polaroids: ' + JSON.stringify(polOnly()));
+    await P.c.close();
+  }
 
   check(errors.length === 0, 'no console errors: ' + JSON.stringify(errors.slice(0, 3)));
   await browser.close();
