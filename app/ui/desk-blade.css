@@ -1,1 +1,68 @@
-/* ui/desk-blade.css: the new desk: the Blade panel (kit.desk). Registered as an empty stub by KS01.1 of the kit and stage build; KS07 fills it. In the kit-desk bundle, fetched only while its setting is on. */
+/* ui/desk-blade.css: the new desk's Blade panel (kit.desk, KS07 of the kit and stage build; gm/kit/blade.js draws it). In the kit-desk bundle,
+   fetched only while the setting is on. Unlayered (the old sheets sit in layer old while the kit is on); no important flags. Every rule is under
+   :root[data-kit~="desk"] and names a kbl- class, which only the kit puts on the page (on its own cards, and on the panel's body, feed, list, Ask
+   and Tools while the desk is on), so with the kit off nothing here can match.
+   Alex, 07/11: "the text is too big so could only see one card". Folded, a card is two lines at 14 px; open, everything reads at 14 px. */
+
+/* the body: the feed first, then the Tools drawer, then Ask at the foot */
+:root[data-kit~="desk"] .kbl-feed { order: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-content: start; align-items: start; gap: var(--ui-space-2); }
+:root[data-kit~="desk"] .kbl-list { grid-column: 1 / -1; gap: 6px; }
+:root[data-kit~="desk"] .kbl-clear { min-height: 32px; padding: 0 var(--ui-space-2); font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .kbl-tools { order: 2; }
+:root[data-kit~="desk"] .kbl-ask { order: 3; border-bottom: 0; border-top: var(--ui-hairline); }
+
+/* the card: a Card with its kind as the colour edge */
+:root[data-kit~="desk"] .kbl-card {
+  display: flex; flex-direction: column; gap: 0; min-width: 0; max-height: calc(var(--as-h, 100vh) - 24px); padding: 0;
+  border: var(--ui-hairline); border-left: 4px solid var(--ui-edge, var(--ui-line)); border-radius: var(--ui-radius);
+  background: var(--ui-raised); color: var(--ui-ink); font: 400 var(--ui-type-body)/1.35 var(--ui-font-text);
+  opacity: 1; transition: opacity var(--ui-motion-base) var(--ui-ease);
+}
+/* the last seconds of an idea's 90: it dims (a cut under reduced motion); the pointer or the focus on it brings it back */
+:root[data-kit~="desk"] .kbl-card[data-kbl-fading] { opacity: .45; transition: opacity 8s linear; }
+:root[data-kit~="desk"] .kbl-card[data-kbl-fading]:hover, :root[data-kit~="desk"] .kbl-card[data-kbl-fading]:focus-within { opacity: 1; transition: opacity var(--ui-motion-quick) var(--ui-ease); }
+@media (prefers-reduced-motion: reduce) {
+  :root[data-kit~="desk"] .kbl-card, :root[data-kit~="desk"] .kbl-card[data-kbl-fading] { transition: none; }
+}
+
+/* folded: the kind's word and the headline, two lines; the time; Pin and X beside */
+:root[data-kit~="desk"] .kbl-head { display: flex; align-items: flex-start; gap: 0; min-width: 0; }
+:root[data-kit~="desk"] .kbl-fold {
+  flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--ui-space-2); align-items: start; justify-content: stretch;
+  box-sizing: border-box; width: auto; height: auto; min-height: 0; margin: 0; padding: 7px var(--ui-space-1) 7px var(--ui-space-3);
+  border: 0; border-radius: 0; background: transparent; color: var(--ui-ink); box-shadow: none; transform: none;
+  font: 400 var(--ui-type-body)/1.35 var(--ui-font-text); letter-spacing: 0; text-transform: none; text-align: left; white-space: normal;
+}
+:root[data-kit~="desk"] .kbl-fold:hover, :root[data-kit~="desk"] .kbl-fold:active { background: var(--ui-sunk); color: var(--ui-ink); border-color: transparent; box-shadow: none; transform: none; }
+:root[data-kit~="desk"] .kbl-fold:focus-visible { outline: var(--ui-focus-ring); outline-offset: -2px; }
+:root[data-kit~="desk"] .kbl-line { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; min-width: 0; overflow-wrap: anywhere; }
+:root[data-kit~="desk"] .kbl-card[data-open="1"] .kbl-line { display: block; -webkit-line-clamp: none; line-clamp: none; overflow: visible; }
+:root[data-kit~="desk"] .kbl-kind { display: inline; margin: 0 6px 0 0; padding: 0; background: none; color: var(--ui-ink-soft); }
+:root[data-kit~="desk"] .kbl-kind b { font: 700 var(--ui-type-label)/1 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase; }
+:root[data-kit~="desk"] .kbl-kind .as-glyph { display: none; }
+:root[data-kit~="desk"] .kbl-card[data-kind="rule"] .kbl-kind { color: var(--ui-rules); }
+:root[data-kit~="desk"] .kbl-card[data-kind="warn"] .kbl-kind { color: var(--ui-alarm); }
+:root[data-kit~="desk"] .kbl-text { display: inline; margin: 0; overflow: visible; white-space: normal; text-overflow: clip; font: 400 var(--ui-type-body)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .kbl-card[data-open="1"] .kbl-text { font-weight: 700; }
+:root[data-kit~="desk"] .kbl-time { padding-top: 2px; color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.4 var(--ui-font-mono); white-space: nowrap; }
+:root[data-kit~="desk"] .kbl-side { flex: 0 0 auto; display: flex; align-items: center; gap: 0; padding: 2px 2px 0 0; }
+:root[data-kit~="desk"] .kbl-pin { min-height: 28px; padding: 0 var(--ui-space-2); font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .kbl-x { min-width: 32px; min-height: 32px; padding: 0; color: var(--ui-ink-soft); font: 400 20px/1 var(--ui-font-text); letter-spacing: 0; }
+:root[data-kit~="desk"] .kbl-x:hover { color: var(--ui-ink); }
+
+/* open: the whole card, in place, at 14 px; it scrolls inside itself when it is taller than the panel */
+:root[data-kit~="desk"] .kbl-more { display: grid; gap: var(--ui-space-2); align-content: start; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 var(--ui-space-3) var(--ui-space-3); }
+:root[data-kit~="desk"] .kbl-card[data-open="0"] .kbl-more { display: none; }
+:root[data-kit~="desk"] .kbl-meta { margin: 0; color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.4 var(--ui-font-text); overflow-wrap: anywhere; }
+:root[data-kit~="desk"] .kbl-bullets { margin: 0; padding-left: 18px; display: grid; gap: 2px; font: 400 var(--ui-type-body)/1.4 var(--ui-font-text); overflow-wrap: anywhere; }
+:root[data-kit~="desk"] .kbl-say, :root[data-kit~="desk"] .kbl-secret, :root[data-kit~="desk"] .kbl-boxed { display: grid; gap: 2px; padding: 6px var(--ui-space-2); color: var(--ui-ink); overflow-wrap: anywhere; }
+:root[data-kit~="desk"] .kbl-say { border: 0; border-left: 3px solid var(--ui-accent); background: var(--ui-sunk); }
+:root[data-kit~="desk"] .kbl-secret { border: 1px dashed var(--ui-ink-faint); background: transparent; }
+:root[data-kit~="desk"] .kbl-boxed { border: var(--ui-hairline); background: var(--ui-surface); }
+:root[data-kit~="desk"] .kbl-band { color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase; }
+:root[data-kit~="desk"] .kbl-band-text { margin: 0; font: 400 var(--ui-type-body)/1.4 var(--ui-font-text); white-space: pre-wrap; }
+:root[data-kit~="desk"] .kbl-pre { margin: 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 400 var(--ui-type-body)/1.4 var(--ui-font-text); }
+:root[data-kit~="desk"] .kbl-chips { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); align-items: center; }
+:root[data-kit~="desk"] .kbl-detail { max-height: calc(var(--as-h, 100vh) * .4); overflow-y: auto; overscroll-behavior: contain; padding: 6px 0 0; border-top: var(--ui-hairline); font: 400 var(--ui-type-body)/1.45 var(--ui-font-text); overflow-wrap: anywhere; }
+:root[data-kit~="desk"] .kbl-plain { white-space: pre-wrap; }
+:root[data-kit~="desk"] .kbl-acts { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); align-items: center; }
