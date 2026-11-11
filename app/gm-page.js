@@ -1722,6 +1722,7 @@
     mountAssist();
     layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack(); apMount(); mountMission(); mountNight(); b09Mount(); csMount(); b17Mount();
     placesMount();      /* N1b: the place and its view, once the panes are drawn and the night controller is there */
+    who();      /* KS12 (night.who): the roster's reader, in whatever place the page opens (nothing while the setting is off) */
     /* listening: every 5 s while the iPad tab is open, every 15 s otherwise (the top bar shows it) */
     if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden) { if (S.panel === 'ipad' || n2 % 3 === 0) loadStt(); renderBeat(); } }, 5000); }
     if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
@@ -2594,6 +2595,7 @@
   function renderBar() {
     if (!S || !S.root) return;
     renderMirror(); spineTick(); b17Tick(); csTick(); if (S.st) S.st.sync();
+    if (S.status === 'ready' && who()) S.who.paint(null);      /* KS12.7 (night.who): the band's who chip, and the reader made when the setting turns on */
     if (W.B68Kit && S.status === 'ready') W.B68Kit.set('desk', !!(W.B68Features && W.B68Features.valueOf(S.doc, 'kit.desk')));      /* the kit and stage build (KS01.2): data-kit="desk" follows the setting, at once (ui/kit-flag.js) */
     if (S.status === 'ready' && W.B68Features) { var pOn = !!W.B68Features.valueOf(S.doc, 'blade.pitches'); if (W.B68Pitches) W.B68Pitches.set(gmApi(), pOn); else if (pOn && W.B68Load) W.B68Load.need('blade-pitches').then(function () { if (W.B68Pitches && S && S.status === 'ready') W.B68Pitches.set(gmApi(), !!W.B68Features.valueOf(S.doc, 'blade.pitches')); }, function () {}); }      /* blade.pitches (KS18): the blade-pitches bundle while it is on; B68Pitches (gm/kit/blade.js) adds the pitch fields to the tick, and takes them off when it turns off */
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
@@ -2825,7 +2827,7 @@
      The host the controller works through. The names the band calls (goPlace, openView, callAftermath, currentPlace, currentView) are with the band's
      host above: they go to S.places and redraw the band. The page's night controller enters a phase exactly as the rail does; the panes are shown by paneShow. */
   function placesPhase() { var nt = S && S.night; if (nt) return nt.phase(); var N = W.B68GmNight; return N && S && S.doc ? N.clean(S.doc.night).phase : ''; }
-  function placesSync() { if (S && S.places && S.status === 'ready') S.places.sync(); }
+  function placesSync() { if (S && S.places && S.status === 'ready') S.places.sync(); if (S && S.status === 'ready') who(); }      /* KS12: the roster's reader is made in every place, not only where Before's lead is drawn */
   function placesHost() {
     var me = S;
     return {
@@ -2869,7 +2871,7 @@
   function who() {
     if (!whoOn()) { if (S && S.who) { S.who.destroy(); S.who = null; } return null; }
     if (!W.B68GmWho) { if (!S.whoAsked && W.B68Load && W.B68Load.need) { S.whoAsked = true; var me = S; W.B68Load.need('night-who').then(function () { if (S === me) placesSync(); }, function () { if (S === me) S.whoAsked = false; }); } return null; }
-    if (!S.who) { S.who = W.B68GmWho.create(whoHost()); S.whoPcSig = ''; S.who.onChange(whoFlow); W.setTimeout(whoPolaroids, 0); }      /* KS12: the roster's readers follow it */
+    if (!S.who) { S.who = W.B68GmWho.create(whoHost()); S.whoPcSig = ''; S.who.onChange(whoFlow); var me = S; W.setTimeout(function () { if (S === me && S.who) { S.who.paint(S.root); whoPolaroids(); } }, 0); }      /* KS12: the roster's readers follow it */
     return S.who;
   }
   /* KS12 (night.who): who is playing changed (a Start, a late arrival, a player let go): the Roll's Who chips, the iPad's crew and faces, the cards and
@@ -6241,7 +6243,7 @@
     runFoldMoves();         /* a phone's move request rides on the characters */
     keyturnSync();          /* a turned key (suite 1.8, switch spine.keyturn) */
     pcStatusSync();         /* the band's PC faces (suite 3.7, switch face.pcstatus) */
-    if (S.who) { var whoSig = JSON.stringify(dtPcs().map(function (c) { return [str(c.id), pcName(c), str(c.owner), str(c.alias)]; })); if (whoSig !== S.whoPcSig) { S.whoPcSig = whoSig; S.who.paint(S.root); whoPolaroids(); } }      /* KS11/KS12.0 (night.who): only when who is filed changed, not every poll */
+    if (who()) { var whoSig = JSON.stringify(dtPcs().map(function (c) { return [str(c.id), pcName(c), str(c.owner), str(c.alias)]; })); if (whoSig !== S.whoPcSig) { S.whoPcSig = whoSig; S.who.paint(S.root); whoPolaroids(); } }      /* KS11/KS12.0 (night.who): only when who is filed changed, not every poll */
     if (JSON.stringify(dtPcs()) === S.dtPcSig) return;
     runStale();
     if (S.mission) S.mission.changed();         /* a card carries its PC's name and owner */
@@ -7828,7 +7830,7 @@
     camp = isObj(doc) ? doc : null;
     if (S && S.status === 'ready') {
       renderRail(); renderBar(); scMaybeRedraw(); runStale();
-      if (S.who) { S.who.paint(S.root); whoPolaroids(); }      /* KS11 (night.who): Before's lead and After's line follow the session; KS12.5: End clears the polaroids */
+      if (who()) { S.who.paint(S.root); whoPolaroids(); }      /* KS11 (night.who): Before's lead and After's line follow the session; KS12.5: End clears the polaroids */
       apClocksFeed(); apSubjects();
       if (S.mission) S.mission.noteClocks();      /* the alarm clock's fill or visibility is on the players' band */
       { var stc = setInst(); if (stc) stc.heal(); }      /* W0.2 / N0: the campaign document's copy of the settings follows the GM state's, on every arrival */
