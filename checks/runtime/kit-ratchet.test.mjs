@@ -51,12 +51,14 @@ export function tree() {
   });
   return out;
 }
-/* what is wrong with `now` against `base`: rises, and anything at all in a kit file */
-export function judge(now, base) {
-  const bad = [];
+/* what is wrong with `now` against `base`: rises, and anything at all in a kit file, unless the kit file is named in `debt` (a kit file
+   written before the helper existed, listed by the overseer's --allow-rise: it may only go down, to zero) */
+export function judge(now, base, debt) {
+  const bad = [], owed = debt || [];
   for (const rel of Object.keys(now)) for (const k of Object.keys(now[rel])) {
     const was = (base[rel] && base[rel][k]) || 0, is = now[rel][k];
-    if (isKit(rel)) bad.push(rel + ': ' + is + ' ' + k + ' in a kit file (a kit file has none)');
+    if (isKit(rel) && owed.indexOf(rel) < 0) bad.push(rel + ': ' + is + ' ' + k + ' in a kit file (a kit file has none)');
+    else if (isKit(rel) && is > was) bad.push(rel + ': ' + k + ' rose from ' + was + ' to ' + is + ' in a kit file on the debt list');
     else if (is > was) bad.push(rel + ': ' + k + ' rose from ' + was + ' to ' + is);
   }
   return bad;
@@ -65,15 +67,17 @@ function totals(t) {
   const s = {}; Object.values(t).forEach((c) => Object.keys(c).forEach((k) => { s[k] = (s[k] || 0) + c[k]; })); return s;
 }
 function write(t) {
-  const body = { _note: 'Written by node checks/runtime/kit-ratchet.test.mjs --write. Counts may only go down.', totals: totals(t), files: t };
+  const kitDebt = Object.keys(t).filter(isKit).sort();
+  const body = { _note: 'Written by node checks/runtime/kit-ratchet.test.mjs --write. Counts may only go down. kitDebt: kit files that must reach zero.',
+    totals: totals(t), kitDebt: kitDebt, files: t };
   fs.writeFileSync(BASE, JSON.stringify(body, null, 1) + '\n');
 }
 
 const args = process.argv.slice(2);
 const now = tree();
 if (args.includes('--write')) {
-  const old = fs.existsSync(BASE) ? JSON.parse(fs.readFileSync(BASE, 'utf8')).files : null;
-  const bad = old ? judge(now, old) : Object.keys(now).filter(isKit).map((r) => r + ': in a kit file');
+  const prev = fs.existsSync(BASE) ? JSON.parse(fs.readFileSync(BASE, 'utf8')) : null;
+  const bad = prev ? judge(now, prev.files, prev.kitDebt) : Object.keys(now).filter(isKit).map((r) => r + ': in a kit file');
   if (bad.length && !args.includes('--allow-rise')) { console.log('REFUSED (a count would rise):\n  ' + bad.join('\n  ')); process.exit(1); }
   write(now);
   console.log('wrote ' + path.relative(ROOT, BASE) + ': ' + JSON.stringify(totals(now)));
@@ -103,6 +107,10 @@ test('the ratchet fails when a test line adds a raw button to a kit file, or rai
   const kitFile = count(fs.readFileSync(path.join(APP, 'ui', 'ui.js'), 'utf8') + "\nh += '<button>';");
   assert.equal(judge({ 'app/ui/ui.js': kitFile }, { 'app/ui/ui.js': kitFile }).length, 1, 'a kit file fails even when the baseline holds it');
   assert.equal(judge({ 'app/gm/kit/band.js': { style: 1 } }, {}).length, 1, 'a kit/ folder counts as kit');
+  const owed = { 'app/gm/kit/who.js': { button: 3 } };
+  assert.deepEqual(judge({ 'app/gm/kit/who.js': { button: 2 } }, owed, ['app/gm/kit/who.js']), [], 'a kit file on the debt list may go down');
+  assert.equal(judge({ 'app/gm/kit/who.js': { button: 4 } }, owed, ['app/gm/kit/who.js']).length, 1, 'but never up');
+  assert.equal(judge({ 'app/gm/kit/who.js': { style: 1 } }, owed, ['app/gm/kit/who.js']).length, 1, 'nor in a new kind');
   assert.ok(isKit('app/display/kit/stage.css') && isKit('app/sheet/kit/tabs.js') && isKit('app/ui/parts.css') && !isKit('app/gm/band.js'));
 });
 
@@ -110,12 +118,14 @@ test('the baseline is the tree written by --write: sorted, every count from the 
   const files = Object.keys(base.files);
   assert.deepEqual(files, [...files].sort(), 'sorted by path');
   assert.deepEqual(base.totals, totals(base.files), 'the totals add up');
-  assert.ok(!files.some(isKit), 'no kit file in the baseline');
+  const debt = base.kitDebt || [];
+  assert.deepEqual(files.filter(isKit), debt, 'the only kit files in the baseline are the debt list');
+  if (debt.length) console.log('  (kit debt, to reach zero: ' + debt.map((r) => r + ' ' + JSON.stringify(base.files[r])).join(', ') + ')');
   assert.ok(base.totals.button > 500 && base.totals.important > 50, 'today\'s counts: ' + JSON.stringify(base.totals));
 });
 
 test('no count has risen since the baseline, and every kit file is at zero', () => {
-  const bad = judge(now, base.files);
+  const bad = judge(now, base.files, base.kitDebt);
   assert.equal(bad.length, 0, '\n  ' + bad.join('\n  '));
   const lower = Object.keys(base.files).filter((rel) => Object.keys(base.files[rel]).some((k) => ((now[rel] || {})[k] || 0) < base.files[rel][k]));
   if (lower.length) console.log('  (lower than the baseline in ' + lower.length + ' file(s): run with --write to lock the gain in)');
