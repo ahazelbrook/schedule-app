@@ -21,8 +21,8 @@ export const MASKS = ['#toastMsg', '#toastErr', '.gm-toast', '[data-kit-mask]'];
    Kept beside MASKS so a new one needs no new capture. Each is listed in kit-off's output. */
 /* Row 2 of the band is live text (the clock, what the iPad shows, the cue, the quiet list): what a poll has told it moves everything after it sideways. Inside it, left and
    width are not compared (height, top, classes, ids, styles are). Each entry: a key pattern and the axes let go. */
-export const LOOSE_AXES = [{ keys: 'gm-band-r2', axes: ['x', 'w'], why: 'band row 2 is live text; a poll moves the cells after it sideways' }];
-export const MASK_KEYS = ['#gm-ipad-now', 'gm-tn-line', '#gm-bar-tray', 'gm-band-quiet'];      /* the iPad's live line (what the iPad has been told, as the poll lands) and Tonight's lines (they count minutes to the real clock) */
+export const LOOSE_AXES = [{ keys: 'gm-band-r2', axes: ['x', 'w'], styles: ['margin'], why: 'band row 2 is live text; a poll moves the cells after it sideways' }];
+export const MASK_KEYS = ['#gm-ipad-now', 'gm-tn-line', '#gm-bar-tray', 'gm-band-quiet', 'rv-players'];      /* the iPad's live line (what the iPad has been told, as the poll lands) and Tonight's lines (they count minutes to the real clock) */
 
 /* THE EXEMPTIONS: where "off means today" is deliberately not true, each one named, each with its reason, each printed by kit-off. Adding one is one line here.
    An exemption finds its elements one of three ways: `selector` (a CSS selector, matched in the page at capture time: the element and everything inside it), `text` (a
@@ -100,7 +100,7 @@ export function compare(base, cur, opts = {}) {
   const keyMasked = (k) => mk.some((re) => re.test(k));
   const exs = (opts.exemptions || EXEMPTIONS), xk = exs.map((e) => (e.keys ? new RegExp(e.keys) : null));
   /* an element's flags: those captured, 'm' if a mask pattern matches its key, and an exemption whose `keys` pattern matches its key */
-  const loose = (opts.looseAxes || LOOSE_AXES).map((l) => ({ re: new RegExp(l.keys), axes: l.axes }));
+  const loose = (opts.looseAxes || LOOSE_AXES).map((l) => ({ re: new RegExp(l.keys), axes: l.axes, styles: l.styles }));
   const fl = (e) => { let f = (e[9] || '') + (mk.some((re) => re.test(e[0])) ? 'm' : ''); if (!/x/.test(f)) { const i = xk.findIndex((re) => re && re.test(e[0])); if (i >= 0) f += 'x' + String.fromCharCode(97 + i); } return f; };
   const nameOf = (e) => { const m = /x([a-z])/.exec(fl(e)); const x = m ? exs[m[1].charCodeAt(0) - 97] : null; return x ? x.name : 'an exemption'; };
   let pushed = 0, firstY = Infinity, lastY = -Infinity;
@@ -110,6 +110,15 @@ export function compare(base, cur, opts = {}) {
     if (!C.has(parent) || !fl(C.get(parent)).includes('x')) { firstY = Math.min(firstY, e[5]); lastY = Math.max(lastY, e[5] + e[7]); }
   }
   if (lastY > -Infinity) pushed = lastY - firstY + 24;      /* the span the new rows fill, and the gaps between them */
+  /* new exempt rows make a scrolled pane taller, so a page that scrolls an element into view comes to rest elsewhere: every element then sits lower or higher by the same amount.
+     That one shared amount (seen on at least 8 elements) is let go, only when new exempt rows exist; an element that moved by anything else is still a difference. */
+  let shift = null;
+  if (pushed) {
+    const cnt = new Map();
+    for (const [k, c] of C) { const b = B.get(k); if (!b || fl(b).includes('m') || fl(c).includes('m') || fl(b).includes('x') || fl(c).includes('x')) continue; const d = Math.round((c[5] - b[5]) * 2) / 2; if (Math.abs(d) > tol) cnt.set(d, (cnt.get(d) || 0) + 1); }
+    let best = 0; for (const [d, n] of cnt) if (n > best) { best = n; shift = d; }
+    if (best < 8) shift = null; else exempted.push('the scroll position of a pane the new rows made taller: ' + shift + ' px on ' + best + ' elements');
+  }
   for (const [k, b] of B) {
     if (!C.has(k)) { if (keyMasked(k)) continue; if (!fl(b).includes('x')) diffs.push({ kind: 'missing', key: k, detail: 'in the baseline, not in this run' }); else exempted.push(nameOf(b) + ': gone ' + k.split('/').slice(-2).join('/')); }
   }
@@ -123,13 +132,14 @@ export function compare(base, cur, opts = {}) {
       const d = q.c - q.b;
       if (Math.abs(d) <= tol) return false;
       if (loose.some((l) => l.re.test(k) && l.axes.includes(q.n))) return false;
+      if (shift !== null && q.n === 'y' && Math.abs(d - shift) <= tol) return false;
       if (pushed && q.n === 'y' && below && d >= -tol && d <= pushed + tol) return false;           /* pushed down by the new rows */
       if (pushed && q.n === 'h' && d >= -tol && d <= pushed + tol) return false;                      /* an ancestor of the new rows grew with them */
       return true;
     });
     if (off.length) diffs.push({ kind: 'box', key: k, detail: off.map((q) => q.n + ' ' + q.b + ' -> ' + q.c).join(', ') });
     const sb = base.styles[b[8]], sc = cur.styles[c[8]];
-    const NOT_EXACT = new Set(['width', 'height']);        /* computed width and height are the box, which is held to tol above (a sub-pixel of text is not a difference) */
+    const NOT_EXACT = new Set(['width', 'height'].concat(...loose.filter((l) => l.re.test(k)).map((l) => l.styles || [])));        /* computed width and height are the box, which is held to tol above (a sub-pixel of text is not a difference) */
     if (b[8] !== undefined && sb.join('\u0001') !== sc.join('\u0001')) {
       const ch = []; base.styleKeys.forEach((p, i) => { if (sb[i] !== sc[i] && !NOT_EXACT.has(p)) ch.push(p + ' ' + JSON.stringify(sb[i]) + ' -> ' + JSON.stringify(sc[i])); });
       if (ch.length && !(pushed && ch.every((s) => /^(width|height) /.test(s) && off.length === 0))) diffs.push({ kind: 'style', key: k, detail: ch.slice(0, 4).join('; ') });
