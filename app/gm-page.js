@@ -2927,9 +2927,12 @@
     chips.innerHTML = bits.join('') || '<span class="gm-dim">any</span>';
   }
   function setLive(id, value) { var l = {}; l[id] = value; patch({ con: { live: l } }); renderChips(); }   /* 08/11: a control no longer asks for a fit; the stamp does */
+  /* KS06 (kit.desk): the Roll's renderers are the new desk's (gm/kit/roll.js) while its card is the one drawn, else gm/roll.js; rollKit() swaps the card to follow the desk */
+  function rollR() { var K = W.B68KitRoll; return K && K.drawn($q('#gm-rl')) ? K : W.B68GmRoll; }
+  function rollKit() { var K = W.B68KitRoll; return !!(K && S && K.mount($q('#gm-roll'))); }
   /* the Roll's Position (one switch: the console's tables and the stamp read it), the size under it, Who and the line; then the stamp's part (b09Paint) */
   function renderPos() {
-    var R = W.B68GmRoll, box = $q('#gm-pos');
+    var R = rollR(), box = $q('#gm-pos');
     if (box && R) {
       var cur = hasSit() ? str(uiNow().pos) : '', ps = hasSit() && Array.isArray(S.con.positions) ? S.con.positions : [], sz = R.sizeLine(ps, cur);
       box.innerHTML = R.posHtml(ps, cur); box.hidden = !ps.length;
@@ -2941,7 +2944,7 @@
     b09Paint();      /* the line, then the stamp's part */
   }
   function renderButtons() {
-    var box = $q('#gm-buttons'), R = W.B68GmRoll; if (!box) return;
+    var box = $q('#gm-buttons'), R = rollR(); if (!box) return;
     rollMiniPaint();
     if (!S.con) { box.innerHTML = '<p class="gm-note bad">' + esc(S.conErr || 'The console is not available.') + '</p>'; return; }
     if (!hasSit()) { box.innerHTML = '<p class="gm-note bad">The pack’s console has no Situations: update the pack. The single tables are under More tables.</p>'; return; }
@@ -2955,7 +2958,7 @@
       return '<button type="button" class="chip sm" data-gm="roll" data-n="' + b.n + '" title="' + esc(b.hint || '') + '">' + esc(b.label) + '</button>';
     }).join('') + '</div>';
   }
-  function renderConsole() { rollBind(); renderPos(); renderControls(); renderButtons(); renderSingles(); drawConsoleCard(); renderRack(); rollFoldSync(); }
+  function renderConsole() { rollKit(); rollBind(); renderPos(); renderControls(); renderButtons(); renderSingles(); drawConsoleCard(); renderRack(); rollFoldSync(); }
   /* Who (08/11/2026, in place of the Dots): the console's Aim at, the PC who is rolling. One tap sets it, a second clears it; it clears itself once the
      roll resolves (a 4/5, a 1–3 or Clean). Blade's fit and L's filed line read it; the console's own cards lean on that PC's hooks, as Aim at always did */
   function whoList() {
@@ -3176,6 +3179,7 @@
     rackHeadPaint();
     var fb = $q('#gm-fitnow'); if (fb) fb.hidden = !(fitBox() && hasSit());     /* the Fit button: only where a box can fit */
     if (!r) { box.innerHTML = vh; return; }
+    var KR = rollR(); if (KR && KR.rackHtml) { box.innerHTML = KR.rackHtml(r, { rows: FX_ROWS, why: fitWhy('other'), fx: fxOf }) + vh; return; }      /* KS06 (kit.desk): the Fixer's answer, built to skim */
     var a = r.ask || { position: r.pre ? r.pre.pos : '', threat: '' };
     var forWhat = (a.hhmm ? 'for ' + a.hhmm + ' · ' : '') + (a.threat ? a.threat : (a.stamped ? 'stamped, no line' : 'not stamped')) + ' · ' + a.position + (a.effect ? ', ' + a.effect : '');
     var h = '<div class="gm-rack-h"><span class="gm-dim gm-fx-for">' + esc(forWhat) + '</span>' +     /* the fold's summary already says Blade */
@@ -3199,6 +3203,7 @@
       if (row && (o.lead || o.say)) h = '<p class="gm-lab">Blade · ' + esc(row[1]) + '</p><p class="gm-fx-big">' + (o.lead ? '<b>' + esc(o.lead) + '</b> ' : '') + esc(o.say) + '</p>' +
         (o.size ? '<p class="gm-fx-size">' + esc(o.size) + '</p>' : '');
       if (h) h = '<div class="gm-fx-hit gm-fx-' + row[2] + '">' + h + '</div>';
+      var KH = rollR(); if (h && KH && KH.hitHtml) h = KH.hitHtml(row, o);      /* KS06 (kit.desk): the hit line as a Card */
     }
     if (hb.__html !== h) { hb.innerHTML = h; hb.__html = h; }
     hb.hidden = !h;
@@ -3236,6 +3241,7 @@
   }
   function voiceHtml(vo) {
     var a = S && S.assist, can = !!(a && typeof a.canAnother === 'function' && a.canAnother());
+    var KV = rollR(); if (KV && KV.voiceHtml) return KV.voiceHtml(vo, can);      /* KS06 (kit.desk): Voice as a Card */
     return '<div class="gm-voice"><div class="gm-rack-h"><span class="gm-lab">Voice</span><span class="gm-dim"><b>' + esc(vo.who) + '</b>' + (vo.want ? ' · ' + esc(vo.want) : '') + '</span>' +
       '<button type="button" class="chip sm" data-gm="voiceclear" title="Drops these lines">Clear</button></div>' +
       '<ol class="gm-rack-lines gm-voice-lines">' + vo.lines.map(function (l) { return '<li><b>' + esc(vo.who.split(' ')[0]) + '</b><span>' + esc(l) + '</span></li>'; }).join('') + '</ol>' +
@@ -4895,7 +4901,7 @@
   }
   /* the stamp's part of the Roll: Effect, Stamp it on the iPad (or what is up, Take it down and Stamp again), the Focus keys and the sizer's strip */
   function b09Paint() {
-    var R = W.B68GmRoll; if (!S || !R) return;
+    var R = rollR(); if (!S || !R) return;
     rollLinePaint();          /* the line first (it follows the room on every paint, as the stamp's own box did): the stamp's view reads it */
     var v = S.stamp ? S.stamp.view() : null, on = !!(v && v.on);
     var eff = $q('#gm-eff'); if (eff) { eff.hidden = !on; eff.innerHTML = on ? R.effHtml(v.draft.effect) : ''; }
@@ -4947,7 +4953,7 @@
     var i = $q('#gm-c-threat'); if (!i) return;
     rollSeed();
     var v = str(live().threat); if (!rollTyping(i) && i.value !== v) { i.value = v; i.__was = v; }
-    var m = rollMem(), cur = rollCut(rollLine()), from = cur && m.seed && m.seed.line === cur ? str(m.seed.room) : '', R = W.B68GmRoll;
+    var m = rollMem(), cur = rollCut(rollLine()), from = cur && m.seed && m.seed.line === cur ? str(m.seed.room) : '', R = rollR();
     var n = $q('#gm-line-note'); if (n) { n.innerHTML = from && R ? R.lineNote(from) : ''; n.hidden = !from; }
     var x = $q('[data-gm="line-clear"]'); if (x) x.hidden = !cur;
   }
@@ -4985,7 +4991,7 @@
   }
   /* Focus: the column as its keys, with the position (and the effect, and whether the stamp is up) on top */
   function rollMiniPaint(v) {
-    var mini = $q('#gm-mini'), R = W.B68GmRoll; if (!mini) return;
+    var mini = $q('#gm-mini'), R = rollR(); if (!mini) return;
     if (!R || !hasSit()) { mini.innerHTML = ''; mini.__html = ''; return; }
     v = v || (S.stamp ? S.stamp.view() : null);
     var h = R.miniHtml(S.con.situations(), str(uiNow().pos), v && v.on ? v.draft.effect : '', !!(v && v.active));
@@ -7866,6 +7872,7 @@
     _places: function () { return S && S.places ? S.places : null; },
     /* N4: the Roll's "If it goes wrong" line from anywhere (the Run view's room card calls its host's setThreat, the same thing) -> bool */
     setThreat: function (text) { return rollSetThreat(text); },
+    rollKit: function () { if (S && S.status === 'ready' && rollKit()) renderConsole(); },      /* KS06 (kit.desk): gm/kit/roll.js calls it when the desk turns on or off */
     aftermath: aftermathFeed,       /* suite 1.6 */
     cast: castFeed,                 /* suites 3.8 and 5.4 */
     _voice: function (v) { if (S) setVoice(v); }
