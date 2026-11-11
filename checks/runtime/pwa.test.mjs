@@ -413,6 +413,28 @@ await test('layers (KS01.5b, note B): only index.html\'s own block is wrapped; a
   ok(!two.inline.hasAttribute('data-layered'), 'not exactly one candidate: nothing is wrapped');
 });
 
+await test('layers: index.html has EXACTLY one id-less <style> before routes.js, in <head>, and no core script loaded before routes.js builds an id-less style (routes.js wraps nothing otherwise)', () => {
+  const at = HTML.indexOf('<script src="routes.js"></script>');
+  ok(at > 0, 'index.html loads routes.js');
+  const before = HTML.slice(0, at);
+  const styles = [...before.matchAll(/<style\b([^>]*)>/g)].filter((m) => !/\b(id|data-href)\s*=/.test(m[1]));
+  eq(styles.length, 1, 'one id-less <style> in index.html before routes.js');
+  ok(styles[0].index < HTML.indexOf('<header'), 'it sits in <head>, before the page body starts');
+  ok([...HTML.matchAll(/<style\b/g)].length === 1, 'and it is the only <style> in the file');
+  /* every script tag before routes.js: a style it builds must carry an id (zoom.js builds #zoomCss); inline scripts build none */
+  const srcs = [...before.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
+  ok(srcs.length > 5, 'the core scripts before routes.js: ' + srcs.length);
+  for (const f of srcs) {
+    const code = fs.readFileSync(path.join(APP, f), 'utf8');
+    for (const m of code.matchAll(/createElement\(\s*['"]style['"]\s*\)/g)) {
+      ok(/\.id\s*=|setAttribute\(\s*['"](id|data-href)['"]/.test(code.slice(m.index, m.index + 160)), f + ' builds a <style> with no id, ahead of routes.js');
+    }
+    ok(!/insertAdjacentHTML\([^)]*<style|innerHTML\s*[+]?=[^;]*<style/.test(code), f + ' writes a <style> as markup');
+  }
+  const inline = [...before.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n');
+  ok(!/createElement\(\s*['"]style['"]/.test(inline), 'index.html\'s inline scripts build no style');
+});
+
 /* the files that only the GM's laptop and the table iPad load: in the gm or display bundle and not in core or table */
 const ROLE_ONLY = (() => {
   const L = routes().B68Load, keep = new Set([...L.BUNDLES.core, ...L.BUNDLES.table]);
