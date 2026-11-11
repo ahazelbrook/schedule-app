@@ -155,6 +155,7 @@ await test('the Roll: the cost field is drawn only when the stamp view carries i
   const h = R.stampHtml({ ...base, active: { ...base.active, result: '45' }, cost: { result: '45', draft: '<b>GM</b>', sent: '' } });
   assert.ok(h.includes('data-gm="stamp-cost"') && h.includes('Cost on the iPad') && h.includes('maxlength="60"'));
   assert.ok(h.includes('&lt;b&gt;GM&lt;/b&gt;') && !h.includes('<b>GM'), 'the draft is text'); assert.ok(h.includes('You do it. It costs.'));
+  assert.ok(h.includes('>Stamp it on the iPad<') && !h.includes('Changed since it went up') && !h.includes('Stamp again'), 'while a result is up the next stamp is a new one');
   assert.ok(R.stampHtml({ on: true, active: null, cost: { result: '13', draft: '', sent: 'Lotte remembers your face.' } }).includes('On the iPad: Lotte remembers your face.'));
   const box = new MiniEl('div'); const ls = {}; box.addEventListener = (t, fn) => { ls[t] = fn; };
   const got = { draft: [], sent: [] }; const ctl = { costDraft: (v) => got.draft.push(v), sendCost: (v) => { got.sent.push(v); return Promise.resolve(true); } };

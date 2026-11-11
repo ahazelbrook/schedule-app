@@ -117,8 +117,10 @@
     /* what is set now differs from what is up: Stamp again is the one full-width button (as Stamp it on the iPad was), so the row under it never wraps */
     return '<p class="gm-rl-up" role="status"><span class="gm-dot on" aria-hidden="true"></span><b>On the iPad</b><span>' + esc(cap(a.position) + ', ' + a.effect) + '</span>' +
         (a.result ? '<span>' + esc(RESULT_WORDS[a.result] || '') + (a.cost ? ' ' + esc(a.cost) : '') + '</span>' : '') +
-        (v.stale ? '<span class="gm-rl-chg">Changed since it went up</span>' : '') + '</p>' +
-      (v.stale ? '<button type="button" class="btn primary gm-stampb" data-gm="stamp" title="Puts what is set now on the iPad in its place">Stamp again</button>' : '') +
+        (v.stale && !a.result ? '<span class="gm-rl-chg">Changed since it went up</span>' : '') + '</p>' +
+      /* KS15: while a result is up the roll is over, so the next stamp is a new one, not "again" */
+      (v.stale || a.result ? '<button type="button" class="btn primary gm-stampb" data-gm="stamp" title="' + (a.result ? 'The next roll: it takes the place of what is up' : 'Puts what is set now on the iPad in its place') + '">' +
+        (a.result ? 'Stamp it on the iPad' : 'Stamp again') + '</button>' : '') +
       '<div class="gm-rl-acts">' +
         '<button type="button" class="btn sm" data-gm="stamp-down" title="Takes the action report off the iPad">Take it down <kbd>Esc</kbd></button>' +
         '<button type="button" class="chip sm" data-gm="stamp-clean" title="Take the card down; the roll needs no consequence">Clean (no card)</button></div>' + costHtml(v.cost);

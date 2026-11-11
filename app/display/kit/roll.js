@@ -77,7 +77,9 @@
     if (w.slam) {
       var slam = doc.createElement('div'); slam.className = 'ks15-slam ui-edge-' + w.edge; slam.setAttribute('data-ks15-result', result(p));
       if (w.beat === 'cost') slam.setAttribute('data-ks15-still', '');           /* the cost follows the result: the stamp is already down */
-      var word = doc.createElement('p'); word.className = 'ks15-slam-word'; word.textContent = w.slam; slam.appendChild(word);
+      var word = doc.createElement('p'); word.className = 'ks15-slam-word';
+      w.slam.replace(/\.\s+/g, '.\n').split('\n').forEach(function (part, i) { var ln = doc.createElement('span'); ln.className = 'ks15-slam-line'; ln.textContent = (i ? ' ' : '') + part; word.appendChild(ln); });   /* a sentence a line */
+      slam.appendChild(word);
       n.appendChild(slam);
     }
     var pl = St.plate({ kicker: w.kicker, title: w.title, line: w.line, side: w.side, edge: w.edge, timer: timed ? { ms: Number(env.ms) || left, endsAt: Date.now() + left } : 0 }, doc);

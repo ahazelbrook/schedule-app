@@ -9,7 +9,6 @@
 :root[data-kit~="stage"] .ks15-beat[hidden] { display: none; }
 :root[data-kit~="stage"] .ks15-lower { position: absolute; left: 5vw; right: 5vw; bottom: 5vh; display: flex; align-items: flex-end; }
 :root[data-kit~="stage"] .ks15-lower .stage-plate { width: 100%; }
-:root[data-kit~="stage"] .ks15-beat[data-ks15-beat="stakes"] .stage-plate-title { color: var(--stage-kick); }
 :root[data-kit~="stage"] .ks15-beat[data-ks15-beat="cost"] .stage-plate-title { font-size: 5.4vh; }
 /* the side block: the position big, the effect under it */
 :root[data-kit~="stage"] .ks15-plate .stage-plate-side { align-content: center; gap: 1.4vh; text-align: center; }
@@ -25,6 +24,7 @@
 :root[data-kit~="stage"] .ks15-slam[data-ks15-result="45"] { color: var(--ui-out-mid-ink); }
 :root[data-kit~="stage"] .ks15-slam[data-ks15-result="13"] { color: var(--ui-out-low-ink); }
 :root[data-kit~="stage"] .ks15-slam-word { margin: 0; font: 900 9vh/1.02 var(--ui-font-poster); letter-spacing: .02em; text-transform: uppercase; text-align: center; overflow-wrap: normal; }
+:root[data-kit~="stage"] .ks15-slam-line { display: block; white-space: nowrap; }
 :root[data-kit~="stage"] .ks15-beat:not([data-reduced]) .ks15-slam:not([data-ks15-still]) { animation: ks15-slam 260ms cubic-bezier(.2, 1.3, .4, 1) both; }
 @keyframes ks15-slam {
   from { transform: translate(-50%, -50%) rotate(-11deg) scale(1.9); opacity: 0; }
@@ -44,4 +44,5 @@
   display: block; margin: 0; padding: 1.4vh 2.4vw; border: 0; border-left: 1.4vh solid var(--ui-edge); border-radius: 0;
   background: light-dark(var(--ui-raised), var(--ui-sunk)); color: var(--ui-ink); box-shadow: none;
 }
-:root[data-kit~="stage"] .ks15-chip .ui-card-body { margin: 0; color: var(--ui-ink); font: 800 3.4vh/1.15 var(--ui-font-cond); letter-spacing: .1em; text-transform: uppercase; }
+:root[data-kit~="stage"] .ks15-chip .ui-card-body { margin: 0; color: var(--ui-ink); font: 800 3.4vh/1.15 var(--ui-font-cond); letter-spacing: .06em; text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
