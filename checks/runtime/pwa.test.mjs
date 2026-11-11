@@ -313,6 +313,64 @@ await test('kit bundles: need() of one brings kit-ui first, its stylesheets afte
   ok(o.indexOf('display/kit/stage.css') > o.indexOf('display/montage.css') && o.indexOf('display/kit/stage.css') > o.indexOf('gm.css') && o.indexOf('display/kit/stage.css') < o.indexOf('<style>'), 'kit-stage\'s sheets sit after every old one: ' + o.slice(0, 40).join(' '));
 });
 
+/* ---------- KS01.5 (Gate 1, A1): once the kit flag layers the page, every old sheet is an @import into layer(old); the kit's stay <link> ---------- */
+function layerDoc(links) {
+  const head = { children: [] }, at = (el) => head.children.indexOf(el);
+  const mk = (tag) => {
+    const a = {}, el = { tagName: tag.toUpperCase(), parentNode: null, textContent: '', getAttribute: (k) => (k in a ? a[k] : el[k] == null ? null : String(el[k])), setAttribute: (k, v) => { a[k] = String(v); }, hasAttribute: (k) => k in a };
+    Object.defineProperty(el, 'nextSibling', { get() { const i = at(el); return i < 0 ? null : head.children[i + 1] || null; } });
+    return el;
+  };
+  head.appendChild = (el) => { el.parentNode = head; head.children.push(el); return el; };
+  head.insertBefore = (el, ref) => { el.parentNode = head; const i = ref ? at(ref) : -1; if (i < 0) head.children.push(el); else head.children.splice(i, 0, el); return el; };
+  head.removeChild = (el) => { head.children.splice(at(el), 1); el.parentNode = null; return el; };
+  for (const f of links) { const l = mk('link'); l.rel = 'stylesheet'; l.href = f; head.appendChild(l); }
+  const inline = mk('style'); inline.textContent = ':root { --paper: #f4efe6; }'; head.appendChild(inline);
+  const zoom = mk('style'); zoom.setAttribute('id', 'zoomCss'); zoom.textContent = '#frame { cursor: grab; }'; head.appendChild(zoom);
+  const isLink = (e) => e.tagName === 'LINK' && e.rel === 'stylesheet', isImport = (e) => e.tagName === 'STYLE' && e.hasAttribute('data-href');
+  const doc = { head, inline, zoom, createElement: mk, documentElement: { getAttribute: () => null },
+    querySelectorAll: (sel) => sel === 'link[rel="stylesheet"]' ? head.children.filter(isLink)
+      : sel === 'link[rel="stylesheet"], style[data-href]' ? head.children.filter((e) => isLink(e) || isImport(e))
+      : sel === 'head > style:not([id]):not([data-href]):not([data-layered])' ? head.children.filter((e) => e.tagName === 'STYLE' && !e.hasAttribute('id') && !e.hasAttribute('data-href') && !e.hasAttribute('data-layered')) : [] };
+  doc.order = () => head.children.map((e) => (isImport(e) ? '@' + e.getAttribute('data-href') : e.tagName === 'STYLE' ? (e.hasAttribute('id') ? '#' + e.getAttribute('id') : '<style>') : String(e.href || e.src)));
+  doc.settle = () => { for (const e of head.children.slice()) if (e.onload && !e.settled) { e.settled = true; e.onload(); } };
+  return doc;
+}
+await test('layers (KS01.5, A1): layerOld() turns each old <link> into <style data-href>@import url() layer(old) in its place (the link goes once its import loads), then wraps the inline block once; styles built in JS stay as they are; it runs once', async () => {
+  const doc = layerDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']);
+  const L = routes(ROUTES, doc).B68Load;
+  eq(L.layered(), false, 'a page is not layered until the kit flag asks');
+  const p = L.layerOld();
+  eq(L.layered(), true);
+  eq(doc.order(), ['@tracker.css', 'tracker.css', '@schedule.css', 'schedule.css', '@rules.css', 'rules.css', '@cast.css', 'cast.css', '<style>', '#zoomCss'], 'each import goes in before its link; the links stay until their imports load');
+  eq(doc.inline.textContent.startsWith('@layer old'), false, 'the inline block waits for the links (else the links would beat it for a moment)');
+  eq(doc.head.children.filter((e) => e.hasAttribute && e.hasAttribute('data-href')).map((e) => e.textContent), ['tracker.css', 'schedule.css', 'rules.css', 'cast.css'].map((f) => '@import url("' + f + '") layer(old);'));
+  doc.settle(); eq(await p, 4, 'four links converted');
+  eq(doc.order(), ['@tracker.css', '@schedule.css', '@rules.css', '@cast.css', '<style>', '#zoomCss'], 'the links are gone');
+  ok(doc.inline.textContent.startsWith('@layer old {\n:root { --paper') && doc.inline.hasAttribute('data-layered'), 'the inline block is in layer(old)');
+  eq(doc.zoom.textContent, '#frame { cursor: grab; }', 'a style built in JS (zoom.js) is not touched');
+  eq(L.layerOld() === p, true, 'once: the same promise'); eq(doc.order().length, 6, 'nothing converted twice');
+});
+await test('layers (KS01.5, A1): a layered page brings every old sheet as an import in its cascade place, before the inline block, and the kit\'s sheets as <link> after the old ones; a stamped build carries ?v= in the import', async () => {
+  const doc = layerDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']);
+  const L = routes(ROUTES, doc).B68Load;
+  const p = L.layerOld(); doc.settle(); await p;
+  L.need('gm'); L.need('kit-desk');
+  const css = doc.order().filter((x) => /\.css$|^<style>$|^#/.test(x));
+  eq(css, ['@tracker.css', '@schedule.css', '@rules.css', '@cast.css', '@gm.css', '@prep.css', 'ui/tokens.css', 'ui/parts.css', 'ui/overlay.css', 'ui/desk-band.css', 'ui/desk-roll.css', 'ui/desk-blade.css', 'ui/desk-run.css', 'ui/desk-shell.css', 'ui/desk-skin.css', '<style>', '#zoomCss'],
+    'old sheets as imports in CSS_ORDER, then the kit\'s links, all before the inline block');
+  const gm = doc.head.children.find((e) => e.getAttribute('data-href') === 'gm.css');
+  eq(gm.textContent, '@import url("gm.css") layer(old);');
+  let got = null; L.need('gm').then(() => { got = 'gm'; }); doc.settle(); await sleep(5);
+  eq(got, 'gm', 'an import\'s load event resolves the bundle like a link\'s');
+  const d2 = layerDoc(['tracker.css']), W2 = routes(stamped(), d2), p2 = W2.B68Load.layerOld(); d2.settle(); await p2;
+  W2.B68Load.need('table');
+  ok(d2.head.children.some((e) => e.getAttribute('data-href') === 'campaign.css' && e.textContent === '@import url("campaign.css?v=' + STAMP + '") layer(old);'), 'stamped: ?v=<build> in the import, as on the link');
+  const off = layerDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']), L3 = routes(ROUTES, off).B68Load;
+  L3.need('gm'); L3.need('kit-desk');
+  ok(!off.head.children.some((e) => e.hasAttribute && e.hasAttribute('data-href')) && !off.inline.hasAttribute('data-layered'), 'never layered: every sheet is a <link>, the inline block untouched (off is today)');
+});
+
 /* the files that only the GM's laptop and the table iPad load: in the gm or display bundle and not in core or table */
 const ROLE_ONLY = (() => {
   const L = routes().B68Load, keep = new Set([...L.BUNDLES.core, ...L.BUNDLES.table]);

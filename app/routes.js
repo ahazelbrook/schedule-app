@@ -80,11 +80,45 @@
   var loaded = {};             /* file -> true once its load event fired (the core: index.html's own tags) */
   BUNDLES.core.forEach(function (f) { loaded[f] = true; loading[f] = Promise.resolve(f); });
   function url(file) { return BUILD === 'dev' ? file : file + '?v=' + encodeURIComponent(BUILD); }
-  /* a stylesheet goes in before the first one that comes after it in CSS_ORDER, else after the last one */
+  /* the kit and stage build (KS01.5, Gate 1 approach A1): the kit's sheets are unlayered and the OLD sheets go into the cascade layer
+     `old` while the kit is on, so a kit rule beats an old one at any specificity and an old !important still beats everything.
+     layerOld() is called by the kit flag (ui/kit-flag.js) when this page first paints a kit token: each old <link> already in becomes
+     <style data-href="x.css">@import url("x.css?v=…") layer(old)</style> (the link goes once its import has loaded, so there is no gap),
+     then index.html's inline block is wrapped in @layer old { }. From then on, for the rest of the page's life, every old sheet the
+     loader brings comes in the same way. Until layerOld() runs nothing here differs from before: the same <link> tags, the same order.
+     Styles built in JS (zoom.js, sheet/claims.js, gm/frontpage.js) and the ambient frames' own styles (display/fx.js) are not touched. */
+  var layering = null;         /* the page has gone layered: a promise that settles once the static links are converted */
+  function isKitCss(f) { return /^(ui|display\/kit|sheet\/kit)\//.test(f); }
+  function importOf(d, file, href) {
+    var s = d.createElement('style'); s.setAttribute('data-href', file); s.textContent = '@import url("' + href + '") layer(old);';
+    return s;
+  }
+  function layerOld() {
+    var d = root.document;
+    if (layering) return layering;
+    if (!d || typeof d.querySelectorAll !== 'function' || typeof d.createElement !== 'function') return Promise.resolve(0);
+    var waits = [];
+    [].slice.call(d.querySelectorAll('link[rel="stylesheet"]')).forEach(function (l) {
+      var href = String(l.getAttribute('href') || ''), f = href.split('?')[0];
+      if (CSS_ORDER.indexOf(f) < 0 || isKitCss(f) || !l.parentNode) return;
+      var s = importOf(d, f, href);
+      waits.push(new Promise(function (done) { s.onload = s.onerror = function () { if (l.parentNode) l.parentNode.removeChild(l); done(); }; }));
+      l.parentNode.insertBefore(s, l);
+    });
+    layering = Promise.all(waits).then(function () {
+      /* index.html's own block, once every link is an import (before that, wrapping it would let the links beat it for a moment) */
+      [].slice.call(d.querySelectorAll('head > style:not([id]):not([data-href]):not([data-layered])')).forEach(function (s) {
+        s.textContent = '@layer old {\n' + s.textContent + '\n}'; s.setAttribute('data-layered', '');
+      });
+      return waits.length;
+    });
+    return layering;
+  }
+  /* a stylesheet goes in before the first one that comes after it in CSS_ORDER, else after the last one (a layered page counts its imports) */
   function placeCss(d, el, file) {
-    var mine = CSS_ORDER.indexOf(file), links = d.querySelectorAll ? d.querySelectorAll('link[rel="stylesheet"]') : [], last = null;
+    var mine = CSS_ORDER.indexOf(file), links = d.querySelectorAll ? d.querySelectorAll(layering ? 'link[rel="stylesheet"], style[data-href]' : 'link[rel="stylesheet"]') : [], last = null;
     for (var i = 0; i < links.length; i++) {
-      var at = CSS_ORDER.indexOf(String(links[i].getAttribute('href') || '').split('?')[0]);
+      var at = CSS_ORDER.indexOf(String(links[i].getAttribute('href') || links[i].getAttribute('data-href') || '').split('?')[0]);
       if (at < 0) continue;
       if (mine >= 0 && at > mine) { links[i].parentNode.insertBefore(el, links[i]); return; }
       last = links[i];
@@ -97,11 +131,12 @@
     loading[file] = new Promise(function (resolve, reject) {
       var d = root.document, el, css = /\.css$/.test(file);
       if (!d || typeof d.createElement !== 'function') { delete loading[file]; reject(new Error('no document to load ' + file + ' into')); return; }
-      if (css) { el = d.createElement('link'); el.rel = 'stylesheet'; }
+      if (css && layering && !isKitCss(file)) el = importOf(d, file, url(file));      /* a layered page: an old sheet comes in layer(old) */
+      else if (css) { el = d.createElement('link'); el.rel = 'stylesheet'; }
       else { el = d.createElement('script'); el.async = false; }
       el.onload = function () { loaded[file] = true; resolve(file); };
       el.onerror = function () { delete loading[file]; if (el.parentNode) el.parentNode.removeChild(el); reject(new Error('could not load ' + file)); };
-      if (css) { el.href = url(file); placeCss(d, el, file); }
+      if (css) { if (el.tagName !== 'STYLE') el.href = url(file); placeCss(d, el, file); }
       else { el.src = url(file); (d.head || d.body || d.documentElement).appendChild(el); }
     });
     return loading[file];
@@ -154,5 +189,5 @@
   }
 
   root.B68_BUILD = BUILD;
-  root.B68Load = { need: need, done: done, kit: kit, kitIn: kitIn, onFigures: onFigures, files: files, url: url, BUNDLES: BUNDLES, CSS_ORDER: CSS_ORDER, build: BUILD };
+  root.B68Load = { need: need, done: done, kit: kit, kitIn: kitIn, onFigures: onFigures, files: files, url: url, layerOld: layerOld, layered: function () { return !!layering; }, BUNDLES: BUNDLES, CSS_ORDER: CSS_ORDER, build: BUILD };
 })(typeof self !== 'undefined' ? self : typeof window !== 'undefined' ? window : globalThis);
