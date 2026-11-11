@@ -21,7 +21,8 @@ export const MASKS = ['#toastMsg', '#toastErr', '.gm-toast', '[data-kit-mask]'];
    Kept beside MASKS so a new one needs no new capture. Each is listed in kit-off's output. */
 /* Row 2 of the band is live text (the clock, what the iPad shows, the cue, the quiet list): what a poll has told it moves everything after it sideways. Inside it, left and
    width are not compared (height, top, classes, ids, styles are). Each entry: a key pattern and the axes let go. */
-export const LOOSE_AXES = [{ keys: 'gm-band-r2', axes: ['x', 'w'], styles: ['margin'], why: 'band row 2 is live text; a poll moves the cells after it sideways' },
+export const LOOSE_AXES = [{ keys: 'gm-band-r2', axes: ['x'], styles: ['margin'], why: 'band row 2 holds live text; a poll moves the cells after it sideways (left only: widths are held, bar the beat pill below)' },
+  { keys: 'gm-band-r2:\\d+/span#gm-bar-beat', axes: ['w'], why: 'the band\'s beat pill: its words are the running beat, live' },
   { keys: '#pp-run-order/div\\.rl-tablewrap:\\d+/table:\\d+/t(head|body):\\d+/tr', axes: ['x', 'w'], why: 'the run order\'s columns are as wide as the running beat\'s clock (mm:ss, live): the cells move sideways' }];
 /* A masked key lets go of BOX AND STYLE ONLY, for the element its pattern matches and everything inside it. Existence, ids and classes are still compared: an element
    of a masked region that is taken away, added or reclassed is a difference (the review of KS04: a mask must never hide the band tray's Send, Clear, Blank, live pill
@@ -122,6 +123,12 @@ export async function fingerprint(page, scenario, width, opts = {}) {
    or nothing; LOOSE_AXES let named axes go. Nothing else is forgiven. */
 /* The keys again, with the state classes (STATE_CLASSES) taken out and the sibling numbers counted afresh: els in document order (a parent before its children,
    as the walk wrote them). Returns [els with new keys, Set of the new keys whose own class was a state class]. With no state class in a file nothing changes. */
+/* an element's classes, the state classes taken out, sorted: what compare holds exact on every matched element */
+function classesOf(e, rules) {
+  let cls = e[3] ? e[3].split(' ') : [];
+  for (const r of rules) if (cls.includes(r.on)) cls = cls.filter((c) => !r.drop.includes(c));
+  return cls.sort().join(' ');
+}
 function rekey(els, rules) {
   /* pass 1: each element's own new signature; the sibling groups (parent + signature) a dropped class lands in are counted afresh, every other key is kept as written */
   const info = els.map((e) => {
@@ -204,6 +211,8 @@ export function compare(base, cur, opts = {}) {
   for (const [k, c] of C) {
     const b = B.get(k);
     if (!b) { if (pollKeys.has(k)) continue; if (!fl(c).includes('x')) diffs.push({ kind: 'extra', key: k, detail: 'in this run, not in the baseline (' + c[1] + (c[2] ? '#' + c[2] : '') + (c[3] ? '.' + c[3].replace(/ /g, '.') : '') + ')' }); continue; }
+    /* classes are exact on every matched element, masked or not (a key with an id does not carry its classes): only an exemption or a state class lets one go */
+    if (!fl(b).includes('x') && !fl(c).includes('x')) { const cb = classesOf(b, rules), cc = classesOf(c, rules); if (cb !== cc) diffs.push({ kind: 'class', key: k, detail: '"' + cb + '" -> "' + cc + '"' }); }
     if (!plain(b, c)) continue;
     const below = b[5] >= firstY - tol;
     const box = ['x', 'y', 'w', 'h'].map((n, i) => ({ n, b: b[4 + i], c: c[4 + i] }));

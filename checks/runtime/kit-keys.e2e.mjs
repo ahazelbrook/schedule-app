@@ -27,28 +27,37 @@ const ONLY = (process.env.KIT_KEYS_ONLY || '').split(',').map((s) => s.trim()).f
 let failed = 0;
 const check = (ok, name) => { if (ok) console.log('PASS ' + name); else { failed++; console.log('FAIL ' + name); } };
 
-/* THE EXEMPTIONS: where a key deliberately does something else with the kit on, each named with its reason and the overseer's ruling, each printed. `hit` is a
-   pattern on the hit's label ("<keys> [<act or via> <key>]"); `off` a pattern on the kit-off page lines that may be missing with the kit on. Nothing else is
-   forgiven: a server effect, a toast, the focus or the hash never is. Adding one is one line here, with the PR that makes the change. */
+/* THE EXEMPTIONS: where a key deliberately does something else with the kit on, each named with its reason and the overseer's ruling, each printed with the hits
+   that used it. Adding one is one entry here, with the PR that makes the change. Each entry: name, reason, and one or more parts, each a `hit` (a pattern on the
+   hit's label, "<keys> [<act or via> <key>]") with ONE of:
+     off       kit-off page lines that may be missing with the kit on
+     loadOn    writes ONLY the kit-on page makes while it loads (never a key's write, never a kit-off one)
+     serverOn  writes ONLY the kit-on page makes on that key's press
+   An entry with a single part may carry hit and its pattern itself; one with several lists them in `parts`. Nothing else is forgiven: a toast, the focus and
+   the hash never are. */
 export const KEYS_EXEMPT = [
   { name: 'KS06: the pinned stamp', reason: 'KS06 (PR #216) pins the stamped line above the Blade fold with kit.desk on, so leaving the Score (Ctrl+Right, F, a Find result) no longer hides #gm-stamp. Ruled intended 12/11',
     hit: /\[(place Control\+ArrowRight|focus f|find Enter)\]$/, off: /^hidden #gm-stamp$/ },
   { name: 'KS07: the Screen, the Now zone and the tab put away', reason: 'KS07 (PR #214, ccd1010) hides the right-edge tab (#as-launch), the Now zone (#as-nowz, #as-now) and the Screen section (#as-screen, #as-sc-*) with kit.desk on, so A opens Blade without hiding the tab or showing them. Ruled intended 12/11',
     hit: /\[assist a\]$/, off: /^(hidden #as-launch|shown #as-(nowz|now|screen|sc-[a-z]+))$/ },
-  /* `loadOn`: a pattern on the writes ONLY the kit-on page makes while it loads (never a key's write, never a kit-off one). Any hit: a load lands on whichever is first */
+  /* a load lands on whichever hit opens the page after it changed: any hit */
   { name: 'KS12.5: the polaroid list on load', reason: 'KS12.5: night.who clears the stored polaroid list on load (and writes the playing characters\' list while a session is open; disclosed in #212). Ruled intended 12/11',
-    hit: /./, loadOn: /^[+~-] \/ambient\/doc\/polaroids(?:\/[^\s]*)?(?: |$)/ }
+    hit: /./, loadOn: /^[+~-] \/ambient\/doc\/polaroids(?:\/[^\s]*)?(?: |$)/ },
+  { name: 'KS14: the band faces layer', reason: 'KS14 (#220): with kit.stage on, gm/pcstatus.js writes the iPad band\'s faces layer while the page loads, and Esc and 0 (clearing the iPad) take it down. Ruled intended 12/11',
+    parts: [{ hit: /./, loadOn: /^[+~-] \/ambient\/doc\/layers\/band\/faces(?:\/[^\s]*)?(?: |$)/ },
+      { hit: /\[(esc Escape|clear 0)\]$/, serverOn: /^- \/ambient\/doc\/layers\/band\/faces(?:\/[^\s]*)?$/ }] }
 ];
+const partsOf = (x) => (x.parts || [x]).map((p) => Object.assign({ name: x.name }, p));
 
 /* what a page line is about: an id (shown/hidden #id) or a state key (an id, or a short path from the nearest id) */
-const lineKey = (line) => { let m = /^(?:shown|hidden) #(\S+)$/.exec(line); if (m) return { id: m[1] }; m = /^(?:new|state|gone) (\S+)/.exec(line); if (m) return { attr: m[1] }; return null; };
+const lineKey = (line) => { let m = /^(?:shown|hidden) #(\S+)$/.exec(line); if (m) return { id: m[1] }; m = /^(?:new|state|gone) (\S+) (\S+)/.exec(line); if (m) return { attr: m[1] + ' ' + m[2] }; return null; };
 const knows = (known, k) => (k.id ? known.ids.has(k.id) : known.attrs.has(k.attr));
 /* One key, kit off (o) against kit on (n). Each: { hit, page, server, load, known: { ids, attrs } } (known: every id and state key on that page, before or after
    the press). A kit-off line about an element the kit-on page does not have at all is LOST (the hooks rule: every id stays): a failure, unless exempted. A kit-on
    line about an element the kit-off page never had is new markup: a note. Every other page line, every server effect and every write the page made while it
    loaded must be the same. Returns { ok, lost, offOnly, onOnly, extra, exempted: [names], why: [lines] }. */
 export function judge(o, n, exempt = KEYS_EXEMPT) {
-  const ex = exempt.filter((x) => x.hit.test(o.hit.label));
+  const ex = [].concat(...exempt.map(partsOf)).filter((x) => x.hit.test(o.hit.label));
   const okOff = (l) => ex.find((x) => x.off && x.off.test(l));
   const used = new Set(), lost = [], po = [], pn = [], extra = [];
   for (const l of o.page) { const k = lineKey(l); if (k && !knows(n.known, k)) { const x = okOff(l); if (x) used.add(x.name); else lost.push(l); } else po.push(l); }
@@ -58,7 +67,9 @@ export function judge(o, n, exempt = KEYS_EXEMPT) {
   const sv = (a, b) => a.filter((l) => !b.includes(l));
   const loadOnOk = (l) => ex.find((x) => x.loadOn && x.loadOn.test(l));
   const lOn = sv(n.load || [], o.load || []).filter((l) => { const x = loadOnOk(l); if (x) { used.add(x.name); return false; } return true; });
-  const sOff = sv(o.server, n.server).concat(sv(o.load || [], n.load || []).map((l) => 'load ' + l)), sOn = sv(n.server, o.server).concat(lOn.map((l) => 'load ' + l));
+  const serverOnOk = (l) => ex.find((x) => x.serverOn && x.serverOn.test(l));
+  const kOn = sv(n.server, o.server).filter((l) => { const x = serverOnOk(l); if (x) { used.add(x.name); return false; } return true; });
+  const sOff = sv(o.server, n.server).concat(sv(o.load || [], n.load || []).map((l) => 'load ' + l)), sOn = kOn.concat(lOn.map((l) => 'load ' + l));
   const ok = !lost.length && !offOnly.length && !onOnly.length && !sOff.length && !sOn.length;
   return { ok, lost, offOnly: offOnly.concat(sOff), onOnly: onOnly.concat(sOn), extra, exempted: [...used] };
 }
@@ -71,7 +82,8 @@ export function judge(o, n, exempt = KEYS_EXEMPT) {
   const lostR = judge(r('X [t x]', ['shown #panel'], K(['panel'])), r('X [t x]', [], K([])));
   check(!lostR.ok && lostR.lost.includes('shown #panel'), 'judge: kit off shows #panel, the kit-on page lost #panel and the key does nothing: a failure (lost)');
   check(!judge(r('X [t x]', ['shown #made'], K(['made'])), r('X [t x]', [], K(['made']))).ok, 'judge: an element the press makes is compared (kit on has it, never shows it): a failure');
-  check(!judge(r('X [t x]', ['state #gm-x a -> b'], K([], ['#gm-x'])), r('X [t x]', [], K([], []))).ok, 'judge: a state change on an element the kit-on page lost: a failure');
+  check(!judge(r('X [t x]', ['state #gm-x aria-pressed false -> true'], K([], ['#gm-x aria-pressed'])), r('X [t x]', [], K([], []))).ok, 'judge: a state change on an element the kit-on page lost: a failure');
+  check(!judge(r('X [t x]', ['state #gm-x aria-pressed false -> true'], K([], ['#gm-x aria-pressed'])), r('X [t x]', [], K([], ['#gm-x aria-selected']))).ok, 'judge: a state attribute the kit-on element lost (aria-pressed): a failure');
   check(!judge(r('X [t x]', [], K([]), ['+ /state/doc/a = 1']), r('X [t x]', [], K([]), ['+ /state/doc/a = 1', '+ /state/doc/b = 2'])).ok, 'judge: a server write only the kit makes: a failure');
   check(!judge(r('X [t x]', [], K([]), [], []), r('X [t x]', [], K([]), [], ['+ /state/doc/b = 2'])).ok, 'judge: a write only the kit page makes while it loads: a failure');
   const nw = judge(r('X [t x]', ['shown #panel'], K(['panel'])), r('X [t x]', ['shown #panel', 'shown #kit-only'], K(['panel', 'kit-only'])));
@@ -89,6 +101,26 @@ export function judge(o, n, exempt = KEYS_EXEMPT) {
   check(!judge(r('1 [situation 1]', [], K([]), [], []), r('1 [situation 1]', [], K([]), [], ['+ /campaign/doc/polaroids/0/id = "x"'])).ok, 'judge: KS12.5 lets no polaroids write elsewhere go (the campaign)');
   check(!judge(r('1 [situation 1]', [], K([]), [], []), r('1 [situation 1]', [], K([]), pol, [])).ok, 'judge: KS12.5 lets no KEY write go (a press that writes the polaroids is a failure)');
   check(!judge(r('1 [situation 1]', [], K([]), [], pol), r('1 [situation 1]', [], K([]), [], [])).ok, 'judge: KS12.5 lets no kit-off-only load write go');
+  /* KS14: the faces layer written on load (any key) and taken down by Esc and 0 only */
+  const faces = ['+ /ambient/doc/layers/band/faces/0/name = "x"', '+ /ambient/doc/layers/band/faces/0/stress = 2'], down = ['- /ambient/doc/layers/band/faces/0/name', '- /ambient/doc/layers/band/faces/0/stress'];
+  const f1 = judge(r('G [panel g]', [], K([]), [], []), r('G [panel g]', [], K([]), [], faces));
+  check(f1.ok && f1.exempted.includes('KS14: the band faces layer'), 'judge: KS14: the faces layer written while the kit-on page loads is let go, and says so');
+  check(judge(r('Esc [esc Escape]', [], K([])), r('Esc [esc Escape]', [], K([]), down)).ok, 'judge: KS14: Esc taking the faces layer down is let go');
+  check(judge(r('0 [clear 0]', [], K([])), r('0 [clear 0]', [], K([]), down)).ok, 'judge: KS14: 0 taking the faces layer down is let go');
+  check(!judge(r('G [panel g]', [], K([])), r('G [panel g]', [], K([]), down)).ok, 'judge: KS14 lets no other key take the faces layer down (G)');
+  check(!judge(r('Esc [esc Escape]', [], K([])), r('Esc [esc Escape]', [], K([]), ['+ /ambient/doc/layers/band/faces/0/name = "x"'])).ok, 'judge: KS14 lets no key WRITE the faces layer (Esc)');
+  check(!judge(r('Esc [esc Escape]', [], K([])), r('Esc [esc Escape]', [], K([]), ['- /ambient/doc/layers/band/facesx'])).ok, 'judge: KS14 lets no look-alike path go (facesx)');
+  check(!judge(r('Esc [esc Escape]', [], K([])), r('Esc [esc Escape]', [], K([]), ['- /ambient/doc/layers/band/clock'])).ok, 'judge: KS14 lets no other band layer go down (clock)');
+  check(!judge(r('G [panel g]', [], K([]), [], []), r('G [panel g]', [], K([]), [], ['+ /ambient/doc/layers/band/facesx = 1', '+ /ambient/doc/layers/stage/faces/0 = 1'])).ok, 'judge: KS14 lets no look-alike load write go');
+  check(!judge(r('Esc [esc Escape]', [], K([]), down), r('Esc [esc Escape]', [], K([]))).ok, 'judge: KS14 lets no kit-off-only removal go');
+  check(!judge(r('G [panel g]', [], K([]), [], faces), r('G [panel g]', [], K([]), [], [])).ok, 'judge: KS14 lets no kit-off-only load write go');
+  /* state keys: the same hook under the same id is the same line, wherever a wrapper puts it; a hook the kit-on page lacks is still lost */
+  const st = (k, a = 'aria-selected') => 'state ' + k + ' ' + a + ' false -> true', ka = (k, a = 'aria-selected') => k + ' ' + a;
+  check(judge(r('C [place c]', [st('#gm-band~.gm-place:3')], K([], [ka('#gm-band~.gm-place:3')])), r('C [place c]', [st('#gm-band~.gm-place:3')], K([], [ka('#gm-band~.gm-place:3')]))).ok, 'judge: a state line keyed by its hook under the nearest id matches across a wrapper');
+  check(!judge(r('C [place c]', [st('#gm-band~.gm-band-panic:0', 'aria-pressed')], K([], [ka('#gm-band~.gm-band-panic:0', 'aria-pressed')])), r('C [place c]', [], K([], [ka('#gm-band~.kband-panic:0', 'aria-pressed')]))).ok, 'judge: a state line whose hook the kit-on page lost is still LOST');
+  const added = judge(r('C [place c]', [st('#gm-band~.gm-place:3')], K([], [ka('#gm-band~.gm-place:3')])), r('C [place c]', [st('#gm-band~.gm-place:3'), st('#gm-band~.gm-place:3', 'aria-pressed')], K([], [ka('#gm-band~.gm-place:3'), ka('#gm-band~.gm-place:3', 'aria-pressed')])));
+  check(added.ok && added.extra.length === 1, 'judge: an attribute only the kit part carries (aria-pressed beside aria-selected) is a note; the old one is still compared');
+  check(!judge(r('C [place c]', [st('#gm-band~.gm-place:3')], K([], [ka('#gm-band~.gm-place:3')])), r('C [place c]', [st('#gm-band~.gm-place:4')], K([], [ka('#gm-band~.gm-place:3'), ka('#gm-band~.gm-place:4')]))).ok, 'judge: the old attribute changing on another tab is a difference');
 }
 if (process.env.KIT_KEYS_SELF_ONLY === '1') { console.log(failed ? 'FAIL kit-keys (self-checks only)' : 'PASS kit-keys (self-checks only)'); process.exit(failed ? 1 : 0); }
 if (!process.env.PW_MODULE) { console.log('SKIP kit-keys: PW_MODULE is not set (it needs Playwright)'); process.exit(0); }
@@ -125,10 +157,32 @@ function snapPage() {
   const sigOf = (a) => a.tagName.toLowerCase() + (typeof a.className === 'string' && a.className.trim() ? '.' + a.className.trim().split(/\s+/).sort()[0] : '');
   /* the insides of an svg (a figure's groups) are drawing, not hooks: the fingerprint skips them too */
   const inSvg = (e) => !!(e.parentElement && e.parentElement.closest('svg'));
-  const path = (e) => { if (e.id) return '#' + e.id; const out = []; for (let a = e; a && a !== document.body && out.length < 4; a = a.parentElement) { const p = a.parentElement, sg = sigOf(a); out.push(a.id ? '#' + a.id : sg + ':' + (p ? [...p.children].filter((x) => sigOf(x) === sg).indexOf(a) : 0)); if (a.id) break; } return out.reverse().join('>'); };
+  void sigOf;
+  /* WHERE A STATE LINE IS (the re-review of KS04: a DOM path made KS05's wrappers and moves read as lost elements): the element's own id, else its nearest
+     ancestor with an id, "~", its hook and its number among the elements with that hook under that id. The hook is the element's first old hook class (one
+     with a hyphen, the kit's own ui- kband- kr- kbl- who- is- classes left out; a state class like "on" has no hyphen), else its first data-* hook, else its
+     tag. Wrappers and moves inside the same id do not change it; a hook that is gone does. */
+  const KIT_CLASS = /^(ui-|kband-|kr-|kbl-|who-|is-)/, NOT_HOOK = /^data-(state|open|alarm|active|on|kit|kit-.*|ui-.*)$/;
+  const hook = (e) => {
+    const cls = (typeof e.className === 'string' ? e.className : '').trim().split(/\s+/).filter((c) => c && !KIT_CLASS.test(c));
+    const hy = cls.filter((c) => c.indexOf('-') > 0).sort(); if (hy.length) return '.' + hy[0];
+    const ds = [...e.attributes].filter((x) => /^data-/.test(x.name) && !NOT_HOOK.test(x.name)).map((x) => x.name + '=' + String(x.value).replace(/\d{5,}/g, '#').replace(/\s+/g, '_').slice(0, 40)).sort();
+    if (ds.length) return '[' + ds[0] + ']';
+    return cls.length ? '.' + cls.sort()[0] : e.tagName.toLowerCase();
+  };
+  const rootOf = (e) => { let a = e.parentElement; while (a && a !== document.body && !(a.id && !inSvg(a))) a = a.parentElement; return a && a !== document.body ? a : document.body; };
+  const rootKey = (r) => (r === document.body ? 'body' : '#' + r.id);
+  const memo = new Map(), rh = (e) => { let v = memo.get(e); if (!v) { v = { r: rootOf(e), h: hook(e) }; memo.set(e, v); } return v; };
+  const keyIn = (e, list) => { if (e.id) return '#' + e.id; const { r, h } = rh(e); const same = list.filter((x) => { if (x.id) return false; const q = rh(x); return q.r === r && q.h === h; }); return rootKey(r) + '~' + h + ':' + same.indexOf(e); };
+  /* live, not the key's: the Now card (it leaves Now on a 1.5 s timer, NOW_MS) and the Run view's people rows (presence arrives with the polls) */
+  const liveEl = (e) => !!(e.closest('#as-now') || e.closest('.rv-ppl'));
   const A = ['aria-pressed', 'aria-selected', 'aria-current', 'aria-expanded', 'data-state', 'data-open', 'data-alarm', 'data-active', 'data-on'];
   const ids = [...document.querySelectorAll('[id]')].filter((e) => !inSvg(e) && vis(e)).map((e) => e.id).sort();
-  const attrs = {}; document.querySelectorAll(A.map((a) => '[' + a + ']').join(',')).forEach((e) => { if (!inSvg(e)) attrs[path(e)] = A.map((a) => e.getAttribute(a)).join('|'); });
+  const stateEls = [...document.querySelectorAll(A.map((a) => '[' + a + ']').join(','))].filter((e) => !inSvg(e) && !liveEl(e));
+  /* one entry per attribute the element carries ("<where> <attribute>"): a kit part that adds aria-pressed beside the old aria-selected is new markup (a note),
+     while the old attribute is still held to what it did */
+  const attrs = {}; stateEls.forEach((e) => { const k = keyIn(e, stateEls); A.forEach((a) => { if (e.hasAttribute(a)) attrs[k + ' ' + a] = e.getAttribute(a); }); });
+  const path = (e) => keyIn(e, [...rootOf(e).querySelectorAll('*')]);
   const a = document.activeElement, toast = ['toastMsg', 'toastErr'].map((i) => { const e = document.getElementById(i); return e ? e.textContent.trim() : ''; }).join('|');
   const all = [...document.querySelectorAll('[id]')].filter((e) => !inSvg(e)).map((e) => e.id);
   return { ids, all, attrs, active: a && a !== document.body ? path(a) : '', hash: location.hash, toast, find: !!document.querySelector('#gm-find-q') && vis(document.querySelector('#gm-find-q')) };
@@ -162,7 +216,7 @@ function pageDiff(a, b) {
   for (const i of a.ids) if (!sb.has(i)) out.push('hidden #' + i);
   /* state the clock or a poll changes, not the key: Blade's seat state (waiting, setting up); the Now card (it leaves Now 1.5 s after the panel shows it,
      app/gm/assist-panel.js NOW_MS); the Run view's people rows (presence arrives with the polls: kit-off masks the players chip for the same reason) */
-  const live = (k) => /^#as-state$/.test(k) || /^#as-now>/.test(k) || /(^|>)ul\.rv-ppl:/.test(k);
+  const live = (k) => /^#as-state /.test(k);        /* the Now card and the people rows are left out in the page itself (snapPage's liveEl) */
   for (const k of Object.keys(b.attrs).filter((x) => !live(x))) if (a.attrs[k] === undefined) out.push('new ' + k + ' ' + b.attrs[k]); else if (a.attrs[k] !== b.attrs[k]) out.push('state ' + k + ' ' + a.attrs[k] + ' -> ' + b.attrs[k]);
   for (const k of Object.keys(a.attrs).filter((x) => !live(x))) if (b.attrs[k] === undefined) out.push('gone ' + k);
   if (a.active !== b.active) out.push('focus ' + (a.active || 'none') + ' -> ' + (b.active || 'none'));

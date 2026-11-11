@@ -90,6 +90,13 @@ if (!process.env.PW_MODULE) { console.log('SKIP kit-off: PW_MODULE is not set (t
   caught('a Debrief card taken away', deb, remove(deb, /gm-debrief-card[^/]*$/));
   caught('a Debrief card reclassed', deb, reclass(deb, /gm-debrief-card[^/]*$/));
   caught('the Find button reclassed (the control)', run, reclass(run, /button\.gm-band-find[^/]*$/));
+  { const m = copy(run), e = m.els.find((x) => /gm-band-r2:\d+\/button\.gm-band-panic:\d+$/.test(x[0])); if (e) e[6] += 30; caught('PANIC 30 px wider (band row 2 holds widths)', run, e ? m : null); }
+  /* an element with an id: its key carries no classes, so classes are compared on their own (the re-review of KS04) */
+  const classed = (fp, id, f) => { const m = copy(fp), e = m.els.find((x) => x[2] === id); if (!e) return null; e[3] = f(e[3]); return m; };
+  for (const id of ['gm-bar-drawer', 'gm-cuebar', 'gm-ipad-now']) {
+    caught('#' + id + ': a class added', run, classed(run, id, (c) => (c ? c + ' ' : '') + 'mutated'));
+    caught('#' + id + ': a class taken off', run, classed(run, id, (c) => c.split(' ').slice(1).join(' ')));
+  }
   /* a live slot: empty on one side is let go; filled on both sides, an element lost inside it is caught */
   const q = load('gm-tray-live-1366.json');
   if (q && find(q, /span\.gm-band-quiet:\d+\/button\.gm-quiet-badge:\d+$/)) {
