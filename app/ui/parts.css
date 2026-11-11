@@ -75,6 +75,19 @@
 :where(:root[data-kit], [data-ui-scope]) .ui-tab[aria-selected="true"] { color: var(--ui-ink); border-bottom-color: var(--ui-accent); }
 :where(:root[data-kit], [data-ui-scope]) .ui-tab:disabled { color: var(--ui-ink-faint); cursor: not-allowed; }
 
+/* ---------- Bottom bar (KS17): a phone's screens, the tab row spread edge to edge, the one shown marked above its word ---------- */
+:where(:root[data-kit], [data-ui-scope]) .ui-bottombar { display: block; box-sizing: border-box; margin: 0; padding: 0; background: var(--ui-raised); color: var(--ui-ink); border-top: var(--ui-rule); }
+:where(:root[data-kit], [data-ui-scope]) .ui-bottombar--fixed { position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--ui-layer-sticky); padding-bottom: env(safe-area-inset-bottom, 0px); }
+:where(:root[data-kit], [data-ui-scope]) .ui-bottombar .ui-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0; border-bottom: 0; }
+:where(:root[data-kit], [data-ui-scope]) .ui-bottombar .ui-tab {
+  min-height: 48px; margin: -2px 0 0; padding: var(--ui-space-2) var(--ui-space-1); border-bottom: 0; border-top: 3px solid transparent;
+  color: var(--ui-ink-soft); font: 900 var(--ui-type-body)/1.2 var(--ui-font-cond); letter-spacing: .14em; overflow: hidden; text-overflow: ellipsis;
+}
+:where(:root[data-kit], [data-ui-scope]) .ui-bottombar .ui-tab:hover, :where(:root[data-kit], [data-ui-scope]) .ui-bottombar .ui-tab.ui-demo-hover { color: var(--ui-ink); border-top-color: var(--ui-line); }
+:where(:root[data-kit], [data-ui-scope]) .ui-bottombar .ui-tab:focus-visible, :where(:root[data-kit], [data-ui-scope]) .ui-bottombar .ui-tab.ui-demo-focus { outline: var(--ui-focus-ring); outline-offset: -4px; }
+:where(:root[data-kit], [data-ui-scope]) .ui-bottombar .ui-tab:active { background: var(--ui-sunk); }
+:where(:root[data-kit], [data-ui-scope]) .ui-bottombar .ui-tab[aria-selected="true"] { color: var(--ui-ink); border-top-color: var(--ui-accent); }
+
 /* ---------- Chip: a status or a small toggle, always with a word ---------- */
 :where(:root[data-kit], [data-ui-scope]) .ui-chip {
   display: inline-flex; align-items: center; gap: .5em; box-sizing: border-box; margin: 0; padding: .3em .85em;
@@ -231,7 +244,7 @@
 :where(:root[data-kit], [data-ui-scope]) .ui-meter-text { color: var(--ui-ink); font: 700 var(--ui-type-label)/1.25 var(--ui-font-text); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
 
 /* ---------- a part with hidden set stays hidden, whatever its display (the look book has no [hidden] rule of its own) ---------- */
-:where(:root[data-kit], [data-ui-scope]) .ui-btn[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-seg[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-tabs[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-chip[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-dot[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-status[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-key[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-card[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-row[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-menu[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-field[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-field-input[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-meter[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-slot[hidden] { display: none; }
+:where(:root[data-kit], [data-ui-scope]) .ui-btn[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-seg[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-tabs[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-chip[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-dot[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-status[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-key[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-card[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-row[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-menu[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-field[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-field-input[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-meter[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-slot[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-bottombar[hidden] { display: none; }
 
 /* reduced motion means a cut: the busy mark stands still */
 @media (prefers-reduced-motion: reduce) {

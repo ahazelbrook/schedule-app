@@ -1144,6 +1144,7 @@
     var rcls = 'dossier ds' + (cur.ui.static ? ' ds-static' : ' ds-live') + (readOnly() ? ' ds-ro' : '') + (pb && pb.id ? ' ds-pb-' + pb.id : '') + (open ? ' ds-panel-open' : '');
     if (cur.root.className !== rcls) cur.root.className = rcls;
     if (window.B68Kit && window.B68Flags && !cur.ui.static && Object.keys(window.B68Flags.all()).length) window.B68Kit.set('phone', window.B68Flags.on('kit.phone'));   /* KS01.2: data-kit="phone" follows the setting, once the campaign has said */
+    if (window.B68SheetTabs && window.B68Kit && window.B68Kit.ready('phone') && !cur.ui.static) window.B68SheetTabs.apply(cur.root, { slots: cur.slots, table: tableNow(), id: cur.doc && cur.doc.id, dots: cur.play.dots, actions: CT.ACTIONS });   /* KS17: the four-screen sheet (sheet/kit/tabs.js) */
     askOwner();
     if (focus && !(a0 && a0.isConnected)) restoreFocus(focus);
     /* the roll panel: bring it (or, after a roll, its verdict) into view, and keep keyboard focus inside the sheet so Esc closes it.

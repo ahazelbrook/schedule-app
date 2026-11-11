@@ -1,1 +1,49 @@
-/* sheet/kit/tabs.css: the four-screen sheet (kit.phone). Registered as an empty stub by KS01.1 of the kit and stage build; KS17 fills it. In the kit-phone bundle, fetched only while its setting is on. */
+/* sheet/kit/tabs.css: the four-screen sheet (kit.phone), KS17 of the kit and stage build. In the kit-phone bundle, fetched only while its setting is on.
+   Unlayered (the old sheets are in the layer `old` once the kit is on), no important flag, every rule under :root[data-kit~="phone"].
+   The split is a phone's alone: everything that hides a part sits in the phone's media query (tracker.css's own break, screen and 760 px), so the
+   wide layout and print are untouched. The marks are sheet/kit/tabs.js's: data-ks17-off "1" (another screen's part), "head" (on a screen other than
+   Now the head keeps only its sticky bar: the top bar stays), "panel" (another screen's box holding an open roll, downtime or end-of-session panel:
+   the box goes, its panel, a fixed bottom sheet, stays); data-ks17-n is a box's place on its screen. */
+
+/* the pieces the kit adds are a phone's only: at a desk's width and in print they are not there */
+:root[data-kit~="phone"] .ks17-bar, :root[data-kit~="phone"] .ks17-top, :root[data-kit~="phone"] .ks17-crew { display: none; }
+
+@media screen and (max-width: 760px) {
+  /* each screen's boxes in its own order */
+  :root[data-kit~="phone"] [data-ks17-n="1"] { order: 1; }
+  :root[data-kit~="phone"] [data-ks17-n="2"] { order: 2; }
+  :root[data-kit~="phone"] [data-ks17-n="3"] { order: 3; }
+  :root[data-kit~="phone"] [data-ks17-n="4"] { order: 4; }
+  :root[data-kit~="phone"] [data-ks17-n="5"] { order: 5; }
+  :root[data-kit~="phone"] [data-ks17-n="6"] { order: 6; }
+  :root[data-kit~="phone"] [data-ks17-n="7"] { order: 7; }
+  :root[data-kit~="phone"] [data-ks17-n="8"] { order: 8; }
+  :root[data-kit~="phone"] [data-ks17-n="9"] { order: 9; }
+  :root[data-kit~="phone"] [data-ks17-n="10"] { order: 10; }
+
+  /* the bottom bar: above the on-stage banner when there is one (cast.css sets --cp-stage-h), under every panel and dialog (55 and up);
+     clear of the home indicator unless the banner already is */
+  :root[data-kit~="phone"] .ks17-bar { display: block; bottom: var(--cp-stage-h, 0px); z-index: 45; padding-bottom: max(0px, calc(env(safe-area-inset-bottom, 0px) - var(--cp-stage-h, 0px))); }
+  /* room under the last box for the bar (a panel's own room, tracker.css's 64vh, wins while one is open) */
+  :root[data-kit~="phone"] .ds-live[data-ks17-screen]:not(.ds-panel-open) { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+
+  /* Now: the top actions, a row each (the name to tap, its dots), then "All twelve ›" */
+  :root[data-kit~="phone"] .ks17-top { display: grid; gap: 0; min-width: 0; padding: var(--ui-space-1) 0 0; }
+  :root[data-kit~="phone"] .ks17-lab { margin: 0 0 var(--ui-space-1); color: var(--ui-ink-soft); font: 900 var(--ui-type-label)/1.2 var(--ui-font-cond); letter-spacing: .14em; text-transform: uppercase; }
+  :root[data-kit~="phone"] .ks17-act { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--ui-space-3); border-bottom: var(--ui-hairline); }
+  :root[data-kit~="phone"] .ks17-act .ui-meter { color: var(--ui-ink); font-size: 20px; pointer-events: none; }
+  :root[data-kit~="phone"] .ks17-actbtn, :root[data-kit~="phone"] .ks17-all { justify-content: flex-start; min-height: 48px; padding: 0; border: 0; background: transparent; text-align: left; }
+  :root[data-kit~="phone"] .ks17-actbtn { color: var(--ui-ink); font: 900 var(--ui-type-lead)/1.2 var(--ui-font-cond); letter-spacing: .1em; }
+  :root[data-kit~="phone"] .ks17-actbtn[aria-expanded="true"] { color: var(--ui-accent-ink); }
+  :root[data-kit~="phone"] .ks17-all { color: var(--ui-ink-soft); font: 900 var(--ui-type-body)/1.2 var(--ui-font-cond); letter-spacing: .12em; }
+
+  /* Crew: the way to the crew sheet, under the fold */
+  :root[data-kit~="phone"] .ks17-crew { display: block; margin-top: var(--ui-space-3); }
+  :root[data-kit~="phone"] .ks17-crewlink { justify-content: flex-start; min-height: 48px; padding: 0; }
+
+  /* another screen's parts (last: at the same weight they win over the pieces' own display above) */
+  :root[data-kit~="phone"] [data-ks17-off="1"] { display: none; }
+  :root[data-kit~="phone"] [data-ks17-off="head"] > :not(.ds-bar) { display: none; }
+  :root[data-kit~="phone"] [data-ks17-off="panel"] { display: contents; }
+  :root[data-kit~="phone"] [data-ks17-off="panel"] > :not(.ds-roll) { display: none; }
+}
