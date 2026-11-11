@@ -1192,6 +1192,7 @@
       strip = el('div', 'dp-strip dp-capbar');
       if (vm.title) strip.appendChild(el('p', 'dp-strip-title', vm.title));
       if (vm.caption) strip.appendChild(el('p', 'dp-strip-cap', vm.caption));
+      if (root.B68Kit && root.B68Kit.ready('stage') && root.B68Stage) strip = root.B68Stage.mapCaption(vm, document) || strip;   /* KS13.2: the caption on the stage's plate */
       e.appendChild(strip);
       e.classList.add('dp-map-capped');
     }
@@ -1503,8 +1504,8 @@
       else if (!hs && s.hs) { s.hs.destroy(); s.hs = null; }
       if (s.hs) s.hs.apply();
       if (s.roomSync) s.roomSync();      /* 4.4 / 4.3: the room's sound follows the switches and the layers */
-      var fx = !!(root.B68Fx && (swOn('fx.pause') || swOn('fx.off')));
-      if (fx && !s.fx) s.fx = root.B68Fx.attach(container, { flags: function () { return { pause: swOn('fx.pause'), off: swOn('fx.off') }; }, covered: function () { return !!(s.amb && s.amb.state().covered); } }); else if (!fx && s.fx) { s.fx.destroy(); s.fx = null; } else if (s.fx) s.fx.sync();
+      var fx = !!(root.B68Fx && (swOn('fx.pause') || swOn('fx.off') || s.stage));     /* KS13.4: the new stage (s.stage) holds its scene still */
+      if (fx && !s.fx) s.fx = root.B68Fx.attach(container, { flags: function () { return { pause: swOn('fx.pause'), off: swOn('fx.off') || !!s.stage }; }, covered: function () { return !!(s.amb && s.amb.state().covered); } }); else if (!fx && s.fx) { s.fx.destroy(); s.fx = null; } else if (s.fx) s.fx.sync();
     }
     s.offs.push(function () { if (s.hs) { s.hs.destroy(); s.hs = null; } if (s.fx) { s.fx.destroy(); s.fx = null; } });
     function ovTimer(fn, ms) { var id = later(fn, ms); s.ov.timers.push(id); return id; }
@@ -2014,7 +2015,7 @@
       }
       bandFit();
     }
-    function applyBand(hud) { s.bandModel = Pure.bandModel(hud); if (!s.bandModel) s.bandSig = ''; paintBand(); }
+    function applyBand(hud) { s.bandModel = Pure.bandModel(hud); if (!s.bandModel) s.bandSig = ''; paintBand(); if (s.stage) s.stage.mission(s.bandModel); }   /* KS13.3: the alarm */
     /* landscape: the band's box is set by its top and bottom, so a new size comes from outside (the iPad's band coming or going over it) and the cut
        is worked out again; in portrait its height follows its content, so only bandFit runs (a re-cut there would chase its own size) */
     var landscape = window.matchMedia ? window.matchMedia('(orientation: landscape)') : null;
@@ -2031,6 +2032,7 @@
       stages.appendChild(stage.el);
       s.stages.push(stage);
       if (stage.attached) later(function () { stage.attached(); }, 0);
+      if (s.stage && s.stage.swap(old, stage, retire)) return;      /* KS13.3: the new stage's transitions (push, wipe, cut) */
       var fast = reduced();
       later(function () { stage.el.classList.add('dp-in'); }, fast ? 0 : 30);
       if (old) {
@@ -2045,6 +2047,7 @@
     }
     function show(display, seq) {
       var my = ++s.token, vm = Pure.viewModel(display);
+      s.lastShow = [display, seq]; if (s.stage) s.stage.next(vm);           /* KS13: a redraw when the new stage comes or goes; what the swap brings */
       if (vm.kind === 'blank') amb.uncover(); else amb.cover();                 /* a spotlight covers the ambient; blank lets it through */
       ovLightsOut(vm.kind === 'dark');                                          /* lights out: no autopilot overlay, no AUTO chip */
       wireSync();
@@ -2060,6 +2063,22 @@
       }
       swap(buildStage(vm, seq, ctx));
     }
+
+    /* KS13 (kit.stage): the new stage's frame (app/display/kit/stage.js) while the setting is on and its bundle has loaded. Off, s.stage stays
+       null and none of the KS13 lines above does anything. Coming or going, it holds the scene still or lets it go, and redraws what is up */
+    s.stage = null; s.lastShow = null;
+    function retire(st) { var i = s.stages.indexOf(st); if (i >= 0) s.stages.splice(i, 1); try { st.destroy(); } catch (e) {} if (st.el.parentNode) st.el.parentNode.removeChild(st.el); }
+    function stageSync() {
+      var on = !!(root.B68Kit && root.B68Kit.ready('stage') && root.B68Stage);
+      if (s.dead || on === !!s.stage) return;
+      if (on) s.stage = root.B68Stage.attach(container, { later: later, clearLater: clearLater, reduced: reduced, band: function () { return s.bandModel; }, wireMs: function () { return WT.on; } });
+      else { s.stage.destroy(); s.stage = null; }
+      suiteSync();
+      if (s.lastShow) show(s.lastShow[0], s.lastShow[1]);
+    }
+    if (root.B68Kit) s.offs.push(root.B68Kit.onChange(stageSync));
+    s.offs.push(function () { if (s.stage) { s.stage.destroy(); s.stage = null; } });
+    stageSync();
 
     /* first stage: blank, so the page is never empty */
     swap(blankStage());
