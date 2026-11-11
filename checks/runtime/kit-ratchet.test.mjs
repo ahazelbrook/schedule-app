@@ -27,8 +27,51 @@ export const KINDS = {
   confirm: /(?:\b(?:window|self|globalThis|W)\.|(?<![\w$.]|function\s{1,4}))confirm\(/g,
   prompt: /(?:\b(?:window|self|globalThis|W)\.|(?<![\w$.]|function\s{1,4}))prompt\(/g
 };
-export function count(text) {
-  const out = {}, code = String(text).replace(/\/\*[\s\S]*?\*\//g, '');     /* block comments are prose, not code */
+/* Block comments out, string-aware (KS02b). A plain /\*...*\/ strip lets any string holding a slash-star ('audio/*') open a fake comment that hides real
+   code up to the next star-slash, so this walks the text once: a ' or " string (it ends at the line's end if it never closes), a `template` (it may
+   span lines), a // line comment (kept: only its text matters, and an apostrophe in it must not open a string) and a regex literal (JS only: where
+   a regex can start, a / opens one that runs to the next unescaped / outside a [class]) are copied through untouched; a block comment is dropped.
+   What it does not do: a backtick nested inside a template's ${ }, and a regex after a ) or an identifier (read as a division, as a parser would
+   for `a) / b`). Both are rare, and the worst they do is hide or show one line. mode 'css' (stylesheets and html) has strings and block comments only. */
+const REGEX_AFTER = /[(,=:[!&|?{};+\-*%<>~^]$/, KEYWORD_AFTER = /(?:^|[^\w$.])(?:return|typeof|case|void|delete|in|of|do|else)\s*$/;
+export function strip(text, mode) {
+  const s = String(text), n = s.length, js = mode !== 'css';
+  let out = '', i = 0, last = '';
+  while (i < n) {
+    const c = s[i], d = s[i + 1];
+    if (c === '/' && d === '*') { const e = s.indexOf('*/', i + 2); i = e < 0 ? n : e + 2; continue; }
+    if (js && c === '/' && d === '/') { let e = s.indexOf('\n', i); if (e < 0) e = n; out += s.slice(i, e); i = e; continue; }
+    if (c === '"' || c === "'" || (js && c === '`')) {
+      let j = i + 1;
+      while (j < n) {
+        const ch = s[j];
+        if (ch === '\\') { j += 2; continue; }
+        if (ch === c) { j++; break; }
+        if (ch === '\n' && c !== '`') break;
+        j++;
+      }
+      j = Math.min(j, n); out += s.slice(i, j); i = j; last = '"'; continue;
+    }
+    if (js && c === '/' && (last === '' || REGEX_AFTER.test(last) || KEYWORD_AFTER.test(out.slice(-12)))) {
+      let j = i + 1, cls = false;
+      while (j < n) {
+        const ch = s[j];
+        if (ch === '\\') { j += 2; continue; }
+        if (ch === '\n') break;
+        if (ch === '[') cls = true; else if (ch === ']') cls = false;
+        else if (ch === '/' && !cls) { j++; break; }
+        j++;
+      }
+      while (j < n && /[a-z]/.test(s[j])) j++;
+      j = Math.min(j, n); out += s.slice(i, j); i = j; last = '0'; continue;
+    }
+    out += c; if (!/\s/.test(c)) last = c; i++;
+  }
+  return out;
+}
+export const modeOf = (rel) => (/\.m?js$/.test(rel) ? 'js' : 'css');
+export function count(text, mode) {
+  const out = {}, code = strip(text, mode);     /* block comments are prose, not code */
   for (const k of Object.keys(KINDS)) { const n = (code.match(KINDS[k]) || []).length; if (n) out[k] = n; }
   return out;
 }
@@ -46,7 +89,7 @@ function walk(dir, out) {
 export function tree() {
   const out = {};
   walk(APP, []).map((p) => path.relative(ROOT, p).split(path.sep).join('/')).sort().forEach((rel) => {
-    const c = count(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
+    const c = count(fs.readFileSync(path.join(ROOT, rel), 'utf8'), modeOf(rel));
     if (Object.keys(c).length) out[rel] = c;
   });
   return out;
@@ -97,6 +140,21 @@ test('the counter: each kind, and what it leaves alone', () => {
   assert.deepEqual(count('ov.confirm({}); B68Ui.prompt(1); function confirm(o) {} askConfirm(); reprompt()'), {});
   assert.deepEqual(count("var t = '<' + tag; s.style.color = 'x'; el.setAttribute('style', '')"), {});
   assert.deepEqual(count('/* an old !important still wins; <button> by hand */ a { b: c }'), {}, 'a block comment is not code');
+});
+
+test('the comment strip is string-aware: a string holding a slash-star does not hide the code after it', () => {
+  const star = '/' + '*', end = '*' + '/';       /* written apart so this file's own comments are not confused */
+  const hidden = "var m = 'audio" + star + "';\nh += '<button class=\"x\">';\nvar n = 'a" + end + "';";
+  assert.deepEqual(count(hidden, 'js'), { button: 1 }, 'a raw <button between two strings is counted');
+  assert.deepEqual(count("var a = \"image" + star + "\"; el.innerHTML = '<button>' + x; /" + "* real comment <button> *" + "/ y();", 'js'), { button: 1 }, 'the real comment is still dropped');
+  assert.deepEqual(count('var t = `a' + star + '\n b`; h = \'<button>\';', 'js'), { button: 1 }, 'a template literal too');
+  assert.deepEqual(count("var re = /['\"]" + star + "/; h = '<button>'; // don't open a string", 'js'), { button: 1 }, 'a regex with a quote, and an apostrophe in a // comment');
+  assert.deepEqual(count("x = a / b; y = '" + star + "'; h = '<button>'; z = c / d;", 'js'), { button: 1 }, 'divisions are not regexes');
+  assert.deepEqual(count("h = '<button>'; // " + star + " not a comment\nk = '<button>'; " + end, 'js'), { button: 2 }, 'a slash-star after // is text');
+  assert.deepEqual(count('a { content: "' + star + '"; } b { c: d !important } ' + star + ' !important ' + end, 'css'), { important: 1 }, 'css: a string, then a real comment');
+  assert.equal(modeOf('app/x.js'), 'js'); assert.equal(modeOf('app/x.mjs'), 'js'); assert.equal(modeOf('app/x.css'), 'css'); assert.equal(modeOf('app/x.html'), 'css');
+  assert.equal(strip('a' + star + ' x ' + end + 'b', 'js'), 'ab', 'a block comment goes');
+  assert.equal(strip("'unterminated\n" + star + " c " + end + "k", 'js'), "'unterminated\nk", 'a string that never closes ends at the line');
 });
 
 test('the ratchet fails when a test line adds a raw button to a kit file, or raises a count anywhere', () => {

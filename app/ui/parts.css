@@ -1,5 +1,7 @@
 /* ui/parts.css: the UI kit's parts (ui-* classes), the kit and stage build (KS02.2). In the kit-ui bundle: fetched only while a kit setting is on.
-   Only kit markup carries a ui- class (B68Ui builds it: app/ui/ui.js), so every rule here starts with one and needs no other scope. The old
+   Every rule is scoped (KS02b): it starts with :where(:root[data-kit], [data-ui-scope]) (zero specificity, so the weights are what they were), and
+   the tokens (tokens.css) are defined on the same two. So a ui-* part draws on a kit page and inside a [data-ui-scope] container, and matches
+   nothing anywhere else: B68Ui used on a page with the kit off, outside a scope, takes no property from here, and index.html's .btn is never touched. The old
    classes a part keeps for its hooks (o.cls) are left alone: each part sets every property it relies on, so an old rule that still matches
    (the old sheets sit in a lower layer once the kit is on) cannot add a border, a shadow or a transform. No important flags; colours from the tokens.
 
@@ -7,7 +9,7 @@
    ui-demo-hover and ui-demo-focus, which take the same rules. The hard offset shadow belongs to the Primary alone. */
 
 /* ---------- Button: primary, standard, quiet, danger ---------- */
-.ui-btn {
+:where(:root[data-kit], [data-ui-scope]) .ui-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: var(--ui-space-2);
   box-sizing: border-box; min-height: var(--ui-control); margin: 0; padding: 0 var(--ui-space-4);
   border: 1px solid var(--ui-line); border-radius: var(--ui-radius); background: var(--ui-raised); color: var(--ui-ink);
@@ -16,223 +18,222 @@
   transition: background-color var(--ui-motion-quick) var(--ui-ease), color var(--ui-motion-quick) var(--ui-ease), border-color var(--ui-motion-quick) var(--ui-ease),
     box-shadow var(--ui-motion-quick) var(--ui-ease), transform var(--ui-motion-quick) var(--ui-ease);
 }
-.ui-btn:hover, .ui-btn.ui-demo-hover { background: var(--ui-sunk); border-color: var(--ui-ink-faint); }
-.ui-btn:focus-visible, .ui-btn.ui-demo-focus { outline: var(--ui-focus-ring); outline-offset: 2px; }
-.ui-btn:active, .ui-btn[aria-pressed="true"] { background: var(--ui-ink); color: var(--ui-on-ink); border-color: var(--ui-ink); }
+:where(:root[data-kit], [data-ui-scope]) .ui-btn:hover, :where(:root[data-kit], [data-ui-scope]) .ui-btn.ui-demo-hover { background: var(--ui-sunk); border-color: var(--ui-ink-faint); }
+:where(:root[data-kit], [data-ui-scope]) .ui-btn:focus-visible, :where(:root[data-kit], [data-ui-scope]) .ui-btn.ui-demo-focus { outline: var(--ui-focus-ring); outline-offset: 2px; }
+:where(:root[data-kit], [data-ui-scope]) .ui-btn:active, :where(:root[data-kit], [data-ui-scope]) .ui-btn[aria-pressed="true"] { background: var(--ui-ink); color: var(--ui-on-ink); border-color: var(--ui-ink); }
 
-.ui-btn--primary {
+:where(:root[data-kit], [data-ui-scope]) .ui-btn--primary {
   border: 2px solid var(--ui-ink); background: var(--ui-accent); color: var(--ui-on-accent); box-shadow: 4px 4px 0 var(--ui-shadow);
   padding: 0 var(--ui-space-5);
 }
-.ui-btn--primary:hover, .ui-btn--primary.ui-demo-hover { background: var(--ui-accent); border-color: var(--ui-ink); box-shadow: 5px 5px 0 var(--ui-shadow); transform: translate(-1px, -1px); }
-.ui-btn--primary:active, .ui-btn--primary[aria-pressed="true"] { background: var(--ui-accent); color: var(--ui-on-accent); border-color: var(--ui-ink); box-shadow: 1px 1px 0 var(--ui-shadow); transform: translate(3px, 3px); }
+:where(:root[data-kit], [data-ui-scope]) .ui-btn--primary:hover, :where(:root[data-kit], [data-ui-scope]) .ui-btn--primary.ui-demo-hover { background: var(--ui-accent); border-color: var(--ui-ink); box-shadow: 5px 5px 0 var(--ui-shadow); transform: translate(-1px, -1px); }
+:where(:root[data-kit], [data-ui-scope]) .ui-btn--primary:active, :where(:root[data-kit], [data-ui-scope]) .ui-btn--primary[aria-pressed="true"] { background: var(--ui-accent); color: var(--ui-on-accent); border-color: var(--ui-ink); box-shadow: 1px 1px 0 var(--ui-shadow); transform: translate(3px, 3px); }
 
-.ui-btn--quiet { border-color: transparent; background: transparent; color: var(--ui-ink); }
-.ui-btn--quiet:hover, .ui-btn--quiet.ui-demo-hover { border-color: transparent; background: var(--ui-sunk); }
+:where(:root[data-kit], [data-ui-scope]) .ui-btn--quiet { border-color: transparent; background: transparent; color: var(--ui-ink); }
+:where(:root[data-kit], [data-ui-scope]) .ui-btn--quiet:hover, :where(:root[data-kit], [data-ui-scope]) .ui-btn--quiet.ui-demo-hover { border-color: transparent; background: var(--ui-sunk); }
 
-.ui-btn--danger { border-color: var(--ui-alarm); background: transparent; color: var(--ui-alarm); }
-.ui-btn--danger:hover, .ui-btn--danger.ui-demo-hover, .ui-btn--danger:active, .ui-btn--danger[aria-pressed="true"] { border-color: var(--ui-alarm); background: var(--ui-alarm); color: var(--ui-on-alarm); }
+:where(:root[data-kit], [data-ui-scope]) .ui-btn--danger { border-color: var(--ui-alarm); background: transparent; color: var(--ui-alarm); }
+:where(:root[data-kit], [data-ui-scope]) .ui-btn--danger:hover, :where(:root[data-kit], [data-ui-scope]) .ui-btn--danger.ui-demo-hover, :where(:root[data-kit], [data-ui-scope]) .ui-btn--danger:active, :where(:root[data-kit], [data-ui-scope]) .ui-btn--danger[aria-pressed="true"] { border-color: var(--ui-alarm); background: var(--ui-alarm); color: var(--ui-on-alarm); }
 
-.ui-btn:disabled, .ui-btn[aria-disabled="true"] {
+:where(:root[data-kit], [data-ui-scope]) .ui-btn:disabled, :where(:root[data-kit], [data-ui-scope]) .ui-btn[aria-disabled="true"] {
   border-style: dashed; border-color: var(--ui-ink-faint); background: transparent; color: var(--ui-ink-faint); box-shadow: none; transform: none; cursor: not-allowed;
 }
-.ui-btn--quiet:disabled { border-color: transparent; }
-.ui-btn[aria-busy="true"] { cursor: progress; pointer-events: none; }
-.ui-btn[aria-busy="true"]::after {
+:where(:root[data-kit], [data-ui-scope]) .ui-btn--quiet:disabled { border-color: transparent; }
+:where(:root[data-kit], [data-ui-scope]) .ui-btn[aria-busy="true"] { cursor: progress; pointer-events: none; }
+:where(:root[data-kit], [data-ui-scope]) .ui-btn[aria-busy="true"]::after {
   content: ""; flex: 0 0 auto; width: .75em; height: .75em; border: 2px solid currentColor; border-right-color: transparent; border-radius: var(--ui-radius-pill);
   animation: ui-spin 800ms linear infinite;
 }
 @keyframes ui-spin { to { transform: rotate(360deg); } }
 
 /* ---------- Segmented: pick one, every option in sight ---------- */
-.ui-seg {
+:where(:root[data-kit], [data-ui-scope]) .ui-seg {
   display: inline-flex; align-items: stretch; gap: 2px; box-sizing: border-box; margin: 0; padding: 3px;
   border: var(--ui-hairline); border-radius: var(--ui-radius); background: var(--ui-sunk);
 }
-.ui-seg-opt {
+:where(:root[data-kit], [data-ui-scope]) .ui-seg-opt {
   display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-height: calc(var(--ui-control) - 8px); margin: 0;
   padding: 0 var(--ui-space-3); border: 0; border-radius: var(--ui-radius); background: transparent; color: var(--ui-ink-soft); box-shadow: none;
   font: 700 var(--ui-type-body)/1.1 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; cursor: pointer;
   transition: background-color var(--ui-motion-quick) var(--ui-ease), color var(--ui-motion-quick) var(--ui-ease);
 }
-.ui-seg-opt:hover, .ui-seg-opt.ui-demo-hover { background: var(--ui-raised); color: var(--ui-ink); }
-.ui-seg-opt:focus-visible, .ui-seg-opt.ui-demo-focus { outline: var(--ui-focus-ring); outline-offset: 1px; }
-.ui-seg-opt[aria-pressed="true"] { background: var(--ui-ink); color: var(--ui-on-ink); }
-.ui-seg-opt:disabled { background: transparent; color: var(--ui-ink-faint); text-decoration: line-through; cursor: not-allowed; }
+:where(:root[data-kit], [data-ui-scope]) .ui-seg-opt:hover, :where(:root[data-kit], [data-ui-scope]) .ui-seg-opt.ui-demo-hover { background: var(--ui-raised); color: var(--ui-ink); }
+:where(:root[data-kit], [data-ui-scope]) .ui-seg-opt:focus-visible, :where(:root[data-kit], [data-ui-scope]) .ui-seg-opt.ui-demo-focus { outline: var(--ui-focus-ring); outline-offset: 1px; }
+:where(:root[data-kit], [data-ui-scope]) .ui-seg-opt[aria-pressed="true"] { background: var(--ui-ink); color: var(--ui-on-ink); }
+:where(:root[data-kit], [data-ui-scope]) .ui-seg-opt:disabled { background: transparent; color: var(--ui-ink-faint); text-decoration: line-through; cursor: not-allowed; }
 
 /* ---------- Tabs: an underline, never a box ---------- */
-.ui-tabs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0 var(--ui-space-5); margin: 0; padding: 0; border-bottom: var(--ui-hairline); }
-.ui-tab {
+:where(:root[data-kit], [data-ui-scope]) .ui-tabs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0 var(--ui-space-5); margin: 0; padding: 0; border-bottom: var(--ui-hairline); }
+:where(:root[data-kit], [data-ui-scope]) .ui-tab {
   box-sizing: border-box; margin: 0 0 -1px; padding: var(--ui-space-2) 0; border: 0; border-bottom: 3px solid transparent; border-radius: 0;
   background: transparent; color: var(--ui-ink-soft); box-shadow: none;
   font: 700 var(--ui-type-body)/1.2 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; cursor: pointer;
   transition: color var(--ui-motion-quick) var(--ui-ease), border-color var(--ui-motion-quick) var(--ui-ease);
 }
-.ui-tab:hover, .ui-tab.ui-demo-hover { color: var(--ui-ink); border-bottom-color: var(--ui-line); }
-.ui-tab:focus-visible, .ui-tab.ui-demo-focus { outline: var(--ui-focus-ring); outline-offset: 2px; }
-.ui-tab[aria-selected="true"] { color: var(--ui-ink); border-bottom-color: var(--ui-accent); }
-.ui-tab:disabled { color: var(--ui-ink-faint); cursor: not-allowed; }
+:where(:root[data-kit], [data-ui-scope]) .ui-tab:hover, :where(:root[data-kit], [data-ui-scope]) .ui-tab.ui-demo-hover { color: var(--ui-ink); border-bottom-color: var(--ui-line); }
+:where(:root[data-kit], [data-ui-scope]) .ui-tab:focus-visible, :where(:root[data-kit], [data-ui-scope]) .ui-tab.ui-demo-focus { outline: var(--ui-focus-ring); outline-offset: 2px; }
+:where(:root[data-kit], [data-ui-scope]) .ui-tab[aria-selected="true"] { color: var(--ui-ink); border-bottom-color: var(--ui-accent); }
+:where(:root[data-kit], [data-ui-scope]) .ui-tab:disabled { color: var(--ui-ink-faint); cursor: not-allowed; }
 
 /* ---------- Chip: a status or a small toggle, always with a word ---------- */
-.ui-chip {
+:where(:root[data-kit], [data-ui-scope]) .ui-chip {
   display: inline-flex; align-items: center; gap: .5em; box-sizing: border-box; margin: 0; padding: .3em .85em;
   border: 1px solid var(--ui-line); border-radius: var(--ui-radius-pill); background: transparent; color: var(--ui-ink); box-shadow: none;
   font: 700 var(--ui-type-label)/1.25 var(--ui-font-text); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; vertical-align: middle;
 }
-.ui-chip--accent { border-color: var(--ui-accent-ink); }
-.ui-chip--alarm { border-color: var(--ui-alarm); color: var(--ui-alarm); }
-.ui-chip--rules { border-color: var(--ui-rules); color: var(--ui-rules); }
-.ui-chip--ok { border-color: var(--ui-ok); }
-.ui-chip--caution { border-color: var(--ui-caution); background: var(--ui-caution); color: var(--ui-on-caution); }
-.ui-chip[type] { cursor: pointer; transition: background-color var(--ui-motion-quick) var(--ui-ease), color var(--ui-motion-quick) var(--ui-ease); }
-.ui-chip[type]:hover, .ui-chip.ui-demo-hover { background: var(--ui-sunk); }
-.ui-chip[type]:focus-visible, .ui-chip.ui-demo-focus { outline: var(--ui-focus-ring); outline-offset: 2px; }
-.ui-chip[type][aria-pressed="true"] { border-color: var(--ui-ink); background: var(--ui-ink); color: var(--ui-on-ink); }
-.ui-chip[type]:disabled { border-style: dashed; color: var(--ui-ink-faint); cursor: not-allowed; }
+:where(:root[data-kit], [data-ui-scope]) .ui-chip--accent { border-color: var(--ui-accent-ink); }
+:where(:root[data-kit], [data-ui-scope]) .ui-chip--alarm { border-color: var(--ui-alarm); color: var(--ui-alarm); }
+:where(:root[data-kit], [data-ui-scope]) .ui-chip--rules { border-color: var(--ui-rules); color: var(--ui-rules); }
+:where(:root[data-kit], [data-ui-scope]) .ui-chip--ok { border-color: var(--ui-ok); }
+:where(:root[data-kit], [data-ui-scope]) .ui-chip--caution { border-color: var(--ui-caution); background: var(--ui-caution); color: var(--ui-on-caution); }
+:where(:root[data-kit], [data-ui-scope]) .ui-chip[type] { cursor: pointer; transition: background-color var(--ui-motion-quick) var(--ui-ease), color var(--ui-motion-quick) var(--ui-ease); }
+:where(:root[data-kit], [data-ui-scope]) .ui-chip[type]:hover, :where(:root[data-kit], [data-ui-scope]) .ui-chip.ui-demo-hover { background: var(--ui-sunk); }
+:where(:root[data-kit], [data-ui-scope]) .ui-chip[type]:focus-visible, :where(:root[data-kit], [data-ui-scope]) .ui-chip.ui-demo-focus { outline: var(--ui-focus-ring); outline-offset: 2px; }
+:where(:root[data-kit], [data-ui-scope]) .ui-chip[type][aria-pressed="true"] { border-color: var(--ui-ink); background: var(--ui-ink); color: var(--ui-on-ink); }
+:where(:root[data-kit], [data-ui-scope]) .ui-chip[type]:disabled { border-style: dashed; color: var(--ui-ink-faint); cursor: not-allowed; }
 
 /* ---------- Status dot: a dot beside a word ---------- */
-.ui-dot {
+:where(:root[data-kit], [data-ui-scope]) .ui-dot {
   display: inline-block; flex: 0 0 auto; box-sizing: border-box; width: .7em; height: .7em; border: 2px solid transparent;
   border-radius: var(--ui-radius-pill); background: var(--ui-ink-faint); vertical-align: middle;
 }
-.ui-dot--live { background: var(--ui-accent); }
-.ui-dot--ok { background: var(--ui-ok); }
-.ui-dot--alarm { background: var(--ui-alarm); border-radius: 1px; }
-.ui-dot--caution { background: var(--ui-caution); }
-.ui-dot--idle { border-color: var(--ui-ink-faint); background: transparent; }
-.ui-status {
+:where(:root[data-kit], [data-ui-scope]) .ui-dot--live { background: var(--ui-accent); }
+:where(:root[data-kit], [data-ui-scope]) .ui-dot--ok { background: var(--ui-ok); }
+:where(:root[data-kit], [data-ui-scope]) .ui-dot--alarm { background: var(--ui-alarm); border-radius: 1px; }
+:where(:root[data-kit], [data-ui-scope]) .ui-dot--caution { background: var(--ui-caution); }
+:where(:root[data-kit], [data-ui-scope]) .ui-dot--idle { border-color: var(--ui-ink-faint); background: transparent; }
+:where(:root[data-kit], [data-ui-scope]) .ui-status {
   display: inline-flex; align-items: center; gap: .55em; color: var(--ui-ink);
   font: 700 var(--ui-type-label)/1.25 var(--ui-font-text); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap;
 }
 
 /* ---------- Key hint ---------- */
-.ui-key {
+:where(:root[data-kit], [data-ui-scope]) .ui-key {
   display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 1.9em; margin: 0; padding: .1em .45em;
   border: 1px solid var(--ui-line); border-bottom-width: 2px; border-radius: var(--ui-radius); background: var(--ui-raised); color: var(--ui-ink-soft);
   font: 700 var(--ui-type-label)/1.3 var(--ui-font-mono); letter-spacing: 0; text-transform: none; white-space: nowrap; vertical-align: middle;
 }
-.ui-btn .ui-key { border-color: currentColor; background: transparent; color: inherit; opacity: .8; }
+:where(:root[data-kit], [data-ui-scope]) .ui-btn .ui-key { border-color: currentColor; background: transparent; color: inherit; opacity: .8; }
 /* a hint inside a control: the letter is painted from data-ui-key, so it is never part of the control's textContent (B68Ui, KS02b) */
-.ui-key[data-ui-key]::before { content: attr(data-ui-key); }
+:where(:root[data-kit], [data-ui-scope]) .ui-key[data-ui-key]::before { content: attr(data-ui-key); }
 
 /* ---------- Card, with a colour edge that means one thing ---------- */
-.ui-card {
+:where(:root[data-kit], [data-ui-scope]) .ui-card {
   display: grid; gap: var(--ui-space-2); box-sizing: border-box; margin: 0; padding: var(--ui-space-3) var(--ui-space-4);
   border: var(--ui-hairline); border-left: 4px solid var(--ui-edge, var(--ui-line)); border-radius: var(--ui-radius);
   background: var(--ui-raised); color: var(--ui-ink); box-shadow: none; font: 400 var(--ui-type-body)/1.45 var(--ui-font-text);
 }
 /* an inline part laid straight into a card (a chip, a status, a meter, a key, a dot, a button) keeps its own width instead of stretching into a bar */
-.ui-card > .ui-chip, .ui-card > .ui-status, .ui-card > .ui-meter, .ui-card > .ui-key, .ui-card > .ui-dot, .ui-card > .ui-btn { justify-self: start; }
-.ui-card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--ui-space-1) var(--ui-space-3); }
-.ui-card-title { margin: 0; color: var(--ui-ink); font: 700 var(--ui-type-lead)/1.25 var(--ui-font-text); letter-spacing: 0; text-transform: none; }
-.ui-card-meta { color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.25 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase; }
-.ui-card-body { margin: 0; color: var(--ui-ink); font: 400 var(--ui-type-body)/1.45 var(--ui-font-text); }
-.ui-card-acts { display: flex; flex-wrap: wrap; gap: var(--ui-space-2); margin-top: var(--ui-space-1); }
+:where(:root[data-kit], [data-ui-scope]) .ui-card > .ui-chip, :where(:root[data-kit], [data-ui-scope]) .ui-card > .ui-status, :where(:root[data-kit], [data-ui-scope]) .ui-card > .ui-meter, :where(:root[data-kit], [data-ui-scope]) .ui-card > .ui-key, :where(:root[data-kit], [data-ui-scope]) .ui-card > .ui-dot, :where(:root[data-kit], [data-ui-scope]) .ui-card > .ui-btn { justify-self: start; }
+:where(:root[data-kit], [data-ui-scope]) .ui-card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--ui-space-1) var(--ui-space-3); }
+:where(:root[data-kit], [data-ui-scope]) .ui-card-title { margin: 0; color: var(--ui-ink); font: 700 var(--ui-type-lead)/1.25 var(--ui-font-text); letter-spacing: 0; text-transform: none; }
+:where(:root[data-kit], [data-ui-scope]) .ui-card-meta { color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.25 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase; }
+:where(:root[data-kit], [data-ui-scope]) .ui-card-body { margin: 0; color: var(--ui-ink); font: 400 var(--ui-type-body)/1.45 var(--ui-font-text); }
+:where(:root[data-kit], [data-ui-scope]) .ui-card-acts { display: flex; flex-wrap: wrap; gap: var(--ui-space-2); margin-top: var(--ui-space-1); }
 
 /* the edges (card, row): one meaning each */
-.ui-edge-accent { --ui-edge: var(--ui-accent); }
-.ui-edge-alarm { --ui-edge: var(--ui-alarm); }
-.ui-edge-rules { --ui-edge: var(--ui-rules); }
-.ui-edge-ok { --ui-edge: var(--ui-ok); }
-.ui-edge-caution { --ui-edge: var(--ui-caution); }
-.ui-edge-ink { --ui-edge: var(--ui-ink); }
-.ui-edge-faction-1 { --ui-edge: var(--ui-faction-1); }
-.ui-edge-faction-2 { --ui-edge: var(--ui-faction-2); }
-.ui-edge-faction-3 { --ui-edge: var(--ui-faction-3); }
-.ui-edge-faction-4 { --ui-edge: var(--ui-faction-4); }
-.ui-edge-faction-5 { --ui-edge: var(--ui-faction-5); }
-.ui-edge-faction-6 { --ui-edge: var(--ui-faction-6); }
-.ui-edge-out-deal { --ui-edge: var(--ui-out-deal); }
-.ui-edge-out-mid { --ui-edge: var(--ui-out-mid); }
-.ui-edge-out-low { --ui-edge: var(--ui-out-low); }
-.ui-edge-out-six { --ui-edge: var(--ui-out-six); }
-.ui-edge-out-crit { --ui-edge: var(--ui-out-crit); }
+:where(:root[data-kit], [data-ui-scope]) .ui-edge-accent { --ui-edge: var(--ui-accent); }
+:where(:root[data-kit], [data-ui-scope]) .ui-edge-alarm { --ui-edge: var(--ui-alarm); }
+:where(:root[data-kit], [data-ui-scope]) .ui-edge-rules { --ui-edge: var(--ui-rules); }
+:where(:root[data-kit], [data-ui-scope]) .ui-edge-ok { --ui-edge: var(--ui-ok); }
+:where(:root[data-kit], [data-ui-scope]) .ui-edge-caution { --ui-edge: var(--ui-caution); }
+:where(:root[data-kit], [data-ui-scope]) .ui-edge-ink { --ui-edge: var(--ui-ink); }
+:where(:root[data-kit], [data-ui-scope]) .ui-edge-faction-1 { --ui-edge: var(--ui-faction-1); }
+:where(:root[data-kit], [data-ui-scope]) .ui-edge-faction-2 { --ui-edge: var(--ui-faction-2); }
+:where(:root[data-kit], [data-ui-scope]) .ui-edge-faction-3 { --ui-edge: var(--ui-faction-3); }
+:where(:root[data-kit], [data-ui-scope]) .ui-edge-faction-4 { --ui-edge: var(--ui-faction-4); }
+:where(:root[data-kit], [data-ui-scope]) .ui-edge-faction-5 { --ui-edge: var(--ui-faction-5); }
+:where(:root[data-kit], [data-ui-scope]) .ui-edge-faction-6 { --ui-edge: var(--ui-faction-6); }
+:where(:root[data-kit], [data-ui-scope]) .ui-edge-out-deal { --ui-edge: var(--ui-out-deal); }
+:where(:root[data-kit], [data-ui-scope]) .ui-edge-out-mid { --ui-edge: var(--ui-out-mid); }
+:where(:root[data-kit], [data-ui-scope]) .ui-edge-out-low { --ui-edge: var(--ui-out-low); }
+:where(:root[data-kit], [data-ui-scope]) .ui-edge-out-six { --ui-edge: var(--ui-out-six); }
+:where(:root[data-kit], [data-ui-scope]) .ui-edge-out-crit { --ui-edge: var(--ui-out-crit); }
 
 /* ---------- Row: one visible action, the rest behind the more button ---------- */
-.ui-row {
+:where(:root[data-kit], [data-ui-scope]) .ui-row {
   position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--ui-space-3);
   box-sizing: border-box; margin: 0; padding: var(--ui-space-2) var(--ui-space-3); border: 0; border-bottom: var(--ui-hairline);
   border-left: 4px solid var(--ui-edge, transparent); background: transparent; color: var(--ui-ink); font: 400 var(--ui-type-body)/1.35 var(--ui-font-text);
 }
-.ui-row:hover, .ui-row:focus-within, .ui-row.ui-demo-hover { background: var(--ui-sunk); }
-.ui-row.is-selected { --ui-edge: var(--ui-accent); background: var(--ui-raised); }
-.ui-row-text { grid-column: 2; display: grid; gap: 2px; min-width: 0; }
-.ui-row-lead {
+:where(:root[data-kit], [data-ui-scope]) .ui-row:hover, :where(:root[data-kit], [data-ui-scope]) .ui-row:focus-within, :where(:root[data-kit], [data-ui-scope]) .ui-row.ui-demo-hover { background: var(--ui-sunk); }
+:where(:root[data-kit], [data-ui-scope]) .ui-row.is-selected { --ui-edge: var(--ui-accent); background: var(--ui-raised); }
+:where(:root[data-kit], [data-ui-scope]) .ui-row-text { grid-column: 2; display: grid; gap: 2px; min-width: 0; }
+:where(:root[data-kit], [data-ui-scope]) .ui-row-lead {
   display: inline-grid; place-items: center; box-sizing: border-box; width: 2.6em; height: 2.6em; border-radius: var(--ui-radius-pill);
   background: var(--ui-ink); color: var(--ui-on-ink); font: 700 var(--ui-type-body)/1 var(--ui-font-text); letter-spacing: .02em; text-transform: uppercase;
 }
-.ui-row.is-selected .ui-row-lead, .ui-row-lead[class*="ui-edge-"] { box-shadow: 0 0 0 2px var(--ui-raised), 0 0 0 4px var(--ui-edge, var(--ui-accent)); }
-.ui-row-title { overflow: hidden; color: var(--ui-ink); font: 700 var(--ui-type-lead)/1.2 var(--ui-font-text); text-overflow: ellipsis; white-space: nowrap; }
-.ui-row-sub { overflow: hidden; color: var(--ui-ink-soft); font: 400 var(--ui-type-body)/1.3 var(--ui-font-text); text-overflow: ellipsis; white-space: nowrap; }
-.ui-row-acts { grid-column: 3; display: flex; align-items: center; gap: var(--ui-space-1); }
-.ui-row-more { min-width: var(--ui-control); padding: 0 var(--ui-space-2); font-size: var(--ui-type-lead); letter-spacing: 0; }
-.ui-menu {
+:where(:root[data-kit], [data-ui-scope]) .ui-row.is-selected .ui-row-lead, :where(:root[data-kit], [data-ui-scope]) .ui-row-lead[class*="ui-edge-"] { box-shadow: 0 0 0 2px var(--ui-raised), 0 0 0 4px var(--ui-edge, var(--ui-accent)); }
+:where(:root[data-kit], [data-ui-scope]) .ui-row-title { overflow: hidden; color: var(--ui-ink); font: 700 var(--ui-type-lead)/1.2 var(--ui-font-text); text-overflow: ellipsis; white-space: nowrap; }
+:where(:root[data-kit], [data-ui-scope]) .ui-row-sub { overflow: hidden; color: var(--ui-ink-soft); font: 400 var(--ui-type-body)/1.3 var(--ui-font-text); text-overflow: ellipsis; white-space: nowrap; }
+:where(:root[data-kit], [data-ui-scope]) .ui-row-acts { grid-column: 3; display: flex; align-items: center; gap: var(--ui-space-1); }
+:where(:root[data-kit], [data-ui-scope]) .ui-row-more { min-width: var(--ui-control); padding: 0 var(--ui-space-2); font-size: var(--ui-type-lead); letter-spacing: 0; }
+:where(:root[data-kit], [data-ui-scope]) .ui-menu {
   position: absolute; top: calc(100% - var(--ui-space-1)); right: var(--ui-space-3); z-index: var(--ui-layer-popover);
   display: grid; min-width: 12em; box-sizing: border-box; margin: 0; padding: var(--ui-space-1);
   border: var(--ui-rule); border-radius: var(--ui-radius); background: var(--ui-raised); color: var(--ui-ink); box-shadow: none;
 }
-.ui-menu--static { position: static; top: auto; right: auto; }
-.ui-menu-item {
+:where(:root[data-kit], [data-ui-scope]) .ui-menu--static { position: static; top: auto; right: auto; }
+:where(:root[data-kit], [data-ui-scope]) .ui-menu-item {
   display: flex; align-items: center; justify-content: space-between; gap: var(--ui-space-4); box-sizing: border-box; width: 100%; margin: 0; padding: var(--ui-space-2) var(--ui-space-3); border: 0; border-radius: var(--ui-radius);
   background: transparent; color: var(--ui-ink); box-shadow: none; text-align: left;
   font: 700 var(--ui-type-body)/1.2 var(--ui-font-text); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; cursor: pointer;
 }
-.ui-menu-item:hover, .ui-menu-item.ui-demo-hover { background: var(--ui-sunk); }
-.ui-menu-item:focus-visible, .ui-menu-item.ui-demo-focus { outline: var(--ui-focus-ring); outline-offset: -2px; }
-.ui-menu-item--danger { color: var(--ui-alarm); }
-.ui-menu-item .ui-key { margin-left: auto; }
-.ui-menu-item:disabled { color: var(--ui-ink-faint); cursor: not-allowed; }
+:where(:root[data-kit], [data-ui-scope]) .ui-menu-item:hover, :where(:root[data-kit], [data-ui-scope]) .ui-menu-item.ui-demo-hover { background: var(--ui-sunk); }
+:where(:root[data-kit], [data-ui-scope]) .ui-menu-item:focus-visible, :where(:root[data-kit], [data-ui-scope]) .ui-menu-item.ui-demo-focus { outline: var(--ui-focus-ring); outline-offset: -2px; }
+:where(:root[data-kit], [data-ui-scope]) .ui-menu-item--danger { color: var(--ui-alarm); }
+:where(:root[data-kit], [data-ui-scope]) .ui-menu-item .ui-key { margin-left: auto; }
+:where(:root[data-kit], [data-ui-scope]) .ui-menu-item:disabled { color: var(--ui-ink-faint); cursor: not-allowed; }
 
 /* ---------- Field: a label above, a hint below ---------- */
-.ui-field { display: grid; gap: var(--ui-space-1); box-sizing: border-box; margin: 0; color: var(--ui-ink); }
-.ui-field-label { color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.25 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase; }
-.ui-field-input {
+:where(:root[data-kit], [data-ui-scope]) .ui-field { display: grid; gap: var(--ui-space-1); box-sizing: border-box; margin: 0; color: var(--ui-ink); }
+:where(:root[data-kit], [data-ui-scope]) .ui-field-label { color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.25 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase; }
+:where(:root[data-kit], [data-ui-scope]) .ui-field-input {
   box-sizing: border-box; width: 100%; min-height: var(--ui-control); margin: 0; padding: 0 var(--ui-space-3);
   border: 1px solid var(--ui-ink-faint); border-radius: var(--ui-radius); background: var(--ui-raised); color: var(--ui-ink); box-shadow: none;
   font: 400 var(--ui-type-body)/1.4 var(--ui-font-text); letter-spacing: 0; text-transform: none;
 }
-.ui-field-input:is(textarea) { min-height: 4.6em; padding: var(--ui-space-2) var(--ui-space-3); resize: vertical; }
-.ui-field-input::placeholder { color: var(--ui-ink-faint); opacity: 1; }
-.ui-field-input:focus-visible, .ui-field-input.ui-demo-focus { border-color: var(--ui-ink); outline: var(--ui-focus-ring); outline-offset: 1px; }
-.ui-field-input:disabled { border-style: dashed; background: var(--ui-sunk); color: var(--ui-ink-faint); cursor: not-allowed; }
-.ui-field-hint { color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.35 var(--ui-font-text); letter-spacing: 0; text-transform: none; }
+:where(:root[data-kit], [data-ui-scope]) .ui-field-input:is(textarea) { min-height: 4.6em; padding: var(--ui-space-2) var(--ui-space-3); resize: vertical; }
+:where(:root[data-kit], [data-ui-scope]) .ui-field-input::placeholder { color: var(--ui-ink-faint); opacity: 1; }
+:where(:root[data-kit], [data-ui-scope]) .ui-field-input:focus-visible, :where(:root[data-kit], [data-ui-scope]) .ui-field-input.ui-demo-focus { border-color: var(--ui-ink); outline: var(--ui-focus-ring); outline-offset: 1px; }
+:where(:root[data-kit], [data-ui-scope]) .ui-field-input:disabled { border-style: dashed; background: var(--ui-sunk); color: var(--ui-ink-faint); cursor: not-allowed; }
+:where(:root[data-kit], [data-ui-scope]) .ui-field-hint { color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.35 var(--ui-font-text); letter-spacing: 0; text-transform: none; }
 
 /* check and switch: the box first, its words beside it, the hint under them; time and range are ordinary fields */
-.ui-field--check, .ui-field--switch { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0 var(--ui-space-3); min-height: var(--ui-control); cursor: pointer; }
-.ui-field--check .ui-field-input, .ui-field--switch .ui-field-input { grid-column: 1; grid-row: 1; width: 1.25em; min-height: 0; height: 1.25em; padding: 0; cursor: pointer; accent-color: var(--ui-accent); }
-.ui-field--check .ui-field-label, .ui-field--switch .ui-field-label { grid-column: 2; grid-row: 1; color: var(--ui-ink); }
-.ui-field--check .ui-field-hint, .ui-field--switch .ui-field-hint { grid-column: 2; grid-row: 2; }
-.ui-field--switch .ui-field-input {
+:where(:root[data-kit], [data-ui-scope]) .ui-field--check, :where(:root[data-kit], [data-ui-scope]) .ui-field--switch { grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0 var(--ui-space-3); min-height: var(--ui-control); cursor: pointer; }
+:where(:root[data-kit], [data-ui-scope]) .ui-field--check .ui-field-input, :where(:root[data-kit], [data-ui-scope]) .ui-field--switch .ui-field-input { grid-column: 1; grid-row: 1; width: 1.25em; min-height: 0; height: 1.25em; padding: 0; cursor: pointer; accent-color: var(--ui-accent); }
+:where(:root[data-kit], [data-ui-scope]) .ui-field--check .ui-field-label, :where(:root[data-kit], [data-ui-scope]) .ui-field--switch .ui-field-label { grid-column: 2; grid-row: 1; color: var(--ui-ink); }
+:where(:root[data-kit], [data-ui-scope]) .ui-field--check .ui-field-hint, :where(:root[data-kit], [data-ui-scope]) .ui-field--switch .ui-field-hint { grid-column: 2; grid-row: 2; }
+:where(:root[data-kit], [data-ui-scope]) .ui-field--switch .ui-field-input {
   appearance: none; -webkit-appearance: none; position: relative; width: 2.6em; height: 1.5em; border: 1px solid var(--ui-ink-faint);
   border-radius: var(--ui-radius-pill); background: var(--ui-sunk);
   transition: background-color var(--ui-motion-quick) var(--ui-ease), border-color var(--ui-motion-quick) var(--ui-ease);
 }
-.ui-field--switch .ui-field-input::before {
+:where(:root[data-kit], [data-ui-scope]) .ui-field--switch .ui-field-input::before {
   content: ""; position: absolute; top: 50%; left: .2em; width: 1em; height: 1em; margin-top: -.5em; border-radius: var(--ui-radius-pill); background: var(--ui-ink-soft);
   transition: transform var(--ui-motion-quick) var(--ui-ease), background-color var(--ui-motion-quick) var(--ui-ease);
 }
-.ui-field--switch .ui-field-input:checked { border-color: var(--ui-ink); background: var(--ui-accent); }
-.ui-field--switch .ui-field-input:checked::before { background: var(--ui-on-accent); transform: translateX(1.1em); }
-.ui-field--range .ui-field-input { padding: 0; border: 0; background: transparent; accent-color: var(--ui-accent); cursor: pointer; }
-.ui-field--range .ui-field-input:disabled { cursor: not-allowed; }
+:where(:root[data-kit], [data-ui-scope]) .ui-field--switch .ui-field-input:checked { border-color: var(--ui-ink); background: var(--ui-accent); }
+:where(:root[data-kit], [data-ui-scope]) .ui-field--switch .ui-field-input:checked::before { background: var(--ui-on-accent); transform: translateX(1.1em); }
+:where(:root[data-kit], [data-ui-scope]) .ui-field--range .ui-field-input { padding: 0; border: 0; background: transparent; accent-color: var(--ui-accent); cursor: pointer; }
+:where(:root[data-kit], [data-ui-scope]) .ui-field--range .ui-field-input:disabled { cursor: not-allowed; }
 
 /* ---------- Meter: pips and the clock ---------- */
-.ui-meter { display: inline-flex; align-items: center; gap: var(--ui-space-2); color: var(--ui-ink); font-size: var(--ui-type-lead); line-height: 1; vertical-align: middle; }
-.ui-meter--accent { color: var(--ui-accent-ink); }
-.ui-meter--alarm { color: var(--ui-alarm); }
-.ui-pip { display: inline-block; box-sizing: border-box; width: .85em; height: .85em; margin-right: -.2em; border: 2px solid currentColor; border-radius: var(--ui-radius-pill); background: transparent; }
-.ui-pip.is-on { background: currentColor; }
-.ui-clock { display: block; flex: 0 0 auto; width: 2em; height: 2em; overflow: visible; }
-.ui-wedge { fill: transparent; stroke: currentColor; stroke-width: 1; stroke-opacity: .45; }
-.ui-wedge.is-on { fill: currentColor; stroke: var(--ui-surface); stroke-width: 1.5; stroke-opacity: 1; }
-.ui-clock-rim { fill: none; stroke: currentColor; stroke-width: 2; }
-.ui-meter-text { color: var(--ui-ink); font: 700 var(--ui-type-label)/1.25 var(--ui-font-text); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+:where(:root[data-kit], [data-ui-scope]) .ui-meter { display: inline-flex; align-items: center; gap: var(--ui-space-2); color: var(--ui-ink); font-size: var(--ui-type-lead); line-height: 1; vertical-align: middle; }
+:where(:root[data-kit], [data-ui-scope]) .ui-meter--accent { color: var(--ui-accent-ink); }
+:where(:root[data-kit], [data-ui-scope]) .ui-meter--alarm { color: var(--ui-alarm); }
+:where(:root[data-kit], [data-ui-scope]) .ui-pip { display: inline-block; box-sizing: border-box; width: .85em; height: .85em; margin-right: -.2em; border: 2px solid currentColor; border-radius: var(--ui-radius-pill); background: transparent; }
+:where(:root[data-kit], [data-ui-scope]) .ui-pip.is-on { background: currentColor; }
+:where(:root[data-kit], [data-ui-scope]) .ui-clock { display: block; flex: 0 0 auto; width: 2em; height: 2em; overflow: visible; }
+:where(:root[data-kit], [data-ui-scope]) .ui-wedge { fill: transparent; stroke: currentColor; stroke-width: 1; stroke-opacity: .45; }
+:where(:root[data-kit], [data-ui-scope]) .ui-wedge.is-on { fill: currentColor; stroke: var(--ui-surface); stroke-width: 1.5; stroke-opacity: 1; }
+:where(:root[data-kit], [data-ui-scope]) .ui-clock-rim { fill: none; stroke: currentColor; stroke-width: 2; }
+:where(:root[data-kit], [data-ui-scope]) .ui-meter-text { color: var(--ui-ink); font: 700 var(--ui-type-label)/1.25 var(--ui-font-text); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
 
 /* ---------- a part with hidden set stays hidden, whatever its display (the look book has no [hidden] rule of its own) ---------- */
-.ui-btn[hidden], .ui-seg[hidden], .ui-tabs[hidden], .ui-chip[hidden], .ui-dot[hidden], .ui-status[hidden], .ui-key[hidden], .ui-card[hidden],
-.ui-row[hidden], .ui-menu[hidden], .ui-field[hidden], .ui-field-input[hidden], .ui-meter[hidden], .ui-slot[hidden] { display: none; }
+:where(:root[data-kit], [data-ui-scope]) .ui-btn[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-seg[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-tabs[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-chip[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-dot[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-status[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-key[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-card[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-row[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-menu[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-field[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-field-input[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-meter[hidden], :where(:root[data-kit], [data-ui-scope]) .ui-slot[hidden] { display: none; }
 
 /* reduced motion means a cut: the busy mark stands still */
 @media (prefers-reduced-motion: reduce) {
-  .ui-btn[aria-busy="true"]::after { animation: none; }
+  :where(:root[data-kit], [data-ui-scope]) .ui-btn[aria-busy="true"]::after { animation: none; }
 }

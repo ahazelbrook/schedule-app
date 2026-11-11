@@ -401,18 +401,58 @@ function selectors(css) {
   while ((m = re.exec(body))) {
     const s = m[1].trim();
     if (!s || s.startsWith('@') || /^(from|to|[0-9.]+%)$/.test(s)) continue;
-    s.split(',').forEach((x) => out.push(x.trim()));
+    splitTop(s).forEach((x) => out.push(x.trim()));
   }
   return out;
 }
+/* a selector list split on the commas outside () and [] (:where(:root[data-kit], [data-ui-scope]) has one inside) */
+function splitTop(s) {
+  const out = []; let d = 0, cur = '';
+  for (const c of s) {
+    if (c === '(' || c === '[') d++; else if (c === ')' || c === ']') d--;
+    if (c === ',' && d === 0) { out.push(cur); cur = ''; } else cur += c;
+  }
+  out.push(cur);
+  return out;
+}
+const SCOPE = ':where(:root[data-kit], [data-ui-scope]) ';
+const TOKEN_SCOPE = /^(:root\[data-kit~="(desk|stage|phone)"\]|\[data-ui-scope\]|:where\(:root:not\(\[data-kit\]\)\) \[data-ui-scope\])/;
 test('the kit sheets: no !important, no @layer, no mangled punctuation, every selector scoped', () => {
   for (const [name, css] of [['tokens.css', TOKENS], ['parts.css', PARTS_CSS]]) {
     assert.ok(!/!\s*important/i.test(stripComments(css)), name + ' has an !important');
     assert.ok(!/@layer/i.test(stripComments(css)), name + ' has an @layer');
     assert.ok(!/[\u0080-\u009f]/.test(css), name + ' has a character in U+0080 to U+009F');
-    for (const s of selectors(css)) assert.ok(/^:root\[data-kit~="(desk|stage|phone)"\]/.test(s) || /^\.ui-[a-z]/.test(s), name + ': unscoped selector ' + s);
+    for (const s of selectors(css)) assert.ok(TOKEN_SCOPE.test(s) || (name === 'parts.css' && s.startsWith(SCOPE + '.ui-')), name + ': unscoped selector ' + s);
   }
-  assert.ok(selectors(TOKENS).every((s) => /^:root\[data-kit~="(desk|stage|phone)"\]/.test(s)), 'every token rule sits under :root[data-kit~=...]');
+  assert.ok(selectors(TOKENS).every((s) => TOKEN_SCOPE.test(s)), 'every token rule sits under :root[data-kit~=...] or on a [data-ui-scope] container');
+});
+
+test('data-ui-scope (KS02b): parts and tokens work under :root[data-kit] and inside a [data-ui-scope] container, and nowhere else', () => {
+  const sel = selectors(PARTS_CSS);
+  assert.ok(sel.length > 100, 'parts.css has its rules: ' + sel.length);
+  for (const s of sel) {
+    assert.ok(s.startsWith(SCOPE + '.ui-'), 'a parts.css selector outside the scope: ' + s);
+    const rest = s.slice(SCOPE.length);
+    assert.ok(!/:where|:root|(^|[\s>+~])(html|body)(?![\w-])/.test(rest) && !/(^|[\s>+~])\*/.test(rest), 'nothing in the rest of the selector escapes the scope: ' + s);
+  }
+  assert.ok(sel.includes(SCOPE + '.ui-btn') && sel.some((s) => s.startsWith(SCOPE + '.ui-btn:hover')), 'the .ui-btn rules are scoped');
+  /* the scope costs no weight: :where() counts for nothing, and no :root[data-kit] is written outside one */
+  assert.ok(!/:root\[data-kit\]/.test(PARTS_CSS.replace(/:where\(:root\[data-kit\], \[data-ui-scope\]\)/g, '').replace(/\/\*[\s\S]*?\*\//g, '')), 'no bare :root[data-kit] in front of a part (it would add weight)');
+  /* a bare .ui-btn, in a page with no data-kit and no data-ui-scope, has no rule that reaches it: every selector needs the scope as an ancestor */
+  const reachesBare = sel.filter((s) => !s.startsWith(SCOPE));
+  assert.deepEqual(reachesBare, [], 'no parts.css rule can match outside the kit root and a scope');
+  /* the tokens: on the kit's root and on a scope, never on :root alone, *, or body */
+  const tsel = selectors(TOKENS);
+  assert.ok(tsel.includes('[data-ui-scope]'), 'the tokens are defined on [data-ui-scope]');
+  assert.ok(tsel.every((s) => TOKEN_SCOPE.test(s)), 'and only on the kit root or a scope');
+  assert.ok(tsel.includes(':where(:root:not([data-kit])) [data-ui-scope]'), 'Paper by default in a scope on a page with no kit');
+  for (const t of ['paper', 'night']) {
+    assert.ok(tsel.includes('[data-ui-scope][data-ui-theme="' + t + '"]') && tsel.includes('[data-ui-scope] [data-ui-theme="' + t + '"]'), 'data-ui-theme ' + t + ' works in a scope');
+  }
+  assert.ok(tsel.includes('[data-ui-scope][data-density="distance"]') && tsel.includes('[data-ui-scope] [data-density="desk"]'), 'density works in a scope');
+  assert.ok(/prefers-reduced-motion:\s*reduce\)\s*\{[^}]*\[data-ui-scope\]\s*\{[^}]*--ui-motion-quick:\s*0ms/.test(stripComments(TOKENS)), 'reduced motion is a cut in a scope');
+  assert.ok(UI_SRC.slice(0, UI_SRC.indexOf('(function')).includes('data-ui-scope'), 'the header contract names data-ui-scope');
+  assert.ok(!/(^|[^\w-])\.btn\b/.test(stripComments(PARTS_CSS) + stripComments(TOKENS)), 'the old .btn is in no kit rule');
 });
 
 test('every colour in the kit is one the app already has', () => {

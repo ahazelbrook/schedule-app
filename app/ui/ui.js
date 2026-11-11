@@ -55,6 +55,11 @@
      B68Ui.PARTS                   the manifest, app/ui/parts.json mirrored here (that file is in no bundle, so it is not precached):
                                    { version, radii, parts: [{ name, fn, class, variants, states, do, dont, examples: [{ caption, opts }] }] }.
                                    The examples are the look book's fixtures. kit-ui.test.mjs keeps the two copies equal
+   data-ui-scope (KS02b). The kit's tokens and parts apply under `:root[data-kit]` (a kit page) and inside any container carrying the attribute
+   data-ui-scope, and nowhere else. A screen whose kit is off that draws B68Ui parts (night.who's sheet, blade.pitches' cards) puts data-ui-scope on
+   the root of what it draws: the tokens are defined there and the parts are styled under it, Paper by default (data-ui-theme="night" on the scope for
+   Night), so a part is never drawn with undefined --ui-* values and never restyles an old .btn outside it. On a kit page a scope inherits the page's
+   theme and density. The helper only emits markup: the caller sets the attribute (the kit-ui bundle must be loaded: B68Load.need('kit-ui')).
    READING A LABEL (KS02b). A button, link, seg option, tab or menu item with a key hint draws <span class="ui-label">Send</span><kbd class="ui-key"
    aria-hidden="true" data-ui-key="S"></kbd>: the hint's letter is painted by CSS (::before), so textContent of the whole button is "Send", never
    "SendS", and (btn.querySelector('.ui-label') || btn).textContent is the label either way. Without a key the button is just its text, as before.

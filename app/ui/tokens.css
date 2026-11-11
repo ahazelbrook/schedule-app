@@ -1,5 +1,10 @@
 /* ui/tokens.css: the UI kit's tokens (--ui-*), the kit and stage build (KS02.1). In the kit-ui bundle: fetched only while a kit setting is on,
-   and every rule sits under :root[data-kit~="desk|stage|phone"], so nothing here matches on a screen whose kit is off.
+   and every rule sits under :root[data-kit~="desk|stage|phone"] or on a [data-ui-scope] container (below), so nothing here matches anywhere else.
+
+   data-ui-scope (KS02b): a container that opts its whole subtree into the kit on a screen whose kit is off (night.who's sheet, blade.pitches'
+   cards put it on their root). The tokens are defined on it, and parts.css styles the ui-* parts under it, and nowhere outside it and the kit's
+   root: a page with no data-kit and no data-ui-scope paints as it did, and index.html's .btn is never touched. A scope on a page with no kit is
+   Paper unless it (or a container in it) says data-ui-theme="night"; on a kit page it takes that page's theme and density.
 
    Themes are written ONCE. Every colour that changes with the theme is one line, light-dark(<Paper>, <Night>), and the theme is only
    color-scheme: the device's preference by default, a stored data-theme ("light" Paper, "dark" Night) when there is one, and a local
@@ -11,7 +16,7 @@
    Density: px for the desk (the default), the iPad's own vmin steps for data-density="distance" (on <html> or any container).
    Every colour is one the app already has (index.html's inline block, app/tokens.css, gm.css's Fixer rows): kit-ui.test.mjs checks it. */
 
-:root[data-kit~="desk"], :root[data-kit~="stage"], :root[data-kit~="phone"] {
+:root[data-kit~="desk"], :root[data-kit~="stage"], :root[data-kit~="phone"], [data-ui-scope] {
   color-scheme: light dark;
 
   /* ground and ink (index.html's --paper, --card, --inset, --ink, --ink-soft, --ink-faint, --on-ink, --hair) */
@@ -100,13 +105,18 @@
 /* the stored theme (the footer's Paper and Night: index.html's b68.theme) */
 :root[data-kit~="desk"][data-theme="light"], :root[data-kit~="stage"][data-theme="light"], :root[data-kit~="phone"][data-theme="light"] { color-scheme: light; }
 :root[data-kit~="desk"][data-theme="dark"], :root[data-kit~="stage"][data-theme="dark"], :root[data-kit~="phone"][data-theme="dark"] { color-scheme: dark; }
+/* a scope on a page with no kit: Paper, unless a data-ui-theme says Night (on a kit page it inherits the page's theme) */
+:where(:root:not([data-kit])) [data-ui-scope] { color-scheme: light; }
 /* a container's own theme, whatever the page's */
-:root[data-kit~="desk"] [data-ui-theme="paper"], :root[data-kit~="stage"] [data-ui-theme="paper"], :root[data-kit~="phone"] [data-ui-theme="paper"] { color-scheme: light; }
-:root[data-kit~="desk"] [data-ui-theme="night"], :root[data-kit~="stage"] [data-ui-theme="night"], :root[data-kit~="phone"] [data-ui-theme="night"] { color-scheme: dark; }
+:root[data-kit~="desk"] [data-ui-theme="paper"], :root[data-kit~="stage"] [data-ui-theme="paper"], :root[data-kit~="phone"] [data-ui-theme="paper"],
+[data-ui-scope][data-ui-theme="paper"], [data-ui-scope] [data-ui-theme="paper"] { color-scheme: light; }
+:root[data-kit~="desk"] [data-ui-theme="night"], :root[data-kit~="stage"] [data-ui-theme="night"], :root[data-kit~="phone"] [data-ui-theme="night"],
+[data-ui-scope][data-ui-theme="night"], [data-ui-scope] [data-ui-theme="night"] { color-scheme: dark; }
 
 /* density: distance, read from 1.5 m, in the iPad's existing vmin steps (app/tokens.css --b68-t-*, display.css spacing) */
 :root[data-kit~="desk"][data-density="distance"], :root[data-kit~="stage"][data-density="distance"], :root[data-kit~="phone"][data-density="distance"],
-:root[data-kit~="desk"] [data-density="distance"], :root[data-kit~="stage"] [data-density="distance"], :root[data-kit~="phone"] [data-density="distance"] {
+:root[data-kit~="desk"] [data-density="distance"], :root[data-kit~="stage"] [data-density="distance"], :root[data-kit~="phone"] [data-density="distance"],
+[data-ui-scope][data-density="distance"], [data-ui-scope] [data-density="distance"] {
   --ui-type-label: 3.4vmin;
   --ui-type-body: 4.4vmin;
   --ui-type-lead: 6vmin;
@@ -121,7 +131,8 @@
   --ui-control: max(44px, 7vmin);
 }
 /* a desk container inside a distance page */
-:root[data-kit~="desk"] [data-density="desk"], :root[data-kit~="stage"] [data-density="desk"], :root[data-kit~="phone"] [data-density="desk"] {
+:root[data-kit~="desk"] [data-density="desk"], :root[data-kit~="stage"] [data-density="desk"], :root[data-kit~="phone"] [data-density="desk"],
+[data-ui-scope][data-density="desk"], [data-ui-scope] [data-density="desk"] {
   --ui-type-label: 12px;
   --ui-type-body: 14px;
   --ui-type-lead: 16px;
@@ -138,7 +149,7 @@
 
 /* reduced motion means a cut */
 @media (prefers-reduced-motion: reduce) {
-  :root[data-kit~="desk"], :root[data-kit~="stage"], :root[data-kit~="phone"] {
+  :root[data-kit~="desk"], :root[data-kit~="stage"], :root[data-kit~="phone"], [data-ui-scope] {
     --ui-motion-quick: 0ms;
     --ui-motion-base: 0ms;
     --ui-motion-slow: 0ms;
