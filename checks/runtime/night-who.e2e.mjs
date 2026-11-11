@@ -51,6 +51,7 @@ const PLAYERS = [['nell.player@example.test', 'Mabel Quist', 'ch-nell', 'Nell Ar
 const stateDir = mkdtempSync(path.join(tmpdir(), 'b68-who-e2e-'));
 const WRANGLER = path.join(ROOT, 'node_modules', '.bin', 'wrangler');
 const env = { ...process.env, CI: '1', WRANGLER_SEND_METRICS: 'false' };
+delete env.ANTHROPIC_API_KEY; delete env.B68_ANTHROPIC_KEY;      /* no model: Blade's seats are never asked here */
 if (await fetch(BASE + '/api/me', { signal: AbortSignal.timeout(1500) }).then(() => true, () => false)) { console.log('FAIL port ' + PORT + ' is already in use'); process.exit(1); }
 const mig = spawnSync(WRANGLER, ['d1', 'migrations', 'apply', 'DB', '--local', '--persist-to', stateDir], { cwd: ROOT, env, encoding: 'utf8', shell: WIN });
 if (mig.status !== 0) { console.log('FAIL migrations\n' + mig.stdout + mig.stderr); process.exit(1); }
