@@ -85,13 +85,15 @@ function tablePage(at = NOW) {
   vm.createContext(win);
   for (const f of ['schedule.js', 'campaign.js']) vm.runInContext(fs.readFileSync(path.join(APP, f), 'utf8'), win, { filename: f });
   const saved = [];
-  const api = { save: (p) => { saved.push(clone(p)); return Promise.resolve(true); }, replace: () => Promise.resolve(true), me: GM, canWrite: true, isGM: true, clockOps: true, roster: () => [], profiles: null };
+  const replaced = [];
+  const api = { save: (p) => { saved.push(clone(p)); return Promise.resolve(true); }, replace: (w) => { replaced.push(clone(w)); return Promise.resolve(true); }, me: GM, canWrite: true, isGM: true, clockOps: true, roster: () => [], profiles: null };
   win.B68Campaign.open(api);
   return {
-    win, saved,
+    win, saved, replaced,
     load(doc) { win.B68Campaign.update(clone(doc)); },
-    click(act) {
-      const btn = { tagName: 'DIV', disabled: false, attributes: [{ name: 'data-act', value: act }], getAttribute: (k) => (k === 'data-act' ? act : null), focus() {} };
+    click(act, data = {}) {
+      const attributes = [{ name: 'data-act', value: act }].concat(Object.entries(data).map(([k, v]) => ({ name: 'data-' + k, value: String(v) })));
+      const btn = { tagName: 'DIV', disabled: false, attributes, getAttribute: (k) => (k === 'data-act' ? act : null), focus() {} };
       listeners.click({ target: { closest: () => btn } });
     },
   };
@@ -182,6 +184,27 @@ test('endPatch: the same document the table\'s End session writes; the roster st
   assert.equal(Who.isOpen(who), false); assert.equal(Who.isOpen(night), true);
 });
 
+test('Gate 2: a whole-document write during the night (the table removes a log line: a PUT) keeps the roster; Tam is still absent', () => {
+  const t = tablePage();
+  const night = serverPatch(storedDoc(), whoPatch(t.win, storedDoc(), { present: ['ch-nell', 'ch-ray'] }));
+  const t2 = tablePage(NOW + 600000); t2.load(night); t2.click('logrm', { i: 1 });
+  assert.equal(t2.replaced.length, 1, 'the table wrote the whole document (PUT)');
+  const after = t2.replaced[0];      // a PUT stores the body as sent (functions/api/campaign.js: only mission and features are carried over)
+  assert.equal(after.log.length, night.log.length - 1, 'the line is gone');
+  assert.deepEqual(Who.roster(after), { ids: ['ch-nell', 'ch-ray'], at: NOW_ISO });
+  assert.equal(Who.model(after, CHARS, { Sm: t.win.B68Schedule }).rows.find((r) => r.id === 'ch-tam').on, false, 'Tam is still absent');
+});
+test('Gate 2: the table page reading (normalize) keeps present exactly as stored; with none stored it adds nothing', () => {
+  const t = tablePage(), N = t.win.B68Campaign.normalize;
+  const night = serverPatch(storedDoc(), whoPatch(t.win, storedDoc(), { present: ['ch-nell', 'ch-ray'] }));
+  const n = N(clone(night));
+  assert.equal(n.session.startedAt, night.session.startedAt, 'startedAt is the stored string');
+  assert.deepEqual(clone(n.session.present), night.session.present);
+  assert.deepEqual(Object.keys(N(storedDoc()).session), ['number', 'startedAt', 'endedAt'], 'no roster stored: the session reads as before');
+  const odd = clone(night); odd.session.present = { 'ch-nell': NOW_ISO, 'ch-ray': true, 'ch-tam': null };
+  assert.deepEqual(clone(N(odd).session.present), { 'ch-nell': NOW_ISO });
+});
+
 // ---------- 3. the sheet's model and After's line ----------
 test('model: ticks from the RSVPs (everyone but a no), the number, the Prep note beside it when it differs', () => {
   const t = tablePage();
@@ -249,7 +272,8 @@ await atest('the sheet: rows from the characters, a tick toggled, Start with two
   // the page's root opens it
   gmRoot.listeners.click({ target: { closest: (s) => (s === '[data-who="open"]' ? { getAttribute: () => 'open' } : null) }, preventDefault() {} });
   assert.equal(ctl.isOpen(), true);
-  const sheet = page.children[0];
+  const sheet = gmRoot.children[0];      /* in #gm-root, under the band, as the workshop's sheets */
+  assert.equal(page.children.length, 0);
   assert.equal(sheet.id, 'gm-who-sheet'); assert.equal(sheet.hidden, false); assert.equal(sheet.getAttribute('role'), 'dialog');
   assert.match(sheet.innerHTML, /data-who-pc="ch-nell" aria-pressed="true"/);
   assert.match(sheet.innerHTML, /data-who-pc="ch-tam" aria-pressed="false"/, 'Tam said no');

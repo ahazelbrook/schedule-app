@@ -19,6 +19,9 @@ Collection `campaign`, document id `main` (one per campaign; on Cloudflare the c
 {
   v: 1,
   session: { number: 0, startedAt: null | ISO, endedAt: null | ISO },
+  // optional, written only by the GM page's Start the night (setting night.who, GM.md):
+  //   session.present = { <character id>: <the session's startedAt> }. An entry counts only while
+  //   its value is the session's own startedAt, so any other Start leaves it inert; none: everyone.
   crew: {
     name: '', type: '', lair: '', notes: '',
     tier: 0,              // 0..6

@@ -172,8 +172,8 @@
 
     /* the sheet: the page's right-edge sheet */
     function sheet() {
-      if (st.el) return st.el;
-      var d = doc0(), page = d && (d.getElementById('gm-page') || d.body); if (!page) return null;
+      var d = doc0(), page = call('root') || (d && (d.getElementById('gm-page') || d.body)); if (!page) return null;      /* in #gm-root, as the workshop's sheets: under the band (--dw-top) */
+      if (st.el) { if (st.el.parentNode !== page && page.appendChild) page.appendChild(st.el); return st.el; }
       var el = d.createElement('section');
       el.className = 'gm-sheet who-sheet'; el.id = 'gm-who-sheet'; el.hidden = true;
       el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Start the night');
