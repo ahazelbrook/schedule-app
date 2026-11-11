@@ -15,7 +15,7 @@
 :root[data-kit~="desk"] .kband-r > .gm-band-grow { flex: 1 1 0; min-width: 0; }
 
 /* the alarm row (the curfew due, PANIC pressed, signed out): red with light ink; the parts inside read Paper's tokens so a Standard button is light */
-:root[data-kit~="desk"] .kband-r2[data-alarm="curfew"], :root[data-kit~="desk"] .kband-r2[data-alarm="panic"], :root[data-kit~="desk"] #gm-band.out .kband-r2 {
+:root[data-kit~="desk"] .kband-r2[data-alarm="curfew"], :root[data-kit~="desk"] .kband-r2[data-alarm="panic"], :root[data-kit~="desk"] #gm-band.out .kband-r2:not([data-band-toasts]) {
   color-scheme: light; border-top-color: transparent; background: var(--ui-alarm); color: var(--ui-on-alarm);
   --ui-ink: var(--ui-on-alarm); --ui-ink-soft: var(--ui-on-alarm); --ui-ink-faint: var(--ui-on-alarm); --ui-line: var(--ui-on-alarm); --ui-sunk: var(--ui-alarm);
 }
@@ -164,16 +164,16 @@
 :root[data-kit~="desk"] .kband-sep { flex: none; align-self: stretch; width: 1px; margin: 10px var(--ui-space-1); background: var(--ui-line); }
 :root[data-kit~="desk"] .kband-sep-mic { display: none; }
 :root[data-kit~="desk"] .kband-tools { display: inline-flex; align-items: center; gap: var(--ui-space-1); flex: none; margin: 0; padding: 0; border: 0; }
-:root[data-kit~="desk"] #gm-band.out .kband-r2 > :not(.kband-signed):not(.kband-tools) { display: none; }      /* signed out: the message, and the tools to sign in again */
-:root[data-kit~="desk"] #gm-band.out .kband-r2 > .kband-signed { order: -1; }
-:root[data-kit~="desk"] #gm-band.out .kband-r2 > .kband-tools { margin-left: auto; }
+:root[data-kit~="desk"] #gm-band.out .kband-r2:not([data-band-toasts]) > :not(.kband-signed):not(.kband-tools) { display: none; }      /* signed out: the message, and the tools to sign in again */
+:root[data-kit~="desk"] #gm-band.out .kband-r2:not([data-band-toasts]) > .kband-signed { order: -1; }
+:root[data-kit~="desk"] #gm-band.out .kband-r2:not([data-band-toasts]) > .kband-tools { margin-left: auto; }
 :root[data-kit~="desk"] .kband-tools .gm-bb { flex: none; min-height: 30px; padding: 0 var(--ui-space-2); box-shadow: none; color: var(--ui-ink-soft); }
 :root[data-kit~="desk"] .kband-tools .gm-bb:hover, :root[data-kit~="desk"] .kband-tools .gm-bb[aria-expanded="true"] { background: var(--ui-raised); color: var(--ui-ink); }
 :root[data-kit~="desk"] .kband-save { flex: none; margin: 0 var(--ui-space-1) 0 0; padding: 0; background: none; color: var(--ui-ink-soft); opacity: 1; font: 700 var(--ui-type-label)/1.2 var(--ui-font-mono); letter-spacing: .04em; text-transform: none; white-space: nowrap; }
 :root[data-kit~="desk"] .kband-save.bad { padding: 2px 6px; background: var(--ui-alarm); color: var(--ui-on-alarm); }
 :root[data-kit~="desk"] .kband-menu { position: relative; display: inline-flex; }
 :root[data-kit~="desk"] .kband-mdot { position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border-radius: var(--ui-radius-pill); background: var(--ui-caution); box-shadow: 0 0 0 2px var(--ui-sunk); pointer-events: none; }
-:root[data-kit~="desk"] #gm-band.out .kband-signed { display: block; flex: 1 1 auto; min-width: 0; padding: var(--ui-space-1) 0; color: inherit; font: 700 var(--ui-type-body)/1.3 var(--ui-font-text); letter-spacing: 0; text-transform: none; }
+:root[data-kit~="desk"] #gm-band.out .kband-r2:not([data-band-toasts]) .kband-signed { display: block; flex: 1 1 auto; min-width: 0; padding: var(--ui-space-1) 0; color: inherit; font: 700 var(--ui-type-body)/1.3 var(--ui-font-text); letter-spacing: 0; text-transform: none; }
 
 /* ---------- narrow screens (a tablet or a phone with the desk on): the rows wrap and the places scroll ---------- */
 @media (max-width: 1099px) {
@@ -181,3 +181,14 @@
   :root[data-kit~="desk"] .kband-places { flex: 1 1 100%; order: 9; min-height: 40px; }
   :root[data-kit~="desk"] .kband-tray { max-width: 100%; }
 }
+
+/* ---------- KS05.3, with the toast stack (KS03): one status dot for the save state, signed out and the pack; a word beside it when something is wrong ----------
+   The old lines leave the band: the save text stays for screen readers (role=status), the signed-out line goes to a toast that stays, with Reload. */
+:root[data-kit~="desk"] .kband-status { display: inline-flex; align-items: center; flex: none; min-height: 30px; padding: 0 var(--ui-space-2); border-radius: var(--ui-radius); color: var(--ui-ink-soft); cursor: default; }
+:root[data-kit~="desk"] .kband-status:focus-visible { outline: var(--ui-focus-ring); outline-offset: 1px; }
+:root[data-kit~="desk"] .kband-status .ui-dot { width: 10px; height: 10px; }
+:root[data-kit~="desk"] .kband-status .ui-status { color: inherit; font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .08em; text-transform: uppercase; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+:root[data-kit~="desk"] .kband-status[data-tone="alarm"] { color: var(--ui-alarm); }
+:root[data-kit~="desk"] .kband-status[data-tone="caution"] { color: var(--ui-caution); }
+:root[data-kit~="desk"] .kband-r2[data-band-toasts] .kband-save { position: absolute; width: 1px; height: 1px; margin: 0; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+:root[data-kit~="desk"] .kband-r2[data-band-toasts] .kband-signed { display: none; }

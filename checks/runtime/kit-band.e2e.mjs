@@ -81,7 +81,7 @@ let failed = 0, passed = 0;
 function check(cond, msg) { console.log((cond ? 'PASS ' : 'FAIL ') + msg); if (cond) passed++; else failed++; }
 async function until(fn, ms, step = 100) { const t0 = Date.now(); for (;;) { const v = await fn(); if (v || Date.now() - t0 > ms) return v; await sleep(step); } }
 const timeout = setTimeout(() => { console.log('FAIL timed out\n' + serverLog.slice(-2000)); process.exit(1); }, 900000);
-const api = (method, p, body) => fetch(BASE + '/api' + p, { method, headers: { 'X-Dev-User': GM, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+const api = (method, p, body, user = GM) => fetch(BASE + '/api' + p, { method, headers: { 'X-Dev-User': user, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
   .then(async (r) => { const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch (_) {} return { status: r.status, json: j }; });
 const kit = (on) => api('PATCH', '/gm/state', { features: { 'kit.desk': on } });
 const gmState = async () => ((await api('GET', '/gm/state')).json || {}).doc || {};
@@ -190,6 +190,17 @@ try {
   check((await kit(true)).status === 200, 'kit.desk is on');
 
   /* ---- 2. the look, and the pictures: every state, Paper and Night, 1366 and 1536 ---- */
+  /* the pack as served, its export date moved 40 days back: the band's pack warning (stale) */
+  const OLD = new Date(Date.now() - 40 * 86400000).toISOString();
+  const oldPack = async (c) => { await c.route(/\/api\/gm\/pack/, async (route) => { const r = await route.fetch(); const t = (await r.text()).replace(/"exportedAt":"[^"]*"/g, '"exportedAt":"' + OLD + '"'); await route.fulfill({ response: r, body: t }); }); };
+  /* a player's quiet-line message (the band's badge); long words everywhere: what is on the iPad, the cue in standby, the beat */
+  const quietLine = async () => { const r = await api('PUT', '/docs', { kind: 'quiet', scope: 'player', json: { v: 1, items: [{ k: 'note', at: Date.now() - 600000, text: 'Can Tam sing at the gala? I have an idea.' }] } }, 'player2@example.test'); if (r.status !== 200) console.log('NOTE the quiet line: PUT /docs ' + r.status); };
+  const longWords = async () => { await api('PUT', '/gm/display', { kind: 'text', title: 'The Pelican Rooms: the long gallery over the card rooms, by lamplight', text: 'A long line of words for the players.' }); };
+  const startBeat = async (p) => {
+    await blur(p); await p.keyboard.press('r'); await p.waitForTimeout(500);
+    await p.evaluate(() => { const b = [...document.querySelectorAll('#gm-prep .pp-beat')]; const s = b.find((x) => /score/i.test(x.getAttribute('data-label') || '')) || b[2] || b[0]; if (s && s.getAttribute('aria-pressed') !== 'true') s.click(); });
+    await p.waitForTimeout(300); await blur(p); await p.keyboard.press('g'); await p.waitForTimeout(400); await blur(p);
+  };
   const signedOut = async (c) => { await c.route(/\/api\/gm\/state/, (route) => (route.request().method() === 'PATCH' ? route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"signed out"}' }) : route.fallback())); };
   const STATES = [
     ['band-normal', {}, null],
@@ -200,7 +211,10 @@ try {
     ['band-cuemore', {}, async (p) => { await p.click('#gm-cuebar .gm-cs-more'); await p.waitForTimeout(300); }],
     ['band-menu', {}, async (p) => { await p.click('#gm-band [data-gm="menu"]'); await p.waitForTimeout(300); }],
     ['band-blade', {}, async (p) => { await p.click('#gm-band [data-band="blade"]'); await p.waitForTimeout(600); }],
-    ['band-signedout', { routes: signedOut }, async (p) => { await p.keyboard.press('2'); await p.waitForSelector('#gm-band.out #gm-signed:not([hidden])', { timeout: 15000 }); }]
+    ['band-signedout', { routes: signedOut }, async (p) => { await p.keyboard.press('2'); await p.waitForSelector('#gm-band.out #gm-signed:not([hidden])', { timeout: 15000 }); await p.waitForTimeout(400); }],
+    ['band-pack', { routes: oldPack }, async (p) => { await p.waitForSelector('#gm-band [data-band-status][data-tone="caution"]', { timeout: 15000 }); await p.waitForTimeout(400); }],
+    ['band-quiet', { setup: quietLine }, async (p) => { const b = await p.waitForSelector('#gm-band .gm-quiet-badge', { timeout: 20000 }).catch(() => null); if (b) { await b.click(); await p.waitForTimeout(400); } else console.log('NOTE no quiet-line badge: the picture shows the band without it'); }],
+    ['band-long', { setup: longWords }, async (p) => { for (let i = 0; i < 3; i++) { await blur(p); await p.keyboard.press('Space'); await p.waitForTimeout(700); } await startBeat(p); }]
   ];
   const MEASURED = ['band-normal', 'band-curfew', 'band-panic'];
   for (const [wd, ht] of [[1366, 768], [1536, 864]]) {
@@ -208,6 +222,8 @@ try {
       if (!SHOTS && !MEASURED.includes(name)) continue;
       for (const theme of (SHOTS ? ['paper', 'night'] : ['paper'])) {
         await setNight({ curfewIn: o.curfewIn });
+        await api('PUT', '/gm/display', { kind: 'blank' });
+        if (o.setup) await o.setup();
         const { c, page } = await open({ w: wd, h: ht, theme, note: o.note === 'none' ? noCues : withCues, routes: o.routes || null });
         if (steps) await steps(page);
         await page.waitForTimeout(300);
@@ -302,6 +318,36 @@ try {
   check(await until(async () => !!(await A.page.$('.gm-blank')), 3000), 'Shift+H still blanks the laptop');
   await A.page.keyboard.press('x'); await sleep(400);
   check(!(await A.page.$('.gm-blank')), 'and a key brings it back');
+
+  /* ---- 8. the messages (KS05.3): one status dot; a toast for what needs a decision ---- */
+  const status = (p) => p.evaluate(() => {
+    const s = document.querySelector('#gm-band [data-band-status]'), sv = document.querySelector('#gm-band .gm-save'), r2 = document.querySelector('#gm-band .kband-r2');
+    const toasts = [...document.querySelectorAll('.ui-toast')].map((t) => ({ cls: t.className, text: (t.querySelector('.ui-toast-text') || {}).textContent || '', acts: [...t.querySelectorAll('button')].map((b) => b.textContent) }));
+    return { shown: !!s && !s.hidden && getComputedStyle(s).display !== 'none', tone: s ? s.getAttribute('data-tone') : '', word: s ? s.textContent : '', title: s ? s.getAttribute('title') || '' : '',
+      saveW: sv ? Math.round(sv.getBoundingClientRect().width) : -1, saveRole: sv ? sv.getAttribute('role') : '', red: r2 ? getComputedStyle(r2).backgroundColor : '', toasts };
+  });
+  const s0 = await status(A.page);
+  check(s0.shown && /^(ok|live|idle)$/.test(s0.tone) && s0.word === '' && s0.title.length > 0, 'the save state is one status dot, no word while all is well (' + s0.tone + ': ' + s0.title + ')');
+  check(s0.saveW <= 1 && s0.saveRole === 'status', 'the old save line is out of sight, still read out (role=status)');
+  {
+    const P = await open({ routes: oldPack });
+    const ok = await until(async () => { const s = await status(P.page); return s.tone === 'caution' && /days old/.test(s.word) && s.toasts.some((t) => /days old/.test(t.text)); }, 15000);
+    check(!!ok, 'an old pack: the dot is caution with its words, and a toast says it (' + JSON.stringify(await status(P.page)) + ')');
+    await sleep(6500);
+    const s2 = await status(P.page);
+    check(s2.toasts.some((t) => /days old/.test(t.text) && t.acts.includes('Menu')), 'the pack toast stays past an info toast\'s five seconds, with Menu: impossible to miss');
+    check(await P.page.evaluate(() => !document.querySelector('#gm-bar-exp').hidden), 'and the Menu keeps its dot');
+    await P.c.close();
+  }
+  {
+    const P = await open({ routes: signedOut });
+    await P.page.keyboard.press('2');
+    const ok = await until(async () => { const s = await status(P.page); return s.tone === 'alarm' && /Signed out/i.test(s.word) && s.toasts.some((t) => /ui-toast--error/.test(t.cls) && /Signed out/.test(t.text) && t.acts.includes('Reload')); }, 15000);
+    check(!!ok, 'signed out: the dot is alarm with "Signed out", and an error toast that stays, with Reload (' + JSON.stringify(await status(P.page)) + ')');
+    const row = await P.page.evaluate(() => { const g = document.querySelector('#gm-signed'); return { line: !!g && getComputedStyle(g).display !== 'none', tools: getComputedStyle(document.querySelector('#gm-band .kband-tools')).display !== 'none', cue: getComputedStyle(document.querySelector('#gm-cuebar')).display !== 'none' }; });
+    check(!row.line && row.tools && row.cue, 'the signed-out line leaves the band for the toast; the band keeps working (' + JSON.stringify(row) + ')');
+    await P.c.close();
+  }
 
   /* ---- 7. the setting off mid-session, and on again ---- */
   await blur(A.page); await A.page.keyboard.press('i');

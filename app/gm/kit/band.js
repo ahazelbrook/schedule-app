@@ -91,6 +91,7 @@
       '<span class="gm-band-cue kband-cue" id="gm-cuebar" data-band-slot="cue" role="group" aria-label="Cue stack"></span>' +
       '<span class="gm-band-sep kband-sep" aria-hidden="true"></span>' +
       '<span class="kband-tools">' +
+        '<span class="kband-status" data-band-status tabindex="0" hidden></span>' +
         '<span class="gm-save kband-save" role="status"></span>' +
         U.button({ label: 'Find', rank: 'quiet', cls: 'gm-bb gm-bb-ghost gm-band-find', data: { gm: 'find-open' }, title: T.find }) +
         U.button({ label: 'Crew', rank: 'quiet', id: 'gm-bar-drawer', cls: 'gm-bb gm-bb-ghost gm-dwbtn', data: { gm: 'drawer' }, title: T.crew,
@@ -169,11 +170,54 @@
       else if (host && typeof host.toast === 'function') host.toast('Blade is not available on this page.', true);
       paint();
     }
+    /* KS05.3: the save state, signed out and the pack's warnings as one status dot (with a word beside it when something is wrong), and a toast
+       for what needs a decision (the overlay kit's B68Ui.toast, KS03). Without the toast stack the old lines stay as they were. The page keeps
+       painting .gm-save, #gm-signed, #gm-band.out, #gm-bar-exp and #gm-menu-warn: this reads them. */
+    var U = Ui(), r2 = q('.kband-r2'), stEl = q('[data-band-status]'), toasts = !!(U && typeof U.toast === 'function' && r2 && stEl);
+    var held = {}, stSig = '', bandObs = null;
+    if (toasts) { r2.setAttribute('data-band-toasts', ''); stEl.hidden = false; stEl.removeAttribute('hidden'); }
+    function toastOn(key, on, o) {
+      if (!on) { if (held[key]) { try { held[key].dismiss(); } catch (e) {} held[key] = null; } return; }
+      if (held[key]) return;
+      try { held[key] = U.toast(Object.assign({ key: 'kband-' + key }, o)); } catch (e) { held[key] = null; }
+    }
+    function status() {
+      if (dead || !toasts) return;
+      var save = q('.gm-save'), exp = q('#gm-bar-exp'), warn = q('#gm-menu-warn'), sig = q('#gm-signed');
+      var sv = save ? str(save.textContent).trim() : '', bad = !!(save && save.classList.contains('bad')), out = !!(el.classList && el.classList.contains('out'));
+      var pack = exp && !exp.hidden ? str(exp.getAttribute('aria-label') || '') : '', check = !!(warn && !warn.hidden);
+      var outMsg = sig ? str(sig.textContent).trim() : 'Signed out';
+      var tone = out || bad ? 'alarm' : pack || check ? 'caution' : sv === 'Saved' ? 'ok' : sv ? 'live' : 'idle';
+      var word = out ? 'Signed out' : bad ? sv : pack ? pack : check ? 'Pack check' : '';
+      var lines = [out ? outMsg : bad ? sv + (save && save.title ? ': ' + save.title : '') : sv || 'Nothing to save yet'];
+      if (pack) lines.push(pack + ': the Menu says more');
+      if (check) lines.push('Pack check: rolls use a neutral word for some table entries. The Menu lists them.');
+      var key = JSON.stringify([tone, word, lines]);
+      if (key !== stSig) {
+        stSig = key;
+        stEl.innerHTML = U.dot({ tone: tone, label: word, title: lines.join('. ') });
+        stEl.setAttribute('data-tone', tone); stEl.setAttribute('title', lines.join('. ')); stEl.setAttribute('aria-label', lines.join('. '));
+      }
+      toastOn('out', out, { text: outMsg, tone: 'error', undo: { label: 'Reload', fn: function () { try { W.location.reload(); } catch (e) {} } } });
+      toastOn('save', bad && !out, { text: sv + (save && save.title ? ': ' + save.title : ''), tone: 'error' });
+      toastOn('pack', !!pack, { text: pack + ': the Menu says more (Update pack).', tone: 'info', duration: 0,
+        undo: { label: 'Menu', fn: function () { var m = q('[data-gm="menu"]'); if (m && typeof m.click === 'function') m.click(); } } });
+    }
+    if (toasts && W && typeof W.MutationObserver === 'function') {
+      bandObs = new W.MutationObserver(status);
+      bandObs.observe(el, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'hidden', 'aria-label', 'title'] });
+    }
     el.addEventListener('click', onClick);
-    watch(); paint();
+    watch(); paint(); status();
     return {
-      update: function () { if (!dead) { watch(); paint(); } },
-      destroy: function () { dead = true; el.removeEventListener('click', onClick); if (obs) { try { obs.disconnect(); } catch (e) {} } obs = null; watched = null; }
+      update: function () { if (!dead) { watch(); paint(); status(); } },
+      destroy: function () {
+        dead = true; el.removeEventListener('click', onClick);
+        if (obs) { try { obs.disconnect(); } catch (e) {} } obs = null; watched = null;
+        if (bandObs) { try { bandObs.disconnect(); } catch (e) {} } bandObs = null;
+        Object.keys(held).forEach(function (k) { if (held[k]) { try { held[k].dismiss(); } catch (e) {} } }); held = {};
+        if (r2) r2.removeAttribute('data-band-toasts');
+      }
     };
   }
 
