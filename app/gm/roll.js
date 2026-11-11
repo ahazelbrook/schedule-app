@@ -12,8 +12,9 @@
    row, with Pay the price and Harm & resist where the card has no such section of its own), Blade's Rack folded under it, and the folds: Scene (Now in,
    the scene, the district, who it aims at, the NPC), Earlier, More tables. Focus (F) collapses the column to #gm-mini: the position, then the four keys.
 
-   Plain script, UMD: window.B68GmRoll in the browser, module.exports under Node (checks/runtime/gm-roll.test.mjs). PURE: HTML strings from plain values,
-   every string through esc(); no DOM, no state, no network. gm-page.js owns the data (con.live in the GM state, the stamp controller, the console), every
+   Plain script, UMD: window.B68GmRoll in the browser, module.exports under Node (checks/runtime/gm-roll.test.mjs). Pure but for
+   one part: HTML strings from plain values, every string through esc(); no state, no network, and no DOM EXCEPT costBind and costKeep (KS15),
+   which listen on the stamp box and keep the cost field's focus across a redraw. gm-page.js owns the data (con.live in the GM state, the stamp controller, the console), every
    data-gm action and the painting. The column is section.gm-console: the one block N1b places, whole, in a place's left column (its parts are found by
    id under the page root, so it can move).
 
@@ -23,7 +24,7 @@
      sizeText(p) -> "severity · ticks · harm n"      sizeLine(positions, cur) -> the line under Position ('' when the pack has no size for it)
      effHtml(cur) -> #gm-eff: three radios (data-gm="eff")
      whoHtml(pcs, cur) -> #gm-who: a chip per PC (data-gm="who"; a second tap clears). pcs: [{ value, label }] (the console's Aim at options, 'anyone' left out)
-     stampHtml(v) -> #gm-stamp. v = { on, active: { position, effect, text, result?, cost? } | null, stale, cost? }
+     stampHtml(v) -> #gm-stamp. v = { on, active: { position, effect, text, result?, cost? } | null, stale, cost?, beats? }
      KS15 (kit.stage): costHtml(v.cost) the "Cost on the iPad" field (only when the stamp view carries cost); costBind(box, stamp|getter) and
        costKeep(box), the field's DOM side; RESULT_WORDS
      lineNote(room) -> the note under the line while it is the room's own ('' for none)
@@ -123,11 +124,17 @@
         (a.result ? 'Stamp it on the iPad' : 'Stamp again') + '</button>' : '') +
       '<div class="gm-rl-acts">' +
         '<button type="button" class="btn sm" data-gm="stamp-down" title="Takes the action report off the iPad">Take it down <kbd>Esc</kbd></button>' +
-        '<button type="button" class="chip sm" data-gm="stamp-clean" title="Take the card down; the roll needs no consequence">Clean (no card)</button></div>' + costHtml(v.cost);
+        '<button type="button" class="chip sm" data-gm="stamp-clean" title="' + cleanWords(v, a)[1] + '">' + cleanWords(v, a)[0] + '</button></div>' + costHtml(v.cost);
   }
   /* KS15 (kit.stage): the words the iPad shows for a result (display/kit/roll.js says the same), and the Roll's one cost field after a 4/5 or a 1-3.
      Only a stamp view made with the setting on carries `cost`, so with it off stampHtml is what it was */
   var RESULT_WORDS = { clean: 'You do it.', '45': 'You do it. It costs.', '13': 'It goes wrong.' };
+  /* Clean says what it does: with the setting on (v.beats) and the stakes up it puts "You do it." on the iPad for 8 seconds; over a result, and with
+     the setting off, it takes the card down as it always did. -> [label, tooltip], both already escaped */
+  function cleanWords(v, a) {
+    if (v && v.beats && a && !a.result) return ['Clean: You do it.', 'The roll is clean: the iPad shows &quot;You do it.&quot; for 8 seconds, then the last-roll chip'];
+    return ['Clean (no card)', 'Take the card down; the roll needs no consequence'];
+  }
   function costHtml(c) {
     if (!c || typeof c !== 'object') return '';
     var sent = str(c.sent);

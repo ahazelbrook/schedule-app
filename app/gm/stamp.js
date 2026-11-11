@@ -41,12 +41,14 @@
                called once each time a stamp goes up, by fire, Stamp again or a cue: the page asks Blade for the fit, vault Projects/blades-68-fixer-on-the-stamp),
                line() and setLine(text) (optional: the Roll's one line; without them the controller keeps its own draft text, as before N4),
                KS15 (read only while the setting kit.stage is on): who() -> the picked Who's name, covered() -> true while the iPad is blank or in PANIC,
+               vet(payload) -> false when the page's own check would refuse that report (optional),
                and show's fourth argument { replace: true } (lay the key's id again, no ifNotOverlay) }
        KS15, THE ROLL AS BEATS (kit.stage on; off, nothing here changes): the stamp's payload carries who; mark(result) lays the SAME beat again with its
        result (RESULT_MS, then the server lets it go and the iPad folds it into its last-roll chip) instead of taking it down, while the beat up is
        still this stamp's and the iPad is not covered (otherwise it is today's mark). After a 4/5 or a 1-3, view().cost = { result, draft, sent } is the
        Roll's "Cost on the iPad" field: costDraft(text) keeps what is typed, sendCost(text?) lays the beat again with the cost (COST_MS); nothing goes
-       unless it is sent, a refusal says so and keeps the text. Take it down, Esc, Clean, a new stamp and dismiss() end the cost; a mark while a result is
+       unless it is sent, a refusal says so and keeps the text. Take it down, Esc, Clean, a new stamp, dismiss(), PANIC, Blank and another show taking
+       over end the cost (view().beats: the setting is on); a mark while a result is
        up takes it down. A write that lands after its stamp was taken down is taken straight back off.
        controller: view() draft(pos|eff|text) fire() stampNow(pos, eff, text) mark(result) esc() clear() reduce() restore() dismiss() seed() destroy()
                    result is '45', '13' or 'clean'. view() -> { on, draft: { position, effect, text }, active, stale, sizer }: stale is true while the
@@ -66,7 +68,7 @@
   var KEY = { stamp: 'spine.stamp', sizer: 'spine.sizer', stage: 'kit.stage' };
   /* KS15 (the roll as beats, kit.stage): a result stands RESULT_MS on the iPad, a cost COST_MS; then the server lets it go and the iPad folds it into
      its last-roll chip. who and cost are cut to the show contract's bounds (functions/_lib/show.js report) */
-  var RESULTS = ['clean', '45', '13'], RESULT_MS = 8000, COST_MS = 10000, WHO_MAX = 40, COST_MAX = 60;
+  var RESULTS = ['clean', '45', '13'], RESULT_MS = 8000, COST_MS = 10000, WHO_MAX = 40, COST_MAX = 60, WATCH_MS = 1000;
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
@@ -155,7 +157,7 @@
     var active = null;                                        /* the stamp on the iPad: { position, effect, text, key, id, at } */
     var sizer = null;                                         /* { position, result, lines, text, armed, reduced } */
     var seeded = '', refreshT = null, armT = null, n = 0;
-    var last = null, foldT = null;                            /* KS15: the resolved roll a cost may follow ({ st, draft, sent }); the result's fold timer */
+    var last = null, foldT = null, watchT = null;                         /* KS15: the resolved roll a cost may follow ({ st, draft, sent }); the result's fold timer */
 
     function on(id) { return typeof host.feature === 'function' ? !!host.feature(id) : false; }
     function changed() { if (typeof host.changed === 'function') host.changed(); }
@@ -250,20 +252,29 @@
         d.effect = EFFECT0;
         if (!hasLine()) { d.text = ''; seeded = ''; }
         last = result === 'clean' ? null : { st: next, draft: '', sent: '' };
+        if (last) watchCost();
         foldLater(next, RESULT_MS); changed();
         return true;
       });
     }
-    /* the cost field (KS15.4): kept here so a redraw of the Roll never loses what is typed; nothing goes until sendCost */
+    /* the cost field (KS15.4): kept here so a redraw of the Roll never loses what is typed; nothing goes until sendCost.
+       It ENDS (as Take it down ends it) the moment the iPad moves on: PANIC, Blank, another show taking over, or the overlay cleared from
+       elsewhere. A once-a-second look while the field is open (the page's ambient document and display kind, no request), and again on Enter,
+       so a stale cost can never put the roll back minutes later */
+    function costGone(L) { return covered() || upId() !== L.st.id; }
+    function stopWatch() { if (watchT !== null) clrT(watchT); watchT = null; }
+    function endCost() { if (!last) return; last = null; stopWatch(); changed(); }
+    function watchCost() { stopWatch(); watchT = setT(function () { watchT = null; if (!last) return; if (costGone(last)) endCost(); else watchCost(); }, WATCH_MS); }
     function costDraft(v) { if (last) last.draft = str(v).replace(/[\r\n]+/g, ' ').slice(0, COST_MAX); }
     function sendCost(v) {
       if (!last || !on(KEY.stage)) return Promise.resolve(false);
       if (v !== undefined) costDraft(v);
       var L = last, c = cutText(L.draft, COST_MAX);
       if (!c) { toast('Type the cost first. Nothing goes until it is sent.', true); return Promise.resolve(false); }
-      if (covered()) { toast('The iPad is blank: the cost stays here until it is back.', true); return Promise.resolve(false); }
-      if (upId() && upId() !== L.st.id) { toast('Something else is on the iPad: the cost stays here.', true); return Promise.resolve(false); }
+      if (costGone(L)) { endCost(); toast('The iPad has moved on, so the cost was not sent.', true); return Promise.resolve(false); }
       var next = copy(L.st); next.cost = c;
+      /* the page's own check first (KS15 review): a hidden name gets this message alone, not the page's general refusal */
+      if (typeof host.vet === 'function' && !host.vet(payload(next))) { toast('The cost did not go to the iPad. It is still in the field.', true); return Promise.resolve(false); }
       stopRefresh();
       return relay(next, COST_MS).then(function (r) {
         if (last !== L) { if (r) takeBack(next); return false; }
@@ -361,9 +372,10 @@
       /* KS15 (kit.stage): what beat is up (the result, the cost) and the cost field after a 4/5 or a 1-3 */
       if (out.active && active.result) { out.active.result = active.result; if (active.who) out.active.who = active.who; if (active.cost) out.active.cost = active.cost; }
       if (last && on(KEY.stage)) out.cost = { result: last.st.result, draft: last.draft, sent: last.sent };
+      if (out.on && on(KEY.stage)) out.beats = true;      /* the Roll says what Clean does now (gm/roll.js stampHtml) */
       return out;
     }
-    function destroy() { stopRefresh(); stopArm(); stopFold(); }
+    function destroy() { stopRefresh(); stopArm(); stopFold(); stopWatch(); }
     return { view: view, draft: draft, fire: fire, stampNow: stampNow, mark: mark, esc: esc, clear: clear, reduce: reduce, restore: restore, dismiss: dismiss, seed: seed, destroy: destroy,
       costDraft: costDraft, sendCost: sendCost };
   }

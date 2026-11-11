@@ -4859,7 +4859,7 @@
       show: function (payload, key, ms, o) { var sh = shows(); return sh ? sh.show('report', payload, { key: key, ms: ms, replace: !!(o && o.replace) }) : Promise.resolve(null); },
       keyFor: function (key) { return W.B68Show ? W.B68Show.idFor(key) : key; }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
       clearOverlay: function () { return patchAmbient({ overlay: null }); },
-      who: function () { return S === me ? fitPc() : ''; }, covered: function () { return S === me && ((isObj(AM.shown) && AM.shown.kind === 'dark') || panicOn()); },     /* KS15 (kit.stage only): the roll as beats */
+      who: function () { return S === me ? fitPc() : ''; }, covered: function () { return S === me && ((isObj(AM.shown) && AM.shown.kind === 'dark') || panicOn()); }, vet: function (p) { return gate.allowsAmbient({ overlay: { id: 'ks15-vet', kind: 'report', ms: 10000, payload: p } }); },     /* KS15 (kit.stage only): the roll as beats */
       log: function (text) { if (S === me && me.night) me.night.stamp(text); }, toast: toast, changed: function () { if (S === me) { b09Paint(); pcStatusSync(); } },
       threat: function (st) { var t = S === me && me.b19 && me.b19.threat; if (t) t.drop(st); }, threatClear: function () { var t = S === me && me.b19 && me.b19.threat; if (t) t.clear(); },
       stamped: function (st) { if (S === me) fitStamped(st); }     /* 08/11: the stamp is what asks Blade for the fit */

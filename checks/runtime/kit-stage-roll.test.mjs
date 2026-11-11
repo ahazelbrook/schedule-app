@@ -37,6 +37,7 @@ function makeHost(over = {}) {
     },
     keyFor: (k) => Show.idFor(k), overlayId: () => overlay, clearOverlay: async () => { calls.clear++; overlay = ''; return {}; },
     who: () => (over.who !== undefined ? over.who : 'Ray'), covered: () => covered,
+    vet: (p) => (over.vet ? over.vet(p) : true),
     log: () => {}, toast: (m, bad) => calls.toast.push([m, !!bad]), now: () => 1700000000000,
     setTimeout: (fn, ms) => { calls.timers.push({ fn, ms }); return calls.timers.length; }, clearTimeout: (h) => { const t = calls.timers[h - 1]; if (t) t.cancelled = true; }, changed: () => { calls.changed++; },
   };
@@ -53,7 +54,7 @@ await test('setting off: the stamp carries no who, and a mark takes the card dow
   assert.deepEqual(calls.show[0].payload, { position: 'risky', effect: 'standard', text: LINE }); assert.equal(calls.show[0].replace, false);
   assert.equal(await c.mark('45'), true);
   assert.equal(calls.show.length, 1, 'nothing laid again'); assert.equal(calls.clear, 1, 'the card came down');
-  assert.equal(c.view().active, null); assert.equal(c.view().sizer.result, '45'); assert.equal(c.view().cost, undefined, 'no cost field');
+  assert.equal(c.view().active, null); assert.equal(c.view().sizer.result, '45'); assert.equal(c.view().cost, undefined, 'no cost field'); assert.equal(c.view().beats, undefined, 'off: Clean keeps its old words');
 });
 
 await test('stakes: the stamp carries who (cut to 40), as a normal keyed show; the payload passes the GM check', async () => {
@@ -70,7 +71,7 @@ await test('result: a 4/5 lays the SAME beat again with its result (same key, re
   assert.equal(r.key, calls.show[0].key, 'the same key, so the same overlay'); assert.equal(r.replace, true); assert.equal(r.ms, 8000);
   assert.deepEqual(r.payload, { position: 'risky', effect: 'standard', text: LINE, who: 'Ray', result: '45' });
   assert.equal(calls.clear, 0, 'not taken down');
-  const v = c.view(); assert.equal(v.active.result, '45'); assert.equal(v.sizer.result, '45'); assert.deepEqual(v.cost, { result: '45', draft: '', sent: '' });
+  const v = c.view(); assert.equal(v.beats, true); assert.equal(v.active.result, '45'); assert.equal(v.sizer.result, '45'); assert.deepEqual(v.cost, { result: '45', draft: '', sent: '' });
   fire(8000); assert.equal(c.view().active, null, 'folded'); assert.ok(c.view().cost, 'the cost can still follow once it has folded');
   assert.equal(calls.timers.filter((t) => t.ms === 170000 && !t.cancelled).length, 0, 'no stakes refresh after the result');
 });
@@ -96,16 +97,32 @@ await test('Gate 2 (1): a re-lay never undoes a takedown: Take it down / Esc, Cl
   assert.equal(h.calls.show.length, n, 'PANIC: no re-lay');
 });
 
-await test('Gate 2 (1): a late cost while blanked or after PANIC stays covered; after Take it down there is no cost to send; another show is never stomped', async () => {
-  let h = await stamped(); await h.c.mark('45'); h.cover(true); let n = h.calls.show.length;
-  assert.equal(await h.c.sendCost('Lotte remembers your face.'), false); assert.equal(h.calls.show.length, n, 'blank: not sent');
-  assert.ok(h.calls.toast.some((t) => t[1] && /blank/i.test(t[0]))); assert.equal(h.c.view().cost.draft, 'Lotte remembers your face.', 'the text is kept');
-  h.setOverlay(''); n = h.calls.show.length; assert.equal(await h.c.sendCost(), false, 'PANIC (covered, overlay cleared): not sent'); assert.equal(h.calls.show.length, n);
-  h.cover(false); assert.equal(await h.c.sendCost(), true, 'back on: it goes'); assert.equal(h.calls.show[n].payload.cost, 'Lotte remembers your face.');
+await test('Gate 2 (1), review: PANIC, Blank, another show taking over, or the overlay cleared elsewhere END the cost field, as Take it down does; it never comes back', async () => {
+  // Blank, then Enter: not sent, and the field is gone; after the lights come back, nothing to send
+  let h = await stamped(); await h.c.mark('45'); h.c.costDraft('Lotte remembers your face.'); h.cover(true); let n = h.calls.show.length;
+  assert.equal(await h.c.sendCost(), false); assert.equal(h.calls.show.length, n, 'blank: not sent');
+  assert.ok(h.calls.toast.some((t) => t[1] && /moved on/.test(t[0]))); assert.equal(h.c.view().cost, undefined, 'the field ended');
+  h.cover(false); assert.equal(await h.c.sendCost('Lotte remembers your face.'), false); assert.equal(h.calls.show.length, n, 'after Resume: never put back');
+  // the once-a-second look ends it without an Enter: Blank, PANIC (covered and cleared), another show, a clear from elsewhere
+  for (const [what, act] of [['Blank', (x) => x.cover(true)], ['PANIC', (x) => { x.cover(true); x.setOverlay(''); }], ['another show', (x) => x.setOverlay('some-other-beat')], ['a clear from elsewhere', (x) => x.setOverlay('')]]) {
+    h = await stamped(); await h.c.mark('13'); h.fire(1000); h.fire(8000); h.fire(1000);
+    assert.ok(h.c.view().cost, what + ': the field stays while nothing has moved on (and after the fold)');
+    act(h); const ch = h.calls.changed; h.fire(1000);
+    assert.equal(h.c.view().cost, undefined, what + ': the field ended'); assert.ok(h.calls.changed > ch, what + ': the Roll is redrawn');
+    h.cover(false); h.setOverlay(''); n = h.calls.show.length;
+    assert.equal(await h.c.sendCost('Lotte remembers your face.'), false); assert.equal(h.calls.show.length, n, what + ': minutes later, still nothing goes');
+    assert.equal(h.calls.timers.filter((t) => t.ms === 1000 && !t.cancelled).length, 0, what + ': no look left running');
+  }
+  // Take it down: no cost to send
   h = await stamped(); await h.c.mark('13'); await h.c.clear(); n = h.calls.show.length;
   assert.equal(h.c.view().cost, undefined); assert.equal(await h.c.sendCost('Lotte remembers your face.'), false); assert.equal(h.calls.show.length, n, 'taken down: never put back');
-  h = await stamped(); await h.c.mark('45'); h.setOverlay('some-other-beat'); n = h.calls.show.length;
-  assert.equal(await h.c.sendCost('Lotte remembers your face.'), false); assert.equal(h.calls.show.length, n, 'another show up: the cost waits');
+});
+
+await test('review (4): a cost the page itself would refuse (a hidden name) gets only the cost message, is not sent, and keeps its text', async () => {
+  const h = await stamped({ vet: (p) => !/GM-ONLY/.test(p.cost || '') }); await h.c.mark('45'); const n = h.calls.show.length;
+  assert.equal(await h.c.sendCost('GM-ONLY-NPC-1 saw it'), false); assert.equal(h.calls.show.length, n, 'not sent');
+  assert.deepEqual(h.calls.toast, [['The cost did not go to the iPad. It is still in the field.', true]]); assert.equal(h.c.view().cost.draft, 'GM-ONLY-NPC-1 saw it');
+  assert.equal(await h.c.sendCost('Lotte remembers your face.'), true);
 });
 
 await test('Gate 2 (1): a mark after kit.stage turns off takes the card down as today, even over a result', async () => {
@@ -157,6 +174,10 @@ await test('the Roll: the cost field is drawn only when the stamp view carries i
   assert.ok(h.includes('&lt;b&gt;GM&lt;/b&gt;') && !h.includes('<b>GM'), 'the draft is text'); assert.ok(h.includes('You do it. It costs.'));
   assert.ok(h.includes('>Stamp it on the iPad<') && !h.includes('Changed since it went up') && !h.includes('Stamp again'), 'while a result is up the next stamp is a new one');
   assert.ok(R.stampHtml({ on: true, active: null, cost: { result: '13', draft: '', sent: 'Lotte remembers your face.' } }).includes('On the iPad: Lotte remembers your face.'));
+  // review (2): Clean says what it does with the setting on and the stakes up; over a result, and with the setting off, it is as today
+  assert.ok(R.stampHtml({ ...base, beats: true }).includes('>Clean: You do it.<') && R.stampHtml({ ...base, beats: true }).includes('for 8 seconds'));
+  assert.ok(R.stampHtml(base).includes('>Clean (no card)<') && R.stampHtml(base).includes('title="Take the card down; the roll needs no consequence"'), 'off: as today');
+  assert.ok(R.stampHtml({ ...base, beats: true, active: { ...base.active, result: '45' } }).includes('>Clean (no card)<'), 'over a result it takes the card down');
   const box = new MiniEl('div'); const ls = {}; box.addEventListener = (t, fn) => { ls[t] = fn; };
   const got = { draft: [], sent: [] }; const ctl = { costDraft: (v) => got.draft.push(v), sendCost: (v) => { got.sent.push(v); return Promise.resolve(true); } };
   R.costBind(box, () => ctl); R.costBind(box, () => ctl);

@@ -149,6 +149,7 @@ try {
   const said = await until(() => page.evaluate(() => document.body.innerText).then((t) => /did not go to the iPad/.test(t) ? 'said' : ''), 4000);
   check(!!said, 'a cost naming a hidden NPC is refused and said');
   check((await page.inputValue('#gm-stamp-cost')) === 'GM-ONLY-NPC-1 saw it', 'and the typed text is kept');
+  check(!/player-layer/.test(await page.evaluate(() => document.body.innerText)), 'and only the cost message is shown (not the general refusal of the page)');
   check(!(await displayGet()).includes('GM-ONLY') && !JSON.stringify(await ov()).includes('GM-ONLY'), 'nothing hidden reached the ambient document or the display GET');
   await page.fill('#gm-stamp-cost', COST); await page.press('#gm-stamp-cost', 'Enter');
   const o3 = await until(async () => { const o = await ov(); return o && o.payload.cost === COST ? o : null; }, 8000);
@@ -195,7 +196,9 @@ try {
   await page.fill('#gm-stamp-cost', COST); await page.press('#gm-stamp-cost', 'Enter'); await beatIs('cost');
   await page.click('#gm-stamp [data-gm="stamp-down"]');
   check(!!(await until(async () => !(await ov()), 6000)) && !!(await noBeat(8000)), 'Take it down takes the cost down');
-  await stampIt(); await page.click('#gm-stamp [data-gm="stamp-clean"]');
+  await stampIt();
+  check(/^Clean: You do it\.$/.test((await page.textContent('#gm-stamp [data-gm="stamp-clean"]')).trim()), 'with the setting on, Clean says what it does: ' + (await page.textContent('#gm-stamp [data-gm="stamp-clean"]')));
+  await page.click('#gm-stamp [data-gm="stamp-clean"]');
   const cl = await beatIs('result');
   check(!!cl && /you do it\./i.test(cl.text) && !/it costs/i.test(cl.text), 'Clean at the stakes: "You do it."');
   check(!(await page.$('#gm-stamp-cost')), 'a clean roll offers no cost');
@@ -203,6 +206,16 @@ try {
   await page.click('#gm-stamp [data-gm="stamp-clean"]');
   check(!!(await until(async () => !(await ov()), 6000)), 'Clean at the result takes it down');
   await sleep(1500); check(!(await ov()), 'and nothing lays it again');
+
+  // ============ review: another show taking over ends the cost field; it never comes back ============
+  await stampIt(); await key(2); await beatIs('result');
+  check(!!(await until(() => page.$('#gm-stamp-cost'), 4000)), 'a cost field after a 4/5');
+  await page.fill('#gm-stamp-cost', COST);
+  await api('PATCH', '/gm/ambient', { overlay: { id: 'other-beat-1', kind: 'stamp', ms: 3000, payload: { word: 'PAID' } } });
+  check(!!(await until(async () => !(await page.$('#gm-stamp-cost')), 20000, 250)), 'another show takes over: the cost field ends');
+  await sleep(4000);
+  check(!(await page.$('#gm-stamp-cost')) && !JSON.stringify(await ov()).includes('Lotte'), 'after the other show runs out the cost field stays gone and nothing put the roll back');
+  await blur(); await page.keyboard.press('Escape'); await api('PATCH', '/gm/ambient', { overlay: null });
 
   // ============ the pictures in Paper, and the desk's Roll with its cost field (KIT_SHOTS only) ============
   if (SHOTS) {
@@ -233,6 +246,7 @@ try {
   await page.reload(); await page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
   const f1 = await stampIt();
   check(!!f1 && f1.payload.who === undefined, 'off: the stamp carries no who: ' + JSON.stringify(f1 && f1.payload));
+  check((await page.textContent('#gm-stamp [data-gm="stamp-clean"]')).trim() === 'Clean (no card)', 'off: Clean keeps its old words');
   await key(2);
   check(!!(await until(async () => !(await ov()), 6000)), 'off: a 4/5 takes the card down as today');
   check(!(await page.$('#gm-stamp-cost')), 'off: no cost field');
