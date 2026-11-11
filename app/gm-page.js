@@ -1249,7 +1249,9 @@
      The panel asks the server (HEAD, same origin) when it opens, and says so, because a silent iPad is otherwise a mystery. */
   var THEME = { state: 'unknown', http: 0, at: 0, busy: false };
 
-  function toast(msg, bad) { var A = W.B68; if (A && A.toast) A.toast(msg, !!bad); }
+  /* KS09.4 (kit.desk): a native confirm that is the last thing its handler does becomes the kit's Dialog; with the kit off the old W.confirm, then go(), at once */
+  function asked(msg, go, o) { var K = W.B68KitShell, me = S, q = K && K.on() ? K.ask(Object.assign({ body: msg }, o)) : null; if (q) { q.then(function (y) { if (y && S === me) go(); }, function () {}); return; } if (W.confirm(msg)) go(); }
+  function toast(msg, bad) { var K = W.B68KitShell; if (K && K.on() && K.toast(msg, !!bad)) return; var A = W.B68; if (A && A.toast) A.toast(msg, !!bad); }      /* KS09.3 (kit.desk): the one toast stack */
   function errText(e) { return e && e.message || String(e || 'unknown error'); }
   function md(s) { var R = W.B68Markdown; return R && R.render ? R.render(str(s)) : '<p>' + esc(s) + '</p>'; }
   function gmApi() { return S && S.api && S.api.gm ? S.api.gm() : (W.claude && W.claude.gm) || null; }
@@ -2286,6 +2288,7 @@
     renderRules();
     setApp(true);
     ipadTrayMount(); bandMount(); escWire();      /* the page's iPad goes to the trays first; the band mounts its own in row 2 */
+    if (W.B68KitShell) W.B68KitShell.sync();      /* KS09.2 (kit.desk): Find, the drawer and the capture bar dressed in the kit */
     if (S.assist && typeof S.assist.relayout === 'function') S.assist.relayout();   /* the Blade panel sits between the band and the capture bar */
   }
   /* ---------- THE BAND (gm/band.js; the GM night rebuild: the frame): one element on top, two rows, never scrolling ----------
@@ -2345,7 +2348,7 @@
       panic: function () { if (S === me) bandPanic('button'); },
       music: function () { return S === me ? muInst() : null; },      /* M1: the band's music pill (gm/music.js) */
       menuHtml: menuHtml, signedOut: function () { return SIGNED_OUT_MSG; }, toast: toast,
-      redraw: function () { if (S === me && S.status === 'ready') { syncHead(); renderPackWarn(); renderBar(); syncSave(); drawerSync(); } },      /* KS05: the band drew the other look (kit.desk turned): paint its parts again (Crew's state too) */
+      redraw: function () { if (S === me && S.status === 'ready') { syncHead(); renderPackWarn(); renderBar(); syncSave(); drawerSync(); placesSync(); } },      /* KS05: the band drew the other look (kit.desk turned): paint its parts again (Crew's state too; KS09: the view tabs) */
       document: document      /* the iPad tray makes its nodes with it (gm/ipad-tray.js: a page whose elements do not carry their document) */
     };
   }
@@ -2368,6 +2371,7 @@
   /* the Menu (the night design: Menu, Find and keys): housekeeping only; the Settings are in the iPad view (N5, gm/ipad-tray.js settingsInView). On a phone, Find and
      Crew are lines here too: the band's first row there is the mark, the places and the Menu */
   function menuHtml() {
+    var K = W.B68KitShell; if (K && K.on()) return K.menuHtml();      /* KS09.2 (kit.desk): the same lines and hooks as the kit's menu */
     return '<button type="button" class="gm-menu-ph" data-gm="find-open">Find</button><button type="button" class="gm-menu-ph" data-gm="drawer">Crew: the clocks, the crew and the sheets</button>' +
       '<p class="gm-menu-h"><span class="gm-exp" id="gm-menu-exp"></span></p>' + '<div class="gm-menu-warn" id="gm-menu-warn" hidden></div>' +
       '<button type="button" data-gm="shortcuts" id="gm-menu-shortcuts" title="The keys, the “Blade, …” lines, clocks, music and cue lines on one card (?)">Shortcuts <kbd>?</kbd></button>' +      /* K1 */
@@ -6770,9 +6774,8 @@
   }
   function prepBeat(b) {
     var k = b.getAttribute('data-beat'), on = isObj(prepDoc().beats) && isObj(prepDoc().beats[k]), x = {};
-    if (on && !W.confirm('Clear this beat’s start time?')) return;
-    x[k] = on ? null : { at: nowIso(), s: prepSession(), label: str(b.getAttribute('data-label')).slice(0, 200) };
-    if (patch({ prep: { beats: x } })) prepRedecorate();
+    var go = function () { x[k] = on ? null : { at: nowIso(), s: prepSession(), label: str(b.getAttribute('data-label')).slice(0, 200) }; if (patch({ prep: { beats: x } })) prepRedecorate(); };
+    if (on) asked('Clear this beat’s start time?', go, { confirm: 'Clear' }); else go();
   }
   function prepPin(sec) {
     var pins = isObj(prepDoc().pins) ? prepDoc().pins : {}, x = {};
@@ -6906,8 +6909,8 @@
   }
   function oppDel(id) {
     var c = oppList().filter(function (o) { return o._id === id; })[0]; if (!c) return;
-    if ((c.from || c.client || c.target || c.type || c.note || c.payout) && !W.confirm('Remove this card?')) return;
-    var x = {}; x[id] = null; if (patch({ opps: { list: x } }, { force: true })) renderCards(true);
+    var go = function () { var x = {}; x[id] = null; if (patch({ opps: { list: x } }, { force: true })) renderCards(true); };
+    if (c.from || c.client || c.target || c.type || c.note || c.payout) asked('Remove this card?', go, { confirm: 'Remove', danger: true }); else go();
   }
   function oppShow(mode, oneId) {
     var list = oppList(); if (oneId) list = list.filter(function (c) { return c._id === oneId; });
@@ -7410,8 +7413,8 @@
   /* in the Menu (and the old header): the capture bar keeps only File and File last roll */
   function clearCapture() {
     var all = newest(S.doc.capture); if (!all.length) { toast('Nothing filed tonight.'); return; }
-    if (!W.confirm('Clear all ' + all.length + ' captured lines? Export tonight’s note first if you want them.')) return;
-    var p = {}; all.forEach(function (e) { p[e._id] = null; }); patch({ capture: p }, { force: true }); renderCapture();
+    asked('Clear all ' + all.length + ' captured lines? Export tonight’s note first if you want them.', function () {
+      var p = {}; all.forEach(function (e) { p[e._id] = null; }); patch({ capture: p }, { force: true }); renderCapture(); }, { title: 'Clear tonight’s capture?', confirm: 'Clear', danger: true });
   }
   function exportTonight() {
     var n = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, x = exportNote(S.doc, { session: n });
