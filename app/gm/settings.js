@@ -6,6 +6,11 @@
      Phones              sheet only / mission cards   phoneCards   a phone setting; the page republishes the mission at once (its own setPhoneCards)
      Mirror for phones   off / on                     the GM state's `mirror` (not a registry line: the server reads it beside Live sync)
      Band                off / on                     display.band  a display setting (the tech run, 06/11: the strip across the top of the iPad starts off)
+     Desk                old desk / new desk          kit.desk      the kit and stage build (11/11), a GM setting: this page follows at once
+     Stage               old iPad / new iPad          kit.stage     a display setting
+     Phone sheet         old sheet / four screens     kit.phone     a phone setting: phones follow on their next campaign arrival
+     Start the night     off / on                     night.who     a GM setting
+     Pitches             Stall and Meanwhile / Pitches  blade.pitches  a GM setting
    Their home is the iPad view's Settings section (gm-page.js renderIpad renders them with render(box)); the Menu's sheet that held them first is gone.
 
    Window.B68GmSettings, and module.exports under Node. gm-page.js makes one per page session with create(host) and calls heal() on every campaign arrival.
@@ -53,7 +58,23 @@
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }] },
     { key: 'display.band', label: 'Band', what: 'The strip across the top of the iPad: the ON AIR lamp, the phase, the crew’s Stress and harm, and security. Off: the map and every scene take the whole screen; the lamp sits in its corner.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
-      said: { 'false': 'Band: off. The iPad follows within a few seconds.', 'true': 'Band: on. The iPad follows within a few seconds.' } }
+      said: { 'false': 'Band: off. The iPad follows within a few seconds.', 'true': 'Band: on. The iPad follows within a few seconds.' } },
+    /* the kit and stage build (11/11): five settings, each off until chosen */
+    { key: 'kit.desk', label: 'Desk', what: 'This page: the desk as it was, or the new desk (the band, the Roll, Blade, Run and the shell rebuilt to one kit). It changes at once.',
+      options: [{ v: false, label: 'Old desk' }, { v: true, label: 'New desk' }],
+      said: { 'false': 'Desk: the old desk.', 'true': 'Desk: the new desk.' } },
+    { key: 'kit.stage', label: 'Stage', what: 'The iPad: as it was, or the new stage (no chrome over the art, the crew across the top, the roll in beats, clocks with names).',
+      options: [{ v: false, label: 'Old iPad' }, { v: true, label: 'New iPad' }],
+      said: { 'false': 'Stage: the old iPad. The iPad follows within a few seconds.', 'true': 'Stage: the new iPad. The iPad follows within a few seconds.' } },
+    { key: 'kit.phone', label: 'Phone sheet', what: 'The players’ sheets on a phone: one long sheet as it was, or four screens (Now, Sheet, Crew, Notes) with a bar at the foot.',
+      options: [{ v: false, label: 'Old sheet' }, { v: true, label: 'Four screens' }],
+      said: { 'false': 'Phone sheet: the old sheet. Phones follow within a few seconds.', 'true': 'Phone sheet: four screens. Phones follow within a few seconds.' } },
+    { key: 'night.who', label: 'Start the night', what: 'Before the night: a Start the night button that asks who is playing. The Roll, the iPad and what you can show follow the players who are there.',
+      options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
+      said: { 'false': 'Start the night: off.', 'true': 'Start the night: on.' } },
+    { key: 'blade.pitches', label: 'Pitches', what: 'Blade’s ideas while a night runs: the Stall and Meanwhile cards as they were, or up to three pitches at a time.',
+      options: [{ v: false, label: 'Stall and Meanwhile' }, { v: true, label: 'Pitches' }],
+      said: { 'false': 'Pitches: Stall and Meanwhile.', 'true': 'Pitches: on.' } }
   ];
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
@@ -115,7 +136,7 @@
     };
 
     function html() {
-      return '<p class="gm-dim">Everything built is on. These five are choices for the night; each one changes at once, with no reload.</p>' +
+      return '<p class="gm-dim">Everything built is on. These are choices for the night; each one changes at once, with no reload.</p>' +
         ctl.rows().map(function (r) {
           return '<div class="gm-set-row" data-set-row="' + esc(r.key) + '"><span class="gm-lab" id="gm-set-l-' + esc(r.key.replace(/\W/g, '-')) + '">' + esc(r.label) + '</span>' +
             '<div class="seg" role="group" aria-labelledby="gm-set-l-' + esc(r.key.replace(/\W/g, '-')) + '">' + r.options.map(function (o) {

@@ -84,6 +84,24 @@ const CHECKS = [
   ['checks/runtime/gm-band.e2e.mjs', 'the band (N1a): four widths in three states with no overlap and nothing off the screen, the places enter phases, Ctrl+arrows, Call the Aftermath, Esc in order, keys held behind an open thing, PANIC without cues, the quiet badge (8810)'],
   ['checks/runtime/gm-shortcuts.e2e.mjs', 'the Shortcuts card (K1): ? opens it at 1366 and 1536 with nothing overflowing, ? and Esc shut it, Find and the Menu open it, a ? typed in a field or behind an open box is not it, the phone\'s Menu, the iPad never has it (8765; starts its own demo night)'],
   ['checks/runtime/music.e2e.mjs', 'the Music desk (M1): three playlists filled through the picker, Play on a tap, Tension in the Score, Action on a Desperate 1–3, a held mood and Auto, PANIC and Resume, Stop, a reload waits, Esc, no audio sent, fit at 1366/1536/390 (8601; starts its own demo night)'],
+  // the kit and stage build (KS01.1 registered these as stubs; each bundle fills its own). Default ports 9400 to 9416, inspector PORT + 20000
+  ['checks/runtime/kit-off.e2e.mjs', 'every setting off: the pages as at day 0 (9400; KS04)'],
+  ['checks/runtime/kit-accept.e2e.mjs', 'the acceptance numbers (9401; KS04)'],
+  ['checks/runtime/kit-keys.e2e.mjs', 'every key, with the kit off and on (9402; KS04)'],
+  ['checks/runtime/kit-band.e2e.mjs', 'the new desk: the band (9403; KS05)'],
+  ['checks/runtime/kit-roll.e2e.mjs', 'the new desk: the Roll (9404; KS06)'],
+  ['checks/runtime/kit-blade.e2e.mjs', 'the new desk: the Blade panel (9405; KS07)'],
+  ['checks/runtime/kit-run.e2e.mjs', 'the new desk: the Run view (9406; KS08)'],
+  ['checks/runtime/kit-shell.e2e.mjs', 'the new desk: the shell (9407; KS09)'],
+  ['checks/runtime/kit-skin.e2e.mjs', 'the new desk: skin and trim (9408; KS10)'],
+  ['checks/runtime/night-who.e2e.mjs', 'Start the night (9409; KS11)'],
+  ['checks/runtime/night-roster.e2e.mjs', 'the roster flows (9410; KS12)'],
+  ['checks/runtime/kit-stage.e2e.mjs', 'the new stage: the frame (9411; KS13)'],
+  ['checks/runtime/kit-stage-band.e2e.mjs', 'the new stage: the top band (9412; KS14)'],
+  ['checks/runtime/kit-stage-roll.e2e.mjs', 'the new stage: the roll as beats (9413; KS15)'],
+  ['checks/runtime/kit-stage-scene.e2e.mjs', 'the new stage: clocks, the NPC and the map (9414; KS16)'],
+  ['checks/runtime/kit-phone.e2e.mjs', 'the four-screen sheet (9415; KS17)'],
+  ['checks/runtime/kit-pitch.e2e.mjs', 'the pitch cards (9416; KS19)'],
 ];
 
 const want = process.argv.slice(2);

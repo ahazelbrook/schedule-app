@@ -65,11 +65,12 @@
     { id: 'room', label: 'Stage 4: the room' },
     { id: 'ai', label: 'Blade (AI)' },
     { id: 'between', label: 'Stage 5: between sessions' },
-    { id: 'fx', label: 'Effects' }
+    { id: 'fx', label: 'Effects' },
+    { id: 'kit', label: 'The kit and stage' }
   ];
   var ID_RE = /^[A-Za-z][A-Za-z0-9.-]{0,39}$/;
 
-  /* THE LINES. Every one is ON except the three marked setting: true. (spine.workshop, the Workshop drawer, is gone with the Workshop: its stored value
+  /* THE LINES. Every one is ON except those marked setting: true. (spine.workshop, the Workshop drawer, is gone with the Workshop: its stored value
      is left where it is, and nothing reads it.) */
   var SWITCHES = [
     { id: 'phoneCards', label: 'Phone mission cards', surface: 'phone', stage: 'existing', default: false, saturday: 'off', setting: true, legacy: 'phoneCards',
@@ -179,7 +180,18 @@
     /* the tech run (06/11): the strip across the top of the iPad got in the way, so it is a choice and starts off (absent reads off, so a campaign
        document that never stored it, and an older page that never writes it, both leave the band down) */
     { id: 'display.band', label: 'The band across the top of the iPad', surface: 'display', stage: 'spine', default: false, saturday: 'off', setting: true,
-      doc: 'The strip across the top of the iPad: the ON AIR lamp, the phase, the crew’s first names with Stress and harm, and security. Off: no strip; the map and every scene take the whole screen and the lamp sits in its own corner.' }
+      doc: 'The strip across the top of the iPad: the ON AIR lamp, the phase, the crew’s first names with Stress and harm, and security. Off: no strip; the map and every scene take the whole screen and the lamp sits in its own corner.' },
+    /* the kit and stage build (11/11): five settings, each off until chosen. Off is the app as it was: the same screens, requests and stored data */
+    { id: 'kit.desk', label: 'The new desk', surface: 'gm', stage: 'kit', default: false, saturday: 'off', setting: true,
+      doc: 'The GM page rebuilt with the UI kit: the band, the Roll, the Blade panel, the Run view and the shell, every other pane skinned to match. Off: the desk as it was.' },
+    { id: 'kit.stage', label: 'The new stage', surface: 'display', stage: 'kit', default: false, saturday: 'off', setting: true,
+      doc: 'The iPad as a stage: no chrome over the art, one plate for words, the crew across the top, the roll in beats, clocks with names, the NPC over the scene, the map full-bleed. Off: the iPad as it was.' },
+    { id: 'kit.phone', label: 'The four-screen sheet', surface: 'phone', stage: 'kit', default: false, saturday: 'off', setting: true,
+      doc: 'On a phone the sheet splits into four screens, Now, Sheet, Crew and Notes, with a bar at the foot. Wide screens and print are unchanged. Off: the one long sheet as it was.' },
+    { id: 'night.who', label: 'Start the night', surface: 'gm', stage: 'kit', default: false, saturday: 'off', setting: true,
+      doc: 'Before the night, Start the night asks who is playing; the Roll, the iPad and every send-to list follow the players who are there. Off: no button, and every filed character counts, as before.' },
+    { id: 'blade.pitches', label: 'Blade pitches', surface: 'gm', stage: 'kit', default: false, saturday: 'off', setting: true,
+      doc: 'Blade pitches up to three ideas at a time (a direction, a complication, a clue, an NPC move, a cutaway) in place of the Stall and Meanwhile cards. Off: Stall and Meanwhile as before.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

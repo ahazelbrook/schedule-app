@@ -31,7 +31,7 @@
        it is there; the cast, because its "on stage" banner shows on every screen during a scene */
     core: ['tracker.css', 'schedule.css', 'rules.css', 'cast.css',
       'content.js', 'core.js', 'zoom.js', 'steps.js', 'tracker.js', 'schedule.js',
-      'markdown.js', 'rules.js', 'cast-page.js', 'name-edit.js', 'sheet/flags.js', 'sheet/keys.js', 'sheet/now.js', 'runtime/cf.js', 'routes.js', 'boot.js'],
+      'markdown.js', 'rules.js', 'cast-page.js', 'name-edit.js', 'sheet/flags.js', 'sheet/keys.js', 'sheet/now.js', 'runtime/cf.js', 'routes.js', 'ui/kit-flag.js', 'boot.js'],
     /* the figure kit and the cast canon (about 1 MB): NOT in the core. First paint draws no figure; boot.js asks for this bundle
        once the route has rendered (B68Load.kit), every caller shows a placeholder and redraws on B68Load.onFigures. gm and
        display need it before they run (DEPS); season.js and the other callers wait for it themselves. sw.js precaches it for everyone but does not require it at install */
@@ -55,12 +55,27 @@
     /* the look book (app/lookbook.html, GM only): every show kind with its fixture; a later bundle that adds a kind lists its renderer file here */
     /* the lair (5.4, between.lair): the display fetches the map kit and the drawer only when a lair is first put on the iPad (the show kind is registered with bundle: 'lair') */
     lair: ['maps/map-kit.js', 'display/lair-draw.js'],
-    lookbook: ['tokens.css', 'display.css', 'display/shows.css', 'display/hardstart.css', 'display/onair.css', 'display/aftermath.css', 'display/board.css', 'display/title-card.css', 'display/castphoto.css', 'display/lair.css', 'display/face-cards.css', 'display/montage.css', 'tokens.js', 'display/shows.js', 'display/show-beats.js', 'display/rolodex-card.js', 'display/report-beat.js', 'display/aftermath.js', 'display/board.js', 'display/title-card.js', 'display/castphoto.js', 'display/lair.js', 'display/layers.js', 'display/montage.js', 'display/hardstart.js', 'display/onair.js', 'maps/map-kit.js', 'display/lair-draw.js', 'display/face-look.js', 'display/face-motif.js', 'display/face-formats.js', 'display/face-badge.js', 'display/face-render.js', 'display/lookbook-faces.js', 'display/lookbook.js']
+    lookbook: ['tokens.css', 'display.css', 'display/shows.css', 'display/hardstart.css', 'display/onair.css', 'display/aftermath.css', 'display/board.css', 'display/title-card.css', 'display/castphoto.css', 'display/lair.css', 'display/face-cards.css', 'display/montage.css', 'tokens.js', 'display/shows.js', 'display/show-beats.js', 'display/rolodex-card.js', 'display/report-beat.js', 'display/aftermath.js', 'display/board.js', 'display/title-card.js', 'display/castphoto.js', 'display/lair.js', 'display/layers.js', 'display/montage.js', 'display/hardstart.js', 'display/onair.js', 'maps/map-kit.js', 'display/lair-draw.js', 'display/face-look.js', 'display/face-motif.js', 'display/face-formats.js', 'display/face-badge.js', 'display/face-render.js', 'display/lookbook-faces.js', 'display/lookbook.js'],
+    /* the kit and stage build: one bundle per setting, each fetched only while its setting is on, so with every setting off a page
+       fetches what it always did (the core's ui/kit-flag.js aside). The desk, the stage and the phone sheet are asked for by the kit
+       flag (B68Kit, ui/kit-flag.js) when their token turns on; Start the night and the pitches by the GM page while their setting is on;
+       kit-lookbook by lookbook-boot.js. Each brings kit-ui first (DEPS): the UI kit every one of them shares. gm/kit/blade.js holds
+       the Blade panel of the new desk and the pitch cards, which also show on the old desk, so it is in both bundles */
+    'kit-ui': ['ui/tokens.css', 'ui/parts.css', 'ui/overlay.css', 'ui/ui.js', 'ui/overlay.js'],
+    'kit-desk': ['ui/desk-band.css', 'ui/desk-roll.css', 'ui/desk-blade.css', 'ui/desk-run.css', 'ui/desk-shell.css', 'ui/desk-skin.css', 'gm/kit/band.js', 'gm/kit/roll.js', 'gm/kit/blade.js', 'gm/kit/run.js', 'gm/kit/shell.js'],
+    'kit-stage': ['display/kit/stage.css', 'display/kit/band.css', 'display/kit/roll.css', 'display/kit/scene.css', 'display/kit/stage.js', 'display/kit/band.js', 'display/kit/roll.js', 'display/kit/scene.js'],
+    'kit-phone': ['sheet/kit/tabs.css', 'sheet/kit/tabs.js'],
+    'night-who': ['ui/desk-who.css', 'gm/kit/who.js'],
+    'blade-pitches': ['gm/kit/blade.js'],
+    'kit-lookbook': ['display/kit/stage.css', 'display/kit/band.css', 'display/kit/roll.css', 'display/kit/scene.css', 'display/kit/stage.js', 'display/kit/band.js', 'display/kit/roll.js', 'display/kit/scene.js']
   };
-  /* every stylesheet, in cascade order (index.html's order from before lazy loading) */
-  var CSS_ORDER = ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', 'gm.css', 'prep.css', 'display.css', 'tokens.css', 'display/shows.css', 'display/hardstart.css', 'display/onair.css', 'display/aftermath.css', 'display/board.css', 'display/title-card.css', 'display/castphoto.css', 'display/lair.css', 'display/face-cards.css', 'display/montage.css'];
+  /* every stylesheet, in cascade order (index.html's order from before lazy loading); the kit's sheets come after every old one */
+  var CSS_ORDER = ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', 'gm.css', 'prep.css', 'display.css', 'tokens.css', 'display/shows.css', 'display/hardstart.css', 'display/onair.css', 'display/aftermath.css', 'display/board.css', 'display/title-card.css', 'display/castphoto.css', 'display/lair.css', 'display/face-cards.css', 'display/montage.css',
+    'ui/tokens.css', 'ui/parts.css', 'ui/overlay.css', 'ui/desk-band.css', 'ui/desk-roll.css', 'ui/desk-blade.css', 'ui/desk-run.css', 'ui/desk-shell.css', 'ui/desk-who.css', 'ui/desk-skin.css',
+    'display/kit/stage.css', 'display/kit/band.css', 'display/kit/roll.css', 'display/kit/scene.css', 'sheet/kit/tabs.css'];
 
-  var DEPS = { gm: ['figures'], display: ['figures'], lookbook: ['figures'] };   /* bundles that need another one in first */
+  var DEPS = { gm: ['figures'], display: ['figures'], lookbook: ['figures'],   /* bundles that need another one in first */
+    'kit-desk': ['kit-ui'], 'kit-stage': ['kit-ui'], 'kit-phone': ['kit-ui'], 'night-who': ['kit-ui'], 'blade-pitches': ['kit-ui'], 'kit-lookbook': ['kit-ui'] };
   var loading = {};            /* file -> Promise (resolved: loaded; a failure is forgotten so it can be tried again) */
   var loaded = {};             /* file -> true once its load event fired (the core: index.html's own tags) */
   BUNDLES.core.forEach(function (f) { loaded[f] = true; loading[f] = Promise.resolve(f); });
