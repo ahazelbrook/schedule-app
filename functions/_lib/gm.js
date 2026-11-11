@@ -428,6 +428,28 @@ export function cleanOverlay(v) {
 }
 
 /**
+ * The score scenes' polaroids (KS12.5, night.who; _briefs KS12-contract): who is playing, as the GM page sends it while a session is open.
+ * null deletes it. Otherwise 1 to POLAROIDS_MAX entries { id: a cast canon id (lowercase letters and digits, at most 40), cap: one line, at most
+ * POLAROID_CAP }; a fresh object per entry, any other field dropped; ids differ. The display draws only ids its cast canon has a figure for and sets
+ * each caption as text. Nothing GM-only: the names of the characters playing, which the iPad's crew band already shows.
+ */
+export const POLAROIDS_MAX = 8, POLAROID_CAP = 60;
+const POLAROID_ID = /^[a-z0-9]{1,40}$/;
+export function cleanPolaroids(v) {
+  if (v === null) return null;
+  if (!Array.isArray(v) || !v.length) throw new HttpError(400, 'polaroids must be a non-empty array of { id, cap } or null');
+  if (v.length > POLAROIDS_MAX) throw new HttpError(413, 'polaroids is too long (at most ' + POLAROIDS_MAX + ')');
+  const seen = new Set();
+  return v.map((x) => {
+    if (!isPlainObject(x)) throw new HttpError(400, 'each polaroid is an object { id, cap }');
+    if (typeof x.id !== 'string' || !POLAROID_ID.test(x.id)) throw new HttpError(400, 'polaroids.id is a bad id');
+    if (seen.has(x.id)) throw new HttpError(400, 'polaroid ids must differ');
+    seen.add(x.id);
+    return { id: x.id, cap: str(x.cap, 'polaroids.cap', POLAROID_CAP).replace(/\s+/g, ' ').trim() };
+  });
+}
+
+/**
  * Validate one PATCH /api/gm/ambient body into a patch. Only these keys are kept (others are dropped); `null` on any
  * but `skip` means "delete this key":
  *   mode 'auto'|'pin'|'off', scene (a scene id), playlist (1 to 16 distinct scene ids, replaces), intervalMin (integer 3-30),
@@ -493,6 +515,7 @@ export function cleanAmbientPatch(raw) {
       if (!patch.wire.length) patch.wire = null;
     }
   }
+  if ('polaroids' in raw) patch.polaroids = cleanPolaroids(raw.polaroids);
   if ('overlay' in raw) patch.overlay = cleanOverlay(raw.overlay);
   // the show contract's lasting layers: one path at a time (`layer`), or all of them at once (`layers: null`)
   if ('layer' in raw) patch.layer = cleanLayerOp(raw.layer);

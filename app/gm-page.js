@@ -1570,6 +1570,7 @@
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
     b09Unmount(me); b17Unmount(me); knUnmount(me); csUnmount(me); bandUnmount(me);
     if (me.places) { try { me.places.destroy(); } catch (e) {} me.places = null; }      /* N1b: its inline tools unbound, its listeners gone */
+    if (me.who) { me.who.destroy(); me.who = null; }      /* KS12.0 (night.who): the sheet, its Esc entry and the band chip go with the page */
     if (me.mission) { try { me.mission.flush(); } catch (e) {} me.mission.destroy(); me.mission = null; }   /* a publish that is waiting goes now */
     apUnmount(me);
     ipadTrayUnmount(me);       /* the tray's timer and its place in the module's list, and the live-sync listener */
@@ -1721,6 +1722,7 @@
     mountAssist();
     layout(); mountCogm(); redrawAll(); subscribeNpcs(); checkPack(); apMount(); mountMission(); mountNight(); b09Mount(); csMount(); b17Mount();
     placesMount();      /* N1b: the place and its view, once the panes are drawn and the night controller is there */
+    who(); whoPolaroids();      /* KS12 (night.who): the roster's reader, in whatever place the page opens (nothing while the setting is off); a stored polaroid list read already */
     /* listening: every 5 s while the iPad tab is open, every 15 s otherwise (the top bar shows it) */
     if (!S.sttTimer && typeof W.setInterval === 'function') { var mine2 = S, n2 = 0; S.sttTimer = W.setInterval(function () { n2++; if (S === mine2 && S.status === 'ready' && !document.hidden) { if (S.panel === 'ipad' || n2 % 3 === 0) loadStt(); renderBeat(); } }, 5000); }
     if (!S.prepTimer && typeof W.setInterval === 'function') { var mine = S; S.prepTimer = W.setInterval(function () { if (S === mine && S.status === 'ready' && prepRunning()) { var pb = $q('#gm-prep'); if (pb && S.panel === 'prep') decoratePrep(pb); decoratePrep($q('#gm-rail')); } }, 15000); }
@@ -2251,6 +2253,7 @@
       if (S !== me || AM.loaded || !isObj(r) || !isObj(r.doc)) return;
       AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null;
       renderBar(); hsSync();
+      if (Array.isArray(r.doc.polaroids) || S.who) whoPolaroids();      /* KS12.5 (night.who): the polaroids follow the session (a list left from a night with the setting on is cleared) */
     }, function () { AM.peeked = false; });
   }
   /* N1b: the places of the night (gm/places.js) draw the view switcher (.gm-views), the chip row below 1100 px (.gm-vchips, in the old segbar's
@@ -2342,6 +2345,7 @@
       panic: function () { if (S === me) bandPanic('button'); },
       music: function () { return S === me ? muInst() : null; },      /* M1: the band's music pill (gm/music.js) */
       menuHtml: menuHtml, signedOut: function () { return SIGNED_OUT_MSG; }, toast: toast,
+      redraw: function () { if (S === me && S.status === 'ready') { syncHead(); renderPackWarn(); renderBar(); syncSave(); drawerSync(); } },      /* KS05: the band drew the other look (kit.desk turned): paint its parts again (Crew's state too) */
       document: document      /* the iPad tray makes its nodes with it (gm/ipad-tray.js: a page whose elements do not carry their document) */
     };
   }
@@ -2445,7 +2449,7 @@
     if (!S.mt) {
       var me = S;
       S.mt = W.B68GmMontage.make({ on: function (id) { return S === me && W.B68Features.valueOf(S.doc, id); }, toast: toast, root: function () { return $q('#gm-root'); },
-        pcs: function () { return S === me ? dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c) }; }) : []; },
+        pcs: function () { return S === me ? herePcs().map(function (c) { return { id: str(c.id), name: pcName(c) }; }) : []; },      /* KS12.3: who is playing */
         rooms: function () { var rs = S === me && S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : [], rv = revealEntries(mapUi()); return rs.filter(function (r) { return isObj(r) && str(r.name) && roomShown(r, rv); }).map(function (r) { return str(r.name); }); },
         over: function () { var R = W.B68GmPhaseRail; if (!(S === me && R && me.night && W.B68Features.valueOf(S.doc, 'spine.rail'))) return null; var m = R.model(me.night.night(), Date.now()), cur = m && m.items ? m.items.filter(function (i) { return i.state === 'now' && i.budget; })[0] : null; return cur ? cur.tone === 'red' : null; },
         room: function () { return S === me && W.B68GmStamp ? W.B68GmStamp.pickRoom(runCrewRooms()) : ''; },
@@ -2458,6 +2462,7 @@
   function rdInst() {
     if (!S || !W.B68GmRoomDesk || !W.B68Features) return null;
     if (!S.rd) S.rd = W.B68GmRoomDesk.create({ feature: function (id) { return !!(S && W.B68Features.valueOf(S.doc, id)); }, doc: function () { return S ? S.doc : null; }, toast: toast, root: function () { return $q('#gm-root'); }, part: part,
+      away: function () { return S && S.who ? S.who.away() : []; },      /* KS12.6 (night.who): the absent packet's ticks */
       save: function (id, item) { var it = {}; it[id] = item; patch({ trouble: { items: it } }); }, show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); } });
     return S.rd;
   }
@@ -2591,6 +2596,7 @@
   function renderBar() {
     if (!S || !S.root) return;
     renderMirror(); spineTick(); b17Tick(); csTick(); if (S.st) S.st.sync();
+    if (S.status === 'ready' && who()) S.who.paint(null);      /* KS12.7 (night.who): the band's who chip, and the reader made when the setting turns on */
     if (W.B68Kit && S.status === 'ready') W.B68Kit.set('desk', !!(W.B68Features && W.B68Features.valueOf(S.doc, 'kit.desk')));      /* the kit and stage build (KS01.2): data-kit="desk" follows the setting, at once (ui/kit-flag.js) */
     if (S.status === 'ready' && W.B68Features) { var pOn = !!W.B68Features.valueOf(S.doc, 'blade.pitches'); if (W.B68Pitches) W.B68Pitches.set(gmApi(), pOn); else if (pOn && W.B68Load) W.B68Load.need('blade-pitches').then(function () { if (W.B68Pitches && S && S.status === 'ready') W.B68Pitches.set(gmApi(), !!W.B68Features.valueOf(S.doc, 'blade.pitches')); }, function () {}); }      /* blade.pitches (KS18): the blade-pitches bundle while it is on; B68Pitches (gm/kit/blade.js) adds the pitch fields to the tick, and takes them off when it turns off */
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
@@ -2822,7 +2828,7 @@
      The host the controller works through. The names the band calls (goPlace, openView, callAftermath, currentPlace, currentView) are with the band's
      host above: they go to S.places and redraw the band. The page's night controller enters a phase exactly as the rail does; the panes are shown by paneShow. */
   function placesPhase() { var nt = S && S.night; if (nt) return nt.phase(); var N = W.B68GmNight; return N && S && S.doc ? N.clean(S.doc.night).phase : ''; }
-  function placesSync() { if (S && S.places && S.status === 'ready') S.places.sync(); }
+  function placesSync() { if (S && S.places && S.status === 'ready') S.places.sync(); if (S && S.status === 'ready') who(); }      /* KS12: the roster's reader is made in every place, not only where Before's lead is drawn */
   function placesHost() {
     var me = S;
     return {
@@ -2866,13 +2872,35 @@
   function who() {
     if (!whoOn()) { if (S && S.who) { S.who.destroy(); S.who = null; } return null; }
     if (!W.B68GmWho) { if (!S.whoAsked && W.B68Load && W.B68Load.need) { S.whoAsked = true; var me = S; W.B68Load.need('night-who').then(function () { if (S === me) placesSync(); }, function () { if (S === me) S.whoAsked = false; }); } return null; }
-    return S.who || (S.who = W.B68GmWho.create(whoHost()));
+    if (!S.who) { S.who = W.B68GmWho.create(whoHost()); S.whoPcSig = whoPcSig(); S.whoCampSig = whoCampSig(); S.who.onChange(whoFlow); var me = S; W.setTimeout(function () { if (S === me && S.who) { S.who.paint(S.root); whoPolaroids(); } }, 0); }      /* KS12: the roster's readers follow it */
+    return S.who;
+  }
+  /* KS12.0: what the who parts are drawn from: who is filed (not their sheets) and the session and RSVPs (not every mission publish) */
+  function whoPcSig() { return JSON.stringify(dtPcs().map(function (c) { return [str(c.id), pcName(c), str(c.owner), str(c.alias)]; })); }
+  function whoCampSig() { return JSON.stringify([camp && camp.session, camp && camp.schedule]); }
+  /* KS12 (night.who): who is playing changed (a Start, a late arrival, a player let go): the Roll's Who chips, the iPad's crew and faces, the cards and
+     the told lists follow, without a reload */
+  function whoFlow() { if (!S || S.status !== 'ready') return; renderPos(); pcStatusSync(); if (S.mission) S.mission.changed(); runStale(); whoPolaroids(); }
+  /* the filed characters the night is for: everyone, unless night.who has a roster (gm/kit/who.js, the one reader) */
+  function herePcs() { var a = dtPcs(); return S && S.who ? S.who.only(a) : a; }
+  /* KS12.5: the score scenes' polaroids (ambient `polaroids`, KS12-contract): the playing characters while a session is open; null otherwise,
+     and null once from a page with the setting off that finds a list (it can only be there from a night with it on) */
+  function whoPolaroids() {
+    var g = gmApi(), Wh = W.B68GmWho; if (!S || S.status !== 'ready' || !g || typeof g.patchAmbient !== 'function' || !isObj(AM.doc)) return;      /* the ambient not read yet: its first look calls again */
+    var have = Array.isArray(AM.doc.polaroids) ? AM.doc.polaroids : null, want = null;
+    if (!S.who) { if (!have || whoOn()) return; }      /* off: only a stored list is cleared (on, with the bundle still coming: wait for it) */
+    else if (Wh && Wh.isOpen(camp)) { want = Wh.polaroidsOf(herePcs().map(function (c) { return { name: pcName(c), alias: str(c.alias) }; })); if (!want.length) want = null; }
+    if (want === null && !have) return;      /* nothing wanted and none stored */
+    var k = JSON.stringify(want); if (k === JSON.stringify(have) || k === S.polSent) return;
+    var me = S; S.polSent = k;
+    Promise.resolve().then(function () { return g.patchAmbient({ polaroids: want }); }).then(function (r) { if (S === me && adoptAmbient(r)) renderIpad(); }, function () { if (S === me) S.polSent = ''; });
   }
   function whoHost() {
     var me = S;
     return {
       root: function () { return S === me ? $q('#gm-root') : null; }, campaign: function () { return S === me ? camp : null; }, prep: function () { return prepNoteSession(); },
       characters: function () { return S === me ? dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), owner: str(c.owner) }; }) : []; },
+      pack: function () { return S === me ? whoAll().map(function (o) { return { name: str(o.value), first: str(o.label) }; }) : []; },      /* KS12.1: the Roll's PCs, by name */
       names: function (ids) { return S === me && S.api && S.api.profiles ? S.api.profiles(ids) : Promise.resolve({}); }, schedule: function () { return W.B68Schedule || null; },
       start: function (o) { return S === me && S.api && S.api.startSession ? S.api.startSession(o) : Promise.reject(new Error('The table is not available here.')); },
       finish: function () { return S === me && S.api && S.api.endSession ? S.api.endSession() : Promise.resolve(false); },
@@ -2927,9 +2955,12 @@
     chips.innerHTML = bits.join('') || '<span class="gm-dim">any</span>';
   }
   function setLive(id, value) { var l = {}; l[id] = value; patch({ con: { live: l } }); renderChips(); }   /* 08/11: a control no longer asks for a fit; the stamp does */
+  /* KS06 (kit.desk): the Roll's renderers are the new desk's (gm/kit/roll.js) while its card is the one drawn, else gm/roll.js; rollKit() swaps the card to follow the desk */
+  function rollR() { var K = W.B68KitRoll; return K && K.drawn($q('#gm-rl')) ? K : W.B68GmRoll; }
+  function rollKit() { var K = W.B68KitRoll; return !!(K && S && K.mount($q('#gm-roll'))); }
   /* the Roll's Position (one switch: the console's tables and the stamp read it), the size under it, Who and the line; then the stamp's part (b09Paint) */
   function renderPos() {
-    var R = W.B68GmRoll, box = $q('#gm-pos');
+    var R = rollR(), box = $q('#gm-pos');
     if (box && R) {
       var cur = hasSit() ? str(uiNow().pos) : '', ps = hasSit() && Array.isArray(S.con.positions) ? S.con.positions : [], sz = R.sizeLine(ps, cur);
       box.innerHTML = R.posHtml(ps, cur); box.hidden = !ps.length;
@@ -2941,7 +2972,7 @@
     b09Paint();      /* the line, then the stamp's part */
   }
   function renderButtons() {
-    var box = $q('#gm-buttons'), R = W.B68GmRoll; if (!box) return;
+    var box = $q('#gm-buttons'), R = rollR(); if (!box) return;
     rollMiniPaint();
     if (!S.con) { box.innerHTML = '<p class="gm-note bad">' + esc(S.conErr || 'The console is not available.') + '</p>'; return; }
     if (!hasSit()) { box.innerHTML = '<p class="gm-note bad">The pack’s console has no Situations: update the pack. The single tables are under More tables.</p>'; return; }
@@ -2955,14 +2986,15 @@
       return '<button type="button" class="chip sm" data-gm="roll" data-n="' + b.n + '" title="' + esc(b.hint || '') + '">' + esc(b.label) + '</button>';
     }).join('') + '</div>';
   }
-  function renderConsole() { rollBind(); renderPos(); renderControls(); renderButtons(); renderSingles(); drawConsoleCard(); renderRack(); rollFoldSync(); }
+  function renderConsole() { rollKit(); rollBind(); renderPos(); renderControls(); renderButtons(); renderSingles(); drawConsoleCard(); renderRack(); rollFoldSync(); }
   /* Who (08/11/2026, in place of the Dots): the console's Aim at, the PC who is rolling. One tap sets it, a second clears it; it clears itself once the
      roll resolves (a 4/5, a 1–3 or Clean). Blade's fit and L's filed line read it; the console's own cards lean on that PC's hooks, as Aim at always did */
-  function whoList() {
+  function whoAll() {
     if (!S || !hasSit() || !Array.isArray(S.con.situationControls)) return [];
     var c = S.con.situationControls.filter(function (x) { return x && x.id === 'pc'; })[0];
     return c && Array.isArray(c.options) ? c.options.filter(function (o) { return o && str(o.value); }) : [];
   }
+  function whoList() { var l = whoAll(); return S && S.who ? S.who.only(l) : l; }      /* KS12.2 (night.who): the chips are the PCs playing tonight */
   function setWho(v) { if (!S || !hasSit()) return; v = str(v); setLive('pc', str(uiNow().pc) === v ? '' : v); renderPos(); renderControls(); }
   function whoClear() { if (S && hasSit() && str(uiNow().pc)) { setLive('pc', ''); renderPos(); renderControls(); } }
   function setPos(v) { setLive('pos', v); renderPos(); }
@@ -3176,6 +3208,7 @@
     rackHeadPaint();
     var fb = $q('#gm-fitnow'); if (fb) fb.hidden = !(fitBox() && hasSit());     /* the Fit button: only where a box can fit */
     if (!r) { box.innerHTML = vh; return; }
+    var KR = rollR(); if (KR && KR.rackHtml) { box.innerHTML = KR.rackHtml(r, { rows: FX_ROWS, why: fitWhy('other'), fx: fxOf }) + vh; return; }      /* KS06 (kit.desk): the Fixer's answer, built to skim */
     var a = r.ask || { position: r.pre ? r.pre.pos : '', threat: '' };
     var forWhat = (a.hhmm ? 'for ' + a.hhmm + ' · ' : '') + (a.threat ? a.threat : (a.stamped ? 'stamped, no line' : 'not stamped')) + ' · ' + a.position + (a.effect ? ', ' + a.effect : '');
     var h = '<div class="gm-rack-h"><span class="gm-dim gm-fx-for">' + esc(forWhat) + '</span>' +     /* the fold's summary already says Blade */
@@ -3199,6 +3232,7 @@
       if (row && (o.lead || o.say)) h = '<p class="gm-lab">Blade · ' + esc(row[1]) + '</p><p class="gm-fx-big">' + (o.lead ? '<b>' + esc(o.lead) + '</b> ' : '') + esc(o.say) + '</p>' +
         (o.size ? '<p class="gm-fx-size">' + esc(o.size) + '</p>' : '');
       if (h) h = '<div class="gm-fx-hit gm-fx-' + row[2] + '">' + h + '</div>';
+      var KH = rollR(); if (h && KH && KH.hitHtml) h = KH.hitHtml(row, o);      /* KS06 (kit.desk): the hit line as a Card */
     }
     if (hb.__html !== h) { hb.innerHTML = h; hb.__html = h; }
     hb.hidden = !h;
@@ -3236,6 +3270,7 @@
   }
   function voiceHtml(vo) {
     var a = S && S.assist, can = !!(a && typeof a.canAnother === 'function' && a.canAnother());
+    var KV = rollR(); if (KV && KV.voiceHtml) return KV.voiceHtml(vo, can);      /* KS06 (kit.desk): Voice as a Card */
     return '<div class="gm-voice"><div class="gm-rack-h"><span class="gm-lab">Voice</span><span class="gm-dim"><b>' + esc(vo.who) + '</b>' + (vo.want ? ' · ' + esc(vo.want) : '') + '</span>' +
       '<button type="button" class="chip sm" data-gm="voiceclear" title="Drops these lines">Clear</button></div>' +
       '<ol class="gm-rack-lines gm-voice-lines">' + vo.lines.map(function (l) { return '<li><b>' + esc(vo.who.split(' ')[0]) + '</b><span>' + esc(l) + '</span></li>'; }).join('') + '</ol>' +
@@ -3703,7 +3738,7 @@
     var mark = targetMark(rs, st, shown);
     /* <<< VV8 */
     if (!Object.keys(placed.crew).length && !Object.keys(placed.pins).length && !mark) return none;
-    var pcs = dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), icon: '' }; });      /* no costume shows on a player screen: a plain token */
+    var pcs = herePcs().map(function (c) { return { id: str(c.id), name: pcName(c), icon: '' }; });      /* no costume shows on a player screen: a plain token (KS12.3: who is playing) */
     var clocks = tableClocks().filter(function (c) { return str(c.id); }).map(function (c) { return { id: str(c.id), size: c.size, filled: c.filled, hidden: !!c.hidden }; });
     var tokens = P.playerTokens(placed, shown, clocks, pcs, mark), hide = tokenDeny(rs.play, mark ? mark.label : '');
     return { tokens: tokens, hide: hide, sig: P.tokenSig(tokens, hide) };
@@ -3948,6 +3983,7 @@
         if (isObj(change) && ('t' in change || 'crew' in change) && !('heard' in change)) { var merged = Object.assign({}, ballDoc(rs.name), change), hh = runHeard(rs, merged, +merged.t); if (hh) change = Object.assign({}, change, { heard: hh }); }
         var prev = ballDoc(rs.name).t; var ok = ballSet(rs.name, change, quiet === true); if (ok && change && 't' in change) S.rvPrevT = prev; /* VV6 */ if (ok && !quiet) runDraw(true); return !!ok; },
       pcs: runPcs, floors: function () { var rs = runV2(); return rs ? runFloors(rs) : { list: [], floorOf: {} }; }, isOpen: runIsOpen,
+      whoSplit: function (l) { return S && S.who ? S.who.split(l) : null; },      /* KS12.4 (night.who): a told list's players, here and not here */
       openRoom: function (name, on) { roomOpen(name, on); }, mapSvg: runMapSvg, mapPaint: function (fr, svg, zoom) { b19Paint(fr, svg, zoom); },
       /* N3, the site (gm/site.js): the ONE alarm, the toolbar and the stage, the rooms' states, each card's Players' map, people and If it goes wrong, the ⋯ parts */
       alarmHtml: function (open) { var si = siteInst(); return si ? si.alarm(open, 'data-rv="alarm"') : ''; }, alarmPop: function () { var si = siteInst(); return si ? si.alarmPop(false) : ''; },
@@ -4557,6 +4593,7 @@
     var fl0 = ipadLayerSet('scene.filter') ? ipadLayers().scene.filter : null;
     AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null; AM.loaded = true; AM.error = '';
     apSync(); hsSync();
+    if (Array.isArray(r.doc.polaroids) || (S && S.who)) whoPolaroids();      /* KS12.5: a stored list follows the session (or goes, with night.who off), whichever read lands first */
     /* F4: the site's Flashback / Back follows a filter it learns of here (a reload mid-flashback draws the toolbar before this GET lands) */
     if ((ipadLayerSet('scene.filter') ? ipadLayers().scene.filter : null) !== fl0 && S) { var fb = S.b19 && S.b19.flashback; if (fb && typeof fb.refresh === 'function') fb.refresh(); else siteChanged(); }
     return true;
@@ -4896,7 +4933,7 @@
   }
   /* the stamp's part of the Roll: Effect, Stamp it on the iPad (or what is up, Take it down and Stamp again), the Focus keys and the sizer's strip */
   function b09Paint() {
-    var R = W.B68GmRoll; if (!S || !R) return;
+    var R = rollR(); if (!S || !R) return;
     rollLinePaint();          /* the line first (it follows the room on every paint, as the stamp's own box did): the stamp's view reads it */
     var v = S.stamp ? S.stamp.view() : null, on = !!(v && v.on);
     var eff = $q('#gm-eff'); if (eff) { eff.hidden = !on; eff.innerHTML = on ? R.effHtml(v.draft.effect) : ''; }
@@ -4948,7 +4985,7 @@
     var i = $q('#gm-c-threat'); if (!i) return;
     rollSeed();
     var v = str(live().threat); if (!rollTyping(i) && i.value !== v) { i.value = v; i.__was = v; }
-    var m = rollMem(), cur = rollCut(rollLine()), from = cur && m.seed && m.seed.line === cur ? str(m.seed.room) : '', R = W.B68GmRoll;
+    var m = rollMem(), cur = rollCut(rollLine()), from = cur && m.seed && m.seed.line === cur ? str(m.seed.room) : '', R = rollR();
     var n = $q('#gm-line-note'); if (n) { n.innerHTML = from && R ? R.lineNote(from) : ''; n.hidden = !from; }
     var x = $q('[data-gm="line-clear"]'); if (x) x.hidden = !cur;
   }
@@ -4986,7 +5023,7 @@
   }
   /* Focus: the column as its keys, with the position (and the effect, and whether the stamp is up) on top */
   function rollMiniPaint(v) {
-    var mini = $q('#gm-mini'), R = W.B68GmRoll; if (!mini) return;
+    var mini = $q('#gm-mini'), R = rollR(); if (!mini) return;
     if (!R || !hasSit()) { mini.innerHTML = ''; mini.__html = ''; return; }
     v = v || (S.stamp ? S.stamp.view() : null);
     var h = R.miniHtml(S.con.situations(), str(uiNow().pos), v && v.on ? v.draft.effect : '', !!(v && v.active));
@@ -5258,7 +5295,7 @@
     var rs = runSite(); if (!rs || !S.locRoll || rs.play.v !== 2) return null;
     var reveal = revealList(mapUi()).concat(cleanRooms(ballDoc(rs.name).open).map(function (n) { return 'room:' + n; }));     /* the Run view's rule: runIsOpen */
     var open = (Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : []).filter(function (r) { return roomShown(r, reveal) && str(r.name); }).map(function (r) { return str(r.name); });
-    var pcs = dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), owner: str(c.owner) }; });
+    var pcs = herePcs().map(function (c) { return { id: str(c.id), name: pcName(c), owner: str(c.owner) }; });      /* KS12.3/12.4: the band's crew and the cards, for who is playing */
     var play = rs.play, roll = S.locRoll, me = S, st = ballDoc(rs.name), h = runHeard(rs, st, +st.t);
     /* A1: the published card has the leads in reach heard; the GM state follows in one deferred write */
     if (h) { st = Object.assign({}, st, { heard: h }); setTimeout(function () { if (S !== me) return; var s2 = ballDoc(rs.name), h2 = runHeard(rs, s2, +s2.t); if (h2) ballSet(rs.name, { heard: h2 }, true); }, 0); }
@@ -6201,14 +6238,14 @@
      (the next change catches up) */
   function keyturnSync() {
     var K = W.B68GmKeyturn, F = W.B68Features; if (!K || !F || !S || !F.valueOf(S.doc, 'spine.keyturn')) return;
-    K.sync({ pcs: dtPcs, show: function (k, p, o) { var c = shows(); return c ? c.show(k, p, o) : Promise.resolve(null); }, toast: toast, now: function () { return Date.now(); } });
+    K.sync({ pcs: herePcs, show: function (k, p, o) { var c = shows(); return c ? c.show(k, p, o) : Promise.resolve(null); }, toast: toast, now: function () { return Date.now(); } });
   }
   /* PC status on the band's faces (suite 3.7, switch face.pcstatus): app/gm/pcstatus.js sends the layer only when what it would draw has changed */
   function pcStatusSync() {
     var K = W.B68GmPcStatus; if (!K || !S || !W.B68Features) return;
     var me = S;
     K.sync({
-      feature: function (id) { return S === me && b09On(id); }, pcs: dtPcs,
+      feature: function (id) { return S === me && b09On(id); }, pcs: herePcs,      /* KS12.3: the faces of who is playing */
       current: function () { var l = isObj(AM.doc) && isObj(AM.doc.layers) && isObj(AM.doc.layers.band) ? AM.doc.layers.band.faces : null; return Array.isArray(l) ? l : null; },
       layer: function (path, value) { var sh = shows(); return sh ? sh.layer(path, value) : Promise.resolve(null); }
     });
@@ -6218,7 +6255,7 @@
     runFoldMoves();         /* a phone's move request rides on the characters */
     keyturnSync();          /* a turned key (suite 1.8, switch spine.keyturn) */
     pcStatusSync();         /* the band's PC faces (suite 3.7, switch face.pcstatus) */
-    if (S.who) S.who.paint(S.root);      /* KS11 (night.who): the Start sheet's rows and After's count follow the filed characters */
+    if (who()) { var whoSig = whoPcSig(); if (whoSig !== S.whoPcSig) { S.whoPcSig = whoSig; S.who.paint(S.root); whoPolaroids(); } }      /* KS11/KS12.0 (night.who): only when who is filed changed, not every poll */
     if (JSON.stringify(dtPcs()) === S.dtPcSig) return;
     runStale();
     if (S.mission) S.mission.changed();         /* a card carries its PC's name and owner */
@@ -7805,7 +7842,7 @@
     camp = isObj(doc) ? doc : null;
     if (S && S.status === 'ready') {
       renderRail(); renderBar(); scMaybeRedraw(); runStale();
-      if (S.who) S.who.paint(S.root);      /* KS11 (night.who): Before's lead and After's line follow the session */
+      if (who()) { var whoCs = whoCampSig(); if (whoCs !== S.whoCampSig) { S.whoCampSig = whoCs; S.who.paint(S.root); whoPolaroids(); } }      /* KS11/KS12.0 (night.who): the session or the RSVPs changed (not every mission publish); KS12.5: End clears the polaroids */
       apClocksFeed(); apSubjects();
       if (S.mission) S.mission.noteClocks();      /* the alarm clock's fill or visibility is on the players' band */
       { var stc = setInst(); if (stc) stc.heal(); }      /* W0.2 / N0: the campaign document's copy of the settings follows the GM state's, on every arrival */
@@ -7867,6 +7904,7 @@
     _places: function () { return S && S.places ? S.places : null; },
     /* N4: the Roll's "If it goes wrong" line from anywhere (the Run view's room card calls its host's setThreat, the same thing) -> bool */
     setThreat: function (text) { return rollSetThreat(text); },
+    rollKit: function () { if (S && S.status === 'ready' && rollKit()) renderConsole(); },      /* KS06 (kit.desk): gm/kit/roll.js calls it when the desk turns on or off */
     aftermath: aftermathFeed,       /* suite 1.6 */
     cast: castFeed,                 /* suites 3.8 and 5.4 */
     _voice: function (v) { if (S) setVoice(v); }
