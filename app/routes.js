@@ -87,7 +87,8 @@
      whose imports loaded are removed and index.html's inline block is wrapped in @layer old { } (until then the links and the block
      stand as before, so the look never changes on the way). A link still loading when this runs is handed to its import: the import's
      load or error settles that file for need() (the link is removed before its own load event could). An import that fails leaves its
-     link where it was. From then on, for the rest of the page's life, every old sheet the loader brings comes in as an import. Until
+     link where it was, UNLAYERED: it then beats the inline block and the kit at any specificity, which is better than losing the sheet.
+     (For a link that was still loading, a failed import removes the link and fails the file, as a failed link would have.) From then on, for the rest of the page's life, every old sheet the loader brings comes in as an import. Until
      layerOld() runs nothing here differs from before: the same <link> tags, the same order, no write to the page.
      Only index.html's own block is wrapped: the one style element in <head> without an id when this file runs (routes.js is one of
      index.html's own tags, so it runs before any script builds a style). Styles built in JS (zoom.js, sheet/quiet.js, sheet/claims.js,
@@ -97,6 +98,7 @@
   var INLINE = (function () {
     var d = root.document; if (!d || typeof d.querySelectorAll !== 'function') return null;
     var s = [].filter.call(d.querySelectorAll('head > style'), function (x) { return !(x.getAttribute && (x.getAttribute('id') || x.getAttribute('data-href'))); });
+    if (s.length !== 1 && typeof console !== 'undefined') console.warn('B68Load: ' + s.length + ' id-less head styles, not one: the inline block will not be layered');
     return s.length === 1 ? s[0] : null;
   })();
   function isKitCss(f) { return /^(ui|display\/kit|sheet\/kit)\//.test(f); }
