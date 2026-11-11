@@ -2358,7 +2358,7 @@
   function bandUpdate() { if (S && S.band && S.status === 'ready') S.band.update(); }
   /* PANIC (the band's last button, and Esc when nothing else is open): the cue stack's panic, with or without cues in the note (the safe scene, the iPad's
      sound down, the work light); a page without the cue stack still sends the iPad to the safe scene */
-  function panicEffect(safe) { if (W.B68GmPcStatus) W.B68GmPcStatus.down();      /* KS14.2: PANIC, nobody acts (its layers: null takes the faces down) */
+  function panicEffect(safe) { if (W.B68GmPcStatus && b09On('kit.stage')) W.B68GmPcStatus.down(true);      /* KS14.2: PANIC, nobody acts (its layers: null takes the faces down; they are not laid again for it) */
     return Promise.all([patchAmbient({ mode: 'pin', scene: safe, overlay: null, layers: null }), pushDisplay({ kind: 'blank' }).then(null, function () { return null; })]).then(function (r) { return r[0] !== null; }); }
   function bandPanic(src) {
     if (!S) return;
@@ -2598,7 +2598,7 @@
     if (!S || !S.root) return;
     renderMirror(); spineTick(); b17Tick(); csTick(); if (S.st) S.st.sync();
     if (S.status === 'ready' && who()) S.who.paint(null);      /* KS12.7 (night.who): the band's who chip, and the reader made when the setting turns on */
-    if (S.status === 'ready') pcStatusSync();      /* KS14 (kit.stage): the faces follow the setting, on or off (sent only on a change) */
+    if (S.status === 'ready' && (b09On('kit.stage') || S.ks14On || (isObj(AM.doc) && ks14Left()))) { S.ks14On = b09On('kit.stage'); pcStatusSync(); }      /* KS14 (kit.stage): the faces follow the setting, on, and once more when it goes off (sent only on a change) */
     if (W.B68Kit && S.status === 'ready') W.B68Kit.set('desk', !!(W.B68Features && W.B68Features.valueOf(S.doc, 'kit.desk')));      /* the kit and stage build (KS01.2): data-kit="desk" follows the setting, at once (ui/kit-flag.js) */
     if (S.status === 'ready' && W.B68Features) { var pOn = !!W.B68Features.valueOf(S.doc, 'blade.pitches'); if (W.B68Pitches) W.B68Pitches.set(gmApi(), pOn); else if (pOn && W.B68Load) W.B68Load.need('blade-pitches').then(function () { if (W.B68Pitches && S && S.status === 'ready') W.B68Pitches.set(gmApi(), !!W.B68Features.valueOf(S.doc, 'blade.pitches')); }, function () {}); }      /* blade.pitches (KS18): the blade-pitches bundle while it is on; B68Pitches (gm/kit/blade.js) adds the pitch fields to the tick, and takes them off when it turns off */
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
@@ -2997,8 +2997,8 @@
     return c && Array.isArray(c.options) ? c.options.filter(function (o) { return o && str(o.value); }) : [];
   }
   function whoList() { var l = whoAll(); return S && S.who ? S.who.only(l) : l; }      /* KS12.2 (night.who): the chips are the PCs playing tonight */
-  function setWho(v) { if (!S || !hasSit()) return; v = str(v); setLive('pc', str(uiNow().pc) === v ? '' : v); renderPos(); renderControls(); pcStatusSync(); }      /* KS14.2: the acting head follows Who */
-  function whoClear() { if (S && hasSit() && str(uiNow().pc)) { setLive('pc', ''); renderPos(); renderControls(); pcStatusSync(); } }
+  function setWho(v) { if (!S || !hasSit()) return; v = str(v); setLive('pc', str(uiNow().pc) === v ? '' : v); renderPos(); renderControls(); if (b09On('kit.stage')) pcStatusSync(); }      /* KS14.2: the acting head follows Who */
+  function whoClear() { if (S && hasSit() && str(uiNow().pc)) { setLive('pc', ''); renderPos(); renderControls(); if (b09On('kit.stage')) pcStatusSync(); } }
   function setPos(v) { setLive('pos', v); renderPos(); }
   /* a roll is never invisible: Focus (which hides the card) goes, said once per page load, and the card's header is scrolled
      into view in the console column */
@@ -4348,9 +4348,10 @@
     }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
   }
   /* Take it down (a tool's own button): what is shown goes, the ambient scene plays. Blank (lights out): true black until the next send. */
-  function blankIpad() { if (W.B68GmPcStatus) { W.B68GmPcStatus.down(); pcStatusSync(); }      /* KS14.2: Blank, nobody acts */
+  function ks14Down() { if (W.B68GmPcStatus && b09On('kit.stage')) { W.B68GmPcStatus.down(); pcStatusSync(); } }      /* KS14.2: Take it down, Blank, Clear: nobody acts */
+  function blankIpad() { ks14Down();
     pushDisplay({ kind: 'blank' }).then(function () { toast('Taken down: the iPad plays the ambient scene.'); }, function (e) { toast('Could not take it down: ' + errText(e), true); }); }
-  function darkIpad() { return pushDisplay({ kind: 'dark' }).then(function () { toast('Blank: the iPad is black until the next send.'); return true; }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); return false; }); }
+  function darkIpad() { ks14Down(); return pushDisplay({ kind: 'dark' }).then(function () { toast('Blank: the iPad is black until the next send.'); return true; }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); return false; }); }
 
   /* ---------- THE iPAD TRAY's Clear (0) (the GM night rebuild, the design's iPad part: one way off) ----------
      Everything down to the ambient scene, through the page's own take-downs, so nothing comes back by itself a moment later: the report card (the
@@ -4369,6 +4370,7 @@
   function clearIpad() {
     var me = S; if (!me) return Promise.resolve(false);
     if (b17Frozen()) { toast('The iPad is frozen: unfreeze it first.', true); return Promise.resolve(false); }      /* Freeze holds the iPad: Clear changes nothing */
+    ks14Down();
     var g = gmApi();
     var fresh = g && typeof g.ambient === 'function' ? Promise.resolve().then(function () { return g.ambient(); }).then(function (r) { if (S === me) adoptAmbient(r); }, function () { /* the cached document will do */ }) : Promise.resolve();
     return fresh.then(function () { return S === me ? clearSteps(me) : false; });
@@ -6249,13 +6251,15 @@
     if (b09On('kit.stage') && !isObj(AM.doc)) return;      /* KS14: not before the ambient is read (an NPC face there is never written over) */
     var me = S;
     K.sync({
-      feature: function (id) { return S === me && (b09On(id) || (id === 'face.pcstatus' && b09On('kit.stage'))); }, pcs: herePcs,      /* KS12.3: the faces of who is playing; KS14: the stage's heads send them too */
+      feature: function (id) { return S === me && b09On(id); }, pcs: herePcs,      /* KS12.3: the faces of who is playing; KS14: stage() on sends them too (pcstatus.js) */
       stage: function () { return S === me && b09On('kit.stage'); }, who: function () { return S === me && hasSit() ? str(uiNow().pc) : ''; }, stampUp: function () { return !!(S === me && me.stamp && me.stamp.view().active); },
       joined: function () { return S !== me ? null : S.who ? S.who.present() : W.B68GmWho ? W.B68GmWho.join(whoAll().map(function (o) { return { name: str(o.value), first: str(o.label) }; }), dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), owner: str(c.owner) }; }), null) : (ks14Who(), null); },      /* KS14.2: KS12's one join */
       current: function () { var l = isObj(AM.doc) && isObj(AM.doc.layers) && isObj(AM.doc.layers.band) ? AM.doc.layers.band.faces : null; return Array.isArray(l) ? l : null; },
+      left: function (v) { if (v === undefined) return isObj(AM.doc) && ks14Left(); ks14Left(!!v); },      /* KS14: the stage's faces outlive a reload with it off */
       layer: function (path, value) { var sh = shows(); return sh ? sh.layer(path, value) : Promise.resolve(null); }
     });
   }
+  function ks14Left(v) { try { if (v === undefined) return W.localStorage.getItem('b68.ks14.faces') === '1'; if (v) W.localStorage.setItem('b68.ks14.faces', '1'); else W.localStorage.removeItem('b68.ks14.faces'); } catch (e) { return false; } }      /* KS14: this browser's memory, never the server's */
   /* KS14.2: the Who's join is KS12's (gm/kit/who.js, the night-who bundle): with night.who off it is fetched once while kit.stage is on */
   function ks14Who() { var me = S; if (!S || S.ks14Who || W.B68GmWho || !W.B68Load || !W.B68Load.need) return; S.ks14Who = true; W.B68Load.need('night-who').then(function () { if (S === me) pcStatusSync(); }, function () { if (S === me) S.ks14Who = false; }); }
   function charactersChanged() {

@@ -2073,7 +2073,7 @@
       if (s.dead || on === !!s.stage) return;
       if (on) s.stage = root.B68Stage.attach(container, { later: later, clearLater: clearLater, reduced: reduced, band: function () { return s.bandModel; }, wireMs: function () { return WT.on; } });
       else { s.stage.destroy(); s.stage = null; }
-      s.stageBand = s.stage && root.B68StageBand ? root.B68StageBand.attach(s.stage, { band: function () { return s.bandModel; }, layers: function () { return s.layers ? s.layers.state() : null; }, doc: document }) : null;      /* KS14: the clock and the crew heads */
+      if (s.stageBand) s.stageBand.destroy(); s.stageBand = s.stage && root.B68StageBand ? root.B68StageBand.attach(s.stage, { band: function () { return s.bandModel; }, layers: function () { return s.layers ? s.layers.state() : null; }, doc: document }) : null;      /* KS14: the clock and the crew heads */
       suiteSync();
       if (s.lastShow) show(s.lastShow[0], s.lastShow[1]);
     }

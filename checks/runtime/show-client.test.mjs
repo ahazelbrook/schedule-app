@@ -120,6 +120,23 @@ await test('layers: clean() keeps names and roles only; the message to a scene c
   assert.equal(Lay.clean({ band: { faces: [{ name: 'a' }, { name: 'b' }, { name: 'c' }, { name: 'd' }, { name: 'e' }] } }).faces.length, 3, 'at most three faces');
 });
 
+await test('KS14.2 the acting mark: the GM check, the server and the display agree on band.faces acting; a scene\'s message never carries it', async () => {
+  const { cleanLayerOp } = await import('../../functions/_lib/show.js');
+  const nell = { pcId: 'pc-nell', name: 'Nell Arbuthnot', stress: 4 }, ray = { pcId: 'pc-ray', name: 'Ray Okonjo', stress: 2, harm: [2] };
+  const server = (v) => { try { return cleanLayerOp({ path: 'band.faces', value: v }).value; } catch (e) { return null; } };
+  const cases = [[nell, ray], [nell, { ...ray, acting: true }], [{ ...nell, acting: false }, ray], [{ ...nell, acting: true }, { ...ray, acting: true }], [nell, { ...ray, acting: 'yes' }],
+    [nell, { ...ray, acting: 1 }], [{ npcId: 'n-mabel' }, { ...ray, acting: true }], [{ ...nell, acting: true }, ray, { pcId: 'pc-tam', name: 'Tam Petrakis' }]];
+  for (const v of cases) {
+    const s = server(v), g = Show.layerOk('band.faces', v);
+    assert.equal(!!s, g, 'server and GM agree: ' + JSON.stringify(v));
+    if (!s) continue;
+    const pcs = s.filter((f) => f.pcId), d = Lay.clean({ band: { faces: pcs } }).faces;      /* a stored { npcId } is drawn only once the GET joins it */
+    assert.deepEqual(d.map((f) => f.acting === true), pcs.map((f) => f.acting === true), 'the display keeps the mark the server keeps: ' + JSON.stringify(v));
+    assert.ok(!JSON.stringify(Lay.message(Lay.clean({ band: { faces: s } }))).includes('acting'), 'a scene is not told who is acting');
+  }
+  assert.equal(Lay.clean({ band: { faces: [{ ...ray, acting: 'yes' }] } }).faces[0].acting, undefined, 'the display keeps true alone');
+});
+
 await test('layers: apply() sets the root attributes, draws the strip, posts to the scene frames only when something changed, answers b68:ready and a scene load; clearing removes it all', () => {
   const { c, amb } = container(); const fa = frame('credits'), fb = frame('watch'); amb.appendChild(fa); amb.appendChild(fb);
   posted.length = 0; listeners.length = 0;

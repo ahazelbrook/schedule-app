@@ -85,6 +85,78 @@ await test('pcstatus: sends once, then only on a change; clears when the switch 
   PC.reset(); const off = fakeHost({ on: false }); assert.equal(await PC.sync(off), 'off'); assert.equal(off.sent.length, 0, 'switch off: nothing is ever sent');
 });
 
+/* KS14 (the kit and stage build, kit.stage): the stage's heads, who is acting (Gate 2 contract KS14-contract.md and its four conditions) */
+const Who = require(path.join(APP, 'gm', 'kit', 'who.js'));
+const four = () => ['Nell Arbuthnot', 'Ray Okonjo', 'Tam Petrakis', 'Octavia Fennimore-Clay'].map((n, i) => { const o = { id: 'pc-' + (i + 1), name: n }; Object.defineProperty(o, 'status', { enumerable: false, value: { stress: i + 1, harm: [1], locks: 0 } }); return o; });
+await test('KS14 pcstatus: facesFrom marks one face acting; a fourth PC acting takes the third place (the 3-face cap); bare faces carry the name and the mark only', () => {
+  const pcs = four();
+  assert.deepEqual(PC.facesFrom(pcs, 'pc-2').map((f) => [f.pcId, !!f.acting]), [['pc-1', false], ['pc-2', true], ['pc-3', false]]);
+  assert.deepEqual(PC.facesFrom(pcs, 'pc-4').map((f) => [f.pcId, !!f.acting]), [['pc-1', false], ['pc-2', false], ['pc-4', true]], 'the acting PC is always on the band');
+  assert.deepEqual(PC.facesFrom(pcs, 'pc-9').map((f) => f.pcId), ['pc-1', 'pc-2', 'pc-3'], 'an id not on the list marks nothing');
+  assert.deepEqual(PC.facesFrom(pcs, ''), PC.facesFrom(pcs), 'no Who: exactly today\'s faces');
+  assert.deepEqual(PC.facesFrom(pcs, 'pc-1', true)[0], { pcId: 'pc-1', name: 'Nell Arbuthnot', acting: true }, 'bare: no stress, harm or locks');
+  assert.ok(Show.layerOk('band.faces', PC.facesFrom(pcs, 'pc-4')) && Show.layerOk('band.faces', PC.facesFrom(pcs, 'pc-1', true)));
+});
+await test('KS14 pcstatus: acting follows Who and the stamp: a pick grows, the stamp coming down (Take it down, Esc, Clean, a result) shrinks, down() (Blank, PANIC) shrinks', () => {
+  PC.reset();
+  assert.equal(PC.acting('Ray', false), 'Ray', 'a pick: Ray acts within one sync');
+  assert.equal(PC.acting('Ray', true), 'Ray', 'the stamp goes up');
+  assert.equal(PC.acting('Ray', false), '', 'the stamp comes down (Take it down, Esc): nobody, though Who stays picked');
+  assert.equal(PC.acting('Ray', false), '', 'and stays down');
+  assert.equal(PC.acting('Ray', true), 'Ray', 'a new stamp with the same Who');
+  assert.equal(PC.acting('', true), '', 'a result (4/5, 1-3) or Clean clears Who: nobody');
+  assert.equal(PC.acting('Nell', true), 'Nell', 'another pick while the beat is up');
+  PC.down(); assert.equal(PC.acting('Nell', true), '', 'Blank or PANIC: nobody, until Who or the stamp changes');
+  assert.equal(PC.acting('Nell', false), '', 'the stamp coming down after a down() is still nobody');
+  assert.equal(PC.acting('Nell', true), 'Nell');
+  PC.reset();
+});
+await test('KS14 pcstatus: the Who becomes an id through B68GmWho.join (KS12\'s matcher): the whole name, a first name only one PC has, never a PC who is not here', () => {
+  const chars = [{ id: 'pc-1', name: 'Nell Arbuthnot', owner: 'u1' }, { id: 'pc-2', name: 'Ray Okonjo', owner: 'u2' }, { id: 'pc-3', name: 'Tam Petrakis', owner: 'u3' }];
+  const pack = [{ name: 'Nell Arbuthnot', first: 'Nell' }, { name: 'Ray', first: 'Ray' }, { name: 'Tam Petrakis', first: 'Tam' }, { name: 'GM-ONLY-Nobody', first: 'X' }];
+  const j = Who.join(pack, chars, null);
+  assert.equal(PC.actingId('Nell Arbuthnot', j), 'pc-1'); assert.equal(PC.actingId('Ray', j), 'pc-2', 'a first name only one PC has');
+  assert.equal(PC.actingId('GM-ONLY-Nobody', j), '', 'a name the join cannot match is nobody'); assert.equal(PC.actingId('', j), ''); assert.equal(PC.actingId('Ray', null), '');
+  const away = Who.join(pack, chars, { ids: ['pc-1', 'pc-2'] });
+  assert.equal(PC.actingId('Tam Petrakis', away), '', 'Tam is not here tonight: nobody acts, no face is marked');
+});
+await test('KS14 pcstatus: kit.stage on sends the faces with face.pcstatus off; off again clears what it wrote (unless face.pcstatus is on); STAGE_STATUS false sends them bare; PANIC does not lay them again', async () => {
+  const pcs = four(), j = Who.join(pcs.map((c) => ({ name: c.name, first: c.name.split(' ')[0] })), pcs.map((c) => ({ id: c.id, name: c.name })), null);
+  const host = (o) => { const sent = []; let faces = null; const h = Object.assign({ sent, pcsOn: false, stageOn: true, whoNow: '', up: false, feature: (id) => id === 'face.pcstatus' && h.pcsOn, stage: () => h.stageOn,
+    who: () => h.whoNow, stampUp: () => h.up, joined: () => j, pcs: () => pcs, current: () => faces, layer: async (p, v) => { sent.push([p, v]); faces = v; return {}; } }, o || {}); return h; };
+  PC.reset(); let h = host();
+  assert.equal(await PC.sync(h), 'sent'); assert.equal(h.sent[0][1].length, 3); assert.equal(h.sent[0][1][0].stress, 1, 'STAGE_STATUS true: the ring\'s number rides');
+  h.whoNow = 'Octavia Fennimore-Clay'; assert.equal(await PC.sync(h), 'sent');
+  assert.deepEqual(h.sent[1][1].map((f) => f.pcId + (f.acting ? '*' : '')), ['pc-1', 'pc-2', 'pc-4*'], 'one write: the fourth PC acts and is on the band');
+  assert.equal(await PC.sync(h), 'same', 'a poll with no change writes nothing');
+  h.up = true; await PC.sync(h); h.up = false; assert.equal(await PC.sync(h), 'sent', 'the stamp comes down'); assert.ok(!h.sent[2][1].some((f) => f.acting), 'nobody acts');
+  h.up = true; await PC.sync(h); assert.ok(h.sent[3][1].some((f) => f.acting), 'stamped again'); PC.down(true); assert.equal(await PC.sync(h), 'same', 'PANIC wiped the layer: the mark going is no reason to lay the faces again');
+  h.stageOn = false; assert.equal(await PC.sync(h), 'cleared', 'kit.stage off, face.pcstatus off: what it wrote is cleared'); assert.deepEqual(h.sent[h.sent.length - 1], ['band.faces', null]);
+  assert.equal(await PC.sync(h), 'off');
+  PC.reset(); h = host({ pcsOn: true }); h.whoNow = 'Ray Okonjo'; await PC.sync(h); assert.ok(h.sent[0][1][1].acting);
+  h.stageOn = false; assert.equal(await PC.sync(h), 'sent', 'kit.stage off with face.pcstatus on: the faces stay'); assert.ok(!h.sent[1][1].some((f) => f.acting), 'without the mark');
+  assert.equal(h.sent.filter((s) => s[1] === null).length, 0, 'never cleared');
+  PC.reset(); PC.STAGE_STATUS = false; h = host(); h.whoNow = 'Nell Arbuthnot'; await PC.sync(h);
+  assert.deepEqual(h.sent[0][1][0], { pcId: 'pc-1', name: 'Nell Arbuthnot', acting: true }, 'bare under the stage alone');
+  PC.reset(); h = host({ pcsOn: true }); await PC.sync(h); assert.equal(h.sent[0][1][0].stress, 1, 'face.pcstatus on: the status rides whatever the flag');
+  PC.STAGE_STATUS = true; PC.reset();
+  h = host({ stageOn: false, pcsOn: false }); h.whoNow = 'Ray Okonjo'; assert.equal(await PC.sync(h), 'off'); assert.equal(h.sent.length, 0, 'both off: nothing, as today');
+});
+await test('KS14 pcstatus: a page loaded with both settings off clears the faces the stage left (this browser remembers), once; never an NPC\'s; nothing without the memory', async () => {
+  const pcs = four(); let mem = false;
+  const host = (cur, o) => { const sent = []; let faces = cur; return Object.assign({ sent, feature: () => false, stage: () => false, pcs: () => pcs, current: () => faces,
+    left: (v) => { if (v === undefined) return mem; mem = v; }, layer: async (p, v) => { sent.push([p, v]); faces = v; return {}; } }, o || {}); };
+  PC.reset(); let h = host(null, { stage: () => true }); await PC.sync(h); assert.equal(mem, true, 'the stage sent: remembered');
+  PC.reset(); h = host([{ pcId: 'pc-1', name: 'Nell Arbuthnot', stress: 1 }]);
+  assert.equal(await PC.sync(h), 'cleared'); assert.deepEqual(h.sent, [['band.faces', null]]); assert.equal(mem, false, 'and forgotten');
+  assert.equal(await PC.sync(h), 'off'); assert.equal(h.sent.length, 1, 'once');
+  PC.reset(); mem = true; h = host([{ npcId: 'n-mabel' }]); assert.equal(await PC.sync(h), 'off'); assert.equal(h.sent.length, 0, 'an NPC holds the band: untouched'); assert.equal(mem, true, 'still remembered');
+  PC.reset(); h = host(null); assert.equal(await PC.sync(h), 'off'); assert.equal(h.sent.length, 0); assert.equal(mem, false, 'nothing on the band: forgotten, nothing sent');
+  PC.reset(); h = host([{ pcId: 'pc-1', name: 'Nell Arbuthnot' }]); assert.equal(await PC.sync(h), 'off'); assert.equal(h.sent.length, 0, 'no memory: PC faces another switch wrote are left alone, as today');
+  PC.reset(); mem = true; h = host([{ pcId: 'pc-1', name: 'Nell Arbuthnot' }], { feature: (id) => id === 'face.pcstatus' }); await PC.sync(h); assert.equal(mem, false, 'face.pcstatus on owns them: forgotten');
+  PC.reset();
+});
+
 await test('display layers: a plain face is unchanged; a status face is read, bounded and drawn; extra keys are dropped', () => {
   assert.deepEqual(Layers.clean({ band: { faces: [{ pcId: 'p1' }, { name: 'Dov Kessler', role: 'Desk sergeant' }] } }).faces, [{ pcId: 'p1' }, { name: 'Dov Kessler', role: 'Desk sergeant' }]);
   const s = Layers.clean({ band: { faces: [{ pcId: 'p1', name: 'Nell', stress: 4, harm: [1, 2, 7], locks: 2, junk: 'GM-ONLY-x' }] } }).faces[0];

@@ -14,8 +14,9 @@
              (orange: the one active thing). Nothing moves: the change is a cut, on the poll that brings it.
    Every string goes in as text (textContent and B68Ui.node): no markup sink, no request.
 
-   API: attach(frame, host) -> { paint(), destroy() } | null      host = { band() -> the band model, layers() -> B68Layers' clean state, doc }
-        paint() repaints only when what it would draw changed (a signature), so a poll that changes nothing touches nothing.
+   API: attach(frame, host) -> { paint(), fit(), destroy() } | null      host = { band() -> the band model, layers() -> B68Layers' clean state, doc }
+        paint() repaints only when what it would draw changed (a signature), so a poll that changes nothing touches nothing. fit() stands the
+        crew under the clock when a name would be cut beside it (it runs after a paint and from a ResizeObserver on the two places).
         Pure = { initial(name), heads(faces, crew) -> [{ name, initial, stress, acting }], clock(model) -> { time, kick, text } | null, sig(o) } */
 (function (root, factory) {
   'use strict';
@@ -40,14 +41,15 @@
   Pure.heads = function (faces, crew) {
     var pcs = (Array.isArray(faces) ? faces : []).filter(function (f) { return isObj(f) && typeof f.pcId === 'string' && f.pcId; });
     var byName = {};
-    pcs.forEach(function (f) { var n = txt(f.name, NAME_MAX); if (n && !byName[n]) byName[n] = f; });
+    function key(n) { return n.toLowerCase().replace(/[^a-z0-9À-ɏ]+/g, ' ').trim(); }      /* case, spacing and punctuation never split a head from its face */
+    pcs.forEach(function (f) { var n = txt(f.name, NAME_MAX); if (n && !byName[key(n)]) byName[key(n)] = f; });
     function head(name, f) {
       var st = f && typeof f.stress === 'number' && isFinite(f.stress) ? Math.max(0, Math.min(STRESS_MAX, Math.floor(f.stress))) : null;
       return { name: name, initial: Pure.initial(name), stress: st, acting: !!(f && f.acting === true) };
     }
     var out = [], seen = {};
     var names = (Array.isArray(crew) ? crew : []).map(function (c) { return txt(isObj(c) ? c.name : '', NAME_MAX); }).filter(Boolean);
-    if (names.length) names.forEach(function (n) { if (out.length < HEADS_MAX && !seen[n]) { seen[n] = 1; out.push(head(n, byName[n] || null)); } });
+    if (names.length) names.forEach(function (n) { if (out.length < HEADS_MAX && !seen[n]) { seen[n] = 1; out.push(head(n, byName[key(n)] || null)); } });
     else pcs.forEach(function (f) { var n = txt(f.name, NAME_MAX); if (n && !seen[n] && out.length < HEADS_MAX) { seen[n] = 1; out.push(head(n, f)); } });
     var acting = 0;
     out.forEach(function (h) { if (h.acting && ++acting > 1) h.acting = false; });      /* one head at most, whatever arrives */
@@ -101,16 +103,49 @@
         add(el, 'p', 'stage-head-name', h.name);
       });
     }
+    /* FIT: a name is never cut while there is room. Beside the clock the crew may run out of width (four heads, a long name, portrait): then it
+       stands under the clock across the inner width (data-stage-stack, its top just below the clock). Decided again only when what is drawn or
+       the screen's size changes, so it cannot chase itself; the observer catches the idle places being shown after a show comes down. */
+    var win = doc.defaultView || null, decided = null, ro = null;
+    function gapPx() { return win ? Math.round(Math.min(win.innerWidth, win.innerHeight) * 0.02) : 12; }
+    function crowded() {
+      var names = crewEl.querySelectorAll('.stage-head-name');
+      for (var i = 0; i < names.length; i++) if (names[i].scrollHeight > names[i].clientHeight + 1 || names[i].scrollWidth > names[i].clientWidth + 1) return true;
+      var c = clockEl.firstChild, h = crewEl.firstChild;
+      if (!c || !h) return false;
+      var a = c.getBoundingClientRect(), b = h.getBoundingClientRect(), g = gapPx();
+      return !(b.left >= a.right + g || b.top >= a.bottom + g);
+    }
+    function fit() {
+      if (dead || !win || !crewEl.firstChild) return;
+      var r = crewEl.getBoundingClientRect(); if (!r.width && !r.height) return;      /* not shown now: the observer calls again */
+      var key = win.innerWidth + 'x' + win.innerHeight + '|' + sigs.clock + '|' + sigs.crew;
+      if (key !== decided) {
+        decided = key; crewEl.removeAttribute('data-stage-stack'); crewEl.style.top = '';
+        if (crowded()) crewEl.setAttribute('data-stage-stack', '');
+      }
+      if (crewEl.hasAttribute('data-stage-stack')) {
+        var c = clockEl.firstChild ? clockEl.getBoundingClientRect() : null;
+        crewEl.style.top = c && c.height ? Math.round(c.bottom + gapPx()) + 'px' : '';
+      }
+    }
+    if (win && typeof win.ResizeObserver === 'function') { ro = new win.ResizeObserver(function () { fit(); }); ro.observe(clockEl); ro.observe(crewEl); }
+    else if (win && win.addEventListener) win.addEventListener('resize', fit);
     function paint() {
       if (dead) return;
       var m = typeof host.band === 'function' ? host.band() : null, L = typeof host.layers === 'function' ? host.layers() : null;
       paintClock(Pure.clock(m));
       paintCrew(Pure.heads(isObj(L) ? L.faces : null, isObj(m) ? m.crew : null));
+      fit();
     }
     paint();
     return {
-      paint: paint,
-      destroy: function () { if (dead) return; dead = true; clockEl.textContent = ''; crewEl.textContent = ''; }
+      paint: paint, fit: fit,
+      destroy: function () {
+        if (dead) return; dead = true;
+        if (ro) ro.disconnect(); else if (win && win.removeEventListener) win.removeEventListener('resize', fit);
+        clockEl.textContent = ''; crewEl.textContent = ''; crewEl.removeAttribute('data-stage-stack'); crewEl.style.top = '';
+      }
     };
   }
 
