@@ -20,8 +20,16 @@
      model(doc, chars, o) -> the sheet's model     chars: [{ id, name, owner }]; o: { names: { <owner>: name }, prep: '3.5' | '', Sm }
      attendanceOf(chars, ids) -> { <owner>: bool } who was here, by player, from the characters ticked
      summary(doc, chars, o) -> 'Session 5 · started 19:42 · 2 playing'    o: { hhmm(iso) }
+     KS12, the one reader (roster() is its only way in):
+     tidy(name) -> 'nell arbuthnot'                  join(pack, chars, roster) -> { all, chars: [{ id, name, owner, here }], pack: [{ name, id, here,
+                                                    unmatched }], unmatched: [name] }   (all: no roster, everyone plays)
+     presentIn(j, idOrNameOrObj) -> bool             awayOwners(j) -> [owner]   splitIn(j, list) -> { here, away }
+     polaroidsOf(chars) -> [{ id, cap }]             the score scenes' polaroids (at most 8), from the characters playing
    DOM
-     create(host) -> { paint(el), open(), close(), isOpen(), start(), end() -> Promise, destroy() }
+     create(host) -> { paint(el), open(), close(), isOpen(), start(), end() -> Promise, destroy(),
+                       present() -> join(...), isPresent(x), only(list), split(list), away() -> [owner], onChange(fn) -> off, sync() }
+       host.pack() -> the pack's PCs [{ name, first }] (the Roll's Who chips' source). paint() also keeps the band's chip (#gm-bar-who, "2 playing")
+       and tells onChange's listeners when who is playing changed.
        host: { root() -> #gm-root, campaign() -> doc | null, characters() -> [{ id, name, owner }], names(ids) -> Promise<{ id: name }>,
                prep() -> the open Prep note's session ('' when none), schedule() -> B68Schedule | null, start(o) -> Promise (boot's
                startSession), finish() -> Promise (boot's endSession), log(text) (the night log), go(place) (the places), restamp(n)
@@ -54,6 +62,50 @@
     if (!at || !p) return null;
     var ids = Object.keys(p).filter(function (id) { return id && p[id] === at; }).sort();
     return ids.length ? { ids: ids, at: at } : null;
+  }
+  /* KS12.1, the one reader. The pack's PCs are known by name (the Roll's Who chips, the console's Aim at), the filed characters by id (the iPad's crew,
+     the cards, the told lists). join() ties them on a tidied name: the whole name, else a first name that only one filed character has. A pack
+     name no filed character matches counts as playing (and the Start sheet warns about it). No roster: everyone, as before the setting. */
+  function tidy(s) {
+    var t = str(s); if (t.normalize) t = t.normalize('NFKD');
+    return t.replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+  function join(pack, chars, r) {
+    var on = null; if (r && Array.isArray(r.ids)) { on = {}; r.ids.forEach(function (id) { on[id] = true; }); }
+    var cs = (Array.isArray(chars) ? chars : []).filter(function (c) { return isObj(c) && str(c.id); }).map(function (c) {
+      return { id: str(c.id), name: str(c.name).trim(), owner: str(c.owner), t: tidy(c.name), here: !on || on[str(c.id)] === true };
+    });
+    var byName = {}, byFirst = {};
+    cs.forEach(function (c) { if (c.t && !byName[c.t]) byName[c.t] = c; var f = c.t.split(' ')[0]; if (f) (byFirst[f] = byFirst[f] || []).push(c); });
+    var pk = (Array.isArray(pack) ? pack : []).map(function (p) {
+      var name = str(isObj(p) ? p.name : p).trim(), t = tidy(name); if (!t) return null;
+      var c = byName[t], f = tidy(isObj(p) && p.first ? p.first : '') || t.split(' ')[0], l = byFirst[f];
+      if (!c && l && l.length === 1) c = l[0];
+      return { name: name, t: t, id: c ? c.id : null, here: c ? c.here : true, unmatched: !c };
+    }).filter(Boolean);
+    return { all: !on, chars: cs, pack: pk, unmatched: pk.filter(function (p) { return p.unmatched; }).map(function (p) { return p.name; }) };
+  }
+  /* is this one playing? x: a character id, a name (pack or filed), or an object carrying id / value / name. Anyone unknown counts as playing */
+  function presentIn(j, x) {
+    if (!j || j.all) return true;
+    var id = isObj(x) ? str(x.id) : str(x), i;
+    for (i = 0; i < j.chars.length; i++) if (id && j.chars[i].id === id) return j.chars[i].here;
+    var t = tidy(isObj(x) ? x.value || x.name || x.label : x); if (!t) return true;
+    for (i = 0; i < j.chars.length; i++) if (j.chars[i].t === t) return j.chars[i].here;
+    for (i = 0; i < j.pack.length; i++) if (j.pack[i].t === t) return j.pack[i].here;
+    return true;
+  }
+  /* the players who are not here: every owner of a filed character none of whose characters is playing (nobody while there is no roster) */
+  function awayOwners(j) {
+    if (!j || j.all) return [];
+    var any = {}, here = {};
+    j.chars.forEach(function (c) { if (!c.owner) return; any[c.owner] = true; if (c.here) here[c.owner] = true; });
+    return Object.keys(any).filter(function (o) { return !here[o]; }).sort();
+  }
+  function splitIn(j, list) {
+    var out = { here: [], away: [] };
+    (Array.isArray(list) ? list : []).forEach(function (x) { (presentIn(j, x) ? out.here : out.away).push(x); });
+    return out;
   }
   function idList(present) {
     if (Array.isArray(present)) return present.map(str).filter(Boolean);
@@ -91,9 +143,11 @@
     var Sm = env.Sm, before = Sm && Sm.normalize ? Sm.normalize(isObj(doc) ? doc.schedule : null) : null, after = before ? clone(before) : null;
     if (after && !carry && Sm.onSessionStart) Sm.onSessionStart(after, +env.ms || Date.now(), n);       /* the table's own: next's answers become session n's attendance */
     if (after && isObj(o.attendance)) {
-      var rec = {}, any = false;
-      Object.keys(o.attendance).forEach(function (u) { if (u && typeof o.attendance[u] === 'boolean') { rec[u] = o.attendance[u]; any = true; } });
-      if (any) { after.attendance = isObj(after.attendance) ? after.attendance : {}; after.attendance[String(n)] = rec; }
+      /* KS12.0: the ticks go OVER the session's record (the RSVPs onSessionStart made, or a carried-on night's), so a player who said yes and has
+         no filed character stays; the GM's own address (a character the GM filed) is never marked */
+      var att = isObj(after.attendance) ? after.attendance : {}, rec = isObj(att[String(n)]) ? clone(att[String(n)]) : {}, any = false;
+      Object.keys(o.attendance).forEach(function (u) { if (u && u !== str(env.me) && typeof o.attendance[u] === 'boolean') { rec[u] = o.attendance[u]; any = true; } });
+      if (any) { after.attendance = att; after.attendance[String(n)] = rec; }
     }
     var sd = before ? diff(before, after) : undefined;
     if (sd) out.schedule = sd;
@@ -151,7 +205,7 @@
   function button(label, attrs, primary) { return '<button type="button" class="btn' + (primary ? ' primary' : '') + '"' + (attrs || '') + '>' + esc(label) + '</button>'; }
   function create(host) {
     host = host || {};
-    var st = { el: null, open: false, m: null, ticks: {}, num: '', busy: false, gone: false, escOff: null, names: {}, asked: {} };
+    var st = { el: null, open: false, m: null, ticks: {}, num: '', busy: false, gone: false, escOff: null, names: {}, asked: {}, chip: null };
     function call(name, a) { var f = host[name]; if (typeof f !== 'function') return undefined; try { return f(a); } catch (e) { return undefined; } }
     function doc() { return call('campaign') || null; }
     function chars() { var c = call('characters'); return Array.isArray(c) ? c : []; }
@@ -161,13 +215,53 @@
     function leadHtml() {
       var d = doc(), m = model(d, chars(), { Sm: Sm() }), r = roster(d);
       var line = m.open ? 'Session ' + m.carry + ' is open' + (r ? ' · ' + r.ids.length + ' playing' : '') : 'Pick who is playing · session ' + m.number;
-      return button('Start the night', ' data-who="open" aria-haspopup="dialog" title="Pick who is playing, then start the session"', true) + '<span class="who-lead-sub">' + esc(line) + '</span>';
+      var label = m.open ? 'Carry on session ' + m.carry : 'Start the night';      /* KS12.0: an open session is carried on, not started */
+      return button(label, ' data-who="open" aria-haspopup="dialog" title="' + (m.open ? 'Who is here: add a late arrival or let someone go' : 'Pick who is playing, then start the session') + '"', true) + '<span class="who-lead-sub">' + esc(line) + '</span>';
     }
+
+    /* ---- KS12.1: the one reader, for the page's other parts ---- */
+    function pack() { var p = call('pack'); return Array.isArray(p) ? p : []; }
+    function joined() { return join(pack(), chars(), roster(doc())); }
+    var heard = [], sig = 'all';
+    function sigOf(j) { return j.all ? 'all' : JSON.stringify([j.chars.map(function (c) { return c.id + (c.here ? '+' : '-'); }), j.unmatched]); }
+    /* tell the listeners when who is playing changed (a Start, a late arrival, a player let go, a character filed); no roster and none before: silent */
+    function sync() {
+      var s = sigOf(joined()); if (s === sig) return false;
+      sig = s;
+      heard.slice().forEach(function (fn) { try { fn(); } catch (e) { /* one listener's fault stays its own */ } });
+      return true;
+    }
+    function onChange(fn) {
+      if (typeof fn !== 'function') return function () {};
+      heard.push(fn);
+      return function () { heard = heard.filter(function (f) { return f !== fn; }); };
+    }
+
+    /* ---- KS12.7: the band's chip, "2 playing": the page's #gm-bar-who when the band has one, else one placed after the session chip ---- */
+    function chip() {
+      var d = doc0(); if (!d || !d.getElementById) return;
+      var c = d.getElementById('gm-bar-who');
+      if (!c) {
+        var sess = d.getElementById('gm-bar-sess'); if (!sess || !sess.parentNode || !d.createElement) return;
+        c = d.createElement('button'); c.type = 'button'; c.id = 'gm-bar-who'; c.className = 'gm-pill who-chip';
+        sess.parentNode.insertBefore(c, sess.nextSibling); st.chip = c;
+      }
+      if (!c.__whoBound) { c.__whoBound = true; c.setAttribute('aria-haspopup', 'dialog'); c.addEventListener('click', onChipClick); }
+      var r = roster(doc()), n = r ? r.ids.length : chars().length, t = n + ' playing';
+      if (c.textContent !== t) c.textContent = t;
+      c.title = 'Who is here: add a late arrival or let someone go';
+    }
+    function onChipClick(ev) { if (ev && ev.preventDefault) ev.preventDefault(); if (ev && ev.stopPropagation) ev.stopPropagation(); open(); }
+
     function paint(el) {
-      if (st.gone || !el || !el.querySelectorAll) return;
-      Array.prototype.forEach.call(el.querySelectorAll('[data-who-lead]'), function (n) { var h = leadHtml(); if (n.__who !== h) { n.__who = h; n.innerHTML = h; } });
-      Array.prototype.forEach.call(el.querySelectorAll('[data-who-after]'), function (n) { var t = summary(doc(), chars()); if (n.textContent !== t) n.textContent = t; });
+      if (st.gone) return;
+      if (el && el.querySelectorAll) {
+        Array.prototype.forEach.call(el.querySelectorAll('[data-who-lead]'), function (n) { var h = leadHtml(); if (n.__who !== h) { n.__who = h; n.innerHTML = h; } });
+        Array.prototype.forEach.call(el.querySelectorAll('[data-who-after]'), function (n) { var t = summary(doc(), chars()); if (n.textContent !== t) n.textContent = t; });
+      }
+      chip();
       if (st.open) draw();
+      sync();
     }
 
     /* the sheet: the page's right-edge sheet */
@@ -200,9 +294,11 @@
       var m = st.m = model(doc(), chars(), { names: st.names, prep: call('prep'), Sm: Sm() });
       m.rows.forEach(function (r) { if (!has(st.ticks, r.id)) st.ticks[r.id] = r.on; });
       var hint = !m.rows.length ? 'No characters are filed yet: the night starts with everyone.' : m.from === 'roster' ? 'Ticked: who is playing now.' : m.from === 'rsvp' ? 'Ticked from the RSVPs: everyone but a no.' : 'Ticked: everyone. Untick who is not here.';
-      var h = '<div class="gm-dhead"><h2 class="gm-sheet-h">Start the night</h2><button type="button" class="gm-x" data-who="close" aria-label="Close Start the night" title="Close (Esc)">×</button></div>' +
+      var un = joined().unmatched, title = m.open ? 'Who is here' : 'Start the night';      /* KS12.1: a pack PC no filed character matches */
+      var warn = un.length ? '<p class="who-warn" role="note"><b>Not filed:</b> ' + esc(un.join(', ')) + '. The pack has ' + (un.length === 1 ? 'this PC' : 'these PCs') + ' but no filed character has the name, so ' + (un.length === 1 ? 'it counts' : 'they count') + ' as playing.</p>' : '';
+      var h = '<div class="gm-dhead"><h2 class="gm-sheet-h">' + title + '</h2><button type="button" class="gm-x" data-who="close" aria-label="Close ' + title + '" title="Close (Esc)">×</button></div>' +
         '<div class="gm-sheet-body who-body">' +
-        '<p class="who-hint">' + esc(hint) + '</p>' +
+        '<p class="who-hint">' + esc(hint) + '</p>' + warn +
         '<div class="who-rows" role="group" aria-label="Who is playing">' + m.rows.map(rowHtml).join('') + '</div>' +
         '<div class="who-num"><label class="who-num-l" for="who-n">Session</label><input id="who-n" class="who-n" type="number" inputmode="numeric" min="1" max="9999" step="1" data-who-n value="' + esc(st.num || String(m.number)) + '">' +
         '<span class="who-num-sub">' + esc(numLine(m)) + '</span></div>' +
@@ -280,9 +376,34 @@
       if (st.escOff) { try { st.escOff(); } catch (e) { /* gone */ } }
       if (st.el && st.el.parentNode) st.el.parentNode.removeChild(st.el);
       st.el = null;
+      var d = doc0(), c = d && d.getElementById ? d.getElementById('gm-bar-who') : null;      /* KS12.7: the chip this made goes; the band's own is unbound */
+      if (c) { if (c.removeEventListener) c.removeEventListener('click', onChipClick); c.__whoBound = false; if (c === st.chip && c.parentNode) c.parentNode.removeChild(c); }
+      st.chip = null; heard = [];
     }
-    return { paint: paint, open: open, close: close, isOpen: function () { return st.open; }, start: start, end: end, destroy: destroy };
+    return { paint: paint, open: open, close: close, isOpen: function () { return st.open; }, start: start, end: end, destroy: destroy,
+      /* KS12.1: the one reader */
+      present: function () { return joined(); },
+      isPresent: function (x) { return presentIn(joined(), x); },
+      only: function (list) { var j = joined(); return j.all ? list : splitIn(j, list).here; },
+      split: function (list) { return splitIn(joined(), list); },
+      away: function () { return awayOwners(joined()); },
+      onChange: onChange, sync: sync };
   }
 
-  return { roster: roster, isOpen: isOpen, startPatch: startPatch, endPatch: endPatch, model: model, attendanceOf: attendanceOf, summary: summary, create: create };
+  /* KS12.5: the score scenes' polaroids, from who is playing: [{ id: the cast canon's id (a first name, tidied), cap }], at most 8. The display draws only
+     the ids its cast canon has a figure for, and sets each caption as text */
+  var POLAROID_MAX = 8, CAP_MAX = 60;
+  function polaroidsOf(list) {
+    var out = [], seen = {};
+    (Array.isArray(list) ? list : []).forEach(function (c) {
+      if (!isObj(c) || out.length >= POLAROID_MAX) return;
+      var id = tidy(c.name).split(' ')[0], cap = (str(c.alias).trim() || str(c.name).trim()).replace(/\s+/g, ' ').slice(0, CAP_MAX);
+      if (!/^[a-z0-9]{1,40}$/.test(id) || seen[id]) return;
+      seen[id] = true; out.push({ id: id, cap: cap });
+    });
+    return out;
+  }
+
+  return { roster: roster, isOpen: isOpen, startPatch: startPatch, endPatch: endPatch, model: model, attendanceOf: attendanceOf, summary: summary, create: create,
+    tidy: tidy, join: join, presentIn: presentIn, awayOwners: awayOwners, splitIn: splitIn, polaroidsOf: polaroidsOf };
 });

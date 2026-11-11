@@ -298,5 +298,99 @@ await atest('the sheet: rows from the characters, a tick toggled, Start with two
   ctl.destroy();
 });
 
+// ---------- 5. KS12.0: the fixes from KS11's review ----------
+test('KS12.0: the ticks go over the RSVP record: a yes with no filed character stays; the GM\'s own character never marks the GM', () => {
+  const t = tablePage(), d = storedDoc();
+  d.schedule.rsvp['mabel.player@example.test'] = { at: '2026-11-21T08:30:00.000Z', v: 'in' };      /* said yes, has no character yet */
+  const chars = CHARS.concat([{ id: 'ch-gm', name: 'Lotte Brand', owner: GM }]);
+  const att = Who.attendanceOf(chars, ['ch-nell', 'ch-ray', 'ch-gm']);
+  const who = serverPatch(d, Who.startPatch(clone(d), { present: ['ch-nell', 'ch-ray', 'ch-gm'], attendance: att }, { iso: NOW_ISO, ms: NOW, me: GM, Sm: t.win.B68Schedule }));
+  assert.deepEqual(who.schedule.attendance['5'], { 'nell.player@example.test': true, 'mabel.player@example.test': true, 'tam.player@example.test': false, 'ray.player@example.test': true });
+  assert.equal(GM in who.schedule.attendance['5'], false, 'the GM is not a player');
+});
+test('KS12.0: a carried-on night keeps its record and changes only the ticked players', () => {
+  const t = tablePage();
+  const night = serverPatch(storedDoc(), whoPatch(t.win, storedDoc(), { present: ['ch-nell', 'ch-ray'], attendance: Who.attendanceOf(CHARS, ['ch-nell', 'ch-ray']) }));
+  const p = Who.startPatch(clone(night), { number: 5, present: ['ch-nell', 'ch-ray', 'ch-tam'], attendance: Who.attendanceOf(CHARS, ['ch-nell', 'ch-ray', 'ch-tam']) }, { iso: NOW_ISO, ms: NOW, me: GM, Sm: t.win.B68Schedule });
+  const late = serverPatch(night, p);
+  assert.deepEqual(late.schedule.attendance['5'], { 'nell.player@example.test': true, 'tam.player@example.test': true, 'ray.player@example.test': true }, 'Tam arrived late');
+  assert.deepEqual(Object.keys(late.session.present).sort(), ['ch-nell', 'ch-ray', 'ch-tam']);
+});
+
+// ---------- 6. KS12.1: the one reader ----------
+const PACK = [{ name: 'Nell Arbuthnot', first: 'Nell' }, { name: 'Ray Okonjo', first: 'Ray' }, { name: 'Tam Petrakis', first: 'Tam' }];
+function nightOf(ids) { const t = tablePage(); return serverPatch(storedDoc(), whoPatch(t.win, storedDoc(), { present: ids })); }
+test('KS12.1 join: the pack\'s names meet the filed ids on a tidied name; the roster says who is here', () => {
+  const j = Who.join(PACK, CHARS, Who.roster(nightOf(['ch-nell', 'ch-ray'])));
+  assert.equal(j.all, false);
+  assert.deepEqual(j.pack.map((p) => [p.name, p.id, p.here]), [['Nell Arbuthnot', 'ch-nell', true], ['Ray Okonjo', 'ch-ray', true], ['Tam Petrakis', 'ch-tam', false]]);
+  assert.deepEqual(j.unmatched, []);
+  assert.equal(Who.presentIn(j, 'ch-tam'), false); assert.equal(Who.presentIn(j, 'ch-ray'), true);
+  assert.equal(Who.presentIn(j, '  tam   PETRAKIS '), false, 'a name, tidied'); assert.equal(Who.presentIn(j, { label: 'Tam', value: 'Tam Petrakis' }), false, 'a Who chip option');
+  assert.equal(Who.presentIn(j, { id: 'ch-nell', name: 'Nell Arbuthnot' }), true);
+  assert.equal(Who.tidy('Ñell  O’Arbuthnot-Smith'), 'nell oarbuthnot smith');
+  assert.deepEqual(Who.awayOwners(j), ['tam.player@example.test']);
+  assert.deepEqual(Who.splitIn(j, CHARS).away.map((c) => c.id), ['ch-tam']);
+});
+test('KS12.1 join: a first name only one filed character has joins; a pack name with no match counts as present and is listed', () => {
+  const chars = [{ id: 'ch-nell', name: 'Nell A.', owner: 'n@x.test' }, { id: 'ch-ray', name: 'Ray Okonjo', owner: 'r@x.test' }, { id: 'ch-tam', name: 'Tam Petrakis', owner: 't@x.test' }];
+  const pack = PACK.concat([{ name: 'Lotte Brand', first: 'Lotte' }]);
+  const j = Who.join(pack, chars, Who.roster(nightOf(['ch-nell'])));
+  assert.equal(j.pack[0].id, 'ch-nell', 'Nell by her first name');
+  assert.deepEqual(j.unmatched, ['Lotte Brand']);
+  assert.equal(Who.presentIn(j, 'Lotte Brand'), true, 'unmatched: playing');
+  assert.equal(Who.presentIn(j, 'Ray Okonjo'), false);
+  const two = Who.join([{ name: 'Nell Arbuthnot' }], chars.concat([{ id: 'ch-n2', name: 'Nell Other', owner: 'o@x.test' }]), null);
+  assert.deepEqual(two.unmatched, ['Nell Arbuthnot'], 'a first name two characters share joins neither');
+});
+test('KS12.1 join: no roster is everyone, exactly as before (the empty roster, a stale one, none stored)', () => {
+  for (const d of [storedDoc(), { session: { number: 5, startedAt: NOW_ISO, present: {} } }, { session: { number: 6, startedAt: NOW_ISO, present: { 'ch-nell': '2026-11-07T08:30:00.000Z' } } }]) {
+    const j = Who.join(PACK, CHARS, Who.roster(d));
+    assert.equal(j.all, true);
+    assert.ok(['ch-nell', 'ch-ray', 'ch-tam', 'Tam Petrakis', 'anyone'].every((x) => Who.presentIn(j, x)));
+    assert.deepEqual(Who.awayOwners(j), []);
+    assert.deepEqual(Who.splitIn(j, CHARS).here, CHARS);
+  }
+});
+test('KS12.5 polaroidsOf: the cast id is the tidied first name, the caption the alias or the name; at most 8, no repeats', () => {
+  assert.deepEqual(Who.polaroidsOf([{ name: 'Nell Arbuthnot', alias: 'The Heron' }, { name: 'Ray Okonjo' }, { name: 'Ray Other' }, { name: '<b>' }]),
+    [{ id: 'nell', cap: 'The Heron' }, { id: 'ray', cap: 'Ray Okonjo' }, { id: 'b', cap: '<b>' }]);
+  assert.equal(Who.polaroidsOf(Array.from({ length: 12 }, (_, i) => ({ name: 'P' + i + ' X' }))).length, 8);
+  assert.equal(Who.polaroidsOf([{ name: 'A ' + 'x'.repeat(100), alias: 'y'.repeat(100) }])[0].cap.length, 60);
+});
+
+await atest('KS12.0/12.1/12.7 on a fake page: Carry on session N, the warning, onChange, the band chip', async () => {
+  const page = fakeEl('div'), gmRoot = fakeEl('div'), bar = fakeEl('span'), sess = fakeEl('span');
+  sess.parentNode = bar; bar.insertBefore = (c, ref) => { bar.children.push(c); c.parentNode = bar; return c; };
+  bar.removeChild = (c) => { bar.children = bar.children.filter((x) => x !== c); c.parentNode = null; };
+  const els = { 'gm-page': page, 'gm-bar-sess': sess };
+  const W = { document: { getElementById: (id) => els[id] || bar.children.find((c) => c.id === id) || null, createElement: (t) => { const e = fakeEl(t); Object.defineProperty(e, 'textContent', { get() { return this._t || ''; }, set(v) { this._t = v; } }); return e; }, activeElement: null, body: page } };
+  W.self = W; vm.createContext(W);
+  vm.runInContext(fs.readFileSync(path.join(APP, 'gm', 'kit', 'who.js'), 'utf8'), W, { filename: 'who.js' });
+  const t = tablePage(); let d = nightOf(['ch-nell', 'ch-ray']);
+  const ctl = W.B68GmWho.create({ root: () => gmRoot, campaign: () => d, characters: () => CHARS, schedule: () => t.win.B68Schedule, pack: () => PACK.concat([{ name: 'Lotte Brand' }]), start: () => Promise.resolve(true) });
+  let fired = 0; const off = ctl.onChange(() => { fired++; });
+  const lead = fakeEl('div'), left = fakeEl('div');
+  left.querySelectorAll = (sel) => (sel === '[data-who-lead]' ? [lead] : []);
+  ctl.paint(left);
+  assert.match(lead.innerHTML, />Carry on session 5<\/button>/, 'KS12.0: an open session is carried on');
+  assert.equal(fired, 1, 'the roster arrived: one change');
+  ctl.paint(left); assert.equal(fired, 1, 'nothing changed: no call');
+  assert.equal(ctl.isPresent('Tam Petrakis'), false); assert.equal(ctl.isPresent('Lotte Brand'), true);
+  assert.deepEqual(clone(ctl.only(CHARS).map((c) => c.id)), ['ch-nell', 'ch-ray']); assert.deepEqual(clone(ctl.away()), ['tam.player@example.test']);
+  const chip = bar.children.find((c) => c.id === 'gm-bar-who');
+  assert.ok(chip, 'the band chip is placed after the session chip'); assert.equal(chip.textContent, '2 playing');
+  chip.listeners.click({ preventDefault() {}, stopPropagation() {} });
+  assert.equal(ctl.isOpen(), true, 'the chip opens the sheet');
+  const sheet = gmRoot.children[0];
+  assert.match(sheet.innerHTML, /<h2 class="gm-sheet-h">Who is here<\/h2>/);
+  assert.match(sheet.innerHTML, /class="who-warn" role="note"><b>Not filed:<\/b> Lotte Brand\./, 'the unmatched pack name is warned about');
+  d = serverPatch(d, Who.startPatch(clone(d), { number: 5, present: ['ch-nell', 'ch-ray', 'ch-tam'] }, { iso: NOW_ISO, ms: NOW, me: GM, Sm: t.win.B68Schedule }));
+  ctl.paint(left); assert.equal(fired, 2, 'a late arrival: a change'); assert.equal(chip.textContent, '3 playing'); assert.equal(ctl.isPresent('ch-tam'), true);
+  off(); d = nightOf(['ch-nell']); ctl.paint(left); assert.equal(fired, 2, 'unsubscribed');
+  ctl.destroy();
+  assert.equal(bar.children.some((c) => c.id === 'gm-bar-who'), false, 'destroy takes the chip it made away');
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 if (failed) process.exitCode = 1;

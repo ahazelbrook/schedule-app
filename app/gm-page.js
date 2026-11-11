@@ -1570,6 +1570,7 @@
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
     b09Unmount(me); b17Unmount(me); knUnmount(me); csUnmount(me); bandUnmount(me);
     if (me.places) { try { me.places.destroy(); } catch (e) {} me.places = null; }      /* N1b: its inline tools unbound, its listeners gone */
+    if (me.who) { me.who.destroy(); me.who = null; }      /* KS12.0 (night.who): the sheet, its Esc entry and the band chip go with the page */
     if (me.mission) { try { me.mission.flush(); } catch (e) {} me.mission.destroy(); me.mission = null; }   /* a publish that is waiting goes now */
     apUnmount(me);
     ipadTrayUnmount(me);       /* the tray's timer and its place in the module's list, and the live-sync listener */
@@ -6217,7 +6218,7 @@
     runFoldMoves();         /* a phone's move request rides on the characters */
     keyturnSync();          /* a turned key (suite 1.8, switch spine.keyturn) */
     pcStatusSync();         /* the band's PC faces (suite 3.7, switch face.pcstatus) */
-    if (S.who) S.who.paint(S.root);      /* KS11 (night.who): the Start sheet's rows and After's count follow the filed characters */
+    if (S.who) { var whoSig = JSON.stringify(dtPcs().map(function (c) { return [str(c.id), pcName(c), str(c.owner)]; })); if (whoSig !== S.whoPcSig) { S.whoPcSig = whoSig; S.who.paint(S.root); } }      /* KS11/KS12.0 (night.who): only when who is filed changed, not every poll */
     if (JSON.stringify(dtPcs()) === S.dtPcSig) return;
     runStale();
     if (S.mission) S.mission.changed();         /* a card carries its PC's name and owner */
