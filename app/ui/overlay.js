@@ -320,8 +320,8 @@
     var row = part('row', { label: '-', open: true, more: list.map(function (it) {
       return { label: it.label, value: it.value, rank: it.rank, key: it.key, disabled: it.disabled, data: it.data, attrs: it.attrs, id: it.id, cls: it.cls, title: it.title };
     }) });
-    var m = row.querySelector('.ui-menu');
-    m.removeAttribute('id'); m.removeAttribute('hidden');
+    var m = row.querySelector('.ui-menu') || el('div', 'ui-menu');   /* no items: an empty menu, not a crash */
+    m.setAttribute('role', 'menu'); m.removeAttribute('id'); m.removeAttribute('hidden');
     if (o.label) m.setAttribute('aria-label', o.label);
     var h = popover({ anchor: o.anchor, el: m, placement: o.placement || 'bottom-start', priority: o.priority, esc: o.esc, mount: o.mount, absolute: o.absolute,
       bounds: o.bounds, pinned: o.pinned, onClose: o.onClose, focus: o.focus });
