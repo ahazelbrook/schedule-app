@@ -36,7 +36,10 @@
          curfew() -> the curfew controller (gm/curfew.js create: view(), keep(), snooze())      cue() -> the cue-stack controller | null
          panic() -> PANIC (the cue stack's: the safe scene, sound down, the work light)      menuHtml() -> the Menu's lines      signedOut() -> text
          root() -> #gm-root (the band writes --dw-top and --gm-bar-h on it: the drawer, the sheets and the phone's chips sit under the band)
-       The band registers its two popovers with W.B68GmEsc (the cue's ⋯ and the quiet list, priority 70) and takes them down in destroy(). */
+       The band registers its two popovers with W.B68GmEsc (the cue's ⋯ and the quiet list, priority 70) and takes them down in destroy().
+     THE NEW DESK (kit.desk, KS05): while W.B68KitBand.on() (gm/kit/band.js), mount() draws its skeleton (the same ids, hooks and old classes) and
+       its Blade button, and update() its phase tabs; band.follow() redraws when the setting turns and asks host.redraw() to paint the parts again.
+       live() -> the bands mounted now. Off, every branch is the old path. */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -63,6 +66,10 @@
   function req(name) { try { return typeof require === 'function' ? require(name) : null; } catch (e) { return null; } }
   function mod(win, node) { return (W && W[win]) || req(node); }
   function rail() { return mod('B68GmPhaseRail', './phase-rail.js'); }
+  /* the new desk (kit.desk, KS05: gm/kit/band.js) draws the band when it is on; null otherwise, and every branch below is the old path. LIVE: the bands
+     mounted now, so the kit can redraw them when the setting turns (follow()) */
+  var LIVE = [];
+  function kit() { var K = W && W.B68KitBand; return K && typeof K.on === 'function' && K.on() ? K : null; }
 
   /* ---------- the places ---------- */
   function normPlace(p) { return { id: str(p.id), label: str(p.label) || str(p.id), phase: PHASE_NAME[p.phase] ? p.phase : null }; }
@@ -175,7 +182,7 @@
   /* ---------- the band (DOM) ---------- */
   function create(host) {
     host = host || {};
-    var el = null, alive = true, timer = null, sig = {}, tray = null, escOffs = [], docOff = null, clickOff = null;
+    var el = null, alive = true, timer = null, sig = {}, tray = null, escOffs = [], docOff = null, clickOff = null, KV = null, drawnKit = false;
     function call(name) {
       var f = host[name]; if (typeof f !== 'function') return undefined;
       try { return f.apply(host, [].slice.call(arguments, 1)); } catch (e) { return undefined; }
@@ -238,7 +245,8 @@
     function mount(headerEl) {
       if (!headerEl || !alive) return null;
       el = headerEl; sig = {};
-      el.innerHTML = skeleton({ menu: call('menuHtml'), signed: call('signedOut') });
+      if (KV) { try { KV.destroy(); } catch (e) {} KV = null; }
+      var KB = kit(); drawnKit = !!KB; el.innerHTML = (KB ? KB.skeleton : skeleton)({ menu: call('menuHtml'), signed: call('signedOut') });      /* KS05: the new desk's band */
       var slot = q('[data-band-slot="tray"]'), T = W && W.B68GmIpadTray;
       if (tray && typeof tray.destroy === 'function') { try { tray.destroy(); } catch (e) {} }
       tray = null;
@@ -256,6 +264,8 @@
         docOff = function () { if (typeof doc.removeEventListener === 'function') doc.removeEventListener('pointerdown', onDocDown, true); };
       }
       escWire();
+      if (KB) { try { KV = KB.wire(el, host); } catch (e) { KV = null; } }      /* KS05: the Blade button */
+      if (LIVE.indexOf(api) < 0) LIVE.push(api);
       if (!timer && W && typeof W.setInterval === 'function') timer = W.setInterval(function () { if (alive && !(W.document && W.document.hidden)) update(); }, TICK_MS);
       update();
       return el;
@@ -279,7 +289,7 @@
       var begun = !!(night && night.phase) || (sms !== null && sms <= now);      /* a night past midnight began yesterday: its phase says so */
       var cs = chips({ places: placeList(), night: night, budgets: pp && pp.budgets, start: start, started: begun, now: now, current: current });
       var s1 = JSON.stringify(cs), nav = q('[data-band-places]');
-      if (nav && s1 !== sig.places) { sig.places = s1; nav.innerHTML = cs.map(chipHtml).join(''); reveal(nav); }
+      if (nav && s1 !== sig.places) { sig.places = s1; if (drawnKit && kit()) kit().places(nav, cs); else nav.innerHTML = cs.map(chipHtml).join(''); reveal(nav); }
       /* row 2: the clock, the curfew, and what turns the row red */
       setText(q('[data-band-clock]'), clockText(now));
       var at = (night && night.curfewAt) || (pp && pp.curfew) || '', cms = at ? curfewMs(night, at, now) : null, ct = curfewText(at, cms, now);
@@ -294,6 +304,7 @@
       setAttr(q('[data-band="panic"]'), 'aria-pressed', panic ? 'true' : 'false');
       if (tray && typeof tray.update === 'function') { try { tray.update(); } catch (e) {} }
       var mu = music(); if (mu && typeof mu.tick === 'function') { try { mu.tick(); } catch (e) {} }      /* PANIC, Resume and a phase move reach the music at once */
+      if (KV) { try { KV.update(); } catch (e) {} }
       place();
     }
     /* where the band ends: the drawer and the sheets open under it, and the phone's chips stick under it */
@@ -318,10 +329,14 @@
       if (tray && typeof tray.destroy === 'function') { try { tray.destroy(); } catch (e) {} }
       tray = null;
       var mu = music(); if (mu && typeof mu.unmountPill === 'function') { try { mu.unmountPill(); } catch (e) {} }
+      if (KV) { try { KV.destroy(); } catch (e) {} KV = null; }
+      if (LIVE.indexOf(api) >= 0) LIVE.splice(LIVE.indexOf(api), 1);
     }
+    /* KS05: the setting turned (or the kit's bundle arrived): draw the other band, and the page paints its parts into it again */
+    function follow() { if (alive && el && !!kit() !== drawnKit) { mount(el); call('redraw'); } }
 
-    return {
-      mount: mount, update: update, destroy: destroy, place: place,
+    var api = {
+      mount: mount, update: update, destroy: destroy, place: place, follow: follow,
       el: function () { return el; },
       cueSlot: function () { return alive ? q('[data-band-slot="cue"]') : null; },
       traySlot: function () { return alive ? q('[data-band-slot="tray"]') : null; },
@@ -330,8 +345,9 @@
       places: placeList,
       step: function (current, d) { return step(placeList(), current, d); }
     };
+    return api;
   }
 
   return { PLACES: PLACES, BETWEEN: BETWEEN, TICK_MS: TICK_MS, placeList: placeList, step: step, chips: chips, chipHtml: chipHtml, clockText: clockText, curfewText: curfewText,
-    skeleton: skeleton, trayFallback: trayFallback, create: create };
+    skeleton: skeleton, trayFallback: trayFallback, create: create, live: function () { return LIVE.slice(); } };
 });

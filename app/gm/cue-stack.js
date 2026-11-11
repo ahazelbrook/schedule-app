@@ -303,7 +303,8 @@
       bindSlot(s);
       var v = view(), k = JSON.stringify([v.noteId, v.seq, v.panic, v.safe, v.standby && v.standby.n, v.next.map(function (x) { return x.n; }), v.total, v.last, more]);
       if (k !== sig) {
-        sig = k; s.innerHTML = html(v); s.setAttribute('data-state', v.panic ? 'panic' : v.standby ? 'standby' : 'idle');
+        var KB = typeof window !== 'undefined' && window.B68KitBand && window.B68KitBand.on() && window.B68KitBand.inBand(s) ? window.B68KitBand : null;      /* KS05: the new desk's cue unit */
+        sig = k; s.innerHTML = KB ? KB.cueHtml(v, { more: more, label: label, manual: MANUAL, pop: popHtml(v) }) : html(v); s.setAttribute('data-state', v.panic ? 'panic' : v.standby ? 'standby' : 'idle');
         if (typeof host.changed === 'function') { try { host.changed(); } catch (e) { /* the band follows on its next tick */ } }
       }
     }

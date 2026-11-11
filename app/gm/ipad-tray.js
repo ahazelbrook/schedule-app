@@ -175,6 +175,7 @@
         };
         box = doc.createElement('div');
         box.className = 'gm-tray'; box.setAttribute('role', 'group'); box.setAttribute('aria-label', 'The iPad');
+        var KB = W && W.B68KitBand; if (!(KB && typeof KB.tray === 'function' && KB.tray(el, doc, box, part))) {      /* KS05: the new desk's band builds the same parts */
         mk(box, 'span', 'gm-tray-lbl', 'iPad', { 'aria-hidden': 'true' });
         part.live = mk(box, 'button', 'gm-tray-live', '', { type: 'button', 'data-tray': 'open' });
         part.dot = mk(part.live, 'span', 'gm-dot'); part.text = mk(part.live, 'span', 'gm-tray-text');
@@ -184,6 +185,7 @@
         mk(part.clear, 'kbd', '', '0');
         part.blank = mk(box, 'button', 'gm-bb gm-tray-blank', 'Blank', { type: 'button', 'data-tray': 'blank', title: 'True black on the iPad until the next send' });
         part.ap = mk(box, 'button', 'gm-pill gm-ap gm-tray-ap', '', { type: 'button', 'data-tray': 'ap' });
+        }
         show(part.send, false); show(part.ap, false);
         el.appendChild(box);
         var me = box; off = function () { if (typeof me.removeEventListener === 'function') me.removeEventListener('click', onClick); };
