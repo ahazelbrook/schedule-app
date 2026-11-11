@@ -1575,8 +1575,8 @@
       ovTimer(function () { ovRemove(true); }, pl.end);
     }
     /* what a beat renderer is handed; portrait() draws a cleaned head-and-shoulders from the figure kit (the Rolodex card, suite 3.5), or null */
-    function beatEnv() {
-      return { document: document, reduced: reduced(), portrait: function (spec, id) { var r = drawPortrait(spec, 'dp-rc-' + String(id).replace(/[^A-Za-z0-9_-]/g, ''), ctx.figures); return r ? document.importNode(r.node, true) : null; } };
+    function beatEnv(o) {
+      return { document: document, reduced: reduced(), stage: s.stage, ms: o && o.ms, age: o && o.age, portrait: function (spec, id) { var r = drawPortrait(spec, 'dp-rc-' + String(id).replace(/[^A-Za-z0-9_-]/g, ''), ctx.figures); return r ? document.importNode(r.node, true) : null; } };   /* KS15: the frame and the beat's time (display/kit/roll.js) */
     }
     /* what the face looks (display/face-render.js) draw with: the kit, the cleaned portrait and full figure, the page's timers, and whether the speech-safe duck is up */
     function faceEnv() {
@@ -1589,7 +1589,7 @@
       var left = o.ms - (o.age || 0);
       if (left <= 0) return;
       ovTimer(function () { ovRemove(false); }, left);
-      root.B68Shows.mount(o, beatEnv()).then(function (node) {
+      root.B68Shows.mount(o, beatEnv(o)).then(function (node) {
         if (!node || s.dead || my !== s.ov.token) return;
         ovLayer.appendChild(node); s.ov.node = node; s.ov.sig = ovSig(o); ovMark(false);
         later(function () { node.classList.add('dp-ov-in'); }, reduced() ? 0 : 30);
@@ -1620,7 +1620,7 @@
       /* a brief beat whose served payload changed under the same id (an NPC on a rolodex was hidden): drawn again in place, so a hidden NPC does not stay up until the beat ends */
       if (o && o.payload && root.B68Shows && root.B68Shows.has(o.kind) && s.ov.node && s.ov.sig !== ovSig(o)) {
         var oldB = s.ov.node, myB = s.ov.token; s.ov.sig = ovSig(o);
-        root.B68Shows.mount(o, beatEnv()).then(function (nb) {
+        root.B68Shows.mount(o, beatEnv(o)).then(function (nb) {
           if (!nb || s.dead || myB !== s.ov.token || s.ov.node !== oldB) return;
           nb.classList.add('dp-ov-in'); if (oldB.parentNode) oldB.parentNode.replaceChild(nb, oldB); s.ov.node = nb;
         });

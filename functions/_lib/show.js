@@ -23,6 +23,7 @@ import { knownAs } from './known-as.js';
 
 const TONES = ['ink', 'orange', 'blue', 'red'];
 const REPORT_POSITIONS = ['controlled', 'risky', 'desperate'], REPORT_EFFECTS = ['limited', 'standard', 'great'];   // the action report card (B09 spine.stamp): report { position, effect, text? (100) }
+const REPORT_RESULTS = ['clean', '45', '13'];   // KS15: report { ..., who? (40), result? clean|45|13, cost? (60) }: the roll as beats on the iPad
 export const SHOW_MS = { min: 1000, max: 180000 };
 export const SHOW_NPC_MAX = { rolodex: 12, faces: 3, credits: 30, previously: 12 };
 
@@ -79,7 +80,13 @@ export const SHOW_KINDS = {
     },
   },
   report: {
-    build: (p) => put({ position: oneOf(p.position, 'payload.position', REPORT_POSITIONS, true), effect: oneOf(p.effect, 'payload.effect', REPORT_EFFECTS, true) }, 'text', text(p.text, 'payload.text', 100)),
+    // KS15 (kit.stage, the roll as beats): who?, result?, cost? are optional; a report without them is built exactly as before
+    build: (p) => {
+      const o = put({ position: oneOf(p.position, 'payload.position', REPORT_POSITIONS, true), effect: oneOf(p.effect, 'payload.effect', REPORT_EFFECTS, true) }, 'text', text(p.text, 'payload.text', 100));
+      put(o, 'who', text(p.who, 'payload.who', 40));
+      put(o, 'result', oneOf(p.result, 'payload.result', REPORT_RESULTS));
+      return put(o, 'cost', text(p.cost, 'payload.cost', 60));
+    },
   },
   ring: { build: (p) => put({}, 'text', text(p.text, 'payload.text', 60)) },
   rolodex: { npc: 'list', build: (p) => ({ npcIds: ids(p.npcIds, 'payload.npcIds', SHOW_NPC_MAX.rolodex, true) }) },
