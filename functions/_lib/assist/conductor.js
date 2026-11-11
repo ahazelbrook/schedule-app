@@ -18,8 +18,12 @@
 //      Whois (who is who) is not a Core seat either: it stops at 85% like Voice and Stall, and its answer is only ever a suggestion the GM taps.
 //      Silence (silenceFlag, above) raises `stall` in code. A Ref card that repeats the same slip within 10 minutes is suppressed (Phase 0: Ref repeats itself on adjacent
 //      minutes). isRepeatSlip() is that rule; the Editor uses it too.
+//   8. Pitches (blade.pitches; pitch.js): only when the page says the setting is on (decide's `pitches`). Then Stall and Meanwhile are not woken,
+//      and the pitch seat wakes on scene_change, stall, a tick with talk and no pitch call for 6 minutes, or the GM's pitchNow, with a 4-minute
+//      cooldown pitchNow skips; it runs under 85% of the cap (pitchNow to the cap). With `pitches` off the answer is today's, key for key.
 
 import { WAKES } from './seats.js';
+import { decidePitch, PITCH_REPLACES } from './pitch.js';
 
 export const DEFAULT_CAP = 30;                       // dollars a night (a Worker setting; the Console has its own monthly limit)
 export const LADDER = { reduced: 0.6, core: 0.85, off: 1 };
@@ -117,11 +121,13 @@ export function canRun(seat, { now, lastRun = {}, inFlight = [], tier = 'all', c
  *   onStage: whether the page named an NPC on stage. Voice runs only then: on npc_change, or on any tick (about each minute).
  *   follow: the previous tick woke Ref on roll_talk (see followsThrough). Ref is woken once more on this tick, under the same gates.
  */
-export function decide({ flags = [], now, lastRun = {}, inFlight = [], spent = 0, cap = DEFAULT_CAP, wakes = WAKES, cooldowns = COOLDOWN_MS, onStage = false, follow = false } = {}) {
+export function decide({ flags = [], now, lastRun = {}, inFlight = [], spent = 0, cap = DEFAULT_CAP, wakes = WAKES, cooldowns = COOLDOWN_MS, onStage = false, follow = false, pitches = false, pitchNow = false } = {}) {
   const tier = budgetTier(spent, cap);
   const set = new Set(flags);
   const seats = [], skipped = [];
   for (const seat of Object.keys(wakes)) {
+    if (seat === 'pitch') continue;                               // blade.pitches: never through the flag loop (below, and only while pitches are on)
+    if (pitches && PITCH_REPLACES.includes(seat)) continue;       // pitches on: Stall and Meanwhile are not woken (a pitch is their offer)
     if (seat === 'voice' && !onStage) continue;                  // silence while nobody is on stage
     if (!wakes[seat].some((f) => set.has(f))) continue;
     const r = canRun(seat, { now, lastRun, inFlight, tier, cooldowns });
@@ -137,7 +143,12 @@ export function decide({ flags = [], now, lastRun = {}, inFlight = [], spent = 0
     const r = canRun('voice', { now, lastRun, inFlight, tier, cooldowns });
     if (r.ok) seats.push('voice'); else skipped.push({ seat: 'voice', why: r.why });
   }
-  return { tier, seats, skipped };
+  if (!pitches || !wakes.pitch) return { tier, seats, skipped };   // pitches off: exactly today's answer
+  // blade.pitches (pitch.js): scene_change or stall, a tick with talk and no pitch call for 6 minutes, or the GM's pitchNow; its own ladder and cooldown
+  const busy = inFlight instanceof Set ? inFlight.has('pitch') : inFlight.includes('pitch');
+  const p = decidePitch({ flags, now, lastRun, tier, busy, pitchNow });
+  if (p.run) seats.push('pitch'); else if (p.why) skipped.push({ seat: 'pitch', why: p.why });
+  return { tier, seats, skipped, pitchWake: p.wake };
 }
 
 // ---------- follow-through ----------

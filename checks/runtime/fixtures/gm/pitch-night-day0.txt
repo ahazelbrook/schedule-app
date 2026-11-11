@@ -1,0 +1,240 @@
+20:00 all [roll_talk] -> ref,ledger,showrunner,scribe,whois
+20:01 all [roll_talk,npc_change] stage -> ref,voice | ledger:cooldown,showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:02 all [] stage -> ref,voice | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:03 all [roll_talk,new_name] -> ref,clerk,ledger,whois | showrunner:cooldown,scribe:cooldown
+20:04 all [harm] -> ref | ledger:cooldown,showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:05 all [clue_mention] -> clerk,mystery,scribe | showrunner:cooldown,whois:cooldown
+20:06 all [stall] -> stall,whois | showrunner:cooldown,scribe:cooldown
+20:07 all [clue_mention] -> clerk | mystery:cooldown,showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:08 all [roll_talk,xp_trigger] -> ref,ledger | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:09 all [xp_trigger] -> ref,whois | ledger:cooldown,showrunner:cooldown,scribe:cooldown
+20:10 all [] -> showrunner,scribe | whois:cooldown
+20:11 all [stall] -> stall | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:12 all [roll_talk,npc_change] -> ref,ledger,whois | showrunner:cooldown,scribe:cooldown
+20:13 all [roll_talk] -> ref | ledger:cooldown,showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:14 all [new_name,clue_mention,xp_trigger] -> ref,clerk,ledger | mystery:cooldown,showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:15 all [] -> scribe,whois | showrunner:cooldown
+20:16 all [new_name] -> clerk | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:17 all [harm,clue_mention] -> ref,ledger | clerk:cooldown,mystery:cooldown,showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:18 all [xp_trigger] -> whois | ledger:cooldown,showrunner:cooldown,scribe:cooldown
+20:19 all [] ->  | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:20 all [npc_change] stage -> voice,showrunner,scribe | whois:cooldown
+20:21 all [roll_talk] stage -> ref,ledger,whois,voice | showrunner:cooldown,scribe:cooldown
+20:22 all [stall] stage -> ref,stall,voice | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:23 all [roll_talk,downtime] stage -> ref,ledger,voice | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:24 all [] stage -> ref,whois,voice | showrunner:cooldown,scribe:cooldown
+20:25 all [] stage -> scribe,voice | showrunner:cooldown,whois:cooldown
+20:26 all [] stage -> voice | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:27 all [harm,scene_change] stage -> ref,ledger,meanwhile,whois,voice | showrunner:cooldown,scribe:cooldown
+20:28 all [] stage -> voice | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:29 all [roll_talk,npc_change] stage -> ref,ledger,voice | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:30 all [roll_talk,npc_change] -> ref,showrunner,scribe,whois | ledger:cooldown
+20:31 all [harm] -> ref,ledger | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:32 all [] ->  | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:33 all [downtime] -> ref,whois | showrunner:cooldown,scribe:cooldown
+20:34 all [harm] -> ref,ledger | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:35 all [roll_talk] -> ref,scribe | ledger:cooldown,showrunner:cooldown,whois:cooldown
+20:36 all [] -> ref,whois | showrunner:cooldown,scribe:cooldown
+20:37 all [] ->  | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:38 all [roll_talk,harm] -> ref,ledger | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:39 all [roll_talk,npc_change] stage -> ref,voice,whois | ledger:cooldown,showrunner:cooldown,scribe:cooldown
+20:40 all [stall] stage -> ref,stall,showrunner,scribe,voice | whois:cooldown
+20:41 all [] stage -> voice | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:42 all [roll_talk,clue_mention] stage -> ref,clerk,ledger,mystery,whois,voice | showrunner:cooldown,scribe:cooldown
+20:43 all [] stage -> ref,voice | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:44 all [stall] stage -> voice | stall:cooldown,showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:45 all [] stage -> scribe,whois,voice | showrunner:cooldown
+20:46 all [roll_talk] stage -> ref,ledger,voice | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:47 all [] stage -> ref,voice | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:48 all [npc_change,clue_mention] -> clerk,whois | mystery:cooldown,showrunner:cooldown,scribe:cooldown
+20:49 all [harm] -> ref,ledger | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:50 all [harm,downtime] -> ref,showrunner,scribe | ledger:cooldown,whois:cooldown
+20:51 all [stall] -> stall,whois | showrunner:cooldown,scribe:cooldown
+20:52 all [new_name] -> clerk | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:53 all [harm] -> ref,ledger | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:54 all [clue_mention,scene_change] -> clerk,meanwhile,whois | mystery:cooldown,showrunner:cooldown,scribe:cooldown
+20:55 all [] -> scribe | showrunner:cooldown,whois:cooldown
+20:56 all [clue_mention] -> clerk | mystery:cooldown,showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:57 all [xp_trigger] -> ledger,whois | showrunner:cooldown,scribe:cooldown
+20:58 all [] ->  | showrunner:cooldown,scribe:cooldown,whois:cooldown
+20:59 all [] ->  | showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:00 all [roll_talk,new_name] -> ref,clerk,ledger,showrunner,scribe,whois
+21:01 all [clue_mention] -> ref,mystery | clerk:cooldown,showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:02 all [clue_mention] -> clerk | mystery:cooldown,showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:03 all [] -> whois | showrunner:cooldown,scribe:cooldown
+21:04 all [] ->  | showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:05 all [] -> scribe | showrunner:cooldown,whois:cooldown
+21:06 all [clue_mention] -> clerk,whois | mystery:cooldown,showrunner:cooldown,scribe:cooldown
+21:07 all [roll_talk] -> ref,ledger | showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:08 all [clue_mention,stall] -> ref,clerk,stall | mystery:cooldown,showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:09 all [clue_mention] -> whois | clerk:cooldown,mystery:cooldown,showrunner:cooldown,scribe:cooldown
+21:10 all [] -> showrunner,scribe | whois:cooldown
+21:11 all [] ->  | showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:12 all [xp_trigger] -> ledger,whois | showrunner:cooldown,scribe:cooldown
+21:13 all [] ->  | showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:14 all [scene_change] -> meanwhile | showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:15 all [] -> scribe,whois | showrunner:cooldown
+21:16 all [] ->  | showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:17 all [] ->  | showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:18 all [] -> whois | showrunner:cooldown,scribe:cooldown
+21:19 all [] ->  | showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:20 all [scene_change] -> showrunner,scribe | meanwhile:cooldown,whois:cooldown
+21:21 all [harm] -> ref,ledger,whois | showrunner:cooldown,scribe:cooldown
+21:22 all [new_name] -> clerk | showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:23 all [clue_mention] -> mystery | clerk:cooldown,showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:24 all [new_name] -> clerk,whois | showrunner:cooldown,scribe:cooldown
+21:25 all [new_name] -> scribe | clerk:cooldown,showrunner:cooldown,whois:cooldown
+21:26 all [] ->  | showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:27 all [roll_talk] -> ref,ledger,whois | showrunner:cooldown,scribe:cooldown
+21:28 all [clue_mention,xp_trigger] -> ref,clerk | ledger:cooldown,mystery:cooldown,showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:29 all [roll_talk,new_name,clue_mention] -> ref,ledger | clerk:cooldown,mystery:cooldown,showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:30 all [] -> ref,showrunner,scribe,whois
+21:31 all [roll_talk,scene_change] -> ref,ledger | showrunner:cooldown,scribe:cooldown,meanwhile:cooldown,whois:cooldown
+21:32 all [roll_talk,npc_change] stage -> ref,voice | ledger:cooldown,showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:33 all [] stage -> ref,whois,voice | showrunner:cooldown,scribe:cooldown
+21:34 all [] stage -> voice | showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:35 all [] stage -> scribe,voice | showrunner:cooldown,whois:cooldown
+21:36 all [harm] stage -> ref,ledger,whois,voice | showrunner:cooldown,scribe:cooldown
+21:37 all [roll_talk,clue_mention] stage -> ref,clerk,voice | ledger:cooldown,mystery:cooldown,showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:38 all [scene_change] stage -> ref,meanwhile,voice | showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:39 all [downtime] stage -> ref,whois,voice | showrunner:cooldown,scribe:cooldown
+21:40 all [] stage -> showrunner,scribe,voice | whois:cooldown
+21:41 all [roll_talk] stage -> ref,ledger,voice | showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:42 all [harm,npc_change] stage -> ref,voice,whois | ledger:cooldown,showrunner:cooldown,scribe:cooldown
+21:43 all [] stage -> voice | showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:44 all [roll_talk] stage -> ref,ledger,voice | showrunner:cooldown,scribe:cooldown,whois:cooldown
+21:45 reduced [roll_talk] stage -> ref,scribe,whois,voice | ledger:cooldown,showrunner:budget
+21:46 reduced [npc_change] stage -> ref,voice | showrunner:budget,scribe:cooldown,whois:cooldown
+21:47 reduced [roll_talk] stage -> ref,ledger,voice | showrunner:budget,scribe:cooldown,whois:cooldown
+21:48 reduced [roll_talk,new_name,clue_mention] stage -> ref,clerk,whois,voice | ledger:cooldown,mystery:budget,showrunner:budget,scribe:cooldown
+21:49 reduced [npc_change,scene_change] -> ref | showrunner:budget,scribe:cooldown,meanwhile:budget,whois:cooldown
+21:50 reduced [harm,npc_change,new_name,downtime] stage -> ref,clerk,ledger,voice,scribe | showrunner:budget,whois:cooldown
+21:51 reduced [] stage -> whois,voice | showrunner:budget,scribe:cooldown
+21:52 reduced [] stage -> voice | showrunner:budget,scribe:cooldown,whois:cooldown
+21:53 reduced [] stage -> voice | showrunner:budget,scribe:cooldown,whois:cooldown
+21:54 reduced [xp_trigger] stage -> ledger,whois,voice | showrunner:budget,scribe:cooldown
+21:55 reduced [] stage -> scribe,voice | showrunner:budget,whois:cooldown
+21:56 reduced [roll_talk] stage -> ref,ledger,voice | showrunner:budget,scribe:cooldown,whois:cooldown
+21:57 reduced [xp_trigger] stage -> ref,whois,voice | ledger:cooldown,showrunner:budget,scribe:cooldown
+21:58 reduced [clue_mention] stage -> clerk,voice | mystery:budget,showrunner:budget,scribe:cooldown,whois:cooldown
+21:59 reduced [] stage -> voice | showrunner:budget,scribe:cooldown,whois:cooldown
+22:00 reduced [roll_talk] stage -> ref,ledger,scribe,whois,voice | showrunner:budget
+22:01 reduced [npc_change] -> ref | showrunner:budget,scribe:cooldown,whois:cooldown
+22:02 reduced [roll_talk,xp_trigger] -> ref,ledger | showrunner:budget,scribe:cooldown,whois:cooldown
+22:03 reduced [harm,scene_change] -> ref,whois | ledger:cooldown,showrunner:budget,scribe:cooldown,meanwhile:budget
+22:04 reduced [] ->  | showrunner:budget,scribe:cooldown,whois:cooldown
+22:05 reduced [] -> scribe | showrunner:budget,whois:cooldown
+22:06 reduced [npc_change] stage -> voice,whois | showrunner:budget,scribe:cooldown
+22:07 reduced [roll_talk] stage -> ref,ledger,voice | showrunner:budget,scribe:cooldown,whois:cooldown
+22:08 reduced [] stage -> ref,voice | showrunner:budget,scribe:cooldown,whois:cooldown
+22:09 reduced [roll_talk] stage -> ref,ledger,whois,voice | showrunner:budget,scribe:cooldown
+22:10 reduced [] stage -> ref,scribe,voice | showrunner:budget,whois:cooldown
+22:11 reduced [] stage -> voice | showrunner:budget,scribe:cooldown,whois:cooldown
+22:12 reduced [roll_talk] stage -> ref,ledger,whois,voice | showrunner:budget,scribe:cooldown
+22:13 reduced [] stage -> ref,voice | showrunner:budget,scribe:cooldown,whois:cooldown
+22:14 reduced [roll_talk] stage -> ref,ledger,voice | showrunner:budget,scribe:cooldown,whois:cooldown
+22:15 reduced [new_name,stall] stage -> ref,clerk,stall,scribe,whois,voice | showrunner:budget
+22:16 reduced [] stage -> voice | showrunner:budget,scribe:cooldown,whois:cooldown
+22:17 reduced [roll_talk] stage -> ref,ledger,voice | showrunner:budget,scribe:cooldown,whois:cooldown
+22:18 reduced [clue_mention] stage -> ref,clerk,whois,voice | mystery:budget,showrunner:budget,scribe:cooldown
+22:19 reduced [] stage -> voice | showrunner:budget,scribe:cooldown,whois:cooldown
+22:20 reduced [clue_mention] stage -> clerk,scribe,voice | mystery:budget,showrunner:budget,whois:cooldown
+22:21 reduced [roll_talk,new_name] stage -> ref,ledger,whois,voice | clerk:cooldown,showrunner:budget,scribe:cooldown
+22:22 core [npc_change,downtime] stage -> ref | voice:budget,showrunner:budget,scribe:budget,whois:budget
+22:23 core [xp_trigger] stage -> ledger | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:24 core [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:25 core [roll_talk] stage -> ref,ledger | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:26 core [stall] stage -> ref | stall:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:27 core [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:28 core [npc_change] stage ->  | voice:budget,showrunner:budget,scribe:budget,whois:budget
+22:29 core [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:30 core [roll_talk] stage -> ref,ledger | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:31 core [] stage -> ref | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:32 core [roll_talk] stage -> ref,ledger | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:33 core [] stage -> ref | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:34 core [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:35 core [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:36 core [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:37 core [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:38 core [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:39 core [harm] stage -> ref,ledger | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:40 core [clue_mention] stage ->  | clerk:budget,mystery:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:41 core [new_name] stage ->  | clerk:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:42 core [roll_talk,npc_change] stage -> ref,ledger | voice:budget,showrunner:budget,scribe:budget,whois:budget
+22:43 core [roll_talk,npc_change] stage -> ref | ledger:cooldown,voice:budget,showrunner:budget,scribe:budget,whois:budget
+22:44 core [] stage -> ref | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:45 core [xp_trigger] stage -> ledger | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:46 core [clue_mention] stage ->  | clerk:budget,mystery:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:47 core [harm] stage -> ref,ledger | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:48 core [roll_talk] stage -> ref | ledger:cooldown,showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:49 core [roll_talk] stage -> ref,ledger | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:50 core [roll_talk] stage -> ref | ledger:cooldown,showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:51 core [clue_mention] stage -> ref | clerk:budget,mystery:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:52 core [roll_talk,harm] stage -> ref,ledger | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:53 core [new_name,stall] stage -> ref | clerk:budget,stall:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:54 core [roll_talk] stage -> ref,ledger | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:55 core [harm,npc_change] -> ref | ledger:cooldown,showrunner:budget,scribe:budget,whois:budget
+22:56 core [npc_change,clue_mention] stage ->  | clerk:budget,voice:budget,mystery:budget,showrunner:budget,scribe:budget,whois:budget
+22:57 core [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:58 core [xp_trigger] stage -> ledger | showrunner:budget,scribe:budget,whois:budget,voice:budget
+22:59 core [roll_talk,clue_mention] stage -> ref | clerk:budget,ledger:cooldown,mystery:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:00 core [] stage -> ref | showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:01 core [roll_talk] stage -> ref,ledger | showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:02 core [] stage -> ref | showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:03 core [harm] stage -> ref,ledger | showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:04 core [npc_change] stage ->  | voice:budget,showrunner:budget,scribe:budget,whois:budget
+23:05 core [roll_talk,clue_mention] stage -> ref,ledger | clerk:budget,mystery:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:06 core [roll_talk] stage -> ref | ledger:cooldown,showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:07 core [xp_trigger] stage -> ref,ledger | showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:08 off [roll_talk,xp_trigger] stage ->  | ref:budget,ledger:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:09 off [roll_talk,xp_trigger] stage ->  | ref:budget,ledger:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:10 off [stall] stage ->  | stall:budget,showrunner:budget,scribe:budget,whois:budget,ref:budget,voice:budget
+23:11 off [npc_change,new_name,xp_trigger] ->  | clerk:budget,ledger:budget,showrunner:budget,scribe:budget,whois:budget
+23:12 off [harm,clue_mention] ->  | ref:budget,clerk:budget,ledger:budget,mystery:budget,showrunner:budget,scribe:budget,whois:budget
+23:13 off [] ->  | showrunner:budget,scribe:budget,whois:budget
+23:14 off [new_name,downtime] ->  | ref:budget,clerk:budget,showrunner:budget,scribe:budget,whois:budget
+23:15 off [new_name] ->  | clerk:budget,showrunner:budget,scribe:budget,whois:budget
+23:16 off [stall] ->  | stall:budget,showrunner:budget,scribe:budget,whois:budget
+23:17 off [] ->  | showrunner:budget,scribe:budget,whois:budget
+23:18 off [clue_mention] ->  | clerk:budget,mystery:budget,showrunner:budget,scribe:budget,whois:budget
+23:19 off [scene_change] ->  | showrunner:budget,scribe:budget,meanwhile:budget,whois:budget
+23:20 off [clue_mention,xp_trigger] ->  | clerk:budget,ledger:budget,mystery:budget,showrunner:budget,scribe:budget,whois:budget
+23:21 off [roll_talk,xp_trigger] ->  | ref:budget,ledger:budget,showrunner:budget,scribe:budget,whois:budget
+23:22 off [harm,scene_change] ->  | ref:budget,ledger:budget,showrunner:budget,scribe:budget,meanwhile:budget,whois:budget
+23:23 off [] ->  | showrunner:budget,scribe:budget,whois:budget
+23:24 off [] ->  | showrunner:budget,scribe:budget,whois:budget
+23:25 off [roll_talk] ->  | ref:budget,ledger:budget,showrunner:budget,scribe:budget,whois:budget
+23:26 off [] ->  | showrunner:budget,scribe:budget,whois:budget,ref:budget
+23:27 off [] ->  | showrunner:budget,scribe:budget,whois:budget
+23:28 off [clue_mention] ->  | clerk:budget,mystery:budget,showrunner:budget,scribe:budget,whois:budget
+23:29 off [] ->  | showrunner:budget,scribe:budget,whois:budget
+23:30 off [roll_talk] ->  | ref:budget,ledger:budget,showrunner:budget,scribe:budget,whois:budget
+23:31 off [roll_talk,xp_trigger] ->  | ref:budget,ledger:budget,showrunner:budget,scribe:budget,whois:budget
+23:32 off [clue_mention] ->  | clerk:budget,mystery:budget,showrunner:budget,scribe:budget,whois:budget,ref:budget
+23:33 off [] ->  | showrunner:budget,scribe:budget,whois:budget
+23:34 off [] ->  | showrunner:budget,scribe:budget,whois:budget
+23:35 off [harm,npc_change,xp_trigger] stage ->  | ref:budget,ledger:budget,voice:budget,showrunner:budget,scribe:budget,whois:budget
+23:36 off [harm] stage ->  | ref:budget,ledger:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:37 off [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:38 off [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:39 off [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:40 off [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:41 off [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:42 off [roll_talk,downtime] stage ->  | ref:budget,ledger:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:43 off [harm] stage ->  | ref:budget,ledger:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:44 off [npc_change] stage ->  | voice:budget,showrunner:budget,scribe:budget,whois:budget
+23:45 off [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:46 off [stall] stage ->  | stall:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:47 off [stall,downtime] stage ->  | ref:budget,stall:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:48 off [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:49 off [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:50 off [roll_talk] stage ->  | ref:budget,ledger:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:51 off [new_name,clue_mention] stage ->  | clerk:budget,mystery:budget,showrunner:budget,scribe:budget,whois:budget,ref:budget,voice:budget
+23:52 off [new_name] stage ->  | clerk:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:53 off [clue_mention] stage ->  | clerk:budget,mystery:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:54 off [roll_talk,harm,clue_mention] stage ->  | ref:budget,clerk:budget,ledger:budget,mystery:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:55 off [] stage ->  | showrunner:budget,scribe:budget,whois:budget,ref:budget,voice:budget
+23:56 off [new_name] stage ->  | clerk:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:57 off [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:58 off [harm] stage ->  | ref:budget,ledger:budget,showrunner:budget,scribe:budget,whois:budget,voice:budget
+23:59 off [] stage ->  | showrunner:budget,scribe:budget,whois:budget,voice:budget

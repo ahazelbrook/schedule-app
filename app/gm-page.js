@@ -2592,6 +2592,7 @@
     if (!S || !S.root) return;
     renderMirror(); spineTick(); b17Tick(); csTick(); if (S.st) S.st.sync();
     if (W.B68Kit && S.status === 'ready') W.B68Kit.set('desk', !!(W.B68Features && W.B68Features.valueOf(S.doc, 'kit.desk')));      /* the kit and stage build (KS01.2): data-kit="desk" follows the setting, at once (ui/kit-flag.js) */
+    if (S.status === 'ready' && W.B68Features) { var pOn = !!W.B68Features.valueOf(S.doc, 'blade.pitches'); if (W.B68Pitches) W.B68Pitches.set(gmApi(), pOn); else if (pOn && W.B68Load) W.B68Load.need('blade-pitches').then(function () { if (W.B68Pitches && S && S.status === 'ready') W.B68Pitches.set(gmApi(), !!W.B68Features.valueOf(S.doc, 'blade.pitches')); }, function () {}); }      /* blade.pitches (KS18): the blade-pitches bundle while it is on; B68Pitches (gm/kit/blade.js) adds the pitch fields to the tick, and takes them off when it turns off */
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();

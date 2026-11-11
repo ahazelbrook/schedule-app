@@ -5,13 +5,17 @@
 //
 //   node scripts/gm-assist-e2e.mjs --transcript <file> --context <file> [--context <file> ...]
 //                                  [--from HH:MM] [--to HH:MM] [--cap 4] [--out gm-private/assist-e2e-report.txt]
-//                                  [--hard-stop <$>] [--fake] [--slips 22:14,22:24]
+//                                  [--hard-stop <$>] [--fake] [--slips 22:14,22:24] [--pitches]
+//   It refuses to run (exit 2) unless given --fake, or --live --alex-approved (live mode spends game credit: Alex's yes and a limit first).
 //
 //   --context     a note that goes in the cached prefix as <context name="...">, in the order given (repeatable)
 //   --cap         the Worker's ASSIST_CAP_USD for the run (default 4): the Conductor's budget ladder works against it
 //   --hard-stop   stop ticking when the log says this much has been spent (default cap + 0.5)
 //   --slips       HH:MM stamps of slips known in advance; the report lists what appeared near each (no judgement is made)
 //   --fake        no network and no key: a canned client, to check the harness itself
+//   --pitches     the page's blade.pitches setting: every tick sends pitch: true and `seen`; the report lists the pitch sets (with --fake: canned
+//                 pitches; checks/runtime/fixtures/gm/pitch-night-transcript.md is an invented night for it). With --fake --pitches a minute whose
+//                 talk says "New scene" raises the fake Tripwire's scene_change, so the run shows a scene wake; without --pitches the fake is as before.
 //
 // The key is read from the environment variable B68_ANTHROPIC_KEY, never ANTHROPIC_API_KEY (Claude Code reads that name and
 // would bill it instead of the plan). It is passed to the SDK and never printed or written. The transcript and the context
@@ -35,6 +39,12 @@ const arg = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i
 const args = (n) => argv.flatMap((a, i) => (a === `--${n}` ? [argv[i + 1]] : []));
 const die = (m) => { console.error(m); process.exit(2); };
 
+// Live mode spends real API money (game credit), so it is opt-in twice over: --fake, or --live AND --alex-approved. Checked first, before
+// anything is read; --fake never reads the key.
+const fake = flag('fake');
+if (fake && flag('live')) die('--fake and --live together: pick one');
+if (!fake && !(flag('live') && flag('alex-approved'))) die('refused: without --fake this script calls the paid Anthropic API. Use --fake, or --live --alex-approved once Alex has said yes and set a dollar limit (--hard-stop).');
+
 const transcriptFile = arg('transcript');
 const contextFiles = args('context');
 if (!transcriptFile) die('--transcript <file> is required');
@@ -42,7 +52,7 @@ const cap = Number(arg('cap', 4));
 if (!(cap > 0)) die('--cap must be a positive number of dollars');
 const hardStop = Number(arg('hard-stop', cap + 0.5));
 const outFile = path.resolve(REPO, arg('out', path.join('gm-private', 'assist-e2e-report.txt')));
-const fake = flag('fake');
+const pitches = flag('pitches');            // the page's blade.pitches: every tick says pitch: true and sends the lines already shown as `seen`
 
 const toMin = (hhmm) => { const m = /^(\d\d?):(\d\d)$/.exec(hhmm || ''); if (!m) die('bad time ' + hhmm + ' (want HH:MM)'); return Number(m[1]) * 60 + Number(m[2]); };
 const stamp = (t) => `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
@@ -93,13 +103,20 @@ if (!prefix) console.error('(no --context: the seats run without a cached prefix
 
 // ---- the client
 let client;
+// --pitches (blade.pitches, KS18): the fake pitch seat answers three of a kind each, numbered so a run shows new lines; the third repeats a
+// fixed line, so from the second set on the Worker drops it as already seen
+const fakePitches = (k) => ({ pitches: [
+  { kind: 'npc_move', line: 'Fake pitch ' + k + ': someone at the bar stops pouring', why_now: 'fake', uses: '' },
+  { kind: 'complication', line: 'Fake pitch ' + k + ': the lamp gutters out', why_now: 'fake', uses: '' },
+  { kind: 'clue', line: 'A page is missing from the book', why_now: 'fake', uses: '' },
+] });
 if (fake) {
   const NONE = Object.fromEntries(['roll_talk', 'harm', 'npc_change', 'new_name', 'clue_mention', 'xp_trigger', 'scene_change', 'stall'].map((f) => [f, false]));
   let n = 0;
   client = { messages: { async create(req) {
-    const ins = req.messages[0].content.filter((b) => b.type === 'text').map((b) => b.text).join('
-');
-    const body = /listen to a live/.test(ins) ? { ...NONE, roll_talk: n++ % 2 === 0 } : /rules referee/.test(ins) ? { slip: true, said_at: '00:00', what_was_said: 'x', rule: 'Rule ' + n + ' (p.1)', card: 'Fake card ' + n }
+    const ins = req.messages[0].content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+    const body = /listen to a live/.test(ins) ? { ...NONE, roll_talk: n++ % 2 === 0, ...(pitches ? { scene_change: /New scene/.test(ins) } : {}) } : /pitching ideas/.test(ins) ? fakePitches(++n)
+      : /rules referee/.test(ins) ? { slip: true, said_at: '00:00', what_was_said: 'x', rule: 'Rule ' + n + ' (p.1)', card: 'Fake card ' + n }
       : /keep the ledger/.test(ins) ? { events: [], xp_totalled: false } : { new_names: [], drift: [], clues_landed: [] };
     return { content: [{ type: 'text', text: JSON.stringify(body) }], usage: { input_tokens: 500, output_tokens: 100, cache_read_input_tokens: 5000, cache_creation_input_tokens: 0 }, stop_reason: 'end_turn' };
   } } };
@@ -129,15 +146,17 @@ let clock = melbMs(first, 0);
 const handler = makeHandler({ clientFor: () => client, now: () => clock });
 const env = { DB: db, CAMPAIGN, ANTHROPIC_API_KEY: 'unused-by-the-injected-client', ASSIST_CAP_USD: String(cap) };
 const GM = { role: 'gm', id: 'gm@example.test' };
+const seenLines = [];                       // --pitches: the lines shown so far (the page sends the last 12)
 const tick = async (after) => {
-  const res = await handler({ request: new Request('https://e2e.invalid/api/gm/assist/tick', { method: 'POST', body: JSON.stringify(after === null ? {} : { after }) }), env, data: { me: GM } });
+  const b = { ...(after === null ? {} : { after }), ...(pitches ? { pitch: true, ...(seenLines.length ? { seen: seenLines.slice(-12) } : {}) } : {}) };
+  const res = await handler({ request: new Request('https://e2e.invalid/api/gm/assist/tick', { method: 'POST', body: JSON.stringify(b) }), env, data: { me: GM } });
   return JSON.parse(await res.text());
 };
 const spentSoFar = () => (exec.db.prepare('SELECT COALESCE(SUM(cents), 0) AS c FROM gm_assist_log').get().c) / 100;
 const logRows = () => exec.db.prepare('SELECT id, at, seat, model, effort, input_tokens, output_tokens, cache_read, cache_write, cents, flags, card FROM gm_assist_log ORDER BY id').all().map((r) => ({ ...r }));
 
 // ---- the run: add each minute's lines, then tick once at the end of that minute
-const cards = [], ticks = [], updates = [];
+const cards = [], ticks = [], updates = [], pitchSets = [];
 let after = null, n = 0, stopped = '';
 const t0wall = Date.now();
 for (let t = first; t <= last; t++) {
@@ -154,6 +173,8 @@ for (let t = first; t <= last; t++) {
   ticks.push({ t, flags: out.flags || [], tier: out.spend && out.spend.tier, spend: out.spend && out.spend.tonight, errors: out.errors || [], seats: rows.map((r) => r.seat) });
   for (const c of out.cards || []) cards.push({ t, seat: c.seat, text: c.text, detail: c.detail });
   for (const u of out.updates || []) updates.push({ t, seat: u.seat, text: u.text });
+  if (out.pitch && out.pitch.items) { pitchSets.push({ t, wake: out.pitch.wake, items: out.pitch.items }); for (const it of out.pitch.items) seenLines.push(it.line); }
+  if (out.stall || out.meanwhile) ticks[ticks.length - 1].rack = (out.stall ? ['stall'] : []).concat(out.meanwhile ? ['meanwhile'] : []);
   if ((out.errors || []).length) console.error(`${stamp(t)} errors: ${out.errors.map((e) => e.seat + ' ' + e.error).join(', ')}`);
   if (out.cards && out.cards.length) console.log(`${stamp(t)} CARD ${out.cards.map((c) => c.seat + ': ' + c.text).join(' | ')}`);
   else if (rows.length > 1) console.log(`${stamp(t)} flags ${(out.flags || []).join(',')} -> ${rows.map((r) => r.seat).join(',')} (no card)`);
@@ -176,9 +197,16 @@ const ran = [...new Set(ticks.map((x) => x.t))];
 p(`Claude at the table: end-to-end run (real tick handler, real Anthropic client, in-memory D1)`);
 p(`transcript: ${path.basename(transcriptFile)}  ${DAY}/${MON}/${YEAR}  ${stamp(first)} to ${stamp(ran.length ? ran[ran.length - 1] : last)}  (${ticks.length} ticks, ${[...minutes.values()].reduce((s, m) => s + m.length, 0)} lines)`);
 p(`context: ${contextFiles.map((f) => path.basename(f)).join(', ') || '(none)'}  about ${estimateTokens(prefix)} tokens`);
-p(`cap: $${cap}   wall clock: ${Math.round((Date.now() - t0wall) / 1000)} s${fake ? '   FAKE CLIENT (no API calls)' : ''}`);
+p(`cap: $${cap}   wall clock: ${Math.round((Date.now() - t0wall) / 1000)} s${fake ? '   FAKE CLIENT (no API calls)' : ''}${pitches ? '   PITCHES ON' : ''}`);
 if (stopped) p(`STOPPED EARLY: ${stopped}`);
 p();
+if (pitches) {
+  const rackTicks = ticks.filter((x) => x.rack && x.rack.length).length;
+  p(`PITCH SETS: ${pitchSets.length} (Stall or Meanwhile offers while pitches were on: ${rackTicks})`);
+  for (const s of pitchSets) p(`  ${stamp(s.t)}  ${s.wake.padEnd(6)} ${s.items.map((i) => i.kind + ': ' + i.line).join(' | ')}`);
+  if (!pitchSets.length) p('  (none)');
+  p();
+}
 p(`CARDS LET THROUGH BY THE EDITOR: ${cards.length}`);
 for (const c of cards) p(`  ${stamp(c.t)}  ${c.seat.toUpperCase().padEnd(6)} ${c.text}`);
 if (!cards.length) p('  (none)');
@@ -203,7 +231,7 @@ const flagged = ticks.filter((x) => x.flags.length);
 let wokeWanted = 0, wokeCalled = 0, coolSuppressed = 0;
 const suppressedBy = {};
 for (const x of flagged) {
-  const wanted = Object.keys(WAKES).filter((s) => WAKES[s].some((f) => x.flags.includes(f)) && !['showrunner', 'mystery', 'meanwhile', 'fixer'].includes(s));
+  const wanted = Object.keys(WAKES).filter((s) => WAKES[s].some((f) => x.flags.includes(f)) && !['showrunner', 'mystery', 'meanwhile', 'fixer', 'pitch'].includes(s));
   const called = wanted.filter((s) => x.seats.includes(s));
   wokeWanted += wanted.length; wokeCalled += called.length;
   for (const s of wanted) if (!called.includes(s)) { coolSuppressed++; suppressedBy[s] = (suppressedBy[s] || 0) + 1; }
