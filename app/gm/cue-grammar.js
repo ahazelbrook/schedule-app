@@ -125,7 +125,8 @@
   /* ---------- the controller ---------- */
   function create(host) {
     host = host || {};
-    var registered = [], el = null, timer = null, toastSeq = 0, pending = null;
+    var registered = [], el = null, timer = null, toastSeq = 0, pending = null, kh = null;
+    function kitShell() { var K = typeof window !== 'undefined' ? window.B68KitShell : null; return K && typeof K.on === 'function' && K.on() ? K : null; }      /* KS09.3 (kit.desk): the cue's toasts join the one stack */
     function on() { return typeof host.feature === 'function' ? !!host.feature('ai.grammar') : false; }
     function say(m, bad) { if (typeof host.toast === 'function') host.toast(m, !!bad); }
     function setT(fn, ms) { return typeof host.setTimeout === 'function' ? host.setTimeout(fn, ms) : setTimeout(fn, ms); }
@@ -152,12 +153,14 @@
       if (timer !== null) { clrT(timer); timer = null; }
       if (el && el.parentNode) el.parentNode.removeChild(el);
       el = null;
+      if (kh) { var k = kh; kh = null; k.dismiss(); }
     }
     function undoToast(text, undo) {
       var doc = typeof host.doc === 'function' ? host.doc() : null;
       if (!on() || !doc || !doc.body) return null;
       hide();
-      var mine = ++toastSeq;
+      var mine = ++toastSeq, KS = kitShell();
+      if (KS && (kh = KS.cueToast({ text: str(text).slice(0, 160), ms: TOAST_MS, undo: typeof undo === 'function' ? function () { if (mine === toastSeq) kitUndo(KS, undo); } : null }))) return kh.el;
       el = doc.createElement('div'); el.className = 'gm-ugtoast'; el.setAttribute('role', 'status');
       var t = doc.createElement('span'); t.className = 'gm-ugtoast-t'; t.textContent = str(text).slice(0, 160); el.appendChild(t);
       if (typeof undo === 'function') {
@@ -183,6 +186,8 @@
       return new Promise(function (resolve) {
         var mine = ++toastSeq, settled = false;
         function settle(v) { if (settled) return; settled = true; if (pending) pending = null; if (timer !== null) { clrT(timer); timer = null; } resolve(v); }
+        var KS = kitShell();
+        if (KS && (kh = KS.cueToast({ text: str(text).slice(0, 160), ms: CONFIRM_MS, yes: yesLabel || 'Yes', onYes: function () { settle(mine === toastSeq); }, onCancel: function () { settle(false); } }))) { pending = function () { settle(false); }; return; }
         var box = doc.createElement('div'); box.className = 'gm-ugtoast'; box.setAttribute('role', 'alertdialog'); el = box;
         var t = doc.createElement('span'); t.className = 'gm-ugtoast-t'; t.textContent = str(text).slice(0, 160); box.appendChild(t);
         var yes = doc.createElement('button'); yes.type = 'button'; yes.className = 'btn sm gm-ugtoast-b'; yes.textContent = yesLabel || 'Yes'; yes.setAttribute('data-ug', 'confirm');
@@ -194,6 +199,10 @@
         timer = setT(function () { timer = null; settle(false); if (mine === toastSeq) hide(); }, CONFIRM_MS);
         pending = function () { settle(false); };   /* hide() (a newer toast) answers no, so the question never hangs */
       });
+    }
+    /* the kit's Undo: the toast has gone (the stack's own way); the answer is a new line in the stack */
+    function kitUndo(KS, undo) {
+      Promise.resolve().then(undo).then(function (r) { KS.toast(r === false ? 'Could not undo that.' : 'Undone.', r === false); }, function () { KS.toast('Could not undo that.', true); });
     }
     function didntCatch() { if (on()) say('Didn’t catch that.', false); return false; }
 
