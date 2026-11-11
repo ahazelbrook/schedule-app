@@ -2591,6 +2591,7 @@
   function renderBar() {
     if (!S || !S.root) return;
     renderMirror(); spineTick(); b17Tick(); csTick(); if (S.st) S.st.sync();
+    if (W.B68Kit && S.status === 'ready') W.B68Kit.set('desk', !!(W.B68Features && W.B68Features.valueOf(S.doc, 'kit.desk')));      /* the kit and stage build (KS01.2): data-kit="desk" follows the setting, at once (ui/kit-flag.js) */
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
