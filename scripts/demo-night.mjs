@@ -5,6 +5,9 @@
 //   npm run demo:night -- --state <dir>         keep the state in <dir> between runs: seeded once, then reused (--reseed seeds it again)
 //   npm run demo:night -- --shots <dir>         seed, take every scenario's screenshot (scripts/demo-night-shots.mjs) into <dir>, and exit
 //   npm run demo:night -- --shots <dir> --only gm-plan,phone-nell     only the scenarios whose names start with one of these
+//   npm run demo:night -- --shots <dir> --fingerprint   also write each scenario's layout fingerprint (<name>-<width>.json) and the requests-<screen>.json files (scripts/kit-fingerprint.mjs)
+//   npm run demo:night -- --shots <dir> --kit desk,stage,phone,who,pitches   turn those of the kit's five settings on first (--kit none writes all five off; omitted, nothing is written)
+//   npm run demo:night -- --shots <dir> --theme paper|night   the look the pages open in (the theme key a device would hold; omitted, the page follows the device as it does today)
 //   Screenshots need Playwright: PW_MODULE=<path to playwright or playwright-core> and, on Windows, PW_CHANNEL=msedge.
 //
 // It runs the Worker exactly as the e2e checks do: `wrangler d1 migrations apply --local` into the state folder, then `wrangler dev` on loopback with
@@ -31,6 +34,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildPrep } from './lib/prep-export.mjs';
 import { buildScreen } from './lib/screen-export.mjs';
 import { basenames } from './lib/vault.mjs';
+import { kitIds, setKit } from './kit-fingerprint.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -46,6 +50,10 @@ const PORT = Number(opt('port', 8890));
 if (!Number.isInteger(PORT) || PORT < 1024 || PORT > 45000) { console.error('--port must be a port number (1024 to 45000)'); process.exit(2); }
 const STATE = opt('state', '');
 const SHOTS = opt('shots', '');
+const KIT = opt('kit', '');
+const THEME = opt('theme', '');
+const FINGERPRINT = flag('fingerprint');
+if (THEME && !/^(paper|night)$/.test(THEME)) { console.error('--theme must be paper or night'); process.exit(2); }
 const ONLY = opt('only', '').split(',').map((s) => s.trim()).filter(Boolean);
 const BASE = 'http://127.0.0.1:' + PORT;
 
@@ -411,7 +419,8 @@ async function main() {
   ].join('\n'));
   if (SHOTS) {
     const { shoot } = await import(pathToFileURL(path.join(ROOT, 'scripts', 'demo-night-shots.mjs')).href);
-    const n = await shoot({ base: BASE, dir: path.resolve(SHOTS), only: ONLY, api, users: USERS, site: SITE });
+    if (opt('kit', null) !== null) await setKit(api, kitIds(KIT));       /* the five settings, written to the GM state and the campaign document before the first page opens */
+    const n = await shoot({ base: BASE, dir: path.resolve(SHOTS), only: ONLY, api, users: USERS, site: SITE, theme: THEME, fingerprint: FINGERPRINT });
     console.log('wrote ' + n + ' screenshots to ' + path.resolve(SHOTS));
     process.exit(0);
   }

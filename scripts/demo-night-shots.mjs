@@ -13,13 +13,17 @@
 //     keepToasts   take the shot without waiting for the toasts to clear (by default it waits up to 8 s, so a toast does not hide the layout)
 //     init      a function run in the page before its own scripts (a Playwright init script: localStorage a real device would already hold)
 //     routes    async (context) => {}: Playwright routes on the browser context, set before the page opens (a 401, a part changed on the way)
+// --fingerprint (KS04): next to each picture a <name>-<width>.json layout fingerprint, and at the end requests-gm|display|phone.json (scripts/kit-fingerprint.mjs).
+// --theme paper|night opens every page with the theme key a device would hold; --kit turns the five settings on first (scripts/demo-night.mjs).
 // The scenarios run in order and share the server's state, so a phase entered in one is the phase of the next until another is entered.
 // Every shot is taken with animations disabled and the mouse parked in a corner. A page error is printed beside the file name; a scenario that
 // fails is reported and the rest go on. The pages run on the real clock: after the prep note's curfew (22:40) a phase shows the curfew bar.
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { BAND_SCENARIOS } from './demo-night-band-shots.mjs';
+import { kitScenarios } from './demo-night-kit-shots.mjs';
+import { fingerprint, logRequests, requestFile, screenOf } from './kit-fingerprint.mjs';
 
 const GM_READY = async (page) => {
   await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
@@ -237,17 +241,24 @@ export const SCENARIOS = [
   ...PLACE_SCENARIOS
 ];
 
-export async function shoot({ base, dir, only = [], api, users }) {
+/* the kit's own scenarios (KS04.3): one per region of the new desk, per stage beat, per phone screen; with the settings off they show today's screens */
+const KIT_SCENARIOS = kitScenarios({ GM_READY, DISPLAY_READY, SHEET_READY, PHONE_READY, enterPhase, tab, then, toPlace, LAPTOPS, closeMission });
+SCENARIOS.push(...KIT_SCENARIOS);
+
+export async function shoot({ base, dir, only = [], api, users, theme = '', fingerprint: fp = false }) {
   const require = createRequire(import.meta.url);
   const { chromium } = require(process.env.PW_MODULE || 'playwright');
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   mkdirSync(dir, { recursive: true });
+  const reqs = { gm: new Set(), display: new Set(), phone: new Set(), other: new Set() };
   async function open(route, user, size, extra = {}, init = null, routes = null) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width: size[0], height: size[1] }, serviceWorkers: 'block', ...extra });
     if (routes) await routes(c);
     await c.addInitScript(() => { window.__B68_POLL_MS = 1000; });
+    if (theme) await c.addInitScript((t) => { try { localStorage.setItem('b68.theme', t); } catch (e) { /* no storage */ } }, theme === 'night' ? 'dark' : 'light');
     if (init) await c.addInitScript(init);
     const page = await c.newPage();
+    if (fp) logRequests(page, reqs[screenOf(route)]);
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -257,10 +268,13 @@ export async function shoot({ base, dir, only = [], api, users }) {
   }
   const ctx = { api, users, base, open };
   let n = 0;
+  const seen = new Set();
   try {
     for (const s of SCENARIOS) {
       if (only.length && !only.some((o) => s.name.startsWith(o))) continue;
       const file = path.join(dir, s.name + '-' + s.size[0] + '.png');
+      if (seen.has(file)) console.log('NOTE ' + path.basename(file) + ' is named twice: the later picture replaces the earlier');
+      seen.add(file);
       let P = null;
       try {
         if (s.setup) await s.setup(ctx);
@@ -271,6 +285,7 @@ export async function shoot({ base, dir, only = [], api, users }) {
         if (!s.keepToasts) await P.page.waitForFunction(() => !['toastMsg', 'toastErr'].some((id) => { const e = document.getElementById(id); return e && e.textContent.trim(); }), null, { timeout: 8000 }).catch(() => {});
         await P.page.waitForTimeout(s.settle === undefined ? 800 : s.settle);
         await P.page.screenshot({ path: file, fullPage: !!s.fullPage, animations: 'disabled' });
+        if (fp) writeFileSync(file.replace(/\.png$/, '.json'), JSON.stringify(await fingerprint(P.page, s.name, s.size[0])));
         n++;
         console.log('shot ' + path.basename(file) + (P.errors.length ? '   page errors: ' + P.errors.slice(0, 2).join(' | ') : ''));
       } catch (e) {
@@ -278,5 +293,6 @@ export async function shoot({ base, dir, only = [], api, users }) {
       } finally { if (P) await P.c.close(); }
     }
   } finally { await browser.close(); }
+  if (fp) for (const [screen, set] of Object.entries(reqs)) if (set.size) writeFileSync(path.join(dir, 'requests-' + screen + '.json'), JSON.stringify(requestFile(screen, set), null, 1));
   return n;
 }
