@@ -312,7 +312,7 @@ try {
   /* print: what tracker.css prints today (the Now card, the fold, Session and Downtime are screen-only), and no bar */
   await wd.emulateMedia({ media: 'print' });
   const pv = await view(wd);
-  const unprinted = pv.boxes.filter((x) => !x.on && !x.fig && !/the night you missed|Between sessions|^Session$|^Downtime$/.test(x.t)).map((x) => x.t);
+  const unprinted = pv.boxes.filter((x) => !x.on && !x.fig && !/^Now · |^Between sessions$|^Session$|^Downtime$/.test(x.t)).map((x) => x.t);
   check(!pv.bar && !unprinted.length, 'print: every box tracker.css prints, no bar' + (unprinted.length ? '; missing: ' + unprinted : ''));
   await Wd.ctx.close();
   await tap(c, 'notes'); await sleep(100);
