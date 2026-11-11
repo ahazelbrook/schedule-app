@@ -5,7 +5,8 @@
 //
 //   node scripts/gm-assist-e2e.mjs --transcript <file> --context <file> [--context <file> ...]
 //                                  [--from HH:MM] [--to HH:MM] [--cap 4] [--out gm-private/assist-e2e-report.txt]
-//                                  [--hard-stop <$>] [--fake] [--slips 22:14,22:24]
+//                                  [--hard-stop <$>] [--fake] [--slips 22:14,22:24] [--pitches]
+//   It refuses to run (exit 2) unless given --fake, or --live --alex-approved (live mode spends game credit: Alex's yes and a limit first).
 //
 //   --context     a note that goes in the cached prefix as <context name="...">, in the order given (repeatable)
 //   --cap         the Worker's ASSIST_CAP_USD for the run (default 4): the Conductor's budget ladder works against it
@@ -13,7 +14,8 @@
 //   --slips       HH:MM stamps of slips known in advance; the report lists what appeared near each (no judgement is made)
 //   --fake        no network and no key: a canned client, to check the harness itself
 //   --pitches     the page's blade.pitches setting: every tick sends pitch: true and `seen`; the report lists the pitch sets (with --fake: canned
-//                 pitches; checks/runtime/fixtures/gm/pitch-night-transcript.md is an invented night for it)
+//                 pitches; checks/runtime/fixtures/gm/pitch-night-transcript.md is an invented night for it). With --fake --pitches a minute whose
+//                 talk says "New scene" raises the fake Tripwire's scene_change, so the run shows a scene wake; without --pitches the fake is as before.
 //
 // The key is read from the environment variable B68_ANTHROPIC_KEY, never ANTHROPIC_API_KEY (Claude Code reads that name and
 // would bill it instead of the plan). It is passed to the SDK and never printed or written. The transcript and the context
@@ -37,6 +39,12 @@ const arg = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 ? argv[i
 const args = (n) => argv.flatMap((a, i) => (a === `--${n}` ? [argv[i + 1]] : []));
 const die = (m) => { console.error(m); process.exit(2); };
 
+// Live mode spends real API money (game credit), so it is opt-in twice over: --fake, or --live AND --alex-approved. Checked first, before
+// anything is read; --fake never reads the key.
+const fake = flag('fake');
+if (fake && flag('live')) die('--fake and --live together: pick one');
+if (!fake && !(flag('live') && flag('alex-approved'))) die('refused: without --fake this script calls the paid Anthropic API. Use --fake, or --live --alex-approved once Alex has said yes and set a dollar limit (--hard-stop).');
+
 const transcriptFile = arg('transcript');
 const contextFiles = args('context');
 if (!transcriptFile) die('--transcript <file> is required');
@@ -44,7 +52,6 @@ const cap = Number(arg('cap', 4));
 if (!(cap > 0)) die('--cap must be a positive number of dollars');
 const hardStop = Number(arg('hard-stop', cap + 0.5));
 const outFile = path.resolve(REPO, arg('out', path.join('gm-private', 'assist-e2e-report.txt')));
-const fake = flag('fake');
 const pitches = flag('pitches');            // the page's blade.pitches: every tick says pitch: true and sends the lines already shown as `seen`
 
 const toMin = (hhmm) => { const m = /^(\d\d?):(\d\d)$/.exec(hhmm || ''); if (!m) die('bad time ' + hhmm + ' (want HH:MM)'); return Number(m[1]) * 60 + Number(m[2]); };
@@ -108,7 +115,7 @@ if (fake) {
   let n = 0;
   client = { messages: { async create(req) {
     const ins = req.messages[0].content.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
-    const body = /listen to a live/.test(ins) ? { ...NONE, roll_talk: n++ % 2 === 0, scene_change: /New scene/.test(ins) } : /pitching ideas/.test(ins) ? fakePitches(++n)
+    const body = /listen to a live/.test(ins) ? { ...NONE, roll_talk: n++ % 2 === 0, ...(pitches ? { scene_change: /New scene/.test(ins) } : {}) } : /pitching ideas/.test(ins) ? fakePitches(++n)
       : /rules referee/.test(ins) ? { slip: true, said_at: '00:00', what_was_said: 'x', rule: 'Rule ' + n + ' (p.1)', card: 'Fake card ' + n }
       : /keep the ledger/.test(ins) ? { events: [], xp_totalled: false } : { new_names: [], drift: [], clues_landed: [] };
     return { content: [{ type: 'text', text: JSON.stringify(body) }], usage: { input_tokens: 500, output_tokens: 100, cache_read_input_tokens: 5000, cache_creation_input_tokens: 0 }, stop_reason: 'end_turn' };

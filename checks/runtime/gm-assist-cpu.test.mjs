@@ -114,14 +114,16 @@ await test('shared client: overlapping calls each carry their own timeout and si
 const P = await import('../../functions/_lib/assist/pitch.js');
 const { SEATS } = await import('../../functions/_lib/assist/seats.js');
 const { cleanLines, addLines } = await import('../../functions/_lib/stt.js');
-async function pitchWorld({ listening = false } = {}) {
+async function pitchWorld({ listening = false, tripwire = null, seed = [] } = {}) {
   const exec = await memoryExec({ schemaFile: path.join(ROOT, 'schema.sql') });
   const db = asD1(exec), clock = { t: Date.parse('2030-04-01T09:00:00.000Z') };
   const iso = (ms) => new Date(ms).toISOString();
   exec.db.prepare("INSERT INTO gm_pack (campaign, part, version, src, updated_at, body) VALUES ('c', 'assist', 'v', '{}', 0, ?)").run(JSON.stringify({ file_id: 'file_test000001' }));
   if (listening) exec.db.prepare('INSERT INTO gm_stt (campaign, updated_at, doc) VALUES (?, ?, ?)').run('c', iso(clock.t), JSON.stringify({ want: 'on', session: '3', speakers: {}, status: { state: 'listening', at: iso(clock.t), lines: 5, error: '' } }));
   const NONE = Object.fromEntries(['roll_talk', 'harm', 'npc_change', 'new_name', 'clue_mention', 'xp_trigger', 'scene_change', 'stall', 'downtime'].map((f) => [f, false]));
-  const replies = { tripwire: { ...NONE, scene_change: true }, stall: { stalled: true, kind: 'clue', offer: 'A runner arrives.', why_now: 'quiet' }, meanwhile: { faction: 'F', cutaway: 'A lamp is lit.', clock: '', suggest_ticks: 0, why: '' },
+  // seed: [seat, ms ago] rows, so those seats are cooling down (their lastRun) and do not wake
+  for (const [seat, ago] of seed) exec.db.prepare("INSERT INTO gm_assist_log (campaign, at, session, seat, model, effort, cents, flags, card) VALUES ('c', ?, '3', ?, 'm', 'low', 0, '', ?)").run(iso(clock.t - ago), seat, JSON.stringify({ out: {} }));
+  const replies = { tripwire: tripwire || { ...NONE, scene_change: true }, stall: { stalled: true, kind: 'clue', offer: 'A runner arrives.', why_now: 'quiet' }, meanwhile: { faction: 'F', cutaway: 'A lamp is lit.', clock: '', suggest_ticks: 0, why: '' },
     showrunner: { spotlight: [], needs_spotlight: '', beat: 'rising', elapsed_minutes: 1, advice: '', speak: false }, scribe: { story: 'S.', corrections: [] }, whois: { guesses: [] },
     pitch: { pitches: [{ kind: 'clue', line: 'A page is missing', why_now: 'x', uses: '' }, { kind: 'direction', line: 'Cut to the stairs', why_now: 'x', uses: '' }] } };
   const client = { messages: { async create(req) {
@@ -159,6 +161,30 @@ await test('KS18 quiet path: with pitch: true the silence costs no more round tr
   const today = await run({ after: 999 }), pitched = await run({ after: 999, pitch: true });
   assert.ok(today.json.stall && pitched.json.pitch, 'both offered something');
   assert.ok(pitched.trips <= today.trips, 'pitches ' + pitched.trips + ' vs today ' + today.trips);
+});
+
+// a tick where the Tripwire flags nothing and the 'tick' seats (Showrunner, Scribe, Who is who) ran a minute ago, so nothing else wakes
+const CALM = ['showrunner', 'scribe', 'whois'].map((s) => [s, 60_000]);
+const QUIET_TW = Object.fromEntries(['roll_talk', 'harm', 'npc_change', 'new_name', 'clue_mention', 'xp_trigger', 'scene_change', 'stall', 'downtime'].map((f) => [f, false]));
+
+await test('KS18 the 6-minute idle wake, with no other seat woken: two D1 round trips more than the same tick today (the seat\'s reads and its row, in place of the held-card read)', async () => {
+  const off = await pitchWorld({ tripwire: QUIET_TW, seed: CALM }); await off.lines(20, 50_000);
+  const a = await off.trips({});
+  const on = await pitchWorld({ tripwire: QUIET_TW, seed: CALM.concat([['pitch', 7 * 60_000]]) }); await on.lines(20, 50_000);
+  const b = await on.trips({ pitch: true });
+  assert.ok(!a.json.pitch && b.json.pitch && b.json.pitch.wake === 'idle', 'today nothing; pitches: the idle wake');
+  assert.deepEqual(b.json.health.ran.sort(), ['pitch', 'tripwire'], 'no other seat woke');
+  assert.equal(b.trips, a.trips + 2, 'round trips: idle pitch ' + b.trips + ', today ' + a.trips);
+});
+
+await test('KS18 an ordinary pitch: true tick where pitch does not wake (cooling down, no scene change): the same D1 round trips as today', async () => {
+  const tw = { ...QUIET_TW, roll_talk: true };
+  const off = await pitchWorld({ tripwire: tw, seed: CALM }); await off.lines(20, 50_000);
+  const a = await off.trips({});
+  const on = await pitchWorld({ tripwire: tw, seed: CALM.concat([['pitch', 60_000]]) }); await on.lines(20, 50_000);
+  const b = await on.trips({ pitch: true, seen: ['an old line'] });
+  assert.ok(!b.json.pitch && !b.json.health.ran.includes('pitch'), 'pitch did not wake');
+  assert.equal(b.trips, a.trips, 'round trips: pitches on ' + b.trips + ', today ' + a.trips);
 });
 
 await test('KS18 the pitch code is cheap: body check, wake, turn (four minutes of talk) and answer under 0.5 ms a tick on this machine', () => {

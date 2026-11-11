@@ -481,5 +481,25 @@ await test('scripts/gm-assist-e2e.mjs --fake --pitches over the invented night: 
   assert.ok(!/^\s+(stall|meanwhile)\s+\d+ calls/m.test(rep), 'neither seat was called');
 });
 
+await test('scripts/gm-assist-e2e.mjs refuses (exit 2, nothing written) without --fake, with --live alone, and with --fake --live; the gate comes before anything is read', () => {
+  const env = { ...process.env }; delete env.B68_ANTHROPIC_KEY; delete env.ANTHROPIC_API_KEY;
+  const out = path.join(os.tmpdir(), 'ks18-e2e-refuse-' + process.pid + '.txt');
+  const tr = path.join(ROOT, 'checks/runtime/fixtures/gm/pitch-night-transcript.md');
+  const run = (extra) => spawnSync(process.execPath, [path.join(ROOT, 'scripts/gm-assist-e2e.mjs'), '--transcript', tr, '--out', out, ...extra], { env, encoding: 'utf8', timeout: 60000 });
+  for (const extra of [[], ['--pitches'], ['--live'], ['--alex-approved'], ['--fake', '--live', '--alex-approved']]) {
+    const r = run(extra);
+    assert.equal(r.status, 2, extra.join(' ') + ': ' + r.stderr);
+    assert.match(r.stderr, /refused: without --fake|--fake and --live together/, extra.join(' '));
+    assert.ok(!/B68_ANTHROPIC_KEY/.test(r.stderr), 'refused before the key is even looked for');
+    assert.ok(!fs.existsSync(out), 'no report written');
+  }
+  const noArgs = spawnSync(process.execPath, [path.join(ROOT, 'scripts/gm-assist-e2e.mjs')], { env, encoding: 'utf8', timeout: 60000 });
+  assert.equal(noArgs.status, 2); assert.match(noArgs.stderr, /refused/, 'the gate is the first check');
+  const src = fs.readFileSync(path.join(ROOT, 'scripts/gm-assist-e2e.mjs'), 'utf8');
+  const keyAt = src.indexOf('process.env.B68_ANTHROPIC_KEY'), fakeBranch = src.indexOf('if (fake) {'), elseAt = src.indexOf('} else {', fakeBranch);
+  assert.ok(fakeBranch > 0 && elseAt > fakeBranch && keyAt > elseAt, 'the key is read only in the live branch, never with --fake');
+  assert.equal(src.split('process.env.B68_ANTHROPIC_KEY').length, 2, 'one read of the key');
+});
+
 console.log(`\n${passed} passed, ${failed} failed${skippedN ? ', ' + skippedN + ' skipped' : ''}`);
 process.exit(failed ? 1 : 0);
