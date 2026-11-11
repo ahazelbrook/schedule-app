@@ -1195,9 +1195,13 @@
     if (!intel.length) h += '<p class="rv-dim">The play has no intel.</p>';
     intel.forEach(function (x) {
       var v = told[x.id], crew = v === "crew", ids = Array.isArray(v) ? v : [];
+      var tell = function (p) { return '<button type="button" class="rv-btn sm rv-tog" data-vv="tell" data-pc="' + esc(p.id) + '" aria-pressed="' + (crew || ids.indexOf(p.id) >= 0) + '"' + (crew ? " disabled" : "") + ">Tell " + esc(p.name) + "</button>"; };
+      /* KS12.4 (night.who): the players who are here first; the others fold under Not here (n), still a tap away. Off, or no roster: as before */
+      var sp = typeof ctx.host.whoSplit === "function" ? ctx.host.whoSplit(pcs) : null, away = sp && sp.away.length ? sp.away : null;
       h += '<div class="rv-intel1" data-intel="' + esc(x.id) + '"><div><b>' + esc(x.id) + "</b> " + esc(x.text) + (x.from ? ' <span class="rv-dim">· ' + esc(x.from) + "</span>" : "") + '</div><div class="rv-acts">' +
-        pcs.map(function (p) { return '<button type="button" class="rv-btn sm rv-tog" data-vv="tell" data-pc="' + esc(p.id) + '" aria-pressed="' + (crew || ids.indexOf(p.id) >= 0) + '"' + (crew ? " disabled" : "") + ">Tell " + esc(p.name) + "</button>"; }).join("") +
-        '<button type="button" class="rv-btn sm rv-tog" data-vv="tellcrew" aria-pressed="' + crew + '">Tell the crew</button></div></div>';
+        (away ? sp.here : pcs).map(tell).join("") +
+        '<button type="button" class="rv-btn sm rv-tog" data-vv="tellcrew" aria-pressed="' + crew + '">Tell the crew</button>' +
+        (away ? '<details class="who-away"' + (away.some(function (p) { return ids.indexOf(p.id) >= 0; }) ? " open" : "") + '><summary title="Players who are not here tonight: the crew does not include them">Not here (' + away.length + ')</summary><span class="who-away-in">' + away.map(tell).join("") + "</span></details>" : "") + "</div></div>";
     });
     box.innerHTML = h + "</details>";
     box.onclick = function (ev) {

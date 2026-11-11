@@ -872,17 +872,22 @@ await test('crewMessage / crewChanged: post when the crew exists and differs fro
 await test('scoreMessage: board and iso are re-sanitised (script gone), the fields are copied by name, polaroids pass through', () => {
   const dirty = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><script>x()</script><rect id="r" onclick="x()" width="3" height="3"/></svg>';
   const score = { name: 'The Mint', district: 'Quay', target: '', reveal: ['public'], view: 'rings', board: dirty, iso: GOOD, at: 'x', gm: 'secret' };
-  const m = P.scoreMessage(score, [{ svg: '<svg/>', cap: 'Babel' }, { svg: '', cap: 'none' }, null], ENV);
+  const m = P.scoreMessage(score, [{ svg: '<svg/>', cap: 'The Heron' }, { svg: '', cap: 'none' }, null], ENV);
   assert.deepEqual(Object.keys(m).sort(), ['board', 'district', 'iso', 'name', 'polaroids', 'target', 'type', 'view']);
   assert.equal(m.type, 'b68:score'); assert.equal(m.view, 'rings'); assert.equal(m.name, 'The Mint');
   assertClean(m.board, 'board'); assert.ok(m.board.includes('id="r"') && !m.board.includes('onclick')); assertClean(m.iso, 'iso');
-  assert.deepEqual(m.polaroids, [{ svg: '<svg/>', cap: 'Babel' }]);
+  assert.deepEqual(m.polaroids, [{ svg: '<svg/>', cap: 'The Heron' }]);
   const bad = P.scoreMessage(Object.assign({}, score, { board: '<html>', iso: 'javascript:' }), [], ENV);
   assert.equal(bad.board, ''); assert.equal(bad.iso, '', 'what will not clean is not sent'); assert.deepEqual(bad.polaroids, []);
   assert.equal(P.scoreMessage(null, [], ENV), null); assert.equal(P.scoreMessage('x', [], ENV), null);
   assert.equal(P.scoreMessage({ board: GOOD, iso: GOOD }, [], ENV).view, 'plan');
   assert.equal(P.isScoreScene('board'), true); assert.equal(P.isScoreScene('exploded'), true); assert.equal(P.isScoreScene('watch'), false); assert.equal(P.isScoreScene('nope'), false);
-  assert.deepEqual(P.POLAROIDS.map((p) => [p.id, p.cap]), [['booker', 'Babel'], ['alfie', 'Ashtray & Buck']]);
+  /* KS12.5: no crew list in the code; the GM page sends it in the ambient document, cleaned again here (8 at most, a cast id, a one-line caption) */
+  assert.equal(P.POLAROIDS, undefined, 'no polaroid list in the code');
+  assert.deepEqual(P.cleanPolaroids([{ id: 'nell', cap: ' The  Heron ' }, { id: 'nell', cap: 'again' }, { id: 'Bad Id', cap: 'x' }, null, { id: 'ray' }]), [{ id: 'nell', cap: 'The Heron' }, { id: 'ray', cap: '' }]);
+  assert.equal(P.cleanPolaroids(Array.from({ length: 12 }, (_, i) => ({ id: 'p' + i, cap: 'x'.repeat(90) }))).length, 8);
+  assert.equal(P.ambientPlan({}).polaroids, undefined, 'no list: the plan has no key');
+  assert.deepEqual(P.ambientPlan({ polaroids: [{ id: 'nell', cap: 'The Heron' }] }).polaroids, [{ id: 'nell', cap: 'The Heron' }]);
 });
 
 /* ---------- the ambient floor: registry, plan and rotation ---------- */

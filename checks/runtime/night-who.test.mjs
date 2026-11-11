@@ -234,7 +234,9 @@ test('summary: After\'s one line', () => {
 });
 test('a model and a summary never carry markup: names go in escaped by the sheet', () => {
   const src = fs.readFileSync(path.join(APP, 'gm', 'kit', 'who.js'), 'utf8');
-  assert.match(src, /esc\(r\.name\)/); assert.match(src, /esc\(sub\)/); assert.match(src, /n\.textContent !== t\) n\.textContent = t/);
+  /* KS12: the rows are B68Ui buttons (every label escaped by the kit) laid out with text nodes; After's line is text */
+  assert.match(src, /btn\(\{ label: \[r\.name, sub,/); assert.match(src, /part\('b', '', r\.name\)/); assert.match(src, /n\.textContent !== t\) n\.textContent = t/);
+  assert.doesNotMatch(src, /<button/, 'no hand-built button (the ratchet\'s kit debt is paid)');
 });
 
 // ---------- 4. the sheet on a fake page ----------
@@ -242,7 +244,7 @@ function fakeEl(tag) {
   const el = {
     tagName: tag.toUpperCase(), attrs: {}, children: [], listeners: {}, hidden: false, className: '', id: '', _html: '',
     setAttribute(k, v) { this.attrs[k] = String(v); }, getAttribute(k) { return this.attrs[k] == null ? null : this.attrs[k]; }, hasAttribute(k) { return k in this.attrs; },
-    addEventListener(k, f) { this.listeners[k] = f; }, removeEventListener() {}, appendChild(c) { this.children.push(c); c.parentNode = this; return c; }, removeChild() {},
+    addEventListener(k, f, cap) { if (cap === true) (this.capture = this.capture || []).push(k); else this.listeners[k] = f; }, removeEventListener() {},      /* a capture listener (B68Ui.guardBusy) is noted, not called */ appendChild(c) { this.children.push(c); c.parentNode = this; return c; }, removeChild() {},
     contains() { return false; }, querySelector() { return null; }, querySelectorAll() { return []; }, focus() {},
   };
   Object.defineProperty(el, 'innerHTML', { get() { return this._html; }, set(v) { this._html = v; } });
@@ -254,6 +256,7 @@ await atest('the sheet: rows from the characters, a tick toggled, Start with two
   const W = { document: { getElementById: (id) => (id === 'gm-page' ? page : null), createElement: fakeEl, activeElement: null, body: page },
     B68GmEsc: { register: (id, o) => { escs.push({ id, o }); return () => {}; } } };
   W.self = W; vm.createContext(W);
+  vm.runInContext(fs.readFileSync(path.join(APP, 'ui', 'ui.js'), 'utf8'), W, { filename: 'ui.js' });      /* the kit-ui bundle comes first (B68Ui) */
   vm.runInContext(fs.readFileSync(path.join(APP, 'gm', 'kit', 'who.js'), 'utf8'), W, { filename: 'who.js' });
   const t = tablePage(); const d = storedDoc();
   const calls = { start: [], log: [], go: [], restamp: [], toast: [] };
@@ -266,8 +269,8 @@ await atest('the sheet: rows from the characters, a tick toggled, Start with two
   const lead = fakeEl('div'), after = fakeEl('p'), left = fakeEl('div');
   left.querySelectorAll = (sel) => (sel === '[data-who-lead]' ? [lead] : sel === '[data-who-after]' ? [after] : []);
   ctl.paint(left);
-  assert.match(lead.innerHTML, /class="btn primary" data-who="open"[^>]*>Start the night<\/button>/);
-  assert.equal((lead.innerHTML.match(/primary/g) || []).length, 1, 'one Primary');
+  assert.match(lead.innerHTML, /<button type="button" class="ui-btn ui-btn--primary btn primary"[^>]*data-who="open"[^>]*>Start the night<\/button>/, 'a B68Ui Primary keeping the old classes');
+  assert.equal((lead.innerHTML.match(/ui-btn--primary/g) || []).length, 1, 'one Primary');
   assert.equal(after.textContent, Who.summary(d, CHARS));
   // the page's root opens it
   gmRoot.listeners.click({ target: { closest: (s) => (s === '[data-who="open"]' ? { getAttribute: () => 'open' } : null) }, preventDefault() {} });
@@ -275,6 +278,7 @@ await atest('the sheet: rows from the characters, a tick toggled, Start with two
   const sheet = gmRoot.children[0];      /* in #gm-root, under the band, as the workshop's sheets */
   assert.equal(page.children.length, 0);
   assert.equal(sheet.id, 'gm-who-sheet'); assert.equal(sheet.hidden, false); assert.equal(sheet.getAttribute('role'), 'dialog');
+  assert.equal(sheet.getAttribute('data-ui-scope'), '', 'KS02b: the sheet is a kit scope'); assert.ok((sheet.capture || []).includes('click'), 'and B68Ui.guardBusy guards it');
   assert.match(sheet.innerHTML, /data-who-pc="ch-nell" aria-pressed="true"/);
   assert.match(sheet.innerHTML, /data-who-pc="ch-tam" aria-pressed="false"/, 'Tam said no');
   assert.match(sheet.innerHTML, /value="5"/); assert.match(sheet.innerHTML, /the Prep note says 4\.5/);
@@ -296,6 +300,102 @@ await atest('the sheet: rows from the characters, a tick toggled, Start with two
   assert.equal(ctl.isOpen(), false); assert.equal(sheet.hidden, true);
   assert.equal(escs[0].o.isOpen(), false);
   ctl.destroy();
+});
+
+// ---------- 5. KS12.0: the fixes from KS11's review ----------
+test('KS12.0: the ticks go over the RSVP record: a yes with no filed character stays; the GM\'s own character never marks the GM', () => {
+  const t = tablePage(), d = storedDoc();
+  d.schedule.rsvp['mabel.player@example.test'] = { at: '2026-11-21T08:30:00.000Z', v: 'in' };      /* said yes, has no character yet */
+  const chars = CHARS.concat([{ id: 'ch-gm', name: 'Lotte Brand', owner: GM }]);
+  const att = Who.attendanceOf(chars, ['ch-nell', 'ch-ray', 'ch-gm']);
+  const who = serverPatch(d, Who.startPatch(clone(d), { present: ['ch-nell', 'ch-ray', 'ch-gm'], attendance: att }, { iso: NOW_ISO, ms: NOW, me: GM, Sm: t.win.B68Schedule }));
+  assert.deepEqual(who.schedule.attendance['5'], { 'nell.player@example.test': true, 'mabel.player@example.test': true, 'tam.player@example.test': false, 'ray.player@example.test': true });
+  assert.equal(GM in who.schedule.attendance['5'], false, 'the GM is not a player');
+});
+test('KS12.0: a carried-on night keeps its record and changes only the ticked players', () => {
+  const t = tablePage();
+  const night = serverPatch(storedDoc(), whoPatch(t.win, storedDoc(), { present: ['ch-nell', 'ch-ray'], attendance: Who.attendanceOf(CHARS, ['ch-nell', 'ch-ray']) }));
+  const p = Who.startPatch(clone(night), { number: 5, present: ['ch-nell', 'ch-ray', 'ch-tam'], attendance: Who.attendanceOf(CHARS, ['ch-nell', 'ch-ray', 'ch-tam']) }, { iso: NOW_ISO, ms: NOW, me: GM, Sm: t.win.B68Schedule });
+  const late = serverPatch(night, p);
+  assert.deepEqual(late.schedule.attendance['5'], { 'nell.player@example.test': true, 'tam.player@example.test': true, 'ray.player@example.test': true }, 'Tam arrived late');
+  assert.deepEqual(Object.keys(late.session.present).sort(), ['ch-nell', 'ch-ray', 'ch-tam']);
+});
+
+// ---------- 6. KS12.1: the one reader ----------
+const PACK = [{ name: 'Nell Arbuthnot', first: 'Nell' }, { name: 'Ray Okonjo', first: 'Ray' }, { name: 'Tam Petrakis', first: 'Tam' }];
+function nightOf(ids) { const t = tablePage(); return serverPatch(storedDoc(), whoPatch(t.win, storedDoc(), { present: ids })); }
+test('KS12.1 join: the pack\'s names meet the filed ids on a tidied name; the roster says who is here', () => {
+  const j = Who.join(PACK, CHARS, Who.roster(nightOf(['ch-nell', 'ch-ray'])));
+  assert.equal(j.all, false);
+  assert.deepEqual(j.pack.map((p) => [p.name, p.id, p.here]), [['Nell Arbuthnot', 'ch-nell', true], ['Ray Okonjo', 'ch-ray', true], ['Tam Petrakis', 'ch-tam', false]]);
+  assert.deepEqual(j.unmatched, []);
+  assert.equal(Who.presentIn(j, 'ch-tam'), false); assert.equal(Who.presentIn(j, 'ch-ray'), true);
+  assert.equal(Who.presentIn(j, '  tam   PETRAKIS '), false, 'a name, tidied'); assert.equal(Who.presentIn(j, { label: 'Tam', value: 'Tam Petrakis' }), false, 'a Who chip option');
+  assert.equal(Who.presentIn(j, { id: 'ch-nell', name: 'Nell Arbuthnot' }), true);
+  assert.equal(Who.tidy('Ñell  O’Arbuthnot-Smith'), 'nell oarbuthnot smith');
+  assert.deepEqual(Who.awayOwners(j), ['tam.player@example.test']);
+  assert.deepEqual(Who.splitIn(j, CHARS).away.map((c) => c.id), ['ch-tam']);
+});
+test('KS12.1 join: a first name only one filed character has joins; a pack name with no match counts as present and is listed', () => {
+  const chars = [{ id: 'ch-nell', name: 'Nell A.', owner: 'n@x.test' }, { id: 'ch-ray', name: 'Ray Okonjo', owner: 'r@x.test' }, { id: 'ch-tam', name: 'Tam Petrakis', owner: 't@x.test' }];
+  const pack = PACK.concat([{ name: 'Lotte Brand', first: 'Lotte' }]);
+  const j = Who.join(pack, chars, Who.roster(nightOf(['ch-nell'])));
+  assert.equal(j.pack[0].id, 'ch-nell', 'Nell by her first name');
+  assert.deepEqual(j.unmatched, ['Lotte Brand']);
+  assert.equal(Who.presentIn(j, 'Lotte Brand'), true, 'unmatched: playing');
+  assert.equal(Who.presentIn(j, 'Ray Okonjo'), false);
+  const two = Who.join([{ name: 'Nell Arbuthnot' }], chars.concat([{ id: 'ch-n2', name: 'Nell Other', owner: 'o@x.test' }]), null);
+  assert.deepEqual(two.unmatched, ['Nell Arbuthnot'], 'a first name two characters share joins neither');
+});
+test('KS12.1 join: no roster is everyone, exactly as before (the empty roster, a stale one, none stored)', () => {
+  for (const d of [storedDoc(), { session: { number: 5, startedAt: NOW_ISO, present: {} } }, { session: { number: 6, startedAt: NOW_ISO, present: { 'ch-nell': '2026-11-07T08:30:00.000Z' } } }]) {
+    const j = Who.join(PACK, CHARS, Who.roster(d));
+    assert.equal(j.all, true);
+    assert.ok(['ch-nell', 'ch-ray', 'ch-tam', 'Tam Petrakis', 'anyone'].every((x) => Who.presentIn(j, x)));
+    assert.deepEqual(Who.awayOwners(j), []);
+    assert.deepEqual(Who.splitIn(j, CHARS).here, CHARS);
+  }
+});
+test('KS12.5 polaroidsOf: the cast id is the tidied first name, the caption the alias or the name; at most 8, no repeats', () => {
+  assert.deepEqual(Who.polaroidsOf([{ name: 'Nell Arbuthnot', alias: 'The Heron' }, { name: 'Ray Okonjo' }, { name: 'Ray Other' }, { name: '<b>' }]),
+    [{ id: 'nell', cap: 'The Heron' }, { id: 'ray', cap: 'Ray Okonjo' }, { id: 'b', cap: '<b>' }]);
+  assert.equal(Who.polaroidsOf(Array.from({ length: 12 }, (_, i) => ({ name: 'P' + i + ' X' }))).length, 8);
+  assert.equal(Who.polaroidsOf([{ name: 'A ' + 'x'.repeat(100), alias: 'y'.repeat(100) }])[0].cap.length, 60);
+});
+
+await atest('KS12.0/12.1/12.7 on a fake page: Carry on session N, the warning, onChange, the band chip', async () => {
+  const page = fakeEl('div'), gmRoot = fakeEl('div'), bar = fakeEl('span'), sess = fakeEl('span');
+  sess.parentNode = bar; bar.insertBefore = (c, ref) => { bar.children.push(c); c.parentNode = bar; return c; };
+  bar.removeChild = (c) => { bar.children = bar.children.filter((x) => x !== c); c.parentNode = null; };
+  const els = { 'gm-page': page, 'gm-bar-sess': sess };
+  const W = { document: { getElementById: (id) => els[id] || bar.children.find((c) => c.id === id) || null, createElement: (t) => { const e = fakeEl(t); Object.defineProperty(e, 'textContent', { get() { return this._t || ''; }, set(v) { this._t = v; } }); const sa = e.setAttribute; e.setAttribute = function (k, v) { sa.call(this, k, v); if (k === 'id') this.id = String(v); }; return e; },
+    createTextNode: (x) => ({ nodeType: 3, data: String(x) }), activeElement: null, body: page } };
+  W.self = W; vm.createContext(W);
+  vm.runInContext(fs.readFileSync(path.join(APP, 'ui', 'ui.js'), 'utf8'), W, { filename: 'ui.js' });      /* the kit-ui bundle comes first (B68Ui) */
+  vm.runInContext(fs.readFileSync(path.join(APP, 'gm', 'kit', 'who.js'), 'utf8'), W, { filename: 'who.js' });
+  const t = tablePage(); let d = nightOf(['ch-nell', 'ch-ray']);
+  const ctl = W.B68GmWho.create({ root: () => gmRoot, campaign: () => d, characters: () => CHARS, schedule: () => t.win.B68Schedule, pack: () => PACK.concat([{ name: 'Lotte Brand' }]), start: () => Promise.resolve(true) });
+  let fired = 0; const off = ctl.onChange(() => { fired++; });
+  const lead = fakeEl('div'), left = fakeEl('div');
+  left.querySelectorAll = (sel) => (sel === '[data-who-lead]' ? [lead] : []);
+  ctl.paint(left);
+  assert.match(lead.innerHTML, />Carry on session 5<\/button>/, 'KS12.0: an open session is carried on');
+  assert.equal(fired, 1, 'the roster arrived: one change');
+  ctl.paint(left); assert.equal(fired, 1, 'nothing changed: no call');
+  assert.equal(ctl.isPresent('Tam Petrakis'), false); assert.equal(ctl.isPresent('Lotte Brand'), true);
+  assert.deepEqual(clone(ctl.only(CHARS).map((c) => c.id)), ['ch-nell', 'ch-ray']); assert.deepEqual(clone(ctl.away()), ['tam.player@example.test']);
+  const chip = bar.children.find((c) => c.id === 'gm-bar-who');
+  assert.ok(chip, 'the band chip is placed after the session chip'); assert.equal(chip.textContent, '2 playing');
+  chip.listeners.click({ preventDefault() {}, stopPropagation() {} });
+  assert.equal(ctl.isOpen(), true, 'the chip opens the sheet');
+  const sheet = gmRoot.children[0];
+  assert.match(sheet.innerHTML, /<h2 class="gm-sheet-h">Who is here<\/h2>/);
+  assert.match(sheet.innerHTML, /class="who-warn" role="note"><b>Not filed:<\/b> Lotte Brand\./, 'the unmatched pack name is warned about');
+  d = serverPatch(d, Who.startPatch(clone(d), { number: 5, present: ['ch-nell', 'ch-ray', 'ch-tam'] }, { iso: NOW_ISO, ms: NOW, me: GM, Sm: t.win.B68Schedule }));
+  ctl.paint(left); assert.equal(fired, 2, 'a late arrival: a change'); assert.equal(chip.textContent, '3 playing'); assert.equal(ctl.isPresent('ch-tam'), true);
+  off(); d = nightOf(['ch-nell']); ctl.paint(left); assert.equal(fired, 2, 'unsubscribed');
+  ctl.destroy();
+  assert.equal(bar.children.some((c) => c.id === 'gm-bar-who'), false, 'destroy takes the chip it made away');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
