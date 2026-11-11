@@ -9,7 +9,10 @@
 //   replace   a second stamp over the first (stakes over stakes, and stakes over a result)
 //   one Esc   Esc, Take it down and Clean at every beat; nothing is laid again after a takedown
 //   off       with kit.stage off a mark takes the card down as today and the stamp carries no who
-// The display makes no request outside its own origin. KIT_SHOTS=<dir> saves the pictures.
+//   desk      the whole walk again with kit.desk ON as well (KS06's Roll card, gm/kit/roll.js): the cost field, the result words and Clean are
+//             mirrored there, so nothing above goes missing with both settings on; then kit.stage off with the desk on: KS06's card as it was
+// The display makes no request outside its own origin. KIT_SHOTS=<dir> saves the pictures. KIT_DESK=0 runs the desk-off walk only, KIT_DESK=1 the
+// desk-on walk only (default: both, desk off first).
 //   PW_MODULE=<path to playwright-core> [PW_CHANNEL=msedge] [PORT=9413] [KIT_SHOTS=<dir>] node checks/runtime/kit-stage-roll.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
@@ -36,8 +39,8 @@ const PARTS = {
 };
 const LINE = 'She calls the desk.', COST = 'Lotte remembers your face.';
 
-let failed = 0, passed = 0;
-function check(cond, msg) { console.log((cond ? 'PASS ' : 'FAIL ') + msg); if (cond) passed++; else failed++; }
+let failed = 0, passed = 0, TAG = '';
+function check(cond, msg) { console.log((cond ? 'PASS ' : 'FAIL ') + TAG + msg); if (cond) passed++; else failed++; }
 async function until(fn, ms, step = 100) { const t0 = Date.now(); for (;;) { const v = await fn(); if (v || Date.now() - t0 > ms) return v; await sleep(step); } }
 
 const stateDir = mkdtempSync(path.join(tmpdir(), 'b68-kit-stage-roll-e2e-'));
@@ -121,7 +124,24 @@ try {
     return until(async () => { const o = await ov(); return o && o.kind === 'report' && !o.payload.result && o.payload.position === pos ? o : null; }, 8000);
   };
   const key = async (n) => { await blur(); await page.click('#gm-buttons [data-gm="situation"][data-n="' + n + '"]'); };
+  const kitCard = () => page.evaluate(() => { const r = document.querySelector('#gm-rl'); return !!r && r.getAttribute('data-kr') === '1'; });
+  const WALKS = process.env.KIT_DESK === '1' ? [true] : process.env.KIT_DESK === '0' ? [false] : [false, true];
 
+  for (const desk of WALKS) {
+    TAG = desk ? '[desk on] ' : '';
+    if (desk) {
+      /* the desk on as well: KS06's Roll card. Who is set again (Clean cleared it), the iPad reloaded so no chip is carried over from the first walk */
+      await api('PATCH', '/gm/ambient', { overlay: null });
+      check((await api('PATCH', '/gm/state', { features: { 'kit.desk': true }, con: { live: { pc: 'Ray' } } })).status === 200, 'kit.desk on');
+      await page.reload(); await page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+      check(!!(await until(kitCard, 30000, 250)), 'the Roll is the new desk\'s card (#gm-rl[data-kr])');
+      await ipad.reload(); await ipad.waitForFunction(() => document.body.dataset.mode === 'display', null, { timeout: 20000 });
+      await until(() => ipad.evaluate(() => !!document.querySelector('.dp-root .stage-frame') && !!window.B68StageRoll), 30000, 250);
+    } else check(!(await kitCard()), 'the Roll is the old card (kit.desk off)');
+    await walk(desk);
+  }
+
+  async function walk(desk) {
   // ============ stamp: the stakes ============
   const o1 = await stampIt();
   check(!!o1 && o1.payload.who === 'Ray' && o1.payload.text === LINE && o1.ms === 180000, 'the stamp carries who: ' + JSON.stringify(o1 && o1.payload));
@@ -143,6 +163,11 @@ try {
 
   // ============ cost: refused (hidden name) is said and kept; unsent never reaches the display GET; sent is drawn ============
   check(!!(await until(() => page.$('#gm-stamp-cost'), 4000)), 'after a 4/5 the Roll shows "Cost on the iPad"');
+  if (desk) {
+    const kf = await page.evaluate(() => { const f = document.querySelector('#gm-stamp-cost'), l = f && f.closest('.ui-field'), up = document.querySelector('#gm-stamp .kr-up');
+      return { field: !!l && /Cost on the iPad/.test(l.textContent), card: !!f && !!f.closest('#gm-rl[data-kr="1"]'), words: up ? up.textContent : '', stamp: (document.querySelector('#gm-stamp [data-gm="stamp"]') || {}).textContent || '' }; });
+    check(kf.field && kf.card && /You do it\. It costs\./.test(kf.words) && /Stamp it on the iPad/.test(kf.stamp), 'the desk card mirrors it: the Field part in the kit card, the result words, "Stamp it on the iPad": ' + JSON.stringify(kf));
+  }
   await page.fill('#gm-stamp-cost', COST);
   check(!(await displayGet()).includes('Lotte remembers'), 'an unsent cost is not in the display GET');
   await page.fill('#gm-stamp-cost', 'GM-ONLY-NPC-1 saw it'); await page.press('#gm-stamp-cost', 'Enter');
@@ -157,6 +182,7 @@ try {
   const s3 = await beatIs('cost');
   check(!!s3 && s3.text.includes(COST) && /it costs/i.test(s3.text), 'the iPad draws the cost: ' + (s3 && s3.text));
   await shot('ipad-cost');
+  check((await page.inputValue('#gm-stamp-cost').catch(() => null)) !== null && /On the iPad: Lotte remembers your face\./.test(await page.textContent('#gm-stamp')), 'after it is sent the field stays and says what is on the iPad');
 
   // ============ the chip: the beat folds; a reload clears it ============
   check(!!(await noBeat(20000)), 'the beat folds');
@@ -218,7 +244,7 @@ try {
   await blur(); await page.keyboard.press('Escape'); await api('PATCH', '/gm/ambient', { overlay: null });
 
   // ============ the pictures in Paper, and the desk's Roll with its cost field (KIT_SHOTS only) ============
-  if (SHOTS) {
+  if (SHOTS && !desk) {
     await ipad.evaluate(() => localStorage.setItem('b68.theme', 'light')); await ipad.reload();
     await ipad.waitForFunction(() => document.body.dataset.mode === 'display', null, { timeout: 20000 });
     await until(() => ipad.evaluate(() => !!document.querySelector('.dp-root .stage-frame')), 30000, 250);
@@ -227,23 +253,42 @@ try {
     await page.fill('#gm-stamp-cost', COST); await page.press('#gm-stamp-cost', 'Enter'); await beatIs('cost'); await shot('ipad-cost', 'paper');
     await noBeat(20000); await sleep(800); await shot('ipad-idle-chip', 'paper');
     await ipad.evaluate(() => localStorage.removeItem('b68.theme'));
+  }
+  if (SHOTS) {
+    /* the desk's Roll with its cost field: the old card (desk-roll-*), and KS06's card with the desk on (desk-kitroll-*) */
     for (const [theme, store] of [['night', 'dark'], ['paper', 'light']]) {
       await page.evaluate((t) => localStorage.setItem('b68.theme', t), store); await page.reload(); await page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+      if (desk) await until(kitCard, 30000, 250);
       await stampIt(); await key(2); await until(() => page.$('#gm-stamp-cost'), 4000);
       await page.fill('#gm-stamp-cost', 'Lotte remembers'); await blur();
       for (const [w, h] of [[1366, 768], [1536, 864]]) {
         await page.setViewportSize({ width: w, height: h }); await sleep(400);
         const box = await page.$('#gm-rl') || await page.$('#gm-stamp');
-        await (box || page).screenshot({ path: path.join(SHOTS, 'desk-roll-' + theme + '-' + w + '.png') });
+        await (box || page).screenshot({ path: path.join(SHOTS, (desk ? 'desk-kitroll-' : 'desk-roll-') + theme + '-' + w + '.png') });
+        if (desk) await page.screenshot({ path: path.join(SHOTS, 'desk-kitpage-' + theme + '-' + w + '.png') });
       }
       await page.setViewportSize({ width: 1440, height: 900 }); await blur(); await page.keyboard.press('Escape'); await until(async () => !(await ov()), 6000);
     }
     await page.evaluate(() => localStorage.removeItem('b68.theme'));
   }
+  }
 
-  // ============ off: today's mark ============
+  // ============ off: today's mark (with the desk on: KS06's card as it was; then the desk off too: today's page) ============
   await setting(false);
+  if (WALKS.includes(true)) {
+    TAG = '[desk on] ';
+    await page.reload(); await page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 }); await until(kitCard, 30000, 250);
+    const d1 = await stampIt();
+    check(!!d1 && d1.payload.who === undefined, 'kit.stage off: the stamp carries no who');
+    check((await page.textContent('#gm-stamp [data-gm="stamp-clean"]')).trim() === 'Clean (no card)', 'kit.stage off: Clean keeps its old words');
+    await key(2);
+    check(!!(await until(async () => !(await ov()), 6000)), 'kit.stage off: a 4/5 takes the card down as today');
+    check(!(await page.$('#gm-stamp-cost')) && !(await page.$('#gm-stamp .kr-upres')), 'kit.stage off: no cost field, no result words');
+    await api('PATCH', '/gm/state', { features: { 'kit.desk': false } });
+    TAG = '';
+  }
   await page.reload(); await page.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000 });
+  check(!(await kitCard()), 'off: the old Roll card');
   const f1 = await stampIt();
   check(!!f1 && f1.payload.who === undefined, 'off: the stamp carries no who: ' + JSON.stringify(f1 && f1.payload));
   check((await page.textContent('#gm-stamp [data-gm="stamp-clean"]')).trim() === 'Clean (no card)', 'off: Clean keeps its old words');

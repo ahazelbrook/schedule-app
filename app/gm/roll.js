@@ -26,7 +26,8 @@
      whoHtml(pcs, cur) -> #gm-who: a chip per PC (data-gm="who"; a second tap clears). pcs: [{ value, label }] (the console's Aim at options, 'anyone' left out)
      stampHtml(v) -> #gm-stamp. v = { on, active: { position, effect, text, result?, cost? } | null, stale, cost?, beats? }
      KS15 (kit.stage): costHtml(v.cost) the "Cost on the iPad" field (only when the stamp view carries cost); costBind(box, stamp|getter) and
-       costKeep(box), the field's DOM side; RESULT_WORDS
+       costKeep(box), the field's DOM side; RESULT_WORDS; cleanWords(v, a) -> [label, tooltip] and costNote(c) -> the line under the field, both
+       plain text. With kit.desk on, gm/kit/roll.js draws the same field, words and Clean label from these, in its own parts
      lineNote(room) -> the note under the line while it is the room's own ('' for none)
      buttonsHtml(sits) -> #gm-buttons: four .gm-btn with keys 1-4 (sits: con.situations())
      miniHtml(sits, pos, eff, up) -> #gm-mini (Focus): the position (and the effect, and whether the stamp is up), then the four keys
@@ -124,24 +125,28 @@
         (a.result ? 'Stamp it on the iPad' : 'Stamp again') + '</button>' : '') +
       '<div class="gm-rl-acts">' +
         '<button type="button" class="btn sm" data-gm="stamp-down" title="Takes the action report off the iPad">Take it down <kbd>Esc</kbd></button>' +
-        '<button type="button" class="chip sm" data-gm="stamp-clean" title="' + cleanWords(v, a)[1] + '">' + cleanWords(v, a)[0] + '</button></div>' + costHtml(v.cost);
+        '<button type="button" class="chip sm" data-gm="stamp-clean" title="' + esc(cleanWords(v, a)[1]) + '">' + esc(cleanWords(v, a)[0]) + '</button></div>' + costHtml(v.cost);
   }
   /* KS15 (kit.stage): the words the iPad shows for a result (display/kit/roll.js says the same), and the Roll's one cost field after a 4/5 or a 1-3.
      Only a stamp view made with the setting on carries `cost`, so with it off stampHtml is what it was */
   var RESULT_WORDS = { clean: 'You do it.', '45': 'You do it. It costs.', '13': 'It goes wrong.' };
   /* Clean says what it does: with the setting on (v.beats) and the stakes up it puts "You do it." on the iPad for 8 seconds; over a result, and with
-     the setting off, it takes the card down as it always did. -> [label, tooltip], both already escaped */
+     the setting off, it takes the card down as it always did. -> [label, tooltip] as plain text (the caller escapes; gm/kit/roll.js says the same) */
   function cleanWords(v, a) {
-    if (v && v.beats && a && !a.result) return ['Clean: You do it.', 'The roll is clean: the iPad shows &quot;You do it.&quot; for 8 seconds, then the last-roll chip'];
+    if (v && v.beats && a && !a.result) return ['Clean: You do it.', 'The roll is clean: the iPad shows "You do it." for 8 seconds, then the last-roll chip'];
     return ['Clean (no card)', 'Take the card down; the roll needs no consequence'];
+  }
+  /* the line under the cost field, plain text: what is on the iPad, or that nothing goes until Enter */
+  function costNote(c) {
+    var sent = str(c && c.sent);
+    return sent ? 'On the iPad: ' + sent + '. Enter sends a change.' : 'Optional. Enter sends it; nothing goes until then.';
   }
   function costHtml(c) {
     if (!c || typeof c !== 'object') return '';
-    var sent = str(c.sent);
     return '<div class="gm-rl-line gm-rl-cost"><label class="gm-lab" for="gm-stamp-cost">Cost on the iPad</label>' +
       '<div class="gm-rl-in"><textarea id="gm-stamp-cost" data-gm="stamp-cost" rows="1" maxlength="60" autocomplete="off" spellcheck="false" ' +
         'placeholder="What it cost, in plain words">' + esc(c.draft) + '</textarea></div>' +
-      '<p class="gm-rl-chg">' + (sent ? 'On the iPad: ' + esc(sent) + '. Enter sends a change.' : 'Optional. Enter sends it; nothing goes until then.') + '</p></div>';
+      '<p class="gm-rl-chg">' + esc(costNote(c)) + '</p></div>';
   }
   /* the field's DOM side (the one part of this file that touches the page): costBind listens once per box (typing is kept by the stamp, Enter sends),
      costKeep(box) before a redraw -> a function that puts the focus and the caret back after it, or null when the field does not have the focus */
@@ -210,5 +215,5 @@
 
   return { EFFECTS: EFFECTS.slice(), cap: cap, esc: esc, shell: shell, posHtml: posHtml, sizeText: sizeText, sizeLine: sizeLine, effHtml: effHtml, whoHtml: whoHtml,
     stampHtml: stampHtml, lineNote: lineNote, buttonsHtml: buttonsHtml, miniHtml: miniHtml, sizerHtml: sizerHtml, sizerActs: sizerActs, quickActs: quickActs, rackSummary: rackSummary,
-    costHtml: costHtml, costBind: costBind, costKeep: costKeep, RESULT_WORDS: RESULT_WORDS };
+    costHtml: costHtml, costBind: costBind, costKeep: costKeep, cleanWords: cleanWords, costNote: costNote, RESULT_WORDS: RESULT_WORDS };
 });

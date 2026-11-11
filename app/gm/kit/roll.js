@@ -12,6 +12,10 @@
      The card     The roll · Who (chips) · Position and Effect (two full-width segmented controls; the size under Position) · If it goes wrong
                   (a field, its x) · STAMP (the Roll's one Primary) with a quiet Fit beside it. Stamped: On the iPad (a chip, with what went up),
                   Stamp again (only once what is set has changed, as before: a second stamp is a second fit), Take it down (Esc), Clean (no card).
+                  KS15 (kit.stage, the roll as beats) is mirrored here, from the same stamp view as the old card: the result's words beside On the
+                  iPad (and on the pin), "Stamp it on the iPad" while a result is up, Clean saying "Clean: You do it." over the stakes, and after a
+                  4/5 or a 1-3 the "Cost on the iPad" field (a B68Ui Field, #gm-stamp-cost; Enter sends) under the actions. The words come from
+                  B68GmRoll (RESULT_WORDS, cleanWords, costNote); the field's DOM side is B68GmRoll's costBind / costKeep, passed through.
      They rolled  the four keys as full-width rows: the outcome colour as the left edge and the word (Before the bargain's colour, 4/5, 1-3; Someone
                   is no outcome: the ink edge), the key at the right. Keys 1 to 4 are the page's, unchanged.
      The Fixer    the dice (the time, the position and the effect) in one small mono line, the line it was fitted for under it; then each outcome as
@@ -26,8 +30,9 @@
      drawn(el) -> bool         el (the page's #gm-rl) is this file's card
      mount(section) -> bool    swap #gm-rl in or out to follow on(); true when it swapped (the page then paints everything)
      start()                   listen to the desk (B68Kit.onChange) and ask the page to follow (B68GmPage.rollKit)
-     the renderers (B68GmRoll's names): posHtml effHtml whoHtml stampHtml buttonsHtml miniHtml lineNote card(); and the page's own, drawn here:
-       rackHtml(r, ctx), hitHtml(row, o), voiceHtml(vo, can). Every other B68GmRoll function is passed through.
+     the renderers (B68GmRoll's names): posHtml effHtml whoHtml stampHtml costHtml buttonsHtml miniHtml lineNote cleanWords card(); and the page's
+       own, drawn here: rackHtml(r, ctx), hitHtml(row, o), voiceHtml(vo, can). Every other B68GmRoll function is passed through (costBind and
+       costKeep among them: gm-page.js b09Paint asks rollR() for them, so with the desk on they must answer here too).
      pure: EDGE, FX_EDGE, points(text) */
 (function (root, factory) {
   'use strict';
@@ -113,11 +118,24 @@
     if (a) {
       var w = doc.querySelector('#gm-who [data-gm="who"][aria-checked="true"]'), who = w ? str(w.textContent).trim() : '';
       h = '<div class="kr-pinrow">' + ui().chip({ label: 'On the iPad', tone: 'accent', dot: true, cls: 'kr-upchip' }) +
-        '<span class="kr-pinwhat">' + esc((who ? who + ', ' : '') + a.position + ', ' + a.effect) + '</span>' +
+        '<span class="kr-pinwhat">' + esc((who ? who + ', ' : '') + a.position + ', ' + a.effect + (a.result ? '. ' + resultWords(a) : '')) + '</span>' +
         ui().button({ label: 'Take it down', key: 'Esc', cls: 'kr-pindown', data: { gm: 'stamp-down' }, title: 'Takes the action report off the iPad' }) + '</div>';
     }
     if (el.__html !== h) { el.innerHTML = h; el.__html = h; }
     el.hidden = !h;
+  }
+  /* KS15 (kit.stage) mirrored: the result's words beside On the iPad, "Stamp it on the iPad" (not "again") while a result is up, Clean saying what it
+     does, and the "Cost on the iPad" field. The words are B68GmRoll's (RESULT_WORDS, cleanWords, costNote), so both Rolls say the same; the field keeps
+     the old card's hooks (#gm-stamp-cost, data-gm="stamp-cost") so the page's costBind / costKeep (passed through below) and its checks find it.
+     Only a stamp view made with kit.stage on carries `result`, `cost` and `beats`: with it off this is KS06's card, unchanged */
+  function resultWords(a) { var R = old(), w = R && R.RESULT_WORDS; return a && a.result && w ? str(w[a.result]) + (a.cost ? ' ' + str(a.cost) : '') : ''; }
+  function cleanWords(v, a) { var R = old(); return R && typeof R.cleanWords === 'function' ? R.cleanWords(v, a) : ['Clean (no card)', 'Take the card down; the roll needs no consequence']; }
+  function costHtml(c) {
+    if (!c || typeof c !== 'object') return '';
+    var R = old();
+    return '<div class="gm-rl-cost kr-costline">' + ui().field({ label: 'Cost on the iPad', kind: 'textarea', id: 'gm-stamp-cost', cls: ['kr-in', 'kr-costin'], data: { gm: 'stamp-cost' },
+      value: str(c.draft), placeholder: 'What it cost, in plain words', hint: R && typeof R.costNote === 'function' ? R.costNote(c) : '',
+      attrs: { rows: '1', maxlength: '60', autocomplete: 'off', spellcheck: 'false' } }) + '</div>';
   }
   function stampHtml(v) {
     v = v || {};
@@ -125,14 +143,17 @@
     if (!v.on) return '';
     var U = ui(), a = v.active;
     if (!a) return U.button({ label: 'Stamp it on the iPad', rank: 'primary', cls: ['gm-stampb', 'kr-stampb'], data: { gm: 'stamp' },
-      title: 'The position, the effect and the line, as an action report on the iPad before the dice. Enter in the line does it too' });
+      title: 'The position, the effect and the line, as an action report on the iPad before the dice. Enter in the line does it too' }) + costHtml(v.cost);
+    var res = resultWords(a), cw = cleanWords(v, a);
     return '<p class="gm-rl-up kr-up" role="status">' + U.chip({ label: 'On the iPad', tone: 'accent', dot: true, cls: 'kr-upchip' }) +
         '<span class="kr-upwhat">' + esc(cap(a.position) + ', ' + a.effect) + '</span>' +
-        (v.stale ? '<span class="gm-rl-chg kr-chg">Changed since it went up</span>' : '') + '</p>' +
-      (v.stale ? U.button({ label: 'Stamp again', rank: 'primary', cls: ['gm-stampb', 'kr-stampb'], data: { gm: 'stamp' }, title: 'Puts what is set now on the iPad in its place' }) : '') +
+        (res ? '<span class="kr-upres">' + esc(res) + '</span>' : '') +
+        (v.stale && !a.result ? '<span class="gm-rl-chg kr-chg">Changed since it went up</span>' : '') + '</p>' +
+      (v.stale || a.result ? U.button({ label: a.result ? 'Stamp it on the iPad' : 'Stamp again', rank: 'primary', cls: ['gm-stampb', 'kr-stampb'], data: { gm: 'stamp' },
+        title: a.result ? 'The next roll: it takes the place of what is up' : 'Puts what is set now on the iPad in its place' }) : '') +
       '<div class="gm-rl-acts kr-acts">' +
         U.button({ label: 'Take it down', key: 'Esc', cls: 'kr-down', data: { gm: 'stamp-down' }, title: 'Takes the action report off the iPad' }) +
-        U.button({ label: 'Clean (no card)', rank: 'quiet', cls: 'kr-clean', data: { gm: 'stamp-clean' }, title: 'Take the card down; the roll needs no consequence' }) + '</div>';
+        U.button({ label: cw[0], rank: 'quiet', cls: 'kr-clean', data: { gm: 'stamp-clean' }, title: cw[1] }) + '</div>' + costHtml(v.cost);
   }
   function buttonsHtml(sits) {
     var U = ui();
@@ -271,9 +292,10 @@
   M.EDGE = EDGE; M.FX_EDGE = FX_EDGE; M.points = points;
   M.on = on; M.drawn = drawn; M.mount = mount; M.start = start; M.card = card;
   M.posHtml = posHtml; M.effHtml = effHtml; M.whoHtml = whoHtml; M.stampHtml = stampHtml; M.buttonsHtml = buttonsHtml; M.miniHtml = miniHtml; M.lineNote = lineNote;
+  M.costHtml = costHtml; M.cleanWords = cleanWords;
   M.rackHtml = rackHtml; M.hitHtml = hitHtml; M.voiceHtml = voiceHtml;
   /* the rest of B68GmRoll, passed through at call time */
-  ['shell', 'sizeText', 'sizeLine', 'sizerHtml', 'sizerActs', 'quickActs', 'rackSummary', 'cap', 'esc'].forEach(function (n) {
+  ['shell', 'sizeText', 'sizeLine', 'sizerHtml', 'sizerActs', 'quickActs', 'rackSummary', 'cap', 'esc', 'costBind', 'costKeep', 'costNote'].forEach(function (n) {
     M[n] = function () { var R = old(); return R && typeof R[n] === 'function' ? R[n].apply(R, arguments) : ''; };
   });
   M.EFFECTS = EFFECTS.slice();

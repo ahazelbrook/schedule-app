@@ -188,6 +188,36 @@ await test('the Roll: the cost field is drawn only when the stamp view carries i
   assert.deepEqual(got, { draft: ['Lotte remembers'], sent: ['Lotte remembers'] }); assert.equal(prevented, 1);
 });
 
+await test('the Roll on the new desk (kit.desk AND kit.stage on): the cost field, the result words and Clean are mirrored, with the same hooks and words', async () => {
+  const KR = require(path.join(ROOT, 'app', 'gm', 'kit', 'roll.js'));
+  KR._ui = require(path.join(ROOT, 'app', 'ui', 'ui.js')); KR._old = R;
+  const base = { on: true, active: { position: 'risky', effect: 'standard', text: 'x' }, stale: false };
+  // kit.stage off (no result, no cost, no beats in the view): KS06's card as it was
+  const off = KR.stampHtml(base);
+  assert.ok(!off.includes('stamp-cost') && !off.includes('kr-upres') && />Clean \(no card\)</.test(off) && !off.includes('gm-stampb'), 'off: no field, no words, the old Clean');
+  assert.ok(!KR.stampHtml({ on: true, active: null }).includes('stamp-cost'));
+  // a 4/5 is up and a cost is being typed: the field is there, in the kit's Field part, with the old hooks; the draft is text
+  const h = KR.stampHtml({ ...base, beats: true, active: { ...base.active, result: '45' }, cost: { result: '45', draft: '<b>GM</b>', sent: '' } });
+  assert.ok(h.includes('id="gm-stamp-cost"') && h.includes('data-gm="stamp-cost"') && h.includes('maxlength="60"') && h.includes('ui-field') && h.includes('Cost on the iPad'), 'the Cost field is drawn');
+  assert.ok(h.includes('&lt;b&gt;GM&lt;/b&gt;') && !h.includes('<b>GM'), 'the draft is text');
+  assert.ok(h.includes('You do it. It costs.') && h.includes(R.costNote({ sent: '' })), 'the same words as the old Roll');
+  assert.ok(/>Stamp it on the iPad</.test(h) && !h.includes('Stamp again') && !h.includes('Changed since it went up'), 'while a result is up the next stamp is a new one');
+  assert.ok(/>Clean \(no card\)</.test(h), 'over a result Clean takes the card down');
+  // the stakes up with the setting on: Clean says what it does (escaped once, not twice)
+  const st = KR.stampHtml({ ...base, beats: true });
+  assert.ok(/>Clean: You do it\.</.test(st) && st.includes('&quot;You do it.&quot; for 8 seconds') && !st.includes('&amp;quot;'), 'Clean: You do it.');
+  assert.equal(R.stampHtml({ ...base, beats: true }).includes('&quot;You do it.&quot; for 8 seconds') && !R.stampHtml({ ...base, beats: true }).includes('&amp;quot;'), true, 'the old Roll escapes it once too');
+  // the beat folded (nothing up) and a cost was sent: the field stays under the stamp, saying what is on the iPad
+  const after = KR.stampHtml({ on: true, active: null, cost: { result: '13', draft: '', sent: 'Lotte remembers your face.' } });
+  assert.ok(after.includes('id="gm-stamp-cost"') && after.includes('On the iPad: Lotte remembers your face.'));
+  // the page asks rollR() for costBind / costKeep: with the desk on they answer here (B68GmRoll's, passed through)
+  const box = new MiniEl('div'); const ls = {}; box.addEventListener = (t, fn) => { ls[t] = fn; };
+  const got = []; KR.costBind(box, () => ({ costDraft: () => {}, sendCost: (v) => { got.push(v); return Promise.resolve(true); } }));
+  const field = new MiniEl('textarea'); field.setAttribute('data-gm', 'stamp-cost'); field.value = 'Lotte remembers';
+  ls.keydown({ target: field, key: 'Enter', preventDefault: () => {} });
+  assert.deepEqual(got, ['Lotte remembers'], 'Enter in the kit field sends'); assert.equal(typeof KR.costKeep, 'function');
+});
+
 /* ---------- the iPad ---------- */
 globalThis.self = globalThis;
 const intervals = []; const realSI = globalThis.setInterval, realCI = globalThis.clearInterval;
