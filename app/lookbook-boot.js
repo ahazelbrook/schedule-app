@@ -51,18 +51,20 @@
       '.lb-kit-col code { font: 400 var(--ui-type-label)/1.3 var(--ui-font-mono); color: var(--ui-ink-soft); overflow-wrap: anywhere; }',
       '.lb-ex { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--ui-space-4) var(--ui-space-4); }',
       '.lb-ex.lb-wide { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 18em), 1fr)); align-items: start; }',
+      '.lb-kit[data-density="distance"] .lb-ex.lb-wide { grid-template-columns: repeat(auto-fill, minmax(min(100%, 32em), 1fr)); }',
+      '.lb-wide .lb-fig, .lb-wide .lb-fig > div { width: 100%; min-width: 0; }',
       '.lb-ex.lb-list { display: grid; gap: 0; }',
       '.lb-ex + .lb-ex { margin-top: var(--ui-space-5); }',
       '.lb-fig { display: grid; gap: var(--ui-space-1); justify-items: start; margin: 0; min-width: 0; }',
       '.lb-list .lb-fig { justify-items: stretch; }',
       '.lb-list .lb-fig.lb-open { padding-bottom: 9em; }',
       '.lb-fig figcaption { color: var(--ui-ink-faint); font: 400 var(--ui-type-label)/1.3 var(--ui-font-mono); }',
-      '.lb-grid { display: grid; justify-content: start; grid-template-columns: auto repeat(6, max-content); gap: var(--ui-space-3) var(--ui-space-4); align-items: center; overflow-x: auto; padding: 6px; }',
+      '.lb-grid { display: grid; justify-content: start; grid-template-columns: auto repeat(3, max-content); gap: var(--ui-space-3) var(--ui-space-4); align-items: center; overflow-x: auto; padding: 6px; }',
       '.lb-grid > span { color: var(--ui-ink-faint); font: 400 var(--ui-type-label)/1.3 var(--ui-font-mono); }',
-      '.lb-sws { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5em, 1fr)); gap: var(--ui-space-2) var(--ui-space-3); }',
-      '.lb-sw { display: grid; grid-template-columns: 2.4em 1fr; gap: 0 var(--ui-space-2); align-items: center; min-width: 0; }',
-      '.lb-sw > span:first-child { grid-row: span 2; display: grid; place-items: center; width: 2.4em; height: 2.4em; border: var(--ui-hairline);',
-      '  border-radius: var(--ui-radius); font: 700 var(--ui-type-label)/1 var(--ui-font-text); }',
+      '.lb-sws { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15em), 1fr)); gap: var(--ui-space-2) var(--ui-space-3); }',
+      '.lb-sw { display: grid; grid-template-columns: 2.4rem 1fr; gap: 0 var(--ui-space-2); align-items: center; min-width: 0; }',
+      '.lb-sw > span:first-child { grid-row: span 2; display: grid; place-items: center; width: 2.4rem; height: 2.4rem; border: var(--ui-hairline);',
+      '  border-radius: var(--ui-radius); font: 700 12px/1 var(--ui-font-text); }',
       '.lb-sw .lb-v { color: var(--ui-ink-faint); font: 400 var(--ui-type-label)/1.2 var(--ui-font-mono); }',
       '.lb-type { display: grid; gap: var(--ui-space-2); }',
       '.lb-type p { margin: 0; display: flex; align-items: baseline; gap: var(--ui-space-3); }',
@@ -149,17 +151,21 @@
       ex.forEach(function (e) { h += fig(U[p.fn](e.opts), e.caption, e.opts.open ? 'lb-open' : ''); });
       h += '</div>';
       if (p.fn === 'button') {
-        h += '<h4><b>Button</b>: every rank in every state</h4><div class="lb-grid"><span></span>';
-        var cols = ['rest'].concat(p.states);
-        cols.forEach(function (c) { h += '<span>' + U.esc(c) + '</span>'; });
-        p.variants.forEach(function (rank) {
-          h += '<span>' + U.esc(rank) + '</span>';
-          cols.forEach(function (c) {
-            var o = { label: ({ primary: 'Send', standard: 'Clear', quiet: 'Blank', danger: 'PANIC' })[rank] || rank, rank: rank };
-            h += '<div>' + U.button(c === 'rest' ? o : withState('button', o, c)) + '</div>';
+        h += '<h4><b>Button</b>: every rank in every state</h4>';
+        var all = ['rest'].concat(p.states);
+        /* two grids of three states each, so the matrix fits a column at distance density too */
+        [all.slice(0, 3), all.slice(3)].forEach(function (cols) {
+          h += '<div class="lb-grid"><span></span>';
+          cols.forEach(function (c) { h += '<span>' + U.esc(c) + '</span>'; });
+          p.variants.forEach(function (rank) {
+            h += '<span>' + U.esc(rank) + '</span>';
+            cols.forEach(function (c) {
+              var o = { label: ({ primary: 'Send', standard: 'Clear', quiet: 'Blank', danger: 'PANIC' })[rank] || rank, rank: rank };
+              h += '<div>' + U.button(c === 'rest' ? o : withState('button', o, c)) + '</div>';
+            });
           });
+          h += '</div>';
         });
-        h += '</div>';
       } else if (p.states && p.states.length) {
         var base = ex[ex.length - 1].opts, sts = p.states.filter(function (s) { return STATE[s]; });
         if (p.fn === 'chip') base = { label: 'Ray', button: true, pressed: false };
