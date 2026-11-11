@@ -84,7 +84,8 @@ const { chromium } = require(process.env.PW_MODULE);
 const NO_EFFECT_OK = {
   'u': 'nothing of Blade\'s to undo on a fresh night', 'p': 'the capture bar is off (it is a Menu setting)', 'x': 'the capture bar is off', 'm': 'the capture bar is off',
   'l': 'the capture bar is off; no roll to file', '0': 'the iPad is already clear', 'h': 'one tap of H H is half a blank',
-  'panel k': 'at the first card there is nothing before it', 'panel u': 'nothing to undo on a fresh night'
+  'panel k': 'at the first card there is nothing before it', 'panel u': 'nothing to undo on a fresh night',
+  'panel j': 'with no card focused J has nothing to move from (the Now card leaving was its timer, not J: NOW_MS)'
 };
 
 /* the keys, from the card: [{ label, key (Playwright), ctx, via, sec, id }] in card order, the Esc and blanking keys last (they change the night's state for everyone after) */
@@ -106,13 +107,16 @@ const CARDS = [
 /* in the page */
 function snapPage() {
   const vis = (e) => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && !e.closest('[hidden]'); };
-  const sigOf = (a) => a.tagName.toLowerCase() + (typeof a.className === 'string' && a.className.trim() ? '.' + a.className.trim().split(/\s+/)[0] : '');
+  /* a step of a path: the tag and its FIRST CLASS IN SORTED ORDER (a kit part puts its ui-* class first and keeps the old one: the order is not a hook) */
+  const sigOf = (a) => a.tagName.toLowerCase() + (typeof a.className === 'string' && a.className.trim() ? '.' + a.className.trim().split(/\s+/).sort()[0] : '');
+  /* the insides of an svg (a figure's groups) are drawing, not hooks: the fingerprint skips them too */
+  const inSvg = (e) => !!(e.parentElement && e.parentElement.closest('svg'));
   const path = (e) => { if (e.id) return '#' + e.id; const out = []; for (let a = e; a && a !== document.body && out.length < 4; a = a.parentElement) { const p = a.parentElement, sg = sigOf(a); out.push(a.id ? '#' + a.id : sg + ':' + (p ? [...p.children].filter((x) => sigOf(x) === sg).indexOf(a) : 0)); if (a.id) break; } return out.reverse().join('>'); };
   const A = ['aria-pressed', 'aria-selected', 'aria-current', 'aria-expanded', 'data-state', 'data-open', 'data-alarm', 'data-active', 'data-on'];
-  const ids = [...document.querySelectorAll('[id]')].filter(vis).map((e) => e.id).sort();
-  const attrs = {}; document.querySelectorAll(A.map((a) => '[' + a + ']').join(',')).forEach((e) => { attrs[path(e)] = A.map((a) => e.getAttribute(a)).join('|'); });
+  const ids = [...document.querySelectorAll('[id]')].filter((e) => !inSvg(e) && vis(e)).map((e) => e.id).sort();
+  const attrs = {}; document.querySelectorAll(A.map((a) => '[' + a + ']').join(',')).forEach((e) => { if (!inSvg(e)) attrs[path(e)] = A.map((a) => e.getAttribute(a)).join('|'); });
   const a = document.activeElement, toast = ['toastMsg', 'toastErr'].map((i) => { const e = document.getElementById(i); return e ? e.textContent.trim() : ''; }).join('|');
-  const all = [...document.querySelectorAll('[id]')].map((e) => e.id);
+  const all = [...document.querySelectorAll('[id]')].filter((e) => !inSvg(e)).map((e) => e.id);
   return { ids, all, attrs, active: a && a !== document.body ? path(a) : '', hash: location.hash, toast, find: !!document.querySelector('#gm-find-q') && vis(document.querySelector('#gm-find-q')) };
 }
 /* an id the page made from the clock and a dice roll (hmwdbhyvbau3l, nmwdbi3uc013): a letter, then letters and at least one digit, 10 to 15 characters, or a letter and the clock's m... */
@@ -142,7 +146,9 @@ function pageDiff(a, b) {
   const out = [], sa = new Set(a.ids), sb = new Set(b.ids);
   for (const i of b.ids) if (!sa.has(i)) out.push('shown #' + i);
   for (const i of a.ids) if (!sb.has(i)) out.push('hidden #' + i);
-  const live = (k) => /^#as-state$/.test(k);        /* Blade's seat state (waiting, setting up) moves with the polls */
+  /* state the clock or a poll changes, not the key: Blade's seat state (waiting, setting up); the Now card (it leaves Now 1.5 s after the panel shows it,
+     app/gm/assist-panel.js NOW_MS); the Run view's people rows (presence arrives with the polls: kit-off masks the players chip for the same reason) */
+  const live = (k) => /^#as-state$/.test(k) || /^#as-now>/.test(k) || /(^|>)ul\.rv-ppl:/.test(k);
   for (const k of Object.keys(b.attrs).filter((x) => !live(x))) if (a.attrs[k] === undefined) out.push('new ' + k + ' ' + b.attrs[k]); else if (a.attrs[k] !== b.attrs[k]) out.push('state ' + k + ' ' + a.attrs[k] + ' -> ' + b.attrs[k]);
   for (const k of Object.keys(a.attrs).filter((x) => !live(x))) if (b.attrs[k] === undefined) out.push('gone ' + k);
   if (a.active !== b.active) out.push('focus ' + (a.active || 'none') + ' -> ' + (b.active || 'none'));
@@ -202,7 +208,7 @@ async function pass(port, kit) {
         await page.keyboard.press(h.key);
         await page.waitForTimeout(1100);
         const a = await page.evaluate(snapPage), sa = await server();
-        res.push({ hit: h, page: pageDiff(b, a), server: serverDiff(sb, sa), load: serverDiff(s0, sb),
+        res.push({ hit: h, page: pageDiff(b, a), server: serverDiff(sb, sa), load: serverDiff(s0, sb), before: b.ids,
           known: { ids: new Set(b.all.concat(a.all)), attrs: new Set(Object.keys(b.attrs).concat(Object.keys(a.attrs))) }, errors });
       } catch (e) {
         res.push({ hit: h, page: ['ERROR ' + String(e.message || e).split('\n')[0]], server: [], load: [], known: { ids: new Set(), attrs: new Set() }, errors: errors.concat(['setup failed']) });
@@ -243,6 +249,11 @@ if (off && on) {
       if (j.lost.length) console.log('    LOST (the kit-on page has no such element): ' + JSON.stringify(j.lost).slice(0, 500));
       if (j.offOnly.length) console.log('    only with the kit off: ' + JSON.stringify(j.offOnly).slice(0, 500));
       if (j.onOnly.length) console.log('    only with the kit on:  ' + JSON.stringify(j.onOnly).slice(0, 500));
+      if (process.env.KIT_KEYS_DEBUG === '1' && o.before && n.before) {        /* the context before the press: what was in view on one page only */
+        const bo = new Set(o.before), bn = new Set(n.before);
+        console.log('    in view before the press, kit off only: ' + o.before.filter((x) => !bn.has(x)).slice(0, 25).join(' '));
+        console.log('    in view before the press, kit on only:  ' + n.before.filter((x) => !bo.has(x)).slice(0, 25).join(' '));
+      }
     }
   });
   console.log('exemptions (KEYS_EXEMPT, each named with its reason):');
