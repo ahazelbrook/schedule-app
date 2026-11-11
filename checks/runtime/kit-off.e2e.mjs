@@ -15,7 +15,7 @@
 // The pages run at a fixed time of day (20:00), the harness's own clock: the prep note's 19:30 start and 22:40 curfew would otherwise change the band by the hour.
 // With no baseline folder it skips with a line saying so (exit 0). The scenarios are the same list the baseline ran, in the same order: a later bundle adds its own
 // to the END of scripts/demo-night-shots.mjs's list only, or the state every later scenario inherits would differ.
-//   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=9400] [KIT_BASELINE=<dir>] [KIT_OFF_ONLY=gm-,band-] node checks/runtime/kit-off.e2e.mjs
+//   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=9400] [KIT_BASELINE=<dir>] [KIT_OFF_ONLY=gm-,band-] [KIT_OFF_KEEP=<dir: keep this run's fingerprints to compare again without a run: node scripts/kit-baseline.mjs --compare <baseline> <dir>>] node checks/runtime/kit-off.e2e.mjs
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -60,7 +60,9 @@ if (!process.env.PW_MODULE) { console.log('SKIP kit-off: PW_MODULE is not set (t
 /* 2. the run: every scenario, the five settings written off */
 const meta = fs.existsSync(path.join(BASELINE, 'baseline-meta.json')) ? JSON.parse(fs.readFileSync(path.join(BASELINE, 'baseline-meta.json'), 'utf8')) : null;
 if (meta) console.log('baseline: commit ' + String(meta.commit).slice(0, 7) + ', taken ' + meta.capturedAt + '; both runs live at 20:00 (the harness clock, scripts/kit-fingerprint.mjs), so the time of day does not matter');
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'b68-kit-off-'));
+const KEEP = process.env.KIT_OFF_KEEP ? path.resolve(process.env.KIT_OFF_KEEP) : '';
+const dir = KEEP || fs.mkdtempSync(path.join(os.tmpdir(), 'b68-kit-off-'));
+if (KEEP) fs.mkdirSync(KEEP, { recursive: true });
 const t0 = Date.now();
 const run = await runShots(ROOT, PORT, dir, ['--fingerprint', '--kit', 'none'].concat(ONLY.length ? ['--only', ONLY.join(',')] : []));
 console.log('the demo night ran ' + Math.round((Date.now() - t0) / 1000) + ' s, exit ' + run.status);
@@ -89,7 +91,7 @@ for (const [screen, q] of Object.entries(r.requests)) {
   if (q.missing.length) console.log('  note: ' + q.missing.length + ' request(s) of the baseline were not made on ' + screen + ' this time (timing; not a failure): ' + q.missing.slice(0, 3).join(', '));
   check(q.extra.length === 0, 'requests on the ' + screen + ' screen: nothing the baseline did not make, bar kit-flag.js');
 }
-fs.rmSync(dir, { recursive: true, force: true });
+if (!KEEP) fs.rmSync(dir, { recursive: true, force: true });
 
 /* 4. on and off again without a reload */
 {
