@@ -254,14 +254,14 @@ try {
     await p.waitForSelector('#gm-left [data-who="open"]', { timeout: 20000 });
     if (kit) await p.waitForFunction(() => /desk/.test(document.documentElement.getAttribute('data-kit') || ''), null, { timeout: 10000 });
     await p.click('#gm-left [data-who="open"]'); await p.waitForSelector('#gm-who-sheet:not([hidden]) .who-row');
-    await sleep(300);
-    const s = await p.$eval('#gm-who-sheet .who-row', (r) => { const c = getComputedStyle(r), b = r.querySelector('.who-name b'); return { display: c.display, minH: c.minHeight, cols: c.gridTemplateColumns.split(' ').length, bfs: getComputedStyle(b).fontSize, kit: document.documentElement.getAttribute('data-kit') || '', layered: !!document.querySelector('style[data-href]') }; });
+    await sleep(400); await shot(p, (kit ? 'sheet-kitdesk' : 'sheet-whoalone') + '-paper-1366');
+    const s = await p.$eval('#gm-who-sheet .who-row', (r) => { const c = getComputedStyle(r), b = r.querySelector('.who-name b'); return { display: c.display, minH: c.minHeight, cols: c.gridTemplateColumns.split(' ').length, bfs: getComputedStyle(b).fontSize, tt: c.textTransform, chip: (() => { const w = document.getElementById('gm-bar-who'), x = document.getElementById('gm-bar-sess'); return !!w && !!x && getComputedStyle(w).color === getComputedStyle(x).color && w.getBoundingClientRect().width > 20; })(), lead: getComputedStyle(document.querySelector('#gm-left .who-lead > .btn')).borderTopWidth, kit: document.documentElement.getAttribute('data-kit') || '', layered: !!document.querySelector('style[data-href]') }; });
     await S.c.close();
     return s;
   };
   const alone = await look(false), withKit = await look(true);
-  check(alone.display === 'grid' && alone.minH === '52px' && alone.cols === 3 && alone.bfs === '15px' && !alone.layered, 'KS12.0: night.who alone (old sheets unlayered): the rows are laid out by desk-who.css: ' + JSON.stringify(alone));
-  check(withKit.display === 'grid' && withKit.minH === '52px' && withKit.cols === 3 && withKit.bfs === '15px' && /desk/.test(withKit.kit), 'and the same with kit.desk (old sheets layered): ' + JSON.stringify(withKit));
+  check(alone.display === 'grid' && alone.minH === '52px' && alone.cols === 3 && alone.bfs === '15px' && alone.tt === 'none' && alone.chip && alone.lead === '2px' && !alone.layered, 'KS12.0: night.who alone (old sheets unlayered): the rows are laid out by desk-who.css: ' + JSON.stringify(alone));
+  check(withKit.display === 'grid' && withKit.minH === '52px' && withKit.cols === 3 && withKit.bfs === '15px' && withKit.tt === 'none' && withKit.chip && /desk/.test(withKit.kit), 'and the same with kit.desk (old sheets layered): ' + JSON.stringify(withKit));
   await api('PATCH', '/gm/state', { features: { 'kit.desk': false } });
 
   /* ---- 10. the setting off: everyone, as before ---- */

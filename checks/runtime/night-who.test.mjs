@@ -234,7 +234,9 @@ test('summary: After\'s one line', () => {
 });
 test('a model and a summary never carry markup: names go in escaped by the sheet', () => {
   const src = fs.readFileSync(path.join(APP, 'gm', 'kit', 'who.js'), 'utf8');
-  assert.match(src, /esc\(r\.name\)/); assert.match(src, /esc\(sub\)/); assert.match(src, /n\.textContent !== t\) n\.textContent = t/);
+  /* KS12: the rows are B68Ui buttons (every label escaped by the kit) laid out with text nodes; After's line is text */
+  assert.match(src, /btn\(\{ label: \[r\.name, sub,/); assert.match(src, /part\('b', '', r\.name\)/); assert.match(src, /n\.textContent !== t\) n\.textContent = t/);
+  assert.doesNotMatch(src, /<button/, 'no hand-built button (the ratchet\'s kit debt is paid)');
 });
 
 // ---------- 4. the sheet on a fake page ----------
@@ -254,6 +256,7 @@ await atest('the sheet: rows from the characters, a tick toggled, Start with two
   const W = { document: { getElementById: (id) => (id === 'gm-page' ? page : null), createElement: fakeEl, activeElement: null, body: page },
     B68GmEsc: { register: (id, o) => { escs.push({ id, o }); return () => {}; } } };
   W.self = W; vm.createContext(W);
+  vm.runInContext(fs.readFileSync(path.join(APP, 'ui', 'ui.js'), 'utf8'), W, { filename: 'ui.js' });      /* the kit-ui bundle comes first (B68Ui) */
   vm.runInContext(fs.readFileSync(path.join(APP, 'gm', 'kit', 'who.js'), 'utf8'), W, { filename: 'who.js' });
   const t = tablePage(); const d = storedDoc();
   const calls = { start: [], log: [], go: [], restamp: [], toast: [] };
@@ -266,8 +269,8 @@ await atest('the sheet: rows from the characters, a tick toggled, Start with two
   const lead = fakeEl('div'), after = fakeEl('p'), left = fakeEl('div');
   left.querySelectorAll = (sel) => (sel === '[data-who-lead]' ? [lead] : sel === '[data-who-after]' ? [after] : []);
   ctl.paint(left);
-  assert.match(lead.innerHTML, /class="btn primary" data-who="open"[^>]*>Start the night<\/button>/);
-  assert.equal((lead.innerHTML.match(/primary/g) || []).length, 1, 'one Primary');
+  assert.match(lead.innerHTML, /<button type="button" class="ui-btn ui-btn--primary btn primary"[^>]*data-who="open"[^>]*>Start the night<\/button>/, 'a B68Ui Primary keeping the old classes');
+  assert.equal((lead.innerHTML.match(/ui-btn--primary/g) || []).length, 1, 'one Primary');
   assert.equal(after.textContent, Who.summary(d, CHARS));
   // the page's root opens it
   gmRoot.listeners.click({ target: { closest: (s) => (s === '[data-who="open"]' ? { getAttribute: () => 'open' } : null) }, preventDefault() {} });
@@ -364,8 +367,10 @@ await atest('KS12.0/12.1/12.7 on a fake page: Carry on session N, the warning, o
   sess.parentNode = bar; bar.insertBefore = (c, ref) => { bar.children.push(c); c.parentNode = bar; return c; };
   bar.removeChild = (c) => { bar.children = bar.children.filter((x) => x !== c); c.parentNode = null; };
   const els = { 'gm-page': page, 'gm-bar-sess': sess };
-  const W = { document: { getElementById: (id) => els[id] || bar.children.find((c) => c.id === id) || null, createElement: (t) => { const e = fakeEl(t); Object.defineProperty(e, 'textContent', { get() { return this._t || ''; }, set(v) { this._t = v; } }); return e; }, activeElement: null, body: page } };
+  const W = { document: { getElementById: (id) => els[id] || bar.children.find((c) => c.id === id) || null, createElement: (t) => { const e = fakeEl(t); Object.defineProperty(e, 'textContent', { get() { return this._t || ''; }, set(v) { this._t = v; } }); const sa = e.setAttribute; e.setAttribute = function (k, v) { sa.call(this, k, v); if (k === 'id') this.id = String(v); }; return e; },
+    createTextNode: (x) => ({ nodeType: 3, data: String(x) }), activeElement: null, body: page } };
   W.self = W; vm.createContext(W);
+  vm.runInContext(fs.readFileSync(path.join(APP, 'ui', 'ui.js'), 'utf8'), W, { filename: 'ui.js' });      /* the kit-ui bundle comes first (B68Ui) */
   vm.runInContext(fs.readFileSync(path.join(APP, 'gm', 'kit', 'who.js'), 'utf8'), W, { filename: 'who.js' });
   const t = tablePage(); let d = nightOf(['ch-nell', 'ch-ray']);
   const ctl = W.B68GmWho.create({ root: () => gmRoot, campaign: () => d, characters: () => CHARS, schedule: () => t.win.B68Schedule, pack: () => PACK.concat([{ name: 'Lotte Brand' }]), start: () => Promise.resolve(true) });

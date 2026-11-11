@@ -6,6 +6,14 @@
    or by .btn (#gm-page .btn's 44 px on a touch screen, #gm-page select / input[type=text]) set nothing these rely on. Both cases are checked in
    checks/runtime/night-roster.e2e.mjs (computed styles with the setting alone and with kit.desk). */
 
+/* the buttons are B68Ui's (ui-btn) with the old classes kept (btn primary, gm-x, gm-pill). With kit.desk the kit's look is theirs. With night.who
+   alone the kit's tokens are not defined (tokens.css is scoped to data-kit) while parts.css's .ui-btn still matches, so the old .btn look is
+   restored here for that case only (index.html's .btn, which .ui-btn would otherwise override with undefined values) */
+:root:not([data-kit~="desk"]) .who-lead > .btn, :root:not([data-kit~="desk"]) .who-go > .btn {
+  display: inline-flex; align-items: center; font: 900 16px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; padding: 10px 14px;
+  border: 2px solid var(--rule); border-radius: 0; box-shadow: 3px 3px 0 var(--shadow-ink); }
+:root:not([data-kit~="desk"]) .who-lead > .btn:active, :root:not([data-kit~="desk"]) .who-go > .btn:active { transform: translate(2px, 2px); box-shadow: none; }
+
 /* Before: the one Primary, at the top of the left column, with a line under it */
 .who-lead { display: grid; gap: 6px; padding: 2px 0 12px; margin-bottom: 4px; border-bottom: 2px solid var(--rule); }
 .who-lead > .btn { min-height: 52px; width: 100%; justify-content: center; font-size: 16px; }
@@ -19,20 +27,21 @@
 .who-hint { margin: 0; font: 500 13px/1.35 var(--font-text); color: var(--ink-soft); }
 .who-warn { margin: 0; padding: 8px 10px; border-left: 4px solid var(--rule); background: var(--inset); font: 500 13px/1.35 var(--font-text); color: var(--ink); }
 .who-rows { display: grid; gap: 6px; }
-.who-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 6px 12px;
-  border: 1.5px solid var(--hair); background: var(--card); color: var(--ink); text-align: left; cursor: pointer; font: inherit; }
-.who-row:hover { border-color: var(--rule); }
-.who-row:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+.who-rows > .who-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 6px 12px;
+  border: 1.5px solid var(--hair); border-radius: 0; background: var(--card); color: var(--ink); text-align: left; cursor: pointer; font: inherit;
+  text-transform: none; letter-spacing: normal; white-space: normal; box-shadow: none; transform: none; }
+.who-rows > .who-row:hover, .who-rows > .who-row:active { background: var(--card); color: var(--ink); border-color: var(--rule); }
+.who-rows > .who-row:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
 .who-tick { width: 22px; height: 22px; border: 2px solid var(--rule); box-sizing: border-box; display: grid; place-items: center; }
-.who-row[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 4px 0 0 var(--accent); }
-.who-row[aria-pressed="true"] .who-tick { background: var(--accent); border-color: var(--accent); }
-.who-row[aria-pressed="true"] .who-tick::after { content: "✓"; color: var(--on-accent); font: 900 14px/1 var(--font-text); }
+.who-rows > .who-row[aria-pressed="true"] { background: var(--card); color: var(--ink); border-color: var(--accent); box-shadow: inset 4px 0 0 var(--accent); }
+.who-rows > .who-row[aria-pressed="true"] .who-tick { background: var(--accent); border-color: var(--accent); }
+.who-rows > .who-row[aria-pressed="true"] .who-tick::after { content: "✓"; color: var(--on-accent); font: 900 14px/1 var(--font-text); }
 .who-name { display: grid; gap: 2px; min-width: 0; }
 .who-name b { font: 700 15px/1.2 var(--font-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .who-name small { font: 500 12px/1.2 var(--font-text); color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .who-state { font: 900 12px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); }
-.who-row[aria-pressed="true"] .who-state { color: var(--ink); }
-.who-row[aria-pressed="false"] .who-name b { color: var(--ink-soft); }
+.who-rows > .who-row[aria-pressed="true"] .who-state { color: var(--ink); }
+.who-rows > .who-row[aria-pressed="false"] .who-name b { color: var(--ink-soft); }
 
 .who-num { display: grid; grid-template-columns: auto 96px; align-items: center; gap: 6px 10px; padding-top: 10px; border-top: 1px solid var(--hair); }
 .who-num-l { font: 900 12px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; }
@@ -44,7 +53,9 @@
 .who-count { flex: none; font: 700 14px/1 var(--font-text); color: var(--ink-soft); }
 
 /* KS12.7: the band's chip, "2 playing" (made here only when the band has no #gm-bar-who of its own) */
-.who-chip { white-space: nowrap; }
+.gm-pill.who-chip { display: inline-flex; align-items: center; min-height: 32px; padding: 4px 9px; border: 1.5px solid currentColor; border-radius: 0; background: none;
+  color: inherit; font: 700 11px/1.2 var(--font-mono); white-space: nowrap; text-transform: none; letter-spacing: normal; box-shadow: none; transform: none; }
+.gm-pill.who-chip:hover, .gm-pill.who-chip:active { background: none; color: inherit; border-color: currentColor; text-decoration: underline; }
 
 /* KS12.4: the players who are not here, folded under a told list's own buttons */
 .who-away { display: inline-block; margin: 0; }

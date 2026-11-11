@@ -3,13 +3,11 @@
  "totals": {
   "style": 3680,
   "important": 69,
-  "button": 626,
+  "button": 623,
   "confirm": 58,
   "prompt": 12
  },
- "kitDebt": [
-  "app/gm/kit/who.js"
- ],
+ "kitDebt": [],
  "files": {
   "app/ambient/boneyard-dawn.html": {
    "style": 257
@@ -139,9 +137,6 @@
   },
   "app/gm/hardstart.js": {
    "button": 6
-  },
-  "app/gm/kit/who.js": {
-   "button": 3
   },
   "app/gm/knowledge.js": {
    "button": 1
