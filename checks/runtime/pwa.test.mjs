@@ -331,9 +331,10 @@ function layerDoc(links) {
   const doc = { head, inline, zoom, createElement: mk, documentElement: { getAttribute: () => null },
     querySelectorAll: (sel) => sel === 'link[rel="stylesheet"]' ? head.children.filter(isLink)
       : sel === 'link[rel="stylesheet"], style[data-href]' ? head.children.filter((e) => isLink(e) || isImport(e))
-      : sel === 'head > style:not([id]):not([data-href]):not([data-layered])' ? head.children.filter((e) => e.tagName === 'STYLE' && !e.hasAttribute('id') && !e.hasAttribute('data-href') && !e.hasAttribute('data-layered')) : [] };
+      : sel === 'head > style' ? head.children.filter((e) => e.tagName === 'STYLE') : [] };
   doc.order = () => head.children.map((e) => (isImport(e) ? '@' + e.getAttribute('data-href') : e.tagName === 'STYLE' ? (e.hasAttribute('id') ? '#' + e.getAttribute('id') : '<style>') : String(e.href || e.src)));
-  doc.settle = () => { for (const e of head.children.slice()) if (e.onload && !e.settled) { e.settled = true; e.onload(); } };
+  /* settle: fire load (or error, for the names in `fail`) on every element that has not answered, or only on those `only` picks */
+  doc.settle = (fail = [], only = () => true) => { for (const e of head.children.slice()) if (e.onload && !e.settled && only(e)) { e.settled = true; const n = doc.order()[head.children.indexOf(e)]; (fail.includes(n) ? e.onerror : e.onload)(); } };
   return doc;
 }
 await test('layers (KS01.5, A1): layerOld() turns each old <link> into <style data-href>@import url() layer(old) in its place (the link goes once its import loads), then wraps the inline block once; styles built in JS stay as they are; it runs once', async () => {
@@ -369,6 +370,47 @@ await test('layers (KS01.5, A1): a layered page brings every old sheet as an imp
   const off = layerDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']), L3 = routes(ROUTES, off).B68Load;
   L3.need('gm'); L3.need('kit-desk');
   ok(!off.head.children.some((e) => e.hasAttribute && e.hasAttribute('data-href')) && !off.inline.hasAttribute('data-layered'), 'never layered: every sheet is a <link>, the inline block untouched (off is today)');
+});
+await test('layers (KS01.5b, note C): the links whose imports loaded go, and the inline block is wrapped, in ONE step once every import has answered; until then links and block stand as before', async () => {
+  const doc = layerDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']);
+  const L = routes(ROUTES, doc).B68Load, p = L.layerOld();
+  doc.settle([], (e) => e.getAttribute('data-href') !== 'cast.css');      /* three of four imports have loaded */
+  await sleep(5);
+  eq(doc.order(), ['@tracker.css', 'tracker.css', '@schedule.css', 'schedule.css', '@rules.css', 'rules.css', '@cast.css', 'cast.css', '<style>', '#zoomCss'], 'no link removed while an import is still out');
+  eq(doc.inline.hasAttribute('data-layered'), false, 'and the block not yet wrapped (it would lose to the links still unlayered)');
+  doc.settle(); eq(await p, 4);
+  eq(doc.order(), ['@tracker.css', '@schedule.css', '@rules.css', '@cast.css', '<style>', '#zoomCss'], 'all four links gone together');
+  ok(doc.inline.hasAttribute('data-layered'), 'with the block wrapped in the same step');
+});
+await test('layers (KS01.5b, note A): a link still loading when layerOld() runs is answered by its import, so need() resolves (it used to hang when the link was removed before its load event); its own late events are ignored', async () => {
+  const doc = layerDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']);
+  const L = routes(ROUTES, doc).B68Load;
+  let got = null, err = null; L.need('gm').then(() => { got = 'gm'; }, (e) => { err = e.message; });
+  const link = doc.head.children.find((e) => e.tagName === 'LINK' && e.href === 'gm.css');
+  ok(link && typeof link.onload === 'function', 'gm.css is a <link>, still loading');
+  const p = L.layerOld();
+  ok(link.onload === null && link.onerror === null, 'the loading link is handed to its import');
+  doc.settle([], (e) => e !== link); await p; await sleep(5);      /* every import and script answers; the gm.css link never does */
+  eq([got, err], ['gm', null], 'need(gm) resolved from the gm.css import');
+  ok(L.done('gm') && !doc.head.children.includes(link), 'gm is done and the old link is gone');
+  ok(doc.head.children.some((e) => e.getAttribute('data-href') === 'gm.css'), 'gm.css is in, layered');
+  const d2 = layerDoc(['tracker.css']), L2 = routes(ROUTES, d2).B68Load;
+  let e2 = null; L2.need('table').catch((e) => { e2 = e.message; });
+  const p2 = L2.layerOld(); d2.settle(['@campaign.css']); await p2; await sleep(5);
+  eq(e2, 'could not load campaign.css', 'an import that fails for a loading link fails that file (the next need() tries again)');
+  ok(!d2.head.children.some((e) => e.href === 'campaign.css' || e.getAttribute('data-href') === 'campaign.css'), 'and leaves neither tag behind');
+});
+await test('layers (KS01.5b, note B): only index.html\'s own block is wrapped; a style a script builds later without an id (sheet/quiet.js) stays unlayered; a static link whose import fails stays a link', async () => {
+  const doc = layerDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']);
+  const L = routes(ROUTES, doc).B68Load;
+  const quiet = doc.createElement('style'); quiet.textContent = '.ds-live .ds-head{user-select:none}'; doc.head.appendChild(quiet);     /* built after routes.js ran */
+  const p = L.layerOld(); doc.settle(['@rules.css']); eq(await p, 3, 'three links swapped; the one whose import failed is kept');
+  eq(quiet.textContent, '.ds-live .ds-head{user-select:none}', 'the script-built style is not wrapped');
+  ok(!quiet.hasAttribute('data-layered') && doc.inline.hasAttribute('data-layered'), 'only the inline block is');
+  ok(doc.head.children.some((e) => e.tagName === 'LINK' && e.href === 'rules.css') && !doc.head.children.some((e) => e.getAttribute('data-href') === 'rules.css'), 'rules.css: its failed import is removed and the link stays');
+  const two = layerDoc(['tracker.css']); two.head.appendChild(two.createElement('style'));      /* two id-less styles when routes.js runs: not sure which is the block */
+  const L2 = routes(ROUTES, two).B68Load, p2 = L2.layerOld(); two.settle(); await p2;
+  ok(!two.inline.hasAttribute('data-layered'), 'not exactly one candidate: nothing is wrapped');
 });
 
 /* the files that only the GM's laptop and the table iPad load: in the gm or display bundle and not in core or table */
