@@ -2847,9 +2847,11 @@
       },
       sheetOpen: function (id) { return S === me ? sheetOpen(id) : false; },
       exportTonight: function () { if (S === me) exportTonight(); },
-      endNight: function () { var h = S === me ? missionHooks() : null; return h ? h.endNight() : Promise.resolve(null); },
+      endNight: function () { var h = S === me ? missionHooks() : null; return h ? h.endNight().then(function (r) { if (r && r.ok && S === me && who()) who().end(); return r; }) : Promise.resolve(null); },      /* KS11: night.who's End also ends the session */
       recording: function () { return S === me && /REC/.test(b29Suffix()); },
       stopRecording: function () { if (S === me && b29()) b29().click('batch'); },
+      whoOn: function () { return S === me && !!who(); },      /* KS11 (night.who): Before's Start the night and After's line; nothing while the setting is off */
+      whoPaint: function (el) { var w = S === me ? who() : null; if (w) w.paint(el); },
       toast: function (m, bad) { toast(m, bad); }
     };
   }
@@ -2857,6 +2859,25 @@
     var PL = W.B68GmPlaces; if (!PL || !S) return;
     if (!S.places) S.places = PL.create(placesHost());
     S.places.mount();
+  }
+  /* ---------- KS11 (night.who): Start the night, gm/kit/who.js in the night-who bundle, fetched and made only while the setting is on ---------- */
+  function whoOn() { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, 'night.who')); }
+  function who() {
+    if (!whoOn()) { if (S && S.who) { S.who.destroy(); S.who = null; } return null; }
+    if (!W.B68GmWho) { if (!S.whoAsked && W.B68Load && W.B68Load.need) { S.whoAsked = true; var me = S; W.B68Load.need('night-who').then(function () { if (S === me) placesSync(); }, function () { if (S === me) S.whoAsked = false; }); } return null; }
+    return S.who || (S.who = W.B68GmWho.create(whoHost()));
+  }
+  function whoHost() {
+    var me = S;
+    return {
+      root: function () { return S === me ? $q('#gm-root') : null; }, campaign: function () { return S === me ? camp : null; }, prep: function () { return prepNoteSession(); },
+      characters: function () { return S === me ? dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), owner: str(c.owner) }; }) : []; },
+      names: function (ids) { return S === me && S.api && S.api.profiles ? S.api.profiles(ids) : Promise.resolve({}); }, schedule: function () { return W.B68Schedule || null; },
+      start: function (o) { return S === me && S.api && S.api.startSession ? S.api.startSession(o) : Promise.reject(new Error('The table is not available here.')); },
+      finish: function () { return S === me && S.api && S.api.endSession ? S.api.endSession() : Promise.resolve(false); },
+      log: function (t) { if (S === me && me.night) me.night.stamp(t); }, go: function (p) { if (S === me) goPlace(p, { navigateOnly: true }); }, toast: function (m, bad) { toast(m, bad); },
+      restamp: function (n) { var d = STT.doc; if (S === me && d && d.want === 'on' && d.session !== String(n)) sttPatch({ session: String(n) }); }      /* listening already on: its lines follow the new number */
+    };
   }
   /* a tool in its right-edge sheet: the registry's open() (gm/tool-registry.js) of a tool no place has bound inline. The places fall back to it
      where they cannot draw a tool inline */
@@ -6195,6 +6216,7 @@
     runFoldMoves();         /* a phone's move request rides on the characters */
     keyturnSync();          /* a turned key (suite 1.8, switch spine.keyturn) */
     pcStatusSync();         /* the band's PC faces (suite 3.7, switch face.pcstatus) */
+    if (S.who) S.who.paint(S.root);      /* KS11 (night.who): the Start sheet's rows and After's count follow the filed characters */
     if (JSON.stringify(dtPcs()) === S.dtPcSig) return;
     runStale();
     if (S.mission) S.mission.changed();         /* a card carries its PC's name and owner */
@@ -7781,6 +7803,7 @@
     camp = isObj(doc) ? doc : null;
     if (S && S.status === 'ready') {
       renderRail(); renderBar(); scMaybeRedraw(); runStale();
+      if (S.who) S.who.paint(S.root);      /* KS11 (night.who): Before's lead and After's line follow the session */
       apClocksFeed(); apSubjects();
       if (S.mission) S.mission.noteClocks();      /* the alarm clock's fill or visibility is on the players' band */
       { var stc = setInst(); if (stc) stc.heal(); }      /* W0.2 / N0: the campaign document's copy of the settings follows the GM state's, on every arrival */

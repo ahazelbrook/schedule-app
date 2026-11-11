@@ -712,6 +712,12 @@
         if (!campRef || typeof campRef.update !== 'function') return Promise.reject(new Error('The table is not available here.'));
         return Promise.resolve().then(function () { return campRef.update({ mission: mission === null ? null : clone(mission) }); }).then(function () { return true; });
       },
+      /* KS11 (Start the night, gm/kit/who.js): the table's Start session and End session, from the GM page. startSession({ number, present: [character id], attendance? })
+         writes what the table's Start writes (the session, next's answers as its attendance, the log line) plus session.present; the open session's own number
+         carries it on. endSession() is the table's End. Only gm/kit/who.js calls them, and it is loaded only while its setting is on */
+      startSession: function (o) { var Wh = window.B68GmWho; if (!Wh || !campRef || !campLoaded) return Promise.reject(new Error('The table has not loaded yet: try again in a moment.')); return campaignSave(Wh.startPatch(clone(tableLatest || {}), o, { iso: nowIso(), ms: Date.now(), me: A.me || null, Sm: schedMod() })); },
+      endSession: function () { var Wh = window.B68GmWho, p = Wh && campRef && campLoaded ? Wh.endPatch(clone(tableLatest || {}), { iso: nowIso(), me: A.me || null }) : null; return p ? campaignSave(p) : Promise.resolve(false); },
+      profiles: function (ids) { return profiles(ids); },      /* the players' names for the Start sheet's rows: { id: name } */
       /* W0.2: the display and phone switches, copied into the campaign document's `features` (GM only; the server cleans the map again) */
       publishFeatures: function (features) {
         if (!campRef || typeof campRef.update !== 'function') return Promise.reject(new Error('The table is not available here.'));
