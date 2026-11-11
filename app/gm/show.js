@@ -49,7 +49,7 @@
   var LAYERS = {
     'band.phase': function (v) { return ['pb', 'plan', 'score', 'after'].indexOf(v) >= 0; },
     'band.security': function (v) { return whole(v, 0, 4); },
-    'band.faces': function (v) { return Array.isArray(v) && v.length >= 1 && v.length <= 3 && v.every(function (f) { return isObj(f) && ((typeof f.npcId === 'string' && ID.test(f.npcId)) || (typeof f.pcId === 'string' && ID.test(f.pcId) && pcFaceOk(f))); }); },
+    'band.faces': function (v) { return Array.isArray(v) && v.length >= 1 && v.length <= 3 && v.every(function (f) { return isObj(f) && ((typeof f.npcId === 'string' && ID.test(f.npcId)) || (typeof f.pcId === 'string' && ID.test(f.pcId) && pcFaceOk(f))); }) && v.filter(function (f) { return f.acting === true; }).length <= 1; },
     'band.onair': function (v) { return v === true; },
     'scene.filter': function (v) { return v === 'flashback'; },
     'scene.layout': function (v) { return v === 'montage'; },
@@ -59,11 +59,12 @@
     'data.previously': function (v) { return idList(v, 12); },
     'data.montage': function (v) { return isObj(v) && Object.keys(v).length === 1 && Array.isArray(v.panels) && v.panels.length >= 2 && v.panels.length <= 4 && v.panels.every(montagePanelOk); }      /* suite 2.8 (functions/_lib/show-montage.js) */
   };
-  /* a PC face's optional status (suite 3.7): name (40), stress 0-9, harm as up to four levels 1-4, locks 0-6 */
+  /* a PC face's optional status (suite 3.7): name (40), stress 0-9, harm as up to four levels 1-4, locks 0-6; acting (KS14.2) a boolean */
   function pcFaceOk(f) {
     return (f.name === undefined || (typeof f.name === 'string' && f.name.trim().length > 0 && f.name.replace(/\s+/g, ' ').trim().length <= 40)) &&
       (f.stress === undefined || whole(f.stress, 0, 9)) && (f.locks === undefined || whole(f.locks, 0, 6)) &&
-      (f.harm === undefined || (Array.isArray(f.harm) && f.harm.length <= 4 && f.harm.every(function (h) { return whole(h, 1, 4); })));
+      (f.harm === undefined || (Array.isArray(f.harm) && f.harm.length <= 4 && f.harm.every(function (h) { return whole(h, 1, 4); }))) &&
+      (f.acting === undefined || f.acting === null || typeof f.acting === 'boolean');      /* KS14.2: true on at most one face (the list check) */
   }
   /* a montage panel: a pcId, and optionally name (40), room (60), line (100) as text and done as a boolean */
   function montagePanelOk(p) {

@@ -183,6 +183,24 @@ await test('secrecy at write for layers: faces, credits and previously keep reve
   assert.equal((await patch(db, { layer: { path: 'band.faces', value: [{ npcId: 'n-hid' }] } })).status, 400);
 });
 
+await test('KS14.2 the acting mark: acting: true on one PC face is kept and served; false or absent leaves the key off; any other value, two marks, or a mark on an NPC face never rides', async () => {
+  const db = await withCast();
+  const nell = { pcId: 'pc-nell', name: 'Nell Arbuthnot', stress: 4 }, ray = { pcId: 'pc-ray', name: 'Ray Okonjo', stress: 2 };
+  assert.deepEqual(cleanLayerOp({ path: 'band.faces', value: [nell, ray] }).value, [nell, ray], 'no mark: exactly as before (no key added)');
+  assert.deepEqual(cleanLayerOp({ path: 'band.faces', value: [nell, { ...ray, acting: false }] }).value, [nell, ray], 'false is no mark');
+  let r = await patch(db, { layer: { path: 'band.faces', value: [nell, { ...ray, acting: true, stray: 'GM-ONLY-STRAY' }, { npcId: 'n-dov', acting: true }] } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.doc.layers.band.faces, [nell, { ...ray, acting: true }, { npcId: 'n-dov' }], 'kept on the PC face, rebuilt from named keys; an NPC face is rebuilt as { npcId } alone');
+  const served = (await getDisplay(db, POLL)).body;
+  assert.deepEqual(served.layers.band.faces.map((f) => f.acting === true), [false, true, false], 'the display GET serves the one mark');
+  assert.ok(!JSON.stringify(served).includes('GM-ONLY'));
+  for (const v of ['yes', 1, 'pc-ray', {}]) assert.equal((await patch(db, { layer: { path: 'band.faces', value: [nell, { ...ray, acting: v }] } })).status, 400, 'acting ' + JSON.stringify(v));
+  assert.equal((await patch(db, { layer: { path: 'band.faces', value: [{ ...nell, acting: true }, { ...ray, acting: true }] } })).status, 400, 'two marks');
+  assert.equal((await patch(db, { layer: { path: 'band.faces', value: [{ npcId: 'n-hid', acting: true }, { ...ray, acting: true }] } })).status, 200, 'a hidden NPC face is dropped; the mark stays on the PC');
+  const g = (await getDisplay(db, POLL)).body;
+  assert.deepEqual(g.layers.band.faces, [{ ...ray, acting: true }]); assert.ok(!JSON.stringify(g).includes('n-hid'));
+});
+
 await test('secrecy at read: served from the NPC rows as they are NOW; hiding an NPC after the write drops it from the overlay and every layer; nothing else of the row is served', async () => {
   const db = await withCast();
   await patch(db, OV('rolodex', { npcIds: ['n-mabel', 'n-dov'] }));
