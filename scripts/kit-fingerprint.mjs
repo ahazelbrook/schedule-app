@@ -19,7 +19,10 @@ export const STYLE_KEYS = ['display', 'position', 'width', 'height', 'margin', '
 export const MASKS = ['#toastMsg', '#toastErr', '.gm-toast', '[data-kit-mask]'];
 /* masks applied when two fingerprints are compared (a pattern on the element's key): what a first look at two baselines showed the clock or chance decides.
    Kept beside MASKS so a new one needs no new capture. Each is listed in kit-off's output. */
-export const MASK_KEYS = ['#gm-ipad-now', 'gm-tn-line'];      /* the iPad's live line (what the iPad has been told, as the poll lands) and Tonight's lines (they count minutes to the real clock) */
+/* Row 2 of the band is live text (the clock, what the iPad shows, the cue, the quiet list): what a poll has told it moves everything after it sideways. Inside it, left and
+   width are not compared (height, top, classes, ids, styles are). Each entry: a key pattern and the axes let go. */
+export const LOOSE_AXES = [{ keys: 'gm-band-r2', axes: ['x', 'w'], why: 'band row 2 is live text; a poll moves the cells after it sideways' }];
+export const MASK_KEYS = ['#gm-ipad-now', 'gm-tn-line', '#gm-bar-tray', 'gm-band-quiet'];      /* the iPad's live line (what the iPad has been told, as the poll lands) and Tonight's lines (they count minutes to the real clock) */
 
 /* THE EXEMPTIONS: where "off means today" is deliberately not true, each one named, each with its reason, each printed by kit-off. Adding one is one line here.
    An exemption finds its elements one of three ways: `selector` (a CSS selector, matched in the page at capture time: the element and everything inside it), `text` (a
@@ -97,6 +100,7 @@ export function compare(base, cur, opts = {}) {
   const keyMasked = (k) => mk.some((re) => re.test(k));
   const exs = (opts.exemptions || EXEMPTIONS), xk = exs.map((e) => (e.keys ? new RegExp(e.keys) : null));
   /* an element's flags: those captured, 'm' if a mask pattern matches its key, and an exemption whose `keys` pattern matches its key */
+  const loose = (opts.looseAxes || LOOSE_AXES).map((l) => ({ re: new RegExp(l.keys), axes: l.axes }));
   const fl = (e) => { let f = (e[9] || '') + (mk.some((re) => re.test(e[0])) ? 'm' : ''); if (!/x/.test(f)) { const i = xk.findIndex((re) => re && re.test(e[0])); if (i >= 0) f += 'x' + String.fromCharCode(97 + i); } return f; };
   const nameOf = (e) => { const m = /x([a-z])/.exec(fl(e)); const x = m ? exs[m[1].charCodeAt(0) - 97] : null; return x ? x.name : 'an exemption'; };
   let pushed = 0, firstY = Infinity, lastY = -Infinity;
@@ -118,6 +122,7 @@ export function compare(base, cur, opts = {}) {
     const off = box.filter((q) => {
       const d = q.c - q.b;
       if (Math.abs(d) <= tol) return false;
+      if (loose.some((l) => l.re.test(k) && l.axes.includes(q.n))) return false;
       if (pushed && q.n === 'y' && below && d >= -tol && d <= pushed + tol) return false;           /* pushed down by the new rows */
       if (pushed && q.n === 'h' && d >= -tol && d <= pushed + tol) return false;                      /* an ancestor of the new rows grew with them */
       return true;
