@@ -19,7 +19,7 @@ export const STYLE_KEYS = ['display', 'position', 'width', 'height', 'margin', '
 export const MASKS = ['#toastMsg', '#toastErr', '.gm-toast', '[data-kit-mask]'];
 /* masks applied when two fingerprints are compared (a pattern on the element's key): what a first look at two baselines showed the clock or chance decides.
    Kept beside MASKS so a new one needs no new capture. Each is listed in kit-off's output. */
-export const MASK_KEYS = [];
+export const MASK_KEYS = ['#gm-ipad-now', 'gm-tn-line'];      /* the iPad's live line (what the iPad has been told, as the poll lands) and Tonight's lines (they count minutes to the real clock) */
 
 /* the exemptions of KS04.2 and only these: the five new Settings rows, the Settings intro line (KS01.1 reworded it), and the Preflight count of the
    bundles (kit-flag.js made 107 into 108). A leaf whose own text reads "N of M kept" is the last; it is matched by text in the page. */
@@ -85,6 +85,7 @@ export function compare(base, cur, opts = {}) {
   const diffs = [], exempted = [];
   const B = new Map(base.els.map((e) => [e[0], e])), C = new Map(cur.els.map((e) => [e[0], e]));
   const mk = (opts.maskKeys || MASK_KEYS).map((x) => new RegExp(x));
+  const keyMasked = (k) => mk.some((re) => re.test(k));
   const fl = (e) => (e[9] || '') + (mk.some((re) => re.test(e[0])) ? 'm' : '');
   let pushed = 0, firstY = Infinity;
   for (const [k, e] of C) if (!B.has(k) && fl(e).includes('x')) {
@@ -93,11 +94,11 @@ export function compare(base, cur, opts = {}) {
     if (!C.has(parent) || !fl(C.get(parent)).includes('x')) { pushed += e[7]; firstY = Math.min(firstY, e[5]); }
   }
   for (const [k, b] of B) {
-    if (!C.has(k)) { if (!fl(b).includes('x')) diffs.push({ kind: 'missing', key: k, detail: 'in the baseline, not in this run' }); else exempted.push('gone, exempt: ' + k.split('/').slice(-2).join('/')); }
+    if (!C.has(k)) { if (keyMasked(k)) continue; if (!fl(b).includes('x')) diffs.push({ kind: 'missing', key: k, detail: 'in the baseline, not in this run' }); else exempted.push('gone, exempt: ' + k.split('/').slice(-2).join('/')); }
   }
   for (const [k, c] of C) {
     const b = B.get(k);
-    if (!b) { if (!fl(c).includes('x')) diffs.push({ kind: 'extra', key: k, detail: 'in this run, not in the baseline (' + c[1] + (c[2] ? '#' + c[2] : '') + (c[3] ? '.' + c[3].replace(/ /g, '.') : '') + ')' }); continue; }
+    if (!b) { if (keyMasked(k)) continue; if (!fl(c).includes('x')) diffs.push({ kind: 'extra', key: k, detail: 'in this run, not in the baseline (' + c[1] + (c[2] ? '#' + c[2] : '') + (c[3] ? '.' + c[3].replace(/ /g, '.') : '') + ')' }); continue; }
     if (fl(b).includes('m') || fl(c).includes('m') || fl(b).includes('x') || fl(c).includes('x')) continue;
     const below = b[5] >= firstY - tol;
     const box = ['x', 'y', 'w', 'h'].map((n, i) => ({ n, b: b[4 + i], c: c[4 + i] }));
@@ -110,8 +111,9 @@ export function compare(base, cur, opts = {}) {
     });
     if (off.length) diffs.push({ kind: 'box', key: k, detail: off.map((q) => q.n + ' ' + q.b + ' -> ' + q.c).join(', ') });
     const sb = base.styles[b[8]], sc = cur.styles[c[8]];
+    const NOT_EXACT = new Set(['width', 'height']);        /* computed width and height are the box, which is held to tol above (a sub-pixel of text is not a difference) */
     if (b[8] !== undefined && sb.join('\u0001') !== sc.join('\u0001')) {
-      const ch = []; base.styleKeys.forEach((p, i) => { if (sb[i] !== sc[i]) ch.push(p + ' ' + JSON.stringify(sb[i]) + ' -> ' + JSON.stringify(sc[i])); });
+      const ch = []; base.styleKeys.forEach((p, i) => { if (sb[i] !== sc[i] && !NOT_EXACT.has(p)) ch.push(p + ' ' + JSON.stringify(sb[i]) + ' -> ' + JSON.stringify(sc[i])); });
       if (ch.length && !(pushed && ch.every((s) => /^(width|height) /.test(s) && off.length === 0))) diffs.push({ kind: 'style', key: k, detail: ch.slice(0, 4).join('; ') });
     }
   }
@@ -144,6 +146,8 @@ export function kitIds(list) {
   return [...new Set(out)];
 }
 /* ---------- running the demo night from a check ---------- */
+/* the environment a child gets: the Anthropic keys taken out (no API call may happen from the harness; demo-night takes them out of the Worker's too) */
+export function noKey() { const e = { ...process.env, CI: '1' }; delete e.B68_ANTHROPIC_KEY; delete e.ANTHROPIC_API_KEY; return e; }
 /* Boots the demo night on port (a temp state folder, removed by stop()) and resolves once it says it is up: { stop, out(), base, state }. extra: more demo-night flags
    (--kit desk,stage ...). The Worker has the Anthropic keys taken out of its environment by demo-night itself. */
 export async function startDemo(root, port, extra = []) {
@@ -152,7 +156,7 @@ export async function startDemo(root, port, extra = []) {
   const base = 'http://127.0.0.1:' + port;
   if (await fetch(base + '/api/me', { signal: AbortSignal.timeout(1500) }).then(() => true, () => false)) throw new Error('port ' + port + ' is already in use');
   const state = fs.mkdtempSync(path.join(os.tmpdir(), 'b68-kit-'));
-  const child = spawn(process.execPath, [path.join(root, 'scripts', 'demo-night.mjs'), '--port', String(port), '--state', state, ...extra], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CI: '1' } });
+  const child = spawn(process.execPath, [path.join(root, 'scripts', 'demo-night.mjs'), '--port', String(port), '--state', state, ...extra], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: noKey() });
   let log = '';
   child.stdout.on('data', (d) => { log += d; }); child.stderr.on('data', (d) => { log += d; });
   const stop = async () => {
@@ -166,7 +170,7 @@ export async function startDemo(root, port, extra = []) {
 /* The same, for a run that takes its own pictures and exits: scripts/demo-night.mjs --shots dir ...; resolves { status, out } when it ends (or at timeoutMs, killed). */
 export async function runShots(root, port, dir, extra = [], timeoutMs = 1500000) {
   const { spawn, spawnSync } = await import('node:child_process'), path = await import('node:path');
-  const child = spawn(process.execPath, [path.join(root, 'scripts', 'demo-night.mjs'), '--port', String(port), '--shots', dir, ...extra], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, CI: '1' } });
+  const child = spawn(process.execPath, [path.join(root, 'scripts', 'demo-night.mjs'), '--port', String(port), '--shots', dir, ...extra], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: noKey() });
   let out = ''; child.stdout.on('data', (d) => { out += d; }); child.stderr.on('data', (d) => { out += d; });
   const kill = () => { if (child.pid) { if (process.platform === 'win32') spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore' }); else { try { process.kill(-child.pid, 'SIGKILL'); } catch (e) { /* gone */ } } } };
   const timer = setTimeout(kill, timeoutMs);
