@@ -548,7 +548,10 @@
     pending = null;
     if (tipEl && tipEl.parentNode) tipEl.parentNode.removeChild(tipEl);
     if (tipFor && held) {
-      if (held.title !== null) { tipFor.setAttribute('title', held.title); tipFor.removeAttribute('data-ui-tip'); }
+      if (held.title !== null) {   /* the title goes back, unless the page wrote a new one while the tip showed */
+        if (!tipFor.hasAttribute('title')) tipFor.setAttribute('title', held.title);
+        tipFor.removeAttribute('data-ui-tip');
+      }
       if (held.describedby !== null) tipFor.setAttribute('aria-describedby', held.describedby); else tipFor.removeAttribute('aria-describedby');
     }
     tipFor = null; held = null;

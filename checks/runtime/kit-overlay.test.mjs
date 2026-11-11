@@ -1,9 +1,9 @@
 // kit-overlay: the kit's overlays (the kit and stage build, KS03): app/ui/overlay.js and overlay.css. No network, no production.
 //   node checks/runtime/kit-overlay.test.mjs                                  the file checks and the logic (no browser)
-//   PW_MODULE=<playwright install> PW_CHANNEL=msedge [KIT_OVERLAY_PORT=10100] node checks/runtime/kit-overlay.test.mjs
+//   KIT_OVERLAY_BROWSER=1 PW_MODULE=<playwright install> PW_CHANNEL=msedge [KIT_OVERLAY_PORT=10100] node checks/runtime/kit-overlay.test.mjs
 //                                                                             the same, then the real dialog, popover, toast stack and tooltip in a
 //                                                                             browser against a static page (a tiny server on KIT_OVERLAY_PORT, 10100 to 10149)
-// No browser suite is registered for KS03, so the browser part lives here. Without PW_MODULE it is skipped and says so.
+// No browser suite is registered for KS03, so the browser part lives here. It runs only with KIT_OVERLAY_BROWSER=1 (an exported PW_MODULE alone does not start a browser inside check:runtime), and says so when skipped.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -170,9 +170,9 @@ await test('toasts: dismissErrors takes every error down at once and leaves the 
 });
 
 /* ---------- the browser part ---------- */
-const PW = process.env.PW_MODULE;
+const PW = process.env.KIT_OVERLAY_BROWSER === '1' && process.env.PW_MODULE;
 if (!PW) {
-  console.log('SKIP the browser part: set PW_MODULE (and PW_CHANNEL=msedge) to run the dialog, popover, toast and tooltip in a real browser');
+  console.log('SKIP the browser part: set KIT_OVERLAY_BROWSER=1 with PW_MODULE (and PW_CHANNEL=msedge) to run the dialog, popover, toast and tooltip in a real browser');
 } else {
   const { chromium } = require(PW);
   const PORT = Number(process.env.KIT_OVERLAY_PORT || 10100);
@@ -493,6 +493,15 @@ if(E){var h=E.handle;E.handle=function(c){var r=h.call(E,c);window.handleLog.pus
       const l = await rect('#tipbot'); await page.mouse.move(l.left + 5, l.top + 5); await page.waitForSelector('.ui-tip');
       const t = await rect('.ui-tip'); assert.ok(t.bottom <= l.top, 'above the low button, not off the page'); assert.ok(t.top >= 0);
       await page.mouse.move(5, 400);
+    });
+    await test('browser: a title the page changes while its tooltip shows is not written over when the tooltip goes', async () => {
+      await keyTo('#tipbtn', 'Tab'); assert.equal(await active(), 'tipbot'); await page.waitForSelector('.ui-tip');
+      assert.equal(await ev(() => document.querySelector('.ui-tip-text').textContent), 'Low button');
+      await ev(() => { document.getElementById('tipbot').setAttribute('title', 'Changed while shown'); });
+      await page.keyboard.press('Tab');   /* to the field, which has no title */
+      assert.equal(await tips(), 0);
+      assert.deepEqual(await ev(() => [document.getElementById('tipbot').getAttribute('title'), document.getElementById('tipbot').hasAttribute('data-ui-tip')]), ['Changed while shown', false]);
+      await ev(() => { document.getElementById('tipbot').setAttribute('title', 'Low button'); });
     });
     await test('browser: B68Ui.tip(el, text, key) works the same; a plain title is left alone on a page without the desk token', async () => {
       await ev(() => { B68Ui.tip(document.getElementById('opener'), 'Opens things', 'O'); });
