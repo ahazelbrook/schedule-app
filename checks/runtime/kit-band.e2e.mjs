@@ -10,8 +10,10 @@
 //   5. the cue unit: GO fires on Space and on PgDn; the quiet Next is the stack's Bypass
 //   6. the iPad: Clear sends what 0 sends; Blank turns the iPad black, as the tray's Blank does; Shift+H still blanks the laptop
 //   7. the setting off mid-session (Settings): the old band without a reload, painted; on again: the new one, painted
+//   8. the messages: one status dot; an old pack's toast fades once per load and leaves when the Blade panel opens; signed out stays, with Reload
+//   9. night.who on, mid-score, at 1366 and 1536: "S9 · n playing" in one chip, all seven places fully in sight, the band 88 px, the sheet opens
 // Every name is invented. SHOTS=<dir> writes the pictures (<view>-<theme>-<width>.png, Paper and Night, 1366x768 and 1536x864).
-//   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=9403] [SHOTS=<dir>] [KIT_BAND_ONLY=shots] node checks/runtime/kit-band.e2e.mjs
+//   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=9403] [SHOTS=<dir>] [KIT_BAND_ONLY=shots|who] node checks/runtime/kit-band.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -120,7 +122,8 @@ const MEASURE = () => {
   }
   const out = items.filter((a) => a.l < -0.5 || a.t < -0.5 || a.r > vw + 0.5 || a.b > vh + 0.5).map((a) => a.id);
   const danger = [...document.querySelectorAll('.ui-btn--danger')].filter(vis).length, primary = [...band.querySelectorAll('.ui-btn--primary')].filter(vis).length;
-  return { n: items.length, over, out, small, bandH: Math.round(band.getBoundingClientRect().height), danger, primary, alarm: band.querySelector('.gm-band-r2').getAttribute('data-alarm'), vw };
+  const clipped = [...nav.querySelectorAll('[data-band-place]')].filter((t) => { const r = t.getBoundingClientRect(); return r.width < 2 || r.left < navR.left - 0.5 || r.right > navR.right + 0.5; }).map((t) => t.getAttribute('data-band-place'));
+  return { n: items.length, over, out, small, clipped, bandH: Math.round(band.getBoundingClientRect().height), danger, primary, alarm: band.querySelector('.gm-band-r2').getAttribute('data-alarm'), vw };
 };
 /* every hook band.js skeleton() carries, read from that skeleton in the page, and whether the band on screen has each */
 const HOOKS = () => {
@@ -190,6 +193,7 @@ try {
   }
   check((await kit(true)).status === 200, 'kit.desk is on');
 
+  if (ONLY !== 'who') {      /* KIT_BAND_ONLY=who: section 9 alone, while working on row 1 */
   /* ---- 2. the look, and the pictures: every state, Paper and Night, 1366 and 1536 ---- */
   /* the pack as served, its export date moved 40 days back: the band's pack warning (stale) */
   const OLD = new Date(Date.now() - 40 * 86400000).toISOString();
@@ -236,9 +240,15 @@ try {
           check(m.over.length === 0, wd + 'x' + ht + ' ' + st + ': no two of the band\'s ' + m.n + ' items overlap' + (m.over.length ? ': ' + m.over.slice(0, 5).join(', ') : ''));
           check(m.out.length === 0, wd + 'x' + ht + ' ' + st + ': none is outside the window' + (m.out.length ? ': ' + m.out.join(', ') : ''));
           check(m.small.length === 0, wd + 'x' + ht + ' ' + st + ': nothing in the band under 12 px' + (m.small.length ? ': ' + m.small.slice(0, 5).join(', ') : ''));
+          check(m.clipped.length === 0, wd + 'x' + ht + ' ' + st + ': every place tab is fully in sight' + (m.clipped.length ? ': clipped ' + m.clipped.join(', ') : ''));
           if (wd === 1366) check(m.bandH <= H0, wd + 'x' + ht + ' ' + st + ': the band is ' + m.bandH + ' px, no taller than today\'s ' + H0);
           check(m.danger === 1, wd + 'x' + ht + ' ' + st + ': one Danger on the page, PANIC (' + m.danger + ')');
           if (st !== 'panic') check(m.primary === 1, wd + 'x' + ht + ' ' + st + ': one Primary in the band, GO (' + m.primary + ')');
+          if (st === 'curfew') {
+            const cu = await page.evaluate(() => { const t = document.querySelector('#gm-cuebar .kband-cs-tag'), g = document.querySelector('#gm-cuebar [data-cs="go"]'), r = t && t.getBoundingClientRect();
+              return { txt: t ? t.innerText.trim() : '', w: r ? Math.round(r.width) : 0, full: !!t && t.scrollWidth <= t.clientWidth + 1, go: !!g && getComputedStyle(g).display !== 'none' }; });
+            check(cu.go && /^#\d+ [A-Z]+/.test(cu.txt) && cu.w > 20 && cu.full, wd + 'x' + ht + ' curfew: GO stays live and the cue in standby keeps its number and kind beside it (' + JSON.stringify(cu) + ')');
+          }
         }
         if (ONLY === 'shots' && theme === 'paper') console.log('  ' + name + ' ' + wd + ': ' + await page.evaluate(() => ['.kband-r1', '.kband-r2'].map((s) => [...document.querySelectorAll('#gm-band ' + s + ' > *')]
           .filter((e) => e.getBoundingClientRect().width > 0).map((e) => ([...e.classList].find((c) => /^kband-/.test(c)) || e.id || e.className) + '=' + Math.round(e.getBoundingClientRect().width) + (e.scrollWidth > e.clientWidth + 1 ? '/' + e.scrollWidth : '')).join(' ')).join(' || ')));
@@ -261,6 +271,8 @@ try {
   check(['kband-sess', 'kband-places', 'kband-bladebox', 'kband-mic', 'kband-clock', 'kband-panic'].every((k, i, a) => r1.indexOf(k) >= 0 && (i === 0 || r1.indexOf(a[i - 1]) < r1.indexOf(k))), 'row 1 in order: session, tabs, Blade, Listening, curfew and clock, PANIC (' + r1.join(' ') + ')');
   const r2 = await A.page.evaluate(() => [...document.querySelectorAll('#gm-band .kband-r2 [data-tray], #gm-band .kband-r2 [data-cs]')].filter((e) => getComputedStyle(e).display !== 'none').map((e) => e.getAttribute('data-tray') || e.getAttribute('data-cs')));
   check(['open', 'clear', 'blank', 'more', 'go', 'bypass'].every((k) => r2.includes(k)) && r2.indexOf('clear') < r2.indexOf('blank') && r2.indexOf('go') < r2.indexOf('bypass'), 'row 2: the iPad chip with Clear, Blank, then the cue, GO, Next (' + r2.join(' ') + ')');
+  const esc = await A.page.evaluate(() => { const k = document.querySelector('#gm-band [data-band="panic"] .ui-key'); return k ? { key: k.getAttribute('data-ui-key'), shown: k.getBoundingClientRect().width > 4, label: document.querySelector('#gm-band [data-band="panic"]').textContent.trim() } : null; });
+  check(!!esc && esc.key === 'Esc' && esc.shown && esc.label === 'PANIC', 'PANIC carries its Esc key hint (' + JSON.stringify(esc) + ')');
   const inChip = await A.page.evaluate(() => { const ch = document.querySelector('#gm-band .kband-ipad'); return !!ch && !!ch.querySelector('[data-tray="open"]') && !!ch.querySelector('[data-tray="clear"]'); });
   check(inChip, 'Clear sits inside the iPad chip');
   const goTxt = await A.page.$eval('#gm-cuebar', (e) => e.textContent.replace(/\s+/g, ' '));
@@ -337,10 +349,23 @@ try {
     const P = await open({ routes: oldPack });
     const ok = await until(async () => { const s = await status(P.page); return s.tone === 'caution' && /Old pack/i.test(s.word) && /days old/.test(s.title) && s.toasts.some((t) => /days old/.test(t.text)); }, 15000);
     check(!!ok, 'an old pack: the dot is caution with its words, and a toast says it (' + JSON.stringify(await status(P.page)) + ')');
-    await sleep(6500);
+    check((await status(P.page)).toasts.some((t) => /days old/.test(t.text) && t.acts.includes('Menu')), 'the pack toast offers the Menu');
+    const gone = await until(async () => !(await status(P.page)).toasts.some((t) => /days old/.test(t.text)), 9000);
+    check(!!gone, 'it fades, as an info toast does (it never sits over the Blade panel\'s foot for the night)');
+    await setNight(); await sleep(2500);      /* the night changed on the server: the poll repaints the band, which reads the pack again */
     const s2 = await status(P.page);
-    check(s2.toasts.some((t) => /days old/.test(t.text) && t.acts.includes('Menu')), 'the pack toast stays past an info toast\'s five seconds, with Menu: impossible to miss');
+    check(!s2.toasts.some((t) => /days old/.test(t.text)) && s2.tone === 'caution' && /Old pack/i.test(s2.word), 'once per load: it does not come back; the dot keeps "Old pack" (' + JSON.stringify(s2) + ')');
     check(await P.page.evaluate(() => !document.querySelector('#gm-bar-exp').hidden), 'and the Menu keeps its dot');
+    await P.c.close();
+  }
+  {
+    const P = await open({ routes: oldPack });
+    await until(async () => (await status(P.page)).toasts.some((t) => /days old/.test(t.text)), 15000);
+    await P.page.click('#gm-band [data-band="blade"]');
+    const clear = await until(async () => !(await status(P.page)).toasts.some((t) => /days old/.test(t.text)) && await P.page.evaluate(() => { const p = document.querySelector('#as-panel'); return !!p && p.getBoundingClientRect().width > 0; }), 4000);
+    check(!!clear, 'the Blade panel opened: the pack toast leaves at once, so the Ask box and Tools are free');
+    const free = await P.page.evaluate(() => ['#as-tools summary', '#as-ask-q'].map((s) => { const e = document.querySelector(s); if (!e) return s + ':none'; const r = e.getBoundingClientRect(), h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return s + ':' + (!!h && (h === e || e.contains(h))); }));
+    check(free.every((x) => /:true$|:none$/.test(x)) && free.some((x) => /:true$/.test(x)), 'nothing covers the panel\'s foot (' + free.join(', ') + ')');
     await P.c.close();
   }
   {
@@ -368,6 +393,53 @@ try {
   check(await until(async () => !!(await A.page.$('#gm-band .kband-r1 [data-band-place]')), 8000), 'on again: the new band, without a reload');
   check(await until(async () => { const p = await painted(); return /Session 9/.test(p.sess) && p.go && p.ipad && p.stt && p.btn && p.exp && p.save; }, 5000), 'and painted: the session, the mic, the cue unit, the iPad chip, Blade, the Menu and the save state (' + JSON.stringify(await painted()) + ')');
   await A.c.close();
+  }
+
+  /* ---- 9. night.who on (KS12) at 1366, mid-score: one chip says the session and who is playing; all seven places stay in sight ---- */
+  if (ONLY === 'who') {
+    await setNight(); const P = await open({ w: 1366, h: 768 });
+    console.log('  who off 1366: ' + await P.page.evaluate(() => [...document.querySelectorAll('#gm-band .kband-r1 > *, #gm-band [data-band-place]')].filter((e) => e.getBoundingClientRect().width > 0).map((e) => ([...e.classList].find((c) => /^kband-(?!r)/.test(c)) || e.id) + '=' + Math.round(e.getBoundingClientRect().width)).join(' ')) + ' clipped ' + (await P.page.evaluate(MEASURE)).clipped.join(','));
+    await P.c.close();
+  }
+  check((await api('PATCH', '/gm/state', { features: { 'night.who': true } })).status === 200, 'night.who is on');
+  await setNight();
+  for (const [wd, ht] of [[1366, 768], [1536, 864]]) {
+    const P = await open({ w: wd, h: ht });
+    await P.page.waitForFunction(() => { const w = document.querySelector('#gm-band #gm-bar-who'); return !!w && /playing/.test(w.textContent) && w.hasAttribute('data-sess'); }, null, { timeout: 20000 }).catch(() => {});
+    await P.page.waitForTimeout(500);
+    const wv = await P.page.evaluate(() => {
+      const nav = document.querySelector('#gm-band [data-band-places]'), nr = nav.getBoundingClientRect(), w = document.querySelector('#gm-bar-who'), s = document.querySelector('#gm-bar-sess');
+      const tabs = [...nav.querySelectorAll('[data-band-place]')].map((t) => { const r = t.getBoundingClientRect(); return { id: t.getAttribute('data-band-place'), l: r.left, r: r.right, w: r.width }; });
+      return { text: w ? w.textContent : '', said: w ? (getComputedStyle(w, '::before').content + w.textContent).replace(/[" ]/g, ' ').replace(/\s+/g, ' ').trim() : '',
+        sessShown: !!s && getComputedStyle(s).display !== 'none', tabs: tabs.length, clipped: tabs.filter((t) => t.w < 2 || t.l < nr.left - 0.5 || t.r > nr.right + 0.5).map((t) => t.id),
+        scroll: [nav.scrollWidth, nav.clientWidth],
+        row: [...document.querySelectorAll('#gm-band .kband-r1 > *')].filter((e) => e.getBoundingClientRect().width > 0).map((e) => ([...e.classList].find((c) => /^kband-/.test(c)) || e.id) + '=' + Math.round(e.getBoundingClientRect().width)).join(' '),
+        tabW: tabs.map((t) => t.id + '=' + Math.round(t.w)).join(' ') };
+    });
+    const m = await P.page.evaluate(MEASURE);
+    check(/^\d+ playing$/.test(wv.text) && /^S9 · \d+ playing$/.test(wv.said) && !wv.sessShown, wd + 'x' + ht + ' night.who: one chip says "' + wv.said + '"; KS12\'s words are its own ("' + wv.text + '"); the session chip steps aside');
+    check(wv.tabs === 7 && wv.clipped.length === 0 && wv.scroll[0] <= wv.scroll[1] + 1, wd + 'x' + ht + ' night.who: all seven places are fully in sight (' + JSON.stringify(wv) + ')');
+    check(m.over.length === 0 && m.out.length === 0 && m.small.length === 0, wd + 'x' + ht + ' night.who: nothing overlaps, nothing outside the window, nothing under 12 px' + JSON.stringify({ over: m.over.slice(0, 4), out: m.out, small: m.small.slice(0, 4) }));
+    if (wd === 1366) check(m.bandH === H0, wd + 'x' + ht + ' night.who: the band stays ' + H0 + ' px (' + m.bandH + ')');
+    /* the curfew's longest words (band.js curfewText), each painted for one layout: row 1 keeps its height and every tab stays in sight */
+    const cw = await P.page.evaluate(() => {
+      const sm = document.querySelector('#gm-band [data-band-curfew]'), nav = document.querySelector('#gm-band [data-band-places]'), band = document.querySelector('#gm-band'), was = sm.textContent, res = [];
+      for (const t of ['curfew 23:59 · 58 min', 'curfew 23:59 · 720 min', 'curfew 23:59 · 120 min over', 'curfew 08:00 · now', '120 min over']) {
+        sm.textContent = t; const nr = nav.getBoundingClientRect(), r = sm.getBoundingClientRect();
+        const clip = [...nav.querySelectorAll('[data-band-place]')].some((x) => { const b = x.getBoundingClientRect(); return b.left < nr.left - 0.5 || b.right > nr.right + 0.5; });
+        res.push({ t, h: Math.round(band.getBoundingClientRect().height), lines: Math.round(r.height / parseFloat(getComputedStyle(sm).lineHeight)), w: Math.round(r.width), clip });
+      }
+      sm.textContent = was; return res;
+    });
+    check(cw.every((x) => x.h === m.bandH && x.lines <= 2 && !x.clip), wd + 'x' + ht + ' night.who: the curfew\'s longest words take two lines at most; the band keeps its height and every tab (' + JSON.stringify(cw) + ')');
+    if (wd === 1366) {
+      await P.page.click('#gm-bar-who');
+      check(!!(await P.page.waitForSelector('#gm-who-sheet:not([hidden])', { timeout: 5000 }).catch(() => null)), 'the merged chip still opens KS12\'s who sheet');
+    }
+    await shot(P.page, 'band-who-paper-' + wd);
+    await P.c.close();
+  }
+  await api('PATCH', '/gm/state', { features: { 'night.who': false } });
 
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 4).join(' | ') : ''));
   await browser.close();

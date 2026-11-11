@@ -37,7 +37,7 @@
 
   var MID = ' · ', X = '✕', ELL = '⋯';
   var PIP = { rule: 1, warn: 1, done: 1, idea: 1, say: 1, note: 1 };
-  var listening = false;
+  var listening = false, packToasted = false;      /* the pack's toast: once per load (the dot, its word and the Menu's dot stay) */
 
   function str(v) { return v == null ? '' : String(v); }
   function req(name) { try { return typeof require === 'function' ? require(name) : null; } catch (e) { return null; } }
@@ -74,7 +74,7 @@
       '<span class="gm-band-sep gm-band-sep-mic kband-sep-mic" aria-hidden="true"></span>' +
       '<span class="gm-band-mic kband-mic">' + U.chip({ button: true, id: 'gm-bar-stt', cls: 'gm-pill', data: { gm: 'ipadview' }, title: T.stt, hidden: true }) + '</span>' +
       '<span class="gm-band-clock kband-clock"><small data-band-curfew></small><b data-band-clock></b></span>' +
-      U.button({ label: 'PANIC', rank: 'danger', cls: 'gm-band-panic kband-panic', data: { band: 'panic' }, title: T.panic }) +
+      U.button({ label: 'PANIC', rank: 'danger', key: 'Esc', cls: 'gm-band-panic kband-panic', data: { band: 'panic' }, title: T.panic }) +      /* the hint only: Esc stays the page's own (B68GmEsc first) */
       '</div>';
     var r2 = '<div class="gm-band-r gm-band-r2 kband-r kband-r2" role="group" aria-label="What is live" data-alarm="" data-ui-theme="night">' +
       '<span class="gm-band-tray kband-tray" id="gm-bar-tray" data-band-slot="tray"></span>' +
@@ -141,6 +141,7 @@
       if (cnt) { if (cnt.textContent !== n) cnt.textContent = n; cnt.hidden = !n; }
       var exp = l ? str(l.getAttribute('aria-expanded')) === 'true' : false;
       if (b.getAttribute('aria-expanded') !== String(exp)) b.setAttribute('aria-expanded', String(exp));
+      if (exp && held.pack) toastOn('pack', false);      /* the panel opened: the pack's toast leaves its foot (the dot keeps the warning) */
       var lab = l ? str(l.getAttribute('aria-label')) : '';
       if (lab && b.getAttribute('aria-label') !== lab) b.setAttribute('aria-label', lab);
       if (pp) {
@@ -200,17 +201,38 @@
       }
       toastOn('out', out, { text: outMsg, tone: 'error', undo: { label: 'Reload', fn: function () { try { W.location.reload(); } catch (e) {} } } });
       toastOn('save', bad && !out, { text: sv + (save && save.title ? ': ' + save.title : ''), tone: 'error' });
-      toastOn('pack', !!pack, { text: pack + ': the Menu says more (Update pack).', tone: 'info', duration: 0,
-        undo: { label: 'Menu', fn: function () { var m = q('[data-gm="menu"]'); if (m && typeof m.click === 'function') m.click(); } } });
+      /* the pack's toast fades (an info toast's own time), once per load, and never over an open Blade panel (its Ask box and Tools sit where the
+         stack is): the dot, its word and the Menu's dot carry the warning after it */
+      var l = launch(), panel = !!(l && str(l.getAttribute('aria-expanded')) === 'true');
+      if (pack && !packToasted && !panel) {
+        packToasted = true;
+        try { held.pack = U.toast({ key: 'kband-pack', text: pack + ': the Menu says more (Update pack).', tone: 'info',
+          undo: { label: 'Menu', fn: function () { var m = q('[data-gm="menu"]'); if (m && typeof m.click === 'function') m.click(); } } }); } catch (e) { held.pack = null; }
+      } else if (held.pack && (!pack || panel)) toastOn('pack', false);
     }
-    if (toasts && W && typeof W.MutationObserver === 'function') {
-      bandObs = new W.MutationObserver(status);
+    /* KS12's who chip (night.who): "S9 · 4 playing" in one chip, so the seven places keep their room at 1366 px. The session chip steps aside;
+       its words stay the page's (renderBar), the who chip's stay KS12's: this only copies the short session onto the who chip (CSS draws it) */
+    function who() {
+      if (dead) return;
+      var r1 = q('.kband-r1'), s = q('#gm-bar-sess'), w = q('#gm-bar-who'); if (!r1 || !s || !w) return;
+      var st = str(s.textContent).trim(), short = st && str(w.textContent).trim() ? st.replace(/^Session\s+(\d+)/, 'S$1') : '';
+      if (short) {
+        if (w.getAttribute('data-sess') !== short) w.setAttribute('data-sess', short);
+        if (!r1.hasAttribute('data-band-who')) r1.setAttribute('data-band-who', '');
+      } else {
+        if (w.hasAttribute('data-sess')) w.removeAttribute('data-sess');
+        if (r1.hasAttribute('data-band-who')) r1.removeAttribute('data-band-who');
+      }
+    }
+    function both() { status(); who(); }
+    if (W && typeof W.MutationObserver === 'function') {
+      bandObs = new W.MutationObserver(both);
       bandObs.observe(el, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'hidden', 'aria-label', 'title'] });
     }
     el.addEventListener('click', onClick);
-    watch(); paint(); status();
+    watch(); paint(); both();
     return {
-      update: function () { if (!dead) { watch(); paint(); status(); } },
+      update: function () { if (!dead) { watch(); paint(); both(); } },
       destroy: function () {
         dead = true; el.removeEventListener('click', onClick);
         if (obs) { try { obs.disconnect(); } catch (e) {} } obs = null; watched = null;
@@ -264,7 +286,7 @@
     if (s) {
       var lab = typeof c.label === 'function' ? str(c.label(s)) : str(s.text);
       var hand = c.manual && c.manual[s.kind] ? '<span class="gm-cs-hand kband-hand">' + MID + 'by hand</span>' : '';      /* in the line, so it gives way before it covers GO */
-      return '<span class="kband-cue-what"><span class="kband-cs-head"><span class="gm-cs-tag kband-cs-tag">STANDBY' + MID + '#' + U.esc(s.n) + ' ' + U.esc(str(s.kind).toUpperCase()) + hand + '</span></span>' +
+      return '<span class="kband-cue-what"><span class="kband-cs-head"><span class="gm-cs-tag kband-cs-tag"><span class="kband-cs-sb">STANDBY' + MID + '</span>#' + U.esc(s.n) + ' ' + U.esc(str(s.kind).toUpperCase()) + hand + '</span></span>' +
         U.button({ label: str(s.text) || lab, rank: 'quiet', cls: 'gm-cs-what kband-cs-what', data: { cs: 'more' }, title: lab, attrs: { 'aria-expanded': more } }) + '</span>' +
         U.button({ label: 'GO', rank: 'primary', key: 'Space', cls: 'gm-cs-go kband-go', data: { cs: 'go' }, title: 'Fire the cue in standby (Space or PgDn)' }) +
         U.button({ label: 'Next ›', rank: 'quiet', cls: 'gm-cs-soft kband-cs-next', data: { cs: 'bypass' }, title: 'Skip this cue without firing it: the next one stands by (Bypass)' }) +

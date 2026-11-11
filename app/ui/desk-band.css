@@ -23,8 +23,10 @@
 :root[data-kit~="desk"] .kband-r2:is([data-alarm="curfew"], [data-alarm="panic"]) :is(.ui-btn--quiet, .kband-ipad-live):hover { background: transparent; text-decoration: underline; }
 :root[data-kit~="desk"] .kband-r2:is([data-alarm="curfew"], [data-alarm="panic"]) :is(.gm-band-call, .gm-cs-resume) { border-color: var(--ui-raised); color: var(--ui-alarm); }
 :root[data-kit~="desk"] .kband-r2:is([data-alarm="curfew"], [data-alarm="panic"]) .kband-cs-tag:not(.gm-cs-alarm) { color: var(--ui-on-alarm); }
-/* the curfew due: its three buttons take the room of the cue's words, the beat, Blank, the autopilot and the music (back once it is answered) */
-:root[data-kit~="desk"] .kband-r2[data-alarm="curfew"] :is(.kband-cue-what, .gm-tray-blank, .gm-tray-ap) { display: none; }
+/* the curfew due: its three buttons take the room of the cue's words, the beat, Blank, the autopilot and the music (back once it is answered);
+   GO stays live, so the cue in standby keeps its number and kind ("#3 LIGHT") beside it */
+:root[data-kit~="desk"] .kband-r2[data-alarm="curfew"] :is(.kband-cs-what, .kband-cs-txt, .kband-cs-sb, .gm-tray-blank, .gm-tray-ap) { display: none; }
+:root[data-kit~="desk"] .kband-r2[data-alarm="curfew"] .kband-cue-what { min-width: max-content; }
 :root[data-kit~="desk"] .kband-r2[data-alarm="curfew"] :is(.kband-beat, .kband-cs-next, .kband-music) { display: none; }
 
 /* ---------- row 1: the mark, the session, who, the places ---------- */
@@ -32,17 +34,20 @@
 :root[data-kit~="desk"] .kband-mark { display: none; flex: none; color: var(--ui-ink); font: 900 20px/1 var(--ui-font-poster); letter-spacing: 0; text-decoration: none; text-transform: none; white-space: nowrap; }
 :root[data-kit~="desk"] .kband-mark b { font: 700 var(--ui-type-label)/1 var(--ui-font-cond); letter-spacing: .14em; vertical-align: 3px; }
 :root[data-kit~="desk"] .kband-mark:focus-visible { outline: var(--ui-focus-ring); outline-offset: 2px; }
-:root[data-kit~="desk"] .kband-sess, :root[data-kit~="desk"] .kband-who { flex: none; min-height: 0; padding: .25em .6em; opacity: 1; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.25 var(--ui-font-text); letter-spacing: .08em; }
+:root[data-kit~="desk"] .kband-sess, :root[data-kit~="desk"] .kband-who { flex: none; min-height: 0; padding: .25em .5em; opacity: 1; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.25 var(--ui-font-text); letter-spacing: .06em; }
 :root[data-kit~="desk"] .kband-sess:empty, :root[data-kit~="desk"] .kband-who:empty { display: none; }
+/* night.who (KS12) fills the who chip: one chip, "S9 · 4 playing" (gm/kit/band.js copies the short session onto it), so the places keep their room */
+:root[data-kit~="desk"] .kband-r1[data-band-who] .kband-sess { display: none; }
+:root[data-kit~="desk"] .kband-who[data-sess]::before { content: attr(data-sess) "\00a0\00b7\00a0"; }
 
 :root[data-kit~="desk"] .kband-places { display: flex; align-items: stretch; align-self: stretch; flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 :root[data-kit~="desk"] .kband-places::-webkit-scrollbar { display: none; }
-:root[data-kit~="desk"] .kband-tabs { flex-wrap: nowrap; align-items: stretch; gap: 0 var(--ui-space-3); border-bottom: 0; }
+:root[data-kit~="desk"] .kband-tabs { flex-wrap: nowrap; align-items: stretch; gap: 0 10px; border-bottom: 0; }
 /* the condensed face, as today's band: seven places, Blade, the mic, the clock and PANIC share one row at 1366 px */
 :root[data-kit~="desk"] .kband-place {
   display: inline-flex; align-items: center; gap: var(--ui-space-1); flex: none; height: auto; min-width: 0; margin: 0; padding: 3px 1px 0;
   border: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--ui-ink-soft); text-align: left;
-  font: 800 var(--ui-type-body)/1 var(--ui-font-cond); letter-spacing: .05em; text-transform: uppercase;
+  font: 800 var(--ui-type-body)/1 var(--ui-font-cond); letter-spacing: .04em; text-transform: uppercase;
 }
 :root[data-kit~="desk"] .kband-place:hover { background: transparent; color: var(--ui-ink); border-bottom-color: var(--ui-line); }
 :root[data-kit~="desk"] .kband-place[aria-current="true"], :root[data-kit~="desk"] .kband-place[aria-current="true"]:hover { background: transparent; color: var(--ui-ink); border-bottom-color: var(--ui-accent); }
@@ -59,7 +64,7 @@
 :root[data-kit~="desk"] .kband-place .gm-place-t:empty { display: none; }
 :root[data-kit~="desk"] .kband-place[data-tone="amber"] .gm-place-t { background: var(--ui-caution); color: var(--ui-on-caution); }
 :root[data-kit~="desk"] .kband-place[data-tone="red"] .gm-place-t { background: var(--ui-alarm); color: var(--ui-on-alarm); }
-:root[data-kit~="desk"] .kband-place.gm-place-btw { margin-left: var(--ui-space-1); padding-left: var(--ui-space-4); border-left: var(--ui-hairline); }
+:root[data-kit~="desk"] .kband-place.gm-place-btw { margin-left: var(--ui-space-1); padding-left: var(--ui-space-3); border-left: var(--ui-hairline); }
 
 /* ---------- row 1: Blade, Listening, the curfew and the clock, PANIC ---------- */
 :root[data-kit~="desk"] .kband-bladebox { position: relative; flex: none; display: inline-flex; }
@@ -87,12 +92,15 @@
 :root[data-kit~="desk"] .kband-r .gm-dot.on { border-color: var(--ui-ok); background: var(--ui-ok); }
 :root[data-kit~="desk"] .kband-r .gm-dot.warn { border-color: var(--ui-caution); background: var(--ui-caution); }
 
-:root[data-kit~="desk"] .kband-clock { display: inline-flex; align-items: baseline; gap: var(--ui-space-3); flex: none; min-width: 0; white-space: nowrap; overflow: visible; }
-:root[data-kit~="desk"] .kband-clock small { flex: none; color: var(--ui-ink-soft); opacity: 1; font: 700 var(--ui-type-label)/1 var(--ui-font-text); letter-spacing: .04em; text-transform: uppercase; }
+/* the curfew's words stack in two short lines beside the clock ("CURFEW 22:40 ·" over "58 MIN"), so the seven places keep their room at 1366 px with
+   the who chip (night.who) and PANIC's Esc hint in the row */
+:root[data-kit~="desk"] .kband-clock { display: inline-flex; align-items: center; gap: var(--ui-space-2); flex: none; min-width: 0; white-space: nowrap; overflow: visible; }
+:root[data-kit~="desk"] .kband-clock small { flex: none; max-width: 8em; color: var(--ui-ink-soft); opacity: 1; font: 700 var(--ui-type-label)/1.15 var(--ui-font-cond); letter-spacing: .04em; text-transform: uppercase;
+  white-space: normal; text-align: right; text-wrap: balance; }
 :root[data-kit~="desk"] .kband-clock small:empty { display: none; }
 :root[data-kit~="desk"] .kband-clock b { flex: none; color: var(--ui-ink); font: 400 26px/1 var(--ui-font-poster); letter-spacing: .01em; }
-:root[data-kit~="desk"] .kband-panic { flex: none; align-self: center; min-height: 30px; margin: 0; padding: 0 var(--ui-space-3); filter: none; letter-spacing: .12em; }
-:root[data-kit~="desk"] .kband-panic .ui-key { font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .kband-panic { flex: none; align-self: center; gap: 6px; min-height: 30px; margin: 0; padding: 0 var(--ui-space-3); filter: none; letter-spacing: .12em; }
+:root[data-kit~="desk"] .kband-panic .ui-key { min-width: 0; padding: .1em .3em; font-size: var(--ui-type-label); }      /* Esc: the hint only (B68GmEsc keeps the key) */
 
 /* ---------- row 2: the iPad, as one chip with Clear inside; Send; a quiet Blank; the autopilot ---------- */
 /* when row 2 is full, the iPad's words and the beat give way twice as fast as the cue's (its words stop at 280 px) */
