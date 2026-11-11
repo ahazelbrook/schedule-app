@@ -8,7 +8,7 @@
 //   title { text (80), sub? (120) }                     wanted { level 0-4, heat? 0-9, siren? }  ring { text? (60) }
 //   rolodex { npcIds [1-12] }  and  spotlight { npcId }   -- joined to their rows like an npc overlay: REVEALED NPCs only.
 // LASTING LAYERS sit in the ambient document (`layers`, nested: band / scene / data) and stay until cleared:
-//   band.phase pb|plan|score|after   band.security 0-4   band.faces [<=3 of { npcId } | { pcId }]   band.onair true
+//   band.phase pb|plan|score|after   band.security 0-4   band.faces [<=3 of { npcId } | { pcId } (one PC face may carry acting: true, KS14.2)]   band.onair true
 //   scene.filter flashback           scene.layout montage   scene.mode start|aftermath
 //   data.countdown { to (epoch ms), label? (40) }   data.credits [npcId, <=30]   data.previously [npcId, <=12]
 // SECRECY: an NPC id is kept only while that NPC is revealed (dropped when written, dropped again on every read), the served payload is
@@ -118,6 +118,8 @@ const pcFace = (f) => {
     if (!o.harm.length) delete o.harm;
   }
   put(o, 'locks', whole(f.locks, 'band.faces locks', 0, 6));
+  // KS14.2 (the kit and stage build, Gate 2): the PC whose turn it is (the Roll's Who). true or nothing: a mark on a face already on the list, never a name
+  if (f.acting !== undefined && f.acting !== null && f.acting !== false) { if (f.acting !== true) bad('band.faces acting must be true'); o.acting = true; }
   return o;
 };
 const FACE = (f) => {
@@ -132,7 +134,9 @@ export const LAYERS = {
   'band.faces': (v) => {
     if (!Array.isArray(v) || !v.length) bad('band.faces must be a list of one to ' + SHOW_NPC_MAX.faces);
     if (v.length > SHOW_NPC_MAX.faces) bad('band.faces holds at most ' + SHOW_NPC_MAX.faces);
-    return v.map(FACE);
+    const out = v.map(FACE);
+    if (out.filter((f) => f.acting === true).length > 1) bad('band.faces marks at most one face acting');
+    return out;
   },
   'band.onair': (v) => { if (v !== true) bad('band.onair must be true (null clears it)'); return true; },
   'scene.filter': (v) => oneOf(v, 'scene.filter', ['flashback'], true),

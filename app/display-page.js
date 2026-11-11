@@ -2015,7 +2015,7 @@
       }
       bandFit();
     }
-    function applyBand(hud) { s.bandModel = Pure.bandModel(hud); if (!s.bandModel) s.bandSig = ''; paintBand(); if (s.stage) s.stage.mission(s.bandModel); }   /* KS13.3: the alarm */
+    function applyBand(hud) { s.bandModel = Pure.bandModel(hud); if (!s.bandModel) s.bandSig = ''; paintBand(); if (s.stage) s.stage.mission(s.bandModel); if (s.stage && s.stageBand) s.stageBand.paint(); }   /* KS13.3: the alarm; KS14: the top band */
     /* landscape: the band's box is set by its top and bottom, so a new size comes from outside (the iPad's band coming or going over it) and the cut
        is worked out again; in portrait its height follows its content, so only bandFit runs (a re-cut there would chase its own size) */
     var landscape = window.matchMedia ? window.matchMedia('(orientation: landscape)') : null;
@@ -2073,6 +2073,7 @@
       if (s.dead || on === !!s.stage) return;
       if (on) s.stage = root.B68Stage.attach(container, { later: later, clearLater: clearLater, reduced: reduced, band: function () { return s.bandModel; }, wireMs: function () { return WT.on; } });
       else { s.stage.destroy(); s.stage = null; }
+      s.stageBand = s.stage && root.B68StageBand ? root.B68StageBand.attach(s.stage, { band: function () { return s.bandModel; }, layers: function () { return s.layers ? s.layers.state() : null; }, doc: document }) : null;      /* KS14: the clock and the crew heads */
       suiteSync();
       if (s.lastShow) show(s.lastShow[0], s.lastShow[1]);
     }
@@ -2123,7 +2124,7 @@
         onStt: function (part) { if (s.stt && typeof s.stt.feed === 'function') { try { s.stt.feed(part); } catch (e) { /* the page goes on */ } } },
         onData: function (display, seq, at) { s.seq = seq; s.updatedAt = at; paintStatus(); show(display, seq); },
         onOverlay: function (overlay) { ovApplyField(overlay); },
-        onLayers: function (layers) { if (s.layers) { s.layers.apply(layers); suiteSync(); } },
+        onLayers: function (layers) { if (s.layers) { s.layers.apply(layers); suiteSync(); } if (s.stage && s.stageBand) s.stageBand.paint(); },      /* KS14: the heads follow the faces */
         onStatus: function (p) { s.poll = p; paintStatus(); s.reloader.state(p.state); }
       });
       s.poller.start();

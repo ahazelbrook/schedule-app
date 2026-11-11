@@ -2357,7 +2357,8 @@
   function bandUpdate() { if (S && S.band && S.status === 'ready') S.band.update(); }
   /* PANIC (the band's last button, and Esc when nothing else is open): the cue stack's panic, with or without cues in the note (the safe scene, the iPad's
      sound down, the work light); a page without the cue stack still sends the iPad to the safe scene */
-  function panicEffect(safe) { return Promise.all([patchAmbient({ mode: 'pin', scene: safe, overlay: null, layers: null }), pushDisplay({ kind: 'blank' }).then(null, function () { return null; })]).then(function (r) { return r[0] !== null; }); }
+  function panicEffect(safe) { if (W.B68GmPcStatus) W.B68GmPcStatus.down();      /* KS14.2: PANIC, nobody acts (its layers: null takes the faces down) */
+    return Promise.all([patchAmbient({ mode: 'pin', scene: safe, overlay: null, layers: null }), pushDisplay({ kind: 'blank' }).then(null, function () { return null; })]).then(function (r) { return r[0] !== null; }); }
   function bandPanic(src) {
     if (!S) return;
     if (S.cs) { S.cs.panic(src || 'button'); bandUpdate(); return; }
@@ -2596,6 +2597,7 @@
     if (!S || !S.root) return;
     renderMirror(); spineTick(); b17Tick(); csTick(); if (S.st) S.st.sync();
     if (S.status === 'ready' && who()) S.who.paint(null);      /* KS12.7 (night.who): the band's who chip, and the reader made when the setting turns on */
+    if (S.status === 'ready') pcStatusSync();      /* KS14 (kit.stage): the faces follow the setting, on or off (sent only on a change) */
     if (W.B68Kit && S.status === 'ready') W.B68Kit.set('desk', !!(W.B68Features && W.B68Features.valueOf(S.doc, 'kit.desk')));      /* the kit and stage build (KS01.2): data-kit="desk" follows the setting, at once (ui/kit-flag.js) */
     if (S.status === 'ready' && W.B68Features) { var pOn = !!W.B68Features.valueOf(S.doc, 'blade.pitches'); if (W.B68Pitches) W.B68Pitches.set(gmApi(), pOn); else if (pOn && W.B68Load) W.B68Load.need('blade-pitches').then(function () { if (W.B68Pitches && S && S.status === 'ready') W.B68Pitches.set(gmApi(), !!W.B68Features.valueOf(S.doc, 'blade.pitches')); }, function () {}); }      /* blade.pitches (KS18): the blade-pitches bundle while it is on; B68Pitches (gm/kit/blade.js) adds the pitch fields to the tick, and takes them off when it turns off */
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
@@ -2991,8 +2993,8 @@
     return c && Array.isArray(c.options) ? c.options.filter(function (o) { return o && str(o.value); }) : [];
   }
   function whoList() { var l = whoAll(); return S && S.who ? S.who.only(l) : l; }      /* KS12.2 (night.who): the chips are the PCs playing tonight */
-  function setWho(v) { if (!S || !hasSit()) return; v = str(v); setLive('pc', str(uiNow().pc) === v ? '' : v); renderPos(); renderControls(); }
-  function whoClear() { if (S && hasSit() && str(uiNow().pc)) { setLive('pc', ''); renderPos(); renderControls(); } }
+  function setWho(v) { if (!S || !hasSit()) return; v = str(v); setLive('pc', str(uiNow().pc) === v ? '' : v); renderPos(); renderControls(); pcStatusSync(); }      /* KS14.2: the acting head follows Who */
+  function whoClear() { if (S && hasSit() && str(uiNow().pc)) { setLive('pc', ''); renderPos(); renderControls(); pcStatusSync(); } }
   function setPos(v) { setLive('pos', v); renderPos(); }
   /* a roll is never invisible: Focus (which hides the card) goes, said once per page load, and the card's header is scrolled
      into view in the console column */
@@ -4339,7 +4341,8 @@
     }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
   }
   /* Take it down (a tool's own button): what is shown goes, the ambient scene plays. Blank (lights out): true black until the next send. */
-  function blankIpad() { pushDisplay({ kind: 'blank' }).then(function () { toast('Taken down: the iPad plays the ambient scene.'); }, function (e) { toast('Could not take it down: ' + errText(e), true); }); }
+  function blankIpad() { if (W.B68GmPcStatus) { W.B68GmPcStatus.down(); pcStatusSync(); }      /* KS14.2: Blank, nobody acts */
+    pushDisplay({ kind: 'blank' }).then(function () { toast('Taken down: the iPad plays the ambient scene.'); }, function (e) { toast('Could not take it down: ' + errText(e), true); }); }
   function darkIpad() { return pushDisplay({ kind: 'dark' }).then(function () { toast('Blank: the iPad is black until the next send.'); return true; }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); return false; }); }
 
   /* ---------- THE iPAD TRAY's Clear (0) (the GM night rebuild, the design's iPad part: one way off) ----------
@@ -6235,13 +6238,18 @@
   /* PC status on the band's faces (suite 3.7, switch face.pcstatus): app/gm/pcstatus.js sends the layer only when what it would draw has changed */
   function pcStatusSync() {
     var K = W.B68GmPcStatus; if (!K || !S || !W.B68Features) return;
+    if (b09On('kit.stage') && !isObj(AM.doc)) return;      /* KS14: not before the ambient is read (an NPC face there is never written over) */
     var me = S;
     K.sync({
-      feature: function (id) { return S === me && b09On(id); }, pcs: herePcs,      /* KS12.3: the faces of who is playing */
+      feature: function (id) { return S === me && (b09On(id) || (id === 'face.pcstatus' && b09On('kit.stage'))); }, pcs: herePcs,      /* KS12.3: the faces of who is playing; KS14: the stage's heads send them too */
+      stage: function () { return S === me && b09On('kit.stage'); }, who: function () { return S === me && hasSit() ? str(uiNow().pc) : ''; }, stampUp: function () { return !!(S === me && me.stamp && me.stamp.view().active); },
+      joined: function () { return S !== me ? null : S.who ? S.who.present() : W.B68GmWho ? W.B68GmWho.join(whoAll().map(function (o) { return { name: str(o.value), first: str(o.label) }; }), dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), owner: str(c.owner) }; }), null) : (ks14Who(), null); },      /* KS14.2: KS12's one join */
       current: function () { var l = isObj(AM.doc) && isObj(AM.doc.layers) && isObj(AM.doc.layers.band) ? AM.doc.layers.band.faces : null; return Array.isArray(l) ? l : null; },
       layer: function (path, value) { var sh = shows(); return sh ? sh.layer(path, value) : Promise.resolve(null); }
     });
   }
+  /* KS14.2: the Who's join is KS12's (gm/kit/who.js, the night-who bundle): with night.who off it is fetched once while kit.stage is on */
+  function ks14Who() { var me = S; if (!S || S.ks14Who || W.B68GmWho || !W.B68Load || !W.B68Load.need) return; S.ks14Who = true; W.B68Load.need('night-who').then(function () { if (S === me) pcStatusSync(); }, function () { if (S === me) S.ks14Who = false; }); }
   function charactersChanged() {
     if (!S || S.status !== 'ready') return;
     runFoldMoves();         /* a phone's move request rides on the characters */

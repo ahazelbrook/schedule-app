@@ -16,7 +16,7 @@
   var BAND_ALL = {
     band: { phase: 'after', security: 4, onair: true, faces: [
       { pcId: 'pc-nell', name: 'Nell Arbuthnot', stress: 9, harm: [1, 1, 2, 3], locks: 2 },
-      { pcId: 'pc-ray', name: 'Ray Okonjo', stress: 2, harm: [2] },
+      { pcId: 'pc-ray', name: 'Ray Okonjo', stress: 2, harm: [2], acting: true },      /* KS14.2: the acting mark (the strip ignores it) */
       { pcId: 'pc-tam', name: 'Tamsin-Petronella Vandermeerholt', stress: 6, locks: 1 }] }
   };
   var BAND_START_FACES = [{ name: 'Mabel Quist', role: 'Fixer' }, { name: 'Dov Kessler', role: 'Desk sergeant' }, { name: 'Ada Vell', role: 'Croupier' }];
@@ -43,6 +43,9 @@
   var STAGE_WIRE = { kicker: 'Wire', title: 'The Pelican Rooms shuts its doors at midnight: the last tram leaves at ten to.', timer: 14000 };
   var STAGE_SVG = [['rect', { x: 20, y: 20, width: 560, height: 360, fill: '#1d2a44', stroke: '#e8c33c', 'stroke-width': 4 }],
     ['rect', { x: 60, y: 60, width: 220, height: 140, fill: '#2f4f7a' }], ['rect', { x: 320, y: 200, width: 220, height: 140, fill: '#7a4f2f' }]];
+  /* KS14: the top band's fixture: the night's clock and NEXT, three heads (one a made-up 22-character name), Ray acting (the faces layer's acting mark) */
+  var STAGE_BAND = { time: '21:14', next: [{ text: 'The band takes five', at: '21:30' }], crew: [{ name: 'Nell Arbuthnot' }, { name: 'Ray Okonjo' }, { name: 'Octavia Fennimore-Clay' }] };
+  var STAGE_FACES = { faces: [{ pcId: 'pc-nell', name: 'Nell Arbuthnot', stress: 4 }, { pcId: 'pc-ray', name: 'Ray Okonjo', stress: 2, acting: true }, { pcId: 'pc-oct', name: 'Octavia Fennimore-Clay', stress: 7 }] };
   function stageCards() {
     var out = [];
     [['plate', 'Stage plate: the scene caption (the wire), timed'], ['map', 'Stage plate: the map caption'], ['idle', 'Idle stage: the slots filled']].forEach(function (k) {
@@ -81,8 +84,8 @@
     }
     if (what === 'idle') {
       var put = function (slot, node) { if (node) F.slot(slot).appendChild(node); };
-      put('clock', U.node('chip', { label: '21:14 · Next 21:30' }));
-      put('crew', U.node('chip', { label: 'Nell Arbuthnot · 4' })); put('crew', U.node('chip', { label: 'Ray Okonjo · 2' }));
+      if (root.B68StageBand) root.B68StageBand.attach(F, { band: function () { return STAGE_BAND; }, layers: function () { return STAGE_FACES; }, doc: document });      /* KS14: the clock and the heads */
+      else { put('clock', U.node('chip', { label: '21:14 · Next 21:30' })); put('crew', U.node('chip', { label: 'Nell Arbuthnot · 4' })); }
       put('roll', U.node('chip', { label: 'Last roll · Nell · clean', tone: 'ok', dot: true }));
       put('clocks', U.node('meter', { kind: 'clock', label: 'Alarm', value: 2, max: 6, show: true, tone: 'alarm' }));
       put('clocks', U.node('meter', { kind: 'clock', label: 'Last tram', value: 3, max: 8, show: true }));
