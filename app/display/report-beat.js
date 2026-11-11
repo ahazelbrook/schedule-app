@@ -8,7 +8,8 @@
   var S = root.B68Shows;
   if (!S) return;
   var C = S.C;
-  var POSITIONS = ['controlled', 'risky', 'desperate'], EFFECTS = ['limited', 'standard', 'great'];
+  var POSITIONS = ['controlled', 'risky', 'desperate'], EFFECTS = ['limited', 'standard', 'great'], RESULTS = ['clean', '45', '13'];
+  function given(v) { return v !== undefined && v !== null && v !== ''; }
 
   function el(doc, tag, cls, text) {
     var e = doc.createElement(tag);
@@ -19,6 +20,13 @@
 
   S.register('report', {
     label: 'Action report', ms: 180000, fixture: { position: 'risky', effect: 'standard', text: 'Wren Tully turns round' },
+    /* KS15 (the roll as beats): the stakes, the result and the cost, as the look book's extra cards. The new stage (display/kit/roll.js) draws them as beats */
+    fixtures: [
+      { label: 'Action report', fixture: { position: 'risky', effect: 'standard', text: 'Wren Tully turns round' } },
+      { label: 'Action report: the stakes', fixture: { position: 'risky', effect: 'standard', text: 'She calls the desk.', who: 'Ray' } },
+      { label: 'Action report: the result', fixture: { position: 'risky', effect: 'standard', text: 'She calls the desk.', who: 'Ray', result: '45' } },
+      { label: 'Action report: the cost', fixture: { position: 'risky', effect: 'standard', text: 'She calls the desk.', who: 'Ray', result: '45', cost: 'Lotte remembers your face.' } }
+    ],
     clean: function (p) {
       var pos = C.oneOf(p.position, POSITIONS), eff = C.oneOf(p.effect, EFFECTS);
       if (!pos || !eff) return null;
@@ -26,6 +34,12 @@
       if (p.text !== undefined && p.text !== null && p.text !== '' && !t) return null;
       var out = { position: pos, effect: eff };
       if (t) out.text = t;
+      /* KS15: who (40), result (clean | 45 | 13) and cost (60) are optional, with the server's bounds; one that is there but out of bounds is no beat */
+      var w = C.text(p.who, 40), r = C.oneOf(p.result, RESULTS), c = C.text(p.cost, 60);
+      if ((given(p.who) && !w) || (given(p.result) && !r) || (given(p.cost) && !c)) return null;
+      if (w) out.who = w;
+      if (r) out.result = r;
+      if (c) out.cost = c;
       return out;
     },
     render: function (p, env) {
