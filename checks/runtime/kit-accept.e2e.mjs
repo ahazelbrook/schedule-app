@@ -173,7 +173,7 @@ try {
   /* ---- 4 and 5: the iPad at 1024x768, idle and with a stamp up ---- */
   const rows = [];
   for (const state of ['idle', 'stamp']) {
-    await api('PATCH', '/gm/ambient', { overlay: state === 'idle' ? null : { id: 'kit-accept-' + state, kind: 'stamp', ms: 180000, payload: { position: 'risky', effect: 'standard', text: 'Nell goes for it: the guard is watching the door' } } });
+    await api('PATCH', '/gm/ambient', { overlay: state === 'idle' ? null : { id: 'kit-accept-' + state, kind: 'report', ms: 180000, payload: { position: 'risky', effect: 'standard', text: 'Nell goes for it: the guard is watching the door' } } });
     const { c, page } = await open('#display', IPAD, 1024, 768);
     await page.waitForSelector('.dp-overlay', { state: 'attached', timeout: 30000 });
     if (state === 'stamp') await page.waitForSelector('.dp-ov-stamp, .dp-ov-report, [class*="dp-ov-"]', { timeout: 15000 }).catch(() => {});

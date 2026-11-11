@@ -406,6 +406,7 @@ async function main() {
   const marker = path.join(stateDir, 'demo-night-seeded.json');
   if (!existsSync(marker) || flag('reseed')) { await seed(); writeFileSync(marker, JSON.stringify({ at: NOW, port: PORT })); console.log('seeded the demo night'); }
   else console.log('reusing the seeded state in ' + stateDir + ' (pass --reseed to seed it again)');
+  if (opt('kit', null) !== null) { await setKit(api, kitIds(KIT)); console.log('the kit settings written: ' + (kitIds(KIT).join(', ') || 'all five off')); }       /* before the first page opens, shots or not */
   console.log([
     '',
     'The demo night is up on ' + BASE + ' (state: ' + persist + (ownState ? ', removed on exit' : '') + ')',
@@ -419,7 +420,6 @@ async function main() {
   ].join('\n'));
   if (SHOTS) {
     const { shoot } = await import(pathToFileURL(path.join(ROOT, 'scripts', 'demo-night-shots.mjs')).href);
-    if (opt('kit', null) !== null) await setKit(api, kitIds(KIT));       /* the five settings, written to the GM state and the campaign document before the first page opens */
     const n = await shoot({ base: BASE, dir: path.resolve(SHOTS), only: ONLY, api, users: USERS, site: SITE, theme: THEME, fingerprint: FINGERPRINT });
     console.log('wrote ' + n + ' screenshots to ' + path.resolve(SHOTS));
     process.exit(0);

@@ -1,8 +1,9 @@
 // The kit's day-0 baseline (KS04.1): every demo-night scenario at its viewport, as a PNG and a layout fingerprint, plus the request logs, taken from commit 798907c
 // (Deploy 35) in a worktree of its own, so the baseline can never drift with the branch. The harness (the scripts/ files this build adds) is copied over that
 // worktree for the run: the app under test is 798907c's, the code that looks at it is this branch's. The worktree is removed afterwards.
-//   PW_MODULE=<playwright> PW_CHANNEL=msedge node scripts/kit-baseline.mjs --port 10150 [--out <dir>] [--commit 798907c] [--keep]
+//   PW_MODULE=<playwright> PW_CHANNEL=msedge node scripts/kit-baseline.mjs --port 10150 [--out <dir>] [--commit 798907c] [--keep] [--only a,b] [--merge]
 //   node scripts/kit-baseline.mjs --compare <dirA> <dirB>      two baselines (or a baseline and a run) against each other: the first 20 differences
+// --only a,b takes just the scenarios whose names start so; --merge keeps what --out already holds (and adds to its request logs) instead of starting it again.
 // --out defaults to b68-wt\_kit-shots\baseline (outside the repo). Take it twice (--out ...\baseline-2) and --compare the two: they must agree.
 import { spawnSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync, readdirSync } from 'node:fs';
@@ -47,12 +48,13 @@ try {
   made = true;
   symlinkSync(path.join(WT, 'deploy-31bf4f9', 'node_modules'), path.join(BASE, 'node_modules'), 'junction');
   for (const f of ['kit-fingerprint.mjs', 'demo-night.mjs', 'demo-night-shots.mjs', 'demo-night-band-shots.mjs', 'demo-night-kit-shots.mjs']) copyFileSync(path.join(ROOT, 'scripts', f), path.join(BASE, 'scripts', f));
-  rmSync(OUT, { recursive: true, force: true }); mkdirSync(OUT, { recursive: true });
+  if (!argv.includes('--merge')) rmSync(OUT, { recursive: true, force: true });
+  mkdirSync(OUT, { recursive: true });
   const env = { ...process.env, PW_MODULE: process.env.PW_MODULE || 'C:/Users/ahaze/AppData/Local/Temp/b07pw/node_modules/playwright-core', PW_CHANNEL: process.env.PW_CHANNEL || 'msedge', CI: '1' };
   delete env.B68_ANTHROPIC_KEY; delete env.ANTHROPIC_API_KEY;
   const head = run('git', ['rev-parse', 'HEAD'], { cwd: BASE }).stdout.trim();
   console.log('baseline of ' + head + ' into ' + OUT + ' on port ' + PORT);
-  r = run(process.execPath, [path.join(BASE, 'scripts', 'demo-night.mjs'), '--port', String(PORT), '--shots', OUT, '--fingerprint'], { cwd: BASE, env, stdio: 'inherit' });
+  r = run(process.execPath, [path.join(BASE, 'scripts', 'demo-night.mjs'), '--port', String(PORT), '--shots', OUT, '--fingerprint'].concat(opt('only', '') ? ['--only', opt('only', '')] : []), { cwd: BASE, env, stdio: 'inherit' });
   const now = new Date();
   writeFileSync(path.join(OUT, 'baseline-meta.json'), JSON.stringify({ v: 1, commit: head, capturedAt: now.toISOString(), localTime: now.toTimeString().slice(0, 5), files: readdirSync(OUT).filter((f) => f.endsWith('.json')).length }, null, 1));
   if (r.status !== 0) throw new Error('demo-night exited ' + r.status);

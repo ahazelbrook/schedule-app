@@ -20,7 +20,7 @@ export function kitScenarios(h) {
     await page.keyboard.press(key); await page.waitForTimeout(700);
   };
   const overlay = (o) => async (ctx) => { const r = await ctx.api('PATCH', '/gm/ambient', { overlay: o }); if (r.status !== 200) throw new Error('PATCH /gm/ambient ' + r.status + ' ' + String(r.text || '').slice(0, 160)); };
-  const stamp = (id, text, position, effect) => overlay({ id, kind: 'stamp', ms: 180000, payload: { position, effect, text } });
+  const stamp = (id, text, position, effect) => overlay({ id, kind: 'report', ms: 180000, payload: { position, effect, text } });
   const ipad = (name, setup, steps) => IPADS.map((size) => ({ name, size, route: '#display', as: IPAD, ready: DISPLAY_READY, settle: 2200, init: HINT, setup, steps }));
   const seen = (sel) => async (page) => { await page.waitForSelector(sel, { timeout: 20000 }).catch(() => {}); };
   /* the player layer of the map to the iPad, as the existing display scenario does it (a GM page opens, shows it, and closes) */
@@ -60,7 +60,7 @@ export function kitScenarios(h) {
     ...ipad('kit-stage-band', overlay(null), seen('.dp-overlay')),
     ...ipad('kit-stage-clocks', tickClocks),
     ...ipad('kit-stage-stakes', stamp('kit-stakes-' + Date.now(), 'Nell goes for it: the guard is watching the door', 'risky', 'standard'), seen('.dp-overlay')),
-    ...ipad('kit-stage-result', stamp('kit-result-' + Date.now(), 'It goes wrong: the house alarm rings upstairs', 'desperate', 'limited'), seen('.dp-overlay')),
+    ...ipad('kit-stage-result', stamp('kit-result-' + Date.now(), 'It goes wrong: a door slams upstairs', 'desperate', 'limited'), seen('.dp-overlay')),
     ...ipad('kit-stage-npc', overlay({ id: 'kit-npc-' + Date.now(), kind: 'npc', ms: 180000, npcId: 'npc-mabel' }), seen('.dp-ov-npc')),
     ...ipad('kit-stage-map', mapToIpad),
     { name: 'kit-stage-clear', size: [1024, 768], route: '#display', as: IPAD, ready: DISPLAY_READY, settle: 500, init: HINT, setup: overlay(null) },
