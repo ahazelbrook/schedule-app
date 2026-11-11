@@ -282,7 +282,8 @@
     }
     (function init() { var r = restore(readStore(), phaseNow()); st.place = r.place; st.views = r.views; st.extra = r.extra; st.phase = phaseNow(); })();
 
-    function current() { var v = st.views[st.place]; return v && (lists(st.place, v) || v === st.extra) ? v : ownOf(st.place)[0].id; }
+    function current() { var v = st.views[st.place], KS = kitShell(); return v && (lists(st.place, v) || v === st.extra) ? v : KS ? KS.first(ownOf(st.place)) : ownOf(st.place)[0].id; }
+    function kitShell() { var K = W && W.B68KitShell; return K && typeof K.on === 'function' && K.on() ? K : null; }      /* KS09 (kit.desk): the new desk's tabs */
     /* a tool registered with a mount of its own (gm/tools.js): a view drawn by its mount */
     function extraTool(id) { var T = W && W.B68GmTools; if (!T || typeof T.extras !== 'function') return null; try { return T.extras().filter(function (t) { return t && t.id === id; })[0] || null; } catch (e) { return null; } }
     function known(id) { return has(VIEWS, id) || !!extraTool(id); }
@@ -365,8 +366,11 @@
       return extra ? '<span class="gm-vc-xw">' + t + '<button type="button" class="chip gm-vc-x" data-pvx="' + esc(id) + '" aria-label="' + esc('Drop ' + label + ' from ' + placeLabel(st.place)) + '">×</button></span>' : t;
     }
     function paintRow(e) {
-      var cur = current(), own = ownOf(st.place), ex = st.extra, d = DEF[st.place];
-      if (e.row) {
+      var cur = current(), own = ownOf(st.place), ex = st.extra, d = DEF[st.place], KS = kitShell();
+      if (KS) { own = KS.inRow(own, cur); st.sigs.row = 'kit'; }      /* KS09: four views put away from the row (their keys and Find still open them) */
+      if (e.row && KS) KS.row(e.row, { label: placeLabel(st.place) + ': views', cur: cur, own: own, extra: ex ? { id: ex, label: labelIn(ex), drop: 'Drop ' + labelIn(ex) + ' from ' + placeLabel(st.place) } : null,
+        pinned: PINNED.map(function (id) { return { id: id, label: VIEWS[id].label }; }), views: VIEWS });
+      else if (e.row) {
         var h = own.map(function (v) { return tabHtml(v.id, v.label, cur === v.id); }).join('') + (ex ? tabHtml(ex, labelIn(ex), cur === ex, true) : '') +
           '<span class="gm-vsep" aria-hidden="true"></span>' + PINNED.map(function (id) { return tabHtml(id, VIEWS[id].label, cur === id, false, true); }).join('');
         if (st.sigs.row !== h) { st.sigs.row = h; e.row.innerHTML = h; e.row.setAttribute('aria-label', placeLabel(st.place) + ': views'); }

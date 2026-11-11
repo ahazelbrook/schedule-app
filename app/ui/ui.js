@@ -30,6 +30,9 @@
                                    count as text), o.tone 'ink' | 'accent' | 'alarm'
      B68Ui.key(o)                  a key hint: <kbd class="ui-key">
      B68Ui.dot(o)                  a status dot: o.tone 'live' | 'ok' | 'alarm' | 'idle' | 'caution'; with o.label a word beside it, else o.title names it
+     B68Ui.bottombar(o)            (KS17) a phone's bottom bar: <nav class="ui-bottombar" aria-label=o.label> round one tab row (the Tabs part: o.items,
+                                   o.value; class ui-tabs ui-bottombar-tabs). o.fixed -> ui-bottombar--fixed: fixed to the foot of the screen, its
+                                   padding clear of the home indicator (env(safe-area-inset-bottom)). The hooks go on the nav
    HOOKS (KS02b). Every part takes ONE options object (a string in its place means { label: string }) and returns an ESCAPED markup string. Every part also takes
    the hooks, passed through untouched: o.id; o.cls (the old class names to keep: a string or a list); o.data ({ 'band-place': 'run' } ->
    data-band-place="run"; a camelCase key is kebab-cased the way dataset does: bandPlace and dataBandPlace both give data-band-place; a key that is
@@ -217,6 +220,15 @@
           { caption: 'Alarm', opts: { tone: 'alarm', label: 'Signed out' } },
           { caption: 'Idle', opts: { tone: 'idle', label: 'Asleep' } },
           { caption: 'Caution', opts: { tone: 'caution', label: 'Slow line' } }
+        ] },
+      { name: 'Bottom bar', fn: 'bottombar', 'class': 'ui-bottombar', variants: ['fixed'], states: ['hover', 'focus-visible', 'pressed'],
+        'do': 'A phone\'s few screens, one word each, the one shown marked. Fixed to the foot, clear of the home indicator.',
+        dont: 'More than five places. An action in the bar: it only moves between screens.',
+        examples: [
+          { caption: 'Now', opts: { label: 'Sheet screens', value: 'now', items: [{ label: 'Now', value: 'now' }, { label: 'Sheet', value: 'sheet' },
+            { label: 'Crew', value: 'crew' }, { label: 'Notes', value: 'notes' }] } },
+          { caption: 'Notes', opts: { label: 'Sheet screens', value: 'notes', items: [{ label: 'Now', value: 'now' }, { label: 'Sheet', value: 'sheet' },
+            { label: 'Crew', value: 'crew' }, { label: 'Notes', value: 'notes' }] } }
         ] }
     ]
   };
@@ -541,7 +553,14 @@
   };
 
   /* ---------- the public helper ---------- */
-  var FNS = ['button', 'seg', 'tabs', 'chip', 'card', 'row', 'field', 'meter', 'key', 'dot', 'link', 'menu'];
+  /* the phone's bottom bar (KS17): a nav holding one tab row (the Tabs part, so B68Ui.wireTabs moves along it); o.fixed sticks it to the foot */
+  T.bottombar = function (o) {
+    var a = hooks([['class', classes(o.fixed ? ['ui-bottombar', 'ui-bottombar--fixed'] : ['ui-bottombar'], o.cls)]], o);
+    if (o.label) put(a, 'aria-label', o.label);
+    return el('nav', a, [T.tabs({ items: o.items, value: o.value, cls: 'ui-bottombar-tabs' })]);
+  };
+
+  var FNS = ['button', 'seg', 'tabs', 'chip', 'card', 'row', 'field', 'meter', 'key', 'dot', 'link', 'menu', 'bottombar'];
   var M = { VERSION: 1, PARTS: PARTS, FNS: FNS.slice(), esc: esc };
   FNS.forEach(function (n) { M[n] = function (o) { return html(T[n](norm(o))); }; });
   M.part = function (d) { d = norm(d); var f = T[d.part]; return typeof f === 'function' ? html(f(d)) : ''; };
