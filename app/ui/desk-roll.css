@@ -61,6 +61,16 @@
 :root[data-kit~="desk"] .kr-sit:active { border-left-color: var(--ui-edge, var(--ui-ink)); }
 :root[data-kit~="desk"] .kr-sit .ui-key { margin-left: auto; }
 
+/* the stamp's one line, pinned above the Blade fold (sticky at the top of the column), so what is up stays in sight beside the Fixer's answer */
+:root[data-kit~="desk"] .kr-pin {
+  position: sticky; top: -12px; z-index: var(--ui-layer-sticky); margin: 0; padding: var(--ui-space-2) var(--ui-space-3); border: var(--ui-hairline); border-left: 4px solid var(--ui-accent); border-radius: var(--ui-radius);
+  background: var(--ui-raised); color: var(--ui-ink); font: 700 var(--ui-type-label)/1.3 var(--ui-font-text);
+}
+/* no display on .kr-pin itself: Focus (F) folds it with the old rule, as it folds the card */
+:root[data-kit~="desk"] .kr-pinrow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-1) var(--ui-space-2); }
+:root[data-kit~="desk"] .kr-pinwhat { flex: 1 1 6em; min-width: 0; overflow-wrap: anywhere; }
+:root[data-kit~="desk"] .kr-pindown { min-height: 28px; padding: 0 var(--ui-space-2); font-size: var(--ui-type-label); letter-spacing: .04em; }
+
 /* ---------- the Rack: the Fixer's answer and Voice, in the Blade fold under the card ---------- */
 :root[data-kit~="desk"] .kr-rackf > summary {
   display: flex; align-items: center; gap: var(--ui-space-2); min-height: 32px; padding: 0 var(--ui-space-3); border: var(--ui-hairline); border-radius: var(--ui-radius);
@@ -102,6 +112,7 @@
 :root[data-kit~="desk"] .kr-pts > li::before { content: ""; position: absolute; left: .2em; top: .62em; width: .32em; height: .32em; border-radius: var(--ui-radius-pill); background: var(--ui-ink-soft); }
 :root[data-kit~="desk"] .kr-pts > li.kr-pt-cost::before { content: none; }
 :root[data-kit~="desk"] .kr-pts b { color: var(--ui-ink); font: 700 var(--ui-type-body)/1.35 var(--ui-font-text); letter-spacing: 0; text-transform: none; }
+:root[data-kit~="desk"] .kr-tail { white-space: nowrap; }
 :root[data-kit~="desk"] .kr-cost {
   margin-left: var(--ui-space-1); padding: 0 .5em; border: 0; border-radius: var(--ui-radius); vertical-align: 1px;
   font: 700 var(--ui-type-label)/1.5 var(--ui-font-mono); letter-spacing: 0; text-transform: none;
@@ -129,8 +140,8 @@
 :root[data-kit~="desk"] .kr-mini-pos small { max-width: 100%; font: 400 var(--ui-type-label)/1 var(--ui-font-text); letter-spacing: 0; opacity: .85; overflow: hidden; text-overflow: ellipsis; }
 :root[data-kit~="desk"] .kr-mini-pos .gm-mini-up { color: var(--ui-caution); opacity: 1; }
 :root[data-kit~="desk"] .kr-mini-b {
-  flex-direction: column-reverse; gap: 3px; width: 100%; min-height: 54px; padding: 4px 1px; border: var(--ui-hairline); border-left: 5px solid var(--ui-edge, var(--ui-line));
+  flex-direction: column-reverse; gap: 3px; width: 100%; min-height: 54px; padding: 4px 0; border: var(--ui-hairline); border-left: 4px solid var(--ui-edge, var(--ui-line));
   font-size: var(--ui-type-label); letter-spacing: 0; text-transform: none; white-space: nowrap;
 }
-:root[data-kit~="desk"] .kr-mini-b .ui-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+:root[data-kit~="desk"] .kr-mini-b .ui-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-family: var(--ui-font-cond); letter-spacing: -.02em; }
 :root[data-kit~="desk"] .kr-mini-b .ui-key { font-size: var(--ui-type-lead); border: 0; background: transparent; opacity: 1; }

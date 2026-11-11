@@ -163,13 +163,15 @@ try {
 
     const fxr = await p.$$eval('#gm-rack li.gm-fx', (l) => l.map((li) => ({ cls: li.className, k: li.querySelector('.gm-fx-k').textContent, edge: getComputedStyle(li).borderLeftColor, ew: parseFloat(getComputedStyle(li).borderLeftWidth),
       lead: (li.querySelector('.gm-fx-lead') || {}).textContent || '', leadW: li.querySelector('.gm-fx-lead') ? +getComputedStyle(li.querySelector('.gm-fx-lead')).fontWeight : 0,
-      pts: [...li.querySelectorAll('.kr-pts > li')].map((x) => x.firstChild.textContent.trim()),
+      pts: [...li.querySelectorAll('.kr-pts > li')].map((x) => { const y = x.cloneNode(true); y.querySelectorAll('.kr-cost').forEach((e) => e.remove()); return y.textContent.replace(/\s+/g, ' ').trim(); }),
+      tail: (() => { const t = li.querySelector('.kr-tail'), k = li.querySelector('.kr-cost'); return t && k ? Math.abs(t.getBoundingClientRect().top - k.getBoundingClientRect().top) < 8 && getComputedStyle(t).whiteSpace === 'nowrap' : null; })(),
       cost: li.querySelector('.kr-cost') ? { t: li.querySelector('.kr-cost').textContent, bg: getComputedStyle(li.querySelector('.kr-cost')).backgroundColor } : null })));
     check(fxr.map((r) => r.k).join('|') === ROWS.map((r) => r[1]).join('|') && fxr.every((r, i) => r.cls.includes('gm-fx-' + ROWS[i][0])), 'five rows in the Fixer\'s order, with the old hooks: ' + fxr.map((r) => r.k).join('|'));
     check(fxr.every((r, i) => r.edge === ROWS[i][2] && r.ew >= 4), 'each outcome has its colour edge: ' + fxr.map((r) => r.edge).join(' '));
     const keys = ['bargain', 'four_five', 'one_three', 'six', 'crit'];
     check(fxr.every((r, i) => r.lead === OUT[keys[i]].lead && r.leadW >= 700 && r.pts.join(' ') === OUT[keys[i]].say), 'the words as sent, in order: the lead in bold, the say as bullets');
     check(fxr[1].pts.length === 2 && fxr[2].pts.length === 2, 'two sentences, two bullets (4/5 and 1–3)');
+    check(fxr.filter((r) => r.cost).every((r) => r.tail === true), 'a cost rides with the last word of its point (never alone on a line)');
     check(fxr[2].cost && fxr[2].cost.t === 'harm 2' && fxr[2].cost.bg === ROWS[2][2] && fxr[1].cost.bg === ROWS[1][2] && fxr[4].cost.bg === ROWS[4][2] && !fxr[0].cost,
       'the cost carries its outcome colour: ' + fxr.map((r) => r.cost ? r.cost.t + '=' + r.cost.bg : '-').join(' '));
     const dice = await p.$eval('#gm-rack .kr-dice', (e) => ({ t: e.textContent, f: getComputedStyle(e).fontFamily, s: parseFloat(getComputedStyle(e).fontSize), h: e.getBoundingClientRect().height, lh: parseFloat(getComputedStyle(e).lineHeight) }));
@@ -185,6 +187,9 @@ try {
     const fit = await until(async () => { const v = await inView(); return v.top >= 0 && v.under >= 0 ? v : null; }, 2000) || await inView();
     console.log('  the answer: ' + JSON.stringify(fit));
     check(fit.h <= fit.visH && fit.top >= 0 && fit.under >= 0, 'the Fixer\'s answer reads top to bottom in the column at 1366x768, no scrolling (' + fit.h + ' of ' + fit.visH + ' px)');
+    const pinOk = (who) => p.evaluate((w) => { const pin = document.querySelector('#kr-pin'), col = document.querySelector('#gm-roll'); if (!pin || pin.hidden) return false; const r = pin.getBoundingClientRect(), c = col.getBoundingClientRect();
+      return r.height > 0 && r.top >= c.top - 1 && r.bottom <= c.bottom && /On the iPad/.test(pin.textContent) && (!w || pin.textContent.includes(w)) && /risky, standard/.test(pin.textContent) && !!pin.querySelector('[data-gm="stamp-down"]'); }, who);
+    check(await pinOk(await p.$eval('#gm-who [aria-checked="true"]', (b) => b.textContent).catch(() => '')), 'the stamp stays in sight: its pinned line (On the iPad, who, risky, standard, Take it down) is in view above the answer');
     if (SHOTS) await shot(p, 'roll-stamped-paper-1366');
 
     /* key 3: the 1–3 is marked */
@@ -227,6 +232,49 @@ try {
     await p.click('#gm-fitnow');
     check(!!(await until(() => seen.fits.length === nFit + 1, 6000)) && seen.fits[nFit].threat === undefined && !!seen.fits[nFit].draws, 'Fit: an unstamped fit with the console\'s draws');
     check(!!(await until(async () => /not stamped/.test(await p.textContent('#gm-rack .kr-for')), 4000)), 'and the Rack says it was not stamped');
+
+    /* the column moves for a fit only when the GM is not in a field and has not scrolled since the fit was asked */
+    const col = { top: () => p.evaluate(() => document.querySelector('#gm-roll').scrollTop), set: async (y) => { await p.evaluate((v) => { document.querySelector('#gm-roll').scrollTop = v; }, y); await sleep(250); } };
+    const fitted = async (n) => !!(await until(async () => seen.fits.length === n && (await p.textContent('#gm-rack')).includes('fit ' + n), 9000));
+    const whole = () => until(async () => { const v = await inView(); return v.top >= 0 && v.under >= 0 ? v : null; }, 2000);
+    /* Enter in the line stamps; the focus stays in the line, so nothing moves until it leaves */
+    await col.set(0);
+    let n0 = seen.fits.length;
+    await p.fill('#gm-c-threat', 'The rope snaps');
+    await p.press('#gm-c-threat', 'Enter');
+    check(await fitted(n0 + 1), 'Enter in the line stamps, and the fit lands');
+    await sleep(500);
+    check(await col.top() === 0 && await p.evaluate(() => document.activeElement && document.activeElement.id === 'gm-c-threat'), 'typing in the line: the column does not move under the GM');
+    await blur(p);
+    const ent = await whole();
+    check(!!ent && await pinOk(''), 'the line left: the whole answer and the pinned stamp come into view' + (ent ? '' : ': ' + JSON.stringify(await inView())));
+    await p.click('#kr-pin [data-gm="stamp-down"]');
+    /* the GM scrolls after the stamp: that fit is left where the GM put it */
+    await col.set(0);
+    n0 = seen.fits.length;
+    await p.fill('#gm-c-threat', 'The lamp swings');
+    await p.click(STAMP);
+    await until(async () => /Fitting…/.test(await p.textContent('#gm-rack')), 3000);
+    await col.set(40);
+    check(await fitted(n0 + 1), 'a stamp, then the GM scrolls, and the fit lands');
+    await sleep(500);
+    check(await col.top() === 40, 'scrolled by the GM since the stamp: the column stays put (' + await col.top() + ')');
+    await p.click('#kr-pin [data-gm="stamp-down"]');
+    check(!!(await until(async () => !!(await p.$(STAMP)) && await p.$eval('#kr-pin', (e) => e.hidden), 3000)), 'the pinned Take it down takes it down, and the pin goes');
+    /* a Scene control holds the focus: nothing moves until the focus leaves the column's fields */
+    await col.set(0);
+    n0 = seen.fits.length;
+    await p.fill('#gm-c-threat', 'The door bangs');
+    await p.click(STAMP);
+    await until(async () => /Fitting…/.test(await p.textContent('#gm-rack')), 3000);
+    await p.evaluate(() => { document.querySelector('#gm-scene').click(); const s = document.querySelector('#gm-now-s'); s.focus({ preventScroll: true }); });
+    check(await fitted(n0 + 1), 'a stamp, a Scene control focused, and the fit lands');
+    await sleep(500);
+    check(await col.top() === 0 && await p.evaluate(() => document.activeElement && document.activeElement.id === 'gm-now-s'), 'a field in the column has the focus: the column does not move');
+    await blur(p);
+    check(!!(await whole()), 'the field left: the whole answer comes into view');
+    await p.evaluate(() => document.querySelector('#gm-scene').click());
+    await p.click('#kr-pin [data-gm="stamp-down"]');
     /* keys 1, 2 and 4 */
     const cardText = () => p.textContent('#gm-card');
     for (const [k, title] of [['1', /Before the roll|Bargain/i], ['2', /4\/5/], ['4', /Someone/i]]) {
@@ -243,6 +291,8 @@ try {
       return m.getBoundingClientRect().height > 0 && rl.getBoundingClientRect().height === 0 && bs.length === 4 && bs.every((b) => b.getBoundingClientRect().height > 0 && parseFloat(getComputedStyle(b).borderLeftWidth) >= 4) ? bs.map((b) => b.textContent).join(' ') : ''; }), 3000);
     check(!!mini, 'Focus (F): the card folds away, the four keys show with their edges: ' + mini);
     if (SHOTS) await shot(p, 'roll-focus-paper-1366');
+    const cut = await p.$$eval('#gm-mini .kr-mini-b .ui-label', (l) => l.filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent));
+    check(cut.length === 0, 'Focus: every word on the keys is whole' + (cut.length ? ': cut ' + cut.join(', ') : ''));
     await blur(p); await p.keyboard.press('f');
     check(!!(await until(() => p.evaluate(() => document.querySelector('#gm-rl').getBoundingClientRect().height > 0), 3000)), 'F again: the card is back');
 

@@ -17,8 +17,10 @@
      The Fixer    the dice (the time, the position and the effect) in one small mono line, the line it was fitted for under it; then each outcome as
                   one row with its colour edge: the word, the lead in bold, the rest as bullets (one a sentence, the words as sent), and the cost (the
                   size) as a chip in the outcome's colour. The row marked on the Roll says Rolled. The hit line over the result card is a Card with
-                  the outcome's edge.
-     The Rack     Voice as a Card: the NPC, the lines as bullets, Clear and Another. Focus (F): the position, then the four keys with their edges.
+                  the outcome's edge. While a stamp is up, its one line (On the iPad, who, position and effect, Take it down) is pinned above the
+                  Blade fold (#kr-pin, sticky). When a fit's lines land, the column moves once (a cut) to show the pin and the whole answer: not while a
+                  field in the column has the focus (it waits for the focus to leave), and not at all once the column was scrolled since the fit was asked.
+     The Rack    Voice as a Card: the NPC, the lines as bullets, Clear and Another. Focus (F): the position, then the four keys with their edges.
    API (window.B68KitRoll; module.exports under Node)
      on() -> bool              the desk is on, its bundle here, and B68Ui and B68GmRoll loaded
      drawn(el) -> bool         el (the page's #gm-rl) is this file's card
@@ -103,8 +105,23 @@
         attrs: { role: 'radio', 'aria-checked': String(v === c) } });
     }).join('');
   }
+  /* the stamp's one-line status pinned above the Blade fold (#kr-pin, sticky in the column), so what is up stays in sight once the column has moved
+     down to the Fixer's answer: On the iPad, who, the position and effect, and Take it down (the page's own data-gm="stamp-down") */
+  function pinPaint(v) {
+    var doc = W && W.document, el = doc && doc.getElementById('kr-pin'); if (!el) return;
+    var a = v && v.on ? v.active : null, h = '';
+    if (a) {
+      var w = doc.querySelector('#gm-who [data-gm="who"][aria-checked="true"]'), who = w ? str(w.textContent).trim() : '';
+      h = '<div class="kr-pinrow">' + ui().chip({ label: 'On the iPad', tone: 'accent', dot: true, cls: 'kr-upchip' }) +
+        '<span class="kr-pinwhat">' + esc((who ? who + ', ' : '') + a.position + ', ' + a.effect) + '</span>' +
+        ui().button({ label: 'Take it down', key: 'Esc', cls: 'kr-pindown', data: { gm: 'stamp-down' }, title: 'Takes the action report off the iPad' }) + '</div>';
+    }
+    if (el.__html !== h) { el.innerHTML = h; el.__html = h; }
+    el.hidden = !h;
+  }
   function stampHtml(v) {
     v = v || {};
+    pinPaint(v);
     if (!v.on) return '';
     var U = ui(), a = v.active;
     if (!a) return U.button({ label: 'Stamp it on the iPad', rank: 'primary', cls: ['gm-stampb', 'kr-stampb'], data: { gm: 'stamp' },
@@ -139,36 +156,49 @@
   function fxRow(row, c, hit, fxOf) {
     var o = fxOf(c[row[0]]); if (!o.lead && !o.say) return '';
     var pts = points(o.say), k = str(row[2]), last = pts.length - 1;
-    var body = pts.map(function (p, i) { return '<li>' + esc(p) + (i === last ? cost(o.size, k) : '') + '</li>'; }).join('');
+    /* the cost rides with the last word of the last point (one nowrap tail), so it never wraps onto a line of its own */
+    var tail = function (p) { var at = p.lastIndexOf(' '); return esc(p.slice(0, at + 1)) + '<span class="kr-tail">' + esc(p.slice(at + 1)) + cost(o.size, k) + '</span>'; };
+    var body = pts.map(function (p, i) { return '<li>' + (i === last && o.size ? tail(p) : esc(p)) + '</li>'; }).join('');
     if (!pts.length && o.size) body = '<li class="kr-pt-cost">' + cost(o.size, k) + '</li>';
     return '<li class="gm-fx gm-fx-' + esc(k) + (hit ? ' hit' : '') + ' kr-fx ui-edge-' + (FX_EDGE[k] || 'ink') + '">' +
       '<p class="kr-fx-h"><b class="gm-fx-k kr-fx-k">' + esc(row[1]) + '</b>' + (o.lead ? '<b class="gm-fx-lead kr-fx-lead">' + esc(o.lead) + '</b>' : '') +
         (hit ? ui().chip({ label: 'Rolled', tone: 'accent', cls: 'kr-rolled' }) : '') + '</p>' +
       (body ? '<ul class="gm-fx-t kr-pts">' + body + '</ul>' : '') + '</li>';
   }
-  /* the answer reads top to bottom without scrolling: the first time a fit's lines are drawn, the column is moved (a cut, never animated) just enough
-     for the whole Blade fold to be in view above the column's sticky foot; nothing moves while the GM is typing the line, or when it is in view */
-  var revealed = null;
-  function reveal(tok) {
-    if (tok == null || tok === revealed || !W || !W.document) return;
-    revealed = tok;
-    var later = typeof W.requestAnimationFrame === 'function' ? W.requestAnimationFrame.bind(W) : function (f) { W.setTimeout(f, 0); };
-    later(function () {
-      var doc = W.document, col = doc.getElementById('gm-roll'), f = doc.getElementById('gm-rackf');
-      if (!col || !f || !f.open || f.hidden || !drawn(doc.getElementById('gm-rl')) || (doc.activeElement && doc.activeElement.id === 'gm-c-threat')) return;
-      var cr = col.getBoundingClientRect(), fr = f.getBoundingClientRect(), last = col.lastElementChild, vis = cr.bottom;
-      if (!fr.height || !cr.height) return;
-      if (last && last !== f && W.getComputedStyle(last).position === 'sticky') vis = Math.min(vis, last.getBoundingClientRect().top);
-      var top = fr.top - cr.top, bottom = fr.bottom - cr.top, h = vis - cr.top;
-      if (top >= 0 && bottom <= h) return;
-      var dy = bottom - h + 8;
-      if (fr.height > h - 8 || top - dy < 0) dy = top - 4;
-      col.scrollTop += dy;
-    });
+  /* the answer reads top to bottom without scrolling. Each fit (its tok) may move the column once (a cut, never animated) just enough for the stamp's
+     pinned line and the whole Blade fold to be in view above the column's sticky foot, when its lines are drawn. Never while a field in the column has the
+     focus (the line after Enter, a Scene control): it waits for the focus to leave the column's fields. Never once the GM (or the page) has scrolled the
+     column since the fit was asked: that fit is then left where the GM put it. Never when it is already in view */
+  var rv = { tok: null, done: true, scrolled: false, self: false, want: false };
+  function later(f) { if (typeof W.requestAnimationFrame === 'function') W.requestAnimationFrame(f); else W.setTimeout(f, 0); }
+  function typing(doc, col) { var a = doc.activeElement; return !!(a && col.contains(a) && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)); }
+  function watch(col) {
+    if (!col || col.__krWatch) return;
+    col.__krWatch = true;
+    col.addEventListener('scroll', function () { if (rv.self) rv.self = false; else rv.scrolled = true; }, { passive: true });
+    col.addEventListener('focusout', function () { W.setTimeout(reveal, 0); });
+  }
+  function arm(tok) { if (tok != null && tok !== rv.tok) rv = { tok: tok, done: false, scrolled: false, self: false, want: false }; }
+  function reveal() {
+    if (!W || !W.document || rv.done || !rv.want) return;
+    var doc = W.document, col = doc.getElementById('gm-roll'), f = doc.getElementById('gm-rackf'), pin = doc.getElementById('kr-pin');
+    if (rv.scrolled || !col || !f || !f.open || f.hidden || !drawn(doc.getElementById('gm-rl'))) { rv.done = true; return; }
+    if (typing(doc, col)) return;                                    /* the focus leaving the column's fields asks again (watch) */
+    rv.done = true;
+    var cr = col.getBoundingClientRect(), fr = f.getBoundingClientRect(), last = col.lastElementChild, vis = cr.bottom;
+    if (!fr.height || !cr.height) return;
+    if (last && last !== f && W.getComputedStyle(last).position === 'sticky') vis = Math.min(vis, last.getBoundingClientRect().top);
+    var pr = pin && !pin.hidden ? pin.getBoundingClientRect() : null;
+    var top = Math.min(fr.top, pr && pr.height ? pr.top : fr.top) - cr.top, bottom = fr.bottom - cr.top, h = vis - cr.top;
+    if (top >= 0 && bottom <= h) return;
+    var dy = bottom - h + 8;
+    if (bottom - top > h - 8 || top - dy < 0) dy = top - 4;
+    var was = col.scrollTop; rv.self = true; col.scrollTop = was + dy;
+    if (col.scrollTop === was) rv.self = false;                      /* nothing moved: no scroll event will come to clear the mark */
   }
   /* r: the page's S.rack ({ tok, ask, pre, status, why, card, hit }); ctx: { rows: FX_ROWS, why: the error line, fx: fxOf } */
   function rackHtml(r, ctx) {
-    if (r.status === 'ready' && !r.hit) reveal(r.tok);
+    if (W && W.document) { watch(W.document.getElementById('gm-roll')); arm(r.tok); if (r.status === 'ready' && !r.hit && r.tok === rv.tok && !rv.done) { rv.want = true; later(reveal); } }
     var U = ui(), a = r.ask || { position: r.pre ? r.pre.pos : '', threat: '' }, x = ctx || {}, fx = typeof x.fx === 'function' ? x.fx : function (v) { return { lead: '', say: str(v), size: '' }; };
     var dice = [a.hhmm ? 'for ' + a.hhmm : '', str(a.position) + (a.effect ? ', ' + a.effect : '')].filter(Boolean).join(' · ');
     var line = a.threat ? a.threat : (a.stamped ? 'stamped, no line' : 'not stamped');
@@ -219,8 +249,11 @@
       var t = sec.ownerDocument.createElement('div'); t.innerHTML = card();
       var kit = t.firstChild; if (!kit) return false;
       sec.replaceChild(kit, cur); sec[KEPT] = cur;
+      var fold = sec.querySelector('#gm-rackf');
+      if (fold && !sec.querySelector('#kr-pin')) { var pin = sec.ownerDocument.createElement('div'); pin.id = 'kr-pin'; pin.className = 'kr-pin'; pin.setAttribute('role', 'status'); pin.hidden = true; sec.insertBefore(pin, fold); }
       ui().guardBusy(sec);
     } else {
+      var p0 = sec.querySelector('#kr-pin'); if (p0) p0.parentNode.removeChild(p0);
       var back = sec[KEPT];
       if (back) sec.replaceChild(back, cur);
       else { var t2 = sec.ownerDocument.createElement('div'); t2.innerHTML = old().shell(); var fresh = t2.querySelector('#gm-rl'); if (!fresh) return false; sec.replaceChild(fresh, cur); }
