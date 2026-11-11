@@ -2094,7 +2094,7 @@
            the small one; an adapter that does not simply gets the transcriber part in full each time */
         fetch: function (seq, aseq, sseq, hseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq, sseq === null ? undefined : sseq, hseq === null ? undefined : hseq); },
         onMission: function (hud) { applyBand(hud); },
-        onFeatures: function (f) { if (root.B68Flags) { root.B68Flags.apply({ features: f }); suiteSync(); } },
+        onFeatures: function (f) { if (root.B68Flags) { root.B68Flags.apply({ features: f }); suiteSync(); } if (root.B68Kit) root.B68Kit.set('stage', swOn('kit.stage')); },   /* KS01.2: data-kit="stage" follows the setting */
         onSkew: function (ms) { s.skew = ms; },
         isHidden: function () { return document.hidden; },
         onAmbient: function (doc) { applyAmbient(doc); },
