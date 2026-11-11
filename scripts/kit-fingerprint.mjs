@@ -22,7 +22,7 @@ export const MASKS = ['#toastMsg', '#toastErr', '.gm-toast', '[data-kit-mask]'];
 /* Row 2 of the band is live text (the clock, what the iPad shows, the cue, the quiet list): what a poll has told it moves everything after it sideways. Inside it, left and
    width are not compared (height, top, classes, ids, styles are). Each entry: a key pattern and the axes let go. */
 export const LOOSE_AXES = [{ keys: 'gm-band-r2', axes: ['x', 'w'], styles: ['margin'], why: 'band row 2 is live text; a poll moves the cells after it sideways' }];
-export const MASK_KEYS = ['#gm-ipad-now', 'gm-tn-line', '#gm-bar-tray', 'gm-band-quiet', 'rv-players'];      /* the iPad's live line (what the iPad has been told, as the poll lands) and Tonight's lines (they count minutes to the real clock) */
+export const MASK_KEYS = ['#gm-ipad-now', 'gm-tn-line', '#gm-bar-tray', 'gm-band-quiet', 'rv-players', 'gm-debrief-card'];      /* the iPad's live line (what the iPad has been told, as the poll lands) and Tonight's lines (they count minutes to the real clock) */
 
 /* THE EXEMPTIONS: where "off means today" is deliberately not true, each one named, each with its reason, each printed by kit-off. Adding one is one line here.
    An exemption finds its elements one of three ways: `selector` (a CSS selector, matched in the page at capture time: the element and everything inside it), `text` (a
