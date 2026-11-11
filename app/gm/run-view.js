@@ -385,6 +385,8 @@
     /* N3: the header's popovers (the time and the night's squares, the alarm, the ⋯), and the tool bound into the right column (the page's: the montage) */
     var timeOpen = false, menuOpen = false, tool = null, escOff = [];
     var self = { box: function () { return boxEl; } };
+    /* KS11 (night.who): Before's Start the night picks who is playing, so this control, which only sets the in-story clock, is Start the clock */
+    function startName() { return typeof host.feature === "function" && host.feature("night.who") ? "Start the clock" : "Start the night"; }
     function closePops() { var was = timeOpen || alarmOpen || menuOpen; timeOpen = alarmOpen = menuOpen = false; return was; }
     /* the selected room: every change goes through here, so the Roll's "If it goes wrong" line can follow it (N4: the host's roomSelected(name),
        '' for none, when the host has it; without one the Roll follows the crew's room) */
@@ -437,7 +439,7 @@
       var m = x.m, p = x.rs.play, st = x.st, nowT = timeOf(st), nowBeat = B.beatOf(p, nowT), h = '<div class="rv-headwrap"><div class="rv-head">';
       if (!m.started) {
         var opts = startMinutes(p);
-        h += '<div class="rv-start" role="group" aria-label="Start the night"><b>Start the night</b> <span class="rv-dim">the engagement result sets the clock</span><span class="rv-startbtns">';
+        h += '<div class="rv-start" role="group" aria-label="' + startName() + '"><b>' + startName() + '</b> <span class="rv-dim">the engagement result sets the clock</span><span class="rv-startbtns">';
         if (opts.length) opts.forEach(function (o) { h += '<button type="button" class="rv-btn" data-rv="start" data-key="' + esc(o.key) + '" data-t="' + o.t + '">' + esc(o.label) + ' <small>' + esc(o.at) + '</small></button>'; });
         else h += '<button type="button" class="rv-btn" data-rv="start" data-key="open" data-t="0">Start at ' + esc(p.clock.start) + '</button>';
         h += '</span></div>';
@@ -498,7 +500,7 @@
       if (gs.length) it += '<p class="rv-mh">Intel: set dark rooms to blueprint</p><div class="rv-mgrid">' + gs.map(function (g) { return '<button type="button" class="rv-mi" data-site="intel" data-group="' + esc(g.id) + '" role="menuitem" title="Every dark room of it becomes blueprint">' + esc(g.label) + '</button>'; }).join("") + "</div>";
       if (menuItems.length) it += '<p class="rv-mh"></p>' + menuItems.map(function (q, i) { return '<button type="button" class="rv-mi" data-rv="menuitem" data-i="' + i + '" data-mid="' + esc(q.id) + '" role="menuitem"' + (q.title ? ' title="' + esc(q.title) + '"' : "") + ">" + esc(typeof q.label === "function" ? q.label(ctx) : q.label) + "</button>"; }).join("");
       if (typeof host.costume === "function") { var cs = !!host.costume(); it += '<button type="button" class="rv-mi" data-site="costume" role="menuitemcheckbox" aria-checked="' + cs + '" title="The Disguise select in a v1 site’s Run the site strip (Location)">Costume engine: ' + (cs ? "shown" : "hidden") + '</button>'; }
-      if (x.m.started) it += '<p class="rv-mh"></p><button type="button" class="rv-mi rv-reset" data-rv="reset" role="menuitem" title="Back to Start the night; asks first">Reset the night</button>';
+      if (x.m.started) it += '<p class="rv-mh"></p><button type="button" class="rv-mi rv-reset" data-rv="reset" role="menuitem" title="Back to ' + startName() + '; asks first">Reset the night</button>';
       return '<div class="rv-pop rv-menu" id="rv-menu" role="menu" aria-label="More for the night"' + (menuOpen ? "" : " hidden") + ">" + it + "</div>";
     }
     /* the toolbar over the board and the map: the views, the map tools (the page's), and the stage group while it has something to say */
@@ -713,7 +715,7 @@
     /* VV12: ask, clear the players' mission, then un-start the ball (site, floor and open stay); a failed mission write is said and the ball still resets */
     self.resetNight = function () {
       var rs = site(); if (!rs || !isStarted(host.state())) return Promise.resolve(false);
-      if (typeof host.confirm !== "function" || !host.confirm(RESET_ASK)) return Promise.resolve(false);
+      if (typeof host.confirm !== "function" || !host.confirm(RESET_ASK.replace("Start the night", startName()))) return Promise.resolve(false);
       var old = host.state(), key = str(old.site || rs.name) + "|" + old.start;
       return Promise.resolve(typeof host.resetMission === "function" ? host.resetMission() : null).then(null, function () { return null; }).then(function () {
         var ok = host.set(resetChange(host.state(), host.pcs()));
