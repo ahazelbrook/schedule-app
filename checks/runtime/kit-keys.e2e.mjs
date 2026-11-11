@@ -14,7 +14,7 @@
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { startDemo } from '../../scripts/kit-fingerprint.mjs';
+import { startDemo, setClock, clockScript } from '../../scripts/kit-fingerprint.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -53,27 +53,34 @@ const CARDS = [
 /* in the page */
 function snapPage() {
   const vis = (e) => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && !e.closest('[hidden]'); };
-  const path = (e) => { if (e.id) return '#' + e.id; const out = []; for (let a = e; a && a !== document.body && out.length < 4; a = a.parentElement) { const p = a.parentElement; out.push(a.tagName.toLowerCase() + (typeof a.className === 'string' && a.className.trim() ? '.' + a.className.trim().split(/\s+/)[0] : '') + ':' + (p ? [...p.children].indexOf(a) : 0)); } return out.reverse().join('>'); };
+  const sigOf = (a) => a.tagName.toLowerCase() + (typeof a.className === 'string' && a.className.trim() ? '.' + a.className.trim().split(/\s+/)[0] : '');
+  const path = (e) => { if (e.id) return '#' + e.id; const out = []; for (let a = e; a && a !== document.body && out.length < 4; a = a.parentElement) { const p = a.parentElement, sg = sigOf(a); out.push(a.id ? '#' + a.id : sg + ':' + (p ? [...p.children].filter((x) => sigOf(x) === sg).indexOf(a) : 0)); if (a.id) break; } return out.reverse().join('>'); };
   const A = ['aria-pressed', 'aria-selected', 'aria-current', 'aria-expanded', 'data-state', 'data-open', 'data-alarm', 'data-active', 'data-on'];
   const ids = [...document.querySelectorAll('[id]')].filter(vis).map((e) => e.id).sort();
   const attrs = {}; document.querySelectorAll(A.map((a) => '[' + a + ']').join(',')).forEach((e) => { attrs[path(e)] = A.map((a) => e.getAttribute(a)).join('|'); });
   const a = document.activeElement, toast = ['toastMsg', 'toastErr'].map((i) => { const e = document.getElementById(i); return e ? e.textContent.trim() : ''; }).join('|');
-  return { ids, attrs, active: a && a !== document.body ? path(a) : '', hash: location.hash, toast, find: !!document.querySelector('#gm-find-q') && vis(document.querySelector('#gm-find-q')) };
+  const all = [...document.querySelectorAll('[id]')].map((e) => e.id);
+  return { ids, all, attrs, active: a && a !== document.body ? path(a) : '', hash: location.hash, toast, find: !!document.querySelector('#gm-find-q') && vis(document.querySelector('#gm-find-q')) };
 }
+/* an id the page made from the clock and a dice roll (hmwdbhyvbau3l, nmwdbi3uc013): a letter, then letters and at least one digit, 10 to 15 characters, or a letter and the clock's m... */
+const GEN_ID = /^(?:[a-z](?=[a-z0-9]*\d)[a-z0-9]{9,14}|[a-z]m[a-z0-9]{9,12})$/;      /* the second shape: a letter, then the clock's base 36 (m...) */
 const clean = (v) => {
   if (Array.isArray(v)) return v.map(clean);
   if (v && typeof v === 'object') { const o = {}; for (const k of Object.keys(v).sort()) { if (/^(at|ts|updated|seq|rev|etag|until|sent|exportedAt|nowMs|savedAt|lastAt)$/.test(k)) continue; o[k] = clean(v[k]); } return o; }
   if (typeof v === 'string' && /^\d{4}-\d\d-\d\dT\d\d:/.test(v)) return 'ISO';
+  if (typeof v === 'string' && GEN_ID.test(v)) return '<id>';
   if (typeof v === 'number' && v > 1e11) return 'EPOCH';
   return v;
 };
 const flat = (v, p = '', out = new Map()) => {
-  if (v && typeof v === 'object') { for (const k of Object.keys(v)) flat(v[k], p + '/' + k, out); if (!Object.keys(v).length) out.set(p, Array.isArray(v) ? '[]' : '{}'); }
+  if (v && typeof v === 'object') { for (const k of Object.keys(v)) flat(v[k], p + '/' + (GEN_ID.test(k) ? '<id>' : k), out); if (!Object.keys(v).length) out.set(p, Array.isArray(v) ? '[]' : '{}'); }
   else out.set(p, JSON.stringify(v));
   return out;
 };
+/* the display GET is built from the ambient and campaign documents, which are compared themselves; an overlay's age and its timed expiry are the clock's */
+const QUIET = (path) => /^\/display\//.test(path) || /\/age$/.test(path);
 function serverDiff(a, b) {
-  const out = [], A = flat(clean(a)), B = flat(clean(b));
+  const out = [], A = new Map([...flat(clean(a))].filter(([k]) => !QUIET(k))), B = new Map([...flat(clean(b))].filter(([k]) => !QUIET(k)));
   for (const [k, v] of B) if (!A.has(k)) out.push('+ ' + k + ' = ' + v.slice(0, 60)); else if (A.get(k) !== v) out.push('~ ' + k + ' ' + A.get(k).slice(0, 40) + ' -> ' + v.slice(0, 40));
   for (const k of A.keys()) if (!B.has(k)) out.push('- ' + k);
   return out.sort();
@@ -82,8 +89,9 @@ function pageDiff(a, b) {
   const out = [], sa = new Set(a.ids), sb = new Set(b.ids);
   for (const i of b.ids) if (!sa.has(i)) out.push('shown #' + i);
   for (const i of a.ids) if (!sb.has(i)) out.push('hidden #' + i);
-  for (const k of Object.keys(b.attrs)) if (a.attrs[k] === undefined) out.push('new ' + k + ' ' + b.attrs[k]); else if (a.attrs[k] !== b.attrs[k]) out.push('state ' + k + ' ' + a.attrs[k] + ' -> ' + b.attrs[k]);
-  for (const k of Object.keys(a.attrs)) if (b.attrs[k] === undefined) out.push('gone ' + k);
+  const live = (k) => /^#as-state$/.test(k);        /* Blade's seat state (waiting, setting up) moves with the polls */
+  for (const k of Object.keys(b.attrs).filter((x) => !live(x))) if (a.attrs[k] === undefined) out.push('new ' + k + ' ' + b.attrs[k]); else if (a.attrs[k] !== b.attrs[k]) out.push('state ' + k + ' ' + a.attrs[k] + ' -> ' + b.attrs[k]);
+  for (const k of Object.keys(a.attrs).filter((x) => !live(x))) if (b.attrs[k] === undefined) out.push('gone ' + k);
   if (a.active !== b.active) out.push('focus ' + (a.active || 'none') + ' -> ' + (b.active || 'none'));
   if (a.hash !== b.hash) out.push('hash ' + a.hash + ' -> ' + b.hash);
   if (a.toast !== b.toast) out.push('toast "' + b.toast + '"');
@@ -92,7 +100,7 @@ function pageDiff(a, b) {
 
 /* one demo night, every hit: returns [{ hit, page: [lines], server: [lines], known: { ids, attrs }, errors }] */
 async function pass(port, kit) {
-  const demo = await startDemo(ROOT, port, ['--kit', kit]);
+  const demo = await startDemo(ROOT, port, ['--kit', kit, '--clock', '20:00']);
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   const api = (p) => fetch(demo.base + '/api' + p, { headers: { 'X-Dev-User': GM } }).then((r) => r.json().catch(() => null), () => null);
   const server = async () => ({ state: await api('/gm/state'), ambient: await api('/gm/ambient'), display: await api('/gm/display'), campaign: await api('/campaign') });
@@ -103,6 +111,9 @@ async function pass(port, kit) {
       const errors = [];
       const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 1366, height: 768 }, serviceWorkers: 'block' });
       await c.addInitScript(() => { window.__B68_POLL_MS = 1000; });
+      /* the same dice and the same time of day in both passes: the two demo nights must be the same night (scripts/kit-fingerprint.mjs) */
+      await c.addInitScript(() => { let a = 0x9e3779b9; Math.random = () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; });
+      const ck = clockScript(); if (ck) await c.addInitScript(ck[0], ck[1]);
       const page = await c.newPage();
       page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
       page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text().slice(0, 160)); });
@@ -133,7 +144,7 @@ async function pass(port, kit) {
         await page.keyboard.press(h.key);
         await page.waitForTimeout(1100);
         const a = await page.evaluate(snapPage), sa = await server();
-        res.push({ hit: h, page: pageDiff(b, a), server: serverDiff(sb, sa), known: { ids: new Set(b.ids), attrs: new Set(Object.keys(b.attrs)) }, errors });
+        res.push({ hit: h, page: pageDiff(b, a), server: serverDiff(sb, sa), known: { ids: new Set(b.all), attrs: new Set(Object.keys(b.attrs)) }, errors });
       } catch (e) {
         res.push({ hit: h, page: ['ERROR ' + String(e.message || e).split('\n')[0]], server: [], known: { ids: new Set(), attrs: new Set() }, errors: errors.concat(['setup failed']) });
       } finally { await c.close(); }
@@ -144,6 +155,7 @@ async function pass(port, kit) {
 }
 
 const timer = setTimeout(() => { console.log('FAIL timed out'); process.exit(1); }, 1500000);
+setClock('20:00');
 let off = null, on = null;
 try {
   console.log('kit OFF (the five settings written off): ' + hits.length + ' key presses');
@@ -169,7 +181,7 @@ if (off && on) {
     const ok = JSON.stringify(po) === JSON.stringify(pn) && JSON.stringify(o.server) === JSON.stringify(n.server);
     if (extra.length) { notes++; console.log('  note: ' + o.hit.label + ': only the kit-on page has ' + extra.slice(0, 3).join('; ')); }
     if (ok) same++;
-    else { check(false, 'the same key does the same thing, kit off and on: ' + o.hit.label); console.log('    off: ' + JSON.stringify(po.concat(o.server)).slice(0, 400)); console.log('    on:  ' + JSON.stringify(pn.concat(n.server)).slice(0, 400)); }
+    else { check(false, 'the same key does the same thing, kit off and on: ' + o.hit.label); const A1 = po.concat(o.server), B1 = pn.concat(n.server); console.log('    only with the kit off: ' + JSON.stringify(A1.filter((x) => !B1.includes(x))).slice(0, 500)); console.log('    only with the kit on:  ' + JSON.stringify(B1.filter((x) => !A1.includes(x))).slice(0, 500)); }
   });
   check(same === off.length, 'kit on does what kit off does, for ' + same + ' of ' + off.length + ' presses (' + notes + ' note(s) of markup only the new pages have)');
 }
