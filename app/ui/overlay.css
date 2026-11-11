@@ -1,1 +1,99 @@
-/* ui/overlay.css: the kit overlays: dialog, popover and menu, toast stack, tooltip. Registered as an empty stub by KS01.1 of the kit and stage build; KS03 fills it. In the kit-ui bundle, fetched only while its setting is on. */
+/* ui/overlay.css: the kit's overlays, the kit and stage build (KS03): the dialog, the popover and the menu, the toast stack, the tooltip.
+   In the kit-ui bundle: fetched only while a kit setting is on. Only kit markup carries these classes (ui/overlay.js builds them), so every rule
+   starts with :where(:root[data-kit], [data-ui-scope]) (zero weight, as parts.css): nothing here matches a page with the kit off outside a scope. Colours come from the tokens (ui/tokens.css), type and space from the same scale, layers from the six named ones. No hard shadow
+   (that belongs to the Primary alone): an overlay is a 2px rule, or, for the toast and the tooltip, the inverse ground (ink on paper, paper on ink).
+   Reduced motion makes every transition a cut (the motion tokens are 0ms there); the toast's timer steps once a second instead of draining. */
+
+/* ---------- Dialog: a native <dialog> opened with showModal ---------- */
+/* the scrim darkens in both themes: --ui-on-accent is the one ink that is the same in Paper and Night */
+:where(:root[data-kit], [data-ui-scope]) .ui-dialog {
+  box-sizing: border-box; width: min(32em, calc(100vw - 2 * var(--ui-space-4))); max-width: none; max-height: calc(100vh - 2 * var(--ui-space-5)); margin: auto; padding: 0;
+  overflow: auto; border: var(--ui-rule); border-radius: var(--ui-radius); background: var(--ui-raised); color: var(--ui-ink); box-shadow: none;
+  font: 400 var(--ui-type-body)/1.45 var(--ui-font-text);
+}
+:where(:root[data-kit], [data-ui-scope]) .ui-dialog::backdrop { background: color-mix(in srgb, var(--ui-on-accent, canvastext) 55%, transparent); }
+:where(:root[data-kit], [data-ui-scope]) .ui-dialog.is-plain { position: fixed; inset: 0; height: fit-content; z-index: var(--ui-layer-dialog); }
+:where(:root[data-kit], [data-ui-scope]) .ui-dialog-scrim { position: fixed; inset: 0; z-index: calc(var(--ui-layer-dialog) - 1); background: color-mix(in srgb, var(--ui-on-accent, canvastext) 55%, transparent); }
+:where(:root[data-kit], [data-ui-scope]) .ui-dialog.is-static { position: static; display: block; width: auto; max-width: 32em; max-height: none; margin: 0; }
+:where(:root[data-kit], [data-ui-scope]) .ui-dialog-form { display: grid; gap: var(--ui-space-4); box-sizing: border-box; margin: 0; padding: var(--ui-space-5); }
+:where(:root[data-kit], [data-ui-scope]) .ui-dialog-title { margin: 0; color: var(--ui-ink); font: 900 var(--ui-type-title)/1.05 var(--ui-font-cond); letter-spacing: .02em; text-transform: uppercase; }
+:where(:root[data-kit], [data-ui-scope]) .ui-dialog-body { margin: 0; color: var(--ui-ink-soft); font: 400 var(--ui-type-lead)/1.45 var(--ui-font-text); white-space: pre-line; }
+:where(:root[data-kit], [data-ui-scope]) .ui-dialog-acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--ui-space-3); margin-top: var(--ui-space-2); }
+:where(:root[data-kit], [data-ui-scope]) .ui-dialog-form .ui-field-input[aria-invalid="true"] { border-color: var(--ui-alarm); outline: 2px solid var(--ui-alarm); outline-offset: 1px; }
+
+/* ---------- Popover and menu: anchored, placed by ui/overlay.js (--ui-x, --ui-y), flipped at the screen edge ---------- */
+:where(:root[data-kit], [data-ui-scope]) .ui-popover {
+  box-sizing: border-box; min-width: 12em; max-width: min(28em, calc(100vw - 2 * var(--ui-space-4))); margin: 0; padding: var(--ui-space-3);
+  border: var(--ui-rule); border-radius: var(--ui-radius); background: var(--ui-raised); color: var(--ui-ink); box-shadow: none;
+  font: 400 var(--ui-type-body)/1.45 var(--ui-font-text); z-index: var(--ui-layer-popover);
+}
+:where(:root[data-kit], [data-ui-scope]) .ui-popover[hidden] { display: none; }
+:where(:root[data-kit], [data-ui-scope]) .ui-popover:focus,
+  :where(:root[data-kit], [data-ui-scope]) .ui-menu:focus { outline: none; }
+:where(:root[data-kit], [data-ui-scope]) .ui-float,
+  :where(:root[data-kit], [data-ui-scope]) .ui-menu.ui-float,
+  :where(:root[data-kit], [data-ui-scope]) .ui-popover.ui-float {
+  position: fixed; left: var(--ui-x, 0px); top: var(--ui-y, 0px); right: auto; bottom: auto; margin: 0; z-index: var(--ui-layer-popover);
+  max-height: var(--ui-pop-max, none); overflow: auto; visibility: hidden;
+}
+:where(:root[data-kit], [data-ui-scope]) .ui-float.is-absolute,
+  :where(:root[data-kit], [data-ui-scope]) .ui-menu.ui-float.is-absolute,
+  :where(:root[data-kit], [data-ui-scope]) .ui-popover.ui-float.is-absolute { position: absolute; }
+:where(:root[data-kit], [data-ui-scope]) .ui-float.is-placed,
+  :where(:root[data-kit], [data-ui-scope]) .ui-menu.ui-float.is-placed,
+  :where(:root[data-kit], [data-ui-scope]) .ui-popover.ui-float.is-placed { visibility: visible; animation: ui-pop-in var(--ui-motion-quick) var(--ui-ease); }
+@keyframes ui-pop-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---------- Toast stack: one stack, bottom right, at most four; the inverse ground, an edge that means one thing ---------- */
+:where(:root[data-kit], [data-ui-scope]) .ui-toast-stack {
+  position: fixed; right: max(var(--ui-space-4), env(safe-area-inset-right, 0px)); bottom: max(var(--ui-space-4), env(safe-area-inset-bottom, 0px));
+  z-index: var(--ui-layer-toast); display: flex; flex-direction: column; justify-content: flex-end; gap: var(--ui-space-2);
+  box-sizing: border-box; width: min(26em, calc(100vw - 2 * var(--ui-space-4))); margin: 0; padding: 0; pointer-events: none;
+}
+:where(:root[data-kit], [data-ui-scope]) .ui-toast-stack.is-local { position: absolute; right: var(--ui-space-3); bottom: var(--ui-space-3); width: min(26em, calc(100% - 2 * var(--ui-space-3))); z-index: var(--ui-layer-sticky); }
+:where(:root[data-kit], [data-ui-scope]) .ui-toast {
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--ui-space-1) var(--ui-space-3);
+  box-sizing: border-box; margin: 0; padding: var(--ui-space-3) var(--ui-space-2) var(--ui-space-3) var(--ui-space-4); overflow: hidden; pointer-events: auto;
+  border: 0; border-left: 4px solid var(--ui-accent); border-radius: var(--ui-radius); background: var(--ui-ink); color: var(--ui-on-ink); box-shadow: none;
+  font: 400 var(--ui-type-lead)/1.35 var(--ui-font-text); animation: ui-toast-in var(--ui-motion-base) var(--ui-ease);
+}
+:where(:root[data-kit], [data-ui-scope]) .ui-toast--error { border-left: 8px solid var(--ui-alarm); }
+:where(:root[data-kit], [data-ui-scope]) .ui-toast-kind { grid-column: 1 / -1; color: var(--ui-on-ink); font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .14em; text-transform: uppercase; }
+:where(:root[data-kit], [data-ui-scope]) .ui-toast-text { grid-column: 1; min-width: 0; overflow-wrap: anywhere; }
+:where(:root[data-kit], [data-ui-scope]) .ui-toast-acts { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: var(--ui-space-1); }
+:where(:root[data-kit], [data-ui-scope]) .ui-toast--error .ui-toast-text { grid-row: 2; }
+:where(:root[data-kit], [data-ui-scope]) .ui-toast--error .ui-toast-acts { grid-row: 2; }
+:where(:root[data-kit], [data-ui-scope]) .ui-toast .ui-btn { border-color: transparent; background: transparent; color: var(--ui-on-ink); box-shadow: none; }
+:where(:root[data-kit], [data-ui-scope]) .ui-toast .ui-btn:hover { border-color: transparent; background: color-mix(in srgb, var(--ui-on-ink) 18%, transparent); }
+:where(:root[data-kit], [data-ui-scope]) .ui-toast .ui-btn:active { border-color: transparent; background: color-mix(in srgb, var(--ui-on-ink) 30%, transparent); color: var(--ui-on-ink); }
+:where(:root[data-kit], [data-ui-scope]) .ui-toast .ui-btn:focus-visible { outline: 2px solid var(--ui-on-ink); outline-offset: 1px; }
+:where(:root[data-kit], [data-ui-scope]) .ui-toast-x { min-width: var(--ui-control); padding: 0 var(--ui-space-2); font-size: var(--ui-type-lead); letter-spacing: 0; }
+:where(:root[data-kit], [data-ui-scope]) .ui-toast-timer {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--ui-on-ink); opacity: .45; transform-origin: left center;
+  animation: ui-toast-drain var(--ui-toast-ms, 5000ms) linear forwards;
+}
+:where(:root[data-kit], [data-ui-scope]) .ui-toast-timer.is-still { animation: none; }
+:where(:root[data-kit], [data-ui-scope]) .ui-toast.is-paused .ui-toast-timer { animation-play-state: paused; }
+:where(:root[data-kit], [data-ui-scope]) .ui-toast.is-leaving { opacity: 0; transition: opacity var(--ui-motion-quick) var(--ui-ease); }
+@keyframes ui-toast-in { from { opacity: 0; transform: translateY(var(--ui-space-2)); } to { opacity: 1; transform: none; } }
+@keyframes ui-toast-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
+/* ---------- Tooltip: the inverse ground, a key hint beside the words, never over the control it describes ---------- */
+:where(:root[data-kit], [data-ui-scope]) .ui-tip {
+  display: inline-flex; align-items: center; gap: var(--ui-space-2); box-sizing: border-box; max-width: min(22em, calc(100vw - 2 * var(--ui-space-4))); margin: 0;
+  padding: var(--ui-space-1) var(--ui-space-2); border: 0; border-radius: var(--ui-radius); background: var(--ui-ink); color: var(--ui-on-ink); box-shadow: none;
+  font: 700 var(--ui-type-label)/1.35 var(--ui-font-text); letter-spacing: .04em; pointer-events: none;
+}
+:where(:root[data-kit], [data-ui-scope]) .ui-tip.ui-float { z-index: calc(var(--ui-layer-toast) - 1); overflow: visible; animation: none; }
+:where(:root[data-kit], [data-ui-scope]) .ui-tip.is-static { position: static; }
+:where(:root[data-kit], [data-ui-scope]) .ui-tip-text { min-width: 0; overflow-wrap: anywhere; }
+:where(:root[data-kit], [data-ui-scope]) .ui-tip .ui-key { border-color: currentColor; background: transparent; color: inherit; opacity: .85; }
+
+/* reduced motion means a cut; the toast's timer steps once a second so it still tells the time */
+@media (prefers-reduced-motion: reduce) {
+  :where(:root[data-kit], [data-ui-scope]) .ui-toast { animation: none; }
+  :where(:root[data-kit], [data-ui-scope]) .ui-float.is-placed,
+  :where(:root[data-kit], [data-ui-scope]) .ui-menu.ui-float.is-placed,
+  :where(:root[data-kit], [data-ui-scope]) .ui-popover.ui-float.is-placed { animation: none; }
+  :where(:root[data-kit], [data-ui-scope]) .ui-toast-timer { animation-timing-function: steps(5, end); }
+}
