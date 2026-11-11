@@ -128,6 +128,13 @@
 // the last 8 minutes of talk, the table's open clocks (campaigns.doc $.clocks, read by json_extract, at most 12 names) and the factions
 // block of the prefix, and answers as `meanwhile: { faction, cutaway, clock, ticks, why, at }`: one off-screen cutaway for the Rack with
 // a SUGGESTED tick (0-2) that nothing here applies.
+// Pitches (setting blade.pitches, the kit and stage build KS18; functions/_lib/assist/pitch.js). The Worker reads no settings: the page sends
+// `pitch: true` on every tick while the setting is on, `pitchNow: true` when the GM asks, and `seen` (at most 12 lines already shown or
+// dismissed). Without `pitch: true` none of this runs and every wake is today's. With it, Stall and Meanwhile are not woken; seat `pitch`
+// (Sonnet, low) wakes on scene_change, stall, the quiet table (in place of Stall), a tick with talk and no pitch call for 6 minutes, with a
+// 4-minute cooldown, under 85% of the cap. `pitchNow` runs it alone at once (no Tripwire, no cooldown, to the cap; 429 at the cap or while a
+// pitch call is in flight) and hands back the cursor it was given. The answer carries `pitch: { at, wake, items: [{ kind, line, why_now, uses }] }`
+// (1-3, kinds all different, no line from `seen`), never a card. Its row (seat 'pitch', card { out, wake, pitch: 1, items, text }) is never shown.
 // The silence flag: a tick with no new talk, with Listening on (the control document says want on and the iPad reports listening within
 // the last two minutes), the newest line 4 to 30 minutes old and Stall past its 5-minute cooldown, runs Stall without the Tripwire (flags
 // `stall,silence`). Listening off, the iPad stopped or errored, or the cap reached: nothing runs.
@@ -154,6 +161,7 @@ import { ledgerGlance, fixerGlance, restoreGlance } from '../../_lib/assist/glan
 import { toCandidate, toVoice, toAnother, toStall, toScribe, toMeanwhile, toHandout, handoutIds, handoutTitles, merge, pendingRefs, CARD_GAP_MS, STALE_MS } from '../../_lib/assist/editor.js';
 import { nightCards, markCards, cleanMarks, OPS } from '../../_lib/assist/cards.js';
 import { cleanActBody, validateActions, markSeen, LINES_MAX } from '../../_lib/assist/hands.js';
+import { cleanPitchBody, decidePitch, pitchUser, toPitches } from '../../_lib/assist/pitch.js';
 
 const BODY_MAX = 8 * 1024;
 const ACT_BODY_MAX = 32 * 1024;            // an act request holds a state of at most 8 KB; a bigger one must reach the state check (a 400), not the generic 413 at 8 KB
@@ -264,6 +272,7 @@ const REPUSH = 're-push the assist part';
 const FILE_ID = /^file_[A-Za-z0-9_-]{4,100}$/;
 
 const HANDOUTS_MAX_BYTES = 16 * 1024;           // the handouts part is a short list; a bigger one is not read here
+const STORY_READERS = STORY_SEATS.concat('pitch');   // the seats given the story so far: STORY_SEATS, and the pitch seat (blade.pitches), which builds on the night
 
 // A read is a D1 statement plus how its rows become the answer (`one`: the first row or null, as .first() gives; otherwise the array of rows).
 // runRead sends one; readAll sends several in ONE db.batch, which is one D1 round trip: the tick's reads that do not depend on each other go
@@ -635,7 +644,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       let timer, timedOut = false;
       try {
         // a seat marked noPrefix (hands) gets neither the cached prefix nor the vault-built extra: its instructions and the user turn are all it reads
-        const instructions = (!cfg.noPrefix && extra[name] ? cfg.instructions + '\n' + String(extra[name]) : cfg.instructions) + (suffix ? '\n' + suffix : '') + (STORY_SEATS.includes(name) ? storyBlock(storyText) : '');
+        const instructions = (!cfg.noPrefix && extra[name] ? cfg.instructions + '\n' + String(extra[name]) : cfg.instructions) + (suffix ? '\n' + suffix : '') + (STORY_READERS.includes(name) ? storyBlock(storyText) : '');
         const deadline = new Promise((_, reject) => { timer = setTimeout(() => { timedOut = true; reject(new Error('deadline')); ctl.abort(); }, deadlineMs); });
         const pending = (async () => call(client, { ...cfg, instructions, prefixFileId: cfg.noPrefix ? '' : fileId, user, deadlineMs, signal: ctl.signal }))();
         pending.catch(() => {});                    // if the deadline wins, this settles later (the abort): nobody is listening, and that is fine
@@ -658,7 +667,15 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       try { return await run(name, user); } catch (e) { if (e && e.busy) { skipped.push({ seat: name, why: 'in-flight' }); return null; } throw e; }
     }
     const spend = () => ({ tonight: dollars(spentBefore + thisTick), cap, tier: budgetTier(spentBefore + thisTick, cap), tick: dollars(thisTick) });
-    const done = (cards, flags, last, updates = [], more = {}) => json({ cards, updates, flags, spend: spend(), last, ...(more.voice ? { voice: more.voice } : {}), ...(more.stall ? { stall: more.stall } : {}), ...(more.meanwhile ? { meanwhile: more.meanwhile } : {}), ...(more.handout ? { handout: more.handout } : {}), ...(more.whois ? { whois: more.whois } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}), ...(isTick ? { health: { skipped, reaped, ran } } : {}) });
+    const done = (cards, flags, last, updates = [], more = {}) => json({ cards, updates, flags, spend: spend(), last, ...(more.voice ? { voice: more.voice } : {}), ...(more.stall ? { stall: more.stall } : {}), ...(more.meanwhile ? { meanwhile: more.meanwhile } : {}), ...(more.handout ? { handout: more.handout } : {}), ...(more.whois ? { whois: more.whois } : {}), ...(more.pitch ? { pitch: more.pitch } : {}), ...(warnings.length ? { warnings } : {}), ...(errors.length ? { errors } : {}), ...(isTick ? { health: { skipped, reaped, ran } } : {}) });
+    // blade.pitches (functions/_lib/assist/pitch.js): one pitch call's log row and its answer. The row is never `shown`, so it holds no card gap,
+    // GET /cards never restores it and gm:after never files it; its cents count in tonight's spend like any seat's.
+    const pitchDone = (px, { at, session, flags, wake, seen }) => {
+      const items = px.r ? toPitches(px.r.json, { seen }) : null;
+      const row = logRow(db, campaign, { at, session, seat: 'pitch', cfg: px.cfg, usage: px.r && px.r.usage, cost: px.r && px.r.cost, flags, timing: px.timing,
+        card: px.r ? { out: px.r.json, wake, ...(items ? { pitch: 1, items, text: items.map((i) => i.line).join(' / ') } : {}) } : { error: errors.find((e) => e.seat === 'pitch')?.error || 'no reply', wake } });
+      return { row, out: items ? { at, wake, items } : null };
+    };
 
     if (action[1] === 'act') {
       // The co-GM's hands (design 5.3/5.4). Core tier: it runs to the cap like Ref. One at a time, and not more often than every 8 s (from the log).
@@ -818,9 +835,29 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     if (after !== null && !(Number.isInteger(after) && after >= 0)) throw new HttpError(400, 'after must be a whole number');
     if (body.rolled !== undefined && typeof body.rolled !== 'boolean') throw new HttpError(400, 'rolled must be true or false');
     const rolled = body.rolled === true;                 // the GM tapped a result or filed a roll about 40 s ago: Ref looks at the last minutes
+    const pin = cleanPitchBody(body);                    // blade.pitches: { pitch, pitchNow, seen }; all false and empty when the page did not send pitch: true
+    if (pin.error) throw new HttpError(400, pin.error);
     // the Tap seats read the last four MINUTES (a busy table says well over 50 lines in four); the Tripwire reads what is new
     const { lines: tail, last } = start.tail;            // both read in the tick's opening batch
     const session = tail.length ? tail[tail.length - 1].session : '';
+    if (pin.pitchNow) {
+      // The GM asked for pitches: the pitch seat alone, at once, over the last four minutes (no Tripwire, no other seat). It skips the cooldown and
+      // runs to the cap; it says so (429) when the cap is reached or a pitch call is already in flight, never a silent drop. It hands back the
+      // cursor it was given, so the talk the Tripwire has not read is still read by the next ordinary tick.
+      const cursor = after !== null ? after : null;
+      if (tier === 'off') throw new HttpError(429, "tonight's cap is reached");
+      if (legacy) return done([], [], cursor);
+      const pg = decidePitch({ now: t0, tier, busy: live().has('pitch'), pitchNow: true });
+      if (!pg.run) throw new HttpError(429, pg.why === 'budget' ? "tonight's cap is reached" : 'pitches are busy');
+      const [story, clocks] = await readAll(db, [lastStoryRd(db, campaign, t0), tableClocksRd(db, campaign)]);
+      storyText = story && story.session === session ? story.story : '';
+      const px = await run('pitch', pitchUser({ wake: 'asked', npc, clocks, seen: pin.seen, stamp: hhmm(t0), talk: formatLines(tail, speakers) }));   // a lease taken meanwhile: run() throws the busy 429
+      if (px.r) ran.push('pitch');
+      if (fileMissing) return done([], [], cursor);
+      const p = pitchDone(px, { at: new Date(now()).toISOString(), session, flags: ['pitch_now'], wake: 'asked', seen: pin.seen });
+      await p.row.run();
+      return done([], ['pitch_now'], cursor, [], { pitch: p.out });
+    }
     if (tier === 'off' || legacy) return done([], [], last);
     const fresh = after !== null ? start.fresh : tail.filter((l) => t0 - Date.parse(l.at) <= FIRST_SLICE_MS);
     const freshText = formatLines(fresh, speakers);
@@ -832,6 +869,20 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       const ll = await lastLine(db, campaign);
       const sil = silenceFlag({ listening: true, lastLineAt: ll ? ll.at : null, now: t0 });
       if (!sil.silent) return done([], [], last);
+      if (pin.pitch) {
+        // blade.pitches: the quiet table wakes the pitch seat in place of Stall (same flags, its own cooldown and ladder); one read batch
+        const [lr, story, clocks, before] = await readAll(db, [lastRunsRd(db, campaign, t0), lastStoryRd(db, campaign, t0), tableClocksRd(db, campaign),
+          linesRd(db, campaign, { since: new Date(ll.at - TAP_WINDOW_MS).toISOString() })]);
+        const pg = decidePitch({ flags: ['stall'], now: t0, lastRun: lr, tier, busy: live().has('pitch') });
+        if (!pg.run) { skipped.push({ seat: 'pitch', why: pg.why }); return done([], [], last); }
+        storyText = story && story.session === ll.session ? story.story : '';
+        const px = await runOrSkip('pitch', pitchUser({ wake: 'quiet', minutes: sil.minutes, npc, clocks, seen: pin.seen, stamp: hhmm(t0), talk: formatLines(before, speakers) }));
+        if (px && px.r) ran.push('pitch');
+        if (!px || fileMissing) return done([], [], last);
+        const qflags = ['stall', 'silence'], p = pitchDone(px, { at: new Date(now()).toISOString(), session: ll.session, flags: qflags, wake: 'quiet', seen: pin.seen });
+        await p.row.run();
+        return done([], qflags, last, [], { pitch: p.out });
+      }
       const sg = canRun('stall', { now: t0, lastRun: await lastRuns(db, campaign, t0), inFlight: live(), tier });
       if (!sg.ok) { skipped.push({ seat: 'stall', why: sg.why }); return done([], [], last); }
       const before = (await readLines(db, campaign, { since: new Date(ll.at - TAP_WINDOW_MS).toISOString() })).lines;
@@ -863,7 +914,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
 
     // 'tick' wakes the Showrunner, paced by its 10-minute cooldown; with nothing else woken a tick costs no model call
     // a rolled-only tick re-reads talk the seats have already read: only Ref looks (no 'tick' seats, no Voice minute)
-    const verdict = decide({ flags: rolledOnly ? flags : flags.concat('tick'), now: t0, lastRun, inFlight: live(), spent: spentBefore + thisTick, cap, wakes, onStage: rolledOnly ? false : !!npc, follow: followsThrough(prev, t0) });
+    const verdict = decide({ flags: rolledOnly ? flags : flags.concat('tick'), now: t0, lastRun, inFlight: live(), spent: spentBefore + thisTick, cap, wakes, onStage: rolledOnly ? false : !!npc, follow: followsThrough(prev, t0), ...(pin.pitch ? { pitches: true } : {}) });
     skipped.push(...verdict.skipped);
     // the Tripwire's row is written once, after the Conductor has spoken, so its card can say which seats were skipped and why
     if (!rolledOnly) await logRow(db, campaign, { at: twAt, session, seat: 'tripwire', cfg: tw.cfg, usage: tw.r && tw.r.usage, cost: tw.r && tw.r.cost, flags, timing: tw.timing,
@@ -876,9 +927,9 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     // talk, the clocks, what Mystery knew, the names Clerk has seen). The Scribe's slice depends on the story row and follows it.
     const wantWide = wake.includes('showrunner') || wake.includes('mystery') || wake.includes('meanwhile');
     const pre = await readNamed(db, {
-      story: wake.some((n) => n === 'scribe' || STORY_SEATS.includes(n)) && lastStoryRd(db, campaign, t0),
+      story: wake.some((n) => n === 'scribe' || STORY_READERS.includes(n)) && lastStoryRd(db, campaign, t0),
       wide: wantWide && linesRd(db, campaign, { since: new Date(t0 - SHOWRUNNER_MIN * 60 * 1000).toISOString() }),
-      clocks: wake.includes('meanwhile') && tableClocksRd(db, campaign),
+      clocks: (wake.includes('meanwhile') || wake.includes('pitch')) && tableClocksRd(db, campaign),
       known: wake.includes('mystery') && lastKnownRd(db, campaign, t0),
       clerk: wake.includes('clerk') && clerkKnownRd(db, campaign, t0),
       whois: wake.includes('whois') && !!roster && anyUnnamed(tail, speakers) && whoisLinesRd(db, campaign),      // most ticks have no unnamed speaker in the last four minutes: no read
@@ -926,6 +977,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     if (wake.includes('clerk')) { clerkNames = pre.clerk; turns.clerk = clerkUser({ known: clerkNames, stamp: hhmm(t0), talk: recentText }); }
     if (scribeTurn) turns.scribe = scribeTurn;
     if (wake.includes('whois')) turns.whois = whoisUser({ roster, needs: whoisNeeds, speakers, lines: pre.whois });
+    if (wake.includes('pitch')) turns.pitch = pitchUser({ wake: verdict.pitchWake, npc, clocks: pre.clocks || [], seen: pin.seen, stamp: hhmm(t0), talk: recentText });
     // each woken seat is on its own deadline: a slow one cannot hold the others' cards. A seat another request took meanwhile is skipped, not an error.
     const settled = await Promise.allSettled(wake.map((name) => run(name, name === 'voice' ? voiceTurn : turns[name] || user)));
     const all = [];
@@ -936,7 +988,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       else all.push({ name, cfg: seats[name], r: null, timing: { secs: 0, stop: '' } });      // run() catches its own errors, so this is a bug's safety net
     });
     // Voice and Stall go to the Rack, not to the Editor's card slot
-    const vx = all.find((x) => x.name === 'voice'), sx = all.find((x) => x.name === 'stall'), results = all.filter((x) => !['voice', 'stall', 'scribe', 'meanwhile', 'whois'].includes(x.name));
+    const vx = all.find((x) => x.name === 'voice'), sx = all.find((x) => x.name === 'stall'), results = all.filter((x) => !['voice', 'stall', 'scribe', 'meanwhile', 'whois', 'pitch'].includes(x.name));
 
     // What the Editor weighs the new cards against is read once the seats have answered (a card another request showed meanwhile counts), all
     // in one round trip: the shown cards, the held Ref cards (unless already read), the gap clocks, the Rack's recent items (when Voice or Stall
@@ -1011,10 +1063,14 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       rows.push(logRow(db, campaign, { at, session, seat: 'meanwhile', cfg: wx.cfg, usage: wx.r && wx.r.usage, cost: wx.r && wx.r.cost, flags, timing: wx.timing,
         card: wx.r ? { out: wx.r.json, ...(mw ? { meanwhile: 1, text: mw.cutaway } : {}) } : { error: errors.find((e) => e.seat === 'meanwhile')?.error || 'no reply' } }));
     }
+    // blade.pitches: the set goes in its own field (never the card slot); the row joins this batch
+    let pitchOut = null;
+    const px = all.find((x) => x.name === 'pitch');
+    if (px) { const p = pitchDone(px, { at, session, flags, wake: verdict.pitchWake, seen: pin.seen }); pitchOut = p.out; rows.push(p.row); }
     if (rows.length) await db.batch(rows);
     const cardOut = edit.card ? [{ seat: edit.card.seat, at, text: edit.card.text, ...(edit.card.detail ? { detail: edit.card.detail } : {}), ...restoreGlance(edit.card, edit.card.seat) }] : [];
     const updatesOut = edit.updates.flatMap((u) => (u.items || [{ key: (u.keys || [])[0] || '', text: u.text }]).map((it) => ({ seat: 'ledger', at, key: it.key, text: it.text, ...ledgerGlance(it.text) })));
-    return done(cardOut, flags, cursor, updatesOut, { voice: voiceOut, stall: stallOut, handout: handoutOut, meanwhile: meanwhileOut, whois: whoisOut });
+    return done(cardOut, flags, cursor, updatesOut, { voice: voiceOut, stall: stallOut, handout: handoutOut, meanwhile: meanwhileOut, whois: whoisOut, pitch: pitchOut });
   };
 }
 
