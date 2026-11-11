@@ -196,7 +196,8 @@ await test('routes.js: index.html loads exactly the core bundle; every other bun
   const W = routes(), L = W.B68Load;
   ok(L && typeof L.need === 'function' && typeof L.files === 'function', 'routes.js defines B68Load');
   eq(W.B68_BUILD, 'dev', "the committed build is 'dev' (scripts/deploy.sh stamps it for the upload)");
-  eq(Object.keys(L.BUNDLES), ['core', 'figures', 'table', 'print', 'crews', 'gm', 'display', 'commend', 'debrief', 'quiet', 'board', 'claims', 'absent', 'lair', 'lookbook'], 'the bundles');
+  eq(Object.keys(L.BUNDLES), ['core', 'figures', 'table', 'print', 'crews', 'gm', 'display', 'commend', 'debrief', 'quiet', 'board', 'claims', 'absent', 'lair', 'lookbook',
+    'kit-ui', 'kit-desk', 'kit-stage', 'kit-phone', 'night-who', 'blade-pitches', 'kit-lookbook'], 'the bundles');
   eq(L.BUNDLES.figures, ['figures/figure-kit.js', 'figures/cast.js'], 'the figures bundle is the kit and the cast canon');
   ok(!HTML.includes('figure-kit.js') && !HTML.includes('figures/cast.js'), 'index.html does not load the figure kit (first paint draws no figure)');
   eq(htmlTags(), L.BUNDLES.core, "index.html's stylesheet and script tags are BUNDLES.core, in order");
@@ -266,6 +267,50 @@ await test('routes.js: an unstamped build (the repository, the artifact, file://
   eq(W.B68_BUILD, STAMP, 'the stamp is B68_BUILD');
   W.B68Load.need('display');
   eq(doc.order(), ['tracker.css', 'display.css?v=' + STAMP, 'tokens.css?v=' + STAMP, 'display/shows.css?v=' + STAMP, 'display/hardstart.css?v=' + STAMP, 'display/onair.css?v=' + STAMP, 'display/aftermath.css?v=' + STAMP, 'display/board.css?v=' + STAMP, 'display/title-card.css?v=' + STAMP, 'display/castphoto.css?v=' + STAMP, 'display/lair.css?v=' + STAMP, 'display/face-cards.css?v=' + STAMP, 'display/montage.css?v=' + STAMP, '<style>', 'figures/figure-kit.js?v=' + STAMP, 'figures/cast.js?v=' + STAMP, 'tokens.js?v=' + STAMP, 'cue-verbs.js?v=' + STAMP, 'cue.js?v=' + STAMP, 'stt.js?v=' + STAMP, 'display/shows.js?v=' + STAMP, 'display/show-beats.js?v=' + STAMP, 'display/rolodex-card.js?v=' + STAMP, 'display/face-look.js?v=' + STAMP, 'display/face-motif.js?v=' + STAMP, 'display/face-formats.js?v=' + STAMP, 'display/face-badge.js?v=' + STAMP, 'display/face-render.js?v=' + STAMP, 'display/report-beat.js?v=' + STAMP, 'display/preflight-report.js?v=' + STAMP, 'display/aftermath.js?v=' + STAMP, 'display/board.js?v=' + STAMP, 'display/title-card.js?v=' + STAMP, 'display/castphoto.js?v=' + STAMP, 'display/lair.js?v=' + STAMP, 'display/layers.js?v=' + STAMP, 'display/montage.js?v=' + STAMP, 'display/hardstart.js?v=' + STAMP, 'display/onair.js?v=' + STAMP, 'display/fx.js?v=' + STAMP, 'display/room-audio.js?v=' + STAMP, 'display-page.js?v=' + STAMP], 'a stamped build versions every bundle URL (the display needs the figure kit first)');
+});
+
+/* ---------- the kit and stage build (KS01.1): one bundle per setting, so with every setting off a page fetches what it did at 798907c,
+   ui/kit-flag.js (the core) aside ---------- */
+const KIT_STAGE = ['display/kit/stage.css', 'display/kit/band.css', 'display/kit/roll.css', 'display/kit/scene.css', 'display/kit/stage.js', 'display/kit/band.js', 'display/kit/roll.js', 'display/kit/scene.js'];
+const KIT = {
+  'kit-ui': ['ui/tokens.css', 'ui/parts.css', 'ui/overlay.css', 'ui/ui.js', 'ui/overlay.js'],
+  'kit-desk': ['ui/desk-band.css', 'ui/desk-roll.css', 'ui/desk-blade.css', 'ui/desk-run.css', 'ui/desk-shell.css', 'ui/desk-skin.css', 'gm/kit/band.js', 'gm/kit/roll.js', 'gm/kit/blade.js', 'gm/kit/run.js', 'gm/kit/shell.js'],
+  'kit-stage': KIT_STAGE,
+  'kit-phone': ['sheet/kit/tabs.css', 'sheet/kit/tabs.js'],
+  'night-who': ['ui/desk-who.css', 'gm/kit/who.js'],
+  'blade-pitches': ['gm/kit/blade.js'],
+  'kit-lookbook': KIT_STAGE,
+};
+const isKitFile = (f) => /^(ui|gm\/kit|display\/kit|sheet\/kit)\//.test(f);
+
+await test('kit bundles: one per setting plus the shared kit-ui and the look book\'s own; no kit file in an old bundle but ui/kit-flag.js in the core, after routes.js and before boot.js; the kit\'s stylesheets after every old one', async () => {
+  const L = routes().B68Load;
+  for (const [name, list] of Object.entries(KIT)) eq(L.BUNDLES[name], list, 'bundle ' + name);
+  for (const [name, list] of Object.entries(L.BUNDLES)) if (!(name in KIT)) eq(list.filter(isKitFile), name === 'core' ? ['ui/kit-flag.js'] : [], name + ': a kit file in an old bundle is a new request with every setting off');
+  eq(L.BUNDLES.core.slice(-3), ['routes.js', 'ui/kit-flag.js', 'boot.js'], 'the flag after routes.js (B68Load is there) and before boot.js (it is set before a route draws)');
+  ok(HTML.includes('<script src="routes.js"></script>\n<script src="ui/kit-flag.js"></script>\n<script src="boot.js"></script>'), 'index.html loads it in that place');
+  const kitCss = L.CSS_ORDER.filter(isKitFile);
+  eq(kitCss, ['ui/tokens.css', 'ui/parts.css', 'ui/overlay.css', 'ui/desk-band.css', 'ui/desk-roll.css', 'ui/desk-blade.css', 'ui/desk-run.css', 'ui/desk-shell.css', 'ui/desk-who.css', 'ui/desk-skin.css',
+    'display/kit/stage.css', 'display/kit/band.css', 'display/kit/roll.css', 'display/kit/scene.css', 'sheet/kit/tabs.css'], 'the kit\'s cascade order');
+  eq(L.CSS_ORDER.slice(L.CSS_ORDER.length - kitCss.length), kitCss, 'every kit stylesheet comes after every old one');
+  ok(!/kit/.test(fs.readFileSync(path.join(APP, 'sw.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')), 'sw.js names no kit file: SHELL learns them from routes.js');
+});
+
+await test('kit bundles: need() of one brings kit-ui first, its stylesheets after the old ones and before the inline style; need() of gm, display or lookbook adds no kit file', async () => {
+  const doc = fakeDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']);
+  const L = routes(ROUTES, doc).B68Load;
+  const p = L.need('kit-desk');
+  eq(doc.order(), ['tracker.css', 'schedule.css', 'rules.css', 'cast.css', 'ui/tokens.css', 'ui/parts.css', 'ui/overlay.css', 'ui/desk-band.css', 'ui/desk-roll.css', 'ui/desk-blade.css', 'ui/desk-run.css', 'ui/desk-shell.css', 'ui/desk-skin.css', '<style>',
+    'ui/ui.js', 'ui/overlay.js', 'gm/kit/band.js', 'gm/kit/roll.js', 'gm/kit/blade.js', 'gm/kit/run.js', 'gm/kit/shell.js'], 'kit-desk: the UI kit first, then the desk');
+  doc.settle(); eq(await p, 'kit-desk'); ok(L.done('kit-ui') && L.done('kit-desk'), 'both done');
+  const n = doc.added().length; await L.need('blade-pitches'); eq(doc.added().length, n, 'blade-pitches after the desk: blade.js and the UI kit are already in');
+  const doc2 = fakeDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']);
+  const L2 = routes(ROUTES, doc2).B68Load;
+  L2.need('gm'); L2.need('display'); L2.need('lookbook'); L2.need('table');
+  eq(doc2.order().filter(isKitFile), [], 'the old bundles fetch no kit file');
+  L2.need('kit-stage');
+  const o = doc2.order();
+  ok(o.indexOf('display/kit/stage.css') > o.indexOf('display/montage.css') && o.indexOf('display/kit/stage.css') > o.indexOf('gm.css') && o.indexOf('display/kit/stage.css') < o.indexOf('<style>'), 'kit-stage\'s sheets sit after every old one: ' + o.slice(0, 40).join(' '));
 });
 
 /* the files that only the GM's laptop and the table iPad load: in the gm or display bundle and not in core or table */
