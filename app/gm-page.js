@@ -2345,6 +2345,7 @@
       panic: function () { if (S === me) bandPanic('button'); },
       music: function () { return S === me ? muInst() : null; },      /* M1: the band's music pill (gm/music.js) */
       menuHtml: menuHtml, signedOut: function () { return SIGNED_OUT_MSG; }, toast: toast,
+      redraw: function () { if (S === me && S.status === 'ready') { syncHead(); renderPackWarn(); renderBar(); syncSave(); drawerSync(); } },      /* KS05: the band drew the other look (kit.desk turned): paint its parts again (Crew's state too) */
       document: document      /* the iPad tray makes its nodes with it (gm/ipad-tray.js: a page whose elements do not carry their document) */
     };
   }
@@ -2357,7 +2358,8 @@
   function bandUpdate() { if (S && S.band && S.status === 'ready') S.band.update(); }
   /* PANIC (the band's last button, and Esc when nothing else is open): the cue stack's panic, with or without cues in the note (the safe scene, the iPad's
      sound down, the work light); a page without the cue stack still sends the iPad to the safe scene */
-  function panicEffect(safe) { return Promise.all([patchAmbient({ mode: 'pin', scene: safe, overlay: null, layers: null }), pushDisplay({ kind: 'blank' }).then(null, function () { return null; })]).then(function (r) { return r[0] !== null; }); }
+  function panicEffect(safe) { if (W.B68GmPcStatus && b09On('kit.stage')) W.B68GmPcStatus.down(true);      /* KS14.2: PANIC, nobody acts (its layers: null takes the faces down; they are not laid again for it) */
+    return Promise.all([patchAmbient({ mode: 'pin', scene: safe, overlay: null, layers: null }), pushDisplay({ kind: 'blank' }).then(null, function () { return null; })]).then(function (r) { return r[0] !== null; }); }
   function bandPanic(src) {
     if (!S) return;
     if (S.cs) { S.cs.panic(src || 'button'); bandUpdate(); return; }
@@ -2596,6 +2598,7 @@
     if (!S || !S.root) return;
     renderMirror(); spineTick(); b17Tick(); csTick(); if (S.st) S.st.sync();
     if (S.status === 'ready' && who()) S.who.paint(null);      /* KS12.7 (night.who): the band's who chip, and the reader made when the setting turns on */
+    if (S.status === 'ready' && (b09On('kit.stage') || S.ks14On || (isObj(AM.doc) && ks14Left()))) { S.ks14On = b09On('kit.stage'); pcStatusSync(); }      /* KS14 (kit.stage): the faces follow the setting, on, and once more when it goes off (sent only on a change) */
     if (W.B68Kit && S.status === 'ready') W.B68Kit.set('desk', !!(W.B68Features && W.B68Features.valueOf(S.doc, 'kit.desk')));      /* the kit and stage build (KS01.2): data-kit="desk" follows the setting, at once (ui/kit-flag.js) */
     if (S.status === 'ready' && W.B68Features) { var pOn = !!W.B68Features.valueOf(S.doc, 'blade.pitches'); if (W.B68Pitches) W.B68Pitches.set(gmApi(), pOn); else if (pOn && W.B68Load) W.B68Load.need('blade-pitches').then(function () { if (W.B68Pitches && S && S.status === 'ready') W.B68Pitches.set(gmApi(), !!W.B68Features.valueOf(S.doc, 'blade.pitches')); }, function () {}); }      /* blade.pitches (KS18): the blade-pitches bundle while it is on; B68Pitches (gm/kit/blade.js) adds the pitch fields to the tick, and takes them off when it turns off */
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
@@ -2994,8 +2997,8 @@
     return c && Array.isArray(c.options) ? c.options.filter(function (o) { return o && str(o.value); }) : [];
   }
   function whoList() { var l = whoAll(); return S && S.who ? S.who.only(l) : l; }      /* KS12.2 (night.who): the chips are the PCs playing tonight */
-  function setWho(v) { if (!S || !hasSit()) return; v = str(v); setLive('pc', str(uiNow().pc) === v ? '' : v); renderPos(); renderControls(); }
-  function whoClear() { if (S && hasSit() && str(uiNow().pc)) { setLive('pc', ''); renderPos(); renderControls(); } }
+  function setWho(v) { if (!S || !hasSit()) return; v = str(v); setLive('pc', str(uiNow().pc) === v ? '' : v); renderPos(); renderControls(); if (b09On('kit.stage')) pcStatusSync(); }      /* KS14.2: the acting head follows Who */
+  function whoClear() { if (S && hasSit() && str(uiNow().pc)) { setLive('pc', ''); renderPos(); renderControls(); if (b09On('kit.stage')) pcStatusSync(); } }
   function setPos(v) { setLive('pos', v); renderPos(); }
   /* a roll is never invisible: Focus (which hides the card) goes, said once per page load, and the card's header is scrolled
      into view in the console column */
@@ -4345,8 +4348,10 @@
     }, function (e) { toast('Could not send to the iPad: ' + errText(e), true); });
   }
   /* Take it down (a tool's own button): what is shown goes, the ambient scene plays. Blank (lights out): true black until the next send. */
-  function blankIpad() { pushDisplay({ kind: 'blank' }).then(function () { toast('Taken down: the iPad plays the ambient scene.'); }, function (e) { toast('Could not take it down: ' + errText(e), true); }); }
-  function darkIpad() { return pushDisplay({ kind: 'dark' }).then(function () { toast('Blank: the iPad is black until the next send.'); return true; }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); return false; }); }
+  function ks14Down() { if (W.B68GmPcStatus && b09On('kit.stage')) { W.B68GmPcStatus.down(); pcStatusSync(); } }      /* KS14.2: Take it down, Blank, Clear: nobody acts */
+  function blankIpad() { ks14Down();
+    pushDisplay({ kind: 'blank' }).then(function () { toast('Taken down: the iPad plays the ambient scene.'); }, function (e) { toast('Could not take it down: ' + errText(e), true); }); }
+  function darkIpad() { ks14Down(); return pushDisplay({ kind: 'dark' }).then(function () { toast('Blank: the iPad is black until the next send.'); return true; }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); return false; }); }
 
   /* ---------- THE iPAD TRAY's Clear (0) (the GM night rebuild, the design's iPad part: one way off) ----------
      Everything down to the ambient scene, through the page's own take-downs, so nothing comes back by itself a moment later: the report card (the
@@ -4365,6 +4370,7 @@
   function clearIpad() {
     var me = S; if (!me) return Promise.resolve(false);
     if (b17Frozen()) { toast('The iPad is frozen: unfreeze it first.', true); return Promise.resolve(false); }      /* Freeze holds the iPad: Clear changes nothing */
+    ks14Down();
     var g = gmApi();
     var fresh = g && typeof g.ambient === 'function' ? Promise.resolve().then(function () { return g.ambient(); }).then(function (r) { if (S === me) adoptAmbient(r); }, function () { /* the cached document will do */ }) : Promise.resolve();
     return fresh.then(function () { return S === me ? clearSteps(me) : false; });
@@ -4892,9 +4898,10 @@
       roomLines: function () { return S === me ? rollRoomLines(rollRoom()) : []; },
       line: function () { return S === me ? rollLine() : ''; }, setLine: function (t) { if (S === me) rollSetThreat(t); },     /* N4: the Roll's one line */
       currentPosition: function () { return S === me && hasSit() ? str(uiNow().pos) : ''; }, setPosition: function (p) { if (S === me) setPos(p); },
-      show: function (payload, key, ms) { var sh = shows(); return sh ? sh.show('report', payload, { key: key, ms: ms }) : Promise.resolve(null); },
+      show: function (payload, key, ms, o) { var sh = shows(); return sh ? sh.show('report', payload, { key: key, ms: ms, replace: !!(o && o.replace) }) : Promise.resolve(null); },
       keyFor: function (key) { return W.B68Show ? W.B68Show.idFor(key) : key; }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
       clearOverlay: function () { return patchAmbient({ overlay: null }); },
+      who: function () { return S === me ? fitPc() : ''; }, covered: function () { return S === me && ((isObj(AM.shown) && AM.shown.kind === 'dark') || panicOn()); }, vet: function (p) { return gate.allowsAmbient({ overlay: { id: 'ks15-vet', kind: 'report', ms: 10000, payload: p } }); },     /* KS15 (kit.stage only): the roll as beats */
       log: function (text) { if (S === me && me.night) me.night.stamp(text); }, toast: toast, changed: function () { if (S === me) { b09Paint(); pcStatusSync(); } },
       threat: function (st) { var t = S === me && me.b19 && me.b19.threat; if (t) t.drop(st); }, threatClear: function () { var t = S === me && me.b19 && me.b19.threat; if (t) t.clear(); },
       stamped: function (st) { if (S === me) fitStamped(st); }     /* 08/11: the stamp is what asks Blade for the fit */
@@ -4935,7 +4942,7 @@
     rollLinePaint();          /* the line first (it follows the room on every paint, as the stamp's own box did): the stamp's view reads it */
     var v = S.stamp ? S.stamp.view() : null, on = !!(v && v.on);
     var eff = $q('#gm-eff'); if (eff) { eff.hidden = !on; eff.innerHTML = on ? R.effHtml(v.draft.effect) : ''; }
-    var box = $q('#gm-stamp'); if (box) { var h = on ? R.stampHtml(v) : ''; if (box.__html !== h) { box.innerHTML = h; box.__html = h; } box.hidden = !on; }
+    var box = $q('#gm-stamp'); if (box) { var h = on ? R.stampHtml(v) : ''; if (box.__html !== h) { var kc = v && v.cost && R.costKeep ? R.costKeep(box) : null; box.innerHTML = h; box.__html = h; if (kc) kc(); } box.hidden = !on; if (v && v.cost && R.costBind) R.costBind(box, function () { return S && S.stamp; }); }     /* KS15: the cost field keeps its focus */
     rollMiniPaint(v); rollSizerPaint(v);
   }
   function b09Marked(res) {
@@ -6241,13 +6248,20 @@
   /* PC status on the band's faces (suite 3.7, switch face.pcstatus): app/gm/pcstatus.js sends the layer only when what it would draw has changed */
   function pcStatusSync() {
     var K = W.B68GmPcStatus; if (!K || !S || !W.B68Features) return;
+    if (b09On('kit.stage') && !isObj(AM.doc)) return;      /* KS14: not before the ambient is read (an NPC face there is never written over) */
     var me = S;
     K.sync({
-      feature: function (id) { return S === me && b09On(id); }, pcs: herePcs,      /* KS12.3: the faces of who is playing */
+      feature: function (id) { return S === me && b09On(id); }, pcs: herePcs,      /* KS12.3: the faces of who is playing; KS14: stage() on sends them too (pcstatus.js) */
+      stage: function () { return S === me && b09On('kit.stage'); }, who: function () { return S === me && hasSit() ? str(uiNow().pc) : ''; }, stampUp: function () { return !!(S === me && me.stamp && me.stamp.view().active); },
+      joined: function () { return S !== me ? null : S.who ? S.who.present() : W.B68GmWho ? W.B68GmWho.join(whoAll().map(function (o) { return { name: str(o.value), first: str(o.label) }; }), dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), owner: str(c.owner) }; }), null) : (ks14Who(), null); },      /* KS14.2: KS12's one join */
       current: function () { var l = isObj(AM.doc) && isObj(AM.doc.layers) && isObj(AM.doc.layers.band) ? AM.doc.layers.band.faces : null; return Array.isArray(l) ? l : null; },
+      left: function (v) { if (v === undefined) return isObj(AM.doc) && ks14Left(); ks14Left(!!v); },      /* KS14: the stage's faces outlive a reload with it off */
       layer: function (path, value) { var sh = shows(); return sh ? sh.layer(path, value) : Promise.resolve(null); }
     });
   }
+  function ks14Left(v) { try { if (v === undefined) return W.localStorage.getItem('b68.ks14.faces') === '1'; if (v) W.localStorage.setItem('b68.ks14.faces', '1'); else W.localStorage.removeItem('b68.ks14.faces'); } catch (e) { return false; } }      /* KS14: this browser's memory, never the server's */
+  /* KS14.2: the Who's join is KS12's (gm/kit/who.js, the night-who bundle): with night.who off it is fetched once while kit.stage is on */
+  function ks14Who() { var me = S; if (!S || S.ks14Who || W.B68GmWho || !W.B68Load || !W.B68Load.need) return; S.ks14Who = true; W.B68Load.need('night-who').then(function () { if (S === me) pcStatusSync(); }, function () { if (S === me) S.ks14Who = false; }); }
   function charactersChanged() {
     if (!S || S.status !== 'ready') return;
     runFoldMoves();         /* a phone's move request rides on the characters */

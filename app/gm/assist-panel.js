@@ -1088,7 +1088,7 @@
       if (!st.open) return;
       var had = host && doc && host.contains(doc.activeElement);
       st.open = false; dropNow(); render(); relayout();
-      if (had) { var lb = q('#as-launch'); if (lb) { try { lb.focus(); } catch (e) {} } }
+      if (had) { var lb = (KB && doc.querySelector && doc.querySelector('#gm-band [data-band="blade"]')) || q('#as-launch'); if (lb) { try { lb.focus(); } catch (e) {} } }      /* KS05: the band's Blade button while the tab is put away */
     }
     /* a warn that has just arrived is spoken at once (an assertive live region outside the panel: a closed panel is visibility:hidden, and that is when a warn matters) */
     function alertWarn(fresh) {

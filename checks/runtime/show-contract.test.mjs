@@ -138,6 +138,41 @@ await test('the report card (B09): position and effect are required and bounded,
   assert.equal(hid.status, 400); assert.ok(!JSON.stringify(hid.body).includes('GM-ONLY'));
 });
 
+await test('KS15 the roll as beats: who, result and cost are optional and bounded; a report without them is unchanged; a hidden name cannot ride in any of them', async () => {
+  const db = await withCast();
+  const base = { position: 'risky', effect: 'standard', text: 'She calls the desk.' };
+  assert.deepEqual(cleanShowPayload('report', base), base, 'no new fields: exactly as before (no key added)');
+  const full = { ...base, who: '  Ray  ', result: '45', cost: 'Lotte remembers your face.', stray: 'GM-ONLY-STRAY' };
+  const ok = await patch(db, OV('report', full, { ms: 8000 }));
+  assert.equal(ok.status, 200);
+  assert.deepEqual(ok.body.doc.overlay.payload, { ...base, who: 'Ray', result: '45', cost: 'Lotte remembers your face.' }, 'rebuilt from named keys: trimmed, stray dropped');
+  const served = (await getDisplay(db, POLL)).body;
+  assert.deepEqual(served.overlay.payload, { ...base, who: 'Ray', result: '45', cost: 'Lotte remembers your face.' }, 'the display GET serves the three, nothing else');
+  assert.ok(!JSON.stringify(served).includes('GM-ONLY'));
+  for (const r of ['clean', '13']) assert.equal((await patch(db, OV('report', { ...base, result: r }))).status, 200, r);
+  const bad = [{ who: 'x'.repeat(41) }, { who: 7 }, { result: '6' }, { result: 'crit' }, { result: 45 }, { cost: 'x'.repeat(61) }, { cost: ['a'] }];
+  for (const b of bad) assert.equal((await patch(db, OV('report', { ...base, ...b }))).status, 400, JSON.stringify(b));
+  for (const b of [{ who: 'GM-ONLY-NPC-1' }, { cost: 'GM-ONLY-ALIAS-1 saw it' }, { cost: 'gm-only-npc-1 remembers' }]) {
+    const r = await patch(db, OV('report', { ...base, result: '13', ...b }));
+    assert.equal(r.status, 400, JSON.stringify(b)); assert.ok(!JSON.stringify(r.body).includes('GM-ONLY') && !JSON.stringify(r.body).toLowerCase().includes('gm-only'), 'the answer never echoes the name');
+  }
+  assert.equal((await patch(db, OV('report', { ...base, who: 'Lotte', cost: 'Lotte Brand remembers your face.' }))).status, 200, 'a revealed name is fine');
+});
+
+await test('KS15: the same id laid again without ifNotOverlay replaces the stakes with the result (a fresh at); with ifNotOverlay it is still once by id', async () => {
+  const db = await withCast();
+  const base = { position: 'risky', effect: 'standard', text: 'She calls the desk.', who: 'Ray' };
+  const id = { id: 'k-stamp-1' };
+  let r = await patch(db, { overlay: { ...id, kind: 'report', ms: 180000, payload: base }, ifNotOverlay: 'k-stamp-1' }); assert.equal(r.status, 200);
+  const at1 = r.body.doc.overlay.at, seq1 = r.body.seq;
+  r = await patch(db, { overlay: { ...id, kind: 'report', ms: 8000, payload: { ...base, result: '45' } }, ifNotOverlay: 'k-stamp-1' });
+  assert.equal(r.body.unchanged, true, 'once by id still holds'); assert.equal(r.body.seq, seq1);
+  await new Promise((res) => setTimeout(res, 5));
+  r = await patch(db, { overlay: { ...id, kind: 'report', ms: 8000, payload: { ...base, result: '45' } } });
+  assert.equal(r.status, 200); assert.equal(r.body.doc.overlay.id, 'k-stamp-1'); assert.equal(r.body.doc.overlay.ms, 8000); assert.equal(r.body.doc.overlay.payload.result, '45');
+  assert.ok(r.body.doc.overlay.at >= at1 && r.body.seq === seq1 + 1, 'a fresh write');
+});
+
 await test('secrecy at write for layers: faces, credits and previously keep revealed NPCs only; none left is 400; pc faces stay', async () => {
   const db = await withCast();
   let r = await patch(db, { layer: { path: 'data.credits', value: ['n-lotte', 'n-hid', 'n-mabel'] } }); assert.equal(r.status, 200);
@@ -146,6 +181,24 @@ await test('secrecy at write for layers: faces, credits and previously keep reve
   assert.deepEqual(r.body.doc.layers.band.faces, [{ pcId: 'pc-nell' }, { npcId: 'n-dov' }]);
   assert.equal((await patch(db, { layer: { path: 'data.previously', value: ['n-hid'] } })).status, 400);
   assert.equal((await patch(db, { layer: { path: 'band.faces', value: [{ npcId: 'n-hid' }] } })).status, 400);
+});
+
+await test('KS14.2 the acting mark: acting: true on one PC face is kept and served; false or absent leaves the key off; any other value, two marks, or a mark on an NPC face never rides', async () => {
+  const db = await withCast();
+  const nell = { pcId: 'pc-nell', name: 'Nell Arbuthnot', stress: 4 }, ray = { pcId: 'pc-ray', name: 'Ray Okonjo', stress: 2 };
+  assert.deepEqual(cleanLayerOp({ path: 'band.faces', value: [nell, ray] }).value, [nell, ray], 'no mark: exactly as before (no key added)');
+  assert.deepEqual(cleanLayerOp({ path: 'band.faces', value: [nell, { ...ray, acting: false }] }).value, [nell, ray], 'false is no mark');
+  let r = await patch(db, { layer: { path: 'band.faces', value: [nell, { ...ray, acting: true, stray: 'GM-ONLY-STRAY' }, { npcId: 'n-dov', acting: true }] } });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.doc.layers.band.faces, [nell, { ...ray, acting: true }, { npcId: 'n-dov' }], 'kept on the PC face, rebuilt from named keys; an NPC face is rebuilt as { npcId } alone');
+  const served = (await getDisplay(db, POLL)).body;
+  assert.deepEqual(served.layers.band.faces.map((f) => f.acting === true), [false, true, false], 'the display GET serves the one mark');
+  assert.ok(!JSON.stringify(served).includes('GM-ONLY'));
+  for (const v of ['yes', 1, 'pc-ray', {}]) assert.equal((await patch(db, { layer: { path: 'band.faces', value: [nell, { ...ray, acting: v }] } })).status, 400, 'acting ' + JSON.stringify(v));
+  assert.equal((await patch(db, { layer: { path: 'band.faces', value: [{ ...nell, acting: true }, { ...ray, acting: true }] } })).status, 400, 'two marks');
+  assert.equal((await patch(db, { layer: { path: 'band.faces', value: [{ npcId: 'n-hid', acting: true }, { ...ray, acting: true }] } })).status, 200, 'a hidden NPC face is dropped; the mark stays on the PC');
+  const g = (await getDisplay(db, POLL)).body;
+  assert.deepEqual(g.layers.band.faces, [{ ...ray, acting: true }]); assert.ok(!JSON.stringify(g).includes('n-hid'));
 });
 
 await test('secrecy at read: served from the NPC rows as they are NOW; hiding an NPC after the write drops it from the overlay and every layer; nothing else of the row is served', async () => {

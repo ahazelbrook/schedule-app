@@ -120,6 +120,23 @@ await test('layers: clean() keeps names and roles only; the message to a scene c
   assert.equal(Lay.clean({ band: { faces: [{ name: 'a' }, { name: 'b' }, { name: 'c' }, { name: 'd' }, { name: 'e' }] } }).faces.length, 3, 'at most three faces');
 });
 
+await test('KS14.2 the acting mark: the GM check, the server and the display agree on band.faces acting; a scene\'s message never carries it', async () => {
+  const { cleanLayerOp } = await import('../../functions/_lib/show.js');
+  const nell = { pcId: 'pc-nell', name: 'Nell Arbuthnot', stress: 4 }, ray = { pcId: 'pc-ray', name: 'Ray Okonjo', stress: 2, harm: [2] };
+  const server = (v) => { try { return cleanLayerOp({ path: 'band.faces', value: v }).value; } catch (e) { return null; } };
+  const cases = [[nell, ray], [nell, { ...ray, acting: true }], [{ ...nell, acting: false }, ray], [{ ...nell, acting: true }, { ...ray, acting: true }], [nell, { ...ray, acting: 'yes' }],
+    [nell, { ...ray, acting: 1 }], [{ npcId: 'n-mabel' }, { ...ray, acting: true }], [{ ...nell, acting: true }, ray, { pcId: 'pc-tam', name: 'Tam Petrakis' }]];
+  for (const v of cases) {
+    const s = server(v), g = Show.layerOk('band.faces', v);
+    assert.equal(!!s, g, 'server and GM agree: ' + JSON.stringify(v));
+    if (!s) continue;
+    const pcs = s.filter((f) => f.pcId), d = Lay.clean({ band: { faces: pcs } }).faces;      /* a stored { npcId } is drawn only once the GET joins it */
+    assert.deepEqual(d.map((f) => f.acting === true), pcs.map((f) => f.acting === true), 'the display keeps the mark the server keeps: ' + JSON.stringify(v));
+    assert.ok(!JSON.stringify(Lay.message(Lay.clean({ band: { faces: s } }))).includes('acting'), 'a scene is not told who is acting');
+  }
+  assert.equal(Lay.clean({ band: { faces: [{ ...ray, acting: 'yes' }] } }).faces[0].acting, undefined, 'the display keeps true alone');
+});
+
 await test('layers: apply() sets the root attributes, draws the strip, posts to the scene frames only when something changed, answers b68:ready and a scene load; clearing removes it all', () => {
   const { c, amb } = container(); const fa = frame('credits'), fb = frame('watch'); amb.appendChild(fa); amb.appendChild(fb);
   posted.length = 0; listeners.length = 0;
@@ -191,6 +208,31 @@ await test('the GM page gate takes the new commands and refuses what names a hid
   assert.equal(gate.allowsAmbient({ layer: { path: 'band.phase' } }), false, 'a layer with no value');
   assert.equal(GP.overlayOk({ id: 'a', kind: 'fx', ms: 4000, fx: 'dawn' }), true, 'an old kind is still fine');
   assert.match(GP.overlayLine({ id: 'a', kind: 'stamp', ms: 4000, payload: { word: 'X' } }), /stamp/);
+});
+
+await test('KS15 the roll as beats: the GM check, the display check and the server agree on report\'s who, result and cost; replace lays the key\'s id again without ifNotOverlay; the gate refuses a hidden name in them', async () => {
+  const { cleanShowPayload } = await import('../../functions/_lib/show.js');
+  const base = { position: 'risky', effect: 'standard', text: 'She calls the desk.' };
+  const server = (p) => { try { return cleanShowPayload('report', p); } catch (e) { return null; } };
+  const cases = [base, { ...base, who: 'Ray' }, { ...base, result: 'clean' }, { ...base, result: '45' }, { ...base, result: '13', cost: 'Lotte remembers your face.' },
+    { ...base, who: 'x'.repeat(40), cost: 'y'.repeat(60) }, { ...base, who: 'x'.repeat(41) }, { ...base, cost: 'y'.repeat(61) }, { ...base, result: '6' }, { ...base, result: 45 }, { ...base, who: 3 }];
+  for (const p of cases) {
+    const s = server(p), d = S.clean('report', p), g = Show.payloadOk('report', p);
+    assert.equal(!!s, !!d, 'server and display agree: ' + JSON.stringify(p)); assert.equal(!!s, g, 'server and GM agree: ' + JSON.stringify(p));
+    if (s) assert.deepEqual(d, s, 'the display keeps what the server keeps: ' + JSON.stringify(p));
+  }
+  assert.deepEqual(S.clean('report', base), base, 'a report without the new fields is unchanged');
+  assert.equal(S.clean('report', { ...base, stray: 'GM-ONLY-STRAY' }).stray, undefined);
+  for (const f of S.entry('report').fixtures) assert.ok(server(f.fixture) && S.clean('report', f.fixture), f.label + ' passes both');
+  const sent = []; const c = Show.make({ send: (p) => { sent.push(p); return Promise.resolve({ ok: 1 }); }, toast: () => {} });
+  await c.show('report', { ...base, who: 'Ray' }, { key: 'stamp-1-9', ms: 180000 });
+  await c.show('report', { ...base, who: 'Ray', result: '45' }, { key: 'stamp-1-9', ms: 8000, replace: true });
+  assert.equal(sent[0].ifNotOverlay, sent[0].overlay.id); assert.equal(sent[1].overlay.id, sent[0].overlay.id, 'the same id'); assert.ok(!('ifNotOverlay' in sent[1]), 'replace sends no ifNotOverlay');
+  const gate = GP.makeGate(() => ['GM-ONLY-NPC-1', 'GM-ONLY-ALIAS-1']);
+  const ov = (payload) => ({ overlay: { id: 'a', kind: 'report', ms: 8000, payload } });
+  assert.equal(gate.allowsAmbient(ov({ ...base, who: 'Ray', result: '45', cost: 'Lotte remembers your face.' })), true);
+  assert.equal(gate.allowsAmbient(ov({ ...base, result: '13', cost: 'GM-ONLY-ALIAS-1 saw it' })), false, 'a hidden name in the cost');
+  assert.equal(gate.allowsAmbient(ov({ ...base, who: 'gm-only-npc-1' })), false, 'a hidden name in who');
 });
 
 /* ---- tokens and the look book ---- */

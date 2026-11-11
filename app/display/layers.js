@@ -57,13 +57,14 @@
     list.slice(0, max).forEach(function (c) { if (isObj(c)) { var n = text(c.name, 120); if (n) out.push({ name: n, role: text(c.role, 120) }); } });
     return out;
   }
-  /* a PC's face: { pcId } and, only when the GM page sent them (suite 3.7, face.pcstatus), name, stress 0-9, harm [levels 1-4] and locks 0-6 */
+  /* a PC's face: { pcId } and, only when the GM page sent them (suite 3.7, face.pcstatus), name, stress 0-9, harm [levels 1-4] and locks 0-6; acting (KS14.2) */
   function pcFace(f) {
     var o = { pcId: f.pcId }, n = text(f.name, 40), st = whole(f.stress, 0, 9), lk = whole(f.locks, 0, 6);
     if (n) o.name = n;
     if (st !== undefined) o.stress = st;
     if (lk !== undefined) o.locks = lk;
     if (Array.isArray(f.harm)) { var h = f.harm.slice(0, 4).filter(function (x) { return whole(x, 1, 4) !== undefined; }); if (h.length) o.harm = h; }
+    if (f.acting === true) o.acting = true;      /* KS14.2: the PC whose turn it is (the new stage's heads read it; the strip ignores it) */
     return o;
   }
   /* suite 2.8 (data.montage): two to four panels { pcId, name, room, line, done }; [] when unset or not that shape. Not in the scenes' b68:data message (message() is unchanged). */
@@ -112,8 +113,10 @@
   /* the message a scene receives (`countdown.to` is already in THIS page's clock: the server's epoch less its skew, rounded to 250 ms so a jittery skew does not re-post; a scene computes to - Date.now()) */
   function message(state) {
     return { type: 'b68:data', phase: state.phase, security: state.security, onair: state.onair, filter: state.filter, layout: state.layout, mode: state.mode,
-      countdown: state.countdown, faces: state.faces, credits: state.credits, previously: state.previously };
+      countdown: state.countdown, faces: state.faces.map(noActing), credits: state.credits, previously: state.previously };
   }
+  /* KS14.2: who is acting is the new stage's alone; a scene's message is what it was (a pick does not re-post to the scenes) */
+  function noActing(f) { if (!f || !f.acting) return f; var o = {}; Object.keys(f).forEach(function (k) { if (k !== 'acting') o[k] = f[k]; }); return o; }
   var ATTRS = { 'data-band-phase': 'phase', 'data-band-security': 'security', 'data-scene-filter': 'filter', 'data-scene-layout': 'layout', 'data-scene-mode': 'mode' };
 
   function attach(container, opts) {
