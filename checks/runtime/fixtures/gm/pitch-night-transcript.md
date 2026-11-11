@@ -1,0 +1,35 @@
+---
+date: 14/11/2026
+note: An invented fixture night for the pitch seat (KS18). Every name and line is made up. Used by assist-pitch.test.mjs through scripts/gm-assist-e2e.mjs --fake --pitches.
+---
+
+- **[20:00] GM:** The Pelican Rooms are loud tonight. Mabel Quist is pouring at the long bar.
+- **[20:00] Nell Arbuthnot:** I sit where I can see the stairs.
+- **[20:01] Ray Okonjo:** I want a word with Dov Kessler about the ledger.
+- **[20:01] GM:** Dov is at the card table with Ada Vell. He waves you over.
+- **[20:02] Ray Okonjo:** I ask him who signs for the crates.
+- **[20:02] GM:** He laughs and says nobody signs for anything in here.
+- **[20:03] Tam Petrakis:** I roll to read him. That's a six.
+- **[20:03] GM:** He keeps glancing at the back room door.
+- **[20:04] Nell Arbuthnot:** How long until the watch comes past?
+- **[20:04] GM:** You are not sure. Lotte Brand might know.
+- **[20:05] Tam Petrakis:** Let's go and find Lotte then.
+- **[20:06] GM:** New scene. The back stairs of the Pelican Rooms, cold and dark.
+- **[20:06] Nell Arbuthnot:** I go first with the lamp low.
+- **[20:07] Ray Okonjo:** I listen at the door at the top.
+- **[20:07] GM:** Two voices. One is Lotte. The other you do not know.
+- **[20:08] Tam Petrakis:** We wait and listen.
+- **[20:08] GM:** They are talking about a shift change.
+- **[20:09] Ray Okonjo:** What do we do now?
+- **[20:10] Nell Arbuthnot:** I don't know. We could go back down.
+- **[20:10] Tam Petrakis:** Or we could knock.
+- **[20:11] Ray Okonjo:** Or wait some more.
+- **[20:12] Nell Arbuthnot:** Anyone want a drink while we think?
+- **[20:18] GM:** All right, where were we.
+- **[20:18] Tam Petrakis:** At the door. I knock.
+- **[20:19] GM:** Lotte opens it a crack and looks past you down the stairs.
+- **[20:20] Ray Okonjo:** I ask her about the ledger.
+- **[20:21] GM:** She says Dov keeps it on him, always.
+- **[20:22] Nell Arbuthnot:** Then we need to get close to Dov.
+- **[20:23] Tam Petrakis:** Back down to the card table.
+- **[20:24] GM:** Ada is packing up her cards.

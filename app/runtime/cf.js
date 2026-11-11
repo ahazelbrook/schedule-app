@@ -1413,6 +1413,9 @@
     /* Claude at the table (app/gm/assist-panel.js). POST /api/gm/assist/tick { after? } -> { cards, updates, flags, spend, last, health: { skipped, reaped } }; it waits 55 s (the Worker gives the Tripwire 12 s and each seat 30 s); 429: busy or
        the night's cap reached. POST /api/gm/assist/fit { position, effect? } -> { cards: [fixer card], spend }; the Fixer may take 30 s, so it waits 60 */
     assistTick: function (after, npc, rolled) { var b = {}; if (after !== undefined && after !== null) b.after = after; if (typeof npc === 'string' && npc) b.npc = npc; if (rolled === true) b.rolled = true; return api('POST', '/gm/assist/tick', b, 55000); },
+    /* blade.pitches (kit and stage, KS18): the same tick plus the pitch fields, sent only while the setting is on (B68Pitches in gm/kit/blade.js routes the
+       panel's assistTick here, and its Pitch now calls it with pitchNow). more: { pitch, pitchNow, seen }; nothing else from it is sent. -> the tick's answer, plus `pitch` */
+    assistPitchTick: function (more, after, npc, rolled) { var b = {}, m = more || {}; if (after !== undefined && after !== null) b.after = after; if (typeof npc === 'string' && npc) b.npc = npc; if (rolled === true) b.rolled = true; if (m.pitch === true) b.pitch = true; if (m.pitchNow === true) b.pitchNow = true; if (m.seen && m.seen.length) b.seen = m.seen.slice(-12); return api('POST', '/gm/assist/tick', b, 55000); },
     assistFit: function (req) { return api('POST', '/gm/assist/fit', req || {}, 60000); },
     /* POST /api/gm/assist/another { npc, shown: [..] } -> { voice: { who, lines: [one line], at }, spend }; the tick also takes npc (the NPC on stage) */
     assistAnother: function (req) { return api('POST', '/gm/assist/another', req || {}, 60000); },
