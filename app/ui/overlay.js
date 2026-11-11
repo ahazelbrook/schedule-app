@@ -525,7 +525,7 @@
   toast.stack = theStack;
 
   /* ---------- the tooltip ---------- */
-  var tipEl = null, tipFor = null, tipTimer = 0, pending = null, held = null;
+  var tipEl = null, tipFor = null, tipTimer = 0, tipLife = 0, pending = null, held = null;
   function isDesk() {
     var d = doc(), v = d && d.documentElement ? d.documentElement.getAttribute('data-kit') : null;
     return !!v && (' ' + v + ' ').indexOf(' desk ') >= 0;
@@ -544,6 +544,7 @@
   }
   function tipHide() {
     if (tipTimer) { W.clearTimeout(tipTimer); tipTimer = 0; }
+    if (tipLife) { W.clearTimeout(tipLife); tipLife = 0; }
     pending = null;
     if (tipEl && tipEl.parentNode) tipEl.parentNode.removeChild(tipEl);
     if (tipFor && held) {
@@ -568,6 +569,7 @@
     tipFor = a;
     (closest(a, 'dialog') || doc().body).appendChild(tipEl);
     floatAt(tipEl, a, 'bottom-center', { gap: 8 });
+    tipLife = W.setTimeout(tipHide, 12000);   /* the page can redraw its control under a tip that would then never get its pointer-out */
   }
   function tipAnchor(t) {
     var a = closest(t, '[title],[data-ui-tip]');

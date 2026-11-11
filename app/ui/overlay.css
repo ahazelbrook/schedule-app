@@ -5,14 +5,15 @@
    Reduced motion makes every transition a cut (the motion tokens are 0ms there); the toast's timer steps once a second instead of draining. */
 
 /* ---------- Dialog: a native <dialog> opened with showModal ---------- */
+/* the scrim darkens in both themes: --ui-on-accent is the one ink that is the same in Paper and Night */
 .ui-dialog {
   box-sizing: border-box; width: min(32em, calc(100vw - 2 * var(--ui-space-4))); max-width: none; max-height: calc(100vh - 2 * var(--ui-space-5)); margin: auto; padding: 0;
   overflow: auto; border: var(--ui-rule); border-radius: var(--ui-radius); background: var(--ui-raised); color: var(--ui-ink); box-shadow: none;
   font: 400 var(--ui-type-body)/1.45 var(--ui-font-text);
 }
-.ui-dialog::backdrop { background: color-mix(in srgb, var(--ui-ink, canvastext) 55%, transparent); }
+.ui-dialog::backdrop { background: color-mix(in srgb, var(--ui-on-accent, canvastext) 55%, transparent); }
 .ui-dialog.is-plain { position: fixed; inset: 0; height: fit-content; z-index: var(--ui-layer-dialog); }
-.ui-dialog-scrim { position: fixed; inset: 0; z-index: calc(var(--ui-layer-dialog) - 1); background: color-mix(in srgb, var(--ui-ink, canvastext) 55%, transparent); }
+.ui-dialog-scrim { position: fixed; inset: 0; z-index: calc(var(--ui-layer-dialog) - 1); background: color-mix(in srgb, var(--ui-on-accent, canvastext) 55%, transparent); }
 .ui-dialog.is-static { position: static; display: block; width: auto; max-width: 32em; max-height: none; margin: 0; }
 .ui-dialog-form { display: grid; gap: var(--ui-space-4); box-sizing: border-box; margin: 0; padding: var(--ui-space-5); }
 .ui-dialog-title { margin: 0; color: var(--ui-ink); font: 900 var(--ui-type-title)/1.05 var(--ui-font-cond); letter-spacing: .02em; text-transform: uppercase; }
