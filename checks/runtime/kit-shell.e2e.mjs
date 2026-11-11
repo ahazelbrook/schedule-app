@@ -270,6 +270,26 @@ try {
     k = await kinds();
     check(k.filter((x) => x.err).length === 2 && k.some((x) => /roll failed/.test(x.t)) && k.some((x) => /Not saved/.test(x.t)), 'at most two of the page\'s errors stay: the newest two ' + JSON.stringify(k.map((x) => x.t.slice(0, 24))));
     await page.evaluate(() => [...document.querySelectorAll('.ui-toast-x')].forEach((x) => x.click()));
+    await sleep(500);
+    /* re-review: these exact page lines are failures and stay (a refused write, a send that did not happen, Co-GM switching itself off) */
+    const STAY_LINES = ['The GM notes are full (250 of 256 KiB). Export tonight’s note and clear the capture first.',
+      'Something else is on the iPad now, so the clocks were not sent and no longer follow the table. Show on iPad sends them again.',
+      'Something else is on the iPad now, so the map was not sent and live reveal has stopped. Show on iPad starts it again.',
+      'Something else is on the iPad now, so the chase was not sent and the strip no longer follows it. Show on iPad sends it again.',
+      'Co-GM switched itself off: Listening is off.'];
+    for (const line of STAY_LINES) {
+      await page.evaluate((t) => window.B68KitShell.toast(t, true), line);
+      const one = (await kinds()).find((x) => x.t === line);
+      check(!!one && one.err, 'stays as an error: "' + line.slice(0, 60) + '…"');
+      await page.evaluate(() => [...document.querySelectorAll('.ui-toast-x')].forEach((x) => x.click())); await sleep(400);
+    }
+    /* re-review: a "Not saved" line keeps its place when two later failures arrive */
+    await page.evaluate(() => { ['Not saved: the server refused a change (invented).', 'Could not send to the iPad: the line dropped (invented).', 'The roll failed: no table (invented).'].forEach((t) => window.B68KitShell.toast(t, true)); });
+    await sleep(600);
+    k = await kinds();
+    check(k.some((x) => /^Not saved/.test(x.t) && x.err) && k.some((x) => /roll failed/.test(x.t)) && !k.some((x) => /line dropped/.test(x.t)) && k.filter((x) => x.err).length === 2,
+      'a "Not saved" line keeps its place: two later failures put the other one away ' + JSON.stringify(k.map((x) => x.t.slice(0, 24))));
+    await page.evaluate(() => [...document.querySelectorAll('.ui-toast-x')].forEach((x) => x.click()));
 
     /* ---- 6. the layers ---- */
     const z = await page.evaluate(() => { const zi = (sel) => { const e = document.querySelector(sel); return e ? Number(getComputedStyle(e).zIndex) || 0 : null; };
@@ -343,6 +363,9 @@ try {
     qs = await until(seen, 3000);
     check(!!qs && qs.inView && qs.top && qs.cancel && !qs.stack, 'a full stack: the question is the old centred toast, at once, on top, with Cancel ' + JSON.stringify(qs));
     check(!(await page.$$eval('.ui-toast-stack .ui-toast', (l) => l.some((x) => /^Reveal/.test(x.textContent)))), 'and nothing of it waits in the stack\'s queue');
+    const live = await page.evaluate(() => { const b = document.querySelector('body > .gm-ugtoast [data-ug="confirm"]'); if (!b) return null; const s = getComputedStyle(b); return { op: s.opacity, bg: s.backgroundColor, fg: s.color }; });
+    check(!!live && live.op === '1' && !/rgba\(0, 0, 0, 0\)|transparent/.test(live.bg) && live.bg !== live.fg, 'its Reveal reads as a live button (full colour, no fade) ' + JSON.stringify(live));
+    if (SHOTS) await shot(page, 'fallback-question-paper-1366');
     if (qs) await page.click('[data-ug="cancel"]');
     check(!!(await until(qGone, 3000)) && (await hiddenNow()) === false, 'its Cancel reveals no one');
     await c.close();

@@ -172,10 +172,11 @@
   /* ---------- KS09.3 one toast stack ----------
      The page sends about 130 lines as errors (toast(msg, true)). Only REAL failures stay until X: a server, save or network failure, a refused
      or lost write, a draw that broke, signed out. A routine line (a "do X first", "nothing to ...", "not on this page", "needs the hosted app",
-     "something else is on the iPad") fades as news does, after six seconds. A line neither list knows stays (the safe side). At most two of the
-     page's errors stay at once: a third puts the oldest away. Preflight's line is one toast whatever its count. */
-  var REAL = /could not|couldn.t|failed|\bfail\b|refused|not saved|not done|not undone|^not sent|offline|could not be reached|signed out|dropped|would not|is full|\bleak|missing|have changed since/i;
-  var ROUTINE = /\bfirst\b|^nothing\b|^no (beat|clock|map)\b|^there is no|^choose\b|^pick\b|^only\b|already|needs? the hosted app|needs the table|needs map kit|not available|not on this page|cannot draw right now|is off tonight|switched itself off|^something else is on the ipad|is not in (the|this)\b|is not one the ipad|not in the pack any more|is frozen|is 1 to 100|^the cards panel holds|^that person is not in the cast|^not in the generator/i;
+     "nothing to ...") fades as news does, after six seconds. A line neither list knows stays (the safe side). At most two of the page's errors
+     stay at once: a third puts the oldest away, except a "Not saved" line, which keeps its place. Preflight's line is one toast whatever its
+     count. A send that did not happen ("... was not sent") and Co-GM switching itself off stay. */
+  var REAL = /could not|couldn.t|failed|\bfail\b|refused|not saved|not done|not undone|not sent|offline|could not be reached|signed out|dropped|would not|\b(is|are) full\b|\bleak|missing|have changed since|switched itself off/i;
+  var ROUTINE = /\bfirst\b|^nothing\b|^no (beat|clock|map)\b|^there is no|^choose\b|^pick\b|^only\b|already|needs? the hosted app|needs the table|needs map kit|not available|not on this page|cannot draw right now|is off tonight|^something else is on the ipad|is not in (the|this)\b|is not one the ipad|not in the pack any more|is frozen|is 1 to 100|^the cards panel holds|^that person is not in the cast|^not in the generator/i;
   var STICKY_MAX = 2, PAGE_MS = 6000;
   var mine = [], sticky = [];      /* the handles this file put in the stack (taken away when the setting turns off); the page's sticky errors, oldest first */
   function stackOk() { var U = W && W.B68Ui; return !!(on() && U && typeof U.toast === 'function'); }
@@ -191,8 +192,12 @@
     try { h = W.B68Ui.toast(stay ? { text: text, tone: 'error', key: key } : { text: text, tone: 'info', key: key, duration: bad ? PAGE_MS : undefined }); } catch (e) { return false; }
     keep(h);
     if (stay) {
-      sticky = sticky.filter(function (x) { return x !== h && live(x); }); sticky.push(h);
-      while (sticky.length > STICKY_MAX) { var old = sticky.shift(); try { old.dismiss(); } catch (e) { /* gone */ } }
+      sticky = sticky.filter(function (x) { return x.h.id !== h.id && live(x.h); }); sticky.push({ h: h, held: /^Not saved/i.test(text) });
+      /* the oldest goes, but a "Not saved" line keeps its place: the page raises it once, and its write is still not on the server */
+      while (sticky.length > STICKY_MAX) {
+        var at = 0; while (at < sticky.length - 1 && sticky[at].held) at++;
+        var old = sticky.splice(at, 1)[0]; try { old.h.dismiss(); } catch (e) { /* gone */ }
+      }
     }
     return true;
   }

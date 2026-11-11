@@ -153,3 +153,6 @@
 
 /* ---------- KS09.3 the cue's toasts in the stack: the old .gm-ugtoast placement (fixed, centred) is not theirs any more ---------- */
 :root[data-kit~="desk"] .ui-toast.kshell-cue { left: auto; bottom: auto; transform: none; z-index: auto; max-width: none; }
+/* the old centred cue toast (a full stack): its Yes or Undo reads as a live button, its Cancel as a quiet one */
+:root[data-kit~="desk"] body > .gm-ugtoast .gm-ugtoast-b { min-height: 32px; padding: 0 var(--ui-space-3); border: 1px solid var(--ui-accent); border-radius: var(--ui-radius); background: var(--ui-accent); box-shadow: none; color: var(--ui-on-accent); opacity: 1; font: 700 var(--ui-type-label)/1 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
+:root[data-kit~="desk"] body > .gm-ugtoast .gm-ugtoast-b[data-ug="cancel"] { border-color: currentColor; background: transparent; color: inherit; }
