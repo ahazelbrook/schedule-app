@@ -2342,7 +2342,7 @@
       panic: function () { if (S === me) bandPanic('button'); },
       music: function () { return S === me ? muInst() : null; },      /* M1: the band's music pill (gm/music.js) */
       menuHtml: menuHtml, signedOut: function () { return SIGNED_OUT_MSG; }, toast: toast,
-      redraw: function () { if (S === me && S.status === 'ready') renderBar(); },      /* KS05: the band drew the other look (kit.desk turned): paint its parts again */
+      redraw: function () { if (S === me && S.status === 'ready') { syncHead(); renderPackWarn(); renderBar(); syncSave(); } },      /* KS05: the band drew the other look (kit.desk turned): paint its parts again */
       document: document      /* the iPad tray makes its nodes with it (gm/ipad-tray.js: a page whose elements do not carry their document) */
     };
   }

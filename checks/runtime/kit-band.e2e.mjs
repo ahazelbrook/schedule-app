@@ -50,7 +50,7 @@ w(G + '/Sessions/b68g-s09.md', ['---', 'session: 9', 'date: 01/02/2030', 'status
 w(G + '/Sessions/b68g-s10.md', ['---', 'session: 10', 'date: 08/02/2030', 'status: prep', 'gm_prep: true', '---', '', '# Session 10: prep', '', '## Notes', '', 'No cues tonight.', ''].join('\n'));
 const prep = buildPrep({ vault, repo: ROOT, exportedAt: new Date().toISOString(), basenames: basenames(vault) });
 const PARTS = {
-  console: con.parts.console, campaign: np.parts.campaign, npc: np.parts.npc,
+  console: { ...con.parts.console, src: { ...(con.parts.console.src || {}), exportedAt: new Date().toISOString() } }, campaign: { ...np.parts.campaign, src: { ...(np.parts.campaign.src || {}), exportedAt: new Date().toISOString() } }, npc: np.parts.npc,      /* a fresh pack: the stale one is its own scenario */
   location: { src: { file: 'fixture/location', blockSha: '0', exportedAt: new Date().toISOString() }, T: loc.T, extra: loc.extra },
   prep
 };
@@ -103,6 +103,7 @@ const MEASURE = () => {
   for (const e of band.querySelectorAll(sel)) {
     if (!vis(e) || inPopover(e)) continue;
     if (e.closest('button') && e.closest('button') !== e) continue;
+    if (e.parentElement && e.parentElement.closest('.gm-cs-tag')) continue;      /* a part of the STANDBY line (by hand) */
     let r = e.getBoundingClientRect(), box = { l: r.left, t: r.top, r: r.right, b: r.bottom };
     if (nav.contains(e)) { box = { l: Math.max(box.l, navR.left), t: box.t, r: Math.min(box.r, navR.right), b: box.b }; if (box.r - box.l < 2) continue; }
     items.push({ id: (e.id || e.getAttribute('data-band-place') || e.getAttribute('data-band') || e.getAttribute('data-cs') || e.getAttribute('data-gm') || e.getAttribute('data-tray') || e.className || e.tagName).toString().slice(0, 30), ...box });
@@ -192,7 +193,10 @@ try {
   /* ---- 2. the look, and the pictures: every state, Paper and Night, 1366 and 1536 ---- */
   /* the pack as served, its export date moved 40 days back: the band's pack warning (stale) */
   const OLD = new Date(Date.now() - 40 * 86400000).toISOString();
-  const oldPack = async (c) => { await c.route(/\/api\/gm\/pack/, async (route) => { const r = await route.fetch(); const t = (await r.text()).replace(/"exportedAt":"[^"]*"/g, '"exportedAt":"' + OLD + '"'); await route.fulfill({ response: r, body: t }); }); };
+  const oldPack = async (c) => {
+    const walk = (v) => { if (Array.isArray(v)) v.forEach(walk); else if (v && typeof v === 'object') { for (const k of Object.keys(v)) { if (k === 'src' && v[k] && typeof v[k] === 'object') v[k].exportedAt = OLD; else walk(v[k]); } } };
+    await c.route(/\/api\/gm\/pack/, async (route) => { const r = await route.fetch(); let j = null; try { j = await r.json(); } catch (_) {} if (!j) return route.fulfill({ response: r }); walk(j); await route.fulfill({ response: r, json: j }); });
+  };
   /* a player's quiet-line message (the band's badge); long words everywhere: what is on the iPad, the cue in standby, the beat */
   const quietLine = async () => { const r = await api('PUT', '/docs', { kind: 'quiet', scope: 'player', json: { v: 1, items: [{ k: 'note', at: Date.now() - 600000, text: 'Can Tam sing at the gala? I have an idea.' }] } }, 'player2@example.test'); if (r.status !== 200) console.log('NOTE the quiet line: PUT /docs ' + r.status); };
   const longWords = async () => { await api('PUT', '/gm/display', { kind: 'text', title: 'The Pelican Rooms: the long gallery over the card rooms, by lamplight', text: 'A long line of words for the players.' }); };
@@ -211,12 +215,12 @@ try {
     ['band-cuemore', {}, async (p) => { await p.click('#gm-cuebar .gm-cs-more'); await p.waitForTimeout(300); }],
     ['band-menu', {}, async (p) => { await p.click('#gm-band [data-gm="menu"]'); await p.waitForTimeout(300); }],
     ['band-blade', {}, async (p) => { await p.click('#gm-band [data-band="blade"]'); await p.waitForTimeout(600); }],
-    ['band-signedout', { routes: signedOut }, async (p) => { await p.keyboard.press('2'); await p.waitForSelector('#gm-band.out #gm-signed:not([hidden])', { timeout: 15000 }); await p.waitForTimeout(400); }],
+    ['band-signedout', { routes: signedOut }, async (p) => { await p.keyboard.press('2'); await p.waitForSelector('#gm-band.out #gm-signed:not([hidden])', { state: 'attached', timeout: 15000 }); await p.waitForTimeout(400); }],
     ['band-pack', { routes: oldPack }, async (p) => { await p.waitForSelector('#gm-band [data-band-status][data-tone="caution"]', { timeout: 15000 }); await p.waitForTimeout(400); }],
     ['band-quiet', { setup: quietLine }, async (p) => { const b = await p.waitForSelector('#gm-band .gm-quiet-badge', { timeout: 20000 }).catch(() => null); if (b) { await b.click(); await p.waitForTimeout(400); } else console.log('NOTE no quiet-line badge: the picture shows the band without it'); }],
     ['band-long', { setup: longWords }, async (p) => { for (let i = 0; i < 3; i++) { await blur(p); await p.keyboard.press('Space'); await p.waitForTimeout(700); } await startBeat(p); }]
   ];
-  const MEASURED = ['band-normal', 'band-curfew', 'band-panic'];
+  const MEASURED = ['band-normal', 'band-curfew', 'band-panic', 'band-long'];
   for (const [wd, ht] of [[1366, 768], [1536, 864]]) {
     for (const [name, o, steps] of STATES) {
       if (!SHOTS && !MEASURED.includes(name)) continue;
@@ -331,7 +335,7 @@ try {
   check(s0.saveW <= 1 && s0.saveRole === 'status', 'the old save line is out of sight, still read out (role=status)');
   {
     const P = await open({ routes: oldPack });
-    const ok = await until(async () => { const s = await status(P.page); return s.tone === 'caution' && /days old/.test(s.word) && s.toasts.some((t) => /days old/.test(t.text)); }, 15000);
+    const ok = await until(async () => { const s = await status(P.page); return s.tone === 'caution' && /Old pack/i.test(s.word) && /days old/.test(s.title) && s.toasts.some((t) => /days old/.test(t.text)); }, 15000);
     check(!!ok, 'an old pack: the dot is caution with its words, and a toast says it (' + JSON.stringify(await status(P.page)) + ')');
     await sleep(6500);
     const s2 = await status(P.page);
@@ -357,11 +361,12 @@ try {
   const painted = () => A.page.evaluate(() => ({ sess: (document.querySelector('#gm-bar-sess') || {}).textContent || '', who: !!document.querySelector('#gm-band #gm-bar-who'),
     btn: !!document.querySelector('#gm-band [data-band="blade"]'), stt: !!document.querySelector('#gm-bar-stt') && !document.querySelector('#gm-bar-stt').hidden,
     cue: ((document.querySelector('#gm-cuebar') || {}).textContent || '').slice(0, 40), go: !!document.querySelector('#gm-cuebar .kband-go'), ipad: !!document.querySelector('#gm-band .kband-ipad [data-tray="clear"]'),
-    tray: !!document.querySelector('#gm-band .gm-tray [data-tray="clear"]') }));
-  check(await until(async () => { const p = await painted(); return /Session 9/.test(p.sess) && !p.who && !p.btn && p.stt && /STANDBY/.test(p.cue) && p.tray && !p.ipad; }, 5000), 'the old band is painted again: the session, the mic, the cue, the tray; no who slot, no Blade button (' + JSON.stringify(await painted()) + ')');
+    tray: !!document.querySelector('#gm-band .gm-tray [data-tray="clear"]'), exp: !!((document.querySelector('#gm-menu-exp') || {}).textContent || '').trim(),
+    save: !!((document.querySelector('#gm-band .gm-save') || {}).textContent || '').trim() }));
+  check(await until(async () => { const p = await painted(); return /Session 9/.test(p.sess) && !p.who && !p.btn && p.stt && /STANDBY/.test(p.cue) && p.tray && !p.ipad && p.exp && p.save; }, 5000), 'the old band is painted again: the session, the mic, the cue, the tray, the Menu and the save state; no who slot, no Blade button (' + JSON.stringify(await painted()) + ')');
   await A.page.click('#gm-ipad-settings [data-set="kit.desk"][data-v="1"]');
   check(await until(async () => !!(await A.page.$('#gm-band .kband-r1 [data-band-place]')), 8000), 'on again: the new band, without a reload');
-  check(await until(async () => { const p = await painted(); return /Session 9/.test(p.sess) && p.go && p.ipad && p.stt && p.btn; }, 5000), 'and painted: the session, the mic, the cue unit, the iPad chip, Blade (' + JSON.stringify(await painted()) + ')');
+  check(await until(async () => { const p = await painted(); return /Session 9/.test(p.sess) && p.go && p.ipad && p.stt && p.btn && p.exp && p.save; }, 5000), 'and painted: the session, the mic, the cue unit, the iPad chip, Blade, the Menu and the save state (' + JSON.stringify(await painted()) + ')');
   await A.c.close();
 
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 4).join(' | ') : ''));

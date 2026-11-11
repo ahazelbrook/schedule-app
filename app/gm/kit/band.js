@@ -188,7 +188,7 @@
       var pack = exp && !exp.hidden ? str(exp.getAttribute('aria-label') || '') : '', check = !!(warn && !warn.hidden);
       var outMsg = sig ? str(sig.textContent).trim() : 'Signed out';
       var tone = out || bad ? 'alarm' : pack || check ? 'caution' : sv === 'Saved' ? 'ok' : sv ? 'live' : 'idle';
-      var word = out ? 'Signed out' : bad ? sv : pack ? pack : check ? 'Pack check' : '';
+      var word = out ? 'Signed out' : bad ? sv : pack ? (/offline/i.test(pack) && !/days/.test(pack) ? 'Offline copy' : 'Old pack') : check ? 'Pack check' : '';      /* the whole is in the title and the toast */
       var lines = [out ? outMsg : bad ? sv + (save && save.title ? ': ' + save.title : '') : sv || 'Nothing to save yet'];
       if (pack) lines.push(pack + ': the Menu says more');
       if (check) lines.push('Pack check: rolls use a neutral word for some table entries. The Menu lists them.');
@@ -263,8 +263,8 @@
     var s = v.standby;
     if (s) {
       var lab = typeof c.label === 'function' ? str(c.label(s)) : str(s.text);
-      var hand = c.manual && c.manual[s.kind] ? U.chip({ label: 'by hand', cls: 'gm-cs-hand' }) : '';
-      return '<span class="kband-cue-what"><span class="kband-cs-head"><span class="gm-cs-tag kband-cs-tag">STANDBY' + MID + '#' + U.esc(s.n) + ' ' + U.esc(str(s.kind).toUpperCase()) + '</span>' + hand + '</span>' +
+      var hand = c.manual && c.manual[s.kind] ? '<span class="gm-cs-hand kband-hand">' + MID + 'by hand</span>' : '';      /* in the line, so it gives way before it covers GO */
+      return '<span class="kband-cue-what"><span class="kband-cs-head"><span class="gm-cs-tag kband-cs-tag">STANDBY' + MID + '#' + U.esc(s.n) + ' ' + U.esc(str(s.kind).toUpperCase()) + hand + '</span></span>' +
         U.button({ label: str(s.text) || lab, rank: 'quiet', cls: 'gm-cs-what kband-cs-what', data: { cs: 'more' }, title: lab, attrs: { 'aria-expanded': more } }) + '</span>' +
         U.button({ label: 'GO', rank: 'primary', key: 'Space', cls: 'gm-cs-go kband-go', data: { cs: 'go' }, title: 'Fire the cue in standby (Space or PgDn)' }) +
         U.button({ label: 'Next ›', rank: 'quiet', cls: 'gm-cs-soft kband-cs-next', data: { cs: 'bypass' }, title: 'Skip this cue without firing it: the next one stands by (Bypass)' }) +
