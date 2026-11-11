@@ -6,7 +6,10 @@
 // Exemptions (KS04.2) are a short named list, EXEMPTIONS in scripts/kit-fingerprint.mjs, each with its reason and each printed here: the five new Settings rows
 // (#gm-ipad-settings [data-set-row="kit.desk"|"kit.stage"|"kit.phone"|"night.who"|"blade.pitches"], and the layout they push down), the Settings intro line
 // (app/gm/settings.js:139, reworded by KS01.1), and the Preflight line that counts the files kept ("N of M kept": kit-flag.js made 107 bundles into 108). A later
-// disclosed exception (KS12's score-scene polaroids) is one more line there. Masks (time or chance decides them; their box and styles are skipped): see MASKS in the helper.
+// disclosed exception is one more line there. Masks (time or chance decides them): MASKS and MASK_KEYS in the helper let go of box and style only, never of an
+// element's existence, ids or classes; STATE_CLASSES, LIVE_SLOTS and LOOSE_AXES are the other named allowances, each printed. Section 1b mutates baseline files
+// (the band tray, the players chip, the iPad line, a Tonight line, a Debrief card, the rows allowance) and every mutation must be caught. KIT_OFF_SELF_ONLY=1 runs
+// sections 1 and 1b alone (seconds, no browser).
 // It also checks its own comparison on a copy of a baseline file (one button moved 3 px must be one difference; one element gone must be one difference).
 // And the mid-game off path (Gate 1 addition): on a running page, with no reload, each of the five settings is turned ON and then OFF again from the Settings rows
 // (and then all five together), and the page's layout fingerprint and its data-kit attributes are held to the same page's all-off fingerprint taken before. After KS01.5
@@ -21,7 +24,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { compare, compareFolders, runShots, startDemo, fingerprint, MASKS, MASK_KEYS, EXEMPTIONS, KIT_SETTING_KEYS } from '../../scripts/kit-fingerprint.mjs';
+import { compare, compareFolders, runShots, startDemo, fingerprint, MASKS, MASK_KEYS, STATE_CLASSES, LIVE_SLOTS, LOOSE_AXES, EXEMPTIONS, KIT_SETTING_KEYS } from '../../scripts/kit-fingerprint.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -57,6 +60,68 @@ if (!process.env.PW_MODULE) { console.log('SKIP kit-off: PW_MODULE is not set (t
   check(compare(base, reclassed).diffs.length === 2, 'the comparison: a changed class is a missing element and an extra one');
 }
 
+/* 1b. mutation tests (the review of KS04): a mask lets go of box and style, never existence; the new rows' allowance covers only what they push. Each mutation is made
+   on a copy of a baseline fingerprint, as the capture would have written it, and must be caught (at least one difference); the controls must not be. */
+{
+  const load = (f) => { const p = path.join(BASELINE, f); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : null; };
+  const copy = (fp) => JSON.parse(JSON.stringify(fp));
+  const find = (fp, re) => fp.els.find((e) => re.test(e[0]));
+  const under = (k) => (e) => e[0] === k || e[0].startsWith(k + '/');
+  const remove = (fp, re) => { const t = find(fp, re); if (!t) return null; const m = copy(fp); m.els = m.els.filter((e) => !under(t[0])(e)); return m; };
+  const reclass = (fp, re) => {        /* the element's class changed (as a kit would rename it): its key and every key inside it change, as the walk would write them */
+    const t = find(fp, re); if (!t) return null; const m = copy(fp), k = t[0], cut = k.lastIndexOf('/'), nk = k.slice(0, cut) + '/' + t[1] + (t[2] ? '#' + t[2] : '.mutated:1');
+    for (const e of m.els) { if (e[0] === k) { e[0] = nk; if (!t[2]) e[3] = 'mutated'; } else if (e[0].startsWith(k + '/')) e[0] = nk + e[0].slice(k.length); }
+    return m;
+  };
+  const addChild = (fp, re) => { const t = find(fp, re); if (!t) return null; const m = copy(fp), at = m.els.findIndex((e) => e[0] === t[0]); m.els.splice(at + 1, 0, [t[0] + '/span.mutant:1', 'span', '', 'mutant', t[4], t[5], 10, 10, t[8], t[9]]); return m; };
+  const caught = (name, fp, m) => { if (!fp || !m) { check(false, 'mutation: ' + name + ' (its baseline file or element is missing)'); return; } const n = compare(fp, m).diffs.length; check(n > 0, 'mutation caught: ' + name + ' (' + n + ' difference(s))'); };
+  const run = load('gm-run-1366.json'), pb = load('gm-pb-1366.json'), deb = load('view-pb-debrief-1366.json');
+  const TRAY = [['Send', /div\.gm-tray:\d+\/button\.gm-bb\.gm-tray-send:\d+$/], ['Clear', /div\.gm-tray:\d+\/button\.gm-bb\.gm-tray-clear:\d+$/], ['Blank', /div\.gm-tray:\d+\/button\.gm-bb\.gm-tray-blank:\d+$/],
+    ['the live pill', /div\.gm-tray:\d+\/button\.gm-tray-live:\d+$/], ['Auto', /div\.gm-tray:\d+\/button\.gm-ap\.gm-pill\.gm-tray-ap:\d+$/], ['the whole tray', /span#gm-bar-tray\/div\.gm-tray:\d+$/]];
+  for (const [n, re] of TRAY) { caught('the band tray\'s ' + n + ' taken away', run, remove(run, re)); caught('the band tray\'s ' + n + ' reclassed', run, reclass(run, re)); }
+  caught('the live pill\'s dot taken away', run, remove(run, /button\.gm-tray-live:\d+\/span\.gm-dot\.on:\d+$/));
+  caught('the Run view\'s players chip taken away', run, remove(run, /span\.rv-chip\.rv-players:\d+$/));
+  caught('the Run view\'s players chip reclassed', run, reclass(run, /span\.rv-chip\.rv-players:\d+$/));
+  caught('#gm-ipad-now taken away', run, remove(run, /p#gm-ipad-now$/));
+  caught('the iPad line\'s box reclassed', run, reclass(run, /div\.gm-ipad-body:\d+$/));
+  caught('a Tonight line taken away', pb, remove(pb, /div\.gm-tn-body:\d+\/p\.gm-tn-line:\d+$/));
+  caught('a Tonight line reclassed', pb, reclass(pb, /div\.gm-tn-body:\d+\/p\.gm-tn-line:\d+$/));
+  caught('an extra element in a Tonight line', pb, addChild(pb, /div\.gm-tn-body:\d+\/p\.gm-tn-line:\d+$/));
+  caught('a Debrief card taken away', deb, remove(deb, /gm-debrief-card[^/]*$/));
+  caught('a Debrief card reclassed', deb, reclass(deb, /gm-debrief-card[^/]*$/));
+  caught('the Find button reclassed (the control)', run, reclass(run, /button\.gm-band-find[^/]*$/));
+  /* a live slot: empty on one side is let go; filled on both sides, an element lost inside it is caught */
+  const q = load('gm-tray-live-1366.json');
+  if (q && find(q, /span\.gm-band-quiet:\d+\/button\.gm-quiet-badge:\d+$/)) {
+    const empty = remove(q, /span\.gm-band-quiet:\d+\/button\.gm-quiet-badge:\d+$/); const e2 = remove(empty, /span\.gm-band-quiet:\d+\/div\.gm-quiet-list:\d+$/);
+    check(compare(q, e2).diffs.length === 0, 'a live slot the poll has not filled yet (the quiet badge) is let go');
+    caught('the quiet list\'s Dismiss button taken away (the slot filled on both sides)', q, remove(q, /div\.gm-quiet-row:\d+\/button\.btn\.sm:\d+$/));
+  } else check(false, 'mutation: the quiet badge (gm-tray-live-1366.json has none)');
+  /* the new Settings rows' allowance. Hidden rows (0x0, the most files) push nothing; shown rows push what is below them by the height they add, and nothing else moves */
+  const settings = find(run, /div#gm-ipad-settings$/);
+  if (settings) {
+    const withRows = (fp, y, h) => {        /* fp plus five new exempt rows at y, h high and 10 apart (0x0 when h is 0): what is below moves down, the ancestors grow */
+      const m = copy(fp), sk = settings[0], add = h ? 5 * h + 5 * 10 : 0;
+      for (const e of m.els) { if (h && e[5] >= y) e[5] = Math.round((e[5] + add) * 100) / 100; if (h && sk.startsWith(e[0] + '/') || e[0] === sk) e[7] = Math.round((e[7] + add) * 100) / 100; }
+      const at = m.els.findIndex((e) => e[0] === sk), rows = [];
+      for (let r = 0; r < 5; r++) rows.push([sk + '/div.gm-set-row:' + (90 + r), 'div', '', 'gm-set-row', h ? 10 : 0, h ? y + r * (h + 10) : 0, h ? 400 : 0, h, settings[8], 'xa']);
+      m.els.splice(at + 1, 0, ...rows);
+      return m;
+    };
+    const btn = run.els.find((e) => e[1] === 'button' && e[6] > 10 && e[7] > 10 && !(e[9] || '').includes('m') && !(e[9] || '').includes('x') && !/gm-band-r2|gm-ipad|gm-tray|pp-clock/.test(e[0]));
+    const hidden = withRows(run, 0, 0);
+    check(compare(run, hidden).diffs.length === 0, 'new rows hidden (0x0): nothing else differs');
+    const tweak = (fp, dy, dh) => { const m = copy(fp), e = m.els.find((x) => x[0] === btn[0]); e[5] += dy; e[7] += dh; return m; };
+    caught('rows hidden: a button moved down 10 px', run, tweak(hidden, 10, 0));
+    caught('rows hidden: a button 12 px taller', run, tweak(hidden, 0, 12));
+    const yRows = Math.max(0, btn[5] - 50), shown = withRows(run, yRows, 100);
+    check(compare(run, shown).diffs.length === 0, 'new rows shown: what they push down by exactly the height they add, and their ancestors\' growth, are let go (' + compare(run, shown).diffs.length + ')');
+    caught('rows shown: a button below them moved down 10 px more', run, tweak(shown, 10, 0));
+    caught('rows shown: a button below them 12 px taller', run, tweak(shown, 0, 12));
+  } else check(false, 'mutation: the rows allowance (gm-run-1366.json has no #gm-ipad-settings)');
+}
+if (process.env.KIT_OFF_SELF_ONLY === '1') { console.log(failed ? 'FAIL kit-off (self-checks only): ' + failed + ' check(s)' : 'PASS kit-off (self-checks only)'); process.exit(failed ? 1 : 0); }
+
 /* 2. the run: every scenario, the five settings written off */
 const meta = fs.existsSync(path.join(BASELINE, 'baseline-meta.json')) ? JSON.parse(fs.readFileSync(path.join(BASELINE, 'baseline-meta.json'), 'utf8')) : null;
 if (meta) console.log('baseline: commit ' + String(meta.commit).slice(0, 7) + ', taken ' + meta.capturedAt + '; both runs live at 20:00 (the harness clock, scripts/kit-fingerprint.mjs), so the time of day does not matter');
@@ -84,7 +149,11 @@ for (const x of EXEMPTIONS) {
 }
 const other = new Map(); for (const e of r.exempted) if (!EXEMPTIONS.some((x) => e.note.startsWith(x.name + ': '))) { if (!other.has(e.note)) other.set(e.note, []); other.get(e.note).push(e.file); }
 for (const [note, files] of other) console.log('  allowance: ' + note + ' (' + files.length + ' file(s), e.g. ' + files[0] + ')');
-console.log('masked (not compared for box or style): ' + MASKS.concat(MASK_KEYS.map((k) => 'key ~ ' + k)).join(', '));
+console.log('masked (box and style not compared; existence, ids and classes still are): ' + MASKS.join(', '));
+for (const m of MASK_KEYS) console.log('  key ~ ' + m.keys + ' (' + m.why + ')');
+for (const s of STATE_CLASSES) console.log('  state class: .' + s.drop.join(', .') + ' on .' + s.on + ' (' + s.why + ')');
+for (const s of LIVE_SLOTS) console.log('  live slot: ' + s.keys + ' (' + s.why + ')');
+for (const l of LOOSE_AXES) console.log('  loose ' + l.axes.join(', ') + ': ' + l.keys + ' (' + l.why + ')');
 for (const d of r.diffs.slice(0, 20)) console.log('  DIFF ' + d.file + '  ' + d.kind + '  ' + d.key.split('/').slice(-3).join('/') + '  ' + d.detail);
 if (r.diffs.length > 20) console.log('  ... and ' + (r.diffs.length - 20) + ' more');
 check(r.diffs.length === 0, 'off means today: no element differs from the baseline in id, classes, box or style (' + r.diffs.length + ' differences)');
@@ -135,13 +204,16 @@ if (!KEEP) fs.rmSync(dir, { recursive: true, force: true });
       const A = await shoot('before-' + ids.join('+'));        /* each round is held to the picture taken just before it: live data (who is here) may change between rounds, not because of a setting */
       for (const id of ids) await set(id, true);
       const mid = await kitAttrs();
+      const stored = await page.evaluate(() => fetch('/api/gm/state', { credentials: 'same-origin' }).then((r) => r.json()).then((j) => (j && j.doc && j.doc.features) || {}, () => ({})));
       for (const id of ids) await set(id, false);
       const B = await shoot('after-' + ids.join('+')), attrsB = await kitAttrs();
       const r = compare(A, B, { tol: 1 });
       for (const d of r.diffs.slice(0, 20)) console.log('  DIFF ' + d.kind + '  ' + d.key.split('/').slice(-3).join('/') + '  ' + d.detail);
       check(r.diffs.length === 0, 'mid-game off, no reload: ' + ids.join(' + ') + ' on, then off: the layout fingerprint is the all-off one (' + r.diffs.length + ' differences)');
       check(JSON.stringify(attrsA) === JSON.stringify(attrsB), 'mid-game off, no reload: ' + ids.join(' + ') + ': the data-kit attributes are the all-off ones' + (JSON.stringify(attrsA) === JSON.stringify(attrsB) ? '' : ' (' + attrsB.join(', ') + ')'));
-      void mid;
+      /* the round really turned its settings on (void mid, before the review): each is stored on, and kit.desk (the one token the GM page paints) is painted */
+      check(ids.every((id) => stored[id] === true), 'mid-game: ' + ids.join(' + ') + ' were stored on while on (' + ids.map((id) => id + '=' + stored[id]).join(', ') + ')');
+      if (ids.includes('kit.desk')) check(mid.some((x) => /^html=.*\bdesk\b/.test(x)), 'mid-game: with kit.desk on, <html data-kit> carries desk (' + (mid.filter((x) => !/=null$/.test(x)).join(', ') || 'none') + ')');
     }
     await page.reload(); await ready();
     check(JSON.stringify(await kitAttrs()) === JSON.stringify(attrsA), 'mid-game off: and the same data-kit attributes after the reload');

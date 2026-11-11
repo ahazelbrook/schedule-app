@@ -21,8 +21,33 @@ export const MASKS = ['#toastMsg', '#toastErr', '.gm-toast', '[data-kit-mask]'];
    Kept beside MASKS so a new one needs no new capture. Each is listed in kit-off's output. */
 /* Row 2 of the band is live text (the clock, what the iPad shows, the cue, the quiet list): what a poll has told it moves everything after it sideways. Inside it, left and
    width are not compared (height, top, classes, ids, styles are). Each entry: a key pattern and the axes let go. */
-export const LOOSE_AXES = [{ keys: 'gm-band-r2', axes: ['x', 'w'], styles: ['margin'], why: 'band row 2 is live text; a poll moves the cells after it sideways' }];
-export const MASK_KEYS = ['#gm-ipad-now', 'gm-tn-line', '#gm-bar-tray', 'gm-band-quiet', 'rv-players', 'gm-debrief-card'];      /* the iPad's live line (what the iPad has been told, as the poll lands) and Tonight's lines (they count minutes to the real clock) */
+export const LOOSE_AXES = [{ keys: 'gm-band-r2', axes: ['x', 'w'], styles: ['margin'], why: 'band row 2 is live text; a poll moves the cells after it sideways' },
+  { keys: '#pp-run-order/div\\.rl-tablewrap:\\d+/table:\\d+/t(head|body):\\d+/tr', axes: ['x', 'w'], why: 'the run order\'s columns are as wide as the running beat\'s clock (mm:ss, live): the cells move sideways' }];
+/* A masked key lets go of BOX AND STYLE ONLY, for the element its pattern matches and everything inside it. Existence, ids and classes are still compared: an element
+   of a masked region that is taken away, added or reclassed is a difference (the review of KS04: a mask must never hide the band tray's Send, Clear, Blank, live pill
+   or Auto, the Run view's players chip, the iPad line, a Tonight line or a Debrief card). Each entry: the key pattern and why. */
+export const MASK_KEYS = [
+  { keys: '#gm-ipad-now', why: 'the iPad line: what the iPad has been told, as the poll lands' },
+  { keys: 'gm-tn-line', why: 'Tonight\'s lines count minutes to the clock' },
+  { keys: '#gm-bar-tray', why: 'the band tray\'s live pill names what the iPad shows, as the poll lands (its width moves Send, Clear, Blank and Auto)' },
+  { keys: 'gm-band-quiet', why: 'the quiet list: what the polls have filed' },
+  { keys: 'rv-players', why: 'the Run view\'s players chip: presence arrives with the polls' },
+  { keys: 'gm-debrief-card', why: 'a Debrief card\'s heading names the weekday' },
+  { keys: 'span\\.pp-clock', why: 'a run-order beat\'s clock: mm:ss since the beat started, or the time it started' }
+];
+/* State classes: a class that the clock or a poll turns on and off. It is taken out of the element's key before two fingerprints are compared (so the element is
+   still matched, and still has to exist), and that element's own box and style are let go. Nothing else about it is forgiven. Each entry: the class the element
+   always carries, the classes dropped, why. */
+export const STATE_CLASSES = [
+  { on: 'pp-clock', drop: ['due', 'late'], why: 'a running beat turns due, then late, by the clock' }
+];
+/* Live slots: an element (the pattern matches ITS key) that a poll fills. The slot itself must exist on both sides. When it is empty on one side and filled on the
+   other, what is inside it is let go (listed); when both sides have something inside, every element inside is compared as usual. So the quiet badge may not have
+   arrived yet, but a quiet list that lost its Dismiss button is still a difference. */
+export const LIVE_SLOTS = [
+  { keys: 'span\\.gm-band-quiet:\\d+$', why: 'the quiet badge: the quiet line\'s own 8-second poll fills the slot (app/gm/quiet.js POLL_MS)' },
+  { keys: 'p#gm-ipad-now$', why: 'the iPad line says "Not known yet" until the first ambient poll lands' }
+];
 
 /* THE EXEMPTIONS: where "off means today" is deliberately not true, each one named, each with its reason, each printed by kit-off. Adding one is one line here.
    An exemption finds its elements one of three ways: `selector` (a CSS selector, matched in the page at capture time: the element and everything inside it), `text` (a
@@ -35,8 +60,9 @@ export const EXEMPTIONS = [
     selector: KIT_SETTING_KEYS.map((k) => '#gm-ipad-settings [data-set-row="' + k + '"]').join(', ') },
   { name: 'the Settings intro line', reason: 'KS01.1 reworded app/gm/settings.js:139 ("These five are choices" to "These are choices")', selector: '#gm-ipad-settings > p.gm-dim' },
   { name: 'the Preflight file count', reason: 'it counts bundles: kit-flag.js made "0 of 107 kept" read 108', text: String.raw`\d+ of \d+ kept` }
-  /* , { name: 'score-scene polaroids', reason: 'KS12: with night.who off the score scenes show none (disclosed)', keys: 'dp-polaroid' } */
 ];
+/* Not here: KS12's score-scene polaroids (disclosed in KS12's PR). They are drawn inside the score scene's iframe, which a fingerprint does not walk, and no baseline
+   scenario shows a scene iframe, so an exemption for them would match nothing. */
 
 /* In the page: walk the body and describe every element. Written as a string-free function so Playwright can serialise it. */
 function inPage(arg) {
@@ -91,41 +117,94 @@ export async function fingerprint(page, scenario, width, opts = {}) {
 /* Two fingerprints, base and cur. Returns { diffs: [{ kind, key, detail }], exempted: ["<exemption name>: new|gone <key tail>"] }.
    ids and classes are exact (they are in the key: a change shows as a missing element and an extra one); a box moves by tol pixels at most; styles are exact.
    Exempt elements that cur has and base has not are listed and skipped, and the layout they push down is allowed for: an element at or below the first of them
-   may sit lower by up to the height the exempt rows add (so that one new row is not forty differences). Nothing else is forgiven. */
+   may sit lower by exactly the height the exempt rows add, and an ancestor of them may grow by it (so that one new row is not forty differences); rows with no
+   box (a hidden pane) push nothing. Masks (MASKS, MASK_KEYS, STATE_CLASSES) let go of box and style only; LIVE_SLOTS let a slot's contents arrive or not, all
+   or nothing; LOOSE_AXES let named axes go. Nothing else is forgiven. */
+/* The keys again, with the state classes (STATE_CLASSES) taken out and the sibling numbers counted afresh: els in document order (a parent before its children,
+   as the walk wrote them). Returns [els with new keys, Set of the new keys whose own class was a state class]. With no state class in a file nothing changes. */
+function rekey(els, rules) {
+  /* pass 1: each element's own new signature; the sibling groups (parent + signature) a dropped class lands in are counted afresh, every other key is kept as written */
+  const info = els.map((e) => {
+    let cls = e[3] ? e[3].split(' ') : [], dropped = false;
+    for (const r of rules) if (cls.includes(r.on)) { const n = cls.filter((c) => !r.drop.includes(c)); if (n.length !== cls.length) dropped = true; cls = n; }
+    return { dropped, sig: e[2] ? e[1] + '#' + e[2] : e[1] + (cls.length ? '.' + cls.join('.') : '') };
+  });
+  if (!info.some((x) => x.dropped)) return [els, new Set()];
+  const pk = (k) => k.slice(0, k.lastIndexOf('/'));
+  const touched = new Set(); els.forEach((e, i) => { if (info[i].dropped) touched.add(pk(e[0]) + '\u0000' + info[i].sig); });
+  const map = new Map(), counts = new Map(), out = [], stated = new Set();
+  els.forEach((e, i) => {
+    const k = e[0], op = pk(k), np = map.has(op) ? map.get(op) : op, sig = info[i].sig, group = op + '\u0000' + sig;
+    let nk;
+    if (touched.has(group)) { const n = (counts.get(group) || 0) + 1; counts.set(group, n); nk = np + '/' + sig + (e[2] ? '' : ':' + n); }
+    else nk = np + k.slice(op.length);
+    map.set(k, nk); out.push([nk].concat(e.slice(1)));
+    if (info[i].dropped) stated.add(nk);
+  });
+  return [out, stated];
+}
+
 export function compare(base, cur, opts = {}) {
   const tol = opts.tol === undefined ? 1 : opts.tol;
   const diffs = [], exempted = [];
-  const B = new Map(base.els.map((e) => [e[0], e])), C = new Map(cur.els.map((e) => [e[0], e]));
-  const mk = (opts.maskKeys || MASK_KEYS).map((x) => new RegExp(x));
-  const keyMasked = (k) => mk.some((re) => re.test(k));
+  const rules = opts.stateClasses || STATE_CLASSES;
+  const [bEls, bStated] = rekey(base.els, rules), [cEls, cStated] = rekey(cur.els, rules);
+  const B = new Map(bEls.map((e) => [e[0], e])), C = new Map(cEls.map((e) => [e[0], e]));
+  const mk = (opts.maskKeys || MASK_KEYS).map((x) => new RegExp(typeof x === 'string' ? x : x.keys));
   const exs = (opts.exemptions || EXEMPTIONS), xk = exs.map((e) => (e.keys ? new RegExp(e.keys) : null));
-  /* an element's flags: those captured, 'm' if a mask pattern matches its key, and an exemption whose `keys` pattern matches its key */
+  /* an element's flags: those captured, 'm' if a mask pattern matches its key or its own class was a state class, and an exemption whose `keys` pattern matches its key.
+     'm' lets go of box and style only; 'x' (an exemption) also lets the element be new or gone. */
   const loose = (opts.looseAxes || LOOSE_AXES).map((l) => ({ re: new RegExp(l.keys), axes: l.axes, styles: l.styles }));
-  const fl = (e) => { let f = (e[9] || '') + (mk.some((re) => re.test(e[0])) ? 'm' : ''); if (!/x/.test(f)) { const i = xk.findIndex((re) => re && re.test(e[0])); if (i >= 0) f += 'x' + String.fromCharCode(97 + i); } return f; };
+  const fl = (e) => { let f = (e[9] || '') + (mk.some((re) => re.test(e[0])) || bStated.has(e[0]) || cStated.has(e[0]) ? 'm' : ''); if (!/x/.test(f)) { const i = xk.findIndex((re) => re && re.test(e[0])); if (i >= 0) f += 'x' + String.fromCharCode(97 + i); } return f; };
   const nameOf = (e) => { const m = /x([a-z])/.exec(fl(e)); const x = m ? exs[m[1].charCodeAt(0) - 97] : null; return x ? x.name : 'an exemption'; };
-  let pushed = 0, firstY = Infinity, lastY = -Infinity;
+  /* live slots empty on one side and filled on the other: the keys inside them are let go for existence (the slot is not) */
+  const pollKeys = new Set();
+  for (const s of (opts.liveSlots || LIVE_SLOTS)) {
+    const re = new RegExp(s.keys);
+    for (const k of new Set([...B.keys(), ...C.keys()])) {
+      if (!re.test(k) || !B.has(k) || !C.has(k)) continue;
+      const p = k + '/', inB = [...B.keys()].filter((x) => x.startsWith(p)), inC = [...C.keys()].filter((x) => x.startsWith(p));
+      if ((inB.length === 0) !== (inC.length === 0)) { inB.concat(inC).forEach((x) => pollKeys.add(x)); exempted.push('a live slot a poll had ' + (inB.length ? 'filled only in the baseline' : 'filled only in this run') + ' (' + s.why + '): ' + k.split('/').slice(-2).join('/')); }
+    }
+  }
+  /* new exempt elements (the new Settings rows): where they sit, only those with a box (a row in a hidden pane is 0x0 at the top of the page: it pushes nothing) */
+  let firstY = Infinity, lastY = -Infinity;
+  const newTops = [];
   for (const [k, e] of C) if (!B.has(k) && fl(e).includes('x')) {
     exempted.push(nameOf(e) + ': new ' + k.split('/').slice(-2).join('/'));
     const parent = k.slice(0, k.lastIndexOf('/'));
-    if (!C.has(parent) || !fl(C.get(parent)).includes('x')) { firstY = Math.min(firstY, e[5]); lastY = Math.max(lastY, e[5] + e[7]); }
+    if ((!C.has(parent) || !fl(C.get(parent)).includes('x')) && e[6] > 0 && e[7] > 0) { firstY = Math.min(firstY, e[5]); lastY = Math.max(lastY, e[5] + e[7]); newTops.push(k); }
   }
-  if (lastY > -Infinity) pushed = lastY - firstY + 24;      /* the span the new rows fill, and the gaps between them */
+  const pushed = newTops.length > 0;
+  const ancestorOfNew = (k) => newTops.some((t) => t.startsWith(k + '/'));
+  const plain = (b, c) => !(fl(b).includes('m') || fl(c).includes('m') || fl(b).includes('x') || fl(c).includes('x'));
+  /* What the new rows add: the span they fill plus one gap (the space between two of them, as the row before the first one has). Every element below them in the
+     same flow sits lower by exactly that amount, and only that amount is let go, only below the first row; an element moved by anything else is a difference.
+     Height: only an ancestor of a new row may grow, and by that same amount. */
+  let added = null;
+  if (pushed) {
+    const ys = newTops.map((k) => C.get(k)).sort((p, q) => p[5] - q[5]);
+    let gap = Infinity; for (let i = 1; i < ys.length; i++) gap = Math.min(gap, ys[i][5] - (ys[i - 1][5] + ys[i - 1][7]));
+    added = Math.round((lastY - firstY + (gap === Infinity || gap < 0 ? 0 : gap)) * 100) / 100;
+    let n = 0; for (const [k, c] of C) { const b = B.get(k); if (b && plain(b, c) && b[5] >= firstY - tol && Math.abs(c[5] - b[5] - added) <= tol) n++; }
+    exempted.push('pushed down by the new rows: ' + added + ' px, on ' + n + ' element(s) below them');
+  }
   /* new exempt rows make a scrolled pane taller, so a page that scrolls an element into view comes to rest elsewhere: every element then sits lower or higher by the same amount.
-     That one shared amount (seen on at least 8 elements) is let go, only when new exempt rows exist; an element that moved by anything else is still a difference. */
+     That one shared amount (seen on at least 8 elements) is let go, only when new exempt rows with a box exist; an element that moved by anything else is still a difference. */
   let shift = null;
   if (pushed) {
     const cnt = new Map();
-    for (const [k, c] of C) { const b = B.get(k); if (!b || fl(b).includes('m') || fl(c).includes('m') || fl(b).includes('x') || fl(c).includes('x')) continue; const d = Math.round((c[5] - b[5]) * 2) / 2; if (Math.abs(d) > tol) cnt.set(d, (cnt.get(d) || 0) + 1); }
+    for (const [k, c] of C) { const b = B.get(k); if (!b || !plain(b, c)) continue; const d = Math.round((c[5] - b[5]) * 2) / 2; if (Math.abs(d) > tol && !(added !== null && Math.abs(d - added) <= tol && b[5] >= firstY - tol)) cnt.set(d, (cnt.get(d) || 0) + 1); }
     let best = 0; for (const [d, n] of cnt) if (n > best) { best = n; shift = d; }
     if (best < 8) shift = null; else exempted.push('the scroll position of a pane the new rows made taller: ' + shift + ' px on ' + best + ' elements');
   }
   for (const [k, b] of B) {
-    if (!C.has(k)) { if (keyMasked(k)) continue; if (!fl(b).includes('x')) diffs.push({ kind: 'missing', key: k, detail: 'in the baseline, not in this run' }); else exempted.push(nameOf(b) + ': gone ' + k.split('/').slice(-2).join('/')); }
+    if (!C.has(k)) { if (pollKeys.has(k)) continue; if (!fl(b).includes('x')) diffs.push({ kind: 'missing', key: k, detail: 'in the baseline, not in this run' }); else exempted.push(nameOf(b) + ': gone ' + k.split('/').slice(-2).join('/')); }
   }
   for (const [k, c] of C) {
     const b = B.get(k);
-    if (!b) { if (keyMasked(k)) continue; if (!fl(c).includes('x')) diffs.push({ kind: 'extra', key: k, detail: 'in this run, not in the baseline (' + c[1] + (c[2] ? '#' + c[2] : '') + (c[3] ? '.' + c[3].replace(/ /g, '.') : '') + ')' }); continue; }
-    if (fl(b).includes('m') || fl(c).includes('m') || fl(b).includes('x') || fl(c).includes('x')) continue;
+    if (!b) { if (pollKeys.has(k)) continue; if (!fl(c).includes('x')) diffs.push({ kind: 'extra', key: k, detail: 'in this run, not in the baseline (' + c[1] + (c[2] ? '#' + c[2] : '') + (c[3] ? '.' + c[3].replace(/ /g, '.') : '') + ')' }); continue; }
+    if (!plain(b, c)) continue;
     const below = b[5] >= firstY - tol;
     const box = ['x', 'y', 'w', 'h'].map((n, i) => ({ n, b: b[4 + i], c: c[4 + i] }));
     const off = box.filter((q) => {
@@ -133,8 +212,8 @@ export function compare(base, cur, opts = {}) {
       if (Math.abs(d) <= tol) return false;
       if (loose.some((l) => l.re.test(k) && l.axes.includes(q.n))) return false;
       if (shift !== null && q.n === 'y' && Math.abs(d - shift) <= tol) return false;
-      if (pushed && q.n === 'y' && below && d >= -tol && d <= pushed + tol) return false;           /* pushed down by the new rows */
-      if (pushed && q.n === 'h' && d >= -tol && d <= pushed + tol) return false;                      /* an ancestor of the new rows grew with them */
+      if (added !== null && q.n === 'y' && below && Math.abs(d - added) <= tol) return false;                 /* pushed down by the new rows */
+      if (added !== null && q.n === 'h' && ancestorOfNew(k) && Math.abs(d - added) <= tol) return false;     /* an ancestor of the new rows grew with them */
       return true;
     });
     if (off.length) diffs.push({ kind: 'box', key: k, detail: off.map((q) => q.n + ' ' + q.b + ' -> ' + q.c).join(', ') });
@@ -142,7 +221,7 @@ export function compare(base, cur, opts = {}) {
     const NOT_EXACT = new Set(['width', 'height'].concat(...loose.filter((l) => l.re.test(k)).map((l) => l.styles || [])));        /* computed width and height are the box, which is held to tol above (a sub-pixel of text is not a difference) */
     if (b[8] !== undefined && sb.join('\u0001') !== sc.join('\u0001')) {
       const ch = []; base.styleKeys.forEach((p, i) => { if (sb[i] !== sc[i] && !NOT_EXACT.has(p)) ch.push(p + ' ' + JSON.stringify(sb[i]) + ' -> ' + JSON.stringify(sc[i])); });
-      if (ch.length && !(pushed && ch.every((s) => /^(width|height) /.test(s) && off.length === 0))) diffs.push({ kind: 'style', key: k, detail: ch.slice(0, 4).join('; ') });
+      if (ch.length) diffs.push({ kind: 'style', key: k, detail: ch.slice(0, 4).join('; ') });
     }
   }
   return { diffs, exempted };
