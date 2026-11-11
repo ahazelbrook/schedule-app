@@ -2871,9 +2871,12 @@
   function who() {
     if (!whoOn()) { if (S && S.who) { S.who.destroy(); S.who = null; } return null; }
     if (!W.B68GmWho) { if (!S.whoAsked && W.B68Load && W.B68Load.need) { S.whoAsked = true; var me = S; W.B68Load.need('night-who').then(function () { if (S === me) placesSync(); }, function () { if (S === me) S.whoAsked = false; }); } return null; }
-    if (!S.who) { S.who = W.B68GmWho.create(whoHost()); S.whoPcSig = ''; S.who.onChange(whoFlow); var me = S; W.setTimeout(function () { if (S === me && S.who) { S.who.paint(S.root); whoPolaroids(); } }, 0); }      /* KS12: the roster's readers follow it */
+    if (!S.who) { S.who = W.B68GmWho.create(whoHost()); S.whoPcSig = whoPcSig(); S.whoCampSig = whoCampSig(); S.who.onChange(whoFlow); var me = S; W.setTimeout(function () { if (S === me && S.who) { S.who.paint(S.root); whoPolaroids(); } }, 0); }      /* KS12: the roster's readers follow it */
     return S.who;
   }
+  /* KS12.0: what the who parts are drawn from: who is filed (not their sheets) and the session and RSVPs (not every mission publish) */
+  function whoPcSig() { return JSON.stringify(dtPcs().map(function (c) { return [str(c.id), pcName(c), str(c.owner), str(c.alias)]; })); }
+  function whoCampSig() { return JSON.stringify([camp && camp.session, camp && camp.schedule]); }
   /* KS12 (night.who): who is playing changed (a Start, a late arrival, a player let go): the Roll's Who chips, the iPad's crew and faces, the cards and
      the told lists follow, without a reload */
   function whoFlow() { if (!S || S.status !== 'ready') return; renderPos(); pcStatusSync(); if (S.mission) S.mission.changed(); runStale(); whoPolaroids(); }
@@ -6243,7 +6246,7 @@
     runFoldMoves();         /* a phone's move request rides on the characters */
     keyturnSync();          /* a turned key (suite 1.8, switch spine.keyturn) */
     pcStatusSync();         /* the band's PC faces (suite 3.7, switch face.pcstatus) */
-    if (who()) { var whoSig = JSON.stringify(dtPcs().map(function (c) { return [str(c.id), pcName(c), str(c.owner), str(c.alias)]; })); if (whoSig !== S.whoPcSig) { S.whoPcSig = whoSig; S.who.paint(S.root); whoPolaroids(); } }      /* KS11/KS12.0 (night.who): only when who is filed changed, not every poll */
+    if (who()) { var whoSig = whoPcSig(); if (whoSig !== S.whoPcSig) { S.whoPcSig = whoSig; S.who.paint(S.root); whoPolaroids(); } }      /* KS11/KS12.0 (night.who): only when who is filed changed, not every poll */
     if (JSON.stringify(dtPcs()) === S.dtPcSig) return;
     runStale();
     if (S.mission) S.mission.changed();         /* a card carries its PC's name and owner */
@@ -7830,7 +7833,7 @@
     camp = isObj(doc) ? doc : null;
     if (S && S.status === 'ready') {
       renderRail(); renderBar(); scMaybeRedraw(); runStale();
-      if (who()) { S.who.paint(S.root); whoPolaroids(); }      /* KS11 (night.who): Before's lead and After's line follow the session; KS12.5: End clears the polaroids */
+      if (who()) { var whoCs = whoCampSig(); if (whoCs !== S.whoCampSig) { S.whoCampSig = whoCs; S.who.paint(S.root); whoPolaroids(); } }      /* KS11/KS12.0 (night.who): the session or the RSVPs changed (not every mission publish); KS12.5: End clears the polaroids */
       apClocksFeed(); apSubjects();
       if (S.mission) S.mission.noteClocks();      /* the alarm clock's fill or visibility is on the players' band */
       { var stc = setInst(); if (stc) stc.heal(); }      /* W0.2 / N0: the campaign document's copy of the settings follows the GM state's, on every arrival */

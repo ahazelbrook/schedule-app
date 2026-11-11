@@ -104,6 +104,8 @@ try {
   async function open(w = 1366, h = 768, theme = '', place = 'before') {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: w, height: h }, serviceWorkers: 'block', acceptDownloads: true, colorScheme: theme === 'night' ? 'dark' : 'light' });
     await c.addInitScript(atPlace(place));
+    /* KS12.0 item 4: count the who controller's full paints (with an element; the band's chip-only paint passes none) */
+    await c.addInitScript({ content: '(function () { var v; Object.defineProperty(window, "B68GmWho", { configurable: true, get: function () { return v; }, set: function (m) { v = m; if (m && m.create && !m.__counted) { var cr = m.create; m.create = function (h) { var x = cr(h), p = x.paint; x.paint = function (el) { if (el) window.__whoFullPaints = (window.__whoFullPaints || 0) + 1; return p(el); }; return x; }; m.__counted = true; } } }); })();' });
     if (theme) await c.addInitScript({ content: 'try { localStorage.setItem("b68.theme", ' + JSON.stringify(theme === 'night' ? 'dark' : 'light') + '); } catch (e) {}' });
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -164,6 +166,12 @@ try {
   check(JSON.stringify(cardIds(m1)) === '["ch-nell","ch-ray"]', 'KS12.3: a card for each PC playing, none for Tam: ' + JSON.stringify(cardIds(m1)));
   const faces = await until(async () => { const a = await ambient(); const f = a && a.layers && a.layers.band && a.layers.band.faces; return Array.isArray(f) && f.length ? f : null; }, 10000, 300);
   check(!!faces && JSON.stringify(faces.map((f) => f.name).sort()) === '["Nell Arbuthnot","Ray Okonjo"]', 'KS12.3: the band\'s faces are the two playing: ' + JSON.stringify(faces && faces.map((f) => f.name)));
+  /* KS12.0 item 4: a sheet tick (Stress, the vice) reaches the page; who is filed did not change, so the who parts are not painted again */
+  const paints0 = await page.evaluate(() => window.__whoFullPaints || 0);
+  check((await api('PUT', '/characters/ch-nell', { v: 2, name: 'Nell Arbuthnot', alias: '', code: '', playbook: 'hound', playbookName: 'Hound', owner: 'nell.player@example.test', spec, sheet: { name: 'Nell Arbuthnot' }, play: { vice: 'Gambling', purveyor: '', contacts: [], clocks: [], stress: 3 } })).status === 200, 'Nell\'s player ticks Stress on her sheet');
+  const nellFace = await until(async () => { const a = await ambient(); const f = a.layers && a.layers.band && Array.isArray(a.layers.band.faces) ? a.layers.band.faces.find((x) => x.pcId === 'ch-nell') : null; return f && f.stress === 3 ? f : null; }, 15000, 300);
+  check(!!nellFace, 'the page saw the tick (the band\'s face has Stress 3)');
+  check(await page.evaluate(() => window.__whoFullPaints || 0) === paints0, 'KS12.0: the characters poll did not repaint the who parts (' + paints0 + ' full paints before and after)');
   const pol1 = await until(async () => { const a = await ambient(); return Array.isArray(a.polaroids) ? a.polaroids : null; }, 8000, 300);
   check(JSON.stringify(pol1) === JSON.stringify([{ id: 'nell', cap: 'Nell Arbuthnot' }, { id: 'ray', cap: 'Ray Okonjo' }]), 'KS12.5: the polaroids are the two playing, by cast id: ' + JSON.stringify(pol1));
   const dispGet = JSON.stringify((await api('GET', '/gm/display', null, IPAD)).json);
