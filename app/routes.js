@@ -82,12 +82,23 @@
   function url(file) { return BUILD === 'dev' ? file : file + '?v=' + encodeURIComponent(BUILD); }
   /* the kit and stage build (KS01.5, Gate 1 approach A1): the kit's sheets are unlayered and the OLD sheets go into the cascade layer
      `old` while the kit is on, so a kit rule beats an old one at any specificity and an old !important still beats everything.
-     layerOld() is called by the kit flag (ui/kit-flag.js) when this page first paints a kit token: each old <link> already in becomes
-     <style data-href="x.css">@import url("x.css?v=…") layer(old)</style> (the link goes once its import has loaded, so there is no gap),
-     then index.html's inline block is wrapped in @layer old { }. From then on, for the rest of the page's life, every old sheet the
-     loader brings comes in the same way. Until layerOld() runs nothing here differs from before: the same <link> tags, the same order.
-     Styles built in JS (zoom.js, sheet/claims.js, gm/frontpage.js) and the ambient frames' own styles (display/fx.js) are not touched. */
+     layerOld() is called by the kit flag (ui/kit-flag.js) when this page first paints a kit token: beside each old <link> already in
+     goes <style data-href="x.css">@import url("x.css?v=…") layer(old)</style>; once every import has answered, in ONE step, the links
+     whose imports loaded are removed and index.html's inline block is wrapped in @layer old { } (until then the links and the block
+     stand as before, so the look never changes on the way). A link still loading when this runs is handed to its import: the import's
+     load or error settles that file for need() (the link is removed before its own load event could). An import that fails leaves its
+     link where it was. From then on, for the rest of the page's life, every old sheet the loader brings comes in as an import. Until
+     layerOld() runs nothing here differs from before: the same <link> tags, the same order, no write to the page.
+     Only index.html's own block is wrapped: the one style element in <head> without an id when this file runs (routes.js is one of
+     index.html's own tags, so it runs before any script builds a style). Styles built in JS (zoom.js, sheet/quiet.js, sheet/claims.js,
+     gm/frontpage.js) and the ambient frames' own styles (display/fx.js) are never touched (layer rule 5). */
   var layering = null;         /* the page has gone layered: a promise that settles once the static links are converted */
+  var pend = {};               /* file -> { ok, bad } while its <link> or <style> has not answered (layerOld hands a loading link to its import) */
+  var INLINE = (function () {
+    var d = root.document; if (!d || typeof d.querySelectorAll !== 'function') return null;
+    var s = [].filter.call(d.querySelectorAll('head > style'), function (x) { return !(x.getAttribute && (x.getAttribute('id') || x.getAttribute('data-href'))); });
+    return s.length === 1 ? s[0] : null;
+  })();
   function isKitCss(f) { return /^(ui|display\/kit|sheet\/kit)\//.test(f); }
   function importOf(d, file, href) {
     var s = d.createElement('style'); s.setAttribute('data-href', file); s.textContent = '@import url("' + href + '") layer(old);';
@@ -97,20 +108,24 @@
     var d = root.document;
     if (layering) return layering;
     if (!d || typeof d.querySelectorAll !== 'function' || typeof d.createElement !== 'function') return Promise.resolve(0);
-    var waits = [];
+    var waits = [], swap = [];
     [].slice.call(d.querySelectorAll('link[rel="stylesheet"]')).forEach(function (l) {
       var href = String(l.getAttribute('href') || ''), f = href.split('?')[0];
       if (CSS_ORDER.indexOf(f) < 0 || isKitCss(f) || !l.parentNode) return;
-      var s = importOf(d, f, href);
-      waits.push(new Promise(function (done) { s.onload = s.onerror = function () { if (l.parentNode) l.parentNode.removeChild(l); done(); }; }));
+      var s = importOf(d, f, href), p = !loaded[f] ? pend[f] : null;
+      if (p) { l.onload = l.onerror = null; }          /* still loading: from here the import answers for this file */
+      waits.push(new Promise(function (done) {
+        s.onload = function () { swap.push(l); if (p) p.ok(); done(); };
+        s.onerror = function () { if (s.parentNode) s.parentNode.removeChild(s); if (p) p.bad(); done(); };   /* the link stays */
+      }));
       l.parentNode.insertBefore(s, l);
     });
     layering = Promise.all(waits).then(function () {
-      /* index.html's own block, once every link is an import (before that, wrapping it would let the links beat it for a moment) */
-      [].slice.call(d.querySelectorAll('head > style:not([id]):not([data-href]):not([data-layered])')).forEach(function (s) {
-        s.textContent = '@layer old {\n' + s.textContent + '\n}'; s.setAttribute('data-layered', '');
-      });
-      return waits.length;
+      swap.forEach(function (l) { if (l.parentNode) l.parentNode.removeChild(l); });
+      if (INLINE && INLINE.parentNode) {      /* once: layering runs once per page */
+        INLINE.textContent = '@layer old {\n' + INLINE.textContent + '\n}'; INLINE.setAttribute('data-layered', '');
+      }
+      return swap.length;
     });
     return layering;
   }
@@ -134,8 +149,11 @@
       if (css && layering && !isKitCss(file)) el = importOf(d, file, url(file));      /* a layered page: an old sheet comes in layer(old) */
       else if (css) { el = d.createElement('link'); el.rel = 'stylesheet'; }
       else { el = d.createElement('script'); el.async = false; }
-      el.onload = function () { loaded[file] = true; resolve(file); };
-      el.onerror = function () { delete loading[file]; if (el.parentNode) el.parentNode.removeChild(el); reject(new Error('could not load ' + file)); };
+      var settled = false;
+      function ok() { if (settled) return; settled = true; delete pend[file]; loaded[file] = true; resolve(file); }
+      function bad() { if (settled) return; settled = true; delete pend[file]; delete loading[file]; if (el.parentNode) el.parentNode.removeChild(el); reject(new Error('could not load ' + file)); }
+      el.onload = ok; el.onerror = bad;
+      if (css) pend[file] = { ok: ok, bad: bad };
       if (css) { if (el.tagName !== 'STYLE') el.href = url(file); placeCss(d, el, file); }
       else { el.src = url(file); (d.head || d.body || d.documentElement).appendChild(el); }
     });

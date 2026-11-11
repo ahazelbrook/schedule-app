@@ -1,1 +1,569 @@
-{}
+{
+  "_note": "The UI kit manifest (KS02). Mirrored in app/ui/ui.js as B68Ui.PARTS; checks/runtime/kit-ui.test.mjs keeps the two equal. The examples are the look book fixtures.",
+  "version": 1,
+  "radii": {
+    "control": "2px",
+    "pill": "999px"
+  },
+  "parts": [
+    {
+      "name": "Button",
+      "fn": "button",
+      "class": "ui-btn",
+      "variants": [
+        "primary",
+        "standard",
+        "quiet",
+        "danger"
+      ],
+      "states": [
+        "hover",
+        "focus-visible",
+        "pressed",
+        "disabled",
+        "busy"
+      ],
+      "do": "One Primary per region. Say what happens: Show on iPad, Take it down.",
+      "dont": "Two Primaries side by side. A hard shadow on anything but the Primary.",
+      "examples": [
+        {
+          "caption": "Primary",
+          "opts": {
+            "label": "Stamp it on the iPad",
+            "rank": "primary"
+          }
+        },
+        {
+          "caption": "Standard",
+          "opts": {
+            "label": "Take it down"
+          }
+        },
+        {
+          "caption": "Quiet",
+          "opts": {
+            "label": "Fit",
+            "rank": "quiet"
+          }
+        },
+        {
+          "caption": "Danger",
+          "opts": {
+            "label": "PANIC",
+            "rank": "danger"
+          }
+        },
+        {
+          "caption": "With its key",
+          "opts": {
+            "label": "Send",
+            "key": "S"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Segmented",
+      "fn": "seg",
+      "class": "ui-seg",
+      "variants": [],
+      "states": [
+        "hover",
+        "focus-visible",
+        "pressed",
+        "disabled"
+      ],
+      "do": "Pick one of a few, every option in sight.",
+      "dont": "More than four options. Places to go: those are Tabs.",
+      "examples": [
+        {
+          "caption": "Position",
+          "opts": {
+            "label": "Position",
+            "value": "risky",
+            "items": [
+              {
+                "label": "Controlled",
+                "value": "controlled"
+              },
+              {
+                "label": "Risky",
+                "value": "risky"
+              },
+              {
+                "label": "Desperate",
+                "value": "desperate"
+              }
+            ]
+          }
+        },
+        {
+          "caption": "Map look",
+          "opts": {
+            "label": "Map look",
+            "value": "seen",
+            "items": [
+              {
+                "label": "Dark",
+                "value": "dark"
+              },
+              {
+                "label": "Blueprint",
+                "value": "blueprint"
+              },
+              {
+                "label": "Seen",
+                "value": "seen"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tabs",
+      "fn": "tabs",
+      "class": "ui-tabs",
+      "variants": [],
+      "states": [
+        "hover",
+        "focus-visible",
+        "selected"
+      ],
+      "do": "Places on one surface: an underline, never a box.",
+      "dont": "Actions in a tab row.",
+      "examples": [
+        {
+          "caption": "Places",
+          "opts": {
+            "label": "Places",
+            "value": "board",
+            "items": [
+              {
+                "label": "Board",
+                "value": "board"
+              },
+              {
+                "label": "Map",
+                "value": "map"
+              },
+              {
+                "label": "Players",
+                "value": "players"
+              },
+              {
+                "label": "Cast",
+                "value": "cast"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Chip",
+      "fn": "chip",
+      "class": "ui-chip",
+      "variants": [
+        "plain",
+        "accent",
+        "alarm",
+        "rules",
+        "ok",
+        "caution"
+      ],
+      "states": [
+        "hover",
+        "focus-visible",
+        "pressed"
+      ],
+      "do": "Status and small toggles, always with a word.",
+      "dont": "Colour with no word. A chip as the main action.",
+      "examples": [
+        {
+          "caption": "Live",
+          "opts": {
+            "label": "On the iPad",
+            "tone": "accent",
+            "dot": true
+          }
+        },
+        {
+          "caption": "Alarm",
+          "opts": {
+            "label": "Alarm 4/6",
+            "tone": "alarm"
+          }
+        },
+        {
+          "caption": "Plain",
+          "opts": {
+            "label": "Last tram 3/8"
+          }
+        },
+        {
+          "caption": "Rules",
+          "opts": {
+            "label": "Rules",
+            "tone": "rules"
+          }
+        },
+        {
+          "caption": "Ok",
+          "opts": {
+            "label": "Phones in",
+            "tone": "ok",
+            "dot": true
+          }
+        },
+        {
+          "caption": "Caution",
+          "opts": {
+            "label": "Heat 3",
+            "tone": "caution"
+          }
+        },
+        {
+          "caption": "Toggle",
+          "opts": {
+            "label": "Nell",
+            "button": true,
+            "pressed": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "Card",
+      "fn": "card",
+      "class": "ui-card",
+      "variants": [
+        "edge"
+      ],
+      "states": [],
+      "do": "One thing, with a colour edge that means one thing.",
+      "dont": "Cards inside cards. An edge colour as decoration.",
+      "examples": [
+        {
+          "caption": "Accent edge",
+          "opts": {
+            "label": "The Pelican Rooms",
+            "meta": "Tonight",
+            "edge": "accent",
+            "body": "A ledger fetched from the quiet side of the hall.",
+            "actions": [
+              {
+                "label": "Show on iPad"
+              }
+            ]
+          }
+        },
+        {
+          "caption": "Faction edge",
+          "opts": {
+            "label": "Mabel Quist",
+            "meta": "Fixer",
+            "edge": "faction-2",
+            "body": "Counts the room twice."
+          }
+        },
+        {
+          "caption": "Outcome edge",
+          "opts": {
+            "label": "4/5",
+            "meta": "Partial",
+            "edge": "out-mid",
+            "body": "You get it, and the floor manager saw you.",
+            "kids": [
+              {
+                "part": "chip",
+                "label": "Heat +1",
+                "tone": "caution"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Row",
+      "fn": "row",
+      "class": "ui-row",
+      "variants": [
+        "selected",
+        "edge"
+      ],
+      "states": [
+        "hover",
+        "focus-visible"
+      ],
+      "do": "A list is rows: one visible action, the rest behind the more button.",
+      "dont": "A wall of buttons on every row.",
+      "examples": [
+        {
+          "caption": "Row",
+          "opts": {
+            "label": "Mabel Quist",
+            "sub": "Fixer · counts the room twice",
+            "lead": "MQ",
+            "action": {
+              "label": "Spotlight"
+            },
+            "more": [
+              {
+                "label": "Introduce"
+              },
+              {
+                "label": "Show on iPad"
+              }
+            ]
+          }
+        },
+        {
+          "caption": "Selected",
+          "opts": {
+            "label": "Dov Kessler",
+            "sub": "Desk sergeant · owes the house",
+            "lead": "DK",
+            "selected": true,
+            "action": {
+              "label": "Spotlight",
+              "rank": "standard"
+            },
+            "more": [
+              {
+                "label": "Introduce"
+              }
+            ]
+          }
+        },
+        {
+          "caption": "More, open",
+          "opts": {
+            "id": "lb-row-ada",
+            "label": "Ada Vell",
+            "sub": "Croupier",
+            "lead": "AV",
+            "open": true,
+            "action": {
+              "label": "Spotlight"
+            },
+            "more": [
+              {
+                "label": "Introduce"
+              },
+              {
+                "label": "Show on iPad"
+              },
+              {
+                "label": "Hide",
+                "rank": "danger"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Field",
+      "fn": "field",
+      "class": "ui-field",
+      "variants": [
+        "text",
+        "select",
+        "textarea"
+      ],
+      "states": [
+        "focus-visible",
+        "disabled"
+      ],
+      "do": "A label above every input; a hint below when it helps.",
+      "dont": "A placeholder as the only label.",
+      "examples": [
+        {
+          "caption": "Text",
+          "opts": {
+            "label": "Note",
+            "placeholder": "A line for tonight",
+            "hint": "Only you see this."
+          }
+        },
+        {
+          "caption": "Select",
+          "opts": {
+            "label": "Position",
+            "kind": "select",
+            "value": "risky",
+            "options": [
+              {
+                "value": "controlled",
+                "label": "Controlled"
+              },
+              {
+                "value": "risky",
+                "label": "Risky"
+              },
+              {
+                "value": "desperate",
+                "label": "Desperate"
+              }
+            ]
+          }
+        },
+        {
+          "caption": "Text area",
+          "opts": {
+            "label": "Prep line",
+            "kind": "textarea",
+            "value": "Lotte Brand waits by the cloakroom."
+          }
+        },
+        {
+          "caption": "Disabled",
+          "opts": {
+            "label": "Session",
+            "value": "4",
+            "kind": "number",
+            "disabled": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "Meter",
+      "fn": "meter",
+      "class": "ui-meter",
+      "variants": [
+        "pips",
+        "clock"
+      ],
+      "states": [],
+      "do": "Pips for short counts, a clock for clocks. Say the count.",
+      "dont": "A meter with no name.",
+      "examples": [
+        {
+          "caption": "Pips",
+          "opts": {
+            "kind": "pips",
+            "label": "Stress",
+            "value": 3,
+            "max": 6
+          }
+        },
+        {
+          "caption": "Clock",
+          "opts": {
+            "kind": "clock",
+            "label": "Last tram",
+            "value": 3,
+            "max": 8,
+            "show": true
+          }
+        },
+        {
+          "caption": "Alarm clock",
+          "opts": {
+            "kind": "clock",
+            "label": "Alarm",
+            "value": 4,
+            "max": 6,
+            "tone": "alarm",
+            "show": true
+          }
+        },
+        {
+          "caption": "Four",
+          "opts": {
+            "kind": "clock",
+            "label": "Cloakroom",
+            "value": 1,
+            "max": 4,
+            "tone": "accent",
+            "show": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "Key hint",
+      "fn": "key",
+      "class": "ui-key",
+      "variants": [],
+      "states": [],
+      "do": "Show the shortcut beside what it does.",
+      "dont": "A key that is not on the shortcuts card.",
+      "examples": [
+        {
+          "caption": "Esc",
+          "opts": {
+            "label": "Esc"
+          }
+        },
+        {
+          "caption": "R",
+          "opts": {
+            "label": "R"
+          }
+        },
+        {
+          "caption": "A",
+          "opts": {
+            "label": "A"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Status dot",
+      "fn": "dot",
+      "class": "ui-dot",
+      "variants": [
+        "live",
+        "ok",
+        "alarm",
+        "idle",
+        "caution"
+      ],
+      "states": [],
+      "do": "A dot beside a word: live, ok, alarm, idle.",
+      "dont": "A dot alone with no word or title.",
+      "examples": [
+        {
+          "caption": "Live",
+          "opts": {
+            "tone": "live",
+            "label": "On the iPad"
+          }
+        },
+        {
+          "caption": "Ok",
+          "opts": {
+            "tone": "ok",
+            "label": "Phones in"
+          }
+        },
+        {
+          "caption": "Alarm",
+          "opts": {
+            "tone": "alarm",
+            "label": "Signed out"
+          }
+        },
+        {
+          "caption": "Idle",
+          "opts": {
+            "tone": "idle",
+            "label": "Asleep"
+          }
+        },
+        {
+          "caption": "Caution",
+          "opts": {
+            "tone": "caution",
+            "label": "Slow line"
+          }
+        }
+      ]
+    }
+  ]
+}
