@@ -2252,6 +2252,7 @@
       if (S !== me || AM.loaded || !isObj(r) || !isObj(r.doc)) return;
       AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null;
       renderBar(); hsSync();
+      if (Array.isArray(r.doc.polaroids) || S.who) whoPolaroids();      /* KS12.5 (night.who): the polaroids follow the session (a list left from a night with the setting on is cleared) */
     }, function () { AM.peeked = false; });
   }
   /* N1b: the places of the night (gm/places.js) draw the view switcher (.gm-views), the chip row below 1100 px (.gm-vchips, in the old segbar's
@@ -2446,7 +2447,7 @@
     if (!S.mt) {
       var me = S;
       S.mt = W.B68GmMontage.make({ on: function (id) { return S === me && W.B68Features.valueOf(S.doc, id); }, toast: toast, root: function () { return $q('#gm-root'); },
-        pcs: function () { return S === me ? dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c) }; }) : []; },
+        pcs: function () { return S === me ? herePcs().map(function (c) { return { id: str(c.id), name: pcName(c) }; }) : []; },      /* KS12.3: who is playing */
         rooms: function () { var rs = S === me && S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : [], rv = revealEntries(mapUi()); return rs.filter(function (r) { return isObj(r) && str(r.name) && roomShown(r, rv); }).map(function (r) { return str(r.name); }); },
         over: function () { var R = W.B68GmPhaseRail; if (!(S === me && R && me.night && W.B68Features.valueOf(S.doc, 'spine.rail'))) return null; var m = R.model(me.night.night(), Date.now()), cur = m && m.items ? m.items.filter(function (i) { return i.state === 'now' && i.budget; })[0] : null; return cur ? cur.tone === 'red' : null; },
         room: function () { return S === me && W.B68GmStamp ? W.B68GmStamp.pickRoom(runCrewRooms()) : ''; },
@@ -2459,6 +2460,7 @@
   function rdInst() {
     if (!S || !W.B68GmRoomDesk || !W.B68Features) return null;
     if (!S.rd) S.rd = W.B68GmRoomDesk.create({ feature: function (id) { return !!(S && W.B68Features.valueOf(S.doc, id)); }, doc: function () { return S ? S.doc : null; }, toast: toast, root: function () { return $q('#gm-root'); }, part: part,
+      away: function () { return S && S.who ? S.who.away() : []; },      /* KS12.6 (night.who): the absent packet's ticks */
       save: function (id, item) { var it = {}; it[id] = item; patch({ trouble: { items: it } }); }, show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); } });
     return S.rd;
   }
@@ -2867,13 +2869,32 @@
   function who() {
     if (!whoOn()) { if (S && S.who) { S.who.destroy(); S.who = null; } return null; }
     if (!W.B68GmWho) { if (!S.whoAsked && W.B68Load && W.B68Load.need) { S.whoAsked = true; var me = S; W.B68Load.need('night-who').then(function () { if (S === me) placesSync(); }, function () { if (S === me) S.whoAsked = false; }); } return null; }
-    return S.who || (S.who = W.B68GmWho.create(whoHost()));
+    if (!S.who) { S.who = W.B68GmWho.create(whoHost()); S.whoPcSig = ''; S.who.onChange(whoFlow); W.setTimeout(whoPolaroids, 0); }      /* KS12: the roster's readers follow it */
+    return S.who;
+  }
+  /* KS12 (night.who): who is playing changed (a Start, a late arrival, a player let go): the Roll's Who chips, the iPad's crew and faces, the cards and
+     the told lists follow, without a reload */
+  function whoFlow() { if (!S || S.status !== 'ready') return; renderPos(); pcStatusSync(); if (S.mission) S.mission.changed(); runStale(); whoPolaroids(); }
+  /* the filed characters the night is for: everyone, unless night.who has a roster (gm/kit/who.js, the one reader) */
+  function herePcs() { var a = dtPcs(); return S && S.who ? S.who.only(a) : a; }
+  /* KS12.5: the score scenes' polaroids (ambient `polaroids`, KS12-contract): the playing characters while a session is open; null otherwise,
+     and null once from a page with the setting off that finds a list (it can only be there from a night with it on) */
+  function whoPolaroids() {
+    var g = gmApi(), Wh = W.B68GmWho; if (!S || S.status !== 'ready' || !g || typeof g.patchAmbient !== 'function') return;
+    var have = isObj(AM.doc) && Array.isArray(AM.doc.polaroids) ? AM.doc.polaroids : null, want = null;
+    if (!S.who) { if (!have || whoOn()) return; }      /* off: only a stored list is cleared (on, with the bundle still coming: wait for it) */
+    else if (Wh && Wh.isOpen(camp)) { want = Wh.polaroidsOf(herePcs().map(function (c) { return { name: pcName(c), alias: str(c.alias) }; })); if (!want.length) want = null; }
+    if (want === null && !have) return;      /* nothing wanted and none stored (or the ambient not read yet: its first look calls again) */
+    var k = JSON.stringify(want); if (k === JSON.stringify(have) || k === S.polSent) return;
+    var me = S; S.polSent = k;
+    Promise.resolve().then(function () { return g.patchAmbient({ polaroids: want }); }).then(function (r) { if (S === me && adoptAmbient(r)) renderIpad(); }, function () { if (S === me) S.polSent = ''; });
   }
   function whoHost() {
     var me = S;
     return {
       root: function () { return S === me ? $q('#gm-root') : null; }, campaign: function () { return S === me ? camp : null; }, prep: function () { return prepNoteSession(); },
       characters: function () { return S === me ? dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), owner: str(c.owner) }; }) : []; },
+      pack: function () { return S === me ? whoAll().map(function (o) { return { name: str(o.value), first: str(o.label) }; }) : []; },      /* KS12.1: the Roll's PCs, by name */
       names: function (ids) { return S === me && S.api && S.api.profiles ? S.api.profiles(ids) : Promise.resolve({}); }, schedule: function () { return W.B68Schedule || null; },
       start: function (o) { return S === me && S.api && S.api.startSession ? S.api.startSession(o) : Promise.reject(new Error('The table is not available here.')); },
       finish: function () { return S === me && S.api && S.api.endSession ? S.api.endSession() : Promise.resolve(false); },
@@ -2959,11 +2980,12 @@
   function renderConsole() { rollBind(); renderPos(); renderControls(); renderButtons(); renderSingles(); drawConsoleCard(); renderRack(); rollFoldSync(); }
   /* Who (08/11/2026, in place of the Dots): the console's Aim at, the PC who is rolling. One tap sets it, a second clears it; it clears itself once the
      roll resolves (a 4/5, a 1–3 or Clean). Blade's fit and L's filed line read it; the console's own cards lean on that PC's hooks, as Aim at always did */
-  function whoList() {
+  function whoAll() {
     if (!S || !hasSit() || !Array.isArray(S.con.situationControls)) return [];
     var c = S.con.situationControls.filter(function (x) { return x && x.id === 'pc'; })[0];
     return c && Array.isArray(c.options) ? c.options.filter(function (o) { return o && str(o.value); }) : [];
   }
+  function whoList() { var l = whoAll(); return S && S.who ? S.who.only(l) : l; }      /* KS12.2 (night.who): the chips are the PCs playing tonight */
   function setWho(v) { if (!S || !hasSit()) return; v = str(v); setLive('pc', str(uiNow().pc) === v ? '' : v); renderPos(); renderControls(); }
   function whoClear() { if (S && hasSit() && str(uiNow().pc)) { setLive('pc', ''); renderPos(); renderControls(); } }
   function setPos(v) { setLive('pos', v); renderPos(); }
@@ -3704,7 +3726,7 @@
     var mark = targetMark(rs, st, shown);
     /* <<< VV8 */
     if (!Object.keys(placed.crew).length && !Object.keys(placed.pins).length && !mark) return none;
-    var pcs = dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), icon: '' }; });      /* no costume shows on a player screen: a plain token */
+    var pcs = herePcs().map(function (c) { return { id: str(c.id), name: pcName(c), icon: '' }; });      /* no costume shows on a player screen: a plain token (KS12.3: who is playing) */
     var clocks = tableClocks().filter(function (c) { return str(c.id); }).map(function (c) { return { id: str(c.id), size: c.size, filled: c.filled, hidden: !!c.hidden }; });
     var tokens = P.playerTokens(placed, shown, clocks, pcs, mark), hide = tokenDeny(rs.play, mark ? mark.label : '');
     return { tokens: tokens, hide: hide, sig: P.tokenSig(tokens, hide) };
@@ -3949,6 +3971,7 @@
         if (isObj(change) && ('t' in change || 'crew' in change) && !('heard' in change)) { var merged = Object.assign({}, ballDoc(rs.name), change), hh = runHeard(rs, merged, +merged.t); if (hh) change = Object.assign({}, change, { heard: hh }); }
         var prev = ballDoc(rs.name).t; var ok = ballSet(rs.name, change, quiet === true); if (ok && change && 't' in change) S.rvPrevT = prev; /* VV6 */ if (ok && !quiet) runDraw(true); return !!ok; },
       pcs: runPcs, floors: function () { var rs = runV2(); return rs ? runFloors(rs) : { list: [], floorOf: {} }; }, isOpen: runIsOpen,
+      whoSplit: function (l) { return S && S.who ? S.who.split(l) : null; },      /* KS12.4 (night.who): a told list's players, here and not here */
       openRoom: function (name, on) { roomOpen(name, on); }, mapSvg: runMapSvg, mapPaint: function (fr, svg, zoom) { b19Paint(fr, svg, zoom); },
       /* N3, the site (gm/site.js): the ONE alarm, the toolbar and the stage, the rooms' states, each card's Players' map, people and If it goes wrong, the ⋯ parts */
       alarmHtml: function (open) { var si = siteInst(); return si ? si.alarm(open, 'data-rv="alarm"') : ''; }, alarmPop: function () { var si = siteInst(); return si ? si.alarmPop(false) : ''; },
@@ -5258,7 +5281,7 @@
     var rs = runSite(); if (!rs || !S.locRoll || rs.play.v !== 2) return null;
     var reveal = revealList(mapUi()).concat(cleanRooms(ballDoc(rs.name).open).map(function (n) { return 'room:' + n; }));     /* the Run view's rule: runIsOpen */
     var open = (Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : []).filter(function (r) { return roomShown(r, reveal) && str(r.name); }).map(function (r) { return str(r.name); });
-    var pcs = dtPcs().map(function (c) { return { id: str(c.id), name: pcName(c), owner: str(c.owner) }; });
+    var pcs = herePcs().map(function (c) { return { id: str(c.id), name: pcName(c), owner: str(c.owner) }; });      /* KS12.3/12.4: the band's crew and the cards, for who is playing */
     var play = rs.play, roll = S.locRoll, me = S, st = ballDoc(rs.name), h = runHeard(rs, st, +st.t);
     /* A1: the published card has the leads in reach heard; the GM state follows in one deferred write */
     if (h) { st = Object.assign({}, st, { heard: h }); setTimeout(function () { if (S !== me) return; var s2 = ballDoc(rs.name), h2 = runHeard(rs, s2, +s2.t); if (h2) ballSet(rs.name, { heard: h2 }, true); }, 0); }
@@ -6201,14 +6224,14 @@
      (the next change catches up) */
   function keyturnSync() {
     var K = W.B68GmKeyturn, F = W.B68Features; if (!K || !F || !S || !F.valueOf(S.doc, 'spine.keyturn')) return;
-    K.sync({ pcs: dtPcs, show: function (k, p, o) { var c = shows(); return c ? c.show(k, p, o) : Promise.resolve(null); }, toast: toast, now: function () { return Date.now(); } });
+    K.sync({ pcs: herePcs, show: function (k, p, o) { var c = shows(); return c ? c.show(k, p, o) : Promise.resolve(null); }, toast: toast, now: function () { return Date.now(); } });
   }
   /* PC status on the band's faces (suite 3.7, switch face.pcstatus): app/gm/pcstatus.js sends the layer only when what it would draw has changed */
   function pcStatusSync() {
     var K = W.B68GmPcStatus; if (!K || !S || !W.B68Features) return;
     var me = S;
     K.sync({
-      feature: function (id) { return S === me && b09On(id); }, pcs: dtPcs,
+      feature: function (id) { return S === me && b09On(id); }, pcs: herePcs,      /* KS12.3: the faces of who is playing */
       current: function () { var l = isObj(AM.doc) && isObj(AM.doc.layers) && isObj(AM.doc.layers.band) ? AM.doc.layers.band.faces : null; return Array.isArray(l) ? l : null; },
       layer: function (path, value) { var sh = shows(); return sh ? sh.layer(path, value) : Promise.resolve(null); }
     });
@@ -6218,7 +6241,7 @@
     runFoldMoves();         /* a phone's move request rides on the characters */
     keyturnSync();          /* a turned key (suite 1.8, switch spine.keyturn) */
     pcStatusSync();         /* the band's PC faces (suite 3.7, switch face.pcstatus) */
-    if (S.who) { var whoSig = JSON.stringify(dtPcs().map(function (c) { return [str(c.id), pcName(c), str(c.owner)]; })); if (whoSig !== S.whoPcSig) { S.whoPcSig = whoSig; S.who.paint(S.root); } }      /* KS11/KS12.0 (night.who): only when who is filed changed, not every poll */
+    if (S.who) { var whoSig = JSON.stringify(dtPcs().map(function (c) { return [str(c.id), pcName(c), str(c.owner), str(c.alias)]; })); if (whoSig !== S.whoPcSig) { S.whoPcSig = whoSig; S.who.paint(S.root); whoPolaroids(); } }      /* KS11/KS12.0 (night.who): only when who is filed changed, not every poll */
     if (JSON.stringify(dtPcs()) === S.dtPcSig) return;
     runStale();
     if (S.mission) S.mission.changed();         /* a card carries its PC's name and owner */
@@ -7805,7 +7828,7 @@
     camp = isObj(doc) ? doc : null;
     if (S && S.status === 'ready') {
       renderRail(); renderBar(); scMaybeRedraw(); runStale();
-      if (S.who) S.who.paint(S.root);      /* KS11 (night.who): Before's lead and After's line follow the session */
+      if (S.who) { S.who.paint(S.root); whoPolaroids(); }      /* KS11 (night.who): Before's lead and After's line follow the session; KS12.5: End clears the polaroids */
       apClocksFeed(); apSubjects();
       if (S.mission) S.mission.noteClocks();      /* the alarm clock's fill or visibility is on the players' band */
       { var stc = setInst(); if (stc) stc.heal(); }      /* W0.2 / N0: the campaign document's copy of the settings follows the GM state's, on every arrival */

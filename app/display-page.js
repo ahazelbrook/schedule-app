@@ -752,6 +752,7 @@
       crew: crew, score: cleanScore(d.score), wire: Pure.cleanWire(d.wire)
     };
     if (plan.mode === 'pin' && !(plan.scene && Pure.ambientAvailable(plan, plan.scene))) { plan.mode = 'auto'; plan.scene = null; }
+    var pol = Pure.cleanPolaroids(d.polaroids); if (pol.length) plan.polaroids = pol;      /* KS12.5: only while the document has a list */
     return plan;
   };
   /* the playlist as it can play now: score scenes drop out while there is no score (the test card is never in a playlist) */
@@ -786,9 +787,9 @@
     if (!isObj(next)) return false;
     return !isObj(prev) || prev.heat !== next.heat || prev.wanted !== next.wanted;
   };
-  /* the crew polaroids on the score scenes: cast id -> caption (the generator's constant; docs/history/AMBIENT-PLAN.md 4.3). Only the crew at the
-     table: two of the original four are not playing (tech run, 06/11), and a crew member with no figure in the cast canon gets no polaroid */
-  Pure.POLAROIDS = [{ id: 'booker', cap: 'Babel' }, { id: 'alfie', cap: 'Ashtray & Buck' }];
+  /* the crew polaroids on the score scenes (KS12.5): who is playing, as the GM page sends it in the ambient document's `polaroids` while a session
+     is open (Start the night): [{ id: a cast canon id, cap }], at most 8, cleaned again here. A crew member with no figure in the cast canon gets no polaroid */
+  Pure.cleanPolaroids = function (v) { var out = [], seen = {}; (Array.isArray(v) ? v : []).forEach(function (p) { if (out.length < 8 && isObj(p) && typeof p.id === 'string' && /^[a-z0-9]{1,40}$/.test(p.id) && !seen[p.id]) { seen[p.id] = 1; out.push({ id: p.id, cap: typeof p.cap === 'string' ? p.cap.replace(/\s+/g, ' ').trim().slice(0, 60) : '' }); } }); return out; };
   /* scoreMessage(score, polaroids, env) -> the message a score scene is sent in reply to its b68:ready, or null with no score.
      `board` and `iso` are the score's svgs run through the sanitiser again here (normal cap) and sent as its markup, '' when one
      will not clean; `polaroids` are [{ svg, cap }] already cleaned by the caller (the figure kit's output, big cap). Nothing but
@@ -1683,7 +1684,7 @@
       if (s.polaroids) return s.polaroids;
       var out = [], K = ctx.figures, C = ctx.cast;
       if (K && C && Array.isArray(C.pcs)) {
-        Pure.POLAROIDS.forEach(function (p) {
+        (s.plan && s.plan.polaroids || []).forEach(function (p) {      /* KS12.5: the list the GM page sends, never one in the code */
           var pc = null; C.pcs.forEach(function (x) { if (x && x.id === p.id) pc = x; });
           var r = pc ? drawPortrait(pc, 'dp-pol-' + p.id, K) : null;
           if (r && r.markup) out.push({ svg: r.markup, cap: p.cap });
@@ -1707,7 +1708,8 @@
       var wk = JSON.stringify(p.wire);
       if (wk !== s.wire.key) { s.wire.key = wk; s.wire.items = p.wire; s.wire.i = 0; wireSync(); }
       else if (s.wire.items.length && s.wire.t === null && !wireEl.classList.contains('dp-wire-on')) wireSync();     /* the mode or the cover changed */
-      var key = p.score ? [p.score.at, p.score.name, p.score.district, p.score.target, p.score.view, p.score.board.length, p.score.iso.length].join('|') : '';
+      var key = p.score ? [p.score.at, p.score.name, p.score.district, p.score.target, p.score.view, p.score.board.length, p.score.iso.length].join('|') + (p.polaroids ? '|' + JSON.stringify(p.polaroids) : '') : '';
+      if (key !== s.scoreKey) s.polaroids = null;      /* KS12.5: a new list draws its polaroids again */
       if (key !== s.scoreKey) {
         s.scoreKey = key; s.score = p.score; s.scoreMsg = null;
         if (p.score) [].forEach.call(layer.querySelectorAll('iframe'), function (f) { if (Pure.isScoreScene(f.getAttribute('data-scene'))) sendScore(f.contentWindow); });

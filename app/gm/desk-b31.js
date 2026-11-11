@@ -92,7 +92,7 @@
     }
     if (which === 'absent') {
       if (!Ab || !bh) return null;
-      return sh.absent || (sh.absent = Ab.make({ members: bh.members, characters: bh.characters, npcs: bh.npcs, docs: bh.docs, toast: h.toast, root: h.root, now: h.now,
+      return sh.absent || (sh.absent = Ab.make({ members: bh.members, characters: bh.characters, npcs: bh.npcs, docs: bh.docs, toast: h.toast, root: h.root, now: h.now, away: h.away,      /* KS12.6: h.away (night.who) */
         frontPage: function () { var f = make('frontpage', h, sh); return f ? f.current() : Promise.resolve(null); } }));
     }
     return null;
