@@ -87,6 +87,11 @@ function packNames(pk) {
   return [...out];
 }
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/* KS12.5: the campaign PCs' first names (campaign.pcs[].first), 3 characters or more */
+function firstNames(pk) {
+  const camp = ((pk && pk.parts) || {}).campaign || {};
+  return [...new Set((camp.pcs || []).map((p) => (p && typeof p.first === 'string' ? p.first.trim() : '')).filter((f) => f.length >= 3 && /^[A-Za-z][A-Za-z'.-]*$/.test(f)))];
+}
 
 /* The GM approved this one ambient scene label on 22/10/2026 and it stays as it is. Allowlisted by the full label string
    as it appears in the source, in exactly these two files: the same word anywhere else still fails. */
@@ -111,8 +116,20 @@ await test('(a) the GM files and public scripts name no campaign or setting prop
       let m; while ((m = re.exec(text))) if (!ok.some(([s, e]) => m.index >= s && m.index < e)) hits.push(rel(f) + ':' + lineOf(text, m.index + m[1].length) + ' ' + (BUILT_IN.includes(n) ? n : mask(n)));
     }
   }
+  /* KS12.5: a PC's first name alone (the full-name list above never sees it): as written, whole word; and lowercased as a whole quoted string or an
+     id (id: 'x'), the form a list of cast ids takes (display-page.js once held one) */
+  const firsts = PACK ? firstNames(PACK) : [];
+  for (const f of NAME_FILES) {
+    const text = read(f), ok = allowedRanges(f, text);
+    for (const n of firsts) {
+      const lc = reEsc(n.toLowerCase());
+      for (const re of [new RegExp('(^|[^A-Za-z0-9_])' + reEsc(n) + '(?![A-Za-z0-9_])', 'g'), new RegExp('()([\'"`])' + lc + '\\2|()\\bid\\s*[:=]\\s*[\'"]?' + lc + '(?![a-z0-9])', 'g')]) {
+        let m; while ((m = re.exec(text))) if (!ok.some(([s, e]) => m.index >= s && m.index < e)) hits.push(rel(f) + ':' + lineOf(text, m.index) + ' first name ' + mask(n));
+      }
+    }
+  }
   if (hits.length) throw new Error(hits.length + ' hit(s):\n  ' + hits.slice(0, 20).join('\n  '));
-  console.log('     ' + NAME_FILES.length + ' files, ' + names.length + ' names');
+  console.log('     ' + NAME_FILES.length + ' files, ' + names.length + ' names, ' + firsts.length + ' first names');
 });
 
 /* ---------- (b) long string literals outside comments ---------- */

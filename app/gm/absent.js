@@ -124,6 +124,8 @@
     ctl.render = function (box) {
       if (!box) return;
       ctl.members().then(function (ms) {
+        var away = typeof h.away === 'function' ? h.away() || [] : [];      /* KS12.6 (night.who): who is not here tonight comes ticked; an untick stays */
+        ms.forEach(function (m) { if (m && away.indexOf(m.id) >= 0 && !(m.id in ticked)) ticked[m.id] = true; });
         box.innerHTML = '<p class="gm-dim">Tick who is absent, write three lines for "Previously on", then send. They also get the saved front page and the changes to their own sheet.</p>' +
           '<div>' + (ms.length ? ms.map(function (m) { return '<label class="gm-sb-row"><input type="checkbox" data-ab-who="' + esc(m.id) + '"' + (ticked[m.id] ? ' checked' : '') + '> ' + esc(m.name || m.id) + '</label>'; }).join('') : '<p class="gm-empty">No players found.</p>') + '</div>' +
           '<div class="gm-sb-row"><label>Previously on (three lines) <textarea data-ab-recap rows="3" style="width:100%">' + esc(recap) + '</textarea></label></div>' +
