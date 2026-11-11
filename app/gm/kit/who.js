@@ -260,7 +260,7 @@
     function paint(el) {
       if (st.gone) return;
       if (el && el.querySelectorAll) {
-        Array.prototype.forEach.call(el.querySelectorAll('[data-who-lead]'), function (n) { var h = leadHtml(); if (n.__who !== h) { n.__who = h; n.innerHTML = h; } });
+        Array.prototype.forEach.call(el.querySelectorAll('[data-who-lead]'), function (n) { var h = leadHtml(); if (n.setAttribute && !n.hasAttribute('data-ui-scope')) n.setAttribute('data-ui-scope', ''); if (n.__who !== h) { n.__who = h; n.innerHTML = h; } });      /* the kit's parts work here without data-kit (KS02b) */
         Array.prototype.forEach.call(el.querySelectorAll('[data-who-after]'), function (n) { var t = summary(doc(), chars()); if (n.textContent !== t) n.textContent = t; });
       }
       chip();
@@ -274,9 +274,10 @@
       if (st.el) { if (st.el.parentNode !== page && page.appendChild) page.appendChild(st.el); return st.el; }
       var el = d.createElement('section');
       el.className = 'gm-sheet who-sheet'; el.id = 'gm-who-sheet'; el.hidden = true;
-      el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Start the night');
+      el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Start the night'); el.setAttribute('data-ui-scope', '');      /* KS02b: a kit scope on the old page */
       el.addEventListener('click', onClick); el.addEventListener('input', onInput); el.addEventListener('keydown', onKey);
       page.appendChild(el); st.el = el;
+      var U = Ui(); if (U && typeof U.guardBusy === 'function') U.guardBusy(el);      /* Start is busy while it writes: a second press is cancelled */
       return el;
     }
     /* a row: one toggle (B68Ui.button, aria-pressed). Its words are its label, so the markup alone says it all; dress() then lays the same words out
@@ -318,7 +319,7 @@
         '<div class="who-rows" role="group" aria-label="Who is playing">' + m.rows.map(rowHtml).join('') + '</div>' +
         '<div class="who-num"><label class="who-num-l" for="who-n">Session</label><input id="who-n" class="who-n" type="number" inputmode="numeric" min="1" max="9999" step="1" data-who-n value="' + esc(st.num || String(m.number)) + '">' +
         '<span class="who-num-sub">' + esc(numLine(m)) + '</span></div>' +
-        '<div class="who-go">' + btn({ label: primaryLabel(), rank: 'primary', cls: ['btn', 'primary'], data: { who: 'start' }, disabled: st.busy }) + '<span class="who-count" role="status">' + count(m) + ' playing</span></div></div>';
+        '<div class="who-go">' + btn({ label: primaryLabel(), rank: 'primary', cls: ['btn', 'primary'], data: { who: 'start' }, busy: st.busy }) + '<span class="who-count" role="status">' + count(m) + ' playing</span></div></div>';
       if (el.__who === h) return;
       var d = doc0(), f = d && d.activeElement;
       if (f && f.hasAttribute && f.hasAttribute('data-who-n') && el.contains(f)) { patchLive(el, m); return; }       /* typing the number: the caret stays */

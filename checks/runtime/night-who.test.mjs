@@ -244,7 +244,7 @@ function fakeEl(tag) {
   const el = {
     tagName: tag.toUpperCase(), attrs: {}, children: [], listeners: {}, hidden: false, className: '', id: '', _html: '',
     setAttribute(k, v) { this.attrs[k] = String(v); }, getAttribute(k) { return this.attrs[k] == null ? null : this.attrs[k]; }, hasAttribute(k) { return k in this.attrs; },
-    addEventListener(k, f) { this.listeners[k] = f; }, removeEventListener() {}, appendChild(c) { this.children.push(c); c.parentNode = this; return c; }, removeChild() {},
+    addEventListener(k, f, cap) { if (cap === true) (this.capture = this.capture || []).push(k); else this.listeners[k] = f; }, removeEventListener() {},      /* a capture listener (B68Ui.guardBusy) is noted, not called */ appendChild(c) { this.children.push(c); c.parentNode = this; return c; }, removeChild() {},
     contains() { return false; }, querySelector() { return null; }, querySelectorAll() { return []; }, focus() {},
   };
   Object.defineProperty(el, 'innerHTML', { get() { return this._html; }, set(v) { this._html = v; } });
@@ -278,6 +278,7 @@ await atest('the sheet: rows from the characters, a tick toggled, Start with two
   const sheet = gmRoot.children[0];      /* in #gm-root, under the band, as the workshop's sheets */
   assert.equal(page.children.length, 0);
   assert.equal(sheet.id, 'gm-who-sheet'); assert.equal(sheet.hidden, false); assert.equal(sheet.getAttribute('role'), 'dialog');
+  assert.equal(sheet.getAttribute('data-ui-scope'), '', 'KS02b: the sheet is a kit scope'); assert.ok((sheet.capture || []).includes('click'), 'and B68Ui.guardBusy guards it');
   assert.match(sheet.innerHTML, /data-who-pc="ch-nell" aria-pressed="true"/);
   assert.match(sheet.innerHTML, /data-who-pc="ch-tam" aria-pressed="false"/, 'Tam said no');
   assert.match(sheet.innerHTML, /value="5"/); assert.match(sheet.innerHTML, /the Prep note says 4\.5/);

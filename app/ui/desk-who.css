@@ -6,13 +6,9 @@
    or by .btn (#gm-page .btn's 44 px on a touch screen, #gm-page select / input[type=text]) set nothing these rely on. Both cases are checked in
    checks/runtime/night-roster.e2e.mjs (computed styles with the setting alone and with kit.desk). */
 
-/* the buttons are B68Ui's (ui-btn) with the old classes kept (btn primary, gm-x, gm-pill). With kit.desk the kit's look is theirs. With night.who
-   alone the kit's tokens are not defined (tokens.css is scoped to data-kit) while parts.css's .ui-btn still matches, so the old .btn look is
-   restored here for that case only (index.html's .btn, which .ui-btn would otherwise override with undefined values) */
-:root:not([data-kit~="desk"]) .who-lead > .btn, :root:not([data-kit~="desk"]) .who-go > .btn {
-  display: inline-flex; align-items: center; font: 900 16px/1 var(--font-cond); text-transform: uppercase; letter-spacing: .08em; padding: 10px 14px;
-  border: 2px solid var(--rule); border-radius: 0; box-shadow: 3px 3px 0 var(--shadow-ink); }
-:root:not([data-kit~="desk"]) .who-lead > .btn:active, :root:not([data-kit~="desk"]) .who-go > .btn:active { transform: translate(2px, 2px); box-shadow: none; }
+/* the buttons are B68Ui's (ui-btn) with the old classes kept as hooks (btn primary, gm-x). The Start sheet and Before's lead are kit scopes
+   (data-ui-scope, KS02b): on the old page (night.who alone) the old .btn rules win there and the buttons look like the old page's; with kit.desk
+   the old sheets are layered and the kit's look wins. Nothing here restyles either button look (KS12 follow-up, #211) */
 
 /* Before: the one Primary, at the top of the left column, with a line under it */
 .who-lead { display: grid; gap: 6px; padding: 2px 0 12px; margin-bottom: 4px; border-bottom: 2px solid var(--rule); }
