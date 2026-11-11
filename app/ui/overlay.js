@@ -18,15 +18,17 @@
                                             o.onSelect(value, item), o.label. Arrow keys, Home and End move; Enter or Space picks; Tab and Esc close
      B68Ui.toast(o) -> { id, dismiss() }     one stack, bottom right, at most four shown (the rest queue). o.text, o.tone ('info' | 'error'),
                                             o.undo (a function, or { label, fn }), o.duration (info only: 5000 ms; 0 stays), o.key (the same key
-                                            replaces the message). Info fades; an error stays, with a red edge, until X or Esc
+                                            replaces the message). Info fades; an error stays, with a red edge, until X (or an Escape heard on the stack where there is no B68GmEsc)
      B68Ui.tip(el, text, key) -> el          marks el with a tooltip (data-ui-tip, data-tip-key); a title on the desk becomes one as well
      B68Ui.tip.node(text, key) -> Element    a static tooltip (the look book)
      B68Ui.overlay                           the pieces, for the check and the look book: place(), step(), toastCore(), stack(), buildDialog()
 
    Esc. This file adds NO document-level Escape listener. On the GM page everything it opens closes through B68GmEsc (gm/esc.js): a dialog at 100
-   (110 and up for a popover opened from inside one), a popover or menu at 70, an error toast at 30 (below the 40 line, so the page's keys stay live).
+   (110 and up for a popover opened from inside one), a popover or menu at 70, and nothing for a toast.
    A native dialog's own Esc (its cancel event) is stopped and sent to B68GmEsc, so the order does not change. Where there is no B68GmEsc (the look
-   book) a dialog keeps its own Esc and a popover or the stack closes on an Escape heard on itself. A tooltip never takes Esc.
+   book) a dialog keeps its own Esc and a popover or the stack closes on an Escape heard on itself. A toast takes no Esc on the GM page: PANIC wins, so an error toast has no
+   B68GmEsc entry and never makes anyOpen() true; X always dismisses it (an Escape heard on the stack itself does, where there is no B68GmEsc).
+   A tooltip never takes Esc.
    Everything the page shows goes in as text. The buttons come from B68Ui, never from markup here: the ratchet counts raw text. */
 (function (root, factory) {
   'use strict';
@@ -446,7 +448,7 @@
     };
   }
   /* the stack on the page: one container, the newest at the bottom. cfg.mount (default: body, or the open dialog, so it stays above the backdrop),
-     cfg.absolute (a local box), cfg.still (no timers: the look book), cfg.noEsc (no B68GmEsc entry) */
+     cfg.absolute (a local box), cfg.still (no timers: the look book) */
   function stack(cfg) {
     cfg = cfg || {};
     var box = null, core;
@@ -495,10 +497,6 @@
     var view = {
       mount: function (it) {
         var b = ensure(); it.el = build(it); b.appendChild(it.el);
-        if (it.tone === 'error' && !cfg.noEsc) {
-          var E = esc();
-          if (E) E.register('ui-toast', { priority: 30, isOpen: function () { return core.hasErrors(); }, close: function () { core.dismissErrors(); } });
-        }
       },
       update: function (it, again) {
         var t = it.el && it.el.querySelector('.ui-toast-text'); if (t) t.textContent = it.text;

@@ -309,7 +309,7 @@
     var tb = document.createElement('div'); tb.className = 'lb-ov-box lb-ov-tall';
     ovRow(col, [ovFig('five toasts: four shown, one waiting', tb)]);
     later.push(function () {
-      var st = O.stack({ mount: tb, absolute: true, still: true, noEsc: true });
+      var st = O.stack({ mount: tb, absolute: true, still: true });
       st.add({ text: 'Sent to the iPad: The vault floor', undo: function () {} });
       st.add({ text: 'Roll saved to the log' });
       st.add({ text: 'The iPad did not answer. Try again.', tone: 'error' });

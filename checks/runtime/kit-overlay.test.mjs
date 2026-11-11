@@ -436,15 +436,20 @@ if(E){var h=E.handle;E.handle=function(c){var r=h.call(E,c);window.handleLog.pus
       await page.click('.ui-toast--error .ui-toast-x');
       await page.waitForFunction(() => document.querySelectorAll('.ui-toast').length === 0);
     });
-    await test('browser: Esc takes every error down in one press, through B68GmEsc at 30 (under the 40 line), before the stamp and PANIC; the info stays', async () => {
-      await ev(() => { window.handleLog.length = 0; window.panics = 0; window.flags.stamp = true; B68Ui.toast({ text: 'One', tone: 'error' }); B68Ui.toast({ text: 'Two', tone: 'error' }); B68Ui.toast({ text: 'Keep', duration: 0 }); });
-      assert.deepEqual(await ev(() => B68GmEsc.list().filter((x) => x.id === 'ui-toast').map((x) => x.priority + ':' + x.open)), ['30:true']);
-      await page.keyboard.press('Escape');
-      assert.deepEqual(await ev(() => window.handleLog), ['closed:ui-toast']);
-      await page.waitForFunction(() => document.querySelectorAll('.ui-toast--error').length === 0);
-      assert.equal(await toasts(), 1, 'the info stays');
-      assert.deepEqual(await ev(() => [window.panics, window.flags.stamp]), [0, true]);
-      await ev(() => { window.flags.stamp = false; const s = B68Ui.toast.stack(); s.dismiss(s.shown()[0]); });
+    await test('browser: an error toast changes nothing about Esc: no B68GmEsc entry, anyOpen stays false, Esc still takes the stamp down and then reaches PANIC in the order of today; X dismisses it', async () => {
+      const order = () => ev(() => B68GmEsc.list().map((x) => x.id + ':' + x.priority + ':' + x.kind));
+      const before = await order();
+      await ev(() => { window.handleLog.length = 0; window.panics = 0; window.flags.stamp = true; B68Ui.toast({ text: 'One', tone: 'error' }); B68Ui.toast({ text: 'Two', tone: 'error' }); });
+      assert.deepEqual(await order(), before, 'the toast registered nothing');
+      assert.equal(await ev(() => B68GmEsc.anyOpen()), false, 'a toast does not hold the keys of the page');
+      await page.keyboard.press('Escape'); await page.keyboard.press('Escape');
+      assert.deepEqual(await ev(() => window.handleLog), ['stamp', 'panic']);
+      assert.deepEqual(await ev(() => [window.panics, window.flags.stamp]), [1, false]);
+      assert.equal(await ev(() => document.querySelectorAll('.ui-toast--error').length), 2, 'Esc left the errors standing');
+      await page.click('.ui-toast--error .ui-toast-x');
+      await page.waitForFunction(() => document.querySelectorAll('.ui-toast--error').length === 1);
+      await page.click('.ui-toast--error .ui-toast-x');
+      await page.waitForFunction(() => document.querySelectorAll('.ui-toast').length === 0);
     });
     await test('browser: reduced motion is a cut: a dismissed toast is gone at once and the timer steps instead of draining', async () => {
       const p2 = await open('/', { reducedMotion: 'reduce' });
