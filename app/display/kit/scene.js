@@ -172,13 +172,16 @@
     else { var mono = doc.createElement('p'); mono.className = 'ks16-mono'; mono.textContent = String(c.name).charAt(0); head.appendChild(mono); }
     row.appendChild(head); row.appendChild(p.el);
     n.appendChild(row);
+    p.onClear(function () { if (row.parentNode) row.parentNode.removeChild(row); });      /* the timer ran out: the head goes with its plate, never alone */
     return p;
   }
   function npcCard(e, c, o, env) {
     if (!c.name) return false;
     var left = Number(o && o.ms) - (Number(o && o.age) || 0), npc = o && o.npc && typeof o.npc === 'object' ? o.npc : {};
+    var held = /^b17sl-/.test(String(o && o.id || ''));      /* SPOTLIGHT's hold (gm/spotlight.js lays it again before it runs out): no timer */
     e.classList.add('ks16-speak');
-    return !!speakNode(e, { name: c.name, alias: c.alias, role: npc.role, faction: npc.faction, spec: c.spec, npcId: o && o.npcId }, left > 0 ? left : 0, env, true);
+    if (held) e.setAttribute('data-ks16-held', '');
+    return !!speakNode(e, { name: c.name, alias: c.alias, role: npc.role, faction: npc.faction, spec: c.spec, npcId: o && o.npcId }, !held && left > 0 ? left : 0, env, true);
   }
   function card(e, c, o, env, prev) {
     if (!on() || !e || !c || !o) return false;
@@ -256,28 +259,38 @@
     else if (n) slot.appendChild(n);
   }
   function stopTick(foot) { if (foot && foot.ks16Tick) { clearInterval(foot.ks16Tick); foot.ks16Tick = null; } }
+  /* portrait: the map ends where the foot starts (stage.css reads --ks16-foot-h), so the plate sits in the space under the drawing */
+  function footHeight(el, foot, off) {
+    if (foot.ks16Ro) { foot.ks16Ro.disconnect(); foot.ks16Ro = null; }
+    if (off) { el.style.removeProperty('--ks16-foot-h'); return; }
+    var put = function () { el.style.setProperty('--ks16-foot-h', Math.ceil(foot.getBoundingClientRect().height) + 'px'); };
+    put();
+    if (W && typeof W.ResizeObserver === 'function') { foot.ks16Ro = new W.ResizeObserver(put); foot.ks16Ro.observe(foot); }
+  }
   function mapFoot(el, m, env, doc) {
     var foot = el.querySelector('.ks16-mapfoot'), w = Pure.bandWords(m);
-    if (!w) { if (foot) { stopTick(foot); foot.parentNode.removeChild(foot); } return; }
+    if (!w) { if (foot) { stopTick(foot); footHeight(el, foot, true); foot.parentNode.removeChild(foot); } return; }
+    /* under a captioned drawing (KS13's dock) the band is ONE row beside the caption: the time, the countdown, the alarm */
+    var dock = el.querySelector('.stage-dock'), compact = !!dock;
     if (!foot) {
       foot = doc.createElement('div'); foot.className = 'ks16-mapfoot';
-      var dock = el.querySelector('.stage-dock');
-      if (dock) { dock.classList.add('ks16-dockrow'); dock.insertBefore(foot, dock.firstChild); } else el.appendChild(foot);
+      if (dock) { dock.classList.add('ks16-dockrow'); dock.insertBefore(foot, dock.firstChild); } else { el.appendChild(foot); footHeight(el, foot, false); }
     }
     var sig = JSON.stringify(m);
     if (foot.getAttribute('data-ks16-sig') === sig) return;
     foot.setAttribute('data-ks16-sig', sig);
     stopTick(foot);
     var oldPlate = foot.querySelector('.ks16-bandplate');
-    if (w.text) {
+    if (compact ? !!(w.kicker || w.timer) : w.text) {
       var skew = function () { return typeof env.skew === 'function' ? Number(env.skew()) || 0 : 0; };
-      var p = W.B68Stage.plate({ kicker: w.kicker, title: w.title, line: w.line, side: w.timer ? Pure.timer(w.timer, Date.now(), skew()).text : '' }, doc);
+      var side0 = w.timer ? Pure.timer(w.timer, Date.now(), skew()).text : '';
+      var p = W.B68Stage.plate(compact ? { title: w.kicker, side: side0 } : { kicker: w.kicker, title: w.title, line: w.line, side: side0 }, doc);
       p.el.classList.add('ks16-bandplate');
+      if (compact) p.el.classList.add('ks16-bandrow');
       p.el.setAttribute('role', 'status');
       var before = p.slot('timer');
       var add = function (cls, t) { if (!t) return; var q = doc.createElement('p'); q.className = cls; q.textContent = t; p.el.insertBefore(q, before); };
-      add('ks16-crew', w.crew); add('ks16-ways', w.ways);
-      if (w.night) p.el.insertBefore(squares(doc, w.night), before);
+      if (!compact) { add('ks16-crew', w.crew); add('ks16-ways', w.ways); if (w.night) p.el.insertBefore(squares(doc, w.night), before); }
       if (w.timer) {
         var side = p.slot('side'), tm = w.timer;
         side.classList.add('ks16-countdown');

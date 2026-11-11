@@ -120,8 +120,8 @@ const NPCS = [
 ];
 let mseq = 0;
 const HUD = (filled, more = {}) => ({ time: '21:14', showTime: true, label: 'Gala night', now: [{ text: 'The band plays the long set', where: 'The floor' }],
-  next: [{ text: 'The band takes five', at: '21:30', inMin: 16 }], alarm: { name: 'Alarm', size: 6, filled, text: '' },
-  crew: [{ name: 'Nell Arbuthnot', room: 'Cloakroom' }, { name: 'Ray Okonjo', room: 'The floor' }], ...more });
+  next: [{ text: 'The band takes five', at: '21:30', inMin: 16 }, { text: 'The doors close', at: '22:40', inMin: 86 }], alarm: { name: 'Alarm', size: 6, filled, text: '' },
+  crew: [{ name: 'Nell Arbuthnot', room: 'Cloakroom' }, { name: 'Ray Okonjo', room: 'The floor' }, { name: 'Tam Petrakis', room: 'The bar' }], ...more });
 const mission = (filled, more) => ok(gm('PATCH', '/api/campaign', { mission: filled === null ? null : { v: 1, site: 'The Pelican Rooms', t: 90, seq: ++mseq, hud: HUD(filled, more) } }), 'mission');
 /* a map that names itself (the map kit's do: a <title> first), and a captioned drawing that does not */
 const MAP = { kind: 'svg', title: 'The Pelican Rooms', caption: '', svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"><title>The Pelican Rooms, ground floor</title><rect x="10" y="10" width="780" height="580" fill="#1d2a44" stroke="#e8c33c" stroke-width="6"/><rect x="60" y="60" width="300" height="200" fill="#2f4f7a"/><rect x="420" y="300" width="300" height="220" fill="#7a4f2f"/></svg>' };
@@ -170,6 +170,19 @@ function judgePlate(m, what) {
   expect(m.minRatio >= 4.5, what + ': contrast on the plate ' + m.minRatio.toFixed(2));
   expect(m.opaque, what + ': the plate is not opaque');
 }
+/* the map's drawn box (the svg is fitted, meet, centred) against the plates over it */
+const mapCover = () => {
+  const st = document.querySelector('.dp-stage.dp-map.dp-in'), svg = st.querySelector('.dp-map-frame svg'), r = svg.getBoundingClientRect();
+  const vb = (svg.getAttribute('data-vb') || '0 0 1 1').split(/\s+/).map(Number), k = Math.min(r.width / vb[2], r.height / vb[3]);
+  const d = { l: r.left + (r.width - vb[2] * k) / 2, t: r.top + (r.height - vb[3] * k) / 2 }; d.r = d.l + vb[2] * k; d.b = d.t + vb[3] * k;
+  const area = (d.r - d.l) * (d.b - d.t); let cov = 0, top = innerHeight;
+  for (const p of st.querySelectorAll('.ks16-mapfoot > .stage-plate')) {
+    const q = p.getBoundingClientRect(); top = Math.min(top, q.top);
+    cov += Math.max(0, Math.min(q.right, d.r) - Math.max(q.left, d.l)) * Math.max(0, Math.min(q.bottom, d.b) - Math.max(q.top, d.t));
+  }
+  const bp = st.querySelector('.ks16-bandplate').getBoundingClientRect();
+  return { kept: 1 - cov / area, drawnH: (d.b - d.t) / innerHeight, plateH: bp.height / innerHeight, footTop: top / innerHeight };
+};
 const running = (page) => page.evaluate(() => (document.getAnimations ? document.getAnimations() : []).filter((a) => a.playState === 'running').map((a) => (a.animationName || a.transitionProperty || 'anim') + '@' + ((a.effect && a.effect.target && a.effect.target.className) || '').toString().slice(0, 50)));
 const domHas = (page, needle) => page.evaluate((n) => document.documentElement.outerHTML.includes(n), needle);
 async function shot(page, name) { if (SHOTS) await page.screenshot({ path: path.join(SHOTS, name + '.png') }); }
@@ -325,6 +338,14 @@ try {
     await I.page.setViewportSize({ width: 1024, height: 768 });
     await overlay(null);
     await I.page.waitForFunction(() => !document.querySelector('.ks16-speak'), null, { timeout: 20000 });
+    /* SPOTLIGHT's own hold (a b17sl- id, laid again before it runs out): the same bar with no timer */
+    await overlay({ id: 'b17sl-e2e1', kind: 'npc', npcId: 'n-dov', ms: 180000 });
+    await I.page.waitForSelector('.ks16-speak[data-ks16-held] .ks16-speakplate', { timeout: 20000 });
+    const h = await I.page.evaluate(() => { const p = document.querySelector('.ks16-speak .ks16-speakplate'); return { timed: p.hasAttribute('data-stage-timed'), timer: p.querySelector('[data-ui-slot="timer"]').textContent, name: p.querySelector('.dp-ov-name').textContent }; });
+    expect(!h.timed && h.timer === '' && h.name === 'Dov Kessler', 'a hold has no timer: ' + JSON.stringify(h));
+    await shot(I.page, 'speaking-held-night-1024');
+    await overlay(null);
+    await I.page.waitForFunction(() => !document.querySelector('.ks16-speak'), null, { timeout: 20000 });
   });
 
   await step('S6: the spotlight beat is the same bar for its own time', async () => {
@@ -351,12 +372,17 @@ try {
     });
     expect(v.svgH >= 0.9 && v.frameH >= 0.9, 'the map fills the height: ' + JSON.stringify({ svgH: v.svgH, frameH: v.frameH }));
     expect(!v.oldBand && !v.bandOn, 'the old band beside the map is put away');
-    expect(v.kicker === '21:14 · Gala night' && v.title === 'Now: The band plays the long set · The floor' && /^Next: The band takes five · 21:30/.test(v.line) && v.crew === 'Nell Arbuthnot · Cloakroom, Ray Okonjo · The floor', 'the band\'s words: ' + JSON.stringify(v));
+    expect(v.kicker === '21:14 · Gala night' && v.title === 'Now: The band plays the long set · The floor' && /^Next: The band takes five · 21:30/.test(v.line) && v.crew === 'Nell Arbuthnot · Cloakroom, Ray Okonjo · The floor, Tam Petrakis · The bar', 'the band\'s words: ' + JSON.stringify(v));
     expect(/^[45]:\d\d$/.test(v.side) && /2 of 6/.test(v.alarm || ''), 'the countdown on the side, the alarm beside: ' + JSON.stringify({ side: v.side, alarm: v.alarm }));
     for (const [w, h] of SIZES) {
-      await I.page.setViewportSize({ width: w, height: h }); await sleep(600);
+      await I.page.setViewportSize({ width: w, height: h }); await sleep(800);
       judgePlate(await I.page.evaluate(plateMeasure, '.dp-map.dp-in .ks16-bandplate'), 'band plate ' + w + 'x' + h);
       judgePlate(await I.page.evaluate(plateMeasure, '.dp-map.dp-in .ks16-mapalarm'), 'map alarm ' + w + 'x' + h);
+      const c = await I.page.evaluate(mapCover);
+      console.log('     map ' + w + 'x' + h + ': drawing ' + (c.drawnH * 100).toFixed(0) + '% of the height, ' + (c.kept * 100).toFixed(0) + '% of it uncovered; plate ' + (c.plateH * 100).toFixed(0) + '% of the height');
+      expect(c.plateH <= 0.335, 'the plate is a lower third (' + w + 'x' + h + '): ' + JSON.stringify(c));
+      expect(h > w ? c.kept >= 0.97 : c.kept >= 2 / 3, 'the map keeps its area (' + w + 'x' + h + '): ' + JSON.stringify(c));
+      if (h > w) expect(c.drawnH >= 0.4, 'portrait: the map at the top, a legible share: ' + JSON.stringify(c));
       await shot(I.page, 'map-night-' + w);
     }
     await I.page.setViewportSize({ width: 1024, height: 768 });
@@ -378,8 +404,84 @@ try {
     const g = await I.page.evaluate(() => { const st = document.querySelector('.dp-stage.dp-map.dp-in'), f = st.querySelector('.dp-map-frame').getBoundingClientRect(), d = st.querySelector('.stage-dock').getBoundingClientRect();
       return { fb: f.bottom, dt: d.top, bleed: st.classList.contains('ks16-bleed'), cap: st.querySelector('.stage-dock .dp-strip-cap').textContent }; });
     expect(Math.abs(g.fb - g.dt) <= 2 && !g.bleed && g.cap === DRAWING.caption, 'the drawing ends where the dock starts: ' + JSON.stringify(g));
-    await shot(I.page, 'drawing-night-1024');
+    const row = await I.page.evaluate(() => { const p = document.querySelector('.dp-map.dp-in .ks16-bandrow'); return p && { title: p.querySelector('[data-ui-slot="title"]').textContent, side: p.querySelector('[data-ui-slot="side"]').textContent, line: p.querySelector('[data-ui-slot="line"]').textContent, alarm: !!document.querySelector('.dp-map.dp-in .stage-dock .ks16-mapalarm'), crew: !!document.querySelector('.dp-map.dp-in .stage-dock .ks16-crew') }; });
+    expect(row && row.title === '21:14 · Gala night' && /^[0-9]:\d\d$/.test(row.side) && row.line === '' && row.alarm && !row.crew, 'one row beside the caption: the time, the countdown, the alarm: ' + JSON.stringify(row));
+    for (const [w, h] of SIZES) {
+      await I.page.setViewportSize({ width: w, height: h }); await sleep(800);
+      const d = await I.page.evaluate(() => { const st = document.querySelector('.dp-stage.dp-map.dp-in'), f = st.querySelector('.dp-map-frame').getBoundingClientRect(), dk = st.querySelector('.stage-dock').getBoundingClientRect(); return { frameH: f.height / innerHeight, fb: f.bottom, dt: dk.top }; });
+      console.log('     drawing ' + w + 'x' + h + ': ' + (d.frameH * 100).toFixed(0) + '% of the height');
+      expect(Math.abs(d.fb - d.dt) <= 2 && d.frameH >= (h > w ? 0.5 : 0.62), 'the drawing keeps its share (' + w + 'x' + h + '): ' + JSON.stringify(d));
+      judgePlate(await I.page.evaluate(plateMeasure, '.dp-map.dp-in .ks16-bandrow'), 'band row ' + w + 'x' + h);
+      await shot(I.page, 'drawing-night-' + w);
+    }
+    await I.page.setViewportSize({ width: 1024, height: 768 });
   });
+
+  /* ---------------- PANIC: the safe scene leaves nothing of the stage on screen ---------------- */
+  await step('PANIC from a clock, a hold, a beat, an NPC and a map: the test card, and no docked clock, crew head or plate left on it', async () => {
+    await mission(2);
+    /* PANIC's own calls (gm-page.js): the ambient pinned to the test card with no overlay and no layers, and a blank push */
+    const panic = () => Promise.all([ambient({ mode: 'pin', scene: 'testcard', overlay: null, layers: null }), push({ kind: 'blank' })]);
+    const left = () => I.page.evaluate(() => ({
+      safe: document.querySelector('.dp-root').hasAttribute('data-stage-safe'),
+      shown: [...document.querySelectorAll('[class*="ks16-"], .stage-slot > *, .stage-lower > *')].filter((n) => n.getClientRects().length && getComputedStyle(n).visibility !== 'hidden')
+        .map((n) => String(n.className.baseVal !== undefined ? n.className.baseVal : n.className).slice(0, 60)).slice(0, 6),
+      card: !!document.querySelector('.dp-ambient iframe[data-scene="testcard"]')
+    }));
+    const cases = [
+      ['clock', () => overlay({ id: 'ov-p1', kind: 'clock', clockId: 'c-tram', ms: 60000 }), '.ks16-clock'],
+      ['hold', () => overlay({ id: 'b17sl-p1', kind: 'npc', npcId: 'n-mabel', ms: 60000 }), '.ks16-speak'],
+      ['beat', () => overlay({ id: 'ov-p2', kind: 'spotlight', ms: 20000, payload: { npcId: 'n-mabel' } }), '.ks16-beat'],
+      ['npc', () => push({ kind: 'npc', npcId: 'n-mabel' }), '.ks16-npc.dp-in'],
+      ['map', () => push(MAP), '.dp-map.dp-in .ks16-bandplate']
+    ];
+    for (const [n, put, sel] of cases) {
+      await ambient({ mode: 'pin', scene: 'duskwall' });
+      await I.page.waitForFunction(() => !document.querySelector('.dp-root').hasAttribute('data-stage-safe'), null, { timeout: 20000 });
+      await put(); await I.page.waitForSelector(sel, { timeout: 20000 }); await sleep(600);
+      await panic();
+      await I.page.waitForFunction(() => document.querySelector('.dp-root').hasAttribute('data-stage-safe') && document.querySelector('.dp-root').classList.contains('stage-idle-on') && !document.querySelector('.dp-ov-card, .dp-show'), null, { timeout: 20000 });
+      await sleep(1500);
+      const v = await left();
+      expect(v.safe && v.card && v.shown.length === 0, 'PANIC from ' + n + ' left: ' + JSON.stringify(v));
+      if (n === 'clock' || n === 'map') await shot(I.page, 'panic-from-' + n + '-night-1024');
+    }
+    await ambient({ mode: 'pin', scene: 'duskwall' });
+    await I.page.waitForFunction(() => !document.querySelector('.dp-root').hasAttribute('data-stage-safe'), null, { timeout: 20000 });
+    await I.page.waitForFunction(() => { const a = document.querySelector('.stage-slot-clocks .ks16-alarm'); return !!a && a.getClientRects().length > 0; }, null, { timeout: 20000 });
+  });
+
+  /* ---------------- kit.stage turned off mid-session: what the stage drew is drawn again the old way ---------------- */
+  await step('off mid-session: a docked clock, a hold, a beat and a pushed NPC are drawn again the old way within a poll; nothing of KS16 is left', async () => {
+    const cases = [
+      ['clock', () => overlay({ id: 'ov-o1', kind: 'clock', clockId: 'c-tram', ms: 90000 }), '.ks16-clock[data-ks16-phase="dock"]', '.dp-ov-card.dp-ov-clock:not(.ks16-clock) svg.dp-ov-face path.dp-ov-seg'],
+      ['hold', () => overlay({ id: 'b17sl-o2', kind: 'npc', npcId: 'n-dov', ms: 90000 }), '.ks16-speak', '.dp-ov-card.dp-ov-npc:not(.ks16-speak) .dp-ov-portrait'],
+      ['beat', () => overlay({ id: 'ov-o3', kind: 'spotlight', ms: 60000, payload: { npcId: 'n-mabel' } }), '.ks16-beat', '.dp-show-spotlight:not(.ks16-speak) .dp-spot-beam'],
+      ['npc', () => push({ kind: 'npc', npcId: 'n-mabel' }), '.ks16-npc.dp-in', '.dp-stage.dp-npc.dp-in:not(.ks16-npc) .dp-npc-name']
+    ];
+    for (const [n, put, kitSel, oldSel] of cases) {
+      await setting(true);
+      await frameOn(I.page);
+      await overlay(null); await push({ kind: 'blank' });
+      await put(); await I.page.waitForSelector(kitSel, { timeout: 20000 }); await sleep(800);
+      await setting(false);
+      await I.page.waitForFunction(() => !document.querySelector('.stage-frame'), null, { timeout: 30000 });
+      const t0 = Date.now();
+      await I.page.waitForSelector(oldSel, { timeout: 12000 });
+      await I.page.waitForFunction(() => !document.querySelector('[class*="ks16-"]'), null, { timeout: 5000 }).catch(() => {});
+      const k = await I.page.evaluate(() => [...document.querySelectorAll('[class*="ks16-"]')].map((e) => String(e.className.baseVal !== undefined ? e.className.baseVal : e.className).slice(0, 50)).slice(0, 4));
+      expect(k.length === 0, 'off from ' + n + ': KS16 nodes left: ' + k.join(' | '));
+      console.log('     off from ' + n + ': the old way in ' + (Date.now() - t0) + ' ms');
+      await sleep(1500);      /* the old card fades in (0.5 s) */
+      const op = await I.page.evaluate((q) => { const e = document.querySelector(q); const c = e && (e.closest('.dp-ov-card, .dp-show, .dp-stage') || e); return c ? Number(getComputedStyle(c).opacity) : -1; }, oldSel);
+      expect(op > 0.9, 'off from ' + n + ': the old one is on screen (opacity ' + op + ')');
+      await shot(I.page, 'off-' + n + '-night-1024');
+    }
+    await overlay(null); await push({ kind: 'blank' });
+    await setting(true);
+    await frameOn(I.page);
+  });
+
 
   await step('Paper: the nameplate, the speaking bar and the band plate pass at 1024x768', async () => {
     const P = await openIpad(browser, { theme: 'light' });

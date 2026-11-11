@@ -1309,7 +1309,7 @@
     function stopRot() { if (A.rot !== null) { clearLater(A.rot); A.rot = null; } }
     function armRot() {
       stopRot();
-      if (A.dead || A.covered || document.hidden || A.plan.mode !== 'auto' || Pure.ambientRotation(A.plan).length < 2) return;
+      if (A.dead || A.covered || A.still || document.hidden || A.plan.mode !== 'auto' || Pure.ambientRotation(A.plan).length < 2) return;
       A.rot = later(function () { A.rot = null; advance(); }, intervalMs());
     }
     function advance() {
@@ -1395,6 +1395,7 @@
         }
         ensure();
       },
+      still: function (on) { on = !!on; if (A.dead || on === !!A.still) return; A.still = on; if (on) stopRot(); else armRot(); },     /* KS16 (kit.stage): no rotation under a pushed NPC; a no-op unless it changes */
       cover: function () {
         if (A.dead) return;
         A.covered = true; stopRot();
@@ -2050,7 +2051,8 @@
     function show(display, seq) {
       var my = ++s.token, vm = Pure.viewModel(display);
       s.lastShow = [display, seq]; if (s.stage) s.stage.next(vm);           /* KS13: a redraw when the new stage comes or goes; what the swap brings */
-      if (vm.kind === 'blank' || (vm.kind === 'npc' && s.stage && root.B68StageScene && root.B68StageScene.on())) amb.uncover(); else amb.cover();   /* a spotlight covers the ambient; blank lets it through (KS16: and the NPC stands over the dimmed scene) */
+      var k16npc = vm.kind === 'npc' && !!s.stage && !!root.B68StageScene && root.B68StageScene.on();      /* KS16 (kit.stage): the NPC stands over the dimmed scene, which holds still */
+      if (vm.kind === 'blank' || k16npc) amb.uncover(); else amb.cover(); amb.still(k16npc);                 /* a spotlight covers the ambient; blank lets it through */
       ovLightsOut(vm.kind === 'dark');                                          /* lights out: no autopilot overlay, no AUTO chip */
       wireSync();
       if (vm.kind === 'npc') {
@@ -2074,7 +2076,7 @@
       var on = !!(root.B68Kit && root.B68Kit.ready('stage') && root.B68Stage);
       if (s.dead || on === !!s.stage) return;
       if (on) s.stage = root.B68Stage.attach(container, { later: later, clearLater: clearLater, reduced: reduced, band: function () { return s.bandModel; }, wireMs: function () { return WT.on; } });
-      else { s.stage.destroy(); s.stage = null; }
+      else { s.stage.destroy(); s.stage = null; if (s.ov.node && /(^|\s)ks1\d-/.test(String(s.ov.node.className))) s.ov.seen = ''; }   /* KS16: an overlay the stage drew is drawn again the old way on the next poll */
       if (s.stageBand) s.stageBand.destroy(); s.stageBand = s.stage && root.B68StageBand ? root.B68StageBand.attach(s.stage, { band: function () { return s.bandModel; }, layers: function () { return s.layers ? s.layers.state() : null; }, doc: document }) : null;      /* KS14: the clock and the crew heads */
       suiteSync();
       if (s.lastShow) show(s.lastShow[0], s.lastShow[1]);
