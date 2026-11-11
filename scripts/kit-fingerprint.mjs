@@ -21,18 +21,27 @@ export const MASKS = ['#toastMsg', '#toastErr', '.gm-toast', '[data-kit-mask]'];
    Kept beside MASKS so a new one needs no new capture. Each is listed in kit-off's output. */
 export const MASK_KEYS = ['#gm-ipad-now', 'gm-tn-line'];      /* the iPad's live line (what the iPad has been told, as the poll lands) and Tonight's lines (they count minutes to the real clock) */
 
-/* the exemptions of KS04.2 and only these: the five new Settings rows, the Settings intro line (KS01.1 reworded it), and the Preflight count of the
-   bundles (kit-flag.js made 107 into 108). A leaf whose own text reads "N of M kept" is the last; it is matched by text in the page. */
+/* THE EXEMPTIONS: where "off means today" is deliberately not true, each one named, each with its reason, each printed by kit-off. Adding one is one line here.
+   An exemption finds its elements one of three ways: `selector` (a CSS selector, matched in the page at capture time: the element and everything inside it), `text` (a
+   leaf element whose own text matches, matched at capture time) or `keys` (a pattern on the element's key, matched when two fingerprints are compared, so it needs no
+   new capture and covers elements the baseline has and this run has not). An exempt element may be new, gone or changed: its box and styles are skipped, and the
+   layout that new ones push down is allowed for (see compare). KS04.2 lists the first three and only these; later ones come with the ticket that discloses them. */
 export const KIT_SETTING_KEYS = ['kit.desk', 'kit.stage', 'kit.phone', 'night.who', 'blade.pitches'];
-export const EXEMPT = KIT_SETTING_KEYS.map((k) => '#gm-ipad-settings [data-set-row="' + k + '"]').concat(['#gm-ipad-settings > p.gm-dim']);
-export const EXEMPT_TEXT = '\\d+ of \\d+ kept';
+export const EXEMPTIONS = [
+  { name: 'the five new Settings rows', reason: 'KS01.1 added kit.desk, kit.stage, kit.phone, night.who and blade.pitches to the Settings of the iPad view',
+    selector: KIT_SETTING_KEYS.map((k) => '#gm-ipad-settings [data-set-row="' + k + '"]').join(', ') },
+  { name: 'the Settings intro line', reason: 'KS01.1 reworded app/gm/settings.js:139 ("These five are choices" to "These are choices")', selector: '#gm-ipad-settings > p.gm-dim' },
+  { name: 'the Preflight file count', reason: 'it counts bundles: kit-flag.js made "0 of 107 kept" read 108', text: String.raw`\d+ of \d+ kept` }
+  /* , { name: 'score-scene polaroids', reason: 'KS12: with night.who off the score scenes show none (disclosed)', keys: 'dp-polaroid' } */
+];
 
 /* In the page: walk the body and describe every element. Written as a string-free function so Playwright can serialise it. */
 function inPage(arg) {
-  const { styleKeys, masks, exempt, exemptText } = arg;
+  const { styleKeys, masks, exemptions } = arg;
   const SKIP = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'NOSCRIPT', 'LINK', 'META']);
   const LEAF_ONLY = new Set(['svg', 'canvas']);
-  const re = new RegExp(exemptText);
+  const exs = exemptions.map((e) => ({ sel: e.selector || '', re: e.text ? new RegExp(e.text) : null }));
+  const exOf = (c) => { for (let i = 0; i < exs.length; i++) { const e = exs[i]; if (e.sel) { try { if (c.matches(e.sel)) return i; } catch (x) { /* a bad selector matches nothing */ } } if (e.re && !c.children.length && (c.textContent || '').length < 80 && e.re.test(c.textContent || '')) return i; } return -1; };
   const sx = window.scrollX || 0, sy = window.scrollY || 0;
   const styles = [], styleIdx = new Map(), els = [];
   const r2 = (n) => Math.round(n * 100) / 100;
@@ -45,7 +54,7 @@ function inPage(arg) {
     return v;
   };
   const inside = (el, sels) => sels.some((s) => { try { return !!el.closest(s); } catch (e) { return false; } });
-  function walk(el, parentKey, maskedUp, exemptUp) {
+  function walk(el, parentKey, maskedUp, exemptUp) {      /* exemptUp: the letter of the exemption an ancestor is in, or '' */
     const counts = new Map();
     for (const c of el.children) {
       if (SKIP.has(c.tagName)) continue;
@@ -55,15 +64,15 @@ function inPage(arg) {
       const n = (counts.get(sig) || 0) + 1; counts.set(sig, n);
       const key = parentKey + '/' + sig + (c.id ? '' : ':' + n);
       const masked = maskedUp || inside(c, masks);
-      const ex = exemptUp || inside(c, exempt) || (!c.children.length && re.test(c.textContent || '') && (c.textContent || '').length < 80);
+      const xi = exOf(c), ex = exemptUp || (xi >= 0 ? 'x' + String.fromCharCode(97 + xi) : '');
       const cs = getComputedStyle(c), r = c.getBoundingClientRect();
       const vals = styleKeys.map((p) => prop(cs, p)), sk = vals.join('\u0001');
       let si = styleIdx.get(sk); if (si === undefined) { si = styles.length; styleIdx.set(sk, si); styles.push(vals); }
-      els.push([key, tag, c.id || '', cls.join(' '), r2(r.left + sx), r2(r.top + sy), r2(r.width), r2(r.height), si, (masked ? 'm' : '') + (ex ? 'x' : '')]);
+      els.push([key, tag, c.id || '', cls.join(' '), r2(r.left + sx), r2(r.top + sy), r2(r.width), r2(r.height), si, (masked ? 'm' : '') + ex]);
       if (!LEAF_ONLY.has(tag)) walk(c, key, masked, ex);
     }
   }
-  walk(document.body, 'body', false, false);
+  walk(document.body, 'body', false, '');
   return { styles, els, width: innerWidth, height: innerHeight, docW: document.documentElement.scrollWidth, docH: document.documentElement.scrollHeight };
 }
 
@@ -72,11 +81,11 @@ export async function fingerprint(page, scenario, width, opts = {}) {
   const masks = MASKS.concat(opts.masks || []);
   await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}' }).catch(() => {});
   await page.waitForTimeout(150);
-  const r = await page.evaluate(inPage, { styleKeys: STYLE_KEYS, masks, exempt: EXEMPT, exemptText: EXEMPT_TEXT });
-  return { v: 1, scenario, width, height: r.height, at: new Date().toISOString(), styleKeys: STYLE_KEYS, masks, exempt: EXEMPT.concat([EXEMPT_TEXT + ' (leaf text)']), styles: r.styles, els: r.els };
+  const r = await page.evaluate(inPage, { styleKeys: STYLE_KEYS, masks, exemptions: EXEMPTIONS });
+  return { v: 1, scenario, width, height: r.height, at: new Date().toISOString(), styleKeys: STYLE_KEYS, masks, exempt: EXEMPTIONS.map((e) => e.name), styles: r.styles, els: r.els };
 }
 
-/* Two fingerprints, base and cur. Returns { diffs: [{ kind, key, detail }], exempted: [string] }.
+/* Two fingerprints, base and cur. Returns { diffs: [{ kind, key, detail }], exempted: ["<exemption name>: new|gone <key tail>"] }.
    ids and classes are exact (they are in the key: a change shows as a missing element and an extra one); a box moves by tol pixels at most; styles are exact.
    Exempt elements that cur has and base has not are listed and skipped, and the layout they push down is allowed for: an element at or below the first of them
    may sit lower by up to the height the exempt rows add (so that one new row is not forty differences). Nothing else is forgiven. */
@@ -86,15 +95,18 @@ export function compare(base, cur, opts = {}) {
   const B = new Map(base.els.map((e) => [e[0], e])), C = new Map(cur.els.map((e) => [e[0], e]));
   const mk = (opts.maskKeys || MASK_KEYS).map((x) => new RegExp(x));
   const keyMasked = (k) => mk.some((re) => re.test(k));
-  const fl = (e) => (e[9] || '') + (mk.some((re) => re.test(e[0])) ? 'm' : '');
+  const exs = (opts.exemptions || EXEMPTIONS), xk = exs.map((e) => (e.keys ? new RegExp(e.keys) : null));
+  /* an element's flags: those captured, 'm' if a mask pattern matches its key, and an exemption whose `keys` pattern matches its key */
+  const fl = (e) => { let f = (e[9] || '') + (mk.some((re) => re.test(e[0])) ? 'm' : ''); if (!/x/.test(f)) { const i = xk.findIndex((re) => re && re.test(e[0])); if (i >= 0) f += 'x' + String.fromCharCode(97 + i); } return f; };
+  const nameOf = (e) => { const m = /x([a-z])/.exec(fl(e)); const x = m ? exs[m[1].charCodeAt(0) - 97] : null; return x ? x.name : 'an exemption'; };
   let pushed = 0, firstY = Infinity;
   for (const [k, e] of C) if (!B.has(k) && fl(e).includes('x')) {
-    exempted.push('new, exempt: ' + k.split('/').slice(-2).join('/'));
+    exempted.push(nameOf(e) + ': new ' + k.split('/').slice(-2).join('/'));
     const parent = k.slice(0, k.lastIndexOf('/'));
     if (!C.has(parent) || !fl(C.get(parent)).includes('x')) { pushed += e[7]; firstY = Math.min(firstY, e[5]); }
   }
   for (const [k, b] of B) {
-    if (!C.has(k)) { if (keyMasked(k)) continue; if (!fl(b).includes('x')) diffs.push({ kind: 'missing', key: k, detail: 'in the baseline, not in this run' }); else exempted.push('gone, exempt: ' + k.split('/').slice(-2).join('/')); }
+    if (!C.has(k)) { if (keyMasked(k)) continue; if (!fl(b).includes('x')) diffs.push({ kind: 'missing', key: k, detail: 'in the baseline, not in this run' }); else exempted.push(nameOf(b) + ': gone ' + k.split('/').slice(-2).join('/')); }
   }
   for (const [k, c] of C) {
     const b = B.get(k);

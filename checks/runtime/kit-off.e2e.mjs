@@ -3,9 +3,10 @@
 // baseline taken from commit 798907c (scripts/kit-baseline.mjs; b68-wt\_kit-shots\baseline): every element's id and classes exact, its box within 1 px, its
 // computed styles equal. The requests the GM page, the display and a phone make are held to the baseline's too: any request the baseline did not make fails, except
 // app/ui/kit-flag.js (the one deliberate new request, the Gate 0 ruling).
-// Exemptions (KS04.2) and only these, each listed in the output: the five new Settings rows (#gm-ipad-settings [data-set-row="kit.desk"|"kit.stage"|"kit.phone"|
-// "night.who"|"blade.pitches"], and the layout they push down), the Settings intro line (app/gm/settings.js:139, reworded by KS01.1), and the Preflight line that counts
-// the files kept ("N of M kept": kit-flag.js made 107 bundles into 108). Masks (time or chance decides them; their box and styles are skipped): see MASKS in the helper.
+// Exemptions (KS04.2) are a short named list, EXEMPTIONS in scripts/kit-fingerprint.mjs, each with its reason and each printed here: the five new Settings rows
+// (#gm-ipad-settings [data-set-row="kit.desk"|"kit.stage"|"kit.phone"|"night.who"|"blade.pitches"], and the layout they push down), the Settings intro line
+// (app/gm/settings.js:139, reworded by KS01.1), and the Preflight line that counts the files kept ("N of M kept": kit-flag.js made 107 bundles into 108). A later
+// disclosed exception (KS12's score-scene polaroids) is one more line there. Masks (time or chance decides them; their box and styles are skipped): see MASKS in the helper.
 // It also checks its own comparison on a copy of a baseline file (one button moved 3 px must be one difference; one element gone must be one difference).
 // And the mid-game off path (Gate 1 addition): on a running page, with no reload, each of the five settings is turned ON and then OFF again from the Settings rows
 // (and then all five together), and the page's layout fingerprint and its data-kit attributes are held to the same page's all-off fingerprint taken before. After KS01.5
@@ -19,7 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { compare, compareFolders, runShots, startDemo, fingerprint, MASKS, KIT_SETTING_KEYS } from '../../scripts/kit-fingerprint.mjs';
+import { compare, compareFolders, runShots, startDemo, fingerprint, MASKS, MASK_KEYS, EXEMPTIONS, KIT_SETTING_KEYS } from '../../scripts/kit-fingerprint.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -48,6 +49,9 @@ if (!process.env.PW_MODULE) { console.log('SKIP kit-off: PW_MODULE is not set (t
   const gone = JSON.parse(JSON.stringify(base)); const removed = gone.els.splice(i, 1)[0];
   const r2 = compare(base, gone);
   check(r2.diffs.some((d) => d.kind === 'missing' && d.key === removed[0]), 'the comparison: a button taken away is a difference');
+  const BS = String.fromCharCode(92), esc = [...removed[0]].map((ch) => ('.*+?^$[](){}|' + BS + '/').includes(ch) ? BS + ch : ch).join('');
+  const r3 = compare(base, gone, { exemptions: [{ name: 'a test exemption', reason: 'the self-test', keys: esc + '$' }] });
+  check(r3.diffs.length === 0 && r3.exempted.some((n) => n.startsWith('a test exemption: gone')), 'the comparison: a named exemption by key pattern lets that element be gone, and says so');
   const reclassed = JSON.parse(JSON.stringify(base)); reclassed.els[i][0] += 'x'; reclassed.els[i][3] += ' extra';
   check(compare(base, reclassed).diffs.length === 2, 'the comparison: a changed class is a missing element and an extra one');
 }
@@ -73,10 +77,12 @@ const r = await compareFolders(BASELINE, dir, { only: ONLY.length ? ONLY : null 
 console.log(r.compared + ' fingerprints compared with the baseline; ' + r.absent.length + ' not taken this run');
 check(r.compared > 0, 'fingerprints were compared (' + r.compared + ')');
 check(r.absent.length === 0, 'every scenario of the baseline was run' + (r.absent.length ? ': ' + r.absent.slice(0, 5).join(', ') : ''));
-const ex = new Map(); for (const e of r.exempted) { const k = e.note; if (!ex.has(k)) ex.set(k, []); ex.get(k).push(e.file); }
-console.log('exempted (KS04.2, and only these): ' + (ex.size ? '' : 'none was needed'));
-for (const [note, files] of ex) console.log('  ' + note + '   in ' + files.length + ' file(s), e.g. ' + files[0]);
-console.log('masked (not compared for box or style): ' + MASKS.join(', '));
+console.log('exemptions (each named, with its reason; add one in EXEMPTIONS in scripts/kit-fingerprint.mjs):');
+for (const x of EXEMPTIONS) {
+  const mine = r.exempted.filter((e) => e.note.startsWith(x.name + ': ')), files = new Set(mine.map((e) => e.file));
+  console.log('  ' + x.name + ' (' + x.reason + '): ' + (mine.length ? mine.length + ' element(s) in ' + files.size + ' file(s), e.g. ' + mine[0].file + ' ' + mine[0].note.slice(x.name.length + 2) : 'not needed this run'));
+}
+console.log('masked (not compared for box or style): ' + MASKS.concat(MASK_KEYS.map((k) => 'key ~ ' + k)).join(', '));
 for (const d of r.diffs.slice(0, 20)) console.log('  DIFF ' + d.file + '  ' + d.kind + '  ' + d.key.split('/').slice(-3).join('/') + '  ' + d.detail);
 if (r.diffs.length > 20) console.log('  ... and ' + (r.diffs.length - 20) + ' more');
 check(r.diffs.length === 0, 'off means today: no element differs from the baseline in id, classes, box or style (' + r.diffs.length + ' differences)');
