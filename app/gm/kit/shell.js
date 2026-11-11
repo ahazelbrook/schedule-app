@@ -160,6 +160,7 @@
   }
   function sync() {
     var d = doc(); if (!d) return;
+    if (!on()) clearStack(d);
     var root = d.getElementById('gm-root'); if (!root) return;
     if (on()) { dress(root); adopt(d); } else undress(root);
   }
@@ -168,16 +169,36 @@
     [['toastMsg', false], ['toastErr', true]].forEach(function (p) { var e = d.getElementById(p[0]), t = e ? str(e.textContent).trim() : ''; if (t && toast(t, p[1])) e.textContent = ''; });
   }
 
-  /* ---------- KS09.3 one toast stack ---------- */
+  /* ---------- KS09.3 one toast stack ----------
+     The page sends about 130 lines as errors (toast(msg, true)). Only REAL failures stay until X: a server, save or network failure, a refused
+     or lost write, a draw that broke, signed out. A routine line (a "do X first", "nothing to ...", "not on this page", "needs the hosted app",
+     "something else is on the iPad") fades as news does, after six seconds. A line neither list knows stays (the safe side). At most two of the
+     page's errors stay at once: a third puts the oldest away. Preflight's line is one toast whatever its count. */
+  var REAL = /could not|couldn.t|failed|\bfail\b|refused|not saved|not done|not undone|^not sent|offline|could not be reached|signed out|dropped|would not|is full|\bleak|missing|have changed since/i;
+  var ROUTINE = /\bfirst\b|^nothing\b|^no (beat|clock|map)\b|^there is no|^choose\b|^pick\b|^only\b|already|needs? the hosted app|needs the table|needs map kit|not available|not on this page|cannot draw right now|is off tonight|switched itself off|^something else is on the ipad|is not in (the|this)\b|is not one the ipad|not in the pack any more|is frozen|is 1 to 100|^the cards panel holds|^that person is not in the cast|^not in the generator/i;
+  var STICKY_MAX = 2, PAGE_MS = 6000;
+  var mine = [], sticky = [];      /* the handles this file put in the stack (taken away when the setting turns off); the page's sticky errors, oldest first */
   function stackOk() { var U = W && W.B68Ui; return !!(on() && U && typeof U.toast === 'function'); }
   function toastEl(h) { var d = doc(); return h && d ? d.querySelector('.ui-toast[data-toast-id="' + String(h.id) + '"]') : null; }
+  function live(h) { var st = h && typeof h.state === 'function' ? h.state() : 'gone'; return st === 'shown' || st === 'queued'; }
+  function keep(h) { mine = mine.filter(live); if (h && mine.indexOf(h) < 0) mine.push(h); return h; }
+  function stays(text) { return REAL.test(text) || !ROUTINE.test(text); }
   function toast(msg, bad) {
     if (!stackOk()) return false;
     var text = str(msg), d = doc(), sig = d && d.getElementById('gm-signed');
     if (bad && sig && str(sig.textContent).trim() === text.trim()) return true;      /* signed out: the band's own toast (with Reload) says it, once */
-    try { W.B68Ui.toast({ text: text, tone: bad ? 'error' : 'info', key: 'page:' + text }); return true; } catch (e) { return false; }
+    var key = /^Preflight:/.test(text) ? 'page:preflight' : 'page:' + text, stay = !!bad && stays(text), h;
+    try { h = W.B68Ui.toast(stay ? { text: text, tone: 'error', key: key } : { text: text, tone: 'info', key: key, duration: bad ? PAGE_MS : undefined }); } catch (e) { return false; }
+    keep(h);
+    if (stay) {
+      sticky = sticky.filter(function (x) { return x !== h && live(x); }); sticky.push(h);
+      while (sticky.length > STICKY_MAX) { var old = sticky.shift(); try { old.dismiss(); } catch (e) { /* gone */ } }
+    }
+    return true;
   }
-  /* the cue's toasts: the Undo one fades with the stack's timer; the question (Yes or Cancel) stays for o.ms with its timer shown, then answers no */
+  /* the cue's toasts: the Undo one fades with the stack's timer; the question (Yes or Cancel) stays for o.ms with its timer shown, then answers no.
+     A cue toast never waits in the stack's queue: when it cannot show at once it is taken back and null is returned, so cue-grammar.js draws its
+     old centred toast (its hooks, its Cancel and its 15 s) instead */
   function cueToast(o) {
     if (!stackOk() || !o) return null;
     var U = W.B68Ui, asking = typeof o.onYes === 'function', done = false, poll = null, h;
@@ -188,20 +209,25 @@
     else if (typeof o.undo === 'function') opt.undo = { label: 'Undo', fn: o.undo };
     try { h = U.toast(opt); } catch (e) { return null; }
     var el = toastEl(h);
-    if (el) {
-      el.classList.add('gm-ugtoast', 'kshell-cue');
-      if (asking) el.setAttribute('role', 'alertdialog');
-      var u = el.querySelector('.ui-toast-undo'); if (u) u.setAttribute('data-ug', asking ? 'confirm' : 'undo');
-      if (asking) {
-        var acts = el.querySelector('.ui-toast-acts'), x = el.querySelector('.ui-toast-x');
-        var c = U.node('button', { label: 'Cancel', rank: 'quiet', cls: 'ui-toast-undo kshell-cancel', data: { ug: 'cancel' } });
-        if (c && acts) { c.addEventListener('click', function () { try { h.dismiss(); } catch (e) { /* gone */ } gone(); }); acts.insertBefore(c, x || null); }
-        if (x) x.setAttribute('aria-label', 'Cancel');
-      }
+    if (!el || (typeof h.state === 'function' && h.state() !== 'shown')) { done = true; try { h.dismiss(); } catch (e) { /* gone */ } return null; }
+    keep(h);
+    el.classList.add('gm-ugtoast', 'kshell-cue');
+    if (asking) el.setAttribute('role', 'alertdialog');
+    var u = el.querySelector('.ui-toast-undo'); if (u) u.setAttribute('data-ug', asking ? 'confirm' : 'undo');
+    if (asking) {
+      var acts = el.querySelector('.ui-toast-acts'), x = el.querySelector('.ui-toast-x');
+      var c = U.node('button', { label: 'Cancel', rank: 'quiet', cls: 'ui-toast-undo kshell-cancel', data: { ug: 'cancel' } });
+      if (c && acts) { c.addEventListener('click', function () { try { h.dismiss(); } catch (e) { /* gone */ } gone(); }); acts.insertBefore(c, x || null); }
+      if (x) x.setAttribute('aria-label', 'Cancel');
     }
     /* the stack says nothing when a toast leaves by X or by its timer: a question is answered no once its toast is going */
-    if (asking) poll = W.setInterval(function () { var s = h && typeof h.state === 'function' ? h.state() : 'gone'; if (s === 'gone' || s === 'leaving') gone(); }, 200);
+    if (asking) poll = W.setInterval(function () { var st = h && typeof h.state === 'function' ? h.state() : 'gone'; if (st === 'gone' || st === 'leaving') gone(); }, 200);
     return { el: el, dismiss: function () { stop(); try { h.dismiss(); } catch (e) { /* gone */ } }, state: function () { return h && typeof h.state === 'function' ? h.state() : 'gone'; } };
+  }
+  /* the setting turned off: what this file put in the stack goes, and an empty stack leaves the page (the old sheets do not style it) */
+  function clearStack(d) {
+    mine.forEach(function (h) { try { h.dismiss(); } catch (e) { /* gone */ } }); mine = []; sticky = [];
+    [].forEach.call(d.querySelectorAll('.ui-toast-stack'), function (b) { if (!b.querySelector('.ui-toast') && b.parentNode) b.parentNode.removeChild(b); });
   }
 
   /* ---------- KS09.4 the dialogs ---------- */

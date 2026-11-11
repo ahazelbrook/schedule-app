@@ -256,6 +256,20 @@ try {
     check((await escList(page)).length === 0 && !(await page.evaluate(() => window.B68GmEsc.anyOpen())), 'a toast takes no Esc (PANIC wins): nothing is open to Esc');
     await page.evaluate(() => { const t = [...document.querySelectorAll('.ui-toast--error')].find((x) => /pack check failed/.test(x.textContent)); if (t) t.querySelector('.ui-toast-x').click(); });
     check(!!(await until(async () => !(await stackText(page)).some((t) => /pack check failed/.test(t)), 3000)), 'X dismisses the error');
+    /* the policy (the overseer's ruling on review): routine lines fade, Preflight is one toast, at most two of the page's errors stay */
+    const kinds = () => page.$$eval('.ui-toast-stack .ui-toast', (l) => l.map((x) => ({ t: x.querySelector('.ui-toast-text').textContent, err: x.classList.contains('ui-toast--error') })));
+    await page.evaluate(() => window.B68KitShell.toast('Roll a location first.', true));
+    let k = await kinds();
+    check(k.some((x) => x.t === 'Roll a location first.' && !x.err), 'a routine "do X first" line is news, not an error');
+    check(!!(await until(async () => !(await kinds()).some((x) => x.t === 'Roll a location first.'), 9000)), 'and it fades by itself');
+    await page.evaluate(() => { window.B68KitShell.toast('Preflight: 4 to fix before the start (Before, Preflight).', true); window.B68KitShell.toast('Preflight: 2 to fix before the start (Before, Preflight).', true); });
+    k = await kinds();
+    check(k.filter((x) => /^Preflight:/.test(x.t)).length === 1 && k.some((x) => /^Preflight: 2 /.test(x.t) && x.err), 'Preflight is one toast: a new count replaces the old one ' + JSON.stringify(k));
+    await page.evaluate(() => { ['Could not send to the iPad: the line dropped (invented).', 'Not saved: the server refused a change (invented).', 'The roll failed: no table (invented).'].forEach((t) => window.B68KitShell.toast(t, true)); });
+    await sleep(600);
+    k = await kinds();
+    check(k.filter((x) => x.err).length === 2 && k.some((x) => /roll failed/.test(x.t)) && k.some((x) => /Not saved/.test(x.t)), 'at most two of the page\'s errors stay: the newest two ' + JSON.stringify(k.map((x) => x.t.slice(0, 24))));
+    await page.evaluate(() => [...document.querySelectorAll('.ui-toast-x')].forEach((x) => x.click()));
 
     /* ---- 6. the layers ---- */
     const z = await page.evaluate(() => { const zi = (sel) => { const e = document.querySelector(sel); return e ? Number(getComputedStyle(e).zIndex) || 0 : null; };
@@ -311,6 +325,26 @@ try {
     if (q) await q.click();
     check(!!(await until(async () => (await hiddenNow()) === true, 6000)), 'Reveal: the person is revealed');
     await api('PUT', '/npcs/npc_hidden', { name: 'GM-ONLY-Lotte Brand', role: 'invented', revealed: false });
+    await until(async () => (await hiddenNow()) === false, 4000); await sleep(2500);      /* the page hears the person is hidden again */
+    /* the reviewer's case: Preflight and three errors up, then a typed Reveal: its question shows at once, with its hooks, and Cancel works */
+    const seen = async () => page.evaluate(() => { const b = document.querySelector('[data-ug="confirm"]'); if (!b) return null; const r = b.getBoundingClientRect(), e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { inView: r.width > 0 && r.top >= 0 && r.bottom <= innerHeight, top: !!e && b.contains(e), cancel: !!document.querySelector('[data-ug="cancel"]'), stack: !!b.closest('.ui-toast-stack') }; });
+    const qGone = () => page.evaluate(() => !document.querySelector('[data-ug="confirm"]'));
+    await page.evaluate(() => { window.B68KitShell.toast('Preflight: 4 to fix before the start (Before, Preflight).', true); ['Could not send to the iPad: the line dropped (invented).', 'Not saved: the server refused a change (invented).', 'The roll failed: no table (invented).'].forEach((t) => window.B68KitShell.toast(t, true)); });
+    await type('Blade, reveal GM-ONLY-Lotte Brand');
+    let qs = await until(seen, 3000);
+    check(!!qs && qs.inView && qs.top && qs.cancel, 'Preflight and three errors up: the Reveal question shows at once, on top, with Cancel ' + JSON.stringify(qs));
+    if (qs) await page.click('[data-ug="cancel"]');
+    check(!!(await until(qGone, 3000)) && (await hiddenNow()) === false, 'and its Cancel reveals no one');
+    /* a full stack (four news lines that stay): the question cannot wait in the queue, so it is the old centred toast, with the same hooks */
+    await page.evaluate(() => { for (let i = 1; i <= 4; i++) window.B68Ui.toast({ text: 'Sent to the iPad: slide ' + i + ' (invented)', tone: 'info', duration: 0 }); });
+    await sleep(2500);
+    await type('Blade, reveal GM-ONLY-Lotte Brand');
+    qs = await until(seen, 3000);
+    check(!!qs && qs.inView && qs.top && qs.cancel && !qs.stack, 'a full stack: the question is the old centred toast, at once, on top, with Cancel ' + JSON.stringify(qs));
+    check(!(await page.$$eval('.ui-toast-stack .ui-toast', (l) => l.some((x) => /^Reveal/.test(x.textContent)))), 'and nothing of it waits in the stack\'s queue');
+    if (qs) await page.click('[data-ug="cancel"]');
+    check(!!(await until(qGone, 3000)) && (await hiddenNow()) === false, 'its Cancel reveals no one');
     await c.close();
   }
 
@@ -362,18 +396,25 @@ try {
     await goPlace(page, 'score');
     await blur(page); await page.keyboard.press('i');
     await page.waitForSelector('#gm-ipad-settings [data-set="kit.desk"][data-v="0"]', { timeout: 5000 });
+    await page.evaluate(() => { ['Could not send to the iPad: the line dropped (invented).', 'Not saved: the server refused a change (invented).'].forEach((t) => window.B68KitShell.toast(t, true)); window.B68KitShell.toast('Sent to the iPad: the card rooms (invented).'); });
+    check((await page.$$('.ui-toast')).length >= 3, 'two errors and a news line up before the setting turns off');
     await page.click('#gm-ipad-settings [data-set="kit.desk"][data-v="0"]');
     const back = await until(() => page.evaluate(() => !/desk/.test(document.documentElement.getAttribute('data-kit') || '') && !document.querySelector('.gm-views.ui-tabs')
       && [...document.querySelectorAll('.gm-views [data-pv]')].some((b) => b.getAttribute('data-pv') === 'chase') && !!document.querySelector('.gm-menu-list > button[data-gm="update"]')), 15000);
     check(!!back, 'off: the old row (Chase back in Score) and the old Menu, without a reload');
     const left = await page.evaluate(() => ({ marks: document.querySelectorAll('[data-kshell-cls], [data-kshell-sig]').length, cls: document.querySelectorAll('#gm-root .kshell-find, #gm-root .kshell-drawer, #gm-root .kshell-foot, #gm-root .kshell-tabs, #gm-root .kshell-viewrow').length }));
     check(left.marks === 0 && left.cls === 0, 'off: no class or mark the shell added is left on the page ' + JSON.stringify(left));
+    const flat = await until(() => page.evaluate(() => ({ toasts: document.querySelectorAll('.ui-toast').length, stack: document.querySelectorAll('.ui-toast-stack').length, h: document.scrollingElement.scrollHeight, vh: innerHeight }))
+      .then((r) => (r.toasts === 0 && r.h <= r.vh ? r : null)), 4000);
+    check(!!flat, 'off: no toast is left in the document and the page does not scroll ' + JSON.stringify(flat || await page.evaluate(() => ({ toasts: document.querySelectorAll('.ui-toast').length, h: document.scrollingElement.scrollHeight, vh: innerHeight }))));
     await page.click('[data-gm="menu"]'); await page.click('[data-gm="capbar"]');
     check(!!(await until(async () => /capture bar/i.test(await oldToast(page)), 3000)), 'off: the page\'s toast is the old #toast line again');
     await page.click('#gm-ipad-settings [data-set="kit.desk"][data-v="1"]');
     const again = await until(() => page.evaluate(() => !!document.querySelector('.gm-views.ui-tabs') && !!document.querySelector('#gm-find.kshell-find') && !!document.querySelector('#gm-drawer .gm-dtab.ui-tab')
       && !document.querySelector('.gm-menu-list > button[data-gm="update"]')), 10000);
     check(!!again, 'on again: the kit row, Find and the drawer dressed, and the kit Menu, without a reload');
+    await sleep(800);
+    check(!(await page.$$eval('.ui-toast', (l) => l.some((x) => /\(invented\)/.test(x.textContent)))), 'on again: the toasts put away when it turned off do not come back');
     await c.close();
   }
 

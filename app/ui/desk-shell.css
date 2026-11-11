@@ -8,7 +8,11 @@
    alarm (Blank) over everything. Nothing else sits over the work. */
 
 /* ---------- KS09.5 the ladder ---------- */
-:root[data-kit~="desk"] :is(.gs-top, .pp-bar, .pp-peek, .gm-pnext, .gm-vchips, .gm-offer) { z-index: var(--ui-layer-sticky); }
+/* the in-pane sticky rows keep today's order among themselves (2, 3, 4, 5) */
+:root[data-kit~="desk"] :is(.gs-top, .pp-peek) { z-index: calc(var(--ui-layer-sticky) - 3); }
+:root[data-kit~="desk"] :is(.pp-bar, .gm-pnext) { z-index: calc(var(--ui-layer-sticky) - 2); }
+:root[data-kit~="desk"] .gm-vchips { z-index: calc(var(--ui-layer-sticky) - 1); }
+:root[data-kit~="desk"] .gm-offer { z-index: var(--ui-layer-sticky); }
 :root[data-kit~="desk"] .gm-drawer { z-index: calc(var(--ui-layer-sticky) + 1); }
 :root[data-kit~="desk"] :is(.gm-sheet, .gm-assist) { z-index: calc(var(--ui-layer-sticky) + 2); }
 :root[data-kit~="desk"] #gm-band { z-index: calc(var(--ui-layer-sticky) + 3); }
@@ -18,9 +22,14 @@
 :root[data-kit~="desk"] .gm-find { z-index: var(--ui-layer-dialog); }
 :root[data-kit~="desk"] :is(.toast, .gm-ugtoast, .rv-ghost) { z-index: var(--ui-layer-toast); }
 :root[data-kit~="desk"] .gm-blank { z-index: var(--ui-layer-alarm); }
-/* a phone: the band rides over the capture bar, and a drawer or a sheet takes the whole screen (a popover, as today) */
+/* a phone, today's order: the site's popovers (25) under its NPC pop (30), both under the capture bar (40), Capture (41) and the band (45);
+   a drawer or a sheet takes the whole screen (a popover, as today) */
 @media (max-width: 599px) {
-  :root[data-kit~="desk"] #gm-band { z-index: calc(var(--ui-layer-sticky) + 6); }
+  :root[data-kit~="desk"] :is(.rv-pop, .rv-menu) { z-index: calc(var(--ui-layer-sticky) + 3); }
+  :root[data-kit~="desk"] .rv-npcpop { z-index: calc(var(--ui-layer-sticky) + 4); }
+  :root[data-kit~="desk"] .gm-foot { z-index: calc(var(--ui-layer-sticky) + 5); }
+  :root[data-kit~="desk"] .gm-fab { z-index: calc(var(--ui-layer-sticky) + 6); }
+  :root[data-kit~="desk"] #gm-band { z-index: calc(var(--ui-layer-sticky) + 7); }
   :root[data-kit~="desk"] :is(.gm-drawer, .gm-sheet) { z-index: var(--ui-layer-popover); }
 }
 
