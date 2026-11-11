@@ -221,6 +221,7 @@
   function kitSection(host) {
     var U = B();
     if (!U || !U.PARTS || document.documentElement.getAttribute('data-kit') === null) return;
+    if (/[?&]frame=/.test(String(location.search || ''))) return;     /* a show card's own frame (lookbook.html?frame=<kind>): the show alone */
     css();
     var p = preset(), sec = document.createElement('section');
     sec.className = 'lb-kit'; sec.id = 'lb-kit';
