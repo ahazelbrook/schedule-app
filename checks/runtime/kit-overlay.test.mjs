@@ -22,18 +22,20 @@ let passed = 0, failed = 0;
 async function test(name, fn) {
   try { await fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); }
 }
+const SCOPE = ':where(:root[data-kit], [data-ui-scope]) ';   /* zero weight; the same prefix as parts.css (KS02b) */
 const strip = (css) => css.replace(/\/\*[\s\S]*?\*\//g, '');
 
 /* ---------- the files ---------- */
 await test('the files exist and the header names what B68Ui gains', () => {
   for (const f of ['app/ui/overlay.css', 'app/ui/overlay.js']) assert.ok(fs.existsSync(path.join(ROOT, f)), f);
-  for (const n of ['B68Ui.confirm', 'B68Ui.prompt', 'B68Ui.popover', 'B68Ui.menu', 'B68Ui.toast', 'B68Ui.tip', 'B68GmEsc']) assert.ok(JS.indexOf(n) >= 0, 'the header names ' + n);
-  for (const n of ['confirm', 'prompt', 'popover', 'menu', 'toast', 'tip', 'place', 'step', 'toastCore', 'stack', 'attach']) assert.equal(typeof O[n], 'function', n);
+  for (const n of ['B68Ui.confirm', 'B68Ui.prompt', 'B68Ui.popover', 'B68Ui.openMenu', 'B68Ui.toast', 'B68Ui.tip', 'B68GmEsc']) assert.ok(JS.indexOf(n) >= 0, 'the header names ' + n);
+  for (const n of ['confirm', 'prompt', 'popover', 'openMenu', 'toast', 'tip', 'place', 'step', 'toastCore', 'stack', 'attach']) assert.equal(typeof O[n], 'function', n);
 });
 await test('attach adds the six to B68Ui and leaves the frozen parts alone', () => {
-  const U = { button() {}, row() {}, VERSION: 1 };
+  const part = () => 'menu part', U = { button() {}, row() {}, menu: part, VERSION: 1 };
   O.attach(U);
-  for (const n of ['confirm', 'prompt', 'popover', 'menu', 'toast', 'tip']) assert.equal(typeof U[n], 'function', n);
+  assert.equal(U.menu, part, 'B68Ui.menu is the menu part (KS02b): the overlay kit leaves it alone');
+  for (const n of ['confirm', 'prompt', 'popover', 'openMenu', 'toast', 'tip']) assert.equal(typeof U[n], 'function', n);
   assert.equal(U.VERSION, 1); assert.equal(typeof U.button, 'function');
 });
 await test('the ratchet would count nothing in the kit files: no hand-built button, no important flag, no inline style attribute, no native confirm or prompt call', () => {
@@ -49,7 +51,7 @@ await test('overlay.css: no @layer, no mangled punctuation, every selector start
   assert.ok(!/[\u0080-\u009f\uFFFD]/.test(CSS), 'no U+0080 to U+009F');
   const sel = css.replace(/@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '').replace(/@media[^{]*\{/g, '').split('}').map((b) => b.split('{')[0]).filter((s) => s.trim());
   assert.ok(sel.length > 20, 'found the rules');
-  for (const g of sel) for (const s of g.split(',').map((x) => x.trim()).filter(Boolean)) assert.ok(/^:root\[data-kit~="(desk|stage|phone)"\]/.test(s) || /^\.ui-[a-z]/.test(s), 'unscoped selector ' + s);
+  for (const g of sel) for (const s of g.split(SCOPE).join('@@').split(',').map((x) => x.trim()).filter(Boolean)) assert.ok(/^@@\.ui-[a-z]/.test(s) && !/:where|:root/.test(s), 'unscoped selector ' + s);
   assert.ok(!/#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/.test(css), 'colours come from the tokens');
   assert.ok(!/box-shadow:\s*[^;n]*\d/.test(css), 'no hard shadow (the Primary alone has one)');
   for (const t of ['--ui-layer-dialog', '--ui-layer-popover', '--ui-layer-toast']) assert.ok(css.indexOf(t) >= 0, t + ' is used');
@@ -57,7 +59,7 @@ await test('overlay.css: no @layer, no mangled punctuation, every selector start
 await test('overlay.css: nothing under 12px on the desk, and reduced motion is a cut', () => {
   const css = strip(CSS);
   assert.ok(!/font:[^;]*\b(?:[0-9]|1[01])px\b/.test(css));
-  assert.ok(/prefers-reduced-motion: reduce\)\s*\{\s*\.ui-toast \{ animation: none/.test(css));
+  assert.ok(/prefers-reduced-motion: reduce\)\s*\{\s*\.ui-toast \{ animation: none/.test(css.split(SCOPE).join('')));
 });
 await test('overlay.js adds no key listener to the document or the window (its source has none)', () => {
   assert.ok(!/(?:document|doc\(\)|\bd|\bW)\.addEventListener\(\s*['"]key/.test(JS));
@@ -240,7 +242,7 @@ if(E){var h=E.handle;E.handle=function(c){var r=h.call(E,c);window.handleLog.pus
 
     /* ---- dialog ---- */
     await test('browser: B68Ui has the six and the page loaded without an error', async () => {
-      assert.equal(await ev(() => ['confirm', 'prompt', 'popover', 'menu', 'toast', 'tip'].every((n) => typeof B68Ui[n] === 'function')), true);
+      assert.equal(await ev(() => ['confirm', 'prompt', 'popover', 'openMenu', 'toast', 'tip'].every((n) => typeof B68Ui[n] === 'function')), true);
       assert.deepEqual(page.errs, []);
     });
     await test('browser: confirm: the confirm button has focus; Enter confirms; the dialog is gone and focus is back on the opener', async () => {
@@ -316,7 +318,7 @@ if(E){var h=E.handle;E.handle=function(c){var r=h.call(E,c);window.handleLog.pus
     });
 
     /* ---- popover and menu ---- */
-    const menuCall = (anchor) => 'B68Ui.menu({ anchor: document.querySelector("' + anchor + '"), label: "Actions", items: [{ label: "Introduce", value: "i" }, { label: "Show on iPad", value: "s" }, { label: "Gone", value: "g", disabled: true }, { label: "Hide", value: "h", rank: "danger" }], onSelect: (v) => window.picked.push(v) })';
+    const menuCall = (anchor) => 'B68Ui.openMenu({ anchor: document.querySelector("' + anchor + '"), label: "Actions", items: [{ label: "Introduce", value: "i" }, { label: "Show on iPad", value: "s" }, { label: "Gone", value: "g", disabled: true }, { label: "Hide", value: "h", rank: "danger" }], onSelect: (v) => window.picked.push(v) })';
     const menuOpen = (anchor, name = 'mm') => ev(([c, n]) => { window[n] = Function('return ' + c)(); window[n].open(); }, [menuCall(anchor), name]);
     const menus = () => ev(() => document.querySelectorAll('.ui-menu').length);
     await test('browser: a menu opens under its anchor with focus on the first item; arrows wrap past a disabled item; Home and End jump; Enter picks, closes and returns focus', async () => {
@@ -362,7 +364,7 @@ if(E){var h=E.handle;E.handle=function(c){var r=h.call(E,c);window.handleLog.pus
     await test('browser: a popover opened inside a dialog closes first, then the dialog, and the page behind is not touched; closing the dialog any other way takes the popover with it', async () => {
       await ev(() => { window.handleLog.length = 0; window.flags.drawer = true; });
       await start('B68Ui.prompt({ title: "Pick", label: "Name" })', 'r');
-      const inner = () => ev(() => { const b = document.createElement('button'); b.id = 'inner'; b.textContent = 'Menu'; document.querySelector('.ui-dialog-acts').prepend(b); window.m5 = B68Ui.menu({ anchor: b, items: ['One', 'Two'] }); window.m5.open(); });
+      const inner = () => ev(() => { const b = document.createElement('button'); b.id = 'inner'; b.textContent = 'Menu'; document.querySelector('.ui-dialog-acts').prepend(b); window.m5 = B68Ui.openMenu({ anchor: b, items: ['One', 'Two'] }); window.m5.open(); });
       await inner();
       assert.equal(await ev(() => document.querySelector('dialog .ui-menu') !== null), true, 'it opens inside the dialog, so it is above the backdrop');
       await page.keyboard.press('Escape'); assert.equal(await dialogs(), 1);

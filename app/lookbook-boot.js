@@ -301,8 +301,8 @@
     ovRow(col, [ovFig('at the right edge it takes the anchor’s right edge; Esc closes it through the page’s one Esc', box), ovFig('at the bottom it opens upward', low)]);
     var items = [{ label: 'Introduce', key: 'N' }, { label: 'Show on iPad', key: 'I' }, { label: 'Hide', rank: 'danger' }];
     later.push(function () {
-      U.menu({ anchor: anchor, items: items, label: 'Actions', mount: box, absolute: true, bounds: box, pinned: true, focus: false }).open();
-      U.menu({ anchor: anchor2, items: items, label: 'More', mount: low, absolute: true, bounds: low, pinned: true, focus: false }).open();
+      U.openMenu({ anchor: anchor, items: items, label: 'Actions', mount: box, absolute: true, bounds: box, pinned: true, focus: false }).open();
+      U.openMenu({ anchor: anchor2, items: items, label: 'More', mount: low, absolute: true, bounds: low, pinned: true, focus: false }).open();
     });
 
     ovHead(col, 'Toast stack', 'one stack, bottom right, at most four; info fades (its timer shows) and can carry Undo; an error stays');

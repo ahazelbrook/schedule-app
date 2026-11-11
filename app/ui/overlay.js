@@ -14,7 +14,7 @@
                                             o.mount + o.absolute + o.bounds (a local box, for the look book), o.pinned (no outside close).
                                             It flips to the other side, and to the other edge, where it would leave the screen.
                                             handle = { el, open(), close(opt), toggle(), isOpen(), place(), destroy() }
-     B68Ui.menu(o) -> handle                 a popover of items: o.anchor, o.items [{label, value, rank, key, disabled, data, onSelect}],
+     B68Ui.openMenu(o) -> handle             (B68Ui.menu is the standalone menu PART, KS02b; this opens one) a popover of items: o.anchor, o.items [{label, value, rank, key, disabled, data, onSelect}],
                                             o.onSelect(value, item), o.label. Arrow keys, Home and End move; Enter or Space picks; Tab and Esc close
      B68Ui.toast(o) -> { id, dismiss() }     one stack, bottom right, at most four shown (the rest queue). o.text, o.tone ('info' | 'error'),
                                             o.undo (a function, or { label, fn }), o.duration (info only: 5000 ms; 0 stays), o.key (the same key
@@ -57,7 +57,7 @@
   function part(name, o) {
     var U = W.B68Ui;
     if (!U || typeof U.node !== 'function') throw new Error('overlay: B68Ui (ui/ui.js) loads first');
-    return U.node(name, o, doc());
+    return U.node(name, o, doc());   /* null for a part B68Ui does not have */
   }
   function elOf(t) { return t && t.nodeType === 1 ? t : (t && t.parentElement) || null; }
   function closest(t, sel) { var e = elOf(t); return e && typeof e.closest === 'function' ? e.closest(sel) : null; }
@@ -319,10 +319,14 @@
   function menu(o) {
     o = o || {};
     var list = (Array.isArray(o.items) ? o.items : []).map(function (it) { return typeof it === 'string' ? { label: it, value: it } : it; });
-    var row = part('row', { label: '-', open: true, more: list.map(function (it) {
+    var spec = list.map(function (it) {
       return { label: it.label, value: it.value, rank: it.rank, key: it.key, disabled: it.disabled, data: it.data, attrs: it.attrs, id: it.id, cls: it.cls, title: it.title };
-    }) });
-    var m = row.querySelector('.ui-menu') || el('div', 'ui-menu');   /* no items: an empty menu, not a crash */
+    });
+    /* the menu part (KS02b) when B68Ui has it; before that, the ui-menu of a row node (the part's own markup either way) */
+    var m = part('menu', { items: spec, label: o.label });
+    if (!m) { var row = part('row', { label: '-', open: true, more: spec }); m = row.querySelector('.ui-menu'); }
+    if (!m) m = el('div', 'ui-menu');   /* no items: an empty menu, not a crash */
+    m.classList.remove('ui-menu--static');
     m.setAttribute('role', 'menu'); m.removeAttribute('id'); m.removeAttribute('hidden');
     if (o.label) m.setAttribute('aria-label', o.label);
     var h = popover({ anchor: o.anchor, el: m, placement: o.placement || 'bottom-start', priority: o.priority, esc: o.esc, mount: o.mount, absolute: o.absolute,
@@ -626,7 +630,7 @@
   function attach(U) {
     U.confirm = function (o) { return openDialog('confirm', o); };
     U.prompt = function (o) { return openDialog('prompt', o); };
-    U.popover = popover; U.menu = menu; U.toast = toast; U.tip = tip;
+    U.popover = popover; U.openMenu = menu; U.toast = toast; U.tip = tip;   /* U.menu is the menu part (KS02b): never overwritten */
     U.overlay = M;
     return U;
   }
@@ -634,7 +638,7 @@
     VERSION: 1, attach: attach, install: install,
     place: place, step: step, toastCore: toastCore, stack: stack, buildDialog: buildDialog, floatAt: floatAt,
     confirm: function (o) { return openDialog('confirm', o); }, prompt: function (o) { return openDialog('prompt', o); },
-    popover: popover, menu: menu, toast: toast, tip: tip
+    popover: popover, openMenu: menu, toast: toast, tip: tip
   };
   return M;
 });
