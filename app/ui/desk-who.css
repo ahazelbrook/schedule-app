@@ -1,38 +1,63 @@
-/* ui/desk-who.css: Start the night and the roster (night.who, KS11; KS12 adds the roster's own). In the night-who bundle, fetched only while its setting is on.
-   Only its own who-* classes: the old ones are not restyled. The sheet is the page's right-edge sheet (.gm-sheet); these lay out what is inside it. */
+/* ui/desk-who.css: Start the night and the roster (night.who, KS11 and KS12). In the night-who bundle, fetched only while its setting is on.
+   Only its own who-* classes, which only this bundle's markup carries: the old ones are not restyled. The sheet is the page's right-edge sheet
+   (.gm-sheet); these lay out what is inside it.
+   KS12.0, the cascade (layer rule 1: no #gm-page weight). With kit.desk on, the old sheets are in layer(old) and any rule here wins. With night.who
+   alone they are unlayered, and these class rules still win: no old rule names a who-* class, and the old rules that reach this markup by element
+   or by .btn (#gm-page .btn's 44 px on a touch screen, #gm-page select / input[type=text]) set nothing these rely on. Both cases are checked in
+   checks/runtime/night-roster.e2e.mjs (computed styles with the setting alone and with kit.desk). */
+
+/* the buttons are B68Ui's (ui-btn) with the old classes kept as hooks (btn primary, gm-x). The Start sheet and Before's lead are kit scopes
+   (data-ui-scope, KS02b): on the old page (night.who alone) the old .btn rules win there and the buttons look like the old page's; with kit.desk
+   the old sheets are layered and the kit's look wins. Nothing here restyles either button look (KS12 follow-up, #211) */
 
 /* Before: the one Primary, at the top of the left column, with a line under it */
-#gm-page .who-lead { display: grid; gap: 6px; padding: 2px 0 12px; margin-bottom: 4px; border-bottom: 2px solid var(--rule); }
-#gm-page .who-lead > .btn { min-height: 52px; width: 100%; justify-content: center; font-size: 16px; }
-#gm-page .who-lead-sub { font: 500 13px/1.3 var(--font-text); color: var(--ink-soft); }
+.who-lead { display: grid; gap: 6px; padding: 2px 0 12px; margin-bottom: 4px; border-bottom: 2px solid var(--rule); }
+.who-lead > .btn { min-height: 52px; width: 100%; justify-content: center; font-size: 16px; }
+.who-lead-sub { font: 500 13px/1.3 var(--font-text); color: var(--ink-soft); }
 
 /* After: the session in one line */
-#gm-page .who-after { margin: 0 0 8px; padding: 8px 10px; border-left: 4px solid var(--rule); background: var(--inset); font: 700 14px/1.3 var(--font-text); color: var(--ink); }
+.who-after { margin: 0 0 8px; padding: 8px 10px; border-left: 4px solid var(--rule); background: var(--inset); font: 700 14px/1.3 var(--font-text); color: var(--ink); }
 
 /* the sheet */
-#gm-page .who-sheet .who-body { gap: 14px; }
-#gm-page .who-hint { margin: 0; font: 500 13px/1.35 var(--font-text); color: var(--ink-soft); }
-#gm-page .who-rows { display: grid; gap: 6px; }
-#gm-page .who-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 6px 12px;
-  border: 1.5px solid var(--hair); background: var(--card); color: var(--ink); text-align: left; cursor: pointer; font: inherit; }
-#gm-page .who-row:hover { border-color: var(--rule); }
-#gm-page .who-row:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
-#gm-page .who-tick { width: 22px; height: 22px; border: 2px solid var(--rule); box-sizing: border-box; display: grid; place-items: center; }
-#gm-page .who-row[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 4px 0 0 var(--accent); }
-#gm-page .who-row[aria-pressed="true"] .who-tick { background: var(--accent); border-color: var(--accent); }
-#gm-page .who-row[aria-pressed="true"] .who-tick::after { content: "✓"; color: var(--on-accent); font: 900 14px/1 var(--font-text); }
-#gm-page .who-name { display: grid; gap: 2px; min-width: 0; }
-#gm-page .who-name b { font: 700 15px/1.2 var(--font-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#gm-page .who-name small { font: 500 12px/1.2 var(--font-text); color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#gm-page .who-state { font: 900 12px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); }
-#gm-page .who-row[aria-pressed="true"] .who-state { color: var(--ink); }
-#gm-page .who-row[aria-pressed="false"] .who-name b { color: var(--ink-soft); }
+.who-sheet .who-body { gap: 14px; }
+.who-hint { margin: 0; font: 500 13px/1.35 var(--font-text); color: var(--ink-soft); }
+.who-warn { margin: 0; padding: 8px 10px; border-left: 4px solid var(--rule); background: var(--inset); font: 500 13px/1.35 var(--font-text); color: var(--ink); }
+.who-rows { display: grid; gap: 6px; }
+.who-rows > .who-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 6px 12px;
+  border: 1.5px solid var(--hair); border-radius: 0; background: var(--card); color: var(--ink); text-align: left; cursor: pointer; font: inherit;
+  text-transform: none; letter-spacing: normal; white-space: normal; box-shadow: none; transform: none; }
+.who-rows > .who-row:hover, .who-rows > .who-row:active { background: var(--card); color: var(--ink); border-color: var(--rule); }
+.who-rows > .who-row:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+.who-tick { width: 22px; height: 22px; border: 2px solid var(--rule); box-sizing: border-box; display: grid; place-items: center; }
+.who-rows > .who-row[aria-pressed="true"] { background: var(--card); color: var(--ink); border-color: var(--accent); box-shadow: inset 4px 0 0 var(--accent); }
+.who-rows > .who-row[aria-pressed="true"] .who-tick { background: var(--accent); border-color: var(--accent); }
+.who-rows > .who-row[aria-pressed="true"] .who-tick::after { content: "✓"; color: var(--on-accent); font: 900 14px/1 var(--font-text); }
+.who-name { display: grid; gap: 2px; min-width: 0; }
+.who-name b { font: 700 15px/1.2 var(--font-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who-name small { font: 500 12px/1.2 var(--font-text); color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who-state { font: 900 12px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft); }
+.who-rows > .who-row[aria-pressed="true"] .who-state { color: var(--ink); }
+.who-rows > .who-row[aria-pressed="false"] .who-name b { color: var(--ink-soft); }
 
-#gm-page .who-num { display: grid; grid-template-columns: auto 96px; align-items: center; gap: 6px 10px; padding-top: 10px; border-top: 1px solid var(--hair); }
-#gm-page .who-num-l { font: 900 12px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; }
-#gm-page .who-n { min-height: 40px; padding: 0 8px; font: 700 18px/1 var(--font-mono); border: 1.5px solid var(--rule); background: var(--card); color: var(--ink); box-sizing: border-box; width: 100%; }
-#gm-page .who-num-sub { grid-column: 1 / -1; font: 500 12px/1.35 var(--font-text); color: var(--ink-soft); }
+.who-num { display: grid; grid-template-columns: auto 96px; align-items: center; gap: 6px 10px; padding-top: 10px; border-top: 1px solid var(--hair); }
+.who-num-l { font: 900 12px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; }
+.who-n { min-height: 40px; padding: 0 8px; font: 700 18px/1 var(--font-mono); border: 1.5px solid var(--rule); background: var(--card); color: var(--ink); box-sizing: border-box; width: 100%; }
+.who-num-sub { grid-column: 1 / -1; font: 500 12px/1.35 var(--font-text); color: var(--ink-soft); }
 
-#gm-page .who-go { display: flex; align-items: center; gap: 12px; padding-top: 10px; border-top: 2px solid var(--rule); }
-#gm-page .who-go > .btn { flex: 1 1 auto; min-height: 52px; justify-content: center; font-size: 16px; }
-#gm-page .who-count { flex: none; font: 700 14px/1 var(--font-text); color: var(--ink-soft); }
+.who-go { display: flex; align-items: center; gap: 12px; padding-top: 10px; border-top: 2px solid var(--rule); }
+.who-go > .btn { flex: 1 1 auto; min-height: 52px; justify-content: center; font-size: 16px; }
+.who-count { flex: none; font: 700 14px/1 var(--font-text); color: var(--ink-soft); }
+
+/* KS12.7: the band's chip, "2 playing" (made here only when the band has no #gm-bar-who of its own) */
+.gm-pill.who-chip { display: inline-flex; align-items: center; min-height: 32px; padding: 4px 9px; border: 1.5px solid currentColor; border-radius: 0; background: none;
+  color: inherit; font: 700 11px/1.2 var(--font-mono); white-space: nowrap; text-transform: none; letter-spacing: normal; box-shadow: none; transform: none; }
+.gm-pill.who-chip:hover, .gm-pill.who-chip:active { background: none; color: inherit; border-color: currentColor; text-decoration: underline; }
+
+/* KS12.4: the players who are not here, folded under a told list's own buttons */
+.who-away { display: inline-block; margin: 0; }
+.who-away > summary { display: inline-flex; align-items: center; min-height: 32px; padding: 0 8px; cursor: pointer; font: 700 12px/1 var(--font-text); color: var(--ink-soft); list-style: none; }
+.who-away > summary::-webkit-details-marker { display: none; }
+.who-away > summary::before { content: "▸"; margin-right: 6px; }
+.who-away[open] > summary::before { content: "▾"; }
+.who-away > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+.who-away-in { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 2px; }

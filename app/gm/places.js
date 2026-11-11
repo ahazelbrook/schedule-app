@@ -440,7 +440,7 @@
         e.left.innerHTML = st.rollHere ? '<button type="button" class="gm-left-back" data-left-back="1" title="Back to ' + esc(d.leftLabel) + ' (the Roll stays a key away: 1 to 4)">◂ ' + esc(d.leftLabel) + '</button>' : leftHtml();
         if (tool && !st.rollHere) bindTool(tool, e.left.querySelector('[data-left-tool]'), 'left');
       }
-      if (!st.rollHere) call('whoPaint', e.left);      /* KS11 (night.who): fills the two slots above; the page has no whoPaint while it is off */
+      if (!st.rollHere) call('whoPaint', e.left);      /* KS11 (night.who): fills the two slots above; the page's whoPaint does nothing while the setting is off */
       if (!st.rollHere) {
         var slot = e.left.querySelector('[data-left-slot]');
         if (slot) {
