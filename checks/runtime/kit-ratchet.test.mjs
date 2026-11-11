@@ -2,7 +2,7 @@
 // Counts, per file under app/ (not app/checks), five things the kit replaces: a hand-built `<button`, an `!important`, an inline `style="`,
 // a native confirm( and a native prompt(. The baseline is checks/runtime/kit-ratchet.baseline.json (today's counts). The check fails when any
 // count rises anywhere (a file missing from the baseline counts as zero), and when a kit file (app/ui/**, or any file in a kit/ folder) has
-// one at all. Later bundles may only lower the numbers. The counts are raw text, comments included, so a kit file does not even mention them.
+// one at all. Later bundles may only lower the numbers. The counts skip /* block comments */ (prose that names them).
 // app/ui/ui.js is the one place that builds a button element: it writes the tag as '<' + tag, so it too counts zero.
 //
 //   node checks/runtime/kit-ratchet.test.mjs                  the check
@@ -28,8 +28,8 @@ export const KINDS = {
   prompt: /(?:\b(?:window|self|globalThis|W)\.|(?<![\w$.]|function\s{1,4}))prompt\(/g
 };
 export function count(text) {
-  const out = {};
-  for (const k of Object.keys(KINDS)) { const n = (String(text).match(KINDS[k]) || []).length; if (n) out[k] = n; }
+  const out = {}, code = String(text).replace(/\/\*[\s\S]*?\*\//g, '');     /* block comments are prose, not code */
+  for (const k of Object.keys(KINDS)) { const n = (code.match(KINDS[k]) || []).length; if (n) out[k] = n; }
   return out;
 }
 export const isKit = (rel) => rel.startsWith('app/ui/') || /(^|\/)kit\//.test(rel);
@@ -96,6 +96,7 @@ test('the counter: each kind, and what it leaves alone', () => {
   assert.deepEqual(count('if (W.confirm("x")) W.prompt("y"); window.confirm(1); confirm(2); prompt(3)'), { confirm: 3, prompt: 2 });
   assert.deepEqual(count('ov.confirm({}); B68Ui.prompt(1); function confirm(o) {} askConfirm(); reprompt()'), {});
   assert.deepEqual(count("var t = '<' + tag; s.style.color = 'x'; el.setAttribute('style', '')"), {});
+  assert.deepEqual(count('/* an old !important still wins; <button> by hand */ a { b: c }'), {}, 'a block comment is not code');
 });
 
 test('the ratchet fails when a test line adds a raw button to a kit file, or raises a count anywhere', () => {

@@ -83,8 +83,31 @@
   }
   function on(name) { return known(name) && want[name] === true && route() === name; }
   function ready(name) { return on(name) && loaded[name] === true; }
+  /* Paper by default on the new desk (KS02): with the desk painted and no theme stored (index.html's b68.theme), data-theme="light", marked
+     data-kit-paper so it can be taken back; storage is never written. The footer's Auto removes data-theme: the watcher puts Paper back
+     while the desk is on. Desk off: the mark goes, and so does the attribute when it is still ours (light, nothing stored): the device
+     decides again, as today. A stored or chosen theme is never overridden. Stage and phones follow the device, as today. */
+  var THEME = 'data-theme', MINE = 'data-kit-paper', watching = false;
+  function storedTheme() {
+    var ls = store(); if (!ls) return '';
+    try { var v = ls.getItem('b68.theme'); return v === 'dark' || v === 'light' ? v : ''; } catch (e) { return ''; }
+  }
+  function paper(el) {
+    if (typeof el.hasAttribute !== 'function') return;
+    if (on('desk')) {
+      if (!el.hasAttribute(THEME) && !storedTheme()) { el.setAttribute(MINE, ''); el.setAttribute(THEME, 'light'); }
+      if (!watching && W && typeof W.MutationObserver === 'function') {
+        watching = true;
+        new W.MutationObserver(function () { paper(el); }).observe(el, { attributes: true, attributeFilter: [THEME] });
+      }
+    } else if (el.hasAttribute(MINE)) {
+      el.removeAttribute(MINE);
+      if (el.getAttribute(THEME) === 'light' && !storedTheme()) el.removeAttribute(THEME);
+    }
+  }
   function paint() {
     var el = html(); if (!el) return;
+    paper(el);
     var t = NAMES.filter(on);
     if (t.length) {
       if (W && W.B68Load && typeof W.B68Load.layerOld === 'function') W.B68Load.layerOld();     /* the old sheets into layer(old), once (routes.js) */

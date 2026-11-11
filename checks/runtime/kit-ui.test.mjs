@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 
@@ -282,6 +283,56 @@ test('ui.js: no hand-built button tag, no string literal over 220 characters', (
   assert.ok(!/<button/.test(UI_SRC), 'ui.js builds the tag as "<" + tag');
   const code = UI_SRC.replace(/\/\*[\s\S]*?\*\//g, '');
   for (const m of code.matchAll(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"/g)) assert.ok(m[0].length - 2 <= 220, 'a literal of ' + (m[0].length - 2) + ' characters');
+});
+
+/* ---------- Paper by default on the desk (ui/kit-flag.js): data-theme="light" while the desk kit is painted and nothing is stored ---------- */
+function flagPage(hash, stored) {
+  const attrs = {}, log = [], observers = [];
+  const el = {
+    setAttribute(k, v) { log.push('set ' + k + '=' + v); attrs[k] = String(v); if (k === 'data-theme') observers.forEach((f) => f()); },
+    removeAttribute(k) { log.push('remove ' + k); delete attrs[k]; if (k === 'data-theme') observers.forEach((f) => f()); },
+    hasAttribute: (k) => Object.prototype.hasOwnProperty.call(attrs, k),
+    getAttribute: (k) => (Object.prototype.hasOwnProperty.call(attrs, k) ? attrs[k] : null)
+  };
+  const ls = new Map(stored ? [['b68.theme', stored]] : []), writes = [];
+  const W = {
+    document: { documentElement: el }, location: { hash }, console,
+    localStorage: { getItem: (k) => (ls.has(k) ? ls.get(k) : null), setItem: (k, v) => { writes.push(k); ls.set(k, String(v)); }, removeItem: (k) => { writes.push(k); ls.delete(k); } },
+    addEventListener() {}, B68Load: { need: () => Promise.resolve(), layerOld() {} },
+    MutationObserver: class { constructor(fn) { this.fn = fn; } observe(t, o) { assert.equal(JSON.stringify(o.attributeFilter), '["data-theme"]'); observers.push(() => this.fn([])); } }
+  };
+  W.self = W;
+  vm.runInNewContext(fs.readFileSync(path.join(APP, 'ui', 'kit-flag.js'), 'utf8'), W);
+  return { W, K: W.B68Kit, attrs, log, ls, writes };
+}
+test('the desk is Paper by default: data-theme="light" while desk is on and nothing is stored, never written to storage', () => {
+  const p = flagPage('#gm');
+  p.K.set('desk', true);
+  assert.equal(p.attrs['data-theme'], 'light');
+  assert.equal(p.attrs['data-kit-paper'], '', 'marked as the kit\'s, so it can be taken back');
+  assert.ok(!p.writes.includes('b68.theme'), 'the theme memory is not written');
+  p.W.document.documentElement.removeAttribute('data-theme');     /* the footer's Auto */
+  assert.equal(p.attrs['data-theme'], 'light', 'Auto on the new desk means Paper');
+  p.K.set('desk', false);
+  assert.ok(!('data-theme' in p.attrs) && !('data-kit-paper' in p.attrs), 'off: the device decides again, as today');
+  p.W.document.documentElement.setAttribute('data-theme', 'dark');
+  p.W.document.documentElement.removeAttribute('data-theme');
+  assert.ok(!('data-theme' in p.attrs), 'with the desk off, Auto stays Auto');
+});
+test('a stored theme wins on the desk; Paper by default touches no other screen and nothing while the kit is off', () => {
+  const night = flagPage('#gm', 'dark');
+  night.W.document.documentElement.setAttribute('data-theme', 'dark');     /* index.html's head script */
+  night.K.set('desk', true);
+  assert.equal(night.attrs['data-theme'], 'dark');
+  assert.ok(!('data-kit-paper' in night.attrs));
+  for (const [hash, name] of [['#display', 'stage'], ['#c/pc-nell', 'phone']]) {
+    const p = flagPage(hash);
+    p.K.set(name, true);
+    assert.ok(!('data-theme' in p.attrs), name + ' follows the device, as today');
+  }
+  const off = flagPage('#gm');
+  off.K.set('desk', false);
+  assert.ok(!off.log.some((l) => /data-theme|data-kit-paper/.test(l)), 'kit off: no theme write at all');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
