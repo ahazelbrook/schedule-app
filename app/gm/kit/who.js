@@ -145,8 +145,9 @@
     if (after && isObj(o.attendance)) {
       /* KS12.0: the ticks go OVER the session's record (the RSVPs onSessionStart made, or a carried-on night's), so a player who said yes and has
          no filed character stays; the GM's own address (a character the GM filed) is never marked */
-      var att = isObj(after.attendance) ? after.attendance : {}, rec = isObj(att[String(n)]) ? clone(att[String(n)]) : {}, any = false;
+      var att = isObj(after.attendance) ? after.attendance : {}, base = isObj(att[String(n)]) ? att[String(n)] : {}, rec = {}, any = false;
       Object.keys(o.attendance).forEach(function (u) { if (u && u !== str(env.me) && typeof o.attendance[u] === 'boolean') { rec[u] = o.attendance[u]; any = true; } });
+      Object.keys(base).forEach(function (u) { if (!has(rec, u)) rec[u] = base[u]; });      /* the ticks first (as before), then the record's others */
       if (any) { after.attendance = att; after.attendance[String(n)] = rec; }
     }
     var sd = before ? diff(before, after) : undefined;
@@ -201,8 +202,10 @@
   }
 
   /* ---------- the page ---------- */
-  /* KS02's B68Ui parts replace this once the kit is merged: a Primary and a Standard button */
-  function button(label, attrs, primary) { return '<button type="button" class="btn' + (primary ? ' primary' : '') + '"' + (attrs || '') + '>' + esc(label) + '</button>'; }
+  /* the buttons are the UI kit's (B68Ui, app/ui/ui.js: the kit-ui bundle loads before this one). They keep the old classes (btn, primary, gm-x,
+     gm-pill): with night.who alone the page's old sheets style them, as before; with kit.desk the kit's own look does (KS02, layer rule 3) */
+  function Ui() { return W && W.B68Ui ? W.B68Ui : null; }
+  function btn(o) { var U = Ui(); return U ? U.button(o) : ''; }
   function create(host) {
     host = host || {};
     var st = { el: null, open: false, m: null, ticks: {}, num: '', busy: false, gone: false, escOff: null, names: {}, asked: {}, chip: null };
@@ -216,7 +219,8 @@
       var d = doc(), m = model(d, chars(), { Sm: Sm() }), r = roster(d);
       var line = m.open ? 'Session ' + m.carry + ' is open' + (r ? ' · ' + r.ids.length + ' playing' : '') : 'Pick who is playing · session ' + m.number;
       var label = m.open ? 'Carry on session ' + m.carry : 'Start the night';      /* KS12.0: an open session is carried on, not started */
-      return button(label, ' data-who="open" aria-haspopup="dialog" title="' + (m.open ? 'Who is here: add a late arrival or let someone go' : 'Pick who is playing, then start the session') + '"', true) + '<span class="who-lead-sub">' + esc(line) + '</span>';
+      return btn({ label: label, rank: 'primary', cls: ['btn', 'primary'], data: { who: 'open' }, attrs: { 'aria-haspopup': 'dialog' },
+        title: m.open ? 'Who is here: add a late arrival or let someone go' : 'Pick who is playing, then start the session' }) + '<span class="who-lead-sub">' + esc(line) + '</span>';
     }
 
     /* ---- KS12.1: the one reader, for the page's other parts ---- */
@@ -242,8 +246,8 @@
       var d = doc0(); if (!d || !d.getElementById) return;
       var c = d.getElementById('gm-bar-who');
       if (!c) {
-        var sess = d.getElementById('gm-bar-sess'); if (!sess || !sess.parentNode || !d.createElement) return;
-        c = d.createElement('button'); c.type = 'button'; c.id = 'gm-bar-who'; c.className = 'gm-pill who-chip';
+        var sess = d.getElementById('gm-bar-sess'), U = Ui(); if (!sess || !sess.parentNode || !U || typeof U.node !== 'function') return;
+        c = U.node('button', { label: '', rank: 'quiet', id: 'gm-bar-who', cls: ['gm-pill', 'who-chip'] }, d);
         sess.parentNode.insertBefore(c, sess.nextSibling); st.chip = c;
       }
       if (!c.__whoBound) { c.__whoBound = true; c.setAttribute('aria-haspopup', 'dialog'); c.addEventListener('click', onChipClick); }
@@ -275,11 +279,23 @@
       page.appendChild(el); st.el = el;
       return el;
     }
+    /* a row: one toggle (B68Ui.button, aria-pressed). Its words are its label, so the markup alone says it all; dress() then lays the same words out
+       as the tick, the name over the player, and the state, with text nodes only */
+    function subOf(r) { return [r.player, r.rsvp === 'in' ? 'said yes' : r.rsvp === 'out' ? 'said no' : ''].filter(Boolean).join(' · '); }
     function rowHtml(r) {
-      var on = !!st.ticks[r.id];
-      var sub = [r.player, r.rsvp === 'in' ? 'said yes' : r.rsvp === 'out' ? 'said no' : ''].filter(Boolean).join(' · ');
-      return '<button type="button" class="who-row" data-who-pc="' + esc(r.id) + '" aria-pressed="' + on + '"><span class="who-tick" aria-hidden="true"></span>' +
-        '<span class="who-name"><b>' + esc(r.name) + '</b>' + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span><span class="who-state">' + (on ? 'Playing' : 'Not here') + '</span></button>';
+      var on = !!st.ticks[r.id], sub = subOf(r);
+      return btn({ label: [r.name, sub, on ? 'Playing' : 'Not here'].filter(Boolean).join(' · '), cls: 'who-row', data: { 'who-pc': r.id }, pressed: on });
+    }
+    function dress(el) {
+      var d = doc0(); if (!d || !d.createElement || !el.querySelectorAll || !st.m) return;
+      var byId = {}; st.m.rows.forEach(function (r) { byId[r.id] = r; });
+      Array.prototype.forEach.call(el.querySelectorAll('.who-row[data-who-pc]'), function (b) {
+        var r = byId[b.getAttribute('data-who-pc')]; if (!r) return;
+        var on = !!st.ticks[r.id], sub = subOf(r), part = function (tag, cls, text) { var e = d.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+        var tick = part('span', 'who-tick'), name = part('span', 'who-name');
+        tick.setAttribute('aria-hidden', 'true'); name.appendChild(part('b', '', r.name)); if (sub) name.appendChild(part('small', '', sub));
+        b.textContent = ''; b.appendChild(tick); b.appendChild(name); b.appendChild(part('span', 'who-state', on ? 'Playing' : 'Not here'));
+      });
     }
     function numberNow() { return whole(st.num) || st.m.number; }
     function primaryLabel() { var n = numberNow(); return st.m.open && n === st.m.carry ? 'Carry on session ' + n : 'Start session ' + n; }
@@ -296,18 +312,18 @@
       var hint = !m.rows.length ? 'No characters are filed yet: the night starts with everyone.' : m.from === 'roster' ? 'Ticked: who is playing now.' : m.from === 'rsvp' ? 'Ticked from the RSVPs: everyone but a no.' : 'Ticked: everyone. Untick who is not here.';
       var un = joined().unmatched, title = m.open ? 'Who is here' : 'Start the night';      /* KS12.1: a pack PC no filed character matches */
       var warn = un.length ? '<p class="who-warn" role="note"><b>Not filed:</b> ' + esc(un.join(', ')) + '. The pack has ' + (un.length === 1 ? 'this PC' : 'these PCs') + ' but no filed character has the name, so ' + (un.length === 1 ? 'it counts' : 'they count') + ' as playing.</p>' : '';
-      var h = '<div class="gm-dhead"><h2 class="gm-sheet-h">' + title + '</h2><button type="button" class="gm-x" data-who="close" aria-label="Close ' + title + '" title="Close (Esc)">×</button></div>' +
+      var h = '<div class="gm-dhead"><h2 class="gm-sheet-h">' + title + '</h2>' + btn({ label: '×', rank: 'quiet', cls: 'gm-x', data: { who: 'close' }, attrs: { 'aria-label': 'Close ' + title }, title: 'Close (Esc)' }) + '</div>' +
         '<div class="gm-sheet-body who-body">' +
         '<p class="who-hint">' + esc(hint) + '</p>' + warn +
         '<div class="who-rows" role="group" aria-label="Who is playing">' + m.rows.map(rowHtml).join('') + '</div>' +
         '<div class="who-num"><label class="who-num-l" for="who-n">Session</label><input id="who-n" class="who-n" type="number" inputmode="numeric" min="1" max="9999" step="1" data-who-n value="' + esc(st.num || String(m.number)) + '">' +
         '<span class="who-num-sub">' + esc(numLine(m)) + '</span></div>' +
-        '<div class="who-go">' + button(primaryLabel(), ' data-who="start"' + (st.busy ? ' disabled' : ''), true) + '<span class="who-count" role="status">' + count(m) + ' playing</span></div></div>';
+        '<div class="who-go">' + btn({ label: primaryLabel(), rank: 'primary', cls: ['btn', 'primary'], data: { who: 'start' }, disabled: st.busy }) + '<span class="who-count" role="status">' + count(m) + ' playing</span></div></div>';
       if (el.__who === h) return;
       var d = doc0(), f = d && d.activeElement;
       if (f && f.hasAttribute && f.hasAttribute('data-who-n') && el.contains(f)) { patchLive(el, m); return; }       /* typing the number: the caret stays */
       var focusPc = f && f.getAttribute && el.contains(f) ? f.getAttribute('data-who-pc') : null;
-      el.__who = h; el.innerHTML = h;
+      el.__who = h; el.innerHTML = h; dress(el);
       if (focusPc) { var b = el.querySelector('[data-who-pc="' + focusPc.replace(/["\\]/g, '\\$&') + '"]'); if (b && b.focus) { try { b.focus({ preventScroll: true }); } catch (e) {} } }
     }
     function patchLive(el, m) {

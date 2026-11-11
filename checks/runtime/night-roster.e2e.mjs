@@ -44,7 +44,7 @@ const ROOMS = [
   { name: 'Underground counting room', band: 'working', detail: 'Coins.' }, { name: 'Luxury penthouse', band: 'secure', isTarget: true, detail: 'The strongbox.' }];
 // the Dovetail Crew: three players, three characters; the pack names them too (the Roll's Who chips), plus one PC nobody has filed
 const PLAYERS = [['nell.player@example.test', 'Mabel Quist', 'ch-nell', 'Nell Arbuthnot'], ['ray.player@example.test', 'Dov Kessler', 'ch-ray', 'Ray Okonjo'], ['tam.player@example.test', 'Ada Vell', 'ch-tam', 'Tam Petrakis']];
-const pc0 = con.parts.console ? con.parts.campaign.pcs[0] : {};
+const pc0 = con.parts.campaign.pcs[0];
 const PACK_PCS = PLAYERS.map(([, , , name]) => ({ ...pc0, name, first: name.split(' ')[0] })).concat([{ ...pc0, name: 'Lotte Brand', first: 'Lotte' }]);
 const PARTS = {
   console: con.parts.console, campaign: { ...con.parts.campaign, pcs: PACK_PCS, src: { ...con.parts.campaign.src, exportedAt: NOW } },
@@ -100,7 +100,7 @@ try {
   check((await api('PATCH', '/gm/state', { features: { 'night.who': true, phoneCards: true }, cards: { location: { hid: 'h_who', auth: SITE, label: SITE + ' · Nowhere Ward', at: NOW } } })).status === 200, 'night.who and phone cards are on');
 
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
-  const errors = [], asked = [];
+  const errors = [];
   async function open(w = 1366, h = 768, theme = '', place = 'before') {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: w, height: h }, serviceWorkers: 'block', acceptDownloads: true, colorScheme: theme === 'night' ? 'dark' : 'light' });
     await c.addInitScript(atPlace(place));
@@ -108,7 +108,7 @@ try {
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
-    page.on('dialog', (d) => { asked.push(d.message()); return d.accept(); });
+    page.on('dialog', (d) => d.accept());
     await page.goto(BASE + '/#gm');
     await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
     await page.waitForSelector('#gm-buttons .gm-btn', { state: 'attached', timeout: 30000 });
@@ -141,7 +141,7 @@ try {
   await page.click('#gm-who-sheet [data-who="start"]');
   const d1 = await until(async () => { const d = await campaign(); return d.session.number === 5 && d.session.present ? d : null; }, 8000);
   check(!!d1 && JSON.stringify(Object.keys(d1.session.present).sort()) === '["ch-nell","ch-ray"]', 'session 5 started with Nell and Ray');
-  check(!!d1 && JSON.stringify(d1.schedule.attendance['5']) === JSON.stringify({ 'nell.player@example.test': true, 'tam.player@example.test': false, 'ray.player@example.test': true }), 'KS12.0: attendance is the RSVPs with the ticks over them: ' + JSON.stringify(d1 && d1.schedule.attendance['5']));
+  check(!!d1 && JSON.stringify(d1.schedule.attendance['5']) === JSON.stringify({ 'nell.player@example.test': true, 'ray.player@example.test': true, 'tam.player@example.test': false }), 'KS12.0: attendance is the RSVPs with the ticks over them: ' + JSON.stringify(d1 && d1.schedule.attendance['5']));
   check(!!(await until(async () => (await page.textContent('#gm-bar-who')) === '2 playing', 5000)), 'the chip: 2 playing');
   await page.click('[data-band-place="before"]');
   check(!!(await until(async () => (await page.textContent('#gm-left .who-lead [data-who="open"]').catch(() => '')).trim() === 'Carry on session 5', 5000)), 'KS12.0: Before\'s lead reads Carry on session 5 while it is open');
@@ -300,7 +300,6 @@ try {
   await I.close();
 
   check(errors.length === 0, 'no console errors: ' + JSON.stringify(errors.slice(0, 3)));
-  void asked;
   await browser.close();
 } catch (e) {
   console.log('FAIL ' + (e && e.stack || e)); failed++;
