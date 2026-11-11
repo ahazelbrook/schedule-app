@@ -25,8 +25,12 @@ function test(name, fn) {
   try { fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); }
 }
 
+/* B68Ui reports a dropped hook with console.warn (once per distinct value): collect them here, so the run stays quiet and a test can read them */
+const warnings = [];
+console.warn = (...a) => { warnings.push(a.join(' ')); };
+
 const EVIL = '<img src=x onerror=alert(1)>';
-const FNS = ['button', 'seg', 'tabs', 'chip', 'card', 'row', 'field', 'meter', 'key', 'dot'];
+const FNS = ['button', 'seg', 'tabs', 'chip', 'card', 'row', 'field', 'meter', 'key', 'dot', 'link', 'menu'];
 
 /* a tiny document: elements with ordered attributes and children, and a serialiser in the same form as the helper's markup */
 const VOID = new Set(['input']);
@@ -53,7 +57,7 @@ function fakeDoc() {
 }
 function serial(n) {
   if (n.nodeType === 3) return escT(n.data);
-  const BOOL = new Set(['hidden', 'disabled', 'selected', 'required']);
+  const BOOL = new Set(['hidden', 'disabled', 'selected', 'required', 'checked', 'download']);
   let s = '<' + n.tag;
   for (const [k, v] of n.attrs) s += v === '' && BOOL.has(k) ? ' ' + k : ' ' + k + '="' + escT(v) + '"';
   s += '>';
@@ -64,16 +68,16 @@ function serial(n) {
 function attrNames(html) { return [...html.matchAll(/\s([a-zA-Z][\w:.-]*)(?==|[\s>])/g)].map((m) => m[1]); }
 
 /* ---------- the helper ---------- */
-test('B68Ui exports the ten parts, part, node, fill, esc and the manifest', () => {
+test('B68Ui exports the twelve parts, part, node, fill, esc, wireTabs, guardBusy and the manifest', () => {
   for (const f of FNS) assert.equal(typeof U[f], 'function', f);
-  for (const f of ['part', 'node', 'fill', 'esc']) assert.equal(typeof U[f], 'function', f);
+  for (const f of ['part', 'node', 'fill', 'esc', 'wireTabs', 'guardBusy']) assert.equal(typeof U[f], 'function', f);
   assert.deepEqual(U.FNS, FNS);
   assert.equal(typeof U.PARTS, 'object');
 });
 
 test('the contract block at the top of ui.js names every part', () => {
   const head = UI_SRC.slice(0, UI_SRC.indexOf('(function'));
-  for (const f of FNS.concat(['part', 'node', 'fill', 'esc', 'PARTS'])) assert.ok(head.includes('B68Ui.' + f), 'B68Ui.' + f + ' in the contract');
+  for (const f of FNS.concat(['part', 'node', 'fill', 'esc', 'PARTS', 'wireTabs', 'guardBusy'])) assert.ok(head.includes('B68Ui.' + f), 'B68Ui.' + f + ' in the contract');
 });
 
 test('a label of <img onerror> comes out as text, in every part and every text option', () => {
@@ -134,7 +138,8 @@ test('buttons: the type defaults to button, submit and reset pass through; rank,
   assert.ok(!U.button({ label: 'A' }).includes('aria-pressed'));
   assert.ok(/ disabled>A<\/button>$/.test(U.button({ label: 'A', disabled: true })));
   assert.ok(U.button({ label: 'A', busy: true }).includes('aria-busy="true"'));
-  assert.ok(U.button({ label: 'Send', key: 'S' }).endsWith('>Send<kbd class="ui-key" aria-hidden="true">S</kbd></button>'));
+  /* KS02b: the label sits in .ui-label and the hint's letter is painted by CSS, so the button's textContent stays the label */
+  assert.ok(U.button({ label: 'Send', key: 'S' }).endsWith('><span class="ui-label">Send</span><kbd class="ui-key" aria-hidden="true" data-ui-key="S"></kbd></button>'));
 });
 
 test('nesting goes through descriptors and slots only: no option takes markup', () => {
@@ -185,6 +190,175 @@ test('the parts draw what the ticket asks: one visible action on a row, the rest
   assert.ok(U.dot({ tone: 'ok' }).includes('role="img" aria-label="ok"'), 'a dot alone is named');
   assert.ok(U.dot({ tone: 'ok', label: 'Phones in' }).includes('aria-hidden="true"></span>Phones in'), 'a dot beside a word');
   assert.ok(U.field({ label: 'Note', id: 'n1', cls: 'gm-note' }).includes('<input class="ui-field-input gm-note" type="text" id="n1">'), 'hooks on the control');
+});
+
+/* ---------- KS02b: the gaps the KS02 review found ---------- */
+test('a camelCase data key is kebab-cased like dataset; a dropped hook warns once per distinct value', () => {
+  const html = U.button({ label: 'Go', data: { fooBar: 1, dataBazQux: 2, 'band-place': 'run', 'data-tone': 'hot', place: 3 } });
+  for (const want of ['data-foo-bar="1"', 'data-baz-qux="2"', 'data-band-place="run"', 'data-tone="hot"', 'data-place="3"']) assert.ok(html.includes(want), want + ': ' + html);
+  warnings.length = 0;
+  const bad = { label: 'Go', id: '9bad id', cls: 'ok no"pe', data: { 'two words': 1 }, attrs: { onfocus: 'x', formaction: 'y' } };
+  U.button(bad); U.button(bad); U.chip(bad);
+  assert.deepEqual(warnings.slice().sort(), [
+    'B68Ui: dropped attribute "onfocus"', 'B68Ui: dropped attribute "formaction"', 'B68Ui: dropped class "no\\"pe"', 'B68Ui: dropped data key "two words"',
+    'B68Ui: dropped id "9bad id"'].sort(), 'each distinct dropped hook, once, however many parts or calls');
+  warnings.length = 0;
+  U.button({ label: 'Go', id: 'fine', cls: ['a', 'b'], data: { x: 1 }, attrs: { 'aria-label': 'x' } });
+  assert.equal(warnings.length, 0, 'a good hook says nothing');
+});
+
+test('hidden: false and hidden: "false" leave the attribute off, in o.hidden and in attrs; true puts it on', () => {
+  for (const v of [false, 'false']) {
+    assert.ok(!/hidden/.test(U.button({ label: 'A', attrs: { hidden: v } })), 'attrs.hidden ' + v);
+    assert.ok(!/hidden/.test(U.button({ label: 'A', hidden: v })), 'o.hidden ' + v);
+  }
+  assert.ok(/ hidden>A<\/button>$/.test(U.button({ label: 'A', hidden: true })));
+  assert.ok(/ hidden>A<\/button>$/.test(U.button({ label: 'A', attrs: { hidden: true } })));
+  assert.ok(U.button({ label: 'A', attrs: { hidden: 'hidden' } }).includes('hidden="hidden"'));
+  assert.ok(U.button({ label: 'A', attrs: { 'aria-hidden': 'false' } }).includes('aria-hidden="false"'), 'only the hidden attribute is special');
+});
+
+test('a key hint leaves the label alone: .ui-label holds the words, the hint is aria-hidden and painted by CSS, so textContent is the label', () => {
+  const d = fakeDoc();
+  for (const [fn, o] of [['button', { label: 'Send', key: 'S' }], ['link', { label: 'Send', key: 'S', href: '#x' }],
+    ['seg', { items: [{ label: 'Send', key: 'S' }] }], ['tabs', { items: [{ label: 'Send', key: 'S' }] }], ['menu', { items: [{ label: 'Send', key: 'S' }] }]]) {
+    const html = U[fn](o);
+    assert.ok(html.includes('<span class="ui-label">Send</span><kbd class="ui-key" aria-hidden="true" data-ui-key="S"></kbd>'), fn + ': ' + html);
+    const n = U.node(fn, o, d);
+    assert.equal(serial(n), html, fn + ': node and string agree');
+    const btn = fn === 'button' || fn === 'link' ? n : n.children[0];
+    assert.equal(btn.textContent, 'Send', fn + ' textContent is the label, never SendS');
+  }
+  assert.equal(U.button({ label: 'Send' }), '<button type="button" class="ui-btn ui-btn--standard">Send</button>', 'no key: just the text, as before');
+  assert.ok(/\.ui-key\[data-ui-key\]::before\s*\{\s*content:\s*attr\(data-ui-key\)/.test(PARTS_CSS), 'the sheet paints the letter');
+  assert.ok(U.button({ label: 'x', key: EVIL }).includes('data-ui-key="&lt;img'), 'the hint is escaped');
+});
+
+/* a minimal tablist: tabs that know their list, can be focused and clicked, and keep their attributes */
+function fakeTabs(n, opts) {
+  opts = opts || {};
+  const log = [];
+  const list = { attrs: { 'aria-orientation': opts.orientation || '' }, getAttribute(k) { return this.attrs[k] || null; }, tabs: [],
+    querySelectorAll(sel) { assert.equal(sel, '[role="tab"]'); return this.tabs; } };
+  for (let i = 0; i < n; i++) {
+    const t = { i, disabled: (opts.disabled || []).includes(i), attrs: { tabindex: i === 0 ? '0' : '-1', 'aria-selected': i === 0 ? 'true' : 'false' },
+      getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }, setAttribute(k, v) { this.attrs[k] = String(v); },
+      focus() { log.push('focus ' + this.i); }, click() { log.push('click ' + this.i); },
+      closest(sel) { return sel === '[role="tab"]' ? this : sel === '[role="tablist"]' ? list : null; } };
+    list.tabs.push(t);
+  }
+  const listeners = [], root = { addEventListener(type, fn, cap) { listeners.push({ type, fn, cap }); } };
+  const press = (i, key, extra) => {
+    const e = Object.assign({ key, target: list.tabs[i], prevented: false, preventDefault() { this.prevented = true; } }, extra);
+    listeners.filter((l) => l.type === 'keydown').forEach((l) => l.fn(e));
+    return e;
+  };
+  return { list, root, log, listeners, press };
+}
+test('wireTabs: ONE delegated keydown listener per root; arrows, Home and End move focus, set the roving tabindex and activate', () => {
+  const t = fakeTabs(4);
+  assert.equal(U.wireTabs(t.root), t.root);
+  U.wireTabs(t.root); U.wireTabs(t.root);
+  assert.deepEqual(t.listeners.map((l) => l.type), ['keydown'], 'one listener however many calls, and none on Escape');
+  let e = t.press(0, 'ArrowRight');
+  assert.ok(e.prevented); assert.deepEqual(t.log, ['focus 1', 'click 1']);
+  assert.deepEqual(t.list.tabs.map((x) => x.attrs.tabindex), ['-1', '0', '-1', '-1'], 'roving tabindex follows focus');
+  t.log.length = 0; t.press(3, 'ArrowRight'); assert.deepEqual(t.log, ['focus 0', 'click 0'], 'wraps from the last to the first');
+  t.log.length = 0; t.press(0, 'ArrowLeft'); assert.deepEqual(t.log, ['focus 3', 'click 3'], 'wraps from the first to the last');
+  t.log.length = 0; t.press(2, 'Home'); assert.deepEqual(t.log, ['focus 0', 'click 0']);
+  t.log.length = 0; t.press(1, 'End'); assert.deepEqual(t.log, ['focus 3', 'click 3']);
+  t.log.length = 0;
+  for (const [key, extra] of [['ArrowDown'], ['Escape'], ['Enter'], ['a'], ['ArrowRight', { shiftKey: true }], ['ArrowRight', { ctrlKey: true }], ['ArrowLeft', { altKey: true }]]) {
+    e = t.press(1, key, extra); assert.ok(!e.prevented, key + ' is left alone');
+  }
+  assert.deepEqual(t.log, [], 'nothing else moves');
+  t.listeners[0].fn({ key: 'ArrowRight', target: { closest: () => null }, preventDefault() { throw new Error('not a tab'); } });
+  assert.ok(!/document\.addEventListener/.test(UI_SRC.replace(/\/\*[\s\S]*?\*\//g, '')), 'ui.js adds nothing to document');
+});
+test('wireTabs: a disabled tab is skipped; a vertical list answers to Up and Down', () => {
+  const t = fakeTabs(4, { disabled: [1] });
+  U.wireTabs(t.root);
+  t.press(0, 'ArrowRight'); assert.deepEqual(t.log, ['focus 2', 'click 2'], 'tab 1 is disabled');
+  const v = fakeTabs(3, { orientation: 'vertical' });
+  U.wireTabs(v.root);
+  assert.ok(!v.press(0, 'ArrowRight').prevented, 'Right does nothing on a vertical list');
+  v.press(0, 'ArrowDown'); assert.deepEqual(v.log, ['focus 1', 'click 1']);
+});
+
+test('guardBusy: ONE capture listener per root cancels a click or Enter or Space on a busy button, and nothing else', () => {
+  const calls = [], listeners = [], root = { addEventListener(type, fn, cap) { listeners.push({ type, fn, cap }); } };
+  assert.equal(U.guardBusy(root), root); U.guardBusy(root);
+  assert.deepEqual(listeners.map((l) => l.type + ':' + l.cap), ['click:true', 'keydown:true'], 'once, in the capture phase');
+  const target = (busy) => ({ closest(sel) { assert.ok(sel.includes('[aria-busy="true"]')); return busy ? this : null; } });
+  const ev = (type, busy, key) => ({ type, key, target: target(busy), preventDefault() { calls.push('prevent'); }, stopPropagation() { calls.push('stop'); }, stopImmediatePropagation() { calls.push('stopNow'); } });
+  const fire = (e) => listeners.filter((l) => l.type === e.type).forEach((l) => l.fn(e));
+  fire(ev('click', true)); assert.deepEqual(calls, ['prevent', 'stop', 'stopNow'], 'a busy click never reaches a handler');
+  calls.length = 0; fire(ev('click', false)); assert.deepEqual(calls, [], 'a button that is not busy is left alone');
+  for (const k of ['Enter', ' ']) { fire(ev('keydown', true, k)); assert.equal(calls.length, 3, k + ' on a busy button is cancelled'); calls.length = 0; }
+  fire(ev('keydown', true, 'Tab')); fire(ev('keydown', true, 'Escape')); fire(ev('keydown', false, 'Enter'));
+  assert.deepEqual(calls, [], 'Tab and Escape still work on a busy button; Enter elsewhere is left alone');
+  assert.ok(/\.ui-btn\[aria-busy="true"\]\s*\{[^}]*pointer-events:\s*none/.test(PARTS_CSS), 'the sheet stops the pointer too');
+});
+
+test('the card keeps an inline part its own width: a chip in a card is not a full-width bar', () => {
+  const css = PARTS_CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+  const m = /(\.ui-card > \.ui-chip[^{]*)\{([^}]*)\}/.exec(css);
+  assert.ok(m && /justify-self:\s*start/.test(m[2]), 'a chip laid into a card aligns to the start');
+  assert.ok(/\.ui-card\s*\{[^}]*display:\s*grid/.test(css), 'the card is still a grid');
+});
+
+test('field: check, switch, time and range', () => {
+  const chk = U.field({ label: 'Phones in', kind: 'check', checked: true, id: 'ph', cls: 'gm-ph', hint: 'Until they leave.', value: 'yes', disabled: true });
+  assert.equal(chk, '<label class="ui-field ui-field--check is-disabled"><input class="ui-field-input gm-ph" type="checkbox" id="ph" value="yes" checked disabled>'
+    + '<span class="ui-field-label">Phones in</span><span class="ui-field-hint">Until they leave.</span></label>');
+  assert.ok(!U.field({ label: 'x', kind: 'check' }).includes('checked'), 'unchecked by default');
+  const sw = U.field({ label: 'Rain', kind: 'switch', checked: true });
+  assert.ok(sw.includes('ui-field--switch') && sw.includes('type="checkbox"') && sw.includes('role="switch"') && sw.includes(' checked'), sw);
+  assert.ok(sw.indexOf('<input') < sw.indexOf('ui-field-label'), 'the box comes first');
+  const tm = U.field({ label: 'Doors', kind: 'time', value: '19:30', min: '17:00', max: '23:00', step: 60 });
+  assert.ok(tm.includes('<input class="ui-field-input" type="time" value="19:30" min="17:00" max="23:00" step="60">'), tm);
+  const rg = U.field({ label: 'Volume', kind: 'range', value: 40, min: 0, max: 100, step: 5, id: 'vol' });
+  assert.ok(rg.startsWith('<label class="ui-field ui-field--range">') && rg.includes('type="range" id="vol" value="40" min="0" max="100" step="5"'), rg);
+  assert.equal(U.field({ label: 'A' }), '<label class="ui-field"><span class="ui-field-label">A</span><input class="ui-field-input" type="text"></label>', 'a text field is as it was');
+  assert.ok(U.field({ label: 'A', kind: 'nope' }).includes('type="text"'));
+  assert.ok(!U.field({ label: 'Q', kind: 'check', placeholder: 'p' }).includes('placeholder'));
+  assert.ok(U.field({ label: EVIL, kind: 'switch', hint: EVIL }).includes('&lt;img'));
+});
+
+test('link: an <a> with the button ranks; the href is checked; escaped; the key hint as on a button', () => {
+  assert.equal(U.link({ label: 'Open', href: 'rules.html' }), '<a class="ui-btn ui-btn--standard" href="rules.html">Open</a>');
+  for (const r of ['primary', 'quiet', 'danger']) assert.ok(U.link({ label: 'A', href: '#a', rank: r }).includes('ui-btn--' + r));
+  const good = ['http://a.test/x?y=1&z=2', 'https://a.test', 'HTTPS://a.test', 'mailto:a@a.test', '#top', '/api/x', '../up/x.html', 'x.html?a=b#c', 'obsidian://open?vault=V&file=F', '//cdn.test/x'];
+  for (const h of good) assert.ok(U.link({ label: 'A', href: h }).includes('href="' + escT(h) + '"'), h + ' passes');
+  warnings.length = 0;
+  const bad = ['javascript:alert(1)', 'JaVaScRiPt:alert(1)', ' javascript:alert(1)', 'java\nscript:alert(1)', 'java\tscript:alert(1)', '\u0000javascript:x', 'data:text/html,<b>', 'vbscript:x', 'file:///c/x', 'ftp://a.test', 'blob:x'];
+  for (const h of bad) assert.ok(!/href/.test(U.link({ label: 'A', href: h })), JSON.stringify(h) + ' is dropped');
+  assert.ok(warnings.length >= 1 && warnings.every((w) => w.startsWith('B68Ui: dropped href')), 'a dropped href warns');
+  assert.ok(!/href/.test(U.link({ label: 'A', attrs: { href: 'javascript:x' } })), 'attrs cannot smuggle an href in');
+  assert.ok(!/href/.test(U.link({ label: 'A' })), 'no href given: none drawn');
+  assert.ok(U.link({ label: 'A', href: '#a' }).startsWith('<a '), 'an anchor, not a button');
+  assert.ok(U.link({ label: 'A', href: 'x"onmouseover="y' }).includes('href="x&quot;onmouseover=&quot;y"'), 'the href is escaped');
+  const dis = U.link({ label: 'A', href: '#a', disabled: true });
+  assert.ok(!dis.includes('href') && dis.includes('aria-disabled="true"') && dis.includes('tabindex="-1"') && dis.includes('role="link"'), dis);
+  assert.ok(U.link({ label: 'A', href: 'https://a.test', target: '_blank' }).includes('target="_blank" rel="noopener noreferrer"'));
+  assert.ok(!U.link({ label: 'A', href: '#a', target: '_top' }).includes('target'), 'only _blank');
+  assert.ok(U.link({ label: 'A', href: '#a', download: 'x.txt' }).includes('download="x.txt"'));
+});
+
+test('menu: a standalone list of menu items with the key hint at the right edge; the row draws its menu from the same items', () => {
+  const html = U.menu({ id: 'm1', cls: 'gm-m', label: 'Mabel Quist', items: [{ label: 'Introduce', key: 'I', data: { act: 'intro' }, id: 'mi-1', cls: 'gm-mi' },
+    { label: 'Hide', rank: 'danger' }, { label: 'Clear', disabled: true }] });
+  assert.ok(html.startsWith('<div class="ui-menu ui-menu--static gm-m" role="menu" id="m1" aria-label="Mabel Quist">'), html);
+  assert.ok(html.includes('<button type="button" class="ui-menu-item gm-mi" id="mi-1" data-act="intro" role="menuitem"><span class="ui-label">Introduce</span><kbd class="ui-key" aria-hidden="true" data-ui-key="I"></kbd></button>'), html);
+  assert.ok(html.includes('ui-menu-item ui-menu-item--danger" role="menuitem">Hide') && html.includes(' role="menuitem" disabled>Clear'), html);
+  assert.equal(U.menu({ items: [] }), '<div class="ui-menu ui-menu--static" role="menu"></div>');
+  assert.equal(U.menu({}), U.menu({ items: [] }));
+  assert.ok(U.menu({ items: [{ label: EVIL, key: EVIL }], label: EVIL }).includes('&lt;img'));
+  assert.ok(/\.ui-menu--static\s*\{[^}]*position:\s*static/.test(PARTS_CSS), 'in the flow, where the row\'s menu is a popover');
+  assert.ok(/\.ui-menu-item \.ui-key\s*\{[^}]*margin-left:\s*auto/.test(PARTS_CSS), 'the hint at the right edge');
+  const items = [{ label: 'Introduce', key: 'I' }, { label: 'Hide', rank: 'danger' }];
+  const body = (h) => h.slice(h.indexOf('<button type="button" class="ui-menu-item'), h.lastIndexOf('</button>') + 9);
+  assert.equal(body(U.row({ id: 'r9', label: 'A', more: items })), body(U.menu({ items })), 'the same items in the row\'s menu');
 });
 
 /* ---------- the manifest ---------- */

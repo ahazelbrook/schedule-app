@@ -63,6 +63,58 @@
       ]
     },
     {
+      "name": "Link",
+      "fn": "link",
+      "class": "ui-btn",
+      "variants": [
+        "primary",
+        "standard",
+        "quiet",
+        "danger"
+      ],
+      "states": [
+        "hover",
+        "focus-visible",
+        "disabled"
+      ],
+      "do": "A way out to another page or file, with the look of a button. Same ranks as a button.",
+      "dont": "A link for an action on this page: that is a Button. A link that is not http, https, mailto, obsidian or a relative path.",
+      "examples": [
+        {
+          "caption": "Standard",
+          "opts": {
+            "label": "Open in Obsidian",
+            "href": "obsidian://open?vault=Demo&file=Pelican%20Rooms"
+          }
+        },
+        {
+          "caption": "Primary",
+          "opts": {
+            "label": "Open the plate",
+            "href": "#plate",
+            "rank": "primary"
+          }
+        },
+        {
+          "caption": "Quiet",
+          "opts": {
+            "label": "Rules page",
+            "href": "rules.html",
+            "rank": "quiet",
+            "target": "_blank"
+          }
+        },
+        {
+          "caption": "Disabled",
+          "opts": {
+            "label": "Not yet",
+            "href": "#later",
+            "disabled": true
+          }
+        }
+      ]
+    },
+    {
       "name": "Segmented",
       "fn": "seg",
       "class": "ui-seg",
@@ -365,13 +417,70 @@
       ]
     },
     {
+      "name": "Menu",
+      "fn": "menu",
+      "class": "ui-menu",
+      "variants": [],
+      "states": [
+        "hover",
+        "focus-visible"
+      ],
+      "do": "A short list of verbs, the key hint at the right edge. One danger item at most, last.",
+      "dont": "A menu of places: those are Tabs. A menu as the first thing a screen shows.",
+      "examples": [
+        {
+          "caption": "With keys",
+          "opts": {
+            "label": "Mabel Quist",
+            "items": [
+              {
+                "label": "Introduce",
+                "key": "I"
+              },
+              {
+                "label": "Show on iPad",
+                "key": "S"
+              },
+              {
+                "label": "Spotlight"
+              },
+              {
+                "label": "Hide",
+                "rank": "danger"
+              }
+            ]
+          }
+        },
+        {
+          "caption": "With a disabled item",
+          "opts": {
+            "label": "Phones",
+            "items": [
+              {
+                "label": "Send",
+                "key": "Enter"
+              },
+              {
+                "label": "Clear",
+                "disabled": true
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
       "name": "Field",
       "fn": "field",
       "class": "ui-field",
       "variants": [
         "text",
         "select",
-        "textarea"
+        "textarea",
+        "check",
+        "switch",
+        "time",
+        "range"
       ],
       "states": [
         "focus-visible",
@@ -425,6 +534,42 @@
             "value": "4",
             "kind": "number",
             "disabled": true
+          }
+        },
+        {
+          "caption": "Check",
+          "opts": {
+            "label": "Phones in",
+            "kind": "check",
+            "checked": true,
+            "hint": "Counts as in until they leave."
+          }
+        },
+        {
+          "caption": "Switch",
+          "opts": {
+            "label": "Rain on the glass",
+            "kind": "switch",
+            "checked": true
+          }
+        },
+        {
+          "caption": "Time",
+          "opts": {
+            "label": "Doors",
+            "kind": "time",
+            "value": "19:30"
+          }
+        },
+        {
+          "caption": "Range",
+          "opts": {
+            "label": "Volume",
+            "kind": "range",
+            "value": 40,
+            "min": 0,
+            "max": 100,
+            "step": 5
           }
         }
       ]

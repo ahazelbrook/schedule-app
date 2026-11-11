@@ -4,7 +4,11 @@
    THE CONTRACT (frozen 11/11; later bundles build on it, so it only grows):
      B68Ui.button(o) -> string     a ui-btn. o.rank: 'primary' | 'standard' (default) | 'quiet' | 'danger'. o.type defaults to 'button'
                                    ('submit' and 'reset' pass through). o.pressed true/false -> aria-pressed; o.disabled; o.busy -> aria-busy;
-                                   o.key -> a key hint inside (aria-hidden)
+                                   o.key -> a key hint inside (aria-hidden; see "Reading a label" below)
+     B68Ui.link(o)                 an <a> that looks like a button (KS02b): same ranks as button. o.href is validated: http, https, mailto, obsidian,
+                                   a relative path or #... pass; anything else (javascript:, data:, ...) is dropped with a warning and the link
+                                   is left without an href. o.target '_blank' adds rel="noopener noreferrer"; o.download; o.disabled ->
+                                   aria-disabled, no href, tabindex -1; o.key as on button
      B68Ui.seg(o)                  a segmented pick-one: o.items [button-like {label, value, cls, data, attrs, disabled, key}], o.value (the one on),
                                    o.label (the group's name, for screen readers)
      B68Ui.tabs(o)                 a tab row, an underline: o.items [{label, value, selected, controls, ...}], o.value, o.label
@@ -14,26 +18,46 @@
      B68Ui.row(o)                  o.label (the name), o.sub, o.lead (initials, or {initials, tone}), o.action (ONE visible button; rank 'quiet' by default),
                                    o.more [button options] behind the more button (a ui-menu, opened by the overlay kit: data-ui-more),
                                    o.selected, o.edge, o.open (the menu drawn open: the look book)
-     B68Ui.field(o)                o.label, o.kind 'text' (default) | 'number' | 'search' | 'select' | 'textarea', o.value, o.options
-                                   [{value, label} or strings], o.placeholder, o.hint, o.disabled, o.required. Hooks go on the control
+     B68Ui.menu(o)                 a standalone menu (KS02b; B68Ui.row draws the same menu behind its more button): o.items [{ label, key, data, cls, id,
+                                   disabled, rank: 'danger' }] as role="menuitem" buttons, the key hint at the right edge; o.label (aria-label).
+                                   Class ui-menu ui-menu--static: it sits in the flow, where the row's one is a popover. Opening, closing and
+                                   arrow keys are the overlay kit's (KS03), not this file's
+     B68Ui.field(o)                o.label, o.kind 'text' (default) | 'number' | 'search' | 'time' | 'range' | 'select' | 'textarea' | 'check' | 'switch'
+                                   (check and switch are checkboxes: o.checked, and the label sits beside the control; switch carries role="switch"),
+                                   o.value, o.options [{value, label} or strings], o.placeholder, o.hint, o.disabled, o.required, o.min, o.max,
+                                   o.step (number, time, range). Hooks go on the control
      B68Ui.meter(o)                o.kind 'pips' (default) | 'clock', o.value, o.max (1-12), o.label (named for screen readers), o.show (the
                                    count as text), o.tone 'ink' | 'accent' | 'alarm'
      B68Ui.key(o)                  a key hint: <kbd class="ui-key">
      B68Ui.dot(o)                  a status dot: o.tone 'live' | 'ok' | 'alarm' | 'idle' | 'caution'; with o.label a word beside it, else o.title names it
-   Every part takes ONE options object (a string in its place means { label: string }) and returns an ESCAPED markup string. Every part also takes
+   HOOKS (KS02b). Every part takes ONE options object (a string in its place means { label: string }) and returns an ESCAPED markup string. Every part also takes
    the hooks, passed through untouched: o.id; o.cls (the old class names to keep: a string or a list); o.data ({ 'band-place': 'run' } ->
-   data-band-place="run"; a key that is not lower-case letters, digits, '.', '_' or '-' is dropped); o.attrs (aria-*, role, name, value, tabindex,
-   hidden, for, form, placeholder, autocomplete, inputmode, min, max, step, rows, maxlength, lang, dir, spellcheck; anything else is dropped);
-   o.title (the tooltip, on every part); o.hidden. Every string is text: there is NO raw-markup option. Nesting goes through descriptors, { part: 'chip', label: 'Live' },
+   data-band-place="run"; a camelCase key is kebab-cased the way dataset does: bandPlace and dataBandPlace both give data-band-place; a key that is
+   still not lower-case letters, digits, '.', '_' or '-' is dropped); o.attrs (aria-*, role, name, value, tabindex, hidden, for, form, placeholder,
+   autocomplete, inputmode, min, max, step, rows, maxlength, lang, dir, spellcheck; anything else is dropped); o.title (the tooltip, on every
+   part); o.hidden. A hidden of false or 'false' (in o.hidden or in attrs) leaves the attribute off. A hook that is dropped (a bad id, class,
+   attribute or data key) is reported once per distinct value with console.warn('B68Ui: dropped ...'), so a mistake shows in the console. Every string is text: there is NO raw-markup option. Nesting goes through descriptors, { part: 'chip', label: 'Live' },
    and a slot, { part: 'slot', name: 'body' } -> <div class="ui-slot" data-ui-slot="body">, which the caller fills itself.
      B68Ui.part(desc) -> string    one descriptor ({ part: 'button' | ... | 'slot', ...options })
      B68Ui.node(name, o, doc) -> Element   the same part built as DOM nodes (createElement and text nodes, no markup sink): for the iPad display,
                                    where every server string goes in as text. doc defaults to the page's document
      B68Ui.fill(root, { name: text }) -> root   sets the textContent of each [data-ui-slot="name"] under root
+     B68Ui.wireTabs(root) -> root  (KS02b) ONE delegated keydown listener on root for every tablist under it, added once per root (a second call does
+                                   nothing): Left/Right (Up/Down on an aria-orientation="vertical" list), Home and End move focus to the next
+                                   enabled tab, wrap round, set the roving tabindex and click() it, so the caller's own click handler selects it
+                                   (the WAI-ARIA tabs pattern, automatic activation). It never listens on Escape. If your click handler redraws
+                                   the row, put focus back on the selected tab there. Call it on a container, not on document
+     B68Ui.guardBusy(root) -> root (KS02b) ONE capture-phase listener on root, added once per root: a click, or an Enter or Space press, on a
+                                   button or link with aria-busy="true" is cancelled before any handler under root sees it. The helper only emits
+                                   markup, so a handler that is bound ABOVE root, or in a capture listener on document, must still check
+                                   aria-busy itself. The CSS gives a busy button pointer-events: none
      B68Ui.esc(s) -> string        & < > " ' as entities
      B68Ui.PARTS                   the manifest, app/ui/parts.json mirrored here (that file is in no bundle, so it is not precached):
                                    { version, radii, parts: [{ name, fn, class, variants, states, do, dont, examples: [{ caption, opts }] }] }.
                                    The examples are the look book's fixtures. kit-ui.test.mjs keeps the two copies equal
+   READING A LABEL (KS02b). A button, link, seg option, tab or menu item with a key hint draws <span class="ui-label">Send</span><kbd class="ui-key"
+   aria-hidden="true" data-ui-key="S"></kbd>: the hint's letter is painted by CSS (::before), so textContent of the whole button is "Send", never
+   "SendS", and (btn.querySelector('.ui-label') || btn).textContent is the label either way. Without a key the button is just its text, as before.
    Edges (card, row): 'accent' 'alarm' 'rules' 'ok' 'caution' 'ink', 'faction-1' to 'faction-6', 'out-deal' 'out-mid' 'out-low' 'out-six'
    'out-crit' (the Fixer's outcomes: for outcomes alone).
    This file is the one place in the kit that builds a button element: it writes the tag as '<' + tag, and the ratchet
@@ -59,7 +83,11 @@
   var CLASS_OK = /^-?[A-Za-z_][A-Za-z0-9_-]*$/;
   var ID_OK = /^[A-Za-z][A-Za-z0-9_:.-]*$/;
   var SLOT_OK = /^[a-z0-9][a-z0-9_-]*$/;
-  var INPUTS = { text: 1, number: 1, search: 1 };
+  var INPUTS = { text: 1, number: 1, search: 1, time: 1, range: 1 };
+  var BOXES = { check: 1, 'switch': 1 };
+  var HREF_SCHEME = /^[a-z][a-z0-9+.\-]*:/i, HREF_OK = /^(https?|mailto|obsidian):/i;
+  var BUSY = 'button[aria-busy="true"],a[aria-busy="true"],[role="button"][aria-busy="true"]';
+  var WIRED_TABS = '__b68UiTabs', WIRED_BUSY = '__b68UiBusy';
   var VOID = { input: 1 };
 
   /* ---------- the manifest (app/ui/parts.json, mirrored: kit-ui.test.mjs keeps them equal) ---------- */
@@ -78,6 +106,15 @@
           { caption: 'Quiet', opts: { label: 'Fit', rank: 'quiet' } },
           { caption: 'Danger', opts: { label: 'PANIC', rank: 'danger' } },
           { caption: 'With its key', opts: { label: 'Send', key: 'S' } }
+        ] },
+      { name: 'Link', fn: 'link', 'class': 'ui-btn', variants: ['primary', 'standard', 'quiet', 'danger'], states: ['hover', 'focus-visible', 'disabled'],
+        'do': 'A way out to another page or file, with the look of a button. Same ranks as a button.',
+        dont: 'A link for an action on this page: that is a Button. A link that is not http, https, mailto, obsidian or a relative path.',
+        examples: [
+          { caption: 'Standard', opts: { label: 'Open in Obsidian', href: 'obsidian://open?vault=Demo&file=Pelican%20Rooms' } },
+          { caption: 'Primary', opts: { label: 'Open the plate', href: '#plate', rank: 'primary' } },
+          { caption: 'Quiet', opts: { label: 'Rules page', href: 'rules.html', rank: 'quiet', target: '_blank' } },
+          { caption: 'Disabled', opts: { label: 'Not yet', href: '#later', disabled: true } }
         ] },
       { name: 'Segmented', fn: 'seg', 'class': 'ui-seg', variants: [], states: ['hover', 'focus-visible', 'pressed', 'disabled'],
         'do': 'Pick one of a few, every option in sight.',
@@ -128,7 +165,15 @@
           { caption: 'More, open', opts: { id: 'lb-row-ada', label: 'Ada Vell', sub: 'Croupier', lead: 'AV', open: true,
             action: { label: 'Spotlight' }, more: [{ label: 'Introduce' }, { label: 'Show on iPad' }, { label: 'Hide', rank: 'danger' }] } }
         ] },
-      { name: 'Field', fn: 'field', 'class': 'ui-field', variants: ['text', 'select', 'textarea'], states: ['focus-visible', 'disabled'],
+      { name: 'Menu', fn: 'menu', 'class': 'ui-menu', variants: [], states: ['hover', 'focus-visible'],
+        'do': 'A short list of verbs, the key hint at the right edge. One danger item at most, last.',
+        dont: 'A menu of places: those are Tabs. A menu as the first thing a screen shows.',
+        examples: [
+          { caption: 'With keys', opts: { label: 'Mabel Quist', items: [{ label: 'Introduce', key: 'I' }, { label: 'Show on iPad', key: 'S' },
+            { label: 'Spotlight' }, { label: 'Hide', rank: 'danger' }] } },
+          { caption: 'With a disabled item', opts: { label: 'Phones', items: [{ label: 'Send', key: 'Enter' }, { label: 'Clear', disabled: true }] } }
+        ] },
+      { name: 'Field', fn: 'field', 'class': 'ui-field', variants: ['text', 'select', 'textarea', 'check', 'switch', 'time', 'range'], states: ['focus-visible', 'disabled'],
         'do': 'A label above every input; a hint below when it helps.',
         dont: 'A placeholder as the only label.',
         examples: [
@@ -136,7 +181,11 @@
           { caption: 'Select', opts: { label: 'Position', kind: 'select', value: 'risky',
             options: [{ value: 'controlled', label: 'Controlled' }, { value: 'risky', label: 'Risky' }, { value: 'desperate', label: 'Desperate' }] } },
           { caption: 'Text area', opts: { label: 'Prep line', kind: 'textarea', value: 'Lotte Brand waits by the cloakroom.' } },
-          { caption: 'Disabled', opts: { label: 'Session', value: '4', kind: 'number', disabled: true } }
+          { caption: 'Disabled', opts: { label: 'Session', value: '4', kind: 'number', disabled: true } },
+          { caption: 'Check', opts: { label: 'Phones in', kind: 'check', checked: true, hint: 'Counts as in until they leave.' } },
+          { caption: 'Switch', opts: { label: 'Rain on the glass', kind: 'switch', checked: true } },
+          { caption: 'Time', opts: { label: 'Doors', kind: 'time', value: '19:30' } },
+          { caption: 'Range', opts: { label: 'Volume', kind: 'range', value: 40, min: 0, max: 100, step: 5 } }
         ] },
       { name: 'Meter', fn: 'meter', 'class': 'ui-meter', variants: ['pips', 'clock'], states: [],
         'do': 'Pips for short counts, a clock for clocks. Say the count.',
@@ -177,22 +226,46 @@
     a.push([k, v === true ? true : String(v)]);
     return a;
   }
+  /* a dropped hook is reported once per distinct (kind, value), so a mistake shows in the console without a flood (at most 200 are kept) */
+  var warned = {}, warnedN = 0;
+  function warn(kind, what) {
+    var k = kind + ' ' + String(what).slice(0, 60);
+    if (warned[k] || warnedN >= 200) return;
+    warned[k] = 1; warnedN++;
+    try { if (typeof console !== 'undefined' && console && typeof console.warn === 'function') console.warn('B68Ui: dropped ' + kind + ' ' + JSON.stringify(String(what).slice(0, 60))); } catch (e) { /* a console that throws is no reason to stop drawing */ }
+  }
   function classes(own, cls) {
     var out = own.slice(), more = Array.isArray(cls) ? cls : str(cls).split(/\s+/);
-    more.forEach(function (c) { c = str(c); if (c && CLASS_OK.test(c) && out.indexOf(c) < 0) out.push(c); });
+    more.forEach(function (c) {
+      c = str(c);
+      if (!c) return;
+      if (!CLASS_OK.test(c)) warn('class', c);
+      else if (out.indexOf(c) < 0) out.push(c);
+    });
     return out.join(' ');
   }
+  /* a data key as the attribute name, dataset's way (fooBar and dataFooBar give data-foo-bar); 'data-x' and 'x' pass as they were */
+  function dataName(k) {
+    k = str(k);
+    if (k.indexOf('data-') === 0) return k;
+    if (/^data[A-Z]/.test(k)) k = k.slice(4);
+    return 'data-' + k.replace(/[A-Z]/g, function (c) { return '-' + c.toLowerCase(); }).replace(/^-/, '');
+  }
+  function falsy(v) { return v === false || v === 'false'; }
   /* the hooks every part takes: id, data-*, the allowed attributes, title, hidden */
   function hooks(a, o) {
-    if (o.id != null && ID_OK.test(str(o.id))) put(a, 'id', o.id);
+    if (o.id != null) { if (ID_OK.test(str(o.id))) put(a, 'id', o.id); else warn('id', o.id); }
     if (o.title != null && o.title !== '') put(a, 'title', o.title);
     var d = o.data && typeof o.data === 'object' ? o.data : {};
     Object.keys(d).forEach(function (k) {
-      var n = k.indexOf('data-') === 0 ? k : 'data-' + k;
-      if (DATA_OK.test(n)) put(a, n, d[k] === true ? '' : d[k]);
+      var n = dataName(k);
+      if (DATA_OK.test(n)) put(a, n, d[k] === true ? '' : d[k]); else warn('data key', k);
     });
     var x = o.attrs && typeof o.attrs === 'object' ? o.attrs : {};
-    Object.keys(x).forEach(function (k) { if (ATTR_OK.test(k)) put(a, k, x[k]); });
+    Object.keys(x).forEach(function (k) {
+      if (!ATTR_OK.test(k)) warn('attribute', k);
+      else if (!(k === 'hidden' && falsy(x[k]))) put(a, k, x[k]);
+    });
     if (o.hidden === true) put(a, 'hidden', true);
     return a;
   }
@@ -217,10 +290,11 @@
 
   /* ---------- the parts, as trees ---------- */
   var T = {};
-  function keyTree(label, hint) {
-    var a = [['class', 'ui-key']];
-    if (hint) put(a, 'aria-hidden', 'true');
-    return el('kbd', a, [txt(label)]);
+  /* a control's label and its key hint. With a hint the label sits in <span class="ui-label"> and the letter is painted by CSS from data-ui-key, so
+     the control's own textContent stays the label (KS02b). With no hint it is the bare text node, as before */
+  function labelKids(label, key) {
+    if (key == null || key === '') return [txt(label)];
+    return [el('span', [['class', 'ui-label']], [txt(label)]), el('kbd', [['class', 'ui-key'], ['aria-hidden', 'true'], ['data-ui-key', str(key)]])];
   }
   T.button = function (o) {
     var rank = RANKS[o.rank] ? o.rank : 'standard';
@@ -229,18 +303,34 @@
     if (o.pressed === true || o.pressed === false) put(a, 'aria-pressed', String(o.pressed));
     if (o.busy) put(a, 'aria-busy', 'true');
     if (o.disabled) put(a, 'disabled', true);
-    var c = [txt(o.label)];
-    if (o.key != null && o.key !== '') c.push(keyTree(o.key, true));
-    return el(BTN, a, c);
+    return el(BTN, a, labelKids(o.label, o.key));
+  };
+  /* an <a> that looks like a button: the same ranks; the href is checked (http, https, mailto, obsidian, relative, #...) */
+  function safeHref(h) {
+    var c = str(h).replace(/[\u0000- ]/g, '');
+    if (!c) return '';
+    if (HREF_SCHEME.test(c) && !HREF_OK.test(c)) return '';
+    return str(h).replace(/[\u0000-\u001f]/g, '').trim();
+  }
+  T.link = function (o) {
+    var rank = RANKS[o.rank] ? o.rank : 'standard';
+    var a = [['class', classes(['ui-btn', 'ui-btn--' + rank], o.cls)]];
+    var href = safeHref(o.href);
+    if (o.href != null && o.href !== '' && !href) warn('href', o.href);
+    if (href && !o.disabled) put(a, 'href', href);
+    hooks(a, o);
+    if (o.disabled) { put(a, 'role', 'link'); put(a, 'aria-disabled', 'true'); put(a, 'tabindex', '-1'); }
+    if (o.target === '_blank') { put(a, 'target', '_blank'); put(a, 'rel', 'noopener noreferrer'); }
+    if (o.download === true) put(a, 'download', true);
+    else if (typeof o.download === 'string' && o.download) put(a, 'download', o.download);
+    return el('a', a, labelKids(o.label, o.key));
   };
   /* a button inside a group part (seg, tabs, menu): the item's own hooks, the part's classes */
   function item(it, own) {
     var a = [['type', 'button'], ['class', classes(own, it.cls)]];
     hooks(a, it);
     if (it.value != null) put(a, 'value', it.value);
-    var c = [txt(it.label)];
-    if (it.key != null && it.key !== '') c.push(keyTree(it.key, true));
-    return { a: a, c: c };
+    return { a: a, c: labelKids(it.label, it.key) };
   }
   function picked(o, it) { return o.value !== undefined && o.value !== null ? it.value != null && String(it.value) === String(o.value) : false; }
   T.seg = function (o) {
@@ -360,19 +450,28 @@
       var ma = [['class', 'ui-menu'], ['role', 'menu']];
       if (menuId) put(ma, 'id', menuId);
       if (!o.open) put(ma, 'hidden', true);
-      c.push(el('div', ma, more.map(function (m) {
-        m = norm(m);
-        var b = item(m, ['ui-menu-item'].concat(m.rank === 'danger' ? ['ui-menu-item--danger'] : []));
-        put(b.a, 'role', 'menuitem');
-        if (m.disabled) put(b.a, 'disabled', true);
-        return el(BTN, b.a, b.c);
-      })));
+      c.push(el('div', ma, menuItems(more)));
     }
     return el('div', a, c);
   };
+  /* the menu items, for the row's menu and the standalone one: { label, key, data, cls, id, disabled, rank: 'danger' } */
+  function menuItems(list) {
+    return list.map(function (m) {
+      m = norm(m);
+      var b = item(m, ['ui-menu-item'].concat(m.rank === 'danger' ? ['ui-menu-item--danger'] : []));
+      put(b.a, 'role', 'menuitem');
+      if (m.disabled) put(b.a, 'disabled', true);
+      return el(BTN, b.a, b.c);
+    });
+  }
+  T.menu = function (o) {
+    var a = hooks([['class', classes(['ui-menu', 'ui-menu--static'], o.cls)], ['role', 'menu']], o);
+    if (o.label) put(a, 'aria-label', o.label);
+    return el('div', a, menuItems(Array.isArray(o.items) ? o.items : []));
+  };
   function merge(a, b) { var o = {}; Object.keys(a).forEach(function (k) { o[k] = a[k]; }); Object.keys(b).forEach(function (k) { o[k] = b[k]; }); return o; }
   T.field = function (o) {
-    var kind = o.kind === 'select' || o.kind === 'textarea' ? o.kind : INPUTS[o.kind] ? o.kind : 'text';
+    var kind = o.kind === 'select' || o.kind === 'textarea' || BOXES[o.kind] ? o.kind : INPUTS[o.kind] ? o.kind : 'text';
     var a, ctl;
     if (kind === 'select') {
       a = hooks([['class', classes(['ui-field-input'], o.cls)]], o);
@@ -387,17 +486,22 @@
       a = hooks([['class', classes(['ui-field-input'], o.cls)]], o);
       ctl = el('textarea', a, [txt(o.value)]);
     } else {
-      a = [['class', classes(['ui-field-input'], o.cls)], ['type', kind]];
+      a = [['class', classes(['ui-field-input'], o.cls)], ['type', BOXES[kind] ? 'checkbox' : kind]];
       hooks(a, o);
-      if (o.value != null) put(a, 'value', o.value);
+      if (o.value != null && typeof o.value !== 'boolean') put(a, 'value', o.value);
+      if (kind === 'switch') put(a, 'role', 'switch');
+      if (BOXES[kind] && (o.checked === true || o.value === true)) put(a, 'checked', true);
+      if (kind === 'number' || kind === 'time' || kind === 'range') ['min', 'max', 'step'].forEach(function (k) { if (o[k] != null && o[k] !== '') put(a, k, o[k]); });
       ctl = el('input', a);
     }
-    if (o.placeholder != null && o.placeholder !== '' && kind !== 'select') put(a, 'placeholder', o.placeholder);
+    if (o.placeholder != null && o.placeholder !== '' && kind !== 'select' && !BOXES[kind]) put(a, 'placeholder', o.placeholder);
     if (o.disabled) put(a, 'disabled', true);
     if (o.required) put(a, 'required', true);
     var c = [el('span', [['class', 'ui-field-label']], [txt(o.label)]), ctl];
     if (o.hint != null && o.hint !== '') c.push(el('span', [['class', 'ui-field-hint']], [txt(o.hint)]));
-    return el('label', [['class', 'ui-field' + (o.disabled ? ' is-disabled' : '')]], c);
+    if (BOXES[kind]) c = [ctl, c[0]].concat(c.slice(2));     /* the box first, its words beside it, the hint under them */
+    var more = BOXES[kind] ? ' ui-field--' + kind : kind === 'range' ? ' ui-field--range' : '';
+    return el('label', [['class', 'ui-field' + more + (o.disabled ? ' is-disabled' : '')]], c);
   };
   function num(v, lo, hi, dflt) { v = Math.floor(Number(v)); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : dflt; }
   function fix(n) { return String(Math.round(n * 100) / 100); }
@@ -426,7 +530,7 @@
   };
 
   /* ---------- the public helper ---------- */
-  var FNS = ['button', 'seg', 'tabs', 'chip', 'card', 'row', 'field', 'meter', 'key', 'dot'];
+  var FNS = ['button', 'seg', 'tabs', 'chip', 'card', 'row', 'field', 'meter', 'key', 'dot', 'link', 'menu'];
   var M = { VERSION: 1, PARTS: PARTS, FNS: FNS.slice(), esc: esc };
   FNS.forEach(function (n) { M[n] = function (o) { return html(T[n](norm(o))); }; });
   M.part = function (d) { d = norm(d); var f = T[d.part]; return typeof f === 'function' ? html(f(d)) : ''; };
@@ -442,6 +546,51 @@
       var s = rootEl.querySelector('[data-ui-slot="' + k + '"]');
       if (s) s.textContent = str(map[k]);
     });
+    return rootEl;
+  };
+
+  /* ---------- the two delegated guards (KS02b): each is added once per root, never per control ---------- */
+  function enabledTabs(list) {
+    return Array.prototype.slice.call(list.querySelectorAll('[role="tab"]')).filter(function (t) {
+      return !t.disabled && t.getAttribute('aria-disabled') !== 'true';
+    });
+  }
+  function onTabKey(e) {
+    var k = e.key;
+    if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || !k) return;
+    var t = e.target && typeof e.target.closest === 'function' ? e.target.closest('[role="tab"]') : null;
+    var list = t && t.closest('[role="tablist"]');
+    if (!list) return;
+    var vertical = list.getAttribute('aria-orientation') === 'vertical';
+    var prev = vertical ? 'ArrowUp' : 'ArrowLeft', next = vertical ? 'ArrowDown' : 'ArrowRight';
+    if (k !== prev && k !== next && k !== 'Home' && k !== 'End') return;
+    var tabs = enabledTabs(list), i = tabs.indexOf(t);
+    if (i < 0) return;
+    var to = k === 'Home' ? 0 : k === 'End' ? tabs.length - 1 : k === next ? (i + 1) % tabs.length : (i - 1 + tabs.length) % tabs.length;
+    e.preventDefault();
+    if (tabs[to] === t) return;
+    tabs.forEach(function (x) { x.setAttribute('tabindex', x === tabs[to] ? '0' : '-1'); });
+    tabs[to].focus();
+    tabs[to].click();
+  }
+  M.wireTabs = function (rootEl) {
+    if (!rootEl || typeof rootEl.addEventListener !== 'function' || rootEl[WIRED_TABS]) return rootEl;
+    rootEl[WIRED_TABS] = true;
+    rootEl.addEventListener('keydown', onTabKey);
+    return rootEl;
+  };
+  function onBusy(e) {
+    var t = e.target && typeof e.target.closest === 'function' ? e.target.closest(BUSY) : null;
+    if (!t) return;
+    if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault(); e.stopPropagation();
+    if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+  }
+  M.guardBusy = function (rootEl) {
+    if (!rootEl || typeof rootEl.addEventListener !== 'function' || rootEl[WIRED_BUSY]) return rootEl;
+    rootEl[WIRED_BUSY] = true;
+    rootEl.addEventListener('click', onBusy, true);
+    rootEl.addEventListener('keydown', onBusy, true);
     return rootEl;
   };
   return M;
