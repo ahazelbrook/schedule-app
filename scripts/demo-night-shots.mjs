@@ -23,7 +23,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { BAND_SCENARIOS } from './demo-night-band-shots.mjs';
 import { kitScenarios } from './demo-night-kit-shots.mjs';
-import { fingerprint, logRequests, requestFile, screenOf } from './kit-fingerprint.mjs';
+import { fingerprint, logRequests, requestFile, screenOf, vnow, clockScript } from './kit-fingerprint.mjs';
 
 const GM_READY = async (page) => {
   await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
@@ -76,15 +76,15 @@ const toFold = async (page) => { await page.$eval('#dossier .ds-betweenbox', (b)
 const COMMEND = { kind: 'commend', owner: '_', scope: 'public', json: null };   /* the Aftermath's step 7 row (app/gm/aftermath.js): 90 s; 180 here, so both sizes fit in it */
 const nellsDebrief = async (ctx) => {   /* last night's Debrief for Nell: from this morning, the defaults two days on */
   const D = createRequire(import.meta.url)('../app/gm/debrief.js');   /* the GM page's own row builder */
-  const at = Date.now() - 30 * 3600 * 1000;
+  const at = vnow() - 30 * 3600 * 1000;
   await call(ctx, 'PUT', '/docs', { kind: 'debrief', owner: P1, scope: 'player', json: D.buildRow({ steps: ['unwind', 'xp', 'credits'], nightAt: at, sentAt: at }) });
 };
 const nellAnswers = async (ctx) => {   /* she answers it: it leaves the Now card for the fold */
   const r = (await call(ctx, 'GET', '/docs?kind=debrief', undefined, P1)).json, row = r && r.docs && r.docs[0];
-  if (row && !row.json.reply) await call(ctx, 'PUT', '/docs', { kind: 'debrief', scope: 'player', json: Object.assign({}, row.json, { reply: { at: Date.now(), unwind: { pick: 'train', note: 'Long walks by the quay' }, xp: { ticked: true, note: '' } } }) }, P1);
+  if (row && !row.json.reply) await call(ctx, 'PUT', '/docs', { kind: 'debrief', scope: 'player', json: Object.assign({}, row.json, { reply: { at: vnow(), unwind: { pick: 'train', note: 'Long walks by the quay' }, xp: { ticked: true, note: '' } } }) }, P1);
 };
 const nellsPacket = async (ctx) => {   /* she missed a night: the GM left her the front page and a recap (app/gm/absent.js builds this row) */
-  await call(ctx, 'PUT', '/docs', { kind: 'packet', owner: P1, scope: 'player', json: { v: 1, at: Date.now(), front: { masthead: 'The Pelican Post', issue: 'No. 12', date: 'Thursday', headline: 'Lights out at the Pelican Rooms',
+  await call(ctx, 'PUT', '/docs', { kind: 'packet', owner: P1, scope: 'player', json: { v: 1, at: vnow(), front: { masthead: 'The Pelican Post', issue: 'No. 12', date: 'Thursday', headline: 'Lights out at the Pelican Rooms',
     standfirst: 'A power cut, a missing ledger and a doorwoman who saw nothing.', account: ['The lights went out at a quarter past eleven.', 'By the time they came back the counting room was empty.'], name: 'Mabel Quist', hook: 'The Watch wants a word.' },
   previously: { faces: [{ name: 'Mabel Quist', role: 'Fixer' }, { name: 'Dov Kessler', role: 'Desk sergeant' }], lines: ['The crew took the job from Mabel.', 'Ray talked his way past the door.', 'Tam found the second set of books.'] }, changes: ['Stress 2 to 4'] } });
 };
@@ -99,7 +99,7 @@ const PHONE_SCENARIOS = [
   /* a key at three hits: the card offers the turn (the Keys box keeps its own) */
   ...nellAt('phone-now-keys', { steps: nowIs('keys') }),
   /* two due at once: the Aftermath's xp commendations first, the key behind "+1 more" */
-  ...nellAt('phone-now-commend', { setup: async (ctx) => { await call(ctx, 'PUT', '/docs', Object.assign({}, COMMEND, { json: { v: 1, secs: 180, until: Date.now() + 180000 } })); }, steps: nowIs('commend') }),
+  ...nellAt('phone-now-commend', { setup: async (ctx) => { await call(ctx, 'PUT', '/docs', Object.assign({}, COMMEND, { json: { v: 1, secs: 180, until: vnow() + 180000 } })); }, steps: nowIs('commend') }),
   ...nellAt('phone-now-more', { steps: async (page) => { await nowIs('commend')(page); await page.click('#dossier .ds-now-more'); await page.waitForSelector('#ds-now-rest', { timeout: 5000 }); } }),
   /* the morning after: the Debrief, and its form */
   ...nellAt('phone-now-debrief', { setup: async (ctx) => { await call(ctx, 'DELETE', '/docs?kind=commend&owner=_'); await nellsDebrief(ctx); }, steps: nowIs('debrief') }),
@@ -139,7 +139,7 @@ const SITE_SCENARIOS = [
     await page.click('.rv-rm.sel .rv-p[data-pid="npc-mabel"] [data-site="spot"]'); await page.waitForSelector('.rv-rm.sel .rv-p.held [data-site="expr"]', { timeout: 10000 });
     await page.click('.rv-rm.sel .rv-p.held [data-expr="pleased"]'); await page.waitForTimeout(900); })),
   ...siteAt('site-montage', async (page) => { await page.click('.rv-tools [data-site="montage"]'); await page.waitForSelector('.rv-sec[data-sec="tool"] .gm-inline', { timeout: 10000 }); },
-    async (ctx) => { await siteClear(ctx); const t = Date.now(), m = 60000;
+    async (ctx) => { await siteClear(ctx); const t = vnow(), m = 60000;
       await ctx.api('PATCH', '/gm/state', { night: { v: 1, phase: 'score', phases: { pb: { budget: 30, start: t - 160 * m, end: t - 130 * m }, plan: { budget: 25, start: t - 130 * m, end: t - 100 * m }, score: { budget: 90, start: t - 100 * m, end: null }, after: { budget: 20 } } } }); }),
   ...siteAt('site-menu', async (page) => { await page.click('[data-rv="menu"]'); await page.waitForSelector('#rv-menu:not([hidden])', { timeout: 5000 }); }),
   ...siteAt('site-alarm', async (page) => { await page.click('.rv-head .rv-alarm'); await page.waitForSelector('.rv-alarmpop', { timeout: 5000 }); }),
@@ -258,6 +258,7 @@ export async function shoot({ base, dir, only = [], api, users, theme = '', fing
     if (theme) await c.addInitScript((t) => { try { localStorage.setItem('b68.theme', t); } catch (e) { /* no storage */ } }, theme === 'night' ? 'dark' : 'light');
     /* a fingerprint run rolls the same dice every time (the Roll card's situation, the generators): Math.random is a seeded generator in the page, from its first script */
     if (fp) await c.addInitScript(() => { let a = 0x9e3779b9; Math.random = () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; });
+    const ck = clockScript(); if (ck) await c.addInitScript(ck[0], ck[1]);
     if (init) await c.addInitScript(init);
     const page = await c.newPage();
     if (fp) logRequests(page, reqs[screenOf(route)]);

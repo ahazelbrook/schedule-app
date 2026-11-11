@@ -8,6 +8,7 @@
 //   kit-stage-idle kit-stage-band kit-stage-clocks kit-stage-stakes kit-stage-result kit-stage-npc kit-stage-map   the iPad at 1024x768, 1180x820 and 768x1024
 //   kit-phone-sheet kit-phone-sheet-full   Nell's sheet at 390x844 and 375x667
 // Invented fixtures only (the Pelican Rooms, the Dovetail Crew). Anything an overlay says is the demo's own words.
+import { vnow } from './kit-fingerprint.mjs';
 const IPAD = 'table.ipad@example.test', P1 = 'player1@example.test';
 const IPADS = [[1024, 768], [1180, 820], [768, 1024]];
 const HINT = () => { try { localStorage.setItem('b68.display.hint', '1'); } catch (e) { /* no storage */ } };       /* the iPad dismissed its Home Screen hint on day one */
@@ -59,9 +60,9 @@ export function kitScenarios(h) {
     ...ipad('kit-stage-idle', overlay(null)),
     ...ipad('kit-stage-band', overlay(null), seen('.dp-overlay')),
     ...ipad('kit-stage-clocks', tickClocks),
-    ...ipad('kit-stage-stakes', stamp('kit-stakes-' + Date.now(), 'Nell goes for it: the guard is watching the door', 'risky', 'standard'), seen('.dp-overlay')),
-    ...ipad('kit-stage-result', stamp('kit-result-' + Date.now(), 'It goes wrong: a door slams upstairs', 'desperate', 'limited'), seen('.dp-overlay')),
-    ...ipad('kit-stage-npc', overlay({ id: 'kit-npc-' + Date.now(), kind: 'npc', ms: 180000, npcId: 'npc-mabel' }), seen('.dp-ov-npc')),
+    ...ipad('kit-stage-stakes', stamp('kit-stakes-' + vnow(), 'Nell goes for it: the guard is watching the door', 'risky', 'standard'), seen('.dp-overlay')),
+    ...ipad('kit-stage-result', stamp('kit-result-' + vnow(), 'It goes wrong: a door slams upstairs', 'desperate', 'limited'), seen('.dp-overlay')),
+    ...ipad('kit-stage-npc', overlay({ id: 'kit-npc-' + vnow(), kind: 'npc', ms: 180000, npcId: 'npc-mabel' }), seen('.dp-ov-npc')),
     ...ipad('kit-stage-map', mapToIpad),
     { name: 'kit-stage-clear', size: [1024, 768], route: '#display', as: IPAD, ready: DISPLAY_READY, settle: 500, init: HINT, setup: overlay(null) },
     /* the phone: Nell's sheet, the part that scrolls and the part that does not */

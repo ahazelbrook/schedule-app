@@ -12,6 +12,7 @@
 // (and then all five together), and the page's layout fingerprint and its data-kit attributes are held to the same page's all-off fingerprint taken before. After KS01.5
 // the old sheets stay layered until a reload (the same look), so it compares fingerprints, never the loaded sheet elements; with the stubs it has nothing to differ on.
 // The same page, reloaded, is held to it too (the all-off look is the same look). It runs on PORT + 1.
+// The pages run at a fixed time of day (20:00), the harness's own clock: the prep note's 19:30 start and 22:40 curfew would otherwise change the band by the hour.
 // With no baseline folder it skips with a line saying so (exit 0). The scenarios are the same list the baseline ran, in the same order: a later bundle adds its own
 // to the END of scripts/demo-night-shots.mjs's list only, or the state every later scenario inherits would differ.
 //   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=9400] [KIT_BASELINE=<dir>] [KIT_OFF_ONLY=gm-,band-] node checks/runtime/kit-off.e2e.mjs
@@ -58,11 +59,7 @@ if (!process.env.PW_MODULE) { console.log('SKIP kit-off: PW_MODULE is not set (t
 
 /* 2. the run: every scenario, the five settings written off */
 const meta = fs.existsSync(path.join(BASELINE, 'baseline-meta.json')) ? JSON.parse(fs.readFileSync(path.join(BASELINE, 'baseline-meta.json'), 'utf8')) : null;
-const CURFEW = '22:40', hm = new Date().toTimeString().slice(0, 5);
-if (meta) {
-  console.log('baseline: commit ' + String(meta.commit).slice(0, 7) + ', taken ' + meta.capturedAt + ' (local ' + meta.localTime + '); this run: local ' + hm);
-  if ((meta.localTime >= CURFEW) !== (hm >= CURFEW)) console.log('NOTE the baseline and this run are on different sides of the prep note\'s curfew (' + CURFEW + '): the pages run on the real clock, so the curfew bar may account for differences in the Score and the band; run it again at a time of day on the baseline\'s side');
-}
+if (meta) console.log('baseline: commit ' + String(meta.commit).slice(0, 7) + ', taken ' + meta.capturedAt + '; both runs live at 20:00 (the harness clock, scripts/kit-fingerprint.mjs), so the time of day does not matter');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'b68-kit-off-'));
 const t0 = Date.now();
 const run = await runShots(ROOT, PORT, dir, ['--fingerprint', '--kit', 'none'].concat(ONLY.length ? ['--only', ONLY.join(',')] : []));

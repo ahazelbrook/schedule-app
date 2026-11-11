@@ -99,12 +99,13 @@ export function compare(base, cur, opts = {}) {
   /* an element's flags: those captured, 'm' if a mask pattern matches its key, and an exemption whose `keys` pattern matches its key */
   const fl = (e) => { let f = (e[9] || '') + (mk.some((re) => re.test(e[0])) ? 'm' : ''); if (!/x/.test(f)) { const i = xk.findIndex((re) => re && re.test(e[0])); if (i >= 0) f += 'x' + String.fromCharCode(97 + i); } return f; };
   const nameOf = (e) => { const m = /x([a-z])/.exec(fl(e)); const x = m ? exs[m[1].charCodeAt(0) - 97] : null; return x ? x.name : 'an exemption'; };
-  let pushed = 0, firstY = Infinity;
+  let pushed = 0, firstY = Infinity, lastY = -Infinity;
   for (const [k, e] of C) if (!B.has(k) && fl(e).includes('x')) {
     exempted.push(nameOf(e) + ': new ' + k.split('/').slice(-2).join('/'));
     const parent = k.slice(0, k.lastIndexOf('/'));
-    if (!C.has(parent) || !fl(C.get(parent)).includes('x')) { pushed += e[7]; firstY = Math.min(firstY, e[5]); }
+    if (!C.has(parent) || !fl(C.get(parent)).includes('x')) { firstY = Math.min(firstY, e[5]); lastY = Math.max(lastY, e[5] + e[7]); }
   }
+  if (lastY > -Infinity) pushed = lastY - firstY + 24;      /* the span the new rows fill, and the gaps between them */
   for (const [k, b] of B) {
     if (!C.has(k)) { if (keyMasked(k)) continue; if (!fl(b).includes('x')) diffs.push({ kind: 'missing', key: k, detail: 'in the baseline, not in this run' }); else exempted.push(nameOf(b) + ': gone ' + k.split('/').slice(-2).join('/')); }
   }
@@ -157,6 +158,29 @@ export function kitIds(list) {
   }
   return [...new Set(out)];
 }
+/* ---------- the clock ---------- */
+/* The demo night's pages run on the real clock: the prep note starts at 19:30 and the curfew is 22:40, so a picture taken at 18:00 and one taken at 21:00 differ
+   (BEFORE to 19:30, "209 min"). A fingerprint run therefore lives at a fixed time of day: a constant offset puts the time of day at HH:MM when the run starts, in the
+   harness (vnow(): everything it writes with a time) and in every page (a Date that adds the same offset, from its first script). Time still runs at its own speed.
+   Things the Worker stamps itself still carry the real time. --clock real turns it off; --fingerprint sets 20:00 unless told otherwise. */
+export const CLOCK = { delta: 0, at: '' };
+export function setClock(hhmm) {
+  if (!hhmm || hhmm === 'real') { CLOCK.delta = 0; CLOCK.at = ''; return; }
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm); if (!m) throw new Error('--clock takes HH:MM or real');
+  const d = new Date(); d.setHours(+m[1], +m[2], 0, 0); CLOCK.delta = d.getTime() - Date.now(); CLOCK.at = hhmm;
+}
+export const vnow = () => Date.now() + CLOCK.delta;
+/* a Playwright init script (function and argument) that gives the page the same offset; null when the clock is real */
+export function clockScript() {
+  if (!CLOCK.delta) return null;
+  return [function (delta) {
+    const R = Date, now = () => R.now() + delta;
+    function D(...a) { if (!new.target) return new R(now()).toString(); return a.length ? new R(...a) : new R(now()); }
+    D.prototype = R.prototype; D.now = now; D.parse = R.parse; D.UTC = R.UTC; Object.setPrototypeOf(D, R);
+    window.Date = D;
+  }, CLOCK.delta];
+}
+
 /* ---------- running the demo night from a check ---------- */
 /* the environment a child gets: the Anthropic keys taken out (no API call may happen from the harness; demo-night takes them out of the Worker's too) */
 export function noKey() { const e = { ...process.env, CI: '1' }; delete e.B68_ANTHROPIC_KEY; delete e.ANTHROPIC_API_KEY; return e; }
@@ -180,7 +204,7 @@ export async function startDemo(root, port, extra = []) {
   return { stop, out: () => log, base, state };
 }
 /* The same, for a run that takes its own pictures and exits: scripts/demo-night.mjs --shots dir ...; resolves { status, out } when it ends (or at timeoutMs, killed). */
-export async function runShots(root, port, dir, extra = [], timeoutMs = 1500000) {
+export async function runShots(root, port, dir, extra = [], timeoutMs = 2700000) {
   const { spawn, spawnSync } = await import('node:child_process'), path = await import('node:path');
   const child = spawn(process.execPath, [path.join(root, 'scripts', 'demo-night.mjs'), '--port', String(port), '--shots', dir, ...extra], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'], env: noKey() });
   let out = ''; child.stdout.on('data', (d) => { out += d; }); child.stderr.on('data', (d) => { out += d; });

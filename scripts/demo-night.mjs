@@ -6,6 +6,7 @@
 //   npm run demo:night -- --shots <dir>         seed, take every scenario's screenshot (scripts/demo-night-shots.mjs) into <dir>, and exit
 //   npm run demo:night -- --shots <dir> --only gm-plan,phone-nell     only the scenarios whose names start with one of these
 //   npm run demo:night -- --shots <dir> --fingerprint   also write each scenario's layout fingerprint (<name>-<width>.json) and the requests-<screen>.json files (scripts/kit-fingerprint.mjs)
+//   npm run demo:night -- --shots <dir> --clock HH:MM|real   the time of day the harness and its pages live at (default 20:00 with --fingerprint, else real)
 //   npm run demo:night -- --shots <dir> --kit desk,stage,phone,who,pitches   turn those of the kit's five settings on first (--kit none writes all five off; omitted, nothing is written)
 //   npm run demo:night -- --shots <dir> --theme paper|night   the look the pages open in (the theme key a device would hold; omitted, the page follows the device as it does today)
 //   Screenshots need Playwright: PW_MODULE=<path to playwright or playwright-core> and, on Windows, PW_CHANNEL=msedge.
@@ -34,7 +35,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { buildPrep } from './lib/prep-export.mjs';
 import { buildScreen } from './lib/screen-export.mjs';
 import { basenames } from './lib/vault.mjs';
-import { kitIds, setKit } from './kit-fingerprint.mjs';
+import { kitIds, setKit, setClock, vnow } from './kit-fingerprint.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -62,7 +63,8 @@ const { GM, IPAD, P1, P2, P3 } = USERS;
 
 /* ---------- the invented night ---------- */
 const SITE = 'The Pelican Rooms';
-const NOW = new Date().toISOString();
+setClock(opt('clock', FINGERPRINT ? '20:00' : 'real'));      /* a fingerprint run lives at 20:00 (scripts/kit-fingerprint.mjs); --clock HH:MM or real */
+const NOW = new Date(vnow()).toISOString();
 const FIX = path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm');
 const fx = (f) => JSON.parse(readFileSync(path.join(FIX, f), 'utf8'));
 const conFix = fx('console-pack.json'), locFix = fx('location-pack.json'), npcFix = fx('npc-pack.json'), scoreFix = fx('score-pack.json'), scenesFix = fx('scenes-pack.json');
@@ -386,7 +388,7 @@ async function seed() {
   }));
   /* the docs: a front page, two opportunity posts, a debrief, a quiet-line message, an absent packet */
   const FP = require(path.join(ROOT, 'app', 'gm', 'frontpage.js')), DB = require(path.join(ROOT, 'app', 'gm', 'debrief.js')), AB = require(path.join(ROOT, 'app', 'gm', 'absent.js'));
-  const t = Date.now();
+  const t = vnow();
   await must('front page', api('PUT', '/docs', { kind: 'frontpage', owner: '_', scope: 'gm', json: { v: 1, text: FRONT_PAGE, at: t } }));
   await must('opportunity 1', api('PUT', '/docs', { kind: 'opportunity', scope: 'player', json: { v: 1, items: [{ id: 'o1', k: 'target', text: 'The strongbox in the penthouse at the Pelican Rooms', at: t - 86400000 }, { id: 'o2', k: 'client', text: 'A porter who wants the house to lose', at: t - 80000000 }] } }, P1));
   await must('opportunity 2', api('PUT', '/docs', { kind: 'opportunity', scope: 'player', json: { v: 1, items: [{ id: 'o1', k: 'operation', text: 'Swap the house\'s ledger for a forged one', at: t - 70000000 }] } }, P2));
