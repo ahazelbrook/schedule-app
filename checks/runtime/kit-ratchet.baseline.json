@@ -1,0 +1,256 @@
+{
+ "_note": "Written by node checks/runtime/kit-ratchet.test.mjs --write. Counts may only go down.",
+ "totals": {
+  "style": 3680,
+  "important": 69,
+  "button": 624,
+  "confirm": 64,
+  "prompt": 12
+ },
+ "files": {
+  "app/ambient/boneyard-dawn.html": {
+   "style": 257
+  },
+  "app/ambient/duskwall-after-dark.html": {
+   "style": 52
+  },
+  "app/ambient/grunts-vet.html": {
+   "style": 249
+  },
+  "app/ambient/lurker-press.html": {
+   "style": 131
+  },
+  "app/ambient/night-tram.html": {
+   "style": 121
+  },
+  "app/ambient/opening-credits.html": {
+   "style": 378
+  },
+  "app/ambient/planning-meeting.html": {
+   "style": 1073
+  },
+  "app/ambient/second-harvest.html": {
+   "style": 339
+  },
+  "app/ambient/sunrise-ball-opening.html": {
+   "style": 16
+  },
+  "app/ambient/undertow.html": {
+   "style": 853
+  },
+  "app/ambient/wanted-wall.html": {
+   "style": 99
+  },
+  "app/ambient/watch-feed.html": {
+   "important": 1,
+   "style": 81
+  },
+  "app/boot.js": {
+   "button": 3,
+   "style": 1,
+   "confirm": 5
+  },
+  "app/campaign.css": {
+   "important": 2
+  },
+  "app/campaign.js": {
+   "button": 26,
+   "confirm": 4
+  },
+  "app/cast-page.js": {
+   "button": 14,
+   "confirm": 1
+  },
+  "app/cast.css": {
+   "important": 2
+  },
+  "app/crewsheet.css": {
+   "important": 1
+  },
+  "app/crewsheet.js": {
+   "button": 31,
+   "style": 9
+  },
+  "app/display.css": {
+   "important": 1
+  },
+  "app/display/aftermath.css": {
+   "important": 3
+  },
+  "app/display/board.css": {
+   "important": 2
+  },
+  "app/display/fx.js": {
+   "important": 3
+  },
+  "app/display/shows.css": {
+   "important": 2
+  },
+  "app/display/title-card.css": {
+   "important": 2
+  },
+  "app/gm-page.js": {
+   "button": 162,
+   "style": 2,
+   "confirm": 22,
+   "prompt": 2
+  },
+  "app/gm.css": {
+   "important": 9
+  },
+  "app/gm/absent.js": {
+   "button": 2,
+   "style": 2
+  },
+  "app/gm/assist-panel.js": {
+   "button": 12
+  },
+  "app/gm/band.js": {
+   "button": 15
+  },
+  "app/gm/board.js": {
+   "confirm": 1
+  },
+  "app/gm/castphoto.js": {
+   "prompt": 1
+  },
+  "app/gm/corkboard.js": {
+   "button": 2
+  },
+  "app/gm/cue-stack.js": {
+   "button": 7
+  },
+  "app/gm/debrief.js": {
+   "confirm": 1
+  },
+  "app/gm/desk-b31.js": {
+   "button": 1,
+   "style": 1
+  },
+  "app/gm/face-looks.js": {
+   "button": 2
+  },
+  "app/gm/frontpage.js": {
+   "button": 3,
+   "style": 1
+  },
+  "app/gm/hardstart.js": {
+   "button": 6
+  },
+  "app/gm/knowledge.js": {
+   "button": 1
+  },
+  "app/gm/mission-publish.js": {
+   "confirm": 1
+  },
+  "app/gm/montage.js": {
+   "button": 5
+  },
+  "app/gm/music.js": {
+   "button": 11,
+   "confirm": 1
+  },
+  "app/gm/phone.js": {
+   "button": 4
+  },
+  "app/gm/places.js": {
+   "button": 19
+  },
+  "app/gm/practical.js": {
+   "button": 3
+  },
+  "app/gm/preflight.js": {
+   "button": 1
+  },
+  "app/gm/prep.js": {
+   "button": 1
+  },
+  "app/gm/print.js": {
+   "button": 4
+  },
+  "app/gm/roll.js": {
+   "button": 20
+  },
+  "app/gm/run-view.js": {
+   "button": 48,
+   "style": 2,
+   "confirm": 1
+  },
+  "app/gm/security.js": {
+   "button": 3
+  },
+  "app/gm/settings.js": {
+   "button": 1
+  },
+  "app/gm/site.js": {
+   "button": 7
+  },
+  "app/gm/spotlight.js": {
+   "button": 6,
+   "confirm": 1
+  },
+  "app/gm/stage.js": {
+   "button": 3
+  },
+  "app/gm/trouble.js": {
+   "button": 6
+  },
+  "app/gm/workshop.js": {
+   "button": 1
+  },
+  "app/index.html": {
+   "button": 22,
+   "important": 4
+  },
+  "app/maps/map-kit.js": {
+   "style": 9
+  },
+  "app/name-edit.js": {
+   "button": 4
+  },
+  "app/rules.css": {
+   "important": 2
+  },
+  "app/rules.js": {
+   "button": 18,
+   "confirm": 2
+  },
+  "app/schedule.css": {
+   "important": 5
+  },
+  "app/schedule.js": {
+   "button": 20,
+   "style": 1,
+   "confirm": 1
+  },
+  "app/season.css": {
+   "important": 5
+  },
+  "app/season.js": {
+   "button": 4
+  },
+  "app/sheet/claims.js": {
+   "button": 1
+  },
+  "app/sheet/keys.js": {
+   "button": 5,
+   "style": 1,
+   "confirm": 1
+  },
+  "app/sheet/now.js": {
+   "button": 3
+  },
+  "app/steps.js": {
+   "button": 7
+  },
+  "app/tracker.css": {
+   "important": 25
+  },
+  "app/tracker.js": {
+   "button": 110,
+   "style": 2,
+   "confirm": 22,
+   "prompt": 9
+  }
+ }
+}
