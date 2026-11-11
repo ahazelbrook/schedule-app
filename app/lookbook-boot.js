@@ -238,6 +238,108 @@
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { readBack(sec); });
   }
 
+  /* ---------- the overlays (KS03), below the kit's parts: a dialog (a confirm with a danger button, a prompt), a menu flipped at the right edge of its
+     box, the toast stack with five toasts (four shown, one waiting), and a tooltip with its key hint. Paper and Night side by side (data-ui-theme
+     on each column); a preset for pictures: lookbook.html#ov=paper or #ov=night. Each demo is the real thing from app/ui/overlay.js, mounted in a
+     box of its own (the menu and the stack are local, pinned and still: no timers, no outside click), so a picture shows what the page does. ---------- */
+  function ovCss() {
+    var s = document.createElement('style'); s.id = 'lb-ov-css';
+    s.textContent = [
+      '.lb-ov { padding: 8px 20px 24px; }',
+      '.lb-ov-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 8px 0 16px; }',
+      '.lb-ov-bar h2 { margin: 0 12px 0 0; font: 900 28px/1.1 var(--ui-font-cond); text-transform: uppercase; letter-spacing: .04em; }',
+      '.lb-ov-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 0; border: var(--ui-rule); }',
+      '.lb-ov-col { min-width: 0; padding: var(--ui-space-5) var(--ui-space-5) var(--ui-space-6); background: var(--ui-surface); color: var(--ui-ink); }',
+      '.lb-ov-col > h3 { margin: 0 0 var(--ui-space-4); font: 900 var(--ui-type-title)/1 var(--ui-font-cond); text-transform: uppercase; letter-spacing: .02em; }',
+      '.lb-ov-col > h4 { margin: var(--ui-space-6) 0 var(--ui-space-3); color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.3 var(--ui-font-text); letter-spacing: .16em; text-transform: uppercase; }',
+      '.lb-ov-col > h4 b { color: var(--ui-ink); }',
+      '.lb-ov-row { display: flex; flex-wrap: wrap; gap: var(--ui-space-5); align-items: flex-start; }',
+      '.lb-ov-fig { display: grid; gap: var(--ui-space-2); margin: 0; min-width: 0; flex: 1 1 24em; }',
+      '.lb-ov-fig figcaption { color: var(--ui-ink-faint); font: 400 var(--ui-type-label)/1.3 var(--ui-font-mono); }',
+      '.lb-ov-box { position: relative; box-sizing: border-box; height: 15em; border: var(--ui-hairline); border-radius: var(--ui-radius); background: var(--ui-sunk); overflow: hidden; }',
+      '.lb-ov-box.lb-ov-tall { height: 25em; }',
+      '.lb-ov-anchor { position: absolute; right: var(--ui-space-3); top: var(--ui-space-3); }',
+      '.lb-ov-low { position: absolute; left: var(--ui-space-3); bottom: var(--ui-space-3); }',
+      '.lb-ov-tipbox { display: grid; justify-items: start; gap: var(--ui-space-2); padding: var(--ui-space-4) 0; }',
+            '.lb-ov[data-lb-ov="paper"] [data-ui-theme="night"], .lb-ov[data-lb-ov="night"] [data-ui-theme="paper"] { display: none; }'
+    ].join('\n');
+    document.head.appendChild(s);
+  }
+  function ovFig(caption, node) {
+    var f = document.createElement('figure'); f.className = 'lb-ov-fig';
+    f.appendChild(node);
+    var c = document.createElement('figcaption'); c.textContent = caption; f.appendChild(c);
+    return f;
+  }
+  function ovHead(col, strong, rest) {
+    var h = document.createElement('h4'), b = document.createElement('b');
+    b.textContent = strong; h.appendChild(b); h.appendChild(document.createTextNode(': ' + rest)); col.appendChild(h);
+  }
+  function ovRow(col, figs) {
+    var row = document.createElement('div'); row.className = 'lb-ov-row';
+    figs.forEach(function (f) { row.appendChild(f); });
+    col.appendChild(row);
+  }
+  function overlayColumn(theme, later) {
+    var U = window.B68Ui, O = window.B68Overlay;
+    var col = document.createElement('div'); col.className = 'lb-ov-col'; col.setAttribute('data-ui-theme', theme);
+    var h3 = document.createElement('h3'); h3.textContent = 'The ’68 overlays · ' + (theme === 'night' ? 'Night' : 'Paper'); col.appendChild(h3);
+
+    ovHead(col, 'Dialog', 'a native dialog; the danger button is never the default, Cancel is');
+    ovRow(col, [
+      ovFig('confirm, danger: Cancel has the focus', O.buildDialog('confirm', { title: 'Take the night down?', body: 'The iPad goes back to the idle scene and the phones are let go. The roster stays.', confirm: 'Take it down', danger: true }, 'div').root),
+      ovFig('prompt: Enter saves, Esc or a click outside leaves', O.buildDialog('prompt', { title: 'Rename the scene', label: 'Name', value: 'The Pelican Rooms', hint: 'Only you see this.', confirm: 'Save' }, 'div').root)
+    ]);
+
+    ovHead(col, 'Popover and menu', 'anchored, and flipped where the screen ends');
+    var box = document.createElement('div'); box.className = 'lb-ov-box';
+    var anchor = U.node('button', { label: 'Actions', cls: 'lb-ov-anchor', attrs: { 'aria-haspopup': 'menu' } });
+    box.appendChild(anchor);
+    var low = document.createElement('div'); low.className = 'lb-ov-box';
+    var anchor2 = U.node('button', { label: 'More', rank: 'quiet', cls: 'lb-ov-low', attrs: { 'aria-haspopup': 'menu' } });
+    low.appendChild(anchor2);
+    ovRow(col, [ovFig('at the right edge it takes the anchor’s right edge; Esc closes it through the page’s one Esc', box), ovFig('at the bottom it opens upward', low)]);
+    var items = [{ label: 'Introduce', key: 'N' }, { label: 'Show on iPad', key: 'I' }, { label: 'Hide', rank: 'danger' }];
+    later.push(function () {
+      U.menu({ anchor: anchor, items: items, label: 'Actions', mount: box, absolute: true, bounds: box, pinned: true, focus: false }).open();
+      U.menu({ anchor: anchor2, items: items, label: 'More', mount: low, absolute: true, bounds: low, pinned: true, focus: false }).open();
+    });
+
+    ovHead(col, 'Toast stack', 'one stack, bottom right, at most four; info fades (its timer shows) and can carry Undo; an error stays');
+    var tb = document.createElement('div'); tb.className = 'lb-ov-box lb-ov-tall';
+    ovRow(col, [ovFig('five toasts: four shown, one waiting', tb)]);
+    later.push(function () {
+      var st = O.stack({ mount: tb, absolute: true, still: true, noEsc: true });
+      st.add({ text: 'Sent to the iPad: The vault floor', undo: function () {} });
+      st.add({ text: 'Roll saved to the log' });
+      st.add({ text: 'The iPad did not answer. Try again.', tone: 'error' });
+      st.add({ text: 'Phones in: Nell, Ray, Tam' });
+      st.add({ text: 'Clock started (waits its turn)' });
+    });
+
+    ovHead(col, 'Tooltip', 'a title, on hover and on keyboard focus, with its key when there is one; never over its control');
+    var tipbox = document.createElement('div'); tipbox.className = 'lb-ov-tipbox';
+    tipbox.appendChild(U.node('button', { label: 'Show on iPad', title: 'Show on iPad', data: { 'tip-key': 'I' } }));
+    tipbox.appendChild(O.tip.node('Show on iPad', 'I'));
+    ovRow(col, [ovFig('the tooltip; hover or Tab to the real button above it', tipbox)]);
+    return col;
+  }
+  function overlaySection(host) {
+    var U = window.B68Ui, O = window.B68Overlay;
+    if (!U || !O || !O.stack || document.documentElement.getAttribute('data-kit') === null) return;
+    ovCss();
+    var m = /ov=(paper|night)/.exec(String(location.hash || '')), later = [];
+    var sec = document.createElement('section'); sec.className = 'lb-ov'; sec.id = 'lb-overlay'; sec.setAttribute('data-lb-ov', m ? m[1] : 'both');
+    var bar = document.createElement('div'); bar.className = 'lb-ov-bar';
+    var h2 = document.createElement('h2'); h2.textContent = 'The overlays'; bar.appendChild(h2); sec.appendChild(bar);
+    var cols = document.createElement('div'); cols.className = 'lb-ov-cols';
+    cols.appendChild(overlayColumn('paper', later)); cols.appendChild(overlayColumn('night', later));
+    sec.appendChild(cols);
+    var after = host.querySelector('#lb-kit') || host.querySelector('.lb-head');
+    host.insertBefore(sec, after ? after.nextSibling : host.firstChild);
+    later.forEach(function (fn) { fn(); });   /* the menus and the stack are measured and placed once the section is in the page */
+  }
+
   fetch('api/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (me) {
@@ -245,7 +347,7 @@
       return addScript('routes.js')
         .then(function () { return window.B68Load.need('lookbook'); })
         .then(kit)
-        .then(function () { window.B68Lookbook.run(root); kitSection(root); });
+        .then(function () { window.B68Lookbook.run(root); kitSection(root); overlaySection(root); });
     })
     .catch(denied);
 })();
