@@ -428,6 +428,7 @@ try {
     await I.page.waitForFunction(() => { const b = document.querySelector('.dp-band'); return b && !b.hidden && document.querySelector('.dp-root').classList.contains('dp-band-on'); }, null, { timeout: 20000 });
     await overlay({ id: 'ov-tram-off', kind: 'clock', clockId: 'c-tram', ms: 60000 });
     await I.page.waitForSelector('.dp-ov-card.dp-ov-clock svg.dp-ov-face path.dp-ov-seg', { timeout: 20000 });
+    await I.page.waitForFunction(() => !document.querySelector('[class*="ks16-"]'), null, { timeout: 5000 }).catch(() => {});      /* a kit overlay seen before the switch may still be fading out (450 ms) */
     const v = await I.page.evaluate(() => ({ ks16: document.querySelectorAll('[class*="ks16-"]').length, which: [...document.querySelectorAll('[class*="ks16-"]')].map((e) => String(e.className.baseVal !== undefined ? e.className.baseVal : e.className) + '<' + (e.parentNode && e.parentNode.className)).slice(0, 6), bleed: !!document.querySelector('.ks16-bleed'), right: getComputedStyle(document.querySelector('.dp-stage.dp-map.dp-in')).right }));
     expect(v.ks16 === 0 && !v.bleed && v.right !== '0px', 'the old map and band: ' + JSON.stringify(v));
     await overlay(null);
