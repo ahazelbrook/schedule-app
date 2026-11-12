@@ -137,7 +137,7 @@
     g('', first);
     var gs = []; try { gs = typeof host.intelGroups === 'function' ? list(host.intelGroups()) : []; } catch (e) { gs = []; }
     g('Intel: set dark rooms to blueprint', gs.map(function (q) { return { label: str(q.label), cls: 'rv-mi', data: { site: 'intel', group: str(q.id) }, title: 'Every dark room of it becomes blueprint' }; }));
-    var sp = stageParts(v), stage = sp.rest.map(function (b) { return { label: str(b.textContent).replace(/\s+/g, ' ').trim(), cls: 'rv-mi krv-moved ' + str(b.getAttribute('class')), data: { site: b.getAttribute('data-site') }, title: b.getAttribute('title') || '', disabled: b.hasAttribute('disabled'), attrs: b.hasAttribute('aria-pressed') ? { 'aria-pressed': b.getAttribute('aria-pressed') } : {} }; });
+    var sp = stageParts(v), stage = sp.rest.filter(function (b) { return b.getAttribute('data-site') !== 'blank'; }).map(function (b) { return { label: str(b.textContent).replace(/\s+/g, ' ').trim(), cls: 'rv-mi krv-moved ' + str(b.getAttribute('class')), data: { site: b.getAttribute('data-site') }, title: b.getAttribute('title') || '', disabled: b.hasAttribute('disabled'), attrs: b.hasAttribute('aria-pressed') ? { 'aria-pressed': b.getAttribute('aria-pressed') } : {} }; });
     if (stage.length || sp.live) groups.push('<p class="rv-mh krv-mh">The map on the iPad</p>' + (sp.live ? '<p class="rv-live krv-live ' + esc(str(sp.live.getAttribute('class')).replace(/\brv-live\b/, '')) + '" data-site-live title="' + esc(sp.live.getAttribute('title')) + '">' + esc(sp.live.textContent) + '</p>' : '') +
       (stage.length ? U.menu({ items: stage, attrs: { role: 'group' }, label: 'The map on the iPad' }) : ''));
     var own = list(v.menuItems).map(function (q, i) { return { label: str(typeof q.label === 'function' ? q.label(ctx) : q.label), cls: 'rv-mi', data: { rv: 'menuitem', i: i, mid: str(q.id) }, title: q.title || '' }; });
@@ -151,9 +151,11 @@
   function toolbar(vs, cur, v) {
     var U = ui(), host = v.host, tools = '';
     try { tools = typeof host.toolsHtml === 'function' ? str(host.toolsHtml()) : ''; } catch (e) { tools = ''; }
-    var tabs = U.tabs({ label: 'View', value: cur.id, cls: 'rv-views krv-views', items: vs.map(function (q) { return { label: q.label, value: q.id, cls: 'chip sm', data: { rv: 'view', v: q.id } }; }) });
+    var tabs = U.tabs({ label: 'View', value: cur.id, cls: 'rv-views krv-views', items: vs.map(function (q) { return { label: q.label, value: q.id, cls: 'chip sm', data: { rv: 'view', v: q.id }, attrs: { tabindex: '0' } }; }) });
     var f = parse(tools), qs = f ? Array.prototype.map.call(f.querySelectorAll('button'), function (b) { return redress(b, { rank: 'quiet', cls: ['krv-tool'] }); }).join('') : '';
     var sp = stageParts(v), send = sp.send ? redress(sp.send, { rank: 'standard', cls: ['krv-send'] }) : '';
+    /* the map's Blank stays in sight while the map is live (a safety control: one press), quiet */
+    send += sp.rest.filter(function (b) { return b.getAttribute('data-site') === 'blank'; }).map(function (b) { return redress(b, { rank: 'quiet', cls: ['krv-tool'] }); }).join('');
     return '<div class="rv-tools krv-tools" role="toolbar" aria-label="The site">' + tabs +
       (qs || send ? '<span class="rv-mtools krv-mtools" role="group" aria-label="Map tools">' + qs + send + '</span>' : '') + '</div>';
   }
@@ -240,7 +242,7 @@
       box.addEventListener('toggle', function (ev) {
         var d = ev.target, k = d && d.getAttribute ? d.getAttribute('data-krv-add') : null; if (k === null || addOpen[k] === !!d.open) return;
         addOpen[k] = !!d.open; if (typeof box.__krvRe === 'function') box.__krvRe();
-        var f = addOpen[k] && box.querySelector ? box.querySelector('.krv-padd input') : null; if (f) f.focus();
+        var d0 = box.ownerDocument, f = addOpen[k] && d0 ? d0.querySelector('#gm-runv .krv-padd input') : null; if (f) f.focus();      /* the redraw made a new section: look in the page */
       }, true);
     }
     if (!name) { box.innerHTML = '<h3 class="rv-sh krv-rmt">Rooms</h3><p class="krv-hint">Nobody is placed yet. Tap a room on the board or the map to see it, and act on it.</p>'; return; }

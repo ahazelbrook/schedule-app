@@ -8,6 +8,7 @@
 /* ---------- the pane: the head across, the board and the inspector under it ---------- */
 :root[data-kit~="desk"] .krv { color: var(--ui-ink); font: 400 var(--ui-type-body)/1.35 var(--ui-font-text); }
 :root[data-kit~="desk"] .krv > .rv-body { grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: var(--ui-space-5); }
+:root[data-kit~="desk"] .krv > .rv-body.mapview { grid-template-columns: minmax(0, 1fr) minmax(280px, 300px); }
 :root[data-kit~="desk"] .krv > .rv-body > .rv-side { padding-left: var(--ui-space-4); border-left: var(--ui-hairline); }
 :root[data-kit~="desk"] .krv .rv-warn { margin: 0; color: var(--ui-alarm); font: 400 var(--ui-type-label)/1.3 var(--ui-font-text); }
 
@@ -117,7 +118,7 @@
   display: flex; align-items: center; gap: var(--ui-space-2); min-width: 0; overflow: hidden; color: var(--ui-ink); font: 700 var(--ui-type-lead)/1.2 var(--ui-font-text);
   letter-spacing: 0; text-overflow: ellipsis; text-transform: none; white-space: nowrap;
 }
-:root[data-kit~="desk"] .krv-rsub { overflow: hidden; color: var(--ui-ink-soft); font: 400 var(--ui-type-body)/1.3 var(--ui-font-text); text-overflow: ellipsis; white-space: nowrap; }
+:root[data-kit~="desk"] .krv-rsub { overflow-wrap: anywhere; color: var(--ui-ink-soft); font: 400 var(--ui-type-body)/1.3 var(--ui-font-text); white-space: normal; }
 :root[data-kit~="desk"] .krv-mark {
   flex: none; padding: 1px var(--ui-space-1); border: 1px solid var(--ui-ink); border-radius: var(--ui-radius); background: transparent; color: var(--ui-ink);
   font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .08em; text-transform: uppercase;

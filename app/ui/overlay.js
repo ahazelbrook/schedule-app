@@ -286,7 +286,7 @@
       handle.place();
       if (anchor) anchor.setAttribute('aria-expanded', 'true');
       var E = esc();
-      if (E && !o.pinned) unreg = E.register(id, { priority: o.priority || (inDialog ? 110 : 70), isOpen: function () { return isOpen; }, close: function () { handle.close(); } });
+      if (E && !o.pinned) unreg = E.register(id, { priority: o.priority || (inDialog ? 110 : 70), isOpen: function () { if (isOpen && anchor && anchor.isConnected === false) { handle.close({ focus: false }); return false; } return isOpen; }, close: function () { handle.close(); } });      /* KS08: the same for an anchor a redraw threw away */
       box.addEventListener('keydown', onKey);
       doc().addEventListener('pointerdown', onOutside, true);
       W.addEventListener('scroll', onScroll, true); W.addEventListener('resize', onResize);
@@ -366,7 +366,7 @@
     floatAt(m, btn, 'bottom-end', {});
     var E = esc(), rec = { btn: btn, menu: m, unreg: null, off: null };
     rec.off = onDialogEnd(btn, function () { moreClose(false); });
-    if (E) rec.unreg = E.register('ui.more', { priority: closest(btn, 'dialog') ? 110 : 70, isOpen: function () { return more === rec; }, close: function () { moreClose(true); } });
+    if (E) rec.unreg = E.register('ui.more', { priority: closest(btn, 'dialog') ? 110 : 70, isOpen: function () { if (more === rec && rec.btn.isConnected === false) { moreClose(false); return false; } return more === rec; }, close: function () { moreClose(true); } });      /* KS08: a redraw that threw the row away closed its menu: Esc goes on to the next entry (PANIC), not to a ghost */
     more = rec;
     var its = Array.prototype.slice.call(m.querySelectorAll('.ui-menu-item:not(:disabled)'));
     its.forEach(function (it) { it.setAttribute('tabindex', '-1'); });

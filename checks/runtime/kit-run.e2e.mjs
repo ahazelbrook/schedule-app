@@ -12,6 +12,8 @@
 //   5. secrecy: the iPad's GET and a phone's GET carry no GM-ONLY- text before or after; the boxed controls on Run at 1366x768 (the kit-accept
 //      measure: the Run view's own, and the whole window's, printed); nothing under 12 px in the Run view
 //   6. the setting off mid-session: today's Run view comes back without a reload
+//   7. Add someone opened focuses its field; a row's ⋯ open and the view redrawn under it (another device, the beat timer): the FIRST Esc is PANIC
+//   (2: also every view tab is in the tab order, and the map's Blank stays a quiet button in the toolbar while the map is live)
 // SHOTS=<dir> writes the pictures (<view>-<theme>-<width>.png).
 //   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=9406] [SHOTS=<dir>] node checks/runtime/kit-run.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
@@ -145,6 +147,20 @@ try {
   check(await page.evaluate(() => document.querySelector('#rv-view').getAttribute('data-view') === 'board'), 'the Board tab shows the board again');
   const tools = await page.evaluate(() => [...document.querySelectorAll('.krv-mtools [data-site]')].map((b) => b.getAttribute('data-site') + ':' + (b.classList.contains('ui-btn--quiet') || b.getAttribute('data-site') === 'send')));
   check(tools.length >= 3 && tools.every((t) => /:true$/.test(t)), 'the map tools are quiet: ' + tools.join(','));
+  /* every view tab is in the tab order (Left and Right stay the beat's): Tab from Board reaches Map, then Players */
+  await page.focus('.krv-views [data-v="board"]'); await page.keyboard.press('Tab');
+  const tab1 = await page.evaluate(() => document.activeElement.getAttribute('data-v'));
+  await page.keyboard.press('Tab');
+  const tab2 = await page.evaluate(() => document.activeElement.getAttribute('data-v'));
+  check(tab1 === 'map' && tab2 === 'players', 'Tab goes Board → Map → Players: ' + [tab1, tab2].join(','));
+  await blur(page);
+  /* the map's Blank: in the toolbar, one press, while the map is live */
+  const wasLive = await page.evaluate(() => !!document.querySelector('.krv-mtools [data-site="ipad-down"]'));
+  if (!wasLive && await page.$('.krv-mtools [data-site="ipad"]')) { await page.click('.krv-mtools [data-site="ipad"]'); await until(() => page.evaluate(() => !!document.querySelector('.krv-mtools [data-site="ipad-down"]')), 6000); await page.waitForTimeout(400); }
+  const live = await page.evaluate(() => ({ down: !!document.querySelector('.krv-mtools [data-site="ipad-down"]'), blank: !!document.querySelector('.krv-mtools [data-site="blank"].ui-btn--quiet'), menu: !!document.querySelector('#rv-menu [data-site="blank"]') }));
+  check(live.down && live.blank && !live.menu, 'while the map is live its Blank is a quiet button in the toolbar (not in ⋯): ' + JSON.stringify(live));
+  if (!wasLive && live.down) { await page.click('.krv-mtools [data-site="ipad-down"]'); await until(() => page.evaluate(() => !document.querySelector('.krv-mtools [data-site="ipad-down"]')), 6000); await page.waitForTimeout(400); }
+  await blur(page);
   await page.click('.krv-head [data-rv="menu"]'); await page.waitForTimeout(300);
   check(await page.evaluate(() => { const m = document.querySelector('#rv-menu'); return !!m && !m.hidden && m.getBoundingClientRect().height > 0 && m.querySelectorAll('.ui-menu-item').length >= 3; }), '⋯ opens the kit menu (#rv-menu)');
   await shot(page, 'run-menu-paper-1366');
@@ -236,6 +252,24 @@ try {
     const o = await open({ w, h, theme });
     await o.page.click('.krv-room[data-room="Showroom"] .krv-rname'); await o.page.waitForTimeout(400);
     await shot(o.page, 'run-' + theme + '-' + w);
+    await o.c.close();
+  }
+
+  /* 7. the Add someone fold focuses its field; then Esc after a redraw under an open row ⋯ is PANIC at the first press (the review's blocker) */
+  {
+    const o = await open();
+    await o.page.click('.krv-room[data-room="Showroom"] .krv-rname'); await o.page.waitForTimeout(400);
+    await o.page.click('.krv-rm .krv-addsum'); await o.page.waitForTimeout(500);
+    check(await o.page.evaluate(() => !!document.activeElement && document.activeElement.matches('#gm-runv .krv-padd input')), 'Add someone opened: its field has the focus');
+    await o.page.click('.krv-rm .krv-addsum'); await o.page.waitForTimeout(400); await blur(o.page);
+    await o.page.click('.krv-rm .krv-p [data-ui-more]'); await o.page.waitForTimeout(300);
+    const opened = await o.page.evaluate(() => [...document.querySelectorAll('#gm-runv .krv-p .ui-menu')].some((m) => !m.hidden));
+    await o.page.evaluate(() => window.B68GmRunView.redrawAll()); await o.page.waitForTimeout(400);
+    const writes = [];
+    o.page.on('request', (r) => { if (r.method() !== 'GET' && /\/api\/gm\/(display|ambient)/.test(r.url())) writes.push(r.method() + ' ' + r.url()); });
+    await o.page.keyboard.press('Escape');
+    await until(() => writes.length > 0, 3000);
+    check(opened && writes.length > 0, 'a row ⋯ open, the view redrawn under it: the FIRST Esc is PANIC (' + writes.length + ' writes)');
     await o.c.close();
   }
 } catch (e) {
