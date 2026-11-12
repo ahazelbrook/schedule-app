@@ -199,3 +199,12 @@
 /* a locked players' map (its band is open on Location): the state still reads, the options are just not pressable */
 :root[data-kit~="desk"] .krv-kseg .ui-seg-opt:disabled { text-decoration: none; }
 :root[data-kit~="desk"] .krv-kseg .ui-seg-opt:disabled[aria-pressed="true"] { background: var(--ui-ink-soft); color: var(--ui-on-ink); }
+
+/* ---------- the GM's phone (KS20): one column, as the old view is at 760 px and under (gm.css). Without this the board keeps its 280 px
+   inspector beside it on a phone, and the rooms and the inspector draw over each other ---------- */
+@media (max-width: 760px) {
+  :root[data-kit~="desk"] .krv > .rv-body, :root[data-kit~="desk"] .krv > .rv-body.mapview { grid-template-columns: minmax(0, 1fr); }
+  :root[data-kit~="desk"] .krv > .rv-body > .rv-side { padding-left: 0; border-left: 0; }
+  :root[data-kit~="desk"] .krv-rooms { grid-template-columns: minmax(0, 1fr); }
+  :root[data-kit~="desk"] .krv-head { flex-wrap: wrap; row-gap: var(--ui-space-1); }
+}
