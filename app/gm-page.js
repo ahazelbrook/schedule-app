@@ -5070,7 +5070,7 @@
   /* the Rack is the Blade fold under the card: there only while it holds the Fixer's lines or Voice; its summary says which */
   function rackFoldSync(r, vo) {
     var f = $q('#gm-rackf'), sm = $q('#gm-rack-sum'), R = W.B68GmRoll; if (!f) return;
-    f.hidden = !(r || vo);
+    var kp = !!(W.B68KitBlade && W.B68KitBlade.rack(f, !(r || vo))); f.hidden = !(r || vo || kp);      /* KS19 (blade.pitches): the newest pitch shows here too (gm/kit/blade.js); with it off, as before */
     var hitRow = r && r.hit && r.status === 'ready' && isObj(r.card) ? FX_ROWS.filter(function (x) { return x[0] === r.hit; })[0] : null, hitO = hitRow ? fxOf(r.card[r.hit]) : null;
     if (sm) sm.textContent = (r || vo) && R ? R.rackSummary({ fitted: r && r.status === 'ready' && r.ask ? str(r.ask.position) : '', pending: !!(r && r.status === 'pending'), error: !!(r && r.status === 'error'),
       hit: hitRow ? hitRow[1] + ' · ' + (hitO.lead || hitO.say) : '', voice: vo ? str(vo.who) : '' }) : '';
@@ -7536,6 +7536,7 @@
     if (ev.key === 'Enter' && tg && tg.id === 'gm-prep-q') { ev.preventDefault(); prepFindGo(); return; }
     if (ev.key === 'Enter' && tg && tg.id === 'gm-gs-q') { ev.preventDefault(); screenFindGo(); return; }
     if (ev.key === 'Enter' && tg && tg.id === 'gm-dt-d100') { ev.preventDefault(); dtD100(tg.value); return; }     /* the morning's d100 */
+    if (ev.key === 'A' && ev.shiftKey && !typing(tg) && !ev.ctrlKey && !ev.metaKey && !ev.altKey && (!escTop() || escTop() === 'blade') && pitchGo()) { ev.preventDefault(); return; }      /* KS19: Shift+A is Pitch now while pitches are on (else it is A, as before) */
     /* keys never fire behind an open thing (the Menu, the drawer, the Blade panel, a popover, a sheet): only its own. W shuts the drawer, A the Blade
        panel and ? the Shortcuts card when that is the top one; GO (Space, PageDown) still fires behind the Blade panel; everything else waits until it is closed (Esc) */
     var top = escTop();
@@ -7569,6 +7570,7 @@
     else if (a.type === 'assist') { if (S.assist) S.assist.toggle(); else toast('Blade is not available on this page.', true); }
     else if (a.type === 'undo') { if (S.assist && typeof S.assist.undoNewest === 'function') S.assist.undoNewest(); }
   }
+  function pitchGo() { var K = W.B68KitBlade; return !!(S && K && typeof K.pitchNow === 'function' && W.B68Features && W.B68Features.valueOf(S.doc, 'blade.pitches') && K.pitchNow()); }      /* KS19: Pitch now, only while pitches are on */
   function toggleFocus() { S.prepWide = !S.prepWide; try { W.localStorage.setItem(PREP_WIDE, S.prepWide ? '1' : '0'); } catch (e) {} syncPanels(); }
   function onClick(ev) {
     if (!S || !ev.target.closest) return;

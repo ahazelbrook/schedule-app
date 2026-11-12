@@ -56,6 +56,7 @@
       { k: 'key', keys: ['F'], does: 'Focus: the Roll shrinks to its keys', hits: [{ key: 'f', act: { type: 'focus' } }] },
       { k: 'key', keys: ['W'], does: 'Crew: the drawer (clocks, crew, sheets)', hits: [{ key: 'w', act: { type: 'drawer' } }] },
       { k: 'key', keys: ['A'], does: 'The Blade panel', hits: [{ key: 'a', act: { type: 'assist' } }] },
+      { k: 'key', keys: ['Shift A'], does: 'Pitch now: Blade’s ideas for the next few minutes (Pitches on; otherwise as A)', hits: [{ key: 'A', shift: true, act: { type: 'assist' } }] },
       { k: 'key', keys: ['U'], does: 'Undo Blade’s newest action', hits: [{ key: 'u', act: { type: 'undo' } }] },
       { k: 'key', keys: ['P', 'X', 'M'], does: 'Capture a Name · Loose end · Moment (capture bar on, in the Menu)',
         hits: [{ key: 'p', act: { type: 'capture', bucket: 'n' } }, { key: 'x', act: { type: 'capture', bucket: 'x' } }, { key: 'm', act: { type: 'capture', bucket: 'm' } }] },

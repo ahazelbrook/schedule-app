@@ -66,3 +66,61 @@
 :root[data-kit~="desk"] .kbl-detail { max-height: calc(var(--as-h, 100vh) * .4); overflow-y: auto; overscroll-behavior: contain; padding: 6px 0 0; border-top: var(--ui-hairline); font: 400 var(--ui-type-body)/1.45 var(--ui-font-text); overflow-wrap: anywhere; }
 :root[data-kit~="desk"] .kbl-plain { white-space: pre-wrap; }
 :root[data-kit~="desk"] .kbl-acts { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); align-items: center; }
+
+/* ---------- the pitch cards (blade.pitches, KS19): a set is one entry in the feed, its head, then each pitch as a compact Card ----------
+   Each kind is a word and an edge: Direction a solid ink rule, Complication a wide caution band framed by a hairline (so it shows on Paper), NPC move a
+   dotted ink rule, Clue a double rule, Cutaway a dashed one (off-screen). No orange (the Primary), blue (rules), red (alarm) or green (done). Folded: the word
+   and the whole line at 14 px (the line is the pitch: at most 16 words, never cut), the why-now at 12 px on one line;
+   open (Enter, or a click on a line): all of it, and what in the prep it leans on. */
+:root[data-kit~="desk"] .kp-set { display: grid; gap: 2px; min-width: 0; opacity: 1; transition: opacity var(--ui-motion-base) var(--ui-ease); }
+:root[data-kit~="desk"] .kp-set[data-kbl-fading] { opacity: .45; transition: opacity 8s linear; }
+:root[data-kit~="desk"] .kp-set[data-kbl-fading]:hover, :root[data-kit~="desk"] .kp-set[data-kbl-fading]:focus-within { opacity: 1; transition: opacity var(--ui-motion-quick) var(--ui-ease); }
+@media (prefers-reduced-motion: reduce) {
+  :root[data-kit~="desk"] .kp-set, :root[data-kit~="desk"] .kp-set[data-kbl-fading] { transition: none; }
+}
+:root[data-kit~="desk"] .kp-sethead { margin: 0; padding: 2px 2px 0; color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.2 var(--ui-font-mono); }
+:root[data-kit~="desk"] .kp-sethead b { color: var(--ui-ink); font: 700 var(--ui-type-label)/1.3 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase; }
+:root[data-kit~="desk"] .kp-items { display: grid; gap: 3px; min-width: 0; }
+:root[data-kit~="desk"] .kp-card {
+  display: flex; flex-direction: column; gap: 0; min-width: 0; padding: 0;
+  border: var(--ui-hairline); border-left: 4px solid var(--ui-ink); border-radius: var(--ui-radius);
+  background: var(--ui-raised); color: var(--ui-ink); font: 400 var(--ui-type-body)/1.35 var(--ui-font-text);
+}
+:root[data-kit~="desk"] .kp-card[data-pkind="complication"] { border-left: 6px solid var(--ui-caution); box-shadow: inset 1px 0 0 var(--ui-ink-soft); }
+:root[data-kit~="desk"] .kp-card[data-pkind="npc_move"] { border-left: 4px dotted var(--ui-ink); }
+:root[data-kit~="desk"] .kp-card[data-pkind="clue"] { border-left: 5px double var(--ui-ink-soft); }
+:root[data-kit~="desk"] .kp-card[data-pkind="cutaway"] { border-left: 4px dashed var(--ui-ink-soft); }
+:root[data-kit~="desk"] .kp-row { display: flex; align-items: flex-start; gap: 0; min-width: 0; }
+:root[data-kit~="desk"] .kp-fold {
+  flex: 1 1 auto; min-width: 0; display: grid; gap: 2px; justify-items: stretch; align-content: start;
+  box-sizing: border-box; width: auto; height: auto; min-height: 0; margin: 0; padding: 4px var(--ui-space-1) 4px var(--ui-space-3);
+  border: 0; border-radius: 0; background: transparent; color: var(--ui-ink); box-shadow: none; transform: none;
+  font: 400 var(--ui-type-body)/1.3 var(--ui-font-text); letter-spacing: 0; text-transform: none; text-align: left; white-space: normal;
+}
+:root[data-kit~="desk"] .kp-fold:hover, :root[data-kit~="desk"] .kp-fold:active { background: var(--ui-sunk); color: var(--ui-ink); border-color: transparent; box-shadow: none; transform: none; }
+:root[data-kit~="desk"] .kp-fold:focus-visible { outline: var(--ui-focus-ring); outline-offset: -2px; }
+:root[data-kit~="desk"] .kp-line { display: block; min-width: 0; overflow-wrap: anywhere; }
+:root[data-kit~="desk"] .kp-kind { margin: 0 6px 0 0; color: var(--ui-ink-soft); }
+:root[data-kit~="desk"] .kp-kind b { font: 700 var(--ui-type-label)/1 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase; }
+:root[data-kit~="desk"] .kp-text { font: 400 var(--ui-type-body)/1.3 var(--ui-font-text); }
+:root[data-kit~="desk"] .kp-why { display: block; min-width: 0; overflow: hidden; color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.25 var(--ui-font-text); white-space: nowrap; text-overflow: ellipsis; }
+:root[data-kit~="desk"] .kp-set[data-open="1"] .kp-why { white-space: normal; overflow-wrap: anywhere; }
+:root[data-kit~="desk"] .kp-uses { margin: 0; padding: 0 var(--ui-space-3) 6px; color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.35 var(--ui-font-text); overflow-wrap: anywhere; }
+/* the X at the corner and Keep under it: a narrow column, so the line keeps the card's width */
+:root[data-kit~="desk"] .kp-side { flex: 0 0 auto; display: flex; flex-direction: column-reverse; align-items: flex-end; gap: 0; padding: 2px 2px 2px 0; }
+:root[data-kit~="desk"] .kp-keep { min-height: 24px; padding: 0 6px; font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .kp-x { min-width: 32px; min-height: 32px; padding: 0; color: var(--ui-ink-soft); font: 400 20px/1 var(--ui-font-text); letter-spacing: 0; }
+:root[data-kit~="desk"] .kp-x:hover { color: var(--ui-ink); }
+/* the head: Pitch now, and what went wrong with it */
+:root[data-kit~="desk"] .kp-go { order: 2; min-height: 36px; }
+:root[data-kit~="desk"] .kp-note { margin: var(--ui-space-1) 0 0; color: var(--ui-ink); font: 400 var(--ui-type-label)/1.35 var(--ui-font-text); }
+/* the Rack, under the Roll: the newest pitch, with its kind's edge */
+:root[data-kit~="desk"] .kp-rack { display: grid; gap: 2px; margin: var(--ui-space-2) 0 0; padding: var(--ui-space-2) var(--ui-space-3); border: var(--ui-hairline); border-left: 4px solid var(--ui-ink); border-radius: var(--ui-radius); background: var(--ui-raised); }
+:root[data-kit~="desk"] .kp-rack[data-pkind="complication"] { border-left: 6px solid var(--ui-caution); box-shadow: inset 1px 0 0 var(--ui-ink-soft); }
+:root[data-kit~="desk"] .kp-rack[data-pkind="npc_move"] { border-left: 4px dotted var(--ui-ink); }
+:root[data-kit~="desk"] .kp-rack[data-pkind="clue"] { border-left: 5px double var(--ui-ink-soft); }
+:root[data-kit~="desk"] .kp-rack[data-pkind="cutaway"] { border-left: 4px dashed var(--ui-ink-soft); }
+:root[data-kit~="desk"] .kp-rack-h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--ui-space-2); margin: 0; padding: 0; border: 0; }
+:root[data-kit~="desk"] .kp-rack-h .gm-lab { color: var(--ui-ink); font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase; }
+:root[data-kit~="desk"] .kp-rack-k, :root[data-kit~="desk"] .kp-rack-why, :root[data-kit~="desk"] .kp-rack-wait { margin: 0; color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .kp-rack-line { margin: 0; color: var(--ui-ink); font: 700 var(--ui-type-body)/1.35 var(--ui-font-text); overflow-wrap: anywhere; }
