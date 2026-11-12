@@ -255,7 +255,7 @@
       var vm = { kind: 'npc', npcId: typeof d.npcId === 'string' ? d.npcId : '', title: title, found: !!n };
       if (n) {
         vm.name = n.name || title; vm.alias = n.alias; vm.sub = [n.role, n.faction].filter(Boolean).join(' · ');
-        vm.description = n.description; vm.spec = n.spec;
+        vm.description = n.description; vm.spec = n.spec; vm.faction = n.faction;      /* KS16: the nameplate's faction stripe (a player field, already in sub) */
       }
       return vm;
     }
@@ -1072,6 +1072,7 @@
       e.appendChild(box);
       return { el: e, destroy: function () {} };
     }
+    if (root.B68StageScene && root.B68StageScene.on()) { var k16 = root.B68StageScene.npcStage(vm, seq, { document: document, figure: function (sp, id) { var r = drawFigure(sp, id, ctx.figures); return r ? document.importNode(r.node, true) : null; } }); if (k16) return k16; }   /* KS16 (kit.stage): over the dimmed scene */
     var fig = drawFigure(vm.spec, 'dp-npc-' + seq, ctx.figures);
     if (fig) {
       var holder = el('div', 'dp-npc-fig'); holder.setAttribute('aria-hidden', 'true');
@@ -1308,7 +1309,7 @@
     function stopRot() { if (A.rot !== null) { clearLater(A.rot); A.rot = null; } }
     function armRot() {
       stopRot();
-      if (A.dead || A.covered || document.hidden || A.plan.mode !== 'auto' || Pure.ambientRotation(A.plan).length < 2) return;
+      if (A.dead || A.covered || A.still || document.hidden || A.plan.mode !== 'auto' || Pure.ambientRotation(A.plan).length < 2) return;
       A.rot = later(function () { A.rot = null; advance(); }, intervalMs());
     }
     function advance() {
@@ -1394,6 +1395,7 @@
         }
         ensure();
       },
+      still: function (on) { on = !!on; if (A.dead || on === !!A.still) return; A.still = on; if (on) stopRot(); else armRot(); },     /* KS16 (kit.stage): no rotation under a pushed NPC; a no-op unless it changes */
       cover: function () {
         if (A.dead) return;
         A.covered = true; stopRot();
@@ -1544,7 +1546,7 @@
     }
     function ovCardNode(card, o) {
       var e = el('div', 'dp-ov-card dp-ov-' + card.kind); e.setAttribute('data-ov-id', o.id);
-      if (card.kind === 'clock') {
+      if (s.stage && root.B68StageScene && root.B68StageScene.card(e, card, o, beatEnv(o), s.ov.node)) { /* KS16 (kit.stage): the clock docks, the NPC speaks (display/kit/scene.js) */ } else if (card.kind === 'clock') {
         var svg = svgEl('svg', { viewBox: '0 0 100 100', class: 'dp-ov-face' });
         card.wedges.forEach(function (w) { svg.appendChild(svgEl('path', { d: w.d, class: 'dp-ov-seg' + (w.on ? ' dp-ov-seg-on' : '') })); });
         e.appendChild(svg);
@@ -2004,6 +2006,7 @@
       } catch (e) { /* the map keeps its frame */ }
     }
     function paintBand() {
+      if (s.stage && root.B68StageScene && root.B68StageScene.band(s.stage, s.current, s.bandModel, { document: document, band: band, container: container, skew: function () { return s.skew || 0; } })) { s.bandSig = ''; return; }   /* KS16 (kit.stage): the band is a plate over the full-bleed map */
       var m = s.bandModel, show = !!m && !!s.current && !!s.current.el && s.current.el.classList.contains('dp-map');
       if (!show) { if (!band.hidden) band.hidden = true; container.classList.remove('dp-band-on'); return; }
       var sig = Pure.bandSig(m), was = !band.hidden;
@@ -2048,7 +2051,8 @@
     function show(display, seq) {
       var my = ++s.token, vm = Pure.viewModel(display);
       s.lastShow = [display, seq]; if (s.stage) s.stage.next(vm);           /* KS13: a redraw when the new stage comes or goes; what the swap brings */
-      if (vm.kind === 'blank') amb.uncover(); else amb.cover();                 /* a spotlight covers the ambient; blank lets it through */
+      var k16npc = vm.kind === 'npc' && !!s.stage && !!root.B68StageScene && root.B68StageScene.on();      /* KS16 (kit.stage): the NPC stands over the dimmed scene, which holds still */
+      if (vm.kind === 'blank' || k16npc) amb.uncover(); else amb.cover(); amb.still(k16npc);                 /* a spotlight covers the ambient; blank lets it through */
       ovLightsOut(vm.kind === 'dark');                                          /* lights out: no autopilot overlay, no AUTO chip */
       wireSync();
       if (vm.kind === 'npc') {
@@ -2072,7 +2076,7 @@
       var on = !!(root.B68Kit && root.B68Kit.ready('stage') && root.B68Stage);
       if (s.dead || on === !!s.stage) return;
       if (on) s.stage = root.B68Stage.attach(container, { later: later, clearLater: clearLater, reduced: reduced, band: function () { return s.bandModel; }, wireMs: function () { return WT.on; } });
-      else { s.stage.destroy(); s.stage = null; }
+      else { s.stage.destroy(); s.stage = null; if (s.ov.node && /(^|\s)ks1\d-/.test(String(s.ov.node.className))) s.ov.seen = ''; }   /* KS16: an overlay the stage drew is drawn again the old way on the next poll */
       if (s.stageBand) s.stageBand.destroy(); s.stageBand = s.stage && root.B68StageBand ? root.B68StageBand.attach(s.stage, { band: function () { return s.bandModel; }, layers: function () { return s.layers ? s.layers.state() : null; }, doc: document }) : null;      /* KS14: the clock and the crew heads */
       suiteSync();
       if (s.lastShow) show(s.lastShow[0], s.lastShow[1]);
