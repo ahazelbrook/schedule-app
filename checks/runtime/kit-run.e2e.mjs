@@ -13,6 +13,8 @@
 //      measure: the Run view's own, and the whole window's, printed); nothing under 12 px in the Run view
 //   6. the setting off mid-session: today's Run view comes back without a reload
 //   7. Add someone opened focuses its field; a row's ⋯ open and the view redrawn under it (another device, the beat timer): the FIRST Esc is PANIC
+//   8. the GM's phone (KS20): at 390x844 and 360x640 the Run view is one column (the board, then the inspector), nothing past the window's edge,
+//      on the Board and the Map; at 1366 and 1536 it keeps its two columns
 //   (2: also every view tab is in the tab order, and the map's Blank stays a quiet button in the toolbar while the map is live)
 // SHOTS=<dir> writes the pictures (<view>-<theme>-<width>.png).
 //   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=9406] [SHOTS=<dir>] node checks/runtime/kit-run.e2e.mjs
@@ -270,6 +272,36 @@ try {
     await o.page.keyboard.press('Escape');
     await until(() => writes.length > 0, 3000);
     check(opened && writes.length > 0, 'a row ⋯ open, the view redrawn under it: the FIRST Esc is PANIC (' + writes.length + ' writes)');
+    await o.c.close();
+  }
+
+  /* 8. the GM's phone (KS20): under 760 px the Run view is one column, the board and the inspector stacked, nothing past the window's edge
+     (the head and the tools wrap); on the laptops it keeps its two columns. The Board and the Map both. */
+  const LAYOUT = () => {
+    const body = document.querySelector('#gm-runv.krv > .rv-body'), main = body && body.querySelector(':scope > .rv-main'), side = body && body.querySelector(':scope > .rv-side');
+    if (!body || !main || !side) return { missing: true };
+    const tracks = getComputedStyle(body).gridTemplateColumns.split(' ').filter(Boolean).length, mr = main.getBoundingClientRect(), sr = side.getBoundingClientRect();
+    const vis = (e) => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
+    const parts = [...document.querySelectorAll('#gm-runv .krv-head > *, #gm-runv .krv-tools > *, #gm-runv .krv-mtools > *, #gm-runv .krv-room, #gm-runv .krv-rm')].filter(vis);
+    const past = parts.filter((e) => { const r = e.getBoundingClientRect(); return r.left < -1 || r.right > innerWidth + 1; }).map((e) => e.className.split(' ').slice(-1)[0] + ':' + Math.round(e.getBoundingClientRect().right));
+    const rooms = [...document.querySelectorAll('#gm-runv .krv-room')].filter(vis).map((e) => Math.round(e.getBoundingClientRect().width));
+    return { tracks, stacked: sr.top >= mr.bottom - 1, mainW: Math.round(mr.width), sideW: Math.round(sr.width), past, roomMin: rooms.length ? Math.min(...rooms) : 0,
+      scroll: document.documentElement.scrollWidth - innerWidth, paneScroll: (() => { const p = document.querySelector('#gm-runv'); return p.scrollWidth - p.clientWidth; })() };
+  };
+  for (const [w, h] of [[390, 844], [360, 640]]) for (const view of ['board', 'map']) {
+    const o = await open({ w, h });
+    if (view === 'map') { await o.page.click('.krv-views [data-v="map"]'); await o.page.waitForTimeout(700); }
+    const L = await o.page.evaluate(LAYOUT);
+    check(!L.missing && L.tracks === 1 && L.stacked && L.mainW >= w - 60 && L.sideW >= w - 60, 'the GM\'s phone at ' + w + 'x' + h + ' (' + view + '): one column, the board and the inspector stacked ' + JSON.stringify({ tracks: L.tracks, stacked: L.stacked, main: L.mainW, side: L.sideW }));
+    check(!L.missing && !L.past.length && L.scroll <= 0 && L.paneScroll <= 1 && (view === 'map' || L.roomMin >= w - 80), 'and nothing past the edge (the head, the tools, the rooms, the inspector) ' + JSON.stringify({ past: L.past, scroll: L.scroll, pane: L.paneScroll, roomMin: L.roomMin }));
+    if (view === 'board') await shot(o.page, 'run-paper-' + w);
+    if (view === 'map') await o.page.click('.krv-views [data-v="board"]').then(() => o.page.waitForTimeout(500), () => {});      /* the view is GM state: leave the Board for the next page */
+    await o.c.close();
+  }
+  for (const [w, h] of [[1366, 768], [1536, 864]]) {
+    const o = await open({ w, h });
+    const L = await o.page.evaluate(LAYOUT);
+    check(!L.missing && L.tracks === 2 && !L.stacked && L.sideW >= 280 && L.sideW <= 340, 'the laptop at ' + w + ': still two columns, the inspector beside the board ' + JSON.stringify({ tracks: L.tracks, side: L.sideW }));
     await o.c.close();
   }
 } catch (e) {
