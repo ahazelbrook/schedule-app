@@ -14,7 +14,7 @@
  *   toneOf(kind) roleOf(kind)                                a person's kind -> the kit's tone; -> the role an anonymous stand-in is drawn as
  *   gmPeople(model, input) -> [person]                       the GM copy: every PC and every person the Run view's board places, in its rooms
  *   playerPeople(input, shown) -> [person]                   the player copy: the crew ONLY, in the rooms in `shown`
- *   crowdOf(play) -> true | { masked: true }                 lightsAt(play, t) -> { room: 'lit' } (events with fx "dawn" in the beat at t)
+ *   crowdOf(play) -> true | { masked: true }                 lightsAt(play, t) -> { room: 'bright' } (events with fx "dawn" in the beat at t)
  *   gm(o, f, input) -> key                                   merges the GM copy's keys into o (a run's GM layer); '' and o untouched when off
  *   forPlayer(o, sc, shown, f) -> { opts, key }              THE ONE DOOR for a player copy: a NEW options object, o untouched; { o, '' } when off
  *   roomViewOk(K) -> bool                                    the vendored map kit lists view "room" (B68Map.options().views)
@@ -42,9 +42,8 @@
   /* MK1 brief: a disguise's icon -> the role the crew member is dressed as ("guest" is a masked guest, by the figure) */
   var ICON_ROLE = { mask: "guest", tray: "waiter", crate: "porter", oar: "boatman", camera: "photographer", cards: "croupier", jacket: "guard", lamp: "technician" };
   var TONES = ["crew", "target", "guard", "staff", "contact", "rival"];
-  /* the light states this module sends. The contract's brightest state is not used: its word trips the repo's leak check (MK1 report), so a
-     dawn event lights its room "lit" until the overseer settles it */
-  var LIGHT = ["dark", "lit"];
+  /* the kit's light states (CONTRACT.md section 2): a dawn event lights its room "bright", the strongest */
+  var LIGHT = ["dark", "lit", "bright"];
 
   function flags(read) {
     var r = typeof read === "function" ? read : function () { return false; }, f = {};
@@ -130,7 +129,7 @@
     list(play.events).forEach(function (e) {
       if (!isObj(e) || e.fx !== "dawn" || typeof e.room !== "string" || !e.room) return;
       var m = B.minuteOf(e.at, play.clock.start); if (isNaN(m) || !(m <= span)) return;      /* after the night's end: never (beatOf would clamp it into the last beat) */
-      if (B.beatOf(play, m).i === now) out[e.room] = "lit";
+      if (B.beatOf(play, m).i === now) out[e.room] = "bright";
     });
     return out;
   }

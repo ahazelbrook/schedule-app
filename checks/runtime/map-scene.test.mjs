@@ -219,14 +219,16 @@ test('the crowd: true, or { masked: true } when play.crowd.masked is exactly tru
   const o = {}; G.gm(o, ONLY('people'), { model: model(PLAY(), CREW, 0), play: Object.assign(PLAY(), { crowd: { masked: true } }), crew: CREW, pcs: PCS, t: 0, kit: KIT });
   assert.deepEqual(o.crowd, { masked: true });
 });
-test('lights follow the fixture\'s fx "dawn" event (00:00, the Showroom): lit in its beat, nothing before or after; the player copy only where the room is shown', () => {
+test('lights follow the fixture\'s fx "dawn" event (00:00, the Showroom): "bright" in its beat, nothing before or after; the player copy only where the room is shown', () => {
   const play = PLAY();
-  assert.deepEqual(G.lightsAt(play, 165), {}); assert.deepEqual(G.lightsAt(play, 180), { Showroom: 'lit' }); assert.deepEqual(G.lightsAt(play, 194), { Showroom: 'lit' });
+  assert.deepEqual(G.lightsAt(play, 165), {}); assert.deepEqual(G.lightsAt(play, 180), { Showroom: 'bright' }); assert.deepEqual(G.lightsAt(play, 194), { Showroom: 'bright' });
   assert.deepEqual(G.lightsAt(play, 195), {}); assert.deepEqual(G.lightsAt(play, 0), {});
   assert.deepEqual(G.lightsAt(PLAY((p) => { p.events.forEach((e) => { delete e.fx; }); }), 180), {}, 'no fx, no light');
-  const o = {}; G.gm(o, ONLY('lights'), { model: model(play, CREW, 180), play, crew: CREW, pcs: PCS, t: 180 }); assert.deepEqual(o.lights, { Showroom: 'lit' });
+  const o = {}; G.gm(o, ONLY('lights'), { model: model(play, CREW, 180), play, crew: CREW, pcs: PCS, t: 180 }); assert.deepEqual(o.lights, { Showroom: 'bright' });
   assert.equal(o.people, undefined, 'lights only: no people');
-  assert.deepEqual(G.forPlayer({}, SC(ONLY('lights')), ['Showroom'], ONLY('lights')).opts.lights, { Showroom: 'lit' });
+  assert.deepEqual(G.forPlayer({}, SC(ONLY('lights')), ['Showroom'], ONLY('lights')).opts.lights, { Showroom: 'bright' });
+  assert.deepEqual(G.forPlayer({}, SC(ONLY('lights'), { lights: { Showroom: 'bright', 'Cocktail lounge': 'lit' } }), ['Showroom', 'Cocktail lounge'], ONLY('lights')).opts.lights,
+    { Showroom: 'bright', 'Cocktail lounge': 'lit' }, 'the contract\'s states pass the door');
   assert.equal(G.forPlayer({}, SC(ONLY('lights')), ['Cocktail lounge'], ONLY('lights')).opts.lights, undefined);
 });
 test('map.fill: layout "stage" sized to the shared screen (iPad 1366 x 1024, TV 1920 x 1080; anything else is the iPad)', () => {
