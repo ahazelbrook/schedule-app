@@ -92,7 +92,11 @@ export function judge(o, n, exempt = KEYS_EXEMPT) {
    every element with an id and every state element (by its key), in the same context, before and after the same press: every class the kit-off element carries
    must be on its kit-on counterpart. An element the kit-on page does not have at all is judge's business (LOST), not this check's. A class the kit retires on
    purpose is CLASS_EXEMPT: named, with the reason and the kit PR that says so (each one printed with the elements that used it). Nothing else is let go. */
+const KS06_ROLL = 'KS06 (#216): the kit Roll card\'s parts replace the old presentation classes; nothing selects on them (grep + kit-roll/gm-stamp/gm-roll tests). Ruled 12/11';
 export const CLASS_EXEMPT = [
+  { name: 'KS06: the Roll\'s Position and Effect controls', reason: KS06_ROLL + ' (seg, gm-rl-seg -> kr-segbox)', key: /^#gm-(?:pos|eff)$/, cls: /^(?:seg|gm-rl-seg)$/ },
+  { name: 'KS06: the Roll\'s Who and They rolled labels', reason: KS06_ROLL + ' (gm-lab -> kr-lab)', key: /^#gm-(?:who|they)-l$/, cls: /^gm-lab$/ },
+  { name: 'KS06: the Roll\'s Fit button', reason: KS06_ROLL + ' (chip, sm -> a B68Ui button, kr-fit)', key: /^#gm-fitnow$/, cls: /^(?:chip|sm)$/ }
 ];
 /* offRes / onRes: [{ hit: { label }, cls: [before, after] }] in the same order (cls: "<key>" -> "class class"). Returns { compared, findings: Map("<key> .<class>"
    -> [hit labels]), used: Map(name -> Set of "<key> .<class>") } */
@@ -212,6 +216,15 @@ export function classCheck(offRes, onRes, exempt = CLASS_EXEMPT) {
   check(ex1.findings.size === 0 && ex1.used.get('T: a retired class').has('#gm-bar .gm-bb'), 'classCheck: a named exemption lets its own class go, and says so');
   check(classCheck([cr('B [panel b]', { '#gm-bar': 'gm-bar gm-bb gm-bc' })], [cr('B [panel b]', { '#gm-bar': 'gm-bar' })], exT).findings.has('#gm-bar .gm-bc'), 'classCheck: the exemption lets no other class go');
   check(classCheck([cr('B [panel b]', { '#gm-baz': 'gm-baz gm-bb' })], [cr('B [panel b]', { '#gm-baz': 'gm-baz' })], exT).findings.has('#gm-baz .gm-bb'), 'classCheck: the exemption holds for its own element only');
+  /* the KS06 entries: exact ids, exact classes. Each lets its own class go on its own elements; another class lost there, or its class lost elsewhere, still fails */
+  const k6 = (id, offCls, onCls) => classCheck([cr('B [panel b]', { [id]: offCls })], [cr('B [panel b]', { [id]: onCls })]);
+  const k6ok = [['#gm-pos', 'gm-pos gm-rl-seg seg', 'gm-pos kr-segbox'], ['#gm-eff', 'gm-eff gm-rl-seg seg', 'gm-eff kr-segbox'], ['#gm-who-l', 'gm-lab', 'kr-lab'], ['#gm-they-l', 'gm-lab', 'kr-lab kr-they'], ['#gm-fitnow', 'chip gm-fitb sm', 'gm-fitb kr-fit ui-btn']];
+  check(k6ok.every(([id, a, b]) => { const r6 = k6(id, a, b); return r6.findings.size === 0 && r6.used.size === 1; }), 'CLASS_EXEMPT: the KS06 Roll card (#gm-pos, #gm-eff: seg, gm-rl-seg; #gm-who-l, #gm-they-l: gm-lab; #gm-fitnow: chip, sm) is let go, and says so');
+  const k6no = [['#gm-pos', 'gm-pos gm-rl-seg seg', 'kr-segbox', '#gm-pos .gm-pos'], ['#gm-eff', 'gm-eff seg gm-x', 'gm-eff', '#gm-eff .gm-x'], ['#gm-who-l', 'gm-lab gm-x', 'kr-lab', '#gm-who-l .gm-x'],
+    ['#gm-they-l', 'gm-lab gm-labx', 'kr-lab', '#gm-they-l .gm-labx'], ['#gm-fitnow', 'chip gm-fitb sm', 'kr-fit ui-btn', '#gm-fitnow .gm-fitb'], ['#gm-fitnow', 'chip sm btn', 'gm-fitb', '#gm-fitnow .btn'],
+    ['#gm-buttons', 'gm-buttons seg', 'gm-buttons', '#gm-buttons .seg'], ['#gm-rl-h', 'gm-lab', 'kr-lab', '#gm-rl-h .gm-lab'], ['#gm-whob', 'chip sm', 'ui-btn', '#gm-whob .chip'], ['#gm-pos-size', 'gm-rl-seg', '', '#gm-pos-size .gm-rl-seg'],
+    ['#gm-band~.gm-pos:0', 'gm-pos seg', 'gm-pos', '#gm-band~.gm-pos:0 .seg']];
+  for (const [id, a, b, want] of k6no) check(k6(id, a, b).findings.has(want), 'CLASS_EXEMPT: the KS06 entries do NOT let ' + want + ' go');
   for (const x of CLASS_EXEMPT) check(x.name && x.reason && /#\d+/.test(x.reason) && x.key instanceof RegExp && x.cls instanceof RegExp, 'CLASS_EXEMPT: "' + x.name + '" is named, has a reason citing its PR, and is narrow (key and class patterns)');
   /* state keys: the same hook under the same id is the same line, wherever a wrapper puts it; a hook the kit-on page lacks is still lost */
   const st = (k, a = 'aria-selected') => 'state ' + k + ' ' + a + ' false -> true', ka = (k, a = 'aria-selected') => k + ' ' + a;
