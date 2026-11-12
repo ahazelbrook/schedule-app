@@ -1195,7 +1195,10 @@
 :where(:root[data-kit~="desk"]) :where(.gm-pnext-back, .gm-x) { border-color: transparent; background: transparent; box-shadow: none; }
 :where(:root[data-kit~="desk"]) :where(.gm-pnext-back, .gm-x):hover { border-color: transparent; background: var(--ui-sunk); color: var(--ui-ink); }
 :where(:root[data-kit~="desk"]) :where(.gm-pnext-back) { font-family: var(--ui-font-text); font-weight: 700; letter-spacing: .08em; color: var(--ui-ink-soft); }
+/* the place's next step sits at the column's foot under a hairline: a quiet row with its arrow, so the Roll's STAMP stays the column's one standout */
 :where(:root[data-kit~="desk"]) :where(.gm-pnext) { border-top: var(--ui-hairline); }
+:where(:root[data-kit~="desk"]) :where(.gm-pnext-go, .gm-pnext-go.primary) { border-color: transparent; background: transparent; color: var(--ui-ink); }
+:where(:root[data-kit~="desk"]) :where(.gm-pnext-go, .gm-pnext-go.primary):hover { border-color: transparent; background: var(--ui-sunk); color: var(--ui-ink); }
 /* a pill that warns (a beat due, a beat late): its colour and its word stay */
 :where(:root[data-kit~="desk"]) :where(.gm-pill.warn, .gm-pill.gm-beat.due) { border-color: var(--ui-caution); }
 :where(:root[data-kit~="desk"]) :where(.gm-pill.gm-beat.late) { border-color: var(--ui-alarm); background: var(--ui-alarm); color: var(--ui-on-alarm); }
@@ -1275,6 +1278,8 @@
 :where(:root[data-kit~="desk"]) :where(.gm-star) { color: var(--ui-ink); }
 :where(:root[data-kit~="desk"]) :where(.gm-clock i) { border: 1px solid var(--ui-ink-faint); }
 :where(:root[data-kit~="desk"]) :where(.gm-clock i.on) { border-color: var(--ui-ink); background: var(--ui-ink); }
+/* a meter or a slider (a volume, a scrub, a progress bar) shows an amount, not a state: the ink (a ticked box stays orange: it is on) */
+:where(:root[data-kit~="desk"]) :where(#gm-page progress, #gm-page input[type="range"]) { accent-color: var(--ui-ink); }
 /* the prep note's marks keep their shapes, in ink: a heading's square, a list's numbers, a link's dotted line, a done cell (the current box stays orange: it is active) */
 :where(:root[data-kit~="desk"]) :where(#gm-page .pp-doc h4)::before { background: var(--ui-ink); }
 :where(:root[data-kit~="desk"]) :where(#gm-page .pp-doc ol > li)::marker { color: var(--ui-ink-soft); }
@@ -1283,6 +1288,18 @@
 :where(:root[data-kit~="desk"]) :where(#gm-page .pp-doc td.pp-cell.done)::after { border-color: var(--ui-ink); background: var(--ui-ink); }
 
 /* ---------- trim ---------- */
+/* the Blade panel's head and filters, the parts KS07 left as they were: Standard buttons, the filters as chips, a hairline under the head */
+:where(:root[data-kit~="desk"]) :where(.gm-assist .as-ap, .gm-assist .as-cogm, .gm-assist .as-pin) {
+  border: 1px solid var(--ui-line); border-radius: var(--ui-radius); background: var(--ui-raised); color: var(--ui-ink); font-family: var(--ui-font-text); font-weight: 700;
+}
+:where(:root[data-kit~="desk"]) :where(.gm-assist .as-ap, .gm-assist .as-cogm, .gm-assist .as-pin):hover { background: var(--ui-sunk); border-color: var(--ui-ink-faint); }
+:where(:root[data-kit~="desk"]) :where(.gm-assist .as-pin[aria-pressed="true"]) { border-color: var(--ui-ink); background: var(--ui-ink); color: var(--ui-on-ink); }
+:where(:root[data-kit~="desk"]) :where(.gm-assist .as-cogm[aria-pressed="true"]) { border-color: var(--ui-ok); background: var(--ui-ok); color: var(--ui-on-ink); }
+:where(:root[data-kit~="desk"]) :where(.gm-assist .as-chip) {
+  border: 1px solid var(--ui-line); border-radius: var(--ui-radius-pill); background: transparent; color: var(--ui-ink); font-family: var(--ui-font-text); font-weight: 700; letter-spacing: .08em;
+}
+:where(:root[data-kit~="desk"]) :where(.gm-assist .as-chip[aria-pressed="true"]) { border-color: var(--ui-ink); background: var(--ui-ink); color: var(--ui-on-ink); }
+:where(:root[data-kit~="desk"]) :where(.gm-assist .as-head) { border-bottom: var(--ui-hairline); }
 /* Downtime's two big answers are buttons, not chips: square-cut */
 :where(:root[data-kit~="desk"]) :where(.gm-dtb) { border-radius: var(--ui-radius); }
 /* the Menu's export line sits in the dark box (KS09): its ink, not the paper's soft grey (it read at 1.9:1) */

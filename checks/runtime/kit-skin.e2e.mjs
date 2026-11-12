@@ -311,3 +311,190 @@ function check(cond, msg) { console.log((cond ? 'PASS ' : 'FAIL ') + msg); if (c
 }
 console.log('static: ' + passed + ' passed, ' + failed + ' failed');
 if (!process.env.PW_MODULE) { console.log((failed ? 'FAIL' : 'PASS') + ' kit-skin (static only: PW_MODULE is not set, so no browser)'); process.exit(failed ? 1 : 0); }
+
+/* ---------- the browser checks, on the demo night ----------
+   For each pane the skin covers, in Paper and in Night, at 1366x768, with kit.desk on:
+     1. the type floor: no drawn text under 12 px (text at 0 px is a glyph hidden on purpose; the front page's newspaper is a picture of a handout)
+     2. mono only for keys and time: no old element sets its text in mono but a kbd, code, a key or a time
+     3. flat: no hard offset shadow but the Primary's (.ui-btn--primary)
+     4. contrast: every text against what is behind it 4.5:1 or more (text on an image is not measured)
+     5. colour: no orange but the active, the Primary, an outcome and a say line (each with a word or a shape); a hovered old button is not orange
+     6. Night: no large light ground (a white flash); the page's own ground is dark
+     7. nothing lost: every control the pane shows without the skin (the sheet blocked) it shows with it (in Paper: what shows does not hang on the theme)
+   Then: the Run view's boxed controls at 1366x768 in the whole window, quiet buttons not counted (25 or fewer), and with the setting off the
+   skin is not fetched and an old .btn keeps its old look. */
+const { chromium } = require(process.env.PW_MODULE);
+const { startDemo } = await import(new URL('../../scripts/kit-fingerprint.mjs', import.meta.url).href);
+const SHOTS = process.env.SHOTS || '';
+const GM = 'gm@example.test';
+const VIEWS = {
+  run: ['score', '', 'g'], prep: ['score', 'prep'], rules: ['score', 'rules'], cast: ['score', 'npc'], ipad: ['score', 'ipad'], downtime: ['pb', 'downtime'],
+  trouble: ['pb', 'trouble'], location: ['score', 'location'], before: ['before'], room: ['before', 'room'], titles: ['opening'], plan: ['plan'],
+  aftermath: ['after'], between: ['between'], find: ['score', '', 'Control+k'], menu: ['score', '', 'menu'], blade: ['score', '', 'a']
+};
+const PAGE = {
+  /* what the checks read, in the page */
+  audit() {
+    const drawn = (e) => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return r.width > 1 && r.height > 1 && s.visibility !== 'hidden' && s.display !== 'none' && +s.opacity > 0 && r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight; };
+    /* a rebuilt pane's own markup (another desk bundle's look, not the skin's) */
+    const kit = (e) => { for (let a = e; a && a !== document.body; a = a.parentElement) if (typeof a.className === 'string' && /(^|\s)(ui-|k(band|r|rv|bl|shell|who|pitch)-)/.test(a.className)) return true; return false; };
+    const parse = (c) => { const m = /rgba?\(([^)]+)\)/.exec(c); if (!m) return null; const p = m[1].split(/[ ,/]+/).filter(Boolean).map(parseFloat); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
+    const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b); };
+    const over = (t, u) => ({ r: t.r * t.a + u.r * (1 - t.a), g: t.g * t.a + u.g * (1 - t.a), b: t.b * t.a + u.b * (1 - t.a), a: 1 });
+    const orange = (c) => { const p = parse(c); if (!p || p.a < 0.3) return false; const r = p.r / 255, g = p.g / 255, b = p.b / 255, mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; if (d < 0.25 || mx !== r) return false; const h = 60 * (((g - b) / d) % 6); return h >= 8 && h <= 40; };
+    const name = (e) => e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') + (typeof e.className === 'string' && e.className.trim() ? '.' + e.className.trim().split(/\s+/).join('.') : '');
+    const OK_ORANGE = '[aria-pressed="true"], [aria-current="true"], [aria-current="page"], [aria-selected="true"], [aria-checked="true"], [aria-expanded="true"], .on, .sel, .here, [data-state="now"], [data-on="true"], [data-auto="true"], ' +
+      '.ui-btn--primary, [class*="ui-edge-out-"], [class*="kr-out-"], .gm-say, .pp-say, .pp-sayline, .kbl-say, .kband-cs, .gm-cs-tag, .as-go, .gm-find-hit, .gm-desklink, [data-state="play"]';
+    const out = { small: [], mono: [], hard: [], low: [], orange: [], light: [], ground: null };
+    for (const e of document.body.querySelectorAll('*')) {
+      if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE'].includes(e.tagName) || e.closest('svg') || e.closest('.b68-fp') || !drawn(e)) continue;
+      const s = getComputedStyle(e), r = e.getBoundingClientRect();
+      if (/\d+px \d+px 0px/.test(s.boxShadow) && /(^|,\s*)rgba?\([^)]*\)\s+-?[1-9]/.test(s.boxShadow) && !e.matches('.ui-btn--primary')) out.hard.push(name(e));
+      const paint = [s.color, s.backgroundColor, s.borderTopWidth !== '0px' && s.borderTopStyle !== 'none' ? s.borderTopColor : '', s.borderLeftWidth !== '0px' && s.borderLeftStyle !== 'none' ? s.borderLeftColor : '', s.borderBottomWidth !== '0px' && s.borderBottomStyle !== 'none' ? s.borderBottomColor : ''];
+      /* colour and ground are judged on the old markup the skin dresses; a rebuilt pane's own parts are their bundle's (and the band, KS05, is painted by its rows) */
+      const mine = !kit(e) && !e.closest('#gm-band, .ui-toast, [class*="ui-toast"]');
+      if (mine && paint.some(orange) && !e.closest(OK_ORANGE)) out.orange.push(name(e));
+      const bg = parse(s.backgroundColor);
+      if (mine && bg && bg.a > 0.9 && lum(bg) > 0.5 && r.width * r.height > 40000) out.light.push(name(e) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height));
+      let own = ''; for (const n of e.childNodes) if (n.nodeType === 3) own += n.nodeValue; own = own.trim(); if (!own) continue;
+      const px = parseFloat(s.fontSize);
+      if (px > 0 && px < 12) out.small.push(name(e) + ' ' + px + ' "' + own.slice(0, 20) + '"');
+      if (/mono/i.test(s.fontFamily) && !kit(e) && !e.closest('kbd, code, time, output, [class*="key"], [class*="time"], [class*="clock"], [class*="when"], .gm-place-t')) out.mono.push(name(e) + ' "' + own.slice(0, 20) + '"');
+      if (px === 0) continue;
+      let fg = parse(s.color), layers = [], image = false;
+      for (let a = e; a; a = a.parentElement) { const cs = getComputedStyle(a); if (cs.backgroundImage && cs.backgroundImage !== 'none') { image = true; break; } const b = parse(cs.backgroundColor); if (b && b.a > 0) { layers.push(b); if (b.a >= 1) break; } }
+      if (image || !fg) continue;
+      let base = { r: 255, g: 255, b: 255, a: 1 }; for (let i = layers.length - 1; i >= 0; i--) base = over(layers[i], base);
+      const f = fg.a < 1 ? over(fg, base) : fg, L1 = lum(f), L2 = lum(base), ratio = (Math.max(L1, L2) + 0.05) / (Math.min(L1, L2) + 0.05);
+      if (ratio < 4.5) out.low.push(name(e) + ' ' + ratio.toFixed(2) + ' "' + own.slice(0, 20) + '"');
+    }
+    out.ground = getComputedStyle(document.body).backgroundColor;
+    return out;
+  },
+  /* the controls the page shows (anywhere on it: a reflow may move one below the fold, which is not losing it), by a key that does not depend on
+     the look; the text only for a control with no id or hook (a live line's text changes with the clock) */
+  controls() {
+    const hooks = (e) => [...e.attributes].filter((a) => /^data-(gm|rv|site|tray|band|set|tab|seg|desk|v|k)/.test(a.name)).map((a) => a.name).join(',');      /* the hook, not its value: the page's state (a map live or not) changes a value between two pages */
+    const key = (e) => e.tagName.toLowerCase() + '|' + (e.id || '') + '|' + hooks(e) + '|' + (e.id || hooks(e) ? '' : (e.textContent || e.value || '').trim().slice(0, 24));
+    const vis = (e) => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && +s.opacity > 0; };
+    return [...document.querySelectorAll('#gm-page button, #gm-page [role="button"], #gm-page a[href], #gm-page input:not([type="hidden"]), #gm-page select, #gm-page textarea, #gm-page summary')].filter(vis).map(key);
+  },
+  /* kit-accept's count: a visible control in the window drawn as a box; quiet buttons apart */
+  boxed() {
+    const vis = (e) => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && +s.opacity > 0; };
+    const alpha = (c) => { const m = /rgba?\(([^)]+)\)/.exec(c); if (!m) return 0; const p = m[1].split(/[ ,/]+/).filter(Boolean); return p.length > 3 ? parseFloat(p[3]) : 1; };
+    const boxed = (e) => { const s = getComputedStyle(e); for (const side of ['top', 'right', 'bottom', 'left']) if (parseFloat(s.getPropertyValue('border-' + side + '-width')) >= 1 && s.getPropertyValue('border-' + side + '-style') !== 'none' && alpha(s.getPropertyValue('border-' + side + '-color')) > 0) return true; return alpha(s.backgroundColor) > 0 || (s.boxShadow && s.boxShadow !== 'none') || false; };
+    const touches = (e) => { const r = e.getBoundingClientRect(); return r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight; };
+    const all = [...document.querySelectorAll('button, [role="button"], input:not([type="hidden"]), select, textarea, summary')].filter(vis).filter(touches).filter(boxed)
+      .filter((e) => !e.closest('.ui-toast, [class*="ui-toast"]'));      /* a passing toast's Undo is not the view's */
+    return { all: all.length, quiet: all.filter((e) => e.matches('.ui-btn--quiet')).length };
+  }
+};
+
+let demo = null, browser = null;
+const timer = setTimeout(async () => { console.log('FAIL timed out'); if (browser) await browser.close().catch(() => {}); if (demo) await demo.stop(); process.exit(1); }, 1500000);
+try {
+  demo = await startDemo(ROOT, PORT, ['--kit', 'desk']);
+  const BASE = demo.base;
+  const api = (method, p, body) => fetch(BASE + '/api' + p, { method, headers: { 'X-Dev-User': GM, 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) }).then(async (r) => ({ status: r.status, text: await r.text() }));
+  browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
+  if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
+  const open = async (theme, w, h, block) => {
+    const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: w, height: h }, serviceWorkers: 'block' });
+    await c.addInitScript((t) => { window.__B68_POLL_MS = 1000; try { localStorage.setItem('b68.theme', t); localStorage.setItem('b68.display.hint', '1'); } catch (e) { /* no storage */ } }, theme === 'night' ? 'dark' : 'light');
+    const fetched = [];
+    if (block) await c.route('**/ui/desk-skin.css*', (r) => r.fulfill({ status: 200, contentType: 'text/css', body: '' }));
+    const page = await c.newPage();
+    page.on('request', (rq) => fetched.push(rq.url()));
+    page.on('dialog', (d) => d.accept());
+    await page.goto(BASE + '/#gm');
+    await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
+    await page.waitForSelector('#gm-buttons .gm-btn', { state: 'attached', timeout: 30000 });
+    return { c, page, fetched };
+  };
+  const ready = (page) => page.waitForFunction(() => window.B68Kit && window.B68Kit.ready('desk'), null, { timeout: 20000 }).catch(() => {});
+  const go = async (page, v) => {
+    const [place, view, key] = VIEWS[v];
+    /* a fresh page for every pane: a popover left open (Find, the Menu) would sit over the next one, and Esc may be PANIC */
+    await page.reload(); await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 }); await ready(page);
+    await page.waitForFunction(() => window.B68GmPage && window.B68GmPage._places && window.B68GmPage._places(), null, { timeout: 20000 });
+    await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    await page.evaluate(([p, w]) => { const P = window.B68GmPage; P.goPlace(p); if (w) P.openView(w); }, [place, view || '']);
+    await page.waitForTimeout(900);
+    if (key === 'menu') await page.click('[data-gm="menu"]');
+    else if (key) await page.keyboard.press(key);
+    if (key) await page.waitForTimeout(700);
+    await page.mouse.move(1, 760); await page.waitForTimeout(400);
+  };
+
+  /* 1 to 7, per pane and theme */
+  const sum = { small: [], mono: [], hard: [], low: [], orange: [], light: [], lost: [] };
+  for (const theme of ['paper', 'night']) {
+    const A = await open(theme, 1366, 768, false); await ready(A.page);
+    const B = theme === 'paper' ? await open(theme, 1366, 768, true) : null;      /* what is shown does not hang on the theme: nothing lost is read in Paper */
+    if (B) await ready(B.page);
+    check(A.fetched.some((u) => /ui\/desk-skin\.css/.test(u)), theme + ': the skin is fetched with kit.desk on');
+    for (const v of Object.keys(VIEWS)) {
+      await go(A.page, v); if (B) await go(B.page, v);
+      const a = await A.page.evaluate(PAGE.audit);
+      if (SHOTS) await A.page.screenshot({ path: path.join(SHOTS, v + '-' + theme + '-1366.png'), animations: 'disabled' });
+      const withSkin = await A.page.evaluate(PAGE.controls), without = B ? await B.page.evaluate(PAGE.controls) : [];
+      const left = new Map(); for (const k of withSkin) left.set(k, (left.get(k) || 0) + 1);
+      const lost = without.filter((k) => { const n = left.get(k) || 0; left.set(k, n - 1); return n <= 0; });
+      for (const k of ['small', 'mono', 'hard', 'low', 'orange']) for (const x of a[k]) sum[k].push(theme + ' ' + v + ': ' + x);
+      if (theme === 'night') { for (const x of a.light) sum.light.push(v + ': ' + x); const g = /rgba?\((\d+), (\d+), (\d+)/.exec(a.ground); if (!g || +g[1] + +g[2] + +g[3] > 240) sum.light.push(v + ': the page ground ' + a.ground); }
+      for (const x of lost) sum.lost.push(theme + ' ' + v + ': ' + x);
+    }
+    /* 5: a hovered old button is not orange */
+    await go(A.page, 'cast');
+    const hov = await A.page.$('#gm-npc .btn:not(.primary):not([disabled])');
+    if (hov) { await hov.hover(); await A.page.waitForTimeout(300); }
+    const hovBg = hov ? await hov.evaluate((e) => getComputedStyle(e).backgroundColor) : '';
+    const hovOrange = /rgba?\((\d+), (\d+), (\d+)/.exec(hovBg), hr = hovOrange ? hovOrange.slice(1).map(Number) : [0, 0, 0];
+    check(!!hov && !(hr[0] > 150 && hr[0] - hr[2] > 100 && hr[1] > 50 && hr[1] < hr[0] - 40), theme + ': a hovered old button takes the sunk ground, not the orange (' + hovBg + ')');
+    await A.c.close(); if (B) await B.c.close();
+  }
+  const show = (l) => (l.length ? ': ' + l.slice(0, 6).join(' | ') + (l.length > 6 ? ' (+' + (l.length - 6) + ')' : '') : '');
+  check(sum.small.length === 0, '1. the type floor: no drawn text under 12 px on any pane, Paper or Night' + show(sum.small));
+  check(sum.mono.length === 0, '2. mono for keys and time alone' + show(sum.mono));
+  check(sum.hard.length === 0, '3. flat: no hard offset shadow but the Primary\'s' + show(sum.hard));
+  check(sum.low.length === 0, '4. contrast: every text 4.5:1 or more, Paper and Night' + show(sum.low));
+  check(sum.orange.length === 0, '5. colour: no orange but the active, the Primary, an outcome and a say line' + show(sum.orange));
+  check(sum.light.length === 0, '6. Night: no large light ground, the page dark' + show(sum.light));
+  check(sum.lost.length === 0, '7. nothing lost: every control shown without the skin is shown with it' + show(sum.lost));
+
+  /* the Run view's boxed controls, the whole window (kit-accept's count), quiet buttons apart */
+  {
+    const A = await open('paper', 1366, 768, false); await ready(A.page);
+    await go(A.page, 'run');
+    const b = await A.page.evaluate(PAGE.boxed);
+    console.log('   Run at 1366x768: ' + b.all + ' boxed controls in the window, ' + b.quiet + ' of them quiet buttons');
+    check(b.all - b.quiet <= 25, 'the Run view: 25 or fewer boxed controls in the window, quiet buttons not counted (' + (b.all - b.quiet) + ')');
+    await A.c.close();
+  }
+
+  /* off: the skin is not fetched and an old .btn keeps its old look */
+  {
+    const r = await api('PATCH', '/gm/state', { features: { 'kit.desk': false } });
+    check(r.status === 200, 'kit.desk turned off (' + r.status + ')');
+    const A = await open('paper', 1366, 768, false);
+    await A.page.waitForTimeout(1500);
+    await go(A.page, 'ipad');
+    const off = await A.page.evaluate(() => {
+      const b = document.querySelector('#gm-ipad .btn, .gm-ipadv .btn, #gm-page .btn'), s = b ? getComputedStyle(b) : null;
+      return { kit: document.documentElement.getAttribute('data-kit') || '', shadow: s ? s.boxShadow : '', border: s ? s.borderTopWidth : '', sheets: [...document.querySelectorAll('link[rel=stylesheet], style[data-href]')].map((l) => l.getAttribute('href') || l.getAttribute('data-href')).join(' ') };
+    });
+    check(!/desk/.test(off.kit) && !A.fetched.some((u) => /ui\/desk-skin\.css/.test(u)) && !/desk-skin/.test(off.sheets), 'off: no desk token, desk-skin.css not fetched');
+    check(/\dpx \dpx 0px/.test(off.shadow) && off.border === '2px', 'off: an old .btn keeps its hard shadow and its 2 px rule (' + off.shadow + ', ' + off.border + ')');
+    await A.c.close();
+  }
+} catch (e) {
+  failed++; console.log('FAIL ' + (e && e.stack || e));
+} finally {
+  clearTimeout(timer);
+  if (browser) await browser.close().catch(() => {});
+  if (demo) await demo.stop();
+}
+console.log('kit-skin: ' + passed + ' passed, ' + failed + ' failed');
+console.log(failed ? 'FAIL kit-skin' : 'PASS kit-skin');
+process.exit(failed ? 1 : 0);
