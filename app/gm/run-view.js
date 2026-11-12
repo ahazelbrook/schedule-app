@@ -576,6 +576,8 @@
     }
 
     /* the one toggle on a room card: Reveal on the map / Revealed · hide (the Run view's own list), or plain text when a band or survey opened it */
+    /* MK1: an optional host part, roomTools(room) -> html (Cut to room, while map.room is on); '' without it */
+    function roomTools(name) { try { return typeof host.roomTools === "function" ? str(host.roomTools(name)) : ""; } catch (e) { return ""; } }
     function revealToggle(c, ctx) {
       var mine = list(ctx.st.open).indexOf(c.name) >= 0, room = ' data-room="' + esc(c.name) + '"';
       var kt = typeof host.knowledgeToggle === "function" ? host.knowledgeToggle(c.name) : "";      /* 2.2: dark, blueprint or seen, while map.knowledge is on */
@@ -603,7 +605,7 @@
         h += '<div class="rv-rm' + (tapped ? " sel" : "") + '" data-room="' + esc(name) + '">' +
           (ks ? '<p class="rv-rmk">' + (ks.band ? esc(ks.band) + " · " : "") + "<b>" + esc(ks.staged && ks.k !== "seen" ? ks.k + ", staged" : ks.k) + "</b></p>" : "") +
           '<h3 class="rv-sh">' + esc(c.name) + (c.zoneLabel ? ' <small>' + esc(c.zoneLabel) + "</small>" : "") + "</h3>" +
-          (seg || revealToggle(c, ctx)) + wrong +
+          (seg || revealToggle(c, ctx)) + roomTools(name) + wrong +
           '<p class="rv-rmpcs"><span class="rv-lab">PCs</span> ' + (c.pcs.length ? c.pcs.map(function (p) { return "<b>" + esc(p.name) + "</b>"; }).join(", ") : '<span class="rv-dim">none</span>') + "</p>";
         var rows = ""; try { rows = typeof host.peopleHtml === "function" ? str(host.peopleHtml(name, ppl, idx === 0)) : ""; } catch (e) { rows = ""; }      /* the first card also shows who is held, wherever they are */
         h += '<h4 class="rv-lab">Who&#39;s here</h4>' + (rows || '<ul class="rv-who">' + (ppl.length ? ppl.map(function (p) {
