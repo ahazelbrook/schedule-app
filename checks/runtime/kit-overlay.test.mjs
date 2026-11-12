@@ -424,6 +424,19 @@ if(E){var h=E.handle;E.handle=function(c){var r=h.call(E,c);window.handleLog.pus
       assert.equal(await ev(() => window.undone), 1);
       await page.waitForFunction(() => document.querySelectorAll('.ui-toast').length === 0);
     });
+    await test('browser: Undo runs once: Enter pressed twice on the focused Undo of a leaving toast undoes one time (the cue\'s Undo and Yes come through here)', async () => {
+      await ev(() => {
+        window.undone = 0; B68Ui.toast({ text: 'Moved the Pelican Rooms clock', duration: 0, undo: () => { window.undone++; } });
+        document.querySelector('.ui-toast-stack').style.setProperty('--ui-motion-quick', '1500ms');   /* a long fade, so the second press finds it leaving */
+        document.querySelector('.ui-toast-undo').focus();
+      });
+      await page.keyboard.press('Enter');
+      assert.equal(await ev(() => [document.activeElement.getAttribute('data-ui-act'), document.querySelector('.ui-toast').classList.contains('is-leaving')]).then((x) => x.join()), 'undo,true', 'still focused, on its way out');
+      await page.keyboard.press('Enter');
+      assert.equal(await ev(() => window.undone), 1, 'the second Enter undid nothing');
+      await page.waitForFunction(() => document.querySelectorAll('.ui-toast').length === 0);
+      await ev(() => { document.querySelector('.ui-toast-stack').style.removeProperty('--ui-motion-quick'); });
+    });
     await test('browser: an error outlives an info, has a red edge, an Error label and an alert role, and stays until X; an info is paused while hovered', async () => {
       await ev(() => { B68Ui.toast({ text: 'Could not save', tone: 'error' }); B68Ui.toast({ text: 'Saved earlier', duration: 500 }); });
       assert.deepEqual(await ev(() => { const e = document.querySelector('.ui-toast--error'); return [e.getAttribute('role'), e.querySelector('.ui-toast-kind').textContent, !!e.querySelector('.ui-toast-timer')]; }), ['alert', 'Error', false]);
