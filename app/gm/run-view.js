@@ -586,6 +586,7 @@
     }
     /* the rooms (the top of the right column): the room tapped, then every room a PC is in; who is there, what happens, the leads in reach, the prep note */
     function roomsSection(box, ctx) {
+      var K = kit(); if (K) return K.room(box, ctx, kv());
       var m = ctx.model, shown = roomsShown(m, ctx.sel), byId = {}, states = {};
       if (!shown.length) { box.innerHTML = '<h3 class="rv-sh">Rooms</h3><p class="rv-dim">Nobody is placed yet. Tap a room on the board or the map to see it, and act on it.</p>'; return; }
       list(ctx.play.people).forEach(function (p) { if (isObj(p)) byId[p.id] = p; });

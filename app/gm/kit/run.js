@@ -198,6 +198,107 @@
     box.innerHTML = h || '<p class="rv-empty krv-empty">The roll has no rooms to show.</p>';
   }
 
+  /* ---------- the inspector (KS08.4): one room, the one selected (else the first room a PC is in) ---------- */
+  var addOpen = {};      /* the Add someone fold, by room, kept across redraws (this page only) */
+  function initials(s) { var o = ''; str(s).trim().split(/\s+/).filter(Boolean).slice(0, 2).forEach(function (w) { o += w.charAt(0).toUpperCase(); }); return o || '?'; }
+  /* a control as button options (for a row's one action and its menu), every hook kept */
+  function optsOf(el, rank) {
+    var data = {}, attrs = {};
+    Array.prototype.forEach.call(el.attributes, function (a) { if (a.name.indexOf('data-') === 0) data[a.name] = a.value; else if (/^aria-/.test(a.name) && a.name !== 'aria-pressed') attrs[a.name] = a.value; });
+    var p = el.getAttribute('aria-pressed');
+    return { label: str(el.textContent).replace(/\s+/g, ' ').trim(), rank: rank || 'quiet', cls: el.getAttribute('class') || '', data: data, attrs: attrs, title: el.getAttribute('title') || '',
+      disabled: el.hasAttribute('disabled'), pressed: p === 'true' ? true : p === 'false' ? false : undefined };
+  }
+  /* Who's here: gm/spotlight.js rowsHtml read back as kit Rows: the name, the role, ONE action (Spotlight, or On the iPad while held), the rest behind ⋯;
+     while one is held, its looks and Take it down stay in sight under the row. Add someone folds under its own quiet line */
+  function whoHtml(html, room) {
+    var U = ui(), f = parse(html); if (!f) return '';
+    var rows = Array.prototype.map.call(f.querySelectorAll('li'), function (li) {
+      if (!li.hasAttribute('data-pid')) return '<p class="krv-hint">' + esc(str(li.textContent).trim()) + '</p>';
+      var nm = li.querySelector('.rv-pn b'), role = li.querySelector('.rv-prole'), mv = li.querySelector('.rv-pmove'), hid = li.querySelector('.rv-hid');
+      var name = nm ? str(nm.textContent).trim() : '', acts = Array.prototype.slice.call(li.querySelectorAll('.rv-pacts button')), looks = li.querySelectorAll('.rv-plooks button');
+      var sub = [role ? str(role.textContent).trim() : '', mv ? str(mv.textContent).trim() : '', hid ? 'hidden from the players' : ''].filter(Boolean).join(MID);
+      var row = U.row({ label: name, sub: sub, lead: { initials: initials(name), tone: li.classList.contains('held') ? 'accent' : '' }, cls: str(li.getAttribute('class')) + ' krv-p', data: { pid: li.getAttribute('data-pid') },
+        action: acts.length ? optsOf(acts[0]) : null, more: acts.slice(1).map(function (b) { return optsOf(b); }), moreLabel: 'More for ' + name });
+      return row + (looks.length ? '<div class="rv-plooks krv-looks">' + Array.prototype.map.call(looks, function (b) { return redress(b, { rank: 'quiet' }); }).join('') + '</div>' : '');
+    }).join('');
+    var form = f.querySelector('form[data-site]'), add = '';
+    if (form) {
+      var inp = form.querySelector('input');
+      add = '<details class="krv-add" data-krv-add="' + esc(room) + '"' + (addOpen[room] ? ' open' : '') + '><summary class="krv-addsum">Add someone from the cast</summary>' +
+        (addOpen[room] ? '<form class="rv-padd krv-padd" data-site="' + esc(form.getAttribute('data-site')) + '" data-room="' + esc(form.getAttribute('data-room')) + '">' +
+        U.field({ label: 'Add someone from the cast', kind: 'text', placeholder: inp ? inp.getAttribute('placeholder') : '', attrs: { name: 'who', autocomplete: 'off', spellcheck: 'false', 'aria-label': inp ? inp.getAttribute('aria-label') : 'Add someone' } }) +
+        U.button({ label: 'Add', type: 'submit', rank: 'quiet', cls: 'rv-btn sm' }) + '</form>' : '') + '</details>';      /* the form is drawn only while open (a closed fold still lays its field out) */
+    }
+    return '<div class="rv-ppl krv-ppl">' + rows + '</div>' + add;
+  }
+  function room(box, ctx, v) {
+    var U = ui(), host = v.host, m = ctx.model, shown = v.roomsShown(m, ctx.sel), name = shown[0], h = '', states = {};
+    box.__krvRe = ctx.rerender;
+    if (!box.__krvAdd && typeof box.addEventListener === 'function') {
+      box.__krvAdd = true;
+      box.addEventListener('toggle', function (ev) {
+        var d = ev.target, k = d && d.getAttribute ? d.getAttribute('data-krv-add') : null; if (k === null || addOpen[k] === !!d.open) return;
+        addOpen[k] = !!d.open; if (typeof box.__krvRe === 'function') box.__krvRe();
+        var f = addOpen[k] && box.querySelector ? box.querySelector('.krv-padd input') : null; if (f) f.focus();
+      }, true);
+    }
+    if (!name) { box.innerHTML = '<h3 class="rv-sh krv-rmt">Rooms</h3><p class="krv-hint">Nobody is placed yet. Tap a room on the board or the map to see it, and act on it.</p>'; return; }
+    try { states = typeof host.roomStates === 'function' ? host.roomStates() || {} : {}; } catch (e) { states = {}; }
+    var c = m.cards[name], ks = isObj(states[name]) ? states[name] : null, byId = {}, told = isObj(ctx.st.told) ? ctx.st.told : {};
+    list(ctx.play.people).forEach(function (p) { if (isObj(p)) byId[p.id] = p; });
+    var ppl = v.peopleIn(ctx.play, ctx.st, ctx.shownT, name), evs = v.eventsIn(ctx.play, ctx.st, ctx.shownT, name), reach = v.reachIn(ctx.play, ctx.st, ctx.shownT, c.pcs.map(function (p) { return p.id; }));
+    h += '<div class="rv-rm krv-rm' + (name === ctx.sel ? ' sel' : '') + '" data-room="' + esc(name) + '">';
+    if (ks) h += '<p class="rv-rmk krv-eyebrow">' + (ks.band ? esc(ks.band) + MID : '') + esc(knowWord(ks, c.open)) + '</p>';
+    h += '<h3 class="rv-sh krv-rmt">' + esc(name) + (c.zoneLabel ? ' <small class="krv-rmz">' + esc(c.zoneLabel) + '</small>' : '') + '</h3>';
+    /* the players' map: dark, blueprint, seen (gm/knowledge.js segHtml, its hooks kept), or today's reveal toggle without map.knowledge */
+    var seg = ''; try { seg = typeof host.knowledgeSeg === 'function' ? str(host.knowledgeSeg(name)) : ''; } catch (e) { seg = ''; }
+    var sf = parse(seg || v.revealToggle(c, ctx)), kb = sf ? sf.querySelectorAll('button[data-site="kn"]') : [];
+    h += '<p class="krv-lab">The players’ map shows it as</p>';
+    if (kb.length) {
+      h += U.seg({ label: 'Players’ map: ' + name, cls: 'rv-kseg krv-kseg', items: Array.prototype.map.call(kb, function (b) { var o = optsOf(b); o.value = b.getAttribute('data-k'); o.attrs['aria-pressed'] = b.getAttribute('aria-pressed') || 'false'; delete o.pressed; return o; }) });
+      var hint = sf.querySelector('.rv-khint'); if (hint) h += '<p class="rv-khint krv-hint' + (hint.classList.contains('staged') ? ' is-staged' : '') + '">' + esc(hint.textContent) + '</p>';
+    } else {
+      var tb = sf ? sf.querySelector('button') : null;
+      h += tb ? '<p class="rv-open krv-open">' + redress(tb, { rank: 'standard' }) + '</p>' : '<p class="rv-open krv-hint">' + esc(sf ? str(sf.textContent).trim() : '') + '</p>';
+    }
+    var wl = []; try { wl = typeof host.roomWrong === 'function' ? list(host.roomWrong(name)) : []; } catch (e) { wl = []; }
+    if (wl.length) h += '<div class="rv-wrong krv-wrong">' + wl.map(function (l) { return '<p><span class="krv-lab">If it goes wrong</span> <span class="rv-wrongt">' + esc(l) + '</span> ' + U.button({ label: '→ the Roll', rank: 'quiet', cls: 'rv-btn sm rv-toroll', data: { site: 'threat', text: l }, title: 'Put this line in the Roll’s If it goes wrong line' }) + '</p>'; }).join('') + '</div>';
+    h += '<p class="rv-rmpcs krv-pcs"><span class="krv-lab">PCs</span> ' + (c.pcs.length ? esc(c.pcs.map(function (p) { return p.name; }).join(', ')) : '<span class="krv-dim">none</span>') + '</p>';
+    var rows = ''; try { rows = typeof host.peopleHtml === 'function' ? str(host.peopleHtml(name, ppl, true)) : ''; } catch (e) { rows = ''; }
+    h += '<h4 class="krv-lab">Who’s here</h4>' + (rows ? whoHtml(rows, name) : '<div class="rv-who krv-ppl">' + (ppl.length ? ppl.map(function (p) {
+      var who = byId[p.id], label = p.label || p.npc || p.id, kind = ' <small class="krv-dim">' + esc(p.kind) + (p.moving ? ' → ' + esc(p.moving.to) + ' in ' + p.moving.inMin + ' min' : '') + '</small>';
+      return '<p class="npc krv-npc">' + (v.hasCard(ctx, who) ? U.button({ label: label, rank: 'quiet', cls: 'rv-npcname', data: { rv: 'npc', id: p.id }, title: 'Their card' }) : esc(label)) + kind + '</p>';
+    }).join('') : '<p class="krv-hint">Nobody.</p>') + '</div>');
+    /* what they can learn here: each piece of intel that tells of the room, Told (tap to take it back) or Tell the crew, as today (ball.told) */
+    var ri = v.intelFor(ctx.play, name);
+    if (ri.length) h += '<h4 class="krv-lab">What they can learn here</h4>' + ri.map(function (x) {
+      var val = told[x.id], crew = val === 'crew', some = Array.isArray(val) && val.length > 0;
+      return '<div class="rv-rintel krv-learn" data-intel="' + esc(x.id) + '"><span class="krv-learnt">' + esc(x.text) + (some ? '<small class="krv-dim">Told to ' + val.length + '</small>' : '') + '</span>' +
+        (crew ? U.chip({ button: true, label: 'Told', tone: 'ok', pressed: true, cls: 'rv-btn sm rv-tog krv-told', data: { rv: 'tellroom', intel: x.id }, title: 'Told to the crew: tap to take it back' })
+          : U.button({ label: 'Tell the crew', cls: 'rv-btn sm rv-tog', data: { rv: 'tellroom', intel: x.id }, pressed: false, title: 'Every PC’s phone learns it' })) + '</div>';
+    }).join('');
+    if (evs.length) h += '<h4 class="krv-lab">Happening</h4>' + evs.map(function (e) { return '<div class="rv-hap krv-hap"><b>' + esc(e.at) + '</b> ' + esc(e.label || e.pub) + (e.say ? v.sayBox(e.say) : '') + '</div>'; }).join('');
+    if (reach.length) h += '<h4 class="krv-lab">In reach</h4>' + reach.map(function (l) {
+      return v.sayBox(l.line, l.who) + '<div class="rv-heard krv-heard">' + l.pcs.map(function (q) {
+        return U.chip({ button: true, label: v.nameOfPc(q.id, ctx) + (q.heard ? ' heard ✓ ' + v.B.timeLabel(ctx.play, q.at) : ' not heard'), pressed: q.heard, cls: 'rv-btn sm rv-tog', data: { rv: 'unhear', way: l.way, pc: q.id }, title: q.heard ? 'Tap to un-hear' : 'Tap to hear' });
+      }).join('') + '</div>';
+    }).join('');
+    if (typeof host.roomNote === 'function') {
+      var note = null; try { note = host.roomNote(name); } catch (e) { note = null; }
+      h += typeof note === 'string' ? '<div class="rv-rmnote pp-doc pp-cardbody krv-note">' + note + '</div>'      /* the page's renderer made it from the prep note */
+        : '<p class="rv-dim rv-nonote krv-hint">No notes for ' + esc(name) + ': add <code>### ' + esc(name) + '</code> under <code>## Rooms</code> in the prep note.</p>';
+    }
+    h += '</div>';
+    /* the other rooms the crew is in: one tap each (today they were stacked under this one) */
+    if (shown.length > 1) h += '<p class="krv-also"><span class="krv-lab">The crew is also in</span>' + shown.slice(1).map(function (n) {
+      var cc = m.cards[n]; return U.button({ label: n + (cc && cc.pcs.length ? ' (' + cc.pcs.map(function (p) { return p.ini; }).join(' ') + ')' : ''), rank: 'quiet', cls: 'krv-alsob', data: { rv: 'room', room: n } });
+    }).join('') + '</p>';
+    box.innerHTML = h;
+    if (typeof host.decorate === 'function') Array.prototype.forEach.call(box.querySelectorAll('.rv-rmnote'), function (el) { try { host.decorate(el); } catch (e) { /* the note still reads */ } });
+    try { v.lightNow(box, ctx); } catch (e) { /* the note still reads, unlit */ }
+  }
+
   /* ---------- in and out ---------- */
   function on() { var K = W && W.B68Kit; return !!(K && typeof K.ready === 'function' && K.ready('desk') && ui()); }
   function frame(box, inn) {
@@ -214,7 +315,7 @@
     later(follow);      /* no replay: a view drawn before this file arrived draws again now */
   }
 
-  M.on = on; M.head = head; M.toolbar = toolbar; M.legend = legend; M.board = board; M.frame = frame; M.start = start; M.menu = menu;
+  M.on = on; M.room = room; M.head = head; M.toolbar = toolbar; M.legend = legend; M.board = board; M.frame = frame; M.start = start; M.menu = menu;
   M.parse = parse; M.redress = redress; M.knowWord = knowWord; M.clockMeter = clockMeter; M.alarmChip = alarmChip; M.inner = inner;
   return M;
 });

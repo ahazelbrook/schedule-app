@@ -148,3 +148,53 @@
 :root[data-kit~="desk"] .krv-lab { margin: 0; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .12em; text-transform: uppercase; }
 :root[data-kit~="desk"] .krv-arm { display: flex; align-items: center; gap: var(--ui-space-2); margin: 0; padding: 0; border: 0; background: transparent; color: var(--ui-accent-ink); font: 700 var(--ui-type-body)/1.3 var(--ui-font-text); }
 :root[data-kit~="desk"] .krv-empty { color: var(--ui-ink-soft); }
+
+/* ---------- the inspector (KS08.4): the right side as one panel ---------- */
+:root[data-kit~="desk"] .krv > .rv-body > .rv-side { gap: var(--ui-space-4); }
+:root[data-kit~="desk"] .krv > .rv-body > .rv-side > .rv-sec { gap: var(--ui-space-1); padding: 0 0 var(--ui-space-3); border: 0; border-bottom: var(--ui-hairline); border-radius: 0; background: transparent; box-shadow: none; }
+:root[data-kit~="desk"] .krv-rm { display: grid; gap: var(--ui-space-2); min-width: 0; margin: 0; padding: 0; border: 0; }
+:root[data-kit~="desk"] .krv-eyebrow, :root[data-kit~="desk"] .krv-rm .krv-lab { margin: var(--ui-space-1) 0 0; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.25 var(--ui-font-text); letter-spacing: .12em; text-transform: uppercase; }
+:root[data-kit~="desk"] .krv-eyebrow { margin: 0; }
+:root[data-kit~="desk"] .krv-rmt { margin: 0; color: var(--ui-ink); font: 400 var(--ui-type-title)/1 var(--ui-font-poster); letter-spacing: .01em; text-transform: uppercase; }
+:root[data-kit~="desk"] .krv-rmz { display: block; margin-top: 2px; color: var(--ui-ink-soft); font: 400 var(--ui-type-body)/1.3 var(--ui-font-text); letter-spacing: 0; text-transform: none; }
+:root[data-kit~="desk"] .krv-kseg { display: flex; width: 100%; }
+:root[data-kit~="desk"] .krv-kseg .ui-seg-opt { flex: 1 1 0; min-width: 0; }
+:root[data-kit~="desk"] .krv-hint { margin: 0; padding: 0; border: 0; color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .krv-hint.is-staged { color: var(--ui-accent-ink); }
+:root[data-kit~="desk"] .krv-open { margin: 0; }
+:root[data-kit~="desk"] .krv-wrong { display: grid; gap: var(--ui-space-1); margin: 0; padding: 0; border: 0; }
+:root[data-kit~="desk"] .krv-wrong p { margin: 0; font: 400 var(--ui-type-body)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .krv-wrong .krv-lab { margin: 0 var(--ui-space-1) 0 0; }
+:root[data-kit~="desk"] .krv-wrong .ui-btn { min-height: 24px; padding: 0 var(--ui-space-1); font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-pcs { margin: 0; font: 700 var(--ui-type-body)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .krv-pcs .krv-lab { margin: 0 var(--ui-space-1) 0 0; }
+:root[data-kit~="desk"] .krv-ppl { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+:root[data-kit~="desk"] .krv-p { padding-left: 0; padding-right: 0; }
+:root[data-kit~="desk"] .krv-looks { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); margin: 0 0 var(--ui-space-2) 44px; }
+:root[data-kit~="desk"] .krv-looks .ui-btn { min-height: 24px; padding: 0 var(--ui-space-2); font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-npc { margin: 0; }
+:root[data-kit~="desk"] .krv-add { margin: 0; }
+:root[data-kit~="desk"] .krv-addsum { padding: var(--ui-space-1) 0; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.3 var(--ui-font-text); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+:root[data-kit~="desk"] .krv-padd { display: flex; align-items: flex-end; gap: var(--ui-space-2); margin: var(--ui-space-1) 0 0; padding: 0; border: 0; }
+:root[data-kit~="desk"] .krv-padd .ui-field { flex: 1 1 auto; min-width: 0; }
+:root[data-kit~="desk"] .krv-learn {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--ui-space-2); margin: 0; padding: var(--ui-space-2) 0 0; border: 0; border-top: var(--ui-hairline);
+  font: 400 var(--ui-type-body)/1.35 var(--ui-font-text);
+}
+:root[data-kit~="desk"] .krv-learnt { display: grid; gap: 2px; min-width: 0; color: var(--ui-ink); font-weight: 700; }
+:root[data-kit~="desk"] .krv-learnt small { font-weight: 400; }
+:root[data-kit~="desk"] .krv-learn .ui-btn { min-height: 28px; padding: 0 var(--ui-space-2); font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-told { font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-hap { display: grid; gap: var(--ui-space-1); margin: 0; font: 400 var(--ui-type-body)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .krv-rm .rv-say { margin: 0; padding: var(--ui-space-1) var(--ui-space-2); border: 0; border-left: 3px solid var(--ui-line); background: var(--ui-sunk); color: var(--ui-ink); font: 400 var(--ui-type-body)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .krv-rm .rv-saylab { color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .1em; }
+:root[data-kit~="desk"] .krv-rm .rv-say small, :root[data-kit~="desk"] .krv-rm .rv-dim { color: var(--ui-ink-soft); font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-heard { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); margin: 0; font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-heard .ui-chip { font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-note { font-size: var(--ui-type-body); }
+:root[data-kit~="desk"] .krv-also { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-1); margin: 0; }
+:root[data-kit~="desk"] .krv-also .krv-lab { margin-right: var(--ui-space-1); }
+:root[data-kit~="desk"] .krv-alsob { min-height: 28px; padding: 0 var(--ui-space-2); font-size: var(--ui-type-label); }
+/* a locked players' map (its band is open on Location): the state still reads, the options are just not pressable */
+:root[data-kit~="desk"] .krv-kseg .ui-seg-opt:disabled { text-decoration: none; }
+:root[data-kit~="desk"] .krv-kseg .ui-seg-opt:disabled[aria-pressed="true"] { background: var(--ui-ink-soft); color: var(--ui-on-ink); }
