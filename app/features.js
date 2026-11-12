@@ -191,7 +191,17 @@
     { id: 'night.who', label: 'Start the night', surface: 'gm', stage: 'kit', default: false, saturday: 'off', setting: true,
       doc: 'Before the night, Start the night asks who is playing; the Roll, the iPad and every send-to list follow the players who are there. Off: no button, and every filed character counts, as before.' },
     { id: 'blade.pitches', label: 'Blade pitches', surface: 'gm', stage: 'kit', default: false, saturday: 'off', setting: true,
-      doc: 'Blade pitches up to three ideas at a time (a direction, a complication, a clue, an NPC move, a cutaway) in place of the Stall and Meanwhile cards. Off: Stall and Meanwhile as before.' }
+      doc: 'Blade pitches up to three ideas at a time (a direction, a complication, a clue, an NPC move, a cutaway) in place of the Stall and Meanwhile cards. Off: Stall and Meanwhile as before.' },
+    /* the map kit's new options (MK1, 13/11): four settings, each off until chosen. Off: the same options reach the map kit, so the same map comes back.
+       The layout one is map.fill: map.stage is taken (Stage rooms, then send) */
+    { id: 'map.fill', label: 'The map fills the shared screen', surface: 'gm', stage: 'map', default: false, saturday: 'try', setting: true,
+      doc: 'The players’ map on the iPad or a TV is drawn to fill that screen, with the key as a strip (map kit stage layout); a Shared screen choice beside the map says iPad (4:3) or TV (16:9). Off: the iPad map as before.' },
+    { id: 'map.people', label: 'People on the map', surface: 'gm', stage: 'map', default: false, saturday: 'try', setting: true,
+      doc: 'The Run view hands the map kit its people: the crew and the cast where the night places them on this screen, the crew alone (in rooms the players know) on the shared screen, and a crowd that suits the place. Off: no people drawn.' },
+    { id: 'map.lights', label: 'Rooms lit by the night’s events', surface: 'gm', stage: 'map', default: false, saturday: 'try', setting: true,
+      doc: 'A False dawn event of the play block lights its room on the map while it runs. Off: every room as before.' },
+    { id: 'map.room', label: 'Cut to the room', surface: 'gm', stage: 'map', default: false, saturday: 'try', setting: true,
+      doc: 'Each room the players know gets Cut to room in the Run view: that room alone as a stage set on the shared screen, through the same checks as the map; Back to the map puts the map up again. Off: no control.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
