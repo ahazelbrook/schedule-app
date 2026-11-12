@@ -1,5 +1,5 @@
 /* gm/kit/blade.js: the Blade panel on the new desk (kit.desk, KS07 of the kit and stage build) and, below, the pitch seat (blade.pitches, KS18; KS19's cards).
-   The file is in two bundles, kit-desk and blade-pitches, so it may be here while the desk is off: B68KitBlade then does nothing at all. Loaded twice, it
+   The file is in two bundles, kit-desk and blade-pitches, so it may be here while the desk is off: B68KitBlade then draws the pitch cards alone. Loaded twice, it
    starts once. It defines B68KitBlade when it loads and reads other modules only when it is called (the kit's load-order rule).
 
    B68KitBlade: Alex, 07/11: "the text is too big so could only see one card... Easier to dismiss cards." With the desk on (B68Kit.on('desk')) and the UI
@@ -20,11 +20,27 @@
      Put away        the Screen section (#as-screen) is hidden: the Tools drawer is Fit it and the Ledger. The Ask box goes to the foot (feed, Tools, Ask), its
                      placeholder cut to one line. A rule or Stop card that arrives with the panel shut goes to the toast stack when the UI kit has one (B68Ui.toast, KS03), with Open;
                      until then the old strip.
+   The pitch cards (blade.pitches, KS19). Alex, 11/11: "More blade pitches... That's really what I want it to be doing mainly." While B68Pitches (below) is
+   hooked, every answer that carries `pitch` becomes ONE card in the panel: a set (a page card, seat 'pitch', kind idea: it is never sent to the server,
+   gone on reload, under the Idea filter, one pip). The set has a head (Pitches, the time, why Blade spoke) and its pitches, each a compact card: the
+   kind as a word and a colour edge (Direction, Complication, Clue, NPC move, Cutaway), the line, the why-now in small type, Keep and an X.
+     Desk on        the kit card (desk-blade.css: kp- classes), drawn by the desk's view.
+     Desk off       today's idea card (gm.css's own as-card, as-fold, as-kind, as-text, as-more, as-ack classes: nothing new to style), drawn by a
+                    pitch-only view through the same seam (bridge.use): every other card is the panel's own, as today.
+     Keep / X       Keep pins a pitch past the fade (an unkept pitch goes when its set fades, 90 s in view, as an idea does on the desk); X dismisses
+                    it, and Delete or Backspace on a focused pitch presses its X. A dismissed line goes back to B68Pitches.remember, so it is in
+                    the next request's `seen` (B68Pitches already remembers every line shown). Nothing is sent or filed: no mark, no Moment.
+     Pitch now      a Pitch button in the panel's head, and Shift+A (gm-page.js asks pitchNow()): busy while it waits, one request at a time
+                    (B68Pitches.now() hands a second press the same promise). A 429 or a failure says so under the head.
+     The Rack       rack(fold): the page's Blade fold under the Roll (#gm-rackf) shows the newest pitch still in the panel (or "pitching...").
+   A pitch never acts: nothing here reaches the iPad, a phone or the display; nothing here writes to the GM state.
    API (window.B68KitBlade; module.exports under Node, which also carries KS18's B68Pitches)
      attach(bridge)          a panel's bridge (assist-panel.js calls it at create when this file is already here)
-     sync()                  every panel follows the desk now (B68Kit.onChange calls it)
-     on() -> bool            the desk is on and the kit is here
-     pure: EDGE, FADE_MS, WARN_MS, pressable(card, canUndo), fadeStep(ms, dt, held) -> { ms, phase: 'ok' | 'fading' | 'gone' } */
+     sync()                  every panel follows the desk and the pitches now (B68Kit.onChange, and B68Pitches.set, call it)
+     on() -> bool            the desk is on and the kit is here           pitches() -> bool   B68Pitches is hooked (the setting is on)
+     pitchNow() -> bool      Pitch now (true: asked, or already asking)   rack(fold) -> bool  paint the Rack's pitch; true when it shows one
+     pure: EDGE, FADE_MS, WARN_MS, pressable(card, canUndo), fadeStep(ms, dt, held) -> { ms, phase: 'ok' | 'fading' | 'gone' },
+           PKIND, pitchSet(res) -> { at, wake, items } | null, errWord(e) */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -39,9 +55,34 @@
   var TONE = { ok: 'ok', bad: 'caution', unk: 'caution', wait: 'plain' };
   var DISMISS_WORDS = /^(got it|dismiss|clear|hide)\b/i;      /* a page card's Got-it label that only says "dismiss": the X says it already */
   var bridges = [], views = [], listening = false;
+  /* the pitches: their kinds' words (KS18's five), why Blade spoke (the reply's wake), the sets alive in the panel (card id -> set), newest last */
+  var PKIND = { direction: 'Direction', complication: 'Complication', clue: 'Clue', npc_move: 'NPC move', cutaway: 'Cutaway' };
+  var WAKE = { scene: 'the scene changed', stall: 'the table stalled', quiet: 'the table went quiet', idle: 'a few minutes on', asked: 'you asked' };
+  var SETS = {}, ORDER = [], pseq = 0, unsub = null, busy = false, noteT = null, noteText = '';
 
   function str(v) { return v == null ? '' : String(v); }
   function clip(s, n) { s = str(s).replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; }
+  /* a tick or Pitch-now answer -> the set it carries, cleaned (1 to 3 items of a known kind with a line), or null */
+  function pitchSet(res) {
+    var p = res && res.pitch; if (!p || typeof p !== 'object' || !Array.isArray(p.items)) return null;
+    var items = p.items.filter(function (x) { return x && PKIND[x.kind] && clip(x.line, 200); }).slice(0, 3).map(function (x) {
+      return { kind: x.kind, line: clip(x.line, 200), why: clip(x.why_now, 160), uses: clip(x.uses, 80), kept: false, gone: false };
+    });
+    return items.length ? { at: str(p.at), wake: WAKE[p.wake] ? p.wake : '', items: items } : null;
+  }
+  /* a failed Pitch now, in words (the Worker's own message is never shown) */
+  function errWord(e) {
+    var s = e && e.status, m = str(e && e.message);
+    if (/pitches are off/.test(m)) return '';
+    if (s === 429) return /cap/i.test(m) ? 'Cap reached for tonight: no more pitches.' : 'Blade is busy pitching: try again in a moment.';
+    if (s === 503) return 'Blade is not set up on the server yet (no key).';
+    if (e && (e.network || e.timeout)) return 'Could not reach the server: try again.';
+    return 'Blade could not pitch just now: try again.';
+  }
+  function pitches() { var P = W && W.B68Pitches; return !!(P && typeof P.on === 'function' && P.on()); }
+  function isSet(c) { return !!(c && c.src === 'page' && c.seat === 'pitch' && SETS[c.id]); }
+  function live(set) { return set ? set.items.filter(function (x) { return !x.gone; }) : []; }
+  function hhmmOf(iso) { var d = new Date(iso); if (isNaN(d)) return ''; function p(n) { return n < 10 ? '0' + n : String(n); } return p(d.getHours()) + ':' + p(d.getMinutes()); }
   /* a card with something to press never fades and is never cleared: Undo, an action, a chip */
   function pressable(c, canUndo) { return !!(canUndo || (c && Array.isArray(c.actions) && c.actions.length) || (c && Array.isArray(c.chips) && c.chips.length)); }
   /* the fade clock of one card: held (under the pointer, focused) stops it, at least HOLD_MS before the dim, so a card let go of stays a little longer */
@@ -53,22 +94,85 @@
   function on() { var K = W && W.B68Kit, U = W && W.B68Ui; return !!(K && typeof K.on === 'function' && K.on('desk') && U && typeof U.node === 'function'); }
 
   /* ---------- one panel's view ---------- */
-  function makeView(b) {
-    var doc = b.doc, h = b.h, st = b.st, U = W.B68Ui;
-    var pinned = {}, fade = {}, ticker = null, last = 0, saved = { small: null, ph: null }, els = { clear: null }, wired = null, dead = false;
+  /* mode 'desk': the whole new desk (KS07) and the pitch cards in the kit's look; mode 'pitch': the desk is off, so only the pitch sets are this view's (in
+     today's idea-card classes), with the Pitch button and the pitches' fade; every other card, and the panel around them, stay the panel's own */
+  function makeView(b, mode) {
+    var doc = b.doc, h = b.h, st = b.st, U = W.B68Ui, desk = mode !== 'pitch';
+    var pinned = {}, fade = {}, ticker = null, last = 0, saved = { small: null, ph: null }, els = { clear: null, go: null, note: null }, wired = null, dead = false;
     function host() { return b.host(); }
     function q(sel) { var x = host(); return x ? x.querySelector(sel) : null; }
     function el(tag, cls, text) { var e = doc.createElement(tag); if (cls) e.className = cls; if (text !== undefined && text !== null) e.textContent = text; return e; }
     function btn(o) { return U.node('button', o, doc); }
     function chip(o) { return U.node('chip', o, doc); }
+    /* a set fades while it has a pitch nobody kept and it is not open; the old desk's own cards never fade (today) */
     function canFade(c) {
-      return !!c && h.cardKind(c) === 'idea' && !c.mock && c.src !== 'ask' && !c.kept && !pinned[c.id] && !h.isOpen(c, false) && !pressable(c, h.canUndo(c));
+      if (isSet(c)) return !h.isOpen(c, false) && live(SETS[c.id]).some(function (x) { return !x.kept; });
+      return desk && !!c && h.cardKind(c) === 'idea' && !c.mock && c.src !== 'ask' && !c.kept && !pinned[c.id] && !h.isOpen(c, false) && !pressable(c, h.canUndo(c));
     }
-    function fadeKind(c) { return !!c && h.cardKind(c) === 'idea' && !c.mock && c.src !== 'ask' && !pressable(c, h.canUndo(c)); }      /* gets a Pin */
-    function clearable(c) { return !!c && !c.mock && !c.kept && !pinned[c.id] && !pressable(c, h.canUndo(c)); }
+    function fadeKind(c) { return !!c && !isSet(c) && h.cardKind(c) === 'idea' && !c.mock && c.src !== 'ask' && !pressable(c, h.canUndo(c)); }      /* gets a Pin (a set's pitches have Keep) */
+    function clearable(c) { return !!c && !c.mock && !c.kept && !pinned[c.id] && (isSet(c) ? !live(SETS[c.id]).some(function (x) { return x.kept; }) : !pressable(c, h.canUndo(c))); }
+
+    /* ---- a pitch set: the head, then each pitch (desk: a kit card with its kind's edge; off: today's idea card) ---- */
+    function setNode(c, now) {
+      var set = SETS[c.id], open = h.isOpen(c, now), items = live(set);
+      var root = el(now ? 'div' : 'li', 'kp-set' + (now ? ' as-now-card' : ''));
+      [['id', c.id], ['seat', 'pitch'], ['kind', 'idea'], ['open', open ? '1' : '0']].forEach(function (a) { root.setAttribute('data-' + a[0], a[1]); });
+      var head = el('p', desk ? 'kp-sethead' : 'as-zlab kp-sethead');
+      head.appendChild(el('b', null, items.length === 1 ? 'Pitch' : 'Pitches'));
+      var t = hhmmOf(set.at || c.at); if (t) head.appendChild(el('time', 'kp-settime', ' · ' + t));
+      if (set.wake) head.appendChild(el('span', 'kp-wake', ' · ' + WAKE[set.wake]));
+      root.appendChild(head);
+      var list = el('div', 'kp-items'); list.setAttribute('role', 'list');
+      set.items.forEach(function (x, i) { if (!x.gone) list.appendChild(pitchNode(c, x, i, open, now)); });
+      root.appendChild(list);
+      if (fade[c.id] && fade[c.id].phase === 'fading') dim(root, true);
+      return root;
+    }
+    function pitchNode(c, x, i, open, now) {
+      var word = PKIND[x.kind], data = { kp: String(i), pkind: x.kind };
+      var root = desk ? U.node('card', { tag: 'div', cls: ['kp-card'], data: data }, doc) : el('div', 'as-card kp-card');
+      if (!desk) { root.setAttribute('data-kind', 'idea'); root.setAttribute('data-open', '1'); root.setAttribute('data-kp', String(i)); root.setAttribute('data-pkind', x.kind); }
+      root.setAttribute('role', 'listitem');
+      var fd = { as: 'fold', id: c.id, kp: String(i) };
+      var fold = now ? el('div', desk ? 'kp-fold' : 'as-fold kp-fold') : btn({ label: '', rank: 'quiet', cls: desk ? ['kp-fold'] : ['as-fold', 'kp-fold'], data: fd, attrs: { 'aria-expanded': String(open) } });
+      var kind = el('span', desk ? 'kp-kind' : 'as-kind kp-kind');
+      if (!desk) { var gl = el('span', 'as-glyph', '✦'); gl.setAttribute('aria-hidden', 'true'); kind.appendChild(gl); }
+      kind.appendChild(el('b', null, word));
+      var tx = el('span', desk ? 'kp-text' : 'as-text kp-text', x.line);
+      if (desk) {
+        var line = el('span', 'kp-line'); line.appendChild(kind); line.appendChild(doc.createTextNode(' ')); line.appendChild(tx); fold.appendChild(line);
+        if (x.why) fold.appendChild(el('span', 'kp-why', x.why));
+      } else { fold.appendChild(kind); fold.appendChild(tx); }
+      var acts = el(desk ? 'span' : 'div', desk ? 'kp-side' : 'as-acts kp-side');
+      if (!now) {
+        acts.appendChild(btn({ label: x.kept ? 'Kept' : 'Keep', rank: 'quiet', cls: desk ? ['kp-keep'] : ['as-ack', 'kp-keep'], pressed: !!x.kept, data: { kbl: 'pkeep', id: c.id, kp: String(i) },
+          title: x.kept ? 'Kept: it stays. Press again to let it fade with its set.' : 'Keep it: it stays past the fade. A pitch fades 90 seconds after its set is in view.' }));
+        acts.appendChild(btn({ label: '×', rank: 'quiet', cls: desk ? ['kp-x'] : ['as-ack', 'kp-x'], data: { kbl: 'px', id: c.id, kp: String(i) }, title: 'Dismiss (Delete)',
+          attrs: { 'aria-label': 'Dismiss: ' + clip(x.line, 60) } }));
+      }
+      if (desk) {
+        var row = el('div', 'kp-row'); row.appendChild(fold); if (acts.firstChild) row.appendChild(acts); root.appendChild(row);
+        if (open && x.uses) root.appendChild(el('p', 'kp-uses', 'Leans on ' + x.uses));
+      } else {
+        root.appendChild(fold);
+        var more = el('div', 'as-more kp-more');
+        if (x.why) more.appendChild(el('p', 'as-askq kp-why', x.why));
+        if (x.uses) more.appendChild(el('p', 'as-saved kp-uses', 'Leans on ' + x.uses));
+        if (acts.firstChild) more.appendChild(acts);
+        if (more.firstChild) root.appendChild(more);
+      }
+      return root;
+    }
+    /* the last seconds of a set's fade: the desk's CSS dims [data-kbl-fading]; the old desk has no sheet of ours, so the set says it with its opacity */
+    function dim(n, on) {
+      if (on) n.setAttribute('data-kbl-fading', ''); else n.removeAttribute('data-kbl-fading');
+      if (!desk && n.style) n.style.opacity = on ? '0.55' : '';
+    }
 
     /* ---- the card ---- */
     function card(c, now) {
+      if (isSet(c)) return setNode(c, now);
+      if (!desk) return null;
       var k = h.cardKind(c), kd = h.KIND[k] || h.KIND.note, open = h.isOpen(c, now), data = { id: c.id, seat: c.seat, kind: k, open: open ? '1' : '0' };
       if (c.mock) data.mock = true;
       var root = U.node('card', { tag: now ? 'div' : 'li', edge: EDGE[k] || 'ink', cls: ['as-card', 'kbl-card'].concat(now ? ['as-now-card'] : []), data: data }, doc);
@@ -150,6 +254,13 @@
     function clearIds() { return h.feedOf(st.cards, st.filter).filter(clearable).map(function (c) { return c.id; }); }
     function paint() {
       var x = host(); if (!x || dead) return;
+      paintGo();
+      if (!desk) {
+        wire(x);
+        var lp = listed();
+        Object.keys(fade).forEach(function (id) { var n = lp[id]; if (n && fade[id].phase === 'fading' && !n.hasAttribute('data-kbl-fading')) dim(n, true); });
+        clock(); return;
+      }
       [['#as-launch'], ['#as-nowz'], ['#as-screen']].forEach(function (s) { var e = q(s[0]); if (e && !e.hidden) e.hidden = true; });
       var ta = q('#as-ask-q'); if (ta) { if (saved.ph === null) saved.ph = ta.getAttribute('placeholder'); if (ta.getAttribute('placeholder') !== ASK_PH) ta.setAttribute('placeholder', ASK_PH); }
       var sm = q('.as-tools summary small'); if (sm) { if (saved.small === null) saved.small = sm.textContent; if (sm.textContent !== 'Fit it · Ledger') sm.textContent = 'Fit it · Ledger'; }
@@ -165,8 +276,35 @@
       Object.keys(fade).forEach(function (id) { var n = li[id]; if (n && fade[id].phase === 'fading' && !n.hasAttribute('data-kbl-fading')) n.setAttribute('data-kbl-fading', ''); });
       clock();
     }
+    /* the Pitch button in the panel's head (while pitches are on), and the line under the head that says what went wrong */
+    function paintGo() {
+      var row = q('.as-head-1'), hd = q('.as-head'), want = pitches() && !!row;
+      if (!want) { goAway(); return; }
+      var tip = 'Blade pitches now: up to three ideas for the next few minutes (Shift+A)';
+      if (!els.go || els.go.parentNode !== row) {
+        if (els.go && els.go.parentNode) els.go.parentNode.removeChild(els.go);
+        els.go = btn({ label: 'Pitch', rank: desk ? 'standard' : 'quiet', cls: desk ? ['kp-go'] : ['as-ap', 'kp-go'], data: { kbl: 'pitch' }, title: tip });
+        row.insertBefore(els.go, q('#as-pin') || q('.as-x') || null);
+      }
+      var word = busy ? 'Pitching…' : 'Pitch';
+      if (els.go.textContent !== word) els.go.textContent = word;
+      if (busy) els.go.setAttribute('aria-busy', 'true'); else els.go.removeAttribute('aria-busy');
+      if (!els.note || els.note.parentNode !== hd) {
+        if (els.note && els.note.parentNode) els.note.parentNode.removeChild(els.note);
+        els.note = el('p', 'as-note kp-note'); els.note.setAttribute('role', 'status');
+        if (hd) hd.appendChild(els.note);
+      }
+      if (els.note.textContent !== noteText) els.note.textContent = noteText;
+      els.note.hidden = !noteText;
+    }
+    function goAway() {
+      [els.go, els.note].forEach(function (e) { if (e && e.parentNode) e.parentNode.removeChild(e); });
+      els.go = null; els.note = null;
+    }
     function unpaint() {
       var x = host(); if (!x) return;
+      goAway();
+      if (!desk) { Object.keys(listed()).forEach(function (id) { var n = listed()[id]; if (n && n.style) n.style.opacity = ''; }); return; }
       ['#as-launch', '#as-nowz', '#as-screen'].forEach(function (s) { var e = q(s); if (e) e.hidden = false; });
       var ta = q('#as-ask-q'); if (ta && saved.ph !== null) ta.setAttribute('placeholder', saved.ph);
       var sm = q('.as-tools summary small'); if (sm && saved.small !== null) sm.textContent = saved.small;
@@ -177,10 +315,27 @@
 
     /* ---- the keys, the clicks and what the pointer holds ---- */
     function cardOf(t) { var li = t && t.closest ? t.closest('.kbl-card[data-id]') : null; var l = q('#as-list'); return li && l && li.parentNode === l ? li : null; }
+    /* a pitch in a set in the feed: { li: the set, card: the pitch } */
+    function pitchOf(t) {
+      var pc = t && t.closest ? t.closest('.kp-card[data-kp]') : null, li = pc && pc.closest('.kp-set[data-id]'), l = q('#as-list');
+      return pc && li && l && li.parentNode === l ? { li: li, card: pc } : null;
+    }
     function onKey(ev) {
       if ((ev.key !== 'Delete' && ev.key !== 'Backspace') || ev.ctrlKey || ev.metaKey || ev.altKey || ev.isComposing) return;
       var t = ev.target, n = t && t.tagName ? t.tagName.toLowerCase() : '';
       if (n === 'input' || n === 'textarea' || n === 'select' || (t && t.isContentEditable)) return;
+      var pp = pitchOf(t);
+      if (pp) {      /* a pitch: its X; the focus goes to the next pitch of the set, else the next card */
+        ev.preventDefault();
+        var id = pp.li.getAttribute('data-id'), kp = +pp.card.getAttribute('data-kp'), set = SETS[id];
+        var rest = set ? set.items.map(function (x, i) { return i; }).filter(function (i) { return i !== kp && !set.items[i].gone; }) : [];
+        var nx = rest.filter(function (i) { return i > kp; })[0]; if (nx === undefined) nx = rest[rest.length - 1];
+        var sib = pp.li.nextElementSibling; while (sib && !sib.getAttribute('data-id')) sib = sib.nextElementSibling;
+        dismissPitch(id, kp);
+        if (nx !== undefined) focusPitch(id, nx); else focusCard(sib ? sib.getAttribute('data-id') : '');
+        return;
+      }
+      if (!desk) return;
       var li = cardOf(t), x = li && li.querySelector('.kbl-x'); if (!x) return;
       ev.preventDefault();
       var sib = li.nextElementSibling; while (sib && !sib.getAttribute('data-id')) sib = sib.nextElementSibling;
@@ -195,9 +350,36 @@
       if (!f) { var nm = q('#as-name'); f = nm; }
       if (f) { try { f.focus({ preventScroll: false }); } catch (e) {} }
     }
+    function focusPitch(id, kp) {
+      var l = q('#as-list'); if (!l) return;
+      var f = Array.prototype.filter.call(l.querySelectorAll('[data-as="fold"][data-kp]'), function (e) { return e.getAttribute('data-id') === id && e.getAttribute('data-kp') === String(kp); })[0];
+      if (f) { try { f.focus({ preventScroll: false }); } catch (e) {} }
+    }
+    /* X: the pitch goes (its line back to B68Pitches, for `seen`); the last one takes its set with it. Keep: it stays past the fade */
+    function dismissPitch(id, kp) {
+      var set = SETS[id], x = set && set.items[kp]; if (!x || x.gone) return;
+      x.gone = true; remember([x.line]);
+      if (!live(set).length) { delete fade[id]; drop(id); if (b.ctl && typeof b.ctl.removeCard === 'function') b.ctl.removeCard(id); }
+      else bump(b, id);
+      paintRacks();
+    }
+    function keepPitch(id, kp) {
+      var set = SETS[id], x = set && set.items[kp]; if (!x || x.gone) return;
+      x.kept = !x.kept; if (x.kept) delete fade[id];
+      bump(b, id); focusKeep(id, kp); clock();
+    }
+    function focusKeep(id, kp) {
+      var l = q('#as-list'), f = l && Array.prototype.filter.call(l.querySelectorAll('[data-kbl="pkeep"]'), function (e) { return e.getAttribute('data-id') === id && e.getAttribute('data-kp') === String(kp); })[0];
+      if (f) { try { f.focus({ preventScroll: true }); } catch (e) {} }
+    }
     function onClick(ev) {
+      var fo = ev.target && ev.target.closest ? ev.target.closest('[data-as="fold"][data-kp]') : null;
+      if (fo && !dead) { focusPitch(fo.getAttribute('data-id'), fo.getAttribute('data-kp')); return; }      /* the panel folded or opened the set and put the focus on its first pitch: back to this one */
       var t = ev.target && ev.target.closest ? ev.target.closest('[data-kbl]') : null; if (!t || dead) return;
       var a = t.getAttribute('data-kbl'), id = t.getAttribute('data-id');
+      if (a === 'pitch') { pitchNow(); return; }
+      if (a === 'px' && id) { dismissPitch(id, +t.getAttribute('data-kp')); return; }
+      if (a === 'pkeep' && id) { keepPitch(id, +t.getAttribute('data-kp')); return; }
       if (a === 'pin' && id) {
         if (pinned[id]) delete pinned[id]; else { pinned[id] = true; delete fade[id]; }
         t.setAttribute('aria-pressed', String(!!pinned[id])); t.textContent = pinned[id] ? 'Pinned' : 'Pin';
@@ -238,16 +420,23 @@
         if (!li[c.id]) return;                      /* not in the list (another filter): not in view */
         var f = fade[c.id] = fadeStep(fade[c.id] ? fade[c.id].ms : 0, st.open ? dt : 0, isHeld(li[c.id]));
         if (f.phase === 'gone') gone.push(c.id);
-        else if (f.phase === 'fading') { if (!li[c.id].hasAttribute('data-kbl-fading')) li[c.id].setAttribute('data-kbl-fading', ''); }
-        else li[c.id].removeAttribute('data-kbl-fading');
+        else if (f.phase === 'fading') { if (!li[c.id].hasAttribute('data-kbl-fading')) dim(li[c.id], true); }
+        else if (li[c.id].hasAttribute('data-kbl-fading')) dim(li[c.id], false);
       });
-      gone.forEach(function (id) { delete fade[id]; if (b.ctl && typeof b.ctl.removeCard === 'function') b.ctl.removeCard(id); });
+      gone.forEach(function (id) {
+        delete fade[id];
+        var set = SETS[id];
+        if (set && set.items.some(function (x) { return !x.gone && x.kept; })) { set.items.forEach(function (x) { if (!x.kept) x.gone = true; }); bump(b, id); paintRacks(); return; }      /* the kept pitches stay */
+        if (set) drop(id);
+        if (b.ctl && typeof b.ctl.removeCard === 'function') b.ctl.removeCard(id);
+        if (set) paintRacks();
+      });
       clock();
     }
 
     /* ---- the strip, as a toast (KS03's stack) when the kit has one ---- */
     function banner(c) {
-      var T = W.B68Ui && W.B68Ui.toast; if (typeof T !== 'function' || dead) return false;
+      var T = W.B68Ui && W.B68Ui.toast; if (!desk || typeof T !== 'function' || dead) return false;
       var k = h.cardKind(c), kd = h.KIND[k] || h.KIND.note;
       try {
         T({ text: 'Blade · ' + kd.word + ': ' + clip(c.headline, 120), tone: k === 'warn' ? 'error' : 'info', key: 'blade-strip', duration: 8000,
@@ -262,16 +451,103 @@
       ticker = null; unwire(); unpaint(); dead = true;
       var i = views.indexOf(view); if (i >= 0) views.splice(i, 1);
     }
-    var view = { bridge: b, card: card, paint: paint, banner: banner, destroy: destroy,
+    var view = { bridge: b, mode: desk ? 'desk' : 'pitch', card: card, paint: paint, paintGo: function () { if (!dead && host()) paintGo(); }, banner: banner, destroy: destroy,
       _state: function () { return { pinned: Object.keys(pinned), fade: JSON.parse(JSON.stringify(fade)), ticking: !!ticker, held: Object.keys(listed()).filter(function (id) { return isHeld(listed()[id]); }) }; } };
     return view;
   }
 
-  function viewOf(b) { for (var i = 0; i < views.length; i++) if (views[i].bridge === b) return views[i]; var v = makeView(b); views.push(v); return v; }
+  /* ---------- the pitch sets: in from B68Pitches, out by X, Clear all, the fade or the setting going off ---------- */
+  function remember(lines) { var P = W && W.B68Pitches; if (P && typeof P.remember === 'function') P.remember(lines); }
+  function drop(id) { delete SETS[id]; var i = ORDER.indexOf(id); if (i >= 0) ORDER.splice(i, 1); }
+  /* a set changed (a pitch dismissed, kept, faded): its card is drawn again (figKey is part of what the panel compares), its headline the first live line */
+  function bump(b, id) {
+    var set = SETS[id]; if (!set || !b || !b.ctl || typeof b.ctl.updateCard !== 'function') return;
+    var ls = live(set).map(function (x) { return x.line; });
+    set.v = (set.v || 0) + 1;
+    b.ctl.updateCard(id, { headline: ls[0] || '', bullets: ls.slice(1), figKey: 'pitch-v' + set.v });
+  }
+  function arrive(res) {
+    var set = pitchSet(res); if (!set || !pitches()) return;
+    var id = 'pitch|' + (++pseq) + '|' + (set.at || new Date().toISOString());
+    set.id = id; set.v = 0; SETS[id] = set; ORDER.push(id);
+    var lines = set.items.map(function (x) { return x.line; });
+    var spec = { id: id, kind: 'idea', seat: 'pitch', headline: lines[0], bullets: lines.slice(1), at: set.at || undefined, figKey: 'pitch-v0',
+      onAck: function () { var s = SETS[id]; if (s) remember(live(s).map(function (x) { return x.line; })); drop(id); paintRacks(); } };      /* Clear all: its lines go back too */
+    var A = W && W.B68GmAssist, put = false;
+    (A && typeof A.live === 'function' ? A.live() : []).forEach(function (b) { if (b && b.ctl && typeof b.ctl.addCard === 'function' && b.ctl.addCard(spec)) put = true; });
+    if (!put) drop(id);
+    paintRacks();
+  }
+  /* the setting went off: the sets go (they are the pitch seat's, and Stall and Meanwhile are back) */
+  function purge() {
+    var ids = ORDER.slice(); if (!ids.length) return;
+    var A = W && W.B68GmAssist;
+    ids.forEach(function (id) { drop(id); (A && typeof A.live === 'function' ? A.live() : []).forEach(function (b) { if (b && b.ctl && typeof b.ctl.removeCard === 'function') b.ctl.removeCard(id); }); });
+  }
+  function note(t) {
+    noteText = t || '';
+    if (noteT && W && W.clearTimeout) W.clearTimeout(noteT);
+    noteT = noteText && W && W.setTimeout ? W.setTimeout(function () { noteT = null; noteText = ''; paintGos(); }, 10000) : null;
+    paintGos();
+  }
+  function paintGos() { views.forEach(function (v) { try { v.paintGo(); } catch (e) { if (W && W.console) W.console.error(e); } }); }
+  /* Pitch now (the head's button, Shift+A): one request at a time; true when it asked (or was already asking) */
+  function pitchNow() {
+    var P = W && W.B68Pitches; if (!pitches() || typeof P.now !== 'function') return false;
+    if (busy) return true;
+    busy = true; noteText = ''; paintGos(); paintRacks();
+    var done = function (res) { busy = false; note(res && pitchSet(res) ? '' : 'Nothing new fits just now: Blade will pitch when the table moves on.'); paintRacks(); };
+    Promise.resolve().then(function () { return P.now(); }).then(done, function (e) { busy = false; note(errWord(e)); paintRacks(); });
+    return true;
+  }
+
+  /* ---------- the Rack: the page's Blade fold under the Roll shows the newest pitch still in the panel ---------- */
+  function newest() {
+    for (var i = ORDER.length - 1; i >= 0; i--) { var s = SETS[ORDER[i]], l = live(s); if (l.length) return { set: s, x: l[0] }; }
+    return null;
+  }
+  function rack(fold) {
+    if (!fold || !fold.ownerDocument) return false;
+    var doc = fold.ownerDocument, box = doc.getElementById('kp-rack'), n = pitches() ? newest() : null, show = pitches() && (busy || !!n);
+    if (!show) { if (box && box.parentNode) box.parentNode.removeChild(box); return false; }
+    var sig = busy && !n ? 'busy' : JSON.stringify([n.set.id, n.x.line, busy]);
+    if (box && box.parentNode === fold && box.__kp === sig) return true;
+    if (!box) { box = doc.createElement('div'); box.id = 'kp-rack'; box.className = 'kp-rack'; box.setAttribute('aria-live', 'polite'); }
+    while (box.firstChild) box.removeChild(box.firstChild);
+    function add(tag, cls, text) { var e = doc.createElement(tag); e.className = cls; if (text) e.textContent = text; box.appendChild(e); return e; }
+    if (n) {
+      box.setAttribute('data-pkind', n.x.kind);
+      var hd = add('p', 'gm-rack-h kp-rack-h');
+      var lab = doc.createElement('span'); lab.className = 'gm-lab'; lab.textContent = 'Pitch'; hd.appendChild(lab);
+      var k = doc.createElement('span'); k.className = 'gm-dim kp-rack-k'; k.textContent = PKIND[n.x.kind] + (hhmmOf(n.set.at) ? ' · ' + hhmmOf(n.set.at) : '') + (busy ? ' · pitching…' : ''); hd.appendChild(k);
+      add('p', 'gm-rack-read kp-rack-line', n.x.line);
+      if (n.x.why) add('p', 'gm-dim kp-rack-why', n.x.why);
+    } else { box.removeAttribute('data-pkind'); add('p', 'gm-dim kp-rack-wait', 'Blade is pitching…').setAttribute('role', 'status'); }
+    box.__kp = sig;
+    if (box.parentNode !== fold) fold.appendChild(box);
+    return true;
+  }
+  /* repaint the Rack between the page's own renders (a set in or out, busy): the fold shows while the Rack box or the pitch has something */
+  function paintRacks() {
+    var doc = W && W.document; if (!doc || typeof doc.getElementById !== 'function') return;
+    var f = doc.getElementById('gm-rackf'); if (!f) return;
+    var has = rack(f), rb = doc.getElementById('gm-rack'), own = !!(rb && rb.firstElementChild);
+    var hid = !(has || own); if (f.hidden !== hid) f.hidden = hid;
+  }
+
+  function viewOf(b, mode) {
+    for (var i = 0; i < views.length; i++) if (views[i].bridge === b && views[i].mode === mode) return views[i];
+    var v = makeView(b, mode); views.push(v); return v;
+  }
   function sync() {
     bridges = bridges.filter(function (b) { return b && typeof b.host === 'function' && b.host(); });
-    var want = on();
-    bridges.forEach(function (b) { try { b.use(want ? viewOf(b) : null); } catch (e) { if (W && W.console) W.console.error(e); } });
+    var P = W && W.B68Pitches;
+    if (!unsub && P && typeof P.onReply === 'function') unsub = P.onReply(arrive);
+    var pOn = pitches();
+    if (!pOn) { purge(); if (busy) busy = false; }
+    var mode = on() ? 'desk' : pOn && W.B68Ui && typeof W.B68Ui.node === 'function' ? 'pitch' : null;
+    bridges.forEach(function (b) { try { b.use(mode ? viewOf(b, mode) : null); } catch (e) { if (W && W.console) W.console.error(e); } });
+    paintGos(); paintRacks();
   }
   function attach(b) {
     if (!b || typeof b.use !== 'function' || bridges.indexOf(b) >= 0) return;
@@ -284,7 +560,8 @@
   }
 
   return { attach: attach, sync: sync, on: on, start: start, views: function () { return views.slice(); },
-    EDGE: EDGE, FADE_MS: FADE_MS, WARN_MS: WARN_MS, pressable: pressable, fadeStep: fadeStep };
+    pitches: pitches, pitchNow: pitchNow, rack: rack, sets: function () { return ORDER.map(function (id) { return JSON.parse(JSON.stringify(SETS[id])); }); },
+    EDGE: EDGE, FADE_MS: FADE_MS, WARN_MS: WARN_MS, pressable: pressable, fadeStep: fadeStep, PKIND: PKIND, pitchSet: pitchSet, errWord: errWord };
 });
 
 /* B68Pitches: KS18 begin */
@@ -354,3 +631,14 @@
   if (typeof module === 'object' && module && module.exports) module.exports.B68Pitches = P;
 })(typeof window !== 'undefined' ? window : null);
 /* B68Pitches: KS18 end */
+
+/* KS19: the pitch cards follow B68Pitches. The page hands B68Pitches on or off on every render (gm-page.js renderBar, KS18's line); this wraps that set()
+   from outside the KS18 block so the cards, the Pitch button and the Rack follow at once (B68KitBlade.sync). In the page only; under Node nothing changes. */
+(function (root) {
+  'use strict';
+  var P = root && root.B68Pitches, K = root && root.B68KitBlade;
+  if (!P || !K || typeof P.set !== 'function' || P.__kp) return;
+  var set = P.set;
+  P.set = function (gm, on) { var r = set(gm, on); try { K.sync(); } catch (e) { if (root.console) root.console.error(e); } return r; };
+  P.__kp = true;
+})(typeof window !== 'undefined' ? window : null);
