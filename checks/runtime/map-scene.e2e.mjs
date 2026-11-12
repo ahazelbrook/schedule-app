@@ -79,6 +79,8 @@ try {
   const page = await ctx.newPage(), errors = [];
   page.on('pageerror', (e) => errors.push(String(e && e.message || e)));
   page.on('dialog', (d) => d.accept());
+  const sceneReqs = []; let onAt = Infinity;
+  page.on('request', (r) => { if (/\/gm\/scene-state\.js/.test(r.url())) sceneReqs.push({ at: Date.now(), url: r.url() }); });
   await page.goto(BASE + '/#gm');
   check(!!(await until(() => page.evaluate(() => !!(window.B68GmPage && window.B68GmPage._state() && window.B68GmPage._state().status === 'ready')), 30000)), 'the GM page is ready');
   check(!!(await until(() => page.evaluate(SPY), 20000)), 'the map kit is here and spied on');
@@ -103,11 +105,15 @@ try {
   await page.waitForSelector('#gm-ipad-settings [data-set-row="map.room"]', { timeout: 8000 });
   const rows = await page.evaluate(() => ['map.fill', 'map.people', 'map.lights', 'map.room'].map((k) => { const r = document.querySelector('#gm-ipad-settings [data-set-row="' + k + '"]'); return r ? r.querySelector('.gm-lab').textContent + '=' + r.querySelector('[aria-pressed="true"]').textContent : null; }));
   check(JSON.stringify(rows) === JSON.stringify(['Map fills the screen=Off', 'People on the map=Off', 'Room lights=Off', 'Cut to the room=Off']), 'the four rows, each Off: ' + JSON.stringify(rows));
+  check(await page.evaluate(() => !window.B68GmScene), 'off: the map-scene bundle is not loaded');
+  onAt = Date.now();
   for (const k of ['map.fill', 'map.people', 'map.lights', 'map.room']) { await page.click('#gm-ipad-settings [data-set="' + k + '"][data-v="1"]'); await page.waitForTimeout(250); }
   await page.waitForTimeout(600);
   const st = await api('GET', '/gm/state');
   const fs = st.json && st.json.doc && st.json.doc.features || {};
   check(['map.fill', 'map.people', 'map.lights', 'map.room'].every((k) => fs[k] === true), 'each is stored on in the GM state');
+  check(!!(await until(() => page.evaluate(() => !!window.B68GmScene), 8000)), 'a map setting on: the map-scene bundle is fetched (B68GmScene is here)');
+  check(sceneReqs.filter((r) => r.at < onAt).length === 0 && sceneReqs.length >= 1, 'gm/scene-state.js was never asked for while the four were off, and once after (' + sceneReqs.length + ')');
   await page.evaluate(() => { const s = document.querySelector('#gm-ipad-settings'); if (s) s.scrollIntoView({ block: 'start' }); });
   await shot(page, 'settings-four-rows-on-1366', ['map.fill', 'map.people', 'map.lights', 'map.room'].map((k) => '#gm-ipad-settings [data-set-row="' + k + '"]'));
 

@@ -3769,7 +3769,14 @@
   }
   /* ---- MK1: the map kit's new options (gm/scene-state.js), behind map.fill, map.people, map.lights and map.room. Every one of these returns
      '' or null at once while all four are off, so the map kit is asked exactly what it was asked before. ---- */
-  function sceneFlags() { var G = sceneMod(), f = G && S ? G.flags(b09On) : null; return f && G.anyOn(f) ? f : null; }
+  function sceneFlags() { var G = sceneMod(); if (!G) { sceneNeed(); return null; } var f = S ? G.flags(b09On) : null; return f && G.anyOn(f) ? f : null; }
+  /* the map-scene bundle (gm/scene-state.js) is fetched once a map setting is on, never before: with all four off the page asks for nothing new */
+  var SCENE_IDS = ['map.fill', 'map.people', 'map.lights', 'map.room'];
+  function sceneNeed() {
+    if (!S || S.sceneAsked || !W.B68Load || typeof W.B68Load.need !== 'function' || !SCENE_IDS.some(b09On)) return;
+    var me = S; S.sceneAsked = true;
+    W.B68Load.need('map-scene').then(function () { if (S === me && S.status === 'ready') sceneRedraw(); }, function () { if (S === me) S.sceneAsked = false; });
+  }
   /* a map setting turned on or off: the Location card (its Shared screen select) and the map follow at once; any other setting changes nothing here */
   function sceneRedraw() {
     var k = JSON.stringify(sceneFlags()); if (k === (S.sceneFk || 'null')) return;
