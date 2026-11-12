@@ -36,6 +36,9 @@ const check = (ok, name) => { if (ok) console.log('PASS ' + name); else { failed
      serverOn  writes ONLY the kit-on page makes on that key's press
    An entry with a single part may carry hit and its pattern itself; one with several lists them in `parts`. Nothing else is forgiven: a toast, the focus and
    the hash never are. */
+/* the keys that open or leave a put-away view (the third review of KS04, note 3: that exemption used to hold for every key): C, S, J (the Score panel's J on the
+   G / B / S / J row, not the Blade panel's J on J / K / U), O, Find's Enter, Esc, and the place keys */
+const PUT_AWAY_KEYS = /(?:\[panel [cso]\]|S \/ J \[panel j\]|\[find Enter\]|\[esc Escape\]|\[place Control\+Arrow(?:Left|Right)\])$/;
 export const KEYS_EXEMPT = [
   { name: 'KS06: the pinned stamp', reason: 'KS06 (PR #216) pins the stamped line above the Blade fold with kit.desk on, so leaving the Score (Ctrl+Right, F, a Find result) no longer hides #gm-stamp. Ruled intended 12/11',
     hit: /\[(place Control\+ArrowRight|focus f|find Enter)\]$/, off: /^hidden #gm-stamp$/ },
@@ -52,9 +55,9 @@ export const KEYS_EXEMPT = [
       /* that next view here is the corkboard: its tab comes in selected with the kit on, unselected with it off */
       { hit: /\[place Control\+Arrow(Left|Right)\]$/, off: /^new #gm-root~\.gm-v[ct]\[data-pv=corkboard\]:\d+ aria-selected false$/ },
       { hit: /\[place Control\+Arrow(Left|Right)\]$/, on: /^new #gm-root~\.gm-v[ct]\[data-pv=corkboard\]:\d+ aria-selected true$/ }] },
-  { name: 'KS09: the put-away views\' tabs', reason: 'KS09 (#221): with kit.desk on, the tabs of the four put-away views (RETIRED in gm/kit/shell.js: chase, scenes, score, cards) leave the view row and the chip row and come back only while one is open, so a key that opens one adds its tab (new, selected) where kit off selects a standing tab, and leaving it takes the tab away. Only those four tabs\' aria-selected; what the view shows is still compared. For the overseer\'s ruling',
-    parts: [{ hit: /./, off: /^(?:state|new|gone) #gm-root~\.gm-v[ct]\[data-pv=(?:chase|scenes|score|cards)\]:\d+ aria-selected(?: |$)/ },
-      { hit: /./, on: /^(?:new|gone) #gm-root~\.gm-v[ct]\[data-pv=(?:chase|scenes|score|cards)\]:\d+ aria-selected(?: |$)/ }] }
+  { name: 'KS09: the put-away views\' tabs', reason: 'KS09 (#221): with kit.desk on, the tabs of the four put-away views (RETIRED in gm/kit/shell.js: chase, scenes, score, cards) leave the view row and the chip row and come back only while one is open, so a key that opens one adds its tab (new, selected) where kit off selects a standing tab, and leaving it takes the tab away. Only the keys that open or leave one (C, S, J, O, Find\'s Enter, Esc, Ctrl+Left / Ctrl+Right), only those four tabs\' aria-selected; what the view shows is still compared. For the overseer\'s ruling',
+    parts: [{ hit: PUT_AWAY_KEYS, off: /^(?:state|new|gone) #gm-root~\.gm-v[ct]\[data-pv=(?:chase|scenes|score|cards)\]:\d+ aria-selected(?: |$)/ },
+      { hit: PUT_AWAY_KEYS, on: /^(?:new|gone) #gm-root~\.gm-v[ct]\[data-pv=(?:chase|scenes|score|cards)\]:\d+ aria-selected(?: |$)/ }] }
 ];
 const partsOf = (x) => (x.parts || [x]).map((p) => Object.assign({ name: x.name }, p));
 
@@ -82,6 +85,40 @@ export function judge(o, n, exempt = KEYS_EXEMPT) {
   const sOff = sv(o.server, n.server).concat(sv(o.load || [], n.load || []).map((l) => 'load ' + l)), sOn = kOn.concat(lOn.map((l) => 'load ' + l));
   const ok = !lost.length && !offOnly.length && !onOnly.length && !sOff.length && !sOn.length;
   return { ok, lost, offOnly: offOnly.concat(sOff), onOnly: onOnly.concat(sOn), extra, exempted: [...used] };
+}
+
+/* THE CLASS CHECK (the third review of KS04, note 2; the hooks rule, KIT-STANDING 4: new markup keeps every old class name the old markup carried). The key of a
+   state line is ONE hook class, so a kit-on element that kept its hook and dropped a second old class (gm-place-btw beside gm-place) matched before. Here, for
+   every element with an id and every state element (by its key), in the same context, before and after the same press: every class the kit-off element carries
+   must be on its kit-on counterpart. An element the kit-on page does not have at all is judge's business (LOST), not this check's. A class the kit retires on
+   purpose is CLASS_EXEMPT: named, with the reason and the kit PR that says so (each one printed with the elements that used it). Nothing else is let go. */
+export const CLASS_EXEMPT = [
+];
+/* offRes / onRes: [{ hit: { label }, cls: [before, after] }] in the same order (cls: "<key>" -> "class class"). Returns { compared, findings: Map("<key> .<class>"
+   -> [hit labels]), used: Map(name -> Set of "<key> .<class>") } */
+export function classCheck(offRes, onRes, exempt = CLASS_EXEMPT) {
+  const findings = new Map(), used = new Map();
+  let compared = 0;
+  offRes.forEach((o, i) => {
+    const n = onRes[i];
+    if (!n || !o.cls || !n.cls) return;
+    o.cls.forEach((oc, s) => {
+      const nc = n.cls[s]; if (!oc || !nc) return;
+      for (const k of Object.keys(oc)) {
+        if (!(k in nc)) continue;
+        compared++;
+        const have = new Set(nc[k] ? nc[k].split(' ') : []);
+        for (const c of (oc[k] ? oc[k].split(' ') : [])) {
+          if (have.has(c)) continue;
+          const line = k + ' .' + c, x = exempt.find((e) => e.key.test(k) && e.cls.test(c));
+          if (x) { if (!used.has(x.name)) used.set(x.name, new Set()); used.get(x.name).add(line); continue; }
+          if (!findings.has(line)) findings.set(line, []);
+          if (!findings.get(line).includes(o.hit.label)) findings.get(line).push(o.hit.label);
+        }
+      }
+    });
+  });
+  return { compared, findings, used };
 }
 
 /* the comparison checks itself first (no browser): a lost effect fails, a press-made element is compared, an exemption lets only its own lines go */
@@ -142,11 +179,40 @@ export function judge(o, n, exempt = KEYS_EXEMPT) {
   check(!judge(r('I [panel i]', ['state #gm-root~.gm-vt[data-pv=intel]:0 aria-selected false -> true'], tabK), r('I [panel i]', ['new #gm-root~.gm-vt[data-pv=intel]:0 aria-selected true'], tabK)).ok, 'judge: KS09 lets no standing tab (intel) go');
   check(!judge(r('C [panel c]', [], tabK), r('C [panel c]', ['state #gm-root~.gm-vt[data-pv=chase]:0 aria-selected false -> true'], tabK)).ok, 'judge: KS09 lets no kit-on state change on a put-away tab go (only its coming and going)');
   check(!judge(r('C [panel c]', ['shown #gm-chase'], K(['gm-chase'])), r('C [panel c]', [], K(['gm-chase']))).ok, 'judge: KS09: a put-away view that does not open is still a failure');
-  /* the toast: the same words in the old region (kit off) and in the stack (kit on) are the same line; other words are not */
+  /* KS09 put-away tabs, by key (note 3): C, S, J (the Score panel's), O, Find's Enter, Esc and the place keys only */
+  const ptOk = (label) => judge(r(label, ['state #gm-root~.gm-vt[data-pv=chase]:0 aria-selected false -> true'], tabK), r(label, ['new #gm-root~.gm-vt[data-pv=chase]:0 aria-selected true'], tabK)).ok;
+  const PT_YES = ['C / D / O [panel c]', 'C / D / O [panel o]', 'G / B / S / J [panel s]', 'G / B / S / J [panel j]', '↑ / ↓ / Enter [find Enter]', 'Esc [esc Escape]', 'Ctrl ← / Ctrl → [place Control+ArrowLeft]', 'Ctrl ← / Ctrl → [place Control+ArrowRight]'];
+  check(PT_YES.every(ptOk), 'judge: KS09 put-away tabs: let go for C, O, S, the Score panel\'s J, Find\'s Enter, Esc and Ctrl+Left / Ctrl+Right');
+  const PT_NO = ['G / B / S / J [panel g]', 'R / T / N / I [panel i]', 'C / D / O [panel d]', 'J / K / U [panel j]', '↑ / ↓ / Enter [find ArrowDown]', 'Space / PgDn [go Space]', 'W [drawer w]', '0 [clear 0]', 'Shift H / H H [blank Shift+H]'];
+  for (const l of PT_NO) check(!ptOk(l), 'judge: KS09 put-away tabs are NOT let go for another key: ' + l);
+  /* the toast: the same tone and words in the old region (kit off) and in the stack (kit on) are the same line; other words, or another tone, are not */
   const snap = (toast) => ({ ids: [], attrs: {}, active: '', hash: '#gm', toast });
-  check(JSON.stringify(pageDiff(snap([]), snap(['Fired cue 1.']))) === JSON.stringify(pageDiff(snap(['Older news']), snap(['Older news', 'Fired cue 1.']))), 'pageDiff: the toast words the press brought are compared wherever they show (old region or the stack)');
-  check(JSON.stringify(pageDiff(snap([]), snap(['Fired cue 1.']))) !== JSON.stringify(pageDiff(snap([]), snap(['Fired cue 2.']))), 'pageDiff: different toast words are a difference');
-  check(!judge(r('Space [go Space]', ['toast "Fired cue 1."'], K([])), r('Space [go Space]', [], K([]))).ok, 'judge: a toast the kit-on page never says is a failure');
+  check(JSON.stringify(pageDiff(snap([]), snap(['message Fired cue 1.']))) === JSON.stringify(pageDiff(snap(['message Older news']), snap(['message Older news', 'message Fired cue 1.']))), 'pageDiff: the toast words the press brought are compared wherever they show (old region or the stack)');
+  check(JSON.stringify(pageDiff(snap([]), snap(['message Fired cue 1.']))) !== JSON.stringify(pageDiff(snap([]), snap(['message Fired cue 2.']))), 'pageDiff: different toast words are a difference');
+  check(pageDiff(snap([]), snap(['error Not saved.'])).includes('toast error "Not saved."'), 'pageDiff: a toast line carries its tone ("toast error \\"Not saved.\\"")');
+  /* MUTATION (note 1): an error toast drawn as an ordinary one, the same words: caught */
+  check(JSON.stringify(pageDiff(snap([]), snap(['error Not saved.']))) !== JSON.stringify(pageDiff(snap([]), snap(['message Not saved.']))), 'pageDiff: the same words as an error and as news are a difference (tone)');
+  check(!judge(r('Space [go Space]', ['toast error "Not saved."'], K([])), r('Space [go Space]', ['toast message "Not saved."'], K([]))).ok, 'judge: MUTATION: kit off says it as an error, kit on as news, the same words: a failure');
+  check(!judge(r('Space [go Space]', ['toast message "Fired cue 1."'], K([])), r('Space [go Space]', ['toast error "Fired cue 1."'], K([]))).ok, 'judge: MUTATION: news turned into an error, the same words: a failure');
+  check(judge(r('Space [go Space]', ['toast error "Choose a beat first."'], K([])), r('Space [go Space]', ['toast error "Choose a beat first."'], K([]))).ok, 'judge: an error the stack lets fade (KS09.3, read as the page\'s bad flag) against the old error: the same');
+  check(!judge(r('Space [go Space]', ['toast message "Fired cue 1."'], K([])), r('Space [go Space]', [], K([]))).ok, 'judge: a toast the kit-on page never says is a failure');
+  /* the class check (note 2): every old class of a hooked element stays on its kit-on counterpart, or is a named exemption */
+  const cr = (label, before, after = before) => ({ hit: { label }, cls: [before, after] });
+  const same = classCheck([cr('B [panel b]', { '#gm-band~.gm-place:3': 'gm-place gm-place-btw', '#gm-x': 'gm-x on' })], [cr('B [panel b]', { '#gm-band~.gm-place:3': 'gm-place gm-place-btw kband-place ui-tab', '#gm-x': 'gm-x on ui-button' })], []);
+  check(same.findings.size === 0 && same.compared === 4, 'classCheck: every old class kept (kit classes beside them): nothing found');
+  const drop = classCheck([cr('B [panel b]', { '#gm-band~.gm-place:3': 'gm-place gm-place-btw' })], [cr('B [panel b]', { '#gm-band~.gm-place:3': 'gm-place kband-place' })], []);
+  check(drop.findings.has('#gm-band~.gm-place:3 .gm-place-btw'), 'classCheck: MUTATION: the kit-on tab keeps its hook (gm-place) and drops a second old class (gm-place-btw): found');
+  const dropB = classCheck([cr('B [panel b]', { '#gm-bar': 'gm-bar gm-bb' })], [cr('B [panel b]', { '#gm-bar': 'gm-bar ui-band' })], []);
+  check(dropB.findings.has('#gm-bar .gm-bb'), 'classCheck: MUTATION: an element with an id keeps it and drops an old class (gm-bb): found');
+  const dropA = classCheck([cr('B [panel b]', { '#gm-x': 'gm-x' }, { '#gm-x': 'gm-x on' })], [cr('B [panel b]', { '#gm-x': 'gm-x' }, { '#gm-x': 'gm-x' })], []);
+  check(dropA.findings.has('#gm-x .on'), 'classCheck: a class the press turns on with the kit off and not with it on: found (after the press)');
+  check(classCheck([cr('B [panel b]', { '#gm-x': 'gm-x' })], [cr('B [panel b]', {})], []).compared === 0, 'classCheck: an element the kit-on page lacks is judge\'s (LOST), not compared here');
+  const exT = [{ name: 'T: a retired class', reason: 'invented', key: /^#gm-bar$/, cls: /^gm-bb$/ }];
+  const ex1 = classCheck([cr('B [panel b]', { '#gm-bar': 'gm-bar gm-bb' })], [cr('B [panel b]', { '#gm-bar': 'gm-bar' })], exT);
+  check(ex1.findings.size === 0 && ex1.used.get('T: a retired class').has('#gm-bar .gm-bb'), 'classCheck: a named exemption lets its own class go, and says so');
+  check(classCheck([cr('B [panel b]', { '#gm-bar': 'gm-bar gm-bb gm-bc' })], [cr('B [panel b]', { '#gm-bar': 'gm-bar' })], exT).findings.has('#gm-bar .gm-bc'), 'classCheck: the exemption lets no other class go');
+  check(classCheck([cr('B [panel b]', { '#gm-baz': 'gm-baz gm-bb' })], [cr('B [panel b]', { '#gm-baz': 'gm-baz' })], exT).findings.has('#gm-baz .gm-bb'), 'classCheck: the exemption holds for its own element only');
+  for (const x of CLASS_EXEMPT) check(x.name && x.reason && /#\d+/.test(x.reason) && x.key instanceof RegExp && x.cls instanceof RegExp, 'CLASS_EXEMPT: "' + x.name + '" is named, has a reason citing its PR, and is narrow (key and class patterns)');
   /* state keys: the same hook under the same id is the same line, wherever a wrapper puts it; a hook the kit-on page lacks is still lost */
   const st = (k, a = 'aria-selected') => 'state ' + k + ' ' + a + ' false -> true', ka = (k, a = 'aria-selected') => k + ' ' + a;
   check(judge(r('C [place c]', [st('#gm-band~.gm-place:3')], K([], [ka('#gm-band~.gm-place:3')])), r('C [place c]', [st('#gm-band~.gm-place:3')], K([], [ka('#gm-band~.gm-place:3')]))).ok, 'judge: a state line keyed by its hook under the nearest id matches across a wrapper');
@@ -224,10 +290,22 @@ function snapPage() {
      while the old attribute is still held to what it did */
   const attrs = {}; stateEls.forEach((e) => { const k = keyIn(e, stateEls); A.forEach((a) => { if (e.hasAttribute(a)) attrs[k + ' ' + a] = e.getAttribute(a); }); });
   const path = (e) => keyIn(e, [...rootOf(e).querySelectorAll('*')]);
-  const a = document.activeElement, toast = ['toastMsg', 'toastErr'].map((i) => { const e = document.getElementById(i); return e ? e.textContent.trim() : ''; })
-    .concat([...document.querySelectorAll('.ui-toast .ui-toast-text')].filter(vis).map((e) => e.textContent.trim())).filter(Boolean);
+  /* and its TONE (the third review of KS04, note 1): each line is "error <words>" or "message <words>". The old region: #toastErr (class "bad", role alert) is an
+     error, #toastMsg news. The stack: the ui-toast--error style or the "Error" kind label is an error. KS09.3 lets a routine hint the page sent as an error
+     (toast(msg, true)) fade as news does, so on the stack the tone is the PAGE'S bad flag: a line B68KitShell.toast was handed with bad set (recorded by the
+     init script in pass(), window.__kkBad) is an error however it is drawn. Whether it sticks is not compared. */
+  const bad = new Set((window.__kkBad || []).map((t) => String(t).trim()));
+  const oldTone = (e) => (e.id === 'toastErr' || e.classList.contains('bad') ? 'error' : 'message');
+  const kitTone = (t, words) => { const k = t.querySelector('.ui-toast-kind'); return t.classList.contains('ui-toast--error') || (k && /^error$/i.test(k.textContent.trim())) || bad.has(words) ? 'error' : 'message'; };
+  const a = document.activeElement, toast = ['toastMsg', 'toastErr'].map((i) => { const e = document.getElementById(i), w = e ? e.textContent.trim() : ''; return w ? oldTone(e) + ' ' + w : ''; })
+    .concat([...document.querySelectorAll('.ui-toast')].map((t) => { const e = t.querySelector('.ui-toast-text'), w = e && vis(e) ? e.textContent.trim() : ''; return w ? kitTone(t, w) + ' ' + w : ''; })).filter(Boolean);
+  /* every old class a hooked element carries (the third review of KS04, note 2): the hook is ONE class, so a second old class the kit-on markup drops would not
+     change the key. Every element with an id, and every state element by its key: "<key>" -> its classes. classCheck compares them, kit off against kit on. */
+  const cls = {}, clsOf = (e) => (typeof e.className === 'string' ? e.className : (e.getAttribute('class') || '')).trim().split(/\s+/).filter(Boolean).sort().join(' ');
+  [...document.querySelectorAll('[id]')].filter((e) => !inSvg(e) && !TOAST_BOX.has(e.id) && !liveEl(e)).forEach((e) => { cls['#' + e.id] = clsOf(e); });
+  stateEls.forEach((e) => { const k = keyIn(e, stateEls); if (!(k in cls)) cls[k] = clsOf(e); });
   const all = [...document.querySelectorAll('[id]')].filter((e) => !inSvg(e)).map((e) => e.id);
-  return { ids, all, attrs, active: a && a !== document.body ? path(a) : '', hash: location.hash, toast, find: !!document.querySelector('#gm-find-q') && vis(document.querySelector('#gm-find-q')) };
+  return { ids, all, attrs, cls, active: a && a !== document.body ? path(a) : '', hash: location.hash, toast, find: !!document.querySelector('#gm-find-q') && vis(document.querySelector('#gm-find-q')) };
 }
 /* an id the page made from the clock and a dice roll (hmwdbhyvbau3l, nmwdbi3uc013): a letter, then letters and at least one digit, 10 to 15 characters, or a letter and the clock's m... */
 const GEN_ID = /^(?:[a-z](?=[a-z0-9]*\d)[a-z0-9]{9,14}|[a-z]m[a-z0-9]{9,12})$/;      /* the second shape: a letter, then the clock's base 36 (m...) */
@@ -263,7 +341,7 @@ function pageDiff(a, b) {
   for (const k of Object.keys(a.attrs).filter((x) => !live(x))) if (b.attrs[k] === undefined) out.push('gone ' + k);
   if (a.active !== b.active) out.push('focus ' + (a.active || 'none') + ' -> ' + (b.active || 'none'));
   if (a.hash !== b.hash) out.push('hash ' + a.hash + ' -> ' + b.hash);
-  for (const t of b.toast) if (!a.toast.includes(t)) out.push('toast "' + t + '"');        /* the words the press brought, wherever they show */
+  for (const t of b.toast) if (!a.toast.includes(t)) { const sp = t.indexOf(' '); out.push('toast ' + t.slice(0, sp) + ' "' + t.slice(sp + 1) + '"'); }        /* the tone and words the press brought, wherever they show */
   return out.sort();
 }
 
@@ -283,6 +361,14 @@ async function pass(port, kit) {
       /* the same dice and the same time of day in both passes: the two demo nights must be the same night (scripts/kit-fingerprint.mjs) */
       await c.addInitScript(() => { let a = 0x9e3779b9; Math.random = () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; });
       const ck = clockScript(); if (ck) await c.addInitScript(ck[0], ck[1]);
+      /* the page's bad flag on the kit stack (snapPage's toast tone): B68KitShell.toast is wrapped as the kit file defines it, to note the words it took as an
+         error. It passes every call through unchanged; with the kit off the file never loads */
+      await c.addInitScript(() => {
+        const bad = window.__kkBad = []; let mod;
+        Object.defineProperty(window, 'B68KitShell', { configurable: true, enumerable: true, get: () => mod, set: (m) => {
+          if (m && typeof m.toast === 'function' && !m.__kkWrapped) { const f = m.toast; m.toast = function (msg, isBad) { const r = f.apply(this, arguments); if (isBad && r) bad.push(String(msg == null ? '' : msg)); return r; }; m.__kkWrapped = true; }
+          mod = m; } });
+      });
       const page = await c.newPage();
       page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
       page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text().slice(0, 160)); });
@@ -318,7 +404,7 @@ async function pass(port, kit) {
         await page.keyboard.press(h.key);
         await page.waitForTimeout(1100);
         const a = await page.evaluate(snapPage), sa = await server();
-        res.push({ hit: h, page: pageDiff(b, a), server: serverDiff(sb, sa), load: serverDiff(s0, sb), before: b.ids,
+        res.push({ hit: h, page: pageDiff(b, a), server: serverDiff(sb, sa), load: serverDiff(s0, sb), before: b.ids, cls: [b.cls, a.cls],
           known: { ids: new Set(b.all.concat(a.all)), attrs: new Set(Object.keys(b.attrs).concat(Object.keys(a.attrs))) }, errors });
       } catch (e) {
         res.push({ hit: h, page: ['ERROR ' + String(e.message || e).split('\n')[0]], server: [], load: [], known: { ids: new Set(), attrs: new Set() }, errors: errors.concat(['setup failed']) });
@@ -369,6 +455,12 @@ if (off && on) {
   console.log('exemptions (KEYS_EXEMPT, each named with its reason):');
   for (const x of KEYS_EXEMPT) console.log('  ' + x.name + ' (' + x.reason + '): ' + (usedEx.has(x.name) ? 'used by ' + usedEx.get(x.name).join(', ') : 'not needed this run'));
   check(same === off.length, 'kit on does what kit off does, for ' + same + ' of ' + off.length + ' presses (' + notes + ' note(s) of markup only the new pages have; ' + usedEx.size + ' exemption(s) used)');
+  /* the class check: every old class of a hooked element, kit off against kit on, before and after every press */
+  const cc = classCheck(off, on);
+  console.log('class exemptions (CLASS_EXEMPT, each named with its reason and PR):');
+  for (const x of CLASS_EXEMPT) console.log('  ' + x.name + ' (' + x.reason + '): ' + (cc.used.has(x.name) ? 'used by ' + [...cc.used.get(x.name)].slice(0, 12).join(', ') + (cc.used.get(x.name).size > 12 ? ' and ' + (cc.used.get(x.name).size - 12) + ' more' : '') : 'not needed this run'));
+  for (const [line, labels] of cc.findings) console.log('    CLASS LOST: ' + line + '   (' + labels.length + ' press(es): ' + labels.slice(0, 4).join(', ') + (labels.length > 4 ? ', ...' : '') + ')');
+  check(cc.findings.size === 0, 'kit on keeps every old class of every hooked element (' + cc.compared + ' element snapshots compared; ' + cc.findings.size + ' class(es) lost' + (cc.findings.size ? ': see CLASS LOST above' : '') + ')');
 }
 console.log(failed ? 'FAIL kit-keys' : 'PASS kit-keys');
 process.exit(failed ? 1 : 0);
