@@ -192,7 +192,9 @@
     o = norm(o);
     if (o.title == null && o.text != null) o.title = o.text;
     return new Promise(function (resolve) {
-      var d = doc(), opener = o.opener || d.activeElement, b = buildDialog(kind, o, 'dialog'), root = b.root;
+      var d = doc(), opener = o.opener || d.activeElement, modal = !!(W.HTMLDialogElement && typeof W.HTMLDialogElement.prototype.showModal === 'function');
+      /* no showModal: a div (role dialog) with a scrim, not a dialog element: the page's keys stop for an open dialog element, and this one must hear Esc through B68GmEsc */
+      var b = buildDialog(kind, o, modal ? 'dialog' : 'div'), root = b.root;
       var isPrompt = kind === 'prompt', cancelVal = isPrompt ? null : false, done = false, unreg = null, scrim = null, downOnBackdrop = false;
       var n = ++depth, E = esc();
       function finish(val) {
@@ -232,10 +234,11 @@
       b.cancel.addEventListener('click', function () { finish(cancelVal); });
       if (b.danger) b.ok.addEventListener('click', function () { finish(true); });
       d.body.appendChild(root);
-      if (typeof root.showModal === 'function') root.showModal();
-      else {   /* no showModal: an open dialog with a scrim behind it */
+      if (modal) root.showModal();
+      else {
         scrim = el('div', 'ui-dialog-scrim'); d.body.insertBefore(scrim, root);
-        root.classList.add('is-plain'); root.setAttribute('open', '');
+        scrim.addEventListener('click', function () { finish(cancelVal); });
+        root.classList.remove('is-static'); root.classList.add('is-plain'); root.setAttribute('aria-modal', 'true');
       }
       (b.danger ? b.cancel : b.input || b.ok).focus();
       if (b.input && typeof b.input.select === 'function') b.input.select();
@@ -467,6 +470,10 @@
       }
       var home = mountPoint();
       if (box.parentNode !== home) home.appendChild(box);
+      if (home.nodeName === 'DIALOG' && !cfg.mount && !home.__uiToastWatch) {   /* any dialog, not only the kit's own: when it closes the stack goes home */
+        home.__uiToastWatch = true;
+        home.addEventListener('close', function again() { home.removeEventListener('close', again); home.__uiToastWatch = false; core.home(); });
+      }
       return box;
     }
     function build(it) {
