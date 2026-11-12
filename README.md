@@ -152,6 +152,10 @@ drive a browser (`check:e2e-all` and every `check:` script above that names a po
 | `schedule.js` | the schedule box, the next-session card, RSVP board, attendance, copied reminder and date poll |
 | `season.js` | the season print (A4 and Letter PDFs) |
 
+## The kit and stage
+
+The GM page, the iPad and a player's phone sheet have a second look, built from one shared UI kit (`app/ui/`), and the GM page has a roster for the night (Start the night) and Blade pitches. All of it is behind **five settings that start off** (`kit.desk`, `kit.stage`, `kit.phone`, `night.who`, `blade.pitches`), so the app is as it was until the GM turns one on in the laptop's own Settings (the iPad view, key `I`): `GM.md`, "The kit and stage: five settings", says what each does, where to turn it on and how to go back. `app/README.md`, "The UI kit", is for whoever builds on it: the `B68Ui` parts and `parts.json`, the layer rules, the ratchet and the harness that proves off means today (`kit-off`, `kit-keys`, `kit-accept`).
+
 ## Docs
 
 - `SETUP.md`: deploying and updating the hosted app (`npm run deploy`, the Access dashboard steps, an
@@ -164,10 +168,10 @@ drive a browser (`check:e2e-all` and every `check:` script above that names a po
 - `CAST.md`: the cast: NPC portraits, who sees what, "on stage".
 - `RULES.md`: the rules wiki: the import from the GM's PC, search, house rules.
 - `GM.md`: the GM's tools: the pack, the GM-only API, the `#gm` page and the `#display` iPad view, the
-  ambient scenes, listening, and the display-only sign-in.
+  ambient scenes, listening, the display-only sign-in, and the five kit and stage settings.
 - `SYNC.md`: the two-way sync between the app and the GM's Obsidian vault (`npm run gm:pull`, `gm:push`, `gm:sync`).
 - `app/CONTRACT.md`: the character document, the living sheet's `play` shape, the module APIs.
-- `app/README.md`: the files in `app/`.
+- `app/README.md`: the files in `app/`, and the UI kit (`app/ui/`): its contract, the layer rules, the ratchet and the kit harness.
 - `docs/history/`: how it got here, kept as written: `PLAN.md` (the original product plan),
   `RESEARCH.md` (build or buy, before all of this), `DEPLOY.md` (the deployment plan),
   `DEPLOY-PROMPT.md` (the first deploy as a prompt for a local Claude session), `ROADMAP.md` (names,
