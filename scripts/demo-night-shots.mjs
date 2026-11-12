@@ -13,13 +13,17 @@
 //     keepToasts   take the shot without waiting for the toasts to clear (by default it waits up to 8 s, so a toast does not hide the layout)
 //     init      a function run in the page before its own scripts (a Playwright init script: localStorage a real device would already hold)
 //     routes    async (context) => {}: Playwright routes on the browser context, set before the page opens (a 401, a part changed on the way)
+// --fingerprint (KS04): next to each picture a <name>-<width>.json layout fingerprint, and at the end requests-gm|display|phone.json (scripts/kit-fingerprint.mjs).
+// --theme paper|night opens every page with the theme key a device would hold; --kit turns the five settings on first (scripts/demo-night.mjs).
 // The scenarios run in order and share the server's state, so a phase entered in one is the phase of the next until another is entered.
 // Every shot is taken with animations disabled and the mouse parked in a corner. A page error is printed beside the file name; a scenario that
 // fails is reported and the rest go on. The pages run on the real clock: after the prep note's curfew (22:40) a phase shows the curfew bar.
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { BAND_SCENARIOS } from './demo-night-band-shots.mjs';
+import { kitScenarios } from './demo-night-kit-shots.mjs';
+import { fingerprint, logRequests, requestFile, screenOf, vnow, clockScript } from './kit-fingerprint.mjs';
 
 const GM_READY = async (page) => {
   await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
@@ -72,15 +76,15 @@ const toFold = async (page) => { await page.$eval('#dossier .ds-betweenbox', (b)
 const COMMEND = { kind: 'commend', owner: '_', scope: 'public', json: null };   /* the Aftermath's step 7 row (app/gm/aftermath.js): 90 s; 180 here, so both sizes fit in it */
 const nellsDebrief = async (ctx) => {   /* last night's Debrief for Nell: from this morning, the defaults two days on */
   const D = createRequire(import.meta.url)('../app/gm/debrief.js');   /* the GM page's own row builder */
-  const at = Date.now() - 30 * 3600 * 1000;
+  const at = vnow() - 30 * 3600 * 1000;
   await call(ctx, 'PUT', '/docs', { kind: 'debrief', owner: P1, scope: 'player', json: D.buildRow({ steps: ['unwind', 'xp', 'credits'], nightAt: at, sentAt: at }) });
 };
 const nellAnswers = async (ctx) => {   /* she answers it: it leaves the Now card for the fold */
   const r = (await call(ctx, 'GET', '/docs?kind=debrief', undefined, P1)).json, row = r && r.docs && r.docs[0];
-  if (row && !row.json.reply) await call(ctx, 'PUT', '/docs', { kind: 'debrief', scope: 'player', json: Object.assign({}, row.json, { reply: { at: Date.now(), unwind: { pick: 'train', note: 'Long walks by the quay' }, xp: { ticked: true, note: '' } } }) }, P1);
+  if (row && !row.json.reply) await call(ctx, 'PUT', '/docs', { kind: 'debrief', scope: 'player', json: Object.assign({}, row.json, { reply: { at: vnow(), unwind: { pick: 'train', note: 'Long walks by the quay' }, xp: { ticked: true, note: '' } } }) }, P1);
 };
 const nellsPacket = async (ctx) => {   /* she missed a night: the GM left her the front page and a recap (app/gm/absent.js builds this row) */
-  await call(ctx, 'PUT', '/docs', { kind: 'packet', owner: P1, scope: 'player', json: { v: 1, at: Date.now(), front: { masthead: 'The Pelican Post', issue: 'No. 12', date: 'Thursday', headline: 'Lights out at the Pelican Rooms',
+  await call(ctx, 'PUT', '/docs', { kind: 'packet', owner: P1, scope: 'player', json: { v: 1, at: vnow(), front: { masthead: 'The Pelican Post', issue: 'No. 12', date: 'Thursday', headline: 'Lights out at the Pelican Rooms',
     standfirst: 'A power cut, a missing ledger and a doorwoman who saw nothing.', account: ['The lights went out at a quarter past eleven.', 'By the time they came back the counting room was empty.'], name: 'Mabel Quist', hook: 'The Watch wants a word.' },
   previously: { faces: [{ name: 'Mabel Quist', role: 'Fixer' }, { name: 'Dov Kessler', role: 'Desk sergeant' }], lines: ['The crew took the job from Mabel.', 'Ray talked his way past the door.', 'Tam found the second set of books.'] }, changes: ['Stress 2 to 4'] } });
 };
@@ -95,7 +99,7 @@ const PHONE_SCENARIOS = [
   /* a key at three hits: the card offers the turn (the Keys box keeps its own) */
   ...nellAt('phone-now-keys', { steps: nowIs('keys') }),
   /* two due at once: the Aftermath's xp commendations first, the key behind "+1 more" */
-  ...nellAt('phone-now-commend', { setup: async (ctx) => { await call(ctx, 'PUT', '/docs', Object.assign({}, COMMEND, { json: { v: 1, secs: 180, until: Date.now() + 180000 } })); }, steps: nowIs('commend') }),
+  ...nellAt('phone-now-commend', { setup: async (ctx) => { await call(ctx, 'PUT', '/docs', Object.assign({}, COMMEND, { json: { v: 1, secs: 180, until: vnow() + 180000 } })); }, steps: nowIs('commend') }),
   ...nellAt('phone-now-more', { steps: async (page) => { await nowIs('commend')(page); await page.click('#dossier .ds-now-more'); await page.waitForSelector('#ds-now-rest', { timeout: 5000 }); } }),
   /* the morning after: the Debrief, and its form */
   ...nellAt('phone-now-debrief', { setup: async (ctx) => { await call(ctx, 'DELETE', '/docs?kind=commend&owner=_'); await nellsDebrief(ctx); }, steps: nowIs('debrief') }),
@@ -135,7 +139,7 @@ const SITE_SCENARIOS = [
     await page.click('.rv-rm.sel .rv-p[data-pid="npc-mabel"] [data-site="spot"]'); await page.waitForSelector('.rv-rm.sel .rv-p.held [data-site="expr"]', { timeout: 10000 });
     await page.click('.rv-rm.sel .rv-p.held [data-expr="pleased"]'); await page.waitForTimeout(900); })),
   ...siteAt('site-montage', async (page) => { await page.click('.rv-tools [data-site="montage"]'); await page.waitForSelector('.rv-sec[data-sec="tool"] .gm-inline', { timeout: 10000 }); },
-    async (ctx) => { await siteClear(ctx); const t = Date.now(), m = 60000;
+    async (ctx) => { await siteClear(ctx); const t = vnow(), m = 60000;
       await ctx.api('PATCH', '/gm/state', { night: { v: 1, phase: 'score', phases: { pb: { budget: 30, start: t - 160 * m, end: t - 130 * m }, plan: { budget: 25, start: t - 130 * m, end: t - 100 * m }, score: { budget: 90, start: t - 100 * m, end: null }, after: { budget: 20 } } } }); }),
   ...siteAt('site-menu', async (page) => { await page.click('[data-rv="menu"]'); await page.waitForSelector('#rv-menu:not([hidden])', { timeout: 5000 }); }),
   ...siteAt('site-alarm', async (page) => { await page.click('.rv-head .rv-alarm'); await page.waitForSelector('.rv-alarmpop', { timeout: 5000 }); }),
@@ -237,17 +241,27 @@ export const SCENARIOS = [
   ...PLACE_SCENARIOS
 ];
 
-export async function shoot({ base, dir, only = [], api, users }) {
+/* the kit's own scenarios (KS04.3): one per region of the new desk, per stage beat, per phone screen; with the settings off they show today's screens */
+const KIT_SCENARIOS = kitScenarios({ GM_READY, DISPLAY_READY, SHEET_READY, PHONE_READY, enterPhase, tab, then, toPlace, LAPTOPS, closeMission });
+SCENARIOS.push(...KIT_SCENARIOS);
+
+export async function shoot({ base, dir, only = [], api, users, theme = '', fingerprint: fp = false }) {
   const require = createRequire(import.meta.url);
   const { chromium } = require(process.env.PW_MODULE || 'playwright');
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   mkdirSync(dir, { recursive: true });
+  const reqs = { gm: new Set(), display: new Set(), phone: new Set(), other: new Set() };
   async function open(route, user, size, extra = {}, init = null, routes = null) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width: size[0], height: size[1] }, serviceWorkers: 'block', ...extra });
     if (routes) await routes(c);
     await c.addInitScript(() => { window.__B68_POLL_MS = 1000; });
+    if (theme) await c.addInitScript((t) => { try { localStorage.setItem('b68.theme', t); } catch (e) { /* no storage */ } }, theme === 'night' ? 'dark' : 'light');
+    /* a fingerprint run rolls the same dice every time (the Roll card's situation, the generators): Math.random is a seeded generator in the page, from its first script */
+    if (fp) await c.addInitScript(() => { let a = 0x9e3779b9; Math.random = () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; });
+    const ck = clockScript(); if (ck) await c.addInitScript(ck[0], ck[1]);
     if (init) await c.addInitScript(init);
     const page = await c.newPage();
+    if (fp) logRequests(page, reqs[screenOf(route)]);
     const errors = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -257,10 +271,13 @@ export async function shoot({ base, dir, only = [], api, users }) {
   }
   const ctx = { api, users, base, open };
   let n = 0;
+  const seen = new Set();
   try {
     for (const s of SCENARIOS) {
       if (only.length && !only.some((o) => s.name.startsWith(o))) continue;
       const file = path.join(dir, s.name + '-' + s.size[0] + '.png');
+      if (seen.has(file)) console.log('NOTE ' + path.basename(file) + ' is named twice: the later picture replaces the earlier');
+      seen.add(file);
       let P = null;
       try {
         if (s.setup) await s.setup(ctx);
@@ -271,6 +288,7 @@ export async function shoot({ base, dir, only = [], api, users }) {
         if (!s.keepToasts) await P.page.waitForFunction(() => !['toastMsg', 'toastErr'].some((id) => { const e = document.getElementById(id); return e && e.textContent.trim(); }), null, { timeout: 8000 }).catch(() => {});
         await P.page.waitForTimeout(s.settle === undefined ? 800 : s.settle);
         await P.page.screenshot({ path: file, fullPage: !!s.fullPage, animations: 'disabled' });
+        if (fp) writeFileSync(file.replace(/\.png$/, '.json'), JSON.stringify(await fingerprint(P.page, s.name, s.size[0])));
         n++;
         console.log('shot ' + path.basename(file) + (P.errors.length ? '   page errors: ' + P.errors.slice(0, 2).join(' | ') : ''));
       } catch (e) {
@@ -278,5 +296,6 @@ export async function shoot({ base, dir, only = [], api, users }) {
       } finally { if (P) await P.c.close(); }
     }
   } finally { await browser.close(); }
+  if (fp) for (const [screen, set] of Object.entries(reqs)) if (set.size) writeFileSync(path.join(dir, 'requests-' + screen + '.json'), JSON.stringify(requestFile(screen, set), null, 1));
   return n;
 }
