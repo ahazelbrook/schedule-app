@@ -13,11 +13,18 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const APP = path.join(ROOT, 'app');
 const BASE = path.join(ROOT, 'checks', 'runtime', 'kit-ratchet.baseline.json');
 const EXT = /\.(js|mjs|css|html)$/;
+/* files git ignores under app/ (a generated, deployed-from-disk file such as app/ambient/calling-cards.html, which the release copies into its
+   worktree) are not source: the ratchet counts what the repo tracks plus new files not yet added. Without git it counts everything on disk. */
+function ignoredUnderApp() {
+  const r = spawnSync('git', ['ls-files', '--others', '--ignored', '--exclude-standard', '--', 'app'], { cwd: ROOT, encoding: 'utf8' });
+  return r.status === 0 ? new Set(r.stdout.split(/\r?\n/).filter(Boolean)) : new Set();
+}
 
 /* the five counts; native confirm/prompt: window., self., globalThis. or the app's W. alias, or a bare call (not a method, not a definition) */
 export const KINDS = {
@@ -77,11 +84,13 @@ export function count(text, mode) {
 }
 export const isKit = (rel) => rel.startsWith('app/ui/') || /(^|\/)kit\//.test(rel);
 
+let IGNORED = null;
 function walk(dir, out) {
+  if (!IGNORED) IGNORED = ignoredUnderApp();
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
     const p = path.join(dir, e.name);
     if (e.isDirectory()) { if (p !== path.join(APP, 'checks')) walk(p, out); }
-    else if (EXT.test(e.name)) out.push(p);
+    else if (EXT.test(e.name) && !IGNORED.has(path.relative(ROOT, p).split(path.sep).join('/'))) out.push(p);
   }
   return out;
 }
