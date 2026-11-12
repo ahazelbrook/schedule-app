@@ -31,6 +31,7 @@ const check = (ok, name) => { if (ok) console.log('PASS ' + name); else { failed
    that used it. Adding one is one entry here, with the PR that makes the change. Each entry: name, reason, and one or more parts, each a `hit` (a pattern on the
    hit's label, "<keys> [<act or via> <key>]") with ONE of:
      off       kit-off page lines that may be missing with the kit on
+     on        kit-on page lines that may appear only with the kit on
      loadOn    writes ONLY the kit-on page makes while it loads (never a key's write, never a kit-off one)
      serverOn  writes ONLY the kit-on page makes on that key's press
    An entry with a single part may carry hit and its pattern itself; one with several lists them in `parts`. Nothing else is forgiven: a toast, the focus and
@@ -45,7 +46,15 @@ export const KEYS_EXEMPT = [
     hit: /./, loadOn: /^[+~-] \/ambient\/doc\/polaroids(?:\/[^\s]*)?(?: |$)/ },
   { name: 'KS14: the band faces layer', reason: 'KS14 (#220): with kit.stage on, gm/pcstatus.js writes the iPad band\'s faces layer while the page loads, and Esc and 0 (clearing the iPad) take it down. Ruled intended 12/11',
     parts: [{ hit: /./, loadOn: /^[+~-] \/ambient\/doc\/layers\/band\/faces(?:\/[^\s]*)?(?: |$)/ },
-      { hit: /\[(esc Escape|clear 0)\]$/, serverOn: /^- \/ambient\/doc\/layers\/band\/faces(?:\/[^\s]*)?$/ }] }
+      { hit: /\[(esc Escape|clear 0)\]$/, serverOn: /^- \/ambient\/doc\/layers\/band\/faces(?:\/[^\s]*)?$/ }] },
+  { name: 'KS09: a place opens on a view that is not put away', reason: 'KS09 (#221) puts Chase, Street, Score generator and Opportunities out of the view row with kit.desk on, and a place\'s first view skips them (current()), so Ctrl+Left onto a place whose first view is Opportunities opens its next view (#gm-vpane), not the Opportunities board. C, S, J, O and Find still open them. For the overseer\'s ruling',
+    parts: [{ hit: /\[place Control\+Arrow(Left|Right)\]$/, off: /^shown #(gm-cards|gm-opp-iv|gm-opps-gm|gm-opps-players)$/ }, { hit: /\[place Control\+Arrow(Left|Right)\]$/, on: /^shown #gm-vpane$/ },
+      /* that next view here is the corkboard: its tab comes in selected with the kit on, unselected with it off */
+      { hit: /\[place Control\+Arrow(Left|Right)\]$/, off: /^new #gm-root~\.gm-v[ct]\[data-pv=corkboard\]:\d+ aria-selected false$/ },
+      { hit: /\[place Control\+Arrow(Left|Right)\]$/, on: /^new #gm-root~\.gm-v[ct]\[data-pv=corkboard\]:\d+ aria-selected true$/ }] },
+  { name: 'KS09: the put-away views\' tabs', reason: 'KS09 (#221): with kit.desk on, the tabs of the four put-away views (RETIRED in gm/kit/shell.js: chase, scenes, score, cards) leave the view row and the chip row and come back only while one is open, so a key that opens one adds its tab (new, selected) where kit off selects a standing tab, and leaving it takes the tab away. Only those four tabs\' aria-selected; what the view shows is still compared. For the overseer\'s ruling',
+    parts: [{ hit: /./, off: /^(?:state|new|gone) #gm-root~\.gm-v[ct]\[data-pv=(?:chase|scenes|score|cards)\]:\d+ aria-selected(?: |$)/ },
+      { hit: /./, on: /^(?:new|gone) #gm-root~\.gm-v[ct]\[data-pv=(?:chase|scenes|score|cards)\]:\d+ aria-selected(?: |$)/ }] }
 ];
 const partsOf = (x) => (x.parts || [x]).map((p) => Object.assign({ name: x.name }, p));
 
@@ -62,7 +71,8 @@ export function judge(o, n, exempt = KEYS_EXEMPT) {
   const used = new Set(), lost = [], po = [], pn = [], extra = [];
   for (const l of o.page) { const k = lineKey(l); if (k && !knows(n.known, k)) { const x = okOff(l); if (x) used.add(x.name); else lost.push(l); } else po.push(l); }
   for (const l of n.page) { const k = lineKey(l); if (k && !knows(o.known, k)) extra.push(l); else pn.push(l); }
-  let offOnly = po.filter((l) => !pn.includes(l)); const onOnly = pn.filter((l) => !po.includes(l));
+  const okOn = (l) => ex.find((x) => x.on && x.on.test(l));
+  let offOnly = po.filter((l) => !pn.includes(l)); const onOnly = pn.filter((l) => !po.includes(l)).filter((l) => { const x = okOn(l); if (x) { used.add(x.name); return false; } return true; });
   offOnly = offOnly.filter((l) => { const x = okOff(l); if (x) { used.add(x.name); return false; } return true; });
   const sv = (a, b) => a.filter((l) => !b.includes(l));
   const loadOnOk = (l) => ex.find((x) => x.loadOn && x.loadOn.test(l));
@@ -114,6 +124,29 @@ export function judge(o, n, exempt = KEYS_EXEMPT) {
   check(!judge(r('G [panel g]', [], K([]), [], []), r('G [panel g]', [], K([]), [], ['+ /ambient/doc/layers/band/facesx = 1', '+ /ambient/doc/layers/stage/faces/0 = 1'])).ok, 'judge: KS14 lets no look-alike load write go');
   check(!judge(r('Esc [esc Escape]', [], K([]), down), r('Esc [esc Escape]', [], K([]))).ok, 'judge: KS14 lets no kit-off-only removal go');
   check(!judge(r('G [panel g]', [], K([]), [], faces), r('G [panel g]', [], K([]), [], [])).ok, 'judge: KS14 lets no kit-off-only load write go');
+  /* KS09: Ctrl+Left / Ctrl+Right only, the Opportunities board's own ids and #gm-vpane only */
+  const opp = ['shown #gm-cards', 'shown #gm-opps-gm'], ko = K(['gm-cards', 'gm-opps-gm', 'gm-vpane', 'gm-other']);
+  const k9 = judge(r('Ctrl [place Control+ArrowLeft]', opp, ko), r('Ctrl [place Control+ArrowLeft]', ['shown #gm-vpane'], ko));
+  check(k9.ok && k9.exempted.includes('KS09: a place opens on a view that is not put away'), 'judge: KS09: Ctrl+Left opening the next view, not Opportunities, is let go, and says so');
+  check(!judge(r('G [panel g]', opp, ko), r('G [panel g]', ['shown #gm-vpane'], ko)).ok, 'judge: KS09 holds for Ctrl+Left / Ctrl+Right only');
+  check(!judge(r('Ctrl [place Control+ArrowLeft]', ['shown #gm-other'], ko), r('Ctrl [place Control+ArrowLeft]', ['shown #gm-vpane'], ko)).ok, 'judge: KS09 lets no other view go missing');
+  check(!judge(r('Ctrl [place Control+ArrowLeft]', [], ko), r('Ctrl [place Control+ArrowLeft]', ['shown #gm-other'], ko)).ok, 'judge: KS09 lets no other view appear');
+  const cbK = K([], ['#gm-root~.gm-vt[data-pv=corkboard]:0 aria-selected', '#gm-root~.gm-vt[data-pv=intel]:0 aria-selected']);
+  check(judge(r('Ctrl [place Control+ArrowLeft]', ['new #gm-root~.gm-vt[data-pv=corkboard]:0 aria-selected false'], cbK), r('Ctrl [place Control+ArrowLeft]', ['new #gm-root~.gm-vt[data-pv=corkboard]:0 aria-selected true'], cbK)).ok, 'judge: KS09: Ctrl+Left selecting the corkboard (the next view) is let go');
+  check(!judge(r('Ctrl [place Control+ArrowLeft]', ['new #gm-root~.gm-vt[data-pv=intel]:0 aria-selected false'], cbK), r('Ctrl [place Control+ArrowLeft]', ['new #gm-root~.gm-vt[data-pv=intel]:0 aria-selected true'], cbK)).ok, 'judge: KS09 lets no other tab be selected instead (intel)');
+  check(!judge(r('B [panel b]', ['new #gm-root~.gm-vt[data-pv=corkboard]:0 aria-selected false'], cbK), r('B [panel b]', ['new #gm-root~.gm-vt[data-pv=corkboard]:0 aria-selected true'], cbK)).ok, 'judge: KS09: the corkboard allowance holds for Ctrl+Left / Ctrl+Right only');
+  /* KS09: the put-away tabs, those four only, aria-selected only, and only a new or gone tab on the kit-on side */
+  const tabK = K([], ['#gm-root~.gm-vt[data-pv=chase]:0 aria-selected', '#gm-root~.gm-vt[data-pv=intel]:0 aria-selected']);
+  const pt = judge(r('C [panel c]', ['state #gm-root~.gm-vt[data-pv=chase]:0 aria-selected false -> true'], tabK), r('C [panel c]', ['new #gm-root~.gm-vt[data-pv=chase]:0 aria-selected true'], tabK));
+  check(pt.ok && pt.exempted.includes('KS09: the put-away views\' tabs'), 'judge: KS09: a put-away view\'s tab coming back when its key opens it is let go, and says so');
+  check(!judge(r('I [panel i]', ['state #gm-root~.gm-vt[data-pv=intel]:0 aria-selected false -> true'], tabK), r('I [panel i]', ['new #gm-root~.gm-vt[data-pv=intel]:0 aria-selected true'], tabK)).ok, 'judge: KS09 lets no standing tab (intel) go');
+  check(!judge(r('C [panel c]', [], tabK), r('C [panel c]', ['state #gm-root~.gm-vt[data-pv=chase]:0 aria-selected false -> true'], tabK)).ok, 'judge: KS09 lets no kit-on state change on a put-away tab go (only its coming and going)');
+  check(!judge(r('C [panel c]', ['shown #gm-chase'], K(['gm-chase'])), r('C [panel c]', [], K(['gm-chase']))).ok, 'judge: KS09: a put-away view that does not open is still a failure');
+  /* the toast: the same words in the old region (kit off) and in the stack (kit on) are the same line; other words are not */
+  const snap = (toast) => ({ ids: [], attrs: {}, active: '', hash: '#gm', toast });
+  check(JSON.stringify(pageDiff(snap([]), snap(['Fired cue 1.']))) === JSON.stringify(pageDiff(snap(['Older news']), snap(['Older news', 'Fired cue 1.']))), 'pageDiff: the toast words the press brought are compared wherever they show (old region or the stack)');
+  check(JSON.stringify(pageDiff(snap([]), snap(['Fired cue 1.']))) !== JSON.stringify(pageDiff(snap([]), snap(['Fired cue 2.']))), 'pageDiff: different toast words are a difference');
+  check(!judge(r('Space [go Space]', ['toast "Fired cue 1."'], K([])), r('Space [go Space]', [], K([]))).ok, 'judge: a toast the kit-on page never says is a failure');
   /* state keys: the same hook under the same id is the same line, wherever a wrapper puts it; a hook the kit-on page lacks is still lost */
   const st = (k, a = 'aria-selected') => 'state ' + k + ' ' + a + ' false -> true', ka = (k, a = 'aria-selected') => k + ' ' + a;
   check(judge(r('C [place c]', [st('#gm-band~.gm-place:3')], K([], [ka('#gm-band~.gm-place:3')])), r('C [place c]', [st('#gm-band~.gm-place:3')], K([], [ka('#gm-band~.gm-place:3')]))).ok, 'judge: a state line keyed by its hook under the nearest id matches across a wrapper');
@@ -163,9 +196,14 @@ function snapPage() {
      with a hyphen, the kit's own ui- kband- kr- kbl- who- is- classes left out; a state class like "on" has no hyphen), else its first data-* hook, else its
      tag. Wrappers and moves inside the same id do not change it; a hook that is gone does. */
   const KIT_CLASS = /^(ui-|kband-|kr-|kbl-|who-|is-)/, NOT_HOOK = /^data-(state|open|alarm|active|on|kit|kit-.*|ui-.*)$/;
+  /* a naming data-* hook (which view, place, panel, tray button or setting an element is), first of this list it carries: with the class it names the element
+     wherever the kit puts it, so a tab row the kit shortens (KS09 puts four views away) does not renumber the rest */
+  const NAMING = ['data-pv', 'data-pvx', 'data-place', 'data-panel', 'data-tray', 'data-set', 'data-set-row', 'data-band', 'data-as', 'data-gm'];
   const hook = (e) => {
     const cls = (typeof e.className === 'string' ? e.className : '').trim().split(/\s+/).filter((c) => c && !KIT_CLASS.test(c));
-    const hy = cls.filter((c) => c.indexOf('-') > 0).sort(); if (hy.length) return '.' + hy[0];
+    const nm = NAMING.find((n) => e.hasAttribute(n)), named = nm ? '[' + nm + '=' + String(e.getAttribute(nm)).replace(/\d{5,}/g, '#').replace(/\s+/g, '_').slice(0, 40) + ']' : '';
+    const hy = cls.filter((c) => c.indexOf('-') > 0).sort(); if (hy.length) return '.' + hy[0] + named;
+    if (named) return named;
     const ds = [...e.attributes].filter((x) => /^data-/.test(x.name) && !NOT_HOOK.test(x.name)).map((x) => x.name + '=' + String(x.value).replace(/\d{5,}/g, '#').replace(/\s+/g, '_').slice(0, 40)).sort();
     if (ds.length) return '[' + ds[0] + ']';
     return cls.length ? '.' + cls.sort()[0] : e.tagName.toLowerCase();
@@ -177,13 +215,17 @@ function snapPage() {
   /* live, not the key's: the Now card (it leaves Now on a 1.5 s timer, NOW_MS) and the Run view's people rows (presence arrives with the polls) */
   const liveEl = (e) => !!(e.closest('#as-now') || e.closest('.rv-ppl'));
   const A = ['aria-pressed', 'aria-selected', 'aria-current', 'aria-expanded', 'data-state', 'data-open', 'data-alarm', 'data-active', 'data-on'];
-  const ids = [...document.querySelectorAll('[id]')].filter((e) => !inSvg(e) && vis(e)).map((e) => e.id).sort();
+  /* the toast: its WORDS are compared, wherever they show (the old #toast region, or the kit's one stack, KS09.3: "moved: the page's toast line into the one
+     stack"); the old region's own boxes are not hooks */
+  const TOAST_BOX = new Set(['toast', 'toastMsg', 'toastErr']);
+  const ids = [...document.querySelectorAll('[id]')].filter((e) => !inSvg(e) && !TOAST_BOX.has(e.id) && vis(e)).map((e) => e.id).sort();
   const stateEls = [...document.querySelectorAll(A.map((a) => '[' + a + ']').join(','))].filter((e) => !inSvg(e) && !liveEl(e));
   /* one entry per attribute the element carries ("<where> <attribute>"): a kit part that adds aria-pressed beside the old aria-selected is new markup (a note),
      while the old attribute is still held to what it did */
   const attrs = {}; stateEls.forEach((e) => { const k = keyIn(e, stateEls); A.forEach((a) => { if (e.hasAttribute(a)) attrs[k + ' ' + a] = e.getAttribute(a); }); });
   const path = (e) => keyIn(e, [...rootOf(e).querySelectorAll('*')]);
-  const a = document.activeElement, toast = ['toastMsg', 'toastErr'].map((i) => { const e = document.getElementById(i); return e ? e.textContent.trim() : ''; }).join('|');
+  const a = document.activeElement, toast = ['toastMsg', 'toastErr'].map((i) => { const e = document.getElementById(i); return e ? e.textContent.trim() : ''; })
+    .concat([...document.querySelectorAll('.ui-toast .ui-toast-text')].filter(vis).map((e) => e.textContent.trim())).filter(Boolean);
   const all = [...document.querySelectorAll('[id]')].filter((e) => !inSvg(e)).map((e) => e.id);
   return { ids, all, attrs, active: a && a !== document.body ? path(a) : '', hash: location.hash, toast, find: !!document.querySelector('#gm-find-q') && vis(document.querySelector('#gm-find-q')) };
 }
@@ -221,7 +263,7 @@ function pageDiff(a, b) {
   for (const k of Object.keys(a.attrs).filter((x) => !live(x))) if (b.attrs[k] === undefined) out.push('gone ' + k);
   if (a.active !== b.active) out.push('focus ' + (a.active || 'none') + ' -> ' + (b.active || 'none'));
   if (a.hash !== b.hash) out.push('hash ' + a.hash + ' -> ' + b.hash);
-  if (a.toast !== b.toast) out.push('toast "' + b.toast + '"');
+  for (const t of b.toast) if (!a.toast.includes(t)) out.push('toast "' + t + '"');        /* the words the press brought, wherever they show */
   return out.sort();
 }
 
