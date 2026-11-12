@@ -2408,7 +2408,7 @@
     if (!S.st) S.st = W.B68GmSettings.create({
       doc: function () { return S.doc; }, patch: patch, campaign: function () { return camp; }, root: function () { return $q('#gm-root'); }, toast: toast,
       publish: function (map) { var a = (S && S.api) || keptApi; return a && typeof a.publishFeatures === 'function' ? a.publishFeatures(map) : Promise.reject(new Error('The table is not available here.')); },
-      redraw: function () { if (S && S.status === 'ready') { renderBar(); renderRun(); b09Paint(); } },
+      redraw: function () { if (S && S.status === 'ready') { renderBar(); renderRun(); b09Paint(); sceneRedraw(); } },
       setPhoneCards: function (on) { return setPhoneCards(on); }, mirrorOn: mirrorOn, toggleMirror: toggleMirror
     });
     return S.st;
@@ -3770,6 +3770,11 @@
   /* ---- MK1: the map kit's new options (gm/scene-state.js), behind map.fill, map.people, map.lights and map.room. Every one of these returns
      '' or null at once while all four are off, so the map kit is asked exactly what it was asked before. ---- */
   function sceneFlags() { var G = sceneMod(), f = G && S ? G.flags(b09On) : null; return f && G.anyOn(f) ? f : null; }
+  /* a map setting turned on or off: the Location card (its Shared screen select) and the map follow at once; any other setting changes nothing here */
+  function sceneRedraw() {
+    var k = JSON.stringify(sceneFlags()); if (k === (S.sceneFk || 'null')) return;
+    S.sceneFk = k; renderLocation(); if (S.map) drawMap(true); runDraw(true); liveTokens();
+  }
   function scenePc(c) { return { id: str(c.id), name: pcName(c), spec: isObj(c.spec) ? c.spec : null }; }
   /* the cast's figure for a person of the play: the app's NPC filed under the person's npc or label (name or alias) */
   function sceneCast(p) {
@@ -7866,7 +7871,7 @@
     if (t.hasAttribute('data-ambint')) { patchAmbient({ intervalMin: Math.round(+t.value) }); return; }
     if (t.hasAttribute('data-site')) { S.siteFor = str(t.value); renderLocation(); return; }     /* the save row's score: this page only */
     if (t.hasAttribute('data-loc')) { var l = {}; l[t.getAttribute('data-loc')] = t.type === 'checkbox' ? t.checked : t.value; patch({ loc: { ui: l } }); }
-    else if (t.hasAttribute('data-map')) setMap(t.getAttribute('data-map'), t.value);
+    else if (t.hasAttribute('data-map')) { setMap(t.getAttribute('data-map'), t.value); if (t.getAttribute('data-map') === 'screen') liveTokens(); }     /* MK1: a live map follows the screen's shape at once (liveReveal: the same path and checks) */
     else if (t.hasAttribute('data-scn')) { var sc = {}; sc[t.getAttribute('data-scn')] = t.value; patch({ scn: { ui: sc } }); }
     else if (t.hasAttribute('data-scui')) scSetUi(t.getAttribute('data-scui'), t.value);
     else if (t.hasAttribute('data-npcui')) { var nu = {}; nu[t.getAttribute('data-npcui')] = t.value; patch({ npc: { ui: nu } }); }

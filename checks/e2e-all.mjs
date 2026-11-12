@@ -102,6 +102,8 @@ const CHECKS = [
   ['checks/runtime/kit-stage-scene.e2e.mjs', 'the new stage: clocks, the NPC and the map (9414; KS16)'],
   ['checks/runtime/kit-phone.e2e.mjs', 'the four-screen sheet (9415; KS17)'],
   ['checks/runtime/kit-pitch.e2e.mjs', 'the pitch cards (9416; KS19)'],
+  // the map kit's new options (MK1)
+  ['checks/runtime/map-scene.e2e.mjs', 'the map takes the new kit options: off, the four settings, the Shared screen and a live re-send to TV (9310; MK1)'],
 ];
 
 const want = process.argv.slice(2);
