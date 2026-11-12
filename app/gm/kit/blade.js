@@ -145,7 +145,7 @@
       } else { fold.appendChild(kind); fold.appendChild(tx); }
       var acts = el(desk ? 'span' : 'div', desk ? 'kp-side' : 'as-acts kp-side');
       if (!now) {
-        acts.appendChild(btn({ label: x.kept ? 'Kept' : 'Keep', rank: 'quiet', cls: desk ? ['kp-keep'] : ['as-ack', 'kp-keep'], pressed: !!x.kept, data: { kbl: 'pkeep', id: c.id, kp: String(i) },
+        acts.appendChild(btn({ label: x.kept ? 'Kept' : 'Keep', rank: 'quiet', cls: desk ? ['kp-keep'] : ['as-star', 'kp-keep'], pressed: !!x.kept, data: { kbl: 'pkeep', id: c.id, kp: String(i) },
           title: x.kept ? 'Kept: it stays. Press again to let it fade with its set.' : 'Keep it: it stays past the fade. A pitch fades 90 seconds after its set is in view.' }));
         acts.appendChild(btn({ label: '×', rank: 'quiet', cls: desk ? ['kp-x'] : ['as-ack', 'kp-x'], data: { kbl: 'px', id: c.id, kp: String(i) }, title: 'Dismiss (Delete)',
           attrs: { 'aria-label': 'Dismiss: ' + clip(x.line, 60) } }));
@@ -284,7 +284,7 @@
       if (!els.go || els.go.parentNode !== row) {
         if (els.go && els.go.parentNode) els.go.parentNode.removeChild(els.go);
         els.go = btn({ label: 'Pitch', rank: desk ? 'standard' : 'quiet', cls: desk ? ['kp-go'] : ['as-ap', 'kp-go'], data: { kbl: 'pitch' }, title: tip });
-        row.insertBefore(els.go, q('#as-pin') || q('.as-x') || null);
+        row.insertBefore(els.go, q('#as-ap') || q('#as-pin') || q('.as-x') || null);      /* first of the head's second row (Auto, Co-GM, Pin), the close X stays on the first */
       }
       var word = busy ? 'Pitching…' : 'Pitch';
       if (els.go.textContent !== word) els.go.textContent = word;

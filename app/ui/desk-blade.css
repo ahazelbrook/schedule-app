@@ -111,7 +111,7 @@
 :root[data-kit~="desk"] .kp-x { min-width: 32px; min-height: 32px; padding: 0; color: var(--ui-ink-soft); font: 400 20px/1 var(--ui-font-text); letter-spacing: 0; }
 :root[data-kit~="desk"] .kp-x:hover { color: var(--ui-ink); }
 /* the head: Pitch now, and what went wrong with it */
-:root[data-kit~="desk"] .kp-go { min-height: 36px; }
+:root[data-kit~="desk"] .kp-go { order: 2; min-height: 36px; }
 :root[data-kit~="desk"] .kp-note { margin: var(--ui-space-1) 0 0; color: var(--ui-ink); font: 400 var(--ui-type-label)/1.35 var(--ui-font-text); }
 /* the Rack, under the Roll: the newest pitch, with its kind's edge */
 :root[data-kit~="desk"] .kp-rack { display: grid; gap: 2px; margin: var(--ui-space-2) 0 0; padding: var(--ui-space-2) var(--ui-space-3); border: var(--ui-hairline); border-left: 4px solid var(--ui-ink); border-radius: var(--ui-radius); background: var(--ui-raised); }
