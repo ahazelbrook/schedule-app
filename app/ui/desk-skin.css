@@ -1246,6 +1246,9 @@
 :where(:root[data-kit~="desk"]) :where(.gm-box, .gm-card, .gm-tbl, .gm-loc-ctl, .gm-npcrow, .gs-sec, .gm-or, .gm-mu-deck, .pp-doc .rl-tablewrap) {
   border: 1px solid var(--ui-line); background: var(--ui-raised); box-shadow: none;
 }
+:where(:root[data-kit~="desk"]) :where(#gm-page .gm-rl-fold > summary, #gm-page .gm-rl-fb, #gm-page .gm-rl-panel, #gm-page .gm-chip) { border: 1px solid var(--ui-line); background: var(--ui-raised); }
+:where(:root[data-kit~="desk"]) :where(#gm-page .gm-rl-panel) { border-top: 0; }
+:where(:root[data-kit~="desk"]) :where(#gm-page .gm-rl-fb):hover { background: var(--ui-sunk); }
 :where(:root[data-kit~="desk"]) :where(.gm-empty) { border: 1px dashed var(--ui-ink-faint); color: var(--ui-ink-soft); }
 :where(:root[data-kit~="desk"]) :where(.gm-card-h) { background: var(--ui-sunk); color: var(--ui-ink); border-bottom: var(--ui-hairline); }
 :where(:root[data-kit~="desk"]) :where(.gm-or-k) { background: transparent; color: var(--ui-ink-soft); font-family: var(--ui-font-text); font-weight: 700; padding-left: 0; }
@@ -1260,7 +1263,8 @@
 }
 :where(:root[data-kit~="desk"]) :where(.gm-box-empty) { border: 1px dashed var(--ui-line); background: transparent; }
 :where(:root[data-kit~="desk"]) :where(.gm-box-empty h3.gm-band) { border-bottom: 0; }
-:where(:root[data-kit~="desk"]) :where(.gm-tbl th) { background: var(--ui-sunk); color: var(--ui-ink-soft); font-family: var(--ui-font-text); font-weight: 700; }
+:where(:root[data-kit~="desk"]) :where(.gm-tbl th, #gm-page .pp-doc th) { background: var(--ui-sunk); color: var(--ui-ink-soft); font-family: var(--ui-font-text); font-weight: 700; }
+:where(:root[data-kit~="desk"]) :where(#gm-page .pp-doc th) { border-color: var(--ui-line); }
 :where(:root[data-kit~="desk"]) :where(.gm-lab, .label, .kicker) { font-family: var(--ui-font-text); font-weight: 700; letter-spacing: .1em; }
 
 
