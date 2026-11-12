@@ -7523,8 +7523,9 @@
     if ((ev.key === ' ' || ev.key === 'Enter') && tg && tg.matches && S.root.contains(tg) && tg.matches('.rl-task[data-task], td[data-cell]')) {
       ev.preventDefault(); if (tg.hasAttribute('data-task')) prepTick(tg.getAttribute('data-task')); else prepCell(tg); return;
     }
-    /* Find: Ctrl+K (or Cmd+K) anywhere opens and shuts it; while open, its own keys only */
-    if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && str(ev.key).toLowerCase() === 'k') { ev.preventDefault(); if (findOn()) findClose(); else findOpen(); return; }
+    /* Find: Ctrl+K (or Cmd+K) anywhere opens and shuts it; while open, its own keys only. Not behind the overlay kit's plain dialog (no showModal,
+       so no dialog[open] above): it waits there as every other key does */
+    if ((ev.ctrlKey || ev.metaKey) && !ev.altKey && str(ev.key).toLowerCase() === 'k') { if (escTop().indexOf('ui.dialog.') === 0) return; ev.preventDefault(); if (findOn()) findClose(); else findOpen(); return; }
     if (findOn()) {
       if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') { ev.preventDefault(); findMove(ev.key === 'ArrowDown' ? 1 : -1); return; }
       if (ev.key === 'Enter' && tg && tg.id === 'gm-find-q') { ev.preventDefault(); findGo(S.findSel || 0); }
