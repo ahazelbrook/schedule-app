@@ -282,9 +282,10 @@ function snapPage() {
   void sigOf;
   /* WHERE A STATE LINE IS (the re-review of KS04: a DOM path made KS05's wrappers and moves read as lost elements): the element's own id, else its nearest
      ancestor with an id, "~", its hook and its number among the elements with that hook under that id. The hook is the element's first old hook class (one
-     with a hyphen, the kit's own ui- kband- kr- kbl- who- is- classes left out; a state class like "on" has no hyphen), else its first data-* hook, else its
+     with a hyphen, the kit's own ui- kband- kr- krv- kbl- who- is- classes left out; a state class like "on" has no hyphen), else its first data-* hook, else its
      tag. Wrappers and moves inside the same id do not change it; a hook that is gone does. */
-  const KIT_CLASS = /^(ui-|kband-|kr-|kbl-|who-|is-)/, NOT_HOOK = /^data-(state|open|alarm|active|on|kit|kit-.*|ui-.*)$/;
+  const KIT_CLASS = /^(ui-|kband-|kr-|krv-|kbl-|who-|is-)/,      /* krv-: KS08's Run view (gm/kit/run.js) */
+    NOT_HOOK = /^data-(state|open|alarm|active|on|kit|kit-.*|ui-.*)$/;
   /* a naming data-* hook (which view, place, panel, tray button or setting an element is), first of this list it carries: with the class it names the element
      wherever the kit puts it, so a tab row the kit shortens (KS09 puts four views away) does not renumber the rest */
   const NAMING = ['data-pv', 'data-pvx', 'data-place', 'data-panel', 'data-tray', 'data-set', 'data-set-row', 'data-band', 'data-as', 'data-gm'];
