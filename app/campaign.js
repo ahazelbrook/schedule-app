@@ -94,11 +94,14 @@
     out.factions = (Array.isArray(c.factions) ? c.factions : d.factions).filter(isObj).map(function (x) { return { name: str(x.name), status: clamp(x.status, -3, 3) }; });
     return out;
   }
+  /* session.present: { <character id>: <the startedAt it was written for> }, the strings exactly as stored (gm/kit/who.js reads them against startedAt) */
+  function presentOf(p) { var o = {}; Object.keys(p).forEach(function (k) { if (k && typeof p[k] === 'string' && p[k]) o[k] = p[k]; }); return o; }
   function nearestSize(n) { n = +n || 4; return SIZES.reduce(function (b, s) { return Math.abs(s - n) < Math.abs(b - n) ? s : b; }, 4); }
   function normalize(d) {
     d = isObj(d) ? d : {};
     var out = defaults(), s = isObj(d.session) ? d.session : {};
     out.session = { number: clamp(s.number, 0, 9999), startedAt: isoOrNull(s.startedAt), endedAt: isoOrNull(s.endedAt) };
+    if (isObj(s.present)) out.session.present = presentOf(s.present);   /* KS11: Start the night's roster (gm/kit/who.js), kept so a whole-document write (a log line removed, a restore) never drops it */
     out.crew = normCrew(d.crew);
     /* a clock without an id is 'c_<i>', a repeated id gets '_': the server gives a stored clock the same id on its next
        write (functions/_lib/campaign.js withClockIds), so a change the page sends by id finds it either way */

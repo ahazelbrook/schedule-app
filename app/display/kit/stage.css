@@ -1,0 +1,91 @@
+/* display/kit/stage.css: the new stage's frame (KS13: S1, S3, S7, S10), behind the setting kit.stage. In the kit-stage and kit-lookbook bundles:
+   fetched only while the setting is on. Unlayered, every rule under :root[data-kit~="stage"], no important flags (KIT-STANDING, the layer rules).
+   The old classes it matches, and why (the ticket's say-so): .dp-chrome, .dp-hint and .dp-status leave the art (S1); .dp-wire is hidden, its
+   bulletins go on a plate (S3); .dp-stage's cross-fade gives way to the frame's own transitions (S7). Sizes the iPad is read by (1 to 1.5 m)
+   are in vh: every line of a plate is at least 3.3% of the screen's height. Colours are the kit's tokens; the stage's theme is the
+   data-ui-theme that stage.js puts on the display root. */
+
+/* ---------- S1: chrome off. The Full screen button, the status line and the hint come back only for the 5 seconds after a tap on the corner ---------- */
+:root[data-kit~="stage"] .dp-root .dp-chrome,
+:root[data-kit~="stage"] .dp-root .dp-hint,
+:root[data-kit~="stage"] .dp-root .dp-status { opacity: 0; pointer-events: none; transition: none; }
+:root[data-kit~="stage"] .dp-root.stage-chrome .dp-chrome,
+:root[data-kit~="stage"] .dp-root.stage-chrome .dp-hint { opacity: 1; pointer-events: auto; }
+:root[data-kit~="stage"] .dp-root.stage-chrome .dp-status { opacity: 1; }
+/* the corner: always a target, a dot only on a fault (red: no connection; amber: stale) */
+:root[data-kit~="stage"] .stage-fault.ui-btn {
+  position: absolute; left: 0; bottom: 0; z-index: 7; display: grid; place-items: center;
+  width: max(56px, 9vmin); height: max(56px, 9vmin); min-height: 0; padding: 0; margin: 0;
+  border: 0; border-radius: 0; background: transparent; box-shadow: none; transition: none;
+}
+:root[data-kit~="stage"] .stage-fault.ui-btn:hover { background: transparent; }
+:root[data-kit~="stage"] .stage-fault .ui-dot { width: max(14px, 2.2vmin); height: max(14px, 2.2vmin); border: 2px solid var(--ui-on-alarm); }
+:root[data-kit~="stage"] .stage-fault[data-stage-fault="none"] .ui-dot,
+:root[data-kit~="stage"] .dp-root.stage-chrome .stage-fault .ui-dot { visibility: hidden; }
+
+/* ---------- the frame: the idle stage's places, over the stages and under the overlays ---------- */
+:root[data-kit~="stage"] .stage-frame { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+:root[data-kit~="stage"] .stage-idle { display: none; }
+:root[data-kit~="stage"] .dp-root.stage-idle-on .stage-idle { display: block; }
+:root[data-kit~="stage"] .stage-slot { position: absolute; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 2vmin; min-width: 0; max-width: 43vw; }
+:root[data-kit~="stage"] .stage-slot:empty { display: none; }
+:root[data-kit~="stage"] .stage-slot-clock { left: 5vw; top: 5vh; align-items: flex-start; }
+:root[data-kit~="stage"] .stage-slot-crew { right: 5vw; top: 5vh; align-items: flex-start; justify-content: flex-end; }
+:root[data-kit~="stage"] .stage-slot-roll { left: 5vw; bottom: 5vh; }
+:root[data-kit~="stage"] .stage-slot-clocks { right: 5vw; bottom: 5vh; justify-content: flex-end; }
+:root[data-kit~="stage"] .stage-lower { position: absolute; left: 5vw; right: 5vw; bottom: 5vh; display: flex; align-items: flex-end; }
+/* the plate wins the lower third; so does an overlay (a card or a beat) */
+:root[data-kit~="stage"] .stage-frame.stage-lower-on .stage-slot-roll,
+:root[data-kit~="stage"] .stage-frame.stage-lower-on .stage-slot-clocks,
+:root[data-kit~="stage"] .dp-root.dp-ov-up .stage-slot-roll,
+:root[data-kit~="stage"] .dp-root.dp-ov-up .stage-slot-clocks { visibility: hidden; }
+/* the safe scene (PANIC's test card) is up: the idle places and the lower plate stand down (stage.js sets data-stage-safe) */
+:root[data-kit~="stage"] .dp-root[data-stage-safe] .stage-idle { display: none; }
+/* the scene caption: the old wire strip stays in the page with its hooks, out of sight; its bulletins are on the lower plate */
+:root[data-kit~="stage"] .dp-root .dp-wire { display: none; }
+
+/* ---------- S3: the plate. A kit card (B68Ui.node('card')) at distance: opaque, an accent rule on top, the edge down its left side ---------- */
+:root[data-kit~="stage"] .stage-plate.ui-card {
+  --stage-kick: light-dark(var(--ui-accent-ink), var(--ui-caution));
+  display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: .7vh 3vw;
+  box-sizing: border-box; min-width: 0; max-width: 100%; margin: 0; padding: 2.2vh 3vw 2.4vh;
+  border: 0; border-top: .6vh solid var(--ui-accent); border-radius: 0;
+  background: light-dark(var(--ui-raised), var(--ui-sunk)); color: var(--ui-ink); box-shadow: none;
+  font: 400 3.6vh/1.3 var(--ui-font-text); text-align: left; pointer-events: none; overflow-wrap: anywhere;
+}
+:root[data-kit~="stage"] .stage-plate.ui-card[class*="ui-edge-"] { border-left: 1.4vh solid var(--ui-edge); }
+:root[data-kit~="stage"] .stage-plate.ui-card[data-stage-side] { grid-template-columns: minmax(0, 1fr) auto; }
+:root[data-kit~="stage"] .stage-plate .ui-slot { grid-column: 1; margin: 0; padding: 0; max-width: none; }
+:root[data-kit~="stage"] .stage-plate .ui-slot:empty { display: none; }
+:root[data-kit~="stage"] .stage-plate-kicker { color: var(--stage-kick); font: 800 3.4vh/1.15 var(--ui-font-cond); letter-spacing: .14em; text-transform: uppercase; }
+:root[data-kit~="stage"] .stage-plate-title { color: var(--ui-ink); font: 700 4.6vh/1.15 var(--ui-font-text); letter-spacing: 0; text-transform: none; }
+:root[data-kit~="stage"] .stage-plate-line { color: var(--ui-ink-soft); font: 400 3.6vh/1.3 var(--ui-font-text); }
+:root[data-kit~="stage"] .stage-plate-timer { color: var(--ui-ink-soft); font: 700 3.4vh/1.1 var(--ui-font-mono); font-variant-numeric: tabular-nums; }
+:root[data-kit~="stage"] .stage-plate .stage-plate-bar { display: none; height: .7vh; background: linear-gradient(to right, var(--ui-accent) calc(var(--stage-left, 1) * 100%), var(--ui-line) 0); }
+:root[data-kit~="stage"] .stage-plate[data-stage-timed] .stage-plate-bar { display: block; }
+:root[data-kit~="stage"] .stage-plate .stage-plate-side {
+  grid-column: 2; grid-row: 1 / span 4; align-self: stretch; display: grid; place-items: center; margin: -2.2vh -3vw -2.4vh 0; padding: 2vh 3vw;
+  background: var(--ui-accent); color: var(--ui-on-accent); font: 900 7vh/1 var(--ui-font-poster); text-transform: uppercase;
+}
+
+/* the map's caption: the plate in a dock at the foot of the map stage; the drawing ends where the dock starts (svgStage's fitAboveBar) */
+:root[data-kit~="stage"] .stage-dock.dp-strip { padding: 2vh 5vw 5vh; background: transparent; pointer-events: none; }
+:root[data-kit~="stage"] .stage-dock .stage-plate { width: fit-content; }
+
+/* ---------- S7: three transitions, one meaning each. The page's cross-fade gives way; stage.js picks one and lands it ---------- */
+:root[data-kit~="stage"] .dp-stage { transition: none; }
+:root[data-kit~="stage"] .dp-stage.dp-out.stage-out-push,
+:root[data-kit~="stage"] .dp-stage.dp-out.stage-out-wipe { opacity: 1; }
+:root[data-kit~="stage"] .dp-stage.stage-in-push { animation: stage-push-in var(--ui-motion-slow) var(--ui-ease) both; }
+:root[data-kit~="stage"] .dp-stage.stage-out-push { animation: stage-push-out var(--ui-motion-slow) var(--ui-ease) both; }
+:root[data-kit~="stage"] .dp-stage.stage-in-wipe { animation: stage-wipe-in var(--ui-motion-slow) linear both; }
+@keyframes stage-push-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes stage-push-out { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+@keyframes stage-wipe-in { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+/* the alarm: a hard cut to a red field naming it, and a hard cut back (stage.js leaves it out under reduced motion) */
+:root[data-kit~="stage"] .stage-flash { position: absolute; inset: 0; z-index: 6; display: grid; place-items: center; background: var(--ui-alarm); color: var(--ui-on-alarm); pointer-events: none; }
+:root[data-kit~="stage"] .stage-flash[hidden] { display: none; }
+:root[data-kit~="stage"] .stage-flash-word { margin: 0; padding: 0 5vw; font: 900 20vmin/1 var(--ui-font-poster); text-transform: uppercase; text-align: center; }
+@media (prefers-reduced-motion: reduce) {
+  :root[data-kit~="stage"] .dp-stage.stage-in-push, :root[data-kit~="stage"] .dp-stage.stage-out-push, :root[data-kit~="stage"] .dp-stage.stage-in-wipe { animation: none; }
+}

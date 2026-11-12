@@ -1,0 +1,138 @@
+/* display/kit/scene.css: the new stage: clocks, the NPC and the map (KS16: S5, S6, S8), behind the setting kit.stage. In the kit-stage and
+   kit-lookbook bundles: fetched only while the setting is on. Unlayered, every rule under :root[data-kit~="stage"] and on markup only
+   display/kit/scene.js draws (ks16-*), no important flags. Its nodes keep the old hooks (dp-ov-card, dp-stage dp-npc, dp-map-frame...); these
+   rules give them the stage's look instead of the old one (the old sheets are layered, so these win). The old classes matched alone, and why
+   (the tickets' say-so): .dp-map-frame inside a ks16-bleed map (S8, the map fills the screen). Sizes in vh: every line at least 3.3% of the
+   screen's height. Colours are the kit's tokens: red for the alarm and a clock's new segments, a faction's colour for its stripe. */
+
+/* ---------- S5: a shown clock. The overlay's node fills the frame, see-through; the big face in the centre, then the dock ---------- */
+:root[data-kit~="stage"] .ks16-clock.dp-ov-card,
+:root[data-kit~="stage"] .ks16-speak.dp-ov-card {
+  inset: 0; width: auto; max-height: none; display: block; padding: 0; gap: 0; overflow: visible;
+  border: 0; border-radius: 0; background: transparent; transform: none; text-align: left; pointer-events: none;
+  transition: opacity var(--ui-motion-base) linear;
+}
+:root[data-kit~="stage"] .ks16-clock.dp-ov-card.dp-ov-in,
+:root[data-kit~="stage"] .ks16-clock.dp-ov-card.dp-ov-out,
+:root[data-kit~="stage"] .ks16-speak.dp-ov-card.dp-ov-in,
+:root[data-kit~="stage"] .ks16-speak.dp-ov-card.dp-ov-out { transform: none; }
+:root[data-kit~="stage"] .ks16-clock[data-ks16-phase="grow"] .ks16-dock,
+:root[data-kit~="stage"] .ks16-clock[data-ks16-phase="dock"] .ks16-grow { display: none; }
+
+/* a clock on a plate: the face beside its name and "n of m" */
+:root[data-kit~="stage"] .ks16-clockplate.stage-plate.ui-card {
+  grid-template-columns: auto minmax(0, max-content); align-items: center; column-gap: 1.6vw; row-gap: .4vh; width: max-content; max-width: 100%;
+  padding: 1.6vh 2vw 1.6vh 1.6vw;
+}
+:root[data-kit~="stage"] .ks16-clockplate.stage-plate .ui-slot { grid-column: 2; }
+:root[data-kit~="stage"] .ks16-clockplate .ks16-face { grid-column: 1; grid-row: 1 / span 2; color: var(--ui-ink); }
+:root[data-kit~="stage"] .ks16-clockplate .ks16-face .ui-clock { width: 9vh; height: 9vh; }
+:root[data-kit~="stage"] .ks16-clockplate .ks16-face .ui-wedge { stroke-width: .8; }
+:root[data-kit~="stage"] .ks16-clockplate .ks16-face .ui-wedge.is-on { stroke: light-dark(var(--ui-raised), var(--ui-sunk)); }
+:root[data-kit~="stage"] .ks16-clockplate .stage-plate-title { font: 800 3.6vh/1.1 var(--ui-font-cond); letter-spacing: .06em; text-transform: uppercase; }
+:root[data-kit~="stage"] .ks16-clockplate .stage-plate-line { color: var(--ui-ink); font: 700 3.4vh/1.1 var(--ui-font-mono); font-variant-numeric: tabular-nums; }
+/* a tick: the new segments in red (the grow, and the docked alarm for its 2 seconds) */
+:root[data-kit~="stage"] .ks16-grow .ui-wedge.ks16-new,
+:root[data-kit~="stage"] .ks16-alarm[data-ks16-ticked] .ui-wedge.ks16-new { fill: var(--ui-alarm); }
+/* the dock: the idle stage's foot-right place */
+:root[data-kit~="stage"] .ks16-clock .ks16-dock { position: absolute; right: 5vw; bottom: 5vh; max-width: 43vw; }
+/* the grow: the same plate, big, in the centre for about 2 seconds */
+:root[data-kit~="stage"] .ks16-clockplate.ks16-grow.stage-plate.ui-card {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); max-width: 80vw;
+  grid-template-columns: minmax(0, max-content); justify-items: center; text-align: center; row-gap: 1.2vh; padding: 3vh 4vw 3.4vh;
+}
+:root[data-kit~="stage"] .ks16-grow.stage-plate .ui-slot { grid-column: 1; }
+:root[data-kit~="stage"] .ks16-grow .ks16-face { grid-row: auto; }
+:root[data-kit~="stage"] .ks16-grow .ks16-face .ui-clock { width: 40vh; height: 40vh; }
+:root[data-kit~="stage"] .ks16-grow .stage-plate-title { font: 900 6vh/1.05 var(--ui-font-poster); letter-spacing: .02em; }
+:root[data-kit~="stage"] .ks16-grow .stage-plate-line { font-size: 4.6vh; }
+:root[data-kit~="stage"] .ks16-clock:not([data-reduced])[data-ks16-phase="grow"] .ks16-grow { animation: ks16-grow var(--ui-motion-slow) var(--ui-ease) both; }
+@keyframes ks16-grow { from { transform: translate(-50%, -50%) scale(.4); opacity: 0; } to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+@media (orientation: portrait) {
+  :root[data-kit~="stage"] .ks16-grow .ks16-face .ui-clock { width: 34vh; height: 34vh; }
+}
+
+/* ---------- S6: who's speaking. A head and a timed plate, in the lower third ---------- */
+:root[data-kit~="stage"] .ks16-speak.dp-ov-card,
+:root[data-kit~="stage"] .ks16-beat.dp-show { display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; gap: 1.2vh; padding: 0 5vw 5vh; background: transparent; text-align: left; pointer-events: none; }
+:root[data-kit~="stage"] .ks16-speakrow { display: flex; align-items: stretch; gap: 0; }
+:root[data-kit~="stage"] .ks16-speakrow .stage-plate { flex: 1 1 auto; min-width: 0; }
+:root[data-kit~="stage"] .ks16-head {
+  flex: 0 0 auto; box-sizing: border-box; width: 24vh; min-height: 24vh; aspect-ratio: auto; display: grid; place-items: end center; overflow: hidden;
+  border-top: .6vh solid var(--ui-accent); background: light-dark(var(--ui-sunk), var(--ui-raised));
+}
+:root[data-kit~="stage"] .ks16-head svg { display: block; width: 100%; height: auto; max-height: 100%; }
+:root[data-kit~="stage"] .ks16-mono { margin: 0; align-self: center; color: var(--ui-ink); font: 900 14vh/1 var(--ui-font-poster); }
+:root[data-kit~="stage"] .ks16-speakplate .stage-plate-title { font: 900 6.4vh/1 var(--ui-font-poster); letter-spacing: .01em; text-transform: uppercase; }
+/* the face looks on a held spotlight (display/face-render.js adds them to the node): the badge sits on the plate's shoulder, the pose over the head */
+:root[data-kit~="stage"] .ks16-speak > .dp-fl-tag { order: -1; align-self: flex-end; padding: .8vh 1.6vw; gap: 1vw; background: light-dark(var(--ui-raised), var(--ui-sunk)); color: var(--ui-ink); }
+:root[data-kit~="stage"] .ks16-speak > .dp-fl-tag .dp-fl-tag-no { font: 700 3.4vh/1 var(--ui-font-mono); }
+:root[data-kit~="stage"] .ks16-speak > .dp-fl-tag .dp-fl-glyph { width: 4.4vh; height: 4.4vh; }
+:root[data-kit~="stage"] .ks16-speak > .dp-fl-pose { inset: auto auto 5vh 5vw; width: 24vh; height: 64vh; }
+
+/* ---------- S6: the NPC stands over the dimmed scene (the scene stays up under it), a nameplate in the lower third ---------- */
+:root[data-kit~="stage"] .ks16-npc.dp-stage { display: block; padding: 0; background: light-dark(rgb(20 17 14 / .5), rgb(8 7 6 / .62)); }
+:root[data-kit~="stage"] .ks16-npc .dp-npc-fig { position: absolute; right: 6vw; top: 4vh; bottom: 0; width: 42vw; height: auto; display: flex; align-items: flex-end; justify-content: center; }
+:root[data-kit~="stage"] .ks16-npc .dp-npc-fig svg { width: 100%; height: 100%; }
+:root[data-kit~="stage"] .ks16-npc .ks16-npcfoot { position: absolute; left: 5vw; bottom: 5vh; max-width: 46vw; max-height: none; overflow: visible; }
+:root[data-kit~="stage"] .ks16-nameplate.stage-plate.ui-card[class*="ui-edge-"] { border-left-width: 2.4vh; }
+:root[data-kit~="stage"] .ks16-nameplate .stage-plate-title { margin: .2vh 0 .4vh; font: 900 9vh/.95 var(--ui-font-poster); letter-spacing: .01em; text-transform: uppercase; text-wrap: balance; }
+:root[data-kit~="stage"] .ks16-nameplate .stage-plate-line { color: var(--ui-ink); font-size: 3.8vh; font-style: normal; max-width: 32em; white-space: normal; }
+@media (orientation: portrait) {
+  :root[data-kit~="stage"] .ks16-npc .dp-npc-fig { left: 10vw; right: 10vw; top: 3vh; bottom: 38vh; width: auto; }
+  :root[data-kit~="stage"] .ks16-npc .ks16-npcfoot { right: 5vw; max-width: none; }
+  :root[data-kit~="stage"] .ks16-nameplate .stage-plate-title { font-size: 7vh; }
+}
+
+/* ---------- S8: the map fills the screen; the band is a real lower third over it (one line each: Now, Next, the crew), the alarm beside it ---------- */
+:root[data-kit~="stage"] .ks16-bleed .dp-map-frame { inset: 0; }
+:root[data-kit~="stage"] .ks16-mapfoot {
+  position: absolute; left: 5vw; right: 5vw; bottom: 5vh; z-index: 1; display: flex; align-items: flex-end; justify-content: space-between; gap: 2vw; pointer-events: none;
+}
+:root[data-kit~="stage"] .dp-root.dp-ov-up .ks16-mapfoot { visibility: hidden; }
+:root[data-kit~="stage"] .ks16-bandplate.stage-plate.ui-card { flex: 0 1 auto; min-width: 0; max-width: 58vw; max-height: 33vh; overflow: hidden; padding: 1.6vh 2.4vw 1.8vh; row-gap: .5vh; }
+:root[data-kit~="stage"] .ks16-bandplate .stage-plate-title { font-size: 4vh; }
+:root[data-kit~="stage"] .ks16-bandplate .stage-plate-kicker,
+:root[data-kit~="stage"] .ks16-bandplate .stage-plate-title,
+:root[data-kit~="stage"] .ks16-bandplate .stage-plate-line,
+:root[data-kit~="stage"] .ks16-bandplate .ks16-crew,
+:root[data-kit~="stage"] .ks16-bandplate .ks16-ways { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.2; }
+:root[data-kit~="stage"] .ks16-bandplate .ks16-crew,
+:root[data-kit~="stage"] .ks16-bandplate .ks16-ways { grid-column: 1; margin: 0; color: var(--ui-ink-soft); font: 400 3.4vh/1.2 var(--ui-font-text); }
+/* the night's beats: one row, every beat a square that shrinks to fit; a mark is a shape on its square (its words are the row's label) */
+:root[data-kit~="stage"] .ks16-squares { grid-column: 1; display: flex; flex-wrap: nowrap; gap: .4vh; min-width: 0; margin: .3vh 0 0; }
+:root[data-kit~="stage"] .ks16-sq { box-sizing: border-box; flex: 0 1 2.8vh; min-width: .6vh; height: 2.8vh; display: grid; place-items: center; overflow: hidden; border: .3vh solid var(--ui-line); font: 900 2.2vh/1 var(--ui-font-text); color: var(--ui-ink); }
+:root[data-kit~="stage"] .ks16-sq-past { background: var(--ui-ink-soft); border-color: var(--ui-ink-soft); }
+:root[data-kit~="stage"] .ks16-sq-cur { background: var(--ui-accent); border-color: var(--ui-accent); color: var(--ui-on-accent); }
+:root[data-kit~="stage"] .ks16-sq-before { opacity: .45; }
+/* the GM's countdown, on the side */
+:root[data-kit~="stage"] .ks16-bandplate .stage-plate-side.ks16-countdown { min-width: 6ch; padding: 1.4vh 2vw; font-size: 5.6vh; font-variant-numeric: tabular-nums; }
+:root[data-kit~="stage"] .ks16-bandplate .ks16-countdown[data-ks16-timer="warn"],
+:root[data-kit~="stage"] .ks16-bandplate .ks16-countdown[data-ks16-timer="zero"] { background: var(--ui-alarm); color: var(--ui-on-alarm); }
+:root[data-kit~="stage"] .ks16-bandplate .ks16-countdown[data-ks16-timer="paused"] { background: var(--ui-line); color: var(--ui-ink); font-size: 4.4vh; }
+:root[data-kit~="stage"] .ks16-mapalarm.stage-plate.ui-card { flex: 0 0 auto; margin-left: auto; }
+/* portrait: the map at the top, ending where the foot starts (scene.js measures it); the plate in the space under the drawing */
+@media (orientation: portrait) {
+  :root[data-kit~="stage"] .ks16-bleed .dp-map-frame { bottom: calc(var(--ks16-foot-h, 0px) + 7vh); }
+  :root[data-kit~="stage"] .ks16-bleed .ks16-mapfoot { flex-wrap: wrap; row-gap: 1.4vh; }
+  :root[data-kit~="stage"] .ks16-bleed .ks16-mapalarm.stage-plate.ui-card { order: -1; }
+  :root[data-kit~="stage"] .ks16-bandplate.stage-plate.ui-card { flex: 1 1 100%; max-width: none; max-height: 30vh; }
+  :root[data-kit~="stage"] .ks16-bandplate .stage-plate-side.ks16-countdown { padding: 1vh 2vw; font-size: 4.6vh; }
+}
+
+/* a captioned drawing (not a map: the map kit's maps name themselves): KS13's dock under it holds ONE row beside the caption: the time and
+   the countdown, then the alarm (the caption wraps under them when the row is too narrow for all three). The drawing ends where the dock starts */
+:root[data-kit~="stage"] .ks16-dockrow.stage-dock { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1.6vh 2vw; }
+:root[data-kit~="stage"] .ks16-dockrow .ks16-mapfoot { display: contents; }
+:root[data-kit~="stage"] .ks16-dockrow .stage-plate { flex: 0 1 auto; min-width: 0; }
+:root[data-kit~="stage"] .ks16-dockrow .ks16-bandrow.stage-plate.ui-card { order: -2; max-width: 90vw; }
+:root[data-kit~="stage"] .ks16-dockrow .ks16-mapalarm.stage-plate.ui-card { order: -1; margin-left: 0; padding: 1.2vh 1.8vw 1.2vh 1.4vw; }
+:root[data-kit~="stage"] .ks16-dockrow .ks16-mapalarm .ks16-face .ui-clock { width: 7vh; height: 7vh; }
+:root[data-kit~="stage"] .ks16-bandrow.stage-plate.ui-card[data-stage-side] { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+:root[data-kit~="stage"] .ks16-bandrow .stage-plate-title { font: 800 3.6vh/1.1 var(--ui-font-cond); letter-spacing: .06em; text-transform: uppercase; }
+:root[data-kit~="stage"] .ks16-bandrow .stage-plate-side.ks16-countdown { grid-row: 1; margin: -1.6vh -2.4vw -1.8vh 0; padding: 0 2vw; font-size: 4.6vh; }
+:root[data-kit~="stage"] .dp-root.dp-ov-up .ks16-dockrow .ks16-mapfoot > * { visibility: hidden; }
+@media (prefers-reduced-motion: reduce) {
+  :root[data-kit~="stage"] .ks16-clock .ks16-grow { animation: none; }
+  :root[data-kit~="stage"] .ks16-clock.dp-ov-card, :root[data-kit~="stage"] .ks16-speak.dp-ov-card { transition: none; }
+}

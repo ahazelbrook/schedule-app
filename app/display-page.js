@@ -255,7 +255,7 @@
       var vm = { kind: 'npc', npcId: typeof d.npcId === 'string' ? d.npcId : '', title: title, found: !!n };
       if (n) {
         vm.name = n.name || title; vm.alias = n.alias; vm.sub = [n.role, n.faction].filter(Boolean).join(' · ');
-        vm.description = n.description; vm.spec = n.spec;
+        vm.description = n.description; vm.spec = n.spec; vm.faction = n.faction;      /* KS16: the nameplate's faction stripe (a player field, already in sub) */
       }
       return vm;
     }
@@ -752,6 +752,7 @@
       crew: crew, score: cleanScore(d.score), wire: Pure.cleanWire(d.wire)
     };
     if (plan.mode === 'pin' && !(plan.scene && Pure.ambientAvailable(plan, plan.scene))) { plan.mode = 'auto'; plan.scene = null; }
+    var pol = Pure.cleanPolaroids(d.polaroids); if (pol.length) plan.polaroids = pol;      /* KS12.5: only while the document has a list */
     return plan;
   };
   /* the playlist as it can play now: score scenes drop out while there is no score (the test card is never in a playlist) */
@@ -786,9 +787,9 @@
     if (!isObj(next)) return false;
     return !isObj(prev) || prev.heat !== next.heat || prev.wanted !== next.wanted;
   };
-  /* the crew polaroids on the score scenes: cast id -> caption (the generator's constant; docs/history/AMBIENT-PLAN.md 4.3). Only the crew at the
-     table: two of the original four are not playing (tech run, 06/11), and a crew member with no figure in the cast canon gets no polaroid */
-  Pure.POLAROIDS = [{ id: 'booker', cap: 'Babel' }, { id: 'alfie', cap: 'Ashtray & Buck' }];
+  /* the crew polaroids on the score scenes (KS12.5): who is playing, as the GM page sends it in the ambient document's `polaroids` while a session
+     is open (Start the night): [{ id: a cast canon id, cap }], at most 8, cleaned again here. A crew member with no figure in the cast canon gets no polaroid */
+  Pure.cleanPolaroids = function (v) { var out = [], seen = {}; (Array.isArray(v) ? v : []).forEach(function (p) { if (out.length < 8 && isObj(p) && typeof p.id === 'string' && /^[a-z0-9]{1,40}$/.test(p.id) && !seen[p.id]) { seen[p.id] = 1; out.push({ id: p.id, cap: typeof p.cap === 'string' ? p.cap.replace(/\s+/g, ' ').trim().slice(0, 60) : '' }); } }); return out; };
   /* scoreMessage(score, polaroids, env) -> the message a score scene is sent in reply to its b68:ready, or null with no score.
      `board` and `iso` are the score's svgs run through the sanitiser again here (normal cap) and sent as its markup, '' when one
      will not clean; `polaroids` are [{ svg, cap }] already cleaned by the caller (the figure kit's output, big cap). Nothing but
@@ -1071,6 +1072,7 @@
       e.appendChild(box);
       return { el: e, destroy: function () {} };
     }
+    if (root.B68StageScene && root.B68StageScene.on()) { var k16 = root.B68StageScene.npcStage(vm, seq, { document: document, figure: function (sp, id) { var r = drawFigure(sp, id, ctx.figures); return r ? document.importNode(r.node, true) : null; } }); if (k16) return k16; }   /* KS16 (kit.stage): over the dimmed scene */
     var fig = drawFigure(vm.spec, 'dp-npc-' + seq, ctx.figures);
     if (fig) {
       var holder = el('div', 'dp-npc-fig'); holder.setAttribute('aria-hidden', 'true');
@@ -1191,6 +1193,7 @@
       strip = el('div', 'dp-strip dp-capbar');
       if (vm.title) strip.appendChild(el('p', 'dp-strip-title', vm.title));
       if (vm.caption) strip.appendChild(el('p', 'dp-strip-cap', vm.caption));
+      if (root.B68Kit && root.B68Kit.ready('stage') && root.B68Stage) strip = root.B68Stage.mapCaption(vm, document) || strip;   /* KS13.2: the caption on the stage's plate */
       e.appendChild(strip);
       e.classList.add('dp-map-capped');
     }
@@ -1306,7 +1309,7 @@
     function stopRot() { if (A.rot !== null) { clearLater(A.rot); A.rot = null; } }
     function armRot() {
       stopRot();
-      if (A.dead || A.covered || document.hidden || A.plan.mode !== 'auto' || Pure.ambientRotation(A.plan).length < 2) return;
+      if (A.dead || A.covered || A.still || document.hidden || A.plan.mode !== 'auto' || Pure.ambientRotation(A.plan).length < 2) return;
       A.rot = later(function () { A.rot = null; advance(); }, intervalMs());
     }
     function advance() {
@@ -1392,6 +1395,7 @@
         }
         ensure();
       },
+      still: function (on) { on = !!on; if (A.dead || on === !!A.still) return; A.still = on; if (on) stopRot(); else armRot(); },     /* KS16 (kit.stage): no rotation under a pushed NPC; a no-op unless it changes */
       cover: function () {
         if (A.dead) return;
         A.covered = true; stopRot();
@@ -1502,8 +1506,8 @@
       else if (!hs && s.hs) { s.hs.destroy(); s.hs = null; }
       if (s.hs) s.hs.apply();
       if (s.roomSync) s.roomSync();      /* 4.4 / 4.3: the room's sound follows the switches and the layers */
-      var fx = !!(root.B68Fx && (swOn('fx.pause') || swOn('fx.off')));
-      if (fx && !s.fx) s.fx = root.B68Fx.attach(container, { flags: function () { return { pause: swOn('fx.pause'), off: swOn('fx.off') }; }, covered: function () { return !!(s.amb && s.amb.state().covered); } }); else if (!fx && s.fx) { s.fx.destroy(); s.fx = null; } else if (s.fx) s.fx.sync();
+      var fx = !!(root.B68Fx && (swOn('fx.pause') || swOn('fx.off') || s.stage));     /* KS13.4: the new stage (s.stage) holds its scene still */
+      if (fx && !s.fx) s.fx = root.B68Fx.attach(container, { flags: function () { return { pause: swOn('fx.pause'), off: swOn('fx.off') || !!s.stage }; }, covered: function () { return !!(s.amb && s.amb.state().covered); } }); else if (!fx && s.fx) { s.fx.destroy(); s.fx = null; } else if (s.fx) s.fx.sync();
     }
     s.offs.push(function () { if (s.hs) { s.hs.destroy(); s.hs = null; } if (s.fx) { s.fx.destroy(); s.fx = null; } });
     function ovTimer(fn, ms) { var id = later(fn, ms); s.ov.timers.push(id); return id; }
@@ -1542,7 +1546,7 @@
     }
     function ovCardNode(card, o) {
       var e = el('div', 'dp-ov-card dp-ov-' + card.kind); e.setAttribute('data-ov-id', o.id);
-      if (card.kind === 'clock') {
+      if (s.stage && root.B68StageScene && root.B68StageScene.card(e, card, o, beatEnv(o), s.ov.node)) { /* KS16 (kit.stage): the clock docks, the NPC speaks (display/kit/scene.js) */ } else if (card.kind === 'clock') {
         var svg = svgEl('svg', { viewBox: '0 0 100 100', class: 'dp-ov-face' });
         card.wedges.forEach(function (w) { svg.appendChild(svgEl('path', { d: w.d, class: 'dp-ov-seg' + (w.on ? ' dp-ov-seg-on' : '') })); });
         e.appendChild(svg);
@@ -1573,8 +1577,8 @@
       ovTimer(function () { ovRemove(true); }, pl.end);
     }
     /* what a beat renderer is handed; portrait() draws a cleaned head-and-shoulders from the figure kit (the Rolodex card, suite 3.5), or null */
-    function beatEnv() {
-      return { document: document, reduced: reduced(), portrait: function (spec, id) { var r = drawPortrait(spec, 'dp-rc-' + String(id).replace(/[^A-Za-z0-9_-]/g, ''), ctx.figures); return r ? document.importNode(r.node, true) : null; } };
+    function beatEnv(o) {
+      return { document: document, reduced: reduced(), stage: s.stage, ms: o && o.ms, age: o && o.age, portrait: function (spec, id) { var r = drawPortrait(spec, 'dp-rc-' + String(id).replace(/[^A-Za-z0-9_-]/g, ''), ctx.figures); return r ? document.importNode(r.node, true) : null; } };   /* KS15: the frame and the beat's time (display/kit/roll.js) */
     }
     /* what the face looks (display/face-render.js) draw with: the kit, the cleaned portrait and full figure, the page's timers, and whether the speech-safe duck is up */
     function faceEnv() {
@@ -1587,7 +1591,7 @@
       var left = o.ms - (o.age || 0);
       if (left <= 0) return;
       ovTimer(function () { ovRemove(false); }, left);
-      root.B68Shows.mount(o, beatEnv()).then(function (node) {
+      root.B68Shows.mount(o, beatEnv(o)).then(function (node) {
         if (!node || s.dead || my !== s.ov.token) return;
         ovLayer.appendChild(node); s.ov.node = node; s.ov.sig = ovSig(o); ovMark(false);
         later(function () { node.classList.add('dp-ov-in'); }, reduced() ? 0 : 30);
@@ -1618,7 +1622,7 @@
       /* a brief beat whose served payload changed under the same id (an NPC on a rolodex was hidden): drawn again in place, so a hidden NPC does not stay up until the beat ends */
       if (o && o.payload && root.B68Shows && root.B68Shows.has(o.kind) && s.ov.node && s.ov.sig !== ovSig(o)) {
         var oldB = s.ov.node, myB = s.ov.token; s.ov.sig = ovSig(o);
-        root.B68Shows.mount(o, beatEnv()).then(function (nb) {
+        root.B68Shows.mount(o, beatEnv(o)).then(function (nb) {
           if (!nb || s.dead || myB !== s.ov.token || s.ov.node !== oldB) return;
           nb.classList.add('dp-ov-in'); if (oldB.parentNode) oldB.parentNode.replaceChild(nb, oldB); s.ov.node = nb;
         });
@@ -1683,7 +1687,7 @@
       if (s.polaroids) return s.polaroids;
       var out = [], K = ctx.figures, C = ctx.cast;
       if (K && C && Array.isArray(C.pcs)) {
-        Pure.POLAROIDS.forEach(function (p) {
+        (s.plan && s.plan.polaroids || []).forEach(function (p) {      /* KS12.5: the list the GM page sends, never one in the code */
           var pc = null; C.pcs.forEach(function (x) { if (x && x.id === p.id) pc = x; });
           var r = pc ? drawPortrait(pc, 'dp-pol-' + p.id, K) : null;
           if (r && r.markup) out.push({ svg: r.markup, cap: p.cap });
@@ -1707,7 +1711,8 @@
       var wk = JSON.stringify(p.wire);
       if (wk !== s.wire.key) { s.wire.key = wk; s.wire.items = p.wire; s.wire.i = 0; wireSync(); }
       else if (s.wire.items.length && s.wire.t === null && !wireEl.classList.contains('dp-wire-on')) wireSync();     /* the mode or the cover changed */
-      var key = p.score ? [p.score.at, p.score.name, p.score.district, p.score.target, p.score.view, p.score.board.length, p.score.iso.length].join('|') : '';
+      var key = p.score ? [p.score.at, p.score.name, p.score.district, p.score.target, p.score.view, p.score.board.length, p.score.iso.length].join('|') + (p.polaroids ? '|' + JSON.stringify(p.polaroids) : '') : '';
+      if (key !== s.scoreKey) s.polaroids = null;      /* KS12.5: a new list draws its polaroids again */
       if (key !== s.scoreKey) {
         s.scoreKey = key; s.score = p.score; s.scoreMsg = null;
         if (p.score) [].forEach.call(layer.querySelectorAll('iframe'), function (f) { if (Pure.isScoreScene(f.getAttribute('data-scene'))) sendScore(f.contentWindow); });
@@ -2001,6 +2006,7 @@
       } catch (e) { /* the map keeps its frame */ }
     }
     function paintBand() {
+      if (s.stage && root.B68StageScene && root.B68StageScene.band(s.stage, s.current, s.bandModel, { document: document, band: band, container: container, skew: function () { return s.skew || 0; } })) { s.bandSig = ''; return; }   /* KS16 (kit.stage): the band is a plate over the full-bleed map */
       var m = s.bandModel, show = !!m && !!s.current && !!s.current.el && s.current.el.classList.contains('dp-map');
       if (!show) { if (!band.hidden) band.hidden = true; container.classList.remove('dp-band-on'); return; }
       var sig = Pure.bandSig(m), was = !band.hidden;
@@ -2012,7 +2018,7 @@
       }
       bandFit();
     }
-    function applyBand(hud) { s.bandModel = Pure.bandModel(hud); if (!s.bandModel) s.bandSig = ''; paintBand(); }
+    function applyBand(hud) { s.bandModel = Pure.bandModel(hud); if (!s.bandModel) s.bandSig = ''; paintBand(); if (s.stage) s.stage.mission(s.bandModel); if (s.stage && s.stageBand) s.stageBand.paint(); }   /* KS13.3: the alarm; KS14: the top band */
     /* landscape: the band's box is set by its top and bottom, so a new size comes from outside (the iPad's band coming or going over it) and the cut
        is worked out again; in portrait its height follows its content, so only bandFit runs (a re-cut there would chase its own size) */
     var landscape = window.matchMedia ? window.matchMedia('(orientation: landscape)') : null;
@@ -2029,6 +2035,7 @@
       stages.appendChild(stage.el);
       s.stages.push(stage);
       if (stage.attached) later(function () { stage.attached(); }, 0);
+      if (s.stage && s.stage.swap(old, stage, retire)) return;      /* KS13.3: the new stage's transitions (push, wipe, cut) */
       var fast = reduced();
       later(function () { stage.el.classList.add('dp-in'); }, fast ? 0 : 30);
       if (old) {
@@ -2043,7 +2050,9 @@
     }
     function show(display, seq) {
       var my = ++s.token, vm = Pure.viewModel(display);
-      if (vm.kind === 'blank') amb.uncover(); else amb.cover();                 /* a spotlight covers the ambient; blank lets it through */
+      s.lastShow = [display, seq]; if (s.stage) s.stage.next(vm);           /* KS13: a redraw when the new stage comes or goes; what the swap brings */
+      var k16npc = vm.kind === 'npc' && !!s.stage && !!root.B68StageScene && root.B68StageScene.on();      /* KS16 (kit.stage): the NPC stands over the dimmed scene, which holds still */
+      if (vm.kind === 'blank' || k16npc) amb.uncover(); else amb.cover(); amb.still(k16npc);                 /* a spotlight covers the ambient; blank lets it through */
       ovLightsOut(vm.kind === 'dark');                                          /* lights out: no autopilot overlay, no AUTO chip */
       wireSync();
       if (vm.kind === 'npc') {
@@ -2058,6 +2067,23 @@
       }
       swap(buildStage(vm, seq, ctx));
     }
+
+    /* KS13 (kit.stage): the new stage's frame (app/display/kit/stage.js) while the setting is on and its bundle has loaded. Off, s.stage stays
+       null and none of the KS13 lines above does anything. Coming or going, it holds the scene still or lets it go, and redraws what is up */
+    s.stage = null; s.lastShow = null;
+    function retire(st) { var i = s.stages.indexOf(st); if (i >= 0) s.stages.splice(i, 1); try { st.destroy(); } catch (e) {} if (st.el.parentNode) st.el.parentNode.removeChild(st.el); }
+    function stageSync() {
+      var on = !!(root.B68Kit && root.B68Kit.ready('stage') && root.B68Stage);
+      if (s.dead || on === !!s.stage) return;
+      if (on) s.stage = root.B68Stage.attach(container, { later: later, clearLater: clearLater, reduced: reduced, band: function () { return s.bandModel; }, wireMs: function () { return WT.on; } });
+      else { s.stage.destroy(); s.stage = null; if (s.ov.node && /(^|\s)ks1\d-/.test(String(s.ov.node.className))) s.ov.seen = ''; }   /* KS16: an overlay the stage drew is drawn again the old way on the next poll */
+      if (s.stageBand) s.stageBand.destroy(); s.stageBand = s.stage && root.B68StageBand ? root.B68StageBand.attach(s.stage, { band: function () { return s.bandModel; }, layers: function () { return s.layers ? s.layers.state() : null; }, doc: document }) : null;      /* KS14: the clock and the crew heads */
+      suiteSync();
+      if (s.lastShow) show(s.lastShow[0], s.lastShow[1]);
+    }
+    if (root.B68Kit) s.offs.push(root.B68Kit.onChange(stageSync));
+    s.offs.push(function () { if (s.stage) { s.stage.destroy(); s.stage = null; } });
+    stageSync();
 
     /* first stage: blank, so the page is never empty */
     swap(blankStage());
@@ -2094,7 +2120,7 @@
            the small one; an adapter that does not simply gets the transcriber part in full each time */
         fetch: function (seq, aseq, sseq, hseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq, sseq === null ? undefined : sseq, hseq === null ? undefined : hseq); },
         onMission: function (hud) { applyBand(hud); },
-        onFeatures: function (f) { if (root.B68Flags) { root.B68Flags.apply({ features: f }); suiteSync(); } },
+        onFeatures: function (f) { if (root.B68Flags) { root.B68Flags.apply({ features: f }); suiteSync(); } if (root.B68Kit) root.B68Kit.set('stage', swOn('kit.stage')); },   /* KS01.2: data-kit="stage" follows the setting */
         onSkew: function (ms) { s.skew = ms; },
         isHidden: function () { return document.hidden; },
         onAmbient: function (doc) { applyAmbient(doc); },
@@ -2102,7 +2128,7 @@
         onStt: function (part) { if (s.stt && typeof s.stt.feed === 'function') { try { s.stt.feed(part); } catch (e) { /* the page goes on */ } } },
         onData: function (display, seq, at) { s.seq = seq; s.updatedAt = at; paintStatus(); show(display, seq); },
         onOverlay: function (overlay) { ovApplyField(overlay); },
-        onLayers: function (layers) { if (s.layers) { s.layers.apply(layers); suiteSync(); } },
+        onLayers: function (layers) { if (s.layers) { s.layers.apply(layers); suiteSync(); } if (s.stage && s.stageBand) s.stageBand.paint(); },      /* KS14: the heads follow the faces */
         onStatus: function (p) { s.poll = p; paintStatus(); s.reloader.state(p.state); }
       });
       s.poller.start();

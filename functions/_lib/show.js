@@ -8,7 +8,7 @@
 //   title { text (80), sub? (120) }                     wanted { level 0-4, heat? 0-9, siren? }  ring { text? (60) }
 //   rolodex { npcIds [1-12] }  and  spotlight { npcId }   -- joined to their rows like an npc overlay: REVEALED NPCs only.
 // LASTING LAYERS sit in the ambient document (`layers`, nested: band / scene / data) and stay until cleared:
-//   band.phase pb|plan|score|after   band.security 0-4   band.faces [<=3 of { npcId } | { pcId }]   band.onair true
+//   band.phase pb|plan|score|after   band.security 0-4   band.faces [<=3 of { npcId } | { pcId } (one PC face may carry acting: true, KS14.2)]   band.onair true
 //   scene.filter flashback           scene.layout montage   scene.mode start|aftermath
 //   data.countdown { to (epoch ms), label? (40) }   data.credits [npcId, <=30]   data.previously [npcId, <=12]
 // SECRECY: an NPC id is kept only while that NPC is revealed (dropped when written, dropped again on every read), the served payload is
@@ -23,6 +23,7 @@ import { knownAs } from './known-as.js';
 
 const TONES = ['ink', 'orange', 'blue', 'red'];
 const REPORT_POSITIONS = ['controlled', 'risky', 'desperate'], REPORT_EFFECTS = ['limited', 'standard', 'great'];   // the action report card (B09 spine.stamp): report { position, effect, text? (100) }
+const REPORT_RESULTS = ['clean', '45', '13'];   // KS15: report { ..., who? (40), result? clean|45|13, cost? (60) }: the roll as beats on the iPad
 export const SHOW_MS = { min: 1000, max: 180000 };
 export const SHOW_NPC_MAX = { rolodex: 12, faces: 3, credits: 30, previously: 12 };
 
@@ -79,7 +80,13 @@ export const SHOW_KINDS = {
     },
   },
   report: {
-    build: (p) => put({ position: oneOf(p.position, 'payload.position', REPORT_POSITIONS, true), effect: oneOf(p.effect, 'payload.effect', REPORT_EFFECTS, true) }, 'text', text(p.text, 'payload.text', 100)),
+    // KS15 (kit.stage, the roll as beats): who?, result?, cost? are optional; a report without them is built exactly as before
+    build: (p) => {
+      const o = put({ position: oneOf(p.position, 'payload.position', REPORT_POSITIONS, true), effect: oneOf(p.effect, 'payload.effect', REPORT_EFFECTS, true) }, 'text', text(p.text, 'payload.text', 100));
+      put(o, 'who', text(p.who, 'payload.who', 40));
+      put(o, 'result', oneOf(p.result, 'payload.result', REPORT_RESULTS));
+      return put(o, 'cost', text(p.cost, 'payload.cost', 60));
+    },
   },
   ring: { build: (p) => put({}, 'text', text(p.text, 'payload.text', 60)) },
   rolodex: { npc: 'list', build: (p) => ({ npcIds: ids(p.npcIds, 'payload.npcIds', SHOW_NPC_MAX.rolodex, true) }) },
@@ -118,6 +125,8 @@ const pcFace = (f) => {
     if (!o.harm.length) delete o.harm;
   }
   put(o, 'locks', whole(f.locks, 'band.faces locks', 0, 6));
+  // KS14.2 (the kit and stage build, Gate 2): the PC whose turn it is (the Roll's Who). true or nothing: a mark on a face already on the list, never a name
+  if (f.acting !== undefined && f.acting !== null && f.acting !== false) { if (f.acting !== true) bad('band.faces acting must be true'); o.acting = true; }
   return o;
 };
 const FACE = (f) => {
@@ -132,7 +141,9 @@ export const LAYERS = {
   'band.faces': (v) => {
     if (!Array.isArray(v) || !v.length) bad('band.faces must be a list of one to ' + SHOW_NPC_MAX.faces);
     if (v.length > SHOW_NPC_MAX.faces) bad('band.faces holds at most ' + SHOW_NPC_MAX.faces);
-    return v.map(FACE);
+    const out = v.map(FACE);
+    if (out.filter((f) => f.acting === true).length > 1) bad('band.faces marks at most one face acting');
+    return out;
   },
   'band.onair': (v) => { if (v !== true) bad('band.onair must be true (null clears it)'); return true; },
   'scene.filter': (v) => oneOf(v, 'scene.filter', ['flashback'], true),

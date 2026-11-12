@@ -9,6 +9,7 @@
 //   band-nocues     a prep note with no Cues section: NO CUES
 //   band-long       long words everywhere: the cue, the beat, what is on the iPad
 //   band-menu, band-cuemore, band-quiet, band-elsewhere: the Menu, the cue's popover, the quiet list, and Planning on screen while the Score runs
+import { vnow } from './kit-fingerprint.mjs';
 const M = 60000;
 const pad = (n) => (n < 10 ? '0' : '') + n;
 const hm = (ms) => { const d = new Date(ms); return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
@@ -25,7 +26,7 @@ const READY = async (page) => {
 /* the night as the shots want it: Personal and Planning done (Planning a little over), the Score 41 minutes in, a start two hours ago, the curfew
    `curfewIn` minutes from now; the cue stack back at its first cue, with no work light */
 async function night(ctx, o = {}) {
-  const now = Date.now();
+  const now = vnow();
   const n = { v: 1, phase: o.phase || 'score', startAt: hm(now - 120 * M), curfewAt: hm(now + (o.curfewIn === undefined ? 58 : o.curfewIn) * M),
     phases: { pb: { budget: 30, start: now - 111 * M, end: now - 79 * M }, plan: { budget: 25, start: now - 79 * M, end: now - 41 * M }, score: { budget: 90, start: now - 41 * M, end: null }, after: { budget: 25, start: null, end: null } } };
   await ctx.api('PATCH', '/gm/state', { night: null });

@@ -1,0 +1,71 @@
+/* display/kit/band.css: the new stage's top band (KS14, S2), behind the setting kit.stage. In the kit-stage and kit-lookbook bundles: fetched only
+   while the setting is on. Unlayered, every rule under :root[data-kit~="stage"], no important flags (KIT-STANDING, the layer rules).
+   Sizes are in vmin, the iPad's short side, so a line is the same size on the glass in landscape and portrait: every line is at least 3.4vmin
+   (26 px at 768), read from 1.5 m. Each group sits on an opaque ground (the plate's), so it reads over any scene art at 4.5:1 or better.
+   The old classes it matches, and why (KS13's note: the old strip covers the clock and crew places until KS14 replaces it): on the idle stage the
+   layers strip's crew cells stand down (the heads are the crew) and the strip keeps one row (none when the crew was all it held); the heads sit below it. */
+
+/* ---------- the two places: the clock top left, the crew top right; the crew may take the wider share ----------
+   When a name would be cut beside the clock (four heads, a long name, portrait), band.js stands the crew under the clock across the inner width
+   (data-stage-stack; its top is measured from the clock) */
+:root[data-kit~="stage"] .stage-slot-clock { max-width: 40vw; }
+:root[data-kit~="stage"] .stage-slot-crew { max-width: 56vw; }
+:root[data-kit~="stage"] .stage-slot-crew[data-stage-stack] { left: 5vw; right: 5vw; max-width: none; justify-content: flex-start; }
+:root[data-kit~="stage"] .stage-slot-crew[data-stage-stack] .stage-heads { flex-wrap: wrap; justify-content: flex-start; }
+@media (orientation: portrait) { :root[data-kit~="stage"] .stage-slot-clock { max-width: 90vw; } }
+
+/* ---------- the clock and NEXT ---------- */
+:root[data-kit~="stage"] .stage-clock {
+  display: flex; align-items: center; gap: 2.4vmin; box-sizing: border-box; min-width: 0; max-width: 100%; padding: 1.6vmin 2.4vmin;
+  border-top: .6vmin solid var(--ui-accent); background: light-dark(var(--ui-raised), var(--ui-sunk)); color: var(--ui-ink);
+}
+:root[data-kit~="stage"] .stage-clock p { margin: 0; padding: 0; }
+:root[data-kit~="stage"] .stage-clock-time { flex: 0 0 auto; font: 900 11vmin/.9 var(--ui-font-poster); letter-spacing: .01em; font-variant-numeric: tabular-nums; }
+:root[data-kit~="stage"] .stage-clock-next { min-width: 0; display: grid; gap: .5vmin; }
+:root[data-kit~="stage"] .stage-clock-kick { color: light-dark(var(--ui-accent-ink), var(--ui-caution)); font: 800 3.4vmin/1.1 var(--ui-font-cond); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
+:root[data-kit~="stage"] .stage-clock-text {
+  font: 700 3.6vmin/1.15 var(--ui-font-text); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+
+/* ---------- the crew: a head each ---------- */
+:root[data-kit~="stage"] .stage-heads {
+  display: flex; align-items: flex-start; justify-content: flex-end; gap: 1.6vmin; box-sizing: border-box; min-width: 0; max-width: 100%; padding: 1.6vmin 2vmin;
+  border-top: .6vmin solid var(--ui-accent); background: light-dark(var(--ui-raised), var(--ui-sunk)); color: var(--ui-ink);
+}
+:root[data-kit~="stage"] .stage-head { --stage-head: 10vmin; display: grid; justify-items: center; align-content: start; gap: .8vmin; min-width: var(--stage-head); max-width: 28vmin; }
+:root[data-kit~="stage"] .stage-head[data-stage-acting] { --stage-head: 14vmin; max-width: 32vmin; }
+:root[data-kit~="stage"] .stage-head-face { position: relative; width: var(--stage-head); height: var(--stage-head); }
+:root[data-kit~="stage"] .stage-head-ring.ui-meter { position: absolute; inset: 0; display: block; font-size: calc(var(--stage-head) / 2); }
+:root[data-kit~="stage"] .stage-head-ring .ui-clock { width: 100%; height: 100%; }
+/* the ring: a dim track of nine, the Stress filled in full ink (the accent when acting), cut apart by the ground; the disc sits inside a gap */
+:root[data-kit~="stage"] .stage-head-ring .ui-wedge { fill: currentColor; fill-opacity: .24; stroke: light-dark(var(--ui-raised), var(--ui-sunk)); stroke-width: 1.4; stroke-opacity: 1; }
+:root[data-kit~="stage"] .stage-head-ring .ui-wedge.is-on { fill-opacity: 1; }
+:root[data-kit~="stage"] .stage-head-ring .ui-clock-rim { stroke: none; }
+:root[data-kit~="stage"] .stage-head-disc {
+  position: absolute; inset: 21%; display: grid; place-items: center; border-radius: 50%; box-shadow: 0 0 0 .5vmin light-dark(var(--ui-raised), var(--ui-sunk));
+  background: var(--ui-ink); color: light-dark(var(--ui-raised), var(--ui-sunk)); font: 900 calc(var(--stage-head) * .36)/1 var(--ui-font-poster);
+}
+:root[data-kit~="stage"] .stage-head:not([data-stage-stress]) .stage-head-disc { inset: 6%; }
+:root[data-kit~="stage"] .stage-head[data-stage-acting] .stage-head-disc { background: var(--ui-accent); color: var(--ui-on-accent); }
+:root[data-kit~="stage"] .stage-head[data-stage-acting] .stage-head-ring { color: var(--ui-accent); }
+:root[data-kit~="stage"] .stage-head-num {
+  position: absolute; right: -6%; bottom: -6%; display: grid; place-items: center; min-width: 4.6vmin; height: 4.6vmin; box-sizing: border-box; padding: 0 .8vmin;
+  border: .4vmin solid light-dark(var(--ui-raised), var(--ui-sunk)); border-radius: 999px; background: var(--ui-ink); color: light-dark(var(--ui-raised), var(--ui-sunk));
+  font: 800 3.4vmin/1 var(--ui-font-text); font-variant-numeric: tabular-nums;
+}
+:root[data-kit~="stage"] .stage-head-name {
+  margin: 0; padding: 0; max-width: 100%; text-align: center; font: 800 3.4vmin/1.1 var(--ui-font-cond); letter-spacing: .02em;
+  overflow-wrap: break-word; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+:root[data-kit~="stage"] .stage-head[data-stage-acting] .stage-head-name { font-size: 4vmin; }
+
+/* ---------- the layers strip (the band's faces, phase and security) on the idle stage: its crew cells stand down, one row, the heads below it ---------- */
+:root[data-kit~="stage"] .dp-root.stage-idle-on .dp-lay-s-crew { display: none; }
+:root[data-kit~="stage"] .dp-root.stage-idle-on.dp-lay-crew { --dp-lay-h: 10vmin; --dp-lay-row: 10vmin; }
+:root[data-kit~="stage"] .dp-root.stage-idle-on.dp-lay-on .stage-slot-clock,
+:root[data-kit~="stage"] .dp-root.stage-idle-on.dp-lay-on .stage-slot-crew { top: calc(var(--dp-lay-h) + 3vh); }
+@media (orientation: portrait) { :root[data-kit~="stage"] .dp-root.stage-idle-on.dp-lay-crew { --dp-lay-h: 8vmin; --dp-lay-row: 8vmin; } }
+/* nothing but the crew in the strip: with its cells stood down it would be an empty bar, so it goes and the art takes the whole frame */
+:root[data-kit~="stage"] .dp-root.stage-idle-on.dp-lay-solo { --dp-lay-h: 0px; --dp-lay-row: 0px; }
+:root[data-kit~="stage"] .dp-root.stage-idle-on.dp-lay-solo .dp-lay-strip { display: none; }

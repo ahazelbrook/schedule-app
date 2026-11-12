@@ -28,10 +28,11 @@ async function withSwitches(list, fn) {
   try { return await fn(); } finally { list.forEach((d) => F.unregister(d.id)); }
 }
 const GMX = sw('test.gm', 'gm'), DISP = sw('test.disp', 'display'), PH = sw('test.phone', 'phone'), DSET = sw('test.dset', 'display', { setting: true });
-const SETTINGS = ['phoneCards', 'fx.off', 'room.music', 'display.band'];      /* display.band: the tech run (06/11), the iPad's strip across the top, off until chosen */
+const SETTINGS = ['phoneCards', 'fx.off', 'room.music', 'display.band',      /* display.band: the tech run (06/11), the iPad's strip across the top, off until chosen */
+  'kit.desk', 'kit.stage', 'kit.phone', 'night.who', 'blade.pitches'];        /* the kit and stage build (KS01.1, 11/11): five more, each off until chosen */
 
 // ---------- the shipped registry ----------
-await test('the shipped lines: each well-formed, default false, phoneCards first; the settings are exactly phoneCards, fx.off, room.music and display.band; spine.workshop is gone', async () => {
+await test('the shipped lines: each well-formed, default false, phoneCards first; the settings are exactly phoneCards, fx.off, room.music, display.band and the kit\'s five; spine.workshop is gone', async () => {
   assert.equal(F.list()[0].id, 'phoneCards');
   for (const s of F.list()) {
     assert.equal(s.default, false, s.id); assert.ok(s.label && s.doc, s.id);
@@ -89,7 +90,7 @@ await test('patches: only a setting can change (features and the old key); any o
   assert.throws(() => F.patchFor({}, 'nope', true), /unknown switch/);
   assert.throws(() => F.patchFor({}, 'spine.rail', false), /always on/);
   await withSwitches([GMX, DISP], () => { assert.throws(() => F.patchFor({}, 'test.disp', false), /always on/); });
-  assert.deepEqual(F.patchAllOff({}), { features: { phoneCards: false, 'fx.off': false, 'room.music': false, 'display.band': false }, phoneCards: false });
+  assert.deepEqual(F.patchAllOff({}), { features: { phoneCards: false, 'fx.off': false, 'room.music': false, 'display.band': false, 'kit.desk': false, 'kit.stage': false, 'kit.phone': false, 'night.who': false, 'blade.pitches': false }, phoneCards: false });
 });
 await test('publicMap: the display and phone lines, complete, as the GM page sees them (a setting as stored, the rest ON); never a GM-only id', async () => {
   await withSwitches([GMX, DISP, PH], () => {
@@ -255,18 +256,38 @@ await test('settings: a failed copy says so and is tried again at the next arriv
   assert.match(r.calls.toast[0][0], /Could not copy the settings/); assert.equal(r.calls.toast[0][1], true);
   assert.equal(r.ctl.heal(), true, 'tried again at once');
 });
-await test('settings: five rows (Scenes, Music, Phones, Mirror for phones, Band), each a two-way choice showing the current value', async () => {
+await test('settings: ten rows (Scenes, Music, Phones, Mirror for phones, Band, and the kit\'s Desk, Stage, Phone sheet, Start the night, Pitches), each a two-way choice showing the current value', async () => {
   const r = rig({ features: { 'room.music': true }, mirror: false }, { v: 1 });
   const rows = r.ctl.rows();
-  assert.deepEqual(rows.map((x) => x.label), ['Scenes', 'Music', 'Phones', 'Mirror for phones', 'Band']);
-  assert.deepEqual(rows.map((x) => x.key), ['fx.off', 'room.music', 'phoneCards', 'mirror', 'display.band']);
-  assert.deepEqual(rows.map((x) => x.options.map((o) => o.label)), [['Moving', 'Held still'], ['Scene themes', 'Heat music'], ['Sheet only', 'Mission cards'], ['Off', 'On'], ['Off', 'On']]);
-  assert.deepEqual(rows.map((x) => x.value), [false, true, false, false, false]);
+  assert.deepEqual(rows.map((x) => x.label), ['Scenes', 'Music', 'Phones', 'Mirror for phones', 'Band', 'Desk', 'Stage', 'Phone sheet', 'Start the night', 'Pitches']);
+  assert.deepEqual(rows.map((x) => x.key), ['fx.off', 'room.music', 'phoneCards', 'mirror', 'display.band', 'kit.desk', 'kit.stage', 'kit.phone', 'night.who', 'blade.pitches']);
+  assert.deepEqual(rows.map((x) => x.options.map((o) => o.label)), [['Moving', 'Held still'], ['Scene themes', 'Heat music'], ['Sheet only', 'Mission cards'], ['Off', 'On'], ['Off', 'On'],
+    ['Old desk', 'New desk'], ['Old iPad', 'New iPad'], ['Old sheet', 'Four screens'], ['Off', 'On'], ['Stall and Meanwhile', 'Pitches']]);
+  assert.deepEqual(rows.map((x) => x.value), [false, true, false, false, false, false, false, false, false, false]);
   const box = { parentNode: null, innerHTML: '' }; r.ctl.render(box);
   assert.match(box.innerHTML, /data-set="room\.music" data-v="1" aria-pressed="true">Heat music/);
   assert.match(box.innerHTML, /data-set="fx\.off" data-v="0" aria-pressed="true">Moving/);
   assert.match(box.innerHTML, /data-set="mirror" data-v="0" aria-pressed="true">Off/);
-  assert.equal((box.innerHTML.match(/aria-pressed="true"/g) || []).length, 5, 'one value pressed per row');
+  assert.equal((box.innerHTML.match(/aria-pressed="true"/g) || []).length, 10, 'one value pressed per row');
+});
+await test('the kit\'s five settings (KS01.1): surfaces gm, display, phone, gm, gm; off with nothing stored; nothing is published or healed while they are off; turning one on writes only its own key', async () => {
+  const want = { 'kit.desk': 'gm', 'kit.stage': 'display', 'kit.phone': 'phone', 'night.who': 'gm', 'blade.pitches': 'gm' };
+  for (const [id, surface] of Object.entries(want)) {
+    const s = F.get(id); assert.ok(s && s.setting === true && s.default === false && s.saturday === 'off' && s.stage === 'kit', id);
+    assert.equal(s.surface, surface, id); assert.equal(F.valueOf({}, id), false, id + ' reads off with nothing stored');
+  }
+  assert.deepEqual(F.publishMap({}, undefined), { phoneCards: false }, 'all off: the campaign copy is what 798907c wrote');
+  assert.deepEqual(F.publicView({}), F.publicView({ 'kit.desk': true, 'night.who': true, 'blade.pitches': true }), 'a GM-only setting never reaches a phone or the iPad');
+  const r = rig({}, { v: 1 });
+  assert.equal(r.ctl.heal(), false); assert.deepEqual(r.calls.publish, [], 'nothing published while the kit is off');
+  const settle = () => new Promise((x) => setImmediate(x));
+  assert.equal(r.ctl.choose('kit.desk', true), true); await settle();
+  assert.deepEqual(r.calls.patch.pop(), { features: { 'kit.desk': true } }); assert.deepEqual(r.calls.publish, [], 'a GM setting is never copied to the campaign');
+  assert.equal(r.ctl.choose('kit.stage', true), true); await settle();
+  assert.deepEqual(r.calls.publish.pop(), { phoneCards: false, 'kit.stage': true }, 'a display setting is copied for the iPad');
+  assert.equal(r.ctl.choose('kit.phone', true), true); await settle();
+  assert.deepEqual(r.calls.publish.pop(), { phoneCards: false, 'kit.stage': true, 'kit.phone': true }, 'a phone setting is copied for the phones');
+  for (const id of ['kit.desk', 'night.who', 'blade.pitches']) assert.ok(!(id in r.camp.features), id + ' never in the campaign document');
 });
 await test('settings: choose takes the page\'s own paths (phone cards: setPhoneCards; mirror: toggleMirror; scenes and music: set, with a toast) and does nothing for the value already chosen', async () => {
   const phone = [];

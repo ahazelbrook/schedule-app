@@ -196,7 +196,8 @@ await test('routes.js: index.html loads exactly the core bundle; every other bun
   const W = routes(), L = W.B68Load;
   ok(L && typeof L.need === 'function' && typeof L.files === 'function', 'routes.js defines B68Load');
   eq(W.B68_BUILD, 'dev', "the committed build is 'dev' (scripts/deploy.sh stamps it for the upload)");
-  eq(Object.keys(L.BUNDLES), ['core', 'figures', 'table', 'print', 'crews', 'gm', 'display', 'commend', 'debrief', 'quiet', 'board', 'claims', 'absent', 'lair', 'lookbook'], 'the bundles');
+  eq(Object.keys(L.BUNDLES), ['core', 'figures', 'table', 'print', 'crews', 'gm', 'display', 'commend', 'debrief', 'quiet', 'board', 'claims', 'absent', 'lair', 'lookbook',
+    'kit-ui', 'kit-desk', 'kit-stage', 'kit-phone', 'night-who', 'blade-pitches', 'kit-lookbook'], 'the bundles');
   eq(L.BUNDLES.figures, ['figures/figure-kit.js', 'figures/cast.js'], 'the figures bundle is the kit and the cast canon');
   ok(!HTML.includes('figure-kit.js') && !HTML.includes('figures/cast.js'), 'index.html does not load the figure kit (first paint draws no figure)');
   eq(htmlTags(), L.BUNDLES.core, "index.html's stylesheet and script tags are BUNDLES.core, in order");
@@ -266,6 +267,172 @@ await test('routes.js: an unstamped build (the repository, the artifact, file://
   eq(W.B68_BUILD, STAMP, 'the stamp is B68_BUILD');
   W.B68Load.need('display');
   eq(doc.order(), ['tracker.css', 'display.css?v=' + STAMP, 'tokens.css?v=' + STAMP, 'display/shows.css?v=' + STAMP, 'display/hardstart.css?v=' + STAMP, 'display/onair.css?v=' + STAMP, 'display/aftermath.css?v=' + STAMP, 'display/board.css?v=' + STAMP, 'display/title-card.css?v=' + STAMP, 'display/castphoto.css?v=' + STAMP, 'display/lair.css?v=' + STAMP, 'display/face-cards.css?v=' + STAMP, 'display/montage.css?v=' + STAMP, '<style>', 'figures/figure-kit.js?v=' + STAMP, 'figures/cast.js?v=' + STAMP, 'tokens.js?v=' + STAMP, 'cue-verbs.js?v=' + STAMP, 'cue.js?v=' + STAMP, 'stt.js?v=' + STAMP, 'display/shows.js?v=' + STAMP, 'display/show-beats.js?v=' + STAMP, 'display/rolodex-card.js?v=' + STAMP, 'display/face-look.js?v=' + STAMP, 'display/face-motif.js?v=' + STAMP, 'display/face-formats.js?v=' + STAMP, 'display/face-badge.js?v=' + STAMP, 'display/face-render.js?v=' + STAMP, 'display/report-beat.js?v=' + STAMP, 'display/preflight-report.js?v=' + STAMP, 'display/aftermath.js?v=' + STAMP, 'display/board.js?v=' + STAMP, 'display/title-card.js?v=' + STAMP, 'display/castphoto.js?v=' + STAMP, 'display/lair.js?v=' + STAMP, 'display/layers.js?v=' + STAMP, 'display/montage.js?v=' + STAMP, 'display/hardstart.js?v=' + STAMP, 'display/onair.js?v=' + STAMP, 'display/fx.js?v=' + STAMP, 'display/room-audio.js?v=' + STAMP, 'display-page.js?v=' + STAMP], 'a stamped build versions every bundle URL (the display needs the figure kit first)');
+});
+
+/* ---------- the kit and stage build (KS01.1): one bundle per setting, so with every setting off a page fetches what it did at 798907c,
+   ui/kit-flag.js (the core) aside ---------- */
+const KIT_STAGE = ['display/kit/stage.css', 'display/kit/band.css', 'display/kit/roll.css', 'display/kit/scene.css', 'display/kit/stage.js', 'display/kit/band.js', 'display/kit/roll.js', 'display/kit/scene.js'];
+const KIT = {
+  'kit-ui': ['ui/tokens.css', 'ui/parts.css', 'ui/overlay.css', 'ui/ui.js', 'ui/overlay.js'],
+  'kit-desk': ['ui/desk-band.css', 'ui/desk-roll.css', 'ui/desk-blade.css', 'ui/desk-run.css', 'ui/desk-shell.css', 'ui/desk-skin.css', 'gm/kit/band.js', 'gm/kit/roll.js', 'gm/kit/blade.js', 'gm/kit/run.js', 'gm/kit/shell.js'],
+  'kit-stage': KIT_STAGE,
+  'kit-phone': ['sheet/kit/tabs.css', 'sheet/kit/tabs.js'],
+  'night-who': ['ui/desk-who.css', 'gm/kit/who.js'],
+  'blade-pitches': ['gm/kit/blade.js'],
+  'kit-lookbook': KIT_STAGE,
+};
+const isKitFile = (f) => /^(ui|gm\/kit|display\/kit|sheet\/kit)\//.test(f);
+
+await test('kit bundles: one per setting plus the shared kit-ui and the look book\'s own; no kit file in an old bundle but ui/kit-flag.js in the core, after routes.js and before boot.js; the kit\'s stylesheets after every old one', async () => {
+  const L = routes().B68Load;
+  for (const [name, list] of Object.entries(KIT)) eq(L.BUNDLES[name], list, 'bundle ' + name);
+  for (const [name, list] of Object.entries(L.BUNDLES)) if (!(name in KIT)) eq(list.filter(isKitFile), name === 'core' ? ['ui/kit-flag.js'] : [], name + ': a kit file in an old bundle is a new request with every setting off');
+  eq(L.BUNDLES.core.slice(-3), ['routes.js', 'ui/kit-flag.js', 'boot.js'], 'the flag after routes.js (B68Load is there) and before boot.js (it is set before a route draws)');
+  ok(HTML.includes('<script src="routes.js"></script>\n<script src="ui/kit-flag.js"></script>\n<script src="boot.js"></script>'), 'index.html loads it in that place');
+  const kitCss = L.CSS_ORDER.filter(isKitFile);
+  eq(kitCss, ['ui/tokens.css', 'ui/parts.css', 'ui/overlay.css', 'ui/desk-band.css', 'ui/desk-roll.css', 'ui/desk-blade.css', 'ui/desk-run.css', 'ui/desk-shell.css', 'ui/desk-who.css', 'ui/desk-skin.css',
+    'display/kit/stage.css', 'display/kit/band.css', 'display/kit/roll.css', 'display/kit/scene.css', 'sheet/kit/tabs.css'], 'the kit\'s cascade order');
+  eq(L.CSS_ORDER.slice(L.CSS_ORDER.length - kitCss.length), kitCss, 'every kit stylesheet comes after every old one');
+  ok(!/kit/.test(fs.readFileSync(path.join(APP, 'sw.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')), 'sw.js names no kit file: SHELL learns them from routes.js');
+});
+
+await test('kit bundles: need() of one brings kit-ui first, its stylesheets after the old ones and before the inline style; need() of gm, display or lookbook adds no kit file', async () => {
+  const doc = fakeDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']);
+  const L = routes(ROUTES, doc).B68Load;
+  const p = L.need('kit-desk');
+  eq(doc.order(), ['tracker.css', 'schedule.css', 'rules.css', 'cast.css', 'ui/tokens.css', 'ui/parts.css', 'ui/overlay.css', 'ui/desk-band.css', 'ui/desk-roll.css', 'ui/desk-blade.css', 'ui/desk-run.css', 'ui/desk-shell.css', 'ui/desk-skin.css', '<style>',
+    'ui/ui.js', 'ui/overlay.js', 'gm/kit/band.js', 'gm/kit/roll.js', 'gm/kit/blade.js', 'gm/kit/run.js', 'gm/kit/shell.js'], 'kit-desk: the UI kit first, then the desk');
+  doc.settle(); eq(await p, 'kit-desk'); ok(L.done('kit-ui') && L.done('kit-desk'), 'both done');
+  const n = doc.added().length; await L.need('blade-pitches'); eq(doc.added().length, n, 'blade-pitches after the desk: blade.js and the UI kit are already in');
+  const doc2 = fakeDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']);
+  const L2 = routes(ROUTES, doc2).B68Load;
+  L2.need('gm'); L2.need('display'); L2.need('lookbook'); L2.need('table');
+  eq(doc2.order().filter(isKitFile), [], 'the old bundles fetch no kit file');
+  L2.need('kit-stage');
+  const o = doc2.order();
+  ok(o.indexOf('display/kit/stage.css') > o.indexOf('display/montage.css') && o.indexOf('display/kit/stage.css') > o.indexOf('gm.css') && o.indexOf('display/kit/stage.css') < o.indexOf('<style>'), 'kit-stage\'s sheets sit after every old one: ' + o.slice(0, 40).join(' '));
+});
+
+/* ---------- KS01.5 (Gate 1, A1): once the kit flag layers the page, every old sheet is an @import into layer(old); the kit's stay <link> ---------- */
+function layerDoc(links) {
+  const head = { children: [] }, at = (el) => head.children.indexOf(el);
+  const mk = (tag) => {
+    const a = {}, el = { tagName: tag.toUpperCase(), parentNode: null, textContent: '', getAttribute: (k) => (k in a ? a[k] : el[k] == null ? null : String(el[k])), setAttribute: (k, v) => { a[k] = String(v); }, hasAttribute: (k) => k in a };
+    Object.defineProperty(el, 'nextSibling', { get() { const i = at(el); return i < 0 ? null : head.children[i + 1] || null; } });
+    return el;
+  };
+  head.appendChild = (el) => { el.parentNode = head; head.children.push(el); return el; };
+  head.insertBefore = (el, ref) => { el.parentNode = head; const i = ref ? at(ref) : -1; if (i < 0) head.children.push(el); else head.children.splice(i, 0, el); return el; };
+  head.removeChild = (el) => { head.children.splice(at(el), 1); el.parentNode = null; return el; };
+  for (const f of links) { const l = mk('link'); l.rel = 'stylesheet'; l.href = f; head.appendChild(l); }
+  const inline = mk('style'); inline.textContent = ':root { --paper: #f4efe6; }'; head.appendChild(inline);
+  const zoom = mk('style'); zoom.setAttribute('id', 'zoomCss'); zoom.textContent = '#frame { cursor: grab; }'; head.appendChild(zoom);
+  const isLink = (e) => e.tagName === 'LINK' && e.rel === 'stylesheet', isImport = (e) => e.tagName === 'STYLE' && e.hasAttribute('data-href');
+  const doc = { head, inline, zoom, createElement: mk, documentElement: { getAttribute: () => null },
+    querySelectorAll: (sel) => sel === 'link[rel="stylesheet"]' ? head.children.filter(isLink)
+      : sel === 'link[rel="stylesheet"], style[data-href]' ? head.children.filter((e) => isLink(e) || isImport(e))
+      : sel === 'head > style' ? head.children.filter((e) => e.tagName === 'STYLE') : [] };
+  doc.order = () => head.children.map((e) => (isImport(e) ? '@' + e.getAttribute('data-href') : e.tagName === 'STYLE' ? (e.hasAttribute('id') ? '#' + e.getAttribute('id') : '<style>') : String(e.href || e.src)));
+  /* settle: fire load (or error, for the names in `fail`) on every element that has not answered, or only on those `only` picks */
+  doc.settle = (fail = [], only = () => true) => { for (const e of head.children.slice()) if (e.onload && !e.settled && only(e)) { e.settled = true; const n = doc.order()[head.children.indexOf(e)]; (fail.includes(n) ? e.onerror : e.onload)(); } };
+  return doc;
+}
+await test('layers (KS01.5, A1): layerOld() turns each old <link> into <style data-href>@import url() layer(old) in its place (the link goes once its import loads), then wraps the inline block once; styles built in JS stay as they are; it runs once', async () => {
+  const doc = layerDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']);
+  const L = routes(ROUTES, doc).B68Load;
+  eq(L.layered(), false, 'a page is not layered until the kit flag asks');
+  const p = L.layerOld();
+  eq(L.layered(), true);
+  eq(doc.order(), ['@tracker.css', 'tracker.css', '@schedule.css', 'schedule.css', '@rules.css', 'rules.css', '@cast.css', 'cast.css', '<style>', '#zoomCss'], 'each import goes in before its link; the links stay until their imports load');
+  eq(doc.inline.textContent.startsWith('@layer old'), false, 'the inline block waits for the links (else the links would beat it for a moment)');
+  eq(doc.head.children.filter((e) => e.hasAttribute && e.hasAttribute('data-href')).map((e) => e.textContent), ['tracker.css', 'schedule.css', 'rules.css', 'cast.css'].map((f) => '@import url("' + f + '") layer(old);'));
+  doc.settle(); eq(await p, 4, 'four links converted');
+  eq(doc.order(), ['@tracker.css', '@schedule.css', '@rules.css', '@cast.css', '<style>', '#zoomCss'], 'the links are gone');
+  ok(doc.inline.textContent.startsWith('@layer old {\n:root { --paper') && doc.inline.hasAttribute('data-layered'), 'the inline block is in layer(old)');
+  eq(doc.zoom.textContent, '#frame { cursor: grab; }', 'a style built in JS (zoom.js) is not touched');
+  eq(L.layerOld() === p, true, 'once: the same promise'); eq(doc.order().length, 6, 'nothing converted twice');
+});
+await test('layers (KS01.5, A1): a layered page brings every old sheet as an import in its cascade place, before the inline block, and the kit\'s sheets as <link> after the old ones; a stamped build carries ?v= in the import', async () => {
+  const doc = layerDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']);
+  const L = routes(ROUTES, doc).B68Load;
+  const p = L.layerOld(); doc.settle(); await p;
+  L.need('gm'); L.need('kit-desk');
+  const css = doc.order().filter((x) => /\.css$|^<style>$|^#/.test(x));
+  eq(css, ['@tracker.css', '@schedule.css', '@rules.css', '@cast.css', '@gm.css', '@prep.css', 'ui/tokens.css', 'ui/parts.css', 'ui/overlay.css', 'ui/desk-band.css', 'ui/desk-roll.css', 'ui/desk-blade.css', 'ui/desk-run.css', 'ui/desk-shell.css', 'ui/desk-skin.css', '<style>', '#zoomCss'],
+    'old sheets as imports in CSS_ORDER, then the kit\'s links, all before the inline block');
+  const gm = doc.head.children.find((e) => e.getAttribute('data-href') === 'gm.css');
+  eq(gm.textContent, '@import url("gm.css") layer(old);');
+  let got = null; L.need('gm').then(() => { got = 'gm'; }); doc.settle(); await sleep(5);
+  eq(got, 'gm', 'an import\'s load event resolves the bundle like a link\'s');
+  const d2 = layerDoc(['tracker.css']), W2 = routes(stamped(), d2), p2 = W2.B68Load.layerOld(); d2.settle(); await p2;
+  W2.B68Load.need('table');
+  ok(d2.head.children.some((e) => e.getAttribute('data-href') === 'campaign.css' && e.textContent === '@import url("campaign.css?v=' + STAMP + '") layer(old);'), 'stamped: ?v=<build> in the import, as on the link');
+  const off = layerDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']), L3 = routes(ROUTES, off).B68Load;
+  L3.need('gm'); L3.need('kit-desk');
+  ok(!off.head.children.some((e) => e.hasAttribute && e.hasAttribute('data-href')) && !off.inline.hasAttribute('data-layered'), 'never layered: every sheet is a <link>, the inline block untouched (off is today)');
+});
+await test('layers (KS01.5b, note C): the links whose imports loaded go, and the inline block is wrapped, in ONE step once every import has answered; until then links and block stand as before', async () => {
+  const doc = layerDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']);
+  const L = routes(ROUTES, doc).B68Load, p = L.layerOld();
+  doc.settle([], (e) => e.getAttribute('data-href') !== 'cast.css');      /* three of four imports have loaded */
+  await sleep(5);
+  eq(doc.order(), ['@tracker.css', 'tracker.css', '@schedule.css', 'schedule.css', '@rules.css', 'rules.css', '@cast.css', 'cast.css', '<style>', '#zoomCss'], 'no link removed while an import is still out');
+  eq(doc.inline.hasAttribute('data-layered'), false, 'and the block not yet wrapped (it would lose to the links still unlayered)');
+  doc.settle(); eq(await p, 4);
+  eq(doc.order(), ['@tracker.css', '@schedule.css', '@rules.css', '@cast.css', '<style>', '#zoomCss'], 'all four links gone together');
+  ok(doc.inline.hasAttribute('data-layered'), 'with the block wrapped in the same step');
+});
+await test('layers (KS01.5b, note A): a link still loading when layerOld() runs is answered by its import, so need() resolves (it used to hang when the link was removed before its load event); its own late events are ignored', async () => {
+  const doc = layerDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']);
+  const L = routes(ROUTES, doc).B68Load;
+  let got = null, err = null; L.need('gm').then(() => { got = 'gm'; }, (e) => { err = e.message; });
+  const link = doc.head.children.find((e) => e.tagName === 'LINK' && e.href === 'gm.css');
+  ok(link && typeof link.onload === 'function', 'gm.css is a <link>, still loading');
+  const p = L.layerOld();
+  ok(link.onload === null && link.onerror === null, 'the loading link is handed to its import');
+  doc.settle([], (e) => e !== link); await p; await sleep(5);      /* every import and script answers; the gm.css link never does */
+  eq([got, err], ['gm', null], 'need(gm) resolved from the gm.css import');
+  ok(L.done('gm') && !doc.head.children.includes(link), 'gm is done and the old link is gone');
+  ok(doc.head.children.some((e) => e.getAttribute('data-href') === 'gm.css'), 'gm.css is in, layered');
+  const d2 = layerDoc(['tracker.css']), L2 = routes(ROUTES, d2).B68Load;
+  let e2 = null; L2.need('table').catch((e) => { e2 = e.message; });
+  const p2 = L2.layerOld(); d2.settle(['@campaign.css']); await p2; await sleep(5);
+  eq(e2, 'could not load campaign.css', 'an import that fails for a loading link fails that file (the next need() tries again)');
+  ok(!d2.head.children.some((e) => e.href === 'campaign.css' || e.getAttribute('data-href') === 'campaign.css'), 'and leaves neither tag behind');
+});
+await test('layers (KS01.5b, note B): only index.html\'s own block is wrapped; a style a script builds later without an id (sheet/quiet.js) stays unlayered; a static link whose import fails stays a link', async () => {
+  const doc = layerDoc(['tracker.css', 'schedule.css', 'rules.css', 'cast.css']);
+  const L = routes(ROUTES, doc).B68Load;
+  const quiet = doc.createElement('style'); quiet.textContent = '.ds-live .ds-head{user-select:none}'; doc.head.appendChild(quiet);     /* built after routes.js ran */
+  const p = L.layerOld(); doc.settle(['@rules.css']); eq(await p, 3, 'three links swapped; the one whose import failed is kept');
+  eq(quiet.textContent, '.ds-live .ds-head{user-select:none}', 'the script-built style is not wrapped');
+  ok(!quiet.hasAttribute('data-layered') && doc.inline.hasAttribute('data-layered'), 'only the inline block is');
+  ok(doc.head.children.some((e) => e.tagName === 'LINK' && e.href === 'rules.css') && !doc.head.children.some((e) => e.getAttribute('data-href') === 'rules.css'), 'rules.css: its failed import is removed and the link stays');
+  const two = layerDoc(['tracker.css']); two.head.appendChild(two.createElement('style'));      /* two id-less styles when routes.js runs: not sure which is the block */
+  const L2 = routes(ROUTES, two).B68Load, p2 = L2.layerOld(); two.settle(); await p2;
+  ok(!two.inline.hasAttribute('data-layered'), 'not exactly one candidate: nothing is wrapped');
+});
+
+await test('layers: index.html has EXACTLY one id-less <style> before routes.js, in <head>, and no core script loaded before routes.js builds an id-less style (routes.js wraps nothing otherwise)', () => {
+  const at = HTML.indexOf('<script src="routes.js"></script>');
+  ok(at > 0, 'index.html loads routes.js');
+  const before = HTML.slice(0, at);
+  const styles = [...before.matchAll(/<style\b([^>]*)>/g)].filter((m) => !/\b(id|data-href)\s*=/.test(m[1]));
+  eq(styles.length, 1, 'one id-less <style> in index.html before routes.js');
+  ok(styles[0].index < HTML.indexOf('<header'), 'it sits in <head>, before the page body starts');
+  ok([...HTML.matchAll(/<style\b/g)].length === 1, 'and it is the only <style> in the file');
+  /* every script tag before routes.js: a style it builds must carry an id (zoom.js builds #zoomCss); inline scripts build none */
+  const srcs = [...before.matchAll(/<script src="([^"]+)"><\/script>/g)].map((m) => m[1]);
+  ok(srcs.length > 5, 'the core scripts before routes.js: ' + srcs.length);
+  for (const f of srcs) {
+    const code = fs.readFileSync(path.join(APP, f), 'utf8');
+    for (const m of code.matchAll(/createElement\(\s*['"]style['"]\s*\)/g)) {
+      ok(/\.id\s*=|setAttribute\(\s*['"](id|data-href)['"]/.test(code.slice(m.index, m.index + 160)), f + ' builds a <style> with no id, ahead of routes.js');
+    }
+    ok(!/insertAdjacentHTML\([^)]*<style|innerHTML\s*[+]?=[^;]*<style/.test(code), f + ' writes a <style> as markup');
+  }
+  const inline = [...before.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n');
+  ok(!/createElement\(\s*['"]style['"]/.test(inline), 'index.html\'s inline scripts build no style');
 });
 
 /* the files that only the GM's laptop and the table iPad load: in the gm or display bundle and not in core or table */

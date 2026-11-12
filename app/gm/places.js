@@ -282,7 +282,8 @@
     }
     (function init() { var r = restore(readStore(), phaseNow()); st.place = r.place; st.views = r.views; st.extra = r.extra; st.phase = phaseNow(); })();
 
-    function current() { var v = st.views[st.place]; return v && (lists(st.place, v) || v === st.extra) ? v : ownOf(st.place)[0].id; }
+    function current() { var v = st.views[st.place], KS = kitShell(); return v && (lists(st.place, v) || v === st.extra) ? v : KS ? KS.first(ownOf(st.place)) : ownOf(st.place)[0].id; }
+    function kitShell() { var K = W && W.B68KitShell; return K && typeof K.on === 'function' && K.on() ? K : null; }      /* KS09 (kit.desk): the new desk's tabs */
     /* a tool registered with a mount of its own (gm/tools.js): a view drawn by its mount */
     function extraTool(id) { var T = W && W.B68GmTools; if (!T || typeof T.extras !== 'function') return null; try { return T.extras().filter(function (t) { return t && t.id === id; })[0] || null; } catch (e) { return null; } }
     function known(id) { return has(VIEWS, id) || !!extraTool(id); }
@@ -365,8 +366,11 @@
       return extra ? '<span class="gm-vc-xw">' + t + '<button type="button" class="chip gm-vc-x" data-pvx="' + esc(id) + '" aria-label="' + esc('Drop ' + label + ' from ' + placeLabel(st.place)) + '">×</button></span>' : t;
     }
     function paintRow(e) {
-      var cur = current(), own = ownOf(st.place), ex = st.extra, d = DEF[st.place];
-      if (e.row) {
+      var cur = current(), own = ownOf(st.place), ex = st.extra, d = DEF[st.place], KS = kitShell();
+      if (KS) { own = KS.inRow(own, cur); st.sigs.row = 'kit'; }      /* KS09: four views put away from the row (their keys and Find still open them) */
+      if (e.row && KS) KS.row(e.row, { label: placeLabel(st.place) + ': views', cur: cur, own: own, extra: ex ? { id: ex, label: labelIn(ex), drop: 'Drop ' + labelIn(ex) + ' from ' + placeLabel(st.place) } : null,
+        pinned: PINNED.map(function (id) { return { id: id, label: VIEWS[id].label }; }), views: VIEWS });
+      else if (e.row) {
         var h = own.map(function (v) { return tabHtml(v.id, v.label, cur === v.id); }).join('') + (ex ? tabHtml(ex, labelIn(ex), cur === ex, true) : '') +
           '<span class="gm-vsep" aria-hidden="true"></span>' + PINNED.map(function (id) { return tabHtml(id, VIEWS[id].label, cur === id, false, true); }).join('');
         if (st.sigs.row !== h) { st.sigs.row = h; e.row.innerHTML = h; e.row.setAttribute('aria-label', placeLabel(st.place) + ': views'); }
@@ -412,11 +416,11 @@
     }
     function leftHtml() {
       var id = st.place;
-      if (id === 'before') return '<section class="gm-box gm-lbox"><h3 class="gm-band">Preflight</h3><div class="gm-lbody gm-ltool" data-left-tool="preflight"></div></section>' +
+      if (id === 'before') return (call('whoOn') ? '<div class="who-lead" data-who-lead></div>' : '') + '<section class="gm-box gm-lbox"><h3 class="gm-band">Preflight</h3><div class="gm-lbody gm-ltool" data-left-tool="preflight"></div></section>' +
         '<section class="gm-box gm-lbox"><h3 class="gm-band">Tonight</h3><div class="gm-lbody" data-left-slot="facts"></div></section>';
       if (id === 'opening') return '<section class="gm-box gm-lbox"><h3 class="gm-band">Hard start</h3><div class="gm-lbody gm-ltool" data-left-tool="hardstart"></div></section>' +
         '<p class="gm-dim gm-lnote">Next: Personal, below, takes the hard start and the opening credits off the iPad and starts Personal business (a <code>phase:</code> cue starts it too).</p>';
-      if (id === 'after') return '<section class="gm-box gm-lbox"><h3 class="gm-band">The crew</h3><div class="gm-lbody" data-left-slot="crew"></div></section>' +
+      if (id === 'after') return (call('whoOn') ? '<p class="who-after" data-who-after></p>' : '') + '<section class="gm-box gm-lbox"><h3 class="gm-band">The crew</h3><div class="gm-lbody" data-left-slot="crew"></div></section>' +
         '<div class="gm-lacts"><button type="button" class="btn" data-pv="debrief" title="The steps not reached go to each phone as a card the next morning">Debrief: send to phones</button>' +
         '<button type="button" class="btn" data-pv="castphoto" title="The cast line-up, at the end of an arc">Cast photo</button>' +
         '<button type="button" class="btn primary" data-pv-end="1" title="Exports tonight’s note, stops the recording, then ends the night for the players (it asks first)">End the night</button></div>';
@@ -432,7 +436,7 @@
       if (d.left === 'roll') { unbindWhere('left'); if (e.left.innerHTML) e.left.innerHTML = ''; st.sigs.left = ''; e.left.hidden = true; return; }
       e.left.hidden = false;
       e.left.setAttribute('aria-label', placeLabel(st.place) + ': ' + d.leftLabel);
-      var shell = st.place + '|' + st.desk + '|' + (st.rollHere ? 'roll' : 'own');
+      var shell = st.place + '|' + st.desk + '|' + (st.rollHere ? 'roll' : 'own') + (call('whoOn') ? '|who' : '');      /* KS11 (night.who): Before's Start the night, After's line */
       if (st.sigs.left !== shell) {
         flushTimes(e.left);      /* F3: a time being typed when the column is rebuilt (a phase moved elsewhere) is written first, not lost */
         unbindWhere('left');
@@ -440,6 +444,7 @@
         e.left.innerHTML = st.rollHere ? '<button type="button" class="gm-left-back" data-left-back="1" title="Back to ' + esc(d.leftLabel) + ' (the Roll stays a key away: 1 to 4)">◂ ' + esc(d.leftLabel) + '</button>' : leftHtml();
         if (tool && !st.rollHere) bindTool(tool, e.left.querySelector('[data-left-tool]'), 'left');
       }
+      if (!st.rollHere) call('whoPaint', e.left);      /* KS11 (night.who): fills the two slots above; the page's whoPaint does nothing while the setting is off */
       if (!st.rollHere) {
         var slot = e.left.querySelector('[data-left-slot]');
         if (slot) {
@@ -484,7 +489,7 @@
         (st.place === 'opening' ? '. The hard start and the opening credits come off the iPad if they are up' : '');
       /* the label says what a tap does: Start <place> when it starts the phase, Next: <place> when it only goes there; the Opening's also ends the hard start */
       var say = (starts ? 'Start ' : 'Next: ') + esc(lab) + ' <span aria-hidden="true">→</span>' + (st.place === 'opening' ? '<small class="gm-pnext-sub">ends the hard start</small>' : '');
-      return (nx ? '<button type="button" class="btn primary gm-pnext-go' + (starts ? ' gm-pnext-start' : '') + '" data-place-next="' + nx + '" title="' + esc(tip) + '">' + say + '</button>' : '') +
+      return (nx ? '<button type="button" class="btn' + (st.place === 'before' && call('whoOn') ? '' : ' primary') + ' gm-pnext-go' + (starts ? ' gm-pnext-start' : '') + '" data-place-next="' + nx + '" title="' + esc(tip) + '">' + say + '</button>' : '') +
         (bk ? '<button type="button" class="gm-pnext-back" data-place-back="' + bk + '" title="' + esc('Look at ' + placeLabel(bk) + ': the night stays where it is (Ctrl+←)') + '" aria-label="' + esc('Back: look at ' + placeLabel(bk)) + '"><span aria-hidden="true">←</span> Back</button>' : '');
     }
     function kids(el) { return el && el.children ? [].slice.call(el.children) : []; }

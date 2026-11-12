@@ -1,0 +1,211 @@
+/* ui/desk-band.css: the band on the new desk (kit.desk, KS05 of the kit and stage build). In the kit-desk bundle: fetched only while its setting is on.
+   Every rule sits under :root[data-kit~="desk"] and starts from a kband- class, which only gm/kit/band.js's markup carries. Unlayered: the old
+   sheets sit in the layer `old` while the kit is on, so a rule here wins for each property it sets; the old classes the markup keeps for its hooks
+   (gm-place, gm-pill, gm-bb, gm-cs-*...) keep their old rules for anything not set here, so each element below sets every property it shows.
+   The band is dark in Paper and in Night (its rows carry data-ui-theme="night"). One Primary (GO), one Danger (PANIC). No important flags. */
+
+/* ---------- the two rows ---------- */
+:root[data-kit~="desk"] .kband-r {
+  display: flex; flex-wrap: nowrap; align-items: center; gap: var(--ui-space-2); box-sizing: border-box; min-width: 0; margin: 0;
+  padding: 0 var(--ui-space-4); border: 0; background: var(--ui-sunk); color: var(--ui-ink);
+  font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: normal; text-transform: none;
+}
+:root[data-kit~="desk"] .kband-r1 { min-height: 40px; }
+/* one line on the desk: the iPad's words and the cue's words give way (an ellipsis, the whole in the title) before anything wraps */
+:root[data-kit~="desk"] .kband-r2 { min-height: 48px; flex-wrap: nowrap; row-gap: 0; padding-right: var(--ui-space-3); border-top: var(--ui-hairline); }
+:root[data-kit~="desk"] .kband-r > .gm-band-grow { flex: 1 1 0; min-width: 0; }
+
+/* the alarm row (the curfew due, PANIC pressed, signed out): red with light ink; the parts inside read Paper's tokens so a Standard button is light */
+:root[data-kit~="desk"] .kband-r2[data-alarm="curfew"], :root[data-kit~="desk"] .kband-r2[data-alarm="panic"], :root[data-kit~="desk"] #gm-band.out .kband-r2:not([data-band-toasts]) {
+  color-scheme: light; border-top-color: transparent; background: var(--ui-alarm); color: var(--ui-on-alarm);
+  --ui-ink: var(--ui-on-alarm); --ui-ink-soft: var(--ui-on-alarm); --ui-ink-faint: var(--ui-on-alarm); --ui-line: var(--ui-on-alarm); --ui-sunk: var(--ui-alarm);
+}
+:root[data-kit~="desk"] .kband-r2:is([data-alarm="curfew"], [data-alarm="panic"]) :is(.ui-btn--quiet, .kband-ipad-live):hover { background: transparent; text-decoration: underline; }
+:root[data-kit~="desk"] .kband-r2:is([data-alarm="curfew"], [data-alarm="panic"]) :is(.gm-band-call, .gm-cs-resume) { border-color: var(--ui-raised); color: var(--ui-alarm); }
+:root[data-kit~="desk"] .kband-r2:is([data-alarm="curfew"], [data-alarm="panic"]) .kband-cs-tag:not(.gm-cs-alarm) { color: var(--ui-on-alarm); }
+/* the curfew due: its three buttons take the room of the cue's words, the beat, Blank, the autopilot and the music (back once it is answered);
+   GO stays live, so the cue in standby keeps its number and kind ("#3 LIGHT") beside it */
+:root[data-kit~="desk"] .kband-r2[data-alarm="curfew"] :is(.kband-cs-what, .kband-cs-txt, .kband-cs-sb, .gm-tray-blank, .gm-tray-ap) { display: none; }
+:root[data-kit~="desk"] .kband-r2[data-alarm="curfew"] .kband-cue-what { min-width: max-content; }
+:root[data-kit~="desk"] .kband-r2[data-alarm="curfew"] :is(.kband-beat, .kband-cs-next, .kband-music) { display: none; }
+
+/* ---------- row 1: the mark, the session, who, the places ---------- */
+/* the mark (Home) gives its room to the places: Home is the Menu's last line */
+:root[data-kit~="desk"] .kband-mark { display: none; flex: none; color: var(--ui-ink); font: 900 20px/1 var(--ui-font-poster); letter-spacing: 0; text-decoration: none; text-transform: none; white-space: nowrap; }
+:root[data-kit~="desk"] .kband-mark b { font: 700 var(--ui-type-label)/1 var(--ui-font-cond); letter-spacing: .14em; vertical-align: 3px; }
+:root[data-kit~="desk"] .kband-mark:focus-visible { outline: var(--ui-focus-ring); outline-offset: 2px; }
+:root[data-kit~="desk"] .kband-sess, :root[data-kit~="desk"] .kband-who { flex: none; min-height: 0; padding: .25em .5em; opacity: 1; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.25 var(--ui-font-text); letter-spacing: .06em; }
+:root[data-kit~="desk"] .kband-sess:empty, :root[data-kit~="desk"] .kband-who:empty { display: none; }
+/* night.who (KS12) fills the who chip: one chip, "S9 · 4 playing" (gm/kit/band.js copies the short session onto it), so the places keep their room */
+:root[data-kit~="desk"] .kband-r1[data-band-who] .kband-sess { display: none; }
+:root[data-kit~="desk"] .kband-who[data-sess]::before { content: attr(data-sess) "\00a0\00b7\00a0"; }
+
+:root[data-kit~="desk"] .kband-places { display: flex; align-items: stretch; align-self: stretch; flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+:root[data-kit~="desk"] .kband-places::-webkit-scrollbar { display: none; }
+:root[data-kit~="desk"] .kband-tabs { flex-wrap: nowrap; align-items: stretch; gap: 0 10px; border-bottom: 0; }
+/* the condensed face, as today's band: seven places, Blade, the mic, the clock and PANIC share one row at 1366 px */
+:root[data-kit~="desk"] .kband-place {
+  display: inline-flex; align-items: center; gap: var(--ui-space-1); flex: none; height: auto; min-width: 0; margin: 0; padding: 3px 1px 0;
+  border: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--ui-ink-soft); text-align: left;
+  font: 800 var(--ui-type-body)/1 var(--ui-font-cond); letter-spacing: .04em; text-transform: uppercase;
+}
+:root[data-kit~="desk"] .kband-place:hover { background: transparent; color: var(--ui-ink); border-bottom-color: var(--ui-line); }
+:root[data-kit~="desk"] .kband-place[aria-current="true"], :root[data-kit~="desk"] .kband-place[aria-current="true"]:hover { background: transparent; color: var(--ui-ink); border-bottom-color: var(--ui-accent); }
+:root[data-kit~="desk"] .kband-place:focus-visible { outline: var(--ui-focus-ring); outline-offset: -2px; }
+:root[data-kit~="desk"] .kband-place .gm-place-n { min-height: 0; padding: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; text-decoration: none; opacity: 1; }
+:root[data-kit~="desk"] .kband-place[data-state="done"] { color: var(--ui-ink-faint); }
+:root[data-kit~="desk"] .kband-place[data-state="done"][aria-current="true"] { color: var(--ui-ink); }
+/* the night's phase: a dot before its name (the underline is the place on screen) */
+:root[data-kit~="desk"] .kband-place[data-state="now"] .gm-place-n::before { content: "\25CF\00a0"; color: var(--ui-accent); }
+/* the minutes against the budget: only for the phase in play, amber near its budget and red over it (every tab's title says them all) */
+:root[data-kit~="desk"] .kband-place .gm-place-t { display: none; min-height: 0; margin: 0; padding: 1px 4px; border-radius: var(--ui-radius); background: none; color: var(--ui-ink-soft); opacity: 1;
+  font: 700 var(--ui-type-label)/1.2 var(--ui-font-mono); letter-spacing: 0; text-transform: none; }
+:root[data-kit~="desk"] .kband-place[data-state="now"] .gm-place-t { display: inline-block; }
+:root[data-kit~="desk"] .kband-place .gm-place-t:empty { display: none; }
+:root[data-kit~="desk"] .kband-place[data-tone="amber"] .gm-place-t { background: var(--ui-caution); color: var(--ui-on-caution); }
+:root[data-kit~="desk"] .kband-place[data-tone="red"] .gm-place-t { background: var(--ui-alarm); color: var(--ui-on-alarm); }
+:root[data-kit~="desk"] .kband-place.gm-place-btw { margin-left: var(--ui-space-1); padding-left: var(--ui-space-3); border-left: var(--ui-hairline); }
+
+/* ---------- row 1: Blade, Listening, the curfew and the clock, PANIC ---------- */
+:root[data-kit~="desk"] .kband-bladebox { position: relative; flex: none; display: inline-flex; }
+:root[data-kit~="desk"] .kband-blade { min-height: 30px; padding: 0 var(--ui-space-2) 0 var(--ui-space-3); background: transparent; color: var(--ui-ink); }
+:root[data-kit~="desk"] .kband-blade[aria-expanded="true"] { border-color: var(--ui-accent); background: var(--ui-raised); color: var(--ui-ink); }
+:root[data-kit~="desk"] .kband-count {
+  position: absolute; top: -7px; right: -7px; min-width: 18px; height: 18px; box-sizing: border-box; padding: 0 5px; border-radius: var(--ui-radius-pill);
+  background: var(--ui-accent); color: var(--ui-on-accent); font: 700 var(--ui-type-label)/18px var(--ui-font-mono); letter-spacing: 0; text-align: center; pointer-events: none;
+}
+:root[data-kit~="desk"] .kband-pips { position: absolute; left: var(--ui-space-3); bottom: 3px; display: flex; gap: 3px; pointer-events: none; }
+:root[data-kit~="desk"] .kband-pip { display: block; width: 5px; height: 5px; border-radius: var(--ui-radius-pill); background: var(--ui-ink-faint); }
+:root[data-kit~="desk"] .kband-pip[data-kind="warn"] { background: var(--ui-alarm); }
+:root[data-kit~="desk"] .kband-pip[data-kind="rule"] { background: var(--ui-rules); }
+:root[data-kit~="desk"] .kband-pip[data-kind="idea"] { background: var(--ui-caution); }
+:root[data-kit~="desk"] .kband-pip[data-kind="say"] { background: var(--ui-accent); }
+:root[data-kit~="desk"] .kband-pip[data-kind="done"] { background: var(--ui-ok); }
+
+:root[data-kit~="desk"] .kband-mic { display: inline-flex; flex: 0 1 auto; min-width: 0; max-width: 132px; }
+:root[data-kit~="desk"] .kband-mic:has(> [hidden]) { display: none; }
+:root[data-kit~="desk"] .kband-mic .gm-pill { flex: 0 1 auto; min-width: 0; max-width: 100%; min-height: 0; overflow: hidden; color: var(--ui-ink); }
+:root[data-kit~="desk"] .kband-mic .gm-pill:hover { background: var(--ui-raised); border-color: var(--ui-line); color: var(--ui-ink); }
+:root[data-kit~="desk"] .kband-mic .gm-pill.warn { border-color: var(--ui-caution); }
+:root[data-kit~="desk"] .kband-r .gm-pill-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: inherit; letter-spacing: inherit; }
+:root[data-kit~="desk"] .kband-r .gm-dot { flex: none; box-sizing: border-box; width: 8px; height: 8px; border: 1.5px solid var(--ui-ink-faint); border-radius: var(--ui-radius-pill); background: transparent; }
+:root[data-kit~="desk"] .kband-r .gm-dot.on { border-color: var(--ui-ok); background: var(--ui-ok); }
+:root[data-kit~="desk"] .kband-r .gm-dot.warn { border-color: var(--ui-caution); background: var(--ui-caution); }
+
+/* the curfew's words stack in two short lines beside the clock ("CURFEW 22:40 ·" over "58 MIN"), so the seven places keep their room at 1366 px with
+   the who chip (night.who) and PANIC's Esc hint in the row */
+:root[data-kit~="desk"] .kband-clock { display: inline-flex; align-items: center; gap: var(--ui-space-2); flex: none; min-width: 0; white-space: nowrap; overflow: visible; }
+:root[data-kit~="desk"] .kband-clock small { flex: none; max-width: 8em; color: var(--ui-ink-soft); opacity: 1; font: 700 var(--ui-type-label)/1.15 var(--ui-font-cond); letter-spacing: .04em; text-transform: uppercase;
+  white-space: normal; text-align: right; text-wrap: balance; }
+:root[data-kit~="desk"] .kband-clock small:empty { display: none; }
+:root[data-kit~="desk"] .kband-clock b { flex: none; color: var(--ui-ink); font: 400 26px/1 var(--ui-font-poster); letter-spacing: .01em; }
+:root[data-kit~="desk"] .kband-panic { flex: none; align-self: center; gap: 6px; min-height: 30px; margin: 0; padding: 0 var(--ui-space-3); filter: none; letter-spacing: .12em; }
+:root[data-kit~="desk"] .kband-panic .ui-key { min-width: 0; padding: .1em .3em; font-size: var(--ui-type-label); }      /* Esc: the hint only (B68GmEsc keeps the key) */
+
+/* ---------- row 2: the iPad, as one chip with Clear inside; Send; a quiet Blank; the autopilot ---------- */
+/* when row 2 is full, the iPad's words and the beat give way twice as fast as the cue's (its words stop at 280 px) */
+:root[data-kit~="desk"] .kband-tray { display: inline-flex; align-items: center; flex: 0 2 auto; min-width: 260px; max-width: 46%; gap: 0; overflow: hidden; }      /* the floor keeps Blank and the autopilot whole */
+:root[data-kit~="desk"] .kband-traybox { display: inline-flex; align-items: center; gap: var(--ui-space-2); flex: 0 1 auto; min-width: 0; }
+:root[data-kit~="desk"] .kband-ipad {
+  display: inline-flex; align-items: center; flex: 0 1 auto; min-width: 0; box-sizing: border-box; height: 32px; padding: 0 2px 0 0;
+  border: 1px solid var(--ui-line); border-radius: var(--ui-radius-pill); background: transparent;
+}
+:root[data-kit~="desk"] .kband-ipad-live {
+  display: inline-flex; align-items: center; gap: var(--ui-space-2); flex: 0 1 auto; min-width: 0; max-width: none; min-height: 0; height: 30px;
+  padding: 0 var(--ui-space-2) 0 var(--ui-space-3); border: 0; border-radius: var(--ui-radius-pill); background: transparent; color: var(--ui-ink);
+}
+:root[data-kit~="desk"] .kband-ipad-live:hover { background: var(--ui-raised); border-color: transparent; color: var(--ui-ink); }
+:root[data-kit~="desk"] .kband-ipad .gm-tray-lbl { flex: none; color: var(--ui-ink); opacity: 1; font: inherit; letter-spacing: inherit; }
+:root[data-kit~="desk"] .kband-ipad .gm-tray-lbl::after { content: "\00a0\00b7"; color: var(--ui-ink-faint); }
+:root[data-kit~="desk"] .kband-ipad .gm-tray-text { min-width: 0; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-kit~="desk"] .kband-clear { flex: none; min-height: 26px; height: 26px; padding: 0 var(--ui-space-2); gap: var(--ui-space-1); border-radius: var(--ui-radius-pill); color: var(--ui-ink-soft); font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .kband-clear:hover { color: var(--ui-ink); }
+:root[data-kit~="desk"] .kband-traybox .gm-tray-send { flex: none; min-height: 30px; background: var(--ui-raised); color: var(--ui-ink); }
+:root[data-kit~="desk"] .kband-traybox .gm-tray-send b { font: 700 var(--ui-type-label)/1 var(--ui-font-mono); }
+:root[data-kit~="desk"] .kband-traybox .gm-tray-blank { flex: none; min-height: 30px; padding: 0 var(--ui-space-2); color: var(--ui-ink-soft); }
+:root[data-kit~="desk"] .kband-traybox .gm-tray-blank:hover { color: var(--ui-ink); }
+:root[data-kit~="desk"] .kband-traybox .gm-tray-ap { flex: none; max-width: 160px; min-height: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.25 var(--ui-font-text); }
+:root[data-kit~="desk"] .kband-traybox .gm-tray-ap:hover { background: var(--ui-raised); color: var(--ui-ink); }
+:root[data-kit~="desk"] .kband-traybox .gm-tray-ap[data-ap="hold"] { border-color: var(--ui-caution); }
+
+/* ---------- row 2: the curfew's buttons, the beat, the music and the quiet line ---------- */
+:root[data-kit~="desk"] .kband-due { display: inline-flex; align-items: center; gap: var(--ui-space-2); flex: none; }
+:root[data-kit~="desk"] .kband-due .ui-btn { min-height: 30px; padding: 0 var(--ui-space-3); letter-spacing: .06em; }
+:root[data-kit~="desk"] .kband-due .ui-btn--quiet { padding: 0 var(--ui-space-2); }
+:root[data-kit~="desk"] .kband-beat { display: inline-flex; align-items: center; gap: var(--ui-space-1); flex: 0 2 auto; min-width: 170px; max-width: 280px; overflow: hidden; }
+:root[data-kit~="desk"] .kband-beat .gm-beat { flex: 0 1 auto; min-width: 0; max-width: 220px; min-height: 30px; padding: 0 var(--ui-space-3); overflow: hidden; color: var(--ui-ink); border: 1px solid var(--ui-line); border-radius: var(--ui-radius-pill); background: transparent;
+  font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .04em; }
+:root[data-kit~="desk"] .kband-beat .gm-beat b { font: inherit; }
+:root[data-kit~="desk"] .kband-beat .gm-beat.due { border-color: var(--ui-caution); }
+:root[data-kit~="desk"] .kband-beat .gm-beat.late { border-color: var(--ui-alarm); color: var(--ui-alarm); }
+:root[data-kit~="desk"] .kband-beat .gm-beat:hover { background: var(--ui-raised); color: var(--ui-ink); }
+:root[data-kit~="desk"] .kband-beat .gm-band-next { flex: none; min-height: 30px; padding: 0 var(--ui-space-2); box-shadow: none; color: var(--ui-ink-soft); }
+:root[data-kit~="desk"] .kband-music { flex: none; align-self: center; gap: var(--ui-space-2); }
+:root[data-kit~="desk"] .kband-music::before { content: none; }
+/* the music's pill (gm/music.js draws it): the kit's chip look, its small words at the label size */
+:root[data-kit~="desk"] .kband-music .gm-mu-pill { min-height: 30px; padding: 0 var(--ui-space-3); border: 1px solid var(--ui-line); border-radius: var(--ui-radius-pill); background: transparent; color: var(--ui-ink);
+  font: 700 var(--ui-type-label)/1 var(--ui-font-text); letter-spacing: .06em; box-shadow: none; }
+:root[data-kit~="desk"] .kband-music .gm-mu-pill:hover, :root[data-kit~="desk"] .kband-music .gm-mu-pill[aria-expanded="true"] { background: var(--ui-raised); color: var(--ui-ink); }
+:root[data-kit~="desk"] .kband-music .gm-mu-pill :is(.gm-mu-note, .gm-mu-a, .gm-mu-st) { font: 700 var(--ui-type-label)/1 var(--ui-font-text); }
+:root[data-kit~="desk"] .kband-music .gm-mu-pill .gm-mu-a { padding: 1px 4px; border-radius: var(--ui-radius); background: var(--ui-ink); color: var(--ui-sunk); }
+:root[data-kit~="desk"] .kband-quiet { flex: none; margin: 0; }
+/* the quiet line's badge (gm/quiet.js draws it and its list): the kit's chip look */
+:root[data-kit~="desk"] .kband-quiet .gm-quiet-badge { min-height: 30px; padding: 0 var(--ui-space-3); border: 1px solid var(--ui-line); border-radius: var(--ui-radius-pill); background: transparent; color: var(--ui-ink);
+  font: 700 var(--ui-type-label)/1 var(--ui-font-text); letter-spacing: .06em; text-transform: uppercase; }
+:root[data-kit~="desk"] .kband-quiet .gm-quiet-badge:hover, :root[data-kit~="desk"] .kband-quiet .gm-quiet-badge[aria-expanded="true"] { background: var(--ui-raised); color: var(--ui-ink); }
+
+/* ---------- row 2: the cue unit: STANDBY and the cue, GO (the band's one Primary), a quiet Next, ⋯ ---------- */
+:root[data-kit~="desk"] .kband-cue { display: inline-flex; align-items: center; gap: var(--ui-space-2); flex: 0 1 auto; min-width: 0; max-width: 620px; position: relative; }
+:root[data-kit~="desk"] .kband-cue-what { display: inline-flex; flex-direction: column; align-items: flex-end; flex: 0 1 auto; min-width: 9em; max-width: 280px; overflow: hidden; gap: 2px; text-align: right; }
+:root[data-kit~="desk"] .kband-cs-head { display: inline-flex; align-items: center; gap: var(--ui-space-2); min-width: 0; max-width: 100%; }
+:root[data-kit~="desk"] .kband-cs-tag { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0; background: none; color: var(--ui-accent); opacity: 1; font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .12em; text-transform: uppercase; }
+:root[data-kit~="desk"] .kband-cs-tag.gm-cs-idle { color: var(--ui-ink-soft); }
+:root[data-kit~="desk"] .kband-cs-tag.gm-cs-alarm { padding: 2px 6px; background: var(--ui-on-alarm); color: var(--ui-alarm); }
+:root[data-kit~="desk"] .kband-cue .kband-hand { color: var(--ui-ink-soft); opacity: 1; font: inherit; letter-spacing: inherit; text-transform: uppercase; }
+:root[data-kit~="desk"] .kband-cs-what {
+  display: block; max-width: 100%; min-height: 0; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--ui-ink);
+  font: 400 var(--ui-type-body)/1.2 var(--ui-font-text); letter-spacing: 0; text-transform: none; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+:root[data-kit~="desk"] .kband-cs-what:hover { background: transparent; text-decoration: underline; text-underline-offset: 3px; }
+:root[data-kit~="desk"] .kband-cs-txt { min-width: 0; max-width: min(300px, 100%); color: inherit; opacity: 1; font: 400 var(--ui-type-body)/1.2 var(--ui-font-text); letter-spacing: 0; text-transform: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-kit~="desk"] .kband-cs-txt.gm-cs-dim { color: var(--ui-ink-soft); }
+:root[data-kit~="desk"] .kband-go { flex: none; min-height: 34px; margin-right: 4px; padding: 0 var(--ui-space-4); font: 700 var(--ui-type-lead)/1 var(--ui-font-text); letter-spacing: .14em; }
+:root[data-kit~="desk"] .kband-go .ui-key { font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .kband-cs-next, :root[data-kit~="desk"] .kband-cs-more { flex: none; min-height: 30px; padding: 0 var(--ui-space-2); box-shadow: none; color: var(--ui-ink-soft); }
+:root[data-kit~="desk"] .kband-cs-more { min-width: 30px; font-size: var(--ui-type-lead); letter-spacing: 0; }
+:root[data-kit~="desk"] .kband-cs-next:hover, :root[data-kit~="desk"] .kband-cs-more:hover, :root[data-kit~="desk"] .kband-cs-more[aria-expanded="true"] { color: var(--ui-ink); }
+:root[data-kit~="desk"] .kband-cue .gm-cs-resume { flex: none; min-height: 30px; }
+
+/* ---------- row 2: the save state, Find, Crew, the Menu; signed out ---------- */
+:root[data-kit~="desk"] .kband-sep { flex: none; align-self: stretch; width: 1px; margin: 10px var(--ui-space-1); background: var(--ui-line); }
+:root[data-kit~="desk"] .kband-sep-mic { display: none; }
+:root[data-kit~="desk"] .kband-tools { display: inline-flex; align-items: center; gap: var(--ui-space-1); flex: none; margin: 0; padding: 0; border: 0; }
+:root[data-kit~="desk"] #gm-band.out .kband-r2:not([data-band-toasts]) > :not(.kband-signed):not(.kband-tools) { display: none; }      /* signed out: the message, and the tools to sign in again */
+:root[data-kit~="desk"] #gm-band.out .kband-r2:not([data-band-toasts]) > .kband-signed { order: -1; }
+:root[data-kit~="desk"] #gm-band.out .kband-r2:not([data-band-toasts]) > .kband-tools { margin-left: auto; }
+:root[data-kit~="desk"] .kband-tools .gm-bb { flex: none; min-height: 30px; padding: 0 var(--ui-space-2); box-shadow: none; color: var(--ui-ink-soft); }
+:root[data-kit~="desk"] .kband-tools .gm-bb:hover, :root[data-kit~="desk"] .kband-tools .gm-bb[aria-expanded="true"] { background: var(--ui-raised); color: var(--ui-ink); }
+:root[data-kit~="desk"] .kband-save { flex: none; margin: 0 var(--ui-space-1) 0 0; padding: 0; background: none; color: var(--ui-ink-soft); opacity: 1; font: 700 var(--ui-type-label)/1.2 var(--ui-font-mono); letter-spacing: .04em; text-transform: none; white-space: nowrap; }
+:root[data-kit~="desk"] .kband-save.bad { padding: 2px 6px; background: var(--ui-alarm); color: var(--ui-on-alarm); }
+:root[data-kit~="desk"] .kband-menu { position: relative; display: inline-flex; }
+:root[data-kit~="desk"] .kband-mdot { position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border-radius: var(--ui-radius-pill); background: var(--ui-caution); box-shadow: 0 0 0 2px var(--ui-sunk); pointer-events: none; }
+:root[data-kit~="desk"] #gm-band.out .kband-r2:not([data-band-toasts]) .kband-signed { display: block; flex: 1 1 auto; min-width: 0; padding: var(--ui-space-1) 0; color: inherit; font: 700 var(--ui-type-body)/1.3 var(--ui-font-text); letter-spacing: 0; text-transform: none; }
+
+/* ---------- narrow screens (a tablet or a phone with the desk on): the rows wrap and the places scroll ---------- */
+@media (max-width: 1099px) {
+  :root[data-kit~="desk"] .kband-r2 { flex-wrap: wrap; }
+  :root[data-kit~="desk"] .kband-r1 { flex-wrap: wrap; row-gap: 0; }
+  :root[data-kit~="desk"] .kband-places { flex: 1 1 100%; order: 9; min-height: 40px; }
+  :root[data-kit~="desk"] .kband-tray { max-width: 100%; }
+}
+
+/* ---------- KS05.3, with the toast stack (KS03): one status dot for the save state, signed out and the pack; a word beside it when something is wrong ----------
+   The old lines leave the band: the save text stays for screen readers (role=status), the signed-out line goes to a toast that stays, with Reload. */
+:root[data-kit~="desk"] .kband-status { display: inline-flex; align-items: center; flex: none; min-height: 30px; padding: 0 var(--ui-space-2); border-radius: var(--ui-radius); color: var(--ui-ink-soft); cursor: default; }
+:root[data-kit~="desk"] .kband-status:focus-visible { outline: var(--ui-focus-ring); outline-offset: 1px; }
+:root[data-kit~="desk"] .kband-status .ui-dot { width: 10px; height: 10px; }
+:root[data-kit~="desk"] .kband-status .ui-status { color: inherit; font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .08em; text-transform: uppercase; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+:root[data-kit~="desk"] .kband-status[data-tone="alarm"] { color: var(--ui-alarm); }
+:root[data-kit~="desk"] .kband-status[data-tone="caution"] { color: var(--ui-caution); }
+:root[data-kit~="desk"] .kband-r2[data-band-toasts] .kband-save { position: absolute; width: 1px; height: 1px; margin: 0; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+:root[data-kit~="desk"] .kband-r2[data-band-toasts] .kband-signed { display: none; }

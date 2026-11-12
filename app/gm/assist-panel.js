@@ -93,6 +93,7 @@
      ctl.ask(q) -> Promise<{ answer } | { error } | null>   POST /gm/assist/ask { q }; null when the box cannot ask or is already asking
      ctl.canAsk() -> bool     false on a phone, with the cap reached or the box not set up, from 85% of the cap (tier core), or when the runtime
                               has no assistAsk
+   B68GmAssist.live() -> the live panels' bridges: the new desk's seam (kit.desk, KS07; gm/kit/blade.js). With the kit off nothing calls it.
    _pure: errKind, errLine, mkCard, inlineNodes, appendInline, stripHeadings, cardKind, fitLines, tierLabel, spendLine, absorb, restore, restoreAsks, momentText, askMoment, askAllowed, askErr, hhmm, clip,
    gateText, citesOf, gateLine, screenAllowed. */
 (function (root, factory) {
@@ -489,6 +490,7 @@
       fit: { busy: false, error: '', card: null }, screen: { busy: {}, error: '' }, ask: { busy: false, error: '' },
       pinned: false, filter: 'all', unfolded: {}, moreOpen: {}, nowId: '', since: '', chipSig: '' };
     var scrollFeedTop = false, host = null, timer = null, bannerT = null, nowT = null, rolledT = null, gone = false, bannerCard = null;
+    var KB = null;      /* the new desk's view of this panel (kit.desk, KS07: gm/kit/blade.js); null while the kit is off, and then every branch below is the old path */
     var avatar = o.avatar || 'gm/blade.svg';
     var bannerMs = o.bannerMs || BANNER_MS;
     var setI = o.setInterval || (win && win.setInterval && win.setInterval.bind(win)), clrI = o.clearInterval || (win && win.clearInterval && win.clearInterval.bind(win));
@@ -523,7 +525,7 @@
       if (!host) return;
       var d = docked();
       host.setAttribute('data-state', d ? 'pinned' : st.open ? 'open' : 'closed');
-      bodyClass('as-tab', true); bodyClass('as-dock', d);
+      bodyClass('as-tab', !KB); bodyClass('as-dock', d);
       var pin = q('#as-pin');
       if (pin) { pin.setAttribute('aria-pressed', String(!!st.pinned)); pin.hidden = !dockable(); pin.title = st.pinned ? 'Unpin: Blade slides over the page again' : 'Pin: dock Blade as a column beside the page'; }
     }
@@ -640,6 +642,7 @@
       tier.setAttribute('data-tier', st.spend ? st.spend.tier : '');
       renderHead(); renderStatus(); renderNow(); renderAsk(); renderChips(); renderList(); renderUpdates(); renderFit(); renderScreen();
       if (scrollFeedTop) { scrollFeedTop = false; var fe = q('#as-feed'); if (fe) fe.scrollTop = 0; }
+      if (KB && typeof KB.paint === 'function') KB.paint();
     }
     function nowMs() { return typeof o.nowMs === 'function' ? +o.nowMs() : Date.now(); }
     function renderHead() {
@@ -713,6 +716,7 @@
     }
     function buildCard(c, now) {
       cache.builds++;
+      if (KB && typeof KB.card === 'function') { var kc = KB.card(c, now); if (kc) return kc; }
       var k = cardKind2(c), kd = KIND[k], open = isOpen(c, now);
       var root = E(now ? 'div' : 'li', 'as-card' + (now ? ' as-now-card' : ''));
       root.setAttribute('data-id', c.id); root.setAttribute('data-seat', c.seat); root.setAttribute('data-kind', k); root.setAttribute('data-open', open ? '1' : '0');
@@ -1044,6 +1048,7 @@
        never the bullets, SAY or GM ONLY. Every other kind only adds a pip. */
     function showBanner(card) {
       if (!host || st.open || isPhone() || (STRIP_KINDS.indexOf(cardKind2(card)) < 0 && card.strip !== true)) return;
+      if (KB && typeof KB.banner === 'function' && KB.banner(card)) return;
       var b = q('#as-banner'), bb = q('.as-banner-b'); if (!b || !bb) return;
       bannerCard = card;
       var k = cardKind2(card);
@@ -1083,7 +1088,7 @@
       if (!st.open) return;
       var had = host && doc && host.contains(doc.activeElement);
       st.open = false; dropNow(); render(); relayout();
-      if (had) { var lb = q('#as-launch'); if (lb) { try { lb.focus(); } catch (e) {} } }
+      if (had) { var lb = (KB && doc.querySelector && doc.querySelector('#gm-band [data-band="blade"]')) || q('#as-launch'); if (lb) { try { lb.focus(); } catch (e) {} } }      /* KS05: the band's Blade button while the tab is put away */
     }
     /* a warn that has just arrived is spoken at once (an assertive live region outside the panel: a closed panel is visibility:hidden, and that is when a warn matters) */
     function alertWarn(fresh) {
@@ -1412,7 +1417,7 @@
     if (setI && !o.noTimer) timer = setI(poll, o.interval || POLL_MS);
     if (!o.noTimer) setTimeout(function () { poll(); }, 1500);
 
-    return {
+    var api = {
       setAutopilot: setAutopilot,
       ready: ready, open: open, close: close, toggle: toggle, isOpen: function () { return st.open; }, pin: togglePin, isPinned: function () { return docked(); }, undoNewest: undoNewest, addCard: addCard, updateCard: updateCard, removeCard: removeCard, relayout: relayout, poll: poll, rolled: rolled, resume: resume, fit: fit, canFit: canFit, autoFit: autoFit, canAnother: canAnother, another: another, canGuess: canGuess, guess: guess, canScreen: canScreen, screenMake: screenMake, ask: ask, canAsk: canAsk,
       state: function () { return JSON.parse(JSON.stringify({ open: st.open, cards: st.cards, updates: st.updates, asks: st.cards.filter(function (c) { return c.src === 'ask'; }), ask: st.ask, nowId: st.nowId, renders: { cards: cache.builds, more: cache.moreRenders }, after: st.after, spend: st.spend, paused: st.paused, error: st.error, listening: st.listening, unread: unread(), fit: st.fit, screen: st.screen, banner: bannerCard ? bannerCard.headline : '' })); },
@@ -1428,11 +1433,41 @@
         if (win && typeof win.removeEventListener === 'function') { win.removeEventListener('resize', onResize); win.removeEventListener('scroll', onScroll); }
         bodyClass('as-tab', false); bodyClass('as-dock', false);
         if (doc && doc.removeEventListener) doc.removeEventListener('visibilitychange', onVis);
+        if (KB && typeof KB.destroy === 'function') { try { KB.destroy(); } catch (e) {} } KB = null; if (LIVE.indexOf(bridge) >= 0) LIVE.splice(LIVE.indexOf(bridge), 1);
         if (host && host.parentNode) host.parentNode.removeChild(host);
         host = null;
       }
     };
+    /* ---------- the new desk's seam (kit.desk, the kit and stage build KS07; app/gm/kit/blade.js holds the work) ----------
+       The kit finds this panel through B68GmAssist.live() (or is handed it here when it loaded first) and calls use(view) while the desk is on, use(null)
+       when it goes off: the cards are drawn again either way. Nothing here runs, draws or sends anything until the kit calls it. dismiss(ids) is Got it
+       for several cards at once: one mark per 50 (the server's bound), the page cards' own work after. */
+    var bridge = {
+      ctl: api, doc: doc, win: win, st: st, host: function () { return gone ? null : host; }, render: function () { if (host && !gone) render(); },
+      h: { appendInline: appendInline, moreHtml: moreHtml, canUndo: canUndo, canKeep: canKeep, isOpen: isOpen, hhmm: hhmm, cardKind: cardKind, feedOf: feedOf,
+        SEAT: SEAT, KIND: KIND, CHECK_WORD: CHECK_WORD, figFns: figFns, setT: setT, clrT: clrT, setI: setI, clrI: clrI },
+      use: function (k) {
+        k = k || null; if (KB === k || gone) return;
+        if (KB && typeof KB.destroy === 'function') { try { KB.destroy(); } catch (e) {} }
+        KB = k; cache.nodes = {}; cache.nowKey = ''; st.chipSig = '';
+        if (host) { render(); relayout(); }
+      },
+      dismiss: function (ids) {
+        var ks = (Array.isArray(ids) ? ids : []).map(cardById).filter(function (c, i, a) { return c && a.indexOf(c) === i; });
+        if (!ks.length || gone) return 0;
+        for (var i = 0; i < ks.length; i += 50) mark('dismiss', ks.slice(i, i + 50));
+        var fns = ks.map(function (c) { return c.src === 'page' ? ackFns[c.id] : null; });
+        ks.forEach(function (c) { remove(st.cards, c.id); delete st.unfolded[c.id]; delete st.moreOpen[c.id]; if (st.nowId === c.id) setNow(''); });
+        render();
+        fns.forEach(function (f) { if (typeof f === 'function') { try { f(); } catch (e) {} } });
+        return ks.length;
+      }
+    };
+    LIVE.push(bridge);
+    if (W && W.B68KitBlade && typeof W.B68KitBlade.attach === 'function') { try { W.B68KitBlade.attach(bridge); } catch (e) {} }
+    return api;
   }
 
-  return { create: create, POSITIONS: POSITIONS, KINDS: KINDS, _pure: P };
+  var LIVE = [];      /* the panels alive in this page (one on the GM page): the new desk's way in (live() below) */
+  return { create: create, POSITIONS: POSITIONS, KINDS: KINDS, _pure: P, live: function () { return LIVE.slice(); } };
 });

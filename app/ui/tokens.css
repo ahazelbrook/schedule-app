@@ -1,0 +1,160 @@
+/* ui/tokens.css: the UI kit's tokens (--ui-*), the kit and stage build (KS02.1). In the kit-ui bundle: fetched only while a kit setting is on,
+   and every rule sits under :root[data-kit~="desk|stage|phone"] or on a [data-ui-scope] container (below), so nothing here matches anywhere else.
+
+   data-ui-scope (KS02b): a container that opts its whole subtree into the kit on a screen whose kit is off (night.who's sheet, blade.pitches'
+   cards put it on their root). The tokens are defined on it, and parts.css styles the ui-* parts under it, and nowhere outside it and the kit's
+   root: a page with no data-kit and no data-ui-scope paints as it did, and index.html's .btn is never touched. A scope on a page with no kit is
+   Paper unless it (or a container in it) says data-ui-theme="night". On a kit page the scope defines NOTHING itself (the token block and the
+   reduced-motion block name it only as :where(:root:not([data-kit])) [data-ui-scope]): it inherits the kit root's tokens, so it follows that page's
+   Paper or Night (data-theme) and density (data-density) like any other part. Only an explicit data-ui-theme or data-density on the scope
+   (or a container in it) overrides. Do not nest scopes: a scope inside a scope on a page with no kit starts from Paper and desk density again.
+
+   Themes are written ONCE. Every colour that changes with the theme is one line, light-dark(<Paper>, <Night>), and the theme is only
+   color-scheme: the device's preference by default, a stored data-theme ("light" Paper, "dark" Night) when there is one, and a local
+   data-ui-theme="paper"|"night" on any container (the look book's columns, the stage's own ground). So a part reads Paper or Night from
+   where it sits. In JS, getComputedStyle(el).getPropertyValue('--ui-ink') is the unresolved light-dark() text: read an element's computed
+   color instead. An element that sets color-scheme itself flips every part inside it.
+   Paper by default on the desk (nothing stored, a dark device): the kit flag puts data-theme="light" on the GM page (ui/kit-flag.js).
+
+   Density: px for the desk (the default), the iPad's own vmin steps for data-density="distance" (on <html> or any container).
+   Every colour is one the app already has (index.html's inline block, app/tokens.css, gm.css's Fixer rows): kit-ui.test.mjs checks it. */
+
+:root[data-kit~="desk"], :root[data-kit~="stage"], :root[data-kit~="phone"], :where(:root:not([data-kit])) [data-ui-scope] {
+  color-scheme: light dark;
+
+  /* ground and ink (index.html's --paper, --card, --inset, --ink, --ink-soft, --ink-faint, --on-ink, --hair) */
+  --ui-surface: light-dark(#f2ede1, #1a1a1c);
+  --ui-raised: light-dark(#fbf8f1, #2a2521);
+  --ui-sunk: light-dark(#e8e2d4, #14110e);
+  --ui-ink: light-dark(#14110e, #f2ede1);
+  --ui-ink-soft: light-dark(#55504a, #c9c3b8);
+  --ui-ink-faint: light-dark(#6a645e, #9a948c);
+  --ui-on-ink: light-dark(#fbf8f1, #14110e);
+  --ui-line: light-dark(#dcd4c2, #55504a);
+
+  /* the one accent: the orange as a fill (the Primary, the active tab's underline), and as text or an edge on the ground */
+  --ui-accent: #e0691e;
+  --ui-on-accent: #14110e;
+  --ui-accent-ink: light-dark(#b8481a, #e8742a);
+  /* rules blue (rules alone), alarm red (alarm alone), ok green, caution mustard, the focus ring, the Primary's hard shadow */
+  --ui-rules: light-dark(#26418f, #8fa3dd);
+  --ui-on-rules: light-dark(#fbf8f1, #14110e);
+  --ui-alarm: light-dark(#a8210f, #d9736e);
+  --ui-on-alarm: light-dark(#fbf8f1, #14110e);
+  --ui-ok: light-dark(#41633e, #7d9e78);
+  --ui-caution: #e8c33c;
+  --ui-on-caution: #14110e;
+  --ui-focus: light-dark(#b8481a, #e8c33c);
+  --ui-shadow: light-dark(#14110e, #f2ede1);
+
+  /* the Fixer's five outcomes (gm.css .gm-fx-*), for outcomes alone: a fill and the ink that reads on it, the same in both themes */
+  --ui-out-deal: #c9348c; --ui-out-deal-ink: #fbf8f1;     /* the bargain */
+  --ui-out-mid: #e0691e; --ui-out-mid-ink: #14110e;       /* 4/5 */
+  --ui-out-low: #a8210f; --ui-out-low-ink: #fbf8f1;       /* 1-3 */
+  --ui-out-six: #6e8f6a; --ui-out-six-ink: #14110e;       /* 6 */
+  --ui-out-crit: #e8c33c; --ui-out-crit-ink: #14110e;     /* critical */
+
+  /* the six faction slots (app/tokens.css --b68-faction-*): a faction gets a slot from data, never here */
+  --ui-faction-1: #e0691e; --ui-faction-1-ink: #14110e;
+  --ui-faction-2: #3f62c4; --ui-faction-2-ink: #fbf8f1;
+  --ui-faction-3: #6e8f6a; --ui-faction-3-ink: #14110e;
+  --ui-faction-4: #c9348c; --ui-faction-4-ink: #fbf8f1;
+  --ui-faction-5: #6e8a8c; --ui-faction-5-ink: #14110e;
+  --ui-faction-6: #e8c33c; --ui-faction-6-ink: #14110e;
+
+  /* faces (the names index.html gives them; the look book has none, so the stack follows) */
+  --ui-font-poster: var(--font-poster, "Archivo Compressed", Impact, "Arial Narrow", sans-serif);
+  --ui-font-cond: var(--font-cond, "Archivo Condensed", "Arial Narrow", sans-serif);
+  --ui-font-text: var(--font-text, "GT America", Helvetica, Arial, sans-serif);
+  --ui-font-mono: var(--font-mono, "Space Mono", ui-monospace, Menlo, monospace);
+
+  /* borders and the two radii (parts.json "radii"): square-cut controls, round chips and dots */
+  --ui-hairline: 1px solid var(--ui-line);
+  --ui-rule: 2px solid var(--ui-ink);
+  --ui-radius: 2px;
+  --ui-radius-pill: 999px;
+  --ui-focus-ring: 2px solid var(--ui-focus);
+
+  /* motion: 120, 200 and 320 ms, and the cut (reduced motion makes every one a cut, below) */
+  --ui-motion-quick: 120ms;
+  --ui-motion-base: 200ms;
+  --ui-motion-slow: 320ms;
+  --ui-motion-cut: 0ms;
+  --ui-ease: cubic-bezier(.2, 0, .1, 1);
+
+  /* six named layers on today's z-index ladder: sticky rows 5, menus and Find 60, the cue toast 9999, Blank 2147483000 */
+  --ui-layer-base: 1;
+  --ui-layer-sticky: 5;
+  --ui-layer-popover: 60;
+  --ui-layer-dialog: 70;
+  --ui-layer-toast: 9999;
+  --ui-layer-alarm: 2147483000;
+
+  /* density: desk, in px */
+  --ui-type-label: 12px;
+  --ui-type-body: 14px;
+  --ui-type-lead: 16px;
+  --ui-type-title: 28px;
+  --ui-type-display: 40px;
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-5: 24px;
+  --ui-space-6: 32px;
+  --ui-control: 32px;
+}
+
+/* the stored theme (the footer's Paper and Night: index.html's b68.theme) */
+:root[data-kit~="desk"][data-theme="light"], :root[data-kit~="stage"][data-theme="light"], :root[data-kit~="phone"][data-theme="light"] { color-scheme: light; }
+:root[data-kit~="desk"][data-theme="dark"], :root[data-kit~="stage"][data-theme="dark"], :root[data-kit~="phone"][data-theme="dark"] { color-scheme: dark; }
+/* a scope on a page with no kit: Paper, unless a data-ui-theme says Night (on a kit page it inherits the page's theme) */
+:where(:root:not([data-kit])) [data-ui-scope] { color-scheme: light; }
+/* a container's own theme, whatever the page's */
+:root[data-kit~="desk"] [data-ui-theme="paper"], :root[data-kit~="stage"] [data-ui-theme="paper"], :root[data-kit~="phone"] [data-ui-theme="paper"],
+[data-ui-scope][data-ui-theme="paper"], [data-ui-scope] [data-ui-theme="paper"] { color-scheme: light; }
+:root[data-kit~="desk"] [data-ui-theme="night"], :root[data-kit~="stage"] [data-ui-theme="night"], :root[data-kit~="phone"] [data-ui-theme="night"],
+[data-ui-scope][data-ui-theme="night"], [data-ui-scope] [data-ui-theme="night"] { color-scheme: dark; }
+
+/* density: distance, read from 1.5 m, in the iPad's existing vmin steps (app/tokens.css --b68-t-*, display.css spacing) */
+:root[data-kit~="desk"][data-density="distance"], :root[data-kit~="stage"][data-density="distance"], :root[data-kit~="phone"][data-density="distance"],
+:root[data-kit~="desk"] [data-density="distance"], :root[data-kit~="stage"] [data-density="distance"], :root[data-kit~="phone"] [data-density="distance"],
+[data-ui-scope][data-density="distance"], [data-ui-scope] [data-density="distance"] {
+  --ui-type-label: 3.4vmin;
+  --ui-type-body: 4.4vmin;
+  --ui-type-lead: 6vmin;
+  --ui-type-title: 9vmin;
+  --ui-type-display: 13vmin;
+  --ui-space-1: .5vmin;
+  --ui-space-2: 1vmin;
+  --ui-space-3: 1.6vmin;
+  --ui-space-4: 2vmin;
+  --ui-space-5: 3vmin;
+  --ui-space-6: 4vmin;
+  --ui-control: max(44px, 7vmin);
+}
+/* a desk container inside a distance page */
+:root[data-kit~="desk"] [data-density="desk"], :root[data-kit~="stage"] [data-density="desk"], :root[data-kit~="phone"] [data-density="desk"],
+[data-ui-scope][data-density="desk"], [data-ui-scope] [data-density="desk"] {
+  --ui-type-label: 12px;
+  --ui-type-body: 14px;
+  --ui-type-lead: 16px;
+  --ui-type-title: 28px;
+  --ui-type-display: 40px;
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-5: 24px;
+  --ui-space-6: 32px;
+  --ui-control: 32px;
+}
+
+/* reduced motion means a cut */
+@media (prefers-reduced-motion: reduce) {
+  :root[data-kit~="desk"], :root[data-kit~="stage"], :root[data-kit~="phone"], :where(:root:not([data-kit])) [data-ui-scope] {
+    --ui-motion-quick: 0ms;
+    --ui-motion-base: 0ms;
+    --ui-motion-slow: 0ms;
+  }
+}
