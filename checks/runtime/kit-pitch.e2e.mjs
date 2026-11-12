@@ -126,6 +126,22 @@ try {
     cards: [...s.querySelectorAll('.kp-card')].map((c) => { const k = c.querySelector('[data-kbl="pkeep"]'); return { kp: c.getAttribute('data-kp'), kind: c.getAttribute('data-pkind'), word: c.querySelector('.kp-kind b').textContent,
       line: c.querySelector('.kp-text').textContent, why: (c.querySelector('.kp-why') || {}).textContent || '', kept: k ? k.getAttribute('aria-pressed') : '' }; }) })));
   const rackLine = (p) => p.evaluate(() => { const f = document.querySelector('#gm-rackf'), l = document.querySelector('#kp-rack .kp-rack-line'); return f && !f.hidden && l ? l.textContent : ''; });
+  /* a line is not cut when its box holds all of it */
+  /* the line's box (.kp-line on the desk, the old .as-text off it) is not clamped and does not hide what overflows, and the whole text sits inside its card */
+  const uncut = (p) => p.$$eval('#as-list .kp-card', (l) => l.map((c) => {
+    const t = c.querySelector('.kp-line') || c.querySelector('.kp-text'), s = getComputedStyle(t), rg = document.createRange(); rg.selectNodeContents(c.querySelector('.kp-text'));
+    const tb = rg.getBoundingClientRect(), cb = c.getBoundingClientRect();
+    const ok = (s.webkitLineClamp === 'none' || s.display !== '-webkit-box') && (s.overflow === 'visible' || t.scrollHeight <= t.clientHeight + 1) && tb.height > 0 && tb.bottom <= cb.bottom + 0.5 && c.scrollHeight <= c.clientHeight + 1;
+    return ok ? true : [s.display, s.webkitLineClamp, s.overflow, Math.round(tb.bottom), Math.round(cb.bottom)].join('/');
+  }));
+  /* the pitch cards wholly in view: inside the window and inside every scrolling box around them */
+  const inView = (p) => p.$$eval('#as-list .kp-card', (l) => l.filter((c) => {
+    const r = c.getBoundingClientRect(); if (!r.height || r.top < 0 || r.bottom > innerHeight + 0.5) return false;
+    for (let e = c.parentElement; e && e !== document.body; e = e.parentElement) { const o = getComputedStyle(e).overflowY; if (o === 'auto' || o === 'scroll' || o === 'hidden') { const b = e.getBoundingClientRect(); if (r.top < b.top - 0.5 || r.bottom > b.bottom + 0.5) return false; } }
+    return true; }).length);
+  /* the Rack's one-line summary in its heading, when it is in view and on top */
+  const sumShown = (p) => p.evaluate(() => { const e = document.querySelector('#gm-rackf:not([hidden]) #kp-rack-sum'); if (!e) return ''; const r = e.getBoundingClientRect(); if (!r.width || r.top < 0 || r.bottom > innerHeight) return '';
+    const h = document.elementFromPoint(r.left + Math.min(20, r.width / 2), r.top + r.height / 2); return h && (h === e || e.contains(h)) ? e.textContent : ''; });
   const WORDS = { direction: 'Direction', complication: 'Complication', clue: 'Clue', npc_move: 'NPC move', cutaway: 'Cutaway' };
   const nows = (seen) => seen.ticks.filter((t) => t.pitchNow).length;
 
@@ -152,7 +168,11 @@ try {
     check(await p.evaluate(() => { const st = window.B68GmAssist.live()[0].ctl.state(); return st.cards.length === 1 && st.cards[0].seat === 'pitch' && st.cards[0].kind === 'idea'; }), 'the set is one card in the panel (seat pitch, kind idea): one pip, under the Idea filter');
     check((await rackLine(p)) === SET1.items[0].line, 'the Rack shows the newest pitch');
     await p.mouse.move(5, 5);
-    if (SHOTS) await p.waitForTimeout(1800);      /* the Now zone gives the set back to the feed after 1.5 s */
+    await p.waitForTimeout(1800);      /* the Now zone gives the set back to the feed after 1.5 s */
+    const oc = await uncut(p);
+    check(oc.length === 3 && oc.every((x) => x === true), 'the old desk: every pitch line reads whole (none cut): ' + JSON.stringify(oc));
+    seen.oldInView = await inView(p);
+    check(seen.oldInView >= 1, 'the old desk at 1366x768: ' + seen.oldInView + ' of 3 pitch cards wholly in view');
     await shot(p, 'olddesk-paper-1366');
 
     /* X: one pitch goes; Keep holds one */
@@ -201,13 +221,18 @@ try {
     check(await p.evaluate(() => document.querySelector('.gm-assist').getAttribute('data-state') !== 'closed'), 'Shift+A does not close the panel');
     await p.keyboard.press('a');
     await p.waitForFunction(() => document.querySelector('.gm-assist').getAttribute('data-state') === 'closed', null, { timeout: 3000 });
-    const b3 = nows(seen);
+    /* with the panel shut, Shift+A opens it (the answer is in view) and a second press never shuts it; the next Esc closes the panel, not PANIC */
+    const b3 = nows(seen), wd = seen.writes.length;
     await p.keyboard.press('Shift+A');
     await until(() => nows(seen) > b3, 4000);
-    check(nows(seen) === b3 + 1 && await p.evaluate(() => document.querySelector('.gm-assist').getAttribute('data-state') === 'closed'), 'with the panel shut, Shift+A asks and leaves it shut');
-    await openPanel(p);
+    check(nows(seen) === b3 + 1 && !!(await p.waitForFunction(() => document.querySelector('.gm-assist').getAttribute('data-state') !== 'closed', null, { timeout: 3000 }).catch(() => null)), 'with the panel shut, Shift+A asks and opens the panel');
+    await p.keyboard.press('Shift+A'); await sleep(400);
+    check(await p.evaluate(() => document.querySelector('.gm-assist').getAttribute('data-state') !== 'closed'), 'a second Shift+A leaves it open');
     const t0 = Date.now(); await p.keyboard.press('Escape');
-    check(!!(await p.waitForFunction(() => document.querySelector('.gm-assist').getAttribute('data-state') === 'closed', null, { timeout: 1500 }).catch(() => null)), 'Esc still closes the panel at once (' + (Date.now() - t0) + ' ms)');
+    check(!!(await p.waitForFunction(() => document.querySelector('.gm-assist').getAttribute('data-state') === 'closed', null, { timeout: 1500 }).catch(() => null)), 'then Esc closes the panel at once (' + (Date.now() - t0) + ' ms)');
+    await sleep(500);
+    const pan = seen.writes.slice(wd).filter((x) => x.u !== '/api/gm/assist/tick');
+    check(pan.length === 0, 'and that Esc was not PANIC: nothing written to the iPad' + (pan.length ? ': ' + JSON.stringify(pan) : ''));
 
     /* a pitch never acts */
     const all = seen.writes.filter((x) => x.u !== '/api/gm/assist/tick'), other = seen.writes.slice(w0).filter((x) => x.u !== '/api/gm/assist/tick');
@@ -243,7 +268,8 @@ try {
     check(m.length === 3 && m.every((x) => x.ui), 'the new desk: three kit cards');
     check(new Set(m.map((x) => x.edge)).size === 3, 'each kind its own edge: ' + m.map((x) => x.edge).join(' | '));
     check(m.every((x) => x.lineFs === 14 && x.whyFs === 12 && x.wordFs === 12), 'the line at 14 px, the word and the why-now at 12 px');
-    check(m.every((x) => x.h <= 84), 'compact: ' + m.map((x) => Math.round(x.h)).join(', ') + ' px');
+    const dc = await uncut(p);
+    check(dc.length === 3 && dc.every((x) => x === true), 'folded, every line reads whole (none cut): ' + m.map((x) => Math.round(x.h)).join(', ') + ' px tall ' + JSON.stringify(dc));
     const small = await p.evaluate(() => {
       let min = 99, where = '';
       for (const e of document.querySelectorAll('#as-panel *')) {
@@ -270,6 +296,11 @@ try {
     await tick(p, seen, SET2);
     await p.waitForFunction(() => document.querySelectorAll('#as-list .kp-set').length === 2, null, { timeout: 5000 });
     check((await rackLine(p)) === SET2.items[0].line, 'the Rack shows the newest pitch on the new desk');
+    const sum = await sumShown(p);
+    check(sum === 'Clue: ' + SET2.items[0].line, 'at 1366x768 the newest pitch is in view in the Rack heading: "' + sum + '"');
+    await p.mouse.move(5, 5);
+    seen.deskInView = await inView(p);
+    check(seen.deskInView >= 4, 'the new desk at 1366x768: ' + seen.deskInView + ' of 4 pitch cards wholly in view (four or more)');
     await p.mouse.move(5, 5);
     await p.evaluate(() => { const a = document.activeElement; if (a && a.blur) a.blur(); });
     await p.clock.fastForward(84000);
@@ -291,7 +322,8 @@ try {
       await openPanel(p);
       await p.mouse.move(5, 5);
       await shot(p, 'desk-' + theme + '-' + w);
-      check(true, theme + ' ' + w + 'x' + h + ' pictured');
+      const nv = await inView(p);
+      check(nv >= 4, theme + ' ' + w + 'x' + h + ' pictured: ' + nv + ' of 5 pitch cards wholly in view');
       await c.close();
     }
     check((await feat({ 'kit.desk': false })).status === 200, 'kit.desk off for the old desk at Night');

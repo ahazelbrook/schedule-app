@@ -30,7 +30,8 @@
      Keep / X       Keep pins a pitch past the fade (an unkept pitch goes when its set fades, 90 s in view, as an idea does on the desk); X dismisses
                     it, and Delete or Backspace on a focused pitch presses its X. A dismissed line goes back to B68Pitches.remember, so it is in
                     the next request's `seen` (B68Pitches already remembers every line shown). Nothing is sent or filed: no mark, no Moment.
-     Pitch now      a Pitch button in the panel's head, and Shift+A (gm-page.js asks pitchNow()): busy while it waits, one request at a time
+     Pitch now      a Pitch button in the panel's head, and Shift+A (gm-page.js asks pitchNow()), which opens the panel and never closes it, so
+                    the answer is in view and the next Esc closes the panel (not PANIC): busy while it waits, one request at a time
                     (B68Pitches.now() hands a second press the same promise). A 429 or a failure says so under the head.
      The Rack       rack(fold): the page's Blade fold under the Roll (#gm-rackf) shows the newest pitch still in the panel (or "pitching...").
    A pitch never acts: nothing here reaches the iPad, a phone or the display; nothing here writes to the GM state.
@@ -38,7 +39,8 @@
      attach(bridge)          a panel's bridge (assist-panel.js calls it at create when this file is already here)
      sync()                  every panel follows the desk and the pitches now (B68Kit.onChange, and B68Pitches.set, call it)
      on() -> bool            the desk is on and the kit is here           pitches() -> bool   B68Pitches is hooked (the setting is on)
-     pitchNow() -> bool      Pitch now (true: asked, or already asking)   rack(fold) -> bool  paint the Rack's pitch; true when it shows one
+     pitchNow() -> bool      Pitch now, and the panel opens (true: asked, or already asking)
+     rack(fold, alone) -> bool   paint the Rack's pitch (and, alone: nothing else in the Rack, a one-line summary in its heading); true when it shows one
      pure: EDGE, FADE_MS, WARN_MS, pressable(card, canUndo), fadeStep(ms, dt, held) -> { ms, phase: 'ok' | 'fading' | 'gone' },
            PKIND, pitchSet(res) -> { at, wake, items } | null, errWord(e) */
 (function (root, factory) {
@@ -141,8 +143,12 @@
       var tx = el('span', desk ? 'kp-text' : 'as-text kp-text', x.line);
       if (desk) {
         var line = el('span', 'kp-line'); line.appendChild(kind); line.appendChild(doc.createTextNode(' ')); line.appendChild(tx); fold.appendChild(line);
-        if (x.why) fold.appendChild(el('span', 'kp-why', x.why));
-      } else { fold.appendChild(kind); fold.appendChild(tx); }
+        if (x.why) { var wy = el('span', 'kp-why', x.why); wy.setAttribute('title', x.why); fold.appendChild(wy); }      /* folded it is one line; the whole of it on hover and when open */
+      } else {
+        /* the line is the pitch: gm.css cuts an open card's .as-text to two lines, so the old desk's line says it whole (inline, so no old sheet changes) */
+        tx.style.display = 'block'; tx.style.webkitLineClamp = 'unset'; tx.style.setProperty('line-clamp', 'none'); tx.style.overflow = 'visible';
+        fold.appendChild(kind); fold.appendChild(tx);
+      }
       var acts = el(desk ? 'span' : 'div', desk ? 'kp-side' : 'as-acts kp-side');
       if (!now) {
         acts.appendChild(btn({ label: x.kept ? 'Kept' : 'Keep', rank: 'quiet', cls: desk ? ['kp-keep'] : ['as-star', 'kp-keep'], pressed: !!x.kept, data: { kbl: 'pkeep', id: c.id, kp: String(i) },
@@ -492,8 +498,14 @@
   }
   function paintGos() { views.forEach(function (v) { try { v.paintGo(); } catch (e) { if (W && W.console) W.console.error(e); } }); }
   /* Pitch now (the head's button, Shift+A): one request at a time; true when it asked (or was already asking) */
+  /* Pitch now opens the panel and never closes it: the answer (or "pitching...", or what went wrong) is in view, and the next Esc closes the panel, not PANIC */
+  function openPanels() {
+    var A = W && W.B68GmAssist;
+    (A && typeof A.live === 'function' ? A.live() : []).forEach(function (b) { var c = b && b.ctl; if (c && typeof c.isOpen === 'function' && !c.isOpen() && typeof c.open === 'function') c.open(); });
+  }
   function pitchNow() {
     var P = W && W.B68Pitches; if (!pitches() || typeof P.now !== 'function') return false;
+    openPanels();
     if (busy) return true;
     busy = true; noteText = ''; paintGos(); paintRacks();
     var done = function (res) { busy = false; note(res && pitchSet(res) ? '' : 'Nothing new fits just now: Blade will pitch when the table moves on.'); paintRacks(); };
@@ -506,9 +518,20 @@
     for (var i = ORDER.length - 1; i >= 0; i--) { var s = SETS[ORDER[i]], l = live(s); if (l.length) return { set: s, x: l[0] }; }
     return null;
   }
-  function rack(fold) {
+  /* the fold's heading: when the Rack holds only a pitch, one line saying it (the fold's own summary is empty then), so at 1366x768, where the
+     Rack's body sits under the fold of the Roll column, the newest pitch still shows at a glance */
+  function rackSum(fold, n, alone) {
+    var doc = fold.ownerDocument, sm = doc.getElementById('kp-rack-sum'), head = fold.querySelector ? fold.querySelector('summary') : null;
+    var t = alone && n ? PKIND[n.x.kind] + ': ' + n.x.line : alone && busy ? 'pitching…' : '';
+    if (!t || !head) { if (sm && sm.parentNode) sm.parentNode.removeChild(sm); return; }
+    if (!sm) { sm = doc.createElement('span'); sm.id = 'kp-rack-sum'; sm.className = 'gm-rl-sum kp-rack-sum'; sm.style.flex = '1 1 0'; }      /* it takes the room left, so the heading's label never shrinks under it */
+    if (sm.textContent !== t) { sm.textContent = t; sm.setAttribute('title', t); }
+    if (sm.parentNode !== head) head.appendChild(sm);
+  }
+  function rack(fold, alone) {
     if (!fold || !fold.ownerDocument) return false;
     var doc = fold.ownerDocument, box = doc.getElementById('kp-rack'), n = pitches() ? newest() : null, show = pitches() && (busy || !!n);
+    rackSum(fold, show ? n : null, show && alone !== false);
     if (!show) { if (box && box.parentNode) box.parentNode.removeChild(box); return false; }
     var sig = busy && !n ? 'busy' : JSON.stringify([n.set.id, n.x.line, busy]);
     if (box && box.parentNode === fold && box.__kp === sig) return true;
@@ -531,7 +554,7 @@
   function paintRacks() {
     var doc = W && W.document; if (!doc || typeof doc.getElementById !== 'function') return;
     var f = doc.getElementById('gm-rackf'); if (!f) return;
-    var has = rack(f), rb = doc.getElementById('gm-rack'), own = !!(rb && rb.firstElementChild);
+    var rb = doc.getElementById('gm-rack'), own = !!(rb && rb.firstElementChild), has = rack(f, !own);
     var hid = !(has || own); if (f.hidden !== hid) f.hidden = hid;
   }
 

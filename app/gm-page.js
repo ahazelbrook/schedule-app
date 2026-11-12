@@ -5070,7 +5070,7 @@
   /* the Rack is the Blade fold under the card: there only while it holds the Fixer's lines or Voice; its summary says which */
   function rackFoldSync(r, vo) {
     var f = $q('#gm-rackf'), sm = $q('#gm-rack-sum'), R = W.B68GmRoll; if (!f) return;
-    var kp = !!(W.B68KitBlade && W.B68KitBlade.rack(f)); f.hidden = !(r || vo || kp);      /* KS19 (blade.pitches): the newest pitch shows here too (gm/kit/blade.js); with it off, as before */
+    var kp = !!(W.B68KitBlade && W.B68KitBlade.rack(f, !(r || vo))); f.hidden = !(r || vo || kp);      /* KS19 (blade.pitches): the newest pitch shows here too (gm/kit/blade.js); with it off, as before */
     var hitRow = r && r.hit && r.status === 'ready' && isObj(r.card) ? FX_ROWS.filter(function (x) { return x[0] === r.hit; })[0] : null, hitO = hitRow ? fxOf(r.card[r.hit]) : null;
     if (sm) sm.textContent = (r || vo) && R ? R.rackSummary({ fitted: r && r.status === 'ready' && r.ask ? str(r.ask.position) : '', pending: !!(r && r.status === 'pending'), error: !!(r && r.status === 'error'),
       hit: hitRow ? hitRow[1] + ' · ' + (hitO.lead || hitO.say) : '', voice: vo ? str(vo.who) : '' }) : '';
