@@ -1183,22 +1183,32 @@
   transition: background-color var(--ui-motion-quick) var(--ui-ease), color var(--ui-motion-quick) var(--ui-ease), border-color var(--ui-motion-quick) var(--ui-ease);
 }
 :where(:root[data-kit~="desk"]) :where(.btn, .gm-btn) { font-family: var(--ui-font-text); font-weight: 700; letter-spacing: .08em; }
-:where(:root[data-kit~="desk"]) :where(.btn, .gm-btn, .gm-desk, .gm-dtb, .gm-ipad-tile, .gm-mini button):hover { background: var(--ui-sunk); border-color: var(--ui-ink-faint); color: var(--ui-ink); }
-:where(:root[data-kit~="desk"]) :where(.btn, .gm-btn, .gm-dtb, .gm-ipad-tile):active { transform: none; box-shadow: none; }
-:where(:root[data-kit~="desk"]) :where(.btn.primary, .btn[aria-pressed="true"], .gm-dtb[aria-pressed="true"], .gm-ipad-tile[aria-pressed="true"], .gm-btn[aria-pressed="true"]) {
+:where(:root[data-kit~="desk"]) :where(.btn:hover, .gm-btn:hover, .gm-desk:hover, .gm-dtb:hover, .gm-ipad-tile:hover, .gm-mini button:hover) { background: var(--ui-sunk); border-color: var(--ui-ink-faint); color: var(--ui-ink); }
+:where(:root[data-kit~="desk"]) :where(.btn:active, .gm-btn:active, .gm-dtb:active, .gm-ipad-tile:active) { transform: none; box-shadow: none; }
+:where(:root[data-kit~="desk"]) :where(.btn.primary, .gm-dtb[aria-pressed="true"], .gm-ipad-tile[aria-pressed="true"], .gm-btn[aria-pressed="true"]) {
   border-color: var(--ui-ink); background: var(--ui-ink); color: var(--ui-on-ink);
 }
-:where(:root[data-kit~="desk"]) :where(.btn.primary, .btn[aria-pressed="true"]):hover { border-color: var(--ui-ink-soft); background: var(--ui-ink-soft); color: var(--ui-on-ink); }
+:where(:root[data-kit~="desk"]) :where(.btn.primary:hover) { border-color: var(--ui-ink-soft); background: var(--ui-ink-soft); color: var(--ui-on-ink); }
+/* ON: an old button that is pressed but not .primary (Off stage, Wide, a revealed name, a staged room, a pinned section, a started beat) has its
+   own look, never the ink slab: the old Cast pane pairs "Put on stage" (.primary) with "Off stage" (pressed), and the two must not look alike.
+   The sunk ground, an ink border and the active underline */
+:where(:root[data-kit~="desk"]) :where(.btn[aria-pressed="true"]:not(.primary), .btn[aria-pressed="true"]:not(.primary):hover) {
+  border-color: var(--ui-ink); background: var(--ui-sunk); color: var(--ui-ink); box-shadow: inset 0 -3px 0 var(--ui-accent);
+}
 :where(:root[data-kit~="desk"]) :where(.btn[disabled], .btn:disabled, .gm-btn:disabled) { border-style: dashed; border-color: var(--ui-ink-faint); background: transparent; color: var(--ui-ink-faint); opacity: 1; }
-:where(:root[data-kit~="desk"]) :where(.btn.bad) { border-color: var(--ui-alarm); background: transparent; color: var(--ui-alarm); }
 /* Quiet: text until hover (the place's Back, the close crosses) */
 :where(:root[data-kit~="desk"]) :where(.gm-pnext-back, .gm-x) { border-color: transparent; background: transparent; box-shadow: none; }
-:where(:root[data-kit~="desk"]) :where(.gm-pnext-back, .gm-x):hover { border-color: transparent; background: var(--ui-sunk); color: var(--ui-ink); }
+:where(:root[data-kit~="desk"]) :where(.gm-pnext-back:hover, .gm-x:hover) { border-color: transparent; background: var(--ui-sunk); color: var(--ui-ink); }
 :where(:root[data-kit~="desk"]) :where(.gm-pnext-back) { font-family: var(--ui-font-text); font-weight: 700; letter-spacing: .08em; color: var(--ui-ink-soft); }
-/* the place's next step sits at the column's foot under a hairline: a quiet row with its arrow, so the Roll's STAMP stays the column's one standout */
+/* the place's next step sits at the column's foot under a hairline. Under the Roll (#gm-roll: STAMP above it) it is a quiet row with its arrow, so
+   STAMP stays the column's one standout; in the other left columns (Preflight, the hard start, the crew: nothing stands out there) it is Standard */
 :where(:root[data-kit~="desk"]) :where(.gm-pnext) { border-top: var(--ui-hairline); }
-:where(:root[data-kit~="desk"]) :where(.gm-pnext-go, .gm-pnext-go.primary) { border-color: transparent; background: transparent; color: var(--ui-ink); }
-:where(:root[data-kit~="desk"]) :where(.gm-pnext-go, .gm-pnext-go.primary):hover { border-color: transparent; background: var(--ui-sunk); color: var(--ui-ink); }
+:where(:root[data-kit~="desk"]) :where(.gm-pnext-go, .gm-pnext-go.primary) { border-color: var(--ui-line); background: var(--ui-raised); color: var(--ui-ink); }
+:where(:root[data-kit~="desk"]) :where(.gm-pnext-go:hover, .gm-pnext-go.primary:hover) { border-color: var(--ui-ink-faint); background: var(--ui-sunk); color: var(--ui-ink); }
+:where(:root[data-kit~="desk"]) :where(#gm-roll > .gm-pnext .gm-pnext-go) { border-color: transparent; background: transparent; }
+:where(:root[data-kit~="desk"]) :where(#gm-roll > .gm-pnext .gm-pnext-go:hover) { border-color: transparent; background: var(--ui-sunk); }
+/* the Roll's "press a button" line: a tighter box, so at 1100 px it does not wrap under the column's foot */
+:where(:root[data-kit~="desk"]) :where(#gm-card > .gm-empty, #gm-roll .gm-empty) { padding: 8px 10px; }
 /* a pill that warns (a beat due, a beat late): its colour and its word stay */
 :where(:root[data-kit~="desk"]) :where(.gm-pill.warn, .gm-pill.gm-beat.due) { border-color: var(--ui-caution); }
 :where(:root[data-kit~="desk"]) :where(.gm-pill.gm-beat.late) { border-color: var(--ui-alarm); background: var(--ui-alarm); color: var(--ui-on-alarm); }
@@ -1209,7 +1219,7 @@
   font-family: var(--ui-font-text); font-weight: 700; letter-spacing: .08em;
   transition: background-color var(--ui-motion-quick) var(--ui-ease), color var(--ui-motion-quick) var(--ui-ease), border-color var(--ui-motion-quick) var(--ui-ease);
 }
-:where(:root[data-kit~="desk"]) :where(.chip):hover { background: var(--ui-sunk); border-color: var(--ui-ink-faint); color: var(--ui-ink); }
+:where(:root[data-kit~="desk"]) :where(.chip:hover) { background: var(--ui-sunk); border-color: var(--ui-ink-faint); color: var(--ui-ink); }
 :where(:root[data-kit~="desk"]) :where(.chip[aria-pressed="true"], .chip[aria-checked="true"], .chip[aria-selected="true"], .chip[aria-current="true"]) {
   border-color: var(--ui-ink); background: var(--ui-ink); color: var(--ui-on-ink);
 }
@@ -1219,7 +1229,7 @@
   :where(:root[data-kit~="desk"]) :where(body.gm-app #gm-prep .pp-rail .chip, body.gm-app #gm-rules .gs-jump .chip) {
     border: 0; border-left: 3px solid transparent; border-radius: 0; background: transparent; color: var(--ui-ink);
   }
-  :where(:root[data-kit~="desk"]) :where(body.gm-app #gm-prep .pp-rail .chip, body.gm-app #gm-rules .gs-jump .chip):hover { background: var(--ui-sunk); }
+  :where(:root[data-kit~="desk"]) :where(body.gm-app #gm-prep .pp-rail .chip:hover, body.gm-app #gm-rules .gs-jump .chip:hover) { background: var(--ui-sunk); }
   :where(:root[data-kit~="desk"]) :where(body.gm-app #gm-prep .pp-rail .chip[aria-current="true"], body.gm-app #gm-rules .gs-jump .chip[aria-current="true"]) {
     border-left-color: var(--ui-accent); background: var(--ui-sunk); color: var(--ui-ink);
   }
@@ -1228,7 +1238,7 @@
 /* Segmented: one sunk track, the options flat inside it, the chosen one inked */
 :where(:root[data-kit~="desk"]) :where(.seg) { gap: 2px; padding: 2px; border: 1px solid var(--ui-line); border-radius: var(--ui-radius); background: var(--ui-sunk); }
 :where(:root[data-kit~="desk"]) :where(.seg .chip, .seg .chip:last-child) { border: 0; border-radius: var(--ui-radius); background: transparent; color: var(--ui-ink-soft); }
-:where(:root[data-kit~="desk"]) :where(.seg .chip):hover { background: var(--ui-raised); color: var(--ui-ink); }
+:where(:root[data-kit~="desk"]) :where(.seg .chip:hover) { background: var(--ui-raised); color: var(--ui-ink); }
 :where(:root[data-kit~="desk"]) :where(.seg .chip[aria-pressed="true"], .seg .chip[aria-checked="true"], .seg .chip[aria-selected="true"]) { background: var(--ui-ink); color: var(--ui-on-ink); }
 
 /* Hint: the quiet line under a control */
@@ -1248,7 +1258,7 @@
 }
 :where(:root[data-kit~="desk"]) :where(#gm-page .gm-rl-fold > summary, #gm-page .gm-rl-fb, #gm-page .gm-rl-panel, #gm-page .gm-chip) { border: 1px solid var(--ui-line); background: var(--ui-raised); }
 :where(:root[data-kit~="desk"]) :where(#gm-page .gm-rl-panel) { border-top: 0; }
-:where(:root[data-kit~="desk"]) :where(#gm-page .gm-rl-fb):hover { background: var(--ui-sunk); }
+:where(:root[data-kit~="desk"]) :where(#gm-page .gm-rl-fb:hover) { background: var(--ui-sunk); }
 :where(:root[data-kit~="desk"]) :where(.gm-empty) { border: 1px dashed var(--ui-ink-faint); color: var(--ui-ink-soft); }
 :where(:root[data-kit~="desk"]) :where(.gm-card-h) { background: var(--ui-sunk); color: var(--ui-ink); border-bottom: var(--ui-hairline); }
 :where(:root[data-kit~="desk"]) :where(.gm-or-k) { background: transparent; color: var(--ui-ink-soft); font-family: var(--ui-font-text); font-weight: 700; padding-left: 0; }
@@ -1256,7 +1266,11 @@
 :where(:root[data-kit~="desk"]) :where(body.gm-app #gm-rules .gs > .gs-top) { border-right: var(--ui-hairline); }
 :where(:root[data-kit~="desk"]) :where(.pp-pin, .pp-doc .pp-beat, .gm-tn-input) { border: 1px solid var(--ui-line); background: var(--ui-raised); color: var(--ui-ink); box-shadow: none; }
 :where(:root[data-kit~="desk"]) :where(.pp-pin) { border-radius: var(--ui-radius); font-family: var(--ui-font-text); font-weight: 700; letter-spacing: .1em; }
-:where(:root[data-kit~="desk"]) :where(.pp-pin, .pp-doc .pp-beat):hover { background: var(--ui-sunk); border-color: var(--ui-ink-faint); }
+:where(:root[data-kit~="desk"]) :where(.pp-pin:hover, .pp-doc .pp-beat:hover) { background: var(--ui-sunk); border-color: var(--ui-ink-faint); }
+/* a pinned section, a started beat: the same ON look as an old pressed button */
+:where(:root[data-kit~="desk"]) :where(.pp-pin[aria-pressed="true"], .pp-pin[aria-pressed="true"]:hover, .pp-doc .pp-beat[aria-pressed="true"], .pp-doc .pp-beat[aria-pressed="true"]:hover) {
+  border-color: var(--ui-ink); background: var(--ui-sunk); color: var(--ui-ink); box-shadow: inset 0 -3px 0 var(--ui-accent);
+}
 :where(:root[data-kit~="desk"]) :where(h3.gm-band, .gs-h) {
   background: transparent; color: var(--ui-ink-soft); border-bottom: var(--ui-hairline);
   font-family: var(--ui-font-text); font-weight: 700; letter-spacing: .1em;
@@ -1296,7 +1310,7 @@
 :where(:root[data-kit~="desk"]) :where(.gm-assist .as-ap, .gm-assist .as-cogm, .gm-assist .as-pin) {
   border: 1px solid var(--ui-line); border-radius: var(--ui-radius); background: var(--ui-raised); color: var(--ui-ink); font-family: var(--ui-font-text); font-weight: 700;
 }
-:where(:root[data-kit~="desk"]) :where(.gm-assist .as-ap, .gm-assist .as-cogm, .gm-assist .as-pin):hover { background: var(--ui-sunk); border-color: var(--ui-ink-faint); }
+:where(:root[data-kit~="desk"]) :where(.gm-assist .as-ap:hover, .gm-assist .as-cogm:hover, .gm-assist .as-pin:hover) { background: var(--ui-sunk); border-color: var(--ui-ink-faint); }
 :where(:root[data-kit~="desk"]) :where(.gm-assist .as-pin[aria-pressed="true"]) { border-color: var(--ui-ink); background: var(--ui-ink); color: var(--ui-on-ink); }
 :where(:root[data-kit~="desk"]) :where(.gm-assist .as-cogm[aria-pressed="true"]) { border-color: var(--ui-ok); background: var(--ui-ok); color: var(--ui-on-ink); }
 :where(:root[data-kit~="desk"]) :where(.gm-assist .as-chip) {

@@ -321,7 +321,7 @@ if (!process.env.PW_MODULE) { console.log((failed ? 'FAIL' : 'PASS') + ' kit-ski
      5. colour: no orange but the active, the Primary, an outcome and a say line (each with a word or a shape); a hovered old button is not orange
      6. Night: no large light ground (a white flash); the page's own ground is dark
      7. nothing lost: every control the pane shows without the skin (the sheet blocked) it shows with it (in Paper: what shows does not hang on the theme)
-   Then: the Run view's boxed controls at 1366x768 in the whole window, quiet buttons not counted (25 or fewer), and with the setting off the
+   Then: ON is not the ink slab (a cast member on stage, Paper and Night, against one who is not; Prep's Wide when shown); the Run view's boxed controls at 1366x768 in the whole window, quiet buttons not counted (25 or fewer), and with the setting off the
    skin is not fetched and an old .btn keeps its old look. */
 const { chromium } = require(process.env.PW_MODULE);
 const { startDemo } = await import(new URL('../../scripts/kit-fingerprint.mjs', import.meta.url).href);
@@ -462,6 +462,44 @@ try {
   check(sum.orange.length === 0, '5. colour: no orange but the active, the Primary, an outcome and a say line' + show(sum.orange));
   check(sum.light.length === 0, '6. Night: no large light ground, the page dark' + show(sum.light));
   check(sum.lost.length === 0, '7. nothing lost: every control shown without the skin is shown with it' + show(sum.lost));
+
+  /* ON is not the ink slab (the review of #231): the Cast pane pairs "Put on stage" (.primary) with "Off stage" (pressed, not .primary); one
+     cast member on stage, her button must look unlike an unstaged row's at a glance, in Paper and in Night (its ground, and its border or its edge) */
+  {
+    const look = (page) => page.evaluate(() => {
+      const on = document.querySelector('#gm-npc [data-gm="npcstage"][aria-pressed="true"]'), off = document.querySelector('#gm-npc [data-gm="npcstage"][aria-pressed="false"]');
+      const s = (e) => { if (!e) return null; const c = getComputedStyle(e); return { bg: c.backgroundColor, border: c.borderTopColor, edge: c.boxShadow, text: e.textContent.trim() }; };
+      return { on: s(on), off: s(off) };
+    });
+    const A = await open('paper', 1366, 768, false); await ready(A.page);
+    await go(A.page, 'cast');
+    const first = await A.page.$('#gm-npc [data-gm="npcstage"][aria-pressed="false"]');
+    if (first) { await first.click(); await A.page.waitForSelector('#gm-npc [data-gm="npcstage"][aria-pressed="true"]', { timeout: 10000 }).catch(() => {}); }
+    for (const theme of ['paper', 'night']) {
+      const P = theme === 'paper' ? A : await open(theme, 1366, 768, false);
+      if (P !== A) { await ready(P.page); await go(P.page, 'cast'); }
+      await P.page.mouse.move(1, 760); await P.page.waitForTimeout(500);
+      const l = await look(P.page);
+      if (SHOTS) await P.page.screenshot({ path: path.join(SHOTS, 'cast-staged-' + theme + '-1366.png'), animations: 'disabled' });
+      check(!!(l.on && l.off) && l.on.bg !== l.off.bg && (l.on.border !== l.off.border || l.on.edge !== l.off.edge),
+        theme + ': a cast member on stage ("' + (l.on && l.on.text) + '": ' + (l.on && l.on.bg) + ', border ' + (l.on && l.on.border) + ', edge ' + (l.on && l.on.edge) + ') looks unlike one who is not ("' +
+        (l.off && l.off.text) + '": ' + (l.off && l.off.bg) + ', border ' + (l.off && l.off.border) + ')');
+      if (P !== A) await P.c.close();
+    }
+    const back = await A.page.$('#gm-npc [data-gm="npcstage"][aria-pressed="true"]');
+    if (back) { await back.click(); await A.page.waitForTimeout(800); }
+    /* the other old pressed buttons keep a pressed look too: Prep's Wide, on and off */
+    await go(A.page, 'prep');
+    const wide = await A.page.$('[data-gm="prep-wide"]');
+    if (wide && await wide.isVisible()) {
+      const before = await wide.evaluate((e) => getComputedStyle(e).backgroundColor);
+      await wide.click(); await A.page.waitForTimeout(500); await A.page.mouse.move(1, 760); await A.page.waitForTimeout(300);
+      const w = await A.page.$('[data-gm="prep-wide"]'), after = w ? await w.evaluate((e) => ({ bg: getComputedStyle(e).backgroundColor, p: e.getAttribute('aria-pressed') })) : null;
+      check(!!after && after.p === 'true' && after.bg !== before, 'Prep\'s Wide shows its pressed state (' + before + ' to ' + (after && after.bg) + ')');
+      if (w) await w.click();
+    } else console.log('   (Prep\'s Wide is not shown at this width: not checked)');
+    await A.c.close();
+  }
 
   /* the Run view's boxed controls, the whole window (kit-accept's count), quiet buttons apart */
   {
