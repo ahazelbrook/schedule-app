@@ -42,8 +42,8 @@ const PUT_AWAY_KEYS = /(?:\[panel [cso]\]|S \/ J \[panel j\]|\[find Enter\]|\[es
 export const KEYS_EXEMPT = [
   { name: 'KS06: the pinned stamp', reason: 'KS06 (PR #216) pins the stamped line above the Blade fold with kit.desk on, so leaving the Score (Ctrl+Right, F, a Find result) no longer hides #gm-stamp. Ruled intended 12/11',
     hit: /\[(place Control\+ArrowRight|focus f|find Enter)\]$/, off: /^hidden #gm-stamp$/ },
-  { name: 'KS07: the Screen, the Now zone and the tab put away', reason: 'KS07 (PR #214, ccd1010) hides the right-edge tab (#as-launch), the Now zone (#as-nowz, #as-now) and the Screen section (#as-screen, #as-sc-*) with kit.desk on, so A opens Blade without hiding the tab or showing them. Ruled intended 12/11',
-    hit: /\[assist a\]$/, off: /^(hidden #as-launch|shown #as-(nowz|now|screen|sc-[a-z]+))$/ },
+  { name: 'KS07: the Screen, the Now zone and the tab put away', reason: 'KS07 (PR #214, ccd1010) hides the right-edge tab (#as-launch), the Now zone (#as-nowz, #as-now) and the Screen section (#as-screen, #as-sc-*) with kit.desk on, so A opens Blade without hiding the tab or showing them. Shift+A with blade.pitches opens the same panel as A (KS19, #225). Ruled intended 12/11 (Shift+A 12/11)',
+    hit: /\[assist (?:a|Shift\+A)\]$/, off: /^(hidden #as-launch|shown #as-(nowz|now|screen|sc-[a-z]+))$/ },
   /* a load lands on whichever hit opens the page after it changed: any hit */
   { name: 'KS12.5: the polaroid list on load', reason: 'KS12.5: night.who clears the stored polaroid list on load (and writes the playing characters\' list while a session is open; disclosed in #212). Ruled intended 12/11',
     hit: /./, loadOn: /^[+~-] \/ambient\/doc\/polaroids(?:\/[^\s]*)?(?: |$)/ },
@@ -143,6 +143,10 @@ export function classCheck(offRes, onRes, exempt = CLASS_EXEMPT) {
   check(exA.ok && exA.exempted.length === 1, 'judge: a named exemption lets its own line go (KS07, A)');
   check(!judge(r('A [assist a]', ['shown #as-feed'], K(['as-feed'])), r('A [assist a]', [], K(['as-feed']))).ok, 'judge: the exemption lets nothing else go (A: #as-feed not shown)');
   check(!judge(r('Q [t q]', ['shown #as-screen'], K(['as-screen'])), r('Q [t q]', [], K(['as-screen']))).ok, 'judge: the exemption holds for its own key only');
+  const exSA = judge(r('Shift A [assist Shift+A]', ['hidden #as-launch', 'shown #as-nowz', 'shown #as-feed'], K(['as-launch', 'as-nowz', 'as-feed'])), r('Shift A [assist Shift+A]', ['shown #as-feed'], K(['as-launch', 'as-nowz', 'as-feed'])));
+  check(exSA.ok && exSA.exempted.length === 1, 'judge: KS07\'s put-away lines go for Shift+A too (it opens the same panel as A; KS19)');
+  check(!judge(r('Shift A [assist Shift+A]', ['shown #as-feed'], K(['as-feed'])), r('Shift A [assist Shift+A]', [], K(['as-feed']))).ok, 'judge: for Shift+A the exemption lets nothing else go (#as-feed not shown)');
+  check(!judge(r('Shift A [assist Shift+A]', ['shown #as-x-lost'], K(['as-x-lost'])), r('Shift A [assist Shift+A]', [], K([]))).ok, 'judge: Shift+A losing any other id is a failure');
   /* KS12.5: only the kit-on page's load writes under /ambient/doc/polaroids go; nothing else does */
   const pol = ['+ /ambient/doc/polaroids/0/id = "x"', '+ /ambient/doc/polaroids/0/cap = "X"'];
   const p1 = judge(r('1 [situation 1]', [], K([]), [], []), r('1 [situation 1]', [], K([]), [], pol));
