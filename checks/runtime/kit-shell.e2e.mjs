@@ -11,6 +11,7 @@
 //      the cue's Undo (a typed "Blade, risky, standard") undoes from the stack; the cue's Reveal question: Cancel reveals no one, Reveal does
 //   5. the dialogs (KS09.4): the three converted native confirms (Clear tonight's capture, Remove a card, Clear a beat's start time), each with
 //      Cancel (one by Esc, which is not PANIC) and Yes; no native dialog opens
+//  5b. the plain dialog (no showModal): Ctrl+K does not open Find behind it; one Esc closes it (not PANIC); then Ctrl+K opens Find
 //   6. the layers (KS09.5): the ladder in the six tokens (drawer < band < popover < Find < toast < Blank); Blank covers the band, a toast and the
 //      capture bar; PANIC's row stays on top of an open drawer
 //   7. the setting off mid-session: the old row, Menu and toast without a reload; no class the shell added is left on the page
@@ -98,9 +99,10 @@ try {
 
   const browser = await chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   const errors = [], dialogs = [];
-  async function open({ w = 1366, h = 768, theme = '', wantKit = true } = {}) {
+  async function open({ w = 1366, h = 768, theme = '', wantKit = true, init = null } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: w, height: h }, serviceWorkers: 'block' });
     await c.addInitScript((id) => { window.__B68_POLL_MS = 700; try { localStorage.setItem('b68.gm.prepNote', id); } catch (e) {} }, noteId);
+    if (init) await c.addInitScript(init);
     if (theme) await c.addInitScript({ content: 'try { localStorage.setItem("b68.theme", ' + JSON.stringify(theme === 'night' ? 'dark' : 'light') + '); } catch (e) {}' });
     const page = await c.newPage();
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -410,6 +412,27 @@ try {
     await page.click('#gm-prep .pp-beat[data-beat="' + beat + '"]');
     check(await answer('confirm') && !!(await until(async () => !(await started()), 4000)), 'and Clear clears it');
     check(dialogs.length === n0, 'no native dialog opened for the three converted sites');
+    await c.close();
+  }
+
+  /* ---- 5b. the plain dialog (a browser with no showModal): Ctrl+K waits behind it as every other key does; one Esc closes it, not PANIC ---- */
+  {
+    const { c, page } = await open({ init: () => { HTMLDialogElement.prototype.showModal = undefined; } });
+    await goPlace(page, 'score');
+    const st = () => page.evaluate(() => ({ plain: !!document.querySelector('.ui-dialog.is-plain'), find: !document.querySelector('#gm-find').hidden, open: window.B68GmEsc.list().filter((e) => e.open && e.kind === 'overlay').map((e) => e.id),
+      alarm: document.querySelector('#gm-band .gm-band-r2').getAttribute('data-alarm'), r: window.__ks03c && window.__ks03c.v }));
+    await page.evaluate(() => { window.__ks03c = undefined; window.B68Ui.confirm({ title: 'Clear the card rooms? (invented)' }).then((v) => { window.__ks03c = { v }; }); });
+    await page.waitForSelector('.ui-dialog.is-plain', { timeout: 3000 });
+    await page.keyboard.press('Control+k'); await page.waitForTimeout(300);
+    let s = await st();
+    check(s.plain && !s.find, 'a plain dialog: Ctrl+K does not open Find under its scrim ' + JSON.stringify(s));
+    await page.keyboard.press('Escape'); await page.waitForTimeout(300);
+    s = await st();
+    check(!s.plain && !s.find && s.r === false && s.open.length === 0 && s.alarm !== 'panic', 'one Esc closes it (its Cancel), nothing is left open behind it, and that Esc was not PANIC ' + JSON.stringify(s));
+    await blur(page); await page.keyboard.press('Control+k');
+    check(!!(await until(() => page.evaluate(() => !document.querySelector('#gm-find').hidden), 3000)), 'with the dialog gone, Ctrl+K opens Find');
+    await page.keyboard.press('Escape');
+    check(!!(await until(() => page.evaluate(() => document.querySelector('#gm-find').hidden), 3000)), 'and Esc closes Find');
     await c.close();
   }
 

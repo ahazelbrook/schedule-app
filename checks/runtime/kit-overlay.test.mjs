@@ -2,7 +2,7 @@
 //   node checks/runtime/kit-overlay.test.mjs                                  the file checks and the logic (no browser)
 //   KIT_OVERLAY_BROWSER=1 PW_MODULE=<playwright install> PW_CHANNEL=msedge [KIT_OVERLAY_PORT=10100] node checks/runtime/kit-overlay.test.mjs
 //                                                                             the same, then the real dialog, popover, toast stack and tooltip in a
-//                                                                             browser against a static page (a tiny server on KIT_OVERLAY_PORT, 10100 to 10149)
+//                                                                             browser against a static page (a tiny server on KIT_OVERLAY_PORT, default 10100: any free port)
 // No browser suite is registered for KS03, so the browser part lives here. It runs only with KIT_OVERLAY_BROWSER=1 (an exported PW_MODULE alone does not start a browser inside check:runtime), and says so when skipped.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -178,7 +178,6 @@ if (!PW) {
 } else {
   const { chromium } = require(PW);
   const PORT = Number(process.env.KIT_OVERLAY_PORT || 10100);
-  if (PORT < 10100 || PORT > 10149) throw new Error('KIT_OVERLAY_PORT must be 10100 to 10149 (this bundle\'s ports)');
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   /* the page: the kit's tokens, parts and overlay sheets, esc.js, ui.js, overlay.js, and a stand-in for the GM page's one Esc (gm-page.js onKey: a
@@ -221,7 +220,9 @@ if(E){var h=E.handle;E.handle=function(c){var r=h.call(E,c);window.handleLog.pus
   const browser = await chromium.launch({ channel: process.env.PW_CHANNEL || undefined, headless: true });
   try {
     const open = async (url = '/', opt = {}) => {
-      const ctx = await browser.newContext({ viewport: { width: 1100, height: 700 }, ...opt }), p = await ctx.newPage();
+      const { init, ...copt } = opt, ctx = await browser.newContext({ viewport: { width: 1100, height: 700 }, ...copt });
+      if (init) await ctx.addInitScript(init);
+      const p = await ctx.newPage();
       const errs = []; p.on('pageerror', (e) => errs.push(String(e))); p.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
       await p.goto('http://127.0.0.1:' + PORT + url); p.errs = errs; p.ctx = ctx;
       return p;
@@ -423,6 +424,19 @@ if(E){var h=E.handle;E.handle=function(c){var r=h.call(E,c);window.handleLog.pus
       assert.equal(await ev(() => window.undone), 1);
       await page.waitForFunction(() => document.querySelectorAll('.ui-toast').length === 0);
     });
+    await test('browser: Undo runs once: Enter pressed twice on the focused Undo of a leaving toast undoes one time (the cue\'s Undo and Yes come through here)', async () => {
+      await ev(() => {
+        window.undone = 0; B68Ui.toast({ text: 'Moved the Pelican Rooms clock', duration: 0, undo: () => { window.undone++; } });
+        document.querySelector('.ui-toast-stack').style.setProperty('--ui-motion-quick', '1500ms');   /* a long fade, so the second press finds it leaving */
+        document.querySelector('.ui-toast-undo').focus();
+      });
+      await page.keyboard.press('Enter');
+      assert.equal(await ev(() => [document.activeElement.getAttribute('data-ui-act'), document.querySelector('.ui-toast').classList.contains('is-leaving')]).then((x) => x.join()), 'undo,true', 'still focused, on its way out');
+      await page.keyboard.press('Enter');
+      assert.equal(await ev(() => window.undone), 1, 'the second Enter undid nothing');
+      await page.waitForFunction(() => document.querySelectorAll('.ui-toast').length === 0);
+      await ev(() => { document.querySelector('.ui-toast-stack').style.removeProperty('--ui-motion-quick'); });
+    });
     await test('browser: an error outlives an info, has a red edge, an Error label and an alert role, and stays until X; an info is paused while hovered', async () => {
       await ev(() => { B68Ui.toast({ text: 'Could not save', tone: 'error' }); B68Ui.toast({ text: 'Saved earlier', duration: 500 }); });
       assert.deepEqual(await ev(() => { const e = document.querySelector('.ui-toast--error'); return [e.getAttribute('role'), e.querySelector('.ui-toast-kind').textContent, !!e.querySelector('.ui-toast-timer')]; }), ['alert', 'Error', false]);
@@ -521,6 +535,34 @@ if(E){var h=E.handle;E.handle=function(c){var r=h.call(E,c);window.handleLog.pus
       assert.equal(await tips(), 0, 'a title is taken over on the desk only');
       assert.equal(await ev(() => document.getElementById('tipbtn').getAttribute('title')), 'Show on iPad');
       await ev(() => { document.documentElement.setAttribute('data-kit', 'desk'); });
+    });
+
+    await test('browser: a toast stack that moved into any open dialog (not only those of the kit) goes home when that dialog closes; a toast on its way out takes no clicks', async () => {
+      await ev(() => { const d = document.createElement('dialog'); d.id = 'foreign'; d.textContent = 'Another dialog'; document.body.appendChild(d); d.showModal(); B68Ui.toast({ text: 'Inside', duration: 0 }); });
+      assert.equal(await ev(() => document.querySelector('.ui-toast-stack').parentNode.id), 'foreign');
+      await ev(() => { document.getElementById('foreign').close(); });
+      await page.waitForFunction(() => document.querySelector('.ui-toast-stack').parentNode === document.body);   /* the close event is a task of its own */
+      assert.equal(await ev(() => document.querySelector('.ui-toast-stack').parentNode === document.body), true, 'home, though the kit did not open that dialog');
+      await ev(() => { document.getElementById('foreign').remove(); const t = document.querySelector('.ui-toast'); t.classList.add('is-leaving'); });
+      assert.equal(await ev(() => getComputedStyle(document.querySelector('.ui-toast.is-leaving')).pointerEvents), 'none');
+      await ev(() => { const s = B68Ui.toast.stack(); s.dismiss(s.shown()[0]); });
+    });
+    await test('browser: with no showModal (a plain fallback) the scrim cancels and Esc closes it through B68GmEsc even with the focus outside it', async () => {
+      const pp = await open('/', { init: () => { HTMLDialogElement.prototype.showModal = undefined; } });
+      const call = 'B68Ui.confirm({ title: "Go?", danger: true })';
+      const go = async () => { await ev(([c]) => { window.r = undefined; window.handleLog.length = 0; Function('return ' + c)().then((v) => { window.r = { v }; }); }, [call], pp); await pp.waitForSelector('.ui-dialog.is-plain'); };
+      await go();
+      assert.deepEqual(await ev(() => [document.querySelectorAll('dialog').length, document.querySelector('.ui-dialog').getAttribute('role'), !!document.querySelector('.ui-dialog-scrim')], null, pp), [0, 'dialog', true]);
+      await pp.mouse.click(3, 3);
+      await pp.waitForFunction(() => window.r !== undefined); assert.equal(await ev(() => window.r.v, null, pp), false, 'a click on the scrim cancels');
+      assert.equal(await ev(() => document.querySelectorAll('.ui-dialog, .ui-dialog-scrim').length, null, pp), 0);
+      await go(); await ev(() => { document.activeElement.blur(); }, null, pp);
+      await pp.keyboard.press('Escape');
+      await pp.waitForFunction(() => window.r !== undefined); assert.equal(await ev(() => window.r.v, null, pp), false, 'Esc closes it with the focus outside');
+      assert.deepEqual(await ev(() => window.handleLog, null, pp), ['closed:ui.dialog.1']);
+      assert.equal(await ev(() => window.panics, null, pp), 0, 'and it did not reach PANIC');
+      assert.deepEqual(pp.errs, []);
+      await pp.ctx.close();
     });
 
     /* ---- no key listener, and a page without an Esc owner ---- */
