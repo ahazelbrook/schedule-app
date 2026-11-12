@@ -10,7 +10,9 @@
 // How each is counted, so a later builder reads the same thing:
 //   boxed control    a visible button, [role=button], input, select, textarea or summary that touches the 1366x768 window and is drawn as a box: a border of 1 px or more in a
 //                    colour that shows, or a background that is not transparent, or a box shadow
-//   text             an element with text of its own that is drawn (not hidden, not zero-size, not screen-reader-only: clipped to 1 px); its computed font-size
+//   text             an element with text of its own that is drawn (not hidden, not zero-size, not screen-reader-only: clipped to 1 px); its computed font-size.
+//                    "Drawn" multiplies the opacity of the element and EVERY ancestor (0 under a display:none ancestor), so chrome a parent hides with opacity 0
+//                    (the old iPad chrome under kit.stage) is not counted. An idle kit.stage screen may draw no text at all: its iPad rows print "n/a idle".
 //   Blade card       an .as-card whose whole box is inside the open panel and the window (cards are invented, answered by the browser's own route: no key, no model)
 //   text height      font-size / window height; the median is by characters, so a long line counts more than a label
 //   contrast         the text colour against the nearest background behind it (translucent layers composited); text on an image or a gradient is counted as "not measured"
@@ -49,7 +51,11 @@ const MEASURE = {
     return { visible: all.length, onScreen: onScreen.length, boxedOnScreen: boxedOn.length, boxedTotal: all.filter(boxed).length, sample: boxedOn.slice(0, 6).map(name) };
   },
   text() {
-    const drawn = (e) => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return r.width > 1 && r.height > 1 && s.visibility !== 'hidden' && s.display !== 'none' && +s.opacity > 0 && !(s.position === 'absolute' && s.clip && s.clip !== 'auto'); };
+    /* shown: the opacity the element is really drawn at, its own times every ancestor's (the kit stage hides the old chrome with opacity 0 on a PARENT, so the
+       element's own opacity is not enough); 0 under a display:none ancestor. Visibility is the element's computed value, which a visibility:hidden ancestor
+       passes down (a child that sets visible again really is drawn). */
+    const shown = (e) => { let o = 1; for (let a = e; a; a = a.parentElement) { const cs = getComputedStyle(a); if (cs.display === 'none') return 0; o *= +cs.opacity; if (!(o > 0)) return 0; } return o; };
+    const drawn = (e) => { const r = e.getBoundingClientRect(), s = getComputedStyle(e); return r.width > 1 && r.height > 1 && s.visibility === 'visible' && shown(e) > 0 && !(s.position === 'absolute' && s.clip && s.clip !== 'auto'); };
     const out = [];
     for (const e of document.body.querySelectorAll('*')) {
       if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE'].includes(e.tagName) || e.closest('svg')) continue;
@@ -64,13 +70,15 @@ const MEASURE = {
     const parse = (c) => { const m = /rgba?\(([^)]+)\)/.exec(c); if (!m) return null; const p = m[1].split(/[ ,/]+/).filter(Boolean).map(parseFloat); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
     const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b); };
     const over = (top, under) => ({ r: top.r * top.a + under.r * (1 - top.a), g: top.g * top.a + under.g * (1 - top.a), b: top.b * top.a + under.b * (1 - top.a), a: 1 });
+    /* the same "really drawn" test as text(): every ancestor's opacity multiplied in, 0 under a display:none ancestor, the computed visibility */
+    const shown = (e) => { let o = 1; for (let a = e; a; a = a.parentElement) { const cs = getComputedStyle(a); if (cs.display === 'none') return 0; o *= +cs.opacity; if (!(o > 0)) return 0; } return o; };
     const out = [];
     for (const e of document.body.querySelectorAll('*')) {
       if (['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE'].includes(e.tagName) || e.closest('svg')) continue;
       let own = ''; for (const n of e.childNodes) if (n.nodeType === 3) own += n.nodeValue;
       own = own.trim(); if (!own) continue;
       const r = e.getBoundingClientRect(), s = getComputedStyle(e);
-      if (r.width <= 1 || r.height <= 1 || s.visibility === 'hidden' || s.display === 'none' || +s.opacity === 0 || r.right <= 0 || r.bottom <= 0 || r.left >= innerWidth || r.top >= innerHeight) continue;
+      if (r.width <= 1 || r.height <= 1 || s.visibility !== 'visible' || !(shown(e) > 0) || r.right <= 0 || r.bottom <= 0 || r.left >= innerWidth || r.top >= innerHeight) continue;
       let fg = parse(s.color), layers = [], image = false;
       for (let a = e; a; a = a.parentElement) {
         const cs = getComputedStyle(a);
@@ -180,28 +188,36 @@ try {
     if (state === 'stamp') await page.waitForSelector('.dp-ov-stamp, .dp-ov-report, [class*="dp-ov-"]', { timeout: 15000 }).catch(() => {});
     await page.waitForTimeout(2500);
     const t = await page.evaluate(MEASURE.text), k = await page.evaluate(MEASURE.contrast);
+    /* the new stage (kit.stage) puts no chrome on the idle screen by design, so an idle stage may draw no text at all: that row is "n/a idle", never a crash
+       and never a pass by default (see the checks below) */
+    const stageOn = await page.evaluate(() => /(^|\s)stage(\s|$)/.test(document.documentElement.getAttribute('data-kit') || ''));
     const H = 768, px = t.map((x) => x.px), med = median(t);
     const measured = k.filter((x) => x.ratio !== null), low = measured.filter((x) => x.ratio < 4.5);
-    rows.push({ state, min: Math.min(...px), med, n: t.length, k, measured, low });
-    note('4. iPad ' + state + ' (1024x768): median text ' + num(med) + ' px = ' + num((med / H) * 100) + '% of the height, smallest ' + Math.min(...px) + ' px = ' + num((Math.min(...px) / H) * 100) + '%, largest ' + Math.max(...px) + ' px (' + t.length + ' text elements)   target 3.3% (25.3 px) or more');
-    note('5. iPad ' + state + ': contrast, ' + measured.length + ' measured, ' + (k.length - measured.length) + ' on an image or a gradient (not measured); lowest ' + (measured.length ? Math.min(...measured.map((x) => x.ratio)) : 'n/a') + ':1, ' + low.length + ' under 4.5:1   target 4.5:1 or more');
+    rows.push({ state, stageOn, min: t.length ? Math.min(...px) : null, med, n: t.length, k, measured, low });
+    if (!t.length) note('4. iPad ' + state + ' (1024x768): no visible text (n/a ' + state + '; kit.stage ' + (stageOn ? 'on' : 'off') + ')   target 3.3% (25.3 px) or more');
+    else note('4. iPad ' + state + ' (1024x768): median text ' + num(med) + ' px = ' + num((med / H) * 100) + '% of the height, smallest ' + Math.min(...px) + ' px = ' + num((Math.min(...px) / H) * 100) + '%, largest ' + Math.max(...px) + ' px (' + t.length + ' text elements)   target 3.3% (25.3 px) or more');
+    note('5. iPad ' + state + ': contrast, ' + measured.length + ' measured, ' + (k.length - measured.length) + ' on an image or a gradient (not measured); lowest ' + (measured.length ? Math.min(...measured.map((x) => x.ratio)) + ':1' : 'n/a') + ', ' + low.length + ' under 4.5:1   target 4.5:1 or more');
     if (low.length) note('   under 4.5:1: ' + low.slice(0, 5).map((x) => x.name + ' "' + x.text + '" ' + x.ratio).join('; '));
     await c.close();
   }
   await api('PATCH', '/gm/ambient', { overlay: null });
+  /* a row with no visible text is acceptable ONLY for the idle screen with kit.stage on; the stamp must always draw text, and so must the old (stage off) idle
+     screen, whose chrome is really there. The target rows below are judged on the rows that drew text; an empty row prints "n/a". */
+  const emptyOk = (r) => r.n > 0 || (r.state === 'idle' && r.stageOn);
+  const drew = rows.filter((r) => r.n > 0);
 
   /* what was measured, as pass or fail only for "could it be measured" (and the targets when KIT_ACCEPT_HARD=1) */
   check(boxed && boxed.onScreen > 0, 'the Run view was measured');
   check(minPx !== null && Number.isFinite(minPx), 'the GM page text was measured');
   check(blade && blade.cards > 0, 'the Blade panel showed the cards it was given (' + (blade ? blade.cards : 0) + ')');
-  check(rows.every((r) => r.n > 0), 'the iPad was measured, idle and with a stamp up');
+  check(rows.length === 2 && rows.every(emptyOk) && drew.some((r) => r.state === 'stamp'), 'the iPad was measured, idle and with a stamp up (' + rows.map((r) => r.state + ' ' + (r.n ? r.n + ' text elements' : 'no visible text')).join(', ') + ')');
   console.log('targets: ' + (HARD ? 'HARD (a miss fails)' : 'reports only until KS20 makes them hard (KIT_ACCEPT_HARD=1)'));
   const targets = [
     ['boxed controls on Run, 1366x768', boxed.boxedOnScreen <= 25, boxed.boxedOnScreen + ' (25 or fewer)'],
     ['smallest GM text (Run view, Blade panel)', Math.min(minPx, minBlade) >= 12, Math.min(minPx, minBlade) + ' px (12 or more)'],
     ['Blade cards visible at once', blade.whole >= 4, blade.whole + ' (4 or more)'],
-    ['iPad text height (median)', rows.every((r) => r.med / 768 >= 0.033), rows.map((r) => num((r.med / 768) * 100) + '% ' + r.state).join(', ') + ' (3.3% or more)'],
-    ['lowest iPad text contrast', rows.every((r) => r.low.length === 0), rows.map((r) => r.low.length + ' under 4.5:1 ' + r.state).join(', ')]
+    ['iPad text height (median)', drew.length > 0 && drew.every((r) => r.med / 768 >= 0.033), rows.map((r) => (r.n ? num((r.med / 768) * 100) + '% ' : 'n/a ') + r.state).join(', ') + ' (3.3% or more)'],
+    ['lowest iPad text contrast', drew.length > 0 && rows.every((r) => r.low.length === 0), rows.map((r) => (r.n ? r.low.length + ' under 4.5:1 ' : 'n/a ') + r.state).join(', ')]
   ];
   for (const [name, ok, what] of targets) { console.log((ok ? 'MET  ' : 'MISS ') + name + ': ' + what); if (HARD && !ok) failed++; }
 } catch (e) {

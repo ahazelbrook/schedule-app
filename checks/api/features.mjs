@@ -57,6 +57,12 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const sorted = (o) => Object.fromEntries(Object.keys(o || {}).sort().map((k) => [k, o[k]]));
 const sameMap = (a, b) => same(sorted(a), sorted(b));
 const NON_SETTINGS = Features.publicIds().filter((i) => !Features.isSetting(i));
+/* A setting whose surface is 'gm' (kit.desk, night.who, blade.pitches) lives in GM state and is never served to a phone or the iPad: it is ABSENT from a served
+   map, not false. The display and phone settings are served as stored. */
+const PUBLIC_SETTINGS = Features.settings().filter((s) => s.surface !== 'gm').map((s) => s.id);
+const GM_SETTINGS = Features.settings().filter((s) => s.surface === 'gm').map((s) => s.id);
+/* a served map with every setting off: each display and phone setting false, each GM-surface setting not there at all (served at all, true or false, fails) */
+const servedAllOff = (m) => PUBLIC_SETTINGS.every((i) => m[i] === false) && GM_SETTINGS.every((i) => !(i in m));
 
 async function main() {
   // in-process: the registry the Worker bundles is the one the page reads
@@ -69,6 +75,9 @@ async function main() {
       expect(NON_SETTINGS.every((i) => m[i] === true) && !('phoneCards' in m), 'nothing stored: every non-setting ON, no setting: ' + JSON.stringify(m));
     }
     expect(parseFeatures('{"phoneCards":false,"zzz":true}').phoneCards === false && !('zzz' in parseFeatures('{"zzz":true}')), 'a stored setting is served as it is; junk never');
+    expect(PUBLIC_SETTINGS.length > 0 && GM_SETTINGS.length > 0, 'the registry has both kinds of setting: public ' + PUBLIC_SETTINGS + ', GM ' + GM_SETTINGS);
+    const gmOn = {}; GM_SETTINGS.forEach((i) => { gmOn[i] = true; });
+    expect(same(cleanFeatures(gmOn), {}) && GM_SETTINGS.every((i) => !(i in servedFeatures(gmOn))), 'a GM-surface setting is never stored or served: ' + JSON.stringify(servedFeatures(gmOn)));
     Features.register({ id: 'test.gmonly', label: 'T', surface: 'gm', stage: 'spine', default: false, saturday: 'off', doc: 'd' });
     try {
       expect(same(cleanFeatures({ 'test.gmonly': true, phoneCards: true }), { phoneCards: true }), 'a registered GM-only id is dropped too');
@@ -161,19 +170,31 @@ async function main() {
     expect(p2.json.features['fx.off'] === false && p2.json.features['room.music'] === true, 'fx.off off, room.music on: ' + JSON.stringify(p2.json.features));
   });
 
-  await step('the old All off (an older page writing every id false): the settings read off and every other display and phone feature is still ON; null removes the stored map and the served one stays', async () => {
+  await step('the old All off (an older page writing every id false): the display and phone settings read off, the GM-surface settings are not served at all, and every other display and phone feature is still ON; null removes the stored map and the served one stays', async () => {
     const ids = Features.publicIds();
     const off = {}; ids.forEach((i) => { off[i] = false; });
     const r = await call('PATCH', '/api/campaign', { user: GM, body: { features: off } });
     expect(r.status === 200 && sameMap(await stored(), off), 'stored all false ' + JSON.stringify(await stored()));
     const g = await call('GET', '/api/campaign', { user: PLAYER }), p = await poll(IPAD);
     for (const m of [g.json.doc.features, p.json.features]) {
-      expect(NON_SETTINGS.every((i) => m[i] === true) && Features.settings().every((s) => m[s.id] === false), 'served: ' + JSON.stringify(m));
+      expect(NON_SETTINGS.every((i) => m[i] === true) && servedAllOff(m), 'served: ' + JSON.stringify(m));
     }
+    for (const t of [g.text, p.text]) for (const id of GM_SETTINGS) expect(!t.includes('"' + id + '"'), 'the GM-surface setting ' + id + ' reached a phone or the iPad');
     const n = await call('PATCH', '/api/campaign', { user: GM, body: { features: null } });
     expect(n.status === 200 && (await stored()) === undefined, 'null removes the stored map');
     const p2 = await poll(IPAD), g2 = await call('GET', '/api/campaign', { user: PLAYER });
     expect(sameMap(p2.json.features, servedFeatures({})) && sameMap(g2.json.doc.features, servedFeatures({})), 'and the served map is the one with nothing stored');
+  });
+
+  await step('a GM-surface setting written ON into the campaign document (kit.desk, night.who, blade.pitches) is dropped on the write and never served to a phone or the iPad', async () => {
+    const body = { phoneCards: false }; GM_SETTINGS.forEach((i) => { body[i] = true; });
+    const r = await call('PATCH', '/api/campaign', { user: GM, body: { features: body } });
+    expect(r.status === 200 && same(await stored(), { phoneCards: false }), 'stored ' + JSON.stringify(await stored()));
+    const g = await call('GET', '/api/campaign', { user: PLAYER }), p = await poll(IPAD);
+    for (const m of [g.json.doc.features, p.json.features]) expect(m.phoneCards === false && GM_SETTINGS.every((i) => !(i in m)), 'served: ' + JSON.stringify(m));
+    for (const t of [g.text, p.text]) for (const id of GM_SETTINGS) expect(!t.includes('"' + id + '"'), 'the GM-surface setting ' + id + ' reached a phone or the iPad');
+    const n = await call('PATCH', '/api/campaign', { user: GM, body: { features: null } });
+    expect(n.status === 200 && (await stored()) === undefined, 'null removes the stored map');
   });
 }
 
