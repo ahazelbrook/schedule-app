@@ -484,7 +484,10 @@
       var acts = el('span', 'ui-toast-acts');
       if (it.undo) {
         var u = part('button', { label: it.undo.label, rank: 'quiet', cls: 'ui-toast-undo', data: { 'ui-act': 'undo' } });
-        u.addEventListener('click', function () { var f = it.undo && it.undo.fn; core.dismiss(it); if (typeof f === 'function') f(); });
+        u.addEventListener('click', function () {   /* once: a toast on its way out (a second Enter on the focused button) runs nothing */
+          if (it.state !== 'shown') return;
+          var f = it.undo && it.undo.fn; core.dismiss(it); if (typeof f === 'function') f();
+        });
         acts.appendChild(u);
       }
       var x = part('button', { label: TIMES, rank: 'quiet', cls: 'ui-toast-x', attrs: { 'aria-label': 'Dismiss' }, data: { 'ui-act': 'dismiss' } });
