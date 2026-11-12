@@ -74,7 +74,7 @@
 }
 :where(:root[data-kit], [data-ui-scope]) .ui-toast-timer.is-still { animation: none; }
 :where(:root[data-kit], [data-ui-scope]) .ui-toast.is-paused .ui-toast-timer { animation-play-state: paused; }
-:where(:root[data-kit], [data-ui-scope]) .ui-toast.is-leaving { opacity: 0; transition: opacity var(--ui-motion-quick) var(--ui-ease); }
+:where(:root[data-kit], [data-ui-scope]) .ui-toast.is-leaving { opacity: 0; pointer-events: none; transition: opacity var(--ui-motion-quick) var(--ui-ease); }
 @keyframes ui-toast-in { from { opacity: 0; transform: translateY(var(--ui-space-2)); } to { opacity: 1; transform: none; } }
 @keyframes ui-toast-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 

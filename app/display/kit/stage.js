@@ -40,6 +40,10 @@
    lower plate with its timer. The map caption is mapCaption().
    S10, idle: the ambient scene held still (B68Fx's off, through the display page's suiteSync), the four slots, the lower plate. Nothing on it
    animates (kit-stage.e2e counts running animations in the page and in the scene frames).
+   THE SAFE SCENE (KS16 review): while the safe scene (PANIC's test card, Pure.SAFE) is in the ambient layer, the root carries
+   data-stage-safe and the idle places and the lower plate stand down (stage.css), so no clock, crew head, docked clock or last roll is left
+   on the PANIC screen. Read from the ambient layer's iframes (a MutationObserver: no new poll); it is set the moment the test card's frame
+   is made, before it has faded in.
    The stage's theme: data-ui-theme on the display root, 'night' unless the page's stored theme is Paper (data-theme="light"), and
    data-density="distance". Nothing here makes a request. */
 (function (root, factory) {
@@ -86,6 +90,7 @@
     return /(^|\s)dp-dot-bad(\s|$)/.test(cls) ? 'alarm' : /(^|\s)dp-dot-warn(\s|$)/.test(cls) ? 'caution' : '';
   };
   Pure.themeOf = function (pageTheme) { return pageTheme === 'light' ? 'paper' : 'night'; };
+  Pure.SAFE = 'testcard';
 
   /* ---------- the plate ---------- */
   function plate(o, doc) {
@@ -244,6 +249,15 @@
     observe(wire, wireSeen, { attributes: true, attributeFilter: ['class'], childList: true, characterData: true, subtree: true });
     wireSeen();
 
+    /* the safe scene (PANIC's test card) is in the ambient layer: the idle places stand down */
+    var ambEl = container.querySelector('.dp-ambient');
+    function safeSeen() {
+      var on = !!ambEl && !!ambEl.querySelector('iframe[data-scene="' + Pure.SAFE + '"]');
+      if (on) container.setAttribute('data-stage-safe', ''); else container.removeAttribute('data-stage-safe');
+    }
+    observe(ambEl, safeSeen, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-scene'] });
+    safeSeen();
+
     /* idle: the blank stage is up */
     function setIdle(on) { container.classList.toggle('stage-idle-on', !!on); }
     var lastStage = stagesEl ? stagesEl.lastElementChild : null;
@@ -305,7 +319,7 @@
         timers.splice(0).forEach(function (id) { clearLater(id); });
         offs.splice(0).forEach(function (f) { try { f(); } catch (e) { /* the rest still go */ } });
         [frame, flashEl, fault].forEach(function (e) { if (e.parentNode) e.parentNode.removeChild(e); });
-        ['data-ui-theme', 'data-density', 'data-stage-tx'].forEach(function (a) { container.removeAttribute(a); });
+        ['data-ui-theme', 'data-density', 'data-stage-tx', 'data-stage-safe'].forEach(function (a) { container.removeAttribute(a); });
         container.classList.remove('stage-chrome', 'stage-idle-on');
         Array.prototype.forEach.call(container.querySelectorAll('.stage-in-push, .stage-in-wipe, .stage-out-push, .stage-out-wipe'), function (e) {
           e.classList.remove('stage-in-push', 'stage-in-wipe', 'stage-out-push', 'stage-out-wipe');

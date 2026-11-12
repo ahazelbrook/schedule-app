@@ -39,6 +39,8 @@
 :root[data-kit~="stage"] .stage-frame.stage-lower-on .stage-slot-clocks,
 :root[data-kit~="stage"] .dp-root.dp-ov-up .stage-slot-roll,
 :root[data-kit~="stage"] .dp-root.dp-ov-up .stage-slot-clocks { visibility: hidden; }
+/* the safe scene (PANIC's test card) is up: the idle places and the lower plate stand down (stage.js sets data-stage-safe) */
+:root[data-kit~="stage"] .dp-root[data-stage-safe] .stage-idle { display: none; }
 /* the scene caption: the old wire strip stays in the page with its hooks, out of sight; its bulletins are on the lower plate */
 :root[data-kit~="stage"] .dp-root .dp-wire { display: none; }
 
