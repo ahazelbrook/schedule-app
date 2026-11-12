@@ -387,6 +387,11 @@
     var self = { box: function () { return boxEl; } };
     /* KS11 (night.who): Before's Start the night picks who is playing, so this control, which only sets the in-story clock, is Start the clock */
     function startName() { return typeof host.feature === "function" && host.feature("night.who") ? "Start the clock" : "Start the night"; }
+    /* KS08 (kit.desk): while the new desk is on, gm/kit/run.js (B68KitRun) draws the head, the toolbar, the board and the room from what kv() lends it; off, this file draws them */
+    function kit() { var K = typeof window !== "undefined" ? window.B68KitRun : null; return K && typeof K.on === "function" && K.on() ? K : null; }
+    function kv() { return { host: host, B: B, arm: arm, sel: sel, peekT: peekT, timeOpen: timeOpen, alarmOpen: alarmOpen, menuOpen: menuOpen, players: players, startName: startName(), menuItems: menuItems,
+      stepTime: stepTime, startMinutes: startMinutes, timer: function (x) { return timerLook(timerShown(x.rs.play, x.st), nowMs()); }, timePop: timePopHtml, alarmPop: alarmPopHtml, alarm: alarmHtml,
+      hasCard: hasCard, nameOfPc: nameOfPc, revealToggle: revealToggle, roomsShown: roomsShown, peopleIn: peopleIn, eventsIn: eventsIn, reachIn: reachIn, intelFor: intelFor, sayBox: sayBox, npcName: npcName, lightNow: lightNow }; }
     function closePops() { var was = timeOpen || alarmOpen || menuOpen; timeOpen = alarmOpen = menuOpen = false; return was; }
     /* the selected room: every change goes through here, so the Roll's "If it goes wrong" line can follow it (N4: the host's roomSelected(name),
        '' for none, when the host has it; without one the Roll follows the crew's room) */
@@ -436,6 +441,7 @@
     /* THE HEADER (N3): one line. The time and the beat (◀ ▶, the time opens the night's squares and the timer's rest), the beat timer, the ONE alarm
        readout, the countdown pie, Players, and ⋯. Before the night starts, the engagement roll row (crit / 6 / 4-5 / 1-3) in place of the time. */
     function headHtml(x) {
+      var K = kit(); if (K) return K.head(x, kv());
       var m = x.m, p = x.rs.play, st = x.st, nowT = timeOf(st), nowBeat = B.beatOf(p, nowT), h = '<div class="rv-headwrap"><div class="rv-head">';
       if (!m.started) {
         var opts = startMinutes(p);
@@ -505,6 +511,7 @@
     }
     /* the toolbar over the board and the map: the views, the map tools (the page's), and the stage group while it has something to say */
     function toolbarHtml(vs, v) {
+      var K = kit(); if (K) return K.toolbar(vs, v, kv());
       var tools = "", stg = "";
       try { tools = typeof host.toolsHtml === "function" ? str(host.toolsHtml()) : ""; } catch (e) { tools = ""; }
       try { stg = typeof host.stageHtml === "function" ? str(host.stageHtml()) : ""; } catch (e) { stg = ""; }
@@ -515,6 +522,7 @@
     /* what the board's tints mean (only when the page gives the states) */
     function legendHtml(v) {
       if (typeof host.roomStates !== "function" || (v.id !== "board" && v.id !== "map")) return "";
+      var K = kit(); if (K) return K.legend(v, kv());
       return '<p class="rv-legend" aria-label="What the players’ map shows of each room"><span class="rv-lg k-dark">dark</span><span class="rv-lg k-blueprint">blueprint</span><span class="rv-lg k-seen">seen</span>' +
         '<span class="rv-lg staged">staged</span><span class="rv-lg sel">selected</span></p>';
     }
@@ -527,6 +535,7 @@
         (inTray ? '<span class="rv-nm">' + esc(c.name) + "</span>" : "") + "</button>";
     }
     function boardView(box, ctx) {
+      var K = kit(); if (K) return K.board(box, ctx, kv());
       var m = ctx.model, h = "", byId = {}, states = {}, pin = "", thr = null;
       try { states = typeof host.roomStates === "function" ? host.roomStates() || {} : {}; } catch (e) { states = {}; }
       try { pin = typeof host.pinned === "function" ? str(host.pinned()) : ""; thr = typeof host.threat === "function" ? host.threat() : null; } catch (e) { pin = ""; thr = null; }
@@ -577,6 +586,7 @@
     }
     /* the rooms (the top of the right column): the room tapped, then every room a PC is in; who is there, what happens, the leads in reach, the prep note */
     function roomsSection(box, ctx) {
+      var K = kit(); if (K) return K.room(box, ctx, kv());
       var m = ctx.model, shown = roomsShown(m, ctx.sel), byId = {}, states = {};
       if (!shown.length) { box.innerHTML = '<h3 class="rv-sh">Rooms</h3><p class="rv-dim">Nobody is placed yet. Tap a room on the board or the map to see it, and act on it.</p>'; return; }
       list(ctx.play.people).forEach(function (p) { if (isObj(p)) byId[p.id] = p; });
@@ -666,6 +676,7 @@
         try { s.render(el, ctx); } catch (e) { el.textContent = "This section could not be drawn: " + (e && e.message || e); }
       });
       paintChip(box);
+      if (typeof window !== "undefined" && window.B68KitRun && typeof window.B68KitRun.frame === "function") window.B68KitRun.frame(box, !!kit());      /* KS08 (kit.desk): the pane's kit class follows the desk */
       /* the alarm's popover hangs under its readout */
       try { var ab = box.querySelector('.rv-head [data-rv="alarm"]'), ap = box.querySelector(".rv-alarmpop"); if (ab && ap && typeof ab.offsetLeft === "number" && ap.style) ap.style.left = Math.max(0, ab.offsetLeft - 2) + "px"; } catch (e) { /* the CSS places it */ }
       var pop = box.querySelector(".rv-npcpop");
@@ -1227,7 +1238,10 @@
   hooks.heard = heard5;
   /* ==== VV5 END ==== */
 
-  return { create: create, model: model, moveCrew: moveCrew, resetChange: resetChange, resetAsk: RESET_ASK, stepTime: stepTime, jumpTime: jumpTime, startMinutes: startMinutes, initials: initials, normRoomName: normRoomName,
+  /* KS08 (kit.desk): every view on screen draws again (gm/kit/run.js calls it when the desk turns on or off) */
+  function redrawAll() { live.slice().forEach(function (v) { try { v.rerender(); } catch (e) { /* one view failing never stops the rest */ } }); }
+
+  return { create: create, model: model, moveCrew: moveCrew, redrawAll: redrawAll, resetChange: resetChange, resetAsk: RESET_ASK, stepTime: stepTime, jumpTime: jumpTime, startMinutes: startMinutes, initials: initials, normRoomName: normRoomName,
     setPlayersChip: setPlayersChip, menuItems: menuItems, views: views, sections: sections, hooks: hooks,
     sortedStops: sortedStops, scanChanges: scanChanges, crewOrder: crewOrder, skipTarget: skipTarget, waySummary: waySummary,
     nowSegments: nowSegments, setWarnings: setWarnings, sayBox: sayBox, roomsShown: roomsShown, peopleIn: peopleIn, eventsIn: eventsIn, reachIn: reachIn, personNames: personNames, npcName: npcName, heardChange: heardChange, foldMoves: foldMoves,

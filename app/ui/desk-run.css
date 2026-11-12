@@ -1,1 +1,201 @@
-/* ui/desk-run.css: the new desk: the Run view (kit.desk). Registered as an empty stub by KS01.1 of the kit and stage build; KS08 fills it. In the kit-desk bundle, fetched only while its setting is on. */
+/* ui/desk-run.css: the Run view on the new desk (kit.desk, KS08 of the kit and stage build; gm/kit/run.js draws it). In the kit-desk bundle, fetched
+   only while the setting is on. Unlayered (the old sheets sit in layer old while the kit is on); no important flags. Every rule is under
+   :root[data-kit~="desk"] and names a krv- class, which only the kit puts on the page (its own markup, and the pane #gm-runv while the kit draws it),
+   so with the kit off nothing here can match. The kit's markup keeps the hook classes the old one carried (rv-card, rv-pc, rv-head, rv-btn...), so an
+   old rule still matches them from layer old: every property such a rule sets that would show is set again here. The z-index of the popovers is
+   KS09's ladder (desk-shell.css). Four sizes: 12 (labels), 14 (reading), 16 (a room's name), 28 (the site's title); mono for the time alone. */
+
+/* ---------- the pane: the head across, the board and the inspector under it ---------- */
+:root[data-kit~="desk"] .krv { color: var(--ui-ink); font: 400 var(--ui-type-body)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .krv > .rv-body { grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); gap: var(--ui-space-5); }
+:root[data-kit~="desk"] .krv > .rv-body.mapview { grid-template-columns: minmax(0, 1fr) minmax(280px, 300px); }
+:root[data-kit~="desk"] .krv > .rv-body > .rv-side { padding-left: var(--ui-space-4); border-left: var(--ui-hairline); }
+:root[data-kit~="desk"] .krv .rv-warn { margin: 0; color: var(--ui-alarm); font: 400 var(--ui-type-label)/1.3 var(--ui-font-text); }
+
+/* ---------- the head (KS08.1): one line ---------- */
+:root[data-kit~="desk"] .krv-headwrap { position: relative; }
+:root[data-kit~="desk"] .krv-head {
+  display: flex; flex-wrap: nowrap; align-items: center; gap: var(--ui-space-2); min-width: 0; margin: 0; padding: 0 0 var(--ui-space-2);
+  border: 0; border-bottom: var(--ui-hairline); border-radius: 0; background: transparent; box-shadow: none;
+}
+:root[data-kit~="desk"] .krv-head > * { flex: none; }
+:root[data-kit~="desk"] .krv-title {
+  flex: 0 6 auto; min-width: 4em; margin: 0 var(--ui-space-1) 0 0; overflow: hidden; color: var(--ui-ink); font: 400 var(--ui-type-title)/1 var(--ui-font-poster);
+  letter-spacing: .01em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap;
+}
+:root[data-kit~="desk"] .krv-clock { display: inline-flex; align-items: center; gap: 0; }
+:root[data-kit~="desk"] .krv-step { min-width: 24px; padding: 0 var(--ui-space-1); font-size: var(--ui-type-body); letter-spacing: 0; }
+:root[data-kit~="desk"] .krv-timebtn { gap: var(--ui-space-1); padding: 0 var(--ui-space-1); letter-spacing: 0; }
+:root[data-kit~="desk"] .krv-time { color: var(--ui-ink); font: 700 var(--ui-type-lead)/1 var(--ui-font-mono); font-variant-numeric: tabular-nums; }
+:root[data-kit~="desk"] .krv-caret { color: var(--ui-ink-soft); font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-beat {
+  margin-left: var(--ui-space-1); color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap;
+}
+:root[data-kit~="desk"] .krv-tgo { gap: var(--ui-space-1); padding: 0 var(--ui-space-2); letter-spacing: 0; }
+:root[data-kit~="desk"] .krv-tgl { display: inline-block; width: auto; height: auto; border: 0; font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-tgo output { min-width: 2.6em; color: var(--ui-ink); font: 700 var(--ui-type-lead)/1 var(--ui-font-mono); font-variant-numeric: tabular-nums; opacity: 1; text-align: left; }
+:root[data-kit~="desk"] .krv-tgo output.paused { color: var(--ui-ink-soft); }
+:root[data-kit~="desk"] .krv-tgo output.warn { color: var(--ui-accent-ink); }
+:root[data-kit~="desk"] .krv-tgo output.zero { color: var(--ui-alarm); }
+
+/* the clocks: a chip with its meter, the word and the count */
+:root[data-kit~="desk"] .krv-ck { flex: none; gap: 6px; min-height: 28px; padding: 0 var(--ui-space-2); }
+:root[data-kit~="desk"] .krv-ck > * { flex: none; }
+:root[data-kit~="desk"] .krv-ck .ui-meter { font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-ck .ui-clock { width: 18px; height: 18px; }
+:root[data-kit~="desk"] .krv-ckl, :root[data-kit~="desk"] .krv-ckv, :root[data-kit~="desk"] .krv-ckn {
+  font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap;
+}
+:root[data-kit~="desk"] .krv-ckv { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+:root[data-kit~="desk"] .krv-ckn { font-variant-numeric: tabular-nums; }
+:root[data-kit~="desk"] .krv-alarm.quiet { border-style: dashed; }
+:root[data-kit~="desk"] .krv-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+:root[data-kit~="desk"] .krv-hsp { flex: 1 1 0; min-width: 0; }
+:root[data-kit~="desk"] .krv-players { flex: 0 1 auto; min-width: 5em; max-width: max-content; padding: 0 var(--ui-space-2); overflow: hidden; border-color: var(--ui-line); color: var(--ui-ink-soft); text-overflow: ellipsis; white-space: nowrap; }
+:root[data-kit~="desk"] .krv-players[data-ok="1"] { border-color: var(--ui-ok); color: var(--ui-ink); }
+:root[data-kit~="desk"] .krv-more { min-width: var(--ui-control); padding: 0 var(--ui-space-2); font-size: var(--ui-type-lead); letter-spacing: 0; }
+
+/* before the night starts: the engagement results in place of the time */
+:root[data-kit~="desk"] .krv-start { display: flex; flex: 0 1 auto; flex-wrap: nowrap; align-items: center; gap: var(--ui-space-2); min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; }
+:root[data-kit~="desk"] .krv-startl { font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
+:root[data-kit~="desk"] .krv-dim { overflow: hidden; color: var(--ui-ink-soft); font-size: var(--ui-type-label); text-overflow: ellipsis; white-space: nowrap; }
+:root[data-kit~="desk"] .krv-startbtns { display: inline-flex; gap: var(--ui-space-1); }
+
+/* the popovers: ⋯ (the kit's menu), and the time and the alarm (today's markup, dressed) */
+:root[data-kit~="desk"] .krv-pop {
+  padding: var(--ui-space-2) var(--ui-space-3); border: var(--ui-hairline); border-radius: var(--ui-radius); background: var(--ui-raised); box-shadow: none;
+  color: var(--ui-ink); font: 400 var(--ui-type-body)/1.35 var(--ui-font-text);
+}
+:root[data-kit~="desk"] .krv-pop p, :root[data-kit~="desk"] .krv-pop .rv-poph { font-size: var(--ui-type-body); }
+:root[data-kit~="desk"] .krv-pop .rv-dim { color: var(--ui-ink-soft); font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-pop .rv-btn { min-height: 28px; padding: 0 var(--ui-space-2); border: var(--ui-hairline); border-radius: var(--ui-radius); background: var(--ui-raised); box-shadow: none; color: var(--ui-ink); font: 700 var(--ui-type-label)/1.1 var(--ui-font-text); }
+:root[data-kit~="desk"] .krv-menu:not([hidden]) { display: grid; gap: var(--ui-space-1); min-width: 260px; padding: var(--ui-space-1); }
+:root[data-kit~="desk"] .krv-menu .ui-menu { position: static; display: grid; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; box-shadow: none; }
+:root[data-kit~="desk"] .krv-menu:not([hidden]) { max-height: calc(100vh - 200px); overflow-y: auto; }
+:root[data-kit~="desk"] .krv-menu .ui-menu-item { justify-content: flex-start; min-height: 28px; text-align: left; }
+:root[data-kit~="desk"] .krv-mh, :root[data-kit~="desk"] .krv-live {
+  margin: var(--ui-space-1) var(--ui-space-2) 0; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.3 var(--ui-font-text); letter-spacing: .1em; text-transform: uppercase;
+}
+:root[data-kit~="desk"] .krv-live { padding: 0; border: 0; background: transparent; color: var(--ui-ink); letter-spacing: .04em; text-transform: none; }
+:root[data-kit~="desk"] .krv-live.live { color: var(--ui-accent-ink); }
+:root[data-kit~="desk"] .krv-hr { height: 0; margin: var(--ui-space-1) 0; border: 0; border-top: var(--ui-hairline); }
+
+/* ---------- tabs and tools (KS08.2) ---------- */
+:root[data-kit~="desk"] .krv-tools { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--ui-space-1) var(--ui-space-4); margin: 0; padding: 0; border-bottom: var(--ui-hairline); }
+:root[data-kit~="desk"] .krv-views { flex: none; border-bottom: 0; }
+:root[data-kit~="desk"] .krv-views .ui-tab { min-height: 0; }
+:root[data-kit~="desk"] .krv-mtools { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--ui-space-1); margin-left: auto; padding: 0 0 var(--ui-space-1); border: 0; }
+:root[data-kit~="desk"] .krv-tool { min-height: 28px; padding: 0 var(--ui-space-2); font-size: var(--ui-type-label); letter-spacing: .08em; }
+:root[data-kit~="desk"] .krv-tool.glow { color: var(--ui-accent-ink); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
+:root[data-kit~="desk"] .krv-send { margin-left: var(--ui-space-1); }
+
+/* the legend: the swatches and their words */
+:root[data-kit~="desk"] .krv-legend { display: flex; flex-wrap: wrap; gap: var(--ui-space-1) var(--ui-space-4); margin: var(--ui-space-2) 0 0; color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.2 var(--ui-font-text); }
+:root[data-kit~="desk"] .krv-lg { display: inline-flex; align-items: center; gap: var(--ui-space-2); }
+:root[data-kit~="desk"] .krv-lg .krv-sw { width: 18px; height: 12px; }
+
+/* ---------- the rooms (KS08.3): rows by floor ---------- */
+:root[data-kit~="desk"] .krv .rv-view { gap: var(--ui-space-3); }
+:root[data-kit~="desk"] .krv-floor { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; margin: 0; }
+:root[data-kit~="desk"] .krv-floorname {
+  margin: 0; padding: var(--ui-space-1) 0; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .12em; text-transform: uppercase;
+}
+:root[data-kit~="desk"] .krv-rooms { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0 var(--ui-space-5); align-content: start; }
+:root[data-kit~="desk"] .krv-room {
+  position: relative; display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: var(--ui-space-3); box-sizing: border-box;
+  min-width: 0; max-width: none; min-height: 52px; margin: 0; padding: var(--ui-space-2) var(--ui-space-2) var(--ui-space-2) var(--ui-space-3);
+  border: 0; border-radius: 0; outline: 0; background: transparent; box-shadow: none; color: var(--ui-ink); cursor: pointer;
+}
+/* the divider is drawn, not a border, so a row is not a boxed control */
+:root[data-kit~="desk"] .krv-room::after { content: ""; position: absolute; right: var(--ui-space-2); bottom: 0; left: var(--ui-space-3); border-bottom: var(--ui-hairline); pointer-events: none; }
+:root[data-kit~="desk"] .krv-room:hover { background: var(--ui-sunk); }
+:root[data-kit~="desk"] .krv-room:focus-visible { outline: var(--ui-focus-ring); outline-offset: -2px; }
+:root[data-kit~="desk"] .krv-room.is-selected { background: var(--ui-raised); }
+:root[data-kit~="desk"] .krv-room.is-selected::before { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 4px; background: var(--ui-accent); }
+:root[data-kit~="desk"] .krv-room.target { outline: 2px dashed var(--ui-accent-ink); outline-offset: -2px; background: var(--ui-sunk); }
+:root[data-kit~="desk"] .krv-rtext { display: grid; gap: 2px; min-width: 0; }
+:root[data-kit~="desk"] .krv-rname {
+  display: flex; align-items: center; gap: var(--ui-space-2); min-width: 0; overflow: hidden; color: var(--ui-ink); font: 700 var(--ui-type-lead)/1.2 var(--ui-font-text);
+  letter-spacing: 0; text-overflow: ellipsis; text-transform: none; white-space: nowrap;
+}
+:root[data-kit~="desk"] .krv-rsub { overflow-wrap: anywhere; color: var(--ui-ink-soft); font: 400 var(--ui-type-body)/1.3 var(--ui-font-text); white-space: normal; }
+:root[data-kit~="desk"] .krv-mark {
+  flex: none; padding: 1px var(--ui-space-1); border: 1px solid var(--ui-ink); border-radius: var(--ui-radius); background: transparent; color: var(--ui-ink);
+  font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .08em; text-transform: uppercase;
+}
+:root[data-kit~="desk"] .krv-mark.is-alarm { border-color: var(--ui-alarm); color: var(--ui-alarm); }
+
+/* the swatch: what the crew knows, as a shape (the word is in the line beside it) */
+:root[data-kit~="desk"] .krv-sw { display: block; box-sizing: border-box; width: 36px; height: 24px; border: 2px solid var(--ui-ink); border-radius: var(--ui-radius); }
+:root[data-kit~="desk"] .krv-sw.k-dark { border-color: var(--ui-line); background: light-dark(var(--ui-ink), var(--ui-sunk)); }
+:root[data-kit~="desk"] .krv-sw.k-blueprint { border-style: dashed; border-color: var(--ui-ink-soft); background: repeating-linear-gradient(135deg, var(--ui-ink-soft) 0 1px, transparent 1px 5px); }
+:root[data-kit~="desk"] .krv-sw.k-seen { border-color: var(--ui-ink); background: var(--ui-raised); }
+:root[data-kit~="desk"] .krv-sw.is-staged { outline: 2px dashed var(--ui-accent-ink); outline-offset: 2px; }
+
+/* the PCs' heads: in the room they are in; one armed is the active one (orange) */
+:root[data-kit~="desk"] .krv-heads { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ui-space-1); min-width: 0; }
+:root[data-kit~="desk"] .krv-pc {
+  position: relative; min-width: 28px; min-height: 28px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--ui-radius-pill);
+  background: var(--ui-ink); color: var(--ui-on-ink); font: 700 var(--ui-type-label)/1 var(--ui-font-text); letter-spacing: 0; cursor: grab;
+}
+:root[data-kit~="desk"] .krv-pc:hover { background: var(--ui-ink-soft); color: var(--ui-on-ink); }
+:root[data-kit~="desk"] .krv-pc.armed, :root[data-kit~="desk"] .krv-pc[aria-pressed="true"] { background: var(--ui-accent); color: var(--ui-on-accent); box-shadow: 0 0 0 2px var(--ui-surface), 0 0 0 4px var(--ui-accent); }
+:root[data-kit~="desk"] .krv-pc.moved::after {
+  content: "\2713"; position: absolute; top: -6px; right: -6px; width: 14px; height: 14px; border-radius: var(--ui-radius-pill); background: var(--ui-surface);
+  color: var(--ui-ok); font: 700 var(--ui-type-label)/14px var(--ui-font-text); text-align: center;
+}
+:root[data-kit~="desk"] .krv-pcname { width: auto; padding: 0 var(--ui-space-3); }
+:root[data-kit~="desk"] .krv-tray { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-2); margin: 0; padding: 0 0 var(--ui-space-2); border: 0; border-bottom: var(--ui-hairline); background: transparent; }
+:root[data-kit~="desk"] .krv-lab { margin: 0; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .12em; text-transform: uppercase; }
+:root[data-kit~="desk"] .krv-arm { display: flex; align-items: center; gap: var(--ui-space-2); margin: 0; padding: 0; border: 0; background: transparent; color: var(--ui-accent-ink); font: 700 var(--ui-type-body)/1.3 var(--ui-font-text); }
+:root[data-kit~="desk"] .krv-empty { color: var(--ui-ink-soft); }
+
+/* ---------- the inspector (KS08.4): the right side as one panel ---------- */
+:root[data-kit~="desk"] .krv > .rv-body > .rv-side { gap: var(--ui-space-4); }
+:root[data-kit~="desk"] .krv > .rv-body > .rv-side > .rv-sec { gap: var(--ui-space-1); padding: 0 0 var(--ui-space-3); border: 0; border-bottom: var(--ui-hairline); border-radius: 0; background: transparent; box-shadow: none; }
+:root[data-kit~="desk"] .krv-rm { display: grid; gap: var(--ui-space-2); min-width: 0; margin: 0; padding: 0; border: 0; }
+:root[data-kit~="desk"] .krv-eyebrow, :root[data-kit~="desk"] .krv-rm .krv-lab { margin: var(--ui-space-1) 0 0; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.25 var(--ui-font-text); letter-spacing: .12em; text-transform: uppercase; }
+:root[data-kit~="desk"] .krv-eyebrow { margin: 0; }
+:root[data-kit~="desk"] .krv-rmt { margin: 0; color: var(--ui-ink); font: 400 var(--ui-type-title)/1 var(--ui-font-poster); letter-spacing: .01em; text-transform: uppercase; }
+:root[data-kit~="desk"] .krv-rmz { display: block; margin-top: 2px; color: var(--ui-ink-soft); font: 400 var(--ui-type-body)/1.3 var(--ui-font-text); letter-spacing: 0; text-transform: none; }
+:root[data-kit~="desk"] .krv-kseg { display: flex; width: 100%; }
+:root[data-kit~="desk"] .krv-kseg .ui-seg-opt { flex: 1 1 0; min-width: 0; }
+:root[data-kit~="desk"] .krv-hint { margin: 0; padding: 0; border: 0; color: var(--ui-ink-soft); font: 400 var(--ui-type-label)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .krv-hint.is-staged { color: var(--ui-accent-ink); }
+:root[data-kit~="desk"] .krv-open { margin: 0; }
+:root[data-kit~="desk"] .krv-wrong { display: grid; gap: var(--ui-space-1); margin: 0; padding: 0; border: 0; }
+:root[data-kit~="desk"] .krv-wrong p { margin: 0; font: 400 var(--ui-type-body)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .krv-wrong .krv-lab { margin: 0 var(--ui-space-1) 0 0; }
+:root[data-kit~="desk"] .krv-wrong .ui-btn { min-height: 24px; padding: 0 var(--ui-space-1); font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-pcs { margin: 0; font: 700 var(--ui-type-body)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .krv-pcs .krv-lab { margin: 0 var(--ui-space-1) 0 0; }
+:root[data-kit~="desk"] .krv-ppl { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+:root[data-kit~="desk"] .krv-p { padding-left: 0; padding-right: 0; }
+:root[data-kit~="desk"] .krv-looks { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); margin: 0 0 var(--ui-space-2) 44px; }
+:root[data-kit~="desk"] .krv-looks .ui-btn { min-height: 24px; padding: 0 var(--ui-space-2); font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-npc { margin: 0; }
+:root[data-kit~="desk"] .krv-add { margin: 0; }
+:root[data-kit~="desk"] .krv-addsum { padding: var(--ui-space-1) 0; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.3 var(--ui-font-text); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+:root[data-kit~="desk"] .krv-padd { display: flex; align-items: flex-end; gap: var(--ui-space-2); margin: var(--ui-space-1) 0 0; padding: 0; border: 0; }
+:root[data-kit~="desk"] .krv-padd .ui-field { flex: 1 1 auto; min-width: 0; }
+:root[data-kit~="desk"] .krv-learn {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--ui-space-2); margin: 0; padding: var(--ui-space-2) 0 0; border: 0; border-top: var(--ui-hairline);
+  font: 400 var(--ui-type-body)/1.35 var(--ui-font-text);
+}
+:root[data-kit~="desk"] .krv-learnt { display: grid; gap: 2px; min-width: 0; color: var(--ui-ink); font-weight: 700; }
+:root[data-kit~="desk"] .krv-learnt small { font-weight: 400; }
+:root[data-kit~="desk"] .krv-learn .ui-btn { min-height: 28px; padding: 0 var(--ui-space-2); font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-told { font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-hap { display: grid; gap: var(--ui-space-1); margin: 0; font: 400 var(--ui-type-body)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .krv-rm .rv-say { margin: 0; padding: var(--ui-space-1) var(--ui-space-2); border: 0; border-left: 3px solid var(--ui-line); background: var(--ui-sunk); color: var(--ui-ink); font: 400 var(--ui-type-body)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .krv-rm .rv-saylab { color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.2 var(--ui-font-text); letter-spacing: .1em; }
+:root[data-kit~="desk"] .krv-rm .rv-say small, :root[data-kit~="desk"] .krv-rm .rv-dim { color: var(--ui-ink-soft); font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-heard { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); margin: 0; font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-heard .ui-chip { font-size: var(--ui-type-label); }
+:root[data-kit~="desk"] .krv-note { font-size: var(--ui-type-body); }
+:root[data-kit~="desk"] .krv-also { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-1); margin: 0; }
+:root[data-kit~="desk"] .krv-also .krv-lab { margin-right: var(--ui-space-1); }
+:root[data-kit~="desk"] .krv-alsob { min-height: 28px; padding: 0 var(--ui-space-2); font-size: var(--ui-type-label); }
+/* a locked players' map (its band is open on Location): the state still reads, the options are just not pressable */
+:root[data-kit~="desk"] .krv-kseg .ui-seg-opt:disabled { text-decoration: none; }
+:root[data-kit~="desk"] .krv-kseg .ui-seg-opt:disabled[aria-pressed="true"] { background: var(--ui-ink-soft); color: var(--ui-on-ink); }

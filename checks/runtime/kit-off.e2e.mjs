@@ -38,6 +38,17 @@ const hasBaseline = fs.existsSync(BASELINE) && fs.readdirSync(BASELINE).some((f)
 if (!hasBaseline) { console.log('SKIP kit-off: no baseline folder at ' + BASELINE + ' (take it with node scripts/kit-baseline.mjs; it is kept outside the repo)'); process.exit(0); }
 if (!process.env.PW_MODULE) { console.log('SKIP kit-off: PW_MODULE is not set (the demo night needs Playwright)'); process.exit(0); }
 
+/* THE MID-GAME REDRAW (KS08, #224; for the overseer's ruling). Turning any setting on writes the campaign's copy of the settings (stc.heal); its arrival
+   publishes the players' mission, and missionSource (gm-page.js) auto-hears the leads in reach (A1) and writes ball.heard. That write is today's code and
+   happens with or without KS08 (the same write, at the same moment, on kit/main without it). Today's Run view is not redrawn by it, so its stale picture
+   matched the all-off one; with KS08, turning kit.desk off must redraw the Run view (to take the kit's markup down), and the redraw shows the leads now
+   heard. So, in a mid-game round that turned kit.desk off, and only there, the elements that follow ball.heard may differ: a lead's line in This beat, a
+   way's block in The job (its st- class is the heard state) and a Heard toggle. Nothing else in the Run view, and nothing outside it. Self-checked below. */
+const MID_REDRAW = [
+  { name: 'KS08: the Run view redrawn with the leads A1 heard', reason: 'turning kit.desk off redraws the Run view; ball.heard was written meanwhile by today\'s A1 auto-hear (a setting change publishes the mission)',
+    keys: String.raw`div#gm-runv/(?:.*/)?(?:li\.rv-bi\.t-lead:\d+|div\.rv-way\.st-[a-z]+:\d+|div\.rv-heard:\d+/button\.rv-btn\.rv-tog\.sm:\d+)(?:/|$)` }
+];
+
 /* 1. the comparison itself, on a copy of one baseline file */
 {
   const f = fs.readdirSync(BASELINE).find((x) => /^gm-run-1366\.json$/.test(x)) || fs.readdirSync(BASELINE).find((x) => /^gm-.*\.json$/.test(x));
@@ -96,6 +107,21 @@ if (!process.env.PW_MODULE) { console.log('SKIP kit-off: PW_MODULE is not set (t
   for (const id of ['gm-bar-drawer', 'gm-cuebar', 'gm-ipad-now']) {
     caught('#' + id + ': a class added', run, classed(run, id, (c) => (c ? c + ' ' : '') + 'mutated'));
     caught('#' + id + ': a class taken off', run, classed(run, id, (c) => c.split(' ').slice(1).join(' ')));
+  }
+  /* the mid-game redraw allowance (MID_REDRAW): the heard elements may change; any other Run view element, or one outside it, is still caught */
+  {
+    const mx = { exemptions: EXEMPTIONS.concat(MID_REDRAW) }, letGo = (name, m) => check(!!m && compare(run, m, mx).diffs.length === 0, 'mid-game redraw allowance lets go: ' + name);
+    const caughtMx = (name, m) => { if (!m) { check(false, 'mid-game redraw allowance: ' + name + ' (its element is missing)'); return; } const n = compare(run, m, mx).diffs.length; check(n > 0, 'mid-game redraw allowance still catches: ' + name + ' (' + n + ')'); };
+    letGo('a lead\'s line gone from This beat', remove(run, /li\.rv-bi\.t-lead:\d+$/));
+    { const t = find(run, /div\.rv-way\.st-[a-z]+:\d+$/), m = t ? copy(run) : null;        /* st-unheard to st-heard, as the walk would write it: its key and every key inside it */
+      if (m) { const nk = t[0].replace(/st-[a-z]+:\d+$/, 'st-heard:9'); for (const e of m.els) { if (e[0] === t[0]) { e[0] = nk; e[3] = 'rv-way st-heard'; } else if (e[0].startsWith(t[0] + '/')) e[0] = nk + e[0].slice(t[0].length); } }
+      letGo('a way\'s block changing its heard state', m); }
+    { const m = copy(run), e = m.els.find((x) => /div\.rv-heard:\d+\/button\.rv-btn\.rv-tog\.sm:\d+$/.test(x[0])); if (e) e[6] += 20; letGo('a Heard toggle redrawn (20 px wider)', e ? m : null); }
+    caughtMx('a room card taken away', remove(run, /div\.[a-z.-]*rv-card[a-z0-9.-]*:\d+$/));
+    caughtMx('the Run view\'s right column room taken away', remove(run, /section\.rv-sec:1\/div\.rv-rm:1$/));
+    caughtMx('the Run view\'s players chip taken away', remove(run, /span\.rv-chip\.rv-players:\d+$/));
+    caughtMx('the band tray\'s Blank taken away', remove(run, /div\.gm-tray:\d+\/button\.gm-bb\.gm-tray-blank:\d+$/));
+    check(!new RegExp(MID_REDRAW[0].keys).test('body/div#gm-band/div.rv-way.st-heard:1'), 'mid-game redraw allowance: nothing outside #gm-runv');
   }
   /* a live slot: empty on one side is let go; filled on both sides, an element lost inside it is caught */
   const q = load('gm-tray-live-1366.json');
@@ -216,7 +242,8 @@ if (!KEEP) fs.rmSync(dir, { recursive: true, force: true });
       const stored = await page.evaluate(() => fetch('/api/gm/state', { credentials: 'same-origin' }).then((r) => r.json()).then((j) => (j && j.doc && j.doc.features) || {}, () => ({})));
       for (const id of ids) await set(id, false);
       const B = await shoot('after-' + ids.join('+')), attrsB = await kitAttrs();
-      const r = compare(A, B, { tol: 1 });
+      const r = compare(A, B, ids.includes('kit.desk') ? { tol: 1, exemptions: EXEMPTIONS.concat(MID_REDRAW) } : { tol: 1 });      /* MID_REDRAW: only a round that turned kit.desk off */
+      { const mr = (r.exempted || []).filter((n) => /^KS08/.test(n)); if (mr.length) console.log('  allowed: ' + mr.length + ' element(s) by "' + MID_REDRAW[0].name + '"'); }
       for (const d of r.diffs.slice(0, 20)) console.log('  DIFF ' + d.kind + '  ' + d.key.split('/').slice(-3).join('/') + '  ' + d.detail);
       check(r.diffs.length === 0, 'mid-game off, no reload: ' + ids.join(' + ') + ' on, then off: the layout fingerprint is the all-off one (' + r.diffs.length + ' differences)');
       check(JSON.stringify(attrsA) === JSON.stringify(attrsB), 'mid-game off, no reload: ' + ids.join(' + ') + ': the data-kit attributes are the all-off ones' + (JSON.stringify(attrsA) === JSON.stringify(attrsB) ? '' : ' (' + attrsB.join(', ') + ')'));
