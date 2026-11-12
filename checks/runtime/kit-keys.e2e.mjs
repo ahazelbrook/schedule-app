@@ -57,7 +57,9 @@ export const KEYS_EXEMPT = [
       { hit: /\[place Control\+Arrow(Left|Right)\]$/, on: /^new #gm-root~\.gm-v[ct]\[data-pv=corkboard\]:\d+ aria-selected true$/ }] },
   { name: 'KS09: the put-away views\' tabs', reason: 'KS09 (#221): with kit.desk on, the tabs of the four put-away views (RETIRED in gm/kit/shell.js: chase, scenes, score, cards) leave the view row and the chip row and come back only while one is open, so a key that opens one adds its tab (new, selected) where kit off selects a standing tab, and leaving it takes the tab away. Only the keys that open or leave one (C, S, J, O, Find\'s Enter, Esc, Ctrl+Left / Ctrl+Right), only those four tabs\' aria-selected; what the view shows is still compared. For the overseer\'s ruling',
     parts: [{ hit: PUT_AWAY_KEYS, off: /^(?:state|new|gone) #gm-root~\.gm-v[ct]\[data-pv=(?:chase|scenes|score|cards)\]:\d+ aria-selected(?: |$)/ },
-      { hit: PUT_AWAY_KEYS, on: /^(?:new|gone) #gm-root~\.gm-v[ct]\[data-pv=(?:chase|scenes|score|cards)\]:\d+ aria-selected(?: |$)/ }] }
+      { hit: PUT_AWAY_KEYS, on: /^(?:new|gone) #gm-root~\.gm-v[ct]\[data-pv=(?:chase|scenes|score|cards)\]:\d+ aria-selected(?: |$)/ }] },
+  { name: 'KS08: the one-room inspector', reason: 'KS08 (#224): with kit.desk on, the Run view\'s right side is one panel for the selected room, and the other rooms a PC is in are "The crew is also in" buttons (disclosed as a move in the PR). A beat step (Right, Shift+Right, Left) auto-hears a lead in reach (the A1 write, ball.heard, compared as a server write and unchanged), and with the kit off that turns on a Heard toggle in a second room card the kit-on panel does not draw. Only those keys, only a Run view .rv-btn turning aria-pressed on. For the overseer\'s ruling',
+    hit: /\[site (?:Shift\+)?Arrow(?:Right|Left)\]$/, off: /^state #gm-runv~\.rv-btn:\d+ aria-pressed false -> true$/ }
 ];
 const partsOf = (x) => (x.parts || [x]).map((p) => Object.assign({ name: x.name }, p));
 
@@ -136,6 +138,14 @@ export function classCheck(offRes, onRes, exempt = CLASS_EXEMPT) {
   check(!judge(r('X [t x]', ['state #gm-x aria-pressed false -> true'], K([], ['#gm-x aria-pressed'])), r('X [t x]', [], K([], []))).ok, 'judge: a state change on an element the kit-on page lost: a failure');
   check(!judge(r('X [t x]', ['state #gm-x aria-pressed false -> true'], K([], ['#gm-x aria-pressed'])), r('X [t x]', [], K([], ['#gm-x aria-selected']))).ok, 'judge: a state attribute the kit-on element lost (aria-pressed): a failure');
   check(!judge(r('X [t x]', [], K([]), ['+ /state/doc/a = 1']), r('X [t x]', [], K([]), ['+ /state/doc/a = 1', '+ /state/doc/b = 2'])).ok, 'judge: a server write only the kit makes: a failure');
+  /* KS08: the one-room inspector lets a beat step's Heard toggle (in a room card the kit-on panel does not draw) go, and nothing else */
+  const hk = K([], ['#gm-runv~.rv-btn:6 aria-pressed']), heardOn = 'state #gm-runv~.rv-btn:6 aria-pressed false -> true';
+  check(judge(r('→ [site ArrowRight]', [heardOn], hk, ['~ /state/doc/ball 1 -> 2']), r('→ [site ArrowRight]', [], hk, ['~ /state/doc/ball 1 -> 2'])).ok, 'judge: KS08: a beat step\'s Heard toggle in a room card the kit-on panel does not draw is let go');
+  check(!judge(r('→ [site ArrowRight]', [heardOn], hk, ['~ /state/doc/ball 1 -> 2']), r('→ [site ArrowRight]', [], hk, [])).ok, 'judge: KS08 lets the server write go nowhere (the beat step\'s write is still compared)');
+  check(!judge(r('G [panel g]', [heardOn], hk), r('G [panel g]', [], hk)).ok, 'judge: KS08 holds for the beat-step keys only (not G)');
+  check(!judge(r('→ [site ArrowRight]', ['state #gm-runv~.rv-btn:6 aria-pressed true -> false'], hk), r('→ [site ArrowRight]', [], hk)).ok, 'judge: KS08 lets a toggle turning off go nowhere');
+  check(!judge(r('→ [site ArrowRight]', ['state #gm-runv~.rv-card:2 aria-pressed false -> true'], K([], ['#gm-runv~.rv-card:2 aria-pressed'])), r('→ [site ArrowRight]', [], K([], []))).ok, 'judge: KS08 lets no other Run view element (a room card) go');
+  check(!judge(r('→ [site ArrowRight]', ['state #gm-band~.rv-btn:6 aria-pressed false -> true'], K([], ['#gm-band~.rv-btn:6 aria-pressed'])), r('→ [site ArrowRight]', [], K([], []))).ok, 'judge: KS08 lets no .rv-btn outside the Run view go');
   check(!judge(r('X [t x]', [], K([]), [], []), r('X [t x]', [], K([]), [], ['+ /state/doc/b = 2'])).ok, 'judge: a write only the kit page makes while it loads: a failure');
   const nw = judge(r('X [t x]', ['shown #panel'], K(['panel'])), r('X [t x]', ['shown #panel', 'shown #kit-only'], K(['panel', 'kit-only'])));
   check(nw.ok && nw.extra.includes('shown #kit-only'), 'judge: markup only the kit-on page has is a note, not a failure');
