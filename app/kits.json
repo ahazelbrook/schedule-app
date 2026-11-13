@@ -4,21 +4,20 @@
     "maps": {
       "file": "maps/map-kit.js",
       "global": "B68Map",
-      "version": "1.0.0",
-      "bytes": 887610,
-      "sha256": "89efc41401fefb121edd71372eb8ede5638f11bd8f3eedb5c2abdb56ea15a85f",
-      "source": "Blades '68 Design System, map kit 0.9.0, plus app-side changes: front vector room, roll w/lvl, kit 1.0 the grand map (src/grand.js, ticket 2.1), a room's own arch (the lair, ticket 5.4) and blueprint rooms on the player copy (opts.blueprint, ticket 2.2); take upstream",
-      "at": "2026-11-04"
+      "version": "1.1.0",
+      "bytes": 1055157,
+      "sha256": "332ad0b192c33198b9bd56e8fbdf24025081ba293df679a3a55e2fc83f9004ef",
+      "source": "Blades '68 kits build, map kit 1.1.0 (13/11/2026), design-system source; to be published",
+      "at": "2026-11-13"
     },
     "figures": {
       "file": "figures/figure-kit.js",
       "global": "B68Figure",
-      "version": "3.0.1",
-      "bytes": 973538,
-      "sha256": "4b889296294dddafbab07e465fbd8ec1ededb415ada95b4b61bf76c2c6ba51e6",
-      "source": "Blades '68 Design System, project/figures/figure-kit.js (3.0.1, published 22/10/2026)",
-      "at": "2026-10-21",
-      "note": "3.0.1 carries the arm blend (pose.arms.R = { a, b, t, as }, used by tools/ambient/motion.js) in the kit, so the app's local patch (6474342, PR #53) is dropped; it draws the same as the patched 3.0.0. The pages load this full build, not figure-kit.min.js: the minified one draws the same but leaves out each part's params and describe, which the character creator reads (app/core.js, app/steps.js: the Parting, Volume, Length, hat Band and prop-side controls, and the part tooltips)"
+      "version": "3.1.0",
+      "bytes": 1135394,
+      "sha256": "8c0ff7d940ea96056953be14bd87fa29330cddfb1b2883da49afda3adf1dad1b",
+      "source": "Blades '68 kits build, figure kit 3.1.0 (13/11/2026), design-system source; to be published",
+      "at": "2026-11-13"
     }
   }
 }
