@@ -140,7 +140,8 @@
     }
     /* the rows of one form; the focus kept on the same row's same button (IP2d) */
     function build(form) {
-      var el = rec.el, d = el.ownerDocument, a = d.activeElement, keep = a && el.contains(a) ? { line: a.getAttribute('data-p2-line'), id: a.getAttribute('data-id') } : null;
+      /* the focus goes back only when it was a keyboard focus, without scrolling; the scroller's place is kept across the rebuild */
+      var el = rec.el, d = el.ownerDocument, a = d.activeElement, keep = a && el.contains(a) && kbFocus(a) ? { line: a.getAttribute('data-p2-line'), id: a.getAttribute('data-id') } : null, sTop = el.scrollTop;
       var V = rec.p.view(form), items = V.rows.slice();
       if (held() && rec.shown && rec.shown.length) {      /* held: every row stays where it was; one that went leaves an empty slot until the hand leaves */
         var merged = [];
@@ -167,7 +168,8 @@
         el.appendChild(m);
       }
       rec.shown = [].map.call(el.querySelectorAll('.gm-p2-line, .gm-p2-slot'), function (n) { return { id: n.getAttribute('data-id'), h: n.offsetHeight }; });
-      if (keep) { var back = el.querySelector('[data-p2-line="' + keep.line + '"]' + (keep.id ? '[data-id="' + keep.id + '"]' : '')) || (keep.line === 'more' ? null : el.querySelector('[data-p2-line="more"]')); if (back && back.focus) back.focus(); }
+      if (keep) { var back = el.querySelector('[data-p2-line="' + keep.line + '"]' + (keep.id ? '[data-id="' + keep.id + '"]' : '')) || (keep.line === 'more' ? null : el.querySelector('[data-p2-line="more"]')); if (back && back.focus) { try { back.focus({ preventScroll: true }); } catch (e) { back.focus(); } } }
+      el.scrollTop = sTop;
     }
     function draw() {
       var d = root.ownerDocument || (W && W.document); if (!d) return;
@@ -179,7 +181,7 @@
         rec.el.addEventListener('click', function (ev) {
           var b = ev.target && ev.target.closest ? ev.target.closest('[data-p2-line]') : null; if (!b) return;
           var act = b.getAttribute('data-p2-line');
-          if (act === 'more') { rec.open = !rec.open; draw(); return; }
+          if (act === 'more') { rec.open = !rec.open; draw(); rec.press = null; return; }      /* "just opened" covers the open's own redraw only */
           var it = rec.p.take(b.getAttribute('data-id')); if (!it) return;
           if (act === 'send') { Promise.resolve().then(function () { return typeof rec.show === 'function' ? rec.show(it.o) : null; }).then(null, function () { /* the page says why */ }); }
           else log('Public line not shown (Not now): ' + str(it.o.text).trim());

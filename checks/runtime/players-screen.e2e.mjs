@@ -400,6 +400,7 @@ try {
     await page.setViewportSize({ width: 1366, height: 768 }); await sleep(600);
     /* IP2d: a new line keeps the keyboard on the same row's same button */
     await setLines(2); await sleep(600);
+    await page.keyboard.press('Shift');      /* a keyboard user: the focus that follows is a keyboard focus (:focus-visible) */
     const f0 = await page.evaluate(() => { const b = document.querySelector('#gm-p2-lines [data-p2-line="later"]'); b.focus(); return b.getAttribute('data-id'); });
     await page.evaluate(() => { const box = document.querySelector('#gm-p2-lines'); window.B68GmPlayersScreen.lines({ root: box.parentNode, log() {} }).add({ kind: 'text', text: 'One more line' }, () => null); });
     await sleep(500);
@@ -444,6 +445,27 @@ try {
       const g = await page.evaluate(COVERS), slots = await page.evaluate(() => document.querySelectorAll('#gm-p2-lines .gm-p2-slot').length);
       check(slots === 0 && !g.out && g.bad.length === 0, 'IP2d re-check: ' + w + 'x' + h + ', the hand gone: closed up, inside the window, over no control: ' + JSON.stringify(Object.assign({ slots }, g)));
       await api('PATCH', '/gm/ambient', { overlay: null });
+    }
+    await page.setViewportSize({ width: 1366, height: 768 }); await sleep(500);
+    await page.evaluate(() => { const box = document.querySelector('#gm-p2-lines'); window.B68GmPlayersScreen.lines({ root: box.parentNode, log() {} }).clear('test'); });
+    /* IP2d final: the list OPEN ("+ n more" pressed with the mouse near the bottom edge), the hand moved onto row 1's Send (and separately a middle
+       row's); a line queued 0.4 s and 2 s after the open: the same row's Send under the pointer, the box top and the scroller's scrollTop unchanged */
+    for (const [w, h] of [[1366, 768], [1280, 720]]) {
+      for (const row of [1, 3]) {
+        await page.mouse.move(3, 3); await page.setViewportSize({ width: w, height: h }); await sleep(600);
+        await setLines(3); await sleep(1300);      /* three, so the two that arrive make five: no sixth pushes the oldest out (that case is above) */
+        const tg = await page.evaluate(() => { const b = document.querySelector('#gm-p2-lines [data-p2-line="more"]'); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+        await page.mouse.click(tg.x, tg.y); const t0 = Date.now(); await sleep(120);
+        const at = await page.evaluate((r) => { const b = document.querySelectorAll('#gm-p2-lines .gm-p2-line [data-p2-line="send"]')[r - 1]; const q = b.getBoundingClientRect(); return { x: q.left + q.width / 2, y: q.top + q.height / 2 }; }, row);
+        await page.mouse.move(at.x, at.y);
+        const st = () => page.evaluate((p) => { const box = document.querySelector('#gm-p2-lines'), e = document.elementFromPoint(p.x, p.y), b = e && e.closest ? e.closest('[data-p2-line], .gm-p2-slot') : null;
+          return { kind: b ? (b.classList.contains('gm-p2-slot') ? 'slot' : b.getAttribute('data-p2-line')) : 'none', id: b ? b.getAttribute('data-id') : '', top: Math.round(box.getBoundingClientRect().top), st: box.scrollTop, open: /Show fewer/.test(box.textContent) }; }, at);
+        const s0 = await st();
+        await sleep(Math.max(0, 400 - (Date.now() - t0))); await addOne('A line 0.4 s after the open'); await sleep(250); const s1 = await st();
+        await sleep(Math.max(0, 2000 - (Date.now() - t0))); await addOne('A line 2 s after the open'); await sleep(250); const s2 = await st();
+        check(s0.open && s0.kind === 'send' && [s1, s2].every((x) => x.kind === 'send' && x.id === s0.id && x.top === s0.top && x.st === s0.st), 'IP2d final: ' + w + 'x' + h + ', the list open, the hand on row ' + row + '\'s Send: lines at 0.4 s and 2 s after the open move nothing (' + JSON.stringify([s0, s1, s2]) + ')');
+        await page.mouse.move(3, 3); await sleep(900);
+      }
     }
     await page.setViewportSize({ width: 1366, height: 768 }); await sleep(500);
     await page.evaluate(() => { const box = document.querySelector('#gm-p2-lines'); window.B68GmPlayersScreen.lines({ root: box.parentNode, log() {} }).clear('test'); });
