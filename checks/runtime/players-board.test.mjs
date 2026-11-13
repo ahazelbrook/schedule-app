@@ -242,7 +242,7 @@ test('the scene: the same site again keeps what was pinned, a new pin arrives on
   const h = read('ambient/planning-board.html');
   assert.match(h, /\[id\^="pb-"\]/, 'a pin card is found by its id');
   assert.match(h, /const same=d\.name===prev\.name&&prev\.name!==null/);
-  assert.match(h, /classList\.contains\("b68-fx-off"\)/, 'held still is read');
+  assert.match(h, /getComputedStyle\(content\)\.transitionDuration/, 'held still is read from transitions that do not take (the scene never names the page\'s classes)');
   const arrive = h.slice(h.indexOf('function arrive('), h.indexOf('// ---- protocol'));
   assert.ok(arrive.length > 100 && !/requestAnimationFrame|animation/.test(arrive), 'the arrival runs on setTimeout and transitions only');
 });

@@ -178,7 +178,9 @@ function show(d){
  T(()=>repin(g0),R(60,90)*1000);
 }
 let prev={name:null,keys:new Set()};
-const still=()=>reduce||document.documentElement.classList.contains("b68-fx-off");
+// held still: the page holding this scene still turns transitions off from outside (the scene never knows how); a transition asked for that
+// does not take is the sign, so the new pin is simply there
+const still=()=>{if(reduce)return true;content.style.transition="opacity 1s";const off=getComputedStyle(content).transitionDuration.split(",").every(x=>!parseFloat(x));content.style.transition="";return off;};
 // the cards on the board: the top-level groups the kit placed with translate(x y), each starting with its shadow rect (its size)
 function cardsOf(root){const out=[];
  for(const g of root.children){

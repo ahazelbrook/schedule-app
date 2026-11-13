@@ -170,8 +170,9 @@ try {
   check(!/GM-ONLY/.test(get), 'the display GET carries no GM-ONLY- text');
   check(!!bd && !bd.gmOnly && !(await dp.evaluate(() => /GM-ONLY/.test(document.documentElement.outerHTML))), 'neither the display DOM nor the board scene\'s DOM holds GM-ONLY- text');
 
-  /* held still: reduced motion on a second display, a new pin is simply there */
-  const rc = await dbrowser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1180, height: 820 }, serviceWorkers: 'block', reducedMotion: 'reduce' });
+  /* held still: "Hold scenes still" (fx.off) on a second display at iPad size, no reduced motion asked: a new pin is simply there */
+  for (const p of ['/gm/state', '/campaign']) await api('PATCH', p, { features: { 'fx.off': true } });
+  const rc = await dbrowser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1180, height: 820 }, serviceWorkers: 'block' });
   const rp = await rc.newPage(); rp.on('pageerror', (e) => errors.push('display (reduced): ' + e.message));
   await rp.goto(BASE + '/#display');
   const rframe = () => rp.frames().find((f) => /planning-board/.test(f.url()) && !f.isDetached());
@@ -181,7 +182,8 @@ try {
   const STILL = 'The back stairs creak';
   await pinIt(pub[0], 'item', STILL);
   const rb = await until(async () => { const b = await rboard(); return b && b.text.includes(STILL) ? b : null; }, 15000, 100);
-  check(!!rb && rb.arriving === 0, 'reduced motion: the new pin is simply there (no arrival)');
+  check(!!rb && rb.arriving === 0, 'held still (fx.off): the new pin is simply there (no arrival)');
+  for (const p of ['/gm/state', '/campaign']) await api('PATCH', p, { features: { 'fx.off': false } });
   await shot(rp, 'board-still-ipad-1180');
   await rc.close();
 

@@ -6873,12 +6873,13 @@
   }
   function pbSetScore(list, ask) {
     if (!S || !S.locRoll) { toast('Roll a location first.', true); return Promise.resolve(null); }
-    var seen = pbSeen(), hide = pbHide(), kept = [], refused = [], waiting = 0, dropped = false;
+    var me = S, seen = pbSeen(), hide = pbHide(), kept = [], refused = [], waiting = 0, dropped = false;
     list.forEach(function (x) { var r = P.tokenScreen([x.tok], S.locRoll, seen, hide); if (r.tokens.length) kept.push(r.tokens[0]); else if (r.refused.length) refused.push({ label: x.tok.label, names: r.refused }); else waiting++; });
     /* the score scene as Set as score scene builds it, then its board drawn again with the screened pins at the same view, kept only if the leak scan passes */
     var pin = function (built) { var svg = W.B68GmPlayersBoard.board(S.locRoll, W.B68Map && W.B68Map.render, { seen: seen, tokens: kept, view: built.view, kit1: P.kit1On(), leaks: P.leaks }); if (svg) built.board = built.score.board = svg; else dropped = kept.length > 0; };
     return setScoreScene({ map: Object.assign({}, mapUi(), { layer: 'player' }), seen: seen, ask: ask, pin: pin }).then(function (r) {
       if (r && dropped) toast('The board went up without its pins: with them it would name a hidden room, or be too large for the iPad.', true);
+      if (r && S === me && S.locRoll) renderLocation();      /* the panel's word on the score scene (sceneBehind) is now the stored one */
       return r ? { ok: true, refused: refused, waiting: waiting, pins: dropped ? 0 : kept.length } : null;
     });
   }
