@@ -2054,6 +2054,7 @@
     /* IP2 (stage.players): the players' screen (app/display/players/players.js), the dials in the corner; off, s.p2 stays null and nothing of it runs */
     s.p2 = null; s.p2on = false; s.p2last = null;
     function p2Sync() {
+      var pbNow = swOn('stage.players'); if (s.pbOn !== pbNow) { var pbFirst = s.pbOn === undefined; s.pbOn = pbNow; if (!pbFirst && s.score) [].forEach.call(layer.querySelectorAll('iframe'), function (f) { if (Pure.isScoreScene(f.getAttribute('data-scene'))) sendScore(f.contentWindow); }); }      /* IP6: the setting flipped: a live planning board is sent its score again, laid out the new way */
       var want = swOn('stage.players') && !!root.B68PlayersScreen;
       if (want && !s.p2) { s.p2 = root.B68PlayersScreen.attach(container, { doc: document, before: ovLayer, watch: [stages, layer, ovLayer], kind: function () { return s.lastShow && isObj(s.lastShow[0]) ? s.lastShow[0].kind : 'blank'; }, dark: function () { return s.dark; }, mode: function () { return container.getAttribute('data-scene-mode'); }, beat: function () { return container.classList.contains('dp-ov-up') && !container.classList.contains('dp-ov-card-on'); }, ambient: function () { var a = s.amb && s.amb.state(); return a && !a.covered ? a.active : null; }, alarm: function () { return s.fullBand && s.fullBand.alarm && isObj(s.hud) && isObj(s.hud.alarm) ? s.hud.alarm : null; }, still: function () { return reduced() || swOn('fx.off'); } }); if (s.p2) s.p2.clocks(s.p2last); }
       else if (!want && s.p2) { s.p2.destroy(); s.p2 = null; }
