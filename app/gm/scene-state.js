@@ -54,6 +54,23 @@
   }
   function anyOn(f) { return isObj(f) && (f.fill === true || f.people === true || f.lights === true || f.room === true); }
   function screenOf(v) { return v === "tv" ? "tv" : "ipad"; }
+  /* a map frame the shared screen reported: two whole numbers of px from 200 to 10000 (what the kit accepts as displayWidth / displayHeight) */
+  function frameOk(f) { var ok = function (n) { return typeof n === "number" && n === Math.round(n) && n >= 200 && n <= 10000; }; return isObj(f) && ok(f.w) && ok(f.h); }
+  /* MK2: is a newly reported frame a real change (more than `px` either way) from the one in use? */
+  function frameMoved(cur, next, px) { if (!frameOk(next)) return false; if (!frameOk(cur)) return true; var d = px >= 0 ? px : 8; return Math.abs(cur.w - next.w) > d || Math.abs(cur.h - next.h) > d; }
+  /* MK2 (the review): following the reported frame, so two screens cannot make the map flap. frameTrack(state, next, now) -> { state, resend }:
+     a new frame (more than 8 px off) is taken and asks for one re-send, at most FRAME_SENDS times in any FRAME_WINDOW; a change beyond that stops
+     following (state.stopped, frame null: the Shared screen select sizes the stage) and sends nothing. A null state starts afresh (the GM chose in
+     the select, or the page was reloaded). */
+  var FRAME_SENDS = 2, FRAME_WINDOW = 10 * 60 * 1000;
+  function frameTrack(st, next, now) {
+    var s = isObj(st) ? { frame: frameOk(st.frame) ? { w: st.frame.w, h: st.frame.h } : null, sends: list(st.sends).slice(), stopped: st.stopped === true } : { frame: null, sends: [], stopped: false };
+    if (s.stopped || !frameMoved(s.frame, next, 8)) return { state: s, resend: false };
+    var t = +now || 0; s.sends = s.sends.filter(function (x) { return t - x < FRAME_WINDOW; });
+    if (s.sends.length >= FRAME_SENDS) { s.stopped = true; s.frame = null; return { state: s, resend: false }; }
+    s.frame = { w: next.w, h: next.h }; s.sends.push(t);
+    return { state: s, resend: true };
+  }
   function initials(label) {
     var out = "";
     str(label).trim().split(/\s+/).filter(Boolean).slice(0, 2).forEach(function (w) { out += Array.from(w)[0].toUpperCase(); });
@@ -62,10 +79,22 @@
   function toneOf(kind) { return TONES.indexOf(kind) >= 0 ? kind : "staff"; }
   function roleOf(kind) { return kind === "guard" ? "guard" : kind === "staff" ? "waiter" : "resident"; }
 
-  /* a person drawn from a spec, or from a role when there is none (the seed keeps the stand-in the same person every time) */
-  function body(room, spec, kind, seed) {
+  /* the figure kit's role ids (CONTRACT.md section 1): the kit's own roles() when it has one, else the contract's fixed list */
+  var ROLE_IDS = ["guest-f", "guest-m", "waiter", "croupier", "photographer", "guard", "bluecoat", "mechanic", "docker", "porter", "cook", "technician", "boatman",
+    "barkeep", "drinker", "shopkeeper", "resident", "clerk", "usher", "kitchen-hand", "cleaner", "warehouse-hand", "driver", "sailor", "dancer", "punter", "cinema-goer",
+    "shopper", "street-kid", "teller", "official", "scholar", "teacher", "pupil", "priest", "acolyte", "officer", "servant", "noble"];
+  function rolesOf(kit) {
+    var r = null; try { r = kit && typeof kit.roles === "function" ? kit.roles() : null; } catch (e) { r = null; }
+    var ids = list(r).map(function (x) { return isObj(x) ? str(x.id) : str(x); }).filter(Boolean);
+    return ids.length ? ids : ROLE_IDS;
+  }
+  /* a person drawn from a spec, or from a role when there is none (the seed keeps the stand-in the same person every time). MK2: a role the play
+     gives the person (a known role id) wins over the one from their kind; an unknown one is ignored */
+  function body(room, spec, kind, seed, role, kit) {
     var s = specOf(spec);
-    return s ? { room: room, spec: s } : { room: room, role: roleOf(kind), seed: str(seed) };
+    if (s) return { room: room, spec: s };
+    var r = typeof role === "string" && role && rolesOf(kit).indexOf(role) >= 0 ? role : roleOf(kind);
+    return { room: room, role: r, seed: str(seed) };
   }
   /* a crew member in a disguise the play defines: the same person in that role's clothes, when the figure kit can dress (kit 3.0.1 cannot: left as is) */
   function dressed(p, icon, kit) {
@@ -100,7 +129,7 @@
       list(c.npcs).forEach(function (n) {
         var person = people[n.id] || null, spec = null;
         if (person && typeof inp.cast === "function") { try { spec = inp.cast(person); } catch (e) { spec = null; } }
-        var p = body(name, spec, str(n.kind), n.id);
+        var p = body(name, spec, str(n.kind), n.id, person ? person.role : null, inp.kit);
         p.mark = str(n.ini) || initials(n.label); p.tone = toneOf(str(n.kind)); p.label = str(n.label);
         out.push(p);
       });
@@ -156,7 +185,11 @@
   }
   function plain(o) { var c = {}; Object.keys(o).forEach(function (k) { if (k !== "figures") c[k] = o[k]; }); return c; }
   /* the key of a player scene input: everything but the figure kit itself (only whether it is there) */
-  function inputKey(sc) { var c = {}; if (!isObj(sc)) return ""; Object.keys(sc).forEach(function (k) { if (k !== "kit") c[k] = sc[k]; }); return keyOf([c, !!sc.kit]); }
+  function inputKey(sc) {
+    var c = {}; if (!isObj(sc)) return "";
+    Object.keys(sc).forEach(function (k) { if (k === "images") c[k] = Object.keys(isObj(sc[k]) ? sc[k] : {}).sort(); else if (k !== "kit") c[k] = sc[k]; });      /* a picture by its key, not its bytes */
+    return keyOf([c, !!sc.kit]);
+  }
 
   /* the GM copy of a run (the GM layer): people, the crowd and the lights merged into o; the key names what was added ('' when nothing) */
   function gm(o, f, input) {
@@ -177,7 +210,11 @@
     var out = Object.assign({}, o), add = {}, open = {};
     list(shown).forEach(function (n) { if (typeof n === "string" && n) open[n] = true; });
     /* the stage layout only where the vendored kit draws it (sc.stage: stageOk(B68Map)); else the layout stays as today */
-    if (f.fill && sc.stage === true) { var sz = SCREENS[screenOf(sc.screen)]; add.layout = "stage"; add.displayWidth = sz.displayWidth; add.displayHeight = sz.displayHeight; }
+    /* sized to the map frame the shared screen last reported (sc.frame), else to the Shared screen select (the fallback) */
+    if (f.fill && sc.stage === true) {
+      var sz = frameOk(sc.frame) ? { displayWidth: sc.frame.w, displayHeight: sc.frame.h } : SCREENS[screenOf(sc.screen)];
+      add.layout = "stage"; add.displayWidth = sz.displayWidth; add.displayHeight = sz.displayHeight;
+    }
     if (f.people) {
       add.people = playerPeople(sc, shown);
       add.crowd = isObj(sc.crowd) && sc.crowd.masked === true ? { masked: true } : true;
@@ -187,9 +224,31 @@
       var l = {}; Object.keys(sc.lights).forEach(function (r) { if (open[r] && LIGHT.indexOf(sc.lights[r]) >= 0) l[r] = sc.lights[r]; });
       if (Object.keys(l).length) add.lights = l;
     }
-    if (f.room && sc.view === "room" && typeof sc.room === "string" && open[sc.room]) { add.view = "room"; add.room = sc.room; }
+    if (f.room && sc.view === "room" && typeof sc.room === "string" && open[sc.room]) {
+      add.view = "room"; add.room = sc.room;
+      if (add.people) add.people = roomPeople(add.people, sc.room, sc.images);
+    }
+    /* MK2 4b: one floor on the shared screen (the GM's iPad floor control; the page offers only the floors the kit's player copy titles) */
+    if (Number.isInteger(sc.floor) && add.view !== "room") add.floor = sc.floor;
     Object.keys(add).forEach(function (k) { out[k] = add[k]; });
     return { opts: out, key: Object.keys(add).length ? "scene:" + keyOf([plain(add), !!sc.kit]) : "" };
+  }
+  /* MK2 step 4: in the room view, the room's people large. A person the page has a picture of (a data:image/ URL the kit accepts, made with the
+     figure kit's rasterize) is drawn as that picture; without one, the kit renders the spec, and that is allowed for three people at most (five
+     rendered figures are about 500 KiB): the others are left out. */
+  var IMG_RE = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/;
+  var ROOM_SPECS = 3;
+  function imageOk(im) { return isObj(im) && typeof im.href === "string" && IMG_RE.test(im.href) && +im.width > 0 && +im.height > 0; }
+  function imageKey(p) { return keyOf(isObj(p) && p.spec ? p.spec : [p && p.role, p && p.seed]); }
+  function roomPeople(people, room, images) {
+    var imgs = isObj(images) ? images : {}, out = [], specs = 0;
+    list(people).forEach(function (p) {
+      if (!isObj(p) || p.room !== room) return;
+      var im = imgs[imageKey(p)];
+      if (imageOk(im)) { out.push(Object.assign({}, p, { image: { href: im.href, width: +im.width, height: +im.height } })); return; }
+      if (specs < ROOM_SPECS) { specs++; out.push(p); }
+    });
+    return out;
   }
 
   function kitOpts(K) { try { return K && typeof K.options === "function" ? K.options() : null; } catch (e) { return null; } }
@@ -197,7 +256,24 @@
   /* the vendored map kit draws layout "stage" (it lists it among its layouts); kit 1.0.0 does not, and falls back to a sheet */
   function stageOk(K) { var o = kitOpts(K); return !!(o && list(o.layouts).indexOf("stage") >= 0); }
 
+  /* MK2 (the overseer's ruling: name each person once). The kit draws people in these views only; a person it draws as a figure carries the
+     flag with their mark and their label, so the older pin (the run's marker with its name strip) is not sent for them as well.
+     figured(people, view) -> [{ room, mark, label }]: the people with a figure of their own and a mark, in a view that draws people.
+     allDrawn(result, want) -> bool: the kit's result says it drew every one of them (result.people: [{ room, mark }]); otherwise the page
+     sends the old pins after all, so nobody is left unnamed (a room with no space for them, a kit that does not report). */
+  var PEOPLE_VIEWS = ["iso", "plan", "section"];
+  function figured(people, view) {
+    if (PEOPLE_VIEWS.indexOf(view) < 0) return [];
+    return list(people).filter(function (p) { return isObj(p) && isObj(p.spec) && typeof p.mark === "string" && p.mark; }).map(function (p) { return { room: str(p.room), mark: p.mark, label: str(p.label) }; });
+  }
+  function allDrawn(result, want) {
+    var w = list(want); if (!w.length) return true;
+    var got = isObj(result) && Array.isArray(result.people) ? result.people : null; if (!got) return false;
+    return w.every(function (x) { return got.some(function (d) { return isObj(d) && d.room === x.room && d.mark === x.mark; }); });
+  }
+
   return { IDS: IDS, SCREENS: SCREENS, ICON_ROLE: ICON_ROLE, flags: flags, anyOn: anyOn, screenOf: screenOf, initials: initials, toneOf: toneOf, roleOf: roleOf,
     gmPeople: gmPeople, playerPeople: playerPeople, crowdOf: crowdOf, lightsAt: lightsAt, knownEvents: knownEvents, gm: gm, forPlayer: forPlayer, roomViewOk: roomViewOk,
-    stageOk: stageOk, keyOf: keyOf, inputKey: inputKey };
+    stageOk: stageOk, frameOk: frameOk, frameMoved: frameMoved, frameTrack: frameTrack, FRAME_SENDS: FRAME_SENDS, FRAME_WINDOW: FRAME_WINDOW, rolesOf: rolesOf, ROLE_IDS: ROLE_IDS, keyOf: keyOf, inputKey: inputKey, imageKey: imageKey, imageOk: imageOk, roomPeople: roomPeople, ROOM_SPECS: ROOM_SPECS,
+    figured: figured, allDrawn: allDrawn, PEOPLE_VIEWS: PEOPLE_VIEWS };
 });
