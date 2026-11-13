@@ -124,7 +124,7 @@ await test('the card on a stub page: only the served player fields as text, the 
   const at = new Date(Date.now() - P.LEAD_MS).toISOString();
   let on = true;
   const C = I.attach(box, { document: doc, on: () => on, still: () => false, skew: () => 0, at: () => at, later: (f, ms) => { timers.push([f, ms]); return timers.length; }, clearLater() {}, figure: () => null });
-  const D = { kind: 'npc', npcId: 'n-mabel', title: 'Mabel Quist', intro: true, look: { expr: 'smirk' }, npc: { name: 'Mabel Quist', alias: 'Mab', role: 'Fixer', faction: 'The Kestrel Club', description: 'Not on the card.', spec: null } };
+  const D = { kind: 'npc', npcId: 'n-mabel', title: 'Mabel Quist', intro: true, look: { expr: 'smirk' }, npc: { name: 'Mabel Quist', alias: 'Mab', role: 'Fixer', faction: 'The Kestrel Club', description: 'Not on the card.', spec: {} } };
   C.next(D, 7);
   assert.ok(C.state() && C.state().seq === 7, 'a card is up');
   const t = texts();

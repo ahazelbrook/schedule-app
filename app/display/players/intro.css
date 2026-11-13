@@ -42,11 +42,11 @@
 
 /* ---------- the type, lower left: kicker, the name with its offset copy, the alias ---------- */
 .pi-type { position: absolute; left: 6vw; bottom: calc(var(--pi-lb) + 5vh); width: 60vw; }
-.pi-kick { margin: 0 0 1.6vh; }
+/* the kicker is label tape: a black strip per line, two lines at most */
+.pi-kick { margin: 0 0 1.4vh; max-width: 92%; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; line-height: 5.6vh; }
 .pi-kick-t {
-  display: inline-block; max-width: 100%; box-sizing: border-box; padding: .9vh 1.4vh .8vh; background: #14110e; color: #fbf8f1;
+  padding: .9vh 1.4vh .8vh; background: #14110e; color: #fbf8f1; -webkit-box-decoration-break: clone; box-decoration-break: clone;
   font: 800 3.4vh/1.1 var(--font-cond, "Archivo Condensed", "Arial Narrow", sans-serif); letter-spacing: .2em; text-transform: uppercase;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pi-name {
   position: relative; margin: 0; font: 900 14vh/.9 var(--font-poster, "Archivo Compressed", Impact, "Arial Narrow", sans-serif);
@@ -67,10 +67,11 @@
 .pi-flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
 
 /* ---------- the timeline ---------- */
-.pi-enter { animation: pi-enter 700ms cubic-bezier(.12, .82, .26, 1) var(--pi-enter, 0ms) both; }
-.pi-col { animation: pi-snap 1ms steps(1, end) var(--pi-freeze, 0ms) both; }
-.pi-sil { animation: pi-shift 1ms steps(1, end) var(--pi-freeze, 0ms) both; }
-.pi-flash { animation: pi-flash 90ms linear var(--pi-freeze, 0ms) forwards; }
+.pi-enter { animation: pi-enter 700ms cubic-bezier(.22, .62, .34, 1) var(--pi-enter, 0ms) both; }
+/* the snap: 1 ms, linear. (Not steps(1, end): a 1 ms animation finishes at progress 0.99999..., which a step floors back to the start.) */
+.pi-col { animation: pi-snap 1ms linear var(--pi-freeze, 0ms) both; }
+.pi-sil { animation: pi-shift 1ms linear var(--pi-freeze, 0ms) both; }
+.pi-flash { animation: pi-flash 70ms linear var(--pi-freeze, 0ms) forwards; }
 .pi-kick { animation: pi-wipe 170ms cubic-bezier(.7, 0, .3, 1) var(--pi-kicker, 0ms) both; }
 .pi-name-back { animation: pi-wipe 190ms cubic-bezier(.7, 0, .3, 1) var(--pi-name, 0ms) both; }
 .pi-name-front { animation: pi-wipe 190ms cubic-bezier(.7, 0, .3, 1) var(--pi-name2, 0ms) both; }
@@ -111,10 +112,17 @@
 @media (orientation: portrait) {
   .pi-card { --pi-figh: 92vh; --pi-lb: 4.5vh; }
   .pi-figout { right: 5vw; }
-  .pi-figout.pi-hasmono { top: calc(var(--pi-lb) + 6vh); right: 50%; height: 44vh; width: 44vh; transform: translateX(50%); }
-  .pi-mono-l { font-size: 32vh; }
+  .pi-figout.pi-hasmono { top: calc(var(--pi-lb) + 4vh); right: 50%; height: 38vh; width: 38vh; transform: translateX(50%); }
+  .pi-mono-l { font-size: 28vh; }
   .pi-type { left: 6vw; width: 88vw; bottom: calc(var(--pi-lb) + 4vh); }
 }
+
+/* the stage under the card keeps its own figure hidden until the card's figure has settled onto it (intro.js lifts pi-on at --pi-fade, so the
+   card's figure fades out over the stage's: one figure on screen throughout, never two) */
+.pi-on .dp-stage.dp-npc .dp-npc-fig { visibility: hidden; }
+
+/* the moment the card is mounted, the figure is measured where it will stand (intro.js lifts pi-measure in the same call) */
+.pi-measure .pi-enter { animation: none; }
 
 /* reduced motion or Hold scenes still: the frozen frame, nothing moves (intro.js cuts to the stage after 3 s) */
 .pi-still .pi-enter, .pi-still .pi-col, .pi-still .pi-sil, .pi-still .pi-flash, .pi-still .pi-kick, .pi-still .pi-name-back, .pi-still .pi-name-front,

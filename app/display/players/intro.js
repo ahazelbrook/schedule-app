@@ -76,7 +76,7 @@
   Pure.kicker = function (role, faction) { return [txt(role, 120), txt(faction, 120)].filter(Boolean).join(' · '); };
   /* the card's drawing: the Tell expression and the Signature pose (names from the fixed lists only), else the spec as served */
   Pure.specFor = function (spec, look, FL) {
-    if (!isObj(spec)) return null;
+    if (!isObj(spec) || !Object.keys(spec).length) return null;      /* no figure spec (a cast row saved without one is {}): the monogram */
     var lk = FL && typeof FL.clean === 'function' ? FL.clean(look) : null, s = spec;
     if (lk && lk.expr && typeof FL.specWith === 'function') s = FL.specWith(s, { expr: lk.expr });
     if (lk && lk.pose && typeof FL.poseSpec === 'function') s = FL.poseSpec(s, lk.pose);
@@ -102,23 +102,30 @@
   function el(doc, tag, cls, text) { var e = doc.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
   function faceLook() { return W && W.B68FaceLook ? W.B68FaceLook : null; }
 
-  /* the drawn box of an svg's content on screen (the union of its children's boxes: what the figure covers, not its viewBox) */
-  function contentRect(svg) {
+  function tagOf(n) { return String(n && n.tagName || '').toLowerCase(); }
+  /* the figure's own body in a kit drawing: g.b68-figure holds the defs, the ground and cast shadows (a path and a use) and the body (its last
+     g); the shadows reach far to the right of the feet, so they are left out of every box here. Anything else: the svg itself. */
+  function bodyOf(svg) {
     if (!svg || !svg.children) return null;
-    var l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
-    for (var i = 0; i < svg.children.length; i++) {
-      var k = svg.children[i], tag = String(k.tagName || '').toLowerCase();
-      if (tag === 'defs' || tag === 'title' || tag === 'desc' || tag === 'style' || typeof k.getBoundingClientRect !== 'function') continue;
-      var q = k.getBoundingClientRect(); if (!q || !(q.width > 0 || q.height > 0)) continue;
-      l = Math.min(l, q.left); t = Math.min(t, q.top); r = Math.max(r, q.right); b = Math.max(b, q.bottom);
-    }
-    return isFinite(l) && r > l && b > t ? { left: l, top: t, width: r - l, height: b - t } : null;
+    var fig = typeof svg.querySelector === 'function' ? svg.querySelector('.b68-figure') : null, kids = fig ? fig.children : [], body = null;
+    for (var i = 0; i < kids.length; i++) if (tagOf(kids[i]) === 'g') body = kids[i];
+    return body || svg;
   }
-  /* crop an svg's viewBox to its drawn content, so every figure fills the card's figure box the same way, hat and hair included */
+  function screenRect(n) {
+    if (!n || typeof n.getBoundingClientRect !== 'function') return null;
+    var q = n.getBoundingClientRect();
+    return q && q.width > 0 && q.height > 0 ? { left: q.left, top: q.top, width: q.width, height: q.height } : null;
+  }
+  /* crop an svg's viewBox to the body, so every figure fills the card's figure box the same way, hat and hair included */
   function cropTo(svg) {
     try {
-      if (!svg || typeof svg.getBBox !== 'function') return null;
-      var bb = svg.getBBox(); if (!bb || !(bb.width > 0) || !(bb.height > 0)) return null;
+      var body = bodyOf(svg), q = screenRect(body), m = svg && typeof svg.getScreenCTM === 'function' ? svg.getScreenCTM() : null;
+      if (!q || !m || typeof svg.createSVGPoint !== 'function') return null;
+      var inv = m.inverse(), p = svg.createSVGPoint();
+      p.x = q.left; p.y = q.top; var a = p.matrixTransform(inv);
+      p.x = q.left + q.width; p.y = q.top + q.height; var b = p.matrixTransform(inv);
+      var bb = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) };
+      if (!(bb.width > 0) || !(bb.height > 0)) return null;
       var pad = bb.height * 0.012, vb = [bb.x - pad, bb.y - pad, bb.width + 2 * pad, bb.height + 2 * pad];
       svg.setAttribute('viewBox', vb.map(function (n) { return Math.round(n * 100) / 100; }).join(' '));
       svg.setAttribute('preserveAspectRatio', 'xMidYMin meet');
@@ -151,8 +158,9 @@
     function build(display, seq, pos, still) {
       var npc = display.npc, FL = faceLook(), pal = Pure.palette(npc.faction, FL), name = txt(npc.name, 200);
       var uid = 'pi-' + String(seq).replace(/[^A-Za-z0-9_-]/g, '');
-      var card = el(doc, 'div', 'pi-card' + (still ? ' pi-still' : ''));
+      var card = el(doc, 'div', 'pi-card pi-measure' + (still ? ' pi-still' : ''));      /* pi-measure: the figure unmoved while it is measured (next() lifts it) */
       card.setAttribute('data-pi-seq', String(seq));
+      card.setAttribute('data-pi-at', String(pos));            /* where the card was when it mounted (the checks read it to know the second) */
       card.setAttribute('role', 'img');
       card.setAttribute('aria-label', 'Introducing ' + name);
       card.style.setProperty('--pi-field', pal.field);
@@ -188,26 +196,26 @@
       if (kick) { var k1 = el(doc, 'p', 'pi-kick'); k1.appendChild(el(doc, 'span', 'pi-kick-t', kick)); type.appendChild(k1); }
       var h = el(doc, 'h1', 'pi-name');
       h.appendChild(el(doc, 'span', 'pi-name-back', name)).setAttribute('aria-hidden', 'true');
-      h.appendChild(el(doc, 'span', 'pi-name-front', name));
+      var front = h.appendChild(el(doc, 'span', 'pi-name-front', name));
       type.appendChild(h);
       if (alias) type.appendChild(el(doc, 'p', 'pi-alias', '“' + alias + '”'));
       card.appendChild(type);
       card.appendChild(el(doc, 'div', 'pi-lb pi-lb-t'));
       card.appendChild(el(doc, 'div', 'pi-lb pi-lb-b'));
       card.appendChild(el(doc, 'div', 'pi-flash'));
-      return { el: card, name: h, type: type, out: out, col: col, sil: sil };
+      return { el: card, name: h, front: front, type: type, out: out, col: col, sil: sil };
     }
 
     /* the name as large as fits: one line at up to 14vh, else two */
     function fitName(c) {
-      var h = c.name, box = c.type, H = (W && W.innerHeight) || 768;
-      if (!h || !box || typeof h.getBoundingClientRect !== 'function') return;
-      var maxW = box.clientWidth || ((W && W.innerWidth) || 1024) * 0.6;
+      var h = c.name, f = c.front, H = (W && W.innerHeight) || 768;
+      if (!h || !f || typeof f.getBoundingClientRect !== 'function') return;
+      /* the front copy is a block as wide as the type box: it overflows (scrollWidth) exactly when the name does not fit */
       var res = Pure.fit(function (vh, wrap) {
         h.style.fontSize = vh + 'vh';
         h.setAttribute('data-pi-wrap', wrap ? '1' : '0');
-        var r = h.getBoundingClientRect(), lh = vh / 100 * H * 0.9, lines = Math.max(1, Math.round(r.height / lh));
-        return { fits: h.scrollWidth <= maxW + 1 && (wrap ? lines <= 2 : lines === 1), lines: lines };
+        var r = f.getBoundingClientRect(), lh = vh / 100 * H * 0.9, lines = Math.max(1, Math.round(r.height / lh));
+        return { fits: f.scrollWidth <= f.clientWidth + 1 && (wrap ? lines <= 2 : lines === 1), lines: lines };
       }, { max: 14, min: 6 });
       h.style.fontSize = res.size + 'vh';
       h.setAttribute('data-pi-wrap', res.lines > 1 ? '1' : '0');
@@ -218,7 +226,7 @@
     function settle(c) {
       try {
         var stages = container.querySelectorAll('.dp-stage.dp-npc'), st = stages.length ? stages[stages.length - 1] : null;
-        var tgt = contentRect(st && st.querySelector('.dp-npc-fig svg')), mine = contentRect(c.col);
+        var tgt = screenRect(bodyOf(st && st.querySelector('.dp-npc-fig svg'))), mine = screenRect(bodyOf(c.col));
         if (!tgt || !mine || !(mine.height > 0)) return;
         var wr = c.out.getBoundingClientRect(), k = tgt.height / mine.height;
         var dx = tgt.left - wr.left - k * (mine.left - wr.left), dy = tgt.top - wr.top - k * (mine.top - wr.top);
@@ -248,11 +256,13 @@
         if (vb) c.out.style.width = 'calc(var(--pi-figh) * ' + (Math.round(vb[2] / vb[3] * 10000) / 10000) + ')';      /* the box is the figure's own shape */
       }
       fitName(c);
+      c.el.classList.remove('pi-measure');
       var me = cur, refit = function () { if (cur === me) fitName(c); };
       if (W && typeof W.addEventListener === 'function') { W.addEventListener('resize', refit); me.offs.push(function () { W.removeEventListener('resize', refit); }); }
       if (doc.fonts && doc.fonts.status !== 'loaded' && doc.fonts.ready && typeof doc.fonts.ready.then === 'function') doc.fonts.ready.then(refit, function () {});
       if (still) { me.timers.push(later(function () { if (cur === me) cut(); }, Math.max(0, Pure.STILL_MS - pos))); return; }
       me.timers.push(later(function () { if (cur === me) settle(c); }, Math.max(0, Pure.T.out - pos)));
+      me.timers.push(later(function () { if (cur === me && container.classList) container.classList.remove('pi-on'); }, Math.max(0, Pure.T.fade - pos)));      /* the stage's figure under the fading card's */
       me.timers.push(later(function () { if (cur === me) cut(); }, Math.max(0, Pure.T.end - pos)));
     }
 
