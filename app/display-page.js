@@ -651,7 +651,7 @@
     { id: 'pells', file: 'pells-provisions.html', label: "Pell's Provisions" },
     { id: 'wanted', file: 'wanted-wall.html', label: 'Wanted wall', needs: 'crew' },
     { id: 'meeting', file: 'planning-meeting.html', label: 'The planning meeting' },
-    { id: 'credits', file: 'opening-credits.html', label: 'Opening credits', pinOnly: true, music: true },
+    { id: 'credits', file: 'opening-credits.html', label: 'Opening credits', pinOnly: true, music: true, episode: 'episode-credits.html' },
     { id: 'veil', file: 'sunrise-ball-opening.html', label: 'The Sunrise Ball: opening', pinOnly: true },
     { id: 'board', file: 'planning-board.html', label: 'Planning board', needs: 'score' },
     { id: 'exploded', file: 'score-exploded.html', label: 'Score site, exploded', needs: 'score' },
@@ -690,12 +690,17 @@
   };
   /* the iframe URL for a scene id, or '' for an unknown id. The watch feed polls /api/campaign unless told not to; the display
      sign-in may not call it, so it is always loaded with ?api=off. */
-  Pure.ambientUrl = function (id) {
+  Pure.ambientUrl = function (id, episode) {
     var sc = Pure.ambientScene(id);
     /* no `.html`: the asset server answers /ambient/x.html with a 307 to /ambient/x, and the service worker will not cache a
        redirected response, so a scene would never be available offline */
-    return sc ? 'ambient/' + sc.file.replace(/\.html$/, '') + (sc.id === 'watch' ? '?api=off' : '') : '';
+    return sc ? 'ambient/' + (episode === true && sc.episode ? sc.episode : sc.file).replace(/\.html$/, '') + (sc.id === 'watch' ? '?api=off' : '') : '';
   };
+  /* IP5.2: a scene with an `episode` file (the Opening credits) plays that file in its place when it was deployed: built on the GM's PC
+     from an episode file and gitignored, so it is on the server only when the deploying checkout had it. The display asks once per page
+     load with a same-origin HEAD (no `.html`, so no redirect; a HEAD passes the service worker by) and keeps the answer: 'yes' or 'no'.
+     No answer (offline, a timeout) plays today's file this time and asks again the next time the scene loads. */
+  Pure.episodeAnswer = function (status) { return status >= 200 && status < 300 ? 'yes' : status >= 400 && status < 500 ? 'no' : ''; };
   /* a scene is playable when it exists and, if it needs a score, the plan has one */
   Pure.ambientAvailable = function (plan, id) {
     var sc = Pure.ambientScene(id);
@@ -1266,7 +1271,7 @@
       return JSON.parse(localStorage.getItem('b68.display.ambientTiming') || 'null');
     } catch (e) { return null; }
   }
-  function makeFrame(id) {
+  function makeFrame(id, episode) {
     var f = document.createElement('iframe');
     f.className = 'dp-amb-frame';
     f.setAttribute('sandbox', 'allow-scripts allow-same-origin');
@@ -1275,8 +1280,25 @@
     f.setAttribute('tabindex', '-1');
     f.setAttribute('referrerpolicy', 'same-origin');
     f.setAttribute('data-scene', id);
-    f.setAttribute('src', Pure.ambientUrl(id));
+    f.setAttribute('src', Pure.ambientUrl(id, episode === true));
     return f;
+  }
+  /* IP5.2: is the episode's own file on the server? One HEAD per page load (Pure.episodeAnswer), 2.5 s at most; '' = no answer */
+  var EPI = { state: '', p: null };
+  function episodeProbe(file) {
+    if (EPI.state) return Promise.resolve(EPI.state);
+    if (EPI.p) return EPI.p;
+    EPI.p = new Promise(function (res) {
+      var done = false, tm = null;
+      function fin(st) { if (done) return; done = true; if (tm !== null) clearTimeout(tm); EPI.p = null; EPI.state = st; res(st); }
+      tm = setTimeout(function () { fin(''); }, 2500);
+      try {
+        if (typeof fetch !== 'function') { fin('no'); return; }
+        fetch('ambient/' + file.replace(/\.html$/, ''), { method: 'HEAD', credentials: 'same-origin', cache: 'no-store' })
+          .then(function (r) { fin(Pure.episodeAnswer(r && r.status)); }, function () { fin(''); });
+      } catch (e) { fin(''); }
+    });
+    return EPI.p;
   }
   function createAmbient(s, layer, later, clearLater) {
     var ctx = s.ctx, container = s.container;
@@ -1340,11 +1362,14 @@
       later(function () { drop(slot); }, reduced() ? 60 : T.fadeMs);
     }
 
-    function load(id) {
+    function load(id, asked) {
       A.cur = id;
       if (A.incoming) { if (A.incoming.id === id) return; drop(A.incoming); A.incoming = null; }
       if (A.active && A.active.id === id) { armRot(); return; }
-      var f = makeFrame(id), slot = { id: id, frame: f, loaded: false, dead: false, wd: null, off: null };
+      /* IP5.2: the Opening credits wait for the one question (is the episode's file on the server?), then load whichever it is */
+      var sc = Pure.ambientScene(id), ep = !!(sc && sc.episode);
+      if (ep && !EPI.state && !asked) { episodeProbe(sc.episode).then(function () { if (!A.dead && !A.covered && A.cur === id) load(id, true); }); return; }
+      var f = makeFrame(id, ep && EPI.state === 'yes'), slot = { id: id, frame: f, loaded: false, dead: false, wd: null, off: null };
       slot.off = on(f, 'load', function () { onLoad(slot); });
       slot.wd = later(function () { slot.wd = null; onWatchdog(slot); }, T.watchdogMs);
       A.incoming = slot;

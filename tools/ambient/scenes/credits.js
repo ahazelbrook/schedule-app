@@ -87,7 +87,7 @@ module.exports = function build(ep) {
     const silBig = L.at(sil[c.id], 1140, 1190, 0.42, `fill="${c.deep}"`).split("sil-" + c.id).join("silb-" + c.id);
     const nameSize = c.name.length > 18 ? 104 : 124;
     // the one who leaves walks in a layer of their own (it moves every frame): their colour figure is there, not in the shot
-    if (leaving) ex.layers += layer("wkL", big, true, [1140, 1190]);
+    if (leaving) ex.layers += walkLayer("wkL", fig, 1140, 1190, 0.42);
     shot("c" + i, `<rect class="wipe" x="0" y="0" width="0" height="${H}" fill="${c.deep}"/>
       <g opacity=".22">${rings(1140, 640, 8, 80, C.paper100, 4)}</g>
       <g class="silf">${silBig}</g><g class="colf" style="display:none">${leaving ? "" : big}</g>
@@ -144,7 +144,7 @@ module.exports = function build(ep) {
       const ox = BX.x + (BX.w - m[2] * s) / 2 - m[0] * s, oy = BX.y + (BX.h - m[3] * s) / 2 - m[1] * s;
       const gapX = ox + g.cx * s, floor = oy;
       const nf = walker(specOf(NEW), "in-" + NEW.id, NEW_FRAMES, s);
-      ex.layers += layer("wkN", L.at(nf, gapX, floor, s), true, [gapX, floor]);
+      ex.layers += walkLayer("wkN", nf, gapX, floor, s);
       ex.layers += layer("fzCard", freezeCard(NEW, floor, poster, mono));
       ex.layers += `<div id="flash"></div>`;
       ex.script += `const NW={id:${JSON.stringify("in-" + NEW.id)},x0:${f2(-gapX - 160)}};\n`;
@@ -219,9 +219,19 @@ module.exports.BEAT = BEAT;
 // ======================================================================================================================
 
 const W_ = 1600, H_ = 1200;
-/* an extra full-stage layer over the shots: a moving one is composited (will-change), so a step repaints that layer alone */
-const layer = (id, inner, moving, feet) => `<svg class="ep${moving ? " mv" : ""}" id="${id}" viewBox="0 0 ${W_} ${H_}" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display:none${feet ? `;transform-origin:${f2(feet[0] / 16)}% ${f2(feet[1] / 12)}%` : ""}">${inner}</svg>`;
+/* an extra full-stage layer over the shots (the freeze's name card) */
+const layer = (id, inner) => `<svg class="ep" id="${id}" viewBox="0 0 ${W_} ${H_}" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display:none">${inner}</svg>`;
+/* A walker's own layer: no bigger than the figure (every pose cut repaints the layer, so on the iPad a figure-sized layer repaints a
+   figure's worth of pixels, not the whole screen), composited (will-change), moved with a CSS transform in % of its own box
+   (data-w/h, stage units), pivoting at the feet. Its viewBox is its box in stage units, so the figure keeps its stage coordinates. */
+function walkLayer(id, fig, X, floor, s) {
+  const [vx, vy, vw, vh] = fig.vb, pad = 8;
+  const x = X + vx * s - pad, y = floor + vy * s - pad, w = vw * s + 2 * pad, h = vh * s + 2 * pad;
+  const style = `display:none;left:${f2(x / 16)}%;top:${f2(y / 12)}%;width:${f2(w / 16)}%;height:${f2(h / 12)}%;transform-origin:${f2((X - x) / w * 100)}% ${f2((floor - y) / h * 100)}%`;
+  return `<svg class="ep mv wk" id="${id}" viewBox="${f2(x)} ${f2(y)} ${f2(w)} ${f2(h)}" preserveAspectRatio="none" aria-hidden="true" data-w="${f2(w)}" data-h="${f2(h)}" style="${style}">${L.at(fig, X, floor, s)}</svg>`;
+}
 const EPISODE_CSS = `.ep{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
+.ep.wk{right:auto;bottom:auto;overflow:visible}
 .mv{will-change:transform}
 #flash{position:absolute;inset:0;background:#fffaf0;opacity:0;pointer-events:none}`;
 
@@ -350,7 +360,7 @@ const wkL=$('wkL'),wkN=$('wkN'),fz=$('fzCard'),fl=$('flash'),inLine=$('inLine'),
 const WALK=[[0,.28,8,1.2],[1,.22,-8,0],[2,.28,8,-1.2],[1,.22,-8,0]],LIMP=[[0,.34,5,.9],[1,.2,-9,0],[2,.24,20,-2.8],[1,.22,-6,0]];
 function step(g,u){const c=u-Math.floor(u);let a=0;for(const s of g){a+=s[1];if(c<a)return s;}return g[g.length-1];}
 const prog=p=>p<=0?0:p>=1?1:(p<.1?5*p*p:p-.05)/.95;
-const place=(el,x,y,r)=>css(el,'translate3d('+(x/16).toFixed(3)+'%,'+(y/12).toFixed(3)+'%,0)'+(r?' rotate('+r.toFixed(2)+'deg)':''));
+const place=(el,x,y,r)=>css(el,'translate3d('+(x/+el.dataset.w*100).toFixed(3)+'%,'+(y/+el.dataset.h*100).toFixed(3)+'%,0)'+(r?' rotate('+r.toFixed(2)+'deg)':''));
 loop(()=>{const t=now();
  if(EP.lv>=0){const sh='c'+EP.lv,on=cur===sh;
   const lt=t-(T.crew0+EP.lv*(T.crewLen+T.locLen));

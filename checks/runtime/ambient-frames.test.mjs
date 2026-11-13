@@ -168,6 +168,80 @@ await test('the walk catches what it is for (a made-up figure: a clip in a hidde
   for (const want of ['#c0 sits in a version hidden in this frame', '0 versions shown', '2 versions shown', '2 heads shown']) if (!p.includes(want)) throw new Error('missed: ' + want + '\n' + p);
 });
 
+/* IP5.2: an episode's own credits, built from the invented fixture (the Dovetail Crew) to a temp folder, never into app/ambient */
+{
+  const { spawnSync } = await import('node:child_process');
+  const os = await import('node:os');
+  const { createRequire } = await import('node:module');
+  const FIX = path.join(ROOT, 'tools', 'ambient', 'fixtures', 'episode-demo.json');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'b68-episode-')), out = path.join(tmp, 'episode-credits.html');
+  const local = path.join(ROOT, 'app', 'ambient', 'episode-credits.html'), stamp = () => (fs.existsSync(local) ? fs.statSync(local).mtimeMs : 'absent'), before = stamp();
+  const run = spawnSync(process.execPath, [path.join(ROOT, 'tools', 'ambient', 'scenes', 'credits.js'), '--episode', FIX, '--out', out], { cwd: ROOT, encoding: 'utf8' });
+  const html = fs.existsSync(out) ? fs.readFileSync(out, 'utf8') : '';
+  const ep = JSON.parse(fs.readFileSync(FIX, 'utf8'));
+  /* one shot's markup: from its opening tag to the next shot's (the shots sit side by side in one svg) */
+  const shotOf = (id) => { const a = html.indexOf('<g class="shot" id="' + id + '"'); if (a < 0) return ''; const b = html.indexOf('<g class="shot" id="', a + 10); return html.slice(a, b < 0 ? html.indexOf('</svg>', a) : b); };
+  const T = (() => { const m = html.match(/const T=(\{[^}]*\});/); return m ? JSON.parse(m[1]) : {}; })();
+
+  await test('episode: the fixture builds (no kit warning, nothing on stderr) to the path asked for, and app/ambient is not touched', () => {
+    if (run.status !== 0) throw new Error('exit ' + run.status + '\n' + run.stderr);
+    if (run.stderr.trim()) throw new Error('stderr: ' + run.stderr);
+    if (!/^episode-credits\.html\s+\d+ KB\s*$/.test(run.stdout.trim())) throw new Error('stdout: ' + run.stdout);
+    if (!/^\s*<!doctype html/i.test(html.slice(0, 200))) throw new Error('not a page');
+    if (stamp() !== before) throw new Error('app/ambient/episode-credits.html changed');
+  });
+
+  await test('episode: every figure, every frame: one version per part, the head shown once, every id unique (the walkers among them)', () => {
+    const r = walkScene(html, 'episode-credits.html');
+    if (r.problems.length) throw new Error(r.problems.length + ' problem(s):\n  ' + r.problems.slice(0, 12).join('\n  '));
+    for (const f of ['cr-tam', 'in-ada']) if (!html.includes('data-fig="' + f + '"')) throw new Error('no figure ' + f);
+    console.log('     ' + r.figures + ' figure(s), ' + r.frames + ' figure-frames');
+  });
+
+  await test('episode: the one who leaves walks in a layer of their own, and is not in the line-up: a gap with their outline is', () => {
+    const c2 = shotOf('c2'), lu = shotOf('lu');
+    if (!/<svg class="ep mv wk" id="wkL"/.test(html) || !/id="wkL"[^>]*>[\s\S]*?data-fig="cr-tam"/.test(html)) throw new Error('the walker layer');
+    if (/data-fig="cr-tam"/.test(c2)) throw new Error('the colour figure is still in the card shot');
+    if (!/id="lvStamp"/.test(c2) || !c2.includes('ON THE RUN')) throw new Error('the stamp on the name card');
+    if (!lu) throw new Error('no line-up shot');
+    for (const id of ['nell', 'ray', 'octavia']) if (!lu.includes('data-id="' + id + '"')) throw new Error(id + ' is missing from the line-up');
+    if (lu.includes('data-id="tam"')) throw new Error('the one who left is still in the line-up');
+    if (lu.includes('data-id="ada"')) throw new Error('the newcomer is already in the line-up (they walk in)');
+    if (!lu.includes('data-id="tam-oa"') || !lu.includes('data-id="tam-ob"')) throw new Error('no outline in the gap');
+    const m = shotOf('m'), p2 = m.slice(m.indexOf('data-i="2"'), m.indexOf('data-i="3"'));
+    if (!p2.includes('ON THE RUN') || /-grain\)/.test(p2) || !/-grain\)/.test(m.slice(m.indexOf('data-i="1"'), m.indexOf('data-i="2"')))) throw new Error('the montage keeps no empty panel');
+  });
+
+  await test('episode: the newcomer walks in after the title, and the held last frame is the freeze with them in it', () => {
+    const lz = shotOf('lz');
+    if (!lz) throw new Error('no freeze shot');
+    if (!/<svg class="ep mv wk" id="wkN"[^>]*>[\s\S]*?data-fig="in-ada"/.test(html)) throw new Error('the newcomer layer');
+    if (!/id="fzName"/.test(html) || !html.includes('>ADA VELL<') || !/id="fzStamp"[\s\S]*?>KIT</.test(html)) throw new Error('the name card and the player stamp');
+    if (!html.includes("at(T.inFreeze,'lz')")) throw new Error('the freeze is not the last shot');
+    if (!html.includes(ep.introducing.line)) throw new Error('the line');
+  });
+
+  await test('episode: the new beats in order, on the beat, inside the card and inside the theme’s 90 s; the fade after the freeze', async () => {
+    const C = createRequire(import.meta.url)(path.join(ROOT, 'tools', 'ambient', 'scenes', 'credits.js'));
+    const B = C.BEAT, card = T.crew0 + 2 * (T.crewLen + T.locLen);
+    const seq = ['lvLook', 'lvCollar', 'lvWalk', 'lvGone', 'lvStamp'].map((k) => T[k]);
+    if (seq.some((v, i) => !(typeof v === 'number') || (i && v <= seq[i - 1]))) throw new Error('out of order: ' + JSON.stringify(T));
+    if (!(seq[0] > card + 4 && seq[4] < card + T.crewLen - 0.8)) throw new Error('the leaver beats leave the card: ' + seq.join(', '));
+    const intro = ['inCut', 'inLine', 'inWalk', 'inStop', 'inFreeze', 'inStamp'].map((k) => T[k]);
+    if (intro.some((v, i) => !(typeof v === 'number') || (i && v <= intro[i - 1])) || !(intro[0] > T.title + 3) || !(T.inFreeze < T.fade && T.fade < T.end && T.end === 90)) throw new Error('intro: ' + JSON.stringify(T));
+    for (const v of seq.concat(intro)) { const n = (v - B.at) / B.len; if (Math.abs(n - Math.round(n)) > 0.01) throw new Error(v + ' s is not on the beat'); }
+  });
+
+  await test('episode: a bad file is refused with a reason (three in the cast, an unknown leaver, a colour that is not a token)', () => {
+    const C = createRequire(import.meta.url)(path.join(ROOT, 'tools', 'ambient', 'scenes', 'credits.js'));
+    const bad = (f, want) => { let e = null; try { C.episodeOf(f); } catch (x) { e = x; } if (!e || !want.test(e.message)) throw new Error('expected ' + want + ', got ' + (e && e.message)); };
+    bad({ cast: ep.cast.slice(0, 3) }, /four entries/);
+    bad(Object.assign({}, ep, { leaves: { id: 'nobody' } }), /not in the cast/);
+    bad(Object.assign({}, ep, { cast: ep.cast.map((c, i) => (i ? c : Object.assign({}, c, { field: 'pink' }))) }), /no colour token/);
+  });
+  try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) { /* a lingering handle */ }
+}
+
 if (failed) { console.log('\n' + failed + ' failed'); process.exit(1); }
 console.log('\nall ambient frame checks passed');
 }
