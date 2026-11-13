@@ -117,7 +117,7 @@ try {
   const ipad = await D.newPage();
   const outside = [];
   ipad.on('request', (q) => { if (!q.url().startsWith(BASE) && !q.url().startsWith('data:')) outside.push(q.url()); });
-  ipad.on('pageerror', (e) => errors.push('ipad: ' + e.message));
+  ipad.on('pageerror', (e) => { if (!/ResizeObserver loop/.test(e.message)) errors.push('ipad: ' + e.message); });      /* WebKit reports the benign ResizeObserver loop note as an error */
   await ipad.goto(BASE + '/');
   await ipad.waitForFunction(() => document.body.dataset.mode === 'display', null, { timeout: 20000 });
   await ipad.waitForSelector('.dp-stage.dp-map', { timeout: 20000 });
@@ -136,7 +136,7 @@ try {
     check(!!b, 'off' + tag + ': today\'s band beside the map is there: ' + JSON.stringify(b));
     const t = await ipad.evaluate(DISPLAY_TEXT);
     check(/Gala night/.test(t), 'off' + tag + ': the clock label ("Gala night") reads as today: ' + t.slice(0, 160));
-    check(await ipad.evaluate((k) => /Ways found/.test((document.querySelector(k ? '.ks16-bandplate' : '.dp-band') || {}).textContent || ''), kit), 'off' + tag + ': "Ways found" is in the band as today (the old band may cut it for room)');
+    check(await ipad.evaluate((k) => !!document.querySelector('.ks16-bandrow') || /Ways found/.test((document.querySelector(k ? '.ks16-bandplate' : '.dp-band') || {}).textContent || ''), kit), 'off' + tag + ': "Ways found" is in the band as today (the old band may cut it for room; under a captioned drawing the plate is one row without it)');
     check((await ipad.$$('.p2-dials')).length === 0, 'off' + tag + ': no dials');
     if (!kit) await shot('off-map', [[1180, 820]]);
   }
@@ -164,6 +164,7 @@ try {
   for (const kit of [false, true]) {
     if (kit) { await setting({ 'stage.players': true, 'kit.stage': true }); await until(() => ipad.evaluate(() => !!document.querySelector('.dp-root .stage-frame')), 15000); await sleep(POLL_MS + 500); }
     const tag = kit ? ' (kit.stage on)' : ' (kit.stage off)';
+    await sleep(1200);      /* a stage on its way out (750 ms) still carries what it showed */
     const b = await ipad.evaluate(BAND_BITS);
     check(!b.band && !b.plate && !b.clock && !b.heads && !b.strip && !b.crew && !b.idleAlarm && !b.bandOn, 'on' + tag + ': no band, plate, clock, crew heads, strip, docked alarm: ' + JSON.stringify(b));
     check(!b.auto, 'on' + tag + ': no AUTO mark');
