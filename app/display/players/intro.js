@@ -222,18 +222,31 @@
       h.setAttribute('data-pi-lines', String(res.lines));
     }
 
-    /* the hand-over: the card's figure settles onto the stage's own figure (under the card) while the ground wipes away */
-    function settle(c) {
+    /* the hand-over: the card's figure settles onto the stage's own figure (under the card) while the ground wipes away; when it has landed
+       (its transitionend, or the fallback at --pi-fade on a page too busy to say so), the stage's figure is shown under it and the card's
+       figure fades out over it, then the card goes. No figure to settle onto (a monogram, no figure on the stage): the fade at --pi-fade. */
+    function settle(c, me) {
+      var landed = false;
+      function land() {
+        if (landed || cur !== me) return; landed = true;
+        if (container.classList) container.classList.remove('pi-on');
+        c.out.classList.add('pi-fading');
+        me.timers.push(later(function () { if (cur === me) cut(); }, 200));
+      }
+      me.timers.push(later(land, Math.max(0, Pure.T.fade - Pure.T.out + 120)));
       try {
         var stages = container.querySelectorAll('.dp-stage.dp-npc'), st = stages.length ? stages[stages.length - 1] : null;
         var tgt = screenRect(bodyOf(st && st.querySelector('.dp-npc-fig svg'))), mine = screenRect(bodyOf(c.col));
-        if (!tgt || !mine || !(mine.height > 0)) return;
+        if (!tgt || !mine || !(mine.height > 0)) { me.timers.push(later(land, Math.max(0, Pure.T.fade - Pure.T.out))); return; }
         var wr = c.out.getBoundingClientRect(), k = tgt.height / mine.height;
         var dx = tgt.left - wr.left - k * (mine.left - wr.left), dy = tgt.top - wr.top - k * (mine.top - wr.top);
+        var onEnd = function (ev) { if (ev && ev.target === c.out && ev.propertyName === 'transform') land(); };
+        c.out.addEventListener('transitionend', onEnd);
+        me.offs.push(function () { c.out.removeEventListener('transitionend', onEnd); });
         c.out.style.transformOrigin = '0 0';
         c.out.style.transform = 'translate(' + Math.round(dx) + 'px, ' + Math.round(dy) + 'px) scale(' + Math.round(k * 1000) / 1000 + ')';
         c.out.classList.add('pi-settling');
-      } catch (e) { /* the card simply wipes */ }
+      } catch (e) { /* the card simply wipes; the fallback lands it */ }
     }
 
     function next(display, seq) {
@@ -261,9 +274,8 @@
       if (W && typeof W.addEventListener === 'function') { W.addEventListener('resize', refit); me.offs.push(function () { W.removeEventListener('resize', refit); }); }
       if (doc.fonts && doc.fonts.status !== 'loaded' && doc.fonts.ready && typeof doc.fonts.ready.then === 'function') doc.fonts.ready.then(refit, function () {});
       if (still) { me.timers.push(later(function () { if (cur === me) cut(); }, Math.max(0, Pure.STILL_MS - pos))); return; }
-      me.timers.push(later(function () { if (cur === me) settle(c); }, Math.max(0, Pure.T.out - pos)));
-      me.timers.push(later(function () { if (cur === me && container.classList) container.classList.remove('pi-on'); }, Math.max(0, Pure.T.fade - pos)));      /* the stage's figure under the fading card's */
-      me.timers.push(later(function () { if (cur === me) cut(); }, Math.max(0, Pure.T.end - pos)));
+      me.timers.push(later(function () { if (cur === me) settle(c, me); }, Math.max(0, Pure.T.out - pos)));
+      me.timers.push(later(function () { if (cur === me) cut(); }, Math.max(0, Pure.T.end + 500 - pos)));      /* a safety: settle() ends the card itself */
     }
 
     return {

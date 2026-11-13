@@ -104,6 +104,7 @@ const CHECKS = [
   ['checks/runtime/kit-pitch.e2e.mjs', 'the pitch cards (9416; KS19)'],
   // the map kit's new options (MK1)
   ['checks/runtime/map-scene.e2e.mjs', 'the map takes the new kit options: off, the four settings, the Shared screen and a live re-send to TV (9310; MK1)'],
+  ['checks/runtime/players-intro.e2e.mjs', 'the NPC introduction: the title card, the stage after it, a late joiner, Take it down, a hidden NPC, reduced motion, off (12110; IP3)'],
 ];
 
 const want = process.argv.slice(2);

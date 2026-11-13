@@ -1,7 +1,7 @@
 /* display/players/intro.css: the NPC introduction (IP3, setting stage.players; display/players/intro.js builds the markup).
    A freeze-frame title card over everything on the display root, then out of the way. Only .pi-* markup, which only intro.js makes, so with the
    setting off nothing here matches. Every beat's delay is a custom property the script sets from the shared clock (--pi-enter, --pi-freeze,
-   --pi-kicker, --pi-name, --pi-name2, --pi-alias, --pi-out, --pi-fade): a page that joins mid-card is at the same frame as the others.
+   --pi-kicker, --pi-name, --pi-name2, --pi-alias, --pi-out): a page that joins mid-card is at the same frame as the others.
    The base styles are the frozen frame; the animations bring it in and take it away, so .pi-still (reduced motion, Hold scenes still) is the
    frozen frame with no animation at all. */
 
@@ -81,8 +81,9 @@
 .pi-ground { animation: pi-groundout 620ms cubic-bezier(.65, 0, .35, 1) var(--pi-out, 99s) both; }
 .pi-lb-t { animation: pi-lbt 420ms cubic-bezier(.6, 0, .4, 1) var(--pi-out, 99s) both; }
 .pi-lb-b { animation: pi-lbb 420ms cubic-bezier(.6, 0, .4, 1) var(--pi-out, 99s) both; }
-.pi-figout { animation: pi-fade 200ms linear var(--pi-fade, 99s) both; }
-.pi-figout.pi-settling { transition: transform 560ms cubic-bezier(.6, 0, .25, 1); }
+.pi-figout.pi-settling { transition: transform 560ms cubic-bezier(.6, 0, .25, 1), opacity 180ms linear; }
+.pi-figout.pi-fading { opacity: 0; transition: opacity 180ms linear; }
+.pi-figout.pi-settling.pi-fading { transition: transform 560ms cubic-bezier(.6, 0, .25, 1), opacity 180ms linear; }
 
 @keyframes pi-enter {
   from { transform: translateX(82vw) skewX(-9deg); }
@@ -106,7 +107,6 @@
 }
 @keyframes pi-lbt { from { transform: none; } to { transform: translateY(-100%); } }
 @keyframes pi-lbb { from { transform: none; } to { transform: translateY(100%); } }
-@keyframes pi-fade { from { opacity: 1; } to { opacity: 0; } }
 
 /* portrait (an iPad held upright): the figure a little smaller and higher, the type across the foot */
 @media (orientation: portrait) {
@@ -117,8 +117,8 @@
   .pi-type { left: 6vw; width: 88vw; bottom: calc(var(--pi-lb) + 4vh); }
 }
 
-/* the stage under the card keeps its own figure hidden until the card's figure has settled onto it (intro.js lifts pi-on at --pi-fade, so the
-   card's figure fades out over the stage's: one figure on screen throughout, never two) */
+/* the stage under the card keeps its own figure hidden until the card's figure has settled onto it (intro.js lifts pi-on when the card's figure
+   lands, and fades that figure out over the stage's: one figure on screen throughout, never two) */
 .pi-on .dp-stage.dp-npc .dp-npc-fig { visibility: hidden; }
 
 /* the moment the card is mounted, the figure is measured where it will stand (intro.js lifts pi-measure in the same call) */
@@ -126,7 +126,7 @@
 
 /* reduced motion or Hold scenes still: the frozen frame, nothing moves (intro.js cuts to the stage after 3 s) */
 .pi-still .pi-enter, .pi-still .pi-col, .pi-still .pi-sil, .pi-still .pi-flash, .pi-still .pi-kick, .pi-still .pi-name-back, .pi-still .pi-name-front,
-.pi-still .pi-alias, .pi-still .pi-type, .pi-still .pi-ground, .pi-still .pi-lb-t, .pi-still .pi-lb-b, .pi-still .pi-figout { animation: none; transition: none; }
+.pi-still .pi-alias, .pi-still .pi-type, .pi-still .pi-ground, .pi-still .pi-lb-t, .pi-still .pi-lb-b { animation: none; transition: none; }
 @media (prefers-reduced-motion: reduce) {
-  .pi-enter, .pi-col, .pi-sil, .pi-flash, .pi-kick, .pi-name-back, .pi-name-front, .pi-alias, .pi-type, .pi-ground, .pi-lb-t, .pi-lb-b, .pi-figout { animation: none; transition: none; }
+  .pi-enter, .pi-col, .pi-sil, .pi-flash, .pi-kick, .pi-name-back, .pi-name-front, .pi-alias, .pi-type, .pi-ground, .pi-lb-t, .pi-lb-b { animation: none; transition: none; }
 }
