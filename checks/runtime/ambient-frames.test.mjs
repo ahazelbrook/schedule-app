@@ -181,6 +181,15 @@ await test('the walk catches what it is for (a made-up figure: a clip in a hidde
   const ep = JSON.parse(fs.readFileSync(FIX, 'utf8'));
   /* one shot's markup: from its opening tag to the next shot's (the shots sit side by side in one svg) */
   const shotOf = (id) => { const a = html.indexOf('<g class="shot" id="' + id + '"'); if (a < 0) return ''; const b = html.indexOf('<g class="shot" id="', a + 10); return html.slice(a, b < 0 ? html.indexOf('</svg>', a) : b); };
+  const LV = ep.leaves.id, LI = ep.cast.findIndex((c) => (c.spec ? c.spec.id : c.id) === LV), NW = ep.introducing.spec.id;
+  const others = ep.cast.map((c) => (c.spec ? c.spec.id : c.id)).filter((id) => id !== LV);
+  /* a walker's own layer, whole (its nested svgs counted) */
+  const layerOf = (id) => {
+    const a = html.indexOf('<svg class="ep mv wk" id="' + id + '"'); if (a < 0) return '';
+    const re = /<(\/?)svg\b/g; re.lastIndex = a; let d = 0, mm;
+    while ((mm = re.exec(html))) { d += mm[1] ? -1 : 1; if (!d) return html.slice(a, mm.index + 6); }
+    return '';
+  };
   const T = (() => { const m = html.match(/const T=(\{[^}]*\});/); return m ? JSON.parse(m[1]) : {}; })();
 
   await test('episode: the fixture builds (no kit warning, nothing on stderr) to the path asked for, and app/ambient is not touched', () => {
@@ -194,36 +203,46 @@ await test('the walk catches what it is for (a made-up figure: a clip in a hidde
   await test('episode: every figure, every frame: one version per part, the head shown once, every id unique (the walkers among them)', () => {
     const r = walkScene(html, 'episode-credits.html');
     if (r.problems.length) throw new Error(r.problems.length + ' problem(s):\n  ' + r.problems.slice(0, 12).join('\n  '));
-    for (const f of ['cr-tam', 'in-ada']) if (!html.includes('data-fig="' + f + '"')) throw new Error('no figure ' + f);
+    for (const f of ['cr-' + LV, 'in-' + NW]) if (!html.includes('data-fig="' + f + '"')) throw new Error('no figure ' + f);
     console.log('     ' + r.figures + ' figure(s), ' + r.frames + ' figure-frames');
   });
 
+  await test('episode: nothing that walks carries a live filter (each pose cut repaints the walker; a filter would re-run each time)', () => {
+    for (const id of ['wkL', 'wkN']) {
+      const w = layerOf(id);
+      if (!w) throw new Error('no layer ' + id);
+      if (/filter=/.test(w) || /<filter\b/.test(w)) throw new Error(id + ' carries a filter');
+    }
+  });
+
   await test('episode: the one who leaves walks in a layer of their own, and is not in the line-up: a gap with their outline is', () => {
-    const c2 = shotOf('c2'), lu = shotOf('lu');
-    if (!/<svg class="ep mv wk" id="wkL"/.test(html) || !/id="wkL"[^>]*>[\s\S]*?data-fig="cr-tam"/.test(html)) throw new Error('the walker layer');
-    if (/data-fig="cr-tam"/.test(c2)) throw new Error('the colour figure is still in the card shot');
-    if (!/id="lvStamp"/.test(c2) || !c2.includes('ON THE RUN')) throw new Error('the stamp on the name card');
+    const cl = shotOf('c' + LI), lu = shotOf('lu');
+    if (!layerOf('wkL').includes('data-fig="cr-' + LV + '"')) throw new Error('the walker layer');
+    if (cl.includes('data-fig="cr-' + LV + '"')) throw new Error('the colour figure is still in the card shot');
+    if (!/id="lvStamp"/.test(cl) || !cl.includes(ep.leaves.stamp)) throw new Error('the stamp on the name card');
     if (!lu) throw new Error('no line-up shot');
-    for (const id of ['nell', 'ray', 'octavia']) if (!lu.includes('data-id="' + id + '"')) throw new Error(id + ' is missing from the line-up');
-    if (lu.includes('data-id="tam"')) throw new Error('the one who left is still in the line-up');
-    if (lu.includes('data-id="ada"')) throw new Error('the newcomer is already in the line-up (they walk in)');
-    if (!lu.includes('data-id="tam-oa"') || !lu.includes('data-id="tam-ob"')) throw new Error('no outline in the gap');
-    const m = shotOf('m'), p2 = m.slice(m.indexOf('data-i="2"'), m.indexOf('data-i="3"'));
-    if (!p2.includes('ON THE RUN') || /-grain\)/.test(p2) || !/-grain\)/.test(m.slice(m.indexOf('data-i="1"'), m.indexOf('data-i="2"')))) throw new Error('the montage keeps no empty panel');
+    for (const id of others) if (!lu.includes('data-id="' + id + '"')) throw new Error(id + ' is missing from the line-up');
+    if (lu.includes('data-id="' + LV + '"')) throw new Error('the one who left is still in the line-up');
+    if (lu.includes('data-id="' + NW + '"')) throw new Error('the newcomer is already in the line-up (they walk in)');
+    if (!lu.includes('data-id="' + LV + '-oa"') || !lu.includes('data-id="' + LV + '-ob"')) throw new Error('no outline in the gap');
+    const m = shotOf('m'), cut = (i) => m.slice(m.indexOf('data-i="' + i + '"'), i < 3 ? m.indexOf('data-i="' + (i + 1) + '"') : m.length);
+    const gp = cut(LI), other = cut(LI === 0 ? 1 : 0);
+    if (!gp.includes(ep.leaves.stamp) || /-grain\)/.test(gp) || !/-grain\)/.test(other)) throw new Error('the montage keeps no empty panel');
   });
 
   await test('episode: the newcomer walks in after the title, and the held last frame is the freeze with them in it', () => {
     const lz = shotOf('lz');
     if (!lz) throw new Error('no freeze shot');
-    if (!/<svg class="ep mv wk" id="wkN"[^>]*>[\s\S]*?data-fig="in-ada"/.test(html)) throw new Error('the newcomer layer');
-    if (!/id="fzName"/.test(html) || !html.includes('>ADA VELL<') || !/id="fzStamp"[\s\S]*?>KIT</.test(html)) throw new Error('the name card and the player stamp');
+    if (!layerOf('wkN').includes('data-fig="in-' + NW + '"')) throw new Error('the newcomer layer');
+    const st = html.slice(html.indexOf('id="fzStamp"'), html.indexOf('id="fzStamp"') + 1200);
+    if (!/id="fzName"/.test(html) || !html.includes('>' + ep.introducing.name + '<') || !st.includes('>' + ep.introducing.player + '<')) throw new Error('the name card and the player stamp');
     if (!html.includes("at(T.inFreeze,'lz')")) throw new Error('the freeze is not the last shot');
     if (!html.includes(ep.introducing.line)) throw new Error('the line');
   });
 
   await test('episode: the new beats in order, on the beat, inside the card and inside the theme’s 90 s; the fade after the freeze', async () => {
     const C = createRequire(import.meta.url)(path.join(ROOT, 'tools', 'ambient', 'scenes', 'credits.js'));
-    const B = C.BEAT, card = T.crew0 + 2 * (T.crewLen + T.locLen);
+    const B = C.BEAT, card = T.crew0 + LI * (T.crewLen + T.locLen);
     const seq = ['lvLook', 'lvCollar', 'lvWalk', 'lvGone', 'lvStamp'].map((k) => T[k]);
     if (seq.some((v, i) => !(typeof v === 'number') || (i && v <= seq[i - 1]))) throw new Error('out of order: ' + JSON.stringify(T));
     if (!(seq[0] > card + 4 && seq[4] < card + T.crewLen - 0.8)) throw new Error('the leaver beats leave the card: ' + seq.join(', '));

@@ -143,11 +143,13 @@ module.exports = function build(ep) {
       const m = g.vb.split(/\s+/).map(Number), s = Math.min(BX.w / m[2], BX.h / m[3]);
       const ox = BX.x + (BX.w - m[2] * s) / 2 - m[0] * s, oy = BX.y + (BX.h - m[3] * s) / 2 - m[1] * s;
       const gapX = ox + g.cx * s, floor = oy;
-      const nf = walker(specOf(NEW), "in-" + NEW.id, NEW_FRAMES, s);
+      const nf = walker(specOf(NEW), "in-" + NEW.id, newFrames(specOf(NEW)), s);
       ex.layers += walkLayer("wkN", nf, gapX, floor, s);
       ex.layers += layer("fzCard", freezeCard(NEW, floor, poster, mono));
       ex.layers += `<div id="flash"></div>`;
-      ex.script += `const NW={id:${JSON.stringify("in-" + NEW.id)},x0:${f2(-gapX - 160)}};\n`;
+      // in from the side with fewer of the line-up to pass (they walk in front of them), starting just out of frame
+      const fromLeft = at <= slots.length - 1 - at, half = nf.vb[2] * s / 2 + 20;
+      ex.script += `const NW={id:${JSON.stringify("in-" + NEW.id)},x0:${f2(fromLeft ? -(gapX + half) : W - gapX + half)}};\n`;
     }
   }
 
@@ -252,8 +254,9 @@ function outlined(svg, tag, ring, fill, px) {
   return `<g opacity=".9">${copy("a", ring, px)}</g>${copy("b", fill, 1.5)}`;
 }
 
-/* the montage's empty panel: the one who left, as a chalk outline on their colour, the stamp's word where the player's name was */
-function gapPanel(c, i, x, y, word, spec, poster) {
+/* the montage's empty panel: the one who left, as a chalk outline on their colour, the stamp's word stamped across it (high enough to be
+   inside what the iPad and a TV show of the bottom row) and an empty strip where the player's name was */
+function gapPanel(c, i, x, y, word, spec) {
   const one = (k) => {
     const p = L.K.portrait(spec, { lod: "lo", silhouette: true, halo: false, chart: false, plate: false, ground: "none", suffix: "-gp" + k });
     const m = p.svg.match(/^<svg[^>]*viewBox="([^"]+)"[^>]*>([\s\S]*)<\/svg>$/);
@@ -265,7 +268,7 @@ function gapPanel(c, i, x, y, word, spec, poster) {
     `<ellipse cx="${x + 400}" cy="${y + 470}" rx="240" ry="44" fill="${C.paper100}" opacity=".12"/>` +
     `<svg x="${x + 170}" y="${y + 20}" width="460" height="560" viewBox="${a.vb}" opacity=".85">${fat(a.inner, C.paper100, 7)}</svg>` +
     `<svg x="${x + 170}" y="${y + 20}" width="460" height="560" viewBox="${b.vb}">${fat(b.inner, c.deep, 1.5)}</svg>` +
-    `<rect x="${x}" y="${y + 500}" width="800" height="100" fill="${C.ink900}"/>${poster(String(word || "").toUpperCase(), x + 40, y + 575, 80, C.caution500)}</g>`;
+    `<rect x="${x}" y="${y + 500}" width="800" height="100" fill="${C.ink900}"/>` + stamp("gapStamp", word, x + 400, y + 360, -8, C.caution500, 76).replace(' style="display:none"', "") + `</g>`;
 }
 
 /* the line-up with slot `at` emptied: the kit's own line-up of `slots` (so every other place is where the kit puts it), the figure in
@@ -294,7 +297,7 @@ function freezeCard(n, floor, poster, mono) {
   const y = Math.max(885, floor + 6), nameSize = n.name.length > 18 ? 84 : 96;      // 885-1050: inside what a TV shows
   return `<g id="fzName" style="display:none"><rect x="0" y="${f2(y)}" width="1040" height="165" fill="${n.deep}"/>` +
     poster(n.name, 70, f2(y + 98), nameSize, C.paper100, `textLength="${Math.min(900, n.name.length * nameSize * .44)}" lengthAdjust="spacingAndGlyphs"`) +
-    mono(n.job + " · " + n.code, 72, f2(y + 143), 24, n.field) + `</g>` + stamp("fzStamp", n.player, 1260, f2(y + 80), -7, C.caution500);
+    mono(n.job + " · " + n.code, 72, f2(y + 143), 24, n.field) + `</g>` + stamp("fzStamp", n.player, 1260, f2(y + 50), -7, C.caution500, 80);      // its foot >= 3% of a TV's height clear of the edge
 }
 
 /* The leaver's frames: rest, a look off-screen, the collar, then three walk poses (stride, pass, the other stride). The kit has no walk
@@ -309,26 +312,70 @@ const LEAVE_FRAMES = [
   { pose: { stance: "square", weight: "L", stoop: 0.12, head: { yaw: 20 }, arms: { L: "lapel", R: "down" } } },
   { pose: { stance: "wide", weight: "R", stoop: 0.05, head: { yaw: 20 }, arms: { L: "lapel", R: { a: "down", b: "carry", t: 0.35 } } } },
 ];
-/* The newcomer's: standing, the two strides and the pass (a hand in the pocket, the other swinging), the cigarette coming up, and the
-   freeze: the spec's own pose (frame 7 is {}) */
-const NEW_FRAMES = [
-  { pose: { arms: { R: "down" }, head: { tilt: 0 } } },
-  { pose: { stance: "wide", weight: "R", arms: { R: { a: "down", b: "behind", t: 0.35 } }, head: { tilt: 0 } } },
-  { pose: { stance: "square", weight: "L", arms: { R: "down" }, head: { tilt: 0 } } },
-  { pose: { stance: "wide", weight: "L", arms: { R: { a: "down", b: "carry", t: 0.35 } }, head: { tilt: 0 } } },
-  { pose: { arms: { R: { a: "down", b: "smoke", t: 0.4 } }, head: { tilt: -2 } } },
-  { pose: { arms: { R: { a: "down", b: "smoke", t: 0.7 } }, head: { tilt: -4 } } },
-  { pose: { arms: { R: { a: "down", b: "smoke", t: 0.93 } }, head: { tilt: -5 } } },
-  {},
-];
+/* The newcomer's: standing, the two strides and the pass (the right arm down and swinging, the left as the spec has it), the right arm
+   coming up into the spec's own pose (a cigarette to the lips, a hand to the lapel...) in three steps, and the freeze: the spec's own
+   pose (frame 7 is {}). An arm the spec leaves down, or gives as a blend, just holds. */
+function newFrames(spec) {
+  const pose = (spec && spec.pose) || {}, R = (pose.arms || {}).R, tilt = Number((pose.head || {}).tilt) || 0;
+  const up = (t) => (typeof R === "string" && R !== "down" ? { R: { a: "down", b: R, t } } : {});
+  const head = (k) => ({ tilt: Math.round(tilt * k * 10) / 10 });
+  return [
+    { pose: { arms: { R: "down" }, head: head(0) } },
+    { pose: { stance: "wide", weight: "R", arms: { R: { a: "down", b: "behind", t: 0.35 } }, head: head(0) } },
+    { pose: { stance: "square", weight: "L", arms: { R: "down" }, head: head(0) } },
+    { pose: { stance: "wide", weight: "L", arms: { R: { a: "down", b: "carry", t: 0.35 } }, head: head(0) } },
+    { pose: { arms: up(0.4), head: head(0.35) } },
+    { pose: { arms: up(0.7), head: head(0.65) } },
+    { pose: { arms: up(0.93), head: head(0.85) } },
+    {},
+  ];
+}
 /* A walker's motion figure. The arm swung behind the body changes the stacking order of the sleeve, and with a ribbed top (the kit's rib
-   textile) the merge cannot keep the pattern's id unique; then the swing goes out to the hip instead (frames 1 and 3 only). */
+   textile) the merge cannot keep the pattern's id unique; then the swing goes out to the hip instead (frames 1 and 3 only). The kit's
+   low level of detail: at a walker's size it drops only fine crease lines, and it halves the bytes of every pose. */
 function walker(spec, id, frames, place) {
-  try { return L.fig(spec, { id, frames, place }); } catch (e) {
+  let f;
+  try { f = L.fig(spec, { id, frames, place, lod: "lo" }); } catch (e) {
     if (!/defined twice/.test(e.message)) throw e;
-    const safe = frames.map((f) => JSON.parse(JSON.stringify(f).replace(/"b":"behind","t":0.35/g, '"b":"hip","t":0.18')));
-    return L.fig(spec, { id, frames: safe, place });
+    const safe = frames.map((x) => JSON.parse(JSON.stringify(x).replace(/"b":"behind","t":0.35/g, '"b":"hip","t":0.18')));
+    f = L.fig(spec, { id, frames: safe, place, lod: "lo" });
   }
+  f.svg = still(f.svg, id);
+  f.bytes = f.svg.length;
+  return f;
+}
+/* A walker repaints at every pose cut, and an SVG filter re-runs on every repaint (the IP5 review measured 50-150 ms stalls on the
+   walk-in): so nothing that moves keeps a live filter. The kit's grain (a filter over the whole figure; the stage's own grain lies
+   over everything anyway), the stipple on the shade bands (they paint as plain translucent shade) and the cast shadow (a flood filter
+   on a skewed copy of the body; the contact shadow under the feet stays) come out. Then the pose versions that came out identical
+   are folded into one (a version listing every frame it shows in), which is most of the merge's repeats. */
+function still(svg, id) {
+  const P = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const s = svg.replace(new RegExp(`<filter id="${P}-(?:grain|stip|flat)"[\\s\\S]*?</filter>`, "g"), "")
+    .replace(new RegExp(`<use [^>]*filter="url\\(#${P}-flat\\)"[^>]*/>`, "g"), "")
+    .replace(new RegExp(`\\sfilter="url\\(#${P}-(?:grain|stip)\\)"`, "g"), "");
+  if (/filter="url\(/.test(s)) throw new Error(id + ": a filter is left on a walker");
+  const tree = L.M.parse(s);
+  const ser = (n) => n.text != null ? n.text : n.kids.length ? `<${n.tag}${n.attrs}>${n.kids.map(ser).join("")}</${n.tag}>` : `<${n.tag}${n.attrs}/>`;
+  (function fold(n) {
+    if (n.text != null) return;
+    for (const k of n.kids) fold(k);
+    if (!/\sdata-mv=""/.test(n.attrs)) return;
+    const byBody = new Map(), out = [];
+    for (const v of n.kids) {
+      const m = v.text == null && v.attrs.match(/\sdata-f="([^"]*)"/);
+      if (!m) { out.push({ v }); continue; }
+      const body = v.kids.map(ser).join(""), fr = m[1].trim().split(/\s+/).map(Number), hit = byBody.get(body);
+      if (hit) hit.fr.push(...fr); else { const e = { v, fr }; byBody.set(body, e); out.push(e); }
+    }
+    n.kids = out.map((e) => {
+      if (!e.fr) return e.v;
+      const fr = e.fr.sort((a, b) => a - b);
+      e.v.attrs = e.v.attrs.replace(/\sdata-f="[^"]*"/, ` data-f=" ${fr.join(" ")} "`).replace(/\sstyle="visibility:hidden"/, "") + (fr.includes(0) ? "" : ' style="visibility:hidden"');
+      return e.v;
+    });
+  })(tree);
+  return tree.kids.map(ser).join("");
 }
 
 /* the new beats, in absolute seconds on the theme's beat. The leaver's card i starts at T.crew0 + i * 11: they look on the first beat
@@ -360,7 +407,9 @@ const wkL=$('wkL'),wkN=$('wkN'),fz=$('fzCard'),fl=$('flash'),inLine=$('inLine'),
 const WALK=[[0,.28,8,1.2],[1,.22,-8,0],[2,.28,8,-1.2],[1,.22,-8,0]],LIMP=[[0,.34,5,.9],[1,.2,-9,0],[2,.24,20,-2.8],[1,.22,-6,0]];
 function step(g,u){const c=u-Math.floor(u);let a=0;for(const s of g){a+=s[1];if(c<a)return s;}return g[g.length-1];}
 const prog=p=>p<=0?0:p>=1?1:(p<.1?5*p*p:p-.05)/.95;
-const place=(el,x,y,r)=>css(el,'translate3d('+(x/+el.dataset.w*100).toFixed(3)+'%,'+(y/+el.dataset.h*100).toFixed(3)+'%,0)'+(r?' rotate('+r.toFixed(2)+'deg)':''));
+// always a rotation, even a hundredth of a degree: a layer that turns from upright to rotated is painted afresh (a 150-180 ms stall
+// measured at the first lean of the walk); one that is never upright is painted once
+const place=(el,x,y,r)=>css(el,'translate3d('+(x/+el.dataset.w*100).toFixed(3)+'%,'+(y/+el.dataset.h*100).toFixed(3)+'%,0) rotate('+(r||.01).toFixed(2)+'deg)');
 loop(()=>{const t=now();
  if(EP.lv>=0){const sh='c'+EP.lv,on=cur===sh;
   const lt=t-(T.crew0+EP.lv*(T.crewLen+T.locLen));
@@ -369,13 +418,16 @@ loop(()=>{const t=now();
   if(showL){let k=0,x=0,y=0,r=0;
    if(t>=T.lvWalk){const p=(t-T.lvWalk)/(T.lvGone-T.lvWalk),s=step(EP.limp?LIMP:WALK,(t-T.lvWalk)/(2*${BEAT.len}));k=3+s[0];x=760*prog(p);y=s[2];r=s[3];}
    else if(t>=T.lvCollar)k=2;else if(t>=T.lvLook)k=1;
+   // while all but invisible (1.8-2.2 s), every pose is shown once, so the walk's first cuts do not wait on a first paint
+   else if(lt<2.2&&!reduce)k=Math.max(0,5-Math.floor((lt-1.8)/.06));
    Motion.show(EP.lvId,k);place(wkL,x,y,r);}
   const st=$('lvStamp');if(st){const sOn=on&&t>=T.lvStamp;vis(st,sOn);if(sOn)slam(st,(t-T.lvStamp)/.12);}
  }
  if(sub)vis(sub,cur==='tt'&&t-T.title>1.7);
  if(EP.intro){const inLu=cur==='lu'&&t>=T.inCut,fzOn=t>=T.inFreeze&&cur==='lz';
   if(inLine){vis(inLine,inLu&&t>=T.inLine);if(inLu&&t>=T.inLine)slam(inLine,(t-T.inLine)/.1);}
-  const showN=(inLu&&t>=T.inWalk-.4)||fzOn;vis(wkN,showN,showN&&t<T.inWalk&&!reduce?'.001':'');
+  // painted all but invisibly from 2 s into the title card (it holds still there), so its first paint is neither in the cut nor the walk
+  const showN=((inLu||(cur==='tt'&&t>=T.title+2))&&(!reduce||t>=T.inWalk))||fzOn;vis(wkN,showN,showN&&t<T.inWalk&&!reduce?'.001':'');
   if(showN){let k=7,x=0,y=0,r=0;
    if(t<T.inStop){const p=(t-T.inWalk)/(T.inStop-T.inWalk);
     if(reduce){k=0;}else{const s=step(WALK,Math.max(0,t-T.inWalk)/(2*${BEAT.len}));k=1+s[0];x=NW.x0*(1-prog(p));y=s[2]*.6;r=s[3]*.8;}}

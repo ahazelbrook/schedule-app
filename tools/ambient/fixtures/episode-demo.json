@@ -29,12 +29,11 @@
         "hair": { "style": "beehive", "color": "cloth-rust" },
         "outfit": { "dress": { "type": "shift-dress", "color": "cloth-teal" }, "feet": { "type": "heels", "color": "cloth-black" } } } }
   ],
-  "leaves": { "id": "tam", "stamp": "ON THE RUN", "limp": true },
-  "introducing": { "player": "KIT", "name": "ADA VELL", "job": "OPERATIVE", "code": "OPR-968-0505", "field": "swing500", "deep": "swing900", "line": "AND INTRODUCING",
-    "spec": { "id": "ada", "name": "Ada Vell", "playbook": "Operative", "heightIn": 67, "figure": "fem", "heads": 7.8, "shape": "slim", "build": 0.9, "skin": "porcelain", "age": 24,
-      "pose": { "stance": "easy", "weight": "R", "arms": { "R": "smoke", "L": "pocket" }, "head": { "tilt": -6 } }, "head": { "shape": "long" },
-      "face": { "eyes": "narrow", "brows": "arched", "nose": "straight", "mouth": "thin", "expression": "cool", "eyewear": { "type": "shades", "frame": "cloth-white", "lens": "dark" } },
-      "hair": { "style": "pixie", "color": "cloth-black" },
-      "outfit": { "base": { "type": "turtleneck", "color": "cloth-black" }, "outer": { "type": "suit-jacket", "color": "cloth-graphite" }, "bottom": { "type": "cigarette-pants", "color": "cloth-black" }, "feet": { "type": "chelsea-boots", "color": "cloth-black" } },
-      "props": [{ "type": "cigarette" }] } }
+  "leaves": { "id": "nell", "stamp": "SKIPPED TOWN" },
+  "introducing": { "player": "MO", "name": "DOV KESSLER", "job": "INTELLECTUAL", "code": "INT-968-0505", "field": "rust500", "deep": "rust900", "line": "ALSO STARRING",
+    "spec": { "id": "dov", "name": "Dov Kessler", "playbook": "Intellectual", "heightIn": 71, "heads": 7.3, "shape": "pear", "build": 1.08, "skin": "fair", "age": 55,
+      "pose": { "stance": "square", "weight": "L", "arms": { "R": "lapel", "L": "pocket" }, "head": { "tilt": 3 } }, "head": { "shape": "round" },
+      "face": { "eyes": "round", "brows": "bushy", "nose": "hooked", "mouth": "wide", "expression": "amused", "facialHair": { "type": "beard-short", "color": "cloth-ash" }, "eyewear": { "type": "round-wire" } },
+      "hair": { "style": "receding", "color": "cloth-ash" },
+      "outfit": { "base": { "type": "shirt", "color": "cloth-cream" }, "outer": { "type": "blazer", "color": "cloth-tobacco", "pattern": "tweed" }, "bottom": { "type": "trousers", "color": "cloth-brown" }, "feet": { "type": "oxfords", "color": "cloth-brown" } } } }
 }
