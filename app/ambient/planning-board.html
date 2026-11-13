@@ -97,8 +97,12 @@ const AX=44,AY=28,WOB=.03;let box={x:800,y:600,w:1220,h:864},base=1.1;
 function visible(){const w=innerWidth||4,h=innerHeight||3,a=w/h;return a>=4/3?{hw:600*a,hh:600}:{hw:800,hh:800/a};}
 function fit(){const v=visible();base=Math.min(1.16,.96*v.hw/(box.w/2+AX),.96*v.hh/(box.h/2+AY))/(1+WOB);}
 addEventListener("resize",fit);fit();
-loop((dt,t)=>{const x=Math.sin(t*2*Math.PI/97)*AX*.8+Math.sin(t*2*Math.PI/41)*AX*.2, y=Math.sin(t*2*Math.PI/73+1)*AY*.8+Math.cos(t*2*Math.PI/37)*AY*.2, s=base*(1+Math.sin(t*2*Math.PI/131)*WOB);
- cam.setAttribute("transform","translate(800 600) scale("+s.toFixed(4)+") translate("+(-box.x+x).toFixed(1)+" "+(-box.y+y).toFixed(1)+")");});
+// the camera eases to a new box (a pin added makes the board taller) rather than jumping; snap() puts it there at once (a first board, or held still)
+let cv={x:box.x,y:box.y,s:base};
+function snap(){cv={x:box.x,y:box.y,s:base};cam.setAttribute("transform","translate(800 600) scale("+base.toFixed(4)+") translate("+(-box.x).toFixed(1)+" "+(-box.y).toFixed(1)+")");}
+loop((dt,t)=>{const k=Math.min(1,dt*1.4);cv.x+=(box.x-cv.x)*k;cv.y+=(box.y-cv.y)*k;cv.s+=(base-cv.s)*k;
+ const x=Math.sin(t*2*Math.PI/97)*AX*.8+Math.sin(t*2*Math.PI/41)*AX*.2, y=Math.sin(t*2*Math.PI/73+1)*AY*.8+Math.cos(t*2*Math.PI/37)*AY*.2, s=cv.s*(1+Math.sin(t*2*Math.PI/131)*WOB);
+ cam.setAttribute("transform","translate(800 600) scale("+s.toFixed(4)+") translate("+(-cv.x+x).toFixed(1)+" "+(-cv.y+y).toFixed(1)+")");});
 // polaroids lift a little in a draught
 loop((dt,t)=>{for(const p of pols){const a=Math.sin(t*p.sp+p.ph)*.6+Math.sin(t*p.sp*2.3+p.ph)*.25;p.e.setAttribute("transform",p.base.replace(/rotate\([^)]*\)/,"rotate("+(p.rot+a).toFixed(2)+")"));}});
 
@@ -136,7 +140,7 @@ function show(d){
   p.setAttribute("class",c?c+" string":"string");p.setAttribute("data-i",n++);p.setAttribute("pathLength","1");
  }
  const bw=1220,bh=bw*vb[3]/vb[2],bx=(W-bw)/2+20,by=120;
- nest(board,vb,bx,by,bw,bh,content);
+ const sheet=nest(board,vb,bx,by,bw,bh,content);
  // masking tape on the sheet's corners
  el("rect",{x:bx+160,y:by+30,width:120,height:30,fill:"#e8dfc4",opacity:".8",transform:"rotate(-12 "+(bx+220)+" "+(by+45)+")"},content);
  el("rect",{x:bx+bw-520,y:by+10,width:110,height:28,fill:"#e8dfc4",opacity:".8",transform:"rotate(9 "+(bx+bw-465)+" "+(by+24)+")"},content);
@@ -158,9 +162,51 @@ function show(d){
  const foot=crew.length?Math.max(by+bh,by+bh-70+16+9+ph):by+bh;
  box={x:bx+bw/2,y:(by+foot)/2,w:bw+40,h:foot-by};fit();
  strings=[...content.querySelectorAll(".string")];
- const g0=gen;
- strings.forEach((s,i)=>T(()=>{if(g0===gen)pin(s,2600);},1500+i*2200));
+ const g0=gen,held=still();
+ // the board's pins (the GM's planning board): a card drawn for a pin carries an id pb-<pin>-...; the same site sent again keeps what was pinned
+ // where it was, still, and only a card whose pin is new arrives (large in the middle, readable, then down to its place, then its string)
+ const same=d.name===prev.name&&prev.name!==null,cards=cardsOf(sheet),keys=new Set(cards.filter(c=>c.key).map(c=>c.key));
+ const fresh=same?cards.filter(c=>c.key&&!prev.keys.has(c.key)):[];
+ prev={name:d.name,keys:keys};
+ if(!same||held)snap();
+ if(!same)strings.forEach((s,i)=>T(()=>{if(g0===gen)pin(s,2600);},1500+i*2200));
+ else{
+  const mine=new Map(strings.map(s=>[s,owner(s,cards)]));
+  strings.forEach(s=>{if(fresh.indexOf(mine.get(s))<0){s.style.transition="none";s.style.strokeDashoffset="0";}});
+  fresh.forEach((c,i)=>arrive(c,strings.filter(s=>mine.get(s)===c),vb,400+i*6400,g0,held));
+ }
  T(()=>repin(g0),R(60,90)*1000);
+}
+let prev={name:null,keys:new Set()};
+const still=()=>reduce||document.documentElement.classList.contains("b68-fx-off");
+// the cards on the board: the top-level groups the kit placed with translate(x y), each starting with its shadow rect (its size)
+function cardsOf(root){const out=[];
+ for(const g of root.children){
+  if(g.localName!=="g")continue;
+  const m=/^translate\(([-\d.]+)[ ,]+([-\d.]+)\)/.exec(g.getAttribute("transform")||""),r=g.firstElementChild;
+  if(!m||!r||r.localName!=="rect")continue;
+  const w=+r.getAttribute("width"),h=+r.getAttribute("height");if(!(w>0&&h>0))continue;
+  const p=g.querySelector('[id^="pb-"]'),k=p&&/^pb-([a-z0-9]+)-/.exec(p.id);
+  out.push({g:g,x:+m[1],y:+m[2],w:w,h:h,key:k?k[1]:""});
+ }
+ return out;}
+// a string starts at its card's pin, near the card's top right corner: the nearest card owns it
+function owner(s,cards){const m=/^M\s*([-\d.]+)[ ,]+([-\d.]+)/.exec(s.getAttribute("d")||"");if(!m)return null;
+ let best=null,bd=1e9;for(const c of cards){const dd=Math.hypot(c.x+c.w-m[1],c.y-m[2]);if(dd<bd){bd=dd;best=c;}}return best;}
+// a new pin arrives: the card drops in large in the middle of the board (dimmed behind it), holds, settles into its place, then its string is pinned.
+// Held still or reduced motion: it is simply there, string and all
+function arrive(c,strs,vb,at,g0,held){
+ strs.forEach(s=>{s.style.transition="none";s.style.strokeDashoffset=held?"0":"1";});
+ if(held)return;
+ const par=c.g.parentNode,next=c.g.nextSibling,wrap=el("g",{"class":"arrive"});
+ const s=Math.min(6,.55*vb[3]/c.h,.42*vb[2]/c.w),tx=vb[0]+vb[2]/2-(c.x+c.w/2)*s,ty=vb[1]+vb[3]/2-(c.y+c.h/2)*s;
+ const big=dy=>"translate("+tx.toFixed(2)+"px,"+(ty+dy).toFixed(2)+"px) scale("+s.toFixed(3)+")";
+ const dim=el("rect",{x:vb[0],y:vb[1],width:vb[2],height:vb[3],fill:"#0d0905"},par);
+ dim.style.opacity="0";par.appendChild(wrap);wrap.appendChild(c.g);
+ wrap.style.transformOrigin="0 0";wrap.style.transform=big(-vb[3]*.2);wrap.style.opacity="0";
+ T(()=>{if(g0!==gen)return;dim.style.transition="opacity 500ms";dim.style.opacity=".5";wrap.style.transition="transform 800ms cubic-bezier(.2,.9,.3,1.12),opacity 250ms linear";wrap.style.transform=big(0);wrap.style.opacity="1";},at);
+ T(()=>{if(g0!==gen)return;dim.style.opacity="0";wrap.style.transition="transform 1300ms cubic-bezier(.55,.05,.3,1)";wrap.style.transform="translate(0px,0px) scale(1)";},at+800+3600);
+ T(()=>{if(g0!==gen)return;par.insertBefore(c.g,next);wrap.remove();dim.remove();strs.forEach(x=>pin(x,2200));},at+800+3600+1400);
 }
 
 // ---- protocol: ask the parent for the score; accept it only from the parent, on this origin ----

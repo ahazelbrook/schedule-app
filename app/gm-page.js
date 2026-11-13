@@ -3576,6 +3576,7 @@
         '<button type="button" class="btn sm" data-gm="scorescene"' + (mu.layer === 'player' ? '' : ' disabled title="Switch Layer to Player: only the player layer goes to the iPad"') + (mu.layer === 'player' ? ' title="The planning board and the exploded site on the iPad, from this roll at these bands"' : '') + '>Set as score scene</button>' +
         '<button type="button" class="btn sm" data-gm="blankipad" title="What is shown comes off the iPad: the ambient scene plays. Clear (0) takes everything down">Take it down</button></div>' +
         (sceneBehind(mu) ? '<p class="gm-dim gm-scene-behind">The score scene shows ' + esc(sceneBehind(mu).join(', ')) + ': press Set as score scene to bring it up to date.</p>' : '') +
+        (pbOn() ? '<div class="gm-pb-slot" data-pb-slot></div>' : '') +      /* IP6 (stage.players): the Board block (gm/players-board.js paints it) */
         runBox(runSite()) +
         '<details class="gm-more gm-mapopts"' + (foldOpen('mapopts') ? ' open' : '') + ' data-fold="mapopts"><summary>View &amp; theme <span class="gm-dim">' + esc(mapLine(mu)) + '</span></summary>' + '<div class="gm-map-ctl">' + sel('view', 'View', VIEWS, mu.view) + sel('theme', 'Theme', THEMES, mu.theme) + sel('time', 'Time', P.TIMES, mu.time) + sel('weather', 'Weather', P.WEATHERS, mu.weather) + sceneScreenSel(mu) + '</div></details>' +
         '<details class="gm-more gm-dl"' + (foldOpen('dl') ? ' open' : '') + ' data-fold="dl"><summary>Downloads</summary><div class="gm-map-acts">' + '<button type="button" class="btn sm" data-gm="dlsvg">Download SVG</button><button type="button" class="btn sm" data-gm="dlnote">Download note (.md)</button>' + '<button type="button" class="btn sm" data-gm="dlcanvas">Download canvas</button></div></details>' + '</section>';
@@ -3584,6 +3585,7 @@
     if (hist.length) h += '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) { return earlierChip(x, 'location', cur && cur.hid === x._id); }).join('') + '</div>';
     box.innerHTML = h;
     runPaint();          /* N3: the stage, the security level, the people and the knowledge are the site's now (gm/site.js), no longer boxes under the Map heading */
+    if (pbOn()) W.B68GmPlayersBoard.paint(box, pbHost());      /* IP6 (stage.players): the pins, and the score scene kept in step with them and the reveal */
     if (!S.map && runSite() && W.B68Map && W.B68Map.render) drawMap(true);     /* a run draws itself: its people are on the map */
     else if (S.map) showMap();
   }
@@ -5998,14 +6000,18 @@
     if (on && STT.loaded && !STT.error) return '<p class="gm-note gm-stt-pc" role="status">Into the vault: waiting for the PC (it looks once a minute). Lines keep on the server till then; if this stays, is the PC on and awake?</p>';
     return '<p class="gm-dim gm-stt-pc">Into the vault: the PC copies new lines by itself while listening is on.</p>';
   }
-  function setScoreScene() {
-    if (!S || !S.locRoll) { toast('Roll a location first.', true); return; }
+  /* IP6 (stage.players): pb = { map, pin(built), ask, seen } from pbSetScore: the same build, then the board redrawn with its pins (pin), the same gate and
+     the one score write; it answers the write's promise and says nothing itself. Without pb, as before. */
+  function setScoreScene(pb) {
+    var none = Promise.resolve(null);
+    if (!S || !S.locRoll) { toast('Roll a location first.', true); return none; }
     var built;
-    try { built = scoreScene(S.locRoll, mapUi(), W.B68Map && W.B68Map.render); } catch (e) { toast(errText(e), true); return; }
-    if (!confirmReveal(built.reveal, 'This score scene')) return;
+    try { built = scoreScene(S.locRoll, pb ? pb.map : mapUi(), W.B68Map && W.B68Map.render); if (pb) pb.pin(built); } catch (e) { toast(errText(e), true); return none; }
+    if (pb ? pb.ask && !confirmReveal(pb.seen, 'The planning board') : !confirmReveal(built.reveal, 'This score scene')) return none;
     gate.mark(built.board); gate.mark(built.iso);
-    patchAmbient({ score: built.score }).then(function (r) {
-      if (r) toast(built.rings ? 'Score scene set. The plan would name a hidden room, so the board uses rings.' : 'Score scene set: ' + built.score.name + '.');
+    return patchAmbient({ score: built.score }).then(function (r) {
+      if (r && !pb) toast(built.rings ? 'Score scene set. The plan would name a hidden room, so the board uses rings.' : 'Score scene set: ' + built.score.name + '.');
+      return r;
     });
   }
   function save(name, data) { if (S.api && S.api.saveFile) S.api.saveFile(name, data); }
@@ -6848,6 +6854,40 @@
     return { npc: function (id) { return S && isObj(S.npcs) ? S.npcs[id] : null; }, ask: asked, push: function (d) { return pushDisplay(d); }, toast: toast, errText: errText,
       reveal: function (id, d) { var ref = npcRef(id); if (!ref) return Promise.reject(new Error('The cast is not available here.')); return ref.update({ revealed: true, firstSeen: d.firstSeen || nowIso() }); },
       tray: function () { if (W.B68GmIpadTray) W.B68GmIpadTray.refresh(); } };
+  }
+  /* IP6 (stage.players): the planning board's pins (gm/players-board.js). What it needs of this page: the player copy's rooms at the bands and the rooms
+     opened on their own, the hidden-name scan, the token screen (each pin alone), the score scene through scoreScene and the gate, and the board pinned on the iPad */
+  function pbOn() { return !!W.B68GmPlayersBoard && b09On('stage.players'); }
+  function pbSeen() { var mu = Object.assign({}, mapUi(), { layer: 'player' }); return revealList(mu).concat(openRooms(mu).map(function (n) { return 'room:' + n; })); }
+  function pbHide() {      /* hidden NPCs (name and alias) and hidden clocks, and the full name of a revealed NPC the players know only by an alias */
+    var out = hiddenSecretNames(), B = W.B68GmPlayersBoard;
+    if (S && isObj(S.npcs)) Object.keys(S.npcs).forEach(function (id) { var d = S.npcs[id]; if (isObj(d) && d.revealed === true && B.known(d) !== str(d.name).trim() && str(d.name).trim()) out.push(str(d.name).trim()); });
+    return out;
+  }
+  function pbHost() {
+    return { doc: function () { return S.doc; }, roll: function () { return S.locRoll; }, site: function () { return S.locRoll ? str(S.locRoll.name) : ''; }, npcs: function () { return S && isObj(S.npcs) ? S.npcs : {}; },
+      rooms: function () { var seen = pbSeen(); return (S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : []).filter(function (r) { return isObj(r) && typeof r.name === 'string' && r.name; }).map(function (r) { return { name: r.name, shown: roomShown(r, seen) }; }); },
+      scan: function (text) { var names = P.tokenHidden(S.locRoll, pbSeen(), pbHide()); return names.filter(function (n) { return namesHit(text, [n]); }); },
+      patch: function (p) { return patch(p); }, score: function () { return AM.doc && isObj(AM.doc.score) ? AM.doc.score : null; }, busy: function () { return AM.busy > 0; },
+      figures: function () { return W.B68Figure || null; }, toast: toast, setScore: pbSetScore, showBoard: pbShowBoard };
+  }
+  function pbSetScore(list, ask) {
+    if (!S || !S.locRoll) { toast('Roll a location first.', true); return Promise.resolve(null); }
+    var seen = pbSeen(), hide = pbHide(), kept = [], refused = [], waiting = 0, dropped = false;
+    list.forEach(function (x) { var r = P.tokenScreen([x.tok], S.locRoll, seen, hide); if (r.tokens.length) kept.push(r.tokens[0]); else if (r.refused.length) refused.push({ label: x.tok.label, names: r.refused }); else waiting++; });
+    /* the score scene as Set as score scene builds it, then its board drawn again with the screened pins at the same view, kept only if the leak scan passes */
+    var pin = function (built) { var svg = W.B68GmPlayersBoard.board(S.locRoll, W.B68Map && W.B68Map.render, { seen: seen, tokens: kept, view: built.view, kit1: P.kit1On(), leaks: P.leaks }); if (svg) built.board = built.score.board = svg; else dropped = kept.length > 0; };
+    return setScoreScene({ map: Object.assign({}, mapUi(), { layer: 'player' }), seen: seen, ask: ask, pin: pin }).then(function (r) {
+      if (r && dropped) toast('The board went up without its pins: with them it would name a hidden room, or be too large for the iPad.', true);
+      return r ? { ok: true, refused: refused, waiting: waiting, pins: dropped ? 0 : kept.length } : null;
+    });
+  }
+  function pbShowBoard() {      /* one press: the board scene pinned, and a blank pushed when a stage covers it (as Roll the opening credits does) */
+    return patchAmbient({ mode: 'pin', scene: 'board' }).then(function (r) {
+      if (r === null) return false;
+      var k = isObj(AM.shown) ? str(AM.shown.kind) : '';
+      return k && k !== 'blank' ? pushDisplay({ kind: 'blank' }).then(function () { return true; }, function () { return true; }) : true;
+    }).then(function (ok) { if (W.B68GmIpadTray) W.B68GmIpadTray.refresh(); if (ok) toast('The planning board is on the iPad.'); return ok; });
   }
   function npcToIpad(id) {
     var d = S.npcs[id]; if (!d) return;
