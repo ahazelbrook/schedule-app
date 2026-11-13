@@ -30,7 +30,7 @@
   /* suite 1.7 and 5.8: the Debrief card and the quiet line, each a lazy bundle fetched only while its own switch is on */
   function betweenSync() {
     var F = window.B68Flags; if (!F) return;
-    [['spine.debrief', 'debrief', 'B68Debrief'], ['between.quiet', 'quiet', 'B68Quiet'], ['between.board', 'board', 'B68Board'], ['between.claims', 'claims', 'B68Claims'], ['between.absent', 'absent', 'B68Absent']].forEach(function (x) {
+    [['spine.debrief', 'debrief', 'B68Debrief'], ['between.quiet', 'quiet', 'B68Quiet'], ['between.board', 'board', 'B68Board'], ['between.claims', 'claims', 'B68Claims'], ['between.absent', 'absent', 'B68Absent'], ['phone.handouts', 'handouts', 'B68Handouts']].forEach(function (x) {      /* IP4: a player's Handouts */
       var mine = x[1] === 'claims' || forPlayer();
       if (F.on(x[0]) && mine) { if (L && L.need) L.need(x[1]).then(function () { if (window[x[2]] && (x[1] === 'claims' || forPlayer())) window[x[2]].start(); }, function () {}); }
       else if (window[x[2]]) window[x[2]].stop();

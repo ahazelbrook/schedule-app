@@ -197,7 +197,8 @@ await test('routes.js: index.html loads exactly the core bundle; every other bun
   ok(L && typeof L.need === 'function' && typeof L.files === 'function', 'routes.js defines B68Load');
   eq(W.B68_BUILD, 'dev', "the committed build is 'dev' (scripts/deploy.sh stamps it for the upload)");
   eq(Object.keys(L.BUNDLES), ['core', 'figures', 'table', 'print', 'crews', 'gm', 'display', 'commend', 'debrief', 'quiet', 'board', 'claims', 'absent', 'lair', 'lookbook',
-    'kit-ui', 'kit-desk', 'kit-stage', 'kit-phone', 'night-who', 'blade-pitches', 'kit-lookbook', 'map-scene'], 'the bundles');
+    'kit-ui', 'kit-desk', 'kit-stage', 'kit-phone', 'night-who', 'blade-pitches', 'kit-lookbook', 'map-scene',
+    'handouts', 'gm-handouts'], 'the bundles');      /* IP4: phone.handouts' two bundles */
   eq(L.BUNDLES.figures, ['figures/figure-kit.js', 'figures/cast.js'], 'the figures bundle is the kit and the cast canon');
   ok(!HTML.includes('figure-kit.js') && !HTML.includes('figures/cast.js'), 'index.html does not load the figure kit (first paint draws no figure)');
   eq(htmlTags(), L.BUNDLES.core, "index.html's stylesheet and script tags are BUNDLES.core, in order");

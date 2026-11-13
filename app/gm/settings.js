@@ -91,7 +91,11 @@
       said: { 'false': 'Room lights: off.', 'true': 'Room lights: on.' } },
     { key: 'map.room', label: 'Cut to the room', what: 'In the Run view, Cut to room puts one room the players know on the shared screen as a stage set; Back to the map undoes it.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
-      said: { 'false': 'Cut to the room: off.', 'true': 'Cut to the room: on.' } }
+      said: { 'false': 'Cut to the room: off.', 'true': 'Cut to the room: on.' } },
+    /* the players' screen build (IP4, 13/11): a phone setting, off until chosen */
+    { key: 'phone.handouts', label: 'Handouts on phones', what: 'Send a handout to a player’s phone, where it stays in their Handouts to open any time. Off: no Send to, and no Handouts on the phones.',
+      options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
+      said: { 'false': 'Handouts on phones: off. Phones follow within a few seconds.', 'true': 'Handouts on phones: on. Phones follow within a few seconds.' } }
   ];
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
