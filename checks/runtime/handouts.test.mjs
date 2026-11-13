@@ -39,6 +39,18 @@ await test('GM pure: withItem adds once, keeps the order, never copies the cue; 
   assert.equal(G.without(G.without(r2, 'sewer-map'), 'ledger'), null);
 });
 
+await test('GM pure: a copy with another file or title (the pack exported again) is REPLACED and given again now; current() tells it from an up-to-date one', () => {
+  const held = G.withItem(G.withItem(null, X, 1000), Y, 2000);
+  const X2 = Object.assign({}, X, { file: '1122334455667788.png' });
+  const r = G.withItem(held, X2, 3000);
+  assert.deepEqual(r.items.map((i) => i.id + ':' + i.file + ':' + i.at), ['ledger:f0e1d2c3b4a59687.png:2000', 'sewer-map:1122334455667788.png:3000']);
+  const r2 = G.withItem(held, Object.assign({}, X, { title: 'Invented sewer map (v2)' }), 4000);
+  assert.equal(r2.items.filter((i) => i.id === 'sewer-map')[0].title, 'Invented sewer map (v2)');
+  const rows = { 'p1@x.test': held, 'p2@x.test': G.withItem(null, X2, 1) };
+  assert.deepEqual(G.sentTo(rows, 'sewer-map').sort(), ['p1@x.test', 'p2@x.test']);
+  assert.deepEqual(G.current(rows, X2), ['p2@x.test'], 'p1 holds an out-of-date copy');
+});
+
 await test('GM pure: clean drops a bad file name (a path, a script, a bad type) and a repeat; at most MAX items', () => {
   const bad = { v: 1, items: [X, { id: 'p', file: '../secret.png' }, { id: 'q', file: 'x.html' }, { id: 'r', file: 'a/b.png' }, { id: '', file: 'ok.png' }, Object.assign({}, X, { title: 'again' })] };
   assert.deepEqual(G.clean(bad).map((i) => i.id), ['sewer-map']);
@@ -70,7 +82,7 @@ function fakeDoc() {
     const e = { tag, attrs: {}, text: '', disabled: false, type: '', className: '', title: '' };
     e.setAttribute = (k, v) => { e.attrs[k] = String(v); };
     Object.defineProperty(e, 'textContent', { get: () => e.text, set: (v) => { e.text = String(v); } });
-    Object.defineProperty(e, 'outerHTML', { get: () => '<' + tag + ' type="' + e.type + '" class="' + e.className + '"' + Object.entries(e.attrs).map(([k, v]) => ' ' + k + '="' + v + '"').join('') + (e.disabled ? ' disabled' : '') + '>' + e.text + '</' + tag + '>' });
+    Object.defineProperty(e, 'outerHTML', { get: () => '<' + tag + ' type="' + e.type + '" class="' + e.className + '"' + Object.entries(e.attrs).map(([k, v]) => ' ' + k + '="' + v + '"').join('') + (e.title ? ' title="' + e.title + '"' : '') + (e.disabled ? ' disabled' : '') + '>' + e.text + '</' + tag + '>' });
     return e;
   };
   return { createElement: mk, querySelectorAll: () => [], activeElement: null };
@@ -137,6 +149,21 @@ await test('GM controller: a second handout merges into the row; Everyone fills 
   await c.tap(chip('ledger', '*'));      /* now everyone has it: Everyone takes it back */
   assert.equal(asks.pop(), 'Take it back from everyone?');
   assert.deepEqual(st.rows, {});
+});
+
+await test('GM controller: after a re-export the held copy is marked out of date; one tap (no ask) sends it again, replacing it', async () => {
+  const st = fakeStore(MEMBERS), asks = [];
+  st.rows['p1@x.test'] = G.withItem(null, X, 100);
+  const X2 = Object.assign({}, X, { file: '1122334455667788.png' });
+  const c = G.create({ doc: fakeDoc(), fetch: st.fetch, toast() {}, ask: (m, go) => { asks.push(m); go(); }, away: () => [], now: () => 9000 });
+  c.html(X2); await c.load(true);
+  const h = c.html(X2);
+  assert.match(h, /class="chip sm gm-ho-old"[^>]*data-to="p1@x.test"[^>]*aria-pressed="false"[^>]*title="Sent copy is out of date: tap to send again"[^>]*>Nell · out of date</);
+  assert.match(h, /Sent to: Nell \(out of date\)/); assert.match(h, /Sent copy is out of date: tap to send again\./);
+  await c.tap(chip('sewer-map', 'p1@x.test'));
+  assert.equal(asks.length, 0, 'sending again asks nothing');
+  assert.deepEqual(st.rows['p1@x.test'].items, [{ id: 'sewer-map', title: 'Invented sewer map', file: '1122334455667788.png', at: 9000 }]);
+  assert.match(c.html(X2), /data-to="p1@x.test"[^>]*aria-pressed="true"[^>]*>Nell</);
 });
 
 await test('bundles: the phone list and the GM Send to are lazy bundles of their own, in no other bundle, each stylesheet in CSS_ORDER', () => {

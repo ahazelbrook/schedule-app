@@ -9,18 +9,22 @@
    It reads at start, on the LiveHub's 'docs' poke, when the page comes back into view, and every 30 s while it is in view (the pattern of sheet/debrief.js).
 
    WHAT IT DRAWS
-   - button() -> the Handouts button for the sheet's top bar (tracker.js puts it after Table, so it is one tap away on the old sheet and on every screen of
-     the four-screen sheet): the count when the player holds any, and a dot when one arrived after they last opened the list.
+   - The entry, one tap from the top level of the old sheet and of every screen of the four-screen sheet, with the count and a dot when one arrived after
+     the list was last opened: on a phone vital() is one more box in the top bar's vitals row (so the bar keeps its height); on a wide screen button()
+     sits after Table in the top bar's buttons (tracker.js draws both; sheet/handouts.css shows the one that fits the width).
    - open(): the list, full screen: newest first, each with its title (drawn first), when it was given, and a thumbnail (the same file, scaled by CSS, loaded
-     lazily). With none: "Nothing yet. The GM can send you anything you are handed at the table." A thumbnail that fails: "Needs a connection".
-   - view(id): one handout full screen on a dark ground, the title on top, the picture in a scrolling box (the browser's own pinch-zoom; a double tap or Zoom
-     shows it at full size, to pan by dragging), Close at the foot. Esc closes the viewer, then the list.
-   - A new handout raises one quiet toast ("<Title> is in your Handouts"). One the GM takes back leaves the list; an open viewer closes with "The GM took this back".
+     lazily). With none: "Nothing yet. The GM can send you anything you are handed at the table." A picture that fails: "Needs a connection" when the
+     phone is offline (or its last read failed), else "Ask the GM to send this again" (the file is gone: the pack was exported again).
+   - view(id): one handout full screen on a dark ground, the title on top, the picture in a scrolling box (the browser's own pinch-zoom; a double tap or the
+     Zoom button steps fit, about 2.5x, full size, to pan by dragging), Close at the foot. Esc closes the viewer, then the list (esc(): tracker.js asks it
+     too, for an Esc with the focus outside the layers); the sheet closing (a back gesture) closes both (tracker.js T.close calls close()).
+   - A new handout raises one quiet toast ("<Title> is in your Handouts"). One the GM takes back leaves the list; an open viewer closes and a line at the
+     top of the list says "The GM took this back: <title>" for 8 s.
    Which handouts the player has seen is kept on this phone (localStorage b68.handouts.seen: the newest `at` seen when the list was last open).
    The images are static files (media/handouts/<hash>.png, never cached by the service worker); every file name comes from this player's own row and is
    checked as a plain file name. Everything is drawn with textContent and DOM nodes.
 
-   API: start() stop() refresh() button() -> markup ('' when not started) open() view(id) close() state()
+   API: start() stop() refresh() button() vital() -> markup ('' when not started) open() view(id) close() esc() -> bool state()
    pure (Node tests): clean(rowJson) -> [{ id, title, file, at }] newest first     fresh(items, seen) -> n     toastText(items) -> string */
 (function (root, factory) {
   'use strict';
@@ -30,7 +34,7 @@
 })(typeof self !== 'undefined' ? self : this, function (W) {
   'use strict';
 
-  var KIND = 'handout', POLL_MS = 30000, MAX = 100, DIR = 'media/handouts/', SEEN_KEY = 'b68.handouts.seen';
+  var KIND = 'handout', POLL_MS = 30000, MAX = 100, DIR = 'media/handouts/', SEEN_KEY = 'b68.handouts.seen', MID = 2.5;
   var FILE_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,78}\.(?:png|jpe?g|gif|webp|svg)$/i;
   var EMPTY = 'Nothing yet. The GM can send you anything you are handed at the table.';
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
@@ -87,18 +91,35 @@
       if (arrived.length) toast(toastText(arrived));
     }
     known = ids;
-    if (viewer && !ids[viewer.id]) { closeViewer(); toast('The GM took this back'); }
+    var gone = viewer && !ids[viewer.id] ? viewer.title : '';
+    if (gone) closeViewer();
     if (JSON.stringify(items) !== before) { if (list) paintList(); redraw(); }
+    if (gone) { if (list) note('The GM took this back: ' + gone); else toast('The GM took this back'); }
   }
+  /* a line at the top of the open list, over everything else on it, until the list closes or 8 s pass (a toast would sit under the list) */
+  var NOTE_MS = 8000;
+  function note(text) {
+    if (!list) return;
+    var l = list;
+    if (l.note && l.note.parentNode) l.note.parentNode.removeChild(l.note);
+    if (l.noteT) W.clearTimeout(l.noteT);
+    var n = l.note = el('p', 'ds-ho-note', text); n.setAttribute('role', 'status');
+    l.el.insertBefore(n, l.body);
+    l.noteT = W.setTimeout(function () { if (n.parentNode) n.parentNode.removeChild(n); if (l.note === n) l.note = null; }, NOTE_MS);
+  }
+  /* the phone is offline, or its last read of the list failed: a picture that fails needs a connection. Online and read: the file is gone */
+  var readOk = true;
+  function offline() { return (W.navigator && W.navigator.onLine === false) || !readOk; }
+  function failText(short) { return offline() ? 'Needs a connection' : short ? 'Ask the GM to send this again' : 'This picture could not be loaded. Ask the GM to send this again.'; }
   function refresh() {
     if (!started) return;
     if (busy) { again = true; return; }
     busy = true;
-    W.fetch('/api/docs?kind=' + KIND + '&limit=5', { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } }).then(function (res) { return res.ok ? res.json() : null; }).then(function (j) {
+    W.fetch('/api/docs?kind=' + KIND + '&limit=5', { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } }).then(function (res) { readOk = !!res.ok; return res.ok ? res.json() : null; }).then(function (j) {
       if (!started || !j) return;
       var rows = Array.isArray(j.docs) ? j.docs : [], r = rows.filter(function (d) { return isObj(d) && d.kind === KIND && d.scope === 'player'; })[0];
       apply(r ? r.json : null);
-    }).then(null, function () { /* offline or signed out: the list stays as it was */ }).then(function () {
+    }).then(null, function () { readOk = false; /* offline or signed out: the list stays as it was */ }).then(function () {
       busy = false;
       if (again) { again = false; refresh(); }
     });
@@ -130,16 +151,32 @@
   }
 
   /* the sheet's top-bar button: an element's own markup (built as nodes, so every attribute and word is set as text) */
-  function button() {
-    if (!started || !W || !W.document) return '';
+  function entry(cls) {
     var n = items.length, nw = fresh(items, seenAt()), b = W.document.createElement('button');
-    b.type = 'button'; b.className = 'btn sm ds-hobtn' + (nw ? ' new' : '');
+    b.type = 'button'; b.className = cls + (nw ? ' new' : '');
     b.setAttribute('data-b68', 'handouts-open'); b.setAttribute('data-always', '1'); b.setAttribute('aria-haspopup', 'dialog');
     b.setAttribute('aria-label', 'Handouts' + (n ? ', ' + n : '') + (nw ? ', ' + nw + ' new' : ''));
     b.title = 'What the GM has handed you';
+    return { b: b, n: n, nw: nw };
+  }
+  function dot(b) { var d = W.document.createElement('span'); d.className = 'ds-tdot'; d.setAttribute('aria-hidden', 'true'); b.appendChild(d); }
+  /* a wide screen: a button in the top bar's row, after Table (a phone hides it: its entry is in the vitals, below) */
+  function button() {
+    if (!started || !W || !W.document) return '';
+    var e = entry('btn sm ds-hobtn'), b = e.b;
     b.appendChild(W.document.createTextNode('Handouts'));
-    if (n) { var c = W.document.createElement('span'); c.className = 'ds-ho-n'; c.setAttribute('aria-hidden', 'true'); c.textContent = String(n); b.appendChild(c); }
-    if (nw) { var d = W.document.createElement('span'); d.className = 'ds-tdot'; d.setAttribute('aria-hidden', 'true'); b.appendChild(d); }
+    if (e.n) { var c = W.document.createElement('span'); c.className = 'ds-ho-n'; c.setAttribute('aria-hidden', 'true'); c.textContent = String(e.n); b.appendChild(c); }
+    if (e.nw) dot(b);
+    return b.outerHTML;
+  }
+  /* a phone: one more box in the top bar's vitals row (Stress, Harm, XP, Load), so the bar keeps its one row of buttons and its height */
+  function vital() {
+    if (!started || !W || !W.document) return '';
+    var e = entry('ds-vit ds-ho-vit'), b = e.b, s = W.document.createElement('span'), v = W.document.createElement('b');
+    s.textContent = 'Handouts'; v.className = 'mono'; v.textContent = String(e.n);
+    s.setAttribute('aria-hidden', 'true'); v.setAttribute('aria-hidden', 'true');
+    b.appendChild(s); b.appendChild(W.document.createTextNode(' ')); b.appendChild(v);
+    if (e.nw) dot(b);
     return b.outerHTML;
   }
 
@@ -194,7 +231,7 @@
       imgs.forEach(function (p) {
         if (!list || !p[0].isConnected) return;
         var img = el('img', 'ds-ho-img'); img.alt = ''; img.decoding = 'async'; img.loading = 'lazy'; img.draggable = false;
-        img.onerror = function () { if (img.parentNode) img.parentNode.removeChild(img); p[0].classList.add('bad'); p[0].textContent = 'Needs a connection'; };
+        img.onerror = function () { if (img.parentNode) img.parentNode.removeChild(img); p[0].classList.add('bad'); p[0].textContent = failText(true); };
         img.src = src(p[1]); p[0].appendChild(img);
       });
     }, 0);
@@ -203,6 +240,7 @@
     if (viewer) closeViewer(false);
     if (!list) return;
     var l = list; list = null;
+    if (l.noteT) W.clearTimeout(l.noteT);
     if (l.el.parentNode) l.el.parentNode.removeChild(l.el);
     var b = W.document.querySelector && W.document.querySelector('#dossier .ds-hobtn');
     backTo(b || l.from);
@@ -224,19 +262,35 @@
     zoom.setAttribute('aria-pressed', 'false');
     foot.appendChild(zoom); foot.appendChild(x2);
     d.appendChild(top); d.appendChild(stage); d.appendChild(foot);
-    var v = viewer = { id: id, el: d, stage: stage, img: img, zoom: zoom, from: from, big: false };
+    var v = viewer = { id: id, title: x.title, el: d, stage: stage, img: img, zoom: zoom, from: from, step: 0, fitW: 0 };
+    /* three steps: fit, about 2.5 times the fit, the picture's own size (the middle step is left out when the picture is smaller than it).
+       The button says what the next tap does; a double tap on the picture does the same, centred where it was tapped */
+    function widths() {
+      var nat = v.img.naturalWidth || 0, mid = Math.round(v.fitW * MID);
+      return mid > 0 && mid < nat * 0.9 ? [0, mid, nat] : [0, nat];
+    }
+    function label() {
+      var ws = widths(), next = (v.step + 1) % ws.length;
+      v.zoom.textContent = next === 0 ? 'Fit to screen' : next === ws.length - 1 ? (ws.length === 3 ? 'Full size' : 'Zoom in') : 'Zoom in';
+      v.zoom.setAttribute('aria-pressed', String(v.step > 0));
+    }
+    v.label = label;
     function toggleZoom(px, py) {
       if (!v.img.naturalWidth) return;
       var s = v.stage, r = s.getBoundingClientRect(), fx = px == null ? 0.5 : (px - r.left + s.scrollLeft) / Math.max(1, s.scrollWidth), fy = py == null ? 0.5 : (py - r.top + s.scrollTop) / Math.max(1, s.scrollHeight);
-      v.big = !v.big; s.classList.toggle('big', v.big);
-      v.zoom.textContent = v.big ? 'Fit to screen' : 'Zoom in'; v.zoom.setAttribute('aria-pressed', String(v.big));
+      if (v.step === 0) v.fitW = v.img.getBoundingClientRect().width;
+      var ws = widths(); v.step = (v.step + 1) % ws.length;
+      s.classList.toggle('big', v.step > 0);
+      v.img.style.width = v.step > 0 ? ws[v.step] + 'px' : '';
+      label();
       s.scrollLeft = Math.max(0, fx * s.scrollWidth - s.clientWidth / 2); s.scrollTop = Math.max(0, fy * s.scrollHeight - s.clientHeight / 2);
     }
+    img.addEventListener('load', function () { if (viewer === v && v.step === 0) { v.fitW = img.getBoundingClientRect().width; label(); } });
     img.addEventListener('dblclick', function (e) { e.preventDefault(); toggleZoom(e.clientX, e.clientY); });
     img.onerror = function () {
       if (viewer !== v) return;
       while (stage.firstChild) stage.removeChild(stage.firstChild);
-      stage.appendChild(el('p', 'ds-ho-none', 'Needs a connection. The picture loads from the internet: try again when you have signal.'));
+      stage.appendChild(el('p', 'ds-ho-none', offline() ? 'Needs a connection. The picture loads from the internet: try again when you have signal.' : failText(false)));
       zoom.disabled = true;
     };
     img.src = src(x);
@@ -255,9 +309,11 @@
     }
   }
   function close() { closeViewer(false); closeList(); }
+  /* Esc from the sheet (tracker.js onDocKey; the focus is outside the layers, say on the page after a tap on the picture): the viewer, else the list. true when it closed one */
+  function esc() { if (viewer) { closeViewer(); return true; } if (list) { closeList(); return true; } return false; }
 
   function state() { return { started: started, loaded: loaded, items: items.slice(), fresh: fresh(items, seenAt()), list: !!list, viewer: viewer ? viewer.id : null }; }
 
-  return { KIND: KIND, start: start, stop: stop, refresh: refresh, button: button, open: open, view: view, close: close, state: state,
+  return { KIND: KIND, start: start, stop: stop, refresh: refresh, button: button, vital: vital, esc: esc, open: open, view: view, close: close, state: state,
     clean: clean, fresh: fresh, toastText: toastText, _set: function (j) { apply(j); } };
 });

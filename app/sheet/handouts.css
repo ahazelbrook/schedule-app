@@ -4,13 +4,14 @@
 #dossier .ds-hobtn .ds-ho-n { display: inline-block; min-width: 1.5em; margin-left: 6px; padding: 0 .35em; border-radius: 999px; background: var(--ink); color: var(--paper); font: 700 11px/1.5 var(--font-mono, monospace); text-align: center; }
 #dossier .ds-hobtn .ds-tdot { display: inline-block; width: 9px; height: 9px; margin-left: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--paper); vertical-align: 1px; }
 #dossier .ds-hobtn.new { border-color: var(--accent); }
-/* a phone's top bar: with Handouts beside Table the row wraps rather than clip (the status line is hidden there, as with Mission) */
-@media (max-width: 760px) {
-  #dossier.ds-live .ds-nav:has(.ds-hobtn) { gap: 5px; flex-wrap: wrap; }
-  #dossier.ds-live .ds-nav:has(.ds-hobtn) > .btn { padding-left: 9px; padding-right: 9px; }
-  #dossier.ds-live .ds-nav:has(.ds-hobtn) .ds-status { display: none; }
-  #dossier.ds-live .ds-nav:has(.ds-hobtn) .ds-status.bad { display: block; order: 9; flex: 0 0 100%; }
+/* a phone (tracker.css's own break, where the vitals row shows): the entry is a fifth vital, so the bar's row of buttons and its height stay as they were */
+@media screen and (max-width: 760px) {
+  #dossier.ds-live .ds-nav .ds-hobtn { display: none; }
 }
+#dossier .ds-ho-vit { position: relative; }
+#dossier .ds-ho-vit.new { border-color: var(--accent); }
+#dossier .ds-ho-vit .ds-tdot { position: absolute; top: -5px; right: -5px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--card, #fffaf2); }
+.ds-ho-note { flex: 0 0 auto; margin: 0; padding: 10px 16px; background: var(--ink, #14110e); color: var(--paper, #f4efe6); font: 700 15px/1.35 var(--font-body, sans-serif); }
 
 /* the list */
 .ds-ho-list { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; background: var(--paper, #f4efe6); color: var(--ink, #14110e); overscroll-behavior: contain; }

@@ -8,3 +8,6 @@
 #gm-page .gm-ho-send .chip:disabled { opacity: .55; cursor: progress; }
 #gm-page .gm-ho-sent { flex: 1 0 100%; font-size: 12px; overflow-wrap: anywhere; }
 @media (pointer: coarse) { #gm-page .gm-ho-send .chip { min-height: 44px; } }
+/* a copy sent before the pack was exported again: a dashed chip that sends it again */
+#gm-page .gm-ho-send .chip.gm-ho-old { border-style: dashed; border-color: var(--accent); }
+#gm-page .gm-ho-oldline { flex: 1 0 100%; font-size: 12px; color: var(--accent-ink, var(--ink)); font-weight: 700; }

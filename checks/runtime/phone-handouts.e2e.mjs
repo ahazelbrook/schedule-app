@@ -50,11 +50,11 @@ function png(w, h, seed) {
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
 const MEDIA = path.join(ROOT, 'app', 'media', 'handouts');
-const FILES = { sewer: 'a1b2c3d4e5f60718.png', ledger: 'f0e1d2c3b4a59687.png', gone: '0badc0ffee123456.png' };
+const FILES = { sewer: 'a1b2c3d4e5f60718.png', ledger: 'f0e1d2c3b4a59687.png', gone: '0badc0ffee123456.png', ledger2: '5566778899aabbcc.png' };
 const preExisting = existsSync(MEDIA) ? readdirSync(MEDIA) : [];
 mkdirSync(MEDIA, { recursive: true });
 writeFileSync(path.join(MEDIA, FILES.sewer), png(1200, 900, 0)); writeFileSync(path.join(MEDIA, FILES.ledger), png(900, 1200, 2));
-const cleanMedia = () => { for (const f of [FILES.sewer, FILES.ledger]) { try { rmSync(path.join(MEDIA, f), { force: true }); } catch (_) {} } if (!preExisting.length) { try { rmSync(MEDIA, { recursive: true, force: true }); } catch (_) {} } };
+const cleanMedia = () => { for (const f of [FILES.sewer, FILES.ledger, FILES.ledger2]) { try { rmSync(path.join(MEDIA, f), { force: true }); } catch (_) {} } if (!preExisting.length) { try { rmSync(MEDIA, { recursive: true, force: true }); } catch (_) {} } };
 const MANIFEST = { v: 1, rel: 'invented/handouts', items: [
   { id: 'sewer-map', title: 'Invented sewer map', file: FILES.sewer, when: 'GM-ONLY-cue when the bin man is handed it' },
   { id: 'ledger', title: 'Invented ledger page', file: FILES.ledger },
@@ -113,7 +113,14 @@ async function gmPage() {
   return { ctx, page, seen };
 }
 const shot = async (pg, name) => { if (SHOTS) await pg.screenshot({ path: path.join(SHOTS, name + '-' + TAG + '.png') }); };
-const btnState = (pg) => pg.evaluate(() => { const b = document.querySelector('#dossier .ds-hobtn'); return b ? { label: b.getAttribute('aria-label'), n: (b.querySelector('.ds-ho-n') || {}).textContent || '', dot: !!b.querySelector('.ds-tdot') } : null; });
+/* on a phone the entry is a fifth vital in the top bar: its count, its dot, and that it is on screen */
+const btnState = (pg) => pg.evaluate(() => { const b = document.querySelector('#dossier .ds-ho-vit'); if (!b) return null; const r = b.getBoundingClientRect(); return { label: b.getAttribute('aria-label'), n: (b.querySelector('b') || {}).textContent || '', dot: !!b.querySelector('.ds-tdot'), shown: r.width > 0 && r.height > 0 }; });
+/* the sticky top bar: its height, whether the status line ("Saved") is drawn, and how many rows the buttons take */
+const barOf = (pg) => pg.evaluate(() => { const b = document.querySelector('#dossier .ds-bar'), st = document.querySelector('#dossier .ds-status'), nav = document.querySelector('#dossier .ds-nav');
+  const tops = [...nav.children].filter((c) => getComputedStyle(c).display !== 'none' && c.getBoundingClientRect().width > 0).map((c) => c.getBoundingClientRect().top).sort((x, y) => x - y);
+  const rows = tops.length ? 1 + tops.filter((t, i) => i > 0 && t - tops[i - 1] > 16).length : 0;      /* a new row starts more than 16 px lower (the status text sits a little lower than the buttons) */
+  return { h: Math.round(b.getBoundingClientRect().height), status: !!st && getComputedStyle(st).display !== 'none', rows }; });
+const heights = {};
 const listTitles = (pg) => pg.evaluate(() => [...document.querySelectorAll('.ds-ho-list .ds-ho-title')].map((e) => e.textContent));
 const chipOf = (pg, id, to) => '#gm-ipad [data-ho-send="' + id + '"] [data-to="' + to + '"]';
 const noSideways = (pg) => pg.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1);
@@ -140,13 +147,16 @@ try {
     const G = await gmPage(), N = await phone(P1, 'pc-nell');
     await sleep(2500);
     check(!(await G.page.$('.gm-ho-send')) && !G.seen.req.some((u) => /handout-send/.test(u)), 'off: no Send to on the GM page, gm/handout-send.js not fetched');
-    check(!(await N.page.$('.ds-hobtn')) && !N.seen.req.some((u) => /sheet\/handouts|kind=handout/.test(u)), 'off: no Handouts on the phone, no sheet/handouts.js, no docs request of the kind');
-    await G.ctx.close(); await N.ctx.close();
+    check(!(await N.page.$('.ds-hobtn, .ds-ho-vit')) && !N.seen.req.some((u) => /sheet\/handouts|kind=handout/.test(u)), 'off: no Handouts on the phone, no sheet/handouts.js, no docs request of the kind');
+    heights.off390 = await barOf(N.page);
+    const N3 = await phone(P1, 'pc-nell', { w: 360, h: 640 }); await sleep(1500);
+    heights.off360 = await barOf(N3.page);
+    await G.ctx.close(); await N.ctx.close(); await N3.ctx.close();
   }
 
   /* ---------- on ---------- */
   await setting(true);
-  const G = await gmPage(), g = G.page;
+  let G = await gmPage(), g = G.page;
   check(await until(async () => !!(await g.$(chipOf(g, 'sewer-map', P1))), 20000), 'on: each handout has Send to… chips');
   const chips = await g.$$eval('#gm-ipad [data-ho-send="sewer-map"] [data-gm="ho-send"]', (l) => l.map((b) => b.textContent + ':' + b.getAttribute('aria-pressed')));
   check(JSON.stringify(chips) === JSON.stringify(['Nell:false', 'Ray:false', 'Everyone:false']), 'one chip per player (first names) and Everyone, none sent: ' + chips.join(' '));
@@ -154,8 +164,8 @@ try {
   const N = await phone(P1, 'pc-nell'), n = N.page, R = await phone(P2, 'pc-ray'), r = R.page;
   check(!!(await until(() => btnState(n), 15000)), 'on: Nell\'s sheet has a Handouts button');
   let b = await btnState(n);
-  check(b && b.n === '' && !b.dot, 'nothing held yet: no count, no dot ' + JSON.stringify(b));
-  await n.click('#dossier .ds-hobtn');
+  check(b && b.n === '0' && !b.dot && b.shown && b.label === 'Handouts', 'nothing held yet: 0, no dot; its name is "Handouts" ' + JSON.stringify(b));
+  await n.click('#dossier .ds-ho-vit');
   check(await until(async () => /Nothing yet\. The GM can send you anything you are handed at the table\./.test(await n.textContent('.ds-ho-list')), 8000), 'the empty list says so');
   await shot(n, 'phone-empty-390');
   await n.click('.ds-ho-close');
@@ -168,7 +178,8 @@ try {
   check(await until(async () => { const s = await btnState(n); return s && s.n === '1' && s.dot; }, 40000), 'Nell\'s button counts 1, with a dot ' + JSON.stringify(await btnState(n)));
   check(await until(() => n.evaluate(() => window.__toasts.includes('Invented sewer map is in your Handouts')), 3000), 'one quiet toast: "Invented sewer map is in your Handouts"');
   await shot(n, 'phone-bar-390');
-  await n.click('#dossier .ds-hobtn');
+  heights.on390 = await barOf(n);
+  await n.click('#dossier .ds-ho-vit');
   check(JSON.stringify(await listTitles(n)) === '["Invented sewer map"]', 'Nell\'s list: the sewer map');
   check(await until(async () => (await n.textContent('.ds-ho-list .ds-ho-when')).startsWith('Given '), 3000), 'with when it was given');
   check(await until(() => n.evaluate(() => { const i = document.querySelector('.ds-ho-list .ds-ho-img'); return !!i && i.complete && i.naturalWidth > 0; }), 10000), 'the thumbnail loads (lazily, after the title)');
@@ -179,18 +190,35 @@ try {
   const vb = await n.evaluate(() => { const v = document.querySelector('.ds-ho-v'), x = document.querySelector('.ds-ho-vx').getBoundingClientRect(), h = document.querySelector('.ds-ho-vh'); return { bg: getComputedStyle(v).backgroundColor, x: [x.bottom, x.height], h: h.textContent, ih: innerHeight }; });
   check(vb.bg === 'rgb(11, 10, 9)' && vb.h === 'Invented sewer map' && vb.x[0] <= vb.ih && vb.x[0] > vb.ih - 120 && vb.x[1] >= 44, 'the title on top, Close at the foot within thumb reach: ' + JSON.stringify(vb));
   await shot(n, 'phone-viewer-390');
-  await n.click('.ds-ho-zoom');
-  const z = await n.evaluate(() => { const s = document.querySelector('.ds-ho-stage'); return { big: s.classList.contains('big'), sw: s.scrollWidth, cw: s.clientWidth }; });
-  check(z.big && z.sw > z.cw, 'Zoom in: full size in a box that pans ' + JSON.stringify(z));
+  /* zoom: fit, about 2.5x, full size; the button says what the next tap does */
+  const zs = () => n.evaluate(() => { const s = document.querySelector('.ds-ho-stage'), i = document.querySelector('.ds-ho-vimg'); return { label: document.querySelector('.ds-ho-zoom').textContent, w: Math.round(i.getBoundingClientRect().width), sw: s.scrollWidth, cw: s.clientWidth }; });
+  const z0 = await zs();
+  await n.click('.ds-ho-zoom'); await sleep(150);
+  const z1 = await zs();
+  await n.click('.ds-ho-zoom'); await sleep(150);
+  const z2 = await zs();
   await shot(n, 'phone-viewer-zoom-390');
-  await n.click('.ds-ho-zoom');
+  await n.click('.ds-ho-zoom'); await sleep(150);
+  const z3 = await zs();
+  check(z0.label === 'Zoom in' && Math.abs(z1.w - z0.w * 2.5) <= 3 && z1.sw > z1.cw && z1.label === 'Full size' && z2.w === 1200 && z2.label === 'Fit to screen' && z3.w === z0.w && z3.label === 'Zoom in',
+    'Zoom: fit, then 2.5x, then full size, then fit; the label names the next step ' + JSON.stringify([z0, z1, z2, z3].map((z) => z.label + ' ' + z.w)));
+  await n.dblclick('.ds-ho-vimg'); await sleep(150);
+  const zd = await zs();
+  check(Math.abs(zd.w - z0.w * 2.5) <= 3 && zd.label === 'Full size', 'a double tap takes the same middle step ' + zd.w);
+  await n.click('.ds-ho-zoom'); await n.click('.ds-ho-zoom'); await sleep(100);
+  /* Esc after a tap on the picture (the focus leaves the dialog for the page) */
+  await n.click('.ds-ho-vimg');
+  await n.keyboard.press('Escape');
+  check(await until(async () => !(await n.$('.ds-ho-v')) && !!(await n.$('.ds-ho-list')), 3000), 'Esc after a tap on the picture closes the viewer (back to the list)');
+  await n.click('.ds-ho-list .ds-ho-open');
+  await n.waitForSelector('.ds-ho-v', { timeout: 5000 });
   await n.click('.ds-ho-vx');
   check(!(await n.$('.ds-ho-v')) && !!(await n.$('.ds-ho-list')), 'Close: back to the list');
 
   /* Ray: nothing of Nell's */
   await sleep(1500);
   const rb = await btnState(r);
-  check(rb && rb.n === '', 'Ray\'s button: no count ' + JSON.stringify(rb));
+  check(rb && rb.n === '0', 'Ray\'s entry: 0 ' + JSON.stringify(rb));
   const rayDocs = await api('GET', '/docs?kind=handout', undefined, P2);
   check(rayDocs.status === 200 && !rayDocs.text.includes(FILES.sewer) && !R.seen.bodies.some((x) => x.b.includes(FILES.sewer)), 'Ray\'s docs GET and every response on his phone: no sewer map file name');
   check(!R.seen.bodies.some((x) => /GM-ONLY/.test(x.b)) && !N.seen.bodies.some((x) => /GM-ONLY/.test(x.b)), 'no phone ever receives the cue or a GM-ONLY- text');
@@ -211,26 +239,63 @@ try {
   await g.click(chipOf(g, 'sewer-map', P1));      /* the page asks "Take it back from Nell?": the dialog is accepted */
   check(await until(async () => (await g.getAttribute(chipOf(g, 'sewer-map', P1), 'aria-pressed')) === 'false', 10000), 'take back: the chip empties');
   check(await until(async () => !(await n.$('.ds-ho-v')), 40000), 'Nell\'s open viewer closes');
-  check(await until(() => n.evaluate(() => window.__toasts.includes('The GM took this back')), 4000), '"The GM took this back"');
+  const noteSeen = () => n.evaluate(() => { const e = document.querySelector('.ds-ho-list .ds-ho-note'); if (!e) return null; const r = e.getBoundingClientRect(), hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return { text: e.textContent, top: !!hit && e.contains(hit), inView: r.top >= 0 && r.bottom <= innerHeight && r.height > 0 }; });
+  const ns = await until(noteSeen, 4000);
+  check(ns && ns.text === 'The GM took this back: Invented sewer map' && ns.top && ns.inView, '"The GM took this back" is SEEN: a line on top of the list, in the viewport ' + JSON.stringify(ns));
+  await shot(n, 'phone-takeback-390');
   check(JSON.stringify(await listTitles(n)) === '["Invented ledger page"]', 'and the list loses it');
 
   /* a file that is not there */
   await g.click(chipOf(g, 'gone', P1));
   check(await until(async () => (await listTitles(n)).includes('Invented lost postcard'), 40000), 'a third handout arrives');
-  check(await until(async () => n.evaluate(() => [...document.querySelectorAll('.ds-ho-th.bad')].some((e) => e.textContent === 'Needs a connection')), 10000), 'its picture fails: "Needs a connection"');
+  check(await until(async () => n.evaluate(() => [...document.querySelectorAll('.ds-ho-th.bad')].some((e) => e.textContent === 'Ask the GM to send this again')), 10000), 'online, its picture fails: "Ask the GM to send this again"');
   await n.click('.ds-ho-list .ds-ho-open[aria-label="Open Invented lost postcard"]');
-  check(await until(async () => /Needs a connection/.test(await n.textContent('.ds-ho-v')), 8000), 'and the viewer says the same');
+  check(await until(async () => /Ask the GM to send this again/.test(await n.textContent('.ds-ho-v')), 8000), 'and the viewer says the same');
   await n.click('.ds-ho-vx'); await n.click('.ds-ho-close');
+  /* offline: "Needs a connection" */
+  await N.ctx.setOffline(true);
+  await n.click('#dossier .ds-ho-vit');
+  check(await until(async () => n.evaluate(() => [...document.querySelectorAll('.ds-ho-th.bad')].some((e) => e.textContent === 'Needs a connection')), 10000), 'offline, a picture that fails: "Needs a connection"');
+  await n.click('.ds-ho-close');
+  await N.ctx.setOffline(false);
+
+  /* the pack exported again: the ledger's file changed. The GM page marks both sent copies out of date; Everyone sends them again in one tap, no ask */
+  writeFileSync(path.join(MEDIA, FILES.ledger2), png(900, 1200, 1));
+  const M2 = { ...MANIFEST, items: MANIFEST.items.map((x) => (x.id === 'ledger' ? { ...x, file: FILES.ledger2 } : x)) };
+  await must(api('POST', '/gm/pack', { part: 'handouts', src: { file: 'invented/handouts', blockSha: '2', exportedAt: new Date().toISOString() }, body: M2 }), 'the handouts part again');
+  await G.ctx.close();
+  G = await gmPage(); g = G.page;
+  let dialogs = 0; g.on('dialog', () => { dialogs++; });
+  check(await until(async () => /out of date/.test(await g.textContent('#gm-ipad [data-ho-send="ledger"]').catch(() => '')), 20000), 're-export: the ledger row says its sent copies are out of date');
+  const oldChips = await g.$$eval('#gm-ipad [data-ho-send="ledger"] [data-gm="ho-send"]', (l) => l.map((b) => b.textContent + ':' + b.getAttribute('aria-pressed') + ':' + b.title));
+  check(oldChips[0] === 'Nell · out of date:false:Sent copy is out of date: tap to send again' && oldChips[1].startsWith('Ray · out of date:false') && /Sent copy is out of date: tap to send again/.test(await g.textContent('#gm-ipad [data-ho-send="ledger"]')),
+    'each chip: "out of date", tap to send again ' + oldChips.join(' | '));
+  await g.$eval('#gm-ipad [data-ho-send="ledger"]', (e) => e.scrollIntoView({ block: 'center' }));
+  await shot(g, 'gm-outofdate-1366');
+  await g.click(chipOf(g, 'ledger', '*'));
+  check(await until(async () => (await g.getAttribute(chipOf(g, 'ledger', '*'), 'aria-pressed')) === 'true', 10000) && dialogs === 0, 'Everyone sends both again in one tap, nothing asked');
+  const nellRow = (await api('GET', '/docs?kind=handout', undefined, P1)).json.docs[0].json.items;
+  check(nellRow.filter((i) => i.id === 'ledger').length === 1 && nellRow.filter((i) => i.id === 'ledger')[0].file === FILES.ledger2, 'Nell\'s row holds the new file, once');
   check(await noSideways(n) && await noSideways(r), '390: no sideways scroll on either phone');
   await shot(g, 'gm-sent-1366');
 
   /* 360 x 640 */
   const S = await phone(P1, 'pc-nell', { w: 360, h: 640 }), s = S.page;
   check(await until(async () => { const x = await btnState(s); return x && x.n === '2'; }, 20000), '360: the button and its count');
-  const nav = await s.evaluate(() => { const b = document.querySelector('#dossier .ds-hobtn').getBoundingClientRect(); return { r: b.right, w: innerWidth, sw: document.documentElement.scrollWidth }; });
-  check(nav.r <= nav.w && nav.sw <= nav.w + 1, '360: the button inside the screen, no sideways scroll ' + JSON.stringify(nav));
+  const nav = await s.evaluate(() => { const v = document.querySelector('#dossier .ds-ho-vit'), b = v.getBoundingClientRect(), l = v.querySelector('span').getBoundingClientRect(), d = v.querySelector('.ds-tdot');
+    const dr = d ? d.getBoundingClientRect() : null, clear = !dr || dr.bottom <= l.top + 1 || dr.left >= l.right - 1;
+    return { r: b.right, w: innerWidth, sw: document.documentElement.scrollWidth, label: l.left >= b.left && l.right <= b.right && clear }; });
+  check(nav.label, '360: the "Handouts" label fits its box and the dot covers none of it');
+  check(nav.r <= nav.w && nav.sw <= nav.w + 1, '360: the entry inside the screen, no sideways scroll ' + JSON.stringify(nav));
   await shot(s, 'phone-bar-360');
-  await s.click('#dossier .ds-hobtn'); await sleep(600);
+  heights.on360 = await barOf(s);
+  console.log('INFO top bar (height px, status shown, rows of buttons): ' + JSON.stringify(heights));
+  for (const w of ['390', '360']) {
+    const a = heights['off' + w], o = heights['on' + w];
+    check(!!a && !!o && a.h === o.h && o.status === a.status && o.status && o.rows === a.rows && o.rows === 1, w + ': the top bar with the setting on is the bar with it off: ' + (o && o.h) + ' px = ' + (a && a.h) + ' px, one row, the status line shown');
+  }
+  await s.click('#dossier .ds-ho-vit'); await sleep(600);
   await shot(s, 'phone-list-360');
   await s.click('.ds-ho-list .ds-ho-open[aria-label="Open Invented ledger page"]');
   await sleep(800);
@@ -243,6 +308,21 @@ try {
   await shot(s, 'phone-viewer-landscape');
   await S.ctx.close();
 
+  /* the back gesture: from Home into the sheet, the list and a handout open, then back: Home, and no Handouts layer left over it */
+  {
+    const Bk = await phone(P1, 'pc-nell'), bk = Bk.page;
+    await bk.goto(BASE + '/'); await sleep(800);
+    await bk.evaluate(() => { location.hash = '#c/pc-nell'; });
+    await bk.waitForSelector('#dossier .ds-ho-vit', { timeout: 20000 });
+    await bk.click('#dossier .ds-ho-vit');
+    await bk.click('.ds-ho-list .ds-ho-open[aria-label="Open Invented ledger page"]');
+    await bk.waitForSelector('.ds-ho-v', { timeout: 5000 });
+    await bk.goBack();
+    check(await until(async () => !(await bk.$('.ds-ho-v')) && !(await bk.$('.ds-ho-list')) && !(await bk.$('#dossier .ds-bar')), 8000), 'back gesture: the sheet closes and takes the viewer and the list with it');
+    await shot(bk, 'phone-after-back-390');
+    await Bk.ctx.close();
+  }
+
   /* the four-screen sheet: the button on every screen (the GM page closed first: an open one copies its own settings back over the campaign's) */
   await G.ctx.close();
   await must(api('PATCH', '/gm/state', { features: { 'kit.phone': true } }), 'kit.phone on (the GM state: the open GM page copies it to the campaign)');
@@ -253,18 +333,18 @@ try {
     const where = [];
     for (const sc of ['now', 'sheet', 'crew', 'notes']) {
       await k.click('#dossier .ks17-bar [data-ks17-tab="' + sc + '"]'); await sleep(250);
-      where.push(sc + ':' + await k.evaluate(() => { const b = document.querySelector('#dossier .ds-hobtn'); if (!b) return 'none'; const r = b.getBoundingClientRect(); return r.width > 0 && r.top >= 0 && r.bottom <= innerHeight ? 'shown' : 'hidden'; }));
+      where.push(sc + ':' + await k.evaluate(() => { const b = document.querySelector('#dossier .ds-ho-vit'); if (!b) return 'none'; const r = b.getBoundingClientRect(); return r.width > 0 && r.top >= 0 && r.bottom <= innerHeight ? 'shown' : 'hidden'; }));
     }
     check(where.every((w) => /shown$/.test(w)), 'kit.phone: Handouts in the top bar on every screen ' + where.join(' '));
     await shot(k, 'phone-kit-notes-390');
-  } else check(false, 'kit.phone: the bar did not come ' + JSON.stringify([(await api('GET', '/campaign')).json, (await api('GET', '/gm/state')).json].map((d) => d && (d.features || (d.doc && d.doc.features) || (d.campaign && d.campaign.features) || Object.keys(d)))) + JSON.stringify(await k.evaluate(() => ({ kit: document.documentElement.getAttribute('data-kit'), tabs: typeof window.B68SheetTabs, flag: window.B68Flags && window.B68Flags.on('kit.phone'), ho: !!document.querySelector('#dossier .ds-hobtn') }))));
+  } else check(false, 'kit.phone: the bar did not come ' + JSON.stringify([(await api('GET', '/campaign')).json, (await api('GET', '/gm/state')).json].map((d) => d && (d.features || (d.doc && d.doc.features) || (d.campaign && d.campaign.features) || Object.keys(d)))) + JSON.stringify(await k.evaluate(() => ({ kit: document.documentElement.getAttribute('data-kit'), tabs: typeof window.B68SheetTabs, flag: window.B68Flags && window.B68Flags.on('kit.phone'), ho: !!document.querySelector('#dossier .ds-ho-vit') }))));
   await K.ctx.close();
   await must(api('PATCH', '/gm/state', { features: { 'kit.phone': false } }), 'kit.phone off');
   await must(api('PATCH', '/campaign', { features: { 'kit.phone': false } }), 'kit.phone off');
 
   /* off again: the button goes from an open sheet */
   await setting(false);
-  check(await until(async () => !(await n.$('#dossier .ds-hobtn')), 20000), 'turned off: Nell\'s Handouts button goes without a reload');
+  check(await until(async () => !(await n.$('#dossier .ds-ho-vit')), 20000), 'turned off: Nell\'s Handouts button goes without a reload');
   await N.ctx.close(); await R.ctx.close();
   check(!errors.length, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 5).join(' | ') : ''));
 } catch (e) {

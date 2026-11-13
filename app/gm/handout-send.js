@@ -17,11 +17,12 @@
    PURE (Node tests)
      KIND, MAX, FILE_RE
      clean(json) -> [{ id, title, file, at }]        a row's items, checked (a bad item is dropped), oldest first
-     withItem(json, x, at) -> row json               the row with handout x added (no change when it is there already)
+     withItem(json, x, at) -> row json               the row with handout x added (no change when the same copy is there; a copy with another file or title is replaced)
      without(json, id) -> row json | null            the row without it; null when nothing is left (delete the row)
      names(members) -> [{ id, name }]                players by first name, a clash told apart by the next initial
      order(players, away) -> players                 tonight's first: owners in away (night.who's away()) go last, each part kept in order
-     sentTo(rows, id) -> [owner]                     who holds handout id
+     sentTo(rows, id) -> [owner]                     who holds handout id (any copy)
+     current(rows, x) -> [owner]                     who holds the copy the pack has now (same file and title); the rest hold an out-of-date copy
    create(host) -> controller
      host: { fetch (default window.fetch), ask(msg, go, o) (the page's confirm), away() -> [owner], toast(msg, bad), now() }
      html(x) -> the markup for handout x's row (escaped; a placeholder until the players and rows have arrived, then painted in place)
@@ -58,8 +59,14 @@
   function withItem(json, x, at) {
     var items = clean(json), c = cleanItem({ id: x && x.id, title: x && x.title, file: x && x.file, at: at });
     if (!c) return { v: 1, items: items };
-    if (items.some(function (i) { return i.id === c.id; })) return { v: 1, items: items };
-    return { v: 1, items: items.concat([c]).slice(-MAX) };
+    if (items.some(function (i) { return same(i, c); })) return { v: 1, items: items };
+    /* a copy of it with another file or title (the pack was exported again since): replaced, and given again now */
+    return { v: 1, items: items.filter(function (i) { return i.id !== c.id; }).concat([c]).slice(-MAX) };
+  }
+  /* the copy a player holds is this handout as the pack has it now: the same file and title */
+  function same(i, x) { return !!i && !!x && i.id === x.id && i.file === x.file && i.title === (one(x.title, 200) || x.file); }
+  function current(rows, x) {
+    return Object.keys(isObj(rows) ? rows : {}).filter(function (o) { return clean(rows[o]).some(function (i) { return same(i, x); }); });
   }
   function without(json, id) {
     var items = clean(json).filter(function (i) { return i.id !== id; });
@@ -126,20 +133,24 @@
     /* the row under one handout: the chips, then who holds it. Built as one string with escaped text and the page's old classes (.chip, .gm-dim) */
     function inner(x) {
       if (!st.loaded) return '<span class="gm-dim">' + (st.error ? 'Could not read who has what: ' + esc(st.error) + '. It tries again when the list redraws.' : 'Send to… (reading the players)') + '</span>';
-      var ps = players(), holders = sentTo(st.rows, x.id), all = ps.length > 0 && ps.every(function (p) { return holders.indexOf(p.id) >= 0; });
+      var ps = players(), holders = sentTo(st.rows, x.id), fresh = current(st.rows, x), all = ps.length > 0 && ps.every(function (p) { return fresh.indexOf(p.id) >= 0; });
       if (!ps.length) return '<span class="gm-dim">Send to…: no players yet. A player shows here once they have opened the app.</span>';
-      var chip = function (to, label, on, title) {
+      var chip = function (to, label, on, title, old) {
         var b = doc().createElement('button');
-        b.type = 'button'; b.className = 'chip sm'; b.setAttribute('data-gm', 'ho-send'); b.setAttribute('data-id', x.id); b.setAttribute('data-to', to);
+        b.type = 'button'; b.className = 'chip sm' + (old ? ' gm-ho-old' : ''); b.setAttribute('data-gm', 'ho-send'); b.setAttribute('data-id', x.id); b.setAttribute('data-to', to);
         b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.title = title; b.textContent = label;
         if (busy[x.id]) b.disabled = true;
         return b.outerHTML;
       };
       var h = '<span class="gm-lab gm-ho-send-l" id="gm-ho-send-l-' + esc(x.id) + '">Send to…</span><span class="gm-ho-send-chips" role="group" aria-labelledby="gm-ho-send-l-' + esc(x.id) + '">';
-      ps.forEach(function (p) { var on = holders.indexOf(p.id) >= 0; h += chip(p.id, p.name, on, on ? 'On ' + p.name + '’s phone: tap to take it back' : 'Send to ' + p.name + '’s phone'); });
+      ps.forEach(function (p) {
+        var on = fresh.indexOf(p.id) >= 0, old = !on && holders.indexOf(p.id) >= 0;
+        h += chip(p.id, old ? p.name + ' · out of date' : p.name, on, on ? 'On ' + p.name + '’s phone: tap to take it back' : old ? 'Sent copy is out of date: tap to send again' : 'Send to ' + p.name + '’s phone', old);
+      });
       h += chip('*', 'Everyone', all, all ? 'On every player’s phone: tap to take it back from everyone' : 'Send to every player’s phone') + '</span>';
-      var who = holders.map(nameOf);
+      var who = holders.map(function (o) { return nameOf(o) + (fresh.indexOf(o) < 0 ? ' (out of date)' : ''); });
       h += '<span class="gm-ho-sent gm-dim">' + (who.length ? 'Sent to: ' + esc(who.join(', ')) : 'Not sent to any phone') + '</span>';
+      if (holders.length > fresh.length) h += '<span class="gm-ho-sent gm-ho-oldline">Sent copy is out of date: tap to send again.</span>';
       return h;
     }
     function html(x) {
@@ -174,7 +185,7 @@
       }).then(function (row) { if (row) st.rows[owner] = row; else delete st.rows[owner]; return row; });
     }
     function has(cur, id) { return clean(cur).some(function (i) { return i.id === id; }); }
-    function send(x, owners) { var at = now(); return Promise.all(owners.map(function (o) { return change(o, function (cur) { return has(cur, x.id) ? undefined : withItem(cur, x, at); }); })); }
+    function send(x, owners) { var at = now(); return Promise.all(owners.map(function (o) { return change(o, function (cur) { return clean(cur).some(function (i) { return same(i, x); }) ? undefined : withItem(cur, x, at); }); })); }
     function takeBack(x, owners) { return Promise.all(owners.map(function (o) { return change(o, function (cur) { return has(cur, x.id) ? without(cur, x.id) : undefined; }); })); }
 
     function run(x, fn, ok) {
@@ -189,16 +200,16 @@
       if (dead || !el || !el.getAttribute) return Promise.resolve(false);
       var id = el.getAttribute('data-id'), to = el.getAttribute('data-to'), x = items[id];
       if (!x || !st.loaded || busy[id]) return Promise.resolve(false);
-      var ps = players(), holders = sentTo(st.rows, id);
+      var ps = players(), holders = sentTo(st.rows, id), fresh = current(st.rows, x);
       if (to === '*') {
-        var lacking = ps.filter(function (p) { return holders.indexOf(p.id) < 0; }).map(function (p) { return p.id; });
+        var lacking = ps.filter(function (p) { return fresh.indexOf(p.id) < 0; }).map(function (p) { return p.id; });      /* an out-of-date copy is sent again */
         if (lacking.length) return run(x, function () { return send(x, lacking); }, x.title + ' is on every player’s phone.');
         return new Promise(function (done) {
           ask('Take it back from everyone?', function () { done(run(x, function () { return takeBack(x, holders); }, x.title + ' is off every phone.')); }, { confirm: 'Take it back' }, done);
         });
       }
       if (!ps.some(function (p) { return p.id === to; })) return Promise.resolve(false);
-      if (holders.indexOf(to) < 0) return run(x, function () { return send(x, [to]); }, 'Sent to ' + nameOf(to) + ': ' + x.title + '.');
+      if (fresh.indexOf(to) < 0) return run(x, function () { return send(x, [to]); }, (holders.indexOf(to) >= 0 ? 'Sent again to ' : 'Sent to ') + nameOf(to) + ': ' + x.title + '.');
       return new Promise(function (done) {
         ask('Take it back from ' + nameOf(to) + '?', function () { done(run(x, function () { return takeBack(x, [to]); }, x.title + ' is off ' + nameOf(to) + '’s phone.')); }, { confirm: 'Take it back' }, done);
       });
@@ -217,5 +228,5 @@
     };
   }
 
-  return { KIND: KIND, MAX: MAX, FILE_RE: FILE_RE, clean: clean, withItem: withItem, without: without, names: names, order: order, sentTo: sentTo, create: create };
+  return { KIND: KIND, MAX: MAX, FILE_RE: FILE_RE, clean: clean, withItem: withItem, without: without, names: names, order: order, sentTo: sentTo, current: current, create: create };
 });
