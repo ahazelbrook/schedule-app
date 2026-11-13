@@ -97,4 +97,6 @@ await test('the scenes built by tools/ambient pause when hidden, keep the screen
 });
 
 console.log('\n' + (failed ? failed + ' failed' : 'all passed'));
-process.exit(failed ? 1 : 0);
+// the exit code, not process.exit(): on Windows a process.exit() made while console output is still queued could hang the process
+// for good (IP5 review: 5 runs in 8); nothing here holds the event loop open, so it drains and exits by itself
+process.exitCode = failed ? 1 : 0;
