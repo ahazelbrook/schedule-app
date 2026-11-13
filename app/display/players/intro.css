@@ -42,11 +42,12 @@
 
 /* ---------- the type, lower left: kicker, the name with its offset copy, the alias ---------- */
 .pi-type { position: absolute; left: 6vw; bottom: calc(var(--pi-lb) + 5vh); width: 60vw; }
-/* the kicker is label tape: a black strip per line, two lines at most */
-.pi-kick { margin: 0 0 1.4vh; max-width: 92%; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; line-height: 5.6vh; }
+/* the kicker is label tape: the role on one strip, the faction on the next; a strip too long for the type box ends in an ellipsis, never wraps */
+.pi-kick { margin: 0 0 1.4vh; display: flex; flex-direction: column; align-items: flex-start; gap: .7vh; max-width: 100%; }
 .pi-kick-t {
-  padding: .9vh 1.4vh .8vh; background: #14110e; color: #fbf8f1; -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  display: block; max-width: 100%; box-sizing: border-box; padding: .9vh 1.4vh .8vh; background: #14110e; color: #fbf8f1;
   font: 800 3.4vh/1.1 var(--font-cond, "Archivo Condensed", "Arial Narrow", sans-serif); letter-spacing: .2em; text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pi-name {
   position: relative; margin: 0; font: 900 14vh/.9 var(--font-poster, "Archivo Compressed", Impact, "Arial Narrow", sans-serif);

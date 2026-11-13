@@ -90,7 +90,7 @@ const look = (page) => page.evaluate(() => {
     card.style.pointerEvents = pe;
   }
   const g = card && card.querySelector('.pi-ground');
-  return { card: !!card, covers, field: g ? getComputedStyle(g).backgroundColor : '', text: card ? card.textContent : '', name: card ? (card.querySelector('.pi-name-front') || {}).textContent : '',
+  return { card: !!card, covers, field: g ? getComputedStyle(g).backgroundColor : '', text: card ? card.textContent : '', name: card ? (card.querySelector('.pi-name-front') || {}).textContent : '', kick: card ? [...card.querySelectorAll('.pi-kick-t')].map((e) => e.textContent).join('|') : '',
     stage: st ? st.className : '', stageText: st ? st.textContent : '', rolodex: !!document.querySelector('.dp-show-rolodex, .dp-rc'), map: !!document.querySelector('.dp-stage.dp-map.dp-in') };
 });
 const domHas = (page, needle) => page.evaluate((n) => document.documentElement.outerHTML.includes(n), needle);
@@ -130,7 +130,7 @@ try {
     expect(L, 'no card covering the screen: ' + JSON.stringify(await look(I.page)));
     expect(/rgb\(224, 105, 30\)|rgb\(\d+, \d+, \d+\)/.test(L.field) && L.field !== 'rgba(0, 0, 0, 0)', 'a colour field: ' + L.field);
     expect(L.name === 'Mabel Quist', 'the name as text: ' + L.name);
-    expect(L.text.includes('“Mab”') && L.text.includes('The house · The Pelican Rooms'), 'alias and kicker: ' + L.text);
+    expect(L.text.includes('“Mab”') && L.kick === 'The house|The Pelican Rooms', 'alias and kicker: ' + L.text);
     expect(!L.text.includes('Runs the rooms') && !(await domHas(I.page, 'GM-ONLY')), 'nothing but the card\'s fields, never the notes');
     const t = await until(async () => { const x = await trayText(); return /Introducing Mabel Quist/.test(x) ? x : null; }, 2000) || await trayText();
     console.log('INFO the tray: ' + t);

@@ -192,8 +192,15 @@
       }
       out.appendChild(enter); card.appendChild(out);
 
-      var type = el(doc, 'div', 'pi-type'), kick = Pure.kicker(npc.role, npc.faction), alias = txt(npc.alias, 120);
-      if (kick) { var k1 = el(doc, 'p', 'pi-kick'); k1.appendChild(el(doc, 'span', 'pi-kick-t', kick)); type.appendChild(k1); }
+      var type = el(doc, 'div', 'pi-type'), role = txt(npc.role, 120), fac = txt(npc.faction, 120), alias = txt(npc.alias, 120);
+      /* the kicker: the role on one tape, the faction on the next (a line never breaks inside either) */
+      if (role || fac) {
+        var k1 = el(doc, 'p', 'pi-kick');
+        k1.setAttribute('aria-label', Pure.kicker(role, fac));
+        if (role) k1.appendChild(el(doc, 'span', 'pi-kick-t', role));
+        if (fac) k1.appendChild(el(doc, 'span', 'pi-kick-t pi-kick-f', fac));
+        type.appendChild(k1);
+      }
       var h = el(doc, 'h1', 'pi-name');
       h.appendChild(el(doc, 'span', 'pi-name-back', name)).setAttribute('aria-hidden', 'true');
       var front = h.appendChild(el(doc, 'span', 'pi-name-front', name));

@@ -128,7 +128,7 @@ await test('the card on a stub page: only the served player fields as text, the 
   C.next(D, 7);
   assert.ok(C.state() && C.state().seq === 7, 'a card is up');
   const t = texts();
-  assert.ok(t.includes('Mabel Quist') && t.includes('“Mab”') && t.includes('Fixer · The Kestrel Club') && t.includes('M'), 'name, alias, kicker, the monogram: ' + t);
+  assert.ok(t.includes('Mabel Quist') && t.includes('“Mab”') && t.includes('Fixer | The Kestrel Club') && t.includes('M'), 'name, alias, the kicker as two tapes (role, then faction), the monogram: ' + t);
   assert.ok(!t.includes('Not on the card'), 'never the description');
   C.next(D, 7); assert.equal(C.state().seq, 7, 'the same push drawn again: the card runs on');
   C.next({ kind: 'blank' }, 8);
