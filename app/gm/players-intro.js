@@ -34,7 +34,7 @@
     var FL = req('B68FaceLook', '../display/face-look.js');
     if (!FL || typeof FL.parseNotes !== 'function') return null;
     var p = FL.parseNotes(notes), out = {};
-    if (p.tell) out.expr = p.tell;
+    if (p.tell) { out.expr = p.tell; out.tell = true; }      /* IP1's tell: the stage plays it now and then after the pose (face-render applyStage), as Show on iPad does */
     if (p.signature) out.pose = p.signature;
     return FL.clean(out);
   }

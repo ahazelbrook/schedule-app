@@ -231,6 +231,32 @@ try {
     answer = 'accept';
   });
 
+  await step('item 5: the card hands over to a stage figure ALREADY in the Signature pose (never the plain pose, never mid-tell), which holds it about 2.5 s, then relaxes and the tell loops', async () => {
+    await toMap(I);
+    await gp.click(intro('n-mabel'));
+    expect(await until(async () => (await look(I.page)).card, 6000, 50), 'the card came');
+    const stageFace = () => I.page.evaluate(() => { const st = [...document.querySelectorAll('.dp-stages > .dp-stage.dp-npc')].pop(); const f = st && st.querySelector('.dp-npc-fig > *'); return f ? f.getAttribute('data-fl') || 'plain' : 'none'; });
+    const seen = [];      /* [card second, card up, the stage figure's face] */
+    let at0 = null;
+    for (let i = 0; i < 120; i++) {
+      const c = await I.page.evaluate(() => { const e = document.querySelector('.pi-card'); return e ? { at: Number(e.getAttribute('data-pi-at')), up: true } : { up: false }; });
+      if (c.up && at0 === null) at0 = { pos: c.at, t: Date.now() };
+      const sec = at0 ? at0.pos + (Date.now() - at0.t) : 0;
+      seen.push([Math.round(sec), c.up, await stageFace()]);
+      if (sec > 12500) break;
+      await sleep(80);
+    }
+    const shown = seen.filter((x) => !x[1] && x[0] > 5000);      /* the stage on screen after the card */
+    expect(shown.length > 10, 'samples after the card: ' + shown.length);
+    const first = shown.slice(0, 3).map((x) => x[2]);
+    expect(first.every((f) => f === 'pose'), 'the first frames after the card are the pose: ' + JSON.stringify(seen.filter((x) => x[0] > 5200).slice(0, 8)));
+    const at8 = shown.filter((x) => x[0] >= 7800 && x[0] <= 8300).map((x) => x[2]);
+    expect(at8.length && at8.every((f) => f === 'pose'), 'still the pose about 2 s after the card: ' + JSON.stringify(at8));
+    const later = shown.filter((x) => x[0] >= 9200).map((x) => x[2]);
+    expect(later.length && later.every((f) => f !== 'pose'), 'then relaxed (the tell loops on its own clock): ' + JSON.stringify(later.slice(0, 6)));
+    await shot(I.page, 'handover-pose-' + ENGINE + '-1180');
+  });
+
   /* ---- item 6: a reveal cue brings the person on (the cue stack's GO; the note's ## Cues) ---- */
   const GO = '#gm-cuebar .gm-cs-go';
   const isRevealed = async (id) => { const r = await gm('GET', '/api/npcs/' + id); const d = r.json && (r.json.doc || r.json); return !!d && d.revealed === true; };

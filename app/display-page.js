@@ -1086,7 +1086,7 @@
       return { el: e, destroy: function () {} };
     }
     var figEnv = { document: document, K: ctx.figures, reduced: reduced(), figure: function (sp, id) { var r = drawFigure(sp, id, ctx.figures); return r ? document.importNode(r.node, true) : null; } };
-    function look(st) { if (vm.look && root.B68FaceRender && typeof root.B68FaceRender.applyStage === 'function') { try { root.B68FaceRender.applyStage(st.el, { look: vm.look, spec: vm.spec, npcId: vm.npcId, seq: seq }, figEnv); } catch (err) { /* the figure stays as drawn */ } } return st; }     /* IP1: the tell and the signature, on Show on iPad too */
+    function look(st) { if (vm.look && root.B68FaceRender && typeof root.B68FaceRender.applyStage === 'function') { try { root.B68FaceRender.applyStage(st.el, { look: vm.look, spec: vm.spec, npcId: vm.npcId, seq: seq }, figEnv, { poseAt: root.B68PlayersIntro && typeof root.B68PlayersIntro.poseAt === 'function' ? root.B68PlayersIntro.poseAt(seq) : 0 }); } catch (err) { /* the figure stays as drawn */ } } return st; }     /* IP1: the tell and the signature, on Show on iPad too */
     if (root.B68StageScene && root.B68StageScene.on()) { var k16 = root.B68StageScene.npcStage(vm, seq, { document: document, figure: figEnv.figure }); if (k16) return look(k16); }   /* KS16 (kit.stage): over the dimmed scene */
     var fig = drawFigure(vm.spec, 'dp-npc-' + seq, ctx.figures);
     if (fig) {

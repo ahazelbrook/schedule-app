@@ -83,6 +83,10 @@
     if (lk && lk.pose && typeof FL.poseSpec === 'function') s = FL.poseSpec(s, lk.pose);
     return s;
   };
+  /* the stage's pose starts 100 ms before the hand-over (or the still card's cut), so the figure the card settles onto is already in the Signature pose with the
+     Tell face, and holds it for the rest of POSE_MS (3.2 s) after; ms from the card's mount at position pos; never under 0 */
+  Pure.POSE_LEAD = 100;
+  Pure.poseAt = function (pos, still) { return Math.max(0, Math.round((still ? Pure.STILL_MS : Pure.T.out) - Pure.POSE_LEAD - (Number(pos) || 0))); };
   Pure.initial = function (name) { var s = txt(name).replace(/^[\s"'“”‘’(\[.,_-]+/, ''); return s ? s.charAt(0).toUpperCase() : '?'; };
   /* the name's size: the largest step from o.max down to o.min (in vh) at which it fits on one line, else on two lines; measure(vh, wrap) ->
      { fits, lines }. One line wins at a size where both fit. Never smaller than o.min (the last step is taken as it is). */
@@ -100,6 +104,7 @@
   };
 
   /* ---------- the card ---------- */
+  var posing = null;      /* { seq, at (epoch ms) }: the card up now, for poseAt() (one display page, one card) */
   function el(doc, tag, cls, text) { var e = doc.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
   function faceLook() { return W && W.B68FaceLook ? W.B68FaceLook : null; }
 
@@ -149,6 +154,7 @@
       c.offs.forEach(function (f) { try { f(); } catch (e) { /* gone */ } });
       if (c.el.parentNode) c.el.parentNode.removeChild(c.el);
       if (container && container.classList) container.classList.remove('pi-on');
+      if (posing && posing.seq === c.seq) posing = null;
     }
 
     function figureNode(spec, uid) {
@@ -285,6 +291,7 @@
       var c;
       try { c = build(display, seq, pos, still); } catch (e) { return; }
       cur = { seq: seq, at: pos, el: c.el, timers: [], offs: [] };
+      posing = { seq: seq, at: Date.now() + Pure.poseAt(pos, still) };      /* the stage built under this card takes the Signature pose just before it is shown */
       container.appendChild(c.el);
       container.classList.add('pi-on');
       if (c.col) {
@@ -310,5 +317,9 @@
     };
   }
 
-  return { attach: attach, Pure: Pure };
+  /* IP3b item 5: when the npc stage built for this seq (display-page.js npcStage, B68FaceRender.applyStage opts.poseAt) should start its Signature pose, in ms
+     from now; 0 when no card is up for that seq (the stage then plays it at once, as for Show on iPad) */
+  function poseAt(seq) { return posing && posing.seq === seq ? Math.max(0, posing.at - Date.now()) : 0; }
+
+  return { attach: attach, poseAt: poseAt, Pure: Pure };
 });
