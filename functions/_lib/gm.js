@@ -261,6 +261,11 @@ export function cleanDisplay(raw) {
   if (kind === 'npc') {
     if (typeof raw.npcId !== 'string' || !ID_RE.test(raw.npcId)) throw new HttpError(400, 'npcId must be an id (A-Z, a-z, 0-9, _ and -, at most 80)');
     out.npcId = raw.npcId;
+    // IP3 (the players' screen): two optional keys. intro: the GM's Introduce (a title card first; only the literal true). look: the names a held
+    // spotlight carries (face-look.js clean: fixed lists, never free text). Deploy 38 drops both here, and its display ignores them: a plain npc.
+    if (raw.intro === true) out.intro = true;
+    const lk = FaceLook.clean(raw.look);
+    if (lk) out.look = lk;
   }
   if (kind === 'text') out.text = str(raw.text, 'text', LIMITS.text, true);
   if (kind === 'rule') out.md = str(raw.md, 'md', LIMITS.rule, true);

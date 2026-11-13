@@ -4642,7 +4642,7 @@
   /* the page's iPad, for the tray: what it knows, and its one way off and its blank */
   function ipadSnapshot() {
     return {
-      shown: AM.shown, doc: AM.doc, now: Date.now(),
+      shown: AM.shown, doc: AM.doc, now: Date.now(), intro: W.B68GmIntro ? W.B68GmIntro.live(AM.shown, Date.now()) : '',      /* IP3: "Introducing <name>" while the card plays */
       names: {
         npc: function (id) { var d = S && isObj(S.npcs) ? S.npcs[id] : null; return isObj(d) ? str(d.name) : ''; },
         clock: function (id) { var c = tableClocks().filter(function (x) { return str(x.id) === str(id); })[0]; return c ? str(c.name) : ''; },
@@ -5127,7 +5127,7 @@
         var d = me.npcs && me.npcs[id];
         return Promise.resolve(ref.update(yes ? { revealed: true, firstSeen: (isObj(d) && d.firstSeen) || nowIso() } : { revealed: false })).then(function () { if (S === me && isObj(me.npcs) && isObj(me.npcs[id])) me.npcs[id].revealed = !!yes; });
       },
-      show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
+      show: function (kind, payload, o) { if (kind === 'rolodex' && introOn() && isObj(payload) && Array.isArray(payload.npcIds) && payload.npcIds.length === 1) return W.B68GmIntro.introduce(payload.npcIds[0], introHost()); var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },      /* IP3: one name, the title card */
       keyFor: function (key) { return W.B68Show ? W.B68Show.idFor(key) : key; }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
       clearOverlay: function () { return patchAmbient({ overlay: null }); },
       holdSpotlight: function (name) { return S === me && me.b17 ? me.b17.spot.holdByName(name) : null; },
@@ -6783,13 +6783,21 @@
     }, function (x) { toast('Could not add them to the cast: ' + errText(x), true); if (S === me) renderNpcGen(); });
   }
   /* "Introduce" (suite 3.5, switch face.rolodex): the NPC's Rolodex card as a lower third on the iPad for about 20 seconds; revealed NPCs only (the server joins to them anyway) */
-  function introHtml(id, rev) { return rev && b09On('face.rolodex') ? '<button type="button" class="btn sm" data-gm="npcintro" data-id="' + esc(id) + '" title="Flip their card up as a lower third on the iPad">Introduce</button>' : ''; }
+  function introHtml(id, rev) { var pl = introOn(); return (rev || pl) && b09On('face.rolodex') ? '<button type="button" class="btn sm" data-gm="npcintro" data-id="' + esc(id) + '" title="' + (pl ? 'A whole-screen title card on the iPad, then they stay on it' : 'Flip their card up as a lower third on the iPad') + '">Introduce</button>' : ''; }
   function npcIntroduce(id) {
     var d = S.npcs[id], sh = shows();
     if (!d) { toast('That person is not in the cast (yet): the cast is still loading, or they were taken out.', true); return; }      /* tech run: never a silent no */
+    if (introOn()) { W.B68GmIntro.introduce(id, introHost()); return; }      /* IP3 (stage.players): Show on iPad with a title card first (gm/players-intro.js) */
     if (!sh) { toast('Introduce needs the hosted app.', true); return; }
     if (d.revealed !== true) { toast('Reveal ' + (d.name || 'them') + ' first.', true); return; }
     sh.show('rolodex', { npcIds: [id] }, { key: 'intro-' + id, ms: 20000 }).then(function (r) { if (r !== null && r !== undefined) toast('Introducing ' + (d.name || 'them') + '.'); }, function () { toast('Could not introduce them on the iPad.', true); });
+  }
+  /* IP3: the introduction's switch and what gm/players-intro.js needs of this page (the reveal is Show on iPad's, the confirm is asked()) */
+  function introOn() { return !!W.B68GmIntro && b09On('stage.players'); }
+  function introHost() {
+    return { npc: function (id) { return S && isObj(S.npcs) ? S.npcs[id] : null; }, ask: asked, push: function (d) { return pushDisplay(d); }, toast: toast, errText: errText,
+      reveal: function (id, d) { var ref = npcRef(id); if (!ref) return Promise.reject(new Error('The cast is not available here.')); return ref.update({ revealed: true, firstSeen: d.firstSeen || nowIso() }); },
+      tray: function () { if (W.B68GmIpadTray) W.B68GmIpadTray.refresh(); } };
   }
   function npcToIpad(id) {
     var d = S.npcs[id]; if (!d) return;

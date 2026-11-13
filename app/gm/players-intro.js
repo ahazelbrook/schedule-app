@@ -1,0 +1,81 @@
+/* gm/players-intro.js: the GM's half of the NPC introduction (IP3 of the players' screen build, behind the setting stage.players). B68GmIntro.
+
+   With the setting on, Introduce for ONE NPC (the cast list's Introduce, the Run view's people rows, the cue "Blade, introduce <name>") is
+   "Show on iPad, with an opening": an ordinary display push of kind npc through the page's one push queue, carrying intro: true and the look
+   (the Tell expression and the Signature pose, names from the fixed lists of display/face-look.js, worked out here from the NPC's GM notes;
+   the notes never leave this page). The iPad plays a title card (display/players/intro.js) and is left on the ordinary npc stage, so a reload
+   shows the NPC. A hidden NPC is asked about first, in the same words as Show on iPad, and revealed only on a yes. Two or more names stay the
+   rolodex beat (the cue grammar sends those as before).
+
+   The tray: "Introducing <name>" while the card plays (this page's clock: the push answer plus the card's length), then the ordinary line.
+
+   API (window.B68GmIntro; module.exports under Node)
+     introduce(id, host) -> Promise<the push answer | null>     look(gmNotes) -> { expr?, pose? } | null     live(shown, nowMs) -> name | ''
+     body(id, d) -> the display push      CARD_MS
+     host: { npc(id) -> the cast doc | null, ask(msg, go) (the page's confirm), reveal(id, d) -> Promise, push(display) -> Promise (pushDisplay),
+             toast(msg, bad), errText(e), tray() (repaint the tray), later?(fn, ms) } */
+(function (root, factory) {
+  'use strict';
+  var M = factory(root);
+  if (typeof module === 'object' && module && module.exports) module.exports = M;
+  else root.B68GmIntro = M;
+})(typeof self !== 'undefined' ? self : this, function (W) {
+  'use strict';
+
+  function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
+  function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
+  function req(name, p) { if (W && W[name]) return W[name]; try { return require(p); } catch (e) { return null; } }
+
+  /* the card's length on the iPad: the lead (display/players/intro.js LEAD_MS) and the card to its end (T.end) */
+  var CARD_MS = 800 + 6200;
+  var last = null;      /* { names: [name, alias], until } the card this page last sent */
+
+  function look(notes) {
+    var FL = req('B68FaceLook', '../display/face-look.js');
+    if (!FL || typeof FL.parseNotes !== 'function') return null;
+    var p = FL.parseNotes(notes), out = {};
+    if (p.tell) out.expr = p.tell;
+    if (p.signature) out.pose = p.signature;
+    return FL.clean(out);
+  }
+  function body(id, d) {
+    var b = { kind: 'npc', npcId: str(id), title: str(d && d.name).slice(0, 2000), intro: true }, lk = look(d && d.gmNotes);
+    if (lk) b.look = lk;
+    return b;
+  }
+  function live(shown, now) {
+    if (!last || !isObj(shown) || shown.kind !== 'npc' || !(now < last.until)) return '';
+    var t = str(shown.title);
+    return t && last.names.indexOf(t) >= 0 ? t : '';
+  }
+
+  function introduce(id, host) {
+    host = host || {};
+    var d = typeof host.npc === 'function' ? host.npc(id) : null, name = isObj(d) ? str(d.name) : '';
+    var toast = typeof host.toast === 'function' ? host.toast : function () {};
+    var errText = typeof host.errText === 'function' ? host.errText : function (e) { return e && e.message || String(e || 'unknown error'); };
+    if (!isObj(d)) return Promise.resolve(null);
+    function go() {
+      var pre = d.revealed === true ? Promise.resolve() : Promise.resolve().then(function () { return host.reveal(id, d); });
+      return pre.then(function () { return host.push(body(id, d)); }).then(function (r) {
+        last = { names: [name, str(d.alias).trim()].filter(Boolean), until: Date.now() + CARD_MS };
+        if (typeof host.tray === 'function') {
+          host.tray();
+          var later = typeof host.later === 'function' ? host.later : function (f, ms) { return setTimeout(f, ms); };
+          later(function () { host.tray(); }, CARD_MS + 50);
+        }
+        toast('Introducing ' + (name || 'them') + '.');
+        return r;
+      }, function (e) {
+        if (!e || !e.superseded) toast('Could not introduce ' + (name || 'them') + ' on the iPad: ' + errText(e), true);
+        return null;
+      });
+    }
+    if (d.revealed === true) return go();
+    /* hidden: the same question as Show on iPad, through the page's own confirm (the kit's dialog when the desk is on) */
+    host.ask('Reveal and show? ' + (name || 'This NPC') + ' is hidden from the players. This reveals them to everyone and shows them on the iPad.', function () { go(); });
+    return Promise.resolve(null);
+  }
+
+  return { introduce: introduce, look: look, body: body, live: live, CARD_MS: CARD_MS, _reset: function () { last = null; } };
+});
