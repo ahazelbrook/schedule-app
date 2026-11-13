@@ -1498,6 +1498,10 @@
     s.layers = root.B68Layers ? root.B68Layers.attach(container, { skew: function () { return s.skew || 0; }, band: function () { return swOn('display.band'); },
       figure: function (spec, id) { var r = drawFigure(spec, 'dp-mt-' + String(id).replace(/[^A-Za-z0-9_-]/g, ''), ctx.figures || root.B68Figure); return r ? document.importNode(r.node, true) : null; } }) : null;      /* the montage draws each PC (the tech run) */
     if (s.layers) s.offs.push(function () { s.layers.destroy(); });
+    /* IP3 (stage.players): the NPC introduction, a title card over everything that hands over to the npc stage (app/display/players/intro.js); off, next() does nothing */
+    s.intro = root.B68PlayersIntro ? root.B68PlayersIntro.attach(container, { document: document, K: ctx.figures || root.B68Figure, on: function () { return swOn('stage.players'); }, still: function () { return reduced() || swOn('fx.off'); }, skew: function () { return s.skew || 0; }, at: function () { return s.updatedAt; }, later: later, clearLater: clearLater,
+      figure: function (spec, id) { var r = drawFigure(spec, id, ctx.figures || root.B68Figure); return r ? document.importNode(r.node, true) : null; } }) : null;
+    if (s.intro) s.offs.push(function () { s.intro.destroy(); });
     /* the suite's display switches (each does nothing while its switch is off): the hard start (1.2, spine.start) and the FX budget (F7, fx.pause / fx.off) */
     function swOn(id) { return !!(root.B68Flags && root.B68Flags.on(id)); }
     function suiteSync() {
@@ -2053,6 +2057,7 @@
     function show(display, seq) {
       var my = ++s.token, vm = Pure.viewModel(display);
       s.lastShow = [display, seq]; if (s.stage) s.stage.next(vm);           /* KS13: a redraw when the new stage comes or goes; what the swap brings */
+      if (s.intro) s.intro.next(display, seq);                               /* IP3: any other push cuts a card at once; an introduction starts one over the stage below */
       var k16npc = vm.kind === 'npc' && !!s.stage && !!root.B68StageScene && root.B68StageScene.on();      /* KS16 (kit.stage): the NPC stands over the dimmed scene, which holds still */
       if (vm.kind === 'blank' || k16npc) amb.uncover(); else amb.cover(); amb.still(k16npc);                 /* a spotlight covers the ambient; blank lets it through */
       ovLightsOut(vm.kind === 'dark');                                          /* lights out: no autopilot overlay, no AUTO chip */

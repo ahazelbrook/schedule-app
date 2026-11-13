@@ -1,0 +1,124 @@
+/* display/players/intro.css: the NPC introduction (IP3, setting stage.players; display/players/intro.js builds the markup).
+   A freeze-frame title card over everything on the display root, then out of the way. Only .pi-* markup, which only intro.js makes, so with the
+   setting off nothing here matches. Every beat's delay is a custom property the script sets from the shared clock (--pi-enter, --pi-freeze,
+   --pi-kicker, --pi-name, --pi-name2, --pi-alias, --pi-out, --pi-fade): a page that joins mid-card is at the same frame as the others.
+   The base styles are the frozen frame; the animations bring it in and take it away, so .pi-still (reduced motion, Hold scenes still) is the
+   frozen frame with no animation at all. */
+
+.pi-card {
+  --pi-figh: 118vh;          /* the figure's full height: head to knee is about 85% of the screen */
+  --pi-lb: 5.5vh;            /* the letterbox bars */
+  position: absolute; inset: 0; z-index: 20; overflow: hidden; pointer-events: none; contain: layout paint;
+  color: var(--pi-ink, #14110e);
+  -webkit-user-select: none; user-select: none;
+}
+
+/* ---------- the cut: a flat colour field, a coarse halftone, a light behind the figure ---------- */
+.pi-ground { position: absolute; inset: 0; background: var(--pi-field, #e0691e); }
+.pi-ground::before {
+  content: ""; position: absolute; inset: 0;
+  background-image: radial-gradient(circle at center, rgb(20 17 14 / .34) 0 33%, transparent 37%);
+  background-size: 1.7vmin 1.7vmin;
+  -webkit-mask-image: linear-gradient(118deg, #000 0%, rgb(0 0 0 / .7) 30%, transparent 62%);
+  mask-image: linear-gradient(118deg, #000 0%, rgb(0 0 0 / .7) 30%, transparent 62%);
+}
+.pi-ground::after {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(ellipse 34% 58% at 70% 46%, rgb(255 255 255 / .26), rgb(255 255 255 / 0) 72%);
+}
+
+/* ---------- the figure: a silhouette that comes in from the right, then colour; the silhouette stays as an offset print shadow ---------- */
+.pi-figout { position: absolute; top: calc(var(--pi-lb) + 2.5vh); right: 8vw; height: var(--pi-figh); }
+.pi-enter { position: relative; height: 100%; }
+.pi-col { position: relative; height: 100%; }
+.pi-sil { position: absolute; inset: 0; transform: translate(1.9vh, 1.3vh); filter: brightness(0); }
+.pi-col svg, .pi-sil svg { display: block; height: 100%; width: 100%; }
+/* no figure: a big disc with the initial knocked out of it, ringed in the field colour */
+.pi-figout.pi-hasmono { top: calc(var(--pi-lb) + 9vh); right: 11vw; height: 62vh; width: 62vh; }
+.pi-mono { border-radius: 50%; background: #14110e; }
+.pi-col.pi-mono { display: grid; place-items: center; box-shadow: 0 0 0 1.3vh var(--pi-field, #e0691e), 0 0 0 2.3vh #14110e; }
+.pi-sil.pi-mono { filter: none; box-shadow: 0 0 0 2.3vh #14110e; }
+.pi-mono-l { font: 900 46vh/1 var(--font-poster, "Archivo Compressed", Impact, "Arial Narrow", sans-serif); color: var(--pi-field, #e0691e); text-transform: uppercase; transform: translateY(2%); }
+
+/* ---------- the type, lower left: kicker, the name with its offset copy, the alias ---------- */
+.pi-type { position: absolute; left: 6vw; bottom: calc(var(--pi-lb) + 5vh); width: 60vw; }
+.pi-kick { margin: 0 0 1.6vh; }
+.pi-kick-t {
+  display: inline-block; max-width: 100%; box-sizing: border-box; padding: .9vh 1.4vh .8vh; background: #14110e; color: #fbf8f1;
+  font: 800 3.4vh/1.1 var(--font-cond, "Archivo Condensed", "Arial Narrow", sans-serif); letter-spacing: .2em; text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pi-name {
+  position: relative; margin: 0; font: 900 14vh/.9 var(--font-poster, "Archivo Compressed", Impact, "Arial Narrow", sans-serif);
+  letter-spacing: .005em; text-transform: uppercase; white-space: nowrap;
+}
+.pi-name[data-pi-wrap="1"] { white-space: normal; text-wrap: balance; }
+.pi-name-front { position: relative; display: block; color: var(--pi-ink, #14110e); }
+.pi-name-back { position: absolute; left: .055em; top: .055em; width: 100%; color: var(--pi-back, #fbf8f1); }
+.pi-alias {
+  margin: 1.8vh 0 0; font: italic 700 5.2vh/1.1 var(--font-cond, "Archivo Condensed", "Arial Narrow", sans-serif);
+  color: var(--pi-ink, #14110e); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ---------- the letterbox and the flash ---------- */
+.pi-lb { position: absolute; left: 0; right: 0; height: var(--pi-lb); background: #000; }
+.pi-lb-t { top: 0; }
+.pi-lb-b { bottom: 0; }
+.pi-flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
+
+/* ---------- the timeline ---------- */
+.pi-enter { animation: pi-enter 700ms cubic-bezier(.12, .82, .26, 1) var(--pi-enter, 0ms) both; }
+.pi-col { animation: pi-snap 1ms steps(1, end) var(--pi-freeze, 0ms) both; }
+.pi-sil { animation: pi-shift 1ms steps(1, end) var(--pi-freeze, 0ms) both; }
+.pi-flash { animation: pi-flash 90ms linear var(--pi-freeze, 0ms) forwards; }
+.pi-kick { animation: pi-wipe 170ms cubic-bezier(.7, 0, .3, 1) var(--pi-kicker, 0ms) both; }
+.pi-name-back { animation: pi-wipe 190ms cubic-bezier(.7, 0, .3, 1) var(--pi-name, 0ms) both; }
+.pi-name-front { animation: pi-wipe 190ms cubic-bezier(.7, 0, .3, 1) var(--pi-name2, 0ms) both; }
+.pi-alias { animation: pi-wipe 170ms cubic-bezier(.7, 0, .3, 1) var(--pi-alias, 0ms) both; }
+/* the hand-over: the type and the ground wipe away, the bars leave, the figure settles onto the stage's (intro.js sets the transform) and goes */
+.pi-type { animation: pi-wipeout 260ms cubic-bezier(.7, 0, .3, 1) var(--pi-out, 99s) both; }
+.pi-ground { animation: pi-groundout 620ms cubic-bezier(.65, 0, .35, 1) var(--pi-out, 99s) both; }
+.pi-lb-t { animation: pi-lbt 420ms cubic-bezier(.6, 0, .4, 1) var(--pi-out, 99s) both; }
+.pi-lb-b { animation: pi-lbb 420ms cubic-bezier(.6, 0, .4, 1) var(--pi-out, 99s) both; }
+.pi-figout { animation: pi-fade 200ms linear var(--pi-fade, 99s) both; }
+.pi-figout.pi-settling { transition: transform 560ms cubic-bezier(.6, 0, .25, 1); }
+
+@keyframes pi-enter {
+  from { transform: translateX(82vw) skewX(-9deg); }
+  78% { transform: translateX(-1vw) skewX(1.5deg); }
+  to { transform: none; }
+}
+@keyframes pi-snap { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pi-shift { from { transform: none; } to { transform: translate(1.9vh, 1.3vh); } }
+@keyframes pi-flash { 0%, 99% { opacity: .9; } 100% { opacity: 0; } }
+@keyframes pi-wipe {
+  from { -webkit-clip-path: inset(-20% 100% -20% 0); clip-path: inset(-20% 100% -20% 0); }
+  to { -webkit-clip-path: inset(-20% -5% -20% 0); clip-path: inset(-20% -5% -20% 0); }
+}
+@keyframes pi-wipeout {
+  from { -webkit-clip-path: inset(-20% -5% -20% 0); clip-path: inset(-20% -5% -20% 0); }
+  to { -webkit-clip-path: inset(-20% -5% -20% 105%); clip-path: inset(-20% -5% -20% 105%); }
+}
+@keyframes pi-groundout {
+  from { -webkit-clip-path: inset(0 0 0 0); clip-path: inset(0 0 0 0); }
+  to { -webkit-clip-path: inset(0 0 0 100%); clip-path: inset(0 0 0 100%); }
+}
+@keyframes pi-lbt { from { transform: none; } to { transform: translateY(-100%); } }
+@keyframes pi-lbb { from { transform: none; } to { transform: translateY(100%); } }
+@keyframes pi-fade { from { opacity: 1; } to { opacity: 0; } }
+
+/* portrait (an iPad held upright): the figure a little smaller and higher, the type across the foot */
+@media (orientation: portrait) {
+  .pi-card { --pi-figh: 92vh; --pi-lb: 4.5vh; }
+  .pi-figout { right: 5vw; }
+  .pi-figout.pi-hasmono { top: calc(var(--pi-lb) + 6vh); right: 50%; height: 44vh; width: 44vh; transform: translateX(50%); }
+  .pi-mono-l { font-size: 32vh; }
+  .pi-type { left: 6vw; width: 88vw; bottom: calc(var(--pi-lb) + 4vh); }
+}
+
+/* reduced motion or Hold scenes still: the frozen frame, nothing moves (intro.js cuts to the stage after 3 s) */
+.pi-still .pi-enter, .pi-still .pi-col, .pi-still .pi-sil, .pi-still .pi-flash, .pi-still .pi-kick, .pi-still .pi-name-back, .pi-still .pi-name-front,
+.pi-still .pi-alias, .pi-still .pi-type, .pi-still .pi-ground, .pi-still .pi-lb-t, .pi-still .pi-lb-b, .pi-still .pi-figout { animation: none; transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .pi-enter, .pi-col, .pi-sil, .pi-flash, .pi-kick, .pi-name-back, .pi-name-front, .pi-alias, .pi-type, .pi-ground, .pi-lb-t, .pi-lb-b, .pi-figout { animation: none; transition: none; }
+}
