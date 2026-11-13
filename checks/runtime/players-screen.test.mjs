@@ -191,6 +191,16 @@ await test('IP2c lines: queued lines are logged at once; the night end drops the
   assert.deepEqual(L.list(), []);
 });
 
+await test('IP2c sticky: a spot that still clears every control is kept; a covered one moves the shortest way; outside the window counts as covered', () => {
+  const cov = G._pure.covers, spot = G._pure.spotFor;
+  const avoid = [{ left: 900, right: 1300, top: 600, bottom: 700 }];
+  assert.equal(cov(400, 650, 300, 60, avoid, 1366, 768), false);
+  assert.equal(cov(800, 650, 300, 60, avoid, 1366, 768), true, 'meets a control');
+  assert.equal(cov(1200, 740, 300, 60, [], 1366, 768), true, 'leaves the window');
+  const near = spot(1366, 768, 300, 60, avoid, 60, { x: 800, y: 650 });
+  assert.ok(near && !cov(near.x, near.y, 300, 60, avoid, 1366, 768) && Math.abs(near.x - 800) + Math.abs(near.y - 650) <= 120, 'the nearest free spot: ' + JSON.stringify(near));
+});
+
 /* ---------- the Worker ---------- */
 const DISPLAY = { me: { role: 'display', email: 'table@example.test' } };
 async function freshDb() {

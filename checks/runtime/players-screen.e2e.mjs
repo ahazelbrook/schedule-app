@@ -297,6 +297,22 @@ try {
       const g = await page.evaluate(QGEO);
       check(g.hits.length === 0 && g.later && g.n.spotlight > 0 && g.n.cards > 0 && g.n.aftermath > 0, 'IP2c: ' + w + 'x' + h + ', collapsed, the queue covers no Spotlight, Introduce, Add, Board room card, START AFTERMATH, BACK or the Blade rail; every Not now and the more line whole: ' + JSON.stringify(g));
       if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'Q-' + w + '.png') });
+      /* IP2c (the delta review): the panel never moves under the hand. The pointer rests on the first Send (it does not move again), then a Next
+         beat (by the key), a scroll of the right column and a clock tick, 3 s each: the panel's box is the same after each */
+      const qBox = () => page.evaluate(() => { const r = document.querySelector('#gm-p2-lines').getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)].join(','); });
+      const sendAt = await page.evaluate(() => { const r = document.querySelector('#gm-p2-lines [data-p2-line="send"]').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+      await page.mouse.move(sendAt.x, sendAt.y); await sleep(300);
+      const b0 = await qBox(), moves = [];
+      await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+      await page.keyboard.press('ArrowRight'); await sleep(3000); moves.push(['next', await qBox()]);
+      await page.evaluate(() => { const sp = [...document.querySelectorAll('button')].find((b) => /^spotlight$/i.test(b.textContent.trim()) && b.offsetParent); let n = sp && sp.parentElement; while (n && !(n.scrollHeight > n.clientHeight + 4 && /(auto|scroll)/.test(getComputedStyle(n).overflowY))) n = n.parentElement; if (n) n.scrollBy(0, 120); });
+      await sleep(3000); moves.push(['scroll', await qBox()]);
+      await clockOps([{ id: 'c-look', filled: 1 }]); await sleep(3000); moves.push(['tick', await qBox()]);
+      const under = await page.evaluate((p) => { const e = document.elementFromPoint(p.x, p.y); return e ? (e.getAttribute('data-p2-line') || e.textContent.trim().slice(0, 30)) : ''; }, sendAt);
+      check(moves.every((m) => m[1] === b0) && under === 'send', 'IP2c: ' + w + 'x' + h + ', the pointer resting on Send: the panel holds still through a Next beat, a scroll and a tick (' + b0 + ' -> ' + moves.map((m) => m[0] + ' ' + m[1]).join('; ') + '); under the pointer: ' + under);
+      await page.mouse.move(5, h - 5); await sleep(1200);
+      const g2 = await page.evaluate(QGEO);
+      check(g2.hits.length === 0, 'IP2c: ' + w + 'x' + h + ', the pointer gone: the collapsed panel still covers no control: ' + JSON.stringify(g2));
     }
     await page.setViewportSize({ width: 1366, height: 768 }); await sleep(600);
     await page.click('#gm-p2-lines [data-p2-line="more"]');

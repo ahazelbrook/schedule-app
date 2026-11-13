@@ -48,7 +48,8 @@
      quiet "+ n more" that opens the rest in place (it closes again at two or fewer). Every line goes to the night log as it is queued (so a reload
      loses nothing untraced), and again when it is pushed out by a sixth, put away with Not now, or dropped at the night's end (clear). One per page.
      The box is placed where it covers no control: the lowest spot in the bottom of the window that meets no button, field, link or Board room card
-     (and leaves the Blade rail's strip alone), looked for again on every draw, on a resize and every 2 s while lines wait. ---- */
+     (and leaves the Blade rail's strip alone). It moves only when a line comes or goes, "+ n more" opens or closes, or on a resize, and never under
+     the GM's hand (see place). ---- */
   var LINES_MAX = 5, LINES_SHOWN = 2, QS = [];
   function linesPure() {
     var list = [];
@@ -62,25 +63,43 @@
     };
   }
   /* where the box goes: candidate spots (x, y, top-left of a w x h box) scanned from the bottom right; the first that meets none of `avoid` (rects) */
-  function spotFor(W0, H0, w, h, avoid, railW) {
+  function spotFor(W0, H0, w, h, avoid, railW, near) {
     var hit = function (x, y) { for (var i = 0; i < avoid.length; i++) { var a = avoid[i]; if (!(a.left >= x + w || a.right <= x || a.top >= y + h || a.bottom <= y)) return true; } return false; };
-    for (var y = H0 - h - 6; y >= H0 * 0.45; y -= 8) for (var x = W0 - railW - w - 8; x >= 8; x -= 16) if (!hit(x, y)) return { x: x, y: y };
-    return null;
+    var best = null, bd = Infinity;
+    for (var y = H0 - h - 6; y >= H0 * 0.45; y -= 8) for (var x = W0 - railW - w - 8; x >= 8; x -= 16) {
+      if (hit(x, y)) continue;
+      if (!near) return { x: x, y: y };
+      var dd = (x - near.x) * (x - near.x) + (y - near.y) * (y - near.y); if (dd < bd) { bd = dd; best = { x: x, y: y }; }
+    }
+    return best;
+  }
+  /* IP2c: does a box (x, y, w, h) meet any of avoid, or leave the window? */
+  function covers(x, y, w, h, avoid, W0, H0) {
+    if (x < 0 || y < 0 || x + w > W0 || y + h > H0) return true;
+    for (var i = 0; i < avoid.length; i++) { var a = avoid[i]; if (!(a.left >= x + w || a.right <= x || a.top >= y + h || a.bottom <= y)) return true; }
+    return false;
   }
   function lines(q) {
     var root = q.root, rec = QS.filter(function (x) { return x.root === root; })[0];
-    if (!rec) { rec = { root: root, p: linesPure(), el: null, show: null, open: false, tick: null }; QS.push(rec); if (QS.length > 4) QS.shift(); }
+    if (!rec) { rec = { root: root, p: linesPure(), el: null, show: null, open: false, hover: false, hoverT: null, at: null }; QS.push(rec); if (QS.length > 4) QS.shift(); }
     rec.q = q;
     function log(text) { try { if (typeof rec.q.log === 'function') rec.q.log(text); } catch (e) { /* the log is a nicety */ } }
+    /* IP2c (the delta review): the box never moves under the GM's hand. It is placed only when a line comes or goes, "+ n more" opens or closes,
+       or the window is resized; never on a timer or a scroll. Then it keeps its spot unless that spot now meets a control (or leaves the window),
+       and moves the shortest way that clears it. While the pointer is over it (and for 600 ms after it leaves) or it holds the focus, it stays put */
+    function held() { var d = root.ownerDocument, a = d && d.activeElement; return rec.hover || !!(a && rec.el && rec.el.contains(a)); }
     function place() {
       var el = rec.el, d = root.ownerDocument, win = d && d.defaultView; if (!el || el.hidden || !win) return;
+      if (held()) { rec.owed = true; return; }      /* asked while held: done once the hand has gone */
+      rec.owed = false;
       var w = el.offsetWidth, h = el.offsetHeight, W0 = win.innerWidth, H0 = win.innerHeight, avoid = [];
       [].forEach.call(d.querySelectorAll('button, input, select, textarea, a[href], [role="button"], .rv-card'), function (n) {
         if (el.contains(n)) return; var r = n.getBoundingClientRect(); if (r.width && r.height && r.bottom > H0 * 0.4 && r.top < H0) avoid.push(r);
       });
-      var s = spotFor(W0, H0, w, h, avoid, 60), es = el.style;
-      es.right = ''; es.bottom = '';
-      if (s) { es.left = s.x + 'px'; es.top = s.y + 'px'; } else { es.left = Math.max(8, W0 - 60 - w - 8) + 'px'; es.top = Math.max(8, H0 - h - 6) + 'px'; }      /* no free spot: bottom right, as before */
+      if (rec.at && !covers(rec.at.x, rec.at.y, w, h, avoid, W0, H0)) return;      /* the spot it has still clears every control: it stays */
+      var s = spotFor(W0, H0, w, h, avoid, 60, rec.at), es = el.style;
+      if (!s) s = { x: Math.max(8, W0 - 60 - w - 8), y: Math.max(8, H0 - h - 6) };      /* no free spot: bottom right, as before */
+      rec.at = s; es.right = ''; es.bottom = ''; es.left = s.x + 'px'; es.top = s.y + 'px';
     }
     function draw() {
       var d = root.ownerDocument || (W && W.document); if (!d) return;
@@ -97,16 +116,17 @@
           else log('Public line not shown (Not now): ' + str(it.o.text).trim());
           draw();
         });
-        root.appendChild(rec.el);
-        var win = d.defaultView; if (win && win.addEventListener) win.addEventListener('resize', place);
+        rec.el.addEventListener('pointerenter', function () { clearTimeout(rec.hoverT); rec.hover = true; });
+        rec.el.addEventListener('pointerleave', function () { clearTimeout(rec.hoverT); rec.hoverT = setTimeout(function () { rec.hover = false; if (rec.owed) place(); }, 600); });
+        rec.el.addEventListener('focusout', function () { setTimeout(function () { if (rec.owed) place(); }, 0); });
+        root.appendChild(rec.el); rec.at = null;
+        var win = d.defaultView; if (win && win.addEventListener && !rec.resizeOn) { rec.resizeOn = true; win.addEventListener('resize', function () { place(); }); }
       }
       if (rec.p.list.length <= LINES_SHOWN) rec.open = false;
       var R = rec.p.rows(rec.open);
       rec.el.hidden = !R.rows.length; rec.el.style.display = R.rows.length ? 'grid' : 'none';
       rec.el.textContent = '';
-      if (rec.tick && !R.rows.length) { clearInterval(rec.tick); rec.tick = null; }
-      if (!R.rows.length) return;
-      if (!rec.tick) rec.tick = setInterval(function () { if (rec.el && rec.el.isConnected) place(); }, 2000);
+      if (!R.rows.length) { rec.at = null; return; }
       R.rows.forEach(function (it) {
         var row = d.createElement('div'); row.className = 'gm-p2-line'; row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.gap = '6px';
         var t = d.createElement('span'); t.className = 'gm-p2-text'; t.style.flex = '1 1 auto'; t.style.minWidth = '0'; t.style.overflow = 'hidden'; t.style.textOverflow = 'ellipsis'; t.style.whiteSpace = 'nowrap';
@@ -228,5 +248,5 @@
   }
 
   return { VERSION: 1, AP_WHY: AP_WHY, FILES: FILES, offerLine: offerLine, apLine: apLine, scene: scene, probe: probe, openCard: openCard, notesMd: notesMd,
-    _pure: { intent: intent, same: same, typing: typing, linesPure: linesPure, LINES_MAX: LINES_MAX, spotFor: spotFor }, lines: lines };
+    _pure: { intent: intent, same: same, typing: typing, linesPure: linesPure, LINES_MAX: LINES_MAX, spotFor: spotFor, covers: covers }, lines: lines };
 });
