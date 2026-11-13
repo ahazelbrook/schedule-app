@@ -322,7 +322,7 @@ try {
     await page.click('#gm-p2-lines .gm-p2-line:first-of-type [data-p2-line="later"]');
     const logged = await until(async () => { const j = (await api('GET', '/gm/state')).json || {}; const d = j.doc || j; const lg = d.night && d.night.log ? Object.values(d.night.log) : []; return lg.some((e) => /Public line not shown \(Not now\): The speeches/i.test(e.text || '')) && lg.some((e) => /Public line waiting for Send: The fireworks/i.test(e.text || '')) ? true : null; }, 8000);
     check(!!logged, 'IP2c: each line is in the night log as it is queued, and Not now is written too');
-    await page.click('#gm-p2-lines .gm-p2-line:first-of-type [data-p2-line="send"]');
+    await page.locator('#gm-p2-lines .gm-p2-line [data-p2-line="send"]').first().click();      /* the row put away leaves an empty slot while the hand is on the panel */
     const o2 = await until(async () => { const o = (await ambientDoc()).overlay; return o && o.kind === 'text' ? o : null; }, 6000);
     check(!!o2 && /fireworks/i.test(o2.text || ''), 'on: Send shows the line');
     const two2 = await qRows();
@@ -406,6 +406,47 @@ try {
     const f1 = await page.evaluate(() => { const a = document.activeElement; return a ? [a.getAttribute('data-p2-line'), a.getAttribute('data-id')] : null; });
     check(!!f1 && f1[0] === 'later' && f1[1] === f0, 'IP2d: a new line rebuilds the rows and the focus stays on the same row\'s Not now: ' + JSON.stringify(f1));
     await page.evaluate(() => { const box = document.querySelector('#gm-p2-lines'); document.activeElement && document.activeElement.blur(); window.B68GmPlayersScreen.lines({ root: box.parentNode, log() {} }).clear('test'); });
+    /* IP2d re-check, THE RULE: while the pointer is on the panel no row moves under it. The hand rests on a row's Send (it does not move); a line
+       queued by a real Next (the key) and one by the page's queue arrive: the same row's Send is still under the pointer and the top is where it was.
+       Then the row under the hand is sent: the pointer is over an empty slot, never another row's Send; the hand leaves: it closes up, inside the
+       window, over no control. (The queue is per GM page: a line sent from a second GM page is not taken out of this one, so nothing moves.) */
+    const under = (p) => page.evaluate((q) => { const e = document.elementFromPoint(q.x, q.y), b = e && e.closest ? e.closest('[data-p2-line], .gm-p2-slot') : null, box = document.querySelector('#gm-p2-lines');
+      return { kind: b ? (b.classList.contains('gm-p2-slot') ? 'slot' : b.getAttribute('data-p2-line')) : (e && box && box.contains(e) ? 'panel' : 'page'), id: b ? b.getAttribute('data-id') : '', top: Math.round(box.getBoundingClientRect().top), n: box.querySelectorAll('.gm-p2-line').length }; }, p);
+    const qCount = () => page.evaluate(() => window.B68GmPlayersScreen.lines({ root: document.querySelector('#gm-p2-lines').parentNode, log() {} }).list().length);
+    const addOne = (t) => page.evaluate((x) => { const box = document.querySelector('#gm-p2-lines'); window.B68GmPlayersScreen.lines({ root: box.parentNode, log() {} }).add({ kind: 'text', text: x }, () => null); }, t);
+    const toNine45 = async () => { for (let i = 0; i < 16 && !(await timeIs('21:45')); i++) { const b = await page.$('[data-rv="back"]:not([disabled])'); if (!b) break; await b.click(); await sleep(150); } };
+    for (const [w, h] of [[1366, 768], [1280, 720]]) {
+      await page.mouse.move(3, 3); await page.setViewportSize({ width: w, height: h }); await sleep(700);
+      await page.evaluate(() => { const b = document.querySelector('#gm-runv [data-rv="view"][data-v="board"]'); if (b) b.click(); }); await sleep(500);
+      for (const row of [1, 2]) {
+        await page.mouse.move(3, 3); await toNine45();
+        await setLines(row === 1 ? 2 : 3); await sleep(1200);
+        const at = await page.evaluate((r) => { const b = document.querySelectorAll('#gm-p2-lines .gm-p2-line [data-p2-line="send"]')[r - 1]; const q = b.getBoundingClientRect(); return { x: q.left + q.width / 2, y: q.top + q.height / 2 }; }, row);
+        await page.mouse.move(at.x, at.y); await sleep(300);
+        const u0 = await under(at), n0 = await qCount();
+        await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+        await page.keyboard.press('ArrowRight');
+        const realNext = await until(async () => ((await qCount()) > n0 ? true : null), 4000, 150);
+        await sleep(600); const u1 = await under(at);
+        await addOne('A line from the queue while the hand rests'); await sleep(700); const u2 = await under(at);
+        check(u0.kind === 'send' && !!realNext && [u1, u2].every((u) => u.kind === 'send' && u.id === u0.id && u.top === u0.top), 'IP2d re-check: ' + w + 'x' + h + ', the hand on row ' + row + '\'s Send: a line from a real Next and one from the queue arrive, the same Send stays under the pointer, the top unchanged (' + JSON.stringify([u0, u1, u2]) + ')');
+      }
+      /* the row under the hand is sent: an empty slot under the pointer */
+      await page.mouse.move(3, 3); await setLines(3); await sleep(1200);
+      const at1 = await page.evaluate(() => { const b = document.querySelector('#gm-p2-lines .gm-p2-line [data-p2-line="send"]'); const q = b.getBoundingClientRect(); return { x: q.left + q.width / 2, y: q.top + q.height / 2 }; });
+      await page.mouse.move(at1.x, at1.y); await sleep(300);
+      const s0 = await under(at1);
+      await page.mouse.down(); await page.mouse.up(); await sleep(500);
+      const s1 = await under(at1);
+      check(s0.kind === 'send' && s1.kind === 'slot' && s1.top === s0.top, 'IP2d re-check: ' + w + 'x' + h + ', the row under the hand sent: the pointer is over an empty slot, not another row (' + JSON.stringify([s0, s1]) + ')');
+      if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'slot-under-hand-' + w + 'x' + h + '.png') });
+      await page.mouse.move(3, 3); await sleep(1500);
+      const g = await page.evaluate(COVERS), slots = await page.evaluate(() => document.querySelectorAll('#gm-p2-lines .gm-p2-slot').length);
+      check(slots === 0 && !g.out && g.bad.length === 0, 'IP2d re-check: ' + w + 'x' + h + ', the hand gone: closed up, inside the window, over no control: ' + JSON.stringify(Object.assign({ slots }, g)));
+      await api('PATCH', '/gm/ambient', { overlay: null });
+    }
+    await page.setViewportSize({ width: 1366, height: 768 }); await sleep(500);
+    await page.evaluate(() => { const box = document.querySelector('#gm-p2-lines'); window.B68GmPlayersScreen.lines({ root: box.parentNode, log() {} }).clear('test'); });
     for (let i = 0; i < 12; i++) { const b = await page.$('[data-rv="back"]:not([disabled])'); if (!b) break; await b.click(); await sleep(150); }
     await sleep(400); await api('PATCH', '/gm/ambient', { overlay: null });
 

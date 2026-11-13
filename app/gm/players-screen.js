@@ -98,6 +98,7 @@
     function held() { var d = root.ownerDocument, a = d && d.activeElement; return rec.hover || !!(a && rec.el && rec.el.contains(a) && kbFocus(a)); }
     /* IP2d delta: a size change of the panel itself (open, close, a row in or out) always keeps it inside the window, even while held: it stays at its
        spot when it fits, else it grows up and left from there, so the control just pressed (the last line) stays under the hand */
+    function toggled() { var pr = rec.press; return !!(pr && Date.now() - pr.t < 1500); }
     function keepIn() {
       var el = rec.el, win = el && el.ownerDocument.defaultView; if (!el || el.hidden || !win) return;
       var r = el.getBoundingClientRect(), at = rec.at || { x: r.left, y: r.top }, w = el.offsetWidth, h = el.offsetHeight;
@@ -115,8 +116,17 @@
     }
     function place() {
       var el = rec.el, d = root.ownerDocument, win = d && d.defaultView; if (!el || el.hidden || !win) return;
-      if (held()) { rec.owed = true; keepIn(); return; }      /* asked while held: only kept inside the window; the rest once the hand has gone */
+      /* THE RULE (IP2d re-check): while the pointer (or a keyboard focus) is on the panel, no row moves under it unless the panel's own toggle was pressed.
+         So, held: a toggle press keeps the panel inside the window (keepIn: the toggle lands under the hand); anything else (a new line, a row gone)
+         leaves the TOP where it is: rows are oldest first, so what is new goes below; if that runs past the window the panel scrolls inside itself */
+      if (held()) {
+        rec.owed = true;
+        if (toggled()) { el.style.maxHeight = 'calc(100vh - 12px)'; keepIn(); }
+        else { var top = el.getBoundingClientRect().top; el.style.maxHeight = Math.max(40, Math.floor(win.innerHeight - top - 6)) + 'px'; }
+        return;
+      }
       rec.owed = false;
+      el.style.maxHeight = 'calc(100vh - 12px)';
       var W0 = win.innerWidth, H0 = win.innerHeight, avoid = avoidList(d, el, H0), es = el.style, forms = rec.open ? ['open'] : FORMS;
       for (var i = 0; i < forms.length; i++) {
         if (rec.form !== forms[i]) build(forms[i]);
@@ -131,11 +141,18 @@
     /* the rows of one form; the focus kept on the same row's same button (IP2d) */
     function build(form) {
       var el = rec.el, d = el.ownerDocument, a = d.activeElement, keep = a && el.contains(a) ? { line: a.getAttribute('data-p2-line'), id: a.getAttribute('data-id') } : null;
-      var V = rec.p.view(form);
-      rec.form = form; el.textContent = '';
+      var V = rec.p.view(form), items = V.rows.slice();
+      if (held() && rec.shown && rec.shown.length) {      /* held: every row stays where it was; one that went leaves an empty slot until the hand leaves */
+        var merged = [];
+        rec.shown.forEach(function (sh) { var it = null; for (var i = 0; i < items.length; i++) if (items[i].id === sh.id) it = items[i]; merged.push(it || { slot: true, id: sh.id, h: sh.h }); });
+        items.forEach(function (it) { if (!merged.some(function (m) { return m.id === it.id; })) merged.push(it); });
+        items = merged;
+      }
+      rec.form = form; rec.domForm = form; el.textContent = '';
       el.style.width = form === 'chip' ? 'auto' : 'min(430px, 34vw)';
-      V.rows.forEach(function (it) {
-        var row = d.createElement('div'); row.className = 'gm-p2-line'; row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.gap = '6px';
+      items.forEach(function (it) {
+        if (it.slot) { var sl = d.createElement('div'); sl.className = 'gm-p2-slot'; sl.setAttribute('data-id', it.id); sl.style.height = it.h + 'px'; sl.setAttribute('aria-hidden', 'true'); el.appendChild(sl); return; }
+        var row = d.createElement('div'); row.className = 'gm-p2-line'; row.setAttribute('data-id', it.id); row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.gap = '6px';
         var t = d.createElement('span'); t.className = 'gm-p2-text'; t.style.flex = '1 1 auto'; t.style.minWidth = '0'; t.style.overflow = 'hidden'; t.style.textOverflow = 'ellipsis'; t.style.whiteSpace = 'nowrap';
         t.textContent = 'Public line: “' + str(it.o.text).trim() + '”'; t.title = t.textContent; row.appendChild(t);
         [['send', 'Send', 'btn sm primary'], ['later', 'Not now', 'btn sm']].forEach(function (b) {
@@ -149,6 +166,7 @@
         var ms = m.style; ms.background = 'none'; ms.border = '0'; ms.color = V.chip ? '#f2ede1' : '#c9c1b2'; ms.font = 'inherit'; ms.fontSize = V.chip ? '13px' : '12px'; ms.padding = '0 2px'; ms.textAlign = 'left'; ms.cursor = 'pointer'; ms.justifySelf = 'start';
         el.appendChild(m);
       }
+      rec.shown = [].map.call(el.querySelectorAll('.gm-p2-line, .gm-p2-slot'), function (n) { return { id: n.getAttribute('data-id'), h: n.offsetHeight }; });
       if (keep) { var back = el.querySelector('[data-p2-line="' + keep.line + '"]' + (keep.id ? '[data-id="' + keep.id + '"]' : '')) || (keep.line === 'more' ? null : el.querySelector('[data-p2-line="more"]')); if (back && back.focus) back.focus(); }
     }
     function draw() {
@@ -157,7 +175,7 @@
         rec.el = d.createElement('div'); rec.el.id = 'gm-p2-lines'; rec.el.className = 'gm-p2-lines'; rec.el.setAttribute('role', 'region'); rec.el.setAttribute('aria-label', 'Public lines waiting');
         var es = rec.el.style; es.position = 'fixed'; es.zIndex = '60'; es.width = 'min(430px, 34vw)'; es.display = 'grid'; es.gap = '3px';
         es.padding = '5px 8px'; es.background = '#1a1714'; es.color = '#f2ede1'; es.borderLeft = '4px solid #e0701e'; es.boxShadow = '0 2px 10px rgba(0,0,0,.35)'; es.fontSize = '13px';
-        es.maxHeight = 'calc(100vh - 12px)'; es.overflowY = 'auto';      /* IP2d delta: a list taller than the window scrolls inside itself */
+        es.maxHeight = 'calc(100vh - 12px)'; es.overflowY = 'auto'; es.overscrollBehavior = 'contain';      /* IP2d delta: a list taller than the window scrolls inside itself */
         rec.el.addEventListener('click', function (ev) {
           var b = ev.target && ev.target.closest ? ev.target.closest('[data-p2-line]') : null; if (!b) return;
           var act = b.getAttribute('data-p2-line');
@@ -169,8 +187,8 @@
         });
         rec.el.addEventListener('pointerdown', function (ev) { var b = ev.target && ev.target.closest ? ev.target.closest('[data-p2-line="more"]') : null; rec.press = b ? { x: ev.clientX, y: ev.clientY, t: Date.now() } : null; });
         rec.el.addEventListener('pointerenter', function () { clearTimeout(rec.hoverT); rec.hover = true; });
-        rec.el.addEventListener('pointerleave', function () { clearTimeout(rec.hoverT); rec.hoverT = setTimeout(function () { rec.hover = false; if (rec.owed) place(); }, 600); });
-        rec.el.addEventListener('focusout', function () { setTimeout(function () { if (rec.owed) place(); }, 0); });
+        rec.el.addEventListener('pointerleave', function () { clearTimeout(rec.hoverT); rec.hoverT = setTimeout(function () { rec.hover = false; if (rec.el && rec.el.querySelector('.gm-p2-slot')) draw(); else if (rec.owed) place(); }, 600); });
+        rec.el.addEventListener('focusout', function () { setTimeout(function () { if (held()) return; if (rec.el && rec.el.querySelector('.gm-p2-slot')) draw(); else if (rec.owed) place(); }, 0); });
         root.appendChild(rec.el); rec.at = null; rec.form = '';
         var win = d.defaultView; if (win && win.addEventListener && !rec.resizeOn) { rec.resizeOn = true; win.addEventListener('resize', function () { place(); }); }
         /* IP2d: the page under it changed (a redraw that moves controls): placed again, once things settle; the hold still applies; a scroll is no change */
@@ -186,7 +204,7 @@
       var n = rec.p.list.length;
       rec.el.hidden = !n; rec.el.style.display = n ? 'grid' : 'none';
       if (!n) { rec.el.textContent = ''; rec.at = null; rec.form = ''; return; }
-      build(rec.open ? 'open' : (rec.form && rec.form !== 'open' ? rec.form : 'two'));
+      build(rec.open ? 'open' : held() && rec.domForm && rec.domForm !== 'open' ? rec.domForm : (rec.form && rec.form !== 'open' ? rec.form : 'two'));
       if (!rec.open) rec.form = '';      /* a collapsed redraw tries the largest form first again */
       place();
     }
