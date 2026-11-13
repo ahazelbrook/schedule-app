@@ -50,9 +50,10 @@ await test('dials: a rise names its new segments; a new clock arrives as a rise;
   assert.deepEqual(P.rises(null, c), {}, 'nothing swells on load');
   assert.deepEqual(P.rises(c, P.clean([{ id: 'a', name: 'Lookouts', size: 4, filled: 0 }])), {}, 'a fall is no rise');
 });
-await test('dials: over the map and an ambient scene; never over Blank, the hard start, a beat, the opening credits or another stage', () => {
-  assert.ok(P.visible({ kind: 'svg' }) && P.visible({ kind: 'blank' }) && P.visible({}));
-  for (const st of [{ kind: 'blank', ambient: 'credits' }, { kind: 'svg', dark: true }, { kind: 'dark' }, { kind: 'svg', mode: 'start' }, { kind: 'svg', beat: true }, { kind: 'handout' }, { kind: 'npc' }, { kind: 'text' }, { kind: 'rule' }, { kind: 'cards' }]) assert.ok(!P.visible(st), JSON.stringify(st));
+await test('dials: over the map and an ambient scene; the map, the ambient and an NPC; never over Blank, the hard start, a beat, the intro card, the opening credits or another stage', () => {
+  assert.ok(P.visible({ kind: 'svg' }) && P.visible({ kind: 'blank' }) && P.visible({}) && P.visible({ kind: 'npc' }), 'the map, the ambient and an NPC (the overseer, 14/11)');
+  assert.ok(!P.visible({ kind: 'npc', intro: true }), 'never over the introduction card');
+  for (const st of [{ kind: 'blank', ambient: 'credits' }, { kind: 'svg', dark: true }, { kind: 'dark' }, { kind: 'svg', mode: 'start' }, { kind: 'svg', beat: true }, { kind: 'handout' }, { kind: 'text' }, { kind: 'rule' }, { kind: 'cards' }]) assert.ok(!P.visible(st), JSON.stringify(st));
   assert.equal(P.wedges(4).length, 4); assert.equal(P.wedges(1)[0], 'circle');
 });
 

@@ -3,6 +3,7 @@
 .p2-dials { position: absolute; z-index: 3; top: max(2vh, env(safe-area-inset-top)); right: max(2vw, env(safe-area-inset-right)); display: flex; flex-direction: row-reverse;
   align-items: flex-start; gap: 1.4vw; pointer-events: none; }
 .p2-dials[hidden] { display: none; }
+.p2-dials.p2-col { flex-direction: column; align-items: flex-end; gap: 1.2vh; }      /* over an NPC stage: the figure stands right of centre, the nameplate lower left */
 .dp-root.p2-screen .dp-auto { display: none; }      /* the autopilot sends nothing while the players' screen is on: no AUTO mark */
 /* R1: the map is one sheet edge to edge: no bar kept for the status line under it (players.js paints the stage the sheet's paper) */
 .dp-root.p2-screen .dp-map-frame { bottom: 0; }

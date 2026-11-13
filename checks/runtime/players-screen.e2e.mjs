@@ -291,7 +291,34 @@ try {
     check(!!during && during.card && !during.dials, 'the dials stand down while the introduction card plays: ' + JSON.stringify(during));
     if (SHOTS && during) await ipad.screenshot({ path: path.join(SHOTS, 'intro-card-no-dials-1180.png') });
     await sleep(7000);
-    check(!(await ipad.evaluate(() => !!document.querySelector('.p2-dials:not([hidden])'))), 'after the card the NPC stays up (a stage that is not the map): the dials stay down');
+    /* the overseer's ruling (14/11): over the NPC stage the dials show, and a tick swells there; not over the NPC's head or nameplate */
+    check(!!(await until(() => ipad.evaluate(() => !document.querySelector('.dp-root.pi-on') && !!document.querySelector('.p2-dials:not([hidden]) .p2-dial')), POLL_MS * 2)), 'after the card the NPC stays up and the dials are back over it');
+    await clockOps([{ id: 'c-crowd', filled: 2 }]);
+    const s4 = await until(() => ipad.evaluate(() => { const d = [...document.querySelectorAll('.p2-dials:not([hidden]) .p2-dial')].find((x) => x.querySelector('.p2-name').textContent === 'The crowd turns'); return d && d.getAttribute('data-p2-tick') ? d.getAttribute('data-p2-tick') : null; }), POLL_MS * 3, 60);
+    check(s4 === 'swell', 'a tick over the NPC stage swells the dial: ' + s4);
+    await sleep(2000);
+    const NPC_CLEAR = () => {
+      const R = (e) => e && e.getBoundingClientRect(), hit = (a, b) => !!a && !!b && b.width > 0 && !(b.left >= a.right || b.right <= a.left || b.top >= a.bottom || b.bottom <= a.top);
+      const st = [...document.querySelectorAll('.dp-stage.dp-npc')].pop() || document.querySelector('.ks16-npc'), dials = R(document.querySelector('.p2-dials:not([hidden])'));
+      if (!st || !dials) return { ok: false, why: 'no stage or no dials' };
+      /* the figure's DRAWN box (its svg is wider than the person): the union of its shapes, then the head = the top fifth, the middle of the width */
+      const svgs = [...document.querySelectorAll('.dp-stage.dp-npc svg, .ks16-npc svg')].filter((v) => { const r = R(v); return r.width > 40 && r.width < 0.6 * innerWidth && r.height > 0.4 * innerHeight; }).sort((a, b) => R(b).height - R(a).height);
+      let f = null;
+      if (svgs[0]) { const sv = R(svgs[0]); for (const n of svgs[0].querySelectorAll('path, rect, ellipse, circle, polygon')) { const r = R(n); if (!r.width || r.width > sv.width * 0.9) continue; f = f ? { left: Math.min(f.left, r.left), right: Math.max(f.right, r.right), top: Math.min(f.top, r.top), bottom: Math.max(f.bottom, r.bottom) } : { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; } }
+      const head = f ? { left: f.left + (f.right - f.left) * 0.2, right: f.right - (f.right - f.left) * 0.2, top: f.top, bottom: f.top + (f.bottom - f.top) * 0.2, width: 1 } : null;
+      const plates = [...document.querySelectorAll('.dp-npc-txt, .ks16-nameplate, .ks16-npcfoot')].map(R).filter((r) => r.width > 0);
+      return { ok: !!head && !hit(dials, head) && !plates.some((p) => hit(dials, p)), head: head && [Math.round(head.left), Math.round(head.right), Math.round(head.top), Math.round(head.bottom)], dials: [Math.round(dials.left), Math.round(dials.top), Math.round(dials.bottom)], plates: plates.length };
+    };
+    for (const kit of [true, false]) {
+      await setting({ 'stage.players': true, 'kit.stage': kit }); await sleep(POLL_MS + 2500);
+      for (const [w, h] of [[1180, 820], [1024, 768], [1920, 1080]]) {
+        await ipad.setViewportSize({ width: w, height: h }); await sleep(900);
+        const c = await ipad.evaluate(NPC_CLEAR);
+        check(c.ok, 'NPC stage, kit.stage ' + (kit ? 'on' : 'off') + ', ' + w + 'x' + h + ': the dials sit over neither the head nor the nameplate ' + JSON.stringify(c));
+        if (SHOTS) await ipad.screenshot({ path: path.join(SHOTS, 'npc-dials' + (kit ? '-kit' : '') + '-' + w + '.png') });
+      }
+      await ipad.setViewportSize({ width: 1180, height: 820 });
+    }
     await api('PUT', '/gm/display', { kind: 'svg', svg: MAP, title: 'The Pelican Rooms' });
     check(!!(await until(() => ipad.evaluate(() => !!document.querySelector('.p2-dials:not([hidden]) .p2-dial')), POLL_MS * 3)), 'the map back: the dials come back');
     /* not while typing */

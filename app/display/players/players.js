@@ -10,7 +10,7 @@
    new segments in the alarm colour, then settles back into the corner. Reduced motion or "Hold scenes still" (fx.off): no swell, the new segments
    flash once. Nothing moves when nothing changed: a poll that brings the same clocks touches nothing.
    NOT OVER: lights out (Blank), the hard start, a brief beat (a title, a stamp, an introduction: anything the GM sent as a moment), the opening
-   credits scene, or any stage but the map and the ambient (a handout, an NPC card, a rule: what the GM sent has the screen).
+   credits scene, IP3's introduction card, or any stage but the map, an NPC and the ambient (a handout, a rule, a text: what the GM sent has the screen).
    Every string goes in as text: no markup sink, no request.
 
    API: attach(container, host) -> { clocks(list | null), sync(), destroy(), el }
@@ -96,10 +96,10 @@
   /* whether the dials may be seen now: { kind, dark, mode, beat, ambient } -> bool */
   Pure.visible = function (st) {
     st = st || {};
-    if (st.dark || st.mode === 'start' || st.beat) return false;
+    if (st.dark || st.mode === 'start' || st.beat || st.intro) return false;
     var k = st.kind || 'blank';
     if (k === 'blank') return st.ambient !== 'credits';
-    return k === 'svg';
+    return k === 'svg' || k === 'npc';      /* the overseer's ruling (14/11): an NPC scene can last ten minutes, a clock ticked in it must be seen */
   };
 
   /* the map sheet's own paper: the colour of the drawing's first rect, if it is a plain colour; else the display's paper token */
@@ -199,7 +199,9 @@
     function sync() {
       if (dead) return;
       sheets();
-      var vis = !!(last && last.length) && Pure.visible({ kind: call(host.kind, 'blank'), dark: call(host.dark, false), mode: call(host.mode, null), beat: call(host.beat, false), ambient: call(host.ambient, null) });
+      var kind = call(host.kind, 'blank');
+      if (el.classList && el.classList.contains('p2-col') !== (kind === 'npc')) el.classList.toggle('p2-col', kind === 'npc');      /* over an NPC: one column down the right edge, clear of the head and the nameplate */
+      var vis = !!(last && last.length) && Pure.visible({ kind: kind, dark: call(host.dark, false), mode: call(host.mode, null), beat: call(host.beat, false), ambient: call(host.ambient, null), intro: !!(container.classList && container.classList.contains('pi-on')) });      /* IP3's title card (pi-on on the root) */
       if (el.hidden === vis) el.hidden = !vis;
     }
     if (W && typeof W.MutationObserver === 'function') {
