@@ -516,6 +516,9 @@ try {
       await frameOn(R.page); await sleep(800);
       await overlay({ id: 'ov-tram-r', kind: 'clock', clockId: 'c-tram', ms: 60000 });
       await R.page.waitForSelector('.ks16-clock[data-ks16-phase="grow"][data-reduced]', { timeout: 20000 });
+      /* IP1b: under reduced motion the page's own rule (index.html: every transition 1 ms) turns each change into a 1 ms flip; one sampled in the same
+         frame it starts in reads as running. Let two frames pass, so only real motion is left to find. */
+      await R.page.evaluate(() => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(res, 20)))));
       const a = await running(R.page);
       expect(!a.some((x) => /ks16/.test(x)), 'an animation under reduced motion: ' + a.join(', '));
       await R.page.waitForFunction(() => document.querySelector('.ks16-clock').getAttribute('data-ks16-phase') === 'dock', null, { timeout: 4000 });

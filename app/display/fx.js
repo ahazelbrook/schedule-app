@@ -2,8 +2,8 @@
    spares the iPad's battery and heat WITHOUT touching a line inside them. A scene is a same-origin iframe, so the display page reaches in from outside:
 
      fx.pause   a scene that is not on show stops moving: the page is hidden, a spotlight covers the ambient, or the frame itself is faded out.
-     fx.off     every ambient scene is held still, all the time (a still picture of the scene: it draws its first frames, then one short run a minute,
-                so the stand-by clock reads the right time; the display page itself is not touched).
+     fx.off     every ambient scene is held still, all the time (a still picture of the scene: it draws its first frames, then holds; the stand-by clock
+                sets its hands on its own minute timer; the display page itself is not touched).
 
    "Stopped" is three things, all reversible and all done from here: CSS animations and transitions in the scene (a style element this file adds, driven by a
    class on the scene's <html>), requestAnimationFrame (calls are held in a queue and replayed on resume, so a canvas loop picks up where it was), and any
@@ -34,15 +34,14 @@
   }
 
   /* IP1 (13/11): "held still" is a still picture, not a blank one. A scene draws its first frames only inside its rAF loop (the stand-by clock sets its hands
-     there), so a held scene is let run for SETTLE_MS when its document arrives or the hold begins, and for TICK_MS once a minute after that (the clock then
-     reads the right minute). Its CSS animations stay paused throughout. */
-  var SETTLE_MS = 1200, TICK_MS = 400, MINUTE = 60000;
+     there), so a held scene is let run for SETTLE_MS when its document arrives or the hold begins, then it holds: truly still (IP1b, 14/11: the once-a-minute run
+     made every held scene twitch; the stand-by card sets its hands on its own timer). Its CSS animations stay paused throughout. */
+  var SETTLE_MS = 1200;
   function now() { return Date.now(); }
-  /* the per-window record: { raf, cancel, held: [{ id, cb }], next, paused, media: [els we paused], open (ms: rAF passes until then), tick (ms: the next
-     minute's run), live: [cbs the real rAF holds now], doc (the document seen last) } */
+  /* the per-window record: { raf, cancel, held: [{ id, cb }], next, paused, media: [els we paused], open (ms: rAF passes until then), live: [cbs the real rAF holds now], doc (the document seen last) } */
   function rec(win) {
     if (win.__b68fx) return win.__b68fx;
-    var r = win.__b68fx = { raf: win.requestAnimationFrame, cancel: win.cancelAnimationFrame, held: [], next: -1, paused: false, media: [], off: false, open: 0, tick: 0, live: [], doc: null };
+    var r = win.__b68fx = { raf: win.requestAnimationFrame, cancel: win.cancelAnimationFrame, held: [], next: -1, paused: false, media: [], off: false, open: 0, live: [], doc: null };
     if (typeof r.raf === 'function') {
       win.requestAnimationFrame = function (cb) {
         if (!r.paused || now() < r.open) return pass(win, r, cb);
@@ -81,10 +80,7 @@
       r.doc = doc;
       r.off = !!s.off;
       if (r.off && (fresh || !wasOff)) {                          /* a new scene, or the hold just began: let it draw its first frames, then hold */
-        r.open = now() + SETTLE_MS; r.tick = (Math.floor(now() / MINUTE) + 1) * MINUTE;
-        release(win, r);
-      } else if (r.off && now() >= r.tick) {                       /* once a minute, on the minute: one short run, so a held clock reads the right time */
-        r.open = now() + TICK_MS; r.tick = (Math.floor(now() / MINUTE) + 1) * MINUTE;
+        r.open = now() + SETTLE_MS;
         release(win, r);
       } else if (!r.off) r.open = 0;
       if (s.paused && !r.paused) {

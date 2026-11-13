@@ -83,7 +83,7 @@ const hands=()=>{const d=new Date(),s=d.getSeconds()+d.getMilliseconds()/1000,m=
 // the hands are set at once and every minute as well as in the loop, so a scene the display holds still still tells the time (IP1)
 hands();loop(hands);
 function dt(){const d=new Date();dateT.textContent=String(d.getDate()).padStart(2,"0")+" "+mon[d.getMonth()]+" 968 AC";}
-dt();setInterval(()=>{dt();hands();},60000);
+const tick=()=>{dt();hands();};dt();setTimeout(()=>{tick();setInterval(tick,60000);},60050-Date.now()%60000);      // on the minute, so a held clock is never a minute behind
 const face=$("face");
 function fit(){const tall=innerWidth<innerHeight*4/3;face.setAttribute("preserveAspectRatio",tall?"xMidYMin meet":"xMidYMid meet");}
 fit();addEventListener("resize",fit);
