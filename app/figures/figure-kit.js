@@ -8500,6 +8500,160 @@ var B68Figure = (() => {
     }
   });
 
+  // src/parts/hats/trades-hats.js
+  var require_trades_hats = __commonJS({
+    "src/parts/hats/trades-hats.js"() {
+      "use strict";
+      var { register } = require_registry();
+      var { frame, sym, castShadow } = require_hat();
+      var tokOr = (ctx, t, d) => typeof t === "string" && ctx.T.tok(t) ? t : d;
+      register({
+        kind: "hat",
+        name: "toque",
+        aliases: ["chef-hat", "toque-blanche"],
+        describe: "Chef's toque: a tall white pleated puff that billows out above a deep stiff band on the brow. The kitchen, the hotel, the canteen.",
+        params: { color: "cotton token (cloth-white)", height: "0.7\u20131.3 (1)" },
+        example: { hair: { hat: { type: "toque" } } },
+        draw(ctx, o) {
+          const { G } = ctx;
+          const { cw } = frame(ctx);
+          const sm = (pts, t = 0.5) => ctx.hs(G.smooth(pts, true, t));
+          const cot = ctx.mat(tokOr(ctx, o.color, "cloth-white"), "cloth");
+          const ht = Math.max(0.7, Math.min(1.3, +o.height || 1)), Y = (y) => -0.4 + (y + 0.4) * ht;
+          const puff = sym([[0, Y(-1.16)], [-cw * 0.5, Y(-1.17)], [-cw * 1.08, Y(-1.08)], [-cw * 1.28, Y(-0.9)], [-cw * 1.24, Y(-0.66)], [-cw * 1.1, -0.45], [-cw * 1.04, -0.37, true], [-cw * 0.5, -0.35], [0, -0.345]]);
+          const band = sym([[0, -0.43], [-cw * 0.6, -0.43], [-cw * 1.02, -0.42, true], [-cw * 1.04, -0.21, true], [-cw * 0.55, -0.18], [0, -0.17]]);
+          const pleats = [];
+          if (ctx.lodAtLeast("mid")) for (const x of [-0.78, -0.42, -0.08, 0.26, 0.6]) {
+            pleats.push({ d: ctx.hs(G.brush([[x * cw, -0.43], [x * cw * 1.14, Y(-0.7)], [x * cw * 1.12, Y(-1.02)]], [4e-3, 0.03, 6e-3])), fill: "shade", o: 0.55 });
+          }
+          const pieces = [
+            {
+              id: "hat-crown",
+              z: ctx.Z.hat,
+              d: sm(puff, 0.5),
+              mat: cot,
+              shade: pleats,
+              lit: [{ d: ctx.hs(G.brush([[-cw * 1.05, Y(-0.7)], [-cw * 0.9, Y(-0.98)], [-cw * 0.5, Y(-1.1)]], [4e-3, 0.05, 6e-3])), o: 0.5 }],
+              light: { form: 1.1, local: true }
+            },
+            {
+              id: "hat-band",
+              z: ctx.Z.hat + 0.1,
+              d: sm(band, 0.4),
+              mat: cot,
+              lines: ctx.lodAtLeast("mid") ? [{ d: ctx.hs(G.brush([[-cw * 1, -0.4], [0, -0.41], [cw * 1, -0.4]], [4e-3, 0.016, 4e-3])), fill: "shade", o: 0.6 }] : [],
+              light: { form: 0.9, local: true }
+            }
+          ];
+          pieces.push(...castShadow(ctx, [[-0.34, -0.2], [-0.18, -0.178], [0, -0.17], [0.18, -0.178], [0.34, -0.2]], 0.05, { shift: 0.015, o: 0.75, core: 0.4 }));
+          return pieces;
+        }
+      });
+      function wholeHair(ctx, id) {
+        const Hh = ctx.S.hair;
+        if (!Hh || !Hh.style || Hh.style === "bald") return [];
+        ctx.S.hair = { ...Hh, hat: null };
+        try {
+          return ctx.part("hair", Hh.style, ctx.S.hair).map((p) => ({ ...p, id: `${id}-${p.id}` }));
+        } finally {
+          ctx.S.hair = Hh;
+        }
+      }
+      register({
+        kind: "hat",
+        name: "eyeshade",
+        aliases: ["visor", "green-visor", "dealer-visor"],
+        describe: "Croupier's (or bookkeeper's) eyeshade: a translucent green celluloid visor on a band round the forehead, the hair whole above it. Worn low it shades the eyes green; pushed up it rides on the hairline.",
+        params: { color: "visor token (covert-500)", band: "band token (cloth-black)", up: "true: pushed up onto the hairline" },
+        example: { hair: { hat: { type: "eyeshade" } } },
+        draw(ctx, o) {
+          const { G } = ctx;
+          const { cw } = frame(ctx);
+          const sm = (pts, t = 0.4) => ctx.hs(G.smooth(pts, true, t));
+          const up = !!o.up, vis = ctx.mat(tokOr(ctx, o.color, "covert-500"), "glass"), bandM = ctx.mat(tokOr(ctx, o.band, "cloth-black"), "cloth");
+          const b0 = up ? -0.37 : -0.31, b1 = b0 + 0.045;
+          const e = up ? -0.53 : -0.075, we = cw * (up ? 1 : 1.12);
+          const visor = up ? sym([[0, e], [-we * 0.6, e + 0.01], [-we, e + 0.05, true], [-cw * 0.92, b0 + 0.01, true], [0, b0 - 0.01]]) : sym([[0, b0 + 0.01], [-cw * 0.95, b0 + 0.03, true], [-we, e - 0.03, true], [-we * 0.6, e - 5e-3], [0, e]]);
+          const pieces = wholeHair(ctx, "eyeshade");
+          pieces.push({ id: "hat-band", z: ctx.Z.hat, d: sm(sym([[0, b0], [-cw * 1.01, b0 + 0.01, true], [-cw * 1.01, b1 + 0.01, true], [0, b1]])), mat: bandM, light: { form: 0.8 } });
+          pieces.push({
+            id: "hat-visor",
+            z: ctx.Z.hat + 0.1,
+            d: sm(visor),
+            mat: vis,
+            opacity: 0.8,
+            light: { form: 0.6, local: true },
+            lines: ctx.lodAtLeast("mid") ? [{ d: ctx.hs(G.brush(up ? [[-we * 0.9, e + 0.05], [0, e + 0.012], [we * 0.9, e + 0.05]] : [[-we * 0.95, e - 0.03], [0, e + 2e-3], [we * 0.95, e - 0.03]], [4e-3, 0.014, 4e-3])), fill: "light", o: 0.6 }] : []
+          });
+          if (!up) {
+            pieces.push({ id: "hat-visor-tint", z: ctx.Z.face + 1.3, d: sm(sym([[0, b1], [-cw * 1.1, b1, true], [-cw * 1.1, 0.07, true], [0, 0.08]])), fill: tokOr(ctx, o.color, "covert-500"), opacity: 0.22, light: false, clip: "head" });
+            pieces.push(...castShadow(ctx, [[-0.36, e - 0.02], [-0.18, e], [0, e + 5e-3], [0.18, e], [0.36, e - 0.02]], 0.06, { shift: 0.015, o: 0.7, core: 0.35 }));
+          }
+          return pieces;
+        }
+      });
+      function crownOnBrim(ctx, g, mat, bandM, o) {
+        const { G } = ctx;
+        const sm = (pts, t = 0.4) => ctx.hs(G.smooth(pts, true, t));
+        const mid = ctx.lodAtLeast("mid"), c = g.curl || 0;
+        const brim = sym([[0, g.y - 0.035], [-g.bw * 0.7, g.y - 0.035], [-g.bw, g.y - 0.02 - c, !c], [-g.bw, g.y + g.bt - c, true], [-g.bw * 0.7, g.y + g.bt + 0.012], [0, g.y + g.bt + 0.02]]);
+        const crown = sym([[0, g.top], [-g.cw1, g.top, true], [-g.cw0, g.y - 0.02, true], [0, g.y - 0.012]]);
+        const band = sym([[0, g.band[0]], [-g.cw0 * 1.005 - (g.cw1 - g.cw0) * (g.y - g.band[0]) / (g.y - g.top), g.band[0], true], [-g.cw0 * 1.01, g.band[1], true], [0, g.band[1] + 8e-3]]);
+        const lines = mid && o.weave ? [0.3, 0.55, 0.8].map((t) => ({ d: ctx.hs(G.brush([[-g.cw0, g.y + (g.top - g.y) * t], [0, g.y + (g.top - g.y) * t - 4e-3], [g.cw0, g.y + (g.top - g.y) * t]], [3e-3, 8e-3, 3e-3])), fill: "shade", o: 0.45 })) : [];
+        const out = [
+          {
+            id: "hat-brim",
+            z: ctx.Z.hat,
+            d: sm(brim),
+            mat,
+            light: { form: 0.7 },
+            lit: [{ d: ctx.hs(G.brush([[-g.bw * 0.95, g.y - 0.015 - c], [-g.bw * 0.5, g.y - 0.022], [0, g.y - 0.024]], [4e-3, 0.018, 6e-3])), o: 0.55 }],
+            lines: mid ? [{ d: ctx.hs(G.brush([[-g.bw, g.y + g.bt * 0.4 - c], [0, g.y + g.bt + 0.012], [g.bw, g.y + g.bt * 0.4 - c]], [3e-3, 0.014, 3e-3])), fill: "deep", o: 0.5 }] : []
+          },
+          {
+            id: "hat-crown",
+            z: ctx.Z.hat + 0.1,
+            d: sm(crown, 0.3),
+            mat,
+            lines,
+            light: { form: 1, local: true },
+            lit: [{ d: ctx.hs(G.brush([[-g.cw1 * 0.85, g.top + 0.03], [-g.cw0 * 0.86, g.y - 0.06]], [0.01, 0.04])), o: 0.45 }]
+          },
+          { id: "hat-band", z: ctx.Z.hat + 0.15, d: sm(band, 0.3), mat: bandM, light: { form: 0.9, local: !!o.localBand } }
+        ];
+        out.push(...castShadow(ctx, [[-0.4, g.y + 0.04], [-0.2, g.y + 0.06], [0, g.y + 0.065], [0.2, g.y + 0.06], [0.4, g.y + 0.04]], 0.07, { shift: 0.02, o: 0.85, core: 0.45 }));
+        return out;
+      }
+      register({
+        kind: "hat",
+        name: "boater",
+        aliases: ["straw-boater", "skimmer"],
+        describe: "Straw boater: a flat-topped straw crown with a ribbon band on a wide, stiff flat brim, worn level. The barber-shop singer, the regatta, the ice-cream seller, the rower.",
+        params: { color: "straw token (cloth-camel)", band: "ribbon token (cloth-navy)" },
+        example: { hair: { hat: { type: "boater", band: "cloth-navy" } } },
+        draw(ctx, o) {
+          const { cw } = frame(ctx);
+          const straw = ctx.mat(tokOr(ctx, o.color, "cloth-camel"), "cloth"), bandM = ctx.mat(tokOr(ctx, o.band, "cloth-navy"), "satin");
+          return crownOnBrim(ctx, { y: -0.3, bw: cw + 0.2, bt: 0.035, top: -0.56, cw0: cw * 0.98, cw1: cw * 0.98, band: [-0.42, -0.32] }, straw, bandM, { weave: true });
+        }
+      });
+      register({
+        kind: "hat",
+        name: "top-hat",
+        aliases: ["topper"],
+        describe: "Top hat: a tall glossy crown flaring a touch to its flat top, a matte band, and a narrow brim curled up at the sides. White tie, the gala, the magician, the undertaker, the doorman.",
+        params: { color: "crown token (cloth-black, glossy)", band: "band token (cloth-black, matte)", height: "0.8\u20131.2 (1)" },
+        example: { hair: { hat: { type: "top-hat" } } },
+        draw(ctx, o) {
+          const { cw } = frame(ctx);
+          const ht = Math.max(0.8, Math.min(1.2, +o.height || 1));
+          const crownM = ctx.mat(tokOr(ctx, o.color, "cloth-black"), "satin"), bandM = ctx.mat(tokOr(ctx, o.band, "cloth-black"), "wool");
+          return crownOnBrim(ctx, { y: -0.3, bw: cw + 0.1, bt: 0.03, top: -0.3 - 0.74 * ht, cw0: cw * 0.93, cw1: cw * 1, band: [-0.45, -0.32], curl: 0.03 }, crownM, bandM, { localBand: true });
+        }
+      });
+    }
+  });
+
   // src/parts/head/ears-normal.js
   var require_ears_normal = __commonJS({
     "src/parts/head/ears-normal.js"(exports, module) {
@@ -10726,6 +10880,153 @@ var B68Figure = (() => {
     }
   });
 
+  // src/parts/masks/ball.js
+  var require_ball = __commonJS({
+    "src/parts/masks/ball.js"() {
+      "use strict";
+      var { register } = require_registry();
+      var M = require_mask();
+      register({
+        kind: "mask",
+        name: "colombina",
+        aliases: ["half-mask", "ball-mask"],
+        describe: "Colombina half mask for a masked ball: covers the brows, the eyes (seen through the holes) and the nose down to its tip, the top edge swept up into points at the temples, a gilt trim along the top and an optional small feather plume at one temple, tied with ribbons. Any colour.",
+        params: { color: "mask colour token (cloth-red)", trim: "trim colour token (metal-brass), false for none", plume: "true or a colour token for a small feather at the temple (default none)", side: "R|L the plume's side (L)" },
+        example: { face: { mask: { type: "colombina", color: "cloth-red", plume: "cloth-black" } } },
+        covers: ["brows", "nose"],
+        draw(ctx, o) {
+          const { C } = ctx, H = ctx.head, k = ctx.R.head.k, mid = ctx.lodAtLeast("mid"), lo = !mid;
+          const sk = M.skull(ctx), wid = sk.wid;
+          const col = M.tokOr(ctx, o.color, "cloth-red");
+          const mat = ctx.mat(col, "satin"), ribM = ctx.mat(col, "cloth");
+          const ex = H.eyeX, ey = H.eyeY, nw = H.noseW, tip = H.noseTipY;
+          const wt = Math.min(0.33, wid(-0.16) - 0.014), lowW = Math.min(0.31, wid(0.06) - 0.014), d0 = 0.03;
+          const L = [
+            [0, ey - 0.13, false, 0.05],
+            [-0.07, ey - 0.15, false, d0],
+            [-0.16, ey - 0.18, false, d0],
+            [-0.25, ey - 0.23, false, d0],
+            [-wt, ey - 0.31, true, 0.01],
+            [-wt * 0.97, ey - 0.16, false, 0.01],
+            [-lowW, ey - 0.01, false, 0.012],
+            [-lowW * 0.9, ey + 0.08, false, d0],
+            [-0.2, ey + 0.13, false, d0],
+            [-0.12, ey + 0.125, false, d0],
+            [-nw * 1.15, tip - 0.02, false, 0.05],
+            [-nw * 0.8, tip + 0.035, false, 0.06],
+            [0, tip + 0.045, false, 0.07]
+          ];
+          const m = Math.max(ctx.px(1.5), 0.01 * k);
+          const outline = M.fitInside(ctx, M.sym(L), sk.kit, m, d0);
+          const d = M.path(ctx, outline, 0.4);
+          const kk = lo ? 1.2 : ctx.lod === "mid" ? 1.1 : 1;
+          const rims = [];
+          for (const s of [-1, 1]) {
+            const ring = M.fitInside(ctx, M.superellipse(s * (ex + 4e-3), ey + 2e-3, 0.088 * kk, 0.052 * kk, { n: 2.4, N: 26, lift: 0.6, side: s }), sk.kit, m, 0.012);
+            rims.push(ring);
+            ctx.cut("^mask-colombina$", M.path(ctx, ring, 0.5, 0.012));
+          }
+          const B = (pts, ws, dd = 0.03) => M.stroke(ctx, pts, ws, dd);
+          const t = M.tone(ctx, { cheek: 0, mouth: 0 });
+          const lines = [], over = [];
+          if (mid) for (const r of rims) lines.push({ d: M.holeRim(ctx, r, 0.012), fill: C.mix(mat.base, ctx.tok("ink-900"), 0.55), o: 0.6 });
+          const trim = o.trim === false ? null : M.tokOr(ctx, o.trim, "metal-brass");
+          if (trim) {
+            const e = lo ? 0.05 : 0.016, top = L.slice(0, 5).map(([x, y]) => [x, y + e * 0.6]).reverse();
+            const full = [...top, ...top.slice(0, -1).reverse().map(([x, y]) => [-x, y])];
+            over.push({ d: B(full, [e * 0.4, e, e, e, e * 1.1, e, e, e, e * 0.4]), fill: ctx.tok(trim), o: 0.95 });
+          }
+          const pieces = [{ id: "mask-colombina", z: ctx.Z.mask, d, mat, shade: t.shade, deep: t.deep, lit: t.lit, lines, over, light: { form: 0.9, sheenO: 0.35 } }];
+          if (mid) for (const [i, r] of rims.entries()) {
+            const top = r.filter((p) => p[1] < ey + 0.01).sort((a, b) => a[0] - b[0]);
+            if (top.length > 3) pieces.push(...M.shadowBand(ctx, `mask-colombina-hole-shadow${i}`, top.filter((_, j) => j % 2 === 0), 0.022, { shift: 8e-3, hw: 1, o: 0.7, core: 0.45 }));
+          }
+          const rw = Math.max(0.017, M.U.hpx(ctx, lo ? 2.4 : 1.7));
+          for (const s of [-1, 1]) {
+            const ex2 = wid(-0.12) - 0.012;
+            pieces.push({ id: `mask-colombina-ribbon-${s < 0 ? "R" : "L"}`, z: ctx.Z.mask - 0.05, d: B(M.tuck(ctx, [[s * (lowW - 0.03), ey - 0.12], [s * ex2, ey - 0.13]], sk.kit, rw * k * 0.6 + ctx.px(1), 0), [rw, rw], 0), clip: "head", mat: ribM, light: false });
+          }
+          if (o.plume) {
+            const s = o.side === "R" ? -1 : 1, pc = M.tokOr(ctx, o.plume, col === "cloth-black" ? "paper-000" : "cloth-black");
+            const sp = [[0, 0], [0.02, -0.1], [0.05, -0.2], [0.1, -0.29], [0.16, -0.36]].map(([x, y]) => [s * (wt - 0.03 + x), ey - 0.27 + y]);
+            const dense = ctx.G.resample(sp, lo ? 7 : 11, 0.5);
+            let vane = B(sp, [0.012, 0.03, 0.03, 0.02, 8e-3], 0.02);
+            for (let i = 1; i < dense.length; i++) {
+              const t2 = i / (dense.length - 1), [x, y] = dense[i], [xa, ya] = dense[i - 1], dx = x - xa, dy = y - ya, l = Math.hypot(dx, dy) || 1;
+              const len = (lo ? 0.075 : 0.06) * Math.sin(Math.PI * Math.min(1, t2 * 0.85 + 0.15)) + 0.015;
+              for (const sd of [-1, 1]) vane += B([[x, y], [x - dy / l * sd * len + dx / l * len * 0.7, y + dx / l * sd * len + dy / l * len * 0.7]], [lo ? 0.04 : 0.028, 6e-3], 0.02);
+            }
+            const lines2 = mid ? [{ d: B(sp.slice(0, 4), [3e-3, 8e-3, 6e-3, 2e-3], 0.02), fill: "light", o: 0.6 }] : [];
+            pieces.push({ id: "mask-colombina-plume", z: ctx.Z.hair + 0.5, d: vane, mat: ctx.mat(pc, "cloth"), light: { form: 0.6 }, lines: lines2 });
+          }
+          return pieces;
+        }
+      });
+      register({
+        kind: "mask",
+        name: "bauta",
+        aliases: ["venetian-mask", "gala-mask"],
+        describe: "Bauta: a full white mask over the whole face for a gala, with a long straight nose, no mouth and a square chin that juts out below the jaw; the eyes show through almond holes and the hair stays. Optional gilt brows and edge.",
+        params: { color: "mask colour token (cloth-white)", trim: "gilt token (e.g. metal-brass) for painted brows and a gilt edge; default none" },
+        example: { face: { mask: { type: "bauta" } } },
+        covers: ["brows", "nose", "mouth", "facialHair", "makeup", "mark", "age", "eyewear"],
+        draw(ctx, o) {
+          const { C } = ctx, H = ctx.head, k = ctx.R.head.k, mid = ctx.lodAtLeast("mid");
+          const sk = M.skull(ctx), wid = sk.wid;
+          const mat = ctx.mat(M.tokOr(ctx, o.color, "cloth-white"), "satin");
+          const ex = H.eyeX, ey = H.eyeY, ny = H.noseY, d0 = 0.03;
+          const L = [
+            [0, -0.35, false, 0.05],
+            [-0.15, -0.34, false, d0],
+            [-wid(-0.27) * 0.9, -0.29, false, d0],
+            [-wid(-0.15) + 0.012, -0.15, false, 0.01],
+            [-wid(0.02) + 0.012, 0.02, false, 0.01],
+            [-wid(0.16) + 0.012, 0.16, false, 0.01],
+            [-Math.max(0.27, wid(0.3) - 0.012), 0.32, false, 0.02],
+            [-0.25, 0.52, false, 0.06],
+            [-0.2, 0.64, true, 0.08],
+            [0, 0.67, false, 0.09]
+          ];
+          const m = Math.max(ctx.px(1.5), 0.01 * k);
+          const d = M.path(ctx, M.sym(L), 0.35);
+          for (const s of [-1, 1]) {
+            const ring = M.fitInside(ctx, M.superellipse(s * (ex + 4e-3), ey + 4e-3, 0.078 * (mid ? 1 : 1.2), 0.04 * (mid ? 1 : 1.3), { n: 2.2, N: 24, lift: 0.5, side: s }), sk.kit, m, 0.012);
+            ctx.cut("^mask-bauta$", M.path(ctx, ring, 0.5, 0.012));
+          }
+          const B = (pts, ws, dd = 0.06) => M.stroke(ctx, pts, ws, dd);
+          const shade = [], deep = [], lit = [], over = [];
+          if (mid) {
+            lit.push({ d: B([[-0.012, -0.05], [-0.024, ny * 0.5], [-0.034, ny + 0.03]], [6e-3, 0.028, 0.034]), o: 0.7 });
+            shade.push({ d: B([[0.024, -0.04], [0.05, ny * 0.5], [0.07, ny + 0.03]], [6e-3, 0.034, 0.05]), o: 0.75 });
+            shade.push({ d: B([[0.06, ny], [0.12, ny + 0.04], [0.18, ny + 0.1]], [0.01, 0.04, 0.012], 0.05), o: 0.45 });
+            for (const s of [-1, 1]) shade.push({ d: B([[s * (ex + 0.1), ey - 0.05], [s * (ex + 0.13), ey + 0.02], [s * (ex + 0.1), ey + 0.1]], [6e-3, 0.04, 6e-3], 0.04), o: s > 0 ? 0.5 : 0.22 });
+            lit.push({ d: B([[-0.17, 0.44], [0, 0.42], [0.17, 0.44]], [6e-3, 0.03, 6e-3], 0.08), o: 0.55 });
+            shade.push({ d: B([[-0.2, 0.36], [0, 0.33], [0.2, 0.36]], [4e-3, 0.018, 4e-3], 0.07), o: 0.5 });
+            deep.push({ d: M.path(ctx, [[0.09, -0.4, true, 0], [0.06, -0.12, false, 0.06], [0.04, 0.02, false, 0.09], [0.09, ny + 0.02, false, 0.1], [0.05, 0.3, false, 0.07], [0.12, 0.55, false, 0.08], [0.2, 0.7, true, 0], [0.95, 0.75, true, 0], [0.95, -0.75, true, 0]], 0.4), o: 0.6 });
+            const tr = M.tokOr(ctx, o.trim, null);
+            if (tr) {
+              const g = ctx.tok(tr);
+              for (const s of [-1, 1]) over.push({ d: B([[s * 0.05, ey - 0.07], [s * (ex - 0.02), ey - 0.12], [s * (ex + 0.1), ey - 0.08]], [4e-3, 0.018, 4e-3], 0.04), fill: g, o: 0.95 });
+              over.push({ d: B([[-wid(-0.15), -0.15], [-0.15, -0.325], [0, -0.335], [0.15, -0.325], [wid(-0.15), -0.15]], [4e-3, 0.014, 0.016, 0.014, 4e-3], 0.03), fill: g, o: 0.9 });
+            }
+          }
+          return [{
+            id: "mask-bauta",
+            z: ctx.Z.maskOver,
+            d,
+            mat,
+            shade,
+            deep,
+            lit,
+            over,
+            light: { form: mid ? 0.5 : 0.95, sheenO: 0.6, face: mid },
+            lines: mid ? [{ d: B([[-0.22, 0.6], [0, 0.635], [0.22, 0.6]], [4e-3, 0.02, 4e-3], 0.08), fill: C.mix(mat.base, ctx.tok("ink-900"), 0.35), o: 0.6 }] : []
+          }];
+        }
+      });
+    }
+  });
+
   // src/parts/masks/bandana.js
   var require_bandana = __commonJS({
     "src/parts/masks/bandana.js"(exports, module) {
@@ -12762,6 +13063,236 @@ var B68Figure = (() => {
     }
   });
 
+  // src/parts/outer/tailored.js
+  var require_tailored = __commonJS({
+    "src/parts/outer/tailored.js"(exports, module) {
+      "use strict";
+      var { register } = require_registry();
+      var C = require_coat();
+      var G = require_geom();
+      function pocketSquare(ctx, F, { opts, pieces }) {
+        if (!opts.pocketSquare) return;
+        const { R, hh } = ctx;
+        const sq = ctx.mat(opts.pocketSquare === true ? "cloth-white" : opts.pocketSquare, "cloth");
+        const Y = R.y.chest - 0.03 * hh, c = F.X("L", 0.6, Y), w = 0.2 * hh;
+        const d = C.crisp([[c[0] - w / 2, Y + 0.012 * hh], [c[0] - w * 0.42, Y - 0.1 * hh], [c[0] - w * 0.12, Y - 0.05 * hh], [c[0] + w * 0.1, Y - 0.12 * hh], [c[0] + w * 0.4, Y - 0.06 * hh], [c[0] + w / 2, Y + 0.012 * hh]]);
+        pieces.push({ id: "pocket-square", z: ctx.Z.collar + 0.2, d, mat: sq, spot: true, lines: ctx.lodAtLeast("mid") ? [C.W(ctx, [[c[0] - w * 0.1, Y - 0.04 * hh], [c[0] + w * 0.05, Y - 0.02 * hh]], [2e-3, 0.02, 2e-3], "shade", 0.6)] : [], light: { form: 0.6 } });
+      }
+      var SUIT = {
+        name: "suit-jacket",
+        color: "cloth-charcoal",
+        kind: "wool",
+        ease: 0.075,
+        hem: ["crotch", 0.1],
+        pinch: 0.04,
+        shoulderDrop: 0.035,
+        vDepth: 1.12,
+        openDepth: 1.4,
+        gapB: 0.02,
+        gapH: 0.3,
+        lapel: "notch",
+        buttons: 2,
+        btnTo: ["waist", -0.1],
+        sleeveTo: 0.93,
+        sleeveEase: 0.05,
+        sleeveHw: (u, b) => b * (1 - 0.06 * u),
+        pockets: [
+          { type: "flap", at: "hip", dy: 0.08, rx: 0.62, w: 0.3, h: 0.1, slant: 0, btn: false, hand: true },
+          { type: "welt", at: "chest", dy: -0.02, rx: 0.6, w: 0.22, slant: -0.015, sides: ["L"] }
+        ],
+        extras: pocketSquare
+      };
+      var BLAZER = {
+        ...SUIT,
+        name: "blazer",
+        color: "cloth-navy",
+        buttonColor: "metal-brass",
+        buttons: 2,
+        vDepth: 1.18,
+        ease: 0.08,
+        pockets: [
+          { type: "patch", at: "hip", dy: 0.06, rx: 0.62, w: 0.3, h: 0.24, hand: true },
+          { type: "patch", at: "chest", dy: -0.02, rx: 0.6, w: 0.22, h: 0.15, sides: ["L"] }
+        ],
+        btnR: 0.027
+      };
+      var DB = {
+        ...SUIT,
+        name: "double-breasted",
+        color: "cloth-mustard",
+        ease: 0.085,
+        hem: ["crotch", 0.12],
+        vDepth: 0.98,
+        openDepth: 1.3,
+        lapel: "peak",
+        lapelW: 1.15,
+        rows: 2,
+        buttons: 6,
+        rowX: 0.3,
+        btnFromDy: 0.28,
+        btnTo: ["waist", 0.16],
+        edgeRx: 0.42,
+        edgeDy: 0.1,
+        btnR: 0.027,
+        buttonColor: null,
+        buttonsOpen: false
+      };
+      var NEHRU = {
+        name: "nehru",
+        color: "cloth-rust",
+        kind: "wool",
+        ease: 0.065,
+        hem: ["crotch", 0.14],
+        pinch: 0.03,
+        shoulderDrop: 0.03,
+        neck: "high",
+        standCollar: { h: 0.21, gap: 0.02, drop: 0.08 },
+        openDepth: 1.3,
+        gapB: 0.03,
+        gapH: 0.28,
+        buttons: 7,
+        btnTop: 0.12,
+        btnTo: ["hip", 0.12],
+        btnR: 0.02,
+        sleeveTo: 0.94,
+        sleeveEase: 0.05,
+        sleeveHw: (u, b) => b * (1 - 0.05 * u),
+        lapel: "none",
+        pockets: [
+          { type: "welt", at: "chest", dy: 0, rx: 0.6, w: 0.2, slant: -0.01, sides: ["L"] },
+          { type: "flap", at: "hip", dy: 0.08, rx: 0.62, w: 0.28, h: 0.095, btn: true, hand: true }
+        ],
+        extras(ctx, F, { fx }) {
+          const { R, hh } = ctx;
+          for (const dy of [0, -0.1]) fx.over.push(...C.btn(ctx, R.torsoPt(0, F.nb + dy * hh), 0.017 * hh, F.btnFill, false));
+        }
+      };
+      var mk = (name, S, describe, example, params) => register({
+        kind: "outer",
+        name,
+        describe,
+        params: { color: "fabric token", pattern: "textile name", open: "true|false (hangs open)", buttons: "count", ...params },
+        example,
+        draw: (ctx, o) => C.buildCoat(ctx, o, S)
+      });
+      var base = { base: { type: "shirt", color: "cloth-white" }, neck: { type: "tie", color: "cloth-red" } };
+      mk(
+        "suit-jacket",
+        SUIT,
+        "60s slim single-breasted jacket: notch lapels, 2 buttons, flap pockets, breast welt; pocketSquare token optional.",
+        { outfit: { ...base, outer: { type: "suit-jacket", color: "cloth-charcoal", pocketSquare: "cloth-white" } } },
+        { pocketSquare: "token or true", ease: "0.05-0.12" }
+      );
+      mk(
+        "blazer",
+        BLAZER,
+        "Navy blazer: notch lapels, brass buttons, patch pockets; pocketSquare optional.",
+        { outfit: { ...base, outer: { type: "blazer", color: "cloth-navy" } } },
+        { pocketSquare: "token or true", buttonColor: "metal token" }
+      );
+      mk(
+        "double-breasted",
+        DB,
+        "Double-breasted jacket (the noble, the Characters plate): peak lapels, six buttons, flap pockets; pocketSquare token.",
+        { outfit: { ...base, outer: { type: "double-breasted", color: "cloth-mustard", pocketSquare: "cloth-red" } } },
+        { pocketSquare: "token or true", buttonColor: "metal token (default tone-on-tone)" }
+      );
+      mk(
+        "nehru",
+        NEHRU,
+        "Nehru jacket: mandarin stand collar, centre buttons, welt and flap pockets (the intellectual).",
+        { outfit: { base: { type: "shirt", color: "cloth-cream" }, outer: { type: "nehru", color: "cloth-rust" } } },
+        {}
+      );
+      module.exports = { SUIT, BLAZER, DB, NEHRU };
+    }
+  });
+
+  // src/parts/outer/evening.js
+  var require_evening = __commonJS({
+    "src/parts/outer/evening.js"(exports, module) {
+      "use strict";
+      var { register } = require_registry();
+      var C = require_coat();
+      var { SUIT } = require_tailored();
+      function evening(ctx, F, { pieces, opts }) {
+        var _a, _b;
+        const satin = ctx.mat(opts.facing || opts.color || F.S.color, "satin"), { R, hh } = ctx, lw = (_b = (_a = opts.lapelW) != null ? _a : F.S.lapelW) != null ? _b : 1;
+        for (const p of pieces) {
+          const m = /-lapel-(R|L)$/.exec(p.id);
+          if (!m) continue;
+          p.mat = satin;
+          if (!ctx.lodAtLeast("mid") || F.S.lapel !== "shawl") continue;
+          const k = R.sx(m[1]), N0 = F.t.pts[m[1]].neck, V = F.Vs[m[1]], P = (dx, dy) => [N0[0] + k * dx * hh, N0[1] + dy * hh];
+          const s1 = P(0.3 * lw, 0.2), md = [(s1[0] + V[0]) / 2 + k * 0.05 * hh, (s1[1] + V[1]) / 2];
+          p.lines = [...p.lines || [], C.W(ctx, [P(0.13, -0.17), s1, md, V], [3e-3, 0.016, 0.014, 2e-3], "deep", 0.6)];
+        }
+        const S = ctx.S.outfit || {};
+        if (!S.neck && opts.bow !== false) pieces.push(...ctx.part("neckwear", "bow-tie", { type: "bow-tie", color: typeof opts.bow === "string" ? opts.bow : "cloth-black" }));
+        if (opts.pocketSquare && SUIT.extras) SUIT.extras(ctx, F, { opts, pieces });
+      }
+      var DJ = {
+        ...SUIT,
+        name: "dinner-jacket",
+        color: "cloth-white",
+        lapel: "shawl",
+        lapelW: 1.3,
+        buttons: 1,
+        vDepth: 1.42,
+        btnFromDy: 0.02,
+        btnTo: ["waist", 0],
+        btnR: 0.028,
+        pockets: [{ type: "welt", at: "hip", dy: 0.08, rx: 0.6, w: 0.3, slant: 0 }],
+        extras: evening
+      };
+      register({
+        kind: "outer",
+        name: "dinner-jacket",
+        aliases: ["tuxedo", "dj", "evening-jacket"],
+        describe: "Shawl-lapel dinner jacket for the ball, the casino floor or the band: one button at a deep V, lapels faced in satin, jetted pockets, and a black bow tie unless the spec already has neckwear. White (the default), black or any colour.",
+        params: { color: "fabric token (cloth-white; cloth-black, cloth-oxblood, cloth-navy \u2026)", facing: "lapel facing token (default: the jacket colour, in satin)", bow: "colour token for the bow tie, or false for none", pocketSquare: "token or true", open: "true|false" },
+        example: { outfit: { base: { type: "shirt", color: "cloth-white" }, outer: { type: "dinner-jacket", color: "cloth-white" } } },
+        draw: (ctx, o) => C.buildCoat(ctx, o, DJ)
+      });
+      var TAIL = {
+        ...SUIT,
+        name: "tailcoat",
+        color: "cloth-black",
+        lapel: "peak",
+        lapelW: 1.05,
+        hem: ["knee", -0.1],
+        flare: 0.02,
+        vDepth: 1.62,
+        ease: 0.07,
+        pinch: 0.05,
+        rows: 2,
+        buttons: 4,
+        rowX: 0.34,
+        btnFromDy: -0.42,
+        btnTo: ["waist", -0.08],
+        btnR: 0.024,
+        pockets: [],
+        pull: false,
+        front: false,
+        extras(ctx, F, x) {
+          evening(ctx, F, x);
+          const { R, hh } = ctx, w = R.w.hip * 0.84, y0 = R.y.waist + 0.06 * hh, y1 = F.hem + 0.6 * hh;
+          ctx.cut("^tailcoat-body$", ctx.G.poly([R.torsoPt(-w, y0), R.torsoPt(w, y0), R.torsoPt(w * 1.05, y1), R.torsoPt(-w * 1.05, y1)]));
+        }
+      };
+      register({
+        kind: "outer",
+        name: "tailcoat",
+        aliases: ["tails", "white-tie", "evening-tailcoat"],
+        describe: "Black evening tailcoat: cut straight across the front at the waist, tails to the knee behind (seen beside the legs), peak lapels faced in satin, two rows of buttons it is never fastened by, and a white bow tie unless the spec has neckwear. White tie for the gala, the conductor, the head waiter, the butler.",
+        params: { color: "fabric token (cloth-black)", facing: "lapel facing token (default: the coat colour, in satin)", bow: "bow tie colour token (cloth-white), or false" },
+        example: { outfit: { base: { type: "shirt", color: "cloth-white" }, mid: { type: "waistcoat", color: "cloth-white" }, outer: { type: "tailcoat" }, bottom: { type: "trousers", color: "cloth-black" } } },
+        draw: (ctx, o) => C.buildCoat(ctx, { bow: "cloth-white", ...o }, TAIL)
+      });
+      module.exports = { DJ, TAIL, evening };
+    }
+  });
+
   // src/parts/outer/leather.js
   var require_leather = __commonJS({
     "src/parts/outer/leather.js"(exports, module) {
@@ -13302,151 +13833,6 @@ var B68Figure = (() => {
     }
   });
 
-  // src/parts/outer/tailored.js
-  var require_tailored = __commonJS({
-    "src/parts/outer/tailored.js"(exports, module) {
-      "use strict";
-      var { register } = require_registry();
-      var C = require_coat();
-      var G = require_geom();
-      function pocketSquare(ctx, F, { opts, pieces }) {
-        if (!opts.pocketSquare) return;
-        const { R, hh } = ctx;
-        const sq = ctx.mat(opts.pocketSquare === true ? "cloth-white" : opts.pocketSquare, "cloth");
-        const Y = R.y.chest - 0.03 * hh, c = F.X("L", 0.6, Y), w = 0.2 * hh;
-        const d = C.crisp([[c[0] - w / 2, Y + 0.012 * hh], [c[0] - w * 0.42, Y - 0.1 * hh], [c[0] - w * 0.12, Y - 0.05 * hh], [c[0] + w * 0.1, Y - 0.12 * hh], [c[0] + w * 0.4, Y - 0.06 * hh], [c[0] + w / 2, Y + 0.012 * hh]]);
-        pieces.push({ id: "pocket-square", z: ctx.Z.collar + 0.2, d, mat: sq, spot: true, lines: ctx.lodAtLeast("mid") ? [C.W(ctx, [[c[0] - w * 0.1, Y - 0.04 * hh], [c[0] + w * 0.05, Y - 0.02 * hh]], [2e-3, 0.02, 2e-3], "shade", 0.6)] : [], light: { form: 0.6 } });
-      }
-      var SUIT = {
-        name: "suit-jacket",
-        color: "cloth-charcoal",
-        kind: "wool",
-        ease: 0.075,
-        hem: ["crotch", 0.1],
-        pinch: 0.04,
-        shoulderDrop: 0.035,
-        vDepth: 1.12,
-        openDepth: 1.4,
-        gapB: 0.02,
-        gapH: 0.3,
-        lapel: "notch",
-        buttons: 2,
-        btnTo: ["waist", -0.1],
-        sleeveTo: 0.93,
-        sleeveEase: 0.05,
-        sleeveHw: (u, b) => b * (1 - 0.06 * u),
-        pockets: [
-          { type: "flap", at: "hip", dy: 0.08, rx: 0.62, w: 0.3, h: 0.1, slant: 0, btn: false, hand: true },
-          { type: "welt", at: "chest", dy: -0.02, rx: 0.6, w: 0.22, slant: -0.015, sides: ["L"] }
-        ],
-        extras: pocketSquare
-      };
-      var BLAZER = {
-        ...SUIT,
-        name: "blazer",
-        color: "cloth-navy",
-        buttonColor: "metal-brass",
-        buttons: 2,
-        vDepth: 1.18,
-        ease: 0.08,
-        pockets: [
-          { type: "patch", at: "hip", dy: 0.06, rx: 0.62, w: 0.3, h: 0.24, hand: true },
-          { type: "patch", at: "chest", dy: -0.02, rx: 0.6, w: 0.22, h: 0.15, sides: ["L"] }
-        ],
-        btnR: 0.027
-      };
-      var DB = {
-        ...SUIT,
-        name: "double-breasted",
-        color: "cloth-mustard",
-        ease: 0.085,
-        hem: ["crotch", 0.12],
-        vDepth: 0.98,
-        openDepth: 1.3,
-        lapel: "peak",
-        lapelW: 1.15,
-        rows: 2,
-        buttons: 6,
-        rowX: 0.3,
-        btnFromDy: 0.28,
-        btnTo: ["waist", 0.16],
-        edgeRx: 0.42,
-        edgeDy: 0.1,
-        btnR: 0.027,
-        buttonColor: null,
-        buttonsOpen: false
-      };
-      var NEHRU = {
-        name: "nehru",
-        color: "cloth-rust",
-        kind: "wool",
-        ease: 0.065,
-        hem: ["crotch", 0.14],
-        pinch: 0.03,
-        shoulderDrop: 0.03,
-        neck: "high",
-        standCollar: { h: 0.21, gap: 0.02, drop: 0.08 },
-        openDepth: 1.3,
-        gapB: 0.03,
-        gapH: 0.28,
-        buttons: 7,
-        btnTop: 0.12,
-        btnTo: ["hip", 0.12],
-        btnR: 0.02,
-        sleeveTo: 0.94,
-        sleeveEase: 0.05,
-        sleeveHw: (u, b) => b * (1 - 0.05 * u),
-        lapel: "none",
-        pockets: [
-          { type: "welt", at: "chest", dy: 0, rx: 0.6, w: 0.2, slant: -0.01, sides: ["L"] },
-          { type: "flap", at: "hip", dy: 0.08, rx: 0.62, w: 0.28, h: 0.095, btn: true, hand: true }
-        ],
-        extras(ctx, F, { fx }) {
-          const { R, hh } = ctx;
-          for (const dy of [0, -0.1]) fx.over.push(...C.btn(ctx, R.torsoPt(0, F.nb + dy * hh), 0.017 * hh, F.btnFill, false));
-        }
-      };
-      var mk = (name, S, describe, example, params) => register({
-        kind: "outer",
-        name,
-        describe,
-        params: { color: "fabric token", pattern: "textile name", open: "true|false (hangs open)", buttons: "count", ...params },
-        example,
-        draw: (ctx, o) => C.buildCoat(ctx, o, S)
-      });
-      var base = { base: { type: "shirt", color: "cloth-white" }, neck: { type: "tie", color: "cloth-red" } };
-      mk(
-        "suit-jacket",
-        SUIT,
-        "60s slim single-breasted jacket: notch lapels, 2 buttons, flap pockets, breast welt; pocketSquare token optional.",
-        { outfit: { ...base, outer: { type: "suit-jacket", color: "cloth-charcoal", pocketSquare: "cloth-white" } } },
-        { pocketSquare: "token or true", ease: "0.05-0.12" }
-      );
-      mk(
-        "blazer",
-        BLAZER,
-        "Navy blazer: notch lapels, brass buttons, patch pockets; pocketSquare optional.",
-        { outfit: { ...base, outer: { type: "blazer", color: "cloth-navy" } } },
-        { pocketSquare: "token or true", buttonColor: "metal token" }
-      );
-      mk(
-        "double-breasted",
-        DB,
-        "Double-breasted jacket (the noble, the Characters plate): peak lapels, six buttons, flap pockets; pocketSquare token.",
-        { outfit: { ...base, outer: { type: "double-breasted", color: "cloth-mustard", pocketSquare: "cloth-red" } } },
-        { pocketSquare: "token or true", buttonColor: "metal token (default tone-on-tone)" }
-      );
-      mk(
-        "nehru",
-        NEHRU,
-        "Nehru jacket: mandarin stand collar, centre buttons, welt and flap pockets (the intellectual).",
-        { outfit: { base: { type: "shirt", color: "cloth-cream" }, outer: { type: "nehru", color: "cloth-rust" } } },
-        {}
-      );
-      module.exports = { SUIT, BLAZER, DB, NEHRU };
-    }
-  });
-
   // src/parts/props/armband.js
   var require_armband = __commonJS({
     "src/parts/props/armband.js"() {
@@ -13909,6 +14295,8 @@ var B68Figure = (() => {
         describe: "Two to four flies buzzing round the head, each with a dotted looping flight trail (the Garbage Loader).",
         params: { count: "2-4 (default 3)", size: "scale (1)" },
         example: { props: [{ type: "flies", count: 3 }] },
+        keep: true,
+        // always with the person: kept when re-dressed
         draw(ctx, o) {
           const { G, hh, Z } = ctx;
           const n = Math.max(1, Math.min(4, o.count || 3)), sz = (o.size || 1) * hh * 0.14;
@@ -13960,6 +14348,11 @@ var B68Figure = (() => {
         describe: "Hinged knee brace over the trousers: steel bars both sides of the knee, thigh and shin straps with brass buckles, kneecap plate with hinge discs (Stacey, right knee).",
         params: { side: "R|L (default R)", color: "strap token (cloth-black)", wide: "extra clearance for baggy trousers, head-heights (0.05)" },
         example: { props: [{ type: "knee-brace", side: "R" }] },
+        keep: true,
+        worn: true,
+        trousers: true,
+        tell: 1.5,
+        // part of the person (kept when re-dressed); worn, not held; drawn over trousers; its boost at map size
         draw(ctx, o) {
           var _a;
           const { R, G, hh } = ctx;
@@ -14589,6 +14982,406 @@ var B68Figure = (() => {
         }
       });
       module.exports = { smokeOrigin, smokeWisp };
+    }
+  });
+
+  // src/parts/props/trades.js
+  var require_trades = __commonJS({
+    "src/parts/props/trades.js"(exports, module) {
+      "use strict";
+      var { register } = require_registry();
+      var K = require_kit();
+      var clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      var arc = (cx, cy, rx, ry, a0, a1, n = 14) => Array.from({ length: n + 1 }, (_, i) => {
+        const a = a0 + (a1 - a0) * i / n;
+        return [cx + Math.cos(a) * rx, cy + Math.sin(a) * ry];
+      });
+      function swapHand(ctx, hi, name, id) {
+        let H;
+        try {
+          H = require_relaxed().handSpace(ctx, hi.side);
+        } catch (e) {
+          return { pieces: [], pt: hi.pt };
+        }
+        if (hi.hand === name || hi.hand === "grip") return { pieces: [], pt: hi.pt };
+        ctx.cut(`^hand-${hi.side}(-|$)`, ctx.G.poly([[-0.6, -0.06], [0.6, -0.06], [0.6, 1.4], [-0.6, 1.4]].map(H.hp)));
+        return { pt: H.hp([0, 0.43]), pieces: ctx.part("hands", name, { side: hi.side }).map((pc) => ({ ...pc, id: String(pc.id).replace(/^hand-/, `${id}-hand-`) })) };
+      }
+      function glassOn(ctx, P, x, y, style, z, id, drink) {
+        const { G } = ctx;
+        const gl = ctx.mat("glass-dark", "glass");
+        const poly = (pts) => G.poly(P(pts.map(([a, b]) => [x + a, y + b])));
+        const out = [];
+        if (style === "tumbler") {
+          out.push({ id: `${id}-body`, z, d: poly([[-1.1, -3.4], [1.1, -3.4], [0.9, 0], [-0.9, 0]]), mat: gl, opacity: 0.55 });
+          out.push({ id: `${id}-drink`, z: z + 0.01, d: poly([[-1, -2.3], [1, -2.3], [0.88, -0.12], [-0.88, -0.12]]), mat: ctx.mat(drink || "cloth-ochre", "glass"), light: { form: 0.5 }, opacity: 0.95 });
+          out.push({ id: `${id}-hi`, z: z + 0.02, d: K.ribbon(P([[x - 0.7, y - 3.1], [x - 0.6, y - 0.4]]), [K.inch(0.04), K.inch(0.16), K.inch(0.04)]), fill: "paper-000", light: false, opacity: 0.8 });
+          return out;
+        }
+        const flute = style === "flute";
+        const st = flute ? 2 : 2.4;
+        out.push({ id: `${id}-foot`, z, d: poly(arc(0, -0.12, 1, 0.24, 0, Math.PI * 2, 16)), mat: gl, opacity: 0.85 });
+        out.push({ id: `${id}-stem`, z, d: poly([[-0.12, -0.1], [0.12, -0.1], [0.12, -st], [-0.12, -st]]), mat: gl, opacity: 0.85 });
+        const bowl = flute ? [[-0.55, -st], [0.55, -st], [0.85, -st - 1.4], [0.9, -st - 4.6], [-0.9, -st - 4.6], [-0.85, -st - 1.4]] : [[-0.35, -st], [0.35, -st], [1.4, -st - 0.55], [2, -st - 1.5], [-2, -st - 1.5], [-1.4, -st - 0.55]];
+        const wine = flute ? [[-0.5, -st - 0.25], [0.5, -st - 0.25], [0.78, -st - 1.4], [0.82, -st - 3.6], [-0.82, -st - 3.6], [-0.78, -st - 1.4]] : [[-0.3, -st - 0.12], [0.3, -st - 0.12], [1.3, -st - 0.6], [1.8, -st - 1.25], [-1.8, -st - 1.25], [-1.3, -st - 0.6]];
+        out.push({ id: `${id}-bowl`, z: z + 0.01, d: G.smooth(P(bowl.map(([a, b]) => [x + a, y + b])), true, 0.25), mat: gl, opacity: 0.55 });
+        out.push({ id: `${id}-drink`, z: z + 0.02, d: G.smooth(P(wine.map(([a, b]) => [x + a, y + b])), true, 0.25), mat: ctx.mat(drink || "cloth-mustard", "glass"), light: { form: 0.4 }, opacity: 0.85 });
+        const hx = flute ? -0.5 : -1.2, h0 = flute ? -st - 4.2 : -st - 1.35, h1 = flute ? -st - 0.9 : -st - 0.7;
+        out.push({ id: `${id}-hi`, z: z + 0.03, d: K.ribbon(P([[x + hx, y + h0], [x + hx * 0.8, y + h1]]), [K.inch(0.04), K.inch(0.15), K.inch(0.04)]), fill: "paper-000", light: false, opacity: 0.8 });
+        return out;
+      }
+      register({
+        kind: "prop",
+        name: "tray",
+        aliases: ["serving-tray", "salver"],
+        describe: "A waiter's round serving tray with two glasses on it. Arm pose raise (the default): carried flat at shoulder height on the upturned hand, beside the head, the fingers hidden under it; arm pose hold: carried low in front of the waist. Polished chrome by default.",
+        params: { side: "R|L the carrying arm", color: "tray token (metal-chrome; metal-brass, cloth-black for a lacquer tray)", glasses: "0\u20133 (2)", glass: "coupe|flute|tumbler (coupe)", drink: "token (cloth-mustard: champagne)", size: "scale (1)" },
+        example: { pose: { arms: { R: "raise", L: "behind" } }, props: [{ type: "tray", side: "R" }] },
+        draw(ctx, o) {
+          var _a;
+          const { G } = ctx;
+          const hi = K.pickArm(ctx, o, ["raise", "hold"], "tray");
+          if (!hi) return [];
+          const k = hi.k, raised = hi.pose === "raise", S = clamp(+o.size || 1, 0.6, 1.5);
+          const rx = 6.6 * S, ry = 1.05 * S, th = 0.55 * S;
+          const out = [];
+          let O, z;
+          if (raised) {
+            let H = null;
+            try {
+              H = require_relaxed().handSpace(ctx, hi.side);
+            } catch (e) {
+              H = null;
+            }
+            const seat = H ? H.hp([0, 0.6]) : hi.pt;
+            if (H) ctx.cut(`^hand-${hi.side}(-|$)`, G.poly([[-0.7, 0.58], [0.7, 0.58], [0.7, 1.6], [-0.7, 1.6]].map(H.hp)));
+            const off = 1.6 * S;
+            const under = th + ry * Math.sqrt(Math.max(0, 1 - (off / rx) ** 2));
+            O = [seat[0] + k * K.inch(off), seat[1] - K.inch(under)];
+            z = hi.zOver;
+          } else {
+            O = K.add(hi.pt, [0, -K.inch(th + ry * 0.6)]);
+            z = hi.zOver + 0.05;
+          }
+          const F = K.frame(O, 0, K.U, k);
+          const P = (pts) => pts.map(F.P);
+          const metal = ctx.mat(o.color || "metal-chrome", "metal");
+          out.push({ id: "tray-rim", z, d: G.poly(P([[-rx, 0], [rx, 0], ...arc(0, th, rx, ry, 0, Math.PI, 18)])), mat: metal, fill: "shade", light: { form: 0.6 } });
+          const lines = [{ d: G.poly(P([...arc(0, 0, rx, ry, 0, Math.PI, 18), ...arc(0, 0, rx * 0.93, ry * 0.8, Math.PI, 0, 18)])), fill: "light", o: 0.75 }];
+          if (ctx.lodAtLeast("mid")) lines.push({ d: G.poly(P(arc(-rx * 0.25, -ry * 0.1, rx * 0.35, ry * 0.32, 0, Math.PI * 2, 16))), fill: "light", o: 0.35 });
+          out.push({ id: "tray-top", z: z + 0.01, d: G.poly(P(arc(0, 0, rx, ry, 0, Math.PI * 2, 32))), mat: metal, lines, light: { form: 0.5 } });
+          const n = clamp(Math.round((_a = o.glasses) != null ? _a : 2), 0, 3);
+          const xs = [[], [0.4], [-2.4, 1.9], [-3.4, -0.2, 3]][n];
+          const style = ["coupe", "flute", "tumbler"].includes(o.glass) ? o.glass : "coupe";
+          xs.forEach((x, i) => out.push(...glassOn(ctx, P, x * S, ry * (i % 2 ? 0.05 : 0.3), style, z + 0.02 + i * 0.01, `tray-glass${i}`, o.drink)));
+          return out;
+        }
+      });
+      function jaw(r, w = 0.38) {
+        const y0 = Math.sqrt(r * r - w * w), a0 = Math.atan2(y0, w), a1 = Math.atan2(y0, -w);
+        return [[w, -0.12 * r], [w, y0], ...arc(0, 0, r, r, a0, a1 - Math.PI * 2, 20).slice(1, -1), [-w, y0], [-w, -0.12 * r]];
+      }
+      register({
+        kind: "prop",
+        name: "spanner",
+        aliases: ["wrench"],
+        describe: "A big double open-ended spanner (about 15 in) held at the side in a carry-pose fist (a down arm gets a fist drawn over the hand), the big jaw hanging down by the thigh, the small one just above the fist. Forged steel with a recessed shank.",
+        params: { side: "R|L", color: "metal token (metal-steel)", size: "scale (1)" },
+        example: { pose: { arms: { R: "carry", L: "down" } }, props: [{ type: "spanner", side: "R" }] },
+        draw(ctx, o) {
+          const { G } = ctx;
+          const hi = K.pickArm(ctx, o, ["carry", "down"], "spanner");
+          if (!hi) return [];
+          const k = hi.k, z = hi.zUnder, S = clamp(+o.size || 1, 0.6, 1.4);
+          const sv = [hi.dir[0] + k * 0.14, hi.dir[1]];
+          const F = K.frame(hi.pt, Math.atan2(-sv[0], sv[1]), K.U * S, k);
+          const P = (pts) => pts.map(F.P);
+          const steel = ctx.mat(o.color || "metal-steel", "metal");
+          const L = 11.4, rb = 1.55, rt = 1;
+          const rotJ = (pts, c, a) => pts.map(([x, y]) => [c[0] + x * Math.cos(a) - y * Math.sin(a), c[1] + x * Math.sin(a) + y * Math.cos(a)]);
+          const out = [];
+          const shank = K.ribbon(P([[0, -2.6], [0, 0], [0, L * 0.5], [0, L - rb * 0.6]]), [K.inch(1.05 * S), K.inch(0.92 * S), K.inch(0.98 * S), K.inch(1.5 * S)]);
+          const lines = ctx.lodAtLeast("mid") ? [
+            { d: K.ribbon(P([[0.06, 1.2], [0.06, L - 2.4]]), [K.inch(0.08 * S), K.inch(0.34 * S), K.inch(0.34 * S), K.inch(0.08 * S)]), fill: "shade", o: 0.7 },
+            { d: K.ribbon(P([[-0.36, -1.8], [-0.34, L - 2]]), K.inch(0.07 * S)), fill: "light", o: 0.55 }
+          ] : [];
+          out.push({ id: "spanner-shank", z, d: shank, mat: steel, lines, light: { form: 0.6 } });
+          out.push({ id: "spanner-jaw", z: z + 0.01, d: G.poly(P(rotJ(jaw(rb, 0.62), [0, L], 0.35))), mat: steel, light: { form: 0.6 } });
+          out.push({ id: "spanner-jaw-top", z: z + 0.01, d: G.poly(P(rotJ(jaw(rt, 0.38), [0, -3], Math.PI - 0.3))), mat: steel, light: { form: 0.6 } });
+          out.push(...K.gripFist(ctx, hi, "spanner"));
+          return out;
+        }
+      });
+      register({
+        kind: "prop",
+        name: "camera",
+        aliases: ["press-camera"],
+        describe: "A 1960s press camera, lens to the viewer, with a flash gun on a chrome handle and a big round flash dish. Arm pose hold: held at the chest on the palm, the flash on the outer side; arm pose raise: held up by the flash handle in a raised fist (the open hand is swapped for a fist), the camera out to the side. `flash: true` fires the bulb.",
+        params: { side: "R|L", color: "body token (leather-black)", flash: "true: the bulb is firing" },
+        example: { pose: { arms: { R: "hold", L: "down" } }, props: [{ type: "camera", side: "R" }] },
+        draw(ctx, o) {
+          const { G } = ctx;
+          const hi = K.pickArm(ctx, o, ["hold", "raise"], "camera");
+          if (!hi) return [];
+          const k = hi.k, up = hi.pose === "raise";
+          const sw = up ? swapHand(ctx, hi, "fist", "camera") : { pieces: [], pt: K.add(hi.pt, K.mul(hi.up, K.inch(0.3))) };
+          const [b0, b1, t, b, hx, h0, h1, dy] = up ? [1, 7.8, -3.4, 1.6, 0, -2.8, 2.6, -5] : [-3.4, 3.4, -5, 0, 4.3, -6.2, -0.4, -8.4];
+          const F = K.frame(sw.pt, 0, K.U, k);
+          const P = (pts) => pts.map(F.P), at = (x, y) => F.P([x, y]);
+          const z = up ? hi.zUnder : hi.zOver;
+          const body = ctx.mat(o.color || "leather-black", "leather"), chrome = ctx.mat("metal-chrome", "metal");
+          const cx = (b0 + b1) / 2, cy = (t + b) / 2;
+          const out = [];
+          out.push({ id: "camera-bracket", z, d: K.rrect(...at(Math.min(cx, hx), b - 0.9), ...at(Math.max(cx, hx), b - 0.2), 0), mat: chrome, light: { form: 0.5 } });
+          out.push({ id: "camera-handle", z: z + 0.01, d: K.ribbon(P([[hx, h0], [hx, h1]]), K.inch(1.25)), mat: chrome, light: { form: 0.8 } });
+          out.push({ id: "camera-finder", z: z + 0.02, d: G.poly(P([[cx - 1.3, t - 1.1], [cx + 1.3, t - 1.1], [cx + 1.5, t], [cx - 1.5, t]])), mat: chrome, light: { form: 0.6 } });
+          out.push({
+            id: "camera-body",
+            z: z + 0.03,
+            d: G.poly(P([[b0, t], [b1, t], [b1, b], [b0, b]])),
+            mat: body,
+            light: { form: 0.8 },
+            lines: ctx.lodAtLeast("mid") ? [{ d: G.poly(P([[b0 + 0.25, t + 0.2], [b1 - 0.25, t + 0.2], [b1 - 0.25, t + 0.45], [b0 + 0.25, t + 0.45]])), fill: "light", o: 0.35 }] : []
+          });
+          out.push({ id: "camera-board", z: z + 0.04, d: G.poly(P([[cx - 1.95, cy - 1.95], [cx + 1.95, cy - 1.95], [cx + 1.95, cy + 1.95], [cx - 1.95, cy + 1.95]])), mat: chrome, fill: "shade", light: { form: 0.6 } });
+          out.push({ id: "camera-lens", z: z + 0.05, d: G.circle(...at(cx, cy), K.inch(1.5)), mat: chrome, light: { form: 0.9 } });
+          out.push({
+            id: "camera-glass",
+            z: z + 0.06,
+            d: G.circle(...at(cx, cy), K.inch(1.05)),
+            mat: ctx.mat("glass-dark", "glass"),
+            light: { form: 0.4 },
+            lines: [{ d: G.circle(...at(cx - 0.35, cy - 0.4), K.inch(0.28)), fill: "light", o: 0.8 }]
+          });
+          out.push({
+            id: "camera-dish",
+            z: z + 0.02,
+            d: G.circle(...at(hx, dy), K.inch(2.7)),
+            mat: chrome,
+            light: { form: 0.5 },
+            lines: [{ d: G.circle(...at(hx, dy), K.inch(2.1)), fill: "shade", o: 0.5 }, { d: G.circle(...at(hx - 0.4, dy - 0.5), K.inch(1.2)), fill: "light", o: 0.5 }]
+          });
+          out.push({ id: "camera-bulb", z: z + 0.03, d: G.circle(...at(hx, dy), K.inch(0.7)), fill: o.flash ? "paper-000" : "paper-200", light: false });
+          if (o.flash && ctx.lodAtLeast("mid")) out.push({ id: "camera-burst", z: ctx.Z.fx, d: G.circle(...at(hx, dy), K.inch(3.6)), fill: "paper-000", light: false, opacity: 0.45 });
+          out.push(...sw.pieces);
+          return out;
+        }
+      });
+      register({
+        kind: "prop",
+        name: "crate",
+        aliases: ["box", "wooden-crate"],
+        describe: "A slatted wooden crate (about 18 by 11 in). Arm pose hold on both arms: carried in front on the palms, the fingers over its bottom edge (one hold arm also works). Arm pose raise: carried on that shoulder beside the head, the raised forearm behind it steadying it.",
+        params: { side: "R|L the shoulder (raise)", color: "wood token (wood-light)", size: "scale (1)" },
+        example: { pose: { arms: { R: "hold", L: "hold" } }, props: [{ type: "crate" }] },
+        draw(ctx, o) {
+          const { G, R } = ctx;
+          const S = clamp(+o.size || 1, 0.6, 1.4), w = 9 * S, h = 11 * S;
+          const holds = ["R", "L"].filter((s) => R.arms[s].pose === "hold");
+          let O, k = 1, z, top = true;
+          if (holds.length && !(o.side && R.arms[o.side].pose === "raise")) {
+            const hs = holds.map((s) => K.handInfo(ctx, s));
+            const mx = hs.reduce((a, q2) => a + q2.pt[0], 0) / hs.length, my = Math.max(...hs.map((q2) => q2.pt[1]));
+            O = [hs.length > 1 ? mx : mx - hs[0].k * K.inch(w * 0.55), my + K.inch(3.2 * S)];
+            z = Math.min(...hs.map((q2) => q2.zUnder));
+          } else {
+            const hi = K.pickArm(ctx, o, ["raise", "hold"], "crate");
+            if (!hi) return [];
+            k = hi.k;
+            top = false;
+            O = [R.centerAt(R.y.shoulder) + k * (0.3 * R.hh + K.inch(w)), R.y.shoulder + 0.02 * R.hh];
+            z = hi.zOver;
+          }
+          const F = K.frame(O, 0, K.U, k);
+          const P = (pts) => pts.map(F.P), q = (x0, y0, x1, y1) => G.poly(P([[x0, y0], [x1, y0], [x1, y1], [x0, y1]]));
+          const wood = ctx.mat(o.color || "wood-light", "wood");
+          const out = [{ id: "crate-inside", z, d: q(-w, -h, w, 0), mat: wood, fill: "deep", light: false }];
+          const sh = (h - 1.4 * S) / 3, grain = [];
+          let slats = "";
+          for (let i = 0; i < 3; i++) {
+            const y1 = -i * (sh + 0.7 * S), y0 = y1 - sh;
+            slats += q(-w, y0, w, y1);
+            if (ctx.lodAtLeast("mid")) grain.push({ d: K.ribbon(P([[-w + 2.5 * S, y0 + sh * 0.45], [w * 0.2, y0 + sh * 0.55], [w - 2.5 * S, y0 + sh * 0.4]]), [K.inch(0.03), K.inch(0.12), K.inch(0.03)]), fill: "shade", o: 0.5 });
+          }
+          out.push({ id: "crate-slats", z: z + 0.01, d: slats, mat: wood, lines: grain, light: { form: 0.7 } });
+          out.push({
+            id: "crate-cleats",
+            z: z + 0.02,
+            d: q(-w, -h, -w + 1.7 * S, 0) + q(w - 1.7 * S, -h, w, 0),
+            mat: wood,
+            fill: "shade",
+            light: { form: 0.5 },
+            lines: ctx.lodAtLeast("mid") ? [{ d: [-1, 1].flatMap((sd) => [0.2, 0.5, 0.8].map((t) => G.circle(...F.P([sd * (w - 0.85 * S), -h * t]), K.inch(0.16)))).join(""), fill: "ink-700", o: 0.8 }] : []
+          });
+          if (top) out.push({ id: "crate-top", z: z + 0.01, d: G.poly(P([[-w, -h], [w, -h], [w - 0.8 * S, -h - 1.3 * S], [-w + 0.8 * S, -h - 1.3 * S]])), mat: wood, fill: "light", light: { form: 0.4 } });
+          return out;
+        }
+      });
+      register({
+        kind: "prop",
+        name: "clipboard",
+        describe: "A hardboard clipboard with a chrome clip and a ruled sheet. Arm pose hold: held upright against the chest, the fingers over its bottom edge; arm pose carry or down: hanging from the fist at the side (a down arm gets a fist). The foreman, the inspector, the stage manager, the man from the council.",
+        params: { side: "R|L", color: "board token (cloth-tan)" },
+        example: { pose: { arms: { R: "down", L: "hold" } }, props: [{ type: "clipboard", side: "L" }] },
+        draw(ctx, o) {
+          const { G } = ctx;
+          const hi = K.pickArm(ctx, o, ["hold", "carry", "down"], "clipboard");
+          if (!hi) return [];
+          const k = hi.k, hold = hi.pose === "hold";
+          const F = hold ? K.frame(K.add(hi.pt, [0, K.inch(2.8)]), -k * 0.1, K.U, k) : K.frame(K.add(hi.pt, [0, -K.inch(0.6)]), k * 0.06, K.U, k);
+          const P = (pts) => pts.map(F.P), q = (x0, y02, x1, y12) => G.poly(P([[x0, y02], [x1, y02], [x1, y12], [x0, y12]]));
+          const w = 4.5, h = 12.2, y0 = hold ? -h : 0, y1 = hold ? 0 : h, top = y0;
+          const z = hi.zUnder;
+          const ink = [];
+          if (ctx.lodAtLeast("mid")) for (let i = 0; i < 7; i++) {
+            const yy = top + 3.4 + i * 1.2;
+            ink.push(q(-w + 1.3, yy, w - 1.3 - (i % 3 === 2 ? 2 : 0), yy + 0.14));
+          }
+          const out = [
+            { id: "clipboard-board", z, d: q(-w, y0, w, y1), mat: ctx.mat(o.color || "cloth-tan", "wood"), light: { form: 0.7 } },
+            {
+              id: "clipboard-paper",
+              z: z + 0.01,
+              d: q(-w + 0.55, top + 1.2, w - 0.55, top + h - 0.5),
+              mat: ctx.mat("paper-000", "paper"),
+              light: { form: 0.5 },
+              lines: ink.length ? [{ d: ink.join(""), fill: "ink-500", o: 0.7 }] : []
+            },
+            { id: "clipboard-clip", z: z + 0.02, d: G.poly(P([[-1.9, top - 0.25], [1.9, top - 0.25], [2.3, top + 1.2], [1.4, top + 1.9], [-1.4, top + 1.9], [-2.3, top + 1.2]])), mat: ctx.mat("metal-chrome", "metal"), light: { form: 0.7 } }
+          ];
+          out.push(...K.gripFist(ctx, hi, "clipboard"));
+          return out;
+        }
+      });
+      register({
+        kind: "prop",
+        name: "oar",
+        aliases: ["paddle", "gondola-oar"],
+        describe: "A long single oar (about 7.5 ft) stood upright beside the figure, the handle on the floor by the foot and the blade high above the head: gripped in a fist at the hip (arm pose carry, or down with a fist drawn over the hand) or higher, beside the head (arm pose raise; the open hand becomes a fist). Varnished wood with a leather collar; the blade can be painted.",
+        params: { side: "R|L", color: "blade token (wood-light: varnished; cloth-red, cloth-navy \u2026 painted)", length: "inches (90)" },
+        example: { pose: { arms: { R: "carry", L: "down" } }, props: [{ type: "oar", side: "R" }] },
+        draw(ctx, o) {
+          const { G } = ctx;
+          const hi = K.pickArm(ctx, o, ["carry", "down", "raise"], "oar");
+          if (!hi) return [];
+          const k = hi.k, sw = hi.pose === "raise" ? swapHand(ctx, hi, "fist", "oar") : { pieces: K.gripFist(ctx, hi, "oar"), pt: hi.pt };
+          const B = [sw.pt[0] + k * K.inch(2.4), 0], v = K.norm(K.sub(sw.pt, B));
+          const F = K.frame(B, Math.atan2(v[0], -v[1]), K.U, k);
+          const P = (pts) => pts.map(F.P);
+          const L = clamp(+o.length || 90, 60, 130), bl = 22, z = hi.zUnder;
+          const wood = ctx.mat("wood-light", "wood"), blade = ctx.mat(o.color || "wood-light", o.color && !/^wood/.test(o.color) ? "cloth" : "wood");
+          const grain = ctx.lodAtLeast("mid") ? [{ d: K.ribbon(P([[-0.3, -8], [-0.28, -(L - bl - 2)]]), K.inch(0.12)), fill: "light", o: 0.5 }] : [];
+          return [
+            { id: "oar-shaft", z, d: K.ribbon(P([[0, 0], [0, -7], [0, -(L - bl) * 0.5], [0, -(L - bl + 1)]]), [K.inch(1.25), K.inch(1.5), K.inch(1.7), K.inch(1.3)]), mat: wood, lines: grain, light: { form: 0.9 } },
+            {
+              id: "oar-collar",
+              z: z + 0.01,
+              d: K.ribbon(P([[0, -(L * 0.42)], [0, -(L * 0.42 + 8)]]), K.inch(2)),
+              mat: ctx.mat("leather-brown", "leather"),
+              light: { form: 0.8 },
+              lines: ctx.lodAtLeast("mid") ? [{ d: K.ribbon(P([[0, -(L * 0.42 + 7.2)], [0, -(L * 0.42 + 8.4)]]), K.inch(2.6)), fill: "deep", o: 0.8 }] : []
+            },
+            {
+              id: "oar-blade",
+              z: z + 0.02,
+              d: G.smooth(P([[-0.6, -(L - bl)], [0.6, -(L - bl)], [3.1, -(L - bl * 0.45)], [3, -(L - 1.2)], [1.6, -L], [-1.6, -L], [-3, -(L - 1.2)], [-3.1, -(L - bl * 0.45)]]), true, 0.35),
+              mat: blade,
+              light: { form: 0.7 },
+              lines: ctx.lodAtLeast("mid") ? [{ d: K.ribbon(P([[0.1, -(L - bl + 1)], [0.25, -(L - 2)]]), [K.inch(0.5), K.inch(0.2)]), fill: "shade", o: 0.5 }] : []
+            },
+            ...sw.pieces
+          ];
+        }
+      });
+      register({
+        kind: "prop",
+        name: "rag",
+        aliases: ["oily-rag", "shop-rag", "cloth"],
+        describe: "An oily shop rag, limp and stained: hanging from a fist (arm pose carry, or down with a fist drawn over the hand) or stuffed in a hip pocket and hanging down the thigh (at: pocket; the default when no arm is in carry). The mechanic, the stoker, the barman's cloth.",
+        params: { at: "hand|pocket", side: "R|L", color: "cloth token (cloth-red)" },
+        example: { props: [{ type: "rag", at: "pocket", side: "R" }] },
+        draw(ctx, o) {
+          const { G, R } = ctx;
+          const inHand = o.at === "hand" || o.at !== "pocket" && ["R", "L"].some((s) => R.arms[s].pose === "carry" && (!o.side || o.side === s));
+          let F, z, fist = [];
+          if (inHand) {
+            const hi = K.pickArm(ctx, o, ["carry", "down"], "rag");
+            if (!hi) return [];
+            F = K.frame(K.add(hi.pt, [0, K.inch(0.4)]), hi.k * 0.05, K.U, hi.k);
+            z = hi.zUnder;
+            fist = K.gripFist(ctx, hi, "rag");
+          } else {
+            const a = K.bodyAnchor(ctx, "hip-" + (o.side === "L" ? "L" : "R")), k = a.k || -1;
+            F = K.frame(K.add(a.pt, [-k * 0.16 * R.hh, -0.02 * R.hh]), k * 0.12, K.U * 0.85, k);
+            z = ctx.Z.belt + 0.5;
+          }
+          const P = (pts) => pts.map(F.P);
+          const mat = ctx.mat(o.color || "cloth-red", "cloth");
+          const out = [{
+            id: "rag",
+            z,
+            d: G.smooth(P([[-0.7, -0.8], [0.7, -0.8], [1.4, 1.5], [2.6, 5.5], [2.9, 8.6], [2, 9.6, true], [1.3, 8.7], [0.4, 10.2, true], [-0.6, 8.9], [-1.6, 9.8, true], [-2.4, 8.4], [-2.1, 5], [-1.3, 1.6]]), true, 0.4),
+            mat,
+            light: { form: 0.7 },
+            shade: [{ d: G.smooth(P([[0.2, 0.5], [1.4, 3.8], [2.2, 8.2], [1.3, 8.6], [0.6, 4.2]]), true, 0.5), o: 0.6 }],
+            lines: ctx.lodAtLeast("mid") ? [
+              { d: K.ribbon(P([[-0.2, 0.2], [-0.9, 4.5], [-1, 8.5]]), [K.inch(0.05), K.inch(0.22), K.inch(0.05)]), fill: "deep", o: 0.6 },
+              { d: G.ellipse(...F.P([-1.1, 6.6]), K.inch(1), K.inch(0.7), 0.4) + G.ellipse(...F.P([1.3, 3.6]), K.inch(0.6), K.inch(0.45), -0.3), fill: "deep", o: 0.45 }
+            ] : []
+          }];
+          return [...out, ...fist];
+        }
+      });
+      register({
+        kind: "prop",
+        name: "mop",
+        aliases: ["mop-and-bucket"],
+        describe: "A string mop stood on its head beside the foot, the handle gripped in a fist at the hip (arm pose carry, or down with a fist drawn over the hand), and a galvanised bucket on the floor beside it. The cleaner, the night porter, the janitor.",
+        params: { side: "R|L", color: "mop token (cloth-stone)", bucket: "false to leave the bucket out" },
+        example: { pose: { arms: { R: "carry", L: "down" } }, props: [{ type: "mop", side: "R" }] },
+        draw(ctx, o) {
+          const { G } = ctx;
+          const hi = K.pickArm(ctx, o, ["carry", "down"], "mop");
+          if (!hi) return [];
+          const k = hi.k, z = hi.zUnder;
+          const B = [hi.pt[0] + k * K.inch(3.2), 0], v = K.norm(K.sub(hi.pt, B));
+          const F = K.frame(B, Math.atan2(v[0], -v[1]), K.U, k);
+          const P = (pts) => pts.map(F.P);
+          const L = Math.hypot(hi.pt[0] - B[0], hi.pt[1]) / K.U + 7;
+          const mop = ctx.mat(o.color || "cloth-stone", "cloth"), steel = ctx.mat("metal-steel", "metal");
+          const strands = [];
+          if (ctx.lodAtLeast("mid")) for (const x of [-3.2, -1.6, 0, 1.6, 3.2]) strands.push({ d: K.ribbon(P([[x * 0.25, -6.2], [x * 0.8, -3], [x, -0.4]]), [K.inch(0.05), K.inch(0.22), K.inch(0.08)]), fill: "deep", o: 0.55 });
+          const out = [
+            { id: "mop-handle", z, d: K.ribbon(P([[0, -7], [0, -L]]), K.inch(1.1)), mat: ctx.mat("wood-light", "wood"), light: { form: 0.9 } },
+            { id: "mop-head", z: z + 0.01, d: G.smooth(P([[-1, -7.2], [1, -7.2], [3.4, -3], [5.2, 0], [3.6, 0.3, true], [2.4, -0.4], [1, 0.3, true], [-0.2, -0.5], [-1.6, 0.3, true], [-2.8, -0.3], [-5, 0.2, true], [-3.6, -3.2]]), true, 0.4), mat: mop, lines: strands, light: { form: 0.8 } },
+            { id: "mop-ferrule", z: z + 0.02, d: K.ribbon(P([[0, -6.4], [0, -8.4]]), K.inch(1.5)), mat: steel, light: { form: 0.7 } }
+          ];
+          if (o.bucket !== false) {
+            const Q = K.frame([B[0] + k * K.inch(11.5), 0], 0, K.U, k), BP = (pts) => pts.map(Q.P), zb = ctx.Z.legs - 1;
+            out.push({
+              id: "mop-bucket",
+              z: zb,
+              d: G.poly(BP([[-5.6, -11], [5.6, -11], [4.6, 0], [-4.6, 0]])),
+              mat: steel,
+              light: { form: 0.9 },
+              lines: ctx.lodAtLeast("mid") ? [{ d: K.ribbon(BP([[-5.2, -7.5], [5.2, -7.5]]), K.inch(0.3)) + K.ribbon(BP([[-4.9, -3.2], [4.9, -3.2]]), K.inch(0.3)), fill: "shade", o: 0.6 }] : []
+            });
+            out.push({
+              id: "mop-bucket-rim",
+              z: zb + 0.01,
+              d: G.poly(BP(arc(0, -11, 5.8, 0.9, 0, Math.PI * 2, 24))),
+              mat: steel,
+              fill: "deep",
+              light: false,
+              lines: [{ d: G.poly(BP(arc(0, -10.9, 5, 0.6, 0, Math.PI * 2, 24))), fill: "slate-700", o: 0.9 }]
+            });
+            out.push({ id: "mop-bucket-bail", z: zb - 0.01, d: K.ribbon(BP([[-5.6, -10], [-4.5, -14.5], [0, -16.2], [4.5, -14.5], [5.6, -10]]), K.inch(0.3)), mat: steel, light: false });
+          }
+          out.push(...K.gripFist(ctx, hi, "mop"));
+          return out;
+        }
+      });
+      module.exports = { arc, swapHand, glassOn, jaw };
     }
   });
 
@@ -15357,6 +16150,7 @@ var B68Figure = (() => {
       require_hats_main();
       require_hats_more();
       require_riot();
+      require_trades_hats();
       require_ears_more();
       require_ears_normal();
       require_oval();
@@ -15370,6 +16164,7 @@ var B68Figure = (() => {
       require_scar();
       require_spots();
       require_balaclava();
+      require_ball();
       require_bandana();
       require_blank();
       require_domino();
@@ -15386,6 +16181,7 @@ var B68Figure = (() => {
       require_mouth_variants();
       require_nose_straight();
       require_nose_variants();
+      require_evening();
       require_leather();
       require_longcoats();
       require_military();
@@ -15398,6 +16194,7 @@ var B68Figure = (() => {
       require_militants();
       require_rifles();
       require_smoking();
+      require_trades();
       require_umbrella();
       require_checks();
       require_houndstooth();
@@ -16708,6 +17505,1905 @@ var B68Figure = (() => {
     }
   });
 
+  // src/core/mini-read.js
+  var require_mini_read = __commonJS({
+    "src/core/mini-read.js"(exports, module) {
+      "use strict";
+      var G = require_geom();
+      var REG = require_registry();
+      var T = require_tokens();
+      var TELL = {
+        hat: 1.28,
+        mask: 1.25,
+        tallHair: 1.15,
+        facialHair: 1.05,
+        companion: 1,
+        gown: 1.3,
+        prop: {
+          "rifle-back": 1.2,
+          "rifle-shoulder": 1.2,
+          briefcase: 1.3,
+          suitcase: 1.3,
+          satchel: 1.3,
+          cane: 1,
+          umbrella: 1.1,
+          glass: 1.7,
+          book: 1.35,
+          newspaper: 1.3,
+          bandolier: 1,
+          placard: 1.1,
+          megaphone: 1.4,
+          molotov: 1.5,
+          pistol: 1.5,
+          holster: 1.3,
+          armband: 1.4,
+          tray: 1.45,
+          camera: 1.35,
+          // K1.7 trades: the crate, oar and mop are big already; the spanner and rag are not
+          spanner: 1.8,
+          crate: 1,
+          clipboard: 1.3,
+          oar: 1,
+          rag: 1.5,
+          mop: 1
+        },
+        propDefault: 1.35,
+        // a hat type's own boost (else `hat`); the eyeshade's visor is pushed on its own (VISOR), not the hair it carries
+        hatType: { eyeshade: 1, toque: 1.15, "top-hat": 1.2, boater: 1.4 },
+        visor: 1.55,
+        // a mask type's own boost (else `mask`): the colombina is a small half mask, the bauta covers the face already
+        maskType: { colombina: 1.35, bauta: 1.08 }
+      };
+      var SKIP_PROPS = /* @__PURE__ */ new Set(["cigarette", "pipe", "flies", "badge", "pin-badges"]);
+      var SUIT = /overall|boiler|jumpsuit|coverall|dungaree/;
+      var WORN = /bandolier|holster|armband|badge|rifle-back|sling|belt|strap|vest|pack|quiver/;
+      var TALL_HAIR = /beehive|afro|bouffant|bun|pompadour|big|tall/;
+      var OPEN_TYPES = /suit-jacket|dinner-jacket|tailcoat|tuxedo|blazer|double-breasted|trench|overcoat|peacoat|leather-jacket|cape-coat|shearling|field-jacket|cardigan|waistcoat/;
+      var DETAIL = /sleeve|cuff|collar|lapel|block|strap|pocket|button|belt|buckle|epaulette|knot|shadow|fade|(?:^|-)tails?(?:\d*$|-)|seam|fold|lines?$/;
+      function flatten(d) {
+        const polys = [];
+        let cur = null, last = [0, 0];
+        let segs;
+        try {
+          segs = G.parse(d);
+        } catch (e) {
+          return polys;
+        }
+        const b3 = (p0, a, b, p, t) => {
+          const u = 1 - t;
+          return [u * u * u * p0[0] + 3 * u * u * t * a[0] + 3 * u * t * t * b[0] + t * t * t * p[0], u * u * u * p0[1] + 3 * u * u * t * a[1] + 3 * u * t * t * b[1] + t * t * t * p[1]];
+        };
+        const b2 = (p0, a, p, t) => {
+          const u = 1 - t;
+          return [u * u * p0[0] + 2 * u * t * a[0] + t * t * p[0], u * u * p0[1] + 2 * u * t * a[1] + t * t * p[1]];
+        };
+        for (const s of segs) {
+          if (s.c === "M") {
+            if (cur && cur.length >= 3) polys.push(cur);
+            cur = [s.p[0]];
+            last = s.p[0];
+            continue;
+          }
+          if (!cur) cur = [last];
+          if (s.c === "L") {
+            cur.push(s.p[0]);
+            last = s.p[0];
+          } else if (s.c === "C") {
+            const [a, b, p] = s.p;
+            for (const t of [0.25, 0.5, 0.75, 1]) cur.push(b3(last, a, b, p, t));
+            last = p;
+          } else if (s.c === "Q") {
+            const [a, p] = s.p;
+            for (const t of [0.34, 0.67, 1]) cur.push(b2(last, a, p, t));
+            last = p;
+          }
+        }
+        if (cur && cur.length >= 3) polys.push(cur);
+        return polys;
+      }
+      function bboxOf(polys) {
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (const pl of polys) for (const p of pl) {
+          if (p[0] < x0) x0 = p[0];
+          if (p[0] > x1) x1 = p[0];
+          if (p[1] < y0) y0 = p[1];
+          if (p[1] > y1) y1 = p[1];
+        }
+        if (x0 === Infinity) return null;
+        return { x: x0, y: y0, x1, y1, w: x1 - x0, h: y1 - y0, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 };
+      }
+      function readUncached(api, spec) {
+        var _a, _b, _c, _d, _e, _f;
+        const B = api.build(spec, { lod: "lo", shadow: false });
+        const S = B.S, R = B.R, hh = R.hh, O = S.outfit || {};
+        const P = B.pieces.filter((p) => p.d && !p.clip && !(p.opacity != null && p.opacity < 0.6));
+        const SLOT_KIND = api.SLOT_KIND || { legs: "legwear", bottom: "bottom", base: "top", dress: "dress", mid: "mid", outer: "outer", neck: "neckwear", waist: "belt", feet: "footwear", hands: "gloves" };
+        const kindOf = (slot) => SLOT_KIND[slot];
+        const of = (kind) => P.filter((p) => p._kind === kind);
+        const matOf = (p) => {
+          if (!p) return null;
+          if (p.mat && p.mat.kind === "skin") return { color: S.skin, kind: "skin" };
+          if (p.mat && p.mat.base) return { color: p.fill === "shade" && p.mat.shade ? p.mat.shade : p.mat.base, kind: p.mat.kind };
+          const t = typeof p.fill === "string" ? T.tok(p.fill) : null;
+          return t && /^#[0-9a-f]{6}$/i.test(t) ? { color: t, kind: "flat" } : null;
+        };
+        const geo = /* @__PURE__ */ new Map();
+        const polysOf = (p) => {
+          if (!geo.has(p)) geo.set(p, flatten(p.d));
+          return geo.get(p);
+        };
+        const boxOf = (p) => bboxOf(polysOf(p));
+        const mainOf = (kind) => {
+          let best = null, ba = -1;
+          for (const p of of(kind)) {
+            if (DETAIL.test(p.id || "") || !matOf(p)) continue;
+            const b = boxOf(p);
+            if (!b) continue;
+            const a = b.w * b.h;
+            if (a > ba) {
+              ba = a;
+              best = p;
+            }
+          }
+          return best;
+        };
+        const has = (slot) => !!(O[slot] && O[slot].type && mainOf(kindOf(slot)));
+        const typeOf = (slot) => O[slot] && O[slot].type || "";
+        const hp = of("head").find((p) => p.id === "head") || of("head")[0];
+        const hb = hp ? boxOf(hp) : null;
+        const head = hb ? { cx: hb.cx, cy: hb.cy, rx: hb.w / 2, ry: hb.h / 2 } : { cx: R.head.cx, cy: R.head.cy, rx: 0.36 * hh, ry: 0.5 * hh };
+        const dressT = typeOf("dress");
+        const bibDress = has("dress") && /overall|dungaree|bib/.test(dressT);
+        const midT = typeOf("mid");
+        const apron = has("mid") && /apron/.test(midT);
+        let src = has("outer") ? "outer" : has("dress") && !bibDress ? "dress" : has("mid") && !apron ? "mid" : has("base") ? "base" : bibDress ? "dress" : null;
+        const torso = { ease: 1.03, hem: R.y.hip, hemHalf: R.w.hip, color: "cloth-graphite", kind: "cloth" };
+        const hemHalfOf = (p, hem) => {
+          let w = 0;
+          const c = R.centerAt(hem);
+          for (const pl of polysOf(p)) for (const q of pl) if (q[1] > hem - 0.35 * hh) w = Math.max(w, Math.abs(q[0] - c));
+          return w || R.w.hip;
+        };
+        if (src) {
+          const mp = mainOf(kindOf(src)), mt = matOf(mp), b = boxOf(mp);
+          Object.assign(torso, mt);
+          torso.ease = src === "outer" ? 1.08 : 1.03;
+          torso.hem = b.y1;
+          const bot = has("bottom") ? mainOf("bottom") : null;
+          if (src === "base" && bot && (mp.z || 0) < (bot.z || 0)) torso.hem = R.y.waist;
+          torso.hem = Math.max(R.y.chest, Math.min(torso.hem, -0.02 * hh));
+          torso.hemHalf = hemHalfOf(mp, torso.hem);
+          if (src === "dress" && SUIT.test(dressT)) {
+            torso.hem = Math.min(torso.hem, R.y.crotch + 0.12 * hh);
+            torso.hemHalf = R.w.hip * 1.04;
+          }
+          if (src === "dress" && /gown/.test(dressT)) {
+            torso.hemHalf = Math.max(torso.hemHalf * TELL.gown, R.w.hip * 1.7);
+            torso.hem = Math.max(torso.hem, -0.03 * hh);
+          }
+          if (src === "dress" && !SUIT.test(dressT) && torso.hem > R.y.crotch) torso.hemHalf = Math.max(torso.hemHalf, R.w.hip * 1.1);
+          const st = typeOf(src);
+          if (src === "outer" && /tail/.test(st) && b.y1 > R.y.crotch) {
+            torso.tails = { hem: Math.min(b.y1, -0.5 * hh), hemHalf: Math.max(R.w.hip * 0.95, Math.min(hemHalfOf(mp, b.y1), R.w.hip * 1.2)) };
+            torso.hem = Math.min(torso.hem, R.y.waist + 0.15 * hh);
+          }
+          if ((src === "outer" || src === "mid") && OPEN_TYPES.test(st)) {
+            const innerSlot = src === "outer" && has("mid") && !apron ? "mid" : has("base") ? "base" : has("dress") ? "dress" : null;
+            if (innerSlot) {
+              const lap = of(kindOf(src)).filter((p) => /lapel/.test(p.id || ""));
+              let bottom = /cardigan/.test(st) ? R.y.waist : /waistcoat/.test(st) ? R.y.chest + 0.15 * hh : R.y.chest + 0.3 * hh;
+              if (lap.length) bottom = Math.max(...lap.map((p) => boxOf(p).y1)) - 0.1 * hh;
+              bottom = Math.max(R.y.shoulder + 0.4 * hh, Math.min(bottom, R.y.waist));
+              torso.open = { ...matOf(mainOf(kindOf(innerSlot))), bottom, width: /double-breasted|peacoat/.test(st) ? 0.8 : 1 };
+            }
+          }
+          if (bibDress && src !== "dress") torso.bib = matOf(mainOf("dress"));
+          const blk = B.pieces.find((p) => p._kind === kindOf(src) && p.d && /block/.test(p.id || "") && p.mat);
+          if (blk) {
+            const b2 = bboxOf(polysOf(blk));
+            if (b2 && b2.w > 0.15 * hh) torso.block = { ...matOf(blk), x0: b2.x, x1: b2.x1, y0: b2.y, y1: b2.y1 };
+          }
+        }
+        if (apron) {
+          const ap = mainOf("mid"), b = boxOf(ap);
+          torso.apron = { ...matOf(ap), top: Math.max(b.y, R.y.chest - 0.2 * hh), hem: Math.min(b.y1, -0.5 * hh) };
+        }
+        if (has("neck")) {
+          const nt = typeOf("neck");
+          const type = /bow/.test(nt) ? "bow-tie" : /tie/.test(nt) ? "tie" : /scarf|kerchief|cravat|ascot/.test(nt) ? "scarf" : null;
+          const np = of("neckwear").filter((p) => matOf(p)).sort((a, b) => {
+            const A = boxOf(a), Bb = boxOf(b);
+            return Bb.w * Bb.h - A.w * A.h;
+          })[0];
+          if (type && np) torso.neckwear = { type, ...matOf(np) };
+        }
+        const neckCover = has("base") && /turtle|polo-neck|roll/.test(typeOf("base")) && src !== "dress" ? matOf(mainOf("top")) : null;
+        const legs = { cover: null, trousers: false, flare: false };
+        let skirt = null;
+        const botT = typeOf("bottom");
+        if (has("bottom") && !/skirt/.test(botT)) {
+          legs.cover = matOf(mainOf("bottom"));
+          legs.trousers = true;
+          legs.flare = (O.bottom.cut || "") === "flare";
+        } else if (has("dress") && /overall|boiler|jumpsuit|coverall/.test(dressT)) {
+          legs.cover = matOf(mainOf("dress"));
+          legs.trousers = true;
+        } else if (has("legs") && /tights|stocking/.test(typeOf("legs"))) legs.cover = matOf(mainOf("legwear"));
+        if (has("bottom") && /skirt/.test(botT)) {
+          const sp = mainOf("bottom"), b = boxOf(sp);
+          skirt = { ...matOf(sp), fromWaist: true, hem: b.y1, hemHalf: hemHalfOf(sp, b.y1), z: 26 };
+        } else if (has("dress") && src === "outer" && !/overall|boiler|jumpsuit|coverall/.test(dressT)) {
+          const dp = mainOf("dress"), b = boxOf(dp);
+          if (b.y1 > torso.hem + 0.15 * hh) {
+            let hw = hemHalfOf(dp, b.y1);
+            if (/gown/.test(dressT)) hw = Math.max(hw * TELL.gown, R.w.hip * 1.6);
+            skirt = { ...matOf(dp), fromWaist: true, hem: /gown/.test(dressT) ? Math.max(b.y1, -0.03 * hh) : b.y1, hemHalf: hw, z: 29 };
+          }
+        }
+        const feet = { mat: null, boot: null };
+        const shoes = of("footwear");
+        const shoeMain = shoes.find((p) => /^shoe-/.test(p.id || "")) || mainOf("footwear");
+        if (shoeMain) {
+          feet.mat = matOf(shoeMain);
+          for (const s of ["R", "L"]) {
+            const p = shoes.find((q) => q.id === `shoe-${s}`);
+            const b = p ? boxOf(p) : null;
+            if (b && b.y < R.legs[s].ankle[1] - 0.45 * hh) (feet.boot = feet.boot || {})[s] = b.y;
+          }
+        }
+        const armParam = (p, A) => {
+          let best = Infinity, par = -1;
+          for (const [a, b, o] of [[A.shoulder, A.elbow, 0], [A.elbow, A.wrist, 1]]) {
+            const ab = G.sub(b, a), L2 = ab[0] * ab[0] + ab[1] * ab[1] || 1e-9;
+            const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1]) / L2));
+            const d = G.dist(p, G.add(a, G.mul(ab, t)));
+            if (d < best) {
+              best = d;
+              par = o + t;
+            }
+          }
+          return best < 0.6 * hh ? par : -1;
+        };
+        const arms = {};
+        for (const s of ["R", "L"]) {
+          const A = R.arms[s];
+          const re = new RegExp(`(sleeve|cuff|cape)-${s}(?![A-Za-z])`);
+          let layers = [];
+          for (const slot of ["base", "dress", "mid", "outer"]) {
+            if (!has(slot)) continue;
+            const kind = kindOf(slot);
+            const sl = of(kind).filter((p) => re.test(p.id || ""));
+            let cover = 0;
+            for (const p of sl) for (const pl of polysOf(p)) for (const q of pl) cover = Math.max(cover, armParam(q, A));
+            if (cover > 0.15) {
+              const mp = sl.find((p) => /sleeve/.test(p.id)) || sl[0];
+              layers.push({ ...matOf(mp), cover: Math.min(2, cover + 0.04), ease: slot === "outer" ? 1.22 : slot === "mid" ? 1.15 : 1.1 });
+            }
+          }
+          layers = layers.filter((l, i) => !layers.slice(i + 1).some((o) => o.cover >= l.cover - 0.08));
+          const gp = of("gloves").find((p) => new RegExp(`-${s}(?![A-Za-z])`).test(p.id || "")) || null;
+          arms[s] = { layers, cover: Math.max(0, ...layers.map((l) => l.cover)), glove: gp ? matOf(gp) : null };
+        }
+        const items = [];
+        const hc = [R.head.cx, R.head.cy];
+        const push = (p, o) => {
+          var _a2;
+          const mt = matOf(p);
+          if (mt) items.push({ polys: polysOf(p), ...mt, z: (_a2 = p.z) != null ? _a2 : 50, boost: 1, ...o });
+        };
+        for (const p of of("hair")) push(p, { head: true, z: ((_a = p.z) != null ? _a : 70) < 60 ? 5 : 70, boost: TALL_HAIR.test(S.hair.style || "") ? TELL.tallHair : 1, anchor: [head.cx, head.cy + head.ry] });
+        for (const p of of("facialHair")) push(p, { head: true, z: 64, boost: TELL.facialHair });
+        const maskT = S.face && S.face.mask && S.face.mask.type || "";
+        const masked = of("mask").length > 0;
+        for (const p of of("mask")) push(p, { head: true, z: 67, boost: (_b = TELL.maskType[maskT]) != null ? _b : TELL.mask });
+        const hatP = of("hat");
+        if (hatP.length) {
+          const hb2 = bboxOf(hatP.flatMap(polysOf));
+          const anchor = hb2.y1 < R.head.cy ? [head.cx, hb2.y1] : hc;
+          const hatT = S.hair.hat && S.hair.hat.type || "";
+          for (const p of hatP) {
+            if (/visor/.test(p.id || "")) {
+              const vb = boxOf(p);
+              push(p, { head: true, z: 72.5, boost: TELL.visor, anchor: [vb.cx, vb.y], flat: true });
+              continue;
+            }
+            push(p, { head: true, z: 72 + (p.z || 72) * 1e-3, boost: (_c = TELL.hatType[hatT]) != null ? _c : TELL.hat, anchor });
+          }
+        }
+        const groups = /* @__PURE__ */ new Map();
+        for (const p of of("prop")) {
+          if (SKIP_PROPS.has(p._name)) continue;
+          if (!groups.has(p._name)) groups.set(p._name, []);
+          groups.get(p._name).push(p);
+        }
+        for (const [name, ps] of groups) {
+          const b = bboxOf(ps.flatMap(polysOf));
+          if (!b) continue;
+          const c = [b.cx, b.cy];
+          const part = REG.get("prop", name) || {};
+          let anchor = c, bestD = WORN.test(name) || part.worn ? -1 : 1.2 * hh;
+          for (const s of ["R", "L"]) {
+            const d = G.dist(R.arms[s].hand, c);
+            if (d < bestD) {
+              bestD = d;
+              anchor = R.arms[s].hand;
+            }
+          }
+          const boost = (_e = (_d = TELL.prop[name]) != null ? _d : part.tell) != null ? _e : TELL.propDefault;
+          for (const p of ps) push(p, { boost, anchor, centre: c, extent: Math.max(b.w, b.h) / 2 });
+        }
+        const comp = of("companion");
+        if (comp.length) {
+          const b = bboxOf(comp.flatMap(polysOf));
+          const anchor = [b.cx, b.y1];
+          const out = Math.sign(b.cx - R.pelvisShift) || 1;
+          const shift = [out * (TELL.companion - 1) * b.w * 0.45, 0];
+          for (const p of comp) push(p, { boost: TELL.companion, anchor, centre: [b.cx, b.cy], extent: b.h / 2, shift, z: Math.min((_f = p.z) != null ? _f : 8, 9) });
+        }
+        let eyebar = null;
+        const ew = S.face && S.face.eyewear;
+        if (ew && ew.type && !masked && (ew.wear == null || ew.wear === "face") && !/monocle|patch|pince|half-moon/.test(ew.type)) {
+          const lens = ew.lens;
+          const lensTok = typeof lens === "string" ? lens : lens && typeof lens === "object" ? lens.color : null;
+          const darkTypes = /shades|aviator|shield|goggles|clip-on|mod-oval|wrap/;
+          let color = null;
+          if (lensTok && T.tok(lensTok) && /^#/.test(T.tok(lensTok))) color = lensTok;
+          else if (lens === "dark" || lens === "mirror" || !lens && darkTypes.test(ew.type)) color = "ink-900";
+          if (/goggles/.test(ew.type) && ew.frame && T.tok(ew.frame)) color = color || ew.frame;
+          if (color) eyebar = { color, kind: "flat", h: /goggles|shield|oversized|big/.test(ew.type) ? 1.35 : 1 };
+        }
+        return { S, R, skin: S.skin, head, torso, legs, skirt, feet, arms, items, eyebar, neckCover, warnings: B.warnings.slice() };
+      }
+      var CACHE = /* @__PURE__ */ new Map();
+      var CACHE_MAX = 96;
+      function read(api, spec) {
+        let key;
+        try {
+          key = JSON.stringify(spec);
+        } catch (e) {
+          return readUncached(api, spec);
+        }
+        if (CACHE.has(key)) {
+          const m2 = CACHE.get(key);
+          CACHE.delete(key);
+          CACHE.set(key, m2);
+          return m2;
+        }
+        const m = readUncached(api, spec);
+        CACHE.set(key, m);
+        if (CACHE.size > CACHE_MAX) CACHE.delete(CACHE.keys().next().value);
+        return m;
+      }
+      module.exports = { read, TELL };
+    }
+  });
+
+  // src/core/mini.js
+  var require_mini = __commonJS({
+    "src/core/mini.js"(exports, module) {
+      "use strict";
+      var G = require_geom();
+      var T = require_tokens();
+      var C = require_color();
+      var LV = require_light();
+      var RD = require_mini_read();
+      var U = 25;
+      var STD_IN = 68;
+      var TONE = { crew: "caution-500", target: "alarm-500", guard: "file-500", staff: "slate-500", contact: "covert-500", rival: "swing-500", crowd: "ink-150" };
+      function fmt(n) {
+        let v = Math.round(n * 10) / 10;
+        if (Math.abs(v) < 0.05) v = 0;
+        let s = String(v);
+        if (s.startsWith("0.")) s = s.slice(1);
+        else if (s.startsWith("-0.")) s = "-" + s.slice(2);
+        return s;
+      }
+      function nums(list) {
+        let out = "";
+        for (const n of list) {
+          const s = fmt(n);
+          out += out && s[0] !== "-" ? " " + s : s;
+        }
+        return out;
+      }
+      function polyD(pts) {
+        return pts.length < 3 ? "" : "M" + nums(pts.flat()) + "Z";
+      }
+      function dp(pts, tol) {
+        if (pts.length < 3) return pts.slice();
+        const a = pts[0], b = pts[pts.length - 1];
+        let best = -1, bi = 0;
+        const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1e-9;
+        for (let i = 1; i < pts.length - 1; i++) {
+          const d = Math.abs((pts[i][0] - a[0]) * dy - (pts[i][1] - a[1]) * dx) / L;
+          if (d > best) {
+            best = d;
+            bi = i;
+          }
+        }
+        if (best <= tol) return [a, b];
+        const l = dp(pts.slice(0, bi + 1), tol), r = dp(pts.slice(bi), tol);
+        return l.slice(0, -1).concat(r);
+      }
+      function simplifyClosed(pts, tol) {
+        if (pts.length < 4) return pts;
+        let far = 0, fd = -1;
+        for (let i = 1; i < pts.length; i++) {
+          const d = Math.hypot(pts[i][0] - pts[0][0], pts[i][1] - pts[0][1]);
+          if (d > fd) {
+            fd = d;
+            far = i;
+          }
+        }
+        const A = dp(pts.slice(0, far + 1), tol), B = dp(pts.slice(far).concat([pts[0]]), tol);
+        return A.slice(0, -1).concat(B.slice(0, -1));
+      }
+      function area(pts) {
+        let a = 0;
+        for (let i = 0; i < pts.length; i++) {
+          const p = pts[i], q = pts[(i + 1) % pts.length];
+          a += p[0] * q[1] - q[0] * p[1];
+        }
+        return Math.abs(a) / 2;
+      }
+      function clipHalf(pts, n, c) {
+        const out = [];
+        const inside = (p) => p[0] * n[0] + p[1] * n[1] >= c;
+        for (let i = 0; i < pts.length; i++) {
+          const P = pts[i], Q = pts[(i + 1) % pts.length], ip = inside(P), iq = inside(Q);
+          if (ip) out.push(P);
+          if (ip !== iq) {
+            const dP = P[0] * n[0] + P[1] * n[1], dQ = Q[0] * n[0] + Q[1] * n[1], t = (c - dP) / (dQ - dP);
+            out.push([P[0] + (Q[0] - P[0]) * t, P[1] + (Q[1] - P[1]) * t]);
+          }
+        }
+        return out;
+      }
+      var MIN_BAR = 1.25;
+      function thicken(pl) {
+        if (pl.length < 3) return pl;
+        let a = 0, b = 0, best = -1;
+        for (let i = 0; i < pl.length; i++) for (let j = i + 1; j < pl.length; j++) {
+          const d = (pl[i][0] - pl[j][0]) ** 2 + (pl[i][1] - pl[j][1]) ** 2;
+          if (d > best) {
+            best = d;
+            a = i;
+            b = j;
+          }
+        }
+        const len = Math.sqrt(best);
+        if (len < 2.5) return pl;
+        const P = pl[a], Q = pl[b], u = [(Q[0] - P[0]) / len, (Q[1] - P[1]) / len], n = [-u[1], u[0]];
+        let lo = 0, hi = 0;
+        for (const p of pl) {
+          const d = (p[0] - P[0]) * n[0] + (p[1] - P[1]) * n[1];
+          lo = Math.min(lo, d);
+          hi = Math.max(hi, d);
+        }
+        if (hi - lo >= MIN_BAR) return pl;
+        const mid = (lo + hi) / 2, h = MIN_BAR / 2;
+        const at = (p, d) => [p[0] + n[0] * (mid + d), p[1] + n[1] * (mid + d)];
+        return [at(P, -h), at(Q, -h), at(Q, h), at(P, h)];
+      }
+      function palette(L, quiet) {
+        const cache = /* @__PURE__ */ new Map();
+        const scheme = T.SCHEMES.natural;
+        return function col(c, kind) {
+          var _a;
+          const k = `${c}|${kind || ""}`;
+          if (cache.has(k)) return cache.get(k);
+          let mat;
+          if (kind === "skin") mat = C.material(T.SKIN[c] ? c : "fair", "skin", scheme);
+          else {
+            const hex = T.tok(c) && /^#[0-9a-f]{6}$/i.test(T.tok(c)) ? T.tok(c) : T.tok("cloth-graphite");
+            mat = C.material(hex, C.KIND[kind] ? kind : "cloth", scheme);
+          }
+          const r = LV.relight(mat, L, scheme);
+          let lit = r.base, shade = r.v2Shade || r.shade;
+          if (quiet) {
+            const grey = T.tok("ink-300");
+            lit = C.mix(C.saturate(lit, 0.36), grey, 0.18);
+            shade = C.mix(C.saturate(shade, 0.36), grey, 0.12);
+          }
+          const out = { lit, shade };
+          if (L.rim && L.rim.color) {
+            const rc = T.tok(L.rim.color) || L.rim.color;
+            out.rim = C.mix(shade, quiet ? C.saturate(rc, 0.5) : rc, 0.55 * Math.min(1, (_a = L.rim.strength) != null ? _a : 1));
+          }
+          cache.set(k, out);
+          return out;
+        };
+      }
+      var BUDGET = 5900;
+      function utf8Len(s) {
+        let n = 0;
+        for (const ch of s) {
+          const c = ch.codePointAt(0);
+          n += c < 128 ? 1 : c < 2048 ? 2 : c < 65536 ? 3 : 4;
+        }
+        return n;
+      }
+      function mini(api, spec, opts) {
+        var _a;
+        const warnings = [];
+        const warn = (m) => {
+          if (!warnings.includes(m)) warnings.push(m);
+        };
+        if (opts != null && (typeof opts !== "object" || Array.isArray(opts))) warn(`mini: options must be an object, got ${JSON.stringify(opts)}; used the defaults`);
+        opts = opts && typeof opts === "object" && !Array.isArray(opts) ? opts : {};
+        if (!spec || typeof spec !== "object" || Array.isArray(spec)) {
+          warn(`mini: the spec must be an object, got ${(_a = JSON.stringify(spec)) != null ? _a : String(spec)}; drew a plain figure`);
+          spec = { id: "figure" };
+        }
+        try {
+          let r = draw(api, spec, opts, warnings, warn, 0);
+          for (let lean = 1; lean <= 2 && utf8Len(r.inner) > BUDGET; lean++) r = draw(api, spec, opts, warnings, warn, lean);
+          return r;
+        } catch (e) {
+          warn(`mini: could not draw this spec (${e.message}); drew a plain figure`);
+          try {
+            return draw(api, { id: "figure" }, opts, warnings, warn);
+          } catch (e2) {
+            return { svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1" width="1" height="1"></svg>`, inner: "", width: 0, height: 0, viewBox: [0, 0, 0, 0], warnings };
+          }
+        }
+      }
+      function draw(api, spec, opts, warnings, warn, lean = 0) {
+        let height = opts.height == null ? 64 : +opts.height;
+        if (!isFinite(height) || height <= 0) {
+          warn(`mini: height "${opts.height}" is not a number of px; used 64`);
+          height = 64;
+        }
+        if (height < 8 || height > 600) {
+          const h = Math.max(8, Math.min(600, height));
+          warn(`mini: height ${height} is outside 8\u2013600 px; used ${h}`);
+          height = h;
+        }
+        const markIn = opts.mark == null || opts.mark === "" ? null : Array.from(String(opts.mark));
+        const mark = markIn ? markIn.slice(0, 2).join("") : null;
+        if (markIn && markIn.length > 2) warn(`mini: mark "${opts.mark}" is longer than 2 characters; drew "${mark}"`);
+        let tone = opts.tone == null ? mark ? "staff" : "crowd" : String(opts.tone);
+        if (!TONE[tone]) {
+          const t = mark ? "staff" : "crowd";
+          warn(`mini: tone "${opts.tone}" is not valid; choose from: ${Object.keys(TONE).join(", ")}; used ${t}`);
+          tone = t;
+        }
+        const L = LV.resolve(opts.light == null ? "bluetime" : opts.light, warn);
+        const quiet = tone === "crowd";
+        const col = palette(L, quiet);
+        const M = RD.read(api, spec, warn);
+        const R = M.R, hh = R.hh;
+        const scale = height / (STD_IN * U);
+        const px = (p) => [p[0] * scale, p[1] * scale];
+        const tol = lean ? 0.55 : 0.32;
+        const sdir = G.norm([-L.dir[0], -L.dir[1]]);
+        const night = L.time === "night";
+        const termF = night ? 0.42 : 0.56;
+        const rimPx = Math.max(0.6, Math.min(1.2, height * 0.014));
+        const shapes = [];
+        const add = (z, fill, poly) => {
+          if (poly && poly.length >= 3) shapes.push({ z, fill, polys: [poly] });
+        };
+        function ribbon(z, mat, A, B, o = {}) {
+          var _a;
+          const a = A.map(px), b = B.map(px);
+          add(z, mat.lit, a.concat(b.slice().reverse()));
+          if (o.flat) return;
+          let s = 0;
+          for (let i = 0; i < a.length; i++) s += (b[i][0] - a[i][0]) * sdir[0] + (b[i][1] - a[i][1]) * sdir[1];
+          const f = (_a = o.termF) != null ? _a : termF;
+          const e = s >= 0 ? b : a, t = a.map((p, i) => G.lerp(p, b[i], s >= 0 ? f : 1 - f));
+          add(z + 0.01, mat.shade, t.concat(e.slice().reverse()));
+          if (mat.rim && !o.noRim && lean < 2) {
+            const band = e.map((p, i) => {
+              const d = G.dist(p, t[i]) || 1;
+              return G.lerp(p, t[i], Math.min(0.6, rimPx / d));
+            });
+            add(z + 0.02, mat.rim, band.concat(e.slice().reverse()));
+          }
+        }
+        function tube(z, mat, pts, hws, o) {
+          const A = [], B = [];
+          for (let i = 0; i < pts.length; i++) {
+            const p = pts[i], q = pts[Math.max(0, i - 1)], r = pts[Math.min(pts.length - 1, i + 1)];
+            const t = G.norm(G.sub(r, q)), n = [-t[1], t[0]];
+            A.push(G.add(p, G.mul(n, hws[i])));
+            B.push(G.sub(p, G.mul(n, hws[i])));
+          }
+          ribbon(z, mat, A, B, o);
+        }
+        function traced(z, polys, mat, centre, o = {}) {
+          var _a, _b;
+          const P = polys.map((pl) => thicken(simplifyClosed(pl.map(px), tol))).filter((pl) => {
+            var _a2;
+            return pl.length >= 3 && area(pl) >= ((_a2 = o.minArea) != null ? _a2 : lean ? 2.4 : 1.4);
+          });
+          if (!P.length) return;
+          shapes.push({ z, fill: mat.lit, polys: P });
+          if (o.flat) return;
+          const c = px(centre), off = ((_a = o.off) != null ? _a : 0.12) * ((_b = o.extent) != null ? _b : hh) * scale;
+          const cc = c[0] * sdir[0] + c[1] * sdir[1] + off;
+          const S = P.filter((pl) => area(pl) >= (lean ? 14 : 7)).map((pl) => clipHalf(pl, sdir, cc)).filter((pl) => pl.length >= 3 && area(pl) >= 1);
+          if (S.length) shapes.push({ z: z + 0.01, fill: mat.shade, polys: S });
+        }
+        const skin = col(M.skin, "skin");
+        const m = (c) => c ? col(c.color, c.kind) : null;
+        const legMat = m(M.legs.cover) || skin;
+        for (const s of ["R", "L"]) {
+          const LG = R.legs[s], W2 = LG.widths;
+          const ease = M.legs.cover && M.legs.trousers ? 1.16 : 1.04;
+          const big = LG.big ? 1.3 : 1;
+          const ankleY = LG.ankle[1] + (M.legs.trousers ? 0.12 * hh : 0.05 * hh);
+          const ankle = [LG.ankle[0], ankleY];
+          const shin = G.lerp(LG.knee, LG.ankle, 0.35);
+          const hemW = M.legs.trousers ? Math.max(W2.ankle * 1.5, W2.calf * (M.legs.flare ? 1.25 : 0.95)) : W2.ankle;
+          tube(10, legMat, [LG.hip, LG.knee, shin, ankle], [Math.min(W2.thigh * ease, Math.max(W2.knee * ease, R.w.hip * 1.04 - Math.abs(LG.hip[0] - R.pelvisShift))), W2.knee * ease * big, W2.calf * ease * big, hemW * ease * big]);
+          const boot = M.feet.boot && M.feet.boot[s];
+          if (boot != null && M.feet.mat) {
+            const top = Math.max(LG.knee[1] + 0.1 * hh, boot);
+            const t0 = (top - LG.knee[1]) / (LG.ankle[1] - LG.knee[1]);
+            const p0 = G.lerp(LG.knee, LG.ankle, Math.max(0, t0));
+            const w0 = G.lerp(W2.knee, W2.calf, Math.min(1, Math.max(0, t0 * 1.5)));
+            tube(11, col(M.feet.mat.color, M.feet.mat.kind), [p0, LG.ankle, [LG.ankle[0], -0.12 * hh]], [w0 * 1.15 * big, W2.ankle * 1.3 * big, W2.ankle * 1.35 * big]);
+          }
+        }
+        if (M.legs.cover && M.legs.trousers) {
+          const yT = R.y.waist, yB = R.y.crotch + 0.18 * hh;
+          const A = [R.torsoPt(-R.w.waist * 1.04, yT), R.torsoPt(-R.w.hip * 1.06, R.y.hip), R.torsoPt(-R.w.hip * 0.9, yB)];
+          const B = [R.torsoPt(R.w.waist * 1.04, yT), R.torsoPt(R.w.hip * 1.06, R.y.hip), R.torsoPt(R.w.hip * 0.9, yB)];
+          ribbon(10.5, legMat, A, B);
+        }
+        if (M.feet.mat) {
+          const fm = col(M.feet.mat.color, M.feet.mat.kind);
+          for (const s of ["R", "L"]) {
+            const LG = R.legs[s], k = LG.k;
+            const toe = LG.toe[0], heel = LG.heel[0], ax = LG.ankle[0];
+            const big = LG.big ? 1.2 : 1;
+            const fh = 0.3 * hh * big, aw = LG.widths.ankle * 1.25 * big;
+            const reach = (toe - ax) * 1.12, hr = (heel - ax) * 1.05;
+            const pts = [[ax - k * aw, -fh], [ax + k * aw, -fh], [ax + reach * 0.75, -fh * 0.55], [ax + reach, -fh * 0.15], [ax + reach * 0.96, 0], [ax + hr, 0], [ax + hr - k * 0.02 * hh, -fh * 0.5]];
+            const lit = Math.sign(k) !== Math.sign(sdir[0] || 1);
+            add(12, lit ? fm.lit : fm.shade, pts.map(px));
+          }
+        }
+        if (M.skirt) {
+          const K = M.skirt, mat = col(K.color, K.kind);
+          const c = R.pelvisShift;
+          const top = K.fromWaist ? R.y.waist : R.y.hip;
+          const hemY = Math.min(-0.04 * hh, K.hem), hw = K.hemHalf;
+          const ys = [top, R.y.hip, hemY];
+          const ws = [K.fromWaist ? R.w.waist * 1.05 : R.w.hip * 1.04, Math.max(R.w.hip * 1.08, G.lerp(R.w.hip, hw, (R.y.hip - top) / Math.max(1, hemY - top))), hw];
+          const A = ys.map((y, i) => [c - ws[i], y]), B = ys.map((y, i) => [c + ws[i], y]);
+          A.push([c - hw * 0.4, hemY + 0.05 * hh]);
+          B.push([c + hw * 0.4, hemY + 0.05 * hh]);
+          ribbon(K.z, mat, A, B);
+        }
+        const TS = M.torso, tm = col(TS.color, TS.kind);
+        {
+          const sec = [];
+          const yS = R.y.shoulder;
+          const ease = TS.ease;
+          sec.push([R.y.neckBase, R.w.neckBase * 1.1]);
+          sec.push([yS, R.w.shoulder * 0.93 * ease]);
+          sec.push([yS + 0.25 * hh, R.w.shoulder * 0.98 * ease]);
+          sec.push([R.y.chest, Math.max(R.w.chest, R.w.shoulder * 0.86) * ease]);
+          const hem = TS.hem;
+          if (hem > R.y.chest + 0.2 * hh) sec.push([Math.min(hem, R.y.waist), R.w.waist * ease]);
+          if (hem > R.y.waist + 0.2 * hh) sec.push([Math.min(hem, R.y.hip), R.w.hip * ease * 1.02]);
+          if (hem > R.y.hip + 0.2 * hh) {
+            if (hem > R.y.crotch + 0.3 * hh) sec.push([R.y.crotch, Math.max(R.w.hip * 1.05 * ease, G.lerp(R.w.hip, TS.hemHalf, 0.3))]);
+            sec.push([hem, Math.max(TS.hemHalf, R.w.hip * 1.04)]);
+          }
+          const A = sec.map(([y, w]) => R.torsoPt(-w, y)), B = sec.map(([y, w]) => R.torsoPt(w, y));
+          ribbon(30, tm, A, B);
+          if (TS.tails) {
+            const K = TS.tails, y02 = R.y.waist, w0 = R.w.waist * ease, w1 = K.hemHalf * 1.05;
+            ribbon(
+              9.5,
+              tm,
+              [R.torsoPt(-w0, y02), R.torsoPt(-R.w.hip * ease * 1.04, R.y.hip), [R.pelvisShift - w1, K.hem]],
+              [R.torsoPt(w0, y02), R.torsoPt(R.w.hip * ease * 1.04, R.y.hip), [R.pelvisShift + w1, K.hem]]
+            );
+          }
+          if (TS.block) {
+            const K = TS.block, bm = col(K.color, K.kind);
+            const edge = (arr, y) => {
+              for (let i = 0; i < arr.length - 1; i++) if (y <= arr[i + 1][1]) {
+                const t = (y - arr[i][1]) / (arr[i + 1][1] - arr[i][1] || 1);
+                return G.lerp(arr[i][0], arr[i + 1][0], Math.max(0, Math.min(1, t)));
+              }
+              return arr[arr.length - 1][0];
+            };
+            const y02 = Math.max(K.y0, sec[0][0]), y12 = Math.min(K.y1, sec[sec.length - 1][0]);
+            if (y12 > y02) {
+              const ys = [y02, ...sec.map((s2) => s2[0]).filter((y) => y > y02 && y < y12), y12];
+              const left = ys.map((y) => [Math.max(edge(A, y), K.x0), y]), right = ys.map((y) => [Math.min(edge(B, y), K.x1), y]);
+              if (left.every((p, i) => right[i][0] > p[0])) ribbon(30.5, bm, left, right);
+            }
+          }
+          if (TS.open) {
+            const O = TS.open, im = col(O.color, O.kind);
+            const yT = R.y.neckBase - 0.02 * hh, yB = O.bottom;
+            const wT = R.w.neckBase * 1.2 * O.width;
+            add(31, im.lit, [R.torsoPt(-wT, yT), R.torsoPt(wT, yT), R.torsoPt(0, yB)].map(px));
+          }
+          if (TS.bib) {
+            const bm = col(TS.bib.color, TS.bib.kind);
+            const y02 = R.y.chest - 0.15 * hh, w = R.w.chest * 0.6;
+            const yB = Math.min(TS.hem + 0.1 * hh, R.y.crotch + 0.2 * hh);
+            const ww = R.w.waist * TS.ease * 1.02, wh = R.w.hip * TS.ease * 1.04;
+            ribbon(
+              31,
+              bm,
+              [R.torsoPt(-w, y02), R.torsoPt(-w * 1.02, R.y.waist - 0.35 * hh), R.torsoPt(-ww, R.y.waist), R.torsoPt(-wh, R.y.hip), R.torsoPt(-wh, yB)],
+              [R.torsoPt(w, y02), R.torsoPt(w * 1.02, R.y.waist - 0.35 * hh), R.torsoPt(ww, R.y.waist), R.torsoPt(wh, R.y.hip), R.torsoPt(wh, yB)]
+            );
+            const sw = Math.max(0.09 * hh, 0.7 / scale);
+            for (const k of [-1, 1]) add(31.1, bm.lit, [R.torsoPt(k * (w - sw * 2.2), y02), R.torsoPt(k * w, y02), R.torsoPt(k * (R.w.shoulder * 0.55 + sw), R.y.shoulder), R.torsoPt(k * (R.w.shoulder * 0.55 - sw), R.y.shoulder)].map(px));
+          }
+          if (TS.apron) {
+            const am = col(TS.apron.color, TS.apron.kind);
+            const y02 = TS.apron.top, y12 = TS.apron.hem, w0 = R.w.chest * 0.6, w1 = R.w.hip * 1;
+            ribbon(37, am, [R.torsoPt(-w0, y02), R.torsoPt(-w1, R.y.waist), R.torsoPt(-w1, y12)], [R.torsoPt(w0, y02), R.torsoPt(w1, R.y.waist), R.torsoPt(w1, y12)]);
+          }
+          if (TS.neckwear) {
+            const N = TS.neckwear, nm = col(N.color, N.kind);
+            if (N.type === "tie") {
+              const y02 = R.y.neckBase + 0.02 * hh, y12 = Math.min(TS.open ? TS.open.bottom - 0.05 * hh : R.y.waist, R.y.waist);
+              const w = Math.max(0.1 * hh, 0.85 / scale);
+              add(32, nm.lit, [R.torsoPt(-w * 0.8, y02), R.torsoPt(w * 0.8, y02), R.torsoPt(w * 1.1, y12 - 0.1 * hh), R.torsoPt(0, y12), R.torsoPt(-w * 1.1, y12 - 0.1 * hh)].map(px));
+            } else if (N.type === "bow-tie") {
+              const y = R.y.neckBase + 0.05 * hh, w = Math.max(0.3 * hh, 2 / scale), h = Math.max(0.1 * hh, 0.8 / scale);
+              add(32, nm.lit, [R.torsoPt(-w, y - h), R.torsoPt(0, y), R.torsoPt(-w, y + h), R.torsoPt(w, y + h), R.torsoPt(0, y), R.torsoPt(w, y - h)].map(px));
+            } else if (N.type === "scarf" || N.type === "neckerchief") {
+              const y02 = R.y.neckBase - 0.12 * hh, y12 = R.y.neckBase + 0.18 * hh, w = R.w.neckBase * 1.5;
+              add(32, nm.lit, [R.torsoPt(-w, y02), R.torsoPt(w, y02), R.torsoPt(w * 1.05, y12), R.torsoPt(-w * 1.05, y12)].map(px));
+            }
+          }
+        }
+        {
+          const nm = M.neckCover ? col(M.neckCover.color, M.neckCover.kind) : skin;
+          const y02 = R.head.cy + 0.25 * hh, y12 = R.y.neckBase + 0.05 * hh, w = R.w.neck * (M.neckCover ? 1.15 : 1);
+          const c0 = R.centerAt(y02), c1 = R.centerAt(y12);
+          add(28, M.neckCover ? nm.lit : nm.shade, [[c0 - w, y02], [c0 + w, y02], [c1 + w, y12], [c1 - w, y12]].map(px));
+        }
+        for (const s of ["R", "L"]) {
+          const A = R.arms[s], W2 = A.widths;
+          const z = A.foreFront ? Math.max(A.z, 50) : A.z;
+          const bones = [A.shoulder, A.elbow, A.wrist];
+          const run = (p0, p1, ease, mat, zz) => {
+            const at = (p) => p <= 1 ? G.lerp(bones[0], bones[1], p) : G.lerp(bones[1], bones[2], p - 1);
+            const wAt = (p) => (p <= 1 ? G.lerp(W2.top * 1.12, W2.elbow, p) : G.lerp(W2.elbow, W2.wrist, p - 1)) * ease;
+            const ps = [p0];
+            if (p0 < 1 && p1 > 1) ps.push(1);
+            ps.push(p1);
+            tube(zz, mat, ps.map(at), ps.map(wAt));
+          };
+          const sl = M.arms[s];
+          if (sl.cover < 1.97) run(0, 2, 1.04, skin, z);
+          sl.layers.forEach((lay, i) => run(0, Math.min(2, lay.cover), lay.ease, col(lay.color, lay.kind), z + 0.02 * (i + 1)));
+          if (!["pocket", "behind"].includes(A.pose)) {
+            const hm = sl.glove ? col(sl.glove.color, sl.glove.kind) : skin;
+            const r = Math.max(0.2 * hh, 0.85 / scale);
+            const h = A.hand;
+            const pts = [];
+            for (let i = 0; i < 8; i++) {
+              const a = i / 8 * Math.PI * 2;
+              pts.push([h[0] + Math.cos(a) * r, h[1] + Math.sin(a) * r * 1.1]);
+            }
+            add(z + 0.09, hm.lit, pts.map(px));
+          }
+        }
+        const HS = 1.12;
+        const hc = [R.head.cx, R.head.cy];
+        const grow = (p, k, c) => [c[0] + (p[0] - c[0]) * k, c[1] + (p[1] - c[1]) * k];
+        const headT = (pl, k = 1, c = hc) => pl.map((p) => grow(grow(p, k, c), HS, hc));
+        {
+          const H = M.head;
+          const pts = [];
+          for (let i = 0; i < 14; i++) {
+            const a = i / 14 * Math.PI * 2;
+            pts.push([H.cx + Math.cos(a) * H.rx, H.cy + Math.sin(a) * H.ry]);
+          }
+          traced(60, [headT(pts)], skin, [H.cx, H.cy], { extent: H.rx, off: 0.5 });
+        }
+        for (const it of M.items) {
+          const mat = col(it.color, it.kind);
+          let polys = it.polys;
+          if (it.head) polys = polys.map((pl) => headT(pl, it.boost, it.anchor || hc));
+          else if (it.boost !== 1) polys = polys.map((pl) => pl.map((p) => grow(p, it.boost, it.anchor)));
+          if (it.shift) polys = polys.map((pl) => pl.map((p) => [p[0] + it.shift[0], p[1] + it.shift[1]]));
+          traced(it.z, polys, mat, it.head ? hc : it.centre, { extent: it.extent, flat: it.flat, minArea: it.minArea });
+        }
+        if (M.eyebar) {
+          const E = M.eyebar, w = M.head.rx * 1.02, h = Math.max(0.09 * hh, 0.75 / scale) * E.h;
+          const y = R.head.cy + 0.02 * hh;
+          const pts = headT([[hc[0] - w, y - h], [hc[0] + w, y - h], [hc[0] + w, y + h], [hc[0] - w, y + h]]);
+          add(66, col(E.color, E.kind).lit, pts.map(px));
+        }
+        const groundW = (R.w.hip * 1.5 + 0.3 * hh) * scale, groundH = Math.max(1.2, 0.09 * hh * scale);
+        const gx = (night ? 0 : sdir[0] * 0.35 * hh) * scale + R.pelvisShift * 0.5 * scale;
+        let ground;
+        {
+          const pts = [];
+          for (let i = 0; i < 12; i++) {
+            const a = i / 12 * Math.PI * 2;
+            pts.push([gx + Math.cos(a) * groundW, Math.sin(a) * groundH]);
+          }
+          ground = `<path fill="${T.INK}" opacity="${night ? 0.35 : 0.22}" d="${polyD(pts)}"/>`;
+        }
+        shapes.forEach((sh, i) => sh.i = i);
+        shapes.sort((a, b) => a.z - b.z || a.i - b.i);
+        let body = "", last = null, buf = "";
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        const ext = (p) => {
+          if (p[0] < x0) x0 = p[0];
+          if (p[0] > x1) x1 = p[0];
+          if (p[1] < y0) y0 = p[1];
+          if (p[1] > y1) y1 = p[1];
+        };
+        const flush = () => {
+          if (last && buf) body += `<path fill="${last}" d="${buf}"/>`;
+          buf = "";
+        };
+        for (const sh of shapes) {
+          if (sh.fill !== last) {
+            flush();
+            last = sh.fill;
+          }
+          for (const pl of sh.polys) {
+            buf += polyD(pl);
+            pl.forEach(ext);
+          }
+        }
+        flush();
+        if (!isFinite(x0)) {
+          x0 = -10;
+          x1 = 10;
+          y0 = -height;
+          y1 = 0;
+        }
+        x0 = Math.min(x0, gx - groundW);
+        x1 = Math.max(x1, gx + groundW);
+        y1 = Math.max(y1, groundH);
+        let disc = "";
+        if (mark) {
+          const r = Math.max(6.5, Math.min(11, height * 0.13));
+          const cy = r * 0.35, cx = 0;
+          const fc = T.tok(TONE[tone]);
+          const ink = T.INK, paper = T.PAPER;
+          const tc = C.contrast(fc, ink) >= C.contrast(fc, paper) ? ink : paper;
+          const circ = (rr) => {
+            const p = [];
+            for (let i = 0; i < 16; i++) {
+              const a = i / 16 * Math.PI * 2;
+              p.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]);
+            }
+            return polyD(p);
+          };
+          const n = Array.from(mark).length;
+          const fs = n > 1 ? r * 1.02 : r * 1.32;
+          const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+          disc = `<path fill="${tc}" d="${circ(r + 1.3)}"/><path fill="${fc}" d="${circ(r)}"/><text x="${fmt(cx)}" y="${fmt(cy + fs * 0.36)}" font-family="Space Mono,monospace" font-weight="700" font-size="${fmt(fs)}" text-anchor="middle" fill="${tc}">${esc(mark)}</text>`;
+          x0 = Math.min(x0, cx - r - 1.3);
+          x1 = Math.max(x1, cx + r + 1.3);
+          y1 = Math.max(y1, cy + r + 1.3);
+        }
+        const inner = `<g class="b68-mini">${ground}${body}${disc}</g>`;
+        x0 = Math.floor(x0 - 1);
+        y0 = Math.floor(y0 - 1);
+        x1 = Math.ceil(x1 + 1);
+        y1 = Math.ceil(y1 + 1);
+        const W = x1 - x0, Hb = y1 - y0;
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x0} ${y0} ${W} ${Hb}" width="${W}" height="${Hb}">${inner}</svg>`;
+        for (const w of M.warnings) if (!warnings.includes(w)) warnings.push(w);
+        return { svg, inner, width: W, height: Hb, viewBox: [x0, y0, W, Hb], warnings };
+      }
+      module.exports = { mini };
+    }
+  });
+
+  // src/core/roles-kit.js
+  var require_roles_kit = __commonJS({
+    "src/core/roles-kit.js"(exports, module) {
+      "use strict";
+      var REG = require_registry();
+      function h32(s) {
+        let h = 2166136261;
+        for (const c of String(s)) {
+          h ^= c.charCodeAt(0);
+          h = Math.imul(h, 16777619);
+        }
+        return h >>> 0;
+      }
+      function rng(...key) {
+        let a = h32(key.join("|"));
+        return () => {
+          a = a + 1831565813 | 0;
+          let t = Math.imul(a ^ a >>> 15, 1 | a);
+          t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+          return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        };
+      }
+      var pick = (r, a) => a[Math.floor(r() * a.length) % a.length];
+      var chance = (r, p) => r() < p;
+      var between = (r, lo, hi) => lo + (hi - lo) * r();
+      var r2 = (v) => Math.round(v * 100) / 100;
+      function wpick(r, pairs) {
+        let t = 0;
+        for (const [, w] of pairs) t += w;
+        let x = r() * t;
+        for (const [v, w] of pairs) {
+          x -= w;
+          if (x < 0) return v;
+        }
+        return pairs[pairs.length - 1][0];
+      }
+      var WANTED = {
+        prop: ["tray", "camera", "spanner", "rag", "crate", "oar", "clipboard", "mop"],
+        hat: ["toque", "boater", "eyeshade", "top-hat"],
+        mask: ["colombina", "bauta"],
+        outer: ["dinner-jacket", "tailcoat"]
+      };
+      var has = (kind, name) => !!REG.get(kind, name);
+      var want = (kind, name, fallback) => has(kind, name) ? name : fallback;
+      function propPose(name, guess) {
+        const p = REG.get("prop", name);
+        const arms = p && p.example && p.example.pose && p.example.pose.arms;
+        if (arms) {
+          for (const s of ["R", "L"]) if (typeof arms[s] === "string" && arms[s] !== "down") return arms[s];
+        }
+        return guess;
+      }
+      module.exports = { h32, rng, pick, chance, between, r2, wpick, WANTED, has, want, propPose };
+    }
+  });
+
+  // src/core/roles-recipes.js
+  var require_roles_recipes = __commonJS({
+    "src/core/roles-recipes.js"(exports, module) {
+      "use strict";
+      var { pick, chance, wpick, want, propPose } = require_roles_kit();
+      var P3 = (a) => a.map(([dom, sec, acc]) => ({ dom, sec, acc }));
+      var LIGHT = ["cloth-white", "cloth-cream", "cloth-stone", "cloth-sky", "cloth-mustard", "cloth-pink", "cloth-lilac", "cloth-salmon", "cloth-sage", "cloth-camel"];
+      var isLight = (t) => LIGHT.includes(t);
+      var darkOf = (t) => isLight(t) ? "cloth-black" : t;
+      var LIPS = ["cloth-red", "cloth-magenta", "cloth-salmon", "cloth-pink", "cloth-oxblood", "cloth-brick"];
+      var IDLE = ["down/down", "down/pocket", "pocket/pocket", "hip/down", "cross", "behind", "pocket/down"];
+      var IDLE_F = ["down/down", "hip/down", "down/hip", "behind", "cross", "hip/hip"];
+      function femLegs(r, c, color, kinds = ["pencil-skirt", "a-line-skirt", "trousers"]) {
+        const k = c.trousers ? "trousers" : pick(r, kinds);
+        const o = { bottom: { type: k, color } };
+        if (k === "trousers") o.bottom.cut = "slim";
+        else o.legs = chance(r, 0.6) ? { type: "tights", sheer: true } : { type: "tights", color: "cloth-black" };
+        return o;
+      }
+      var femShoes = (r, list = ["heels", "heels", "loafers", "mary-janes"]) => ({ type: pick(r, list), color: pick(r, ["cloth-black", "cloth-black", "cloth-chocolate", "cloth-oxblood"]) });
+      var mShoes = (r, list = ["oxfords"]) => ({ type: pick(r, list), color: pick(r, ["cloth-black", "cloth-black", "cloth-chocolate", "leather-brown"]) });
+      var shirt = (color = "cloth-white", o = {}) => ({ type: "shirt", color, ...o });
+      var crate = (r) => chance(r, 0.65) ? { type: "crate", pose: "hold", both: true } : { type: "crate", pose: "raise" };
+      var glass = (r, style) => ({ type: "glass", style: style || pick(r, ["tumbler", "cocktail"]), pose: "hold" });
+      var RECIPES = {
+        /* ---------------- gala and gaming ---------------- */
+        "guest-m": {
+          fem: 0,
+          age: [22, 62],
+          expr: ["smile", "amused", "cool", "smirk", "neutral", "laugh", "wary"],
+          beard: 0.25,
+          beards: ["pencil", "moustache", "goatee", "beard-short"],
+          hair: { m: ["slick-back", "side-part", "short", "pompadour", "mod-mop", "slick-back"] },
+          palettes: P3([
+            ["cloth-black", "cloth-white", "cloth-red"],
+            ["cloth-black", "cloth-white", "cloth-mustard"],
+            ["cloth-white", "cloth-black", "cloth-oxblood"],
+            ["cloth-navy", "cloth-white", "cloth-sky"],
+            ["cloth-oxblood", "cloth-black", "cloth-cream"],
+            ["cloth-aubergine", "cloth-black", "cloth-pink"],
+            ["cloth-charcoal", "cloth-white", "cloth-teal"],
+            ["cloth-petrol", "cloth-black", "cloth-ochre"]
+          ]),
+          wear(r, c) {
+            const { dom, acc } = c.P;
+            const cut = wpick(r, [["dj", 45], ["double-breasted", 20], ["nehru", 15], ["suit-jacket", 20], ["tailcoat", want("outer", "tailcoat") ? 10 : 0]]);
+            const o = { bottom: { type: "trousers", color: isLight(dom) || chance(r, 0.5) ? "cloth-black" : dom, cut: "slim" }, feet: mShoes(r, ["oxfords", "oxfords", "chelsea-boots"]) };
+            if (cut === "dj") o.outer = { type: want("outer", "dinner-jacket", "suit-jacket"), color: dom };
+            else o.outer = { type: cut, color: cut === "nehru" && !isLight(dom) && dom !== "cloth-oxblood" ? pick(r, ["cloth-cream", "cloth-white", "cloth-mustard"]) : dom };
+            if (cut === "nehru") o.base = chance(r, 0.5) ? { type: "turtleneck", color: dom === "cloth-black" ? "cloth-white" : "cloth-black" } : shirt();
+            else {
+              o.base = shirt();
+              o.neck = cut === "suit-jacket" && chance(r, 0.35) ? { type: "tie", color: acc, width: "slim" } : { type: "bow-tie", color: chance(r, 0.7) ? "cloth-black" : acc };
+              if (chance(r, 0.4)) o.outer.pocketSquare = acc === "cloth-black" ? "cloth-white" : acc;
+            }
+            const props = [];
+            const p = wpick(r, [["glass", 45], ["cig", 15], ["none", 40]]);
+            if (p === "glass") props.push(glass(r));
+            if (p === "cig") props.push({ type: "cigarette", pose: "smoke" });
+            const hat = want("hat", "top-hat", null) && chance(r, 0.1) ? { type: "top-hat", color: "cloth-black" } : null;
+            return { outfit: o, hat, props, free: ["down/pocket", "pocket/pocket", "down/down", "behind", "lapel/down", "pocket/down"], jewellery: chance(r, 0.25) ? [{ type: "watch", side: "L" }] : [] };
+          }
+        },
+        "guest-f": {
+          fem: 1,
+          age: [20, 62],
+          expr: ["smile", "amused", "cool", "smirk", "neutral", "laugh", "wary"],
+          makeup: 1,
+          shapes: { f: ["slim", "slim", "hourglass", "lean", "hourglass", "column"] },
+          // an oval or a pear in a column gown is a tent
+          hair: { f: ["beehive", "flip", "bob", "bun", "pixie", "long-straight", "beehive", "flip", "bowl-bob"] },
+          palettes: P3([
+            ["cloth-black", "cloth-white", "metal-brass"],
+            ["cloth-red", "cloth-black", "metal-brass"],
+            ["cloth-plum", "cloth-pink", "metal-chrome"],
+            ["cloth-magenta", "cloth-white", "cloth-black"],
+            ["cloth-sea", "cloth-cream", "metal-brass"],
+            ["cloth-mustard", "cloth-black", "cloth-white"],
+            ["cloth-white", "cloth-black", "cloth-red"],
+            ["cloth-cobalt", "cloth-white", "metal-chrome"],
+            ["cloth-aubergine", "cloth-lilac", "metal-brass"],
+            ["cloth-petrol", "cloth-mustard", "metal-brass"],
+            ["cloth-salmon", "cloth-cream", "metal-brass"],
+            ["cloth-forest", "cloth-cream", "metal-brass"]
+          ]),
+          wear(r, c) {
+            const { dom, sec, acc } = c.P;
+            const metal = acc.startsWith("metal-") ? acc : "metal-brass";
+            const o = {};
+            const broad = ["invtri", "rect", "oval", "pear"].includes(c.shape);
+            const kind = wpick(r, [["gown", 50], ["shift", broad ? 0 : 25], ["aline", 25]]);
+            if (kind === "gown") o.dress = { type: "gown", color: dom, neckline: pick(r, ["v", "boat", "crew", "high"]), sleeves: pick(r, ["none", "none", "long", "short"]) };
+            else if (kind === "shift") {
+              o.dress = { type: "shift-dress", color: dom };
+              if (chance(r, 0.5)) o.dress.block = { color: sec, shape: pick(r, ["arc", "stripe", "panel"]) };
+            } else if (kind === "aline") o.dress = { type: "a-line-dress", color: dom, sleeves: pick(r, ["none", "short"]), neckline: pick(r, ["boat", "scoop", "v"]), hem: pick(r, ["knee", "knee", "short"]) };
+            else {
+              o.base = { type: "blouse", color: sec === "cloth-black" ? "cloth-white" : sec };
+              o.bottom = { type: "slacks", color: dom };
+            }
+            if (kind !== "gown" && kind !== "trouser" && chance(r, 0.5)) o.legs = { type: "tights", sheer: true };
+            o.feet = kind === "shift" && chance(r, 0.35) ? { type: "go-go-boots", color: "cloth-white" } : { type: "heels", color: pick(r, ["cloth-black", dom, "cloth-black"]) };
+            if (chance(r, 0.35)) o.hands = { type: "opera", color: pick(r, ["cloth-white", "cloth-black", isLight(dom) ? "cloth-white" : dom]) };
+            const jewellery = [{ type: "earrings", style: pick(r, ["drop", "hoop", "disc", "stud", "drop"]), color: metal }];
+            if (chance(r, 0.5)) jewellery.push({ type: "necklace", style: pick(r, ["pearls", "choker", "chain", "pearls"]), color: pick(r, [metal, "cloth-black"]) });
+            if (chance(r, 0.25)) jewellery.push({ type: "bangle", side: "L", color: metal });
+            const props = [];
+            const p = wpick(r, [["glass", 40], ["cig", 10], ["none", 50]]);
+            if (p === "glass") props.push(glass(r, "cocktail"));
+            if (p === "cig") props.push({ type: "cigarette", pose: "smoke" });
+            const hat = chance(r, 0.08) ? { type: "pillbox", color: dom } : null;
+            return { outfit: o, hat, props, free: ["down/down", "hip/down", "down/hip", "hip/hip", "behind"], jewellery };
+          }
+        },
+        waiter: {
+          fem: 0.3,
+          age: [17, 60],
+          expr: ["neutral", "wary", "smile", "tired", "cool", "neutral"],
+          beard: 0.2,
+          beards: ["pencil", "moustache"],
+          hair: { m: ["slick-back", "side-part", "short", "crew", "slick-back", "receding"], f: ["bun", "bun", "bob", "pixie", "ponytail"] },
+          palettes: P3([["cloth-black", "cloth-white", "cloth-black"], ["cloth-oxblood", "cloth-white", "cloth-black"], ["cloth-charcoal", "cloth-white", "cloth-oxblood"], ["cloth-white", "cloth-black", "cloth-black"], ["cloth-forest", "cloth-white", "cloth-black"], ["cloth-navy", "cloth-white", "cloth-black"]]),
+          wear(r, c) {
+            const { dom, acc } = c.P;
+            const vest = darkOf(dom);
+            const o = { base: shirt(), neck: { type: "bow-tie", color: chance(r, 0.75) ? "cloth-black" : acc } };
+            const style = dom === "cloth-white" ? "jacket" : wpick(r, [["waistcoat", 45], ["apron", 30], ["jacket", 25]]);
+            if (style === "waistcoat") o.mid = { type: "waistcoat", color: vest };
+            if (style === "apron") o.mid = { type: "apron", style: "bistro", color: "cloth-white", length: pick(r, ["knee", "calf"]), waistcoat: vest };
+            if (style === "jacket") o.outer = { type: want("outer", "dinner-jacket", "suit-jacket"), color: "cloth-white" };
+            Object.assign(o, c.fem ? femLegs(r, c, "cloth-black") : { bottom: { type: "trousers", color: "cloth-black" } });
+            o.feet = c.fem ? femShoes(r, ["heels", "loafers"]) : { type: "oxfords", color: "cloth-black" };
+            const props = [];
+            if (chance(r, 0.85)) props.push(want("prop", "tray") ? { type: "tray", pose: chance(r, 0.75) ? propPose("tray", "raise") : "hold" } : glass(r));
+            return { outfit: o, props, free: ["behind", "behind", "down/down", "behind/down"] };
+          }
+        },
+        croupier: {
+          fem: 0.4,
+          age: [21, 58],
+          expr: ["neutral", "cool", "wary", "stern", "smirk"],
+          beard: 0.2,
+          beards: ["pencil", "moustache"],
+          hair: { m: ["slick-back", "side-part", "short", "slick-back"], f: ["bun", "bob", "flip", "bun"] },
+          palettes: P3([["cloth-black", "cloth-white", "cloth-oxblood"], ["cloth-oxblood", "cloth-white", "metal-brass"], ["cloth-forest", "cloth-white", "cloth-black"], ["cloth-navy", "cloth-white", "cloth-red"], ["cloth-charcoal", "cloth-white", "cloth-forest"]]),
+          wear(r, c) {
+            const { dom, acc } = c.P;
+            const o = { base: shirt(), mid: { type: "waistcoat", color: dom }, neck: { type: "bow-tie", color: chance(r, 0.5) || acc.startsWith("metal-") ? "cloth-black" : acc } };
+            if (chance(r, 0.4)) o.mid.piping = true;
+            Object.assign(o, c.fem ? femLegs(r, c, "cloth-black", ["pencil-skirt", "trousers"]) : { bottom: { type: "trousers", color: "cloth-black" } });
+            o.feet = c.fem ? femShoes(r, ["heels", "loafers"]) : { type: "oxfords", color: "cloth-black" };
+            const hat = want("hat", "eyeshade") && chance(r, 0.85) ? { type: "eyeshade", color: "cloth-forest" } : null;
+            return { outfit: o, hat, props: [], free: ["behind", "down/down", "hip/down", "behind/down"], jewellery: chance(r, 0.3) ? [{ type: "watch", side: "L" }] : [] };
+          }
+        },
+        photographer: {
+          fem: 0.35,
+          age: [19, 55],
+          expr: ["smirk", "determined", "cool", "neutral", "grin", "wary"],
+          beard: 0.3,
+          beards: ["stubble", "moustache", "goatee", "five-oclock"],
+          eyewear: [0.25, ["horn-rim", "browline", "square-thick"]],
+          hair: { m: ["mod-mop", "short", "side-part", "pompadour", "receding", "crew"], f: ["pixie", "bob", "ponytail", "flip", "bowl-bob"] },
+          palettes: P3([["cloth-tan", "cloth-cream", "cloth-red"], ["cloth-charcoal", "cloth-black", "cloth-mustard"], ["cloth-brown", "cloth-cream", "cloth-rust"], ["cloth-black", "cloth-ash", "cloth-red"], ["cloth-khaki", "cloth-white", "cloth-navy"], ["cloth-camel", "cloth-black", "cloth-orange"]]),
+          wear(r, c) {
+            const { dom, sec, acc } = c.P;
+            const o = {};
+            let hat = null;
+            if (chance(r, 0.5)) {
+              o.base = shirt(pick(r, ["cloth-white", "cloth-cream"]), { collar: "open" });
+              o.neck = { type: "tie", color: acc, loose: true };
+              o.outer = { type: "suit-jacket", color: dom, open: true };
+              if (chance(r, 0.6)) hat = { type: "trilby", color: darkOf(dom) === dom ? dom : "cloth-charcoal" };
+            } else {
+              o.base = { type: "turtleneck", color: sec };
+              o.outer = chance(r, 0.5) ? { type: "blazer", color: dom, open: true } : { type: "leather-jacket", color: pick(r, ["cloth-black", "cloth-brown"]), open: true };
+            }
+            if (c.fem) Object.assign(o, femLegs(r, c, darkOf(dom), ["mini-skirt", "a-line-skirt", "trousers"]));
+            else o.bottom = { type: "trousers", color: pick(r, [dom, "cloth-charcoal", "cloth-black"]), cut: "slim" };
+            o.feet = c.fem ? femShoes(r, ["loafers", "go-go-boots", "mary-janes"]) : mShoes(r, ["chelsea-boots", "oxfords", "loafers"]);
+            if (o.feet.type === "go-go-boots") o.feet.color = pick(r, ["cloth-white", "cloth-black"]);
+            const props = [want("prop", "camera") ? { type: "camera", pose: propPose("camera", "hold") } : { type: "book", color: "cloth-black", pose: "hold" }];
+            if (chance(r, 0.5)) props.push({ type: "satchel", color: pick(r, ["leather-brown", "leather-black"]) });
+            return { outfit: o, hat, props, free: ["down", "pocket", "hip"] };
+          }
+        },
+        /* ---------------- watch and guard ---------------- */
+        guard: {
+          fem: 0.15,
+          age: [24, 58],
+          h: 2,
+          expr: ["stern", "wary", "neutral", "determined", "scowl"],
+          beard: 0.25,
+          beards: ["moustache", "stubble", "five-oclock", "goatee"],
+          eyewear: [0.2, ["shades", "aviators"]],
+          shapes: { m: ["rect", "invtri", "oval", "lean", "rect", "invtri"], f: ["invtri", "lean"] },
+          build: [1.04, 1.3],
+          stance: ["square", "wide", "easy", "square"],
+          hair: { m: ["crew", "buzz", "flattop", "short", "slick-back", "balding"], f: ["bun", "pixie", "side-part"] },
+          palettes: P3([["cloth-black", "cloth-white", "cloth-black"], ["cloth-charcoal", "cloth-white", "cloth-navy"], ["cloth-navy", "cloth-white", "cloth-ink-blue"], ["cloth-black", "cloth-white", "cloth-oxblood"], ["cloth-graphite", "cloth-white", "cloth-black"]]),
+          wear(r, c) {
+            const { dom, acc } = c.P;
+            const o = { base: shirt() };
+            if (chance(r, 0.5)) {
+              o.outer = { type: want("outer", "dinner-jacket", "suit-jacket"), color: "cloth-black" };
+              o.neck = { type: "bow-tie", color: "cloth-black" };
+            } else {
+              o.outer = { type: "suit-jacket", color: dom };
+              o.neck = { type: "tie", color: acc, width: "slim" };
+            }
+            Object.assign(o, c.fem ? femLegs(r, c, o.outer.color === "cloth-black" ? "cloth-black" : dom, ["trousers", "pencil-skirt"]) : { bottom: { type: "trousers", color: o.outer.color } });
+            o.feet = c.fem ? femShoes(r, ["loafers", "heels"]) : { type: "oxfords", color: "cloth-black" };
+            if (chance(r, 0.2)) o.hands = { type: "leather", color: "leather-black" };
+            return { outfit: o, props: [], free: ["behind", "behind", "cross", "down/down", "hip/down"] };
+          }
+        },
+        bluecoat: {
+          fem: 0.2,
+          age: [21, 60],
+          h: 1,
+          expr: ["stern", "wary", "neutral", "determined", "tired"],
+          beard: 0.3,
+          beards: ["moustache", "moustache", "chops", "five-oclock"],
+          shapes: { m: ["oval", "rect", "lean", "invtri"], f: ["lean", "slim", "invtri"] },
+          build: [1, 1.25],
+          hair: { m: ["short", "crew", "side-part", "receding", "flattop"], f: ["bun", "bob", "bun"] },
+          palettes: P3([["cloth-navy", "cloth-cream", "metal-brass"], ["cloth-ink-blue", "cloth-white", "metal-brass"], ["cloth-navy", "cloth-white", "metal-chrome"]]),
+          wear(r, c) {
+            const { dom, sec, acc } = c.P;
+            const o = { base: shirt(sec), outer: { type: "watch-tunic", color: dom, buttonColor: acc } };
+            Object.assign(o, c.fem ? femLegs(r, c, dom, ["pencil-skirt", "trousers"]) : { bottom: { type: "trousers", color: dom } });
+            o.feet = c.fem ? { type: "loafers", color: "cloth-black" } : { type: pick(r, ["oxfords", "oxfords", "combat-boots"]), color: "cloth-black" };
+            if (chance(r, 0.15)) o.hands = { type: "leather", color: "leather-black" };
+            const hat = chance(r, 0.85) ? { type: "peaked-cap", color: dom, badge: acc } : null;
+            return { outfit: o, hat, props: [], free: ["behind", "hip/down", "down/down", "cross", "down/hip"] };
+          }
+        },
+        /* ---------------- trades ---------------- */
+        mechanic: {
+          fem: 0.15,
+          age: [17, 60],
+          expr: ["neutral", "tired", "grin", "determined", "smirk", "wary"],
+          beard: 0.35,
+          beards: ["stubble", "moustache", "chops", "five-oclock", "beard-short"],
+          weathered: 0.5,
+          shapes: { m: ["lean", "rect", "invtri", "column", "oval", "pear"], f: ["lean", "slim", "pear"] },
+          hair: { m: ["crew", "buzz", "pompadour", "mod-mop", "short", "flattop", "slick-back", "receding"], f: ["ponytail", "pixie", "bun", "bob"] },
+          palettes: P3([
+            ["cloth-sky", "cloth-white", "cloth-red"],
+            ["cloth-navy", "cloth-cream", "cloth-orange"],
+            ["cloth-khaki", "cloth-white", "cloth-red"],
+            ["cloth-olive", "cloth-cream", "cloth-mustard"],
+            ["cloth-tobacco", "cloth-black", "cloth-red"],
+            ["cloth-faded-denim", "cloth-white", "cloth-orange"],
+            ["cloth-graphite", "cloth-ash", "cloth-mustard"],
+            ["cloth-orange", "cloth-navy", "cloth-white"],
+            ["cloth-denim", "cloth-white", "cloth-red"]
+          ]),
+          wear(r, c) {
+            const { dom, sec, acc } = c.P;
+            const o = {};
+            if (chance(r, 0.55)) o.dress = { type: "boiler-suit", color: dom };
+            else {
+              o.base = { type: "tee", color: sec, sleeves: pick(r, ["short", "rolled"]) };
+              o.dress = { type: "overalls", color: dom };
+            }
+            o.feet = { type: "combat-boots", color: pick(r, ["cloth-black", "cloth-chocolate"]) };
+            if (chance(r, 0.4)) o.hands = { type: "work", color: pick(r, ["cloth-tan", "cloth-khaki", "cloth-stone"]) };
+            if (chance(r, 0.3)) o.neck = { type: "neckerchief", color: acc };
+            const hat = wpick(r, [[{ type: "flat-cap", color: pick(r, ["cloth-charcoal", "cloth-brown", "cloth-graphite"]) }, 30], [{ type: "beanie", color: pick(r, [acc, "cloth-charcoal"]) }, 10], [null, 60]]);
+            const props = [];
+            const tool = wpick(r, [["spanner", 50], ["rag", 30], [null, 20]]);
+            if (tool === "spanner" && want("prop", "spanner")) props.push({ type: "spanner", pose: propPose("spanner", "carry") });
+            else if (tool === "rag" && want("prop", "rag")) props.push(chance(r, 0.5) ? { type: "rag", at: "pocket" } : { type: "rag", pose: "carry" });
+            return { outfit: o, hat, props, free: ["cross", "hip/down", "hip/hip", "pocket/pocket", "down/down", "pocket/down"] };
+          }
+        },
+        docker: {
+          fem: 0.05,
+          age: [17, 58],
+          h: 1,
+          expr: ["scowl", "neutral", "tired", "grin", "stern", "wary"],
+          beard: 0.45,
+          beards: ["stubble", "beard-short", "beard-full", "moustache", "chops"],
+          weathered: 0.6,
+          shapes: { m: ["rect", "invtri", "oval", "lean", "rect", "column"], f: ["lean", "invtri"] },
+          build: [1, 1.3],
+          ears: 0.15,
+          hair: { m: ["crew", "buzz", "short", "flattop", "receding", "mod-mop", "balding"], f: ["ponytail", "bun"] },
+          palettes: P3([
+            ["cloth-navy", "cloth-cream", "cloth-red"],
+            ["cloth-forest", "cloth-ash", "cloth-mustard"],
+            ["cloth-brown", "cloth-cream", "cloth-rust"],
+            ["cloth-charcoal", "cloth-stone", "cloth-red"],
+            ["cloth-olive", "cloth-cream", "cloth-orange"],
+            ["cloth-petrol", "cloth-white", "cloth-mustard"],
+            ["cloth-tobacco", "cloth-sky", "cloth-red"]
+          ]),
+          wear(r, c) {
+            const { dom, sec, acc } = c.P;
+            const o = {};
+            const top = wpick(r, [["knit", 35], ["tee", 30], ["shirt", 35]]);
+            if (top === "knit") o.base = { type: "knit", color: sec, cable: chance(r, 0.4) };
+            else if (top === "tee") o.base = { type: "tee", color: sec, sleeves: "rolled" };
+            else o.base = shirt(sec, { collar: "open", sleeves: "rolled", tucked: true, ...chance(r, 0.4) ? { pattern: { type: pick(r, ["check", "tartan", "gingham"]), color2: dom } } : {} });
+            const coat = wpick(r, [["peacoat", 30], ["field-jacket", 15], [null, 55]]);
+            if (coat) o.outer = { type: coat, color: dom, open: chance(r, 0.4) };
+            o.bottom = wpick(r, [[{ type: "jeans", color: pick(r, ["cloth-denim", "cloth-faded-denim"]) }, 40], [{ type: "cargo-trousers", color: coat ? "cloth-charcoal" : dom }, 30], [{ type: "trousers", color: pick(r, ["cloth-charcoal", "cloth-brown", "cloth-graphite"]) }, 30]]);
+            o.feet = { type: "combat-boots", color: pick(r, ["cloth-black", "cloth-chocolate"]) };
+            if (chance(r, 0.4)) o.hands = { type: "work", color: pick(r, ["cloth-tan", "cloth-khaki"]) };
+            if (chance(r, 0.25)) o.neck = { type: "neckerchief", color: acc };
+            if (!o.outer && o.base.type === "shirt" && chance(r, 0.6)) o.waist = { type: "belt", color: "leather-brown" };
+            const hat = wpick(r, [[{ type: "beanie", color: pick(r, [dom, acc, "cloth-charcoal"]) }, 45], [{ type: "flat-cap", color: pick(r, ["cloth-charcoal", "cloth-brown"]) }, 30], [null, 25]]);
+            const props = [];
+            if (want("prop", "crate") && chance(r, 0.65)) props.push(crate(r));
+            return { outfit: o, hat, props, free: ["cross", "cross", "hip/hip", "down/down", "pocket/pocket", "hip/down"] };
+          }
+        },
+        porter: {
+          fem: 0.1,
+          age: [16, 66],
+          expr: ["neutral", "tired", "smile", "wary", "determined"],
+          beard: 0.25,
+          beards: ["moustache", "chops", "stubble"],
+          hair: { m: ["short", "crew", "side-part", "receding", "balding", "slick-back"], f: ["bun", "bob"] },
+          palettes: P3([["cloth-oxblood", "cloth-white", "metal-brass"], ["cloth-forest", "cloth-cream", "metal-brass"], ["cloth-navy", "cloth-white", "cloth-red"], ["cloth-plum", "cloth-white", "metal-brass"], ["cloth-brown", "cloth-cream", "cloth-mustard"]]),
+          wear(r, c) {
+            const { dom, sec, acc } = c.P;
+            const brass = acc.startsWith("metal-") ? acc : "metal-brass";
+            const o = {};
+            let hat;
+            if (chance(r, 0.55)) {
+              o.base = shirt(sec);
+              o.outer = { type: "watch-tunic", color: dom, badge: false, buttonColor: brass };
+              hat = chance(r, 0.5) ? { type: "pillbox", color: dom } : { type: "peaked-cap", color: dom, badge: brass };
+            } else {
+              o.base = shirt(sec, { sleeves: "rolled" });
+              o.mid = { type: "waistcoat", color: dom };
+              hat = chance(r, 0.6) ? { type: "peaked-cap", color: dom, badge: brass } : { type: "flat-cap", color: "cloth-charcoal" };
+            }
+            Object.assign(o, c.fem ? femLegs(r, c, darkOf(dom), ["pencil-skirt", "trousers"]) : { bottom: { type: "trousers", color: chance(r, 0.5) ? dom : "cloth-black" } });
+            o.feet = c.fem ? { type: "loafers", color: "cloth-black" } : { type: "oxfords", color: "cloth-black" };
+            const load = wpick(r, [["crate", want("prop", "crate") ? 60 : 0], ["suitcase", 25], [null, 15]]);
+            const props = load === "crate" ? [crate(r)] : load === "suitcase" ? [{ type: "suitcase", color: pick(r, ["leather-brown", "leather-black", "cloth-tan", "cloth-camel"]), pose: "carry" }] : [];
+            return { outfit: o, hat, props, free: ["behind", "down/down", "behind/down", "hip/down"] };
+          }
+        },
+        cook: {
+          fem: 0.3,
+          age: [17, 64],
+          expr: ["stern", "scowl", "grin", "tired", "neutral", "smile"],
+          beard: 0.3,
+          beards: ["moustache", "stubble", "chops", "beard-short"],
+          shapes: { m: ["lean", "rect", "column", "lean", "oval", "invtri"], f: ["pear", "lean", "slim", "hourglass"] },
+          hair: { m: ["short", "crew", "buzz", "slick-back", "receding", "balding"], f: ["bun", "bun", "pixie", "ponytail"] },
+          palettes: P3([["cloth-white", "cloth-black", "cloth-red"], ["cloth-white", "cloth-ash", "cloth-cobalt"], ["cloth-cream", "cloth-charcoal", "cloth-red"], ["cloth-white", "cloth-navy", "cloth-sky"]]),
+          wear(r, c) {
+            const { dom, sec, acc } = c.P;
+            const o = {};
+            if (chance(r, 0.5)) {
+              o.base = { type: "tee", color: "cloth-white" };
+              o.outer = { type: "nehru", color: dom };
+            } else {
+              o.base = chance(r, 0.5) ? { type: "tee", color: "cloth-white", sleeves: "rolled" } : shirt("cloth-white", { sleeves: "rolled" });
+              o.mid = { type: "apron", color: dom, length: pick(r, ["knee", "thigh"]) };
+              if (chance(r, 0.25)) o.mid.pattern = { type: "pinstripe", color2: sec };
+            }
+            if (c.fem && !c.trousers && chance(r, 0.3)) {
+              o.bottom = { type: "a-line-skirt", color: sec };
+              o.legs = { type: "tights", sheer: true };
+            } else o.bottom = { type: "trousers", color: sec, ...chance(r, 0.6) ? { pattern: { type: pick(r, ["check", "hound"]), color2: "cloth-white" } } : {} };
+            o.feet = { type: pick(r, ["oxfords", "oxfords", "loafers"]), color: "cloth-black" };
+            if (chance(r, 0.5)) o.neck = { type: "neckerchief", color: acc };
+            let hat = null;
+            if (want("hat", "toque") && chance(r, 0.8)) hat = { type: "toque", color: "cloth-white" };
+            else if (c.fem && chance(r, 0.4)) hat = { type: "headscarf", color: pick(r, ["cloth-white", acc]), dots: false };
+            return { outfit: o, hat, props: [], free: ["cross", "cross", "hip/hip", "hip/down", "down/down", "behind"] };
+          }
+        },
+        technician: {
+          fem: 0.25,
+          age: [20, 60],
+          expr: ["neutral", "determined", "wary", "tired", "smirk"],
+          beard: 0.2,
+          beards: ["moustache", "goatee", "stubble"],
+          eyewear: [0.35, ["horn-rim", "browline", "square-thick", "round-wire"]],
+          hair: { m: ["crew", "side-part", "short", "buzz", "receding", "mod-mop"], f: ["bun", "pixie", "bob", "ponytail"] },
+          palettes: P3([["cloth-sky", "cloth-white", "cloth-red"], ["cloth-white", "cloth-stone", "cloth-cobalt"], ["cloth-sea", "cloth-cream", "cloth-mustard"], ["cloth-graphite", "cloth-white", "cloth-orange"], ["cloth-stone", "cloth-black", "cloth-red"], ["cloth-cobalt", "cloth-white", "cloth-mustard"]]),
+          wear(r, c) {
+            const { dom, acc } = c.P;
+            const o = { dress: { type: "boiler-suit", color: dom }, feet: { type: pick(r, ["combat-boots", "oxfords"]), color: "cloth-black" } };
+            if (chance(r, 0.3)) o.hands = { type: "work", color: pick(r, ["cloth-tan", "cloth-stone"]) };
+            const props = [];
+            const tool = wpick(r, [["clipboard", 40], ["spanner", 30], [null, 30]]);
+            if (tool === "spanner" && want("prop", "spanner")) props.push({ type: "spanner", pose: propPose("spanner", "carry") });
+            else if (tool) props.push(want("prop", "clipboard") ? { type: "clipboard", pose: propPose("clipboard", "hold") } : { type: "book", color: acc, pose: "hold" });
+            if (chance(r, 0.3)) props.push({ type: "badge", shape: "round", size: 0.8 });
+            return { outfit: o, props, free: ["down", "hip", "pocket"] };
+          }
+        },
+        boatman: {
+          fem: 0.1,
+          age: [18, 70],
+          expr: ["neutral", "wary", "tired", "smirk", "stern", "grin"],
+          beard: 0.5,
+          beards: ["beard-full", "beard-short", "chops", "moustache", "stubble"],
+          weathered: 0.6,
+          shapes: { m: ["rect", "lean", "invtri", "oval", "column"], f: ["lean", "invtri"] },
+          hair: { m: ["short", "crew", "mod-mop", "receding", "balding", "buzz"], f: ["ponytail", "bun", "pixie"] },
+          palettes: P3([["cloth-navy", "cloth-white", "cloth-red"], ["cloth-forest", "cloth-cream", "cloth-mustard"], ["cloth-petrol", "cloth-white", "cloth-orange"], ["cloth-charcoal", "cloth-cream", "cloth-red"], ["cloth-brown", "cloth-sky", "cloth-mustard"]]),
+          wear(r, c) {
+            const { dom, sec, acc } = c.P;
+            const o = {};
+            const top = wpick(r, [["breton", 35], ["knit", 35], ["tee", 30]]);
+            if (top === "breton") o.base = { type: "tee", color: "cloth-white", sleeves: "long", pattern: { type: "breton", color2: dom } };
+            else if (top === "knit") o.base = { type: "knit", color: sec, cable: chance(r, 0.6) };
+            else o.base = { type: "tee", color: sec, sleeves: "rolled" };
+            const coat = wpick(r, [["peacoat", 40], ["shearling", 10], [null, 50]]);
+            if (coat) o.outer = { type: coat, color: coat === "shearling" ? "cloth-denim" : dom, open: chance(r, 0.5) };
+            o.bottom = wpick(r, [[{ type: "trousers", color: dom }, 40], [{ type: "cargo-trousers", color: pick(r, ["cloth-khaki", "cloth-charcoal"]) }, 25], [{ type: "jeans", color: "cloth-denim" }, 35]]);
+            o.feet = { type: "combat-boots", color: pick(r, ["cloth-black", "cloth-chocolate"]) };
+            if (chance(r, 0.35)) o.neck = { type: "neckerchief", color: acc };
+            const tell = wpick(r, [["oar", 40], ["boater", 35], ["both", 25]]);
+            const oar = tell !== "boater" && want("prop", "oar"), boater = tell !== "oar" && want("hat", "boater");
+            const hat = boater ? { type: "boater", color: pick(r, ["cloth-camel", "cloth-cream"]), band: pick(r, [dom, acc]) } : wpick(r, [[{ type: "beanie", color: pick(r, [dom, acc]) }, 35], [{ type: "peaked-cap", color: pick(r, ["cloth-navy", "cloth-white"]), badge: "metal-brass" }, 25], [{ type: "flat-cap", color: "cloth-charcoal" }, 15], [null, 25]]);
+            const props = [];
+            if (oar) props.push({ type: "oar", pose: propPose("oar", "carry") });
+            if (chance(r, 0.3)) props.push(oar || chance(r, 0.5) ? { type: "pipe", at: "mouth" } : { type: "pipe", pose: "smoke" });
+            return { outfit: o, hat, props, free: ["cross", "pocket/pocket", "hip/down", "down/down", "pocket/down"] };
+          }
+        },
+        cleaner: {
+          // tier 2 in name, with its own recipe: the mop is the tell
+          fem: 0.6,
+          age: [18, 70],
+          expr: ["tired", "neutral", "wary", "sad", "smile"],
+          beard: 0.25,
+          beards: ["moustache", "stubble"],
+          hair: { m: ["short", "crew", "receding", "balding", "side-part"], f: ["bun", "bob", "pixie", "flip"] },
+          palettes: P3([["cloth-sky", "cloth-white", "cloth-red"], ["cloth-sage", "cloth-cream", "cloth-navy"], ["cloth-pink", "cloth-white", "cloth-teal"], ["cloth-navy", "cloth-sky", "cloth-mustard"], ["cloth-brown", "cloth-cream", "cloth-red"], ["cloth-lilac", "cloth-white", "cloth-plum"]]),
+          wear(r, c) {
+            const { dom, sec, acc } = c.P;
+            const o = {};
+            if (c.fem) {
+              if (!c.trousers && chance(r, 0.5)) o.dress = { type: "a-line-dress", color: sec, sleeves: "short" };
+              else {
+                o.base = { type: "blouse", color: sec };
+                Object.assign(o, femLegs(r, c, "cloth-charcoal", ["a-line-skirt", "slacks"]));
+              }
+              o.mid = { type: "apron", color: dom, length: "knee", ...chance(r, 0.4) ? { pattern: { type: "gingham", color2: "cloth-white" } } : {} };
+              o.feet = { type: pick(r, ["loafers", "mary-janes"]), color: "cloth-black" };
+            } else {
+              if (chance(r, 0.5)) o.dress = { type: "boiler-suit", color: dom };
+              else {
+                o.base = shirt(sec, { sleeves: "rolled" });
+                o.mid = { type: "apron", color: dom, length: "knee" };
+                o.bottom = { type: "trousers", color: "cloth-charcoal" };
+              }
+              o.feet = { type: "oxfords", color: "cloth-black" };
+            }
+            if (chance(r, 0.3)) o.hands = { type: "work", color: "cloth-mustard" };
+            const hat = c.fem ? chance(r, 0.5) ? { type: "headscarf", color: acc, dots: chance(r, 0.4) } : null : chance(r, 0.3) ? { type: "flat-cap", color: "cloth-charcoal" } : null;
+            const props = want("prop", "mop") && chance(r, 0.85) ? [{ type: "mop", pose: propPose("mop", "carry") }] : [];
+            return { outfit: o, hat, props, free: ["down/down", "hip/down", "cross", "behind"] };
+          }
+        },
+        /* ---------------- drink and street ---------------- */
+        barkeep: {
+          fem: 0.3,
+          age: [20, 66],
+          expr: ["wary", "neutral", "smirk", "tired", "amused", "smile"],
+          beard: 0.35,
+          beards: ["moustache", "pencil", "chops", "goatee"],
+          shapes: { m: ["lean", "oval", "rect", "column", "invtri"], f: ["slim", "hourglass", "lean", "pear"] },
+          hair: { m: ["slick-back", "short", "side-part", "pompadour", "receding", "balding"], f: ["beehive", "bun", "bob", "flip"] },
+          palettes: P3([["cloth-oxblood", "cloth-white", "cloth-black"], ["cloth-black", "cloth-white", "cloth-red"], ["cloth-forest", "cloth-cream", "cloth-black"], ["cloth-tobacco", "cloth-white", "cloth-mustard"], ["cloth-navy", "cloth-white", "cloth-red"], ["cloth-warm-grey", "cloth-cream", "cloth-oxblood"]]),
+          wear(r, c) {
+            const { dom, sec, acc } = c.P;
+            const o = { base: shirt(sec, { sleeves: pick(r, ["rolled", "rolled", "long"]) }) };
+            if (chance(r, 0.15)) o.base.pattern = { type: "pinstripe", color2: dom };
+            const vest = wpick(r, [["waistcoat", 50], ["apron", 30], [null, 20]]);
+            if (vest === "waistcoat") o.mid = { type: "waistcoat", color: dom };
+            if (vest === "apron") o.mid = { type: "apron", style: "bistro", color: "cloth-white", length: "knee", ...chance(r, 0.5) ? { waistcoat: dom } : {} };
+            const nk = wpick(r, [["bow-tie", 40], ["tie", 20], [null, 40]]);
+            if (nk) o.neck = { type: nk, color: nk === "tie" ? dom : acc };
+            Object.assign(o, c.fem ? femLegs(r, c, "cloth-black", ["pencil-skirt", "a-line-skirt", "trousers"]) : { bottom: { type: "trousers", color: pick(r, ["cloth-black", "cloth-charcoal", dom]) } });
+            o.feet = c.fem ? femShoes(r) : mShoes(r);
+            const p = wpick(r, [["glass", 60], ["cig", 10], ["none", 30]]);
+            const props = p === "glass" ? [glass(r, "tumbler")] : p === "cig" ? [{ type: "cigarette", pose: "smoke" }] : [];
+            return { outfit: o, props, free: ["cross", "hip/down", "down/down", "hip/hip"] };
+          }
+        },
+        drinker: {
+          fem: 0.45,
+          age: [19, 72],
+          expr: ["laugh", "amused", "tired", "smile", "sad", "grin", "neutral", "smirk"],
+          beard: 0.35,
+          makeup: 0.7,
+          hair: { m: ["short", "side-part", "slick-back", "pompadour", "mod-mop", "receding", "balding", "crew"], f: ["beehive", "flip", "bob", "pixie", "long-straight", "ponytail"] },
+          palettes: P3([
+            ["cloth-brown", "cloth-cream", "cloth-mustard"],
+            ["cloth-charcoal", "cloth-sky", "cloth-red"],
+            ["cloth-tan", "cloth-white", "cloth-forest"],
+            ["cloth-navy", "cloth-cream", "cloth-orange"],
+            ["cloth-olive", "cloth-stone", "cloth-rust"],
+            ["cloth-black", "cloth-white", "cloth-teal"],
+            ["cloth-tobacco", "cloth-sage", "cloth-red"],
+            ["cloth-plum", "cloth-pink", "cloth-cream"],
+            ["cloth-teal", "cloth-cream", "cloth-orange"]
+          ]),
+          wear(r, c) {
+            const { dom, sec, acc } = c.P;
+            const o = {};
+            let hat = null;
+            if (c.fem) {
+              if (!c.trousers && chance(r, 0.45)) {
+                o.dress = chance(r, 0.5) ? { type: "a-line-dress", color: dom, sleeves: pick(r, ["none", "short", "elbow"]) } : { type: "shift-dress", color: dom, ...chance(r, 0.5) ? { block: { color: acc, shape: pick(r, ["arc", "stripe", "panel"]) } } : {} };
+                if (chance(r, 0.5)) o.legs = { type: "tights", sheer: true };
+              } else {
+                o.base = { type: pick(r, ["blouse", "shell", "knit", "turtleneck"]), color: sec };
+                Object.assign(o, femLegs(r, c, dom, ["a-line-skirt", "mini-skirt", "pencil-skirt", "slacks"]));
+              }
+              if (!o.dress && chance(r, 0.25)) o.mid = { type: "cardigan", color: acc };
+              o.feet = femShoes(r, ["heels", "mary-janes", "go-go-boots", "loafers"]);
+              if (o.feet.type === "go-go-boots") o.feet.color = pick(r, ["cloth-white", "cloth-black"]);
+            } else {
+              const style = wpick(r, [["office", 40], ["casual", 35], ["leather", 25]]);
+              if (style === "office") {
+                o.base = shirt(sec, { collar: "open" });
+                o.neck = { type: "tie", color: acc, loose: true };
+                o.outer = { type: "suit-jacket", color: dom, open: chance(r, 0.5) };
+                o.bottom = { type: "trousers", color: dom };
+              } else if (style === "casual") {
+                o.base = { type: pick(r, ["knit", "polo", "turtleneck"]), color: dom };
+                o.bottom = { type: pick(r, ["trousers", "jeans"]), color: pick(r, ["cloth-charcoal", "cloth-stone", "cloth-denim"]) };
+                if (o.bottom.type === "jeans") o.bottom.color = "cloth-denim";
+              } else {
+                o.base = { type: "tee", color: sec };
+                o.outer = { type: "leather-jacket", color: pick(r, ["cloth-black", "cloth-brown"]), open: true };
+                o.bottom = { type: "jeans", color: pick(r, ["cloth-denim", "cloth-faded-denim"]) };
+              }
+              o.feet = mShoes(r, ["oxfords", "chelsea-boots", "loafers"]);
+              hat = wpick(r, [[{ type: "trilby", color: pick(r, ["cloth-charcoal", "cloth-brown", dom]) }, 20], [{ type: "flat-cap", color: pick(r, ["cloth-charcoal", "cloth-brown"]) }, 15], [{ type: "boater", color: "cloth-camel" }, want("hat", "boater") ? 8 : 0], [null, 65]]);
+              if (style === "leather") hat = null;
+            }
+            const props = [];
+            const p = wpick(r, [["glass", 50], ["both", 20], ["cig", 15], ["none", 15]]);
+            if (p === "glass" || p === "both") props.push(glass(r));
+            if (p === "cig" || p === "both") props.push({ type: "cigarette", pose: "smoke" });
+            return { outfit: o, hat, props, free: c.fem ? IDLE_F : IDLE };
+          }
+        },
+        shopkeeper: {
+          fem: 0.45,
+          age: [26, 74],
+          expr: ["smile", "neutral", "wary", "tired", "amused"],
+          beard: 0.35,
+          beards: ["moustache", "moustache", "beard-short", "chops"],
+          eyewear: [0.4, ["half-moon", "browline", "horn-rim", "round-wire"]],
+          shapes: { m: ["oval", "lean", "pear", "rect", "column"], f: ["pear", "lean", "slim", "hourglass", "slim"] },
+          hair: { m: ["short", "receding", "balding", "side-part", "slick-back"], f: ["bun", "bob", "flip", "beehive"] },
+          palettes: P3([["cloth-sage", "cloth-white", "cloth-brown"], ["cloth-navy", "cloth-cream", "cloth-red"], ["cloth-tan", "cloth-white", "cloth-forest"], ["cloth-stone", "cloth-sky", "cloth-oxblood"], ["cloth-brown", "cloth-cream", "cloth-mustard"], ["cloth-warm-grey", "cloth-white", "cloth-cobalt"]]),
+          wear(r, c) {
+            const { dom, sec, acc } = c.P;
+            const o = { base: c.fem ? { type: "blouse", color: sec } : shirt(sec) };
+            if (!c.fem && chance(r, 0.55)) o.neck = { type: "tie", color: acc };
+            const mid = wpick(r, [["apron", 40], ["cardigan", 35], ["waistcoat", c.fem ? 0 : 25]]);
+            if (mid === "apron") o.mid = { type: "apron", color: dom, length: pick(r, ["knee", "thigh"]) };
+            else if (mid === "cardigan") o.mid = { type: "cardigan", color: dom, closed: chance(r, 0.5) };
+            else o.mid = { type: "waistcoat", color: dom };
+            if (c.fem) Object.assign(o, femLegs(r, c, pick(r, ["cloth-charcoal", "cloth-brown", "cloth-navy"]), ["a-line-skirt", "pencil-skirt"]));
+            else o.bottom = { type: "trousers", color: pick(r, ["cloth-charcoal", "cloth-brown", "cloth-warm-grey"]) };
+            o.feet = c.fem ? femShoes(r, ["loafers", "mary-janes", "heels"]) : mShoes(r, ["oxfords", "loafers"]);
+            const p = wpick(r, [["newspaper", 20], ["book", 10], [null, 70]]);
+            const props = p === "newspaper" ? [{ type: "newspaper", pose: "hold" }] : p === "book" ? [{ type: "book", color: acc, pose: "hold" }] : [];
+            return { outfit: o, props, free: ["behind", "hip/hip", "cross", "down/down", "hip/down"] };
+          }
+        },
+        resident: {
+          fem: 0.5,
+          age: [16, 78],
+          expr: ["neutral", "wary", "tired", "smile", "sad", "amused", "stern", "smirk"],
+          beard: 0.3,
+          makeup: 0.5,
+          eyewear: [0.15, ["browline", "horn-rim", "round-wire", "cat-eye", "shades"]],
+          hair: { m: ["short", "side-part", "mod-mop", "crew", "pompadour", "receding", "balding", "slick-back", "buzz"], f: ["bob", "flip", "beehive", "pixie", "long-straight", "ponytail", "bun", "bowl-bob"] },
+          palettes: P3([
+            ["cloth-camel", "cloth-cream", "cloth-red"],
+            ["cloth-warm-grey", "cloth-white", "cloth-mustard"],
+            ["cloth-navy", "cloth-sky", "cloth-orange"],
+            ["cloth-olive", "cloth-cream", "cloth-rust"],
+            ["cloth-rust", "cloth-cream", "cloth-teal"],
+            ["cloth-brown", "cloth-stone", "cloth-sky"],
+            ["cloth-sea", "cloth-white", "cloth-mustard"],
+            ["cloth-charcoal", "cloth-cream", "cloth-pink"],
+            ["cloth-mustard", "cloth-brown", "cloth-white"],
+            ["cloth-teal", "cloth-cream", "cloth-orange"],
+            ["cloth-plum", "cloth-pink", "cloth-cream"],
+            ["cloth-tobacco", "cloth-cream", "cloth-cobalt"]
+          ]),
+          wear(r, c) {
+            const { dom, sec, acc } = c.P;
+            const o = {};
+            let hat = null;
+            if (c.fem) {
+              if (!c.trousers && chance(r, 0.4)) {
+                o.dress = chance(r, 0.5) ? { type: "a-line-dress", color: dom, sleeves: pick(r, ["short", "elbow", "long"]) } : { type: "shift-dress", color: dom, ...chance(r, 0.4) ? { block: { color: acc, shape: pick(r, ["arc", "stripe", "panel"]) } } : {} };
+                if (chance(r, 0.4)) o.legs = { type: "tights", ...chance(r, 0.5) ? { sheer: true } : { color: pick(r, ["cloth-black", acc]) } };
+              } else {
+                o.base = { type: pick(r, ["blouse", "shell", "knit", "turtleneck"]), color: sec };
+                Object.assign(o, femLegs(r, c, dom, ["a-line-skirt", "pencil-skirt", "mini-skirt", "slacks", "cigarette-pants"]));
+              }
+              if (chance(r, 0.3)) o.outer = { type: pick(r, ["cape-coat", "overcoat", "trench"]), color: pick(r, [dom, acc, "cloth-camel"]), open: chance(r, 0.4) };
+              o.feet = femShoes(r, ["heels", "mary-janes", "go-go-boots", "loafers", "chelsea-boots"]);
+              if (o.feet.type === "go-go-boots") o.feet.color = pick(r, ["cloth-white", "cloth-black"]);
+              hat = wpick(r, [[{ type: "headscarf", color: acc, dots: chance(r, 0.4) }, 15], [{ type: "pillbox", color: dom }, 4], [null, 81]]);
+            } else {
+              o.base = { type: pick(r, ["shirt", "polo", "knit", "turtleneck", "tee"]), color: sec };
+              if (o.base.type === "shirt" && chance(r, 0.4)) o.neck = { type: "tie", color: acc };
+              const coat = wpick(r, [["overcoat", 15], ["trench", 10], ["blazer", 12], ["field-jacket", 8], ["leather-jacket", 8], ["cardigan", 12], [null, 35]]);
+              if (coat === "cardigan") o.mid = { type: "cardigan", color: dom };
+              else if (coat) o.outer = { type: coat, color: coat === "leather-jacket" ? pick(r, ["cloth-black", "cloth-brown"]) : dom, open: chance(r, 0.4) };
+              o.bottom = wpick(r, [[{ type: "trousers", color: pick(r, ["cloth-charcoal", "cloth-brown", "cloth-stone", "cloth-warm-grey", dom]) }, 60], [{ type: "jeans", color: pick(r, ["cloth-denim", "cloth-faded-denim"]) }, 30], [{ type: "cargo-trousers", color: "cloth-khaki" }, 10]]);
+              o.feet = mShoes(r, ["oxfords", "loafers", "chelsea-boots", "sneakers"]);
+              if (o.feet.type === "sneakers") o.feet.color = pick(r, ["cloth-navy", "cloth-white"]);
+              hat = wpick(r, [[{ type: "trilby", color: pick(r, ["cloth-charcoal", "cloth-brown"]) }, 12], [{ type: "flat-cap", color: pick(r, ["cloth-charcoal", "cloth-brown", "cloth-graphite"]) }, 10], [{ type: "beret", color: pick(r, ["cloth-black", dom]) }, 4], [{ type: "boater", color: "cloth-camel" }, want("hat", "boater") ? 6 : 0], [null, 74]]);
+            }
+            const props = [];
+            const p = wpick(r, [["newspaper", 12], ["umbrella", 10], ["satchel", 10], ["book", 8], ["cig", 10], [null, 50]]);
+            if (p === "newspaper") props.push({ type: "newspaper", pose: "hold" });
+            if (p === "umbrella") props.push({ type: "umbrella", color: pick(r, ["cloth-black", acc]), pose: "carry" });
+            if (p === "satchel") props.push({ type: "satchel", color: "leather-brown" });
+            if (p === "book") props.push({ type: "book", color: acc, pose: "hold" });
+            if (p === "cig") props.push({ type: "cigarette", pose: "smoke" });
+            return { outfit: o, hat, props, free: c.fem ? IDLE_F : IDLE };
+          }
+        },
+        /* ---------------- desk ---------------- */
+        clerk: {
+          fem: 0.5,
+          age: [18, 66],
+          expr: ["neutral", "wary", "tired", "smile", "sad", "determined"],
+          beard: 0.2,
+          beards: ["moustache", "pencil"],
+          makeup: 0.6,
+          eyewear: [0.45, ["browline", "horn-rim", "round-wire", "square-thick"]],
+          shapes: { m: ["lean", "column", "lanky", "oval", "pear"], f: ["slim", "lean", "pear", "hourglass"] },
+          hair: { m: ["side-part", "short", "receding", "slick-back", "crew", "balding"], f: ["bun", "bob", "flip", "beehive", "pixie"] },
+          palettes: P3([["cloth-charcoal", "cloth-white", "cloth-oxblood"], ["cloth-warm-grey", "cloth-sky", "cloth-navy"], ["cloth-brown", "cloth-cream", "cloth-mustard"], ["cloth-navy", "cloth-white", "cloth-red"], ["cloth-ash", "cloth-white", "cloth-forest"], ["cloth-tobacco", "cloth-cream", "cloth-teal"]]),
+          wear(r, c) {
+            const { dom, sec, acc } = c.P;
+            const o = {};
+            let hat = null;
+            if (c.fem) {
+              o.base = { type: "blouse", color: sec, ...chance(r, 0.3) ? { collarColor: acc } : {} };
+              if (chance(r, 0.5)) o.outer = { type: "suit-jacket", color: dom };
+              else o.mid = { type: "cardigan", color: chance(r, 0.5) ? dom : acc, closed: chance(r, 0.5) };
+              Object.assign(o, femLegs(r, c, dom, ["pencil-skirt", "pencil-skirt", "a-line-skirt"]));
+              o.feet = femShoes(r, ["heels", "loafers"]);
+            } else {
+              o.base = shirt(sec);
+              o.neck = { type: "tie", color: acc, width: "slim" };
+              const top = wpick(r, [["suit-jacket", 60], ["cardigan", 20], ["waistcoat", 20]]);
+              if (top === "suit-jacket") o.outer = { type: "suit-jacket", color: dom };
+              else o.mid = { type: top, color: dom };
+              o.bottom = { type: "trousers", color: top === "suit-jacket" ? dom : pick(r, ["cloth-charcoal", "cloth-warm-grey"]) };
+              o.feet = mShoes(r, ["oxfords", "oxfords", "loafers"]);
+              if (chance(r, 0.12)) hat = { type: "bowler", color: "cloth-black" };
+            }
+            const props = [];
+            const p = wpick(r, [["briefcase", 35], ["book", 20], ["newspaper", 15], ["clipboard", 15], [null, 15]]);
+            if (p === "briefcase") props.push({ type: "briefcase", color: pick(r, ["leather-black", "leather-brown"]), pose: "carry" });
+            if (p === "book") props.push({ type: "book", color: pick(r, [acc, "cloth-black", "cloth-petrol"]), pose: "hold" });
+            if (p === "newspaper") props.push({ type: "newspaper", pose: "hold" });
+            if (p === "clipboard") props.push(want("prop", "clipboard") ? { type: "clipboard", pose: propPose("clipboard", "hold") } : { type: "book", color: "cloth-stone", pose: "hold" });
+            return { outfit: o, hat, props, free: ["down/down", "pocket/down", "behind", "down/pocket"] };
+          }
+        }
+      };
+      module.exports = { RECIPES, LIPS };
+    }
+  });
+
+  // src/core/roles.js
+  var require_roles = __commonJS({
+    "src/core/roles.js"(exports, module) {
+      "use strict";
+      var K = require_roles_kit();
+      var { RECIPES, LIPS } = require_roles_recipes();
+      var REG = require_registry();
+      var { pick, chance, between, r2, wpick, want } = K;
+      var TABLE = [
+        ["guest-f", "Guest", 1],
+        ["guest-m", "Guest", 1],
+        ["waiter", "Waiter", 1],
+        ["croupier", "Croupier", 1],
+        ["photographer", "Photographer", 1],
+        ["guard", "Security guard", 1],
+        ["bluecoat", "Bluecoat", 1],
+        ["mechanic", "Mechanic", 1],
+        ["docker", "Docker", 1],
+        ["porter", "Porter", 1],
+        ["cook", "Cook", 1],
+        ["technician", "Technician", 1],
+        ["boatman", "Boatman", 1],
+        ["barkeep", "Barkeep", 1],
+        ["drinker", "Drinker", 1],
+        ["shopkeeper", "Shopkeeper", 1],
+        ["resident", "Resident", 1],
+        ["clerk", "Clerk", 1],
+        ["usher", "Usher", 2, "waiter"],
+        ["kitchen-hand", "Kitchen hand", 2, "cook"],
+        ["cleaner", "Cleaner", 2],
+        ["warehouse-hand", "Warehouse hand", 2, "docker"],
+        ["driver", "Driver", 2, "mechanic"],
+        ["sailor", "Sailor", 2, "docker"],
+        ["dancer", "Dancer", 2, "drinker"],
+        ["punter", "Punter", 2, "guest-m"],
+        ["cinema-goer", "Cinema-goer", 2, "resident"],
+        ["shopper", "Shopper", 2, "resident"],
+        ["street-kid", "Street kid", 2, "resident"],
+        ["teller", "Teller", 2, "clerk"],
+        ["official", "Official", 2, "clerk"],
+        ["scholar", "Scholar", 2, "clerk"],
+        ["teacher", "Teacher", 2, "clerk"],
+        ["pupil", "Pupil", 2, "resident"],
+        ["priest", "Priest", 2, "resident"],
+        ["acolyte", "Acolyte", 2, "resident"],
+        ["officer", "Officer", 2, "bluecoat"],
+        ["servant", "Servant", 2, "waiter"],
+        ["noble", "Noble", 2, "guest-m"]
+      ];
+      var BY_ID = Object.fromEntries(TABLE.map(([id, label, tier, alias]) => [id, { id, label, tier, alias }]));
+      function roles() {
+        return TABLE.map(([id, label, tier, alias]) => alias ? { id, label, tier, alias } : { id, label, tier });
+      }
+      function resolve(role) {
+        const asked = String(role == null ? "" : role).trim().toLowerCase();
+        const row = BY_ID[asked];
+        if (!row) return { asked: "resident", use: "resident", note: `role "${role}" is not known; drew a resident (roles() lists every role)` };
+        if (row.alias) return { asked, use: row.alias, note: `${asked} is drawn as ${row.alias} until it has its own recipe` };
+        return { asked, use: asked, note: "" };
+      }
+      var SKINS = ["porcelain", "fair", "olive", "tan", "brown", "deep", "ebony", "flushed", "pale"];
+      var DARK = ["brown", "deep", "ebony"];
+      var SHAPES = { m: ["lean", "lean", "rect", "invtri", "column", "oval", "lanky", "pear"], f: ["slim", "slim", "hourglass", "lean", "pear", "column"] };
+      var BEARDS = ["moustache", "pencil", "goatee", "beard-short", "beard-full", "chops", "stubble", "five-oclock"];
+      var HAIR_COL = [["cloth-black", 3], ["cloth-chocolate", 3], ["cloth-brown", 3], ["cloth-tobacco", 2], ["cloth-rust", 1], ["cloth-ochre", 1], ["cloth-camel", 1], ["cloth-tan", 1]];
+      var HAIR_DARK = [["cloth-black", 3], ["ink-900", 2], ["cloth-chocolate", 2]];
+      var GREYS = ["short", "side-part", "crew", "flattop", "receding", "balding", "slick-back", "mod-mop", "afro", "buzz", "pompadour", "beehive", "bun"];
+      var PARTED = ["bob", "flip", "pompadour", "side-part", "short", "pixie", "mod-mop", "ponytail"];
+      var WIDE = ["oval", "pear"];
+      var tents = (o) => o.dress && ["boiler-suit", "overalls", "gown"].includes(o.dress.type) || o.outer && !o.outer.open || o.mid && o.mid.type === "apron";
+      var partOf = (p) => (p && p.type ? REG.get("prop", p.type) : null) || {};
+      function person(r, R, fem, skin) {
+        const age = Math.round(R.age[0] + (R.age[1] - R.age[0]) * Math.pow(r(), 1.4));
+        const dark = DARK.includes(skin);
+        const base = fem ? 61 : 65, span = fem ? 8 : 10;
+        const heightIn = Math.max(61, Math.min(75, Math.round(base + span * (r() + r()) / 2 + (R.h || 0))));
+        const shape = wpick(r, (R.shapes && R.shapes[fem ? "f" : "m"] || SHAPES[fem ? "f" : "m"]).map((sh) => [sh, WIDE.includes(sh) ? 0.35 : 1]));
+        const [b0, b1] = R.build || [0.92, 1.15];
+        const build = r2(Math.min(between(r, b0, b1), WIDE.includes(shape) ? 1 : 1.2));
+        let styles = R.hair[fem ? "f" : "m"] || [fem ? "bob" : "short"];
+        if (dark && chance(r, fem ? 0.3 : 0.25)) styles = ["afro"];
+        if (!fem && age < 40) styles = styles.filter((s) => s !== "balding" && s !== "receding");
+        if (!styles.length) styles = [fem ? "bob" : "short"];
+        const hair = { style: pick(r, styles), color: wpick(r, dark ? HAIR_DARK : HAIR_COL) };
+        if (age >= 58 && chance(r, 0.6)) hair.color = pick(r, ["ink-300", "cloth-ash", "ink-150"]);
+        else if (age >= 44 && GREYS.includes(hair.style) && chance(r, 0.6)) hair.grey = "ink-300";
+        if (PARTED.includes(hair.style)) hair.part = pick(r, ["L", "R"]);
+        hair.volume = r2(between(r, 0.9, 1.2));
+        const face = {
+          eyes: pick(r, ["almond", "hooded", "narrow", "heavy", "deepset", "round", "upturned", "downturned"]),
+          brows: pick(r, ["straight", "heavy", "arched", "angled", "bushy", "straight"]),
+          nose: pick(r, ["straight", "broad", "hooked", "button", "flat", "straight", R.ears ? "broken" : "straight"]),
+          mouth: pick(r, ["neutral", "wide", "grim", "full", "thin", "pout"]),
+          expression: pick(r, R.expr)
+        };
+        if (!fem && chance(r, R.beard || 0)) {
+          face.facialHair = { type: pick(r, R.beards || BEARDS), color: hair.color };
+          if (hair.grey) face.facialHair.grey = hair.grey;
+        }
+        if (fem && chance(r, R.makeup == null ? 0.6 : R.makeup)) face.makeup = { type: pick(r, ["mod", "classic"]), lips: pick(r, LIPS) };
+        if (R.eyewear && chance(r, R.eyewear[0])) face.eyewear = { type: pick(r, fem ? R.eyewear[1] : R.eyewear[1].filter((e) => e !== "cat-eye")) };
+        if (age >= 42 && chance(r, R.weathered || 0)) face.ageStyle = "weathered";
+        const head = { shape: pick(r, ["oval", "square", "wedge", "pear", "round", "long", "heart"]) };
+        const ears = wpick(r, [["normal", 8], ["big", 1], ["small", 1], ["cauliflower", R.ears ? 2 : 0]]);
+        if (ears !== "normal") head.ears = ears;
+        const stance = WIDE.includes(shape) ? "easy" : pick(r, R.stance || ["easy", "easy", "easy", "square"]);
+        const pose = { stance };
+        if (stance === "easy") pose.weight = pick(r, ["R", "L"]);
+        pose.head = { tilt: Math.round(between(r, -4, 4)), yaw: Math.round(between(r, -8, 8)) };
+        return { figure: fem ? "fem" : "masc", heightIn, shape, build, skin, age, head, face, hair, pose };
+      }
+      function armPair(s) {
+        if (s === "cross" || s === "behind") return { R: s, L: s };
+        const [a, b] = s.split("/");
+        return { R: a, L: b || "down" };
+      }
+      var NO_POCKET = (o) => o.dress && !["boiler-suit", "overalls"].includes(o.dress.type);
+      var other = (s) => s === "R" ? "L" : "R";
+      function fitArms(r, W, keep) {
+        const props = W.props.map(({ pose, ...p }) => p);
+        let arms;
+        if (keep) arms = { ...keep };
+        else {
+          arms = armPair(pick(r, W.free));
+          if (chance(r, 0.5) && arms.R !== arms.L) arms = { R: arms.L, L: arms.R };
+        }
+        const used = {};
+        W.props.forEach((p, i) => {
+          if (!p.pose) return;
+          const free = ["R", "L"].filter((s) => !used[s]);
+          if (!free.length) {
+            props[i] = null;
+            return;
+          }
+          delete props[i].both;
+          if (p.both && free.length === 2) {
+            used.R = used.L = 1;
+            arms.R = arms.L = p.pose;
+            return;
+          }
+          let side = free.find((s) => arms[s] === p.pose);
+          if (!side && keep) side = free.find((s) => arms[s] === "down" || typeof arms[s] !== "string") || free[0];
+          if (!side) side = free.length === 2 ? chance(r, 0.65) ? "R" : "L" : free[0];
+          used[side] = 1;
+          arms[side] = p.pose;
+          props[i].side = side;
+        });
+        for (const s of ["R", "L"]) {
+          if (used[s]) continue;
+          if (arms[s] === "cross" && used[other(s)]) arms[s] = "down";
+          if (["smoke", "hold", "carry"].includes(arms[s])) arms[s] = keep ? "down" : pick(r, ["down", "pocket"]);
+        }
+        if (arms.R === "cross" !== (arms.L === "cross")) {
+          for (const s of ["R", "L"]) if (arms[s] === "cross") arms[s] = "down";
+        }
+        if (NO_POCKET(W.outfit)) {
+          for (const s of ["R", "L"]) if (arms[s] === "pocket") arms[s] = "hip";
+        }
+        return { arms, props: props.filter(Boolean) };
+      }
+      var MASKS = ["metal-brass", "cloth-black", "cloth-white", "cloth-red"];
+      function gala(r, fem, guest) {
+        const color = pick(r, MASKS);
+        if (guest && fem && want("mask", "colombina") && chance(r, 0.5)) return { type: "colombina", color };
+        if (guest && !fem && want("mask", "bauta") && chance(r, 0.25)) return { type: "bauta", color: pick(r, ["cloth-white", "metal-brass"]) };
+        return { type: "domino", color };
+      }
+      function clothes(rc, R, c) {
+        const P = pick(rc, R.palettes);
+        return { props: [], free: ["down/down"], jewellery: [], hat: null, ...R.wear(rc, { ...c, P }) };
+      }
+      function extra(o = {}) {
+        o = o && typeof o === "object" ? o : {};
+        const seed = o.seed == null ? 0 : o.seed;
+        const { asked, use, note } = resolve(o.role);
+        const R = RECIPES[use];
+        const rp = K.rng("person", use, seed), rc = K.rng("clothes", use, seed), rm = K.rng("mask", use, seed);
+        const n = Number(seed), ri = TABLE.findIndex((t) => t[0] === use);
+        const skin = Number.isInteger(n) && seed !== "" ? SKINS[((n + ri * 4) % 9 + 9) % 9] : pick(rp, SKINS);
+        const fem = chance(rp, R.fem);
+        const who = person(rp, R, fem, skin);
+        const W = clothes(rc, R, { fem, age: who.age, dark: DARK.includes(skin), trousers: false, shape: who.shape });
+        if (WIDE.includes(who.shape) && (tents(W.outfit) || !fem)) {
+          const apron = W.outfit.mid && W.outfit.mid.type === "apron";
+          who.shape = fem || apron ? "lean" : "rect";
+          who.build = r2(Math.min(1.02, who.build + 0.04));
+        }
+        const { arms, props } = fitArms(rc, W);
+        const spec = { id: `${asked}-${seed}`, name: BY_ID[asked].label, ...who, seed: `${asked}-${seed}` };
+        spec.pose = { ...who.pose, arms };
+        spec.outfit = W.outfit;
+        if (W.hat) spec.hair = { ...spec.hair, hat: W.hat };
+        if (W.jewellery.length) spec.jewellery = W.jewellery;
+        if (props.length) spec.props = props;
+        if (o.masked) {
+          spec.face = { ...spec.face, mask: gala(rm, fem, use === "guest-f" || use === "guest-m") };
+          delete spec.face.eyewear;
+        }
+        spec.notes = `Extra: ${BY_ID[asked].label.toLowerCase()} (role ${asked}, seed ${seed}${o.masked ? ", masked" : ""}).${note ? " " + note + "." : ""}`;
+        return spec;
+      }
+      function dress(spec, role, opts = {}) {
+        const S = spec && typeof spec === "object" ? spec : {};
+        opts = opts && typeof opts === "object" ? opts : {};
+        let { asked, use, note } = resolve(role);
+        const fem = S.figure === "fem";
+        if (use === "guest-f" && !fem) {
+          use = "guest-m";
+          note = (note ? note + "; " : "") + "guest-f on a masc figure is dressed as guest-m";
+        } else if (use === "guest-m" && fem) {
+          use = "guest-f";
+          note = (note ? note + "; " : "") + "guest-m on a fem figure is dressed as guest-f";
+        }
+        const R = RECIPES[use];
+        const key = S.id || S.name || JSON.stringify(S).slice(0, 200);
+        const rc = K.rng("dress", use, key), rm = K.rng("dress-mask", use, key);
+        const props0 = [].concat(S.props || []).map((p) => typeof p === "string" ? { type: p } : p).filter((p) => p && typeof p === "object");
+        const kept = props0.filter((p) => partOf(p).keep);
+        const trousers = kept.some((p) => partOf(p).trousers);
+        const W = clothes(rc, R, { fem, age: S.age || 35, dark: DARK.includes(S.skin), trousers, shape: S.shape || (fem ? "slim" : "lean") });
+        const pose0 = typeof S.pose === "string" ? { stance: S.pose } : { ...S.pose || {} };
+        let arms0 = pose0.arms && typeof pose0.arms === "object" ? { R: pose0.arms.R || "down", L: pose0.arms.L || "down" } : typeof pose0.arms === "string" ? armPair(pose0.arms) : { R: "down", L: "down" };
+        if (arms0.R === "cross" || arms0.L === "cross") arms0 = { R: "cross", L: "cross" };
+        const { arms, props } = fitArms(rc, W, arms0);
+        const out = { ...S };
+        out.pose = { ...pose0, arms };
+        if (pose0.hands && typeof pose0.hands === "object") {
+          const hands = {};
+          for (const s of ["R", "L"]) if (pose0.hands[s] && arms[s] === arms0[s]) hands[s] = pose0.hands[s];
+          if (Object.keys(hands).length) out.pose.hands = hands;
+          else delete out.pose.hands;
+        }
+        out.outfit = W.outfit;
+        const hair = typeof S.hair === "string" ? { style: S.hair } : { ...S.hair || {} };
+        delete hair.hat;
+        if (W.hat) hair.hat = W.hat;
+        if (Object.keys(hair).length) out.hair = hair;
+        const face = { ...S.face || {} };
+        delete face.mask;
+        const ew = typeof face.eyewear === "string" ? { type: face.eyewear } : face.eyewear;
+        if (ew && ew.type && !["eyepatch", "monocle"].includes(ew.type) && (opts.masked || ew.wear === "hand")) {
+          const band = ["goggles", "shield"].includes(ew.type);
+          face.eyewear = band ? W.hat ? { ...ew, wear: "on" } : { ...ew, wear: "up" } : { ...ew, wear: "pocket" };
+          delete face.eyewear.hand;
+        }
+        if (opts.masked) face.mask = gala(rm, fem, use === "guest-f" || use === "guest-m");
+        out.face = face;
+        const own = [].concat(S.jewellery || S.jewelry || []).filter((j) => j && ["earrings", "earring", "ring", "rings"].includes(j.type || j));
+        const jew = own.concat(W.jewellery.filter((j) => !(own.length && j.type === "earrings")));
+        delete out.jewelry;
+        if (jew.length) out.jewellery = jew;
+        else delete out.jewellery;
+        const all = kept.concat(props);
+        if (all.length) out.props = all;
+        else delete out.props;
+        out.notes = `${S.notes ? S.notes + " " : ""}Dressed as ${BY_ID[asked].label.toLowerCase()} (${asked}${opts.masked ? ", masked" : ""}).${note ? " " + note + "." : ""}`;
+        return out;
+      }
+      module.exports = { extra, roles, dress };
+    }
+  });
+
   // src/index.js
   var require_index = __commonJS({
     "src/index.js"(exports, module) {
@@ -16718,6 +19414,8 @@ var B68Figure = (() => {
       var G = require_geom();
       var C = require_color();
       var raster = require_raster();
+      var miniMod = require_mini();
+      var rolesMod = require_roles();
       module.exports = {
         ...api,
         tokens: T,
@@ -16725,11 +19423,17 @@ var B68Figure = (() => {
         geom: G,
         color: C,
         U: 25,
-        version: "3.0.1",
+        version: "3.1.0",
         // light v2 + face v2 the default; light v1 retired (Wave 2, signed off 22/10/2026)
         rasterize: (spec, o) => raster.rasterize(api, spec, o),
         // browser only: render once to a bitmap (ROADMAP §4.1)
-        clearRasterCache: raster.clearRasterCache
+        clearRasterCache: raster.clearRasterCache,
+        mini: (spec, o) => miniMod.mini(api, spec, o),
+        // map-size figures (K1.5)
+        extra: rolesMod.extra,
+        roles: rolesMod.roles,
+        dress: rolesMod.dress
+        // people by walk of life, and re-dressing (K1.6)
       };
     }
   });

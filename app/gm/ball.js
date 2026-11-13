@@ -155,6 +155,7 @@
       return true;
     }).map(function (p) {
       var where = "play.people[" + p.id + "]", o = copy(p);
+      roleOf(p, o, where, warn);      /* MK2: v1 too */
       if (p.stops !== undefined) {
         if (!Array.isArray(p.stops)) { warn(where + ".stops: not a list; dropped"); o.stops = []; }
         else {
@@ -236,6 +237,7 @@
       return true;
     }).map(copy);
 
+    crowdOf(play, out, warn);      /* MK2: v1 too */
     return { play: out, warnings: warnings };
   }
 
@@ -575,6 +577,7 @@
     }).map(function (p) {
       var where = "play.people[" + p.id + "]", o = copy(p);
       ["look", "wary", "note"].forEach(function (k) { textKey(o, p, k, where); });
+      roleOf(p, o, where, warn);      /* MK2: an optional figure role ("croupier"), shaped like a role id or dropped */
       if (p.with !== undefined) { warn(where + ".with: a v2 person follows through a stop { at, with }; the key is dropped"); delete o.with; }
       var stops = [];
       if (p.stops !== undefined && !Array.isArray(p.stops)) warn(where + ".stops: not a list; dropped");
@@ -851,7 +854,28 @@
       if (play.secret.length > LIMITS.secret) warn("play.secret: " + play.secret.length + " entries, keeping the first " + LIMITS.secret);
       out.secret = play.secret.slice(0, LIMITS.secret).filter(function (s, i) { if (isStr(s)) return true; warn("play.secret[" + i + "]: not text; dropped"); return false; });
     }
+    crowdOf(play, out, warn);
     return { play: out, warnings: warnings };
+  }
+  /* MK2: a person's optional `role`, a figure kit role id ("croupier", "kitchen-hand") the map draws them as when they have no figure of their own;
+     kept when it is shaped like an id (lower case, letters and dashes), else dropped with a warning. The map ignores an id the figure kit does not know. */
+  var ROLE_RE = /^[a-z][a-z-]{1,30}$/;
+  function roleOf(p, o, where, warn) {
+    if (p.role === undefined) return;
+    if (typeof p.role === "string" && ROLE_RE.test(p.role)) { o.role = p.role; return; }
+    warn(where + ".role: " + JSON.stringify(p.role) + " is not a role id; dropped"); delete o.role;
+  }
+  /* MK2: the optional crowd block ({ masked: true | false }: the guests wear masks, so the map's crowd does). Only `masked`, only as a boolean, is
+     kept; anything else under crowd is dropped with a warning, and a crowd that is not an object goes */
+  function crowdOf(play, out, warn) {
+    if (play.crowd === undefined) { delete out.crowd; return; }
+    if (!isObj(play.crowd)) { warn("play.crowd: not an object; dropped"); delete out.crowd; return; }
+    var c = {};
+    Object.keys(play.crowd).forEach(function (k) {
+      if (k === "masked" && typeof play.crowd.masked === "boolean") c.masked = play.crowd.masked;
+      else warn("play.crowd." + k + ": " + (k === "masked" ? "not true or false" : "not a crowd key") + "; dropped");
+    });
+    out.crowd = c;
   }
 
   /* ---- v2: where people are ---------------------------------------------------------------------------------- */

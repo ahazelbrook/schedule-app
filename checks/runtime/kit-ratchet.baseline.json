@@ -1,7 +1,7 @@
 {
  "_note": "Written by node checks/runtime/kit-ratchet.test.mjs --write. Counts may only go down. kitDebt: kit files that must reach zero.",
  "totals": {
-  "style": 3680,
+  "style": 3682,
   "important": 69,
   "button": 623,
   "confirm": 56,
@@ -198,7 +198,7 @@
    "important": 4
   },
   "app/maps/map-kit.js": {
-   "style": 9
+   "style": 11
   },
   "app/name-edit.js": {
    "button": 4

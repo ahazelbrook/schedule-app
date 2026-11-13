@@ -289,10 +289,11 @@
     if (!isObj(map) || map.layer !== 'player') throw new Error('Only the player layer can go to the iPad. Switch Layer to Player first.');
     if (!roll || typeof render !== 'function') throw new Error('Roll a location first.');
     var reveal = revealEntries(map);       /* the bands, and "room:<name>" for each room opened on its own (the kit's 0.9 reveal) */
-    var o = mapOpts(map, 'player', reveal, P.IPAD_MAP);
+    var o = mapOpts(map, 'player', reveal, P.IPAD_MAP), o0 = o;
+    o = scenePlayer(o, roll, reveal, map, tk);       /* MK1 (map.fill, map.people, map.lights, map.room): the scene through its one door; off, o itself */
     /* M3: the crew markers and visible pinned clocks of the run (tk = { tokens, hide }, from playerTokens) go through tokenScreen here,
        the one door; with none left, `o` is exactly what it was before tokens existed (no `tokens` key at all) */
-    var scr = isObj(tk) ? tokenScreen(tk.tokens, roll, reveal, tk.hide) : { tokens: [], refused: [] };
+    var tkb = sceneBare(tk, o), scr = isObj(tkb) ? tokenScreen(tkb.tokens, roll, reveal, tkb.hide) : { tokens: [], refused: [] };      /* MK2: tkb is tk unless people are drawn */
     /* a clean render of these options, or null: defence in depth (PR #53) an iso that names a hidden room is redrawn as rings in the
        same look; anything else, or rings that leak too, is not clean */
     function clean(opts) {
@@ -302,12 +303,43 @@
     }
     var used = scr.tokens, r = used.length ? clean(Object.assign({}, o, { tokens: used })) : null, dropped = false;
     if (!r) { if (used.length) { dropped = true; used = []; } r = clean(o); }      /* a map that only leaks WITH its markers goes without them */
+    if (!r && o !== o0) { r = clean(o0); if (r) dropped = true; }      /* MK1: and one that leaks only with its scene goes as before, without it */
     if (!r) { var e = new Error(P.LEAK_MSG); e.leak = true; throw e; }
+    var cut = o !== o0 && bytesOf(r.svg) > P.SVG_CAP ? sceneFit() : '';      /* MK2: a scene over the shared screen's cap; off, never asked */
+    function sceneFit() {      /* the same map without the crowd, then without the scene (each clean and under the cap); else a refusal that says why */
+      var tries = [['crowd', Object.assign({}, o, { crowd: undefined })], ['scene', o0]];
+      for (var i = 0; i < tries.length; i++) { var t = clean(used.length ? Object.assign({}, tries[i][1], { tokens: used }) : tries[i][1]); if (t && bytesOf(t.svg) <= P.SVG_CAP) { r = t; return tries[i][0]; } }
+      var eb = new Error('This map is too large for the iPad (' + Math.round(bytesOf(r.svg) / 1024) + ' KiB, at most ' + Math.round(P.SVG_CAP / 1024) + ') even without its people: show fewer bands or another view.'); eb.big = true; throw eb;
+    }
+    /* MK2 (name each person once): the bare markers went only if the kit drew every crew member it left out; otherwise the full markers, as before */
+    if (tkb !== tk && !sceneMod().allDrawn(r, sceneMod().figured(o.people, o.view))) return playerDisplay(roll, map, render, Object.assign({}, tk, { bare: null }));
     var capRooms = rollRoomsOf(roll, entryRooms(reveal));       /* only rooms this roll has: a name left over from a site edit opens nothing and is not captioned */
-    return { kind: 'svg', title: str(roll.name).slice(0, 200), caption: (roll.district ? roll.district + ' · ' : '') + 'surveyed: ' + entryBands(reveal).join(', ') + (capRooms.length ? ' + ' + capRooms.join(', ') : ''), svg: r.svg, warnings: r.warnings || [], reveal: reveal,
+    var d = { kind: 'svg', title: str(roll.name).slice(0, 200), caption: (roll.district ? roll.district + ' · ' : '') + 'surveyed: ' + entryBands(reveal).join(', ') + (capRooms.length ? ' + ' + capRooms.join(', ') : ''), svg: r.svg, warnings: r.warnings || [], reveal: reveal,
       tokens: used.length, tokensRefused: scr.refused.length > 0 || dropped };
+    if (cut) d.sceneCut = cut;       /* MK2: 'crowd' or 'scene', only when one was cut */
+    return d;
   }
   P.playerDisplay = playerDisplay;
+  P.SVG_CAP = 600 * 1024;       /* the server's cap on a display svg (functions/_lib/gm.js LIMITS.svg); a larger one is a 413 */
+  P.SCENE_CUT_MSG = { crowd: 'The map went to the iPad without the crowd: with it, it was over the iPad’s 600 KiB.', scene: 'The map went to the iPad without its people: with them, it was over the iPad’s 600 KiB.' };
+  /* MK1 (gm/scene-state.js): the map kit's new options. tk.scene is the page's scene input (sceneInput, only while a map setting is on); it goes
+     through B68GmScene.forPlayer, the one door (the crew only, in the rooms a marker may stand in), then the people's names and marks through
+     tokenScreen, as a marker's label would; a refused name takes the people off. Without tk.scene, o comes back untouched. */
+  function sceneMod() { return (W && W.B68GmScene) || P.sceneMod || null; }
+  function scenePlayer(o, roll, reveal, map, tk) {
+    var G = sceneMod(); if (!G || !isObj(tk) || !isObj(tk.scene)) return o;
+    var r = G.forPlayer(o, tk.scene, tokenRooms(roll, reveal, knowRooms(map)), tk.scene.flags), ppl = r.opts.people;
+    var lab = Array.isArray(ppl) ? ppl.map(function (p) { return { room: str(p.room), label: str(p.label) + ' ' + str(p.mark), svg: '' }; }) : [];
+    if (lab.length && tokenScreen(lab, roll, reveal, tk.hide).refused.length) r.opts.people = [];
+    return r.opts;
+  }
+  P.scenePlayer = scenePlayer;
+  /* MK2 (the overseer's ruling: name each person once): with people drawn as figures (a view that draws people, and the scene's people there), the
+     bare markers (tk.bare: the run's markers without the crew who have a figure of their own); anything else, tk itself */
+  function sceneBare(tk, o) {
+    var G = sceneMod(); if (!G || !isObj(tk) || !isObj(tk.bare) || !Array.isArray(tk.bare.tokens) || G.PEOPLE_VIEWS.indexOf(o.view) < 0 || !Array.isArray(o.people) || !o.people.length) return tk;
+    return Object.assign({}, tk, { tokens: tk.bare.tokens, hide: tk.bare.hide });
+  }
   /* The only way a chase strip reaches the display (the Chase panel, GM.md "Chase"): the PLAYER layer at the iPad's size, drawn here
      from the chase's player copy (B68GmChase.playerCopy: no roll line, no GM note, no hidden opposing clock), never with the roll lines,
      then scanned for every secret of the whole chase (B68GmChase.secrets) and held to the server's 600 KiB. render: B68Map.chase;
@@ -2394,7 +2426,7 @@
     if (!S.st) S.st = W.B68GmSettings.create({
       doc: function () { return S.doc; }, patch: patch, campaign: function () { return camp; }, root: function () { return $q('#gm-root'); }, toast: toast,
       publish: function (map) { var a = (S && S.api) || keptApi; return a && typeof a.publishFeatures === 'function' ? a.publishFeatures(map) : Promise.reject(new Error('The table is not available here.')); },
-      redraw: function () { if (S && S.status === 'ready') { renderBar(); renderRun(); b09Paint(); } },
+      redraw: function () { if (S && S.status === 'ready') { renderBar(); renderRun(); b09Paint(); sceneRedraw(); } },
       setPhoneCards: function (on) { return setPhoneCards(on); }, mirrorOn: mirrorOn, toggleMirror: toggleMirror
     });
     return S.st;
@@ -2625,8 +2657,9 @@
       sp.innerHTML = '<span class="gm-dot' + (on ? warn ? ' warn' : ' on' : '') + '"></span><span class="gm-pill-t">' + esc(text) + airSuffix(d) + '</span>'; airSync();
       sp.classList.toggle('warn', warn);
       sp.title = 'The mic: ' + text + '. Opens the iPad view.';
-      /* the pill only once the transcriber has ever been set up (the stt document written), or while it is on */
-      var show = STT.loaded && (!!STT.at || on);
+      /* the pill only once the transcriber has ever been set up (the stt document written), or while it is on. MK2: the map frame's ask and answer
+         (frameWant, frame) live in the same document and are not the transcriber: a document holding only them does not count as set up */
+      var show = STT.loaded && ((!!STT.at && sttOwn(d)) || on);
       sp.hidden = !show; if (show) sp.removeAttribute('hidden'); else sp.setAttribute('hidden', '');
     }
     bandUpdate();
@@ -3528,7 +3561,7 @@
         '<button type="button" class="btn sm" data-gm="blankipad" title="What is shown comes off the iPad: the ambient scene plays. Clear (0) takes everything down">Take it down</button></div>' +
         (sceneBehind(mu) ? '<p class="gm-dim gm-scene-behind">The score scene shows ' + esc(sceneBehind(mu).join(', ')) + ': press Set as score scene to bring it up to date.</p>' : '') +
         runBox(runSite()) +
-        '<details class="gm-more gm-mapopts"' + (foldOpen('mapopts') ? ' open' : '') + ' data-fold="mapopts"><summary>View &amp; theme <span class="gm-dim">' + esc(mapLine(mu)) + '</span></summary>' + '<div class="gm-map-ctl">' + sel('view', 'View', VIEWS, mu.view) + sel('theme', 'Theme', THEMES, mu.theme) + sel('time', 'Time', P.TIMES, mu.time) + sel('weather', 'Weather', P.WEATHERS, mu.weather) + '</div></details>' +
+        '<details class="gm-more gm-mapopts"' + (foldOpen('mapopts') ? ' open' : '') + ' data-fold="mapopts"><summary>View &amp; theme <span class="gm-dim">' + esc(mapLine(mu)) + '</span></summary>' + '<div class="gm-map-ctl">' + sel('view', 'View', VIEWS, mu.view) + sel('theme', 'Theme', THEMES, mu.theme) + sel('time', 'Time', P.TIMES, mu.time) + sel('weather', 'Weather', P.WEATHERS, mu.weather) + sceneScreenSel(mu) + '</div></details>' +
         '<details class="gm-more gm-dl"' + (foldOpen('dl') ? ' open' : '') + ' data-fold="dl"><summary>Downloads</summary><div class="gm-map-acts">' + '<button type="button" class="btn sm" data-gm="dlsvg">Download SVG</button><button type="button" class="btn sm" data-gm="dlnote">Download note (.md)</button>' + '<button type="button" class="btn sm" data-gm="dlcanvas">Download canvas</button></div></details>' + '</section>';
     } else h += '<p class="gm-empty">Choose what you know (or leave it on any) and roll. The card marks what the players can see.</p>' + '<p><button type="button" class="btn sm" data-gm="blankipad" title="What is shown comes off the iPad: the ambient scene plays. Clear (0) takes everything down">Take it down</button></p>';
     var hist = newest(isObj(S.doc.hist) ? S.doc.hist.location : null).slice(0, LIMITS.hist);
@@ -3579,6 +3612,15 @@
     if (d.open) a.push(id);
     try { W.localStorage.setItem(FOLD_KEY, JSON.stringify(a.slice(-20))); } catch (e) {}
   }
+  /* MK1 (map.fill): the shared screen's shape, kept with the map's controls (loc.map.screen, a new optional key: 'tv', else the iPad); '' while off */
+  function sceneScreenSel(mu) {
+    var f = sceneFlags(); if (!f) return '';
+    var fl = sceneFloors(), cur = sceneFloor();      /* MK2 4b: with any map setting on, the shared screen's floor */
+    var fr = S.sceneFrame, stop = !!(S.frameTrack && S.frameTrack.stopped);      /* a reported frame wins: the select is the fallback, and the size when following stopped */
+    var lab = stop ? 'Shared screen (its reported size kept changing, so this sizes it)' : fr ? 'Shared screen, if it stops reporting (it reports ' + fr.w + ' × ' + fr.h + ')' : 'Shared screen';
+    return (f.fill && sceneMod().stageOk(W.B68Map) ? sel('screen', lab, [['ipad', 'iPad (4:3)'], ['tv', 'TV (16:9)']], sceneMod().screenOf(mu.screen)) : '') +      /* only a kit that draws "stage" */
+      (fl.length > 1 ? sel('ipadFloor', 'Shared screen floor', [['', 'Whole building']].concat(fl.map(function (l) { return [String(l.lvl), l.title]; })), cur === null ? '' : String(cur)) : '');
+  }
   function sel(key, label, list, v) { return '<label class="gm-field" for="gm-m-' + key + '"><span class="gm-lab">' + label + '</span><select id="gm-m-' + key + '" data-map="' + key + '">' + list.map(function (o) { var val = Array.isArray(o) ? o[0] : o, txt = Array.isArray(o) ? o[1] : o; return '<option value="' + esc(val) + '"' + (val === str(v) ? ' selected' : '') + '>' + esc(txt) + '</option>'; }).join('') + '</select></label>'; }
   /* the fold's summary: view · theme, and the time and weather when they are set */
   function mapLine(mu) { var a = [mu.view, mu.theme], tl = P.TIMES.filter(function (x) { return x[0] && x[0] === mu.time; })[0], wl = P.WEATHERS.filter(function (x) { return x[0] && x[0] === mu.weather; })[0]; if (tl) a.push(tl[1].toLowerCase()); if (wl) a.push(wl[0] === 'rolled' ? "the roll's weather" : wl[0] === 'none' ? 'no weather' : wl[1].toLowerCase()); return a.join(' · '); }
@@ -3596,6 +3638,7 @@
     if (sig && S.runCache && S.runCache.map[sig]) r = S.runCache.map[sig];
     else {
       try { r = K.render(S.locRoll, o); } catch (e) { if (!quiet) toast('The map could not be drawn: ' + errText(e), true); return; }
+      r = sceneGmCheck(o, r, K);      /* MK2: anyone left without a pill who was not drawn gets the pills back */
       if (sig) { var rc = S.runCache = S.runCache || { map: {}, keys: [] }; rc.map[sig] = r; rc.keys.push(sig); while (rc.keys.length > RUN_CACHE_MAX) delete rc.map[rc.keys.shift()]; }
     }
     S.map = { svg: r.svg, warnings: r.warnings || [], layer: mu.layer === 'player' ? 'player' : 'gm', view: mu.view, theme: mu.theme, time: mu.time, weather: mu.weather, sig: sig, held: held, kit1: !!o.kit1 };
@@ -3608,7 +3651,7 @@
     box.setAttribute('data-layer', S.map.layer); b17Tint();
     box.classList.toggle('gm-leak', !!S.map.leak);
     if (w) w.classList.toggle('bad', !!S.map.leak);
-    if (w) w.textContent = (S.map.leak ? 'Not for the iPad: ' + P.LEAK_MSG + ' ' : '') + (S.map.held ? P.TOKEN_LEAK_MSG + ' ' : '') + (S.map.layer === 'gm' ? 'GM layer: everything shows. ' : 'Player layer. ') + (S.map.warnings.length ? S.map.warnings.length + ' map note' + (S.map.warnings.length === 1 ? '' : 's') + ': ' + S.map.warnings.slice(0, 2).map(function (x) { return typeof x === 'string' ? x : x && (x.message || x.msg || JSON.stringify(x)); }).join(' · ') + (S.map.warnings.length > 2 ? ' …' : '') : '');
+    if (w) w.textContent = (S.map.leak ? 'Not for the iPad: ' + P.LEAK_MSG + ' ' : '') + (S.map.held ? P.TOKEN_LEAK_MSG + ' ' : '') + (S.map.layer === 'gm' ? 'GM layer: everything shows. ' : 'Player layer. ' + scenePreviewNote()) + (S.map.warnings.length ? S.map.warnings.length + ' map note' + (S.map.warnings.length === 1 ? '' : 's') + ': ' + S.map.warnings.slice(0, 2).map(function (x) { return typeof x === 'string' ? x : x && (x.message || x.msg || JSON.stringify(x)); }).join(' · ') + (S.map.warnings.length > 2 ? ' …' : '') : '');
   }
   /* a change to the map controls redraws a map already on screen, so what shows always matches the controls */
   function setMap(k, v) {
@@ -3701,7 +3744,7 @@
      drawing, or '' when this map is not a run (a player layer, a rolled site) */
   function runApply(o) {
     var rs = o.layer === 'gm' ? runSite() : null; if (!rs) return '';
-    if (rs.play.v === 2) { var t2 = runV2Tokens(rs); o.tokens = t2; return JSON.stringify([rollKey(S.locRoll), o.view, o.theme, o.time, o.weather, o.floor, t2.map(function (t) { return t.room + '|' + t.svg; })].concat(o.kit1 ? ['kit1'] : [])); }
+    if (rs.play.v === 2) { var sk = sceneGm(o, rs), t2 = runV2Tokens(rs, sceneFigured(o, rs)); o.tokens = t2; return JSON.stringify(      /* MK2: a person drawn as a figure gets no pill too */[rollKey(S.locRoll), o.view, o.theme, o.time, o.weather, o.floor, t2.map(function (t) { return t.room + '|' + t.svg; })].concat(o.kit1 ? ['kit1'] : []).concat(sk ? [sk] : [])); }     /* MK1: sk is '' with the map settings off */
     var m = runModel(rs); if (!m) return '';
     var toks = runTokens(m);
     o.tokens = toks;
@@ -3734,8 +3777,19 @@
     return hiddenSecretNames().some(function (n) { return fold(n) === f; }) ? null : m;
   }
   /* <<< VV8 */
-  function playerTokenSet(reveal) {
-    var none = { tokens: [], hide: [], sig: '' }, rs = runSite(); if (!rs || !S.locRoll) return none;
+  /* MK1: the player copy's markers, and (only while a map setting is on) the scene input beside them, its key in the sig so live reveal follows it.
+     MK2 (name each person once): while map.people is on and the kits draw people, `bare` is the same markers without the crew who have a figure of
+     their own; playerDisplay uses it only in a view that draws people, and only if the kit then drew every one of them */
+  function sceneTk(tk, reveal, skip) {
+    if (skip) return tk;      /* the bare set itself */
+    var sc = sceneInput(); if (!sc) return tk;
+    var out = Object.assign({}, tk, { scene: sc, sig: tk.sig + '|' + sceneMod().inputKey(sc) });
+    var figs = sc.flags.people && scenePeopleKit() ? herePcs().filter(function (c) { return isObj(c.spec) && Object.keys(c.spec).length > 0; }).map(function (c) { return str(c.id); }) : [];
+    if (figs.length) { var b = playerTokenSet(reveal, figs); out.bare = { tokens: b.tokens, hide: b.hide }; }
+    return out;
+  }
+  function playerTokenSet(reveal, skip) {
+    var none = { tokens: [], hide: [], sig: '' }, rs = runSite(); if (!rs || !S.locRoll) return sceneTk(none, reveal, skip);
     var st = ballDoc(rs.name), placed = { crew: isObj(st.crew) ? st.crew : {}, pins: isObj(st.pins) ? st.pins : {} };
     var shown = (Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : []).filter(function (r) { return roomShown(r, reveal); }).map(function (r) { return str(r.name); });
     var noBp = tokenRooms(S.locRoll, reveal, knowRooms(Object.assign({}, mapUi(), { layer: 'player' })));      /* 2.2: never in a blueprint room (knowNow is empty with map.knowledge off) */
@@ -3743,11 +3797,155 @@
     /* >>> VV8: the target's marker (design 5.3, H6): B.targetInView at the published ball.t and the rooms this very map shows */
     var mark = targetMark(rs, st, shown);
     /* <<< VV8 */
-    if (!Object.keys(placed.crew).length && !Object.keys(placed.pins).length && !mark) return none;
-    var pcs = herePcs().map(function (c) { return { id: str(c.id), name: pcName(c), icon: '' }; });      /* no costume shows on a player screen: a plain token (KS12.3: who is playing) */
+    if (!Object.keys(placed.crew).length && !Object.keys(placed.pins).length && !mark) return sceneTk(none, reveal, skip);
+    var pcs = herePcs().filter(function (c) { return !skip || skip.indexOf(str(c.id)) < 0; }).map(function (c) { return { id: str(c.id), name: pcName(c), icon: '' }; });      /* MK2: skip (bare markers only); no costume shows on a player screen: a plain token (KS12.3: who is playing) */
     var clocks = tableClocks().filter(function (c) { return str(c.id); }).map(function (c) { return { id: str(c.id), size: c.size, filled: c.filled, hidden: !!c.hidden }; });
     var tokens = P.playerTokens(placed, shown, clocks, pcs, mark), hide = tokenDeny(rs.play, mark ? mark.label : '');
-    return { tokens: tokens, hide: hide, sig: P.tokenSig(tokens, hide) };
+    return sceneTk({ tokens: tokens, hide: hide, sig: P.tokenSig(tokens, hide) }, reveal, skip);      /* MK1/MK2: the scene beside it while a map setting is on */
+  }
+  /* ---- MK1: the map kit's new options (gm/scene-state.js), behind map.fill, map.people, map.lights and map.room. Every one of these returns
+     '' or null at once while all four are off, so the map kit is asked exactly what it was asked before. ---- */
+  function sceneFlags() { var G = sceneMod(); if (!G) { sceneNeed(); return null; } var f = S ? G.flags(b09On) : null; return f && G.anyOn(f) ? f : null; }
+  /* the map-scene bundle (gm/scene-state.js) is fetched once a map setting is on, never before: with all four off the page asks for nothing new */
+  var SCENE_IDS = ['map.fill', 'map.people', 'map.lights', 'map.room'];
+  function sceneNeed() {
+    if (!S || S.sceneAsked || !W.B68Load || typeof W.B68Load.need !== 'function' || !SCENE_IDS.some(b09On)) return;
+    var me = S; S.sceneAsked = true;
+    W.B68Load.need('map-scene').then(function () { if (S === me && S.status === 'ready') sceneRedraw(); }, function () { if (S === me) S.sceneAsked = false; });
+  }
+  /* a map setting turned on or off: the Location card (its Shared screen select) and the map follow at once; any other setting changes nothing here */
+  function sceneRedraw() {
+    sceneFrameAsk();
+    var k = JSON.stringify(sceneFlags()); if (k === (S.sceneFk || 'null')) return;
+    S.sceneFk = k; renderLocation(); if (S.map) drawMap(true); runDraw(true); liveTokens();
+  }
+  /* MK2 (the review): the transcriber document counts as set up only with something beyond the map frame's ask and answer in it */
+  function sttOwn(d) { return !!d && Object.keys(d).some(function (k) { return k !== 'frameWant' && k !== 'frame'; }); }
+  /* the GM asks the shared screen for its map frame only while the stage is sized to it (map.fill on, a map kit that draws "stage"): the stt
+     document's frameWant, a bare boolean; the display answers only while it is there. Off, nothing is written (and an old ask is taken back) */
+  function sceneFrameAsk() {
+    if (!S || !STT.loaded || S.frameAsking) return;
+    var K = W.B68Map, kitStage = false; try { kitStage = !!(K && typeof K.options === 'function' && (K.options().layouts || []).indexOf('stage') >= 0); } catch (e) { kitStage = false; }
+    var want = b09On('map.fill') && kitStage, have = !!(STT.doc && STT.doc.frameWant === true), g = gmApi();
+    if (want === have || !g || typeof g.patchStt !== 'function') return;
+    var me = S; S.frameAsking = true;
+    Promise.resolve().then(function () { return g.patchStt({ frameWant: want ? true : null }); }).then(function () { if (S === me) { S.frameAsking = false; loadStt(); } }, function () { if (S === me) S.frameAsking = false; });
+  }
+  function scenePc(c) { return { id: str(c.id), name: pcName(c), spec: isObj(c.spec) ? c.spec : null }; }
+  /* the cast's figure for a person of the play: the app's NPC filed under the person's npc or label (name or alias) */
+  function sceneCast(p) {
+    var want = [p.npc, p.label].map(function (x) { return str(x).toLowerCase().trim(); }).filter(Boolean), ns = S && isObj(S.npcs) ? S.npcs : {};
+    var lc = function (x) { return str(x).toLowerCase().trim(); };
+    var id = Object.keys(ns).filter(function (k) { var d = ns[k]; return isObj(d) && isObj(d.spec) && (want.indexOf(lc(d.name)) >= 0 || (lc(d.alias) && want.indexOf(lc(d.alias)) >= 0)); })[0];
+    return id ? ns[id].spec : null;
+  }
+  /* the GM copy of a v2 run: people (every PC and person the board places), the crowd, the lights, merged into o; the cache key's part */
+  function sceneGm(o, rs) {
+    var f = sceneFlags(); if (!f) return '';
+    var st = ballDoc(rs.name), t = +st.t >= 0 ? +st.t : 0;
+    return sceneMod().gm(o, f, { model: runV2Model(rs, t), play: rs.play, crew: isObj(st.crew) ? st.crew : {}, pcs: dtPcs().map(scenePc), cast: sceneCast, t: t, kit: W.B68Figure });
+  }
+  /* MK2 (name each person once): the kits draw people (a map kit with the room view, a figure kit with mini) */
+  function scenePeopleKit() { var G = sceneMod(), F = W.B68Figure; return !!(G && G.roomViewOk(W.B68Map) && F && typeof F.mini === 'function'); }
+  /* the GM copy: who the map draws as a figure with a flag (they get no pill too); remembered for sceneGmCheck. null while off: every pill as before */
+  function sceneFigured(o, rs) {
+    S.sceneSkip = null;
+    var G = sceneMod(); if (!G || !sceneFlags() || !scenePeopleKit()) return null;
+    var fig = G.figured(o.people, o.view); if (!fig.length) return null;
+    S.sceneSkip = { o: o, rs: rs, want: fig };
+    return fig;
+  }
+  /* after the GM copy's render: if the kit did not draw someone who lost their pill, draw it again with every pill */
+  function sceneGmCheck(o, r, K) {
+    var s = S && S.sceneSkip, G = sceneMod(); if (!s || s.o !== o || !r || !G || G.allDrawn(r, s.want)) return r;
+    o.tokens = runV2Tokens(s.rs);
+    try { return K.render(S.locRoll, o); } catch (e) { return r; }
+  }
+  /* the player copy's scene input (playerTokenSet): the crew who are playing, where the ball has them, the disguises' icons, the crowd, the lights,
+     the shared screen's shape and the room cut to. Never the play's people. */
+  function sceneInput() {
+    var f = sceneFlags(), G = sceneMod(); if (!f) return null;
+    var rs = runSite(), st = rs ? ballDoc(rs.name) : {}, play = rs ? rs.play : null, t = +st.t >= 0 ? +st.t : 0;
+    var room = f.room && S.sceneRoom && G.roomViewOk(W.B68Map) ? str(S.sceneRoom) : '';
+    return { flags: f, pcs: herePcs().map(scenePc), crew: isObj(st.crew) ? st.crew : {}, disguises: (play && Array.isArray(play.disguises) ? play.disguises : []).filter(isObj).map(function (d) { return { id: str(d.id), icon: str(d.icon) }; }),
+      crowd: G.crowdOf(play), lights: play ? G.lightsAt(play, t, G.knownEvents(play, st, sceneRooms())) : {},      /* only events the players may know light the shared screen */
+      screen: G.screenOf(mapUi().screen), stage: G.stageOk(W.B68Map), view: room ? 'room' : '', room: room, kit: W.B68Figure,
+      floor: sceneFloor(), images: S.sceneImg || {}, frame: f.fill && G.stageOk(W.B68Map) ? S.sceneFrame || null : null };      /* the frame only where the stage is sized to it */
+  }
+  /* MK2 (the overseer's addition 1, and the review): while asked (sceneFrameAsk), the shared screen answers with the pixel size of its map frame
+     (the stt document's frame, numbers only). The stage is drawn for that frame. B68GmScene.frameTrack decides: a new frame (more than 8 px off) is taken and the
+     live map sent again once, 1.5 s later, at most twice in ten minutes; a frame that keeps changing (two screens of different sizes) stops the
+     following, and the Shared screen select sizes the stage until the GM chooses there again or reloads. */
+  function sceneFrameSeen() {
+    var G = W.B68GmScene, d = STT.doc, nf = d && d.frameWant === true && isObj(d.frame) ? d.frame : null; if (!S || !G || !isObj(nf)) return;      /* the answer, read only while asked */
+    var was = S.frameTrack, r = G.frameTrack(was, nf, Date.now()), me = S;
+    S.frameTrack = r.state; S.sceneFrame = r.state.stopped ? null : r.state.frame;
+    if (r.state.stopped && !(was && was.stopped) && S.panel === 'location') renderLocation();      /* the line beside the select */
+    if (!r.resend) return;
+    clearTimeout(S.frameDt); S.frameDt = setTimeout(function () { if (S === me && sceneFlags()) { liveTokens(); if (S.panel === 'location') renderLocation(); } }, 1500);
+  }
+  /* MK2 4b: the shared screen's floor (loc.map.ipadFloor, a new optional key: '' is the whole building). Only a floor the kit's own player copy
+     titles is offered or sent: its titles are generic (Ground floor, Basement...), taken from B68Map.render's result, never from B68Map.floors */
+  function sceneFloors() {
+    var K = W.B68Map; if (!S || !S.locRoll || !K || typeof K.render !== 'function') return [];
+    var mu = Object.assign({}, mapUi(), { layer: 'player' }), rv = revealEntries(mu), key = rollKey(S.locRoll) + '|' + rv.join(',');
+    if (S.floorMemo && S.floorMemo.key === key) return S.floorMemo.v;
+    var v = []; try { var r = K.render(S.locRoll, mapOpts(mu, 'player', rv, P.IPAD_MAP)); v = (r && r.layout && Array.isArray(r.layout.levels) ? r.layout.levels : []).filter(function (l) { return isObj(l) && Number.isInteger(l.lvl) && P.LEVEL_TITLES.indexOf(str(l.title).toLowerCase()) >= 0; }).map(function (l) { return { lvl: l.lvl, title: str(l.title) }; }).sort(function (a, b) { return b.lvl - a.lvl; }); } catch (e) { v = []; }
+    S.floorMemo = { key: key, v: v };
+    return v;
+  }
+  function sceneFloor() { var s = str(mapUi().ipadFloor); if (!/^-?\d+$/.test(s)) return null; var n = +s; return sceneFloors().some(function (l) { return l.lvl === n; }) ? n : null; }
+  /* MK2 step 4: the pictures of the people in a room cut to, made with the figure kit's own rasterize (a webp as a data: URL the server and the kit
+     accept), remembered by person; a person without one goes as a spec (three at most). Never waits more than 4 s. */
+  function sceneImages(room) {
+    var G = sceneMod(), F = W.B68Figure, sc = sceneInput(); if (!G || !sc || !F || typeof F.rasterize !== 'function' || typeof W.FileReader !== 'function') return Promise.resolve(0);
+    var imgs = S.sceneImg = S.sceneImg || {}, want = G.playerPeople(sc, [room]).filter(function (p) { return !imgs[G.imageKey(p)]; });
+    var one = function (p) {
+      var spec = p.spec || (typeof F.extra === 'function' ? F.extra({ role: p.role, seed: p.seed }) : null); if (!spec) return Promise.resolve(0);
+      return F.rasterize(spec, { height: 420, pixelRatio: 1, type: 'image/webp', quality: 0.85 }).then(function (r) {
+        return new Promise(function (res) { var fr = new W.FileReader(); fr.onload = function () { var h = str(fr.result); if (G.imageOk({ href: h, width: r.width, height: r.height })) imgs[G.imageKey(p)] = { href: h, width: r.width, height: r.height }; res(1); }; fr.onerror = function () { res(0); }; fr.readAsDataURL(r.blob); });
+      }, function () { return 0; });
+    };
+    return Promise.race([Promise.all(want.map(one)), new Promise(function (res) { setTimeout(res, 4000); })]);
+  }
+  /* map.room: the rooms the crew knows (where a marker may stand on the players' map), a Cut to room on each room card, and what is up */
+  function sceneRooms() { var mu = Object.assign({}, mapUi(), { layer: 'player' }), rv = revealEntries(mu); return S && S.locRoll ? tokenRooms(S.locRoll, rv, knowRooms(mu)) : []; }
+  function sceneRoomOk() { var f = sceneFlags(); return !!(f && f.room && sceneMod().roomViewOk(W.B68Map) && runSite()); }
+  function sceneRoomTools(name) {
+    if (!sceneRoomOk() || sceneRooms().indexOf(name) < 0) return '';
+    var up = !!S.sceneRoom && S.sceneRoom === name && mapOnIpad();
+    return '<p class="rv-open gm-scene-cut">' + runChip(up ? 'On the iPad' : 'Cut to room', ' data-site="scene-cut" data-room="' + esc(name) + '" title="This room alone on the shared screen, as a stage set"', up) + '</p>';
+  }
+  function sceneTools() {
+    if (!sceneRoomOk() || !S.sceneRoom || !mapOnIpad()) return '';
+    return '<span class="chip sm gm-scene-up" role="status">iPad: ' + esc(S.sceneRoom) + '</span>' + runChip('Back to the map', ' data-site="scene-back" title="The players’ map on the shared screen again"');
+  }
+  /* a data-site action of MK1's (true when it was one); Show on iPad and Take it down put the map, not a room, on the screen */
+  function sceneAct(a, el) {
+    if (a === 'ipad' || a === 'ipad-down') { if (S) S.sceneRoom = ''; return false; }
+    if (a !== 'scene-cut' && a !== 'scene-back') return false;
+    var name = a === 'scene-cut' && el && el.getAttribute ? str(el.getAttribute('data-room')) : '', me = S, was = S.sceneRoom || '';
+    if (a === 'scene-cut' && (!sceneRoomOk() || sceneRooms().indexOf(name) < 0)) return true;
+    S.sceneRoom = name;
+    /* MK2: the room's pictures first; then the one send that keeps the room cut to (showOnIpad clears it for every other). If anything changed
+       the cut while the pictures were made (Show on iPad, another cut), this one is dropped */
+    Promise.resolve(name ? sceneImages(name) : 0).then(function () {
+      if (S !== me || S.sceneRoom !== name) return false;
+      var sent; S.sceneCutting = true;
+      try { sent = siteMapUp(false, false); } finally { S.sceneCutting = false; }
+      return sent;
+    }).then(function (ok) { if (S === me && !ok && S.sceneRoom === name) S.sceneRoom = was; if (S === me) siteChanged(); });
+    return true;
+  }
+  /* the laptop's player-layer preview does not draw the scene: one line says what the shared screen adds (the review of #234, item 4) */
+  function scenePreviewNote() {
+    var f = sceneFlags(); if (!f || !S.map || S.map.layer !== 'player') return '';
+    var a = [];
+    if (f.fill && sceneMod().stageOk(W.B68Map)) a.push('fills the screen');
+    if (f.people) a.push('shows the crew and a crowd');
+    if (f.lights) a.push('lights a room when an event the players know runs');
+    if (S.sceneRoom && mapOnIpad()) a.push('is cut to ' + S.sceneRoom);
+    return a.length ? 'The shared screen also ' + a.join(', ') + ' (not drawn here). ' : '';
   }
 
   /* ---- the strip ---- */
@@ -3917,11 +4115,14 @@
   }
   function runV2Model(rs, t) { return W.B68GmRunView.model(rs.play, ballDoc(rs.name), { t: t, pcs: runPcs(), floors: runFloors(rs), isOpen: runIsOpen }); }
   /* one token per room that holds a PC or a person who matters, at the published time (a peek never reaches the map) */
-  function runV2Tokens(rs) {
+  function runV2Tokens(rs, fig) {
     var st = ballDoc(rs.name), m = runV2Model(rs, +st.t >= 0 ? +st.t : 0), out = [];
+    /* MK2: fig (from sceneFigured) lists the people the map draws as figures with their flag: they get no pill as well; null, every pill as before */
+    var drawn = function (room, label) { return !!fig && fig.some(function (f) { return f.room === room && f.label === label; }); };
     Object.keys(m.cards).sort().forEach(function (name) {
       var c = m.cards[name]; if (c.lvl === null) return;
-      var pills = c.pcs.map(function (p) { return { t: p.ini, c: '#111111' }; }).concat(c.npcs.map(function (n) { return { t: n.ini, c: RUN_KIND[n.kind] || '#5d5d5d' }; }));
+      var pills = c.pcs.filter(function (p) { return !drawn(name, str(p.name)); }).map(function (p) { return { t: p.ini, c: '#111111' }; })
+        .concat(c.npcs.filter(function (n) { return !drawn(name, str(n.label)); }).map(function (n) { return { t: n.ini, c: RUN_KIND[n.kind] || '#5d5d5d' }; }));
       if (!pills.length) return;
       if (pills.length > 4) pills = pills.slice(0, 3).concat([{ t: '+' + (pills.length - 3), c: '#333333' }]);
       out.push({ room: name, label: '', svg: runTokenSvg({ pills: pills, pies: [], lens: null, danger: false }) });
@@ -3942,6 +4143,7 @@
     if (sig && S.runCache && S.runCache.map[sig]) r = S.runCache.map[sig];
     else {
       try { r = K.render(S.locRoll, o); } catch (e) { return ''; }
+      r = sceneGmCheck(o, r, K);      /* MK2 */
       if (sig) { var rc = S.runCache = S.runCache || { map: {}, keys: [] }; rc.map[sig] = r; rc.keys.push(sig); while (rc.keys.length > RUN_CACHE_MAX) delete rc.map[rc.keys.shift()]; }
     }
     S.b19Model = r && r.model ? r.model : null;     /* B19: the rooms' ids, for the map beats */
@@ -3993,13 +4195,13 @@
       openRoom: function (name, on) { roomOpen(name, on); }, mapSvg: runMapSvg, mapPaint: function (fr, svg, zoom) { b19Paint(fr, svg, zoom); },
       /* N3, the site (gm/site.js): the ONE alarm, the toolbar and the stage, the rooms' states, each card's Players' map, people and If it goes wrong, the ⋯ parts */
       alarmHtml: function (open) { var si = siteInst(); return si ? si.alarm(open, 'data-rv="alarm"') : ''; }, alarmPop: function () { var si = siteInst(); return si ? si.alarmPop(false) : ''; },
-      toolsHtml: function () { var si = siteInst(); return si ? si.tools() : ''; }, stageHtml: function () { var si = siteInst(); return si ? si.stage() : ''; },
+      toolsHtml: function () { var si = siteInst(); return (si ? si.tools() : '') + sceneTools(); }, roomTools: sceneRoomTools, stageHtml: function () { var si = siteInst(); return si ? si.stage() : ''; },
       roomStates: function () { var si = siteInst(); return si ? si.states() : {}; }, knowledgeSeg: function (name) { var si = siteInst(); return si ? si.seg(name) : ''; },
       peopleHtml: function (name, here, first) { var si = siteInst(); return si ? si.people(name, here, first) : ''; }, roomWrong: function (name) { var si = siteInst(); return si ? si.wrong(name) : []; },
       roomAt: function (svg, ev) { var k = knInst(); return k ? k.roomAt(svg, ev) : ''; },
       pinned: function () { return S && S.b19 && S.b19.flashback ? S.b19.flashback.pinned() : ''; }, threat: function () { return S && S.b19 && S.b19.threat ? S.b19.threat.view() : null; },
       intelGroups: function () { var k = knInst(); return k && k.active() ? k.view().groups.map(function (g) { return { id: g.id, label: g.label }; }) : []; },
-      costume: function () { var si = siteInst(); return si ? si.costume() : false; }, siteAct: function (a, el, view) { var si = siteInst(); if (si) si.act(a, el, view); },
+      costume: function () { var si = siteInst(); return si ? si.costume() : false; }, siteAct: function (a, el, view) { if (sceneAct(a, el)) return; var si = siteInst(); if (si) si.act(a, el, view); },
       clockNamed: function (name) { var l = tableClocks().filter(function (c) { return str(c.name).trim() === name; }); return l.length ? l[0] : null; },
       publish: runPublish, toast: toast, phoneCards: phoneCardsOn, setPhoneCards: setPhoneCards,
       /* server time: the iPad corrects to it, so the beat timer's endsAt is stamped on it (the GM api's Date-header skew; 0 when unknown) */
@@ -4109,6 +4311,7 @@
   }
   /* okd: a reveal list the GM has just said yes to (Send, F4): the same list is not asked about twice; any other list still asks */
   function showOnIpad(okd) {
+    if (S && S.sceneRoom && !S.sceneCutting) S.sceneRoom = '';      /* MK1 (#234 review): a deliberate map send puts the map up, never a room cut to earlier */
     var mu = mapUi(), d, tk = playerTokenSet(revealEntries(mu));
     try { d = playerDisplay(S.locRoll, mu, W.B68Map && W.B68Map.render, tk); } catch (e) { toast(errText(e), true); return Promise.resolve(false); }
     if (!(Array.isArray(okd) && JSON.stringify(okd) === JSON.stringify(d.reveal)) && !confirmReveal(d.reveal, 'This map')) return Promise.resolve(false);
@@ -4122,6 +4325,7 @@
       if (S === me) renderLocation();
       toast('On the iPad: ' + d.title + ' (' + d.caption + '). Bands you open or close now go to the iPad at once.');
       if (d.tokensRefused) toast(P.TOKEN_LEAK_MSG, true);
+      if (d.sceneCut) toast(P.SCENE_CUT_MSG[d.sceneCut], true);      /* MK2: said on this screen, never silent */
       if (S === me) liveTokens();          /* a marker moved while this was on its way */
       return true;
     }, function (e) { if (!e.superseded) toast('Could not send to the iPad: ' + errText(e), true); return false; });
@@ -4326,6 +4530,7 @@
       fail: function () { if (S === me) endLive(); }
     }).then(function () {
       toast('On the iPad now: ' + d.caption + '.');
+      if (d.sceneCut) toast(P.SCENE_CUT_MSG[d.sceneCut], true);      /* MK2 */
       /* a refused set of markers says so once per set (the map itself went) */
       if (d.tokensRefused && S === me && S.mapOn && S.mapOn.key === key && S.mapOn.tokToast !== sig) { S.mapOn.tokToast = sig; toast(P.TOKEN_LEAK_MSG, true); }
     }, function (e) {
@@ -5647,6 +5852,7 @@
     var g = gmApi(); if (!g || typeof g.stt !== 'function') return;
     Promise.all([g.stt(), g.transcript({ tail: 30 }).then(function (r) { return r; }, function () { return null; })]).then(function (res) {
       STT.doc = res[0] && res[0].doc || null; STT.at = res[0] && res[0].updatedAt || null; STT.tail = res[1] && Array.isArray(res[1].lines) ? res[1].lines : STT.tail; STT.error = ''; STT.loaded = true; renderStt(); renderBar();
+      sceneFrameAsk(); sceneFrameSeen();      /* MK2: the ask for the shared screen's map frame, and its answer */
     }, function (e) { STT.error = errText(e); STT.loaded = true; renderStt(); renderBar(); });
   }
   /* A6 (ai.onair): the page mirrors the iPad's ON AIR lamp and the off-the-record countdown (gm/onair.js reads the listening document this page already polls) */
@@ -7800,7 +8006,7 @@
     if (t.hasAttribute('data-ambint')) { patchAmbient({ intervalMin: Math.round(+t.value) }); return; }
     if (t.hasAttribute('data-site')) { S.siteFor = str(t.value); renderLocation(); return; }     /* the save row's score: this page only */
     if (t.hasAttribute('data-loc')) { var l = {}; l[t.getAttribute('data-loc')] = t.type === 'checkbox' ? t.checked : t.value; patch({ loc: { ui: l } }); }
-    else if (t.hasAttribute('data-map')) setMap(t.getAttribute('data-map'), t.value);
+    else if (t.hasAttribute('data-map')) { if (t.getAttribute('data-map') === 'screen' && S) { S.frameTrack = null; S.sceneFrame = null; } setMap(t.getAttribute('data-map'), t.value); if (/^(screen|ipadFloor)$/.test(t.getAttribute('data-map'))) liveTokens(); }     /* MK1/MK2: a live map follows the screen's shape and floor at once (liveReveal); choosing a screen follows reports afresh */
     else if (t.hasAttribute('data-scn')) { var sc = {}; sc[t.getAttribute('data-scn')] = t.value; patch({ scn: { ui: sc } }); }
     else if (t.hasAttribute('data-scui')) scSetUi(t.getAttribute('data-scui'), t.value);
     else if (t.hasAttribute('data-npcui')) { var nu = {}; nu[t.getAttribute('data-npcui')] = t.value; patch({ npc: { ui: nu } }); }

@@ -16,6 +16,7 @@
    Plain script, UMD: window.B68Stt in the browser, module.exports (the pure helpers) under Node.
 
    B68Stt.attach(container, { gm })   gm = window.claude.gm (stt, patchStt, sttToken, addTranscript) -> { destroy, state, feed }
+     opts.frame() -> { w, h } | null (MK2, optional): the display's map frame in px, sent as PATCH { frame } only while the GM asks (frameWant)
      feed(part)  the display poll's transcriber part { want, session } (null: that answer had none, ask GET /api/gm/stt yourself)
    Pure: downsample(f32, inRate, outRate) -> Int16Array · runsOf(words) -> runs with their words · makeMerger(emit, clock, cue) · lineId() · DG_URL
    makeMerger(emit, clock, cue): cue is B68Cue (display bundle: cue.js loads first). A line closes after 4 s quiet or 20 s open, as before; a line holding a cue closes
@@ -243,6 +244,20 @@
       Promise.resolve().then(function () { return opts.device(); }).then(null, function () { return null; }).then(go).catch(function () {});
     }
     function setState(st, err) { s.state = st; if (err !== undefined) s.error = err; paint(); report(); }
+    /* MK2: the map frame's size, two whole numbers from 200 to 10000, or null (no reporter, no map up, a size out of range). It is sent ONLY while the
+       GM asks for it (s.ask: the stt part's frame: true on the display GET, else the document's frameWant on the old poll), as its own PATCH
+       { frame }, never in the status: with no ask the page makes exactly the requests it always made */
+    function frameTick() {
+      if (!s.ask || !gm.patchStt) { s.lastFrame = ''; return; }
+      var f = frameNow(), k = f ? f.w + 'x' + f.h : ''; if (!f || k === s.lastFrame) return;
+      s.lastFrame = k; Promise.resolve().then(function () { return gm.patchStt({ frame: f }); }).catch(function () { s.lastFrame = ''; });
+    }
+    function frameNow() {
+      if (typeof opts.frame !== 'function') return null;
+      var f = null; try { f = opts.frame(); } catch (e) { f = null; }
+      var ok = function (n) { return typeof n === 'number' && n === Math.round(n) && n >= 200 && n <= 10000; };
+      return f && ok(f.w) && ok(f.h) ? { w: f.w, h: f.h } : null;
+    }
 
     /* ---- the lines out ---- */
     function push(line) {
@@ -376,18 +391,21 @@
       Promise.resolve().then(function () { return gm.stt(); }).then(function (r) {
         if (s.dead || s.fed === true) return;       /* the display poll took over while this was out */
         var d = r && r.doc || {};
+        s.ask = d.frameWant === true;      /* MK2: the GM's ask for the map frame, on the old way */
         take(d.want, d.session);
       }, function () {});
     }
     function feed(part) {
       if (s.dead) return;
-      if (part && (part.want === 'on' || part.want === 'off')) { s.fed = true; take(part.want, part.session); }
+      if (part && (part.want === 'on' || part.want === 'off')) { s.fed = true; s.ask = part.frame === true; take(part.want, part.session); }      /* MK2: the ask rides on the part */
       else if (s.fed !== false) { s.fed = false; poll(); }       /* no part in the answer: the old way, starting now */
     }
     every(poll, T.poll);
     every(function () { s.merger.tick(); }, T.tick);
     every(send, T.flush);
     every(function () { if (s.running || (!document.hidden && Date.now() - s.lastReport >= T.idleStatus)) report(); }, T.status);
+    /* MK2: while the GM asks, the map frame's size goes within 2 s of a change (once per size); without the ask nothing is sent */
+    if (typeof opts.frame === 'function') every(frameTick, 2000);
     every(function () {
       if (s.ws && s.ws.readyState === 1 && Date.now() - s.lastSent > 3000) { try { s.ws.send(JSON.stringify({ type: 'KeepAlive' })); } catch (e) {} }
       if (s.running && Date.now() - s.startedAt > T.maxSession) { s.error = 'stopped after 6 hours'; stop(); }
