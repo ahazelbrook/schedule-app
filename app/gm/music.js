@@ -689,11 +689,13 @@
       var now0 = st.playing && st.track ? '<b>Now playing</b> ' + esc(st.track) + ' <span class="gm-cs-dim">· ' + esc(LABEL[st.list] || '') + (st.list && st.mood && st.list !== st.mood ? ' (for ' + esc(LABEL[st.mood]) + ': its playlist is empty)' : '') + '</span>'
         : !st.total ? 'No tracks yet. Add them in <b>Before › The room › Music</b>.' : st.mode === 'off' ? 'Stopped.' : st.tapped ? 'Paused.' : 'Waiting for a tap on ▶ (the browser plays nothing until you press it).';
       var why = st.mode === 'auto' ? '<span class="gm-cs-dim">Auto: ' + esc(WHY[st.why] || LABEL[st.auto] || '') + '</span>' : st.mode !== 'off' ? '<span class="gm-cs-dim">Held on ' + esc(LABEL[st.mode] || '') + ' until Auto</span>' : '';
-      return '<div class="gm-cs-popacts"><button type="button" class="btn sm primary gm-mu-pp" data-mu-act="toggle"' + (st.total ? '' : ' disabled') + '>' + (st.playing ? '❚❚ Pause' : '▶ Play') + '</button>' +
-        '<button type="button" class="btn sm" data-mu-act="next"' + (st.total && st.playing ? '' : ' disabled') + '>Next track</button>' + why + '</div>' + segHtml() +
+      /* one deck button (▶/❚❚, Next track, Bring the music back): the same markup each time */
+      var act = function (a, cls, on, label) { return '<button type="button" class="btn sm' + cls + '" data-mu-act="' + a + '"' + (on ? '' : ' disabled') + '>' + label + '</button>'; };
+      return '<div class="gm-cs-popacts">' + act('toggle', ' primary gm-mu-pp', st.total, st.playing ? '❚❚ Pause' : '▶ Play') +
+        act('next', '', st.total && st.playing, 'Next track') + why + '</div>' + segHtml() +
         '<label class="gm-mu-vol">Volume <input type="range" min="0" max="100" step="5" value="' + st.vol + '" data-mu-vol aria-label="Music volume"> <span data-mu-voln>' + st.vol + '</span></label>' +
         '<p class="gm-mu-np" data-mu-np>' + now0 + '</p>' + (st.err ? '<p class="gm-mu-err" role="status">' + esc(st.err) + '</p>' : '') + (st.duck === 'credits' ? '<div class="gm-cs-popacts gm-mu-duck" role="status"><span><b>Quiet for the credits.</b> <span class="gm-cs-dim">It comes back by itself when they end.</span></span>' +
-          '<button type="button" class="btn sm" data-mu-act="back">Bring the music back</button></div>' : st.ducked ? '<p class="gm-cs-dim">Faded down: the work light is on.</p>' : '');
+          act('back', '', true, 'Bring the music back') + '</div>' : st.ducked ? '<p class="gm-cs-dim">Faded down: the work light is on.</p>' : '');
     }
     function popHtml() { return deckHtml() + '<div class="gm-cs-popacts"><button type="button" class="btn sm" data-mu-act="library">Library…</button></div>'; }
     function busyRange(el) { var vf = el && el.querySelector('[data-mu-vol]'); return !!(vf && h.document && h.document.activeElement === vf); }
