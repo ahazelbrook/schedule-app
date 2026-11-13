@@ -309,6 +309,29 @@ try {
   check(!!sEarly && sEarly.reveal.join() === stored, 'IP6c: a pin made before the stored score was read lands at the stored bands (' + (sEarly ? sEarly.reveal.join() : 'not written') + ')');
   await gp.unroute('**/api/gm/ambient**', later);
 
+  /* IP6d: the GM page on ANOTHER site's roll; from a second device a pinned face is hidden again and a clock named on a pin is hidden: both
+     leave the stored board, the display GET and the scene within one sync, the rest of the board stays, the page stays where it was */
+  await sleep(2000);
+  await gp.click('[data-gm="locroll"]');
+  await gp.waitForFunction((n) => window.B68GmPage._state().locRoll && window.B68GmPage._state().locRoll.name !== n, 'The Pelican Rooms', { timeout: 10000 });
+  await sleep(2500);
+  const sA = await score(), otherSite = await gp.evaluate(() => window.B68GmPage._state().locRoll.name);
+  check(!!sA && sA.name === 'The Pelican Rooms' && sA.board.includes('Mabel Quist') && sA.board.includes(CLOCKLINE), 'IP6d: the Pelican Rooms board is the score scene (Mabel Quist and the clock line on it) while the page is on ' + otherSite);
+  await npc('npc-mabel', { revealed: false });
+  const campD = (await api('GET', '/campaign')).json, cdD = campD && (campD.doc || campD);
+  await api('PATCH', '/campaign', { clocks: (cdD.clocks || []).map((c) => c.id === 'c-marker' ? Object.assign({}, c, { hidden: true }) : c) });
+  const sGone = await until(async () => { const s = await score(), g = await displayGet(), b = await board(); return s && !s.board.includes('Mabel Quist') && !s.board.includes(CLOCKLINE) && !g.includes('Mabel Quist') && !g.includes(CLOCKLINE) && b && !b.text.includes('Mabel Quist') && !b.text.includes(CLOCKLINE) ? s : null; }, 15000, 250);
+  check(!!sGone, 'IP6d: the hidden face and the hidden clock line are gone from the stored board, the display GET and the scene within one sync');
+  check(!!sGone && sGone.name === 'The Pelican Rooms' && sGone.board.includes(DOVLINE) && sGone.board.includes(EARLY) && sGone.reveal.join() === sA.reveal.join(), 'IP6d: the rest of the board stays, at the stored bands (' + (sGone ? sGone.reveal.join() : '') + ')');
+  check(await gp.evaluate((n) => window.B68GmPage._state().locRoll.name === n, otherSite), 'IP6d: the GM page is still on ' + otherSite);
+  const said = await toastErr();
+  check(/planning board of The Pelican Rooms was redrawn/.test(said) && /Open The Pelican Rooms/.test(said), 'IP6d: one toast says what happened and how back: "' + said.slice(0, 120) + '"');
+  await npc('npc-mabel', { revealed: true });
+  await api('PATCH', '/campaign', { clocks: (cdD.clocks || []) });
+  await gp.click('[data-gm="replay"][data-tool="location"][title^="The Pelican Rooms"]').catch(() => {});
+  await gp.waitForFunction(() => window.B68GmPage._state().locRoll && window.B68GmPage._state().locRoll.name === 'The Pelican Rooms', null, { timeout: 10000 }).catch(() => {});
+  check(!!(await until(async () => { const s = await score(); return s && s.board.includes('Mabel Quist') && s.board.includes(CLOCKLINE) ? s : null; }, 20000)), 'IP6d: back on the Pelican Rooms with the face and the clock allowed again, both come back');
+
   /* off: no Board block, and Set as score scene stores today's board */
   await players(false);
   await openGm();

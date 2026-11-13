@@ -232,7 +232,7 @@ test('the wiring: scoreScene is unchanged, one score write, the block and the pa
   assert.match(src, /function pbOn\(\) \{ return !!W\.B68GmPlayersBoard && b09On\('stage\.players'\); \}/);
   assert.match(src, /\(pbOn\(\) \? '<div class="gm-pb-slot" data-pb-slot><\/div>' : ''\)/);
   assert.match(src, /if \(pbOn\(\)\) W\.B68GmPlayersBoard\.paint\(box, pbHost\(\)\);/);
-  assert.match(src, /P\.tokenScreen\(\[x\.tok\], S\.locRoll, seen, hide\)/, 'each pin screened alone');
+  assert.ok(src.includes('P.tokenScreen([x.tok], roll, seen, hide)'), 'each pin screened alone');
   const R = req(path.join(APP, 'routes.js')); const gm = (R.BUNDLES || R.bundles || {}).gm || [];
   if (gm.length) assert.equal(gm[gm.length - 1], 'gm/players-board.js', 'the last of the gm bundle');
   else assert.ok(read('routes.js').includes("'gm/players-screen.js', 'gm/players-board.js']"), 'the last of the gm bundle');
@@ -317,6 +317,14 @@ await test('IP6c: a page load writes nothing; before the stored score and the ca
   ready = true; B.follow(host); await tick();
   assert.equal(calls.length, 1, 'it is written once the stored score is read'); assert.equal(calls[0].n, 2); assert.equal(calls[0].keep, true, 'at the stored bands');
   B.reset();
+});
+await test('IP6d: the stored board of another site that shows a hidden name is redrawn from its roll when the page has it, else taken down; nothing to do, nothing done', () => {
+  assert.equal(B.otherPlan([], true), 'none'); assert.equal(B.otherPlan([], false), 'none'); assert.equal(B.otherPlan(null, true), 'none');
+  assert.equal(B.otherPlan(['ada vell'], true), 'redraw', 'the roll at hand: redrawn without the failing pins, at its stored bands');
+  assert.equal(B.otherPlan(['ada vell'], false), 'clear', 'no roll here: the score scene comes down rather than leave the name up');
+  const src = read('gm-page.js');
+  assert.ok(read('gm/players-board.js').includes("if (!onBoard(host, s)) { if (typeof host.other === 'function') host.other(); return; }") && src.includes('function pbOther()'), 'follow hands another site board to the page');
+  assert.equal((src.match(/patchAmbient\(\{ score:/g) || []).length, 2, 'still the one built write and the one clear');
 });
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 if (failed) process.exit(1);

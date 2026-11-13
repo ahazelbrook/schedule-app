@@ -169,6 +169,9 @@
     return { room: pin.room, label: WORD[pin.kind], svg: cardSvg(pin, uid) };
   }
   function sig(parts) { return JSON.stringify(parts); }
+  /* IP6d: the stored board is another site's and shows names the players may not see now (hits): redraw it from that site's roll when this page
+     has it ('redraw', at its stored bands, the failing pins screened out), else take the score scene down ('clear'); nothing to do: 'none' */
+  function otherPlan(hits, haveRoll) { return !Array.isArray(hits) || !hits.length ? 'none' : haveRoll ? 'redraw' : 'clear'; }
   /* the board under the iPad's cap with as many real faces as fit: items [{ full, lite?, alt? }] (screened tokens, oldest pin first). With every
      face full the board is too large -> the oldest face is drawn lighter, then the next... -> then the oldest lighter face becomes a name plate,
      then the next, until it fits. -> { svg | null, lighter, plates }. A board refused for any other reason (a leak) is null at once. */
@@ -288,7 +291,8 @@
     else if (rolled(host) && !st.pending) return;
     if (st.pending) { st.pending = false; sync(host, false); return; }      /* a pin made before the stored score was read: written now, at the stored bands */
     var s = state(host);
-    if (s.sig === st.last || !onBoard(host, s)) return;
+    if (!onBoard(host, s)) { if (typeof host.other === 'function') host.other(); return; }      /* IP6d: the stored board is another site's: it is still screened */
+    if (s.sig === st.last) return;
     if (typeof host.busy === 'function' && host.busy()) { if (n < 20) setTimeout(function () { follow(host, n + 1); }, 400); return; }
     sync(host, false);
   }
@@ -380,5 +384,5 @@
 
   return { KEY: KEY, KINDS: KINDS, MAX: MAX, FACES_MAX: FACES_MAX, TEXT_MAX: TEXT_MAX, SITES_MAX: SITES_MAX, WORD: WORD,
     clean: clean, sitesOf: sitesOf, pinsOf: pinsOf, patchFor: patchFor, wrap: wrap, fitText: fitText, cardSvg: cardSvg, faceSvg: faceSvg, known: known,
-    token: token, sig: sig, board: board, fitBoard: fitBoard, ems: ems, AREAS: AREAS, rebase: function (host) { var s0 = state(host); st.last = s0.sig; st.bands = s0.shownKey; st.roll = host.roll(); }, paint: paint, follow: function (host) { follow(host, 0); }, add: add, remove: remove, sync: sync, reset: reset, _state: state };
+    token: token, sig: sig, board: board, tokensOf: tokensOf, otherPlan: otherPlan, fitBoard: fitBoard, ems: ems, AREAS: AREAS, rebase: function (host) { var s0 = state(host); st.last = s0.sig; st.bands = s0.shownKey; st.roll = host.roll(); }, paint: paint, follow: function (host) { follow(host, 0); }, add: add, remove: remove, sync: sync, reset: reset, _state: state };
 });
