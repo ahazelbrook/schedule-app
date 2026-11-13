@@ -85,6 +85,7 @@ try {
     await G.route('**/api/gm/assist/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cards: [], updates: [], flags: [], asks: [], marked: 1 }) }));
     page = await G.newPage();
     page.on('pageerror', (e) => errors.push('gm: ' + e.message));
+    page.on('dialog', (d) => d.accept());
     await page.goto(BASE + '/#gm');
     await page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
     await page.waitForSelector('#gm-buttons .gm-btn', { state: 'attached', timeout: 30000 });
@@ -279,6 +280,20 @@ try {
     check(/Tell:/.test(card) && /Signature:/.test(card), 'on: Show on iPad opens the NPC\'s card on the GM page (Tell:, Signature:): ' + card.slice(0, 120));
     if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'gm-npc-card-1366.png') });
     await until(async () => (await shownKind()) === 'npc', 6000);
+    /* IP3's introduction (one NPC, Introduce): the card opens on the GM page; the dials stand down under the title card and come back with the map */
+    const MAP = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><rect width="400" height="300" fill="#e8dfcc"/><text x="20" y="40">The Showroom</text></svg>';
+    await api('PUT', '/gm/display', { kind: 'svg', svg: MAP, title: 'The Pelican Rooms' });
+    check(!!(await until(() => ipad.evaluate(() => !!document.querySelector('.p2-dials:not([hidden]) .p2-dial')), POLL_MS * 3)), 'the dials are up over the map before the introduction');
+    await page.evaluate(() => { const b = document.querySelector('#gm-npc [data-gm="npcintro"][data-id="npc-lotte"]'); if (b) b.click(); });
+    const introCard = await until(() => page.evaluate(() => { const c = document.querySelector('#gm-npc .gm-castcard'), row = c && c.closest('li') && c.closest('li').previousElementSibling; return c && row && row.getAttribute('data-id') === 'npc-lotte' ? c.textContent : ''; }), 8000);
+    check(/Doorwoman/.test(introCard) && /Tell:/.test(introCard), 'on: Introduce (IP3\'s title card) opens that NPC\'s card on the GM page: ' + introCard.slice(0, 80));
+    const during = await until(() => ipad.evaluate(() => document.querySelector('.dp-root.pi-on') ? { card: true, dials: !!document.querySelector('.p2-dials:not([hidden])') } : null), POLL_MS * 3, 100);
+    check(!!during && during.card && !during.dials, 'the dials stand down while the introduction card plays: ' + JSON.stringify(during));
+    if (SHOTS && during) await ipad.screenshot({ path: path.join(SHOTS, 'intro-card-no-dials-1180.png') });
+    await sleep(7000);
+    check(!(await ipad.evaluate(() => !!document.querySelector('.p2-dials:not([hidden])'))), 'after the card the NPC stays up (a stage that is not the map): the dials stay down');
+    await api('PUT', '/gm/display', { kind: 'svg', svg: MAP, title: 'The Pelican Rooms' });
+    check(!!(await until(() => ipad.evaluate(() => !!document.querySelector('.p2-dials:not([hidden]) .p2-dial')), POLL_MS * 3)), 'the map back: the dials come back');
     /* not while typing */
     await page.evaluate(() => { const i = document.createElement('input'); i.id = 'ip2-typing'; document.body.appendChild(i); i.focus(); });
     await page.evaluate(() => { const b = document.querySelector('#gm-npc [data-gm="npcintro"][data-id="npc-dov"]'); if (b) b.click(); });
