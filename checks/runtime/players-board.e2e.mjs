@@ -126,6 +126,9 @@ try {
   await pinIt(pub[0], 'face', 'Mabel Quist');
   const s2 = await until(async () => { const s = await score(); return s && s.board.includes('pb-p2-') ? s : null; }, 10000);
   check(!!s2 && strings(s2.board) === strings(s1.board) + 1, 'pin a face: a portrait goes up in the room, with its own string');
+  if (await until(async () => { const b = await board(); return b && b.arriving ? b : null; }, 8000, 100)) { await sleep(1300); await shot(dp, 'board-face-arrive-tv-1920'); }
+  await until(async () => { const b = await board(); return b && !b.arriving ? b : null; }, 15000);
+  await sleep(2600); await shot(dp, 'board-face-settled-tv-1920');
   const ids = s2 ? [...s2.board.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]) : [];
   check(ids.length > 0 && new Set(ids).size === ids.length, 'every id on the board is there once (' + ids.length + ' ids)');
 
@@ -153,6 +156,9 @@ try {
   check(!!s4, 'the band revealed again: the board updates by itself (no second press of Set as score scene)');
   check(!!(await until(async () => { const b = await board(); return b && b.text.includes(WAIT) ? b : null; }, 15000)), 'and the pin comes up on the iPad');
   await tick('working', false);
+  const s5 = await until(async () => { const s = await score(); return s && s.reveal.join() === 'public' && !s.board.includes(WAIT) ? s : null; }, 10000);
+  check(!!s5, 'taken back once more: the board follows again' + (s5 ? '' : ' (stored ' + ((await score()) || {}).reveal + ', page ' + JSON.stringify(await gp.evaluate(() => window.B68GmPage._state().doc.loc.map.reveal)) + ')'));
+  check(await gp.evaluate(() => !document.querySelector('.gm-scene-behind')), 'the Location view does not say the score scene is behind');
 
   /* remove */
   await gp.click('[data-pb-pin="p1"] [data-pb="remove"]');

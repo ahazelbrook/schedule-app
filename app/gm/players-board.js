@@ -170,7 +170,7 @@
   }
 
   /* ---------- the GM's block ---------- */
-  var st = { last: null, busy: false, again: false, form: { kind: 'line' } };
+  var st = { last: null, busy: false, again: false, form: { kind: 'line' }, focus: '', caret: -1 };
   function el(doc, tag, attrs, text) {
     var e = doc.createElement(tag);
     Object.keys(attrs || {}).forEach(function (k) { if (attrs[k] !== false && attrs[k] != null) e.setAttribute(k, attrs[k] === true ? '' : attrs[k]); });
@@ -200,10 +200,10 @@
     return Promise.resolve(host.setScore(list, !!ask)).then(function (r) {
       st.busy = false;
       if (r && r.refused && r.refused.length) host.toast('Not on the board: ' + r.refused.map(function (x) { return x.label; }).join(', ') + ' would show the players a name they must not see (' + r.refused.map(function (x) { return x.names.join(', '); }).join('; ') + ').', true);
-      if (!r) st.last = null;
+      if (!r) st.last = '';      /* not set: the next look tries again (a sig is never '') */
       if (st.again) { st.again = false; var n = state(host); if (n.sig !== st.last) return sync(host, false); }
       return r;
-    }, function () { st.busy = false; st.last = null; return null; });
+    }, function () { st.busy = false; st.last = ''; return null; });
   }
   function add(host, pin) {
     var s = state(host); if (!s.site) { host.toast('Roll a location first.', true); return false; }
@@ -233,12 +233,19 @@
   /* this site's score scene is the stored one */
   function onBoard(host, s) { var sc = host.score(); return !!(isObj(sc) && s.site && siteName(sc.name) === s.site); }
 
+  /* the score scene follows a change while this site's board is up; while the page is busy with the iPad it looks again shortly (at most 20 times) */
+  function follow(host, n) {
+    var s = state(host);
+    if (s.sig === st.last || !onBoard(host, s)) return;
+    if (typeof host.busy === 'function' && host.busy()) { if (n < 20) setTimeout(function () { follow(host, n + 1); }, 400); return; }
+    sync(host, false);
+  }
   function paint(box, host) {
     var slot = box && box.querySelector ? box.querySelector('[data-pb-slot]') : null;
     var s = state(host);
     /* keep the score scene in step: a pin, a reveal or a face changed since this page last set it, while this site's board is the score scene */
     if (st.last === null) st.last = s.sig;
-    else if (s.sig !== st.last && onBoard(host, s) && !(typeof host.busy === 'function' && host.busy())) sync(host, false);
+    else follow(host, 0);
     if (!slot) return;
     var doc = slot.ownerDocument, root = el(doc, 'section', { 'class': 'gm-pboard', 'aria-label': 'Board' });
     root.appendChild(el(doc, 'h4', {}, 'Board'));
@@ -300,8 +307,19 @@
     root.appendChild(acts);
     while (slot.firstChild) slot.removeChild(slot.firstChild);
     slot.appendChild(root);
+    /* the panel is redrawn under the GM's hands (a poll, a reveal): the field being typed in keeps the focus and the caret. The page has already
+       replaced the slot, so where the focus was is this module's own note (a blur while the field is still on the page clears it) */
+    [room, kind, what].forEach(function (c) {
+      var name = c.getAttribute('data-pb');
+      c.addEventListener('focus', function () { st.focus = name; });
+      c.addEventListener('blur', function () { if (c.isConnected) st.focus = ''; });
+      c.addEventListener('keyup', function () { if (typeof c.selectionStart === 'number') st.caret = c.selectionStart; });
+    });
+    var lost = !doc.activeElement || doc.activeElement === doc.body;
+    var back = st.focus && lost ? slot.querySelector('[data-pb="' + st.focus + '"]') : null;
+    if (back) { back.focus(); if (back.getAttribute('data-pb') === 'text' && back.setSelectionRange) { var c0 = Math.min(st.caret >= 0 ? st.caret : back.value.length, back.value.length); back.setSelectionRange(c0, c0); } }
   }
-  function reset() { st.last = null; st.busy = false; st.again = false; st.form = { kind: 'line' }; }
+  function reset() { st.last = null; st.busy = false; st.again = false; st.form = { kind: 'line' }; st.focus = ''; st.caret = -1; }
 
   return { KEY: KEY, KINDS: KINDS, MAX: MAX, FACES_MAX: FACES_MAX, TEXT_MAX: TEXT_MAX, SITES_MAX: SITES_MAX, WORD: WORD,
     clean: clean, sitesOf: sitesOf, pinsOf: pinsOf, patchFor: patchFor, wrap: wrap, fitText: fitText, cardSvg: cardSvg, faceSvg: faceSvg, known: known,
