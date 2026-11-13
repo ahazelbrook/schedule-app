@@ -357,6 +357,8 @@ try {
     I = await openIpad(browser, 1180, 820);
     if (stage) await I.page.waitForFunction(() => (document.documentElement.getAttribute('data-kit') || '').includes('stage'), null, { timeout: 30000 });
     await step('tint: ' + (stage ? 'new' : 'old') + ' stage: a badge card\'s tell face is tinted like its steady face', async () => {
+      /* the face looks arrive with the display's later bundle files; a card drawn before they land is plain until it is laid again (a fresh page only) */
+      await I.page.waitForFunction(() => !!(window.B68FaceRender && window.B68FaceFormats), null, { timeout: 20000 }); await sleep(500);
       await ambient({ overlay: { id: 'b17sl-tint' + (stage ? 1 : 0), kind: 'npc', npcId: 'n-dov', ms: 60000, look: { fmt: 'badge', expr: 'smirk', tell: true } } });
       await I.page.waitForFunction(() => { const h = document.querySelector('.dp-ov-portrait'); return !!(h && h.closest('.dp-fl') && h.querySelector(':scope > svg g.dp-fl-duo')); }, null, { timeout: 12000 });
       await I.page.waitForFunction(() => { const s = document.querySelector('.dp-ov-portrait > svg'); return !!s && s.getAttribute('data-fl') === 'tell'; }, null, { timeout: 25000 });
