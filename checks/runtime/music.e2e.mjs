@@ -159,6 +159,51 @@ try {
   if (resume) await resume.click();
   check(!!resume && await until(async () => (await attr(page, 'data-gate')) === 'up', 6000), 'Resume brings it back');
 
+  /* ---- IP5.1: the Opening credits duck it while they RUN (90 s), not while they stay pinned; Bring the music back; a replay ducks again ---- */
+  const ambDoc = () => fetch(BASE + '/api/gm/ambient', { headers: { 'X-Dev-User': GM } }).then((r) => r.json()).then((j) => (j && j.doc) || {}, () => ({}));
+  await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+  await page.keyboard.press('i');
+  const CR = '#gm-ipad [data-gm="ambscene"][data-id="credits"]';
+  check(!!(await until(() => page.$(CR), 8000)), 'I opens the iPad view with the Opening credits in its Scenes');
+  await page.click(CR);
+  check(!!(await until(async () => { const d = await ambDoc(); return d.mode === 'pin' && d.scene === 'credits'; }, 6000)) && await until(async () => (await attr(page, 'data-gate')) === 'down', 5000),
+    'pinning the Opening credits fades the laptop music down (the gate is 0)');
+  check(await page.$eval(PILL, (e) => /Quiet: credits/.test(e.textContent) && /quiet for the Opening credits/.test(e.title)), 'the pill says why: Quiet: credits');
+  await page.click(PILL);
+  check(await until(() => page.$eval(POP, (e) => /Quiet for the credits/.test(e.textContent) && !!e.querySelector('[data-mu-act="back"]')), 3000), 'the popover says Quiet for the credits, with Bring the music back');
+  if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'credits-quiet-1366.png'), clip: { x: 0, y: 0, width: 1366, height: 430 } });
+  await page.click(PILL);
+  const listBefore = await attr(page, 'data-list');
+  await page.evaluate(() => window.B68GmPage._creditsAge(91000));      /* the clock past the run; nothing else pressed */
+  check(await until(async () => (await attr(page, 'data-gate')) === 'up', 5000), 'past the credits’ 90 s, with the scene still pinned: the gate is 1 again');
+  const stillPinned = await ambDoc();
+  const back = await page.evaluate(() => window.B68GmPage._music());
+  check(stillPinned.mode === 'pin' && stillPinned.scene === 'credits' && !!back && back.playing && back.gate > 0.98 && back.duck === '' && !!back.list && back.list === listBefore && await page.$eval(PILL, (e) => !/Quiet/.test(e.textContent)),
+    'the mood plays (' + JSON.stringify(back && { list: back.list, mood: back.mood, gate: back.gate }) + '), the credits still pinned on the server');
+  /* a replay: another scene, then the credits again */
+  await page.click('#gm-ipad [data-gm="ambscene"]:not([data-id="credits"]):not([disabled])');
+  await until(async () => { const d = await ambDoc(); return d.mode === 'pin' && d.scene !== 'credits'; }, 5000);
+  await page.click(CR);
+  check(await until(async () => (await attr(page, 'data-gate')) === 'down', 6000), 'pinned again (a replay): down again');
+  await page.click(PILL);
+  await until(() => page.$(POP + ' [data-mu-act="back"]'), 3000);
+  await page.click(POP + ' [data-mu-act="back"]');
+  check(await until(async () => (await attr(page, 'data-gate')) === 'up', 5000), 'Bring the music back: up at once');
+  await page.waitForTimeout(2500);
+  check(await attr(page, 'data-gate') === 'up', 'and it stays up while the credits stay pinned');
+  if (!(await page.$eval(POP, (e) => e.hidden))) await page.click(PILL);
+  /* Clear (the tray) means the credits are over: the music is back at once, the credits stay pinned */
+  await page.click('#gm-ipad [data-gm="ambscene"]:not([data-id="credits"]):not([disabled])');
+  await until(async () => { const d = await ambDoc(); return d.mode === 'pin' && d.scene !== 'credits'; }, 5000);
+  await page.click(CR);
+  const downAgain = await until(async () => (await attr(page, 'data-gate')) === 'down', 6000);
+  const tray = await page.$('.gm-tray [data-tray="clear"]');
+  if (tray) await tray.click();
+  check(downAgain && !!tray && await until(async () => (await attr(page, 'data-gate')) === 'up', 5000) && (await ambDoc()).scene === 'credits', 'Clear (the tray): the music is back at once; the credits stay pinned');
+  /* the iPad back on Auto for what follows */
+  await page.click('#gm-ipad [data-gm="ambmode"][data-v="auto"]');
+  await until(async () => (await ambDoc()).mode === 'auto', 5000);
+
   /* ---- the shots of the pill and the popover at 1366 and 1536, and the fit ---- */
   for (const w of [1366, 1536]) {
     await page.setViewportSize({ width: w, height: w === 1366 ? 768 : 864 });

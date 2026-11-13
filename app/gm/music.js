@@ -31,13 +31,14 @@
    memStore() / idbStore(win) -> { list(), get(id), put(id, meta, blob), del(id) }   (all promises; idbStore over database b68-gm-music, or null)
    make(host) -> ctl
      host: { audio() -> an <audio>-like, url(blob), revoke(url), devices() -> Promise<[MediaDeviceInfo-like]>, prefs: { get(), set(v) }, store,
-             inputs() -> moodOf's inputs plus { panic: bool, credits: bool }, toast(msg, bad?), confirm(msg) -> bool, now(), root() -> #gm-root,
+             inputs() -> moodOf's inputs plus { panic: bool, credits: bool (the credits are RUNNING: creditsWatch) }, creditsDone() (Bring the music back), toast(msg, bad?), confirm(msg) -> bool, now(), root() -> #gm-root,
              storage: navigator.storage-like | null, duration(blob) -> Promise<ms>, every(fn, ms) -> id, stop(id), document }
      ctl.load() -> Promise          ctl.tick()  (the page calls it each second; also every(…) when given)
      ctl.play() ctl.pause() ctl.toggle() ctl.next() ctl.setMode('auto' | mood | 'off') ctl.stop() ctl.setVol(0..100) ctl.cue(word) -> bool
      ctl.add(files, list, { folder }?) -> Promise<n>   a track already in that playlist (the same name and size) is skipped, so a folder can be added again;
        a folder holding two or more of the three named folders goes to addAll; in a folder only EXT_RE's file types count; adds run one at a time
      ctl.addAll(files) -> Promise<n>   a folder holding a folder per playlist (Add a folder of all three, or that folder dropped on the tool)
+     ctl.creditsBack() -> bool   Bring the music back: ends the credits' duck now (state().duck says why the gate is down: 'panic' | 'credits' | '')
      ctl.remove(id)   ctl.clear(list)   ctl.tracks() -> [track]   ctl.state() -> { mode, mood, playing, ... }
      ctl.open() ctl.toggleSheet() ctl.render(box)  the Music tool (the library, the output, the storage)
      ctl.mountPill(slot) ctl.paintPill() ctl.popOpen() ctl.closePop()   the band's pill and its popover (B68GmEsc, priority 70)
@@ -236,6 +237,32 @@
     return out;
   }
 
+  /* ---------- the credits duck (IP5.1) ----------
+     The music fades down while the Opening credits RUN, not for as long as they stay pinned: the scene holds its title card after the run, and the
+     pin often stays all night. CREDITS_RUN_MS is the scene's own length: tools/ambient/scenes/credits.js T.end (90 s). Keep the two equal.
+     creditsWatch() -> { see(pinned, updatedAt, now, fresh), over(), duck(now) -> bool, left(now) -> ms }
+       see: the page read the ambient document. A pin that ARRIVES starts the run at `now` (the page saw it land); on the page's first read
+            (`fresh`: a reload with the credits already pinned) the start is the document's updatedAt, never later than now. Not pinned: it resets,
+            so the next pin (a replay) ducks again.
+       over: the GM did something that means the credits are over (Clear, showing anything, a place on the band, Bring the music back): the
+            duck ends at once, until the next pin. */
+  var CREDITS_RUN_MS = 90000;
+  function creditsWatch() {
+    var on = false, at = 0, done = false;
+    return {
+      see: function (pinned, updatedAt, now, fresh) {
+        if (!pinned) { on = false; done = false; return; }
+        if (on) return;
+        var u = typeof updatedAt === 'string' ? Date.parse(updatedAt) : NaN;
+        on = true; done = false; at = fresh && isFinite(u) ? Math.min(u, now) : now;
+      },
+      over: function () { if (on) done = true; },
+      duck: function (now) { return on && !done && now - at < CREDITS_RUN_MS; },
+      left: function (now) { return on && !done ? Math.max(0, CREDITS_RUN_MS - (now - at)) : 0; },
+      _age: function (ms) { if (on) at -= ms; }     /* the checks: as if that much more of the run had passed */
+    };
+  }
+
   /* ---------- the controller ---------- */
   function make(host) {
     var h = host || {}, ctl = {}, store = h.store || memStore();
@@ -244,6 +271,7 @@
     var tracks = [], loaded = false, mem = null, res = null, gateTo = 1, gate = 1, gateRate = 0, playing = false, tapped = false;
     var decks = [deckOf(), deckOf()], cur = 0, bags = { calm: [], tension: [], action: [] }, last = '', list = '', err = '', note = '', outs = [], persisted = null, used = null;
     var loop = null, ticker = null, popOpen = false, slot = null, escOff = null, docOff = null, box = null, alive = true, tester = null, seq = 0, persistAsked = false;
+    var duckWhy = '', cskip = false;      /* IP5.1: why the gate is down ('panic' | 'credits' | ''), and Bring the music back while the host has no creditsDone */
 
     function now() { return typeof h.now === 'function' ? h.now() : Date.now(); }
     function say(m, bad) { if (typeof h.toast === 'function') h.toast(m, bad); }
@@ -255,7 +283,9 @@
       var i = inputs();
       res = moodOf(Object.assign({}, i, { manual: mode === 'auto' ? '' : mode }), mem, now());
       mem = res.memory;
-      gateTo = i.panic || i.credits ? 0 : 1;
+      if (!i.credits) cskip = false;      /* Bring the music back holds until the credits' duck ends; the next pin ducks again */
+      duckWhy = i.panic ? 'panic' : i.credits && !cskip ? 'credits' : '';
+      gateTo = duckWhy ? 0 : 1;
       var fade = i.panic ? PANIC_FADE : CREDITS_FADE;
       if (gate !== gateTo) { gateRate = 1 / fade; run(); }
       return res;
@@ -376,6 +406,12 @@
     ctl.toggle = function () { return playing ? ctl.pause() : ctl.play(); };
     ctl.next = function () { if (!playing) return ctl.play(); if (list) start(list, TRACK_FADE); return true; };
     ctl.stop = function () { return ctl.setMode('off'); };
+    /* IP5.1: Bring the music back: the credits' duck ends now (the host's own watch, so the page knows too); PANIC is not touched */
+    ctl.creditsBack = function () {
+      if (duckWhy !== 'credits') return false;
+      if (typeof h.creditsDone === 'function') h.creditsDone(); else cskip = true;
+      decide(); paintAll(); return true;
+    };
     ctl.setMode = function (m) {
       var w = moodWord(m); if (!w) return false;
       mode = w; if (w !== 'auto' && w !== 'off') prefs.mood = w; save();
@@ -512,7 +548,7 @@
     ctl.state = function () {
       var d = decks[cur], t = d.id ? tracks.filter(function (x) { return x.id === d.id; })[0] : null;
       return { mode: mode, mood: res ? res.mood : '', auto: res ? res.auto : '', why: res ? res.why : '', playing: playing, tapped: tapped, list: list, track: t ? t.name : '',
-        trackId: d.id, vol: prefs.vol, sink: prefs.sink, gate: gate, ducked: gateTo < 1, counts: counts(), total: tracks.length, loaded: loaded, err: err };
+        trackId: d.id, vol: prefs.vol, sink: prefs.sink, gate: gate, ducked: gateTo < 1, duck: duckWhy, counts: counts(), total: tracks.length, loaded: loaded, err: err };
     };
 
     /* ---- the Music tool (Before > The room, and Find) ---- */
@@ -574,6 +610,7 @@
         if (t.hasAttribute('data-mu-mode')) { ctl.setMode(t.getAttribute('data-mu-mode')); paintAll(); }
         else if (t.getAttribute('data-mu-act') === 'toggle') { ctl.toggle(); paintAll(); }
         else if (t.getAttribute('data-mu-act') === 'next') { ctl.next(); paintAll(); }
+        else if (t.getAttribute('data-mu-act') === 'back') ctl.creditsBack();
         else if (t.hasAttribute('data-mu-del')) ctl.remove(t.getAttribute('data-mu-del'));
         else if (t.hasAttribute('data-mu-clear')) ctl.clear(t.getAttribute('data-mu-clear'));
         else if (t.getAttribute('data-mu') === 'test') ctl.test();
@@ -630,13 +667,13 @@
     /* ---- the band's pill and its popover ---- */
     function pillText() {
       var st = ctl.state(), m = st.mode === 'off' ? '' : st.mood;
-      return { mood: !st.total ? 'Music' : st.mode === 'off' ? 'Off' : (LABEL[m] || 'Off'), auto: st.mode === 'auto', state: st.playing ? 'play' : 'pause' };
+      return { mood: !st.total ? 'Music' : st.mode === 'off' ? 'Off' : st.duck === 'credits' && st.playing ? 'Quiet: credits' : (LABEL[m] || 'Off'), auto: st.mode === 'auto', state: st.playing ? 'play' : 'pause' };
     }
     function pillTitle() {
       var st = ctl.state();
       if (!st.total) return 'Music: no tracks yet. Add them in Before > The room > Music.';
       var s = 'Music: ' + (st.mode === 'off' ? 'stopped' : (LABEL[st.mood] || 'off') + (st.mode === 'auto' ? ' (Auto: ' + (WHY[st.why] || '') + ')' : ' (held until Auto)')) +
-        (st.playing ? ', playing' + (st.track ? ': ' + st.track : '') : st.tapped ? ', paused' : ', waiting for a tap on ▶') + (st.ducked ? '; faded for the work light or the credits' : '');
+        (st.playing ? ', playing' + (st.track ? ': ' + st.track : '') : st.tapped ? ', paused' : ', waiting for a tap on ▶') + (st.duck === 'credits' ? '; quiet for the Opening credits (it comes back by itself when they end)' : st.ducked ? '; faded for the work light' : '');
       return s;
     }
     function segHtml() {
@@ -655,7 +692,8 @@
       return '<div class="gm-cs-popacts"><button type="button" class="btn sm primary gm-mu-pp" data-mu-act="toggle"' + (st.total ? '' : ' disabled') + '>' + (st.playing ? '❚❚ Pause' : '▶ Play') + '</button>' +
         '<button type="button" class="btn sm" data-mu-act="next"' + (st.total && st.playing ? '' : ' disabled') + '>Next track</button>' + why + '</div>' + segHtml() +
         '<label class="gm-mu-vol">Volume <input type="range" min="0" max="100" step="5" value="' + st.vol + '" data-mu-vol aria-label="Music volume"> <span data-mu-voln>' + st.vol + '</span></label>' +
-        '<p class="gm-mu-np" data-mu-np>' + now0 + '</p>' + (st.err ? '<p class="gm-mu-err" role="status">' + esc(st.err) + '</p>' : '') + (st.ducked ? '<p class="gm-cs-dim">Faded down: the work light or the Opening credits are up.</p>' : '');
+        '<p class="gm-mu-np" data-mu-np>' + now0 + '</p>' + (st.err ? '<p class="gm-mu-err" role="status">' + esc(st.err) + '</p>' : '') + (st.duck === 'credits' ? '<div class="gm-cs-popacts gm-mu-duck" role="status"><span><b>Quiet for the credits.</b> <span class="gm-cs-dim">It comes back by itself when they end.</span></span>' +
+          '<button type="button" class="btn sm" data-mu-act="back">Bring the music back</button></div>' : st.ducked ? '<p class="gm-cs-dim">Faded down: the work light is on.</p>' : '');
     }
     function popHtml() { return deckHtml() + '<div class="gm-cs-popacts"><button type="button" class="btn sm" data-mu-act="library">Library…</button></div>'; }
     function busyRange(el) { var vf = el && el.querySelector('[data-mu-vol]'); return !!(vf && h.document && h.document.activeElement === vf); }
@@ -697,6 +735,7 @@
         if (m) { ctl.setMode(m); popOpen = false; }      /* a mood, Auto or Stop closes it: an open popover holds the page's keys (Space is GO) */
         else if (a === 'toggle') ctl.toggle();
         else if (a === 'next') ctl.next();
+        else if (a === 'back') ctl.creditsBack();
         else if (a === 'library') { popOpen = false; paintPill(); if (typeof h.openLibrary === 'function') h.openLibrary(); else ctl.open(); }
         paintPill();
       });
@@ -761,6 +800,7 @@
   }
 
   return { MOODS: MOODS, LABEL: LABEL, FALL: FALL, HOLD_MS: HOLD_MS, DWELL_MS: DWELL_MS, TRACK_FADE: TRACK_FADE, CUT_FADE: CUT_FADE, PANIC_FADE: PANIC_FADE, KEY: KEY, DB: DB, ACCEPT: ACCEPT,
+    CREDITS_RUN_MS: CREDITS_RUN_MS, creditsWatch: creditsWatch,
     moodWord: moodWord, moodOf: moodOf, pick: pick, bagNext: bagNext, prefsOf: prefsOf, trackOf: trackOf, summary: summary, durText: durText, isAudio: isAudio, toneWav: toneWav,
     folderMood: folderMood, folderFiles: folderFiles, byFolder: byFolder,
     memStore: memStore, idbStore: idbStore, deviceList: deviceList, make: make, browserHost: browserHost };
