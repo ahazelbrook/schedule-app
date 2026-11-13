@@ -62,7 +62,9 @@ export const EXEMPTIONS = [
   { name: 'the Settings intro line', reason: 'KS01.1 reworded app/gm/settings.js:139 ("These five are choices" to "These are choices")', selector: '#gm-ipad-settings > p.gm-dim' },
   { name: 'the Preflight file count', reason: 'it counts bundles: kit-flag.js made "0 of 107 kept" read 108', text: String.raw`\d+ of \d+ kept` },
   { name: 'the four map Settings rows', reason: 'MK1 added map.fill, map.people, map.lights and map.room (GM settings, off) to the Settings of the iPad view',
-    selector: ['map.fill', 'map.people', 'map.lights', 'map.room'].map((k) => '#gm-ipad-settings [data-set-row="' + k + '"]').join(', ') }
+    selector: ['map.fill', 'map.people', 'map.lights', 'map.room'].map((k) => '#gm-ipad-settings [data-set-row="' + k + '"]').join(', ') },
+  { name: 'the Players screen Settings row', reason: 'IP2 added stage.players (a display setting, off) as the first row of the Settings of the iPad view',
+    selector: '#gm-ipad-settings [data-set-row="stage.players"]' }
 ];
 /* Not here: KS12's score-scene polaroids (disclosed in KS12's PR). They are drawn inside the score scene's iframe, which a fingerprint does not walk, and no baseline
    scenario shows a scene iframe, so an exemption for them would match nothing. */

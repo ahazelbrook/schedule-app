@@ -201,7 +201,10 @@
     { id: 'map.lights', label: 'Rooms lit by the night’s events', surface: 'gm', stage: 'map', default: false, saturday: 'try', setting: true,
       doc: 'A False dawn event of the play block lights its room on the map while it runs. Off: every room as before.' },
     { id: 'map.room', label: 'Cut to the room', surface: 'gm', stage: 'map', default: false, saturday: 'try', setting: true,
-      doc: 'Each room the players know gets Cut to room in the Run view: that room alone as a stage set on the shared screen, through the same checks as the map; Back to the map puts the map up again. Off: no control.' }
+      doc: 'Each room the players know gets Cut to room in the Run view: that room alone as a stage set on the shared screen, through the same checks as the map; Back to the map puts the map up again. Off: no control.' },
+    /* the players' screen build (IP2, 13/11): one display setting, off until chosen. Off: the iPad, the GM page and the phones as they were */
+    { id: 'stage.players', label: 'Players’ screen: map first', surface: 'display', stage: 'kit', default: false, saturday: 'off', setting: true,
+      doc: 'The shared screen shows the map and what the GM sends, nothing else: no scene band or plate, no time, no Now or Next, no crew status; the clocks the GM made visible sit as dials in a corner; a new scene replaces what is showing. Off: the iPad as it was.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

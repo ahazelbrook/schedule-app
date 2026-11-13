@@ -46,6 +46,10 @@
 
   var RESEND_MS = 4000, RESEND_MAX = 3;
   var ROWS = [
+    /* the players' screen build (IP2, 13/11): first, the row the GM looks for */
+    { key: 'stage.players', label: 'Players’ screen', what: 'The iPad or TV the players see: as it was, or the map first (no scene band, no time, no Now or Next, no crew status; visible clocks as dials in a corner; a new scene replaces what is up).',
+      options: [{ v: false, label: 'Classic' }, { v: true, label: 'Map first' }],
+      said: { 'false': 'Players’ screen: classic. The iPad follows within a few seconds.', 'true': 'Players’ screen: map first. The iPad follows within a few seconds.' } },
     { key: 'fx.off', label: 'Scenes', what: 'The ambient scenes on the iPad: moving, or held as stills to save the battery and the heat.',
       options: [{ v: false, label: 'Moving' }, { v: true, label: 'Held still' }],
       said: { 'false': 'Scenes: moving. The iPad follows within a few seconds.', 'true': 'Scenes: held still. The iPad follows within a few seconds.' } },
