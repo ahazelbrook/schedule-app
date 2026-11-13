@@ -298,5 +298,25 @@ await test('IP6b: the card text sits at least 4% of the card width clear of each
     for (const s of AWK) { const f = B.fitText(s, B.AREAS[kind][2], B.AREAS[kind][3]); for (const l of f.lines) assert.ok(B.ems(l) * f.size <= w + 0.5, kind + ': "' + l + '" is ' + Math.round(B.ems(l) * f.size) + ' wide in ' + w); }
   }
 });
+await test('IP6c: a page load writes nothing; before the stored score and the cast are read nothing is written, and a pin made then waits and lands at the stored bands', async () => {
+  B.reset();
+  const calls = [], doc = { boardPins: { 'Site A': { pins: [{ id: 'p1', room: 'Hall', kind: 'line', text: 'One' }], at: 1 } } };
+  let ready = false, hide = [], npcs = {};
+  const host = { doc: () => doc, roll: () => ROLLA, site: () => 'Site A', rooms: () => [{ name: 'Hall', shown: true }], npcs: () => npcs, scan: () => [],
+    patch: (p) => { Object.assign(doc.boardPins, p.boardPins); return true; }, score: () => (ready ? { name: 'Site A' } : null), busy: () => false, toast: () => {}, figures: () => null,
+    hide: () => hide, ready: () => ready, showBoard: () => Promise.resolve(true), setScore: (list, ask, keep) => { calls.push({ n: list.length, keep }); return Promise.resolve({ ok: true, refused: [] }); } };
+  const ROLLA = { name: 'Site A' }, tick = () => new Promise((r) => setTimeout(r, 0));
+  B.paint(null, host); hide = ['Someone']; npcs = { a: { name: 'A', revealed: true } }; B.follow(host); await tick();
+  assert.equal(calls.length, 0, 'not ready: no write, whatever changes');
+  ready = true; B.follow(host); B.paint(null, host); await tick();
+  assert.equal(calls.length, 0, 'ready: the first look takes the starting point and writes nothing (the cast and the hide list arrived before it)');
+  B.reset(); ready = false;
+  B.paint(null, host);
+  assert.ok(B.add(host, { room: 'Hall', kind: 'line', text: 'Two' }), 'a pin made before the stored score is read is stored');
+  await tick(); assert.equal(calls.length, 0, 'and waits');
+  ready = true; B.follow(host); await tick();
+  assert.equal(calls.length, 1, 'it is written once the stored score is read'); assert.equal(calls[0].n, 2); assert.equal(calls[0].keep, true, 'at the stored bands');
+  B.reset();
+});
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 if (failed) process.exit(1);

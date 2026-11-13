@@ -271,6 +271,44 @@ try {
   const edge = full ? Math.min(...full.cards.map((c) => c.edge)) : 0;
   check(!!full && edge >= 0.04, 'IP6b: every card\'s words sit at least 4% of its width clear of its edges at 1920x1080 (closest ' + (edge * 100).toFixed(1) + '%)');
   await shot(dp, 'board-three-bands-tv-1920');
+  /* IP6c: a GM page load writes nothing to the board: a reload, a second page opening and that page reloading; the stored score read late
+     (held 3 s): no write, the ticks become the stored bands when it comes; a pin made before it comes lands at the stored bands */
+  await gp.click('[data-pb-pin="p5"] [data-pb="remove"]');
+  await until(async () => { const s = await score(); return s && !s.board.includes(STILL); }, 15000);
+  await sleep(2500);
+  const atOf = async () => ((await score()) || {}).at, stored = ((await score()) || { reveal: [] }).reveal.join();
+  let at0 = await atOf();
+  await openGm(); await sleep(15000);
+  check((await atOf()) === at0, 'IP6c: a GM page reload writes nothing to the board (15 s)');
+  const g2c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 1366, height: 768 }, serviceWorkers: 'block' });
+  await g2c.addInitScript(atPlace('score'));
+  const g2 = await g2c.newPage(); g2.on('pageerror', (e) => errors.push('gm2: ' + e.message)); g2.on('dialog', (d) => d.accept());
+  await g2.goto(BASE + '/#gm');
+  await g2.waitForFunction(() => window.B68GmPage && window.B68GmPage._state && window.B68GmPage._state().locRoll, null, { timeout: 40000 });
+  await g2.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur()); await g2.keyboard.press('b');
+  await sleep(15000);
+  check((await atOf()) === at0, 'IP6c: a second GM page opening writes nothing to the board');
+  await g2.reload(); await sleep(15000);
+  check((await atOf()) === at0, 'IP6c: the second page reloading writes nothing to the board');
+  await g2c.close();
+  const late = async (route) => { await sleep(3000); try { await route.continue(); } catch (e) { /* the page went */ } };
+  await gp.route('**/api/gm/ambient**', late);
+  await openGm();
+  await gp.waitForFunction(() => { const s = window.B68GmPage._state(); return s && s.npcsIn; }, null, { timeout: 20000 }).catch(() => {});
+  await sleep(6000);
+  const ticksLate = await gp.$$eval('[data-reveal]', (l) => l.filter((x) => x.checked).map((x) => x.getAttribute('data-reveal')).join());
+  check((await atOf()) === at0 && ticksLate === stored, 'IP6c: the stored score read 3 s late, after the cast: no write, and the ticks are the stored bands when it comes (' + ticksLate + ' = ' + stored + ')');
+  await gp.unroute('**/api/gm/ambient**', late);
+  const later = async (route) => { await sleep(6000); try { await route.continue(); } catch (e) { /* the page went */ } };
+  await gp.route('**/api/gm/ambient**', later);
+  await openGm();
+  const EARLY = 'Pinned before the board was read';
+  await gp.waitForSelector('[data-pb-slot] .gm-pboard', { timeout: 15000 });
+  await pinIt(pub[0], 'line', EARLY);
+  const sEarly = await until(async () => { const s = await score(); return s && s.board.includes(EARLY) ? s : null; }, 20000);
+  check(!!sEarly && sEarly.reveal.join() === stored, 'IP6c: a pin made before the stored score was read lands at the stored bands (' + (sEarly ? sEarly.reveal.join() : 'not written') + ')');
+  await gp.unroute('**/api/gm/ambient**', later);
+
   /* off: no Board block, and Set as score scene stores today's board */
   await players(false);
   await openGm();
