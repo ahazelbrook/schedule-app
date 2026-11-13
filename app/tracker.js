@@ -384,6 +384,7 @@
         '<div class="ds-nav' + (mbtn ? ' ds-nav-m' : '') + (qbtn ? ' ds-nav-q' : '') + '">' +
           '<button type="button" class="btn sm" data-act="back" data-always="1">← Back</button>' +
           (live ? tableButton() : '') +
+          (live && window.B68Handouts ? window.B68Handouts.button() : '') +      /* IP4 (phone.handouts): a player's Handouts, '' while off */
           mbtn +
           '<button type="button" class="btn sm ds-wide" data-act="edit"' + (ro ? ' disabled' : '') + '>Edit figure</button>' +
           '<button type="button" class="btn sm" data-act="print" data-always="1">Print</button>' +

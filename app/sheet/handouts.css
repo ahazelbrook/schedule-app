@@ -1,0 +1,46 @@
+/* sheet/handouts.css: the player's Handouts (IP4, phone.handouts; in the handouts bundle, loaded only while the setting is on, for a player).
+   The button in the sheet's top bar, the list (full screen, paper) and the viewer (full screen, dark ground). */
+#dossier .ds-hobtn { position: relative; }
+#dossier .ds-hobtn .ds-ho-n { display: inline-block; min-width: 1.5em; margin-left: 6px; padding: 0 .35em; border-radius: 999px; background: var(--ink); color: var(--paper); font: 700 11px/1.5 var(--font-mono, monospace); text-align: center; }
+#dossier .ds-hobtn .ds-tdot { display: inline-block; width: 9px; height: 9px; margin-left: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--paper); vertical-align: 1px; }
+#dossier .ds-hobtn.new { border-color: var(--accent); }
+/* a phone's top bar: with Handouts beside Table the row wraps rather than clip (the status line is hidden there, as with Mission) */
+@media (max-width: 760px) {
+  #dossier.ds-live .ds-nav:has(.ds-hobtn) { gap: 5px; flex-wrap: wrap; }
+  #dossier.ds-live .ds-nav:has(.ds-hobtn) > .btn { padding-left: 9px; padding-right: 9px; }
+  #dossier.ds-live .ds-nav:has(.ds-hobtn) .ds-status { display: none; }
+  #dossier.ds-live .ds-nav:has(.ds-hobtn) .ds-status.bad { display: block; order: 9; flex: 0 0 100%; }
+}
+
+/* the list */
+.ds-ho-list { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; background: var(--paper, #f4efe6); color: var(--ink, #14110e); overscroll-behavior: contain; }
+.ds-ho-top { flex: 0 0 auto; padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px; border-bottom: 2px solid var(--rule, #14110e); }
+.ds-ho-h { margin: 0; font: 900 18px/1.2 var(--font-cond, sans-serif); text-transform: uppercase; letter-spacing: .08em; }
+.ds-ho-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 8px 16px; }
+.ds-ho-empty { max-width: 28em; margin: 24px auto; font: 400 16px/1.45 var(--font-body, sans-serif); text-align: center; color: var(--ink-soft, #4a443d); }
+.ds-ho-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.ds-ho-open { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 12px; align-items: center; width: 100%; min-height: 72px; margin: 0; padding: 8px; border: 2px solid var(--rule, #14110e); background: var(--card, #fffaf2); color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.ds-ho-open:focus-visible, .ds-ho-close:focus-visible, .ds-ho-vx:focus-visible, .ds-ho-zoom:focus-visible { outline: 3px solid var(--focus, #ffd166); outline-offset: 2px; }
+.ds-ho-th { display: grid; place-items: center; width: 88px; height: 66px; overflow: hidden; background: #1a1714; color: #cfc7bb; font: 700 10px/1.2 var(--font-cond, sans-serif); text-align: center; text-transform: uppercase; letter-spacing: .06em; }
+.ds-ho-th.bad { padding: 4px; }
+.ds-ho-img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ds-ho-t { display: grid; gap: 3px; min-width: 0; }
+.ds-ho-title { font: 700 16px/1.3 var(--font-body, sans-serif); overflow-wrap: anywhere; }
+.ds-ho-when { font: 400 13px/1.3 var(--font-body, sans-serif); color: var(--ink-soft, #4a443d); }
+.ds-ho-foot { flex: 0 0 auto; display: flex; justify-content: flex-end; padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px)); border-top: 2px solid var(--rule, #14110e); }
+.ds-ho-foot .btn { min-height: 48px; min-width: 120px; }
+
+/* one handout: a dark ground, the title on top, Close at the foot */
+.ds-ho-v { position: fixed; inset: 0; z-index: 1001; display: flex; flex-direction: column; background: #0b0a09; color: #f1ece4; overscroll-behavior: contain; }
+.ds-ho-vtop { flex: 0 0 auto; display: grid; gap: 2px; padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 8px; }
+.ds-ho-vh { margin: 0; font: 900 16px/1.25 var(--font-cond, sans-serif); text-transform: uppercase; letter-spacing: .06em; overflow-wrap: anywhere; }
+.ds-ho-vwhen { font: 400 12px/1.3 var(--font-body, sans-serif); color: #cfc7bb; }
+.ds-ho-stage { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: auto; -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y pinch-zoom; padding: 0 8px; }
+.ds-ho-vimg { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; margin: auto; background: #1a1714; }
+.ds-ho-stage.big { display: block; }
+.ds-ho-stage.big .ds-ho-vimg { max-width: none; max-height: none; }
+.ds-ho-none { max-width: 26em; margin: 0 auto; padding: 0 16px; font: 400 16px/1.45 var(--font-body, sans-serif); text-align: center; color: #cfc7bb; }
+.ds-ho-vfoot { flex: 0 0 auto; display: flex; gap: 10px; justify-content: space-between; padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px)); }
+.ds-ho-vfoot .btn { min-height: 48px; min-width: 120px; }
+.ds-ho-v .ds-ho-zoom { background: transparent; color: #f1ece4; border-color: #f1ece4; }
+@media print { .ds-ho-list, .ds-ho-v, #dossier .ds-nav .ds-hobtn { display: none; } }

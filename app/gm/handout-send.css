@@ -1,0 +1,10 @@
+/* gm/handout-send.css: Send to… under each handout (IP4, phone.handouts; in the gm-handouts bundle, loaded only while the setting is on).
+   The page's own chips (.chip): a filled chip is a handout on that player's phone. */
+#gm-page .gm-ho-send { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 10px 8px; }
+#gm-page .gm-ho-send-l { flex: 0 0 auto; margin-right: 2px; }
+#gm-page .gm-ho-send-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+#gm-page .gm-ho-send .chip { min-height: 32px; }
+#gm-page .gm-ho-send .chip[aria-pressed="true"] { background: var(--rule); color: var(--on-ink); border-color: var(--rule); }
+#gm-page .gm-ho-send .chip:disabled { opacity: .55; cursor: progress; }
+#gm-page .gm-ho-sent { flex: 1 0 100%; font-size: 12px; overflow-wrap: anywhere; }
+@media (pointer: coarse) { #gm-page .gm-ho-send .chip { min-height: 44px; } }

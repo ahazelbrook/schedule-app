@@ -5729,10 +5729,19 @@
       h += '<li class="gm-handout' + (on ? ' gm-handout-on' : '') + '" data-ho="' + esc(x.id) + '"' + (on ? ' aria-current="true"' : '') + '><img class="gm-handout-thumb" src="' + esc(P.HANDOUT_DIR + x.file) + '" alt="" loading="lazy" decoding="async" width="72" height="72">' +
         '<div class="gm-handout-t"><b>' + esc(x.title) + '</b>' + (on ? '<span class="gm-ho-tag">On the iPad</span>' : '') + (x.when ? '<span class="gm-dim">' + esc(x.when) + '</span>' : '') +
         '<div class="gm-ipad-acts"><button type="button" class="btn sm primary" data-gm="ho-show" data-id="' + esc(x.id) + '">Show on iPad</button>' +
-        '<button type="button" class="btn sm" data-gm="blankipad">Take it down</button></div></div></li>';
+        '<button type="button" class="btn sm" data-gm="blankipad">Take it down</button></div>' + hoSendHtml(x) + '</div></li>';      /* IP4 (phone.handouts): Send to…, '' while off */
     });
     return h + '</ul></div>';
   }
+  /* IP4 (phone.handouts): Send to… under each handout, gm/handout-send.js in the gm-handouts bundle, fetched and made only while the setting is on */
+  function hoSendInst() {
+    if (!S || !W.B68Features || !W.B68Features.valueOf(S.doc, 'phone.handouts')) { if (S && S.hoSend) { S.hoSend.destroy(); S.hoSend = null; } return null; }
+    var me = S;
+    if (!W.B68GmHandoutSend) { if (!S.hoSendAsked && W.B68Load && W.B68Load.need) { S.hoSendAsked = true; W.B68Load.need('gm-handouts').then(function () { if (S === me) renderIpad(); }, function () { if (S === me) S.hoSendAsked = false; }); } return null; }
+    if (!S.hoSend) S.hoSend = W.B68GmHandoutSend.create({ ask: asked, toast: toast, away: function () { return S === me && S.who ? S.who.away() : []; } });
+    return S.hoSend;
+  }
+  function hoSendHtml(x) { var hs = hoSendInst(); return hs ? hs.html(x) : ''; }
   function showHandout(id) {
     var x = handoutById(id); if (!x) { toast('That handout is not in the pack any more.', true); return Promise.resolve(false); }
     var me = S;
@@ -7885,6 +7894,7 @@
       case 'voiceclear': S.voice = null; renderRack(); break;
       case 'ho-show': showHandout(b.getAttribute('data-id')); break;
       case 'ho-step': hoStep(+b.getAttribute('data-d')); break;      /* T12: the deck's Previous / Next */
+      case 'ho-send': { var hsd = hoSendInst(); if (hsd) hsd.tap(b); } break;      /* IP4 (phone.handouts): a Send to… chip */
       case 'another': voiceAnother(); break;
       case 'intent': doIntent(+b.getAttribute('data-i')); break;
       case 'replay': {
