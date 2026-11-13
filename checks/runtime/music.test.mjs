@@ -288,30 +288,28 @@ await test('IP5.1 creditsWatch: the duck lasts while the credits RUN (90 s, cred
   const run = readFileSync(new URL('../../tools/ambient/scenes/credits.js', import.meta.url), 'utf8').match(/\bend:\s*(\d+(?:\.\d+)?)\s*\}/);
   assert.ok(run && Number(run[1]) * S === M.CREDITS_RUN_MS, 'CREDITS_RUN_MS equals credits.js T.end (' + (run && run[1]) + ' s)');
   const w = M.creditsWatch(), T0 = 1_000_000;
-  w.see(false, null, T0, true);
+  w.see(false, T0, true);
   assert.equal(w.duck(T0), false, 'nothing pinned: no duck');
-  w.see(true, new Date(T0 - 3600 * S).toISOString(), T0 + 5 * S, false);      /* the pin arrives while the page watches: the start is now, not updatedAt */
-  assert.equal(w.duck(T0 + 5 * S), true); assert.equal(w.duck(T0 + 94 * S), true, '89 s in: still down');
+  w.see(true, T0 + 5 * S, false);      /* the pin arrives while the page watches: the run starts now */
+  assert.equal(w.duck(T0 + 5 * S), true); assert.equal(w.duck(T0 + 94 * S), true, '89 s in: still down'); assert.equal(w.left(T0 + 35 * S), 60 * S, '60 s left');
   assert.equal(w.duck(T0 + 95 * S), false, 'the run is over: the gate opens though the pin stays');
-  w.see(true, null, T0 + 10 * MIN, false); assert.equal(w.duck(T0 + 10 * MIN), false, 'pinned for 10 minutes: still open');
-  w.see(false, null, T0 + 11 * MIN, false); w.see(true, null, T0 + 12 * MIN, false);
+  w.see(true, T0 + 10 * MIN, false); assert.equal(w.duck(T0 + 10 * MIN), false, 'pinned for 10 minutes: still open');
+  w.see(false, T0 + 11 * MIN, false); w.see(true, T0 + 12 * MIN, false);
   assert.equal(w.duck(T0 + 12 * MIN + 30 * S), true, 'pinned again (a replay): down again');
   w.over(); assert.equal(w.duck(T0 + 12 * MIN + 31 * S), false, 'the GM’s "the credits are over": open at once');
-  w.see(true, null, T0 + 12 * MIN + 32 * S, false); assert.equal(w.duck(T0 + 12 * MIN + 32 * S), false, 'and stays open while the same pin holds');
-  /* a reload with the credits already pinned: the start is the document's updatedAt, never later than now */
-  const r1 = M.creditsWatch(); r1.see(true, new Date(T0 - 30 * S).toISOString(), T0, true);
-  assert.equal(r1.duck(T0), true, 'pinned 30 s before the reload: down'); assert.equal(r1.left(T0), 60 * S, '60 s left');
-  const r2 = M.creditsWatch(); r2.see(true, new Date(T0 - 20 * MIN).toISOString(), T0, true);
-  assert.equal(r2.duck(T0), false, 'pinned 20 min before the reload: the music plays');
-  const r3 = M.creditsWatch(); r3.see(true, new Date(T0 + 5 * MIN).toISOString(), T0, true);
-  assert.equal(r3.duck(T0 + 89 * S), true); assert.equal(r3.duck(T0 + 90 * S), false, 'a server clock ahead of the laptop: the run is counted from now');
-  const r4 = M.creditsWatch(); r4.see(true, 'not a date', T0, true); assert.equal(r4.left(T0), 90 * S, 'no readable updatedAt: from now');
+  w.see(true, T0 + 12 * MIN + 32 * S, false); assert.equal(w.duck(T0 + 12 * MIN + 32 * S), false, 'and stays open while the same pin holds');
+  /* a reload with the credits already pinned: the first read never ducks (the document cannot say when they were pinned) */
+  const r1 = M.creditsWatch(); r1.see(true, T0, true);
+  assert.equal(r1.duck(T0), false, 'pinned before the page loaded: the music plays'); assert.equal(r1.left(T0), 0);
+  r1.see(true, T0 + 5 * S, false); assert.equal(r1.duck(T0 + 5 * S), false, 'and keeps playing while that pin holds');
+  r1.see(false, T0 + 60 * S, false); r1.see(true, T0 + 70 * S, false);
+  assert.equal(r1.duck(T0 + 71 * S), true, 'a pin this page then sees arrive ducks');
 });
 
 await test('IP5.1 the player: pinned credits for 10 minutes: down for the run, then back by itself; Bring the music back; a replay ducks again', async () => {
   const w = M.creditsWatch(); let pinned = false, done = 0;
   const r = rig();
-  r.host.inputs = () => { w.see(pinned, null, r.host.now(), false); return { ...r.inputs, credits: w.duck(r.host.now()) }; };
+  r.host.inputs = () => { w.see(pinned, r.host.now(), false); return { ...r.inputs, credits: w.duck(r.host.now()) }; };
   r.host.creditsDone = () => { done++; w.over(); };
   await r.ctl.add([file('c1.wav')], 'calm');
   await r.ctl.load(); r.ctl.play(); await r.flush(); await r.flush(); await r.run(1600);

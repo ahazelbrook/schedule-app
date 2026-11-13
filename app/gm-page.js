@@ -2513,11 +2513,14 @@
   /* IP5.1: the credits' duck lasts while the Opening credits RUN (B68GmMusic.creditsWatch: the scene's 90 s), not while they stay pinned: the
      pin holds the title card all night, and the music once stayed silent with it. The watch reads AM (module level, so also while Rules or Home
      is open: MU_LAST no longer carries a stale `credits`), and the GM's own "the credits are over" (crOver) ends it at once */
-  var CRW = null, CRW_SEEN = false;
+  var CRW = null, CRW_LAST = null;      /* CRW_LAST: the pin this page last read (null: no read yet, so the first read never ducks) */
   function crWatch() { if (!CRW && W.B68GmMusic && typeof W.B68GmMusic.creditsWatch === 'function') CRW = W.B68GmMusic.creditsWatch(); return CRW; }
   function crSeen() {
-    var w = crWatch(); if (!w || !isObj(AM.doc)) return;
-    w.see(AM.doc.mode === 'pin' && AM.doc.scene === 'credits', AM.updatedAt, Date.now(), !CRW_SEEN); CRW_SEEN = true;
+    if (!isObj(AM.doc)) return;
+    var had = !!CRW, pinned = AM.doc.mode === 'pin' && AM.doc.scene === 'credits', w = crWatch();
+    /* a watch made late (the music module arrived after a read) takes a pin this page had already read as one it did not see arrive */
+    if (w) w.see(pinned, Date.now(), CRW_LAST === null || (!had && CRW_LAST === true));
+    CRW_LAST = pinned;
   }
   function crDuck() { crSeen(); return !!CRW && CRW.duck(Date.now()); }
   /* Clear, anything shown on the iPad, a place tapped on the band, Bring the music back: the music comes back now (the iPad is not touched) */

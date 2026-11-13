@@ -240,21 +240,21 @@
   /* ---------- the credits duck (IP5.1) ----------
      The music fades down while the Opening credits RUN, not for as long as they stay pinned: the scene holds its title card after the run, and the
      pin often stays all night. CREDITS_RUN_MS is the scene's own length: tools/ambient/scenes/credits.js T.end (90 s). Keep the two equal.
-     creditsWatch() -> { see(pinned, updatedAt, now, fresh), over(), duck(now) -> bool, left(now) -> ms }
-       see: the page read the ambient document. A pin that ARRIVES starts the run at `now` (the page saw it land); on the page's first read
-            (`fresh`: a reload with the credits already pinned) the start is the document's updatedAt, never later than now. Not pinned: it resets,
-            so the next pin (a replay) ducks again.
+     creditsWatch() -> { see(pinned, now, fresh), over(), duck(now) -> bool, left(now) -> ms }
+       see: the page read the ambient document. Only a pin this page SEES ARRIVE (not pinned, then pinned) starts the run, at `now`. The
+            page's first read (`fresh`) never does: credits pinned before the page loaded (a reload mid-night) leave the music playing (the
+            document's updatedAt is the last change of any kind, not the pin, so it cannot time them). Not pinned: it resets, so the next
+            pin (a replay) ducks again.
        over: the GM did something that means the credits are over (Clear, showing anything, a place on the band, Bring the music back): the
             duck ends at once, until the next pin. */
   var CREDITS_RUN_MS = 90000;
   function creditsWatch() {
     var on = false, at = 0, done = false;
     return {
-      see: function (pinned, updatedAt, now, fresh) {
+      see: function (pinned, now, fresh) {
         if (!pinned) { on = false; done = false; return; }
         if (on) return;
-        var u = typeof updatedAt === 'string' ? Date.parse(updatedAt) : NaN;
-        on = true; done = false; at = fresh && isFinite(u) ? Math.min(u, now) : now;
+        on = true; at = now; done = !!fresh;      /* already pinned at the first read: seen, but no duck */
       },
       over: function () { if (on) done = true; },
       duck: function (now) { return on && !done && now - at < CREDITS_RUN_MS; },

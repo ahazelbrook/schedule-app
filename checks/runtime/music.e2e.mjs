@@ -235,6 +235,8 @@ try {
   check(await until(async () => (await attr(page, 'data-state')) === 'play', 4000), 'Auto after Stop plays again');
 
   /* ---- a reload keeps the library and waits for a tap ---- */
+  /* (IP5 review: the credits pinned just before the reload: the page's first read never ducks, the music plays when tapped) */
+  await fetch(BASE + '/api/gm/ambient', { method: 'PATCH', headers: { 'X-Dev-User': GM, 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'pin', scene: 'credits' }) });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.B68GmMusic && document.querySelector('[data-band-slot="music"] [data-mu-pill]'), null, { timeout: 60000 });
   check(await until(async () => /Tension|Action|Hanging/.test(await page.$eval(PILL, (e) => e.textContent)), 8000), 'after a reload the pill knows its tracks');
@@ -251,6 +253,10 @@ try {
     !!(await page.$(deck + ' [data-mu-act="toggle"]')) && !!(await page.$(deck + ' [data-mu-act="next"]')) && !!(await page.$(deck + ' [data-mu-vol]')), 'the Music tool has the controls too: ▶/❚❚, Next track, the moods, Auto, Stop and the volume');
   await page.click(deck + ' [data-mu-act="toggle"]');
   check(await until(async () => (await attr(page, 'data-state')) === 'play', 5000), 'the tool’s ▶ plays');
+  await page.waitForTimeout(2500);
+  const rl = await page.evaluate(() => window.B68GmPage._music());
+  check(!!rl && rl.duck === '' && rl.gate > 0.98 && (await attr(page, 'data-gate')) === 'up', 'credits pinned before the reload: the first read does not duck, the music plays (' + JSON.stringify(rl && { duck: rl.duck, gate: rl.gate }) + ')');
+  await fetch(BASE + '/api/gm/ambient', { method: 'PATCH', headers: { 'X-Dev-User': GM, 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'auto' }) });
   await page.click(deck + ' [data-mu-mode="tension"]');
   check(await until(async () => (await attr(page, 'data-mode')) === 'tension' && (await attr(page, 'data-list')) === 'tension', 5000) &&
     await until(() => page.$eval(deck + ' [data-mu-mode="tension"]', (b) => b.getAttribute('aria-pressed') === 'true'), 3000), 'the tool’s Tension holds it, and the pill and the tool both show it');
