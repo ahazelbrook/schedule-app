@@ -80,7 +80,7 @@
   /* the card's lines and their size: the narrowest wrap that keeps to three lines (the 60 characters always fit three), set as large as the card is wide */
   var ADV = 0.5, AREA = 470;
   function fitText(text) {
-    var t = one(text).slice(0, TEXT_MAX), w = Math.max(8, Math.ceil(t.length / 3)), lines = wrap(t, w);
+    var t = one(text).slice(0, TEXT_MAX), lw = t.split(' ').reduce(function (m, x) { return Math.max(m, x.length); }, 0), w = Math.max(8, Math.ceil(t.length / 3), Math.min(lw, 22)), lines = wrap(t, w);
     while (lines.length > 3) { w++; lines = wrap(t, w); }
     var longest = lines.reduce(function (m, l) { return Math.max(m, l.length); }, 1);
     return { lines: lines, size: Math.round(Math.min(92, AREA / (longest * ADV))) };
@@ -116,7 +116,7 @@
       g = '<rect width="540" height="600" fill="#fbf8f1"/><rect x="0" y="118" width="540" height="6" fill="#c22f1c"/>' + rules +
         '<path d="M40 30 h40 l-12 60 h-40 z M100 30 h40 l-12 60 h-40 z" fill="#14110e"/>' + head('HEARD', '#c22f1c', 160, 84) + textBlock(fitAt(p.text, 480), 30, 140, 440, '#14110e');
     }
-    return OPEN + '<g id="' + esc(uid) + '">' + g + '</g></svg>';
+    return OPEN + '<title>' + esc(one(p.text).slice(0, TEXT_MAX)) + '</title><g id="' + esc(uid) + '">' + g + '</g></svg>';      /* the words whole in the title: the page's scan reads them unbroken */
   }
   /* fitText for a narrower card face (the tag): the same wrap, scaled to `w` px */
   function fitAt(text, w) { var f = fitText(text); f.size = Math.round(Math.min(92, f.size * w / AREA)); return f; }
