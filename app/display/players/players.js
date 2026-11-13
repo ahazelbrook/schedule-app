@@ -238,6 +238,7 @@
       sheets();
       var kind = call(host.kind, 'blank');
       if (el.classList && el.classList.contains('p2-col') !== (kind === 'npc')) el.classList.toggle('p2-col', kind === 'npc');      /* over an NPC: one column down the right edge, clear of the head and the nameplate */
+      var onBoard = kind === 'blank' && call(host.ambient, null) === 'board'; if (el.classList && el.classList.contains('p2-board') !== onBoard) el.classList.toggle('p2-board', onBoard);      /* IP6: over the planning board the corners hold the pinned cards: the dials go to the foot of the sheet */
       var vis = !!(last && last.length) && Pure.visible({ kind: kind, dark: call(host.dark, false), mode: call(host.mode, null), beat: call(host.beat, false), ambient: call(host.ambient, null), intro: !!(container.classList && container.classList.contains('pi-on')) });      /* IP3's title card (pi-on on the root) */
       if (el.hidden === vis) el.hidden = !vis;
     }
