@@ -5119,6 +5119,16 @@
     M.openCard({ doc: document, npc: function (x) { return isObj(me.npcs) ? me.npcs[x] : null; }, rv: function () { return S === me && me.rv && me.rvBox && me.rvBox.isConnected ? me.rv : null; },
       cast: function (x) { if (S !== me) return; var pf = str(me.p2focus).split('|'), k = pf.length === 2 && pf[1] === x ? '#gm-npc [data-gm="' + pf[0] + '"][data-id="' + pf[1].replace(/[^A-Za-z0-9_-]/g, '') + '"]' : ''; me.p2focus = ''; me.npcCardOpen = x; renderNpcs(); var nb = k ? $q(k) : null; if (nb && nb.focus) nb.focus(); } }, id);      /* IP2b: the row's button keeps the focus through the redraw */
   }
+  /* IP2c: the night ends (or is reset): the public-line queue is emptied, each line written to the night log as not sent; an empty queue writes nothing */
+  function p2LinesEnd(fn, why) {
+    return function () {
+      var M = W.B68GmPlayersScreen, me = S;
+      return Promise.resolve(fn.apply(this, arguments)).then(function (r) {      /* only a night that did end (End the night can be declined) */
+        if (r && r.ok && M && me && me.root && M.lines) M.lines({ root: me.root, log: function (t) { if (S === me && me.night && typeof me.night.cue === 'function') me.night.cue(t); } }).clear(why);
+        return r;
+      });
+    };
+  }
   function p2NotesSrc(names) {
     var M = p2(); if (!M || !S || !isObj(S.npcs)) return '';
     var want = [].concat(names).map(function (x) { return str(x).toLowerCase().trim(); }).filter(Boolean);
@@ -5651,7 +5661,8 @@
   function missionHooks() {
     var me = S, ctl = me && me.mission, M = W.B68GmMission; if (!ctl || !M) return null;
     return {
-      onPublished: ctl.onPublished, status: ctl.status, last: ctl.last, publishNow: ctl.publishNow, endNight: ctl.endNight, resetNight: ctl.resetNight, landed: ctl.landed, changed: ctl.changed,
+      onPublished: ctl.onPublished, status: ctl.status, last: ctl.last, publishNow: ctl.publishNow, endNight: p2LinesEnd(ctl.endNight, 'the night ended'), resetNight: p2LinesEnd(ctl.resetNight, 'the night was reset'),      /* IP2c: the public lines still waiting are dropped, and logged */
+      landed: ctl.landed, changed: ctl.changed,
       renderPlayersView: function (el, m) { return M.renderPlayersView(el, m === undefined ? ctl.last() : m, W.document); }
     };
   }

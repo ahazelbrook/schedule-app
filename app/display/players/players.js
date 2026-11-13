@@ -194,7 +194,7 @@
     }
     /* IP2b: one swell at a time: a dial waits its turn and goes when the one before has settled (the newest of a poll last, in the order they rose).
        A repaint in between is no matter: the turn finds the dial by its id and marks its new segments again */
-    var pending = [], swelling = false;
+    var pending = [], swelling = false, held = false;
     function runSwell() {
       if (swelling || dead) return;
       var w = pending.shift(); if (!w) return;
@@ -203,13 +203,15 @@
       var segs = d.querySelectorAll('.p2-seg');
       w.segs.forEach(function (i) { if (segs[i]) segs[i].setAttribute('class', segs[i].getAttribute('class') + ' p2-new'); });
       swelling = true;
-      swell(d, function () { swelling = false; runSwell(); });
+      swell(d, function () { swelling = false; if (held) { held = false; sig = ''; paint({}); } else runSwell(); });      /* IP2c: a redraw held for the swell runs now */
     }
     function clearNew(d) {
       var n = d.querySelectorAll('.p2-new');
       for (var i = 0; i < n.length; i++) n[i].setAttribute('class', n[i].getAttribute('class').replace(/\s*p2-new\b/, ''));
     }
     function paint(rises) {
+      /* IP2c: while a dial swells nothing is redrawn under it (a redraw would snap it back): a rise waits its turn, and the redraw runs when it settles */
+      if (swelling) { Object.keys(rises).forEach(function (id) { pending.push({ id: id, segs: rises[id].segs }); }); held = true; return; }
       var band = call(host.alarm, null), cl = last || [];
       /* the alarm told once stays told while the band still has an alarm and the clock is up (a tick reaches the clocks a poll before the band) */
       var al = Pure.alarmId(cl, band) || (isObj(band) && alarmKeep && cl.some(function (c) { return c.id === alarmKeep; }) ? alarmKeep : '');

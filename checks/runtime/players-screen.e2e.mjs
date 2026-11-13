@@ -267,26 +267,57 @@ try {
     await sleep(2500);
     check(!(await ambientDoc()).overlay, 'on: nothing goes to the iPad by itself (2.5 s after the beat, past the publish)');
     check((await linesText()).length === 1, 'on: the line outlives the publish that follows the beat');
-    /* IP2b: a second public event does not lose the first: the newest on top, a count, each with its own Send */
+    /* IP2b/IP2c: a second public event does not lose the first: oldest first, each with its own Send */
     let two = null;
     for (let i = 0; i < 12 && !two; i++) { await page.click('[data-rv="next"]').catch(() => {}); two = await until(async () => { const l = await linesText(); return l.length >= 2 ? l : null; }, 900, 150); }
-    check(!!two && /fireworks/i.test(two[0]) && /speeches/i.test(two[1]) && /2 public lines waiting/.test(await page.evaluate(() => document.querySelector('#gm-p2-lines').textContent)), 'IP2b: a second public line queues above the first, with a count: ' + JSON.stringify(two));
-    const geo = await page.evaluate(() => {
+    check(!!two && /speeches/i.test(two[0]) && /fireworks/i.test(two[1]), 'IP2b: a second public line queues beside the first (oldest first): ' + JSON.stringify(two));
+    /* two more (back before ten, Next onto the speeches again): four waiting, two shown, "+ 2 more" */
+    const timeIs = (t) => page.evaluate((x) => { const o = document.querySelector('#rv-time'); return !!o && o.textContent.trim() === x; }, t);
+    for (let k = 0; k < 2; k++) {
+      for (let i = 0; i < 14 && !(await timeIs('21:45')); i++) { const b = await page.$('[data-rv="back"]:not([disabled])'); if (!b) break; await b.click(); await sleep(150); }
+      await page.click('[data-rv="next"]'); await sleep(700);
+    }
+    const qRows = () => page.evaluate(() => { const o = document.querySelector('#gm-p2-lines'); return o ? { rows: o.querySelectorAll('.gm-p2-line').length, more: (o.querySelector('[data-p2-line="more"]') || {}).textContent || '' } : null; });
+    const c4 = await until(async () => { const r = await qRows(); return r && r.more === '+ 2 more' ? r : null; }, 6000);
+    check(!!c4 && c4.rows === 2, 'IP2c: four lines waiting: two rows and "+ 2 more": ' + JSON.stringify(c4));
+    const QGEO = () => {
       const q = document.querySelector('#gm-p2-lines').getBoundingClientRect(), hit = (a, b) => !(b.left >= a.right || b.right <= a.left || b.top >= a.bottom || b.bottom <= a.top);
-      const named = (re) => [...document.querySelectorAll('button, a')].filter((b) => re.test(b.textContent.trim()) && b.offsetParent).map((b) => b.getBoundingClientRect());
+      const seen = (b) => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0 && b.offsetParent !== null && !b.closest('#gm-p2-lines'); };
+      const named = (re) => [...document.querySelectorAll('button, a, input')].filter((b) => seen(b) && (re.test(b.textContent.trim()) || re.test(b.getAttribute('placeholder') || ''))).map((b) => b.getBoundingClientRect());
       const rail = [...document.querySelectorAll('body *')].filter((e) => { const r = e.getBoundingClientRect(); return r.left >= innerWidth - 60 && r.height > 120 && r.width > 10; }).map((e) => e.getBoundingClientRect());
-      const later = [...document.querySelectorAll('#gm-p2-lines [data-p2-line="later"]')].map((b) => { const r = b.getBoundingClientRect(); const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return r.right <= innerWidth && r.bottom <= innerHeight && r.left >= 0 && (at === b || b.contains(at)); });
-      return { aftermath: named(/start aftermath/i).some((r) => hit(q, r)), back: named(/^←?\s*back$/i).some((r) => hit(q, r)), rail: rail.some((r) => hit(q, r)), later, nAfter: named(/start aftermath/i).length, nBack: named(/^←?\s*back$/i).length, q: [Math.round(q.left), Math.round(q.top), Math.round(q.right), Math.round(q.bottom)] };
-    });
-    check(!geo.aftermath && !geo.back && !geo.rail && geo.later.length === 2 && geo.later.every(Boolean), 'IP2b: at 1366x768 the queue covers neither START AFTERMATH, BACK nor the Blade rail, and each Not now is whole: ' + JSON.stringify(geo));
-    if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'gm-lines-queue-1366.png') });
-    await page.click('#gm-p2-lines .gm-p2-line:nth-of-type(2) [data-p2-line="later"], #gm-p2-lines .gm-p2-line:last-child [data-p2-line="later"]');
-    const logged = await until(async () => { const j = (await api('GET', '/gm/state')).json || {}; const d = j.doc || j; const lg = d.night && d.night.log ? Object.values(d.night.log) : []; return lg.some((e) => /Public line not shown \(Not now\): The speeches/i.test(e.text || '')) ? true : null; }, 8000);
-    check(!!logged, 'IP2b: a line put away with Not now is written to the night log');
-    await page.click('#gm-p2-lines [data-p2-line="send"]');
+      const cards = [...document.querySelectorAll('.rv-card')].filter(seen).map((b) => b.getBoundingClientRect());
+      const groups = { spotlight: named(/^spotlight$/i), introduce: named(/^introduce$/i), add: named(/^add$/i), aftermath: named(/start aftermath/i), back: named(/^←?\s*back$/i), cards, rail };
+      const out = { q: [Math.round(q.left), Math.round(q.top), Math.round(q.right), Math.round(q.bottom)], n: {} , hits: [] };
+      Object.keys(groups).forEach((k) => { out.n[k] = groups[k].length; if (groups[k].some((r) => hit(q, r))) out.hits.push(k); });
+      out.later = [...document.querySelectorAll('#gm-p2-lines [data-p2-line="later"], #gm-p2-lines [data-p2-line="more"]')].every((b) => { const r = b.getBoundingClientRect(); const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return r.right <= innerWidth && r.bottom <= innerHeight && (at === b || b.contains(at)); });
+      return out;
+    };
+    for (const [w, h] of [[1366, 768], [1280, 720]]) {
+      await page.setViewportSize({ width: w, height: h }); await sleep(2600);      /* the box looks for its spot again within 2 s */
+      const g = await page.evaluate(QGEO);
+      check(g.hits.length === 0 && g.later && g.n.spotlight > 0 && g.n.cards > 0 && g.n.aftermath > 0, 'IP2c: ' + w + 'x' + h + ', collapsed, the queue covers no Spotlight, Introduce, Add, Board room card, START AFTERMATH, BACK or the Blade rail; every Not now and the more line whole: ' + JSON.stringify(g));
+      if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'Q-' + w + '.png') });
+    }
+    await page.setViewportSize({ width: 1366, height: 768 }); await sleep(600);
+    await page.click('#gm-p2-lines [data-p2-line="more"]');
+    const open = await qRows();
+    check(!!open && open.rows === 4 && open.more === 'Show fewer', 'IP2c: "+ 2 more" opens the rest in place: ' + JSON.stringify(open));
+    if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'Q-open-1366.png') });
+    await page.click('#gm-p2-lines .gm-p2-line:first-of-type [data-p2-line="later"]');
+    const logged = await until(async () => { const j = (await api('GET', '/gm/state')).json || {}; const d = j.doc || j; const lg = d.night && d.night.log ? Object.values(d.night.log) : []; return lg.some((e) => /Public line not shown \(Not now\): The speeches/i.test(e.text || '')) && lg.some((e) => /Public line waiting for Send: The fireworks/i.test(e.text || '')) ? true : null; }, 8000);
+    check(!!logged, 'IP2c: each line is in the night log as it is queued, and Not now is written too');
+    await page.click('#gm-p2-lines .gm-p2-line:first-of-type [data-p2-line="send"]');
     const o2 = await until(async () => { const o = (await ambientDoc()).overlay; return o && o.kind === 'text' ? o : null; }, 6000);
     check(!!o2 && /fireworks/i.test(o2.text || ''), 'on: Send shows the line');
-    check((await linesText()).length === 0, 'IP2b: the queue is empty once both are dealt with');
+    const two2 = await qRows();
+    check(!!two2 && two2.rows === 2 && !two2.more, 'IP2c: back to two, the more line goes: ' + JSON.stringify(two2));
+    /* the night ends: the two still waiting are dropped and logged as not sent (GM state only) */
+    await page.click('[data-rv="menu"]'); await page.waitForSelector('[data-rv="menuitem"][data-mid="end-night"]', { timeout: 5000 });
+    await page.click('[data-rv="menuitem"][data-mid="end-night"]');
+    const gone = await until(async () => ((await linesText()).length === 0 ? true : null), 8000);
+    const endLog = await until(async () => { const j = (await api('GET', '/gm/state')).json || {}; const d = j.doc || j; const lg = d.night && d.night.log ? Object.values(d.night.log) : []; return lg.filter((e) => /Public line not sent \(the night ended\): The speeches/i.test(e.text || '')).length === 2 ? true : null; }, 8000);
+    check(!!gone && !!endLog, 'IP2c: End the night empties the queue and logs each line as not sent');
+    check(!/Public line/.test(await displayGet()), 'IP2c: no public line text reaches the display GET');
     for (let i = 0; i < 12; i++) { const b = await page.$('[data-rv="back"]:not([disabled])'); if (!b) break; await b.click(); await sleep(150); }
     await sleep(400); await api('PATCH', '/gm/ambient', { overlay: null });
 
