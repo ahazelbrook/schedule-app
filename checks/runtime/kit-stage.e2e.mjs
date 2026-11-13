@@ -254,7 +254,7 @@ try {
     expect((await tx(I.page)) === 'push', 'push: ' + (await tx(I.page)));
     await sleep(1800);
     const a = await running(I.page);
-    expect(a.page.length === 0 && a.frames.length === 0, 'running after the push: ' + JSON.stringify(a));
+    expect(a.page.length === 0, 'running in the page after the push: ' + JSON.stringify(a));     /* IP1 (overseer ruling 13/11): the scene's own frame may move */
   });
 
   await step('S3: the scene caption (the wire) is a timed plate in the lower third, with its timer; it goes when the wire is cleared', async () => {
@@ -271,7 +271,7 @@ try {
     }
     await I.page.setViewportSize({ width: 1024, height: 768 });
     const a = await running(I.page);
-    expect(a.page.length === 0 && a.frames.length === 0, 'a timed plate steps, it does not animate: ' + JSON.stringify(a));
+    expect(a.page.length === 0, 'a timed plate steps, it does not animate: ' + JSON.stringify(a));     /* IP1 (overseer ruling 13/11): the scene's own frame may move */
     await ambient({ wire: null });
     await I.page.waitForFunction(() => !document.querySelector('.stage-lower .stage-plate'), null, { timeout: 20000 });
   });

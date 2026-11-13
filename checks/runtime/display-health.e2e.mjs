@@ -166,7 +166,7 @@ try {
   if (want('fit')) for (const band of [false, true]) {
     await settings({ band });
     await ambient(band ? { layer: { path: 'band.phase', value: 'plan' } } : { layers: null });
-    for (const [w, h, what] of [[1024, 768, 'iPad 1024x768'], [1180, 820, 'iPad 1180x820'], [1536, 864, 'TV at 125% (1536x864)'], [1920, 1080, 'TV 1920x1080']]) {
+    for (const [w, h, what] of [[1024, 768, 'iPad 1024x768'], [1180, 820, 'iPad 1180x820'], [1536, 864, 'TV at 125% (1536x864)'], [1920, 1080, 'TV 1920x1080'], [983, 834, 'the TV map frame at 125% (983x834)']]) {
       I = await openIpad(browser, w, h);
       await step('fit: ' + what + (band ? ', under the band' : '') + ': every word and the rings inside the frame', async () => {
         await sceneUp(I.page, 'testcard');
