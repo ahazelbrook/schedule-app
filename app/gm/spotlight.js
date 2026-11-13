@@ -15,7 +15,7 @@
      MAX whoNames(md) -> [name]      matchNpcs(names, npcs) -> [npc]      (npc = { id, name, alias?, role?, revealed })
      peopleFor({ here, md, npcs, extra }) -> [row]       here: [{ label, kind, npc, moving }] the play's people in the room now; extra: [npc id]
        row = { id (the cast id, '' for a play person the cast lacks), name, alias, role, kind, revealed, here, moving, added }
-     rowsHtml(rows, view, opts, esc) -> HTML the rows and the Add field; opts: { room, face(row) -> html | '', card(row) -> bool, introduce: bool }
+     rowsHtml(rows, view, opts, esc) -> HTML the rows and the Add field; opts: { room, face(row) -> html | '', card(row) -> bool, introduce: bool, players: bool (stage.players: the title card, which asks about a hidden person) }
      create(host) -> controller
        host: { feature(id) -> bool, npcs() -> [npc], roomMd(room) -> Markdown, here(room) -> [play person], focusRoom() -> room name,
                hold(npcId, ms, look?) -> Promise<answer | null>, clear() -> Promise, overlayId() -> the id of the overlay up now, confirm(msg) -> bool,
@@ -96,7 +96,7 @@
       if (r.id) {
         acts += '<button type="button" class="rv-btn sm rv-spot' + (held ? ' on' : '') + '" data-site="spot" data-id="' + esc(r.id) + '" aria-pressed="' + held + '" title="' +
           (held ? 'Held on the iPad: Take it down below' : r.revealed ? 'Hold their portrait on the iPad' : 'Hidden from the players: asks Reveal and show? first') + '">' + (held ? '● On the iPad' : 'Spotlight') + '</button>';
-        if (o.introduce !== false) acts += '<button type="button" class="rv-btn sm" data-site="intro" data-id="' + esc(r.id) + '"' + (r.revealed ? ' title="Flip their card up as a lower third on the iPad"' : ' disabled title="Hidden from the players: reveal them first (Spotlight asks)"') + '>Introduce</button>';
+        if (o.introduce !== false) acts += '<button type="button" class="rv-btn sm" data-site="intro" data-id="' + esc(r.id) + '"' + (o.players ? ' title="A whole-screen title card on the iPad, then they stay on it' + (r.revealed ? '' : ' (hidden: asks to reveal them first)') + '"' : r.revealed ? ' title="Flip their card up as a lower third on the iPad"' : ' disabled title="Hidden from the players: reveal them first (Spotlight asks)"') + '>Introduce</button>';
       }
       if (typeof o.card === 'function' && o.card(r)) acts += '<button type="button" class="rv-btn sm" data-site="card" data-name="' + esc(r.name) + '"' + (r.alias ? ' data-alias="' + esc(r.alias) + '"' : '') + ' title="Their card, here on this screen">Card</button>';
       if (r.added) acts += '<button type="button" class="rv-btn sm rv-px" data-site="who-x" data-id="' + esc(r.id) + '" data-room="' + esc(room) + '" aria-label="Take ' + esc(r.name) + ' off this room">×</button>';

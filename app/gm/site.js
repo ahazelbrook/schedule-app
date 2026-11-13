@@ -106,7 +106,7 @@
         var n = npcs.filter(function (x) { return x && x.id === held; })[0];
         if (n) rows.unshift({ id: str(n.id), name: str(n.name), alias: str(n.alias), role: 'held on the iPad', kind: '', revealed: n.revealed === true, here: false, moving: null, added: false });
       }
-      return Sp.rowsHtml(rows, sp.view(), { room: room, introduce: true,
+      return Sp.rowsHtml(rows, sp.view(), { room: room, introduce: true, players: typeof page.players === 'function' && !!page.players(),
         face: function (r) { return r.id && typeof page.face === 'function' ? page.face(r.id) : ''; },
         card: function (r) { return typeof page.card === 'function' && !!page.card([r.name, r.alias].filter(Boolean)); } }, esc);
     }

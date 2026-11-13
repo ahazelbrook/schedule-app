@@ -175,6 +175,28 @@ await test('the GM\'s Introduce: a revealed NPC is pushed at once; a hidden one 
   await G.introduce('n-dov', mk({ name: 'Dov Kessler', revealed: true }, { fail: sup }));
   assert.equal(log.filter((x) => x[0] === 'toast').length, 0, 'a push replaced by a newer one says nothing');
 });
+await test('the cue "Blade, introduce X": ONE toast (the cue\'s own, with Undo), and its Undo is Take it down for that NPC', async () => {
+  G._reset();
+  const log = [];
+  const host = { npc: () => ({ name: 'Mabel Quist', revealed: true }), ask() {}, reveal: () => Promise.resolve(), push: () => Promise.resolve({ seq: 9 }), toast: (m) => log.push(['toast', m]),
+    tray() {}, later() {}, takeDown: (t) => { log.push(['down', t]); return Promise.resolve(true); } };
+  const r = await G.introduce('n-mabel', host, { quiet: true });
+  assert.equal(r.seq, 9); assert.equal(typeof r.undo, 'function');
+  assert.equal(log.filter((x) => x[0] === 'toast').length, 0, 'quiet: no toast of its own');
+  await r.undo(); assert.deepEqual(log, [['down', 'Mabel Quist']], 'Undo takes her down (the page checks she is still what is up)');
+  assert.match(read('gm/cue-grammar.js'), /typeof res\.undo === 'function' \? res\.undo : function \(\) \{ return clearIfMine\(key\); \}/, 'the cue uses the host\'s undo when it gives one');
+  assert.match(read('gm-page.js'), /W\.B68GmIntro\.introduce\(payload\.npcIds\[0\], introHost\(\), \{ quiet: true \}\)/, 'the cue host asks for the quiet introduce');
+});
+await test('the Run view people rows: with the setting on, Introduce is enabled for a hidden person (it asks) and says what it does; off, as before', () => {
+  const Sp = req(path.join(APP, 'gm', 'spotlight.js'));
+  const rows = [{ id: 'n-mabel', name: 'Mabel Quist', revealed: true }, { id: 'n-hid', name: 'GM-ONLY-NPC-1', revealed: false }];
+  const btn = (html, id) => (html.match(new RegExp('<button[^>]*data-site="intro" data-id="' + id + '"[^>]*>')) || [''])[0];
+  const on = Sp.rowsHtml(rows, null, { room: 'Bar', introduce: true, players: true });
+  assert.ok(!/disabled/.test(btn(on, 'n-hid')) && /asks to reveal/.test(btn(on, 'n-hid')), 'on, hidden: enabled, and it says it asks: ' + btn(on, 'n-hid'));
+  assert.ok(/whole-screen title card/.test(btn(on, 'n-mabel')) && !/lower third/.test(on), 'on: no stale lower-third words');
+  const off = Sp.rowsHtml(rows, null, { room: 'Bar', introduce: true });
+  assert.ok(/disabled/.test(btn(off, 'n-hid')) && /lower third/.test(btn(off, 'n-mabel')), 'off: as before');
+});
 await test('the tray: "Introducing <name>" while the card plays, then the ordinary line', async () => {
   G._reset();
   const host = { npc: () => ({ name: 'Mabel Quist', alias: 'Mab', revealed: true }), ask() {}, reveal: () => Promise.resolve(), push: () => Promise.resolve({ seq: 1 }), toast() {}, tray() {}, later() {} };

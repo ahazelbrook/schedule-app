@@ -5181,7 +5181,7 @@
         var d = me.npcs && me.npcs[id];
         return Promise.resolve(ref.update(yes ? { revealed: true, firstSeen: (isObj(d) && d.firstSeen) || nowIso() } : { revealed: false })).then(function () { if (S === me && isObj(me.npcs) && isObj(me.npcs[id])) me.npcs[id].revealed = !!yes; });
       },
-      show: function (kind, payload, o) { if (kind === 'rolodex' && introOn() && isObj(payload) && Array.isArray(payload.npcIds) && payload.npcIds.length === 1) return W.B68GmIntro.introduce(payload.npcIds[0], introHost()); var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },      /* IP3: one name, the title card */
+      show: function (kind, payload, o) { if (kind === 'rolodex' && introOn() && isObj(payload) && Array.isArray(payload.npcIds) && payload.npcIds.length === 1) return W.B68GmIntro.introduce(payload.npcIds[0], introHost(), { quiet: true }); var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },      /* IP3: one name, the title card */
       keyFor: function (key) { return W.B68Show ? W.B68Show.idFor(key) : key; }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
       clearOverlay: function () { return patchAmbient({ overlay: null }); },
       holdSpotlight: function (name) { return S === me && me.b17 ? me.b17.spot.holdByName(name) : null; },
@@ -5464,7 +5464,7 @@
       npcs: function () { return S === me ? siteNpcs(me) : []; }, card: function (names) { return !!npcCardSrc(names); }, face: function (id) { return S === me ? siteFace(me, id) : ''; },
       roomMd: function (room) { var rn = S === me ? runRoomNotes() : null; return rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? str(rn.byRoom[room].md) : ''; },
       scoreOver: siteScoreOver, montageOpen: function () { return !!(S === me && S.rv && S.rv.toolOpen() === 'montage'); }, montage: function (view) { siteMontage(view); },
-      dawn: function () { return runDawn(); }, introduce: function (id) { npcIntroduce(id); }, setThreat: siteThreat,
+      dawn: function () { return runDawn(); }, introduce: function (id) { npcIntroduce(id); }, players: function () { return introOn(); }, setThreat: siteThreat,
       /* T5: Show on iPad / Take it down for the players' map, in the site's toolbar */
       mapLive: function () { return S === me && mapOnIpad(); }, mapShow: function () { return S === me ? siteMapUp(false) : Promise.resolve(false); }, mapDown: function () { if (S === me) blankIpad(); },
       lineShown: function () { var l = $q('#gm-runv .rv-siteline'); return !!(l && l.offsetParent !== null); }
@@ -6866,7 +6866,8 @@
   function introHost() {
     return { npc: function (id) { return S && isObj(S.npcs) ? S.npcs[id] : null; }, ask: asked, push: function (d) { return pushDisplay(d); }, toast: toast, errText: errText,
       reveal: function (id, d) { var ref = npcRef(id); if (!ref) return Promise.reject(new Error('The cast is not available here.')); return ref.update({ revealed: true, firstSeen: d.firstSeen || nowIso() }); },
-      tray: function () { if (W.B68GmIpadTray) W.B68GmIpadTray.refresh(); } };
+      tray: function () { if (W.B68GmIpadTray) W.B68GmIpadTray.refresh(); },
+      takeDown: function (title) { if (isObj(AM.shown) && AM.shown.kind === 'npc' && str(AM.shown.title) === str(title)) blankIpad(); } };      /* the cue's Undo: Take it down, while they are still up */
   }
   /* IP6 (stage.players): the planning board's pins (gm/players-board.js). What it needs of this page: the player copy's rooms at the bands and the rooms
      opened on their own, the hidden-name scan, the token screen (each pin alone), the score scene through scoreScene and the gate, and the board pinned on the iPad */

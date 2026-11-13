@@ -10,10 +10,10 @@
    The tray: "Introducing <name>" while the card plays (this page's clock: the push answer plus the card's length), then the ordinary line.
 
    API (window.B68GmIntro; module.exports under Node)
-     introduce(id, host) -> Promise<the push answer | null>     look(gmNotes) -> { expr?, pose? } | null     live(shown, nowMs) -> name | ''
+     introduce(id, host, opts?) -> Promise<the push answer (with undo() when opts.quiet) | null>     look(gmNotes) -> { expr?, pose? } | null     live(shown, nowMs) -> name | ''
      body(id, d) -> the display push      CARD_MS
      host: { npc(id) -> the cast doc | null, ask(msg, go) (the page's confirm), reveal(id, d) -> Promise, push(display) -> Promise (pushDisplay),
-             toast(msg, bad), errText(e), tray() (repaint the tray), later?(fn, ms) } */
+             toast(msg, bad), errText(e), tray() (repaint the tray), takeDown(title) (Take it down while that NPC is up), later?(fn, ms) } */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -49,8 +49,10 @@
     return t && last.names.indexOf(t) >= 0 ? t : '';
   }
 
-  function introduce(id, host) {
-    host = host || {};
+  /* opts.quiet (the cue "Blade, introduce X", which says its own one toast with an Undo): no toast here, and the answer carries undo(), which
+     takes the NPC down while it is still what the iPad shows */
+  function introduce(id, host, opts) {
+    host = host || {}; opts = opts || {};
     var d = typeof host.npc === 'function' ? host.npc(id) : null, name = isObj(d) ? str(d.name) : '';
     var toast = typeof host.toast === 'function' ? host.toast : function () {};
     var errText = typeof host.errText === 'function' ? host.errText : function (e) { return e && e.message || String(e || 'unknown error'); };
@@ -64,8 +66,9 @@
           var later = typeof host.later === 'function' ? host.later : function (f, ms) { return setTimeout(f, ms); };
           later(function () { host.tray(); }, CARD_MS + 50);
         }
-        toast('Introducing ' + (name || 'them') + '.');
-        return r;
+        if (!opts.quiet) { toast('Introducing ' + (name || 'them') + '.'); return r; }
+        var title = body(id, d).title;
+        return Object.assign({}, isObj(r) ? r : {}, { undo: function () { return typeof host.takeDown === 'function' ? host.takeDown(title) : null; } });
       }, function (e) {
         if (!e || !e.superseded) toast('Could not introduce ' + (name || 'them') + ' on the iPad: ' + errText(e), true);
         return null;

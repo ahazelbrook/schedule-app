@@ -305,7 +305,7 @@
       var opts = { key: key }; if (kind === 'rolodex' && typeof host.feature === 'function' && host.feature('face.rolodex')) opts.ms = 20000;     /* the lower third stays about 20 seconds (suite 3.5) */
       return Promise.resolve(host.show(kind, payload, opts)).then(function (res) {
         if (res === null || res === undefined) return { ok: false, say: '' };
-        return done(lead + r.npcs.map(function (p) { return p.name; }).join(', ') + '.', function () { return clearIfMine(key); });
+        return done(lead + r.npcs.map(function (p) { return p.name; }).join(', ') + '.', typeof res.undo === 'function' ? res.undo : function () { return clearIfMine(key); });      /* IP3b: a host answer may carry its own undo (the title card: Take it down) */
       });
     }
     /* a cue_do action (already through validateActions) -> Promise<{ ok, say }>. The switch is read here too: a cue that arrives with it off does nothing. */
