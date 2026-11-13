@@ -1,4 +1,4 @@
-/*! Blades '68 map kit — B68Map. Built 2026-10-28 from src/. Rooms are the book's; geometry is [interpretation]. */
+/*! Blades '68 map kit — B68Map. Built 2026-11-13 from src/. Rooms are the book's; geometry is [interpretation]. */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
   else root.B68Map = factory();
@@ -17,7 +17,7 @@ const M = {};
 // A THEME turns roles into paint. That is the whole trick that lets one plan
 // render as a rulebook plate, a blueprint, a case file or a heist board.
 
-M.VERSION = "1.0.0";     // 1.0: the grand map (grand.js), app-side until the design system takes it; 0.9 otherwise unchanged
+M.VERSION = "1.1.0";     // 1.1: the stage layout, people and the crowd, lights, one room; 1.0 was the grand map
 // A table looked up by a word from a roll or an option: its own entries only, so "__proto__",
 // "toString" or "constructor" find nothing (as any other unknown word does), never
 // Object.prototype's.
@@ -567,6 +567,7 @@ M.lightAt = function (o, opts = {}, pt = {}) {
   const W = [], raw = Object.assign({}, opts, { view: "street" });
   const ro = M.resolveOpts(raw, W), theme = M.own(M.THEMES, ro.theme) || M.THEMES.rulebook;
   const model = M.model(o, W);
+  if (ro.kit1 === true && o.kit === 1) model.grand = M.grand.read(o, model, W);     // kit 1.0: the street the render draws (K0.4)
   const seed = ro.seed != null ? ro.seed : (o.seed != null ? o.seed : M.hash(model.name + model.district));
   const B = M.street.build(o, ro, W, theme, model, seed, "b68l" + M.hash(model.name).toString(36));
   const sc = B.scene, out = B.out, V = sc.street.view, L = B.T.light;
@@ -3241,7 +3242,8 @@ const pathOf = s => s.kind === "circle"
 // ONE cover per floor: the floor's outline with the surveyed rooms cut out
 // (even-odd), so the file never holds a hidden room's outline. Futurist pods
 // stand apart, so there the cover is the hidden pods themselves.
-S.coverPiece = function (lv, reveal) {
+// role: "unknown" (the hatching), or "facade-lid" (K1.4 item 2: the iso's covered floor as the building's closed top).
+S.coverPiece = function (lv, reveal, role = "unknown") {
   const hidden = lv.rooms.filter(r => r.shape && !M.roomRevealed(reveal, r));
   if (!hidden.length) return null;
   let d;
@@ -3253,7 +3255,7 @@ S.coverPiece = function (lv, reveal) {
     const outer = X.kind === "circle" ? pathOf({ kind: "circle", cx: X.cx, cy: X.cy, r: X.r }) : pathOf({ kind: "poly", pts: G.rectPts(X.r) });
     d = [outer].concat(known.map(pathOf)).join(" ");
   }
-  return P.g([P.path("unknown", d, { evenodd: true })], { cls: "map-cover" });
+  return P.g([P.path(role, d, { evenodd: true })], { cls: "map-cover" });
 };
 
 // --- Room labels ----------------------------------------------------------------
@@ -3348,6 +3350,12 @@ S.labelBlock = function (r, x, y, icons, ctx, region, o = {}) {
       if (s === min) break;
     }
   }
+  // the stage (1.0) has no room list: a name that can't fit its room at the floor goes beside it on a leader
+  // (labels.js), on one line or two, and only becomes a pin when there is no free space for it
+  if (!best && !o.pin && region && ctx.opts && ctx.opts.layout === "stage") {
+    const d1 = dims([name], min, n ? "B" : "A"), d2 = words.length > 1 ? dims(M.splitEven(name, 2, min, cls, ls), min, n ? "B" : "A") : null;
+    best = d2 && d1.tw > 7.5 * min && Math.min(...d2.lines.map(l => l.length)) >= 3 ? d2 : d1; best.out = true;
+  }
   const kids = [];
   const badgeAt = (bd, x0, cy) => [P.rect("num-bg", x0, cy - bd.h / 2, bd.w, bd.h, { rx: bd.h / 2 }), P.text("num", x0 + bd.w / 2, cy + bd.ns * 0.36, num, { size: bd.ns })];
   if (best) {
@@ -3368,7 +3376,7 @@ S.labelBlock = function (r, x, y, icons, ctx, region, o = {}) {
       icons.forEach(([nm, role], i) => kids.push(M.icon(nm, ix + ik * 0.68 + i * pitch, iy, ik, role)));
     }
     const ux0 = Math.min(...parts.map(b => b.x0)), uy0 = Math.min(...parts.map(b => b.y0)), ux1 = Math.max(...parts.map(b => b.x0 + b.w)), uy1 = Math.max(...parts.map(b => b.y0 + b.h));
-    return P.g(kids, { anchor: [x, y], cls: "room-label", meta: { kind: "room", room: r, lv: o.lv, anchor: [x, y], box: { x0: ux0, y0: uy0, w: ux1 - ux0, h: uy1 - uy0 }, parts, region, size: d.s, icons, pin: false } });
+    return P.g(kids, { anchor: [x, y], cls: "room-label", meta: { kind: "room", room: r, lv: o.lv, anchor: [x, y], box: { x0: ux0, y0: uy0, w: ux1 - ux0, h: uy1 - uy0 }, parts, region, size: d.s, icons, pin: false, out: !!d.out } });
   }
   // the pin: the number, and the GM's icons beside it
   const bd = badge(Math.max(1.2 * k, fu)), pad = n ? bd.ns * 0.22 : 0, gap = bd.ns * 0.25;
@@ -3407,7 +3415,7 @@ S.level = function (lv, model, ctx) {
   // the deepest band gets the theme's tone (halftone, hatch …) on top
   for (const r of lv.rooms) if (r.shape && r.band === "secure" && known(r)) L.floors.push(shapePiece("floor-tone", r.shape, { room: r.id, data: { band: r.band } }));
   // …and one cover over the rest, under the walls that face what is known
-  if (reveal) { const cv = S.coverPiece(lv, reveal); if (cv) L.floors.push(cv); }
+  if (reveal) { const cv = S.coverPiece(lv, reveal, M.FACADE2 && opts.view === "iso" ? "facade-lid" : "unknown"); if (cv) L.floors.push(cv); }      // K1.4 item 2: the iso's lid
 
   // --- furniture ---
   for (const r of lv.rooms) {
@@ -3496,12 +3504,13 @@ S.level = function (lv, model, ctx) {
   // would tell the players how many rooms they haven't found.
   // It sits in the middle of the hidden area, never on the deepest room, which
   // would point at the vault.
-  if (reveal) {
+  // K2.5: on the stage the iso's lid carries no word: the strip's NOT YET SEEN says it once (themes.js stagePage)
+  if (reveal && !(M.FACADE2 && iso && opts.layout === "stage")) {
     const hid = lv.rooms.filter(r => r.frame && r.shape && !known(r));
     if (hid.length) {
       const pts = hid.flatMap(r => r.shape.kind === "circle" ? [[r.shape.cx - r.shape.r, r.shape.cy - r.shape.r], [r.shape.cx + r.shape.r, r.shape.cy + r.shape.r]] : r.shape.pts);
       const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), c = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
-      let host = hid.find(r => S.inside(r.shape, c[0], c[1])), at = c;
+      let host = hid.find(r => S.inside(r.gallery ? { kind: "poly", pts: G.rectPts(r.rect) } : r.shape, c[0], c[1])), at = c;     // kit 1.0: a gallery's hole is its own (hidden) void
       if (!host) { host = hid.reduce((a, r) => G.dist(centroidOf(r), c) < G.dist(centroidOf(a), c) ? r : a, hid[0]); at = centroidOf(host); }
       const f = host.frame, rot = ((f.rot || 0) % 180 + 180) % 180, across = rot > 45 && rot < 135 ? f.h : f.w;
       const floorU = ctx.floorU || 0, uc = S.type(ctx).unknown;
@@ -3598,7 +3607,13 @@ S.entries = function (lay, ctx) {
       const B = e.level.bbox, ys = [[B.x, B.y], [B.x + B.w, B.y], [B.x + B.w, B.y + B.h], [B.x, B.y + B.h]].map(c => ctx.toScreen(e.level, c[0], c[1], e.from === "above" ? 9 : -2.5)[1]);
       Lv = Math.max(L0, e.from === "above" ? y - Math.min(...ys) + 1.5 * k : Math.max(...ys) - y + 1.5 * k);
     }
-    const sx = vertical ? x - dx * Lv : x + dx * L0, sy = vertical ? y - dy * Lv : y + dy * L0;
+    // the room view gives a way in at its side the strip between the wall and the page’s edge (ctx.sideZone, [x0, x1]). Where
+    // the arrow with its tag beyond it would run off the page, the arrow stays in the strip and the tag stands over it.
+    const full = String(e.vec && e.vec.n || e.kind).replace(/^the\s+/i, "").toUpperCase();
+    let zone = ctx.sideZone && !vertical && Math.abs(dx) > 0.5 && Math.abs(dy) < 0.01 ? ctx.sideZone(e) : null;
+    if (zone && L0 + 1.53 * ts + M.textW(full, ts, ty.label, ty.entryLS) + 1.2 * ts + ic * 1.6 <= zone[1] - zone[0]) zone = null;
+    const Lh = zone ? Math.max(4 * k, Math.min(L0, zone[1] - zone[0] - 0.5 * ts)) : L0;
+    const sx = vertical ? x - dx * Lv : x + dx * Lh, sy = vertical ? y - dy * Lv : y + dy * Lh;
     const dashed = player && /question/.test(know);
     const segs = [];
     if (vertical) {
@@ -3616,20 +3631,29 @@ S.entries = function (lay, ctx) {
     // the tag names the way in without its article; where the full name would
     // be wide against the floor (a phone), its first word does ("SERVICE"),
     // and the key carries the full name beside the same colour
-    const full = String(e.vec && e.vec.n || e.kind).replace(/^the\s+/i, "").toUpperCase();
     const lvB = e.level && e.level.bbox, floorW = lvB ? (ctx.opts.view === "iso" ? (lvB.w + lvB.h) * Math.cos(Math.PI / 6) : lvB.w) : Infinity;
-    const tag = M.textW(full, ts, ty.label, ty.entryLS) + 1.2 * ts > floorW * 0.28 ? full.split(/\s+/)[0] : full;
+    let tag = M.textW(full, ts, ty.label, ty.entryLS) + 1.2 * ts > floorW * 0.28 ? full.split(/\s+/)[0] : full;
     const off = 1.53 * ts;
-    const tx = vertical ? sx : e.dir[0] || e.dir[1] ? sx + dx * off : x;
-    const tyy = vertical ? (e.from === "above" ? sy - 0.9 * ts : sy + 1.9 * ts) : e.dir[0] || e.dir[1] ? sy + dy * off + (dy ? 0 : 0.35 * ts) : y - 2.35 * ts;
-    const anchor = vertical ? "middle" : dx > 0.5 ? "start" : dx < -0.5 ? "end" : "middle";
-    const w = M.textW(tag, ts, ty.label, ty.entryLS) + 1.2 * ts, th = 1.47 * ts;
+    let tx = vertical ? sx : e.dir[0] || e.dir[1] ? sx + dx * off : x;
+    let tyy = vertical ? (e.from === "above" ? sy - 0.9 * ts : sy + 1.9 * ts) : e.dir[0] || e.dir[1] ? sy + dy * off + (dy ? 0 : 0.35 * ts) : y - 2.35 * ts;
+    let anchor = vertical ? "middle" : dx > 0.5 ? "start" : dx < -0.5 ? "end" : "middle";
+    let w = M.textW(tag, ts, ty.label, ty.entryLS) + 1.2 * ts; const th = 1.47 * ts;
     // a tag hanging below its arrow's tail sits under it, one standing above sits over it
-    const by = dy > 0.5 && anchor === "middle" ? tyy - ts : tyy - ts;
-    const bx = anchor === "start" ? tx - 0.47 * ts : anchor === "end" ? tx - w + 0.47 * ts : tx - w / 2;
+    let by = dy > 0.5 && anchor === "middle" ? tyy - ts : tyy - ts;
+    let bx = anchor === "start" ? tx - 0.47 * ts : anchor === "end" ? tx - w + 0.47 * ts : tx - w / 2;
+    let iconX = null;
+    if (zone) {
+      // the full name if the strip holds it with its icon, else its first word; the icon on the outer side; inside the page first
+      const tw = t => M.textW(t, ts, ty.label, ty.entryLS) + 1.2 * ts, zw = zone[1] - zone[0];
+      tag = tw(full) + ic * 1.5 > zw ? full.split(/\s+/)[0] : full; w = tw(tag);
+      const lo = zone[0] + (dx < 0 ? ic * 1.5 : 0), hi = zone[1] - (dx > 0 ? ic * 1.5 : 0), c = (x + sx) / 2 - w / 2;
+      bx = dx > 0 ? Math.min(hi - w, Math.max(lo, c)) : Math.max(lo, Math.min(hi - w, c));
+      by = sy - 1.6 * k - 0.4 * ts - th; anchor = "start"; tx = bx + 0.47 * ts; tyy = by + ts;
+      iconX = dx < 0 ? bx - ic * 0.82 : bx + w + ic * 0.82;
+    }
     out.push(P.rect(role + "-tag", bx, by, w, th, { rx: 0.4 }));
     out.push(P.text(role + "-text", anchor === "middle" ? tx : anchor === "start" ? tx + 0.12 * ts : tx - 0.12 * ts, tyy, tag, { size: ts, anchor }));
-    const icx = anchor === "end" ? bx - ic * 0.82 : bx + w + ic * 0.82, icy = by + th / 2;
+    const icx = iconX != null ? iconX : anchor === "end" ? bx - ic * 0.82 : bx + w + ic * 0.82, icy = by + th / 2;
     out.push(M.icon(/free/.test(know) ? "eye" : /question/.test(know) ? "question" : "lock", icx, icy, ic, role));
     const boxes = [{ x0: bx, y0: by, w, h: th }, { x0: icx - ic * 0.68, y0: icy - ic * 0.68, w: ic * 1.36, h: ic * 1.36 }];
     // a note under the tag (the street: what a way on the rear wall is, M.street.rearNote)
@@ -3736,7 +3760,7 @@ LB.solve = function (S0) {
     for (let i = 0; i < 14 && !pick; i++) for (const j of i ? [0, 1, -1, 2, -2] : [0]) {
       const ox = dx * step * i + px * step * 1.3 * j, oy = dy * step * i + py * step * 1.3 * j;
       const bs = m.boxes.map(b => ({ x0: b.x0 + ox, y0: b.y0 + oy, w: b.w, h: b.h }));
-      if (bs.every(b => !placed.some(q => hit(b, q, gap)))) { pick = { ox, oy, bs }; break; }
+      if (bs.every(b => !placed.some(q => hit(b, q, gap)) && !(m.avoid || []).some(q => hit(b, q, gap)))) { pick = { ox, oy, bs }; break; }      // m.avoid: kit 1.0's section keeps its tags off the building
     }
     if (!pick) pick = { ox: 0, oy: 0, bs: m.boxes };
     if (pick.ox || pick.oy) {
@@ -3790,7 +3814,38 @@ LB.solve = function (S0) {
     return out.sort((p, q) => p.cost - q.cost);
   };
 
-  const order = movers.slice().sort((p, q) => (q.m.pin - p.m.pin) || (q.m.box.w * q.m.box.h - p.m.box.w * p.m.box.h) || (p.m.room.n - q.m.room.n));
+  // (the stage's names set beside their rooms, m.out, go after every name that fits inside its own; their whole box keeps
+  // off the other rooms and, in iso and plan, off every floor drawn: its footprint (at floor and wall top, in iso), never a room's)
+  const hull = ps => { const s = ps.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]), cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]), lo = [], up = [];
+    for (const p of s) { while (lo.length > 1 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+    for (const p of s.reverse()) { while (up.length > 1 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+    return lo.slice(0, -1).concat(up.slice(0, -1)); };
+  const stage = movers.some(mv => mv.m.out);
+  const solids = !stage || view === "section" ? [] : parts.filter(p => p.lv && p.lv.bbox && (p.iso || view !== "iso")).map(p => {
+    const c = G.rectPts(p.lv.bbox), ox = p.tf ? p.tf.x || 0 : 0, oy = p.tf ? p.tf.y || 0 : 0;
+    return p.iso ? hull(c.flatMap(q => [p.iso.P0(q, 0), p.iso.P0(q, 9)])) : c.map(q => [q[0] + ox, q[1] + oy]); });
+  // the section: the building is the box round its known rooms and its UNSURVEYED cover (both drawn in every copy)
+  if (stage && view === "section") {
+    const B = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }, add = (x, y) => { B.x0 = Math.min(B.x0, x); B.x1 = Math.max(B.x1, x); B.y0 = Math.min(B.y0, y); B.y1 = Math.max(B.y1, y); };
+    for (const R of rooms) for (const q of R.poly || []) add(q[0], q[1]);
+    for (const p of parts) for (const g of M.flat(p.layers.cover || [])) if (g && g.t === "path" && (g.r === "unknown" || g.r === "facade")) {      // K1.4: or its façade
+      const t = String(g.d).match(/[A-Za-z]|-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?/g) || [], ox = p.tf ? p.tf.x || 0 : 0, oy = p.tf ? p.tf.y || 0 : 0;
+      let i = 0, cmd = "", x = 0, y = 0;
+      while (i < t.length) {
+        if (/[A-Za-z]/.test(t[i])) { cmd = t[i++]; continue; }
+        if (cmd === "M" || cmd === "L") { x = +t[i++]; y = +t[i++]; } else if (cmd === "H") x = +t[i++]; else if (cmd === "V") y = +t[i++]; else if (cmd === "A") { i += 5; x = +t[i++]; y = +t[i++]; } else { i++; continue; }
+        add(x + ox, y + oy);
+      }
+    }
+    if (isFinite(B.x0)) solids.push(G.rectPts({ x: B.x0, y: B.y0, w: B.x1 - B.x0, h: B.y1 - B.y0 }));
+  }
+  // and a name is not hung on a leader longer than 14 of its own type size: past that it is a pin
+  const leadLen = (mv, b) => { const a = [mv.m.anchor[0] + mv.o[0], mv.m.anchor[1] + mv.o[1]], p = view === "iso" && ctx.toScreen && mv.m.lv ? ctx.toScreen(mv.m.lv, mv.m.anchor[0], mv.m.anchor[1], 0) : a;
+    return Math.hypot(Math.max(b.x0, Math.min(p[0], b.x0 + b.w)) - p[0], Math.max(b.y0, Math.min(p[1], b.y0 + b.h)) - p[1]); };
+  const pts9 = b => [0, 0.5, 1].flatMap(u => [0, 0.5, 1].map(v => [b.x0 + u * b.w, b.y0 + v * b.h]));
+  const offRooms = (b, self) => !overRoom(b, self) && ![[0, 0], [1, 0], [0, 1], [1, 1]].some(([u, v]) => rooms.some(R => R.mv !== self && R.poly && M.scene.insideBy(R.poly, b.x0 + u * b.w, b.y0 + v * b.h, 0)))
+    && !solids.some(S => pts9(b).some(([x, y]) => M.scene.insideBy(S, x, y, 0)) || S.some(([x, y]) => x > b.x0 && x < b.x0 + b.w && y > b.y0 && y < b.y0 + b.h));
+  const order = movers.slice().sort((p, q) => (q.m.pin - p.m.pin) || ((p.m.out ? 1 : 0) - (q.m.out ? 1 : 0)) || (q.m.box.w * q.m.box.h - p.m.box.w * p.m.box.h) || (p.m.room.n - q.m.room.n));
   const leaders = [], boxes = [];
   const place = mv => {
     const a = [mv.m.anchor[0] + mv.o[0], mv.m.anchor[1] + mv.o[1]];
@@ -3798,10 +3853,10 @@ LB.solve = function (S0) {
     for (const c of candidates(mv, a)) {
       const b = boxAt(mv, a, c.ox, c.oy), ps = partsAt(mv, a, c.ox, c.oy);
       if (!ps.every(free)) continue;
-      if (!c.inside && (!inArea(b) || overRoom(b, mv))) continue;
+      if (!c.inside && (!inArea(b) || (mv.m.out ? leadLen(mv, b) > 14 * mv.m.size || !offRooms(b, mv) : overRoom(b, mv)))) continue;
       pick = { c, b, ps }; break;
     }
-    if (!pick) {
+    if (!pick && !mv.m.out) {
       // outside over another room is better than nothing
       for (const c of candidates(mv, a)) { if (c.inside) continue; const b = boxAt(mv, a, c.ox, c.oy), ps = partsAt(mv, a, c.ox, c.oy); if (ps.every(free) && inArea(b)) { pick = { c, b, ps }; break; } }
     }
@@ -3854,6 +3909,7 @@ LB.solve = function (S0) {
   const dropped = [];
   const ty = M.scene.type(ctx);
   for (const f of floaters) {
+    if (f.m.along) { LB.route(f, { placed, fixed, segs, inArea, gap, ty, dropped, part: parts[0], k }); continue; }
     const variants = [{ b0: f.m.box }];
     if (f.m.kind === "skip" && f.m.text && /\s/.test(f.m.text)) {
       const ts = f.m.size, lines = M.splitEven(f.m.text, 2, ts, ty.label), w = Math.max(...lines.map(l => M.textW(l, ts, ty.label))) + 0.4 * ts, [cx, yb] = f.m.at;
@@ -3880,9 +3936,60 @@ LB.solve = function (S0) {
   for (const { part, pts } of leaders) {
     const ox = part.tf ? part.tf.x || 0 : 0, oy = part.tf ? part.tf.y || 0 : 0;
     const [[x1, y1], [x2, y2]] = pts;
-    part.layers.labels.unshift(P.g([P.line("leader", x1 - ox, y1 - oy, x2 - ox, y2 - oy, { sw: Math.max(0.22, 0.2 * k) }), P.circle("leader-dot", x1 - ox, y1 - oy, Math.max(0.45, 0.4 * k))], { cls: "map-leader" }));
+    const st = ctx.opts.layout === "stage" ? fu : 0;      // the stage is read across the table: a leader it can see
+    part.layers.labels.unshift(P.g([P.line("leader", x1 - ox, y1 - oy, x2 - ox, y2 - oy, { sw: Math.max(0.22, 0.2 * k, st * 0.11) }), P.circle("leader-dot", x1 - ox, y1 - oy, Math.max(0.45, 0.4 * k, st * 0.24))], { cls: "map-leader" }));
   }
   return { boxes, fixed, leaders: leaders.length };
+};
+
+// --- A route's words (kit 1.0's grand section, K0.3) --------------------------------------------
+// A route label that knows its own line (meta.along: points on the line, the middle first) is placed
+// by the kit's principle, a route's words are on the drawing when they fit, else the route is in the
+// key. In order, the first that is free:
+//   1. on its own line, at the spot nearest the middle, on one line or two;
+//   2. off the line, close by, on a short leader to it;
+//   3. a lettered marker on the line, the words in the key (LINKS THAT SKIP, by the same letter).
+// Free: clear, by a gap of 0.6 of the type, of every room label and pin, way-in tag and badge,
+// floor title, UNSURVEYED mark and route label placed before it, of the way-in arrows, and of the
+// marks the section asks it to keep off (meta.avoid: the threats). The same inputs, the same choice.
+LB.route = function (f, X) {
+  const { placed, fixed, segs, inArea, ty, dropped, part, k } = X, m = f.m, ts = m.size, g = Math.max(X.gap, 0.6 * ts);
+  const avoid = m.avoid || [], tx = f.g.kids[0];
+  const free = b => inArea(b) && !placed.some(q => hit(b, q, g)) && !avoid.some(q => hit(b, q, g)) && !segs.some(s => segHit(s, b, g * 0.5));
+  const vars = [{ lines: null, w: m.box.w, h: m.box.h }];
+  if (/\s/.test(m.text)) { const lines = M.splitEven(m.text, 2, ts, ty.label); vars.push({ lines, w: Math.max(...lines.map(l => M.textW(l, ts, ty.label))) + 0.4 * ts, h: ts * 2.2 }); }
+  const boxAt = (v, cx, cy) => ({ x0: cx - v.w / 2, y0: cy - v.h / 2, w: v.w, h: v.h });
+  const ox = part && part.tf ? part.tf.x || 0 : 0, oy = part && part.tf ? part.tf.y || 0 : 0;
+  const done = (b, kids, lead) => {
+    f.g.kids = kids; m.box = b;
+    placed.push(Object.assign({ what: "skip" }, b)); fixed.push(Object.assign({ what: "skip" }, b));
+    if (lead && part) part.layers.labels.unshift(P.g([P.line("leader", lead[0][0] - ox, lead[0][1] - oy, lead[1][0] - ox, lead[1][1] - oy, { sw: Math.max(0.22, 0.2 * k) }), P.circle("leader-dot", lead[0][0] - ox, lead[0][1] - oy, Math.max(0.45, 0.4 * k))], { cls: "map-leader" }));
+  };
+  // the words, centred on (cx, cy): one line's box is centred 0.3 of the type above its baseline, and so is two lines'
+  const words = (v, cx, cy) => [Object.assign({}, tx, { x: cx, y: cy + 0.3 * ts, lines: v.lines || undefined, lh: v.lines ? 1.1 : undefined })];
+  // 1. on its own line
+  for (const v of vars) for (const p of m.along) { const b = boxAt(v, p[0], p[1]); if (free(b)) return done(b, words(v, p[0], p[1])); }
+  // 2. off the line, on a leader no longer than three times the type, that crosses no other word
+  for (const r of [0.6, 1.2, 1.9, 2.7].map(q => q * ts)) for (const v of vars) for (const p of m.along) for (let d = 0; d < 16; d++) {
+    const t = d * Math.PI / 8, c = Math.cos(t), s = Math.sin(t), cx = p[0] + c * (r + v.w / 2 * Math.abs(c)), cy = p[1] + s * (r + v.h / 2 * Math.abs(s)), b = boxAt(v, cx, cy);
+    if (!free(b)) continue;
+    const e = [Math.max(b.x0, Math.min(p[0], b.x0 + b.w)), Math.max(b.y0, Math.min(p[1], b.y0 + b.h))];
+    if (placed.some(q => segHit([p[0], p[1], e[0], e[1]], q, 0))) continue;
+    return done(b, words(v, cx, cy), [p, e]);
+  }
+  // 3. a lettered marker on the line; the key spells the route out beside its letter
+  const mark = String.fromCharCode(65 + dropped.filter(x => x.mark).length % 26), rr = 0.78 * ts, mb = p => ({ x0: p[0] - rr, y0: p[1] - rr, w: 2 * rr, h: 2 * rr });
+  const over = b => placed.reduce((s, q) => { const a = Math.min(b.x0 + b.w, q.x0 + q.w) - Math.max(b.x0, q.x0), c = Math.min(b.y0 + b.h, q.y0 + q.h) - Math.max(b.y0, q.y0); return s + (a > 0 && c > 0 ? a * c : 0); }, 0);
+  let p = m.along.find(q => free(mb(q))), lead = null;
+  // no free spot on the line: the marker beside it on a short leader, and only then the spot that overlaps least
+  if (!p) for (const r of [0.6, 1.2, 1.9, 2.8, 4, 5.5, 7.5].map(q => q * ts)) { for (const q of m.along) for (let d = 0; d < 16 && !p; d++) {
+    const c = [q[0] + Math.cos(d * Math.PI / 8) * (r + rr), q[1] + Math.sin(d * Math.PI / 8) * (r + rr)];
+    if (free(mb(c)) && !placed.some(z => segHit([q[0], q[1], c[0], c[1]], z, 0))) { p = c; lead = [q, c]; }
+  } if (p) break; }
+  if (!p) p = m.along.reduce((best, q) => (over(mb(q)) < over(mb(best)) - 1e-9 ? q : best), m.along[0]);
+  dropped.push(Object.assign({}, m.link, { mark }));
+  f.g.cls = (f.g.cls || "") + " map-skip-marker";
+  return done(mb(p), [P.circle("ov-skip-head", p[0], p[1], rr), P.text("num", p[0], p[1] + 0.36 * ts, mark, { size: ts })], lead);
 };
 
 // ---- src/iso.js ----
@@ -4013,39 +4120,144 @@ function upright(pieces, lv, toScreen, z) {
   return out;
 }
 
+// --- K2.5: the whole building across a wide stage ---------------------------------------------------------------
+// A floor's title, for placing floors: the widest it could be in any copy (the book's title, or a player copy's neutral
+// one: M.safeTitles), so a player copy's floors stand exactly where the GM's do.
+ISO.hasTitle = lv => !!(lv.title0 !== undefined ? lv.title0 : lv.title);
+ISO.titleRoom = function (lv, ts, ty) {
+  const book = lv.title0 !== undefined ? lv.title0 : lv.title, alts = (M.LEVEL_ALT && M.LEVEL_ALT[String(lv.lvl)]) || ["Level " + lv.lvl];
+  return Math.max(...[book].concat(alts).filter(Boolean).map(t => M.textW(String(t).toUpperCase(), ts, ty.title, ty.titleLS || 0)));
+};
+// On the stage, the floors stand in columns across the page when that draws each floor larger than one stack does: the
+// lowest floor at the bottom of the left column, rising up it and on up the next column to the right (two columns of two,
+// a row, ...). Each column is an exploded stack as ever; the columns stand side by side with their tops level. The choice
+// is measured: of one column, and of every count of columns, the one whose floors (each its site, wall tops and title's
+// room) give the largest scale on the stage's drawing area; one column unless another beats it by 3%. Nothing measured
+// depends on what the crew knows: not even the type floor, which a copy's names move (they set the page's scale), so the
+// titles are measured, and the floors stacked, at the size the type floor would have if the floors alone filled the
+// drawing area, and a third again (the names round them take some of it). Returns null (one column, with its stack so
+// measured) or { at: floor → [dx, dy], cols, same(a, b) }.
+ISO.arrange = function (order, X) {
+  const { shift, zOf, proj, stack, k, titleW, ctx, lay } = X, n = order.length, vx = ISO.vx(lay), opts = ctx.opts;
+  const titled = M.showTitles(lay, ctx), ty = M.scene.type(ctx);
+  let ts = 3.4 * k;
+  const boxOf = list => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const add = q => { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); };
+    for (const lv of list) {
+      const [sx, sy] = shift.get(lv), z = zOf.get(lv), SB = lv.siteBox || lv.bbox;
+      const c = lv.exterior.kind === "circle" || lv.exterior.kind === "hub" ? G.rectPts(SB) : G.rectPts({ x: SB.x - 10, y: SB.y - 10, w: SB.w + 20, h: SB.h + 20 + (lv.lvl === 0 ? 10 : 0) });
+      for (const p of c) for (const h of [0, 9]) add(proj(p[0] + sx, p[1] + sy, z + h));
+      if (titled && ISO.hasTitle(lv)) {
+        const cp = vx > 0 ? [lv.bbox.x, lv.bbox.y + lv.bbox.h] : [lv.bbox.x, lv.bbox.y], q = proj(cp[0] + sx, cp[1] + sy, z);
+        add([q[0] - 4 * k - titleW(lv, ts, ty), q[1]]);
+      }
+    }
+    return { x0, y0, w: x1 - x0, h: y1 - y0 };
+  };
+  // the drawing area (page units: the page is 1000 wide) and the type floor on the page
+  const D = M.stageArea(opts), fpx = 1.02 * opts.minLabelPx * 1000 / opts.displayWidth, gap = 10 + 6 * k;
+  const scale = (w, h) => Math.min(D.w / w, D.h / h);
+  const measure = cols => { const bs = cols.map(boxOf); return { bs, w: bs.reduce((t, b) => t + b.w, 0) + gap * (cols.length - 1), h: Math.max(...bs.map(b => b.h)) }; };
+  const lay1 = cols => {
+    ts = 3.4 * k;
+    const t0 = titled; let m;
+    for (const c of cols) stack(c, ts);
+    if (t0) { m = measure(cols); ts = Math.max(3.4 * k, 1.33 * fpx / scale(m.w, m.h)); for (const c of cols) stack(c, ts); }
+    m = measure(cols);
+    return { cols, bs: m.bs, ts, s: scale(m.w, m.h) };
+  };
+  let best = lay1([order]);
+  const one = best.s;
+  for (let c = 2; c <= n; c++) {
+    const r = Math.ceil(n / c);
+    if (Math.ceil(n / (c - 1)) === r) continue;              // the same columns as one fewer
+    const cols = [];
+    for (let i = 0; i < n; i += r) cols.push(order.slice(i, i + r));
+    const t = lay1(cols);
+    if (t.s > best.s && t.s > one * 1.03) best = t;
+  }
+  for (const c of best.cols) stack(c, best.ts);
+  if (best.cols.length === 1) return null;
+  const at = new Map(), colOf = new Map();
+  let x = 0;
+  best.cols.forEach((c, i) => { const b = best.bs[i]; for (const lv of c) { at.set(lv, [x - b.x0, -b.y0]); colOf.set(lv, i); } x += b.w + gap; });
+  return { at, cols: best.cols.length, same: (a, b) => colOf.get(a) === colOf.get(b) };
+};
+
+// K2.5: one floor on the stage (floor: n) marks the way up and the way down: a tag each, stacked over the stair core at head
+// height, naming the floor it leads to by that floor's title (a player copy's titles are safe already: M.safeTitles), or "UP"
+// and "DOWN" alone where that floor has none. At the core when this copy knows it; else off the floor's left corner, so the
+// tag says nothing of where unsurveyed stairs stand. A fixed word: the solver keeps every name clear of it.
+ISO.wayTags = function (lv, lay, ctx) {
+  const all = (lay.allLevels || lay.levels).slice().sort((a, b) => a.lvl - b.lvl), i = all.indexOf(lv), up = all[i + 1], dn = all[i - 1];
+  if (i < 0 || (!up && !dn)) return null;
+  const k = ctx.k, ty = M.scene.type(ctx), ts = Math.max(1.6 * k, ctx.floorU || 0), cls = ty.label, ls = ty.smLS || 0;
+  const core = lv.core && lv.core.frame && (!ctx.reveal || M.scene.nodeKnown(lv.core, ctx.reveal)) ? lv.core.frame : null;
+  const B = lv.bbox, at = core ? [core.cx, core.cy] : (ISO.vx(lay) > 0 ? [B.x, B.y + B.h] : [B.x, B.y]);
+  const tags = [[up, "UP"], [dn, "DOWN"]].filter(([l]) => l).map(([l, w]) => ({ t: l.title ? `${w} TO ${String(l.title).toUpperCase()}` : w, up: w === "UP" }));
+  const pd = ts * 0.35, tri = ts * 0.7, h = ts * 1.35, gap = ts * 0.2, kids = [];
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  tags.forEach((g, j) => {
+    const tw = M.textW(g.t, ts, cls, ls), w = pd + tri + pd * 0.8 + tw + pd, bx = core ? at[0] - w / 2 : at[0] - w - 2 * k, by = at[1] - (tags.length - j) * (h + gap) - (core ? 0 : -h);
+    const tx = bx + pd, ty0 = by + h / 2, s = tri / 2;
+    kids.push(P.rect("label-bg", bx, by, w, h, { rx: Math.min(0.4, ts * 0.15) }),
+      P.poly("label-sm", g.up ? [[tx, ty0 + s * 0.8], [tx + tri, ty0 + s * 0.8], [tx + s, ty0 - s * 0.8]] : [[tx, ty0 - s * 0.8], [tx + tri, ty0 - s * 0.8], [tx + s, ty0 + s * 0.8]]),
+      P.text("label-sm", tx + tri + pd * 0.8, ty0 + ts * 0.36, g.t, { size: ts, anchor: "start" }));
+    x0 = Math.min(x0, bx); y0 = Math.min(y0, by); x1 = Math.max(x1, bx + w); y1 = Math.max(y1, by + h);
+  });
+  return P.g(kids, { anchor: at, cls: "map-way-tag", meta: { box: { x0, y0, w: x1 - x0, h: y1 - y0 }, lv, pri: 3, fixed: true } });
+};
+
 // Build the parts for composePage, stacked bottom to top.
 ISO.build = function (lay, model, ctx) {
   const { k } = ctx;
   const order = lay.levels.slice().sort((a, b) => a.lvl - b.lvl);
   const shift = new Map(), zOf = new Map();
-  let z = 0;
-  order.forEach((lv, i) => {
+  order.forEach(lv => {
     // kit 1.0: every floor about the street floor's centre, so a set-back floor stands where it is built
     const C = lay.grand ? lay.grand.centre : null, sx = C ? -C[0] : -(lv.bbox.x + lv.bbox.w / 2), sy = C ? -C[1] : -(lv.bbox.y + lv.bbox.h / 2);
     shift.set(lv, [sx, sy]);
-    if (i > 0) {
-      const prev = order[i - 1];
-      z += (prev.bbox.w + prev.bbox.h) * IS * 0.5 + (lv.bbox.w + lv.bbox.h) * IS * 0.5 + 10 + 6 * k;
-    }
-    zOf.set(lv, z);
   });
   const lift = { room: 8, floor: 0, label: 8 };
   const vx = ISO.vx(lay), proj = ISO.projFor(vx);
-  // Floor titles sit off each floor's left corner at the type floor's size. When the page draws the
-  // building small (a long key on the iPad), two titles can outgrow the gap between their floors:
-  // open the gap just enough that they clear each other. A sheet whose titles clear already is unchanged.
-  if (M.showTitles(lay, ctx)) {
-    const ts = Math.max(3.4 * k, ctx.floorU || 0), ty = M.scene.type(ctx);
-    const cornerOf = (lv) => { const [sx, sy] = shift.get(lv), p = vx > 0 ? [lv.bbox.x, lv.bbox.y + lv.bbox.h] : [lv.bbox.x, lv.bbox.y]; return proj(p[0] + sx, p[1] + sy, zOf.get(lv)); };
-    for (let i = 1; i < order.length; i++) {
-      const a = order[i - 1], b = order[i];
-      if (!a.title || !b.title) continue;
-      const ca = cornerOf(a), cb = cornerOf(b), x = (c, lv) => [c[0] - 4 * k - M.textW(lv.title.toUpperCase(), ts, ty.title, ty.titleLS || 0), c[0] - 4 * k];
-      const xa = x(ca, a), xb = x(cb, b), need = ts * 1.3 - (ca[1] - cb[1]);
-      if (xa[0] < xb[1] && xb[0] < xa[1] && need > 0) for (let j = i; j < order.length; j++) zOf.set(order[j], zOf.get(order[j]) + need);
+  // K2.5: on the stage a title's width is the widest this floor's title could be in any copy (ISO.titleRoom), so where the
+  // floors stand never depends on what the crew knows; elsewhere it is the title itself, as ever
+  const stage = ctx.opts.layout === "stage";
+  const titleW = (lv, ts, ty) => stage ? ISO.titleRoom(lv, ts, ty) : M.textW(lv.title.toUpperCase(), ts, ty.title, ty.titleLS || 0);
+  // One stack of floors, bottom to top from z = 0.
+  const stack = (list, tsAt) => {      // tsAt: the titles' size to stack them at (ISO.arrange); else the type floor's, as ever
+    let z = 0;
+    list.forEach((lv, i) => {
+      if (i > 0) {
+        const prev = list[i - 1];
+        z += (prev.bbox.w + prev.bbox.h) * IS * 0.5 + (lv.bbox.w + lv.bbox.h) * IS * 0.5 + 10 + 6 * k;
+      }
+      zOf.set(lv, z);
+    });
+    // Floor titles sit off each floor's left corner at the type floor's size. When the page draws the
+    // building small (a long key on the iPad), two titles can outgrow the gap between their floors:
+    // open the gap just enough that they clear each other. A sheet whose titles clear already is unchanged.
+    if (M.showTitles(lay, ctx)) {
+      const ts = tsAt != null ? tsAt : Math.max(3.4 * k, ctx.floorU || 0), ty = M.scene.type(ctx);
+      const cornerOf = (lv) => { const [sx, sy] = shift.get(lv), p = vx > 0 ? [lv.bbox.x, lv.bbox.y + lv.bbox.h] : [lv.bbox.x, lv.bbox.y]; return proj(p[0] + sx, p[1] + sy, zOf.get(lv)); };
+      for (let i = 1; i < list.length; i++) {
+        const a = list[i - 1], b = list[i];
+        if (stage ? !ISO.hasTitle(a) || !ISO.hasTitle(b) : !a.title || !b.title) continue;
+        const ca = cornerOf(a), cb = cornerOf(b), x = (c, lv) => [c[0] - 4 * k - titleW(lv, ts, ty), c[0] - 4 * k];
+        const xa = x(ca, a), xb = x(cb, b), need = ts * 1.3 - (ca[1] - cb[1]);
+        if (xa[0] < xb[1] && xb[0] < xa[1] && need > 0) for (let j = i; j < list.length; j++) zOf.set(list[j], zOf.get(list[j]) + need);
+      }
     }
-  }
-  const toScreen = (lv, x, y, kind) => {
+  };
+  stack(order);
+  // K2.5: on the stage, the floors in columns across a wide page when that draws them larger (ISO.arrange); off: none
+  const off = stage && order.length > 1 ? ISO.arrange(order, { shift, zOf, proj, stack, k, titleW, ctx, lay }) : null;
+  ctx.isoCols = off ? off.cols : null;
+  const toScreen = off ? (lv, x, y, kind) => {
+    const [sx, sy] = shift.get(lv) || [0, 0], o = off.at.get(lv) || [0, 0], q = proj(x + sx, y + sy, (zOf.get(lv) || 0) + (typeof kind === "number" ? kind : (lift[kind] || 0)));
+    return [q[0] + o[0], q[1] + o[1]];
+  } : (lv, x, y, kind) => {
     const [sx, sy] = shift.get(lv) || [0, 0];
     return proj(x + sx, y + sy, (zOf.get(lv) || 0) + (typeof kind === "number" ? kind : (lift[kind] || 0)));
   };
@@ -4058,8 +4270,8 @@ ISO.build = function (lay, model, ctx) {
   const grow = (x, y) => { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); };
   // Draw the top floor last so it sits over the one below.
   for (const lv of order) {
-    const [sx, sy] = shift.get(lv), zz = zOf.get(lv);
-    const mat = `matrix(${IC.toFixed(5)} ${vx * IS} ${(-vx * IC).toFixed(5)} ${IS} ${(IC * (sx - vx * sy)).toFixed(3)} ${(IS * (vx * sx + sy) - zz).toFixed(3)})`;
+    const [sx, sy] = shift.get(lv), zz = zOf.get(lv), o = off ? off.at.get(lv) : [0, 0];
+    const mat = `matrix(${IC.toFixed(5)} ${vx * IS} ${(-vx * IC).toFixed(5)} ${IS} ${(IC * (sx - vx * sy) + o[0]).toFixed(3)} ${(IS * (vx * sx + sy) - zz + o[1]).toFixed(3)})`;
     const layers = M.scene.level(lv, model, ctx);
     if (model.grand) M.grand.dress(lv, layers, model, ctx);
     const P0 = (p, h) => toScreen(lv, p[0], p[1], h);
@@ -4082,8 +4294,14 @@ ISO.build = function (lay, model, ctx) {
     // Upper floors float: no ground, no street.
     if (lv.lvl !== 0) layers.site = layers.site.filter(p => ["footprint", "hull", "deck"].includes(p.r));
     const drawnWalls = [];
-    const walls = slab.concat(model.grand ? wallBoxes(lv, P0, hiddenAt, vx, drawnWalls, M.grand.wallOpts(lv, model)) : wallBoxes(lv, P0, hiddenAt, vx, drawnWalls));
+    // K2.5: the rooms' light (GR.floorLights): pools on the floor, the shade over floor and furniture under the walls, and a
+    // palazzo's windows lit in a lit room. No light named on this floor: null, and the floor is as ever
+    const lit = M.grand.floorLights(lv, model, ctx, p => P0(p, 0));
+    const walls = slab.concat(model.grand ? wallBoxes(lv, P0, hiddenAt, vx, drawnWalls, M.grand.wallOpts(lv, model, lit ? lit.winRole : null)) : wallBoxes(lv, P0, hiddenAt, vx, drawnWalls));
+    if (lit) { layers.floors.push(...lit.pools); if (lit.shade) walls.unshift(lit.shade); }
     layers.walls = walls;
+    // K2.5: one floor on the stage marks the way up and the way down at its stair core (ISO.wayTags)
+    if (stage && ctx.drawn && order.length === 1) { const wt = ISO.wayTags(lv, lay, ctx); if (wt) layers.labels.push(wt); }
     // Icons and labels upright, at head height above their floor.
     const lifted = [];
     layers.game = layers.game.filter(p => { if (p.t === "g" && /icon/.test(p.cls || "")) { lifted.push(p); return false; } return true; });
@@ -4108,7 +4326,7 @@ ISO.build = function (lay, model, ctx) {
     const p = toScreen(order[i], a.frame.cx, a.frame.cy, 0), q = toScreen(order[i + 1], b.frame.cx, b.frame.cy, 0);
     coreLinks.push(P.line("core-link", p[0], p[1], q[0], q[1], { sw: 0.5 * k }));
   }
-  if (model.grand) coreLinks.push(...M.grand.isoLinks(order, toScreen, k, ctx.reveal));
+  if (model.grand) coreLinks.push(...M.grand.isoLinks(order, toScreen, k, ctx.reveal, off ? off.same : null));
   return { parts, coreLinks, bounds: { minX, minY, maxX, maxY } };
 };
 
@@ -4133,6 +4351,55 @@ ISO.build = function (lay, model, ctx) {
 
 const SEC = M.section = {};
 const FLOOR_H = 14, BASE_H = 13;
+
+// K2.3: opts.lights = { "<room>": "dark" | "lit" | "bright" } → a Map of room → state, for the rooms this copy knows. A room
+// the copy doesn't know is left out without a word (its light changes no byte of a player copy); a value that is not one of
+// the three is drawn lit, and a name that is no room of the roll is left out, each with a warning. No lights: an empty Map.
+SEC.LIGHTS = ["dark", "lit", "bright"];
+// K1.4 item 2, the one switch: true draws the façade in the ordinary section's player copy (SEC.build) and the iso's covered
+// floors as a lid in the wall colour (scene.js S.level). false is item 1 alone: those copies as 0.9 drew them.
+M.FACADE2 = true;
+SEC.lightMap = function (model, ctx, known) {
+  const out = new Map(), L0 = ctx.opts.lights, W = ctx.W;
+  if (L0 == null) return out;
+  if (typeof L0 !== "object" || Array.isArray(L0)) { M.warn(W, "lights should be { \"<room>\": \"dark\" | \"lit\" | \"bright\" } — left out"); return out; }
+  for (const name of Object.keys(L0)) {
+    const r = model.rooms.find(x => x.name === name), v = L0[name];
+    if (!r) { M.warn(W, `lights: ${JSON.stringify(name)} is not one of this roll's rooms — left out`); continue; }
+    if (!known(r)) continue;
+    if (!SEC.LIGHTS.includes(v)) { M.warn(W, `lights "${r.name}": ${JSON.stringify(v)} is not dark, lit or bright — drawn lit`); continue; }
+    out.set(r, v);
+  }
+  return out;
+};
+// The ordinary section's rooms in their light: each box shaded (dark), or flooded with two lamps' glow and a little light
+// through each open side into the next box this copy knows (bright); every lit or bright room's lamp pool (cell-pool: the
+// plate paints it at Night only). The same roles and look as the grand section's (GR.lights) and the room view's.
+SEC.lights = function (rows, lights, kindBetween, known, Ls) {
+  const shade = [], pools = [];
+  for (const row of rows) {
+    const bs = row.boxes.slice().sort((a, b) => a.x - b.x), y0 = row.y0, y1 = row.y1, h = y1 - y0;
+    bs.forEach((b, i) => {
+      const st = b.r && lights.get(b.r); if (!st) return;
+      const sh = b.sh || { t: "rect" }, air = role => sh.t === "path" ? P.path(role, sh.d) : P.rect(role, b.x, y0, b.w, h);
+      if (st === "dark") { shade.push(air("rm-dark")); return; }
+      pools.push(P.ellipse("cell-pool", b.x + b.w / 2, y1 - h * 0.34, Math.max(2, b.w * 0.5), h * 0.42));
+      if (st !== "bright") return;
+      shade.push(air("rm-bright"));
+      for (const x of [b.x + b.w * 0.3, b.x + b.w * 0.7]) { const y = y0 + h * 0.35, R0 = Math.min(7, x - b.x, b.x + b.w - x, y - y0 + 0.6, y1 - y); if (R0 > 0.8) for (const f of [1, 0.66, 0.4]) shade.push(P.circle("rm-glow", x, y, R0 * f)); }
+      for (const [j, sgn] of [[i - 1, -1], [i + 1, 1]]) {
+        const nb = bs[j];
+        if (!nb || (nb.r && !known(nb.r))) continue;
+        const kind = nb.r ? kindBetween(b.r, nb.r) : "opening";
+        if (!kind || kind === "secret") continue;
+        const xw = sgn < 0 ? b.x : b.x + b.w, reach = Math.min(4, nb.w * 0.4);
+        shade.push(P.g([P.rect("rm-bright", sgn < 0 ? xw - reach / 2 : xw, y1 - 7.2, reach / 2, 7.2), P.g([P.rect("rm-bright", sgn < 0 ? xw - reach : xw + reach / 2, y1 - 7.2, reach / 2, 7.2)], { opacity: 0.5 })], { cls: "fx-spill" }));
+      }
+    });
+  }
+  if (pools.length) Ls.floors.push(...pools);
+  if (shade.length) Ls.walls.unshift(P.g(shade, { cls: "map-light" }));
+};
 
 // --- Side-view fixtures ------------------------------------------------------------
 // Each draws standing on y = 0, rising to negative y, w feet wide, centred on 0.
@@ -4310,7 +4577,7 @@ SEC.build = function (lay, model, ctx) {
     for (const b of boxes) {
       // the player copy draws nothing of a room the crew hasn't surveyed
       if (b.r && !known(b.r)) continue;
-      const role = b.core || b.passage ? "floor-corridor" : "floor-" + b.r.band, sh = boxShape(b), data = b.r ? { band: b.r.band } : undefined;
+      const role = b.core || b.passage ? "floor-corridor" : "floor-" + b.r.band, sh = b.sh = boxShape(b), data = b.r ? { band: b.r.band } : undefined;
       Ls.floors.push(sh.t === "path" ? P.path(role, sh.d, { data, room: b.r && b.r.id }) : P.rect(role, b.x, y0, b.w, y1 - y0, { data, room: b.r && b.r.id }));
       if (b.r && b.r.band === "secure") Ls.floors.push(sh.t === "path" ? P.path("floor-tone", sh.d, { data, room: b.r.id }) : P.rect("floor-tone", b.x, y0, b.w, y1 - y0, { data, room: b.r.id }));
       if (st === "spine" && !b.core) Ls.walls.push(P.line("drop-ceiling", b.x + 0.5, y0 + 2.2, b.x + b.w - 0.5, y0 + 2.2, { sw: 0.25 }));
@@ -4494,10 +4761,23 @@ SEC.build = function (lay, model, ctx) {
   }
   const ctx2 = Object.assign({}, ctx, { toScreen: (lv, x, y) => [x, y], dirScreen: d => { const l = Math.hypot(d[0], d[1]) || 1; return [d[0] / l, d[1] / l]; } });
   const entries = M.scene.entries({ entries: fake }, ctx2);
+  // --- K2.3: a room's light (as the grand section's, GR.lights) ---
+  const lights = SEC.lightMap(model, ctx, known);
+  if (lights.size) SEC.lights(rows, lights, kindBetween, known, Ls);
   // --- player cover --- one path for every unsurveyed run of rooms, so the
   // file never holds a hidden room's edge; a run stops short of the walls
   // that face a surveyed room, which stay visible.
-  if (reveal) {
+  // K1.4 item 2 (behind M.FACADE2): the façade, as the grand section's (GR.facade), over every floor but a ship's hull and
+  // a Futurist capsule, which keep the hatching [interpretation]. The bays count from the row's own front edge.
+  const pillAny = st === "radial" && !ship;
+  if (reveal && M.FACADE2 && !ship && !pillAny) {
+    const frows = rows.map(row => {
+      const bs = row.boxes.slice().sort((a, b) => a.x - b.x);
+      return { lv: row.lv, y0: row.y0, y1: row.y1, L: Math.min(...bs.map(b => b.x)), R: Math.max(...bs.map(b => b.x + b.w)), cells: bs.map(b => ({ a: b.x, b: b.x + b.w, r: b.r })) };
+    });
+    const fc = GR.facade(frows, c => !c.r || known(c.r), { palazzo: false, name: model.name, inset: 0.7 });
+    if (fc) Ls.cover.push(fc);
+  } else if (reveal) {
     const subs = [];
     for (const row of rows) {
       const bs = row.boxes.slice().sort((a, b) => a.x - b.x), runs = [];
@@ -4530,6 +4810,8 @@ SEC.build = function (lay, model, ctx) {
     }
     if (subs.length) Ls.cover.push(P.g([P.path("unknown", subs.join(" "))], { cls: "map-cover" }));
   }
+  // K1.3: each room's cell, for the people standing on its floor line (people.js)
+  if (ctx.opts.people || ctx.opts.crowd) ctx.peopleCells = rows.flatMap(row => row.boxes.filter(b => b.r).map(b => ({ room: b.r, a: b.x, b: b.x + b.w, floor: row.y1, top: row.y0 })));
   // positions for tokens and the board
   const rowOf = new Map(rows.map(r => [r.lv, r]));
   ctx.toScreen = (lv, x, y) => {
@@ -4916,6 +5198,8 @@ ST.scene = function (o, model, lay, street, ctx, X) {
   // painter's order, then shadows by day
   const sorted = ST.sort(S.items, V);
   if (!S.night) for (const it of S.items) ST.castShadow(S, it);
+  // kit 1.0 (K0.4): a canal front's basin is cut out of the pavement, shadows and all (ST.cutDecals)
+  if (S.cut) ST.cutDecals(S);
   // the ways in, with the kit's own arrows and tags
   ctx.toScreen = (lv, x, y, kind) => V.proj(x, y, ((lv && lv.z) || 0) + (typeof kind === "number" ? kind : 0));
   ctx.dirScreen = V.dir;
@@ -4937,6 +5221,8 @@ ST.scene = function (o, model, lay, street, ctx, X) {
   // the road's name on the road
   if (built.roadName) {
     const rn = built.roadName, ss = Math.max(3.2 * k, (ctx.floorU || 0) * 1.1);
+    // (kit 1.0, K0.4: the road's name keeps off a canal front's basin, along the path it is painted on)
+    if (S.cut && rn.y < S.cut.y1) { const hw = M.textW(rn.text, ss, M.scene.type(ctx).label) / 2 + 9; if (rn.x + hw > S.cut.x0 && rn.x - hw < S.cut.x1) rn.x = S.cut.x0 - hw; }
     const host = parts.find(p => p.lv.z === rn.z) || parts[0];
     // painted on the road: labels may sit over it (its slanted box would wall off half the street)
     host.layers.site.push(P.text("street-label", rn.x, rn.y + ss * 0.35, rn.text, { size: ss, anchor: "middle" }));
@@ -5102,9 +5388,12 @@ ST.landmarkTag = function (exit, name, V, ctx, streetW) {
 // --- The key ---------------------------------------------------------------------------------
 // The facts a theme typesets for the street. The player copy keeps what the
 // crew could see from the street: no back route, no target, no watcher.
+// The player copy lists what is on the street, not where the GM looked it up: the provenance
+// after an entry ("(p.430)", "(base Blades props)") is the GM copy's only (K0.4).
+ST.uncite = s => String(s || "").replace(/ \((?:pp?\.\d+(?:[–-]\d+)?|base Blades(?: props)?)\)/g, "");
 ST.facts = function (o, model, street, built, opts, T) {
   const player = opts.layer === "player";
-  const feats = built.features.filter(f => !(player && f.gm));
+  const feats = built.features.filter(f => !(player && f.gm)).map(f => player && f.what ? Object.assign({}, f, { what: ST.uncite(f.what) }) : f);
   feats.forEach((f, i) => { f.n = i + 1; });
   const ways = model.vectors.map((v, i) => ({ kind: ["front", "service", "back"][i], n: v.n, how: v.how, cost: v.cost, know: v.know }))
     .filter(v => !player || !/can't be known/.test(v.know))
@@ -5119,7 +5408,7 @@ ST.facts = function (o, model, street, built, opts, T) {
     time: timeLine,
     street: [street.descRaw && `${ST.cap(street.descRaw)}.`, (street.sound || street.smell) && `${ST.cap(street.sound)}${street.sound && street.smell ? "; " : ""}${street.smell}.`, street.useRaw && `The block is ${street.useRaw.toLowerCase()}.`].filter(Boolean),
     features: feats,
-    obstacle: ob ? { name: street.obstacle, icon: ob.icon, text: `Outside: ${street.obstacle.toLowerCase()}. The stretch of street it holds is marked.` } : null,
+    obstacle: ob ? { name: street.obstacle, icon: ob.icon, text: `Outside: ${street.obstacle.toLowerCase()}. The stretch of street it holds is marked.`, cite: player ? ST.uncite(" (p.420)") : " (p.420)" } : null,
     ways, landmark: street.landmark, watcher: player ? "" : street.watcher,
     note: player ? "" : G.note + (built.waterNote ? " " + built.waterNote : "")
   };
@@ -5171,7 +5460,7 @@ ST.legendBlocks = function (F, w, k, opt, ty, fk) {
     const y0 = b.h;
     b.pieces.push(M.icon(F.obstacle.icon, 1.2 * s, y0 + 1.3 * s, 2.2 * s, "ov-lock"));
     text(b, "lg-text-strong", F.obstacle.name, 2 * s, { x: 3.4 * s });
-    text(b, "lg-small", `${F.obstacle.text} Free to know: it is the front's cost (p.420).`, 1.75 * s, { x: 3.4 * s });
+    text(b, "lg-small", `${F.obstacle.text} Free to know: it is the front's cost${F.obstacle.cite == null ? " (p.420)" : F.obstacle.cite}.`, 1.75 * s, { x: 3.4 * s });
     b.h = Math.max(b.h, y0 + 2.7 * s);
   }
   if (F.ways.length) {
@@ -5208,7 +5497,7 @@ ST.keyHTML = function (F, th) {
     for (const f of F.features) h += `<li value="${f.n}" data-feature="${e(f.kind)}"><span class="b68-key__n">${f.n}</span><span><span class="${f.kind === "site" ? "b68-key__strong" : ""}">${e(f.name)}</span>${(f.icons || []).map(([n, r]) => icon(n, r)).join("")}${f.what ? `<br><span class="b68-key__small">${e(f.what)}</span>` : ""}</span></li>`;
     h += `</ol></section>`;
   }
-  if (F.obstacle) h += `<section class="b68-key__obstacles"><h3>In the way</h3><ul><li>${icon(F.obstacle.icon, "ov-lock")}<span><span class="b68-key__strong">${e(F.obstacle.name)}</span><br><span class="b68-key__small">${e(F.obstacle.text)} Free to know: it is the front's cost (p.420).</span></span></li></ul></section>`;
+  if (F.obstacle) h += `<section class="b68-key__obstacles"><h3>In the way</h3><ul><li>${icon(F.obstacle.icon, "ov-lock")}<span><span class="b68-key__strong">${e(F.obstacle.name)}</span><br><span class="b68-key__small">${e(F.obstacle.text)} Free to know: it is the front's cost${F.obstacle.cite == null ? " (p.420)" : F.obstacle.cite}.</span></span></li></ul></section>`;
   if (F.ways.length) {
     h += `<section class="b68-key__ways"><h3>The way in</h3><ul>`;
     for (const v of F.ways) { const a = th ? th.paint("ov-" + v.kind + "-tag", { t: "rect" }) : null; h += `<li data-way="${v.kind}"><span class="b68-key__swatch" style="background:${e(a && a.fill && !/^url/.test(a.fill) ? a.fill : "#14110e")}"></span><span><span class="b68-key__strong">${e(v.n)} — ${e(v.know)}</span><br><span class="b68-key__small">${e(`${v.how} ${F.player && /question/.test(v.know) ? "" : v.cost || ""}`.trim())}</span></span></li>`; }
@@ -5503,8 +5792,11 @@ ST.compose = function (o, model, lay, street, ctx, T) {
   const F = { X0: xl - 18, X1: xr + 18, lots, site: siteLot, nb1, nb2, descLot, useLot, maxD: Math.max(...lots.map(l => l.d - l.y0)) };
 
   // --- the ground ---------------------------------------------------------------------------------
+  // (kit 1.0, K0.4: a canal front's basin is cut out of the near pavement; not on a deck, where the water runs under it)
+  if (site.grand && site.grand.canal && G.g !== "deck") S.cut = { x0: F.site.x0, x1: F.site.x1, y0: 0, y1: 0, z: 0 };
   const ground = M.own(ST.GROUNDS, G.g)(S, F, G.v, { water: waterProps.length > 0, street, rng: S.rng });
   F.ground = ground;
+  if (S.cut) ST.canalCut(S, F, ground);
   const zs = ground.zSite || 0;                     // the level the frontage stands on
   // the side passages between the lots, under whatever stands in them
   ST.passages(S, F, zs);
@@ -5538,6 +5830,7 @@ ST.compose = function (o, model, lay, street, ctx, T) {
   ST.streetLife(S, F, LKs.people || LKs.traffic ? Object.assign({}, ground, { people: Math.max(1, Math.round((ground.people || 4) * (LKs.people || 1))), traffic: Math.round((ground.traffic || 0) * (LKs.traffic || 1)) }) : ground, { obstacle: street.obstacle, props: street.props });
   ST.sightlines(S, keep, loose0);
   if (S.deckTop) S.deckTop.closed = true;
+  if (S.cut) ST.cutItems(S);
 
   // --- the features the key numbers ------------------------------------------------------------------------
   const feats = [];
@@ -5567,12 +5860,13 @@ ST.compose = function (o, model, lay, street, ctx, T) {
   // --- the ways in, where the plan put the doors --------------------------------------------------------------------
   const entries = siteOut.entries;
   return { S, V, entries, features: feats, streetW: (F.X1 - F.X0) * SIC, roadName: ground.roadName && street.named ? Object.assign({ text: street.named.replace(/^the /i, "").toUpperCase() }, ground.roadName) : null,
-    exit: ground.exit, stagePoint: obOut ? obOut.pt : null, waterNote: ground.waterNote || "" };
+    exit: ground.exit, stagePoint: obOut ? obOut.pt : null, waterNote: [ground.waterNote || "", site.grand && site.grand.canal ? ST.canalNote(G.g) : ""].filter(Boolean).join(" ") };
 };
 
 // --- The site, as the plan builds it ------------------------------------------------------------------
 ST.siteSpec = function (model, lay, W) {
   if (!lay) return { W: 60, D: 46, storeys: 2, H: GF + STOREY, roofDeck: false, shape: "rect", toWorld: () => [0, 0], levelZ: () => 0, lv0: null, empty: true };
+  if (model.grand && lay.grand) return ST.grandSpec(model, lay);
   const lv0 = lay.levels.find(l => l.lvl === 0) || lay.levels[0];
   const B = lv0.bbox, SB = lv0.siteBox || B;
   const ship = !!lv0.hull, hub = lv0.exterior.kind === "hub";
@@ -5611,9 +5905,10 @@ ST.siteMass = function (S, site, model, F, zs, X) {
   const { V } = S, look = M.own(STYLE_LOOK, model.styleName) || STYLE_LOOK.Brutalist, night = S.night;
   const x0 = F.site.x0, x1 = F.site.x1, y0 = -site.D, y1 = 0, H = site.H;
   const out = { item: null, entries: [], taken: [], blocks: [] };
-  let main, shipOut = null, stad = null;
+  let main, shipOut = null, stad = null, gr = null;
   if (site.open) main = M.outdoors.street(S, site, model, F, zs);           // drawn without a roof
   else if (site.shape === "ship") { shipOut = ST.ship(S, site, F, zs); main = shipOut.item; }
+  else if (site.grand) { gr = ST.grandMass(S, site, model, F, zs, look, X, out); main = gr.main; }      // kit 1.0 (K0.4)
   else if (site.shape === "hub" || look.rounded) { stad = ST.stadium(x0, y0, x1, y1); main = ST.rounded(S, stad, zs, H, site); }
   else {
     main = S.box(x0, y0, zs, x1, y1, zs + H, "site", f => ST.windows(S, f, look, site.storeys, { site: true, night, looks: S.looks }));
@@ -5621,7 +5916,7 @@ ST.siteMass = function (S, site, model, F, zs, X) {
     if (look.cornice) S.box(x0 - 0.6, y1 - 1.4, zs + H - 1.6, x1 + 0.6, y1 + 0.6, zs + H, "site2");
     ST.roof(S, look, x0, y0, x1, y1, zs + H, site);
   }
-  out.item = main;
+  out.item = gr ? gr.top : main;
   // --- the front: the plan's front door, on the street face ---
   // (a stadium's on its front flat, a ship's gangway on the straight of its hull)
   const fe = X.ent("front"), lay = site.lay;
@@ -5634,11 +5929,13 @@ ST.siteMass = function (S, site, model, F, zs, X) {
     S.box(fx - 2, shipOut.gang.yS, zs, fx + 2, 0.6, zs + 0.7, "wood", f => f.top(fx - 1.6, shipOut.gang.yS, fx + 1.6, 0.6, "st-d:stripe"), { shadow: false });
     out.taken.push({ kind: "front", face: "front", u0: fx - 2, u1: fx + 2, z0: zs - 2, z1: zs + 4, tip: [fx, 0.2, zs], marks: gridGround(fx - 1.6, shipOut.gang.yS, fx + 1.6, 0.6, zs + 0.7) });
   } else {
-    const f = S.faces(main), canopy = !site.open && (look.win === "slit" || look.win === "grid");
-    f.front(fx - 2.8, fx + 2.8, zs, zs + 8.6, "st-d:door-site");
-    f.front(fx - 0.12, fx + 0.12, zs, zs + 8.6, "st-d:frame");
+    // (a palazzo's door is arched, drawn with its walls: ST.palazzoFace)
+    const pal = !!(gr && gr.palazzo), f = S.faces(main), canopy = !site.open && !pal && (look.win === "slit" || look.win === "grid");
+    if (!pal) { f.front(fx - 2.8, fx + 2.8, zs, zs + 8.6, "st-d:door-site"); f.front(fx - 0.12, fx + 0.12, zs, zs + 8.6, "st-d:frame"); }
     if (canopy) S.box(fx - 5, 0, zs + 9.2, fx + 5, 4.5, zs + 10.2, "site2");      // a canopy
-    out.taken.push({ kind: "front", face: "front", u0: fx - (canopy ? 5 : 2.8), u1: fx + (canopy ? 5 : 2.8), z0: zs, z1: zs + (canopy ? 10.2 : 8.6), tip: [fx, 0.2, zs], marks: gridOn([0, 0], [1, 0], [0, 1], fx - 2.6, fx + 2.6, zs + 0.3, zs + 8.3) });
+    const wl = gr && gr.front && gr.front.landing;          // a canal front's landing is the front's to stand on
+    out.taken.push(wl ? { kind: "front", face: "front", u0: wl[0], u1: wl[1], z0: wl[2], z1: zs + 10.4, tip: [fx, 0.2, zs], marks: gridOn([0, 0], [1, 0], [0, 1], fx - 2.4, fx + 2.4, zs + 0.3, zs + 9.6) }
+      : { kind: "front", face: "front", u0: fx - (canopy ? 5 : 2.8), u1: fx + (canopy ? 5 : 2.8), z0: zs, z1: zs + (canopy ? 10.2 : 8.6), tip: [fx, 0.2, zs], marks: gridOn([0, 0], [1, 0], [0, 1], fx - 2.6, fx + 2.6, zs + 0.3, zs + 8.3) });
   }
   if (fe && fe.vec) out.entries.push({ kind: "front", vec: fe.vec, level: { z: zs }, x: fx, y: 0.2, dir: [0, 1] });
   Object.assign(out, { main, look, shipOut, stad });
@@ -5686,7 +5983,10 @@ ST.occluded = function (V, occ, x, y, z) {
 const REACH = { "fire-escape": 4.2, "area-steps": 4.2, "cellar-steps": 4.2, balcony: 3.4, catwalk: 13.5, "spiral-stair": 6 };
 const TIP_GAP = 8, SLIDE = 16, FAN = 0.6;
 ST.wayIn = function (S, site, F, zs, siteOut, e, X, occ, blocks) {
-  const { V } = S, { main, look, shipOut, stad } = siteOut, lay = site.lay, H = site.H, x0 = F.site.x0, x1 = F.site.x1, y0 = -site.D, y1 = 0;
+  // kit 1.0 (K0.4): on a grand site the wall is its own floor's, as tall as the block it stands in (ST.grandWall)
+  const GW = site.grand ? ST.grandWall(site, e) : null;
+  const { V } = S, { look, shipOut, stad } = siteOut, main = GW ? GW.host : siteOut.main, lay = site.lay, H = GW ? GW.H : site.H;
+  const x0 = GW ? GW.x0 : F.site.x0, x1 = GW ? GW.x1 : F.site.x1, y0 = GW ? GW.y0 : -site.D, y1 = GW ? GW.y1 : 0;
   const side = X.sideOf(e), lvl = e.level && e.level.lvl != null ? e.level.lvl : 0, means = e.means || "door";
   const way = { kind: e.kind, vec: e.vec };
   const dir = e.dir || [0, 0], reach = e.from ? 0 : REACH[means] || 0;
@@ -5707,7 +6007,7 @@ ST.wayIn = function (S, site, F, zs, siteOut, e, X, occ, blocks) {
   const done = (o, foot) => { taken.push(Object.assign({ kind: e.kind, tip: [o.x, o.y, o.level.z] }, foot || {})); return o; };
   // --- from above: a skylight, or a roof hatch ---
   if (e.from === "above") {
-    const [rx, ry, rz] = ST.roofSpot(S, site, F, zs, wx, wy, look, shipOut, occ, stad, tips);
+    const [rx, ry, rz] = ST.roofSpot(S, site, F, zs, wx, wy, look, shipOut, occ, stad, tips, GW);
     (site.clutter = site.clutter || []).push([rx - 3, ry - 3, rx + 3, ry + 3]);       // a later way keeps off it
     if (means === "skylight") { S.box(rx - 3, ry - 3, rz, rx + 3, ry + 3, rz + 1.4, "glass", null, { shadow: false }); return done(Object.assign(way, { level: { z: rz + 1.4 }, x: rx, y: ry, dir: [0, 0], from: "above" }), { face: "roof" }); }
     ST.roofHatch(S, rx, ry, rz);
@@ -5745,7 +6045,7 @@ ST.wayIn = function (S, site, F, zs, siteOut, e, X, occ, blocks) {
   const shows = side === "front" || side === seen;
   const sg = side === "east" ? 1 : side === "west" ? -1 : 0;
   // a door on a floor off the street; one on a roof terrace is the roof's edge
-  const zFloor = lvl <= 0 ? zs : zs + GF + STOREY * (lvl - 1), atRoof = zFloor > zs + H - 7.6, zDoor = Math.min(zFloor, zs + H);
+  const zFloor = lvl <= 0 ? zs : GW ? zs + GW.zf : zs + GF + STOREY * (lvl - 1), atRoof = zFloor > zs + H - 7.6, zDoor = Math.min(zFloor, zs + H);
   const zb = Math.max(zs + GF, zDoor);
   const gap = side === "east" ? (F.nb2 ? F.nb2.x0 : F.useLot.x0) - x1 : side === "west" ? x0 - (F.nb1 ? F.nb1.x1 : F.descLot.x1) : 12;
   const area = means === "area-steps" || means === "cellar-steps";
@@ -5928,7 +6228,7 @@ ST.shipWay = function (S, site, F, zs, siteOut, e, c) {
 // roof's slope, clear of a Futurist dome, on a ship's top deck.
 // If a taller building next door hides that spot, the nearest one it doesn't;
 // and the nearest one clear of another way's arrow.
-ST.roofSpot = function (S, site, F, zs, wx, wy, look, shipOut, occ, stad, tips) {
+ST.roofSpot = function (S, site, F, zs, wx, wy, look, shipOut, occ, stad, tips, GW) {
   const far = (x, y, z) => !tips || tips.every(t => ST.scrDist(S.V, [x, y, z], t.tip) >= TIP_GAP);
   if (shipOut && shipOut.top) {
     const b = shipOut.top.b, at = [Math.max(b[0] + 2.5, Math.min(b[3] - 2.5, wx)), Math.max(b[1] + 2.5, Math.min(b[4] - 2.5, wy)), b[5]];
@@ -5937,9 +6237,10 @@ ST.roofSpot = function (S, site, F, zs, wx, wy, look, shipOut, occ, stad, tips) 
     for (let x = b[0] + 2.5; x <= b[3] - 2.5; x += 2) for (let y = b[1] + 2.5; y <= b[4] - 2.5; y += 2) { const dd = Math.hypot(x - at[0], y - at[1]); if ((!best || dd < best[2]) && far(x, y, b[5])) best = [x, y, dd]; }
     return best ? [best[0], best[1], b[5]] : at;
   }
-  const z = zs + (site.open ? site.deckZ : site.H), y0 = -site.D, y1 = 0, x0 = F.site.x0, x1 = F.site.x1;
+  // (a grand site, K0.4: the roof of the block its floor stands in; only the highest is pitched, and never a palazzo's)
+  const z = zs + (GW ? GW.H : site.open ? site.deckZ : site.H), y0 = GW ? GW.y0 : -site.D, y1 = GW ? GW.y1 : 0, x0 = GW ? GW.x0 : F.site.x0, x1 = GW ? GW.x1 : F.site.x1;
   const round = !!stad, dr = round ? Math.min(stad.r * 0.8, 18) + 3 : 0;
-  const pitch = look.roof === "pitch" && !site.roofDeck && !site.open, d = y1 - y0, cy = (y0 + y1) / 2, rise = Math.min(16, d * 0.32);
+  const pitch = look.roof === "pitch" && !site.roofDeck && !site.open && (!GW || (GW.top && !site.grand.palazzo)), d = y1 - y0, cy = (y0 + y1) / 2, rise = Math.min(16, d * 0.32);
   const zAt = (x, y) => pitch ? z + rise * Math.max(0, 1 - Math.abs(y - cy) / (d / 2)) : z;
   // a Futurist dome: just outside it, on the stadium's roof
   if (round && Math.hypot(wx - stad.cx, wy - stad.cy) < dr) { const a = Math.hypot(wx - stad.cx, wy - stad.cy) > 0.1 ? Math.atan2(wy - stad.cy, wx - stad.cx) : 0; wx = stad.cx + Math.cos(a) * dr; wy = stad.cy + Math.sin(a) * dr; }
@@ -5967,10 +6268,13 @@ ST.windows = function (S, f, look, storeys, o = {}) {
   const LK = o.looks && o.looks.any ? o.looks : null, lr = S.looksRng || rng;
   const litP = LK && LK.litP != null ? LK.litP : o.litP != null ? o.litP : 0.34;
   const lit = () => night && rng() < litP;
-  for (let s = 0; s < storeys; s++) {
-    const zb = z0 + (s === 0 ? 0 : GF + STOREY * (s - 1)), zh = s === 0 ? GF : STOREY;
-    if (s === 0 && o.groundFloor === false) continue;
-    const winA = zb + (s === 0 ? 3.4 : 2.8), winB = zb + zh - (s === 0 ? 2.6 : 2.2);
+  // o.levels (a grand site, K0.4): each storey's own height, { dz: its floor above the box's foot, h, ground }
+  const LV = o.levels || null;
+  for (let s = 0; s < (LV ? LV.length : storeys); s++) {
+    const g0 = LV ? LV[s].ground : s === 0;
+    const zb = LV ? z0 + LV[s].dz : z0 + (s === 0 ? 0 : GF + STOREY * (s - 1)), zh = LV ? LV[s].h : s === 0 ? GF : STOREY;
+    if (g0 && o.groundFloor === false) continue;
+    const winA = zb + (g0 ? 3.4 : 2.8), winB = zb + zh - (g0 ? 2.6 : 2.2);
     const across = (a, b, put) => {
       if (look.win === "band") { put(a + 1.2, b - 1.2, winA - 0.6, winB + 0.4, lit() ? "st-d:winlit" : "st-d:glass"); for (let u = a + 6; u < b - 2; u += 6) put(u - 0.1, u + 0.1, winA - 0.6, winB + 0.4, "st-d:frame"); return; }
       const pitch = look.win === "slit" ? 6 : look.win === "grid" ? 6.4 : look.win === "tall" ? 8 : look.win === "round" ? 9 : 7.5;
@@ -5985,15 +6289,15 @@ ST.windows = function (S, f, look, storeys, o = {}) {
         if (LK && LK.tall) { const mid = (za + zb2) / 2, hh = Math.min((zb2 - za) * LK.tall, zh - 1.6) / 2; za = Math.max(zb + 0.8, mid - hh); zb2 = Math.min(zb + zh - 0.8, mid + hh); }
         const role = lit() ? "st-d:winlit" : "st-d:win";
         // boarded or barred: wide enough to read at map scale, even over a slit window
-        if (LK && ((LK.boardGround && s === 0) || (LK.board && lr() < LK.board))) { const bw = Math.max(wa, 2.8) / 2 + 0.3; put(c - bw, c + bw, za - 0.3, zb2 + 0.3, "st-d:boards"); for (let zz = za + 0.7; zz < zb2 - 0.2; zz += 1.2) put(c - bw, c + bw, zz, zz + 0.28, "st-d:boardline"); continue; }
+        if (LK && ((LK.boardGround && g0) || (LK.board && lr() < LK.board))) { const bw = Math.max(wa, 2.8) / 2 + 0.3; put(c - bw, c + bw, za - 0.3, zb2 + 0.3, "st-d:boards"); for (let zz = za + 0.7; zz < zb2 - 0.2; zz += 1.2) put(c - bw, c + bw, zz, zz + 0.28, "st-d:boardline"); continue; }
         put(c - wa / 2, c + wa / 2, za, zb2, role);
-        if (LK && LK.grille && s === 0) { const gw = Math.max(wa, 2.8) / 2 + 0.25; put(c - gw, c + gw, za - 0.25, za + 0.15, "st-d:grille"); put(c - gw, c + gw, zb2 - 0.15, zb2 + 0.25, "st-d:grille"); for (let u = c - gw + 0.35; u < c + gw - 0.1; u += 0.75) put(u - 0.15, u + 0.15, za, zb2, "st-d:grille"); }
+        if (LK && LK.grille && g0) { const gw = Math.max(wa, 2.8) / 2 + 0.25; put(c - gw, c + gw, za - 0.25, za + 0.15, "st-d:grille"); put(c - gw, c + gw, zb2 - 0.15, zb2 + 0.25, "st-d:grille"); for (let u = c - gw + 0.35; u < c + gw - 0.1; u += 0.75) put(u - 0.15, u + 0.15, za, zb2, "st-d:grille"); }
       }
     };
-    if (!(s === 0 && o.shopfront)) across(x0, x1, (a, b, za, zb2, role) => f.front(a, b, za, zb2, role));
+    if (!(g0 && o.shopfront)) across(x0, x1, (a, b, za, zb2, role) => f.front(a, b, za, zb2, role));
     // the site's walls: rival tags on the ground floor, patches anywhere (condition and volume)
-    if (LK && LK.graffiti && s === 0) for (let u = x0 + 1.5 + lr() * 3; u < x1 - 7; u += 8 + lr() * 6) { const gz = zb + 0.4 + lr() * 1.2; f.front(u, u + 4.5 + lr() * 3.5, gz, gz + 2.4 + lr() * 1.8, lr() < 0.5 ? "st-d:tag1" : "st-d:tag2"); }
-    if (LK && LK.strange && s === 0) f.front(x0, x1, zb, zb + zh * 0.7, "st-d:shimmer");
+    if (LK && LK.graffiti && g0) for (let u = x0 + 1.5 + lr() * 3; u < x1 - 7; u += 8 + lr() * 6) { const gz = zb + 0.4 + lr() * 1.2; f.front(u, u + 4.5 + lr() * 3.5, gz, gz + 2.4 + lr() * 1.8, lr() < 0.5 ? "st-d:tag1" : "st-d:tag2"); }
+    if (LK && LK.strange && g0) f.front(x0, x1, zb, zb + zh * 0.7, "st-d:shimmer");
     if (LK && LK.patch) for (let u = x0 + 3 + lr() * 6; u < x1 - 5; u += 11 + lr() * 10) { const pz = zb + 1 + lr() * Math.max(0.5, zh - 4); f.front(u, u + 2.4 + lr() * 2, pz, pz + 1.6 + lr(), "st-d:patch"); }
     if (o.sideWindows !== false) across(y0, y1, (a, b, za, zb2, role) => f.side(a, b, za, zb2, role));
   }
@@ -6147,6 +6451,8 @@ ST.ship = function (S, site, F, zs) {
 
 // Steps down to a basement door: the area, with its railings.
 ST.area = function (S, side, xs, wx, wy, zs) {
+  // kit 1.0: on a canal front the front is water, so the steps go down the façade into it (K0.4)
+  if (side === "front" && S.cut && S.cut.y1 > 0 && wx > S.cut.x0 && wx < S.cut.x1) return ST.waterStair(S, wx, zs);
   if (side === "front") {
     S.decal(P.rect("st-g:area", wx - 5, 0, 10, 4.5), zs);
     for (let i = 0; i < 6; i++) S.decal(P.rect("st-g:step", wx - 4.4 + i * 1.5, 0.4, 0.4, 3.7), zs);
@@ -6478,7 +6784,9 @@ ST.canal = function (S, F, y0, width, o = {}) {
   const zw = -4.5, y1 = y0 + width;
   S.decal(P.rect("st-g:water", F.X0, y0, F.X1 - F.X0, width), zw);
   for (let x = F.X0 + 7; x < F.X1; x += 10) S.decal(P.rect("st-g:ripple", x + ((x * 13) % 5), y0 + 5 + ((x * 7) % (width - 9)), 3.4, 0.35), zw);
-  S.box(F.X0, y0, zw, F.X1, y0 + 0.6, 0, "edge", null, { noTop: true, shadow: false });
+  // (kit 1.0, K0.4: on a canal path, the near bank opens where a canal front's basin meets the canal)
+  if (o.towpath && S.cut) { for (const [a, b] of [[F.X0, S.cut.x0], [S.cut.x1, F.X1]]) if (b - a > 0.5) S.box(a, y0, zw, b, y0 + 0.6, 0, "edge", null, { noTop: true, shadow: false }); }
+  else S.box(F.X0, y0, zw, F.X1, y0 + 0.6, 0, "edge", null, { noTop: true, shadow: false });
   strip(S, F.X0, F.X1, y0 - 0.9, y0, "edge");
   strip(S, F.X0, F.X1, y1, y1 + 1, "edge");
   strip(S, F.X0, F.X1, y1 + 1, y1 + 9, "pave");
@@ -7152,6 +7460,267 @@ ST.streetLife1 = function (S, F, g, o) {
   }
 };
 
+// =============================================================================
+// kit 1.0: a grand site on the street (K0.4)
+// =============================================================================
+// Only when the roll says kit: 1 and the render asks for it (opts.kit1, which sets model.grand, as for the other views);
+// without both, nothing here runs and the street is 0.9's, byte for byte.
+//
+// The site is the building grand.js builds. Every floor stands on its own footprint (build.floors) at its own storey height,
+// in the plan's one frame (the iso's lay.grand.centre), so a set-back floor stands where it is built; storeys on one footprint
+// are one block. A palazzo is drawn in the iso's and the section's words: arched windows by the iso's bays, a rusticated
+// street floor, a cornice and a balustraded parapet round every roof the street sees, no pitched roof and no chimney.
+// Otherwise each block takes the building's own printed style, as the street draws it, and only the highest block takes
+// its roof (a pitched roof, a plant deck); a lower block's roof is flat, with a rim. [interpretation]
+//
+// A canal front (build.front "canal") stands on the water. The near pavement in front of the site (on a canal path, the
+// towpath) is a basin of water at the canal's level, open to the canal where the street has one: the water door has its
+// landing and its water steps, the boats tie up beside it, and a loading door on a floor at or under the street opens at the
+// waterline with its barge. The street's own ground is the rest; nothing stands in the basin. [interpretation]
+
+// The site as grand.js builds it: the street's site spec, with each floor's footprint and height (world feet)
+ST.grandSpec = function (model, lay) {
+  const g = model.grand, lv0 = lay.levels.find(l => l.lvl === 0) || lay.levels[0], B = lv0.bbox, c0 = lay.grand.centre, D = B.h;
+  const toWorld = (lv, x, y) => [x - c0[0], y - c0[1] - D / 2];
+  const hOf = l => l.h || (l.lvl < 0 ? 11 : 14);
+  const ups = lay.levels.filter(l => l.lvl >= 0 && !l.ground).sort((a, b) => a.lvl - b.lvl), zAt = {};
+  let z = 0;
+  for (const l of ups) { zAt[l.lvl] = z; z += hOf(l); }
+  for (const l of lay.levels) if (l.lvl < 0) zAt[l.lvl] = -hOf(l);
+  const levels = ups.map(l => { const [x0, y0] = toWorld(l, l.bbox.x, l.bbox.y); return { lvl: l.lvl, x0, y0, x1: x0 + l.bbox.w, y1: y0 + l.bbox.h, z0: zAt[l.lvl], z1: zAt[l.lvl] + hOf(l), h: hOf(l), lv: l }; });
+  const same = (a, b) => ["x0", "y0", "x1", "y1"].every(k => Math.abs(a[k] - b[k]) < 0.01);
+  const blocks = [];
+  for (const L of levels) {
+    const b = blocks[blocks.length - 1];
+    if (b && same(b, L) && Math.abs(b.z1 - L.z0) < 0.01) { b.z1 = L.z1; b.levels.push(L); }
+    else blocks.push({ x0: L.x0, y0: L.y0, x1: L.x1, y1: L.y1, z0: L.z0, z1: L.z1, levels: [L] });
+  }
+  const top = blocks.reduce((a, b) => (b.z1 > a.z1 + 0.01 ? b : a), blocks[0]);
+  const levelOf = lvl => levels.find(L => L.lvl === lvl) || levels[0];
+  const blockOf = lvl => blocks.find(b => b.levels.some(L => L.lvl === lvl)) || blocks[0];
+  return { W: B.w, D, storeys: levels.length, H: z, roofDeck: false, shape: "rect", toWorld, levelZ: l => zAt[l.lvl] != null ? zAt[l.lvl] : 0, lv0, lay, hull: null, hullBox: B, beam: 0, open: null, deckZ: 0,
+    grand: { g, palazzo: g.style === "palazzo", canal: g.front === "canal", levels, blocks, top, levelOf, blockOf, zOf: lvl => zAt[lvl] != null ? zAt[lvl] : 0, c0, has: kind => g.faces.some(f => f.kind === kind) } };
+};
+
+// The wall a way in lands on, on a grand site: its own floor's (the ground floor's for one at or under the street), as tall as
+// the block it stands in, and that block for its door
+ST.grandWall = function (site, e) {
+  const G = site.grand, lvl = e.level && e.level.lvl != null ? e.level.lvl : 0, L = G.levelOf(lvl > 0 ? lvl : 0), b = G.blockOf(L.lvl);
+  return { x0: L.x0, x1: L.x1, y0: L.y0, y1: L.y1, H: b.z1, zf: lvl > 0 ? G.zOf(lvl) : 0, host: b.item, top: b === G.top };
+};
+
+// The building: its blocks, their windows, roofs and crowns, the front door, and on a canal front the water at its foot
+ST.grandMass = function (S, site, model, F, zs, look, X, out) {
+  const G = site.grand, night = S.night, x0 = F.site.x0, x1 = F.site.x1;
+  const fe = X.ent("front");
+  let fx = fe && fe.level ? site.toWorld(fe.level, fe.x, fe.y)[0] : 0;
+  fx = Math.max(x0 + 4, Math.min(x1 - 4, fx));
+  const L = G.palazzo ? null : look;
+  for (const b of G.blocks) {
+    const lv = b.levels.map(Lv => ({ dz: Lv.z0 - b.z0, h: Lv.h, ground: Lv.lvl === 0 }));
+    b.item = S.box(b.x0, b.y0, zs + b.z0, b.x1, b.y1, zs + b.z1, "site", f => G.palazzo ? ST.palazzoFace(S, f, b, site, zs, fx) : ST.windows(S, f, look, lv.length, { site: true, night, looks: S.looks, levels: lv }));
+  }
+  const main = G.blockOf(0).item, M0 = G.blockOf(0);
+  if (L && L.mural) ST.mural(S, main, M0.x0, M0.x1, M0.y1, zs + M0.z0, M0.z1 - M0.z0);
+  for (const b of G.blocks) {
+    const zt = zs + b.z1;
+    if (G.palazzo) { ST.grandCrown(S, b, G.blocks, zt); continue; }
+    if (L.cornice) S.box(b.x0 - 0.6, b.y1 - 1.4, zt - 1.6, b.x1 + 0.6, b.y1 + 0.6, zt, "site2");
+    if (b === G.top) ST.roof(S, L, b.x0, b.y0, b.x1, b.y1, zt, site);
+    else for (const e of ST.grandEdges(b, G.blocks)) if (e.side === "front" || e.side === (S.V.flip ? "west" : "east")) ST.grandRim(S, e, zt, L.parapet || 1);
+  }
+  const res = { main, top: G.top.item, palazzo: G.palazzo, fx, front: null };
+  if (G.canal) res.front = ST.canalFront(S, site, model, F, zs, fx, out, main);
+  return res;
+};
+
+// Each edge of a block's roof the street can see the parapet of, less what a block standing on it covers:
+// [{ side, at, a, b }], a to b along x (the front and back) or y (the sides)
+ST.grandEdges = function (b, blocks) {
+  const ups = blocks.filter(u => u !== b && Math.abs(u.z0 - b.z1) < 0.01);
+  const sub = (lo, hi, cuts) => { let segs = [[lo, hi]]; for (const [c, d] of cuts) segs = segs.flatMap(([p, q]) => [[p, Math.min(q, c)], [Math.max(p, d), q]].filter(([s, t]) => t - s > 0.5)); return segs; };
+  const out = [];
+  for (const [side, at, lo, hi] of [["front", b.y1, b.x0, b.x1], ["back", b.y0, b.x0, b.x1], ["west", b.x0, b.y0, b.y1], ["east", b.x1, b.y0, b.y1]]) {
+    const along = side === "front" || side === "back";
+    const cuts = ups.filter(u => along ? at >= u.y0 - 0.01 && at <= u.y1 + 0.01 : at >= u.x0 - 0.01 && at <= u.x1 + 0.01).map(u => along ? [u.x0, u.x1] : [u.y0, u.y1]);
+    for (const [a, c] of sub(lo, hi, cuts)) out.push({ side, at, a, b: c });
+  }
+  return out;
+};
+// A plain rim round a lower block's flat roof (its own style's parapet height)
+ST.grandRim = function (S, e, z, pp) {
+  const t = 1, along = e.side === "front" || e.side === "back";
+  if (along) { const y0 = e.side === "front" ? e.at - t : e.at; S.box(e.a, y0, z, e.b, y0 + t, z + pp, "site2", null, { shadow: false }); }
+  else { const xa = e.side === "east" ? e.at - t : e.at; S.box(xa, e.a, z, xa + t, e.b, z + pp, "site2", null, { shadow: false }); }
+};
+// A palazzo's crown: the cornice round the roof's edge, then a balustraded parapet on every edge no block stands on, piers at
+// its ends (the section's GR.secParapet, seen in the round). The section's roles: cornice, parapet, baluster.
+ST.grandCrown = function (S, b, blocks, z) {
+  const c = S.box(b.x0 - 0.7, b.y0 - 0.7, z - 1.3, b.x1 + 0.7, b.y1 + 0.7, z, "cornice", null, { noTop: true, shadow: false });
+  const f = S.faces(c);
+  f.top(b.x0 - 0.7, b.y1 - 0.6, b.x1 + 0.7, b.y1 + 0.7, "st-t:cornice"); f.top(b.x0 - 0.7, b.y0 - 0.7, b.x1 + 0.7, b.y0 + 0.6, "st-t:cornice");
+  f.top(b.x0 - 0.7, b.y0 + 0.6, b.x0 + 0.6, b.y1 - 0.6, "st-t:cornice"); f.top(b.x1 - 0.6, b.y0 + 0.6, b.x1 + 0.7, b.y1 - 0.6, "st-t:cornice");
+  const hP = 3.2, t = 0.8;
+  for (const e of ST.grandEdges(b, blocks)) {
+    const along = e.side === "front" || e.side === "back";
+    const ya = e.side === "front" ? e.at - t : e.at, xa = e.side === "east" ? e.at - t : e.at;
+    const box = (a, c2, za, zb, mat, extra) => along ? S.box(a, ya, za, c2, ya + t, zb, mat, extra, { shadow: false }) : S.box(xa, a, za, xa + t, c2, zb, mat, extra, { shadow: false });
+    box(e.a, e.b, z, z + 0.5, "parapet", F => {
+      for (let u = e.a + 0.9; u < e.b - 0.5; u += 1.7) (along ? F.front : F.side)(u - 0.25, u + 0.25, z + 0.5, z + hP - 0.5, "st-f:baluster");
+    });
+    box(e.a, e.b, z + hP - 0.5, z + hP, "parapet");
+    for (const end of [e.a, e.b]) box(end - 0.6, end + 0.6, z, z + hP + 0.4, "parapet");
+  }
+};
+
+// A palazzo's walls, storey by storey: the street floor rusticated, arched windows by the iso's bays (GR.wallOpts: 9 ft bays
+// along each wall, counted in the plan's frame, so the street's arches stand where the iso's do), the door arched. By
+// Bluetime the arches are glass, as in the iso and the section; at Night they are the street's dark or lit windows.
+ST.palazzoFace = function (S, f, b, site, zs, fx) {
+  const G = site.grand, night = S.night, rng = S.rng, LK = S.looks && S.looks.any ? S.looks : null, lr = S.looksRng || rng;
+  const litP = ST.litOf(S, 0.34), BAY = 9, rw = 1.25, c0 = G.c0, D = site.D;
+  // world to the plan's frame, along each face
+  const planX = x => x + c0[0], planY = y => y + c0[1] + D / 2;
+  const arch = (u, za, zt, w) => { const pts = [[u - w, za], [u + w, za], [u + w, zt]]; for (let i = 1; i < 8; i++) { const a = i * Math.PI / 8; pts.push([u + w * Math.cos(a), zt + w * Math.sin(a)]); } pts.push([u - w, zt]); return pts; };
+  const bays = (a0, a1, toPlan) => {
+    const out = [], p0 = toPlan(a0), off = a0 - p0;
+    for (let u = Math.ceil((p0 + 2) / BAY) * BAY - BAY / 2; u + off <= a1 - 2; u += BAY) { const w = u + off; if (w - rw >= a0 + 1 && w + rw <= a1 - 1) out.push(w); }
+    return out;
+  };
+  for (const L of b.levels) {
+    const zb = zs + L.z0, h = L.h, ground = L.lvl === 0;
+    // the street floor: rusticated, the joints every sixth of its height (as the iso)
+    if (ground) for (let z = zb + h * 0.16; z < zb + h * 0.95; z += h * 0.16) { f.front(f.x0, f.x1, z, z + 0.14, "st-d:rustic"); f.side(f.y0, f.y1, z, z + 0.14, "st-d:rustic"); }
+    // the condition and volume as the street shows them (ST.looks): taller or lower arches, boarded or barred ones
+    const tk = LK && LK.tall ? LK.tall : 1, za = zb + h * (tk > 1 ? 0.14 : tk < 1 ? 0.28 : 0.2), zt = zb + h * (tk > 1 ? 0.74 : tk < 1 ? 0.6 : 0.68);
+    const put = (poly, rect, u, zA, zT) => {
+      if (LK && ((LK.boardGround && ground) || (LK.board && lr() < LK.board))) { poly(arch(u, zA, zT, rw + 0.3), "st-d:boards"); return; }
+      poly(arch(u, zA, zT, rw), night ? (rng() < litP ? "st-d:winlit" : "st-d:win") : "arch-glass");
+      if (LK && LK.grille && ground) { rect(u - rw - 0.25, u + rw + 0.25, zA - 0.25, zA + 0.15, "st-d:grille"); for (let v = u - rw + 0.35; v < u + rw - 0.1; v += 0.75) rect(v - 0.15, v + 0.15, zA, zT + rw * 0.8, "st-d:grille"); }
+    };
+    for (const u of bays(f.x0, f.x1, planX)) { if (ground && Math.abs(u - fx) < rw + 4) continue; put(f.frontPoly, f.front, u, za, zt); }
+    for (const u of bays(f.y0, f.y1, planY)) put(f.sidePoly, f.side, u, za, zt);
+    // the door: the water door on a canal, else the street door, arched in the rusticated wall
+    // (at Night a canal front's water door gives light, as a lit shopfront does)
+    if (ground && Math.abs(f.y1 - 0) < 0.01) { f.frontPoly(arch(fx, zs, zs + 7.6, 2.6), night && G.canal && G.has("water-door") ? "st-d:shoplit" : "st-d:door-site"); f.front(fx - 0.12, fx + 0.12, zs, zs + 7.6, "st-d:frame"); }
+  }
+};
+
+// The front on the water: the basin, the façade under the street's level, the water door's landing and its steps, the boats,
+// a loading door at the waterline and its barge. Returns what the front way in stands on.
+ST.canalFront = function (S, site, model, F, zs, fx, out, main) {
+  const G = site.grand, C = S.cut, x0 = F.site.x0, x1 = F.site.x1, zw = zs - 4.5, Yb = C ? C.y1 : 0, has = G.has;
+  void main;
+  if (!C || Yb <= 0) {
+    // a deck: the front stays on the deck, and the canal runs along under it, on the ground below, in front of the site
+    const lw = F.ground && F.ground.lower;
+    if (lw && lw.pave) S.decal(P.rect("st-g:water", x0, 0, x1 - x0, lw.pave[1]), lw.z);
+    return null;
+  }
+  // the basin and its walls: the façade below the street, and the side wall the view looks into
+  S.decal(P.rect("st-g:water", x0, 0, x1 - x0, Yb), zw);
+  for (let x = x0 + 6; x < x1 - 4; x += 11) S.decal(P.rect("st-g:ripple", x + ((Math.round(x) * 13) % 5), 2 + ((Math.round(x) * 7) % Math.max(2, Math.round(Yb - 4))), 3.2, 0.35), zw);
+  const sunk = S.canalFacade = S.box(x0, -0.6, zw, x1, 0, zs, "site", null, { noTop: true, shadow: false });
+  if (S.V.flip) S.box(x1, 0, zw, x1 + 0.8, Yb, zs, "edge", null, { noTop: true, shadow: false });
+  else S.box(x0 - 0.8, 0, zw, x0, Yb, zs, "edge", null, { noTop: true, shadow: false });
+  if (!F.ground || F.ground.kind !== "waterside") S.decal(P.rect("st-g:edge", x0 - 0.8, Yb, x1 - x0 + 1.6, 0.8), zs);
+  const busy = [];             // spans of the front the landing, the steps and the barge take
+  // the water door's landing, on piers, with its steps down to the water
+  const door = has("water-door"), steps = has("water-steps");
+  const Ld = door ? Math.max(3, Math.min(6, Yb - 4.5)) : 0;
+  if (door) { S.box(fx - 5, 0, zw - 0.2, fx + 5, Ld, zs, "edge", null, { shadow: false }); busy.push([fx - 5, fx + 5]); S.waterDoor = { x: fx, y: Ld / 2, z: zs }; }
+  if (steps) {
+    const sx = door ? fx : ST.faceX(site, "water-steps", fx, x0, x1), n = 4, run = Math.max(0.8, (Yb - Ld - 0.6) / n);
+    for (let i = 0; i < n; i++) S.box(sx - 4 - i * 0.5, Ld + i * run, zw - 0.2, sx + 4 + i * 0.5, Ld + (i + 1) * run, zs - (i + 1) * (zs - zw) / (n + 1), "edge", null, { shadow: false });
+    busy.push([sx - 6, sx + 6]);
+  }
+  if (door && S.night) {
+    // the water door gives light: on its landing and on the water beyond (B68Map.lightAt reads both as a doorway)
+    const a = P.poly("st-g:spill", [[fx - 2.6, 0], [fx + 2.6, 0], [fx + 4.8, Ld], [fx - 4.8, Ld]]); a.uncut = true; S.decal(a, zs);
+    S.decal(P.poly("st-g:spill", [[fx - 4.8, Ld], [fx + 4.8, Ld], [fx + 7, Yb], [fx - 7, Yb]]), zw);
+  }
+  // a loading door at the waterline, on a floor at or under the street, and its barge, clear of the landing
+  const ld = G.g.faces.find(f => f.kind === "loading-door" && f.room && f.room.lvl <= 0 && f.room.rect);
+  if (ld) {
+    let x = ST.faceX(site, "loading-door", fx, x0, x1);
+    const clear = v => v - 7.5 >= x0 + 1 && v + 7.5 <= x1 - 1 && busy.every(([a, b]) => v + 7.5 <= a || v - 7.5 >= b);
+    if (!clear(x)) { const c = [1, -1].flatMap(s => Array.from({ length: 40 }, (_, i) => x + s * (i + 1))).filter(clear).sort((p, q) => Math.abs(p - x) - Math.abs(q - x))[0]; x = c == null ? null : c; }
+    if (x != null) {
+      S.faces(sunk).front(x - 3, x + 3, zw + 0.3, zs - 0.3, "st-d:door-site");
+      S.box(x - 7, 1.2, zw - 0.6, x + 7, Math.min(Yb - 0.6, 5.4), zw + 1.2, "barge", f => f.top(x - 5.2, 2, x + 2.6, Math.min(Yb - 1.4, 4.6), "st-d:cargo"), { shadow: false });
+      busy.push([x - 7.5, x + 7.5]);
+      out.taken.push({ kind: "dock", face: "front", u0: x - 7.5, u1: x + 7.5, z0: zw - 1, z1: zs + 0.4 });
+    }
+  }
+  // the boats tie up beside the landing (as the iso: either side of it), clear of the steps and the barge
+  if (has("boats")) {
+    const hideW = S.V.flip ? 4.5 : 0, hideE = S.V.flip ? 0 : 4.5;
+    const ok = v => v - 6 >= x0 + 1 + hideW && v + 6 <= x1 - 1 - hideE && busy.every(([a, b]) => v + 6.5 <= a || v - 6.5 >= b);
+    // nearest the landing first (the iso's 13 ft either side), each clear of the one before
+    let n = 0;
+    for (let d = 13; n < 2 && d < 90; d += 0.5) for (const x of [fx + d, fx - d]) if (n < 2 && ok(x)) { ST.boat(S, x, Yb * (n ? 0.72 : 0.55), zw + 0.6, 11, "gondola", { thin: true }); busy.push([x - 6, x + 6]); n++; }
+  }
+  // nothing else stands in the basin: the props keep off it (ST.slots), and anything the street put there goes (ST.cutItems)
+  for (let x = x0 + 2; x <= x1 - 2; x += 4) out.blocks.push([x, Yb / 2, Yb / 2 + 1.5]);
+  return { landing: door ? [fx - 5, fx + 5, zw - 0.2] : null, Ld, Yb, zw };
+};
+// The GM key's line on a canal front (the street key's [interpretation] note)
+ST.canalNote = g => g === "deck" ? "The site's front is on the canal, which runs under the deck." : g === "waterside" ? "The site's front stands on the canal: the towpath stops either side of it." : "The site's front stands on the canal: a basin cut into the pavement in front of it.";
+// Where a face's room meets the front, in world x (the room's middle), or the front door's
+ST.faceX = function (site, kind, fx, x0, x1) {
+  const f = site.grand.g.faces.find(q => q.kind === kind && q.room && q.room.rect);
+  if (!f) return fx;
+  return Math.max(x0 + 6, Math.min(x1 - 6, f.room.rect.x + f.room.rect.w / 2 - site.grand.c0[0]));
+};
+// Steps down to a basement door on a canal front (ST.area's, where the front is water): a stone flight along the façade,
+// from the street's level down to a door at the waterline
+ST.waterStair = function (S, wx, zs) {
+  const zw = zs - 4.5, n = 6, C = S.cut, s = !C || wx - C.x0 <= C.x1 - wx ? 1 : -1;      // the flight starts at the basin's nearer end
+  for (let i = 0; i < n; i++) { const a = wx - s * 5 + s * i * 1.6, b = a + s * 1.6; S.box(Math.min(a, b), 0, zw - 0.2, Math.max(a, b), 3, zs - i * (zs - zw) / n, "edge", null, { shadow: false }); }
+  // the door at its foot, in the façade under the street
+  if (S.canalFacade) S.faces(S.canalFacade).front(Math.min(wx + s * 1.4, wx + s * 4.6), Math.max(wx + s * 1.4, wx + s * 4.6), zw + 0.5, zs - 0.4, "st-d:door-site");
+};
+// After the ground: how deep the basin runs (to a canal path's water, else across the near pavement, 9 to 14 ft), and the
+// obstacle's stage moved along the street off the water
+ST.canalCut = function (S, F, g) {
+  const C = S.cut, p = g.pave || [0, 8];
+  C.z = g.zSite || 0;
+  C.y1 = g.kind === "waterside" && g.water ? g.water.y0 : Math.max(9, Math.min(14, p[1]));
+  const st = g.stage;
+  if (st && st.y - st.h / 2 < C.y1 && st.x + st.w / 2 > C.x0 - 2 && st.x - st.w / 2 < C.x1 + 2) {
+    const east = C.x1 + st.w / 2 + 6, west = C.x0 - st.w / 2 - 6;
+    st.x = F.X1 - (east + st.w / 2) >= (west - st.w / 2) - F.X0 ? east : west;
+  }
+};
+// Nothing the street put on the pavement stands in the basin: a lamp, a passer-by, a bollard (the props kept off it already)
+ST.cutItems = function (S) {
+  const C = S.cut, inside = (x, y) => x > C.x0 + 0.01 && x < C.x1 - 0.01 && y > C.y0 + 0.01 && y < C.y1 - 0.01;
+  const gone = it => !it.basin && Math.abs((it.ground || 0) - C.z) < 0.01 && inside((it.b[0] + it.b[3]) / 2, (it.b[1] + it.b[4]) / 2);
+  S.items = S.items.filter(it => !gone(it));
+  for (const [z, ds] of S.furn) if (Math.abs(z - C.z) < 0.01) S.furn.set(z, ds.filter(p => { const q = ST.flatPts(p); if (!q) return true; const c = M.G.centroid(q); return !inside(c[0], c[1]); }));
+};
+// The pavement's ground is cut away over the basin (after the shadows fall): a piece wholly over it goes, one across its edge
+// is cut to what lies outside it. A light's pool or a puddle that only reaches over the edge stays whole.
+ST.cutDecals = function (S) {
+  const C = S.cut, ds = S.decals.get(C.z);
+  if (!ds) return;
+  const swap = q => q.map(([x, y]) => [y, x]);
+  const clipX = (pts, lo, hi) => swap(ST.clipY(swap(pts), lo, hi));
+  const minus = pts => [ST.clipY(pts, -Infinity, C.y0), ST.clipY(pts, C.y1, Infinity), clipX(ST.clipY(pts, C.y0, C.y1), -Infinity, C.x0), clipX(ST.clipY(pts, C.y0, C.y1), C.x1, Infinity)].filter(q => q.length > 2);
+  const out = [];
+  for (const p of ds) {
+    const pts = p.uncut ? null : ST.flatPts(p);
+    if (!pts) { out.push(p); continue; }
+    const xs = pts.map(q => q[0]), ys = pts.map(q => q[1]), bx0 = Math.min(...xs), bx1 = Math.max(...xs), by0 = Math.min(...ys), by1 = Math.max(...ys);
+    if (bx1 <= C.x0 || bx0 >= C.x1 || by1 <= C.y0 || by0 >= C.y1) { out.push(p); continue; }
+    const cx = (bx0 + bx1) / 2, cy = (by0 + by1) / 2, centreIn = cx > C.x0 && cx < C.x1 && cy > C.y0 && cy < C.y1;
+    if (p.t === "ellipse" || p.t === "circle") { if (!centreIn) out.push(p); continue; }
+    const o = p.opacity != null ? { opacity: p.opacity } : {};
+    for (const q of minus(pts)) out.push(P.poly(p.r, q.map(v => [+v[0].toFixed(3), +v[1].toFixed(3)]), o));
+  }
+  S.decals.set(C.z, out);
+};
+
 // ---- src/grand.js ----
 // =============================================================================
 // grand — map kit 1.0: the grand map (footprints, spans, faces, a grand stair, the palazzo)
@@ -7365,12 +7934,17 @@ GR.level = function (model, rooms, lvl, F, rng, multi, st, W) {
   for (const n of nodes) G.rectPts(n.rect).forEach((p, i, a) => walls.push(L.seg(p, a[(i + 1) % 4], st.int)));
   G.rectPts(F).forEach((p, i, a) => walls.push(L.seg(p, a[(i + 1) % 4], "ext")));
   for (const v of voids) if (v.ring) G.rectPts(v.rect).forEach((p, i, a) => walls.push(L.seg(p, a[(i + 1) % 4], "rail")));
+  // The doors come from the floor's geometry and the bands alone (K0.3): the nodes are taken in the order they stand,
+  // not the order the roll lists its rooms, and a door is wide between rooms of 200 sq ft or more. So two hidden rooms of
+  // one band that change places leave every door on a known room's wall where it was (tools/qa.js checks it).
+  const at = q => [q.rect.y, q.rect.x, q.rect.w, q.rect.h].map(v => +v.toFixed(3));
+  const gnodes = nodes.slice().sort((p, q) => { const a = at(p), b = at(q); return a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3]; });
   const edges = [];
-  for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) { const e = sharedEdge(nodes[i].rect, nodes[j].rect, 3.5); if (e) edges.push({ a: nodes[i], b: nodes[j], e }); }
-  const roots = nodes.filter(r => r.kind === "core" || depthOf(r.band) === 0);
-  for (const c of connect(nodes, edges, st, rng, roots.length ? [roots[0]] : [])) {
+  for (let i = 0; i < gnodes.length; i++) for (let j = i + 1; j < gnodes.length; j++) { const e = sharedEdge(gnodes[i].rect, gnodes[j].rect, 3.5); if (e) edges.push({ a: gnodes[i], b: gnodes[j], e }); }
+  const roots = gnodes.filter(r => r.kind === "core" || depthOf(r.band) === 0);
+  for (const c of connect(gnodes, edges, st, rng, roots.length ? [roots[0]] : [])) {
     const open = c.a.kind && c.b.kind, kind = open || c.a.kind === "core" || c.b.kind === "core" ? "opening" : kindFor(st, c.a, c.b);
-    const big = (c.a.w >= 5 || c.a.kind) && (c.b.w >= 5 || c.b.kind);
+    const wide = n => n.kind || n.rect.w * n.rect.h >= 200, big = wide(c.a) && wide(c.b);
     doors.push(Object.assign(doorOn(c.e, undefined, big && kind !== "vault" ? 5 : 3, kind, rng), { a: c.a, b: c.b }));
   }
   // a loading door (and a water door the front way in does not already make) in the room's front wall
@@ -7434,7 +8008,8 @@ GR.boatTop = (x, y, i) => P.g([P.path("fx3", "M-7 0 Q-3 -1.5 0 -1.5 Q3 -1.5 7 0 
 
 // The iso's walls: each floor's walls stand as tall as its storey, and a palazzo's far walls carry arched windows by bay (the
 // same bays whatever the rooms behind them) over a rusticated street floor.
-GR.wallOpts = function (lv, model) {
+// K2.5: winRole, when given (GR.floorLights), names each window's paint by the room behind it (a lit room's are win-lit).
+GR.wallOpts = function (lv, model, winRole) {
   const g = model.grand, hk = (lv.h || 14) / 14, BAY = 9;
   const deco = g.style !== "palazzo" || lv.lvl < 0 ? null : (s, h, A, B, P0) => {
     if (s.t !== "ext" || h < 5) return null;
@@ -7447,19 +8022,63 @@ GR.wallOpts = function (lv, model) {
       const pts = [at(u - rw, zb), at(u + rw, zb), at(u + rw, zt)];
       for (let i = 1; i < 8; i++) { const t = i * Math.PI / 8; pts.push(at(u + rw * Math.cos(t), zt + rw * Math.sin(t))); }
       pts.push(at(u - rw, zt));
-      out.push(P.poly("arch-glass", pts));
+      out.push(P.poly(winRole ? winRole(horiz ? [u, A[1]] : [A[0], u]) : "arch-glass", pts));
     }
     return out.length ? [P.g(out, { cls: "fx-arches" })] : null;
   };
   return { hk, deco };
 };
 
+// --- K2.5: a room's light in the iso and the plan (GR.floorLights) --- begin ---------------------------------------------
+// opts.lights read as the section reads them (M.section.lightMap: only rooms this copy knows, so a hidden room's light changes
+// no byte), laid on the floor in the section's roles and palette (GR.lights): dark is deep shade (rm-dark) over the room's floor
+// and furniture, and its people dim (people.js, from ctx.roomLights); bright is a warm flood (rm-bright) over them and a soft
+// pool of glow (rm-glow) round the room's middle; lit and bright both get the lamp pool on the floor (cell-pool: the plate
+// paints it at Night only) and, on a palazzo's walls, their windows lit (win-lit: arch-glass but at Night in the plate). Lit is
+// therefore as drawn but at Night in the plate. A gallery is shaded on its runs, never over its void. P0: plan point → the
+// walls layer's point (the iso's projection at floor level; the plan's identity). Returns null when no room on this floor has
+// a light (the floor is then as ever), else { pools (plan pieces, for the floors layer), shade (a group, the walls layer's
+// first piece), winRole (plan point by a wall → its window's role) }.
+GR.floorLights = function (lv, model, ctx, P0) {
+  if (ctx.opts.lights == null) return null;
+  const known = r => !ctx.reveal || M.roomRevealed(ctx.reveal, r), lights = ctx.roomLights || (ctx.roomLights = M.section.lightMap(model, ctx, known));
+  const here = lv.rooms.filter(r => r.shape && r.frame && lights.has(r));
+  if (!here.length) return null;
+  const ring = (cx, cy, rr) => Array.from({ length: 28 }, (_, i) => [cx + Math.cos(i * Math.PI / 14) * rr, cy + Math.sin(i * Math.PI / 14) * rr]);
+  const outline = r => r.shape.kind === "circle" ? ring(r.shape.cx, r.shape.cy, r.shape.r) : r.shape.pts;
+  const areas = r => r.gallery && r.frames && r.frames.length ? r.frames.map(q => G.rectPts({ x: q.cx - q.w / 2, y: q.cy - q.h / 2, w: q.w, h: q.h })) : [outline(r)];
+  const shade = [], pools = [];
+  for (const r of here) {
+    const st = lights.get(r), f = (r.gallery && r.frames && r.frames[0]) || r.frame, R = Math.min(f.w, f.h) / 2;      // a gallery's lamp on its widest run
+    if (st === "dark") { for (const a of areas(r)) shade.push(P.poly("rm-dark", a.map(p => P0(p)))); continue; }
+    pools.push(P.ellipse("cell-pool", f.cx, f.cy, R * 0.8, R * 0.8));
+    if (st !== "bright") continue;
+    for (const a of areas(r)) shade.push(P.poly("rm-bright", a.map(p => P0(p))));
+    for (const s of [1, 0.66, 0.4]) shade.push(P.poly("rm-glow", ring(f.cx, f.cy, Math.min(9, R * 0.8) * s).map(p => P0(p))));
+  }
+  const B = lv.bbox, mx = B.x + B.w / 2, my = B.y + B.h / 2;
+  const winRole = p => {
+    const d = Math.hypot(mx - p[0], my - p[1]) || 1, x = p[0] + (mx - p[0]) / d * 1.5, y = p[1] + (my - p[1]) / d * 1.5;
+    const r = here.find(q => M.scene.insideBy(outline(q), x, y, 0));
+    return GR.winRole(r ? lights.get(r) : null);
+  };
+  return { pools, shade: shade.length ? P.g(shade, { cls: "map-light" }) : null, winRole };
+};
+// --- K2.5: GR.floorLights --- end ---------------------------------------------------------------------------------------
+
 // The iso's lines between floors: a double-height room's void drops to the room below, corner by corner (dashed, as the core)
-GR.isoLinks = function (order, toScreen, k, reveal) {
+// K2.5: on the stage the floors may stand in columns (ISO.arrange); a void over a room in another column is one dashed lead,
+// the void's centre to the room's, not four lines across the page (same: whether two floors share a column; absent, all do)
+GR.isoLinks = function (order, toScreen, k, reveal, same) {
   const out = [], known = r => !reveal || M.roomRevealed(reveal, r);
   for (const lv of order) for (const v of lv.voids || []) {
     const below = order.find(l => l.rooms.includes(v.span));
     if (!below || !known(v.span) || !S.nodeKnown(v, reveal || new Set(M.BANDS))) continue;
+    if (same && !same(lv, below)) {
+      const q = v.rect, f = v.span.frame || { cx: q.x + q.w / 2, cy: q.y + q.h / 2 }, a = toScreen(lv, q.x + q.w / 2, q.y + q.h / 2, 0), b = toScreen(below, f.cx, f.cy, 0);
+      out.push(P.line("core-link", a[0], a[1], b[0], b[1], { sw: 0.45 * k }));
+      continue;
+    }
     for (const p of G.rectPts(v.rect)) { const a = toScreen(lv, p[0], p[1], 0), b = toScreen(below, p[0], p[1], 0); out.push(P.line("core-link", a[0], a[1], b[0], b[1], { sw: 0.45 * k })); }
   }
   return out;
@@ -7472,6 +8091,15 @@ GR.isoLinks = function (order, toScreen, k, reveal) {
 // side of the void. A floor that starts at the front starts at the left; a set-back floor stands back. Where the cells go
 // never depends on what the crew knows: the player copy only leaves pieces out.
 GR.SEC_SLAB = 1.2;
+// Which end of the section a way in through a wall comes in at: the front wall at the front (left), the back wall at the
+// back (right), a side wall at the end nearer its room's depth [interpretation: the section can't show a side wall].
+GR.wallEnd = function (e, lv) {
+  if (e.kind === "front" || e.side === "bottom") return "front";
+  if (e.side === "top") return "back";
+  const r = e.room, B = lv && lv.bbox;
+  if (!r || !r.rect || !B) return "back";
+  return r.rect.y + r.rect.h / 2 >= B.y + B.h / 2 - 0.01 ? "front" : "back";
+};
 GR.secRows = function (lay, model) {
   const levels = (lay.allLevels || lay.levels).filter(l => !l.ground), H = lv => lv.h || (lv.lvl < 0 ? 11 : 14), T = GR.SEC_SLAB;
   const rowY = new Map();
@@ -7479,8 +8107,19 @@ GR.secRows = function (lay, model) {
   for (const l of levels.filter(l => l.lvl >= 0).sort((a, b) => a.lvl - b.lvl)) { rowY.set(l, [y - H(l), y]); y -= H(l) + T; }
   y = T;
   for (const l of levels.filter(l => l.lvl < 0).sort((a, b) => b.lvl - a.lvl)) { rowY.set(l, [y, y + H(l)]); y += H(l) + T; }
-  const keyOf = n => [-(n.rect.y + n.rect.h / 2), n.rect.x];
-  const cmp = (a, b) => keyOf(a)[0] - keyOf(b)[0] || keyOf(a)[1] - keyOf(b)[1];
+  // A room a way in or the front's dressing comes into takes the end of its row the arrow comes from (K0.3): a front face
+  // (water door, steps, boats, loading door) or a way in through the front wall puts it first, a way in through a side
+  // wall the end nearer its depth, through the back wall last. Only what both copies have decides it (never a way in
+  // the crew can't know), so the order is the same in the GM's copy and every player copy.
+  const tier = new Map();
+  const claim = (r, t) => { if (r && r.rect && !tier.has(r)) tier.set(r, t); };
+  for (const lv of levels) {
+    const front = lv.bbox.y + lv.bbox.h;
+    for (const f of model.grand.faces) if (f.room && lv.rooms.includes(f.room) && f.room.rect && Math.abs(f.room.rect.y + f.room.rect.h - front) < 0.5) claim(f.room, 0);
+    for (const e of lay.entries || []) if (e.room && !e.from && !M.vecHidden(e.vec) && lv.rooms.includes(e.room)) { const end = GR.wallEnd(e, lv); claim(e.room, end === "front" ? (e.kind === "front" || e.side === "bottom" ? 0 : 1) : e.side === "top" ? 4 : 3); }
+  }
+  const keyOf = n => [tier.has(n) ? tier.get(n) : 2, -(n.rect.y + n.rect.h / 2), n.rect.x];
+  const cmp = (a, b) => { const p = keyOf(a), q = keyOf(b); return p[0] - q[0] || p[1] - q[1] || p[2] - q[2]; };
   const nw = n => { const A = n.rect.w * n.rect.h; return n.kind === "core" ? 8 : n.kind === "corridor" ? Math.min(20, Math.max(6, Math.sqrt(A) * 0.7)) : Math.min(60, Math.max(12, Math.sqrt(A) * 0.9)); };
   const frontY = Math.max(...levels.map(l => l.bbox.y + l.bbox.h));
   let coreX = null;
@@ -7531,6 +8170,7 @@ GR.section = function (lay, model, ctx) {
   const k = ctx.k = Math.min(ctx.k, 1.15), { rng } = ctx, g = model.grand, T = GR.SEC_SLAB, st = model.rings;
   const reveal = ctx.reveal, known = r => !reveal || M.roomRevealed(reveal, r), gm = ctx.opts.layer !== "player";
   const nodeKnown = n => !n || !reveal || S.nodeKnown(n, reveal);
+  const lights = M.section.lightMap(model, ctx, known);       // K2.3: room → "dark" | "lit" | "bright", only rooms this copy knows
   const cellKnown = c => c.passage ? true : c.void ? nodeKnown(c.v) : c.n && c.n.kind === "core" ? true : c.n && c.n.kind === "corridor" ? true : known(c.n);
   const all = GR.secRows(lay, model), drawn = new Set(lay.levels), rows = all.filter(r => drawn.has(r.lv));
   const Ls = { site: [], floors: [], furn: [], walls: [], doors: [], game: [], cover: [], labels: [], entries: [] };
@@ -7574,7 +8214,7 @@ GR.section = function (lay, model, ctx) {
     if (c.void) { if (!known(c.v.span)) Ls.floors.push(P.rect("void-well", c.a, row.y0, c.b - c.a, H(row), { cls: "void" })); gap(row, c.a, c.b); continue; }
     if (c.upper) { if (known(c.n)) gap(row, c.a, c.b); continue; }       // drawn with the room below, as one double-height cell
     const r = c.n, va = GR.rooms(model, r).span === 2 ? voidAbove(r) : null, y0 = va ? va.row.y0 : row.y0;
-    const data = { band: r.band };
+    const data = { band: r.band, room: r.id };      // data-room, as the iso's floors carry it (tools/qa.js lands each way in on it)
     Ls.floors.push(P.rect("floor-" + r.band, c.a, y0, c.b - c.a, row.y1 - y0, { data, room: r.id }));
     if (r.band === "secure") Ls.floors.push(P.rect("floor-tone", c.a, y0, c.b - c.a, row.y1 - y0, { data, room: r.id }));
   }
@@ -7612,7 +8252,8 @@ GR.section = function (lay, model, ctx) {
     // scale: a grand room is tall, arched and lit; a service room is low under a dropped ceiling
     if (gs.scale === "grand") {
       const hh = row.y1 - y0, zb = row.y1 - hh * 0.12, zt = y0 + hh * (va ? 0.18 : 0.3), rw = Math.min(2.2, hh * 0.09), BAY = 10, arch = [];
-      for (let u = Math.ceil((c.a + 3) / BAY) * BAY - BAY / 2; u <= c.b - 3; u += BAY) arch.push(P.path("arch-glass", `M${u - rw} ${zb} L${u - rw} ${zt + rw} A${rw} ${rw} 0 0 1 ${u + rw} ${zt + rw} L${u + rw} ${zb} Z`, { opacity: 0.7 }));
+      const winRole = GR.winRole(lights.get(r));      // K2.3: a lit or bright room's windows are lit at Night (the plate); else as ever
+      for (let u = Math.ceil((c.a + 3) / BAY) * BAY - BAY / 2; u <= c.b - 3; u += BAY) arch.push(P.path(winRole, `M${u - rw} ${zb} L${u - rw} ${zt + rw} A${rw} ${rw} 0 0 1 ${u + rw} ${zt + rw} L${u + rw} ${zb} Z`, { opacity: 0.7 }));
       if (arch.length) Ls.floors.push(P.g(arch, { cls: "fx-arches" }));
       const cx = va ? (va.c.a + va.c.b) / 2 : (c.a + c.b) / 2, hang = va ? va.row.y0 : y0, drop = va ? (row.y0 - hang) * 0.72 : 2.5, s = va ? 1.5 : 1;
       if (!r.grandStair) Ls.furn.push(GR.secChandelier(cx, hang, drop, s));
@@ -7624,7 +8265,9 @@ GR.section = function (lay, model, ctx) {
 
   // --- slabs, walls, partitions and doors ---
   const kindBetween = (a, b) => { for (const row of all) for (const d of row.lv.doors) if ((d.a === a && d.b === b) || (d.a === b && d.b === a)) return d.kind; return null; };
+  const bld = [];       // the building's outline as boxes (every storey and its roof), for the way-in tags to keep off
   for (const row of rows) {
+    bld.push({ x0: row.L - 2.2, y0: row.y0 - T, w: row.R - row.L + 4.4, h: H(row) + 2 * T });
     const gaps = (slabGaps.get(row) || []).slice().sort((p, q) => p[0] - q[0]);
     // the floor under this row: whole, but for a known void or a stair arriving
     let x = row.L; const runs = [];
@@ -7636,8 +8279,8 @@ GR.section = function (lay, model, ctx) {
     if (row.lv.lvl < 0) { for (const [a, b] of roofRuns) Ls.walls.push(P.rect("slab-sec", a, row.y0 - T, b - a, T)); }
     else for (const [a, b] of roofRuns) {
       Ls.walls.push(P.rect("slab-sec", a - (palazzo ? 0.4 : 0), row.y0 - T, b - a + (palazzo ? 0.8 : 0), T));
-      if (palazzo) GR.secParapet(Ls, a, b, row.y0 - T, a <= row.L + 0.01, b >= row.R - 0.01);
-      else if (row.lv.lvl >= 0 && !up && st === "blurred") { const h = Math.min(18, (b - a) * 0.32); Ls.walls.push(P.poly("roof", [[a - 2, row.y0 - T], [b + 2, row.y0 - T], [(a + b) / 2, row.y0 - T - h]]), P.rect("roof", a + (b - a) * 0.72, row.y0 - T - h * 0.85, 3, h * 0.6)); }
+      if (palazzo) { GR.secParapet(Ls, a, b, row.y0 - T, a <= row.L + 0.01, b >= row.R - 0.01); bld.push({ x0: a - 1.6, y0: row.y0 - T - 5, w: b - a + 3.2, h: 5 }); }
+      else if (row.lv.lvl >= 0 && !up && st === "blurred") { const h = Math.min(18, (b - a) * 0.32); bld.push({ x0: a - 2, y0: row.y0 - T - h, w: b - a + 4, h }); Ls.walls.push(P.poly("roof", [[a - 2, row.y0 - T], [b + 2, row.y0 - T], [(a + b) / 2, row.y0 - T - h]]), P.rect("roof", a + (b - a) * 0.72, row.y0 - T - h * 0.85, 3, h * 0.6)); }
     }
     // the outer walls: a palazzo's are thick, rusticated at the street floor, and pierced by arched windows
     for (const [xx, side] of [[row.L, -1], [row.R, 1]]) {
@@ -7702,10 +8345,11 @@ GR.section = function (lay, model, ctx) {
     Ls.labels.push(M.scene.labelBlock(r, ax, ay, icons, ctx, region, { lv: row.lv }));
     if (gm && r.isTarget) Ls.game.unshift(P.rect("ov-target-area", c.a, row.y0, c.b - c.a, H(row)));
   }
+  const marks = [];       // the threats' marks, for the route labels to keep off (M.labels.route)
   const pos = new Map([...mainCell].map(([r, { row, c }]) => [r, [(c.a + c.b) / 2, (row.y0 + row.y1) / 2]]));
   if (gm) {
     const tgt = model.rooms.find(r => r.isTarget), td = tgt ? M.BANDS.indexOf(tgt.band) : 3;
-    const stand = (r, role, icon, t) => { const m = mainCell.get(r); if (m) Ls.game.push(M.icon(icon, m.c.a + (m.c.b - m.c.a) * (0.72 + 0.1 * t), m.row.y1 - ik * 1.1, ik * 1.2, role)); };
+    const stand = (r, role, icon, t) => { const m = mainCell.get(r); if (!m) return; const x = m.c.a + (m.c.b - m.c.a) * (0.72 + 0.1 * t), y = m.row.y1 - ik * 1.1; Ls.game.push(M.icon(icon, x, y, ik * 1.2, role)); marks.push({ x0: x - ik * 0.85, y0: y - ik * 0.85, w: ik * 1.7, h: ik * 1.7 }); };
     if (model.soc) model.rooms.filter(r => M.BANDS.indexOf(r.band) === Math.max(0, td - 1)).slice(0, 2).forEach((r, i) => stand(r, "ov-soc", "social", i));
     if (model.phys) model.rooms.filter(r => r.isTarget || r.band === "controlled").slice(0, 2).forEach((r, i) => stand(r, "ov-phys", "guard", i));
   }
@@ -7720,7 +8364,10 @@ GR.section = function (lay, model, ctx) {
       links.push(P.poly(role + "-head", [[ex + ux * s, ey + uy * s], [ex - uy * s * 0.7, ey + ux * s * 0.7], [ex + uy * s * 0.7, ey - ux * s * 0.7]]));
       if (label) {
         const ts = Math.max(1.3 * k, ctx.floorU || 0), lc = M.scene.type(ctx).label, cx = (a[0] + ex) / 4 + mx / 2, cy = (a[1] + ey) / 4 + my / 2 - 0.5 * ts, w = M.textW(label, ts, lc) + 0.4 * ts;
-        links.push(P.g([P.text("ov-skip-label", cx, cy, label, { size: ts })], { cls: "map-skip-label", meta: { kind: "skip", box: { x0: cx - w / 2, y0: cy - ts * 0.85, w, h: ts * 1.1 }, text: label, size: ts, at: [cx, cy], link } }));
+        // its own line, sampled from the middle out: the label solver sets the words on it where they fit (M.labels.route)
+        const along = [];
+        for (let i = 0; i <= 18; i++) { const t = 0.5 + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 0.04, u = 1 - t; along.push([u * u * a[0] + 2 * u * t * mx + t * t * ex, u * u * a[1] + 2 * u * t * my + t * t * ey]); }
+        links.push(P.g([P.text("ov-skip-label", cx, cy, label, { size: ts })], { cls: "map-skip-label", meta: { kind: "skip", box: { x0: cx - w / 2, y0: cy - ts * 0.85, w, h: ts * 1.1 }, text: label, size: ts, at: [cx, cy], link, along, avoid: marks } }));
       }
     };
     const mid = r => { const p = pos.get(r); return [p[0], p[1] + 2]; };
@@ -7745,9 +8392,16 @@ GR.section = function (lay, model, ctx) {
       const c = hit.c; x = c.a + Math.min(3, (c.b - c.a) / 3); y = row.y1 + T; dir = [0, 1];
       if (!sealed) Ls.doors.push(P.rect("door-gap", x - 1.3, row.y1 - 0.1, 2.6, T + 0.2));
     } else {
-      const mid = hit ? (hit.c.a + hit.c.b) / 2 : row.R, right = e.side === "top" || (e.side !== "bottom" && mid > (row.L + row.R) / 2);
+      const right = e.side === "top" || (e.side !== "bottom" && (!hit || GR.wallEnd(e, row.lv) === "back"));
       const fx0 = right ? row.R + wallT : row.L - wallT, sgn = right ? 1 : -1;
       x = fx0; y = row.y1 - 3.6; dir = [sgn, 0];
+      // the room isn't the end cell (two ways in claim one end, or a way the crew can't know, which may not move a room):
+      // the arrow carries on, dashed, across the cells in front of it to the room's own wall
+      const edge = hit ? (right ? hit.c.b : hit.c.a) : null;
+      if (edge != null && !sealed && (gm || known(e.room)) && Math.abs(edge - (right ? row.R : row.L)) > 0.5) {
+        const role = "ov-" + kind, s = 1.2 * k, xe = edge + sgn * 0.4;
+        Ls.game.push(P.g([P.line(role + "-line", fx0, y, xe + sgn * s, y, { sw: 0.5 * k, dash: true }), P.poly(role + "-head", [[xe, y], [xe + sgn * s * 1.4, y - s * 0.8], [xe + sgn * s * 1.4, y + s * 0.8]])], { cls: "map-entry-reach map-entry-reach-" + kind }));
+      }
       if (!sealed) {
         Ls.doors.push(P.rect("door-gap", (right ? row.R : row.L - wallT) - 0.9, row.y1 - 7.2, 1.8 + wallT, 7.2));
         const out = [], m = e.means, yF = row.y1;
@@ -7762,27 +8416,21 @@ GR.section = function (lay, model, ctx) {
   }
   const ctx2 = Object.assign({}, ctx, { toScreen: (lv, x, y) => [x, y], dirScreen: d => { const l = Math.hypot(d[0], d[1]) || 1; return [d[0] / l, d[1] / l]; } });
   const entries = M.scene.entries({ entries: fake }, ctx2);
-
-  // --- the player cover: one path for every run of cells the crew hasn't surveyed ---
-  if (reveal) {
-    const subs = [], R2 = G.round;
-    for (const row of rows) {
-      const runs = []; let cur = null;
-      for (const c of row.cells) {
-        const hid = !cellKnown(c);
-        if (hid) { if (cur && Math.abs(cur.x1 - c.a) < 0.01) cur.x1 = c.b; else { cur = { x0: c.a, x1: c.b }; runs.push(cur); } }
-        else cur = null;
-      }
-      for (const u of runs) { const x0 = u.x0 + (Math.abs(u.x0 - row.L) < 0.01 ? 0.7 : 0.3), x1 = u.x1 - (Math.abs(u.x1 - row.R) < 0.01 ? 0.7 : 0.3); subs.push(`M${R2(x0)} ${R2(row.y0)} H${R2(x1)} V${R2(row.y1)} H${R2(x0)} Z`); }
-      if (runs.length) {
-        const u = runs.reduce((a, b) => (b.x1 - b.x0 > a.x1 - a.x0 ? b : a), runs[0]);
-        const fu = ctx.floorU || 0, uc = M.scene.type(ctx).unknown, size = M.fitText("UNSURVEYED", Math.max(6, u.x1 - u.x0 - 2), Math.max(1.9 * k, fu), uc, fu || undefined);
-        const ux = (u.x0 + u.x1) / 2, uy = (row.y0 + row.y1) / 2, uw = M.textW("UNSURVEYED", size, uc) + 1;
-        Ls.labels.push(P.g([P.text("label-unknown", ux, uy + size * 0.35, "UNSURVEYED", { size })], { cls: "map-unsurveyed", meta: { box: { x0: ux - uw / 2, y0: uy - size * 0.55, w: uw, h: size * 1.1 }, kind: "unsurveyed" } }));
-      }
-    }
-    if (subs.length) Ls.cover.push(P.g([P.path("unknown", subs.join(" "))], { cls: "map-cover" }));
+  // each tag keeps off the building (the label solver slides it out along its arrow), and its badge stands a little clear of it
+  for (const en of entries) {
+    const m = en.meta, tag = m.boxes[0], ic = en.kids.find(q => q.t === "g" && q.tf && String(q.cls || "").startsWith("icon "));
+    m.avoid = bld;
+    if (!ic || !m.boxes[1]) continue;
+    const d = (ic.tf.x < tag.x0 + tag.w / 2 ? -1 : 1) * 0.3 * (m.th || 2) / 1.47;
+    ic.tf = Object.assign({}, ic.tf, { x: ic.tf.x + d }); m.boxes[1] = Object.assign({}, m.boxes[1], { x0: m.boxes[1].x0 + d });
   }
+
+  // --- the player copy: what the crew hasn't seen is the building's outside wall (K1.4: GR.facade) ---
+  if (reveal) { const fc = GR.facade(rows, cellKnown, { palazzo, name: model.name }); if (fc) Ls.cover.push(fc); }
+  // --- a room's light: dark, lit or bright (K2.3: GR.lights) ---
+  GR.lights(rows, model, ctx, { lights, mainCell, voidAbove, kindBetween, cellKnown, Ls });
+  // K1.3: each room's cells (a gallery has two), for the people standing on their floor lines (people.js)
+  if (ctx.opts.people || ctx.opts.crowd) ctx.peopleCells = rows.flatMap(row => row.cells.filter(c => c.n && c.n.name && !c.void && !c.upper && !c.passage).map(c => ({ room: c.n, a: c.a, b: c.b, floor: row.y1, top: row.y0 })));
   ctx.toScreen = (lv, x, y) => {
     for (const r of lv.rooms) for (const f of [r.frame].concat(r.frames || [])) if (f && Math.abs(f.cx - x) < 0.01 && Math.abs(f.cy - y) < 0.01 && pos.has(r)) return pos.get(r);
     for (const e of lay.entries) if (e.level === lv && Math.abs(e.x - x) < 0.01 && Math.abs(e.y - y) < 0.01) return secEntry[e.kind] || [XL, 0];
@@ -7794,6 +8442,106 @@ GR.section = function (lay, model, ctx) {
   let minX = XL - ext - 2, maxX = XR + 12 + 16 * k;
   for (const p of flatE) if (p.t === "rect") { minX = Math.min(minX, p.x - 4 * k); maxX = Math.max(maxX, p.x + p.w + 4 * k); }
   return { parts: [{ lv: rows[0].lv, layers: Ls, tf: { x: 0, y: 0 } }], bounds: { minX, minY, maxX, maxY: bot + 8 }, entries, links };
+};
+
+// --- K1.4: the player copy's façade ------------------------------------------------------------------------------
+// What the crew hasn't seen is the building's outside wall, seen from the street: learning a room cuts that piece of wall
+// away and shows the room behind it (a doll's house opened). One group (class map-cover, as the cover it replaces): the wall,
+// one path for every run of cells the crew hasn't surveyed (so the file holds no hidden room's outline), a string course under
+// each slab, a palazzo's rusticated base, and the windows. The windows stand on the floor's own bays, counted from its front
+// edge (row.L): their number, size and place over a stretch depend only on the stretch's ends (the edges of cells this copy
+// knows) and the storey, never on the rooms behind. A palazzo's are arched, a plain building's square-headed; below ground,
+// small barred lights under the slab. At Night the plate lights some of them, chosen by the building's name, floor and bay
+// alone [interpretation]. A theme paints facade, facade-line, facade-joint, facade-win and facade-winlit.
+GR.FACADE_BAY = 10;
+GR.facade = function (rows, cellKnown, o) {
+  const R2 = G.round, BAY = GR.FACADE_BAY, wall = [], kids = [];
+  for (const row of rows) {
+    const runs = []; let cur = null;
+    for (const c of row.cells) {
+      if (!cellKnown(c)) { if (cur && Math.abs(cur.x1 - c.a) < 0.01) cur.x1 = c.b; else { cur = { x0: c.a, x1: c.b }; runs.push(cur); } }
+      else cur = null;
+    }
+    const H = row.y1 - row.y0, lvl = row.lv.lvl, y0 = row.y0, y1 = row.y1;
+    for (const u of runs) {
+      // flush with the outer wall at the row's ends; just clear of the partition where a known cell stands beside it
+      const end = o.inset || 0, x0 = u.x0 + (Math.abs(u.x0 - row.L) < 0.01 ? end : 0.3), x1 = u.x1 - (Math.abs(u.x1 - row.R) < 0.01 ? end : 0.3);
+      if (x1 - x0 < 0.5) continue;
+      wall.push(`M${R2(x0)} ${R2(y0)} H${R2(x1)} V${R2(y1)} H${R2(x0)} Z`);
+      kids.push(P.rect("facade-line", x0, y0, x1 - x0, Math.min(0.8, H * 0.06)));                     // the string course under the slab
+      if (o.palazzo && lvl <= 0) for (let yy = y0 + 2; yy < y1 - 0.4; yy += 2) kids.push(P.line("facade-joint", x0, yy, x1, yy, { sw: 0.14 }));
+      else if (lvl === 0) kids.push(P.rect("facade-line", x0, y1 - Math.min(1.2, H * 0.08), x1 - x0, Math.min(1.2, H * 0.08)));     // a plinth
+      // the windows, bay by bay from the floor's own edge
+      const rw = lvl < 0 ? 1.3 : Math.min(1.7, H * 0.1), m = rw + 0.8;
+      for (let i = Math.max(0, Math.floor((x0 - row.L) / BAY) - 1); row.L + BAY / 2 + i * BAY <= x1; i++) {
+        const cx = row.L + BAY / 2 + i * BAY;
+        if (cx - m < x0 || cx + m > x1) continue;
+        const role = M.hash(`${o.name}|${lvl}|${i}`) % 7 < 2 ? "facade-winlit" : "facade-win";
+        if (lvl < 0) {
+          const t = y0 + Math.min(1.4, H * 0.1), h = Math.min(2.4, H * 0.22);
+          kids.push(P.rect(role, cx - rw, t, 2 * rw, h), P.rect("facade-line", cx - rw - 0.3, t + h, 2 * rw + 0.6, 0.3));
+          for (const dx of [-rw / 3, rw / 3]) kids.push(P.line("facade-joint", cx + dx, t, cx + dx, t + h, { sw: 0.16 }));
+          continue;
+        }
+        const zb = y1 - H * 0.2, zt = y0 + H * 0.3;
+        if (o.palazzo) {
+          kids.push(P.path(role, `M${R2(cx - rw)} ${R2(zb)} L${R2(cx - rw)} ${R2(zt + rw)} A${R2(rw)} ${R2(rw)} 0 0 1 ${R2(cx + rw)} ${R2(zt + rw)} L${R2(cx + rw)} ${R2(zb)} Z`));
+          kids.push(P.rect("facade-line", cx - 0.35, zt - 0.45, 0.7, 0.9));                                     // the keystone
+        } else kids.push(P.rect(role, cx - rw, zt, 2 * rw, zb - zt), P.rect("facade-line", cx - rw - 0.3, zt - 0.5, 2 * rw + 0.6, 0.5));
+        kids.push(P.rect("facade-line", cx - rw - 0.4, zb, 2 * rw + 0.8, 0.4));                                  // the sill
+      }
+    }
+  }
+  return wall.length ? P.g([P.path("facade", wall.join(" "))].concat(kids), { cls: "map-cover" }) : null;
+};
+
+// --- K2.3: a room's light ---------------------------------------------------------------------------------------
+// Over a room's cells, under the slabs, the partitions and every word: dark is the cell in deep shade, its furniture (and any
+// people drawn in the furniture layer) dim shapes under it; bright is the cell flooded warm, the chandelier's glow (two lamps'
+// where it has none), and a little light through each open side into the next cell this copy knows; lit is the room as drawn.
+// At Night in the plate a lit or bright room also gets its lamp pool on the floor and its windows lit (cell-pool and win-lit:
+// every other look paints a pool as nothing and win-lit as arch-glass, so lit is byte for byte today's). The room view's
+// roles (rm-dark, rm-bright, rm-glow), so a room reads the same on the map and in its own view. [interpretation]
+GR.winRole = st => (st === "lit" || st === "bright" ? "win-lit" : "arch-glass");
+GR.lights = function (rows, model, ctx, X) {
+  const { lights, mainCell, voidAbove, kindBetween, cellKnown, Ls } = X;
+  if (!lights.size) return;
+  const shade = [], pools = [];
+  for (const row of rows) row.cells.forEach((c, i) => {
+    const r = c.n;
+    if (!r || !r.name || c.void || c.upper || c.passage) return;
+    const st = lights.get(r); if (!st) return;
+    const gs = GR.rooms(model, r), va = gs.span === 2 ? voidAbove(r) : null, y0 = va ? va.row.y0 : row.y0, y1 = row.y1, w = c.b - c.a, h = y1 - y0;
+    const main = mainCell.get(r) && mainCell.get(r).c === c, hr = y1 - row.y0;
+    // the room's own air: its cell, and over a double height only the void it rises through (never the gallery round it)
+    const air = role => [P.rect(role, c.a, row.y0, w, hr)].concat(va ? [P.rect(role, va.c.a, va.row.y0, va.c.b - va.c.a, row.y0 - va.row.y0)] : []);
+    if (st === "dark") { shade.push(...air("rm-dark")); return; }
+    // the lamp's pool on the floor and the wall behind (the plate at Night)
+    pools.push(P.ellipse("cell-pool", (c.a + c.b) / 2, y1 - hr * 0.34, Math.max(2, w * 0.5), hr * 0.42));
+    if (st !== "bright") return;
+    shade.push(...air("rm-bright"));
+    // the glow: round the chandelier where the room has one, else two lamps; kept inside the cell
+    const lamps = [];
+    if (main && gs.scale === "grand" && !r.grandStair) {
+      const cx = va ? (va.c.a + va.c.b) / 2 : (c.a + c.b) / 2, hang = va ? va.row.y0 : y0, s = va ? 1.5 : 1, drop = va ? (row.y0 - hang) * 0.72 : 2.5;
+      lamps.push([cx, hang + drop + 1.6 * s, 1.4 * s]);
+    } else if (main || c.gallery) lamps.push([c.a + w * 0.3, y0 + h * 0.35, 1], [c.a + w * 0.7, y0 + h * 0.35, 1]);
+    for (const [x, y, s] of lamps) {
+      const xa = va && y < row.y0 ? va.c.a : c.a, xb = va && y < row.y0 ? va.c.b : c.b, R0 = Math.min(7 * s, x - xa, xb - x, y - y0 + 0.6, y1 - y);
+      if (R0 > 0.8) for (const f of [1, 0.66, 0.4]) shade.push(P.circle("rm-glow", x, y, R0 * f));
+    }
+    // a little light through each open side into the next cell this copy knows (a door's height, fading)
+    for (const [j, sgn] of [[i - 1, -1], [i + 1, 1]]) {
+      const nb = row.cells[j];
+      if (!nb || nb.void || nb.n === r || !cellKnown(nb)) continue;
+      const a = nb.n && nb.n.kind !== "void" ? nb.n : null, kind = a && a.name ? kindBetween(r, a) : "opening";
+      if (!kind || kind === "secret") continue;
+      const xw = sgn < 0 ? c.a : c.b, reach = Math.min(4, (nb.b - nb.a) * 0.4);
+      shade.push(P.g([P.rect("rm-bright", sgn < 0 ? xw - reach / 2 : xw, y1 - 7.2, reach / 2, 7.2), P.g([P.rect("rm-bright", sgn < 0 ? xw - reach : xw + reach / 2, y1 - 7.2, reach / 2, 7.2)], { opacity: 0.5 })], { cls: "fx-spill" }));
+    }
+  });
+  if (pools.length) Ls.floors.push(...pools);
+  if (shade.length) Ls.walls.unshift(P.g(shade, { cls: "map-light" }));
 };
 
 // A palazzo's roof edge: a cornice, then a balustraded parapet; returned ends get piers
@@ -7835,6 +8583,1058 @@ GR.secStair = function (a, b, y1, y0, k) {
   return P.g(kids, { cls: "furniture fx-stairs-grand" });
 };
 
+// ---- src/people.js ----
+// =============================================================================
+// people — who stands in each room (bundle K1.3). The contract is _kits/_briefs/CONTRACT.md section 2.
+// =============================================================================
+// Nothing here runs unless the caller passes opts.people or opts.crowd (and the figure kit as opts.figures.kit).
+//
+//   opts.people  [{ room, spec, role, seed, mark, tone, label }]   placed people: the crew, named NPCs. Each stands in `room`
+//                (spelt as the roll spells it); a `role` (and `seed`) is made a spec by the figure kit's extra()
+//   opts.crowd   true | { density 0.5..2, seed, masked }          anonymous extras in every known room, by the kind of place
+//                (roll.target) and the room (M.CROWD below). Dressing, like furniture: [interpretation]
+//
+// Where they stand is decided per room from the room's own geometry and the seed, never from what the crew knows: a player
+// copy is the GM's with the people of unknown rooms left out, so a hidden room's people change no byte of it.
+// The views call in once each: section.js and grand.js record each room's cells (ctx.peopleCells), and M.buildScene calls
+// PP.draw after the label solver, which stands everyone on the page as one group (class map-people) under the room labels.
+
+const PP = M.people = {};
+// The figure kit's role ids (contract §1). The crowd table names roles by these and nothing else.
+PP.ROLES = ["guest-f", "guest-m", "waiter", "croupier", "photographer", "guard", "bluecoat", "mechanic", "docker", "porter", "cook",
+  "technician", "boatman", "barkeep", "drinker", "shopkeeper", "resident", "clerk",
+  "usher", "kitchen-hand", "cleaner", "warehouse-hand", "driver", "sailor", "dancer", "punter", "cinema-goer", "shopper", "street-kid",
+  "teller", "official", "scholar", "teacher", "pupil", "priest", "acolyte", "officer", "servant", "noble"];
+PP.TONES = ["crew", "target", "guard", "staff", "contact", "rival", "crowd"];
+PP.GUESTS = ["guest-f", "guest-m", "noble", "punter", "dancer"];         // who wears a mask when the crowd is masked (a gala)
+PP.MIN_PX = 34;                    // below this on the page a person is a symbol: never drawn smaller
+PP.ADULT_FT = 68 / 12;             // the figure kit's `height` is a 5 ft 8 in adult
+
+// --- Who is found where — [interpretation] -------------------------------------------------
+// A room's people come from its archetype (after the target's dressing, so a cinema's "Main floor" is an auditorium), else
+// from words in its name, else from its band. A mix is [[who, weight]]: a role id, or "pub" (the place's public), "staff"
+// (who works there) or "guard" (who guards it), which the kind of place fills in. per = square feet a person at density 1;
+// max = most in one room at density 1. Every room is then scaled by its band: a secure or controlled room is nearly empty.
+M.CROWD = {
+  places: {
+    "Casino": { pub: [["guest-f", 3], ["guest-m", 3], ["punter", 1]], staff: [["waiter", 2], ["croupier", 1], ["porter", 0.5]], guard: "guard", d: 1.1 },
+    "Cinema": { pub: [["cinema-goer", 4], ["guest-f", 1], ["guest-m", 1]], staff: [["usher", 2], ["waiter", 1]], guard: "guard", d: 1 },
+    "Pub": { pub: [["drinker", 5], ["resident", 1]], staff: [["barkeep", 2], ["waiter", 1]], guard: "guard", d: 1,
+      rooms: { offices: [["barkeep", 1]] } },
+    "Milkbar": { pub: [["resident", 2], ["street-kid", 1], ["drinker", 1]], staff: [["barkeep", 1], ["cook", 0.5]], guard: null, d: 0.8 },
+    "Kaff house": { pub: [["resident", 2], ["drinker", 2], ["scholar", 0.5]], staff: [["barkeep", 1], ["waiter", 1]], guard: null, d: 0.9 },
+    "Automat diner": { pub: [["resident", 3], ["clerk", 1], ["docker", 1]], staff: [["cook", 1], ["cleaner", 0.5]], guard: null, d: 0.8 },
+    "Restaurant": { pub: [["guest-f", 2], ["guest-m", 2]], staff: [["waiter", 2], ["cook", 1]], guard: null, d: 1 },
+    "Bank": { pub: [["resident", 2], ["clerk", 1], ["guest-m", 1]], staff: [["teller", 2], ["clerk", 1]], guard: "guard", d: 0.9 },
+    "Precinct station": { pub: [["resident", 2], ["bluecoat", 1]], staff: [["bluecoat", 3], ["clerk", 1], ["officer", 0.5]], guard: "bluecoat", d: 0.9 },
+    "Newsagent": { pub: [["resident", 2], ["street-kid", 1]], staff: [["shopkeeper", 1]], guard: null, d: 0.6 },
+    "Records office": { pub: [["resident", 2]], staff: [["clerk", 3], ["official", 1]], guard: "guard", d: 0.8 },
+    "Pawnshop": { pub: [["resident", 2]], staff: [["shopkeeper", 1]], guard: null, d: 0.5 },
+    "Bookshop": { pub: [["resident", 1], ["scholar", 1], ["shopper", 1]], staff: [["shopkeeper", 1]], guard: null, d: 0.6 },
+    "House": { pub: [["resident", 2]], staff: [["resident", 1], ["servant", 0.5]], guard: null, d: 0.5 },
+    "Laundrette": { pub: [["resident", 3]], staff: [["cleaner", 1], ["shopkeeper", 0.5]], guard: null, d: 0.7 },
+    "Garage": { pub: [["driver", 1], ["resident", 1]], staff: [["mechanic", 3], ["clerk", 0.3]], guard: "mechanic", d: 0.8,
+      rooms: { control: [["clerk", 1], ["mechanic", 0.5]], offices: [["clerk", 1]] } },
+    "Boathouse": { pub: [["boatman", 1], ["resident", 1]], staff: [["boatman", 2], ["docker", 2], ["porter", 1]], guard: "boatman", d: 0.8 },
+    "Ship": { pub: [["sailor", 2]], staff: [["sailor", 3], ["docker", 1], ["technician", 1]], guard: "guard", d: 0.7 },
+    "Electroplasmic substation": { pub: [["technician", 1]], staff: [["technician", 3], ["mechanic", 1]], guard: "guard", d: 0.6 },
+    "Pharmacy": { pub: [["resident", 3]], staff: [["shopkeeper", 1], ["technician", 0.5]], guard: null, d: 0.7 },
+    "School": { pub: [["pupil", 3]], staff: [["teacher", 1], ["clerk", 0.3]], guard: null, d: 1 },
+    "Temple": { pub: [["resident", 3], ["acolyte", 0.5]], staff: [["priest", 1], ["acolyte", 2]], guard: "acolyte", d: 0.9 },
+    "Market": { pub: [["shopper", 3], ["resident", 1], ["street-kid", 0.5]], staff: [["shopkeeper", 2], ["porter", 1]], guard: "bluecoat", d: 1.2 },
+    "Autodrome": { pub: [["punter", 3], ["guest-m", 1]], staff: [["mechanic", 2], ["driver", 1], ["official", 0.5]], guard: "guard", d: 1 },
+    // the generator's other kinds of place (undressed: their rooms keep the book's archetypes)
+    "Office building": { pub: [["clerk", 2], ["resident", 1]], staff: [["clerk", 3], ["cleaner", 0.3]], guard: "guard", d: 0.8 },
+    "Mansion": { pub: [["guest-f", 2], ["guest-m", 2], ["noble", 1]], staff: [["servant", 2], ["waiter", 1]], guard: "guard", d: 0.8 },
+    "Warehouse": { pub: [["docker", 1]], staff: [["warehouse-hand", 2], ["docker", 2], ["porter", 1]], guard: "guard", d: 0.6 },
+    "Factory": { pub: [["technician", 1]], staff: [["technician", 2], ["mechanic", 1], ["warehouse-hand", 1]], guard: "guard", d: 0.7 },
+    "Laboratory": { pub: [["scholar", 1], ["clerk", 1]], staff: [["technician", 2], ["scholar", 1], ["clerk", 0.5]], guard: "guard", d: 0.7 },
+    "Apartment block": { pub: [["resident", 3], ["street-kid", 0.5]], staff: [["porter", 1]], guard: null, d: 0.6 },
+    "Anomaly": { pub: [["resident", 1]], staff: [["scholar", 1]], guard: null, d: 0.4 },
+    "": { pub: [["resident", 2], ["guest-m", 1], ["guest-f", 1]], staff: [["clerk", 1], ["porter", 1]], guard: "guard", d: 1 }
+  },
+  // a target the table doesn't name takes its theme's row
+  themes: { "Offices": "Office building", "Industrial Facility": "Factory", "Scientific Facility": "Laboratory", "Trendy Mansion": "Mansion",
+    "Old Mansion": "Mansion", "Casino": "Casino", "Apartment Block": "Apartment block", "Anomalous Zone": "Anomaly" },
+  rooms: {
+    // gala and gaming
+    "casino-floor": { mix: [["pub", 6], ["croupier", 2], ["waiter", 1.5], ["guard", 0.5]], per: 110 },
+    "card-rooms": { mix: [["pub", 4], ["croupier", 1.5], ["waiter", 0.7]], per: 120 },
+    "vip": { mix: [["pub", 3], ["waiter", 1], ["guard", 0.5]], per: 150 },
+    "showroom": { mix: [["pub", 6], ["waiter", 1], ["dancer", 1]], per: 110 },
+    "dance": { mix: [["dancer", 3], ["pub", 3], ["barkeep", 0.4]], per: 90 },
+    "ballroom": { mix: [["pub", 6], ["waiter", 1.5], ["photographer", 0.3], ["guard", 0.3]], per: 100 },
+    "cocktail": { mix: [["pub", 4], ["barkeep", 1], ["waiter", 0.8]], per: 110 },
+    "bar": { mix: [["pub", 4], ["barkeep", 1], ["waiter", 0.8]], per: 110 },
+    "restaurant": { mix: [["pub", 4], ["waiter", 1.5]], per: 120 },
+    "dining": { mix: [["pub", 4], ["waiter", 1.5]], per: 120 },
+    "foyer": { mix: [["pub", 4], ["usher", 1], ["guard", 0.4]], per: 160 },
+    "foyer-small": { mix: [["pub", 2]], per: 200, max: 3 },
+    "maitre-d": { mix: [["pub", 3], ["waiter", 1]], per: 150 },
+    "hotel": { mix: [["pub", 2], ["porter", 1], ["waiter", 0.5]], per: 200 },
+    "penthouse": { mix: [["pub", 2], ["waiter", 0.5], ["guard", 0.5]], per: 250, max: 4 },
+    "sunken-lounge": { mix: [["pub", 3], ["waiter", 0.6]], per: 150 },
+    "lounge": { mix: [["pub", 3], ["waiter", 0.6]], per: 150 },
+    "den": { mix: [["pub", 2]], per: 200, max: 3 },
+    "terrace": { mix: [["pub", 3], ["waiter", 0.5]], per: 180 },
+    "garden": { mix: [["pub", 2], ["guard", 0.3]], per: 400 },
+    "music": { mix: [["pub", 3], ["waiter", 0.4]], per: 150 },
+    "gallery": { mix: [["pub", 2], ["guard", 0.3]], per: 200 },
+    "trophy": { mix: [["pub", 2]], per: 200 },
+    // shows, shops and counters
+    "auditorium": { mix: [["pub", 6], ["usher", 0.6]], per: 90 },
+    "concession": { mix: [["pub", 3], ["staff", 1]], per: 120 },
+    "box-office": { mix: [["pub", 3], ["clerk", 0.8], ["usher", 0.5]], per: 150 },
+    "boxes": { mix: [["pub", 3], ["usher", 0.4]], per: 140 },
+    "projection": { mix: [["technician", 1]], per: 300, max: 2 },
+    "pub": { mix: [["pub", 5], ["barkeep", 1]], per: 100 },
+    "snug": { mix: [["pub", 3]], per: 100 },
+    "stage-small": { mix: [["pub", 3], ["dancer", 0.5]], per: 110 },
+    "milkbar": { mix: [["pub", 4], ["staff", 1]], per: 110 },
+    "kaff": { mix: [["pub", 4], ["staff", 1]], per: 110 },
+    "automat": { mix: [["pub", 4], ["staff", 0.6]], per: 110 },
+    "booths": { mix: [["pub", 4], ["waiter", 0.6]], per: 110 },
+    "banking-hall": { mix: [["pub", 4], ["teller", 2], ["guard", 0.6]], per: 140 },
+    "deposit-boxes": { mix: [["clerk", 1], ["guard", 0.5]], per: 300, max: 2 },
+    "teller-backoffice": { mix: [["teller", 3], ["clerk", 1]], per: 160 },
+    "private-banking": { mix: [["guest-m", 2], ["clerk", 1]], per: 200 },
+    "staff-canteen": { mix: [["staff", 3], ["cook", 1]], per: 140 },
+    "precinct-desk": { mix: [["bluecoat", 2], ["resident", 2]], per: 150 },
+    "squad-room": { mix: [["bluecoat", 3], ["officer", 1], ["clerk", 0.5]], per: 150 },
+    "evidence": { mix: [["bluecoat", 1], ["clerk", 0.5]], per: 300, max: 2 },
+    "cells": { mix: [["resident", 2], ["bluecoat", 1]], per: 200, max: 4 },
+    "interview": { mix: [["officer", 1], ["resident", 1]], per: 150, max: 2 },
+    "shop-news": { mix: [["pub", 3], ["shopkeeper", 1]], per: 130 },
+    "shop-pawn": { mix: [["pub", 3], ["shopkeeper", 1]], per: 130 },
+    "shop-books": { mix: [["pub", 3], ["shopkeeper", 1]], per: 130 },
+    "shop-pharmacy": { mix: [["pub", 3], ["shopkeeper", 1]], per: 130 },
+    "counter-public": { mix: [["pub", 3], ["clerk", 1.5]], per: 150 },
+    "stockroom": { mix: [["porter", 1], ["shopkeeper", 0.5]], per: 300, max: 2 },
+    "dispensary": { mix: [["shopkeeper", 1], ["technician", 1]], per: 200, max: 3 },
+    "laundry": { mix: [["resident", 3], ["cleaner", 0.5]], per: 130 },
+    "folding": { mix: [["cleaner", 2], ["resident", 1]], per: 150 },
+    "market-stalls": { mix: [["pub", 5], ["shopkeeper", 2]], per: 140 },
+    "food-stalls": { mix: [["pub", 4], ["cook", 1.5], ["shopkeeper", 1]], per: 130 },
+    "market-gate": { mix: [["pub", 3], ["guard", 0.4]], per: 180 },
+    "stockyard": { mix: [["porter", 2], ["docker", 1]], per: 300 },
+    "grandstand": { mix: [["pub", 6], ["waiter", 0.4]], per: 90 },
+    "track": { mix: [["driver", 1], ["official", 0.5]], per: 800, max: 3 },
+    "pits": { mix: [["mechanic", 3], ["driver", 1]], per: 180 },
+    "race-control": { mix: [["official", 2], ["technician", 1]], per: 200, max: 4 },
+    "nave": { mix: [["pub", 6], ["priest", 0.6], ["acolyte", 0.6]], per: 120 },
+    "narthex": { mix: [["pub", 3], ["acolyte", 0.6]], per: 160 },
+    "chapel": { mix: [["pub", 2], ["priest", 0.5]], per: 150 },
+    "classroom": { mix: [["pupil", 6], ["teacher", 1]], per: 90 },
+    "staff-room": { mix: [["teacher", 2], ["clerk", 0.3]], per: 150 },
+    // trades
+    "car-bays": { mix: [["mechanic", 4], ["driver", 0.5]], per: 180 },
+    "parts-store": { mix: [["mechanic", 1], ["clerk", 0.5]], per: 250, max: 3 },
+    "garage": { mix: [["driver", 1], ["mechanic", 1], ["guard", 0.3]], per: 400, max: 4 },
+    "parking": { mix: [["driver", 1], ["resident", 1]], per: 400 },
+    "boat-slip": { mix: [["boatman", 3], ["docker", 1]], per: 200 },
+    "jetty": { mix: [["boatman", 2], ["docker", 2], ["porter", 1]], per: 180 },
+    "hold": { mix: [["sailor", 2], ["docker", 2]], per: 220 },
+    "gangway": { mix: [["sailor", 2], ["porter", 1]], per: 160 },
+    "dock": { mix: [["docker", 3], ["porter", 1.5], ["clerk", 0.3]], per: 160 },
+    "warehouse": { mix: [["warehouse-hand", 3], ["docker", 1], ["porter", 1]], per: 260 },
+    "assembly": { mix: [["technician", 4], ["mechanic", 1]], per: 180 },
+    "packing": { mix: [["warehouse-hand", 2], ["porter", 2]], per: 180 },
+    "workshop": { mix: [["mechanic", 2], ["technician", 1]], per: 200 },
+    "boiler": { mix: [["technician", 2], ["mechanic", 1]], per: 300, max: 3 },
+    "machines": { mix: [["technician", 2], ["mechanic", 1]], per: 300, max: 3 },
+    "tanks": { mix: [["technician", 2]], per: 300, max: 3 },
+    "waste": { mix: [["porter", 1], ["technician", 1]], per: 300, max: 3 },
+    "plant-room": { mix: [["technician", 1], ["mechanic", 1]], per: 350, max: 2 },
+    "control": { mix: [["technician", 2], ["guard", 0.5]], per: 200, max: 4 },
+    "transformers": { mix: [["technician", 2]], per: 350, max: 3 },
+    "generator": { mix: [["technician", 2]], per: 350, max: 3 },
+    // labs and desks
+    "lab": { mix: [["technician", 2], ["scholar", 1]], per: 200 },
+    "testing": { mix: [["technician", 2], ["scholar", 1]], per: 200 },
+    "clean": { mix: [["technician", 2]], per: 250, max: 3 },
+    "biolab": { mix: [["technician", 2], ["scholar", 1]], per: 220 },
+    "cryo": { mix: [["technician", 1]], per: 300, max: 2 },
+    "radiation": { mix: [["technician", 1]], per: 500, max: 1 },
+    "chem-store": { mix: [["technician", 1]], per: 400, max: 1 },
+    "vault-store": { mix: [["guard", 1]], per: 500, max: 1 },
+    "observation": { mix: [["scholar", 1], ["pub", 1]], per: 200 },
+    "computer": { mix: [["technician", 2], ["clerk", 1]], per: 200 },
+    "offices": { mix: [["clerk", 3], ["official", 0.5]], per: 150 },
+    "open-office": { mix: [["clerk", 4]], per: 130 },
+    "corner-office": { mix: [["official", 1], ["clerk", 0.5]], per: 250, max: 2 },
+    "conference": { mix: [["clerk", 2], ["official", 1]], per: 120 },
+    "files": { mix: [["clerk", 1]], per: 300, max: 2 },
+    "lobby": { mix: [["pub", 3], ["clerk", 1], ["guard", 0.5]], per: 180 },
+    "lobby-mail": { mix: [["resident", 2], ["porter", 0.5]], per: 200, max: 3 },
+    "lift-hall": { mix: [["pub", 2]], per: 200, max: 3 },
+    "breakroom": { mix: [["staff", 2]], per: 140 },
+    "closet": { mix: [["cleaner", 1]], per: 400, max: 1 },
+    "restroom": { mix: [["pub", 1]], per: 300, max: 2 },
+    // security and the deep rooms
+    "security": { mix: [["guard", 3], ["technician", 0.5]], per: 150, max: 4 },
+    "counting": { mix: [["teller", 2], ["guard", 1]], per: 150, max: 5 },
+    "vault": { mix: [["guard", 1]], per: 600, max: 1 },
+    "panic": { mix: [], per: 999, max: 0 },
+    // houses
+    "kitchen": { mix: [["cook", 3], ["kitchen-hand", 1.5], ["porter", 0.6], ["waiter", 0.6]], per: 140 },
+    "servants": { mix: [["servant", 2], ["waiter", 0.5]], per: 200 },
+    "wine-cellar": { mix: [["servant", 1], ["porter", 0.5]], per: 400, max: 2 },
+    "library": { mix: [["scholar", 2], ["pub", 1]], per: 200 },
+    "study": { mix: [["pub", 1]], per: 300, max: 2 },
+    "bedroom": { mix: [["pub", 1]], per: 400, max: 2 },
+    "dressing": { mix: [["servant", 1]], per: 300, max: 1 },
+    "attic": { mix: [["servant", 0.5]], per: 500, max: 1 },
+    "meditation": { mix: [["pub", 1]], per: 300, max: 2 },
+    "hallway": { mix: [["resident", 1]], per: 300, max: 2 },
+    "stairwell": { mix: [["resident", 1]], per: 300, max: 1 },
+    "fire-escape": { mix: [["resident", 1]], per: 400, max: 1 },
+    "flat-rundown": { mix: [["resident", 2]], per: 300, max: 3 },
+    "flat-tidy": { mix: [["resident", 2]], per: 300, max: 3 },
+    "flat-strange": { mix: [["resident", 1]], per: 400, max: 2 },
+    "laundry-basement": { mix: [["resident", 1], ["cleaner", 0.5]], per: 300, max: 3 },
+    "roof": { mix: [["technician", 0.5]], per: 600, max: 1 }
+    // anomalies (anom-*) fall through to the words and the band: a few of the place's own, or nobody
+  },
+  // words in a room's name, for a room whose archetype is not in the table (an unknown room is drawn "empty")
+  words: [[/kitchen|scullery/i, "kitchen"], [/\bbar\b|saloon|tavern|taproom/i, "bar"], [/lobby|foyer|entrance|reception|vestibule/i, "foyer"],
+    [/ballroom|gala|casino|gaming|card/i, "casino-floor"], [/dining|restaurant|canteen|caf[eé]/i, "dining"], [/office|study|records?\b|clerk/i, "offices"],
+    [/vault|strongroom|\bsafe\b/i, "vault"], [/security|guard|watch/i, "security"], [/workshop|garage|repair|bay\b/i, "workshop"],
+    [/dock|quay|wharf|jetty|pier|slip\b/i, "dock"], [/\bcells?\b|lock-?up|holding/i, "cells"], [/stor(e|age)|warehouse|depot|hold\b/i, "warehouse"],
+    [/\blab\b|laborator/i, "lab"], [/bed|suite|quarters/i, "bedroom"], [/chapel|shrine|altar/i, "chapel"], [/class|school/i, "classroom"]],
+  // the band: who is there when nothing else says, and how full it is
+  bands: { public: { k: 1, mix: [["pub", 1]], per: 150 }, working: { k: 0.8, mix: [["staff", 1]], per: 220 },
+    controlled: { k: 0.5, mix: [["guard", 1], ["staff", 1]], per: 300 }, secure: { k: 0.3, mix: [["guard", 1]], per: 600, max: 1 } },
+  max: 12
+};
+
+// The place row for a roll: its target, else its theme's, else the default.
+PP.place = model => M.own(M.CROWD.places, model.target) || M.own(M.CROWD.places, M.own(M.CROWD.themes, model.themeName) || "") || M.CROWD.places[""];
+// The recipe for one room: { mix, per, max, k, from } — from says which rule chose it (for the report and the checker).
+PP.recipe = function (model, r) {
+  const C = M.CROWD, pl = PP.place(model), band = M.own(C.bands, r.band) || C.bands.public;
+  const own = pl.rooms && M.own(pl.rooms, r.arch);
+  if (own) return { mix: own, per: (M.own(C.rooms, r.arch) || band).per, max: (M.own(C.rooms, r.arch) || {}).max, k: band.k, from: "place" };
+  const a = r.arch !== "empty" ? M.own(C.rooms, r.arch) : null;
+  if (a) return { mix: a.mix, per: a.per, max: a.max, k: band.k, from: "archetype" };
+  const w = C.words.find(([re]) => re.test(r.name || "")), wa = w && M.own(C.rooms, w[1]);
+  if (wa) return { mix: wa.mix, per: wa.per, max: wa.max, k: band.k, from: "words" };
+  return { mix: band.mix, per: band.per, max: band.max, k: band.k, from: "band" };
+};
+// The mix with "pub", "staff" and "guard" filled in by the place: [[role, weight]], role ids only.
+PP.roleMix = function (model, mix) {
+  const pl = PP.place(model), out = [];
+  for (const [who, wt] of mix) {
+    if (who === "pub" || who === "staff") { const sub = pl[who] || [], t = sub.reduce((s, x) => s + x[1], 0) || 1; for (const [r, w] of sub) out.push([r, wt * w / t]); }
+    else if (who === "guard") { if (pl.guard) out.push([pl.guard, wt]); }
+    else out.push([who, wt]);
+  }
+  return out.filter(([r, w]) => w > 0 && PP.ROLES.includes(r));
+};
+// How many of whom stand in a room, as role ids, from the seed and the room alone (never from any other room).
+PP.crowdRoles = function (model, r, seed, density) {
+  const rc = PP.recipe(model, r), mix = PP.roleMix(model, rc.mix);
+  if (!mix.length) return [];
+  const pl = PP.place(model), f = r.frame, area = f && f.w > 0 && f.h > 0 ? f.w * f.h : (r.w || 2.5) * 150;
+  const dup = model.rooms.filter(q => q.name === r.name).indexOf(r), rng = M.rng(seed).fork("crowd|" + r.name + "|" + dup);
+  const x = area / rc.per * rc.k * (pl.d || 1) * density;
+  const n = Math.min(Math.floor(x + rng()), Math.round((rc.max != null ? rc.max : M.CROWD.max) * density));
+  const tot = mix.reduce((s, m) => s + m[1], 0), out = [];
+  for (let i = 0; i < n; i++) { let u = rng() * tot, j = 0; while (j < mix.length - 1 && u >= mix[j][1]) { u -= mix[j][1]; j++; } out.push(mix[j][0]); }
+  return out;
+};
+
+// --- resolve: the people to draw ---------------------------------------------------------
+// resolve(model, opts, W) -> [{ room, spec, mark, tone, label, crowd, role }], placed people first (in the order given), then the
+// crowd room by room. room is the room's name as the roll spells it. On the player layer everyone in a room the crew does not
+// know (or knows only as a blueprint) is left out. With no figure kit it returns nothing and warns once.
+PP.resolve = function (model, opts, W) {
+  opts = opts || {}; W = W || [];
+  const given = opts.people != null && !(Array.isArray(opts.people) && !opts.people.length);
+  if (!given && !opts.crowd) return [];
+  const kit = opts.figures && opts.figures.kit;
+  if (!kit || typeof kit !== "object") { M.warn(W, "people and crowd need the figure kit (figures: { kit: B68Figure }) — left out"); return []; }
+  const player = opts.layer != null && opts.layer !== "gm";
+  const R = new Set(opts.reveal || ["public"]), bp = player ? M.blueprintIds(model, Object.assign({}, opts, { layer: "player" })) : null;
+  const known = r => !player || (M.roomRevealed(R, r) && !(bp && bp.has(r.id)));
+  const extra = (o, what) => {
+    if (typeof kit.extra !== "function") { M.warn(W, `${what}: the figure kit has no extra() — left out`); return null; }
+    try { const s = kit.extra(o); return s && typeof s === "object" ? s : null; } catch (e) { M.warn(W, `${what}: extra() failed (${e.message}) — left out`); return null; }
+  };
+  const out = [];
+  if (given && !Array.isArray(opts.people)) M.warn(W, "people should be a list of { room, spec | role, mark, tone, label } — left out");
+  (Array.isArray(opts.people) ? opts.people : []).forEach((p, i) => {
+    const what = `person ${i + 1}`;
+    if (!p || typeof p !== "object") { M.warn(W, `${what} is not an object — left out`); return; }
+    const r = model.rooms.find(q => q.name === p.room);
+    if (!r) { M.warn(W, `${what}: room "${p.room}" is not one of this roll's rooms — left out`); return; }
+    if (!known(r)) return;
+    let spec = p.spec && typeof p.spec === "object" ? p.spec : null;
+    if (!spec && typeof p.role === "string") {
+      if (!PP.ROLES.includes(p.role)) M.warn(W, `${what}: role "${p.role}" is not one of the figure kit's roles (${PP.ROLES.join(", ")}) — the kit draws a resident`);
+      spec = extra({ role: p.role, seed: p.seed != null ? p.seed : M.hash(p.room + "|" + i), masked: !!p.masked }, what);
+    } else if (!spec) M.warn(W, `${what} in "${p.room}" has neither a spec nor a role — left out`);
+    if (!spec) return;
+    let mark = p.mark != null && p.mark !== "" ? String(p.mark) : null;
+    if (mark && Array.from(mark).length > 2) { M.warn(W, `${what}: mark "${mark}" is more than 2 characters — cut to ${Array.from(mark).slice(0, 2).join("")}`); mark = Array.from(mark).slice(0, 2).join(""); }
+    let tone = p.tone != null ? p.tone : null;
+    if (tone != null && !PP.TONES.includes(tone)) { M.warn(W, `${what}: tone "${tone}" is not one of ${PP.TONES.join(", ")} — the kit's default`); tone = null; }
+    out.push({ room: r.name, spec, mark, tone, label: p.label != null && p.label !== "" ? String(p.label) : null, crowd: false, role: p.role || null });
+  });
+  if (opts.crowd) {
+    const c = opts.crowd === true ? {} : (typeof opts.crowd === "object" ? opts.crowd : {});
+    if (opts.crowd !== true && typeof opts.crowd !== "object") M.warn(W, `crowd should be true or { density, seed, masked } — drawn at density 1`);
+    let density = c.density == null ? 1 : +c.density;
+    if (!(density >= 0.5 && density <= 2)) { const d2 = Number.isFinite(density) ? Math.max(0.5, Math.min(2, density)) : 1; M.warn(W, `crowd.density ${JSON.stringify(c.density)} is not 0.5 to 2 — drawn at ${d2}`); density = d2; }
+    const seed = c.seed != null ? c.seed : (opts.seed != null ? opts.seed : (model.seed != null ? model.seed : M.hash(model.name + model.district)));
+    for (const r of model.rooms) {
+      const roles = PP.crowdRoles(model, r, seed, density);
+      if (!roles.length || !known(r)) continue;        // decided for every room alike, then the unknown left out
+      const dup = model.rooms.filter(q => q.name === r.name).indexOf(r);
+      roles.forEach((role, i) => {
+        const spec = extra({ role, seed: M.hash(`${seed}|${r.name}|${dup}|${i}`), masked: !!c.masked && PP.GUESTS.includes(role) }, `the crowd in "${r.name}"`);
+        if (spec) out.push({ room: r.name, spec, mark: null, tone: "crowd", label: null, crowd: true, role });
+      });
+    }
+  }
+  return out;
+};
+
+// --- draw: stand them in the views ---------------------------------------------------------
+const PP_CACHE = new WeakMap();      // one render's resolved people and drawn figures (the scene is built two or three times)
+const ppF = v => String(+(+v).toFixed(2)), ppS = v => String(+(+v).toFixed(5));
+const ppOverlap = (a, b) => a.x0 < b.x0 + b.w && b.x0 < a.x0 + a.w && a.y0 < b.y0 + b.h && b.y0 < a.y0 + a.h;
+const ppCircle = s => Array.from({ length: 24 }, (_, i) => [s.cx + Math.cos(i * Math.PI / 12) * s.r, s.cy + Math.sin(i * Math.PI / 12) * s.r]);
+
+PP.draw = function (r, lay, model, ctx, solved) {
+  const opts = ctx.opts, W = ctx.W, view = opts.view;
+  opts._people = null;
+  if (view !== "section" && view !== "iso" && view !== "plan") { M.warn(W, `people and crowd are drawn in the section, iso and plan views — not in ${view}`); return; }
+  let C = PP_CACHE.get(model);
+  if (!C) { C = { list: PP.resolve(model, opts, W), figs: new Map() }; PP_CACHE.set(model, C); }
+  if (!C.list.length || !r.parts.length) return;
+  const kit = opts.figures.kit, fu = ctx.floorU || 0, k = ctx.k || 1;
+  // the page's scale: the type floor is minLabelPx on the page and floorU in drawing units (feet)
+  const pxU = fu > 0 && opts.minLabelPx > 0 ? opts.minLabelPx / fu : 0;
+  const hTrue = PP.ADULT_FT, hMin = pxU ? PP.MIN_PX / pxU : 0;
+  const light = typeof opts.light === "string" && /^(bluetime|night)$/i.test(opts.light) ? opts.light.toLowerCase()
+    : (opts.light && typeof opts.light === "object" ? opts.light : (/night/i.test(String(opts.time || model.time || "")) ? "night" : "bluetime"));
+  const fs = Math.max(fu, 1.6 * k), ty = M.scene.type(ctx);
+  // the crowd fills at most this share of a floor, so a room reads as a room and not a queue (placed people may fill it all)
+  const dens = opts.crowd && typeof opts.crowd === "object" && +opts.crowd.density >= 0.5 && +opts.crowd.density <= 2 ? +opts.crowd.density : 1, fill = Math.min(1, 0.6 * dens);
+  // one person's figure at a height (drawing units for a 5 ft 8 in adult): its markup and its box in drawing units
+  // the figure kit's drawing is cached by its pixel height (the scene is built two or three times while the type settles); its
+  // scale into drawing units is worked out on every call, from this pass's height
+  const figure = (p, hU) => {
+    const pxH = pxU ? Math.round(hU * pxU * 2) / 2 : 64, s = hU / pxH;
+    const key = JSON.stringify([p.spec, pxH, light, p.mark, p.tone, !!p.crowd]);
+    let m = C.figs.get(key);
+    if (m === undefined) {
+      m = null;
+      try {
+        const o = { height: pxH, light };
+        // the mark is the flag's (drawn over the head at the type floor), so the mini draws no disc at the feet; it keeps the tone
+        if (p.tone) o.tone = p.tone;
+        const res = typeof kit.mini === "function" ? kit.mini(p.spec, o) : null;
+        for (const w of (res && res.warnings) || []) M.warn(W, "figure kit: " + w);
+        if (res && res.inner) m = { inner: res.inner, wPx: res.width || pxH * 0.35, hPx: res.height || pxH };
+        else if (!p.crowd && typeof kit.render === "function") {
+          // no mini yet: the full figure, for a look only (about 90 KB each), placed by the kit's rule: 25 units an inch, feet at 0
+          const fr = kit.render(p.spec, { lod: "lo", grain: false, shadow: false });
+          if (fr && fr.inner) { m = { inner: fr.inner, vb: fr.viewBox || [-400, -1700, 800, 1700] }; M.warn(W, "figure kit: mini() drew nothing — placed people drawn with render() instead (heavy: a look only)"); }
+        } else if (p.crowd) M.warn(W, "figure kit: mini() drew nothing — the crowd left out");
+      } catch (e) { M.warn(W, `figure kit failed on a person in "${p.room}": ${e.message}`); m = null; }
+      C.figs.set(key, m);
+    }
+    if (!m) return null;
+    if (m.vb) { const sk = hU / (68 * 25); return { inner: m.inner, w: m.vb[2] * sk * 0.8, h: -m.vb[1] * sk, s: sk }; }
+    return { inner: m.inner, w: m.wPx * s, h: m.hPx * s, s };
+  };
+  // the people of each room, placed people first (marked before unmarked), then the crowd
+  const byRoom = new Map();
+  C.list.forEach((p, i) => {
+    const rm = model.rooms.find(q => q.name === p.room);
+    if (!rm) return;
+    if (!byRoom.has(rm)) byRoom.set(rm, []);
+    byRoom.get(rm).push(Object.assign({ pri: p.crowd ? 2 : p.mark ? 0 : 1, i }, p));
+  });
+  for (const ps of byRoom.values()) ps.sort((a, b) => a.pri - b.pri || a.i - b.i);
+  const seed = opts.seed != null ? opts.seed : (model.seed != null ? model.seed : M.hash(model.name + model.district));
+  const rngFor = rm => M.rng(seed).fork("people|" + view + "|" + rm.name + "|" + model.rooms.filter(q => q.name === rm.name).indexOf(rm));
+  const drawn = [];          // { rm, p, f, x, y, lo, hi, top }: feet at (x, y) on the sheet
+  const chips = [];          // { rm, n, x, y, w }
+  const chipW = n => M.textW("+" + n, fs, ty.label) + fs * 0.9;
+  const bodyW = f => Math.min(f.w, f.h * 0.32);            // the body, not the figure's box (a prop or the mark's disc may overhang)
+  const words = solved ? (solved.boxes || []).concat((solved.fixed || []).filter(q => q.what !== "street")) : [];
+
+  if (view === "section") {
+    // the section: along each cell's floor line, one row, clear of the partitions and, where there is room, of the words
+    const cells = ctx.peopleCells || [];
+    for (const [rm, ps] of byRoom) {
+      const base = cells.filter(c => c.room === rm).map(c => ({ a: c.a + 0.8, b: c.b - 0.8, floor: c.floor, top: c.top, lo: c.a, hi: c.b })).filter(s => s.b - s.a > 1);
+      if (!base.length) continue;
+      const hU = Math.min(Math.max(hTrue, hMin), Math.min(...base.map(s => (s.floor - s.top) * 0.8)));
+      // the runs of floor that no word (a room's name or pin, a tag) stands over at the height of a person
+      const clearOf = s => {
+        let runs = [[s.a, s.b]];
+        for (const q of words) if (q.y0 < s.floor && q.y0 + q.h > s.floor - hU * 0.85 && q.x0 < s.b && q.x0 + q.w > s.a)
+          runs = runs.flatMap(([a, b]) => q.x0 + q.w + 0.3 <= a || q.x0 - 0.3 >= b ? [[a, b]] : [[a, q.x0 - 0.3], [q.x0 + q.w + 0.3, b]].filter(([u, v]) => v - u > 1));
+        return runs.map(([a, b]) => Object.assign({}, s, { a, b }));
+      };
+      const used = s => s.items.reduce((t, it) => t + it.w * 1.1, 0);
+      const fitIn = segs => (w, lim = 1) => segs.filter(s => (s.b - s.a) * lim - used(s) >= w * 1.1).sort((p, q) => (q.b - q.a - used(q)) - (p.b - p.a - used(p)))[0];
+      const standPlaced = segs => {
+        const fit = fitIn(segs); let over = 0;
+        for (const s of segs) s.items = [];
+        for (const p of ps.filter(p => !p.crowd)) { const f = figure(p, hU); if (!f) continue; const s = fit(bodyW(f)); if (s) s.items.push({ p, f, w: bodyW(f) }); else over++; }
+        return { segs, over, fit };
+      };
+      let L = standPlaced(base.flatMap(clearOf));
+      if (L.over) L = standPlaced(base.map(s => Object.assign({}, s)));      // not enough floor clear of the words: the words win, drawn over them
+      const { segs, fit } = L;
+      let over = L.over;
+      if (over) {
+        // the chip takes the end of the roomiest run; the last placed person gives way if it must
+        let s = fit(chipW(over));
+        while (!s) { const t = segs.slice().sort((p, q) => used(q) - used(p))[0], it = t.items.pop(); if (!it) break; over++; s = fit(chipW(over)); }
+        if (s) s.items.push({ chip: true, w: chipW(over) });
+      }
+      const cap = Math.ceil(segs.reduce((t, s) => t + s.b - s.a, 0) / (hU * 0.2)) + 2;
+      for (const p of ps.filter(p => p.crowd).slice(0, cap)) { const f = figure(p, hU); if (!f) continue; const s = fit(bodyW(f) * 0.8, fill); if (s) s.items.push({ p, f, w: bodyW(f) * 0.8 }); }
+      const rng = rngFor(rm);
+      for (const s of segs) {
+        const chip = s.items.find(it => it.chip), items = rng.shuffle(s.items.filter(it => !it.chip)).concat(chip ? [chip] : []);
+        if (!items.length) continue;
+        const slack = Math.max(0, s.b - s.a - items.reduce((t, it) => t + it.w, 0)), wts = items.map(() => 0.5 + rng()), wt = wts.reduce((a, b) => a + b, 0);
+        let x = s.a;
+        items.forEach((it, j) => {
+          x += slack * wts[j] / wt * (j ? 1 : 0.5);
+          if (it.chip) chips.push({ rm, n: over, x: x + it.w / 2, y: s.floor, w: it.w });
+          else drawn.push({ rm, p: it.p, f: it.f, x: x + it.w / 2, y: s.floor, top: s.top, lo: s.lo, hi: s.hi });
+          x += it.w;
+        });
+      }
+    }
+  } else {
+    // iso and plan: on each room's floor, every floor drawn; feet on a seeded scatter inside the room, clear of each other
+    const iso = view === "iso", T = ctx.toScreen, ins = M.scene.insideBy;
+    const rectPts = f => G.rectPts({ x: f.cx - f.w / 2, y: f.cy - f.h / 2, w: f.w, h: f.h });
+    for (const lv of lay.levels) for (const rm of lv.rooms) {
+      const ps = byRoom.get(rm);
+      if (!ps || !rm.frame) continue;
+      const sp = rm.shape ? (rm.shape.kind === "circle" ? ppCircle(rm.shape) : rm.shape.pts) : null;
+      const polys = rm.gallery && rm.frames && rm.frames.length ? rm.frames.map(rectPts) : [sp && sp.length >= 3 ? sp : rectPts(rm.frame)];
+      const all = polys.flat(), bx0 = Math.min(...all.map(p => p[0])), bx1 = Math.max(...all.map(p => p[0])), by0 = Math.min(...all.map(p => p[1])), by1 = Math.max(...all.map(p => p[1]));
+      const scr = all.map(p => T(lv, p[0], p[1], 0)), sx0 = Math.min(...scr.map(q => q[0])), sx1 = Math.max(...scr.map(q => q[0])), sy0 = Math.min(...scr.map(q => q[1])), sy1 = Math.max(...scr.map(q => q[1]));
+      // in the plan never taller than the room is deep (the head stays in the room); in the iso a figure may rise past the back wall,
+      // so the 34 px floor holds even in a small room (a person is then a symbol)
+      const hU = iso ? Math.max(hTrue, hMin) : Math.min(Math.max(hTrue, hMin), (by1 - by0) * 0.7);
+      const rng = rngFor(rm), wNom = hU * 0.34, step = Math.max(0.9, wNom * 0.5), mg = Math.max(0.8, wNom * 0.45);
+      const cand = [];
+      for (let y = by0 + mg; y <= by1 - mg; y += step) for (let x = bx0 + mg; x <= bx1 - mg; x += step) {
+        const px = x + (rng() - 0.5) * step * 0.6, py = y + (rng() - 0.5) * step * 0.6;
+        if (!polys.some(P0 => ins(P0, px, py, mg) && (iso || ins(P0, px, py - hU, mg * 0.5)))) continue;
+        const q = T(lv, px, py, 0);
+        cand.push({ x: q[0], y: q[1], r: rng() });
+      }
+      if (!cand.length) continue;
+      // keep people off the words the solver placed (the room's name or pin, tags, titles) where there is room
+      const box = c => ({ x0: c.x - wNom / 2, y0: c.y - hU, w: wNom, h: hU });
+      for (const c of cand) { const b = box(c); c.clear = !words.some(q => ppOverlap(b, q)); }
+      const depth = (sy1 - sy0) * 0.4;
+      const front = cand.slice().sort((a, b) => (b.clear - a.clear) || (b.y + b.r * depth) - (a.y + a.r * depth));
+      const loose = cand.slice().sort((a, b) => (b.clear - a.clear) || a.r - b.r);
+      const taken = [];
+      const free = (c, w, h) => taken.every(t => Math.abs(t.x - c.x) >= (t.w + w) * 0.45 || Math.abs(t.y - c.y) >= Math.max(t.h, h) * 0.55);
+      const take = (p, f, list) => { const w = f.inner ? bodyW(f) : f.w; for (const c of list) if (free(c, w, f.h)) { taken.push({ x: c.x, y: c.y, w, h: f.h, p, f }); return true; } return false; };
+      let over = 0;
+      for (const p of ps.filter(p => !p.crowd)) { const f = figure(p, hU); if (f && !take(p, f, front)) over++; }
+      if (over) {
+        // the chip stands in a free spot; failing one, the last placed person gives way to it
+        if (!take(null, { w: chipW(over), h: fs * 1.4 }, front)) { const t = taken.slice().reverse().find(q => q.p); if (t) { taken.splice(taken.indexOf(t), 1); over++; take(null, { w: chipW(over), h: fs * 1.4 }, front); } }
+        const cc = taken.find(t => !t.p);
+        if (cc) { taken.splice(taken.indexOf(cc), 1); chips.push({ rm, n: over, x: cc.x, y: cc.y, w: cc.w }); taken.push(Object.assign({}, cc, { chip: true })); }
+      }
+      // how many nominal people the floor holds, and the crowd's share of that
+      const cap = []; for (const c of loose) if (cap.every(q => Math.abs(q.x - c.x) >= wNom * 0.9 || Math.abs(q.y - c.y) >= hU * 0.55)) cap.push(c);
+      const room = Math.max(0, Math.floor(cap.length * fill) - taken.length);
+      for (const p of ps.filter(p => p.crowd).slice(0, room)) { const f = figure(p, hU); if (f) take(p, f, loose); }
+      for (const t of taken) if (t.p) drawn.push({ rm, p: t.p, f: t.f, x: t.x, y: t.y, lo: sx0, hi: sx1, top: sy0 - hU * 1.5 });
+    }
+  }
+  if (!drawn.length && !chips.length) return;
+  // painter's order: the crowd back to front, then the placed people back to front (marked people stand in front)
+  drawn.sort((a, b) => (a.p.crowd ? 0 : 1) - (b.p.crowd ? 0 : 1) || a.y - b.y || a.x - b.x);
+  const part = r.parts[0], ox = part.tf ? part.tf.x || 0 : 0, oy = part.tf ? part.tf.y || 0 : 0;
+  const kids = [];
+  const dim = d => view !== "section" && ctx.roomLights && ctx.roomLights.get(d.rm) === "dark" ? ` opacity="0.45"` : "";      // K2.5: a dark room's people dim (iso, plan)
+  for (const d of drawn) kids.push(P.raw(`<g class="map-person" data-room="${M.esc(d.rm.id)}" transform="translate(${ppF(d.x - ox)} ${ppF(d.y - oy)}) scale(${ppS(d.f.s)})"${dim(d)}>${d.f.inner}</g>`));
+  // A marked person carries a flag over the head: a stem and a pill with the mark's letters at the type floor, in the tone's
+  // colour (the letters, not the colour, say who it is). Flags never sit under a word the solver placed or under another flag:
+  // each tries the spots beside and above its head, nearest first, and people standing together fan out. Kept on the drawing.
+  // A label, when given and when it fits, sits beside the flag. The crowd carries none.
+  // the solver's leader lines (a name set outside its room) are words too, for the flags: sampled into small boxes
+  const leaderBoxes = [];
+  for (const pt of r.parts) for (const g of pt.layers.labels || []) if (g && g.t === "g" && g.cls === "map-leader") for (const q of g.kids || []) if (q.t === "line") {
+    const tx = (pt.tf && !(pt.tfs && pt.tfs.labels) ? pt.tf.x || 0 : 0), ty2 = (pt.tf && !(pt.tfs && pt.tfs.labels) ? pt.tf.y || 0 : 0), n = Math.max(1, Math.ceil(Math.hypot(q.x2 - q.x1, q.y2 - q.y1) / (fs * 0.5)));
+    for (let i = 0; i <= n; i++) { const x = q.x1 + (q.x2 - q.x1) * i / n + tx, y = q.y1 + (q.y2 - q.y1) * i / n + ty2; leaderBoxes.push({ x0: x - fs * 0.2, y0: y - fs * 0.2, w: fs * 0.4, h: fs * 0.4 }); }
+  }
+  const boxes = [], flagBoxes = [], Bd = r.bounds || { minX: -Infinity, minY: -Infinity, maxX: Infinity, maxY: Infinity };
+  const ovA = (a, b) => Math.max(0, Math.min(a.x0 + a.w, b.x0 + b.w) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y0 + a.h, b.y0 + b.h) - Math.max(a.y0, b.y0));
+  const inPage = b => b.x0 >= Bd.minX && b.x0 + b.w <= Bd.maxX && b.y0 >= Bd.minY && b.y0 + b.h <= Bd.maxY;
+  for (const d of drawn.filter(q => q.p.mark).sort((a, b) => a.p.pri - b.p.pri || a.p.i - b.p.i)) {
+    const mk = Array.from(String(d.p.mark).toUpperCase()).slice(0, 2).join(""), tone = PP.TONES.includes(d.p.tone) && d.p.tone !== "crowd" ? d.p.tone : "staff";
+    const ph = fs * 1.4, pw = Math.max(ph, M.textW(mk, fs, ty.label) + fs * 0.8), head = d.y - d.f.h, sw = Math.max(0.15, fs * 0.18), side = (bodyW(d.f) + pw) / 2 + fs * 0.35;
+    // the flag and its label are one unit: the label is a tab tucked behind the pill, on the right, else the left, else left off
+    const t = d.p.label ? d.p.label.toUpperCase() : "", tw = t ? M.textW(t, fs, ty.label) + fs * 0.6 + ph / 2 : 0;
+    const arr = t ? [1, -1, 0] : [0];
+    // above the head first; then beside it, at head height, on a short stem (where a room's name sits just over the heads)
+    const spots = [];
+    for (let up = 0; up <= 5; up++) for (const u of [0, -0.65, 0.65, -1.3, 1.3, -2, 2, -2.8, 2.8]) spots.push({ dx: u * pw, rise: fs * 0.85 + up * ph * 0.95, cost: Math.abs(u) * 1.2 + up });
+    for (const sgn of [1, -1]) for (const k of [0, 1]) spots.push({ dx: sgn * (side + k * pw * 0.7), rise: -ph * 0.75, cost: 0.9 + k * 0.8 + (sgn < 0 ? 0.1 : 0) });
+    const gapF = fs * 0.35, others = words.concat(leaderBoxes, flagBoxes.map(q => ({ x0: q.x0 - gapF, y0: q.y0 - gapF, w: q.w + 2 * gapF, h: q.h + 2 * gapF })), boxes);
+    let best = null;
+    for (const sp of spots) for (const side2 of arr) {
+      const fx = d.x + sp.dx + side2 * tw / 2, fb = head - sp.rise, b = { x0: fx - pw / 2, y0: fb - ph, w: pw, h: ph };
+      const lb = side2 > 0 ? { x0: b.x0 + b.w - ph / 2, y0: b.y0, w: tw, h: ph } : side2 < 0 ? { x0: b.x0 - tw + ph / 2, y0: b.y0, w: tw, h: ph } : null;
+      const U = lb ? { x0: Math.min(b.x0, lb.x0), y0: b.y0, w: pw + tw - ph / 2, h: ph } : b;
+      if (!inPage(U)) continue;
+      const hit = others.reduce((s2, q) => s2 + ovA(U, q), 0), cost = (hit > 0 ? 1e4 + hit : 0) + sp.cost + (t && !lb ? 6 : 0) + (side2 < 0 ? 0.2 : 0);
+      if (!best || cost < best.cost) best = { b, fx, fb, lb, U, cost };
+    }
+    if (!best) {      // nowhere on the drawing: straight up, pulled inside it, no label
+      const fx = Math.min(Math.max(d.x, Bd.minX + pw / 2), Bd.maxX - pw / 2), fb = Math.max(head - fs * 0.85, Bd.minY + ph), b = { x0: fx - pw / 2, y0: fb - ph, w: pw, h: ph };
+      best = { b, fx, fb, lb: null, U: b };
+    }
+    const { b, fx, fb, lb, U } = best, besideF = fb > head + fs * 0.1, sx = besideF ? (fx > d.x ? b.x0 : b.x0 + b.w) : fx, sy = besideF ? b.y0 + ph / 2 : fb;
+    flagBoxes.push(U);
+    const role = "rm-mark-" + tone, k2 = [P.poly(role, [[d.x - sw / 2 - ox, head - fs * 0.1 - oy], [d.x + sw / 2 - ox, head - fs * 0.1 - oy], [sx + sw / 2 - ox, sy - oy], [sx - sw / 2 - ox, sy - oy]])];
+    if (lb) k2.push(P.rect("label-bg", lb.x0 - ox, lb.y0 - oy, lb.w, lb.h, { rx: ph / 2 }), P.text("label-sm", (lb.x0 > b.x0 ? lb.x0 + ph / 2 + (lb.w - ph / 2) / 2 : lb.x0 + (lb.w - ph / 2) / 2) - ox, lb.y0 + ph / 2 + fs * 0.36 - oy, t, { size: fs }));
+    k2.push(P.rect(role, b.x0 - ox, b.y0 - oy, b.w, b.h, { rx: ph / 2 }), P.text("rm-mark-text", fx - ox, b.y0 + ph / 2 + fs * 0.36 - oy, mk, { size: fs }));
+    kids.push(P.g(k2, { cls: "map-person-flag", room: d.rm.id }));
+  }
+  // a label over a head, at the type floor, only where it fits in its room and clear of the others (unmarked placed people)
+  for (const d of drawn.filter(q => q.p.label && !q.p.mark).sort((a, b) => a.p.pri - b.p.pri || a.p.i - b.p.i)) {
+    const t = d.p.label.toUpperCase(), tw = M.textW(t, fs, ty.label) + fs * 0.5, y = d.y - d.f.h - fs * 0.35;
+    const at = [0, -0.6, 0.6, -1.2, 1.2].map(u => ({ x0: d.x - tw / 2 + u * tw, y0: y - fs * 1.05, w: tw, h: fs * 1.25 }))
+      .find(b => b.x0 >= d.lo && b.x0 + b.w <= d.hi && b.y0 >= d.top && !boxes.some(q => ppOverlap(q, b)) && !words.some(q => ppOverlap(q, b)) && !flagBoxes.some(q => ppOverlap(q, b)));
+    if (!at) continue;
+    boxes.push(at);
+    kids.push(P.g([P.rect("label-bg", at.x0 - ox, at.y0 - oy, at.w, at.h, { rx: Math.min(0.4, fs * 0.15) }), P.text("label-sm", at.x0 + at.w / 2 - ox, y - fs * 0.2 - oy, t, { size: fs })], { cls: "map-person-label", room: d.rm.id }));
+  }
+  for (const c of chips) {
+    const h = fs * 1.3, y0 = c.y - h - 0.2;
+    kids.push(P.g([P.rect("label-bg", c.x - c.w / 2 - ox, y0 - oy, c.w, h, { rx: h / 2 }), P.text("label-sm", c.x - ox, y0 + h * 0.74 - oy, "+" + c.n, { size: fs })], { cls: "map-people-more", room: c.rm.id }));
+  }
+  part.layers.labels.unshift(P.g(kids, { cls: "map-people" }));
+  opts._people = drawn.map(d => ({ room: d.rm.name, mark: d.p.mark || null, x: +d.x.toFixed(2), y: +d.y.toFixed(2), h: +d.f.h.toFixed(2) }));
+};
+
+// ---- src/room.js ----
+// =============================================================================
+// room — one room as a stage set (bundle K3.1): view "room" with opts.room. The contract is _kits/_briefs/CONTRACT.md section 2.
+// =============================================================================
+//   B68Map.render(roll, { view: "room", room: "Showroom", layout: "screen" })
+// The room seen side-on, filling a shared screen: its floor, back wall and ceiling at its real height, its furniture from the
+// same recipe the map uses (the SIDE views, at a size that reads), its ways out at the edges (the rooms next door as slivers,
+// named, with an arrow; other doors in the back wall; the stairs; a way in that lands here, with its tag), and its people large.
+// The film cut: the map is the establishing shot; this is the scene.
+//
+// Secrecy. The set never depends on what the crew knows, nor on any other room's own fields: its width comes from the page, its
+// height from its own floor, its furniture from its own name and size. The player copy leaves pieces out: an unknown room is a
+// closed door on a blank wall with no name in the file; an unknown neighbour is an unnamed closed door; skips, locks, threats,
+// the target and secret doors are GM only. People are drawn only in the room shown, and only when this copy knows it.
+//
+// Drawing choices the roll does not decide are [interpretation], listed in the K3.1 report for sign-off.
+
+const RM = M.room = {};
+RM.FT = 300;                        // the figure kit's units per foot (25 per inch)
+RM.LIGHTS = ["dark", "lit", "bright"];
+RM.TONES = ["crew", "target", "guard", "staff", "contact", "rival", "crowd"];
+// The page a room is drawn on, when the caller does not size it: the stage's default (contract §2), or the preset's shape.
+RM.page = function (opts, raw) {
+  const pr = opts.preset || {}, named = raw.layout || "sheet", free = named === "sheet" || named === "drawing";
+  let DW = raw.displayWidth ? +raw.displayWidth : (free ? 1366 : named === "phone" ? 390 : pr.displayWidth || 1366);
+  let DH = raw.displayHeight ? +raw.displayHeight : Math.round(DW / (free ? 1366 / 1024 : named === "phone" ? 390 / 700 : pr.aspect || 1366 / 1024));
+  if (!(DW >= 200)) DW = 1366;
+  if (!(DH >= 150)) DH = Math.round(DW * 0.75);
+  // the type floor: the layout's, never under 16 px on a shared screen (a phone or a print keeps its own)
+  const fpx = raw.minLabelPx != null && +raw.minLabelPx > 0 ? +raw.minLabelPx : named === "phone" ? 10 : named === "print" ? (pr.minLabelPx || 29) : Math.max(16, pr.minLabelPx || 16);
+  return { DW, DH, fpx, width: raw.width ? +raw.width : named === "phone" ? 1170 : DW };
+};
+
+// Which room: the one asked for, spelt as the roll spells it. None asked: where the front lands, else the first room this copy
+// knows [interpretation]. Returns null (with a warning) for a name the roll does not have: the caller draws the section.
+RM.pick = function (model, lay, opts, W, reveal) {
+  const want = opts.room;
+  if (want == null || want === "") {
+    const fr = (lay.entries || []).find(e => e.kind === "front" && e.room);
+    const all = [fr && fr.room].filter(x => model.rooms.includes(x)).concat(model.rooms);
+    return all.find(r => !reveal || M.roomRevealed(reveal, r)) || model.rooms[0];
+  }
+  const r = typeof want === "string" ? model.rooms.find(x => x.name === want) : null;
+  if (!r) M.warn(W, `room ${JSON.stringify(typeof want === "string" ? want : String(want))} is not one of this roll's rooms — drawing the section`);
+  return r || null;
+};
+
+// The light a room is in: opts.lights[name], else as drawn.
+RM.lightOf = function (opts, r, W) {
+  const L0 = opts.lights;
+  if (L0 == null) return "lit";
+  if (typeof L0 !== "object" || Array.isArray(L0)) { M.warn(W, "lights should be { \"<room>\": \"dark\" | \"lit\" | \"bright\" } — left out"); return "lit"; }
+  const v = M.own(L0, r.name);
+  if (v == null) return "lit";
+  if (!RM.LIGHTS.includes(v)) { M.warn(W, `lights "${r.name}": "${v}" is not dark, lit or bright — drawn lit`); return "lit"; }
+  return v;
+};
+
+// --- The render ---------------------------------------------------------------------------
+// Returns null when the roll has no room of that name (render.js then draws the section).
+RM.render = function (o, opts, W, theme, model, seed, raw) {
+  if (!model.rooms.length) return M.emptyRender(model, opts, theme, W, seed, "b68r" + M.hash(model.name).toString(36));
+  const player = opts.layer === "player", reveal = player ? new Set(opts.reveal || ["public"]) : null;
+  const known = r => !reveal || M.roomRevealed(reveal, r);
+  const lay = M.layout.build(model, "plan", M.rng(seed).fork("layout"), model.grand ? { player, W } : { player });
+  if (player) M.safeTitles(lay, model, opts.reveal);
+  const r = RM.pick(model, lay, opts, W, reveal);
+  if (!r) return null;
+  const pg = RM.page(opts, raw);
+  const isKnown = known(r);
+  if (!isKnown) M.warn(W, "the room asked for is not one the crew knows — drawn as a closed door");
+  const light = isKnown ? RM.lightOf(opts, r, W) : "lit";
+  const timeL = M.light.forRoll({ timeOfDay: model.time }, opts, W), night = timeL.time === "Night";
+  // ids from what this copy may hold: never another room's name or fields
+  const sid = opts.idPrefix || ("b68r" + M.hash(JSON.stringify([model.name, model.district, isKnown ? r.name : "?", seed, opts.theme, opts.layer, player ? (opts.reveal || null) : null,
+    pg.DW, pg.DH, pg.fpx, pg.width, light, timeL.time, opts.grain !== false, opts.sheet || null])).toString(36));
+  // the board pins a sheet: one room is that sheet [interpretation]
+  const thName = opts.theme === "board" ? (M.own(M.THEMES, opts.sheet) && opts.sheet !== "board" ? opts.sheet : "blueprint") : opts.theme;
+  const th0 = M.own(M.THEMES, thName) || M.THEMES.rulebook;
+  const scene = { model, opts, W, _id: sid, lay: { levels: [] }, parts: [], tokens: [] };
+  const th = (th0.painter ? th0 : M.THEMES.rulebook).painter(scene);
+  const set = isKnown ? RM.set(r, lay, model, opts, W, reveal, pg, th0, { light, night, rng: M.rng(seed).fork("dress"), sid }) : RM.closed(pg);
+  const out = RM.compose(set, th, pg, opts, sid, model, isKnown ? r : null);
+  return { svg: out.svg, width: out.width, height: out.height, warnings: W, model, layout: lay, seed, floorPx: pg.fpx, room: isKnown ? r.name : null, people: set.drawn || [], bytes: out.svg.length };
+};
+
+// --- The set ----------------------------------------------------------------------------
+// Everything in feet: the floor at y = 0, up is −y, the room's inside from x = 0 to SW. Built to fit the page: its height is
+// the room's own, its width whatever the page leaves (a stage set is as wide as the stage) [interpretation].
+RM.set = function (r, lay, model, opts, W, reveal, pg, th0, X) {
+  const gm = !reveal, known = q => !reveal || M.roomRevealed(reveal, q), nodeKnown = n => !reveal || S.nodeKnown(n, reveal);
+  const grand = model.grand, gs = grand ? GR.rooms(model, r) : { span: 1, scale: null, at: null };
+  const lv = lay.levels.find(l => l.rooms.includes(r)) || lay.levels[0], st = model.rings;
+  const lvH = l => (l && l.h) || (l && l.lvl < 0 ? 13 : 14), T = grand ? GR.SEC_SLAB : 0.9;
+  const palazzo = !!(grand && grand.style === "palazzo");
+  // the height: its storey; a double-height room both storeys (when this copy knows the void above); a service room low
+  const up = lay.levels.find(l => l.lvl === lv.lvl + 1 && !l.ground) || null;
+  const vAbove = gs.span === 2 && up ? (up.voids || []).find(v => v.span === r) : null;
+  const dbl = !!(vAbove && nodeKnown(vAbove));
+  const H0 = lvH(lv), Hc = dbl ? H0 + T + lvH(up) : H0;
+  // the page: a title strip at the top, the set under it
+  const { DW, DH, fpx } = pg, m = Math.max(1.4 * fpx, DW * 0.018), tH = Math.max(fpx * 4.4, DH * 0.13);
+  const aw = DW - 2 * m, ah = DH - tH - m;
+  const wt = palazzo ? 1.3 : 0.9;
+  // a way in through the roof or the floor needs headroom for its arrow and tag
+  const ways = (lay.entries || []).filter(e => e.room === r && !(reveal && /can't be known/.test((e.vec && e.vec.know) || "")));
+  const above = ways.some(e => e.from === "above"), below = ways.some(e => e.from === "below");
+  let cs = ah / (Hc + 2 * T + 1.2);
+  const k0 = () => (fpx / cs) / 1.3;
+  const head = () => (above ? 9 * k0() + 5 * fpx / cs : 0.6), foot = () => (below ? 9 * k0() + 5 * fpx / cs : 0.6);
+  for (let i = 0; i < 3; i++) cs = ah / (Hc + 2 * T + head() + foot());
+  let totW = aw / cs;
+  const SL = Math.max(4.5, Math.min(14, totW * 0.075));
+  let SW = totW - 2 * (SL + wt);
+  if (SW < 16) { SW = 16; cs = Math.min(cs, aw / (SW + 2 * (SL + wt))); }
+  const ft = { u: 1 / cs, fu: fpx / cs };
+  const topY = -(Hc + T + head()), botY = T + foot();
+  const Ls = { site: [], floors: [], furn: [], crowd: [], walls: [], doors: [], game: [], people: [], light: [], labels: [], entries: [] };
+  const ty = S.type({ type: th0.type });
+  const tagS = ft.fu * 1.25;
+  // Words are set in a finer unit than the set's feet (q feet each, 8 page px), so the themes' letter-spacing, which is in
+  // drawing units, keeps the proportion it has on the map. Every word group is wrapped in scale(q).
+  const q = 8 / cs, LSft = (ty.labelLS || 0) * q;
+  const local = (kids, cls) => P.g(kids, { tf: { s: q }, cls });
+  const tag = (x, y, text, anchor, o2 = {}) => {
+    // a word on a paper tag, its type never under the floor; anchor start | end | middle at (x, y = the tag's top), in feet
+    const s = (o2.size || tagS) / q, cls = ty.label, ls = o2.fg === "ov-skip-tagtext" ? 0 : (ty.labelLS || 0), lines = o2.lines || [text], pad = 0.35 * s;
+    const tw = Math.max(...lines.map(l => M.textW(l, s, cls, ls))), aw2 = o2.arrow ? s * 1.3 : 0, w = tw + 2 * pad + aw2, h = lines.length * s * 1.12 + 1.6 * pad;
+    const X0 = x / q, Y0 = y / q, x0 = anchor === "start" ? X0 : anchor === "end" ? X0 - w : X0 - w / 2, kids = [P.rect(o2.bg || "label-bg", x0, Y0, w, h, { rx: s * 0.2 })];
+    let tx = x0 + pad;
+    if (o2.arrow) {
+      const ax = o2.arrow < 0 ? x0 + pad + s * 0.45 : x0 + w - pad - s * 0.45, ay = Y0 + h / 2, a = s * 0.42 * (o2.arrow < 0 ? -1 : 1);
+      kids.push(P.poly("rm-arrow", [[ax + a, ay], [ax - a, ay - s * 0.4], [ax - a, ay + s * 0.4]]));
+      if (o2.arrow < 0) tx += aw2;
+    }
+    lines.forEach((l, i) => kids.push(P.text(o2.fg || "label", tx, Y0 + pad * 0.8 + s * (0.86 + 1.12 * i), l, { size: s, anchor: "start" })));
+    if (o2.icon) kids.push(M.icon(o2.icon[0], x0 - s * 1.0, Y0 + h / 2, s * 1.3, o2.icon[1]));
+    return { g: local(kids, o2.cls || "rm-tag"), w: w * q, h: h * q, x0: x0 * q };
+  };
+
+  // --- the shell: back wall, ceiling, floor ---
+  const band = r.band;
+  Ls.floors.push(P.rect("floor-" + band, 0, -Hc, SW, Hc, { data: { band } }));
+  if (band === "secure") Ls.floors.push(local([P.rect("floor-tone", 0, -Hc / q, SW / q, Hc / q)], "rm-tone"));
+  if (gm && r.isTarget) Ls.floors.push(P.rect("ov-target-area", 0, -Hc, SW, Hc));
+  Ls.walls.push(P.rect("slab-sec", -wt - 0.4, -Hc - T, SW + 2 * wt + 0.8, T), P.rect("slab-sec", -wt - 0.4, 0, SW + 2 * wt + 0.8, T));
+  if (palazzo && !up) Ls.walls.push(P.rect("cornice", -wt - 1.2, -Hc - T - 0.7, SW + 2 * wt + 2.4, 0.7));
+  const backOpen = [], dress = [];
+  const lvl = lv.lvl, under = lvl < 0, hk = dbl ? H0 : Hc;
+  // --- ways out: doors to the rooms next door, the core, a passage ---
+  const posOf = RM.positions(lay, model, lv), myX = posOf(r), exits = [], seen = new Set();
+  for (const d of lv.doors || []) {
+    if (d.ext || !(d.a === r || d.b === r)) continue;
+    const o2 = d.a === r ? d.b : d.a;
+    if (!o2 || seen.has(o2)) continue;
+    seen.add(o2);
+    if (d.kind === "secret" && !gm) continue;                              // a secret door is never in the player copy
+    exits.push({ node: o2, kind: d.kind, x: o2 === "hub" ? myX + 0.01 : posOf(o2) });
+  }
+  const ringAbove = dbl && vAbove.ring ? vAbove.ring : null;
+  exits.sort((p, q) => p.x - q.x);
+  const lefts = exits.filter(e => e.x < myX), rights = exits.filter(e => e.x >= myX);
+  // a facade way in takes a wing first (the front the left, where the section puts the street); the rooms next door the
+  // wings left free, the rest the back wall [interpretation]
+  const side = ways.filter(e => !(e.from === "above" || e.from === "below"));
+  const wayAt = new Map();
+  for (const e of side) {
+    const pref = e.kind === "front" || e.side === "left" || e.side === "bottom" ? ["L", "R"] : ["R", "L"];
+    wayAt.set(e, pref.find(s => ![...wayAt.values()].includes(s)) || "B");
+  }
+  const taken = new Set(wayAt.values());
+  const wing = { L: lefts.length && !taken.has("L") ? lefts[lefts.length - 1] : null, R: rights.length && !taken.has("R") ? rights[0] : null };
+  const back = exits.filter(e => e !== wing.L && e !== wing.R);
+  const nB = back.length + side.filter(e => wayAt.get(e) === "B").length;
+  const bx = i => SW * (i + 1) / (nB + 1);                                 // back-wall doors, spread along it in order [interpretation]
+  const isRoom = n => n && n !== "hub" && !n.kind;
+  const openTo = n => !isRoom(n) || known(n);
+  const floorRole = n => isRoom(n) ? "floor-" + n.band : "floor-corridor";
+  const name = n => n === "hub" ? "THE HUB" : n.kind === "core" ? null : !isRoom(n) ? "PASSAGE" : known(n) ? String(n.name).toUpperCase() : null;
+  const stairWords = () => {
+    const ups = lay.levels.some(l => l.lvl > lvl && !l.ground), downs = lay.levels.some(l => l.lvl < lvl && !l.ground);
+    return ups && downs ? "STAIRS UP AND DOWN" : ups ? "STAIRS UP" : downs ? "STAIRS DOWN" : "STAIRS";
+  };
+  const doorH = 7.2;
+  // the wings: a partition with a door to the sliver of the room next door, or the outer wall
+  const sliverX = s => s === "L" ? -wt - SL : SW + wt;
+  for (const s of ["L", "R"]) {
+    const e = wing[s], x = s === "L" ? -wt : SW, way = side.find(q => wayAt.get(q) === s);
+    if (e) {
+      const n = e.node, open = openTo(n);
+      // the sliver: a strip of the next room's floor colour, or a plain strip for one this copy does not know
+      Ls.site.push(P.rect(open ? floorRole(n) : "rm-sliver", sliverX(s), -Hc, SL, Hc));
+      if (!open) Ls.doors.push(P.rect("door-leaf-sec", x + 0.05, -doorH, wt - 0.1, doorH));
+      else if (e.kind === "vault") Ls.doors.push(P.circle("door-vault", x + wt / 2, -doorH / 2, 3.2));
+      else if (e.kind === "curtain") for (let yy = -doorH + 0.4; yy < -0.3; yy += 0.7) Ls.doors.push(P.circle("door-curtain", x + wt / 2, yy, 0.2));
+      else if (e.kind === "secret") Ls.doors.push(P.line("door-secret", x + wt / 2, -doorH, x + wt / 2, 0, { sw: 0.4 }));
+      if (n && n.kind === "core") { const st2 = [], nS = 9, x0 = sliverX(s); for (let i = 0; i < nS; i++) { const sx2 = s === "L" ? x0 + SL - (i + 1) * SL / nS : x0 + i * SL / nS; st2.push(P.rect("fx2", sx2, -(i + 1) * doorH / nS, SL / nS + 0.02, (i + 1) * doorH / nS)); } Ls.furn.push(P.g(st2, { cls: "furniture fx-stairs", opacity: 0.9 })); }
+    }
+    const gap = !!(e || way);
+    Ls.walls.push(P.rect("slab-sec", x, -Hc, wt, gap ? Hc - doorH : Hc));
+    if (!e && way) Ls.doors.push(P.rect("door-gap", x, -doorH, wt, doorH));
+    // an outside wall: a palazzo's arched window in it, as the section draws one [interpretation]
+    if (!e && !way && palazzo && !under) Ls.walls.push(P.path("arch-glass", `M${x} ${-hk * 0.2} L${x} ${-hk * 0.66} A${wt / 2} 1.2 0 0 1 ${x + wt} ${-hk * 0.66} L${x + wt} ${-hk * 0.2} Z`, { opacity: 0.6 }));
+  }
+  // the back wall's doors: a doorway showing the next room's colour (or the stairs), or a closed door to a room this copy does not know
+  let bi = 0;
+  const backDoor = [], backWays = [];
+  for (const e of back) {
+    const cx = bx(bi++), n = e.node, w = n && n.kind === "core" ? 5.2 : 4.2, x0 = cx - w / 2, x1 = cx + w / 2, open = openTo(n), kids = [P.rect("door-gap", x0, -doorH, w, doorH)];
+    if (open) {
+      kids.push(P.rect(floorRole(n), x0 + 0.25, -doorH + 0.25, w - 0.5, doorH - 0.25, { opacity: 0.9 }));
+      if (n && n.kind === "core") for (let i = 0, nS = 8; i < nS; i++) kids.push(P.rect("fx2", x0 + 0.25 + i * (w - 0.5) / nS, -(i + 1) * (doorH - 0.6) / nS, (w - 0.5) / nS + 0.02, (i + 1) * (doorH - 0.6) / nS, { opacity: 0.9 }));
+      if (e.kind === "vault") kids.push(P.circle("door-vault", cx, -doorH / 2, Math.min(w, doorH) * 0.44));
+      if (e.kind === "curtain") for (let xx = x0 + 0.5; xx < x1 - 0.3; xx += 0.9) for (let yy = -doorH + 0.5; yy < -0.3; yy += 0.9) kids.push(P.circle("door-curtain", xx, yy, 0.11));
+      if (e.kind === "secret") kids.push(P.line("door-secret", x0, -doorH, x0, 0, { sw: 0.3 }), P.line("door-secret", x1, -doorH, x1, 0, { sw: 0.3 }), P.line("door-secret", x0, -doorH, x1, -doorH, { sw: 0.3 }));
+    } else kids.push(P.rect("door-leaf-sec", x0 + 0.2, -doorH + 0.2, w - 0.4, doorH - 0.2), P.circle("fx3", x1 - 0.7, -3.4, 0.22));
+    Ls.doors.push(P.g(kids, { cls: "rm-door" }));
+    backOpen.push([x0 - 1, x1 + 1]);
+    backDoor.push({ e, cx, w });
+  }
+  for (const e of side) if (wayAt.get(e) === "B") { const cx = bx(bi++); Ls.doors.push(P.rect("door-gap", cx - 2, -doorH, 4, doorH)); backOpen.push([cx - 3, cx + 3]); backWays.push({ e, cx }); }
+
+  // windows and the printed style on the back wall [interpretation]
+  const clearOf = (a, b) => !backOpen.some(([p, q]) => b > p && a < q);
+  if (palazzo && gs.scale === "grand" && !under) {
+    const zb = -hk * 0.12, zt = -hk + hk * 0.3, rw = Math.min(2.2, hk * 0.09), BAY = Math.max(9, Math.min(14, SW / 6));
+    if (dbl) { const zb2 = -(H0 + T) - 4.2, zt2 = -Hc + 2.2, rw2 = Math.min(1.8, rw); for (let x = BAY / 2; x <= SW - 2; x += BAY) dress.push(P.path("arch-glass", `M${G.round(x - rw2)} ${G.round(zb2)} L${G.round(x - rw2)} ${G.round(zt2 + rw2)} A${rw2} ${rw2} 0 0 1 ${G.round(x + rw2)} ${G.round(zt2 + rw2)} L${G.round(x + rw2)} ${G.round(zb2)} Z`, { opacity: 0.7 })); }
+    for (let x = BAY / 2; x <= SW - 2; x += BAY) if (clearOf(x - rw, x + rw)) dress.push(P.path("arch-glass", `M${G.round(x - rw)} ${G.round(zb)} L${G.round(x - rw)} ${G.round(zt + rw)} A${rw} ${rw} 0 0 1 ${G.round(x + rw)} ${G.round(zt + rw)} L${G.round(x + rw)} ${G.round(zb)} Z`, { opacity: 0.45 }));
+  } else if (!under && st === "glazed") {
+    const y0 = -Hc + 1.6, y1 = -3;
+    for (let x = 1; x < SW - 5; x += 5.5) if (clearOf(x, x + 4.6)) dress.push(P.rect("arch-glass", x, y0, 4.6, y1 - y0, { opacity: 0.4 }));
+  } else if (!under && gs.scale !== "service" && !(model.open)) {
+    const ww = 3.4, wy = -Hc + Math.max(2, Hc * 0.22), wh = Math.min(5, Hc * 0.32);
+    for (const x of [SW * 0.25, SW * 0.75]) if (clearOf(x - ww / 2, x + ww / 2)) dress.push(P.rect("arch-glass", x - ww / 2, wy, ww, wh, { opacity: 0.4 }));
+  }
+  if (st === "blurred") for (let y = -Hc + 1.3; y < -0.4; y += 1.3) dress.push(P.line("rustic", 0, y, SW, y, { sw: 0.08 }));
+  if (st === "hard") for (let y = -Hc + 2.5; y < -0.4; y += 2.5) dress.push(P.line("rustic", 0, y, SW, y, { sw: 0.06 }));
+  if (gs.scale === "service") { const yc = -Hc + Hc * 0.28; Ls.walls.push(P.rect("slab-sec", 0, yc - 0.35, SW, 0.35), P.line("drop-ceiling", 0.4, yc + 1.2, SW - 0.4, yc + 1.2, { sw: 0.2 })); }     // a service room: low, under a dropped ceiling (the section's)
+  else if (st === "spine") Ls.walls.push(P.line("drop-ceiling", 0.4, -Hc + 1.8, SW - 0.4, -Hc + 1.8, { sw: 0.2 }));
+  if (palazzo && lvl === 0) for (let y = -2; y > -H0; y -= 2) Ls.walls.push(P.line("rustic", -wt, y, 0, y, { sw: 0.1 }), P.line("rustic", SW, y, SW + wt, y, { sw: 0.1 }));
+  if (dress.length) Ls.floors.push(P.g(dress, { cls: "fx-arches" }));
+  const glass = dress.filter(p => p.r === "arch-glass");
+  if (X.night && glass.length) Ls.floors.push(P.g(glass.map(p => Object.assign({}, p, { r: "rm-night-glass", opacity: undefined })), { cls: "rm-night" }));
+
+  // the gallery round the void, seen across it (a double-height room with a ring above) [interpretation]
+  if (dbl) {
+    const yG = -(H0 + T), gw = Math.max(3, Math.min(SW * 0.14, 9)), rk = ringAbove && known(ringAbove);
+    if (ringAbove) for (const [a, b] of [[0, gw], [SW - gw, SW]]) {
+      Ls.floors.push(P.rect(rk ? "floor-" + ringAbove.band : "rm-sliver", a, -Hc, b - a, Hc - (H0 + T)));
+      Ls.walls.push(P.rect("slab-sec", a, yG, b - a, T));
+    }
+    const hR = 3.4, kids = [P.rect("fx3", 0, yG - hR, SW, 0.35), P.rect("fx3", 0, yG - 0.35, SW, 0.35)];
+    for (let x = 0.7; x < SW - 0.3; x += 1.8) kids.push(P.rect("fx3", x, yG - hR + 0.35, 0.36, hR - 0.7, { rx: 0.15 }));
+    Ls.furn.push(P.g(kids, { cls: "furniture fx-rail", opacity: 0.85 }));
+  }
+
+  // --- furniture: the room's own recipe, from its own size, laid along the set ---
+  const at = gs.at || null;
+  let fw, fh;
+  if (at) { fw = Math.max(at[2], at[3]); fh = Math.min(at[2], at[3]); }
+  else { const A = r.w * 260; fw = Math.sqrt(A * 1.4); fh = A / fw; }
+  const R = { x: -fw / 2 + 1.2, y: -fh / 2 + 1.2, w: Math.max(1, fw - 2.4), h: Math.max(1, fh - 2.4) };
+  const recipe = M.own(M.ARCH, r.arch);
+  let pls = recipe ? recipe(R, X.rng.fork(r.name)).flat().filter(p => p && !p.skip) : [];
+  pls = pls.concat(M.circulationParts(r)(R)).filter(p => p.part !== "stairs-grand");
+  pls.sort((p, q) => p.y - q.y);
+  // spread over the room's own width, centred, when the stage is wider [interpretation]
+  const spanW = Math.min(SW - 2.4, Math.max(fw * 1.15, SW * 0.7)), sx0 = (SW - spanW) / 2;
+  const kidsF = [], used = [], props = [];
+  for (const pl of pls) {
+    const fn = pl.part === "pool" || pl.part === "water" ? (w => [P.rect("fxw", -w / 2, -0.45, w, 0.45), P.rect("fxl", -w / 2 - 0.4, -0.6, w + 0.8, 0.2)]) : M.own(SIDE, pl.part); if (!fn) continue;
+    const fx = sx0 + (pl.x - R.x) / (R.w || 1) * spanW, pw = Math.min(pl.w || (M.own(M.PARTS, pl.part) ? M.own(M.PARTS, pl.part).size[0] : 3), SW - 2.4);
+    if (used.some(q => q.part === pl.part && Math.abs(q.x - fx) < pw * 0.7)) continue;
+    used.push({ part: pl.part, x: fx });
+    const backP = (pl.y - R.y) / (R.h || 1) < 0.35;
+    // a piece that hangs from a 14 ft ceiling hangs from this one
+    const hang = pl.part === "chandelier" || pl.part === "pipe-run";
+    kidsF.push(P.g(fn(pw), { tf: { x: fx, y: hang ? -Hc + 14 : 0 }, opacity: backP ? 0.55 : pl.opacity, cls: "fx-" + pl.part }));
+    props.push({ x: fx, w: pw, part: pl.part });
+  }
+  if (kidsF.length) Ls.furn.push(P.g(kidsF, { cls: "furniture" }));
+  if (r.grandStair) Ls.furn.push(GR.secStair(SW * 0.3, SW * 0.7, 0, -Hc - T, 1));
+  // a grand room's chandelier (the section's), lit bright
+  const chand = [];
+  if (gs.scale === "grand" && !r.grandStair) {
+    const cx = SW / 2, s = dbl ? 1.5 : 1.2, drop = dbl ? (Hc - H0) * 0.72 : 2.5;
+    Ls.furn.push(GR.secChandelier(cx, -Hc, drop, s));
+    chand.push([cx, -Hc + drop + 1.6 * s, s]);
+  }
+
+  // --- the light: dark, lit, bright [interpretation: how each looks] ---
+  if (X.light === "dark") Ls.light.push(P.rect("rm-dark", -wt, -Hc - T, SW + 2 * wt, Hc + 2 * T));
+  if (X.light === "bright") {
+    Ls.light.push(P.rect("rm-bright", 0, -Hc, SW, Hc));
+    const glows = chand.length ? chand : [[SW * 0.3, -Hc * 0.8, 1], [SW * 0.7, -Hc * 0.8, 1]];
+    for (const [x, y, s] of glows) for (const rr of [9, 6, 3.6]) Ls.light.push(P.circle("rm-glow", x, y, rr * s * (dbl ? 1 : 0.8)));
+  }
+
+  // --- labels: the ways out, named ---
+  const yTag = -doorH - 1.0 - tagS * 1.6;
+  for (const s of ["L", "R"]) {
+    const e = wing[s]; if (!e) continue;
+    const n = e.node, words = n && n.kind === "core" ? stairWords() : name(n);
+    if (!words) continue;                                                // an unknown neighbour: an unnamed door
+    const lines = M.textW(words, tagS, ty.label, LSft) + 2.5 * tagS > SW * 0.42 + SL ? M.splitEven(words, 2, tagS, ty.label, LSft) : [words];
+    Ls.labels.push(tag(s === "L" ? sliverX("L") + 0.3 : SW + wt + SL - 0.3, yTag - (lines.length - 1) * tagS * 1.12, words, s === "L" ? "start" : "end", { arrow: s === "L" ? -1 : 1, lines }).g);
+  }
+  for (const b of backDoor) {
+    const n = b.e.node, words = n && n.kind === "core" ? stairWords() : name(n);
+    if (!words) continue;
+    const lines = M.textW(words, tagS, ty.label, LSft) > Math.max(SW / (nB + 1) - tagS, 6) ? M.splitEven(words, 2, tagS, ty.label, LSft) : [words];
+    Ls.labels.push(tag(b.cx, -doorH - 0.5 - lines.length * tagS * 1.12 - tagS * 0.6, words, "middle", { lines }).g);
+  }
+  let gy = -Hc + 0.6;
+  const topTag = words => { const t = tag(SW - 0.6, gy, words, "end"); Ls.labels.push(t.g); gy += t.h + tagS * 0.35; };
+  if (ringAbove && known(ringAbove)) topTag(`${String(ringAbove.name).toUpperCase()}: THE GALLERY ABOVE`);
+  if (r.grandStair) { const tl = (lay.levels.find(l => l.lvl === r.grandStair.to) || {}).title; topTag(`GRAND STAIR UP${tl ? " TO " + String(tl).toUpperCase() : ""}`); }
+
+  // --- the GM's layer: the target, the lock here and its answer, threats, the routes that skip floors ---
+  const gmStack = [];
+  if (gm) {
+    const tgt = model.rooms.find(q => q.isTarget), td = tgt ? M.BANDS.indexOf(tgt.band) : 3;
+    if (r.isTarget) gmStack.push(["star", "ov-target", `THE TARGET${model.targetWhat ? ": " + String(model.targetWhat).toUpperCase() : ""}`]);
+    if (r.obstacle) gmStack.push([M.obstacleIcon(r.obstacle), "ov-lock", String(r.obstacle).toUpperCase()]);
+    if (r.holdsAnswerTo) gmStack.push(["key", "ov-pair", `ANSWERS: ${String(r.holdsAnswerTo).toUpperCase()}`]);
+    if (r.loot && r.featured) gmStack.push(["loot", "ov-loot", String(r.loot).toUpperCase()]);
+    if (model.soc && model.rooms.filter(q => M.BANDS.indexOf(q.band) === Math.max(0, td - 1)).slice(0, 2).includes(r)) gmStack.push(["social", "ov-soc", `SOCIAL THREAT: ${String(model.soc.name).toUpperCase()}`]);
+    if (model.phys && model.rooms.filter(q => q.isTarget || q.band === "controlled").slice(0, 2).includes(r)) gmStack.push(["guard", "ov-phys", `PHYSICAL THREAT: ${String(model.phys.name).toUpperCase()}`]);
+    const byName = n => model.rooms.find(q => q.name === n);
+    for (const s of model.skips) {
+      const a = byName(s.from), b = byName(s.to);
+      if (!a || !b || (a !== r && b !== r) || a === b) continue;
+      const o3 = a === r ? b : a, dir = o3.lvl > r.lvl ? "↑" : o3.lvl < r.lvl ? "↓" : "↔";
+      gmStack.push([null, "ov-skip", `${dir} ${a === r ? "TO" : "FROM"} ${String(o3.name).toUpperCase()}: ${String(s.via || "").toUpperCase()}`]);
+    }
+  }
+  // the GM's notes stand at the back wall's upper left, under the ceiling, a tag each [interpretation]
+  const ik = tagS * 1.25;
+  let gy2 = -Hc + 0.6;
+  for (const [ic, role, words] of gmStack) {
+    const maxW = SW * 0.45, lines = M.textW(words, tagS, ty.label, LSft) > maxW ? M.wrapW(words, maxW, tagS, ty.label, LSft) : [words];
+    const x0 = 0.6 + (ic ? ik * 1.25 : 0);
+    const t = tag(x0, gy2, words, "start", role === "ov-skip" ? { lines, bg: "ov-skip-tag", fg: "ov-skip-tagtext" } : { lines, icon: ic ? [ic, role] : null });
+    Ls.game.push(t.g);
+    gy2 += t.h + tagS * 0.35;
+  }
+
+  // --- ways in that land here: the door (or the hatch) and its tag ---
+  const fake = [];
+  for (const e of ways) {
+    const sealed = !!reveal && e.kind === "back" && M.vecHidden(e.vec || {});
+    if (sealed) continue;
+    let x, y, dir;
+    if (e.from === "above") {
+      x = e.means === "skylight" ? SW / 2 : SW * 0.12; y = -Hc - T; dir = [0, -1];
+      Ls.doors.push(e.means === "skylight" ? P.rect("skylight-sec", x - 3, -Hc - T - 0.2, 6, T + 0.4) : P.rect("door-gap", x - 1.3, -Hc - T - 0.1, 2.6, T + 0.2));
+      if (e.means !== "skylight") Ls.furn.push(P.g(sv.ladder(Hc), { tf: { x, y: 0 }, cls: "furniture fx-roof-hatch" }));
+    } else if (e.from === "below") {
+      x = SW * 0.88; y = T; dir = [0, 1];
+      Ls.doors.push(P.rect("door-gap", x - 1.3, -0.1, 2.6, T + 0.2));
+    } else {
+      const s = wayAt.get(e);
+      if (s === "L") { x = -wt; y = -3.6; dir = [-1, 0]; }
+      else if (s === "R") { x = SW + wt; y = -3.6; dir = [1, 0]; }
+      else { const b = backWays.find(q => q.e === e); x = b ? b.cx : SW / 2; y = -doorH; dir = [0, -1]; }
+    }
+    fake.push({ vec: e.vec || {}, kind: e.kind, level: "room", x: x / q, y: y / q, dir, from: e.from, zs: dir[1] ? null : dir[0] < 0 ? "L" : "R" });
+  }
+  // a way in at the side has the strip between its wall and the page’s edge: the sliver, the page’s margin and any slack (S.entries, sideZone)
+  const edgeFt = SL + (m + Math.max(0, (aw - (SW + 2 * (SL + wt)) * cs) / 2)) / cs - 1.2 * ft.fu;
+  const sideZone = e => e.zs === "L" ? [(-wt - edgeFt) / q, (-wt - 0.2) / q] : e.zs === "R" ? [(SW + wt + 0.2) / q, (SW + wt + edgeFt) / q] : null;
+  const ctxE = { k: k0() / q, opts, floorU: ft.fu / q, type: th0.type, drawn: null, sideZone, toScreen: (l, x, y) => [x, y], dirScreen: d => { const l = Math.hypot(d[0], d[1]) || 1; return [d[0] / l, d[1] / l]; } };
+  if (fake.length) Ls.entries.push(local(S.entries({ entries: fake }, ctxE), "rm-ways"));
+
+  // --- people ---
+  const drawn = RM.people(r, model, opts, W, Ls, { SW, Hc, T, ft, light: X.light, night: X.night, tagS, ty, q, sid: X.sid, rng: X.rng.fork("people:" + r.name), cs, reveal });
+  return { Ls, SW, SL, wt, Hc, T, topY, botY, cs, m, tH, ft, drawn, lv };
+};
+
+// Where each room and node stands left to right, as the section puts them: the grand section's cells, or the plan's x.
+RM.positions = function (lay, model, lv) {
+  if (model.grand) {
+    const rows = GR.secRows(lay, model), row = rows.find(q => q.lv === lv), at = new Map();
+    if (row) for (const c of row.cells) { const n = c.n; if (n && !at.has(n)) at.set(n, (c.a + c.b) / 2); }
+    return n => at.has(n) ? at.get(n) : n && n.frame ? n.frame.cx : 0;
+  }
+  return n => n && n.frame ? n.frame.cx : n && n.rect ? n.rect.x + n.rect.w / 2 : 0;
+};
+
+// --- People -------------------------------------------------------------------------------
+// M.people.resolve gives who is where; this view draws the people of its room. Marked people stand in front, drawn with the
+// figure kit's render (or a raster the app made: image { href, width, height[, viewBox] }); the crowd behind, a little smaller
+// and quieter, drawn with kit.mini scaled up (vector and small). [interpretation: where each stands, the crowd's size and tone]
+RM.people = function (r, model, opts, W, Ls, X) {
+  if (X.reveal && !M.roomRevealed(X.reveal, r)) return [];
+  let list = [];
+  try { list = M.people && typeof M.people.resolve === "function" ? (M.people.resolve(model, opts, W) || []) : []; }
+  catch (e) { M.warn(W, `people could not be placed: ${e.message}`); list = []; }
+  if (!Array.isArray(list)) list = [];
+  list = list.filter(p => p && typeof p === "object" && p.room === r.name);
+  if (!list.length) return [];
+  const kit = opts.figures && opts.figures.kit;
+  const okImg = p => !!p.image && typeof p.image.href === "string" && /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(p.image.href) && +p.image.width > 0 && +p.image.height > 0;
+  const marked = list.filter(p => !p.crowd), crowd = list.filter(p => p.crowd);
+  for (const p of marked) if (p.image && !okImg(p)) M.warn(W, `a person's image needs a data:image/ URL with its width and height — drawn from the spec`);
+  const hasKit = !!kit && typeof kit.render === "function";
+  if (!hasKit && (crowd.length || marked.some(p => !okImg(p)))) M.warn(W, "people need figures: { kit } (the figure kit) — left out");
+  const { SW, ft, cs } = X, drawn = [];
+  const lightFor = X.light === "dark" ? "night" : X.light === "bright" ? { time: "bluetime", keyColor: "#f4c870" } : X.night ? "night" : "bluetime";
+  const hIn = p => (p.spec && +p.spec.heightIn > 30 && +p.spec.heightIn < 100 ? +p.spec.heightIn : 68);
+  // the crowd first (behind): kit.mini scaled up, spread across the floor, seeded
+  const nC = crowd.length;
+  if (hasKit) crowd.forEach((p, i) => {
+    const x = SW * (0.05 + 0.9 * (i + 0.5) / nC) + X.rng.range(-0.3, 0.3) * SW / nC * 0.5, hf = 5.667 * 0.9, y = -0.5;
+    let svg = "";
+    if (typeof kit.mini === "function" && p.spec) {
+      try { const mm = kit.mini(p.spec, { height: 64, light: lightFor, tone: "crowd" }); if (mm && mm.inner) svg = `<g transform="translate(${G.round(x)} ${y}) scale(${(hf / 64).toFixed(5)})" opacity="0.85">${mm.inner}</g>`; }
+      catch (e) { M.warn(W, `a crowd figure failed to draw: ${e.message}`); }
+    }
+    if (svg) Ls.crowd.push(P.raw(svg));
+    else Ls.crowd.push(P.g(sv.person("rm-crowd"), { tf: { x, y, s: hf / 5.95 }, cls: "rm-crowd" }));      // no mini yet: a quiet silhouette
+    drawn.push({ room: r.name, mark: null, x, y, h: hf, crowd: true });
+  });
+  // the marked people in front, evenly along the floor [interpretation]
+  const n = marked.length, gapW = SW / (n + 1);
+  marked.forEach((p, i) => {
+    const x = SW * (i + 1) / (n + 1), hf = hIn(p) / 12;
+    let svg = "";
+    if (okImg(p)) {
+      const im = p.image, vb = Array.isArray(im.viewBox) && im.viewBox.length === 4 && im.viewBox.every(v => Number.isFinite(+v)) ? im.viewBox.map(v => +v / RM.FT) : null;
+      // with the render's viewBox (kit units) it lands exactly; without, it stands on the floor at the person's height
+      const [bx0, by0, bw, bh] = vb || (() => { const h = hf * 1.08, w = h * im.width / im.height; return [-w / 2, -h, w, h]; })();
+      svg = `<image href="${M.esc(im.href)}" x="${G.round(x + bx0)}" y="${G.round(by0)}" width="${G.round(bw)}" height="${G.round(bh)}" preserveAspectRatio="xMidYMax meet"/>`;
+    } else if (hasKit && p.spec) {
+      try {
+        const fr = kit.render(p.spec, { height: Math.round(hf * 1.06 * cs), light: lightFor, suffix: "-" + X.sid + "-" + i });
+        if (fr && fr.inner) svg = `<g transform="translate(${G.round(x)} 0) scale(${(1 / RM.FT).toFixed(6)})">${fr.inner}</g>`;
+      } catch (e) { M.warn(W, `a figure failed to draw: ${e.message}`); }
+    }
+    if (!svg) return;
+    Ls.people.push(P.raw(svg));
+    // the mark (a letter on a disc) and the label (only when given, and only where it fits), as one chip at the feet, on the floor
+    const tone = RM.TONES.includes(p.tone) ? p.tone : p.mark ? "staff" : "crowd";
+    const q = X.q, s = ft.fu * 1.2 / q, rr = s * 0.8, cy = rr * 0.6, xl = x / q, mk = p.mark ? String(p.mark).slice(0, 2).toUpperCase() : "";
+    const t = p.label ? String(p.label).toUpperCase() : "", tw = t ? M.textW(t, s, X.ty.label, X.ty.labelLS || 0) : 0;
+    const full = (mk ? 2 * rr + 0.3 * s : 0) + (t ? tw + 0.7 * s : 0), withLabel = !!t && full * q <= gapW * 0.96;
+    const kids = [];
+    if (withLabel) {
+      const x0 = xl - full / 2;
+      kids.push(P.rect("label-bg", x0 - (mk ? 0.1 * s : 0), cy - s * 0.7, full + (mk ? 0.1 * s : 0), s * 1.4, { rx: s * 0.7 }));
+      kids.push(P.text("label", x0 + (mk ? 2 * rr + 0.3 * s : 0.35 * s), cy + s * 0.35, t, { size: s, anchor: "start" }));
+      if (mk) kids.push(P.circle("rm-mark-" + tone, x0 + rr, cy, rr), P.text("rm-mark-text", x0 + rr, cy + s * 0.36, mk, { size: s * 0.9 }));
+    } else if (mk) kids.push(P.circle("rm-mark-" + tone, xl, cy, rr), P.text("rm-mark-text", xl, cy + s * 0.36, mk, { size: s * 0.9 }));
+    if (kids.length) Ls.labels.push(P.g(kids, { tf: { s: q }, cls: "rm-mark" }));
+    drawn.push({ room: r.name, mark: p.mark || null, x, y: 0, h: hf });
+  });
+  return drawn;
+};
+
+// --- A room this copy does not know: a closed door on a blank wall, and nothing else ---------------
+RM.closed = function (pg) {
+  const { DW, DH, fpx } = pg, m = Math.max(1.4 * fpx, DW * 0.018), tH = Math.max(fpx * 4.4, DH * 0.13);
+  const aw = DW - 2 * m, ah = DH - tH - m, Hc = 14, cs = ah / (Hc + 3), SW = aw / cs - 2;
+  const Ls = { site: [], floors: [], furn: [], crowd: [], walls: [], doors: [], game: [], people: [], light: [], labels: [], entries: [] };
+  Ls.floors.push(P.rect("rm-sliver", 0, -Hc, SW, Hc));
+  Ls.walls.push(P.rect("slab-sec", -1, 0, SW + 2, 0.9));
+  Ls.doors.push(P.rect("door-gap", SW / 2 - 2.4, -7.6, 4.8, 7.6), P.rect("door-leaf-sec", SW / 2 - 2, -7.2, 4, 7.2), P.circle("fx3", SW / 2 + 1.3, -3.5, 0.25));
+  return { Ls, SW, SL: 0, wt: 1, Hc, T: 0.9, topY: -Hc - 1.5, botY: 1.5, cs, m, tH, ft: { u: 1 / cs, fu: fpx / cs }, drawn: [], closed: true };
+};
+
+// --- The page: the title strip and the set ---------------------------------------------------
+RM.compose = function (set, th, pg, opts, id, model, r) {
+  const { DW, DH, fpx, width } = pg, { Ls, SW, SL, wt, topY, botY, cs, m, tH } = set;
+  const totW = SW + 2 * (SL + wt), ox = m + (DW - 2 * m - totW * cs) / 2 + (SL + wt) * cs;
+  const usedH = (botY - topY) * cs, oy = tH + Math.max(0, (DH - tH - m - usedH) / 2) - topY * cs;
+  const scene = { _pxft: cs * width / DW };
+  const ser = (pcs, mode) => M.toSVG(pcs, { paint: th.paint, shadowColour: th.shadowColour }, mode);
+  const box = { x: -(SL + wt), y: topY, w: totW, h: botY - topY };
+  let body = th.background ? th.background(id, { PW: DW, PH: DH, box, cx: ox, cy: oy, k: 1, cs }) : "";
+  body += `<g class="map-drawing room-set" transform="translate(${ox.toFixed(2)} ${oy.toFixed(2)}) scale(${cs.toFixed(4)})"${th.contentFilter ? ` filter="url(#${id}-${th.contentFilter})"` : ""}>`;
+  body += ser(Ls.site) + ser(Ls.floors);
+  if (th.shadow) body += `<g transform="translate(${th.shadow[0]} ${th.shadow[1]})" opacity="${th.shadow[2]}">${ser(Ls.furn, "shadow")}</g>`;
+  body += ser(Ls.furn) + ser(Ls.crowd);
+  for (const pass of th.wallPasses || [null]) body += ser(Ls.walls, pass);
+  body += ser(Ls.doors) + ser(Ls.people) + ser(Ls.light) + `<g class="rm-game">${ser(Ls.game)}</g>` + ser(Ls.labels) + ser(Ls.entries);
+  body += "</g>";
+  // grain on the set, not the type
+  if (opts.grain !== false && th.grain) body += `<rect x="${(ox + box.x * cs).toFixed(2)}" y="${(oy + box.y * cs).toFixed(2)}" width="${(box.w * cs).toFixed(2)}" height="${(box.h * cs).toFixed(2)}" filter="url(#${id}-grain)" style="mix-blend-mode:${th.grainBlend || "multiply"}" opacity="${th.grain}" pointer-events="none"/>`;
+  // the title strip: the room's name large; its floor and the site's name small above it [interpretation: the strip's look]
+  const ty = S.type({ type: th.type });
+  const kick = r ? [set.lv && set.lv.title ? set.lv.title : null, model.name].filter(Boolean).join(" · ").toUpperCase() : String(model.name || "").toUpperCase();
+  const big = r ? String(r.name).toUpperCase() : "A CLOSED DOOR";
+  const ks = Math.max(fpx, tH * 0.2), bs0 = Math.max(fpx * 1.6, tH * 0.56);
+  const bs = Math.max(fpx, M.fitText(big, DW - 2 * m, bs0, ty.title || "poster", fpx));
+  const tl = [P.text("lg-kicker", m, m * 0.6 + ks * 0.9, kick, { size: ks, anchor: "start" }), P.text("lg-title", m, m * 0.6 + ks * 1.25 + bs * 0.86, big, { size: bs, anchor: "start" })];
+  body += `<g class="room-title">${ser(tl)}</g>`;
+  const title = `${model.name || "Map kit"}: ${opts.layer === "player" ? "player handout, " : ""}${r ? r.name : "a closed door"}`;
+  const desc = r ? `One room as a stage set: ${r.name}${set.lv && set.lv.title ? ", " + String(set.lv.title).toLowerCase() : ""}, its furniture, its ways out${set.drawn && set.drawn.length ? " and the people in it" : ""}.` : "A room the crew has not surveyed: a closed door.";
+  const lab = ` role="img" aria-labelledby="${id}-t ${id}-d"`, labIn = `<title id="${id}-t">${M.esc(title)}</title><desc id="${id}-d">${M.esc(desc)}</desc>`;
+  const H = Math.round(width * DH / DW);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" font-weight="400" font-style="normal" viewBox="0 0 ${DW.toFixed(2)} ${DH.toFixed(2)}" width="${width}" height="${H}" font-family='${M.FONTS.condensed}' data-map="${id}" data-view="room"${lab}>${labIn}<defs>${th.defs(id, scene)}</defs><rect width="100%" height="100%" fill="${th.page}"/>${body}</svg>`;
+  // where each person was drawn, in the file's own units
+  for (const d of set.drawn || []) { d.x = +(ox + d.x * cs).toFixed(1); d.y = +(oy + d.y * cs).toFixed(1); d.h = +(d.h * cs).toFixed(1); }
+  return { svg, width, height: H };
+};
+
 // ---- src/render.js ----
 // =============================================================================
 // render — the public API
@@ -7864,7 +9664,7 @@ GR.secStair = function (a, b, y1, y0, k) {
 //                  renders portraits itself (K.portrait(spec))
 //          grain   false switches texture off (faster in big batches, smaller PDFs)
 
-M.VIEWS = ["iso", "plan", "rings", "section", "street"];
+M.VIEWS = ["iso", "plan", "rings", "section", "street", "room"];        // room: one room as a stage set (room.js, K3.1)
 
 // --- Where the map will be seen ---------------------------------------------------
 // The width a map is shown at decides how big its type must be. A preset gives
@@ -7884,7 +9684,10 @@ M.PRESETS = {
   screen: { width: 1920, displayWidth: 1920, minLabelPx: 16, key: "side", aspect: 16 / 9, margin: 1.4 },
   ipad: { width: 1366, displayWidth: 1366, minLabelPx: 16, key: "best", aspect: 1366 / 1024, margin: 1.4 },
   print: { width: 2480, displayWidth: 2480, minLabelPx: 29, key: "best", aspect: 210 / 297, margin: 2.6, valign: "top", paper: "A4" },
-  drawing: { width: 1400, minLabelPx: 10, key: "none" }
+  drawing: { width: 1400, minLabelPx: 10, key: "none" },
+  // stage (1.0): a screen shared across the table, displayWidth × displayHeight (an iPad 1366 × 1024, a TV 1920 × 1080).
+  // The drawing fills it, the key is a strip (stagePage, themes.js); the floor is 16 px at 1366 and scales with the width
+  stage: { width: 1366, displayWidth: 1366, displayHeight: 1024, minLabelPx: 16, key: "strip", aspect: 1366 / 1024, margin: 0.8 }
 };
 M.PAPER = { A4: { w: 210, h: 297 }, letter: { w: 215.9, h: 279.4 } };
 M.resolveOpts = function (opts, W) {
@@ -7901,6 +9704,17 @@ M.resolveOpts = function (opts, W) {
   if (name === "print") {
     const paper = String(o.paper || pr.paper).toLowerCase() === "letter" ? "letter" : "A4", pp = M.own(M.PAPER, paper);
     pr.paper = paper; pr.aspect = pp.w / pp.h; pr.width = Math.round(pp.w / 25.4 * 300); pr.displayWidth = pr.width;
+  }
+  if (name === "stage") {
+    const dim = (v, d, what) => { if (v == null) return d; if (+v >= 200 && +v <= 10000) return Math.round(+v); M.warn(W, `${what} ${JSON.stringify(v)} is not a screen size in px — using ${d}`); return d; };
+    const dw = dim(o.displayWidth, pr.displayWidth, "displayWidth"), dh = dim(o.displayHeight, pr.displayHeight, "displayHeight");
+    Object.assign(pr, { displayWidth: dw, displayHeight: dh, width: dw, aspect: dw / dh, minLabelPx: Math.round(16 * dw / 1366) });
+    o.displayWidth = dw; o.displayHeight = dh; o.key = null; o.aspect = null;
+  }
+  // a size that is not a number of px is named and dropped: nothing a caller passes may throw (API.md, Warnings)
+  for (const k of ["width", "displayWidth", "minLabelPx"]) {
+    if (o[k] == null) continue;
+    if (typeof o[k] === "object" || !(Number.isFinite(+o[k]) && +o[k] > 0)) { M.warn(W, k + " " + JSON.stringify(o[k]) + " is not a size in px — using the layout’s"); delete o[k]; }
   }
   o.layout = name; o.preset = pr;
   o.width = o.width || pr.width;
@@ -7930,6 +9744,7 @@ M.pickFloors = function (lay, floor, W, view) {
 // that names no hidden room (whole words, any case: the table app's own leak check). The GM copy keeps
 // the book's titles.
 const LEVEL_ALT = { "-1": ["Below ground", "Lower level", "Level -1"], "0": ["Street level", "Level 0"], "1": ["First floor", "Level 1"], "2": ["Upper storey", "Level 2"] };
+M.LEVEL_ALT = LEVEL_ALT;
 M.hiddenNames = function (model, reveal) {
   const R = new Set(reveal || ["public"]), low = (s) => String(s || "").toLowerCase();
   const seen = model.rooms.filter(r => M.roomRevealed(R, r)).map(r => low(r.name));
@@ -7945,6 +9760,7 @@ M.safeTitles = function (lay, model, reveal) {
   for (const lv of lay.levels) {
     if (!lv.title || !M.namesAny(lv.title, hidden)) continue;
     const alt = (LEVEL_ALT[String(lv.lvl)] || ["Level " + lv.lvl]).find(a => !M.namesAny(a, hidden));
+    if (lv.title0 === undefined) lv.title0 = lv.title;      // K2.5: the book's title, so the stage iso places floors alike in every copy
     lv.title = alt || null;
   }
 };
@@ -7987,8 +9803,13 @@ const render1 = function (o, opts = {}) {
   let sid = opts.idPrefix || ("b68m" + M.hash(JSON.stringify([model.name, model.district, model.rooms.map(r => r.name + r.band), seed,
     opts.view, opts.theme, opts.layer, opts.reveal || null, opts.width, opts.sheet || null, opts.legend, opts.grain !== false, raw.layout || null,
     raw.displayWidth || null, opts.floor == null ? null : opts.floor, raw.minLabelPx == null ? null : raw.minLabelPx, raw.paper || null, raw.key || null])).toString(36));
+  const stage = opts.layout === "stage";
+  if (stage && !opts.idPrefix) sid += "s" + opts.displayHeight.toString(36);
+  M._stageOut = null;
   // the street outside: its own module, the same type floor (street.js)
-  if (opts.view === "street") return M.street.render(o, opts, W, theme, model, seed, opts.idPrefix || (sid + M.hash("street" + (raw.time || "")).toString(36).slice(0, 4)));
+  if (opts.view === "street") { const r = M.street.render(o, opts, W, theme, model, seed, opts.idPrefix || (sid + M.hash("street" + (raw.time || "")).toString(36).slice(0, 4))); if (stage && M._stageOut) r.stage = M._stageOut; return r; }
+  // one room as a stage set (room.js); a room the roll does not have draws the section, with a warning
+  if (opts.view === "room") { const rr = M.room.render(o, opts, W, theme, model, seed, raw); if (rr) return rr; opts.view = "section"; }
   if (!model.rooms.length) return M.emptyRender(model, opts, theme, W, seed, sid);
   if (model.grand && !opts.idPrefix) sid += "g";
   if (BP.ids && !opts.idPrefix) sid += "k";
@@ -8025,9 +9846,12 @@ const render1 = function (o, opts = {}) {
     if (fu >= needD * 1.004 && fk >= needK * 1.004) break;
     fu = Math.max(fu, needD * 1.02); fk = Math.max(fk, needK * 1.02);
   }
-  return { svg: out.svg, width: out.width, height: out.height, warnings: W, model, layout: lay, seed, floorPx: opts.minLabelPx || 0 };
+  const res = { svg: out.svg, width: out.width, height: out.height, warnings: W, model, layout: lay, seed, floorPx: opts.minLabelPx || 0 };
+  if (stage && out.stage) res.stage = out.stage;
+  if (opts._people) res.people = opts._people;      // K1.3: where each person was drawn
+  return res;
 };
-M.render = function (o, opts) { const prev = BP.ids; BP.ids = null; try { return render1(o, opts); } finally { BP.ids = prev; } };
+M.render =function (o, opts) { const prev = BP.ids; BP.ids = null; try { return render1(o, opts); } finally { BP.ids = prev; } };
 
 // Build a sheet's scene (floors, links, ways in, labels placed) for a theme to compose.
 M.buildScene = function (lay, model, ctx, X) {
@@ -8046,7 +9870,8 @@ M.buildScene = function (lay, model, ctx, X) {
   const k = ctx.k, B = Object.assign({}, r.bounds);
   growEntries(B, r.entries);
   // every room label clear of every other word on the sheet
-  const solved = M.labels.solve({ parts: r.parts, links: r.links, entries: r.entries, ctx, view: opts.view, bounds: r.bounds });
+  const solved = M.labels.solve({ parts: r.parts, links: r.links, entries: r.entries, ctx, view: opts.view, bounds: opts.layout === "stage" ? M.stageRoom(r.bounds, opts) : r.bounds });
+  if (opts.people || opts.crowd) M.people.draw(r, lay, model, ctx, solved);      // K1.3: people in the rooms, under the labels (people.js)
   for (const b of solved.boxes) grow(B, b);
   for (const b of solved.fixed) if (b.what !== "street") grow(B, b);
   const pad = r.pad, box = { x: B.minX - pad, y: B.minY - pad, w: B.maxX - B.minX + 2 * pad, h: B.maxY - B.minY + 2 * pad };
@@ -8073,7 +9898,7 @@ M.buildScene = function (lay, model, ctx, X) {
   const kl = Math.max(k, Math.min(box.w, box.h * 1.5) / 118);
   const roomPos = rm => { const lv = lvOf(rm); return lv && rm.frame ? ctx.toScreen(lv, rm.frame.cx, rm.frame.cy, "room") : null; };
   const onSheet = new Set(lay.levels.flatMap(l => l.rooms));
-  return { model, lay, parts: r.parts, links: r.links, entries: r.entries, box, k, kl, tokens, opts, offsets: r.offsets || new Map(lay.levels.map(l => [l, [0, 0]])), W,
+  return { model, lay, parts: r.parts, links: r.links, entries: r.entries, box, built: r.bounds, k, kl, tokens, opts, offsets: r.offsets || new Map(lay.levels.map(l => [l, [0, 0]])), W,
     toScreen: ctx.toScreen, roomPos, _id: X.sid, keyFloor: X.keyFloor || 0, keyAt: X.keyAt || null, floorU: ctx.floorU || 0, onSheet, drawn: ctx.drawn,
     // every tag, label and arrow the solver placed, for a theme's stamp to keep clear of (M.street.stampAt)
     stampTags: { boxes: solved.fixed.filter(b => b.what !== "street" && b.what !== "title").concat(solved.boxes).map(q => ({ x0: q.x0, y0: q.y0, w: q.w, h: q.h })), segs: r.entries.flatMap(e => (e && e.meta && e.meta.segs) || []) } };
@@ -8101,6 +9926,8 @@ M.buildPlan = function (lay, model, ctx) {
     offsets.set(lv, [dx, dy]);
     const layers = M.scene.level(lv, model, ctx);
     if (model.grand) M.grand.dress(lv, layers, model, ctx);
+    const lit = M.grand.floorLights(lv, model, ctx, p => p);       // K2.5: the rooms' light, as in the iso
+    if (lit) { layers.floors.push(...lit.pools); if (lit.shade) layers.walls.unshift(lit.shade); }
     if (lv.title && M.showTitles(lay, ctx)) layers.labels.push(P.text("level-title", B.x - 10, B.y - 10 - titleH * 0.3, lv.title.toUpperCase(), { size: ts, anchor: "start" }));
     parts.push({ lv, layers, tf: { x: dx, y: dy } });
   });
@@ -8201,6 +10028,9 @@ M.KEY_CSS = `.b68-key{font:15px/1.35 "GT America",Helvetica,Arial,sans-serif;col
 .b68-key__swatch{display:inline-block;width:1em;height:1em;flex:none}.b68-key__icon{width:1.25em;height:1.25em;vertical-align:-.25em;flex:none}
 .b68-key__target{font-weight:700}.b68-key__strong{font-weight:700}.b68-key__small{font-size:.88em;color:#2a2521;margin:.1em 0 .5em}
 .b68-key [data-known=false] h4{opacity:.6}.b68-key__note{font-style:italic;color:#55504a;font-size:.88em;margin-top:1.4em}`;
+// The player key says "from outside" only while the crew knows nothing past the public band (K0.3): once a deeper band
+// or a single deeper room is open, it is "What you know".
+M.keyOutside = F => !!F && (F.bands || []).every(b => b.band === "public" || !b.known);
 M.keyHTML = function (F, th) {
   const e = M.esc;
   const icon = (name, role) => th ? `<svg class="b68-key__icon" viewBox="-1.4 -1.4 2.8 2.8" aria-hidden="true">${M.toSVG([M.icon(name, 0, 0, 2, role)], { paint: th.paint })}</svg>` : "";
@@ -8213,7 +10043,7 @@ M.keyHTML = function (F, th) {
   if (F.floor) h += `<p class="b68-key__floor">This sheet: ${e(F.floor)}</p>`;
   h += `</header>`;
   if (F.approach) h += `<section class="b68-key__approach"><h3>Approach</h3><p>${e(F.approach)}</p>${F.targetLine ? `<p class="b68-key__target">${icon("star", "ov-target")} ${e(F.targetLine)}</p>` : ""}</section>`;
-  h += `<section class="b68-key__rooms"><h3>${F.player ? "What you know from outside" : "Rooms, by how deep"}</h3>`;
+  h += `<section class="b68-key__rooms"><h3>${F.player ? (M.keyOutside(F) ? "What you know from outside" : "What you know") : "Rooms, by how deep"}</h3>`;
   for (const b of F.bands) {
     h += `<div class="b68-key__band" data-band="${b.band}" data-known="${b.known}"><h4>${swatch(b.band)}${e(b.label)}${b.known ? (b.partial ? " — partly surveyed" : "") : " — not yet surveyed"}</h4>`;
     if (b.known) {
@@ -8250,11 +10080,11 @@ M.keyHTML = function (F, th) {
   }
   if (F.skips && F.skips.length) {
     h += `<section class="b68-key__skips"><h3>Links that skip</h3><ul>`;
-    for (const l of F.skips) h += `<li><span>${l.a} → ${l.b} — ${e(l.via)}</span></li>`;
+    for (const l of F.skips) h += `<li>${l.mark ? `<span class="b68-key__n">${e(l.mark)}</span>` : ""}<span>${l.a} → ${l.b} — ${e(l.via)}</span></li>`;
     h += `</ul></section>`;
   }
   if (F.note && !F.player) h += `<p class="b68-key__note">${e(F.note)}</p>`;
-  if (F.player) h += `<p class="b68-key__note">Hatched rooms are what gathering information is for. Open a band when the crew learns it.</p>`;
+  if (F.player) h += `<p class="b68-key__note">What the crew has not seen is what gathering information is for. Open a band when the crew learns it.</p>`;
   return h + `</section>`;
 };
 
@@ -8399,6 +10229,10 @@ function finish(a, p) {
 }
 const wrapPaint = fn => (role, p, mode) => finish(fn(role, p, mode), p);
 
+// K1.4: does the drawing draw what the crew hasn't seen as a façade (grand.js GR.facade)? Then its key's swatch is the façade's.
+const hasFacade = scene => (scene.parts || []).some(p => M.flat((p.layers && p.layers.cover) || []).some(g => g && g.r === "facade"));
+const withFacade = (F, scene) => (F && F.kind !== "street" && (hasFacade(scene) || hasLid(scene)) ? Object.assign({}, F, { facade: true }) : F);      // the iso’s lid counts: its key shows the wall’s swatch and note too
+
 // --- Shared legend typesetter -------------------------------------------------------
 // Lays the facts out as blocks, each a list of pieces with a height; then flows
 // the blocks into columns. Roles are "lg-*" so each theme styles them.
@@ -8436,10 +10270,10 @@ function legendBlocks(F, w, k, opt, ty, fk) {
   }
   // bands
   b = block();
-  text(b, "lg-h", F.player ? "WHAT YOU KNOW FROM OUTSIDE" : "ROOMS, BY HOW DEEP", 1.7 * s); b.h += 0.4 * s;
+  text(b, "lg-h", F.player ? (M.keyOutside(F) ? "WHAT YOU KNOW FROM OUTSIDE" : "WHAT YOU KNOW") : "ROOMS, BY HOW DEEP", 1.7 * s); b.h += 0.4 * s;
   for (const band of F.bands) {
     b.pieces.push(P.rect("lg-swatch-" + band.band, 0, b.h + 0.2 * s, 2.4 * s, 2.4 * s));
-    if (!band.known) b.pieces.push(P.rect("unknown", 0, b.h + 0.2 * s, 2.4 * s, 2.4 * s));
+    if (!band.known) b.pieces.push(P.rect(F.facade ? "facade" : "unknown", 0, b.h + 0.2 * s, 2.4 * s, 2.4 * s));      // K1.4: the façade's swatch where the drawing has one
     text(b, "lg-band", band.label.toUpperCase() + (band.known ? (band.partial ? " — partly surveyed" : "") : " — not yet surveyed"), 2 * s, { x: 3.4 * s, nowrap: true });
     b.h += 0.2 * s;
     if (!band.known) { b.h += 0.6 * s; continue; }
@@ -8494,7 +10328,7 @@ function legendBlocks(F, w, k, opt, ty, fk) {
   // skip links whose words wouldn't fit on the drawing
   if (F.skips && F.skips.length) {
     b = block(); text(b, "lg-h", "LINKS THAT SKIP", 1.7 * s); b.h += 0.3 * s;
-    for (const l of F.skips) text(b, "lg-text", `${l.a} → ${l.b} — ${l.via}`, 1.9 * s);
+    for (const l of F.skips) text(b, "lg-text", `${l.mark ? l.mark + "  " : ""}${l.a} → ${l.b} — ${l.via}`, 1.9 * s);      // a lettered route (kit 1.0 section): its letter, as on the line
   }
   // links between floors
   if (F.between && F.between.length) {
@@ -8514,7 +10348,7 @@ function legendBlocks(F, w, k, opt, ty, fk) {
     line("ov-skip-line", "ov-skip-head", "A link that skips a ring — the line to plan around");
   }
   if (F.note && !F.player) { b = block(); text(b, "lg-small-italic", F.note, 1.7 * s); }
-  if (F.player) { b = block(); text(b, "lg-small-italic", "Hatched rooms are what gathering information is for. Open a band when the crew learns it.", 1.75 * s); }
+  if (F.player) { b = block(); text(b, "lg-small-italic", (F.facade ? "Behind the walls is what gathering information is for." : "Hatched rooms are what gathering information is for.") + " Open a band when the crew learns it.", 1.75 * s); }      // K1.4
   return blocks;
 }
 function flowLegend(blocks, colW, cols, gap) {
@@ -8536,7 +10370,7 @@ function composePage(scene, th, o = {}) {
   const { box, opts, parts, links, entries, tokens } = scene, k = scene.kl || scene.k;
   const id = scene._id || ("b68m" + uid());
   const paint = th.paint, pr = opts.preset || {};
-  const L = opts.aspect ? pageFirst(scene, th) : contentFirst(scene, th);
+  const L = opts.layout === "stage" ? stagePage(scene, th) : opts.aspect ? pageFirst(scene, th) : contentFirst(scene, th);
   const { legend, LW, LH, below, cs, bw, bh, PW, PH, cx, cy, lx, ly, kp, fk } = L;
   scene._cs = cs;
   const width = opts.width, height = Math.round(width * PH / PW);
@@ -8577,13 +10411,15 @@ function composePage(scene, th, o = {}) {
   body += ser(entries);
   body += th.overlay ? th.overlay(id, scene) : "";
   body += "</g>";
-  if (legend) body += `<g class="map-key" transform="translate(${lx.toFixed(2)} ${ly.toFixed(2)})">${th.legendBackground ? th.legendBackground(id, LW, LH, kp) : ""}${ser(legend)}</g>`;
+  if (legend) body += `<g class="map-key" transform="translate(${lx.toFixed(2)} ${ly.toFixed(2)})">${th.legendBackground && !L.stage ? th.legendBackground(id, LW, LH, kp) : ""}${ser(legend)}</g>`;
   body += th.foreground ? th.foreground(id, { PW, PH, k: kp, scene, lx, ly, LW, LH, below, draw: scene._drawRect, floor: fk }) : "";
   // Grain sits on the drawing, not the type: the rulebook's text pages are clean.
   if (opts.grain !== false && th.grain) body += `<rect x="${(cx + box.x * cs).toFixed(2)}" y="${(cy + box.y * cs).toFixed(2)}" width="${bw.toFixed(2)}" height="${bh.toFixed(2)}" filter="url(#${id}-grain)" style="mix-blend-mode:${th.grainBlend || "multiply"}" opacity="${th.grain}" pointer-events="none"/>`;
   const lab = M.svgLabel(scene, id);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" font-weight="400" font-style="normal" viewBox="0 0 ${PW.toFixed(2)} ${PH.toFixed(2)}" width="${width}" height="${height}" font-family='${FONT.condensed}'${lab.attrs}>${lab.inner}<defs>${th.defs(id, scene)}</defs><rect width="100%" height="100%" fill="${th.page}"/>${body}</svg>`;
-  return { svg, width, height, PW, PH, content: { cx, cy, cs } };
+  const res = { svg, width, height, PW, PH, content: { cx, cy, cs } };
+  if (L.stage) res.stage = M._stageOut = M.stageStats(scene, L);
+  return res;
 }
 M.composePage = composePage;
 
@@ -8628,7 +10464,7 @@ function contentFirst(scene, th) {
     const PW = box.w + 2 * m, PH = box.h + 2 * m + (th.footerH || 0) * ks;
     return { legend: null, LW: 0, LH: 0, below: false, cs: 1, bw: box.w, bh: box.h, PW, PH, cx: m - box.x, cy: m - box.y, lx: 0, ly: 0, kp: ks, fk };
   }
-  const F = M.legendFacts(scene), gap = 3.4 * ks;
+  const F = withFacade(M.legendFacts(scene), scene), gap = 3.4 * ks;
   const keyFor = (isBelow, maxCols) => {
     const colW = isBelow ? Math.min(box.w, Math.max(48 * ks, Math.min(64 * ks, box.w / 3 - 4 * ks))) : Math.max(54 * ks, Math.min(72 * ks, box.h * 0.55));
     let cols = isBelow ? Math.max(1, Math.floor((box.w + gap) / (colW + gap))) : 1;
@@ -8670,7 +10506,7 @@ function pageFirst(scene, th) {
     const dx = (Wp - bw) / 2, dy = top ? m : (Hp - bh) / 2;
     return { legend: null, LW: 0, LH: 0, below: false, cs, bw, bh, PW: Wp, PH: Hfull, cx: dx - box.x * cs, cy: dy - box.y * cs, lx: 0, ly: 0, kp: ks, fk };
   }
-  const F = M.legendFacts(scene);
+  const F = withFacade(M.legendFacts(scene), scene);
   const blocksAt = colW => legendBlocks(F, colW, ks, th.legend || {}, th.type, fk);
   // Can the key be set in a W × H space? Fewest columns first, each column
   // between 36 and 64 type units wide.
@@ -8719,8 +10555,145 @@ function pageFirst(scene, th) {
   return { legend: K.pieces, LW: K.LW, LH: K.LH, below: K.below, cs, bw, bh, PW: Wp, PH, cx: dx - box.x * cs, cy: dy - box.y * cs, lx, ly, kp: ks, fk };
 }
 
+// --- The stage (1.0) ------------------------------------------------------------------
+// layout "stage": a screen shared across the table (an iPad stood on it, a TV). The page is the screen's shape and
+// the key a strip along the top, 8% of the height or less: the site's name in the display face, its one line, and
+// the ways in as chips drawn like their tags (a player copy's facts, so only what its key may say). No room list: a
+// room left as a pin is listed, number and name, in the strip's free middle or, when that is full, in a narrow
+// column at the side. The drawing fills the rest, with a small even margin. Every word at the floor or over.
+const stageRooms = scene => {
+  const seen = new Map();          // room → pin (true only when every label of the room is a pin)
+  for (const p of scene.parts || []) for (const g of (p.layers && p.layers.labels) || []) if (g && g.meta && g.meta.kind === "room" && g.meta.room) {
+    const was = seen.get(g.meta.room); seen.set(g.meta.room, (was === undefined || was) && !!g.meta.pin);
+  }
+  return seen;
+};
+// K2.5: the iso's lid over a covered floor (scene.js S.coverPiece, role facade-lid): on the stage, the strip's note says it
+const hasLid = scene => (scene.parts || []).some(p => M.flat((p.layers && p.layers.floors) || []).some(g => g && g.r === "facade-lid"));
+// K2.5: the floor a stage page of the iso or the plan draws alone (opts.floor), by its title, upper case; else ""
+const stageFloor = scene => {
+  const lay = scene.lay, v = scene.opts && scene.opts.view;
+  if (!lay || !scene.drawn || (v !== "iso" && v !== "plan") || lay.levels.length !== 1 || (lay.allLevels || lay.levels).length < 2) return "";
+  return lay.levels[0].title ? String(lay.levels[0].title).toUpperCase() : "";
+};
+function stagePage(scene, th) {
+  const { box, opts } = scene, pr = opts.preset || {};
+  const Wp = 1000, Hfull = Wp / pr.aspect, f = opts.minLabelPx * Wp / opts.displayWidth * 1.01, ks = Math.max(f / 1.7, Wp / 520);
+  const Hp = Hfull - (th.footerH || 0) * ks, m = (pr.margin || 0.8) * f;
+  const fit = (aw, ah) => Math.max(0.01, Math.min(aw / box.w, ah / box.h));
+  const drawIn = (x0, y0, aw, ah) => { const cs = fit(aw, ah), bw = box.w * cs, bh = box.h * cs; return { cs, bw, bh, cx: x0 + (aw - bw) / 2 - box.x * cs, cy: y0 + (ah - bh) / 2 - box.y * cs }; };
+  const base = { below: false, PW: Wp, PH: Hfull, lx: 0, ly: 0, kp: ks, fk: f };
+  if (opts.legend === false) return Object.assign(base, drawIn(m, m, Wp - 2 * m, Hp - 2 * m), { legend: null, LW: 0, LH: 0, stage: { strip: 0, side: false } });
+  const F = M.legendFacts(scene), ty = Object.assign({ key: "text", keyBold: "textBold", title: "poster", label: "condensed", entryLS: 0 }, th.type || {});
+  const tw = (t, s, face, ls) => M.textW(t, s, face, ls || 0), out = [];
+  const py = 0.3 * f, Hs = Math.min(0.08 * Hfull, 2 * py + 2.6 * f * 0.82 + 1.55 * f), Hi = Hs - 2 * py;
+  // the ways in, right-aligned: each its icon and a tag like the one on the map; two rows when one is too long
+  const ic = 1.3 * f, th1 = 1.47 * f, cg = 0.8 * f;
+  const chips = (F.ways || []).map(v => { const tag = String(v.n || v.kind).replace(/^the\s+/i, "").toUpperCase(), tagW = tw(tag, f, ty.label, ty.entryLS) + 1.2 * f; return { v, tag, tagW, w: ic * 1.36 + 0.3 * f + tagW }; });
+  // K1.4: one quiet note for the façade, before the ways in: its swatch, "not yet seen"
+  if (hasFacade(scene) || hasLid(scene)) { const tag = "NOT YET SEEN", tagW = tw(tag, f, ty.key) + 0.4 * f; chips.unshift({ note: true, tag, tagW, w: ic * 1.36 + 0.3 * f + tagW }); }
+  const rowW = cs => cs.reduce((s, c) => s + c.w, 0) + Math.max(0, cs.length - 1) * cg;
+  let rows = [chips];
+  if (chips.length > 1 && rowW(chips) > 0.42 * (Wp - 2 * m) && Hi >= 2 * th1 + 0.3 * f) { const h = Math.ceil(chips.length / 2); rows = [chips.slice(0, h), chips.slice(h)]; }
+  const CW = chips.length ? Math.max(...rows.map(rowW)) : 0, rowsH = rows.length * th1 + (rows.length - 1) * 0.3 * f;
+  rows.forEach((row, ri) => {
+    let x = Wp - m - rowW(row); const y0 = py + (Hi - rowsH) / 2 + ri * (th1 + 0.3 * f);
+    for (const c of row) {
+      if (c.note) {
+        const sw = ic * 1.36, sh = th1;
+        out.push(P.rect("facade", x, y0, sw, sh), P.rect("facade-win", x + sw * 0.32, y0 + sh * 0.2, sw * 0.36, sh * 0.6), P.text("lg-small", x + sw + 0.3 * f, y0 + f * 1.06, c.tag, { size: f, anchor: "start" }));
+        x += c.w + cg; continue;
+      }
+      const role = "ov-" + c.v.kind, know = c.v.know || "";
+      out.push(M.icon(/free/.test(know) ? "eye" : /question/.test(know) ? "question" : "lock", x + ic * 0.68, y0 + th1 / 2, ic, role));
+      const bx = x + ic * 1.36 + 0.3 * f;
+      out.push(P.rect(role + "-tag", bx, y0, c.tagW, th1, { rx: 0.4 }), P.text(role + "-text", bx + 0.59 * f, y0 + f * 1.06, c.tag, { size: f, anchor: "start" }));
+      x += c.w + cg;
+    }
+  });
+  // the name and its one line, left
+  const maxTW = Math.max(12 * f, Wp - 2 * m - CW - 2 * f), name = String(F.name || "").toUpperCase();
+  // K2.5: one floor of the iso or the plan: its title beside the name, smaller, in the same face (a player copy's is safe)
+  const fl = stageFloor(scene), flS = T => Math.max(f, 0.62 * T), nameW = T => tw(name, T, ty.title) + (fl ? 0.7 * T + tw(fl, flS(T), ty.title) : 0);
+  let T = Math.min(2.6 * f, (Hi - 1.55 * f) / 0.82);
+  if (name && nameW(T) > maxTW) T = Math.max(f, T * maxTW / nameW(T));
+  const two = T >= 1.4 * f;
+  if (!two) T = Math.max(f, Math.min(2.2 * f, Hi / 0.9));
+  let sub = [F.sub, F.time].filter(Boolean).join(" · "), subX = m, titleW = name ? nameW(T) : 0;
+  const subMax = two ? maxTW : maxTW - titleW - 1.2 * f;
+  if (sub && tw(sub, f, ty.keyBold) > subMax) sub = F.sub || "";
+  if (sub && tw(sub, f, ty.keyBold) > subMax) { const w0 = M.wrapW(sub, Math.max(f, subMax - tw("…", f, ty.keyBold)), f, ty.keyBold, 0)[0] || ""; sub = w0 + "…"; }
+  const blockH = two ? T * 0.82 + 1.25 * f + 0.3 * f : T * 0.82, ty0 = py + (Hi - blockH) / 2;
+  if (name) out.push(P.text("lg-title", m, ty0 + T * 0.82, name, { size: T, anchor: "start" }));
+  if (name && fl) {
+    const fx = m + tw(name, T, ty.title) + 0.7 * T, fs = flS(T);
+    out.push(P.rect("lg-chip", fx - 0.42 * T, ty0 + T * 0.82 - fs * 0.78, 0.1 * f, fs * 0.78), P.text("lg-title", fx, ty0 + T * 0.82, fl, { size: fs, anchor: "start" }));
+  }
+  if (sub) { if (!two) subX = m + titleW + 1.2 * f; out.push(P.text("lg-sub", subX, two ? ty0 + T * 0.82 + 1.25 * f : ty0 + T * 0.82, sub, { size: f, anchor: "start" })); }
+  const leftEnd = Math.max(m + titleW, sub ? subX + tw(sub, f, ty.keyBold) : 0);
+  out.push(P.rect("lg-chip", m, Hs - 0.06 * f, Wp - 2 * m, 0.12 * f));
+  // the rooms left as pins (and, in the GM's copy, any link that skips whose words left the drawing)
+  const nm = String, badge = n => { const h = f * 1.25; return { h, w: Math.max(h, tw(n, f, ty.label) + f * 0.5) }; };
+  const items = [...stageRooms(scene)].filter(([, pin]) => pin).map(([r]) => r).sort((a, b) => a.n - b.n)
+    .map(r => { const n = nm(r.n), b = badge(n); return { n, name: nm(r.name), b, w: b.w + 0.35 * f + tw(nm(r.name), f, ty.key) }; })
+    .concat((F.skips || []).map(l => { const t = `${l.a} → ${l.b} ${l.via}`; return { name: t, w: tw(t, f, ty.key) }; }));
+  const rh = 1.4 * f, colGap = 1.2 * f;
+  const columns = (list, perCol) => { const cols = []; for (let i = 0; i < list.length; i += perCol) cols.push(list.slice(i, i + perCol)); return cols.map(c => ({ c, w: Math.max(...c.map(x => x.w)) })); };
+  const setList = (cols, x0, y0) => {
+    let x = x0;
+    for (const col of cols) {
+      col.c.forEach((it, i) => {
+        const cy = y0 + i * rh + rh / 2;
+        if (it.b) out.push(P.rect("num-bg", x, cy - it.b.h / 2, it.b.w, it.b.h, { rx: it.b.h / 2 }), P.text("num", x + it.b.w / 2, cy + f * 0.36, it.n, { size: f }));
+        out.push(P.text("lg-text", x + (it.b ? it.b.w + 0.35 * f : 0), cy + f * 0.36, it.name, { size: f, anchor: "start" }));
+      });
+      x += col.w + colGap;
+    }
+  };
+  let side = null;
+  if (items.length) {
+    const R = Math.max(1, Math.floor((Hi + 0.15 * f) / rh)), cols = columns(items, R), need = cols.reduce((s, c) => s + c.w, 0) + (cols.length - 1) * colGap;
+    const fx0 = leftEnd + 1.6 * f, fx1 = Wp - m - CW - 1.6 * f;
+    if (need <= fx1 - fx0) setList(cols, fx0, py + (Hi - Math.min(R, items.length) * rh) / 2);
+    else {
+      // a narrow column under the strip, beside the drawing (the two centred together)
+      const top = Hs + 0.6 * m, Rc = Math.max(1, Math.floor((Hp - top - m) / rh)), cc = columns(items, Rc);
+      side = { cc, top, Rc, w: cc.reduce((s, c) => s + c.w, 0) + (cc.length - 1) * colGap };
+    }
+  }
+  const y0 = Hs + 0.5 * m, aw = Wp - 2 * m - (side ? side.w + 1.5 * f : 0), D = drawIn(m, y0, aw, Hp - y0 - m);
+  // the drawing sits centred in its share, so the column right beside it centres the pair on the page
+  if (side) setList(side.cc, m + (aw - D.bw) / 2 + D.bw + 1.5 * f, side.top + Math.max(0, (Hp - side.top - m - Math.min(side.Rc, items.length) * rh) / 2));
+  return Object.assign(base, D, { legend: out, LW: Wp, LH: Hs, stage: { strip: Hs, side: !!side, listed: items.length } });
+}
+// The drawing's bounds grown to the stage's shape: the spare room on the page a name set beside its room may use
+// (labels.js) without making the drawing smaller.
+M.stageRoom = function (B, opts) {
+  const pr = opts.preset || {}, Wp = 1000, Hfull = Wp / pr.aspect, f = opts.minLabelPx * Wp / opts.displayWidth * 1.01, m = (pr.margin || 0.8) * f;
+  const A = (Wp - 2 * m) / (Hfull - Math.min(0.08 * Hfull, 4.3 * f) - 1.5 * m), w = B.maxX - B.minX, h = B.maxY - B.minY;
+  if (!(w > 0 && h > 0)) return B;
+  const ex = Math.max(0, h * A - w) / 2 * 0.9, ey = Math.max(0, w / A - h) / 2 * 0.9;
+  return { minX: B.minX - ex, maxX: B.maxX + ex, minY: B.minY - ey, maxY: B.maxY + ey };
+};
+// K2.5: the stage's drawing area under the strip, in page units (the page is 1000 wide), as M.stageRoom measures it (the
+// iso's floors are arranged to it: ISO.arrange)
+M.stageArea = function (opts) {
+  const pr = opts.preset || {}, Wp = 1000, Hfull = Wp / (pr.aspect || 4 / 3), f = opts.minLabelPx * Wp / opts.displayWidth * 1.01, m = (pr.margin || 0.8) * f;
+  return { w: Wp - 2 * m, h: Hfull - Math.min(0.08 * Hfull, 4.3 * f) - 1.5 * m };
+};
+// What the stage gave the drawing: the building's share of the page, the drawing's (with its arrows and tags), the
+// strip's, and the rooms that kept their names against those left as pins. On the render's result as `stage`.
+M.stageStats = function (scene, L) {
+  const page = L.PW * L.PH, B = scene.built, cs = L.cs;
+  const bArea = B && isFinite(B.minX) && isFinite(B.maxX) ? (B.maxX - B.minX) * (B.maxY - B.minY) * cs * cs : L.bw * L.bh;
+  let named = 0, pins = 0;
+  for (const pin of stageRooms(scene).values()) if (pin) pins++; else named++;
+  const r4 = v => Math.round(v * 10000) / 10000;
+  return { share: r4(bArea / page), drawShare: r4(L.bw * L.bh / page), stripShare: r4(L.stage.strip / L.PH), named, pins, side: L.stage.side };
+};
+
 // A page of width W and height H, padded out to aspect (W / H) when one is set.
-M.padTo = (W, H, aspect) => !aspect ? { W, H } : (W / H < aspect ? { W: H * aspect, H } : { W, H: W / aspect });
+M.padTo =(W, H, aspect) => !aspect ? { W, H } : (W / H < aspect ? { W: H * aspect, H } : { W, H: W / aspect });
 
 
 // Roles the projected views add (iso wall boxes, section shells). One table
@@ -8757,8 +10730,42 @@ const projectedPaint = (C, role) => {
     case "cornice": return Object.assign({ fill: C.roof }, C.edge ? { stroke: C.edge, "stroke-width": 0.12, "fill-opacity": 0.2 } : {});
     case "parapet": return Object.assign({ fill: C.top }, C.edge ? { stroke: C.edge, "stroke-width": 0.1, "fill-opacity": 0.2 } : {});
     case "baluster": return Object.assign({ fill: C.face }, C.edge ? { stroke: C.edge, "stroke-width": 0.08, "fill-opacity": 0.1 } : {});
+    // --- K3.1 room view (room.js): the set's light, the slivers, the people's marks ---
+    case "rm-arrow": return { fill: C.end };
+    case "rm-sliver": return { fill: C.gap };
+    case "rm-crowd": return { fill: C.face, opacity: 0.5 };
+    case "rm-dark": return { fill: TOK.ink900, opacity: 0.78 };
+    case "rm-bright": return { fill: TOK.caution500, opacity: 0.16 };
+    case "rm-glow": return { fill: TOK.caution300 || TOK.caution500, opacity: 0.16 };
+    case "rm-night-glass": return { fill: TOK.ink900, opacity: 0.62 };
+    case "rm-mark-text": return { fill: TOK.paper000, "font-weight": 900 };
+    case "rm-mark-crew": return { fill: TOK.file500, stroke: TOK.paper000, "stroke-width": 0.12 };
+    case "rm-mark-target": return { fill: TOK.alarm700, stroke: TOK.paper000, "stroke-width": 0.12 };
+    case "rm-mark-guard": return { fill: TOK.ink900, stroke: TOK.paper000, "stroke-width": 0.12 };
+    case "rm-mark-staff": return { fill: TOK.slate500, stroke: TOK.paper000, "stroke-width": 0.12 };
+    case "rm-mark-contact": return { fill: TOK.covert700, stroke: TOK.paper000, "stroke-width": 0.12 };
+    case "rm-mark-rival": return { fill: TOK.swing700, stroke: TOK.paper000, "stroke-width": 0.12 };
+    case "rm-mark-crowd": return { fill: TOK.ink500, stroke: TOK.paper000, "stroke-width": 0.12 };
   }
   return null;
+};
+
+// K1.4 and K2.3 (grand.js GR.facade, GR.lights): a room's state painted. F per theme: wall (the façade, the building's outside
+// wall in the scheme's own colour), line (its string courses, sills and joints), glass and lit (its windows: lit only at Night
+// in the plate), arch (what arch-glass paints, so a lit room's windows are today's by day), winLit (a lit room's windows at
+// Night), pool (a lit room's lamp pool: the plate at Night, else nothing). undefined: not one of these roles.
+const statePaint = (F, role) => {
+  switch (role) {
+    case "facade": return { fill: F.wall };
+    case "facade-lid": return { fill: F.lid || F.wall };
+    case "facade-line": return { fill: F.line };
+    case "facade-joint": return { stroke: F.line, opacity: 0.6 };
+    case "facade-win": return Object.assign({ fill: F.glass }, F.frame ? { stroke: F.frame, "stroke-width": 0.12 } : {});
+    case "facade-winlit": return Object.assign({ fill: F.lit || F.glass }, F.frame ? { stroke: F.frame, "stroke-width": 0.12 } : {});
+    case "win-lit": return F.winLit ? { fill: F.winLit } : Object.assign({}, F.arch);
+    case "cell-pool": return F.pool ? { fill: F.pool } : null;
+  }
+  return undefined;
 };
 
 // Icon roles come in as "ov-kind:part". One table per theme keeps it legible.
@@ -8801,10 +10808,14 @@ T.rulebook = {
     const self = Object.assign({}, this);
     const PC = { face: TOK.ink700, end: TOK.ink900, top: TOK.ink900, glass: TOK.file300, glassEdge: TOK.file500, soft: b, roof: mix(a, TOK.ink900, 0.45), earth: mix(TOK.rust900 || "#3a2213", TOK.paper200, 0.55), water: mix(TOK.file700, TOK.paper000, 0.25), thin: TOK.ink500, door: TOK.ink700, gap: mix(TOK.paper000, a, 0.06), hull: mix(TOK.rust700, TOK.ink900, 0.45), deck: mix(TOK.paper300, TOK.rust500, 0.35), quay: TOK.paper300 };
     const SPAL = scene.street ? M.streetPalette.flat(scene) : null;
+    // K1.4: the façade is the scheme's own colour (a dark field lifted toward its second, as the floors are) [interpretation]
+    const fw = hex(a).reduce((s, v) => s + v, 0) < 200 ? mix(a, b, 0.35) : a;
+    const SF = { wall: fw, line: mix(fw, TOK.ink900, 0.45), glass: PC.glass, frame: PC.glassEdge, arch: projectedPaint(PC, "arch-glass") };
     self.paint = wrapPaint((role, p, mode) => {
       if (SPAL && role.startsWith("st-")) { const sp = M.street.paint(SPAL, role, p); return sp === undefined ? null : sp; }
       const ic = iconPaint(icons, role); if (ic || role.includes(":")) return ic;
       const pj = projectedPaint(PC, role); if (pj) return pj;
+      const sf = statePaint(SF, role); if (sf !== undefined) return sf;
       if (role.startsWith("floor-")) { const band = role.slice(6); if (band === "tone") return { fill: `url(#${scene._id}-dots)`, opacity: 0.22 }; if (band === "corridor") return { fill: bandC(BR, "corridor") }; return { fill: C.floor[band] }; }
       if (C[role]) return { fill: C[role] };
       if (role.startsWith("wall-")) {
@@ -8898,10 +10909,12 @@ T.blueprint = {
     const id = scene._id = scene._id || ("b68m" + uid());
     const PC = { face: BG, end: BG, top: "#3f6db0", edge: W, glass: W, glassEdge: W, soft: W, roof: W, earth: "#1a4580", water: "#1a4580", thin: W, door: W, gap: BG };
     const SPAL = scene.street ? M.streetPalette.blue(scene, BG, W, RED, YEL) : null;
+    const SF = { wall: mix(BG, PC.top, 0.5), line: mix(BG, W, 0.55), glass: BG, frame: W, arch: projectedPaint(PC, "arch-glass") };       // K1.4: an elevation's linework
     self.paint = wrapPaint((role, p, mode) => {
       if (SPAL && role.startsWith("st-")) { const sp = M.street.paint(SPAL, role, p); return sp === undefined ? null : sp; }
       const ic = iconPaint(icons, role); if (ic || role.includes(":")) return ic;
       const pj = projectedPaint(PC, role); if (pj) { if (role === "glass" || /^wall[fe]-glass/.test(role)) return Object.assign(pj, { fill: W, opacity: 0.12 }); return pj; }
+      const sf = statePaint(SF, role); if (sf !== undefined) return sf;
       if (role.startsWith("fx")) {
         if (role === "fx3") return { fill: W, "fill-opacity": 0.22, stroke: W, "stroke-width": 0.12 };
         if (role === "fxglow") return { fill: YEL, "fill-opacity": 0.35, stroke: W, "stroke-width": 0.1 };
@@ -9010,12 +11023,14 @@ T.casefile = {
     const id = scene._id = scene._id || ("b68m" + uid());
     const player = scene.opts.layer === "player";
     const PC = { face: "#55504a", end: "#2a2521", top: "#1a1816", glass: "#b8b4ab", glassEdge: "#55504a", soft: "#8a857d", roof: "#3a3632", earth: "#cfcabf", water: "#c4c0b6", thin: "#55504a", door: "#2a2521", gap: "#fbfaf6", hull: "#3a3632", deck: "#d9d5cb", quay: "#dcd8cd" };
+    const SF = { wall: PC.face, line: PC.end, glass: PC.glass, frame: PC.end, arch: projectedPaint(PC, "arch-glass") };      // K1.4: a photograph of the front, grey
     // the street is a surveillance photograph: the plate's colours, through the copy filter
     const SPAL = scene.street ? Object.assign(M.streetPalette.flat(scene), { tag: () => ({ fill: "#fbf8f1", stroke: INK, "stroke-width": 0.2 }), tagText: () => ({ fill: INK, "font-family": FONT.typewriter, "font-weight": 700 }) }) : null;
     self.paint = wrapPaint((role, p, mode) => {
       if (SPAL && role.startsWith("st-")) { const sp = M.street.paint(SPAL, role, p); return sp === undefined ? null : sp; }
       const ic = iconPaint(icons, role); if (ic || role.includes(":")) return ic;
       const pj = projectedPaint(PC, role); if (pj) return pj;
+      const sf = statePaint(SF, role); if (sf !== undefined) return sf;
       const fxc = { fx: "#6f6a63", fx2: "#4e4a44", fx3: "#1f1c19", fxl: "#fbf8f1", fxm: "#8f8a82", fxw: "#a9a59c", fxg: "#625f58", fxglow: "#e7e3d8", fxline: "#1f1c19" };
       if (fxc[role]) return { fill: fxc[role] };
       if (role.startsWith("floor-")) { const band = role.slice(6); if (band === "tone") return { fill: `url(#${id}-dots)`, opacity: 0.16 }; if (band === "corridor") return { fill: "#fbfaf6" }; return { fill: G[band] }; }
@@ -9325,6 +11340,12 @@ T.plate = {
       earth: night ? mix(TOK.rust900, TOK.slate900, 0.5) : mix(TOK.rust900, TOK.paper200, 0.55), water: night ? mix(TOK.file700, TOK.slate900, 0.6) : mix(TOK.file700, TOK.paper000, 0.25), thin: night ? TOK.ink300 : TOK.ink500,
       door: night ? TOK.ink300 : TOK.ink700, gap: C.floor.corridor, hull: mix(TOK.rust700, TOK.ink900, 0.45), deck: night ? mix(TOK.paper300, TOK.slate900, 0.7) : mix(TOK.paper300, TOK.rust500, 0.35), quay: night ? mix(TOK.paper300, TOK.slate900, 0.7) : TOK.paper300 };
     const SPAL = scene.street ? PL.streetPalette(scene) : null;
+    // K1.4 and K2.3: the façade lit as the building's walls are (by Bluetime the lit face; at Night the wall dark, its glass
+    // darker, a few windows lit in the night's key colour), and a lit room's windows and lamp pool at Night [interpretation]
+    const keyC = (M.PALETTE.light && M.PALETTE.light.night && M.PALETTE.light.night.keyColor) || C.warm;
+    const SF = night
+      ? { wall: mix(mix(a, TOK.slate500, 0.45), C.page, 0.38), line: mix(mix(a, TOK.slate500, 0.45), C.page, 0.7), glass: mix(TOK.file700, C.page, 0.62), lit: keyC, winLit: keyC, pool: `url(#${id}-warm)`, arch: projectedPaint(PC, "arch-glass") }
+      : { wall: C.wallLit, line: C.wallShade, glass: PC.glass, frame: PC.glassEdge, arch: projectedPaint(PC, "arch-glass") };
     const K = C.key.text, K2 = night ? TOK.ink150 : TOK.ink700, K3 = night ? TOK.ink300 : TOK.ink500;
     self.paint = wrapPaint((role, p, mode) => {
       if (SPAL && role.startsWith("st-")) { const sp = M.street.paint(SPAL, role, p); return sp === undefined ? null : sp; }
@@ -9344,6 +11365,7 @@ T.plate = {
       if (role === "slab") return { fill: C.wallLit };
       if (role === "slab-side") return { fill: C.wallShade };
       const pj = projectedPaint(PC, role); if (pj) return pj;
+      const sf = statePaint(SF, role); if (sf !== undefined) return sf;
       if (role.startsWith("floor-")) { const band = role.slice(6); if (band === "tone") return { fill: `url(#${id}-dots)`, opacity: night ? 0.08 : 0.16 }; return { fill: C.floor[band] || C.floor.public }; }
       if (C.fx.lit[role]) return { fill: C.fx.lit[role] };
       if (role.startsWith("wall-")) {
@@ -9623,7 +11645,9 @@ SP.flat = function (scene) {
     tent: "#f4f1ea", float: TK.swing500, float2: TK.caution500, barrier: "#ebe5d6", booth: TK.file500, kiosk: b, drum: TK.rust700, coal: TK.ink900,
     rope: "#b89a6a", net: "#8a7a5a", gold: TK.caution500, rock: "#4a443e", rubblestone: "#9a9185", bin: TK.covert500,
     block: "#d2c9b7", far: "#d1c7b4", deck: "#c9c1b0", podium: "#8a8274", edge: "#8f8778", kerbstone: "#a39b8a", marquee: b, billboard: TK.ink700,
-    hull: mix(TK.rust700, ink, 0.45), deckwood: "#a07850", barge: "#5b4a3a", boat: "#3e6b70", gondola: TK.ink900, hoarding: "#d9cfb2", roof: "#6b4b3c", roofline: ink
+    hull: mix(TK.rust700, ink, 0.45), deckwood: "#a07850", barge: "#5b4a3a", boat: "#3e6b70", gondola: TK.ink900, hoarding: "#d9cfb2", roof: "#6b4b3c", roofline: ink,
+    // kit 1.0 (K0.4): a palazzo's crown, in the section's words, the scheme's colour darkened as the section's cornice is
+    cornice: mix(a, ink, 0.45), parapet: mix(a, ink, 0.4), baluster: mix(a, ink, 0.3)
   };
   const dim = (c, t) => night ? mix(c, NIGHT, t) : c;
   // [interpretation] A way in's door or window stands out from its wall: dark on a
@@ -9676,6 +11700,7 @@ SP.flat = function (scene) {
         case "shoplit": return { fill: night ? "#f2b552" : mix(TK.file700, TK.ink700, 0.5) };
         case "door": return { fill: p && p.way && darkWall ? dim(mix(pap, a, 0.3), 0.45) : dim(TK.ink700, 0.3) };
         case "door-site": return { fill: dim(mix(b, ink, 0.2), 0.45) };
+        case "rustic": return { fill: dim(mix(a, ink, 0.45), 0.55), opacity: 0.7 };          // kit 1.0 (K0.4): a palazzo's rusticated joints
         case "secret": return { fill: "none", stroke: TK.alarm700, "stroke-width": 0.35, "stroke-dasharray": "0.7 0.5" };
         case "sign1": return { fill: dim(TK.covert500, 0.5) };
         case "sign2": return { fill: dim(pap, 0.55) };

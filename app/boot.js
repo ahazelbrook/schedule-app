@@ -764,6 +764,9 @@
     Object.defineProperty(out, 'status', { enumerable: false, value: {
       stress: typeof p.stress === 'number' && isFinite(p.stress) ? Math.max(0, Math.min(9, Math.floor(p.stress))) : null, harm: harm,
       locks: Math.min(6, (Array.isArray(p.keys) ? p.keys : []).filter(function (k) { return isObj(k) && k.deadlock; }).length), turn: turn } });
+    /* MK2: the character's own figure, for the people the GM page's map may draw (gm/scene-state.js). NOT enumerable, like status: the slim copy's
+       JSON (the Downtime panel's change signature) and its keys are what they were; nothing reads it while the map draws no people */
+    Object.defineProperty(out, 'spec', { enumerable: false, value: isObj(d.spec) && Object.keys(d.spec).length ? d.spec : null });
     return out;
   }
   function gmCharacters() {

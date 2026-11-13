@@ -367,7 +367,9 @@
     if (!isObj(a) || typeof a.seq !== 'number' || !isFinite(a.seq)) return null;
     if (a.unchanged === true) return { seq: a.seq, unchanged: true };
     if (a.want !== 'on' && a.want !== 'off') return null;
-    return { seq: a.seq, want: a.want, session: typeof a.session === 'string' ? a.session.slice(0, 12) : '' };
+    var p = { seq: a.seq, want: a.want, session: typeof a.session === 'string' ? a.session.slice(0, 12) : '' };
+    if (a.frame === true) p.frame = true;      /* MK2: the GM's ask for the map frame (a bare boolean); absent, the part is as it was */
+    return p;
   };
   /* The fourth part (design 5.3, 5.5d): GET ...&hseq=N adds a top-level `mission`: { hseq, hud } (hud an object, or null for no mission) or
      { hseq, unchanged: true }. Anything else is ignored (an older server sends none). */
@@ -518,7 +520,7 @@
           if (stt) {
             if (stt.seq !== sseq) moved = true;
             sseq = stt.seq; sttSeen = true;
-            if (!stt.unchanged && o.onStt) { try { o.onStt({ seq: stt.seq, want: stt.want, session: stt.session }); } catch (e) { /* ditto */ } }
+            if (!stt.unchanged && o.onStt) { try { o.onStt(stt.frame === true ? { seq: stt.seq, want: stt.want, session: stt.session, frame: true } : { seq: stt.seq, want: stt.want, session: stt.session }); } catch (e) { /* ditto */ } }      /* MK2: the frame ask rides along */
           } else if (sttSeen !== false) {
             sttSeen = false;
             if (o.onStt) { try { o.onStt(null); } catch (e) { /* ditto */ } }
@@ -2135,7 +2137,7 @@
       /* live sync: a poke for the display, the ambient or the transcriber makes the poll run now; the 4 s poll goes on unchanged */
       if (root.B68Live && typeof root.B68Live.on === 'function') { try { s.liveOff = root.B68Live.on(['display', 'ambient', 'stt'], function () { if (s.poller) s.poller.poke(); }); } catch (e) { s.liveOff = null; } }
       /* the transcriber (app/stt.js): idle until the GM presses Start listening, then one tap here opens the mic */
-      if (root.B68Stt && typeof root.B68Stt.attach === 'function') { try { s.stt = root.B68Stt.attach(container, { gm: ctx.gm, hear: function (t) { if (s.room) s.room.hear(t); }, device: root.B68DisplayPreflight ? root.B68DisplayPreflight.reporter({ music: function () { return s.music; } }) : null, air: function () { return root.B68OnAir && swOn('ai.onair') ? root.B68OnAir.shared() : null; }, airOff: function () { if (root.B68OnAir) root.B68OnAir.shared().destroy(); } }); } catch (e) { s.stt = null; } }
+      if (root.B68Stt && typeof root.B68Stt.attach === 'function') { try { s.stt = root.B68Stt.attach(container, { gm: ctx.gm, hear: function (t) { if (s.room) s.room.hear(t); }, device: root.B68DisplayPreflight ? root.B68DisplayPreflight.reporter({ music: function () { return s.music; } }) : null, frame: function () { var f = container.querySelector('.dp-map-frame'), r = f && f.getBoundingClientRect ? f.getBoundingClientRect() : null; return r && r.width && r.height ? { w: Math.round(r.width), h: Math.round(r.height) } : null; }, air: function () { return root.B68OnAir && swOn('ai.onair') ? root.B68OnAir.shared() : null; }, airOff: function () { if (root.B68OnAir) root.B68OnAir.shared().destroy(); } }); } catch (e) { s.stt = null; } }
     }
 
     /* visibility: pause polling while hidden, poll at once on return, and take the wake lock back */

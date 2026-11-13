@@ -35,7 +35,13 @@ if (process.argv.includes('--write-golden')) {
 let failed = 0, passed = 0;
 function test(name, fn) { try { fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); } }
 
-const S = sites(), K1 = S.pelicanK1, GOLD = JSON.parse(fs.readFileSync(GOLDEN, 'utf8'));
+const S = sites(), K1 = S.pelicanK1, GOLD0 = JSON.parse(fs.readFileSync(GOLDEN, 'utf8'));
+/* MK2: the vendored kit may change a golden case only for a listed reason (scripts/map-goldens.mjs, which works the reason out against kit 1.0.0);
+   those cases and their new hashes are in map-kit1-golden-changes.json, recorded against this kit's sha256. Every other case is held to 0.9. */
+const CHANGES = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'map-kit1-golden-changes.json'), 'utf8'));
+const KITS = JSON.parse(fs.readFileSync(path.join(ROOT, 'app', 'kits.json'), 'utf8')).kits.maps;
+const LISTED = ['heading', 'iso-cover', 'facade', 'street-key', 'key-walls'];      /* key-walls: the overseer's final build, its listed change 2 */
+const GOLD = Object.assign({}, GOLD0, Object.fromEntries(Object.entries(CHANGES.changed).map(([k, v]) => [k, v.sha])));
 const ROOMS = K1.rooms.map((r) => r.name);
 const draw = (opts, roll = K1) => K.render(roll, Object.assign({ kit1: true, layout: 'ipad' }, opts));
 /* the scene a render built (M.grand.section / M.iso.build), caught on its way to the theme */
@@ -53,12 +59,17 @@ const role = (ps, r) => ps.filter((p) => p.r === r);
 const without = (roll, fn) => { const r = JSON.parse(JSON.stringify(roll)); fn(r); return r; };
 
 /* ---------- 1. backward compatible ---------- */
-test('kit 1.0 is the kit the app vendors; its golden hashes are 0.9\'s, one per case', () => {
-  assert.equal(K.VERSION, '1.0.0');
-  assert.deepEqual(Object.keys(GOLD).sort(), cases().map((c) => c[0]).sort());
+test('the goldens are 0.9\'s, one per case; the cases the vendored kit changed are recorded against THIS kit, each for a listed reason', () => {
+  assert.deepEqual(Object.keys(GOLD0).sort(), cases().map((c) => c[0]).sort());
+  assert.equal(CHANGES.kit.version, K.VERSION, 'recorded against ' + CHANGES.kit.version + ', the app vendors ' + K.VERSION);
+  assert.equal(CHANGES.kit.sha256, KITS.sha256, 'the changes were recorded against another build of the map kit: run node scripts/map-goldens.mjs');
+  for (const [k, v] of Object.entries(CHANGES.changed)) {
+    assert.ok(k in GOLD0, k + ' is a case'); assert.ok(Array.isArray(v.why) && v.why.length && v.why.every((w) => LISTED.includes(w)), k + ': ' + JSON.stringify(v.why));
+  }
+  assert.ok(Object.keys(CHANGES.changed).every((k) => /:player\d$/.test(k)), 'with the switch off, only player copies changed (the GM layer is 0.9\'s)');
 });
 
-test('switch off: every fixture site draws byte for byte as kit 0.9 (the 1.0 fields present on the Pelican Rooms)', () => {
+test('switch off: every fixture site draws byte for byte as kit 0.9, but for the recorded, listed changes (the 1.0 fields present on the Pelican Rooms)', () => {
   const bad = [];
   for (const [key, s, opts] of cases()) if (sha(K.render(typeof s === 'number' ? rolled(s) : S[s], opts).svg) !== GOLD[key]) bad.push(key);
   assert.deepEqual(bad, [], bad.length + ' of ' + cases().length + ' cases changed');

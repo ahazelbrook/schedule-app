@@ -1,0 +1,276 @@
+{
+ "$comment": "Written by node scripts/map-goldens.mjs --write. The cases this map kit draws differently from the 0.9 goldens (map-kit1-golden.json), each with its listed reason. map-kit1.test.mjs holds every other case to 0.9.",
+ "kit": {
+  "version": "1.1.0",
+  "sha256": "332ad0b192c33198b9bd56e8fbdf24025081ba293df679a3a55e2fc83f9004ef"
+ },
+ "reasons": [
+  "heading",
+  "iso-cover",
+  "facade",
+  "street-key",
+  "key-walls"
+ ],
+ "changed": {
+  "pelican:iso:player0": {
+   "sha": "3bc4deb9dba8e850",
+   "why": [
+    "iso-cover",
+    "key-walls"
+   ]
+  },
+  "pelican:iso:player1": {
+   "sha": "a5a818393e838773",
+   "why": [
+    "heading",
+    "iso-cover",
+    "key-walls"
+   ]
+  },
+  "pelican:iso:player2": {
+   "sha": "47805c13cc13b731",
+   "why": [
+    "heading",
+    "iso-cover",
+    "key-walls"
+   ]
+  },
+  "pelican:plan:player1": {
+   "sha": "deb000ccd4d3d2bb",
+   "why": [
+    "heading"
+   ]
+  },
+  "pelican:plan:player2": {
+   "sha": "809feb0e6d74cf7c",
+   "why": [
+    "heading"
+   ]
+  },
+  "pelican:rings:player1": {
+   "sha": "a0cbe95f35de39b1",
+   "why": [
+    "heading"
+   ]
+  },
+  "pelican:rings:player2": {
+   "sha": "cd888eca5c1a488e",
+   "why": [
+    "heading"
+   ]
+  },
+  "pelican:section:player0": {
+   "sha": "9332dbb40310fee5",
+   "why": [
+    "facade"
+   ]
+  },
+  "pelican:section:player1": {
+   "sha": "a8550ba4635c37e0",
+   "why": [
+    "heading",
+    "facade"
+   ]
+  },
+  "pelican:section:player2": {
+   "sha": "0d4c8034543bb15d",
+   "why": [
+    "heading",
+    "facade"
+   ]
+  },
+  "pelicanK1:iso:player0": {
+   "sha": "d72b5dd7874ae3cf",
+   "why": [
+    "iso-cover",
+    "key-walls"
+   ]
+  },
+  "pelicanK1:iso:player1": {
+   "sha": "65f5b87006dd5d08",
+   "why": [
+    "heading",
+    "iso-cover",
+    "key-walls"
+   ]
+  },
+  "pelicanK1:iso:player2": {
+   "sha": "3079a7b0565f9de0",
+   "why": [
+    "heading",
+    "iso-cover",
+    "key-walls"
+   ]
+  },
+  "pelicanK1:plan:player1": {
+   "sha": "a4a5d473fc30df81",
+   "why": [
+    "heading"
+   ]
+  },
+  "pelicanK1:plan:player2": {
+   "sha": "7d09ab7867653c21",
+   "why": [
+    "heading"
+   ]
+  },
+  "pelicanK1:rings:player1": {
+   "sha": "94574a37c1b4ac66",
+   "why": [
+    "heading"
+   ]
+  },
+  "pelicanK1:rings:player2": {
+   "sha": "eb6c76e9f163bc75",
+   "why": [
+    "heading"
+   ]
+  },
+  "pelicanK1:section:player0": {
+   "sha": "7eae79ca597f2af4",
+   "why": [
+    "facade"
+   ]
+  },
+  "pelicanK1:section:player1": {
+   "sha": "498a2895c75440c3",
+   "why": [
+    "heading",
+    "facade"
+   ]
+  },
+  "pelicanK1:section:player2": {
+   "sha": "75a5c8f781fcffaa",
+   "why": [
+    "heading",
+    "facade"
+   ]
+  },
+  "goose:iso:player0": {
+   "sha": "6af41d9681999862",
+   "why": [
+    "iso-cover",
+    "key-walls"
+   ]
+  },
+  "goose:iso:player1": {
+   "sha": "c3e261c734c70b53",
+   "why": [
+    "heading",
+    "iso-cover",
+    "key-walls"
+   ]
+  },
+  "goose:iso:player2": {
+   "sha": "970c58130083702a",
+   "why": [
+    "heading",
+    "iso-cover",
+    "key-walls"
+   ]
+  },
+  "goose:plan:player1": {
+   "sha": "3c85266511dd8e94",
+   "why": [
+    "heading"
+   ]
+  },
+  "goose:plan:player2": {
+   "sha": "9947b1b77e44bf62",
+   "why": [
+    "heading"
+   ]
+  },
+  "goose:rings:player1": {
+   "sha": "9e51eb6e5c44d1d5",
+   "why": [
+    "heading"
+   ]
+  },
+  "goose:rings:player2": {
+   "sha": "afd2d5a74d676811",
+   "why": [
+    "heading"
+   ]
+  },
+  "goose:section:player1": {
+   "sha": "d2f96812bf29d16c",
+   "why": [
+    "heading"
+   ]
+  },
+  "goose:section:player2": {
+   "sha": "0ec11a94788748d3",
+   "why": [
+    "heading"
+   ]
+  },
+  "lobby:iso:player0": {
+   "sha": "9d4497ba388a6d82",
+   "why": [
+    "iso-cover",
+    "key-walls"
+   ]
+  },
+  "lobby:iso:player1": {
+   "sha": "bd887178fe2421b3",
+   "why": [
+    "heading",
+    "iso-cover",
+    "key-walls"
+   ]
+  },
+  "lobby:iso:player2": {
+   "sha": "90ea667090333a80",
+   "why": [
+    "heading",
+    "iso-cover",
+    "key-walls"
+   ]
+  },
+  "lobby:plan:player1": {
+   "sha": "b561565d48f92e52",
+   "why": [
+    "heading"
+   ]
+  },
+  "lobby:plan:player2": {
+   "sha": "67a5883e93536c0d",
+   "why": [
+    "heading"
+   ]
+  },
+  "lobby:rings:player1": {
+   "sha": "6bf0188e63d536f7",
+   "why": [
+    "heading"
+   ]
+  },
+  "lobby:rings:player2": {
+   "sha": "2b5a0c9fc07bc4c7",
+   "why": [
+    "heading"
+   ]
+  },
+  "lobby:section:player0": {
+   "sha": "3c7e60b95d32d1f0",
+   "why": [
+    "facade"
+   ]
+  },
+  "lobby:section:player1": {
+   "sha": "32c199e8c8c0d28c",
+   "why": [
+    "heading",
+    "facade"
+   ]
+  },
+  "lobby:section:player2": {
+   "sha": "99be57a326e2b6a9",
+   "why": [
+    "heading",
+    "facade"
+   ]
+  }
+ }
+}
