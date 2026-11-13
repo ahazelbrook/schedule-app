@@ -79,15 +79,19 @@
   }
   /* the card's lines and their size in a w x h text area: of the wraps into one to five lines, the one that sets the words largest (a word longer
      than 22 characters is broken, never clipped; the 60 characters always fit) */
-  var ADV = 0.5, LH = 1.08;
+  /* the card face's advance widths in em (Archivo Condensed at weight 800, measured in Edge 14/11/2026); a character not listed counts wide */
+  var LH = 1.08, ADV = { ' ': .17, '.': .28, ',': .28, "'": .24, '?': .55, '!': .3, '-': .3, '&': .73, '"': .44, '(': .37, ')': .37 };
+  'abcdeghknopquxy'.split('').forEach(function (c) { ADV[c] = .57; }); 'fr'.split('').forEach(function (c) { ADV[c] = .37; }); 'ijl'.split('').forEach(function (c) { ADV[c] = .26; });
+  ADV.s = .52; ADV.t = .35; ADV.v = .51; ADV.z = .48; ADV.m = .84; ADV.w = .78; ADV.I = .3; ADV.M = .84; ADV.W = .89; '0123456789'.split('').forEach(function (c) { ADV[c] = .56; });
+  function ems(line) { var n = 0; for (var i = 0; i < line.length; i++) { var c = line.charAt(i); n += ADV[c] !== undefined ? ADV[c] : /[A-Z]/.test(c) ? .74 : .6; } return n; }
   function fitText(text, w, h) {
     var t = one(text).slice(0, TEXT_MAX), W0 = w || 480, H0 = h || 420, best = null;
     var lw = Math.min(22, t.split(' ').reduce(function (m, x) { return Math.max(m, x.length); }, 1));
     for (var cw = Math.max(lw, Math.ceil(t.length / 5)); cw <= Math.max(lw, t.length); cw++) {
       var lines = wrap(t, cw);
       if (lines.length > 5) continue;
-      var longest = lines.reduce(function (m, l) { return Math.max(m, l.length); }, 1);
-      var size = Math.round(Math.min(110, W0 / (longest * ADV), H0 / (lines.length * LH)));
+      var longest = lines.reduce(function (m, l) { return Math.max(m, ems(l)); }, .5);
+      var size = Math.floor(Math.min(110, W0 / longest, H0 / (lines.length * LH)));
       if (!best || size > best.size) best = { lines: lines, size: size };
     }
     return best || { lines: wrap(t, 22), size: 40 };
@@ -100,7 +104,7 @@
   function head(word, fill, x, y) { return '<text x="' + x + '" y="' + y + '" font-family="' + TYPE + '" font-weight="700" font-size="44" letter-spacing="6" fill="' + fill + '">' + esc(word) + '</text>'; }
   var OPEN = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 600">';
   /* the text area of each kind, [x, y, w, h] in the 540 x 600 frame: wide enough that 60 characters are set at 60 units or more */
-  var AREAS = { item: [30, 172, 480, 405], route: [20, 262, 500, 334], question: [20, 140, 500, 445], line: [20, 136, 500, 450] };
+  var AREAS = { item: [32, 172, 476, 405], route: [24, 262, 492, 334], question: [24, 140, 492, 445], line: [24, 136, 492, 450] };      /* at least 24 of 540 (4.4%) clear of each edge */
   /* an index card for line, item, route or question, in the kit's 540 x 600 token frame; each kind its own colour and shape, read at 1.5 m */
   function cardSvg(pin, uid) {
     var p = isObj(pin) ? pin : {}, k = AREAS[p.kind] ? p.kind : 'line', a = AREAS[k], fit = fitText(p.text, a[2], a[3]), g = '';
@@ -134,13 +138,15 @@
     return ka ? one(d.alias) : one(d.name);
   }
   /* a face: the figure kit's portrait of the NPC (the spec with the known name, no notes), its ids its own; '' when it cannot be drawn */
-  function faceSvg(npc, K, uid) {
+  /* lite: the same face without the height chart and halo, its path coordinates whole numbers (about a third lighter, the same picture at this size) */
+  function faceSvg(npc, K, uid, lite) {
     var d = isObj(npc) ? npc : {};
     if (!K || typeof K.portrait !== 'function' || !isObj(d.spec) || !Object.keys(d.spec).length) return '';
     try {
       var s = JSON.parse(JSON.stringify(d.spec)), name = known(d);
       delete s.notes; delete s.$comment; s.id = uid; s.name = name; if (s.plate) s.plate = name;
-      var svg = str(K.portrait(s, { lod: 'lo' }).svg);
+      var svg = str(K.portrait(s, lite ? { lod: 'lo', chart: false, halo: false } : { lod: 'lo' }).svg);
+      if (lite) svg = svg.replace(/ d="([^"]*)"/g, function (m, d) { return ' d="' + d.replace(/-?\d+\.\d+/g, function (n) { return String(Math.round(+n)); }) + '"'; });
       svg = svg.replace(/<svg([^>]*?)\swidth="[^"]*"/, '<svg$1').replace(/<svg([^>]*?)\sheight="[^"]*"/, '<svg$1');
       return /^<svg[\s>]/.test(svg) ? svg : '';
     } catch (e) { return ''; }
@@ -163,6 +169,18 @@
     return { room: pin.room, label: WORD[pin.kind], svg: cardSvg(pin, uid) };
   }
   function sig(parts) { return JSON.stringify(parts); }
+  /* the board under the iPad's cap with as many real faces as fit: items [{ full, lite?, alt? }] (screened tokens, oldest pin first). With every
+     face full the board is too large -> the oldest face is drawn lighter, then the next... -> then the oldest lighter face becomes a name plate,
+     then the next, until it fits. -> { svg | null, lighter, plates }. A board refused for any other reason (a leak) is null at once. */
+  function fitBoard(roll, render, o, items) {
+    var cur = items.map(function (x) { return x.full; }), out = { svg: null, lighter: 0, plates: 0 }, faces = [];
+    function big() { var rp = {}; out.svg = board(roll, render, Object.assign({}, o, { tokens: cur, report: rp })); return !out.svg && rp.big === true; }
+    if (!big()) return out;
+    items.forEach(function (x, i) { if (x.lite || x.alt) faces.push(i); });
+    for (var a = 0; a < faces.length; a++) { if (!items[faces[a]].lite) continue; cur[faces[a]] = items[faces[a]].lite; out.lighter++; if (!big()) return out; }
+    for (var b = 0; b < faces.length; b++) { if (!items[faces[b]].alt) continue; cur[faces[b]] = items[faces[b]].alt; out.plates++; if (!big()) return out; }
+    return out;
+  }
   /* the score scene's board drawn again with the pins: the PLAYER layer, the board theme, the view the score scene chose (kit 1 only on the plan, as there),
      at the bands and the rooms opened on their own. o = { seen, tokens (each already through the page's token screen), view, kit1, leaks(svg, roll, reveal) }.
      -> the svg, or null when there is nothing to pin or the leak scan finds a hidden name anywhere on it (the board then goes up without its pins) */
@@ -172,6 +190,7 @@
     var view = x.view === 'rings' ? 'rings' : 'plan', opts = { view: view, theme: 'board', layer: 'player', reveal: x.seen, width: 1600, tokens: x.tokens };
     if (view === 'plan' && x.kit1) opts.kit1 = true;
     var r; try { r = render(roll, opts); } catch (e) { return null; }
+    if (r && typeof r.svg === 'string' && r.svg.length > SVG_MAX && isObj(x.report)) x.report.big = true;      /* over the iPad's cap: the caller may lighten the faces */
     return r && typeof r.svg === 'string' && r.svg.length <= SVG_MAX && !x.leaks(r.svg, roll, x.seen).length ? r.svg : null;
   }
 
@@ -200,7 +219,11 @@
     s.pins.forEach(function (p) {
       var t = token(p, { npcs: s.npcs, K: K }); if (!t) return;
       var x = { pin: p, tok: t };      /* a face also has a plain plate (initials, the name as its caption): what goes up if the figures will not fit the iPad's cap */
-      if (p.kind === 'face') x.alt = { room: t.room, label: t.label, svg: plateSvg(t.label, 'pb-' + p.id + '-n' + (++drawN).toString(36) + '-plate') };
+      if (p.kind === 'face') {      /* in reserve, lightest last: the face without its chart and with whole-number paths, then a name plate */
+        var d = s.npcs[p.npcId], lite = faceSvg(d, K, 'pb-' + p.id + '-' + (++drawN).toString(36), true);
+        if (lite) x.lite = { room: t.room, label: t.label, svg: lite };
+        x.alt = { room: t.room, label: t.label, svg: plateSvg(t.label, 'pb-' + p.id + '-n' + (++drawN).toString(36) + '-plate') };
+      }
       out.push(x);
     });
     return out;
@@ -220,7 +243,7 @@
       /* a pin the screen refuses now (someone hidden again, a clock hidden, a known-as name) stays stored and waits, as a pin for an unknown room does; said once */
       if (r) { var ids = (r.refused || []).map(function (x) { return x.id; }), fresh = (r.refused || []).filter(function (x) { return st.refused.indexOf(x.id) < 0; }); st.refused = ids;
         if (fresh.length) host.toast('Off the board until it is safe: ' + fresh.map(function (x) { return x.label; }).join(', ') + ' would show the players a name they must not see (' + fresh.map(function (x) { return x.names.join(', '); }).join('; ') + ').', true);
-        if (r.plates && !st.plated) { st.plated = true; host.toast('The faces went up as name plates: with the figures the board was too large for the iPad.', true); } }
+        if (r.plates && !st.plated) { st.plated = true; host.toast((r.plates === 1 ? 'One face' : r.plates + ' faces') + ' went up as a name plate: with every figure the board was too large for the iPad.', true); } }
       if (!r) st.last = '';      /* not set: the next look tries again (a sig is never '') */
       if (st.again) { st.again = false; var n = state(host); if (n.sig !== st.last) return sync(host, false); }
       return r;
@@ -291,6 +314,7 @@
         .forEach(function (id) { what.appendChild(el(doc, 'option', { value: id }, known(s.npcs[id]))); });
     } else what = el(doc, 'input', { type: 'text', 'data-pb': 'text', maxlength: String(TEXT_MAX), placeholder: 'What the crew learned (Enter pins it)', autocomplete: 'off', 'aria-label': 'Text' });
     if (st.form.text && what.tagName === 'INPUT') what.value = st.form.text;
+    if (st.form.npc && what.tagName === 'SELECT' && [].some.call(what.options, function (o) { return o.value === st.form.npc; })) what.value = st.form.npc;      /* the person chosen survives a redraw */
     f.appendChild(field('Room', room)); f.appendChild(field('Kind', kind)); f.appendChild(field(st.form.kind === 'face' ? 'Who' : 'Text', what));
     var pinB = btn(doc, 'Pin', { type: 'submit', 'class': 'btn sm primary', 'data-pb': 'pin' });
     if (!known_.length || !s.site) { pinB.disabled = true; pinB.title = s.site ? 'No room is known to the players yet: reveal a band or open a room' : 'Roll a location first'; }
@@ -299,6 +323,7 @@
     kind.addEventListener('change', function () { st.form.kind = kind.value; st.form.room = room.value; paint(box, host); });
     room.addEventListener('change', function () { st.form.room = room.value; });
     if (what.tagName === 'INPUT') what.addEventListener('input', function () { st.form.text = what.value; });
+    else what.addEventListener('change', function () { st.form.npc = what.value; });
     f.addEventListener('submit', function (ev) {
       ev.preventDefault();
       var pin = { room: room.value, kind: kind.value, text: kind.value === 'face' ? '' : what.value, npcId: kind.value === 'face' ? what.value : undefined };
@@ -349,5 +374,5 @@
 
   return { KEY: KEY, KINDS: KINDS, MAX: MAX, FACES_MAX: FACES_MAX, TEXT_MAX: TEXT_MAX, SITES_MAX: SITES_MAX, WORD: WORD,
     clean: clean, sitesOf: sitesOf, pinsOf: pinsOf, patchFor: patchFor, wrap: wrap, fitText: fitText, cardSvg: cardSvg, faceSvg: faceSvg, known: known,
-    token: token, sig: sig, board: board, paint: paint, follow: function (host) { follow(host, 0); }, add: add, remove: remove, sync: sync, reset: reset, _state: state };
+    token: token, sig: sig, board: board, fitBoard: fitBoard, ems: ems, AREAS: AREAS, rebase: function (host) { var s0 = state(host); st.last = s0.sig; st.bands = s0.shownKey; st.roll = host.roll(); }, paint: paint, follow: function (host) { follow(host, 0); }, add: add, remove: remove, sync: sync, reset: reset, _state: state };
 });

@@ -4326,6 +4326,7 @@
     return !say.length || W.confirm(what + ' will show the players ' + say.join(' and ') + '. Go ahead?');
   }
   function resetReveal() {
+    if (pbOn() && pbReplayReveal()) return;      /* IP6b (stage.players): the stored board's site comes back at the bands the iPad shows */
     var r = mapUi().reveal;
     if (BANDS.some(function (b) { return !!r[b] !== !!P.REVEAL0[b]; })) patch({ loc: { map: { reveal: clone(P.REVEAL0) } } });
   }
@@ -4828,6 +4829,7 @@
     var fl0 = ipadLayerSet('scene.filter') ? ipadLayers().scene.filter : null;
     AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null; AM.loaded = true; AM.error = '';
     crSeen(); apSync(); hsSync();
+    if (pbOn()) pbRevealLate();      /* IP6b: a reload that replayed the roll before this document came */
     if (Array.isArray(r.doc.polaroids) || (S && S.who)) whoPolaroids();      /* KS12.5: a stored list follows the session (or goes, with night.who off), whichever read lands first */
     /* F4: the site's Flashback / Back follows a filter it learns of here (a reload mid-flashback draws the toolbar before this GET lands) */
     if ((ipadLayerSet('scene.filter') ? ipadLayers().scene.filter : null) !== fl0 && S) { var fb = S.b19 && S.b19.flashback; if (fb && typeof fb.refresh === 'function') fb.refresh(); else siteChanged(); }
@@ -6890,16 +6892,17 @@
   }
   function pbSetScore(list, ask, keep) {
     if (!S || !S.locRoll) { toast('Roll a location first.', true); return Promise.resolve(null); }
-    var me = S, pmu = pbMap(keep), seen = pbSeen(pmu), hide = pbHide(), kept = [], alts = [], refused = [], waiting = 0, dropped = false, plates = false;
+    var me = S, pmu = pbMap(keep), seen = pbSeen(pmu), hide = pbHide(), kept = [], refused = [], waiting = 0, dropped = false, plates = 0;
+    function screened(tok) { var r = tok ? P.tokenScreen([tok], S.locRoll, seen, hide) : null; return r && r.tokens.length ? r.tokens[0] : null; }
     list.forEach(function (x) {
       var r = P.tokenScreen([x.tok], S.locRoll, seen, hide);
-      if (r.tokens.length) { kept.push(r.tokens[0]); var a = x.alt ? P.tokenScreen([x.alt], S.locRoll, seen, hide) : null; alts.push(a && a.tokens.length ? a.tokens[0] : r.tokens[0]); }
+      if (r.tokens.length) kept.push({ full: r.tokens[0], lite: screened(x.lite), alt: screened(x.alt) });
       else if (r.refused.length) refused.push({ id: x.pin.id, label: x.tok.label, names: r.refused }); else waiting++;
     });
     /* the score scene as Set as score scene builds it, then its board drawn again with the screened pins at the same view, kept only if the leak scan passes */
     var pin = function (built) {
-      var B = W.B68GmPlayersBoard, o = { seen: seen, tokens: kept, view: built.view, kit1: P.kit1On(), leaks: P.leaks }, svg = B.board(S.locRoll, W.B68Map && W.B68Map.render, o);
-      if (!svg && alts.some(function (a, i) { return a !== kept[i]; })) { svg = B.board(S.locRoll, W.B68Map && W.B68Map.render, Object.assign({}, o, { tokens: alts })); plates = !!svg; }      /* too large with the figures: the faces as name plates */
+      var fit = W.B68GmPlayersBoard.fitBoard(S.locRoll, W.B68Map && W.B68Map.render, { seen: seen, view: built.view, kit1: P.kit1On(), leaks: P.leaks }, kept), svg = fit.svg;      /* too large: faces lighter, then name plates, oldest first, only as many as it takes */
+      plates = fit.svg ? fit.plates : 0;
       if (svg) built.board = built.score.board = svg; else dropped = kept.length > 0;
     };
     return setScoreScene({ map: pmu, seen: seen, ask: ask, pin: pin }).then(function (r) {
@@ -6907,6 +6910,23 @@
       if (r && S === me && S.locRoll) renderLocation();      /* the panel's word on the score scene (sceneBehind) is now the stored one */
       return r ? { ok: true, refused: refused, waiting: waiting, pins: dropped ? 0 : kept.length, plates: plates } : null;
     });
+  }
+  /* IP6b: the bands of the stored score scene when it is this roll's site, else null */
+  function pbStoredBands() { var sc = AM.doc && isObj(AM.doc.score) ? AM.doc.score : null; return sc && S && S.locRoll && str(sc.name) === str(S.locRoll.name).slice(0, 200) && Array.isArray(sc.reveal) ? sc.reveal : null; }
+  /* a replay (Earlier, a reload, another device) of the site whose board the iPad shows: the ticks take the stored bands (true), so one tick never
+     takes rooms away. Another site, or nothing stored: false (reset to public, as before). The ambient document not read yet: note the roll and reset. */
+  function pbReplayReveal() {
+    if (!AM.loaded) { S.pbRevealWait = S.locRoll; return false; }
+    var bands = pbStoredBands(); if (!bands) return false;
+    var want = {}, r = mapUi().reveal; BANDS.forEach(function (b) { want[b] = b === 'public' || bands.indexOf(b) >= 0; });
+    if (BANDS.some(function (b) { return !!r[b] !== want[b]; })) patch({ loc: { map: { reveal: want } } });
+    return true;
+  }
+  function pbRevealLate() {
+    if (!S || !S.pbRevealWait || S.pbRevealWait !== S.locRoll) return;
+    S.pbRevealWait = null; var r = mapUi().reveal;
+    if (BANDS.some(function (b) { return !!r[b] !== !!P.REVEAL0[b]; }) || !pbReplayReveal()) return;      /* the GM ticked something meanwhile: theirs stands */
+    W.B68GmPlayersBoard.rebase(pbHost()); renderLocation();
   }
   function pbShowBoard() {      /* one press: the board scene pinned, and a blank pushed when a stage covers it (as Roll the opening credits does) */
     return patchAmbient({ mode: 'pin', scene: 'board' }).then(function (r) {

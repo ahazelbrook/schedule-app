@@ -142,7 +142,7 @@ test('the text: five lines at most, never clipped, for every length to 60 and fo
     const f = B.fitText(t);
     assert.ok(f.lines.length >= 1 && f.lines.length <= 5, t + ': ' + f.lines.length + ' lines');
     assert.equal(f.lines.join('').replace(/ /g, ''), t.slice(0, 60).replace(/ /g, ''), t + ': every character is set');
-    assert.ok(f.size >= 40 && f.size <= 110, t + ': size ' + f.size);
+    assert.ok(f.size >= 30 && f.size <= 110, t + ': size ' + f.size);
   }
   assert.ok(B.fitText('Ten').size > B.fitText('x'.repeat(60)).size, 'a short line is set larger');
   for (const t of ['The croupier deals seconds after midnight on the last table!', 'Who holds the key to the cage behind the counting room door?']) assert.ok(B.fitText(t, 500, 334).size >= 60, t + ': 60 characters set at 60 units or more, so 26 px on a 234 px card (' + B.fitText(t, 500, 334).size + ')');
@@ -271,6 +271,32 @@ await test('the module follows a name hidden after the fact, writes nothing for 
   hide = ['Dov Kessler']; B.follow(host); await tick();
   assert.equal(lists.length, 2, 'after that, a change is followed again');
   B.reset();
+});
+await test('IP6b: over the cap the faces lighten oldest first, then turn to plates only as many as it takes; a leak is null at once', () => {
+  const items = [{ full: { n: 'card' } }, { full: { n: 'f1' }, lite: { n: 'l1' }, alt: { n: 'p1' } }, { full: { n: 'f2' }, lite: { n: 'l2' }, alt: { n: 'p2' } }, { full: { n: 'f3' }, lite: { n: 'l3' }, alt: { n: 'p3' } }];
+  const COST = { card: 10, f1: 100, f2: 100, f3: 100, l1: 70, l2: 70, l3: 70, p1: 5, p2: 5, p3: 5 };
+  const run = (cap, leak) => { const seen = []; const render = (roll, o) => { seen.push(o.tokens.map((x) => x.n).join(',')); const n = o.tokens.reduce((s, x) => s + COST[x.n], 0); return { svg: '<svg>' + 'x'.repeat(n * 1024) + '</svg>' }; };
+    const r = B.fitBoard({}, render, { seen: ['public'], view: 'plan', leaks: () => (leak ? ['x'] : []) }, items); return { r, seen, cap }; };
+  const small = run(); assert.equal(small.r.lighter + small.r.plates, 0); assert.equal(small.seen.length, 1, 'under the cap: drawn once, every face full');
+  const fit = (target) => { const it = items.map((x) => x); const render = (roll, o) => { const n = o.tokens.reduce((s, x) => s + COST[x.n], 0); return { svg: '<svg>' + 'x'.repeat(Math.round(n * target)) + '</svg>' }; };
+    const seen = []; const r = B.fitBoard({}, (a, o) => { seen.push(o.tokens.map((x) => x.n).join(',')); return render(a, o); }, { seen: ['public'], view: 'plan', leaks: () => [] }, it); return { r, seen }; };
+  /* 310 units of board; scale so that 290 fits: one face lighter is enough */
+  const one = fit(590 * 1024 / 290);
+  assert.ok(one.r.svg, 'it fits'); assert.equal(one.r.lighter, 1); assert.equal(one.r.plates, 0); assert.equal(one.seen[1], 'card,l1,f2,f3', 'the oldest face first');
+  /* 222 fits: every face lighter (220) is just enough, no plate */
+  const lite = fit(590 * 1024 / 222); assert.equal(lite.r.lighter, 3); assert.equal(lite.r.plates, 0);
+  /* 160 fits: three lighter (220), then the oldest a plate (155): one plate, two real faces */
+  const plate = fit(590 * 1024 / 160); assert.equal(plate.r.plates, 1); assert.equal(plate.seen[plate.seen.length - 1], 'card,p1,l2,l3');
+  const leak = run(undefined, true); assert.equal(leak.r.svg, null); assert.equal(leak.seen.length, 1, 'a leak: no lighter tries, null at once');
+});
+await test('IP6b: the card text sits at least 4% of the card width clear of each edge, by the face\'s measured widths, for awkward lines', () => {
+  const AWK = ['Who keeps the spare key?', 'WWWW MMMM WWWW MMMM WWWW MMMM WWWW MMMM WWWW MMMM WWWW MMMM', 'Mmmmmmmm wwwwwww mmmmmmm wwwwwww mmmmmmm wwwwwww mmmmmmmmmm',
+    'The Gentleman From Ferry Street keeps the keys on his watch', 'A brass key on a red cord, behind the bar, under the till!', 'www.mmm www.mmm www.mmm www.mmm www.mmm www.mmm www.mmm ww'];
+  for (const kind of ['line', 'item', 'route', 'question']) {
+    const [x, , w] = B.AREAS[kind];
+    assert.ok(x >= 540 * 0.04 && x + w <= 540 * 0.96, kind + ': the area keeps 4% clear');
+    for (const s of AWK) { const f = B.fitText(s, B.AREAS[kind][2], B.AREAS[kind][3]); for (const l of f.lines) assert.ok(B.ems(l) * f.size <= w + 0.5, kind + ': "' + l + '" is ' + Math.round(B.ems(l) * f.size) + ' wide in ' + w); }
+  }
 });
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 if (failed) process.exit(1);
