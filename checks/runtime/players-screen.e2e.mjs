@@ -176,8 +176,10 @@ try {
     /* R1: one sheet edge to edge: the stage's ground is the drawing's paper and the drawing's frame reaches the foot (no bar kept for the status line) */
     const sheet = await ipad.evaluate(() => { const m = [...document.querySelectorAll('.dp-stage.dp-map')].pop(), f = m.querySelector('.dp-map-frame'), r = m.querySelector('.dp-map-frame svg > rect');
       const fill = r ? r.getAttribute('fill') : '', probe = document.createElement('i'); probe.style.color = fill; document.body.appendChild(probe); const want = getComputedStyle(probe).color; probe.remove();
-      return { bg: getComputedStyle(m).backgroundColor, want, frameBottom: Math.round(innerHeight - f.getBoundingClientRect().bottom) }; });
-    check(sheet.bg === sheet.want && !/rgba?\(10, 9, 8/.test(sheet.bg) && sheet.frameBottom === 0, 'on' + tag + ': the map stands on its own paper edge to edge (ground ' + sheet.bg + ', the sheet ' + sheet.want + ', the frame ' + sheet.frameBottom + ' px off the foot)');
+      const cap = m.querySelector('.dp-capbar'), capH = cap ? Math.round(cap.getBoundingClientRect().height) : 0, capBg = cap ? getComputedStyle(cap).backgroundColor : '', capPlate = !!(cap && /stage-plate|ui-card/.test(cap.className));
+      return { bg: getComputedStyle(m).backgroundColor, want, frameBottom: Math.round(innerHeight - f.getBoundingClientRect().bottom), capH, capBg, capPlate }; });
+    const capOk = !sheet.capBg || sheet.capPlate || /rgba\(0, 0, 0, 0\)|transparent/.test(sheet.capBg);      /* a caption bar on the paper; the kit's caption is its own plate */
+    check(sheet.bg === sheet.want && !/rgba?\(10, 9, 8/.test(sheet.bg) && Math.abs(sheet.frameBottom - sheet.capH) <= 1 && capOk, 'on' + tag + ': the map stands on its own paper edge to edge (ground ' + sheet.bg + ', the sheet ' + sheet.want + ', the frame ' + sheet.frameBottom + ' px off the foot, a caption bar ' + sheet.capH + ' px ' + (sheet.capBg || 'none') + ')');
     /* R2: no wall-clock status line while the page is healthy */
     const stt = await ipad.evaluate(() => ({ status: getComputedStyle(document.querySelector('.dp-status')).visibility, conn: !!document.querySelector('.p2-conn:not([hidden])') }));
     check(stt.status === 'hidden' && !stt.conn, 'on' + tag + ': no status line and no connection dot while the page is healthy: ' + JSON.stringify(stt));
@@ -308,6 +310,8 @@ try {
       return until(async () => { const j = (await api('GET', '/gm/display')).json; return j && j.seq !== seq0 && j.display && j.display.kind === 'svg' ? j.display.svg : null; }, 15000);
     };
     const stageKit = await page.evaluate(() => { try { return window.B68Map.options().layouts.indexOf('stage') >= 0; } catch (e) { return false; } });
+    await page.evaluate(() => { const n = document.querySelector('.rv-rm.sel .rv-p.held [data-site="spot"]'); if (n) n.click(); });      /* Narrator: the held face comes down */
+    await api('PATCH', '/gm/ambient', { overlay: null });
     await setting({ 'stage.players': true, 'map.fill': true });
     const svgOn = await fillShow();
     check(!!svgOn && stageKit, 'R3: map.fill on, the stage layout drawn for the shared screen (kit lists stage: ' + stageKit + ')');

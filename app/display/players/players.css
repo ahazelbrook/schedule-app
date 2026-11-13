@@ -6,6 +6,8 @@
 .dp-root.p2-screen .dp-auto { display: none; }      /* the autopilot sends nothing while the players' screen is on: no AUTO mark */
 /* R1: the map is one sheet edge to edge: no bar kept for the status line under it (players.js paints the stage the sheet's paper) */
 .dp-root.p2-screen .dp-map-frame { bottom: 0; }
+.dp-root.p2-screen .dp-map .dp-capbar { background: transparent; color: var(--b68-ink, #14110e); padding-bottom: max(16px, calc(env(safe-area-inset-bottom) + 12px)); }      /* a captioned drawing: its title on the same paper */
+.dp-root.p2-screen .dp-map .dp-capbar .dp-strip-cap { color: var(--b68-ink-soft, #55504a); }
 /* R2: the status line (its words are wall-clock time) and the kit's fault dot stand down; .p2-conn is the one amber dot, after 20 s without an answer */
 .dp-root.p2-screen .dp-status, .dp-root.p2-screen .stage-fault .ui-dot { visibility: hidden; }
 .p2-conn { position: absolute; z-index: 3; left: max(14px, env(safe-area-inset-left)); bottom: max(14px, env(safe-area-inset-bottom)); width: max(12px, 1.6vmin); height: max(12px, 1.6vmin);
