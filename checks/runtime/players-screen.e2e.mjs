@@ -369,6 +369,35 @@ try {
       }
     }
     await page.setViewportSize({ width: 1366, height: 768 }); await sleep(600);
+    /* IP2d delta: the opened list stays inside the window under the hand. "+ n more" (or the chip) pressed with the mouse, the hand left there:
+       every Send, Not now and Show fewer reachable (inside the window, or inside the panel's own scroller), Show fewer within 40 px of the pointer;
+       Show fewer pressed: closed; the hand away: collapsed, it covers no control again (not frozen by the mouse's focus) */
+    for (const [w, h] of [[1366, 768], [1280, 720], [1024, 520]]) {
+      await page.mouse.move(3, 3); await page.setViewportSize({ width: w, height: h }); await sleep(700);
+      await setLines(4); await sleep(1200);
+      const tg = await page.evaluate(() => { const b = document.querySelector('#gm-p2-lines [data-p2-line="more"]'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2, text: b.textContent }; });
+      if (!tg) { check(false, 'IP2d delta: ' + w + 'x' + h + ': no "+ n more" or chip to press'); continue; }
+      await page.mouse.click(tg.x, tg.y); await sleep(500);
+      const o = await page.evaluate((p) => {
+        const q = document.querySelector('#gm-p2-lines'), pr = q.getBoundingClientRect(), scroller = q.scrollHeight > q.clientHeight + 1;
+        const inWin = (r) => r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight;
+        const btns = [...q.querySelectorAll('[data-p2-line]')];
+        const reach = btns.filter((b) => inWin(b.getBoundingClientRect()) || (scroller && inWin(pr))).length;
+        const fewer = btns.find((b) => /Show fewer/.test(b.textContent)), fr = fewer && fewer.getBoundingClientRect();
+        const near = !!fr && p.x >= fr.left - 40 && p.x <= fr.right + 40 && p.y >= fr.top - 40 && p.y <= fr.bottom + 40;
+        return { open: !!fewer, n: btns.length, reach, panelIn: inWin(pr), near, scroller, box: [Math.round(pr.left), Math.round(pr.top), Math.round(pr.right), Math.round(pr.bottom)] };
+      }, tg);
+      check(o.open && o.n >= 9 && o.reach === o.n && o.panelIn && o.near, 'IP2d delta: ' + w + 'x' + h + ', "' + tg.text + '" pressed and the hand left there: the open list inside the window, every button reachable, Show fewer under the hand: ' + JSON.stringify(o));
+      if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'open-under-hand-' + w + 'x' + h + '.png') });
+      const sf = await page.evaluate(() => { const b = [...document.querySelectorAll('#gm-p2-lines [data-p2-line="more"]')].find((x) => /Show fewer/.test(x.textContent)); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+      if (sf) await page.mouse.click(sf.x, sf.y);
+      await sleep(400);
+      const closed = await page.evaluate(() => !/Show fewer/.test(document.querySelector('#gm-p2-lines').textContent));
+      await page.mouse.move(3, 3); await sleep(1500);
+      const g = await page.evaluate(COVERS);
+      check(closed && !g.open && !g.out && g.bad.length === 0, 'IP2d delta: ' + w + 'x' + h + ', Show fewer pressed and the hand away: closed, and collapsed it covers no control (not frozen): ' + JSON.stringify(g));
+    }
+    await page.setViewportSize({ width: 1366, height: 768 }); await sleep(600);
     /* IP2d: a new line keeps the keyboard on the same row's same button */
     await setLines(2); await sleep(600);
     const f0 = await page.evaluate(() => { const b = document.querySelector('#gm-p2-lines [data-p2-line="later"]'); b.focus(); return b.getAttribute('data-id'); });

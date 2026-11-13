@@ -93,7 +93,19 @@
        IP2d (a small laptop): collapsed, it SHRINKS before it covers anything: two rows and "+ n more", else one row and "+ n more", else a one-line
        chip ("3 lines waiting") that opens the list on a press. Only the open list may sit over a control (the GM asked for it). */
     var FORMS = ['two', 'one', 'chip'];
-    function held() { var d = root.ownerDocument, a = d && d.activeElement; return rec.hover || !!(a && rec.el && rec.el.contains(a)); }
+    /* the hold: the pointer over the panel (and 600 ms after), or a KEYBOARD focus inside it (IP2d delta: a mouse press leaves a focus that must not freeze it) */
+    function kbFocus(a) { try { return !!(a && a.matches && a.matches(':focus-visible')); } catch (e) { return true; } }
+    function held() { var d = root.ownerDocument, a = d && d.activeElement; return rec.hover || !!(a && rec.el && rec.el.contains(a) && kbFocus(a)); }
+    /* IP2d delta: a size change of the panel itself (open, close, a row in or out) always keeps it inside the window, even while held: it stays at its
+       spot when it fits, else it grows up and left from there, so the control just pressed (the last line) stays under the hand */
+    function keepIn() {
+      var el = rec.el, win = el && el.ownerDocument.defaultView; if (!el || el.hidden || !win) return;
+      var r = el.getBoundingClientRect(), at = rec.at || { x: r.left, y: r.top }, w = el.offsetWidth, h = el.offsetHeight;
+      var x = at.x, y = at.y, pr = rec.press, tg = el.querySelector('[data-p2-line="more"]');
+      if (pr && Date.now() - pr.t < 1500 && tg) { x = pr.x - (tg.offsetLeft + tg.offsetWidth / 2); y = pr.y - (tg.offsetTop + tg.offsetHeight / 2); }      /* the toggle just pressed lands under the hand */
+      x = Math.max(8, Math.min(x, win.innerWidth - w - 8)); y = Math.max(6, Math.min(y, win.innerHeight - h - 6));
+      el.style.right = ''; el.style.bottom = ''; el.style.left = x + 'px'; el.style.top = y + 'px';
+    }
     function avoidList(d, el, H0) {
       var avoid = [];
       [].forEach.call(d.querySelectorAll('button, input, select, textarea, a[href], [role="button"], .rv-card'), function (n) {
@@ -103,7 +115,7 @@
     }
     function place() {
       var el = rec.el, d = root.ownerDocument, win = d && d.defaultView; if (!el || el.hidden || !win) return;
-      if (held()) { rec.owed = true; return; }      /* asked while held: done once the hand has gone */
+      if (held()) { rec.owed = true; keepIn(); return; }      /* asked while held: only kept inside the window; the rest once the hand has gone */
       rec.owed = false;
       var W0 = win.innerWidth, H0 = win.innerHeight, avoid = avoidList(d, el, H0), es = el.style, forms = rec.open ? ['open'] : FORMS;
       for (var i = 0; i < forms.length; i++) {
@@ -145,6 +157,7 @@
         rec.el = d.createElement('div'); rec.el.id = 'gm-p2-lines'; rec.el.className = 'gm-p2-lines'; rec.el.setAttribute('role', 'region'); rec.el.setAttribute('aria-label', 'Public lines waiting');
         var es = rec.el.style; es.position = 'fixed'; es.zIndex = '60'; es.width = 'min(430px, 34vw)'; es.display = 'grid'; es.gap = '3px';
         es.padding = '5px 8px'; es.background = '#1a1714'; es.color = '#f2ede1'; es.borderLeft = '4px solid #e0701e'; es.boxShadow = '0 2px 10px rgba(0,0,0,.35)'; es.fontSize = '13px';
+        es.maxHeight = 'calc(100vh - 12px)'; es.overflowY = 'auto';      /* IP2d delta: a list taller than the window scrolls inside itself */
         rec.el.addEventListener('click', function (ev) {
           var b = ev.target && ev.target.closest ? ev.target.closest('[data-p2-line]') : null; if (!b) return;
           var act = b.getAttribute('data-p2-line');
@@ -154,6 +167,7 @@
           else log('Public line not shown (Not now): ' + str(it.o.text).trim());
           draw();
         });
+        rec.el.addEventListener('pointerdown', function (ev) { var b = ev.target && ev.target.closest ? ev.target.closest('[data-p2-line="more"]') : null; rec.press = b ? { x: ev.clientX, y: ev.clientY, t: Date.now() } : null; });
         rec.el.addEventListener('pointerenter', function () { clearTimeout(rec.hoverT); rec.hover = true; });
         rec.el.addEventListener('pointerleave', function () { clearTimeout(rec.hoverT); rec.hoverT = setTimeout(function () { rec.hover = false; if (rec.owed) place(); }, 600); });
         rec.el.addEventListener('focusout', function () { setTimeout(function () { if (rec.owed) place(); }, 0); });
