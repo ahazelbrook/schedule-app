@@ -485,7 +485,7 @@ function cleanHud(h) {
       beats: whole(n.beats, 0, L.beats), start: whole(n.start, 0, L.beats), cur: whole(n.cur, 0, L.beats),
       marks: listOf(n.marks, L.marks, (m) => (isPlainObject(m) ? { i: whole(m.i, 0, L.beats), icon: cut(m.icon, L.str), text: cut(m.text, L.str) } : null)),
     } : null,
-    alarm: a ? { name: cut(a.name, L.str), size, filled: Math.min(whole(a.filled, 0, L.size), size), text: cut(a.text, L.str) } : null,
+    alarm: a ? { name: cut(a.name, L.str), size, filled: Math.min(whole(a.filled, 0, L.size), size), text: cut(a.text, L.str), ...(typeof a.id === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(a.id) ? { id: a.id } : {}) } : null,      // IP2 R4: the alarm's table clock id, only when sent
     crew: listOf(h.crew, L.crew, (c) => {
       if (!isPlainObject(c)) return null;
       const out = { name: cut(c.name, L.str), costume: cut(c.costume, L.str), icon: cut(c.icon, L.str) };
@@ -592,7 +592,9 @@ export async function loadMissionPart(db, campaign, hseqRaw, withLive) {
   const have = typeof hseqRaw === 'string' && HSEQ_RE.test(hseqRaw) ? Number(hseqRaw) : -1;      // anything else counts as stale
   const seq = "CASE WHEN json_valid(doc) THEN json_extract(doc, '$.mission.seq') END";
   const hud = "CASE WHEN json_valid(doc) AND COALESCE(json_extract(doc, '$.mission.seq'), 0) != ?2 THEN json_extract(doc, '$.mission.hud') END";
-  const feat = "CASE WHEN json_valid(doc) THEN json_extract(doc, '$.features') END";
+  // IP2 (stage.players): the SAME column also cuts out the table's clocks while the players' screen setting is stored on. json_extract with two paths
+  // answers a JSON array [features, clocks]; off, the second path names nothing and the array is [features, null]. No new statement, no new row read.
+  const feat = "CASE WHEN json_valid(doc) THEN json_extract(doc, '$.features', CASE WHEN json_extract(doc, '$.features.\"stage.players\"') = 1 THEN '$.clocks' ELSE '$.ip2none' END) END";
   const row = await db.prepare(
     'SELECT (SELECT ' + seq + ' FROM campaigns WHERE id = ?1) AS hseq, (SELECT ' + hud + ' FROM campaigns WHERE id = ?1) AS hud, (SELECT ' + feat + ' FROM campaigns WHERE id = ?1) AS feat' +
     (withLive ? ', (SELECT ' + LIVE_SQL + ' FROM campaigns WHERE id = ?3) AS live' : '')
@@ -607,5 +609,26 @@ export async function loadMissionPart(db, campaign, hseqRaw, withLive) {
     try { const v = typeof r.hud === 'string' ? JSON.parse(r.hud) : null; if (isPlainObject(v)) h = v; } catch (_) { /* no hud */ }
     part = { hseq: now, hud: h };
   }
-  return { part, live: liveFlagOf(r.live === undefined ? null : r.live), features: parseFeatures(r.feat) };
+  let fc = null;
+  try { const v = typeof r.feat === 'string' ? JSON.parse(r.feat) : null; if (Array.isArray(v)) fc = v; } catch (_) { /* none */ }
+  const features = parseFeatures(fc && fc[0] != null ? JSON.stringify(fc[0]) : null);
+  const out = { part, live: liveFlagOf(r.live === undefined ? null : r.live), features };
+  if (features['stage.players'] === true) out.clocks = playersClocks(fc ? fc[1] : null);
+  return out;
+}
+
+/**
+ * IP2 (stage.players): the table clocks the players may see, for the dials on the shared screen: [{ id, name (at most 60), size, filled }] in the
+ * table's order, at most 12. A hidden clock and a nameless one are left out, exactly as visibleClock() reads them, so a hidden clock's name never
+ * leaves the server. Response only: nothing is stored.
+ */
+export function playersClocks(raw) {
+  const list = withClockIds(Array.isArray(raw) ? raw : []);
+  const out = [];
+  for (const c of list) {
+    if (out.length >= 12) break;
+    const v = visibleClock([c], c.id);
+    if (v) out.push({ id: String(c.id).slice(0, 40), name: v.name, size: v.size, filled: v.filled });
+  }
+  return out;
 }

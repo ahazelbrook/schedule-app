@@ -105,6 +105,7 @@ const CHECKS = [
   // the map kit's new options (MK1)
   ['checks/runtime/map-scene.e2e.mjs', 'the map takes the new kit options: off, the four settings, the Shared screen and a live re-send to TV (9310; MK1)'],
   ['checks/runtime/players-intro.e2e.mjs', 'the NPC introduction: the title card, the stage after it, a late joiner, Take it down, a hidden NPC, reduced motion, off (12110; IP3)'],
+  ['checks/runtime/players-screen.e2e.mjs', 'the players screen, map first: no band, the dials, nothing by itself, a scene just plays, the NPC card (12050; IP2)'],
 ];
 
 const want = process.argv.slice(2);
