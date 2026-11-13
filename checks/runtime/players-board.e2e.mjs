@@ -36,6 +36,15 @@ const api = (method, p, body, user = GM) => fetch(BASE + '/api' + p, { method, h
 const players = async (on) => { for (const p of ['/gm/state', '/campaign']) await api('PATCH', p, { features: { 'stage.players': on } }); };
 const score = async () => { const d = (await api('GET', '/gm/ambient')).json; return d && d.doc && d.doc.score ? d.doc.score : null; };
 const displayGet = async () => (await api('GET', '/gm/display?seq=-1&aseq=-1&hseq=-1', undefined, IPAD)).text;
+/* what the board scene shows (run inside its frame): the strings and how many are pinned up, every word, a card arriving, the sheet, the kit's own way-in
+   card words, and the big cards of the players' screen: each pin's on-screen width and the smallest of its words (body type and caption) in screen px */
+function probe() {
+  const S = [...document.querySelectorAll('.string')], px = (x) => parseFloat(x.getAttribute('font-size')) * Math.hypot(x.getScreenCTM().a, x.getScreenCTM().b);
+  const cards = [...document.querySelectorAll('.pcard')].map((g) => { const r = g.getBoundingClientRect(), body = [...g.querySelectorAll('text[font-weight="800"], text[font-family="Yellowtail"]')].filter((x) => x.textContent.trim());
+    return { pin: g.getAttribute('data-pin'), w: r.width, text: [...g.querySelectorAll('text, title')].map((x) => x.textContent).join(' '), font: body.length ? Math.min(...body.map(px)) : 0 }; });
+  return { strings: S.length, drawn: S.filter((s) => /^0(px)?$/.test(getComputedStyle(s).strokeDashoffset)).length, text: [...document.querySelectorAll('text, title')].map((x) => x.textContent).join(' | '),
+    arriving: document.querySelectorAll('.arrive, .landing').length, sheet: !!document.querySelector('#content > svg'), kit: /costs a question/.test(document.body.textContent), cards, gmOnly: /GM-ONLY/.test(document.documentElement.outerHTML) };
+}
 const strings = (svg) => (String(svg).match(/stroke="#a51d16"/g) || []).length;
 
 if (await fetch(BASE + '/api/me', { signal: AbortSignal.timeout(1500) }).then(() => true, () => false)) { console.log('FAIL port ' + PORT + ' is already in use'); process.exit(1); }
@@ -97,15 +106,16 @@ try {
   await until(async () => /"kind":"dark"/.test(await displayGet()), 8000);
   await sleep(1500);      /* the GM page's poll learns the iPad is dark */
   const frame = () => dp.frames().find((f) => /planning-board/.test(f.url()) && !f.isDetached());
-  const board = async () => { const f = frame(); if (!f) return null; try { return await f.evaluate(() => ({ strings: document.querySelectorAll('.string').length, drawn: [...document.querySelectorAll('.string')].filter((s) => getComputedStyle(s).strokeDashoffset === '0' || getComputedStyle(s).strokeDashoffset === '0px').length, text: [...document.querySelectorAll('text, title')].map((t) => t.textContent).join(' | '), arriving: document.querySelectorAll('.arrive').length, gmOnly: /GM-ONLY/.test(document.documentElement.outerHTML) })); } catch (e) { return null; } };
+  const board = async () => { const f = frame(); if (!f) return null; try { return await f.evaluate(probe); } catch (e) { return null; } };
 
   /* Board on the iPad: the board scene, and the dark comes down */
   await gp.click('[data-pb="show"]');
   const amb0 = await until(async () => { const d = (await api('GET', '/gm/ambient')).json; return d && d.doc && d.doc.mode === 'pin' && d.doc.scene === 'board' && d.doc.score ? d.doc : null; }, 10000);
   check(!!amb0, 'Board on the iPad: the ambient scene is pinned to the board, with this site\'s score scene set');
   check(!!(await until(async () => { const t = await displayGet(); return /"kind":"blank"/.test(t); }, 10000)), 'Board on the iPad: the dark that covered it came down (a blank, as Roll the opening credits does)');
-  const b0 = await until(async () => { const b = await board(); return b && b.strings > 0 ? b : null; }, 30000);
+  const b0 = await until(async () => { const b = await board(); return b && b.sheet ? b : null; }, 30000);
   check(!!b0, 'the iPad plays the planning board (' + (b0 ? b0.strings + ' strings' : 'no frame') + ')');
+  check(!!b0 && !b0.kit, 'on: the map kit way-in cards are not in the scene (their words, "costs a question", are nowhere in it)');
   const s0 = await score();
 
   /* a line pinned to a room the players know */
@@ -121,6 +131,8 @@ try {
   const settled = await until(async () => { const b = await board(); return b && !b.arriving && b.drawn === b.strings ? b : null; }, 15000);
   check(!!settled, 'it settles into its place and its string is pinned');
   await shot(dp, 'board-settled-tv-1920');
+  const c1 = settled && settled.cards.find((c) => c.text.includes(LINE));
+  check(!!c1 && c1.w >= 230 && c1.font >= 26, 'at 1920x1080 the pin is a big card in the cork: ' + (c1 ? Math.round(c1.w) + ' px wide, words ' + c1.font.toFixed(1) + ' px' : 'no card') + ' (at least 230 and 26)');
 
   /* a face: a revealed NPC */
   await pinIt(pub[0], 'face', 'Mabel Quist');
@@ -176,13 +188,15 @@ try {
   const rp = await rc.newPage(); rp.on('pageerror', (e) => errors.push('display (reduced): ' + e.message));
   await rp.goto(BASE + '/#display');
   const rframe = () => rp.frames().find((f) => /planning-board/.test(f.url()) && !f.isDetached());
-  const rboard = async () => { const f = rframe(); if (!f) return null; try { return await f.evaluate(() => ({ strings: document.querySelectorAll('.string').length, text: [...document.querySelectorAll('text, title')].map((t) => t.textContent).join(' | '), arriving: document.querySelectorAll('.arrive').length })); } catch (e) { return null; } };
-  await until(async () => { const b = await rboard(); return b && b.strings > 0; }, 30000);
+  const rboard = async () => { const f = rframe(); if (!f) return null; try { return await f.evaluate(probe); } catch (e) { return null; } };
+  await until(async () => { const b = await rboard(); return b && b.sheet && b.cards.length > 0; }, 30000);
   await sleep(1000);
   const STILL = 'The back stairs creak';
   await pinIt(pub[0], 'item', STILL);
   const rb = await until(async () => { const b = await rboard(); return b && b.text.includes(STILL) ? b : null; }, 15000, 100);
   check(!!rb && rb.arriving === 0, 'held still (fx.off): the new pin is simply there (no arrival)');
+  const rc1 = rb && rb.cards.find((c) => c.text.includes(STILL)), small = rb ? rb.cards.reduce((m, c) => Math.min(m, c.w), 1e9) : 0, smallF = rb ? rb.cards.reduce((m, c) => Math.min(m, c.font), 1e9) : 0;
+  check(!!rc1 && small >= 160 && smallF >= 18, 'at 1180x820 every card is at least 160 px wide with words at least 18 px (' + (rb ? rb.cards.length + ' cards, narrowest ' + Math.round(small) + ' px, smallest words ' + smallF.toFixed(1) + ' px' : 'none') + ')');
   for (const p of ['/gm/state', '/campaign']) await api('PATCH', p, { features: { 'fx.off': false } });
   await shot(rp, 'board-still-ipad-1180');
   await rc.close();
@@ -201,6 +215,8 @@ try {
   await gp.click('[data-gm="scorescene"]');
   const sOff = await until(async () => { const s = await score(); return s && s.at !== sOff0.at ? s : null; }, 10000);
   check(!!sOff && !/pb-p\d/.test(sOff.board) && !sOff.board.includes(STILL), 'off: Set as score scene stores the board as today (no pin on it), though pins are still stored');
+  const bOff = await until(async () => { const b = await board(); return b && b.sheet && b.kit && !b.cards.length ? b : null; }, 25000);
+  check(!!bOff, 'off: the scene is as before (the map kit way-in cards on the board, no big cards)');
 
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 4).join(' | ') : ''));
   await dc.close(); await gc.close();

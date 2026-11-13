@@ -1729,7 +1729,8 @@
     function sendScore(win) {
       if (!s.score || !win) return;
       if (!s.scoreMsg) s.scoreMsg = Pure.scoreMessage(s.score, polaroids(), parserEnv(false));
-      try { win.postMessage(s.scoreMsg, location.origin); } catch (e) { /* the frame went away */ }
+      var msg = swOn('stage.players') ? Object.assign({}, s.scoreMsg, { players: true }) : s.scoreMsg;      /* IP6: the planning board lays its pins out big; off, today's message */
+      try { win.postMessage(msg, location.origin); } catch (e) { /* the frame went away */ }
     }
     /* the ambient doc arrived (or changed): re-plan, tell the watch feed a changed crew, hand a changed score to the live score scenes */
     function applyAmbient(doc) {

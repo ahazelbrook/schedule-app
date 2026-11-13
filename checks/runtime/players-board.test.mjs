@@ -116,7 +116,7 @@ test('the stored pins: only the known shape, kinds and caps (12 pins, 60 charact
     { id: 'P5', room: 'A', kind: 'line', text: 'x' }, { id: 'p6', room: 'A', kind: 'rumour', text: 'x' }, null, 'p7']), [], 'every malformed pin is dropped');
   assert.equal(B.clean([{ id: 'p1', room: 'A', kind: 'item', text: 'x'.repeat(90) }])[0].text.length, 60, 'the text is capped at 60');
   const many = Array.from({ length: 20 }, (_, i) => ({ id: 'p' + i, room: 'A', kind: 'question', text: 'Who ' + i }));
-  assert.equal(B.clean(many).length, 12, 'at most 12 pins');
+  assert.equal(B.clean(many).length, 8, 'at most 8 pins (the overseer, 14/11)');
   assert.equal(B.clean([ok, ok]).length, 1, 'an id once');
   assert.deepEqual(B.KINDS, ['line', 'face', 'item', 'route', 'question']);
 });
@@ -134,17 +134,18 @@ test('the key: boardPins, one entry a site, six sites at most (the oldest goes a
   assert.equal(Object.keys(p).join(), 'boardPins', 'nothing but the new key');
 });
 
-test('the text: three lines at most, never clipped, for every length to 60 and for words longer than a line', () => {
+test('the text: five lines at most, never clipped, for every length to 60 and for words longer than a line', () => {
   const words = 'the guard on the side door changes at ten and nobody checks the coal chute after dark'.split(' ');
   const texts = ['Ten', 'x'.repeat(60), 'Supercalifragilisticexpialidociousness and then some more of it', 'a'.repeat(25) + ' ' + 'b'.repeat(34)];
   for (let n = 1; n <= words.length; n++) texts.push(words.slice(0, n).join(' ').slice(0, 60));
   for (const t of texts) {
     const f = B.fitText(t);
-    assert.ok(f.lines.length >= 1 && f.lines.length <= 3, t + ': ' + f.lines.length + ' lines');
+    assert.ok(f.lines.length >= 1 && f.lines.length <= 5, t + ': ' + f.lines.length + ' lines');
     assert.equal(f.lines.join('').replace(/ /g, ''), t.slice(0, 60).replace(/ /g, ''), t + ': every character is set');
-    assert.ok(f.size >= 26 && f.size <= 92, t + ': size ' + f.size);
+    assert.ok(f.size >= 40 && f.size <= 110, t + ': size ' + f.size);
   }
   assert.ok(B.fitText('Ten').size > B.fitText('x'.repeat(60)).size, 'a short line is set larger');
+  for (const t of ['The croupier deals seconds after midnight on the last table!', 'Who holds the key to the cage behind the counting room door?']) assert.ok(B.fitText(t, 500, 334).size >= 60, t + ': 60 characters set at 60 units or more, so 26 px on a 234 px card (' + B.fitText(t, 500, 334).size + ')');
 });
 
 test('each card passes the display\'s own sanitiser and the scene\'s checker, is 540 x 600, carries its words, and each kind looks different', () => {
@@ -160,7 +161,8 @@ test('each card passes the display\'s own sanitiser and the scene\'s checker, is
     assert.deepEqual(shellStrips(t.svg), [], kind + ': the scene strips nothing');
     assert.ok(!/<script|javascript:|\son[a-z]+=|href=|style=/i.test(t.svg), kind + ': nothing active');
     assert.ok(t.svg.includes('<title>Mab &amp; &quot;Kessler&quot; &lt;meet&gt; at ten</title>'), kind + ': the words whole, escaped');
-    for (const l of B.fitText(pin.text).lines) assert.ok(t.svg.includes('>' + l.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') + '</text>'), kind + ': the line ' + l);
+    const set = [...t.svg.matchAll(/font-weight="800"[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]).join(' ');
+    assert.equal(set.replace(/ /g, ''), 'Mab &amp; &quot;Kessler&quot; &lt;meet&gt; at ten'.replace(/ /g, ''), kind + ': every word set on the card, escaped');
     assert.equal(t.label, B.WORD[kind]);
     fills.add(t.svg.match(/<rect width="540" height="600" fill="([^"]+)"/)[1]);
   }

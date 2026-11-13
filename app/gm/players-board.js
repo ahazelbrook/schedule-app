@@ -2,7 +2,7 @@
 
    What the crew has learned, pinned to the room it belongs to on the score scene's cork board (the ambient scene "board",
    app/ambient/planning-board.html). A pin is { id, room, kind, text, npcId? }: kind line (something overheard or learned), face (a person),
-   item, route or question; text at most 60 characters; at most 12 pins a site.
+   item, route or question; text at most 60 characters; at most 8 pins a site.
 
    Stored on the GM state under a NEW optional key, boardPins: { "<site name>": { pins: [pin], at: ms } }, at most 6 sites (the oldest goes).
    Nothing older reads it (Deploy 38 ignores it). Each pin is drawn HERE as one of the map kit's tokens, { room, label, svg } (the board theme
@@ -14,7 +14,7 @@
    not know waits; one that would name a hidden room, NPC or clock is refused and named), then the board drawn on the PLAYER layer with them
    and the page's leak scan over the whole board, the gate, and the ambient document's score.
 
-   Pure: clean(list) · sitesOf(doc) · pinsOf(doc, site) · patchFor(doc, site, pins, now) · wrap(text, w) · fitText(text) · cardSvg(pin, uid)
+   Pure: clean(list) · sitesOf(doc) · pinsOf(doc, site) · patchFor(doc, site, pins, now) · wrap(text, w) · fitText(text, w, h) · cardSvg(pin, uid)
          faceSvg(npc, K, uid) · known(npc) · token(pin, ctx) · sig(parts)
    paint(box, host): fills [data-pb-slot] under box with the Board block (DOM, no markup sink) and keeps the score scene in step
    host = { doc(), roll(), site() -> name, rooms() -> [{ name, shown }], npcs(), scan(text) -> [hidden names], patch(p) -> bool,
@@ -29,7 +29,7 @@
   'use strict';
 
   var KEY = 'boardPins', KINDS = ['line', 'face', 'item', 'route', 'question'];
-  var MAX = 12, TEXT_MAX = 60, SITES_MAX = 6, SITE_MAX = 80, FACES_MAX = 4, SVG_MAX = 590 * 1024;      /* a face is ~70 KB of figure: four keep the board under the iPad's 600 KiB */
+  var MAX = 8, TEXT_MAX = 60, SITES_MAX = 6, SITE_MAX = 80, FACES_MAX = 4, SVG_MAX = 590 * 1024;      /* a face is ~70 KB of figure: four keep the board under the iPad's 600 KiB */
   var WORD = { line: 'Overheard', face: 'Face', item: 'Item', route: 'Route', question: 'Question' };
   var KIND_LABEL = { line: 'Line (overheard, learned)', face: 'Face (a person)', item: 'Item', route: 'Route', question: 'Question' };
 
@@ -77,49 +77,55 @@
     if (cur) lines.push(cur);
     return lines;
   }
-  /* the card's lines and their size: the narrowest wrap that keeps to three lines (the 60 characters always fit three), set as large as the card is wide */
-  var ADV = 0.5, AREA = 470;
-  function fitText(text) {
-    var t = one(text).slice(0, TEXT_MAX), lw = t.split(' ').reduce(function (m, x) { return Math.max(m, x.length); }, 0), w = Math.max(8, Math.ceil(t.length / 3), Math.min(lw, 22)), lines = wrap(t, w);
-    while (lines.length > 3) { w++; lines = wrap(t, w); }
-    var longest = lines.reduce(function (m, l) { return Math.max(m, l.length); }, 1);
-    return { lines: lines, size: Math.round(Math.min(92, AREA / (longest * ADV))) };
+  /* the card's lines and their size in a w x h text area: of the wraps into one to five lines, the one that sets the words largest (a word longer
+     than 22 characters is broken, never clipped; the 60 characters always fit) */
+  var ADV = 0.5, LH = 1.08;
+  function fitText(text, w, h) {
+    var t = one(text).slice(0, TEXT_MAX), W0 = w || 480, H0 = h || 420, best = null;
+    var lw = Math.min(22, t.split(' ').reduce(function (m, x) { return Math.max(m, x.length); }, 1));
+    for (var cw = Math.max(lw, Math.ceil(t.length / 5)); cw <= Math.max(lw, t.length); cw++) {
+      var lines = wrap(t, cw);
+      if (lines.length > 5) continue;
+      var longest = lines.reduce(function (m, l) { return Math.max(m, l.length); }, 1);
+      var size = Math.round(Math.min(110, W0 / (longest * ADV), H0 / (lines.length * LH)));
+      if (!best || size > best.size) best = { lines: lines, size: size };
+    }
+    return best || { lines: wrap(t, 22), size: 40 };
   }
   var FONT = "'Archivo Condensed', 'Arial Narrow', sans-serif", TYPE = "'Courier Prime', 'Courier New', monospace";
-  function textBlock(fit, x, y0, h, fill, anchor) {
-    var lh = fit.size * 1.08, top = y0 + (h - lh * fit.lines.length) / 2 + fit.size * 0.8;
-    return fit.lines.map(function (l, i) { return '<text x="' + x + '" y="' + Math.round(top + i * lh) + '"' + (anchor ? ' text-anchor="' + anchor + '"' : '') + ' font-family="' + FONT + '" font-weight="800" font-size="' + fit.size + '" fill="' + fill + '">' + esc(l) + '</text>'; }).join('');
+  function textBlock(fit, x, y0, h, fill) {
+    var lh = fit.size * LH, top = y0 + (h - lh * fit.lines.length) / 2 + fit.size * 0.8;
+    return fit.lines.map(function (l, i) { return '<text x="' + x + '" y="' + Math.round(top + i * lh) + '" font-family="' + FONT + '" font-weight="800" font-size="' + fit.size + '" fill="' + fill + '">' + esc(l) + '</text>'; }).join('');
   }
   function head(word, fill, x, y) { return '<text x="' + x + '" y="' + y + '" font-family="' + TYPE + '" font-weight="700" font-size="44" letter-spacing="6" fill="' + fill + '">' + esc(word) + '</text>'; }
   var OPEN = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 540 600">';
+  /* the text area of each kind, [x, y, w, h] in the 540 x 600 frame: wide enough that 60 characters are set at 60 units or more */
+  var AREAS = { item: [30, 172, 480, 405], route: [20, 262, 500, 334], question: [20, 140, 500, 445], line: [20, 136, 500, 450] };
   /* an index card for line, item, route or question, in the kit's 540 x 600 token frame; each kind its own colour and shape, read at 1.5 m */
   function cardSvg(pin, uid) {
-    var p = isObj(pin) ? pin : {}, fit = fitText(p.text), g = '';
-    if (p.kind === 'item') {      /* a manila luggage tag on a string */
-      g = '<rect width="540" height="600" fill="#2f2a22"/><path d="M110 40 H500 V560 H110 L30 470 V130 Z" fill="#d8b878"/><circle cx="92" cy="300" r="26" fill="#2f2a22"/>' +
-        '<circle cx="92" cy="300" r="34" fill="none" stroke="#b08d4e" stroke-width="10"/><path d="M92 300 C40 250 20 150 0 120" fill="none" stroke="#efe6cf" stroke-width="7"/>' +
-        head('ITEM', '#5a3f12', 150, 112) + '<rect x="150" y="132" width="320" height="6" fill="#5a3f12"/>' + textBlock(fitAt(p.text, 330), 150, 150, 390, '#241a08');
-    } else if (p.kind === 'route') {      /* a torn strip of street map with the way marked */
-      var grid = ''; for (var i = 0; i < 6; i++) grid += '<path d="M' + (i * 100 - 20) + ' 0 L' + (i * 100 + 40) + ' 330" stroke="#a9b7c2" stroke-width="' + (i % 2 ? 10 : 22) + '"/>';
-      for (var j = 0; j < 4; j++) grid += '<path d="M0 ' + (40 + j * 90) + ' L540 ' + (20 + j * 90) + '" stroke="#a9b7c2" stroke-width="' + (j % 2 ? 14 : 8) + '"/>';
-      g = '<rect width="540" height="600" fill="#f4f1e8"/><rect width="540" height="330" fill="#dfe6ea"/>' + grid +
-        '<path d="M40 290 C140 260 150 150 250 150 S400 90 470 50" fill="none" stroke="#c22f1c" stroke-width="16" stroke-dasharray="34 22" stroke-linecap="round"/>' +
-        '<path d="M470 50 l-62 6 l40 46 z" fill="#c22f1c"/><circle cx="40" cy="290" r="18" fill="#c22f1c"/>' +
-        '<path d="M0 330 L30 318 L70 336 L110 320 L160 338 L210 322 L260 336 L320 318 L380 338 L430 320 L490 336 L540 322 V600 H0 Z" fill="#f4f1e8"/>' +
-        head('ROUTE', '#c22f1c', 30, 392) + textBlock(fitAt(p.text, 480), 30, 404, 190, '#14110e');
-    } else if (p.kind === 'question') {      /* a yellow card with a large question mark */
+    var p = isObj(pin) ? pin : {}, k = AREAS[p.kind] ? p.kind : 'line', a = AREAS[k], fit = fitText(p.text, a[2], a[3]), g = '';
+    if (k === 'item') {      /* a manila luggage tag, hung by its string */
+      g = '<rect width="540" height="600" fill="#2f2a22"/><path d="M90 20 H450 L525 95 V585 H15 V95 Z" fill="#d8b878"/><circle cx="270" cy="70" r="24" fill="#2f2a22"/>' +
+        '<circle cx="270" cy="70" r="32" fill="none" stroke="#b08d4e" stroke-width="9"/><path d="M270 70 C250 40 230 15 200 0" fill="none" stroke="#efe6cf" stroke-width="7"/>' +
+        head('ITEM', '#5a3f12', 40, 150) + '<rect x="40" y="162" width="460" height="5" fill="#5a3f12"/>';
+    } else if (k === 'route') {      /* a torn strip of street map with the way marked */
+      var grid = ''; for (var i = 0; i < 6; i++) grid += '<path d="M' + (i * 100 - 20) + ' 0 L' + (i * 100 + 30) + ' 210" stroke="#a9b7c2" stroke-width="' + (i % 2 ? 10 : 22) + '"/>';
+      for (var j = 0; j < 3; j++) grid += '<path d="M0 ' + (35 + j * 70) + ' L540 ' + (20 + j * 70) + '" stroke="#a9b7c2" stroke-width="' + (j % 2 ? 14 : 8) + '"/>';
+      g = '<rect width="540" height="600" fill="#f4f1e8"/><rect width="540" height="210" fill="#dfe6ea"/>' + grid +
+        '<path d="M40 180 C140 160 150 100 250 100 S400 60 470 36" fill="none" stroke="#c22f1c" stroke-width="16" stroke-dasharray="34 22" stroke-linecap="round"/>' +
+        '<path d="M470 36 l-62 6 l40 46 z" fill="#c22f1c"/><circle cx="40" cy="180" r="18" fill="#c22f1c"/>' +
+        '<path d="M0 210 L30 198 L70 216 L110 200 L160 218 L210 202 L260 216 L320 198 L380 218 L430 200 L490 216 L540 202 V600 H0 Z" fill="#f4f1e8"/>' + head('ROUTE', '#c22f1c', 30, 258);
+    } else if (k === 'question') {      /* a yellow card with a large question mark */
       g = '<rect width="540" height="600" fill="#f2d64b"/><text x="270" y="430" text-anchor="middle" font-family="' + FONT + '" font-weight="900" font-size="560" fill="#c22f1c" opacity="0.22">?</text>' +
-        '<text x="470" y="120" text-anchor="middle" font-family="' + FONT + '" font-weight="900" font-size="150" fill="#c22f1c">?</text>' +
-        head('ASK', '#7a1a10', 30, 82) + textBlock(fitAt(p.text, 480), 30, 150, 420, '#14110e');
+        '<text x="470" y="120" text-anchor="middle" font-family="' + FONT + '" font-weight="900" font-size="150" fill="#c22f1c">?</text>' + head('ASK', '#7a1a10', 30, 82);
     } else {      /* line: a ruled white index card */
       var rules = ''; for (var r = 0; r < 7; r++) rules += '<rect x="0" y="' + (190 + r * 58) + '" width="540" height="3" fill="#8fa3dd"/>';
       g = '<rect width="540" height="600" fill="#fbf8f1"/><rect x="0" y="118" width="540" height="6" fill="#c22f1c"/>' + rules +
-        '<path d="M40 30 h40 l-12 60 h-40 z M100 30 h40 l-12 60 h-40 z" fill="#14110e"/>' + head('HEARD', '#c22f1c', 160, 84) + textBlock(fitAt(p.text, 480), 30, 140, 440, '#14110e');
+        '<path d="M40 30 h40 l-12 60 h-40 z M100 30 h40 l-12 60 h-40 z" fill="#14110e"/>' + head('HEARD', '#c22f1c', 160, 84);
     }
+    g += textBlock(fit, a[0], a[1], a[3], k === 'item' ? '#241a08' : '#14110e');
     return OPEN + '<title>' + esc(one(p.text).slice(0, TEXT_MAX)) + '</title><g id="' + esc(uid) + '">' + g + '</g></svg>';      /* the words whole in the title: the page's scan reads them unbroken */
   }
-  /* fitText for a narrower card face (the tag): the same wrap, scaled to `w` px */
-  function fitAt(text, w) { var f = fitText(text); f.size = Math.round(Math.min(92, f.size * w / AREA)); return f; }
 
   /* the name the players know: a known-as NPC (tag known-as, an alias) goes by the alias, as everywhere the table sees the cast */
   function known(npc) {
