@@ -212,7 +212,10 @@ try {
     const v = await until(async () => { const x = await look(I.page); return x.rolodex ? x : null; }, 8000);
     expect(v && !v.card, 'the rolodex beat: ' + JSON.stringify(await look(I.page)));
     expect(v.map, 'over the map, which stays');
+    const seen = await until(() => I.page.evaluate(() => { const c = document.querySelector('.dp-rc-card'); if (!c) return null; const r = c.getBoundingClientRect(), cs = getComputedStyle(c.closest('.dp-show') || c); return r.width > 50 && r.height > 50 && cs.visibility !== 'hidden' && Number(cs.opacity) > 0.5 && /Mabel Quist/.test(c.textContent) ? { w: Math.round(r.width), h: Math.round(r.height), o: cs.opacity } : null; }), 4000);
+    console.log('INFO the rolodex card: ' + JSON.stringify(seen) + ' ' + JSON.stringify(await I.page.evaluate(() => { const c = document.querySelector('.dp-show-rolodex, .dp-rc'); if (!c) return null; const r = c.getBoundingClientRect(), cs = getComputedStyle(c); return { cls: c.className, r: [r.x, r.y, r.width, r.height].map(Math.round), op: cs.opacity, vis: cs.visibility, z: cs.zIndex, parent: c.parentNode && c.parentNode.className }; })));
     await shot(I.page, 'off-rolodex-' + ENGINE + '-1180');
+    expect(seen, 'the paper card is on screen with her name');
   });
   await step('no page errors on the GM page or the display', async () => { expect(!errors.length, errors.slice(0, 5).join(' / ')); });
 } catch (e) { failed++; console.log('FAIL the run stopped: ' + (e && e.stack || e)); }
