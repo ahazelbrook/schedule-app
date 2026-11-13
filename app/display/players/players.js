@@ -107,6 +107,25 @@
     var f = typeof fill === 'string' ? fill.trim() : '';
     return /^#[0-9a-fA-F]{3,8}$/.test(f) || /^rgba?\(\s*[\d.\s,%]+\)$/.test(f) ? f : 'var(--b68-paper, #f2ede1)';
   };
+  /* IP2b: the view box that shows the drawing b (user units) as large as a W x H px frame allows, a margin m (a fraction of the drawing) round it,
+     clear of the dials' corner (cw x ch px at the top right; 0 when there are none). Three ways, the largest wins: the whole frame (when the drawing,
+     centred, misses the corner), the frame below the corner's band, the frame left of the corner's column. The box has the frame's own shape, so the
+     page's own fit keeps it as it is. -> { x, y, w, h } */
+  Pure.fitView = function (b, W, H, cw, ch, m) {
+    if (!b || !(b.w > 0) || !(b.h > 0) || !(W > 0) || !(H > 0)) return null;
+    m = m >= 0 ? m : 0.03; cw = Math.max(0, Math.min(W * 0.6, cw || 0)); ch = Math.max(0, Math.min(H * 0.5, ch || 0));
+    var bw = b.w * (1 + 2 * m), bh = b.h * (1 + 2 * m);
+    function place(k, x0, y0, aw, ah) { var dw = bw * k, dh = bh * k, l = x0 + (aw - dw) / 2, t = y0 + (ah - dh) / 2; return { k: k, l: l, t: t, r: l + dw, btm: t + dh }; }
+    var full = place(Math.min(W / bw, H / bh), 0, 0, W, H);
+    var hits = cw > 0 && ch > 0 && full.r > W - cw && full.t < ch;
+    var best = full;
+    if (hits) {
+      var below = place(Math.min(W / bw, (H - ch) / bh), 0, ch, W, H - ch), left = place(Math.min((W - cw) / bw, H / bh), 0, 0, W - cw, H);
+      best = below.k >= left.k ? below : left;
+    }
+    var k = best.k, mx = b.w * m * k, my = b.h * m * k;      /* the drawing's own box sits inside the margin */
+    return { x: b.x - (best.l + mx) / k, y: b.y - (best.t + my) / k, w: W / k, h: H / k };
+  };
   /* the connection is worth a dot only after STALE_MS without an answer */
   Pure.STALE_MS = 20000;
   Pure.stale = function (heard, now) { return typeof heard === 'number' && typeof now === 'number' && now - heard > Pure.STALE_MS; };
@@ -209,8 +228,28 @@
       try { mo.observe(container, { attributes: true, attributeFilter: ['class', 'data-scene-mode'] }); } catch (e) { /* the polls still sync */ }
       (host.watch || []).forEach(function (n) { try { if (n) mo.observe(n, { childList: true }); } catch (e) { /* ditto */ } });
     }
+    /* an element's box in the root svg's own units (its group may carry a transform): its screen box, through the root's screen matrix */
+    function userBox(svg, g) {
+      if (!g || typeof svg.getScreenCTM !== 'function') return null;
+      var m = svg.getScreenCTM(), r = g.getBoundingClientRect(); if (!m || !r || !r.width) return null;
+      var inv = m.inverse(), p = svg.createSVGPoint(), q1, q2;
+      p.x = r.left; p.y = r.top; q1 = p.matrixTransform(inv); p.x = r.right; p.y = r.bottom; q2 = p.matrixTransform(inv);
+      return { x: Math.min(q1.x, q2.x), y: Math.min(q1.y, q2.y), width: Math.abs(q2.x - q1.x), height: Math.abs(q2.y - q1.y) };
+    }
     return {
       el: el,
+      /* IP2b: a stage-layout map (a .map-drawing, no .map-key: drawn for some frame, perhaps not this one) is fitted by its DRAWING, not its page,
+         so it fills the sheet whatever size the GM page drew it for; the dials' band at the top is kept clear. Anything else: the page as it was */
+      fit: function (svg, vb, frame) {
+        try {
+          if (!svg || !svg.querySelector('.map-drawing') || svg.querySelector('.map-key')) return vb;
+          var b = userBox(svg, svg.querySelector('.map-drawing')), r = frame && frame.getBoundingClientRect ? frame.getBoundingClientRect() : null;
+          if (!b || !b.width || !b.height || !r || !r.width || !r.height) return vb;
+          var win = doc.defaultView, vh = win ? win.innerHeight / 100 : 8, cw = 0, ch = 0;
+          if (last && last.length) { var e = el.hidden ? null : el.getBoundingClientRect(); cw = e && e.width ? r.right - e.left + vh : Math.min(4, last.length) * 18 * vh; ch = e && e.height ? e.bottom - r.top + vh : 20 * vh; }
+          return Pure.fitView({ x: b.x, y: b.y, w: b.width, h: b.height }, r.width, r.height, cw, ch, 0.02) || vb;
+        } catch (e) { return vb; }
+      },
       clocks: function (list) {
         if (dead) return;
         heard = Date.now(); if (!conn.hidden) conn.hidden = true;

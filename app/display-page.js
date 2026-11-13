@@ -1207,7 +1207,7 @@
       if (zoom) return;
       fitAboveBar();
       if (strip && window.ResizeObserver) { ro = new ResizeObserver(function () { fitAboveBar(); }); ro.observe(strip); }
-      zoom = attachZoom(frame, svg, res.viewBox, {});
+      zoom = attachZoom(frame, svg, S && S.p2 ? S.p2.fit(svg, res.viewBox, frame) : res.viewBox, {});      /* IP2b (stage.players): a stage-layout map fitted by its drawing */
     }
     return {
       el: e, attached: ready,

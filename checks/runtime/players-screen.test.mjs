@@ -145,6 +145,19 @@ await test('R1, R2: the sheet\'s paper from its first rect (a plain colour, else
   assert.match(P.paper('url(#grain)'), /--b68-paper/); assert.match(P.paper(null), /--b68-paper/);
   assert.equal(P.stale(1000, 21000), false); assert.equal(P.stale(1000, 21001), true); assert.equal(P.stale(undefined, 5), false);
 });
+await test('IP2b fit: a stage-layout drawing fills at least 90% of the binding side at the four screens, clear of the dials corner, centred', () => {
+  const b = { x: 40, y: 30, w: 1300, h: 620 };
+  for (const [W, H, cw, ch] of [[1920, 1080, 740, 217], [1536, 864, 600, 175], [1180, 820, 560, 165], [1024, 768, 520, 155], [1920, 1080, 0, 0]]) {
+    const v = P.fitView(b, W, H, cw, ch, 0.02), k = W / v.w;
+    assert.ok(Math.abs(v.h * k - H) < 1, 'the box has the frame\'s shape');
+    const l = (b.x - v.x) * k, t = (b.y - v.y) * k, r = l + b.w * k, btm = t + b.h * k;
+    assert.ok(Math.max((r - l) / W, (btm - t) / H) >= 0.9, W + 'x' + H + ': ' + Math.round((r - l) / W * 100) + '% x ' + Math.round((btm - t) / H * 100) + '%');
+    assert.ok(l >= 0 && t >= 0 && r <= W + 0.5 && btm <= H + 0.5, 'inside the frame');
+    assert.ok(!(r > W - cw && t < ch), 'clear of the dials corner');
+    assert.ok(Math.abs(l - (W - r)) < 1, 'centred across');
+  }
+  assert.equal(P.fitView(null, 100, 100), null);
+});
 
 /* ---------- the Worker ---------- */
 const DISPLAY = { me: { role: 'display', email: 'table@example.test' } };
