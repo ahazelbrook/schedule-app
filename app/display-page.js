@@ -1495,7 +1495,7 @@
     s.ov = { seen: '', node: null, token: 0, timers: [], applied: false };
     /* the show contract's lasting layers and the data channel to the HTML scenes (app/display/layers.js) */
     /* the band across the top is a setting (display.band, the iPad view's Settings), off unless the GM turns it on (the tech run, 06/11) */
-    s.layers = root.B68Layers ? root.B68Layers.attach(container, { skew: function () { return s.skew || 0; }, band: function () { return swOn('display.band'); },
+    s.layers = root.B68Layers ? root.B68Layers.attach(container, { skew: function () { return s.skew || 0; }, band: function () { return swOn('display.band'); }, quiet: function () { return swOn('stage.players'); },
       figure: function (spec, id) { var r = drawFigure(spec, 'dp-mt-' + String(id).replace(/[^A-Za-z0-9_-]/g, ''), ctx.figures || root.B68Figure); return r ? document.importNode(r.node, true) : null; } }) : null;      /* the montage draws each PC (the tech run) */
     if (s.layers) s.offs.push(function () { s.layers.destroy(); });
     /* IP3 (stage.players): the NPC introduction, a title card over everything that hands over to the npc stage (app/display/players/intro.js); off, next() does nothing */
@@ -2024,7 +2024,16 @@
       }
       bandFit();
     }
-    function applyBand(hud) { s.bandModel = Pure.bandModel(hud); if (!s.bandModel) s.bandSig = ''; paintBand(); if (s.stage) s.stage.mission(s.bandModel); if (s.stage && s.stageBand) s.stageBand.paint(); }   /* KS13.3: the alarm; KS14: the top band */
+    function applyBand(hud) { s.hud = hud; s.fullBand = Pure.bandModel(hud); s.bandModel = swOn('stage.players') ? null : s.fullBand; if (!s.bandModel) s.bandSig = ''; paintBand(); if (s.stage) s.stage.mission(s.fullBand); if (s.stage && s.stageBand) s.stageBand.paint(); if (s.p2) s.p2.sync(); }   /* KS13.3: the alarm; KS14: the top band; IP2: no band while the players' screen is on, the alarm's hard cut kept */
+    /* IP2 (stage.players): the players' screen (app/display/players/players.js), the dials in the corner; off, s.p2 stays null and nothing of it runs */
+    s.p2 = null; s.p2on = false; s.p2last = null;
+    function p2Sync() {
+      var want = swOn('stage.players') && !!root.B68PlayersScreen;
+      if (want && !s.p2) { s.p2 = root.B68PlayersScreen.attach(container, { doc: document, before: ovLayer, watch: [stages, layer, ovLayer], kind: function () { return s.lastShow && isObj(s.lastShow[0]) ? s.lastShow[0].kind : 'blank'; }, dark: function () { return s.dark; }, mode: function () { return container.getAttribute('data-scene-mode'); }, beat: function () { return container.classList.contains('dp-ov-up') && !container.classList.contains('dp-ov-card-on'); }, ambient: function () { var a = s.amb && s.amb.state(); return a && !a.covered ? a.active : null; }, alarm: function () { return s.fullBand ? s.fullBand.alarm : null; }, still: function () { return reduced() || swOn('fx.off'); } }); if (s.p2) s.p2.clocks(s.p2last); }
+      else if (!want && s.p2) { s.p2.destroy(); s.p2 = null; }
+      if (s.p2on !== want) { s.p2on = want; applyBand(s.hud); }
+    }
+    s.offs.push(function () { if (s.p2) { s.p2.destroy(); s.p2 = null; } });
     /* landscape: the band's box is set by its top and bottom, so a new size comes from outside (the iPad's band coming or going over it) and the cut
        is worked out again; in portrait its height follows its content, so only bandFit runs (a re-cut there would chase its own size) */
     var landscape = window.matchMedia ? window.matchMedia('(orientation: landscape)') : null;
@@ -2084,7 +2093,7 @@
       if (s.dead || on === !!s.stage) return;
       if (on) s.stage = root.B68Stage.attach(container, { later: later, clearLater: clearLater, reduced: reduced, band: function () { return s.bandModel; }, wireMs: function () { return WT.on; } });
       else { s.stage.destroy(); s.stage = null; if (s.ov.node && /(^|\s)ks1\d-/.test(String(s.ov.node.className))) s.ov.seen = ''; }   /* KS16: an overlay the stage drew is drawn again the old way on the next poll */
-      if (s.stageBand) s.stageBand.destroy(); s.stageBand = s.stage && root.B68StageBand ? root.B68StageBand.attach(s.stage, { band: function () { return s.bandModel; }, layers: function () { return s.layers ? s.layers.state() : null; }, doc: document }) : null;      /* KS14: the clock and the crew heads */
+      if (s.stageBand) s.stageBand.destroy(); s.stageBand = s.stage && root.B68StageBand ? root.B68StageBand.attach(s.stage, { band: function () { return s.bandModel; }, layers: function () { return s.layers && !swOn('stage.players') ? s.layers.state() : null; }, doc: document }) : null;      /* KS14: the clock and the crew heads */
       suiteSync();
       if (s.lastShow) show(s.lastShow[0], s.lastShow[1]);
     }
@@ -2125,9 +2134,9 @@
       s.poller = Pure.createPoller({
         /* sseq rides as a third argument: the adapter (app/runtime/cf.js) forwards it as ?sseq= to make the unchanged answer
            the small one; an adapter that does not simply gets the transcriber part in full each time */
-        fetch: function (seq, aseq, sseq, hseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq, sseq === null ? undefined : sseq, hseq === null ? undefined : hseq); },
+        fetch: function (seq, aseq, sseq, hseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq, sseq === null ? undefined : sseq, hseq === null ? undefined : hseq).then(function (r) { s.p2last = r && Array.isArray(r.clocks) ? r.clocks : null; if (s.p2) s.p2.clocks(s.p2last); return r; }); },      /* IP2: the dials' clocks ride on the answer while stage.players is on */
         onMission: function (hud) { applyBand(hud); },
-        onFeatures: function (f) { if (root.B68Flags) { root.B68Flags.apply({ features: f }); suiteSync(); } if (root.B68Kit) root.B68Kit.set('stage', swOn('kit.stage')); },   /* KS01.2: data-kit="stage" follows the setting */
+        onFeatures: function (f) { if (root.B68Flags) { root.B68Flags.apply({ features: f }); suiteSync(); } if (root.B68Kit) root.B68Kit.set('stage', swOn('kit.stage')); p2Sync(); },   /* KS01.2: data-kit="stage" follows the setting; IP2: the players' screen too */
         onSkew: function (ms) { s.skew = ms; },
         isHidden: function () { return document.hidden; },
         onAmbient: function (doc) { applyAmbient(doc); },

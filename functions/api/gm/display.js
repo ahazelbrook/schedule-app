@@ -34,6 +34,8 @@
 //                     document's mission.seq differs from N (hud is mission.hud as stored; no mission at all is { hseq: 0, hud: null }), else
 //                     { hseq, unchanged: true }. Read in one statement, the same one as the live switch when that is read too (loadMissionPart in
 //                     functions/_lib/campaign.js). Never the mission's cards. A call without hseq is answered as before, with no `mission`.
+//                     IP2 (stage.players): while that display setting is stored on, an answer with `mission` also carries `clocks`, the table clocks the
+//                     players may see ([{ id, name, size, filled }], hidden and nameless ones left out), cut out by the SAME statement (playersClocks).
 //   PUT  display   -> { seq, display, updatedAt }: replaces the display and bumps seq. With ifSeq (a whole number) only while the
 //                     display is still at that seq, else 409 and nothing changes (the GM page's live reveal; GM.md "Location")
 // display: { kind: 'blank' | 'dark' | 'svg' | 'npc' | 'text' | 'rule' | 'cards' | 'handout', title?, caption? } plus `file` + `showTitle`
@@ -69,9 +71,10 @@ export async function onRequest({ request, env, data, waitUntil }) {
     // live switch it is the SAME statement (loadMissionPart), so a page that sends hseq makes no more D1 calls than one that does not. hud only, never the cards.
     const wantHud = hseq !== null;
     let feats = null;      // what the iPad is told (W0.2; N0: every display and phone feature ON, a setting as stored), set by tail() from the same read
-    const withHud = (out, part) => (part ? { ...out, mission: part, now: Date.now(), ...(feats ? { features: feats } : {}) } : out);   // now: the band's countdown corrects the iPad's clock by it
+    let clocks = null;     // IP2 (stage.players): the visible table clocks for the dials, from the same read, only while that setting is stored on
+    const withHud = (out, part) => (part ? { ...out, mission: part, now: Date.now(), ...(feats ? { features: feats } : {}), ...(clocks ? { clocks } : {}) } : out);   // now: the band's countdown corrects the iPad's clock by it
     const tail = async (needLive) => {      // the live switch (when the call reads it) and the mission part (when asked), in one read
-      if (wantHud) { const r = await loadMissionPart(db, campaign, hseq, needLive); feats = r.features && Object.keys(r.features).length ? r.features : null; return r; }
+      if (wantHud) { const r = await loadMissionPart(db, campaign, hseq, needLive); feats = r.features && Object.keys(r.features).length ? r.features : null; clocks = Array.isArray(r.clocks) ? r.clocks : null; return r; }
       return { part: undefined, live: needLive ? await liveFlag(db, campaign) : true };
     };
     const cur0 = await loadDisplay(db, campaign);

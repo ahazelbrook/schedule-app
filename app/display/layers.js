@@ -188,7 +188,7 @@
     if (root && typeof root.addEventListener === 'function') root.addEventListener('resize', onResize);
     /* the hard start draws its own name plates (scene.mode start), so the strip's crew cells stand down while it runs */
     function crewDrawn() { return state.faces.length > 0 && state.mode !== 'start'; }
-    function banded() { return !(opts && typeof opts.band === 'function') || opts.band() === true; }
+    function banded() { return (!(opts && typeof opts.band === 'function') || opts.band() === true) && !(opts && typeof opts.quiet === 'function' && opts.quiet() === true); }      /* IP2: opts.quiet() (stage.players) stands the strip down, the lamp in its corner */
     function hasStrip() { return banded() && (state.phase !== null || state.security !== null || state.onair || state.faces.length > 0 || lamp !== null); }
     function paintMic() {
       if (!slots) return;
