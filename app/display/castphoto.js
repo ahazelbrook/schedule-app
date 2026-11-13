@@ -24,7 +24,7 @@
 })(typeof self !== 'undefined' ? self : this, function (root) {
   'use strict';
 
-  var MAX = 30, H_MIN = 40, H_MAX = 96;
+  var MAX = 30, H_MIN = 40, H_MAX = 96, DRAWS = 0;
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function num(v, d) { return typeof v === 'number' && isFinite(v) ? v : d; }
@@ -116,7 +116,7 @@
     n.setAttribute('data-show', 'castphoto');
     if (env && env.reduced) n.setAttribute('data-reduced', '1');
     var list = items(p.npcs, p.sil);
-    var d = compose(list, { height: 520, suffix: '-ov', title: p.title || '', big: true });
+    var d = compose(list, { height: 520, suffix: '-ov' + (++DRAWS), title: p.title || '', big: true });      /* IP1: ids of its own each time (see display-page.js drawId) */
     if (d.svg) {
       var holder = el(doc, 'div', 'dp-cp-photo');
       holder.innerHTML = scrub(d.svg);

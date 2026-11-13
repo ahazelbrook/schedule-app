@@ -256,6 +256,7 @@
       if (n) {
         vm.name = n.name || title; vm.alias = n.alias; vm.sub = [n.role, n.faction].filter(Boolean).join(' · ');
         vm.description = n.description; vm.spec = n.spec; vm.faction = n.faction;      /* KS16: the nameplate's faction stripe (a player field, already in sub) */
+        if (isObj(d.look)) vm.look = d.look;      /* IP1: the names of the tell and the signature pose the GM sent (display/face-look.js cleans them again) */
       }
       return vm;
     }
@@ -1047,13 +1048,18 @@
     return { el: e, destroy: function () {} };
   }
 
+  /* IP1 (13/11): every figure drawn on this page gets ids of its own. The kit names a figure's clip paths after spec.id; two copies of one figure with the same
+     ids, the earlier one inside a display:none subtree, make Chromium resolve the visible copy's url(#...) clips to the unrendered one and drop them: the
+     head's and the torso's shade paths then draw unclipped (the flat shapes behind an NPC on the TV). So a draw counter goes on every id. */
+  var DRAWS = 0;
+  function drawId(uid) { return String(uid) + '-d' + (++DRAWS); }
   /* the NPC: a figure at true proportion beside the player-facing text */
   function drawFigure(spec, uid, K) {
     if (!K || !spec) return null;
     var out = null, tries = [function (s) { return K.render(s, { height: 900 }); }, function (s) { return K.portrait(s, { lod: 'mid' }); }];
     for (var i = 0; i < tries.length && !out; i++) {
       try {
-        var s = JSON.parse(JSON.stringify(spec)); s.id = uid;
+        var s = JSON.parse(JSON.stringify(spec)); s.id = drawId(uid);
         var r = tries[i](s);
         var res = Pure.sanitiseSvg(r && r.svg, parserEnv(true));
         if (res.ok) out = res;
@@ -1065,7 +1071,7 @@
   function drawPortrait(spec, uid, K) {
     if (!K || typeof K.portrait !== 'function' || !spec) return null;
     try {
-      var s = JSON.parse(JSON.stringify(spec)); s.id = uid;
+      var s = JSON.parse(JSON.stringify(spec)); s.id = drawId(uid);
       var r = K.portrait(s, { lod: 'mid' }), res = Pure.sanitiseSvg(r && r.svg, parserEnv(true));
       return res.ok ? res : null;
     } catch (e) { return null; }
@@ -1079,7 +1085,9 @@
       e.appendChild(box);
       return { el: e, destroy: function () {} };
     }
-    if (root.B68StageScene && root.B68StageScene.on()) { var k16 = root.B68StageScene.npcStage(vm, seq, { document: document, figure: function (sp, id) { var r = drawFigure(sp, id, ctx.figures); return r ? document.importNode(r.node, true) : null; } }); if (k16) return k16; }   /* KS16 (kit.stage): over the dimmed scene */
+    var figEnv = { document: document, K: ctx.figures, reduced: reduced(), figure: function (sp, id) { var r = drawFigure(sp, id, ctx.figures); return r ? document.importNode(r.node, true) : null; } };
+    function look(st) { if (vm.look && root.B68FaceRender && typeof root.B68FaceRender.applyStage === 'function') { try { root.B68FaceRender.applyStage(st.el, { look: vm.look, spec: vm.spec, npcId: vm.npcId, seq: seq }, figEnv); } catch (err) { /* the figure stays as drawn */ } } return st; }     /* IP1: the tell and the signature, on Show on iPad too */
+    if (root.B68StageScene && root.B68StageScene.on()) { var k16 = root.B68StageScene.npcStage(vm, seq, { document: document, figure: figEnv.figure }); if (k16) return look(k16); }   /* KS16 (kit.stage): over the dimmed scene */
     var fig = drawFigure(vm.spec, 'dp-npc-' + seq, ctx.figures);
     if (fig) {
       var holder = el('div', 'dp-npc-fig'); holder.setAttribute('aria-hidden', 'true');
@@ -1092,7 +1100,7 @@
     if (vm.alias) txt.appendChild(el('p', 'dp-npc-alias', '“' + vm.alias + '”'));
     if (vm.description) txt.appendChild(el('p', 'dp-npc-desc', vm.description));
     e.appendChild(txt);
-    return { el: e, destroy: function () {} };
+    return look({ el: e, destroy: function () {} });
   }
 
   /* the map: sanitised, inline, fitted, with pinch / two-finger pan / double-tap and a title strip that fades */
@@ -1537,8 +1545,8 @@
       else if (!hs && s.hs) { s.hs.destroy(); s.hs = null; }
       if (s.hs) s.hs.apply();
       if (s.roomSync) s.roomSync();      /* 4.4 / 4.3: the room's sound follows the switches and the layers */
-      var fx = !!(root.B68Fx && (swOn('fx.pause') || swOn('fx.off') || s.stage));     /* KS13.4: the new stage (s.stage) holds its scene still */
-      if (fx && !s.fx) s.fx = root.B68Fx.attach(container, { flags: function () { return { pause: swOn('fx.pause'), off: swOn('fx.off') || !!s.stage }; }, covered: function () { return !!(s.amb && s.amb.state().covered); } }); else if (!fx && s.fx) { s.fx.destroy(); s.fx = null; } else if (s.fx) s.fx.sync();
+      var fx = !!(root.B68Fx && (swOn('fx.pause') || swOn('fx.off')));     /* IP1 (overseer ruling 13/11): only the GM's Scenes setting holds a scene still, the new stage no longer does (KS13.4 was) */
+      if (fx && !s.fx) s.fx = root.B68Fx.attach(container, { flags: function () { return { pause: swOn('fx.pause'), off: swOn('fx.off') }; }, covered: function () { return !!(s.amb && s.amb.state().covered); } }); else if (!fx && s.fx) { s.fx.destroy(); s.fx = null; } else if (s.fx) s.fx.sync();
     }
     s.offs.push(function () { if (s.hs) { s.hs.destroy(); s.hs = null; } if (s.fx) { s.fx.destroy(); s.fx = null; } });
     function ovTimer(fn, ms) { var id = later(fn, ms); s.ov.timers.push(id); return id; }

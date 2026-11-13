@@ -12,7 +12,7 @@
 
    create(host) -> controller
      host: { feature(id) -> bool, notes(npcId) -> the NPC's gmNotes string | '' }
-     controller: initial(id) -> look | null      the look a spotlight starts with (the format, when face.formats is on; no expression: the face as drawn)
+     controller: initial(id) -> look | null      the look a spotlight (and Show on iPad) starts with: the format, when face.formats is on; the tell (tell: true) and the signature pose (IP1)
                  express(cur, id, name) -> { look } | { say }     name: neutral | pleased | hostile | afraid | tell
                  signature(cur, id) -> { look } | { say }        the pose goes in this one overlay only: cur is not changed
                  relay(cur) -> look | null                       the look for a renewed hold: the expression and format kept, the pose dropped, `re` set so the iPad does not replay the motif
@@ -51,10 +51,16 @@
     function notes(id) { try { return FL ? FL.parseNotes(typeof host.notes === 'function' ? host.notes(id) : '') : { tell: '', signature: '', fmt: '' }; } catch (e) { return { tell: '', signature: '', fmt: '' }; } }
     function any() { return on('face.expressions') || on('face.formats') || on('face.badge'); }
 
+    /* IP1 (overseer ruling 13/11): a spotlight starts with the person's tell (played now and then on the iPad: tell: true) and their signature pose, as well as the format */
     function initial(id) {
-      if (!FL || !on('face.formats')) return null;
-      var f = notes(id).fmt;
-      return f ? { fmt: f } : null;
+      if (!FL) return null;
+      var n = notes(id), out = {};
+      if (on('face.formats') && n.fmt) out.fmt = n.fmt;
+      if (on('face.expressions')) {
+        if (n.tell && FL.EXPRS.indexOf(n.tell) >= 0) { out.expr = n.tell; out.tell = true; }
+        if (n.signature) out.pose = n.signature;
+      }
+      return Object.keys(out).length ? out : null;
     }
     function express(cur, id, name) {
       if (!FL || !on('face.expressions')) return { say: '' };
@@ -64,7 +70,9 @@
         if (!expr) return { say: 'No tell yet: write a line "Tell: smirk" in this person’s GM notes.' };
       }
       if (FL.EXPRS.indexOf(expr) < 0) return { say: '' };
-      return { look: Object.assign({}, cur || {}, { expr: expr }) };
+      var out = Object.assign({}, cur || {}, { expr: expr });
+      if (name === 'tell') out.tell = true; else delete out.tell;       /* a face the GM picks is worn; the tell is played (IP1) */
+      return { look: out };
     }
     function signature(cur, id) {
       if (!FL || !on('face.expressions')) return { say: '' };

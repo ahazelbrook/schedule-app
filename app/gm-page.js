@@ -6925,7 +6925,9 @@
       var ref = npcRef(id); if (!ref) { toast('The cast is not available here.', true); return; }
       pre = Promise.resolve().then(function () { return ref.update({ revealed: true, firstSeen: d.firstSeen || nowIso() }); });
     }
-    pre.then(function () { return pushDisplay({ kind: 'npc', npcId: id, title: str(d.name).slice(0, 2000) }); })
+    var FLk = W.B68GmFaceLooks, lk = FLk ? FLk.create({ feature: b09On, notes: function () { return str(d.gmNotes); } }).initial(id) : null;      /* IP1: the tell and the signature play on the iPad (names only) */
+    if (lk) delete lk.fmt;
+    pre.then(function () { return pushDisplay(lk && (lk.expr || lk.pose) ? { kind: 'npc', npcId: id, title: str(d.name).slice(0, 2000), look: lk } : { kind: 'npc', npcId: id, title: str(d.name).slice(0, 2000) }); })
       .then(function () { toast('On the iPad: ' + (d.name || 'the NPC') + '.'); }, function (e) { if (!e || !e.superseded) toast('Could not show ' + (d.name || 'them') + ' on the iPad: ' + errText(e), true); });
   }
 
