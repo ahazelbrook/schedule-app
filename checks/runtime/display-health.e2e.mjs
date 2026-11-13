@@ -72,7 +72,7 @@ const NPCS = [
     spec: { figure: 'fem', skin: 'brown', heightIn: 63, age: 29, hair: { style: 'bowl-bob', color: 'cloth-black' }, outfit: { base: { type: 'shirt', color: 'cloth-cream' }, outer: { type: 'blazer', color: 'cloth-charcoal' } } } }],
   ['n-lotte', { name: 'Lotte Brand', alias: '', role: 'Doorwoman', faction: 'The Kestrel Club', description: 'Decides who comes in.', revealed: true,
     spec: { figure: 'fem', skin: 'fair', heightIn: 70, age: 52, hair: { style: 'short', color: 'cloth-brown' }, outfit: { outer: { type: 'cape-coat', color: 'cloth-black' } } } }],
-  ['n-silver', { name: 'Rex Halloran', alias: '', role: 'Host', faction: 'The Kestrel Club', description: 'Silver hair, a white jacket.', revealed: true,
+  ['n-host', { name: 'Rex Halloran', alias: '', role: 'Host', faction: 'The Kestrel Club', description: 'Grey hair, a pale jacket.', revealed: true,
     spec: { skin: 'tan', heightIn: 71, age: 60, hair: { style: 'slick-back', color: 'ink-300' }, outfit: { base: { type: 'shirt', color: 'cloth-white' }, outer: { type: 'dinner-jacket', color: 'cloth-white' } }, face: { expression: 'smile' }, pose: { arms: { R: 'hold' } } } }],
   ['n-plain', { name: 'Ned Prosser', alias: '', role: 'Porter', faction: '', description: 'Carries what he is told to.', revealed: true, spec: { heightIn: 67, age: 35 } }]
 ];
