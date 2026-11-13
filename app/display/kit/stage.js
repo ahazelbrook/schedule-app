@@ -38,7 +38,7 @@
    poll). The corner is always a target (a quiet B68Ui button, drawn only on a fault): a tap brings the chrome back for 5 seconds.
    S3, the scene caption is the wire: each bulletin the old strip shows (its node stays, hidden, with its hooks and role) is mirrored onto a
    lower plate with its timer. The map caption is mapCaption().
-   S10, idle: the ambient scene held still (B68Fx's off, through the display page's suiteSync), the four slots, the lower plate. Nothing on it
+   S10, idle: the ambient scene (held still only by the Scenes setting since IP1, 13/11), the four slots, the lower plate. Nothing on it
    animates (kit-stage.e2e counts running animations in the page and in the scene frames).
    THE SAFE SCENE (KS16 review): while the safe scene (PANIC's test card, Pure.SAFE) is in the ambient layer, the root carries
    data-stage-safe and the idle places and the lower plate stand down (stage.css), so no clock, crew head, docked clock or last roll is left

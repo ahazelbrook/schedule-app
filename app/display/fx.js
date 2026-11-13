@@ -2,7 +2,8 @@
    spares the iPad's battery and heat WITHOUT touching a line inside them. A scene is a same-origin iframe, so the display page reaches in from outside:
 
      fx.pause   a scene that is not on show stops moving: the page is hidden, a spotlight covers the ambient, or the frame itself is faded out.
-     fx.off     every ambient scene is held still, all the time (a still picture of the scene; the display page itself is not touched).
+     fx.off     every ambient scene is held still, all the time (a still picture of the scene: it draws its first frames, then one short run a minute,
+                so the stand-by clock reads the right time; the display page itself is not touched).
 
    "Stopped" is three things, all reversible and all done from here: CSS animations and transitions in the scene (a style element this file adds, driven by a
    class on the scene's <html>), requestAnimationFrame (calls are held in a queue and replayed on resume, so a canvas loop picks up where it was), and any
@@ -32,13 +33,19 @@
     return { paused: paused, off: off };
   }
 
-  /* the per-window record: { raf, cancel, held: [{ id, cb }], next, paused, media: [els we paused] } */
+  /* IP1 (13/11): "held still" is a still picture, not a blank one. A scene draws its first frames only inside its rAF loop (the stand-by clock sets its hands
+     there), so a held scene is let run for SETTLE_MS when its document arrives or the hold begins, and for TICK_MS once a minute after that (the clock then
+     reads the right minute). Its CSS animations stay paused throughout. */
+  var SETTLE_MS = 1200, TICK_MS = 400, MINUTE = 60000;
+  function now() { return Date.now(); }
+  /* the per-window record: { raf, cancel, held: [{ id, cb }], next, paused, media: [els we paused], open (ms: rAF passes until then), tick (ms: the next
+     minute's run), live: [cbs the real rAF holds now], doc (the document seen last) } */
   function rec(win) {
     if (win.__b68fx) return win.__b68fx;
-    var r = win.__b68fx = { raf: win.requestAnimationFrame, cancel: win.cancelAnimationFrame, held: [], next: -1, paused: false, media: [], off: false };
+    var r = win.__b68fx = { raf: win.requestAnimationFrame, cancel: win.cancelAnimationFrame, held: [], next: -1, paused: false, media: [], off: false, open: 0, tick: 0, live: [], doc: null };
     if (typeof r.raf === 'function') {
       win.requestAnimationFrame = function (cb) {
-        if (!r.paused) return r.raf.call(win, cb);
+        if (!r.paused || now() < r.open) return pass(win, r, cb);
         var id = r.next--; r.held.push({ id: id, cb: cb }); return id;
       };
       win.cancelAnimationFrame = function (id) {
@@ -47,6 +54,17 @@
       };
     }
     return r;
+  }
+  /* the real rAF, remembering the callback until it runs, so a release never starts the same loop twice */
+  function pass(win, r, cb) {
+    if (typeof cb !== 'function') return r.raf.call(win, cb);
+    r.live.push(cb);
+    return r.raf.call(win, function (t) { var i = r.live.indexOf(cb); if (i >= 0) r.live.splice(i, 1); cb(t); });
+  }
+  /* run what was held: each callback once, and none the real rAF already holds (a scene that restarted its own loop meanwhile keeps one loop) */
+  function release(win, r) {
+    var held = r.held, seen = []; r.held = [];
+    held.forEach(function (h) { if (seen.indexOf(h.cb) >= 0 || r.live.indexOf(h.cb) >= 0) return; seen.push(h.cb); pass(win, r, h.cb); });
   }
   function apply(win, state) {
     var r;
@@ -59,14 +77,22 @@
       if (!doc.getElementById(STYLE_ID) && doc.head) { var st = doc.createElement('style'); st.id = STYLE_ID; st.textContent = CSS; doc.head.appendChild(st); }
       var cl = doc.documentElement.classList;
       cl.toggle(CLS_PAUSED, !!s.paused); cl.toggle(CLS_OFF, !!s.off);
+      var fresh = r.doc !== doc, wasOff = r.off;
+      r.doc = doc;
       r.off = !!s.off;
+      if (r.off && (fresh || !wasOff)) {                          /* a new scene, or the hold just began: let it draw its first frames, then hold */
+        r.open = now() + SETTLE_MS; r.tick = (Math.floor(now() / MINUTE) + 1) * MINUTE;
+        release(win, r);
+      } else if (r.off && now() >= r.tick) {                       /* once a minute, on the minute: one short run, so a held clock reads the right time */
+        r.open = now() + TICK_MS; r.tick = (Math.floor(now() / MINUTE) + 1) * MINUTE;
+        release(win, r);
+      } else if (!r.off) r.open = 0;
       if (s.paused && !r.paused) {
         r.paused = true;
         [].forEach.call(doc.querySelectorAll ? doc.querySelectorAll('video, audio') : [], function (m) { if (!m.paused) { try { m.pause(); r.media.push(m); } catch (e) { /* ignore */ } } });
       } else if (!s.paused && r.paused) {
-        r.paused = false;
-        var held = r.held; r.held = [];
-        held.forEach(function (h) { r.raf.call(win, h.cb); });
+        r.paused = false; r.open = 0;
+        release(win, r);
         var med = r.media; r.media = [];
         med.forEach(function (m) { try { var p = m.play(); if (p && p.catch) p.catch(function () {}); } catch (e) { /* ignore */ } });
       }
