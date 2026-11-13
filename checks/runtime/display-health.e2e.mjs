@@ -23,6 +23,8 @@ const PORT = Number(process.env.PORT || 9461);
 const BASE = 'http://127.0.0.1:' + PORT;
 const GM = 'gm@example.test', IPAD = 'table.ipad@example.test';
 const SHOTS = process.env.SHOTS || '';
+const ONLY = String(process.env.ONLY || '').split(',').filter(Boolean);      // ONLY=scenes,looks runs those parts (clock fit scenes figures looks)
+const want = (part) => !ONLY.length || ONLY.includes(part);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const WIN = process.platform === 'win32';
 
@@ -131,9 +133,11 @@ try {
   await push({ kind: 'blank' });
   await ambient({ mode: 'pin', scene: 'testcard', overlay: null, layers: null, crew: { heat: 2, wanted: 1 } });
 
+  let I = null;
   /* ---------- clock ---------- */
+  if (want('clock')) {
   await settings({ still: true });
-  let I = await openIpad(browser, 1180, 820);
+  I = await openIpad(browser, 1180, 820);
   await step('clock: held still, the stand-by clock shows the right time (not 12:00)', async () => {
     await sceneUp(I.page, 'testcard'); await heldIs(I.page, true); await sleep(1500);
     const c = await clock(I.page);
@@ -156,9 +160,10 @@ try {
   await step('clock: no page errors', async () => { expect(!I.errors.length, I.errors.join(' | ')); });
   await I.ctx.close();
   await settings({});
+  }
 
   /* ---------- fit ---------- */
-  for (const band of [false, true]) {
+  if (want('fit')) for (const band of [false, true]) {
     await settings({ band });
     await ambient(band ? { layer: { path: 'band.phase', value: 'plan' } } : { layers: null });
     for (const [w, h, what] of [[1024, 768, 'iPad 1024x768'], [1180, 820, 'iPad 1180x820'], [1536, 864, 'TV at 125% (1536x864)'], [1920, 1080, 'TV 1920x1080']]) {
@@ -182,6 +187,7 @@ try {
   await settings({});
 
   /* ---------- scenes ---------- */
+  if (want('scenes')) {
   I = await openIpad(browser, 1180, 820);
   for (const id of SCENES) {
     await settings({ still: false });
@@ -189,10 +195,13 @@ try {
     I.errors.length = 0;
     await step('scenes: ' + id + ': moving, then held still (a full picture), then moving again, with no page error', async () => {
       await sceneUp(I.page, id); await heldIs(I.page, false); await sleep(2500);
-      await settings({ still: true }); await heldIs(I.page, true); await sleep(1800);
+      await settings({ still: true }); await heldIs(I.page, true); await sleep(3000);      /* past the 1.2 s first run */
       const h1 = await frameShot(I.page, 'health-' + id + '-held'); await sleep(1500); const h2 = await frameShot(I.page, 'health-' + id + '-held-2');
       expect(h1 && h1.sd > 6, 'held: a blank or flat frame (contrast ' + (h1 && h1.sd.toFixed(1)) + ')');
-      expect(diff(h1, h2) < 0.5, 'held: the scene still moves (' + diff(h1, h2).toFixed(2) + ')');
+      /* held = its frame loop is held (a scene's own setTimeout events, a flicker or a sequence step, still fire: fx.js says so); the picture is reported */
+      const loop = await I.page.evaluate(() => { const f = document.querySelector('.dp-ambient iframe.dp-amb-in'), r = f && f.contentWindow.__b68fx; return r ? { held: r.held.length, live: r.live.length } : null; });
+      expect(loop && loop.held >= 1 && loop.live === 0, 'held: the frame loop still runs: ' + JSON.stringify(loop));
+      if (diff(h1, h2) >= 0.5) console.log('INFO ' + id + ': held, the picture changed by ' + diff(h1, h2).toFixed(2) + ' (a timer of its own)');
       await settings({ still: false }); await heldIs(I.page, false); await sleep(1500);
       const m1 = await frameShot(I.page, 'health-' + id + '-moving'); await sleep(2500); const m2 = await frameShot(I.page, 'health-' + id + '-moving-2');
       expect(diff(m1, m2) > 0.02, 'moving again: two pictures 2.5 s apart are the same (' + diff(m1, m2).toFixed(3) + ')');
@@ -200,10 +209,11 @@ try {
     });
   }
   await I.ctx.close();
+  }
   await ambient({ mode: 'pin', scene: 'duskwall' });
 
   /* ---------- figures ---------- */
-  for (const stage of [false, true]) {
+  if (want('figures')) for (const stage of [false, true]) {
     await settings({ stage });
     for (const [w, h] of [[1180, 820], [1536, 864]]) {
       I = await openIpad(browser, w, h);
@@ -229,6 +239,7 @@ try {
 
   /* ---------- looks ---------- */
   const LOOK = { expr: 'smirk', tell: true, pose: 'lapel' };
+  if (want('looks')) {
   const figSig = (page) => page.evaluate(() => { const all = document.querySelectorAll('.dp-stages .dp-npc'), e = all[all.length - 1]; const s = e && e.querySelector('.dp-npc-fig > svg'); return s ? s.getAttribute('data-fl') || 'drawn' : ''; });
   for (const stage of [false, true]) {
     await settings({ stage });
@@ -267,6 +278,7 @@ try {
   await ambient({ overlay: null });
   await step('looks: no page errors', async () => { expect(!I.errors.length, I.errors.join(' | ')); });
   await I.ctx.close();
+  }
 } catch (e) { failed++; console.log('FAIL ' + (e && e.stack || e)); }
 await browser.close();
 console.log(passed + ' passed, ' + failed + ' failed');
