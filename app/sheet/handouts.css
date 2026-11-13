@@ -42,5 +42,6 @@
 .ds-ho-none { max-width: 26em; margin: 0 auto; padding: 0 16px; font: 400 16px/1.45 var(--font-body, sans-serif); text-align: center; color: #cfc7bb; }
 .ds-ho-vfoot { flex: 0 0 auto; display: flex; gap: 10px; justify-content: space-between; padding: 10px 16px calc(12px + env(safe-area-inset-bottom, 0px)); }
 .ds-ho-vfoot .btn { min-height: 48px; min-width: 120px; }
-.ds-ho-v .ds-ho-zoom { background: transparent; color: #f1ece4; border-color: #f1ece4; }
+.ds-ho-v .ds-ho-vfoot .ds-ho-zoom { background: transparent; color: #f1ece4; border-color: #f1ece4; box-shadow: none; }
+.ds-ho-v .ds-ho-vfoot .ds-ho-vx { background: #f1ece4; color: #0b0a09; border-color: #f1ece4; box-shadow: none; }
 @media print { .ds-ho-list, .ds-ho-v, #dossier .ds-nav .ds-hobtn { display: none; } }
