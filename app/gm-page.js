@@ -3594,7 +3594,7 @@
     try { W.localStorage.setItem(FOLD_KEY, JSON.stringify(a.slice(-20))); } catch (e) {}
   }
   /* MK1 (map.fill): the shared screen's shape, kept with the map's controls (loc.map.screen, a new optional key: 'tv', else the iPad); '' while off */
-  function sceneScreenSel(mu) { var f = sceneFlags(); return f && f.fill ? sel('screen', 'Shared screen', [['ipad', 'iPad (4:3)'], ['tv', 'TV (16:9)']], sceneMod().screenOf(mu.screen)) : ''; }
+  function sceneScreenSel(mu) { var f = sceneFlags(); return f && f.fill && sceneMod().stageOk(W.B68Map) ? sel('screen', 'Shared screen', [['ipad', 'iPad (4:3)'], ['tv', 'TV (16:9)']], sceneMod().screenOf(mu.screen)) : ''; }
   function sel(key, label, list, v) { return '<label class="gm-field" for="gm-m-' + key + '"><span class="gm-lab">' + label + '</span><select id="gm-m-' + key + '" data-map="' + key + '">' + list.map(function (o) { var val = Array.isArray(o) ? o[0] : o, txt = Array.isArray(o) ? o[1] : o; return '<option value="' + esc(val) + '"' + (val === str(v) ? ' selected' : '') + '>' + esc(txt) + '</option>'; }).join('') + '</select></label>'; }
   /* the fold's summary: view · theme, and the time and weather when they are set */
   function mapLine(mu) { var a = [mu.view, mu.theme], tl = P.TIMES.filter(function (x) { return x[0] && x[0] === mu.time; })[0], wl = P.WEATHERS.filter(function (x) { return x[0] && x[0] === mu.weather; })[0]; if (tl) a.push(tl[1].toLowerCase()); if (wl) a.push(wl[0] === 'rolled' ? "the roll's weather" : wl[0] === 'none' ? 'no weather' : wl[1].toLowerCase()); return a.join(' · '); }
@@ -3624,7 +3624,7 @@
     box.setAttribute('data-layer', S.map.layer); b17Tint();
     box.classList.toggle('gm-leak', !!S.map.leak);
     if (w) w.classList.toggle('bad', !!S.map.leak);
-    if (w) w.textContent = (S.map.leak ? 'Not for the iPad: ' + P.LEAK_MSG + ' ' : '') + (S.map.held ? P.TOKEN_LEAK_MSG + ' ' : '') + (S.map.layer === 'gm' ? 'GM layer: everything shows. ' : 'Player layer. ') + (S.map.warnings.length ? S.map.warnings.length + ' map note' + (S.map.warnings.length === 1 ? '' : 's') + ': ' + S.map.warnings.slice(0, 2).map(function (x) { return typeof x === 'string' ? x : x && (x.message || x.msg || JSON.stringify(x)); }).join(' · ') + (S.map.warnings.length > 2 ? ' …' : '') : '');
+    if (w) w.textContent = (S.map.leak ? 'Not for the iPad: ' + P.LEAK_MSG + ' ' : '') + (S.map.held ? P.TOKEN_LEAK_MSG + ' ' : '') + (S.map.layer === 'gm' ? 'GM layer: everything shows. ' : 'Player layer. ' + scenePreviewNote()) + (S.map.warnings.length ? S.map.warnings.length + ' map note' + (S.map.warnings.length === 1 ? '' : 's') + ': ' + S.map.warnings.slice(0, 2).map(function (x) { return typeof x === 'string' ? x : x && (x.message || x.msg || JSON.stringify(x)); }).join(' · ') + (S.map.warnings.length > 2 ? ' …' : '') : '');
   }
   /* a change to the map controls redraws a map already on screen, so what shows always matches the controls */
   function setMap(k, v) {
@@ -3803,7 +3803,8 @@
     var rs = runSite(), st = rs ? ballDoc(rs.name) : {}, play = rs ? rs.play : null, t = +st.t >= 0 ? +st.t : 0;
     var room = f.room && S.sceneRoom && G.roomViewOk(W.B68Map) ? str(S.sceneRoom) : '';
     return { flags: f, pcs: herePcs().map(scenePc), crew: isObj(st.crew) ? st.crew : {}, disguises: (play && Array.isArray(play.disguises) ? play.disguises : []).filter(isObj).map(function (d) { return { id: str(d.id), icon: str(d.icon) }; }),
-      crowd: G.crowdOf(play), lights: play ? G.lightsAt(play, t) : {}, screen: G.screenOf(mapUi().screen), view: room ? 'room' : '', room: room, kit: W.B68Figure };
+      crowd: G.crowdOf(play), lights: play ? G.lightsAt(play, t, G.knownEvents(play, st, sceneRooms())) : {},      /* only events the players may know light the shared screen */
+      screen: G.screenOf(mapUi().screen), stage: G.stageOk(W.B68Map), view: room ? 'room' : '', room: room, kit: W.B68Figure };
   }
   /* map.room: the rooms the crew knows (where a marker may stand on the players' map), a Cut to room on each room card, and what is up */
   function sceneRooms() { var mu = Object.assign({}, mapUi(), { layer: 'player' }), rv = revealEntries(mu); return S && S.locRoll ? tokenRooms(S.locRoll, rv, knowRooms(mu)) : []; }
@@ -3824,8 +3825,20 @@
     var name = a === 'scene-cut' && el && el.getAttribute ? str(el.getAttribute('data-room')) : '', me = S, was = S.sceneRoom || '';
     if (a === 'scene-cut' && (!sceneRoomOk() || sceneRooms().indexOf(name) < 0)) return true;
     S.sceneRoom = name;
-    Promise.resolve(siteMapUp(false, false)).then(function (ok) { if (S === me && !ok) S.sceneRoom = was; if (S === me) siteChanged(); });
+    var sent; S.sceneCutting = true;       /* the one send that keeps the room cut to (showOnIpad clears it for every other) */
+    try { sent = siteMapUp(false, false); } finally { S.sceneCutting = false; }
+    Promise.resolve(sent).then(function (ok) { if (S === me && !ok) S.sceneRoom = was; if (S === me) siteChanged(); });
     return true;
+  }
+  /* the laptop's player-layer preview does not draw the scene: one line says what the shared screen adds (the review of #234, item 4) */
+  function scenePreviewNote() {
+    var f = sceneFlags(); if (!f || !S.map || S.map.layer !== 'player') return '';
+    var a = [];
+    if (f.fill && sceneMod().stageOk(W.B68Map)) a.push('fills the screen');
+    if (f.people) a.push('shows the crew and a crowd');
+    if (f.lights) a.push('lights a room when an event the players know runs');
+    if (S.sceneRoom && mapOnIpad()) a.push('is cut to ' + S.sceneRoom);
+    return a.length ? 'The shared screen also ' + a.join(', ') + ' (not drawn here). ' : '';
   }
 
   /* ---- the strip ---- */
@@ -4187,6 +4200,7 @@
   }
   /* okd: a reveal list the GM has just said yes to (Send, F4): the same list is not asked about twice; any other list still asks */
   function showOnIpad(okd) {
+    if (S && S.sceneRoom && !S.sceneCutting) S.sceneRoom = '';      /* MK1 (#234 review): a deliberate map send puts the map up, never a room cut to earlier */
     var mu = mapUi(), d, tk = playerTokenSet(revealEntries(mu));
     try { d = playerDisplay(S.locRoll, mu, W.B68Map && W.B68Map.render, tk); } catch (e) { toast(errText(e), true); return Promise.resolve(false); }
     if (!(Array.isArray(okd) && JSON.stringify(okd) === JSON.stringify(d.reveal)) && !confirmReveal(d.reveal, 'This map')) return Promise.resolve(false);

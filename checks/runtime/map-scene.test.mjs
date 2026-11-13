@@ -54,7 +54,7 @@ const dressCalls = [];
 const KIT = { dress(spec, role, opts) { dressCalls.push([spec.name, role, opts && opts.masked === true]); return Object.assign(cl(spec), { outfit: 'role:' + role, mask: !!(opts && opts.masked) }); } };
 /* the scene input the page builds (sceneInput) for these flags */
 const SC = (f, extra) => Object.assign({ flags: f, pcs: cl(PCS), crew: cl(CREW), disguises: PLAY().disguises.map((d) => ({ id: d.id, icon: d.icon })), crowd: G.crowdOf(PLAY()),
-  lights: G.lightsAt(PLAY(), 180), screen: 'ipad', view: '', room: '', kit: KIT }, extra || {});
+  lights: G.lightsAt(PLAY(), 180), screen: 'ipad', stage: true, view: '', room: '', kit: KIT }, extra || {});      /* stage: a kit that draws layout "stage" */
 /* a stand-in map kit: captures every options object, draws the people's labels as text (as the new kit will) so the leak scan sees them */
 function spyRender() {
   const calls = [];
@@ -259,6 +259,46 @@ test('the room control shows only where the vendored kit lists view "room"; the 
 });
 test('initials are the Run view\'s own', () => {
   for (const s of ['Nell Arbuthnot', 'ray okonjo', '  Tam  ', '', 'Ada Vell Brand', 'Élodie Ünsel']) assert.equal(G.initials(s), RV.initials(s), s);
+});
+
+/* ---------- the review of #234 ---------- */
+test('a hidden dawn event never lights the player copy; a public one does; one told to the crew does; the GM copy shows them all', () => {
+  const hidden = PLAY((p) => { const e = p.events.find((x) => x.fx === 'dawn'); delete e.vis; }), pub = PLAY();
+  assert.equal(hidden.events.find((x) => x.fx === 'dawn').vis, 'hidden', 'no vis reads hidden');
+  const st = { site: 'The Pelican Rooms', v: 2, start: 0, t: 180, crew: cl(CREW) }, shown = ROOMS.map((r) => r.name);
+  assert.deepEqual(G.lightsAt(hidden, 180, G.knownEvents(hidden, st, shown)), {}, 'hidden: no light for the players');
+  assert.deepEqual(G.lightsAt(pub, 180, G.knownEvents(pub, st, shown)), { Showroom: 'bright' }, 'public: lit');
+  const told = PLAY((p) => { const e = p.events.find((x) => x.fx === 'dawn'); delete e.vis; });
+  const toldSt = Object.assign({}, st, { told: { I1: 'crew' } });       /* fixture intel I1 reveals the speeches and the fireworks */
+  assert.deepEqual(G.lightsAt(told, 180, G.knownEvents(told, toldSt, shown)), { Showroom: 'bright' }, 'told through intel: lit');
+  for (const p of [hidden, pub]) { const o = {}; G.gm(o, ONLY('lights'), { model: model(p, CREW, 180), play: p, crew: CREW, pcs: PCS, t: 180 }); assert.deepEqual(o.lights, { Showroom: 'bright' }, 'the GM copy shows it'); }
+  assert.deepEqual(G.knownEvents({ v: 1, events: [{ id: 'a', vis: 'public' }, { id: 'b' }] }, {}, []), { a: true }, 'no players\' view: public only');
+  /* and through the page's door: the scene input carries only the known lights, the door keeps them only in shown rooms */
+  const sc = SC(ONLY('lights'), { lights: G.lightsAt(hidden, 180, G.knownEvents(hidden, st, shown)) });
+  assert.equal(G.forPlayer({}, sc, shown, ONLY('lights')).opts.lights, undefined);
+});
+test('layout "stage" only when the kit draws it: with map.fill on and a kit without it, the layout is today\'s', () => {
+  assert.equal(G.stageOk({ options: () => ({ layouts: ['ipad', 'print', 'sheet', 'phone'] }) }), false);
+  assert.equal(G.stageOk({ options: () => ({ layouts: ['ipad', 'stage'] }) }), true);
+  assert.equal(G.stageOk(null), false); assert.equal(G.stageOk({ options() { throw new Error('x'); } }), false);
+  const K = require(path.join(ROOT, 'app', 'maps', 'map-kit.js'));
+  console.log('  (the vendored map kit ' + K.VERSION + ' draws layout "stage": ' + G.stageOk(K) + ')');
+  const o = { layout: 'ipad', view: 'iso' };
+  assert.deepEqual(G.forPlayer(o, SC(ONLY('fill'), { stage: false }), [], ONLY('fill')).opts, o, 'map.fill on, no stage in the kit: the options as today');
+  assert.equal(G.forPlayer(o, SC(ONLY('fill'), { stage: false }), [], ONLY('fill')).key, '');
+  const { render, calls } = spyRender();
+  P.playerDisplay(ROLL, PMAP(), render, { tokens: [], hide: [], sig: '', scene: SC(ONLY('fill'), { stage: G.stageOk(K) }) });
+  assert.equal(calls[calls.length - 1].layout, G.stageOk(K) ? 'stage' : 'ipad', 'what reaches the vendored kit');
+});
+test('the room cut: every deliberate map send clears it (Show on iPad, the Score\'s automatic map); only Cut to room keeps it', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
+  const body = (name) => { const i = src.indexOf('function ' + name + '('); return i < 0 ? '' : src.slice(i, src.indexOf('\n  }\n', i)); };
+  assert.match(body('showOnIpad'), /if \(S && S\.sceneRoom && !S\.sceneCutting\) S\.sceneRoom = '';/, 'showOnIpad clears it unless Cut to room is sending');
+  assert.match(body('siteMapUp'), /showOnIpad\(/, 'the site\'s Show on iPad and the Score\'s automatic map go through showOnIpad');
+  assert.match(body('scoreMapDefault'), /siteMapUp\(/);
+  const act = body('sceneAct');
+  assert.match(act, /S\.sceneCutting = true;[\s\S]*siteMapUp\(false, false\)[\s\S]*finally \{ S\.sceneCutting = false; \}/, 'Cut to room is the one send that keeps it');
+  assert.ok(!/sceneRoom\s*=\s*[^'=]/.test(body('liveReveal')), 'a live re-send neither sets nor clears it');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

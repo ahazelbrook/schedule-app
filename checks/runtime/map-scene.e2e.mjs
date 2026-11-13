@@ -85,7 +85,8 @@ try {
   check(!!(await until(() => page.evaluate(() => !!(window.B68GmPage && window.B68GmPage._state() && window.B68GmPage._state().status === 'ready')), 30000)), 'the GM page is ready');
   check(!!(await until(() => page.evaluate(SPY), 20000)), 'the map kit is here and spied on');
   const kitVer = await page.evaluate(() => window.B68Map.VERSION || ''), roomView = await page.evaluate(() => { try { return window.B68Map.options().views.indexOf('room') >= 0; } catch (e) { return false; } });
-  console.log('  map kit ' + kitVer + ', view "room": ' + roomView);
+  const stageKit = await page.evaluate(() => { try { return window.B68Map.options().layouts.indexOf('stage') >= 0; } catch (e) { return false; } });
+  console.log('  map kit ' + kitVer + ', view "room": ' + roomView + ', layout "stage": ' + stageKit);
 
   /* 0. off */
   await page.evaluate(() => window.B68GmPage.openView('location')); await page.waitForTimeout(600);
@@ -121,7 +122,8 @@ try {
   await page.evaluate(() => window.B68GmPage.openView('location')); await page.waitForTimeout(600);
   await page.evaluate(() => { const d = document.querySelector('details[data-fold="mapopts"]'); if (d) { d.open = true; d.scrollIntoView({ block: 'center' }); } });
   const sel = await page.evaluate(() => { const s = document.querySelector('#gm-m-screen'); return s ? { v: s.value, opts: [...s.options].map((o) => o.textContent), label: s.closest('label').textContent.trim() } : null; });
-  check(!!sel && sel.v === 'ipad' && JSON.stringify(sel.opts) === JSON.stringify(['iPad (4:3)', 'TV (16:9)']), 'the Shared screen select: iPad (4:3) / TV (16:9), iPad by default ' + JSON.stringify(sel));
+  if (stageKit) check(!!sel && sel.v === 'ipad' && JSON.stringify(sel.opts) === JSON.stringify(['iPad (4:3)', 'TV (16:9)']), 'the Shared screen select: iPad (4:3) / TV (16:9), iPad by default ' + JSON.stringify(sel));
+  else check(!sel, 'the kit has no stage layout: no Shared screen select, even with map.fill on');
   await shot(page, 'location-shared-screen-1366', 'details[data-fold="mapopts"]');
   await page.evaluate(() => { window.__mk1.length = 0; }); await toRun(page);
   await page.evaluate(() => { const b = document.querySelector('#gm-runv [data-rv="view"][data-v="map"]'); if (b) b.click(); }); await page.waitForTimeout(1500);
@@ -142,17 +144,21 @@ try {
   const d0 = await api('GET', '/gm/display', undefined, IPAD);
   await page.click(showBtn); await page.waitForTimeout(500);
   const up = await until(async () => (await opts(page)).filter((o) => o.layer === 'player').pop(), 10000);
-  check(!!up && up.layout === 'stage' && up.displayWidth === 1366 && up.displayHeight === 1024, 'Show on iPad: the player copy is layout "stage" at 1366 x 1024 ' + JSON.stringify(up && [up.layout, up.displayWidth, up.displayHeight]));
+  if (stageKit) check(!!up && up.layout === 'stage' && up.displayWidth === 1366 && up.displayHeight === 1024, 'Show on iPad: the player copy is layout "stage" at 1366 x 1024 ' + JSON.stringify(up && [up.layout, up.displayWidth, up.displayHeight]));
+  else check(!!up && up.layout === 'ipad' && !('displayWidth' in up), 'Show on iPad, map.fill on, a kit with no stage layout: the iPad layout as today ' + JSON.stringify(up && [up.layout, up.displayWidth]));
   check(!!up && Array.isArray(up.people) && up.people.every((p) => p.tone === 'crew' && CREW.includes(p.label)), 'the player copy\'s people are the crew only: ' + JSON.stringify(up && up.people && up.people.map((p) => p.label)));
   const d1 = await until(async () => { const d = await api('GET', '/gm/display', undefined, IPAD); return d.status === 200 && d.text !== d0.text ? d : null; }, 8000);
   check(!!d1, 'the iPad has the map');
   await page.evaluate(() => { window.__mk1.length = 0; window.B68GmPage.openView('location'); }); await page.waitForTimeout(600);
   await page.evaluate(() => { const d = document.querySelector('details[data-fold="mapopts"]'); if (d) d.open = true; });
-  await page.selectOption('#gm-m-screen', 'tv');
-  const tv = await until(async () => (await opts(page)).filter((o) => o.layer === 'player' && o.displayWidth === 1920).pop(), 6000);
-  check(!!tv && tv.layout === 'stage' && tv.displayHeight === 1080, 'Shared screen to TV: the live map is drawn again at once, 1920 x 1080');
-  const d2 = await until(async () => { const d = await api('GET', '/gm/display', undefined, IPAD); return d.status === 200 && d1 && d.text !== d1.text ? d : null; }, 8000);
-  check(!!d2, 'and it reached the iPad (the display changed)');
+  let d2 = null;
+  if (stageKit) {
+    await page.selectOption('#gm-m-screen', 'tv');
+    const tv = await until(async () => (await opts(page)).filter((o) => o.layer === 'player' && o.displayWidth === 1920).pop(), 6000);
+    check(!!tv && tv.layout === 'stage' && tv.displayHeight === 1080, 'Shared screen to TV: the live map is drawn again at once, 1920 x 1080');
+    d2 = await until(async () => { const d = await api('GET', '/gm/display', undefined, IPAD); return d.status === 200 && d1 && d.text !== d1.text ? d : null; }, 8000);
+    check(!!d2, 'and it reached the iPad (the display changed)');
+  }
   const last = d2 || d1 || d0;
   check(!/GM-ONLY-/.test(last.text) && !CAST.some((n) => last.text.includes(n)), 'the iPad\'s GET carries no GM-ONLY- text and no cast name');
   await page.evaluate(() => { const d = document.querySelector('details[data-fold="mapopts"]'); if (d) d.scrollIntoView({ block: 'center' }); });

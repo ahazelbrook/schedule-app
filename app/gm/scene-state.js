@@ -14,7 +14,9 @@
  *   toneOf(kind) roleOf(kind)                                a person's kind -> the kit's tone; -> the role an anonymous stand-in is drawn as
  *   gmPeople(model, input) -> [person]                       the GM copy: every PC and every person the Run view's board places, in its rooms
  *   playerPeople(input, shown) -> [person]                   the player copy: the crew ONLY, in the rooms in `shown`
- *   crowdOf(play) -> true | { masked: true }                 lightsAt(play, t) -> { room: 'bright' } (events with fx "dawn" in the beat at t)
+ *   crowdOf(play) -> true | { masked: true }                 lightsAt(play, t, known) -> { room: 'bright' } (fx "dawn" events in the beat at t; only `known` ones when given)
+ *   knownEvents(play, st, open) -> { id: true }               the events the players may know (B68GmBall.playerView's own rule)
+ *   stageOk(K) -> bool                                       the vendored map kit lists layout "stage" (B68Map.options().layouts)
  *   gm(o, f, input) -> key                                   merges the GM copy's keys into o (a run's GM layer); '' and o untouched when off
  *   forPlayer(o, sc, shown, f) -> { opts, key }              THE ONE DOOR for a player copy: a NEW options object, o untouched; { o, '' } when off
  *   roomViewOk(K) -> bool                                    the vendored map kit lists view "room" (B68Map.options().views)
@@ -123,14 +125,26 @@
 
   function crowdOf(play) { return isObj(play) && isObj(play.crowd) && play.crowd.masked === true ? { masked: true } : true; }
   /* the rooms lit at minute t: each event with fx "dawn" that falls in the beat holding t (the beat the Run view shows as happening) */
-  function lightsAt(play, t) {
+  /* known (optional): { <event id>: true }, the events a light may come from. The GM copy passes nothing (every running event); the player copy
+     passes knownEvents (what the players may know), so a hidden event never lights a room on the shared screen */
+  function lightsAt(play, t, known) {
     var out = {}; if (!isObj(play) || !isObj(play.clock)) return out;
-    var now = B.beatOf(play, +t || 0).i, span = B.minuteOf(play.clock.end, play.clock.start);
+    var now = B.beatOf(play, +t || 0).i, span = B.minuteOf(play.clock.end, play.clock.start), only = isObj(known) ? known : null;
     list(play.events).forEach(function (e) {
       if (!isObj(e) || e.fx !== "dawn" || typeof e.room !== "string" || !e.room) return;
+      if (only && only[e.id] !== true) return;
       var m = B.minuteOf(e.at, play.clock.start); if (isNaN(m) || !(m <= span)) return;      /* after the night's end: never (beatOf would clamp it into the last beat) */
       if (B.beatOf(play, m).i === now) out[e.room] = "bright";
     });
+    return out;
+  }
+  /* the events the players may know, by the players' own view (B68GmBall.playerView, the mission's one reader of the play: public, "seen" with a PC
+     in the room, or told through intel); without that view (a v1 play) the public events only. A hidden event that was not told is never in it. */
+  function knownEvents(play, st, open) {
+    var out = {}, v = null;
+    try { v = typeof B.playerView === "function" ? B.playerView(play, isObj(st) ? st : {}, list(open)) : null; } catch (e) { v = null; }
+    if (v && Array.isArray(v.events)) v.events.forEach(function (e) { if (isObj(e) && typeof e.id === "string") out[e.id] = true; });
+    else list(isObj(play) ? play.events : []).forEach(function (e) { if (isObj(e) && e.vis === "public" && typeof e.id === "string") out[e.id] = true; });
     return out;
   }
 
@@ -162,7 +176,8 @@
     if (!isObj(o) || !isObj(sc) || !anyOn(f)) return { opts: o, key: "" };
     var out = Object.assign({}, o), add = {}, open = {};
     list(shown).forEach(function (n) { if (typeof n === "string" && n) open[n] = true; });
-    if (f.fill) { var sz = SCREENS[screenOf(sc.screen)]; add.layout = "stage"; add.displayWidth = sz.displayWidth; add.displayHeight = sz.displayHeight; }
+    /* the stage layout only where the vendored kit draws it (sc.stage: stageOk(B68Map)); else the layout stays as today */
+    if (f.fill && sc.stage === true) { var sz = SCREENS[screenOf(sc.screen)]; add.layout = "stage"; add.displayWidth = sz.displayWidth; add.displayHeight = sz.displayHeight; }
     if (f.people) {
       add.people = playerPeople(sc, shown);
       add.crowd = isObj(sc.crowd) && sc.crowd.masked === true ? { masked: true } : true;
@@ -177,11 +192,12 @@
     return { opts: out, key: Object.keys(add).length ? "scene:" + keyOf([plain(add), !!sc.kit]) : "" };
   }
 
-  function roomViewOk(K) {
-    var o = null; try { o = K && typeof K.options === "function" ? K.options() : null; } catch (e) { o = null; }
-    return !!(o && list(o.views).indexOf("room") >= 0);
-  }
+  function kitOpts(K) { try { return K && typeof K.options === "function" ? K.options() : null; } catch (e) { return null; } }
+  function roomViewOk(K) { var o = kitOpts(K); return !!(o && list(o.views).indexOf("room") >= 0); }
+  /* the vendored map kit draws layout "stage" (it lists it among its layouts); kit 1.0.0 does not, and falls back to a sheet */
+  function stageOk(K) { var o = kitOpts(K); return !!(o && list(o.layouts).indexOf("stage") >= 0); }
 
   return { IDS: IDS, SCREENS: SCREENS, ICON_ROLE: ICON_ROLE, flags: flags, anyOn: anyOn, screenOf: screenOf, initials: initials, toneOf: toneOf, roleOf: roleOf,
-    gmPeople: gmPeople, playerPeople: playerPeople, crowdOf: crowdOf, lightsAt: lightsAt, gm: gm, forPlayer: forPlayer, roomViewOk: roomViewOk, keyOf: keyOf, inputKey: inputKey };
+    gmPeople: gmPeople, playerPeople: playerPeople, crowdOf: crowdOf, lightsAt: lightsAt, knownEvents: knownEvents, gm: gm, forPlayer: forPlayer, roomViewOk: roomViewOk,
+    stageOk: stageOk, keyOf: keyOf, inputKey: inputKey };
 });
