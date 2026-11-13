@@ -94,6 +94,7 @@ function still(lit, pressFigs) {
   const r = rng(1968), o = [];
   const defs = `<linearGradient id="ld-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${SKY[0]}"/><stop offset=".55" stop-color="${SKY[1]}"/><stop offset="1" stop-color="${SKY[2]}"/></linearGradient>
 <linearGradient id="ld-fac" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a2033"/><stop offset=".7" stop-color="#262d43"/><stop offset="1" stop-color="#3a3a4a"/></linearGradient>
+<radialGradient id="ld-wg"><stop offset="0" stop-color="${WARM}" stop-opacity=".16"/><stop offset="1" stop-color="${WARM}" stop-opacity="0"/></radialGradient>
 <radialGradient id="ld-dg"><stop offset="0" stop-color="${CREAM}" stop-opacity=".55"/><stop offset=".45" stop-color="${WARM}" stop-opacity=".18"/><stop offset="1" stop-color="${WARM}" stop-opacity="0"/></radialGradient>
 <radialGradient id="ld-lg"><stop offset="0" stop-color="${CREAM}" stop-opacity=".5"/><stop offset=".35" stop-color="${WARM}" stop-opacity=".14"/><stop offset="1" stop-color="${WARM}" stop-opacity="0"/></radialGradient>
 <linearGradient id="ld-st" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${WARM}" stop-opacity=".22"/><stop offset=".6" stop-color="${WARM}" stop-opacity=".05"/><stop offset="1" stop-color="${WARM}" stop-opacity="0"/></linearGradient>`;
@@ -143,7 +144,7 @@ function still(lit, pressFigs) {
     const w = i === 4 ? 78 : 62, x = cx(i) - w / 2, top = 290, bot = 440, on = i === 4 || r() < 0.82;
     const ped = i % 2 ? `<path d="M${f2(x - 10)} 284 L${f2(cx(i))} 262 L${f2(x + w + 10)} 284 Z" fill="${TRIM}"/>` : `<path d="M${f2(x - 10)} 284 Q${f2(cx(i))} 254 ${f2(x + w + 10)} 284 Z" fill="${TRIM}"/>`;
     o.push(ped + rect(x - 10, 284, w + 20, 5, TRIM));
-    if (on) o.push(circ(cx(i), 360, 70, WARM, 'opacity=".07"'));
+    if (on) o.push(`<ellipse cx="${f2(cx(i))}" cy="366" rx="74" ry="104" fill="url(#ld-wg)"/>`);
     o.push(`<path d="${archD(x, top, w, bot)}" fill="${on ? GOLD2 : "#151a29"}"${on ? ' opacity=".92"' : ""}/>`);
     if (on) {
       // a chandelier's glow deep in the room, then the glazing bars
@@ -317,7 +318,7 @@ module.exports = function build(opts = {}) {
   const wins = pick.map((w, k) => {
     const id = "ld-w" + k, x = w.x, y = w.top, ww = w.w, hh = w.bot - w.top;
     css.push(`#${id}{left:${f2(x / 16)}%;top:${f2(y / 12)}%;width:${f2(ww / 16)}%;height:${f2(hh / 12)}%}`);
-    const who = `<g fill="#3a2a12" opacity=".62"><circle cx="0" cy="${f2(hh * 0.42)}" r="${f2(ww * 0.17)}"/><path d="M${f2(-ww * 0.42)} ${f2(hh + 4)} Q${f2(-ww * 0.42)} ${f2(hh * 0.56)} 0 ${f2(hh * 0.54)} Q${f2(ww * 0.42)} ${f2(hh * 0.56)} ${f2(ww * 0.42)} ${f2(hh + 4)} Z"/></g>`;
+    const who = `<g fill="#4a3514" opacity=".5"><circle cx="0" cy="${f2(hh * 0.56)}" r="${f2(ww * 0.11)}"/><path d="M${f2(-ww * 0.26)} ${f2(hh + 4)} Q${f2(-ww * 0.26)} ${f2(hh * 0.68)} 0 ${f2(hh * 0.66)} Q${f2(ww * 0.26)} ${f2(hh * 0.68)} ${f2(ww * 0.26)} ${f2(hh + 4)} Z"/></g>`;
     return { html: `<svg class="bx" id="${id}" viewBox="0 0 ${f2(ww)} ${f2(hh)}" preserveAspectRatio="none" aria-hidden="true"><defs><clipPath id="${id}c"><path d="${archD(0, 0, ww, hh)}"/></clipPath></defs><g clip-path="url(#${id}c)"><g id="${id}s" transform="translate(-999 0)">${who}</g></g></svg>`, w: f2(ww), P: [29, 41, 35, 47][k], o: [3, 17, 26, 9][k] };
   });
   // the flashbulbs: a small hard burst, and a soft afterglow around it
@@ -378,7 +379,7 @@ function guestAt(g,t,c){const b=BOATS[g.b];const u=since(t,b.s),ts=b.i+g.o;
  v-=STEPS*STEP;const xt=g.lane+(800-g.lane)/2;if(v<g.p)return {x:xt,y:YL-RISE*STEPS,k:.856,f:g.n&&v>.15&&v<g.p-.2?4:0};
  v-=g.p;const c2=Math.floor(v/.42)+1;if(c2<=3)return {x:xt+(800-xt)*c2/3,y:YL-RISE*STEPS-16*c2,k:.856-.035*c2,f:[1,3,1][c2-1]};return null;}
 let done={},lastT=-1,glowAt=[-9,-9],burst=[0,0];
-function frame(t,c,live,wc){
+function paint(t,c,live,wc){
  for(let k=0;k<BOATS.length;k++){const a=boatAt(BOATS[k],t),o=bE[k];vis(o,!!a);if(!a)continue;
   tf(o,'translate3d('+(a.dx/${BWd}*100).toFixed(3)+'%,'+(bob(k,c)/${BH}*100).toFixed(3)+'%,0)');
   attr(o.wk,'visibility',a.mv&&live?'visible':'hidden');const sw=live&&Math.floor(c*3.4+k)%2===1;attr(o.ra,'visibility',sw?'hidden':'visible');attr(o.rb,'visibility',sw?'visible':'hidden');}
@@ -396,7 +397,7 @@ function frame(t,c,live,wc){
  for(let e=0;e<FL.length;e++){const [ft,k]=FL[e];if(!done[e]&&t>=ft&&t<ft+.3){done[e]=1;burst[k]=1;op(fE[k],1);glowAt[k]=t;}}
  for(let k=0;k<2;k++){const u=since(t,glowAt[k]);op(hE[k],!burst[k]&&u<1.1?.85*Math.pow(1-u/1.1,2):burst[k]?1:0);}
 }
-loop((dt,c)=>{const h=held();if(h||reduce){frame(HOLD,0,false,h?null:c);return;}frame((c+T0)%LOOP,c,true,c);});
+loop((dt,c)=>{const h=held();if(h||reduce){paint(HOLD,0,false,h?null:c);return;}paint((c+T0)%LOOP,c,true,c);});
 `;
   return L.build({ file: "night-landing.html", out: opts.out, title: "The landing", fonts: [], body, css: CSS, script, grain: 0.14, vignette: 0.5, bg: "#05070d", fps: 30 });
 };
