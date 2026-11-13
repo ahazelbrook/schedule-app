@@ -6657,7 +6657,7 @@
       S.npcUnsub = db.collection('npcs').onSnapshot(function (snap) {
         if (S !== me) return;
         var m = {}; (snap && snap.docs || []).forEach(function (d) { var x = d && typeof d.data === 'function' ? d.data() : null; if (isObj(x)) m[d.id] = x; });
-        me.npcs = m; renderNpcs(); renderRail(); apSubjects(); liveTokens(); hsSync();        /* VV8: revealing (or filing) an NPC can show or hide the target's marker; F3: the hard start's faces */
+        me.npcs = m; renderNpcs(); renderRail(); apSubjects(); liveTokens(); hsSync(); if (pbOn()) W.B68GmPlayersBoard.follow(pbHost());        /* VV8: revealing (or filing) an NPC can show or hide the target's marker; F3: the hard start's faces */
       }, function () {});
     } catch (e) { S.npcUnsub = null; }
   }
@@ -6858,7 +6858,13 @@
   /* IP6 (stage.players): the planning board's pins (gm/players-board.js). What it needs of this page: the player copy's rooms at the bands and the rooms
      opened on their own, the hidden-name scan, the token screen (each pin alone), the score scene through scoreScene and the gate, and the board pinned on the iPad */
   function pbOn() { return !!W.B68GmPlayersBoard && b09On('stage.players'); }
-  function pbSeen() { var mu = Object.assign({}, mapUi(), { layer: 'player' }); return revealList(mu).concat(openRooms(mu).map(function (n) { return 'room:' + n; })); }
+  function pbSeen(mu0) { var mu = mu0 || Object.assign({}, mapUi(), { layer: 'player' }); return revealList(mu).concat(openRooms(mu).map(function (n) { return 'room:' + n; })); }
+  /* the player map at the bands the stored score scene has (keep: the GM has not ticked a band on this page since it was set), else as ticked now */
+  function pbMap(keep) {
+    var mu = Object.assign({}, mapUi(), { layer: 'player' }), sc = AM.doc && isObj(AM.doc.score) ? AM.doc.score : null;
+    if (keep && sc && S.locRoll && str(sc.name) === str(S.locRoll.name).slice(0, 200) && Array.isArray(sc.reveal)) { var rv = {}; BANDS.forEach(function (b) { rv[b] = b === 'public' || sc.reveal.indexOf(b) >= 0; }); mu.reveal = rv; }
+    return mu;
+  }
   function pbHide() {      /* hidden NPCs (name and alias) and hidden clocks, and the full name of a revealed NPC the players know only by an alias */
     var out = hiddenSecretNames(), B = W.B68GmPlayersBoard;
     if (S && isObj(S.npcs)) Object.keys(S.npcs).forEach(function (id) { var d = S.npcs[id]; if (isObj(d) && d.revealed === true && B.known(d) !== str(d.name).trim() && str(d.name).trim()) out.push(str(d.name).trim()); });
@@ -6869,18 +6875,26 @@
       rooms: function () { var seen = pbSeen(); return (S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : []).filter(function (r) { return isObj(r) && typeof r.name === 'string' && r.name; }).map(function (r) { return { name: r.name, shown: roomShown(r, seen) }; }); },
       scan: function (text) { var names = P.tokenHidden(S.locRoll, pbSeen(), pbHide()); return names.filter(function (n) { return namesHit(text, [n]); }); },
       patch: function (p) { return patch(p); }, score: function () { return AM.doc && isObj(AM.doc.score) ? AM.doc.score : null; }, busy: function () { return AM.busy > 0; },
-      figures: function () { return W.B68Figure || null; }, toast: toast, setScore: pbSetScore, showBoard: pbShowBoard };
+      figures: function () { return W.B68Figure || null; }, toast: toast, setScore: pbSetScore, showBoard: pbShowBoard, hide: pbHide };
   }
-  function pbSetScore(list, ask) {
+  function pbSetScore(list, ask, keep) {
     if (!S || !S.locRoll) { toast('Roll a location first.', true); return Promise.resolve(null); }
-    var me = S, seen = pbSeen(), hide = pbHide(), kept = [], refused = [], waiting = 0, dropped = false;
-    list.forEach(function (x) { var r = P.tokenScreen([x.tok], S.locRoll, seen, hide); if (r.tokens.length) kept.push(r.tokens[0]); else if (r.refused.length) refused.push({ label: x.tok.label, names: r.refused }); else waiting++; });
+    var me = S, pmu = pbMap(keep), seen = pbSeen(pmu), hide = pbHide(), kept = [], alts = [], refused = [], waiting = 0, dropped = false, plates = false;
+    list.forEach(function (x) {
+      var r = P.tokenScreen([x.tok], S.locRoll, seen, hide);
+      if (r.tokens.length) { kept.push(r.tokens[0]); var a = x.alt ? P.tokenScreen([x.alt], S.locRoll, seen, hide) : null; alts.push(a && a.tokens.length ? a.tokens[0] : r.tokens[0]); }
+      else if (r.refused.length) refused.push({ id: x.pin.id, label: x.tok.label, names: r.refused }); else waiting++;
+    });
     /* the score scene as Set as score scene builds it, then its board drawn again with the screened pins at the same view, kept only if the leak scan passes */
-    var pin = function (built) { var svg = W.B68GmPlayersBoard.board(S.locRoll, W.B68Map && W.B68Map.render, { seen: seen, tokens: kept, view: built.view, kit1: P.kit1On(), leaks: P.leaks }); if (svg) built.board = built.score.board = svg; else dropped = kept.length > 0; };
-    return setScoreScene({ map: Object.assign({}, mapUi(), { layer: 'player' }), seen: seen, ask: ask, pin: pin }).then(function (r) {
+    var pin = function (built) {
+      var B = W.B68GmPlayersBoard, o = { seen: seen, tokens: kept, view: built.view, kit1: P.kit1On(), leaks: P.leaks }, svg = B.board(S.locRoll, W.B68Map && W.B68Map.render, o);
+      if (!svg && alts.some(function (a, i) { return a !== kept[i]; })) { svg = B.board(S.locRoll, W.B68Map && W.B68Map.render, Object.assign({}, o, { tokens: alts })); plates = !!svg; }      /* too large with the figures: the faces as name plates */
+      if (svg) built.board = built.score.board = svg; else dropped = kept.length > 0;
+    };
+    return setScoreScene({ map: pmu, seen: seen, ask: ask, pin: pin }).then(function (r) {
       if (r && dropped) toast('The board went up without its pins: with them it would name a hidden room, or be too large for the iPad.', true);
       if (r && S === me && S.locRoll) renderLocation();      /* the panel's word on the score scene (sceneBehind) is now the stored one */
-      return r ? { ok: true, refused: refused, waiting: waiting, pins: dropped ? 0 : kept.length } : null;
+      return r ? { ok: true, refused: refused, waiting: waiting, pins: dropped ? 0 : kept.length, plates: plates } : null;
     });
   }
   function pbShowBoard() {      /* one press: the board scene pinned, and a blank pushed when a stage covers it (as Roll the opening credits does) */
@@ -8168,6 +8182,7 @@
       renderRail(); renderBar(); scMaybeRedraw(); runStale();
       if (who()) { var whoCs = whoCampSig(); if (whoCs !== S.whoCampSig) { S.whoCampSig = whoCs; S.who.paint(S.root); whoPolaroids(); } }      /* KS11/KS12.0 (night.who): the session or the RSVPs changed (not every mission publish); KS12.5: End clears the polaroids */
       apClocksFeed(); apSubjects();
+      if (pbOn()) W.B68GmPlayersBoard.follow(pbHost());      /* IP6: a clock hidden (or shown) changes what a pin may say */
       if (S.mission) S.mission.noteClocks();      /* the alarm clock's fill or visibility is on the players' band */
       { var stc = setInst(); if (stc) stc.heal(); }      /* W0.2 / N0: the campaign document's copy of the settings follows the GM state's, on every arrival */
       /* the stage changed: the NPC tab's buttons follow */

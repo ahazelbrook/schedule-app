@@ -97,12 +97,8 @@ const AX=44,AY=28,WOB=.03;let box={x:800,y:600,w:1220,h:864},base=1.1,fill=false
 function visible(){const w=innerWidth||4,h=innerHeight||3,a=w/h;return a>=4/3?{hw:600*a,hh:600}:{hw:800,hh:800/a};}
 function fit(){const v=visible();base=fill?Math.min(2*v.hw/box.w,2*v.hh/box.h):Math.min(1.16,.96*v.hw/(box.w/2+AX),.96*v.hh/(box.h/2+AY))/(1+WOB);}
 addEventListener("resize",fit);fit();
-// the camera eases to a new box (a pin added makes the board taller) rather than jumping; snap() puts it there at once (a first board, or held still)
-let cv={x:box.x,y:box.y,s:base};
-function snap(){cv={x:box.x,y:box.y,s:base};cam.setAttribute("transform","translate(800 600) scale("+base.toFixed(4)+") translate("+(-box.x).toFixed(1)+" "+(-box.y).toFixed(1)+")");}
-loop((dt,t)=>{const k=Math.min(1,dt*1.4);cv.x+=(box.x-cv.x)*k;cv.y+=(box.y-cv.y)*k;cv.s+=(base-cv.s)*k;
- const q=fill?0:1,x=q*(Math.sin(t*2*Math.PI/97)*AX*.8+Math.sin(t*2*Math.PI/41)*AX*.2), y=q*(Math.sin(t*2*Math.PI/73+1)*AY*.8+Math.cos(t*2*Math.PI/37)*AY*.2), s=cv.s*(1+q*Math.sin(t*2*Math.PI/131)*WOB);
- cam.setAttribute("transform","translate(800 600) scale("+s.toFixed(4)+") translate("+(-cv.x+x).toFixed(1)+" "+(-cv.y+y).toFixed(1)+")");});
+loop((dt,t)=>{const q=fill?0:1,x=q*(Math.sin(t*2*Math.PI/97)*AX*.8+Math.sin(t*2*Math.PI/41)*AX*.2), y=q*(Math.sin(t*2*Math.PI/73+1)*AY*.8+Math.cos(t*2*Math.PI/37)*AY*.2), s=base*(1+q*Math.sin(t*2*Math.PI/131)*WOB);
+ cam.setAttribute("transform","translate(800 600) scale("+s.toFixed(4)+") translate("+(-box.x+x).toFixed(1)+" "+(-box.y+y).toFixed(1)+")");});
 // polaroids lift a little in a draught
 loop((dt,t)=>{for(const p of pols){const a=Math.sin(t*p.sp+p.ph)*.6+Math.sin(t*p.sp*2.3+p.ph)*.25;p.e.setAttribute("transform",p.base.replace(/rotate\([^)]*\)/,"rotate("+(p.rot+a).toFixed(2)+")"));}});
 
@@ -115,6 +111,8 @@ function repin(g){if(g!==gen||!strings.length)return;const s=strings[Math.floor(
 
 function teardown(){gen++;for(const id of timers)clearTimeout(id);timers=[];pols=[];strings=[];clear(content);}
 
+// the players' screen puts the camera on its frame at once (held still, the loop never runs)
+function snap(){cam.setAttribute("transform","translate(800 600) scale("+base.toFixed(4)+") translate("+(-box.x).toFixed(1)+" "+(-box.y).toFixed(1)+")");}
 // ---- the players' screen (the display sends players:true while stage.players is on): the sheet as large as the screen allows, the GM's pins
 // as big cards in the cork either side of it, each strung to the point on its room the kit strung it to. The kit's own small index cards (the
 // ways in, any threat) and their strings and pins come off: the way-in tags drawn ON the sheet stay. The page fills its frame exactly (no drift).
@@ -144,8 +142,14 @@ function showPlayers(d,board){
  // the sheet's own box (the kit's title above it), cropped from the board
  const cx0=sx-sw*.025,cy0=0,cw=sw*1.05,ch=sy+sh*1.025,Rc=cw/ch;
  const n=pins.length,pad=Math.round(Bh*.015),gap=Math.round(Bh*.014),A=600/540;
- pins.sort((a,b)=>(a.end?a.end[0]:0)-(b.end?b.end[0]:0));
- const L=pins.slice(0,Math.ceil(n/2)),Rt=pins.slice(Math.ceil(n/2)),rows=Math.max(L.length,Rt.length);
+ // each card hangs on the side nearest its room; a side holds four, and the cards nearest the middle go over to the other side
+ const mid=sx+sw/2,ex=p=>p.end?p.end[0]:mid,L=[],Rt=[];
+ pins.forEach(p=>(p.end?(ex(p)<mid?L:Rt):(L.length<=Rt.length?L:Rt)).push(p));
+ L.sort((a,b)=>ex(a)-ex(b));while(L.length>4)Rt.push(L.pop());
+ Rt.sort((a,b)=>ex(b)-ex(a));while(Rt.length>4)L.push(Rt.pop());
+ const rows=Math.max(L.length,Rt.length);
+ // strings to one room end a little above its name and fanned apart, so the room's label stays readable
+ const fan=new Map();pins.forEach(p=>{if(p.end){const k=p.end.join(",");if(!fan.has(k))fan.set(k,[]);fan.get(k).push(p);}});
  [L,Rt].forEach(s=>s.sort((a,b)=>(a.end?a.end[1]:0)-(b.end?b.end[1]:0)));
  const C=rows?Math.min((Bh-2*pad-(rows-1)*gap)/(rows*A),Bw*.2,Math.max(Bw*.12,(Bw-6*pad-.8*Bh*Rc)/2)):0;
  const side=C?C+2*pad:0,aw=Bw-2*side-2*pad,ah=Bh-2*pad,Sw=Math.min(aw,ah*Rc),Sh=Sw/Rc,X0=side+pad+(aw-Sw)/2,Y0=pad+(ah-Sh)/2;
@@ -164,12 +168,11 @@ function showPlayers(d,board){
    el("rect",{x:C*.025,y:C*.04,width:C,height:A*C,fill:"#000",opacity:".35"},g);
    p.img.setAttribute("x","0");p.img.setAttribute("y","0");p.img.setAttribute("width",C.toFixed(1));p.img.setAttribute("height",(A*C).toFixed(1));p.img.setAttribute("preserveAspectRatio","xMidYMid slice");
    g.appendChild(p.img);
-   if(p.face&&p.cap){el("rect",{x:0,y:A*C-C*.19,width:C,height:C*.19,fill:"#fbf8f1"},g);
-    const t=el("text",{x:C/2,y:A*C-C*.055,"text-anchor":"middle","font-family":"Yellowtail","font-size":(C*.115).toFixed(1),fill:"#14110e"},g);t.textContent=p.cap;}
+   if(p.face&&p.cap)caption(g,p.cap,C,A);
    const hx=left?C*.9:C*.1,hy=C*.07;
    el("circle",{cx:hx,cy:hy,r:C*.04,fill:"#a8210f"},g);el("circle",{cx:hx-C*.012,cy:hy-C*.012,r:C*.014,fill:"#e03a20"},g);
    let s=null;
-   if(p.end){const [px,py]=toC(p.end[0],p.end[1]),ax=x+hx,ay=y+hy,/* never steeper than flat at the card: it leaves its own card sideways, clear of the cards above and below */sag=Math.min(Bh*.05,Math.hypot(px-ax,py-ay)*.12);
+   if(p.end){const grp=fan.get(p.end.join(",")),j=grp.indexOf(p),[px0,py0]=toC(p.end[0],p.end[1]),px=px0+(j-(grp.length-1)/2)*Bh*.014,py=py0-Bh*.022,ax=x+hx,ay=y+hy,/* never steeper than flat at the card: it leaves its own card sideways, clear of the cards above and below */sag=Math.min(Bh*.05,Math.hypot(px-ax,py-ay)*.12);
     s=el("path",{d:"M"+ax.toFixed(1)+" "+ay.toFixed(1)+" Q"+((ax+px)/2).toFixed(1)+" "+Math.max(ay,(ay+py)/2+sag).toFixed(1)+" "+px.toFixed(1)+" "+py.toFixed(1),fill:"none",stroke:"#a51d16","stroke-width":Math.max(2.5,Bh*.0032).toFixed(2),"stroke-linecap":"round","class":"string",pathLength:"1"},strG);
     el("circle",{cx:px.toFixed(1),cy:py.toFixed(1),r:Math.max(3,Bh*.005).toFixed(1),fill:"#c22f1c"},endG);}
    placed.push({key:p.key,g:g,fin:fin,C:C,s:s});
@@ -178,18 +181,30 @@ function showPlayers(d,board){
  box={x:Bw/2,y:Bh/2,w:Bw,h:Bh};fit();snap();
  strings=[...content.querySelectorAll(".string")];
  const g0=gen,held=still(),same=d.name===prev.name&&prev.name!==null;
- const fresh=same?placed.filter(p=>!prev.keys.has(p.key)):[];
+ // new pins (and any whose arrival a re-send cut short) arrive one after another; at most the last four move, the rest are simply there
+ if(!same||held)landQ.clear();
+ const fresh=same?placed.filter(p=>!prev.keys.has(p.key)||landQ.has(p.key)):[],moving=held?[]:fresh.slice(-4);
  prev={name:d.name,keys:new Set(placed.map(p=>p.key))};
  if(!same)strings.forEach((s,i)=>T(()=>{if(g0===gen)pin(s,2600);},1200+i*1600));
  else{
-  strings.forEach(s=>{if(!fresh.some(p=>p.s===s)){s.style.transition="none";s.style.strokeDashoffset="0";}});
-  fresh.forEach((p,i)=>land(p,Bw,Bh,400+i*6400,g0,held,cardG));
+  strings.forEach(s=>{if(!moving.some(p=>p.s===s)){s.style.transition="none";s.style.strokeDashoffset="0";}});
+  moving.forEach((p,i)=>{landQ.add(p.key);land(p,Bw,Bh,400+i*6400,g0,held,cardG);});
  }
  T(()=>repin(g0),R(60,90)*1000);
  return true;
 }
 // a new pin on the players' screen: in large in the middle (1.6 times its place, the board dimmed), held, then a move and a shrink into its place,
 // then its string. Held still or reduced motion: simply there
+const landQ=new Set();
+// a face's caption: the name the players know, on one line, or two split at a space, set as large as the card is wide (never cut, never past the card)
+function caption(g,cap,C,A){
+ const one=cap.length,cut=cap.lastIndexOf(" ",Math.ceil(one/2))>0?cap.lastIndexOf(" ",Math.ceil(one/2)):cap.indexOf(" ");
+ let lines=[cap],f=Math.min(C*.115,C*.9/(one*.46));
+ if(f<C*.085&&cut>0){lines=[cap.slice(0,cut),cap.slice(cut+1)];f=Math.min(C*.1,C*.9/(Math.max(lines[0].length,lines[1].length)*.46));}
+ const h=lines.length*f*1.05+C*.06;
+ el("rect",{x:0,y:A*C-h,width:C,height:h,fill:"#fbf8f1"},g);
+ lines.forEach((l,i)=>{const t=el("text",{x:C/2,y:A*C-h+C*.03+f*(.85+i*1.05),"text-anchor":"middle","font-family":"Yellowtail","font-size":f.toFixed(1),fill:"#14110e"},g);t.textContent=l;});
+}
 function land(p,Bw,Bh,at,g0,held,cardG){
  if(p.s){p.s.style.transition="none";p.s.style.strokeDashoffset=held?"0":"1";}
  if(held)return;
@@ -199,14 +214,32 @@ function land(p,Bw,Bh,at,g0,held,cardG){
  p.g.style.transform=big.replace("px) scale","px) translate(0px,-"+(Bh*.06).toFixed(0)+"px) scale");p.g.style.opacity="0";
  T(()=>{if(g0!==gen)return;dim.style.transition="opacity 500ms";dim.style.opacity=".5";p.g.style.transition="transform 800ms cubic-bezier(.2,.9,.3,1.12),opacity 250ms linear";p.g.style.transform=big;p.g.style.opacity="1";},at);
  T(()=>{if(g0!==gen)return;dim.style.opacity="0";p.g.style.transition="transform 1300ms cubic-bezier(.55,.05,.3,1)";p.g.style.transform=p.fin;},at+800+3600);
- T(()=>{if(g0!==gen)return;cardG.appendChild(p.g);p.g.classList.remove("landing");dim.remove();if(p.s)pin(p.s,2200);},at+800+3600+1400);
+ T(()=>{if(g0!==gen)return;landQ.delete(p.key);cardG.appendChild(p.g);p.g.classList.remove("landing");dim.remove();if(p.s)pin(p.s,2200);},at+800+3600+1400);
 }
+let prev={name:null,keys:new Set()};
+// held still: the page holding this scene still turns transitions off from outside (the scene never knows how); a transition asked for that
+// does not take is the sign, so the new pin is simply there
+const still=()=>{if(reduce)return true;content.style.transition="opacity 1s";const off=getComputedStyle(content).transitionDuration.split(",").every(x=>!parseFloat(x));content.style.transition="";return off;};
+// the cards on the board: the top-level groups the kit placed with translate(x y), each starting with its shadow rect (its size)
+function cardsOf(root){const out=[];
+ for(const g of root.children){
+  if(g.localName!=="g")continue;
+  const m=/^translate\(([-\d.]+)[ ,]+([-\d.]+)\)/.exec(g.getAttribute("transform")||""),r=g.firstElementChild;
+  if(!m||!r||r.localName!=="rect")continue;
+  const w=+r.getAttribute("width"),h=+r.getAttribute("height");if(!(w>0&&h>0))continue;
+  const p=g.querySelector('[id^="pb-"]'),k=p&&/^pb-([a-z0-9]+)-/.exec(p.id);
+  out.push({g:g,x:+m[1],y:+m[2],w:w,h:h,key:k?k[1]:""});
+ }
+ return out;}
+// a string starts at its card's pin, near the card's top right corner: the nearest card owns it
+function owner(s,cards){const m=/^M\s*([-\d.]+)[ ,]+([-\d.]+)/.exec(s.getAttribute("d")||"");if(!m)return null;
+ let best=null,bd=1e9;for(const c of cards){const dd=Math.hypot(c.x+c.w-m[1],c.y-m[2]);if(dd<bd){bd=dd;best=c;}}return best;}
 const POL_ROT=[-4,3,-2,5];
 function show(d){
  const board=parseSvg(d.board),vb=board&&viewBox(board);
  if(!board||!vb)return;
- if(d.players===true&&showPlayers(d,board))return;
- fill=false;
+ if(d.players===true&&showPlayers(d,board))return;      // the players' screen (stage.players); off, everything below as before
+ fill=false;lastD=null;
  const pw=176,ph=228,crew=[];
  for(const p of (Array.isArray(d.polaroids)?d.polaroids.slice(0,8):[])){
   if(!p||typeof p!=="object")continue;
@@ -228,7 +261,7 @@ function show(d){
   p.setAttribute("class",c?c+" string":"string");p.setAttribute("data-i",n++);p.setAttribute("pathLength","1");
  }
  const bw=1220,bh=bw*vb[3]/vb[2],bx=(W-bw)/2+20,by=120;
- const sheet=nest(board,vb,bx,by,bw,bh,content);
+ nest(board,vb,bx,by,bw,bh,content);
  // masking tape on the sheet's corners
  el("rect",{x:bx+160,y:by+30,width:120,height:30,fill:"#e8dfc4",opacity:".8",transform:"rotate(-12 "+(bx+220)+" "+(by+45)+")"},content);
  el("rect",{x:bx+bw-520,y:by+10,width:110,height:28,fill:"#e8dfc4",opacity:".8",transform:"rotate(9 "+(bx+bw-465)+" "+(by+24)+")"},content);
@@ -250,53 +283,9 @@ function show(d){
  const foot=crew.length?Math.max(by+bh,by+bh-70+16+9+ph):by+bh;
  box={x:bx+bw/2,y:(by+foot)/2,w:bw+40,h:foot-by};fit();
  strings=[...content.querySelectorAll(".string")];
- const g0=gen,held=still();
- // the board's pins (the GM's planning board): a card drawn for a pin carries an id pb-<pin>-...; the same site sent again keeps what was pinned
- // where it was, still, and only a card whose pin is new arrives (large in the middle, readable, then down to its place, then its string)
- const same=d.name===prev.name&&prev.name!==null,cards=cardsOf(sheet),keys=new Set(cards.filter(c=>c.key).map(c=>c.key));
- const fresh=same?cards.filter(c=>c.key&&!prev.keys.has(c.key)):[];
- prev={name:d.name,keys:keys};
- if(!same||held)snap();
- if(!same)strings.forEach((s,i)=>T(()=>{if(g0===gen)pin(s,2600);},1500+i*2200));
- else{
-  const mine=new Map(strings.map(s=>[s,owner(s,cards)]));
-  strings.forEach(s=>{if(fresh.indexOf(mine.get(s))<0){s.style.transition="none";s.style.strokeDashoffset="0";}});
-  fresh.forEach((c,i)=>arrive(c,strings.filter(s=>mine.get(s)===c),vb,400+i*6400,g0,held));
- }
+ const g0=gen;
+ strings.forEach((s,i)=>T(()=>{if(g0===gen)pin(s,2600);},1500+i*2200));
  T(()=>repin(g0),R(60,90)*1000);
-}
-let prev={name:null,keys:new Set()};
-// held still: the page holding this scene still turns transitions off from outside (the scene never knows how); a transition asked for that
-// does not take is the sign, so the new pin is simply there
-const still=()=>{if(reduce)return true;content.style.transition="opacity 1s";const off=getComputedStyle(content).transitionDuration.split(",").every(x=>!parseFloat(x));content.style.transition="";return off;};
-// the cards on the board: the top-level groups the kit placed with translate(x y), each starting with its shadow rect (its size)
-function cardsOf(root){const out=[];
- for(const g of root.children){
-  if(g.localName!=="g")continue;
-  const m=/^translate\(([-\d.]+)[ ,]+([-\d.]+)\)/.exec(g.getAttribute("transform")||""),r=g.firstElementChild;
-  if(!m||!r||r.localName!=="rect")continue;
-  const w=+r.getAttribute("width"),h=+r.getAttribute("height");if(!(w>0&&h>0))continue;
-  const p=g.querySelector('[id^="pb-"]'),k=p&&/^pb-([a-z0-9]+)-/.exec(p.id);
-  out.push({g:g,x:+m[1],y:+m[2],w:w,h:h,key:k?k[1]:""});
- }
- return out;}
-// a string starts at its card's pin, near the card's top right corner: the nearest card owns it
-function owner(s,cards){const m=/^M\s*([-\d.]+)[ ,]+([-\d.]+)/.exec(s.getAttribute("d")||"");if(!m)return null;
- let best=null,bd=1e9;for(const c of cards){const dd=Math.hypot(c.x+c.w-m[1],c.y-m[2]);if(dd<bd){bd=dd;best=c;}}return best;}
-// a new pin arrives: the card drops in large in the middle of the board (dimmed behind it), holds, settles into its place, then its string is pinned.
-// Held still or reduced motion: it is simply there, string and all
-function arrive(c,strs,vb,at,g0,held){
- strs.forEach(s=>{s.style.transition="none";s.style.strokeDashoffset=held?"0":"1";});
- if(held)return;
- const par=c.g.parentNode,next=c.g.nextSibling,wrap=el("g",{"class":"arrive"});
- const s=Math.min(6,.55*vb[3]/c.h,.42*vb[2]/c.w),tx=vb[0]+vb[2]/2-(c.x+c.w/2)*s,ty=vb[1]+vb[3]/2-(c.y+c.h/2)*s;
- const big=dy=>"translate("+tx.toFixed(2)+"px,"+(ty+dy).toFixed(2)+"px) scale("+s.toFixed(3)+")";
- const dim=el("rect",{x:vb[0],y:vb[1],width:vb[2],height:vb[3],fill:"#0d0905"},par);
- dim.style.opacity="0";par.appendChild(wrap);wrap.appendChild(c.g);
- wrap.style.transformOrigin="0 0";wrap.style.transform=big(-vb[3]*.2);wrap.style.opacity="0";
- T(()=>{if(g0!==gen)return;dim.style.transition="opacity 500ms";dim.style.opacity=".5";wrap.style.transition="transform 800ms cubic-bezier(.2,.9,.3,1.12),opacity 250ms linear";wrap.style.transform=big(0);wrap.style.opacity="1";},at);
- T(()=>{if(g0!==gen)return;dim.style.opacity="0";wrap.style.transition="transform 1300ms cubic-bezier(.55,.05,.3,1)";wrap.style.transform="translate(0px,0px) scale(1)";},at+800+3600);
- T(()=>{if(g0!==gen)return;par.insertBefore(c.g,next);wrap.remove();dim.remove();strs.forEach(x=>pin(x,2200));},at+800+3600+1400);
 }
 
 // ---- protocol: ask the parent for the score; accept it only from the parent, on this origin ----

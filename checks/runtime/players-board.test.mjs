@@ -18,7 +18,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const APP = path.join(ROOT, 'app');
 const req = createRequire(import.meta.url);
 let passed = 0, failed = 0;
-function test(name, fn) { try { fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); } }
+async function test(name, fn) { try { await fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); } }
 const read = (p) => fs.readFileSync(path.join(APP, p), 'utf8');
 
 const B = req(path.join(APP, 'gm', 'players-board.js'));
@@ -108,7 +108,7 @@ const NPCS = {
   'npc-hid': { name: 'GM-ONLY-Hidden Person', alias: '', revealed: false, tags: [], spec: { name: 'GM-ONLY-Hidden Person' } }
 };
 
-test('the stored pins: only the known shape, kinds and caps (12 pins, 60 characters); a face needs an NPC, a card needs words', () => {
+test('the stored pins: only the known shape, kinds and caps (8 pins, 60 characters); a face needs an NPC, a card needs words', () => {
   const ok = { id: 'p1', room: 'Showroom', kind: 'line', text: '  The house  takes a cut  ' };
   assert.deepEqual(B.clean([ok]), [{ id: 'p1', room: 'Showroom', kind: 'line', text: 'The house takes a cut' }]);
   assert.deepEqual(B.clean([{ id: 'p2', room: 'Showroom', kind: 'face', text: 'x', npcId: 'npc-mabel' }])[0], { id: 'p2', room: 'Showroom', kind: 'face', text: 'x', npcId: 'npc-mabel' });
@@ -234,20 +234,43 @@ test('the wiring: scoreScene is unchanged, one score write, the block and the pa
   assert.match(src, /if \(pbOn\(\)\) W\.B68GmPlayersBoard\.paint\(box, pbHost\(\)\);/);
   assert.match(src, /P\.tokenScreen\(\[x\.tok\], S\.locRoll, seen, hide\)/, 'each pin screened alone');
   const R = req(path.join(APP, 'routes.js')); const gm = (R.BUNDLES || R.bundles || {}).gm || [];
-  if (gm.length) assert.ok(gm.indexOf('gm/players-board.js') >= 0 && gm.indexOf('gm/players-board.js') < gm.indexOf('gm-page.js'));
-  else assert.match(read('routes.js'), /'gm\/players-board\.js', 'gm-page\.js'/);
+  if (gm.length) assert.equal(gm[gm.length - 1], 'gm/players-board.js', 'the last of the gm bundle');
+  else assert.ok(read('routes.js').includes("'gm/players-screen.js', 'gm/players-board.js']"), 'the last of the gm bundle');
   const mod = read('gm/players-board.js');
   assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML|fetch\(|XMLHttpRequest|<button|!important|style=/.test(mod), 'no markup sink, no request, no hand-built button');
 });
 
-test('the scene: the same site again keeps what was pinned, a new pin arrives on timers (not frames) and is simply there held still', () => {
+test('the scene: off is ipad/main (no players flag: the old layout, every string re-pinned one at a time); on, the players layout; arrivals on timers, simply there held still', () => {
   const h = read('ambient/planning-board.html');
-  assert.match(h, /\[id\^="pb-"\]/, 'a pin card is found by its id');
-  assert.match(h, /const same=d\.name===prev\.name&&prev\.name!==null/);
-  assert.match(h, /getComputedStyle\(content\)\.transitionDuration/, 'held still is read from transitions that do not take (the scene never names the page\'s classes)');
-  const arrive = h.slice(h.indexOf('function arrive('), h.indexOf('// ---- protocol'));
-  assert.ok(arrive.length > 100 && !/requestAnimationFrame|animation/.test(arrive), 'the arrival runs on setTimeout and transitions only');
+  const show = h.slice(h.indexOf('function show(d){'), h.indexOf('// ---- protocol'));
+  assert.ok(show.includes('if(d.players===true&&showPlayers(d,board))return;'), 'the players layout only on a message with players: true');
+  assert.ok(show.includes('strings.forEach((s,i)=>T(()=>{if(g0===gen)pin(s,2600);},1500+i*2200));'), 'off: a re-sent board re-pins every string, as ipad/main');
+  assert.ok(!/prev|landQ|snap\(|still\(/.test(show), 'off: no same-site branch, no snap, no held-still probe in the old path');
+  assert.ok(h.includes('[id^="pb-"]'), 'a pin card is found by its id');
+  assert.ok(h.includes('getComputedStyle(content).transitionDuration'), 'held still is read from transitions that do not take (the scene never names the page classes)');
+  const land = h.slice(h.indexOf('function land('), h.indexOf('let prev='));
+  assert.ok(land.length > 100 && !/requestAnimationFrame|animation/.test(land), 'the arrival runs on setTimeout and transitions only');
 });
 
+await test('the module follows a name hidden after the fact, writes nothing for a replayed roll, and keeps a plate in reserve for each face', async () => {
+  B.reset();
+  const lists = [], doc = { boardPins: { 'Site A': { pins: [{ id: 'p1', room: 'Hall', kind: 'line', text: 'Mabel Quist owns it' }, { id: 'p2', room: 'Hall', kind: 'face', text: '', npcId: 'npc-mabel' }], at: 1 } } };
+  let roll = { name: 'Site A' }, hide = [];
+  const host = { doc: () => doc, roll: () => roll, site: () => roll.name, rooms: () => [{ name: 'Hall', shown: true }], npcs: () => NPCS, scan: () => [], patch: () => true,
+    score: () => ({ name: 'Site A' }), busy: () => false, toast: () => {}, figures: () => null, hide: () => hide, showBoard: () => Promise.resolve(true),
+    setScore: (list) => { lists.push(list); return Promise.resolve({ ok: true, refused: [] }); } };
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  B.paint(null, host); await tick();
+  assert.equal(lists.length, 0, 'the first look only takes its bearings');
+  hide = ['Mabel Quist']; B.follow(host); await tick();
+  assert.equal(lists.length, 1, 'a name hidden after the fact redraws the board (the screen then drops the pin)');
+  const face = lists[0].find((x) => x.pin.kind === 'face');
+  assert.ok(face && face.alt && /-plate"/.test(face.alt.svg) && face.alt.label === face.tok.label, 'a face carries a plate in reserve, same room and label');
+  roll = { name: 'Site A' }; hide = []; B.follow(host); B.paint(null, host); await tick();
+  assert.equal(lists.length, 1, 'the roll replayed (its reveal reset): nothing written');
+  hide = ['Dov Kessler']; B.follow(host); await tick();
+  assert.equal(lists.length, 2, 'after that, a change is followed again');
+  B.reset();
+});
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 if (failed) process.exit(1);

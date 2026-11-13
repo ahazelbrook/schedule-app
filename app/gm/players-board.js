@@ -158,7 +158,7 @@
     if (pin.kind === 'face') {
       var d = isObj(c.npcs) ? c.npcs[pin.npcId] : null;
       if (!isObj(d) || d.revealed !== true || !known(d)) return null;
-      return { room: pin.room, label: known(d).slice(0, 28), svg: faceSvg(d, c.K, uid) || plateSvg(known(d), uid) };
+      return { room: pin.room, label: known(d).slice(0, 80), svg: faceSvg(d, c.K, uid) || plateSvg(known(d), uid) };
     }
     return { room: pin.room, label: WORD[pin.kind], svg: cardSvg(pin, uid) };
   }
@@ -176,7 +176,7 @@
   }
 
   /* ---------- the GM's block ---------- */
-  var st = { last: null, busy: false, again: false, form: { kind: 'line' }, focus: '', caret: -1 };
+  var st = { last: null, busy: false, again: false, form: { kind: 'line' }, focus: '', caret: -1, refused: [], plated: false, roll: undefined };
   function el(doc, tag, attrs, text) {
     var e = doc.createElement(tag);
     Object.keys(attrs || {}).forEach(function (k) { if (attrs[k] !== false && attrs[k] != null) e.setAttribute(k, attrs[k] === true ? '' : attrs[k]); });
@@ -190,22 +190,37 @@
     var site = siteName(host.site()), pins = site ? pinsOf(host.doc(), site) : [], rooms = host.rooms() || [], npcs = host.npcs() || {};
     var shown = {}; rooms.forEach(function (r) { if (r.shown) shown[r.name] = 1; });
     var faces = pins.filter(function (p) { return p.kind === 'face'; }).map(function (p) { var d = npcs[p.npcId]; return [p.npcId, isObj(d) && d.revealed === true ? known(d) : '', isObj(d) ? JSON.stringify(d.spec || {}).length : 0]; });
-    return { site: site, pins: pins, shown: shown, rooms: rooms, npcs: npcs, sig: sig([site, Object.keys(shown).sort(), pins, faces]) };
+    /* the names no pin may show now (hidden NPCs and clocks, a known-as NPC's full name): a change to them redraws the board, as a reveal does */
+    var hide = (typeof host.hide === 'function' ? host.hide() || [] : []).map(function (x) { return str(x).toLowerCase(); }).sort();
+    var shownKey = Object.keys(shown).sort().join('|');
+    return { site: site, pins: pins, shown: shown, rooms: rooms, npcs: npcs, shownKey: shownKey, sig: sig([site, Object.keys(shown).sort(), pins, faces, hide]) };
   }
   function tokensOf(s, host) {
     var K = typeof host.figures === 'function' ? host.figures() : null, out = [];
-    s.pins.forEach(function (p) { var t = token(p, { npcs: s.npcs, K: K }); if (t) out.push({ pin: p, tok: t }); });
+    s.pins.forEach(function (p) {
+      var t = token(p, { npcs: s.npcs, K: K }); if (!t) return;
+      var x = { pin: p, tok: t };      /* a face also has a plain plate (initials, the name as its caption): what goes up if the figures will not fit the iPad's cap */
+      if (p.kind === 'face') x.alt = { room: t.room, label: t.label, svg: plateSvg(t.label, 'pb-' + p.id + '-n' + (++drawN).toString(36) + '-plate') };
+      out.push(x);
+    });
     return out;
   }
   /* set the score scene from the pins (and the bands and rooms ticked now); one at a time, the newest wins */
   function sync(host, ask) {
     if (st.busy) { st.again = true; return Promise.resolve(null); }
     var s = state(host); if (!s.site) return Promise.resolve(null);
+    /* the bands the iPad shows stay as they are until the GM ticks a band or opens a room on this page (a page reloaded or a roll replayed starts at
+       public: a pin, a name hidden or a face changed must not take the players' rooms away with it) */
+    var keep = onBoard(host, s) && st.bands !== undefined && s.shownKey === st.bands;
     st.busy = true; st.last = s.sig;
     var list = tokensOf(s, host);
-    return Promise.resolve(host.setScore(list, !!ask)).then(function (r) {
+    return Promise.resolve(host.setScore(list, !!ask, keep)).then(function (r) {
+      if (r && !keep) st.bands = s.shownKey;
       st.busy = false;
-      if (r && r.refused && r.refused.length) host.toast('Not on the board: ' + r.refused.map(function (x) { return x.label; }).join(', ') + ' would show the players a name they must not see (' + r.refused.map(function (x) { return x.names.join(', '); }).join('; ') + ').', true);
+      /* a pin the screen refuses now (someone hidden again, a clock hidden, a known-as name) stays stored and waits, as a pin for an unknown room does; said once */
+      if (r) { var ids = (r.refused || []).map(function (x) { return x.id; }), fresh = (r.refused || []).filter(function (x) { return st.refused.indexOf(x.id) < 0; }); st.refused = ids;
+        if (fresh.length) host.toast('Off the board until it is safe: ' + fresh.map(function (x) { return x.label; }).join(', ') + ' would show the players a name they must not see (' + fresh.map(function (x) { return x.names.join(', '); }).join('; ') + ').', true);
+        if (r.plates && !st.plated) { st.plated = true; host.toast('The faces went up as name plates: with the figures the board was too large for the iPad.', true); } }
       if (!r) st.last = '';      /* not set: the next look tries again (a sig is never '') */
       if (st.again) { st.again = false; var n = state(host); if (n.sig !== st.last) return sync(host, false); }
       return r;
@@ -241,16 +256,20 @@
 
   /* the score scene follows a change while this site's board is up; while the page is busy with the iPad it looks again shortly (at most 20 times) */
   function follow(host, n) {
+    if (rolled(host)) return;
     var s = state(host);
     if (s.sig === st.last || !onBoard(host, s)) return;
     if (typeof host.busy === 'function' && host.busy()) { if (n < 20) setTimeout(function () { follow(host, n + 1); }, 400); return; }
     sync(host, false);
   }
+  /* the roll on the Location card is another object than at the last look (another site, or this one replayed from Earlier, which resets the
+     reveal to public): take it as the new starting point and write nothing, so leaving a site and coming back never downgrades the iPad */
+  function rolled(host) { var r = typeof host.roll === 'function' ? host.roll() : null; if (st.roll === undefined) { st.roll = r; return false; } if (r === st.roll) return false; st.roll = r; var s0 = state(host); st.last = s0.sig; st.bands = s0.shownKey; return true; }
   function paint(box, host) {
     var slot = box && box.querySelector ? box.querySelector('[data-pb-slot]') : null;
     var s = state(host);
     /* keep the score scene in step: a pin, a reveal or a face changed since this page last set it, while this site's board is the score scene */
-    if (st.last === null) st.last = s.sig;
+    if (st.last === null || rolled(host)) { st.last = s.sig; st.roll = host.roll(); st.bands = s.shownKey; }      /* a new page, or a roll replayed (its reveal reset): the stored board stands until the GM changes something */
     else follow(host, 0);
     if (!slot) return;
     var doc = slot.ownerDocument, root = el(doc, 'section', { 'class': 'gm-pboard', 'aria-label': 'Board' });
@@ -295,6 +314,7 @@
         li.appendChild(el(doc, 'span', {}, p.kind === 'face' ? (isObj(d) ? known(d) : 'someone no longer in the cast') : p.text));
         if (!s.shown[p.room]) li.appendChild(el(doc, 'span', { 'class': 'gm-dim', 'data-pb': 'waiting' }, ' (waiting for the room)'));
         else if (p.kind === 'face' && !(isObj(d) && d.revealed === true)) li.appendChild(el(doc, 'span', { 'class': 'gm-dim' }, ' (hidden: not on the board)'));
+        else if (st.refused.indexOf(p.id) >= 0) li.appendChild(el(doc, 'span', { 'class': 'gm-dim', 'data-pb': 'refused' }, ' (names someone hidden: not on the board)'));
         var x = btn(doc, '×', { 'class': 'btn sm', 'data-pb': 'remove', 'aria-label': 'Take down ' + WORD[p.kind] + ' in ' + p.room, title: 'Take this pin down' });
         x.addEventListener('click', function () { if (remove(host, p.id)) paint(box, host); });
         li.appendChild(doc.createTextNode(' ')); li.appendChild(x);
@@ -325,9 +345,9 @@
     var back = st.focus && lost ? slot.querySelector('[data-pb="' + st.focus + '"]') : null;
     if (back) { back.focus(); if (back.getAttribute('data-pb') === 'text' && back.setSelectionRange) { var c0 = Math.min(st.caret >= 0 ? st.caret : back.value.length, back.value.length); back.setSelectionRange(c0, c0); } }
   }
-  function reset() { st.last = null; st.busy = false; st.again = false; st.form = { kind: 'line' }; st.focus = ''; st.caret = -1; }
+  function reset() { st.last = null; st.busy = false; st.again = false; st.form = { kind: 'line' }; st.focus = ''; st.caret = -1; st.refused = []; st.plated = false; st.roll = undefined; st.bands = undefined; }
 
   return { KEY: KEY, KINDS: KINDS, MAX: MAX, FACES_MAX: FACES_MAX, TEXT_MAX: TEXT_MAX, SITES_MAX: SITES_MAX, WORD: WORD,
     clean: clean, sitesOf: sitesOf, pinsOf: pinsOf, patchFor: patchFor, wrap: wrap, fitText: fitText, cardSvg: cardSvg, faceSvg: faceSvg, known: known,
-    token: token, sig: sig, board: board, paint: paint, add: add, remove: remove, sync: sync, reset: reset, _state: state };
+    token: token, sig: sig, board: board, paint: paint, follow: function (host) { follow(host, 0); }, add: add, remove: remove, sync: sync, reset: reset, _state: state };
 });

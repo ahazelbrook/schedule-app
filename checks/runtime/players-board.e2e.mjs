@@ -177,6 +177,52 @@ try {
   check(!!(await until(async () => { const s = await score(); return s && !s.board.includes(LINE) ? s : null; }, 10000)), 'remove: the card comes off the stored board');
   check(!!(await until(async () => { const b = await board(); return b && !b.text.includes(LINE) ? b : null; }, 15000)), 'and off the iPad');
 
+  /* secrecy after the fact: a name the players could see when it was pinned, hidden later, comes off the stored board, the display GET and
+     the scene within one sync; the pin stays stored (waiting), and comes back when the name may be seen again */
+  const gone = async (needle, what) => {
+    const ok = await until(async () => { const s = await score(), b = await board(), g = await displayGet(); return s && !s.board.includes(needle) && b && !b.text.includes(needle) && !g.includes(needle) ? true : null; }, 15000, 250);
+    check(!!ok, what + ': "' + needle + '" is gone from the stored board, the display GET and the scene');
+  };
+  const npc = (id, change) => api('PATCH', '/npcs/' + id, change);
+  const CLOCKLINE = 'Win back the marker before dawn';
+  await pinIt(pub[0], 'line', CLOCKLINE);
+  const DOVLINE = 'Dov Kessler keeps the door';
+  await pinIt(pub[0], 'line', DOVLINE);
+  check(!!(await until(async () => { const b = await board(); return b && b.text.includes(CLOCKLINE) && b.text.includes(DOVLINE) && b.text.includes('Mabel Quist') ? b : null; }, 15000)), 'three pins naming people and a clock the players can see are up');
+  check((await npc('npc-mabel', { revealed: false })).status === 200, 'the GM hides Mabel Quist again (her face is pinned)');
+  await gone('Mabel Quist', 'a pinned face hidden again');
+  check(await gp.evaluate(() => JSON.stringify(window.B68GmPage._state().doc.boardPins || {}).includes('npc-mabel')), 'her pin is still stored (it waits)');
+  check((await npc('npc-mabel', { revealed: true })).status === 200, 'and revealed again');
+  check(!!(await until(async () => { const b = await board(); return b && b.text.includes('Mabel Quist') ? b : null; }, 15000)), 'her face comes back by itself');
+  const camp = (await api('GET', '/campaign')).json, cdoc = camp && (camp.doc || camp);
+  const clocks = (cdoc.clocks || []).map((c) => c.id === 'c-marker' ? Object.assign({}, c, { hidden: true }) : c);
+  check((await api('PATCH', '/campaign', { clocks })).status === 200, 'the GM hides the clock "Win back the marker"');
+  await gone(CLOCKLINE, 'a pin naming a clock hidden later');
+  await api('PATCH', '/campaign', { clocks: (cdoc.clocks || []) });
+  check((await npc('npc-dov', { alias: 'Kessler', tags: ['recurring', 'known-as'] })).status === 200, 'Dov Kessler becomes known only as Kessler');
+  await gone(DOVLINE, 'a pin with the full name of an NPC now known by an alias');
+  await npc('npc-dov', { alias: '', tags: ['recurring'] });
+  check(!!(await until(async () => { const s = await score(); return s && s.board.includes(CLOCKLINE) && s.board.includes(DOVLINE) ? s : null; }, 15000)), 'with the clock shown and the full name allowed again, both pins come back');
+
+  /* leaving the site and coming back (Earlier) writes nothing: the iPad keeps the bands it had */
+  await tick('working', true);
+  const sKeep = await until(async () => { const s = await score(); return s && s.reveal.join() === 'public,working' ? s : null; }, 10000);
+  await sleep(1500);
+  await gp.click('[data-gm="locroll"]');
+  await gp.waitForFunction((n) => window.B68GmPage._state().locRoll && window.B68GmPage._state().locRoll.name !== n, 'The Pelican Rooms', { timeout: 10000 }).catch(() => {});
+  await sleep(1200);
+  await gp.click('[data-gm="replay"][data-tool="location"][title^="The Pelican Rooms"]').catch(() => {});
+  await gp.waitForFunction(() => window.B68GmPage._state().locRoll && window.B68GmPage._state().locRoll.name === 'The Pelican Rooms', null, { timeout: 10000 }).catch(() => {});
+  await sleep(3000);
+  const sBack = await score();
+  check(!!sKeep && !!sBack && sBack.at === sKeep.at && sBack.reveal.join() === 'public,working' && await gp.evaluate(() => window.B68GmPage._state().locRoll.name === 'The Pelican Rooms'),
+    'another site rolled, then the Pelican Rooms again from Earlier: no score write, the iPad keeps public,working' + (sBack ? ' (stored ' + sBack.reveal.join() + ')' : ''));
+  await npc('npc-mabel', { revealed: false });
+  const sHid = await until(async () => { const s = await score(); return s && sBack && s.at !== sBack.at ? s : null; }, 15000);
+  check(!!sHid && sHid.reveal.join() === 'public,working' && !sHid.board.includes('Mabel Quist'), 'and a face hidden after that comes off the board while the iPad keeps public,working (the page shows public since the replay)' + (sHid ? ' (stored ' + sHid.reveal.join() + ')' : ''));
+  await npc('npc-mabel', { revealed: true });
+  await until(async () => { const s = await score(); return s && s.board.includes('Mabel Quist'); }, 15000);
+
   /* secrecy */
   const get = await displayGet(), bd = await board();
   check(!/GM-ONLY/.test(get), 'the display GET carries no GM-ONLY- text');
@@ -184,6 +230,7 @@ try {
 
   /* held still: "Hold scenes still" (fx.off) on a second display at iPad size, no reduced motion asked: a new pin is simply there */
   for (const p of ['/gm/state', '/campaign']) await api('PATCH', p, { features: { 'fx.off': true } });
+  await openGm(); await sleep(800);      /* the GM page holds its own copy of the settings and writes it back to the campaign on every arrival: it must have fx.off too */
   const rc = await dbrowser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1180, height: 820 }, serviceWorkers: 'block' });
   const rp = await rc.newPage(); rp.on('pageerror', (e) => errors.push('display (reduced): ' + e.message));
   await rp.goto(BASE + '/#display');
@@ -217,6 +264,12 @@ try {
   check(!!sOff && !/pb-p\d/.test(sOff.board) && !sOff.board.includes(STILL), 'off: Set as score scene stores the board as today (no pin on it), though pins are still stored');
   const bOff = await until(async () => { const b = await board(); return b && b.sheet && b.kit && !b.cards.length ? b : null; }, 25000);
   check(!!bOff, 'off: the scene is as before (the map kit way-in cards on the board, no big cards)');
+  await sleep(6000);      /* every string of that board is pinned up by now */
+  const sOff1 = await score();
+  await gp.click('[data-gm="scorescene"]');
+  let repin = null;
+  for (let i = 0; i < 80 && !repin; i++) { const b = await board(); if (b && b.kit && b.strings > 0 && b.drawn === 0) repin = b; else await sleep(100); }
+  check(!!repin && (await until(async () => { const s = await score(); return s && s.at !== sOff1.at; }, 5000)), 'off: the same site sent again re-pins every string from nothing, as ipad/main (' + (repin ? repin.strings + ' strings, 0 drawn' : 'never seen undrawn') + ')');
 
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 4).join(' | ') : ''));
   await dc.close(); await gc.close();
