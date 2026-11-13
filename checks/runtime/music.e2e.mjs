@@ -311,6 +311,34 @@ try {
   }
   await ph.close();
 
+  /* ---- with the players' screen on (IP2, stage.players): a scene pick blanks whatever covers the scene; that blank must not end the
+     credits' duck, and another scene must (the setting is read at load: the page reloads) ---- */
+  const api = (m, p, b) => fetch(BASE + '/api' + p, { method: m, headers: { 'X-Dev-User': GM, 'Content-Type': 'application/json' }, body: b ? JSON.stringify(b) : undefined });
+  const shownKind = async () => { const j = await (await api('GET', '/gm/display')).json().catch(() => ({})); return j && j.display ? j.display.kind : ''; };
+  const players = (on) => api('PATCH', '/gm/state', { features: { 'stage.players': on } }).then(() => api('PATCH', '/campaign', { features: { 'stage.players': on } }));
+  await players(true);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.B68GmMusic && window.B68GmPlayersScreen && document.querySelector('[data-band-slot="music"] [data-mu-pill]'), null, { timeout: 60000 });
+  await page.waitForTimeout(2000);
+  await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+  if (!(await page.isVisible(CR).catch(() => false))) await page.keyboard.press('i');
+  const crShown = await page.waitForSelector(CR, { state: 'visible', timeout: 10000 }).then(() => true, () => false);
+  if (!crShown) console.log('  the iPad view did not open: ' + JSON.stringify(await page.evaluate(() => ({ ipad: !!document.querySelector('#gm-ipad'), hidden: document.querySelector('#gm-ipad') && document.querySelector('#gm-ipad').hidden, hash: location.hash }))));
+  await page.click('#gm-ipad [data-gm="ambscene"]:not([data-id="credits"]):not([disabled])');
+  await until(async () => { const d = await ambDoc(); return d.mode === 'pin' && d.scene !== 'credits'; }, 5000);
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => window.B68GmPage._pushDisplay({ kind: 'text', title: 'Invented', text: 'An invented line' }));
+  await until(async () => (await shownKind()) === 'text', 5000);
+  await page.click(CR);
+  const p2blank = await until(async () => (await shownKind()) === 'blank', 6000);
+  const p2down = await until(async () => (await attr(page, 'data-gate')) === 'down', 6000);
+  await page.waitForTimeout(2500);
+  check(!!p2blank && !!p2down && await attr(page, 'data-gate') === 'down', 'players\' screen on: pinning the credits blanks the stage (' + !!p2blank + ') and the duck starts and holds (' + !!p2down + ')');
+  await page.click('#gm-ipad [data-gm="ambscene"]:not([data-id="credits"]):not([disabled])');
+  check(await until(async () => (await attr(page, 'data-gate')) === 'up', 6000), 'players\' screen on: another scene ends the duck');
+  await players(false);
+  await api('PATCH', '/gm/ambient', { mode: 'auto' });
+
   /* ---- nothing audio left the laptop ---- */
   const names = Object.values(TRACKS).flat().concat(['m1-calm-c', 'm1-tension-c', 'm1-action-c']);
   const bad = sent.filter((r) => /^audio\//i.test(r.type) || (r.body && (r.body.includes('RIFF') || r.body.includes('WAVE'))) || names.some((n) => r.url.includes(n) || (r.body && r.body.includes(n))));
