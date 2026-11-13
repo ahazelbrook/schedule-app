@@ -5,7 +5,22 @@
 // Sound: the scene asks its parent (the display page) to play the theme with a same-origin b68:music message and runs its
 // clock from the parent's replies ({ state: 'playing', t }), so the cuts follow the music even when it starts late (the iPad
 // needs one tap before it may play sound). With no music, it runs on its own clock.
+//
+// An episode's own credits (IP5.2): `node tools/ambient/scenes/credits.js --episode <file.json> [--out <path>]` writes
+// app/ambient/episode-credits.html (gitignored: an episode is campaign data, and this repository is public; the display plays it in
+// place of opening-credits.html whenever it was deployed). The file (see tools/ambient/fixtures/episode-demo.json) may set:
+//   episode, subtitle      the title card's lines ("EPISODE FOUR", and a smaller one under it)
+//   cast                   four entries, each { id (from app/figures/cast.js) | spec (a full figure-kit spec), player, name, job, code,
+//                          field, deep (colour token names, as C below: "file500") }
+//   caption                the line under the line-up
+//   leaves                 { id, stamp, limp }: that member's card plays to its name card, then they look off-screen, turn up a collar
+//                          and walk out of frame; `stamp` lands on the name card. The montage and the line-up keep their place as an
+//                          empty gap (a chalk outline)
+//   introducing            { ...a cast entry..., line }: after the title, the line-up with the gap, the line slams in, the newcomer
+//                          walks into the gap from the other side, stops, and the picture freezes on them: the scene holds that frame
+// The new beats land on the theme's beat (BEAT below). With no argument the build is today's opening-credits.html, byte for byte.
 "use strict";
+const fs = require("fs"), path = require("path");
 const L = require("../lib.js");
 const { C, f2, pts, rng, esc } = L;
 
@@ -19,8 +34,15 @@ const CAST = [
 ];
 // seconds: the quiet intro (bass and bongos) carries the cards; the horns (from ~17.5 s) bring the crew
 const T = { crew0: 17.5, crewLen: 9.5, locLen: 1.5, montage: 63.5, lineup: 71, title: 77, fade: 84, end: 90 };
+// The theme's beat, measured 13/11/2026 by decoding theme.mp3 in a browser and combing the onsets of its low band over 17.5-90 s:
+// 137.9 bpm, a beat every 0.4352 s from 17.573 s (the strongest hits of the ending: 81.95 and 85.45 s, beats 148 and 156).
+const BEAT = { at: 17.573, len: 0.4352 };
+const beat = (n) => Math.round((BEAT.at + n * BEAT.len) * 1000) / 1000;
 
-module.exports = function build() {
+module.exports = function build(ep) {
+  const E = ep ? episodeOf(ep) : null;
+  const EPISODE_ = E ? E.episode : EPISODE, CAST_ = E ? E.cast : CAST;
+  const specOf = (c) => (c.spec ? JSON.parse(JSON.stringify(c.spec)) : L.pc(c.id));
   const W = 1600, H = 1200, r = rng(1968);
   let shots = "";
   const shot = (id, inner, bg) => { shots += `<g class="shot" id="${id}" style="display:none">${bg ? `<rect width="${W}" height="${H}" fill="${bg}"/>` : ""}${inner}</g>`; };
@@ -28,6 +50,9 @@ module.exports = function build() {
   const mono = (txt, x, y, size, fill, extra = "") => `<text x="${x}" y="${y}" font-family="Space Mono" font-weight="700" font-size="${size}" fill="${fill}" letter-spacing="${size * .22}" ${extra}>${esc(txt)}</text>`;
   const rings = (cx, cy, n, gap, col, w) => Array.from({ length: n }, (_, k) => `<circle cx="${cx}" cy="${cy}" r="${(k + 1) * gap}" fill="none" stroke="${col}" stroke-width="${w}"/>`).join("");
   const skyline = (y, col, seed) => { const rr = rng(seed); let o = "", x = -20; while (x < W + 20) { const w = 60 + rr() * 140, h = 120 + rr() * 320; o += `<rect x="${f2(x)}" y="${f2(y - h)}" width="${f2(w)}" height="${f2(h + 400)}" fill="${col}"/>`; if (rr() < .3) o += `<rect x="${f2(x + w / 2 - 3)}" y="${f2(y - h - 50)}" width="6" height="50" fill="${col}"/>`; x += w + 4; } return o; };
+  const LV = E && E.leaves ? E.leaves : null, NEW = E && E.introducing ? E.introducing : null;
+  const lvAt = LV ? CAST_.findIndex((c) => c.id === LV.id) : -1;
+  const ex = { layers: "", css: "", script: "" };      // the episode's own parts, outside the shared timeline
 
   // ---------- the cards over the intro ----------
   // 1. black; an orange bar wipes; the place types on
@@ -39,9 +64,9 @@ module.exports = function build() {
     <text x="800" y="1060" text-anchor="middle" font-family="Archivo Condensed" font-size="64" fill="${C.paper100}"><tspan font-weight="300">SOMEBODY </tspan><tspan font-weight="900">HAS TO DO </tspan><tspan font-weight="300">SOMETHING </tspan><tspan font-weight="900">ABOUT IT</tspan></text>`, C.file500);
   // 4. four colour bars wipe down, the crew in silhouette walk into them
   const sil = {};
-  for (const c of CAST) sil[c.id] = L.fig(L.pc(c.id), { id: "sil-" + c.id, silhouette: true, lod: "lo", shadow: false });
-  shot("s4", CAST.map((c, i) => `<rect class="s4bar" x="${i * 400}" y="0" width="400" height="0" fill="${c.field}"/>`).join("") +
-    CAST.map((c, i) => `<g class="s4fig" data-i="${i}">${L.at(sil[c.id], 200 + i * 400, 1180, 0.4)}</g>`).join(""), C.ink900);
+  for (const c of CAST_) sil[c.id] = L.fig(specOf(c), { id: "sil-" + c.id, silhouette: true, lod: "lo", shadow: false });
+  shot("s4", CAST_.map((c, i) => `<rect class="s4bar" x="${i * 400}" y="0" width="400" height="0" fill="${c.field}"/>`).join("") +
+    CAST_.map((c, i) => `<g class="s4fig" data-i="${i}">${L.at(sil[c.id], 200 + i * 400, 1180, 0.4)}</g>`).join(""), C.ink900);
   // 5. STARRING
   shot("s5", `${poster("STARRING", 800, 640, 200, C.paper100, 'text-anchor="middle" id="s5t" letter-spacing="8"')}<rect id="s5bar" x="300" y="690" width="0" height="14" fill="${C.signal500}"/>`, C.ink900);
 
@@ -52,23 +77,26 @@ module.exports = function build() {
     stacey: [{}, { pose: { head: { yaw: 14, tilt: 3 } } }],
     loader: [{}, { pose: { head: { yaw: -14, tilt: -4 } } }],
   };
-  CAST.forEach((c, i) => {
-    const spec = L.pc(c.id);
-    const fig = L.fig(spec, { id: "cr-" + c.id, frames: moves[c.id], place: 0.42 });
+  CAST_.forEach((c, i) => {
+    const spec = specOf(c);
+    const leaving = i === lvAt;
+    const fig = leaving ? walker(spec, "cr-" + c.id, LEAVE_FRAMES, 0.42) : L.fig(spec, { id: "cr-" + c.id, frames: moves[c.id] || GLANCE, place: 0.42 });
     const big = L.at(fig, 1140, 1190, 0.42);
     // the silhouette again, big: its ids renamed, so no id is defined twice (a reference resolves to the first copy, and that
     // one sits in another shot, display:none, which older WebKit does not resolve into)
     const silBig = L.at(sil[c.id], 1140, 1190, 0.42, `fill="${c.deep}"`).split("sil-" + c.id).join("silb-" + c.id);
     const nameSize = c.name.length > 18 ? 104 : 124;
+    // the one who leaves walks in a layer of their own (it moves every frame): their colour figure is there, not in the shot
+    if (leaving) ex.layers += layer("wkL", big, true, [1140, 1190]);
     shot("c" + i, `<rect class="wipe" x="0" y="0" width="0" height="${H}" fill="${c.deep}"/>
       <g opacity=".22">${rings(1140, 640, 8, 80, C.paper100, 4)}</g>
-      <g class="silf">${silBig}</g><g class="colf" style="display:none">${big}</g>
+      <g class="silf">${silBig}</g><g class="colf" style="display:none">${leaving ? "" : big}</g>
       <g class="card" style="display:none">
         <rect x="0" y="770" width="960" height="300" fill="${c.deep}"/>
         <text x="70" y="850" font-family="Archivo Condensed" font-size="54" fill="${C.paper100}"><tspan font-weight="900">${esc(c.player)}</tspan><tspan font-weight="300"> as</tspan></text>
         ${poster(c.name, 70, 965, nameSize, C.paper100, `textLength="${Math.min(840, c.name.length * nameSize * .44)}" lengthAdjust="spacingAndGlyphs"`)}
         ${mono(c.job + " · " + c.code, 72, 1030, 26, c.field)}
-        <rect class="cardclip" x="0" y="770" width="960" height="300" fill="${c.deep}"/></g>`, c.field);
+        <rect class="cardclip" x="0" y="770" width="960" height="300" fill="${c.deep}"/></g>${leaving ? stamp("lvStamp", LV.stamp, 740, 772, -8, C.caution500, 80) : ""}`, c.field);
   });
 
   // ---------- the locations between the crew ----------
@@ -83,30 +111,59 @@ module.exports = function build() {
 
   // ---------- the montage: four panels flashing on the beat ----------
   let grid = "";
-  CAST.forEach((c, i) => {
-    const pr = L.K.portrait(L.pc(c.id), { lod: "lo" });
-    const m = pr.svg.match(/^<svg[^>]*viewBox="([^"]+)"[^>]*>([\s\S]*)<\/svg>$/);
+  CAST_.forEach((c, i) => {
     const x = (i % 2) * 800, y = Math.floor(i / 2) * 600;
+    if (i === lvAt) { grid += gapPanel(c, i, x, y, LV.stamp, specOf(c), poster); return; }
+    const pr = L.K.portrait(specOf(c), { lod: "lo" });
+    const m = pr.svg.match(/^<svg[^>]*viewBox="([^"]+)"[^>]*>([\s\S]*)<\/svg>$/);
     grid += `<g class="panel" data-i="${i}"><rect x="${x}" y="${y}" width="800" height="600" fill="${c.field}" class="pbg"/><svg x="${x + 170}" y="${y + 20}" width="460" height="560" viewBox="${m[1]}">${m[2]}</svg>
       <rect x="${x}" y="${y + 500}" width="800" height="100" fill="${c.deep}"/>${poster(c.player, x + 40, y + 575, 80, C.paper100)}</g>`;
   });
   shot("m", grid, C.ink900);
   // ---------- the line-up ----------
-  const lu = L.K.lineup(CAST.map((c) => L.pc(c.id)), { chart: true, height: 820 });
-  const lm = lu.svg.match(/^<svg[^>]*viewBox="([^"]+)"[^>]*>([\s\S]*)<\/svg>$/);
-  shot("lu", `<svg x="100" y="80" width="1400" height="900" viewBox="${lm[1]}">${lm[2]}</svg>${mono("MILITANTS · TIER 0 · THE BONEYARD", 800, 1120, 34, C.ink900, 'text-anchor="middle"')}`, C.paper100);
+  const caption = E && E.caption ? E.caption : "MILITANTS · TIER 0 · THE BONEYARD";
+  if (!LV && !NEW) {
+    const lu = L.K.lineup(CAST_.map((c) => specOf(c)), { chart: true, height: 820 });
+    const lm = lu.svg.match(/^<svg[^>]*viewBox="([^"]+)"[^>]*>([\s\S]*)<\/svg>$/);
+    shot("lu", `<svg x="100" y="80" width="1400" height="900" viewBox="${lm[1]}">${lm[2]}</svg>${mono(caption, 800, 1120, 34, C.ink900, 'text-anchor="middle"')}`, C.paper100);
+  } else {
+    // the line-up with a gap: the slot is sized for whoever ends up in it (the newcomer, else the one who left), then emptied
+    const slots = CAST_.map((c) => specOf(c)), at = lvAt >= 0 ? lvAt : slots.length;
+    slots[at] = NEW ? specOf(NEW) : slots[at];
+    const g = gapLineup(slots, at, { chart: true, height: 820 }, lvAt >= 0 ? specOf(CAST_[lvAt]) : null, lvAt >= 0 ? CAST_[lvAt].deep : null);
+    // a smaller box than today's line-up (y 80-980): the line above it and the name card under it stay inside what a 16:9 TV shows of
+    // the 4:3 stage (y 150-1050)
+    const BX = { x: 100, y: 300, w: 1400, h: 580 }, box = (vb) => `x="${BX.x}" y="${BX.y}" width="${BX.w}" height="${BX.h}" viewBox="${vb}"`;
+    shot("lu", `<svg ${box(g.vb)}>${g.inner}</svg>${mono(caption, 800, 960, 34, C.ink900, 'text-anchor="middle"')}` +
+      (NEW ? `<g id="inLine" style="display:none" transform="translate(800 220)"><g class="slam"><rect x="-800" y="-70" width="${W}" height="140" fill="${C.ink900}"/>${poster(NEW.line, 0, 46, 130, C.paper100, 'text-anchor="middle" letter-spacing="6"')}</g></g>` : ""), C.paper100);
+    if (NEW) {
+      // the freeze: the same line-up in silhouette on the newcomer's colour, the newcomer (in their own layer) in colour over it
+      const z = gapLineup(slots, at, { chart: true, height: 820, silhouette: true, suffix: "-z", ground: NEW.field }, null, null);
+      shot("lz", `<svg ${box(z.vb)}>${z.inner}</svg>`, NEW.deep);
+      const m = g.vb.split(/\s+/).map(Number), s = Math.min(BX.w / m[2], BX.h / m[3]);
+      const ox = BX.x + (BX.w - m[2] * s) / 2 - m[0] * s, oy = BX.y + (BX.h - m[3] * s) / 2 - m[1] * s;
+      const gapX = ox + g.cx * s, floor = oy;
+      const nf = walker(specOf(NEW), "in-" + NEW.id, NEW_FRAMES, s);
+      ex.layers += layer("wkN", L.at(nf, gapX, floor, s), true, [gapX, floor]);
+      ex.layers += layer("fzCard", freezeCard(NEW, floor, poster, mono));
+      ex.layers += `<div id="flash"></div>`;
+      ex.script += `const NW={id:${JSON.stringify("in-" + NEW.id)},x0:${f2(-gapX - 160)}};\n`;
+    }
+  }
 
   // ---------- the title card ----------
   shot("tt", `<g id="ttrings" opacity=".3">${rings(800, 560, 10, 64, C.signal500, 6)}</g>
     <text x="808" y="668" text-anchor="middle" font-family="Bowlby One" font-size="200" fill="${C.caution500}" textLength="1240" lengthAdjust="spacingAndGlyphs">BLADES '68</text>
     <text id="tttop" x="800" y="660" text-anchor="middle" font-family="Bowlby One" font-size="200" fill="${C.signal500}" textLength="1240" lengthAdjust="spacingAndGlyphs">BLADES '68</text>
     <rect id="ttbar" x="400" y="730" width="0" height="12" fill="${C.paper100}"/>
-    ${mono(EPISODE, 800, 830, 46, C.paper100, 'text-anchor="middle" id="ttep" style="display:none"')}`, C.ink900);
+    ${mono(EPISODE_, 800, 830, 46, C.paper100, 'text-anchor="middle" id="ttep" style="display:none"')}${E && E.subtitle ? mono(E.subtitle, 800, 910, 34, C.caution500, 'text-anchor="middle" id="ttsub" style="display:none"') : ""}`, C.ink900);
 
-  const body = `<svg class="layer" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${shots}</svg>`;
+  const body = `<svg class="layer" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${shots}</svg>${ex.layers}`;
+  // the episode's timing: T plus the new beats (absolute seconds, on BEAT), and the theme's fade moved after the freeze
+  const TT = E ? Object.assign({}, T, episodeTimes(lvAt, !!NEW)) : T;
 
-  const script = `
-const T=${JSON.stringify(T)};
+  let script = `
+const T=${JSON.stringify(TT)};
 const Q=new URLSearchParams(location.search);
 const shots={};document.querySelectorAll('.shot').forEach(g=>shots[g.id]=g);
 let cur=null;const show=id=>{if(cur===id)return;if(cur)shots[cur].style.display='none';shots[id].style.display='';cur=id;};
@@ -119,7 +176,7 @@ at(3,'s2',t=>{document.querySelectorAll('.s2w').forEach(e=>{const k=+e.dataset.k
 at(6.5,'s3');
 at(10,'s4',t=>{document.querySelectorAll('.s4bar').forEach((e,i)=>e.setAttribute('height',(1200*ease((t-i*.18)/.42)).toFixed(0)));document.querySelectorAll('.s4fig').forEach((g,i)=>{g.style.display=t>0.9+i*.35?'':'none';});});
 at(13.5,'s5',t=>{$('s5bar').setAttribute('width',(1000*ease((t-.4)/.42)).toFixed(0));});
-const CREW=${JSON.stringify(CAST.map((c) => c.id))};
+const CREW=${JSON.stringify(CAST_.map((c) => c.id))};
 CREW.forEach((id,i)=>{
  const t0=T.crew0+i*(T.crewLen+T.locLen);const g=shots['c'+i];const wipe=g.querySelector('.wipe'),silf=g.querySelector('.silf'),colf=g.querySelector('.colf'),card=g.querySelector('.card'),clip=g.querySelector('.cardclip');
  let moved=false;
@@ -146,7 +203,223 @@ if(window.parent!==window){try{parent.postMessage({type:'b68:music',cmd:'play'},
 loop(()=>{const t=now();let s=TL[0];for(const x of TL)if(x[0]<=t)s=x;show(s[1]);s[2](t-s[0]);
  if(t>=T.fade&&!faded){faded=true;if(window.parent!==window){try{parent.postMessage({type:'b68:music',cmd:'fade',sec:T.end-T.fade},location.origin);}catch(e){}}}});
 `;
-  return L.build({ file: "opening-credits.html", title: "Opening credits", fonts: ["Archivo Compressed", "Archivo Condensed", "Bowlby One", "Space Mono Bold"], body, script, grain: .14, vignette: .35, bg: C.ink900, fps: 30 });
+  if (E) {
+    // the one who leaves plays no head move of their own: the episode's loop below runs their frames
+    if (lvAt >= 0) script = script.replace("if(t>4&&!moved){", "if(t>4&&!moved&&i!==" + lvAt + "){");
+    script += ex.script + EPISODE_SCRIPT(lvAt, LV, NEW, CAST_[lvAt]);
+  }
+  const css = E ? EPISODE_CSS : undefined;
+  return L.build({ file: E ? "episode-credits.html" : "opening-credits.html", out: E && E.out, title: "Opening credits", fonts: ["Archivo Compressed", "Archivo Condensed", "Bowlby One", "Space Mono Bold"], body, css, script, grain: .14, vignette: .35, bg: C.ink900, fps: 30 });
 };
 module.exports.T = T;
-if (require.main === module) module.exports();
+module.exports.BEAT = BEAT;
+
+// ======================================================================================================================
+// The episode's beats (IP5.2). Nothing below runs for today's opening-credits.html.
+// ======================================================================================================================
+
+const W_ = 1600, H_ = 1200;
+/* an extra full-stage layer over the shots: a moving one is composited (will-change), so a step repaints that layer alone */
+const layer = (id, inner, moving, feet) => `<svg class="ep${moving ? " mv" : ""}" id="${id}" viewBox="0 0 ${W_} ${H_}" preserveAspectRatio="xMidYMid slice" aria-hidden="true" style="display:none${feet ? `;transform-origin:${f2(feet[0] / 16)}% ${f2(feet[1] / 12)}%` : ""}">${inner}</svg>`;
+const EPISODE_CSS = `.ep{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
+.mv{will-change:transform}
+#flash{position:absolute;inset:0;background:#fffaf0;opacity:0;pointer-events:none}`;
+
+/* a rubber stamp: a double-ruled box, the word in condensed caps, tilted; hidden until it lands (its own group, so it can slam) */
+function stamp(id, word, cx, cy, rot, col, size = 92) {
+  const w = String(word || "").toUpperCase(), bw = Math.max(size * 2.8, w.length * size * 0.5 + 70), bh = Math.round(size * 1.4);
+  return `<g id="${id}" style="display:none" transform="translate(${cx} ${cy}) rotate(${rot})" opacity=".94"><g class="slam">` +
+    `<rect x="${f2(-bw / 2)}" y="${-bh / 2}" width="${f2(bw)}" height="${bh}" fill="none" stroke="${col}" stroke-width="9"/>` +
+    `<rect x="${f2(-bw / 2 + 14)}" y="${-bh / 2 + 14}" width="${f2(bw - 28)}" height="${bh - 28}" fill="none" stroke="${col}" stroke-width="3"/>` +
+    `<text x="0" y="${f2(size * 0.34)}" text-anchor="middle" font-family="Archivo Compressed" font-weight="900" font-size="${size}" letter-spacing="4" fill="${col}">${esc(w)}</text></g></g>`;
+}
+
+/* a figure's silhouette as a chalk outline: the silhouette drawn fat in `ring`, then again in `fill` over it, so only a rim shows.
+   `svg` is a kit silhouette render; its ids are renamed per copy (each id once in the page). */
+function outlined(svg, tag, ring, fill, px) {
+  const copy = (k, col, w) => svg.replace(/fill="#14110e"/g, `fill="${col}" stroke="${col}" stroke-width="${w}" stroke-linejoin="round" vector-effect="non-scaling-stroke"`)
+    .replace(/\sfilter="url\(#[^)]*\)"/g, "").replace(/\bid="([^"]+)"/g, `id="$1-${tag}${k}"`).replace(/url\(#([^)]+)\)/g, `url(#$1-${tag}${k})`);
+  return `<g opacity=".9">${copy("a", ring, px)}</g>${copy("b", fill, 1.5)}`;
+}
+
+/* the montage's empty panel: the one who left, as a chalk outline on their colour, the stamp's word where the player's name was */
+function gapPanel(c, i, x, y, word, spec, poster) {
+  const one = (k) => {
+    const p = L.K.portrait(spec, { lod: "lo", silhouette: true, halo: false, chart: false, plate: false, ground: "none", suffix: "-gp" + k });
+    const m = p.svg.match(/^<svg[^>]*viewBox="([^"]+)"[^>]*>([\s\S]*)<\/svg>$/);
+    return { vb: m[1], inner: m[2] };
+  };
+  const a = one("a"), b = one("b");
+  const fat = (s, col, w) => s.replace(/fill="#14110e"/g, `fill="${col}" stroke="${col}" stroke-width="${w}" stroke-linejoin="round" vector-effect="non-scaling-stroke"`).replace(/\sfilter="url\(#[^)]*\)"/g, "");
+  return `<g class="panel" data-i="${i}"><rect x="${x}" y="${y}" width="800" height="600" fill="${c.deep}" class="pbg"/>` +
+    `<ellipse cx="${x + 400}" cy="${y + 470}" rx="240" ry="44" fill="${C.paper100}" opacity=".12"/>` +
+    `<svg x="${x + 170}" y="${y + 20}" width="460" height="560" viewBox="${a.vb}" opacity=".85">${fat(a.inner, C.paper100, 7)}</svg>` +
+    `<svg x="${x + 170}" y="${y + 20}" width="460" height="560" viewBox="${b.vb}">${fat(b.inner, c.deep, 1.5)}</svg>` +
+    `<rect x="${x}" y="${y + 500}" width="800" height="100" fill="${C.ink900}"/>${poster(String(word || "").toUpperCase(), x + 40, y + 575, 80, C.caution500)}</g>`;
+}
+
+/* the line-up with slot `at` emptied: the kit's own line-up of `slots` (so every other place is where the kit puts it), the figure in
+   that slot cut back out, and, when `who` is given, their chalk outline (in `col`) standing in it.
+   -> { vb, inner, cx (the gap's centre, in the line-up's units) } */
+function gapLineup(slots, at, opts, who, col) {
+  const lu = L.K.lineup(slots, opts);
+  const m = lu.svg.match(/^<svg[^>]*viewBox="([^"]+)"[^>]*>([\s\S]*)<\/svg>$/);
+  const vb = m[1].split(/\s+/).map(Number);
+  const one = L.K.render(slots[at], Object.assign({}, opts, { scale: lu.scale, suffix: (opts.suffix || "") + "-l" + at, pad: 0, fitShadow: false }));
+  let inner = m[2];
+  const k = inner.indexOf(one.inner), g0 = inner.lastIndexOf('<g transform="translate(', k);
+  if (k < 0 || g0 < 0 || inner.slice(k + one.inner.length, k + one.inner.length + 4) !== "</g>") throw new Error("credits: could not find slot " + at + " in the line-up");
+  const cx = lu.positions[at].x * vb[2];
+  inner = inner.slice(0, g0) + inner.slice(k + one.inner.length + 4);
+  if (who) {
+    const s = L.K.render(who, { silhouette: true, lod: "lo", shadow: false, scale: lu.scale, pad: 0, suffix: "-gap" });
+    const um = s.svg.match(/^<svg[^>]*>([\s\S]*)<\/svg>$/);
+    inner += `<g transform="translate(${f2(cx)} 0)">${outlined(`<g>${um[1]}</g>`, "o", col, opts.ground || "#e8e2d4", 6)}</g>`;
+  }
+  return { vb: m[1], inner, cx };
+}
+
+/* the newcomer's name card, under the line-up's floor: their colour, the name, the job and code, and the player's name stamped on */
+function freezeCard(n, floor, poster, mono) {
+  const y = Math.max(885, floor + 6), nameSize = n.name.length > 18 ? 84 : 96;      // 885-1050: inside what a TV shows
+  return `<g id="fzName" style="display:none"><rect x="0" y="${f2(y)}" width="1040" height="165" fill="${n.deep}"/>` +
+    poster(n.name, 70, f2(y + 98), nameSize, C.paper100, `textLength="${Math.min(900, n.name.length * nameSize * .44)}" lengthAdjust="spacingAndGlyphs"`) +
+    mono(n.job + " · " + n.code, 72, f2(y + 143), 24, n.field) + `</g>` + stamp("fzStamp", n.player, 1260, f2(y + 80), -7, C.caution500);
+}
+
+/* The leaver's frames: rest, a look off-screen, the collar, then three walk poses (stride, pass, the other stride). The kit has no walk
+   cycle and its figures face us, so a walk is these cut on the beat while the layer moves, with a bob. */
+/* an episode's own cast member (not one of the four above): the head glance the page plays at 4 s into the card */
+const GLANCE = [{}, { pose: { head: { yaw: -12 } } }, { pose: { head: { yaw: -22, tilt: -3 } } }];
+const LEAVE_FRAMES = [
+  {},
+  { pose: { head: { yaw: 24, tilt: 2 } } },
+  { pose: { head: { yaw: 24, tilt: 2 }, arms: { L: "lapel" } } },
+  { pose: { stance: "wide", weight: "L", stoop: 0.05, head: { yaw: 20 }, arms: { L: "lapel", R: { a: "down", b: "behind", t: 0.35 } } } },
+  { pose: { stance: "square", weight: "L", stoop: 0.12, head: { yaw: 20 }, arms: { L: "lapel", R: "down" } } },
+  { pose: { stance: "wide", weight: "R", stoop: 0.05, head: { yaw: 20 }, arms: { L: "lapel", R: { a: "down", b: "carry", t: 0.35 } } } },
+];
+/* The newcomer's: standing, the two strides and the pass (a hand in the pocket, the other swinging), the cigarette coming up, and the
+   freeze: the spec's own pose (frame 7 is {}) */
+const NEW_FRAMES = [
+  { pose: { arms: { R: "down" }, head: { tilt: 0 } } },
+  { pose: { stance: "wide", weight: "R", arms: { R: { a: "down", b: "behind", t: 0.35 } }, head: { tilt: 0 } } },
+  { pose: { stance: "square", weight: "L", arms: { R: "down" }, head: { tilt: 0 } } },
+  { pose: { stance: "wide", weight: "L", arms: { R: { a: "down", b: "carry", t: 0.35 } }, head: { tilt: 0 } } },
+  { pose: { arms: { R: { a: "down", b: "smoke", t: 0.4 } }, head: { tilt: -2 } } },
+  { pose: { arms: { R: { a: "down", b: "smoke", t: 0.7 } }, head: { tilt: -4 } } },
+  { pose: { arms: { R: { a: "down", b: "smoke", t: 0.93 } }, head: { tilt: -5 } } },
+  {},
+];
+/* A walker's motion figure. The arm swung behind the body changes the stacking order of the sleeve, and with a ribbed top (the kit's rib
+   textile) the merge cannot keep the pattern's id unique; then the swing goes out to the hip instead (frames 1 and 3 only). */
+function walker(spec, id, frames, place) {
+  try { return L.fig(spec, { id, frames, place }); } catch (e) {
+    if (!/defined twice/.test(e.message)) throw e;
+    const safe = frames.map((f) => JSON.parse(JSON.stringify(f).replace(/"b":"behind","t":0.35/g, '"b":"hip","t":0.18')));
+    return L.fig(spec, { id, frames: safe, place });
+  }
+}
+
+/* the new beats, in absolute seconds on the theme's beat. The leaver's card i starts at T.crew0 + i * 11: they look on the first beat
+   4.1 s in, turn the collar up two beats later, walk on the next (four beats: off by beat +7), and the stamp lands two beats after.
+   The newcomer: the cut to the line-up on beat 148 (81.98 s, a hit), the line on 149, the walk on 150-155, the cigarette, the freeze
+   on 156 (85.46 s, the strongest hit of the ending), the player's stamp on 157; the theme's fade moves to 86.5 s. */
+function episodeTimes(lvAt, intro) {
+  const o = {};
+  if (lvAt >= 0) {
+    const t0 = T.crew0 + lvAt * (T.crewLen + T.locLen), n = Math.ceil((t0 + 4.1 - BEAT.at) / BEAT.len);
+    Object.assign(o, { lvLook: beat(n), lvCollar: beat(n + 2), lvWalk: beat(n + 3), lvGone: beat(n + 7), lvStamp: beat(n + 9), lvEnd: t0 + T.crewLen });
+  }
+  if (intro) Object.assign(o, { inCut: beat(148), inLine: beat(149), inWalk: beat(150), inStop: beat(155), inFreeze: beat(156), inStamp: beat(157), fade: 86.5 });
+  return o;
+}
+
+/* the episode's own loop, after the shared one each frame (it reads the same clock): the walk layers, the stamps, the line and the
+   freeze. Every frame is drawn from t alone, so a jump of the clock (the display's sync) lands on the right picture. Reduced motion:
+   cuts only (the leaver is there, then gone; the newcomer is in place; no flash, no slam). */
+function EPISODE_SCRIPT(lvAt, LV, NEW, lvCast) {
+  return `
+const EP={lv:${lvAt},limp:${!!(LV && LV.limp)},lvId:${JSON.stringify(lvCast ? "cr-" + lvCast.id : "")},intro:${!!NEW}};
+const css=(el,s)=>{if(el&&el.__t!==s){el.style.transform=s;el.__t=s;}},vis=(el,on,op)=>{if(!el)return;const d=on?'':'none',o=op||'';if(el.style.display!==d)el.style.display=d;if(el.style.opacity!==o)el.style.opacity=o;};
+const slam=(el,k)=>{if(!el)return;const g=el.firstChild,s=reduce||k>=1?'':'scale('+(1+.6*(1-ease(k))).toFixed(3)+')';if(g.__s!==s){g.setAttribute('transform',s);g.__s=s;}};
+const wkL=$('wkL'),wkN=$('wkN'),fz=$('fzCard'),fl=$('flash'),inLine=$('inLine'),sub=$('ttsub');
+// a walk, one cycle every two beats: [pose (0 one stride, 1 the pass, 2 the other stride), share of the cycle, bob px, sway deg]. The
+// kit's figures face us and have no walk, so a step is a stride pose and a pass pose cut on the beat, the body dipping on the stride
+// and leaning onto the stepping side. A limp holds the good leg longer and drops hard onto the other.
+const WALK=[[0,.28,8,1.2],[1,.22,-8,0],[2,.28,8,-1.2],[1,.22,-8,0]],LIMP=[[0,.34,5,.9],[1,.2,-9,0],[2,.24,20,-2.8],[1,.22,-6,0]];
+function step(g,u){const c=u-Math.floor(u);let a=0;for(const s of g){a+=s[1];if(c<a)return s;}return g[g.length-1];}
+const prog=p=>p<=0?0:p>=1?1:(p<.1?5*p*p:p-.05)/.95;
+const place=(el,x,y,r)=>css(el,'translate3d('+(x/16).toFixed(3)+'%,'+(y/12).toFixed(3)+'%,0)'+(r?' rotate('+r.toFixed(2)+'deg)':''));
+loop(()=>{const t=now();
+ if(EP.lv>=0){const sh='c'+EP.lv,on=cur===sh;
+  const lt=t-(T.crew0+EP.lv*(T.crewLen+T.locLen));
+  // the colour figure shows from 2.2 s (as the others do), painted all but invisibly a beat early so the cut does not hitch
+  const showL=on&&lt>=1.8&&t<(reduce?T.lvWalk:T.lvGone);vis(wkL,showL,showL&&lt<2.2?'.001':'');
+  if(showL){let k=0,x=0,y=0,r=0;
+   if(t>=T.lvWalk){const p=(t-T.lvWalk)/(T.lvGone-T.lvWalk),s=step(EP.limp?LIMP:WALK,(t-T.lvWalk)/(2*${BEAT.len}));k=3+s[0];x=760*prog(p);y=s[2];r=s[3];}
+   else if(t>=T.lvCollar)k=2;else if(t>=T.lvLook)k=1;
+   Motion.show(EP.lvId,k);place(wkL,x,y,r);}
+  const st=$('lvStamp');if(st){const sOn=on&&t>=T.lvStamp;vis(st,sOn);if(sOn)slam(st,(t-T.lvStamp)/.12);}
+ }
+ if(sub)vis(sub,cur==='tt'&&t-T.title>1.7);
+ if(EP.intro){const inLu=cur==='lu'&&t>=T.inCut,fzOn=t>=T.inFreeze&&cur==='lz';
+  if(inLine){vis(inLine,inLu&&t>=T.inLine);if(inLu&&t>=T.inLine)slam(inLine,(t-T.inLine)/.1);}
+  const showN=(inLu&&t>=T.inWalk-.4)||fzOn;vis(wkN,showN,showN&&t<T.inWalk&&!reduce?'.001':'');
+  if(showN){let k=7,x=0,y=0,r=0;
+   if(t<T.inStop){const p=(t-T.inWalk)/(T.inStop-T.inWalk);
+    if(reduce){k=0;}else{const s=step(WALK,Math.max(0,t-T.inWalk)/(2*${BEAT.len}));k=1+s[0];x=NW.x0*(1-prog(p));y=s[2]*.6;r=s[3]*.8;}}
+   else if(t<T.inFreeze){const q=(t-T.inStop)/(T.inFreeze-T.inStop);k=reduce?0:q<.25?4:q<.5?5:q<.8?6:7;}
+   Motion.show(NW.id,k);place(wkN,x,y,r);}
+  vis(fz,fzOn);const nm=$('fzName'),fs=$('fzStamp');
+  if(fzOn){vis(nm,true);vis(fs,t>=T.inStamp);if(t>=T.inStamp)slam(fs,(t-T.inStamp)/.12);}
+  // the freeze's hard flash: two frames of white, then nothing (none at all with reduced motion)
+  const f=!reduce&&t>=T.inFreeze&&t<T.inFreeze+.07?'1':'0';if(fl&&fl.style.opacity!==f)fl.style.opacity=f;
+ }
+});
+${NEW ? "at(T.inCut,'lu');at(T.inFreeze,'lz');TL.sort((a,b)=>a[0]-b[0]);" : ""}
+`;
+}
+
+/* an episode file -> the build's inputs; colours by token name; a cast entry names a cast.js id or carries a full spec */
+function episodeOf(ep) {
+  const col = (k, what) => { if (C[k]) return C[k]; throw new Error("credits: " + what + ": no colour token " + JSON.stringify(k) + " (one of " + Object.keys(C).join(", ") + ")"); };
+  const entry = (c, what) => {
+    if (!c || typeof c !== "object") throw new Error("credits: " + what + " is not an object");
+    const id = c.spec ? String(c.spec.id || c.id || "") : String(c.id || "");
+    if (!/^[a-z][a-z0-9-]*$/.test(id)) throw new Error("credits: " + what + " needs an id of lower-case letters (" + JSON.stringify(id) + ")");
+    if (!c.spec && !L.cast.byId[id]) throw new Error("credits: " + what + ": " + id + " is not in app/figures/cast.js; give a full spec");
+    for (const k of ["player", "name", "job", "code"]) if (typeof c[k] !== "string" || !c[k]) throw new Error("credits: " + what + " needs " + k);
+    const o = { id, player: c.player, name: c.name, job: c.job, code: c.code, field: col(c.field, what + ".field"), deep: col(c.deep, what + ".deep") };
+    if (c.spec) o.spec = Object.assign({}, c.spec, { id });
+    return o;
+  };
+  if (!Array.isArray(ep.cast) || ep.cast.length !== 4) throw new Error("credits: the cast is four entries (the cards are cut to the music for four)");
+  const cast = ep.cast.map((c, i) => entry(c, "cast[" + i + "]"));
+  if (new Set(cast.map((c) => c.id)).size !== cast.length) throw new Error("credits: two cast entries share an id");
+  const out = { episode: String(ep.episode || EPISODE), subtitle: ep.subtitle ? String(ep.subtitle) : "", cast, caption: ep.caption ? String(ep.caption) : "", out: ep.out || null };
+  if (ep.leaves) {
+    const lv = typeof ep.leaves === "string" ? { id: ep.leaves } : ep.leaves;
+    if (!cast.some((c) => c.id === lv.id)) throw new Error("credits: leaves names " + JSON.stringify(lv.id) + ", who is not in the cast");
+    out.leaves = { id: lv.id, stamp: String(lv.stamp || ep.stamp || "GONE"), limp: !!lv.limp };
+  }
+  if (ep.introducing) {
+    const n = entry(ep.introducing, "introducing");
+    if (cast.some((c) => c.id === n.id)) throw new Error("credits: the newcomer's id is already in the cast");
+    n.line = String(ep.introducing.line || "AND INTRODUCING");
+    out.introducing = n;
+  }
+  return out;
+}
+module.exports.episodeOf = episodeOf;
+
+if (require.main === module) {
+  const a = process.argv.slice(2), at = (k) => { const i = a.indexOf(k); return i >= 0 ? a[i + 1] : null; };
+  const file = at("--episode");
+  if (!file) module.exports();
+  else {
+    const ep = JSON.parse(fs.readFileSync(path.resolve(file), "utf8"));
+    if (at("--out")) ep.out = at("--out");
+    module.exports(ep);
+  }
+}

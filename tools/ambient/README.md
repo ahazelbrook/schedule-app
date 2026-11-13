@@ -49,6 +49,12 @@ node tools/ambient/redress.js             # Booker's suit and Alfie's cigarette 
 - `redress.js` swaps figures inside the designer-built pages. It finds the render options that reproduce each original exactly
   (scale, silhouette, shadow), learns the page's colour treatment from the old cast (git `a3d5370`), and renders the new spec or
   motion frames the same way. It always starts from the committed page, so it can be re-run.
+- **An episode's own credits are local only.** `node tools/ambient/scenes/credits.js --episode <file.json>` builds
+  `app/ambient/episode-credits.html` from an episode file (the title card's lines, the cast, and two optional beats: one of the crew
+  walks out of the line-up, and a newcomer walks into the gap and freezes; the format is at the top of `scenes/credits.js`, an invented
+  example is `fixtures/episode-demo.json`). The page is gitignored and the real episode file is kept outside this repository. When the
+  page is on the server, the display plays it wherever the Opening credits are pinned; when it is not, `opening-credits.html` plays.
+  `--out <path>` writes it elsewhere (the checks build the example to a temp folder).
 - **Calling cards are local only.** The faction deck's art is the book's, and this repository is public, so `calling-cards.html` and
   `cards/` are gitignored. To rebuild: read the design system's `assets/factions/NN-name.png` files for the factions the crew know,
   shrink each to 520 px wide JPEG (quality 80) as `cards/NN-name.jpg`, then run `scenes/cards.js`. Deploy from the PC that has the file.
