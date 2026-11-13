@@ -5099,7 +5099,7 @@
   function p2Card(id) {
     var M = p2(), me = S; if (!M || !me) return;
     M.openCard({ doc: document, npc: function (x) { return isObj(me.npcs) ? me.npcs[x] : null; }, rv: function () { return S === me && me.rv && me.rvBox && me.rvBox.isConnected ? me.rv : null; },
-      cast: function (x) { if (S !== me) return; var f = document.activeElement, k = f && f.closest && f.closest('#gm-npc') && f.getAttribute('data-gm') ? '#gm-npc [data-gm="' + f.getAttribute('data-gm') + '"][data-id="' + str(f.getAttribute('data-id')).replace(/[^A-Za-z0-9_-]/g, '') + '"]' : ''; me.npcCardOpen = x; renderNpcs(); var nb = k ? (k) : null; if (nb && nb.focus) nb.focus(); } }, id);      /* IP2b: the row's button keeps the focus through the redraw */
+      cast: function (x) { if (S !== me) return; var pf = str(me.p2focus).split('|'), k = pf.length === 2 && pf[1] === x ? '#gm-npc [data-gm="' + pf[0] + '"][data-id="' + pf[1].replace(/[^A-Za-z0-9_-]/g, '') + '"]' : ''; me.p2focus = ''; me.npcCardOpen = x; renderNpcs(); var nb = k ? $q(k) : null; if (nb && nb.focus) nb.focus(); } }, id);      /* IP2b: the row's button keeps the focus through the redraw */
   }
   function p2NotesSrc(names) {
     var M = p2(); if (!M || !S || !isObj(S.npcs)) return '';
@@ -7995,7 +7995,7 @@
       case 'dlsvg': if (!S.map) toast('Draw the map first.', true); else if (S.map.layer === 'player' && S.map.leak) toast(P.LEAK_MSG, true); else save(slug(S.locRoll && S.locRoll.name) + '-' + S.map.view + '-' + S.map.theme + '-' + S.map.layer + '.svg', S.map.svg); break;
       case 'dlnote': if (S.locRoll && W.B68GmLocation) save(slug(S.locRoll.name) + '.md', W.B68GmLocation.noteBody(S.locRoll, { date: dmy(new Date()) })); break;
       case 'dlcanvas': if (S.locRoll && W.B68GmLocation) save(slug(S.locRoll.name) + '.canvas', W.B68GmLocation.canvas(S.locRoll, part('location'))); break;
-      case 'npcipad': npcToIpad(b.getAttribute('data-id')); break;
+      case 'npcipad': if (b.closest && b.closest('#gm-npc')) S.p2focus = 'npcipad|' + b.getAttribute('data-id'); npcToIpad(b.getAttribute('data-id')); break;      /* IP2b: the row's button gets the focus back after the card redraw */
       case 'npcintro': npcIntroduce(b.getAttribute('data-id')); break;
       case 'npcstage': stageNpc(b.getAttribute('data-id')); break;
       case 'npccard': { var nci = b.getAttribute('data-id'); S.npcCardOpen = S.npcCardOpen === nci ? null : nci; renderNpcs(); var ncb = $q('#gm-npc [data-gm="npccard"][data-id="' + str(nci).replace(/"/g, '') + '"]'); if (ncb) ncb.focus(); break; }
