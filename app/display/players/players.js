@@ -180,16 +180,30 @@
       return d;
     }
     /* the swell: the dial travels toward the middle of the screen and grows, then comes back (CSS reads --p2-dx / --p2-dy) */
-    function swell(d) {
+    function swell(d, done) {
+      var fin = function () { if (typeof done === 'function') done(); };
       var still = call(host.still, false);
-      if (still) { d.setAttribute('data-p2-tick', 'flash'); later(function () { d.removeAttribute('data-p2-tick'); clearNew(d); }, FLASH_MS); return; }
+      if (still) { d.setAttribute('data-p2-tick', 'flash'); later(function () { d.removeAttribute('data-p2-tick'); clearNew(d); fin(); }, FLASH_MS); return; }
       try {
         var r = d.getBoundingClientRect(), win = doc.defaultView, cx = (win ? win.innerWidth : 0) / 2, cy = (win ? win.innerHeight : 0) / 2;
         var dx = Math.round(cx - (r.left + r.width / 2)), dy = Math.round(cy - (r.top + r.height / 2));
         d.style.setProperty('--p2-dx', Math.round(dx * 0.55) + 'px'); d.style.setProperty('--p2-dy', Math.round(dy * 0.55) + 'px');
       } catch (e) { /* it swells where it stands */ }
       d.setAttribute('data-p2-tick', 'swell');
-      later(function () { d.removeAttribute('data-p2-tick'); d.style.removeProperty('--p2-dx'); d.style.removeProperty('--p2-dy'); clearNew(d); }, SWELL_MS);
+      later(function () { d.removeAttribute('data-p2-tick'); d.style.removeProperty('--p2-dx'); d.style.removeProperty('--p2-dy'); clearNew(d); fin(); }, SWELL_MS);
+    }
+    /* IP2b: one swell at a time: a dial waits its turn and goes when the one before has settled (the newest of a poll last, in the order they rose).
+       A repaint in between is no matter: the turn finds the dial by its id and marks its new segments again */
+    var pending = [], swelling = false;
+    function runSwell() {
+      if (swelling || dead) return;
+      var w = pending.shift(); if (!w) return;
+      var d = el.querySelector('.p2-dial[data-p2-id="' + w.id.replace(/[^A-Za-z0-9_-]/g, '') + '"]');
+      if (!d || el.hidden) { runSwell(); return; }
+      var segs = d.querySelectorAll('.p2-seg');
+      w.segs.forEach(function (i) { if (segs[i]) segs[i].setAttribute('class', segs[i].getAttribute('class') + ' p2-new'); });
+      swelling = true;
+      swell(d, function () { swelling = false; runSwell(); });
     }
     function clearNew(d) {
       var n = d.querySelectorAll('.p2-new');
@@ -210,9 +224,11 @@
         var rise = rises[c.id] || null, d = dial(c, rise);
         if (al && c.id === al) d.setAttribute('data-p2-alarm', '');
         el.appendChild(d);
-        if (rise) swells.push(d);
+        if (rise) swells.push({ id: c.id, segs: rise.segs });
       });
-      if (swells.length && !el.hidden) swells.forEach(swell); else swells.forEach(clearNew);
+      if (!el.hidden) swells.forEach(function (w) { pending.push(w); });
+      [].forEach.call(el.querySelectorAll('.p2-dial'), clearNew);      /* the new segments go red only for their own swell */
+      runSwell();
     }
     /* what is up decides whether the dials are seen; hidden is a cut */
     function sync() {
