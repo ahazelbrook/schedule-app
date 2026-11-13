@@ -44,58 +44,115 @@
     return Promise.resolve(null);
   }
 
-  /* ---- IP2b: the public lines, a short queue (the newest on top, at most LINES_MAX), each with Send and Not now; a count when more than one. A line
-     pushed out by a sixth, or put away with Not now, is written to the night log (host.log), so none is lost without a trace. One per page root. ---- */
-  var LINES_MAX = 5, QS = [];
+  /* ---- IP2b/IP2c: the public lines, a short queue (at most LINES_MAX), each with Send and Not now. Shown OLDEST first and at most two rows, then a
+     quiet "+ n more" that opens the rest in place (it closes again at two or fewer). Every line goes to the night log as it is queued (so a reload
+     loses nothing untraced), and again when it is pushed out by a sixth, put away with Not now, or dropped at the night's end (clear). One per page.
+     The box is placed where it covers no control: the lowest spot in the bottom of the window that meets no button, field, link or Board room card
+     (and leaves the Blade rail's strip alone). It moves only when a line comes or goes, "+ n more" opens or closes, or on a resize, and never under
+     the GM's hand (see place). ---- */
+  var LINES_MAX = 5, LINES_SHOWN = 2, QS = [];
   function linesPure() {
     var list = [];
     return {
       list: list,
       add: function (o) { list.unshift({ id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), o: o }); return list.length > LINES_MAX ? list.splice(LINES_MAX) : []; },
-      take: function (id) { for (var i = 0; i < list.length; i++) if (list[i].id === id) return list.splice(i, 1)[0]; return null; }
+      take: function (id) { for (var i = 0; i < list.length; i++) if (list[i].id === id) return list.splice(i, 1)[0]; return null; },
+      /* the rows to draw: oldest first; collapsed, the oldest two and how many more */
+      rows: function (open) { var all = list.slice().reverse(); return open || all.length <= LINES_SHOWN ? { rows: all, more: 0 } : { rows: all.slice(0, LINES_SHOWN), more: all.length - LINES_SHOWN }; },
+      clear: function () { return list.splice(0); }
     };
+  }
+  /* where the box goes: candidate spots (x, y, top-left of a w x h box) scanned from the bottom right; the first that meets none of `avoid` (rects) */
+  function spotFor(W0, H0, w, h, avoid, railW, near) {
+    var hit = function (x, y) { for (var i = 0; i < avoid.length; i++) { var a = avoid[i]; if (!(a.left >= x + w || a.right <= x || a.top >= y + h || a.bottom <= y)) return true; } return false; };
+    var best = null, bd = Infinity;
+    for (var y = H0 - h - 6; y >= H0 * 0.45; y -= 8) for (var x = W0 - railW - w - 8; x >= 8; x -= 16) {
+      if (hit(x, y)) continue;
+      if (!near) return { x: x, y: y };
+      var dd = (x - near.x) * (x - near.x) + (y - near.y) * (y - near.y); if (dd < bd) { bd = dd; best = { x: x, y: y }; }
+    }
+    return best;
+  }
+  /* IP2c: does a box (x, y, w, h) meet any of avoid, or leave the window? */
+  function covers(x, y, w, h, avoid, W0, H0) {
+    if (x < 0 || y < 0 || x + w > W0 || y + h > H0) return true;
+    for (var i = 0; i < avoid.length; i++) { var a = avoid[i]; if (!(a.left >= x + w || a.right <= x || a.top >= y + h || a.bottom <= y)) return true; }
+    return false;
   }
   function lines(q) {
     var root = q.root, rec = QS.filter(function (x) { return x.root === root; })[0];
-    if (!rec) { rec = { root: root, p: linesPure(), el: null, show: null }; QS.push(rec); if (QS.length > 4) QS.shift(); }
+    if (!rec) { rec = { root: root, p: linesPure(), el: null, show: null, open: false, hover: false, hoverT: null, at: null }; QS.push(rec); if (QS.length > 4) QS.shift(); }
     rec.q = q;
     function log(text) { try { if (typeof rec.q.log === 'function') rec.q.log(text); } catch (e) { /* the log is a nicety */ } }
+    /* IP2c (the delta review): the box never moves under the GM's hand. It is placed only when a line comes or goes, "+ n more" opens or closes,
+       or the window is resized; never on a timer or a scroll. Then it keeps its spot unless that spot now meets a control (or leaves the window),
+       and moves the shortest way that clears it. While the pointer is over it (and for 600 ms after it leaves) or it holds the focus, it stays put */
+    function held() { var d = root.ownerDocument, a = d && d.activeElement; return rec.hover || !!(a && rec.el && rec.el.contains(a)); }
+    function place() {
+      var el = rec.el, d = root.ownerDocument, win = d && d.defaultView; if (!el || el.hidden || !win) return;
+      if (held()) { rec.owed = true; return; }      /* asked while held: done once the hand has gone */
+      rec.owed = false;
+      var w = el.offsetWidth, h = el.offsetHeight, W0 = win.innerWidth, H0 = win.innerHeight, avoid = [];
+      [].forEach.call(d.querySelectorAll('button, input, select, textarea, a[href], [role="button"], .rv-card'), function (n) {
+        if (el.contains(n)) return; var r = n.getBoundingClientRect(); if (r.width && r.height && r.bottom > H0 * 0.4 && r.top < H0) avoid.push(r);
+      });
+      if (rec.at && !covers(rec.at.x, rec.at.y, w, h, avoid, W0, H0)) return;      /* the spot it has still clears every control: it stays */
+      var s = spotFor(W0, H0, w, h, avoid, 60, rec.at), es = el.style;
+      if (!s) s = { x: Math.max(8, W0 - 60 - w - 8), y: Math.max(8, H0 - h - 6) };      /* no free spot: bottom right, as before */
+      rec.at = s; es.right = ''; es.bottom = ''; es.left = s.x + 'px'; es.top = s.y + 'px';
+    }
     function draw() {
       var d = root.ownerDocument || (W && W.document); if (!d) return;
       if (!rec.el || !rec.el.isConnected) {
         rec.el = d.createElement('div'); rec.el.id = 'gm-p2-lines'; rec.el.className = 'gm-p2-lines'; rec.el.setAttribute('role', 'region'); rec.el.setAttribute('aria-label', 'Public lines waiting');
-        /* bottom right of the work area: clear of the left column (the Roll, START AFTERMATH, BACK) and of the Blade rail on the right */
-        var es = rec.el.style; es.position = 'fixed'; es.right = '64px'; es.bottom = '12px'; es.zIndex = '60'; es.maxWidth = 'min(600px, calc(100vw - 420px))'; es.display = 'grid'; es.gap = '6px';
-        es.padding = '8px 10px'; es.background = '#1a1714'; es.color = '#f2ede1'; es.borderLeft = '4px solid #e0701e'; es.boxShadow = '0 2px 10px rgba(0,0,0,.35)';
+        var es = rec.el.style; es.position = 'fixed'; es.zIndex = '60'; es.width = 'min(430px, 34vw)'; es.display = 'grid'; es.gap = '3px';
+        es.padding = '5px 8px'; es.background = '#1a1714'; es.color = '#f2ede1'; es.borderLeft = '4px solid #e0701e'; es.boxShadow = '0 2px 10px rgba(0,0,0,.35)'; es.fontSize = '13px';
         rec.el.addEventListener('click', function (ev) {
           var b = ev.target && ev.target.closest ? ev.target.closest('[data-p2-line]') : null; if (!b) return;
+          var act = b.getAttribute('data-p2-line');
+          if (act === 'more') { rec.open = !rec.open; draw(); return; }
           var it = rec.p.take(b.getAttribute('data-id')); if (!it) return;
-          if (b.getAttribute('data-p2-line') === 'send') { Promise.resolve().then(function () { return typeof rec.show === 'function' ? rec.show(it.o) : null; }).then(null, function () { /* the page says why */ }); }
+          if (act === 'send') { Promise.resolve().then(function () { return typeof rec.show === 'function' ? rec.show(it.o) : null; }).then(null, function () { /* the page says why */ }); }
           else log('Public line not shown (Not now): ' + str(it.o.text).trim());
           draw();
         });
-        root.appendChild(rec.el);
+        rec.el.addEventListener('pointerenter', function () { clearTimeout(rec.hoverT); rec.hover = true; });
+        rec.el.addEventListener('pointerleave', function () { clearTimeout(rec.hoverT); rec.hoverT = setTimeout(function () { rec.hover = false; if (rec.owed) place(); }, 600); });
+        rec.el.addEventListener('focusout', function () { setTimeout(function () { if (rec.owed) place(); }, 0); });
+        root.appendChild(rec.el); rec.at = null;
+        var win = d.defaultView; if (win && win.addEventListener && !rec.resizeOn) { rec.resizeOn = true; win.addEventListener('resize', function () { place(); }); }
       }
-      var L = rec.p.list;
-      rec.el.hidden = !L.length; rec.el.style.display = L.length ? 'grid' : 'none';
+      if (rec.p.list.length <= LINES_SHOWN) rec.open = false;
+      var R = rec.p.rows(rec.open);
+      rec.el.hidden = !R.rows.length; rec.el.style.display = R.rows.length ? 'grid' : 'none';
       rec.el.textContent = '';
-      if (!L.length) return;
-      if (L.length > 1) { var h = d.createElement('p'); h.className = 'gm-p2-count'; h.style.margin = '0'; h.style.fontSize = '12px'; h.style.letterSpacing = '.08em'; h.style.textTransform = 'uppercase'; h.textContent = L.length + ' public lines waiting'; rec.el.appendChild(h); }
-      L.forEach(function (it) {
-        var row = d.createElement('div'); row.className = 'gm-p2-line'; row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.gap = '8px'; row.style.flexWrap = 'wrap';
-        var t = d.createElement('span'); t.className = 'gm-p2-text'; t.style.flex = '1 1 14em'; t.style.minWidth = '0'; t.textContent = 'Public line: “' + str(it.o.text).trim() + '”'; row.appendChild(t);
+      if (!R.rows.length) { rec.at = null; return; }
+      R.rows.forEach(function (it) {
+        var row = d.createElement('div'); row.className = 'gm-p2-line'; row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.gap = '6px';
+        var t = d.createElement('span'); t.className = 'gm-p2-text'; t.style.flex = '1 1 auto'; t.style.minWidth = '0'; t.style.overflow = 'hidden'; t.style.textOverflow = 'ellipsis'; t.style.whiteSpace = 'nowrap';
+        t.textContent = 'Public line: “' + str(it.o.text).trim() + '”'; t.title = t.textContent; row.appendChild(t);
         [['send', 'Send', 'btn sm primary'], ['later', 'Not now', 'btn sm']].forEach(function (b) {
-          var x = d.createElement('button'); x.type = 'button'; x.className = b[2]; x.setAttribute('data-p2-line', b[0]); x.setAttribute('data-id', it.id); x.textContent = b[1]; row.appendChild(x);
+          var x = d.createElement('button'); x.type = 'button'; x.className = b[2]; x.setAttribute('data-p2-line', b[0]); x.setAttribute('data-id', it.id); x.textContent = b[1]; x.style.flex = '0 0 auto'; row.appendChild(x);
         });
         rec.el.appendChild(row);
       });
+      if (R.more || rec.open) {
+        var m = d.createElement('button'); m.type = 'button'; m.className = 'gm-p2-more'; m.setAttribute('data-p2-line', 'more');
+        m.textContent = rec.open ? 'Show fewer' : '+ ' + R.more + ' more';
+        var ms = m.style; ms.background = 'none'; ms.border = '0'; ms.color = '#c9c1b2'; ms.font = 'inherit'; ms.fontSize = '12px'; ms.padding = '0 2px'; ms.textAlign = 'left'; ms.cursor = 'pointer'; ms.justifySelf = 'start';
+        rec.el.appendChild(m);
+      }
+      place();
     }
     return {
       add: function (o, show) {
         rec.show = show;
+        log('Public line waiting for Send: ' + str(o.text).trim());      /* IP2c: in the night log from the moment it is queued, so a reload loses nothing untraced */
         rec.p.add(o).forEach(function (it) { log('Public line not shown (more than ' + LINES_MAX + ' waiting): ' + str(it.o.text).trim()); });
         draw();
       },
+      /* IP2c: the night ends: every line still waiting is dropped, each written to the night log as not sent */
+      clear: function (why) { rec.p.clear().reverse().forEach(function (it) { log('Public line not sent (' + (why || 'the night ended') + '): ' + str(it.o.text).trim()); }); rec.open = false; if (rec.el) draw(); },
       list: function () { return rec.p.list.map(function (it) { return str(it.o.text); }); }
     };
   }
@@ -191,5 +248,5 @@
   }
 
   return { VERSION: 1, AP_WHY: AP_WHY, FILES: FILES, offerLine: offerLine, apLine: apLine, scene: scene, probe: probe, openCard: openCard, notesMd: notesMd,
-    _pure: { intent: intent, same: same, typing: typing, linesPure: linesPure, LINES_MAX: LINES_MAX }, lines: lines };
+    _pure: { intent: intent, same: same, typing: typing, linesPure: linesPure, LINES_MAX: LINES_MAX, spotFor: spotFor, covers: covers }, lines: lines };
 });

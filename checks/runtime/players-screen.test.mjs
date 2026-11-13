@@ -168,6 +168,38 @@ await test('IP2b lines: the newest on top, at most five; the one pushed out is h
   const id = q.list[2].id; assert.equal(q.take(id).o.text, 'L4'); assert.equal(q.take(id), null);
   assert.equal(q.list.length, 4); assert.equal(G._pure.LINES_MAX, 5);
 });
+await test('IP2c lines: oldest first, two rows and "+ n more" collapsed, all when open; clear hands back every line; the spot meets no control', () => {
+  const q = G._pure.linesPure();
+  ['A', 'B', 'C', 'D'].forEach((t) => q.add({ text: t }));
+  const c = q.rows(false), o = q.rows(true);
+  assert.deepEqual(c.rows.map((x) => x.o.text), ['A', 'B']); assert.equal(c.more, 2);
+  assert.deepEqual(o.rows.map((x) => x.o.text), ['A', 'B', 'C', 'D']); assert.equal(o.more, 0);
+  assert.deepEqual(q.clear().map((x) => x.o.text).reverse(), ['A', 'B', 'C', 'D']); assert.equal(q.list.length, 0);
+  const spot = G._pure.spotFor;
+  const avoid = [{ left: 0, right: 300, top: 600, bottom: 768 }, { left: 900, right: 1300, top: 500, bottom: 768 }, { left: 320, right: 880, top: 300, bottom: 650 }];
+  const s = spot(1366, 768, 400, 70, avoid, 60);
+  assert.ok(s && !avoid.some((a) => !(a.left >= s.x + 400 || a.right <= s.x || a.top >= s.y + 70 || a.bottom <= s.y)), 'a free spot: ' + JSON.stringify(s));
+  assert.equal(spot(1366, 768, 400, 70, [{ left: 0, right: 1366, top: 0, bottom: 768 }], 60), null, 'no room: none (the page falls back)');
+});
+await test('IP2c lines: queued lines are logged at once; the night end drops the rest as not sent (GM night log only)', () => {
+  const logs = [], root = { ownerDocument: null };
+  const L = G.lines({ root, log: (t) => logs.push(t) });
+  L.add({ text: 'The speeches' }, () => {}); L.add({ text: 'The fireworks' }, () => {});
+  assert.deepEqual(logs, ['Public line waiting for Send: The speeches', 'Public line waiting for Send: The fireworks']);
+  L.clear('the night ended');
+  assert.deepEqual(logs.slice(2), ['Public line not sent (the night ended): The speeches', 'Public line not sent (the night ended): The fireworks']);
+  assert.deepEqual(L.list(), []);
+});
+
+await test('IP2c sticky: a spot that still clears every control is kept; a covered one moves the shortest way; outside the window counts as covered', () => {
+  const cov = G._pure.covers, spot = G._pure.spotFor;
+  const avoid = [{ left: 900, right: 1300, top: 600, bottom: 700 }];
+  assert.equal(cov(400, 650, 300, 60, avoid, 1366, 768), false);
+  assert.equal(cov(800, 650, 300, 60, avoid, 1366, 768), true, 'meets a control');
+  assert.equal(cov(1200, 740, 300, 60, [], 1366, 768), true, 'leaves the window');
+  const near = spot(1366, 768, 300, 60, avoid, 60, { x: 800, y: 650 });
+  assert.ok(near && !cov(near.x, near.y, 300, 60, avoid, 1366, 768) && Math.abs(near.x - 800) + Math.abs(near.y - 650) <= 120, 'the nearest free spot: ' + JSON.stringify(near));
+});
 
 /* ---------- the Worker ---------- */
 const DISPLAY = { me: { role: 'display', email: 'table@example.test' } };
