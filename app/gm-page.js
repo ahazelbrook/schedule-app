@@ -2597,8 +2597,8 @@
       show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
       reveal: function (name) {
         var x = csNpc(name), ref = x && npcRef(x.id); if (!x || !ref) return Promise.resolve({ ok: false, say: 'No NPC called ' + name + '.' });
-        if (x.d.revealed === true) return Promise.resolve({ ok: true });
-        return Promise.resolve(ref.update({ revealed: true, firstSeen: x.d.firstSeen || nowIso() })).then(function () { if (S === me && isObj(me.npcs) && isObj(me.npcs[x.id])) me.npcs[x.id].revealed = true; return { ok: true }; }, function () { return { ok: false, say: 'Could not reveal ' + name + '.' }; });
+        if (x.d.revealed === true) return introOn() ? revealShown(x) : Promise.resolve({ ok: true });      /* IP3b: already revealed, the cue still brings them on */
+        return Promise.resolve(ref.update({ revealed: true, firstSeen: x.d.firstSeen || nowIso() })).then(function () { if (S === me && isObj(me.npcs) && isObj(me.npcs[x.id])) me.npcs[x.id].revealed = true; return introOn() ? revealShown(x) : { ok: true }; }, function () { return { ok: false, say: 'Could not reveal ' + name + '.' }; });
       },
       phase: function (p) { return cuePhase(me, p); },
       music: function (word) { var m = S === me ? muInst() : null; return Promise.resolve(!!(m && m.cue(word))); },      /* M1: a `music:` cue */
@@ -5184,6 +5184,7 @@
       show: function (kind, payload, o) { if (kind === 'rolodex' && introOn() && isObj(payload) && Array.isArray(payload.npcIds) && payload.npcIds.length === 1) return W.B68GmIntro.introduce(payload.npcIds[0], introHost(), { quiet: true }); var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },      /* IP3: one name, the title card */
       keyFor: function (key) { return W.B68Show ? W.B68Show.idFor(key) : key; }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
       clearOverlay: function () { return patchAmbient({ overlay: null }); },
+      introduce: function (id) { return S === me && introOn() ? revealShown({ id: id, d: isObj(me.npcs) ? me.npcs[id] : null }) : null; },      /* IP3b: "reveal <name>" brings them on (stage.players) */
       holdSpotlight: function (name) { return S === me && me.b17 ? me.b17.spot.holdByName(name) : null; },
       narrator: function () { return S === me && me.b17 ? me.b17.spot.narrator() : Promise.resolve(false); },
       stageSend: function () { return S === me && me.b17 && b09On('map.stage') ? me.b17.stage.send() : null; }
@@ -6867,7 +6868,24 @@
     return { npc: function (id) { return S && isObj(S.npcs) ? S.npcs[id] : null; }, ask: asked, push: function (d) { return pushDisplay(d); }, toast: toast, errText: errText,
       reveal: function (id, d) { var ref = npcRef(id); if (!ref) return Promise.reject(new Error('The cast is not available here.')); return ref.update({ revealed: true, firstSeen: d.firstSeen || nowIso() }); },
       tray: function () { if (W.B68GmIpadTray) W.B68GmIpadTray.refresh(); },
-      takeDown: function (title) { if (isObj(AM.shown) && AM.shown.kind === 'npc' && str(AM.shown.title) === str(title)) blankIpad(); } };      /* the cue's Undo: Take it down, while they are still up */
+      takeDown: function (title) { if (isObj(AM.shown) && AM.shown.kind === 'npc' && str(AM.shown.title) === str(title)) blankIpad(); },      /* the cue's Undo: Take it down, while they are still up */
+      blocked: introBlocked };
+  }
+  /* IP3b item 6: why a reveal cue's introduction cannot go up now ('' when it can): the GM's Blank, a running hard start, a frozen iPad */
+  function introBlocked() {
+    var sc = isObj(AM.doc) && isObj(AM.doc.layers) && isObj(AM.doc.layers.scene) ? AM.doc.layers.scene : {};
+    if (isObj(AM.shown) && AM.shown.kind === 'dark') return 'the iPad is on Blank';
+    if (sc.mode === 'start') return 'the hard start is running';
+    if (b17Frozen()) return 'the iPad is frozen';
+    return '';
+  }
+  /* IP3b item 6 (stage.players): a reveal cue (the cue stack's `reveal:`; the grammar's "reveal <name>" through its host) brings the person on with the
+     introduction, after the reveal's own write. The reveal stands whatever happens to the card; when it cannot go up, ONE line says so and why. */
+  function revealShown(x) {
+    var nm = str(x && x.d && x.d.name) || 'They';
+    return Promise.resolve(W.B68GmIntro.introduce(x.id, introHost(), { cue: true })).then(function (r) {
+      return isObj(r) && r.notShown ? { ok: true, warn: true, say: nm + ' is revealed but not shown on the iPad: ' + r.notShown + '.', notShown: r.notShown } : { ok: true, shown: r };
+    }, function (e) { return { ok: true, warn: true, say: nm + ' is revealed but not shown on the iPad: ' + errText(e) + '.', notShown: errText(e) }; });
   }
   /* IP6 (stage.players): the planning board's pins (gm/players-board.js). What it needs of this page: the player copy's rooms at the bands and the rooms
      opened on their own, the hidden-name scan, the token screen (each pin alone), the score scene through scoreScene and the gate, and the board pinned on the iPad */

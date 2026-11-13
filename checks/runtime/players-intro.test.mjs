@@ -187,6 +187,25 @@ await test('the cue "Blade, introduce X": ONE toast (the cue\'s own, with Undo),
   assert.match(read('gm/cue-grammar.js'), /typeof res\.undo === 'function' \? res\.undo : function \(\) \{ return clearIfMine\(key\); \}/, 'the cue uses the host\'s undo when it gives one');
   assert.match(read('gm-page.js'), /W\.B68GmIntro\.introduce\(payload\.npcIds\[0\], introHost\(\), \{ quiet: true \}\)/, 'the cue host asks for the quiet introduce');
 });
+await test('a reveal cue (item 6, opts.cue): silent, never asks, never pushes a hidden person; when the card cannot go up (Blank, hard start, frozen, a failed push) it answers why, and says nothing itself', async () => {
+  G._reset();
+  const mk = (d, o = {}) => { const log = []; return { log, host: { npc: () => d, ask: () => log.push('ask'), reveal: () => { log.push('reveal'); return Promise.resolve(); },
+    push: (x) => { log.push(['push', x.npcId, x.intro]); return o.fail ? Promise.reject(o.fail) : Promise.resolve({ seq: 7 }); }, toast: (m) => log.push(['toast', m]), errText: (e) => e.message,
+    tray() {}, later() {}, takeDown: () => log.push('down'), blocked: () => o.blocked || '' } }; };
+  const a = mk({ name: 'Ada Vell', revealed: true }); const r1 = await G.introduce('n-ada', a.host, { cue: true });
+  assert.deepEqual(a.log, [['push', 'n-ada', true]], 'one push, no toast, no question'); assert.equal(r1.seq, 7); assert.equal(typeof r1.undo, 'function');
+  const h = mk({ name: 'GM-ONLY-NPC-1', revealed: false }); const r2 = await G.introduce('n-hid', h.host, { cue: true });
+  assert.deepEqual(h.log, [], 'a hidden person: nothing sent, nothing asked (the reveal\'s own write comes first)'); assert.ok(r2.notShown);
+  for (const why of ['the iPad is on Blank', 'the hard start is running', 'the iPad is frozen']) {
+    const b = mk({ name: 'Ada Vell', revealed: true }, { blocked: why }); const r = await G.introduce('n-ada', b.host, { cue: true });
+    assert.deepEqual(b.log, [], why + ': no push, no toast'); assert.equal(r.notShown, why);
+  }
+  const f = mk({ name: 'Ada Vell', revealed: true }, { fail: new Error('offline') }); const r3 = await G.introduce('n-ada', f.host, { cue: true });
+  assert.equal(r3.notShown, 'offline'); assert.equal(f.log.filter((x) => x[0] === 'toast').length, 0, 'the caller says the one line');
+  assert.match(read('gm-page.js'), /if \(x\.d\.revealed === true\) return introOn\(\) \? revealShown\(x\) : Promise\.resolve\(\{ ok: true \}\);/, 'the cue stack: already revealed, brought on (setting on); off, as before');
+  assert.match(read('gm-page.js'), /me\.npcs\[x\.id\]\.revealed = true; return introOn\(\) \? revealShown\(x\) : \{ ok: true \};/, 'the cue stack: after its own reveal write, brought on (setting on); off, as before');
+  assert.match(read('gm/cue-stack.js'), /say\(r\.say \? r\.say : MANUAL\[c\.kind\]/, 'a fired cue may say its own one line');
+});
 await test('the Run view people rows: with the setting on, Introduce is enabled for a hidden person (it asks) and says what it does; off, as before', () => {
   const Sp = req(path.join(APP, 'gm', 'spotlight.js'));
   const rows = [{ id: 'n-mabel', name: 'Mabel Quist', revealed: true }, { id: 'n-hid', name: 'GM-ONLY-NPC-1', revealed: false }];

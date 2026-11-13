@@ -9,12 +9,14 @@
 // PW_DISPLAY_ENGINE=webkit runs the display pages in WebKit (the GM page stays on Edge).
 //   PW_MODULE=<path to playwright-core> [PW_CHANNEL=msedge] [PORT=12110] [KIT_SHOTS=<dir>] node checks/runtime/players-intro.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { atPlace } from './fixtures/gm/places.mjs';
+import { buildPrep } from '../../scripts/lib/prep-export.mjs';
+import { basenames } from '../../scripts/lib/vault.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -66,6 +68,11 @@ const NPCS = [
     spec: { skin: 'tan', heightIn: 74, age: 44, hair: { style: 'buzz', color: 'cloth-graphite' }, outfit: { outer: { type: 'peacoat', color: 'cloth-charcoal' } } } }],
   ['n-long', { name: 'Bartholomewes Cunninghamsey', alias: 'The Accountant of Lower Wharf Street', role: 'Bookkeeper to the harbour board', faction: 'The Kestrel Club', description: 'Long.', revealed: true,
     spec: { skin: 'olive', heightIn: 70, age: 58, hair: { style: 'slick-back', color: 'cloth-graphite', hat: { type: 'peaked-cap', color: 'cloth-navy' } }, outfit: { outer: { type: 'peacoat', color: 'cloth-navy' } } } }],
+  /* item 6: three hidden people a reveal cue brings on (one known to the players by an alias only), and one for the setting off */
+  ['n-ada', { name: 'Ada Vell', alias: '', role: 'Croupier', faction: '', description: 'Deals.', revealed: false,
+    spec: { figure: 'fem', skin: 'brown', heightIn: 63, age: 29, hair: { style: 'bowl-bob', color: 'cloth-black' }, outfit: { base: { type: 'shirt', color: 'cloth-cream' }, outer: { type: 'blazer', color: 'cloth-charcoal' } } } }],
+  ['n-lotte', { name: 'Lotte Brand', alias: 'The Doorwoman', role: 'Door', faction: '', description: 'Door.', revealed: false, tags: ['known-as'], spec: { figure: 'fem', heightIn: 70, age: 52 } }],
+  ['n-tam', { name: 'Tam Petrakis', alias: '', role: 'Runner', faction: '', description: 'Runs.', revealed: false, spec: { heightIn: 68, age: 30 } }],
   ['n-hid', { name: 'GM-ONLY-NPC-1', alias: 'GM-ONLY-ALIAS-1', role: 'GM-ONLY-ROLE-1', faction: 'GM-ONLY-FACTION-1', description: 'GM-ONLY-DESC-1', gmNotes: 'GM-ONLY-NOTES', revealed: false, spec: { heightIn: 70, age: 40 } }]
 ];
 
@@ -104,7 +111,14 @@ try {
   /* the GM page asks for a pack first: the repo's console fixture */
   const con = JSON.parse(readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'console-pack.json'), 'utf8')).parts.console;
   await ok(gm('POST', '/api/gm/pack', { part: 'console', src: con.src, body: Object.fromEntries(Object.entries(con).filter(([k]) => k !== 'src')) }), 'pack');
-  for (const [id, doc] of NPCS) await ok(gm('PUT', '/api/npcs/' + id, { ...doc, firstSeen: new Date().toISOString(), tags: [] }), 'npc ' + id);
+  /* item 6: an invented prep note with reveal cues, through the real exporter (a temp vault) */
+  const vault = path.join(stateDir, 'vault'), VG = 'Wiki/Games/Blades in the Dark/Campaigns/Group';
+  const vf = path.join(vault, ...(VG + '/Sessions/b68g-s09.md').split('/')); mkdirSync(path.dirname(vf), { recursive: true });
+  writeFileSync(vf, ['---', 'session: 9', 'date: 01/02/2030', 'status: prep', 'gm_prep: true', '---', '', '# Session 9: prep', '', '## Cues', '', 'safe: testcard', '',
+    '1. reveal: Ada Vell', '2. reveal: Mabel Quist', '3. reveal: Lotte Brand', '4. reveal: Dov Kessler', '5. reveal: Tam Petrakis', '', '## Notes', '', 'Nothing else here.', ''].join(String.fromCharCode(10)));
+  const prep = buildPrep({ vault, repo: ROOT, exportedAt: new Date().toISOString(), basenames: basenames(vault) });
+  await ok(gm('POST', '/api/gm/pack', { part: 'prep', src: prep.src, body: Object.fromEntries(Object.entries(prep).filter(([k]) => k !== 'src')) }), 'prep pack');
+  for (const [id, doc] of NPCS) await ok(gm('PUT', '/api/npcs/' + id, { ...doc, firstSeen: new Date().toISOString(), tags: doc.tags || [] }), 'npc ' + id);
   await ok(gm('PATCH', '/api/gm/ambient', { mode: 'pin', scene: 'duskwall', overlay: null }), 'ambient');
   await players(true);
   I = await openIpad();
@@ -216,6 +230,56 @@ try {
     const n = await gm('GET', '/api/npcs/n-hid'); expect(!n.json || !n.json.doc || n.json.doc.revealed !== true, 'still hidden');
     answer = 'accept';
   });
+
+  /* ---- item 6: a reveal cue brings the person on (the cue stack's GO; the note's ## Cues) ---- */
+  const GO = '#gm-cuebar .gm-cs-go';
+  const isRevealed = async (id) => { const r = await gm('GET', '/api/npcs/' + id); const d = r.json && (r.json.doc || r.json); return !!d && d.revealed === true; };
+  const gmText = () => gp.evaluate(() => document.body.innerText);
+  const cardThenStage = async (name) => {
+    const L = await until(async () => { const v = await look(I.page); return v.card && v.name === name ? v : null; }, 8000, 50);
+    expect(L, 'the title card for ' + name + ': ' + JSON.stringify(await look(I.page)).slice(0, 200));
+    const st = await until(async () => { const v = await look(I.page); return !v.card && /dp-npc/.test(v.stage) && v.stageText.includes(name) ? v : null; }, 10000);
+    expect(st, 'then their stage: ' + JSON.stringify(await look(I.page)).slice(0, 200));
+  };
+  await step('item 6, on: GO on "reveal: Ada Vell" (hidden) reveals her, then the title card, then her stage; nothing of her reached the display before', async () => {
+    await toMap(I);
+    expect(!(await ipadGet()).includes('Ada Vell') && !(await domHas(I.page, 'Ada Vell')), 'nothing of her on the display before the cue');
+    await gp.waitForSelector(GO, { timeout: 15000 });
+    await gp.click(GO);
+    await cardThenStage('Ada Vell');
+    expect(await isRevealed('n-ada'), 'revealed');
+  });
+  await step('item 6, on: GO on "reveal: Mabel Quist" (already revealed) still brings her on', async () => {
+    await toMap(I);
+    await gp.click(GO);
+    await cardThenStage('Mabel Quist');
+  });
+  await step('item 6, on: a person known to the players by an alias only is shown by the alias; the full name never reaches the display', async () => {
+    await toMap(I);
+    await gp.click(GO);
+    let leak = false;
+    const poll = async () => { if ((await ipadGet()).includes('Lotte Brand') || (await domHas(I.page, 'Lotte Brand'))) leak = true; };
+    const L = await until(async () => { await poll(); const v = await look(I.page); return v.card && v.name === 'The Doorwoman' ? v : null; }, 8000, 100);
+    expect(L, 'the card by the alias: ' + JSON.stringify(await look(I.page)).slice(0, 200));
+    for (let i = 0; i < 10; i++) { await poll(); await sleep(500); }
+    expect(!leak, 'the full name reached the display');
+    expect(await isRevealed('n-lotte'), 'revealed');
+  });
+  await step('item 6, on: with the iPad on Blank the reveal stands, nothing is pushed, and the GM gets ONE line saying why', async () => {
+    await gp.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    await gp.keyboard.press('i');
+    await gp.waitForSelector('[data-gm="darkipad"]', { timeout: 10000 });
+    await gp.click('[data-gm="darkipad"]');
+    expect(await until(() => I.page.evaluate(() => document.querySelector('.dp-root').classList.contains('dp-lights-out')), 8000), 'the iPad is on Blank');
+    await gp.click(GO);
+    const said = await until(async () => /Dov Kessler is revealed but not shown on the iPad: the iPad is on Blank\./.test(await gmText()), 6000);
+    expect(said, 'the one line: ' + (await gmText()).match(/[^\n]*not shown[^\n]*/g));
+    expect(((await gmText()).match(/revealed but not shown/g) || []).length === 1, 'exactly one');
+    await sleep(1500);
+    expect(!(await look(I.page)).card && await I.page.evaluate(() => document.querySelector('.dp-root').classList.contains('dp-lights-out')), 'no card; still Blank');
+    expect(!/GM-ONLY/.test(await ipadGet()) && !(await domHas(I.page, 'GM-ONLY')), 'the hidden second person never reached the display');
+    await gp.keyboard.press('n');
+  });
   await step('Hold scenes still (fx.off) on: the introduction still plays in full (it holds the ambient scenes, not a sent event: overseer ruling)', async () => {
     for (const p of ['/api/gm/state', '/api/campaign']) await ok(gm('PATCH', p, { features: { 'fx.off': true } }), 'fx.off on');
     await sleep(5000);
@@ -261,6 +325,17 @@ try {
     console.log('INFO the rolodex card: ' + JSON.stringify(seen) + ' ' + JSON.stringify(await I.page.evaluate(() => { const c = document.querySelector('.dp-show-rolodex, .dp-rc'); if (!c) return null; const r = c.getBoundingClientRect(), cs = getComputedStyle(c); return { cls: c.className, r: [r.x, r.y, r.width, r.height].map(Math.round), op: cs.opacity, vis: cs.visibility, z: cs.zIndex, parent: c.parentNode && c.parentNode.className }; })));
     await shot(I.page, 'off-rolodex-' + ENGINE + '-1180');
     expect(seen, 'the paper card is on screen with her name');
+  });
+  await step('item 6, off: GO on "reveal: Tam Petrakis" flips the flag only; the display is unchanged', async () => {
+    await toMap(I);
+    const before = JSON.parse(await ipadGet());
+    await gp.waitForSelector(GO, { timeout: 15000 });
+    await gp.click(GO);
+    expect(await until(() => isRevealed('n-tam'), 6000), 'revealed');
+    await sleep(2500);
+    const after = JSON.parse(await ipadGet()), v = await look(I.page);
+    expect(after.seq === before.seq && after.display.kind === 'svg', 'the display was not pushed: ' + before.seq + ' -> ' + after.seq + ' ' + after.display.kind);
+    expect(!v.card && v.map, 'no card; the map is still up');
   });
   await step('no page errors on the GM page or the display', async () => { expect(!errors.length, errors.slice(0, 5).join(' / ')); });
 } catch (e) { failed++; console.log('FAIL the run stopped: ' + (e && e.stack || e)); }

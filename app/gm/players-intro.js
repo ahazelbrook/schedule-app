@@ -10,10 +10,10 @@
    The tray: "Introducing <name>" while the card plays (this page's clock: the push answer plus the card's length), then the ordinary line.
 
    API (window.B68GmIntro; module.exports under Node)
-     introduce(id, host, opts?) -> Promise<the push answer (with undo() when opts.quiet) | null>     look(gmNotes) -> { expr?, pose? } | null     live(shown, nowMs) -> name | ''
+     introduce(id, host, opts?) -> Promise<the push answer (with undo() when opts.quiet) | { notShown: reason } (opts.cue) | null>     look(gmNotes) -> { expr?, pose? } | null     live(shown, nowMs) -> name | ''
      body(id, d) -> the display push      CARD_MS
      host: { npc(id) -> the cast doc | null, ask(msg, go) (the page's confirm), reveal(id, d) -> Promise, push(display) -> Promise (pushDisplay),
-             toast(msg, bad), errText(e), tray() (repaint the tray), takeDown(title) (Take it down while that NPC is up), later?(fn, ms) } */
+             toast(msg, bad), errText(e), tray() (repaint the tray), takeDown(title) (Take it down while that NPC is up), blocked?() -> a reason the card cannot go up now | '', later?(fn, ms) } */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -50,13 +50,22 @@
   }
 
   /* opts.quiet (the cue "Blade, introduce X", which says its own one toast with an Undo): no toast here, and the answer carries undo(), which
-     takes the NPC down while it is still what the iPad shows */
+     takes the NPC down while it is still what the iPad shows.
+     opts.cue (a reveal cue, IP3b item 6: the cue stack's `reveal:` and the grammar's "reveal <name>", after their own reveal has been written): quiet as
+     above, never asks, and when the card cannot go up (host.blocked() names a reason: the iPad on Blank, the hard start running, the iPad frozen; or
+     the push fails) it says nothing either and answers { notShown: reason }, so the caller says ONE thing: revealed, but not shown, and why. */
   function introduce(id, host, opts) {
     host = host || {}; opts = opts || {};
+    if (opts.cue) opts.quiet = true;
     var d = typeof host.npc === 'function' ? host.npc(id) : null, name = isObj(d) ? str(d.name) : '';
     var toast = typeof host.toast === 'function' ? host.toast : function () {};
     var errText = typeof host.errText === 'function' ? host.errText : function (e) { return e && e.message || String(e || 'unknown error'); };
-    if (!isObj(d)) return Promise.resolve(null);
+    if (!isObj(d)) return Promise.resolve(opts.cue ? { notShown: 'they are not in the cast here' } : null);
+    if (opts.cue) {
+      if (d.revealed !== true) return Promise.resolve({ notShown: 'they are not revealed' });      /* never a hidden person: the reveal's own write comes first */
+      var why = typeof host.blocked === 'function' ? str(host.blocked()) : '';
+      if (why) return Promise.resolve({ notShown: why });
+    }
     function go() {
       var pre = d.revealed === true ? Promise.resolve() : Promise.resolve().then(function () { return host.reveal(id, d); });
       return pre.then(function () { return host.push(body(id, d)); }).then(function (r) {
@@ -70,6 +79,7 @@
         var title = body(id, d).title;
         return Object.assign({}, isObj(r) ? r : {}, { undo: function () { return typeof host.takeDown === 'function' ? host.takeDown(title) : null; } });
       }, function (e) {
+        if (opts.cue) return { notShown: e && e.superseded ? 'a newer push replaced it' : errText(e) };
         if (!e || !e.superseded) toast('Could not introduce ' + (name || 'them') + ' on the iPad: ' + errText(e), true);
         return null;
       });

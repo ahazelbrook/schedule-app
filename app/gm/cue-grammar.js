@@ -249,11 +249,24 @@
         }
         var r = resolve(a.names || []); if (r.error) return Promise.resolve(fail(r.error));
         var p = r.npcs[0];
-        if (p.revealed) return Promise.resolve(fail(p.name + ' is already revealed.'));
+        /* IP3b (stage.players): the person is also brought on with the introduction, after the reveal's own write (host.introduce answers null while the
+           setting is off: then as before). ONE toast: revealed (or introducing), or revealed but not shown and why. Undo takes them off the iPad
+           while they are still up, and un-reveals them only if this cue revealed them. */
+        function bringOn(revealedHere) {
+          var unreveal = revealedHere ? function () { return host.reveal(p.id, false); } : null;
+          var iq = typeof host.introduce === 'function' ? host.introduce(p.id) : null;
+          if (!iq) return revealedHere ? done('Revealed ' + p.name + '.', unreveal) : fail(p.name + ' is already revealed.');
+          return Promise.resolve(iq).then(function (res) {
+            if (res && res.notShown) return revealedHere ? done(res.say, unreveal) : fail(res.say);
+            var down = res && res.shown && typeof res.shown.undo === 'function' ? res.shown.undo : null;
+            return done((revealedHere ? 'Revealed ' : 'Introducing ') + p.name + '.', function () { return Promise.resolve(down ? down() : null).then(function () { return unreveal ? unreveal() : null; }); });
+          });
+        }
+        if (p.revealed) return Promise.resolve(bringOn(false));
         /* the GM is asked first (a spoken cue can mishear a name); only then does it fire, and the usual Undo follows the confirm */
         return confirmToast('Reveal ' + p.name + ' to the iPad?', 'Reveal').then(function (yes) {
           if (!yes) { hide(); return { ok: false, say: '' }; }
-          return Promise.resolve(host.reveal(p.id, true)).then(function () { return done('Revealed ' + p.name + '.', function () { return host.reveal(p.id, false); }); },
+          return Promise.resolve(host.reveal(p.id, true)).then(function () { return bringOn(true); },
             function () { return fail('Could not reveal ' + p.name + '.'); });
         });
       },
