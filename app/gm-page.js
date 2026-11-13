@@ -291,6 +291,7 @@
     var reveal = revealEntries(map);       /* the bands, and "room:<name>" for each room opened on its own (the kit's 0.9 reveal) */
     var o = mapOpts(map, 'player', reveal, P.IPAD_MAP), o0 = o;
     o = scenePlayer(o, roll, reveal, map, tk);       /* MK1 (map.fill, map.people, map.lights, map.room): the scene through its one door; off, o itself */
+    if (o.layout === 'stage' && p2()) o = Object.assign({}, o, { legend: false });      /* IP2 R3 (stage.players): the stage layout's key strip (the ways in) does not go to the players; the tags on the drawing stay */
     /* M3: the crew markers and visible pinned clocks of the run (tk = { tokens, hide }, from playerTokens) go through tokenScreen here,
        the one door; with none left, `o` is exactly what it was before tokens existed (no `tokens` key at all) */
     var tkb = sceneBare(tk, o), scr = isObj(tkb) ? tokenScreen(tkb.tokens, roll, reveal, tkb.hide) : { tokens: [], refused: [] };      /* MK2: tkb is tk unless people are drawn */
@@ -4290,6 +4291,7 @@
     Promise.resolve().then(function () { return job.g.setDisplay(body); }).then(function (r) {
       DQ.busy = null;
       if (body.kind !== 'dark' && S && S.b17 && S.b17.stage && typeof S.b17.stage.unblank === 'function') S.b17.stage.unblank();     /* N3: anything but the dark on the iPad ends Blank */
+      if (body.kind === 'npc' && body.npcId) p2Card(body.npcId);      /* IP2 (stage.players): an NPC on the iPad (Show on iPad, an introduction) opens their card here */
       try { if (job.opts.done) job.opts.done(r || {}); } catch (e) {}
       noteShown(job.d, job.opts); job.res(r); pumpDisplay(); paintLive();
     }, function (e) {
@@ -4857,6 +4859,7 @@
     if (!showCtl && W.B68Show) {
       showCtl = W.B68Show.make({ send: patchAmbient, toast: toast });
       var sendShow = showCtl.show;   /* 4.7: a ring that reached the iPad also rings the practical speaker (gm/phone.js; off unless room.phone is on) */
+      var p2Show = sendShow; sendShow = function (kind, payload) { var pr = p2Show.apply(showCtl, arguments); if (kind === 'rolodex' && isObj(payload) && Array.isArray(payload.npcIds) && payload.npcIds.length) Promise.resolve(pr).then(function (r) { if (r != null) p2Card(payload.npcIds[0]); }); return pr; };      /* IP2: an Introduce beat (the button or the cue) opens the first NPC's card */
       showCtl.show = function (kind) { var pr = sendShow.apply(showCtl, arguments); if (kind === 'ring') Promise.resolve(pr).then(function (r) { var rd = r !== null ? rdInst() : null; if (rd) rd.onShow(kind); }); return pr; };
     }
     return showCtl;
@@ -5086,6 +5089,24 @@
      The logic is in gm/stamp.js and gm/cue-grammar.js; this is the seam they are given. Every switch is read live from the state document, so with all three off
      nothing here draws, registers a cue word or writes. */
   function b09On(id) { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, id)); }
+  /* IP2 (stage.players): the players' screen's GM side (gm/players-screen.js); off, p2() is null and every branch above and below takes the old path */
+  function p2() { return b09On('stage.players') && W.B68GmPlayersScreen ? W.B68GmPlayersScreen : null; }
+  function p2Ambient(p) {
+    var M = p2(); if (!M) return patchAmbient(p);
+    return M.scene({ patch: patchAmbient, shown: function () { return isObj(AM.shown) ? str(AM.shown.kind) : ''; }, current: function () { return isObj(AM.doc) ? { mode: AM.doc.mode, scene: AM.doc.scene } : null; },
+      blank: function () { return pushDisplay({ kind: 'blank' }); }, label: function (id) { var x = P.IPAD_SCENES.filter(function (y) { return y.id === id; })[0]; return x ? x.label : ''; }, toast: toast }, p);
+  }
+  function p2Card(id) {
+    var M = p2(), me = S; if (!M || !me) return;
+    M.openCard({ doc: document, npc: function (x) { return isObj(me.npcs) ? me.npcs[x] : null; }, rv: function () { return S === me && me.rv && me.rvBox && me.rvBox.isConnected ? me.rv : null; },
+      cast: function (x) { if (S !== me) return; me.npcCardOpen = x; renderNpcs(); } }, id);
+  }
+  function p2NotesSrc(names) {
+    var M = p2(); if (!M || !S || !isObj(S.npcs)) return '';
+    var want = [].concat(names).map(function (x) { return str(x).toLowerCase().trim(); }).filter(Boolean);
+    var id = Object.keys(S.npcs).filter(function (k) { var d = S.npcs[k]; return isObj(d) && [d.name].concat(d.alias || []).some(function (n) { return want.indexOf(str(n).toLowerCase().trim()) >= 0; }); })[0];
+    return id ? M.notesMd(S.npcs[id]) : '';
+  }
   function b09Layer(me, path, value) {
     var sh = shows(); if (!sh) return Promise.resolve(null);
     return sh.layer(path, value).then(function (r) { if (r !== null && S === me) { me.b09.layers[path] = value; } return r; });
@@ -5516,7 +5537,7 @@
     if (h) { st = Object.assign({}, st, { heard: h }); setTimeout(function () { if (S !== me) return; var s2 = ballDoc(rs.name), h2 = runHeard(rs, s2, +s2.t); if (h2) ballSet(rs.name, { heard: h2 }, true); }, 0); }
     var rn = runRoomNotes(), rooms = {};
     if (rn && isObj(rn.byRoom)) (Array.isArray(roll.rooms) ? roll.rooms : []).forEach(function (r) { var n = isObj(r) ? str(r.name) : '', e = n && isObj(rn.byRoom[n]) ? rn.byRoom[n] : null; if (e) rooms[n] = { costume: typeof e.costume === 'string' ? e.costume : null, say: (Array.isArray(e.say) ? e.say : []).filter(function (x) { return typeof x === 'string'; }) }; });
-    return { play: play, state: st, clocks: tableClocks(), pcs: pcs, open: open, rooms: rooms, phoneCards: phoneCardsOn(),
+    return { play: play, state: st, clocks: tableClocks(), pcs: pcs, open: open, rooms: rooms, phoneCards: phoneCardsOn(), players: b09On('stage.players'),
       deny: function () { return { names: tokenHidden(roll, reveal, []).concat(hiddenSecretNames()), secrets: (Array.isArray(play.secret) ? play.secret : []).filter(function (x) { return typeof x === 'string'; }) }; } };
   }
   /* an unrevealed NPC whose name or alias is this one */
@@ -6792,25 +6813,7 @@
     if (introOn()) { W.B68GmIntro.introduce(id, introHost()); return; }      /* IP3 (stage.players): Show on iPad with a title card first (gm/players-intro.js) */
     if (!sh) { toast('Introduce needs the hosted app.', true); return; }
     if (d.revealed !== true) { toast('Reveal ' + (d.name || 'them') + ' first.', true); return; }
-    sh.show('rolodex', { npcIds: [id] }, { key: 'intro-' + id, ms: 20000 }).then(function (r) { if (r !== null && r !== undefined) { toast('Introducing ' + (d.name || 'them') + '.'); p2Card(id); } }, function () { toast('Could not introduce them on the iPad.', true); });
-  }
-  /* IP2 (stage.players): the players' screen's GM side (gm/players-screen.js); off, p2() is null and every branch above and below takes the old path */
-  function p2() { return b09On('stage.players') && W.B68GmPlayersScreen ? W.B68GmPlayersScreen : null; }
-  function p2Ambient(p) {
-    var M = p2(); if (!M) return patchAmbient(p);
-    return M.scene({ patch: patchAmbient, shown: function () { return isObj(AM.shown) ? str(AM.shown.kind) : ''; }, current: function () { return isObj(AM.doc) ? { mode: AM.doc.mode, scene: AM.doc.scene } : null; },
-      blank: function () { return pushDisplay({ kind: 'blank' }); }, label: function (id) { var x = P.IPAD_SCENES.filter(function (y) { return y.id === id; })[0]; return x ? x.label : ''; }, toast: toast }, p);
-  }
-  function p2Card(id) {
-    var M = p2(), me = S; if (!M || !me) return;
-    M.openCard({ doc: document, npc: function (x) { return isObj(me.npcs) ? me.npcs[x] : null; }, rv: function () { return S === me && me.rv && me.rvBox && me.rvBox.isConnected ? me.rv : null; },
-      cast: function (x) { if (S !== me) return; me.npcCardOpen = x; renderNpcs(); } }, id);
-  }
-  function p2NotesSrc(names) {
-    var M = p2(); if (!M || !S || !isObj(S.npcs)) return '';
-    var want = [].concat(names).map(function (x) { return str(x).toLowerCase().trim(); }).filter(Boolean);
-    var id = Object.keys(S.npcs).filter(function (k) { var d = S.npcs[k]; return isObj(d) && [d.name].concat(d.alias || []).some(function (n) { return want.indexOf(str(n).toLowerCase().trim()) >= 0; }); })[0];
-    return id ? M.notesMd(S.npcs[id]) : '';
+    sh.show('rolodex', { npcIds: [id] }, { key: 'intro-' + id, ms: 20000 }).then(function (r) { if (r !== null && r !== undefined) toast('Introducing ' + (d.name || 'them') + '.'); }, function () { toast('Could not introduce them on the iPad.', true); });
   }
   /* IP3: the introduction's switch and what gm/players-intro.js needs of this page (the reveal is Show on iPad's, the confirm is asked()) */
   function introOn() { return !!W.B68GmIntro && b09On('stage.players'); }
@@ -6830,7 +6833,7 @@
       pre = Promise.resolve().then(function () { return ref.update({ revealed: true, firstSeen: d.firstSeen || nowIso() }); });
     }
     pre.then(function () { return pushDisplay({ kind: 'npc', npcId: id, title: str(d.name).slice(0, 2000) }); })
-      .then(function () { toast('On the iPad: ' + (d.name || 'the NPC') + '.'); p2Card(id); }, function (e) { if (!e || !e.superseded) toast('Could not show ' + (d.name || 'them') + ' on the iPad: ' + errText(e), true); });
+      .then(function () { toast('On the iPad: ' + (d.name || 'the NPC') + '.'); }, function (e) { if (!e || !e.superseded) toast('Could not show ' + (d.name || 'them') + ' on the iPad: ' + errText(e), true); });
   }
 
   /* ---------- the Prep tab (gm/prep.js; GM.md "Prep"): the prep notes from the pack, ticks and beats in the GM state ---------- */

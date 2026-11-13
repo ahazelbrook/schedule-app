@@ -17,7 +17,7 @@
           host = { doc, before (the node the dials go in front of), watch: [nodes whose children change what is up], kind() -> the display kind up,
                    dark() -> bool, mode() -> the hard start's scene mode, beat() -> bool (a brief beat is up), ambient() -> the scene playing or null,
                    alarm() -> the band's alarm { name, size, filled } or null, still() -> bool (no swell) }
-        Pure = { clean(list), alarmId(clocks, alarm), pick(clocks, order, alarmId), rises(prev, next), wedges(size), visible(state), MAX } */
+        Pure = { clean(list), alarmId(clocks, alarm), paper(fill), stale(heard, now), pick(clocks, order, alarmId), rises(prev, next), wedges(size), visible(state), MAX } */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -64,6 +64,7 @@
      so a clock of that name, else the ONE visible clock of the alarm's size and fill; '' when it cannot be told */
   Pure.alarmId = function (clocks, alarm) {
     if (!isObj(alarm)) return '';
+    if (typeof alarm.id === 'string' && alarm.id) { for (var j = 0; j < clocks.length; j++) if (clocks[j].id === alarm.id) return clocks[j].id; return ''; }      /* R4: the band names its clock: only that one */
     var nm = txt(alarm.name, NAME_MAX).toLowerCase(), i;
     for (i = 0; i < clocks.length; i++) if (nm && clocks[i].name.toLowerCase() === nm) return clocks[i].id;
     var size = int(alarm.size, 0), filled = int(alarm.filled, -1), hits = clocks.filter(function (c) { return c.size === size && c.filled === filled; });
@@ -101,6 +102,15 @@
     return k === 'svg';
   };
 
+  /* the map sheet's own paper: the colour of the drawing's first rect, if it is a plain colour; else the display's paper token */
+  Pure.paper = function (fill) {
+    var f = typeof fill === 'string' ? fill.trim() : '';
+    return /^#[0-9a-fA-F]{3,8}$/.test(f) || /^rgba?\(\s*[\d.\s,%]+\)$/.test(f) ? f : 'var(--b68-paper, #f2ede1)';
+  };
+  /* the connection is worth a dot only after STALE_MS without an answer */
+  Pure.STALE_MS = 20000;
+  Pure.stale = function (heard, now) { return typeof heard === 'number' && typeof now === 'number' && now - heard > Pure.STALE_MS; };
+
   function attach(container, host) {
     host = host || {};
     var doc = host.doc || (container && container.ownerDocument) || (W && W.document);
@@ -109,7 +119,21 @@
     el.className = 'p2-dials'; el.setAttribute('aria-label', 'Clocks'); el.setAttribute('role', 'list'); el.hidden = true;
     if (host.before && host.before.parentNode === container) container.insertBefore(el, host.before); else container.appendChild(el);
     if (container.classList) container.classList.add('p2-screen');      /* the AUTO chip stands down: the autopilot sends nothing while this is on */
-    var dead = false, last = null, order = {}, tick = 0, sig = '', timers = [], mo = null, alarmKeep = '';
+    var dead = false, last = null, order = {}, tick = 0, sig = '', timers = [], mo = null, alarmKeep = '', heard = Date.now();
+    /* R2: the connection, as one small amber dot bottom left, only after 20 s without an answer (the status line's words and time stand down) */
+    var conn = doc.createElement('span'); conn.className = 'p2-conn'; conn.hidden = true; conn.setAttribute('role', 'img'); conn.setAttribute('aria-label', 'No connection');
+    container.appendChild(conn);
+    var connTick = setInterval(function () { if (!dead) { var st = Pure.stale(heard, Date.now()); if (conn.hidden === st) conn.hidden = !st; } }, 2000);
+    /* R1: a map stands on its own sheet's paper, edge to edge (the stage's ground is the drawing's paper, not black); undone on destroy */
+    function sheets() {
+      var maps = container.querySelectorAll ? container.querySelectorAll('.dp-stage.dp-map') : [];
+      for (var i = 0; i < maps.length; i++) {
+        var m = maps[i]; if (m.hasAttribute('data-p2-sheet')) continue;
+        var r = m.querySelector('.dp-map-frame svg > rect');
+        m.style.background = Pure.paper(r ? r.getAttribute('fill') : '');
+        m.setAttribute('data-p2-sheet', '');
+      }
+    }
     function call(fn, d) { try { return typeof fn === 'function' ? fn() : d; } catch (e) { return d; } }
     function later(fn, ms) { var id = setTimeout(function () { var i = timers.indexOf(id); if (i >= 0) timers.splice(i, 1); if (!dead) fn(); }, ms); timers.push(id); }
 
@@ -174,6 +198,7 @@
     /* what is up decides whether the dials are seen; hidden is a cut */
     function sync() {
       if (dead) return;
+      sheets();
       var vis = !!(last && last.length) && Pure.visible({ kind: call(host.kind, 'blank'), dark: call(host.dark, false), mode: call(host.mode, null), beat: call(host.beat, false), ambient: call(host.ambient, null) });
       if (el.hidden === vis) el.hidden = !vis;
     }
@@ -186,6 +211,7 @@
       el: el,
       clocks: function (list) {
         if (dead) return;
+        heard = Date.now(); if (!conn.hidden) conn.hidden = true;
         var next = Pure.clean(list), rises = Pure.rises(last, next);
         Object.keys(rises).forEach(function (id) { order[id] = ++tick; });
         last = next;
@@ -198,6 +224,9 @@
         if (mo) mo.disconnect();
         timers.splice(0).forEach(function (id) { clearTimeout(id); });
         if (el.parentNode) el.parentNode.removeChild(el);
+        clearInterval(connTick); if (conn.parentNode) conn.parentNode.removeChild(conn);
+        var maps = container.querySelectorAll ? container.querySelectorAll('[data-p2-sheet]') : [];
+        for (var i = 0; i < maps.length; i++) { maps[i].style.background = ''; maps[i].removeAttribute('data-p2-sheet'); }
         if (container.classList) container.classList.remove('p2-screen');
       }
     };

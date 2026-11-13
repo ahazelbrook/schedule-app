@@ -485,7 +485,7 @@ function cleanHud(h) {
       beats: whole(n.beats, 0, L.beats), start: whole(n.start, 0, L.beats), cur: whole(n.cur, 0, L.beats),
       marks: listOf(n.marks, L.marks, (m) => (isPlainObject(m) ? { i: whole(m.i, 0, L.beats), icon: cut(m.icon, L.str), text: cut(m.text, L.str) } : null)),
     } : null,
-    alarm: a ? { name: cut(a.name, L.str), size, filled: Math.min(whole(a.filled, 0, L.size), size), text: cut(a.text, L.str) } : null,
+    alarm: a ? { name: cut(a.name, L.str), size, filled: Math.min(whole(a.filled, 0, L.size), size), text: cut(a.text, L.str), ...(typeof a.id === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(a.id) ? { id: a.id } : {}) } : null,      // IP2 R4: the alarm's table clock id, only when sent
     crew: listOf(h.crew, L.crew, (c) => {
       if (!isPlainObject(c)) return null;
       const out = { name: cut(c.name, L.str), costume: cut(c.costume, L.str), icon: cut(c.icon, L.str) };

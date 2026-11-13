@@ -117,6 +117,34 @@ await test('GM: the Autopilot row says why, and only while on', () => {
   G.apLine(el, false); assert.equal(kids.length, 0);
 });
 
+await test('R4: the band\'s alarm names its table clock by id while stage.players is on (only then); the dials match by id, never by name or size when an id is there', async () => {
+  const fs = await import('node:fs');
+  const B = req(path.join(ROOT, 'app', 'gm', 'ball.js')), MP = req(path.join(ROOT, 'app', 'gm', 'mission-publish.js'));
+  const FX = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'pelican-play-v2.json'), 'utf8'));
+  const rooms = FX.zones.flatMap((z) => z.rooms), play = B.checkPlay(FX, rooms).play;
+  const state = { v: 2, site: 'The Pelican Rooms', start: 0, t: B.minuteOf('22:00', '21:00'), crew: {}, open: rooms };
+  const clocks = [{ id: 'c-look', name: 'Lookouts', size: 6, filled: 2 }, { id: 'c-fuse', name: play.alarm.clock, size: 6, filled: 2, hidden: false }];
+  const src = (players) => ({ play, state, clocks, pcs: [], open: rooms, players });
+  const off = MP.buildMission(B, src(false), 3), on = MP.buildMission(B, src(true), 3);
+  assert.ok(off && off.hud.alarm && !('id' in off.hud.alarm), 'off: the hud as before');
+  assert.equal(on.hud.alarm.id, 'c-fuse');
+  const hid = MP.buildMission(B, { ...src(true), clocks: [{ id: 'c-fuse', name: play.alarm.clock, size: 6, filled: 2, hidden: true }] }, 3);
+  assert.ok(!hid.hud.alarm, 'a hidden alarm clock is no alarm at all');
+  const P2 = P.clean(clocks);
+  assert.equal(P.alarmId(P2, { name: 'Alarm', size: 6, filled: 2, id: 'c-fuse' }), 'c-fuse', 'two clocks of the same size and fill: the id tells');
+  assert.equal(P.alarmId(P2, { name: 'Lookouts', size: 6, filled: 2, id: 'gone' }), '', 'an id that is not up: no alarm, never a guess by name');
+  assert.equal(P.alarmId(P2, { name: 'Alarm', size: 6, filled: 2 }), '', 'an old hud: the fallback, and a tie tells nothing');
+  const { cleanMission } = await import('../../functions/_lib/campaign.js');
+  assert.equal(cleanMission({ seq: 1, hud: { alarm: { name: 'Alarm', size: 6, filled: 2, id: 'c-fuse' } } }).hud.alarm.id, 'c-fuse', 'the server keeps the id');
+  assert.ok(!('id' in cleanMission({ seq: 1, hud: { alarm: { name: 'Alarm', size: 6, filled: 2, id: 'bad id!' } } }).hud.alarm), 'a bad id is dropped');
+  assert.ok(!('id' in cleanMission({ seq: 1, hud: { alarm: { name: 'Alarm', size: 6, filled: 2 } } }).hud.alarm), 'none sent, none stored');
+});
+await test('R1, R2: the sheet\'s paper from its first rect (a plain colour, else the paper token); the dot after 20 s without an answer', () => {
+  assert.equal(P.paper('#f2ede1'), '#f2ede1'); assert.equal(P.paper('rgb(242, 237, 225)'), 'rgb(242, 237, 225)');
+  assert.match(P.paper('url(#grain)'), /--b68-paper/); assert.match(P.paper(null), /--b68-paper/);
+  assert.equal(P.stale(1000, 21000), false); assert.equal(P.stale(1000, 21001), true); assert.equal(P.stale(undefined, 5), false);
+});
+
 /* ---------- the Worker ---------- */
 const DISPLAY = { me: { role: 'display', email: 'table@example.test' } };
 async function freshDb() {

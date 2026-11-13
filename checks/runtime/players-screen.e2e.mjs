@@ -173,6 +173,14 @@ try {
     check(bad.length === 0, 'on' + tag + ': none of the time, label, Now/Next, ways or crew in the display DOM: ' + (bad.join(', ') || 'clean') + ' | ' + t.slice(0, 200));
     const fr = await ipad.evaluate(() => { const m = document.querySelector('.dp-stage.dp-map'), r = m && m.getBoundingClientRect(); return r ? { l: r.left, t: r.top, r: innerWidth - r.right, b: innerHeight - r.bottom } : null; });
     check(!!fr && Math.max(Math.abs(fr.l), Math.abs(fr.t), Math.abs(fr.r), Math.abs(fr.b)) <= 1, 'on' + tag + ': the map frame reaches every edge: ' + JSON.stringify(fr));
+    /* R1: one sheet edge to edge: the stage's ground is the drawing's paper and the drawing's frame reaches the foot (no bar kept for the status line) */
+    const sheet = await ipad.evaluate(() => { const m = [...document.querySelectorAll('.dp-stage.dp-map')].pop(), f = m.querySelector('.dp-map-frame'), r = m.querySelector('.dp-map-frame svg > rect');
+      const fill = r ? r.getAttribute('fill') : '', probe = document.createElement('i'); probe.style.color = fill; document.body.appendChild(probe); const want = getComputedStyle(probe).color; probe.remove();
+      return { bg: getComputedStyle(m).backgroundColor, want, frameBottom: Math.round(innerHeight - f.getBoundingClientRect().bottom) }; });
+    check(sheet.bg === sheet.want && !/rgba?\(10, 9, 8/.test(sheet.bg) && sheet.frameBottom === 0, 'on' + tag + ': the map stands on its own paper edge to edge (ground ' + sheet.bg + ', the sheet ' + sheet.want + ', the frame ' + sheet.frameBottom + ' px off the foot)');
+    /* R2: no wall-clock status line while the page is healthy */
+    const stt = await ipad.evaluate(() => ({ status: getComputedStyle(document.querySelector('.dp-status')).visibility, conn: !!document.querySelector('.p2-conn:not([hidden])') }));
+    check(stt.status === 'hidden' && !stt.conn, 'on' + tag + ': no status line and no connection dot while the page is healthy: ' + JSON.stringify(stt));
     const ds = await ipad.evaluate(DIALS);
     check(ds.length === 4 && !ds.some((d) => /GM-ONLY/.test(d.name)) && !ds.some((d) => d.name === 'House alarm'), 'on' + tag + ': four dials, the visible clocks only (the hidden alarm and the GM-ONLY- one never): ' + ds.map((d) => d.name).join(', '));
     const H = await ipad.evaluate(() => innerHeight);
@@ -211,6 +219,17 @@ try {
   const s3 = await swellSeen('The crowd turns');
   check(!!s3 && s3.tick === 'flash', 'reduced motion: no swell, the new segment flashes: ' + JSON.stringify(s3));
   await ipad.emulateMedia({ reducedMotion: 'no-preference' });
+
+  /* R2: the server goes quiet: after 20 s one small amber dot bottom left (no words, no time); back, it goes */
+  await ipad.route('**/api/gm/display**', (r) => r.abort());
+  const t20 = Date.now();
+  const dot = await until(() => ipad.evaluate(() => { const c = document.querySelector('.p2-conn:not([hidden])'); if (!c) return null; const r = c.getBoundingClientRect(); return { l: Math.round(r.left), b: Math.round(innerHeight - r.bottom), w: Math.round(r.width), text: c.textContent, bg: getComputedStyle(c).backgroundColor }; }), 40000, 500);
+  const quietMs = Date.now() - t20;
+  check(!!dot && quietMs >= 19000 && dot.l < 40 && dot.b < 40 && dot.w <= 24 && !dot.text, 'R2: no answer for 20 s: one small dot bottom left, no words (' + quietMs + ' ms; ' + JSON.stringify(dot) + ')');
+  check(await ipad.evaluate(() => getComputedStyle(document.querySelector('.dp-status')).visibility === 'hidden'), 'R2: the status line stays down while the dot shows');
+  if (SHOTS && dot) await ipad.screenshot({ path: path.join(SHOTS, 'R2-stale-dot-1180.png') });
+  await ipad.unroute('**/api/gm/display**');
+  check(!!(await until(() => ipad.evaluate(() => !document.querySelector('.p2-conn:not([hidden])')), 70000, 500)), 'R2: the connection back, the dot goes');
 
   /* not over Blank */
   await api('PUT', '/gm/display', { kind: 'dark' });
@@ -276,6 +295,36 @@ try {
     await page.click('.rv-npcpop [data-rv="npcx"]').catch(() => {});
     await sleep(2500);
     check(!(await page.$('.rv-npcpop')), 'on: the card stays closed once the GM closes it while the spotlight is held');
+
+    /* R3: the stage layout (map.fill on): the players' copy goes without its key strip (the ways-in chips); the tags on the drawing stay. Classic keeps the strip */
+    const fillShow = async () => {
+      await page.reload(); await page.waitForSelector('#gm-buttons .gm-btn', { state: 'attached', timeout: 30000 });
+      await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+      await page.keyboard.press('g'); await page.waitForSelector('.rv-head', { timeout: 15000 });
+      const bd = await page.$('#gm-runv [data-rv="view"][data-v="board"]'); if (bd) await bd.click(); await page.waitForTimeout(600);
+      const dn = await page.$('#gm-runv [data-site="ipad-down"]'); if (dn) { await dn.click(); await page.waitForTimeout(800); }
+      const seq0 = (await api('GET', '/gm/display')).json.seq;
+      await page.click('#gm-runv [data-site="ipad"]');
+      return until(async () => { const j = (await api('GET', '/gm/display')).json; return j && j.seq !== seq0 && j.display && j.display.kind === 'svg' ? j.display.svg : null; }, 15000);
+    };
+    const stageKit = await page.evaluate(() => { try { return window.B68Map.options().layouts.indexOf('stage') >= 0; } catch (e) { return false; } });
+    await setting({ 'stage.players': true, 'map.fill': true });
+    const svgOn = await fillShow();
+    check(!!svgOn && stageKit, 'R3: map.fill on, the stage layout drawn for the shared screen (kit lists stage: ' + stageKit + ')');
+    check(!!svgOn && !/class="map-key"/.test(svgOn) && /FRONT/i.test(svgOn), 'R3: on, the players\' copy has no key strip (no ways-in chips), the FRONT tag on the drawing stays');
+    await ipad.waitForSelector('.dp-stage.dp-map', { timeout: 20000 });
+    const d3 = await ipad.evaluate(() => { const d = document.querySelector('.p2-dials:not([hidden])'); if (!d) return null; const r = d.getBoundingClientRect(); const hits = [...document.querySelectorAll('.dp-stage.dp-map svg text')].filter((t) => { const b = t.getBoundingClientRect(); return b.width && !(b.left > r.right || b.right < r.left || b.top > r.bottom || b.bottom < r.top); }).map((t) => t.textContent); return hits; });
+    check(Array.isArray(d3) && d3.length === 0, 'R3: the dials sit over no label of the stage-layout map: ' + JSON.stringify(d3));
+    if (SHOTS) for (const [w, h] of [[1920, 1080], [1536, 864], [1180, 820], [1024, 768]]) { await ipad.setViewportSize({ width: w, height: h }); await sleep(7000); await ipad.screenshot({ path: path.join(SHOTS, 'R3-fill-on-strip-gone-' + w + '.png') }); }
+    await ipad.setViewportSize({ width: 1180, height: 820 });
+    await setting({ 'stage.players': false, 'map.fill': true });
+    const svgOff = await fillShow();
+    check(!!svgOff && /class="map-key"/.test(svgOff), 'R3: Classic with map.fill on keeps the key strip as today');
+    await setting({ 'stage.players': true, 'map.fill': false });
+    const svgKeyed = await fillShow();
+    check(!!svgKeyed && /class="map-key"/.test(svgKeyed) && /THE WAY IN/i.test(svgKeyed), 'R3: on with map.fill off (the keyed layout): the key stays as today');
+    if (SHOTS) for (const [w, h] of [[1920, 1080], [1180, 820]]) { await ipad.setViewportSize({ width: w, height: h }); await sleep(5000); await ipad.screenshot({ path: path.join(SHOTS, 'R3-fill-off-keyed-' + w + '.png') }); }
+    await ipad.setViewportSize({ width: 1180, height: 820 });
   }
 
   check(errors.length === 0, 'no page errors: ' + errors.join(' | '));
