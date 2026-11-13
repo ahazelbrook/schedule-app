@@ -67,7 +67,10 @@
     'kit-phone': ['sheet/kit/tabs.css', 'sheet/kit/tabs.js'],
     'night-who': ['ui/desk-who.css', 'gm/kit/who.js'],
     'blade-pitches': ['gm/kit/blade.js'],
-    'kit-lookbook': ['display/kit/stage.css', 'display/kit/band.css', 'display/kit/roll.css', 'display/kit/scene.css', 'display/kit/stage.js', 'display/kit/band.js', 'display/kit/roll.js', 'display/kit/scene.js']
+    'kit-lookbook': ['display/kit/stage.css', 'display/kit/band.css', 'display/kit/roll.css', 'display/kit/scene.css', 'display/kit/stage.js', 'display/kit/band.js', 'display/kit/roll.js', 'display/kit/scene.js'],
+    /* MK1: the map kit's new options (gm/scene-state.js), fetched by the GM page only while one of map.fill, map.people, map.lights or map.room is on,
+       so with all four off the page makes the requests it always made */
+    'map-scene': ['gm/scene-state.js']
   };
   /* every stylesheet, in cascade order (index.html's order from before lazy loading); the kit's sheets come after every old one */
   var CSS_ORDER = ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', 'gm.css', 'prep.css', 'display.css', 'tokens.css', 'display/shows.css', 'display/hardstart.css', 'display/onair.css', 'display/aftermath.css', 'display/board.css', 'display/title-card.css', 'display/castphoto.css', 'display/lair.css', 'display/face-cards.css', 'display/montage.css',
@@ -75,7 +78,7 @@
     'display/kit/stage.css', 'display/kit/band.css', 'display/kit/roll.css', 'display/kit/scene.css', 'sheet/kit/tabs.css'];
 
   var DEPS = { gm: ['figures'], display: ['figures'], lookbook: ['figures'],   /* bundles that need another one in first */
-    'kit-desk': ['kit-ui'], 'kit-stage': ['kit-ui'], 'kit-phone': ['kit-ui'], 'night-who': ['kit-ui'], 'blade-pitches': ['kit-ui'], 'kit-lookbook': ['kit-ui'] };
+    'kit-desk': ['kit-ui'], 'kit-stage': ['kit-ui'], 'kit-phone': ['kit-ui'], 'night-who': ['kit-ui'], 'blade-pitches': ['kit-ui'], 'kit-lookbook': ['kit-ui'], 'map-scene': ['gm'] };
   var loading = {};            /* file -> Promise (resolved: loaded; a failure is forgotten so it can be tried again) */
   var loaded = {};             /* file -> true once its load event fired (the core: index.html's own tags) */
   BUNDLES.core.forEach(function (f) { loaded[f] = true; loading[f] = Promise.resolve(f); });

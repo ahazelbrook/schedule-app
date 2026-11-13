@@ -264,6 +264,9 @@
       var tb = sf ? sf.querySelector('button') : null;
       h += tb ? '<p class="rv-open krv-open">' + redress(tb, { rank: 'standard' }) + '</p>' : '<p class="rv-open krv-hint">' + esc(sf ? str(sf.textContent).trim() : '') + '</p>';
     }
+    /* MK1: the host's optional roomTools (Cut to room, while map.room is on), its button drawn again as a part, its hook kept */
+    var rtx = ''; try { rtx = typeof host.roomTools === 'function' ? str(host.roomTools(name)) : ''; } catch (e) { rtx = ''; }
+    var rtf = rtx ? parse(rtx) : null, rtb = rtf ? rtf.querySelector('button') : null; if (rtb) h += '<p class="rv-open krv-open">' + redress(rtb, { rank: 'standard' }) + '</p>';
     var wl = []; try { wl = typeof host.roomWrong === 'function' ? list(host.roomWrong(name)) : []; } catch (e) { wl = []; }
     if (wl.length) h += '<div class="rv-wrong krv-wrong">' + wl.map(function (l) { return '<p><span class="krv-lab">If it goes wrong</span> <span class="rv-wrongt">' + esc(l) + '</span> ' + U.button({ label: '→ the Roll', rank: 'quiet', cls: 'rv-btn sm rv-toroll', data: { site: 'threat', text: l }, title: 'Put this line in the Roll’s If it goes wrong line' }) + '</p>'; }).join('') + '</div>';
     h += '<p class="rv-rmpcs krv-pcs"><span class="krv-lab">PCs</span> ' + (c.pcs.length ? esc(c.pcs.map(function (p) { return p.name; }).join(', ')) : '<span class="krv-dim">none</span>') + '</p>';

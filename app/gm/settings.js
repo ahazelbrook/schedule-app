@@ -74,7 +74,20 @@
       said: { 'false': 'Start the night: off.', 'true': 'Start the night: on.' } },
     { key: 'blade.pitches', label: 'Pitches', what: 'Blade’s ideas while a night runs: the Stall and Meanwhile cards as they were, or up to three pitches at a time.',
       options: [{ v: false, label: 'Stall and Meanwhile' }, { v: true, label: 'Pitches' }],
-      said: { 'false': 'Pitches: Stall and Meanwhile.', 'true': 'Pitches: on.' } }
+      said: { 'false': 'Pitches: Stall and Meanwhile.', 'true': 'Pitches: on.' } },
+    /* the map kit's new options (MK1, 13/11): four GM settings, each off until chosen */
+    { key: 'map.fill', label: 'Map fills the screen', what: 'The players’ map on the shared screen: drawn as before, or filling the screen with the key as a strip (choose iPad or TV beside the map).',
+      options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
+      said: { 'false': 'Map fills the screen: off.', 'true': 'Map fills the screen: on.' } },
+    { key: 'map.people', label: 'People on the map', what: 'Figures on the map: the crew and the cast on this screen, the crew alone on the shared screen, and a crowd that suits the place.',
+      options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
+      said: { 'false': 'People on the map: off.', 'true': 'People on the map: on.' } },
+    { key: 'map.lights', label: 'Room lights', what: 'A False dawn event lights its room on the map while it runs.',
+      options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
+      said: { 'false': 'Room lights: off.', 'true': 'Room lights: on.' } },
+    { key: 'map.room', label: 'Cut to the room', what: 'In the Run view, Cut to room puts one room the players know on the shared screen as a stage set; Back to the map undoes it.',
+      options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
+      said: { 'false': 'Cut to the room: off.', 'true': 'Cut to the room: on.' } }
   ];
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
