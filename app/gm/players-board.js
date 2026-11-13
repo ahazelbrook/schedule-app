@@ -230,6 +230,7 @@
   }
   /* set the score scene from the pins (and the bands and rooms ticked now); one at a time, the newest wins */
   function sync(host, ask) {
+    if (!ready(host)) { st.pending = true; return Promise.resolve(null); }      /* the stored score not read yet: wait for it (follow writes it then) */
     if (st.busy) { st.again = true; return Promise.resolve(null); }
     var s = state(host); if (!s.site) return Promise.resolve(null);
     /* the bands the iPad shows stay as they are until the GM ticks a band or opens a room on this page (a page reloaded or a roll replayed starts at
@@ -278,8 +279,14 @@
   function onBoard(host, s) { var sc = host.score(); return !!(isObj(sc) && s.site && siteName(sc.name) === s.site); }
 
   /* the score scene follows a change while this site's board is up; while the page is busy with the iPad it looks again shortly (at most 20 times) */
+  /* the page has read the stored score scene and the cast (host.ready); until then nothing is written and no starting point is taken */
+  function ready(host) { return typeof host.ready !== 'function' || !!host.ready(); }
+  function base(host) { var s0 = state(host); st.last = s0.sig; st.bands = s0.shownKey; st.roll = host.roll(); }
   function follow(host, n) {
-    if (rolled(host)) return;
+    if (!ready(host)) return;
+    if (!st.based) { base(host); st.based = true; }      /* the first look once everything is read: the starting point, no write (whatever was noted before it) */
+    else if (rolled(host) && !st.pending) return;
+    if (st.pending) { st.pending = false; sync(host, false); return; }      /* a pin made before the stored score was read: written now, at the stored bands */
     var s = state(host);
     if (s.sig === st.last || !onBoard(host, s)) return;
     if (typeof host.busy === 'function' && host.busy()) { if (n < 20) setTimeout(function () { follow(host, n + 1); }, 400); return; }
@@ -292,8 +299,7 @@
     var slot = box && box.querySelector ? box.querySelector('[data-pb-slot]') : null;
     var s = state(host);
     /* keep the score scene in step: a pin, a reveal or a face changed since this page last set it, while this site's board is the score scene */
-    if (st.last === null || rolled(host)) { st.last = s.sig; st.roll = host.roll(); st.bands = s.shownKey; }      /* a new page, or a roll replayed (its reveal reset): the stored board stands until the GM changes something */
-    else follow(host, 0);
+    follow(host, 0);      /* a new page, or a roll replayed (its reveal reset): the stored board stands until the GM changes something */
     if (!slot) return;
     var doc = slot.ownerDocument, root = el(doc, 'section', { 'class': 'gm-pboard', 'aria-label': 'Board' });
     root.appendChild(el(doc, 'h4', {}, 'Board'));
@@ -370,7 +376,7 @@
     var back = st.focus && lost ? slot.querySelector('[data-pb="' + st.focus + '"]') : null;
     if (back) { back.focus(); if (back.getAttribute('data-pb') === 'text' && back.setSelectionRange) { var c0 = Math.min(st.caret >= 0 ? st.caret : back.value.length, back.value.length); back.setSelectionRange(c0, c0); } }
   }
-  function reset() { st.last = null; st.busy = false; st.again = false; st.form = { kind: 'line' }; st.focus = ''; st.caret = -1; st.refused = []; st.plated = false; st.roll = undefined; st.bands = undefined; }
+  function reset() { st.last = null; st.busy = false; st.again = false; st.form = { kind: 'line' }; st.focus = ''; st.caret = -1; st.refused = []; st.plated = false; st.roll = undefined; st.bands = undefined; st.pending = false; st.based = false; }
 
   return { KEY: KEY, KINDS: KINDS, MAX: MAX, FACES_MAX: FACES_MAX, TEXT_MAX: TEXT_MAX, SITES_MAX: SITES_MAX, WORD: WORD,
     clean: clean, sitesOf: sitesOf, pinsOf: pinsOf, patchFor: patchFor, wrap: wrap, fitText: fitText, cardSvg: cardSvg, faceSvg: faceSvg, known: known,

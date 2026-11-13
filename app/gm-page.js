@@ -4829,7 +4829,7 @@
     var fl0 = ipadLayerSet('scene.filter') ? ipadLayers().scene.filter : null;
     AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null; AM.loaded = true; AM.error = '';
     crSeen(); apSync(); hsSync();
-    if (pbOn()) pbRevealLate();      /* IP6b: a reload that replayed the roll before this document came */
+    if (pbOn()) { pbRevealLate(); W.B68GmPlayersBoard.follow(pbHost()); }      /* IP6b: a reload that replayed the roll before this document came; IP6c: the board's starting point (or a pin that waited) */
     if (Array.isArray(r.doc.polaroids) || (S && S.who)) whoPolaroids();      /* KS12.5: a stored list follows the session (or goes, with night.who off), whichever read lands first */
     /* F4: the site's Flashback / Back follows a filter it learns of here (a reload mid-flashback draws the toolbar before this GET lands) */
     if ((ipadLayerSet('scene.filter') ? ipadLayers().scene.filter : null) !== fl0 && S) { var fb = S.b19 && S.b19.flashback; if (fb && typeof fb.refresh === 'function') fb.refresh(); else siteChanged(); }
@@ -6670,7 +6670,7 @@
       S.npcUnsub = db.collection('npcs').onSnapshot(function (snap) {
         if (S !== me) return;
         var m = {}; (snap && snap.docs || []).forEach(function (d) { var x = d && typeof d.data === 'function' ? d.data() : null; if (isObj(x)) m[d.id] = x; });
-        me.npcs = m; renderNpcs(); renderRail(); apSubjects(); liveTokens(); hsSync(); if (pbOn()) W.B68GmPlayersBoard.follow(pbHost());        /* VV8: revealing (or filing) an NPC can show or hide the target's marker; F3: the hard start's faces */
+        me.npcs = m; me.npcsIn = true; renderNpcs(); renderRail(); apSubjects(); liveTokens(); hsSync(); if (pbOn()) W.B68GmPlayersBoard.follow(pbHost());        /* VV8: revealing (or filing) an NPC can show or hide the target's marker; F3: the hard start's faces */
       }, function () {});
     } catch (e) { S.npcUnsub = null; }
   }
@@ -6888,7 +6888,8 @@
       rooms: function () { var seen = pbSeen(); return (S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : []).filter(function (r) { return isObj(r) && typeof r.name === 'string' && r.name; }).map(function (r) { return { name: r.name, shown: roomShown(r, seen) }; }); },
       scan: function (text) { var names = P.tokenHidden(S.locRoll, pbSeen(), pbHide()); return names.filter(function (n) { return namesHit(text, [n]); }); },
       patch: function (p) { return patch(p); }, score: function () { return AM.doc && isObj(AM.doc.score) ? AM.doc.score : null; }, busy: function () { return AM.busy > 0; },
-      figures: function () { return W.B68Figure || null; }, toast: toast, setScore: pbSetScore, showBoard: pbShowBoard, hide: pbHide };
+      figures: function () { return W.B68Figure || null; }, toast: toast, setScore: pbSetScore, showBoard: pbShowBoard, hide: pbHide,
+      ready: function () { return !!(S && AM.loaded && (S.npcsIn || !(S.api && S.api.db && S.api.db()))); } };      /* IP6c: the stored score scene and the cast are read (or this page has no cast to wait for) */
   }
   function pbSetScore(list, ask, keep) {
     if (!S || !S.locRoll) { toast('Roll a location first.', true); return Promise.resolve(null); }
