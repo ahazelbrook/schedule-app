@@ -66,6 +66,26 @@ await test('every registry scene has its file, and its iframe URL has no .html (
   }
 });
 
+await test('IP5.2: the Opening credits name their episode file (gitignored, local only): its URL has no .html, a 2xx is yes, a 4xx no, anything else no answer', async () => {
+  const { createRequire } = await import('node:module');
+  const P = createRequire(import.meta.url)(path.join(ROOT, 'app', 'display-page.js')).Pure;
+  const sc = P.ambientScene('credits');
+  ok(sc && sc.episode === 'episode-credits.html' && sc.file === 'opening-credits.html' && sc.music === true, 'the registry entry');
+  ok(P.ambientUrl('credits') === 'ambient/opening-credits' && P.ambientUrl('credits', true) === 'ambient/episode-credits', 'the two URLs');
+  ok(P.ambientUrl('harvest', true) === 'ambient/second-harvest' && P.ambientUrl('watch', true) === 'ambient/watch-feed?api=off', 'a scene with no episode file ignores the flag');
+  ok(P.episodeAnswer(200) === 'yes' && P.episodeAnswer(204) === 'yes' && P.episodeAnswer(404) === 'no' && P.episodeAnswer(403) === 'no' && P.episodeAnswer(500) === '' && P.episodeAnswer(undefined) === '', 'the answers');
+  ok(P.AMBIENT_SCENES.filter((s) => s.episode).length === 1, 'only the credits have one');
+  const ignore = fs.readFileSync(path.join(ROOT, '.gitignore'), 'utf8').split(/\r?\n/).map((l) => l.trim());
+  ok(ignore.includes('app/ambient/episode-credits.html'), '.gitignore keeps the episode page out of the repository');
+  const local = path.join(AMB, 'episode-credits.html');
+  if (fs.existsSync(local)) {
+    const text = fs.readFileSync(local, 'utf8');
+    ok(/^\s*<!doctype html/i.test(text.slice(0, 200)) && /visibilitychange/.test(text) && /wakeLock/.test(text), 'the local episode page is a scene');
+    const hits = (text.match(/https?:\/\/[^\s"'<>)]*/gi) || []).filter((u) => !/^http:\/\/www\.w3\.org\/(2000\/svg|1999\/xlink)$/.test(u.replace(/[;,.]+$/, '')));
+    ok(hits.length === 0, 'the local episode page references ' + hits.slice(0, 3).join(' | '));
+  } else console.log('     (no local episode page here: app/ambient/episode-credits.html is built on the GM\'s PC)');
+});
+
 await test('the scenes built by tools/ambient pause when hidden, keep the screen awake, load nothing, and take b68:crew only from their own origin', () => {
   for (const f of HERE.filter((x) => SCENES.indexOf(x) >= 6)) {
     const text = fs.readFileSync(path.join(AMB, f), 'utf8');
@@ -77,4 +97,6 @@ await test('the scenes built by tools/ambient pause when hidden, keep the screen
 });
 
 console.log('\n' + (failed ? failed + ' failed' : 'all passed'));
-process.exit(failed ? 1 : 0);
+// the exit code, not process.exit(): on Windows a process.exit() made while console output is still queued could hang the process
+// for good (IP5 review: 5 runs in 8); nothing here holds the event loop open, so it drains and exits by itself
+process.exitCode = failed ? 1 : 0;

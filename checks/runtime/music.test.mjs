@@ -283,6 +283,68 @@ await test('the player: PANIC fades it to silence in 1 s and Resume brings it ba
   assert.ok(a.volume > 0.5);
 });
 
+await test('IP5.1 creditsWatch: the duck lasts while the credits RUN (90 s, credits.js T.end), not while they stay pinned', () => {
+  assert.equal(M.CREDITS_RUN_MS, 90 * S, 'the scene’s own length');
+  const run = readFileSync(new URL('../../tools/ambient/scenes/credits.js', import.meta.url), 'utf8').match(/\bend:\s*(\d+(?:\.\d+)?)\s*\}/);
+  assert.ok(run && Number(run[1]) * S === M.CREDITS_RUN_MS, 'CREDITS_RUN_MS equals credits.js T.end (' + (run && run[1]) + ' s)');
+  const w = M.creditsWatch(), T0 = 1_000_000;
+  w.see(false, T0, true);
+  assert.equal(w.duck(T0), false, 'nothing pinned: no duck');
+  w.see(true, T0 + 5 * S, false);      /* the pin arrives while the page watches: the run starts now */
+  assert.equal(w.duck(T0 + 5 * S), true); assert.equal(w.duck(T0 + 94 * S), true, '89 s in: still down'); assert.equal(w.left(T0 + 35 * S), 60 * S, '60 s left');
+  assert.equal(w.duck(T0 + 95 * S), false, 'the run is over: the gate opens though the pin stays');
+  w.see(true, T0 + 10 * MIN, false); assert.equal(w.duck(T0 + 10 * MIN), false, 'pinned for 10 minutes: still open');
+  w.see(false, T0 + 11 * MIN, false); w.see(true, T0 + 12 * MIN, false);
+  assert.equal(w.duck(T0 + 12 * MIN + 30 * S), true, 'pinned again (a replay): down again');
+  w.over(); assert.equal(w.duck(T0 + 12 * MIN + 31 * S), false, 'the GM’s "the credits are over": open at once');
+  w.see(true, T0 + 12 * MIN + 32 * S, false); assert.equal(w.duck(T0 + 12 * MIN + 32 * S), false, 'and stays open while the same pin holds');
+  /* a reload with the credits already pinned: the first read never ducks (the document cannot say when they were pinned) */
+  const r1 = M.creditsWatch(); r1.see(true, T0, true);
+  assert.equal(r1.duck(T0), false, 'pinned before the page loaded: the music plays'); assert.equal(r1.left(T0), 0);
+  r1.see(true, T0 + 5 * S, false); assert.equal(r1.duck(T0 + 5 * S), false, 'and keeps playing while that pin holds');
+  r1.see(false, T0 + 60 * S, false); r1.see(true, T0 + 70 * S, false);
+  assert.equal(r1.duck(T0 + 71 * S), true, 'a pin this page then sees arrive ducks');
+});
+
+await test('IP5.1 the player: pinned credits for 10 minutes: down for the run, then back by itself; Bring the music back; a replay ducks again', async () => {
+  const w = M.creditsWatch(); let pinned = false, done = 0;
+  const r = rig();
+  r.host.inputs = () => { w.see(pinned, r.host.now(), false); return { ...r.inputs, credits: w.duck(r.host.now()) }; };
+  r.host.creditsDone = () => { done++; w.over(); };
+  await r.ctl.add([file('c1.wav')], 'calm');
+  await r.ctl.load(); r.ctl.play(); await r.flush(); await r.flush(); await r.run(1600);
+  const a = live(r)[0]; assert.ok(a.volume > 0.5);
+  pinned = true; await r.tick(); await r.run(2100);
+  assert.equal(a.volume, 0, 'down under the credits'); assert.equal(r.ctl.state().duck, 'credits', 'the state says why');
+  await r.run(85 * S); await r.tick(); await r.run(500);
+  assert.equal(a.volume, 0, 'still down 88 s in');
+  await r.run(3 * S); await r.tick(); await r.run(2100);
+  assert.ok(Math.abs(a.volume - 0.6) < 0.01, 'back by itself after the run, with the scene still pinned: ' + a.volume);
+  assert.equal(r.ctl.state().duck, ''); assert.equal(r.ctl.state().playing, true); assert.equal(r.ctl.state().list, 'calm', 'the mood plays');
+  for (let i = 0; i < 10; i++) { await r.run(50 * S); await r.tick(); }
+  assert.ok(a.volume > 0.5, 'still up 10 minutes later, still pinned');
+  assert.equal(r.ctl.creditsBack(), false, 'Bring the music back does nothing when nothing is ducked');
+  /* a replay: pinned again */
+  pinned = false; await r.tick(); pinned = true; await r.tick(); await r.run(2100);
+  assert.equal(a.volume, 0, 'a replay ducks again');
+  assert.equal(r.ctl.creditsBack(), true); await r.run(2100);
+  assert.equal(done, 1, 'through the host, so the page knows'); assert.ok(a.volume > 0.5, 'Bring the music back: up at once');
+  await r.tick(); await r.run(500); assert.ok(a.volume > 0.5, 'and it stays up while the same pin holds');
+  /* PANIC is not the credits: Bring the music back leaves the work light alone */
+  r.inputs.panic = true; await r.tick(); await r.run(1000);
+  assert.equal(r.ctl.state().duck, 'panic'); assert.equal(r.ctl.creditsBack(), false); assert.equal(a.volume, 0);
+  r.inputs.panic = false; await r.tick(); await r.run(2100);
+  /* a host with no creditsDone: the controller holds it itself until the credits flag drops */
+  const q = rig({ inputs: { credits: true } });
+  await q.ctl.add([file('c1.wav')], 'calm');
+  await q.ctl.load(); q.ctl.play(); await q.flush(); await q.flush(); await q.run(2100);
+  const b = live(q)[0]; assert.equal(b.volume, 0);
+  assert.equal(q.ctl.creditsBack(), true); await q.run(2100); assert.ok(b.volume > 0.5);
+  await q.tick(); await q.run(500); assert.ok(b.volume > 0.5, 'held');
+  q.inputs.credits = false; await q.tick(); q.inputs.credits = true; await q.tick(); await q.run(2100);
+  assert.equal(b.volume, 0, 'the next run ducks again');
+});
+
 await test('the player: a track that ends goes to the next in the same mood; Next track; pause keeps the place', async () => {
   const r = rig();
   await r.ctl.add([file('c1.wav'), file('c2.wav'), file('c3.wav')], 'calm');

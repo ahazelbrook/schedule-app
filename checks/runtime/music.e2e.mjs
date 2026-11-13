@@ -159,6 +159,51 @@ try {
   if (resume) await resume.click();
   check(!!resume && await until(async () => (await attr(page, 'data-gate')) === 'up', 6000), 'Resume brings it back');
 
+  /* ---- IP5.1: the Opening credits duck it while they RUN (90 s), not while they stay pinned; Bring the music back; a replay ducks again ---- */
+  const ambDoc = () => fetch(BASE + '/api/gm/ambient', { headers: { 'X-Dev-User': GM } }).then((r) => r.json()).then((j) => (j && j.doc) || {}, () => ({}));
+  await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+  await page.keyboard.press('i');
+  const CR = '#gm-ipad [data-gm="ambscene"][data-id="credits"]';
+  check(!!(await until(() => page.$(CR), 8000)), 'I opens the iPad view with the Opening credits in its Scenes');
+  await page.click(CR);
+  check(!!(await until(async () => { const d = await ambDoc(); return d.mode === 'pin' && d.scene === 'credits'; }, 6000)) && await until(async () => (await attr(page, 'data-gate')) === 'down', 5000),
+    'pinning the Opening credits fades the laptop music down (the gate is 0)');
+  check(await page.$eval(PILL, (e) => /Quiet: credits/.test(e.textContent) && /quiet for the Opening credits/.test(e.title)), 'the pill says why: Quiet: credits');
+  await page.click(PILL);
+  check(await until(() => page.$eval(POP, (e) => /Quiet for the credits/.test(e.textContent) && !!e.querySelector('[data-mu-act="back"]')), 3000), 'the popover says Quiet for the credits, with Bring the music back');
+  if (SHOTS) await page.screenshot({ path: path.join(SHOTS, 'credits-quiet-1366.png'), clip: { x: 0, y: 0, width: 1366, height: 430 } });
+  await page.click(PILL);
+  const listBefore = await attr(page, 'data-list');
+  await page.evaluate(() => window.B68GmPage._creditsAge(91000));      /* the clock past the run; nothing else pressed */
+  check(await until(async () => (await attr(page, 'data-gate')) === 'up', 5000), 'past the credits’ 90 s, with the scene still pinned: the gate is 1 again');
+  const stillPinned = await ambDoc();
+  const back = await page.evaluate(() => window.B68GmPage._music());
+  check(stillPinned.mode === 'pin' && stillPinned.scene === 'credits' && !!back && back.playing && back.gate > 0.98 && back.duck === '' && !!back.list && back.list === listBefore && await page.$eval(PILL, (e) => !/Quiet/.test(e.textContent)),
+    'the mood plays (' + JSON.stringify(back && { list: back.list, mood: back.mood, gate: back.gate }) + '), the credits still pinned on the server');
+  /* a replay: another scene, then the credits again */
+  await page.click('#gm-ipad [data-gm="ambscene"]:not([data-id="credits"]):not([disabled])');
+  await until(async () => { const d = await ambDoc(); return d.mode === 'pin' && d.scene !== 'credits'; }, 5000);
+  await page.click(CR);
+  check(await until(async () => (await attr(page, 'data-gate')) === 'down', 6000), 'pinned again (a replay): down again');
+  await page.click(PILL);
+  await until(() => page.$(POP + ' [data-mu-act="back"]'), 3000);
+  await page.click(POP + ' [data-mu-act="back"]');
+  check(await until(async () => (await attr(page, 'data-gate')) === 'up', 5000), 'Bring the music back: up at once');
+  await page.waitForTimeout(2500);
+  check(await attr(page, 'data-gate') === 'up', 'and it stays up while the credits stay pinned');
+  if (!(await page.$eval(POP, (e) => e.hidden))) await page.click(PILL);
+  /* Clear (the tray) means the credits are over: the music is back at once, the credits stay pinned */
+  await page.click('#gm-ipad [data-gm="ambscene"]:not([data-id="credits"]):not([disabled])');
+  await until(async () => { const d = await ambDoc(); return d.mode === 'pin' && d.scene !== 'credits'; }, 5000);
+  await page.click(CR);
+  const downAgain = await until(async () => (await attr(page, 'data-gate')) === 'down', 6000);
+  const tray = await page.$('.gm-tray [data-tray="clear"]');
+  if (tray) await tray.click();
+  check(downAgain && !!tray && await until(async () => (await attr(page, 'data-gate')) === 'up', 5000) && (await ambDoc()).scene === 'credits', 'Clear (the tray): the music is back at once; the credits stay pinned');
+  /* the iPad back on Auto for what follows */
+  await page.click('#gm-ipad [data-gm="ambmode"][data-v="auto"]');
+  await until(async () => (await ambDoc()).mode === 'auto', 5000);
+
   /* ---- the shots of the pill and the popover at 1366 and 1536, and the fit ---- */
   for (const w of [1366, 1536]) {
     await page.setViewportSize({ width: w, height: w === 1366 ? 768 : 864 });
@@ -190,6 +235,8 @@ try {
   check(await until(async () => (await attr(page, 'data-state')) === 'play', 4000), 'Auto after Stop plays again');
 
   /* ---- a reload keeps the library and waits for a tap ---- */
+  /* (IP5 review: the credits pinned just before the reload: the page's first read never ducks, the music plays when tapped) */
+  await fetch(BASE + '/api/gm/ambient', { method: 'PATCH', headers: { 'X-Dev-User': GM, 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'pin', scene: 'credits' }) });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window.B68GmMusic && document.querySelector('[data-band-slot="music"] [data-mu-pill]'), null, { timeout: 60000 });
   check(await until(async () => /Tension|Action|Hanging/.test(await page.$eval(PILL, (e) => e.textContent)), 8000), 'after a reload the pill knows its tracks');
@@ -206,6 +253,10 @@ try {
     !!(await page.$(deck + ' [data-mu-act="toggle"]')) && !!(await page.$(deck + ' [data-mu-act="next"]')) && !!(await page.$(deck + ' [data-mu-vol]')), 'the Music tool has the controls too: ▶/❚❚, Next track, the moods, Auto, Stop and the volume');
   await page.click(deck + ' [data-mu-act="toggle"]');
   check(await until(async () => (await attr(page, 'data-state')) === 'play', 5000), 'the tool’s ▶ plays');
+  await page.waitForTimeout(2500);
+  const rl = await page.evaluate(() => window.B68GmPage._music());
+  check(!!rl && rl.duck === '' && rl.gate > 0.98 && (await attr(page, 'data-gate')) === 'up', 'credits pinned before the reload: the first read does not duck, the music plays (' + JSON.stringify(rl && { duck: rl.duck, gate: rl.gate }) + ')');
+  await fetch(BASE + '/api/gm/ambient', { method: 'PATCH', headers: { 'X-Dev-User': GM, 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'auto' }) });
   await page.click(deck + ' [data-mu-mode="tension"]');
   check(await until(async () => (await attr(page, 'data-mode')) === 'tension' && (await attr(page, 'data-list')) === 'tension', 5000) &&
     await until(() => page.$eval(deck + ' [data-mu-mode="tension"]', (b) => b.getAttribute('aria-pressed') === 'true'), 3000), 'the tool’s Tension holds it, and the pill and the tool both show it');
@@ -259,6 +310,34 @@ try {
     if (m) { await m.scrollIntoViewIfNeeded(); await m.screenshot({ path: path.join(SHOTS, 'tool-390.png') }); }
   }
   await ph.close();
+
+  /* ---- with the players' screen on (IP2, stage.players): a scene pick blanks whatever covers the scene; that blank must not end the
+     credits' duck, and another scene must (the setting is read at load: the page reloads) ---- */
+  const api = (m, p, b) => fetch(BASE + '/api' + p, { method: m, headers: { 'X-Dev-User': GM, 'Content-Type': 'application/json' }, body: b ? JSON.stringify(b) : undefined });
+  const shownKind = async () => { const j = await (await api('GET', '/gm/display')).json().catch(() => ({})); return j && j.display ? j.display.kind : ''; };
+  const players = (on) => api('PATCH', '/gm/state', { features: { 'stage.players': on } }).then(() => api('PATCH', '/campaign', { features: { 'stage.players': on } }));
+  await players(true);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window.B68GmMusic && window.B68GmPlayersScreen && document.querySelector('[data-band-slot="music"] [data-mu-pill]'), null, { timeout: 60000 });
+  await page.waitForTimeout(2000);
+  await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+  if (!(await page.isVisible(CR).catch(() => false))) await page.keyboard.press('i');
+  const crShown = await page.waitForSelector(CR, { state: 'visible', timeout: 10000 }).then(() => true, () => false);
+  if (!crShown) console.log('  the iPad view did not open: ' + JSON.stringify(await page.evaluate(() => ({ ipad: !!document.querySelector('#gm-ipad'), hidden: document.querySelector('#gm-ipad') && document.querySelector('#gm-ipad').hidden, hash: location.hash }))));
+  await page.click('#gm-ipad [data-gm="ambscene"]:not([data-id="credits"]):not([disabled])');
+  await until(async () => { const d = await ambDoc(); return d.mode === 'pin' && d.scene !== 'credits'; }, 5000);
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => window.B68GmPage._pushDisplay({ kind: 'text', title: 'Invented', text: 'An invented line' }));
+  await until(async () => (await shownKind()) === 'text', 5000);
+  await page.click(CR);
+  const p2blank = await until(async () => (await shownKind()) === 'blank', 6000);
+  const p2down = await until(async () => (await attr(page, 'data-gate')) === 'down', 6000);
+  await page.waitForTimeout(2500);
+  check(!!p2blank && !!p2down && await attr(page, 'data-gate') === 'down', 'players\' screen on: pinning the credits blanks the stage (' + !!p2blank + ') and the duck starts and holds (' + !!p2down + ')');
+  await page.click('#gm-ipad [data-gm="ambscene"]:not([data-id="credits"]):not([disabled])');
+  check(await until(async () => (await attr(page, 'data-gate')) === 'up', 6000), 'players\' screen on: another scene ends the duck');
+  await players(false);
+  await api('PATCH', '/gm/ambient', { mode: 'auto' });
 
   /* ---- nothing audio left the laptop ---- */
   const names = Object.values(TRACKS).flat().concat(['m1-calm-c', 'm1-tension-c', 'm1-action-c']);

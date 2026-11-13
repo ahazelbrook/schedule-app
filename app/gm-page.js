@@ -2286,7 +2286,7 @@
     AM.peeked = true;
     Promise.resolve().then(function () { return g.ambient(); }).then(function (r) {
       if (S !== me || AM.loaded || !isObj(r) || !isObj(r.doc)) return;
-      AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null;
+      AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null; crSeen();
       renderBar(); hsSync();
       if (Array.isArray(r.doc.polaroids) || S.who) whoPolaroids();      /* KS12.5 (night.who): the polaroids follow the session (a list left from a night with the setting on is cleared) */
     }, function () { AM.peeked = false; });
@@ -2364,7 +2364,7 @@
     return true;
   }
   /* Ctrl+Left / Ctrl+Right: the place before or after this one, to look at it (never a phase change) */
-  function placeStep(d) { var B = W.B68GmBand; if (!B || !S) return; var cur = currentPlace(), next = B.step(B.placeList(), cur, d); if (next && next !== cur) goPlace(next, { navigateOnly: true }); }
+  function placeStep(d) { var B = W.B68GmBand; if (!B || !S) return; var cur = currentPlace(), next = B.step(B.placeList(), cur, d); if (next && next !== cur) { crOver(); goPlace(next, { navigateOnly: true }); } }
   function bandHost(me) {
     return {
       root: function () { return S === me ? $q('#gm-root') : null; },
@@ -2373,7 +2373,7 @@
       now: function () { return Date.now(); },
       currentPlace: function () { return S === me ? currentPlace() : ''; },
       currentView: function () { return S === me ? currentView() : ''; },
-      goPlace: function (id, o) { return S === me ? goPlace(id, o) : false; },
+      goPlace: function (id, o) { if (S !== me) return false; crOver(); return goPlace(id, o); },      /* IP5.1: a place tapped on the band ends the credits' duck */
       openView: function (id) { return S === me ? openView(id) : false; },
       callAftermath: function () { return S === me ? callAftermath() : false; },
       curfew: function () { var Sp = W.B68GmSpine; return S === me && Sp && typeof Sp.curfew === 'function' ? Sp.curfew() : null; },
@@ -2510,19 +2510,34 @@
   /* the last inputs read while the GM page was up: the music plays on while Rules, the cast, the table or Home is open (S is null there), and must
      not take that for "no PANIC, no phase" (the work light would lift itself, and Tension would step down) */
   var MU_LAST = { phase: '' };
+  /* IP5.1: the credits' duck lasts while the Opening credits RUN (B68GmMusic.creditsWatch: the scene's 90 s), not while they stay pinned: the
+     pin holds the title card all night, and the music once stayed silent with it. The watch reads AM (module level, so also while Rules or Home
+     is open: MU_LAST no longer carries a stale `credits`), and the GM's own "the credits are over" (crOver) ends it at once */
+  var CRW = null, CRW_LAST = null;      /* CRW_LAST: the pin this page last read (null: no read yet, so the first read never ducks) */
+  function crWatch() { if (!CRW && W.B68GmMusic && typeof W.B68GmMusic.creditsWatch === 'function') CRW = W.B68GmMusic.creditsWatch(); return CRW; }
+  function crSeen() {
+    if (!isObj(AM.doc)) return;
+    var had = !!CRW, pinned = AM.doc.mode === 'pin' && AM.doc.scene === 'credits', w = crWatch();
+    /* a watch made late (the music module arrived after a read) takes a pin this page had already read as one it did not see arrive */
+    if (w) w.see(pinned, Date.now(), CRW_LAST === null || (!had && CRW_LAST === true));
+    CRW_LAST = pinned;
+  }
+  function crDuck() { crSeen(); return !!CRW && CRW.duck(Date.now()); }
+  /* Clear, anything shown on the iPad, a place tapped on the band, Bring the music back: the music comes back now (the iPad is not touched) */
+  function crOver() { var w = crWatch(); if (!w || !w.duck(Date.now())) return; w.over(); if (MU) { try { MU.tick(); } catch (e) {} } }
   function muInputs() {
-    if (!S || S.status !== 'ready') return MU_LAST;
+    if (!S || S.status !== 'ready') return Object.assign({}, MU_LAST, { credits: crDuck() });
     var sec = null; try { sec = S.b17 && S.b17.security ? S.b17.security.view() : null; } catch (e) { sec = null; }
     var v = null; try { v = S.cs ? S.cs.view() : null; } catch (e) { v = null; }
     var ch = false; try { ch = !!chCur(); } catch (e) { ch = false; }
     /* a site alarm the GM keeps hidden from the players (security's quiet) is no trigger: the room would hear what the GM hid */
     return (MU_LAST = { phase: placesPhase() || '', alarm: isObj(sec) && !sec.quiet ? { index: sec.index, n: sec.n, filled: sec.site ? sec.filled : null } : null, chase: ch,
-      desperate: S.muDesp || 0, panic: !!(v && v.panic), credits: !!(isObj(AM.doc) && AM.doc.mode === 'pin' && AM.doc.scene === 'credits') });
+      desperate: S.muDesp || 0, panic: !!(v && v.panic), credits: crDuck() });
   }
   function muInst() {
     if (MU || MU_FAILED || !W.B68GmMusic) return MU;
     try {
-      MU = W.B68GmMusic.make(W.B68GmMusic.browserHost({ inputs: muInputs, toast: toast, root: function () { return $q('#gm-root'); },
+      MU = W.B68GmMusic.make(W.B68GmMusic.browserHost({ inputs: muInputs, creditsDone: crOver, toast: toast, root: function () { return $q('#gm-root'); },
         openLibrary: function () { var T = W.B68GmTools, t = T && T.get ? T.get('music') : null; if (!openView('music') && t) t.open(); } }));
       MU.load(); MU.start();
     } catch (e) { MU = null; MU_FAILED = true; if (W.console) W.console.error('music: the Music desk could not start on this page', e); }
@@ -4272,6 +4287,7 @@
     if (!gate.allows(d)) return Promise.reject(new Error('Only a player-layer map made on this page can go to the iPad.'));
     opts = opts || {};
     if (!opts.b17 && b17Frozen()) return Promise.reject(new Error('The iPad is frozen: unfreeze it first.'));
+    if (!isObj(d) || d.kind !== 'blank') crOver();      /* IP5.1: anything shown on the iPad ends the credits' duck (a blank does not: rolling the credits blanks the stage) */
     if (!opts.map) endLive();
     if (!opts.chase) endChase();
     if (!opts.clocks) endClocks();
@@ -4581,6 +4597,7 @@
   function clearIpad() {
     var me = S; if (!me) return Promise.resolve(false);
     if (b17Frozen()) { toast('The iPad is frozen: unfreeze it first.', true); return Promise.resolve(false); }      /* Freeze holds the iPad: Clear changes nothing */
+    crOver();      /* IP5.1: Clear means the credits are over for the music (their title card stays on the iPad) */
     ks14Down();
     var g = gmApi();
     var fresh = g && typeof g.ambient === 'function' ? Promise.resolve().then(function () { return g.ambient(); }).then(function (r) { if (S === me) adoptAmbient(r); }, function () { /* the cached document will do */ }) : Promise.resolve();
@@ -4808,7 +4825,7 @@
     if (typeof r.seq === 'number' && typeof AM.seq === 'number' && r.seq < AM.seq) return false;     /* an older answer landing late */
     var fl0 = ipadLayerSet('scene.filter') ? ipadLayers().scene.filter : null;
     AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null; AM.loaded = true; AM.error = '';
-    apSync(); hsSync();
+    crSeen(); apSync(); hsSync();
     if (Array.isArray(r.doc.polaroids) || (S && S.who)) whoPolaroids();      /* KS12.5: a stored list follows the session (or goes, with night.who off), whichever read lands first */
     /* F4: the site's Flashback / Back follows a filter it learns of here (a reload mid-flashback draws the toolbar before this GET lands) */
     if ((ipadLayerSet('scene.filter') ? ipadLayers().scene.filter : null) !== fl0 && S) { var fb = S.b19 && S.b19.flashback; if (fb && typeof fb.refresh === 'function') fb.refresh(); else siteChanged(); }
@@ -4848,6 +4865,7 @@
   function newOverlayId() { return OV_PREFIX + (++ovCount); }
   function showOverlay(o) {
     if (!isObj(o)) return Promise.resolve(null);
+    if (o.auto !== true) crOver();      /* IP5.1: the GM's own overlay ends the credits' duck; the autopilot's does not */
     var ov = Object.assign({}, o); if (ov.id === undefined) ov.id = newOverlayId();
     if (!overlayOk(ov)) { toast('That overlay is not one the iPad can show.', true); return Promise.resolve(null); }
     return patchAmbient({ overlay: ov });
@@ -4860,7 +4878,7 @@
       showCtl = W.B68Show.make({ send: patchAmbient, toast: toast });
       var sendShow = showCtl.show;   /* 4.7: a ring that reached the iPad also rings the practical speaker (gm/phone.js; off unless room.phone is on) */
       var p2Show = sendShow; sendShow = function (kind, payload) { var pr = p2Show.apply(showCtl, arguments); if (kind === 'rolodex' && isObj(payload) && Array.isArray(payload.npcIds) && payload.npcIds.length) Promise.resolve(pr).then(function (r) { if (r != null) p2Card(payload.npcIds[0]); }); return pr; };      /* IP2: an Introduce beat (the button or the cue) opens the first NPC's card */
-      showCtl.show = function (kind) { var pr = sendShow.apply(showCtl, arguments); if (kind === 'ring') Promise.resolve(pr).then(function (r) { var rd = r !== null ? rdInst() : null; if (rd) rd.onShow(kind); }); return pr; };
+      showCtl.show = function (kind) { crOver(); var pr = sendShow.apply(showCtl, arguments);      /* IP5.1: a show ends the credits' duck */ if (kind === 'ring') Promise.resolve(pr).then(function (r) { var rd = r !== null ? rdInst() : null; if (rd) rd.onShow(kind); }); return pr; };
     }
     return showCtl;
   }
@@ -8141,6 +8159,7 @@
     _pure: P,
     /* for checks (music.e2e.mjs): the music's state, also while another page (Rules, the cast, Home) is open over the GM page */
     _music: function () { return MU ? MU.state() : null; },
+    _creditsAge: function (ms) { var w = crWatch(); if (w) w._age(+ms || 0); },      /* for checks (music.e2e.mjs): as if the credits had run that much longer */
     /* for checks (gm.e2e.mjs): the current roll, and the display gate */
     _stamped: function (st) { fitStamped(st); },     /* tests: what the stamp's host.stamped does (the node rig has no iPad to stamp on) */
     _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer, svg: S.map.svg }, panel: S.panel, seg: S.seg, doc: S.doc, runCacheN: S.runCache ? S.runCache.keys.length : 0 } : null; },

@@ -22,3 +22,8 @@ app/media/
 # The handout images (prop art, copied from the vault by `npm run gm:handouts`): inside app/media/ above, named here too so the
 # intent survives a change to that line. Deployed from disk, never committed (HOSTING.md, GM.md "Handouts").
 app/media/handouts/
+
+# An episode's own opening credits (IP5.2): built from an episode file kept off the repository (campaign data; this repository is
+# public) with `node tools/ambient/scenes/credits.js --episode <file.json>`, deployed from disk, never committed. The display plays it
+# in place of opening-credits.html when the file is on the server. See tools/ambient/README.md.
+app/ambient/episode-credits.html
