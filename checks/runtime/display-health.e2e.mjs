@@ -279,6 +279,76 @@ try {
   await step('looks: no page errors', async () => { expect(!I.errors.length, I.errors.join(' | ')); });
   await I.ctx.close();
   }
+
+  /* ---------- dupes (B4/B5, the shapes behind an NPC on the TV) ----------
+     In Chromium, two copies of one figure's markup (the same ids) with the EARLIER copy inside a display:none subtree make the visible copy's url(#...)
+     clips resolve to the unrendered one: the clips drop and the head's and torso's shade paths draw flat, outside the figure. The display must never
+     draw two figures with the same ids. Each flow keeps the figures of its first step (as a superseded node kept hidden would) and puts them, hidden,
+     before everything; then every reference of every visible figure must resolve inside that figure, and the visible figures must look the same. */
+  if (want('dupes')) {
+    const FIGS = "[...document.querySelectorAll('svg')].filter((s) => s.querySelector('clipPath') && !s.parentNode.closest('svg') && !s.closest('.dp-ambient') && !s.closest('#ip1-hidden'))";
+    /* the figures up after the first step; later, the ones that are gone (superseded: a node like that kept hidden is what draws the shapes) */
+    const keep = (page) => page.evaluate((q) => { window.__ip1early = eval(q).map((s) => ({ s, html: s.outerHTML })); return window.__ip1early.length; }, FIGS);
+    const gone = (page) => page.evaluate(() => (window.__ip1early || []).filter((x) => !x.s.isConnected).map((x) => x.html));
+    const hideBefore = (page, list) => page.evaluate((l) => { const d = document.createElement('div'); d.id = 'ip1-hidden'; d.style.display = 'none'; d.innerHTML = l.join(''); const r = document.querySelector('.dp-root'); r.insertBefore(d, r.firstChild); }, list);
+    const unhide = (page) => page.evaluate(() => { const d = document.getElementById('ip1-hidden'); if (d) d.remove(); });
+    const refs = (page) => page.evaluate((q) => {
+      const seen = {}, dup = []; document.querySelectorAll('[id]').forEach((e) => { if (e.closest('.dp-ambient') || e.closest('#ip1-hidden')) return; if (seen[e.id]) dup.push(e.id); seen[e.id] = 1; });
+      const bad = [], figs = eval(q);
+      for (const f of figs) f.querySelectorAll('*').forEach((e) => { for (const a of e.attributes) {
+        const m = /url\(\s*#([^)\s]+)\s*\)/.exec(a.value) || (/(^|:)href$/.test(a.name) ? /^#(.+)$/.exec(a.value) : null);
+        if (m) { const t = document.getElementById(m[1]); if (!t || !f.contains(t)) bad.push(a.name + '=' + a.value); }
+      } });
+      return { figs: figs.length, ndup: dup.length, dup: dup.slice(0, 3), nbad: bad.length, bad: bad.slice(0, 3) };
+    }, FIGS);
+    const boxes = (page) => page.evaluate((q) => eval(q).map((s) => { const r = s.getBoundingClientRect(); return { x: Math.max(0, r.left), y: Math.max(0, r.top), width: Math.min(innerWidth - Math.max(0, r.left), r.width), height: Math.min(innerHeight - Math.max(0, r.top), r.height) }; }).filter((b) => b.width > 20 && b.height > 20), FIGS);
+    const grey = async (page, clip) => { const buf = await page.screenshot({ clip }); return page.evaluate(async (b64) => {
+      const img = new Image(); img.src = 'data:image/png;base64,' + b64; await img.decode();
+      const c = document.createElement('canvas'); c.width = 120; c.height = 160; const g = c.getContext('2d'); g.drawImage(img, 0, 0, 120, 160);
+      const d = g.getImageData(0, 0, 120, 160).data, px = []; for (let i = 0; i < d.length; i += 4) px.push((d[i] + d[i + 1] + d[i + 2]) / 3); return px; }, buf.toString('base64')); };
+    const show = (id) => push({ kind: 'npc', npcId: id, title: id });
+    const FLOWS = [
+      ['Introduce, then Show', async () => { await ambient({ overlay: { id: 'intro-h' + Date.now().toString(36).slice(-4), kind: 'rolodex', ms: 30000, payload: { npcIds: ['n-dov'] } } }); }, async () => { await show('n-dov'); }],
+      ['Show twice', async () => { await show('n-dov'); }, async () => { await show('n-dov'); }],
+      ['Show, then a held spotlight', async () => { await show('n-dov'); }, async () => { await ambient({ overlay: { id: 'b17sl-h' + Date.now().toString(36).slice(-4), kind: 'npc', npcId: 'n-dov', ms: 60000 } }); }],
+      ['Show, Clear, Show', async () => { await show('n-dov'); }, async () => { await push({ kind: 'blank' }); await sleep(4800); await show('n-dov'); }],
+      ['Show, then the new stage flips (the same push drawn again)', async () => { await show('n-dov'); }, null]
+    ];
+    for (const stage of [false, true]) {
+      await settings({ stage, still: true });
+      await ambient({ mode: 'pin', scene: 'duskwall', overlay: null });
+      await push({ kind: 'blank' });
+      I = await openIpad(browser, 1536, 864);
+      if (stage) await I.page.waitForFunction(() => (document.documentElement.getAttribute('data-kit') || '').includes('stage'), null, { timeout: 30000 });
+      for (const [name, first, second] of FLOWS) {
+        await step('dupes: ' + (stage ? 'new' : 'old') + ' stage: ' + name + ': no id twice, every clip inside its own figure, nothing drawn outside it', async () => {
+          await first(); await sleep(5200);
+          expect((await keep(I.page)) >= 1, 'no figure after the first step');
+          if (second) await second(); else { await settings({ stage: !stage, still: true }); await sleep(9000); }
+          await sleep(5200);
+          const earlier = await gone(I.page);
+          console.log('INFO ' + name + ': ' + earlier.length + ' superseded figure(s) kept hidden before the visible ones');
+          const plain = await refs(I.page);
+          expect(plain.figs >= 1 && !plain.ndup && !plain.nbad, 'as drawn: ' + JSON.stringify(plain));
+          const bx = await boxes(I.page), before = [];
+          for (const b of bx) before.push(await grey(I.page, b));
+          await hideBefore(I.page, earlier); await sleep(400);
+          const r = await refs(I.page), after = [];
+          for (const b of bx) after.push(await grey(I.page, b));
+          await unhide(I.page);
+          if (SHOTS) { await hideBefore(I.page, earlier); await I.page.screenshot({ path: path.join(SHOTS, 'health-dupes-' + (stage ? 'stage' : 'old') + '-' + name.replace(/\W+/g, '-').slice(0, 40) + '.png') }); await unhide(I.page); }
+          const moved = before.map((p, i) => { let t = 0; for (let k = 0; k < p.length; k++) t += Math.abs(p[k] - after[i][k]); return +(t / p.length).toFixed(2); });
+          expect(!r.nbad, 'with the earlier figures kept hidden, a clip resolves outside its figure: ' + JSON.stringify(r));
+          expect(moved.every((m) => m < 1.5), 'with the earlier figures kept hidden, the visible figure changed (mean ' + JSON.stringify(moved) + ')');
+          if (!second) { await settings({ stage, still: true }); await sleep(9000); }
+          await ambient({ overlay: null }); await push({ kind: 'blank' }); await sleep(4800);
+        });
+      }
+      await step('dupes: ' + (stage ? 'new' : 'old') + ' stage: no page errors', async () => { expect(!I.errors.length, I.errors.join(' | ')); });
+      await I.ctx.close();
+    }
+    await settings({});
+  }
 } catch (e) { failed++; console.log('FAIL ' + (e && e.stack || e)); }
 await browser.close();
 console.log(passed + ' passed, ' + failed + ' failed');

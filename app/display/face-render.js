@@ -27,7 +27,7 @@
   function tryRequire(p) { try { return require(p); } catch (e) { return null; } }
   var FL = root.B68FaceLook || (typeof require === 'function' ? tryRequire('./face-look.js') : null);
   function part(name, file) { return root[name] || (typeof require === 'function' ? tryRequire(file) : null); }
-  var POSE_MS = 3200;
+  var POSE_MS = 3200, DRAWS = 0;
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function on(id, env) {
@@ -121,7 +121,7 @@
     var expr = xp && look && look.expr ? look.expr : '', fmt = fm && look && look.fmt ? look.fmt : '', pose = xp && look && look.pose ? look.pose : '';
     if (!expr && !fmt && !pose && !bd) return false;
     var faction = typeof npc.faction === 'string' ? npc.faction : '', id = o && typeof o.npcId === 'string' ? o.npcId : '';
-    var uid = 'dp-fl-' + safe(o && o.id), spec = card.spec, holder = byClass(e, 'dp-ov-portrait'), done = false;
+    var uid = 'dp-fl-' + safe(o && o.id) + '-' + (++DRAWS), spec = card.spec, holder = byClass(e, 'dp-ov-portrait'), done = false;      /* IP1: ids of its own each draw (the duotone filter too) */
 
     if (expr || pose) ensureAfraid(env.K);
     if (expr && holder && spec && typeof env.portrait === 'function') {
@@ -141,9 +141,11 @@
   }
 
   /* IP1 (overseer ruling 13/11): Show on iPad (the display kind `npc`, old stage or new) plays the look too. The full figure takes the signature pose for
-     POSE_MS, then stands as drawn, and the tell plays on it (looped as above). e is the stage; vm.look the names the GM sent; env as for apply(). */
-  function applyStage(e, vm, env) {
+     POSE_MS, then stands as drawn, and the tell plays on it (looped as above). e is the stage; vm.look the names the GM sent; env as for apply().
+     opts.poseAt (ms, default 0): when the pose starts, for a caller that covers the figure first (the introduction card); the tell loop follows it. */
+  function applyStage(e, vm, env, opts) {
     env = env || {};
+    var poseAt = opts && opts.poseAt > 0 ? +opts.poseAt : 0;
     if (!e || !vm || !FL || !env.document || typeof env.figure !== 'function' || !on('face.expressions', env)) return false;
     var look = FL.clean(vm.look), spec = vm.spec, holder = byClass(e, 'dp-npc-fig');
     if (!look || !spec || !holder || !holder.firstChild || (!look.expr && !look.pose)) return false;
@@ -161,14 +163,16 @@
       try { posed = draw(FL.poseSpec(look.expr ? FL.specWith(spec, { expr: look.expr }) : spec, look.pose), '-p'); } catch (err) { posed = null; }
       if (posed) {
         mark(posed, 'pose'); if (posed.classList) posed.classList.add('dp-fl-tell');
-        empty(holder); holder.appendChild(posed); done = true;
-        later(function () { if (holder.firstChild === posed) { if (steady.classList) steady.classList.add('dp-fl-tell'); empty(holder); holder.appendChild(steady); } }, POSE_MS);
+        var pose = function () { if (!connected(holder) && poseAt) return; empty(holder); holder.appendChild(posed);
+          later(function () { if (holder.firstChild === posed) { if (steady.classList) steady.classList.add('dp-fl-tell'); empty(holder); holder.appendChild(steady); } }, POSE_MS); };
+        if (poseAt) later(pose, poseAt); else pose();
+        done = true;
       }
     }
     if (loop) {
       var t = null;
       try { t = draw(FL.specWith(spec, { expr: look.expr }), '-t'); } catch (err) { t = null; }
-      if (t) done = tellLoop(holder, steady, mark(t, 'tell'), env, look.pose ? POSE_MS : 0) || done;
+      if (t) done = tellLoop(holder, steady, mark(t, 'tell'), env, poseAt + (look.pose ? POSE_MS : 0)) || done;
     }
     return done;
   }

@@ -1048,13 +1048,18 @@
     return { el: e, destroy: function () {} };
   }
 
+  /* IP1 (13/11): every figure drawn on this page gets ids of its own. The kit names a figure's clip paths after spec.id; two copies of one figure with the same
+     ids, the earlier one inside a display:none subtree, make Chromium resolve the visible copy's url(#...) clips to the unrendered one and drop them: the
+     head's and the torso's shade paths then draw unclipped (the flat shapes behind an NPC on the TV). So a draw counter goes on every id. */
+  var DRAWS = 0;
+  function drawId(uid) { return String(uid) + '-d' + (++DRAWS); }
   /* the NPC: a figure at true proportion beside the player-facing text */
   function drawFigure(spec, uid, K) {
     if (!K || !spec) return null;
     var out = null, tries = [function (s) { return K.render(s, { height: 900 }); }, function (s) { return K.portrait(s, { lod: 'mid' }); }];
     for (var i = 0; i < tries.length && !out; i++) {
       try {
-        var s = JSON.parse(JSON.stringify(spec)); s.id = uid;
+        var s = JSON.parse(JSON.stringify(spec)); s.id = drawId(uid);
         var r = tries[i](s);
         var res = Pure.sanitiseSvg(r && r.svg, parserEnv(true));
         if (res.ok) out = res;
@@ -1066,7 +1071,7 @@
   function drawPortrait(spec, uid, K) {
     if (!K || typeof K.portrait !== 'function' || !spec) return null;
     try {
-      var s = JSON.parse(JSON.stringify(spec)); s.id = uid;
+      var s = JSON.parse(JSON.stringify(spec)); s.id = drawId(uid);
       var r = K.portrait(s, { lod: 'mid' }), res = Pure.sanitiseSvg(r && r.svg, parserEnv(true));
       return res.ok ? res : null;
     } catch (e) { return null; }
