@@ -43,7 +43,13 @@
     return e;
   }
   function kids(e) { return e && e.children ? Array.prototype.slice.call(e.children) : []; }
-  function byClass(e, cls) { var k = kids(e); for (var i = 0; i < k.length; i++) if (String(k[i].className || '').split(/\s+/).indexOf(cls) >= 0) return k[i]; return null; }
+  /* the first element below e (at any depth: the new stage nests the head inside its speaking row, IP1) that carries the class */
+  function byClass(e, cls) {
+    var k = kids(e);
+    for (var i = 0; i < k.length; i++) if (String(k[i].className || '').split(/\s+/).indexOf(cls) >= 0) return k[i];
+    for (var j = 0; j < k.length; j++) { var d = byClass(k[j], cls); if (d) return d; }
+    return null;
+  }
   function empty(e) { while (e.firstChild) e.removeChild(e.firstChild); }
   function safe(s) { return String(s == null ? '' : s).replace(/[^A-Za-z0-9_-]/g, ''); }
 
@@ -72,6 +78,40 @@
     return true;
   }
 
+  /* IP1 (overseer ruling 13/11): a look that says `tell` plays the person's tell while they are up: the face as drawn, then the tell for TELL_MS, then the face
+     again, and so on every LOOP_MIN to LOOP_MAX ms, so a face that stays up for ten minutes never reads as frozen. Never while the GM's Scenes setting holds
+     the screen still or the device asks for reduced motion: then the tell simply stays on the face (as a plain expression always did). The loop ends by
+     itself once the holder has left the page. */
+  var TELL_MS = 3600, LOOP_MIN = 12000, LOOP_MAX = 20000;
+  function still(env) { return on('fx.off', env) || !!(env && env.reduced); }
+  function mark(n, what) { if (n && n.setAttribute) n.setAttribute('data-fl', what); return n; }      /* which face is up, for the checks */
+  function connected(n) { return !!n && (n.isConnected === undefined ? !!n.parentNode : n.isConnected); }
+  function tellLoop(holder, steady, tell, env, firstMs) {
+    var later = typeof env.later === 'function' ? env.later : function (f, ms) { return setTimeout(f, ms); };
+    var seen = false, misses = 0;
+    function put(n) { n.classList && n.classList.add('dp-fl-tell'); empty(holder); holder.appendChild(n); }
+    function alive() { if (connected(holder)) { seen = true; return true; } return !seen && ++misses < 5; }
+    function play() {
+      if (!alive()) return;
+      if (connected(holder) && !still(env)) { put(tell); later(function () { if (connected(holder) && holder.firstChild === tell) put(steady); }, TELL_MS); }
+      later(play, LOOP_MIN + Math.floor(Math.random() * (LOOP_MAX - LOOP_MIN)));
+    }
+    later(play, firstMs + 700);
+    return true;
+  }
+  /* the face with the expression (steady), or the tell loop; draw(spec, uidSuffix) -> node | null */
+  function face(holder, spec, expr, loop, draw, env, firstMs) {
+    if (!holder || !spec || !expr || typeof draw !== 'function') return false;
+    var drawn = null;
+    try { drawn = draw(FL.specWith(spec, { expr: expr }), '-t'); } catch (err) { drawn = null; }
+    if (!drawn) return false;
+    mark(drawn, loop ? 'tell' : 'expr');
+    var steady = holder.firstChild;
+    if (loop && steady && !still(env)) return tellLoop(holder, steady, drawn, env, firstMs);
+    empty(holder); holder.appendChild(drawn);
+    return true;
+  }
+
   function apply(e, card, o, env) {
     env = env || {};
     if (!e || !card || card.kind !== 'npc' || !FL || !env.document) return false;
@@ -85,9 +125,8 @@
 
     if (expr || pose) ensureAfraid(env.K);
     if (expr && holder && spec && typeof env.portrait === 'function') {
-      var drawn = null;
-      try { drawn = env.portrait(FL.specWith(spec, { expr: expr }), uid); } catch (err) { drawn = null; }
-      if (drawn) { empty(holder); holder.appendChild(drawn); done = true; }
+      var loop = look.tell === true;
+      if (face(holder, spec, expr, loop, function (sp, k) { return env.portrait(sp, uid + (loop ? k : '')); }, env, pose && !look.re ? POSE_MS : 0)) done = true;
     }
     var bi = bd ? BD.info(faction, id) : null;
     if (bi) BD.decorate(e, bi);
@@ -101,7 +140,40 @@
     return done;
   }
 
+  /* IP1 (overseer ruling 13/11): Show on iPad (the display kind `npc`, old stage or new) plays the look too. The full figure takes the signature pose for
+     POSE_MS, then stands as drawn, and the tell plays on it (looped as above). e is the stage; vm.look the names the GM sent; env as for apply(). */
+  function applyStage(e, vm, env) {
+    env = env || {};
+    if (!e || !vm || !FL || !env.document || typeof env.figure !== 'function' || !on('face.expressions', env)) return false;
+    var look = FL.clean(vm.look), spec = vm.spec, holder = byClass(e, 'dp-npc-fig');
+    if (!look || !spec || !holder || !holder.firstChild || (!look.expr && !look.pose)) return false;
+    ensureAfraid(env.K);
+    var uid = 'dp-fls-' + safe(vm.npcId) + '-' + safe(vm.seq), done = false, steady = holder.firstChild;
+    var draw = function (sp, k) { return env.figure(sp, uid + k); };
+    var loop = !!look.expr && look.tell === true && !still(env), later = typeof env.later === 'function' ? env.later : function (f, ms) { return setTimeout(f, ms); };
+    if (look.expr && !loop) {                     /* a plain expression (or a tell while the screen is held still): the face simply wears it */
+      var ex = null;
+      try { ex = draw(FL.specWith(spec, { expr: look.expr }), '-e'); } catch (err) { ex = null; }
+      if (ex) { steady = mark(ex, 'expr'); empty(holder); holder.appendChild(ex); done = true; }
+    }
+    if (look.pose) {
+      var posed = null;
+      try { posed = draw(FL.poseSpec(look.expr ? FL.specWith(spec, { expr: look.expr }) : spec, look.pose), '-p'); } catch (err) { posed = null; }
+      if (posed) {
+        mark(posed, 'pose'); if (posed.classList) posed.classList.add('dp-fl-tell');
+        empty(holder); holder.appendChild(posed); done = true;
+        later(function () { if (holder.firstChild === posed) { if (steady.classList) steady.classList.add('dp-fl-tell'); empty(holder); holder.appendChild(steady); } }, POSE_MS);
+      }
+    }
+    if (loop) {
+      var t = null;
+      try { t = draw(FL.specWith(spec, { expr: look.expr }), '-t'); } catch (err) { t = null; }
+      if (t) done = tellLoop(holder, steady, mark(t, 'tell'), env, look.pose ? POSE_MS : 0) || done;
+    }
+    return done;
+  }
+
   function unlock() { var BD = part('B68FaceBadge', './face-badge.js'); return !!(BD && BD.unlock()); }
 
-  return { on: on, active: active, ensureAfraid: ensureAfraid, apply: apply, unlock: unlock, POSE_MS: POSE_MS };
+  return { on: on, active: active, ensureAfraid: ensureAfraid, apply: apply, applyStage: applyStage, unlock: unlock, POSE_MS: POSE_MS, TELL_MS: TELL_MS };
 });

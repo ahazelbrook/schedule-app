@@ -8,6 +8,7 @@
      expr   neutral | pleased | hostile | afraid, or one of TELLS (an NPC's tell is one of the kit's own expression presets)
      pose   a name from POSES (the kit's arm poses): the signature pose, played once
      fmt    licence | badge | mugshot | society | passport
+     tell   true when expr is the person's tell (IP1): the iPad plays it every 12 to 20 s while they are up, unless the screen is held still
      re     true when this is the GM page laying the same spotlight again (the hold is renewed before it runs out): the iPad keeps the expression and format
             and does not replay the pose or the motif
    The badge number, the faction glyph and style, and the motif are worked out on the iPad from the NPC's id and faction (already served), so they add no field here.
@@ -59,6 +60,7 @@
     if (has(POSES, raw.pose)) out.pose = raw.pose;
     if (has(FMTS, raw.fmt)) out.fmt = raw.fmt;
     if (raw.re === true) out.re = true;
+    if (raw.tell === true && out.expr) out.tell = true;      /* IP1: expr is the person's own tell, so the iPad plays it now and then rather than wearing it */
     return Object.keys(out).length ? out : null;
   }
 

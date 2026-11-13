@@ -256,6 +256,7 @@
       if (n) {
         vm.name = n.name || title; vm.alias = n.alias; vm.sub = [n.role, n.faction].filter(Boolean).join(' · ');
         vm.description = n.description; vm.spec = n.spec; vm.faction = n.faction;      /* KS16: the nameplate's faction stripe (a player field, already in sub) */
+        if (isObj(d.look)) vm.look = d.look;      /* IP1: the names of the tell and the signature pose the GM sent (display/face-look.js cleans them again) */
       }
       return vm;
     }
@@ -1079,7 +1080,9 @@
       e.appendChild(box);
       return { el: e, destroy: function () {} };
     }
-    if (root.B68StageScene && root.B68StageScene.on()) { var k16 = root.B68StageScene.npcStage(vm, seq, { document: document, figure: function (sp, id) { var r = drawFigure(sp, id, ctx.figures); return r ? document.importNode(r.node, true) : null; } }); if (k16) return k16; }   /* KS16 (kit.stage): over the dimmed scene */
+    var figEnv = { document: document, K: ctx.figures, reduced: reduced(), figure: function (sp, id) { var r = drawFigure(sp, id, ctx.figures); return r ? document.importNode(r.node, true) : null; } };
+    function look(st) { if (vm.look && root.B68FaceRender && typeof root.B68FaceRender.applyStage === 'function') { try { root.B68FaceRender.applyStage(st.el, { look: vm.look, spec: vm.spec, npcId: vm.npcId, seq: seq }, figEnv); } catch (err) { /* the figure stays as drawn */ } } return st; }     /* IP1: the tell and the signature, on Show on iPad too */
+    if (root.B68StageScene && root.B68StageScene.on()) { var k16 = root.B68StageScene.npcStage(vm, seq, { document: document, figure: figEnv.figure }); if (k16) return look(k16); }   /* KS16 (kit.stage): over the dimmed scene */
     var fig = drawFigure(vm.spec, 'dp-npc-' + seq, ctx.figures);
     if (fig) {
       var holder = el('div', 'dp-npc-fig'); holder.setAttribute('aria-hidden', 'true');
@@ -1092,7 +1095,7 @@
     if (vm.alias) txt.appendChild(el('p', 'dp-npc-alias', '“' + vm.alias + '”'));
     if (vm.description) txt.appendChild(el('p', 'dp-npc-desc', vm.description));
     e.appendChild(txt);
-    return { el: e, destroy: function () {} };
+    return look({ el: e, destroy: function () {} });
   }
 
   /* the map: sanitised, inline, fitted, with pinch / two-finger pan / double-tap and a title strip that fades */
