@@ -64,6 +64,8 @@ const NPCS = [
     spec: { figure: 'fem', skin: 'porcelain', heightIn: 66, age: 47, hair: { style: 'beehive', color: 'cloth-chocolate' }, outfit: { base: { type: 'shirt', color: 'cloth-white' }, outer: { type: 'double-breasted', color: 'cloth-oxblood' } } } }],
   ['n-dov', { name: 'Dov Kessler', alias: '', role: 'House security', faction: 'The Tidewater Watch', description: 'Watches the doors.', revealed: true, gmNotes: 'Tell: tired\nSignature: cross\n',
     spec: { skin: 'tan', heightIn: 74, age: 44, hair: { style: 'buzz', color: 'cloth-graphite' }, outfit: { outer: { type: 'peacoat', color: 'cloth-charcoal' } } } }],
+  ['n-long', { name: 'Bartholomewes Cunninghamsey', alias: 'The Accountant of Lower Wharf Street', role: 'Bookkeeper to the harbour board', faction: 'The Kestrel Club', description: 'Long.', revealed: true,
+    spec: { skin: 'olive', heightIn: 70, age: 58, hair: { style: 'slick-back', color: 'cloth-graphite', hat: { type: 'peaked-cap', color: 'cloth-navy' } }, outfit: { outer: { type: 'peacoat', color: 'cloth-navy' } } } }],
   ['n-hid', { name: 'GM-ONLY-NPC-1', alias: 'GM-ONLY-ALIAS-1', role: 'GM-ONLY-ROLE-1', faction: 'GM-ONLY-FACTION-1', description: 'GM-ONLY-DESC-1', gmNotes: 'GM-ONLY-NOTES', revealed: false, spec: { heightIn: 70, age: 40 } }]
 ];
 
@@ -169,6 +171,33 @@ try {
     expect(!/dp-npc/.test(v.stage) || Date.now() - t0 < 6000, 'and the stage is not the NPC: ' + v.stage);
     await sleep(800);
     expect(!(await look(I.page)).card, 'and it does not come back');
+  });
+  await step('on: the type never runs over the figure: left of its box at 1024x768, 1180x820, 1536x864, 1920x1080; clear of it in 768x1024; the name and the alias whole, the faction on its own tape', async () => {
+    await toMap(I);
+    await gp.click(intro('n-long'));
+    expect(await until(async () => (await look(I.page)).card, 6000, 50), 'the card came');
+    await sleep(1700);
+    const bad = [];
+    for (const [w, h] of [[1024, 768], [1180, 820], [1536, 864], [1920, 1080], [768, 1024]]) {
+      await I.page.setViewportSize({ width: w, height: h }); await sleep(250);
+      const g = await I.page.evaluate(() => {
+        const card = document.querySelector('.pi-card'); if (!card) return null;
+        const R = (e) => e.getBoundingClientRect(), fig = R(card.querySelector('.pi-figout')), clip = R(card.querySelector('.pi-figclip'));
+        const texts = [...card.querySelectorAll('.pi-kick-t, .pi-name-front, .pi-name-back, .pi-alias')].map(R);
+        const nm = card.querySelector('.pi-name-front'), al = card.querySelector('.pi-alias'), tapes = [...card.querySelectorAll('.pi-kick-t')].map((e) => e.textContent);
+        return { right: Math.max(...texts.map((r) => r.right)), top: Math.min(...texts.map((r) => r.top)), figLeft: fig.left, figTop: fig.top, clipBottom: Math.min(clip.bottom, fig.bottom),
+          nameWhole: nm.scrollWidth <= nm.clientWidth + 1, aliasWhole: al.scrollHeight <= al.clientHeight + 2, tapes };
+      });
+      if (!g) { bad.push(w + 'x' + h + ': the card went'); break; }
+      const portrait = h > w;
+      if (!portrait && g.right > g.figLeft + 1) bad.push(w + 'x' + h + ': type to ' + Math.round(g.right) + ' past the figure at ' + Math.round(g.figLeft));
+      if (portrait && g.clipBottom > g.top + 1) bad.push(w + 'x' + h + ': the figure to ' + Math.round(g.clipBottom) + ' under the type from ' + Math.round(g.top));
+      if (!g.nameWhole || !g.aliasWhole) bad.push(w + 'x' + h + ': clipped ' + JSON.stringify(g));
+      if (g.tapes[1] !== 'The Kestrel Club') bad.push(w + 'x' + h + ': the faction tape ' + JSON.stringify(g.tapes));
+      if (w === 768) await shot(I.page, 'long-portrait-' + ENGINE + '-768');
+    }
+    await I.page.setViewportSize({ width: 1180, height: 820 });
+    expect(!bad.length, bad.join(' / '));
   });
   await step('on: a hidden NPC\'s Introduce asks "Reveal and show?"; declined, nothing is sent: no card, the hidden name in neither the display GET nor the DOM', async () => {
     await toMap(I);

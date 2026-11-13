@@ -190,7 +190,9 @@
         enter.appendChild(ms); enter.appendChild(mc);
         out.classList.add('pi-hasmono');
       }
-      out.appendChild(enter); card.appendChild(out);
+      out.appendChild(enter);
+      var clip = el(doc, 'div', 'pi-figclip');      /* in portrait it stops just above the type block, so the type is never over the figure */
+      clip.appendChild(out); card.appendChild(clip);
 
       var type = el(doc, 'div', 'pi-type'), role = txt(npc.role, 120), fac = txt(npc.faction, 120), alias = txt(npc.alias, 120);
       /* the kicker: the role on one tape, the faction on the next (a line never breaks inside either) */
@@ -210,7 +212,20 @@
       card.appendChild(el(doc, 'div', 'pi-lb pi-lb-t'));
       card.appendChild(el(doc, 'div', 'pi-lb pi-lb-b'));
       card.appendChild(el(doc, 'div', 'pi-flash'));
-      return { el: card, name: h, front: front, type: type, out: out, col: col, sil: sil };
+      return { el: card, name: h, front: front, type: type, out: out, clip: clip, col: col, sil: sil };
+    }
+
+    /* the type never runs over the figure. Landscape: the type block is as wide as the free room left of the figure's box (at least 30% of the
+       width), and the name shrinks to fit it. Portrait: the type runs across the foot and the figure is cut off just above it. */
+    function layout(c) {
+      var Wd = (W && W.innerWidth) || 1024, Hd = (W && W.innerHeight) || 768, portrait = Hd > Wd;
+      c.type.style.width = ''; c.clip.style.bottom = '';
+      if (!portrait) {
+        var fr = c.out.getBoundingClientRect(), tr = c.type.getBoundingClientRect();
+        if (fr.width > 0 && fr.left > tr.left) c.type.style.width = Math.round(Math.max(Wd * 0.3, fr.left - tr.left - Wd * 0.025)) + 'px';
+      }
+      fitName(c);
+      if (portrait && !c.free) c.clip.style.bottom = Math.max(0, Math.round(Hd - c.type.getBoundingClientRect().top + Hd * 0.015)) + 'px';
     }
 
     /* the name as large as fits: one line at up to 14vh, else two */
@@ -241,6 +256,7 @@
         me.timers.push(later(function () { if (cur === me) cut(); }, 200));
       }
       me.timers.push(later(land, Math.max(0, Pure.T.fade - Pure.T.out + 120)));
+      me.timers.push(later(function () { c.free = true; c.clip.style.bottom = ''; }, 260));      /* portrait: the whole figure again once the type has wiped away */
       try {
         var stages = container.querySelectorAll('.dp-stage.dp-npc'), st = stages.length ? stages[stages.length - 1] : null;
         var tgt = screenRect(bodyOf(st && st.querySelector('.dp-npc-fig svg'))), mine = screenRect(bodyOf(c.col));
@@ -275,9 +291,9 @@
         if (vb && c.sil) { c.sil.setAttribute('viewBox', c.col.getAttribute('viewBox')); c.sil.setAttribute('preserveAspectRatio', 'xMidYMin meet'); c.sil.removeAttribute('width'); c.sil.removeAttribute('height'); }
         if (vb) c.out.style.width = 'calc(var(--pi-figh) * ' + (Math.round(vb[2] / vb[3] * 10000) / 10000) + ')';      /* the box is the figure's own shape */
       }
-      fitName(c);
+      layout(c);
       c.el.classList.remove('pi-measure');
-      var me = cur, refit = function () { if (cur === me) fitName(c); };
+      var me = cur, refit = function () { if (cur === me) layout(c); };
       if (W && typeof W.addEventListener === 'function') { W.addEventListener('resize', refit); me.offs.push(function () { W.removeEventListener('resize', refit); }); }
       if (doc.fonts && doc.fonts.status !== 'loaded' && doc.fonts.ready && typeof doc.fonts.ready.then === 'function') doc.fonts.ready.then(refit, function () {});
       if (still) { me.timers.push(later(function () { if (cur === me) cut(); }, Math.max(0, Pure.STILL_MS - pos))); return; }

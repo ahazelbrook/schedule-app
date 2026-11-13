@@ -28,6 +28,7 @@
 }
 
 /* ---------- the figure: a silhouette that comes in from the right, then colour; the silhouette stays as an offset print shadow ---------- */
+.pi-figclip { position: absolute; inset: 0; overflow: hidden; }
 .pi-figout { position: absolute; top: calc(var(--pi-lb) + 2.5vh); right: 8vw; height: var(--pi-figh); }
 .pi-enter { position: relative; height: 100%; }
 .pi-col { position: relative; height: 100%; }
@@ -51,14 +52,14 @@
 }
 .pi-name {
   position: relative; margin: 0; font: 900 14vh/.9 var(--font-poster, "Archivo Compressed", Impact, "Arial Narrow", sans-serif);
-  letter-spacing: .005em; text-transform: uppercase; white-space: nowrap;
+  letter-spacing: .005em; word-spacing: .1em; text-transform: uppercase; white-space: nowrap;
 }
 .pi-name[data-pi-wrap="1"] { white-space: normal; text-wrap: balance; }
 .pi-name-front { position: relative; display: block; color: var(--pi-ink, #14110e); }
 .pi-name-back { position: absolute; left: .055em; top: .055em; width: 100%; color: var(--pi-back, #fbf8f1); }
 .pi-alias {
   margin: 1.8vh 0 0; font: italic 700 5.2vh/1.1 var(--font-cond, "Archivo Condensed", "Arial Narrow", sans-serif);
-  color: var(--pi-ink, #14110e); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--pi-ink, #14110e); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: break-word;
 }
 
 /* ---------- the letterbox and the flash ---------- */
@@ -84,6 +85,7 @@
 .pi-lb-b { animation: pi-lbb 420ms cubic-bezier(.6, 0, .4, 1) var(--pi-out, 99s) both; }
 .pi-figout.pi-settling { transition: transform 560ms cubic-bezier(.6, 0, .25, 1), opacity 180ms linear; }
 .pi-figout.pi-fading { opacity: 0; transition: opacity 180ms linear; }
+.pi-settling .pi-sil { opacity: 0; transition: opacity 150ms linear; }      /* the print shadow leaves as the figure settles (no ghost over the stage) */
 .pi-figout.pi-settling.pi-fading { transition: transform 560ms cubic-bezier(.6, 0, .25, 1), opacity 180ms linear; }
 
 @keyframes pi-enter {
