@@ -201,6 +201,14 @@ await test('IP2c sticky: a spot that still clears every control is kept; a cover
   assert.ok(near && !cov(near.x, near.y, 300, 60, avoid, 1366, 768) && Math.abs(near.x - 800) + Math.abs(near.y - 650) <= 120, 'the nearest free spot: ' + JSON.stringify(near));
 });
 
+await test('IP2d forms: two rows, one row, a chip, the open list (oldest first; the count of what is not shown)', () => {
+  const q = G._pure.linesPure(); ['A', 'B', 'C'].forEach((t) => q.add({ text: t }));
+  const v = (f) => { const x = q.view(f); return [x.rows.map((r) => r.o.text).join(''), x.more, x.chip].join('|'); };
+  assert.equal(v('two'), 'AB|1|0'); assert.equal(v('one'), 'A|2|0'); assert.equal(v('chip'), '|0|3'); assert.equal(v('open'), 'ABC|0|0');
+  const one = G._pure.linesPure(); one.add({ text: 'Z' });
+  assert.equal(one.view('two').more, 0); assert.equal(one.view('chip').chip, 1);
+});
+
 /* ---------- the Worker ---------- */
 const DISPLAY = { me: { role: 'display', email: 'table@example.test' } };
 async function freshDb() {

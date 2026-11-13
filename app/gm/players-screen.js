@@ -59,7 +59,9 @@
       take: function (id) { for (var i = 0; i < list.length; i++) if (list[i].id === id) return list.splice(i, 1)[0]; return null; },
       /* the rows to draw: oldest first; collapsed, the oldest two and how many more */
       rows: function (open) { var all = list.slice().reverse(); return open || all.length <= LINES_SHOWN ? { rows: all, more: 0 } : { rows: all.slice(0, LINES_SHOWN), more: all.length - LINES_SHOWN }; },
-      clear: function () { return list.splice(0); }
+      clear: function () { return list.splice(0); },
+      /* IP2d: what a form shows: 'two' (two rows, + n more), 'one' (one row, + n more), 'chip' (no row: n waiting), 'open' (every row) */
+      view: function (form) { var all = list.slice().reverse(), k = form === 'open' ? all.length : form === 'one' ? 1 : form === 'chip' ? 0 : LINES_SHOWN; return { rows: all.slice(0, k), more: form === 'chip' || form === 'open' ? 0 : Math.max(0, all.length - k), chip: form === 'chip' ? all.length : 0 }; }
     };
   }
   /* where the box goes: candidate spots (x, y, top-left of a w x h box) scanned from the bottom right; the first that meets none of `avoid` (rects) */
@@ -84,22 +86,58 @@
     if (!rec) { rec = { root: root, p: linesPure(), el: null, show: null, open: false, hover: false, hoverT: null, at: null }; QS.push(rec); if (QS.length > 4) QS.shift(); }
     rec.q = q;
     function log(text) { try { if (typeof rec.q.log === 'function') rec.q.log(text); } catch (e) { /* the log is a nicety */ } }
-    /* IP2c (the delta review): the box never moves under the GM's hand. It is placed only when a line comes or goes, "+ n more" opens or closes,
-       or the window is resized; never on a timer or a scroll. Then it keeps its spot unless that spot now meets a control (or leaves the window),
-       and moves the shortest way that clears it. While the pointer is over it (and for 600 ms after it leaves) or it holds the focus, it stays put */
+    /* IP2c (the delta review): the box never moves under the GM's hand. While the pointer is over it (and for 600 ms after it leaves) or it holds
+       the focus, it stays put; a re-place asked meanwhile runs once the hand has gone. Otherwise it is placed when a line comes or goes, the list
+       opens or closes, the window is resized, or (IP2d) the page under it changes; never on a timer or a scroll. It keeps its spot unless that spot
+       now meets a control (or leaves the window), and then moves the shortest way that clears it.
+       IP2d (a small laptop): collapsed, it SHRINKS before it covers anything: two rows and "+ n more", else one row and "+ n more", else a one-line
+       chip ("3 lines waiting") that opens the list on a press. Only the open list may sit over a control (the GM asked for it). */
+    var FORMS = ['two', 'one', 'chip'];
     function held() { var d = root.ownerDocument, a = d && d.activeElement; return rec.hover || !!(a && rec.el && rec.el.contains(a)); }
+    function avoidList(d, el, H0) {
+      var avoid = [];
+      [].forEach.call(d.querySelectorAll('button, input, select, textarea, a[href], [role="button"], .rv-card'), function (n) {
+        if (el.contains(n)) return; var r = n.getBoundingClientRect(); if (r.width && r.height && r.bottom > H0 * 0.4 && r.top < H0) avoid.push(r);
+      });
+      return avoid;
+    }
     function place() {
       var el = rec.el, d = root.ownerDocument, win = d && d.defaultView; if (!el || el.hidden || !win) return;
       if (held()) { rec.owed = true; return; }      /* asked while held: done once the hand has gone */
       rec.owed = false;
-      var w = el.offsetWidth, h = el.offsetHeight, W0 = win.innerWidth, H0 = win.innerHeight, avoid = [];
-      [].forEach.call(d.querySelectorAll('button, input, select, textarea, a[href], [role="button"], .rv-card'), function (n) {
-        if (el.contains(n)) return; var r = n.getBoundingClientRect(); if (r.width && r.height && r.bottom > H0 * 0.4 && r.top < H0) avoid.push(r);
+      var W0 = win.innerWidth, H0 = win.innerHeight, avoid = avoidList(d, el, H0), es = el.style, forms = rec.open ? ['open'] : FORMS;
+      for (var i = 0; i < forms.length; i++) {
+        if (rec.form !== forms[i]) build(forms[i]);
+        var w = el.offsetWidth, h = el.offsetHeight;
+        if (rec.at && !covers(rec.at.x, rec.at.y, w, h, avoid, W0, H0)) { es.left = rec.at.x + 'px'; es.top = rec.at.y + 'px'; return; }      /* its spot still clears every control */
+        var s = spotFor(W0, H0, w, h, avoid, 60, rec.at);
+        if (s) { rec.at = s; es.right = ''; es.bottom = ''; es.left = s.x + 'px'; es.top = s.y + 'px'; return; }
+      }
+      var fw = el.offsetWidth, fh = el.offsetHeight;      /* nowhere clear even as a chip (or the open list): bottom right, as before */
+      rec.at = { x: Math.max(8, W0 - 60 - fw - 8), y: Math.max(8, H0 - fh - 6) }; es.right = ''; es.bottom = ''; es.left = rec.at.x + 'px'; es.top = rec.at.y + 'px';
+    }
+    /* the rows of one form; the focus kept on the same row's same button (IP2d) */
+    function build(form) {
+      var el = rec.el, d = el.ownerDocument, a = d.activeElement, keep = a && el.contains(a) ? { line: a.getAttribute('data-p2-line'), id: a.getAttribute('data-id') } : null;
+      var V = rec.p.view(form);
+      rec.form = form; el.textContent = '';
+      el.style.width = form === 'chip' ? 'auto' : 'min(430px, 34vw)';
+      V.rows.forEach(function (it) {
+        var row = d.createElement('div'); row.className = 'gm-p2-line'; row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.gap = '6px';
+        var t = d.createElement('span'); t.className = 'gm-p2-text'; t.style.flex = '1 1 auto'; t.style.minWidth = '0'; t.style.overflow = 'hidden'; t.style.textOverflow = 'ellipsis'; t.style.whiteSpace = 'nowrap';
+        t.textContent = 'Public line: “' + str(it.o.text).trim() + '”'; t.title = t.textContent; row.appendChild(t);
+        [['send', 'Send', 'btn sm primary'], ['later', 'Not now', 'btn sm']].forEach(function (b) {
+          var x = d.createElement('button'); x.type = 'button'; x.className = b[2]; x.setAttribute('data-p2-line', b[0]); x.setAttribute('data-id', it.id); x.textContent = b[1]; x.style.flex = '0 0 auto'; row.appendChild(x);
+        });
+        el.appendChild(row);
       });
-      if (rec.at && !covers(rec.at.x, rec.at.y, w, h, avoid, W0, H0)) return;      /* the spot it has still clears every control: it stays */
-      var s = spotFor(W0, H0, w, h, avoid, 60, rec.at), es = el.style;
-      if (!s) s = { x: Math.max(8, W0 - 60 - w - 8), y: Math.max(8, H0 - h - 6) };      /* no free spot: bottom right, as before */
-      rec.at = s; es.right = ''; es.bottom = ''; es.left = s.x + 'px'; es.top = s.y + 'px';
+      if (V.more || V.chip || form === 'open') {
+        var m = d.createElement('button'); m.type = 'button'; m.className = V.chip ? 'gm-p2-chip' : 'gm-p2-more'; m.setAttribute('data-p2-line', 'more');
+        m.textContent = form === 'open' ? 'Show fewer' : V.chip ? V.chip + (V.chip === 1 ? ' public line waiting' : ' public lines waiting') : '+ ' + V.more + ' more';
+        var ms = m.style; ms.background = 'none'; ms.border = '0'; ms.color = V.chip ? '#f2ede1' : '#c9c1b2'; ms.font = 'inherit'; ms.fontSize = V.chip ? '13px' : '12px'; ms.padding = '0 2px'; ms.textAlign = 'left'; ms.cursor = 'pointer'; ms.justifySelf = 'start';
+        el.appendChild(m);
+      }
+      if (keep) { var back = el.querySelector('[data-p2-line="' + keep.line + '"]' + (keep.id ? '[data-id="' + keep.id + '"]' : '')) || (keep.line === 'more' ? null : el.querySelector('[data-p2-line="more"]')); if (back && back.focus) back.focus(); }
     }
     function draw() {
       var d = root.ownerDocument || (W && W.document); if (!d) return;
@@ -119,29 +157,23 @@
         rec.el.addEventListener('pointerenter', function () { clearTimeout(rec.hoverT); rec.hover = true; });
         rec.el.addEventListener('pointerleave', function () { clearTimeout(rec.hoverT); rec.hoverT = setTimeout(function () { rec.hover = false; if (rec.owed) place(); }, 600); });
         rec.el.addEventListener('focusout', function () { setTimeout(function () { if (rec.owed) place(); }, 0); });
-        root.appendChild(rec.el); rec.at = null;
+        root.appendChild(rec.el); rec.at = null; rec.form = '';
         var win = d.defaultView; if (win && win.addEventListener && !rec.resizeOn) { rec.resizeOn = true; win.addEventListener('resize', function () { place(); }); }
+        /* IP2d: the page under it changed (a redraw that moves controls): placed again, once things settle; the hold still applies; a scroll is no change */
+        if (win && typeof win.MutationObserver === 'function') {
+          var mt = null;
+          rec.mo = new win.MutationObserver(function (recs) {
+            for (var i = 0; i < recs.length; i++) { var t = recs[i].target; if (!(rec.el && (t === rec.el || rec.el.contains(t)))) { clearTimeout(mt); mt = setTimeout(function () { if (rec.el && !rec.el.hidden) place(); }, 400); return; } }
+          });
+          rec.mo.observe(root, { childList: true, subtree: true });
+        }
       }
       if (rec.p.list.length <= LINES_SHOWN) rec.open = false;
-      var R = rec.p.rows(rec.open);
-      rec.el.hidden = !R.rows.length; rec.el.style.display = R.rows.length ? 'grid' : 'none';
-      rec.el.textContent = '';
-      if (!R.rows.length) { rec.at = null; return; }
-      R.rows.forEach(function (it) {
-        var row = d.createElement('div'); row.className = 'gm-p2-line'; row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.gap = '6px';
-        var t = d.createElement('span'); t.className = 'gm-p2-text'; t.style.flex = '1 1 auto'; t.style.minWidth = '0'; t.style.overflow = 'hidden'; t.style.textOverflow = 'ellipsis'; t.style.whiteSpace = 'nowrap';
-        t.textContent = 'Public line: “' + str(it.o.text).trim() + '”'; t.title = t.textContent; row.appendChild(t);
-        [['send', 'Send', 'btn sm primary'], ['later', 'Not now', 'btn sm']].forEach(function (b) {
-          var x = d.createElement('button'); x.type = 'button'; x.className = b[2]; x.setAttribute('data-p2-line', b[0]); x.setAttribute('data-id', it.id); x.textContent = b[1]; x.style.flex = '0 0 auto'; row.appendChild(x);
-        });
-        rec.el.appendChild(row);
-      });
-      if (R.more || rec.open) {
-        var m = d.createElement('button'); m.type = 'button'; m.className = 'gm-p2-more'; m.setAttribute('data-p2-line', 'more');
-        m.textContent = rec.open ? 'Show fewer' : '+ ' + R.more + ' more';
-        var ms = m.style; ms.background = 'none'; ms.border = '0'; ms.color = '#c9c1b2'; ms.font = 'inherit'; ms.fontSize = '12px'; ms.padding = '0 2px'; ms.textAlign = 'left'; ms.cursor = 'pointer'; ms.justifySelf = 'start';
-        rec.el.appendChild(m);
-      }
+      var n = rec.p.list.length;
+      rec.el.hidden = !n; rec.el.style.display = n ? 'grid' : 'none';
+      if (!n) { rec.el.textContent = ''; rec.at = null; rec.form = ''; return; }
+      build(rec.open ? 'open' : (rec.form && rec.form !== 'open' ? rec.form : 'two'));
+      if (!rec.open) rec.form = '';      /* a collapsed redraw tries the largest form first again */
       place();
     }
     return {

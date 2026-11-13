@@ -334,6 +334,49 @@ try {
     const endLog = await until(async () => { const j = (await api('GET', '/gm/state')).json || {}; const d = j.doc || j; const lg = d.night && d.night.log ? Object.values(d.night.log) : []; return lg.filter((e) => /Public line not sent \(the night ended\): The speeches/i.test(e.text || '')).length === 2 ? true : null; }, 8000);
     check(!!gone && !!endLog, 'IP2c: End the night empties the queue and logs each line as not sent');
     check(!/Public line/.test(await displayGet()), 'IP2c: no public line text reaches the display GET');
+
+    /* IP2d (a small laptop): collapsed, the panel shrinks before it covers anything (two rows, one row, a chip), on the Run view's Board and Map,
+       after three Next beats, at five laptop sizes with 1, 3 and 5 lines waiting. The lines go in through the page's own queue (the module's
+       lines() on the page root); the real path from Next is checked above. The pointer stays off the panel */
+    const setLines = (n) => page.evaluate((k) => {
+      const box = document.querySelector('#gm-p2-lines'), M = window.B68GmPlayersScreen; if (!box || !M) return false;
+      const L = M.lines({ root: box.parentNode, log() {} }); L.clear('test');
+      for (let i = 0; i < k; i++) L.add({ kind: 'text', text: 'Probe line ' + (i + 1) + ' with a long public sentence that runs on' }, () => null);
+      return true;
+    }, n);
+    const COVERS = () => {
+      const q = document.querySelector('#gm-p2-lines'); if (!q || q.hidden || q.style.display === 'none') return { none: true };
+      const b = q.getBoundingClientRect(), hit = (r) => !(r.left >= b.right || r.right <= b.left || r.top >= b.bottom || r.bottom <= b.top);
+      const bad = [...document.querySelectorAll('button, input, select, textarea, a[href], [role="button"], .rv-card')].filter((n) => !q.contains(n) && n.offsetParent !== null).filter((n) => { const r = n.getBoundingClientRect(); return r.width && r.height && hit(r); }).map((n) => (n.textContent || n.getAttribute('placeholder') || n.className).trim().slice(0, 24));
+      const form = q.querySelector('.gm-p2-chip') ? 'chip' : q.querySelectorAll('.gm-p2-line').length + ' row' + (q.querySelector('[data-p2-line="more"]') ? '+more' : '');
+      return { bad, form, open: /Show fewer/.test(q.textContent), out: b.left < 0 || b.top < 0 || b.right > innerWidth || b.bottom > innerHeight };
+    };
+    await page.mouse.move(3, 3);
+    const SMALL = [[1280, 720], [1280, 800], [1366, 768], [1440, 900], [1024, 768]];
+    for (const view of ['board', 'map']) {
+      await page.evaluate((v) => { const b = document.querySelector('#gm-runv [data-rv="view"][data-v="' + v + '"]'); if (b) b.click(); }, view); await sleep(900);
+      for (const [w, h] of SMALL) {
+        await page.setViewportSize({ width: w, height: h }); await sleep(700);
+        await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+        for (let i = 0; i < 3; i++) { await page.keyboard.press('ArrowRight'); await sleep(350); }
+        const res = [];
+        for (const n of [1, 3, 5]) {
+          await setLines(n); await sleep(900);
+          res.push([n, await page.evaluate(COVERS)]);
+        }
+        check(res.every(([, c]) => !c.none && !c.open && !c.out && c.bad.length === 0), 'IP2d: ' + view + ' ' + w + 'x' + h + ' after three Next beats, collapsed with 1, 3 and 5 lines: covers no control (' + res.map(([n, c]) => n + ': ' + c.form + (c.bad.length ? ' OVER ' + c.bad.join('/') : '')).join('; ') + ')');
+        if (SHOTS && w === 1280 && h === 720) await page.screenshot({ path: path.join(SHOTS, 'small-' + view + '-1280x720.png') });
+      }
+    }
+    await page.setViewportSize({ width: 1366, height: 768 }); await sleep(600);
+    /* IP2d: a new line keeps the keyboard on the same row's same button */
+    await setLines(2); await sleep(600);
+    const f0 = await page.evaluate(() => { const b = document.querySelector('#gm-p2-lines [data-p2-line="later"]'); b.focus(); return b.getAttribute('data-id'); });
+    await page.evaluate(() => { const box = document.querySelector('#gm-p2-lines'); window.B68GmPlayersScreen.lines({ root: box.parentNode, log() {} }).add({ kind: 'text', text: 'One more line' }, () => null); });
+    await sleep(500);
+    const f1 = await page.evaluate(() => { const a = document.activeElement; return a ? [a.getAttribute('data-p2-line'), a.getAttribute('data-id')] : null; });
+    check(!!f1 && f1[0] === 'later' && f1[1] === f0, 'IP2d: a new line rebuilds the rows and the focus stays on the same row\'s Not now: ' + JSON.stringify(f1));
+    await page.evaluate(() => { const box = document.querySelector('#gm-p2-lines'); document.activeElement && document.activeElement.blur(); window.B68GmPlayersScreen.lines({ root: box.parentNode, log() {} }).clear('test'); });
     for (let i = 0; i < 12; i++) { const b = await page.$('[data-rv="back"]:not([disabled])'); if (!b) break; await b.click(); await sleep(150); }
     await sleep(400); await api('PATCH', '/gm/ambient', { overlay: null });
 
