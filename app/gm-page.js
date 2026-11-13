@@ -2577,7 +2577,7 @@
       patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); }, toast: toast,
       cueSlot: function () { return S === me && me.band ? me.band.cueSlot() : null; }, changed: function () { if (S === me && me.band) me.band.update(); },
       log: function (t) { if (S === me && me.night) me.night.cue(t); },
-      scene: function (id) { return patchAmbient({ mode: 'pin', scene: id }).then(function (r) { return r !== null; }); },
+      scene: function (id) { return p2Ambient({ mode: 'pin', scene: id }).then(function (r) { return r !== null; }); },
       show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
       reveal: function (name) {
         var x = csNpc(name), ref = x && npcRef(x.id); if (!x || !ref) return Promise.resolve({ ok: false, say: 'No NPC called ' + name + '.' });
@@ -4213,7 +4213,7 @@
       setThreat: function (text) { return rollSetThreat(text); }, roomSelected: function (name) { rollRoomSelected(name); },
       /* the NPC cards and the prep note's rooms (the Rooms section), and the Prep decorator for the SAY callouts */
       hasNpcCard: function (names) { return !!npcCardSrc(names); },
-      npcCard: function (names) { var src = npcCardSrc(names); return src ? npcCardHtml(src, 'rn-') : ''; },
+      npcCard: function (names) { var src = npcCardSrc(names) || p2NotesSrc(names); return src ? npcCardHtml(src, 'rn-') : ''; },      /* IP2: no vault card, the cast notes */
       decorate: function (el) { if (W.B68GmPrep && el) W.B68GmPrep.decorate(el, {}); },
       roomNote: function (room) { var rn = runRoomNotes(), e = rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? rn.byRoom[room] : null, si = siteInst(), md = e ? str(e.md) : ''; if (si && md) md = si.noteMd(md);      /* N3: the If it goes wrong line is the card's action line, not the note's */
         return e && str(e.md).trim() ? npcCardHtml(md, 'rm-') : null; },
@@ -5008,6 +5008,7 @@
     var ln = $q('#gm-ipad-ap');
     if (ln) { ln.hidden = !v; if (v) { var m = ln.querySelector('[data-ap-badge]'), t = ln.querySelector('[data-gm="aptoggle"]'); if (m) m.textContent = v.badge; if (t) t.textContent = v.action; var o = ln.querySelector('[data-gm="apoff"]'); if (o) o.hidden = v.mode === 'off'; } }
     if (W.B68GmIpadTray) W.B68GmIpadTray.refresh();      /* the tray's autopilot pill (gm/ipad-tray.js) */
+    if (ln && W.B68GmPlayersScreen) W.B68GmPlayersScreen.apLine(ln, b09On('stage.players'));      /* IP2: the row says why it sends nothing */
   }
   /* Take over (or Hand back, or Switch on): the top bar's pill, the Blade panel's header and the iPad tab all call this */
   function apToggle() {
@@ -5024,7 +5025,7 @@
     var ap = S && S.ap; if (!ap) return;
     if (!isObj(camp) || !Array.isArray(camp.clocks)) { ap.clocks = null; return; }
     var now = apClockMap(), prev = ap.clocks; ap.clocks = now;
-    if (!prev) return;
+    if (!prev || b09On('stage.players')) return;      /* IP2: the dials show the clocks; the autopilot sends no clock overlay */
     var changed = [], gone = [];
     Object.keys(now).forEach(function (id) {
       var n = now[id], p = prev[id];
@@ -5060,7 +5061,7 @@
   }
   /* Voice's lines arrived for the NPC on stage: the page's own stage decides who (Voice's `who` is model text and is never looked up) */
   function apNpcSpoke() {
-    var ap = S && S.ap; if (!ap) return;
+    var ap = S && S.ap; if (!ap || b09On('stage.players')) return;      /* IP2: map first, the GM sends NPCs */
     var who = npcList().filter(function (x) { return staged(x.id) && str(x.doc.name).replace(/\s+/g, ' ').trim(); })[0];
     if (!who) return;
     apEvent({ type: 'npc', npcId: who.id, staged: true, revealed: who.doc.revealed === true, portrait: isObj(who.doc.spec) && Object.keys(who.doc.spec).length > 0 });
@@ -5372,9 +5373,9 @@
       roomMd: function (room) { var rn = S === me ? runRoomNotes() : null; return rn && room && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? str(rn.byRoom[room].md) : ''; },
       here: function (room) { var rs = S === me ? runV2() : null, RV = W.B68GmRunView; if (!rs || !RV || !room) return []; var st = ballDoc(rs.name); return RV.peopleIn(rs.play, st, typeof st.t === 'number' ? st.t : 0, room); },
       focusRoom: function () { return S === me && S.rv && runV2() ? S.rv.selected() : pickRoomName(); },
-      hold: function (npcId, ms, look) { var ov = { id: 'b17sl-' + newOverlayId().slice(-8), kind: 'npc', npcId: npcId, ms: ms }; if (look) ov.look = look; return showOverlay(ov); },
+      hold: function (npcId, ms, look) { var ov = { id: 'b17sl-' + newOverlayId().slice(-8), kind: 'npc', npcId: npcId, ms: ms }; if (look) ov.look = look; if (me.p2hold !== npcId) { me.p2hold = npcId; p2Card(npcId); } return showOverlay(ov); },      /* IP2: the first hold opens the card, not each re-lay */
       notes: function (id) { var d = S === me && isObj(me.npcs) ? me.npcs[id] : null; return isObj(d) ? str(d.gmNotes) : ''; },
-      clear: function () { var up = isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; return up.indexOf('b17sl-') === 0 ? clearOverlay() : Promise.resolve(null); },
+      clear: function () { me.p2hold = null; var up = isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; return up.indexOf('b17sl-') === 0 ? clearOverlay() : Promise.resolve(null); },
       overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
       confirm: function (m) { return W.confirm(m); },
       reveal: function (id) {
@@ -5583,10 +5584,11 @@
       reveal: function (npc) { return S === me ? missionReveal(npc) : Promise.resolve(false); },
       offer: function (spec) { if (S === me) missionOffer(spec); },
       toast: toast,
+      hold: function (o) { var M = S === me ? p2() : null; if (!M) return false; M.offerLine(o, missionOffer, showOverlay); return true; },      /* IP2 (stage.players): the public line waits for the GM's Send */
       overlay: function (o) { return S === me ? showOverlay(o) : Promise.resolve(null); },
       confirm: function (msg) { return W.confirm(msg); }
     });
-    me.mission.onPublished(function (r) { if (r && r.ok && S === me) missionOffer(null); });
+    me.mission.onPublished(function (r) { if (r && r.ok && S === me && !(S.offer && S.offer.keep)) missionOffer(null); });      /* IP2: a kept offer (the public line) outlives the publish */
     /* >>> VV6 in the Run view (app/gm/run-view.js seams): the Players chip, "End the night" in Run's menu, the Players view */
     var RV = W.B68GmRunView, chip = function () { if (!RV || !RV.setPlayersChip) return; var st = me.mission.status(); RV.setPlayersChip(st.text || 'Players: —', st.ok); };
     if (RV && Array.isArray(RV.menuItems) && !RV.menuItems.some(function (i) { return i.id === 'end-night'; })) {
@@ -6611,7 +6613,7 @@
     var list = npcList();
     box.innerHTML = '<div id="gm-npcgen"></div><h3 class="gm-band">The cast</h3>' +
       (list.length ? '<ul class="gm-npcs">' + list.map(function (x) {
-        var d = x.doc, rev = d.revealed === true, src = npcCardSrc([d.name].concat(d.alias || [])), open = !!src && S.npcCardOpen === x.id;
+        var d = x.doc, rev = d.revealed === true, src = npcCardSrc([d.name].concat(d.alias || [])) || (S.npcCardOpen === x.id ? p2NotesSrc([d.name]) : ''), open = !!src && S.npcCardOpen === x.id;
         return '<li class="gm-npcrow" data-id="' + esc(x.id) + '"><div class="gm-thumb" data-fig="' + esc(x.id) + '" aria-hidden="true"></div><div class="gm-npcmeta"><b>' + esc(d.name || 'Unnamed') + '</b><small>' + esc([d.role, d.faction].filter(Boolean).join(' · ')) + '</small>' + (rev ? '' : '<span class="gm-badge">Hidden</span>') + '</div>' +
           '<div class="gm-npcacts">' + (src ? '<button type="button" class="btn sm" data-gm="npccard" data-id="' + esc(x.id) + '" aria-expanded="' + open + '">Card</button>' : '') + '<button type="button" class="btn sm" data-gm="npcipad" data-id="' + esc(x.id) + '">Show on iPad</button>' + introHtml(x.id, rev) + stageHtml(x.id, staged(x.id)) + '</div></li>' +
           (open ? '<li class="gm-npccardrow"><div class="pp-card gm-castcard pp-doc">' + npcCardHtml(src, 'nc-') + '</div></li>' : '');
@@ -6790,7 +6792,25 @@
     if (introOn()) { W.B68GmIntro.introduce(id, introHost()); return; }      /* IP3 (stage.players): Show on iPad with a title card first (gm/players-intro.js) */
     if (!sh) { toast('Introduce needs the hosted app.', true); return; }
     if (d.revealed !== true) { toast('Reveal ' + (d.name || 'them') + ' first.', true); return; }
-    sh.show('rolodex', { npcIds: [id] }, { key: 'intro-' + id, ms: 20000 }).then(function (r) { if (r !== null && r !== undefined) toast('Introducing ' + (d.name || 'them') + '.'); }, function () { toast('Could not introduce them on the iPad.', true); });
+    sh.show('rolodex', { npcIds: [id] }, { key: 'intro-' + id, ms: 20000 }).then(function (r) { if (r !== null && r !== undefined) { toast('Introducing ' + (d.name || 'them') + '.'); p2Card(id); } }, function () { toast('Could not introduce them on the iPad.', true); });
+  }
+  /* IP2 (stage.players): the players' screen's GM side (gm/players-screen.js); off, p2() is null and every branch above and below takes the old path */
+  function p2() { return b09On('stage.players') && W.B68GmPlayersScreen ? W.B68GmPlayersScreen : null; }
+  function p2Ambient(p) {
+    var M = p2(); if (!M) return patchAmbient(p);
+    return M.scene({ patch: patchAmbient, shown: function () { return isObj(AM.shown) ? str(AM.shown.kind) : ''; }, current: function () { return isObj(AM.doc) ? { mode: AM.doc.mode, scene: AM.doc.scene } : null; },
+      blank: function () { return pushDisplay({ kind: 'blank' }); }, label: function (id) { var x = P.IPAD_SCENES.filter(function (y) { return y.id === id; })[0]; return x ? x.label : ''; }, toast: toast }, p);
+  }
+  function p2Card(id) {
+    var M = p2(), me = S; if (!M || !me) return;
+    M.openCard({ doc: document, npc: function (x) { return isObj(me.npcs) ? me.npcs[x] : null; }, rv: function () { return S === me && me.rv && me.rvBox && me.rvBox.isConnected ? me.rv : null; },
+      cast: function (x) { if (S !== me) return; me.npcCardOpen = x; renderNpcs(); } }, id);
+  }
+  function p2NotesSrc(names) {
+    var M = p2(); if (!M || !S || !isObj(S.npcs)) return '';
+    var want = [].concat(names).map(function (x) { return str(x).toLowerCase().trim(); }).filter(Boolean);
+    var id = Object.keys(S.npcs).filter(function (k) { var d = S.npcs[k]; return isObj(d) && [d.name].concat(d.alias || []).some(function (n) { return want.indexOf(str(n).toLowerCase().trim()) >= 0; }); })[0];
+    return id ? M.notesMd(S.npcs[id]) : '';
   }
   /* IP3: the introduction's switch and what gm/players-intro.js needs of this page (the reveal is Show on iPad's, the confirm is asked()) */
   function introOn() { return !!W.B68GmIntro && b09On('stage.players'); }
@@ -6810,7 +6830,7 @@
       pre = Promise.resolve().then(function () { return ref.update({ revealed: true, firstSeen: d.firstSeen || nowIso() }); });
     }
     pre.then(function () { return pushDisplay({ kind: 'npc', npcId: id, title: str(d.name).slice(0, 2000) }); })
-      .then(function () { toast('On the iPad: ' + (d.name || 'the NPC') + '.'); }, function (e) { if (!e || !e.superseded) toast('Could not show ' + (d.name || 'them') + ' on the iPad: ' + errText(e), true); });
+      .then(function () { toast('On the iPad: ' + (d.name || 'the NPC') + '.'); p2Card(id); }, function (e) { if (!e || !e.superseded) toast('Could not show ' + (d.name || 'them') + ' on the iPad: ' + errText(e), true); });
   }
 
   /* ---------- the Prep tab (gm/prep.js; GM.md "Prep"): the prep notes from the pack, ticks and beats in the GM state ---------- */
@@ -7962,9 +7982,9 @@
       case 'siteroll': rollSite(str(b.getAttribute('data-score'))); break;
       case 'siteclear': clearSite(str(b.getAttribute('data-score'))); break;
       case 'ambretry': loadAmbient(); break;
-      case 'ambmode': { var am = b.getAttribute('data-v'); if (am === 'pin') patchAmbient({ mode: 'pin', scene: AM.doc && ipadView(AM.doc).scene || 'harvest' }); else patchAmbient({ mode: am }); break; }
-      case 'ambscene': patchAmbient({ mode: 'pin', scene: b.getAttribute('data-id') }); break;
-      case 'ambskip': patchAmbient({ skip: true }); break;
+      case 'ambmode': { var am = b.getAttribute('data-v'); if (am === 'pin') p2Ambient({ mode: 'pin', scene: AM.doc && ipadView(AM.doc).scene || 'harvest' }); else p2Ambient({ mode: am }); break; }
+      case 'ambscene': p2Ambient({ mode: 'pin', scene: b.getAttribute('data-id') }); break;
+      case 'ambskip': p2Ambient({ skip: true }); break;
       case 'clearoverlay': clearOverlay(); break;
       case 'aptoggle': apToggle(); break;
       case 'apoff': apSwitchOff(); break;

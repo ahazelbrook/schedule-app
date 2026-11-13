@@ -20,6 +20,7 @@
      hiddenNpc(name) -> { id, name } | null, a hidden NPC the name belongs to      reveal(npc) -> Promise (asks first, then the page's reveal)
      offer(spec | null)  spec = { text, label, run } an actionable notice          toast(msg, bad)
      overlay(o) -> Promise, the page's showOverlay (the gate runs inside it)        confirm(msg) -> bool
+     hold(o) -> true (optional; IP2, stage.players): the page took the public line as an offer with Send, so nothing is sent now
      delay(fn, ms) -> handle, cancel(handle), now() -> Date                         (all optional; setTimeout, clearTimeout and new Date)
    controller:
      changed()                   something the mission reads may have moved: publish in 800 ms (each change restarts the wait)
@@ -304,6 +305,7 @@
       if (!o) return Promise.resolve(null);
       var hit = screenFor({ v: 1, hud: { text: o.text }, cards: {} }, src);
       if (hit) return Promise.resolve(null);       /* the gate would refuse it too; stay quiet */
+      if (typeof d.hold === 'function' && d.hold(o) === true) return Promise.resolve(null);      /* IP2 (stage.players): offered to the GM with Send, not sent */
       return Promise.resolve(d.overlay(o)).then(function (r) { return r === undefined ? true : r; }, function () { return null; });
     }
 
