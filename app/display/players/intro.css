@@ -2,7 +2,7 @@
    A freeze-frame title card over everything on the display root, then out of the way. Only .pi-* markup, which only intro.js makes, so with the
    setting off nothing here matches. Every beat's delay is a custom property the script sets from the shared clock (--pi-enter, --pi-freeze,
    --pi-kicker, --pi-name, --pi-name2, --pi-alias, --pi-out): a page that joins mid-card is at the same frame as the others.
-   The base styles are the frozen frame; the animations bring it in and take it away, so .pi-still (reduced motion, Hold scenes still) is the
+   The base styles are the frozen frame; the animations bring it in and take it away, so .pi-still (the device asking for reduced motion; not Hold scenes still) is the
    frozen frame with no animation at all. */
 
 .pi-card {
@@ -127,7 +127,7 @@
 /* the moment the card is mounted, the figure is measured where it will stand (intro.js lifts pi-measure in the same call) */
 .pi-measure .pi-enter { animation: none; }
 
-/* reduced motion or Hold scenes still: the frozen frame, nothing moves (intro.js cuts to the stage after 3 s) */
+/* reduced motion (the device setting; Hold scenes still does not apply to a sent event): the frozen frame, nothing moves (intro.js cuts to the stage after 3 s) */
 .pi-still .pi-enter, .pi-still .pi-col, .pi-still .pi-sil, .pi-still .pi-flash, .pi-still .pi-kick, .pi-still .pi-name-back, .pi-still .pi-name-front,
 .pi-still .pi-alias, .pi-still .pi-type, .pi-still .pi-ground, .pi-still .pi-lb-t, .pi-still .pi-lb-b { animation: none; transition: none; }
 @media (prefers-reduced-motion: reduce) {

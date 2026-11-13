@@ -12,7 +12,8 @@
      5.5 to 6.2 s THE HAND-OVER. The ground, the bars and the type wipe away; the figure settles onto the stage's own figure; the card is gone.
    Under the card, from the first frame, is the ordinary NPC stage (display-page.js builds it as for Show on iPad), so what is left is exactly
    what Show on iPad paints, and it stays until the next push.
-   Reduced motion, or Hold scenes still (fx.off): the frozen frame, still, for 3 s, then a cut to the stage.
+   The device asking for reduced motion: the frozen frame, still, for 3 s, then a cut to the stage. Hold scenes still (fx.off) holds the ambient
+   scenes only: an introduction is a sent event and plays in full (the overseer's ruling, 13/11).
 
    ONE CLOCK. The card's zero is the display's `updatedAt` (the server's time of the push, in every full display answer) plus LEAD_MS, read on the
    server's clock (the page's skew from the GET's `now`), so every screen is at the same second. A page that first sees the push too late into
@@ -24,7 +25,7 @@
    API (window.B68PlayersIntro; module.exports under Node for the Pure part)
      attach(container, env) -> { next(display, seq), cut(), state() -> { seq, at } | null, destroy() }
        env: { document, figure(spec, uid) -> svg node | null (already through the page's cleaner), K? (the figure kit), on() -> bool (the setting),
-              still() -> bool (reduced motion or fx.off), skew() -> ms, at() -> the display's updatedAt, later(fn, ms), clearLater(id) }
+              still() -> bool (the device asks for reduced motion), skew() -> ms, at() -> the display's updatedAt, later(fn, ms), clearLater(id) }
        next() is called by the page's show() for EVERY display it paints: another seq cuts a card that is up, at once; an intro starts one.
      Pure: LEAD_MS, T, STILL_MS, LATE_MS, position(at, now, skew), wants(display, on), startable(pos, still), palette(faction, FL), kicker(role,
            faction), specFor(spec, look, FL), fit(measure, o), initial(name) */
@@ -45,7 +46,7 @@
   /* the timeline, ms from the card's zero */
   Pure.T = { enter: 0, freeze: 700, kicker: 900, name: 1000, name2: 1060, alias: 1250, out: 5500, fade: 6000, end: 6200 };
   Pure.LEAD_MS = 800;        /* the card's zero is this long after the push, so the screens' polls (poked by live sync) land before the figure enters */
-  Pure.STILL_MS = 3000;      /* reduced motion or held still: the frozen frame for this long, then a cut */
+  Pure.STILL_MS = 3000;      /* reduced motion: the frozen frame for this long, then a cut */
   Pure.LATE_MS = 5000;       /* a page that first sees the push later than this into the card shows the stage only */
   Pure.SIGNAL = ['#e0691e', '#14110e'];
   Pure.PAPER = '#fbf8f1';

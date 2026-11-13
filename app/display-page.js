@@ -1532,7 +1532,7 @@
       figure: function (spec, id) { var r = drawFigure(spec, 'dp-mt-' + String(id).replace(/[^A-Za-z0-9_-]/g, ''), ctx.figures || root.B68Figure); return r ? document.importNode(r.node, true) : null; } }) : null;      /* the montage draws each PC (the tech run) */
     if (s.layers) s.offs.push(function () { s.layers.destroy(); });
     /* IP3 (stage.players): the NPC introduction, a title card over everything that hands over to the npc stage (app/display/players/intro.js); off, next() does nothing */
-    s.intro = root.B68PlayersIntro ? root.B68PlayersIntro.attach(container, { document: document, K: ctx.figures || root.B68Figure, on: function () { return swOn('stage.players'); }, still: function () { return reduced() || swOn('fx.off'); }, skew: function () { return s.skew || 0; }, at: function () { return s.updatedAt; }, later: later, clearLater: clearLater,
+    s.intro = root.B68PlayersIntro ? root.B68PlayersIntro.attach(container, { document: document, K: ctx.figures || root.B68Figure, on: function () { return swOn('stage.players'); }, still: function () { return reduced(); }, skew: function () { return s.skew || 0; }, at: function () { return s.updatedAt; }, later: later, clearLater: clearLater,
       figure: function (spec, id) { var r = drawFigure(spec, id, ctx.figures || root.B68Figure); return r ? document.importNode(r.node, true) : null; } }) : null;
     if (s.intro) s.offs.push(function () { s.intro.destroy(); });
     /* the suite's display switches (each does nothing while its switch is off): the hard start (1.2, spine.start) and the FX budget (F7, fx.pause / fx.off) */

@@ -4,7 +4,7 @@
 //   on   Introduce: the title card covers the screen (the colour field, the name as text, no map anywhere), the tray says "Introducing";
 //        then the ordinary npc stage is up and stays (30 s), the tray says the name; a second display page opened after the card shows the
 //        stage and never a card; Take it down mid-card clears it at once; a hidden NPC's Introduce asks first and, declined, sends nothing:
-//        no card, and the hidden name in neither the display GET nor the DOM; reduced motion: the still frame, then the stage
+//        no card, and the hidden name in neither the display GET nor the DOM; Hold scenes still on: the card still plays (overseer ruling); reduced motion: the still frame, then the stage
 //   off  Introduce is the old rolodex beat (the paper card), no title card
 // PW_DISPLAY_ENGINE=webkit runs the display pages in WebKit (the GM page stays on Edge).
 //   PW_MODULE=<path to playwright-core> [PW_CHANNEL=msedge] [PORT=12110] [KIT_SHOTS=<dir>] node checks/runtime/players-intro.e2e.mjs
@@ -212,6 +212,19 @@ try {
     expect(!(await domHas(I.page, 'GM-ONLY')), 'the display DOM never names them');
     const n = await gm('GET', '/api/npcs/n-hid'); expect(!n.json || !n.json.doc || n.json.doc.revealed !== true, 'still hidden');
     answer = 'accept';
+  });
+  await step('Hold scenes still (fx.off) on: the introduction still plays in full (it holds the ambient scenes, not a sent event: overseer ruling)', async () => {
+    for (const p of ['/api/gm/state', '/api/campaign']) await ok(gm('PATCH', p, { features: { 'fx.off': true } }), 'fx.off on');
+    await sleep(5000);
+    try {
+      await toMap(I);
+      await gp.click(intro('n-dov'));
+      expect(await until(async () => (await look(I.page)).card, 6000, 50), 'the card came');
+      const st = await I.page.evaluate(() => ({ still: !!document.querySelector('.pi-card.pi-still'),
+        running: document.getAnimations().filter((a) => a.effect && a.effect.target && a.effect.target.closest && a.effect.target.closest('.pi-card') && a.playState === 'running').length }));
+      expect(!st.still && st.running > 0, 'the moving card: ' + JSON.stringify(st));
+      await until(async () => { const v = await look(I.page); return !v.card ? v : null; }, 9000);
+    } finally { for (const p of ['/api/gm/state', '/api/campaign']) await ok(gm('PATCH', p, { features: { 'fx.off': false } }), 'fx.off off'); }
   });
   await step('reduced motion: the still frame (no animation), then the stage', async () => {
     const R = await openIpad({ reduced: true, w: 1024, h: 768 });

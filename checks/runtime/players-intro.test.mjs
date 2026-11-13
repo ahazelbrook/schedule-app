@@ -251,6 +251,7 @@ await test('the files: no markup sink, no request, no hand-built button, no impo
   }
   assert.match(read('display-page.js'), /if \(s\.intro\) s\.intro\.next\(display, seq\);/, 'the display page hands every push to it');
   assert.match(read('display-page.js'), /on: function \(\) \{ return swOn\('stage\.players'\); \}/, 'behind the setting');
+  assert.match(read('display-page.js'), /still: function \(\) \{ return reduced\(\); \}/, 'only the device\'s reduced motion makes the card still: Hold scenes still holds the ambient scenes, not a sent event (overseer ruling)');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
