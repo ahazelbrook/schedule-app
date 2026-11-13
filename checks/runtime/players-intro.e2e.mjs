@@ -174,12 +174,15 @@ try {
   });
   await step('on: the type never runs over the figure: left of its box at 1024x768, 1180x820, 1536x864, 1920x1080; clear of it in 768x1024; the name and the alias whole, the faction on its own tape', async () => {
     await toMap(I);
-    await gp.click(intro('n-long'));
+    await gp.click(intro('n-long'));      /* the GM page's Introduce once; then a fresh card at each size (the same push again), so every size is measured in the hold */
     expect(await until(async () => (await look(I.page)).card, 6000, 50), 'the card came');
-    await sleep(1700);
     const bad = [];
     for (const [w, h] of [[1024, 768], [1180, 820], [1536, 864], [1920, 1080], [768, 1024]]) {
-      await I.page.setViewportSize({ width: w, height: h }); await sleep(250);
+      await I.page.setViewportSize({ width: w, height: h });
+      const before = await I.page.evaluate(() => { const c = document.querySelector('.pi-card'); return c ? c.getAttribute('data-pi-seq') : ''; });
+      await ok(gm('PUT', '/api/gm/display', { kind: 'npc', npcId: 'n-long', title: 'Bartholomewes Cunninghamsey', intro: true }), 'again');
+      await until(() => I.page.evaluate((b) => { const c = document.querySelector('.pi-card'); return !!c && c.getAttribute('data-pi-seq') !== b; }, before), 6000, 50);
+      await sleep(2600);      /* in the hold: the lead (0.8 s) and the last wipe (to 1.4 s) are over */
       const g = await I.page.evaluate(() => {
         const card = document.querySelector('.pi-card'); if (!card) return null;
         const R = (e) => e.getBoundingClientRect(), fig = R(card.querySelector('.pi-figout')), clip = R(card.querySelector('.pi-figclip'));
