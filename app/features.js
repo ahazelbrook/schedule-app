@@ -204,7 +204,10 @@
       doc: 'Each room the players know gets Cut to room in the Run view: that room alone as a stage set on the shared screen, through the same checks as the map; Back to the map puts the map up again. Off: no control.' },
     /* the players' screen build (IP2, 13/11): one display setting, off until chosen. Off: the iPad, the GM page and the phones as they were */
     { id: 'stage.players', label: 'Players’ screen: map first', surface: 'display', stage: 'kit', default: false, saturday: 'off', setting: true,
-      doc: 'The shared screen shows the map and what the GM sends, nothing else: no scene band or plate, no time, no Now or Next, no crew status; the clocks the GM made visible sit as dials in a corner; a new scene replaces what is showing. Off: the iPad as it was.' }
+      doc: 'The shared screen shows the map and what the GM sends, nothing else: no scene band or plate, no time, no Now or Next, no crew status; the clocks the GM made visible sit as dials in a corner; a new scene replaces what is showing. Off: the iPad as it was.' },
+    /* the players' screen build (IP4, 13/11): one phone setting, off until chosen. Off: no Send to on the GM page, no Handouts on a phone, no request, nothing stored */
+    { id: 'phone.handouts', label: 'Handouts on phones', surface: 'phone', stage: 'kit', default: false, saturday: 'off', setting: true,
+      doc: 'Each handout in the GM page’s list can be sent to one player or to everyone; it stays in a Handouts list on that player’s sheet, to open full screen any time, until the GM takes it back. Off: no Send to, no Handouts button.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

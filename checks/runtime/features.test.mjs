@@ -31,7 +31,8 @@ const GMX = sw('test.gm', 'gm'), DISP = sw('test.disp', 'display'), PH = sw('tes
 const SETTINGS = ['phoneCards', 'fx.off', 'room.music', 'display.band',      /* display.band: the tech run (06/11), the iPad's strip across the top, off until chosen */
   'kit.desk', 'kit.stage', 'kit.phone', 'night.who', 'blade.pitches',         /* the kit and stage build (KS01.1, 11/11): five more, each off until chosen */
   'map.fill', 'map.people', 'map.lights', 'map.room',                          /* the map kit's new options (MK1, 13/11): four more GM settings, each off until chosen */
-  'stage.players'];                                                             /* the players' screen build (IP2, 13/11): one display setting, off until chosen */
+  'stage.players',                                                              /* the players' screen build (IP2, 13/11): one display setting, off until chosen */
+  'phone.handouts'];                                                            /* IP4 (13/11): one phone setting, off until chosen */
 
 // ---------- the shipped registry ----------
 await test('the shipped lines: each well-formed, default false, phoneCards first; the settings are exactly phoneCards, fx.off, room.music, display.band and the kit\'s five; spine.workshop is gone', async () => {
@@ -92,7 +93,7 @@ await test('patches: only a setting can change (features and the old key); any o
   assert.throws(() => F.patchFor({}, 'nope', true), /unknown switch/);
   assert.throws(() => F.patchFor({}, 'spine.rail', false), /always on/);
   await withSwitches([GMX, DISP], () => { assert.throws(() => F.patchFor({}, 'test.disp', false), /always on/); });
-  assert.deepEqual(F.patchAllOff({}), { features: { phoneCards: false, 'fx.off': false, 'room.music': false, 'display.band': false, 'kit.desk': false, 'kit.stage': false, 'kit.phone': false, 'night.who': false, 'blade.pitches': false, 'map.fill': false, 'map.people': false, 'map.lights': false, 'map.room': false, 'stage.players': false }, phoneCards: false });
+  assert.deepEqual(F.patchAllOff({}), { features: { phoneCards: false, 'fx.off': false, 'room.music': false, 'display.band': false, 'kit.desk': false, 'kit.stage': false, 'kit.phone': false, 'night.who': false, 'blade.pitches': false, 'map.fill': false, 'map.people': false, 'map.lights': false, 'map.room': false, 'stage.players': false, 'phone.handouts': false }, phoneCards: false });
 });
 await test('publicMap: the display and phone lines, complete, as the GM page sees them (a setting as stored, the rest ON); never a GM-only id', async () => {
   await withSwitches([GMX, DISP, PH], () => {
@@ -258,21 +259,21 @@ await test('settings: a failed copy says so and is tried again at the next arriv
   assert.match(r.calls.toast[0][0], /Could not copy the settings/); assert.equal(r.calls.toast[0][1], true);
   assert.equal(r.ctl.heal(), true, 'tried again at once');
 });
-await test('settings: fifteen rows (the Players screen row first, then Scenes, Music, Phones, Mirror for phones, Band, the kit\'s Desk, Stage, Phone sheet, Start the night, Pitches, and MK1\'s four map rows), each a two-way choice showing the current value', async () => {
+await test('settings: sixteen rows (the Players screen row first, then Scenes, Music, Phones, Mirror for phones, Band, the kit\'s Desk, Stage, Phone sheet, Start the night, Pitches, MK1\'s four map rows and IP4\'s Handouts on phones), each a two-way choice showing the current value', async () => {
   const r = rig({ features: { 'room.music': true }, mirror: false }, { v: 1 });
   const rows = r.ctl.rows();
   assert.deepEqual(rows.map((x) => x.label), ['Players’ screen', 'Scenes', 'Music', 'Phones', 'Mirror for phones', 'Band', 'Desk', 'Stage', 'Phone sheet', 'Start the night', 'Pitches',
-    'Map fills the screen', 'People on the map', 'Room lights', 'Cut to the room']);
+    'Map fills the screen', 'People on the map', 'Room lights', 'Cut to the room', 'Handouts on phones']);
   assert.deepEqual(rows.map((x) => x.key), ['stage.players', 'fx.off', 'room.music', 'phoneCards', 'mirror', 'display.band', 'kit.desk', 'kit.stage', 'kit.phone', 'night.who', 'blade.pitches',
-    'map.fill', 'map.people', 'map.lights', 'map.room']);
+    'map.fill', 'map.people', 'map.lights', 'map.room', 'phone.handouts']);
   assert.deepEqual(rows.map((x) => x.options.map((o) => o.label)), [['Classic', 'Map first'], ['Moving', 'Held still'], ['Scene themes', 'Heat music'], ['Sheet only', 'Mission cards'], ['Off', 'On'], ['Off', 'On'],
-    ['Old desk', 'New desk'], ['Old iPad', 'New iPad'], ['Old sheet', 'Four screens'], ['Off', 'On'], ['Stall and Meanwhile', 'Pitches'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On']]);
-  assert.deepEqual(rows.map((x) => x.value), [false, false, true, false, false, false, false, false, false, false, false, false, false, false, false]);
+    ['Old desk', 'New desk'], ['Old iPad', 'New iPad'], ['Old sheet', 'Four screens'], ['Off', 'On'], ['Stall and Meanwhile', 'Pitches'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On']]);
+  assert.deepEqual(rows.map((x) => x.value), [false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false]);
   const box = { parentNode: null, innerHTML: '' }; r.ctl.render(box);
   assert.match(box.innerHTML, /data-set="room\.music" data-v="1" aria-pressed="true">Heat music/);
   assert.match(box.innerHTML, /data-set="fx\.off" data-v="0" aria-pressed="true">Moving/);
   assert.match(box.innerHTML, /data-set="mirror" data-v="0" aria-pressed="true">Off/);
-  assert.equal((box.innerHTML.match(/aria-pressed="true"/g) || []).length, 15, 'one value pressed per row');
+  assert.equal((box.innerHTML.match(/aria-pressed="true"/g) || []).length, 16, 'one value pressed per row');
 });
 await test('the kit\'s five settings (KS01.1): surfaces gm, display, phone, gm, gm; off with nothing stored; nothing is published or healed while they are off; turning one on writes only its own key', async () => {
   const want = { 'kit.desk': 'gm', 'kit.stage': 'display', 'kit.phone': 'phone', 'night.who': 'gm', 'blade.pitches': 'gm' };
