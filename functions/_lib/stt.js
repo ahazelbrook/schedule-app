@@ -136,9 +136,11 @@ export function sttOf(row) {
 export function sttPartOf(doc) {
   const want = doc && doc.want === 'on' ? 'on' : 'off';
   const session = doc && typeof doc.session === 'string' && SESSION.test(doc.session) ? doc.session : '';
+  // MK2: the GM's ask for the display's map frame (a bare boolean, frameWant). Absent, the part and its seq are exactly as they were
+  const ask = !!(doc && doc.frameWant === true);
   let h = 0x811c9dc5;
-  for (const c of want + '|' + session) { h ^= c.charCodeAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
-  return { seq: h >>> 0, want, session };
+  for (const c of want + '|' + session + (ask ? '|frame' : '')) { h ^= c.charCodeAt(0); h = Math.imul(h, 0x01000193) >>> 0; }
+  return ask ? { seq: h >>> 0, want, session, frame: true } : { seq: h >>> 0, want, session };
 }
 
 /** { seq, want, session } for the display GET: `{ seq, want: 'off', session: '' }` while nothing is stored. */
@@ -154,9 +156,13 @@ export function cleanSttPatch(raw, role) {
   if (!isPlainObject(raw)) throw new HttpError(400, 'body must be an object');
   const out = {};
   for (const k of Object.keys(raw)) {
-    if (!['want', 'session', 'speakers', 'status'].includes(k)) throw new HttpError(400, 'unknown key ' + k);
-    if (k !== 'status' && role !== 'gm') throw new HttpError(403, 'only the GM can change ' + k);
+    if (!['want', 'session', 'speakers', 'status', 'frameWant', 'frame'].includes(k)) throw new HttpError(400, 'unknown key ' + k);
+    if (k !== 'status' && k !== 'frame' && role !== 'gm') throw new HttpError(403, 'only the GM can change ' + k);
   }
+  // MK2: the GM's ask for the display's map frame (true; anything else takes it away) and the display's answer ({ w, h }, whole px from 200 to
+  // 10000; anything else is dropped, never a 400). Both top-level keys, never in `status`: they are not the transcriber's
+  if ('frameWant' in raw) out.frameWant = raw.frameWant === true ? true : null;
+  if ('frame' in raw) { const fr = cleanFrame(raw.frame); if (fr) out.frame = fr; }
   if ('want' in raw) { if (raw.want !== 'on' && raw.want !== 'off') throw new HttpError(400, 'want must be on or off'); out.want = raw.want; }
   if ('session' in raw) { const s = raw.session === null ? '' : String(raw.session); if (!SESSION.test(s)) throw new HttpError(400, 'session must be a session number'); out.session = s; }
   if ('speakers' in raw) {
@@ -186,6 +192,13 @@ export function cleanSttPatch(raw, role) {
   return out;
 }
 
+/** The display's map frame -> { w, h } or null: only two whole numbers from 200 to 10000, nothing else is kept. */
+export function cleanFrame(f) {
+  if (!isPlainObject(f)) return null;
+  const ok = (n) => Number.isInteger(n) && n >= 200 && n <= 10000;
+  return ok(f.w) && ok(f.h) ? { w: f.w, h: f.h } : null;
+}
+
 const AUDIO = ['unlocked', 'locked', 'none'];
 /** The iPad's device report -> { audio, files, of, build } with every field bounded; anything else is 400. */
 export function cleanDevice(d) {
@@ -202,6 +215,8 @@ export function sttSignal(doc) {
   const sig = [doc && doc.want, doc && doc.session, doc && doc.speakers, s.state, s.lines, s.error];
   if (s.pausedUntil !== undefined) sig.push(s.pausedUntil);
   if (s.device) sig.push(s.device.audio, s.device.files, s.device.of, s.device.build);     // only when reported: a status without it signs as it always did
+  // MK2: frame and frameWant are deliberately NOT in the signal: two screens of different sizes would flip the frame on every answer, and each flip
+  // would poke every open page into polling again. The GM page reads the frame on its own timer, the display the ask on its own GET; no poke.
   return JSON.stringify(sig);
 }
 
