@@ -41,7 +41,7 @@ demo.stdout.on('data', (d) => { demoLog += d; }); demo.stderr.on('data', (d) => 
 function killDemo() { if (WIN) spawnSync('taskkill', ['/pid', String(demo.pid), '/T', '/F'], { stdio: 'ignore' }); else { try { process.kill(-demo.pid, 'SIGKILL'); } catch (_) {} } }
 process.on('exit', killDemo);
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130));
-const timeout = setTimeout(() => { console.log('FAIL timed out\n' + demoLog.slice(-2000)); process.exit(1); }, 600000);
+const timeout = setTimeout(() => { console.log('FAIL timed out\n' + demoLog.slice(-2000)); process.exit(1); }, 900000);      /* the frame waits on the display's own minute-long reports */
 
 /* the spy: every options object the page hands the map kit, as JSON (the figure kit replaced by a mark) */
 const SPY = () => {
@@ -163,6 +163,127 @@ try {
   check(!/GM-ONLY-/.test(last.text) && !CAST.some((n) => last.text.includes(n)), 'the iPad\'s GET carries no GM-ONLY- text and no cast name');
   await page.evaluate(() => { const d = document.querySelector('details[data-fold="mapopts"]'); if (d) d.scrollIntoView({ block: 'center' }); });
   await shot(page, 'location-shared-screen-tv-1366', 'details[data-fold="mapopts"]');
+
+  /* 5. (MK2, a kit with people and the room view) each setting alone, then together: the desk and the two shared screens (an iPad at 1366 x 1024,
+     a TV at 1920 x 1080: two display pages, the iPad's own login), the dawn event's room bright, one floor, Cut to room with pictures and back */
+  if (roomView) {
+    const disp = async (w, h) => { const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: w, height: h }, serviceWorkers: 'block' }); const p = await c.newPage(); p.on('pageerror', (e) => errors.push('display: ' + String(e && e.message || e))); await p.goto(BASE + '/#display'); return p; };
+    const DI = await disp(1366, 1024), DT = await disp(1920, 1080);
+    const frame = (p) => p.evaluate(() => { const s = document.querySelector('#display-page .dp-map-frame svg'); return s ? s.outerHTML.length + ':' + (s.getAttribute('viewBox') || '') : ''; });
+    const settle = async (p, was) => { await until(async () => { const f = await frame(p); return f && f !== was ? f : null; }, 12000, 300); await p.waitForTimeout(700); };
+    const both = async (name) => { const a = await frame(DI), b = await frame(DT); return { a, b, name }; };
+    const shoot = async (st) => { await settle(DI, st.a); await settle(DT, st.b); if (SHOTS) { await DI.screenshot({ path: path.join(SHOTS, 'ipad-' + st.name + '-1366x1024.png') }); await DT.screenshot({ path: path.join(SHOTS, 'tv-' + st.name + '-1920x1080.png') }); } };
+    const desk = async (name) => { if (!SHOTS) return; await page.setViewportSize({ width: 1366, height: 768 }); await toRun(page); await page.evaluate(() => { const b = document.querySelector('#gm-runv [data-rv="view"][data-v="map"]'); if (b) b.click(); }); await page.waitForTimeout(1500); await shot(page, 'desk-' + name + '-1366x768'); await page.setViewportSize({ width: 1366, height: 1024 }); };
+    const setFlags = async (on) => {
+      await page.evaluate(() => window.B68GmPage.openView('ipad')); await page.waitForSelector('#gm-ipad-settings [data-set-row="map.room"]', { timeout: 8000 });
+      for (const k of ['map.fill', 'map.people', 'map.lights', 'map.room']) { await page.click('#gm-ipad-settings [data-set="' + k + '"][data-v="' + (on.includes(k) ? 1 : 0) + '"]'); await page.waitForTimeout(250); }
+      await page.waitForTimeout(800);
+    };
+    const lastPlayer = async (pred, ms = 10000) => until(async () => (await opts(page)).filter((o) => o.layer === 'player' && (!pred || pred(o))).pop(), ms);
+    const screenTo = async (v) => { await page.evaluate(() => window.B68GmPage.openView('location')); await page.waitForTimeout(500); await page.evaluate(() => { const d = document.querySelector('details[data-fold="mapopts"]'); if (d) d.open = true; }); if (await page.$('#gm-m-screen')) await page.selectOption('#gm-m-screen', v); await page.waitForTimeout(600); };
+    /* the map stays up on the shared screen from here; every change goes through live reveal */
+    let st = await both('fill');
+    await setFlags(['map.fill']); await screenTo('ipad');
+    let o = await lastPlayer((x) => x.layout === 'stage');
+    check(!!o && !('people' in o) && !('lights' in o), 'map.fill alone: the stage layout, no people, no lights');
+    await shoot(st);
+    st = await both('people'); await page.evaluate(() => { window.__mk1.length = 0; }); await setFlags(['map.people']);
+    o = await lastPlayer((x) => Array.isArray(x.people));
+    check(!!o && o.layout !== 'stage' && o.crowd !== undefined && o.people.every((p) => p.tone === 'crew' && CREW.includes(p.label)), 'map.people alone: the crew and a crowd on the players\' map, the iPad layout');
+    await shoot(st); await desk('people');
+    st = await both('lights-bright'); await page.evaluate(() => { window.__mk1.length = 0; }); await setFlags(['map.lights']);
+    await page.evaluate(() => window.B68GmPage._ballSet({ t: 180 }));      /* 00:00, the fireworks: a dawn event in the Showroom */
+    o = await lastPlayer((x) => x.lights);
+    check(!!o && o.lights && o.lights.Showroom === 'bright', 'map.lights alone, at 00:00: the Showroom is bright ' + JSON.stringify(o && o.lights));
+    await shoot(st); await desk('lights-bright');
+    st = await both('all'); await page.evaluate(() => { window.__mk1.length = 0; }); await setFlags(['map.fill', 'map.people', 'map.lights', 'map.room']); await screenTo('tv');
+    o = await lastPlayer((x) => x.layout === 'stage' && x.displayWidth >= 200 && Array.isArray(x.people) && x.lights);      /* sized to a reported frame once one is in */
+    check(!!o, 'all four together: the stage (' + (o ? o.displayWidth + ' x ' + o.displayHeight : '?') + '), the crew, the crowd and the light on the players\' map');
+    await shoot(st); await desk('all');
+    /* one floor */
+    await page.evaluate(() => { window.B68GmPage.openView('location'); }); await page.waitForTimeout(500);
+    await page.evaluate(() => { const d = document.querySelector('details[data-fold="mapopts"]'); if (d) d.open = true; });
+    const fl = await page.evaluate(() => { const s = document.querySelector('#gm-m-ipadFloor'); return s ? [...s.options].map((x) => [x.value, x.textContent]) : null; });
+    check(!!fl && fl[0][1] === 'Whole building' && fl.length > 2 && fl.slice(1).every(([v, t]) => /^-?\d+$/.test(v) && /^(Ground floor|Upper floor|Top floor|Basement)$/.test(t)), 'the Shared screen floor offers Whole building and the kit\'s own floor titles ' + JSON.stringify(fl));
+    if (fl && fl.length > 1) {
+      st = await both('one-floor'); await page.evaluate(() => { window.__mk1.length = 0; });
+      await page.selectOption('#gm-m-ipadFloor', fl[1][0]);
+      o = await lastPlayer((x) => Number.isInteger(x.floor), 8000);
+      check(!!o && o.floor === +fl[1][0], 'choosing ' + fl[1][1] + ' re-sends the live map at once with floor ' + fl[1][0]);
+      await shoot(st); await shot(page, 'location-floor-1366', 'details[data-fold="mapopts"]');
+      st = await both('whole'); await page.selectOption('#gm-m-ipadFloor', ''); await settle(DT, st.b);
+    }
+    /* Cut to room, then back */
+    await toRun(page);
+    await page.evaluate(() => { const b = document.querySelector('#gm-runv [data-rv="view"][data-v="board"]'); if (b) b.click(); }); await page.waitForTimeout(500);
+    const cuts = await page.evaluate(() => [...document.querySelectorAll('[data-site="scene-cut"]')].map((b) => b.getAttribute('data-room')));
+    check(cuts.length > 0, 'the kit draws a room: Cut to room on the known rooms shown (' + cuts.join(', ') + ')');
+    if (cuts.length) {
+      st = await both('room'); await page.evaluate(() => { window.__mk1.length = 0; });
+      await page.click('[data-site="scene-cut"][data-room="' + cuts[0].replace(/"/g, '\\"') + '"]');
+      o = await lastPlayer((x) => x.view === 'room', 15000);
+      check(!!o && o.room === cuts[0], 'Cut to room: view "room" of ' + cuts[0] + ' through the player path');
+      const imgs = o ? (o.people || []).filter((p) => p.image).length : 0, specs = o ? (o.people || []).filter((p) => !p.image).length : 0;
+      check(!!o && specs <= 3 && (o.people || []).every((p) => p.tone === 'crew'), 'the room\'s people: ' + imgs + ' as pictures (rasterize), ' + specs + ' as specs (three at most), the crew only');
+      await shoot(st);
+      check(await until(() => page.evaluate(() => !!document.querySelector('[data-site="scene-back"]') && /iPad: /.test((document.querySelector('.gm-scene-up') || {}).textContent || '')), 6000), 'the GM\'s toolbar says which room is up, with Back to the map');
+      await shot(page, 'run-cut-to-room-1366', '#gm-runv');
+      const dr = await api('GET', '/gm/display', undefined, IPAD);
+      check(dr.status === 200 && !/GM-ONLY-/.test(dr.text) && !CAST.some((n) => dr.text.includes(n)), 'the room on the iPad carries no GM-ONLY- text and no cast name (' + Math.round(dr.text.length / 1024) + ' KiB)');
+      st = await both('back'); await page.evaluate(() => { window.__mk1.length = 0; });
+      await page.click('[data-site="scene-back"]');
+      o = await lastPlayer((x) => x.view !== 'room', 10000);
+      check(!!o && o.view !== 'room', 'Back to the map: the map again');
+      await shoot(st);
+      /* the review of #234, item 3: after a cut, a deliberate send of the map (the Location card's Show on iPad) puts the map up, and a later live
+         re-send (the clock moves) keeps the map, not the room */
+      await toRun(page); await page.evaluate(() => { const b = document.querySelector('#gm-runv [data-rv="view"][data-v="board"]'); if (b) b.click(); }); await page.waitForTimeout(400);
+      await page.click('[data-site="scene-cut"][data-room="' + cuts[0].replace(/"/g, '\\"') + '"]');
+      check(!!(await lastPlayer((x) => x.view === 'room', 15000)), 'cut to the room again');
+      await page.evaluate(() => { window.__mk1.length = 0; window.B68GmPage.openView('location'); }); await page.waitForTimeout(600);
+      await page.click('#gm-loc [data-gm="ipad"]');
+      o = await lastPlayer(null, 10000);
+      check(!!o && o.view !== 'room', 'the Location card\'s Show on iPad: the map, not the room');
+      await page.evaluate(() => { window.__mk1.length = 0; window.B68GmPage._ballSet({ t: 195 }); });
+      o = await lastPlayer(null, 10000);
+      check(!!o && o.view !== 'room', 'and a live re-send after it keeps the map');
+    }
+    /* the overseer's addition 1: the stage drawn for the frame the shared screen reports. One screen only from here (two would both report) */
+    if (stageKit) {
+      await DI.context().close();
+      /* both pages reported different frames above, so the GM may have stopped following (two screens must not make the map flap); choosing in the
+         Shared screen select follows reports afresh. The frame rides on the display's own reports (idle: one a minute), so the waits are long */
+      await screenTo('tv'); await toRun(page);
+      const frameOf = (p) => p.evaluate(() => { const f = document.querySelector('#display-page .dp-map-frame'); if (!f) return null; const r = f.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height) }; });
+      const sizedTo = async (fr, ms) => until(async () => (await opts(page)).filter((x) => x.layer === 'player' && x.layout === 'stage' && Math.abs(x.displayWidth - fr.w) <= 8 && Math.abs(x.displayHeight - fr.h) <= 8).pop(), ms, 500);
+      await page.evaluate(() => { window.__mk1.length = 0; });
+      await DT.setViewportSize({ width: 1700, height: 1000 }); await DT.waitForTimeout(800);
+      const f1 = await frameOf(DT);
+      const s1 = f1 ? await sizedTo(f1, 110000) : null;
+      check(!!f1 && !!s1, 'the TV page resized: its map frame (' + JSON.stringify(f1) + ') is reported and the live map is drawn again for it ' + JSON.stringify(s1 && [s1.displayWidth, s1.displayHeight]));
+      /* the review: the frame's ask and answer are not the transcriber: fill on, the transcriber never used, the band shows no mic pill */
+      const stt = await api('GET', '/gm/stt');
+      check(!!(stt.json && stt.json.doc && stt.json.doc.frameWant === true && stt.json.doc.frame), 'the GM asked (frameWant) and the TV answered (frame) in the stt document');
+      /* the pill depends on what it did before: the display's own idle status reports (as on a1f8d57) may show it; the frame's keys alone never do */
+      const own = Object.keys((stt.json && stt.json.doc) || {}).filter((k) => k !== 'frameWant' && k !== 'frame'), on = !!(stt.json && stt.json.doc && stt.json.doc.want === 'on');
+      const pill = await page.evaluate(() => { const p = document.querySelector('#gm-bar-stt'); return !!p && !p.hidden; });
+      check(pill === (own.length > 0 || on), 'fill on, the transcriber not in use: the mic pill only for what showed it before (the document\'s own keys: ' + JSON.stringify(own) + ', pill ' + pill + ')');
+      st = { b: await frame(DT), name: 'tv-frame' }; await page.evaluate(() => { window.__mk1.length = 0; });      /* the iPad page is closed: the TV alone */
+      await DT.setViewportSize({ width: 1920, height: 1080 }); await DT.waitForTimeout(800);
+      const f2 = await frameOf(DT), s2 = f2 ? await sizedTo(f2, 110000) : null;
+      check(!!f2 && !!s2 && f2.w < 1920, 'back at 1920 x 1080: the stage is drawn for the real frame (' + JSON.stringify(f2) + '), not the whole TV');
+      const sel2 = await page.evaluate(() => { window.B68GmPage.openView('location'); const s = document.querySelector('#gm-m-screen'); return s ? s.closest('label').textContent : ''; });
+      await page.waitForTimeout(600);
+      const lab2 = await page.evaluate(() => { const s = document.querySelector('#gm-m-screen'); return s ? s.closest('label').querySelector('.gm-lab').textContent : ''; });
+      check(/if it stops reporting \(it reports \d+ × \d+\)/.test(lab2), 'the Shared screen select now reads as the fallback: "' + lab2 + '"');
+      await settle(DT, st.b); if (SHOTS) await DT.screenshot({ path: path.join(SHOTS, 'tv-real-frame-1920x1080.png') });
+      const sent = async () => (await opts(page)).filter((x) => x.layer === 'player' && x.layout === 'stage').length;
+      const n0 = await sent(); await page.waitForTimeout(20000); const n1 = await sent();
+      check(n1 - n0 <= 2, 'and it settles: no re-send loop with the frame unchanged (' + (n1 - n0) + ' shared-screen renders in 20 s)');
+      void sel2;
+    } else await DI.context().close();
+    await DT.context().close();
+  }
   check(!errors.length, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
   await browser.close();
 } catch (e) { check(false, 'the run: ' + (e && e.stack || e)); }

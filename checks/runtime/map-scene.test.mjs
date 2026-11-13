@@ -14,6 +14,8 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { parseSite } from '../../scripts/lib/authored-export.mjs';
+import { cleanSttPatch, cleanFrame, sttSignal, sttPartOf } from '../../functions/_lib/stt.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(import.meta.url);
@@ -261,6 +263,94 @@ test('initials are the Run view\'s own', () => {
   for (const s of ['Nell Arbuthnot', 'ray okonjo', '  Tam  ', '', 'Ada Vell Brand', 'Élodie Ünsel']) assert.equal(G.initials(s), RV.initials(s), s);
 });
 
+/* ---------- MK2, step 3: the shared screen's cap ---------- */
+test('the cap is the server\'s 600 KiB (functions/_lib/gm.js LIMITS.svg)', () => {
+  assert.equal(P.SVG_CAP, 600 * 1024);
+  assert.match(fs.readFileSync(path.join(ROOT, 'functions', '_lib', 'gm.js'), 'utf8'), /svg: 600 \* KiB/);
+});
+test('over the cap the map goes without the crowd, then without its people, and says so; a map too large even then is refused out loud; off, nothing changes', () => {
+  const pad = (n) => '<!--' + 'x'.repeat(n) + '-->';
+  const big = (rule) => (roll, o) => ({ svg: '<svg xmlns="http://www.w3.org/2000/svg"><text>Showroom</text>' + pad(rule(o)) + '</svg>', warnings: [] });
+  const tk = () => ({ tokens: [], hide: [], sig: '', scene: SC(ONLY('people')) });
+  const d1 = P.playerDisplay(ROLL, PMAP(), big((o) => (o.crowd ? 700 * 1024 : 100)), tk());
+  assert.equal(d1.sceneCut, 'crowd'); assert.ok(d1.svg.length < P.SVG_CAP); assert.match(P.SCENE_CUT_MSG.crowd, /without the crowd/);
+  const d2 = P.playerDisplay(ROLL, PMAP(), big((o) => (o.people ? 700 * 1024 : 100)), tk());
+  assert.equal(d2.sceneCut, 'scene'); assert.match(P.SCENE_CUT_MSG.scene, /without its people/);
+  assert.throws(() => P.playerDisplay(ROLL, PMAP(), big(() => 700 * 1024), tk()), (e) => e.big === true && /too large for the iPad \(700 KiB, at most 600\)/.test(e.message));
+  const d3 = P.playerDisplay(ROLL, PMAP(), big(() => 700 * 1024), { tokens: [], hide: [], sig: '' });
+  assert.equal(d3.sceneCut, undefined, 'off: no scene, no size check (the server answers as it always did)');
+  const d4 = P.playerDisplay(ROLL, PMAP(), big(() => 100), tk());
+  assert.ok(!('sceneCut' in d4), 'under the cap: nothing cut, and no sceneCut key');
+});
+test('the vendored kits: the Pelican Rooms\' player map with people and the crowd is under the cap at three times, all bands open, on the iPad and a TV', () => {
+  const K = require(path.join(ROOT, 'app', 'maps', 'map-kit.js')), FK = require(path.join(ROOT, 'app', 'figures', 'figure-kit.js'));
+  if (typeof FK.mini !== 'function') { console.log('  (skipped: the vendored figure kit has no mini)'); return; }
+  const rows = [];
+  for (const t of [0, 150, 180]) for (const screen of ['ipad', 'tv']) {
+    const sc = SC(ALL_ON, { kit: FK, screen, lights: G.lightsAt(PLAY(), t) });
+    const reveal = ['public', 'working', 'controlled', 'secure'], shown = P.tokenRooms(ROLL, reveal, []);
+    const o = G.forPlayer({ view: 'iso', theme: 'rulebook', layer: 'player', reveal, layout: 'ipad' }, sc, shown, ALL_ON).opts;
+    const n = Buffer.byteLength(K.render(ROLL, o).svg);
+    rows.push('t=' + t + ' ' + screen + ' ' + Math.round(n / 1024) + ' KiB'); assert.ok(n < P.SVG_CAP, rows[rows.length - 1]);
+  }
+  console.log('  sizes (iso, all bands, people and crowd): ' + rows.join(' · '));
+});
+
+/* ---------- MK2, step 4: the room view's people as pictures ---------- */
+const IMG = (n) => ({ href: 'data:image/webp;base64,' + 'QUJD'.repeat(n), width: 120, height: 420 });
+test('the room view: a person with a picture goes as image (the data URL the kit and the server accept); without one, three people at most go as specs', () => {
+  const crew = { pc1: { room: 'Showroom' }, pc2: { room: 'Showroom' }, pc3: { room: 'Showroom' }, pc4: { room: 'Showroom' }, pc5: { room: 'Showroom' }, pc6: { room: 'Cocktail lounge' } };
+  const pcs = ['Nell Arbuthnot', 'Ray Okonjo', 'Tam Petrakis', 'Mabel Quist', 'Dov Kessler', 'Ada Vell'].map((name, i) => ({ id: 'pc' + (i + 1), name, spec: SPEC(name, 'masc') }));
+  const shown = ['Showroom', 'Cocktail lounge'], f = G.flags(() => true);
+  const none = G.forPlayer({}, SC(f, { pcs, crew, view: 'room', room: 'Showroom', images: {} }), shown, f).opts;
+  assert.equal(none.view, 'room'); assert.equal(none.people.length, G.ROOM_SPECS); assert.equal(G.ROOM_SPECS, 3);
+  assert.ok(none.people.every((p) => p.room === 'Showroom' && p.spec && !p.image), 'specs, in the room only');
+  const people = G.playerPeople(SC(f, { pcs, crew }), ['Showroom']), images = {};
+  people.slice(0, 4).forEach((p) => { images[G.imageKey(p)] = IMG(3); });
+  images['not-a-person'] = IMG(1);
+  const some = G.forPlayer({}, SC(f, { pcs, crew, view: 'room', room: 'Showroom', images }), shown, f).opts;
+  assert.equal(some.people.filter((p) => p.image).length, 4, 'four pictures'); assert.equal(some.people.filter((p) => !p.image).length, 1, 'and the fifth as a spec');
+  assert.deepEqual(some.people.find((p) => p.image).image, IMG(3));
+  const bad = {}; bad[G.imageKey(people[0])] = { href: 'blob:http://x/1', width: 1, height: 1 }; bad[G.imageKey(people[1])] = { href: 'data:image/svg+xml;base64,QUJD', width: 1, height: 1 };
+  const b = G.forPlayer({}, SC(f, { pcs, crew, view: 'room', room: 'Showroom', images: bad }), shown, f).opts;
+  assert.ok(b.people.every((p) => !p.image), 'a blob: URL or an SVG data URL is never passed as a picture');
+  assert.equal(G.inputKey(SC(f, { images })), G.inputKey(SC(f, { images: JSON.parse(JSON.stringify(images)) })), 'a picture keys by its person, not its bytes');
+  assert.equal(G.forPlayer({}, SC(f, { pcs, crew, images }), shown, f).opts.people.filter((p) => p.image).length, 0, 'the map (not the room view) takes no pictures');
+});
+
+/* ---------- MK2, step 4b: one floor on the shared screen ---------- */
+test('the shared screen\'s floor: an integer floor goes to the kit (with any map setting on); none, or the room view, sends no floor; off, nothing', () => {
+  const f = ONLY('people');
+  assert.equal(G.forPlayer({}, SC(f, { floor: 1 }), [], f).opts.floor, 1);
+  assert.equal(G.forPlayer({}, SC(f, { floor: -1 }), [], f).opts.floor, -1);
+  for (const v of [null, undefined, '1', 1.5, NaN]) assert.ok(!('floor' in G.forPlayer({}, SC(f, { floor: v }), [], f).opts), String(v));
+  assert.ok(!('floor' in G.forPlayer({}, SC(ALL_ON, { floor: 1, view: 'room', room: 'Showroom' }), ['Showroom'], ALL_ON).opts), 'the room view is one room already');
+  const o = { view: 'iso' }; assert.equal(G.forPlayer(o, SC(ALL_OFF, { floor: 1 }), [], ALL_OFF).opts, o, 'off: the options untouched');
+});
+test('the floors offered are the kit\'s own player-copy titles (generic: never a room\'s name)', () => {
+  const K = require(path.join(ROOT, 'app', 'maps', 'map-kit.js'));
+  const r = K.render(ROLL, { view: 'iso', layer: 'player', reveal: ['public'], layout: 'ipad' });
+  const titles = (r.layout.levels || []).map((l) => String(l.title).toLowerCase());
+  assert.ok(titles.length > 1 && titles.every((t) => P.LEVEL_TITLES.includes(t)), JSON.stringify(titles));
+  for (const room of ROOMS) assert.ok(!titles.includes(room.name.toLowerCase()), room.name);
+  const one = K.render(ROLL, { view: 'iso', layer: 'player', reveal: ['public'], layout: 'ipad', floor: r.layout.levels[0].lvl });
+  assert.ok(one.svg.length < r.svg.length && !one.warnings.some((w) => /is not on this map/.test(w)), 'one floor draws less, and the kit knows the floor');
+});
+
+/* ---------- MK2, step 5: the site's crowd flag through the exporter ---------- */
+test('play.crowd: { masked } (a boolean) survives the export into the pack; anything else under crowd is dropped, with a warning', () => {
+  const NOTE = (play) => ['---', 'wiki: entity', '---', '# The Pelican Rooms', '', '```json b68-site\n' + JSON.stringify({ patch: { name: 'The Pelican Rooms', district: 'Nowhere Ward', rooms: ROOMS }, play }) + '\n```', ''].join('\n');
+  const exp = (crowd) => { const p = cl(FX); if (crowd !== undefined) p.crowd = crowd; return parseSite(NOTE(p), 'The Pelican Rooms', 'r'); };
+  const a = exp({ masked: true, colour: 'GM-ONLY-CROWD', density: 3 });
+  assert.deepEqual(a.site.play.crowd, { masked: true });
+  assert.ok(a.warnings.some((w) => /play\.crowd\.colour: not a crowd key; dropped/.test(w)) && a.warnings.some((w) => /play\.crowd\.density/.test(w)));
+  assert.ok(!JSON.stringify(a.site).includes('GM-ONLY-CROWD'), 'nothing else under crowd reaches the pack');
+  assert.deepEqual(exp({ masked: false }).site.play.crowd, { masked: false });
+  assert.deepEqual(exp({ masked: 'yes' }).site.play.crowd, {}, 'masked not a boolean: dropped');
+  assert.ok(!('crowd' in exp('masked').site.play) && !('crowd' in exp(undefined).site.play));
+  assert.deepEqual(G.crowdOf(exp({ masked: true }).site.play), { masked: true }, 'and the map reads it');
+});
+
 /* ---------- the review of #234 ---------- */
 test('a hidden dawn event never lights the player copy; a public one does; one told to the crew does; the GM copy shows them all', () => {
   const hidden = PLAY((p) => { const e = p.events.find((x) => x.fx === 'dawn'); delete e.vis; }), pub = PLAY();
@@ -299,6 +389,134 @@ test('the room cut: every deliberate map send clears it (Show on iPad, the Score
   const act = body('sceneAct');
   assert.match(act, /S\.sceneCutting = true;[\s\S]*siteMapUp\(false, false\)[\s\S]*finally \{ S\.sceneCutting = false; \}/, 'Cut to room is the one send that keeps it');
   assert.ok(!/sceneRoom\s*=\s*[^'=]/.test(body('liveReveal')), 'a live re-send neither sets nor clears it');
+});
+
+/* ---------- the overseer's addition 1: the stage drawn for the frame the shared screen reports ---------- */
+test('the stage is sized to the reported map frame; without one (or a bad one), to the Shared screen select', () => {
+  const f = ONLY('fill');
+  assert.deepEqual(G.forPlayer({}, SC(f, { frame: { w: 1229, h: 870 }, screen: 'tv' }), [], f).opts, { layout: 'stage', displayWidth: 1229, displayHeight: 870 }, 'the frame wins over the select');
+  for (const bad of [null, { w: 199, h: 900 }, { w: 1000, h: 10001 }, { w: '1229', h: 870 }, { w: 1229.5, h: 870 }, [1229, 870]]) {
+    const o = G.forPlayer({}, SC(f, { frame: bad, screen: 'tv' }), [], f).opts;
+    assert.deepEqual([o.displayWidth, o.displayHeight], [1920, 1080], 'fallback to the select: ' + JSON.stringify(bad));
+  }
+  assert.equal(G.frameOk({ w: 200, h: 10000 }), true); assert.equal(G.frameOk({ w: 200, h: 10001 }), false);
+  assert.equal(G.frameMoved(null, { w: 1229, h: 870 }, 8), true, 'the first frame is taken');
+  assert.equal(G.frameMoved({ w: 1229, h: 870 }, { w: 1236, h: 864 }, 8), false, 'a few pixels: no re-send');
+  assert.equal(G.frameMoved({ w: 1229, h: 870 }, { w: 1240, h: 870 }, 8), true, 'more than 8 px: taken');
+  assert.equal(G.frameMoved({ w: 1229, h: 870 }, null, 8), false, 'no frame reported: keep the last one');
+  assert.notEqual(G.inputKey(SC(f, { frame: { w: 1229, h: 870 } })), G.inputKey(SC(f, { frame: { w: 1366, h: 900 } })), 'a new frame changes the live map\'s key (it is sent again)');
+  assert.deepEqual(G.forPlayer({ layout: 'ipad' }, SC(f, { frame: { w: 1229, h: 870 }, stage: false }), [], f).opts, { layout: 'ipad' }, 'a kit without stage: the frame changes nothing');
+});
+test('the frame\'s ask and answer: top-level keys, never in the status; the GM asks (frameWant, a bare boolean), the display answers ({ w, h }); neither moves the signal; with no ask the display\'s part is a1f8d57\'s', () => {
+  /* the answer: the display may send it; only w and h, whole px from 200 to 10000; anything else dropped without failing the PATCH */
+  assert.deepEqual(cleanSttPatch({ frame: { w: 1229, h: 870 } }, 'display'), { frame: { w: 1229, h: 870 } });
+  for (const bad of [{ w: 1229 }, { w: -1, h: 870 }, 'big', [1229, 870], { w: 1229.2, h: 870 }]) assert.deepEqual(cleanSttPatch({ frame: bad }, 'display'), {}, JSON.stringify(bad));
+  assert.deepEqual(cleanSttPatch({ frame: { w: 1229, h: 870, svg: '<svg/>' } }, 'display'), { frame: { w: 1229, h: 870 } }, 'only w and h are kept');
+  /* the status is a1f8d57's: a frame put in it is not kept */
+  assert.ok(!('frame' in cleanSttPatch({ status: { state: 'idle', lines: 0, frame: { w: 1229, h: 870 } } }, 'display').status));
+  /* the ask: the GM's only (403 for the display); true asks, anything else takes it back (null deletes the key) */
+  assert.deepEqual(cleanSttPatch({ frameWant: true }, 'gm'), { frameWant: true }); assert.deepEqual(cleanSttPatch({ frameWant: false }, 'gm'), { frameWant: null });
+  assert.throws(() => cleanSttPatch({ frameWant: true }, 'display'), /only the GM/);
+  assert.equal(cleanFrame({ w: 200, h: 200 }).w, 200); assert.equal(cleanFrame({ w: 199, h: 200 }), null);
+  /* the display's part (its GET): no ask, exactly a1f8d57's (the same keys, the same seq); with the ask, frame: true and a new seq */
+  const base = { want: 'off', session: '' }, asked = Object.assign({ frameWant: true, frame: { w: 1229, h: 870 } }, base);
+  assert.deepEqual(sttPartOf(Object.assign({ frame: { w: 1229, h: 870 } }, base)), sttPartOf(base), 'an answer alone changes nothing the display reads');
+  assert.deepEqual(Object.keys(sttPartOf(base)), ['seq', 'want', 'session']);
+  assert.equal(sttPartOf(asked).frame, true); assert.notEqual(sttPartOf(asked).seq, sttPartOf(base).seq, 'the ask reaches the display on its own GET');
+  /* and the display page passes it on to its transcriber module (its part cleaner keeps frame only when it is exactly true) */
+  const DP = require(path.join(ROOT, 'app', 'display-page.js')).Pure;
+  assert.deepEqual(DP.sttPart({ stt: sttPartOf(asked) }), Object.assign({}, sttPartOf(asked)), 'asked: frame: true kept');
+  assert.deepEqual(DP.sttPart({ stt: sttPartOf(base) }), sttPartOf(base), 'not asked: the part as a1f8d57 cleans it');
+  assert.ok(!('frame' in DP.sttPart({ stt: Object.assign({}, sttPartOf(base), { frame: 'yes' }) })), 'anything but true: no ask');
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'display-page.js'), 'utf8');
+  assert.match(src, /o\.onStt\(stt\.frame === true \? \{ seq: stt\.seq, want: stt\.want, session: stt\.session, frame: true \}/, 'the hand-off to the transcriber keeps the ask');
+  /* the signal (the poke): neither key moves it, so two screens answering different sizes poke nobody */
+  const doc = (x) => Object.assign({ want: 'off', status: { state: 'idle', lines: 0, error: '' } }, x || {});
+  assert.equal(sttSignal(doc({ frameWant: true, frame: { w: 1229, h: 870 } })), sttSignal(doc({ frameWant: true, frame: { w: 1366, h: 900 } })), 'two answers that differ only in frame: the same signal');
+  assert.equal(sttSignal(doc({ frameWant: true, frame: { w: 1229, h: 870 } })), sttSignal(doc()), 'and a1f8d57\'s signal');
+});
+test('the GM band\'s transcriber pill depends on what it did before: a document holding only the frame\'s ask and answer is not "set up"', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
+  assert.match(src, /var show = STT\.loaded && \(\(!!STT\.at && sttOwn\(d\)\) \|\| on\);/);
+  const body = src.slice(src.indexOf('function sttOwn('), src.indexOf('\n', src.indexOf('function sttOwn(')));
+  const sttOwn = new Function('return ' + body.replace(/^\s*/, ''))();
+  assert.equal(sttOwn({ frameWant: true, frame: { w: 1, h: 1 } }), false, 'only the ask and the answer: no pill');
+  assert.equal(sttOwn({ frameWant: true }), false);
+  for (const d of [{ want: 'off' }, { status: { state: 'idle' } }, { session: '3' }, { speakers: {} }, { copier: { at: 'x' } }, { want: 'off', frameWant: true }]) assert.equal(sttOwn(d), true, JSON.stringify(d));
+});
+test('two screens cannot make the map flap: alternating frames (two sizes, twenty reports) give at most two re-sends, then the Shared screen select sizes the stage', () => {
+  const A = { w: 1229, h: 1050 }, B = { w: 1088, h: 970 };
+  let st = null, sends = 0, t = 0;
+  for (let i = 0; i < 20; i++) { t += 60000; const r = G.frameTrack(st, i % 2 ? B : A, t); st = r.state; if (r.resend) sends++; }
+  assert.equal(sends, 2, 'two re-sends (' + sends + ')'); assert.equal(G.FRAME_SENDS, 2); assert.equal(G.FRAME_WINDOW, 600000);
+  assert.equal(st.stopped, true); assert.equal(st.frame, null, 'following stopped: no frame');
+  const f = ONLY('fill'), o = G.forPlayer({}, SC(f, { frame: st.frame, screen: 'tv' }), [], f).opts;
+  assert.deepEqual([o.displayWidth, o.displayHeight], [1920, 1080], 'the stage from the Shared screen select at the end');
+  /* one screen: a resize is followed, and the same size again asks for nothing */
+  let one = G.frameTrack(null, A, 0); assert.equal(one.resend, true);
+  one = G.frameTrack(one.state, { w: 1232, h: 1048 }, 1000); assert.equal(one.resend, false, 'a few px: nothing');
+  one = G.frameTrack(one.state, B, 2000); assert.equal(one.resend, true, 'a real resize, once');
+  /* the window: two changes, then a third more than ten minutes after the first is followed again */
+  let w = G.frameTrack(null, A, 0); w = G.frameTrack(w.state, B, 60000); w = G.frameTrack(w.state, A, 660001);
+  assert.equal(w.resend, true, 'outside the ten minutes: followed'); assert.equal(w.state.stopped, false);
+  /* stopped stays stopped until the GM chooses in the select (a null state: the page's handler) or reloads */
+  assert.equal(G.frameTrack(st, A, t + 3600000).resend, false);
+  assert.equal(G.frameTrack(null, A, t + 3600000).resend, true, 'a fresh start follows again');
+});
+test('the frame is in the scene input only where the stage is sized to it (map.fill on, a kit that draws stage)', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
+  assert.match(src, /frame: f\.fill && G\.stageOk\(W\.B68Map\) \? S\.sceneFrame \|\| null : null/);
+  for (const k of ['people', 'lights', 'room']) {
+    const f = ONLY(k), a = G.forPlayer({}, SC(f, { frame: null }), ['Showroom'], f).opts, b = G.forPlayer({}, SC(f, { frame: { w: 1229, h: 1050 } }), ['Showroom'], f).opts;
+    assert.deepEqual(strip(b), strip(a), k + ' alone: a frame changes nothing that reaches the kit');
+  }
+});
+
+/* ---------- the overseer's addition 2: a person's own role ---------- */
+test('play.people[].role: kept by checkPlay when shaped like a role id; it wins over the kind on the GM copy when the figure kit knows it', () => {
+  const p = PLAY((x) => { x.people.find((q) => q.id === 'pq').role = 'croupier'; x.people.find((q) => q.id === 'wr').role = 'Not A Role'; x.people.find((q) => q.id === 'od').role = 'astronaut'; });
+  assert.equal(p.people.find((q) => q.id === 'pq').role, 'croupier');
+  assert.ok(!('role' in p.people.find((q) => q.id === 'wr')), 'not an id: dropped');
+  const r = BALL.checkPlay((() => { const x = cl(FX); x.people[1].role = 42; return x; })(), ROOMS.map((q) => q.name));
+  assert.ok(r.warnings.some((w) => /\.role: 42 is not a role id; dropped/.test(w)));
+  /* minute 0: Pip Quill (staff) in the Cocktail lounge, Odette (target) in the Showroom; Pip is on the board as a looker (the cook disguise) */
+  const o = {}; G.gm(o, ONLY('people'), { model: model(p, CREW, 0), play: p, crew: CREW, pcs: PCS, cast: () => null, t: 0, kit: KIT });
+  const pip = o.people.find((q) => q.label === 'Pip Quill'), od = o.people.find((q) => q.label === 'Odette Marsh');
+  assert.equal(pip.role, 'croupier', 'the play\'s role wins over staff (waiter)');
+  assert.equal(od.role, 'resident', 'an id the kit does not know is ignored: the role from the kind');
+  const kitRoles = { roles: () => [{ id: 'astronaut' }] }, o2 = {};
+  G.gm(o2, ONLY('people'), { model: model(p, CREW, 0), play: p, crew: CREW, pcs: PCS, cast: () => null, t: 0, kit: Object.assign({}, KIT, kitRoles) });
+  assert.equal(o2.people.find((q) => q.label === 'Odette Marsh').role, 'astronaut', 'the kit\'s own roles() decides what is known');
+  assert.ok(!JSON.stringify(G.forPlayer({}, SC(ALL_ON), ROOMS.map((q) => q.name), ALL_ON).opts.people).includes('croupier'), 'GM copy only: the player copy is the crew');
+});
+
+/* ---------- the overseer's ruling: name each person once ---------- */
+test('people on: each crew name appears once in the player SVG of the whole-building iso (the flag, not also the pin); a view with no people keeps the pins; people off: the pins as on ' + BASE, () => {
+  const K = require(path.join(ROOT, 'app', 'maps', 'map-kit.js')), FK = require(path.join(ROOT, 'app', 'figures', 'figure-kit.js'));
+  if (typeof FK.mini !== 'function' || typeof FK.extra !== 'function') { console.log('  (skipped: the vendored figure kit has no mini)'); return; }
+  const render = K.render.bind(K), reveal = ['public'], shown = P.tokenRooms(ROLL, reveal, []);
+  const pcs = PCS.map((c, i) => ({ id: c.id, name: c.name, spec: FK.extra({ role: i ? 'guest-m' : 'guest-f', seed: c.id }) }));
+  const crew = { pc1: { room: 'Showroom' }, pc2: { room: 'Underground counting room' }, pc3: { room: 'Cocktail lounge' } };
+  const placed = { crew, pins: {} }, tokPcs = (skip) => pcs.filter((c) => !skip.includes(c.id)).map((c) => ({ id: c.id, name: c.name, icon: '' }));
+  const full = P.playerTokens(placed, shown, [], tokPcs([]), null), bare = P.playerTokens(placed, shown, [], tokPcs(pcs.map((c) => c.id)), null);
+  assert.ok(full.length >= 2 && bare.length === 0, 'the fixture has pins to drop');
+  const scene = SC(ONLY('people'), { pcs, crew, kit: FK, disguises: [] });
+  const count = (svg, name) => P.svgText(svg).split(name.toLowerCase()).length - 1;
+  const onIso = P.playerDisplay(ROLL, PMAP({ view: 'iso' }), render, { tokens: full, hide: [], sig: 'x', scene, bare: { tokens: bare, hide: [] } });
+  for (const n of ['Nell Arbuthnot', 'Tam Petrakis']) assert.equal(count(onIso.svg, n), 1, n + ' once in the iso with people on (' + count(onIso.svg, n) + ')');
+  assert.equal(count(onIso.svg, 'Ray Okonjo'), 0, 'a crew member in a hidden room: neither flag nor pin');
+  assert.equal(onIso.tokens, 0, 'no pins went (each crew member is a figure with a flag)');
+  /* a view that draws no people: the pins come back, so nobody is left unnamed */
+  const onRings = P.playerDisplay(ROLL, PMAP({ view: 'rings' }), render, { tokens: full, hide: [], sig: 'x', scene, bare: { tokens: bare, hide: [] } });
+  assert.equal(onRings.tokens, full.length, 'rings draws no people: every pin');
+  /* a kit that did not draw them (no `people` in its result): the pins after all */
+  const blind = (roll, o) => { const r = render(roll, o); delete r.people; return r; };
+  assert.equal(P.playerDisplay(ROLL, PMAP({ view: 'iso' }), blind, { tokens: full, hide: [], sig: 'x', scene, bare: { tokens: bare, hide: [] } }).tokens, full.length);
+  /* people off: no scene and no bare set, so the pins are exactly what a1f8d57's page draws */
+  if (OLD) {
+    const a = OLD.playerDisplay(ROLL, PMAP({ view: 'iso' }), render, { tokens: full, hide: [], sig: 'x' }), b = P.playerDisplay(ROLL, PMAP({ view: 'iso' }), render, { tokens: full, hide: [], sig: 'x' });
+    assert.equal(b.svg, a.svg, 'people off: the same svg, pins and all'); assert.equal(b.tokens, full.length);
+  }
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
