@@ -34,11 +34,70 @@
   function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
 
   /* ---- IP2.3 B: the public line waits for Send ---- */
-  function offerLine(o, offer, show) {
-    if (!isObj(o) || typeof offer !== 'function') return Promise.resolve(null);
+  /* q (IP2b, optional) = { root, log(text) }: the lines wait in a short queue of their own (lines()) instead of the page's one-slot notice */
+  function offerLine(o, offer, show, q) {
+    if (!isObj(o)) return Promise.resolve(null);
     var t = str(o.text).trim(); if (!t) return Promise.resolve(null);
+    if (isObj(q) && q.root) { lines(q).add(o, show); return Promise.resolve(null); }
+    if (typeof offer !== 'function') return Promise.resolve(null);
     offer({ text: 'Public line: “' + t + '”', label: 'Send', keep: true, run: function () { return typeof show === 'function' ? show(o) : null; } });
     return Promise.resolve(null);
+  }
+
+  /* ---- IP2b: the public lines, a short queue (the newest on top, at most LINES_MAX), each with Send and Not now; a count when more than one. A line
+     pushed out by a sixth, or put away with Not now, is written to the night log (host.log), so none is lost without a trace. One per page root. ---- */
+  var LINES_MAX = 5, QS = [];
+  function linesPure() {
+    var list = [];
+    return {
+      list: list,
+      add: function (o) { list.unshift({ id: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), o: o }); return list.length > LINES_MAX ? list.splice(LINES_MAX) : []; },
+      take: function (id) { for (var i = 0; i < list.length; i++) if (list[i].id === id) return list.splice(i, 1)[0]; return null; }
+    };
+  }
+  function lines(q) {
+    var root = q.root, rec = QS.filter(function (x) { return x.root === root; })[0];
+    if (!rec) { rec = { root: root, p: linesPure(), el: null, show: null }; QS.push(rec); if (QS.length > 4) QS.shift(); }
+    rec.q = q;
+    function log(text) { try { if (typeof rec.q.log === 'function') rec.q.log(text); } catch (e) { /* the log is a nicety */ } }
+    function draw() {
+      var d = root.ownerDocument || (W && W.document); if (!d) return;
+      if (!rec.el || !rec.el.isConnected) {
+        rec.el = d.createElement('div'); rec.el.id = 'gm-p2-lines'; rec.el.className = 'gm-p2-lines'; rec.el.setAttribute('role', 'region'); rec.el.setAttribute('aria-label', 'Public lines waiting');
+        /* bottom right of the work area: clear of the left column (the Roll, START AFTERMATH, BACK) and of the Blade rail on the right */
+        var es = rec.el.style; es.position = 'fixed'; es.right = '64px'; es.bottom = '12px'; es.zIndex = '60'; es.maxWidth = 'min(600px, calc(100vw - 420px))'; es.display = 'grid'; es.gap = '6px';
+        es.padding = '8px 10px'; es.background = '#1a1714'; es.color = '#f2ede1'; es.borderLeft = '4px solid #e0701e'; es.boxShadow = '0 2px 10px rgba(0,0,0,.35)';
+        rec.el.addEventListener('click', function (ev) {
+          var b = ev.target && ev.target.closest ? ev.target.closest('[data-p2-line]') : null; if (!b) return;
+          var it = rec.p.take(b.getAttribute('data-id')); if (!it) return;
+          if (b.getAttribute('data-p2-line') === 'send') { Promise.resolve().then(function () { return typeof rec.show === 'function' ? rec.show(it.o) : null; }).then(null, function () { /* the page says why */ }); }
+          else log('Public line not shown (Not now): ' + str(it.o.text).trim());
+          draw();
+        });
+        root.appendChild(rec.el);
+      }
+      var L = rec.p.list;
+      rec.el.hidden = !L.length; rec.el.style.display = L.length ? 'grid' : 'none';
+      rec.el.textContent = '';
+      if (!L.length) return;
+      if (L.length > 1) { var h = d.createElement('p'); h.className = 'gm-p2-count'; h.style.margin = '0'; h.style.fontSize = '12px'; h.style.letterSpacing = '.08em'; h.style.textTransform = 'uppercase'; h.textContent = L.length + ' public lines waiting'; rec.el.appendChild(h); }
+      L.forEach(function (it) {
+        var row = d.createElement('div'); row.className = 'gm-p2-line'; row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.gap = '8px'; row.style.flexWrap = 'wrap';
+        var t = d.createElement('span'); t.className = 'gm-p2-text'; t.style.flex = '1 1 14em'; t.style.minWidth = '0'; t.textContent = 'Public line: “' + str(it.o.text).trim() + '”'; row.appendChild(t);
+        [['send', 'Send', 'btn sm primary'], ['later', 'Not now', 'btn sm']].forEach(function (b) {
+          var x = d.createElement('button'); x.type = 'button'; x.className = b[2]; x.setAttribute('data-p2-line', b[0]); x.setAttribute('data-id', it.id); x.textContent = b[1]; row.appendChild(x);
+        });
+        rec.el.appendChild(row);
+      });
+    }
+    return {
+      add: function (o, show) {
+        rec.show = show;
+        rec.p.add(o).forEach(function (it) { log('Public line not shown (more than ' + LINES_MAX + ' waiting): ' + str(it.o.text).trim()); });
+        draw();
+      },
+      list: function () { return rec.p.list.map(function (it) { return str(it.o.text); }); }
+    };
   }
 
   /* ---- IP2.3 E: the Autopilot row says why ---- */
@@ -132,5 +191,5 @@
   }
 
   return { VERSION: 1, AP_WHY: AP_WHY, FILES: FILES, offerLine: offerLine, apLine: apLine, scene: scene, probe: probe, openCard: openCard, notesMd: notesMd,
-    _pure: { intent: intent, same: same, typing: typing } };
+    _pure: { intent: intent, same: same, typing: typing, linesPure: linesPure, LINES_MAX: LINES_MAX }, lines: lines };
 });

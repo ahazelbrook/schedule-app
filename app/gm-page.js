@@ -5099,7 +5099,7 @@
   function p2Card(id) {
     var M = p2(), me = S; if (!M || !me) return;
     M.openCard({ doc: document, npc: function (x) { return isObj(me.npcs) ? me.npcs[x] : null; }, rv: function () { return S === me && me.rv && me.rvBox && me.rvBox.isConnected ? me.rv : null; },
-      cast: function (x) { if (S !== me) return; me.npcCardOpen = x; renderNpcs(); } }, id);
+      cast: function (x) { if (S !== me) return; var f = document.activeElement, k = f && f.closest && f.closest('#gm-npc') && f.getAttribute('data-gm') ? '#gm-npc [data-gm="' + f.getAttribute('data-gm') + '"][data-id="' + str(f.getAttribute('data-id')).replace(/[^A-Za-z0-9_-]/g, '') + '"]' : ''; me.npcCardOpen = x; renderNpcs(); var nb = k ? (k) : null; if (nb && nb.focus) nb.focus(); } }, id);      /* IP2b: the row's button keeps the focus through the redraw */
   }
   function p2NotesSrc(names) {
     var M = p2(); if (!M || !S || !isObj(S.npcs)) return '';
@@ -5605,7 +5605,7 @@
       reveal: function (npc) { return S === me ? missionReveal(npc) : Promise.resolve(false); },
       offer: function (spec) { if (S === me) missionOffer(spec); },
       toast: toast,
-      hold: function (o) { var M = S === me ? p2() : null; if (!M) return false; M.offerLine(o, missionOffer, showOverlay); return true; },      /* IP2 (stage.players): the public line waits for the GM's Send */
+      hold: function (o) { var M = S === me ? p2() : null; if (!M) return false; M.offerLine(o, missionOffer, showOverlay, { root: S.root, log: function (t) { if (S === me && S.night && typeof S.night.cue === 'function') S.night.cue(t); } }); return true; },      /* IP2 (stage.players): the public line waits for the GM's Send */
       overlay: function (o) { return S === me ? showOverlay(o) : Promise.resolve(null); },
       confirm: function (msg) { return W.confirm(msg); }
     });

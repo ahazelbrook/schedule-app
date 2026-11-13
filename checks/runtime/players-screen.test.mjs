@@ -159,6 +159,16 @@ await test('IP2b fit: a stage-layout drawing fills at least 90% of the binding s
   assert.equal(P.fitView(null, 100, 100), null);
 });
 
+await test('IP2b lines: the newest on top, at most five; the one pushed out is handed back (to be logged); take removes by id', () => {
+  const q = G._pure.linesPure();
+  for (let i = 1; i <= 5; i++) assert.deepEqual(q.add({ text: 'L' + i }), []);
+  assert.deepEqual(q.list.map((x) => x.o.text), ['L5', 'L4', 'L3', 'L2', 'L1']);
+  const out = q.add({ text: 'L6' });
+  assert.deepEqual(out.map((x) => x.o.text), ['L1'], 'the oldest goes, and is handed back');
+  const id = q.list[2].id; assert.equal(q.take(id).o.text, 'L4'); assert.equal(q.take(id), null);
+  assert.equal(q.list.length, 4); assert.equal(G._pure.LINES_MAX, 5);
+});
+
 /* ---------- the Worker ---------- */
 const DISPLAY = { me: { role: 'display', email: 'table@example.test' } };
 async function freshDb() {
