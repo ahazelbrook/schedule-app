@@ -756,6 +756,7 @@ service worker never caches a redirect. The registry ids, in picker order:
 | `veil` | `sunrise-ball-opening` | The Sunrise Ball's opening (s04), 30 s and silent: a crane down to the Velvet Veil and the gondola queue, Ironclad at the water door, through the glass to the chandelier, the title; **pin only**, pinned after the engagement roll while the GM narrates, plays once and holds on the title |
 | `board`, `exploded` | `planning-board`, `score-exploded` | The score scenes |
 | `testcard` | `test-card` | Please stand by (pin only) |
+| `landing` | `night-landing` | The landing: guests arriving by boat at a grand lit building at night, a flashbulb now and then; extras only, no text. Held still, one composed frame and no flash. Not in the default rotation: pin it, or tick it into a playlist |
 
 The scenes from `boneyard` on are built by `tools/ambient/scenes/*.js` (see `tools/ambient/README.md`); their figures move now
 and then (a few hard-cut frames: a drag on a cigarette, a glance, a sip). `tools/ambient/redress.js` re-dressed Booker in his suit in

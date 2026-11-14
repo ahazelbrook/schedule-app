@@ -892,7 +892,7 @@ await test('scoreMessage: board and iso are re-sanitised (script gone), the fiel
 
 /* ---------- the ambient floor: registry, plan and rotation ---------- */
 await test('ambient registry: ordered, URLs come only from it, the watch feed is always ?api=off', () => {
-  assert.deepEqual(P.AMBIENT_SCENES.map((s) => s.id), ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting', 'credits', 'veil', 'board', 'exploded', 'testcard']);
+  assert.deepEqual(P.AMBIENT_SCENES.map((s) => s.id), ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting', 'credits', 'veil', 'board', 'exploded', 'testcard', 'landing']);
   assert.equal(P.ambientUrl('harvest'), 'ambient/second-harvest');
   assert.equal(P.ambientUrl('wanted'), 'ambient/wanted-wall', 'the wanted wall polls nothing: no ?api=off');
   assert.equal(P.ambientUrl('vet'), 'ambient/grunts-vet');
