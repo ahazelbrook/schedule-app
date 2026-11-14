@@ -109,6 +109,7 @@ const CHECKS = [
   ['checks/runtime/phone-handouts.e2e.mjs', 'handouts on the players\' phones: off, send to one and to everyone, take back, the list and viewer at 390 and 360 (12170; IP4)'],
   ['checks/runtime/players-board.e2e.mjs', 'the planning board: pins arrive on the board scene, wait for their room, a hidden name refused, remove, held still, off (12260; IP6)'],
   ['checks/runtime/display-health.e2e.mjs', 'the display\'s health: the held stand-by clock, the stand-by fit, every scene held and moving, figures, the tell and signature (9461; IP1)'],
+  ['checks/runtime/prep-actions.e2e.mjs', 'prep actions: a note without a span is untouched; handout, clock (once, hidden, Undo), rule pop-over; the cards close on touch (12400; PA)'],
 ];
 
 const want = process.argv.slice(2);

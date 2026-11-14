@@ -100,7 +100,13 @@
     var secs = (Array.isArray(sections) ? sections : []).filter(function (s) { return isObj(s) && s.id && s.md; });
     var s = secs.filter(function (x) { return fold(x.title) === f; })[0];
     if (s) return { src: 'screen', id: str(s.id), title: str(s.title), md: str(s.md) };
-    var h = (Array.isArray(hits) ? hits : []).filter(function (x) { return isObj(x) && x.id; });
+    /* a hit counts only when every word of the term (its first letters: "pushing" finds "push") is in its title or its snippet */
+    var ws = str(term).toLowerCase().split(/[^a-z0-9À-ɏ]+/).filter(function (w) { return w.length >= 3; });
+    var h = (Array.isArray(hits) ? hits : []).filter(function (x) {
+      if (!isObj(x) || !x.id) return false;
+      var t = (str(x.title) + ' ' + str(x.snip).replace(/<[^>]*>/g, '')).toLowerCase();
+      return ws.every(function (w) { var s = w.replace(/(?:ing|ed|es|s)$/, ''); return t.indexOf(s.length >= 3 ? s : w) >= 0; });
+    });
     var e = h.filter(function (x) { return fold(x.title) === f; })[0] || h[0];
     if (e) return { src: 'rules', id: str(e.id) };
     s = secs.filter(function (x) { return fold(x.title).indexOf(f) >= 0; })[0];
@@ -202,8 +208,9 @@
   function hitsOf(R, term) { if (!R) return []; try { var r = R.hits(term, 5); return r && Array.isArray(r.hits) ? r.hits : []; } catch (e) { return []; } }
   function warmRules(el, host) {
     var R = rulesOf(host);
-    if (!warm) warm = R && typeof R.load === 'function' ? Promise.resolve().then(function () { return R.load(true); }).then(function () { return true; }, function () { return true; }) : Promise.resolve(true);
-    warm.then(function () { [].forEach.call(el.querySelectorAll('button.pa-rule'), function (b) { b.__paWarm = true; ruleMute(b, host); }); });
+    /* the device's own copy only (no download from a page draw); with no copy here, no chip is muted: a tap loads the rules and says */
+    if (!warm) warm = R && typeof R.load === 'function' ? Promise.resolve().then(function () { return R.load(true); }).then(function (c) { return !!c; }, function () { return false; }) : Promise.resolve(!R);
+    warm.then(function (known) { if (!known) return; [].forEach.call(el.querySelectorAll('button.pa-rule'), function (b) { b.__paWarm = true; ruleMute(b, host); }); });
   }
   function ruleMute(b, host) {
     if (!b.__paWarm) return;
