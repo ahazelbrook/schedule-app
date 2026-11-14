@@ -12,7 +12,8 @@
      5.5 to 6.2 s THE HAND-OVER. The ground, the bars and the type wipe away; the figure settles onto the stage's own figure; the card is gone.
    Under the card, from the first frame, is the ordinary NPC stage (display-page.js builds it as for Show on iPad), so what is left is exactly
    what Show on iPad paints, and it stays until the next push.
-   Reduced motion, or Hold scenes still (fx.off): the frozen frame, still, for 3 s, then a cut to the stage.
+   The device asking for reduced motion: the frozen frame, still, for 3 s, then a cut to the stage. Hold scenes still (fx.off) holds the ambient
+   scenes only: an introduction is a sent event and plays in full (the overseer's ruling, 13/11).
 
    ONE CLOCK. The card's zero is the display's `updatedAt` (the server's time of the push, in every full display answer) plus LEAD_MS, read on the
    server's clock (the page's skew from the GET's `now`), so every screen is at the same second. A page that first sees the push too late into
@@ -24,7 +25,7 @@
    API (window.B68PlayersIntro; module.exports under Node for the Pure part)
      attach(container, env) -> { next(display, seq), cut(), state() -> { seq, at } | null, destroy() }
        env: { document, figure(spec, uid) -> svg node | null (already through the page's cleaner), K? (the figure kit), on() -> bool (the setting),
-              still() -> bool (reduced motion or fx.off), skew() -> ms, at() -> the display's updatedAt, later(fn, ms), clearLater(id) }
+              still() -> bool (the device asks for reduced motion), skew() -> ms, at() -> the display's updatedAt, later(fn, ms), clearLater(id) }
        next() is called by the page's show() for EVERY display it paints: another seq cuts a card that is up, at once; an intro starts one.
      Pure: LEAD_MS, T, STILL_MS, LATE_MS, position(at, now, skew), wants(display, on), startable(pos, still), palette(faction, FL), kicker(role,
            faction), specFor(spec, look, FL), fit(measure, o), initial(name) */
@@ -45,7 +46,7 @@
   /* the timeline, ms from the card's zero */
   Pure.T = { enter: 0, freeze: 700, kicker: 900, name: 1000, name2: 1060, alias: 1250, out: 5500, fade: 6000, end: 6200 };
   Pure.LEAD_MS = 800;        /* the card's zero is this long after the push, so the screens' polls (poked by live sync) land before the figure enters */
-  Pure.STILL_MS = 3000;      /* reduced motion or held still: the frozen frame for this long, then a cut */
+  Pure.STILL_MS = 3000;      /* reduced motion: the frozen frame for this long, then a cut */
   Pure.LATE_MS = 5000;       /* a page that first sees the push later than this into the card shows the stage only */
   Pure.SIGNAL = ['#e0691e', '#14110e'];
   Pure.PAPER = '#fbf8f1';
@@ -82,6 +83,10 @@
     if (lk && lk.pose && typeof FL.poseSpec === 'function') s = FL.poseSpec(s, lk.pose);
     return s;
   };
+  /* the stage's pose starts 100 ms before the hand-over (or the still card's cut), so the figure the card settles onto is already in the Signature pose with the
+     Tell face, and holds it for the rest of POSE_MS (3.2 s) after; ms from the card's mount at position pos; never under 0 */
+  Pure.POSE_LEAD = 100;
+  Pure.poseAt = function (pos, still) { return Math.max(0, Math.round((still ? Pure.STILL_MS : Pure.T.out) - Pure.POSE_LEAD - (Number(pos) || 0))); };
   Pure.initial = function (name) { var s = txt(name).replace(/^[\s"'“”‘’(\[.,_-]+/, ''); return s ? s.charAt(0).toUpperCase() : '?'; };
   /* the name's size: the largest step from o.max down to o.min (in vh) at which it fits on one line, else on two lines; measure(vh, wrap) ->
      { fits, lines }. One line wins at a size where both fit. Never smaller than o.min (the last step is taken as it is). */
@@ -99,6 +104,7 @@
   };
 
   /* ---------- the card ---------- */
+  var posing = null;      /* { seq, at (epoch ms) }: the card up now, for poseAt() (one display page, one card) */
   function el(doc, tag, cls, text) { var e = doc.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
   function faceLook() { return W && W.B68FaceLook ? W.B68FaceLook : null; }
 
@@ -148,6 +154,7 @@
       c.offs.forEach(function (f) { try { f(); } catch (e) { /* gone */ } });
       if (c.el.parentNode) c.el.parentNode.removeChild(c.el);
       if (container && container.classList) container.classList.remove('pi-on');
+      if (posing && posing.seq === c.seq) posing = null;
     }
 
     function figureNode(spec, uid) {
@@ -190,10 +197,19 @@
         enter.appendChild(ms); enter.appendChild(mc);
         out.classList.add('pi-hasmono');
       }
-      out.appendChild(enter); card.appendChild(out);
+      out.appendChild(enter);
+      var clip = el(doc, 'div', 'pi-figclip');      /* in portrait it stops just above the type block, so the type is never over the figure */
+      clip.appendChild(out); card.appendChild(clip);
 
-      var type = el(doc, 'div', 'pi-type'), kick = Pure.kicker(npc.role, npc.faction), alias = txt(npc.alias, 120);
-      if (kick) { var k1 = el(doc, 'p', 'pi-kick'); k1.appendChild(el(doc, 'span', 'pi-kick-t', kick)); type.appendChild(k1); }
+      var type = el(doc, 'div', 'pi-type'), role = txt(npc.role, 120), fac = txt(npc.faction, 120), alias = txt(npc.alias, 120);
+      /* the kicker: the role on one tape, the faction on the next (a line never breaks inside either) */
+      if (role || fac) {
+        var k1 = el(doc, 'p', 'pi-kick');
+        k1.setAttribute('aria-label', Pure.kicker(role, fac));
+        if (role) k1.appendChild(el(doc, 'span', 'pi-kick-t', role));
+        if (fac) k1.appendChild(el(doc, 'span', 'pi-kick-t pi-kick-f', fac));
+        type.appendChild(k1);
+      }
       var h = el(doc, 'h1', 'pi-name');
       h.appendChild(el(doc, 'span', 'pi-name-back', name)).setAttribute('aria-hidden', 'true');
       var front = h.appendChild(el(doc, 'span', 'pi-name-front', name));
@@ -203,7 +219,20 @@
       card.appendChild(el(doc, 'div', 'pi-lb pi-lb-t'));
       card.appendChild(el(doc, 'div', 'pi-lb pi-lb-b'));
       card.appendChild(el(doc, 'div', 'pi-flash'));
-      return { el: card, name: h, front: front, type: type, out: out, col: col, sil: sil };
+      return { el: card, name: h, front: front, type: type, out: out, clip: clip, col: col, sil: sil };
+    }
+
+    /* the type never runs over the figure. Landscape: the type block is as wide as the free room left of the figure's box (at least 30% of the
+       width), and the name shrinks to fit it. Portrait: the type runs across the foot and the figure is cut off just above it. */
+    function layout(c) {
+      var Wd = (W && W.innerWidth) || 1024, Hd = (W && W.innerHeight) || 768, portrait = Hd > Wd;
+      c.type.style.width = ''; c.clip.style.bottom = '';
+      if (!portrait) {
+        var fr = c.out.getBoundingClientRect(), tr = c.type.getBoundingClientRect();
+        if (fr.width > 0 && fr.left > tr.left) c.type.style.width = Math.round(Math.max(Wd * 0.3, fr.left - tr.left - Wd * 0.025)) + 'px';
+      }
+      fitName(c);
+      if (portrait && !c.free) c.clip.style.bottom = Math.max(0, Math.round(Hd - c.type.getBoundingClientRect().top + Hd * 0.015)) + 'px';
     }
 
     /* the name as large as fits: one line at up to 14vh, else two */
@@ -234,6 +263,7 @@
         me.timers.push(later(function () { if (cur === me) cut(); }, 200));
       }
       me.timers.push(later(land, Math.max(0, Pure.T.fade - Pure.T.out + 120)));
+      me.timers.push(later(function () { c.free = true; c.clip.style.bottom = ''; }, 260));      /* portrait: the whole figure again once the type has wiped away */
       try {
         var stages = container.querySelectorAll('.dp-stage.dp-npc'), st = stages.length ? stages[stages.length - 1] : null;
         var tgt = screenRect(bodyOf(st && st.querySelector('.dp-npc-fig svg'))), mine = screenRect(bodyOf(c.col));
@@ -261,6 +291,7 @@
       var c;
       try { c = build(display, seq, pos, still); } catch (e) { return; }
       cur = { seq: seq, at: pos, el: c.el, timers: [], offs: [] };
+      posing = { seq: seq, at: Date.now() + Pure.poseAt(pos, still) };      /* the stage built under this card takes the Signature pose just before it is shown */
       container.appendChild(c.el);
       container.classList.add('pi-on');
       if (c.col) {
@@ -268,9 +299,9 @@
         if (vb && c.sil) { c.sil.setAttribute('viewBox', c.col.getAttribute('viewBox')); c.sil.setAttribute('preserveAspectRatio', 'xMidYMin meet'); c.sil.removeAttribute('width'); c.sil.removeAttribute('height'); }
         if (vb) c.out.style.width = 'calc(var(--pi-figh) * ' + (Math.round(vb[2] / vb[3] * 10000) / 10000) + ')';      /* the box is the figure's own shape */
       }
-      fitName(c);
+      layout(c);
       c.el.classList.remove('pi-measure');
-      var me = cur, refit = function () { if (cur === me) fitName(c); };
+      var me = cur, refit = function () { if (cur === me) layout(c); };
       if (W && typeof W.addEventListener === 'function') { W.addEventListener('resize', refit); me.offs.push(function () { W.removeEventListener('resize', refit); }); }
       if (doc.fonts && doc.fonts.status !== 'loaded' && doc.fonts.ready && typeof doc.fonts.ready.then === 'function') doc.fonts.ready.then(refit, function () {});
       if (still) { me.timers.push(later(function () { if (cur === me) cut(); }, Math.max(0, Pure.STILL_MS - pos))); return; }
@@ -286,5 +317,9 @@
     };
   }
 
-  return { attach: attach, Pure: Pure };
+  /* IP3b item 5: when the npc stage built for this seq (display-page.js npcStage, B68FaceRender.applyStage opts.poseAt) should start its Signature pose, in ms
+     from now; 0 when no card is up for that seq (the stage then plays it at once, as for Show on iPad) */
+  function poseAt(seq) { return posing && posing.seq === seq ? Math.max(0, posing.at - Date.now()) : 0; }
+
+  return { attach: attach, poseAt: poseAt, Pure: Pure };
 });

@@ -1086,7 +1086,7 @@
       return { el: e, destroy: function () {} };
     }
     var figEnv = { document: document, K: ctx.figures, reduced: reduced(), figure: function (sp, id) { var r = drawFigure(sp, id, ctx.figures); return r ? document.importNode(r.node, true) : null; } };
-    function look(st) { if (vm.look && root.B68FaceRender && typeof root.B68FaceRender.applyStage === 'function') { try { root.B68FaceRender.applyStage(st.el, { look: vm.look, spec: vm.spec, npcId: vm.npcId, seq: seq }, figEnv); } catch (err) { /* the figure stays as drawn */ } } return st; }     /* IP1: the tell and the signature, on Show on iPad too */
+    function look(st) { if (vm.look && root.B68FaceRender && typeof root.B68FaceRender.applyStage === 'function') { try { root.B68FaceRender.applyStage(st.el, { look: vm.look, spec: vm.spec, npcId: vm.npcId, seq: seq }, figEnv, { poseAt: root.B68PlayersIntro && typeof root.B68PlayersIntro.poseAt === 'function' ? root.B68PlayersIntro.poseAt(seq) : 0 }); } catch (err) { /* the figure stays as drawn */ } } return st; }     /* IP1: the tell and the signature, on Show on iPad too */
     if (root.B68StageScene && root.B68StageScene.on()) { var k16 = root.B68StageScene.npcStage(vm, seq, { document: document, figure: figEnv.figure }); if (k16) return look(k16); }   /* KS16 (kit.stage): over the dimmed scene */
     var fig = drawFigure(vm.spec, 'dp-npc-' + seq, ctx.figures);
     if (fig) {
@@ -1532,7 +1532,7 @@
       figure: function (spec, id) { var r = drawFigure(spec, 'dp-mt-' + String(id).replace(/[^A-Za-z0-9_-]/g, ''), ctx.figures || root.B68Figure); return r ? document.importNode(r.node, true) : null; } }) : null;      /* the montage draws each PC (the tech run) */
     if (s.layers) s.offs.push(function () { s.layers.destroy(); });
     /* IP3 (stage.players): the NPC introduction, a title card over everything that hands over to the npc stage (app/display/players/intro.js); off, next() does nothing */
-    s.intro = root.B68PlayersIntro ? root.B68PlayersIntro.attach(container, { document: document, K: ctx.figures || root.B68Figure, on: function () { return swOn('stage.players'); }, still: function () { return reduced() || swOn('fx.off'); }, skew: function () { return s.skew || 0; }, at: function () { return s.updatedAt; }, later: later, clearLater: clearLater,
+    s.intro = root.B68PlayersIntro ? root.B68PlayersIntro.attach(container, { document: document, K: ctx.figures || root.B68Figure, on: function () { return swOn('stage.players'); }, still: function () { return reduced(); }, skew: function () { return s.skew || 0; }, at: function () { return s.updatedAt; }, later: later, clearLater: clearLater,
       figure: function (spec, id) { var r = drawFigure(spec, id, ctx.figures || root.B68Figure); return r ? document.importNode(r.node, true) : null; } }) : null;
     if (s.intro) s.offs.push(function () { s.intro.destroy(); });
     /* the suite's display switches (each does nothing while its switch is off): the hard start (1.2, spine.start) and the FX budget (F7, fx.pause / fx.off) */

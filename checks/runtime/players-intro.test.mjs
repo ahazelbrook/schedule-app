@@ -106,6 +106,15 @@ await test('the name\'s size: 14vh on one line when it fits, else the largest si
   assert.equal(one.lines, 1); assert.ok(one.size < 14 && one.size * 14 * 0.42 <= 60, 'one long word shrinks until it fits: ' + one.size);
   assert.deepEqual(P.fit(() => ({ fits: false, lines: 9 }), { max: 14, min: 6 }), { size: 6, lines: 2 }, 'nothing fits: the floor');
 });
+await test('item 5, the pose at the hand-over: the stage under the card starts its Signature pose 100 ms before the hand-over (the still card: before its cut), from the card\'s mount', () => {
+  assert.equal(P.poseAt(-800, false), P.T.out - 100 + 800, 'mounted in the lead');
+  assert.equal(P.poseAt(2000, false), P.T.out - 100 - 2000, 'a reload two seconds in');
+  assert.equal(P.poseAt(0, true), P.STILL_MS - 100, 'the still card');
+  assert.equal(P.poseAt(9999, false), 0, 'never under 0');
+  assert.ok(P.T.out - P.POSE_LEAD + 3200 - P.T.end >= 2000, 'the pose holds a good while after the card ends (POSE_MS 3.2 s)');
+  assert.equal(typeof I.poseAt, 'function'); assert.equal(I.poseAt(12345), 0, 'no card for that seq: 0 (the stage poses at once, as Show on iPad)');
+  assert.match(read('display-page.js'), /applyStage\(st\.el, \{ look: vm\.look, spec: vm\.spec, npcId: vm\.npcId, seq: seq \}, figEnv, \{ poseAt: root\.B68PlayersIntro && typeof root\.B68PlayersIntro\.poseAt === 'function' \? root\.B68PlayersIntro\.poseAt\(seq\) : 0 \}\)/, 'the npc stage passes it');
+});
 await test('the card on a stub page: only the served player fields as text, the hidden NPC never drawn, any other push cuts it at once', () => {
   const made = [];
   class N {
@@ -128,7 +137,7 @@ await test('the card on a stub page: only the served player fields as text, the 
   C.next(D, 7);
   assert.ok(C.state() && C.state().seq === 7, 'a card is up');
   const t = texts();
-  assert.ok(t.includes('Mabel Quist') && t.includes('“Mab”') && t.includes('Fixer · The Kestrel Club') && t.includes('M'), 'name, alias, kicker, the monogram: ' + t);
+  assert.ok(t.includes('Mabel Quist') && t.includes('“Mab”') && t.includes('Fixer | The Kestrel Club') && t.includes('M'), 'name, alias, the kicker as two tapes (role, then faction), the monogram: ' + t);
   assert.ok(!t.includes('Not on the card'), 'never the description');
   C.next(D, 7); assert.equal(C.state().seq, 7, 'the same push drawn again: the card runs on');
   C.next({ kind: 'blank' }, 8);
@@ -142,11 +151,11 @@ await test('the card on a stub page: only the served player fields as text, the 
 /* ---------- the GM's half ---------- */
 await test('the GM\'s push: Show on iPad\'s display with intro true and the look from the Tell and Signature lines (names only, never the notes)', async () => {
   const notes = 'GM-ONLY-NOTE owes the house\nTell: smirk — touches her cuff\nSignature: lapel\nRelation: society\n';
-  assert.deepEqual(G.look(notes), { expr: 'smirk', pose: 'lapel' });
+  assert.deepEqual(G.look(notes), { expr: 'smirk', pose: 'lapel', tell: true });
   assert.equal(G.look('nothing here'), null); assert.equal(G.look(''), null);
   assert.deepEqual(G.look('Tell: flat\nSignature: lean'), null, 'words not on the lists: no look');
   const b = G.body('n-mabel', { name: 'Mabel Quist', gmNotes: notes });
-  assert.deepEqual(b, { kind: 'npc', npcId: 'n-mabel', title: 'Mabel Quist', intro: true, look: { expr: 'smirk', pose: 'lapel' } });
+  assert.deepEqual(b, { kind: 'npc', npcId: 'n-mabel', title: 'Mabel Quist', intro: true, look: { expr: 'smirk', pose: 'lapel', tell: true } });
   assert.ok(!JSON.stringify(b).includes('GM-ONLY'), 'the notes never ride');
   assert.deepEqual(G.body('n-dov', { name: 'Dov Kessler' }), { kind: 'npc', npcId: 'n-dov', title: 'Dov Kessler', intro: true }, 'no lines: no look');
 });
@@ -174,6 +183,47 @@ await test('the GM\'s Introduce: a revealed NPC is pushed at once; a hidden one 
   const sup = new Error('newer'); sup.superseded = true;
   await G.introduce('n-dov', mk({ name: 'Dov Kessler', revealed: true }, { fail: sup }));
   assert.equal(log.filter((x) => x[0] === 'toast').length, 0, 'a push replaced by a newer one says nothing');
+});
+await test('the cue "Blade, introduce X": ONE toast (the cue\'s own, with Undo), and its Undo is Take it down for that NPC', async () => {
+  G._reset();
+  const log = [];
+  const host = { npc: () => ({ name: 'Mabel Quist', revealed: true }), ask() {}, reveal: () => Promise.resolve(), push: () => Promise.resolve({ seq: 9 }), toast: (m) => log.push(['toast', m]),
+    tray() {}, later() {}, takeDown: (t) => { log.push(['down', t]); return Promise.resolve(true); } };
+  const r = await G.introduce('n-mabel', host, { quiet: true });
+  assert.equal(r.seq, 9); assert.equal(typeof r.undo, 'function');
+  assert.equal(log.filter((x) => x[0] === 'toast').length, 0, 'quiet: no toast of its own');
+  await r.undo(); assert.deepEqual(log, [['down', 'Mabel Quist']], 'Undo takes her down (the page checks she is still what is up)');
+  assert.match(read('gm/cue-grammar.js'), /typeof res\.undo === 'function' \? res\.undo : function \(\) \{ return clearIfMine\(key\); \}/, 'the cue uses the host\'s undo when it gives one');
+  assert.match(read('gm-page.js'), /W\.B68GmIntro\.introduce\(payload\.npcIds\[0\], introHost\(\), \{ quiet: true \}\)/, 'the cue host asks for the quiet introduce');
+});
+await test('a reveal cue (item 6, opts.cue): silent, never asks, never pushes a hidden person; when the card cannot go up (Blank, hard start, frozen, a failed push) it answers why, and says nothing itself', async () => {
+  G._reset();
+  const mk = (d, o = {}) => { const log = []; return { log, host: { npc: () => d, ask: () => log.push('ask'), reveal: () => { log.push('reveal'); return Promise.resolve(); },
+    push: (x) => { log.push(['push', x.npcId, x.intro]); return o.fail ? Promise.reject(o.fail) : Promise.resolve({ seq: 7 }); }, toast: (m) => log.push(['toast', m]), errText: (e) => e.message,
+    tray() {}, later() {}, takeDown: () => log.push('down'), blocked: () => o.blocked || '' } }; };
+  const a = mk({ name: 'Ada Vell', revealed: true }); const r1 = await G.introduce('n-ada', a.host, { cue: true });
+  assert.deepEqual(a.log, [['push', 'n-ada', true]], 'one push, no toast, no question'); assert.equal(r1.seq, 7); assert.equal(typeof r1.undo, 'function');
+  const h = mk({ name: 'GM-ONLY-NPC-1', revealed: false }); const r2 = await G.introduce('n-hid', h.host, { cue: true });
+  assert.deepEqual(h.log, [], 'a hidden person: nothing sent, nothing asked (the reveal\'s own write comes first)'); assert.ok(r2.notShown);
+  for (const why of ['the iPad is on Blank', 'the hard start is running', 'the iPad is frozen']) {
+    const b = mk({ name: 'Ada Vell', revealed: true }, { blocked: why }); const r = await G.introduce('n-ada', b.host, { cue: true });
+    assert.deepEqual(b.log, [], why + ': no push, no toast'); assert.equal(r.notShown, why);
+  }
+  const f = mk({ name: 'Ada Vell', revealed: true }, { fail: new Error('offline') }); const r3 = await G.introduce('n-ada', f.host, { cue: true });
+  assert.equal(r3.notShown, 'offline'); assert.equal(f.log.filter((x) => x[0] === 'toast').length, 0, 'the caller says the one line');
+  assert.match(read('gm-page.js'), /if \(x\.d\.revealed === true\) return introOn\(\) \? revealShown\(x\) : Promise\.resolve\(\{ ok: true \}\);/, 'the cue stack: already revealed, brought on (setting on); off, as before');
+  assert.match(read('gm-page.js'), /me\.npcs\[x\.id\]\.revealed = true; return introOn\(\) \? revealShown\(x\) : \{ ok: true \};/, 'the cue stack: after its own reveal write, brought on (setting on); off, as before');
+  assert.match(read('gm/cue-stack.js'), /say\(r\.say \? r\.say : MANUAL\[c\.kind\]/, 'a fired cue may say its own one line');
+});
+await test('the Run view people rows: with the setting on, Introduce is enabled for a hidden person (it asks) and says what it does; off, as before', () => {
+  const Sp = req(path.join(APP, 'gm', 'spotlight.js'));
+  const rows = [{ id: 'n-mabel', name: 'Mabel Quist', revealed: true }, { id: 'n-hid', name: 'GM-ONLY-NPC-1', revealed: false }];
+  const btn = (html, id) => (html.match(new RegExp('<button[^>]*data-site="intro" data-id="' + id + '"[^>]*>')) || [''])[0];
+  const on = Sp.rowsHtml(rows, null, { room: 'Bar', introduce: true, players: true });
+  assert.ok(!/disabled/.test(btn(on, 'n-hid')) && /asks to reveal/.test(btn(on, 'n-hid')), 'on, hidden: enabled, and it says it asks: ' + btn(on, 'n-hid'));
+  assert.ok(/whole-screen title card/.test(btn(on, 'n-mabel')) && !/lower third/.test(on), 'on: no stale lower-third words');
+  const off = Sp.rowsHtml(rows, null, { room: 'Bar', introduce: true });
+  assert.ok(/disabled/.test(btn(off, 'n-hid')) && /lower third/.test(btn(off, 'n-mabel')), 'off: as before');
 });
 await test('the tray: "Introducing <name>" while the card plays, then the ordinary line', async () => {
   G._reset();
@@ -251,6 +301,7 @@ await test('the files: no markup sink, no request, no hand-built button, no impo
   }
   assert.match(read('display-page.js'), /if \(s\.intro\) s\.intro\.next\(display, seq\);/, 'the display page hands every push to it');
   assert.match(read('display-page.js'), /on: function \(\) \{ return swOn\('stage\.players'\); \}/, 'behind the setting');
+  assert.match(read('display-page.js'), /still: function \(\) \{ return reduced\(\); \}/, 'only the device\'s reduced motion makes the card still: Hold scenes still holds the ambient scenes, not a sent event (overseer ruling)');
 });
 
 console.log('\n' + passed + ' passed, ' + failed + ' failed');

@@ -2,7 +2,7 @@
    A freeze-frame title card over everything on the display root, then out of the way. Only .pi-* markup, which only intro.js makes, so with the
    setting off nothing here matches. Every beat's delay is a custom property the script sets from the shared clock (--pi-enter, --pi-freeze,
    --pi-kicker, --pi-name, --pi-name2, --pi-alias, --pi-out): a page that joins mid-card is at the same frame as the others.
-   The base styles are the frozen frame; the animations bring it in and take it away, so .pi-still (reduced motion, Hold scenes still) is the
+   The base styles are the frozen frame; the animations bring it in and take it away, so .pi-still (the device asking for reduced motion; not Hold scenes still) is the
    frozen frame with no animation at all. */
 
 .pi-card {
@@ -28,6 +28,7 @@
 }
 
 /* ---------- the figure: a silhouette that comes in from the right, then colour; the silhouette stays as an offset print shadow ---------- */
+.pi-figclip { position: absolute; inset: 0; overflow: hidden; }
 .pi-figout { position: absolute; top: calc(var(--pi-lb) + 2.5vh); right: 8vw; height: var(--pi-figh); }
 .pi-enter { position: relative; height: 100%; }
 .pi-col { position: relative; height: 100%; }
@@ -42,22 +43,23 @@
 
 /* ---------- the type, lower left: kicker, the name with its offset copy, the alias ---------- */
 .pi-type { position: absolute; left: 6vw; bottom: calc(var(--pi-lb) + 5vh); width: 60vw; }
-/* the kicker is label tape: a black strip per line, two lines at most */
-.pi-kick { margin: 0 0 1.4vh; max-width: 92%; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; line-height: 5.6vh; }
+/* the kicker is label tape: the role on one strip, the faction on the next; a strip too long for the type box ends in an ellipsis, never wraps */
+.pi-kick { margin: 0 0 1.4vh; display: flex; flex-direction: column; align-items: flex-start; gap: .7vh; max-width: 100%; }
 .pi-kick-t {
-  padding: .9vh 1.4vh .8vh; background: #14110e; color: #fbf8f1; -webkit-box-decoration-break: clone; box-decoration-break: clone;
+  display: block; max-width: 100%; box-sizing: border-box; padding: .9vh 1.4vh .8vh; background: #14110e; color: #fbf8f1;
   font: 800 3.4vh/1.1 var(--font-cond, "Archivo Condensed", "Arial Narrow", sans-serif); letter-spacing: .2em; text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pi-name {
   position: relative; margin: 0; font: 900 14vh/.9 var(--font-poster, "Archivo Compressed", Impact, "Arial Narrow", sans-serif);
-  letter-spacing: .005em; text-transform: uppercase; white-space: nowrap;
+  letter-spacing: .005em; word-spacing: .1em; text-transform: uppercase; white-space: nowrap;
 }
 .pi-name[data-pi-wrap="1"] { white-space: normal; text-wrap: balance; }
 .pi-name-front { position: relative; display: block; color: var(--pi-ink, #14110e); }
 .pi-name-back { position: absolute; left: .055em; top: .055em; width: 100%; color: var(--pi-back, #fbf8f1); }
 .pi-alias {
   margin: 1.8vh 0 0; font: italic 700 5.2vh/1.1 var(--font-cond, "Archivo Condensed", "Arial Narrow", sans-serif);
-  color: var(--pi-ink, #14110e); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--pi-ink, #14110e); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: break-word;
 }
 
 /* ---------- the letterbox and the flash ---------- */
@@ -83,6 +85,7 @@
 .pi-lb-b { animation: pi-lbb 420ms cubic-bezier(.6, 0, .4, 1) var(--pi-out, 99s) both; }
 .pi-figout.pi-settling { transition: transform 560ms cubic-bezier(.6, 0, .25, 1), opacity 180ms linear; }
 .pi-figout.pi-fading { opacity: 0; transition: opacity 180ms linear; }
+.pi-settling .pi-sil { opacity: 0; transition: opacity 150ms linear; }      /* the print shadow leaves as the figure settles (no ghost over the stage) */
 .pi-figout.pi-settling.pi-fading { transition: transform 560ms cubic-bezier(.6, 0, .25, 1), opacity 180ms linear; }
 
 @keyframes pi-enter {
@@ -124,7 +127,7 @@
 /* the moment the card is mounted, the figure is measured where it will stand (intro.js lifts pi-measure in the same call) */
 .pi-measure .pi-enter { animation: none; }
 
-/* reduced motion or Hold scenes still: the frozen frame, nothing moves (intro.js cuts to the stage after 3 s) */
+/* reduced motion (the device setting; Hold scenes still does not apply to a sent event): the frozen frame, nothing moves (intro.js cuts to the stage after 3 s) */
 .pi-still .pi-enter, .pi-still .pi-col, .pi-still .pi-sil, .pi-still .pi-flash, .pi-still .pi-kick, .pi-still .pi-name-back, .pi-still .pi-name-front,
 .pi-still .pi-alias, .pi-still .pi-type, .pi-still .pi-ground, .pi-still .pi-lb-t, .pi-still .pi-lb-b { animation: none; transition: none; }
 @media (prefers-reduced-motion: reduce) {
