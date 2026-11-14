@@ -176,19 +176,21 @@
     var cur = items.map(function (x) { return x.full; }), out = { svg: null, lighter: 0, plates: 0 }, faces = [];
     function big() { var rp = {}; out.svg = board(roll, render, Object.assign({}, o, { tokens: cur, report: rp })); return !out.svg && rp.big === true; }
     if (!big()) return out;
+    if (isObj(o) && o.shade === true) { o = Object.assign({}, o); delete o.shade; out.flat = true; if (!big()) return out; }      /* IP7 (map.shade): flat furniture first */
     items.forEach(function (x, i) { if (x.lite || x.alt) faces.push(i); });
     for (var a = 0; a < faces.length; a++) { if (!items[faces[a]].lite) continue; cur[faces[a]] = items[faces[a]].lite; out.lighter++; if (!big()) return out; }
     for (var b = 0; b < faces.length; b++) { if (!items[faces[b]].alt) continue; cur[faces[b]] = items[faces[b]].alt; out.plates++; if (!big()) return out; }
     return out;
   }
   /* the score scene's board drawn again with the pins: the PLAYER layer, the board theme, the view the score scene chose (kit 1 only on the plan, as there),
-     at the bands and the rooms opened on their own. o = { seen, tokens (each already through the page's token screen), view, kit1, leaks(svg, roll, reveal) }.
+     at the bands and the rooms opened on their own. o = { seen, tokens (each already through the page's token screen), view, kit1, shade (IP7: map.shade, absent while off), leaks(svg, roll, reveal) }.
      -> the svg, or null when there is nothing to pin or the leak scan finds a hidden name anywhere on it (the board then goes up without its pins) */
   function board(roll, render, o) {
     var x = isObj(o) ? o : {};
     if (!roll || typeof render !== 'function' || typeof x.leaks !== 'function' || !Array.isArray(x.tokens) || !x.tokens.length || !Array.isArray(x.seen)) return null;
     var view = x.view === 'rings' ? 'rings' : 'plan', opts = { view: view, theme: 'board', layer: 'player', reveal: x.seen, width: 1600, tokens: x.tokens };
     if (view === 'plan' && x.kit1) opts.kit1 = true;
+    if (x.shade === true) opts.shade = true;      /* IP7 (map.shade): as the score scene's own board; off, not even the key */
     var r; try { r = render(roll, opts); } catch (e) { return null; }
     if (r && typeof r.svg === 'string' && r.svg.length > SVG_MAX && isObj(x.report)) x.report.big = true;      /* over the iPad's cap: the caller may lighten the faces */
     return r && typeof r.svg === 'string' && r.svg.length <= SVG_MAX && !x.leaks(r.svg, roll, x.seen).length ? r.svg : null;
@@ -244,6 +246,7 @@
       /* a pin the screen refuses now (someone hidden again, a clock hidden, a known-as name) stays stored and waits, as a pin for an unknown room does; said once */
       if (r) { var ids = (r.refused || []).map(function (x) { return x.id; }), fresh = (r.refused || []).filter(function (x) { return st.refused.indexOf(x.id) < 0; }); st.refused = ids;
         if (fresh.length) host.toast('Off the board until it is safe: ' + fresh.map(function (x) { return x.label; }).join(', ') + ' would show the players a name they must not see (' + fresh.map(function (x) { return x.names.join(', '); }).join('; ') + ').', true);
+        if (r.flat && !st.flat) { st.flat = true; host.toast('The board went up with flat furniture: with depth it was too large for the iPad.', true); }      /* IP7 */
         if (r.plates && !st.plated) { st.plated = true; host.toast((r.plates === 1 ? 'One face' : r.plates + ' faces') + ' went up as a name plate: with every figure the board was too large for the iPad.', true); } }
       if (!r) st.last = '';      /* not set: the next look tries again (a sig is never '') */
       if (st.again) { st.again = false; var n = state(host); if (n.sig !== st.last) return sync(host, false); }
@@ -376,7 +379,7 @@
     var back = st.focus && lost ? slot.querySelector('[data-pb="' + st.focus + '"]') : null;
     if (back) { back.focus(); if (back.getAttribute('data-pb') === 'text' && back.setSelectionRange) { var c0 = Math.min(st.caret >= 0 ? st.caret : back.value.length, back.value.length); back.setSelectionRange(c0, c0); } }
   }
-  function reset() { st.last = null; st.busy = false; st.again = false; st.form = { kind: 'line' }; st.focus = ''; st.caret = -1; st.refused = []; st.plated = false; st.roll = undefined; st.bands = undefined; st.pending = false; st.based = false; }
+  function reset() { st.last = null; st.busy = false; st.again = false; st.form = { kind: 'line' }; st.focus = ''; st.caret = -1; st.refused = []; st.plated = false; st.flat = false; st.roll = undefined; st.bands = undefined; st.pending = false; st.based = false; }
 
   return { KEY: KEY, KINDS: KINDS, MAX: MAX, FACES_MAX: FACES_MAX, TEXT_MAX: TEXT_MAX, SITES_MAX: SITES_MAX, WORD: WORD,
     clean: clean, sitesOf: sitesOf, pinsOf: pinsOf, patchFor: patchFor, wrap: wrap, fitText: fitText, cardSvg: cardSvg, faceSvg: faceSvg, known: known,
