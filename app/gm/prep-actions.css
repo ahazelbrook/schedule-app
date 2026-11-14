@@ -2,6 +2,7 @@
    in the prep-actions bundle: fetched only when a note holds an action span. Orange is the action, blue the rules, a dashed edge what cannot act. */
 #gm-page .pa-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-height: 24px; margin: 0 2px; padding: 1px 8px 1px 6px; vertical-align: baseline;
   border: 1.5px solid var(--rule); border-radius: 4px; background: var(--card); color: var(--ink); font: 700 13px/1.15 var(--font-cond); cursor: pointer; white-space: nowrap; text-align: left; }
+#gm-page td .pa-chip, #gm-page td .pa-send { margin-block: -4px; }      /* a table row keeps its height: the chip may overhang the cell's padding */
 #gm-page .pa-chip .pa-mark { color: var(--accent); font-size: 10px; line-height: 1; flex: none; }
 #gm-page .pa-chip .pa-l { overflow: hidden; text-overflow: ellipsis; }
 #gm-page .pa-chip:hover { background: var(--rule); color: var(--on-ink); }

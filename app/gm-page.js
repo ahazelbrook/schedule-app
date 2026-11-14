@@ -7273,6 +7273,8 @@
     box.innerHTML = '<div class="pp-peekcard"><button type="button" class="pp-peekx" data-gm="prep-peekx" aria-label="Close" title="Close (Esc)">✕</button>' + h + '<p class="pp-acts">' + acts + '<a class="btn sm" href="' + esc(W.B68GmPrep.obsidianUri(pk, L.rel)) + '">Open in Obsidian</a><button type="button" class="btn sm" data-gm="prep-peekx">Close</button></p></div>';
     box.hidden = false;
     var cb = box.querySelector('.pp-cardbody'); if (cb) W.B68GmPrep.decorate(cb, {});     /* a card has no boxes or beats: nothing of the GM state */
+    /* PA2: where the page itself scrolls under the sticky view chips (under 1100 px: an iPad), the card sticks below them, so its ✕ is never under the bars */
+    try { var vc = $q('.gm-vchips'), vs = vc && W.getComputedStyle(vc), vr = vc && vc.getBoundingClientRect(); box.style.top = vs && vs.position === 'sticky' && vr.height ? Math.round((parseFloat(vs.top) || 0) + vr.height + 6) + 'px' : ''; } catch (e) { /* the sheet's top */ }
     try { box.scrollIntoView({ block: 'nearest' }); } catch (e) {}
   }
   /* ---------- the Cards panel: the planning meeting's opportunity cards, typed onto the card here, shown on the iPad ----------

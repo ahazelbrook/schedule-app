@@ -140,7 +140,8 @@ try {
     const by = (re) => chips.filter((c) => re.test(c.t));
     check(by(/^▶ The Pelican Rooms floor plan$/).length === 2 && by(/^▶ Mabel Quist’s letter$/).length === 1, tag + ': handout chips read as the handout title (both lead-ins, id and title and prefix)');
     check(by(/GM-ONLY-PA-MISSING/).every((c) => /pa-muted/.test(c.cls) && /No handout/.test(c.title)) && by(/dance: tonight/).every((c) => /pa-muted/.test(c.cls)) && by(/crew sheet/).every((c) => /pa-muted/.test(c.cls) && /crew sheet/.test(c.title)), tag + ': a missing handout, an unknown verb and the crew sheet are muted, each with a reason');
-    check(by(new RegExp('^▶ Clock: ' + CLOCK + ' \\(6\\)$')).length === 1, tag + ': the clock chip reads Clock: name (6)');
+    check(si === 0 ? by(new RegExp('^▶ Clock: ' + CLOCK + ' \\(6\\)$')).length === 1 : by(new RegExp('^● Clock: ' + CLOCK + ' 1/6$')).length === 1,
+      tag + (si === 0 ? ': the clock chip reads Clock: name (6)' : ': the clock made on the first size: the chip reads Clock: name 1/6 on a fresh page'));
     check(by(/^▶ Position and effect$/).length === 1 && by(/Position and effect/)[0].cls.includes('pa-rule'), tag + ': the rule chip reads its term, in the rule style');
     check(await p.evaluate(() => !!document.querySelector('#gm-prep .rl-callout .pa-chip.pa-rule') && !!document.querySelector('#gm-prep li .pa-chip') && !!document.querySelector('#gm-prep td .pa-chip')), tag + ': chips in a callout, a list item and a table cell');
     const rows = await p.$$eval('#gm-prep table', (ts) => { const t = ts.find((x) => x.querySelector('.pa-chip')); return t ? [...t.querySelectorAll('tbody tr')].map((r) => Math.round(r.getBoundingClientRect().height)) : []; });
@@ -223,8 +224,8 @@ try {
     await tapOn(p, '#gm-prep a[href^="#pp:npc"]');
     await p.waitForSelector('#gm-prep-peek:not([hidden]) .pp-peekx', { timeout: 8000 });
     await sleep(300);
-    const px = await p.evaluate(() => { const r = document.querySelector('#gm-prep-peek .pp-peekx').getBoundingClientRect(), c = document.querySelector('#gm-prep-peek .pp-peekcard').getBoundingClientRect(); return { w: r.width, h: r.height, top: r.top, bottom: r.bottom, right: r.right, cr: c.right, vh: innerHeight, vw: innerWidth, long: c.height }; });
-    check(px.w >= 44 && px.h >= 44 && px.top >= 0 && px.bottom <= px.vh && px.right <= px.vw && px.cr - px.right < 12, tag + ': PA2: the card has a ✕ at its top right, in sight, ' + Math.round(px.w) + 'x' + Math.round(px.h) + ' px (card ' + Math.round(px.long) + ' px tall)');
+    const px = await p.evaluate(() => { const r = document.querySelector('#gm-prep-peek .pp-peekx').getBoundingClientRect(), c = document.querySelector('#gm-prep-peek .pp-peekcard').getBoundingClientRect(); const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return { w: r.width, h: r.height, top: r.top, bottom: r.bottom, right: r.right, cr: c.right, vh: innerHeight, vw: innerWidth, long: c.height, hit: !!(at && at.closest('.pp-peekx')) }; });
+    check(px.hit && px.w >= 44 && px.h >= 44 && px.top >= 0 && px.bottom <= px.vh && px.right <= px.vw && px.cr - px.right < 12, tag + ': PA2: the card has a ✕ at its top right, in sight and not under the bars, ' + Math.round(px.w) + 'x' + Math.round(px.h) + ' px (card ' + Math.round(px.long) + ' px tall)');
     await shot(p, 'prep-peek-' + tag);
     await p.evaluate(() => { const b = document.querySelector('#gm-prep-peek .pp-cardbody'); if (b) b.scrollTop = b.scrollHeight; });
     await tapOn(p, '#gm-prep-peek .pp-peekx');
@@ -243,7 +244,16 @@ try {
       await tapOn(p, '.rv-npcpop [data-rv="npcx"]');
       check(!!(await until(() => p.evaluate(() => !document.querySelector('.rv-npcpop')), 3000)), tag + ': PA2: its ✕ closes it');
       await tapOn(p, npcBtn); await until(() => p.evaluate(() => !!document.querySelector('.rv-npcpop')), 5000);
-      await tapOn(p, '#gm-runv .rv-floor');
+      /* a point of the Run view the card does not cover (a floor label, a legend, the header's edge) */
+      const pt = await p.evaluate(() => {
+        const pop = document.querySelector('.rv-npcpop').getBoundingClientRect();
+        for (const e of document.querySelectorAll('#gm-runv .rv-floor, #gm-runv .rv-cn, #gm-runv .rv-head, #gm-runv .rv-sh')) {
+          const r = e.getBoundingClientRect(), x = r.left + 4, y = r.top + r.height / 2;
+          if (r.width && (x < pop.left || x > pop.right || y < pop.top || y > pop.bottom) && document.elementFromPoint(x, y) && document.elementFromPoint(x, y).closest('#gm-runv')) return [x, y];
+        }
+        return null;
+      });
+      if (pt) { if (WK) await p.touchscreen.tap(pt[0], pt[1]); else await p.mouse.click(pt[0], pt[1]); }
       check(!!(await until(() => p.evaluate(() => !document.querySelector('.rv-npcpop')), 3000)), tag + ': PA2: a tap outside the Run view card closes it');
     } else check(false, tag + ': PA2: the Run view shows a person with a card');
     await ctx.close();
