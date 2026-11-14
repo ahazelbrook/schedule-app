@@ -324,8 +324,10 @@
     function sceneFit() {      /* IP7: flat furniture first; then (MK2) the same map without the crowd, then without the scene (each clean and under the cap); else a refusal that says why */
       var tries = shaded ? [['shade', flat(o)]] : [];
       if (o !== o0) tries.push(['crowd', Object.assign(flat(o), { crowd: undefined })], ['scene', flat(o0)]);
-      for (var i = 0; i < tries.length; i++) { var t = clean(used.length ? Object.assign({}, tries[i][1], { tokens: used }) : tries[i][1]); if (t && bytesOf(t.svg) <= P.SVG_CAP) { r = t; return tries[i][0]; } }
-      if (o === o0) { var t0 = clean(used.length ? Object.assign(flat(o), { tokens: used }) : flat(o)); if (t0) { r = t0; return ''; } var el = new Error(P.LEAK_MSG); el.leak = true; throw el; }      /* IP7: no scene, and too large even flat: the flat map goes as it would have (today's behaviour); a flat copy that names a hidden room: the leak refusal */
+      var got = [];
+      for (var i = 0; i < tries.length; i++) { var t = clean(used.length ? Object.assign({}, tries[i][1], { tokens: used }) : tries[i][1]); got.push(t); if (t && bytesOf(t.svg) <= P.SVG_CAP) { r = t; return tries[i][0]; } }
+      if (shaded && !got[0]) { var el = new Error(P.LEAK_MSG); el.leak = true; throw el; }      /* IP7: nothing fitted, and the flat copy names a hidden room: the leak refusal, not "too large" */
+      if (o === o0) { r = got[0]; return ''; }      /* IP7: no scene, and too large even flat: the flat map (clean) goes as it would have (today's behaviour: the server answers) */
       var eb = new Error('This map is too large for the iPad (' + Math.round(bytesOf(r.svg) / 1024) + ' KiB, at most ' + Math.round(P.SVG_CAP / 1024) + ') even without its people: show fewer bands or another view.'); eb.big = true; throw eb;
     }
     /* MK2 (name each person once): the bare markers went only if the kit drew every crew member it left out; otherwise the full markers, as before */
@@ -730,6 +732,17 @@
     }, shadeCut ? { shadeCut: true } : {});      /* IP7: only when the depth went */
   }
   P.scoreScene = scoreScene;
+  /* IP7 (map.shade): the stored score scene drawn again for a flip, when the planning board is not what keeps it (stage.players off). The stored
+     scene is a function of the roll and its bands alone (scoreScene reads nothing else from the controls), so it is rebuilt from the STORED bands:
+     never a room more or less than the players have. -> the new build, or null when there is nothing to do: no score stored, another site's, pins
+     stored for this site (only the board's own path draws pins), or the same drawing as the one stored (the identical-board guard). */
+  function scoreReshade(roll, stored, pins, render) {
+    if (!roll || !isObj(stored) || str(stored.name) !== str(roll.name).slice(0, 200) || !Array.isArray(stored.reveal) || pins > 0) return null;
+    var rv = {}; BANDS.forEach(function (b) { rv[b] = b === 'public' || stored.reveal.indexOf(b) >= 0; });
+    var built; try { built = scoreScene(roll, { layer: 'player', reveal: rv }, render); } catch (e) { return null; }
+    return built.score.board === stored.board && built.score.iso === stored.iso ? null : built;
+  }
+  P.scoreReshade = scoreReshade;
 
   /* Score sites (GM.md, "Score sites"): a location roll saved against a score card of the prep part. GM state
      sites: { <score key>: { seed, ui, mem, name, district, label, map: { view, theme }, at } }; the replay recipe is the one
@@ -3869,6 +3882,19 @@
     var k = P.shadeOn() === true; if (k === (S.shadeK === true)) return;
     S.shadeK = k; if (S.map) drawMap(true); runDraw(true); liveTokens();
     if (pbOn()) W.B68GmPlayersBoard.follow(pbHost());      /* the stored planning board and exploded site of this site, once, through the board's own guarded path (ready, busy, same-sig, onBoard) */
+    else scoreFlip();
+  }
+  /* without the planning board (stage.players off): the score scene Set as score scene stored for this site, drawn again from its stored bands, once.
+     Nothing before the stored score is read, while the iPad is being written, for another site's, with pins stored (the board's to draw), or when the
+     drawing would be the same (P.scoreReshade) */
+  function scoreFlip() {
+    if (!S || !AM.loaded || AM.busy > 0 || !S.locRoll) return false;
+    var B = W.B68GmPlayersBoard; if (!B || typeof B.pinsOf !== 'function') return false;      /* the board's module (the gm bundle) reads its own pins */
+    var bp = B.pinsOf(S.doc, str(S.locRoll.name)).length;
+    var built = P.scoreReshade(S.locRoll, AM.doc && AM.doc.score, bp, W.B68Map && W.B68Map.render); if (!built) return false;
+    gate.mark(built.board); gate.mark(built.iso);
+    patchAmbient({ score: built.score }).then(function (r) { if (r && built.shadeCut) toast(P.SCENE_CUT_MSG.shade.replace('The map went', 'The score scene went'), true); });
+    return true;
   }
   /* MK2 (the review): the transcriber document counts as set up only with something beyond the map frame's ask and answer in it */
   function sttOwn(d) { return !!d && Object.keys(d).some(function (k) { return k !== 'frameWant' && k !== 'frame'; }); }

@@ -218,7 +218,31 @@ test('cap, the score scene: a board or exploded site over 600 KiB with depth is 
 test('cap, a flat copy that names a hidden room: the leak refusal, not "too large"', () => withShade(true, () => {
   const render = (roll, o) => ({ svg: o.shade ? '<svg><text>Showroom</text><!--' + 'x'.repeat(BIG) + '--></svg>' : '<svg><text>Luxury penthouse</text></svg>', warnings: [] });
   assert.throws(() => P.playerDisplay(ROLL, PMAP(), render, { tokens: [], hide: [], sig: '' }), (e) => e.leak === true && e.message === P.LEAK_MSG);
+  /* with a scene: the crowd and scene steps are tried first (each clean or not); when none fits, the leak of the flat copy is what is said */
+  const both = (roll, o) => ({ svg: o.shade ? '<svg><text>Showroom</text><!--' + 'x'.repeat(BIG) + '--></svg>' : o.people ? '<svg><text>Luxury penthouse</text></svg>' : '<svg><text>Showroom</text><!--' + 'x'.repeat(BIG) + '--></svg>', warnings: [] });
+  assert.throws(() => P.playerDisplay(ROLL, PMAP(), both, { tokens: [], hide: [], sig: '', scene: SC(ONLY('people')) }), (e) => e.leak === true);
+  /* and a flat copy that is clean but still too large, with a scene: "too large", as before */
+  assert.throws(() => P.playerDisplay(ROLL, PMAP(), spy(() => BIG).render, { tokens: [], hide: [], sig: '', scene: SC(ONLY('people')) }), (e) => e.big === true);
 }));
+test('a flip without the planning board: the stored score scene is rebuilt from its STORED bands, once; nothing for the same drawing, another site, pins stored or nothing stored', () => {
+  const S0 = withShade(false, () => P.scoreScene(ROLL, { layer: 'player', reveal: { public: true, working: true } }, spy((o) => (o.shade ? 10 : 0)).render)).score;
+  const render = spy((o) => (o.shade ? 10 : 0)).render;
+  withShade(false, () => assert.equal(P.scoreReshade(ROLL, S0, 0, render), null, 'the same drawing: no write'));
+  const b = withShade(true, () => { const sp = spy((o) => (o.shade ? 10 : 0)); const r = P.scoreReshade(ROLL, S0, 0, sp.render); assert.ok(sp.calls.every((o) => o.reveal.join() === 'public,working'), 'the stored bands, nothing more'); return r; });
+  assert.ok(b && b.score.board !== S0.board, 'on: a new drawing'); assert.deepEqual(b.score.reveal, S0.reveal);
+  withShade(true, () => assert.equal(P.scoreReshade(ROLL, b.score, 0, render), null, 'and once stored, the same again: no second write'));
+  withShade(false, () => assert.equal(P.scoreReshade(ROLL, b.score, 0, render).score.board, S0.board, 'off: back to the flat drawing'));
+  withShade(true, () => {
+    assert.equal(P.scoreReshade(ROLL, S0, 2, render), null, 'pins stored: the board\'s to draw');
+    assert.equal(P.scoreReshade(ROLL, null, 0, render), null, 'nothing stored');
+    assert.equal(P.scoreReshade(ROLL, Object.assign({}, S0, { name: 'Another place' }), 0, render), null, 'another site\'s');
+  });
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8'), i = src.indexOf('function scoreFlip(');
+  const body = src.slice(i, src.indexOf('\n  }\n', i));
+  assert.match(body, /if \(!S \|\| !AM\.loaded \|\| AM\.busy > 0 \|\| !S\.locRoll\) return false;/, 'not before the stored score is read, not while the iPad is written');
+  assert.match(body, /gate\.mark\(built\.board\); gate\.mark\(built\.iso\);\s*patchAmbient\(\{ score: built\.score \}\)/, 'through the gate, one write');
+  assert.match(src, /if \(pbOn\(\)\) W\.B68GmPlayersBoard\.follow\(pbHost\(\)\);[^\n]*\n\s*else scoreFlip\(\);/);
+});
 test('cap, the pinned sheet: flat before any face is lightened or plated', () => withShade(true, () => {
   const items = [{ full: tok('Showroom'), lite: tok('Showroom'), alt: tok('Showroom') }];
   let d = spy((o) => (o.shade ? BIG : 0)), r = PB.fitBoard(ROLL, d.render, Object.assign({ seen: ['public'], view: 'plan', leaks: () => [] }, P.shadeOpt()), items);
