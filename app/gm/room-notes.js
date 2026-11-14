@@ -45,6 +45,7 @@
 
   function plain(md) {
     return str(md)
+      .replace(/(`+)[  ]?(?:▶️?|>>)[  ][\s\S]*?\1/g, ' ')      /* PA: a prep action span (`▶ handout: …`) is the GM's button, never text: gone whole */
       .replace(/<!--[\s\S]*?-->/g, ' ')
       .replace(/!?\[\[([^\]|]*)\|([^\]]*)\]\]/g, '$2')
       .replace(/!?\[\[([^\]]*)\]\]/g, '$1')

@@ -4233,7 +4233,7 @@
       /* the NPC cards and the prep note's rooms (the Rooms section), and the Prep decorator for the SAY callouts */
       hasNpcCard: function (names) { return !!npcCardSrc(names); },
       npcCard: function (names) { var src = npcCardSrc(names) || p2NotesSrc(names); return src ? npcCardHtml(src, 'rn-') : ''; },      /* IP2: no vault card, the cast notes */
-      decorate: function (el) { if (W.B68GmPrep && el) W.B68GmPrep.decorate(el, {}); },
+      decorate: function (el) { if (W.B68GmPrep && el) { W.B68GmPrep.decorate(el, {}); paDecorate(el); } },      /* PA: action chips in a room's note and an NPC card too */
       roomNote: function (room) { var rn = runRoomNotes(), e = rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? rn.byRoom[room] : null, si = siteInst(), md = e ? str(e.md) : ''; if (si && md) md = si.noteMd(md);      /* N3: the If it goes wrong line is the card's action line, not the note's */
         return e && str(e.md).trim() ? npcCardHtml(md, 'rm-') : null; },
       /* a switch's value (map.countdown: the header's countdown pie) */
@@ -7086,6 +7086,36 @@
     W.B68GmPrep.decorate(el, { ticks: p.ticks, cells: p.cells, beats: p.beats });
     el.querySelectorAll('.pp-pin').forEach(function (b) { var on = isObj(pins[b.getAttribute('data-sec')]); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Pinned' : 'Pin'; });
     decorateSites(el);
+    paDecorate(el);      /* PA: the note's action spans become chips (gm/prep-actions.js, fetched only when a note holds one) */
+  }
+  /* ---------- PA (prep actions): ▶ handout / clock / rule chips in the prep note. A note without an action span: nothing fetched, nothing changed ---------- */
+  function paDecorate(el) {
+    if (!S || !el || !el.querySelectorAll) return;
+    var A = W.B68GmPrepActions; if (A) { A.decorate(el, paHost()); return; }
+    if (S.paAsked || !W.B68Load || !W.B68Load.need || !paHas(el)) return;
+    var me = S; S.paAsked = true;
+    W.B68Load.need('prep-actions').then(function () { if (S === me) { prepRedecorate(); var rv = $q('#gm-runv'); if (rv) paDecorate(rv); } }, function () { if (S === me) S.paAsked = false; });
+  }
+  /* the lead-in alone (the module's own parse decides the rest): a code span outside a fence whose text starts "▶ " or ">> " */
+  function paHas(el) { return [].some.call(el.querySelectorAll('code'), function (c) { return !(c.closest && c.closest('pre')) && /^\s*(?:▶️?|>>)[  ]+\S/.test(c.textContent); }); }
+  function paHost() {
+    var me = S;
+    if (me.paHost) return me.paHost;
+    return (me.paHost = {
+      handouts: function () { return S === me ? handouts() : []; }, show: function (id) { return showHandout(id); },
+      sendHtml: function (x) { var hs = S === me ? hoSendInst() : null; return hs ? hs.html(x) : ''; },
+      clocks: tableClocks, canClock: function () { return !!(S === me && me.api && typeof me.api.addClock === 'function'); },
+      addClock: function (c) { return me.api.addClock(c); },
+      clockOps: function (ops) { return me.api && typeof me.api.clockOps === 'function' ? me.api.clockOps(ops) : Promise.reject(new Error('The table cannot change one clock here.')); },
+      toast: toast, undoToast: function (text, undo) { return S === me && me.cueGrammar ? me.cueGrammar.undoToast(text, undo) : null; },
+      screen: screenSections, rules: rulesApi, md: function () { return W.B68Markdown; }, esc: function () { return W.B68GmEsc || null; },
+      openRule: function (r) {
+        if (S !== me) return;
+        setPanel('rules'); if (isPhone()) { S.seg = 'side'; syncPanels(); }
+        if (r.src === 'screen') { var fq = $q('#gm-gs-q'); if (fq && fq.value) { fq.value = ''; filterScreen(''); } screenJump(r.id); flash($q('#gm-rules [data-gs="' + str(r.id).replace(/"/g, '') + '"]')); }
+        else rulesSearch(r.q, r.id);
+      }
+    });
   }
   function prepRedecorate() { decoratePrep($q('#gm-prep')); renderRail(); renderBeat(); }
   /* the note's find box: every word somewhere in a section's heading or text keeps its chip in the rail; Enter goes to the first */
@@ -7240,7 +7270,7 @@
       var bare = lc(L.name).replace(/^b68g?-/, '').replace(/^the-/, ''), st = (c.standing || []).filter(function (s) { return B68slug(s.faction).replace(/^the-/, '') === bare; })[0];
       h = '<p class="gm-kick">Faction</p><h3>' + esc(st ? st.faction : L.name) + '</h3>' + (st ? '<p><span class="gm-lab">Status with the crew</span> ' + esc((st.status > 0 ? '+' : '') + st.status) + '</p>' : '<p class="gm-dim">No status recorded on the board.</p>');
     }
-    box.innerHTML = '<div class="pp-peekcard">' + h + '<p class="pp-acts">' + acts + '<a class="btn sm" href="' + esc(W.B68GmPrep.obsidianUri(pk, L.rel)) + '">Open in Obsidian</a><button type="button" class="btn sm" data-gm="prep-peekx">Close</button></p></div>';
+    box.innerHTML = '<div class="pp-peekcard"><button type="button" class="pp-peekx" data-gm="prep-peekx" aria-label="Close" title="Close (Esc)">✕</button>' + h + '<p class="pp-acts">' + acts + '<a class="btn sm" href="' + esc(W.B68GmPrep.obsidianUri(pk, L.rel)) + '">Open in Obsidian</a><button type="button" class="btn sm" data-gm="prep-peekx">Close</button></p></div>';
     box.hidden = false;
     var cb = box.querySelector('.pp-cardbody'); if (cb) W.B68GmPrep.decorate(cb, {});     /* a card has no boxes or beats: nothing of the GM state */
     try { box.scrollIntoView({ block: 'nearest' }); } catch (e) {}
@@ -8031,6 +8061,7 @@
       case 'ho-show': showHandout(b.getAttribute('data-id')); break;
       case 'ho-step': hoStep(+b.getAttribute('data-d')); break;      /* T12: the deck's Previous / Next */
       case 'ho-send': { var hsd = hoSendInst(); if (hsd) hsd.tap(b); } break;      /* IP4 (phone.handouts): a Send to… chip */
+      case 'pa': if (W.B68GmPrepActions) W.B68GmPrepActions.tap(b, paHost()); break;      /* PA: a prep action chip, its Send…, its pop-over's ✕ and Open in Rules */
       case 'another': voiceAnother(); break;
       case 'intent': doIntent(+b.getAttribute('data-i')); break;
       case 'replay': {
@@ -8246,6 +8277,7 @@
       if (who()) { var whoCs = whoCampSig(); if (whoCs !== S.whoCampSig) { S.whoCampSig = whoCs; S.who.paint(S.root); whoPolaroids(); } }      /* KS11/KS12.0 (night.who): the session or the RSVPs changed (not every mission publish); KS12.5: End clears the polaroids */
       apClocksFeed(); apSubjects();
       if (pbOn()) W.B68GmPlayersBoard.follow(pbHost());      /* IP6: a clock hidden (or shown) changes what a pin may say */
+      if (W.B68GmPrepActions) W.B68GmPrepActions.refresh(S.root, paHost());      /* PA: a clock chip says where its clock stands */
       if (S.mission) S.mission.noteClocks();      /* the alarm clock's fill or visibility is on the players' band */
       { var stc = setInst(); if (stc) stc.heal(); }      /* W0.2 / N0: the campaign document's copy of the settings follows the GM state's, on every arrival */
       /* the stage changed: the NPC tab's buttons follow */

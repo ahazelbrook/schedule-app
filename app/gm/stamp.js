@@ -80,6 +80,7 @@
 
   /* ---------- the room's lines ---------- */
   function plain(s) {
+    s = str(s).replace(/(`+)[  ]?(?:▶️?|>>)[  ][\s\S]*?\1/g, ' ');      /* PA: a prep action span is the GM's button, never text: gone whole */
     return str(s).replace(/<!--[\s\S]*?-->/g, ' ').replace(/!?\[\[([^\]|]*)\|([^\]]*)\]\]/g, '$2').replace(/!?\[\[([^\]]*)\]\]/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
       .replace(/(\*\*|__|==|~~|`)/g, '').replace(/(^|[^\w])[*_]([^*_]+)[*_]/g, '$1$2').replace(/\s+/g, ' ').trim();
   }
@@ -95,7 +96,7 @@
       var m = LABEL.exec(ln);
       if (m) {
         var rest = m[1].replace(/^(?:\*\*|__)\s*/, '');
-        if (plain(rest)) { add(rest); under = false; } else under = true;
+        if (plain(rest)) { add(rest); under = false; } else under = !/`[  ]?(?:▶|>>)/.test(rest);      /* PA: a line that held only an action span has no list under it */
         continue;
       }
       if (under) {
