@@ -111,6 +111,7 @@ const CHECKS = [
   ['checks/runtime/display-health.e2e.mjs', 'the display\'s health: the held stand-by clock, the stand-by fit, every scene held and moving, figures, the tell and signature (9461; IP1)'],
   ['checks/runtime/prep-actions.e2e.mjs', 'prep actions: a note without a span is untouched; handout, clock (once, hidden, Undo), rule pop-over; the cards close on touch (12400; PA)'],
   ['checks/runtime/map-shade.e2e.mjs', 'furniture depth: a shaded map with people through every checker to the display and the planning board, re-sent, stage, room cut, re-pin: never a hidden copy (12520; IP7)'],
+  ['checks/runtime/map-shade-paint.e2e.mjs', 'furniture depth, what is on top: people over solids, labels and tokens over everything, nothing that shows flat goes missing shaded (no server; IP7)'],
 ];
 
 const want = process.argv.slice(2);

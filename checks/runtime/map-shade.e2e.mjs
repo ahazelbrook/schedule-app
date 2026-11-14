@@ -211,6 +211,18 @@ try {
     expect(s.nested >= 2 && !s.nbad && !s.ndup, JSON.stringify(s));
     await shot(I.page, 'board-pinned-1536x864-on');
   });
+  await step('3 planning board: the pins (cards) and their strings sit above the shaded sheet', async () => {
+    const f = await frame(); await sleep(7000);
+    const top = await f.evaluate(() => {
+      const out = { cards: 0, strings: 0, bad: [] };
+      for (const c of document.querySelectorAll('.pcard')) { const r = c.getBoundingClientRect(); if (r.width < 4) continue; out.cards++; const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); if (!t || !c.contains(t)) out.bad.push('card under ' + (t && t.closest && t.closest('.sheet') ? 'the sheet' : t && t.tagName)); }
+      for (const s of document.querySelectorAll('.string')) { if (typeof s.getTotalLength !== 'function') continue; const m = s.getScreenCTM(); if (!m) continue; const p = new DOMPoint(s.getPointAtLength(s.getTotalLength() / 2).x, s.getPointAtLength(s.getTotalLength() / 2).y).matrixTransform(m); out.strings++;
+        const t = document.elementFromPoint(p.x, p.y); if (t && t.closest && t.closest('.sheet')) out.bad.push('string under the sheet'); }
+      return out;
+    });
+    console.log('INFO planning board: ' + top.cards + ' cards and ' + top.strings + ' strings checked on top of the shaded sheet');
+    expect(top.cards >= 1 && !top.bad.length, JSON.stringify(top));
+  });
   await step('b planning board: pinned again (a second pin): the scene tears down before it draws, never two copies with the same ids', async () => {
     const f = await frame(); let worst = 0;
     await ambient({ score: B2 });
