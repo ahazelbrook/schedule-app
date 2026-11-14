@@ -333,9 +333,11 @@ export async function runShots(root, port, dir, extra = [], timeoutMs = 2700000)
 const REQ = (p) => new RegExp('^GET /(app/)?' + p.replace(/[.]/g, '[.]') + '([?].*)?$');
 export const ALLOWED_NEW_REQUESTS = [
   { name: 'kit-flag.js', reason: 'the kit flag\'s own file, the one deliberate new request of Gate 0', test: REQ('ui/kit-flag.js') },
-  { name: 'the players\' screen files (display)', reason: 'IP2/IP3 (stage.players, off): display/players/players.js and intro.js only define B68PlayersScreen and B68PlayersIntro, attached by display-page.js only while the setting is on; players.css and intro.css only style .p2-* and .pi-* markup, which only those files make',
+  { name: 'the players\' screen files (display)', reason: 'IP2/IP3 (stage.players, off): display/players/players.js and intro.js only define B68PlayersScreen and B68PlayersIntro, attached by display-page.js only while the setting is on; ' +
+      'players.css and intro.css only style .p2-* and .pi-* markup, which only those files make',
     test: (u) => ['display/players/players.js', 'display/players/players.css', 'display/players/intro.js', 'display/players/intro.css'].some((p) => REQ(p).test(u)) },
-  { name: 'the players\' screen files (GM)', reason: 'IP2/IP3/IP6 (stage.players, off): gm/players-screen.js, players-intro.js and players-board.js only define their modules; gm-page.js calls them only behind b09On(\'stage.players\') (the queue\'s probe fetch and every listener start there)',
+  { name: 'the players\' screen files (GM)', reason: 'IP2/IP3/IP6 (stage.players, off): gm/players-screen.js, players-intro.js and players-board.js only define their modules; ' +
+      'gm-page.js calls them only behind b09On(\'stage.players\') (the queue\'s probe fetch and every listener start there)',
     test: (u) => ['gm/players-screen.js', 'gm/players-intro.js', 'gm/players-board.js'].some((p) => REQ(p).test(u)) }
 ];
 export const allowedRequest = (u) => ALLOWED_NEW_REQUESTS.find((a) => a.test instanceof RegExp ? a.test.test(u) : a.test(u)) || null;
