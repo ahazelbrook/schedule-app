@@ -68,7 +68,7 @@ export const EXEMPTIONS = [
   { name: 'the Handouts on phones Settings row', reason: 'IP4 added phone.handouts (a phone setting, off) as the last row of the Settings of the iPad view',
     selector: '#gm-ipad-settings [data-set-row="phone.handouts"]' },
   { name: 'the eighteenth scene tile (The landing)', reason: 'IP8 added a new ambient scene, the landing, to the scene tiles of the iPad view: a deliberate visible addition with every setting off',
-    selector: '.gm-ipad-tiles [data-gm="ambscene"][data-id="landing"]' }
+    selector: '.gm-ipad-tiles [data-gm="ambscene"][data-id="landing"]', pushes: false }      /* it fills the empty second slot of the last tile row at every width: nothing moves for it */
 ];
 /* Not here: KS12's score-scene polaroids (disclosed in KS12's PR). They are drawn inside the score scene's iframe, which a fingerprint does not walk, and no baseline
    scenario shows a scene iframe, so an exemption for them would match nothing. */
@@ -188,7 +188,8 @@ export function compare(base, cur, opts = {}) {
   for (const [k, e] of C) if (!B.has(k) && fl(e).includes('x')) {
     exempted.push(nameOf(e) + ': new ' + k.split('/').slice(-2).join('/'));
     const parent = k.slice(0, k.lastIndexOf('/'));
-    if ((!C.has(parent) || !fl(C.get(parent)).includes('x')) && e[6] > 0 && e[7] > 0) { firstY = Math.min(firstY, e[5]); lastY = Math.max(lastY, e[5] + e[7]); newTops.push(k); }
+    const own = /x([a-z])/.exec(fl(e)), ex = own ? exs[own[1].charCodeAt(0) - 97] : null;      /* an exemption with pushes: false (an element in a slot that was empty) is new but moves nothing: it stays out of the span, so anything it did push is a difference */
+    if ((!C.has(parent) || !fl(C.get(parent)).includes('x')) && e[6] > 0 && e[7] > 0 && !(ex && ex.pushes === false)) { firstY = Math.min(firstY, e[5]); lastY = Math.max(lastY, e[5] + e[7]); newTops.push(k); }
   }
   const pushed = newTops.length > 0;
   const ancestorOfNew = (k) => newTops.some((t) => t.startsWith(k + '/'));
