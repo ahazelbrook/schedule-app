@@ -86,6 +86,7 @@
   /* the stage's pose starts 100 ms before the hand-over (or the still card's cut), so the figure the card settles onto is already in the Signature pose with the
      Tell face, and holds it for the rest of POSE_MS (3.2 s) after; ms from the card's mount at position pos; never under 0 */
   Pure.POSE_LEAD = 100;
+  Pure.SETTLE_AFTER = 200;      /* the figure starts to settle when the type's 200 ms wipe-out (intro.css) has ended: no letter over the moving figure */
   Pure.poseAt = function (pos, still) { return Math.max(0, Math.round((still ? Pure.STILL_MS : Pure.T.out) - Pure.POSE_LEAD - (Number(pos) || 0))); };
   Pure.initial = function (name) { var s = txt(name).replace(/^[\s"'“”‘’(\[.,_-]+/, ''); return s ? s.charAt(0).toUpperCase() : '?'; };
   /* the name's size: the largest step from o.max down to o.min (in vh) at which it fits on one line, else on two lines; measure(vh, wrap) ->
@@ -305,7 +306,7 @@
       if (W && typeof W.addEventListener === 'function') { W.addEventListener('resize', refit); me.offs.push(function () { W.removeEventListener('resize', refit); }); }
       if (doc.fonts && doc.fonts.status !== 'loaded' && doc.fonts.ready && typeof doc.fonts.ready.then === 'function') doc.fonts.ready.then(refit, function () {});
       if (still) { me.timers.push(later(function () { if (cur === me) cut(); }, Math.max(0, Pure.STILL_MS - pos))); return; }
-      me.timers.push(later(function () { if (cur === me) settle(c, me); }, Math.max(0, Pure.T.out - pos)));
+      me.timers.push(later(function () { if (cur === me) settle(c, me); }, Math.max(0, Pure.T.out + Pure.SETTLE_AFTER - pos)));      /* IP3c: once the type has wiped away */
       me.timers.push(later(function () { if (cur === me) cut(); }, Math.max(0, Pure.T.end + 500 - pos)));      /* a safety: settle() ends the card itself */
     }
 

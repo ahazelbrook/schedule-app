@@ -73,6 +73,7 @@ const NPCS = [
     spec: { figure: 'fem', skin: 'brown', heightIn: 63, age: 29, hair: { style: 'bowl-bob', color: 'cloth-black' }, outfit: { base: { type: 'shirt', color: 'cloth-cream' }, outer: { type: 'blazer', color: 'cloth-charcoal' } } } }],
   ['n-lotte', { name: 'Lotte Brand', alias: 'The Doorwoman', role: 'Door', faction: '', description: 'Door.', revealed: false, tags: ['known-as'], spec: { figure: 'fem', heightIn: 70, age: 52 } }],
   ['n-tam', { name: 'Tam Petrakis', alias: '', role: 'Runner', faction: '', description: 'Runs.', revealed: false, spec: { heightIn: 68, age: 30 } }],
+  ['n-wren', { name: 'Wren Ashby', alias: '', role: 'Courier', faction: '', description: 'Carries.', revealed: false, spec: { heightIn: 66, age: 27 } }],
   ['n-hid', { name: 'GM-ONLY-NPC-1', alias: 'GM-ONLY-ALIAS-1', role: 'GM-ONLY-ROLE-1', faction: 'GM-ONLY-FACTION-1', description: 'GM-ONLY-DESC-1', gmNotes: 'GM-ONLY-NOTES', revealed: false, spec: { heightIn: 70, age: 40 } }]
 ];
 
@@ -120,6 +121,7 @@ try {
   await ok(gm('POST', '/api/gm/pack', { part: 'prep', src: prep.src, body: Object.fromEntries(Object.entries(prep).filter(([k]) => k !== 'src')) }), 'prep pack');
   for (const [id, doc] of NPCS) await ok(gm('PUT', '/api/npcs/' + id, { ...doc, firstSeen: new Date().toISOString(), tags: doc.tags || [] }), 'npc ' + id);
   await ok(gm('PATCH', '/api/gm/ambient', { mode: 'pin', scene: 'duskwall', overlay: null }), 'ambient');
+  await ok(gm('PATCH', '/api/gm/state', { features: { 'ai.grammar': true } }), 'the typed cue grammar (IP3c: "Blade, reveal <name>")');
   await players(true);
   I = await openIpad();
   await toMap(I);
@@ -257,6 +259,47 @@ try {
     await shot(I.page, 'handover-pose-' + ENGINE + '-1180');
   });
 
+  await step('IP3c item 3: across the hand-over (5.2 to 6.4 s, every frame) no visible letter of the type is over the figure, for a long name and a short one', async () => {
+    const bad = [];
+    for (const id of ['n-long', 'n-mabel']) {
+      await toMap(I);
+      await gp.click(intro(id));
+      expect(await until(async () => (await look(I.page)).card, 6000, 50), 'the card came');
+      const r = await I.page.evaluate(() => new Promise((done) => {
+        const card = document.querySelector('.pi-card'), type = card.querySelector('.pi-type'), out = card.querySelector('.pi-figout'), at = Number(card.getAttribute('data-pi-at'));
+        const anims = () => document.getAnimations().filter((a) => a.effect && a.effect.target === type);
+        const svg = card.querySelector('.pi-col svg'), fig = svg && svg.querySelector('.b68-figure'), gs = fig ? [...fig.children].filter((k) => k.tagName.toLowerCase() === 'g') : [];
+        const body = gs.length ? gs[gs.length - 1] : (svg || out);
+        const pct = (v, w) => /%$/.test(v) ? parseFloat(v) / 100 * w : parseFloat(v) || 0;
+        const out2 = { frames: 0, over: [] };
+        const step = () => {
+          if (!card.isConnected) { done(out2); return; }
+          const a = anims()[0], sec = a ? a.currentTime + at : NaN;
+          if (sec >= 5200 && sec <= 6400) {
+            out2.frames++;
+            const tr = type.getBoundingClientRect(), cp = getComputedStyle(type).clipPath || getComputedStyle(type).webkitClipPath || '';
+            const m = /inset\(([^)]*)\)/.exec(cp), parts = m ? m[1].trim().split(/\s+/) : [];
+            const visL = tr.left + (parts.length === 4 ? pct(parts[3], tr.width) : 0), visR = tr.right - (parts.length === 4 ? pct(parts[1], tr.width) : 0);
+            const fr = body.getBoundingClientRect(), op = Number(getComputedStyle(out).opacity);
+            if (op > 0.05 && fr.width > 0) {
+              for (const e of card.querySelectorAll('.pi-kick-t, .pi-name-front, .pi-name-back, .pi-alias')) {
+                const q = e.getBoundingClientRect(), l = Math.max(q.left, visL), rr = Math.min(q.right, visR);
+                if (rr - l > 1 && Math.min(rr, fr.right) - Math.max(l, fr.left) > 2 && Math.min(q.bottom, fr.bottom) - Math.max(q.top, fr.top) > 2) out2.over.push(Math.round(sec) + ':' + e.className);
+              }
+            }
+          }
+          if (sec > 6400) { done(out2); return; }
+          requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      }));
+      if (r.frames < 10) bad.push(id + ': only ' + r.frames + ' frames sampled');
+      if (r.over.length) bad.push(id + ': ' + r.over.slice(0, 4).join(', '));
+      await until(async () => !(await look(I.page)).card, 4000);
+    }
+    expect(!bad.length, bad.join(' / '));
+  });
+
   /* ---- item 6: a reveal cue brings the person on (the cue stack's GO; the note's ## Cues) ---- */
   const GO = '#gm-cuebar .gm-cs-go';
   const isRevealed = async (id) => { const r = await gm('GET', '/api/npcs/' + id); const d = r.json && (r.json.doc || r.json); return !!d && d.revealed === true; };
@@ -304,7 +347,41 @@ try {
     await sleep(1500);
     expect(!(await look(I.page)).card && await I.page.evaluate(() => document.querySelector('.dp-root').classList.contains('dp-lights-out')), 'no card; still Blank');
     expect(!/GM-ONLY/.test(await ipadGet()) && !(await domHas(I.page, 'GM-ONLY')), 'the hidden second person never reached the display');
+    await gp.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    await gp.keyboard.press('0');      /* the GM's own Clear: Blank comes off through this page, so the page knows it */
+    expect(await until(() => I.page.evaluate(() => !document.querySelector('.dp-root').classList.contains('dp-lights-out')), 8000), 'Blank lifted');
     await gp.keyboard.press('n');
+  });
+  await step('IP3c item 1: "Blade, reveal <name>" then Undo with the take-down push held back 2 s: the un-reveal waits for it, so the display GET never holds the hidden name', async () => {
+    await toMap(I);
+    await gp.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    if (!(await gp.$eval('#as-panel', (e) => !e.hidden).catch(() => false))) await gp.keyboard.press('a');
+    try {
+    await gp.waitForSelector('#as-ask-q', { timeout: 10000 });
+    await gp.fill('#as-ask-q', 'Blade, reveal Wren Ashby'); await gp.press('#as-ask-q', 'Enter');
+    const yes = await until(() => gp.$('.gm-ugtoast [data-ug="confirm"]'), 6000);
+    expect(yes, 'the grammar asks first'); await yes.click();
+    /* the cue's toast (with its Undo) lasts about 5 s: read it and use it while the card is still up */
+    const undo = await until(() => gp.$('.gm-ugtoast [data-ug="undo"]'), 4000);
+    expect(undo, 'the Undo is there');
+    const said = await gp.evaluate(() => [...document.querySelectorAll('.gm-ugtoast')].map((e) => e.textContent).join(' | '));
+    expect(/Introducing Wren Ashby\./.test(said), 'IP3c item 2: the toast names who went up: ' + said);
+    expect(await until(async () => { const v = await look(I.page); return v.card && v.name === 'Wren Ashby'; }, 6000, 50), 'her card is up');
+    await gp.route('**/api/gm/display*', async (route) => { if (route.request().method() === 'PUT') await sleep(2000); await route.continue(); });
+    try {
+      await undo.click();
+      let leak = '', t0 = Date.now(), hidden = false, down = false;
+      while (Date.now() - t0 < 7000 && !(hidden && down)) {
+        const rev = await isRevealed('n-wren'), g = await ipadGet();
+        hidden = !rev; down = !g.includes('Wren Ashby');
+        if (hidden && g.includes('Wren Ashby')) leak = g.slice(0, 160);
+        await sleep(100);
+      }
+      expect(!leak, 'the hidden name in the display GET after the un-reveal: ' + leak);
+      expect(hidden && down, 'and in the end: hidden and taken down (' + hidden + ', ' + down + ')');
+    } finally { await gp.unroute('**/api/gm/display*'); }
+    } finally { if (await gp.$eval('#as-panel', (e) => !e.hidden).catch(() => false)) await gp.click('#as-panel .as-x'); }      /* close the Ask box: it covers the cast list */
+    expect(await until(async () => !(await look(I.page)).card && !(await I.page.evaluate(() => !!document.querySelector('.dp-stage.dp-npc.dp-in'))), 6000), 'the iPad is clear again');
   });
   await step('Hold scenes still (fx.off) on: the introduction still plays in full (it holds the ambient scenes, not a sent event: overseer ruling)', async () => {
     for (const p of ['/api/gm/state', '/api/campaign']) await ok(gm('PATCH', p, { features: { 'fx.off': true } }), 'fx.off on');
