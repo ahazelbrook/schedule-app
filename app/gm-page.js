@@ -3892,9 +3892,7 @@
     var B = W.B68GmPlayersBoard; if (!B || typeof B.pinsOf !== 'function') return false;      /* the board's module (the gm bundle) reads its own pins */
     var bp = B.pinsOf(S.doc, str(S.locRoll.name)).length;
     var built = P.scoreReshade(S.locRoll, AM.doc && AM.doc.score, bp, W.B68Map && W.B68Map.render); if (!built) return false;
-    gate.mark(built.board); gate.mark(built.iso);
-    patchAmbient({ score: built.score }).then(function (r) { if (r && built.shadeCut) toast(P.SCENE_CUT_MSG.shade.replace('The map went', 'The score scene went'), true); });
-    return true;
+    return setScoreScene({ built: built, ask: false }).then(function (r) { if (r && built.shadeCut) toast(P.SCENE_CUT_MSG.shade.replace('The map went', 'The score scene went'), true); return !!r; });      /* the one score write (gate, freeze, toasts) */
   }
   /* MK2 (the review): the transcriber document counts as set up only with something beyond the map frame's ask and answer in it */
   function sttOwn(d) { return !!d && Object.keys(d).some(function (k) { return k !== 'frameWant' && k !== 'frame'; }); }
@@ -6079,7 +6077,7 @@
     var none = Promise.resolve(null);
     if (!S || !S.locRoll) { toast('Roll a location first.', true); return none; }
     var built;
-    try { built = scoreScene(S.locRoll, pb ? pb.map : mapUi(), W.B68Map && W.B68Map.render); if (pb) pb.pin(built); } catch (e) { toast(errText(e), true); return none; }
+    try { built = pb && pb.built ? pb.built : scoreScene(S.locRoll, pb ? pb.map : mapUi(), W.B68Map && W.B68Map.render); if (pb && pb.pin) pb.pin(built); } catch (e) { toast(errText(e), true); return none; }      /* IP7: pb.built, the flip's rebuild (scoreFlip): the same one write */
     if (pb ? pb.ask && !confirmReveal(pb.seen, 'The planning board') : !confirmReveal(built.reveal, 'This score scene')) return none;
     gate.mark(built.board); gate.mark(built.iso);
     return patchAmbient({ score: built.score }).then(function (r) {

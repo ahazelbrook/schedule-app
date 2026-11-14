@@ -240,7 +240,9 @@ test('a flip without the planning board: the stored score scene is rebuilt from 
   const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8'), i = src.indexOf('function scoreFlip(');
   const body = src.slice(i, src.indexOf('\n  }\n', i));
   assert.match(body, /if \(!S \|\| !AM\.loaded \|\| AM\.busy > 0 \|\| !S\.locRoll\) return false;/, 'not before the stored score is read, not while the iPad is written');
-  assert.match(body, /gate\.mark\(built\.board\); gate\.mark\(built\.iso\);\s*patchAmbient\(\{ score: built\.score \}\)/, 'through the gate, one write');
+  assert.match(body, /return setScoreScene\(\{ built: built, ask: false \}\)/, 'through setScoreScene, the page\'s one score write (the gate, Freeze)');
+  assert.match(src, /built = pb && pb\.built \? pb\.built : scoreScene\(/, 'setScoreScene takes the rebuild as it is');
+  assert.equal((src.match(/patchAmbient\(\{ score:/g) || []).length, 2, 'still only the set and the clear write a score (gm-nosecrets (g))');
   assert.match(src, /if \(pbOn\(\)\) W\.B68GmPlayersBoard\.follow\(pbHost\(\)\);[^\n]*\n\s*else scoreFlip\(\);/);
 });
 test('cap, the pinned sheet: flat before any face is lightened or plated', () => withShade(true, () => {
