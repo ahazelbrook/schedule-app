@@ -23,7 +23,7 @@ const PORT = Number(process.env.PORT || 9461);
 const BASE = 'http://127.0.0.1:' + PORT;
 const GM = 'gm@example.test', IPAD = 'table.ipad@example.test';
 const SHOTS = process.env.SHOTS || '';
-const ONLY = String(process.env.ONLY || '').split(',').filter(Boolean);      // ONLY=scenes,looks runs those parts (clock fit scenes figures looks dupes blink tint still maps)
+const ONLY = String(process.env.ONLY || '').split(',').filter(Boolean);      // ONLY=scenes,looks runs those parts (clock fit scenes figures looks dupes blink firstpoll tint still maps)
 const want = (part) => !ONLY.length || ONLY.includes(part);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const WIN = process.platform === 'win32';
@@ -406,6 +406,24 @@ try {
     await settings({});
   }
 
+  /* ---------- firstpoll (IP1b delta): a held spotlight that is up when the display opens (or reloads) gets its format, tint and tell. The poller drew it
+     before it had applied the switches, so the face looks read as off, and the same overlay id was never drawn again. ---------- */
+  if (want('firstpoll')) for (const stage of [false, true]) {
+    await settings({ stage });
+    await push({ kind: 'blank' });
+    await ambient({ overlay: { id: 'b17sl-first' + (stage ? 1 : 0), kind: 'npc', npcId: 'n-dov', ms: 60000, look: { fmt: 'badge', expr: 'smirk', tell: true } } });
+    I = await openIpad(browser, 1180, 820);
+    const framed = (page) => page.waitForFunction(() => { const h = document.querySelector('.dp-ov-portrait'); return !!(h && h.closest('.dp-fl') && h.querySelector(':scope > svg > g.dp-fl-duo')); }, null, { timeout: 8000 });
+    const tells = (page) => page.waitForFunction(() => { const s = document.querySelector('.dp-ov-portrait > svg'); return !!s && s.getAttribute('data-fl') === 'tell' && !!s.querySelector(':scope > g.dp-fl-duo'); }, null, { timeout: 25000 });
+    await step('firstpoll: ' + (stage ? 'new' : 'old') + ' stage: a spotlight already up when the display opens has its frame and tint within a poll, then its tell', async () => { await framed(I.page); await tells(I.page); });
+    await I.page.reload(); await I.page.waitForFunction(() => document.body.dataset.mode === 'display', null, { timeout: 20000 });
+    await step('firstpoll: ' + (stage ? 'new' : 'old') + ' stage: and again after a reload', async () => { await framed(I.page); await tells(I.page); });
+    await ambient({ overlay: null });
+    await step('firstpoll: ' + (stage ? 'new' : 'old') + ' stage: no page errors', async () => { expect(!I.errors.length, I.errors.join(' | ')); });
+    await I.ctx.close();
+  }
+  await settings({});
+
   /* ---------- tint (IP1b): a held spotlight with a portrait format and a tell: the tell face wears the format's tint, as the steady face does ---------- */
   if (want('tint')) for (const stage of [false, true]) {
     await settings({ stage });
@@ -413,8 +431,6 @@ try {
     I = await openIpad(browser, 1180, 820);
     if (stage) await I.page.waitForFunction(() => (document.documentElement.getAttribute('data-kit') || '').includes('stage'), null, { timeout: 30000 });
     await step('tint: ' + (stage ? 'new' : 'old') + ' stage: a badge card\'s tell face is tinted like its steady face', async () => {
-      /* the face looks arrive with the display's later bundle files; a card drawn before they land is plain until it is laid again (a fresh page only) */
-      await I.page.waitForFunction(() => !!(window.B68FaceRender && window.B68FaceFormats), null, { timeout: 20000 }); await sleep(500);
       await ambient({ overlay: { id: 'b17sl-tint' + (stage ? 1 : 0), kind: 'npc', npcId: 'n-dov', ms: 60000, look: { fmt: 'badge', expr: 'smirk', tell: true } } });
       await I.page.waitForFunction(() => { const h = document.querySelector('.dp-ov-portrait'); return !!(h && h.closest('.dp-fl') && h.querySelector(':scope > svg g.dp-fl-duo')); }, null, { timeout: 12000 });
       await I.page.waitForFunction(() => { const s = document.querySelector('.dp-ov-portrait > svg'); return !!s && s.getAttribute('data-fl') === 'tell'; }, null, { timeout: 25000 });
@@ -436,6 +452,7 @@ try {
     I = await openIpad(browser, 1180, 820);
     await step('still: a held scene does not move across a minute boundary', async () => {
       await sceneUp(I.page, 'tram'); await heldIs(I.page, true); await sleep(2500);
+      await I.page.waitForFunction(() => !!document.querySelector('.dp-root:not(.dp-ui)'), null, { timeout: 20000 });      /* past the buttons' and status line's fade (about 7 s after load) */
       const s0 = new Date().getSeconds(); if (s0 < 50 || s0 > 57) await sleep((((56 - s0) + 60) % 60) * 1000);
       let prev = await frameShot(I.page, 'health-still-0'); const diffs = []; const t0 = Date.now();
       while (Date.now() - t0 < 9000) { await sleep(250); const cur = await frameShot(I.page, 'health-still-x'); diffs.push(+diff(prev, cur).toFixed(2)); prev = cur; }
