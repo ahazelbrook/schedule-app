@@ -507,6 +507,9 @@
           fails = 0; lastErr = null;
           if (typeof o.onSkew === 'function') { var sk = Pure.skewOf(r.now, t0, Date.now()); if (sk !== null) { try { o.onSkew(sk); } catch (e) { /* ditto */ } } }
           var moved = false;
+          /* IP1b delta (14/11): the switches first, so nothing on this answer is drawn under the last answer's settings (a held spotlight up when the page
+             opens was drawn with the face looks off, then never drawn again) */
+          if (typeof o.onFeatures === 'function') { try { o.onFeatures(Pure.featuresPart(r)); } catch (e) { /* ditto */ } }   /* W0.2: the iPad's switches, on every answer */
           if (amb) {
             if (amb.seq !== aseq) moved = true;
             aseq = amb.seq;
@@ -517,7 +520,6 @@
             hseq = mis.hseq;
             if (!mis.unchanged && o.onMission) { try { o.onMission(mis.hud); } catch (e) { /* ditto */ } }
           }
-          if (typeof o.onFeatures === 'function') { try { o.onFeatures(Pure.featuresPart(r)); } catch (e) { /* ditto */ } }   /* W0.2: the iPad's switches, on every answer */
           if (stt) {
             if (stt.seq !== sseq) moved = true;
             sseq = stt.seq; sttSeen = true;

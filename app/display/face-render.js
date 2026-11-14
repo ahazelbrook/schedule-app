@@ -85,11 +85,18 @@
   var TELL_MS = 3600, LOOP_MIN = 12000, LOOP_MAX = 20000;
   function still(env) { return on('fx.off', env) || !!(env && env.reduced); }
   function mark(n, what) { if (n && n.setAttribute) n.setAttribute('data-fl', what); return n; }      /* which face is up, for the checks */
+  /* IP1c: a swap is a hard cut that never shows an empty frame: the incoming face goes in first, fully opaque, then the outgoing one is REMOVED in the
+     same task (never hidden: a hidden copy can take the visible one's clips in Chromium; the two carry their own ids anyway) */
+  function swapIn(holder, n) {
+    if (!holder || !n) return;
+    if (n.parentNode !== holder) holder.appendChild(n);
+    var k = kids(holder); for (var i = 0; i < k.length; i++) if (k[i] !== n) holder.removeChild(k[i]);
+  }
   function connected(n) { return !!n && (n.isConnected === undefined ? !!n.parentNode : n.isConnected); }
   function tellLoop(holder, steady, tell, env, firstMs) {
     var later = typeof env.later === 'function' ? env.later : function (f, ms) { return setTimeout(f, ms); };
     var seen = false, misses = 0;
-    function put(n) { n.classList && n.classList.add('dp-fl-tell'); empty(holder); holder.appendChild(n); }
+    function put(n) { swapIn(holder, n); }
     function alive() { if (connected(holder)) { seen = true; return true; } return !seen && ++misses < 5; }
     function play() {
       if (!alive()) return;
@@ -173,9 +180,9 @@
       var posed = null;
       try { posed = draw(FL.poseSpec(look.expr ? FL.specWith(spec, { expr: look.expr }) : spec, look.pose), '-p'); } catch (err) { posed = null; }
       if (posed) {
-        mark(posed, 'pose'); if (posed.classList) posed.classList.add('dp-fl-tell');
-        var pose = function () { if (!connected(holder) && poseAt) return; empty(holder); holder.appendChild(posed);
-          later(function () { if (holder.firstChild === posed) { if (steady.classList) steady.classList.add('dp-fl-tell'); empty(holder); holder.appendChild(steady); } }, POSE_MS); };
+        mark(posed, 'pose');
+        var pose = function () { if (!connected(holder) && poseAt) return; swapIn(holder, posed);
+          later(function () { if (holder.firstChild === posed) swapIn(holder, steady); }, POSE_MS); };
         if (poseAt) later(pose, poseAt); else pose();
         done = true;
       }

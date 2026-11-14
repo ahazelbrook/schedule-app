@@ -88,7 +88,4 @@
 .dp-fl-tx-hatch { background-image: repeating-linear-gradient(45deg, rgba(242, 237, 225, .07) 0 1px, transparent 1px 1.2vmin), repeating-linear-gradient(-45deg, rgba(242, 237, 225, .07) 0 1px, transparent 1px 1.2vmin); }
 .dp-fl-tx-dots { background-image: radial-gradient(circle, rgba(242, 237, 225, .1) 2px, transparent 2.6px); background-size: 3vmin 3vmin; }
 /* IP1 (13/11): a tell or a signature pose swapped onto a face or a figure fades in (display/face-render.js); a cut under reduced motion */
-.dp-fl-tell { animation: dp-fl-tell-in .45s ease both; }
-@keyframes dp-fl-tell-in { from { opacity: 0; } to { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .dp-fl-tell { animation: none; } }
-[data-reduced] .dp-fl-tell { animation: none; }
+/* IP1c: no fade: a tell or a pose swap is a hard cut (display/face-render.js swapIn), so the figure never blinks to nothing */
