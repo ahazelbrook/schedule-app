@@ -209,9 +209,22 @@
     var w = m.weather;
     if (w === 'rolled') o.weather = true; else if (w === 'none') o.weather = false; else if (w === 'rain' || w === 'fog' || w === 'snow') o.weather = w;
     if (P.kit1On()) o.kit1 = true;        /* 2.1: map kit 1.0 draws a site whose block says kit: 1; with the switch off, not even the key */
+    Object.assign(o, P.shadeOpt());       /* IP7 (map.shade): furniture with depth; off, not even the key */
     return Object.assign(o, size || { width: 1400 });
   }
   P.mapOpts = mapOpts;
+  /* IP7 · furniture depth: map.shade (app/features.js, a GM setting, off until chosen), read through the registry. THE ONE PLACE the map kit's
+     `shade` option comes from: mapOpts (this screen's map, the Run view's, the shared screen in the keyed and stage layouts, a room cut to), the
+     score scene (the planning board and the exploded site) and the planning board's pinned sheet all take P.shadeOpt(). Off it is {}, so the
+     options are exactly what they were (no `shade` key at all). P.shadeOn() is the read (a test can stand it in). */
+  var SHADE_SWITCH = P.SHADE_SWITCH = 'map.shade';
+  function shadeOf(doc) { var F = W && W.B68Features; try { return !!(F && typeof F.valueOf === 'function' && F.isSetting(SHADE_SWITCH) && F.valueOf(doc, SHADE_SWITCH) === true); } catch (e) { return false; } }
+  P.shadeOf = shadeOf;
+  P.shadeOn = function () { return shadeOf(S && S.doc); };
+  P.shadeOpt = function () { return P.shadeOn() === true ? { shade: true } : {}; };
+  /* a copy of the options without `shade` (the first step down every size ladder) */
+  function flat(o) { var c = Object.assign({}, o); delete c.shade; return c; }
+  P.flat = flat;
   /* 2.1 · Map kit 1.0, the grand map: map.kit1 (app/features.js, GM only; always on since N0), read through the registry.
      kit1Of(doc) is the read itself; P.kit1On() is what mapOpts and the score scene ask (a test can stand it in). */
   var KIT1_SWITCH = P.KIT1_SWITCH = 'map.kit1';
@@ -306,10 +319,15 @@
     if (!r) { if (used.length) { dropped = true; used = []; } r = clean(o); }      /* a map that only leaks WITH its markers goes without them */
     if (!r && o !== o0) { r = clean(o0); if (r) dropped = true; }      /* MK1: and one that leaks only with its scene goes as before, without it */
     if (!r) { var e = new Error(P.LEAK_MSG); e.leak = true; throw e; }
-    var cut = o !== o0 && bytesOf(r.svg) > P.SVG_CAP ? sceneFit() : '';      /* MK2: a scene over the shared screen's cap; off, never asked */
-    function sceneFit() {      /* the same map without the crowd, then without the scene (each clean and under the cap); else a refusal that says why */
-      var tries = [['crowd', Object.assign({}, o, { crowd: undefined })], ['scene', o0]];
-      for (var i = 0; i < tries.length; i++) { var t = clean(used.length ? Object.assign({}, tries[i][1], { tokens: used }) : tries[i][1]); if (t && bytesOf(t.svg) <= P.SVG_CAP) { r = t; return tries[i][0]; } }
+    var shaded = o.shade === true;      /* IP7 (map.shade): off, false, and the ladder below is exactly MK2's */
+    var cut = (o !== o0 || shaded) && bytesOf(r.svg) > P.SVG_CAP ? sceneFit() : '';      /* MK2: a scene over the shared screen's cap; off, never asked */
+    function sceneFit() {      /* IP7: flat furniture first; then (MK2) the same map without the crowd, then without the scene (each clean and under the cap); else a refusal that says why */
+      var tries = shaded ? [['shade', flat(o)]] : [];
+      if (o !== o0) tries.push(['crowd', Object.assign(flat(o), { crowd: undefined })], ['scene', flat(o0)]);
+      var got = [];
+      for (var i = 0; i < tries.length; i++) { var t = clean(used.length ? Object.assign({}, tries[i][1], { tokens: used }) : tries[i][1]); got.push(t); if (t && bytesOf(t.svg) <= P.SVG_CAP) { r = t; return tries[i][0]; } }
+      if (shaded && !got[0]) { var el = new Error(P.LEAK_MSG); el.leak = true; throw el; }      /* IP7: nothing fitted, and the flat copy names a hidden room: the leak refusal, not "too large" */
+      if (o === o0) { r = got[0]; return ''; }      /* IP7: no scene, and too large even flat: the flat map (clean) goes as it would have (today's behaviour: the server answers) */
       var eb = new Error('This map is too large for the iPad (' + Math.round(bytesOf(r.svg) / 1024) + ' KiB, at most ' + Math.round(P.SVG_CAP / 1024) + ') even without its people: show fewer bands or another view.'); eb.big = true; throw eb;
     }
     /* MK2 (name each person once): the bare markers went only if the kit drew every crew member it left out; otherwise the full markers, as before */
@@ -317,12 +335,13 @@
     var capRooms = rollRoomsOf(roll, entryRooms(reveal));       /* only rooms this roll has: a name left over from a site edit opens nothing and is not captioned */
     var d = { kind: 'svg', title: str(roll.name).slice(0, 200), caption: (roll.district ? roll.district + ' · ' : '') + 'surveyed: ' + entryBands(reveal).join(', ') + (capRooms.length ? ' + ' + capRooms.join(', ') : ''), svg: r.svg, warnings: r.warnings || [], reveal: reveal,
       tokens: used.length, tokensRefused: scr.refused.length > 0 || dropped };
-    if (cut) d.sceneCut = cut;       /* MK2: 'crowd' or 'scene', only when one was cut */
+    if (cut) d.sceneCut = cut;       /* MK2: 'crowd' or 'scene', only when one was cut; IP7: 'shade' when only the depth went */
     return d;
   }
   P.playerDisplay = playerDisplay;
   P.SVG_CAP = 600 * 1024;       /* the server's cap on a display svg (functions/_lib/gm.js LIMITS.svg); a larger one is a 413 */
-  P.SCENE_CUT_MSG = { crowd: 'The map went to the iPad without the crowd: with it, it was over the iPad’s 600 KiB.', scene: 'The map went to the iPad without its people: with them, it was over the iPad’s 600 KiB.' };
+  P.SCENE_CUT_MSG = { crowd: 'The map went to the iPad without the crowd: with it, it was over the iPad’s 600 KiB.', scene: 'The map went to the iPad without its people: with them, it was over the iPad’s 600 KiB.',
+    shade: 'The map went to the iPad with flat furniture: with depth, it was over the iPad’s 600 KiB.' };      /* IP7 */
   /* MK1 (gm/scene-state.js): the map kit's new options. tk.scene is the page's scene input (sceneInput, only while a map setting is on); it goes
      through B68GmScene.forPlayer, the one door (the crew only, in the rooms a marker may stand in), then the people's names and marks through
      tokenScreen, as a marker's label would; a refused name takes the people off. Without tk.scene, o comes back untouched. */
@@ -687,24 +706,43 @@
     if (!isObj(map) || map.layer !== 'player') throw new Error('Only the player layer can be a score scene. Switch Layer to Player first.');
     if (!roll || typeof render !== 'function') throw new Error('Roll a location first.');
     var reveal = revealList(map), k1 = P.kit1On() ? { kit1: true } : {};     /* 2.1: the planning board is kit 1.0's exploded iso when the switch is on */
+    /* IP7 (map.shade): every drawing here takes P.shadeOpt() ({} while off, so these are the same options as before); one held over the stored
+       score's 600 KiB cap is drawn again flat (the first step down the ladder) and shadeCut says so */
+    var sh = P.shadeOpt(), look = Object.assign({}, k1, sh), shadeCut = false;
+    function draw(o) {
+      var r = render(roll, o);
+      if (sh.shade === true && r && bytesOf(r.svg) > P.SVG_CAP) { var f = render(roll, flat(o)); if (f && bytesOf(f.svg) < bytesOf(r.svg)) { shadeCut = true; return f; } }
+      return r;
+    }
     function leak() { var e = new Error(P.LEAK_MSG); e.leak = true; return e; }
-    var board = render(roll, Object.assign({ view: 'plan', theme: 'board', layer: 'player', reveal: reveal, width: 1600 }, k1)), view = 'plan';
+    var board = draw(Object.assign({ view: 'plan', theme: 'board', layer: 'player', reveal: reveal, width: 1600 }, look)), view = 'plan';
     if (leaks(board.svg, roll, reveal).length) {
-      board = render(roll, { view: 'rings', theme: 'board', layer: 'player', reveal: reveal, width: 1600 }); view = 'rings';
+      board = draw(Object.assign({ view: 'rings', theme: 'board', layer: 'player', reveal: reveal, width: 1600 }, sh)); view = 'rings';
       if (leaks(board.svg, roll, reveal).length) throw leak();
     }
-    var iso = render(roll, Object.assign({ view: 'iso', theme: 'blueprint', legend: false, layer: 'player', reveal: reveal, width: 1600 }, k1));
+    var iso = draw(Object.assign({ view: 'iso', theme: 'blueprint', legend: false, layer: 'player', reveal: reveal, width: 1600 }, look));
     var isoRings = false;
     if (leaks(iso.svg, roll, reveal).length) {
-      iso = render(roll, { view: 'rings', theme: 'blueprint', legend: false, layer: 'player', reveal: reveal, width: 1600 }); isoRings = true;
+      iso = draw(Object.assign({ view: 'rings', theme: 'blueprint', legend: false, layer: 'player', reveal: reveal, width: 1600 }, sh)); isoRings = true;
       if (leaks(iso.svg, roll, reveal).length) throw leak();
     }
-    return {
+    return Object.assign({
       reveal: reveal, view: view, rings: view === 'rings', isoRings: isoRings, board: board.svg, iso: iso.svg,
       score: { name: str(roll.name).slice(0, 200), district: str(roll.district).slice(0, 200), target: '', reveal: reveal, view: view, board: board.svg, iso: iso.svg }
-    };
+    }, shadeCut ? { shadeCut: true } : {});      /* IP7: only when the depth went */
   }
   P.scoreScene = scoreScene;
+  /* IP7 (map.shade): the stored score scene drawn again for a flip, when the planning board is not what keeps it (stage.players off). The stored
+     scene is a function of the roll and its bands alone (scoreScene reads nothing else from the controls), so it is rebuilt from the STORED bands:
+     never a room more or less than the players have. -> the new build, or null when there is nothing to do: no score stored, another site's, pins
+     stored for this site (only the board's own path draws pins), or the same drawing as the one stored (the identical-board guard). */
+  function scoreReshade(roll, stored, pins, render) {
+    if (!roll || !isObj(stored) || str(stored.name) !== str(roll.name).slice(0, 200) || !Array.isArray(stored.reveal) || pins > 0) return null;
+    var rv = {}; BANDS.forEach(function (b) { rv[b] = b === 'public' || stored.reveal.indexOf(b) >= 0; });
+    var built; try { built = scoreScene(roll, { layer: 'player', reveal: rv }, render); } catch (e) { return null; }
+    return built.score.board === stored.board && built.score.iso === stored.iso ? null : built;
+  }
+  P.scoreReshade = scoreReshade;
 
   /* Score sites (GM.md, "Score sites"): a location roll saved against a score card of the prep part. GM state
      sites: { <score key>: { seed, ui, mem, name, district, label, map: { view, theme }, at } }; the replay recipe is the one
@@ -2428,7 +2466,7 @@
     if (!S.st) S.st = W.B68GmSettings.create({
       doc: function () { return S.doc; }, patch: patch, campaign: function () { return camp; }, root: function () { return $q('#gm-root'); }, toast: toast,
       publish: function (map) { var a = (S && S.api) || keptApi; return a && typeof a.publishFeatures === 'function' ? a.publishFeatures(map) : Promise.reject(new Error('The table is not available here.')); },
-      redraw: function () { if (S && S.status === 'ready') { renderBar(); renderRun(); b09Paint(); sceneRedraw(); } },
+      redraw: function () { if (S && S.status === 'ready') { renderBar(); renderRun(); b09Paint(); sceneRedraw(); shadeRedraw(); } },
       setPhoneCards: function (on) { return setPhoneCards(on); }, mirrorOn: mirrorOn, toggleMirror: toggleMirror
     });
     return S.st;
@@ -3763,12 +3801,12 @@
      drawing, or '' when this map is not a run (a player layer, a rolled site) */
   function runApply(o) {
     var rs = o.layer === 'gm' ? runSite() : null; if (!rs) return '';
-    if (rs.play.v === 2) { var sk = sceneGm(o, rs), t2 = runV2Tokens(rs, sceneFigured(o, rs)); o.tokens = t2; return JSON.stringify(      /* MK2: a person drawn as a figure gets no pill too */[rollKey(S.locRoll), o.view, o.theme, o.time, o.weather, o.floor, t2.map(function (t) { return t.room + '|' + t.svg; })].concat(o.kit1 ? ['kit1'] : []).concat(sk ? [sk] : [])); }     /* MK1: sk is '' with the map settings off */
+    if (rs.play.v === 2) { var sk = sceneGm(o, rs), t2 = runV2Tokens(rs, sceneFigured(o, rs)); o.tokens = t2; return JSON.stringify(      /* MK2: a person drawn as a figure gets no pill too */[rollKey(S.locRoll), o.view, o.theme, o.time, o.weather, o.floor, t2.map(function (t) { return t.room + '|' + t.svg; })].concat(o.kit1 ? ['kit1'] : []).concat(sk ? [sk] : []).concat(o.shade ? ['shade'] : [])); }     /* MK1: sk is '' with the map settings off; IP7: 'shade' only while map.shade is on */
     var m = runModel(rs); if (!m) return '';
     var toks = runTokens(m);
     o.tokens = toks;
     if (m.floor !== 'all' && (o.view === 'iso' || o.view === 'plan' || o.view === 'section')) o.floor = m.floor;
-    return JSON.stringify([rollKey(S.locRoll), o.view, o.theme, o.time, o.weather, o.floor, toks.map(function (t) { return t.room + '|' + t.svg; })].concat(o.kit1 ? ['kit1'] : []));     /* 2.1: a switch flip redraws */
+    return JSON.stringify([rollKey(S.locRoll), o.view, o.theme, o.time, o.weather, o.floor, toks.map(function (t) { return t.room + '|' + t.svg; })].concat(o.kit1 ? ['kit1'] : []).concat(o.shade ? ['shade'] : []));     /* 2.1: a switch flip redraws; IP7: so does map.shade */
   }
   /* Names the markers on a player copy must never carry: the play's people and disguises (whole labels) and the names of hidden clocks.
      This is the ONLY use of `play.people` on the player path: it feeds tokenScreen's deny list and nothing is drawn from it. */
@@ -3801,6 +3839,7 @@
      their own; playerDisplay uses it only in a view that draws people, and only if the kit then drew every one of them */
   function sceneTk(tk, reveal, skip) {
     if (skip) return tk;      /* the bare set itself */
+    if (P.shadeOn()) tk = Object.assign({}, tk, { sig: tk.sig + '|shade' });      /* IP7 (map.shade): the live map on the iPad is sent again when the depth turns on or off; off, tk itself */
     var sc = sceneInput(); if (!sc) return tk;
     var out = Object.assign({}, tk, { scene: sc, sig: tk.sig + '|' + sceneMod().inputKey(sc) });
     var figs = sc.flags.people && scenePeopleKit() ? herePcs().filter(function (c) { return isObj(c.spec) && Object.keys(c.spec).length > 0; }).map(function (c) { return str(c.id); }) : [];
@@ -3837,6 +3876,23 @@
     sceneFrameAsk();
     var k = JSON.stringify(sceneFlags()); if (k === (S.sceneFk || 'null')) return;
     S.sceneFk = k; renderLocation(); if (S.map) drawMap(true); runDraw(true); liveTokens();
+  }
+  /* IP7 (map.shade) turned on or off: this screen's map, the Run view's and the live map on the iPad are drawn again; nothing while it stays as it was */
+  function shadeRedraw() {
+    var k = P.shadeOn() === true; if (k === (S.shadeK === true)) return;
+    S.shadeK = k; if (S.map) drawMap(true); runDraw(true); liveTokens();
+    if (pbOn()) W.B68GmPlayersBoard.follow(pbHost());      /* the stored planning board and exploded site of this site, once, through the board's own guarded path (ready, busy, same-sig, onBoard) */
+    else scoreFlip();
+  }
+  /* without the planning board (stage.players off): the score scene Set as score scene stored for this site, drawn again from its stored bands, once.
+     Nothing before the stored score is read, while the iPad is being written, for another site's, with pins stored (the board's to draw), or when the
+     drawing would be the same (P.scoreReshade) */
+  function scoreFlip() {
+    if (!S || !AM.loaded || AM.busy > 0 || !S.locRoll) return false;
+    var B = W.B68GmPlayersBoard; if (!B || typeof B.pinsOf !== 'function') return false;      /* the board's module (the gm bundle) reads its own pins */
+    var bp = B.pinsOf(S.doc, str(S.locRoll.name)).length;
+    var built = P.scoreReshade(S.locRoll, AM.doc && AM.doc.score, bp, W.B68Map && W.B68Map.render); if (!built) return false;
+    return setScoreScene({ built: built, ask: false }).then(function (r) { if (r && built.shadeCut) toast(P.SCENE_CUT_MSG.shade.replace('The map went', 'The score scene went'), true); return !!r; });      /* the one score write (gate, freeze, toasts) */
   }
   /* MK2 (the review): the transcriber document counts as set up only with something beyond the map frame's ask and answer in it */
   function sttOwn(d) { return !!d && Object.keys(d).some(function (k) { return k !== 'frameWant' && k !== 'frame'; }); }
@@ -6021,11 +6077,12 @@
     var none = Promise.resolve(null);
     if (!S || !S.locRoll) { toast('Roll a location first.', true); return none; }
     var built;
-    try { built = scoreScene(S.locRoll, pb ? pb.map : mapUi(), W.B68Map && W.B68Map.render); if (pb) pb.pin(built); } catch (e) { toast(errText(e), true); return none; }
+    try { built = pb && pb.built ? pb.built : scoreScene(S.locRoll, pb ? pb.map : mapUi(), W.B68Map && W.B68Map.render); if (pb && pb.pin) pb.pin(built); } catch (e) { toast(errText(e), true); return none; }      /* IP7: pb.built, the flip's rebuild (scoreFlip): the same one write */
     if (pb ? pb.ask && !confirmReveal(pb.seen, 'The planning board') : !confirmReveal(built.reveal, 'This score scene')) return none;
     gate.mark(built.board); gate.mark(built.iso);
     return patchAmbient({ score: built.score }).then(function (r) {
       if (r && !pb) toast(built.rings ? 'Score scene set. The plan would name a hidden room, so the board uses rings.' : 'Score scene set: ' + built.score.name + '.');
+      if (r && !pb && built.shadeCut) toast(P.SCENE_CUT_MSG.shade.replace('The map went', 'The score scene went'), true);      /* IP7: said, never silent */
       return r;
     });
   }
@@ -6917,12 +6974,13 @@
       rooms: function () { var seen = pbSeen(); return (S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : []).filter(function (r) { return isObj(r) && typeof r.name === 'string' && r.name; }).map(function (r) { return { name: r.name, shown: roomShown(r, seen) }; }); },
       scan: function (text) { var names = P.tokenHidden(S.locRoll, pbSeen(), pbHide()); return names.filter(function (n) { return namesHit(text, [n]); }); },
       patch: function (p) { return patch(p); }, score: function () { return AM.doc && isObj(AM.doc.score) ? AM.doc.score : null; }, busy: function () { return AM.busy > 0; },
-      figures: function () { return W.B68Figure || null; }, toast: toast, setScore: pbSetScore, showBoard: pbShowBoard, hide: pbHide,
+      figures: function () { return W.B68Figure || null; }, toast: toast, setScore: pbSetScore, look: function () { return P.shadeOn() ? 'shade' : ''; },      /* IP7 */
+      showBoard: pbShowBoard, hide: pbHide,
       ready: function () { return !!(S && AM.loaded && (S.npcsIn || !(S.api && S.api.db && S.api.db()))); } };      /* IP6c: the stored score scene and the cast are read (or this page has no cast to wait for) */
   }
   function pbSetScore(list, ask, keep) {
     if (!S || !S.locRoll) { toast('Roll a location first.', true); return Promise.resolve(null); }
-    var me = S, pmu = pbMap(keep), seen = pbSeen(pmu), hide = pbHide(), kept = [], refused = [], waiting = 0, dropped = false, plates = 0;
+    var me = S, pmu = pbMap(keep), seen = pbSeen(pmu), hide = pbHide(), kept = [], refused = [], waiting = 0, dropped = false, plates = 0, flatBoard = false;
     function screened(tok) { var r = tok ? P.tokenScreen([tok], S.locRoll, seen, hide) : null; return r && r.tokens.length ? r.tokens[0] : null; }
     list.forEach(function (x) {
       var r = P.tokenScreen([x.tok], S.locRoll, seen, hide);
@@ -6931,14 +6989,14 @@
     });
     /* the score scene as Set as score scene builds it, then its board drawn again with the screened pins at the same view, kept only if the leak scan passes */
     var pin = function (built) {
-      var fit = W.B68GmPlayersBoard.fitBoard(S.locRoll, W.B68Map && W.B68Map.render, { seen: seen, view: built.view, kit1: P.kit1On(), leaks: P.leaks }, kept), svg = fit.svg;      /* too large: faces lighter, then name plates, oldest first, only as many as it takes */
-      plates = fit.svg ? fit.plates : 0;
+      var fit = W.B68GmPlayersBoard.fitBoard(S.locRoll, W.B68Map && W.B68Map.render, Object.assign({ seen: seen, view: built.view, kit1: P.kit1On(), leaks: P.leaks }, P.shadeOpt()), kept), svg = fit.svg;      /* IP7: P.shadeOpt(), {} while off */      /* too large: faces lighter, then name plates, oldest first, only as many as it takes */
+      plates = fit.svg ? fit.plates : 0; flatBoard = !!(fit.svg && fit.flat) || built.shadeCut === true;      /* IP7: the board's own toast says it, once per change */
       if (svg) built.board = built.score.board = svg; else dropped = kept.length > 0;
     };
     return setScoreScene({ map: pmu, seen: seen, ask: ask, pin: pin }).then(function (r) {
       if (r && dropped) toast('The board went up without its pins: with them it would name a hidden room, or be too large for the iPad.', true);
       if (r && S === me && S.locRoll) renderLocation();      /* the panel's word on the score scene (sceneBehind) is now the stored one */
-      return r ? { ok: true, refused: refused, waiting: waiting, pins: dropped ? 0 : kept.length, plates: plates } : null;
+      return r ? Object.assign({ ok: true, refused: refused, waiting: waiting, pins: dropped ? 0 : kept.length, plates: plates }, flatBoard ? { flat: true } : {}) : null;
     });
   }
   /* IP6b: the bands of the stored score scene when it is this roll's site, else null */

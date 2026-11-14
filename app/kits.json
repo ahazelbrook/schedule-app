@@ -4,11 +4,11 @@
     "maps": {
       "file": "maps/map-kit.js",
       "global": "B68Map",
-      "version": "1.1.0",
-      "bytes": 1055157,
-      "sha256": "332ad0b192c33198b9bd56e8fbdf24025081ba293df679a3a55e2fc83f9004ef",
-      "source": "Blades '68 kits build, map kit 1.1.0 (13/11/2026), design-system source; to be published",
-      "at": "2026-11-13"
+      "version": "1.2.0",
+      "bytes": 1089904,
+      "sha256": "2c6c384e426ffffb81466c8bbb4112e7e1b0ad0b227d59d55bd24f94f6eba486",
+      "source": "Blades '68 kits build, map kit 1.2.0 (13/11/2026), design-system source; to be published",
+      "at": "2026-11-14"
     },
     "figures": {
       "file": "figures/figure-kit.js",
@@ -17,7 +17,7 @@
       "bytes": 1135394,
       "sha256": "8c0ff7d940ea96056953be14bd87fa29330cddfb1b2883da49afda3adf1dad1b",
       "source": "Blades '68 kits build, figure kit 3.1.0 (13/11/2026), design-system source; to be published",
-      "at": "2026-11-13"
+      "at": "2026-11-14"
     }
   }
 }

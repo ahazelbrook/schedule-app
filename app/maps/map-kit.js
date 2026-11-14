@@ -1,4 +1,4 @@
-/*! Blades '68 map kit — B68Map. Built 2026-11-13 from src/. Rooms are the book's; geometry is [interpretation]. */
+/*! Blades '68 map kit — B68Map. Built 2026-11-14 from src/. Rooms are the book's; geometry is [interpretation]. */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) module.exports = factory();
   else root.B68Map = factory();
@@ -17,7 +17,7 @@ const M = {};
 // A THEME turns roles into paint. That is the whole trick that lets one plan
 // render as a rulebook plate, a blueprint, a case file or a heist board.
 
-M.VERSION = "1.1.0";     // 1.1: the stage layout, people and the crowd, lights, one room; 1.0 was the grand map
+M.VERSION = "1.2.0";     // 1.2: shade (furniture with a little depth), off by default; 1.1: the stage layout, people and the crowd, lights, one room; 1.0 was the grand map
 // A table looked up by a word from a roll or an option: its own entries only, so "__proto__",
 // "toString" or "constructor" find nothing (as any other unknown word does), never
 // Object.prototype's.
@@ -186,6 +186,7 @@ function attrs(o) {
 }
 function tfStr(tf) {
   if (!tf) return "";
+  if (tf.str) return tf.str;      // 1.2 shade: a solid drawn again over a person carries its floor's own transform
   let s = "";
   if (tf.x || tf.y) s += `translate(${n(tf.x || 0)} ${n(tf.y || 0)})`;
   if (tf.rot) s += ` rotate(${n(tf.rot)})`;
@@ -220,15 +221,21 @@ M.toSVG = function toSVG(pieces, theme, mode, bp) {
     let inBp = bp === true;
     if (!inBp && BP.ids) { const id = bpRoom(p); inBp = id !== null && BP.ids.has(id); }
     if (p.t === "g") {
+      if (p.noCast && mode === "shadow") continue;     // 1.2 shade: a solid casts its own shadow (shade.js), not its outline
+      if (p.soloPass && mode) continue;      // 1.2 shade: a solid among the walls is drawn in their first pass only
       if (inBp && /(^| )(furniture|icon)( |-|$)/.test(p.cls || "")) continue;
       const inner = toSVG(p.kids, theme, mode, inBp);
-      if (inner) out += `<g${attrs({ transform: tfStr(p.tf) || undefined, opacity: p.opacity, class: p.cls, "data-room": p.room, "data-know": inBp && !bp ? "blueprint" : undefined })}>${inner}</g>`;
+      if (inner) out += `<g${attrs({ id: p.gid, transform: tfStr(p.tf) || undefined, opacity: p.opacity, class: p.cls, "data-room": p.room, "data-know": inBp && !bp ? "blueprint" : undefined })}>${inner}</g>`;
       continue;
     }
     if (p.t === "raw") { if (mode !== "shadow") out += p.svg; continue; }
+    if (p.cast && mode !== "shadow") continue;            // 1.2 shade: a cast shadow is drawn in the shadow pass only
+    if (p.noCast && mode === "shadow") continue;
     let a = theme.paint(p.r, p, mode);
     if (a && inBp && mode !== "shadow") a = bpPaint(a, p);
     if (!a) continue;
+    if ((p.lineOnly && a.fill && a.fill !== "none") || (p.fillOnly && (!a.fill || a.fill === "none"))) continue;      // 1.2 shade: a hatch for linework themes, a highlight for filled ones
+    if (p.step && a.fill && mode !== "shadow") a.fill = M.shade.step(a.fill, p.step);      // 1.2 shade: a side face
     if (mode === "shadow") {
       if (a.fill && a.fill !== "none") a.fill = theme.shadowColour;
       if (a.stroke && a.stroke !== "none") a.stroke = theme.shadowColour;
@@ -4095,6 +4102,7 @@ function wallBoxes(lv, P0, hiddenAt, vx = 1, rec, gw) {      // gw: kit 1.0's { 
     const E1 = endB ? B : A, E2 = endB ? B2 : A2;
     pts.push(P.poly("walle-" + s.t, [P0(E1, 0), P0(E2, 0), P0(E2, h), P0(E1, h)], { dk: key, nrm: endB ? [dx / len, dy / len] : [-dx / len, -dy / len] }));
     pts.push(P.poly("wallt-" + s.t, [P0(A, h), P0(B, h), P0(B2, h), P0(A2, h)], { dk: key }));
+    { const ws = { A, B, A2, B2, h }; for (const q of pts) q.wseg = ws; }      // 1.2 shade: where each wall stands, for the solids (shade.js); never in the file
     boxes.push({ key, pieces: pts });
   }
   boxes.sort((p, q) => p.key - q.key);
@@ -4212,6 +4220,7 @@ ISO.wayTags = function (lv, lay, ctx) {
 // Build the parts for composePage, stacked bottom to top.
 ISO.build = function (lay, model, ctx) {
   const { k } = ctx;
+  if (M.shade.on(ctx.opts)) ctx.shadeReg = [];      // 1.2: the solids this build draws, for the people (shade.js)
   const order = lay.levels.slice().sort((a, b) => a.lvl - b.lvl);
   const shift = new Map(), zOf = new Map();
   order.forEach(lv => {
@@ -4300,6 +4309,10 @@ ISO.build = function (lay, model, ctx) {
     const walls = slab.concat(model.grand ? wallBoxes(lv, P0, hiddenAt, vx, drawnWalls, M.grand.wallOpts(lv, model, lit ? lit.winRole : null)) : wallBoxes(lv, P0, hiddenAt, vx, drawnWalls));
     if (lit) { layers.floors.push(...lit.pools); if (lit.shade) walls.unshift(lit.shade); }
     layers.walls = walls;
+    // (the plate stands its own pieces up: plate.js, its heroes)
+    // 1.2: furniture as low solids (shade.js), after the walls: a solid against a wall behind it is drawn among the walls,
+    // after that wall and before any in front of it; off: as ever
+    if (M.shade.on(ctx.opts) && ctx.opts.theme !== "plate") layers.furn = M.shade.isoFurn(layers.furn, vx, null, ctx.shadeReg || (ctx.shadeReg = []), { lv, tf: `translate(0 -0.9) ${mat}`, walls, lights: ctx.roomLights }, M.shade.line(ctx.opts));      // 1.2: furniture as low solids (shade.js); off: as ever
     // K2.5: one floor on the stage marks the way up and the way down at its stair core (ISO.wayTags)
     if (stage && ctx.drawn && order.length === 1) { const wt = ISO.wayTags(lv, lay, ctx); if (wt) layers.labels.push(wt); }
     // Icons and labels upright, at head height above their floor.
@@ -9016,7 +9029,7 @@ PP.draw = function (r, lay, model, ctx, solved) {
     }
   } else {
     // iso and plan: on each room's floor, every floor drawn; feet on a seeded scatter inside the room, clear of each other
-    const iso = view === "iso", T = ctx.toScreen, ins = M.scene.insideBy;
+    const iso = view === "iso", T = ctx.toScreen, ins = M.scene.insideBy, shReg = ctx.shadeReg && ctx.shadeReg.length ? ctx.shadeReg : null;
     const rectPts = f => G.rectPts({ x: f.cx - f.w / 2, y: f.cy - f.h / 2, w: f.w, h: f.h });
     for (const lv of lay.levels) for (const rm of lv.rooms) {
       const ps = byRoom.get(rm);
@@ -9033,8 +9046,9 @@ PP.draw = function (r, lay, model, ctx, solved) {
       for (let y = by0 + mg; y <= by1 - mg; y += step) for (let x = bx0 + mg; x <= bx1 - mg; x += step) {
         const px = x + (rng() - 0.5) * step * 0.6, py = y + (rng() - 0.5) * step * 0.6;
         if (!polys.some(P0 => ins(P0, px, py, mg) && (iso || ins(P0, px, py - hU, mg * 0.5)))) continue;
+        if (shReg && M.shade.blocked(shReg, lv, px, py, mg * 0.6)) continue;      // 1.2 shade: nobody stands in a solid
         const q = T(lv, px, py, 0);
-        cand.push({ x: q[0], y: q[1], r: rng() });
+        cand.push({ x: q[0], y: q[1], r: rng(), px, py });
       }
       if (!cand.length) continue;
       // keep people off the words the solver placed (the room's name or pin, tags, titles) where there is room
@@ -9045,7 +9059,7 @@ PP.draw = function (r, lay, model, ctx, solved) {
       const loose = cand.slice().sort((a, b) => (b.clear - a.clear) || a.r - b.r);
       const taken = [];
       const free = (c, w, h) => taken.every(t => Math.abs(t.x - c.x) >= (t.w + w) * 0.45 || Math.abs(t.y - c.y) >= Math.max(t.h, h) * 0.55);
-      const take = (p, f, list) => { const w = f.inner ? bodyW(f) : f.w; for (const c of list) if (free(c, w, f.h)) { taken.push({ x: c.x, y: c.y, w, h: f.h, p, f }); return true; } return false; };
+      const take = (p, f, list) => { const w = f.inner ? bodyW(f) : f.w; for (const c of list) if (free(c, w, f.h)) { taken.push({ x: c.x, y: c.y, w, h: f.h, p, f, c }); return true; } return false; };
       let over = 0;
       for (const p of ps.filter(p => !p.crowd)) { const f = figure(p, hU); if (f && !take(p, f, front)) over++; }
       if (over) {
@@ -9058,7 +9072,7 @@ PP.draw = function (r, lay, model, ctx, solved) {
       const cap = []; for (const c of loose) if (cap.every(q => Math.abs(q.x - c.x) >= wNom * 0.9 || Math.abs(q.y - c.y) >= hU * 0.55)) cap.push(c);
       const room = Math.max(0, Math.floor(cap.length * fill) - taken.length);
       for (const p of ps.filter(p => p.crowd).slice(0, room)) { const f = figure(p, hU); if (f) take(p, f, loose); }
-      for (const t of taken) if (t.p) drawn.push({ rm, p: t.p, f: t.f, x: t.x, y: t.y, lo: sx0, hi: sx1, top: sy0 - hU * 1.5 });
+      for (const t of taken) if (t.p) drawn.push({ rm, p: t.p, f: t.f, x: t.x, y: t.y, lo: sx0, hi: sx1, top: sy0 - hU * 1.5, lv, at: t.c });
     }
   }
   if (!drawn.length && !chips.length) return;
@@ -9067,7 +9081,14 @@ PP.draw = function (r, lay, model, ctx, solved) {
   const part = r.parts[0], ox = part.tf ? part.tf.x || 0 : 0, oy = part.tf ? part.tf.y || 0 : 0;
   const kids = [];
   const dim = d => view !== "section" && ctx.roomLights && ctx.roomLights.get(d.rm) === "dark" ? ` opacity="0.45"` : "";      // K2.5: a dark room's people dim (iso, plan)
-  for (const d of drawn) kids.push(P.raw(`<g class="map-person" data-room="${M.esc(d.rm.id)}" transform="translate(${ppF(d.x - ox)} ${ppF(d.y - oy)}) scale(${ppS(d.f.s)})"${dim(d)}>${d.f.inner}</g>`));
+  const shReg2 = view === "iso" && ctx.shadeReg && ctx.shadeReg.length ? ctx.shadeReg : null;
+  const shOver = shReg2 ? M.shade.overAll(shReg2, ctx.isoVx, drawn.map(d => d.at && !(ctx.roomLights && ctx.roomLights.get(d.rm) === "dark") ? { lv: d.lv, x: d.at.px, y: d.at.py, half: bodyW(d.f) / 2 / (Math.SQRT2 * Math.cos(Math.PI / 6)), feet: d.y, head: d.y - d.f.h, x0: d.x - bodyW(d.f) / 2, x1: d.x + bodyW(d.f) / 2 } : null), ctx.toScreen) : null;
+  for (const d of drawn) {
+    kids.push(P.raw(`<g class="map-person" data-room="${M.esc(d.rm.id)}" transform="translate(${ppF(d.x - ox)} ${ppF(d.y - oy)}) scale(${ppS(d.f.s)})"${dim(d)}>${d.f.inner}</g>`));
+    // 1.2 shade: a solid standing in front of this person is drawn again over them (shade.js; not in a dark room, where both are
+    // dim shapes under its shade); off: nothing here
+    if (shOver) kids.push(...M.shade.overPerson(shOver[drawn.indexOf(d)], -ox, -oy, ctx.shadeSid, shReg2));
+  }
   // A marked person carries a flag over the head: a stem and a pill with the mark's letters at the type floor, in the tone's
   // colour (the letters, not the colour, say who it is). Flags never sit under a word the solver placed or under another flag:
   // each tries the spots beside and above its head, nearest first, and people standing together fan out. Kept on the drawing.
@@ -9127,6 +9148,421 @@ PP.draw = function (r, lay, model, ctx, solved) {
   }
   part.layers.labels.unshift(P.g(kids, { cls: "map-people" }));
   opts._people = drawn.map(d => ({ room: d.rm.name, mark: d.p.mark || null, x: +d.x.toFixed(2), y: +d.y.toFixed(2), h: +d.f.h.toFixed(2) }));
+};
+
+// ---- src/shade.js ----
+// =============================================================================
+// shade — furniture with a little depth (opts.shade: true, since 1.2)
+// =============================================================================
+// Off by default: without it nothing here runs and every file is what 1.1 drew.
+// With it, in the iso each piece of room furniture becomes a low solid: its own
+// drawing lifted to a top face, two side faces (lit and in shade: a lighter and a
+// darker step of the piece's own paint, never a new hue) and a short hard cast
+// shadow on the floor. One light for the drawing: the kit's key (M.light.planKey,
+// the plate's sun), from the front left. Heights by kind (SH.H), modest: a table
+// lower than a bar, a shelf taller than a desk, nothing near a wall's height.
+// Paint only: this module never moves a piece, and draws nothing the flat drawing
+// did not (a room the copy does not know has no furniture, so no solid).
+
+const SH = M.shade = {};
+
+// feet of height by part; 0 = stays flat on the floor (rugs, water, stairs, cages, things overhead)
+SH.H = {
+  chair: 0.8, stool: 0.8, armchair: 1.2, "bubble-chair": 1.4, sofa: 1.2, "sofa-curve": 1.2, table: 1.1, "table-round": 1.1, "table-long": 1.4,
+  booth: 1.4, "coffee-table": 0.7, rug: 0, desk: 1.5, "desk-big": 1.5, "typing-desk": 1.5, filing: 2.4, shelf: 3, bookcase: 3.2, counter: 1.9,
+  bar: 2.1, workbench: 1.7, console: 1.7, "monitor-wall": 3.2, computer: 2.2, chalkboard: 3, lockers: 3.2, bed: 1, "bed-round": 1, bunk: 2.4,
+  wardrobe: 3.2, stove: 1.5, sink: 1.5, "kitchen-run": 1.8, "toilet-stall": 3, bath: 1, piano: 1.6, plant: 1.6, planter: 1.2, lounger: 0.7,
+  pool: 0, hedge: 1.8, topiary: 2, sculpture: 2.8, fireplace: 2.2, chandelier: 0, column: 4.4, "display-case": 1.8, frame: 0, trunk: 1,
+  crate: 1.6, pallet: 0.8, barrel: 1.6, "wine-rack": 2.4, slots: 2.8, roulette: 1.5, "card-table": 1.5, "dice-table": 1.6, stage: 0.8,
+  "dance-floor": 0, screen: 3.6, "seat-row": 0.7, "seat-row-curved": 0.7, "dj-booth": 1.7, "record-player": 1.4, plasmovision: 2, billiards: 1.5,
+  "vault-door": 4, "deposit-wall": 3.6, safe: 2.2, "cash-cart": 1.6, "count-table": 1.5, "teller-counter": 2, "queue-rope": 0, cell: 0,
+  "evidence-cage": 0, conveyor: 1.4, machine: 2.4, boiler: 3, tank: 3, "pipe-run": 1, transformer: 2.6, "washer-row": 1.6, autopod: 1.8,
+  "car-lift": 0, boat: 0, water: 0, forklift: 2, "lab-bench": 1.7, apparatus: 2.2, "cryo-tank": 3, dummy: 2.6, trefoil: 0, "hazard-strip": 0,
+  stairs: 0, "stairs-grand": 0, "stairs-spiral": 0, lift: 0, ladder: 0, skylight: 0, hatch: 0, catwalk: 0, "fire-escape": 0, "area-steps": 0,
+  balcony: 0, "roof-hatch": 0, orb: 1.4, mirror: 0, flame: 0, tree: 3.4, snow: 0, void: 0, doorframe: 0
+};
+SH.SEAT = 0;            // a chair beside a table (a small dark shape beside the body): 0 leaves it flat on the floor, so a table and its chairs keep their plan shape at a distance; > 0 stands it up this high
+SH.CAST = 0.4;          // the cast shadow's length per foot of height, along the key's shadow
+
+SH.heightOf = kind => { const h = M.own(SH.H, kind); return h == null ? 1.4 : h; };
+SH.on = opts => !!opts && opts.shade === true;
+// a linework theme: no fills (blueprint, and the board on its default blueprint sheet)
+SH.line = opts => opts.theme === "blueprint" || (opts.theme === "board" && (opts.sheet || "blueprint") === "blueprint");
+
+// --- affine helpers: [a b c d e f] as SVG's matrix ---
+const shMul = (A, B) => [A[0] * B[0] + A[2] * B[1], A[1] * B[0] + A[3] * B[1], A[0] * B[2] + A[2] * B[3], A[1] * B[2] + A[3] * B[3], A[0] * B[4] + A[2] * B[5] + A[4], A[1] * B[4] + A[3] * B[5] + A[5]];
+const shTf = tf => {
+  if (!tf) return [1, 0, 0, 1, 0, 0];
+  let m = [1, 0, 0, 1, tf.x || 0, tf.y || 0];
+  if (tf.rot) { const r = tf.rot * Math.PI / 180, c = Math.cos(r), s = Math.sin(r); m = shMul(m, [c, s, -s, c, 0, 0]); }
+  if (tf.s && tf.s !== 1) m = shMul(m, [tf.s, 0, 0, tf.s, 0, 0]);
+  if (tf.sx && tf.sx !== 1) m = shMul(m, [tf.sx, 0, 0, 1, 0, 0]);
+  return m;
+};
+const shAp = (m, p) => [m[0] * p[0] + m[2] * p[1] + m[4], m[1] * p[0] + m[3] * p[1] + m[5]];
+const shRot = (deg, v) => { const r = -(deg || 0) * Math.PI / 180, c = Math.cos(r), s = Math.sin(r); return [c * v[0] - s * v[1], s * v[0] + c * v[1]]; };
+
+// the points of a path's d (its end points; an arc's bulge is left out: a footprint, not a drawing)
+function shPathPts(d) {
+  const tok = String(d).match(/[a-zA-Z]|-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?/g) || [], out = [];
+  let i = 0, cmd = "M", x = 0, y = 0, sx = 0, sy = 0;
+  const num = () => +tok[i++];
+  const N = { M: 2, L: 2, T: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, A: 7, Z: 0 };
+  while (i < tok.length) {
+    if (/[a-zA-Z]/.test(tok[i])) { cmd = tok[i++]; if (/z/i.test(cmd)) { x = sx; y = sy; continue; } }
+    const U = cmd.toUpperCase(), rel = cmd !== U, n = N[U];
+    if (!n || i + n > tok.length) break;
+    const v = []; for (let j = 0; j < n; j++) v.push(num());
+    if (v.some(q => !Number.isFinite(q))) break;
+    if (U === "H") x = (rel ? x : 0) + v[0];
+    else if (U === "V") y = (rel ? y : 0) + v[0];
+    else { const ex = v[n - 2], ey = v[n - 1]; x = (rel ? x : 0) + ex; y = (rel ? y : 0) + ey; }
+    if (U === "M") { sx = x; sy = y; cmd = rel ? "l" : "L"; }
+    out.push([x, y]);
+  }
+  return out;
+}
+const shRing = (cx, cy, rx, ry) => { const o = [], k = Math.max(rx, ry) < 1 ? 8 : 12; for (let i = 0; i < k; i++) { const a = i * 2 * Math.PI / k; o.push([cx + Math.cos(a) * rx, cy + Math.sin(a) * ry]); } return o; };
+// the outline points of one piece of a part, in the part's own coordinates (null: a stroke or a word: no footprint)
+function shPts(p, m) {
+  if (!p) return null;
+  let pts = null;
+  if (p.t === "rect") pts = [[p.x, p.y], [p.x + p.w, p.y], [p.x + p.w, p.y + p.h], [p.x, p.y + p.h]];
+  else if (p.t === "circle") pts = shRing(p.cx, p.cy, p.rad, p.rad);
+  else if (p.t === "ellipse") pts = shRing(p.cx, p.cy, p.rx, p.ry);
+  else if (p.t === "poly") pts = p.pts;
+  else if (p.t === "path") pts = shPathPts(p.d);
+  else if (p.t === "g") { const mm = shMul(m || [1, 0, 0, 1, 0, 0], shTf(p.tf)); const all = []; for (const k of p.kids || []) { const q = shPts(k, mm); if (q) all.push(...q); } return all.length >= 3 ? all : null; }
+  if (!pts || pts.length < 3) return null;
+  if (p.tf) pts = pts.map(q => shAp(shTf(p.tf), q));
+  return m ? pts.map(q => shAp(m, q)) : pts;
+}
+// the convex hull (monotone chain), counter-clockwise in a y-down plan
+function shHull(pts) {
+  const P2 = pts.filter(q => Number.isFinite(q[0]) && Number.isFinite(q[1])).map(q => [q[0], q[1]]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (P2.length < 3) return P2;
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], hi = [];
+  for (const p of P2) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 1e-9) lo.pop(); lo.push(p); }
+  for (let i = P2.length - 1; i >= 0; i--) { const p = P2[i]; while (hi.length >= 2 && cr(hi[hi.length - 2], hi[hi.length - 1], p) <= 1e-9) hi.pop(); hi.push(p); }
+  return lo.slice(0, -1).concat(hi.slice(0, -1));
+}
+const shArea = h => h.length < 3 ? 0 : G.area(h);
+const shR = v => Math.round(v * 100) / 100;
+
+const shN = v => { const r = Math.round(v * 10) / 10; return (r === 0 ? 0 : r).toString(); };
+const shD = pts => "M" + pts.map(q => shN(q[0]) + " " + shN(q[1])).join(" ") + "Z";
+
+// One piece (a part's group: cls "fx-<part>") as solids, in the coordinates its parent draws it in.
+// E: { up(h) → the offset that lifts a thing h ft (screen-up), V: toward the viewer, F: toward the key, S: the shadow per ft }
+// → { casts: [pts], prisms: [{ depth, pts, h, kids, rim, solid }] }, or null: flat. A prism's kids are its side faces (a path
+// per tone), a sparse hatch on its shade face (for a linework theme only) and its top (the piece's own shapes, lifted).
+// rim: the top's visible edge as a thin strip, drawn (SH.isoFurn) only where solids stand close; solid: false for the seats.
+SH.piece = function (pg, E) {
+  const kind = ((pg.cls || "").match(/(?:^| )fx-([\w-]+)/) || [])[1];
+  const H = SH.heightOf(kind);
+  if (!kind || !(H > 0) || !pg.kids || !pg.kids.length) return null;
+  const m = shTf(pg.tf);
+  const items = pg.kids.map(k => { const loc = shPts(k, null); return { k, loc: loc ? shHull(loc) : null }; });
+  let body = null;
+  for (const it of items) if (it.loc && (!body || shArea(it.loc) > shArea(body.loc))) body = it;
+  if (!body || shArea(body.loc) < 0.05) return null;
+  const bA = shArea(body.loc), bx = body.loc.map(q => q[0]), by = body.loc.map(q => q[1]);
+  const B = { x0: Math.min(...bx) - 0.05, x1: Math.max(...bx) + 0.05, y0: Math.min(...by) - 0.05, y1: Math.max(...by) + 0.05 };
+  // the body is the biggest shape; what lies on it is its top's detail; a shape beside it as big as half of it is a solid of its
+  // own (a row of machines); a small dark one beside it (a chair at a table, fx3) is a seat, a low solid; other small ones beside it
+  // stay flat on the floor, unless together they are as big as the body (a bank of machines round its spine): then the piece is one block
+  let prisms = [{ h: H, kids: [], locs: [body.loc] }];
+  const seats = [], others = [];
+  for (const it of items) {
+    if (it === body) { prisms[0].kids.push(it.k); continue; }
+    const c = it.loc ? it.loc.reduce((s, q) => [s[0] + q[0] / it.loc.length, s[1] + q[1] / it.loc.length], [0, 0]) : null;
+    if (!it.loc || (c[0] >= B.x0 && c[0] <= B.x1 && c[1] >= B.y0 && c[1] <= B.y1)) { prisms[0].kids.push(it.k); continue; }
+    if (shArea(it.loc) >= 0.5 * bA) prisms.push({ h: H, kids: [it.k], locs: [it.loc] }); else if (it.k.r === "fx3") seats.push(it); else others.push(it);
+  }
+  const floor = [];
+  if (others.reduce((a, it) => a + shArea(it.loc), 0) >= 0.6 * bA) { prisms[0].kids.push(...others.map(it => it.k)); prisms[0].locs = [shHull(body.loc.concat(...others.map(it => it.loc)))]; }
+  else floor.push(...others.map(it => it.k));
+  // a row of like shapes (seats, machines, washers) is one long block, not a solid each
+  if (prisms.length > 3) { const all = []; for (const p of prisms) for (const l of p.locs) all.push(...l); prisms = [{ h: H, kids: pg.kids.filter(k => !seats.some(s => s.k === k) && !floor.includes(k)), locs: [shHull(all)] }]; }
+  const tf = pg.tf || {}, dOf = pts => { const c = pts.reduce((s, q) => [s[0] + q[0] / pts.length, s[1] + q[1] / pts.length], [0, 0]); return c[0] * E.V[0] + c[1] * E.V[1]; };
+  // the seats: those behind the body in one low solid, those in front in another (each a few shapes at one height)
+  if (seats.length && (E.line || !(SH.SEAT > 0))) floor.push(...seats.map(it => it.k));      // the seats stay on the floor (linework: always)
+  else if (seats.length) {
+    const hs = Math.min(H, SH.SEAT), bd = dOf(body.loc.map(q => shAp(m, q)));
+    const back = seats.filter(s => dOf(s.loc.map(q => shAp(m, q))) < bd), front = seats.filter(s => !back.includes(s));
+    for (const g of [back, front]) if (g.length) prisms.push({ h: hs, kids: g.map(s => s.k), locs: g.map(s => s.loc), seat: true });
+  }
+  // a solid whose top a wall behind it would hide (walls are drawn after the furniture) is drawn among the walls instead, after
+  // that wall (SH.isoFurn); where it cannot be (a wall in front in the way, or a lit room), it is kept low enough to be seen,
+  // or left flat: a monitor wall or a shelf against a far wall never sinks behind it
+  if (E.wall) prisms = prisms.filter(pr => {
+    const w = [];
+    for (const loc of pr.locs) for (const q of shHull(loc.map(v => shAp(m, v)))) w.push(shAp(E.fm, q));
+    const r = E.wall(w, pr.h);
+    pr.at = r.at; pr.h = r.h;
+    if (pr.h >= 0.3) return true;
+    floor.push(...pr.kids); return false;
+  });
+  if (!prisms.length) return floor.length && floor.length < pg.kids.length ? { floor: P.g(floor, { tf: pg.tf, opacity: pg.opacity }), casts: [], prisms: [] } : null;
+  const casts = [], out = [];
+  prisms.forEach((pr, pi) => {
+    const o = E.up(pr.h), sv = [E.S[0] * pr.h * SH.CAST, E.S[1] * pr.h * SH.CAST], role = pr.kids[0].r || "fx";
+    const tones = { 1: [], "-1": [] }, line = [], all = [];
+    let rim = null;
+    for (const loc of pr.locs) {
+      const pts = shHull(loc.map(q => shAp(m, q))), n = pts.length;
+      all.push(...pts);
+      const c = pts.reduce((s, q) => [s[0] + q[0] / n, s[1] + q[1] / n], [0, 0]);
+      if (!pr.seat) casts.push(shHull(pts.concat(pts.map(q => [q[0] + sv[0], q[1] + sv[1]]))));
+      // each visible edge, lit or in shade; a run of one tone is one face
+      const tone = [];
+      for (let i = 0; i < n; i++) {
+        const a = pts[i], b = pts[(i + 1) % n], dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+        let nx = dy / l, ny = -dx / l;
+        if (nx * ((a[0] + b[0]) / 2 - c[0]) + ny * ((a[1] + b[1]) / 2 - c[1]) < 0) { nx = -nx; ny = -ny; }
+        tone.push(nx * E.V[0] + ny * E.V[1] <= 0.02 ? 0 : pr.seat ? 1 : (nx * E.F[0] + ny * E.F[1] > 0.3 ? 1 : -1));      // a seat: one face, in shade
+      }
+      // the visible edge as one run (its first point where an unseen edge ends): for the rim and the linework
+      const vs = tone.findIndex((t, i) => t !== 0 && tone[(i - 1 + n) % n] === 0), vis = [], vt = [];
+      if (vs >= 0) { let j = vs; vis.push(pts[j]); while (tone[j] !== 0 && vis.length <= n) { vt.push(tone[j]); j = (j + 1) % n; vis.push(pts[j]); } }
+      if (vis.length > 1) {
+        // linework (SH.isoFurn, line): the outline of the visible sides and top edge, the vertical where lit meets shade, and a
+        // sparse hatch of verticals on the shade face
+        line.push(shD(vis.concat(vis.slice().reverse().map(q => [q[0] + o[0], q[1] + o[1]]))));
+        const vl = (q, f) => "M" + shN(q[0]) + " " + shN(q[1]) + " " + shN(q[0] + o[0] * f) + " " + shN(q[1] + o[1] * f);
+        for (let j = 1; j < vt.length; j++) if (vt[j] !== vt[j - 1]) line.push(vl(vis[j], 1));
+        for (let j = 0; j < vt.length; j++) if (vt[j] < 0) {
+          const a = vis[j], b = vis[j + 1], l = Math.hypot(b[0] - a[0], b[1] - a[1]), k = Math.floor(l / 1.6);
+          for (let q = 1; q <= k; q++) line.push(vl([a[0] + (b[0] - a[0]) * q / (k + 1), a[1] + (b[1] - a[1]) * q / (k + 1)], 1));
+        }
+      }
+      let start = tone.findIndex((t, i) => t !== tone[(i - 1 + n) % n]);
+      if (start < 0) start = 0;
+      for (let s = 0; s < n;) {
+        const t = tone[(start + s) % n];
+        let e = s; while (e + 1 < n && tone[(start + e + 1) % n] === t) e++;
+        if (t) {
+          const run = []; for (let j = s; j <= e + 1; j++) run.push(pts[(start + j) % n]);
+          tones[t].push(shD(run.concat(run.slice().reverse().map(q => [q[0] + o[0], q[1] + o[1]]))));
+        }
+        s = e + 1;
+      }
+      // the rim: the top's whole visible edge (lit and shade runs together), a thin strip inside the top
+      if (!pr.seat && pr.locs.length === 1) {
+        if (vis.length > 1) {
+          const run = vis;
+          const ext = Math.sqrt(shArea(pts)), w = Math.min(0.3, ext * 0.1);
+          const inn = run.map(q => { const dx = c[0] - q[0], dy = c[1] - q[1], l = Math.hypot(dx, dy) || 1; return [q[0] + o[0] + dx / l * w, q[1] + o[1] + dy / l * w]; });
+          rim = P.path(role, shD(run.map(q => [q[0] + o[0], q[1] + o[1]]).concat(inn.reverse())), { step: 1, fillOnly: true });
+        }
+      }
+    }
+    const kids = [];
+    for (const t of [1, -1]) if (tones[t].length) kids.push(P.path(role, tones[t].join(""), { step: t }));
+    kids.push(P.g(pr.kids, { tf: { x: shR((tf.x || 0) + o[0]), y: shR((tf.y || 0) + o[1]), rot: tf.rot, s: tf.s, sx: tf.sx }, cls: pi ? undefined : pg.cls, opacity: pg.opacity }));
+    const pts = shHull(all);
+    out.push({ depth: dOf(pts), pts, h: pr.h, kids, rim, solid: !pr.seat, seat: !!pr.seat, line: line.join(""), at: pr.at });
+  });
+  return { floor: floor.length ? P.g(floor, { tf: pg.tf, opacity: pg.opacity }) : null, casts, prisms: out };
+};
+
+// The iso's furniture layer with every room's pieces as solids. vx: the iso's corner; L: the drawing's light (or null);
+// reg (optional): an array that gets every solid drawn ({ lv, ltf, ftf, foot, h, kids, host, seat }) for the people (SH.blocked,
+// SH.occluders); at: { lv, tf, walls, lights }: the floor, its furniture layer's transform, its walls as drawn (each piece
+// carrying the wall it belongs to, wseg) and the rooms' lights.
+// Per furnished frame: the cast shadows as one path (drawn in the theme's shadow pass only), what stays flat, then each solid
+// back to front, its side faces and then its top: a taller piece close in front of a lower one covers it as it should.
+// Walls are drawn after the furniture: a solid standing close in front of a wall would sink behind it. Such a solid is drawn
+// among the walls instead, right after the last wall behind it, when no wall in front of it comes before that; else (and in a
+// room with a light, whose shade lies under the walls) it is kept lower than the wall would hide, or left flat.
+SH.LIFT = 0.9;          // the furniture layer's own lift on the page (iso.js: translate(0 -0.9))
+SH.isoFurn = function (furn, vx, L, reg, at, line) {
+  const pk = M.light.planKey(L, vx), s = Math.hypot(pk.shadow[0], pk.shadow[1]) || 1;
+  const W = { V: [vx / Math.SQRT2, 1 / Math.SQRT2], F: pk.from, S: [pk.shadow[0] / s, pk.shadow[1] / s] };
+  // the walls as runs of pieces (one per wall box), in drawing order
+  const segs = [];
+  if (at && at.walls) { let cur = null; at.walls.forEach((p, i) => { if (p && p.wseg) { if (!cur || cur.w !== p.wseg) segs.push(cur = { w: p.wseg, first: i, last: i }); else cur.last = i; } }); }
+  const lit = room => { const rm = at && at.lv && at.lv.rooms ? at.lv.rooms.find(r => r.id === room) : null, l = rm && at.lights ? at.lights.get(rm) : null; return l === "dark" || l === "bright"; };
+  const probe = (pts, h) => {
+    const smp = pts.slice(); for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; smp.push([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]); }
+    let behind = -1, tmin = Infinity, front = Infinity;
+    for (const sg of segs) {
+      for (const p of smp) {
+        const tb = shRay(p, [-vx, -1], sg.w.A, sg.w.B);
+        if (tb != null && tb < h + SH.LIFT) { behind = Math.max(behind, sg.last); tmin = Math.min(tmin, tb); }
+        const tf = shRay(p, [vx, 1], sg.w.A2, sg.w.B2);
+        if (tf != null && tf <= sg.w.h) front = Math.min(front, sg.first);
+      }
+    }
+    return { behind, front, tmin };
+  };
+  const env = (rot, fg, wall) => ({ line: !!line, V: shRot(rot, W.V), F: shRot(rot, W.F), S: shRot(rot, W.S), up: h => shRot(rot, [-vx * h, -h]), fm: shTf(fg.tf), wall });
+  const moved = [];
+  const frame = fg => {
+    if (!fg || fg.t !== "g" || !fg.kids) return fg;
+    // a room's solids move among the walls together (so they still sort with each other), after the last wall behind any of
+    // them, when that comes before every wall in front of any of them and the room has no light; else each one a wall would
+    // hide is kept low enough to be seen
+    const run = wall => { const E = env(fg.tf && fg.tf.rot, fg, wall), r = { flat: [], casts: [], prisms: [] };
+      for (const pg of fg.kids) { const q = pg && pg.t === "g" ? SH.piece(pg, E) : null; if (!q) { r.flat.push(pg); continue; } if (q.floor) r.flat.push(q.floor); r.casts.push(...q.casts); r.prisms.push(...q.prisms); }
+      return r; };
+    const log = [];
+    let R = run(segs.length ? (w, h) => { log.push(probe(w, h)); return { h, at: null }; } : null);
+    const need = log.filter(q => q.behind >= 0);
+    if (need.length) {
+      const behind = Math.max(...need.map(q => q.behind)), front = Math.min(...log.map(q => q.front));
+      if (front > behind && !lit(fg.room)) for (const p of R.prisms) p.at = behind + 1;
+      else R = run((w, h) => { const q = probe(w, h); return { h: q.behind < 0 ? h : Math.min(h, Math.max(0, q.tmin - SH.LIFT - 0.1)), at: null }; });
+    }
+    const flat = R.flat, casts = R.casts, prisms = R.prisms;
+    if (!prisms.length) return flat.length === fg.kids.length && flat.every((q, i) => q === fg.kids[i]) ? fg : Object.assign({}, fg, { kids: flat });
+    prisms.sort((a, b) => a.depth - b.depth);
+    // every solid's top carries a rim a step lighter along its visible edge: the top reads as a top, apart from its sides, and
+    // racks standing in close rows still read as rows, not one dark block
+    for (const p of prisms) if (p.rim) p.kids = p.kids.concat(p.rim);
+    // linework (no fills) draws the solids' faces as their outlines (p.line), one path per frame
+    const solid = [];
+    if (line) { const d = prisms.map(p => p.line).filter(Boolean).join(""); if (d) solid.push(P.path("fx", d)); for (const p of prisms) solid.push(...p.kids.filter(q => q.t !== "path")); }
+    else for (const p of prisms) solid.push(...p.kids);
+    const fm = shTf(fg.tf), bp = BP.ids && BP.ids.has(fg.room), mv = prisms[0].at != null;
+    if (reg && !bp) for (const p of prisms) reg.push({ lv: at && at.lv, ltf: at && at.tf, ftf: fg.tf, room: fg.room, line: !!line, host: solid, foot: p.pts.map(q => shAp(fm, q)), h: p.h, kids: line ? p.kids.filter(q => q.t !== "path") : p.kids, seat: p.seat, moved: mv });
+    const base = [P.path("fx3", casts.map(shD).join(""), { cast: true })].concat(flat);
+    // the room's solids drawn among the walls: one group, in the furniture layer's transform and its frame's
+    if (mv) { moved.push({ at: prisms[0].at, depth: prisms[prisms.length - 1].depth, g: P.g([P.g([P.g(solid, {})], { tf: fg.tf, cls: "furniture", room: fg.room })], { tf: { str: at.tf }, soloPass: true, noCast: true }) }); return Object.assign({}, fg, { kids: base }); }
+    return Object.assign({}, fg, { kids: base.concat(solid.length ? [P.g(solid, { noCast: true })] : []) });
+  };
+  const out = furn.map(g => g && g.t === "g" && g.cls === "room-furniture" ? Object.assign({}, g, { kids: g.kids.map(frame) }) : g);
+  // into the walls, back to front at each place, the later places first so the earlier indices hold
+  if (moved.length && at && at.walls) {
+    const by = new Map();
+    for (const m of moved) { if (!by.has(m.at)) by.set(m.at, []); by.get(m.at).push(m); }
+    for (const i of [...by.keys()].sort((a, b) => b - a)) at.walls.splice(i, 0, ...by.get(i).sort((a, b) => a.depth - b.depth).map(m => m.g));
+  }
+  return out;
+};
+// a ray from p along d: the t (in steps of d) where it crosses the segment A–B, or null
+function shRay(p, d, A, B) {
+  const ex = B[0] - A[0], ey = B[1] - A[1], det = -d[0] * ey + d[1] * ex;
+  if (Math.abs(det) < 1e-9) return null;
+  const qx = A[0] - p[0], qy = A[1] - p[1];
+  const t = (-qx * ey + qy * ex) / det, u = (d[0] * qy - d[1] * qx) / det;
+  return u >= -1e-6 && u <= 1 + 1e-6 && t > 1e-6 ? t : null;
+}
+
+const shIn = (pts, x, y) => { let c = false; for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) { const a = pts[i], b = pts[j]; if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
+const shNear = (pts, x, y) => { let d = Infinity; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / l2)); d = Math.min(d, Math.hypot(x - a[0] - t * dx, y - a[1] - t * dy)); } return d; };
+// Does a person's standing spot (plan x, y on floor lv) fall on a solid, or within pad ft of one? (people.js, shade on only)
+SH.blocked = function (reg, lv, x, y, pad) {
+  for (const s of reg) if (s.lv === lv && (shIn(s.foot, x, y) || shNear(s.foot, x, y) < pad)) return true;
+  return false;
+};
+// in front (sgn 1) or behind (sgn -1): some point of the footprint lies toward the viewer from the feet (or away), within the
+// body's width across the view (U: the plan direction that is the screen's x)
+const shVU = vx => ({ V: [vx / Math.SQRT2, 1 / Math.SQRT2], U: [1 / Math.SQRT2, -vx / Math.SQRT2] });
+function shSide(s, V, U, at, half, sgn) {
+  const n = s.foot.length;
+  for (let i = 0; i < n; i++) {
+    const a = s.foot[i], b = s.foot[(i + 1) % n];
+    for (let k = 0; k <= 4; k++) {
+      const q = [a[0] + (b[0] - a[0]) * k / 4 - at.x, a[1] + (b[1] - a[1]) * k / 4 - at.y];
+      if (Math.abs(q[0] * U[0] + q[1] * U[1]) <= half && sgn * (q[0] * V[0] + q[1] * V[1]) > 0) return true;
+    }
+  }
+  return false;
+}
+// The solids that stand in front of a person and cover part of them: each drawn again over the person, in the people's own
+// coordinates (the floor's furniture transform). vx: the iso's corner; at: { lv, x, y } the feet on the plan; half: the body's
+// half-width in plan ft across the view; T: ctx.toScreen; feetY, headY: the person's screen rows.
+SH.occluders = function (reg, vx, at, half, T, feetY, headY) {
+  const { V, U } = shVU(vx), out = [];
+  for (const s of reg) {
+    if (s.lv !== at.lv || s.line || s.seat) continue;      // linework hides nothing; a seat is too low to matter
+    if (!shSide(s, V, U, at, half, 1)) continue;
+    // and its top rises over the feet's row on the screen, below the head
+    let top = Infinity;
+    for (const q of s.foot) top = Math.min(top, T(at.lv, q[0], q[1], s.h)[1]);
+    if (top >= feetY) continue;
+    out.push(s);
+  }
+  return out;
+};
+// the occluders as pieces in the people's group (screen coordinates): one group per floor transform
+// The solid itself is given an id where it stands in the furniture layer (its pieces wrapped in one group) and drawn again by
+// reference: <use href="#id"/>, a few bytes however much the piece holds. sid: the render's id prefix.
+SH.overPerson = (list, dx, dy, sid, reg) => list.map(s => {
+  if (!s.gid && s.host && sid && reg) {
+    const i = s.host.indexOf(s.kids[0]);
+    if (i >= 0) { const ks = s.kids.slice(); s.gid = sid + "-o" + (reg.oN = (reg.oN || 0) + 1).toString(36); s.host.splice(i, ks.length, P.g(ks, { gid: s.gid })); s.kids = ks; }
+  }
+  const body = s.gid ? [P.raw(`<use href="#${s.gid}"/>`)] : s.kids;
+  return P.g([P.g([P.g(body, { tf: s.ftf })], { tf: { str: s.ltf } })], { tf: dx || dy ? { x: dx, y: dy } : undefined, cls: "map-occluder" });
+});
+
+// paint: a side face's step (toSVG, p.step): lit is the paint a step toward the paper, shade a step toward the ink
+SH.step = function (fill, step) {
+  if (typeof fill !== "string" || !/^#[0-9a-f]{6}$/i.test(fill)) return fill;
+  const T = M.TOKENS, to = step > 0 ? T.paper000 : T.ink900, t = step > 0 ? 0.32 : 0.28;
+  const A = [1, 3, 5].map(i => parseInt(fill.slice(i, i + 2), 16)), Bc = [1, 3, 5].map(i => parseInt(to.slice(i, i + 2), 16));
+  let out = A.map((v, i) => Math.round(v + (Bc[i] - v) * t));
+  // a near-black paint has no darker token: its shade is the ink, its lit side a clear step up
+  if (step < 0 && out.reduce((a, b) => a + b, 0) > A.reduce((a, b) => a + b, 0) - 12) out = A.map(v => Math.round(v * 0.72));
+  return "#" + out.map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, "0")).join("");
+};
+
+// The plan's furniture layer with depth: the theme's hard drop shadow down and to the right stays as it is (it is already one),
+// and each solid piece's body carries a thin highlight along its up-left edges, a step lighter than its own paint, drawn inside
+// the piece (so a theme that leaves a piece out, the plate, leaves its highlight out too). No sides: the plan is seen from
+// straight above. A linework theme draws no highlight (fillOnly). reg/lv as SH.isoFurn (people stand off the solids).
+SH.planFurn = function (furn, reg, lv, line) {
+  const frame = fg => {
+    if (!fg || fg.t !== "g" || !fg.kids) return fg;
+    const fm = shTf(fg.tf), bp = BP.ids && BP.ids.has(fg.room);
+    let any = false;
+    const kids = fg.kids.map(pg => {
+      const kind = pg && pg.t === "g" ? ((pg.cls || "").match(/(?:^| )fx-([\w-]+)/) || [])[1] : null, H = kind ? SH.heightOf(kind) : 0;
+      if (!(H > 0) || !pg.kids) return pg;
+      let body = null;
+      for (const k of pg.kids) { const loc = shPts(k, null); if (loc) { const h = shHull(loc); if (!body || shArea(h) > shArea(body.h)) body = { k, h }; } }
+      if (!body || shArea(body.h) < 0.05) return pg;
+      const m = shTf(pg.tf), pts = body.h, n = pts.length, c = pts.reduce((s, q) => [s[0] + q[0] / n, s[1] + q[1] / n], [0, 0]);
+      if (reg && !bp) reg.push({ lv, foot: shHull(pts.map(q => shAp(fm, shAp(m, q)))), h: H });
+      // up-left on the page, in the piece's own coordinates (its frame's and its own turn undone; a mirror flips x)
+      const tf = pg.tf || {}, UL = shRot((tf.rot || 0) + ((fg.tf && fg.tf.rot) || 0), [-Math.SQRT1_2, -Math.SQRT1_2]);
+      if (tf.sx && tf.sx < 0) UL[0] = -UL[0];
+      const w = Math.min(0.22, Math.sqrt(shArea(pts)) * 0.06) / ((tf.s && tf.s > 0) ? tf.s : 1), d = [];
+      for (let i = 0; i < n; i++) {
+        const a = pts[i], b = pts[(i + 1) % n], dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+        let nx = dy / l, ny = -dx / l;
+        if (nx * ((a[0] + b[0]) / 2 - c[0]) + ny * ((a[1] + b[1]) / 2 - c[1]) < 0) { nx = -nx; ny = -ny; }
+        if (nx * UL[0] + ny * UL[1] <= 0.3 || l < 0.3) continue;
+        d.push(shD([a, b, [b[0] - nx * w, b[1] - ny * w], [a[0] - nx * w, a[1] - ny * w]]));
+      }
+      if (!d.length || line) return pg;
+      any = true;
+      return Object.assign({}, pg, { kids: pg.kids.concat(P.path(body.k.r || "fx", d.join(""), { step: 1, noCast: true, fillOnly: true })) });
+    });
+    return any ? Object.assign({}, fg, { kids }) : fg;
+  };
+  return furn.map(g => g && g.t === "g" && g.cls === "room-furniture" ? Object.assign({}, g, { kids: g.kids.map(frame) }) : g);
+};
+
+// For people drawn back to front (ps[i]: { lv, x, y, half, feet, head, x0, x1 }, or null), the solids to draw after each:
+// a solid in front of several people is drawn once, after the last of them, when no one drawn in between stands in front of
+// it where it rises into their figure (that one would be hidden); otherwise again after each of them. → [[solid]] by person
+SH.overAll = function (reg, vx, ps, T) {
+  const occ = ps.map(p => p ? SH.occluders(reg, vx, p, p.half, T, p.feet, p.head) : []), out = ps.map(() => []), VU = shVU(vx);
+  const box = s => s._box || (s._box = (() => { let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity; for (const q of s.foot) for (const z of [0, s.h]) { const r = T(s.lv, q[0], q[1], z); x0 = Math.min(x0, r[0]); x1 = Math.max(x1, r[0]); y0 = Math.min(y0, r[1]); y1 = Math.max(y1, r[1]); } return { x0, x1, y0, y1 }; })());
+  const by = new Map();
+  occ.forEach((l, i) => l.forEach(s => { if (!by.has(s)) by.set(s, []); by.get(s).push(i); }));
+  for (const [s, is] of by) {
+    const lo = is[0], hi = is[is.length - 1], b = box(s);
+    let clash = false;
+    for (let j = lo + 1; j < hi && !clash; j++) { const p = ps[j]; if (!p || is.includes(j) || p.lv !== s.lv) continue; if (p.x1 > b.x0 && p.x0 < b.x1 && p.feet > b.y0 && p.head < b.y1 && shSide(s, VU.V, VU.U, p, p.half, -1)) clash = true; }
+    if (clash) for (const i of is) out[i].push(s); else out[hi].push(s);
+  }
+  // each person's solids in the order they stand (back to front)
+  return out.map(l => l.sort((a, b) => reg.indexOf(a) - reg.indexOf(b)));
 };
 
 // ---- src/room.js ----
@@ -9805,6 +10241,7 @@ const render1 = function (o, opts = {}) {
     raw.displayWidth || null, opts.floor == null ? null : opts.floor, raw.minLabelPx == null ? null : raw.minLabelPx, raw.paper || null, raw.key || null])).toString(36));
   const stage = opts.layout === "stage";
   if (stage && !opts.idPrefix) sid += "s" + opts.displayHeight.toString(36);
+  if (opts.shade === true && !opts.idPrefix && (opts.view === "iso" || opts.view === "plan")) sid += "h";      // 1.2: a shaded copy never shares ids with a flat one (the views shade draws)
   M._stageOut = null;
   // the street outside: its own module, the same type floor (street.js)
   if (opts.view === "street") { const r = M.street.render(o, opts, W, theme, model, seed, opts.idPrefix || (sid + M.hash("street" + (raw.time || "")).toString(36).slice(0, 4))); if (stage && M._stageOut) r.stage = M._stageOut; return r; }
@@ -9857,6 +10294,7 @@ M.render =function (o, opts) { const prev = BP.ids; BP.ids = null; try { return 
 M.buildScene = function (lay, model, ctx, X) {
   const { opts, W, reveal } = ctx;
   let r;
+  if (M.shade.on(opts)) ctx.shadeSid = X.sid;      // 1.2: ids for the solids drawn again over people (shade.js)
   if (opts.view === "iso") {
     // iso type sits over a smaller footprint on the page: give it room.
     ctx.k = Math.max(ctx.k, 1.2);
@@ -9907,6 +10345,7 @@ M.buildScene = function (lay, model, ctx, X) {
 // Floors in a grid that lands near a 1.4 : 1 sheet — one row for two floors,
 // two columns for three or four. A title sits above each floor.
 M.buildPlan = function (lay, model, ctx) {
+  if (M.shade.on(ctx.opts) && ctx.opts.view === "plan") ctx.shadeReg = [];      // 1.2: the solids, for the people (shade.js)
   const k = ctx.k, fu = ctx.floorU || 0, n = lay.levels.length, ts = Math.max(3.4 * k, fu);
   const offsets = new Map(), titleH = M.showTitles(lay, ctx) ? Math.max(7 * k, ts * 1.9) : 0, gap = 26 + 16 * k;
   const cols = n <= 2 ? n : 2;
@@ -9926,6 +10365,7 @@ M.buildPlan = function (lay, model, ctx) {
     offsets.set(lv, [dx, dy]);
     const layers = M.scene.level(lv, model, ctx);
     if (model.grand) M.grand.dress(lv, layers, model, ctx);
+    if (M.shade.on(ctx.opts) && ctx.opts.view === "plan") layers.furn = M.shade.planFurn(layers.furn, ctx.shadeReg, lv, M.shade.line(ctx.opts));      // 1.2: furniture depth (shade.js); off: as ever
     const lit = M.grand.floorLights(lv, model, ctx, p => p);       // K2.5: the rooms' light, as in the iso
     if (lit) { layers.floors.push(...lit.pools); if (lit.shade) layers.walls.unshift(lit.shade); }
     if (lv.title && M.showTitles(lay, ctx)) layers.labels.push(P.text("level-title", B.x - 10, B.y - 10 - titleH * 0.3, lv.title.toUpperCase(), { size: ts, anchor: "start" }));
@@ -11500,7 +11940,8 @@ PL.prepare = function (scene, th) {
       let kept = others.slice(0, keepN);
       // at Night a room keeps its light, if it has one
       if (night && !kept.some(i => i.light)) { const l = others.find(i => i.light); if (l) kept = kept.slice(0, keepN - 1).concat([l]); }
-      const nHero = !night && iso ? (roomPx > 320 ? 3 : roomPx > 200 ? 2 : 1) : 0;
+      // 1.2 shade: every piece the plate keeps that has a height stands up, at Bluetime and at Night (Night: no cast shadow)
+      const nHero = iso && opts.shade === true ? Infinity : !night && iso ? (roomPx > 320 ? 3 : roomPx > 200 ? 2 : 1) : 0;
       const heroSet = new Set(kept.filter(i => i.h > 0).slice(0, nHero));
       const keepSet = new Set(items.filter(i => i.keep).concat(kept));
       // heroes: a box on its footprint, its own drawing on top, its shadow on the floor
@@ -11514,14 +11955,14 @@ PL.prepare = function (scene, th) {
           const p = quad[i], q = quad[(i + 1) % 4], dx = q[0] - p[0], dy = q[1] - p[1], l = Math.hypot(dx, dy) || 1;
           const nx = (area2 > 0 ? dy : -dy) / l, ny = (area2 > 0 ? -dx : dx) / l;
           if (vx * nx + ny <= 0.01) continue;
-          const lit = nx * pk.from[0] + ny * pk.from[1] > 0.3;
+          const lit = night ? ny > 0.3 : nx * pk.from[0] + ny * pk.from[1] > 0.3;      // at Night (shade only) lit as the walls are
           pcs.push(P.poly(`pl-hero-${lit ? "lit" : "shade"}:${tone}`, [part.iso.P0(p, 0), part.iso.P0(q, 0), part.iso.P0(q, h), part.iso.P0(p, h)]));
         }
         const top = ser1([P.g([P.g(toned(pg.kids, tone), { tf: pg.tf })], { tf: fg.tf })], th);
         pcs.push(P.raw(`<g transform="translate(0 ${f2(-h)}) ${part.iso.mat}">${top}</g>`));
         heroes.push({ dk: vx * cx + cy, pcs });
         const s0 = pk.shadow;
-        shadows.push({ core: M.street.hull(quad.concat(quad.map(p => [p[0] + s0[0] * h * 0.6, p[1] + s0[1] * h * 0.6]))), tail: M.street.hull(quad.map(p => [p[0] + s0[0] * h * 0.55, p[1] + s0[1] * h * 0.55]).concat(quad.map(p => [p[0] + s0[0] * h, p[1] + s0[1] * h]))) });
+        if (!night) shadows.push({ core: M.street.hull(quad.concat(quad.map(p => [p[0] + s0[0] * h * 0.6, p[1] + s0[1] * h * 0.6]))), tail: M.street.hull(quad.map(p => [p[0] + s0[0] * h * 0.55, p[1] + s0[1] * h * 0.55]).concat(quad.map(p => [p[0] + s0[0] * h, p[1] + s0[1] * h]))) });
       }
       // the night's lights: one pool per room, round its light
       if (night) {

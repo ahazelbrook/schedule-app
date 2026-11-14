@@ -95,7 +95,11 @@
     /* the players' screen build (IP4, 13/11): a phone setting, off until chosen */
     { key: 'phone.handouts', label: 'Handouts on phones', what: 'Send a handout to a player’s phone, where it stays in their Handouts to open any time. Off: no Send to, and no Handouts on the phones.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
-      said: { 'false': 'Handouts on phones: off. Phones follow within a few seconds.', 'true': 'Handouts on phones: on. Phones follow within a few seconds.' } }
+      said: { 'false': 'Handouts on phones: off. Phones follow within a few seconds.', 'true': 'Handouts on phones: on. Phones follow within a few seconds.' } },
+    /* the players' screen build (IP7, 14/11): the map rows' fifth, put LAST so that no row of today changes place (kit-off) */
+    { key: 'map.shade', label: 'Furniture depth', what: 'The furniture on every map: flat as before, or solid (a little depth and a short shadow). A map too large for the iPad goes flat.',
+      options: [{ v: false, label: 'Flat' }, { v: true, label: 'Solid' }],
+      said: { 'false': 'Furniture depth: flat.', 'true': 'Furniture depth: solid.' } }
   ];
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
