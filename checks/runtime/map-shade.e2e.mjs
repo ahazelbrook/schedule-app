@@ -212,19 +212,23 @@ try {
     await shot(I.page, 'board-pinned-1536x864-on');
   });
   await step('3 planning board: the pins (cards) and their strings sit above the shaded sheet', async () => {
-    const f = await frame(); await sleep(7000);
+    const f = await frame();
+    /* every pin has landed: no card still landing, and the landing's dim (a rect over the whole scene, which answers a hit test even at opacity 0) is gone;
+       then the strings' pinning stroke has drawn */
+    await f.waitForFunction(() => { const c = document.getElementById('content'); return !!c && !document.querySelector('.landing') && ![...c.children].some((e) => e.tagName.toLowerCase() === 'rect' && e.getAttribute('fill') === '#0d0905'); }, null, { timeout: 45000 });
+    await sleep(3500);
     const top = await f.evaluate(() => {
       const out = { cards: 0, strings: 0, bad: [] };
-      for (const c of document.querySelectorAll('.pcard')) { const r = c.getBoundingClientRect(); if (r.width < 4) continue; out.cards++; const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-        /* the scene's own layers over everything (a landing's dim, the grain) may be on top; what must never be is the sheet, the shaded board */
-        if (t && !c.contains(t) && t.closest && t.closest('.sheet')) out.bad.push('card under the sheet');
-        if (!(c.compareDocumentPosition(document.querySelector('.sheet')) & Node.DOCUMENT_POSITION_PRECEDING)) out.bad.push('card before the sheet'); }
-      for (const s of document.querySelectorAll('.string')) { if (typeof s.getTotalLength !== 'function') continue; const m = s.getScreenCTM(); if (!m) continue; const p = new DOMPoint(s.getPointAtLength(s.getTotalLength() / 2).x, s.getPointAtLength(s.getTotalLength() / 2).y).matrixTransform(m); out.strings++;
-        const t = document.elementFromPoint(p.x, p.y); if (t && t.closest && t.closest('.sheet')) out.bad.push('string under the sheet'); }
+      /* the whole stack at a point, top first: the card (or string) must be in it, and above everything of the sheet */
+      const above = (x, y, own) => { const st = document.elementsFromPoint(x, y), i = st.findIndex(own), j = st.findIndex((e) => !!(e.closest && e.closest('.sheet'))); return i < 0 ? 'not hit' : j >= 0 && j < i ? 'under the sheet' : ''; };
+      for (const c of document.querySelectorAll('.pcard')) { const r = c.getBoundingClientRect(); if (r.width < 4) continue; out.cards++;
+        const w = above(r.left + r.width / 2, r.top + r.height / 2, (e) => c.contains(e)); if (w) out.bad.push('card ' + w); }
+      for (const s of document.querySelectorAll('.string')) { if (typeof s.getTotalLength !== 'function') continue; const m = s.getScreenCTM(); if (!m) continue; const q = s.getPointAtLength(s.getTotalLength() / 2), p = new DOMPoint(q.x, q.y).matrixTransform(m); out.strings++;
+        const w = above(p.x, p.y, (e) => e === s); if (w) out.bad.push('string ' + w); }
       return out;
     });
-    console.log('INFO planning board: ' + top.cards + ' cards and ' + top.strings + ' strings checked on top of the shaded sheet');
-    expect(top.cards >= 1 && !top.bad.length, JSON.stringify(top));
+    console.log('INFO planning board: ' + top.cards + ' cards and ' + top.strings + ' strings checked on top of the shaded sheet (all pins landed)');
+    expect(top.cards >= 1 && top.strings >= 1 && !top.bad.length, JSON.stringify(top));
   });
   await step('b planning board: pinned again (a second pin): the scene tears down before it draws, never two copies with the same ids', async () => {
     const f = await frame(); let worst = 0;

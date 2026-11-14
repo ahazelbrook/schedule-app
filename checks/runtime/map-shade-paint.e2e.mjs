@@ -127,6 +127,7 @@ try {
       await step('1 ' + site + ' ' + lay + ': the people layer is painted after every piece of furniture and every wall; occluders live only in it', async () => {
         await load(svg, 2400); const d = await docOrder();
         expect(d.firstPeople < Infinity, 'no people drawn');
+        expect(d.lastFurniture >= 0, 'no furniture found: the order check would prove nothing');
         expect(d.lastFurniture < d.firstPeople, 'furniture painted after the people: ' + JSON.stringify(d));
         expect(d.occluderUsesOutside === 0, 'an occluder outside the people layer');
       });
@@ -136,7 +137,8 @@ try {
           + ', under an occluder ' + sum('occluder') + ', under another person ' + sum('person') + ', under a label ' + sum('label') + ', under furniture ' + sum('furniture') + ', under the drawing ' + sum('drawing') + ' (sub-pixel misses ' + r.out.reduce((s, x) => s + (x.miss || 0), 0) + '); ' + r.occ + ' occluders');
         expect(sum('furniture') === 0 && sum('drawing') === 0, 'a person painted over by furniture or the drawing: ' + JSON.stringify(r.out.filter((x) => x.furniture || x.drawing).slice(0, 3)));
         expect(sum('self') > 0.5 * r.out.reduce((s, x) => s + Object.values(x).reduce((a, b) => a + b, 0), 0), 'most of the people\'s paint is on top');
-        expect(r.overlaps.every((v) => v !== false), 'an occluder that does not overlap the person before it');
+        expect(r.occ >= 1, 'no occluders: nobody stands behind a solid, so the cut is not tested');
+        expect(r.overlaps.every((v) => v === true), 'an occluder with no person before it, or one that does not overlap that person: ' + JSON.stringify(r.overlaps));
       });
     }
     /* ---------- 3. labels, tags and tokens on top ---------- */
@@ -146,15 +148,21 @@ try {
         const kind = eval(kindSrc);
         const items = [...document.querySelectorAll('.room-label, .map-entry, .map-way-tag, .map-person-flag')].filter((e, i, a) => !a.some((x) => x !== e && x.contains(e)));
         const toks = [...document.querySelectorAll('#m svg svg')].filter((s) => /^(NA|RO|TP)$/.test((s.textContent || '').trim()));
-        const bad = []; let n = 0;
+        /* the whole stack at the centre of each of their shapes, top first: where the label (or token) is in the stack, nothing of the map's drawing
+           (a wall, a floor), no furniture and no occluder may be above it. A centre that misses the shape's paint (the label is not in the stack) is skipped */
+        const bad = []; let n = 0, miss = 0;
         for (const e of items.concat(toks)) for (const s of e.querySelectorAll('rect, path, circle, text, polygon')) {
-          const b = s.getBoundingClientRect(); if (b.width < 2 || b.height < 2) continue; n++;
-          const w = kind(document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2), e);
-          if (w === 'furniture' || w === 'occluder') bad.push((e.getAttribute('class') || 'token') + ' under ' + w);
+          const b = s.getBoundingClientRect(); if (b.width < 2 || b.height < 2) continue;
+          const st = document.elementsFromPoint(b.left + b.width / 2, b.top + b.height / 2), i = st.findIndex((x) => e.contains(x));
+          if (i < 0) { miss++; continue; }
+          n++;
+          for (const x of st.slice(0, i)) { const w = kind(x, e); if (w === 'furniture' || w === 'occluder' || w === 'drawing') { bad.push((e.getAttribute('class') || 'token') + ' under ' + w); break; } }
         }
-        return { items: items.length, toks: toks.length, n, bad };
+        return { items: items.length, toks: toks.length, n, miss, bad };
       }, KIND);
-      console.log('INFO ' + site + ': ' + r.items + ' labels and tags, ' + r.toks + ' tokens, ' + r.n + ' of their shapes tested');
+      console.log('INFO ' + site + ': ' + r.items + ' labels and tags, ' + r.toks + ' tokens, ' + r.n + ' of their shapes tested (' + r.miss + ' centres off their paint)');
+      expect(r.items >= 1, 'labels and tags drawn: ' + r.items);
+      expect(r.n >= 10, 'shapes tested: ' + r.n);
       expect(r.toks >= 2, 'tokens drawn: ' + r.toks);
       expect(!r.bad.length, r.bad.slice(0, 5).join(' | '));
     });
