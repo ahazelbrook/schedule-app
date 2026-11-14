@@ -7,7 +7,7 @@
 //   S3       the map caption and the scene caption (the wire) on the plate: inside the inner 90%, every line at least 3.3% of the screen's height,
 //            4.5:1 on the plate, the timed plate shows its timer; at 1024x768, 1180x820 and 768x1024, Night and Paper
 //   S7       push (a new push), wipe (the same map again), alarm (the mission's alarm fills: the flash), and cut under reduced motion (no flash)
-//   S10      idle: the scene held still, and no animation running in the page or in the scene's frame
+//   S10      idle: no animation running in the page (the scene's frame moves unless the Scenes setting holds it: IP1, overseer ruling 13/11)
 // The display makes no request outside its own origin. KIT_SHOTS=<dir> saves the pictures.
 //   PW_MODULE=<path to playwright-core> [PW_CHANNEL=msedge] [PORT=9411] [KIT_SHOTS=<dir>] node checks/runtime/kit-stage.e2e.mjs
 import { spawn, spawnSync } from 'node:child_process';
@@ -175,11 +175,11 @@ try {
   });
 
   await setting(true);
-  await step('on: the frame attaches within a few polls; the stage is Night at distance; the scene is held still', async () => {
+  await step('on: the frame attaches within a few polls; the stage is Night at distance; the scene moves (IP1, overseer ruling 13/11: only the Scenes setting holds it still)', async () => {
     await frameOn(I.page);
     const v = await I.page.evaluate(() => { const r = document.querySelector('.dp-root'), f = document.querySelector('.dp-ambient iframe.dp-amb-in');
       return { theme: r.getAttribute('data-ui-theme'), density: r.getAttribute('data-density'), still: !!(f && f.contentDocument && f.contentDocument.documentElement.classList.contains('b68-fx-off')), idle: r.classList.contains('stage-idle-on') }; });
-    expect(v.theme === 'night' && v.density === 'distance' && v.still && v.idle, JSON.stringify(v));
+    expect(v.theme === 'night' && v.density === 'distance' && !v.still && v.idle, JSON.stringify(v));
   });
 
   await step('S1 + S10: the idle stage shows the art and nothing else: no Full screen, no status, no dot; nothing animates, here or in the scene', async () => {
@@ -194,7 +194,7 @@ try {
     expect(!(await I.page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.dp-chrome')).opacity) > 0)), 'a tap on the art does not bring the chrome back');
     await sleep(1500);
     const a = await running(I.page);
-    expect(a.page.length === 0 && a.frames.length === 0, 'running animations on an idle stage: ' + JSON.stringify(a));
+    expect(a.page.length === 0, 'running animations in the page on an idle stage: ' + JSON.stringify(a));     /* IP1 (overseer ruling 13/11): the scene's own frame may move */
     await shot(I.page, 'idle-night-1024');
   });
 
@@ -254,7 +254,7 @@ try {
     expect((await tx(I.page)) === 'push', 'push: ' + (await tx(I.page)));
     await sleep(1800);
     const a = await running(I.page);
-    expect(a.page.length === 0 && a.frames.length === 0, 'running after the push: ' + JSON.stringify(a));
+    expect(a.page.length === 0, 'running in the page after the push: ' + JSON.stringify(a));     /* IP1 (overseer ruling 13/11): the scene's own frame may move */
   });
 
   await step('S3: the scene caption (the wire) is a timed plate in the lower third, with its timer; it goes when the wire is cleared', async () => {
@@ -271,7 +271,7 @@ try {
     }
     await I.page.setViewportSize({ width: 1024, height: 768 });
     const a = await running(I.page);
-    expect(a.page.length === 0 && a.frames.length === 0, 'a timed plate steps, it does not animate: ' + JSON.stringify(a));
+    expect(a.page.length === 0, 'a timed plate steps, it does not animate: ' + JSON.stringify(a));     /* IP1 (overseer ruling 13/11): the scene's own frame may move */
     await ambient({ wire: null });
     await I.page.waitForFunction(() => !document.querySelector('.stage-lower .stage-plate'), null, { timeout: 20000 });
   });

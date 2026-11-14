@@ -256,6 +256,7 @@
       if (n) {
         vm.name = n.name || title; vm.alias = n.alias; vm.sub = [n.role, n.faction].filter(Boolean).join(' · ');
         vm.description = n.description; vm.spec = n.spec; vm.faction = n.faction;      /* KS16: the nameplate's faction stripe (a player field, already in sub) */
+        if (isObj(d.look)) vm.look = d.look;      /* IP1: the names of the tell and the signature pose the GM sent (display/face-look.js cleans them again) */
       }
       return vm;
     }
@@ -506,6 +507,9 @@
           fails = 0; lastErr = null;
           if (typeof o.onSkew === 'function') { var sk = Pure.skewOf(r.now, t0, Date.now()); if (sk !== null) { try { o.onSkew(sk); } catch (e) { /* ditto */ } } }
           var moved = false;
+          /* IP1b delta (14/11): the switches first, so nothing on this answer is drawn under the last answer's settings (a held spotlight up when the page
+             opens was drawn with the face looks off, then never drawn again) */
+          if (typeof o.onFeatures === 'function') { try { o.onFeatures(Pure.featuresPart(r)); } catch (e) { /* ditto */ } }   /* W0.2: the iPad's switches, on every answer */
           if (amb) {
             if (amb.seq !== aseq) moved = true;
             aseq = amb.seq;
@@ -516,7 +520,6 @@
             hseq = mis.hseq;
             if (!mis.unchanged && o.onMission) { try { o.onMission(mis.hud); } catch (e) { /* ditto */ } }
           }
-          if (typeof o.onFeatures === 'function') { try { o.onFeatures(Pure.featuresPart(r)); } catch (e) { /* ditto */ } }   /* W0.2: the iPad's switches, on every answer */
           if (stt) {
             if (stt.seq !== sseq) moved = true;
             sseq = stt.seq; sttSeen = true;
@@ -651,11 +654,12 @@
     { id: 'pells', file: 'pells-provisions.html', label: "Pell's Provisions" },
     { id: 'wanted', file: 'wanted-wall.html', label: 'Wanted wall', needs: 'crew' },
     { id: 'meeting', file: 'planning-meeting.html', label: 'The planning meeting' },
-    { id: 'credits', file: 'opening-credits.html', label: 'Opening credits', pinOnly: true, music: true },
+    { id: 'credits', file: 'opening-credits.html', label: 'Opening credits', pinOnly: true, music: true, episode: 'episode-credits.html' },
     { id: 'veil', file: 'sunrise-ball-opening.html', label: 'The Sunrise Ball: opening', pinOnly: true },
     { id: 'board', file: 'planning-board.html', label: 'Planning board', needs: 'score' },
     { id: 'exploded', file: 'score-exploded.html', label: 'Score site, exploded', needs: 'score' },
-    { id: 'testcard', file: 'test-card.html', label: 'Please stand by', pinOnly: true }
+    { id: 'testcard', file: 'test-card.html', label: 'Please stand by', pinOnly: true },
+    { id: 'landing', file: 'night-landing.html', label: 'The landing' }
   ];
   Pure.AMBIENT_DEFAULT_PLAYLIST = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting'];
   /* the theme a `music: true` scene may ask the display to play: an MP3 kept on the GM's PC and deployed from disk, never committed */
@@ -690,12 +694,17 @@
   };
   /* the iframe URL for a scene id, or '' for an unknown id. The watch feed polls /api/campaign unless told not to; the display
      sign-in may not call it, so it is always loaded with ?api=off. */
-  Pure.ambientUrl = function (id) {
+  Pure.ambientUrl = function (id, episode) {
     var sc = Pure.ambientScene(id);
     /* no `.html`: the asset server answers /ambient/x.html with a 307 to /ambient/x, and the service worker will not cache a
        redirected response, so a scene would never be available offline */
-    return sc ? 'ambient/' + sc.file.replace(/\.html$/, '') + (sc.id === 'watch' ? '?api=off' : '') : '';
+    return sc ? 'ambient/' + (episode === true && sc.episode ? sc.episode : sc.file).replace(/\.html$/, '') + (sc.id === 'watch' ? '?api=off' : '') : '';
   };
+  /* IP5.2: a scene with an `episode` file (the Opening credits) plays that file in its place when it was deployed: built on the GM's PC
+     from an episode file and gitignored, so it is on the server only when the deploying checkout had it. The display asks once per page
+     load with a same-origin HEAD (no `.html`, so no redirect; a HEAD passes the service worker by) and keeps the answer: 'yes' or 'no'.
+     No answer (offline, a timeout) plays today's file this time and asks again the next time the scene loads. */
+  Pure.episodeAnswer = function (status) { return status >= 200 && status < 300 ? 'yes' : status >= 400 && status < 500 ? 'no' : ''; };
   /* a scene is playable when it exists and, if it needs a score, the plan has one */
   Pure.ambientAvailable = function (plan, id) {
     var sc = Pure.ambientScene(id);
@@ -1042,13 +1051,18 @@
     return { el: e, destroy: function () {} };
   }
 
+  /* IP1 (13/11): every figure drawn on this page gets ids of its own. The kit names a figure's clip paths after spec.id; two copies of one figure with the same
+     ids, the earlier one inside a display:none subtree, make Chromium resolve the visible copy's url(#...) clips to the unrendered one and drop them: the
+     head's and the torso's shade paths then draw unclipped (the flat shapes behind an NPC on the TV). So a draw counter goes on every id. */
+  var DRAWS = 0;
+  function drawId(uid) { return String(uid) + '-d' + (++DRAWS); }
   /* the NPC: a figure at true proportion beside the player-facing text */
   function drawFigure(spec, uid, K) {
     if (!K || !spec) return null;
     var out = null, tries = [function (s) { return K.render(s, { height: 900 }); }, function (s) { return K.portrait(s, { lod: 'mid' }); }];
     for (var i = 0; i < tries.length && !out; i++) {
       try {
-        var s = JSON.parse(JSON.stringify(spec)); s.id = uid;
+        var s = JSON.parse(JSON.stringify(spec)); s.id = drawId(uid);
         var r = tries[i](s);
         var res = Pure.sanitiseSvg(r && r.svg, parserEnv(true));
         if (res.ok) out = res;
@@ -1060,7 +1074,7 @@
   function drawPortrait(spec, uid, K) {
     if (!K || typeof K.portrait !== 'function' || !spec) return null;
     try {
-      var s = JSON.parse(JSON.stringify(spec)); s.id = uid;
+      var s = JSON.parse(JSON.stringify(spec)); s.id = drawId(uid);
       var r = K.portrait(s, { lod: 'mid' }), res = Pure.sanitiseSvg(r && r.svg, parserEnv(true));
       return res.ok ? res : null;
     } catch (e) { return null; }
@@ -1074,7 +1088,9 @@
       e.appendChild(box);
       return { el: e, destroy: function () {} };
     }
-    if (root.B68StageScene && root.B68StageScene.on()) { var k16 = root.B68StageScene.npcStage(vm, seq, { document: document, figure: function (sp, id) { var r = drawFigure(sp, id, ctx.figures); return r ? document.importNode(r.node, true) : null; } }); if (k16) return k16; }   /* KS16 (kit.stage): over the dimmed scene */
+    var figEnv = { document: document, K: ctx.figures, reduced: reduced(), figure: function (sp, id) { var r = drawFigure(sp, id, ctx.figures); return r ? document.importNode(r.node, true) : null; } };
+    function look(st) { if (vm.look && root.B68FaceRender && typeof root.B68FaceRender.applyStage === 'function') { try { root.B68FaceRender.applyStage(st.el, { look: vm.look, spec: vm.spec, npcId: vm.npcId, seq: seq }, figEnv, { poseAt: root.B68PlayersIntro && typeof root.B68PlayersIntro.poseAt === 'function' ? root.B68PlayersIntro.poseAt(seq) : 0 }); } catch (err) { /* the figure stays as drawn */ } } return st; }     /* IP1: the tell and the signature, on Show on iPad too */
+    if (root.B68StageScene && root.B68StageScene.on()) { var k16 = root.B68StageScene.npcStage(vm, seq, { document: document, figure: figEnv.figure }); if (k16) return look(k16); }   /* KS16 (kit.stage): over the dimmed scene */
     var fig = drawFigure(vm.spec, 'dp-npc-' + seq, ctx.figures);
     if (fig) {
       var holder = el('div', 'dp-npc-fig'); holder.setAttribute('aria-hidden', 'true');
@@ -1087,7 +1103,7 @@
     if (vm.alias) txt.appendChild(el('p', 'dp-npc-alias', '“' + vm.alias + '”'));
     if (vm.description) txt.appendChild(el('p', 'dp-npc-desc', vm.description));
     e.appendChild(txt);
-    return { el: e, destroy: function () {} };
+    return look({ el: e, destroy: function () {} });
   }
 
   /* the map: sanitised, inline, fitted, with pinch / two-finger pan / double-tap and a title strip that fades */
@@ -1207,7 +1223,7 @@
       if (zoom) return;
       fitAboveBar();
       if (strip && window.ResizeObserver) { ro = new ResizeObserver(function () { fitAboveBar(); }); ro.observe(strip); }
-      zoom = attachZoom(frame, svg, res.viewBox, {});
+      zoom = attachZoom(frame, svg, S && S.p2 ? S.p2.fit(svg, res.viewBox, frame) : res.viewBox, {});      /* IP2b (stage.players): a stage-layout map fitted by its drawing */
     }
     return {
       el: e, attached: ready,
@@ -1266,7 +1282,7 @@
       return JSON.parse(localStorage.getItem('b68.display.ambientTiming') || 'null');
     } catch (e) { return null; }
   }
-  function makeFrame(id) {
+  function makeFrame(id, episode) {
     var f = document.createElement('iframe');
     f.className = 'dp-amb-frame';
     f.setAttribute('sandbox', 'allow-scripts allow-same-origin');
@@ -1275,8 +1291,25 @@
     f.setAttribute('tabindex', '-1');
     f.setAttribute('referrerpolicy', 'same-origin');
     f.setAttribute('data-scene', id);
-    f.setAttribute('src', Pure.ambientUrl(id));
+    f.setAttribute('src', Pure.ambientUrl(id, episode === true));
     return f;
+  }
+  /* IP5.2: is the episode's own file on the server? One HEAD per page load (Pure.episodeAnswer), 2.5 s at most; '' = no answer */
+  var EPI = { state: '', p: null };
+  function episodeProbe(file) {
+    if (EPI.state) return Promise.resolve(EPI.state);
+    if (EPI.p) return EPI.p;
+    EPI.p = new Promise(function (res) {
+      var done = false, tm = null;
+      function fin(st) { if (done) return; done = true; if (tm !== null) clearTimeout(tm); EPI.p = null; EPI.state = st; res(st); }
+      tm = setTimeout(function () { fin(''); }, 2500);
+      try {
+        if (typeof fetch !== 'function') { fin('no'); return; }
+        fetch('ambient/' + file.replace(/\.html$/, ''), { method: 'HEAD', credentials: 'same-origin', cache: 'no-store' })
+          .then(function (r) { fin(Pure.episodeAnswer(r && r.status)); }, function () { fin(''); });
+      } catch (e) { fin(''); }
+    });
+    return EPI.p;
   }
   function createAmbient(s, layer, later, clearLater) {
     var ctx = s.ctx, container = s.container;
@@ -1340,11 +1373,14 @@
       later(function () { drop(slot); }, reduced() ? 60 : T.fadeMs);
     }
 
-    function load(id) {
+    function load(id, asked) {
       A.cur = id;
       if (A.incoming) { if (A.incoming.id === id) return; drop(A.incoming); A.incoming = null; }
       if (A.active && A.active.id === id) { armRot(); return; }
-      var f = makeFrame(id), slot = { id: id, frame: f, loaded: false, dead: false, wd: null, off: null };
+      /* IP5.2: the Opening credits wait for the one question (is the episode's file on the server?), then load whichever it is */
+      var sc = Pure.ambientScene(id), ep = !!(sc && sc.episode);
+      if (ep && !EPI.state && !asked) { episodeProbe(sc.episode).then(function () { if (!A.dead && !A.covered && A.cur === id) load(id, true); }); return; }
+      var f = makeFrame(id, ep && EPI.state === 'yes'), slot = { id: id, frame: f, loaded: false, dead: false, wd: null, off: null };
       slot.off = on(f, 'load', function () { onLoad(slot); });
       slot.wd = later(function () { slot.wd = null; onWatchdog(slot); }, T.watchdogMs);
       A.incoming = slot;
@@ -1495,9 +1531,13 @@
     s.ov = { seen: '', node: null, token: 0, timers: [], applied: false };
     /* the show contract's lasting layers and the data channel to the HTML scenes (app/display/layers.js) */
     /* the band across the top is a setting (display.band, the iPad view's Settings), off unless the GM turns it on (the tech run, 06/11) */
-    s.layers = root.B68Layers ? root.B68Layers.attach(container, { skew: function () { return s.skew || 0; }, band: function () { return swOn('display.band'); },
+    s.layers = root.B68Layers ? root.B68Layers.attach(container, { skew: function () { return s.skew || 0; }, band: function () { return swOn('display.band'); }, quiet: function () { return swOn('stage.players'); },
       figure: function (spec, id) { var r = drawFigure(spec, 'dp-mt-' + String(id).replace(/[^A-Za-z0-9_-]/g, ''), ctx.figures || root.B68Figure); return r ? document.importNode(r.node, true) : null; } }) : null;      /* the montage draws each PC (the tech run) */
     if (s.layers) s.offs.push(function () { s.layers.destroy(); });
+    /* IP3 (stage.players): the NPC introduction, a title card over everything that hands over to the npc stage (app/display/players/intro.js); off, next() does nothing */
+    s.intro = root.B68PlayersIntro ? root.B68PlayersIntro.attach(container, { document: document, K: ctx.figures || root.B68Figure, on: function () { return swOn('stage.players'); }, still: function () { return reduced(); }, skew: function () { return s.skew || 0; }, at: function () { return s.updatedAt; }, later: later, clearLater: clearLater,
+      figure: function (spec, id) { var r = drawFigure(spec, id, ctx.figures || root.B68Figure); return r ? document.importNode(r.node, true) : null; } }) : null;
+    if (s.intro) s.offs.push(function () { s.intro.destroy(); });
     /* the suite's display switches (each does nothing while its switch is off): the hard start (1.2, spine.start) and the FX budget (F7, fx.pause / fx.off) */
     function swOn(id) { return !!(root.B68Flags && root.B68Flags.on(id)); }
     function suiteSync() {
@@ -1508,8 +1548,8 @@
       else if (!hs && s.hs) { s.hs.destroy(); s.hs = null; }
       if (s.hs) s.hs.apply();
       if (s.roomSync) s.roomSync();      /* 4.4 / 4.3: the room's sound follows the switches and the layers */
-      var fx = !!(root.B68Fx && (swOn('fx.pause') || swOn('fx.off') || s.stage));     /* KS13.4: the new stage (s.stage) holds its scene still */
-      if (fx && !s.fx) s.fx = root.B68Fx.attach(container, { flags: function () { return { pause: swOn('fx.pause'), off: swOn('fx.off') || !!s.stage }; }, covered: function () { return !!(s.amb && s.amb.state().covered); } }); else if (!fx && s.fx) { s.fx.destroy(); s.fx = null; } else if (s.fx) s.fx.sync();
+      var fx = !!(root.B68Fx && (swOn('fx.pause') || swOn('fx.off')));     /* IP1 (overseer ruling 13/11): only the GM's Scenes setting holds a scene still, the new stage no longer does (KS13.4 was) */
+      if (fx && !s.fx) s.fx = root.B68Fx.attach(container, { flags: function () { return { pause: swOn('fx.pause'), off: swOn('fx.off') }; }, covered: function () { return !!(s.amb && s.amb.state().covered); } }); else if (!fx && s.fx) { s.fx.destroy(); s.fx = null; } else if (s.fx) s.fx.sync();
     }
     s.offs.push(function () { if (s.hs) { s.hs.destroy(); s.hs = null; } if (s.fx) { s.fx.destroy(); s.fx = null; } });
     function ovTimer(fn, ms) { var id = later(fn, ms); s.ov.timers.push(id); return id; }
@@ -1700,7 +1740,8 @@
     function sendScore(win) {
       if (!s.score || !win) return;
       if (!s.scoreMsg) s.scoreMsg = Pure.scoreMessage(s.score, polaroids(), parserEnv(false));
-      try { win.postMessage(s.scoreMsg, location.origin); } catch (e) { /* the frame went away */ }
+      var msg = swOn('stage.players') ? Object.assign({}, s.scoreMsg, { players: true }) : s.scoreMsg;      /* IP6: the planning board lays its pins out big; off, today's message */
+      try { win.postMessage(msg, location.origin); } catch (e) { /* the frame went away */ }
     }
     /* the ambient doc arrived (or changed): re-plan, tell the watch feed a changed crew, hand a changed score to the live score scenes */
     function applyAmbient(doc) {
@@ -2020,7 +2061,17 @@
       }
       bandFit();
     }
-    function applyBand(hud) { s.bandModel = Pure.bandModel(hud); if (!s.bandModel) s.bandSig = ''; paintBand(); if (s.stage) s.stage.mission(s.bandModel); if (s.stage && s.stageBand) s.stageBand.paint(); }   /* KS13.3: the alarm; KS14: the top band */
+    function applyBand(hud) { s.hud = hud; s.fullBand = Pure.bandModel(hud); s.bandModel = swOn('stage.players') ? null : s.fullBand; if (!s.bandModel) s.bandSig = ''; paintBand(); if (s.stage) s.stage.mission(s.fullBand); if (s.stage && s.stageBand) s.stageBand.paint(); if (s.p2) s.p2.sync(); }   /* KS13.3: the alarm; KS14: the top band; IP2: no band while the players' screen is on, the alarm's hard cut kept */
+    /* IP2 (stage.players): the players' screen (app/display/players/players.js), the dials in the corner; off, s.p2 stays null and nothing of it runs */
+    s.p2 = null; s.p2on = false; s.p2last = null;
+    function p2Sync() {
+      var pbNow = swOn('stage.players'); if (s.pbOn !== pbNow) { var pbFirst = s.pbOn === undefined; s.pbOn = pbNow; if (!pbFirst && s.score) [].forEach.call(layer.querySelectorAll('iframe'), function (f) { if (Pure.isScoreScene(f.getAttribute('data-scene'))) sendScore(f.contentWindow); }); }      /* IP6: the setting flipped: a live planning board is sent its score again, laid out the new way */
+      var want = swOn('stage.players') && !!root.B68PlayersScreen;
+      if (want && !s.p2) { s.p2 = root.B68PlayersScreen.attach(container, { doc: document, before: ovLayer, watch: [stages, layer, ovLayer], kind: function () { return s.lastShow && isObj(s.lastShow[0]) ? s.lastShow[0].kind : 'blank'; }, dark: function () { return s.dark; }, mode: function () { return container.getAttribute('data-scene-mode'); }, beat: function () { return container.classList.contains('dp-ov-up') && !container.classList.contains('dp-ov-card-on'); }, ambient: function () { var a = s.amb && s.amb.state(); return a && !a.covered ? a.active : null; }, alarm: function () { return s.fullBand && s.fullBand.alarm && isObj(s.hud) && isObj(s.hud.alarm) ? s.hud.alarm : null; }, still: function () { return reduced() || swOn('fx.off'); } }); if (s.p2) s.p2.clocks(s.p2last); }
+      else if (!want && s.p2) { s.p2.destroy(); s.p2 = null; }
+      if (s.p2on !== want) { s.p2on = want; applyBand(s.hud); }
+    }
+    s.offs.push(function () { if (s.p2) { s.p2.destroy(); s.p2 = null; } });
     /* landscape: the band's box is set by its top and bottom, so a new size comes from outside (the iPad's band coming or going over it) and the cut
        is worked out again; in portrait its height follows its content, so only bandFit runs (a re-cut there would chase its own size) */
     var landscape = window.matchMedia ? window.matchMedia('(orientation: landscape)') : null;
@@ -2053,7 +2104,8 @@
     function show(display, seq) {
       var my = ++s.token, vm = Pure.viewModel(display);
       s.lastShow = [display, seq]; if (s.stage) s.stage.next(vm);           /* KS13: a redraw when the new stage comes or goes; what the swap brings */
-      var k16npc = vm.kind === 'npc' && !!s.stage && !!root.B68StageScene && root.B68StageScene.on();      /* KS16 (kit.stage): the NPC stands over the dimmed scene, which holds still */
+      if (s.intro) s.intro.next(display, seq);                               /* IP3: any other push cuts a card at once; an introduction starts one over the stage below */
+      var k16npc = vm.kind === 'npc' && !!s.stage && !!root.B68StageScene && root.B68StageScene.on();      /* KS16 (kit.stage): the NPC stands over the dimmed scene (it stops rotating; it moves unless the Scenes setting holds it, IP1) */
       if (vm.kind === 'blank' || k16npc) amb.uncover(); else amb.cover(); amb.still(k16npc);                 /* a spotlight covers the ambient; blank lets it through */
       ovLightsOut(vm.kind === 'dark');                                          /* lights out: no autopilot overlay, no AUTO chip */
       wireSync();
@@ -2079,7 +2131,7 @@
       if (s.dead || on === !!s.stage) return;
       if (on) s.stage = root.B68Stage.attach(container, { later: later, clearLater: clearLater, reduced: reduced, band: function () { return s.bandModel; }, wireMs: function () { return WT.on; } });
       else { s.stage.destroy(); s.stage = null; if (s.ov.node && /(^|\s)ks1\d-/.test(String(s.ov.node.className))) s.ov.seen = ''; }   /* KS16: an overlay the stage drew is drawn again the old way on the next poll */
-      if (s.stageBand) s.stageBand.destroy(); s.stageBand = s.stage && root.B68StageBand ? root.B68StageBand.attach(s.stage, { band: function () { return s.bandModel; }, layers: function () { return s.layers ? s.layers.state() : null; }, doc: document }) : null;      /* KS14: the clock and the crew heads */
+      if (s.stageBand) s.stageBand.destroy(); s.stageBand = s.stage && root.B68StageBand ? root.B68StageBand.attach(s.stage, { band: function () { return s.bandModel; }, layers: function () { return s.layers && !swOn('stage.players') ? s.layers.state() : null; }, doc: document }) : null;      /* KS14: the clock and the crew heads */
       suiteSync();
       if (s.lastShow) show(s.lastShow[0], s.lastShow[1]);
     }
@@ -2120,9 +2172,9 @@
       s.poller = Pure.createPoller({
         /* sseq rides as a third argument: the adapter (app/runtime/cf.js) forwards it as ?sseq= to make the unchanged answer
            the small one; an adapter that does not simply gets the transcriber part in full each time */
-        fetch: function (seq, aseq, sseq, hseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq, sseq === null ? undefined : sseq, hseq === null ? undefined : hseq); },
+        fetch: function (seq, aseq, sseq, hseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq, sseq === null ? undefined : sseq, hseq === null ? undefined : hseq).then(function (r) { s.p2last = r && Array.isArray(r.clocks) ? r.clocks : null; if (s.p2) s.p2.clocks(s.p2last); return r; }); },      /* IP2: the dials' clocks ride on the answer while stage.players is on */
         onMission: function (hud) { applyBand(hud); },
-        onFeatures: function (f) { if (root.B68Flags) { root.B68Flags.apply({ features: f }); suiteSync(); } if (root.B68Kit) root.B68Kit.set('stage', swOn('kit.stage')); },   /* KS01.2: data-kit="stage" follows the setting */
+        onFeatures: function (f) { if (root.B68Flags) { root.B68Flags.apply({ features: f }); suiteSync(); } if (root.B68Kit) root.B68Kit.set('stage', swOn('kit.stage')); p2Sync(); },   /* KS01.2: data-kit="stage" follows the setting; IP2: the players' screen too */
         onSkew: function (ms) { s.skew = ms; },
         isHidden: function () { return document.hidden; },
         onAmbient: function (doc) { applyAmbient(doc); },

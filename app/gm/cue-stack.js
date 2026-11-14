@@ -35,7 +35,7 @@
      parse(note) -> { cues: [{ n, kind, arg, text, show? }], safe, skipped: [line] }        note = { blocks: [{ k, src }] } or a string
      create(host) -> controller
        host: { feature() -> bool, note() -> the prep note | null, doc() -> the GM state document, patch(p) -> bool, now() -> ms, toast(msg, bad), log(text),
-               scene(id) -> Promise<bool>, show(kind, payload, { key }) -> Promise<answer | null>, reveal(name) -> Promise<{ ok, say }>, phase(p) -> Promise<bool>,
+               scene(id) -> Promise<bool>, show(kind, payload, { key }) -> Promise<answer | null>, reveal(name) -> Promise<{ ok, say, warn? } (on ok, say replaces Fired cue n.)>, phase(p) -> Promise<bool>,
                ambient() -> { mode, scene }, panic(safeScene) -> Promise, resume(prior) -> Promise, cueSlot() -> the band's element for the cue | null,
                changed() (optional: what the cue shows moved, so the band can follow), cueVerbs(), grammar() -> B68GmCueGrammar | null, grammarOn() -> bool, setTimeout }
        controller: view() go(src) bypass() back() reset() panic(src) resume() paint() tick() key(ev, doc) -> bool  moreOpen() closeMore()
@@ -180,7 +180,7 @@
         if (MANUAL[c.kind]) return Promise.resolve({ ok: true, manual: true });
         if (c.kind === 'scene') return Promise.resolve(host.scene(c.arg)).then(ok);
         if (c.kind === 'show') return Promise.resolve(host.show(c.show.kind, c.show.payload, { key: 'cue-' + v.noteId + '-' + c.n })).then(function (r) { return ok(r !== null && r !== undefined); });
-        if (c.kind === 'reveal') return Promise.resolve(host.reveal(c.arg)).then(function (r) { return r && r.ok ? { ok: true } : { ok: false, say: (r && r.say) || 'Could not reveal ' + c.arg + '.' }; });
+        if (c.kind === 'reveal') return Promise.resolve(host.reveal(c.arg)).then(function (r) { return r && r.ok ? { ok: true, say: r.say || '', warn: !!r.warn } : { ok: false, say: (r && r.say) || 'Could not reveal ' + c.arg + '.' }; });
         if (c.kind === 'phase') return Promise.resolve(host.phase(c.arg)).then(ok);
         if (c.kind === 'music') return Promise.resolve(typeof host.music === 'function' ? host.music(c.arg) : false).then(function (r) { return r ? { ok: true } : { ok: false, say: 'Cue ' + c.n + ': the music is not on this page.' }; });
       } catch (e) { /* falls through to a failure */ }
@@ -202,7 +202,7 @@
         var v2 = view(); save(v2, v2.seq.concat([[c.n, 'f']]));
         last = (c.manual || MANUAL[c.kind] ? 'By hand: ' : 'Fired: ') + label(c);
         if (typeof host.log === 'function') { try { host.log('Cue ' + c.n + ' ' + c.kind + ': ' + c.text); } catch (e) {} }
-        say(MANUAL[c.kind] ? 'Cue ' + c.n + ': ' + c.text + ' (by hand)' : 'Fired cue ' + c.n + '.');
+        say(r.say ? r.say : MANUAL[c.kind] ? 'Cue ' + c.n + ': ' + c.text + ' (by hand)' : 'Fired cue ' + c.n + '.', !!r.warn);      /* IP3b: a fired cue may say its own one line (a reveal that could not be shown) */
         paint(); return { ok: true, n: c.n, kind: c.kind, src: src };
       }, function () { busy = false; say('Cue ' + c.n + ' did not fire.', true); paint(); return { ok: false, reason: 'failed', n: c.n }; });
     }

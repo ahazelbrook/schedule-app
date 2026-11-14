@@ -59,6 +59,10 @@
     { key: 'display.band', label: 'Band', what: 'The strip across the top of the iPad: the ON AIR lamp, the phase, the crew’s Stress and harm, and security. Off: the map and every scene take the whole screen; the lamp sits in its corner.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'Band: off. The iPad follows within a few seconds.', 'true': 'Band: on. The iPad follows within a few seconds.' } },
+    /* the players' screen build (IP2, 13/11): the first row after the five rows of day 0, so no day-0 row changes place (kit-off) */
+    { key: 'stage.players', label: 'Players’ screen', what: 'The iPad or TV the players see: as it was, or the map first (no scene band, no time, no Now or Next, no crew status; visible clocks as dials in a corner; a new scene replaces what is up).',
+      options: [{ v: false, label: 'Classic' }, { v: true, label: 'Map first' }],
+      said: { 'false': 'Players’ screen: classic. The iPad follows within a few seconds.', 'true': 'Players’ screen: map first. The iPad follows within a few seconds.' } },
     /* the kit and stage build (11/11): five settings, each off until chosen */
     { key: 'kit.desk', label: 'Desk', what: 'This page: the desk as it was, or the new desk (the band, the Roll, Blade, Run and the shell rebuilt to one kit). It changes at once.',
       options: [{ v: false, label: 'Old desk' }, { v: true, label: 'New desk' }],
@@ -87,7 +91,11 @@
       said: { 'false': 'Room lights: off.', 'true': 'Room lights: on.' } },
     { key: 'map.room', label: 'Cut to the room', what: 'In the Run view, Cut to room puts one room the players know on the shared screen as a stage set; Back to the map undoes it.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
-      said: { 'false': 'Cut to the room: off.', 'true': 'Cut to the room: on.' } }
+      said: { 'false': 'Cut to the room: off.', 'true': 'Cut to the room: on.' } },
+    /* the players' screen build (IP4, 13/11): a phone setting, off until chosen */
+    { key: 'phone.handouts', label: 'Handouts on phones', what: 'Send a handout to a player’s phone, where it stays in their Handouts to open any time. Off: no Send to, and no Handouts on the phones.',
+      options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
+      said: { 'false': 'Handouts on phones: off. Phones follow within a few seconds.', 'true': 'Handouts on phones: on. Phones follow within a few seconds.' } }
   ];
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

@@ -62,10 +62,24 @@ export const EXEMPTIONS = [
   { name: 'the Settings intro line', reason: 'KS01.1 reworded app/gm/settings.js:139 ("These five are choices" to "These are choices")', selector: '#gm-ipad-settings > p.gm-dim' },
   { name: 'the Preflight file count', reason: 'it counts bundles: kit-flag.js made "0 of 107 kept" read 108', text: String.raw`\d+ of \d+ kept` },
   { name: 'the four map Settings rows', reason: 'MK1 added map.fill, map.people, map.lights and map.room (GM settings, off) to the Settings of the iPad view',
-    selector: ['map.fill', 'map.people', 'map.lights', 'map.room'].map((k) => '#gm-ipad-settings [data-set-row="' + k + '"]').join(', ') }
+    selector: ['map.fill', 'map.people', 'map.lights', 'map.room'].map((k) => '#gm-ipad-settings [data-set-row="' + k + '"]').join(', ') },
+  { name: 'the Players screen Settings row', reason: 'IP2 added stage.players (a display setting, off) to the Settings of the iPad view, the first row after the five rows of day 0',
+    selector: '#gm-ipad-settings [data-set-row="stage.players"]' },
+  { name: 'the Handouts on phones Settings row', reason: 'IP4 added phone.handouts (a phone setting, off) as the last row of the Settings of the iPad view',
+    selector: '#gm-ipad-settings [data-set-row="phone.handouts"]' },
+  { name: 'the eighteenth scene tile (The landing)', reason: 'IP8 added a new ambient scene, the landing, to the scene tiles of the iPad view: a deliberate visible addition with every setting off',
+    selector: '.gm-ipad-tiles [data-gm="ambscene"][data-id="landing"]', pushes: false },      /* it fills the empty second slot of the last tile row at every width: nothing moves for it */
+  /* a card on a cold display: by key, because the look's classes are part of the card's key, so the baseline's card reads as gone and this run's as new */
+  { name: 'the NPC card on a display that opens with it already up',
+    reason: 'IP1c: the display applies its settings before it draws on the first poll, so a spotlight card already up when the page opens gets its face look, ' +
+      'as on a page that was already open (day 0 drew it plain until it was laid again)',
+    keys: String.raw`div\.[^/]*dp-ov-card[^/]*dp-ov-npc:\d+(/|$)`, pushes: false }
 ];
 /* Not here: KS12's score-scene polaroids (disclosed in KS12's PR). They are drawn inside the score scene's iframe, which a fingerprint does not walk, and no baseline
-   scenario shows a scene iframe, so an exemption for them would match nothing. */
+   scenario shows a scene iframe, so an exemption for them would match nothing.
+   Not here either: PA (prep actions, no setting). Its chips appear only where a prep note holds an action span, and the demo night's note holds none, so
+   gm/prep-actions.js and .css are never fetched; its ✕ on the Prep person card and the Run view NPC card (and their CSS) exist only while a card is open,
+   and no baseline scenario opens one. The Preflight file count it raises by two is the exemption above. */
 
 /* In the page: walk the body and describe every element. Written as a string-free function so Playwright can serialise it. */
 function inPage(arg) {
@@ -182,7 +196,8 @@ export function compare(base, cur, opts = {}) {
   for (const [k, e] of C) if (!B.has(k) && fl(e).includes('x')) {
     exempted.push(nameOf(e) + ': new ' + k.split('/').slice(-2).join('/'));
     const parent = k.slice(0, k.lastIndexOf('/'));
-    if ((!C.has(parent) || !fl(C.get(parent)).includes('x')) && e[6] > 0 && e[7] > 0) { firstY = Math.min(firstY, e[5]); lastY = Math.max(lastY, e[5] + e[7]); newTops.push(k); }
+    const own = /x([a-z])/.exec(fl(e)), ex = own ? exs[own[1].charCodeAt(0) - 97] : null;      /* an exemption with pushes: false (an element in a slot that was empty) is new but moves nothing: it stays out of the span, so anything it did push is a difference */
+    if ((!C.has(parent) || !fl(C.get(parent)).includes('x')) && e[6] > 0 && e[7] > 0 && !(ex && ex.pushes === false)) { firstY = Math.min(firstY, e[5]); lastY = Math.max(lastY, e[5] + e[7]); newTops.push(k); }
   }
   const pushed = newTops.length > 0;
   const ancestorOfNew = (k) => newTops.some((t) => t.startsWith(k + '/'));
@@ -321,7 +336,20 @@ export async function runShots(root, port, dir, extra = [], timeoutMs = 2700000)
 }
 
 /* ---------- two folders ---------- */
-export const ALLOWED_NEW_REQUEST = /^GET \/(app\/)?ui\/kit-flag\.js(\?.*)?$/;      /* the one deliberate new request (Gate 0): the kit flag's own file */
+/* The new requests allowed with every setting off, each named with its reason (printed by kit-off): a file the page now fetches that makes
+   nothing, listens to nothing, starts no timer, sends no request and writes no storage until its setting is on. */
+const REQ = (p) => new RegExp('^GET /(app/)?' + p.replace(/[.]/g, '[.]') + '([?].*)?$');
+export const ALLOWED_NEW_REQUESTS = [
+  { name: 'kit-flag.js', reason: 'the kit flag\'s own file, the one deliberate new request of Gate 0', test: REQ('ui/kit-flag.js') },
+  { name: 'the players\' screen files (display)', reason: 'IP2/IP3 (stage.players, off): display/players/players.js and intro.js only define B68PlayersScreen and B68PlayersIntro, attached by display-page.js only while the setting is on; ' +
+      'players.css and intro.css only style .p2-* and .pi-* markup, which only those files make',
+    test: (u) => ['display/players/players.js', 'display/players/players.css', 'display/players/intro.js', 'display/players/intro.css'].some((p) => REQ(p).test(u)) },
+  { name: 'the players\' screen files (GM)', reason: 'IP2/IP3/IP6 (stage.players, off): gm/players-screen.js, players-intro.js and players-board.js only define their modules; ' +
+      'gm-page.js calls them only behind b09On(\'stage.players\') (the queue\'s probe fetch and every listener start there)',
+    test: (u) => ['gm/players-screen.js', 'gm/players-intro.js', 'gm/players-board.js'].some((p) => REQ(p).test(u)) }
+];
+export const allowedRequest = (u) => ALLOWED_NEW_REQUESTS.find((a) => a.test instanceof RegExp ? a.test.test(u) : a.test(u)) || null;
+export const ALLOWED_NEW_REQUEST = { test: (u) => !!allowedRequest(u) };      /* the old name, kept for its callers */
 /* Every <scenario>-<width>.json of base against cur, and every requests-<screen>.json.
    Returns { compared, absent: [files cur lacks], diffs: [{ file, kind, key, detail }], exempted: [{ file, note }], requests: { screen: { extra, missing, allowed } } }. */
 export async function compareFolders(baseDir, curDir, opts = {}) {

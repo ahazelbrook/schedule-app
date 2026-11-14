@@ -24,7 +24,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { compare, compareFolders, runShots, startDemo, fingerprint, MASKS, MASK_KEYS, STATE_CLASSES, LIVE_SLOTS, LOOSE_AXES, EXEMPTIONS, KIT_SETTING_KEYS } from '../../scripts/kit-fingerprint.mjs';
+import { compare, compareFolders, runShots, startDemo, fingerprint, MASKS, MASK_KEYS, STATE_CLASSES, LIVE_SLOTS, LOOSE_AXES, EXEMPTIONS, KIT_SETTING_KEYS, ALLOWED_NEW_REQUESTS, allowedRequest } from '../../scripts/kit-fingerprint.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -190,11 +190,13 @@ for (const l of LOOSE_AXES) console.log('  loose ' + l.axes.join(', ') + ': ' + 
 for (const d of r.diffs.slice(0, 20)) console.log('  DIFF ' + d.file + '  ' + d.kind + '  ' + d.key.split('/').slice(-3).join('/') + '  ' + d.detail);
 if (r.diffs.length > 20) console.log('  ... and ' + (r.diffs.length - 20) + ' more');
 check(r.diffs.length === 0, 'off means today: no element differs from the baseline in id, classes, box or style (' + r.diffs.length + ' differences)');
+console.log('allowed new requests (each named, with its reason; add one in ALLOWED_NEW_REQUESTS in scripts/kit-fingerprint.mjs):');
+for (const a of ALLOWED_NEW_REQUESTS) console.log('  ' + a.name + ' (' + a.reason + ')');
 for (const [screen, q] of Object.entries(r.requests)) {
-  if (q.allowed.length) console.log('  allowed new request (' + screen + '): ' + q.allowed.join(', '));
+  if (q.allowed.length) console.log('  allowed new request (' + screen + '): ' + q.allowed.map((u) => u + ' [' + allowedRequest(u).name + ']').join(', '));
   for (const u of q.extra) console.log('  NEW REQUEST (' + screen + ') ' + u);
   if (q.missing.length) console.log('  note: ' + q.missing.length + ' request(s) of the baseline were not made on ' + screen + ' this time (timing; not a failure): ' + q.missing.slice(0, 3).join(', '));
-  check(q.extra.length === 0, 'requests on the ' + screen + ' screen: nothing the baseline did not make, bar kit-flag.js');
+  check(q.extra.length === 0, 'requests on the ' + screen + ' screen: nothing the baseline did not make, bar the named allowed requests');
 }
 if (!KEEP) fs.rmSync(dir, { recursive: true, force: true });
 
@@ -239,7 +241,10 @@ if (!KEEP) fs.rmSync(dir, { recursive: true, force: true });
       const A = await shoot('before-' + ids.join('+'));        /* each round is held to the picture taken just before it: live data (who is here) may change between rounds, not because of a setting */
       for (const id of ids) await set(id, true);
       const mid = await kitAttrs();
-      const stored = await page.evaluate(() => fetch('/api/gm/state', { credentials: 'same-origin' }).then((r) => r.json()).then((j) => (j && j.doc && j.doc.features) || {}, () => ({})));
+      /* the page saves after an 800 ms debounce (LIMITS.debounce) and its PATCH round trip, so one read 900 ms after the press could land before the save (IP2e: kit.desk=false once, 14/11): read until stored, 10 s at most */
+      const readStored = () => page.evaluate(() => fetch('/api/gm/state', { credentials: 'same-origin', cache: 'no-store' }).then((r) => r.json()).then((j) => (j && j.doc && j.doc.features) || {}, () => ({})));
+      let stored = await readStored();
+      for (let t = 0; t < 20 && !ids.every((id) => stored[id] === true); t++) { await page.waitForTimeout(500); stored = await readStored(); }
       for (const id of ids) await set(id, false);
       const B = await shoot('after-' + ids.join('+')), attrsB = await kitAttrs();
       const r = compare(A, B, ids.includes('kit.desk') ? { tol: 1, exemptions: EXEMPTIONS.concat(MID_REDRAW) } : { tol: 1 });      /* MID_REDRAW: only a round that turned kit.desk off */

@@ -265,7 +265,7 @@ await test('GM: with every face switch off the held overlay is sent exactly as b
 const DOV_ROW = [{ id: 'npc_pr_dov', name: 'Dov Kessler', alias: '', role: '', kind: '', revealed: true, here: true, moving: null, added: false }];
 await test('GM: five expression buttons on the held person\'s row; each lays the held person again with that look, and that face is pressed; the tell comes from the notes', async () => {
   const log = { holds: [], toasts: [], timers: [] }, c = Spot.create(spotHost(['face.spotlight', 'face.expressions', 'face.formats'], NOTES, log));
-  await c.spotlight('npc_pr_dov'); assert.deepEqual(log.holds[0].look, { fmt: 'badge' }, 'the format from the Relation line, no expression yet');
+  await c.spotlight('npc_pr_dov'); assert.deepEqual(log.holds[0].look, { fmt: 'badge', expr: 'smirk', tell: true, pose: 'lapel' }, 'the format from the Relation line, and (IP1, overseer ruling 13/11) the tell to play and the signature pose');
   const v = c.view(); assert.ok(v.faces && v.faces.on); const html = Spot.rowsHtml(DOV_ROW, v, {});
   assert.deepEqual([...html.matchAll(/data-site="expr" data-expr="(\w+)"/g)].map((m) => m[1]), ['neutral', 'pleased', 'hostile', 'afraid', 'tell']);
   assert.ok(/data-site="sig"/.test(html) && !/data-site="sig" disabled/.test(html), 'Signature is on: the notes name one');
@@ -278,7 +278,7 @@ await test('GM: five expression buttons on the held person\'s row; each lays the
   /* the signature goes in one overlay only, and the renewal after it drops it but keeps the expression and says it is a renewal */
   await c.signature(); assert.equal(log.holds[log.holds.length - 1].look.pose, 'lapel'); assert.ok(!log.holds[log.holds.length - 1].look.re, 'the signature is not marked a renewal, so its pose plays'); assert.equal(log.holds[log.holds.length - 1].look.expr, 'smirk');
   await log.timers[log.timers.length - 1](); const re = log.holds[log.holds.length - 1].look;
-  assert.deepEqual(re, { fmt: 'badge', expr: 'smirk', re: true });
+  assert.deepEqual(re, { fmt: 'badge', expr: 'smirk', tell: true, re: true });      /* IP1: the tell (pressed last) is still the one played */
   await c.narrator(); assert.equal(c.view().faces, null);
 });
 

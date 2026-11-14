@@ -80,10 +80,11 @@ const every=(a,b,fn,first)=>{let t=first!=null?first:R(a,b);loop(dt=>{t-=dt;if(t
 const busy={};const move=(id,seq)=>{if(busy[id])return Promise.resolve();busy[id]=1;return Motion.play(id,seq).then(()=>{busy[id]=0;});};
 `;
 
-/** write app/ambient/<file> and report its size */
+/** write app/ambient/<file> (or `o.out`, a full path: the checks build to a temp folder) and report its size */
 function build(o) {
   const html = page(Object.assign({}, o, { script: SCRIPT_BASE + (o.script || "") }));
-  const out = path.join(ROOT, "app", "ambient", o.file);
+  const out = o.out ? path.resolve(o.out) : path.join(ROOT, "app", "ambient", o.file);
+  if (o.out) fs.mkdirSync(path.dirname(out), { recursive: true });
   fs.writeFileSync(out, html);
   console.log(o.file.padEnd(28), (html.length / 1024).toFixed(0).padStart(6) + " KB");
   return out;

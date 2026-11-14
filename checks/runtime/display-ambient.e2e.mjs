@@ -5,7 +5,7 @@
 // Timings are shortened through the loopback-only hook localStorage['b68.display.ambientTiming'] (display-page.js).
 //   PW_MODULE=<path to playwright> node checks/runtime/display-ambient.e2e.mjs      (invented fixtures only)
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -58,7 +58,7 @@ async function openDisplay(browser, timing) {
     try { if (window === window.top) localStorage.setItem('b68.display.ambientTiming', JSON.stringify(t)); } catch (e) { /* no storage */ }
   }, timing);
   const seen = { requests: [], fromScenes: [], errors: [], console: [], ambientResponses: [] };
-  page.on('response', (r) => { try { if (new URL(r.url()).pathname.startsWith('/ambient/')) seen.ambientResponses.push({ url: r.url(), status: r.status(), redirected: !!r.request().redirectedFrom(), type: r.headers()['content-type'] || '' }); } catch (e) { /* no url */ } });
+  page.on('response', (r) => { try { if (new URL(r.url()).pathname.startsWith('/ambient/')) seen.ambientResponses.push({ url: r.url(), method: r.request().method(), status: r.status(), redirected: !!r.request().redirectedFrom(), type: r.headers()['content-type'] || '' }); } catch (e) { /* no url */ } });
   page.on('request', (r) => { seen.requests.push(r.url()); let f = ''; try { f = r.frame().url(); } catch (e) { /* no frame */ } if (f.indexOf('/ambient/') >= 0) seen.fromScenes.push(r.url()); });
   page.on('pageerror', (e) => seen.errors.push(String(e && e.message || e)));
   page.on('console', (m) => { if (m.type() === 'error') seen.console.push(m.text()); });
@@ -290,6 +290,44 @@ try {
     expect(!m.playing && m.scene === null && m.state === 'off' && m.text === '', 'another scene stopped the theme and cleared the line: ' + JSON.stringify(m));
   });
 
+  await step('IP5.2: the episode\'s own credits play in place of the opening credits when their file is on the server, and not when it is not; asked once, same theme', async () => {
+    // the invented fixture, built to a temp folder and served by a route (so this never depends on, or touches, app/ambient)
+    const tmpEp = mkdtempSync(path.join(tmpdir(), 'b68-episode-e2e-')), epFile = path.join(tmpEp, 'episode-credits.html');
+    const b = spawnSync(process.execPath, [path.join(ROOT, 'tools', 'ambient', 'scenes', 'credits.js'), '--episode', path.join(ROOT, 'tools', 'ambient', 'fixtures', 'episode-demo.json'), '--out', epFile], { cwd: ROOT, encoding: 'utf8' });
+    expect(b.status === 0 && existsSync(epFile), 'the fixture builds: ' + b.stderr);
+    const epHtml = readFileSync(epFile, 'utf8');
+    for (const have of [true, false]) {
+      const ctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: 1180, height: 820 }, serviceWorkers: 'block' });
+      const asked = [];
+      await ctx.route('**/ambient/episode-credits', (route) => { const m = route.request().method(); asked.push(m); return have ? route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: m === 'HEAD' ? '' : epHtml }) : route.fulfill({ status: 404, contentType: 'text/plain', body: 'Not Found' }); });
+      const page = await ctx.newPage();
+      await page.addInitScript(() => { try { if (window === window.top) localStorage.setItem('b68.display.ambientTiming', JSON.stringify({ intervalMs: 600000, graceMs: 60000 })); } catch (e) { /* no storage */ } });
+      const errors = []; page.on('pageerror', (e) => errors.push(String(e && e.message || e)));
+      await ambient({ mode: 'pin', scene: 'duskwall' });
+      await page.goto(BASE + '/#display');
+      await page.waitForSelector('.dp-ambient', { state: 'attached', timeout: 20000 });
+      await shows(page, 'duskwall');
+      expect(asked.length === 0, 'nothing asked before the credits: ' + asked.join(','));
+      await ambient({ mode: 'pin', scene: 'credits' });
+      await shows(page, 'credits');
+      const fr = (await frames(page)).find((f) => f.scene === 'credits');
+      expect(fr && fr.src === (have ? 'ambient/episode-credits' : 'ambient/opening-credits'), (have ? 'deployed: the episode\'s credits play' : 'not deployed: today\'s credits play') + ' (' + JSON.stringify(fr) + ')');
+      expect(asked.filter((m) => m === 'HEAD').length === 1, 'one HEAD asked: ' + asked.join(','));
+      if (have) { const sf = sceneFrame(page, 'episode-credits'); expect(!!sf && (await sf.locator('#wkL').count()) === 1, 'the frame holds the episode page'); }
+      let m = null; for (let i = 0; i < 40; i++) { m = await page.evaluate(() => window.B68DisplayPage && window.B68DisplayPage.ambient && window.B68DisplayPage.ambient.music ? window.B68DisplayPage.ambient.music() : null); if (m && m.scene === 'credits' && m.state !== 'checking' && m.state !== 'off') break; await sleep(250); }
+      expect(m && m.scene === 'credits' && m.state !== 'off', 'the scene asked for the theme, as the opening credits do: ' + JSON.stringify(m));
+      // a replay (another scene, then the credits again) asks nothing more and plays the same file
+      await ambient({ mode: 'pin', scene: 'duskwall' }); await shows(page, 'duskwall');
+      await ambient({ mode: 'pin', scene: 'credits' }); await shows(page, 'credits');
+      const fr2 = (await frames(page)).find((f) => f.scene === 'credits' && f.on);
+      expect(fr2 && fr2.src === fr.src && asked.filter((x) => x === 'HEAD').length === 1, 'a replay: the same file, the answer kept (' + asked.join(',') + ')');
+      expect(errors.length === 0, 'page errors: ' + errors.join(' | '));
+      await ctx.close();
+    }
+    try { rmSync(tmpEp, { recursive: true, force: true }); } catch (e) { /* a lingering handle */ }
+    await ambient({ mode: 'pin', scene: 'duskwall' });
+  });
+
   await step('the wire: bulletins lie over the playing scene one at a time, round the list; a spotlight hides them; clearing the wire removes them', async () => {
     await ambient({ mode: null, scene: null, wire: null });
     await push(BLANK);
@@ -322,7 +360,10 @@ try {
     expect(D.seen.errors.length === 0, 'page errors: ' + D.seen.errors.join(' | '));
     const csp = D.seen.console.filter((m) => /content security policy|refused to|x-frame-options/i.test(m));
     expect(csp.length === 0, 'CSP / frame refusals: ' + csp.join(' | '));
-    expect(D.seen.ambientResponses.every((x) => x.status === 200 && !x.redirected), 'every scene answered 200: ' + JSON.stringify(D.seen.ambientResponses.filter((x) => x.status !== 200 || x.redirected)));
+    /* IP5.2: the one HEAD is the display asking whether the episode's credits were deployed (a 404 is the answer "no"); every scene answered 200 */
+    const heads = D.seen.ambientResponses.filter((x) => x.method === 'HEAD'), gets = D.seen.ambientResponses.filter((x) => x.method !== 'HEAD');
+    expect(heads.length <= 1 && heads.every((x) => /\/ambient\/episode-credits$/.test(new URL(x.url).pathname) && (x.status === 200 || x.status === 404)), 'the episode question, asked at most once: ' + JSON.stringify(heads));
+    expect(gets.every((x) => x.status === 200 && !x.redirected), 'every scene answered 200: ' + JSON.stringify(gets.filter((x) => x.status !== 200 || x.redirected)));
   });
 } finally {
   await browser.close();

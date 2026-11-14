@@ -756,6 +756,7 @@ service worker never caches a redirect. The registry ids, in picker order:
 | `veil` | `sunrise-ball-opening` | The Sunrise Ball's opening (s04), 30 s and silent: a crane down to the Velvet Veil and the gondola queue, Ironclad at the water door, through the glass to the chandelier, the title; **pin only**, pinned after the engagement roll while the GM narrates, plays once and holds on the title |
 | `board`, `exploded` | `planning-board`, `score-exploded` | The score scenes |
 | `testcard` | `test-card` | Please stand by (pin only) |
+| `landing` | `night-landing` | The landing: guests arriving by boat at a grand lit building at night, a flashbulb now and then; extras only, no text. Held still, one composed frame and no flash. Not in the default rotation: pin it, or tick it into a playlist |
 
 The scenes from `boneyard` on are built by `tools/ambient/scenes/*.js` (see `tools/ambient/README.md`); their figures move now
 and then (a few hard-cut frames: a drag on a cigarette, a glance, a sip). `tools/ambient/redress.js` re-dressed Booker in his suit in
@@ -1105,7 +1106,7 @@ The room's music plays from the **GM laptop** to the speaker chosen here (the Bl
   - stepping up is at once; stepping down waits until 60 s after the last cut (no flapping);
   - while another page is open over the GM page (Rules, the cast, the table, Home), the music keeps the night it last read: the work light stays up for it, and the Score does not step down;
   - a tapped mood holds until **Auto** is tapped; the night is still followed underneath, so Auto takes over at once. **Stop** fades out.
-- **PANIC** fades the music to silence in 1 s while the work light is up (the tracks keep their place); **Resume** brings it back. While the iPad shows the **Opening credits** scene (it plays the theme), the laptop music fades down, and comes back after.
+- **PANIC** fades the music to silence in 1 s while the work light is up (the tracks keep their place); **Resume** brings it back. While the **Opening credits** run on the iPad (they play the theme), the laptop music fades down; it comes back by itself after their 90 s even if they stay pinned on the title card, and at once on Clear, anything shown on the iPad, a place tapped on the band, or **Bring the music back** in the music popover (the pill reads `Quiet: credits` meanwhile). Pinning them again ducks again. Only a pin the page sees arrive ducks: a GM page loaded or reloaded while the credits are already pinned plays its music.
 - **Not built (M1):** the dip for "Blade" (the GM page reads the transcript only on the cue lane's poll, seconds late) and the voice verb "Blade, music action". Both are on the list for after the first night.
 - **Tests.** `checks/runtime/music.test.mjs` (in `check:runtime`) and `checks/runtime/music.e2e.mjs` (its own demo night, port 8601; in `check:e2e-all`): `npm run check:music` runs both.
 

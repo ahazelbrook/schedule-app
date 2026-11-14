@@ -155,13 +155,13 @@
       el = null;
       if (kh) { var k = kh; kh = null; k.dismiss(); }
     }
-    function undoToast(text, undo) {
+    function undoToast(text, undo, bad) {      /* bad (IP3c): the warning style, as the page's own warning toasts, Undo kept */
       var doc = typeof host.doc === 'function' ? host.doc() : null;
       if (!on() || !doc || !doc.body) return null;
       hide();
       var mine = ++toastSeq, KS = kitShell();
       if (KS && (kh = KS.cueToast({ text: str(text).slice(0, 160), ms: TOAST_MS, undo: typeof undo === 'function' ? function () { if (mine === toastSeq) kitUndo(KS, undo); } : null }))) return kh.el;
-      el = doc.createElement('div'); el.className = 'gm-ugtoast'; el.setAttribute('role', 'status');
+      el = doc.createElement('div'); el.className = 'gm-ugtoast'; el.setAttribute('role', bad ? 'alert' : 'status'); if (bad) el.setAttribute('data-ug-bad', '');
       var t = doc.createElement('span'); t.className = 'gm-ugtoast-t'; t.textContent = str(text).slice(0, 160); el.appendChild(t);
       if (typeof undo === 'function') {
         var b = doc.createElement('button'); b.type = 'button'; b.className = 'btn sm gm-ugtoast-b'; b.textContent = 'Undo'; b.setAttribute('data-ug', 'undo');
@@ -169,7 +169,7 @@
           if (mine !== toastSeq) return;
           if (timer !== null) { clrT(timer); timer = null; }
           b.disabled = true;
-          Promise.resolve().then(undo).then(function (r) { if (mine === toastSeq && el) { t.textContent = r === false ? 'Could not undo that.' : 'Undone.'; if (b.parentNode) b.parentNode.removeChild(b); timer = setT(hide, 1500); } },
+          Promise.resolve().then(undo).then(function (r) { if (mine === toastSeq && el) { t.textContent = typeof r === 'string' ? r : r === false ? 'Could not undo that.' : 'Undone.'; if (b.parentNode) b.parentNode.removeChild(b); timer = setT(hide, 1500); } },
             function () { if (mine === toastSeq && el) { t.textContent = 'Could not undo that.'; timer = setT(hide, 2500); } });
         });
         el.appendChild(b);
@@ -202,7 +202,7 @@
     }
     /* the kit's Undo: the toast has gone (the stack's own way); the answer is a new line in the stack */
     function kitUndo(KS, undo) {
-      Promise.resolve().then(undo).then(function (r) { KS.toast(r === false ? 'Could not undo that.' : 'Undone.', r === false); }, function () { KS.toast('Could not undo that.', true); });
+      Promise.resolve().then(undo).then(function (r) { KS.toast(typeof r === 'string' ? r : r === false ? 'Could not undo that.' : 'Undone.', r === false || typeof r === 'string');      /* IP3c: an undo may say why it could not */ }, function () { KS.toast('Could not undo that.', true); });
     }
     function didntCatch() { if (on()) say('Didn’t catch that.', false); return false; }
 
@@ -226,7 +226,7 @@
       }
       return { npcs: out };
     }
-    function done(say_, undo) { if (say_) undoToast(say_, undo); return { ok: true, say: say_ }; }
+    function done(say_, undo, bad) { if (say_) undoToast(say_, undo, bad); return { ok: true, say: say_ }; }
     function fail(msg) { say(msg, true); return { ok: false, say: msg }; }
     function clearIfMine(key) {
       if (typeof host.overlayId === 'function' && typeof host.keyFor === 'function' && host.overlayId() === host.keyFor(key) && typeof host.clearOverlay === 'function') return host.clearOverlay();
@@ -249,11 +249,31 @@
         }
         var r = resolve(a.names || []); if (r.error) return Promise.resolve(fail(r.error));
         var p = r.npcs[0];
-        if (p.revealed) return Promise.resolve(fail(p.name + ' is already revealed.'));
+        /* IP3b (stage.players): the person is also brought on with the introduction, after the reveal's own write (host.introduce answers null while the
+           setting is off: then as before). ONE toast: revealed (or introducing), or revealed but not shown and why. Undo takes them off the iPad
+           while they are still up, and un-reveals them only if this cue revealed them. */
+        function bringOn(revealedHere) {
+          var unreveal = revealedHere ? function () { return host.reveal(p.id, false); } : null;
+          var iq = typeof host.introduce === 'function' ? host.introduce(p.id) : null;
+          if (!iq) return revealedHere ? done('Revealed ' + p.name + '.', unreveal) : fail(p.name + ' is already revealed.');
+          return Promise.resolve(iq).then(function (res) {
+            if (res && res.notShown) return revealedHere ? done(res.say, unreveal, true) : fail(res.say);      /* IP3c: the warning style on both paths */
+            var down = res && res.shown && typeof res.shown.undo === 'function' ? res.shown.undo : null;
+            /* IP3c: the take-down is written FIRST and the un-reveal only after it succeeded (else a hidden person's name could sit in the stored display for a poll); a
+               take-down that fails leaves them revealed and says so, in the same toast */
+            return done('Introducing ' + (res && res.seen ? res.seen : p.name) + '.', function () {      /* IP3c: who went up, as the players see them */
+              return Promise.resolve(down ? down() : true).then(function (r) {
+                if (r && r.failed) return p.name + ' stays revealed: the iPad could not take them down (' + r.failed + ').';
+                return unreveal ? unreveal() : null;
+              });
+            });
+          });
+        }
+        if (p.revealed) return Promise.resolve(bringOn(false));
         /* the GM is asked first (a spoken cue can mishear a name); only then does it fire, and the usual Undo follows the confirm */
         return confirmToast('Reveal ' + p.name + ' to the iPad?', 'Reveal').then(function (yes) {
           if (!yes) { hide(); return { ok: false, say: '' }; }
-          return Promise.resolve(host.reveal(p.id, true)).then(function () { return done('Revealed ' + p.name + '.', function () { return host.reveal(p.id, false); }); },
+          return Promise.resolve(host.reveal(p.id, true)).then(function () { return bringOn(true); },
             function () { return fail('Could not reveal ' + p.name + '.'); });
         });
       },
@@ -305,7 +325,7 @@
       var opts = { key: key }; if (kind === 'rolodex' && typeof host.feature === 'function' && host.feature('face.rolodex')) opts.ms = 20000;     /* the lower third stays about 20 seconds (suite 3.5) */
       return Promise.resolve(host.show(kind, payload, opts)).then(function (res) {
         if (res === null || res === undefined) return { ok: false, say: '' };
-        return done(lead + r.npcs.map(function (p) { return p.name; }).join(', ') + '.', function () { return clearIfMine(key); });
+        return done(lead + r.npcs.map(function (p) { return p.name; }).join(', ') + '.', typeof res.undo === 'function' ? res.undo : function () { return clearIfMine(key); });      /* IP3b: a host answer may carry its own undo (the title card: Take it down) */
       });
     }
     /* a cue_do action (already through validateActions) -> Promise<{ ok, say }>. The switch is read here too: a cue that arrives with it off does nothing. */

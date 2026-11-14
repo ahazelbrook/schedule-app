@@ -1,0 +1,45 @@
+/* display/players/players.css: the players' screen (IP2, stage.players): the clock dials in the top-right corner. Only players.js draws .p2-*
+   markup, and only while the setting is on, so with it off nothing here matches. Read from 1.5 m: a dial about 9vh across, its name 2.2vh. */
+.p2-dials { position: absolute; z-index: 3; top: max(2vh, env(safe-area-inset-top)); right: max(2vw, env(safe-area-inset-right)); display: flex; flex-direction: row-reverse;
+  align-items: flex-start; gap: 1.4vw; pointer-events: none; }
+.p2-dials[hidden] { display: none; }
+.p2-dials.p2-col { flex-direction: column; align-items: flex-end; gap: 1.2vh; }      /* over an NPC stage: the figure stands right of centre, the nameplate lower left */
+.p2-dials.p2-board { top: auto; right: 50%; bottom: max(1.5vh, env(safe-area-inset-bottom)); transform: translateX(50%); }      /* IP6: over the planning board, at the foot of the sheet (the corners hold the pinned cards) */
+.dp-root.p2-screen .dp-auto { display: none; }      /* the autopilot sends nothing while the players' screen is on: no AUTO mark */
+/* R1: the map is one sheet edge to edge: no bar kept for the status line under it (players.js paints the stage the sheet's paper) */
+.dp-root.p2-screen .dp-map-frame { bottom: 0; }
+.dp-root.p2-screen .dp-map .dp-capbar { background: transparent; color: var(--b68-ink, #14110e); padding-bottom: max(16px, calc(env(safe-area-inset-bottom) + 12px)); }      /* a captioned drawing: its title on the same paper */
+.dp-root.p2-screen .dp-map .dp-capbar .dp-strip-cap { color: var(--b68-ink-soft, #55504a); }
+/* R2: the status line (its words are wall-clock time) and the kit's fault dot stand down; .p2-conn is the one amber dot, after 20 s without an answer */
+.dp-root.p2-screen .dp-status, .dp-root.p2-screen .stage-fault .ui-dot { visibility: hidden; }
+.p2-conn { position: absolute; z-index: 3; left: max(14px, env(safe-area-inset-left)); bottom: max(14px, env(safe-area-inset-bottom)); width: max(12px, 1.6vmin); height: max(12px, 1.6vmin);
+  border-radius: 50%; background: #e8a33c; box-shadow: 0 0 0 2px rgba(10, 9, 8, .7); pointer-events: none; }
+.p2-conn[hidden] { display: none; }
+.p2-dial { display: flex; flex-direction: column; align-items: center; gap: .8vh; width: 15vh; padding: 1.2vh .8vh 1vh; border-radius: 1.2vh;
+  background: rgba(10, 9, 8, .86); color: var(--b68-paper, #f2ede1); transform-origin: 50% 35%; }
+.p2-face { display: block; width: 9vh; height: 9vh; }
+.p2-clock { display: block; width: 100%; height: 100%; overflow: visible; }
+.p2-seg { fill: rgba(242, 237, 225, .1); stroke: currentColor; stroke-width: .8; stroke-opacity: .5; }
+.p2-seg.p2-on { fill: currentColor; stroke: rgba(10, 9, 8, .9); stroke-width: 1.2; stroke-opacity: 1; }
+.p2-seg.p2-new { fill: var(--b68-alarm-lit, #e03a20); }
+.p2-rim { fill: none; stroke: currentColor; stroke-width: 1.4; }
+.p2-full .p2-seg.p2-on { fill: var(--b68-alarm-lit, #e03a20); }
+.p2-full .p2-rim { stroke: var(--b68-alarm-lit, #e03a20); }
+.p2-name { margin: 0; max-width: 100%; font: 700 2.2vh/1.15 var(--b68-font-cond, "Arial Narrow", sans-serif); font-variant: small-caps; letter-spacing: .06em; text-align: center;
+  overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.p2-dial[data-p2-alarm] .p2-name { color: var(--b68-alarm-lit, #e03a20); }
+
+/* the tick: toward the middle and three times the size, then back; nothing else ever moves */
+.p2-dial[data-p2-tick="swell"] { position: relative; z-index: 1; background: rgba(10, 9, 8, .95); animation: p2-swell 1.6s ease-in-out both; }
+@keyframes p2-swell {
+  0% { transform: none; }
+  28% { transform: translate(var(--p2-dx, 0px), var(--p2-dy, 0px)) scale(3); }
+  72% { transform: translate(var(--p2-dx, 0px), var(--p2-dy, 0px)) scale(3); }
+  100% { transform: none; }
+}
+.p2-dial[data-p2-tick="flash"] .p2-new { animation: p2-flash .7s steps(2, jump-none) 1; }
+@keyframes p2-flash { 0% { opacity: 1; } 50% { opacity: .15; } 100% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .p2-dial[data-p2-tick="swell"] { animation: none; }
+  .p2-dial[data-p2-tick="swell"] .p2-new { animation: p2-flash .7s steps(2, jump-none) 1; }
+}

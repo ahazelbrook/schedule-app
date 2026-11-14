@@ -384,6 +384,7 @@
         '<div class="ds-nav' + (mbtn ? ' ds-nav-m' : '') + (qbtn ? ' ds-nav-q' : '') + '">' +
           '<button type="button" class="btn sm" data-act="back" data-always="1">← Back</button>' +
           (live ? tableButton() : '') +
+          (live && window.B68Handouts ? window.B68Handouts.button() : '') +      /* IP4 (phone.handouts): a player's Handouts, '' while off */
           mbtn +
           '<button type="button" class="btn sm ds-wide" data-act="edit"' + (ro ? ' disabled' : '') + '>Edit figure</button>' +
           '<button type="button" class="btn sm" data-act="print" data-always="1">Print</button>' +
@@ -432,7 +433,8 @@
       ['ds-harmbox', isHull(pb) ? 'Damage' : 'Harm', String(hl.n), /^[34]:/.test(hl.worst), hl.n ? hl.n + ' harm, worst level ' + hl.worst : 'No harm'],
       ['ds-xpbox', 'XP', play.xp.playbook + '/8' + (play.xpHold ? ' +' + play.xpHold : ''), play.xp.playbook >= 8, 'Playbook xp ' + play.xp.playbook + ' of 8' + (play.xpHold ? ', ' + play.xpHold + ' unspent' : '')]];
     if (ld) parts.push(['ds-itembox', 'Load', ld.total + '/' + ld.limit, ld.total > ld.limit, 'Load ' + ld.total + ' of ' + ld.limit]);
-    return '<div class="ds-vitals" style="--n:' + parts.length + '">' + parts.map(function (x) { return '<button type="button" class="ds-vit' + (x[3] ? ' hot' : '') + '" data-act="jump" data-to="' + x[0] + '" data-always="1" title="' + esc(x[4]) + '" aria-label="' + esc(x[4]) + ': go to the box"><span>' + esc(x[1]) + '</span> <b class="mono">' + esc(x[2]) + '</b></button>'; }).join('') + '</div>';
+    var hv = window.B68Handouts && cur && !cur.ui.static ? window.B68Handouts.vital() : '';      /* IP4 (phone.handouts): a player's Handouts as one more vital on a phone, '' while off */
+    return '<div class="ds-vitals" style="--n:' + (parts.length + (hv ? 1 : 0)) + '">' + parts.map(function (x) { return '<button type="button" class="ds-vit' + (x[3] ? ' hot' : '') + '" data-act="jump" data-to="' + x[0] + '" data-always="1" title="' + esc(x[4]) + '" aria-label="' + esc(x[4]) + ': go to the box"><span>' + esc(x[1]) + '</span> <b class="mono">' + esc(x[2]) + '</b></button>'; }).join('') + hv + '</div>';
   }
   /* the figure: drawn only where it is shown (a desk's Figure box, and print), and only when its spec changed */
   function figKey(doc) { var k; try { k = JSON.stringify(doc.spec || null); } catch (e) { k = ''; } return (cur.ui.mug ? 'm' : 'f') + k; }
@@ -1599,6 +1601,7 @@
   }
   function onDocKey(e) {
     if (!cur || (e.key !== 'Escape' && e.key !== 'Esc')) return;
+    if (window.B68Handouts && window.B68Handouts.esc()) return;      /* IP4: the Handouts viewer, then its list, first (it is on top) */
     if (mv) { closeMissionScreen(); return; }
     if (tv) { closeTableScreen(); return; }
     if (cur.ui.more) { cur.ui.more = false; render(); var mb = cur.root.querySelector('.ds-morebtn'); if (mb) try { mb.focus({ preventScroll: true }); } catch (x) {} return; }
@@ -1927,6 +1930,7 @@
     cur = null; if (c.statusT) clearTimeout(c.statusT);
     if (c.screenOff) { try { c.screenOff(); } catch (e) {} c.screenOff = null; }
     closeTableScreen(false); closeMissionScreen(false);
+    if (window.B68Handouts) window.B68Handouts.close();      /* IP4: a back gesture closes the Handouts layers too */
     c.root.removeEventListener('click', onClick); c.root.removeEventListener('input', onInput); c.root.removeEventListener('change', onChange); c.root.removeEventListener('keydown', onKey);
     document.removeEventListener('keydown', onDocKey); document.removeEventListener('click', onDocClick);
     window.removeEventListener('b68:runtime', onRuntime); window.removeEventListener('pagehide', onHide); document.removeEventListener('visibilitychange', onHide);

@@ -246,5 +246,64 @@ await test('another bundle owning a word does not stop the rest: a clash skips o
   assert.ok(!got.includes('spotlight') && got.includes('stamp') && got.includes('go'), got.join(','));
 });
 
+await test('IP3b (stage.players): "reveal <name>" brings the person on after the reveal\'s own write; ONE toast; Undo takes them down and un-reveals only if this cue revealed them; not shown says why; setting off (no host.introduce answer): as before', async () => {
+  const order = [];
+  const mk = (answer) => { const m = makeHost(); const rev = m.host.reveal; m.host.reveal = async (id, yes) => { order.push(['reveal', id, yes]); return rev(id, yes); };
+    m.host.introduce = (id) => { order.push(['introduce', id]); return answer === null ? null : Promise.resolve(answer); }; return m; };
+  const tick = async () => { for (let i = 0; i < 4; i++) await new Promise((r2) => setImmediate(r2)); };
+  /* hidden: asked first, revealed, then brought on */
+  let downs = 0; order.length = 0;
+  const m1 = mk({ ok: true, shown: { seq: 4, undo: () => { downs++; return null; } } }); const c1 = G.create(m1.host);
+  const r1 = c1.run({ type: 'cue_do', verb: 'reveal', names: ['GM-ONLY-NPC-1'] }); await tick();
+  assert.equal(order.length, 0, 'nothing before the GM says yes'); m1.doc.toasts()[0].children[1].click();
+  assert.equal((await r1).ok, true); assert.deepEqual(order, [['reveal', 'n-hid', true], ['introduce', 'n-hid']], 'the reveal is written first, then the introduction');
+  const t1 = m1.doc.toasts(); assert.equal(t1.length, 1, 'one toast'); assert.match(t1[0].children[0].textContent, /^Introducing GM-ONLY-NPC-1\./, 'IP3c: who went up');
+  t1[0].children[1].click(); await tick();
+  assert.equal(downs, 1, 'Undo takes them off the iPad'); assert.deepEqual(m1.log.revealed.slice(-1), [['n-hid', false]], 'and un-reveals them (this cue revealed them)');
+  /* already revealed: no question, introduced; Undo only takes them down */
+  downs = 0; order.length = 0;
+  const m2 = mk({ ok: true, shown: { seq: 5, undo: () => { downs++; return null; } } }); const c2 = G.create(m2.host);
+  assert.equal((await c2.run({ type: 'cue_do', verb: 'reveal', names: ['Mabel Quist'] })).ok, true); assert.deepEqual(order, [['introduce', 'n-mabel']]);
+  const t2 = m2.doc.toasts(); assert.equal(t2.length, 1); assert.match(t2[0].children[0].textContent, /^Introducing Mabel Quist\./);
+  t2[0].children[1].click(); await tick();
+  assert.equal(downs, 1); assert.equal(m2.log.revealed.length, 0, 'never un-reveals someone it did not reveal');
+  /* not shown: the reveal stands, ONE line says why */
+  const m3 = mk({ ok: true, warn: true, notShown: 'the iPad is on Blank', say: 'GM-ONLY-NPC-1 is revealed but not shown on the iPad: the iPad is on Blank.' }); const c3 = G.create(m3.host);
+  const r3 = c3.run({ type: 'cue_do', verb: 'reveal', names: ['GM-ONLY-NPC-1'] }); await tick(); m3.doc.toasts()[0].children[1].click(); await r3;
+  assert.deepEqual(m3.log.revealed, [['n-hid', true]], 'the reveal stands'); const t3 = m3.doc.toasts();
+  assert.equal(t3.length, 1); assert.match(t3[0].children[0].textContent, /revealed but not shown on the iPad: the iPad is on Blank/);
+  assert.ok('data-ug-bad' in t3[0].attrs && t3[0].attrs.role === 'alert' && t3[0].children[1].attrs['data-ug'] === 'undo', 'IP3c: the warning style, as the cue stack\'s, with its Undo kept');
+  /* IP3c: the toast names who went up as the players see them (the host's seen name: a known-as person's alias) */
+  const m5 = mk({ ok: true, seen: 'The Doorwoman', shown: { seq: 6, undo: () => true } }); const c5 = G.create(m5.host);
+  const r5 = c5.run({ type: 'cue_do', verb: 'reveal', names: ['GM-ONLY-NPC-1'] }); await tick(); m5.doc.toasts()[0].children[1].click(); await r5;
+  assert.equal(m5.doc.toasts()[0].children[0].textContent, 'Introducing The Doorwoman.');
+  /* setting off: host.introduce answers null, exactly as before */
+  const m4 = mk(null); const c4 = G.create(m4.host);
+  assert.equal((await c4.run({ type: 'cue_do', verb: 'reveal', names: ['Mabel Quist'] })).ok, false, 'already revealed: refused as before');
+  const r4 = c4.run({ type: 'cue_do', verb: 'reveal', names: ['GM-ONLY-NPC-1'] }); await tick(); m4.doc.toasts().slice(-1)[0].children[1].click();
+  assert.equal((await r4).ok, true); assert.match(m4.doc.toasts().slice(-1)[0].children[0].textContent, /^Revealed GM-ONLY-NPC-1\.$/);
+});
+
+await test('IP3c: "reveal <name>"\'s Undo writes the take-down FIRST and un-reveals only after it succeeded (a slow take-down is waited for); a failed take-down leaves them revealed and says why in the same toast', async () => {
+  const order = [];
+  const mk = (takeDown) => { const m = makeHost(); const rev = m.host.reveal; m.host.reveal = async (id, yes) => { order.push(['reveal', yes]); return rev(id, yes); };
+    m.host.introduce = () => Promise.resolve({ ok: true, shown: { seq: 4, undo: takeDown } }); return m; };
+  const tick = async (n = 4) => { for (let i = 0; i < n; i++) await new Promise((r2) => setImmediate(r2)); };
+  let release = null;
+  const m1 = mk(() => { order.push(['down-start']); return new Promise((res) => { release = () => { order.push(['down-done']); res(true); }; }); }); const c1 = G.create(m1.host);
+  const r1 = c1.run({ type: 'cue_do', verb: 'reveal', names: ['GM-ONLY-NPC-1'] }); await tick(); m1.doc.toasts()[0].children[1].click(); await r1;
+  order.length = 0;
+  m1.doc.toasts()[0].children[1].click(); await tick(8);
+  assert.deepEqual(order, [['down-start']], 'the un-reveal waits while the take-down is on its way');
+  release(); await tick(8);
+  assert.deepEqual(order, [['down-start'], ['down-done'], ['reveal', false]], 'then, and only then, the un-reveal');
+  order.length = 0;
+  const m2 = mk(() => Promise.resolve({ failed: 'offline' })); const c2 = G.create(m2.host);
+  const r2 = c2.run({ type: 'cue_do', verb: 'reveal', names: ['GM-ONLY-NPC-1'] }); await tick(); m2.doc.toasts()[0].children[1].click(); await r2;
+  m2.doc.toasts()[0].children[1].click(); await tick(8);
+  assert.deepEqual(m2.log.revealed, [['n-hid', true]], 'a failed take-down: never un-revealed');
+  const t = m2.doc.toasts(); assert.equal(t.length, 1, 'one toast'); assert.equal(t[0].children[0].textContent, 'GM-ONLY-NPC-1 stays revealed: the iPad could not take them down (offline).');
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

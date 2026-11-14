@@ -40,7 +40,7 @@ export const CARD_LIMITS = { cards: 8, field: 120, interval: 120 };
 
 // The ambient scenes (GM.md, "Ambient scenes"; the plan: docs/history/AMBIENT-PLAN.md): the ids mirror Pure.AMBIENT_SCENES in app/display-page.js; the bands are the
 // four reveal layers of a score site, lowest first.
-export const AMBIENT_SCENES = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting', 'credits', 'veil', 'board', 'exploded', 'testcard'];
+export const AMBIENT_SCENES = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting', 'credits', 'veil', 'board', 'exploded', 'testcard', 'landing'];
 export const WIRE_MAX = 240, WIRE_ITEMS_MAX = 6;       // a bulletin's characters, bulletins at once (mirrors functions/_lib/assist/prompts.js)
 export const AMBIENT_MODES = ['auto', 'pin', 'off'];
 // the overlay (cleanOverlay): the kinds, the clock sizes, the effects, and the caps; mirrored by Pure.OVERLAY in app/display-page.js
@@ -261,6 +261,11 @@ export function cleanDisplay(raw) {
   if (kind === 'npc') {
     if (typeof raw.npcId !== 'string' || !ID_RE.test(raw.npcId)) throw new HttpError(400, 'npcId must be an id (A-Z, a-z, 0-9, _ and -, at most 80)');
     out.npcId = raw.npcId;
+    // IP3 (the players' screen): two optional keys. intro: the GM's Introduce (a title card first; only the literal true). look: the names a held
+    // spotlight carries (face-look.js clean: fixed lists, never free text). Deploy 38 drops both here, and its display ignores them: a plain npc.
+    if (raw.intro === true) out.intro = true;
+    const lk = FaceLook.clean(raw.look);
+    if (lk) out.look = lk;
   }
   if (kind === 'text') out.text = str(raw.text, 'text', LIMITS.text, true);
   if (kind === 'rule') out.md = str(raw.md, 'md', LIMITS.rule, true);

@@ -291,6 +291,7 @@
     var reveal = revealEntries(map);       /* the bands, and "room:<name>" for each room opened on its own (the kit's 0.9 reveal) */
     var o = mapOpts(map, 'player', reveal, P.IPAD_MAP), o0 = o;
     o = scenePlayer(o, roll, reveal, map, tk);       /* MK1 (map.fill, map.people, map.lights, map.room): the scene through its one door; off, o itself */
+    if (o.layout === 'stage' && p2()) o = Object.assign({}, o, { legend: false });      /* IP2 R3 (stage.players): the stage layout's key strip (the ways in) does not go to the players; the tags on the drawing stay */
     /* M3: the crew markers and visible pinned clocks of the run (tk = { tokens, hide }, from playerTokens) go through tokenScreen here,
        the one door; with none left, `o` is exactly what it was before tokens existed (no `tokens` key at all) */
     var tkb = sceneBare(tk, o), scr = isObj(tkb) ? tokenScreen(tkb.tokens, roll, reveal, tkb.hide) : { tokens: [], refused: [] };      /* MK2: tkb is tk unless people are drawn */
@@ -563,7 +564,8 @@
     { id: 'cards', label: 'Calling cards' }, { id: 'pells', label: "Pell's Provisions" }, { id: 'wanted', label: 'Wanted wall' },
     { id: 'meeting', label: 'The planning meeting' }, { id: 'credits', label: 'Opening credits', pinOnly: true }, { id: 'veil', label: 'The Sunrise Ball: opening', pinOnly: true },
     { id: 'board', label: 'Planning board', needs: 'score' }, { id: 'exploded', label: 'Score site, exploded', needs: 'score' },
-    { id: 'testcard', label: 'Please stand by', pinOnly: true }
+    { id: 'testcard', label: 'Please stand by', pinOnly: true },
+    { id: 'landing', label: 'The landing' }
   ];
   P.IPAD_INTERVALS = [4, 7, 10, 15];
   P.IPAD_INTERVAL_DEFAULT = 7;
@@ -2285,7 +2287,7 @@
     AM.peeked = true;
     Promise.resolve().then(function () { return g.ambient(); }).then(function (r) {
       if (S !== me || AM.loaded || !isObj(r) || !isObj(r.doc)) return;
-      AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null;
+      AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null; crSeen();
       renderBar(); hsSync();
       if (Array.isArray(r.doc.polaroids) || S.who) whoPolaroids();      /* KS12.5 (night.who): the polaroids follow the session (a list left from a night with the setting on is cleared) */
     }, function () { AM.peeked = false; });
@@ -2363,7 +2365,7 @@
     return true;
   }
   /* Ctrl+Left / Ctrl+Right: the place before or after this one, to look at it (never a phase change) */
-  function placeStep(d) { var B = W.B68GmBand; if (!B || !S) return; var cur = currentPlace(), next = B.step(B.placeList(), cur, d); if (next && next !== cur) goPlace(next, { navigateOnly: true }); }
+  function placeStep(d) { var B = W.B68GmBand; if (!B || !S) return; var cur = currentPlace(), next = B.step(B.placeList(), cur, d); if (next && next !== cur) { crOver(); goPlace(next, { navigateOnly: true }); } }
   function bandHost(me) {
     return {
       root: function () { return S === me ? $q('#gm-root') : null; },
@@ -2372,7 +2374,7 @@
       now: function () { return Date.now(); },
       currentPlace: function () { return S === me ? currentPlace() : ''; },
       currentView: function () { return S === me ? currentView() : ''; },
-      goPlace: function (id, o) { return S === me ? goPlace(id, o) : false; },
+      goPlace: function (id, o) { if (S !== me) return false; crOver(); return goPlace(id, o); },      /* IP5.1: a place tapped on the band ends the credits' duck */
       openView: function (id) { return S === me ? openView(id) : false; },
       callAftermath: function () { return S === me ? callAftermath() : false; },
       curfew: function () { var Sp = W.B68GmSpine; return S === me && Sp && typeof Sp.curfew === 'function' ? Sp.curfew() : null; },
@@ -2509,19 +2511,34 @@
   /* the last inputs read while the GM page was up: the music plays on while Rules, the cast, the table or Home is open (S is null there), and must
      not take that for "no PANIC, no phase" (the work light would lift itself, and Tension would step down) */
   var MU_LAST = { phase: '' };
+  /* IP5.1: the credits' duck lasts while the Opening credits RUN (B68GmMusic.creditsWatch: the scene's 90 s), not while they stay pinned: the
+     pin holds the title card all night, and the music once stayed silent with it. The watch reads AM (module level, so also while Rules or Home
+     is open: MU_LAST no longer carries a stale `credits`), and the GM's own "the credits are over" (crOver) ends it at once */
+  var CRW = null, CRW_LAST = null;      /* CRW_LAST: the pin this page last read (null: no read yet, so the first read never ducks) */
+  function crWatch() { if (!CRW && W.B68GmMusic && typeof W.B68GmMusic.creditsWatch === 'function') CRW = W.B68GmMusic.creditsWatch(); return CRW; }
+  function crSeen() {
+    if (!isObj(AM.doc)) return;
+    var had = !!CRW, pinned = AM.doc.mode === 'pin' && AM.doc.scene === 'credits', w = crWatch();
+    /* a watch made late (the music module arrived after a read) takes a pin this page had already read as one it did not see arrive */
+    if (w) w.see(pinned, Date.now(), CRW_LAST === null || (!had && CRW_LAST === true));
+    CRW_LAST = pinned;
+  }
+  function crDuck() { crSeen(); return !!CRW && CRW.duck(Date.now()); }
+  /* Clear, anything shown on the iPad, a place tapped on the band, Bring the music back: the music comes back now (the iPad is not touched) */
+  function crOver() { var w = crWatch(); if (!w || !w.duck(Date.now())) return; w.over(); if (MU) { try { MU.tick(); } catch (e) {} } }
   function muInputs() {
-    if (!S || S.status !== 'ready') return MU_LAST;
+    if (!S || S.status !== 'ready') return Object.assign({}, MU_LAST, { credits: crDuck() });
     var sec = null; try { sec = S.b17 && S.b17.security ? S.b17.security.view() : null; } catch (e) { sec = null; }
     var v = null; try { v = S.cs ? S.cs.view() : null; } catch (e) { v = null; }
     var ch = false; try { ch = !!chCur(); } catch (e) { ch = false; }
     /* a site alarm the GM keeps hidden from the players (security's quiet) is no trigger: the room would hear what the GM hid */
     return (MU_LAST = { phase: placesPhase() || '', alarm: isObj(sec) && !sec.quiet ? { index: sec.index, n: sec.n, filled: sec.site ? sec.filled : null } : null, chase: ch,
-      desperate: S.muDesp || 0, panic: !!(v && v.panic), credits: !!(isObj(AM.doc) && AM.doc.mode === 'pin' && AM.doc.scene === 'credits') });
+      desperate: S.muDesp || 0, panic: !!(v && v.panic), credits: crDuck() });
   }
   function muInst() {
     if (MU || MU_FAILED || !W.B68GmMusic) return MU;
     try {
-      MU = W.B68GmMusic.make(W.B68GmMusic.browserHost({ inputs: muInputs, toast: toast, root: function () { return $q('#gm-root'); },
+      MU = W.B68GmMusic.make(W.B68GmMusic.browserHost({ inputs: muInputs, creditsDone: crOver, toast: toast, root: function () { return $q('#gm-root'); },
         openLibrary: function () { var T = W.B68GmTools, t = T && T.get ? T.get('music') : null; if (!openView('music') && t) t.open(); } }));
       MU.load(); MU.start();
     } catch (e) { MU = null; MU_FAILED = true; if (W.console) W.console.error('music: the Music desk could not start on this page', e); }
@@ -2577,12 +2594,12 @@
       patch: function (p) { return S === me ? patch(p) : false; }, now: function () { return Date.now(); }, toast: toast,
       cueSlot: function () { return S === me && me.band ? me.band.cueSlot() : null; }, changed: function () { if (S === me && me.band) me.band.update(); },
       log: function (t) { if (S === me && me.night) me.night.cue(t); },
-      scene: function (id) { return patchAmbient({ mode: 'pin', scene: id }).then(function (r) { return r !== null; }); },
+      scene: function (id) { return p2Ambient({ mode: 'pin', scene: id }).then(function (r) { return r !== null; }); },
       show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
       reveal: function (name) {
         var x = csNpc(name), ref = x && npcRef(x.id); if (!x || !ref) return Promise.resolve({ ok: false, say: 'No NPC called ' + name + '.' });
-        if (x.d.revealed === true) return Promise.resolve({ ok: true });
-        return Promise.resolve(ref.update({ revealed: true, firstSeen: x.d.firstSeen || nowIso() })).then(function () { if (S === me && isObj(me.npcs) && isObj(me.npcs[x.id])) me.npcs[x.id].revealed = true; return { ok: true }; }, function () { return { ok: false, say: 'Could not reveal ' + name + '.' }; });
+        if (x.d.revealed === true) return introOn() ? revealShown(x) : Promise.resolve({ ok: true });      /* IP3b: already revealed, the cue still brings them on */
+        return Promise.resolve(ref.update({ revealed: true, firstSeen: x.d.firstSeen || nowIso() })).then(function () { if (S === me && isObj(me.npcs) && isObj(me.npcs[x.id])) me.npcs[x.id].revealed = true; return introOn() ? revealShown(x) : { ok: true }; }, function () { return { ok: false, say: 'Could not reveal ' + name + '.' }; });
       },
       phase: function (p) { return cuePhase(me, p); },
       music: function (word) { var m = S === me ? muInst() : null; return Promise.resolve(!!(m && m.cue(word))); },      /* M1: a `music:` cue */
@@ -3560,6 +3577,7 @@
         '<button type="button" class="btn sm" data-gm="scorescene"' + (mu.layer === 'player' ? '' : ' disabled title="Switch Layer to Player: only the player layer goes to the iPad"') + (mu.layer === 'player' ? ' title="The planning board and the exploded site on the iPad, from this roll at these bands"' : '') + '>Set as score scene</button>' +
         '<button type="button" class="btn sm" data-gm="blankipad" title="What is shown comes off the iPad: the ambient scene plays. Clear (0) takes everything down">Take it down</button></div>' +
         (sceneBehind(mu) ? '<p class="gm-dim gm-scene-behind">The score scene shows ' + esc(sceneBehind(mu).join(', ')) + ': press Set as score scene to bring it up to date.</p>' : '') +
+        (pbOn() ? '<div class="gm-pb-slot" data-pb-slot></div>' : '') +      /* IP6 (stage.players): the Board block (gm/players-board.js paints it) */
         runBox(runSite()) +
         '<details class="gm-more gm-mapopts"' + (foldOpen('mapopts') ? ' open' : '') + ' data-fold="mapopts"><summary>View &amp; theme <span class="gm-dim">' + esc(mapLine(mu)) + '</span></summary>' + '<div class="gm-map-ctl">' + sel('view', 'View', VIEWS, mu.view) + sel('theme', 'Theme', THEMES, mu.theme) + sel('time', 'Time', P.TIMES, mu.time) + sel('weather', 'Weather', P.WEATHERS, mu.weather) + sceneScreenSel(mu) + '</div></details>' +
         '<details class="gm-more gm-dl"' + (foldOpen('dl') ? ' open' : '') + ' data-fold="dl"><summary>Downloads</summary><div class="gm-map-acts">' + '<button type="button" class="btn sm" data-gm="dlsvg">Download SVG</button><button type="button" class="btn sm" data-gm="dlnote">Download note (.md)</button>' + '<button type="button" class="btn sm" data-gm="dlcanvas">Download canvas</button></div></details>' + '</section>';
@@ -3568,6 +3586,7 @@
     if (hist.length) h += '<div class="gm-earlier"><span class="gm-lab">Earlier:</span>' + hist.map(function (x) { return earlierChip(x, 'location', cur && cur.hid === x._id); }).join('') + '</div>';
     box.innerHTML = h;
     runPaint();          /* N3: the stage, the security level, the people and the knowledge are the site's now (gm/site.js), no longer boxes under the Map heading */
+    if (pbOn()) W.B68GmPlayersBoard.paint(box, pbHost());      /* IP6 (stage.players): the pins, and the score scene kept in step with them and the reveal */
     if (!S.map && runSite() && W.B68Map && W.B68Map.render) drawMap(true);     /* a run draws itself: its people are on the map */
     else if (S.map) showMap();
   }
@@ -4213,8 +4232,8 @@
       setThreat: function (text) { return rollSetThreat(text); }, roomSelected: function (name) { rollRoomSelected(name); },
       /* the NPC cards and the prep note's rooms (the Rooms section), and the Prep decorator for the SAY callouts */
       hasNpcCard: function (names) { return !!npcCardSrc(names); },
-      npcCard: function (names) { var src = npcCardSrc(names); return src ? npcCardHtml(src, 'rn-') : ''; },
-      decorate: function (el) { if (W.B68GmPrep && el) W.B68GmPrep.decorate(el, {}); },
+      npcCard: function (names) { var src = npcCardSrc(names) || p2NotesSrc(names); return src ? npcCardHtml(src, 'rn-') : ''; },      /* IP2: no vault card, the cast notes */
+      decorate: function (el) { if (W.B68GmPrep && el) { W.B68GmPrep.decorate(el, {}); paDecorate(el); } },      /* PA: action chips in a room's note and an NPC card too */
       roomNote: function (room) { var rn = runRoomNotes(), e = rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? rn.byRoom[room] : null, si = siteInst(), md = e ? str(e.md) : ''; if (si && md) md = si.noteMd(md);      /* N3: the If it goes wrong line is the card's action line, not the note's */
         return e && str(e.md).trim() ? npcCardHtml(md, 'rm-') : null; },
       /* a switch's value (map.countdown: the header's countdown pie) */
@@ -4271,6 +4290,7 @@
     if (!gate.allows(d)) return Promise.reject(new Error('Only a player-layer map made on this page can go to the iPad.'));
     opts = opts || {};
     if (!opts.b17 && b17Frozen()) return Promise.reject(new Error('The iPad is frozen: unfreeze it first.'));
+    if (!isObj(d) || d.kind !== 'blank') crOver();      /* IP5.1: anything shown on the iPad ends the credits' duck (a blank does not: rolling the credits blanks the stage) */
     if (!opts.map) endLive();
     if (!opts.chase) endChase();
     if (!opts.clocks) endClocks();
@@ -4290,6 +4310,7 @@
     Promise.resolve().then(function () { return job.g.setDisplay(body); }).then(function (r) {
       DQ.busy = null;
       if (body.kind !== 'dark' && S && S.b17 && S.b17.stage && typeof S.b17.stage.unblank === 'function') S.b17.stage.unblank();     /* N3: anything but the dark on the iPad ends Blank */
+      if (body.kind === 'npc' && body.npcId) p2Card(body.npcId);      /* IP2 (stage.players): an NPC on the iPad (Show on iPad, an introduction) opens their card here */
       try { if (job.opts.done) job.opts.done(r || {}); } catch (e) {}
       noteShown(job.d, job.opts); job.res(r); pumpDisplay(); paintLive();
     }, function (e) {
@@ -4306,6 +4327,7 @@
     return !say.length || W.confirm(what + ' will show the players ' + say.join(' and ') + '. Go ahead?');
   }
   function resetReveal() {
+    if (pbOn() && pbReplayReveal()) return;      /* IP6b (stage.players): the stored board's site comes back at the bands the iPad shows */
     var r = mapUi().reveal;
     if (BANDS.some(function (b) { return !!r[b] !== !!P.REVEAL0[b]; })) patch({ loc: { map: { reveal: clone(P.REVEAL0) } } });
   }
@@ -4559,7 +4581,7 @@
   /* Take it down (a tool's own button): what is shown goes, the ambient scene plays. Blank (lights out): true black until the next send. */
   function ks14Down() { if (W.B68GmPcStatus && b09On('kit.stage')) { W.B68GmPcStatus.down(); pcStatusSync(); } }      /* KS14.2: Take it down, Blank, Clear: nobody acts */
   function blankIpad() { ks14Down();
-    pushDisplay({ kind: 'blank' }).then(function () { toast('Taken down: the iPad plays the ambient scene.'); }, function (e) { toast('Could not take it down: ' + errText(e), true); }); }
+    return pushDisplay({ kind: 'blank' }).then(function () { toast('Taken down: the iPad plays the ambient scene.'); return true; }, function (e) { toast('Could not take it down: ' + errText(e), true); return false; }); }      /* IP3c: the promise, for whoever waits on it */
   function darkIpad() { ks14Down(); return pushDisplay({ kind: 'dark' }).then(function () { toast('Blank: the iPad is black until the next send.'); return true; }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); return false; }); }
 
   /* ---------- THE iPAD TRAY's Clear (0) (the GM night rebuild, the design's iPad part: one way off) ----------
@@ -4579,6 +4601,7 @@
   function clearIpad() {
     var me = S; if (!me) return Promise.resolve(false);
     if (b17Frozen()) { toast('The iPad is frozen: unfreeze it first.', true); return Promise.resolve(false); }      /* Freeze holds the iPad: Clear changes nothing */
+    crOver();      /* IP5.1: Clear means the credits are over for the music (their title card stays on the iPad) */
     ks14Down();
     var g = gmApi();
     var fresh = g && typeof g.ambient === 'function' ? Promise.resolve().then(function () { return g.ambient(); }).then(function (r) { if (S === me) adoptAmbient(r); }, function () { /* the cached document will do */ }) : Promise.resolve();
@@ -4642,7 +4665,7 @@
   /* the page's iPad, for the tray: what it knows, and its one way off and its blank */
   function ipadSnapshot() {
     return {
-      shown: AM.shown, doc: AM.doc, now: Date.now(),
+      shown: AM.shown, doc: AM.doc, now: Date.now(), intro: W.B68GmIntro ? W.B68GmIntro.live(AM.shown, Date.now()) : '',      /* IP3: "Introducing <name>" while the card plays */
       names: {
         npc: function (id) { var d = S && isObj(S.npcs) ? S.npcs[id] : null; return isObj(d) ? str(d.name) : ''; },
         clock: function (id) { var c = tableClocks().filter(function (x) { return str(x.id) === str(id); })[0]; return c ? str(c.name) : ''; },
@@ -4806,7 +4829,8 @@
     if (typeof r.seq === 'number' && typeof AM.seq === 'number' && r.seq < AM.seq) return false;     /* an older answer landing late */
     var fl0 = ipadLayerSet('scene.filter') ? ipadLayers().scene.filter : null;
     AM.doc = r.doc; AM.seq = typeof r.seq === 'number' ? r.seq : AM.seq; AM.updatedAt = r.updatedAt || null; AM.loaded = true; AM.error = '';
-    apSync(); hsSync();
+    crSeen(); apSync(); hsSync();
+    if (pbOn()) { pbRevealLate(); W.B68GmPlayersBoard.follow(pbHost()); }      /* IP6b: a reload that replayed the roll before this document came; IP6c: the board's starting point (or a pin that waited) */
     if (Array.isArray(r.doc.polaroids) || (S && S.who)) whoPolaroids();      /* KS12.5: a stored list follows the session (or goes, with night.who off), whichever read lands first */
     /* F4: the site's Flashback / Back follows a filter it learns of here (a reload mid-flashback draws the toolbar before this GET lands) */
     if ((ipadLayerSet('scene.filter') ? ipadLayers().scene.filter : null) !== fl0 && S) { var fb = S.b19 && S.b19.flashback; if (fb && typeof fb.refresh === 'function') fb.refresh(); else siteChanged(); }
@@ -4846,6 +4870,7 @@
   function newOverlayId() { return OV_PREFIX + (++ovCount); }
   function showOverlay(o) {
     if (!isObj(o)) return Promise.resolve(null);
+    if (o.auto !== true) crOver();      /* IP5.1: the GM's own overlay ends the credits' duck; the autopilot's does not */
     var ov = Object.assign({}, o); if (ov.id === undefined) ov.id = newOverlayId();
     if (!overlayOk(ov)) { toast('That overlay is not one the iPad can show.', true); return Promise.resolve(null); }
     return patchAmbient({ overlay: ov });
@@ -4857,7 +4882,8 @@
     if (!showCtl && W.B68Show) {
       showCtl = W.B68Show.make({ send: patchAmbient, toast: toast });
       var sendShow = showCtl.show;   /* 4.7: a ring that reached the iPad also rings the practical speaker (gm/phone.js; off unless room.phone is on) */
-      showCtl.show = function (kind) { var pr = sendShow.apply(showCtl, arguments); if (kind === 'ring') Promise.resolve(pr).then(function (r) { var rd = r !== null ? rdInst() : null; if (rd) rd.onShow(kind); }); return pr; };
+      var p2Show = sendShow; sendShow = function (kind, payload) { var pr = p2Show.apply(showCtl, arguments); if (kind === 'rolodex' && isObj(payload) && Array.isArray(payload.npcIds) && payload.npcIds.length) Promise.resolve(pr).then(function (r) { if (r != null) p2Card(payload.npcIds[0]); }); return pr; };      /* IP2: an Introduce beat (the button or the cue) opens the first NPC's card */
+      showCtl.show = function (kind) { crOver(); var pr = sendShow.apply(showCtl, arguments);      /* IP5.1: a show ends the credits' duck */ if (kind === 'ring') Promise.resolve(pr).then(function (r) { var rd = r !== null ? rdInst() : null; if (rd) rd.onShow(kind); }); return pr; };
     }
     return showCtl;
   }
@@ -5008,6 +5034,7 @@
     var ln = $q('#gm-ipad-ap');
     if (ln) { ln.hidden = !v; if (v) { var m = ln.querySelector('[data-ap-badge]'), t = ln.querySelector('[data-gm="aptoggle"]'); if (m) m.textContent = v.badge; if (t) t.textContent = v.action; var o = ln.querySelector('[data-gm="apoff"]'); if (o) o.hidden = v.mode === 'off'; } }
     if (W.B68GmIpadTray) W.B68GmIpadTray.refresh();      /* the tray's autopilot pill (gm/ipad-tray.js) */
+    if (ln && W.B68GmPlayersScreen) W.B68GmPlayersScreen.apLine(ln, b09On('stage.players'));      /* IP2: the row says why it sends nothing */
   }
   /* Take over (or Hand back, or Switch on): the top bar's pill, the Blade panel's header and the iPad tab all call this */
   function apToggle() {
@@ -5024,7 +5051,7 @@
     var ap = S && S.ap; if (!ap) return;
     if (!isObj(camp) || !Array.isArray(camp.clocks)) { ap.clocks = null; return; }
     var now = apClockMap(), prev = ap.clocks; ap.clocks = now;
-    if (!prev) return;
+    if (!prev || b09On('stage.players')) return;      /* IP2: the dials show the clocks; the autopilot sends no clock overlay */
     var changed = [], gone = [];
     Object.keys(now).forEach(function (id) {
       var n = now[id], p = prev[id];
@@ -5060,7 +5087,7 @@
   }
   /* Voice's lines arrived for the NPC on stage: the page's own stage decides who (Voice's `who` is model text and is never looked up) */
   function apNpcSpoke() {
-    var ap = S && S.ap; if (!ap) return;
+    var ap = S && S.ap; if (!ap || b09On('stage.players')) return;      /* IP2: map first, the GM sends NPCs */
     var who = npcList().filter(function (x) { return staged(x.id) && str(x.doc.name).replace(/\s+/g, ' ').trim(); })[0];
     if (!who) return;
     apEvent({ type: 'npc', npcId: who.id, staged: true, revealed: who.doc.revealed === true, portrait: isObj(who.doc.spec) && Object.keys(who.doc.spec).length > 0 });
@@ -5085,6 +5112,34 @@
      The logic is in gm/stamp.js and gm/cue-grammar.js; this is the seam they are given. Every switch is read live from the state document, so with all three off
      nothing here draws, registers a cue word or writes. */
   function b09On(id) { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, id)); }
+  /* IP2 (stage.players): the players' screen's GM side (gm/players-screen.js); off, p2() is null and every branch above and below takes the old path */
+  function p2() { return b09On('stage.players') && W.B68GmPlayersScreen ? W.B68GmPlayersScreen : null; }
+  function p2Ambient(p) {
+    var M = p2(); if (!M) return patchAmbient(p);
+    return M.scene({ patch: patchAmbient, shown: function () { return isObj(AM.shown) ? str(AM.shown.kind) : ''; }, current: function () { return isObj(AM.doc) ? { mode: AM.doc.mode, scene: AM.doc.scene } : null; },
+      blank: function () { return pushDisplay({ kind: 'blank' }); }, label: function (id) { var x = P.IPAD_SCENES.filter(function (y) { return y.id === id; })[0]; return x ? x.label : ''; }, toast: toast }, p);
+  }
+  function p2Card(id) {
+    var M = p2(), me = S; if (!M || !me) return;
+    M.openCard({ doc: document, npc: function (x) { return isObj(me.npcs) ? me.npcs[x] : null; }, rv: function () { return S === me && me.rv && me.rvBox && me.rvBox.isConnected ? me.rv : null; },
+      cast: function (x) { if (S !== me) return; var pf = str(me.p2focus).split('|'), k = pf.length === 2 && pf[1] === x ? '#gm-npc [data-gm="' + pf[0] + '"][data-id="' + pf[1].replace(/[^A-Za-z0-9_-]/g, '') + '"]' : ''; me.p2focus = ''; me.npcCardOpen = x; renderNpcs(); var nb = k ? $q(k) : null; if (nb && nb.focus) nb.focus(); } }, id);      /* IP2b: the row's button keeps the focus through the redraw */
+  }
+  /* IP2c: the night ends (or is reset): the public-line queue is emptied, each line written to the night log as not sent; an empty queue writes nothing */
+  function p2LinesEnd(fn, why) {
+    return function () {
+      var M = W.B68GmPlayersScreen, me = S;
+      return Promise.resolve(fn.apply(this, arguments)).then(function (r) {      /* only a night that did end (End the night can be declined) */
+        if (r && r.ok && M && me && me.root && M.lines) M.lines({ root: me.root, log: function (t) { if (S === me && me.night && typeof me.night.cue === 'function') me.night.cue(t); } }).clear(why);
+        return r;
+      });
+    };
+  }
+  function p2NotesSrc(names) {
+    var M = p2(); if (!M || !S || !isObj(S.npcs)) return '';
+    var want = [].concat(names).map(function (x) { return str(x).toLowerCase().trim(); }).filter(Boolean);
+    var id = Object.keys(S.npcs).filter(function (k) { var d = S.npcs[k]; return isObj(d) && [d.name].concat(d.alias || []).some(function (n) { return want.indexOf(str(n).toLowerCase().trim()) >= 0; }); })[0];
+    return id ? M.notesMd(S.npcs[id]) : '';
+  }
   function b09Layer(me, path, value) {
     var sh = shows(); if (!sh) return Promise.resolve(null);
     return sh.layer(path, value).then(function (r) { if (r !== null && S === me) { me.b09.layers[path] = value; } return r; });
@@ -5127,9 +5182,10 @@
         var d = me.npcs && me.npcs[id];
         return Promise.resolve(ref.update(yes ? { revealed: true, firstSeen: (isObj(d) && d.firstSeen) || nowIso() } : { revealed: false })).then(function () { if (S === me && isObj(me.npcs) && isObj(me.npcs[id])) me.npcs[id].revealed = !!yes; });
       },
-      show: function (kind, payload, o) { var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },
+      show: function (kind, payload, o) { if (kind === 'rolodex' && introOn() && isObj(payload) && Array.isArray(payload.npcIds) && payload.npcIds.length === 1) return W.B68GmIntro.introduce(payload.npcIds[0], introHost(), { quiet: true }); var sh = shows(); return sh ? sh.show(kind, payload, o) : Promise.resolve(null); },      /* IP3: one name, the title card */
       keyFor: function (key) { return W.B68Show ? W.B68Show.idFor(key) : key; }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
       clearOverlay: function () { return patchAmbient({ overlay: null }); },
+      introduce: function (id) { return S === me && introOn() ? revealShown({ id: id, d: isObj(me.npcs) ? me.npcs[id] : null }) : null; },      /* IP3b: "reveal <name>" brings them on (stage.players) */
       holdSpotlight: function (name) { return S === me && me.b17 ? me.b17.spot.holdByName(name) : null; },
       narrator: function () { return S === me && me.b17 ? me.b17.spot.narrator() : Promise.resolve(false); },
       stageSend: function () { return S === me && me.b17 && b09On('map.stage') ? me.b17.stage.send() : null; }
@@ -5372,9 +5428,9 @@
       roomMd: function (room) { var rn = S === me ? runRoomNotes() : null; return rn && room && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? str(rn.byRoom[room].md) : ''; },
       here: function (room) { var rs = S === me ? runV2() : null, RV = W.B68GmRunView; if (!rs || !RV || !room) return []; var st = ballDoc(rs.name); return RV.peopleIn(rs.play, st, typeof st.t === 'number' ? st.t : 0, room); },
       focusRoom: function () { return S === me && S.rv && runV2() ? S.rv.selected() : pickRoomName(); },
-      hold: function (npcId, ms, look) { var ov = { id: 'b17sl-' + newOverlayId().slice(-8), kind: 'npc', npcId: npcId, ms: ms }; if (look) ov.look = look; return showOverlay(ov); },
+      hold: function (npcId, ms, look) { var ov = { id: 'b17sl-' + newOverlayId().slice(-8), kind: 'npc', npcId: npcId, ms: ms }; if (look) ov.look = look; if (me.p2hold !== npcId) { me.p2hold = npcId; p2Card(npcId); } return showOverlay(ov); },      /* IP2: the first hold opens the card, not each re-lay */
       notes: function (id) { var d = S === me && isObj(me.npcs) ? me.npcs[id] : null; return isObj(d) ? str(d.gmNotes) : ''; },
-      clear: function () { var up = isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; return up.indexOf('b17sl-') === 0 ? clearOverlay() : Promise.resolve(null); },
+      clear: function () { me.p2hold = null; var up = isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; return up.indexOf('b17sl-') === 0 ? clearOverlay() : Promise.resolve(null); },
       overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
       confirm: function (m) { return W.confirm(m); },
       reveal: function (id) {
@@ -5410,7 +5466,7 @@
       npcs: function () { return S === me ? siteNpcs(me) : []; }, card: function (names) { return !!npcCardSrc(names); }, face: function (id) { return S === me ? siteFace(me, id) : ''; },
       roomMd: function (room) { var rn = S === me ? runRoomNotes() : null; return rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? str(rn.byRoom[room].md) : ''; },
       scoreOver: siteScoreOver, montageOpen: function () { return !!(S === me && S.rv && S.rv.toolOpen() === 'montage'); }, montage: function (view) { siteMontage(view); },
-      dawn: function () { return runDawn(); }, introduce: function (id) { npcIntroduce(id); }, setThreat: siteThreat,
+      dawn: function () { return runDawn(); }, introduce: function (id) { npcIntroduce(id); }, players: function () { return introOn(); }, setThreat: siteThreat,
       /* T5: Show on iPad / Take it down for the players' map, in the site's toolbar */
       mapLive: function () { return S === me && mapOnIpad(); }, mapShow: function () { return S === me ? siteMapUp(false) : Promise.resolve(false); }, mapDown: function () { if (S === me) blankIpad(); },
       lineShown: function () { var l = $q('#gm-runv .rv-siteline'); return !!(l && l.offsetParent !== null); }
@@ -5515,7 +5571,7 @@
     if (h) { st = Object.assign({}, st, { heard: h }); setTimeout(function () { if (S !== me) return; var s2 = ballDoc(rs.name), h2 = runHeard(rs, s2, +s2.t); if (h2) ballSet(rs.name, { heard: h2 }, true); }, 0); }
     var rn = runRoomNotes(), rooms = {};
     if (rn && isObj(rn.byRoom)) (Array.isArray(roll.rooms) ? roll.rooms : []).forEach(function (r) { var n = isObj(r) ? str(r.name) : '', e = n && isObj(rn.byRoom[n]) ? rn.byRoom[n] : null; if (e) rooms[n] = { costume: typeof e.costume === 'string' ? e.costume : null, say: (Array.isArray(e.say) ? e.say : []).filter(function (x) { return typeof x === 'string'; }) }; });
-    return { play: play, state: st, clocks: tableClocks(), pcs: pcs, open: open, rooms: rooms, phoneCards: phoneCardsOn(),
+    return { play: play, state: st, clocks: tableClocks(), pcs: pcs, open: open, rooms: rooms, phoneCards: phoneCardsOn(), players: b09On('stage.players'),
       deny: function () { return { names: tokenHidden(roll, reveal, []).concat(hiddenSecretNames()), secrets: (Array.isArray(play.secret) ? play.secret : []).filter(function (x) { return typeof x === 'string'; }) }; } };
   }
   /* an unrevealed NPC whose name or alias is this one */
@@ -5583,10 +5639,11 @@
       reveal: function (npc) { return S === me ? missionReveal(npc) : Promise.resolve(false); },
       offer: function (spec) { if (S === me) missionOffer(spec); },
       toast: toast,
+      hold: function (o) { var M = S === me ? p2() : null; if (!M) return false; M.offerLine(o, missionOffer, showOverlay, { root: S.root, log: function (t) { if (S === me && S.night && typeof S.night.cue === 'function') S.night.cue(t); } }); return true; },      /* IP2 (stage.players): the public line waits for the GM's Send */
       overlay: function (o) { return S === me ? showOverlay(o) : Promise.resolve(null); },
       confirm: function (msg) { return W.confirm(msg); }
     });
-    me.mission.onPublished(function (r) { if (r && r.ok && S === me) missionOffer(null); });
+    me.mission.onPublished(function (r) { if (r && r.ok && S === me && !(S.offer && S.offer.keep)) missionOffer(null); });      /* IP2: a kept offer (the public line) outlives the publish */
     /* >>> VV6 in the Run view (app/gm/run-view.js seams): the Players chip, "End the night" in Run's menu, the Players view */
     var RV = W.B68GmRunView, chip = function () { if (!RV || !RV.setPlayersChip) return; var st = me.mission.status(); RV.setPlayersChip(st.text || 'Players: —', st.ok); };
     if (RV && Array.isArray(RV.menuItems) && !RV.menuItems.some(function (i) { return i.id === 'end-night'; })) {
@@ -5610,7 +5667,8 @@
   function missionHooks() {
     var me = S, ctl = me && me.mission, M = W.B68GmMission; if (!ctl || !M) return null;
     return {
-      onPublished: ctl.onPublished, status: ctl.status, last: ctl.last, publishNow: ctl.publishNow, endNight: ctl.endNight, resetNight: ctl.resetNight, landed: ctl.landed, changed: ctl.changed,
+      onPublished: ctl.onPublished, status: ctl.status, last: ctl.last, publishNow: ctl.publishNow, endNight: p2LinesEnd(ctl.endNight, 'the night ended'), resetNight: p2LinesEnd(ctl.resetNight, 'the night was reset'),      /* IP2c: the public lines still waiting are dropped, and logged */
+      landed: ctl.landed, changed: ctl.changed,
       renderPlayersView: function (el, m) { return M.renderPlayersView(el, m === undefined ? ctl.last() : m, W.document); }
     };
   }
@@ -5706,10 +5764,19 @@
       h += '<li class="gm-handout' + (on ? ' gm-handout-on' : '') + '" data-ho="' + esc(x.id) + '"' + (on ? ' aria-current="true"' : '') + '><img class="gm-handout-thumb" src="' + esc(P.HANDOUT_DIR + x.file) + '" alt="" loading="lazy" decoding="async" width="72" height="72">' +
         '<div class="gm-handout-t"><b>' + esc(x.title) + '</b>' + (on ? '<span class="gm-ho-tag">On the iPad</span>' : '') + (x.when ? '<span class="gm-dim">' + esc(x.when) + '</span>' : '') +
         '<div class="gm-ipad-acts"><button type="button" class="btn sm primary" data-gm="ho-show" data-id="' + esc(x.id) + '">Show on iPad</button>' +
-        '<button type="button" class="btn sm" data-gm="blankipad">Take it down</button></div></div></li>';
+        '<button type="button" class="btn sm" data-gm="blankipad">Take it down</button></div>' + hoSendHtml(x) + '</div></li>';      /* IP4 (phone.handouts): Send to…, '' while off */
     });
     return h + '</ul></div>';
   }
+  /* IP4 (phone.handouts): Send to… under each handout, gm/handout-send.js in the gm-handouts bundle, fetched and made only while the setting is on */
+  function hoSendInst() {
+    if (!S || !W.B68Features || !W.B68Features.valueOf(S.doc, 'phone.handouts')) { if (S && S.hoSend) { S.hoSend.destroy(); S.hoSend = null; } return null; }
+    var me = S;
+    if (!W.B68GmHandoutSend) { if (!S.hoSendAsked && W.B68Load && W.B68Load.need) { S.hoSendAsked = true; W.B68Load.need('gm-handouts').then(function () { if (S === me) { renderIpad(); if (W.B68GmPrepActions) W.B68GmPrepActions.refresh(S.root, paHost()); } }, function () { if (S === me) S.hoSendAsked = false; }); } return null; }
+    if (!S.hoSend) S.hoSend = W.B68GmHandoutSend.create({ ask: asked, toast: toast, away: function () { return S === me && S.who ? S.who.away() : []; } });
+    return S.hoSend;
+  }
+  function hoSendHtml(x) { var hs = hoSendInst(); return hs ? hs.html(x) : ''; }
   function showHandout(id) {
     var x = handoutById(id); if (!x) { toast('That handout is not in the pack any more.', true); return Promise.resolve(false); }
     var me = S;
@@ -5948,14 +6015,18 @@
     if (on && STT.loaded && !STT.error) return '<p class="gm-note gm-stt-pc" role="status">Into the vault: waiting for the PC (it looks once a minute). Lines keep on the server till then; if this stays, is the PC on and awake?</p>';
     return '<p class="gm-dim gm-stt-pc">Into the vault: the PC copies new lines by itself while listening is on.</p>';
   }
-  function setScoreScene() {
-    if (!S || !S.locRoll) { toast('Roll a location first.', true); return; }
+  /* IP6 (stage.players): pb = { map, pin(built), ask, seen } from pbSetScore: the same build, then the board redrawn with its pins (pin), the same gate and
+     the one score write; it answers the write's promise and says nothing itself. Without pb, as before. */
+  function setScoreScene(pb) {
+    var none = Promise.resolve(null);
+    if (!S || !S.locRoll) { toast('Roll a location first.', true); return none; }
     var built;
-    try { built = scoreScene(S.locRoll, mapUi(), W.B68Map && W.B68Map.render); } catch (e) { toast(errText(e), true); return; }
-    if (!confirmReveal(built.reveal, 'This score scene')) return;
+    try { built = scoreScene(S.locRoll, pb ? pb.map : mapUi(), W.B68Map && W.B68Map.render); if (pb) pb.pin(built); } catch (e) { toast(errText(e), true); return none; }
+    if (pb ? pb.ask && !confirmReveal(pb.seen, 'The planning board') : !confirmReveal(built.reveal, 'This score scene')) return none;
     gate.mark(built.board); gate.mark(built.iso);
-    patchAmbient({ score: built.score }).then(function (r) {
-      if (r) toast(built.rings ? 'Score scene set. The plan would name a hidden room, so the board uses rings.' : 'Score scene set: ' + built.score.name + '.');
+    return patchAmbient({ score: built.score }).then(function (r) {
+      if (r && !pb) toast(built.rings ? 'Score scene set. The plan would name a hidden room, so the board uses rings.' : 'Score scene set: ' + built.score.name + '.');
+      return r;
     });
   }
   function save(name, data) { if (S.api && S.api.saveFile) S.api.saveFile(name, data); }
@@ -6601,7 +6672,7 @@
       S.npcUnsub = db.collection('npcs').onSnapshot(function (snap) {
         if (S !== me) return;
         var m = {}; (snap && snap.docs || []).forEach(function (d) { var x = d && typeof d.data === 'function' ? d.data() : null; if (isObj(x)) m[d.id] = x; });
-        me.npcs = m; renderNpcs(); renderRail(); apSubjects(); liveTokens(); hsSync();        /* VV8: revealing (or filing) an NPC can show or hide the target's marker; F3: the hard start's faces */
+        me.npcs = m; me.npcsIn = true; renderNpcs(); renderRail(); apSubjects(); liveTokens(); hsSync(); if (pbOn()) W.B68GmPlayersBoard.follow(pbHost());        /* VV8: revealing (or filing) an NPC can show or hide the target's marker; F3: the hard start's faces */
       }, function () {});
     } catch (e) { S.npcUnsub = null; }
   }
@@ -6611,7 +6682,7 @@
     var list = npcList();
     box.innerHTML = '<div id="gm-npcgen"></div><h3 class="gm-band">The cast</h3>' +
       (list.length ? '<ul class="gm-npcs">' + list.map(function (x) {
-        var d = x.doc, rev = d.revealed === true, src = npcCardSrc([d.name].concat(d.alias || [])), open = !!src && S.npcCardOpen === x.id;
+        var d = x.doc, rev = d.revealed === true, src = npcCardSrc([d.name].concat(d.alias || [])) || (S.npcCardOpen === x.id ? p2NotesSrc([d.name]) : ''), open = !!src && S.npcCardOpen === x.id;
         return '<li class="gm-npcrow" data-id="' + esc(x.id) + '"><div class="gm-thumb" data-fig="' + esc(x.id) + '" aria-hidden="true"></div><div class="gm-npcmeta"><b>' + esc(d.name || 'Unnamed') + '</b><small>' + esc([d.role, d.faction].filter(Boolean).join(' · ')) + '</small>' + (rev ? '' : '<span class="gm-badge">Hidden</span>') + '</div>' +
           '<div class="gm-npcacts">' + (src ? '<button type="button" class="btn sm" data-gm="npccard" data-id="' + esc(x.id) + '" aria-expanded="' + open + '">Card</button>' : '') + '<button type="button" class="btn sm" data-gm="npcipad" data-id="' + esc(x.id) + '">Show on iPad</button>' + introHtml(x.id, rev) + stageHtml(x.id, staged(x.id)) + '</div></li>' +
           (open ? '<li class="gm-npccardrow"><div class="pp-card gm-castcard pp-doc">' + npcCardHtml(src, 'nc-') + '</div></li>' : '');
@@ -6783,13 +6854,116 @@
     }, function (x) { toast('Could not add them to the cast: ' + errText(x), true); if (S === me) renderNpcGen(); });
   }
   /* "Introduce" (suite 3.5, switch face.rolodex): the NPC's Rolodex card as a lower third on the iPad for about 20 seconds; revealed NPCs only (the server joins to them anyway) */
-  function introHtml(id, rev) { return rev && b09On('face.rolodex') ? '<button type="button" class="btn sm" data-gm="npcintro" data-id="' + esc(id) + '" title="Flip their card up as a lower third on the iPad">Introduce</button>' : ''; }
+  function introHtml(id, rev) { var pl = introOn(); return (rev || pl) && b09On('face.rolodex') ? '<button type="button" class="btn sm" data-gm="npcintro" data-id="' + esc(id) + '" title="' + (pl ? 'A whole-screen title card on the iPad, then they stay on it' : 'Flip their card up as a lower third on the iPad') + '">Introduce</button>' : ''; }
   function npcIntroduce(id) {
     var d = S.npcs[id], sh = shows();
     if (!d) { toast('That person is not in the cast (yet): the cast is still loading, or they were taken out.', true); return; }      /* tech run: never a silent no */
+    if (introOn()) { W.B68GmIntro.introduce(id, introHost()); return; }      /* IP3 (stage.players): Show on iPad with a title card first (gm/players-intro.js) */
     if (!sh) { toast('Introduce needs the hosted app.', true); return; }
     if (d.revealed !== true) { toast('Reveal ' + (d.name || 'them') + ' first.', true); return; }
     sh.show('rolodex', { npcIds: [id] }, { key: 'intro-' + id, ms: 20000 }).then(function (r) { if (r !== null && r !== undefined) toast('Introducing ' + (d.name || 'them') + '.'); }, function () { toast('Could not introduce them on the iPad.', true); });
+  }
+  /* IP3: the introduction's switch and what gm/players-intro.js needs of this page (the reveal is Show on iPad's, the confirm is asked()) */
+  function introOn() { return !!W.B68GmIntro && b09On('stage.players'); }
+  function introHost() {
+    return { npc: function (id) { return S && isObj(S.npcs) ? S.npcs[id] : null; }, ask: asked, push: function (d) { return pushDisplay(d); }, toast: toast, errText: errText,
+      reveal: function (id, d) { var ref = npcRef(id); if (!ref) return Promise.reject(new Error('The cast is not available here.')); return ref.update({ revealed: true, firstSeen: d.firstSeen || nowIso() }); },
+      tray: function () { if (W.B68GmIpadTray) W.B68GmIpadTray.refresh(); },
+      takeDown: function (title) {      /* the cue's Undo: Take it down while they are still up; resolves true when done (or nothing to do), { failed } else (IP3c: the caller waits on it) */
+        if (!(isObj(AM.shown) && AM.shown.kind === 'npc' && str(AM.shown.title) === str(title))) return Promise.resolve(true);
+        ks14Down(); return pushDisplay({ kind: 'blank' }).then(function () { return true; }, function (e) { return { failed: errText(e) }; });
+      },
+      blocked: introBlocked };
+  }
+  /* IP3b item 6: why a reveal cue's introduction cannot go up now ('' when it can): the GM's Blank, a running hard start, a frozen iPad */
+  function introBlocked() {
+    var sc = isObj(AM.doc) && isObj(AM.doc.layers) && isObj(AM.doc.layers.scene) ? AM.doc.layers.scene : {};
+    if (isObj(AM.shown) && AM.shown.kind === 'dark') return 'the iPad is on Blank';
+    if (sc.mode === 'start') return 'the hard start is running';
+    if (b17Frozen()) return 'the iPad is frozen';
+    return '';
+  }
+  /* IP3b item 6 (stage.players): a reveal cue (the cue stack's `reveal:`; the grammar's "reveal <name>" through its host) brings the person on with the
+     introduction, after the reveal's own write. The reveal stands whatever happens to the card; when it cannot go up, ONE line says so and why. */
+  /* the name the players see: a known-as person (known-as.js: tags hold known-as and the alias is set) by the alias alone */
+  function seenName(d) {
+    var ka = isObj(d) && Array.isArray(d.tags) && d.tags.some(function (t) { return typeof t === 'string' && t.trim().toLowerCase() === 'known-as'; }) && str(d.alias).trim();
+    return ka ? str(d.alias).trim() : str(d && d.name) || 'them';
+  }
+  function revealShown(x) {
+    var nm = str(x && x.d && x.d.name) || 'They';
+    return Promise.resolve(W.B68GmIntro.introduce(x.id, introHost(), { cue: true })).then(function (r) {
+      return isObj(r) && r.notShown ? { ok: true, warn: true, say: nm + ' is revealed but not shown on the iPad: ' + r.notShown + '.', notShown: r.notShown }
+        : { ok: true, shown: r, seen: seenName(x.d), say: 'Introducing ' + seenName(x.d) + '.' };      /* IP3c: the toast names who went up, as the players see them */
+    }, function (e) { return { ok: true, warn: true, say: nm + ' is revealed but not shown on the iPad: ' + errText(e) + '.', notShown: errText(e) }; });
+  }
+  /* IP6 (stage.players): the planning board's pins (gm/players-board.js). What it needs of this page: the player copy's rooms at the bands and the rooms
+     opened on their own, the hidden-name scan, the token screen (each pin alone), the score scene through scoreScene and the gate, and the board pinned on the iPad */
+  function pbOn() { return !!W.B68GmPlayersBoard && b09On('stage.players'); }
+  function pbSeen(mu0) { var mu = mu0 || Object.assign({}, mapUi(), { layer: 'player' }); return revealList(mu).concat(openRooms(mu).map(function (n) { return 'room:' + n; })); }
+  /* the player map at the bands the stored score scene has (keep: the GM has not ticked a band on this page since it was set), else as ticked now */
+  function pbMap(keep) {
+    var mu = Object.assign({}, mapUi(), { layer: 'player' }), sc = AM.doc && isObj(AM.doc.score) ? AM.doc.score : null;
+    if (keep && sc && S.locRoll && str(sc.name) === str(S.locRoll.name).slice(0, 200) && Array.isArray(sc.reveal)) { var rv = {}; BANDS.forEach(function (b) { rv[b] = b === 'public' || sc.reveal.indexOf(b) >= 0; }); mu.reveal = rv; }
+    return mu;
+  }
+  function pbHide() {      /* hidden NPCs (name and alias) and hidden clocks, and the full name of a revealed NPC the players know only by an alias */
+    var out = hiddenSecretNames(), B = W.B68GmPlayersBoard;
+    if (S && isObj(S.npcs)) Object.keys(S.npcs).forEach(function (id) { var d = S.npcs[id]; if (isObj(d) && d.revealed === true && B.known(d) !== str(d.name).trim() && str(d.name).trim()) out.push(str(d.name).trim()); });
+    return out;
+  }
+  function pbHost() {
+    return { doc: function () { return S.doc; }, roll: function () { return S.locRoll; }, site: function () { return S.locRoll ? str(S.locRoll.name) : ''; }, npcs: function () { return S && isObj(S.npcs) ? S.npcs : {}; },
+      rooms: function () { var seen = pbSeen(); return (S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : []).filter(function (r) { return isObj(r) && typeof r.name === 'string' && r.name; }).map(function (r) { return { name: r.name, shown: roomShown(r, seen) }; }); },
+      scan: function (text) { var names = P.tokenHidden(S.locRoll, pbSeen(), pbHide()); return names.filter(function (n) { return namesHit(text, [n]); }); },
+      patch: function (p) { return patch(p); }, score: function () { return AM.doc && isObj(AM.doc.score) ? AM.doc.score : null; }, busy: function () { return AM.busy > 0; },
+      figures: function () { return W.B68Figure || null; }, toast: toast, setScore: pbSetScore, showBoard: pbShowBoard, hide: pbHide,
+      ready: function () { return !!(S && AM.loaded && (S.npcsIn || !(S.api && S.api.db && S.api.db()))); } };      /* IP6c: the stored score scene and the cast are read (or this page has no cast to wait for) */
+  }
+  function pbSetScore(list, ask, keep) {
+    if (!S || !S.locRoll) { toast('Roll a location first.', true); return Promise.resolve(null); }
+    var me = S, pmu = pbMap(keep), seen = pbSeen(pmu), hide = pbHide(), kept = [], refused = [], waiting = 0, dropped = false, plates = 0;
+    function screened(tok) { var r = tok ? P.tokenScreen([tok], S.locRoll, seen, hide) : null; return r && r.tokens.length ? r.tokens[0] : null; }
+    list.forEach(function (x) {
+      var r = P.tokenScreen([x.tok], S.locRoll, seen, hide);
+      if (r.tokens.length) kept.push({ full: r.tokens[0], lite: screened(x.lite), alt: screened(x.alt) });
+      else if (r.refused.length) refused.push({ id: x.pin.id, label: x.tok.label, names: r.refused }); else waiting++;
+    });
+    /* the score scene as Set as score scene builds it, then its board drawn again with the screened pins at the same view, kept only if the leak scan passes */
+    var pin = function (built) {
+      var fit = W.B68GmPlayersBoard.fitBoard(S.locRoll, W.B68Map && W.B68Map.render, { seen: seen, view: built.view, kit1: P.kit1On(), leaks: P.leaks }, kept), svg = fit.svg;      /* too large: faces lighter, then name plates, oldest first, only as many as it takes */
+      plates = fit.svg ? fit.plates : 0;
+      if (svg) built.board = built.score.board = svg; else dropped = kept.length > 0;
+    };
+    return setScoreScene({ map: pmu, seen: seen, ask: ask, pin: pin }).then(function (r) {
+      if (r && dropped) toast('The board went up without its pins: with them it would name a hidden room, or be too large for the iPad.', true);
+      if (r && S === me && S.locRoll) renderLocation();      /* the panel's word on the score scene (sceneBehind) is now the stored one */
+      return r ? { ok: true, refused: refused, waiting: waiting, pins: dropped ? 0 : kept.length, plates: plates } : null;
+    });
+  }
+  /* IP6b: the bands of the stored score scene when it is this roll's site, else null */
+  function pbStoredBands() { var sc = AM.doc && isObj(AM.doc.score) ? AM.doc.score : null; return sc && S && S.locRoll && str(sc.name) === str(S.locRoll.name).slice(0, 200) && Array.isArray(sc.reveal) ? sc.reveal : null; }
+  /* a replay (Earlier, a reload, another device) of the site whose board the iPad shows: the ticks take the stored bands (true), so one tick never
+     takes rooms away. Another site, or nothing stored: false (reset to public, as before). The ambient document not read yet: note the roll and reset. */
+  function pbReplayReveal() {
+    if (!AM.loaded) { S.pbRevealWait = S.locRoll; return false; }
+    var bands = pbStoredBands(); if (!bands) return false;
+    var want = {}, r = mapUi().reveal; BANDS.forEach(function (b) { want[b] = b === 'public' || bands.indexOf(b) >= 0; });
+    if (BANDS.some(function (b) { return !!r[b] !== want[b]; })) patch({ loc: { map: { reveal: want } } });
+    return true;
+  }
+  function pbRevealLate() {
+    if (!S || !S.pbRevealWait || S.pbRevealWait !== S.locRoll) return;
+    S.pbRevealWait = null; var r = mapUi().reveal;
+    if (BANDS.some(function (b) { return !!r[b] !== !!P.REVEAL0[b]; }) || !pbReplayReveal()) return;      /* the GM ticked something meanwhile: theirs stands */
+    W.B68GmPlayersBoard.rebase(pbHost()); renderLocation();
+  }
+  function pbShowBoard() {      /* one press: the board scene pinned, and a blank pushed when a stage covers it (as Roll the opening credits does) */
+    return patchAmbient({ mode: 'pin', scene: 'board' }).then(function (r) {
+      if (r === null) return false;
+      var k = isObj(AM.shown) ? str(AM.shown.kind) : '';
+      return k && k !== 'blank' ? pushDisplay({ kind: 'blank' }).then(function () { return true; }, function () { return true; }) : true;
+    }).then(function (ok) { if (W.B68GmIpadTray) W.B68GmIpadTray.refresh(); if (ok) toast('The planning board is on the iPad.'); return ok; });
   }
   function npcToIpad(id) {
     var d = S.npcs[id]; if (!d) return;
@@ -6801,7 +6975,9 @@
       var ref = npcRef(id); if (!ref) { toast('The cast is not available here.', true); return; }
       pre = Promise.resolve().then(function () { return ref.update({ revealed: true, firstSeen: d.firstSeen || nowIso() }); });
     }
-    pre.then(function () { return pushDisplay({ kind: 'npc', npcId: id, title: str(d.name).slice(0, 2000) }); })
+    var FLk = W.B68GmFaceLooks, lk = FLk ? FLk.create({ feature: b09On, notes: function () { return str(d.gmNotes); } }).initial(id) : null;      /* IP1: the tell and the signature play on the iPad (names only) */
+    if (lk) delete lk.fmt;
+    pre.then(function () { return pushDisplay(lk && (lk.expr || lk.pose) ? { kind: 'npc', npcId: id, title: str(d.name).slice(0, 2000), look: lk } : { kind: 'npc', npcId: id, title: str(d.name).slice(0, 2000) }); })
       .then(function () { toast('On the iPad: ' + (d.name || 'the NPC') + '.'); }, function (e) { if (!e || !e.superseded) toast('Could not show ' + (d.name || 'them') + ' on the iPad: ' + errText(e), true); });
   }
 
@@ -6910,6 +7086,36 @@
     W.B68GmPrep.decorate(el, { ticks: p.ticks, cells: p.cells, beats: p.beats });
     el.querySelectorAll('.pp-pin').forEach(function (b) { var on = isObj(pins[b.getAttribute('data-sec')]); b.setAttribute('aria-pressed', String(on)); b.textContent = on ? 'Pinned' : 'Pin'; });
     decorateSites(el);
+    paDecorate(el);      /* PA: the note's action spans become chips (gm/prep-actions.js, fetched only when a note holds one) */
+  }
+  /* ---------- PA (prep actions): ▶ handout / clock / rule chips in the prep note. A note without an action span: nothing fetched, nothing changed ---------- */
+  function paDecorate(el) {
+    if (!S || !el || !el.querySelectorAll) return;
+    var A = W.B68GmPrepActions; if (A) { A.decorate(el, paHost()); return; }
+    if (S.paAsked || !W.B68Load || !W.B68Load.need || !paHas(el)) return;
+    var me = S; S.paAsked = true;
+    W.B68Load.need('prep-actions').then(function () { if (S === me) { prepRedecorate(); var rv = $q('#gm-runv'); if (rv) paDecorate(rv); } }, function () { if (S === me) S.paAsked = false; });
+  }
+  /* the one test of an action span (gm/room-notes.js isAction, what room-notes.js and stamp.js strip): a code span outside a fence */
+  function paHas(el) { var R = W.B68GmRooms; return !!(R && R.isAction) && [].some.call(el.querySelectorAll('code'), function (c) { return !(c.closest && c.closest('pre')) && R.isAction(c.textContent); }); }
+  function paHost() {
+    var me = S;
+    if (me.paHost) return me.paHost;
+    return (me.paHost = {
+      handouts: function () { return S === me ? handouts() : []; }, show: function (id) { return showHandout(id); },
+      sendHtml: function (x) { var hs = S === me ? hoSendInst() : null; return hs ? hs.html(x) : ''; },
+      clocks: tableClocks, canClock: function () { return !!(S === me && me.api && typeof me.api.addClock === 'function'); },
+      addClock: function (c) { return me.api.addClock(c); },
+      clockOps: function (ops) { return me.api && typeof me.api.clockOps === 'function' ? me.api.clockOps(ops) : Promise.reject(new Error('The table cannot change one clock here.')); },
+      toast: toast, undoToast: function (text, undo) { return S === me && me.cueGrammar ? me.cueGrammar.undoToast(text, undo) : null; },
+      screen: screenSections, rules: rulesApi, md: function () { return W.B68Markdown; }, esc: function () { return W.B68GmEsc || null; },
+      openRule: function (r) {
+        if (S !== me) return;
+        setPanel('rules'); if (isPhone()) { S.seg = 'side'; syncPanels(); }
+        if (r.src === 'screen') { var fq = $q('#gm-gs-q'); if (fq && fq.value) { fq.value = ''; filterScreen(''); } screenJump(r.id); flash($q('#gm-rules [data-gs="' + str(r.id).replace(/"/g, '') + '"]')); }
+        else rulesSearch(r.q, r.id);
+      }
+    });
   }
   function prepRedecorate() { decoratePrep($q('#gm-prep')); renderRail(); renderBeat(); }
   /* the note's find box: every word somewhere in a section's heading or text keeps its chip in the rail; Enter goes to the first */
@@ -7065,8 +7271,12 @@
       h = '<p class="gm-kick">Faction</p><h3>' + esc(st ? st.faction : L.name) + '</h3>' + (st ? '<p><span class="gm-lab">Status with the crew</span> ' + esc((st.status > 0 ? '+' : '') + st.status) + '</p>' : '<p class="gm-dim">No status recorded on the board.</p>');
     }
     box.innerHTML = '<div class="pp-peekcard">' + h + '<p class="pp-acts">' + acts + '<a class="btn sm" href="' + esc(W.B68GmPrep.obsidianUri(pk, L.rel)) + '">Open in Obsidian</a><button type="button" class="btn sm" data-gm="prep-peekx">Close</button></p></div>';
+    /* PA2: a ✕ pinned at the card's top right (an iPad has no Esc, and the Close at the foot is below the whole card) */
+    { var pkc = box.querySelector('.pp-peekcard'), pkx = document.createElement('button'); pkx.type = 'button'; pkx.className = 'pp-peekx'; pkx.setAttribute('data-gm', 'prep-peekx'); pkx.setAttribute('aria-label', 'Close'); pkx.title = 'Close (Esc)'; pkx.textContent = '✕'; if (pkc) pkc.insertBefore(pkx, pkc.firstChild); }
     box.hidden = false;
     var cb = box.querySelector('.pp-cardbody'); if (cb) W.B68GmPrep.decorate(cb, {});     /* a card has no boxes or beats: nothing of the GM state */
+    /* PA2: where the page itself scrolls under the sticky view chips (under 1100 px: an iPad), the card sticks below them, so its ✕ is never under the bars */
+    try { var vc = $q('.gm-vchips'), vs = vc && W.getComputedStyle(vc), vr = vc && vc.getBoundingClientRect(); box.style.top = vs && vs.position === 'sticky' && vr.height ? Math.round((parseFloat(vs.top) || 0) + vr.height + 6) + 'px' : ''; } catch (e) { /* the sheet's top */ }
     try { box.scrollIntoView({ block: 'nearest' }); } catch (e) {}
   }
   /* ---------- the Cards panel: the planning meeting's opportunity cards, typed onto the card here, shown on the iPad ----------
@@ -7854,6 +8064,8 @@
       case 'voiceclear': S.voice = null; renderRack(); break;
       case 'ho-show': showHandout(b.getAttribute('data-id')); break;
       case 'ho-step': hoStep(+b.getAttribute('data-d')); break;      /* T12: the deck's Previous / Next */
+      case 'ho-send': { var hsd = hoSendInst(); if (hsd) hsd.tap(b); } break;      /* IP4 (phone.handouts): a Send to… chip */
+      case 'pa': if (W.B68GmPrepActions) W.B68GmPrepActions.tap(b, paHost()); break;      /* PA: a prep action chip, its Send…, its pop-over's ✕ and Open in Rules */
       case 'another': voiceAnother(); break;
       case 'intent': doIntent(+b.getAttribute('data-i')); break;
       case 'replay': {
@@ -7954,9 +8166,9 @@
       case 'siteroll': rollSite(str(b.getAttribute('data-score'))); break;
       case 'siteclear': clearSite(str(b.getAttribute('data-score'))); break;
       case 'ambretry': loadAmbient(); break;
-      case 'ambmode': { var am = b.getAttribute('data-v'); if (am === 'pin') patchAmbient({ mode: 'pin', scene: AM.doc && ipadView(AM.doc).scene || 'harvest' }); else patchAmbient({ mode: am }); break; }
-      case 'ambscene': patchAmbient({ mode: 'pin', scene: b.getAttribute('data-id') }); break;
-      case 'ambskip': patchAmbient({ skip: true }); break;
+      case 'ambmode': { var am = b.getAttribute('data-v'); if (am === 'pin') p2Ambient({ mode: 'pin', scene: AM.doc && ipadView(AM.doc).scene || 'harvest' }); else p2Ambient({ mode: am }); break; }
+      case 'ambscene': p2Ambient({ mode: 'pin', scene: b.getAttribute('data-id') }); break;
+      case 'ambskip': p2Ambient({ skip: true }); break;
       case 'clearoverlay': clearOverlay(); break;
       case 'aptoggle': apToggle(); break;
       case 'apoff': apSwitchOff(); break;
@@ -7964,7 +8176,7 @@
       case 'dlsvg': if (!S.map) toast('Draw the map first.', true); else if (S.map.layer === 'player' && S.map.leak) toast(P.LEAK_MSG, true); else save(slug(S.locRoll && S.locRoll.name) + '-' + S.map.view + '-' + S.map.theme + '-' + S.map.layer + '.svg', S.map.svg); break;
       case 'dlnote': if (S.locRoll && W.B68GmLocation) save(slug(S.locRoll.name) + '.md', W.B68GmLocation.noteBody(S.locRoll, { date: dmy(new Date()) })); break;
       case 'dlcanvas': if (S.locRoll && W.B68GmLocation) save(slug(S.locRoll.name) + '.canvas', W.B68GmLocation.canvas(S.locRoll, part('location'))); break;
-      case 'npcipad': npcToIpad(b.getAttribute('data-id')); break;
+      case 'npcipad': if (b.closest && b.closest('#gm-npc')) S.p2focus = 'npcipad|' + b.getAttribute('data-id'); npcToIpad(b.getAttribute('data-id')); break;      /* IP2b: the row's button gets the focus back after the card redraw */
       case 'npcintro': npcIntroduce(b.getAttribute('data-id')); break;
       case 'npcstage': stageNpc(b.getAttribute('data-id')); break;
       case 'npccard': { var nci = b.getAttribute('data-id'); S.npcCardOpen = S.npcCardOpen === nci ? null : nci; renderNpcs(); var ncb = $q('#gm-npc [data-gm="npccard"][data-id="' + str(nci).replace(/"/g, '') + '"]'); if (ncb) ncb.focus(); break; }
@@ -8068,6 +8280,8 @@
       renderRail(); renderBar(); scMaybeRedraw(); runStale();
       if (who()) { var whoCs = whoCampSig(); if (whoCs !== S.whoCampSig) { S.whoCampSig = whoCs; S.who.paint(S.root); whoPolaroids(); } }      /* KS11/KS12.0 (night.who): the session or the RSVPs changed (not every mission publish); KS12.5: End clears the polaroids */
       apClocksFeed(); apSubjects();
+      if (pbOn()) W.B68GmPlayersBoard.follow(pbHost());      /* IP6: a clock hidden (or shown) changes what a pin may say */
+      if (W.B68GmPrepActions) W.B68GmPrepActions.refresh(S.root, paHost());      /* PA: a clock chip says where its clock stands */
       if (S.mission) S.mission.noteClocks();      /* the alarm clock's fill or visibility is on the players' band */
       { var stc = setInst(); if (stc) stc.heal(); }      /* W0.2 / N0: the campaign document's copy of the settings follows the GM state's, on every arrival */
       /* the stage changed: the NPC tab's buttons follow */
@@ -8100,6 +8314,7 @@
     _pure: P,
     /* for checks (music.e2e.mjs): the music's state, also while another page (Rules, the cast, Home) is open over the GM page */
     _music: function () { return MU ? MU.state() : null; },
+    _creditsAge: function (ms) { var w = crWatch(); if (w) w._age(+ms || 0); },      /* for checks (music.e2e.mjs): as if the credits had run that much longer */
     /* for checks (gm.e2e.mjs): the current roll, and the display gate */
     _stamped: function (st) { fitStamped(st); },     /* tests: what the stamp's host.stamped does (the node rig has no iPad to stamp on) */
     _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer, svg: S.map.svg }, panel: S.panel, seg: S.seg, doc: S.doc, runCacheN: S.runCache ? S.runCache.keys.length : 0 } : null; },

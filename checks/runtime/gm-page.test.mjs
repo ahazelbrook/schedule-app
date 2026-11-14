@@ -901,7 +901,7 @@ await test('9b. crewOf: whole numbers clamped to 0-9 / 0-4; null without a numbe
   assert.deepEqual(P.crewOf({ crew: { heat: 5 } }), { heat: 5, wanted: 0 });
   for (const d of [null, {}, { crew: null }, { crew: {} }, { crew: { heat: '3', wanted: 'x' } }, { crew: { heat: NaN } }, { crew: [] }]) assert.equal(P.crewOf(d), null, JSON.stringify(d));
   const v0 = P.ipadView(null); assert.deepEqual([v0.mode, v0.intervalMin, v0.hasScore, v0.intervals], ['auto', 7, false, [4, 7, 10, 15]]);
-  assert.deepEqual(v0.tiles.map((x) => [x.id, x.disabled, x.pressed, x.note]), [['harvest', false, false, ''], ['watch', false, false, ''], ['duskwall', false, false, ''], ['boneyard', false, false, ''], ['undertow', false, false, ''], ['vet', false, false, ''], ['tram', false, false, ''], ['lurker', false, false, ''], ['cards', false, false, ''], ['pells', false, false, ''], ['wanted', false, false, ''], ['meeting', false, false, ''], ['credits', false, false, 'pin only'], ['veil', false, false, 'pin only'], ['board', true, false, 'needs a score scene'], ['exploded', true, false, 'needs a score scene'], ['testcard', false, false, 'pin only']]);
+  assert.deepEqual(v0.tiles.map((x) => [x.id, x.disabled, x.pressed, x.note]), [['harvest', false, false, ''], ['watch', false, false, ''], ['duskwall', false, false, ''], ['boneyard', false, false, ''], ['undertow', false, false, ''], ['vet', false, false, ''], ['tram', false, false, ''], ['lurker', false, false, ''], ['cards', false, false, ''], ['pells', false, false, ''], ['wanted', false, false, ''], ['meeting', false, false, ''], ['credits', false, false, 'pin only'], ['veil', false, false, 'pin only'], ['board', true, false, 'needs a score scene'], ['exploded', true, false, 'needs a score scene'], ['testcard', false, false, 'pin only'], ['landing', false, false, '']]);
   const v1 = P.ipadView({ mode: 'pin', scene: 'board', intervalMin: 12, score: SCORE0 });
   assert.deepEqual([v1.mode, v1.intervalMin, v1.intervals, v1.hasScore], ['pin', 12, [4, 7, 10, 12, 15], true]);
   assert.deepEqual(v1.tiles.filter((x) => x.pressed).map((x) => x.id), ['board']); assert.equal(v1.tiles.filter((x) => x.disabled).length, 0);
@@ -997,7 +997,7 @@ await test('9g. the gate lets a score patch through only when both svgs were mar
   assert.equal(g.allowsAmbient({ score: { board: 5, iso: 6 } }), false);
 });
 
-await test('9h. the iPad view: a tab (I); On the iPad now, then Listening, Scenes and Settings; the mode, seventeen scenes, the interval; the server document is drawn; Clear and Blank are the tray\'s', async () => {
+await test('9h. the iPad view: a tab (I); On the iPad now, then Listening, Scenes and Settings; the mode, eighteen scenes, the interval; the server document is drawn; Clear and Blank are the tray\'s', async () => {
   const fg = addAmbient(fakeGm(), { doc: { mode: 'pin', scene: 'duskwall', intervalMin: 10 }, shown: { kind: 'svg', title: 'Invented Mill' } });
   const h = await openPage({ fg, camp: CAMP3 });
   assert.ok(h.q('#gm-ipad') && h.q('[data-pane="ipad"]') && h.q('.gm-views [data-pv="ipad"]').textContent.includes('iPad'), 'a pinned view in every place');
@@ -1005,7 +1005,7 @@ await test('9h. the iPad view: a tab (I); On the iPad now, then Listening, Scene
   h.press('i'); assert.equal(h.page._state().panel, 'ipad');
   await until(() => h.page._ambient().loaded);
   assert.deepEqual(h.qa('#gm-ipad .gm-band').map((x) => x.textContent.replace(/\s+/g, ' ').trim().split(' ')[0]), ['On', 'Listening', 'Settings', 'Scenes'], 'the view\'s sections (the grid sets Listening and Settings beside the Scenes)');
-  assert.equal(h.qa('#gm-ipad .gm-ipad-tile').length, 17); assert.equal(h.qa('#gm-ipad [data-gm="ambmode"]').length, 3);
+  assert.equal(h.qa('#gm-ipad .gm-ipad-tile').length, 18); assert.equal(h.qa('#gm-ipad [data-gm="ambmode"]').length, 3);
   assert.equal(h.q('#gm-ipad-now').textContent, 'Map · Invented Mill', 'what the display holds, read once');
   assert.deepEqual(h.qa('#gm-ipad [data-gm="ambmode"]').map((b) => [b.getAttribute('data-v'), b.getAttribute('aria-pressed')]), [['off', 'false'], ['auto', 'false'], ['pin', 'true']]);
   assert.deepEqual(h.qa('#gm-ipad .gm-ipad-tile').filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.getAttribute('data-id')), ['duskwall']);

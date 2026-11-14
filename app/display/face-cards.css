@@ -87,3 +87,5 @@
 .dp-fl-tx-grid { background-image: linear-gradient(rgba(242, 237, 225, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(242, 237, 225, .07) 1px, transparent 1px); background-size: 2.2vmin 2.2vmin; }
 .dp-fl-tx-hatch { background-image: repeating-linear-gradient(45deg, rgba(242, 237, 225, .07) 0 1px, transparent 1px 1.2vmin), repeating-linear-gradient(-45deg, rgba(242, 237, 225, .07) 0 1px, transparent 1px 1.2vmin); }
 .dp-fl-tx-dots { background-image: radial-gradient(circle, rgba(242, 237, 225, .1) 2px, transparent 2.6px); background-size: 3vmin 3vmin; }
+/* IP1 (13/11): a tell or a signature pose swapped onto a face or a figure fades in (display/face-render.js); a cut under reduced motion */
+/* IP1c: no fade: a tell or a pose swap is a hard cut (display/face-render.js swapIn), so the figure never blinks to nothing */

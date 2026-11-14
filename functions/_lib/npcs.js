@@ -166,6 +166,7 @@ export async function joinDisplayNpc(db, campaign, cur) {
   const doc = row && isLiveNpc(row, campaign) ? parseNpc(row) : null;
   const shown = isKnownAs(doc) ? { ...d, title: doc.alias.trim() } : d;
   const v = playerView(doc);      // null unless revealed; never gmNotes; a known-as NPC by its alias
+  if (!v && ('look' in shown || 'intro' in shown)) { const { look: _l, intro: _i, ...plain } = shown; return { ...cur, display: plain }; }     // IP3: an NPC hidden again since: no look, no card
   if (!v) return shown === d ? cur : { ...cur, display: shown };
   const text = (x) => (typeof x === 'string' ? x : '');
   return { ...cur, display: { ...shown, npc: { name: text(v.name), alias: text(v.alias), role: text(v.role), faction: text(v.faction), description: text(v.description), spec: drawingSpec(v.spec) } } };

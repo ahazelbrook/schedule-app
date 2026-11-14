@@ -27,7 +27,7 @@
   function tryRequire(p) { try { return require(p); } catch (e) { return null; } }
   var FL = root.B68FaceLook || (typeof require === 'function' ? tryRequire('./face-look.js') : null);
   function part(name, file) { return root[name] || (typeof require === 'function' ? tryRequire(file) : null); }
-  var POSE_MS = 3200;
+  var POSE_MS = 3200, DRAWS = 0;
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function on(id, env) {
@@ -43,7 +43,13 @@
     return e;
   }
   function kids(e) { return e && e.children ? Array.prototype.slice.call(e.children) : []; }
-  function byClass(e, cls) { var k = kids(e); for (var i = 0; i < k.length; i++) if (String(k[i].className || '').split(/\s+/).indexOf(cls) >= 0) return k[i]; return null; }
+  /* the first element below e (at any depth: the new stage nests the head inside its speaking row, IP1) that carries the class */
+  function byClass(e, cls) {
+    var k = kids(e);
+    for (var i = 0; i < k.length; i++) if (String(k[i].className || '').split(/\s+/).indexOf(cls) >= 0) return k[i];
+    for (var j = 0; j < k.length; j++) { var d = byClass(k[j], cls); if (d) return d; }
+    return null;
+  }
   function empty(e) { while (e.firstChild) e.removeChild(e.firstChild); }
   function safe(s) { return String(s == null ? '' : s).replace(/[^A-Za-z0-9_-]/g, ''); }
 
@@ -72,6 +78,57 @@
     return true;
   }
 
+  /* IP1 (overseer ruling 13/11): a look that says `tell` plays the person's tell while they are up: the face as drawn, then the tell for TELL_MS, then the face
+     again, and so on every LOOP_MIN to LOOP_MAX ms, so a face that stays up for ten minutes never reads as frozen. Never while the GM's Scenes setting holds
+     the screen still or the device asks for reduced motion: then the tell simply stays on the face (as a plain expression always did). The loop ends by
+     itself once the holder has left the page. */
+  var TELL_MS = 3600, LOOP_MIN = 12000, LOOP_MAX = 20000;
+  function still(env) { return on('fx.off', env) || !!(env && env.reduced); }
+  function mark(n, what) { if (n && n.setAttribute) n.setAttribute('data-fl', what); return n; }      /* which face is up, for the checks */
+  /* IP1c: a swap is a hard cut that never shows an empty frame: the incoming face goes in first, fully opaque, then the outgoing one is REMOVED in the
+     same task (never hidden: a hidden copy can take the visible one's clips in Chromium; the two carry their own ids anyway) */
+  function swapIn(holder, n) {
+    if (!holder || !n) return;
+    if (n.parentNode !== holder) holder.appendChild(n);
+    var k = kids(holder); for (var i = 0; i < k.length; i++) if (k[i] !== n) holder.removeChild(k[i]);
+  }
+  function connected(n) { return !!n && (n.isConnected === undefined ? !!n.parentNode : n.isConnected); }
+  function tellLoop(holder, steady, tell, env, firstMs) {
+    var later = typeof env.later === 'function' ? env.later : function (f, ms) { return setTimeout(f, ms); };
+    var seen = false, misses = 0;
+    function put(n) { swapIn(holder, n); }
+    function alive() { if (connected(holder)) { seen = true; return true; } return !seen && ++misses < 5; }
+    function play() {
+      if (!alive()) return;
+      if (connected(holder) && !still(env)) { put(tell); later(function () { if (connected(holder) && holder.firstChild === tell) put(steady); }, TELL_MS); }
+      later(play, LOOP_MIN + Math.floor(Math.random() * (LOOP_MAX - LOOP_MIN)));
+    }
+    later(play, firstMs + 700);
+    return true;
+  }
+  /* the face with the expression (steady), or the tell loop; draw(spec, uidSuffix) -> node | null */
+  function face(holder, spec, expr, loop, draw, env, firstMs) {
+    if (!holder || !spec || !expr || typeof draw !== 'function') return false;
+    var drawn = null;
+    try { drawn = draw(FL.specWith(spec, { expr: expr }), '-t'); } catch (err) { drawn = null; }
+    if (!drawn) return false;
+    mark(drawn, loop ? 'tell' : 'expr');
+    var steady = holder.firstChild;
+    if (loop && steady && !still(env)) { holder.__flTell = drawn; return tellLoop(holder, steady, drawn, env, firstMs); }
+    empty(holder); holder.appendChild(drawn);
+    return true;
+  }
+
+  /* the format's duotone group (face-formats.js wrap) put round a face that was not in the holder when the card was wrapped */
+  function tintLike(doc, holder, n) {
+    var g0 = holder.querySelector ? holder.querySelector('g.dp-fl-duo') : null, flt = g0 && g0.getAttribute('filter');
+    if (!flt || !n || !n.firstChild || (n.querySelector && n.querySelector('g.dp-fl-duo'))) return false;
+    var g = doc.createElementNS('http://www.w3.org/2000/svg', 'g'); g.setAttribute('filter', flt); g.setAttribute('class', 'dp-fl-duo');
+    while (n.firstChild) g.appendChild(n.firstChild);
+    n.appendChild(g);
+    return true;
+  }
+
   function apply(e, card, o, env) {
     env = env || {};
     if (!e || !card || card.kind !== 'npc' || !FL || !env.document) return false;
@@ -81,13 +138,12 @@
     var expr = xp && look && look.expr ? look.expr : '', fmt = fm && look && look.fmt ? look.fmt : '', pose = xp && look && look.pose ? look.pose : '';
     if (!expr && !fmt && !pose && !bd) return false;
     var faction = typeof npc.faction === 'string' ? npc.faction : '', id = o && typeof o.npcId === 'string' ? o.npcId : '';
-    var uid = 'dp-fl-' + safe(o && o.id), spec = card.spec, holder = byClass(e, 'dp-ov-portrait'), done = false;
+    var uid = 'dp-fl-' + safe(o && o.id) + '-' + (++DRAWS), spec = card.spec, holder = byClass(e, 'dp-ov-portrait'), done = false;      /* IP1: ids of its own each draw (the duotone filter too) */
 
     if (expr || pose) ensureAfraid(env.K);
     if (expr && holder && spec && typeof env.portrait === 'function') {
-      var drawn = null;
-      try { drawn = env.portrait(FL.specWith(spec, { expr: expr }), uid); } catch (err) { drawn = null; }
-      if (drawn) { empty(holder); holder.appendChild(drawn); done = true; }
+      var loop = look.tell === true;
+      if (face(holder, spec, expr, loop, function (sp, k) { return env.portrait(sp, uid + (loop ? k : '')); }, env, pose && !look.re ? POSE_MS : 0)) done = true;
     }
     var bi = bd ? BD.info(faction, id) : null;
     if (bi) BD.decorate(e, bi);
@@ -96,12 +152,50 @@
         glyph: bi && bi.slot ? BD.glyph(doc, faction, bi.slot) : null });
       done = true;
     } else if (bi) { e.appendChild(BD.strip(doc, bi, faction)); done = true; }
+    if (fmt && holder && holder.__flTell) tintLike(doc, holder, holder.__flTell);      /* IP1b: the tell face wears the format's tint too (the wrap tints only the face up at the time) */
     if (pose && spec && playPose(doc, e, o, look, env, expr ? FL.specWith(spec, { expr: expr }) : spec)) done = true;
     if (bi) BD.motif(env, id, bi.slot, look);       /* once, when the spotlight first appears (not when it is laid again) */
     return done;
   }
 
+  /* IP1 (overseer ruling 13/11): Show on iPad (the display kind `npc`, old stage or new) plays the look too. The full figure takes the signature pose for
+     POSE_MS, then stands as drawn, and the tell plays on it (looped as above). e is the stage; vm.look the names the GM sent; env as for apply().
+     opts.poseAt (ms, default 0): when the pose starts, for a caller that covers the figure first (the introduction card); the tell loop follows it. */
+  function applyStage(e, vm, env, opts) {
+    env = env || {};
+    var poseAt = opts && opts.poseAt > 0 ? +opts.poseAt : 0;
+    if (!e || !vm || !FL || !env.document || typeof env.figure !== 'function' || !on('face.expressions', env)) return false;
+    var look = FL.clean(vm.look), spec = vm.spec, holder = byClass(e, 'dp-npc-fig');
+    if (!look || !spec || !holder || !holder.firstChild || (!look.expr && !look.pose)) return false;
+    ensureAfraid(env.K);
+    var uid = 'dp-fls-' + safe(vm.npcId) + '-' + safe(vm.seq), done = false, steady = holder.firstChild;
+    var draw = function (sp, k) { return env.figure(sp, uid + k); };
+    var loop = !!look.expr && look.tell === true && !still(env), later = typeof env.later === 'function' ? env.later : function (f, ms) { return setTimeout(f, ms); };
+    if (look.expr && !loop) {                     /* a plain expression (or a tell while the screen is held still): the face simply wears it */
+      var ex = null;
+      try { ex = draw(FL.specWith(spec, { expr: look.expr }), '-e'); } catch (err) { ex = null; }
+      if (ex) { steady = mark(ex, 'expr'); empty(holder); holder.appendChild(ex); done = true; }
+    }
+    if (look.pose) {
+      var posed = null;
+      try { posed = draw(FL.poseSpec(look.expr ? FL.specWith(spec, { expr: look.expr }) : spec, look.pose), '-p'); } catch (err) { posed = null; }
+      if (posed) {
+        mark(posed, 'pose');
+        var pose = function () { if (!connected(holder) && poseAt) return; swapIn(holder, posed);
+          later(function () { if (holder.firstChild === posed) swapIn(holder, steady); }, POSE_MS); };
+        if (poseAt) later(pose, poseAt); else pose();
+        done = true;
+      }
+    }
+    if (loop) {
+      var t = null;
+      try { t = draw(FL.specWith(spec, { expr: look.expr }), '-t'); } catch (err) { t = null; }
+      if (t) done = tellLoop(holder, steady, mark(t, 'tell'), env, poseAt + (look.pose ? POSE_MS : 0)) || done;
+    }
+    return done;
+  }
+
   function unlock() { var BD = part('B68FaceBadge', './face-badge.js'); return !!(BD && BD.unlock()); }
 
-  return { on: on, active: active, ensureAfraid: ensureAfraid, apply: apply, unlock: unlock, POSE_MS: POSE_MS };
+  return { on: on, active: active, ensureAfraid: ensureAfraid, apply: apply, applyStage: applyStage, unlock: unlock, POSE_MS: POSE_MS, TELL_MS: TELL_MS };
 });
