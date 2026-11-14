@@ -38,6 +38,10 @@ const rect = (x, y, w, h, fill, extra = "") => `<rect x="${f2(x)}" y="${f2(y)}" 
 const circ = (x, y, r, fill, extra = "") => `<circle cx="${f2(x)}" cy="${f2(y)}" r="${f2(r)}" fill="${fill}"${extra ? " " + extra : ""}/>`;
 const archD = (x, top, w, bottom) => { const r = w / 2; return `M${f2(x)} ${f2(bottom)} L${f2(x)} ${f2(top + r)} A${f2(r)} ${f2(r)} 0 0 1 ${f2(x + w)} ${f2(top + r)} L${f2(x + w)} ${f2(bottom)} Z`; };
 const lerp = (a, b, u) => a + (b - a) * u;
+/* light as flat rings of low opacity (no gradient: a gradient fill is the dearest thing a software renderer repaints) */
+const glow = (x, y, r, col = WARM, k = 1) => circ(x, y, r, col, `opacity="${f2(0.05 * k)}"`) + circ(x, y, r * 0.62, col, `opacity="${f2(0.07 * k)}"`) + circ(x, y, r * 0.34, col, `opacity="${f2(0.1 * k)}"`);
+/* a vertical gradient as flat bands */
+const bands = (x, y, w, h, cols) => cols.map((c, i) => rect(x, y + h * i / cols.length, w, h / cols.length + 0.5, c)).join("");
 
 // ---------------------------------------------------------------- figures
 const hex2 = (h) => (h.length === 3 ? h.split("").map((c) => c + c).join("") : h);
@@ -103,13 +107,8 @@ const FLASHES = [[8.0, 0], [17.6, 1], [27.0, 0], [41.0, 1], [48.4, 0], [48.75, 1
 // ---------------------------------------------------------------- the still picture
 function still(lit) {
   const r = rng(1968), o = [];
-  const defs = `<linearGradient id="ld-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${SKY[0]}"/><stop offset=".55" stop-color="${SKY[1]}"/><stop offset="1" stop-color="${SKY[2]}"/></linearGradient>
-<linearGradient id="ld-fac" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a2033"/><stop offset=".7" stop-color="#262d43"/><stop offset="1" stop-color="#3a3a4a"/></linearGradient>
-<radialGradient id="ld-wg"><stop offset="0" stop-color="${WARM}" stop-opacity=".16"/><stop offset="1" stop-color="${WARM}" stop-opacity="0"/></radialGradient>
-<radialGradient id="ld-dg"><stop offset="0" stop-color="${CREAM}" stop-opacity=".55"/><stop offset=".45" stop-color="${WARM}" stop-opacity=".18"/><stop offset="1" stop-color="${WARM}" stop-opacity="0"/></radialGradient>
-<radialGradient id="ld-lg"><stop offset="0" stop-color="${CREAM}" stop-opacity=".5"/><stop offset=".35" stop-color="${WARM}" stop-opacity=".14"/><stop offset="1" stop-color="${WARM}" stop-opacity="0"/></radialGradient>
-<linearGradient id="ld-st" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${WARM}" stop-opacity=".22"/><stop offset=".6" stop-color="${WARM}" stop-opacity=".05"/><stop offset="1" stop-color="${WARM}" stop-opacity="0"/></linearGradient>`;
-  o.push(rect(0, 0, W, 700, "url(#ld-sky)"));
+  const defs = "";
+  o.push(bands(0, 0, W, 700, [SKY[0], "#070a17", "#0a0f22", SKY[1], "#121530", "#191834", SKY[2]]));
   { let s = ""; for (let i = 0; i < 70; i++) s += circ(r() * W, 10 + r() * 250, 0.7 + r() * 1.2, C.paper100, `opacity="${f2(0.15 + r() * 0.45)}"`); o.push(s); }
 
   // the neighbours either side: lower, darker, a few lit windows
@@ -132,7 +131,7 @@ function still(lit) {
 
   // the palazzo: nine bays
   const X0 = 240, X1 = 1360, BW = (X1 - X0) / 9, cx = (i) => X0 + BW * (i + 0.5);
-  o.push(rect(X0, 160, X1 - X0, 440, "url(#ld-fac)"));
+  o.push(bands(X0, 160, X1 - X0, 440, ["#1a2033", "#1d2337", "#20273b", "#232a3f", "#262d43", "#2c3246", "#333648"]));
   // the roof's balustrade, urns, cornice and dentils
   o.push(rect(X0 - 6, 112, X1 - X0 + 12, 8, TRIM) + rect(X0 - 6, 142, X1 - X0 + 12, 8, TRIM));
   { let s = ""; for (let x = X0 + 4; x < X1 - 4; x += 17) s += `<path d="M${f2(x)} 142 q -3 -6 0 -11 q 2 -4 0 -9 h 7 q -2 5 0 9 q 3 5 0 11 z" fill="${STONE_L}"/>`; o.push(s); }
@@ -155,7 +154,6 @@ function still(lit) {
     const w = i === 4 ? 78 : 62, x = cx(i) - w / 2, top = 290, bot = 440, on = i === 4 || r() < 0.82;
     const ped = i % 2 ? `<path d="M${f2(x - 10)} 284 L${f2(cx(i))} 262 L${f2(x + w + 10)} 284 Z" fill="${TRIM}"/>` : `<path d="M${f2(x - 10)} 284 Q${f2(cx(i))} 254 ${f2(x + w + 10)} 284 Z" fill="${TRIM}"/>`;
     o.push(ped + rect(x - 10, 284, w + 20, 5, TRIM));
-    if (on) o.push(`<ellipse cx="${f2(cx(i))}" cy="366" rx="74" ry="104" fill="url(#ld-wg)"/>`);
     o.push(`<path d="${archD(x, top, w, bot)}" fill="${on ? GOLD2 : "#151a29"}"${on ? ' opacity=".92"' : ""}/>`);
     if (on) {
       // a chandelier's glow deep in the room, then the glazing bars
@@ -178,11 +176,11 @@ function still(lit) {
     o.push(`<path d="${archD(cx(i) - 34, 500, 68, 600)}" fill="${on ? "#c99a45" : "#11151f"}"${on ? ' opacity=".75"' : ""}/>`);
     if (on) lit.push([cx(i), 50, 0.25, GOLD]);
   }
-  o.push(circ(800, 560, 210, "url(#ld-dg)"));
+  o.push(glow(800, 560, 150, CREAM, 0.9));
   o.push(`<path d="${archD(746, 486, 108, 600)}" fill="${C.ink700}"/><path d="${archD(754, 494, 92, 600)}" fill="${CREAM}"/><path d="${archD(770, 510, 60, 600)}" fill="#ffffff" opacity=".7"/>`);
   lit.push([800, 110, 0.8, CREAM]);
   // the terrace and the light out of the door
-  o.push(rect(0, 600, W, 52, "#1c2130") + `<ellipse cx="800" cy="626" rx="330" ry="44" fill="url(#ld-lg)"/>`);
+  o.push(rect(0, 600, W, 52, "#1c2130") + `<ellipse cx="800" cy="626" rx="300" ry="40" fill="${WARM}" opacity=".06"/><ellipse cx="800" cy="626" rx="170" ry="26" fill="${WARM}" opacity=".09"/>`);
   // the awning: striped, scalloped, on two brass posts
   {
     const bl = 726, br = 874, fl = 700, fr = 900, by = 474, fy = 556, n = 12;
@@ -205,7 +203,7 @@ function still(lit) {
     return s;
   };
   o.push(balus(-10, 600) + balus(1000, 1610));
-  const lamp = (x, y, big) => rect(x - 2.5, y, 5, 26, INK) + circ(x, y - 8, big ? 64 : 46, "url(#ld-lg)") + circ(x, y - 8, big ? 11 : 9, CREAM) + rect(x - 8, y - 22, 16, 5, BRASS);
+  const lamp = (x, y, big) => rect(x - 2.5, y, 5, 26, INK) + glow(x, y - 8, big ? 46 : 36, CREAM, 0.9) + circ(x, y - 8, big ? 11 : 9, CREAM) + rect(x - 8, y - 22, 16, 5, BRASS);
   for (const x of [620, 980]) o.push(rect(x - 20, 590, 40, 62, TRIM) + rect(x - 24, 584, 48, 8, "#56618a") + lamp(x, 558, true));
   lit.push([620, 22, 0.7, CREAM], [980, 22, 0.7, CREAM]);
   // the coping and the embankment wall, down to the water
@@ -228,7 +226,7 @@ function still(lit) {
       s += rect(800 - w, y, w * 2, RISE, STONE) + rect(800 - w, y, w * 2, 2.5, "#56618a");
       s += rect(800 - cw / 2, y, cw, RISE, CARPET) + rect(800 - cw / 2, y + RISE - 4, cw, 4, "#6e160a") + rect(800 - cw / 2 - 3, y + 1, cw + 6, 2, GOLD, 'opacity=".85"');
     }
-    s += rect(800 - hw(STEPS), YT, hw(STEPS) * 2, YL - YT, "url(#ld-st)");
+    s += [0.16, 0.1, 0.05].map((op, i) => rect(800 - hw(STEPS), YT + i * 36, hw(STEPS) * 2, 36, WARM, `opacity="${op}"`)).join("");
     // the landing at the water, and its piers and lamps
     s += rect(510, YL, 580, 14, "#353e58") + rect(510, YL, 580, 2, "#6a7392", 'opacity=".6"') + rect(510, YL + 14, 580, 10, "#151a27");
     s += rect(800 - 64, YL, 128, 14, CARPET);
@@ -310,7 +308,7 @@ function boat(k, b) {
   s += `<path d="M${x0 + 6} 836 L1070 829 Q1094 825 1106 816" fill="none" stroke="${b.strake}" stroke-width="1.5" opacity=".4"/>`;
   s += `<path d="M960 818 L978 798 L1010 798 L1016 816" fill="none" stroke="${C.paper100}" stroke-width="2" opacity=".45"/>`;
   // the lantern on its post at the bow, and its light on the water (two versions, swapped)
-  s += rect(1083, 772, 4, 46, INK) + circ(1085, 762, 46, "url(#ld-lg)") + rect(1077, 752, 16, 18, CREAM) + rect(1075, 748, 20, 4, BRASS) + circ(1085, 761, 4, GOLD);
+  s += rect(1083, 772, 4, 46, INK) + glow(1085, 762, 38, CREAM, 0.9) + rect(1077, 752, 16, 18, CREAM) + rect(1075, 748, 20, 4, BRASS) + circ(1085, 761, 4, GOLD);
   const rr = rng(100 + k), refl = (v) => { let g = ""; for (let y = WL + 6; y < WL + 170; y += 7 + rr() * 4) { const f = 1 - (y - WL) / 170; if (rr() < 0.15) continue; const w = 6 + rr() * 22 * (0.4 + f); g += rect(1085 - w / 2 + (rr() - 0.5) * 10, y, w, 2.2 + rr() * 1.4, v ? GOLD : WARM, `opacity="${f2(0.75 * f)}"`); } return g; };
   s += `<g id="${id}ra">${refl(0)}</g><g id="${id}rb" visibility="hidden">${refl(1)}</g>`;
   return s;
