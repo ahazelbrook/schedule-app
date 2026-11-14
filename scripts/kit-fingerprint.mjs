@@ -67,6 +67,8 @@ export const EXEMPTIONS = [
     selector: '#gm-ipad-settings [data-set-row="stage.players"]' },
   { name: 'the Handouts on phones Settings row', reason: 'IP4 added phone.handouts (a phone setting, off) as the last row of the Settings of the iPad view',
     selector: '#gm-ipad-settings [data-set-row="phone.handouts"]' },
+  { name: 'the Furniture depth Settings row', reason: 'IP7 added map.shade (a GM setting, off) as the last row of the Settings of the iPad view, after Handouts on phones, so no row of today moves',
+    selector: '#gm-ipad-settings [data-set-row="map.shade"]' },
   { name: 'the eighteenth scene tile (The landing)', reason: 'IP8 added a new ambient scene, the landing, to the scene tiles of the iPad view: a deliberate visible addition with every setting off',
     selector: '.gm-ipad-tiles [data-gm="ambscene"][data-id="landing"]', pushes: false },      /* it fills the empty second slot of the last tile row at every width: nothing moves for it */
   /* a card on a cold display: by key, because the look's classes are part of the card's key, so the baseline's card reads as gone and this run's as new */
