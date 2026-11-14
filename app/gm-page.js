@@ -7096,8 +7096,8 @@
     var me = S; S.paAsked = true;
     W.B68Load.need('prep-actions').then(function () { if (S === me) { prepRedecorate(); var rv = $q('#gm-runv'); if (rv) paDecorate(rv); } }, function () { if (S === me) S.paAsked = false; });
   }
-  /* the lead-in alone (the module's own parse decides the rest): a code span outside a fence whose text starts "▶ " or ">> " */
-  function paHas(el) { return [].some.call(el.querySelectorAll('code'), function (c) { return !(c.closest && c.closest('pre')) && /^\s*(?:▶️?|>>)[  ]+\S/.test(c.textContent); }); }
+  /* the one test of an action span (gm/room-notes.js isAction, what room-notes.js and stamp.js strip): a code span outside a fence */
+  function paHas(el) { var R = W.B68GmRooms; return !!(R && R.isAction) && [].some.call(el.querySelectorAll('code'), function (c) { return !(c.closest && c.closest('pre')) && R.isAction(c.textContent); }); }
   function paHost() {
     var me = S;
     if (me.paHost) return me.paHost;

@@ -754,7 +754,13 @@
       if (!site()) return;          /* the box without a v2 night holds the page's site line (data-gm="site"): the page's, not this view's */
       var tg = ev.target, inPop = tg && tg.closest ? tg.closest('.rv-pop, [data-rv="menu"], [data-rv="alarm"], [data-rv="timepop"]') : null;
       var shut = !inPop && (timeOpen || alarmOpen || menuOpen) ? closePops() : false;      /* a tap outside an open popover shuts it, and still does what it tapped */
-      if (npcOpen && !(tg && tg.closest && tg.closest('.rv-npcpop, [data-rv="npc"]'))) { npcOpen = null; shut = true; }      /* PA2: a tap outside the NPC card shuts it too (an iPad has no Esc) */
+      /* PA2: a tap outside the NPC card shuts it too (an iPad has no Esc). On a page control (a chip, a #pp: name, a task box, a tick cell) the card is
+         taken out of the page without a redraw, so the page's own click handler still finds what was tapped and does it in the same tap */
+      if (npcOpen && !(tg && tg.closest && tg.closest('.rv-npcpop, [data-rv="npc"]'))) {
+        npcOpen = null;
+        if (tg.closest('[data-gm], a[href^="#pp:"], .rl-task, td[data-cell]')) { var np = boxEl.querySelector(".rv-npcpop"); if (np && np.parentNode) np.parentNode.removeChild(np); }
+        else shut = true;
+      }
       /* N3: a data-site control (the alarm's steps, the tools, the stage, the Players' map, the people, → the Roll, Intel, the Costume engine) is the page's */
       var se = tg && tg.closest ? tg.closest("[data-site]") : null, sa = se && typeof se.getAttribute === "function" ? se.getAttribute("data-site") : null;
       if (sa && boxEl.contains(se) && str(se.tagName).toUpperCase() !== "FORM") {

@@ -44,8 +44,13 @@
 
   var LEAD = /^\s*(?:▶️?|>>)[  ]+(\S[\s\S]*)$/;
   var SIZES = [4, 6, 8, 12], EXCERPT = 600, HOVER_MS = 350;
-  /* an action span inside Markdown source: a run of backticks, the lead-in, anything, the same run (strip) */
-  var SPAN_MD = /(`+)[  ]?(?:▶️?|>>)[  ][\s\S]*?\1/g;
+  /* the ONE test of "is this an action span" and the stripper live in gm/room-notes.js (B68GmRooms, in the gm bundle; required under Node),
+     so what becomes a chip here is exactly what room-notes.js and stamp.js take out before text leaves the page */
+  function rooms() {
+    var R = W && W.B68GmRooms;
+    if (!R && typeof require === 'function') { try { R = require('./room-notes.js'); } catch (e) { R = null; } }
+    return R && typeof R.isAction === 'function' && typeof R.stripActions === 'function' ? R : null;
+  }
 
   function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
@@ -69,6 +74,7 @@
     return { name: name.slice(0, 60), size: size, ticks: ticks };
   }
   function parse(text) {
+    var R = rooms(); if (!R || !R.isAction(text)) return null;      /* the room notes' test decides; LEAD only cuts the lead-in off */
     var m = LEAD.exec(str(text)); if (!m) return null;
     var rest = words(m[1]), v = /^([A-Za-z][A-Za-z ]*?)\s*:\s*([\s\S]*)$/.exec(rest);
     var verb = (v ? v[1] : rest).toLowerCase().replace(/\s+/g, ' '), arg = v ? words(v[2]) : '';
@@ -93,7 +99,7 @@
     }
     return { none: true };
   }
-  function strip(md) { return str(md).replace(SPAN_MD, ''); }
+  function strip(md) { var R = rooms(); return R ? R.stripActions(md) : str(md); }
   /* the GM screen's section of that title first (the T tab's own text), then the rules: a title the term folds to, else the best hit */
   function findRule(term, sections, hits) {
     var f = fold(term); if (!f) return null;

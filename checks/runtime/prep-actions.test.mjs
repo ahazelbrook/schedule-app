@@ -81,10 +81,35 @@ await test('the excerpt: about 600 characters, cut at a word, an ellipsis', () =
   assert.equal(A.excerpt('Short **rule**.', { plain: (s) => s.replace(/\*/g, '') }), 'Short rule.');
 });
 await test('strip: an action span goes whole, text and all; other code spans stay', () => {
-  assert.equal(A.strip('Hand them `▶ handout: Mabels letter` now.'), 'Hand them  now.');
-  assert.equal(A.strip('A `>> clock: Alarm / 6` and `{+1d}` and `[Ledger]`'), 'A  and `{+1d}` and `[Ledger]`');
-  assert.equal(A.strip('``▶ rule: Push ` yourself``'), '');
+  assert.equal(A.strip('Hand them `▶ handout: Mabels letter` now.'), 'Hand them   now.');
+  assert.equal(A.strip('A `>> clock: Alarm / 6` and `{+1d}` and `[Ledger]`'), 'A   and `{+1d}` and `[Ledger]`');
+  assert.equal(A.strip('``▶ rule: Push ` yourself``'), ' ');
   assert.equal(A.strip('No spans here.'), 'No spans here.');
+  /* review round: a span starts only at an OPENING backtick run; leading spaces before the lead-in are still a span */
+  assert.equal(A.strip('`a` >> b `c`'), '`a` >> b `c`', 'the text between two code spans is not a span');
+  assert.equal(A.strip('`a` ▶ b `c` d'), '`a` ▶ b `c` d');
+  assert.equal(A.strip('x `  ▶ rule: GM-ONLY-TWO` y'), 'x   y', 'two leading spaces: a chip, so stripped');
+  assert.equal(A.strip('x `   >> clock: GM-ONLY-THREE / 4` y'), 'x   y');
+  assert.equal(A.strip('a ` then `▶ handout: x`'), 'a ` then `▶ handout: x`', 'as Markdown pairs them: "` then `" is the span, so nothing here is an action (and none is chipped)');
+  assert.equal(A.strip('a `` b `▶ handout: x`'), 'a `` b  ', 'an unmatched run is literal; the span after it still goes');
+  assert.equal(A.strip('`` `▶ x` ``'), '`` `▶ x` ``', 'a span whose text starts with a backtick is not an action');
+});
+await test('one test decides: every code span the chip renderer would chip is exactly what strip and the room notes take out', () => {
+  const contents = ['▶ handout: a', '  ▶ handout: a', '>> rule: b', '   >> rule: b', '▶️ clock: c / 6', ' ▶ crew sheet', '▶ dance: x', '▶handout: a', '>>rule: b', '> handout: a', ' ▶ ', '[Ledger]', '{+1d}', '`▶ x`', 'plain'];
+  for (const c of contents) {
+    const md = 'Before `` ' + c + ' `` after and `' + c.replace(/`/g, '') + '` end';
+    const chip = !!A.parse(c), chip2 = !!A.parse(c.replace(/`/g, ''));
+    assert.equal(chip, Rooms.isAction(c), 'parse and isAction agree: ' + JSON.stringify(c));
+    const out = A.strip(md), plainOut = Rooms.plain(md), stampOut = St.goesWrong('- If it goes wrong: ' + md).join(' ');
+    for (const [name, o] of [['strip', out], ['room notes', plainOut], ['stamp', stampOut]]) {
+      if (chip || chip2) assert.ok(!/GM-NEVER|handout: a|rule: b|clock: c|crew sheet|dance: x/.test(o) || !(chip && chip2), name + ' takes out ' + JSON.stringify(c) + ': ' + o);
+      assert.ok(/Before/.test(o) && /end/.test(o), name + ' keeps the text round it: ' + o);
+    }
+  }
+  const md = 'Say `  ▶ rule: GM-ONLY-SAY2` it.';
+  assert.equal(Rooms.plain(md), 'Say it.');
+  assert.deepEqual(St.goesWrong('- If it goes wrong: doors lock `  >> clock: GM-ONLY-W2 / 4`\n- **Who:** GM-ONLY-WHO'), ['doors lock']);
+  assert.deepEqual(St.goesWrong('- If it goes wrong: `   ▶ clock: GM-ONLY-W3 / 4`\n- **Who:** GM-ONLY-WHO'), [], 'a line of only a span (three spaces in): no list under it');
 });
 await test('secrecy: the room notes give the phones no action span (SAY, Costume), the stamp no "If it goes wrong" span', () => {
   const md = ['## Rooms', '', '### Showroom', '', '- **Costume:** A guest’s mask `▶ handout: GM-ONLY-HANDOUT-A`', '- **Who:** Mabel Quist `▶ clock: GM-ONLY-CLOCK / 6`',

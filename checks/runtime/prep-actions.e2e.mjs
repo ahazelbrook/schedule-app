@@ -125,14 +125,14 @@ try {
     if (typeof b.src !== 'string') continue;
     const s0 = b.src;
     b.src = b.src.replace('- **Costume:** Evening dress, a guest\'s mask', '- **Costume:** Evening dress, a guest\'s mask `▶ handout: GM-ONLY-PA-COSTUME`')
-      .replace('- If it goes wrong: Dov Kessler turns and looks straight at you', '- If it goes wrong: Dov Kessler turns and looks straight at you `▶ clock: GM-ONLY-PA-WRONG / 4`')
-      .replace('> Ladies and gentlemen, the house thanks you. Do enjoy the tables.', '> Ladies and gentlemen, the house thanks you. Do enjoy the tables. `>> rule: GM-ONLY-PA-SAY`');
-    if (b.src !== s0) spans += (b.src.match(/GM-ONLY-PA-(COSTUME|WRONG|SAY)/g) || []).length;
+      .replace('- If it goes wrong: Dov Kessler turns and looks straight at you', '- If it goes wrong: Dov Kessler turns and looks straight at you `▶ clock: GM-ONLY-PA-WRONG / 4` `  >> clock: GM-ONLY-PA-TWOW / 6`')
+      .replace('> Ladies and gentlemen, the house thanks you. Do enjoy the tables.', '> Ladies and gentlemen, the house thanks you. Do enjoy the tables. `>> rule: GM-ONLY-PA-SAY` `  ▶ rule: GM-ONLY-PA-TWOS`');
+    if (b.src !== s0) spans += (b.src.match(/GM-ONLY-PA-(COSTUME|WRONG|SAY|TWOW|TWOS)/g) || []).length;
   }
-  check(spans === 3, 'the Showroom\'s Costume, If it goes wrong and SAY lines each hold an action span (' + spans + ')');
+  check(spans === 5, 'the Showroom\'s Costume, If it goes wrong and SAY lines each hold an action span (' + spans + ')');
   check((await api('POST', '/gm/pack', { part: 'prep', src: prep.src || {}, body: prep.body })).status === 200, 'the prep part with the action section');
   check((await api('POST', '/gm/pack', { part: 'handouts', src: { file: 'invented/handouts', blockSha: '1', exportedAt: new Date().toISOString() }, body: HANDOUTS })).status === 200, 'the handouts part');
-  camp.body.cards = Object.assign({}, camp.body.cards || {}, { 'Mabel Quist': LONG_CARD });
+  camp.body.cards = Object.assign({}, camp.body.cards || {}, { 'Mabel Quist': LONG_CARD, 'Dov Kessler': '# Dov Kessler\n\nHouse security. He watches the doors, not the floor.\n' });
   check((await api('POST', '/gm/pack', { part: 'campaign', src: camp.src || {}, body: camp.body })).status === 200, 'a long card for Mabel Quist');
 
   /* the iPad, signed in as the display */
@@ -296,7 +296,7 @@ try {
 
   /* ---- secrecy: the room's lines leave the GM page without their action spans (the phones' mission card, the iPad's stamp) ---- */
   if (!WK) {
-    const LEAK = /GM-ONLY-PA-(COSTUME|WRONG|SAY)|[▶]|>> (handout|clock|rule)/;
+    const LEAK = /GM-ONLY-PA-(COSTUME|WRONG|SAY|TWOW|TWOS)|[▶]|>> (handout|clock|rule)/;
     check((await api('PATCH', '/gm/state', { phoneCards: true })).status === 200, 'secrecy: Phone cards on');
     const { p, ctx } = await gmPage(W0, H0, 'score');
     await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
@@ -304,9 +304,12 @@ try {
     await p.waitForSelector('.rv-head', { timeout: 15000 });
     const roomRm = await until(() => p.evaluate(() => document.querySelectorAll('#gm-runv .pa-chip').length), 10000);
     check(!!roomRm, 'secrecy: the GM\'s own room note in the Run view shows the spans as chips (' + roomRm + ')');
-    /* a move publishes the mission: a PC into the Showroom */
-    const pcBtn = await p.$('.rv-tray .rv-pc, .rv-card .rv-pc');
-    if (pcBtn) { await pcBtn.click(); await p.click('.rv-card[data-room="Showroom"]').catch(() => {}); }
+    /* a move publishes the mission: each PC in turn into the Cocktail lounge and back to the Showroom, ending in the Showroom (the Roll's line follows the crew) */
+    const costumed = async () => { const d = (await api('GET', '/campaign')).json.doc; const m = d && d.mission; return m && Object.values(m.cards || {}).some((c) => c && c.costumeLine) ? m : null; };
+    for (const room of ['Cocktail lounge', 'Showroom']) {
+      const pcs = await p.$$eval('#gm-runv .rv-pc[data-id]', (l) => [...new Set(l.map((b) => b.getAttribute('data-id')))]);
+      for (const id of pcs.slice(0, 1)) { await p.locator('#gm-runv .rv-pc[data-id="' + id + '"]').first().click().catch(() => {}); await p.click('.rv-card[data-room="' + room + '"]').catch(() => {}); await sleep(1500); }
+    }
     const mis = await until(async () => { const d = (await api('GET', '/campaign')).json.doc; const m = d && d.mission; return m && Object.values(m.cards || {}).some((c) => c && c.costumeLine) ? m : null; }, 15000);
     const mj = JSON.stringify(mis || {});
     check(!!mis && /Evening dress, a guest's mask/.test(mj) && !LEAK.test(mj), 'secrecy: the phones\' mission card has the Costume line without its span (' + (mis ? 'published' : 'none') + ')');
@@ -325,6 +328,29 @@ try {
     check(!!ov && /Dov Kessler turns/.test(JSON.stringify(ov)) && !LEAK.test(dget), 'secrecy: the stamp on the iPad carries the line without the span (the display GET and the overlay)');
     await sleep(1500);
     check(!LEAK.test(await dp.evaluate(() => document.body.innerHTML)), 'secrecy: nor the display\'s DOM');
+
+    /* review round, FIX 1: with the Run view's NPC card open, ONE tap on a page control does its job (and the card goes) */
+    const ids = await p.$$eval('#gm-runv [data-rv="npc"]', (l) => [...new Set(l.map((b) => b.getAttribute('data-id')))]);
+    const cardTitle = () => p.evaluate(() => { const h = document.querySelector('.rv-npcpop header b'); return h ? h.textContent.trim() : null; });
+    const openCard = async (id) => { await p.locator('#gm-runv [data-rv="npc"][data-id="' + id + '"]').first().click(); return until(cardTitle, 5000); };
+    const ruleInNote = '#gm-runv .rv-rmnote .pa-chip.pa-rule';
+    check(ids.length >= 2 && !!(await p.$(ruleInNote)), 'run view: two people with cards and a rule chip in a room note (' + ids.join(',') + ')');
+    if (ids.length >= 2 && (await p.$(ruleInNote))) {
+      await p.evaluate((s) => document.querySelector(s).scrollIntoView({ block: 'center' }), ruleInNote);
+      const t1 = await openCard(ids[0]);
+      await p.locator(ruleInNote).first().click();
+      const popUp = await until(() => p.evaluate(() => { const e = document.querySelector('.pa-pop'); return !!e && e.getBoundingClientRect().height > 0; }), 5000);
+      check(!!t1 && !!popUp && !(await cardTitle()), 'run view: with a card open (' + t1 + '), ONE tap on a rule chip in a room note opens its pop-over (and the card goes)');
+      if (await p.$('.pa-pop .pa-x')) await p.click('.pa-pop .pa-x');
+      const a = await openCard(ids[0]);
+      { const at = await p.evaluate((id) => { for (const e of document.querySelectorAll('#gm-runv [data-rv="npc"][data-id="' + id + '"]')) { const r = e.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2, h = document.elementFromPoint(x, y); if (r.width && h && e.contains(h)) return [x, y]; } return null; }, ids[1]); if (at) await p.mouse.click(at[0], at[1]); }
+      const b = await until(async () => { const t = await cardTitle(); return t && t !== a ? t : null; }, 5000);
+      check(!!a && !!b, 'run view: ONE tap on a second person\'s name switches the card (' + a + ' -> ' + b + ')');
+      const pt = await p.evaluate(() => { const pop = document.querySelector('.rv-npcpop'); if (!pop) return null; const pr = pop.getBoundingClientRect();
+        for (const e of document.querySelectorAll('#gm-runv .rv-floor, #gm-runv .rv-cn, #gm-runv .rv-head')) { const r = e.getBoundingClientRect(), x = r.left + 4, y = r.top + r.height / 2; if (r.width && (x < pr.left || x > pr.right || y < pr.top || y > pr.bottom)) return [x, y]; } return null; });
+      if (pt) await p.mouse.click(pt[0], pt[1]);
+      check(!!pt && !!(await until(() => p.evaluate(() => !document.querySelector('.rv-npcpop')), 3000)), 'run view: a tap on empty space closes the card');
+    }
     await ctx.close();
   }
   await dctx.close();

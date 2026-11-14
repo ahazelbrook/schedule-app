@@ -12,7 +12,10 @@
        costume   the plain text after the first "- **Costume:**" bullet, <= 160 characters, or null
        say       the plain bodies of "> [!quote] SAY" callouts, <= 300 characters each, at most 3
    normRoom(s)  NFKC, lower case, a leading "the " dropped, punctuation dropped, whitespace collapsed: "The Showroom!" -> "showroom"
-   plain(md)    Markdown to one line of text: [[a|b]] -> b, [[a]] -> a, [t](u) -> t; emphasis, code, callout markers and HTML gone */
+   plain(md)    Markdown to one line of text: [[a|b]] -> b, [[a]] -> a, [t](u) -> t; emphasis, code, callout markers and HTML gone
+   isAction(text)     PA: a code span's text is a prep action span (the ONE test: gm/prep-actions.js chips exactly these, gm/stamp.js strips them)
+   stripActions(md)   PA: the Markdown with every action code span gone whole (code spans found as Markdown finds them: a backtick run to the next
+                      run of the same length; an unmatched run is a literal) */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -43,9 +46,25 @@
     return t.toLowerCase().trim().replace(/^the\s+/, '').replace(PUNCT, '').replace(/\s+/g, ' ').trim();
   }
 
+  /* PA: the lead-in "▶ " (an optional U+FE0F after the triangle) or ">> ", after any whitespace, then something */
+  var ACTION = /^\s*(?:▶️?|>>)[  ]+\S/;
+  function isAction(text) { return ACTION.test(str(text)); }
+  function runEnd(s, i) { while (i < s.length && s.charAt(i) === '`') i++; return i; }
+  function stripActions(md) {
+    var s = str(md), out = '', i = 0;
+    while (i < s.length) {
+      var j = s.indexOf('`', i); if (j < 0) { out += s.slice(i); break; }
+      var k = runEnd(s, j), n = k - j, m = k, close = -1;
+      while (m < s.length) { var a = s.indexOf('`', m); if (a < 0) break; var b = runEnd(s, a); if (b - a === n) { close = a; break; } m = b; }
+      if (close < 0) { out += s.slice(i, k); i = k; continue; }      /* no closing run of that length: the backticks are literal */
+      out += s.slice(i, j) + (isAction(s.slice(k, close)) ? ' ' : s.slice(j, close + n));
+      i = close + n;
+    }
+    return out;
+  }
+
   function plain(md) {
-    return str(md)
-      .replace(/(`+)[  ]?(?:▶️?|>>)[  ][\s\S]*?\1/g, ' ')      /* PA: a prep action span (`▶ handout: …`) is the GM's button, never text: gone whole */
+    return stripActions(md)      /* PA: a prep action span (`▶ handout: …`) is the GM's button, never text: gone whole */
       .replace(/<!--[\s\S]*?-->/g, ' ')
       .replace(/!?\[\[([^\]|]*)\|([^\]]*)\]\]/g, '$2')
       .replace(/!?\[\[([^\]]*)\]\]/g, '$1')
@@ -152,5 +171,5 @@
     return none(names);
   }
 
-  return { normRoom: normRoom, find: find, plain: plain };
+  return { normRoom: normRoom, find: find, plain: plain, isAction: isAction, stripActions: stripActions };
 });

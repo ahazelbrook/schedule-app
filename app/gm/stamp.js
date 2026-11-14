@@ -79,8 +79,15 @@
   function lower(pos) { var i = LADDER.indexOf(pos); return i >= 0 && i < LADDER.length - 1 ? LADDER[i + 1] : ''; }
 
   /* ---------- the room's lines ---------- */
+  /* PA: the room notes' stripActions (gm/room-notes.js, in the same bundle; required under Node), so the chips and what is stripped agree by construction */
+  function actionsOut(s) {
+    var R = typeof self !== 'undefined' && self && self.B68GmRooms;
+    if (!R && typeof require === 'function') { try { R = require('./room-notes.js'); } catch (e) { R = null; } }
+    if (R && typeof R.stripActions === 'function') return R.stripActions(s);
+    return str(s).replace(/(^|[^`])(`+)\s*(?:\u25B6\uFE0F?|>>)[ \u00a0]+\S[\s\S]*?\2(?!`)/g, '$1 ');      /* no room notes module: the same lead-in, best effort */
+  }
   function plain(s) {
-    s = str(s).replace(/(`+)[  ]?(?:▶️?|>>)[  ][\s\S]*?\1/g, ' ');      /* PA: a prep action span is the GM's button, never text: gone whole */
+    s = actionsOut(s);      /* PA: a prep action span is the GM's button, never text: gone whole (room-notes.js stripActions, the one test) */
     return str(s).replace(/<!--[\s\S]*?-->/g, ' ').replace(/!?\[\[([^\]|]*)\|([^\]]*)\]\]/g, '$2').replace(/!?\[\[([^\]]*)\]\]/g, '$1').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
       .replace(/(\*\*|__|==|~~|`)/g, '').replace(/(^|[^\w])[*_]([^*_]+)[*_]/g, '$1$2').replace(/\s+/g, ' ').trim();
   }
@@ -96,7 +103,7 @@
       var m = LABEL.exec(ln);
       if (m) {
         var rest = m[1].replace(/^(?:\*\*|__)\s*/, '');
-        if (plain(rest)) { add(rest); under = false; } else under = !/`[  ]?(?:▶|>>)/.test(rest);      /* PA: a line that held only an action span has no list under it */
+        if (plain(rest)) { add(rest); under = false; } else under = actionsOut(rest) === str(rest);      /* PA: a line that held only an action span has no list under it */
         continue;
       }
       if (under) {
