@@ -46,10 +46,6 @@
 
   var RESEND_MS = 4000, RESEND_MAX = 3;
   var ROWS = [
-    /* the players' screen build (IP2, 13/11): first, the row the GM looks for */
-    { key: 'stage.players', label: 'Players’ screen', what: 'The iPad or TV the players see: as it was, or the map first (no scene band, no time, no Now or Next, no crew status; visible clocks as dials in a corner; a new scene replaces what is up).',
-      options: [{ v: false, label: 'Classic' }, { v: true, label: 'Map first' }],
-      said: { 'false': 'Players’ screen: classic. The iPad follows within a few seconds.', 'true': 'Players’ screen: map first. The iPad follows within a few seconds.' } },
     { key: 'fx.off', label: 'Scenes', what: 'The ambient scenes on the iPad: moving, or held as stills to save the battery and the heat.',
       options: [{ v: false, label: 'Moving' }, { v: true, label: 'Held still' }],
       said: { 'false': 'Scenes: moving. The iPad follows within a few seconds.', 'true': 'Scenes: held still. The iPad follows within a few seconds.' } },
@@ -63,6 +59,10 @@
     { key: 'display.band', label: 'Band', what: 'The strip across the top of the iPad: the ON AIR lamp, the phase, the crew’s Stress and harm, and security. Off: the map and every scene take the whole screen; the lamp sits in its corner.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'Band: off. The iPad follows within a few seconds.', 'true': 'Band: on. The iPad follows within a few seconds.' } },
+    /* the players' screen build (IP2, 13/11): the first row after the five rows of day 0, so no day-0 row changes place (kit-off) */
+    { key: 'stage.players', label: 'Players’ screen', what: 'The iPad or TV the players see: as it was, or the map first (no scene band, no time, no Now or Next, no crew status; visible clocks as dials in a corner; a new scene replaces what is up).',
+      options: [{ v: false, label: 'Classic' }, { v: true, label: 'Map first' }],
+      said: { 'false': 'Players’ screen: classic. The iPad follows within a few seconds.', 'true': 'Players’ screen: map first. The iPad follows within a few seconds.' } },
     /* the kit and stage build (11/11): five settings, each off until chosen */
     { key: 'kit.desk', label: 'Desk', what: 'This page: the desk as it was, or the new desk (the band, the Roll, Blade, Run and the shell rebuilt to one kit). It changes at once.',
       options: [{ v: false, label: 'Old desk' }, { v: true, label: 'New desk' }],

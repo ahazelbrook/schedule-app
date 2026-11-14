@@ -22,7 +22,7 @@ function report(r, label) {
   for (const d of r.diffs.slice(0, 20)) console.log('  ' + d.file + '  ' + d.kind + '  ' + d.key.split('/').slice(-3).join('/') + '  ' + d.detail);
   if (r.diffs.length > 20) console.log('  ... and ' + (r.diffs.length - 20) + ' more');
   for (const [s, q] of Object.entries(r.requests)) {
-    console.log('  requests ' + s + ': ' + q.extra.length + ' new' + (q.allowed.length ? ' (+' + q.allowed.length + ' allowed: kit-flag.js)' : '') + ', ' + q.missing.length + ' not made this time');
+    console.log('  requests ' + s + ': ' + q.extra.length + ' new' + (q.allowed.length ? ' (+' + q.allowed.length + ' allowed by name)' : '') + ', ' + q.missing.length + ' not made this time');
     for (const u of q.extra.slice(0, 20)) console.log('    NEW ' + u);
     for (const u of q.missing.slice(0, 20)) console.log('    GONE ' + u);
   }
