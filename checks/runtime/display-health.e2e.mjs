@@ -23,7 +23,7 @@ const PORT = Number(process.env.PORT || 9461);
 const BASE = 'http://127.0.0.1:' + PORT;
 const GM = 'gm@example.test', IPAD = 'table.ipad@example.test';
 const SHOTS = process.env.SHOTS || '';
-const ONLY = String(process.env.ONLY || '').split(',').filter(Boolean);      // ONLY=scenes,looks runs those parts (clock fit scenes figures looks dupes tint still maps)
+const ONLY = String(process.env.ONLY || '').split(',').filter(Boolean);      // ONLY=scenes,looks runs those parts (clock fit scenes figures looks dupes blink tint still maps)
 const want = (part) => !ONLY.length || ONLY.includes(part);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const WIN = process.platform === 'win32';
@@ -345,6 +345,62 @@ try {
         });
       }
       await step('dupes: ' + (stage ? 'new' : 'old') + ' stage: no page errors', async () => { expect(!I.errors.length, I.errors.join(' | ')); });
+      await I.ctx.close();
+    }
+    await settings({});
+  }
+
+  /* ---------- blink (IP1c): a pose or tell swap never blinks the figure. Every animation frame, the figure's holder must show at least one face that is
+     fully opaque and visible (the swaps used to fade the incoming face in from nothing, with the outgoing one already gone). Show on iPad (pose in and out,
+     tell in and out) and a held spotlight on a badge card (tell in and out; its tint holds through each swap), both stages. ---------- */
+  if (want('blink')) {
+    const record = (page, sel) => page.evaluate((q) => {
+      const R = window.__blink = { frames: 0, empty: 0, worst: [], kinds: [], untinted: 0, stop: false };
+      const tick = () => {
+        if (R.stop) return;
+        const all = document.querySelectorAll(q), h = all[all.length - 1];
+        if (h) {
+          R.frames++;
+          const faces = [...h.children].filter((c) => c.tagName.toLowerCase() === 'svg');
+          const solid = faces.filter((s) => { const cs = getComputedStyle(s); return cs.visibility === 'visible' && cs.display !== 'none' && parseFloat(cs.opacity) >= 0.999; });
+          if (!solid.length) { R.empty++; if (R.worst.length < 5) R.worst.push(faces.map((s) => (s.getAttribute('data-fl') || 'drawn') + '@' + getComputedStyle(s).opacity).join(',') || 'none'); }
+          const k = faces.length ? faces[faces.length - 1].getAttribute('data-fl') || 'drawn' : 'none';
+          if (R.kinds[R.kinds.length - 1] !== k) R.kinds.push(k);
+          if (h.closest('.dp-fl') && solid.length && !solid.some((s) => s.querySelector(':scope > g.dp-fl-duo'))) R.untinted++;
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }, sel);
+    const result = (page) => page.evaluate(() => { const R = window.__blink; R.stop = true; return { frames: R.frames, empty: R.empty, worst: R.worst, kinds: R.kinds, untinted: R.untinted }; });
+    for (const stage of [false, true]) {
+      await settings({ stage });
+      await push({ kind: 'blank' });
+      I = await openIpad(browser, 1180, 820);
+      if (stage) await I.page.waitForFunction(() => (document.documentElement.getAttribute('data-kit') || '').includes('stage'), null, { timeout: 30000 });
+      await I.page.waitForFunction(() => !!(window.B68FaceRender && window.B68FaceFormats), null, { timeout: 20000 }); await sleep(500);
+      await step('blink: ' + (stage ? 'new' : 'old') + ' stage: Show on iPad, pose in and out, tell in and out: a fully opaque figure in every frame', async () => {
+        await record(I.page, '.dp-stages .dp-npc .dp-npc-fig');
+        await push({ kind: 'npc', npcId: 'n-dov', title: 'Dov', look: { expr: 'smirk', tell: true, pose: 'lapel' } });
+        await sleep(13000);
+        const r = await result(I.page);
+        expect(r.kinds.includes('pose') && r.kinds.includes('tell') && r.kinds.filter((k) => k === 'drawn').length >= 2, 'the swaps did not all happen: ' + JSON.stringify(r.kinds));
+        expect(r.frames > 100 && r.empty === 0, r.empty + ' of ' + r.frames + ' frames had no fully opaque figure: ' + JSON.stringify(r.worst));
+      });
+      await push({ kind: 'blank' }); await sleep(4800);
+      await step('blink: ' + (stage ? 'new' : 'old') + ' stage: a held spotlight on a badge card, tell in and out: a fully opaque, tinted face in every frame', async () => {
+        await record(I.page, '.dp-ov-portrait');
+        await ambient({ overlay: { id: 'b17sl-blink' + (stage ? 1 : 0), kind: 'npc', npcId: 'n-dov', ms: 60000, look: { fmt: 'badge', expr: 'smirk', tell: true } } });
+        await I.page.waitForFunction(() => { const s = document.querySelector('.dp-ov-portrait > svg'); return !!s && s.getAttribute('data-fl') === 'tell'; }, null, { timeout: 25000 });
+        await I.page.waitForFunction(() => { const s = document.querySelector('.dp-ov-portrait > svg'); return !!s && s.getAttribute('data-fl') !== 'tell'; }, null, { timeout: 10000 });
+        await sleep(500);
+        const r = await result(I.page);
+        expect(r.kinds.includes('tell') && r.kinds.filter((k) => k === 'drawn').length >= 2, 'the swaps did not all happen: ' + JSON.stringify(r.kinds));
+        expect(r.frames > 60 && r.empty === 0, r.empty + ' of ' + r.frames + ' frames had no fully opaque face: ' + JSON.stringify(r.worst));
+        expect(r.untinted === 0, r.untinted + ' frames showed an untinted face on the badge card');
+      });
+      await ambient({ overlay: null });
+      await step('blink: ' + (stage ? 'new' : 'old') + ' stage: no page errors', async () => { expect(!I.errors.length, I.errors.join(' | ')); });
       await I.ctx.close();
     }
     await settings({});
