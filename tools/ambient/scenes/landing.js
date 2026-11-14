@@ -59,10 +59,21 @@ function night(svg, id) {
   // kit units are 1/25 inch, a hundredth of a stage pixel here: whole units are plenty (and a third of the bytes)
   s = s.replace(/\s(d|points)="([^"]*)"/g, (m, k, v) => ` ${k}="${v.replace(/-?\d*\.\d+/g, (n) => String(Math.round(+n)))}"`);
   s = s.replace(/((?:fill|stroke|stop-color|flood-color|lighting-color|color)=")#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})"/g, (m, a, h) => a + ramp(h) + '"');
-  return s;
+  return flat(s);
 }
-function figure(spec, id, frames, place) {
-  const f = L.fig(Object.assign({}, spec, { id }), { id, frames: frames || [{}], place, lod: "lo", bake: false, shadow: false });
+/* Flat shapes: the kit's shading (crescents and bands laid over a part and clipped to it) comes out, with the clip paths, leaving each
+   part in its own colour. At this size, mapped to the night ramp, the shading barely shows; it is most of what a repaint costs. */
+function flat(svg) {
+  const tree = L.M.parse(svg);
+  (function walk(n) {
+    if (n.text != null) return;
+    n.kids = n.kids.filter((k) => k.text != null || (k.tag !== "clipPath" && !/\sclip-path="/.test(k.attrs)));
+    for (const k of n.kids) walk(k);
+  })(tree);
+  return tree.kids.map(L.M.ser).join("");
+}
+function figure(spec, id, frames, place, silhouette) {
+  const f = L.fig(Object.assign({}, spec, { id }), { id, frames: frames || [{}], place, lod: "lo", bake: false, shadow: false, silhouette: !!silhouette });
   f.svg = night(f.svg, id);
   return f;
 }
@@ -90,7 +101,7 @@ const BOATS = [
 const FLASHES = [[8.0, 0], [17.6, 1], [27.0, 0], [41.0, 1], [48.4, 0], [48.75, 1], [57.5, 0], [66.0, 1], [76.3, 0], [85.5, 1], [94.0, 0], [107.4, 1], [107.8, 0], [116.0, 1]];
 
 // ---------------------------------------------------------------- the still picture
-function still(lit, pressFigs) {
+function still(lit) {
   const r = rng(1968), o = [];
   const defs = `<linearGradient id="ld-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${SKY[0]}"/><stop offset=".55" stop-color="${SKY[1]}"/><stop offset="1" stop-color="${SKY[2]}"/></linearGradient>
 <linearGradient id="ld-fac" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a2033"/><stop offset=".7" stop-color="#262d43"/><stop offset="1" stop-color="#3a3a4a"/></linearGradient>
@@ -185,7 +196,8 @@ function still(lit, pressFigs) {
     o.push(s);
   }
   // the press at the head of the steps, behind the balustrade (their legs hidden by it)
-  for (const [f, x, s] of pressFigs) o.push(L.at(f, x, 650, s));
+  // (the press stand here, in layers of their own: see build())
+  const cut = o.length;
   // the balustrade along the terrace's edge, broken for the steps, and the piers and lamps at the stair head
   const balus = (a, b) => {
     let s = rect(a, 606, b - a, 9, STONE_L) + rect(a, 606, b - a, 2, "#6a7392", 'opacity=".6"') + rect(a, 644, b - a, 8, STONE_L);
@@ -228,26 +240,55 @@ function still(lit, pressFigs) {
   }
   // the water
   o.push(rect(0, 842, W, H - 842, WATER) + rect(0, 842, W, 26, "#0e1322", 'opacity=".9"'));
-  return { defs, svg: o.join(""), nob };
+  return { defs, back: merge(o.slice(0, cut).join("")), front: merge(o.slice(cut).join("")), nob };
+}
+/* Runs of shapes that differ only in where they are (balusters, joints, dentils, lit windows) become one path each: the same picture
+   in the same order, a fraction of the elements for a browser to walk when it repaints. */
+function merge(svg) {
+  const tok = /<rect x="([-\d.]+)" y="([-\d.]+)" width="([-\d.]+)" height="([-\d.]+)"([^>]*)\/>|<path d="([^"]*)"([^>]*)\/>/g;
+  let out = "", last = 0, key = null, ds = [];
+  const flush = () => { if (key !== null) out += `<path d="${ds.join("")}"${key.slice(1)}/>`; key = null; ds = []; };
+  let m;
+  while ((m = tok.exec(svg))) {
+    if (m.index !== last) { flush(); out += svg.slice(last, m.index); }
+    const isRect = m[1] !== undefined, rest = isRect ? m[5] : m[7];
+    const d = isRect ? `M${m[1]} ${m[2]}h${m[3]}v${m[4]}h${-m[3]}z` : m[6];
+    const k = "p" + rest;
+    if (k !== key) { flush(); key = k; }
+    ds.push(isRect ? d : d.replace(/^(?![Mm])/, "M0 0"));
+    last = tok.lastIndex;
+  }
+  flush();
+  return out + svg.slice(last);
 }
 
+/* Many small rects of one colour and opacity, painted as ONE path: a browser that repaints the water every frame (WebKit on Windows
+   has no composited layers) draws a handful of paths instead of a thousand rects. Only for marks that never overlap in a way that shows. */
+function buckets() {
+  const m = new Map();
+  return {
+    add(x, y, w, h, fill, op) { const k = fill + "|" + op; if (!m.has(k)) m.set(k, []); m.get(k).push(`M${f2(x)} ${f2(y)}h${f2(w)}v${f2(h)}h${f2(-w)}z`); },
+    svg() { let o = ""; for (const [k, d] of m) { const [fill, op] = k.split("|"); o += `<path d="${d.join("")}" fill="${fill}" opacity="${op}"/>`; } return o; },
+  };
+}
 /* the window reflections: a broken streak under each lit window, a dash at a time; two of them, seeded apart, cross-fade */
 function reflections(lit, seed) {
-  const r = rng(seed); let s = "";
+  const r = rng(seed), B = buckets();
   for (const [x, w, op, col] of lit) {
     const len = 150 + r() * 200 + op * 160;
     for (let y = 850; y < 850 + len; y += 8 + r() * 4) {
       const f = 1 - (y - 850) / len, dw = Math.max(3, w * (0.25 + r() * 0.7));
       if (r() < 0.18) continue;
-      s += rect(x - dw / 2 + Math.sin(y * 0.08 + x + seed) * (4 + w * 0.05), y, dw, 2.4 + r() * 1.6, col, `opacity="${f2(Math.max(0, f * op * 0.75))}"`);
+      B.add(x - dw / 2 + Math.sin(y * 0.08 + x + seed) * (4 + w * 0.05), y, dw, 2.4 + r() * 1.6, col, (Math.round(Math.max(0, f * op * 0.75) * 20) / 20).toFixed(2));
     }
   }
-  return s;
+  return B.svg();
 }
 /* the ripples: pale dashes, a strip two stage-widths wide (one tile twice) that slides */
 function ripples() {
-  const r = rng(77); let one = "";
-  for (let i = 0; i < 190; i++) { const y = 856 + Math.pow(r(), 0.8) * 344, w = 16 + r() * 60 * (0.5 + (y - 850) / 350); one += rect(r() * W, y, w, 1.6 + (y - 850) / 220, C.file300, `opacity="${f2(0.05 + r() * 0.11)}"`); }
+  const r = rng(77), B = buckets();
+  for (let i = 0; i < 190; i++) { const y = 856 + Math.pow(r(), 0.8) * 344, w = 16 + r() * 60 * (0.5 + (y - 850) / 350); B.add(r() * W, y, w, 1.6 + (y - 850) / 220, C.file300, (0.06 + Math.floor(r() * 4) * 0.03).toFixed(2)); }
+  const one = B.svg();
   return `<g>${one}</g><g transform="translate(${W} 0)">${one}</g>`;
 }
 
@@ -286,8 +327,8 @@ module.exports = function build(opts = {}) {
     [{ heightIn: 70, age: 39, skin: "brown", hair: { style: "short", color: "cloth-black", hat: { type: "trilby", color: "cloth-charcoal", band: "cloth-black" } }, outfit: { outer: { type: "suit-jacket", color: "cloth-charcoal" }, bottom: { type: "trousers", color: "cloth-charcoal" } }, pose: { arms: { R: "raise", L: "down" } }, props: [{ type: "camera", side: "R" }] }, 1034],
     [{ figure: "fem", heightIn: 65, age: 29, skin: "fair", hair: { style: "bowl-bob", color: "cloth-brown" }, outfit: { outer: { type: "suit-jacket", color: "cloth-graphite" }, bottom: { type: "trousers", color: "cloth-black" } }, pose: { arms: { R: "hold", L: "down" } }, props: [{ type: "camera", side: "R" }] }, 1072],
     [{ heightIn: 68, age: 55, skin: "pale", hair: { style: "short", color: "ink-300", hat: { type: "trilby", color: "cloth-brown", band: "cloth-black" } }, outfit: { outer: { type: "suit-jacket", color: "cloth-brown" }, bottom: { type: "trousers", color: "cloth-brown" } } }, 1108],
-  ].map(([spec, x], i) => [figure(spec, "lgp" + i, [{}], PS), x, PS]);
-  const st = still(lit, press);
+  ].map(([spec, x], i) => [figure(spec, "lgp" + i, [{}], PS, true), x, PS]);
+  const st = still(lit);
 
   // where the two raised cameras' flashes are: the press figure's x, a little above its head (the camera is held up by the flash)
   const KNOTS = [[562 - 14, 650 - 71 * 25 * PS * 1.04], [1034 - 14, 650 - 70 * 25 * PS * 1.04]];
@@ -319,7 +360,7 @@ module.exports = function build(opts = {}) {
     const id = "ld-w" + k, x = w.x, y = w.top, ww = w.w, hh = w.bot - w.top;
     css.push(`#${id}{left:${f2(x / 16)}%;top:${f2(y / 12)}%;width:${f2(ww / 16)}%;height:${f2(hh / 12)}%}`);
     const who = `<g fill="#4a3514" opacity=".5"><circle cx="0" cy="${f2(hh * 0.56)}" r="${f2(ww * 0.11)}"/><path d="M${f2(-ww * 0.26)} ${f2(hh + 4)} Q${f2(-ww * 0.26)} ${f2(hh * 0.68)} 0 ${f2(hh * 0.66)} Q${f2(ww * 0.26)} ${f2(hh * 0.68)} ${f2(ww * 0.26)} ${f2(hh + 4)} Z"/></g>`;
-    return { html: `<svg class="bx" id="${id}" viewBox="0 0 ${f2(ww)} ${f2(hh)}" preserveAspectRatio="none" aria-hidden="true"><defs><clipPath id="${id}c"><path d="${archD(0, 0, ww, hh)}"/></clipPath></defs><g clip-path="url(#${id}c)"><g id="${id}s" transform="translate(-999 0)">${who}</g></g></svg>`, w: f2(ww), P: [29, 41, 35, 47][k], o: [3, 17, 26, 9][k] };
+    return { html: `<svg class="bx mv" id="${id}" viewBox="0 0 ${f2(ww)} ${f2(hh)}" preserveAspectRatio="none" aria-hidden="true"><defs><clipPath id="${id}c"><path d="${archD(0, 0, ww, hh)}"/></clipPath></defs><g clip-path="url(#${id}c)"><g id="${id}s" transform="translate(-999 0)">${who}</g></g></svg>`, w: f2(ww), P: [29, 41, 35, 47][k], o: [3, 17, 26, 9][k] };
   });
   // the flashbulbs: a small hard burst, and a soft afterglow around it
   const flashes = KNOTS.map(([x, y], k) => {
@@ -336,11 +377,20 @@ module.exports = function build(opts = {}) {
   const water = `<svg class="bx op mv" id="ld-ra" viewBox="0 842 ${W} ${H - 842}" preserveAspectRatio="none" aria-hidden="true">${reflections(lit, 11)}</svg>` +
     `<svg class="bx op mv" id="ld-rb" viewBox="0 842 ${W} ${H - 842}" preserveAspectRatio="none" aria-hidden="true">${reflections(lit, 29)}</svg>` +
     `<svg class="bx mv" id="ld-rip" viewBox="0 842 ${W * 2} ${H - 842}" preserveAspectRatio="none" aria-hidden="true">${ripples()}</svg>`;
-  const body = V("ld-bg", `<defs>${st.defs}</defs>${st.svg}`) + water + wins.map((w) => w.html).join("") + layers.join("") + boats + flashes;
+  // the press in two small layers of their own, between the building and the balustrade: a figure is costly to repaint, and a
+  // browser without composited layers (WebKit on Windows) repaints what lies under anything that moves
+  const pressLayer = (id, list) => {
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const [f, x, s] of list) { const [vx, vy, vw, vh] = f.vb; x0 = Math.min(x0, x + vx * s); y0 = Math.min(y0, 650 + vy * s); x1 = Math.max(x1, x + (vx + vw) * s); y1 = Math.max(y1, 650 + (vy + vh) * s); }
+    x0 -= 4; y0 -= 4; x1 += 4; y1 += 4;
+    css.push(`#${id}{left:${f2(x0 / 16)}%;top:${f2(y0 / 12)}%;width:${f2((x1 - x0) / 16)}%;height:${f2((y1 - y0) / 12)}%}`);
+    return `<svg class="bx st" id="${id}" viewBox="${f2(x0)} ${f2(y0)} ${f2(x1 - x0)} ${f2(y1 - y0)}" preserveAspectRatio="none" aria-hidden="true">${list.map(([f, x, s]) => L.at(f, x, 650, s)).join("")}</svg>`;
+  };
+  const body = V("ld-bk", `<defs>${st.defs}</defs>${st.back}`) + pressLayer("ld-p0", press.slice(0, 2)) + pressLayer("ld-p1", press.slice(2)) + V("ld-fr", st.front) + water + wins.map((w) => w.html).join("") + layers.join("") + boats + flashes;
 
-  const CSS = `.tl{position:absolute;inset:0;width:100%;height:100%;display:block}
+  const CSS = `.tl{position:absolute;inset:0;width:100%;height:100%;display:block;will-change:transform}
 .bx{position:absolute;display:block;overflow:visible;pointer-events:none}
-.mv{will-change:transform}
+.mv,.st{will-change:transform}
 .op{will-change:opacity,transform}
 #ld-b0,#ld-b1,#ld-b2,#ld-b3,${gdata.map((g) => "#" + g.id).join(",")}{visibility:hidden}
 .fl{opacity:0;will-change:opacity}
@@ -385,10 +435,11 @@ function paint(t,c,live,wc){
   attr(o.wk,'visibility',a.mv&&live?'visible':'hidden');const sw=live&&Math.floor(c*3.4+k)%2===1;attr(o.ra,'visibility',sw?'hidden':'visible');attr(o.rb,'visibility',sw?'visible':'hidden');}
  for(let i=0;i<G.length;i++){const g=G[i],s=guestAt(g,t,c),o=gE[i];vis(o,!!s);if(!s)continue;
   tf(o,'translate3d('+((s.x-800)/g.w*100).toFixed(2)+'%,'+((s.y-YL)/g.h*100).toFixed(2)+'%,0) scale('+s.k.toFixed(3)+')');pose(g.id,s.f);}
- if(wc!==null){const a=.5+.5*Math.sin(wc*.42);op(ra,.25+.75*a);op(rb,1-.75*a);
+ // the water steps ten times a second: slow enough to look smooth, and a browser that repaints it does so a third as often
+ if(wc!==null){wc=Math.floor(wc*10)/10;const a=.5+.5*Math.sin(wc*.42);op(ra,.25+.75*a);op(rb,1-.75*a);
   tf(ra,'translate3d('+(Math.sin(wc*.17)*.35).toFixed(3)+'%,0,0)');tf(rb,'translate3d('+(Math.sin(wc*.13+2)*-.35).toFixed(3)+'%,0,0)');
   tf(rip,'translate3d('+(-((wc*9)%1600)/3200*100).toFixed(3)+'%,0,0)');}else{op(ra,.75);op(rb,.25);}
- for(let k=0;k<WIN.length;k++){const w=WIN[k];let x=-999;if(live){const ph=(c+w.o)%w.P;if(ph<8)x=-w.w*.6+w.w*2.2*ph/8;}else if(k===1)x=w.w*.62;
+ for(let k=0;k<WIN.length;k++){const w=WIN[k];let x=-999;if(live){const ph=(Math.floor(c*10)/10+w.o)%w.P;if(ph<8)x=-w.w*.6+w.w*2.2*ph/8;}else if(k===1)x=w.w*.62;
   attr(wE[k],'transform','translate('+x.toFixed(1)+' 0)');}
  // the flashbulbs: a burst is on for one painted frame, then the afterglow fades over a second
  for(let k=0;k<2;k++)if(burst[k]){burst[k]=0;op(fE[k],0);}
