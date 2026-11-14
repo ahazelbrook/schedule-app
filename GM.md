@@ -1134,7 +1134,7 @@ The five are independent: any one can be on with the others off. `night.who` and
 ### Turning a setting on
 
 1. Open the GM page (`#gm`) on the laptop, signed in as the GM.
-2. Press **`I`** (the iPad view; Find, `Ctrl+K`, also lists it under "settings"). The **Settings** section sits under Listening, beside the Scenes (one column under 1100 px), and the five kit rows come after Band.
+2. Press **`I`** (the iPad view; Find, `Ctrl+K`, also lists it under "settings"). The **Settings** section sits under Listening, beside the Scenes (one column under 1100 px), and the Players' screen row and then the five kit rows come after Band.
 3. Tap the right-hand choice on a row (New desk, New iPad, Four screens, On, Pitches). A toast says what changed and the button reads pressed. The left-hand choice turns it off again.
 
 That is the only place a setting is changed. **A change made in the laptop's own Settings is instant on that page; the iPad follows on its next poll and a phone on its next campaign arrival.** A change made on *another* device (a second GM page) reaches an open GM page only when its window regains focus or its tab becomes visible: **there is no GM-state poll**. So on a game night, flip settings from the laptop that is running the night.
@@ -1284,7 +1284,7 @@ Seven settings came after the kit and stage. **Every one is off until chosen**, 
 - **Where the rows sit.** Players' screen is the sixth row, straight after Band (after the five rows of the first build, so none of those moved). The four map rows follow Pitches, then Handouts on phones, and Furniture depth is last.
 - **The map kit in the app** is `app/maps/map-kit.js`, a vendored copy; `app/kits.json` records its version (1.2.0) beside the figure kit's (3.1.0).
 - **Furniture depth and the size cap.** `P.shadeOpt()` in `app/gm-page.js` is `{ shade: true }` while the setting is on and `{}` while it is off, so off does not even pass the key. A map too large for its cap is drawn again without the shade before anything else is given up: the shade is the first step down every size ladder.
-- **Checks.** `checks/runtime/map-scene.test.mjs`, `players-intro.test.mjs`, `players-screen.test.mjs`, `handouts.test.mjs`, `players-board.test.mjs`, `map-shade.test.mjs` and `map-shade-kit.test.mjs` run in `npm run check:runtime`. The browser checks are `map-scene.e2e.mjs`, `players-screen.e2e.mjs`, `players-intro.e2e.mjs`, `players-board.e2e.mjs`, `phone-handouts.e2e.mjs`, `map-shade.e2e.mjs` and `map-shade-paint.e2e.mjs`. `kit-off.e2e.mjs` holds every setting's off state to the page as it was.
+- **Checks.** `checks/runtime/map-scene.test.mjs`, `players-intro.test.mjs`, `players-screen.test.mjs`, `handouts.test.mjs`, `players-board.test.mjs`, `map-shade.test.mjs` and `map-shade-kit.test.mjs` run in `npm run check:runtime`. The browser checks are `map-scene.e2e.mjs`, `players-screen.e2e.mjs`, `players-intro.e2e.mjs`, `players-board.e2e.mjs`, `phone-handouts.e2e.mjs`, `map-shade.e2e.mjs` and `map-shade-paint.e2e.mjs`. `kit-off.e2e.mjs` holds the five kit settings' off state to the page as it was (it was written before these seven).
 
 ## Live sync (`functions/_lib/live.js`, `worker/live.js`, `functions/api/live.js`)
 
