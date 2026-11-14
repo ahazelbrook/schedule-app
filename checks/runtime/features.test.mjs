@@ -259,16 +259,16 @@ await test('settings: a failed copy says so and is tried again at the next arriv
   assert.match(r.calls.toast[0][0], /Could not copy the settings/); assert.equal(r.calls.toast[0][1], true);
   assert.equal(r.ctl.heal(), true, 'tried again at once');
 });
-await test('settings: sixteen rows (the Players screen row first, then Scenes, Music, Phones, Mirror for phones, Band, the kit\'s Desk, Stage, Phone sheet, Start the night, Pitches, MK1\'s four map rows and IP4\'s Handouts on phones), each a two-way choice showing the current value', async () => {
+await test('settings: sixteen rows (Scenes, Music, Phones, Mirror for phones, Band, then the Players screen row, the kit\'s Desk, Stage, Phone sheet, Start the night, Pitches, MK1\'s four map rows and IP4\'s Handouts on phones), each a two-way choice showing the current value', async () => {
   const r = rig({ features: { 'room.music': true }, mirror: false }, { v: 1 });
   const rows = r.ctl.rows();
-  assert.deepEqual(rows.map((x) => x.label), ['Players’ screen', 'Scenes', 'Music', 'Phones', 'Mirror for phones', 'Band', 'Desk', 'Stage', 'Phone sheet', 'Start the night', 'Pitches',
+  assert.deepEqual(rows.map((x) => x.label), ['Scenes', 'Music', 'Phones', 'Mirror for phones', 'Band', 'Players’ screen', 'Desk', 'Stage', 'Phone sheet', 'Start the night', 'Pitches',
     'Map fills the screen', 'People on the map', 'Room lights', 'Cut to the room', 'Handouts on phones']);
-  assert.deepEqual(rows.map((x) => x.key), ['stage.players', 'fx.off', 'room.music', 'phoneCards', 'mirror', 'display.band', 'kit.desk', 'kit.stage', 'kit.phone', 'night.who', 'blade.pitches',
+  assert.deepEqual(rows.map((x) => x.key), ['fx.off', 'room.music', 'phoneCards', 'mirror', 'display.band', 'stage.players', 'kit.desk', 'kit.stage', 'kit.phone', 'night.who', 'blade.pitches',
     'map.fill', 'map.people', 'map.lights', 'map.room', 'phone.handouts']);
-  assert.deepEqual(rows.map((x) => x.options.map((o) => o.label)), [['Classic', 'Map first'], ['Moving', 'Held still'], ['Scene themes', 'Heat music'], ['Sheet only', 'Mission cards'], ['Off', 'On'], ['Off', 'On'],
+  assert.deepEqual(rows.map((x) => x.options.map((o) => o.label)), [['Moving', 'Held still'], ['Scene themes', 'Heat music'], ['Sheet only', 'Mission cards'], ['Off', 'On'], ['Off', 'On'], ['Classic', 'Map first'],
     ['Old desk', 'New desk'], ['Old iPad', 'New iPad'], ['Old sheet', 'Four screens'], ['Off', 'On'], ['Stall and Meanwhile', 'Pitches'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On']]);
-  assert.deepEqual(rows.map((x) => x.value), [false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false]);
+  assert.deepEqual(rows.map((x) => x.value), [false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false]);
   const box = { parentNode: null, innerHTML: '' }; r.ctl.render(box);
   assert.match(box.innerHTML, /data-set="room\.music" data-v="1" aria-pressed="true">Heat music/);
   assert.match(box.innerHTML, /data-set="fx\.off" data-v="0" aria-pressed="true">Moving/);
