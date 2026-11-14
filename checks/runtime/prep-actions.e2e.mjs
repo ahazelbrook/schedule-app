@@ -186,6 +186,28 @@ try {
       const plIds = await pp.$$eval('.tp-clock', (ns) => ns.map((n) => n.dataset.id));
       check(!!seenMarker && !(await pp.evaluate((n) => document.body.innerHTML.includes(n), CLOCK)), 'clock: a phone\'s table page shows the crew\'s clock and not the hidden one (' + plIds.join() + ')');
       await pc.close();
+
+      /* Send… beside a handout chip: only with phone.handouts on; it opens the handouts list's own Send to… row */
+      check(!(await p.$('#gm-prep .pa-send')), 'send: with phone.handouts off there is no Send… beside a handout chip');
+      const setting = async (on) => { await api('PATCH', '/gm/state', { features: { 'phone.handouts': on } }); await api('PATCH', '/campaign', { features: { 'phone.handouts': on } }); };
+      await setting(true);
+      await p.reload();
+      await p.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
+      await p.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000, state: 'attached' });
+      await openPrep(p);
+      check(!!(await until(() => p.evaluate(() => !!document.querySelector('#gm-prep p .pa-chip.pa-handout + .pa-send')), 15000)), 'send: with phone.handouts on, a Send… sits beside the handout chip');
+      await tapOn(p, '#gm-prep p .pa-send');
+      const row = await until(() => p.evaluate(() => { const b = document.querySelector('.pa-pop [data-gm="ho-send"][data-to="*"]'); return b ? [...document.querySelectorAll('.pa-pop [data-gm="ho-send"]')].map((x) => x.textContent.trim()).join(', ') : null; }), 10000);
+      check(!!row, 'send: it opens the Send to… row (' + row + ')');
+      await shot(p, 'prep-send-' + TAG + '-' + W0);
+      if (row) {
+        await tapOn(p, '.pa-pop [data-gm="ho-send"][data-to="*"]');
+        const got = await until(async () => { const r = await api('GET', '/docs?kind=handout&limit=5', undefined, P1); return r.text.includes(FILES.plan) ? r.text : null; }, 10000);
+        check(!!got && !/GM-ONLY/.test(got), 'send: Everyone puts it on a player\'s phone list (the docs row), with no cue');
+        const dg2 = await api('GET', '/gm/display', undefined, IPAD);
+        check(!/GM-ONLY/.test(dg2.text), 'send: the shared screen is sent nothing GM-only');
+      }
+      await setting(false);
     }
 
     /* rule: the pop-over, closed three ways */

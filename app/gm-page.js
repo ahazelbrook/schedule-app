@@ -5772,7 +5772,7 @@
   function hoSendInst() {
     if (!S || !W.B68Features || !W.B68Features.valueOf(S.doc, 'phone.handouts')) { if (S && S.hoSend) { S.hoSend.destroy(); S.hoSend = null; } return null; }
     var me = S;
-    if (!W.B68GmHandoutSend) { if (!S.hoSendAsked && W.B68Load && W.B68Load.need) { S.hoSendAsked = true; W.B68Load.need('gm-handouts').then(function () { if (S === me) renderIpad(); }, function () { if (S === me) S.hoSendAsked = false; }); } return null; }
+    if (!W.B68GmHandoutSend) { if (!S.hoSendAsked && W.B68Load && W.B68Load.need) { S.hoSendAsked = true; W.B68Load.need('gm-handouts').then(function () { if (S === me) { renderIpad(); if (W.B68GmPrepActions) W.B68GmPrepActions.refresh(S.root, paHost()); } }, function () { if (S === me) S.hoSendAsked = false; }); } return null; }
     if (!S.hoSend) S.hoSend = W.B68GmHandoutSend.create({ ask: asked, toast: toast, away: function () { return S === me && S.who ? S.who.away() : []; } });
     return S.hoSend;
   }
@@ -7270,7 +7270,9 @@
       var bare = lc(L.name).replace(/^b68g?-/, '').replace(/^the-/, ''), st = (c.standing || []).filter(function (s) { return B68slug(s.faction).replace(/^the-/, '') === bare; })[0];
       h = '<p class="gm-kick">Faction</p><h3>' + esc(st ? st.faction : L.name) + '</h3>' + (st ? '<p><span class="gm-lab">Status with the crew</span> ' + esc((st.status > 0 ? '+' : '') + st.status) + '</p>' : '<p class="gm-dim">No status recorded on the board.</p>');
     }
-    box.innerHTML = '<div class="pp-peekcard"><button type="button" class="pp-peekx" data-gm="prep-peekx" aria-label="Close" title="Close (Esc)">✕</button>' + h + '<p class="pp-acts">' + acts + '<a class="btn sm" href="' + esc(W.B68GmPrep.obsidianUri(pk, L.rel)) + '">Open in Obsidian</a><button type="button" class="btn sm" data-gm="prep-peekx">Close</button></p></div>';
+    box.innerHTML = '<div class="pp-peekcard">' + h + '<p class="pp-acts">' + acts + '<a class="btn sm" href="' + esc(W.B68GmPrep.obsidianUri(pk, L.rel)) + '">Open in Obsidian</a><button type="button" class="btn sm" data-gm="prep-peekx">Close</button></p></div>';
+    /* PA2: a ✕ pinned at the card's top right (an iPad has no Esc, and the Close at the foot is below the whole card) */
+    { var pkc = box.querySelector('.pp-peekcard'), pkx = document.createElement('button'); pkx.type = 'button'; pkx.className = 'pp-peekx'; pkx.setAttribute('data-gm', 'prep-peekx'); pkx.setAttribute('aria-label', 'Close'); pkx.title = 'Close (Esc)'; pkx.textContent = '✕'; if (pkc) pkc.insertBefore(pkx, pkc.firstChild); }
     box.hidden = false;
     var cb = box.querySelector('.pp-cardbody'); if (cb) W.B68GmPrep.decorate(cb, {});     /* a card has no boxes or beats: nothing of the GM state */
     /* PA2: where the page itself scrolls under the sticky view chips (under 1100 px: an iPad), the card sticks below them, so its ✕ is never under the bars */
