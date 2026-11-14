@@ -212,7 +212,12 @@ test('cap, the score scene: a board or exploded site over 600 KiB with depth is 
   assert.deepEqual(b.calls.map((o) => [o.view, o.shade]), [['plan', true], ['iso', true], ['iso', undefined]]);
   assert.ok(!('shadeCut' in P.scoreScene(ROLL, PMAP(), spy().render)));
   const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
-  assert.match(src, /if \(r && built\.shadeCut\) toast\(P\.SCENE_CUT_MSG\.shade/, 'said on this screen');
+  assert.match(src, /if \(r && !pb && built\.shadeCut\) toast\(P\.SCENE_CUT_MSG\.shade/, 'said on this screen for Set as score scene, never on the planning board\'s path');
+  assert.match(src, /flatBoard = !!\(fit\.svg && fit\.flat\) \|\| built\.shadeCut === true;/, 'the planning board\'s path hands it to the board, which says it once per change');
+}));
+test('cap, a flat copy that names a hidden room: the leak refusal, not "too large"', () => withShade(true, () => {
+  const render = (roll, o) => ({ svg: o.shade ? '<svg><text>Showroom</text><!--' + 'x'.repeat(BIG) + '--></svg>' : '<svg><text>Luxury penthouse</text></svg>', warnings: [] });
+  assert.throws(() => P.playerDisplay(ROLL, PMAP(), render, { tokens: [], hide: [], sig: '' }), (e) => e.leak === true && e.message === P.LEAK_MSG);
 }));
 test('cap, the pinned sheet: flat before any face is lightened or plated', () => withShade(true, () => {
   const items = [{ full: tok('Showroom'), lite: tok('Showroom'), alt: tok('Showroom') }];
@@ -222,6 +227,47 @@ test('cap, the pinned sheet: flat before any face is lightened or plated', () =>
   d = spy(); r = PB.fitBoard(ROLL, d.render, { seen: ['public'], view: 'plan', leaks: () => [] }, items);
   assert.ok(!('flat' in r), 'off: no key');
 }));
+
+/* ---------- 4b. the planning board: a flip re-sends the stored board once; the flat toast once per change ---------- */
+async function atest(name, fn) { try { await fn(); passed++; console.log('PASS ' + name); } catch (e) { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); } }
+const tick = () => new Promise((r) => setTimeout(r, 0));
+function boardHost(o) {
+  const doc = { boardPins: { 'Site A': { pins: [{ id: 'p1', room: 'Hall', kind: 'line', text: 'Back by nine' }], at: 1 } } }, roll = { name: 'Site A' };
+  return Object.assign({ doc: () => doc, roll: () => roll, site: () => roll.name, rooms: () => [{ name: 'Hall', shown: true }], npcs: () => ({}), scan: () => [], patch: () => true,
+    score: () => ({ name: 'Site A' }), busy: () => false, toast: () => {}, figures: () => null, hide: () => [], showBoard: () => Promise.resolve(true), ready: () => true }, o);
+}
+await atest('a flip with the board up: one write each way (on, then off), none when nothing changed; no score scene stored: no write; not read yet: no write', async () => {
+  PB.reset();
+  let look = '', writes = [];
+  const host = boardHost({ look: () => look, setScore: () => { writes.push(look); return Promise.resolve({ ok: true, refused: [] }); } });
+  PB.follow(host); await tick(); assert.equal(writes.length, 0, 'the first look takes its bearings');
+  PB.follow(host); await tick(); assert.equal(writes.length, 0, 'nothing changed: nothing written');
+  look = 'shade'; PB.follow(host); await tick(); assert.deepEqual(writes, ['shade'], 'on: one write, shaded');
+  PB.follow(host); PB.follow(host); await tick(); assert.equal(writes.length, 1, 'never a loop');
+  look = ''; PB.follow(host); await tick(); assert.deepEqual(writes, ['shade', ''], 'off: one write, flat');
+  PB.reset(); writes = []; look = '';
+  const none = boardHost({ look: () => look, score: () => null, setScore: () => { writes.push(look); return Promise.resolve({ ok: true, refused: [] }); } });
+  PB.follow(none); await tick(); look = 'shade'; PB.follow(none); await tick(); assert.equal(writes.length, 0, 'no score scene of this site stored: no write');
+  PB.reset(); writes = []; look = ''; let ready = false;
+  const cold = boardHost({ look: () => look, ready: () => ready, setScore: () => { writes.push(look); return Promise.resolve({ ok: true, refused: [] }); } });
+  look = 'shade'; PB.follow(cold); await tick(); assert.equal(writes.length, 0, 'the stored score not read yet: nothing written');
+  ready = true; PB.follow(cold); await tick(); assert.equal(writes.length, 0, 'once read, the first look is the starting point (it is already shaded or not): no write');
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8'), i = src.indexOf('function shadeRedraw(');
+  assert.match(src.slice(i, src.indexOf('\n  }\n', i)), /if \(pbOn\(\)\) W\.B68GmPlayersBoard\.follow\(pbHost\(\)\);/, 'the flip goes through the board\'s own follow');
+  assert.match(src, /look: function \(\) \{ return P\.shadeOn\(\) \? 'shade' : ''; \}/);
+  const h0 = boardHost({}), h1 = boardHost({ look: () => '' });
+  assert.equal(PB._state(h1).sig, PB._state(h0).sig, 'off: the board\'s signature is what it was');
+  PB.reset();
+});
+await atest('the board\'s flat toast: once per change, never once per sync', async () => {
+  PB.reset();
+  const toasts = [], res = [{ ok: true, refused: [], flat: true }, { ok: true, refused: [], flat: true }, { ok: true, refused: [] }, { ok: true, refused: [], flat: true }];
+  let n = 0;
+  const host = boardHost({ toast: (m) => toasts.push(m), setScore: () => Promise.resolve(res[n++]) });
+  for (let i = 0; i < res.length; i++) { await PB.sync(host, false); }
+  assert.equal(toasts.filter((m) => /flat furniture/.test(m)).length, 2, 'flat, flat (said once), not flat, flat again (said again)');
+  PB.reset();
+});
 
 /* ---------- 5. rollback: the code live before today ---------- */
 test('rollback: ' + ROLLBACK + '\'s registry and Settings read a stored map.shade safely (ignored, never published, never a row)', () => {

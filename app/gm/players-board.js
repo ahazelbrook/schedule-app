@@ -214,7 +214,10 @@
     /* the names no pin may show now (hidden NPCs and clocks, a known-as NPC's full name): a change to them redraws the board, as a reveal does */
     var hide = (typeof host.hide === 'function' ? host.hide() || [] : []).map(function (x) { return str(x).toLowerCase(); }).sort();
     var shownKey = Object.keys(shown).sort().join('|');
-    return { site: site, pins: pins, shown: shown, rooms: rooms, npcs: npcs, shownKey: shownKey, sig: sig([site, Object.keys(shown).sort(), pins, faces, hide]) };
+    /* IP7: the drawing's look (host.look(): 'shade' while map.shade is on, else ''): a flip redraws the stored board once, through follow; '' adds nothing */
+    var look = typeof host.look === 'function' ? str(host.look()) : '', parts = [site, Object.keys(shown).sort(), pins, faces, hide];
+    if (look) parts.push(look);
+    return { site: site, pins: pins, shown: shown, rooms: rooms, npcs: npcs, shownKey: shownKey, sig: sig(parts) };
   }
   function tokensOf(s, host) {
     var K = typeof host.figures === 'function' ? host.figures() : null, out = [];
@@ -246,7 +249,8 @@
       /* a pin the screen refuses now (someone hidden again, a clock hidden, a known-as name) stays stored and waits, as a pin for an unknown room does; said once */
       if (r) { var ids = (r.refused || []).map(function (x) { return x.id; }), fresh = (r.refused || []).filter(function (x) { return st.refused.indexOf(x.id) < 0; }); st.refused = ids;
         if (fresh.length) host.toast('Off the board until it is safe: ' + fresh.map(function (x) { return x.label; }).join(', ') + ' would show the players a name they must not see (' + fresh.map(function (x) { return x.names.join(', '); }).join('; ') + ').', true);
-        if (r.flat && !st.flat) { st.flat = true; host.toast('The board went up with flat furniture: with depth it was too large for the iPad.', true); }      /* IP7 */
+        if (r.flat && !st.flat) host.toast('The board went up with flat furniture: with depth it was too large for the iPad.', true);      /* IP7: said once per change, never once per sync */
+        st.flat = r.flat === true;
         if (r.plates && !st.plated) { st.plated = true; host.toast((r.plates === 1 ? 'One face' : r.plates + ' faces') + ' went up as a name plate: with every figure the board was too large for the iPad.', true); } }
       if (!r) st.last = '';      /* not set: the next look tries again (a sig is never '') */
       if (st.again) { st.again = false; var n = state(host); if (n.sig !== st.last) return sync(host, false); }

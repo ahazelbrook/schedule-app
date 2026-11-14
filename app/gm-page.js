@@ -325,7 +325,7 @@
       var tries = shaded ? [['shade', flat(o)]] : [];
       if (o !== o0) tries.push(['crowd', Object.assign(flat(o), { crowd: undefined })], ['scene', flat(o0)]);
       for (var i = 0; i < tries.length; i++) { var t = clean(used.length ? Object.assign({}, tries[i][1], { tokens: used }) : tries[i][1]); if (t && bytesOf(t.svg) <= P.SVG_CAP) { r = t; return tries[i][0]; } }
-      if (o === o0) { var t0 = clean(used.length ? Object.assign(flat(o), { tokens: used }) : flat(o)); if (t0) { r = t0; return ''; } }      /* IP7: no scene, and too large even flat: the flat map goes as it would have (today's behaviour) */
+      if (o === o0) { var t0 = clean(used.length ? Object.assign(flat(o), { tokens: used }) : flat(o)); if (t0) { r = t0; return ''; } var el = new Error(P.LEAK_MSG); el.leak = true; throw el; }      /* IP7: no scene, and too large even flat: the flat map goes as it would have (today's behaviour); a flat copy that names a hidden room: the leak refusal */
       var eb = new Error('This map is too large for the iPad (' + Math.round(bytesOf(r.svg) / 1024) + ' KiB, at most ' + Math.round(P.SVG_CAP / 1024) + ') even without its people: show fewer bands or another view.'); eb.big = true; throw eb;
     }
     /* MK2 (name each person once): the bare markers went only if the kit drew every crew member it left out; otherwise the full markers, as before */
@@ -3868,6 +3868,7 @@
   function shadeRedraw() {
     var k = P.shadeOn() === true; if (k === (S.shadeK === true)) return;
     S.shadeK = k; if (S.map) drawMap(true); runDraw(true); liveTokens();
+    if (pbOn()) W.B68GmPlayersBoard.follow(pbHost());      /* the stored planning board and exploded site of this site, once, through the board's own guarded path (ready, busy, same-sig, onBoard) */
   }
   /* MK2 (the review): the transcriber document counts as set up only with something beyond the map frame's ask and answer in it */
   function sttOwn(d) { return !!d && Object.keys(d).some(function (k) { return k !== 'frameWant' && k !== 'frame'; }); }
@@ -6057,7 +6058,7 @@
     gate.mark(built.board); gate.mark(built.iso);
     return patchAmbient({ score: built.score }).then(function (r) {
       if (r && !pb) toast(built.rings ? 'Score scene set. The plan would name a hidden room, so the board uses rings.' : 'Score scene set: ' + built.score.name + '.');
-      if (r && built.shadeCut) toast(P.SCENE_CUT_MSG.shade.replace('The map went', 'The score scene went'), true);      /* IP7: said, never silent */
+      if (r && !pb && built.shadeCut) toast(P.SCENE_CUT_MSG.shade.replace('The map went', 'The score scene went'), true);      /* IP7: said, never silent */
       return r;
     });
   }
@@ -6949,7 +6950,8 @@
       rooms: function () { var seen = pbSeen(); return (S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : []).filter(function (r) { return isObj(r) && typeof r.name === 'string' && r.name; }).map(function (r) { return { name: r.name, shown: roomShown(r, seen) }; }); },
       scan: function (text) { var names = P.tokenHidden(S.locRoll, pbSeen(), pbHide()); return names.filter(function (n) { return namesHit(text, [n]); }); },
       patch: function (p) { return patch(p); }, score: function () { return AM.doc && isObj(AM.doc.score) ? AM.doc.score : null; }, busy: function () { return AM.busy > 0; },
-      figures: function () { return W.B68Figure || null; }, toast: toast, setScore: pbSetScore, showBoard: pbShowBoard, hide: pbHide,
+      figures: function () { return W.B68Figure || null; }, toast: toast, setScore: pbSetScore, look: function () { return P.shadeOn() ? 'shade' : ''; },      /* IP7 */
+      showBoard: pbShowBoard, hide: pbHide,
       ready: function () { return !!(S && AM.loaded && (S.npcsIn || !(S.api && S.api.db && S.api.db()))); } };      /* IP6c: the stored score scene and the cast are read (or this page has no cast to wait for) */
   }
   function pbSetScore(list, ask, keep) {
@@ -6964,7 +6966,7 @@
     /* the score scene as Set as score scene builds it, then its board drawn again with the screened pins at the same view, kept only if the leak scan passes */
     var pin = function (built) {
       var fit = W.B68GmPlayersBoard.fitBoard(S.locRoll, W.B68Map && W.B68Map.render, Object.assign({ seen: seen, view: built.view, kit1: P.kit1On(), leaks: P.leaks }, P.shadeOpt()), kept), svg = fit.svg;      /* IP7: P.shadeOpt(), {} while off */      /* too large: faces lighter, then name plates, oldest first, only as many as it takes */
-      plates = fit.svg ? fit.plates : 0; flatBoard = !!(fit.svg && fit.flat);
+      plates = fit.svg ? fit.plates : 0; flatBoard = !!(fit.svg && fit.flat) || built.shadeCut === true;      /* IP7: the board's own toast says it, once per change */
       if (svg) built.board = built.score.board = svg; else dropped = kept.length > 0;
     };
     return setScoreScene({ map: pmu, seen: seen, ask: ask, pin: pin }).then(function (r) {
