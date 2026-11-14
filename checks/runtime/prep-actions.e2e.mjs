@@ -90,6 +90,8 @@ async function openPrep(p) {
   await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
   await p.keyboard.press('r');
   await p.waitForSelector('#gm-prep .pp-doc', { timeout: 20000 });
+  /* the invented section: the Rooms section holds chips of its own (the secrecy fixture) */
+  await p.evaluate(() => { const s = [...document.querySelectorAll('#gm-prep .pp-doc > .pp-sec')].find((x) => /^Prep actions/.test((x.querySelector('h3') || {}).textContent || '')); if (s) s.setAttribute('data-pa-sec', ''); });
 }
 const tapOn = async (p, sel) => { if (WK) await p.locator(sel).first().tap(); else await p.locator(sel).first().click(); };
 
@@ -117,6 +119,17 @@ try {
   const prep = (await api('GET', '/gm/pack?part=prep')).json, camp = (await api('GET', '/gm/pack?part=campaign')).json;
   const note = prep.body.notes[0];
   note.blocks.push({ k: 'md', from: note.rel || note.id, src: SECTION, tasks: [] });
+  /* the Showroom's lines with an action span each: the phones' Costume and SAY, the stamp's If it goes wrong (the GM's buttons, never the players' text) */
+  let spans = 0;
+  for (const b of note.blocks) {
+    if (typeof b.src !== 'string') continue;
+    const s0 = b.src;
+    b.src = b.src.replace('- **Costume:** Evening dress, a guest\'s mask', '- **Costume:** Evening dress, a guest\'s mask `▶ handout: GM-ONLY-PA-COSTUME`')
+      .replace('- If it goes wrong: Dov Kessler turns and looks straight at you', '- If it goes wrong: Dov Kessler turns and looks straight at you `▶ clock: GM-ONLY-PA-WRONG / 4`')
+      .replace('> Ladies and gentlemen, the house thanks you. Do enjoy the tables.', '> Ladies and gentlemen, the house thanks you. Do enjoy the tables. `>> rule: GM-ONLY-PA-SAY`');
+    if (b.src !== s0) spans += (b.src.match(/GM-ONLY-PA-(COSTUME|WRONG|SAY)/g) || []).length;
+  }
+  check(spans === 3, 'the Showroom\'s Costume, If it goes wrong and SAY lines each hold an action span (' + spans + ')');
   check((await api('POST', '/gm/pack', { part: 'prep', src: prep.src || {}, body: prep.body })).status === 200, 'the prep part with the action section');
   check((await api('POST', '/gm/pack', { part: 'handouts', src: { file: 'invented/handouts', blockSha: '1', exportedAt: new Date().toISOString() }, body: HANDOUTS })).status === 200, 'the handouts part');
   camp.body.cards = Object.assign({}, camp.body.cards || {}, { 'Mabel Quist': LONG_CARD });
@@ -133,8 +146,8 @@ try {
     const [W, H] = SIZES[si], tag = TAG + '-' + W;
     const { p, ctx, seen } = await gmPage(W, H);
     await openPrep(p);
-    await until(() => p.evaluate(() => document.querySelectorAll('#gm-prep .pa-chip').length >= 9), 15000);
-    const chips = await p.$$eval('#gm-prep .pa-chip', (l) => l.map((b) => ({ t: (b.querySelector('.pa-mark').textContent + ' ' + b.querySelector('.pa-l').textContent).replace(/\s+/g, ' ').trim(), cls: b.className, title: b.title })));
+    await until(() => p.evaluate(() => document.querySelectorAll('#gm-prep [data-pa-sec] .pa-chip').length >= 9), 15000);
+    const chips = await p.$$eval('#gm-prep [data-pa-sec] .pa-chip', (l) => l.map((b) => ({ t: (b.querySelector('.pa-mark').textContent + ' ' + b.querySelector('.pa-l').textContent).replace(/\s+/g, ' ').trim(), cls: b.className, title: b.title })));
     check(seen.some((u) => /gm\/prep-actions\.js/.test(u)), tag + ': a note with an action span fetches the bundle');
     check(chips.length === 9, tag + ': nine chips (' + chips.map((c) => c.t).join(' | ') + ')');
     const by = (re) => chips.filter((c) => re.test(c.t));
@@ -146,13 +159,13 @@ try {
     check(await p.evaluate(() => !!document.querySelector('#gm-prep .rl-callout .pa-chip.pa-rule') && !!document.querySelector('#gm-prep li .pa-chip') && !!document.querySelector('#gm-prep td .pa-chip')), tag + ': chips in a callout, a list item and a table cell');
     const rows = await p.$$eval('#gm-prep table', (ts) => { const t = ts.find((x) => x.querySelector('.pa-chip')); return t ? [...t.querySelectorAll('tbody tr')].map((r) => Math.round(r.getBoundingClientRect().height)) : []; });
     check(rows.length === 2 && rows[0] <= rows[1] + 12, tag + ': the table row with a handout chip stays one row tall (' + rows.join(' vs ') + ' px)');
-    await p.evaluate(() => { const c = document.querySelector('#gm-prep .pa-chip'); c.closest('p, li, td, .rl-callout').scrollIntoView({ block: 'center' }); });
+    await p.evaluate(() => { const c = document.querySelector('#gm-prep [data-pa-sec] .pa-chip'); c.closest('p, li, td, .rl-callout').scrollIntoView({ block: 'center' }); });
     await sleep(300);
     await shot(p, 'prep-chips-' + tag);
 
     if (si === 0) {
       /* handout: on the shared screen */
-      await tapOn(p, '#gm-prep p .pa-chip.pa-handout');
+      await tapOn(p, '#gm-prep [data-pa-sec] p .pa-chip.pa-handout');
       const dg = await until(async () => { const r = await api('GET', '/gm/display', undefined, IPAD); return r.json && r.json.display && r.json.display.kind === 'handout' ? r.text : null; }, 10000);
       check(!!dg && dg.includes(FILES.plan), 'handout: a tap shows it on the shared screen (the display GET has the file)');
       check(!!(await until(() => dp.evaluate((f) => [...document.querySelectorAll('img')].some((i) => i.src.includes(f)), FILES.plan), 10000)), 'handout: the display DOM draws it');
@@ -160,11 +173,11 @@ try {
 
       /* clock: once, hidden */
       const clocksNamed = async (u) => { const r = await api('GET', '/campaign', undefined, u); return ((r.json && (r.json.doc || r.json).clocks) || []).filter((c) => c && c.name === CLOCK); };
-      await tapOn(p, '#gm-prep .pa-chip.pa-clock');
+      await tapOn(p, '#gm-prep [data-pa-sec] .pa-chip.pa-clock');
       const made = await until(async () => { const l = await clocksNamed(GM); return l.length ? l : null; }, 10000);
       check(!!made && made.length === 1 && made[0].hidden === true && made[0].size === 6 && made[0].filled === 1, 'clock: a tap adds it once, hidden, 1/6 (' + JSON.stringify(made) + ')');
-      check(!!(await until(() => p.evaluate((n) => [...document.querySelectorAll('#gm-prep .pa-chip.pa-clock')].some((b) => b.textContent.includes('Clock: ' + n + ' 1/6')), CLOCK), 8000)), 'clock: the chip now says where it stands (Clock: name 1/6)');
-      await tapOn(p, '#gm-prep .pa-chip.pa-clock');
+      check(!!(await until(() => p.evaluate((n) => [...document.querySelectorAll('#gm-prep [data-pa-sec] .pa-chip.pa-clock')].some((b) => b.textContent.includes('Clock: ' + n + ' 1/6')), CLOCK), 8000)), 'clock: the chip now says where it stands (Clock: name 1/6)');
+      await tapOn(p, '#gm-prep [data-pa-sec] .pa-chip.pa-clock');
       await sleep(800);
       check((await clocksNamed(GM)).length === 1, 'clock: a second tap adds nothing');
       const dget = await api('GET', '/gm/display', undefined, IPAD);
@@ -174,10 +187,10 @@ try {
       if (await undo.count()) {
         await undo.first().click();
         check(!!(await until(async () => (await clocksNamed(GM)).length === 0, 8000)), 'clock: Undo takes it off the table');
-        check(!!(await until(() => p.evaluate((n) => [...document.querySelectorAll('#gm-prep .pa-chip.pa-clock')].some((b) => b.textContent.includes('Clock: ' + n + ' (6)')), CLOCK), 8000)), 'clock: the chip offers the add again');
+        check(!!(await until(() => p.evaluate((n) => [...document.querySelectorAll('#gm-prep [data-pa-sec] .pa-chip.pa-clock')].some((b) => b.textContent.includes('Clock: ' + n + ' (6)')), CLOCK), 8000)), 'clock: the chip offers the add again');
       } else check(false, 'clock: the add toasted with Undo');
       /* added again, then a player's phone: the table page shows the crew's clock, never the hidden one */
-      await tapOn(p, '#gm-prep .pa-chip.pa-clock');
+      await tapOn(p, '#gm-prep [data-pa-sec] .pa-chip.pa-clock');
       check(!!(await until(async () => (await clocksNamed(GM)).length === 1, 8000)), 'clock: a tap after the Undo adds it again');
       const pc = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': P1 }, viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
       const pp = await pc.newPage();
@@ -195,8 +208,8 @@ try {
       await p.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
       await p.waitForSelector('#gm-buttons .gm-btn', { timeout: 30000, state: 'attached' });
       await openPrep(p);
-      check(!!(await until(() => p.evaluate(() => !!document.querySelector('#gm-prep p .pa-chip.pa-handout + .pa-send')), 15000)), 'send: with phone.handouts on, a Send… sits beside the handout chip');
-      await tapOn(p, '#gm-prep p .pa-send');
+      check(!!(await until(() => p.evaluate(() => !!document.querySelector('#gm-prep [data-pa-sec] p .pa-chip.pa-handout + .pa-send')), 15000)), 'send: with phone.handouts on, a Send… sits beside the handout chip');
+      await tapOn(p, '#gm-prep [data-pa-sec] p .pa-send');
       const row = await until(() => p.evaluate(() => { const b = document.querySelector('.pa-pop [data-gm="ho-send"][data-to="*"]'); return b ? [...document.querySelectorAll('.pa-pop [data-gm="ho-send"]')].map((x) => x.textContent.trim()).join(', ') : null; }), 10000);
       check(!!row, 'send: it opens the Send to… row (' + row + ')');
       await shot(p, 'prep-send-' + TAG + '-' + W0);
@@ -212,7 +225,7 @@ try {
 
     /* rule: the pop-over, closed three ways */
     const popOpen = () => p.evaluate(() => { const e = document.querySelector('.pa-pop'); return !!e && e.getBoundingClientRect().height > 0; });
-    const rule = '#gm-prep .pa-chip.pa-rule:not(.pa-muted)';
+    const rule = '#gm-prep [data-pa-sec] .pa-chip.pa-rule:not(.pa-muted)';
     await p.evaluate((s) => document.querySelector(s).scrollIntoView({ block: 'center' }), rule);
     await tapOn(p, rule);
     check(!!(await until(async () => popOpen() && p.evaluate(() => /Set the position/.test(document.querySelector('.pa-pop').textContent)), 8000)), tag + ': rule: a tap opens the pop-over with the rule');
@@ -228,7 +241,7 @@ try {
     const xs = await p.evaluate(() => { const r = document.querySelector('.pa-pop .pa-x').getBoundingClientRect(); return [r.width, r.height]; });
     await tapOn(p, '.pa-pop .pa-x');
     check(!!(await until(async () => !(await popOpen()), 3000)), tag + ': rule: its ✕ closes it (' + xs.map(Math.round).join('x') + ' px)');
-    await tapOn(p, '#gm-prep .pa-chip.pa-rule:has-text("GM-ONLY-PA-NORULE")');
+    await tapOn(p, '#gm-prep [data-pa-sec] .pa-chip.pa-rule:has-text("GM-ONLY-PA-NORULE")');
     check(!!(await until(() => p.evaluate(() => /No rule called/.test((document.querySelector('.pa-pop') || {}).textContent || '')), 8000)), tag + ': rule: an unknown term says "No rule called …"');
     await tapOn(p, '.pa-pop .pa-x');
     if (!WK) {
@@ -278,6 +291,40 @@ try {
       if (pt) { if (WK) await p.touchscreen.tap(pt[0], pt[1]); else await p.mouse.click(pt[0], pt[1]); }
       check(!!(await until(() => p.evaluate(() => !document.querySelector('.rv-npcpop')), 3000)), tag + ': PA2: a tap outside the Run view card closes it');
     } else check(false, tag + ': PA2: the Run view shows a person with a card');
+    await ctx.close();
+  }
+
+  /* ---- secrecy: the room's lines leave the GM page without their action spans (the phones' mission card, the iPad's stamp) ---- */
+  if (!WK) {
+    const LEAK = /GM-ONLY-PA-(COSTUME|WRONG|SAY)|[▶]|>> (handout|clock|rule)/;
+    check((await api('PATCH', '/gm/state', { phoneCards: true })).status === 200, 'secrecy: Phone cards on');
+    const { p, ctx } = await gmPage(W0, H0, 'score');
+    await p.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+    await p.keyboard.press('g');
+    await p.waitForSelector('.rv-head', { timeout: 15000 });
+    const roomRm = await until(() => p.evaluate(() => document.querySelectorAll('#gm-runv .pa-chip').length), 10000);
+    check(!!roomRm, 'secrecy: the GM\'s own room note in the Run view shows the spans as chips (' + roomRm + ')');
+    /* a move publishes the mission: a PC into the Showroom */
+    const pcBtn = await p.$('.rv-tray .rv-pc, .rv-card .rv-pc');
+    if (pcBtn) { await pcBtn.click(); await p.click('.rv-card[data-room="Showroom"]').catch(() => {}); }
+    const mis = await until(async () => { const d = (await api('GET', '/campaign')).json.doc; const m = d && d.mission; return m && Object.values(m.cards || {}).some((c) => c && c.costumeLine) ? m : null; }, 15000);
+    const mj = JSON.stringify(mis || {});
+    check(!!mis && /Evening dress, a guest's mask/.test(mj) && !LEAK.test(mj), 'secrecy: the phones\' mission card has the Costume line without its span (' + (mis ? 'published' : 'none') + ')');
+    const pget = (await api('GET', '/campaign', undefined, P1)).text;
+    check(!LEAK.test(pget), 'secrecy: a phone\'s GET holds no action span or its text' + (LEAK.test(pget) ? ' (' + pget.slice(Math.max(0, pget.search(LEAK) - 120), pget.search(LEAK) + 60) + ')' : ''));
+    const pc = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': P1 }, viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
+    const pp = await pc.newPage(); await pp.goto(BASE + '/#t'); await sleep(4000);
+    check(!LEAK.test(await pp.evaluate(() => document.body.innerHTML)), 'secrecy: nor the phone\'s DOM');
+    await pc.close();
+    const line = await until(async () => { const v = await p.inputValue('#gm-c-threat').catch(() => ''); return v || null; }, 8000);
+    check(line === 'Dov Kessler turns and looks straight at you', 'secrecy: the Roll\'s line from the room has no span (' + JSON.stringify(line) + ')');
+    await p.click('#gm-pos [data-v="risky"]').catch(() => {}); await p.click('#gm-eff [data-v="standard"]').catch(() => {});
+    await p.click('#gm-stamp [data-gm="stamp"]');
+    const ov = await until(async () => { const d = (await api('GET', '/gm/ambient')).json; const o = d && d.doc && d.doc.overlay; return o && o.kind === 'report' ? o : null; }, 8000);
+    const dget = (await api('GET', '/gm/display', undefined, IPAD)).text + JSON.stringify(ov || {});
+    check(!!ov && /Dov Kessler turns/.test(JSON.stringify(ov)) && !LEAK.test(dget), 'secrecy: the stamp on the iPad carries the line without the span (the display GET and the overlay)');
+    await sleep(1500);
+    check(!LEAK.test(await dp.evaluate(() => document.body.innerHTML)), 'secrecy: nor the display\'s DOM');
     await ctx.close();
   }
   await dctx.close();
