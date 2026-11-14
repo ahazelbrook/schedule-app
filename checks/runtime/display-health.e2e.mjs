@@ -23,7 +23,7 @@ const PORT = Number(process.env.PORT || 9461);
 const BASE = 'http://127.0.0.1:' + PORT;
 const GM = 'gm@example.test', IPAD = 'table.ipad@example.test';
 const SHOTS = process.env.SHOTS || '';
-const ONLY = String(process.env.ONLY || '').split(',').filter(Boolean);      // ONLY=scenes,looks runs those parts (clock fit scenes figures looks)
+const ONLY = String(process.env.ONLY || '').split(',').filter(Boolean);      // ONLY=scenes,looks runs those parts (clock fit scenes figures looks dupes tint still maps)
 const want = (part) => !ONLY.length || ONLY.includes(part);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const WIN = process.platform === 'win32';
@@ -345,6 +345,80 @@ try {
         });
       }
       await step('dupes: ' + (stage ? 'new' : 'old') + ' stage: no page errors', async () => { expect(!I.errors.length, I.errors.join(' | ')); });
+      await I.ctx.close();
+    }
+    await settings({});
+  }
+
+  /* ---------- tint (IP1b): a held spotlight with a portrait format and a tell: the tell face wears the format's tint, as the steady face does ---------- */
+  if (want('tint')) for (const stage of [false, true]) {
+    await settings({ stage });
+    await push({ kind: 'blank' });
+    I = await openIpad(browser, 1180, 820);
+    if (stage) await I.page.waitForFunction(() => (document.documentElement.getAttribute('data-kit') || '').includes('stage'), null, { timeout: 30000 });
+    await step('tint: ' + (stage ? 'new' : 'old') + ' stage: a badge card\'s tell face is tinted like its steady face', async () => {
+      /* the face looks arrive with the display's later bundle files; a card drawn before they land is plain until it is laid again (a fresh page only) */
+      await I.page.waitForFunction(() => !!(window.B68FaceRender && window.B68FaceFormats), null, { timeout: 20000 }); await sleep(500);
+      await ambient({ overlay: { id: 'b17sl-tint' + (stage ? 1 : 0), kind: 'npc', npcId: 'n-dov', ms: 60000, look: { fmt: 'badge', expr: 'smirk', tell: true } } });
+      await I.page.waitForFunction(() => { const h = document.querySelector('.dp-ov-portrait'); return !!(h && h.closest('.dp-fl') && h.querySelector(':scope > svg g.dp-fl-duo')); }, null, { timeout: 12000 });
+      await I.page.waitForFunction(() => { const s = document.querySelector('.dp-ov-portrait > svg'); return !!s && s.getAttribute('data-fl') === 'tell'; }, null, { timeout: 25000 });
+      const v = await I.page.evaluate(() => { const s = document.querySelector('.dp-ov-portrait > svg'); const g = s.querySelector('g.dp-fl-duo'); return { fl: s.getAttribute('data-fl'), duo: !!g, filter: g && g.getAttribute('filter'), kids: s.children.length }; });
+      expect(v.fl === 'tell' && v.duo && /^url\(#dp-fl-duo-/.test(v.filter || '') && v.kids === 1, 'the tell face is not inside the tint group: ' + JSON.stringify(v));
+      if (SHOTS) { await sleep(1200); await I.page.screenshot({ path: path.join(SHOTS, 'health-tint-tell-' + (stage ? 'stage' : 'old') + '.png') }); }      /* past its 0.45 s fade */
+    });
+    await ambient({ overlay: null });
+    await step('tint: ' + (stage ? 'new' : 'old') + ' stage: no page errors', async () => { expect(!I.errors.length, I.errors.join(' | ')); });
+    await I.ctx.close();
+  }
+  await settings({});
+
+  /* ---------- still (IP1b): a held scene is truly still across a minute boundary (it used to run for 0.4 s on the minute) ---------- */
+  if (want('still')) {
+    await settings({ still: true });
+    await push({ kind: 'blank' });
+    await ambient({ mode: 'pin', scene: 'tram', overlay: null });
+    I = await openIpad(browser, 1180, 820);
+    await step('still: a held scene does not move across a minute boundary', async () => {
+      await sceneUp(I.page, 'tram'); await heldIs(I.page, true); await sleep(2500);
+      const s0 = new Date().getSeconds(); if (s0 < 50 || s0 > 57) await sleep((((56 - s0) + 60) % 60) * 1000);
+      let prev = await frameShot(I.page, 'health-still-0'); const diffs = []; const t0 = Date.now();
+      while (Date.now() - t0 < 9000) { await sleep(250); const cur = await frameShot(I.page, 'health-still-x'); diffs.push(+diff(prev, cur).toFixed(2)); prev = cur; }
+      expect(diffs.every((d) => d < 0.1), 'the held scene moved: ' + JSON.stringify(diffs));
+    });
+    await I.ctx.close();
+    await settings({});
+  }
+
+  /* ---------- maps (IP1b): a map's ids are the GM page's, the same each time it is shown. A superseded map must never sit hidden (display:none,
+     [hidden] or visibility:hidden) in the document while the new one shows; it fades or cuts and goes. Re-sent and shown again after Blank, both stages. */
+  if (want('maps')) {
+    const MAP = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><defs><clipPath id="hm-clip"><rect x="20" y="20" width="360" height="260" rx="30"/></clipPath>'
+      + '<linearGradient id="hm-grad"><stop offset="0" stop-color="#345"/><stop offset="1" stop-color="#654"/></linearGradient></defs>'
+      + '<g clip-path="url(#hm-clip)"><rect width="400" height="300" fill="url(#hm-grad)"/><circle id="hm-pin" cx="200" cy="150" r="40" fill="#eee"/></g></svg>';
+    const mapState = (page) => page.evaluate(() => {
+      const hiddenUp = (e) => { for (let n = e; n && n.nodeType === 1; n = n.parentNode) { const cs = getComputedStyle(n); if (n.hidden || cs.display === 'none' || cs.visibility === 'hidden') return true; } return false; };
+      const maps = [...document.querySelectorAll('.dp-stages svg')].filter((s) => s.querySelector('#hm-clip'));
+      const seen = {}, dup = []; document.querySelectorAll('[id]').forEach((e) => { if (e.closest('.dp-ambient')) return; if (seen[e.id]) dup.push(e.id); seen[e.id] = 1; });
+      return { maps: maps.length, hidden: maps.filter(hiddenUp).length, ndup: dup.length };
+    });
+    for (const stage of [false, true]) {
+      await settings({ stage });
+      await push({ kind: 'blank' });
+      I = await openIpad(browser, 1536, 864);
+      if (stage) await I.page.waitForFunction(() => (document.documentElement.getAttribute('data-kit') || '').includes('stage'), null, { timeout: 30000 });
+      await step('maps: ' + (stage ? 'new' : 'old') + ' stage: a map re-sent, and shown again after Blank, never leaves a hidden copy, and settles to one', async () => {
+        const seenHidden = [];
+        const watch = async (ms) => { const t0 = Date.now(); let last = null; while (Date.now() - t0 < ms) { last = await mapState(I.page); if (last.hidden) seenHidden.push(last); await sleep(120); } return last; };
+        await push({ kind: 'svg', title: 'The Test Rooms', svg: MAP }); await watch(6000);
+        await push({ kind: 'svg', title: 'The Test Rooms', caption: 'again', svg: MAP }); await watch(6000);
+        await push({ kind: 'blank' }); await watch(5000);
+        await push({ kind: 'svg', title: 'The Test Rooms', svg: MAP });
+        const end = await watch(6000);
+        expect(!seenHidden.length, 'a map copy sat hidden: ' + JSON.stringify(seenHidden.slice(0, 3)));
+        expect(end && end.maps === 1 && !end.ndup, 'after it settles: ' + JSON.stringify(end));
+      });
+      await push({ kind: 'blank' });
+      await step('maps: ' + (stage ? 'new' : 'old') + ' stage: no page errors', async () => { expect(!I.errors.length, I.errors.join(' | ')); });
       await I.ctx.close();
     }
     await settings({});

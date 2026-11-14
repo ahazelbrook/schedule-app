@@ -107,8 +107,18 @@
     if (!drawn) return false;
     mark(drawn, loop ? 'tell' : 'expr');
     var steady = holder.firstChild;
-    if (loop && steady && !still(env)) return tellLoop(holder, steady, drawn, env, firstMs);
+    if (loop && steady && !still(env)) { holder.__flTell = drawn; return tellLoop(holder, steady, drawn, env, firstMs); }
     empty(holder); holder.appendChild(drawn);
+    return true;
+  }
+
+  /* the format's duotone group (face-formats.js wrap) put round a face that was not in the holder when the card was wrapped */
+  function tintLike(doc, holder, n) {
+    var g0 = holder.querySelector ? holder.querySelector('g.dp-fl-duo') : null, flt = g0 && g0.getAttribute('filter');
+    if (!flt || !n || !n.firstChild || (n.querySelector && n.querySelector('g.dp-fl-duo'))) return false;
+    var g = doc.createElementNS('http://www.w3.org/2000/svg', 'g'); g.setAttribute('filter', flt); g.setAttribute('class', 'dp-fl-duo');
+    while (n.firstChild) g.appendChild(n.firstChild);
+    n.appendChild(g);
     return true;
   }
 
@@ -135,6 +145,7 @@
         glyph: bi && bi.slot ? BD.glyph(doc, faction, bi.slot) : null });
       done = true;
     } else if (bi) { e.appendChild(BD.strip(doc, bi, faction)); done = true; }
+    if (fmt && holder && holder.__flTell) tintLike(doc, holder, holder.__flTell);      /* IP1b: the tell face wears the format's tint too (the wrap tints only the face up at the time) */
     if (pose && spec && playPose(doc, e, o, look, env, expr ? FL.specWith(spec, { expr: expr }) : spec)) done = true;
     if (bi) BD.motif(env, id, bi.slot, look);       /* once, when the spotlight first appears (not when it is laid again) */
     return done;

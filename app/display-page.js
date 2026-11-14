@@ -2102,7 +2102,7 @@
       var my = ++s.token, vm = Pure.viewModel(display);
       s.lastShow = [display, seq]; if (s.stage) s.stage.next(vm);           /* KS13: a redraw when the new stage comes or goes; what the swap brings */
       if (s.intro) s.intro.next(display, seq);                               /* IP3: any other push cuts a card at once; an introduction starts one over the stage below */
-      var k16npc = vm.kind === 'npc' && !!s.stage && !!root.B68StageScene && root.B68StageScene.on();      /* KS16 (kit.stage): the NPC stands over the dimmed scene, which holds still */
+      var k16npc = vm.kind === 'npc' && !!s.stage && !!root.B68StageScene && root.B68StageScene.on();      /* KS16 (kit.stage): the NPC stands over the dimmed scene (it stops rotating; it moves unless the Scenes setting holds it, IP1) */
       if (vm.kind === 'blank' || k16npc) amb.uncover(); else amb.cover(); amb.still(k16npc);                 /* a spotlight covers the ambient; blank lets it through */
       ovLightsOut(vm.kind === 'dark');                                          /* lights out: no autopilot overlay, no AUTO chip */
       wireSync();

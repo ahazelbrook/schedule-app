@@ -252,6 +252,8 @@ try {
     const r = await rect(G.page, '.dp-ov-dawn');
     expect(r.l === 0 && r.t === 0 && Math.abs(r.r - 1) < 1e-6 && Math.abs(r.b - 1) < 1e-6, 'the whole frame: ' + JSON.stringify(r));
     await G.page.waitForSelector('.dp-ov-dawn[data-phase="hold"]', { timeout: 15000 });
+    /* IP1b: the ramp's own transition can still be landing in the frame the phase turns to hold (opacity 0.986, warm 0.014): let it land */
+    await G.page.waitForFunction(() => { const e = document.querySelector('.dp-ov-dawn'); return !!e && getComputedStyle(e).opacity === '1' && getComputedStyle(e.querySelector('.dp-ov-warm')).opacity === '0'; }, null, { timeout: 1500 }).catch(() => {});
     const hold = await G.page.evaluate(() => { const e = document.querySelector('.dp-ov-dawn'), cs = getComputedStyle(e); return { op: cs.opacity, bg: cs.backgroundColor, warm: getComputedStyle(e.querySelector('.dp-ov-warm')).opacity, z: getComputedStyle(e.parentNode).zIndex, text: e.innerText }; });
     expect(hold.op === '1' && /255, 255, 255/.test(hold.bg) && hold.warm === '0', 'white in the hold, the warm gone: ' + JSON.stringify(hold));
     expect(hold.text === '', 'no text in the dawn');
