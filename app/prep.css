@@ -142,6 +142,13 @@
 #gm-page .pp-peek { position: sticky; top: 48px; z-index: 2; }
 #gm-page .pp-peekcard { border: 2px solid var(--rule); background: var(--card); box-shadow: 4px 4px 0 var(--shadow-ink); padding: 10px 12px; margin: 8px 0 12px; display: grid; gap: 6px; }
 #gm-page .pp-peekcard h3 { font: 900 30px/.9 var(--font-poster); margin: 0; }
+/* PA2: the card's ✕, pinned at its top right (the card is sticky, so it is always in sight while the card is): 44 px, a finger's size */
+#gm-page .pp-peekcard { position: relative; }
+#gm-page .pp-peekcard > :is(.gm-kick, h3, .gm-sub) { padding-right: 52px; }
+#gm-page .pp-peekx { position: absolute; top: 4px; right: 4px; z-index: 1; width: 44px; height: 44px; display: inline-grid; place-items: center; padding: 0;
+  border: 2px solid var(--rule); border-radius: 4px; background: var(--card); color: var(--ink); font: 700 20px/1 var(--font-cond); cursor: pointer; }
+#gm-page .pp-peekx:hover { background: var(--rule); color: var(--on-ink); }
+#gm-page .pp-peekx:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 #gm-page .pp-sayline { margin: 0; padding: 2px 0 2px 12px; border-left: 4px solid var(--accent); font-size: 15px; }
 #gm-page .pp-peekcard .pp-cardbody { max-height: min(62vh, 640px); overflow-y: auto; overscroll-behavior: contain; border-top: 2px solid var(--rule); padding: 8px 6px 0 0; }
 /* an NPC's whole card (the peek, the cast list's Card): the note's look a size down, its blocks spaced as a section's are */

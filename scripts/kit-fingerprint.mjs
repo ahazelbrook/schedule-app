@@ -71,7 +71,10 @@ export const EXEMPTIONS = [
     selector: '.gm-ipad-tiles [data-gm="ambscene"][data-id="landing"]', pushes: false }      /* it fills the empty second slot of the last tile row at every width: nothing moves for it */
 ];
 /* Not here: KS12's score-scene polaroids (disclosed in KS12's PR). They are drawn inside the score scene's iframe, which a fingerprint does not walk, and no baseline
-   scenario shows a scene iframe, so an exemption for them would match nothing. */
+   scenario shows a scene iframe, so an exemption for them would match nothing.
+   Not here either: PA (prep actions, no setting). Its chips appear only where a prep note holds an action span, and the demo night's note holds none, so
+   gm/prep-actions.js and .css are never fetched; its ✕ on the Prep person card and the Run view NPC card (and their CSS) exist only while a card is open,
+   and no baseline scenario opens one. The Preflight file count it raises by two is the exemption above. */
 
 /* In the page: walk the body and describe every element. Written as a string-free function so Playwright can serialise it. */
 function inPage(arg) {

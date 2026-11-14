@@ -74,11 +74,13 @@
     /* IP4 (phone.handouts): handouts on the players' phones. The phone's list and viewer, started by boot.js for a player while the setting is on;
        the GM page's Send to…, fetched by gm-page.js while it is on. With it off neither is fetched */
     handouts: ['sheet/handouts.css', 'sheet/handouts.js'],
-    'gm-handouts': ['gm/handout-send.css', 'gm/handout-send.js']
+    'gm-handouts': ['gm/handout-send.css', 'gm/handout-send.js'],
+    /* PA (prep actions): the prep note's action chips, fetched by gm-page.js only when a rendered note holds an action span */
+    'prep-actions': ['gm/prep-actions.css', 'gm/prep-actions.js']
   };
   /* every stylesheet, in cascade order (index.html's order from before lazy loading); the kit's sheets come after every old one */
   var CSS_ORDER = ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', 'gm.css', 'prep.css', 'display.css', 'tokens.css', 'display/shows.css', 'display/hardstart.css', 'display/onair.css', 'display/aftermath.css', 'display/board.css', 'display/title-card.css', 'display/castphoto.css', 'display/lair.css', 'display/face-cards.css', 'display/montage.css', 'display/players/intro.css', 'display/players/players.css',
-    'sheet/handouts.css', 'gm/handout-send.css',      /* IP4: old-style sheets of their own classes, last of the old ones (layered with them while a kit is on) */
+    'sheet/handouts.css', 'gm/handout-send.css', 'gm/prep-actions.css',      /* IP4: old-style sheets of their own classes, last of the old ones (layered with them while a kit is on) */
     'ui/tokens.css', 'ui/parts.css', 'ui/overlay.css', 'ui/desk-band.css', 'ui/desk-roll.css', 'ui/desk-blade.css', 'ui/desk-run.css', 'ui/desk-shell.css', 'ui/desk-who.css', 'ui/desk-skin.css',
     'display/kit/stage.css', 'display/kit/band.css', 'display/kit/roll.css', 'display/kit/scene.css', 'sheet/kit/tabs.css'];
 

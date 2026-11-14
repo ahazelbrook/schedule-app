@@ -1143,6 +1143,7 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 #gm-page .rv-npcpop { position: fixed; top: 64px; right: 340px; width: min(420px, 92vw); max-height: calc(100vh - 90px); overflow: auto; z-index: 30; border: 2px solid var(--rule); background: var(--card); box-shadow: 4px 4px 0 var(--shadow-ink); padding: 0 10px 10px; }
 #gm-page .rv-npcpop > header { position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--card); padding: 8px 0 6px; border-bottom: 1px solid var(--hair); font: 900 14px/1.15 var(--font-cond); text-transform: uppercase; letter-spacing: .05em; }
 #gm-page .rv-npcpop > header .rv-btn { margin-inline-start: auto; }
+#gm-page .rv-npcpop > header [data-rv="npcx"] { flex: none; min-width: 44px; min-height: 44px; padding: 0; font-size: 22px; line-height: 1; }      /* PA2: a finger's size (the header is sticky, so it stays in sight) */
 #gm-page .rv-warn { margin: 0; border-left: 4px solid var(--alarm); padding: 2px 8px; }
 /* the Map view: the map fills a frame (the svg has a viewBox, so it scales to fit) */
 #gm-page .rv-body.mapview .rv-map { height: calc(100vh - 150px); display: flex; align-items: center; justify-content: center; }

@@ -1,0 +1,41 @@
+/* gm/prep-actions.css: the prep note's action chips, their pop-over and the clock's Undo toast (PA; gm/prep-actions.js). Old-style classes of its own,
+   in the prep-actions bundle: fetched only when a note holds an action span. Orange is the action, blue the rules, a dashed edge what cannot act. */
+#gm-page .pa-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-height: 24px; margin: 0 2px; padding: 1px 8px 1px 6px; vertical-align: baseline;
+  border: 1.5px solid var(--rule); border-radius: 4px; background: var(--card); color: var(--ink); font: 700 13px/1.15 var(--font-cond); cursor: pointer; white-space: nowrap; text-align: left; }
+#gm-page td .pa-chip, #gm-page td .pa-send { margin-block: -4px; }      /* a table row keeps its height: the chip may overhang the cell's padding */
+#gm-page .pa-chip .pa-mark { color: var(--accent); font-size: 10px; line-height: 1; flex: none; }
+#gm-page .pa-chip .pa-l { overflow: hidden; text-overflow: ellipsis; }
+#gm-page .pa-chip:hover { background: var(--rule); color: var(--on-ink); }
+#gm-page .pa-chip:hover .pa-mark { color: inherit; }
+#gm-page .pa-chip:focus-visible, #gm-page .pa-send:focus-visible, #gm-page .pa-x:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+#gm-page .pa-chip[aria-busy="true"] { opacity: .6; cursor: progress; }
+#gm-page .pa-chip.pa-rule { border-color: var(--pp-file); color: var(--pp-file); }
+#gm-page .pa-chip.pa-rule .pa-mark { color: var(--pp-file); }
+#gm-page .pa-chip.pa-rule:hover, #gm-page .pa-chip.pa-rule[aria-expanded="true"] { background: var(--pp-file); color: var(--pp-on-file); }
+#gm-page .pa-chip.pa-rule:hover .pa-mark, #gm-page .pa-chip.pa-rule[aria-expanded="true"] .pa-mark { color: inherit; }
+#gm-page .pa-chip.pa-done { border-style: solid; background: transparent; color: var(--ink-soft); }
+#gm-page .pa-chip.pa-done .pa-mark { color: var(--ink-soft); }
+#gm-page .pa-chip.pa-muted, #gm-page .pa-chip.pa-rule.pa-muted { border-style: dashed; border-color: var(--ink-soft); color: var(--ink-soft); background: transparent; font-weight: 600; }
+#gm-page .pa-chip.pa-muted .pa-mark { color: var(--ink-soft); }
+#gm-page .pa-send { display: inline-flex; align-items: center; min-height: 24px; margin: 0 2px; padding: 1px 6px; vertical-align: baseline; border: 1.5px solid var(--hair, var(--ink-soft));
+  border-radius: 4px; background: transparent; color: var(--ink-soft); font: 600 12px/1.15 var(--font-cond); cursor: pointer; white-space: nowrap; }
+#gm-page .pa-send:hover, #gm-page .pa-send[aria-expanded="true"] { border-color: var(--rule); color: var(--ink); }
+/* the pop-over: at its chip, over the page */
+#gm-page .pa-pop { position: fixed; z-index: 60; max-height: min(60vh, 460px); overflow: auto; overscroll-behavior: contain; border: 2px solid var(--rule); background: var(--card); color: var(--ink);
+  box-shadow: 4px 4px 0 var(--shadow-ink); padding: 0 12px 10px; font-size: 14px; line-height: 1.4; }
+#gm-page .pa-pophead { position: sticky; top: 0; display: flex; align-items: center; gap: 8px; padding: 6px 0 6px; background: var(--card); border-bottom: 1px solid var(--hair, var(--rule)); }
+#gm-page .pa-popt { flex: 1; font: 900 16px/1.1 var(--font-cond); text-transform: uppercase; letter-spacing: .03em; }
+#gm-page .pa-x { flex: none; width: 36px; height: 36px; display: inline-grid; place-items: center; border: 1.5px solid var(--rule); border-radius: 4px; background: var(--card); color: var(--ink); font: 700 16px/1 var(--font-cond); cursor: pointer; }
+#gm-page .pa-x:hover { background: var(--rule); color: var(--on-ink); }
+#gm-page .pa-popb p { margin: 8px 0 0; }
+#gm-page .pa-popb .pa-cap, #gm-page .pa-popb .pa-dim { color: var(--ink-soft); font-size: 13px; }
+#gm-page .pa-popb .pa-text { white-space: pre-line; }
+#gm-page .pa-popb .pa-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+#gm-page .pa-popb .gm-ho-send { margin-top: 8px; }
+/* the clock's Undo, when the page's own toast is not there */
+#gm-page .pa-toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 70; display: flex; align-items: center; gap: 10px; max-width: min(560px, calc(100vw - 32px));
+  padding: 8px 10px 8px 14px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); box-shadow: 4px 4px 0 var(--shadow-ink); font-size: 14px; }
+@media (pointer: coarse) {
+  #gm-page .pa-chip, #gm-page .pa-send { min-height: 32px; }
+  #gm-page .pa-x { width: 44px; height: 44px; }
+}
