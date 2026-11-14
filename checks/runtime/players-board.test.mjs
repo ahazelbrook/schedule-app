@@ -232,7 +232,7 @@ test('the wiring: scoreScene is unchanged, one score write, the block and the pa
   assert.match(src, /function pbOn\(\) \{ return !!W\.B68GmPlayersBoard && b09On\('stage\.players'\); \}/);
   assert.match(src, /\(pbOn\(\) \? '<div class="gm-pb-slot" data-pb-slot><\/div>' : ''\)/);
   assert.match(src, /if \(pbOn\(\)\) W\.B68GmPlayersBoard\.paint\(box, pbHost\(\)\);/);
-  assert.match(src, /P\.tokenScreen\(\[x\.tok\], S\.locRoll, seen, hide\)/, 'each pin screened alone');
+  assert.ok(src.includes('P.tokenScreen([x.tok], roll, seen, hide)'), 'each pin screened alone');
   const R = req(path.join(APP, 'routes.js')); const gm = (R.BUNDLES || R.bundles || {}).gm || [];
   if (gm.length) assert.equal(gm[gm.length - 1], 'gm/players-board.js', 'the last of the gm bundle');
   else assert.ok(read('routes.js').includes("'gm/players-screen.js', 'gm/players-board.js']"), 'the last of the gm bundle');
@@ -317,6 +317,38 @@ await test('IP6c: a page load writes nothing; before the stored score and the ca
   ready = true; B.follow(host); await tick();
   assert.equal(calls.length, 1, 'it is written once the stored score is read'); assert.equal(calls[0].n, 2); assert.equal(calls[0].keep, true, 'at the stored bands');
   B.reset();
+});
+await test('IP6d: the stored board of another site that shows a hidden name is redrawn from its roll when the page has it, else taken down; nothing to do, nothing done', () => {
+  assert.equal(B.otherPlan([], true), 'none'); assert.equal(B.otherPlan([], false), 'none'); assert.equal(B.otherPlan(null, true), 'none');
+  assert.equal(B.otherPlan(['ada vell'], true), 'redraw', 'the roll at hand: redrawn without the failing pins, at its stored bands');
+  assert.equal(B.otherPlan(['ada vell'], false), 'clear', 'no roll here: the score scene comes down rather than leave the name up');
+  const src = read('gm-page.js');
+  assert.ok(read('gm/players-board.js').includes("if (!onBoard(host, s)) { if (typeof host.other === 'function') host.other(); return; }") && src.includes('function pbOther()'), 'follow hands another site board to the page');
+  assert.equal((src.match(/patchAmbient\(\{ score:/g) || []).length, 2, 'still the one built write and the one clear');
+});
+await test('IP6d guard: automatic board writes stop at 3 in 10 s until a GM press; a board the same but for its ids is not written; the pins a board carries', () => {
+  const g = { times: [], stopped: false };
+  assert.deepEqual([0, 1000, 2000].map((t) => B.autoGate(g, t, true)), ['ok', 'ok', 'ok']);
+  assert.equal(B.autoGate(g, 3000, true), 'stop', 'the 4th within 10 s stops it (said once)');
+  assert.equal(B.autoGate(g, 30000, true), 'stopped', 'and it stays stopped, however long after');
+  assert.equal(B.autoGate(g, 30001, false), 'ok', 'a GM press passes and clears it');
+  assert.equal(B.autoGate(g, 30002, true), 'ok', 'automatic writes may go again');
+  const h = { times: [] }; ['ok', 'ok', 'ok'].forEach((v, i) => assert.equal(B.autoGate(h, i * 4000, true), v)); assert.equal(B.autoGate(h, 12500, true), 'ok', 'spread over more than 10 s: no stop');
+  assert.ok(B.sameBoard('<svg id="b68m1abc-board"><g id="pb-p1-5"/><use href="#pb-p1-5-x"/></svg>', '<svg id="b68m9zz-board"><g id="pb-p1-7"/><use href="#pb-p1-7-x"/></svg>'), 'per-draw ids aside, the same board');
+  assert.ok(!B.sameBoard('<svg><text>One</text></svg>', '<svg><text>Two</text></svg>')); assert.ok(!B.sameBoard('', ''));
+  assert.deepEqual(B.pinsOn('<svg><g id="pb-p1-5"/><g id="pb-p2-6-p-frame-x"/><g id="pb-p1-9"/><g id="b68m-pb-p9"/></svg>'), ['p1', 'p2']);
+  const src = read('gm-page.js');
+  assert.ok(src.includes("if (pb && typeof pb.check === 'function' && !pb.check(built)) return none;") && src.includes("B.autoWrite("), "the gate sits before the one score write");
+  assert.ok(!/P\.svgHays\(sc\.board\)/.test(src), 'another site\'s board: the map\'s own words are never scanned, only the pins');
+  const W0 = (o) => Object.assign({ auto: true, storedName: 'A', builtName: 'A', storedReveal: 'public', builtReveal: 'public', wrote: '' }, o);
+  const two = '<svg><g id="pb-p1-1"/><g id="pb-p2-1"/><text>x</text></svg>', one = '<svg><g id="pb-p1-2"/><text>x</text></svg>', three = '<svg><g id="pb-p1-3"/><g id="pb-p2-3"/><g id="pb-p3-3"/></svg>';
+  const k = { times: [] };
+  assert.equal(B.autoWrite(W0({ stored: two, built: two.replace(/-1"/g, '-9"') }), k, 0), 'same', 'the same board: not written');
+  for (let n = 0; n < 6; n++) assert.equal(B.autoWrite(W0({ stored: two, built: one }), k, n), 'write', 'a pin taken off is never held, however many');
+  assert.deepEqual([1, 2, 3].map((n) => B.autoWrite(W0({ stored: two, built: three }), k, n)), ['write', 'write', 'write']);
+  assert.equal(B.autoWrite(W0({ stored: two, built: three }), k, 4), 'stop', 'the 4th growing write in 10 s stops');
+  assert.equal(B.autoWrite(W0({ stored: two, built: one }), k, 5), 'write', 'stopped, a pin taken off still goes');
+  assert.equal(B.autoWrite(W0({ auto: false, stored: two, built: three }), k, 6), 'write', 'a GM press writes and clears it');
 });
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 if (failed) process.exit(1);

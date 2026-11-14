@@ -6017,9 +6017,11 @@
      the one score write; it answers the write's promise and says nothing itself. Without pb, as before. */
   function setScoreScene(pb) {
     var none = Promise.resolve(null);
-    if (!S || !S.locRoll) { toast('Roll a location first.', true); return none; }
+    var roll = pb && pb.roll ? pb.roll : S && S.locRoll;      /* IP6d: pb.roll, the stored board's own site when the page is on another */
+    if (!S || !roll) { toast('Roll a location first.', true); return none; }
     var built;
-    try { built = scoreScene(S.locRoll, pb ? pb.map : mapUi(), W.B68Map && W.B68Map.render); if (pb) pb.pin(built); } catch (e) { toast(errText(e), true); return none; }
+    try { built = scoreScene(roll, pb ? pb.map : mapUi(), W.B68Map && W.B68Map.render); if (pb) pb.pin(built); } catch (e) { toast(errText(e), true); return none; }
+    if (pb && typeof pb.check === 'function' && !pb.check(built)) return none;      /* IP6d: an automatic write that would change nothing, or one too many */
     if (pb ? pb.ask && !confirmReveal(pb.seen, 'The planning board') : !confirmReveal(built.reveal, 'This score scene')) return none;
     gate.mark(built.board); gate.mark(built.iso);
     return patchAmbient({ score: built.score }).then(function (r) {
@@ -6873,6 +6875,8 @@
   function pbOn() { return !!W.B68GmPlayersBoard && b09On('stage.players'); }
   function pbSeen(mu0) { var mu = mu0 || Object.assign({}, mapUi(), { layer: 'player' }); return revealList(mu).concat(openRooms(mu).map(function (n) { return 'room:' + n; })); }
   /* the player map at the bands the stored score scene has (keep: the GM has not ticked a band on this page since it was set), else as ticked now */
+  /* the player map at these bands (another site's board: no rooms opened on their own, no blueprint rooms) */
+  function pbBandsMap(bands) { var rv = {}; BANDS.forEach(function (b) { rv[b] = b === 'public' || (Array.isArray(bands) && bands.indexOf(b) >= 0); }); return Object.assign({}, mapUi(), { layer: 'player', reveal: rv, open: [], know: [] }); }
   function pbMap(keep) {
     var mu = Object.assign({}, mapUi(), { layer: 'player' }), sc = AM.doc && isObj(AM.doc.score) ? AM.doc.score : null;
     if (keep && sc && S.locRoll && str(sc.name) === str(S.locRoll.name).slice(0, 200) && Array.isArray(sc.reveal)) { var rv = {}; BANDS.forEach(function (b) { rv[b] = b === 'public' || sc.reveal.indexOf(b) >= 0; }); mu.reveal = rv; }
@@ -6888,30 +6892,80 @@
       rooms: function () { var seen = pbSeen(); return (S.locRoll && Array.isArray(S.locRoll.rooms) ? S.locRoll.rooms : []).filter(function (r) { return isObj(r) && typeof r.name === 'string' && r.name; }).map(function (r) { return { name: r.name, shown: roomShown(r, seen) }; }); },
       scan: function (text) { var names = P.tokenHidden(S.locRoll, pbSeen(), pbHide()); return names.filter(function (n) { return namesHit(text, [n]); }); },
       patch: function (p) { return patch(p); }, score: function () { return AM.doc && isObj(AM.doc.score) ? AM.doc.score : null; }, busy: function () { return AM.busy > 0; },
-      figures: function () { return W.B68Figure || null; }, toast: toast, setScore: pbSetScore, showBoard: pbShowBoard, hide: pbHide,
+      figures: function () { return W.B68Figure || null; }, toast: toast, setScore: pbSetScore, showBoard: pbShowBoard, hide: pbHide, other: pbOther,
       ready: function () { return !!(S && AM.loaded && (S.npcsIn || !(S.api && S.api.db && S.api.db()))); } };      /* IP6c: the stored score scene and the cast are read (or this page has no cast to wait for) */
   }
-  function pbSetScore(list, ask, keep) {
-    if (!S || !S.locRoll) { toast('Roll a location first.', true); return Promise.resolve(null); }
-    var me = S, pmu = pbMap(keep), seen = pbSeen(pmu), hide = pbHide(), kept = [], refused = [], waiting = 0, dropped = false, plates = 0;
-    function screened(tok) { var r = tok ? P.tokenScreen([tok], S.locRoll, seen, hide) : null; return r && r.tokens.length ? r.tokens[0] : null; }
+  function pbSetScore(list, ask, keep, other, auto) {
+    var roll = other ? other.roll : S && S.locRoll;
+    if (!S || !roll) { toast('Roll a location first.', true); return Promise.resolve(null); }
+    var me = S, pmu = other ? pbBandsMap(other.bands) : pbMap(keep), seen = other ? revealList(pmu) : pbSeen(pmu), hide = pbHide(), kept = [], refused = [], waiting = 0, dropped = false, plates = 0;
+    function screened(tok) { var r = tok ? P.tokenScreen([tok], roll, seen, hide) : null; return r && r.tokens.length ? r.tokens[0] : null; }
     list.forEach(function (x) {
-      var r = P.tokenScreen([x.tok], S.locRoll, seen, hide);
+      var r = P.tokenScreen([x.tok], roll, seen, hide);
       if (r.tokens.length) kept.push({ full: r.tokens[0], lite: screened(x.lite), alt: screened(x.alt) });
       else if (r.refused.length) refused.push({ id: x.pin.id, label: x.tok.label, names: r.refused }); else waiting++;
     });
     /* the score scene as Set as score scene builds it, then its board drawn again with the screened pins at the same view, kept only if the leak scan passes */
     var pin = function (built) {
-      var fit = W.B68GmPlayersBoard.fitBoard(S.locRoll, W.B68Map && W.B68Map.render, { seen: seen, view: built.view, kit1: P.kit1On(), leaks: P.leaks }, kept), svg = fit.svg;      /* too large: faces lighter, then name plates, oldest first, only as many as it takes */
+      var fit = W.B68GmPlayersBoard.fitBoard(roll, W.B68Map && W.B68Map.render, { seen: seen, view: built.view, kit1: P.kit1On(), leaks: P.leaks }, kept), svg = fit.svg;      /* too large: faces lighter, then name plates, oldest first, only as many as it takes */
       plates = fit.svg ? fit.plates : 0;
       if (svg) built.board = built.score.board = svg; else dropped = kept.length > 0;
     };
-    return setScoreScene({ map: pmu, seen: seen, ask: ask, pin: pin }).then(function (r) {
-      if (r && dropped) toast('The board went up without its pins: with them it would name a hidden room, or be too large for the iPad.', true);
+    var check = function (built) { return pbAutoOk(built, !!auto); };
+    /* an automatic write first reads the stored score afresh, after a short random wait: with two GM pages open, the second finds the first's
+       board already stored and writes nothing (pbAutoOk) */
+    var g = gmApi(), fresh = !auto || !g || typeof g.ambient !== 'function' ? Promise.resolve() : new Promise(function (res) { setTimeout(res, Math.round(Math.random() * 2500)); })
+      .then(function () { return g.ambient(); }).then(function (r) { if (S === me && r) adoptAmbient(r); }, function () { /* the copy this page holds will do */ });
+    return fresh.then(function () { return setScoreScene({ map: pmu, seen: seen, ask: ask, pin: pin, roll: other ? roll : null, check: check }).then(function (r) {
+      if (r) S.pbWrote = built0(r);
+      if (r && dropped && !other) toast('The board went up without its pins: with them it would name a hidden room, or be too large for the iPad.', true);
       if (r && S === me && S.locRoll) renderLocation();      /* the panel's word on the score scene (sceneBehind) is now the stored one */
       return r ? { ok: true, refused: refused, waiting: waiting, pins: dropped ? 0 : kept.length, plates: plates } : null;
+    }); });
+  }
+  /* IP6d: the stored board while the page is on ANOTHER site: does it show a name the players may not see now (someone hidden again, a clock
+     hidden, a known-as NPC's full name)? Then it is redrawn from that site's roll (the authored sites, the Earlier list) at its stored bands
+     without the pins that fail the screen; if that roll is not at hand here, the score scene comes down. One toast says which and how back. */
+  function pbOther() {
+    var sc = AM.doc && isObj(AM.doc.score) ? AM.doc.score : null; if (!sc || !str(sc.board) || (S.locRoll && str(sc.name) === str(S.locRoll.name).slice(0, 200))) return;
+    var site = str(sc.name), B = W.B68GmPlayersBoard, pins = B.pinsOf(S.doc, site), on = B.pinsOn(sc.board), up = pins.filter(function (p) { return on.indexOf(p.id) >= 0; });
+    if (!up.length) return;      /* only what the pins put on the board is looked at, never the map's own words */
+    var hide = pbHide(), key = JSON.stringify([site, up.map(function (p) { return p.id; }).sort(), hide.map(function (n) { return fold(n); }).sort()]);
+    if (S.pbOtherKey === key) return; S.pbOtherKey = key;      /* one decision per site, pins on the board and hidden names: a write changes none of them */
+    var npcs = isObj(S.npcs) ? S.npcs : {}, roll = pbRollOf(site), K = W.B68Figure || null;
+    var drop = up.filter(function (p) {
+      var tok = B.token(p, { npcs: npcs, K: K }); if (!tok) return true;      /* a face whose person is hidden again (or gone) */
+      if (roll) return P.tokenScreen([tok], roll, Array.isArray(sc.reveal) ? sc.reveal : ['public'], hide).refused.length > 0;      /* exactly the token screen, its exclusions too */
+      return hide.some(function (n) { return namesHit(tok.label + ' ' + p.text, [n]); });
+    });
+    var plan = B.otherPlan(drop.map(function (p) { return p.id; }), !!roll), say = function (what) { toast('The planning board of ' + site + ' ' + what + ': a pin showed a name the players must not see now. Open ' + site + ' to pin it again when it may be shown.', true); };
+    if (plan === 'none') return;
+    if (plan === 'clear') { clearScoreScene().then(function (r) { if (r) say('came down'); }); return; }
+    var list = B.tokensOf({ pins: pins, npcs: npcs }, pbHost());
+    pbSetScore(list, false, true, { roll: roll, bands: sc.reveal }, true).then(function (r) {
+      if (r) { S.pbOtherFixed = site; say('was redrawn without ' + drop.map(function (p) { return p.kind === 'face' ? 'a face' : B.WORD[p.kind]; }).join(', ')); }
+      else if (!(S.pbAuto && S.pbAuto.stopped) && AM.doc && isObj(AM.doc.score) && B.pinsOn(AM.doc.score.board).some(function (id) { return drop.some(function (p) { return p.id === id; }); })) clearScoreScene().then(function (r2) { if (r2) say('came down'); });      /* it could not be redrawn and the name is still up (another page did not take it off): down */
     });
   }
+  /* IP6d: the one gate for the board's AUTOMATIC writes (a follow, another site's board; a press of the GM's is never stopped and lets it run again):
+     a board the same as the stored one (or the last this page wrote) is not written; and at most 3 in 10 s, then it stops, says so once, and waits
+     for the GM */
+  function built0(r) { return r && isObj(r.doc) && isObj(r.doc.score) ? str(r.doc.score.board) : ''; }
+  function pbAutoOk(built, auto) {
+    var B = W.B68GmPlayersBoard, g = S.pbAuto || (S.pbAuto = { times: [], stopped: false, said: false }), sc = AM.doc && isObj(AM.doc.score) ? AM.doc.score : null;
+    var v = B.autoWrite({ auto: auto, stored: sc ? str(sc.board) : '', storedName: sc ? str(sc.name) : '', storedReveal: sc ? str(sc.reveal) : '', built: str(built.score.board), builtName: str(built.score.name), builtReveal: str(built.score.reveal), wrote: S.pbWrote || '' }, g, Date.now());
+    if (v === 'stop') { if (W.console) W.console.warn('B68 planning board: 3 automatic writes in 10 s; it stops updating itself until the GM presses something'); toast('The board stopped updating itself: press Board on the iPad.', true); }
+    return v === 'write';
+  }
+  /* the roll of a site by its name, from what this page holds: the authored sites of the pack, the Location card and its Earlier list */
+  function pbRollOf(name) {
+    var L = W.B68GmLocation, pk = part('location'), au = pk ? authoredOf(pk) : null, out = null;
+    if (au && isObj(au.sites)) Object.keys(au.sites).forEach(function (k) { if (!out && isObj(au.sites[k]) && str(au.sites[k].name || k) === name) { try { out = authoredRoll(L, pk, au.sites[k]); } catch (e) { out = null; } } });
+    var cards = [isObj(S.doc.cards) ? S.doc.cards.location : null].concat(newest(isObj(S.doc.hist) ? S.doc.hist.location : null));
+    cards.forEach(function (e) { if (out || !isObj(e)) return; var r = replayLocation(e); if (r && str(r.name).slice(0, 200) === name) out = r; });
+    return out && str(out.name).slice(0, 200) === name ? out : null;
+  }
+  function clearScoreScene() { return patchAmbient({ score: null }); }
   /* IP6b: the bands of the stored score scene when it is this roll's site, else null */
   function pbStoredBands() { var sc = AM.doc && isObj(AM.doc.score) ? AM.doc.score : null; return sc && S && S.locRoll && str(sc.name) === str(S.locRoll.name).slice(0, 200) && Array.isArray(sc.reveal) ? sc.reveal : null; }
   /* a replay (Earlier, a reload, another device) of the site whose board the iPad shows: the ticks take the stored bands (true), so one tick never
@@ -6921,6 +6975,7 @@
     var bands = pbStoredBands(); if (!bands) return false;
     var want = {}, r = mapUi().reveal; BANDS.forEach(function (b) { want[b] = b === 'public' || bands.indexOf(b) >= 0; });
     if (BANDS.some(function (b) { return !!r[b] !== want[b]; })) patch({ loc: { map: { reveal: want } } });
+    if (S.pbOtherFixed && S.pbOtherFixed === str(S.locRoll.name).slice(0, 200)) { S.pbOtherFixed = null; setTimeout(function () { if (pbOn()) W.B68GmPlayersBoard.sync(pbHost(), false); }, 0); }      /* IP6d */
     return true;
   }
   function pbRevealLate() {
@@ -8108,7 +8163,7 @@
       case 'clearoverlay': clearOverlay(); break;
       case 'aptoggle': apToggle(); break;
       case 'apoff': apSwitchOff(); break;
-      case 'clearscore': patchAmbient({ score: null }); break;
+      case 'clearscore': clearScoreScene(); break;
       case 'dlsvg': if (!S.map) toast('Draw the map first.', true); else if (S.map.layer === 'player' && S.map.leak) toast(P.LEAK_MSG, true); else save(slug(S.locRoll && S.locRoll.name) + '-' + S.map.view + '-' + S.map.theme + '-' + S.map.layer + '.svg', S.map.svg); break;
       case 'dlnote': if (S.locRoll && W.B68GmLocation) save(slug(S.locRoll.name) + '.md', W.B68GmLocation.noteBody(S.locRoll, { date: dmy(new Date()) })); break;
       case 'dlcanvas': if (S.locRoll && W.B68GmLocation) save(slug(S.locRoll.name) + '.canvas', W.B68GmLocation.canvas(S.locRoll, part('location'))); break;
