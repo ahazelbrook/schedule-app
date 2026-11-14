@@ -392,7 +392,7 @@ module.exports = function build(opts = {}) {
 .op{will-change:opacity,transform}
 #ld-b0,#ld-b1,#ld-b2,#ld-b3,${gdata.map((g) => "#" + g.id).join(",")}{visibility:hidden}
 .fl{opacity:0;will-change:opacity}
-.glow{border-radius:50%;background:radial-gradient(circle,rgba(255,250,236,.75) 0,rgba(255,236,190,.32) 22%,rgba(255,226,170,.1) 48%,rgba(255,226,170,0) 70%)}
+.glow{border-radius:50%;background:radial-gradient(circle,rgba(255,250,236,.95) 0,rgba(255,240,205,.5) 16%,rgba(255,230,180,.16) 40%,rgba(255,226,170,0) 68%)}
 ${css.join("\n")}`;
 
   const script = `
@@ -444,7 +444,7 @@ function paint(t,c,live,wc){
  if(!live){for(let k=0;k<2;k++){op(fE[k],0);op(hE[k],0);}glowAt=[-9,-9];lastT=t;return;}
  if(t<lastT)done={};lastT=t;
  for(let e=0;e<FL.length;e++){const [ft,k]=FL[e];if(!done[e]&&t>=ft&&t<ft+.3){done[e]=1;burst[k]=1;op(fE[k],1);glowAt[k]=t;}}
- for(let k=0;k<2;k++){const u=since(t,glowAt[k]);op(hE[k],!burst[k]&&u<1.1?.85*Math.pow(1-u/1.1,2):burst[k]?1:0);}
+ for(let k=0;k<2;k++){const u=since(t,glowAt[k]);op(hE[k],!burst[k]&&u<1.3?Math.pow(1-u/1.3,1.6):burst[k]?1:0);}
 }
 loop((dt,c)=>{const h=held();if(h||reduce){paint(HOLD,0,false,h?null:c);return;}paint((c+T0)%LOOP,c,true,c);});
 `;
