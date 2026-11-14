@@ -215,7 +215,10 @@ try {
     const f = await frame(); await sleep(7000);
     const top = await f.evaluate(() => {
       const out = { cards: 0, strings: 0, bad: [] };
-      for (const c of document.querySelectorAll('.pcard')) { const r = c.getBoundingClientRect(); if (r.width < 4) continue; out.cards++; const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); if (!t || !c.contains(t)) out.bad.push('card under ' + (t && t.closest && t.closest('.sheet') ? 'the sheet' : t && t.tagName)); }
+      for (const c of document.querySelectorAll('.pcard')) { const r = c.getBoundingClientRect(); if (r.width < 4) continue; out.cards++; const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        /* the scene's own layers over everything (a landing's dim, the grain) may be on top; what must never be is the sheet, the shaded board */
+        if (t && !c.contains(t) && t.closest && t.closest('.sheet')) out.bad.push('card under the sheet');
+        if (!(c.compareDocumentPosition(document.querySelector('.sheet')) & Node.DOCUMENT_POSITION_PRECEDING)) out.bad.push('card before the sheet'); }
       for (const s of document.querySelectorAll('.string')) { if (typeof s.getTotalLength !== 'function') continue; const m = s.getScreenCTM(); if (!m) continue; const p = new DOMPoint(s.getPointAtLength(s.getTotalLength() / 2).x, s.getPointAtLength(s.getTotalLength() / 2).y).matrixTransform(m); out.strings++;
         const t = document.elementFromPoint(p.x, p.y); if (t && t.closest && t.closest('.sheet')) out.bad.push('string under the sheet'); }
       return out;
