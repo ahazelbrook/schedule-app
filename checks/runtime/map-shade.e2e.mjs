@@ -222,7 +222,9 @@ try {
       /* the whole stack at a point, top first: the card (or string) must be in it, and above everything of the sheet */
       const above = (x, y, own) => { const st = document.elementsFromPoint(x, y), i = st.findIndex(own), j = st.findIndex((e) => !!(e.closest && e.closest('.sheet'))); return i < 0 ? 'not hit' : j >= 0 && j < i ? 'under the sheet' : ''; };
       for (const c of document.querySelectorAll('.pcard')) { const r = c.getBoundingClientRect(); if (r.width < 4) continue; out.cards++;
-        const w = above(r.left + r.width / 2, r.top + r.height / 2, (e) => c.contains(e)); if (w) out.bad.push('card ' + w); }
+        const w = above(r.left + r.width / 2, r.top + r.height / 2, (e) => c.contains(e)); if (w) out.bad.push('card ' + w);
+        /* a card beside the sheet has no sheet in its stack: so also its place in the paint order, after the sheet */
+        if (!(c.compareDocumentPosition(document.querySelector('.sheet')) & Node.DOCUMENT_POSITION_PRECEDING)) out.bad.push('card painted before the sheet'); }
       for (const s of document.querySelectorAll('.string')) { if (typeof s.getTotalLength !== 'function') continue; const m = s.getScreenCTM(); if (!m) continue; const q = s.getPointAtLength(s.getTotalLength() / 2), p = new DOMPoint(q.x, q.y).matrixTransform(m); out.strings++;
         const w = above(p.x, p.y, (e) => e === s); if (w) out.bad.push('string ' + w); }
       return out;
