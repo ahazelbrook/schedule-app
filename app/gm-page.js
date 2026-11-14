@@ -4580,7 +4580,7 @@
   /* Take it down (a tool's own button): what is shown goes, the ambient scene plays. Blank (lights out): true black until the next send. */
   function ks14Down() { if (W.B68GmPcStatus && b09On('kit.stage')) { W.B68GmPcStatus.down(); pcStatusSync(); } }      /* KS14.2: Take it down, Blank, Clear: nobody acts */
   function blankIpad() { ks14Down();
-    pushDisplay({ kind: 'blank' }).then(function () { toast('Taken down: the iPad plays the ambient scene.'); }, function (e) { toast('Could not take it down: ' + errText(e), true); }); }
+    return pushDisplay({ kind: 'blank' }).then(function () { toast('Taken down: the iPad plays the ambient scene.'); return true; }, function (e) { toast('Could not take it down: ' + errText(e), true); return false; }); }      /* IP3c: the promise, for whoever waits on it */
   function darkIpad() { ks14Down(); return pushDisplay({ kind: 'dark' }).then(function () { toast('Blank: the iPad is black until the next send.'); return true; }, function (e) { toast('Could not blank the iPad: ' + errText(e), true); return false; }); }
 
   /* ---------- THE iPAD TRAY's Clear (0) (the GM night rebuild, the design's iPad part: one way off) ----------
@@ -6868,7 +6868,10 @@
     return { npc: function (id) { return S && isObj(S.npcs) ? S.npcs[id] : null; }, ask: asked, push: function (d) { return pushDisplay(d); }, toast: toast, errText: errText,
       reveal: function (id, d) { var ref = npcRef(id); if (!ref) return Promise.reject(new Error('The cast is not available here.')); return ref.update({ revealed: true, firstSeen: d.firstSeen || nowIso() }); },
       tray: function () { if (W.B68GmIpadTray) W.B68GmIpadTray.refresh(); },
-      takeDown: function (title) { if (isObj(AM.shown) && AM.shown.kind === 'npc' && str(AM.shown.title) === str(title)) blankIpad(); },      /* the cue's Undo: Take it down, while they are still up */
+      takeDown: function (title) {      /* the cue's Undo: Take it down while they are still up; resolves true when done (or nothing to do), { failed } else (IP3c: the caller waits on it) */
+        if (!(isObj(AM.shown) && AM.shown.kind === 'npc' && str(AM.shown.title) === str(title))) return Promise.resolve(true);
+        ks14Down(); return pushDisplay({ kind: 'blank' }).then(function () { return true; }, function (e) { return { failed: errText(e) }; });
+      },
       blocked: introBlocked };
   }
   /* IP3b item 6: why a reveal cue's introduction cannot go up now ('' when it can): the GM's Blank, a running hard start, a frozen iPad */
@@ -6881,10 +6884,16 @@
   }
   /* IP3b item 6 (stage.players): a reveal cue (the cue stack's `reveal:`; the grammar's "reveal <name>" through its host) brings the person on with the
      introduction, after the reveal's own write. The reveal stands whatever happens to the card; when it cannot go up, ONE line says so and why. */
+  /* the name the players see: a known-as person (known-as.js: tags hold known-as and the alias is set) by the alias alone */
+  function seenName(d) {
+    var ka = isObj(d) && Array.isArray(d.tags) && d.tags.some(function (t) { return typeof t === 'string' && t.trim().toLowerCase() === 'known-as'; }) && str(d.alias).trim();
+    return ka ? str(d.alias).trim() : str(d && d.name) || 'them';
+  }
   function revealShown(x) {
     var nm = str(x && x.d && x.d.name) || 'They';
     return Promise.resolve(W.B68GmIntro.introduce(x.id, introHost(), { cue: true })).then(function (r) {
-      return isObj(r) && r.notShown ? { ok: true, warn: true, say: nm + ' is revealed but not shown on the iPad: ' + r.notShown + '.', notShown: r.notShown } : { ok: true, shown: r };
+      return isObj(r) && r.notShown ? { ok: true, warn: true, say: nm + ' is revealed but not shown on the iPad: ' + r.notShown + '.', notShown: r.notShown }
+        : { ok: true, shown: r, seen: seenName(x.d), say: 'Introducing ' + seenName(x.d) + '.' };      /* IP3c: the toast names who went up, as the players see them */
     }, function (e) { return { ok: true, warn: true, say: nm + ' is revealed but not shown on the iPad: ' + errText(e) + '.', notShown: errText(e) }; });
   }
   /* IP6 (stage.players): the planning board's pins (gm/players-board.js). What it needs of this page: the player copy's rooms at the bands and the rooms
