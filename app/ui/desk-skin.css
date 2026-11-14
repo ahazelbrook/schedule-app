@@ -437,6 +437,7 @@
   #gm-page .pp-pin,
   #gm-page .pp-from) { font-size: 12px; }
 :where(:root[data-kit~="desk"]) :where(#gm-page .pp-site-t) { font-size: 14px; }
+:where(:root[data-kit~="desk"]) :where(#gm-page .pp-peekx) { font-size: 20px; }
 :where(:root[data-kit~="desk"]) :where(#gm-page .pp-sayline) { font-size: 16px; }
 :where(:root[data-kit~="desk"]) :where(#gm-page .pp-mini) { font-size: 14px; }
 :where(:root[data-kit~="desk"]) :where(#gm-page .oc-edit) { font-size: 17px; }
@@ -611,6 +612,7 @@
 :where(:root[data-kit~="desk"]) :where(#gm-page .gm-find-box input[type="search"]) { font-size: 18px; }
 :where(:root[data-kit~="desk"]) :where(#gm-page .gm-rack-lines b.gm-fx-lead) { font-size: 14px; }
 :where(:root[data-kit~="desk"]) :where(#gm-page .rv-pc.moved)::after { font-size: 12px; }
+:where(:root[data-kit~="desk"]) :where(#gm-page .rv-npcpop > header [data-rv="npcx"]) { font-size: 22px; }
 :where(:root[data-kit~="desk"]) :where(#gm-page .gm-sc code:not(.gm-sc-line),
   #gm-page .pp-doc code.pp-prov,
   #gm-page .pp-doc code.pp-rule) { font-size: 12px; }
@@ -914,7 +916,8 @@
 :where(:root[data-kit~="desk"]) :where(#gm-page .pp-title) { font-family: var(--font-poster); }
 :where(:root[data-kit~="desk"]) :where(#gm-page .pp-meta,
   #gm-page .pp-pin,
-  #gm-page .pp-from) { font-family: var(--font-cond); }
+  #gm-page .pp-from,
+  #gm-page .pp-peekx) { font-family: var(--font-cond); }
 :where(:root[data-kit~="desk"]) :where(#gm-page .gm-stt-tail,
   #stageBanner .cp-st-name small) { font-family: var(--font-text); }
 :where(:root[data-kit~="desk"]) :where(#gm-page .gm-import code) { font-family: var(--font-mono); }
