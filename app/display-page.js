@@ -656,7 +656,8 @@
     { id: 'veil', file: 'sunrise-ball-opening.html', label: 'The Sunrise Ball: opening', pinOnly: true },
     { id: 'board', file: 'planning-board.html', label: 'Planning board', needs: 'score' },
     { id: 'exploded', file: 'score-exploded.html', label: 'Score site, exploded', needs: 'score' },
-    { id: 'testcard', file: 'test-card.html', label: 'Please stand by', pinOnly: true }
+    { id: 'testcard', file: 'test-card.html', label: 'Please stand by', pinOnly: true },
+    { id: 'landing', file: 'night-landing.html', label: 'The landing' }
   ];
   Pure.AMBIENT_DEFAULT_PLAYLIST = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'cards', 'pells', 'wanted', 'meeting'];
   /* the theme a `music: true` scene may ask the display to play: an MP3 kept on the GM's PC and deployed from disk, never committed */

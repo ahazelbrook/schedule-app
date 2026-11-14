@@ -76,7 +76,7 @@ const NPCS = [
     spec: { skin: 'tan', heightIn: 71, age: 60, hair: { style: 'slick-back', color: 'ink-300' }, outfit: { base: { type: 'shirt', color: 'cloth-white' }, outer: { type: 'dinner-jacket', color: 'cloth-white' } }, face: { expression: 'smile' }, pose: { arms: { R: 'hold' } } } }],
   ['n-plain', { name: 'Ned Prosser', alias: '', role: 'Porter', faction: '', description: 'Carries what he is told to.', revealed: true, spec: { heightIn: 67, age: 35 } }]
 ];
-const SCENES = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'pells', 'wanted', 'meeting', 'veil', 'testcard'];
+const SCENES = ['harvest', 'watch', 'duskwall', 'boneyard', 'undertow', 'vet', 'tram', 'lurker', 'pells', 'wanted', 'meeting', 'veil', 'testcard', 'landing'];
 const NOISE = /Content Security Policy|Report Only|media\/theme\.mp3|favicon/;      // report-only CSP lines, the theme kept off git, the icon
 
 async function openIpad(browser, w, h) {

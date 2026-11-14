@@ -29,7 +29,7 @@
   var FILES = { harvest: 'second-harvest.html', watch: 'watch-feed.html', duskwall: 'duskwall-after-dark.html', boneyard: 'boneyard-dawn.html', undertow: 'undertow.html',
     vet: 'grunts-vet.html', tram: 'night-tram.html', lurker: 'lurker-press.html', cards: 'calling-cards.html', pells: 'pells-provisions.html', wanted: 'wanted-wall.html',
     meeting: 'planning-meeting.html', credits: 'opening-credits.html', veil: 'sunrise-ball-opening.html', board: 'planning-board.html', exploded: 'score-exploded.html',
-    testcard: 'test-card.html' };
+    testcard: 'test-card.html', landing: 'night-landing.html' };
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
 

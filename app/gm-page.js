@@ -564,7 +564,8 @@
     { id: 'cards', label: 'Calling cards' }, { id: 'pells', label: "Pell's Provisions" }, { id: 'wanted', label: 'Wanted wall' },
     { id: 'meeting', label: 'The planning meeting' }, { id: 'credits', label: 'Opening credits', pinOnly: true }, { id: 'veil', label: 'The Sunrise Ball: opening', pinOnly: true },
     { id: 'board', label: 'Planning board', needs: 'score' }, { id: 'exploded', label: 'Score site, exploded', needs: 'score' },
-    { id: 'testcard', label: 'Please stand by', pinOnly: true }
+    { id: 'testcard', label: 'Please stand by', pinOnly: true },
+    { id: 'landing', label: 'The landing' }
   ];
   P.IPAD_INTERVALS = [4, 7, 10, 15];
   P.IPAD_INTERVAL_DEFAULT = 7;
