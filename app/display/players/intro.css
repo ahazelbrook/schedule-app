@@ -79,7 +79,7 @@
 .pi-name-front { animation: pi-wipe 190ms cubic-bezier(.7, 0, .3, 1) var(--pi-name2, 0ms) both; }
 .pi-alias { animation: pi-wipe 170ms cubic-bezier(.7, 0, .3, 1) var(--pi-alias, 0ms) both; }
 /* the hand-over: the type and the ground wipe away, the bars leave, the figure settles onto the stage's (intro.js sets the transform) and goes */
-.pi-type { animation: pi-wipeout 260ms cubic-bezier(.7, 0, .3, 1) var(--pi-out, 99s) both; }
+.pi-type { animation: pi-wipeout 200ms cubic-bezier(.7, 0, .3, 1) var(--pi-out, 99s) both; }      /* IP3c: right to left, so the end nearest the figure goes first; the figure moves only after (intro.js SETTLE_AFTER) */
 .pi-ground { animation: pi-groundout 620ms cubic-bezier(.65, 0, .35, 1) var(--pi-out, 99s) both; }
 .pi-lb-t { animation: pi-lbt 420ms cubic-bezier(.6, 0, .4, 1) var(--pi-out, 99s) both; }
 .pi-lb-b { animation: pi-lbb 420ms cubic-bezier(.6, 0, .4, 1) var(--pi-out, 99s) both; }
@@ -102,7 +102,7 @@
 }
 @keyframes pi-wipeout {
   from { -webkit-clip-path: inset(-20% -5% -20% 0); clip-path: inset(-20% -5% -20% 0); }
-  to { -webkit-clip-path: inset(-20% -5% -20% 105%); clip-path: inset(-20% -5% -20% 105%); }
+  to { -webkit-clip-path: inset(-20% 105% -20% 0); clip-path: inset(-20% 105% -20% 0); }
 }
 @keyframes pi-groundout {
   from { -webkit-clip-path: inset(0 0 0 0); clip-path: inset(0 0 0 0); }
