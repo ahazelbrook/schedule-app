@@ -171,6 +171,30 @@
   function sig(parts) { return JSON.stringify(parts); }
   /* IP6d: the stored board is another site's and shows names the players may not see now (hits): redraw it from that site's roll when this page
      has it ('redraw', at its stored bands, the failing pins screened out), else take the score scene down ('clear'); nothing to do: 'none' */
+  /* the pin ids a stored board carries (each pin's drawing has an id pb-<pin>-...) */
+  function pinsOn(svg) { var out = []; (str(svg).match(/ id="pb-([a-z0-9]+)-/g) || []).forEach(function (m) { var id = m.slice(8, -1); if (out.indexOf(id) < 0) out.push(id); }); return out; }
+  /* two boards the same but for the ids each drawing makes for itself */
+  function sameBoard(a, b) { function n(s) { return str(s).replace(/(?:b68m|pb-)[A-Za-z0-9_-]*/g, ''); } return !!a && !!b && n(a) === n(b); }
+  /* the automatic-write gate: g = { times, stopped }. A GM press (auto false) clears it and passes; an automatic write passes while fewer than
+     3 went in the last 10 s; the 4th is 'stop' (say it once), every one after is 'stopped' until a press */
+  function autoGate(g, now, auto) {
+    if (!auto) { g.times = []; g.stopped = false; return 'ok'; }
+    if (g.stopped) return 'stopped';
+    g.times = (g.times || []).filter(function (x) { return now - x < 10000; });
+    if (g.times.length >= 3) { g.stopped = true; return 'stop'; }
+    g.times.push(now); return 'ok';
+  }
+  /* an automatic board write, decided: 'write', 'same' (nothing would change: not written), 'stop' (the 4th in 10 s: say it once) or 'stopped'.
+     A write that only takes pins off the stored board (secrecy) is never held; a GM press always writes and clears the count.
+     o = { auto, stored, storedName, storedReveal, built, builtName, builtReveal, wrote } */
+  function autoWrite(o, g, now) {
+    if (!o.auto) { autoGate(g, now, false); return 'write'; }
+    var same = o.storedName === o.builtName && o.storedReveal === o.builtReveal;
+    if (same && (sameBoard(o.stored, o.built) || sameBoard(o.wrote, o.built))) return 'same';
+    var on = pinsOn(o.stored), now2 = pinsOn(o.built);
+    if (same && now2.length < on.length && now2.every(function (id) { return on.indexOf(id) >= 0; })) return 'write';
+    var v = autoGate(g, now, true); return v === 'ok' ? 'write' : v;
+  }
   function otherPlan(hits, haveRoll) { return !Array.isArray(hits) || !hits.length ? 'none' : haveRoll ? 'redraw' : 'clear'; }
   /* the board under the iPad's cap with as many real faces as fit: items [{ full, lite?, alt? }] (screened tokens, oldest pin first). With every
      face full the board is too large -> the oldest face is drawn lighter, then the next... -> then the oldest lighter face becomes a name plate,
@@ -232,7 +256,7 @@
     return out;
   }
   /* set the score scene from the pins (and the bands and rooms ticked now); one at a time, the newest wins */
-  function sync(host, ask) {
+  function sync(host, ask, auto) {
     if (!ready(host)) { st.pending = true; return Promise.resolve(null); }      /* the stored score not read yet: wait for it (follow writes it then) */
     if (st.busy) { st.again = true; return Promise.resolve(null); }
     var s = state(host); if (!s.site) return Promise.resolve(null);
@@ -241,7 +265,7 @@
     var keep = onBoard(host, s) && st.bands !== undefined && s.shownKey === st.bands;
     st.busy = true; st.last = s.sig;
     var list = tokensOf(s, host);
-    return Promise.resolve(host.setScore(list, !!ask, keep)).then(function (r) {
+    return Promise.resolve(host.setScore(list, !!ask, keep, null, !!auto)).then(function (r) {
       if (r && !keep) st.bands = s.shownKey;
       st.busy = false;
       /* a pin the screen refuses now (someone hidden again, a clock hidden, a known-as name) stays stored and waits, as a pin for an unknown room does; said once */
@@ -249,7 +273,7 @@
         if (fresh.length) host.toast('Off the board until it is safe: ' + fresh.map(function (x) { return x.label; }).join(', ') + ' would show the players a name they must not see (' + fresh.map(function (x) { return x.names.join(', '); }).join('; ') + ').', true);
         if (r.plates && !st.plated) { st.plated = true; host.toast((r.plates === 1 ? 'One face' : r.plates + ' faces') + ' went up as a name plate: with every figure the board was too large for the iPad.', true); } }
       if (!r) st.last = '';      /* not set: the next look tries again (a sig is never '') */
-      if (st.again) { st.again = false; var n = state(host); if (n.sig !== st.last) return sync(host, false); }
+      if (st.again) { st.again = false; var n = state(host); if (n.sig !== st.last) return sync(host, false, auto); }
       return r;
     }, function () { st.busy = false; st.last = ''; return null; });
   }
@@ -294,7 +318,7 @@
     if (!onBoard(host, s)) { if (typeof host.other === 'function') host.other(); return; }      /* IP6d: the stored board is another site's: it is still screened */
     if (s.sig === st.last) return;
     if (typeof host.busy === 'function' && host.busy()) { if (n < 20) setTimeout(function () { follow(host, n + 1); }, 400); return; }
-    sync(host, false);
+    sync(host, false, s.shownKey === st.bands);      /* automatic (a name hidden or shown, a face changed): the page's gate may hold it; a band the GM ticked is the GM's own act */
   }
   /* the roll on the Location card is another object than at the last look (another site, or this one replayed from Earlier, which resets the
      reveal to public): take it as the new starting point and write nothing, so leaving a site and coming back never downgrades the iPad */
@@ -384,5 +408,5 @@
 
   return { KEY: KEY, KINDS: KINDS, MAX: MAX, FACES_MAX: FACES_MAX, TEXT_MAX: TEXT_MAX, SITES_MAX: SITES_MAX, WORD: WORD,
     clean: clean, sitesOf: sitesOf, pinsOf: pinsOf, patchFor: patchFor, wrap: wrap, fitText: fitText, cardSvg: cardSvg, faceSvg: faceSvg, known: known,
-    token: token, sig: sig, board: board, tokensOf: tokensOf, otherPlan: otherPlan, fitBoard: fitBoard, ems: ems, AREAS: AREAS, rebase: function (host) { var s0 = state(host); st.last = s0.sig; st.bands = s0.shownKey; st.roll = host.roll(); }, paint: paint, follow: function (host) { follow(host, 0); }, add: add, remove: remove, sync: sync, reset: reset, _state: state };
+    token: token, sig: sig, board: board, tokensOf: tokensOf, otherPlan: otherPlan, pinsOn: pinsOn, sameBoard: sameBoard, autoGate: autoGate, autoWrite: autoWrite, fitBoard: fitBoard, ems: ems, AREAS: AREAS, rebase: function (host) { var s0 = state(host); st.last = s0.sig; st.bands = s0.shownKey; st.roll = host.roll(); }, paint: paint, follow: function (host) { follow(host, 0); }, add: add, remove: remove, sync: sync, reset: reset, _state: state };
 });

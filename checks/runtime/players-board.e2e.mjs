@@ -56,7 +56,7 @@ demo.stdout.on('data', (d) => { demoOut += d; }); demo.stderr.on('data', (d) => 
 function killDemo() { if (WIN) spawnSync('taskkill', ['/pid', String(demo.pid), '/T', '/F'], { stdio: 'ignore' }); else { try { process.kill(-demo.pid, 'SIGKILL'); } catch (_) {} } }
 process.on('exit', killDemo);
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(130));
-const timeout = setTimeout(() => { console.log('FAIL timed out\n' + demoOut.slice(-1500)); process.exit(1); }, 480000);
+const timeout = setTimeout(() => { console.log('FAIL timed out\n' + demoOut.slice(-1500)); process.exit(1); }, 900000);
 
 let browser = null, dbrowser = null;
 try {
@@ -317,20 +317,43 @@ try {
   await sleep(2500);
   const sA = await score(), otherSite = await gp.evaluate(() => window.B68GmPage._state().locRoll.name);
   check(!!sA && sA.name === 'The Pelican Rooms' && sA.board.includes('Mabel Quist') && sA.board.includes(CLOCKLINE), 'IP6d: the Pelican Rooms board is the score scene (Mabel Quist and the clock line on it) while the page is on ' + otherSite);
-  await npc('npc-mabel', { revealed: false });
+  /* every score write (a new `at`) and every error toast on the GM page while fn runs, then for ms more */
+  const watch = async (ms, fn) => {
+    await gp.evaluate(() => { const e = document.getElementById('toastErr'); if (e) e.textContent = ''; window.__pbToasts = []; if (!window.__pbObs) { const el = document.getElementById('toastErr'); if (el) { window.__pbObs = new MutationObserver(() => { const t = el.textContent; if (t && window.__pbToasts[window.__pbToasts.length - 1] !== t) window.__pbToasts.push(t); }); window.__pbObs.observe(el, { childList: true, characterData: true, subtree: true }); } } });
+    const ats = new Set([((await score()) || {}).at]), first = [...ats][0];
+    const poll = (async () => { const end = Date.now() + ms; while (Date.now() < end) { ats.add(((await score()) || {}).at); await sleep(300); } })();
+    if (fn) await fn(); await poll;
+    ats.add(((await score()) || {}).at);
+    return { writes: [...ats].filter((a) => a && a !== first).length, toasts: await gp.evaluate(() => window.__pbToasts.slice()) };
+  };
+  /* the reviewer's case: a hidden person whose alias is a word of the board's own title, the page on another site: nothing to do */
+  const quiet = await watch(30000, () => npc('npc-hidden-partner', { alias: 'Pelican' }));
+  check(quiet.writes === 0 && quiet.toasts.length === 0, 'IP6d: a hidden alias equal to a word of the board\'s title, page on another site: ' + quiet.writes + ' writes, ' + quiet.toasts.length + ' toasts in 30 s');
+  await npc('npc-hidden-partner', { alias: '' });
+  const wFace = await watch(8000, () => npc('npc-mabel', { revealed: false }));
+  check(wFace.writes === 1, 'IP6d: a pinned face hidden again: exactly one write (' + wFace.writes + '), toasts ' + wFace.toasts.length);
   const campD = (await api('GET', '/campaign')).json, cdD = campD && (campD.doc || campD);
-  await api('PATCH', '/campaign', { clocks: (cdD.clocks || []).map((c) => c.id === 'c-marker' ? Object.assign({}, c, { hidden: true }) : c) });
+  const wClock = await watch(8000, () => api('PATCH', '/campaign', { clocks: (cdD.clocks || []).map((c) => c.id === 'c-marker' ? Object.assign({}, c, { hidden: true }) : c) }));
+  check(wClock.writes === 1 && wClock.toasts.length === 1, 'IP6d: a clock named on a pin hidden: exactly one write (' + wClock.writes + ') and one toast (' + wClock.toasts.length + ')');
   const sGone = await until(async () => { const s = await score(), g = await displayGet(), b = await board(); return s && !s.board.includes('Mabel Quist') && !s.board.includes(CLOCKLINE) && !g.includes('Mabel Quist') && !g.includes(CLOCKLINE) && b && !b.text.includes('Mabel Quist') && !b.text.includes(CLOCKLINE) ? s : null; }, 15000, 250);
   check(!!sGone, 'IP6d: the hidden face and the hidden clock line are gone from the stored board, the display GET and the scene within one sync');
   check(!!sGone && sGone.name === 'The Pelican Rooms' && sGone.board.includes(DOVLINE) && sGone.board.includes(EARLY) && sGone.reveal.join() === sA.reveal.join(), 'IP6d: the rest of the board stays, at the stored bands (' + (sGone ? sGone.reveal.join() : '') + ')');
   check(await gp.evaluate((n) => window.B68GmPage._state().locRoll.name === n, otherSite), 'IP6d: the GM page is still on ' + otherSite);
-  const said = await toastErr();
+  const said = wClock.toasts[0] || wFace.toasts[0] || '';
   check(/planning board of The Pelican Rooms was redrawn/.test(said) && /Open The Pelican Rooms/.test(said), 'IP6d: one toast says what happened and how back: "' + said.slice(0, 120) + '"');
   await npc('npc-mabel', { revealed: true });
   await api('PATCH', '/campaign', { clocks: (cdD.clocks || []) });
   await gp.click('[data-gm="replay"][data-tool="location"][title^="The Pelican Rooms"]').catch(() => {});
   await gp.waitForFunction(() => window.B68GmPage._state().locRoll && window.B68GmPage._state().locRoll.name === 'The Pelican Rooms', null, { timeout: 10000 }).catch(() => {});
   check(!!(await until(async () => { const s = await score(); return s && s.board.includes('Mabel Quist') && s.board.includes(CLOCKLINE) ? s : null; }, 20000)), 'IP6d: back on the Pelican Rooms with the face and the clock allowed again, both come back');
+  /* IP6d, the same trap on the board's own site: a hidden alias equal to a word of the title, a room's name, a street's: no write, pins untouched */
+  await sleep(3000);
+  const onBefore = ((await score()) || { board: '' }).board.match(/ id="pb-([a-z0-9]+)-/g) || [];
+  const same = await watch(30000, async () => { for (const a of ['Pelican', 'Showroom', 'Gantry33']) { await npc('npc-hidden-partner', { alias: a }); await sleep(9000); } });
+  const onAfter = ((await score()) || { board: '' }).board.match(/ id="pb-([a-z0-9]+)-/g) || [];
+  const pinIds = (l) => [...new Set(l.map((m) => m.slice(8, -1)))].sort().join();
+  check(same.writes === 0 && pinIds(onBefore) === pinIds(onAfter), 'IP6d: on the board\'s own site, a hidden alias equal to the title word, a room, a street: ' + same.writes + ' writes in 30 s, pins ' + pinIds(onAfter));
+  await npc('npc-hidden-partner', { alias: '' });
 
   /* off: no Board block, and Set as score scene stores today's board */
   await players(false);
