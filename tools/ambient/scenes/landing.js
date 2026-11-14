@@ -242,6 +242,17 @@ function still(lit) {
 }
 /* Runs of shapes that differ only in where they are (balusters, joints, dentils, lit windows) become one path each: the same picture
    in the same order, a fraction of the elements for a browser to walk when it repaints. */
+/* `opacity` on a single shape makes a renderer paint it into a layer of its own and blend that; on a shape that only fills (or only
+   strokes) `fill-opacity` (or `stroke-opacity`) draws the same thing directly */
+function leafOpacity(svg) {
+  return svg.replace(/<(rect|circle|ellipse|path)\b([^>]*?)\sopacity="([^"]*)"([^>]*)\/>/g, (m, tag, a, op, b) => {
+    const at = a + " " + b, stroke = /\sstroke="(?!none)/.test(at), fill = /\sfill="(?!none)/.test(at), fillNone = /\sfill="none"/.test(at);
+    if (/-opacity=/.test(at)) return m;
+    if (fill && !stroke) return `<${tag}${a} fill-opacity="${op}"${b}/>`;
+    if (stroke && fillNone) return `<${tag}${a} stroke-opacity="${op}"${b}/>`;
+    return m;
+  });
+}
 function merge(svg) {
   const tok = /<rect x="([-\d.]+)" y="([-\d.]+)" width="([-\d.]+)" height="([-\d.]+)"([^>]*)\/>|<path d="([^"]*)"([^>]*)\/>/g;
   let out = "", last = 0, key = null, ds = [];
@@ -384,7 +395,7 @@ module.exports = function build(opts = {}) {
     css.push(`#${id}{left:${f2(x0 / 16)}%;top:${f2(y0 / 12)}%;width:${f2((x1 - x0) / 16)}%;height:${f2((y1 - y0) / 12)}%}`);
     return `<svg class="bx st" id="${id}" viewBox="${f2(x0)} ${f2(y0)} ${f2(x1 - x0)} ${f2(y1 - y0)}" preserveAspectRatio="none" aria-hidden="true">${list.map(([f, x, s]) => L.at(f, x, 650, s)).join("")}</svg>`;
   };
-  const body = V("ld-bk", `<defs>${st.defs}</defs>${st.back}`) + pressLayer("ld-p0", press.slice(0, 2)) + pressLayer("ld-p1", press.slice(2)) + V("ld-fr", st.front) + water + wins.map((w) => w.html).join("") + layers.join("") + boats + flashes;
+  const body = leafOpacity(V("ld-bk", `<defs>${st.defs}</defs>${st.back}`) + pressLayer("ld-p0", press.slice(0, 2)) + pressLayer("ld-p1", press.slice(2)) + V("ld-fr", st.front) + water + wins.map((w) => w.html).join("") + layers.join("") + boats + flashes);
 
   const CSS = `.tl{position:absolute;inset:0;width:100%;height:100%;display:block;will-change:transform}
 .bx{position:absolute;display:block;overflow:visible;pointer-events:none}
