@@ -1,8 +1,8 @@
 {
  "$comment": "Written by node scripts/map-goldens.mjs --write. The cases this map kit draws differently from the 0.9 goldens (map-kit1-golden.json), each with its listed reason. map-kit1.test.mjs holds every other case to 0.9.",
  "kit": {
-  "version": "1.1.0",
-  "sha256": "332ad0b192c33198b9bd56e8fbdf24025081ba293df679a3a55e2fc83f9004ef"
+  "version": "1.2.0",
+  "sha256": "a1822e5e1fa5d5a3332cde89c5b03f9ae03783fba1c18ffada2ec3b4e5bccf1e"
  },
  "reasons": [
   "heading",
