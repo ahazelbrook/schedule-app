@@ -41,6 +41,11 @@
 //   handouts  the manifest of the prop images the GM can show on the iPad: [{ id, title, file, when? }] (lib/handouts-export.mjs).
 //             Manifest only: the images are git-ignored static files in app/media/handouts/ (npm run gm:handouts). No images: no part.
 //
+//   rooms     (optional) the room tables: { v: 1, T: { rooms: { <normRoom>: { name, themes[], band, say[3], people[{ role, w }], things[10] } },
+//             roles: { <role>: { lines[3], looks[2], pose, face } }, aliases: { <normRoom>: <normRoom> } } } (under T so the app's CHECKED loop calls
+//             B68GmRoomTables.check(T) as for every other part), from the vault's Room tables pages
+//             (lib/rooms-export.mjs; npm run gm:rooms-check <folder> checks them). The room key build's RK12 adds buildRooms: until then no part.
+//
 //   assist    { prefix }: the cached prefix for "Claude at the table" (functions/api/gm/assist.js): the rules reference, the NPC
 //             cast, every NPC card's How to play block, the player-to-character table (player: on the PC notes, or the git-ignored
 //             gm-private/players.json, which wins) and tonight's prep (last) as <context name="..."> blocks (lib/assist-export.mjs). GM only. This file keeps the text;
@@ -249,7 +254,7 @@ function buildLocation(vault, exportedAt) {
   }
   const extra = toJson(x, "extra", dropped);
   if (dropped.length) warn("location: dropped non-JSON values: " + dropped.join(", "));
-  // authored sites: hand-built locations bound to score cards (lib/authored-export.mjs); here, not a part of their own (12 parts max)
+  // authored sites: hand-built locations bound to score cards (lib/authored-export.mjs); here, not a part of their own (the server keeps at most 24 parts: LIMITS.parts)
   const authored = buildAuthored({ vault, warn });
   const out = { src: { file: rel(vault, file), blockSha: authored ? sha(block + "\u0000" + JSON.stringify(authored)) : sha(block), exportedAt }, T, extra, _extraNames: extraNames };
   if (authored) out.authored = authored;
