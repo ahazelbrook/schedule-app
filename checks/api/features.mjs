@@ -197,7 +197,7 @@ async function main() {
     for (const m of [g.json.doc.features, p.json.features]) expect(m['phone.find'] === true && six.every((i) => !(i in m)), 'served: ' + JSON.stringify(m));
     for (const t of [g.text, p.text]) for (const id of six) expect(!t.includes('"' + id + '"'), id + ' reached a phone or the iPad');
     const o = await call('PATCH', '/api/campaign', { user: GM, body: { features: { 'phone.find': false } } });
-    expect(o.status === 200 && same(await stored(), { 'phone.find': false }), 'turned off: stored false');
+    expect(o.status === 200 && same(await stored(), { phoneCards: false, 'phone.find': false }), 'turned off: stored false (a PATCH merges)');
     const g2 = await call('GET', '/api/campaign', { user: PLAYER });
     expect(g2.json.doc.features['phone.find'] === false, 'and served false');
     const n = await call('PATCH', '/api/campaign', { user: GM, body: { features: null } });

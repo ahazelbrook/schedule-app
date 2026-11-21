@@ -118,6 +118,7 @@ const CHECKS = [
   ['checks/runtime/room-key.e2e.mjs', 'things in rooms: the card, the zoom, Show on iPad (9502; RK09 to RK11)'],
   ['checks/runtime/room-tables.e2e.mjs', 'rolled rooms: the roll, the cards, Swap and Roll another, people, Keep (9503; RK14 and RK15)'],
   ['checks/runtime/room-state.e2e.mjs', 'the stored room state: a thing\'s state and kept ids survive a reload and an old build (9505; RK08.4)'],
+  ['checks/runtime/room-bundles.e2e.mjs', 'each room key setting fetches its own bundle and nothing else; off, no room key file on the GM page or a phone (9507; RK01)'],
   ['checks/runtime/glance.e2e.mjs', "the GM's glance (9504; RK20 to RK24)"],
 ];
 

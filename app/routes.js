@@ -75,9 +75,7 @@
        the GM page's Send to…, fetched by gm-page.js while it is on. With it off neither is fetched */
     handouts: ['sheet/handouts.css', 'sheet/handouts.js'],
     'gm-handouts': ['gm/handout-send.css', 'gm/handout-send.js'],
-    /* PA (prep actions): the prep note's action chips, fetched by gm-page.js only when a rendered note holds an action span */
-    'prep-actions': ['gm/prep-actions.css', 'gm/prep-actions.js'],
-    /* the room key build (RK01): one bundle per setting, each fetched only while its setting is on, so with all seven off no page asks for a new file.
+    /* the room key build (RK01): one bundle per setting (before prep-actions, which stays the last bundle: checks/runtime/prep-actions.test.mjs), each fetched only while its setting is on, so with all seven off no page asks for a new file.
        The GM page asks for night-flow, close-crew, room-key, room-tables and gm-glance (gm-page.js, P.rkWant in renderBar); a phone asks for phone-find (boot.js).
        room-tables brings room-key first (DEPS): a rolled room draws the zoom card. The two sheets are in the room-key and gm-glance bundles and are never
        layered (isKitCss), so the kit-scoped rules they hold (:root[data-kit~="desk"]) beat the layered old sheets */
@@ -86,7 +84,9 @@
     'room-key': ['gm/room-key.css', 'gm/room-things.js', 'gm/room-state.js', 'gm/room-zoom.js', 'gm/room-show.js', 'gm/room-mark.js'],
     'room-tables': ['gm/room-tables.js', 'gm/room-roll.js', 'gm/room-rolled.js', 'gm/room-swap.js', 'gm/room-blade.js', 'gm/room-people.js', 'gm/room-keep.js'],
     'gm-glance': ['gm/glance.css', 'gm/glance-crew.js', 'gm/glance-now.js', 'gm/quick-rules.js', 'gm/loud.js', 'gm/npc-find.js'],
-    'phone-find': ['sheet/ability-find.js']
+    'phone-find': ['sheet/ability-find.js'],
+    /* PA (prep actions): the prep note's action chips, fetched by gm-page.js only when a rendered note holds an action span */
+    'prep-actions': ['gm/prep-actions.css', 'gm/prep-actions.js']
   };
   /* every stylesheet, in cascade order (index.html's order from before lazy loading); the kit's sheets come after every old one */
   var CSS_ORDER = ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', 'gm.css', 'prep.css', 'display.css', 'tokens.css', 'display/shows.css', 'display/hardstart.css', 'display/onair.css', 'display/aftermath.css', 'display/board.css', 'display/title-card.css', 'display/castphoto.css', 'display/lair.css', 'display/face-cards.css', 'display/montage.css', 'display/players/intro.css', 'display/players/players.css',
