@@ -222,7 +222,7 @@
     { id: 'room.key', label: 'Things in rooms', surface: 'gm', stage: 'kit', default: false, saturday: 'off', setting: true,
       doc: 'A room note’s Things show on its card; a click opens the zoom card; Show on iPad sends one line. Off: the note as now.' },
     { id: 'room.tables', label: 'Rolled rooms', surface: 'gm', stage: 'kit', default: false, saturday: 'off', setting: true,
-      doc: 'A rolled site’s rooms draw a read-aloud, things and people from the room tables; Swap, Roll another, Keep, Tailor. Off: as now.' },
+      doc: 'A rolled site’s rooms draw a read-aloud, things and people from the room tables; Swap, Roll another, Keep and the Blade tap. Off: as now.' },
     { id: 'gm.glance', label: 'The GM’s glance', surface: 'gm', stage: 'kit', default: false, saturday: 'off', setting: true,
       doc: 'The crew at a glance, the fiction’s clock and who’s where, quick rules, when it goes loud, NPC by name. Off: as now.' },
     { id: 'phone.find', label: 'Search on the phones', surface: 'phone', stage: 'kit', default: false, saturday: 'off', setting: true,

@@ -113,7 +113,7 @@
     { key: 'room.key', label: 'Things in rooms', what: 'A room note’s Things on its card, a zoom card on a click, and Show on iPad for one line.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'Things in rooms: off.', 'true': 'Things in rooms: on.' } },
-    { key: 'room.tables', label: 'Rolled rooms', what: 'A rolled site’s rooms get a read-aloud, things and people from the room tables, with Swap, Roll another, Keep and Tailor.',
+    { key: 'room.tables', label: 'Rolled rooms', what: 'A rolled site’s rooms get a read-aloud, things and people from the room tables, with Swap, Roll another, Keep and the Blade tap.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'Rolled rooms: off.', 'true': 'Rolled rooms: on.' } },
     { key: 'gm.glance', label: 'The glance', what: 'The crew at a glance, the fiction’s clock and who’s where, quick rules, when it goes loud, and any NPC by name.',
