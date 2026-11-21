@@ -226,7 +226,10 @@
     { id: 'gm.glance', label: 'The GM’s glance', surface: 'gm', stage: 'kit', default: false, saturday: 'off', setting: true,
       doc: 'The crew at a glance, the fiction’s clock and who’s where, quick rules, when it goes loud, NPC by name. Off: as now.' },
     { id: 'phone.find', label: 'Search on the phones', surface: 'phone', stage: 'kit', default: false, saturday: 'off', setting: true,
-      doc: 'A search box over the abilities on the players’ sheets. Off: as now.' }
+      doc: 'A search box over the abilities on the players’ sheets. Off: as now.' },
+    /* the map diagnosis (RK28, added to RK01 on 22/11): the eighth setting, a GM one, off until chosen */
+    { id: 'map.fit', label: 'The map fits the iPad', surface: 'gm', stage: 'kit', default: false, saturday: 'off', setting: true,
+      doc: 'Over the iPad’s 600 KiB, the map sheds crowd and figures step by step, and a map that still can’t fit is stopped on the GM page with the reason. Off: as now.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

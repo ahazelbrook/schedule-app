@@ -121,7 +121,11 @@
       said: { 'false': 'The glance: off.', 'true': 'The glance: on.' } },
     { key: 'phone.find', label: 'Search on phones', what: 'A search box over the abilities on a player’s sheet. Off: no box.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
-      said: { 'false': 'Search on phones: off. Phones follow within a few seconds.', 'true': 'Search on phones: on. Phones follow within a few seconds.' } }
+      said: { 'false': 'Search on phones: off. Phones follow within a few seconds.', 'true': 'Search on phones: on. Phones follow within a few seconds.' } },
+    /* RK28 (added to RK01 on 22/11): the map diagnosis's setting, last */
+    { key: 'map.fit', label: 'The map fits the iPad', what: 'A map over the iPad’s 600 KiB sheds crowd and figures step by step; one that still can’t fit is stopped on this page with the reason.',
+      options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
+      said: { 'false': 'The map fits the iPad: off.', 'true': 'The map fits the iPad: on.' } }
   ];
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

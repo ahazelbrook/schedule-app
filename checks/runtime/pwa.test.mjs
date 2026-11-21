@@ -199,7 +199,7 @@ await test('routes.js: index.html loads exactly the core bundle; every other bun
   eq(Object.keys(L.BUNDLES), ['core', 'figures', 'table', 'print', 'crews', 'gm', 'display', 'commend', 'debrief', 'quiet', 'board', 'claims', 'absent', 'lair', 'lookbook',
     'kit-ui', 'kit-desk', 'kit-stage', 'kit-phone', 'night-who', 'blade-pitches', 'kit-lookbook', 'map-scene',
     'handouts', 'gm-handouts',      /* IP4: phone.handouts' two bundles */
-    'night-flow', 'close-crew', 'room-key', 'room-tables', 'gm-glance', 'phone-find',      /* RK01: one per room key setting, before prep-actions (which stays last) */
+    'night-flow', 'close-crew', 'room-key', 'room-tables', 'gm-glance', 'phone-find', 'map-fit',      /* RK01: one per room key setting, before prep-actions (which stays last) */
     'prep-actions'], 'the bundles');
   eq(L.BUNDLES.figures, ['figures/figure-kit.js', 'figures/cast.js'], 'the figures bundle is the kit and the cast canon');
   ok(!HTML.includes('figure-kit.js') && !HTML.includes('figures/cast.js'), 'index.html does not load the figure kit (first paint draws no figure)');
@@ -446,6 +446,7 @@ const RK = {
   'room-tables': ['gm/room-tables.js', 'gm/room-roll.js', 'gm/room-rolled.js', 'gm/room-swap.js', 'gm/room-blade.js', 'gm/room-people.js', 'gm/room-keep.js'],
   'gm-glance': ['gm/glance.css', 'gm/glance-crew.js', 'gm/glance-now.js', 'gm/quick-rules.js', 'gm/loud.js', 'gm/npc-find.js'],
   'phone-find': ['sheet/ability-find.js'],
+  'map-fit': ['gm/map-fit.js', 'gm/svg-slim.js'],
 };
 const RK_FILES = new Set(Object.values(RK).flat());
 const SHEETS = ['tracker.css', 'schedule.css', 'rules.css', 'cast.css'];
@@ -471,7 +472,7 @@ await test('room key bundles: need() of one fetches only its own files; room-tab
   ok(o.indexOf('ui/ui.js') < o.indexOf('gm/room-things.js'), 'the kit-ui scripts come before the room-key scripts');
   doc.settle(); eq(await p, 'room-tables'); ok(L.done('room-key') && L.done('room-tables') && !L.done('gm-glance'), 'both done, nothing else');
   const n = doc.added().length; await L.need('room-key'); eq(doc.added().length, n, 'room-key after room-tables: nothing more to fetch');
-  for (const name of ['night-flow', 'close-crew', 'gm-glance', 'phone-find']) {
+  for (const name of ['night-flow', 'close-crew', 'gm-glance', 'phone-find', 'map-fit']) {
     const d = fakeDoc(SHEETS), L1 = routes(ROUTES, d).B68Load; L1.need(name);
     eq(d.order().filter((x) => RK_FILES.has(x)), RK[name], name + ' fetches its own files and no other room key file');
   }
@@ -498,10 +499,10 @@ await test('room key bundles: P.rkWant (gm-page.js renderBar) names the bundles 
   const { createRequire } = await import('node:module');
   const P = createRequire(import.meta.url)(path.join(APP, 'gm-page.js'))._pure;
   ok(P && typeof P.rkWant === 'function', 'gm-page.js exports P.rkWant');
-  const ids = ['stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance', 'phone.find'];
+  const ids = ['stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance', 'phone.find', 'map.fit'];
   eq(P.rkWant(() => false), [], 'all off: no bundle');
-  eq(P.rkWant((id) => ids.includes(id)), ['night-flow', 'close-crew', 'room-key', 'room-tables', 'gm-glance'], 'all on: the five the GM page loads (stamp.brief has no file; phone.find is the phone\'s, through boot.js)');
-  for (const [id, want] of [['night.flow', ['night-flow']], ['close.crew', ['close-crew']], ['room.key', ['room-key']], ['room.tables', ['room-tables']], ['gm.glance', ['gm-glance']], ['stamp.brief', []], ['phone.find', []]]) eq(P.rkWant((x) => x === id), want, id);
+  eq(P.rkWant((id) => ids.includes(id)), ['night-flow', 'close-crew', 'room-key', 'room-tables', 'gm-glance', 'map-fit'], 'all on: the six the GM page loads (stamp.brief has no file; phone.find is the phone\'s, through boot.js)');
+  for (const [id, want] of [['night.flow', ['night-flow']], ['close.crew', ['close-crew']], ['room.key', ['room-key']], ['room.tables', ['room-tables']], ['gm.glance', ['gm-glance']], ['map.fit', ['map-fit']], ['stamp.brief', []], ['phone.find', []]]) eq(P.rkWant((x) => x === id), want, id);
   const L = routes().B68Load;
   for (const n of P.rkWant(() => true)) ok(Object.prototype.hasOwnProperty.call(L.BUNDLES, n), n + ' is a bundle in routes.js');
   const src = fs.readFileSync(path.join(APP, 'gm-page.js'), 'utf8');

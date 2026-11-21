@@ -85,6 +85,7 @@
     'room-tables': ['gm/room-tables.js', 'gm/room-roll.js', 'gm/room-rolled.js', 'gm/room-swap.js', 'gm/room-blade.js', 'gm/room-people.js', 'gm/room-keep.js'],
     'gm-glance': ['gm/glance.css', 'gm/glance-crew.js', 'gm/glance-now.js', 'gm/quick-rules.js', 'gm/loud.js', 'gm/npc-find.js'],
     'phone-find': ['sheet/ability-find.js'],
+    'map-fit': ['gm/map-fit.js', 'gm/svg-slim.js'],      /* RK28 (map.fit), fetched by gm-page.js while it is on */
     /* PA (prep actions): the prep note's action chips, fetched by gm-page.js only when a rendered note holds an action span */
     'prep-actions': ['gm/prep-actions.css', 'gm/prep-actions.js']
   };

@@ -186,10 +186,10 @@ async function main() {
     expect(sameMap(p2.json.features, servedFeatures({})) && sameMap(g2.json.doc.features, servedFeatures({})), 'and the served map is the one with nothing stored');
   });
 
-  await step('the room key build\'s seven settings (RK01) are all registered off: the six GM-surface ones are never stored or served (absent from a phone\'s and the iPad\'s answer, written on or off); phone.find is the one phone setting, served as stored and false until written', async () => {
-    const six = ['stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance'];
+  await step('the room key build\'s eight settings (RK01) are all registered off: the seven GM-surface ones are never stored or served (absent from a phone\'s and the iPad\'s answer, written on or off); phone.find is the one phone setting, served as stored and false until written', async () => {
+    const six = ['stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance', 'map.fit'];      /* the seven GM-surface ones (the name stays) */
     for (const id of six.concat('phone.find')) expect(Features.isSetting(id) && Features.valueOf({}, id) === false, id + ' is a setting and reads off with nothing stored');
-    expect(six.every((i) => GM_SETTINGS.includes(i)) && PUBLIC_SETTINGS.includes('phone.find') && !GM_SETTINGS.includes('phone.find'), 'six gm, one phone');
+    expect(six.every((i) => GM_SETTINGS.includes(i)) && PUBLIC_SETTINGS.includes('phone.find') && !GM_SETTINGS.includes('phone.find'), 'seven gm, one phone');
     const body = { phoneCards: false, 'phone.find': true }; six.forEach((i) => { body[i] = true; });
     const r = await call('PATCH', '/api/campaign', { user: GM, body: { features: body } });
     expect(r.status === 200 && same(await stored(), { phoneCards: false, 'phone.find': true }), 'only the phone one is stored: ' + JSON.stringify(await stored()));

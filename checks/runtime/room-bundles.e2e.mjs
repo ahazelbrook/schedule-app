@@ -19,6 +19,7 @@ const BUNDLES = {
   'room.tables': ['gm/room-tables.js', 'gm/room-roll.js', 'gm/room-rolled.js', 'gm/room-swap.js', 'gm/room-blade.js', 'gm/room-people.js', 'gm/room-keep.js'],
   'gm.glance': ['gm/glance.css', 'gm/glance-crew.js', 'gm/glance-now.js', 'gm/quick-rules.js', 'gm/loud.js', 'gm/npc-find.js'],
   'phone.find': ['sheet/ability-find.js'],
+  'map.fit': ['gm/map-fit.js', 'gm/svg-slim.js'],
 };
 const ALL = Object.values(BUNDLES).flat();
 let failed = 0;
@@ -38,13 +39,13 @@ try {
   await G.page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
   await G.page.waitForSelector('#gm-buttons .gm-btn', { state: 'attached', timeout: 30000 });
   await G.page.waitForTimeout(2500);
-  check(mine(G.urls).length === 0, 'all seven off: no room key file requested by the GM page (' + G.urls.length + ' requests)');
+  check(mine(G.urls).length === 0, 'all eight off: no room key file requested by the GM page (' + G.urls.length + ' requests)');
   await G.page.click('.gm-tray [data-tray="open"]');
   await G.page.waitForSelector('#gm-ipad-settings [data-set-row]', { timeout: 10000 });
   const rows = await G.page.$$eval('#gm-ipad-settings [data-set-row]', (els) => els.map((e) => e.getAttribute('data-set-row')));
-  check(rows.slice(-7).join() === 'stamp.brief,night.flow,close.crew,room.key,room.tables,gm.glance,phone.find' && rows.length === 24, 'the Settings list: 24 rows, the seven last: ' + rows.slice(-8).join(' '));
+  check(rows.slice(-8).join() === 'stamp.brief,night.flow,close.crew,room.key,room.tables,gm.glance,phone.find,map.fit' && rows.length === 25, 'the Settings list: 25 rows, the eight last: ' + rows.slice(-9).join(' '));
   let seen = new Set(mine(G.urls));
-  for (const id of ['stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance']) {
+  for (const id of ['stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance', 'map.fit']) {
     await G.page.click('#gm-ipad-settings [data-set="' + id + '"][data-v="1"]');
     await G.page.waitForTimeout(1500);
     const now = new Set(mine(G.urls)), fresh = [...now].filter((f) => !seen.has(f));
@@ -64,7 +65,7 @@ try {
   await P.page.reload(); await P.page.waitForTimeout(4000);
   check(mine(P.urls).includes('sheet/ability-find.js') && mine(P.urls).length === 1, 'phone.find on: the phone fetches sheet/ability-find.js and no other room key file: ' + mine(P.urls).join(' '));
   // off again: a reload of the GM page with all but room.key off asks only for that
-  for (const id of ['stamp.brief', 'night.flow', 'close.crew', 'room.tables', 'gm.glance', 'phone.find']) await G.page.click('#gm-ipad-settings [data-set="' + id + '"][data-v="0"]');
+  for (const id of ['stamp.brief', 'night.flow', 'close.crew', 'room.tables', 'gm.glance', 'phone.find', 'map.fit']) await G.page.click('#gm-ipad-settings [data-set="' + id + '"][data-v="0"]');
   await G.page.waitForTimeout(1500);
   const G2 = await open('#gm', 'gm@example.test', [1366, 768]);
   await G2.page.waitForTimeout(6000);

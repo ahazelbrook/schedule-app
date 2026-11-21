@@ -72,8 +72,8 @@ test('map.shade: a GM setting in the Maps stage, default off, Saturday "try", la
   assert.ok(!('map.shade' in F.publishMap({ features: { 'map.shade': true } }, {})), 'never copied to the campaign document');
   assert.deepEqual(G.IDS, { fill: 'map.fill', people: 'map.people', lights: 'map.lights', room: 'map.room' }, 'not one of the scene flags: the map-scene bundle is not fetched for it');
 });
-test('the Settings row is the last of its build (Flat / Solid), before the seven of the room key build (RK01): every row of ' + TODAY + ' keeps its index', () => {
-  const RK = 7;      /* RK01: stamp.brief, night.flow, close.crew, room.key, room.tables, gm.glance and phone.find come after it */
+test('the Settings row is the last of its build (Flat / Solid), before the eight of the room key build (RK01): every row of ' + TODAY + ' keeps its index', () => {
+  const RK = 8;      /* RK01: stamp.brief, night.flow, close.crew, room.key, room.tables, gm.glance, phone.find and map.fit come after it */
   const keys = SET.ROWS.map((r) => r.key), last = SET.ROWS[SET.ROWS.length - 1 - RK];
   assert.equal(last.key, 'map.shade'); assert.equal(last.label, 'Furniture depth');
   let state = {}; const ctl = SET.create({ F, doc: () => state, patch: (p) => { state = { features: Object.assign({}, state.features, p.features) }; return true; }, campaign: () => ({ features: {} }), publish: () => Promise.resolve(true), toast() {}, redraw() {} });
