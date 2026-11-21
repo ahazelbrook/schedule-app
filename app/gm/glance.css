@@ -1,0 +1,3 @@
+/* gm/glance.css: the GM's glance (gm.glance). Registered as an empty stub by RK01 of the room key build; RK20 fills it.
+   In the gm-glance bundle, fetched only while its setting is on. Old-desk rules go here, scoped to this build's own classes; kit rules are scoped under
+   :root[data-kit~="desk"], unlayered, with no !important. */

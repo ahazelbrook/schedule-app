@@ -76,16 +76,28 @@
     handouts: ['sheet/handouts.css', 'sheet/handouts.js'],
     'gm-handouts': ['gm/handout-send.css', 'gm/handout-send.js'],
     /* PA (prep actions): the prep note's action chips, fetched by gm-page.js only when a rendered note holds an action span */
-    'prep-actions': ['gm/prep-actions.css', 'gm/prep-actions.js']
+    'prep-actions': ['gm/prep-actions.css', 'gm/prep-actions.js'],
+    /* the room key build (RK01): one bundle per setting, each fetched only while its setting is on, so with all seven off no page asks for a new file.
+       The GM page asks for night-flow, close-crew, room-key, room-tables and gm-glance (gm-page.js, P.rkWant in renderBar); a phone asks for phone-find (boot.js).
+       room-tables brings room-key first (DEPS): a rolled room draws the zoom card. The two sheets are in the room-key and gm-glance bundles and are never
+       layered (isKitCss), so the kit-scoped rules they hold (:root[data-kit~="desk"]) beat the layered old sheets */
+    'night-flow': ['gm/night-ticks.js', 'gm/blade-chips.js', 'gm/threat-room.js', 'gm/public-lines.js'],
+    'close-crew': ['gm/close-crew.js'],
+    'room-key': ['gm/room-key.css', 'gm/room-things.js', 'gm/room-state.js', 'gm/room-zoom.js', 'gm/room-show.js', 'gm/room-mark.js'],
+    'room-tables': ['gm/room-tables.js', 'gm/room-roll.js', 'gm/room-rolled.js', 'gm/room-swap.js', 'gm/room-blade.js', 'gm/room-people.js', 'gm/room-keep.js'],
+    'gm-glance': ['gm/glance.css', 'gm/glance-crew.js', 'gm/glance-now.js', 'gm/quick-rules.js', 'gm/loud.js', 'gm/npc-find.js'],
+    'phone-find': ['sheet/ability-find.js']
   };
   /* every stylesheet, in cascade order (index.html's order from before lazy loading); the kit's sheets come after every old one */
   var CSS_ORDER = ['tracker.css', 'campaign.css', 'crewsheet.css', 'schedule.css', 'season.css', 'rules.css', 'cast.css', 'gm.css', 'prep.css', 'display.css', 'tokens.css', 'display/shows.css', 'display/hardstart.css', 'display/onair.css', 'display/aftermath.css', 'display/board.css', 'display/title-card.css', 'display/castphoto.css', 'display/lair.css', 'display/face-cards.css', 'display/montage.css', 'display/players/intro.css', 'display/players/players.css',
     'sheet/handouts.css', 'gm/handout-send.css', 'gm/prep-actions.css',      /* IP4: old-style sheets of their own classes, last of the old ones (layered with them while a kit is on) */
+    'gm/room-key.css', 'gm/glance.css',      /* RK01: the room key's and the glance's own classes; not layered (isKitCss), so their kit-scoped rules beat the layered old sheets */
     'ui/tokens.css', 'ui/parts.css', 'ui/overlay.css', 'ui/desk-band.css', 'ui/desk-roll.css', 'ui/desk-blade.css', 'ui/desk-run.css', 'ui/desk-shell.css', 'ui/desk-who.css', 'ui/desk-skin.css',
     'display/kit/stage.css', 'display/kit/band.css', 'display/kit/roll.css', 'display/kit/scene.css', 'sheet/kit/tabs.css'];
 
   var DEPS = { gm: ['figures'], display: ['figures'], lookbook: ['figures'],   /* bundles that need another one in first */
-    'kit-desk': ['kit-ui'], 'kit-stage': ['kit-ui'], 'kit-phone': ['kit-ui'], 'night-who': ['kit-ui'], 'blade-pitches': ['kit-ui'], 'kit-lookbook': ['kit-ui'], 'map-scene': ['gm'] };
+    'kit-desk': ['kit-ui'], 'kit-stage': ['kit-ui'], 'kit-phone': ['kit-ui'], 'night-who': ['kit-ui'], 'blade-pitches': ['kit-ui'], 'kit-lookbook': ['kit-ui'], 'map-scene': ['gm'],
+    'room-key': ['kit-ui'], 'room-tables': ['room-key'], 'night-flow': ['prep-actions'] };      /* RK01: the zoom card uses B68Ui on the old desk too; rolled rooms draw the zoom card, so room-key comes in first; prep-actions loads only on demand (gm-page.js), so night-flow brings it */
   var loading = {};            /* file -> Promise (resolved: loaded; a failure is forgotten so it can be tried again) */
   var loaded = {};             /* file -> true once its load event fired (the core: index.html's own tags) */
   BUNDLES.core.forEach(function (f) { loaded[f] = true; loading[f] = Promise.resolve(f); });
@@ -111,7 +123,7 @@
     if (s.length !== 1 && typeof console !== 'undefined') console.warn('B68Load: ' + s.length + ' id-less head styles, not one: the inline block will not be layered');
     return s.length === 1 ? s[0] : null;
   })();
-  function isKitCss(f) { return /^(ui|display\/kit|sheet\/kit)\//.test(f); }
+  function isKitCss(f) { return /^(ui|display\/kit|sheet\/kit)\//.test(f) || /^gm\/(room-key|glance)\.css$/.test(f); }      /* RK01: the room key's and the glance's sheets stay unlayered, as the kit's do */
   function importOf(d, file, href) {
     var s = d.createElement('style'); s.setAttribute('data-href', file); s.textContent = '@import url("' + href + '") layer(old);';
     return s;
