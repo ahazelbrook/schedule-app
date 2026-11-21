@@ -210,7 +210,23 @@
       doc: 'Each handout in the GM page’s list can be sent to one player or to everyone; it stays in a Handouts list on that player’s sheet, to open full screen any time, until the GM takes it back. Off: no Send to, no Handouts button.' },
     /* the players' screen build (IP7, 14/11): the map kit's shade option, a GM setting, off until chosen. Off: the option is not passed, so the same map comes back */
     { id: 'map.shade', label: 'Furniture depth', surface: 'gm', stage: 'map', default: false, saturday: 'try', setting: true,
-      doc: 'Every map the GM page draws (this screen, the shared screen, a room cut to, the planning board and the exploded site) asks the map kit for furniture as low solids with a short cast shadow (shade: true). A map over the iPad’s cap goes flat first. Off: flat furniture, as before.' }
+      doc: 'Every map the GM page draws (this screen, the shared screen, a room cut to, the planning board and the exploded site) asks the map kit for furniture as low solids with a short cast shadow (shade: true). A map over the iPad’s cap goes flat first. Off: flat furniture, as before.' },
+    /* the room key build (RK01, 22/11): seven settings, each off until chosen. Off is the app as it was: the same markup, requests and stored data.
+       phone.find is the only phone one (copied into the campaign document as phone.handouts is); the other six are GM-only and never served */
+    { id: 'stamp.brief', label: 'Stamp banners leave the iPad after 10 s', surface: 'gm', stage: 'kit', default: false, saturday: 'off', setting: true,
+      doc: 'The roll’s stamp shows on the iPad for 10 seconds and then goes; the roll panel keeps it until the roll resolves. Off: it stays until Take it down.' },
+    { id: 'night.flow', label: 'Ticks reach the clock', surface: 'gm', stage: 'kit', default: false, saturday: 'off', setting: true,
+      doc: 'A stamped consequence can tick its clock; Blade’s ▶ chips act; "tick X" typed in Ask works; the threat marker follows the roll; public lines are louder. Off: as now.' },
+    { id: 'close.crew', label: 'The close writes the crew', surface: 'gm', stage: 'kit', default: false, saturday: 'off', setting: true,
+      doc: 'Aftermath writes heat and Wanted back once, with heat reasons, status by faction, xp prompts and an Open list. Off: display only.' },
+    { id: 'room.key', label: 'Things in rooms', surface: 'gm', stage: 'kit', default: false, saturday: 'off', setting: true,
+      doc: 'A room note’s Things show on its card; a click opens the zoom card; Show on iPad sends one line. Off: the note as now.' },
+    { id: 'room.tables', label: 'Rolled rooms', surface: 'gm', stage: 'kit', default: false, saturday: 'off', setting: true,
+      doc: 'A rolled site’s rooms draw a read-aloud, things and people from the room tables; Swap, Roll another, Keep, Tailor. Off: as now.' },
+    { id: 'gm.glance', label: 'The GM’s glance', surface: 'gm', stage: 'kit', default: false, saturday: 'off', setting: true,
+      doc: 'The crew at a glance, the fiction’s clock and who’s where, quick rules, when it goes loud, NPC by name. Off: as now.' },
+    { id: 'phone.find', label: 'Search on the phones', surface: 'phone', stage: 'kit', default: false, saturday: 'off', setting: true,
+      doc: 'A search box over the abilities on the players’ sheets. Off: as now.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
