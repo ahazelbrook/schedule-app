@@ -134,7 +134,7 @@ try {
   await toHeat();
   check(/Kept 11 stacks: 5 each for 2 PCs, 1 left over/.test(titheText), 'the tithe step shows the split over the two PCs: ' + (titheText.match(/Kept[^\n]*/) || [''])[0]);
   const ptxt = await panel();
-  check(/Heat reasons/i.test(ptxt) && /House add-on/i.test(ptxt) && !/Modifiers \(\+ or/i.test(ptxt) && (await g.$$(AFT + ' .cc-row .chip')).length === 4, 'on: the heat step has the reason ticks and the house add-on in place of the Modifiers box: ' + JSON.stringify(ptxt.slice(0, 700)));
+  check(/Heat reasons/i.test(ptxt) && /House add-on/i.test(ptxt) && !/Modifiers \(\+ or/i.test(ptxt) && (await g.$$(AFT + ' .cc-row .chip:not(.cc-rule-chip)')).length === 4, 'on: the heat step has the reason ticks and the house add-on in place of the Modifiers box: ' + JSON.stringify(ptxt.slice(0, 700)));
   await exposure(6);
   await g.click(AFT + ' .cc-row button:has-text("High-profile target")'); await sleep(300);
   await g.click(AFT + ' .cc-row button:has-text("A killing")'); await sleep(300);
@@ -142,7 +142,10 @@ try {
   await g.fill(AFT + ' input.cc-house', '1'); await g.press(AFT + ' input.cc-house', 'Tab'); await sleep(300);
   await ip.waitForFunction(() => !!document.querySelector('.dp-show-aftermath .dp-show-wanted.dp-ov-in'), null, { timeout: 15000 });
   const htxt = await panel();
-  check(/Modifiers \+4/.test(htxt) && /Next writes the crew: Heat 2 → 0, Wanted 0 → 1/.test(htxt), 'the ticks make +4 and the panel says what Next writes: ' + (htxt.match(/Next writes[^\n]*/) || [''])[0]);
+  const nextLine = await g.$eval(AFT + ' .cc-next-line', (p) => ({ text: p.textContent, beside: !!(p.nextElementSibling && p.nextElementSibling.querySelector('button.primary')) }));
+  check(/Modifiers \+4/.test(htxt) && nextLine.text === 'Next writes the crew: Heat 2 → 0 · Wanted 0 → 1' && nextLine.beside, 'the ticks make +4, and the line right above Next says what it writes: ' + JSON.stringify(nextLine));
+  const nextBox = await g.$eval(AFT + ' .seg button.primary:text-is("Next")', (b) => { const r = b.getBoundingClientRect(); return { top: Math.round(r.top), bottom: Math.round(r.bottom), vh: innerHeight }; });
+  check(nextBox.bottom <= nextBox.vh && nextBox.top >= 0, 'at 1366x768 Next is in view on the heat step: ' + JSON.stringify(nextBox));
   check(await g.$$eval(AFT + ' .cc-rule-chip', (b) => b.length === 1 && /rule: heat/.test(b[0].textContent)), 'a rule chip for the heat rules');
   await shot(g, 'gm-heat-on');
   await shot(ip, 'ipad-heat-siren');
@@ -157,7 +160,7 @@ try {
   check(!!w1 && w1.from.heat === 2 && w1.from.wanted === 0 && w1.to.heat === 0 && w1.to.wanted === 1, 'the guard holds the numbers from before the close: ' + st1.night.aftermath.data.crewWritten);
 
   await press('Back'); await onStep('heat');
-  check(/Written to the crew: Heat 2 → 0, Wanted 0 → 1/.test(await panel()), 'Back: the heat step says it was written, and Next sends the same numbers');
+  check(/Heat 2 → 0 · Wanted 0 → 1 \(written already: the same numbers again\)/.test(await g.$eval(AFT + ' .cc-next-line', (p) => p.textContent)), 'Back: the line beside Next says it was written, and Next sends the same numbers');
   await press('Next'); await onStep('status'); await sleep(2000);
   const again = await crewNow();
   check(again.heat === 0 && again.wanted === 1, 'Back and Next again: still Heat 0, Wanted 1 (never 2): ' + JSON.stringify([again.heat, again.wanted]));
@@ -186,6 +189,24 @@ try {
   check(!phoneUrls.some((u) => /close-crew/.test(u)), 'the phone never fetches the close-crew bundle');
   check((await api('GET', '/campaign', null, PLAYER)).json.doc.log.every((e) => !leak.test(JSON.stringify(e))), 'the campaign log (every player downloads it) holds none of it');
 
+  /* ---- 5. the xp step lists the crew's triggers (the crews bundle loads on demand) ---- */
+  await press('Next'); await press('Next'); await onStep('xp');
+  const crewRows = await until(() => g.$$eval(AFT + ' .cc-xp-row', (r) => r.map((x) => x.textContent).filter((t) => /The crew:/.test(t)).length), 10000);
+  check(crewRows >= 1, 'the xp step lists the crew\'s triggers as ticks: ' + crewRows + ' rows');
+  await shot(g, 'gm-xp-on');
+  await press('End now'); await sleep(800);
+  /* ---- 6. Start again: a close tonight is on the crew, so it asks ---- */
+  await g.evaluate(() => window.B68GmTools.get('aftermath').open()); await sleep(500);
+  const ask = await panel();
+  check(/A close tonight already wrote the crew: Heat 2 → 0, Wanted 0 → 1/.test(ask) && (await g.$$(AFT + ' button:text-is("Same score")')).length === 1 && (await g.$$(AFT + ' button:text-is("A new score")')).length === 1 && (await g.$$(AFT + ' button:has-text("Start the Aftermath")')).length === 0, 'Start asks: Same score or A new score: ' + JSON.stringify(ask.slice(0, 300)));
+  await shot(g, 'gm-start-ask');
+  await g.click(AFT + ' button:text-is("Same score")'); await onStep('payout');
+  check(await g.$eval(AFT + ' label:has-text("Stacks") input', (i) => i.value) === '14', 'Same score takes that close back with its numbers (14 stacks)');
+  await press('Next'); await press('Next'); await onStep('heat');
+  check(/\(written already: the same numbers again\)/.test(await g.$eval(AFT + ' .cc-next-line', (p) => p.textContent)), 'and its heat step will write the same numbers again');
+  await press('Next'); await onStep('status'); await sleep(1500);
+  const same = await crewNow();
+  check(same.heat === 0 && same.wanted === 1, 'Same score and Next: still Heat 0, Wanted 1: ' + JSON.stringify([same.heat, same.wanted]));
   await press('End now'); await sleep(500);
   check(errors.length === 0, 'no console errors or page errors' + (errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''));
   await browser.close();

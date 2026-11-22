@@ -78,19 +78,42 @@
   function crewPair(c) { return isObj(c) ? { heat: int(c.heat, 0, 9, -1), wanted: int(c.wanted, 0, 4, -1) } : null; }
   function okPair(p) { return !!p && p.heat >= 0 && p.wanted >= 0; }
   function samePair(a, b) { return okPair(a) && okPair(b) && a.heat === b.heat && a.wanted === b.wanted; }
+  /* the heat step's inputs a close was written with (exposure, modifiers, the reasons ticked, the house add-on), so Same score and Redo give them back whole */
+  function inputsOf(d) {
+    d = isObj(d) ? d : {};
+    return { x: int(d.exposure, 0, 6, 0), m: int(d.mods, -6, 6, 0), h: reasonsOf(d.heatWhy).join(','), a: d.house === '' || d.house == null ? 0 : clamp(d.house, -HOUSE_MAX, HOUSE_MAX) };
+  }
   function packWritten(w) {
-    return JSON.stringify({ from: { heat: w.from.heat, wanted: w.from.wanted }, to: { heat: w.to.heat, wanted: w.to.wanted }, at: Math.floor(+w.at) || 0 });
+    var o = { from: { heat: w.from.heat, wanted: w.from.wanted }, to: { heat: w.to.heat, wanted: w.to.wanted }, at: Math.floor(+w.at) || 0 };
+    if (isObj(w.inputs)) o.in = inputsOf({ exposure: w.inputs.x, mods: w.inputs.m, heatWhy: w.inputs.h, house: w.inputs.a });
+    return JSON.stringify(o);
   }
   function parseWritten(text) {
     var j = null; try { j = JSON.parse(str(text)); } catch (e) { j = null; }
     if (!isObj(j)) return null;
     var f = crewPair(j.from), t = crewPair(j.to);
-    return okPair(f) && okPair(t) ? { from: f, to: t, at: int(j.at, 0, 8.64e15, 0) } : null;
+    if (!okPair(f) || !okPair(t)) return null;
+    var w = { from: f, to: t, at: int(j.at, 0, 8.64e15, 0) };
+    if (isObj(j.in)) w.inputs = inputsOf({ exposure: j.in.x, mods: j.in.m, heatWhy: j.in.h, house: j.in.a });
+    return w;
   }
-  /* where a new run starts: the crew as it stands, unless this close was written already and the crew still holds what it wrote */
+  /* the run's heat step put back to a written close: the numbers before it and the inputs it was written with, so Next writes its `to` again */
+  function restore(d, w) {
+    d.heat = w.from.heat; d.wanted = w.from.wanted;
+    if (!w.inputs) return d;
+    d.exposure = w.inputs.x; d.mods = w.inputs.m;
+    if (w.inputs.h) d.heatWhy = w.inputs.h; else delete d.heatWhy;
+    if (w.inputs.a) d.house = w.inputs.a; else delete d.house;
+    return d;
+  }
+  /* the earlier close tonight that a fresh Start must ask about: its stored string while the crew still holds what it wrote, else '' (the crew moved since) */
+  function earlier(crewNow, data) {
+    var t = isObj(data) ? str(data.crewWritten) : '', w = parseWritten(t);
+    return w && samePair(crewPair(crewNow), w.to) ? t : '';
+  }
   function seed(crewNow, data) {
-    var w = parseWritten(isObj(data) ? data.crewWritten : ''), now = crewPair(crewNow);
-    if (w && samePair(now, w.to)) return { heat: w.from.heat, wanted: w.from.wanted, written: data.crewWritten };
+    var t = earlier(crewNow, data), w = parseWritten(t), now = crewPair(crewNow);
+    if (w) return { heat: w.from.heat, wanted: w.from.wanted, written: t };
     return { heat: okPair(now) ? now.heat : 0, wanted: okPair(now) ? now.wanted : 0, written: '' };
   }
 
@@ -162,20 +185,27 @@
     if (k === 'xpTicks') { var out = ''; ticksOf(v).forEach(function (t) { var n = out ? out + ',' + t : t; if (n.length <= OPEN_MAX) out = n; }); return out; }
     return undefined;     /* crewWritten is never typed: only onNext writes it */
   }
-  /* start(): d is the new run's data, seeded from the crew sheet; prev is the night's aftermath data from an earlier run, if any */
-  /* A fresh Start is a NEW close by default (a second score the same night must add to the first, never undo it): the run starts from the crew as it
-     stands. When the crew still holds what an earlier close tonight wrote, that close is kept as lastClose, and the heat step offers "Redo that close"
-     (set({ redo: true })), which starts from the numbers before it instead (Gate 2: the advisor's change). */
-  function begin(d, crewNow, prev) {
-    var p = isObj(prev) ? prev : {}, s = seed(crewNow, p), now = crewPair(crewNow);
+  /* start(how): d is the new run's data, seeded from the crew sheet; prev is the night's aftermath data from the run before, if any.
+     When the crew still holds what an earlier close tonight wrote, Start asks (the overseer's ruling at Gate 2):
+       'same'  Same score: that close again, with its numbers and every input it had (its stacks, picks, Open lines ...). Next writes its `to` again.
+       'new'   A new score: a fresh close from the crew as it stands; the earlier one is kept as lastClose, and the heat step's Redo puts it back.
+     With no earlier close, how is ignored and it is a new close. */
+  var NOT_CARRIED = ['pos', 'pending', 'lastClose'];
+  function begin(d, crewNow, prev, how) {
+    var p = isObj(prev) ? prev : {}, t = earlier(crewNow, p), w = parseWritten(t), now = crewPair(crewNow);
+    if (w && how === 'same') {
+      Object.keys(p).forEach(function (k) { if (NOT_CARRIED.indexOf(k) < 0) d[k] = p[k]; });
+      restore(d, w); d.crewWritten = t;
+      return d;
+    }
     d.heat = okPair(now) ? now.heat : 0; d.wanted = okPair(now) ? now.wanted : 0;
-    if (s.written) d.lastClose = s.written;
+    if (w) d.lastClose = t;
     if (str(p.open)) d.open = packOpen(p.open);      /* the night's open lines outlive a restart of the show */
     return d;
   }
   function set(data, patch) {
     var ticks = false, last = parseWritten(data.lastClose);
-    if (patch.redo === true && last) { data.heat = last.from.heat; data.wanted = last.from.wanted; data.crewWritten = data.lastClose; delete data.lastClose; }
+    if (patch.redo === true && last) { restore(data, last); data.crewWritten = data.lastClose; delete data.lastClose; }      /* Redo that close: its numbers and inputs */
     KEYS.forEach(function (k) {
       if (!(k in patch) || k === 'crewWritten' || k === 'lastClose') return;
       data[k] = clean(k, patch[k]);
@@ -221,7 +251,7 @@
     if (id === 'heat') {
       var t = target(d, ctx.heatOutcome), at = ctx.now();
       return Promise.resolve().then(function () { return x.write(t.to); }).then(function () {
-        d.crewWritten = packWritten({ from: t.from, to: t.to, at: at });
+        d.crewWritten = packWritten({ from: t.from, to: t.to, at: at, inputs: { x: d.exposure, m: d.mods, h: d.heatWhy, a: d.house } });
         logOnce(night, writtenLine(t));
       }, function (e) {
         ctx.toast('Could not write heat and Wanted to the crew: ' + (e && e.message || e) + '. Back, then Next, tries again.', true);
@@ -269,7 +299,7 @@
     return r;
   }
   function ruleChip(ui, term) {
-    var wrap = ui.el('div', 'cc-rule'), txt = ui.el('p', 'gm-dim cc-rule-text'), open = false;
+    var txt = ui.el('p', 'gm-dim cc-rule-text'), open = false;
     txt.hidden = true;
     var b = ui.btn('▶ rule: ' + term, function () {
       open = !open; b.setAttribute('aria-expanded', String(open)); txt.hidden = !open;
@@ -283,16 +313,27 @@
       }).then(null, function () { txt.textContent = 'The rules could not load.'; });
     }, 'chip cc-rule-chip');
     b.setAttribute('aria-expanded', 'false');
-    wrap.appendChild(b); wrap.appendChild(txt);
-    return wrap;
+    /* the rule chips' own blue (prep.css --pp-file), outlined: never the accent, which is PANIC's and the Primary's */
+    b.style.background = 'transparent'; b.style.borderColor = 'var(--pp-file, currentColor)'; b.style.color = 'var(--pp-file, inherit)'; b.style.boxShadow = 'none';
+    return { chip: b, text: txt };
+  }
+  /* the line beside Next on the heat step: exactly what Next will write (target()), and the earlier write when it differs */
+  function writeLine(data, heatOutcome) {
+    var d = isObj(data) ? data : {}, t = target(d, heatOutcome), w = parseWritten(d.crewWritten);
+    var s = 'Next writes the crew: Heat ' + t.from.heat + ' → ' + t.to.heat + ' · Wanted ' + t.from.wanted + ' → ' + t.to.wanted;
+    if (!w) return s;
+    if (samePair(w.from, t.from) && samePair(w.to, t.to)) return s + ' (written already: the same numbers again)';
+    return s + ' (written earlier: Heat ' + w.from.heat + ' → ' + w.to.heat + ' · Wanted ' + w.from.wanted + ' → ' + w.to.wanted + ')';
   }
   function paintHeat(form, st, ui) {
-    var d = st.data, on = reasonsOf(d.heatWhy), r = row(ui, 'Heat reasons');
+    var d = st.data, on = reasonsOf(d.heatWhy), r = row(ui, 'Heat reasons'), rule = ruleChip(ui, 'heat');
     REASONS.forEach(function (x) {
       var has = on.indexOf(x.id) >= 0;
       r.appendChild(chip(ui, x.label + ' +' + x.n, has, function () { var next = has ? on.filter(function (i) { return i !== x.id; }) : on.concat([x.id]); ui.set({ heatWhy: next.join(',') }); }));
     });
+    r.appendChild(rule.chip);
     form.appendChild(r);
+    form.appendChild(rule.text);
     var h = row(ui, 'House add-on');
     var lab = ui.el('input'); lab.type = 'text'; lab.className = 'cc-house-why'; lab.placeholder = 'What for (e.g. explosives)'; lab.value = str(d.houseWhy); lab.maxLength = LABEL_MAX; lab.style.width = '16em'; lab.style.flex = 'none';
     lab.setAttribute('aria-label', 'House add-on: what for');
@@ -301,19 +342,15 @@
     n.value = d.house === undefined ? '' : String(d.house); n.setAttribute('aria-label', 'House add-on: + or −');
     n.addEventListener('change', function () { ui.set({ house: n.value }); });
     h.appendChild(lab); h.appendChild(n);
+    h.appendChild(ui.el('span', 'gm-dim cc-mods', 'Modifiers ' + signed(int(d.mods, -6, 6, 0)) + ' (ticks and add-on, at most ±6)'));
     form.appendChild(h);
-    form.appendChild(ui.el('p', 'gm-dim cc-mods', 'Modifiers ' + signed(int(d.mods, -6, 6, 0)) + ' (the reasons ticked and the house add-on, at most ±6).'));
-    form.appendChild(ruleChip(ui, 'heat'));
-    var w = parseWritten(d.crewWritten), t = target(d, ui.heatOutcome), last = w ? null : parseWritten(d.lastClose);
+    var last = parseWritten(d.crewWritten) ? null : parseWritten(d.lastClose);
     if (last) {
       var lr = row(ui, '');
       lr.appendChild(ui.el('span', 'gm-dim cc-last', 'A close earlier tonight wrote Heat ' + last.from.heat + ' → ' + last.to.heat + ', Wanted ' + last.from.wanted + ' → ' + last.to.wanted + '. This is a new close; to correct that one instead:'));
       lr.appendChild(ui.btn('Redo that close', function () { ui.set({ redo: true }); }, 'cc-redo'));
       form.appendChild(lr);
     }
-    form.appendChild(ui.el('p', 'gm-dim cc-write', w
-      ? 'Written to the crew: Heat ' + w.from.heat + ' → ' + w.to.heat + ', Wanted ' + w.from.wanted + ' → ' + w.to.wanted + '. Next sends the same numbers again, never twice the heat.'
-      : 'Next writes the crew: Heat ' + t.from.heat + ' → ' + t.to.heat + ', Wanted ' + t.from.wanted + ' → ' + t.to.wanted + '.'));
   }
   function paintStatus(form, st, ui) {
     var picks = picksOf(st.data.picks), fs = ui.factions();
@@ -339,6 +376,7 @@
     form.appendChild(ui.el('p', 'gm-dim cc-split', splitLine(split(st.data.stacks, st.data.tithe, ui.pcs().length)) + ' Shown here and logged; no sheet is changed.'));
   }
   function paintXp(form, st, ui) {
+    if (!ui.Crews && typeof ui.need === 'function') ui.need('crews');      /* the crews bundle (routes.js): the crew's triggers list once it is in */
     var list = xpList(ui.pcs(), ui.crewType(), ui.Content, ui.Crews), on = ticksOf(st.data.xpTicks);
     var box = ui.el('div', 'cc-xp'); box.style.display = 'grid'; box.style.gap = '4px';
     if (!list.length) box.appendChild(ui.el('p', 'gm-dim', 'No PCs filed.'));
@@ -365,7 +403,7 @@
     REASONS: REASONS, KEYS: KEYS, HOUSE_MAX: HOUSE_MAX, OPEN_MAX: OPEN_MAX,
     reasonsOf: reasonsOf, modsOf: modsOf, target: target, packWritten: packWritten, parseWritten: parseWritten, seed: seed,
     picksOf: picksOf, packPicks: packPicks, pickLines: pickLines, split: split, splitLine: splitLine, openOf: openOf, packOpen: packOpen,
-    xpList: xpList, clean: clean, begin: begin, set: set, quiet: quiet, payload: payload, onNext: onNext, writtenLine: writtenLine,
+    xpList: xpList, clean: clean, earlier: earlier, restore: restore, inputsOf: inputsOf, writeLine: writeLine, begin: begin, set: set, quiet: quiet, payload: payload, onNext: onNext, writtenLine: writtenLine,
     feed: feed, writer: writer, paintHeat: paintHeat, paintStatus: paintStatus, paintTithe: paintTithe, paintXp: paintXp, paintOpen: paintOpen
   };
 });

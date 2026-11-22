@@ -118,7 +118,17 @@
     function night() { return typeof host.night === 'function' ? host.night() : null; }
     /* RK07 (close.crew): { C: B68GmCloseCrew, write, factions, pcs, crewType, ... } while the setting is on, else null, and every branch below is skipped */
     function cc() { var x = typeof host.closeCrew === 'function' ? host.closeCrew() : null; return x && x.C ? x : null; }
-    function keys() { var x = cc(); return x ? DATA_KEYS.concat(x.C.KEYS) : DATA_KEYS; }
+    function ccOn() { return typeof host.closeCrewOn === 'function' && host.closeCrewOn() === true; }      /* the setting is on (its bundle may still be loading) */
+    /* the keys a save keeps. While the setting is on but its bundle is not in yet, every key the data already holds is kept too, so an early save never drops the guard or the Open lines */
+    function keys(data) {
+      var x = cc(); if (x) return DATA_KEYS.concat(x.C.KEYS);
+      if (!ccOn() || !isObj(data)) return DATA_KEYS;
+      return DATA_KEYS.concat(Object.keys(data).filter(function (k) { return DATA_KEYS.indexOf(k) < 0 && k !== 'pos' && k !== 'pending' && k !== '__proto__'; }));
+    }
+    function earlier() {      /* RK07: the close tonight that Start must ask about ('' when none): the setting on, the last run finished, the crew still as it wrote */
+      var x = cc(), n0 = x ? night() : null, a0 = n0 && typeof n0.night === 'function' ? n0.night().aftermath : null;
+      return x && a0 && a0.step === 'done' ? x.C.earlier(typeof host.crew === 'function' ? host.crew() : null, a0.data) : '';
+    }
     function sinceMs() {
       if (typeof host.since === 'function') { var s = host.since(); if (typeof s === 'number' && isFinite(s)) return s; }
       return now() - 8 * 3600 * 1000;
@@ -126,7 +136,7 @@
     function persist() {
       var n = night(); if (!n || !run) return;
       var data = {};
-      keys().forEach(function (k) { if (run.data[k] !== undefined && run.data[k] !== '') data[k] = run.data[k]; });
+      keys(run.data).forEach(function (k) { if (run.data[k] !== undefined && run.data[k] !== '') data[k] = run.data[k]; });
       data.pos = run.i; data.pending = pendingFor(run.done).join(',');
       n.setAfter(run.i >= 0 && run.i < STEPS.length ? STEPS[run.i].id : 'done', data);
     }
@@ -156,13 +166,15 @@
       j = Math.max(0, j);
       return leave().then(function () { run.i = j; return enter(); }).then(function () { return true; });
     }
-    function start() {
+    function start(how) {
       if (!on()) { toast('The Aftermath show is switched off (Menu, Switchboard).', true); return Promise.resolve(false); }
       if (run) return Promise.resolve(false);
+      if (ccOn() && !cc()) { toast('The close is still loading: try Start again in a moment.', true); return Promise.resolve(false); }      /* RK07: never a close without its guard */
+      if (earlier() && how !== 'same' && how !== 'new') { toast('A close tonight already wrote this crew: choose Same score or A new score.', true); return Promise.resolve(false); }
       var c = typeof host.crew === 'function' ? host.crew() : null, d = {};
       if (isObj(c)) { d.heat = int(c.heat, 0, 9, 0); d.wanted = int(c.wanted, 0, 4, 0); }
       var x = cc(), n0 = x ? night() : null, a0 = n0 && typeof n0.night === 'function' ? n0.night().aftermath : null;
-      if (x) x.C.begin(d, c, a0 ? a0.data : null);      /* RK07: a close already written to this crew starts again from the numbers before it */
+      if (x) x.C.begin(d, c, a0 ? a0.data : null, how);      /* RK07: Same score takes that close back whole; a new score keeps it as lastClose */
       run = { i: -1, startedAt: now(), seq: 0, sentAt: 0, done: {}, data: d, picks: {}, msg: '' };
       var n = night(); if (n && n.phase() !== 'after') n.enter('after');
       return Promise.resolve(host.layer('band.phase', 'after')).then(function () { return host.layer('scene.mode', 'aftermath'); }).then(function () { return go(0); }, fail);
@@ -180,7 +192,7 @@
       if (!run) return Promise.resolve(false);
       return leave().then(function () { return host.clearShow({ layers: false }); }).then(function () { return host.layer('scene.mode', null); }).then(function () {
         var pending = pendingFor(run.done), n = night();
-        if (n) { var data = {}; keys().forEach(function (k) { if (run.data[k] !== undefined && run.data[k] !== '') data[k] = run.data[k]; }); data.pending = pending.join(','); data.pos = STEPS.length; n.setAfter('done', data); }
+        if (n) { var data = {}; keys(run.data).forEach(function (k) { if (run.data[k] !== undefined && run.data[k] !== '') data[k] = run.data[k]; }); data.pending = pending.join(','); data.pos = STEPS.length; n.setAfter('done', data); }
         if (pending.length) toast('Not done, filed for the Debrief: ' + pending.join(', ') + '.');
         run = null;
         return true;
@@ -208,21 +220,23 @@
       if (run) return true;
       var n = night(), a = n && typeof n.night === 'function' ? n.night().aftermath : null;
       if (!a || !isObj(a.data) || a.step === '' || a.step === 'done' || stepIndex(a.step) < 0) return false;
-      var d = {}; keys().forEach(function (k) { if (a.data[k] !== undefined) d[k] = a.data[k]; });
+      var d = {}; keys(a.data).forEach(function (k) { if (a.data[k] !== undefined) d[k] = a.data[k]; });
       var done = {}; STEPS.forEach(function (s, i) { if (i < stepIndex(a.step)) done[s.id] = true; });
       var pend = str(a.data.pending).split(',').filter(Boolean); pend.forEach(function (id) { delete done[id]; });
       run = { i: stepIndex(a.step), startedAt: now(), seq: 0, sentAt: 0, done: done, data: d, picks: {}, msg: '' };
       return true;
     }
     function state() {
-      var open = !!run, i = open ? run.i : -1;
-      return {
+      var open = !!run, i = open ? run.i : -1, ew = open ? '' : earlier();
+      var st = {
         enabled: on(), open: open, i: i, step: i >= 0 && i < STEPS.length ? STEPS[i] : null, steps: STEPS,
         done: open ? JSON.parse(JSON.stringify(run.done)) : {}, pending: open ? pendingFor(run.done) : [],
         data: open ? JSON.parse(JSON.stringify(run.data)) : {}, msg: open ? run.msg : '', secsTotal: SECS_TOTAL,
         credits: open ? npcIds() : [], outcome: open ? heatOutcome(run.data.heat, run.data.exposure, run.data.mods) : null,
         sentAt: open ? run.sentAt : 0, startedAt: open ? run.startedAt : 0
       };
+      if (ew) st.earlier = cc().C.parseWritten(ew);      /* RK07: only while the setting is on and a close tonight is on the crew */
+      return st;
     }
     return { start: start, next: next, back: back, skip: skip, go: go, finish: finish, stop: finish, set: set, pick: pick, tick: tick, resume: resume, state: state, now: now };
   }
@@ -277,6 +291,7 @@
       },
       rules: rulesText,
       closeCrew: closeCrew,
+      closeCrewOn: function () { var f = feed(); return !!(f && W.B68Features && W.B68Features.valueOf(f.doc, 'close.crew')); },
       toast: function (m, bad) { var f = feed(); if (f && typeof f.toast === 'function') f.toast(m, bad); else if (W.console) W.console.log(m); }
     });
     return ctl;
@@ -287,8 +302,10 @@
   /* RK07: what the close's extras draw with, and how a change of theirs goes back through the controller and repaints this box */
   function ccUi(x, c, box) {
     return { el: el, btn: btn, heatOutcome: heatOutcome, rules: W.B68Rules || null, factions: x.factions, crewType: x.crewType, Content: x.Content, Crews: x.Crews,
-      pcs: function () { return typeof x.pcs === 'function' ? x.pcs() : []; }, set: function (p) { return c.set(p).then(function () { paint(box); }); } };
+      pcs: function () { return typeof x.pcs === 'function' ? x.pcs() : []; }, set: function (p) { return c.set(p).then(function () { paint(box); }); },
+      need: function (name) { if (ccAsked[name] || !W.B68Load || typeof W.B68Load.need !== 'function') return; ccAsked[name] = true; W.B68Load.need(name).then(function () { paint(liveBox(box)); }, function () { ccAsked[name] = false; }); } };
   }
+  var ccAsked = {};
   function mmss(s) { return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
 
   /* the 10 s tick lives on the box it was started for (box.__aftT), so a second box (the inline copy beside the right-edge one) never loses the first one's interval */
@@ -329,6 +346,16 @@
     if (!st.open) {
       /* Start enters the Aftermath; the page follows the night to its place, which binds the show inline and empties this right-edge copy (N1b):
          the step is then painted into the copy that is live */
+      var ew = st.earlier;      /* RK07 (close.crew): a close tonight already wrote this crew, so Start asks which this is (the overseer's ruling at Gate 2) */
+      if (ew) {
+        box.appendChild(el('p', 'cc-earlier', 'A close tonight already wrote the crew: Heat ' + ew.from.heat + ' → ' + ew.to.heat + ', Wanted ' + ew.from.wanted + ' → ' + ew.to.wanted + '.'));
+        var two = el('div', 'seg cc-start');
+        two.appendChild(btn('Same score', function () { c.resume(); c.start('same').then(function () { paint(liveBox(box)); }); }, 'primary'));
+        two.appendChild(btn('A new score', function () { c.resume(); c.start('new').then(function () { paint(liveBox(box)); }); }));
+        box.appendChild(two);
+        box.appendChild(el('p', 'gm-dim', 'Same score: that close again, with its numbers (the show was restarted). A new score: a second close on top of it.'));
+        return;
+      }
       var go = btn('Start the Aftermath', function () { c.resume(); c.start().then(function () { paint(liveBox(box)); }); }, 'primary');
       box.appendChild(go);
       return;
@@ -380,7 +407,6 @@
         });
       }
       box.appendChild(form);
-      if (ui) X.C.paintOpen(box, st, ui);
       if (st.msg) box.appendChild(el('p', 'gm-warn', st.msg));
       var aid = el('p', 'gm-dim gm-aft-rules'); box.appendChild(aid);
       rulesText(s.term).then(function (t) { aid.textContent = t ? 'From the rules: ' + t : ''; });
@@ -391,6 +417,11 @@
     row.appendChild(btn(st.i === st.steps.length - 1 ? 'Finish' : 'Next', function () { c.next().then(function () { paint(box); }); }, 'primary'));
     row.appendChild(btn('End now', function () { c.finish().then(function () { paint(box); }); }));
     box.appendChild(row);
+    if (ui) {      /* RK07: what Next writes sits right above Next, at full contrast; the rules note and the Open lines go below the buttons, so Next stays in view */
+      if (s.id === 'heat') { var nl = el('p', 'cc-next-line', X.C.writeLine(st.data, heatOutcome)); nl.style.fontWeight = '700'; nl.style.margin = '4px 0'; box.insertBefore(nl, row); }
+      if (aid) box.appendChild(aid);
+      X.C.paintOpen(box, st, ui);
+    }
     if (st.pending.length) box.appendChild(el('p', 'gm-dim', 'Not done yet (goes to the Debrief if left): ' + st.pending.join(', ') + '.'));
     keep();
   }
