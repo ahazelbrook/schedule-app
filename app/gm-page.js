@@ -222,6 +222,7 @@
   P.shadeOf = shadeOf;
   P.shadeOn = function () { return shadeOf(S && S.doc); };
   P.shadeOpt = function () { return P.shadeOn() === true ? { shade: true } : {}; };
+  P.rkWant = function (on) { return [['night.flow', 'night-flow'], ['close.crew', 'close-crew'], ['room.key', 'room-key'], ['room.tables', 'room-tables'], ['gm.glance', 'gm-glance'], ['map.fit', 'map-fit']].filter(function (x) { return on(x[0]); }).map(function (x) { return x[1]; }); };      /* RK01: the room key build's bundles, one per setting, wanted only while the setting is on; [] with all off */
   /* a copy of the options without `shade` (the first step down every size ladder) */
   function flat(o) { var c = Object.assign({}, o); delete c.shade; return c; }
   P.flat = flat;
@@ -1111,7 +1112,8 @@
      -> [{ part, missing: [path] }]. A downtime part is laid over the built-in tables (app/downtime-tables.js, the third name), so it is
      checked laid over them: check(T, part's T). A part the pack lacks, a module or base tables not loaded and a check that throws say
      nothing. */
-  var CHECKED = [['console', 'B68GmConsole'], ['location', 'B68GmLocation'], ['npc', 'B68GmNpc'], ['scenes', 'B68GmScenes'], ['score', 'B68GmScore'], ['downtime', 'B68GmDowntime', 'B68DowntimeTables']];
+  var CHECKED = [['console', 'B68GmConsole'], ['location', 'B68GmLocation'], ['npc', 'B68GmNpc'], ['scenes', 'B68GmScenes'], ['score', 'B68GmScore'], ['downtime', 'B68GmDowntime', 'B68DowntimeTables'],
+    ['rooms', 'B68GmRoomTables']];      /* RK01: the rooms part is { v: 1, T: { rooms, roles, aliases } }; B68GmRoomTables (room-tables bundle) checks T, and says nothing while that bundle is not loaded */
   function packWarnings(mods, parts) {
     var out = [];
     CHECKED.forEach(function (c) {
@@ -1686,7 +1688,7 @@
       '<p class="gm-up"><button type="button" class="btn ' + (losses.length ? 'bad' : 'primary') + '" data-gm="upload"' + (v.ok ? '' : ' disabled') + '>' + (losses.length ? 'Upload anyway' : 'Upload ' + v.parts.length + ' part' + (v.parts.length === 1 ? '' : 's')) + '</button> <progress id="gm-prog" max="' + Math.max(1, v.parts.length) + '" value="0" hidden></progress> <span id="gm-upmsg" class="gm-dim" role="status"></span></p>';
   }
   /* the pack check as a list: a warning, never an error (the rollers use a neutral word for a table the pack lacks) */
-  function modMap() { return { B68GmConsole: W.B68GmConsole, B68GmLocation: W.B68GmLocation, B68GmNpc: W.B68GmNpc, B68GmScenes: W.B68GmScenes, B68GmScore: W.B68GmScore, B68GmDowntime: W.B68GmDowntime, B68DowntimeTables: W.B68DowntimeTables }; }
+  function modMap() { return { B68GmConsole: W.B68GmConsole, B68GmLocation: W.B68GmLocation, B68GmNpc: W.B68GmNpc, B68GmScenes: W.B68GmScenes, B68GmScore: W.B68GmScore, B68GmDowntime: W.B68GmDowntime, B68DowntimeTables: W.B68DowntimeTables, B68GmRoomTables: W.B68GmRoomTables }; }
   function packWarnHtml(warns) {
     if (!warns.length) return '';
     var n = warns.reduce(function (k, w) { return k + w.missing.length; }, 0);
@@ -2692,6 +2694,7 @@
     if (S.status === 'ready' && (b09On('kit.stage') || S.ks14On || (isObj(AM.doc) && ks14Left()))) { S.ks14On = b09On('kit.stage'); pcStatusSync(); }      /* KS14 (kit.stage): the faces follow the setting, on, and once more when it goes off (sent only on a change) */
     if (W.B68Kit && S.status === 'ready') W.B68Kit.set('desk', !!(W.B68Features && W.B68Features.valueOf(S.doc, 'kit.desk')));      /* the kit and stage build (KS01.2): data-kit="desk" follows the setting, at once (ui/kit-flag.js) */
     if (S.status === 'ready' && W.B68Features) { var pOn = !!W.B68Features.valueOf(S.doc, 'blade.pitches'); if (W.B68Pitches) W.B68Pitches.set(gmApi(), pOn); else if (pOn && W.B68Load) W.B68Load.need('blade-pitches').then(function () { if (W.B68Pitches && S && S.status === 'ready') W.B68Pitches.set(gmApi(), !!W.B68Features.valueOf(S.doc, 'blade.pitches')); }, function () {}); }      /* blade.pitches (KS18): the blade-pitches bundle while it is on; B68Pitches (gm/kit/blade.js) adds the pitch fields to the tick, and takes them off when it turns off */
+    if (S.status === 'ready' && W.B68Features && W.B68Load) P.rkWant(function (id) { return !!W.B68Features.valueOf(S.doc, id); }).forEach(function (n) { var me = S; if (!me.rkAsked) me.rkAsked = {}; if (!me.rkAsked[n]) { me.rkAsked[n] = true; W.B68Load.need(n).then(function () {}, function () { me.rkAsked[n] = false; }); } });      /* RK01 (night.flow, close.crew, room.key, room.tables, gm.glance): each bundle is fetched once, only while its setting is on; the stubs do nothing until their tickets fill them */
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();

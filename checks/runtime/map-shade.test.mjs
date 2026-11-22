@@ -72,18 +72,19 @@ test('map.shade: a GM setting in the Maps stage, default off, Saturday "try", la
   assert.ok(!('map.shade' in F.publishMap({ features: { 'map.shade': true } }, {})), 'never copied to the campaign document');
   assert.deepEqual(G.IDS, { fill: 'map.fill', people: 'map.people', lights: 'map.lights', room: 'map.room' }, 'not one of the scene flags: the map-scene bundle is not fetched for it');
 });
-test('the Settings row is the last (Flat / Solid): every row of ' + TODAY + ' keeps its index', () => {
-  const keys = SET.ROWS.map((r) => r.key), last = SET.ROWS[SET.ROWS.length - 1];
+test('the Settings row is the last of its build (Flat / Solid), before the eight of the room key build (RK01): every row of ' + TODAY + ' keeps its index', () => {
+  const RK = 8;      /* RK01: stamp.brief, night.flow, close.crew, room.key, room.tables, gm.glance, phone.find and map.fit come after it */
+  const keys = SET.ROWS.map((r) => r.key), last = SET.ROWS[SET.ROWS.length - 1 - RK];
   assert.equal(last.key, 'map.shade'); assert.equal(last.label, 'Furniture depth');
   let state = {}; const ctl = SET.create({ F, doc: () => state, patch: (p) => { state = { features: Object.assign({}, state.features, p.features) }; return true; }, campaign: () => ({ features: {} }), publish: () => Promise.resolve(true), toast() {}, redraw() {} });
-  const row = ctl.rows().pop(); assert.equal(row.key, 'map.shade'); assert.equal(row.value, false); assert.deepEqual(row.options.map((o) => [o.v, o.label]), [[false, 'Flat'], [true, 'Solid']]);
+  const rows7 = ctl.rows(), row = rows7[rows7.length - 1 - RK]; assert.equal(row.key, 'map.shade'); assert.equal(row.value, false); assert.deepEqual(row.options.map((o) => [o.v, o.label]), [[false, 'Flat'], [true, 'Solid']]);
   assert.equal(ctl.choose('map.shade', true), true); assert.equal(state.features['map.shade'], true, 'Solid writes the GM state');
   const old = atCommit(TODAY, 'app/gm/settings.js');
   if (!old) { console.log('  (skipped the comparison: git cannot show ' + TODAY + ')'); return; }
-  assert.deepEqual(keys.slice(0, -1), old.ROWS.map((r) => r.key), 'the rows of today, in their places');
-  assert.deepEqual(SET.ROWS.slice(0, -1), old.ROWS, 'and each row as it was');
+  assert.deepEqual(keys.slice(0, -1 - RK), old.ROWS.map((r) => r.key), 'the rows of today, in their places');
+  assert.deepEqual(SET.ROWS.slice(0, -1 - RK), old.ROWS, 'and each row as it was');
   const oldF = atCommit(TODAY, 'app/features.js');
-  assert.deepEqual(F.list().map((x) => x.id).slice(0, -1), oldF.list().map((x) => x.id), 'the registry: map.shade appended, nothing else moved');
+  assert.deepEqual(F.list().map((x) => x.id).slice(0, -1 - RK), oldF.list().map((x) => x.id), 'the registry: map.shade appended, nothing else moved');
 });
 test('the kit-off exemption names the new row', () => {
   const src = fs.readFileSync(path.join(ROOT, 'scripts', 'kit-fingerprint.mjs'), 'utf8');

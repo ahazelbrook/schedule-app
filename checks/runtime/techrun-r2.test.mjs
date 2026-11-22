@@ -64,7 +64,8 @@ await test('T9: display.band is a display SETTING that starts off (absent reads 
 await test('T9: the iPad view Settings has a Band row (Off / On) beside Scenes, Music, Phones and Mirror, and choosing On writes the setting', async () => {
   const rows = Set_.ROWS.map((r) => r.key);
   assert.deepEqual(rows, ['fx.off', 'room.music', 'phoneCards', 'mirror', 'display.band', 'stage.players', 'kit.desk', 'kit.stage', 'kit.phone', 'night.who', 'blade.pitches',
-    'map.fill', 'map.people', 'map.lights', 'map.room', 'phone.handouts', 'map.shade']);      /* KS01.1: the kit's five after Band; MK1: the four map rows after them; IP2: Players' screen after Band (no day-0 row moves); IP4: Handouts on phones; IP7: Furniture depth last */
+    'map.fill', 'map.people', 'map.lights', 'map.room', 'phone.handouts', 'map.shade',
+    'stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance', 'phone.find', 'map.fit']);      /* KS01.1: the kit's five after Band; MK1: the four map rows after them; IP2: Players' screen after Band (no day-0 row moves); IP4: Handouts on phones; IP7: Furniture depth; RK01: the room key build's eight last */
   let state = {}, published = null;
   const ctl = Set_.create({ F, doc: () => state, patch: (p) => { state = Object.assign({}, state, { features: Object.assign({}, state.features, p.features) }); return true; },
     campaign: () => ({ features: {} }), publish: (m) => { published = m; return Promise.resolve(true); }, toast() {}, redraw() {} });

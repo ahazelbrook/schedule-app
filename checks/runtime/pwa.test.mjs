@@ -198,7 +198,9 @@ await test('routes.js: index.html loads exactly the core bundle; every other bun
   eq(W.B68_BUILD, 'dev', "the committed build is 'dev' (scripts/deploy.sh stamps it for the upload)");
   eq(Object.keys(L.BUNDLES), ['core', 'figures', 'table', 'print', 'crews', 'gm', 'display', 'commend', 'debrief', 'quiet', 'board', 'claims', 'absent', 'lair', 'lookbook',
     'kit-ui', 'kit-desk', 'kit-stage', 'kit-phone', 'night-who', 'blade-pitches', 'kit-lookbook', 'map-scene',
-    'handouts', 'gm-handouts', 'prep-actions'], 'the bundles');      /* IP4: phone.handouts' two bundles */
+    'handouts', 'gm-handouts',      /* IP4: phone.handouts' two bundles */
+    'night-flow', 'close-crew', 'room-key', 'room-tables', 'gm-glance', 'phone-find', 'map-fit',      /* RK01: one per room key setting, before prep-actions (which stays last) */
+    'prep-actions'], 'the bundles');
   eq(L.BUNDLES.figures, ['figures/figure-kit.js', 'figures/cast.js'], 'the figures bundle is the kit and the cast canon');
   ok(!HTML.includes('figure-kit.js') && !HTML.includes('figures/cast.js'), 'index.html does not load the figure kit (first paint draws no figure)');
   eq(htmlTags(), L.BUNDLES.core, "index.html's stylesheet and script tags are BUNDLES.core, in order");
@@ -434,6 +436,88 @@ await test('layers: index.html has EXACTLY one id-less <style> before routes.js,
   }
   const inline = [...before.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n');
   ok(!/createElement\(\s*['"]style['"]/.test(inline), 'index.html\'s inline scripts build no style');
+});
+
+/* ---------- the room key build (RK01): one bundle per setting, so with every setting off a page fetches what it did at 0ac15a50 ---------- */
+const RK = {
+  'night-flow': ['gm/night-ticks.js', 'gm/blade-chips.js', 'gm/threat-room.js', 'gm/public-lines.js'],
+  'close-crew': ['gm/close-crew.js'],
+  'room-key': ['gm/room-key.css', 'gm/room-things.js', 'gm/room-state.js', 'gm/room-zoom.js', 'gm/room-show.js', 'gm/room-mark.js'],
+  'room-tables': ['gm/room-tables.js', 'gm/room-roll.js', 'gm/room-rolled.js', 'gm/room-swap.js', 'gm/room-blade.js', 'gm/room-people.js', 'gm/room-keep.js'],
+  'gm-glance': ['gm/glance.css', 'gm/glance-crew.js', 'gm/glance-now.js', 'gm/quick-rules.js', 'gm/loud.js', 'gm/npc-find.js'],
+  'phone-find': ['sheet/ability-find.js'],
+  'map-fit': ['gm/map-fit.js', 'gm/svg-slim.js'],
+};
+const RK_FILES = new Set(Object.values(RK).flat());
+const SHEETS = ['tracker.css', 'schedule.css', 'rules.css', 'cast.css'];
+
+await test('room key bundles: one per setting, each file in exactly one of them and in no old bundle or the core; room-tables lists room-key first; the two sheets sit after the old ones and before the kit\'s', async () => {
+  const L = routes().B68Load;
+  for (const [name, list] of Object.entries(RK)) eq(L.BUNDLES[name], list, 'bundle ' + name);
+  for (const [name, list] of Object.entries(L.BUNDLES)) if (!(name in RK)) eq(list.filter((f) => RK_FILES.has(f)), [], name + ': a room key file in another bundle is a new request with every setting off');
+  eq(Object.values(RK).flat().length, RK_FILES.size, 'no file is in two room key bundles');
+  for (const f of RK_FILES) ok(fs.existsSync(path.join(APP, f)), f + ' exists');
+  const order = L.CSS_ORDER, at = (f) => order.indexOf(f);
+  ok(at('gm/room-key.css') > at('gm/prep-actions.css') && at('gm/glance.css') > at('gm/room-key.css') && at('gm/glance.css') < at('ui/tokens.css'), 'both sheets: after every old one, before the kit\'s');
+  ok(!/room-key|glance|night-flow|close-crew|ability-find/.test(fs.readFileSync(path.join(APP, 'sw.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')), 'sw.js names none of them: SHELL learns them from routes.js');
+  for (const f of RK_FILES) ok(L.files().includes(f), f + ' is in the service worker\'s shell (B68Load.files())');
+});
+
+await test('room key bundles: need() of one fetches only its own files; room-tables brings room-key first; need() of gm, display, table or lookbook adds none of them', async () => {
+  const doc = fakeDoc(SHEETS), L = routes(ROUTES, doc).B68Load;
+  const p = L.need('room-tables');
+  const o = doc.order(), kitUi = L.BUNDLES['kit-ui'];
+  eq(o.filter((x) => RK_FILES.has(x)), RK['room-key'].concat(RK['room-tables']), 'room-key (its sheet, then its scripts), then the seven of room-tables');
+  eq(o.filter((x) => kitUi.includes(x)).length, kitUi.length, 'room-key brought kit-ui in first (the zoom card uses B68Ui on the old desk too)');
+  ok(o.indexOf('ui/ui.js') < o.indexOf('gm/room-things.js'), 'the kit-ui scripts come before the room-key scripts');
+  doc.settle(); eq(await p, 'room-tables'); ok(L.done('room-key') && L.done('room-tables') && !L.done('gm-glance'), 'both done, nothing else');
+  const n = doc.added().length; await L.need('room-key'); eq(doc.added().length, n, 'room-key after room-tables: nothing more to fetch');
+  for (const name of ['night-flow', 'close-crew', 'gm-glance', 'phone-find', 'map-fit']) {
+    const d = fakeDoc(SHEETS), L1 = routes(ROUTES, d).B68Load; L1.need(name);
+    eq(d.order().filter((x) => RK_FILES.has(x)), RK[name], name + ' fetches its own files and no other room key file');
+  }
+  const dn = fakeDoc(SHEETS), Ln = routes(ROUTES, dn).B68Load; Ln.need('night-flow');
+  eq(dn.order().filter((x) => Ln.BUNDLES['prep-actions'].includes(x)), Ln.BUNDLES['prep-actions'], 'night-flow brings prep-actions (it loads only on demand)');
+  const dg = fakeDoc(SHEETS), Lg = routes(ROUTES, dg).B68Load; Lg.need('gm-glance');
+  eq(dg.order().filter((x) => Lg.BUNDLES['kit-ui'].includes(x) || Lg.BUNDLES['prep-actions'].includes(x)), [], 'gm-glance, close-crew and phone-find bring no dependency');
+  const d2 = fakeDoc(SHEETS), L2 = routes(ROUTES, d2).B68Load;
+  L2.need('gm'); L2.need('display'); L2.need('lookbook'); L2.need('table'); L2.need('handouts'); L2.need('kit-desk');
+  eq(d2.order().filter((x) => RK_FILES.has(x)), [], 'the old bundles and the kit fetch no room key file');
+});
+
+await test('room key bundles: the two sheets are never layered (they hold kit-scoped rules); an old sheet still is', async () => {
+  const doc = layerDoc(SHEETS), L = routes(ROUTES, doc).B68Load;
+  const p = L.layerOld(); doc.settle(); await p;
+  L.need('room-key'); L.need('gm-glance'); L.need('handouts');
+  const o = doc.order();
+  ok(o.includes('gm/room-key.css') && o.includes('gm/glance.css') && !o.includes('@gm/room-key.css') && !o.includes('@gm/glance.css'), 'the two sheets are <link>s, not layer(old) imports: ' + o.join(' '));
+  ok(o.includes('@sheet/handouts.css'), 'while an old sheet (handouts.css) is an import in layer(old)');
+  ok(o.indexOf('gm/room-key.css') > o.indexOf('@sheet/handouts.css') && o.indexOf('gm/glance.css') > o.indexOf('gm/room-key.css'), 'in cascade order');
+});
+
+await test('room key bundles: P.rkWant (gm-page.js renderBar) names the bundles whose setting is on, in order, and none with all seven off; stamp.brief and phone.find ask for nothing here', async () => {
+  const { createRequire } = await import('node:module');
+  const P = createRequire(import.meta.url)(path.join(APP, 'gm-page.js'))._pure;
+  ok(P && typeof P.rkWant === 'function', 'gm-page.js exports P.rkWant');
+  const ids = ['stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance', 'phone.find', 'map.fit'];
+  eq(P.rkWant(() => false), [], 'all off: no bundle');
+  eq(P.rkWant((id) => ids.includes(id)), ['night-flow', 'close-crew', 'room-key', 'room-tables', 'gm-glance', 'map-fit'], 'all on: the six the GM page loads (stamp.brief has no file; phone.find is the phone\'s, through boot.js)');
+  for (const [id, want] of [['night.flow', ['night-flow']], ['close.crew', ['close-crew']], ['room.key', ['room-key']], ['room.tables', ['room-tables']], ['gm.glance', ['gm-glance']], ['map.fit', ['map-fit']], ['stamp.brief', []], ['phone.find', []]]) eq(P.rkWant((x) => x === id), want, id);
+  const L = routes().B68Load;
+  for (const n of P.rkWant(() => true)) ok(Object.prototype.hasOwnProperty.call(L.BUNDLES, n), n + ' is a bundle in routes.js');
+  const src = fs.readFileSync(path.join(APP, 'gm-page.js'), 'utf8');
+  eq([...src.matchAll(/P\.rkWant\(/g)].length, 1, 'renderBar is the one caller');
+  const rooms = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'rooms-pack.json'), 'utf8'));
+  ok(rooms.v === 1 && rooms.T && rooms.T.rooms && rooms.T.roles && rooms.T.aliases, 'the rooms fixture is { v: 1, T: { rooms, roles, aliases } }');
+  const RT = createRequire(import.meta.url)(path.join(APP, 'gm', 'room-tables.js')), called = [];
+  const mods = { B68GmRoomTables: { check(T) { called.push(T); return ['rooms.pelican bar.say']; } } };
+  eq(P.packWarnings(mods, { rooms }), [{ part: 'rooms', missing: ['rooms.pelican bar.say'] }], 'the CHECKED loop calls B68GmRoomTables.check for a rooms part');
+  ok(called.length === 1 && called[0] === rooms.T, 'with the T of the part, so the part is { v, T }');
+  eq(P.packWarnings({ B68GmRoomTables: RT }, { rooms }), [], 'the stub finds nothing missing');
+  eq(P.packWarnings({}, { rooms }), [], 'and a page where the room-tables bundle is not loaded says nothing');
+  ok(/B68GmRoomTables: W.B68GmRoomTables/.test(fs.readFileSync(path.join(APP, 'gm-page.js'), 'utf8')), 'modMap hands the loaded module to the loop');
+  const boot = fs.readFileSync(path.join(APP, 'boot.js'), 'utf8');
+  ok(/\['phone\.find', 'phone-find', 'B68AbilityFind'\]/.test(boot), 'boot.js asks for phone-find while phone.find is on (the between list, a player only), and calls stop() when it goes off');
 });
 
 /* the files that only the GM's laptop and the table iPad load: in the gm or display bundle and not in core or table */

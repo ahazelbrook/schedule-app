@@ -1,0 +1,3 @@
+/* gm/room-key.css: the room key's own classes (room.key). Registered as an empty stub by RK01 of the room key build; RK09 fills it.
+   In the room-key bundle, fetched only while its setting is on. Old-desk rules go here, scoped to this build's own classes; kit rules are scoped under
+   :root[data-kit~="desk"], unlayered, with no !important. */
