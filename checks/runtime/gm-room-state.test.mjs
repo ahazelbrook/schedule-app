@@ -3,7 +3,9 @@
 // once) and mergePatch (the saver merges what is pending), and the server's deepMerge (functions/_lib/http.js). INVENTED data only (the
 // Pelican Rooms; GM-ONLY- markers). The shape; rollKeys; same-named rooms (#1, #2); one rollKey a patch; the caps with the oldest dropped;
 // a table change dropping gone slugs with the note; two quick writes never losing one (and a random sweep of page, saver and server);
-// nothing written while off; an unknown v left alone; Deploy 41's (1ad1ba3) merge code keeping the key. No browser, no network.
+// nothing written while off; an unknown v left alone; Deploy 41's (1ad1ba3) merge code keeping the key. Two devices (the review's S1,
+// S1b, S2: the record of nulls dies when the saver is idle; part rides on every write); unknown fields kept; the byte cap dropping whole
+// rolls and clearRoll; Keep by slot; reroll counts and collapsed swap chains; Blade people as { line, role? }. No browser, no network.
 //   node checks/runtime/gm-room-state.test.mjs
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -32,7 +34,7 @@ function rig(o = {}) {
   const r = { on: o.on !== false, part: o.part == null ? 'p1' : o.part, t: T0, doc: clone(o.doc || {}), pending: null, patches: [], toasts: [], refuse: false };
   r.ref = clone(r.doc); r.server = clone(r.doc);
   r.host = {
-    on: () => r.on, doc: () => r.doc, now: () => (r.t += 1000), part: () => r.part, toast: (t) => r.toasts.push(t),
+    on: () => r.on, doc: () => r.doc, now: () => (r.t += 1000), part: () => r.part, toast: (t) => r.toasts.push(t), busy: () => !!r.pending,
     patch: (p) => { if (r.refuse) return false; r.patches.push(clone(p)); r.doc = PP.applyPatch(r.doc, p); r.ref = PP.applyPatch(r.ref, p); r.pending = r.pending ? PP.mergePatch(r.pending, p) : clone(p); return true; },
   };
   r.rs = RS.create(r.host);
@@ -47,9 +49,9 @@ function test(name, fn) { try { fn(); passed++; console.log('PASS ' + name); } c
 test('gm-room-state: loads under Node and as a plain script (window.B68GmRoomState), no longer a stub; the contract is written at the top', () => {
   assert.equal(RS.stub, undefined);
   assert.equal(RS.V, 1); assert.equal(RS.NOTE, 'tables changed');
-  assert.deepEqual(RS.CAPS, { rolls: 24, rooms: 40, blades: 12, extra: 10, swaps: 10, marks: 20, kept: 12, bytes: 48 * 1024, tomb: 4000 });
+  assert.deepEqual(RS.CAPS, { rolls: 24, rooms: 40, blades: 12, extra: 10, swaps: 10, marks: 20, kept: 12, rr: 999, bytes: 48 * 1024, tomb: 4000 });
   const api = Object.keys(RS.create({})).sort();
-  assert.deepEqual(api, ['addExtra', 'addKept', 'clear', 'on', 'prune', 'read', 'roll', 'setBlade', 'setExtra', 'setMark', 'setSay', 'setSwap', 'stale'].sort());
+  assert.deepEqual(api, ['addExtra', 'addKept', 'clear', 'clearRoll', 'on', 'prune', 'read', 'reroll', 'roll', 'setBlade', 'setExtra', 'setMark', 'setSay', 'setSwap', 'stale'].sort());
   const win = {}; win.self = win; win.window = win;
   vm.runInNewContext(fs.readFileSync(path.join(ROOT, FILE), 'utf8'), win, { filename: FILE });
   assert.equal(typeof win.B68GmRoomState.create, 'function');
@@ -63,16 +65,21 @@ test('the shape: one write of each kind gives exactly the contract\'s document; 
   assert.ok(rs.setSwap(SEED, s1, 'velvet-rope', 'grand-piano'));
   assert.ok(rs.addExtra(SEED, s1, 'stage-curtain'));
   assert.ok(rs.setSay(SEED, s1, 2));
-  assert.ok(rs.addKept(SEED, s1, 'npc_mabel_quist_k3x9'));
-  assert.ok(rs.setBlade(SEED, s2, { say: 'GM-ONLY-blade: the lights flicker twice.', things: [{ name: 'A tin whistle', line: 'dented', look: 'GM-ONLY-look: a name scratched on it', tags: ['clue', 'bogus'] }], people: ['"Evening, all."'] }));
-  assert.deepEqual(r.doc, { roomstate: { v: 1, at: iso(6), keys: { [String(SEED)]: { part: 'p1', at: iso(6), rooms: {
-    'showroom#1': { marks: { 'brass-umbrella-stand': 'empty' }, swaps: { 'velvet-rope': 'grand-piano' }, extra: { 'stage-curtain': iso(3) }, say: 2, kept: { npc_mabel_quist_k3x9: iso(5) } },
-    'showroom#2': { blade: { at: iso(6), say: 'GM-ONLY-blade: the lights flicker twice.', people: ['"Evening, all."'],
+  assert.ok(rs.addKept(SEED, s1, 'npc_mabel_quist_k3x9', 'p1'));
+  assert.ok(rs.setBlade(SEED, s2, { say: 'GM-ONLY-blade: the lights flicker twice.', things: [{ name: 'A tin whistle', line: 'dented', look: 'GM-ONLY-look: a name scratched on it', tags: ['clue', 'bogus'] }],
+    people: [{ line: '"Evening, all."', role: 'waiter' }, '"A bare line."', { line: '   ' }, { line: '"Bad role."', role: 'Not A Role' }] }));
+  const doc6 = clone(r.doc);      /* the shape after the six writes; the reroll is checked after it */
+  assert.ok(rs.reroll(SEED, s2));
+  assert.deepEqual(doc6, { roomstate: { v: 1, at: iso(6), keys: { [String(SEED)]: { part: 'p1', at: iso(6), rooms: {
+    'showroom#1': { marks: { 'brass-umbrella-stand': 'empty' }, swaps: { 'velvet-rope': 'grand-piano' }, extra: { 'stage-curtain': iso(3) }, say: 2, kept: { npc_mabel_quist_k3x9: { slot: 'p1', at: iso(5) } } },
+    'showroom#2': { blade: { at: iso(6), say: 'GM-ONLY-blade: the lights flicker twice.', people: [{ line: '"Evening, all."', role: 'waiter' }, { line: '"A bare line."' }, { line: '"Bad role."' }],
       things: [{ name: 'A tin whistle', line: 'dented', look: 'GM-ONLY-look: a name scratched on it', roll: '', danger: '', states: [], tags: ['clue'] }] } } } } } } });
-  assert.deepEqual(rs.read(SEED, s1), { say: 2, extra: ['stage-curtain'], swaps: { 'velvet-rope': 'grand-piano' }, marks: { 'brass-umbrella-stand': 'empty' }, blade: null, kept: ['npc_mabel_quist_k3x9'] });
-  assert.equal(rs.read(SEED, s2).blade.things[0].slug, 'tin-whistle', 'a Blade thing reads with its slug (stored without)');
-  assert.deepEqual(rs.read(SEED, 'nowhere#1'), { say: null, extra: [], swaps: {}, marks: {}, blade: null, kept: [] }, 'nothing stored: the empty room');
-  assert.deepEqual(rs.roll(SEED), { part: 'p1', at: iso(6), rooms: { 'showroom#1': rs.read(SEED, s1), 'showroom#2': rs.read(SEED, s2) } });
+  assert.deepEqual(rs.read(SEED, s1), { say: 2, rr: 0, extra: ['stage-curtain'], swaps: { 'velvet-rope': 'grand-piano' }, marks: { 'brass-umbrella-stand': 'empty' }, blade: null, kept: [{ id: 'npc_mabel_quist_k3x9', slot: 'p1' }], other: {} });
+  assert.deepEqual(rooms(r.doc, String(SEED))['showroom#2'], { rr: 1 }, 'the reroll: rr 1, and the Blade entry gone with the draw');
+  assert.deepEqual(rooms(doc6, String(SEED))['showroom#2'].blade.people.map((p) => p.line), ['"Evening, all."', '"A bare line."', '"Bad role."'], 'people are { line, role? }, never "[object Object]"');
+  assert.equal(RS.clean({ blade: { say: 'x', things: [{ name: 'A tin whistle' }] } }).blade.things[0].slug, 'tin-whistle', 'a Blade thing reads with its slug (stored without)');
+  assert.deepEqual(rs.read(SEED, 'nowhere#1'), { say: null, rr: 0, extra: [], swaps: {}, marks: {}, blade: null, kept: [], other: {} }, 'nothing stored: the empty room');
+  assert.deepEqual(rs.roll(SEED), { part: 'p1', at: iso(7), rooms: { 'showroom#1': rs.read(SEED, s1), 'showroom#2': rs.read(SEED, s2) } });
   assert.equal(rs.roll('404'), null);
   const copy = rs.read(SEED, s1); copy.marks.x = 'y'; copy.extra.push('z'); assert.deepEqual(rs.read(SEED, s1).extra, ['stage-curtain'], 'a read is a copy');
   /* store overrides only: outside the Blade entry every string is a slug, a state, an id, a time or a part version */
@@ -107,7 +114,7 @@ test('each write is one patch touching one rollKey; a no-op sends nothing; a roo
   r.rs.setMark(SEED, 'showroom#1', 'a', 'on'); r.rs.setMark('77', 'bar#1', 'b', 'on'); r.rs.setMark(SEED, 'showroom#1', 'a', 'off');
   assert.equal(r.patches.length, 3);
   assert.ok(r.patches.every((p) => Object.keys(p.roomstate.keys).length === 1), 'one rollKey each');
-  assert.deepEqual(r.patches[2], { roomstate: { v: 1, at: iso(3), keys: { [String(SEED)]: { at: iso(3), rooms: { 'showroom#1': { marks: { a: 'off' } } } } } } }, 'the smallest patch: one leaf, the two times');
+  assert.deepEqual(r.patches[2], { roomstate: { v: 1, at: iso(3), keys: { [String(SEED)]: { part: 'p1', at: iso(3), rooms: { 'showroom#1': { marks: { a: 'off' } } } } } } }, 'the smallest patch: one leaf, the two times and the part');
   assert.ok(r.rs.setMark(SEED, 'showroom#1', 'a', 'off')); assert.equal(r.patches.length, 3, 'the same mark again: true, nothing sent');
   assert.ok(r.rs.setMark(SEED, 'showroom#1', 'a', null)); assert.equal(r.doc.roomstate.keys[String(SEED)], undefined, 'the last mark gone: the room, then the roll');
   assert.ok(r.rs.setMark(SEED, 'showroom#1', 'zz', null)); assert.equal(r.patches.length, 4, 'taking away what is not there sends nothing');
@@ -127,7 +134,7 @@ test('bad arguments are refused and send nothing', () => {
     () => r.rs.setSay(SEED, 'a#1', 10), () => r.rs.setSay(SEED, 'a#1', -1), () => r.rs.setSay(SEED, 'a#1', 1.5), () => r.rs.setSay(SEED, 'a#1', '1'),
     () => r.rs.setSwap(SEED, 'a#1', 'a', 'a'), () => r.rs.setSwap(SEED, 'a#1', 'a', 'B'), () => r.rs.setSwap(SEED, 'a#1', 'x'.repeat(41), 'b'),
     () => r.rs.addExtra(SEED, 'a#1', ''), () => r.rs.setExtra(SEED, 'a#1', ['ok', 'Not ok']), () => r.rs.setExtra(SEED, 'a#1', 'a'),
-    () => r.rs.addKept(SEED, 'a#1', 'npc mabel'), () => r.rs.addKept(SEED, 'a#1', 'x'.repeat(65)), () => r.rs.addKept(SEED, 'a#1', 7),
+    () => r.rs.addKept(SEED, 'a#1', 'npc mabel', 'p1'), () => r.rs.addKept(SEED, 'a#1', 'x'.repeat(65), 'p1'), () => r.rs.addKept(SEED, 'a#1', 7, 'p1'), () => r.rs.addKept(SEED, 'a#1', 'npc_1'), () => r.rs.addKept(SEED, 'a#1', 'npc_1', 'P 1'),
     () => r.rs.setBlade(SEED, 'a#1', 'text'), () => r.rs.setBlade(SEED, 'a#1', {}), () => r.rs.setBlade(SEED, 'a#1', { say: '   ', things: [{ line: 'no name' }], people: [''] })];
   no.forEach((f, i) => assert.equal(f(), false, 'case ' + i));
   assert.equal(r.patches.length, 0);
@@ -154,9 +161,9 @@ test('caps: 24 rolls, and a 25th drops the oldest by at (a write refreshes a rol
   const c = rig();
   for (let i = 0; i < 10; i++) { assert.ok(c.rs.addExtra(SEED, 'a#1', 'e' + i)); assert.ok(c.rs.setSwap(SEED, 'a#1', 's' + i, 't' + i)); }
   for (let i = 0; i < 20; i++) assert.ok(c.rs.setMark(SEED, 'a#1', 'm' + i, 'on'));
-  for (let i = 0; i < 12; i++) assert.ok(c.rs.addKept(SEED, 'a#1', 'npc_' + i));
-  assert.deepEqual([c.rs.addExtra(SEED, 'a#1', 'e10'), c.rs.setSwap(SEED, 'a#1', 's10', 't'), c.rs.setMark(SEED, 'a#1', 'm20', 'on'), c.rs.addKept(SEED, 'a#1', 'npc_12'), c.rs.setExtra(SEED, 'a#1', Array.from({ length: 11 }, (_, i) => 'x' + i))], [false, false, false, false, false]);
-  assert.deepEqual([c.rs.addExtra(SEED, 'a#1', 'e3'), c.rs.setSwap(SEED, 'a#1', 's3', 'u3'), c.rs.setMark(SEED, 'a#1', 'm3', 'off'), c.rs.addKept(SEED, 'a#1', 'npc_3')], [true, true, true, true], 'changing one already there is fine');
+  for (let i = 0; i < 12; i++) assert.ok(c.rs.addKept(SEED, 'a#1', 'npc_' + i, 'p' + i));
+  assert.deepEqual([c.rs.addExtra(SEED, 'a#1', 'e10'), c.rs.setSwap(SEED, 'a#1', 's10', 't'), c.rs.setMark(SEED, 'a#1', 'm20', 'on'), c.rs.addKept(SEED, 'a#1', 'npc_12', 'p12'), c.rs.setExtra(SEED, 'a#1', Array.from({ length: 11 }, (_, i) => 'x' + i))], [false, false, false, false, false]);
+  assert.deepEqual([c.rs.addExtra(SEED, 'a#1', 'e3'), c.rs.setSwap(SEED, 'a#1', 's3', 'u3'), c.rs.setMark(SEED, 'a#1', 'm3', 'off'), c.rs.addKept(SEED, 'a#1', 'npc_3', 'p3')], [true, true, true, true], 'changing one already there is fine');
 });
 
 const BLADE = (i) => ({ say: 'GM-ONLY-blade ' + i + ': ' + 'w'.repeat(400), people: ['"' + 'p'.repeat(130) + '"', 'two', 'three', 'four'],
@@ -166,7 +173,7 @@ test('the Blade entry: the one stored text, capped (say 300, 2 things at the thi
   const r = rig();
   assert.ok(r.rs.setBlade(SEED, 'bar#1', BLADE(0)));
   const b = r.doc.roomstate.keys[String(SEED)].rooms['bar#1'].blade;
-  assert.equal(b.say.length, 300); assert.equal(b.things.length, 2); assert.equal(b.people.length, 3); assert.equal(b.people[0].length, 120);
+  assert.equal(b.say.length, 300); assert.equal(b.things.length, 2); assert.equal(b.people.length, 3); assert.equal(b.people[0].line.length, 120);
   assert.deepEqual(b.things.map((t) => [t.name.length, t.line.length, t.look.length, t.roll.length, t.danger.length]), [[40, 80, 120, 160, 100], [40, 80, 120, 160, 100]]);
   assert.ok(b.things.every((t) => !('slug' in t)), 'stored without slugs');
   assert.ok(r.rs.setBlade(SEED, 'bar#1', { say: 'Shorter.' }));
@@ -192,16 +199,17 @@ test('the byte budget: roomstate stays within 48 KiB; past it the oldest Blade e
   const all = Object.values(r.doc.roomstate.keys).flatMap((k) => Object.values(k.rooms)).map((x) => x.blade.say.slice(0, 16));
   assert.ok(all.length < 40 && all.includes('GM-ONLY-blade 39'), 'the newest is kept: ' + all.length + ' entries');
   assert.ok(!all.includes('GM-ONLY-blade 0'), 'the oldest went');
-  const q = rig();
-  for (let i = 0; i < 24; i++) for (let j = 0; j < 40; j++) q.rs.setExtra('roll-' + i, 'a room with a long long name ' + j + '#1', Array.from({ length: 10 }, (_, k) => 'a-very-long-slug-for-thing-number-' + k));
+  /* one roll alone past the budget: nothing else to drop, so refused, and said so */
+  const q = rig(), res = [];
+  for (let j = 0; j < 40; j++) for (let k = 0; k < 20; k++) res.push(q.rs.setMark('one-roll', 'a room with a long long name ' + j + '#1', ('a-very-long-slug-for-the-thing-number-' + k).slice(0, 40), 'x'.repeat(24)));
   assert.ok(Buffer.byteLength(JSON.stringify(q.doc.roomstate)) <= 48 * 1024);
-  assert.ok(q.toasts.some((t) => /room notes are full/.test(t)), 'refused, and said so');
+  assert.ok(res.includes(false) && q.toasts.some((t) => /room notes are full/.test(t)), 'refused, and said so');
 });
 
 test('prune(partVersion, known): a table change drops the overrides on slugs that are gone, moves part, and says "tables changed"', () => {
   const r = rig();
   r.rs.setMark(SEED, 'bar#1', 'a', 'open'); r.rs.setMark(SEED, 'bar#1', 'b', 'shut'); r.rs.setSwap(SEED, 'bar#1', 'a', 'c'); r.rs.setSwap(SEED, 'bar#1', 'b', 'a');
-  r.rs.addExtra(SEED, 'bar#1', 'd'); r.rs.setSay(SEED, 'bar#1', 1); r.rs.addKept(SEED, 'bar#1', 'npc_1');
+  r.rs.addExtra(SEED, 'bar#1', 'd'); r.rs.setSay(SEED, 'bar#1', 1); r.rs.addKept(SEED, 'bar#1', 'npc_1', 'p1');
   r.rs.setMark(SEED, 'cellar#1', 'gone', 'on');
   r.rs.setMark('other', 'bar#1', 'a', 'on');
   assert.equal(r.rs.stale(SEED), false);
@@ -211,7 +219,7 @@ test('prune(partVersion, known): a table change drops the overrides on slugs tha
   const seen = [];
   const res = r.rs.prune('p2', (rk, rm) => { seen.push(rk + '|' + rm); return rk === String(SEED) ? (rm === 'bar#1' ? ['a', 'c'] : []) : null; });
   assert.deepEqual(res, { rolls: 1, dropped: 4, note: 'tables changed' });
-  assert.deepEqual(r.rs.read(SEED, 'bar#1'), { say: 1, extra: [], swaps: { a: 'c' }, marks: { a: 'open' }, blade: null, kept: ['npc_1'] }, 'b, the b->a swap and the extra d are gone; say and kept stay');
+  assert.deepEqual(r.rs.read(SEED, 'bar#1'), { say: 1, rr: 0, extra: [], swaps: { a: 'c' }, marks: { a: 'open' }, blade: null, kept: [{ id: 'npc_1', slot: 'p1' }], other: {} }, 'b, the b->a swap and the extra d are gone; say and kept stay');
   assert.equal(rooms(r.doc, String(SEED))['cellar#1'], undefined, 'a room left with nothing goes');
   assert.equal(r.doc.roomstate.keys[String(SEED)].part, 'p2'); assert.equal(r.rs.stale(SEED), false);
   assert.equal(r.doc.roomstate.keys.other.part, 'p1', 'known gave null for the other roll: left as it is');
@@ -265,14 +273,14 @@ test('two devices at once: A adds extra x and B adds extra y to the same room (a
     const base = rig(); base.rs.setMark(SEED, 'bar#1', 'a', 'open'); base.flush();
     const { a, b, shared } = pair(base.server);
     assert.ok(a.rs.addExtra(SEED, 'bar#1', 'x')); assert.ok(b.rs.addExtra(SEED, 'bar#1', 'y'));
-    assert.ok(a.rs.addKept(SEED, 'bar#1', 'npc_a')); assert.ok(b.rs.addKept(SEED, 'bar#1', 'npc_b'));
+    assert.ok(a.rs.addKept(SEED, 'bar#1', 'npc_a', 'p1')); assert.ok(b.rs.addKept(SEED, 'bar#1', 'npc_b', 'p2'));
     for (const d of order === 'ab' ? [a, b] : [b, a]) d.flush();
     const room = shared.server.roomstate.keys[String(SEED)].rooms['bar#1'];
     assert.deepEqual(Object.keys(room.extra).sort(), ['x', 'y'], order + ': both extras on the server');
     assert.deepEqual(Object.keys(room.kept).sort(), ['npc_a', 'npc_b'], order + ': both kept ids on the server');
     assert.equal(room.marks.a, 'open', order + ': the older mark is untouched');
     a.flush(); assert.deepEqual(a.rs.read(SEED, 'bar#1').extra, ['x', 'y'], order + ': A reads both, in the order they were added (A\'s clock first)');
-    b.flush(); assert.deepEqual(b.rs.read(SEED, 'bar#1').kept, ['npc_a', 'npc_b'], order + ': and so does B');
+    b.flush(); assert.deepEqual(b.rs.read(SEED, 'bar#1').kept, [{ id: 'npc_a', slot: 'p1' }, { id: 'npc_b', slot: 'p2' }], order + ': and so does B');
   }
   /* taking one away on A while B adds another: the null for A's slug and B's new slug both land */
   const base = rig(); base.rs.setExtra(SEED, 'bar#1', ['x', 'y']); base.flush();
@@ -283,6 +291,107 @@ test('two devices at once: A adds extra x and B adds extra y to the same room (a
   /* why maps: the same two writes as lists, through the same server merge, lose one */
   const asLists = deepMerge(deepMerge({ extra: ['a'] }, { extra: ['a', 'x'] }), { extra: ['a', 'y'] });
   assert.deepEqual(asLists.extra, ['a', 'y'], 'a list replaces whole, so A\'s x would be lost');
+});
+
+/* the review's S1 and S1b (22/11): the record of what A removed must not outlive A's save, or it deletes what B wrote after it */
+test('S1: A clears room R and saves; B adds an extra to R; A marks a thing in R: B\'s extra survives', () => {
+  const base = rig(); base.rs.setMark(SEED, 'bar#1', 'a', 'open'); base.rs.addExtra(SEED, 'bar#1', 'e'); base.rs.setMark(SEED, 'bar#2', 'k', 'on'); base.flush();
+  const { a, b, shared } = pair(base.server);
+  assert.ok(a.rs.clear(SEED, 'bar#1')); a.flush();
+  b.flush(); assert.ok(b.rs.addExtra(SEED, 'bar#1', 'y')); b.flush();
+  assert.ok(a.rs.setMark(SEED, 'bar#1', 'm', 'on')); a.flush();
+  assert.deepEqual(shared.server.roomstate.keys[String(SEED)].rooms['bar#1'], { extra: { y: shared.server.roomstate.keys[String(SEED)].rooms['bar#1'].extra.y }, marks: { m: 'on' } }, 'B\'s y is there, beside A\'s new mark; A\'s old mark and extra are not');
+});
+test('S1b: A\'s roll goes when its last room clears; B marks R2 in that roll; A marks R: B\'s whole R2 survives', () => {
+  const base = rig(); base.rs.setMark(SEED, 'bar#1', 'a', 'open'); base.rs.setMark(SEED, 'cellar#1', 'old', 'on'); base.flush();
+  const { a, b, shared } = pair(base.server);
+  assert.ok(a.rs.clear(SEED, 'cellar#1')); assert.ok(a.rs.clear(SEED, 'bar#1')); a.flush();
+  assert.equal(shared.server.roomstate.keys[String(SEED)], undefined, 'the roll went with its last room');
+  b.flush(); assert.ok(b.rs.setMark(SEED, 'cellar#1', 'k', 'on')); b.flush();
+  assert.ok(a.rs.setMark(SEED, 'bar#1', 'm', 'on')); a.flush();
+  const roll = shared.server.roomstate.keys[String(SEED)];
+  assert.deepEqual(roll.rooms, { 'bar#1': { marks: { m: 'on' } }, 'cellar#1': { marks: { k: 'on' } } }, 'B\'s R2 is there');
+  assert.equal(roll.part, 'p1', 'and the roll has its part');
+});
+test('S2: a roll B re-creates after A removed it is never left without a part (part rides on every write)', () => {
+  const base = rig(); base.rs.setMark(SEED, 'bar#1', 'a', 'open'); base.flush();
+  const { a, b, shared } = pair(base.server);
+  assert.ok(b.rs.setMark(SEED, 'bar#1', 'b', 'on'));      /* B still sees the roll, so its patch is a change to it */
+  assert.ok(a.rs.clear(SEED, 'bar#1')); a.flush(); b.flush();
+  assert.equal(shared.server.roomstate.keys[String(SEED)].part, 'p1'); assert.equal(b.rs.stale(SEED), false);
+  assert.ok(a.patches.concat(b.patches).every((p) => Object.values(p.roomstate.keys).every((v) => v === null || typeof v.part === 'string')), 'every roll a patch writes carries part');
+});
+
+test('unknown fields are kept: a later build\'s field on a room or a roll survives every write, and keeps its room or roll from being removed', () => {
+  const doc = { roomstate: { v: 1, at: iso(0), keys: { [String(SEED)]: { part: 'p1', at: iso(0), zz: { later: true }, rooms: {
+    'bar#1': { marks: { a: 'open' }, zz: 7 }, 'bar#2': { zz: 'only this' } } } } } };
+  const r = rig({ doc });
+  assert.deepEqual(r.rs.read(SEED, 'bar#2').other, { zz: 'only this' }, 'read hands it back under other');
+  assert.ok(r.rs.clear(SEED, 'bar#1'));
+  assert.deepEqual(rooms(r.doc, String(SEED))['bar#1'], { zz: 7 }, 'clear takes what this file knows, never zz');
+  assert.ok(r.rs.setMark(SEED, 'bar#2', 'b', 'on')); assert.ok(r.rs.setMark(SEED, 'bar#2', 'b', null));
+  assert.deepEqual(rooms(r.doc, String(SEED))['bar#2'], { zz: 'only this' }, 'a room holding only zz is not empty');
+  assert.deepEqual(Object.keys(r.rs.roll(SEED).rooms).sort(), ['bar#1', 'bar#2']);
+  const q = rig({ doc: { roomstate: { v: 1, at: iso(0), keys: { [String(SEED)]: { part: 'p1', at: iso(0), zz: 1, rooms: { 'bar#1': { marks: { a: 'open' } } } } } } } });
+  assert.ok(q.rs.clear(SEED, 'bar#1'));
+  assert.deepEqual(q.doc.roomstate.keys[String(SEED)].zz, 1, 'a roll holding zz stays when its last room clears');
+  q.part = 'p2'; q.rs.prune('p2', () => []);
+  assert.equal(q.doc.roomstate.keys[String(SEED)].zz, 1, 'and prune keeps it too');
+});
+
+test('the byte cap: 30 rolls of marks never refuse a write (the oldest whole roll goes); clearRoll forgets a site', () => {
+  const r = rig(), res = [];
+  for (let i = 0; i < 30; i++) for (let j = 0; j < 10; j++) for (let k = 0; k < 6; k++) res.push(r.rs.setMark('a-long-roll-key-for-site-' + i, 'a room with a fairly long name ' + j + '#1', ('a-long-slug-for-thing-' + k + '-of-the-room').slice(0, 40), 'x'.repeat(24)));
+  assert.ok(res.every((x) => x === true), 'every write true: ' + res.filter((x) => !x).length + ' refused');
+  assert.ok(Buffer.byteLength(JSON.stringify(r.doc.roomstate)) <= 48 * 1024);
+  const keys = Object.keys(r.doc.roomstate.keys);
+  assert.ok(keys.length < 24 && keys.includes('a-long-roll-key-for-site-29') && !keys.includes('a-long-roll-key-for-site-0'), 'the newest roll is whole, the oldest went: ' + keys.length + ' rolls');
+  assert.equal(Object.keys(r.doc.roomstate.keys['a-long-roll-key-for-site-29'].rooms).length, 10);
+  assert.equal(r.toasts.length, 0, 'no "full" toast');
+  assert.ok(r.rs.clearRoll('a-long-roll-key-for-site-29')); assert.equal(r.doc.roomstate.keys['a-long-roll-key-for-site-29'], undefined);
+  assert.ok(r.rs.clearRoll('nowhere'), 'nothing to clear: true, nothing sent');
+  assert.equal(r.rs.clearRoll(''), false);
+});
+
+test('Keep (RK19): kept says which quick-draw slot was kept; one slot is kept once; it reads back after a reload', () => {
+  const r = rig();
+  assert.ok(r.rs.addKept(SEED, 'ballroom#1', 'npc_mabel_1', 'p1'));
+  assert.equal(r.rs.addKept(SEED, 'ballroom#1', 'npc_other', 'p1'), false, 'a second Keep for slot p1 is refused');
+  assert.ok(r.rs.addKept(SEED, 'ballroom#1', 'npc_mabel_1', 'p1'), 'the same id and slot again: true, nothing sent');
+  assert.equal(r.rs.addKept(SEED, 'ballroom#1', 'npc_mabel_1', 'p2'), false, 'one id is one slot');
+  assert.ok(r.rs.addKept(SEED, 'ballroom#1', 'npc_dov_2', 'p2'));
+  r.flush();
+  const again = RS.create(Object.assign({}, r.host, { doc: () => r.server }));
+  assert.deepEqual(again.read(SEED, 'ballroom#1').kept, [{ id: 'npc_mabel_1', slot: 'p1' }, { id: 'npc_dov_2', slot: 'p2' }]);
+  assert.equal(r.patches.length, 2);
+});
+
+test('Reroll (RK15): rr counts rerolls (a fresh draw), the rest of the draw goes, kept stays; clear goes back to the first draw; swap chains collapse', () => {
+  const r = rig();
+  r.rs.setMark(SEED, 'bar#1', 'a', 'open'); r.rs.setSwap(SEED, 'bar#1', 'a', 'b'); r.rs.addExtra(SEED, 'bar#1', 'c'); r.rs.setSay(SEED, 'bar#1', 2);
+  r.rs.setBlade(SEED, 'bar#1', { say: 'x' }); r.rs.addKept(SEED, 'bar#1', 'npc_1', 'p1');
+  assert.ok(r.rs.reroll(SEED, 'bar#1')); assert.ok(r.rs.reroll(SEED, 'bar#1'));
+  assert.deepEqual(r.rs.read(SEED, 'bar#1'), { say: null, rr: 2, extra: [], swaps: {}, marks: {}, blade: null, kept: [{ id: 'npc_1', slot: 'p1' }], other: {} });
+  assert.ok(r.rs.clear(SEED, 'bar#1')); assert.equal(r.doc.roomstate.keys[String(SEED)], undefined, 'clear: rr and kept go too');
+  assert.ok(r.rs.setSwap(SEED, 'bar#1', 'a', 'b')); assert.ok(r.rs.setSwap(SEED, 'bar#1', 'b', 'c'));
+  assert.deepEqual(r.rs.read(SEED, 'bar#1').swaps, { a: 'c' }, 'a for b, then b for c: { a: c }');
+  assert.ok(r.rs.setSwap(SEED, 'bar#1', 'c', 'd')); assert.deepEqual(r.rs.read(SEED, 'bar#1').swaps, { a: 'd' });
+  assert.ok(r.rs.setSwap(SEED, 'bar#1', 'd', 'a')); assert.deepEqual(r.rs.read(SEED, 'bar#1').swaps, {}, 'swapped back to the original: no entry');
+  assert.ok(r.rs.setSwap(SEED, 'bar#1', 'e', 'f')); assert.ok(r.rs.setSwap(SEED, 'bar#1', 'f', null)); assert.deepEqual(r.rs.read(SEED, 'bar#1').swaps, {}, 'null on what shows puts the original back');
+  const q = rig({ doc: { roomstate: { v: 1, at: iso(0), keys: { k: { part: 'p1', at: iso(0), rooms: { 'bar#1': { rr: 999 } } } } } } });
+  assert.equal(q.rs.reroll('k', 'bar#1'), false, 'rr stops at 999');
+});
+
+test('The Blade tap (RK16): people stored as { line, role? }; prune keeps marks on the room\'s own Blade things', () => {
+  const r = rig();
+  assert.ok(r.rs.setBlade(SEED, 'bar#1', { say: 'Hi.', things: [{ name: 'A tin whistle' }], people: [{ line: 'p'.repeat(200), role: 'waiter' }, 'two', { line: 'three' }, { line: 'four' }] }));
+  const pp = rooms(r.doc, String(SEED))['bar#1'].blade.people;
+  assert.deepEqual(pp.map((p) => [p.line.length, p.role || '']), [[120, 'waiter'], [3, ''], [5, '']], '3 people, each { line <= 120, role? }');
+  assert.ok(r.rs.setMark(SEED, 'bar#1', 'tin-whistle', 'taken')); assert.ok(r.rs.setMark(SEED, 'bar#1', 'gone-thing', 'on'));
+  r.part = 'p2';
+  const res = r.rs.prune('p2', () => ['something-else']);
+  assert.deepEqual(r.rs.read(SEED, 'bar#1').marks, { 'tin-whistle': 'taken' }, 'the Blade thing\'s mark stays; the gone one goes');
+  assert.equal(res.dropped, 1);
 });
 
 /* a random sweep: the page, its saver and the server agree after every send, whatever the order of writes and sends */
@@ -299,7 +408,7 @@ test('a random sweep (6 seeds x 1,500 writes, sends at random): the server alway
       else if (op === 3) r.rs.setExtra(rk, rm, rnd() < 0.5 ? [] : [pick(SL)]);
       else if (op === 4) r.rs.setSay(rk, rm, rnd() < 0.3 ? null : Math.floor(rnd() * 3));
       else if (op === 5) r.rs.setBlade(rk, rm, rnd() < 0.4 ? null : { say: 'S' + i, things: rnd() < 0.5 ? [{ name: 'A t' + i }] : [], people: rnd() < 0.5 ? ['p' + i] : [] });
-      else if (op === 6) r.rs.addKept(rk, rm, 'npc_' + Math.floor(rnd() * 3));
+      else if (op === 6) r.rs.addKept(rk, rm, 'npc_' + Math.floor(rnd() * 3), 'p' + Math.floor(rnd() * 3));
       else if (op === 7) r.rs.clear(rk, rm);
       else { r.part = pick(['p1', 'p2']); r.rs.prune(r.part, () => SL.slice(0, 2 + Math.floor(rnd() * 2))); }
       if (rnd() < 0.25) { r.flush(); assert.deepEqual(r.server.roomstate || null, r.ref.roomstate || null, 'seed ' + seed + ', write ' + i); }
@@ -316,7 +425,7 @@ test('nothing is written while off (room.key and room.tables both off): every wr
   const r = rig({ on: false, doc: { roomstate: { v: 1, at: iso(0), keys: { [String(SEED)]: { part: 'p1', at: iso(0), rooms: { 'bar#1': { marks: { a: 'open' } } } } } } } });
   const before = clone(r.doc);
   const all = [r.rs.setMark(SEED, 'bar#1', 'b', 'on'), r.rs.setSwap(SEED, 'bar#1', 'a', 'b'), r.rs.addExtra(SEED, 'bar#1', 'c'), r.rs.setExtra(SEED, 'bar#1', ['c']), r.rs.setSay(SEED, 'bar#1', 1),
-    r.rs.setBlade(SEED, 'bar#1', { say: 'x' }), r.rs.addKept(SEED, 'bar#1', 'npc_1'), r.rs.clear(SEED, 'bar#1')];
+    r.rs.setBlade(SEED, 'bar#1', { say: 'x' }), r.rs.addKept(SEED, 'bar#1', 'npc_1', 'p1'), r.rs.clear(SEED, 'bar#1'), r.rs.reroll(SEED, 'bar#1'), r.rs.clearRoll(SEED)];
   assert.deepEqual(all, all.map(() => false));
   assert.deepEqual(r.rs.prune('p2', () => []), { rolls: 0, dropped: 0, note: '' });
   assert.equal(r.patches.length, 0); assert.deepEqual(r.doc, before); assert.equal(r.rs.on(), false);
@@ -334,8 +443,8 @@ test('a roomstate with another v (a later build\'s) is read as empty and never w
   const q = rig(); q.refuse = true;
   assert.equal(q.rs.setMark(SEED, 'bar#1', 'a', 'on'), false); q.refuse = false;
   assert.ok(q.rs.setMark(SEED, 'bar#1', 'a', 'on'));
-  const junk = rig({ doc: { roomstate: { v: 1, keys: { [String(SEED)]: { part: 'p1', rooms: { 'bar#1': { marks: { a: 'open', 'Bad Key': 'x', b: 7, c: '' }, extra: ['x'], swaps: { a: 'B' }, kept: { ok_1: iso(1), 'bad id': iso(1), ok_2: 'yesterday', ok_3: 7 }, say: 12, blade: 'x' } } } } } } });
-  assert.deepEqual(junk.rs.read(SEED, 'bar#1'), { say: null, extra: [], swaps: {}, marks: { a: 'open' }, blade: null, kept: ['ok_1'] }, 'malformed values are left out of a read');
+  const junk = rig({ doc: { roomstate: { v: 1, keys: { [String(SEED)]: { part: 'p1', rooms: { 'bar#1': { marks: { a: 'open', 'Bad Key': 'x', b: 7, c: '' }, extra: ['x'], swaps: { a: 'B' }, kept: { ok_1: { slot: 'p1', at: iso(1) }, 'bad id': { slot: 'p2', at: iso(1) }, ok_2: { slot: 'p3', at: 'yesterday' }, ok_3: iso(1), ok_4: { slot: 'p1', at: iso(2) } }, say: 12, rr: 1.5, blade: 'x' } } } } } } });
+  assert.deepEqual(junk.rs.read(SEED, 'bar#1'), { say: null, rr: 0, extra: [], swaps: {}, marks: { a: 'open' }, blade: null, kept: [{ id: 'ok_1', slot: 'p1' }], other: {} }, 'malformed values are left out of a read (a slot kept twice: the first)');
   assert.ok(junk.rs.setMark(SEED, 'bar#1', 'a', 'shut'));
 });
 

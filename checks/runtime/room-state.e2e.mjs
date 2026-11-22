@@ -120,7 +120,7 @@ try {
     out.push(rs.setSwap(rk, R1, 'velvet-rope', 'grand-piano'));
     out.push(rs.addExtra(rk, R1, 'stage-curtain'));
     out.push(rs.setSay(rk, R1, 1));
-    out.push(rs.addKept(rk, R1, 'npc_mabel_quist_rk08'));
+    out.push(rs.addKept(rk, R1, 'npc_mabel_quist_rk08', 'p1'));
     out.push(rs.setBlade(rk, R2, { say: 'GM-ONLY-blade: the lights dip twice.', things: [{ name: 'A tin whistle', look: 'GM-ONLY-look: a name scratched on it', tags: ['clue'] }], people: ['GM-ONLY-blade-line'] }));
     out.push(rs.setMark(rk, R2, 'a', 'on')); out.push(rs.setMark(rk, R2, 'b', 'off'));           /* two quick writes in a row */
     out.push(rs.setMark(rk, 'pelican cloakroom#1', 'coat', 'taken')); out.push(rs.clear(rk, 'pelican cloakroom#1')); out.push(rs.setMark(rk, 'pelican cloakroom#1', 'hat', 'taken'));
@@ -133,8 +133,8 @@ try {
   const k1 = d1.roomstate.keys[ctx.rk];
   check(d1.roomstate.v === 1 && /Z$/.test(d1.roomstate.at) && /Z$/.test(k1.at) && typeof k1.part === 'string', 'the server holds roomstate { v: 1, at, keys: { <rollKey>: { part, at, rooms } } }');
   const r1 = k1.rooms[R1] || {}, atMap = (m, keys) => !!m && Object.keys(m).join() === keys.join() && Object.values(m).every((v) => /^\d{4}-\d\d-\d\dT.*Z$/.test(v));
-  check(same({ marks: r1.marks, swaps: r1.swaps, say: r1.say }, { marks: want[R1].marks, swaps: want[R1].swaps, say: want[R1].say }) && atMap(r1.extra, want[R1].extra) && atMap(r1.kept, want[R1].kept)
-    && Object.keys(r1).sort().join() === 'extra,kept,marks,say,swaps', 'the first room: mark, swap, say, and extra and kept id as { <key>: <at> } maps, as written');
+  check(same({ marks: r1.marks, swaps: r1.swaps, say: r1.say }, { marks: want[R1].marks, swaps: want[R1].swaps, say: want[R1].say }) && atMap(r1.extra, want[R1].extra) && !!r1.kept && Object.keys(r1.kept).join() === want[R1].kept.join() && r1.kept[want[R1].kept[0]].slot === 'p1' && atMap(r1.extra, want[R1].extra)
+    && Object.keys(r1).sort().join() === 'extra,kept,marks,say,swaps', 'the first room: mark, swap, say, extra as { <slug>: <at> } and kept as { <npcId>: { slot, at } }, as written');
   check(same(k1.rooms['pelican cloakroom#1'], want['pelican cloakroom#1']), 'a room cleared and written again before the save holds only the new mark');
   check(same(k1.rooms[R2].marks, { a: 'on', b: 'off' }) && k1.rooms[R2].blade.say === 'GM-ONLY-blade: the lights dip twice.' && !('slug' in k1.rooms[R2].blade.things[0]), 'two quick marks both landed, beside the Blade entry');
   const mine = G.patches.slice(off0).map((b) => { try { return JSON.parse(b); } catch (e) { return {}; } }).filter((p) => p.roomstate);
@@ -145,7 +145,7 @@ try {
   await G.page.reload();
   await G.page.waitForFunction(() => window.B68GmPage._state() && window.B68GmPage._state().status === 'ready' && !!window.B68GmPage._roomState(), null, { timeout: 60000 });
   const back = await G.page.evaluate(({ rk, R1, R2 }) => { const rs = window.B68GmPage._roomState(); return { r1: rs.read(rk, R1), r2: rs.read(rk, R2), roll: Object.keys(rs.roll(rk).rooms).sort() }; }, { rk: ctx.rk, R1, R2 });
-  check(same(back.r1, { say: 1, extra: ['stage-curtain'], swaps: { 'velvet-rope': 'grand-piano' }, marks: { 'brass-umbrella-stand': 'empty' }, blade: null, kept: ['npc_mabel_quist_rk08'] }), 'after a reload the first room reads back as written');
+  check(same(back.r1, { say: 1, rr: 0, extra: ['stage-curtain'], swaps: { 'velvet-rope': 'grand-piano' }, marks: { 'brass-umbrella-stand': 'empty' }, blade: null, kept: [{ id: 'npc_mabel_quist_rk08', slot: 'p1' }], other: {} }), 'after a reload the first room reads back as written');
   check(back.r2.blade && back.r2.blade.things[0].slug === 'tin-whistle' && same(back.r2.marks, { a: 'on', b: 'off' }), 'and the second, its Blade thing with its slug');
   const leaks = [];
   for (const [user, p] of [[P1, '/api/campaign'], [P1, '/api/table/screen'], [P1, '/api/characters'], [P1, '/api/npcs'], [IPAD, '/api/gm/display'], [IPAD, '/api/gm/ambient'], [IPAD, '/api/table/screen']]) {
