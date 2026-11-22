@@ -121,6 +121,8 @@ export async function rk04(c) {
     check(await tapChip(/Position and effect/), 'chips: tap the ▶ rule: chip');
     const pop = await wait(() => p.evaluate(() => { const e = document.querySelector('.pa-pop'); if (!e) return null; const r = e.getBoundingClientRect(), s = getComputedStyle(e); return r.height > 0 ? { l: r.left, t: r.top, r: r.right, b: r.bottom, w: innerWidth, h: innerHeight, border: s.borderTopWidth, pos: s.position, text: e.textContent.slice(0, 60) } : null; }));
     check(!!pop && pop.pos === 'fixed' && pop.border === '2px' && pop.l >= 0 && pop.t >= 0 && pop.r <= pop.w && pop.b <= pop.h, 'chips: the rule\'s pop-over is styled and inside the screen (' + JSON.stringify(pop) + ')');
+    await wait(() => p.evaluate(() => !/Loading/.test((document.querySelector('.pa-pop') || {}).textContent || 'Loading')));
+    await shots(p, 'rk04-rule-popover');
     await p.keyboard.press('Escape');
     check(!!(await wait(() => p.evaluate(() => !document.querySelector('.pa-pop')))), 'chips: Esc closes it');
     await shots(p, 'rk04-desk-off-paper');
