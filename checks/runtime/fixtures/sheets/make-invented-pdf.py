@@ -22,7 +22,7 @@ def box(x, y, w, h, fill=WHITE, stroke=BLACK):
     p.draw_rect(pymupdf.Rect(x, y, x + w, y + h), color=stroke, fill=fill, width=.5)
 
 
-def diamond(x, y, s=7.3):
+def rhombus(x, y, s=7.3):
     cx, cy = x + s / 2, y + s / 2
     corners = [(cx, y), (x + s, cy), (cx, y + s), (x, cy)]
     pts = []
@@ -58,7 +58,7 @@ for k, y in enumerate((106.7, 144.8, 184, 221.8)):
     text(448.7, y + 8.2, ['ALPHA', 'BRAVO', 'CHARLIE', 'VERSATILE'][k] + ': an invented rule, nothing more.', 8, 'hebo')
 text(702, 44, 'STACKS', 7)
 for i in range(4):
-    diamond(731.8 + 9.6 * i, 38.2)
+    rhombus(731.8 + 9.6 * i, 38.2)
 text(41, 350, 'HARM', 9, 'hebo')
 for lv, nm, y in ((4, 'Grim', 363), (3, 'Dire', 380), (2, 'Rough', 397), (1, 'Light', 413)):
     text(42.5, y, '%d. %s' % (lv, nm), 9)
@@ -80,7 +80,7 @@ if friends:
         triangle(445.5, y + 2.1)
         text(458.4, y + 8.2, name, 8.5)
 text(700.6, 340, 'ITEMS', 9, 'hebo')
-rows = [('Brass lantern', 1, 'helv'), ('Silk rope', 1, 'heit'), ('Crowbar', 1, 'helv'), ('Heavy coat', 2, 'helv')]
+rows = [('Brass lantern', 1, 'helv'), ('Hemp rope', 1, 'heit'), ('Crowbar', 1, 'helv'), ('Heavy coat', 2, 'helv')]
 for n, (name, sq, font) in enumerate(rows):
     y = 359 + 11.4 * n
     for q in range(sq):

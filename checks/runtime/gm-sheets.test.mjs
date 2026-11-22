@@ -71,12 +71,12 @@ await test('gm-sheets: the private folder guard: a path inside it passes, a sibl
 /* ---- the count rules, on an invented content table ---- */
 const CONTENT = {
   PLAYBOOKS: [
-    { id: 'dovetail', name: 'Dovetail', abilities: [1, 2, 3], items: [['Brass lantern', 1], ['Silk rope', 0]], contacts: [['Mabel Quist', 'a ferryman'], ['Dov Kessler', 'a clerk']], bank: false },
+    { id: 'dovetail', name: 'Dovetail', abilities: [1, 2, 3], items: [['Brass lantern', 1], ['Hemp rope', 0]], contacts: [['Mabel Quist', 'a ferryman'], ['Dov Kessler', 'a clerk']], bank: false },
     { id: 'tin', name: 'Tin', abilities: [1, 2], resource: 'Tally (10 boxes, instead of Stress)', items: [], contacts: [] },
   ],
   PARANORMAL: [
     { id: 'wisp', name: 'Wisp', paranormal: true, stressMax: 12, abilities: [1], fixedAbility: { n: 'x' }, itemsRule: 'none', items: [], contacts: [] },
-    { id: 'pelican', name: 'Pelican', paranormal: true, maxDot: 5, abilities: [1, 2], fixedAbility: { n: 'x' }, items: [['Vial', 1], ['Vial (second)', 1]], contacts: [] },
+    { id: 'ember', name: 'Ember', paranormal: true, maxDot: 5, abilities: [1, 2], fixedAbility: { n: 'x' }, items: [['Vial', 1], ['Vial (second)', 1]], contacts: [] },
   ],
   STANDARD_ITEMS: [['Crowbar', 1], ['Heavy coat', 2]],
 };
@@ -86,7 +86,7 @@ const goodMap = () => ({
   stress: rects(9), xp: rects(8), xpi: rects(6), xpp: rects(6), xpr: rects(6),
   acts: Object.fromEntries(Array.from({ length: 12 }, (_, i) => ['A' + i, { l: rect(i), d: rects(4) }])),
   ab: Array.from({ length: 4 }, () => ({ n: 'x', b: [rect(0)], k: rect(0) })),
-  items: [{ n: 'Brass lantern', s: rects(1), i: 0 }, { n: 'Silk rope', s: rects(1), i: 1 }, { n: 'Crowbar', s: rects(1), i: 0 }, { n: 'Heavy coat', s: rects(2), i: 0 }],
+  items: [{ n: 'Brass lantern', s: rects(1), i: 0 }, { n: 'Hemp rope', s: rects(1), i: 1 }, { n: 'Crowbar', s: rects(1), i: 0 }, { n: 'Heavy coat', s: rects(2), i: 0 }],
   stacks: rects(4), bank: [], harm: Array.from({ length: 6 }, () => ({ level: 1 })), heal: rect(0),
   keys: Array.from({ length: 4 }, () => ({ hits: rects(3) })), friends: [{ n: 'Mabel Quist, a ferryman' }, { n: 'Dov Kessler, a clerk' }],
 });
@@ -99,7 +99,7 @@ await test('sheets-check: what a page must hold comes from content.js: stress (d
   assert.equal(K.expectFor(CONTENT, 'tin').stress, 10, '"(10 boxes" in the resource line is the box count'); assert.equal(K.expectFor(CONTENT, 'tin').bank, 40);
   const wisp = K.expectFor(CONTENT, 'wisp');
   assert.equal(wisp.stress, 12); assert.equal(wisp.items.length, 0, 'an items RULE means the page prints no item lines'); assert.equal(wisp.abilities, 2, 'paranormal: no Versatile');
-  const pel = K.expectFor(CONTENT, 'pelican');
+  const pel = K.expectFor(CONTENT, 'ember');
   assert.equal(pel.dots, 5, 'maxDot'); assert.equal(pel.items.length, 4);
   assert.throws(() => K.expectFor(CONTENT, 'nobody'), /no playbook "nobody"/);
 });
@@ -187,7 +187,7 @@ if (!PY) {
       assert.ok(Object.values(map.acts).every((a) => a.d.length === 4)); assert.equal(map.ab.length, 4); assert.equal(map.stacks.length, 4); assert.equal(map.harm.length, 6);
       assert.equal(map.keys.length, 4); assert.ok(map.keys.every((k) => k.hits.length === 3)); assert.equal(map.friends.length, 2); assert.ok(map.heal);
       assert.deepEqual(map.items.map((i) => [i.s.length, i.i]), [[1, 0], [1, 1], [1, 0], [2, 0]], 'item squares are the load; the italic line takes none');
-      assert.equal(map.kinds.stress, 'box'); assert.equal(map.kinds.stacks, 'diamond');
+      assert.equal(map.kinds.stress, 'box'); assert.equal(map.kinds.stacks, 'lozenge');
       assert.ok(map.stress.every((b) => b.length === 4), 'rectangles are [x0, y0, x1, y1]');
       assert.deepEqual(ls(priv), ['proofs'], 'the private folder holds only the proofs: the work folder is gone');
       const png = fs.readFileSync(path.join(priv, 'proofs', 'proof-dovetail.png'));

@@ -16,7 +16,7 @@
 # THE MAP SCHEMA (version 1). Rectangles are [x0, y0, x1, y1] in PDF points on the page's own box (the SVG's viewBox is the same box, 841.89 x 595.28 for A4
 # landscape). RK32's page.js draws from it. Region keys sit at the top level, as the design's prototype map did:
 #   header   v: 1, playbook: <id, set by gm-sheets.mjs>, page: <1-based>, size: [w, h], kinds: { region: kind }
-#   kinds    box (a tick box or a capsule), dot (a round mark), diamond, clock, text (a writing line to put words on), mark (a triangle before a name)
+#   kinds    box (a tick box or a capsule), dot (a round mark), lozenge (a diamond shape), clock, text (a writing line to put words on), mark (a triangle before a name)
 #   stress   [rect...]                            the Stress / Drain / Instability boxes, left to right
 #   xp       [rect...]  xpi, xpp, xpr             the playbook's xp boxes, and the Insight, Prowess and Resolve xp boxes
 #   acts     { Action: { l: rect, d: [rect...] } }   the label and the dots of each of the twelve actions
@@ -37,7 +37,7 @@ import sys, os, re, json, argparse
 
 SCHEMA = 1
 ACTIONS = ['Hunt', 'Study', 'Survey', 'Tinker', 'Finesse', 'Prowl', 'Skirmish', 'Wreck', 'Attune', 'Command', 'Consort', 'Sway']
-KINDS = {'stress': 'box', 'xp': 'box', 'xpi': 'box', 'xpp': 'box', 'xpr': 'box', 'acts': 'dot', 'ab': 'dot', 'items': 'box', 'stacks': 'diamond', 'bank': 'diamond',
+KINDS = {'stress': 'box', 'xp': 'box', 'xpi': 'box', 'xpp': 'box', 'xpr': 'box', 'acts': 'dot', 'ab': 'dot', 'items': 'box', 'stacks': 'lozenge', 'bank': 'lozenge',
          'harm': 'text', 'heal': 'clock', 'res': 'box', 'keys': 'box', 'friends': 'mark', 'coh': 'box', 'id': 'text', 'load': 'text'}
 ATTR_XP = [('xpi', 0), ('xpp', 1), ('xpr', 2)]          # the three XP labels in the action column, top to bottom
 WHITE = (1.0, 1.0, 1.0)
