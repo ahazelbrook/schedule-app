@@ -6,9 +6,13 @@
    THE STAMP (1.3; since the night rebuild, N4, part of the Roll, gm/roll.js). The position (the console's own, one value: host.currentPosition), an
    effect (standard until another is picked, and standard again once a roll is resolved) and the Roll's one-line threatened consequence (host.line: the
    console's Threat on screen, one field). fire() ("Stamp it on the iPad"), or a cue through stampNow(), puts the ACTION REPORT card (show kind `report`,
-   functions/_lib/show.js) on the iPad and logs the stamp to night.log; picking an effect never fires it. The card stays up until the result is marked
-   (mark()), until Esc, or until clear(); the server holds a beat for at most three minutes, so while it is pending the card is laid again every 170
-   seconds. Nothing goes to a phone (D3). Taking the card down never touches the lasting layers, and only happens while the overlay up is still this
+   functions/_lib/show.js) on the iPad and logs the stamp to night.log; picking an effect never fires it. With the setting stamp.brief OFF the card stays
+   up until the result is marked (mark()), until Esc, or until clear(); the server holds a beat for at most three minutes, so while it is pending the card
+   is laid again every 170 seconds. With stamp.brief ON (RK02) the card is laid for BRIEF_MS (10 s) and never laid again: the server and the iPad let it
+   go at at + ms, and the Roll's stamp line stays (view().gone, "Gone from the iPad") until the roll is resolved, with again() ("Show again") laying it
+   for another 10 s. A beat this controller laid is gone once its own clock has run out (the page's stored ambient overlay keeps its id after expiry, so
+   the id alone no longer says it is up): the cost field never lays a beat again over a card that has gone, while a result recorded under kit.stage
+   still lays its own 8 s beat. Nothing goes to a phone (D3). Taking the card down never touches the lasting layers, and only happens while the overlay up is still this
    stamp's own. This file listens for no key: Esc reaches the stamp through the page's one Esc (gm/esc.js, the entry the page registers as kind 'stamp').
 
    THE SIZER (1.4). When a 4/5 or a 1-3 is marked on a stamped roll (only then), offer the consequence at FULL size for the stamped position: the severity, ticks and
@@ -50,7 +54,9 @@
        unless it is sent, a refusal says so and keeps the text. Take it down, Esc, Clean, a new stamp, dismiss(), PANIC, Blank and another show taking
        over end the cost (view().beats: the setting is on); a mark while a result is
        up takes it down. A write that lands after its stamp was taken down is taken straight back off.
-       controller: view() draft(pos|eff|text) fire() stampNow(pos, eff, text) mark(result) esc() clear() reduce() restore() dismiss() seed() destroy()
+       controller: view() draft(pos|eff|text) fire() stampNow(pos, eff, text) mark(result) esc() clear() reduce() restore() dismiss() seed() destroy() again()
+                   (RK02, stamp.brief on: again() lays a gone stamp for another 10 s; view().gone is true once it has gone, view().active.left is the whole
+                   seconds it has left while it is up; host.feature('stamp.brief') is read at each lay, so a stamp keeps the clock it was laid with)
                    result is '45', '13' or 'clean'. view() -> { on, draft: { position, effect, text }, active, stale, sizer }: stale is true while the
                    stamp is up and the position, effect or line set now differs from it (the Roll offers Stamp again). stampNow(pos, eff, '') stamps
                    the Roll's line; stampNow with a text makes that text the line (one field, one value). */
@@ -65,7 +71,9 @@
   var POSITIONS = ['controlled', 'risky', 'desperate'], EFFECTS = ['limited', 'standard', 'great'], EFFECT0 = 'standard';
   var LADDER = ['desperate', 'risky', 'controlled'];          /* worst first: reducing a consequence moves along it */
   var TEXT_MAX = 100, LINE_MAX = 140, LINES_MAX = 5, REFRESH_MS = 170000, ARM_MS = 6000, SHOW_MS = 180000;
-  var KEY = { stamp: 'spine.stamp', sizer: 'spine.sizer', stage: 'kit.stage' };
+  var KEY = { stamp: 'spine.stamp', sizer: 'spine.sizer', stage: 'kit.stage', brief: 'stamp.brief' };
+  /* RK02 (stamp.brief): a stamp stands BRIEF_MS on the iPad, then the server and the iPad let it go; the Roll's line counts the seconds down once a second */
+  var BRIEF_MS = 10000, TICK_MS = 1000;
   /* KS15 (the roll as beats, kit.stage): a result stands RESULT_MS on the iPad, a cost COST_MS; then the server lets it go and the iPad folds it into
      its last-roll chip. who and cost are cut to the show contract's bounds (functions/_lib/show.js report) */
   var RESULTS = ['clean', '45', '13'], RESULT_MS = 8000, COST_MS = 10000, WHO_MAX = 40, COST_MAX = 60, WATCH_MS = 1000;
@@ -166,8 +174,10 @@
     var sizer = null;                                         /* { position, result, lines, text, armed, reduced } */
     var seeded = '', refreshT = null, armT = null, n = 0;
     var last = null, foldT = null, watchT = null;                         /* KS15: the resolved roll a cost may follow ({ st, draft, sent }); the result's fold timer */
+    var goneT = null;                                                      /* RK02: the one timer that counts a brief stamp down and redraws the Roll when it has gone */
 
     function on(id) { return typeof host.feature === 'function' ? !!host.feature(id) : false; }
+    function brief() { return on(KEY.brief); }      /* RK02: stamp.brief */
     function changed() { if (typeof host.changed === 'function') host.changed(); }
     function toast(m, bad) { if (typeof host.toast === 'function') host.toast(m, bad); }
     function setT(fn, ms) { return typeof host.setTimeout === 'function' ? host.setTimeout(fn, ms) : setTimeout(fn, ms); }
@@ -195,25 +205,39 @@
       return true;
     }
 
-    function overlayIsMine() { return !!active && typeof host.overlayId === 'function' && host.overlayId() === active.id; }
+    /* RK02: the stored ambient overlay keeps its id after the server lets it go, so the id alone says nothing about expiry. A beat laid with stamp.brief
+       on carries its own end (st.until, ms on the page's clock); one laid with it off has none and is never gone by the clock (the refresh keeps it up) */
+    function expired(st) { return !!st && typeof st.until === 'number' && st.until > 0 && now() >= st.until; }
+    function idIsMine() { return !!active && typeof host.overlayId === 'function' && host.overlayId() === active.id; }
+    function overlayIsMine() { return idIsMine() && !expired(active); }
+    function stopGone() { if (goneT !== null) clrT(goneT); goneT = null; }
+    /* count a brief stamp down: redraw the Roll each second while it is up, and once more when it has gone (the page's "Gone from the iPad") */
+    function armGone(st) {
+      stopGone();
+      if (!st || !st.until) return;
+      var left = st.until - now();
+      goneT = setT(function () { goneT = null; if (active !== st) return; changed(); if (now() < st.until) armGone(st); }, Math.max(20, Math.min(TICK_MS, left + 20)));
+    }
     function takeDown() {
       var mine = overlayIsMine();
-      stopRefresh(); stopFold();
+      stopRefresh(); stopFold(); stopGone();
       if (typeof host.threatClear === 'function') host.threatClear();        /* suite 2.5: the glyph on the map clears with the stamp */
       var was = active; active = null;
       if (was && mine && typeof host.clearOverlay === 'function') return Promise.resolve(host.clearOverlay()).then(null, function () { return null; });
       return Promise.resolve(null);
     }
     function lay(st) {
-      var key = 'stamp-' + (++n) + '-' + st.at, ms = SHOW_MS;
+      var brf = brief(), key = 'stamp-' + (++n) + '-' + st.at, ms = brf ? BRIEF_MS : SHOW_MS;
       st.key = key; st.id = typeof host.keyFor === 'function' ? host.keyFor(key) : key;
-      return Promise.resolve(host.show(payload(st), key, ms));
+      var p = Promise.resolve(host.show(payload(st), key, ms));
+      if (!brf) { delete st.until; return p; }
+      return p.then(function (r) { if (r) st.until = now() + ms; return r; });      /* RK02: its own end, from the moment the server has it */
     }
     function refresh() {
       refreshT = null;
       if (!active || !overlayIsMine()) return;               /* something else is up now: leave it be */
       var st = active, prev = st.id;
-      lay(st).then(function (r) { if (active === st && r) schedule(); else if (active === st && !r) st.id = prev; });
+      lay(st).then(function (r) { if (active === st && r) { if (st.until) armGone(st); else schedule(); } else if (active === st && !r) st.id = prev; });
     }
     function schedule() { stopRefresh(); refreshT = setT(refresh, REFRESH_MS); }
 
@@ -224,9 +248,12 @@
     function stopFold() { if (foldT !== null) clrT(foldT); foldT = null; }
     function foldLater(st, ms) { stopFold(); foldT = setT(function () { foldT = null; if (active === st) { active = null; changed(); } }, ms); }
     function covered() { try { return typeof host.covered === 'function' && !!host.covered(); } catch (e) { return true; } }
-    function copy(st) { var o = {}; ['position', 'effect', 'text', 'who', 'at', 'key', 'id', 'result', 'cost'].forEach(function (k) { if (st[k] !== undefined) o[k] = st[k]; }); return o; }
+    function copy(st) { var o = {}; ['position', 'effect', 'text', 'who', 'at', 'key', 'id', 'result', 'cost', 'until'].forEach(function (k) { if (st[k] !== undefined) o[k] = st[k]; }); return o; }
     function upId() { return typeof host.overlayId === 'function' ? str(host.overlayId()) : ''; }
-    function relay(st, ms) { return Promise.resolve(host.show(payload(st), st.key, ms, { replace: true })).then(null, function () { return null; }); }
+    function relay(st, ms) {
+      var brf = brief();
+      return Promise.resolve(host.show(payload(st), st.key, ms, { replace: true })).then(function (r) { if (r && brf) st.until = now() + ms; else delete st.until; return r; }, function () { return null; });
+    }
     /* a write that landed after its stamp was taken down: take it straight back off (only while it is what is up) */
     function takeBack(st) { if (active === null && upId() === st.id && typeof host.clearOverlay === 'function') return Promise.resolve(host.clearOverlay()).then(null, function () { return null; }); return null; }
     /* the mark of a stamp that is up: the card comes down; on a 4/5 or a 1-3 the sizer offers the size (unchanged since 1.4) */
@@ -248,8 +275,8 @@
       return takeDown().then(function () { stopArm(); if ((result === '45' || result === '13') && d.effect !== EFFECT0) d.effect = EFFECT0; changed(); return false; });
     }
     function markStage(st, result) {
-      if (!overlayIsMine() || covered()) return markPlain(st, result);      /* another show is up, PANIC cleared it, or the iPad is blank: today's mark */
-      stopRefresh(); stopArm();
+      if (!idIsMine() || covered()) return markPlain(st, result);      /* another show is up, PANIC cleared it, or the iPad is blank: today's mark. RK02: a card that has gone by its own clock is still ours, so its result is laid */
+      stopRefresh(); stopArm(); stopGone();
       var next = copy(st); next.result = result;
       return relay(next, RESULT_MS).then(function (r) {
         if (active !== st) { takeBack(next); return false; }                  /* Esc, Take it down or a new stamp came while it was out */
@@ -269,7 +296,7 @@
        It ENDS (as Take it down ends it) the moment the iPad moves on: PANIC, Blank, another show taking over, or the overlay cleared from
        elsewhere. A once-a-second look while the field is open (the page's ambient document and display kind, no request), and again on Enter,
        so a stale cost can never put the roll back minutes later */
-    function costGone(L) { return covered() || upId() !== L.st.id; }
+    function costGone(L) { return covered() || upId() !== L.st.id || expired(L.st); }      /* RK02: a card that has gone by its clock is never laid again */
     function stopWatch() { if (watchT !== null) clrT(watchT); watchT = null; }
     function endCost() { if (!last) return; last = null; stopWatch(); changed(); }
     function watchCost() { stopWatch(); watchT = setT(function () { watchT = null; if (!last) return; if (costGone(last)) endCost(); else watchCost(); }, WATCH_MS); }
@@ -308,7 +335,8 @@
         d.position = pos; d.effect = eff; setLine(st.text);
         if (typeof host.log === 'function') host.log(stampLine(st));
         if (typeof host.setPosition === 'function' && typeof host.currentPosition === 'function' && host.currentPosition() !== pos) host.setPosition(pos);
-        schedule(); changed();
+        if (st.until) armGone(st); else schedule();      /* RK02: a brief stamp is counted down and never laid again */
+        changed();
         if (typeof host.threat === 'function') host.threat(st);               /* suite 2.5: the glyph drops on the room before the dice */
         if (typeof host.stamped === 'function') { try { host.stamped({ position: st.position, effect: st.effect, text: st.text, at: st.at }); } catch (e) {} }   /* 08/11: asks Blade for the fit */
         return true;
@@ -381,11 +409,30 @@
       if (out.active && active.result) { out.active.result = active.result; if (active.who) out.active.who = active.who; if (active.cost) out.active.cost = active.cost; }
       if (last && on(KEY.stage)) out.cost = { result: last.st.result, draft: last.draft, sent: last.sent };
       if (out.on && on(KEY.stage)) out.beats = true;      /* the Roll says what Clean does now (gm/roll.js stampHtml) */
+      /* RK02 (stamp.brief): a stamp laid with it on says how long it has left, or that it has gone (the stamp line stays until the roll resolves) */
+      if (out.active && active.until && !active.result) {
+        var secs = Math.ceil((active.until - now()) / 1000);
+        if (secs > 0) out.active.left = secs; else out.gone = true;
+      }
       return out;
     }
-    function destroy() { stopRefresh(); stopArm(); stopFold(); stopWatch(); }
+    /* RK02 "Show again": a stamp that has gone from the iPad (stamp.brief on) is laid for another 10 s, as it was, under a new id. Not a new stamp: nothing is
+       logged, no glyph drops and Blade is not asked again. Like a stamp, it goes up whatever the iPad shows (the GM pressed it); a refusal says so and
+       leaves the Roll's line as it was */
+    function again() {
+      var st = active;
+      if (!st || st.result || !brief() || !expired(st)) return Promise.resolve(false);
+      var pk = st.key, pi = st.id, pu = st.until;
+      return lay(st).then(function (r) {
+        if (active !== st) { if (r) takeBack(copy(st)); return false; }               /* Esc, Take it down or a new stamp came while it was out */
+        if (!r) { st.key = pk; st.id = pi; st.until = pu; toast('The stamp did not go back on the iPad.', true); return false; }
+        armGone(st); changed();
+        return true;
+      }, function () { st.key = pk; st.id = pi; st.until = pu; return false; });
+    }
+    function destroy() { stopRefresh(); stopArm(); stopFold(); stopWatch(); stopGone(); }
     return { view: view, draft: draft, fire: fire, stampNow: stampNow, mark: mark, esc: esc, clear: clear, reduce: reduce, restore: restore, dismiss: dismiss, seed: seed, destroy: destroy,
-      costDraft: costDraft, sendCost: sendCost };
+      costDraft: costDraft, sendCost: sendCost, again: again };
   }
 
   return { POSITIONS: POSITIONS, EFFECTS: EFFECTS, EFFECT0: EFFECT0, LADDER: LADDER, TEXT_MAX: TEXT_MAX, cutText: cutText, goesWrong: goesWrong, pickRoom: pickRoom, roomLines: roomLines,

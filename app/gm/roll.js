@@ -5,7 +5,9 @@
      Effect   [Limited] [Standard] [Great]
      If it goes wrong: one line (the console's Threat on screen and the stamp's line: one field, one value, prefilled from the room; a two-row
      textarea so it shows whole in the column, never more than one line)
-     Stamp it on the iPad  ->  while up: ● On the iPad, Take it down (Esc), Clean (no card), and Stamp again once what is set has changed
+     Stamp it on the iPad  ->  while up: ● On the iPad, Take it down (Esc), Clean (no card), and Stamp again once what is set has changed.
+                               With stamp.brief on (RK02) the card leaves the iPad after 10 s: while up it counts the seconds, then the line stays as
+                               "Gone from the iPad" with Show again (10 s more), Clear and Clean, until the roll is resolved
      Who: the PCs as chips, one optional tap (the console's Aim at: who is rolling, for Blade and L; 08/11/2026 it replaced the Dots)
      They rolled [1 Before] [2 4/5] [3 1–3] [4 Someone] (keys 1-4)
    Under the card, Blade's lines (#gm-rackf: since 08/11 they open there the moment a stamp goes up) and the line that hit (#gm-fxhit); then the result card (the consequence at full size for the stamped position sits under its header; Reduce and Hide size join its actions
@@ -116,8 +118,10 @@
     var a = v.active;
     if (!a) return '<button type="button" class="btn primary gm-stampb" data-gm="stamp" ' +
       'title="The position, the effect and the line, as an action report on the iPad before the dice. Enter in the line does it too">Stamp it on the iPad</button>' + costHtml(v.cost);
+    if (v.gone) return goneHtml(v, a);      /* RK02 (stamp.brief): only a stamp view made with it on says gone */
     /* what is set now differs from what is up: Stamp again is the one full-width button (as Stamp it on the iPad was), so the row under it never wraps */
     return '<p class="gm-rl-up" role="status"><span class="gm-dot on" aria-hidden="true"></span><b>On the iPad</b><span>' + esc(cap(a.position) + ', ' + a.effect) + '</span>' +
+        (a.left ? '<span class="gm-rl-left" title="Seconds left on the iPad">' + esc(a.left) + ' s</span>' : '') +
         (a.result ? '<span>' + esc(RESULT_WORDS[a.result] || '') + (a.cost ? ' ' + esc(a.cost) : '') + '</span>' : '') +
         (v.stale && !a.result ? '<span class="gm-rl-chg">Changed since it went up</span>' : '') + '</p>' +
       /* KS15: while a result is up the roll is over, so the next stamp is a new one, not "again" */
@@ -125,6 +129,17 @@
         (a.result ? 'Stamp it on the iPad' : 'Stamp again') + '</button>' : '') +
       '<div class="gm-rl-acts">' +
         '<button type="button" class="btn sm" data-gm="stamp-down" title="Takes the action report off the iPad">Take it down <kbd>Esc</kbd></button>' +
+        '<button type="button" class="chip sm" data-gm="stamp-clean" title="' + esc(cleanWords(v, a)[1]) + '">' + esc(cleanWords(v, a)[0]) + '</button></div>' + costHtml(v.cost);
+  }
+  /* RK02 (stamp.brief): the stamp has left the iPad and the roll is not resolved yet. The line stays, and says so: Show again lays it for another 10 s (the
+     one Primary here unless what is set has changed, when Stamp again is), Clear drops the line (the old Take it down, which it no longer is), Clean marks it. */
+  function goneHtml(v, a) {
+    var again = '<button type="button" class="btn sm' + (v.stale ? '' : ' primary') + '" data-gm="stamp-again" title="Puts this action report back on the iPad for 10 seconds">Show again</button>';
+    return '<p class="gm-rl-up gm-rl-gone" role="status"><span class="gm-dot" aria-hidden="true"></span><b>Gone from the iPad</b><span>' + esc(cap(a.position) + ', ' + a.effect) + '</span>' +
+        (v.stale ? '<span class="gm-rl-chg">Changed since it went up</span>' : '') + '</p>' +
+      (v.stale ? '<button type="button" class="btn primary gm-stampb" data-gm="stamp" title="Puts what is set now on the iPad in its place">Stamp again</button>' : '') +
+      '<div class="gm-rl-acts">' + again +
+        '<button type="button" class="btn sm" data-gm="stamp-down" title="Clears this stamp from the Roll. It is already off the iPad">Clear</button>' +
         '<button type="button" class="chip sm" data-gm="stamp-clean" title="' + esc(cleanWords(v, a)[1]) + '">' + esc(cleanWords(v, a)[0]) + '</button></div>' + costHtml(v.cost);
   }
   /* KS15 (kit.stage): the words the iPad shows for a result (display/kit/roll.js says the same), and the Roll's one cost field after a 4/5 or a 1-3.

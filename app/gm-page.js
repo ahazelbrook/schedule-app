@@ -5252,7 +5252,7 @@
     me.cueGrammar.register();
     /* N4: the stamp is the page's one Esc's 'stamp' entry (gm/esc.js): Esc takes it down when nothing above it is open and no field has the focus */
     if (W.B68GmEsc && typeof W.B68GmEsc.register === 'function') me.stampEsc = W.B68GmEsc.register('stamp', { priority: 10, kind: 'stamp',
-      isOpen: function () { var v = S === me && me.stamp ? me.stamp.view() : null; return !!(v && v.active); }, close: function () { if (S === me && me.stamp) me.stamp.esc(); } });
+      isOpen: function () { var v = S === me && me.stamp ? me.stamp.view() : null; return !!(v && v.active && !v.gone); }, close: function () { if (S === me && me.stamp) me.stamp.esc(); } });
     b09Paint();
   }
   function b09Unmount(me) {
@@ -5355,7 +5355,7 @@
     var mini = $q('#gm-mini'), R = rollR(); if (!mini) return;
     if (!R || !hasSit()) { mini.innerHTML = ''; mini.__html = ''; return; }
     v = v || (S.stamp ? S.stamp.view() : null);
-    var h = R.miniHtml(S.con.situations(), str(uiNow().pos), v && v.on ? v.draft.effect : '', !!(v && v.active));
+    var h = R.miniHtml(S.con.situations(), str(uiNow().pos), v && v.on ? v.draft.effect : '', !!(v && v.active && !v.gone));
     if (mini.__html !== h) { mini.innerHTML = h; mini.__html = h; }
   }
   /* the sizer's strip in its slot under the card's header, and its Reduce and Done in their slot on the card's actions row (drawConsoleCard makes both).
@@ -8112,6 +8112,7 @@
       case 'eff': if (S.stamp) S.stamp.draft('eff', b.getAttribute('data-v')); break;
       case 'stamp': rollStamp(); break;
       case 'stamp-down': if (S.stamp) S.stamp.esc(); break;
+      case 'stamp-again': if (S.stamp && S.stamp.again) S.stamp.again(); break;      /* RK02 (stamp.brief): Show again */
       case 'stamp-clean': if (S.stamp) S.stamp.mark('clean'); if (S.rack && S.rack.ask && S.rack.ask.stamped) rackHit('six', ''); whoClear(); break;
       case 'sz-reduce': if (S.stamp) S.stamp.reduce(); break;
       case 'sz-restore': if (S.stamp) S.stamp.restore(); break;

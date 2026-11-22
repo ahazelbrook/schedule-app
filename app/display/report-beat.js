@@ -1,5 +1,6 @@
 /* The action report card (suite B09, spine.stamp): the show kind `report`, a stamped position and effect and the one-line threatened consequence, held on the
-   iPad until the GM marks the result (the page takes it off). Registers with B68Shows (app/display/shows.js) like the other brief beats; the look book draws
+   iPad until the GM marks the result (the page takes it off), or, with the setting stamp.brief on (RK02), for 10 seconds (the overlay's ms; the server and the iPad
+   let it go at at + ms, so nothing here times it). Registers with B68Shows (app/display/shows.js) like the other brief beats; the look book draws
    its fixture. The server's bounds (functions/_lib/show.js): position controlled|risky|desperate, effect limited|standard|great, text at most 100.
    Looks come from app/tokens.css and app/display/shows.css. Rules text and numbers never appear here: the card names the stamp, not what it means.
    The fixture uses the invented cast only. */
