@@ -611,7 +611,9 @@ fails and nobody is known, nothing is purged.
   `hist.score` / `mem.score`, see Score (J)), `dt` (`ui`: the Downtime panel's choices; its cards are `cards.downtime` /
   `hist.downtime` / `mem.downtime`, see Downtime (D)), `ball` (Run the site: `{ site, t, floor, lens, crew, pins }`, see Authored sites), `pins` (50, text), `capture` (400, and 128 KiB: `{ id, bucket: n|x|m|r, text, at, s? }`),
   `prep` (`ticks`, `cells`, `beats`, `pins`: the Prep tab), `opps` (the Cards panel), `sites` (Score sites), `chase` (the Chase panel:
-  `current`, `past`, `ui`) and `now` (`{ district }`: Now in). Capture never touches
+  `current`, `past`, `ui`), `now` (`{ district }`: Now in) and, only once room.key or room.tables has written one, `roomstate` (a
+  site's room overrides by roll and room: thing states, swaps, extras, the Blade tap's answer, kept NPC ids; written only by
+  `app/gm/room-state.js`, whose header is the contract; older builds keep it as it is). Capture never touches
   the campaign log; **Export tonight's note** downloads `b68g-s<NN>-notes.md`.
   `s` is the session number the campaign document held when the line was filed (`camp.session.number`, a whole number; absent when
   there was none), on typed lines, on lines filed by a card's action (a bargain accepted) and on rolls filed with `L`, so the sync
