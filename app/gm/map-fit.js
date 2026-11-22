@@ -8,7 +8,8 @@
                           first the full render, o the scene's options, o0 the options without the scene, draw(opts) the page's clean(), render the wrapped one.
      steps                [{ rung, bytes, leaked }], the full render first. A step that named a hidden room has leaked: true, and the size it drew at.
    The ladder, each rung tried only while the map is still over the cap:
-     shade (flat furniture) > halfcrowd > crowd (none) > figures (a room cut keeps one full figure) > scene (no people) > rings (the plain map as rings).
+     shade (flat furniture) > halfcrowd > crowd (none) > figures (a room cut keeps one full figure) > nofigures (the room alone) > scene (no people) > rings (the plain map as rings).
+   A room cut with more than one figure goes straight to figures (RK28b): the shade, crowd rungs save about 3% there and cost a render each.
    Plain script, UMD: window.B68GmMapFit in the browser, module.exports under Node. ES5, as the files beside it. */
 (function (root, factory) {
   'use strict';
@@ -17,8 +18,8 @@
   else root.B68GmMapFit = M;
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
-  var RUNGS = ['shade', 'halfcrowd', 'crowd', 'figures', 'scene', 'rings'];
-  var LABEL = { full: 'whole', shade: 'flat furniture', halfcrowd: 'half the crowd', crowd: 'no crowd', figures: 'one figure', scene: 'no people', rings: 'rings' };
+  var RUNGS = ['shade', 'halfcrowd', 'crowd', 'figures', 'nofigures', 'scene', 'rings'];
+  var LABEL = { full: 'whole', shade: 'flat furniture', halfcrowd: 'half the crowd', crowd: 'no crowd', figures: 'one figure', nofigures: 'the room alone', scene: 'no people', rings: 'rings' };
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function copy(o) { return Object.assign({}, o); }
   function kib(n) { return Math.round(n / 1024); }
@@ -45,18 +46,19 @@
      without them. Furniture goes flat on its own first (a flat copy that fits is the cut). The rungs after it keep the depth, so a toast never claims less than
      was done, but for the last two: the map without its people goes flat (flatOptions) when the flat copy came out smaller than the shaded one. */
   function plan(o, o0, flat) {
-    var out = [], cur;
-    if (isObj(o) && o.shade === true) out.push(['shade', flat(o)]);
-    if (o !== o0) {
-      if (o.crowd) {
+    var out = [], cur, room = isObj(o) && o !== o0 && o.view === 'room', one = room ? oneFigure(o.people) : null;
+    if (one) {      /* a room cut with several figures: the figures are the weight, so they go first */
+      cur = copy(o); delete cur.crowd; cur.people = one; out.push(['figures', cur]);
+    } else {
+      if (isObj(o) && o.shade === true) out.push(['shade', flat(o)]);
+      if (o !== o0 && o.crowd) {
         var half = halfCrowd(o.crowd);
         if (half) { cur = copy(o); cur.crowd = half; out.push(['halfcrowd', cur]); }
         cur = copy(o); delete cur.crowd; out.push(['crowd', cur]);
       }
-      var one = o.view === 'room' ? oneFigure(o.people) : null;
-      if (one) { cur = copy(o); delete cur.crowd; cur.people = one; out.push(['figures', cur]); }
-      out.push(['scene', o0, flat(o0)]);
     }
+    if (room && Array.isArray(o.people) && o.people.length) { cur = copy(o); delete cur.crowd; cur.people = []; out.push(['nofigures', cur]); }      /* the room alone: better than losing the room */
+    if (o !== o0) out.push(['scene', o0, flat(o0)]);
     if (o0.view !== 'rings') { cur = copy(o0); cur.view = 'rings'; var fl = flat(cur); out.push(['rings', cur, fl]); }
     return out;
   }
