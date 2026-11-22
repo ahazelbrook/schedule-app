@@ -99,8 +99,8 @@ await test('sheets-check: what a page must hold comes from content.js: stress (d
   assert.equal(K.expectFor(CONTENT, 'tin').stress, 10, '"(10 boxes" in the resource line is the box count'); assert.equal(K.expectFor(CONTENT, 'tin').bank, 40);
   const wisp = K.expectFor(CONTENT, 'wisp');
   assert.equal(wisp.stress, 12); assert.equal(wisp.items.length, 0, 'an items RULE means the page prints no item lines'); assert.equal(wisp.abilities, 2, 'paranormal: no Versatile');
-  const pel = K.expectFor(CONTENT, 'ember');
-  assert.equal(pel.dots, 5, 'maxDot'); assert.equal(pel.items.length, 4);
+  const emb = K.expectFor(CONTENT, 'ember');
+  assert.equal(emb.dots, 5, 'maxDot'); assert.equal(emb.items.length, 4);
   assert.throws(() => K.expectFor(CONTENT, 'nobody'), /no playbook "nobody"/);
 });
 await test('sheets-check: a map that is right passes every count, and each count fails on its own when broken (a deliberate break goes red)', () => {
