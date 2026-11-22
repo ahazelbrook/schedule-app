@@ -39,10 +39,13 @@
    drops the roll's oldest by blade.at); roomstate itself <= 48 KiB (past it the oldest Blade entries anywhere go first, then the oldest
    whole rolls other than the one being written, and only then is the write refused). A room left with nothing in it is removed, and so
    is a roll left with no rooms.
+   Known limit (H5, the re-review): a cap judges a roll's age from this device's own copy, which can be stale, so dropping "the oldest"
+   roll can lose another device's fresh mark on it. It needs a cap to be hit (24 rolls, or 48 KiB), so it is rare.
 
    The API:  RS = B68GmRoomState.create(host)
      host = { on() -> room.key or room.tables is on, doc() -> the GM state, patch(p) -> bool (the page's patch: its local apply and its
-              saver), busy() -> the page's saver has something pending or in flight, now() -> ms, part() -> the rooms part's version or '',
+              saver), busy() -> the saver's PENDING patch holds roomstate (only a pending patch folds later writes into it; a patch in
+              flight goes on its own, and a pending pin or UI change does not count), now() -> ms, part() -> the rooms part's version or '',
               toast?(text, bad) }
      Reads (no write; they work with the settings off too):
        RS.read(rollKey, roomKey) -> { say: n|null, rr: n, extra: [slug], swaps: {}, marks: {}, blade: { at, say, things: [thing+slug],
@@ -70,10 +73,10 @@
            becomes partVersion, one patch a roll. A roll where known gives anything but an array for a stored room is left as it is. When
            anything was dropped, note is 'tables changed' and host.toast says so (the caller does not toast again).
      Pure: B68GmRoomState.roomKeys(names) -> [roomKey | ''], roomKey(name, n), isSlug(s), clean(rawRoom) (what read gives), CAPS, NOTE, V.
-   Two quick writes never lose one: each write reads host.doc() afresh (the page applies a patch at once). While the saver is busy, a room
-   or roll removed and then written again carries the nulls of what it held (the saver's merge would otherwise turn "remove R, then set
-   R.x" into "set R.x" and bring the old R.y back on the server). That record is emptied whenever the saver is idle, so it never deletes
-   what another device wrote after the removal reached the server. */
+   Two quick writes never lose one: each write reads host.doc() afresh (the page applies a patch at once). While the saver's pending patch
+   holds roomstate, a room or roll removed and then written again carries the nulls of what it held (the saver's merge would otherwise
+   turn "remove R, then set R.x" into "set R.x" and bring the old R.y back on the server). That record is emptied whenever no roomstate
+   is pending, so it never deletes what another device wrote after the removal left this page (the reviews' S1, S1b, H1, H1b). */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -225,7 +228,7 @@
     host = isObj(host) ? host : {};
     var tomb = {}, tombN = 0;
     function on() { try { return !!(host.on && host.on()); } catch (e) { return false; } }
-    /* the saver idle: what this page removed has reached the server, so the record of it goes (a host with no busy() keeps it) */
+    /* no roomstate pending: what this page removed has left the saver, so the record of it goes (a host with no busy() keeps it) */
     function settle() { var b = true; try { b = host.busy ? !!host.busy() : true; } catch (e) { b = true; } if (!b) { tomb = {}; tombN = 0; } }
     function stateNow() {
       var d = null; try { d = host.doc ? host.doc() : null; } catch (e) { d = null; }

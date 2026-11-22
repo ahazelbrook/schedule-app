@@ -34,7 +34,7 @@ function rig(o = {}) {
   const r = { on: o.on !== false, part: o.part == null ? 'p1' : o.part, t: T0, doc: clone(o.doc || {}), pending: null, patches: [], toasts: [], refuse: false };
   r.ref = clone(r.doc); r.server = clone(r.doc);
   r.host = {
-    on: () => r.on, doc: () => r.doc, now: () => (r.t += 1000), part: () => r.part, toast: (t) => r.toasts.push(t), busy: () => !!r.pending,
+    on: () => r.on, doc: () => r.doc, now: () => (r.t += 1000), part: () => r.part, toast: (t) => r.toasts.push(t), busy: () => !!(r.pending && r.pending.roomstate),
     patch: (p) => { if (r.refuse) return false; r.patches.push(clone(p)); r.doc = PP.applyPatch(r.doc, p); r.ref = PP.applyPatch(r.ref, p); r.pending = r.pending ? PP.mergePatch(r.pending, p) : clone(p); return true; },
   };
   r.rs = RS.create(r.host);
@@ -312,6 +312,28 @@ test('S1b: A\'s roll goes when its last room clears; B marks R2 in that roll; A 
   const roll = shared.server.roomstate.keys[String(SEED)];
   assert.deepEqual(roll.rooms, { 'bar#1': { marks: { m: 'on' } }, 'cellar#1': { marks: { k: 'on' } } }, 'B\'s R2 is there');
   assert.equal(roll.part, 'p1', 'and the roll has its part');
+});
+/* the re-review's H1 and H1b: another GM-state patch pending on A (a pin, a UI change) must not keep the record alive; only a pending
+   roomstate patch can fold A's null into a later write */
+test('H1: A clears R and saves; B adds an extra to R; A makes another patch, then marks R: B\'s extra survives', () => {
+  const base = rig(); base.rs.setMark(SEED, 'bar#1', 'a', 'open'); base.rs.addExtra(SEED, 'bar#1', 'e'); base.rs.setMark(SEED, 'bar#2', 'k', 'on'); base.flush();
+  const { a, b, shared } = pair(base.server);
+  assert.ok(a.rs.clear(SEED, 'bar#1')); a.flush();
+  b.flush(); assert.ok(b.rs.addExtra(SEED, 'bar#1', 'y')); b.flush();
+  assert.ok(a.host.patch({ pins: { p1: { text: 'a pin', at: iso(50) } } }), 'another patch now pending on A');
+  assert.ok(a.rs.setMark(SEED, 'bar#1', 'm', 'on')); a.flush();
+  const room = shared.server.roomstate.keys[String(SEED)].rooms['bar#1'];
+  assert.deepEqual(Object.keys(room.extra || {}), ['y'], 'B\'s y is there'); assert.deepEqual(room.marks, { m: 'on' });
+  assert.equal(shared.server.pins.p1.text, 'a pin');
+});
+test('H1b: the same with B\'s mark in R2 of a roll A removed: B\'s whole R2 survives', () => {
+  const base = rig(); base.rs.setMark(SEED, 'bar#1', 'a', 'open'); base.rs.setMark(SEED, 'cellar#1', 'old', 'on'); base.flush();
+  const { a, b, shared } = pair(base.server);
+  assert.ok(a.rs.clear(SEED, 'cellar#1')); assert.ok(a.rs.clear(SEED, 'bar#1')); a.flush();
+  b.flush(); assert.ok(b.rs.setMark(SEED, 'cellar#1', 'k', 'on')); b.flush();
+  assert.ok(a.host.patch({ loc: { ui: { view: 'iso' } } }), 'another patch now pending on A');
+  assert.ok(a.rs.setMark(SEED, 'bar#1', 'm', 'on')); a.flush();
+  assert.deepEqual(shared.server.roomstate.keys[String(SEED)].rooms, { 'bar#1': { marks: { m: 'on' } }, 'cellar#1': { marks: { k: 'on' } } });
 });
 test('S2: a roll B re-creates after A removed it is never left without a part (part rides on every write)', () => {
   const base = rig(); base.rs.setMark(SEED, 'bar#1', 'a', 'open'); base.flush();
