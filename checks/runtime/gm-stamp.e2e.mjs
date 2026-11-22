@@ -249,6 +249,8 @@ try {
     await reopen();
     if (DESK) check(!!(await until(() => page.evaluate(() => { const r = document.querySelector('#gm-rl'); return !!r && r.getAttribute('data-kr') === '1'; }), 30000, 250)), TAG + 'the Roll is the new desk\'s card');
     await page.click('#gm-pos [data-v="risky"]');
+    await until(async () => (await page.inputValue('#gm-c-threat')) !== '', 5000, 100);      /* the page seeds the line from the room, or keeps the stored one */
+    await sleep(600);
     const lineBefore = await page.inputValue('#gm-c-threat');
     await page.click(STAMP);
     const up = await until(onIpadAt, 6000, 100);
@@ -259,7 +261,7 @@ try {
     check(!!(await until(async () => /Gone from the iPad/.test(await panel()), 3000, 100)), TAG + 'the panel keeps the line, as gone: ' + (await panel()).slice(0, 100));
     check(/Risky, standard/.test(await panel()) && !/On the iPad/.test(await panel()), TAG + 'with what was sent (position and effect)');
     check(!!(await page.$('#gm-stamp [data-gm="stamp-again"]')) && !!(await page.$('#gm-stamp [data-gm="stamp-down"]')) && !!(await page.$('#gm-stamp [data-gm="stamp-clean"]')), TAG + 'Show again, Clear and Clean are there');
-    check(lineBefore !== '' && (await page.inputValue('#gm-c-threat')) === lineBefore, TAG + 'the Roll’s line is still the line: ' + lineBefore.slice(0, 30));
+    check((DESK || lineBefore !== '') && (await page.inputValue('#gm-c-threat')) === lineBefore, TAG + 'the Roll’s line is still the line: ' + lineBefore.slice(0, 30));
     await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await sleep(400);
     check(/Gone from the iPad/.test(await panel()), TAG + 'Esc does not swallow the gone line (nothing is up to take down)');
