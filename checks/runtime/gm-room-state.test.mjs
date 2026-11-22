@@ -66,7 +66,7 @@ test('the shape: one write of each kind gives exactly the contract\'s document; 
   assert.ok(rs.addKept(SEED, s1, 'npc_mabel_quist_k3x9'));
   assert.ok(rs.setBlade(SEED, s2, { say: 'GM-ONLY-blade: the lights flicker twice.', things: [{ name: 'A tin whistle', line: 'dented', look: 'GM-ONLY-look: a name scratched on it', tags: ['clue', 'bogus'] }], people: ['"Evening, all."'] }));
   assert.deepEqual(r.doc, { roomstate: { v: 1, at: iso(6), keys: { [String(SEED)]: { part: 'p1', at: iso(6), rooms: {
-    'showroom#1': { marks: { 'brass-umbrella-stand': 'empty' }, swaps: { 'velvet-rope': 'grand-piano' }, extra: ['stage-curtain'], say: 2, kept: ['npc_mabel_quist_k3x9'] },
+    'showroom#1': { marks: { 'brass-umbrella-stand': 'empty' }, swaps: { 'velvet-rope': 'grand-piano' }, extra: { 'stage-curtain': iso(3) }, say: 2, kept: { npc_mabel_quist_k3x9: iso(5) } },
     'showroom#2': { blade: { at: iso(6), say: 'GM-ONLY-blade: the lights flicker twice.', people: ['"Evening, all."'],
       things: [{ name: 'A tin whistle', line: 'dented', look: 'GM-ONLY-look: a name scratched on it', roll: '', danger: '', states: [], tags: ['clue'] }] } } } } } } });
   assert.deepEqual(rs.read(SEED, s1), { say: 2, extra: ['stage-curtain'], swaps: { 'velvet-rope': 'grand-piano' }, marks: { 'brass-umbrella-stand': 'empty' }, blade: null, kept: ['npc_mabel_quist_k3x9'] });
@@ -114,7 +114,8 @@ test('each write is one patch touching one rollKey; a no-op sends nothing; a roo
   r.rs.setMark('77', 'bar#2', 'c', 'on'); assert.ok(r.rs.clear('77', 'bar#1'));
   assert.deepEqual(Object.keys(rooms(r.doc, '77')), ['bar#2'], 'clear removes the room, the roll stays for its other room');
   assert.ok(r.rs.setSwap('77', 'bar#2', 'c', 'd') && r.rs.setSwap('77', 'bar#2', 'c', null)); assert.equal(rooms(r.doc, '77')['bar#2'].swaps, undefined, 'a map left empty goes');
-  assert.ok(r.rs.setExtra('77', 'bar#2', ['x', 'y', 'x'])); assert.deepEqual(rooms(r.doc, '77')['bar#2'].extra, ['x', 'y']);
+  assert.ok(r.rs.setExtra('77', 'bar#2', ['y', 'x', 'y'])); assert.deepEqual(Object.keys(rooms(r.doc, '77')['bar#2'].extra).sort(), ['x', 'y']);
+  assert.deepEqual(r.rs.read('77', 'bar#2').extra, ['y', 'x'], 'setExtra reads back in list order');
   assert.ok(r.rs.setExtra('77', 'bar#2', [])); assert.equal(rooms(r.doc, '77')['bar#2'].extra, undefined);
   assert.ok(r.rs.setSay('77', 'bar#2', 0)); assert.equal(rooms(r.doc, '77')['bar#2'].say, 0, 'say 0 is a say');
   assert.ok(r.rs.setSay('77', 'bar#2', null)); assert.equal(rooms(r.doc, '77')['bar#2'].say, undefined);
@@ -233,7 +234,7 @@ test('two quick writes never lose one: both marks reach the server in the one me
   assert.ok(r.rs.setMark(SEED, 'bar#1', 'a', 'open')); assert.ok(r.rs.setMark(SEED, 'bar#1', 'b', 'shut'));
   assert.ok(r.rs.setSwap(SEED, 'bar#2', 'c', 'd')); assert.ok(r.rs.addExtra(SEED, 'bar#1', 'e')); assert.ok(r.rs.addExtra(SEED, 'bar#1', 'f'));
   r.flush();
-  assert.deepEqual(r.server.roomstate.keys[String(SEED)].rooms, { 'bar#1': { marks: { a: 'open', b: 'shut' }, extra: ['e', 'f'] }, 'bar#2': { swaps: { c: 'd' } } });
+  assert.deepEqual(r.server.roomstate.keys[String(SEED)].rooms, { 'bar#1': { marks: { a: 'open', b: 'shut' }, extra: { e: iso(4), f: iso(5) } }, 'bar#2': { swaps: { c: 'd' } } });
 });
 
 test('a room cleared and written again before the saver sends keeps the clear (the saver would merge "null R, then set R.x" into "set R.x")', () => {
@@ -250,6 +251,38 @@ test('a room cleared and written again before the saver sends keeps the clear (t
   q.flush();
   assert.deepEqual(q.server.roomstate.keys['roll-1'].rooms['bar#1'].marks, { new: 'on' }, 'the dropped roll came back without its old mark');
   assert.deepEqual(q.server.roomstate, q.ref.roomstate);
+});
+
+/* two GM devices on one server: each page holds its own copy, saves through its own saver, and the server merges what arrives (deepMerge) */
+function pair(doc) {
+  const shared = { server: clone(doc || {}) }, a = rig({ doc: shared.server }), b = rig({ doc: shared.server });
+  b.t += 500;      /* the two clocks differ a little */
+  for (const d of [a, b]) d.flush = () => { if (d.pending) { shared.server = deepMerge(shared.server, d.pending); d.pending = null; } d.server = shared.server; d.doc = clone(shared.server); return shared.server; };
+  return { a, b, shared };
+}
+test('two devices at once: A adds extra x and B adds extra y to the same room (and each keeps an NPC); both survive the server\'s merge, in either order', () => {
+  for (const order of ['ab', 'ba']) {
+    const base = rig(); base.rs.setMark(SEED, 'bar#1', 'a', 'open'); base.flush();
+    const { a, b, shared } = pair(base.server);
+    assert.ok(a.rs.addExtra(SEED, 'bar#1', 'x')); assert.ok(b.rs.addExtra(SEED, 'bar#1', 'y'));
+    assert.ok(a.rs.addKept(SEED, 'bar#1', 'npc_a')); assert.ok(b.rs.addKept(SEED, 'bar#1', 'npc_b'));
+    for (const d of order === 'ab' ? [a, b] : [b, a]) d.flush();
+    const room = shared.server.roomstate.keys[String(SEED)].rooms['bar#1'];
+    assert.deepEqual(Object.keys(room.extra).sort(), ['x', 'y'], order + ': both extras on the server');
+    assert.deepEqual(Object.keys(room.kept).sort(), ['npc_a', 'npc_b'], order + ': both kept ids on the server');
+    assert.equal(room.marks.a, 'open', order + ': the older mark is untouched');
+    a.flush(); assert.deepEqual(a.rs.read(SEED, 'bar#1').extra, ['x', 'y'], order + ': A reads both, in the order they were added (A\'s clock first)');
+    b.flush(); assert.deepEqual(b.rs.read(SEED, 'bar#1').kept, ['npc_a', 'npc_b'], order + ': and so does B');
+  }
+  /* taking one away on A while B adds another: the null for A's slug and B's new slug both land */
+  const base = rig(); base.rs.setExtra(SEED, 'bar#1', ['x', 'y']); base.flush();
+  const { a, b, shared } = pair(base.server);
+  assert.ok(a.rs.setExtra(SEED, 'bar#1', ['y'])); assert.ok(b.rs.addExtra(SEED, 'bar#1', 'z'));
+  b.flush(); a.flush();
+  assert.deepEqual(Object.keys(shared.server.roomstate.keys[String(SEED)].rooms['bar#1'].extra).sort(), ['y', 'z'], 'x went (a null), z came (a key), y stayed');
+  /* why maps: the same two writes as lists, through the same server merge, lose one */
+  const asLists = deepMerge(deepMerge({ extra: ['a'] }, { extra: ['a', 'x'] }), { extra: ['a', 'y'] });
+  assert.deepEqual(asLists.extra, ['a', 'y'], 'a list replaces whole, so A\'s x would be lost');
 });
 
 /* a random sweep: the page, its saver and the server agree after every send, whatever the order of writes and sends */
@@ -301,7 +334,7 @@ test('a roomstate with another v (a later build\'s) is read as empty and never w
   const q = rig(); q.refuse = true;
   assert.equal(q.rs.setMark(SEED, 'bar#1', 'a', 'on'), false); q.refuse = false;
   assert.ok(q.rs.setMark(SEED, 'bar#1', 'a', 'on'));
-  const junk = rig({ doc: { roomstate: { v: 1, keys: { [String(SEED)]: { part: 'p1', rooms: { 'bar#1': { marks: { a: 'open', 'Bad Key': 'x', b: 7, c: '' }, extra: 'x', swaps: { a: 'B' }, kept: ['ok_1', 'bad id', 'ok_1'], say: 12, blade: 'x' } } } } } } });
+  const junk = rig({ doc: { roomstate: { v: 1, keys: { [String(SEED)]: { part: 'p1', rooms: { 'bar#1': { marks: { a: 'open', 'Bad Key': 'x', b: 7, c: '' }, extra: ['x'], swaps: { a: 'B' }, kept: { ok_1: iso(1), 'bad id': iso(1), ok_2: 'yesterday', ok_3: 7 }, say: 12, blade: 'x' } } } } } } });
   assert.deepEqual(junk.rs.read(SEED, 'bar#1'), { say: null, extra: [], swaps: {}, marks: { a: 'open' }, blade: null, kept: ['ok_1'] }, 'malformed values are left out of a read');
   assert.ok(junk.rs.setMark(SEED, 'bar#1', 'a', 'shut'));
 });

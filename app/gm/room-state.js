@@ -6,8 +6,8 @@
 
    The shape:
      roomstate = { v: 1, at, keys: { <rollKey>: { part, at, rooms: { <roomKey>: {
-       say?, extra?: [slug], swaps?: { <slug>: <slug> }, marks?: { <slug>: <state> },
-       blade?: { at, say?, things?: [thing], people?: [line] }, kept?: [npcId] } } } } }
+       say?, extra?: { <slug>: <at> }, swaps?: { <slug>: <slug> }, marks?: { <slug>: <state> },
+       blade?: { at, say?, things?: [thing], people?: [line] }, kept?: { <npcId>: <at> } } } } } }
      v        1. A roomstate whose v is not 1 is read as empty and never written (a later build owns it).
      at       ISO time of the last write: at the top for any roll; on a roll, its last write (the oldest roll is the one with the oldest at).
      rollKey  the page's rollKey(roll) (gm-page.js P.rollKey, ~:829): the seed, or 'a:' + the authored site's name; so saved, unsaved and
@@ -16,12 +16,14 @@
      roomKey  normRoom(name) + '#' + n, n counting same-named rooms in the roll from 1: roomKeys(names). Names repeat within a site.
      slug     a thing's key, slug(name) in room-things.js: a-z0-9 words joined by '-', <= 40. Never a table index.
      say      which of the table's read-aloud lines, 0 to 9.
-     extra    the slugs Roll another added, in order (<= 10).
+     extra    the slugs Roll another added, each with the ISO time it was added (<= 10). A map, not a list, so two devices adding at once
+              merge key by key on save (a list would replace whole); taking one away writes null for that slug, which the page's applyPatch
+              and the server's deepMerge both read as "delete the key" (the saver's mergePatch keeps the null, so it still reaches the server).
      swaps    { <slug drawn>: <slug drawn in its place> } (<= 10).
      marks    { <slug>: <state> }, a state being 1 to 24 characters, lower case (<= 20).
      blade    the Blade tap's answer, the ONE place text is stored: say <= 300, things <= 2 (the thing shape of room-things.js, cut to its
               limits, stored without slug), people <= 3 lines of <= 120; at is when it was set.
-     kept     the NPC ids Keep filed (<= 12), /^[A-Za-z0-9_-]{1,64}$/.
+     kept     the NPC ids Keep filed, each with the ISO time it was kept (<= 12), ids /^[A-Za-z0-9_-]{1,64}$/; a map, as extra is.
    Never rolled text: the draw replays from the seed and the tables; only overrides are stored.
    Caps: 24 rolls (a 25th drops the oldest roll); 40 rooms a roll (a 41st is refused: rooms carry no at); 12 Blade entries a roll (a 13th
    drops the roll's oldest by blade.at); roomstate itself <= 48 KiB (past it the oldest Blade entries anywhere go first, then the write is
@@ -31,8 +33,9 @@
      host = { on() -> room.key or room.tables is on, doc() -> the GM state, patch(p) -> bool (the page's patch: its local apply and its
               saver), now() -> ms, part() -> the rooms part's version or '', toast?(text, bad) }
      Reads (no write; they work with the settings off too):
-       RS.read(rollKey, roomKey) -> { say: n|null, extra: [], swaps: {}, marks: {}, blade: { at, say, things: [thing+slug], people } | null, kept: [] }
-                                    always that object (empty when nothing is stored), a copy, malformed values left out
+       RS.read(rollKey, roomKey) -> { say: n|null, extra: [slug], swaps: {}, marks: {}, blade: { at, say, things: [thing+slug], people } | null, kept: [npcId] }
+                                    always that object (empty when nothing is stored), a copy, malformed values left out; extra and kept
+                                    read as lists in the order they were added (by their at, then by key)
        RS.roll(rollKey)          -> { part, at, rooms: { <roomKey>: read } } (rooms with something in them) | null
        RS.stale(rollKey)         -> true when the roll is stored and its part is not host.part() (call prune)
      Writes: each is ONE host.patch that touches one rollKey (plus the nulls of anything a cap drops). Each returns true when the stored
@@ -41,7 +44,8 @@
        RS.setSay(rollKey, roomKey, n | null)
        RS.setSwap(rollKey, roomKey, slug, toSlug | null)       null takes the swap away
        RS.setMark(rollKey, roomKey, slug, state | null)        null takes the mark away
-       RS.addExtra(rollKey, roomKey, slug)  RS.setExtra(rollKey, roomKey, [slug])
+       RS.addExtra(rollKey, roomKey, slug)  RS.setExtra(rollKey, roomKey, [slug])   setExtra writes the whole list, each slug
+                                                                                    at now plus its place in ms, so it reads in list order
        RS.setBlade(rollKey, roomKey, { say?, things?, people? } | null)
        RS.addKept(rollKey, roomKey, npcId)
        RS.clear(rollKey, roomKey)                               the room back to its draw (Reroll the room)
@@ -51,6 +55,8 @@
            where known gives anything but an array for a stored room is left as it is. When anything was dropped, note is 'tables changed'
            and host.toast says so (the caller does not toast again).
      Pure: B68GmRoomState.roomKeys(names) -> [roomKey | ''], roomKey(name, n), isSlug(s), clean(rawRoom) (what read gives), CAPS, NOTE, V.
+   Two devices writing at once merge on the server key by key (every list-like field is a map); only the Blade entry and the say index
+   replace whole, and the last writer wins those.
    Two quick writes never lose one: each write reads host.doc() afresh (the page applies a patch at once), and a room or roll removed and
    then written again before the saver sends carries the nulls of what it held (the saver's merge would otherwise turn "remove R, then set
    R.x" into "set R.x" and bring the old R.y back on the server). */
@@ -108,12 +114,12 @@
   function isSlug(s) { return typeof s === 'string' && s.length <= 40 && SLUG.test(s); }
   function stateOf(s) { if (typeof s !== 'string') return null; var t = cut(str(s).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').toLowerCase(), LIM.state); return t || null; }
   function sayOf(n) { return typeof n === 'number' && n % 1 === 0 && n >= 0 && n <= LIM.say ? n : null; }
-  function norm(name) { var R = mod('B68GmRooms', './room-notes.js'); return R ? R.normRoom(name) : str(name).toLowerCase().trim(); }
-  function roomKey(name, n) { var k = norm(name), i = n == null ? 1 : n; return k && typeof i === 'number' && i % 1 === 0 && i >= 1 && i <= 99 && isRoomKey(k + '#' + i) ? k + '#' + i : ''; }
+  function normName(name) { var R = mod('B68GmRooms', './room-notes.js'); return R ? R.normRoom(name) : str(name).toLowerCase().trim(); }
+  function roomKey(name, n) { var k = normName(name), i = n == null ? 1 : n; return k && typeof i === 'number' && i % 1 === 0 && i >= 1 && i <= 99 && isRoomKey(k + '#' + i) ? k + '#' + i : ''; }
   function roomKeys(names) {
     var seen = {};
     return (Array.isArray(names) ? names : []).map(function (nm) {
-      var k = typeof nm === 'string' ? norm(nm) : ''; if (!k) return '';
+      var k = typeof nm === 'string' ? normName(nm) : ''; if (!k) return '';
       seen[k] = (has(seen, k) ? seen[k] : 0) + 1;
       return roomKey(nm, seen[k]);
     });
@@ -142,19 +148,31 @@
     return b ? { at: b.at || null, say: b.say || null, people: b.people.length ? b.people.slice() : null,
       things: b.things.length ? b.things.map(function (t) { var o = {}; ['name', 'line', 'look', 'roll', 'danger', 'states', 'tags'].forEach(function (k) { o[k] = clone(t[k]); }); return o; }) : null } : null;
   }
-  function clean(r) {
-    r = isObj(r) ? r : {};
-    return { say: sayOf(r.say), extra: slugList(r.extra, CAPS.extra), swaps: slugMap(r.swaps, CAPS.swaps, function (x) { return isSlug(x) ? x : null; }),
-      marks: slugMap(r.marks, CAPS.marks, stateOf), blade: bladeOf(r.blade),
-      kept: (Array.isArray(r.kept) ? r.kept : []).filter(function (id, i, a) { return typeof id === 'string' && NPC.test(id) && a.indexOf(id) === i; }).slice(0, CAPS.kept) };
+  /* { <key>: <ISO at> } with good keys and times only, at most max (the first added kept) */
+  var AT = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/;
+  function byAt(m) { return Object.keys(m).sort(function (a, b) { return m[a] < m[b] ? -1 : m[a] > m[b] ? 1 : a < b ? -1 : a > b ? 1 : 0; }); }
+  function timeMap(v, max, keyOk) {
+    var src = {}, out = {};
+    Object.keys(isObj(v) ? v : {}).forEach(function (k) { if (k !== '__proto__' && keyOk(k) && typeof v[k] === 'string' && AT.test(v[k])) src[k] = v[k]; });
+    byAt(src).slice(0, max).forEach(function (k) { out[k] = src[k]; });
+    return out;
   }
-  function isEmpty(c) { return c.say === null && !c.extra.length && !Object.keys(c.swaps).length && !Object.keys(c.marks).length && !c.blade && !c.kept.length; }
+  function isNpc(id) { return typeof id === 'string' && NPC.test(id); }
+  /* a stored room as this file works on it: extra and kept as their maps */
+  function normRoomState(r) {
+    r = isObj(r) ? r : {};
+    return { say: sayOf(r.say), extra: timeMap(r.extra, CAPS.extra, isSlug), swaps: slugMap(r.swaps, CAPS.swaps, function (x) { return isSlug(x) ? x : null; }),
+      marks: slugMap(r.marks, CAPS.marks, stateOf), blade: bladeOf(r.blade), kept: timeMap(r.kept, CAPS.kept, isNpc) };
+  }
+  /* what a caller reads: extra and kept as lists in the order they were added */
+  function view(n) { return { say: n.say, extra: byAt(n.extra), swaps: n.swaps, marks: n.marks, blade: n.blade, kept: byAt(n.kept) }; }
+  function clean(r) { return view(normRoomState(r)); }
+  function isEmpty(c) { return c.say === null && !Object.keys(c.extra).length && !Object.keys(c.swaps).length && !Object.keys(c.marks).length && !c.blade && !Object.keys(c.kept).length; }
   /* the room patch that takes cur to next (cleaned rooms): leaves only, maps key by key, the Blade entry whole; null when nothing changes */
   function diff(cur, next) {
     var p = {}, n = 0;
     if (cur.say !== next.say) { p.say = next.say; n++; }
-    ['extra', 'kept'].forEach(function (f) { if (!same(cur[f], next[f])) { p[f] = next[f].length ? next[f].slice() : null; n++; } });
-    ['swaps', 'marks'].forEach(function (f) {
+    ['extra', 'swaps', 'marks', 'kept'].forEach(function (f) {
       var d = {}, m = 0;
       Object.keys(cur[f]).forEach(function (k) { if (!has(next[f], k)) { d[k] = null; m++; } });
       Object.keys(next[f]).forEach(function (k) { if (cur[f][k] !== next[f][k]) { d[k] = next[f][k]; m++; } });
@@ -216,7 +234,7 @@
         });
         oldest(list).forEach(function (e) {
           if (bytes(JSON.stringify(after)) <= CAPS.bytes) return;
-          var rp = isObj(kp[e.rk]) ? kp[e.rk] : (kp[e.rk] = {}), raw = roomsIn(rollIn(after.keys, e.rk))[e.rm], c = clean(raw);
+          var rp = isObj(kp[e.rk]) ? kp[e.rk] : (kp[e.rk] = {}), raw = roomsIn(rollIn(after.keys, e.rk))[e.rm], c = normRoomState(raw);
           c.blade = null;
           if (!isObj(rp.rooms)) rp.rooms = {};
           rp.rooms[e.rm] = isEmpty(c) ? null : combine(isObj(rp.rooms[e.rm]) ? rp.rooms[e.rm] : {}, { blade: null });
@@ -236,11 +254,11 @@
       if (!on()) return false;
       var rk = keyOf(rollKey); if (!rk || !isRoomKey(rmKey)) return false;
       var st = stateNow(); if (!st.ok) return false;
-      var at = nowIso(), roll = rollIn(st.keys, rk), rooms = roomsIn(roll), cur = clean(rooms[rmKey]), next = clean(rooms[rmKey]);
+      var at = nowIso(), roll = rollIn(st.keys, rk), rooms = roomsIn(roll), cur = normRoomState(rooms[rmKey]), next = normRoomState(rooms[rmKey]);
       if (fn(next, at) === false) return false;
-      next = clean(next);
+      next = normRoomState(next);
       var rp = diff(cur, next); if (!rp) return true;
-      var empty = isEmpty(next), others = Object.keys(rooms).filter(function (k) { return k !== rmKey && !isEmpty(clean(rooms[k])); });
+      var empty = isEmpty(next), others = Object.keys(rooms).filter(function (k) { return k !== rmKey && !isEmpty(normRoomState(rooms[k])); });
       if (!roll && empty) return true;
       if (isEmpty(cur) && !empty && others.length >= CAPS.rooms) { say('A site keeps at most ' + CAPS.rooms + ' rooms of changes.'); return false; }
       var rollP = { at: at, rooms: {} }, kp = {};
@@ -248,7 +266,7 @@
       if (!roll) rollP.part = partNow();
       if (next.blade && !cur.blade) {
         var bl = oldest(others.filter(function (k) { return !!bladeOf(rooms[k].blade); }).map(function (k) { return { id: k, at: bladeOf(rooms[k].blade).at }; }));
-        while (bl.length >= CAPS.blades) { var e = bl.shift(), c = clean(rooms[e.id]); c.blade = null; rollP.rooms[e.id] = isEmpty(c) ? null : { blade: null }; if (isEmpty(c)) others.splice(others.indexOf(e.id), 1); }
+        while (bl.length >= CAPS.blades) { var e = bl.shift(), c = normRoomState(rooms[e.id]); c.blade = null; rollP.rooms[e.id] = isEmpty(c) ? null : { blade: null }; if (isEmpty(c)) others.splice(others.indexOf(e.id), 1); }
       }
       kp[rk] = empty && roll && !others.length ? null : rollP;
       if (!roll) {
@@ -265,7 +283,7 @@
     function rollOf(rollKey) {
       var rk = keyOf(rollKey), st = stateNow(), roll = rk && st.ok ? rollIn(st.keys, rk) : null; if (!roll) return null;
       var out = { part: str(roll.part), at: str(roll.at), rooms: {} }, rooms = roomsIn(roll);
-      Object.keys(rooms).forEach(function (k) { var c = clean(rooms[k]); if (isRoomKey(k) && !isEmpty(c)) out.rooms[k] = c; });
+      Object.keys(rooms).forEach(function (k) { var c = normRoomState(rooms[k]); if (isRoomKey(k) && !isEmpty(c)) out.rooms[k] = view(c); });
       return out;
     }
     function stale(rollKey) { var r = rollOf(rollKey); return !!r && r.part !== partNow(); }
@@ -282,11 +300,11 @@
           if (!fine) return;
           var live = null; try { live = known(rk, rm); } catch (e) { live = null; }
           if (!Array.isArray(live)) { fine = false; return; }
-          var cur = clean(rooms[rm]), next = clean(rooms[rm]), inn = function (s) { return live.indexOf(s) >= 0; };
-          next.extra = cur.extra.filter(inn);
+          var cur = normRoomState(rooms[rm]), next = normRoomState(rooms[rm]), inn = function (s) { return live.indexOf(s) >= 0; };
+          Object.keys(cur.extra).forEach(function (k) { if (!inn(k)) delete next.extra[k]; });
           Object.keys(cur.swaps).forEach(function (k) { if (!inn(k) || !inn(cur.swaps[k])) delete next.swaps[k]; });
           Object.keys(cur.marks).forEach(function (k) { if (!inn(k)) delete next.marks[k]; });
-          dropped += cur.extra.length - next.extra.length + Object.keys(cur.swaps).length - Object.keys(next.swaps).length + Object.keys(cur.marks).length - Object.keys(next.marks).length;
+          dropped += Object.keys(cur.extra).length - Object.keys(next.extra).length + Object.keys(cur.swaps).length - Object.keys(next.swaps).length + Object.keys(cur.marks).length - Object.keys(next.marks).length;
           var d = diff(cur, next);
           if (!isEmpty(next)) left++;
           if (d) rp[rm] = isEmpty(next) ? null : d;
@@ -312,12 +330,12 @@
       },
       addExtra: function (rk, rm, slug) {
         if (!isSlug(slug)) return false;
-        return write(rk, rm, function (r) { if (r.extra.indexOf(slug) >= 0) return; if (r.extra.length >= CAPS.extra) return false; r.extra.push(slug); });
+        return write(rk, rm, function (r, at) { if (has(r.extra, slug)) return; if (Object.keys(r.extra).length >= CAPS.extra) return false; r.extra[slug] = at; });
       },
       setExtra: function (rk, rm, list) {
         if (!Array.isArray(list) || !list.every(isSlug)) return false;
         var l = slugList(list, 99); if (l.length > CAPS.extra) return false;
-        return write(rk, rm, function (r) { r.extra = l; });
+        return write(rk, rm, function (r, at) { var t = Date.parse(at), m = {}; l.forEach(function (x, i) { m[x] = l.length > 1 || !has(r.extra, x) ? new Date(t + i).toISOString() : r.extra[x]; }); r.extra = m; });
       },
       setBlade: function (rk, rm, entry) {
         if (entry !== null && !isObj(entry)) return false;
@@ -325,9 +343,9 @@
       },
       addKept: function (rk, rm, id) {
         if (typeof id !== 'string' || !NPC.test(id)) return false;
-        return write(rk, rm, function (r) { if (r.kept.indexOf(id) >= 0) return; if (r.kept.length >= CAPS.kept) return false; r.kept.push(id); });
+        return write(rk, rm, function (r, at) { if (has(r.kept, id)) return; if (Object.keys(r.kept).length >= CAPS.kept) return false; r.kept[id] = at; });
       },
-      clear: function (rk, rm) { return write(rk, rm, function (r) { r.say = null; r.extra = []; r.swaps = {}; r.marks = {}; r.blade = null; r.kept = []; }); }
+      clear: function (rk, rm) { return write(rk, rm, function (r) { r.say = null; r.extra = {}; r.swaps = {}; r.marks = {}; r.blade = null; r.kept = {}; }); }
     };
   }
 
