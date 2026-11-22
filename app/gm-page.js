@@ -222,6 +222,15 @@
   P.shadeOf = shadeOf;
   P.shadeOn = function () { return shadeOf(S && S.doc); };
   P.shadeOpt = function () { return P.shadeOn() === true ? { shade: true } : {}; };
+  /* RK28 · map.fit (a GM setting, off until chosen), read through the registry as map.shade is. P.fitMod() is the ladder's module (gm/map-fit.js, in the map-fit
+     bundle), or null: off, or the bundle not loaded yet, and then playerDisplay runs exactly the code it ran before. P.fitWrap(render) is the renderer it draws
+     with while the setting is on (the kit's svg through gm/svg-slim.js, sizes noted); off, render itself. A test stands P.fitOn, P.mapFit and P.svgSlim in. */
+  var FIT_SWITCH = P.FIT_SWITCH = 'map.fit';
+  function fitOf(doc) { var F = W && W.B68Features; try { return !!(F && typeof F.valueOf === 'function' && F.isSetting(FIT_SWITCH) && F.valueOf(doc, FIT_SWITCH) === true); } catch (e) { return false; } }
+  P.fitOf = fitOf;
+  P.fitOn = function () { return fitOf(S && S.doc); };
+  P.fitMod = function () { var M = P.fitOn() === true ? (W && W.B68GmMapFit) || P.mapFit : null; return M && typeof M.fit === 'function' ? M : null; };
+  P.fitWrap = function (render) { var M = P.fitMod(), X = (W && W.B68GmSvgSlim) || P.svgSlim; return M ? M.wrap(render, { bytes: bytesOf, slim: X && typeof X.slim === 'function' ? X.slim : null }) : render; };
   P.rkWant = function (on) { return [['night.flow', 'night-flow'], ['close.crew', 'close-crew'], ['room.key', 'room-key'], ['room.tables', 'room-tables'], ['gm.glance', 'gm-glance'], ['map.fit', 'map-fit'], ['room.intro', 'room-intro']].filter(function (x) { return on(x[0]); }).map(function (x) { return x[1]; }); };      /* RK01: the room key build's bundles, one per setting, wanted only while the setting is on; [] with all off */
   /* a copy of the options without `shade` (the first step down every size ladder) */
   function flat(o) { var c = Object.assign({}, o); delete c.shade; return c; }
@@ -302,6 +311,7 @@
   function playerDisplay(roll, map, render, tk) {
     if (!isObj(map) || map.layer !== 'player') throw new Error('Only the player layer can go to the iPad. Switch Layer to Player first.');
     if (!roll || typeof render !== 'function') throw new Error('Roll a location first.');
+    render = P.fitWrap(render);       /* RK28 (map.fit): the kit's svg slimmed before the scan below, sizes noted; off, render itself */
     var reveal = revealEntries(map);       /* the bands, and "room:<name>" for each room opened on its own (the kit's 0.9 reveal) */
     var o = mapOpts(map, 'player', reveal, P.IPAD_MAP), o0 = o;
     o = scenePlayer(o, roll, reveal, map, tk);       /* MK1 (map.fill, map.people, map.lights, map.room): the scene through its one door; off, o itself */
@@ -321,7 +331,12 @@
     if (!r && o !== o0) { r = clean(o0); if (r) dropped = true; }      /* MK1: and one that leaks only with its scene goes as before, without it */
     if (!r) { var e = new Error(P.LEAK_MSG); e.leak = true; throw e; }
     var shaded = o.shade === true;      /* IP7 (map.shade): off, false, and the ladder below is exactly MK2's */
-    var cut = (o !== o0 || shaded) && bytesOf(r.svg) > P.SVG_CAP ? sceneFit() : '';      /* MK2: a scene over the shared screen's cap; off, never asked */
+    var fitM = P.fitMod(), cut = fitM ? fitCut(fitM) : (o !== o0 || shaded) && bytesOf(r.svg) > P.SVG_CAP ? sceneFit() : '';      /* MK2: a scene over the shared screen's cap; off, never asked. RK28 (map.fit): the ladder of gm/map-fit.js instead */
+    function fitCut(M) {      /* RK28: over the cap, each step through clean() above with the same markers; nothing fits: refused here with the smallest size and the steps that leaked, never sent for a 413 */
+      if (bytesOf(r.svg) <= P.SVG_CAP) return '';
+      var ft = M.fit({ first: r, o: o, o0: o0, cap: P.SVG_CAP, flat: flat, bytes: bytesOf, render: render, draw: function (x) { return clean(used.length ? Object.assign({}, x, { tokens: used }) : x); } });
+      r = ft.r; return ft.cut;
+    }
     function sceneFit() {      /* IP7: flat furniture first; then (MK2) the same map without the crowd, then without the scene (each clean and under the cap); else a refusal that says why */
       var tries = shaded ? [['shade', flat(o)]] : [];
       if (o !== o0) tries.push(['crowd', Object.assign(flat(o), { crowd: undefined })], ['scene', flat(o0)]);
@@ -342,7 +357,10 @@
   P.playerDisplay = playerDisplay;
   P.SVG_CAP = 600 * 1024;       /* the server's cap on a display svg (functions/_lib/gm.js LIMITS.svg); a larger one is a 413 */
   P.SCENE_CUT_MSG = { crowd: 'The map went to the iPad without the crowd: with it, it was over the iPad’s 600 KiB.', scene: 'The map went to the iPad without its people: with them, it was over the iPad’s 600 KiB.',
-    shade: 'The map went to the iPad with flat furniture: with depth, it was over the iPad’s 600 KiB.' };      /* IP7 */
+    shade: 'The map went to the iPad with flat furniture: with depth, it was over the iPad’s 600 KiB.',      /* IP7 */
+    halfcrowd: 'The map went to the iPad with half the crowd: with all of it, it was over the iPad’s 600 KiB.',      /* RK28 (map.fit) */
+    figures: 'The room went to the iPad with one full figure and no crowd: with all its people, it was over the iPad’s 600 KiB.',
+    rings: 'The map went to the iPad as rings, without its people: in the view you chose, it was over the iPad’s 600 KiB.' };
   /* MK1 (gm/scene-state.js): the map kit's new options. tk.scene is the page's scene input (sceneInput, only while a map setting is on); it goes
      through B68GmScene.forPlayer, the one door (the crew only, in the rooms a marker may stand in), then the people's names and marks through
      tokenScreen, as a marker's label would; a refused name takes the people off. Without tk.scene, o comes back untouched. */
