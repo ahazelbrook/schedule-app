@@ -2174,7 +2174,7 @@
            the small one; an adapter that does not simply gets the transcriber part in full each time */
         fetch: function (seq, aseq, sseq, hseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq, sseq === null ? undefined : sseq, hseq === null ? undefined : hseq).then(function (r) { s.p2last = r && Array.isArray(r.clocks) ? r.clocks : null; if (s.p2) s.p2.clocks(s.p2last); return r; }); },      /* IP2: the dials' clocks ride on the answer while stage.players is on */
         onMission: function (hud) { applyBand(hud); },
-        onFeatures: function (f) { if (root.B68Flags) { root.B68Flags.apply({ features: f }); suiteSync(); } if (root.B68Kit) root.B68Kit.set('stage', swOn('kit.stage')); p2Sync(); },   /* KS01.2: data-kit="stage" follows the setting; IP2: the players' screen too */
+        onFeatures: function (f) { if (root.B68Flags) { root.B68Flags.apply({ features: f }); suiteSync(); } if (root.B68Kit) root.B68Kit.set('stage', swOn('kit.stage')); p2Sync(); if (swOn('room.intro') && root.B68Load && !s.riAsked) { s.riAsked = true; root.B68Load.need('room-intro').then(function () {}, function () { s.riAsked = false; }); } },      /* KS01.2: data-kit="stage" follows the setting; IP2: the players' screen too; RK30: room.intro (RK29): its bundle is asked for once, only while the served features say it is on; off, no request */
         onSkew: function (ms) { s.skew = ms; },
         isHidden: function () { return document.hidden; },
         onAmbient: function (doc) { applyAmbient(doc); },

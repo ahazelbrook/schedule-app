@@ -222,7 +222,7 @@
   P.shadeOf = shadeOf;
   P.shadeOn = function () { return shadeOf(S && S.doc); };
   P.shadeOpt = function () { return P.shadeOn() === true ? { shade: true } : {}; };
-  P.rkWant = function (on) { return [['night.flow', 'night-flow'], ['close.crew', 'close-crew'], ['room.key', 'room-key'], ['room.tables', 'room-tables'], ['gm.glance', 'gm-glance'], ['map.fit', 'map-fit']].filter(function (x) { return on(x[0]); }).map(function (x) { return x[1]; }); };      /* RK01: the room key build's bundles, one per setting, wanted only while the setting is on; [] with all off */
+  P.rkWant = function (on) { return [['night.flow', 'night-flow'], ['close.crew', 'close-crew'], ['room.key', 'room-key'], ['room.tables', 'room-tables'], ['gm.glance', 'gm-glance'], ['map.fit', 'map-fit'], ['room.intro', 'room-intro']].filter(function (x) { return on(x[0]); }).map(function (x) { return x[1]; }); };      /* RK01: the room key build's bundles, one per setting, wanted only while the setting is on; [] with all off */
   /* a copy of the options without `shade` (the first step down every size ladder) */
   function flat(o) { var c = Object.assign({}, o); delete c.shade; return c; }
   P.flat = flat;

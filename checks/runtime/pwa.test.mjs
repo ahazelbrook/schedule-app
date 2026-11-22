@@ -199,7 +199,7 @@ await test('routes.js: index.html loads exactly the core bundle; every other bun
   eq(Object.keys(L.BUNDLES), ['core', 'figures', 'table', 'print', 'crews', 'gm', 'display', 'commend', 'debrief', 'quiet', 'board', 'claims', 'absent', 'lair', 'lookbook',
     'kit-ui', 'kit-desk', 'kit-stage', 'kit-phone', 'night-who', 'blade-pitches', 'kit-lookbook', 'map-scene',
     'handouts', 'gm-handouts',      /* IP4: phone.handouts' two bundles */
-    'night-flow', 'close-crew', 'room-key', 'room-tables', 'gm-glance', 'phone-find', 'map-fit',      /* RK01: one per room key setting, before prep-actions (which stays last) */
+    'night-flow', 'close-crew', 'room-key', 'room-tables', 'gm-glance', 'phone-find', 'map-fit', 'room-intro', 'phone-glance',      /* RK30 added the last two. RK01: one per room key setting, before prep-actions (which stays last) */
     'prep-actions'], 'the bundles');
   eq(L.BUNDLES.figures, ['figures/figure-kit.js', 'figures/cast.js'], 'the figures bundle is the kit and the cast canon');
   ok(!HTML.includes('figure-kit.js') && !HTML.includes('figures/cast.js'), 'index.html does not load the figure kit (first paint draws no figure)');
@@ -447,6 +447,8 @@ const RK = {
   'gm-glance': ['gm/glance.css', 'gm/glance-crew.js', 'gm/glance-now.js', 'gm/quick-rules.js', 'gm/loud.js', 'gm/npc-find.js'],
   'phone-find': ['sheet/ability-find.js'],
   'map-fit': ['gm/map-fit.js', 'gm/svg-slim.js'],
+  'room-intro': ['display/room-intro.css', 'gm/room-intro.js', 'display/room-intro.js'],      /* RK30: one bundle for the GM page and the iPad */
+  'phone-glance': ['sheet/glance.css', 'sheet/page.css', 'sheet/glance.js', 'sheet/page.js'],
 };
 const RK_FILES = new Set(Object.values(RK).flat());
 const SHEETS = ['tracker.css', 'schedule.css', 'rules.css', 'cast.css'];
@@ -459,7 +461,7 @@ await test('room key bundles: one per setting, each file in exactly one of them 
   for (const f of RK_FILES) ok(fs.existsSync(path.join(APP, f)), f + ' exists');
   const order = L.CSS_ORDER, at = (f) => order.indexOf(f);
   ok(at('gm/room-key.css') > at('gm/prep-actions.css') && at('gm/glance.css') > at('gm/room-key.css') && at('gm/glance.css') < at('ui/tokens.css'), 'both sheets: after every old one, before the kit\'s');
-  ok(!/room-key|glance|night-flow|close-crew|ability-find/.test(fs.readFileSync(path.join(APP, 'sw.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')), 'sw.js names none of them: SHELL learns them from routes.js');
+  ok(!/room-key|glance|night-flow|close-crew|ability-find|room-intro/.test(fs.readFileSync(path.join(APP, 'sw.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')), 'sw.js names none of them: SHELL learns them from routes.js');
   for (const f of RK_FILES) ok(L.files().includes(f), f + ' is in the service worker\'s shell (B68Load.files())');
 });
 
@@ -472,14 +474,14 @@ await test('room key bundles: need() of one fetches only its own files; room-tab
   ok(o.indexOf('ui/ui.js') < o.indexOf('gm/room-things.js'), 'the kit-ui scripts come before the room-key scripts');
   doc.settle(); eq(await p, 'room-tables'); ok(L.done('room-key') && L.done('room-tables') && !L.done('gm-glance'), 'both done, nothing else');
   const n = doc.added().length; await L.need('room-key'); eq(doc.added().length, n, 'room-key after room-tables: nothing more to fetch');
-  for (const name of ['night-flow', 'close-crew', 'gm-glance', 'phone-find', 'map-fit']) {
+  for (const name of ['night-flow', 'close-crew', 'gm-glance', 'phone-find', 'map-fit', 'room-intro', 'phone-glance']) {
     const d = fakeDoc(SHEETS), L1 = routes(ROUTES, d).B68Load; L1.need(name);
     eq(d.order().filter((x) => RK_FILES.has(x)), RK[name], name + ' fetches its own files and no other room key file');
   }
   const dn = fakeDoc(SHEETS), Ln = routes(ROUTES, dn).B68Load; Ln.need('night-flow');
   eq(dn.order().filter((x) => Ln.BUNDLES['prep-actions'].includes(x)), Ln.BUNDLES['prep-actions'], 'night-flow brings prep-actions (it loads only on demand)');
   const dg = fakeDoc(SHEETS), Lg = routes(ROUTES, dg).B68Load; Lg.need('gm-glance');
-  eq(dg.order().filter((x) => Lg.BUNDLES['kit-ui'].includes(x) || Lg.BUNDLES['prep-actions'].includes(x)), [], 'gm-glance, close-crew and phone-find bring no dependency');
+  eq(dg.order().filter((x) => Lg.BUNDLES['kit-ui'].includes(x) || Lg.BUNDLES['prep-actions'].includes(x)), [], 'gm-glance, close-crew, phone-find, room-intro and phone-glance bring no dependency');
   const d2 = fakeDoc(SHEETS), L2 = routes(ROUTES, d2).B68Load;
   L2.need('gm'); L2.need('display'); L2.need('lookbook'); L2.need('table'); L2.need('handouts'); L2.need('kit-desk');
   eq(d2.order().filter((x) => RK_FILES.has(x)), [], 'the old bundles and the kit fetch no room key file');
@@ -499,10 +501,10 @@ await test('room key bundles: P.rkWant (gm-page.js renderBar) names the bundles 
   const { createRequire } = await import('node:module');
   const P = createRequire(import.meta.url)(path.join(APP, 'gm-page.js'))._pure;
   ok(P && typeof P.rkWant === 'function', 'gm-page.js exports P.rkWant');
-  const ids = ['stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance', 'phone.find', 'map.fit'];
+  const ids = ['stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance', 'phone.find', 'map.fit', 'room.intro', 'phone.glance'];
   eq(P.rkWant(() => false), [], 'all off: no bundle');
-  eq(P.rkWant((id) => ids.includes(id)), ['night-flow', 'close-crew', 'room-key', 'room-tables', 'gm-glance', 'map-fit'], 'all on: the six the GM page loads (stamp.brief has no file; phone.find is the phone\'s, through boot.js)');
-  for (const [id, want] of [['night.flow', ['night-flow']], ['close.crew', ['close-crew']], ['room.key', ['room-key']], ['room.tables', ['room-tables']], ['gm.glance', ['gm-glance']], ['map.fit', ['map-fit']], ['stamp.brief', []], ['phone.find', []]]) eq(P.rkWant((x) => x === id), want, id);
+  eq(P.rkWant((id) => ids.includes(id)), ['night-flow', 'close-crew', 'room-key', 'room-tables', 'gm-glance', 'map-fit', 'room-intro'], 'all on: the seven the GM page loads (stamp.brief has no file; phone.find and phone.glance are the phone\'s, through boot.js)');
+  for (const [id, want] of [['night.flow', ['night-flow']], ['close.crew', ['close-crew']], ['room.key', ['room-key']], ['room.tables', ['room-tables']], ['gm.glance', ['gm-glance']], ['map.fit', ['map-fit']], ['room.intro', ['room-intro']], ['stamp.brief', []], ['phone.find', []], ['phone.glance', []]]) eq(P.rkWant((x) => x === id), want, id);
   const L = routes().B68Load;
   for (const n of P.rkWant(() => true)) ok(Object.prototype.hasOwnProperty.call(L.BUNDLES, n), n + ' is a bundle in routes.js');
   const src = fs.readFileSync(path.join(APP, 'gm-page.js'), 'utf8');
@@ -518,6 +520,33 @@ await test('room key bundles: P.rkWant (gm-page.js renderBar) names the bundles 
   ok(/B68GmRoomTables: W.B68GmRoomTables/.test(fs.readFileSync(path.join(APP, 'gm-page.js'), 'utf8')), 'modMap hands the loaded module to the loop');
   const boot = fs.readFileSync(path.join(APP, 'boot.js'), 'utf8');
   ok(/\['phone\.find', 'phone-find', 'B68AbilityFind'\]/.test(boot), 'boot.js asks for phone-find while phone.find is on (the between list, a player only), and calls stop() when it goes off');
+});
+
+await test('room-intro and phone-glance (RK30): the card\'s sheet sits after the NPC introduction\'s and the players\' screen\'s; the phone\'s two sheets sit with the room key\'s and are never layered; the iPad, a phone and the GM page each ask for their own bundle only', async () => {
+  const L = routes().B68Load, order = L.CSS_ORDER, at = (f) => order.indexOf(f);
+  ok(at('display/room-intro.css') > at('display/players/intro.css') && at('display/room-intro.css') > at('display/players/players.css') && at('display/room-intro.css') < at('sheet/handouts.css'), 'display/room-intro.css: after the players\' sheets, among the old ones');
+  ok(at('sheet/glance.css') > at('gm/prep-actions.css') && at('sheet/page.css') > at('sheet/glance.css') && at('sheet/page.css') < at('gm/room-key.css'), 'the phone\'s two sheets: after every old one, before the room key\'s, in order');
+  ok(at('sheet/page.css') < at('ui/tokens.css') && at('sheet/glance.css') > 0, 'and before the kit\'s');
+  eq(L.BUNDLES['room-intro'].filter((f) => /\.css$/.test(f)), ['display/room-intro.css'], 'room-intro holds one sheet');
+  for (const f of ['display/room-intro.css', 'sheet/glance.css', 'sheet/page.css']) ok(L.files().includes(f), f + ' is in the service worker\'s shell');
+  for (const n of ['display', 'gm', 'table', 'lookbook', 'handouts', 'phone-find', 'kit-phone']) eq(L.BUNDLES[n].filter((f) => /room-intro|sheet\/(glance|page)\./.test(f)), [], n + ' holds none of the RK30 files: a page that does not ask for them does not fetch them');
+  const doc = layerDoc(SHEETS), L2 = routes(ROUTES, doc).B68Load;
+  const p = L2.layerOld(); doc.settle(); await p;
+  L2.need('phone-glance'); L2.need('room-intro');
+  const o = doc.order();
+  ok(o.includes('sheet/glance.css') && o.includes('sheet/page.css') && !o.includes('@sheet/glance.css') && !o.includes('@sheet/page.css'), 'the phone\'s sheets are <link>s, not layer(old) imports: ' + o.join(' '));
+  ok(o.includes('@display/room-intro.css'), 'while the card\'s sheet is an old one: an import in layer(old), as the NPC introduction\'s is');
+  const dn = fakeDoc(SHEETS), Ln = routes(ROUTES, dn).B68Load; Ln.need('phone-glance');
+  eq(dn.order().filter((x) => RK_FILES.has(x)), RK['phone-glance'], 'phone-glance fetches its four files, in order');
+  const dr = fakeDoc(SHEETS), Lr = routes(ROUTES, dr).B68Load; Lr.need('room-intro');
+  eq(dr.order().filter((x) => RK_FILES.has(x)), RK['room-intro'], 'room-intro fetches its three files, in order');
+  const dp = fs.readFileSync(path.join(APP, 'display-page.js'), 'utf8'), gp = fs.readFileSync(path.join(APP, 'gm-page.js'), 'utf8'), boot = fs.readFileSync(path.join(APP, 'boot.js'), 'utf8');
+  ok(/\['phone\.glance', 'phone-glance', 'B68SheetGlance'\]/.test(boot), 'boot.js asks for phone-glance while phone.glance is on (the between list, a player only), and calls stop() when it goes off');
+  eq([...dp.matchAll(/need\('room-intro'\)/g)].length, 1, 'display-page.js asks for room-intro in one place');
+  ok(/if \(swOn\('room\.intro'\) && root\.B68Load && !s\.riAsked\) \{ s\.riAsked = true; root\.B68Load\.need\('room-intro'\)/.test(dp), 'and only when the served features say room.intro is on, once (riAsked)');
+  ok(/onFeatures: function \(f\) \{[^\n]*B68Flags\.apply\(\{ features: f \}\)[^\n]*need\('room-intro'\)/.test(dp), 'from onFeatures, after the served features are applied');
+  eq([...gp.matchAll(/need\('room-intro'\)/g)].length, 0, 'the GM page names no room-intro itself: P.rkWant does');
+  eq([...(dp + gp + boot).matchAll(/need\('(?:phone-glance|room-intro)'\)/g)].length, 1, 'no other page code asks for them directly');
 });
 
 /* the files that only the GM's laptop and the table iPad load: in the gm or display bundle and not in core or table */
