@@ -116,6 +116,9 @@
     function on() { return typeof host.enabled === 'function' ? host.enabled() === true : false; }
     function fail(e) { toast('The Aftermath could not do that: ' + (e && e.message || e), true); return false; }
     function night() { return typeof host.night === 'function' ? host.night() : null; }
+    /* RK07 (close.crew): { C: B68GmCloseCrew, write, factions, pcs, crewType, ... } while the setting is on, else null, and every branch below is skipped */
+    function cc() { var x = typeof host.closeCrew === 'function' ? host.closeCrew() : null; return x && x.C ? x : null; }
+    function keys() { var x = cc(); return x ? DATA_KEYS.concat(x.C.KEYS) : DATA_KEYS; }
     function sinceMs() {
       if (typeof host.since === 'function') { var s = host.since(); if (typeof s === 'number' && isFinite(s)) return s; }
       return now() - 8 * 3600 * 1000;
@@ -123,14 +126,15 @@
     function persist() {
       var n = night(); if (!n || !run) return;
       var data = {};
-      DATA_KEYS.forEach(function (k) { if (run.data[k] !== undefined && run.data[k] !== '') data[k] = run.data[k]; });
+      keys().forEach(function (k) { if (run.data[k] !== undefined && run.data[k] !== '') data[k] = run.data[k]; });
       data.pos = run.i; data.pending = pendingFor(run.done).join(',');
       n.setAfter(run.i >= 0 && run.i < STEPS.length ? STEPS[run.i].id : 'done', data);
     }
     function npcIds() { return met(typeof host.npcs === 'function' ? host.npcs() : [], sinceMs(), run && run.picks); }
     function send() {
       if (!run || run.i < 0 || run.i >= STEPS.length) return Promise.resolve(false);
-      var s = STEPS[run.i], pl = payloadFor(s.id, run.data, { npcIds: npcIds() });
+      var s = STEPS[run.i], pl = payloadFor(s.id, run.data, { npcIds: npcIds() }), x = cc();
+      if (x) pl = x.C.payload(s.id, run.data, pl);      /* RK07: the status step's faction picks lead its lines */
       run.msg = '';
       if (!pl) { run.msg = 'No revealed NPC met tonight: nothing to credit.'; return Promise.resolve(false); }
       run.seq++; run.sentAt = now();
@@ -157,18 +161,26 @@
       if (run) return Promise.resolve(false);
       var c = typeof host.crew === 'function' ? host.crew() : null, d = {};
       if (isObj(c)) { d.heat = int(c.heat, 0, 9, 0); d.wanted = int(c.wanted, 0, 4, 0); }
+      var x = cc(), n0 = x ? night() : null, a0 = n0 && typeof n0.night === 'function' ? n0.night().aftermath : null;
+      if (x) x.C.begin(d, c, a0 ? a0.data : null);      /* RK07: a close already written to this crew starts again from the numbers before it */
       run = { i: -1, startedAt: now(), seq: 0, sentAt: 0, done: {}, data: d, picks: {}, msg: '' };
       var n = night(); if (n && n.phase() !== 'after') n.enter('after');
       return Promise.resolve(host.layer('band.phase', 'after')).then(function () { return host.layer('scene.mode', 'aftermath'); }).then(function () { return go(0); }, fail);
     }
-    function next() { if (!run || run.i < 0) return Promise.resolve(false); run.done[STEPS[run.i].id] = true; return go(run.i + 1); }
+    function next() {
+      if (!run || run.i < 0) return Promise.resolve(false);
+      run.done[STEPS[run.i].id] = true;
+      var x = cc(), me = run;      /* RK07: Next does the step's own work first (the heat step writes the crew, once, in absolute numbers), then moves on */
+      if (x) return x.C.onNext(STEPS[run.i].id, run, x, { heatOutcome: heatOutcome, now: now, toast: toast, night: night }).then(function () { return run === me ? go(run.i + 1) : false; });
+      return go(run.i + 1);
+    }
     function skip() { if (!run || run.i < 0) return Promise.resolve(false); delete run.done[STEPS[run.i].id]; return go(run.i + 1); }
     function back() { if (!run || run.i <= 0) return Promise.resolve(false); delete run.done[STEPS[run.i - 1].id]; return go(run.i - 1); }
     function finish() {
       if (!run) return Promise.resolve(false);
       return leave().then(function () { return host.clearShow({ layers: false }); }).then(function () { return host.layer('scene.mode', null); }).then(function () {
         var pending = pendingFor(run.done), n = night();
-        if (n) { var data = {}; DATA_KEYS.forEach(function (k) { if (run.data[k] !== undefined && run.data[k] !== '') data[k] = run.data[k]; }); data.pending = pending.join(','); data.pos = STEPS.length; n.setAfter('done', data); }
+        if (n) { var data = {}; keys().forEach(function (k) { if (run.data[k] !== undefined && run.data[k] !== '') data[k] = run.data[k]; }); data.pending = pending.join(','); data.pos = STEPS.length; n.setAfter('done', data); }
         if (pending.length) toast('Not done, filed for the Debrief: ' + pending.join(', ') + '.');
         run = null;
         return true;
@@ -181,6 +193,8 @@
         var v = patch[k];
         run.data[k] = (k === 'status' || k === 'harm' || k === 'who' || k === 'line') ? str(v).slice(0, 200) : clamp(v, k === 'mods' ? -6 : 0, k === 'wanted' ? 4 : k === 'heat' ? 9 : k === 'exposure' ? 6 : k === 'mods' ? 6 : 99);
       });
+      var x = cc();      /* RK07: the close's own fields; a GM-only one (the Open lines, the xp ticks, a label) is kept without sending the step again */
+      if (x) { x.C.set(run.data, patch); if (x.C.quiet(patch)) { persist(); return Promise.resolve(true); } }
       persist();
       return run.i >= 0 ? send() : Promise.resolve(false);
     }
@@ -194,7 +208,7 @@
       if (run) return true;
       var n = night(), a = n && typeof n.night === 'function' ? n.night().aftermath : null;
       if (!a || !isObj(a.data) || a.step === '' || a.step === 'done' || stepIndex(a.step) < 0) return false;
-      var d = {}; DATA_KEYS.forEach(function (k) { if (a.data[k] !== undefined) d[k] = a.data[k]; });
+      var d = {}; keys().forEach(function (k) { if (a.data[k] !== undefined) d[k] = a.data[k]; });
       var done = {}; STEPS.forEach(function (s, i) { if (i < stepIndex(a.step)) done[s.id] = true; });
       var pend = str(a.data.pending).split(',').filter(Boolean); pend.forEach(function (id) { delete done[id]; });
       run = { i: stepIndex(a.step), startedAt: now(), seq: 0, sentAt: 0, done: done, data: d, picks: {}, msg: '' };
@@ -233,6 +247,12 @@
 
   var ctl = null, page = null;
   function feed() { var P = W.B68GmPage; return P && typeof P.aftermath === 'function' ? P.aftermath() : null; }
+  /* RK07 (close.crew): what the close needs of the page, only while the setting is on and its bundle has loaded (gm-page.js aftermathFeed adds writeCrew); else null */
+  function closeCrew() {
+    var f = feed(), C = W.B68GmCloseCrew;
+    if (!f || !C || C.stub || typeof C.onNext !== 'function' || typeof f.writeCrew !== 'function' || !W.B68Features || !W.B68Features.valueOf(f.doc, 'close.crew')) return null;
+    return { C: C, write: f.writeCrew, factions: function () { return f.factions || []; }, pcs: f.pcs, crewType: function () { return f.crewType || ''; }, Content: W.B68Content, Crews: W.B68Crews };
+  }
   function controller() {
     if (ctl) return ctl;
     var P = W.B68GmPage;
@@ -256,6 +276,7 @@
         return isFinite(t) ? t : undefined;
       },
       rules: rulesText,
+      closeCrew: closeCrew,
       toast: function (m, bad) { var f = feed(); if (f && typeof f.toast === 'function') f.toast(m, bad); else if (W.console) W.console.log(m); }
     });
     return ctl;
@@ -263,6 +284,11 @@
 
   function el(tag, cls, text) { var e = W.document.createElement(tag); if (cls) e.className = cls; if (text != null && text !== '') e.textContent = text; return e; }
   function btn(label, fn, cls) { var b = el('button', 'btn sm' + (cls ? ' ' + cls : ''), label); b.type = 'button'; b.addEventListener('click', fn); return b; }
+  /* RK07: what the close's extras draw with, and how a change of theirs goes back through the controller and repaints this box */
+  function ccUi(x, c, box) {
+    return { el: el, btn: btn, heatOutcome: heatOutcome, rules: W.B68Rules || null, factions: x.factions, crewType: x.crewType, Content: x.Content, Crews: x.Crews,
+      pcs: function () { return typeof x.pcs === 'function' ? x.pcs() : []; }, set: function (p) { return c.set(p).then(function () { paint(box); }); } };
+  }
   function mmss(s) { return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
 
   /* the 10 s tick lives on the box it was started for (box.__aftT), so a second box (the inline copy beside the right-edge one) never loses the first one's interval */
@@ -319,6 +345,7 @@
     var s = st.step;
     if (s) {
       box.appendChild(el('h3', '', (st.i + 1) + '. ' + s.label));
+      var X = closeCrew(), ui = X ? ccUi(X, c, box) : null;      /* RK07 (close.crew): the close's extras; null while the setting is off */
       var form = el('div', 'gm-aft-form'); form.style.display = 'grid'; form.style.gap = '8px';
       var field = function (key, label, kind, extra) {
         var wrap = el('label', ''), inp;
@@ -330,19 +357,19 @@
         wrap.appendChild(inp); form.appendChild(wrap);
       };
       if (s.id === 'payout') field('stacks', 'Stacks', 'num');
-      if (s.id === 'tithe') { field('stacks', 'Payout (stacks)', 'num'); field('tithe', 'Tithe (stacks)', 'num'); }
+      if (s.id === 'tithe') { field('stacks', 'Payout (stacks)', 'num'); field('tithe', 'Tithe (stacks)', 'num'); if (ui) X.C.paintTithe(form, st, ui); }
       if (s.id === 'heat') {
         field('heat', 'Heat now (0 to 9)', 'num', { max: 9 }); field('wanted', 'Wanted level (0 to 4)', 'num', { max: 4 });
         var seg = el('div', 'seg'); seg.appendChild(el('span', 'gm-lab', 'Exposure '));
         EXPOSURE.forEach(function (x) { var b = btn(String(x), function () { c.set({ exposure: x }).then(function () { paint(box); }); }, 'chip'); b.setAttribute('aria-pressed', String(st.data.exposure === x)); seg.appendChild(b); });
         form.appendChild(seg);
-        field('mods', 'Modifiers (+ or −)', 'num', { min: -6, max: 6 });
+        if (ui) X.C.paintHeat(form, st, ui); else field('mods', 'Modifiers (+ or −)', 'num', { min: -6, max: 6 });
         var o = st.outcome; form.appendChild(el('p', 'gm-dim', 'Heat ' + o.total + (o.siren ? ': the siren, then WANTED goes up one.' : '. No siren.')));
       }
-      if (s.id === 'status') field('status', 'Status changes', 'area');
+      if (s.id === 'status') { if (ui) X.C.paintStatus(form, st, ui); field('status', 'Status changes', 'area'); }
       if (s.id === 'harm') field('harm', 'Harm complications', 'area');
       if (s.id === 'unwind') { field('who', 'Whose turn to decide', 'text'); field('line', 'A line (optional)', 'text'); }
-      if (s.id === 'xp') form.appendChild(el('p', 'gm-dim', 'Phones show the xp triggers for 90 seconds. Moving on takes them down.'));
+      if (s.id === 'xp') { form.appendChild(el('p', 'gm-dim', 'Phones show the xp triggers for 90 seconds. Moving on takes them down.')); if (ui) X.C.paintXp(form, st, ui); }
       if (s.id === 'credits') {
         var f = feed(), ids = st.credits, all = f ? f.npcs.filter(function (n) { return n.revealed === true; }) : [];
         form.appendChild(el('p', 'gm-dim', all.length ? 'Revealed NPCs met tonight are ticked. Tick or untick; hidden NPCs are never listed.' : 'No revealed NPCs.'));
@@ -353,6 +380,7 @@
         });
       }
       box.appendChild(form);
+      if (ui) X.C.paintOpen(box, st, ui);
       if (st.msg) box.appendChild(el('p', 'gm-warn', st.msg));
       var aid = el('p', 'gm-dim gm-aft-rules'); box.appendChild(aid);
       rulesText(s.term).then(function (t) { aid.textContent = t ? 'From the rules: ' + t : ''; });
