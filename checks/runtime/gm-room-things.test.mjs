@@ -74,7 +74,7 @@ test('RK08.2 the old one-line Find gives things with a name only; a Find with a 
 });
 
 test('fences: lines inside ``` / ~~~ are never read (the penthouse\'s fenced Things is skipped, the real one is read, names after "Things:" count)', () => {
-  assert.deepEqual(RT.parse(mdOf('Luxury penthouse')), [T('a telescope'), T('a silver tray'),
+  assert.deepEqual(RT.parse(mdOf('Luxury penthouse')), [T('a telescope'), T('a tin tray'),
     T('A drinks trolley', { line: 'rattling.', danger: 'GM-ONLY-danger: the bottles fall if it is pushed fast.', tags: ['weapon', 'hazard'] })]);
   assert.deepEqual(RT.parse('```\n- **Things:**\n  1. **A lamp**\n```'), [], 'a block wholly in a fence is nothing');
   assert.deepEqual(RT.parse('- **Things:**\n  1. **A lamp**\n     ```\n     - Tags: clue\n     ```\n     - Tags: tool'), [T('A lamp', { tags: ['tool'] })], 'a fence inside an item is not read');

@@ -74,7 +74,7 @@ Green baize and low lamps. Nobody talks above a murmur.
 - **Things:**
   1. **Not this one either**
 ~~~
-- **Things:** a telescope · a silver tray
+- **Things:** a telescope · a tin tray
   1. **A drinks trolley**, rattling.
      - ! GM-ONLY-danger: the bottles fall if it is pushed fast.
      - Tags: weapon, hazard
