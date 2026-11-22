@@ -214,6 +214,22 @@ async function main() {
     const n = await call('PATCH', '/api/campaign', { user: GM, body: { features: null } });
     expect(n.status === 200 && (await stored()) === undefined, 'null removes the stored map');
   });
+
+  await step('the second registrar\'s two settings (RK30) are registered off and served as stored: room.intro (a display setting) and phone.glance (a phone one) reach the iPad and a phone alike, false until written, true once written, and a GM setting beside them still never does', async () => {
+    for (const id of ['room.intro', 'phone.glance']) expect(Features.isSetting(id) && Features.valueOf({}, id) === false && PUBLIC_SETTINGS.includes(id) && !GM_SETTINGS.includes(id), id + ' is a public setting and reads off with nothing stored');
+    expect(Features.get('room.intro').surface === 'display' && Features.get('phone.glance').surface === 'phone', 'surfaces: display, phone');
+    const body = { phoneCards: false, 'room.intro': true, 'phone.glance': true, 'map.fit': true };
+    const r = await call('PATCH', '/api/campaign', { user: GM, body: { features: body } });
+    expect(r.status === 200 && same(await stored(), { phoneCards: false, 'room.intro': true, 'phone.glance': true }), 'both public ones are stored, the GM one is dropped: ' + JSON.stringify(await stored()));
+    const g = await call('GET', '/api/campaign', { user: PLAYER }), p = await poll(IPAD);
+    for (const m of [g.json.doc.features, p.json.features]) expect(m['room.intro'] === true && m['phone.glance'] === true && !('map.fit' in m), 'served as stored: ' + JSON.stringify(m));
+    const o = await call('PATCH', '/api/campaign', { user: GM, body: { features: { 'room.intro': false } } });
+    expect(o.status === 200 && same(await stored(), { phoneCards: false, 'room.intro': false, 'phone.glance': true }), 'room.intro turned off: stored false (a PATCH merges)');
+    const p2 = await poll(IPAD);
+    expect(p2.json.features['room.intro'] === false && p2.json.features['phone.glance'] === true, 'and the iPad is told false: ' + JSON.stringify(p2.json.features));
+    const n = await call('PATCH', '/api/campaign', { user: GM, body: { features: null } });
+    expect(n.status === 200 && (await stored()) === undefined, 'null removes the stored map');
+  });
 }
 
 const timer = setTimeout(() => { console.log('FAIL overall timeout after ' + OVERALL_TIMEOUT_MS + ' ms'); stop(); process.exit(1); }, OVERALL_TIMEOUT_MS);

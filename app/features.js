@@ -229,7 +229,13 @@
       doc: 'A search box over the abilities on the players’ sheets. Off: as now.' },
     /* the map diagnosis (RK28, added to RK01 on 22/11): the eighth setting, a GM one, off until chosen */
     { id: 'map.fit', label: 'The map fits the iPad', surface: 'gm', stage: 'kit', default: false, saturday: 'off', setting: true,
-      doc: 'Over the iPad’s 600 KiB, the map sheds crowd and figures step by step, and a map that still can’t fit is stopped on the GM page with the reason. Off: as now.' }
+      doc: 'Over the iPad’s 600 KiB, the map sheds crowd and figures step by step, and a map that still can’t fit is stopped on the GM page with the reason. Off: as now.' },
+    /* the second registrar (RK30, 22/11): two more settings, off until chosen. room.intro is a display one (the iPad reads it from the poll's features, as stage.players is read);
+       phone.glance is a phone one (copied into the campaign document, as phone.find is) */
+    { id: 'room.intro', label: 'Room openings on the iPad', surface: 'display', stage: 'kit', default: false, saturday: 'off', setting: true,
+      doc: 'When you open a room or a band on the live map, the iPad plays a title card for the room, like an NPC introduction. Off: as now.' },
+    { id: 'phone.glance', label: 'The glance sheet on phones', surface: 'phone', stage: 'kit', default: false, saturday: 'off', setting: true,
+      doc: 'Phones open on one screen with stress, harm, the actions and the abilities you own; Full sheet shows the official playbook page, filled in. Off: as now.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

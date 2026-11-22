@@ -1,6 +1,8 @@
-// room-bundles (RK01): with every room key setting off, the GM page and a phone request no room key file; each setting turned on from the Settings fetches
+// room-bundles (RK01, extended by RK30): with every room key setting off, the GM page and a phone request no room key file; each setting turned on from the Settings fetches
 // exactly its own bundle (room.tables also room-key, room.key also kit-ui, night.flow also prep-actions); a phone fetches sheet/ability-find.js only while
 // phone.find is on; a fresh GM page with only room.key on fetches room-key's files only. Runs the demo night (invented data), no model, no network beyond loopback.
+// RK30 added the two later settings: room.intro (one bundle, asked for by the GM page and by the iPad's display page from its poll's features) and phone.glance
+// (a phone's, through boot.js). Each page fetches only its own bundle, and a page whose setting is off fetches none of its files.
 //   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=9507] node checks/runtime/room-bundles.e2e.mjs
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -20,6 +22,8 @@ const BUNDLES = {
   'gm.glance': ['gm/glance.css', 'gm/glance-crew.js', 'gm/glance-now.js', 'gm/quick-rules.js', 'gm/loud.js', 'gm/npc-find.js'],
   'phone.find': ['sheet/ability-find.js'],
   'map.fit': ['gm/map-fit.js', 'gm/svg-slim.js'],
+  'room.intro': ['display/room-intro.css', 'gm/room-intro.js', 'display/room-intro.js'],
+  'phone.glance': ['sheet/glance.css', 'sheet/page.css', 'sheet/glance.js', 'sheet/page.js'],
 };
 const ALL = Object.values(BUNDLES).flat();
 let failed = 0;
@@ -28,8 +32,8 @@ const demo = await startDemo(ROOT, PORT);
 try {
   const browser = await pw.chromium.launch({ channel: process.env.PW_CHANNEL || undefined });
   const mine = (urls) => ALL.filter((f) => urls.some((u) => u.split('?')[0].endsWith('/' + f)));
-  async function open(route, user, size) {
-    const ctx = await browser.newContext({ viewport: { width: size[0], height: size[1] }, extraHTTPHeaders: { 'X-Dev-User': user } });
+  async function open(route, user, size, o = {}) {
+    const ctx = await browser.newContext({ viewport: { width: size[0], height: size[1] }, extraHTTPHeaders: { 'X-Dev-User': user }, ...(o.noSw ? { serviceWorkers: 'block' } : {}) });
     const page = await ctx.newPage(); const urls = [];
     page.on('request', (r) => urls.push(r.url()));
     await page.goto(demo.base + '/' + route);
@@ -39,11 +43,11 @@ try {
   await G.page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
   await G.page.waitForSelector('#gm-buttons .gm-btn', { state: 'attached', timeout: 30000 });
   await G.page.waitForTimeout(2500);
-  check(mine(G.urls).length === 0, 'all eight off: no room key file requested by the GM page (' + G.urls.length + ' requests)');
+  check(mine(G.urls).length === 0, 'all ten off: no room key file requested by the GM page (' + G.urls.length + ' requests)');
   await G.page.click('.gm-tray [data-tray="open"]');
   await G.page.waitForSelector('#gm-ipad-settings [data-set-row]', { timeout: 10000 });
   const rows = await G.page.$$eval('#gm-ipad-settings [data-set-row]', (els) => els.map((e) => e.getAttribute('data-set-row')));
-  check(rows.slice(-8).join() === 'stamp.brief,night.flow,close.crew,room.key,room.tables,gm.glance,phone.find,map.fit' && rows.length === 25, 'the Settings list: 25 rows, the eight last: ' + rows.slice(-9).join(' '));
+  check(rows.slice(-10).join() === 'stamp.brief,night.flow,close.crew,room.key,room.tables,gm.glance,phone.find,map.fit,room.intro,phone.glance' && rows.length === 27, 'the Settings list: 27 rows, the ten last: ' + rows.slice(-11).join(' '));
   let seen = new Set(mine(G.urls));
   for (const id of ['stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance', 'map.fit']) {
     await G.page.click('#gm-ipad-settings [data-set="' + id + '"][data-v="1"]');
@@ -64,8 +68,35 @@ try {
   await G.page.waitForTimeout(8000);
   await P.page.reload(); await P.page.waitForTimeout(4000);
   check(mine(P.urls).includes('sheet/ability-find.js') && mine(P.urls).length === 1, 'phone.find on: the phone fetches sheet/ability-find.js and no other room key file: ' + mine(P.urls).join(' '));
+  // RK30: the iPad's display page. With room.intro off it asks for none of the room key files. Then the GM turns it on: the open page picks it up from its poll, and a fresh one asks at once
+  const IPAD = 'table.ipad@example.test';
+  const D = await open('#display', IPAD, [1180, 820], { noSw: true });
+  await D.page.waitForFunction(() => document.body.dataset.mode === 'display', null, { timeout: 30000 });
+  await D.page.waitForTimeout(3500);
+  check(mine(D.urls).length === 0, 'the display with room.intro off requests no room key file (' + D.urls.length + ' requests): ' + mine(D.urls).join(' '));
+  seen = new Set(mine(G.urls));
+  await G.page.click('#gm-ipad-settings [data-set="room.intro"][data-v="1"]');
+  await G.page.waitForTimeout(1500);
+  const gfresh = mine(G.urls).filter((f) => !seen.has(f));
+  check(gfresh.sort().join() === BUNDLES['room.intro'].slice().sort().join(), 'room.intro on: the GM page fetches the room-intro bundle and nothing else: ' + gfresh.join(' '));
+  await D.page.waitForTimeout(9000);
+  check(mine(D.urls).sort().join() === BUNDLES['room.intro'].slice().sort().join(), 'room.intro on: the open display page picks it up from its poll and fetches the room-intro bundle only: ' + mine(D.urls).join(' '));
+  const D2 = await open('#display', IPAD, [1180, 820], { noSw: true });
+  await D2.page.waitForFunction(() => document.body.dataset.mode === 'display', null, { timeout: 30000 });
+  await D2.page.waitForTimeout(5000);
+  check(mine(D2.urls).sort().join() === BUNDLES['room.intro'].slice().sort().join(), 'a fresh display page with room.intro on fetches the room-intro bundle only: ' + mine(D2.urls).join(' '));
+  await P.page.reload(); await P.page.waitForTimeout(4000);
+  check(!mine(P.urls).some((f) => BUNDLES['room.intro'].includes(f)), 'a phone, with room.intro on, fetches none of its files');
+  // RK30: a phone and phone.glance
+  check(!mine(P.urls).some((f) => BUNDLES['phone.glance'].includes(f)), 'a phone with phone.glance off requests no phone-glance file');
+  await G.page.click('#gm-ipad-settings [data-set="phone.glance"][data-v="1"]');
+  await G.page.waitForTimeout(8000);
+  await P.page.reload(); await P.page.waitForTimeout(4000);
+  const pnow = mine(P.urls);
+  check(BUNDLES['phone.glance'].every((f) => pnow.includes(f)) && pnow.every((f) => BUNDLES['phone.glance'].includes(f) || BUNDLES['phone.find'].includes(f)), 'phone.glance on: the phone fetches the phone-glance bundle (and the ability search, which is also on) and no room-intro file: ' + pnow.join(' '));
+  check(!mine(G.urls).some((f) => BUNDLES['phone.glance'].includes(f)) && !mine(D2.urls).some((f) => BUNDLES['phone.glance'].includes(f)), 'neither the GM page nor the display page fetches a phone-glance file');
   // off again: a reload of the GM page with all but room.key off asks only for that
-  for (const id of ['stamp.brief', 'night.flow', 'close.crew', 'room.tables', 'gm.glance', 'phone.find', 'map.fit']) await G.page.click('#gm-ipad-settings [data-set="' + id + '"][data-v="0"]');
+  for (const id of ['stamp.brief', 'night.flow', 'close.crew', 'room.tables', 'gm.glance', 'phone.find', 'map.fit', 'room.intro', 'phone.glance']) await G.page.click('#gm-ipad-settings [data-set="' + id + '"][data-v="0"]');
   await G.page.waitForTimeout(1500);
   const G2 = await open('#gm', 'gm@example.test', [1366, 768]);
   await G2.page.waitForTimeout(6000);
