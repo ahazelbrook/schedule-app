@@ -12,6 +12,8 @@
      The card     The roll · Who (chips) · Position and Effect (two full-width segmented controls; the size under Position) · If it goes wrong
                   (a field, its x) · STAMP (the Roll's one Primary) with a quiet Fit beside it. Stamped: On the iPad (a chip, with what went up),
                   Stamp again (only once what is set has changed, as before: a second stamp is a second fit), Take it down (Esc), Clean (no card).
+                  With stamp.brief on (RK02) the stamp leaves the iPad after 10 s: On the iPad counts the seconds, then the line stays as "Gone from the
+                  iPad" with Show again (10 s more), Clear (the page's stamp-down) and Clean, until the roll is resolved; the pin says the same.
                   KS15 (kit.stage, the roll as beats) is mirrored here, from the same stamp view as the old card: the result's words beside On the
                   iPad (and on the pin), "Stamp it on the iPad" while a result is up, Clean saying "Clean: You do it." over the stakes, and after a
                   4/5 or a 1-3 the "Cost on the iPad" field (a B68Ui Field, #gm-stamp-cost; Enter sends) under the actions. The words come from
@@ -117,9 +119,11 @@
     var a = v && v.on ? v.active : null, h = '';
     if (a) {
       var w = doc.querySelector('#gm-who [data-gm="who"][aria-checked="true"]'), who = w ? str(w.textContent).trim() : '';
-      h = '<div class="kr-pinrow">' + ui().chip({ label: 'On the iPad', tone: 'accent', dot: true, cls: 'kr-upchip' }) +
+      var gone = !!v.gone;      /* RK02 (stamp.brief): the stamp has left the iPad; the pin keeps the line and offers Show again */
+      h = '<div class="kr-pinrow">' + ui().chip(gone ? { label: 'Gone from the iPad', tone: 'plain', cls: 'kr-upchip kr-gonechip' } : { label: 'On the iPad' + (a.left ? ' · ' + a.left + ' s' : ''), tone: 'accent', dot: true, cls: 'kr-upchip' }) +
         '<span class="kr-pinwhat">' + esc((who ? who + ', ' : '') + a.position + ', ' + a.effect + (a.result ? '. ' + resultWords(a) : '')) + '</span>' +
-        ui().button({ label: 'Take it down', key: 'Esc', cls: 'kr-pindown', data: { gm: 'stamp-down' }, title: 'Takes the action report off the iPad' }) + '</div>';
+        (gone ? ui().button({ label: 'Show again', cls: 'kr-pindown', data: { gm: 'stamp-again' }, title: 'Puts this action report back on the iPad for 10 seconds' })
+          : ui().button({ label: 'Take it down', key: 'Esc', cls: 'kr-pindown', data: { gm: 'stamp-down' }, title: 'Takes the action report off the iPad' })) + '</div>';
     }
     if (el.__html !== h) { el.innerHTML = h; el.__html = h; }
     el.hidden = !h;
@@ -137,6 +141,19 @@
       value: str(c.draft), placeholder: 'What it cost, in plain words', hint: R && typeof R.costNote === 'function' ? R.costNote(c) : '',
       attrs: { rows: '1', maxlength: '60', autocomplete: 'off', spellcheck: 'false' } }) + '</div>';
   }
+  /* RK02 (stamp.brief): the stamp has left the iPad and the roll is not resolved. Same hooks as the card above (gm-rl-up, gm-stampb, gm-rl-acts, stamp-down,
+     stamp-clean); Show again is the one Primary unless what is set has changed (then Stamp again is) */
+  function goneHtml(v, a, cw) {
+    var U = ui();
+    return '<p class="gm-rl-up gm-rl-gone kr-up kr-gone" role="status">' + U.chip({ label: 'Gone from the iPad', tone: 'plain', cls: 'kr-upchip kr-gonechip' }) +
+        '<span class="kr-upwhat">' + esc(cap(a.position) + ', ' + a.effect) + '</span>' +
+        (v.stale ? '<span class="gm-rl-chg kr-chg">Changed since it went up</span>' : '') + '</p>' +
+      (v.stale ? U.button({ label: 'Stamp again', rank: 'primary', cls: ['gm-stampb', 'kr-stampb'], data: { gm: 'stamp' }, title: 'Puts what is set now on the iPad in its place' }) : '') +
+      '<div class="gm-rl-acts kr-acts">' +
+        U.button({ label: 'Show again', rank: v.stale ? undefined : 'primary', cls: 'kr-again', data: { gm: 'stamp-again' }, title: 'Puts this action report back on the iPad for 10 seconds' }) +
+        U.button({ label: 'Clear', cls: 'kr-down', data: { gm: 'stamp-down' }, title: 'Clears this stamp from the Roll. It is already off the iPad' }) +
+        U.button({ label: cw[0], rank: 'quiet', cls: 'kr-clean', data: { gm: 'stamp-clean' }, title: cw[1] }) + '</div>' + costHtml(v.cost);
+  }
   function stampHtml(v) {
     v = v || {};
     pinPaint(v);
@@ -145,7 +162,8 @@
     if (!a) return U.button({ label: 'Stamp it on the iPad', rank: 'primary', cls: ['gm-stampb', 'kr-stampb'], data: { gm: 'stamp' },
       title: 'The position, the effect and the line, as an action report on the iPad before the dice. Enter in the line does it too' }) + costHtml(v.cost);
     var res = resultWords(a), cw = cleanWords(v, a);
-    return '<p class="gm-rl-up kr-up" role="status">' + U.chip({ label: 'On the iPad', tone: 'accent', dot: true, cls: 'kr-upchip' }) +
+    if (v.gone) return goneHtml(v, a, cw);      /* RK02 (stamp.brief): only a stamp view made with it on says gone */
+    return '<p class="gm-rl-up kr-up" role="status">' + U.chip({ label: 'On the iPad' + (a.left ? ' · ' + a.left + ' s' : ''), tone: 'accent', dot: true, cls: 'kr-upchip' }) +
         '<span class="kr-upwhat">' + esc(cap(a.position) + ', ' + a.effect) + '</span>' +
         (res ? '<span class="kr-upres">' + esc(res) + '</span>' : '') +
         (v.stale && !a.result ? '<span class="gm-rl-chg kr-chg">Changed since it went up</span>' : '') + '</p>' +

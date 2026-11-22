@@ -5224,7 +5224,7 @@
       show: function (payload, key, ms, o) { var sh = shows(); return sh ? sh.show('report', payload, { key: key, ms: ms, replace: !!(o && o.replace) }) : Promise.resolve(null); },
       keyFor: function (key) { return W.B68Show ? W.B68Show.idFor(key) : key; }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; },
       clearOverlay: function () { return patchAmbient({ overlay: null }); },
-      who: function () { return S === me ? fitPc() : ''; }, covered: function () { return S === me && ((isObj(AM.shown) && AM.shown.kind === 'dark') || panicOn()); }, vet: function (p) { return gate.allowsAmbient({ overlay: { id: 'ks15-vet', kind: 'report', ms: 10000, payload: p } }); },     /* KS15 (kit.stage only): the roll as beats */
+      who: function () { return S === me ? fitPc() : ''; }, covered: function () { return S === me && ((isObj(AM.shown) && AM.shown.kind === 'dark') || panicOn()); }, againBlocked: function () { return S === me ? (panicOn() ? 'PANIC is on' : introBlocked()) : ''; }, vet: function (p) { return gate.allowsAmbient({ overlay: { id: 'ks15-vet', kind: 'report', ms: 10000, payload: p } }); },     /* KS15 (kit.stage only): the roll as beats */
       log: function (text) { if (S === me && me.night) me.night.stamp(text); }, toast: toast, changed: function () { if (S === me) { b09Paint(); pcStatusSync(); } },
       threat: function (st) { var t = S === me && me.b19 && me.b19.threat; if (t) t.drop(st); }, threatClear: function () { var t = S === me && me.b19 && me.b19.threat; if (t) t.clear(); },
       stamped: function (st) { if (S === me) fitStamped(st); }     /* 08/11: the stamp is what asks Blade for the fit */
@@ -5252,7 +5252,7 @@
     me.cueGrammar.register();
     /* N4: the stamp is the page's one Esc's 'stamp' entry (gm/esc.js): Esc takes it down when nothing above it is open and no field has the focus */
     if (W.B68GmEsc && typeof W.B68GmEsc.register === 'function') me.stampEsc = W.B68GmEsc.register('stamp', { priority: 10, kind: 'stamp',
-      isOpen: function () { var v = S === me && me.stamp ? me.stamp.view() : null; return !!(v && v.active); }, close: function () { if (S === me && me.stamp) me.stamp.esc(); } });
+      isOpen: function () { var v = S === me && me.stamp ? me.stamp.view() : null; return !!(v && v.active); }, close: function () { if (S === me && me.stamp) me.stamp.esc(); } });      /* RK02: a gone stamp line is still the Esc's to clear (nothing is written: the card is already off), never PANIC's */
     b09Paint();
   }
   function b09Unmount(me) {
@@ -5355,7 +5355,7 @@
     var mini = $q('#gm-mini'), R = rollR(); if (!mini) return;
     if (!R || !hasSit()) { mini.innerHTML = ''; mini.__html = ''; return; }
     v = v || (S.stamp ? S.stamp.view() : null);
-    var h = R.miniHtml(S.con.situations(), str(uiNow().pos), v && v.on ? v.draft.effect : '', !!(v && v.active));
+    var h = R.miniHtml(S.con.situations(), str(uiNow().pos), v && v.on ? v.draft.effect : '', !!(v && v.active && !v.gone));
     if (mini.__html !== h) { mini.innerHTML = h; mini.__html = h; }
   }
   /* the sizer's strip in its slot under the card's header, and its Reduce and Done in their slot on the card's actions row (drawConsoleCard makes both).
@@ -8112,6 +8112,7 @@
       case 'eff': if (S.stamp) S.stamp.draft('eff', b.getAttribute('data-v')); break;
       case 'stamp': rollStamp(); break;
       case 'stamp-down': if (S.stamp) S.stamp.esc(); break;
+      case 'stamp-again': if (S.stamp && S.stamp.again) S.stamp.again(); break;      /* RK02 (stamp.brief): Show again */
       case 'stamp-clean': if (S.stamp) S.stamp.mark('clean'); if (S.rack && S.rack.ask && S.rack.ask.stamped) rackHit('six', ''); whoClear(); break;
       case 'sz-reduce': if (S.stamp) S.stamp.reduce(); break;
       case 'sz-restore': if (S.stamp) S.stamp.restore(); break;
