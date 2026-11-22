@@ -4,6 +4,7 @@
 //   node checks/runtime/gm-sheets.test.mjs
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -35,6 +36,28 @@ await test('gm-sheets: the guard lets app/media/sheets/ and its insides through,
   }
   assert.throws(() => M.buildSheets({ dest: path.join(ROOT, 'app', 'media') }), /only inside/, 'a dest outside app/media/sheets/ is refused before anything happens');
   assert.throws(() => M.buildSheets({ dest: path.join(ROOT, 'app', 'sheet') }), /only inside/);
+});
+await test('gm-sheets: the guard follows junctions and symlinks: a link inside app/media/sheets/ that leads out is refused, one that stays inside is let through', () => {
+  const S = path.join(ROOT, 'app', 'media', 'sheets');
+  const made = [];                                   /* what this test creates, so it can remove exactly that (app/media/sheets may not exist yet) */
+  const mk = (d) => { if (!fs.existsSync(d)) { mk(path.dirname(d)); fs.mkdirSync(d); made.push(d); } };
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'b68-guard-out-'));
+  const probe = path.join(S, '_guard-' + process.pid);
+  try {
+    mk(probe); mk(path.join(probe, 'real'));
+    try { fs.symlinkSync(outside, path.join(probe, 'leak'), 'junction'); } catch (e) { console.log('SKIP no junction or symlink here (' + e.code + ')'); return; }
+    fs.symlinkSync(path.join(probe, 'real'), path.join(probe, 'ok'), 'junction');
+    assert.throws(() => M.assertInsideSheets(path.join(probe, 'leak')), /only inside app\/media\/sheets/, 'the link itself');
+    assert.throws(() => M.assertInsideSheets(path.join(probe, 'leak', 'x.svg')), /only inside/, 'a file that does not exist yet, under the link');
+    assert.throws(() => M.assertInsideSheets(path.join(probe, 'leak', 'deep', 'x.svg')), /only inside/, 'a deeper path under the link');
+    assert.throws(() => M.buildSheets({ dest: path.join(probe, 'leak') }), /only inside/, 'a dest that is such a link is refused before anything happens');
+    assert.equal(M.assertInsideSheets(path.join(probe, 'ok', 'x.svg')), path.join(probe, 'ok', 'x.svg'), 'a link that stays inside is fine');
+    assert.equal(fs.readdirSync(outside).length, 0, 'nothing was written outside');
+  } finally {
+    for (const l of ['leak', 'ok']) { try { fs.unlinkSync(path.join(probe, l)); } catch (_) { /* never made */ } }
+    for (const d of made.reverse()) { try { fs.rmdirSync(d); } catch (_) { /* not empty or gone: leave it */ } }
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
 });
 await test('gm-sheets: run as a command it exits 0 with its one-line count, and touches no file (the tracked tree and app/media are as they were)', () => {
   const before = fs.existsSync(path.join(ROOT, 'app', 'media')) ? fs.readdirSync(path.join(ROOT, 'app', 'media')).sort().join() : '-';

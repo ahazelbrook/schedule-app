@@ -13,17 +13,40 @@
 //
 // The art is the publisher's: it never goes in git (.gitignore holds app/media/ and app/media/sheets/; checks/runtime/sheets-private.test.mjs fails
 // on any tracked file under app/media/ or any large tracked picture outside the known kit files). The script writes ONLY inside app/media/sheets/.
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const SHEETS_DIR = path.join(REPO, 'app', 'media', 'sheets');
 
-/** Throw unless `p` is app/media/sheets itself or a path inside it. Every write RK33 makes goes through this first. Returns the resolved path. */
+/** The real path of `p` when it exists; else the real path of its deepest existing ancestor with the missing tail put back (so a junction or symlink on the
+    way, or as `p` itself, shows where it really leads). Pure reading: nothing is created. */
+export function realish(p) {
+  const r = path.resolve(String(p));
+  const tail = [];
+  let cur = r;
+  for (;;) {
+    try { return path.join(fs.realpathSync(cur), ...tail.reverse()); } catch (e) {
+      const up = path.dirname(cur);
+      if (up === cur) return r;
+      tail.push(path.basename(cur)); cur = up;
+    }
+  }
+}
+
+/** True when `p` is `root` itself or inside it, after both are resolved through symlinks and junctions. */
+export function isInside(root, p) {
+  const rel = path.relative(realish(root), realish(p));
+  return !(rel.startsWith('..') || path.isAbsolute(rel));
+}
+
+/** Throw unless `p` is app/media/sheets itself or a path inside it, as it REALLY is: a junction or symlink inside the folder that leads out is refused
+    (the parent is resolved with fs.realpathSync, as far as it exists). Every write RK33 makes goes through this first. Returns the resolved path. */
 export function assertInsideSheets(p) {
   const r = path.resolve(String(p));
   const rel = path.relative(SHEETS_DIR, r);
-  if (rel.startsWith('..') || path.isAbsolute(rel)) throw new Error('gm:sheets writes only inside app/media/sheets/: ' + p);
+  if (rel.startsWith('..') || path.isAbsolute(rel) || !isInside(SHEETS_DIR, r)) throw new Error('gm:sheets writes only inside app/media/sheets/: ' + p);
   return r;
 }
 
