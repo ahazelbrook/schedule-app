@@ -1,0 +1,41 @@
+{
+  "$comment": "The Palazzo Rooms: an INVENTED 12-room kit: 1 palazzo on four floors, drawn like the Pelican Rooms (pelican-kit1.json) with six rooms more. Invented values only. Read by checks/runtime/gm-map-fit.test.mjs and gm-svg-slim.test.mjs (RK28).",
+  "name": "The Palazzo Rooms",
+  "patch": {
+    "name": "The Palazzo Rooms",
+    "district": "Nowhere Ward",
+    "kit": 1,
+    "build": {
+      "style": "palazzo",
+      "front": "canal",
+      "core": [0, 40, 24, 16],
+      "floors": {
+        "-1": { "x": 0, "y": 0, "w": 48, "d": 56, "h": 11 },
+        "0": { "x": 0, "y": 0, "w": 72, "d": 56, "h": 18 },
+        "1": { "x": 0, "y": 0, "w": 72, "d": 56, "h": 14 },
+        "2": { "x": 0, "y": 24, "w": 48, "d": 32, "h": 12 }
+      },
+      "stair": { "room": "Cocktail lounge", "to": 1 },
+      "faces": [
+        { "kind": "water-door", "room": "Cocktail lounge" },
+        { "kind": "water-steps", "room": "Cocktail lounge" },
+        { "kind": "boats", "room": "Cocktail lounge" }
+      ]
+    },
+    "rooms": [
+      { "name": "Showroom", "band": "public", "lvl": 0, "at": [24, 0, 48, 56], "span": 2, "scale": "grand" },
+      { "name": "Cocktail lounge", "band": "public", "lvl": 0, "at": [0, 0, 24, 40], "scale": "grand" },
+      { "name": "Security control room", "band": "working", "lvl": 1, "at": [0, 0, 24, 40], "scale": "service" },
+      { "name": "Private card rooms", "band": "controlled", "lvl": 1, "at": [24, 0, 24, 56] },
+      { "name": "Library", "band": "controlled", "lvl": 1, "at": [48, 0, 24, 28] },
+      { "name": "Gallery", "band": "working", "lvl": 1, "at": [48, 28, 24, 28] },
+      { "name": "Underground counting room", "band": "working", "lvl": -1, "at": [0, 0, 24, 40], "scale": "service" },
+      { "name": "Wine cellar", "band": "working", "lvl": -1, "at": [24, 0, 24, 40], "scale": "service" },
+      { "name": "Servants hall", "band": "working", "lvl": -1, "at": [0, 40, 24, 16], "scale": "service" },
+      { "name": "Boat house", "band": "public", "lvl": -1, "at": [24, 40, 24, 16] },
+      { "name": "Luxury penthouse", "band": "secure", "isTarget": true, "lvl": 2, "at": [24, 24, 24, 32] },
+      { "name": "Roof terrace", "band": "controlled", "lvl": 2, "at": [0, 24, 24, 32] }
+    ],
+    "vectors": [{ "n": "The front", "how": "A door on the water.", "know": "free", "room": "Cocktail lounge", "level": "street", "means": "door" }]
+  }
+}
