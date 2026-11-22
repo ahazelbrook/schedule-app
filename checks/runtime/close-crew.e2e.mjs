@@ -134,7 +134,7 @@ try {
   await toHeat();
   check(/Kept 11 stacks: 5 each for 2 PCs, 1 left over/.test(titheText), 'the tithe step shows the split over the two PCs: ' + (titheText.match(/Kept[^\n]*/) || [''])[0]);
   const ptxt = await panel();
-  check(/Heat reasons/.test(ptxt) && /House add-on/.test(ptxt) && !/Modifiers \(\+ or/.test(ptxt), 'on: the heat step has the reason ticks and the house add-on in place of the Modifiers box: ' + JSON.stringify(ptxt.slice(0, 700)));
+  check(/Heat reasons/i.test(ptxt) && /House add-on/i.test(ptxt) && !/Modifiers \(\+ or/i.test(ptxt) && (await g.$$(AFT + ' .cc-row .chip')).length === 4, 'on: the heat step has the reason ticks and the house add-on in place of the Modifiers box: ' + JSON.stringify(ptxt.slice(0, 700)));
   await exposure(6);
   await g.click(AFT + ' .cc-row button:has-text("High-profile target")'); await sleep(300);
   await g.click(AFT + ' .cc-row button:has-text("A killing")'); await sleep(300);
