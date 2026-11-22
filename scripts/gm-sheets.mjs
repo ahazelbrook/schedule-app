@@ -6,7 +6,9 @@
 //   <private>/proofs/proof-<playbook>.png every region outlined, for a person to look at once per publish
 //   <private>/fix-<playbook>.json         hand fixes (read here, never written)
 //
-// Run it on the GM's PC, in the worktree that is about to deploy, BEFORE the deploy (the deploy copies app/media/ from disk):
+// The order, on the GM's PC: run this in the checkout that will run the release (the one holding app/media/sheets/), THEN `npm run release`. The release builds its
+// own detached worktree and copies only the gitignored files it names; scripts/release.mjs copies app/media/sheets/ from the checkout into it (every run), so the
+// pages reach the deploy. A bare `npm run deploy` is the old route and does not carry them unless it is run in this checkout.
 //   npm run gm:sheets -- --pdf "C:\Users\ahaze\Downloads\Blades 68 playbooks.pdf"
 //   node scripts/gm-sheets.mjs --pdf <pdf> [--out <dir>] [--private <dir>] [--pages 1,2] [--dry] [--python <exe>]
 //   (--content <content.js> and --playbooks a,b name another character table and page order: the tests use them on an invented sheet)
@@ -21,6 +23,15 @@
 //   4. a page that fails a count is REFUSED (nothing written for it) unless its fix file waives that count with a reason (the waiver is printed as a FLAG for a
 //      person to settle, and the app's own run-time check keeps a mark from being drawn where the map and the data disagree);
 //   5. the proof picture is drawn from the final map, for every page, refused or not.
+//
+// The map file (<playbook>.map.json) is the prototype's shape: region keys at the top level (stress, xp, xpi, xpp, xpr, acts, ab, items, stacks, bank, harm, heal, res,
+// keys, friends, coh, id, load; rectangles [x0, y0, x1, y1] in PDF points, detail at the top of scripts/lib/sheets-map.py) plus a header:
+//   v         the schema version (1)                       page      the 1-based page of the PDF
+//   size      [w, h] of the page box in points (841.89 x 595.28)    title   the page's biggest text (the playbook's name)
+//   playbook  the id (hound, hull, ... timepast)           kinds     { region: box | dot | lozenge | clock | text | mark }, advisory
+//   waived    only when non-empty: the CHECK NAMES a fix waived. A check name is not always a region key: 'item loads' belongs to items, 'key hits' to keys,
+//             'dots' to acts (sheets-check.mjs FAMILY). A waiver covers the WHOLE region: the app must draw nothing there unless its own counts agree.
+//   fixed     only when non-empty: the region keys a fix file replaced whole
 //
 //   buildSheets(opts) -> { sheets, errors, warnings, table }
 //     opts      { pdf, dest, private, python, pages, dry, content, playbooks }  (content: another content.js, playbooks: the page order; the tests use both)
@@ -71,7 +82,17 @@ export function assertInside(root, p, message) {
 /** Throw unless `p` is app/media/sheets itself or a path inside it, as it REALLY is: a junction or symlink inside the folder that leads out is refused
     (the parent is resolved with fs.realpathSync, as far as it exists). Every write into the app goes through this first. Returns the resolved path. */
 export function assertInsideSheets(p) {
+  const bad = sheetsRootProblem(REPO);
+  if (bad) throw new Error('gm:sheets writes only inside app/media/sheets/, which is not itself a real folder of this checkout: ' + bad);
   return assertInside(SHEETS_DIR, p, 'gm:sheets writes only inside app/media/sheets/');
+}
+
+/** '' when app/media/sheets of `repo` really is <real repo>/app/media/sheets; else what is wrong. If app/media or app/media/sheets is itself a junction or symlink
+    the folder resolves through it and a write "inside" it would land elsewhere, so the whole step is refused. (The repo is a parameter so a test can use a made-up one.) */
+export function sheetsRootProblem(repo = REPO) {
+  const want = path.join(realish(repo), 'app', 'media', 'sheets');
+  const got = realish(path.join(repo, 'app', 'media', 'sheets'));
+  return path.relative(got, want) === '' ? '' : 'it leads to ' + got + ', not ' + want;
 }
 
 /** The private folder: --private, else B68_SHEETS_PRIVATE, else _sheets beside the worktrees (b68-wt\_sheets for any worktree under b68-wt). */
@@ -126,10 +147,10 @@ export function buildSheets(opts = {}) {
   if (!opts.pages && info.pages !== order.length) return fail('expected a ' + order.length + '-page PDF, found ' + info.pages + ' pages (use --pages to map some)');
   for (const n of wanted) if (!(n >= 1 && n <= order.length && n <= info.pages)) return fail('page ' + n + ' is not one of the ' + order.length + ' playbook pages');
 
-  const work = assertInsidePrivate(priv, path.join(priv, 'work'));
   const proofs = assertInsidePrivate(priv, path.join(priv, 'proofs'));
-  fs.rmSync(work, { recursive: true, force: true });
-  fs.mkdirSync(work, { recursive: true });
+  /* The work folder is a fresh one this run makes (mkdtemp) and removes: nothing that was already in <private> is ever deleted, whatever --private names. */
+  fs.mkdirSync(priv, { recursive: true });
+  const work = assertInsidePrivate(priv, fs.mkdtempSync(path.join(priv, 'work-')));
   try {
     runHelper(python, ['extract', '--pdf', pdf, '--work', work, '--pages', wanted.join(',')]);
     const written = [];

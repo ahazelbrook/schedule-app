@@ -176,5 +176,24 @@ await test('a dirty deploy worktree is refused before any change', async () => {
   assert.ok(!execLines(w).some((l) => /checkout --detach/.test(l)));
 });
 
+await test('the Full sheet pages (app/media/sheets) are copied from the checkout into the release worktree on every run, in a dry run too; none there means no copy and a line saying so', async () => {
+  const src = path.join(MAIN, 'app', 'media', 'sheets'), dst = path.join(WT, 'app', 'media', 'sheets');
+  const w = world(); w.files.set(src, 'pages');
+  assert.equal((await run(base(['--go']), w.ctx)).code, 0);
+  assert.ok(w.log.some((l) => l.kind === 'cp' && l.line === src + ' -> ' + dst), 'copied into the worktree');
+  assert.ok(w.printed.some((l) => /sheets: app\/media\/sheets copied/.test(l)));
+  const wd = world(); wd.files.set(src, 'pages');
+  assert.equal((await run(base(['--dry']), wd.ctx)).code, 0);
+  assert.ok(wd.printed.some((l) => l.includes('[dry] copy ' + src + ' -> ' + dst)), 'the dry plan prints the copy');
+  assert.ok(!wd.log.some((l) => l.kind === 'cp'), 'and copies nothing');
+  const w2 = world();                                            /* the destination already has an old page: it is still replaced */
+  w2.files.set(src, 'new'); w2.files.set(dst, 'old');
+  await run(base(['--go']), w2.ctx); assert.equal(w2.files.get(dst), 'new');
+  const w3 = world();                                            /* no pages made: nothing copied, the release carries on */
+  assert.equal((await run(base(['--go']), w3.ctx)).code, 0);
+  assert.ok(!w3.log.some((l) => l.kind === 'cp' && l.line.includes('media/sheets')));
+  assert.ok(w3.printed.some((l) => /no app\/media\/sheets here/.test(l)));
+});
+
 console.log('\nrelease: ' + passed + ' passed, ' + failed + ' failed');
 if (failed) process.exit(1);

@@ -6,7 +6,9 @@
 // Steps, in order (the same list for --dry and a real run; --dry prints each and runs nothing):
 //   guard        refuses on a game day and without --go (a dry run is exempt from --go)
 //   worktree     fetch origin, deploy worktree detached at origin/main, clean check, npm ci if the lockfile changed
-//   media        the gitignored files copied from the ambient2 worktree when missing
+//   media        the gitignored files copied from the ambient2 worktree when missing; and the phone's Full sheet pages
+//                (app/media/sheets/, made by `npm run gm:sheets` in THIS checkout) copied into the release worktree every time, so a
+//                changed page ships. None there: nothing copied, and the phone falls back to the classic sheet.
 //   live         `wrangler deployments list` must show --expect as the live version (the rollback target)
 //   bookmark     `wrangler d1 time-travel info blades68` (read, before anything changes)
 //   handouts     npm run gm:handouts
@@ -105,7 +107,18 @@ function dryContext(ctx) {
   };
 }
 
-const showCmd = (cmd, args, o) => (o.cwd ? '(in ' + o.cwd + ') ' : '') + [path.basename(cmd) === cmd ? cmd : '"' + cmd + '"'].concat(args.map((a) => (/\s/.test(a) ? '"' + a + '"' : a))).join(' ');
+/** The Full sheet pages: app/media/sheets/ of the checkout that runs the release (where `npm run gm:sheets` wrote them; git-ignored) into the release
+    worktree. Always copied (a regenerated page replaces the old one); a --dry run prints the copy. No folder: say so, and carry on (the phone falls back). */
+export function sheetsCopy(S) {
+  const { ctx } = S;
+  const src = path.join(ctx.repo, 'app', 'media', 'sheets'), dst = path.join(S.wt, 'app', 'media', 'sheets');
+  if (path.resolve(src) === path.resolve(dst)) { ctx.print('    sheets: this is the release worktree itself, nothing to copy'); return; }
+  if (!ctx.fs.exists(src)) { ctx.print('    sheets: no app/media/sheets here (run npm run gm:sheets first); Full sheet will use the classic sheet'); return; }
+  ctx.fs.cp(src, dst);
+  ctx.print('    sheets: app/media/sheets copied into the release worktree');
+}
+
+const showCmd =(cmd, args, o) => (o.cwd ? '(in ' + o.cwd + ') ' : '') + [path.basename(cmd) === cmd ? cmd : '"' + cmd + '"'].concat(args.map((a) => (/\s/.test(a) ? '"' + a + '"' : a))).join(' ');
 
 // ---- helpers -----------------------------------------------------------------------------------------------------------
 
@@ -197,6 +210,7 @@ export const STEPS = {
       if (!ctx.fs.exists(src)) throw fail('media missing in both places: ' + rel);
       ctx.fs.cp(src, dst);
     }
+    sheetsCopy(S);
   },
 
   live(S) {

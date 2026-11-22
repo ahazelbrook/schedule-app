@@ -67,6 +67,31 @@ await test('gm-sheets: the private folder guard: a path inside it passes, a sibl
     for (const bad of [path.dirname(priv), priv + '-x', path.join(priv, '..', 'x.png'), ROOT]) assert.throws(() => M.assertInsidePrivate(priv, bad), /only inside/, bad);
   } finally { fs.rmSync(priv, { recursive: true, force: true }); }
 });
+/* A made-up checkout: a copy of the step's own scripts in a temp folder, so its REPO is that folder and a junction can be put where the guard looks. */
+function fakeRepo(tmpRoot, linkAt) {
+  const repo = path.join(tmpRoot, 'repo'), elsewhere = path.join(tmpRoot, 'elsewhere');
+  fs.mkdirSync(path.join(repo, 'scripts', 'lib'), { recursive: true }); fs.mkdirSync(path.join(repo, 'app'), { recursive: true }); fs.mkdirSync(elsewhere);
+  for (const f of ['gm-sheets.mjs', 'lib/sheets-check.mjs', 'lib/sheets-map.py']) fs.copyFileSync(path.join(ROOT, 'scripts', f), path.join(repo, 'scripts', f));
+  if (linkAt === 'media') fs.symlinkSync(elsewhere, path.join(repo, 'app', 'media'), 'junction');
+  else { fs.mkdirSync(path.join(repo, 'app', 'media')); if (linkAt === 'sheets') fs.symlinkSync(elsewhere, path.join(repo, 'app', 'media', 'sheets'), 'junction'); }
+  return { repo, elsewhere, script: path.join(repo, 'scripts', 'gm-sheets.mjs') };
+}
+await test('gm-sheets: if app/media or app/media/sheets is itself a junction the whole step is refused (the folder would resolve through it): the guard, and the command in a made-up checkout, write nothing outside', () => {
+  assert.equal(M.sheetsRootProblem(ROOT), '', 'this checkout is sound');
+  for (const linkAt of ['media', 'sheets']) {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'b68-root-'));
+    try {
+      let fake; try { fake = fakeRepo(tmpRoot, linkAt); } catch (e) { console.log('SKIP no junction here (' + e.code + ')'); return; }
+      assert.match(M.sheetsRootProblem(fake.repo), /it leads to .*elsewhere/, linkAt + ': a link at the root is found');
+      const r = spawnSync(process.execPath, [fake.script, '--pdf', path.join(tmpRoot, 'x.pdf'), '--private', path.join(tmpRoot, 'priv')], { encoding: 'utf8' });
+      assert.equal(r.status, 1, r.stdout + r.stderr); assert.match(r.stderr, /only inside app\/media\/sheets\/, which is not itself a real folder/);
+      const r2 = spawnSync(process.execPath, [fake.script, '--pdf', path.join(tmpRoot, 'x.pdf'), '--out', path.join(fake.repo, 'app', 'media', 'sheets', 'sub')], { encoding: 'utf8' });
+      assert.equal(r2.status, 1, 'a dest under the link is refused as well');
+      assert.deepEqual(fs.readdirSync(fake.elsewhere), [], linkAt + ': nothing was written through the link');
+      assert.ok(!fs.existsSync(path.join(tmpRoot, 'priv')), 'and nothing else was made');
+    } finally { fs.rmSync(tmpRoot, { recursive: true, force: true }); }
+  }
+});
 
 /* ---- the count rules, on an invented content table ---- */
 const CONTENT = {
@@ -221,6 +246,25 @@ if (!PY) {
       assert.match(run(short, {}, { dovetail: { waive: { stress: 'no' } } }).r.errors[0], /dovetail: fix file: waive "stress" needs a reason/);
       assert.match(run(short, {}, { dovetail: '{ not json' }).r.errors[0], /dovetail: fix file is not JSON/);
       assert.equal(run(short, {}, { dovetail: { waive: { items: 'covers items only, not the stress count' } } }).r.sheets.length, 0, 'a waiver for another region does not cover this one');
+    });
+    await test('gm-sheets: a junction at <private>/proofs is refused before anything is drawn, and one at <private>/work is never followed or emptied (the run makes its own fresh work folder)', () => {
+      const mkLink = (target, at) => { try { fs.symlinkSync(target, at, 'junction'); return true; } catch (e) { console.log('SKIP no junction here (' + e.code + ')'); return false; } };
+      const out1 = path.join(tmp, 'out-proofs'), priv1 = path.join(tmp, 'priv-p');
+      fs.mkdirSync(out1); fs.mkdirSync(priv1);
+      if (!mkLink(out1, path.join(priv1, 'proofs'))) return;
+      assert.throws(() => M.buildSheets({ pdf: ok, dest: path.join(dest, 'jp'), private: priv1, content: contentFile, playbooks: ['dovetail'], python: PY }), /only inside .*priv-p/);
+      assert.deepEqual(fs.readdirSync(out1), [], 'no proof was drawn through the link');
+      assert.deepEqual(ls(path.join(dest, 'jp')), [], 'and nothing was written into the app');
+      const out2 = path.join(tmp, 'out-work'), priv2 = path.join(tmp, 'priv-w');
+      fs.mkdirSync(out2); fs.mkdirSync(priv2); fs.writeFileSync(path.join(out2, 'keep.txt'), 'mine');
+      fs.mkdirSync(path.join(priv2, 'proofs')); fs.writeFileSync(path.join(priv2, 'fix-other.json'), '{}');
+      if (!mkLink(out2, path.join(priv2, 'work'))) return;
+      const r = M.buildSheets({ pdf: ok, dest: path.join(dest, 'jw'), private: priv2, content: contentFile, playbooks: ['dovetail'], python: PY });
+      assert.deepEqual(r.errors, [], r.errors.join('; '));
+      assert.deepEqual(fs.readdirSync(out2), ['keep.txt'], 'what was behind the work link is untouched and nothing was written there');
+      assert.equal(fs.readFileSync(path.join(out2, 'keep.txt'), 'utf8'), 'mine');
+      assert.deepEqual(ls(priv2), ['fix-other.json', 'proofs', 'work'], 'the private folder holds what it held, plus nothing left over (the run removed its own work-* folder)');
+      assert.ok(fs.existsSync(path.join(priv2, 'fix-other.json')));
     });
     await test('gm-sheets: it refuses a PDF or a private folder inside the repository, a missing PDF, no --pdf, and a PDF of the wrong length', () => {
       assert.match(M.buildSheets({ dest, pdf: path.join(ROOT, 'package.json') }).errors[0], /keep it outside the repository/);
