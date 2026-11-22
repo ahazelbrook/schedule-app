@@ -172,9 +172,23 @@ await test('Back and Next again re-send the SAME absolute numbers, never a secon
   await r.ctl.finish();
   assert.ok(CC.parseWritten(r.night().aftermath.data.crewWritten), 'the guard outlives the finish');
   await r.ctl.start();
-  assert.deepEqual([r.ctl.state().data.heat, r.ctl.state().data.wanted], [2, 0], 'a fresh Start on the written crew starts from the numbers before the close');
-  await r.ctl.go(2); await r.ctl.set({ exposure: 6, heatWhy: 'profile,killing', house: 1 }); await r.ctl.next();
-  assert.deepEqual([r.camp.crew.heat, r.camp.crew.wanted], [0, 1], 'still Heat 0, Wanted 1');
+  assert.deepEqual([r.ctl.state().data.heat, r.ctl.state().data.wanted], [0, 1], 'a fresh Start is a new close: it starts from the crew as it stands');
+  assert.ok(CC.parseWritten(r.ctl.state().data.lastClose) && r.ctl.state().data.crewWritten === undefined, 'the earlier close is kept as lastClose, not as this run\'s guard');
+  await r.ctl.go(2); await r.ctl.set({ redo: true });
+  assert.deepEqual([r.ctl.state().data.heat, r.ctl.state().data.wanted], [2, 0], 'Redo that close: back to the numbers before it');
+  assert.equal(heatShows(r).pop().payload.heat, 2, 'and the iPad is told the heat step again from there');
+  await r.ctl.set({ exposure: 6, heatWhy: 'profile,killing', house: 1 }); await r.ctl.next();
+  assert.deepEqual([r.camp.crew.heat, r.camp.crew.wanted], [0, 1], 'redone: still Heat 0, Wanted 1');
+});
+
+await test('ADVISOR (Gate 2): a second score the same night adds to the first, never undoes it', async () => {
+  const r = rig({ crew: { heat: 5, wanted: 0, vault: 3 } });
+  await toHeat(r); await r.ctl.set({ exposure: 2 }); await r.ctl.next(); await r.ctl.finish();
+  assert.deepEqual([r.camp.crew.heat, r.camp.crew.wanted], [7, 0], 'the first close: 5 + 2');
+  await r.ctl.start(); await r.ctl.go(2);
+  assert.deepEqual([r.ctl.state().data.heat, r.ctl.state().data.wanted], [7, 0], 'the second starts from 7, not from the first close\'s 5');
+  await r.ctl.set({ exposure: 2 }); await r.ctl.next();
+  assert.deepEqual([r.camp.crew.heat, r.camp.crew.wanted], [0, 1], '7 + 2 = 9: the siren, Heat 0 and Wanted 1');
 });
 
 await test('a reload mid-show (resume) keeps the guard and the numbers from before the close', async () => {

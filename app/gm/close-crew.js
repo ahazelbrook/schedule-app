@@ -16,7 +16,8 @@
    wanted = min(4, wanted + wantedUp) ('68: at 9 or more, gain a Wanted level and clear Heat; the excess does not carry over).
    ONCE: night.aftermath.data.crewWritten holds { from, to, at } as a JSON string (the night's aftermath data is a flat bag of strings, numbers and booleans,
    gm/night.js cleanData). `from` is the heat and Wanted before the close. The run's own numbers never change after the write, so Back and Next again send the
-   same absolute values; a fresh Start on a crew that still holds `to` starts again from `from`, never from the written values.
+   same absolute values. A fresh Start is a new close (a second score adds to the first); while the crew still holds `to`, the earlier close is kept as
+   lastClose and the heat step offers "Redo that close", which starts again from its `from` (so correcting it never adds the heat twice).
 
    PURE (Node tests)
      REASONS KEYS HOUSE_MAX OPEN_MAX
@@ -47,7 +48,7 @@
     { id: 'killing', label: 'A killing', n: 2 }
   ];
   /* the night's aftermath data keys this file adds (aftermath.js DATA_KEYS has the rest); 12 + 7 is inside night.js's 24 */
-  var KEYS = ['heatWhy', 'house', 'houseWhy', 'crewWritten', 'picks', 'open', 'xpTicks'];
+  var KEYS = ['heatWhy', 'house', 'houseWhy', 'crewWritten', 'lastClose', 'picks', 'open', 'xpTicks'];
   var HOUSE_MAX = 6, OPEN_MAX = 200, PICKS_MAX = 6, LABEL_MAX = 40;
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
@@ -162,17 +163,21 @@
     return undefined;     /* crewWritten is never typed: only onNext writes it */
   }
   /* start(): d is the new run's data, seeded from the crew sheet; prev is the night's aftermath data from an earlier run, if any */
+  /* A fresh Start is a NEW close by default (a second score the same night must add to the first, never undo it): the run starts from the crew as it
+     stands. When the crew still holds what an earlier close tonight wrote, that close is kept as lastClose, and the heat step offers "Redo that close"
+     (set({ redo: true })), which starts from the numbers before it instead (Gate 2: the advisor's change). */
   function begin(d, crewNow, prev) {
-    var p = isObj(prev) ? prev : {}, s = seed(crewNow, p);
-    d.heat = s.heat; d.wanted = s.wanted;
-    if (s.written) d.crewWritten = s.written;
+    var p = isObj(prev) ? prev : {}, s = seed(crewNow, p), now = crewPair(crewNow);
+    d.heat = okPair(now) ? now.heat : 0; d.wanted = okPair(now) ? now.wanted : 0;
+    if (s.written) d.lastClose = s.written;
     if (str(p.open)) d.open = packOpen(p.open);      /* the night's open lines outlive a restart of the show */
     return d;
   }
   function set(data, patch) {
-    var ticks = false;
+    var ticks = false, last = parseWritten(data.lastClose);
+    if (patch.redo === true && last) { data.heat = last.from.heat; data.wanted = last.from.wanted; data.crewWritten = data.lastClose; delete data.lastClose; }
     KEYS.forEach(function (k) {
-      if (!(k in patch) || k === 'crewWritten') return;
+      if (!(k in patch) || k === 'crewWritten' || k === 'lastClose') return;
       data[k] = clean(k, patch[k]);
       if (k === 'heatWhy' || k === 'house') ticks = true;
     });
@@ -295,7 +300,13 @@
     form.appendChild(h);
     form.appendChild(ui.el('p', 'gm-dim cc-mods', 'Modifiers ' + signed(int(d.mods, -6, 6, 0)) + ' (the reasons ticked and the house add-on, at most ±6).'));
     form.appendChild(ruleChip(ui, 'heat'));
-    var w = parseWritten(d.crewWritten), t = target(d, ui.heatOutcome);
+    var w = parseWritten(d.crewWritten), t = target(d, ui.heatOutcome), last = w ? null : parseWritten(d.lastClose);
+    if (last) {
+      var lr = row(ui, '');
+      lr.appendChild(ui.el('span', 'gm-dim cc-last', 'A close earlier tonight wrote Heat ' + last.from.heat + ' → ' + last.to.heat + ', Wanted ' + last.from.wanted + ' → ' + last.to.wanted + '. This is a new close; to correct that one instead:'));
+      lr.appendChild(ui.btn('Redo that close', function () { ui.set({ redo: true }); }, 'cc-redo'));
+      form.appendChild(lr);
+    }
     form.appendChild(ui.el('p', 'gm-dim cc-write', w
       ? 'Written to the crew: Heat ' + w.from.heat + ' → ' + w.to.heat + ', Wanted ' + w.from.wanted + ' → ' + w.to.wanted + '. Next sends the same numbers again, never twice the heat.'
       : 'Next writes the crew: Heat ' + t.from.heat + ' → ' + t.to.heat + ', Wanted ' + t.from.wanted + ' → ' + t.to.wanted + '.'));
