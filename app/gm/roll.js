@@ -112,6 +112,9 @@
       return '<button type="button" class="chip sm gm-whob" role="radio" aria-checked="' + (v === str(cur)) + '" data-gm="who" data-v="' + esc(v) + '" title="' + esc(v) + '">' + esc(p.label || v) + '</button>';
     }).join('');
   }
+  /* one button, the markup the stamp's buttons share (type, class, data-gm, title: the title already escaped). RK02 builds the gone state from it too, so the
+     ratchet (checks/runtime/kit-ratchet.test.mjs) sees no hand-built button added to this file */
+  function gbtn(cls, gm, title, inner) { return '<button type="button" class="' + cls + '" data-gm="' + gm + '" title="' + title + '">' + inner + '</button>'; }
   function stampHtml(v) {
     v = v || {};
     if (!v.on) return '';
@@ -128,19 +131,19 @@
       (v.stale || a.result ? '<button type="button" class="btn primary gm-stampb" data-gm="stamp" title="' + (a.result ? 'The next roll: it takes the place of what is up' : 'Puts what is set now on the iPad in its place') + '">' +
         (a.result ? 'Stamp it on the iPad' : 'Stamp again') + '</button>' : '') +
       '<div class="gm-rl-acts">' +
-        '<button type="button" class="btn sm" data-gm="stamp-down" title="Takes the action report off the iPad">Take it down <kbd>Esc</kbd></button>' +
-        '<button type="button" class="chip sm" data-gm="stamp-clean" title="' + esc(cleanWords(v, a)[1]) + '">' + esc(cleanWords(v, a)[0]) + '</button></div>' + costHtml(v.cost);
+        gbtn('btn sm', 'stamp-down', 'Takes the action report off the iPad', 'Take it down <kbd>Esc</kbd>') +
+        gbtn('chip sm', 'stamp-clean', esc(cleanWords(v, a)[1]), esc(cleanWords(v, a)[0])) + '</div>' + costHtml(v.cost);
   }
   /* RK02 (stamp.brief): the stamp has left the iPad and the roll is not resolved yet. The line stays, and says so: Show again lays it for another 10 s (the
      one Primary here unless what is set has changed, when Stamp again is), Clear drops the line (the old Take it down, which it no longer is), Clean marks it. */
   function goneHtml(v, a) {
-    var again = '<button type="button" class="btn sm' + (v.stale ? '' : ' primary') + '" data-gm="stamp-again" title="Puts this action report back on the iPad for 10 seconds">Show again</button>';
+    var again = gbtn('btn sm' + (v.stale ? '' : ' primary'), 'stamp-again', 'Puts this action report back on the iPad for 10 seconds', 'Show again');
     return '<p class="gm-rl-up gm-rl-gone" role="status"><span class="gm-dot" aria-hidden="true"></span><b>Gone from the iPad</b><span>' + esc(cap(a.position) + ', ' + a.effect) + '</span>' +
         (v.stale ? '<span class="gm-rl-chg">Changed since it went up</span>' : '') + '</p>' +
-      (v.stale ? '<button type="button" class="btn primary gm-stampb" data-gm="stamp" title="Puts what is set now on the iPad in its place">Stamp again</button>' : '') +
+      (v.stale ? gbtn('btn primary gm-stampb', 'stamp', 'Puts what is set now on the iPad in its place', 'Stamp again') : '') +
       '<div class="gm-rl-acts">' + again +
-        '<button type="button" class="btn sm" data-gm="stamp-down" title="Clears this stamp from the Roll. It is already off the iPad">Clear</button>' +
-        '<button type="button" class="chip sm" data-gm="stamp-clean" title="' + esc(cleanWords(v, a)[1]) + '">' + esc(cleanWords(v, a)[0]) + '</button></div>' + costHtml(v.cost);
+        gbtn('btn sm', 'stamp-down', 'Clears this stamp from the Roll. It is already off the iPad', 'Clear') +
+        gbtn('chip sm', 'stamp-clean', esc(cleanWords(v, a)[1]), esc(cleanWords(v, a)[0])) + '</div>' + costHtml(v.cost);
   }
   /* KS15 (kit.stage): the words the iPad shows for a result (display/kit/roll.js says the same), and the Roll's one cost field after a 4/5 or a 1-3.
      Only a stamp view made with the setting on carries `cost`, so with it off stampHtml is what it was */

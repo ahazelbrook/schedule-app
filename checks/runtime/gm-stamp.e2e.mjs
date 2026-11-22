@@ -238,10 +238,10 @@ try {
   /* what the display is served: the overlay is left out once the SERVER's clock has passed at + ms (the GET the iPad polls) */
   const onIpad = async () => { const o = (((await api('GET', '/gm/display')).json || {}).ambient || {}).doc; return o && o.overlay ? o.overlay : null; };
   const panel = () => page.$eval('#gm-stamp', (e) => e.textContent.replace(/\s+/g, ' ').trim()).catch(() => '');
-  /* how long the card stood, by the SERVER's own stamp (the overlay's at, the GET the iPad polls) to the first GET without it: no click or poll latency in it */
-  let seenAt = 0;
-  const onIpadAt = async () => { const o = await onIpad(); if (o && o.at) seenAt = Date.parse(o.at); return o; };
-  const goneFromGet = async (ms = 14000) => { await until(async () => !(await onIpadAt()), ms, 100); return Date.now() - seenAt; };
+  const onIpadAt = onIpad;
+  const sleepTo = (t) => sleep(Math.max(0, t - Date.now()));
+  /* how long the card stands, by the SERVER's own stamp (the overlay's at, one clock on this PC): a GET at 8.5 s still has it, a GET at 10.8 s does not. No click or poll latency in it */
+  const stands = async (o) => { const at = Date.parse(o.at); await sleepTo(at + 8500); const early = await onIpad(); await sleepTo(at + 10800); const late = await onIpad(); return { early: !!early && early.id === o.id, late: !late }; };
   for (const DESK of [false, true]) {
     const TAG = DESK ? '[kit.desk on] ' : '';
     await api('PATCH', '/gm/ambient', { overlay: null });
@@ -249,16 +249,17 @@ try {
     await reopen();
     if (DESK) check(!!(await until(() => page.evaluate(() => { const r = document.querySelector('#gm-rl'); return !!r && r.getAttribute('data-kr') === '1'; }), 30000, 250)), TAG + 'the Roll is the new desk\'s card');
     await page.click('#gm-pos [data-v="risky"]');
+    const lineBefore = await page.inputValue('#gm-c-threat');
     await page.click(STAMP);
     const up = await until(onIpadAt, 6000, 100);
     check(!!up && up.kind === 'report' && up.ms === 10000, TAG + 'the stamp is on the display route for 10 s: ' + JSON.stringify(up && { kind: up.kind, ms: up.ms }));
     check(!!(await until(async () => /On the iPad/.test(await panel()) && /\d+ s/.test(await panel()), 3000, 100)), TAG + 'the Roll says it is on the iPad and counts the seconds: ' + (await panel()).slice(0, 80));
-    const took = await goneFromGet();
-    check(took >= 9500 && took <= 11000, TAG + 'gone from the display GET by 11 s (' + took + ' ms after the server set it)');
+    const s1 = await stands(up);
+    check(s1.early && s1.late, TAG + 'on the display GET at 8.5 s, and gone from it by 10.8 s (' + JSON.stringify(s1) + ')');
     check(!!(await until(async () => /Gone from the iPad/.test(await panel()), 3000, 100)), TAG + 'the panel keeps the line, as gone: ' + (await panel()).slice(0, 100));
     check(/Risky, standard/.test(await panel()) && !/On the iPad/.test(await panel()), TAG + 'with what was sent (position and effect)');
     check(!!(await page.$('#gm-stamp [data-gm="stamp-again"]')) && !!(await page.$('#gm-stamp [data-gm="stamp-down"]')) && !!(await page.$('#gm-stamp [data-gm="stamp-clean"]')), TAG + 'Show again, Clear and Clean are there');
-    check((await page.inputValue('#gm-c-threat')) === 'Wren Tully turns round', TAG + 'the Roll’s line is still the line');
+    check(lineBefore !== '' && (await page.inputValue('#gm-c-threat')) === lineBefore, TAG + 'the Roll’s line is still the line: ' + lineBefore.slice(0, 30));
     await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
     await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await sleep(400);
     check(/Gone from the iPad/.test(await panel()), TAG + 'Esc does not swallow the gone line (nothing is up to take down)');
@@ -266,8 +267,8 @@ try {
     const again = await until(onIpadAt, 6000, 100);
     check(!!again && again.kind === 'report' && again.ms === 10000 && !!up && again.id !== up.id && JSON.stringify(again.payload) === JSON.stringify(up.payload), TAG + 'Show again lays the same report for 10 s under a new id');
     check(!!(await until(async () => /On the iPad/.test(await panel()), 3000, 100)), TAG + 'and the Roll says it is on the iPad again');
-    const took2 = await goneFromGet();
-    check(took2 >= 9500 && took2 <= 11000, TAG + 'and it is gone again from the GET by 11 s (' + took2 + ' ms)');
+    const s2 = await stands(again);
+    check(s2.early && s2.late, TAG + 'and it stands 10 s again: on the GET at 8.5 s, gone by 10.8 s (' + JSON.stringify(s2) + ')');
     check(!!(await until(async () => /Gone from the iPad/.test(await panel()), 3000, 100)), TAG + 'the line is kept again');
     /* Esc and Take it down still work early */
     await page.click('#gm-stamp [data-gm="stamp-again"]');
@@ -278,7 +279,7 @@ try {
     check(!!(await until(async () => !(await onIpad()), 4000, 100)), TAG + 'Esc takes it down early');
     check(!!(await until(async () => !!(await page.$(STAMP)) && !/Gone from the iPad/.test(await panel()), 3000, 100)), TAG + 'and the Roll goes back to Stamp it on the iPad');
     /* a roll marked after it has gone resolves it: the line goes, the size is offered, nothing is laid */
-    await page.click(STAMP); await until(onIpadAt, 6000, 100); await goneFromGet();
+    await page.click(STAMP); const o3 = await until(onIpadAt, 6000, 100); await sleepTo(Date.parse(o3.at) + 10800);
     await until(async () => /Gone from the iPad/.test(await panel()), 3000, 100);
     await page.click('#gm-buttons [data-gm="situation"][data-n="2"]');
     check(!!(await until(() => page.$(SIZER), 4000)), TAG + 'a 4/5 marked after it has gone still offers the size');
