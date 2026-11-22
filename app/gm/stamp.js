@@ -11,8 +11,8 @@
    is laid again every 170 seconds. With stamp.brief ON (RK02) the card is laid for BRIEF_MS (10 s) and never laid again: the server and the iPad let it
    go at at + ms, and the Roll's stamp line stays (view().gone, "Gone from the iPad") until the roll is resolved, with again() ("Show again") laying it
    for another 10 s. A beat this controller laid is gone once its own clock has run out (the page's stored ambient overlay keeps its id after expiry, so
-   the id alone no longer says it is up): the cost field never lays a beat again over a card that has gone, while a result recorded under kit.stage
-   still lays its own 8 s beat. Nothing goes to a phone (D3). Taking the card down never touches the lasting layers, and only happens while the overlay up is still this
+   the id alone no longer says it is up): a result recorded under kit.stage after the card has gone still lays its own 8 s beat, and the cost field stays
+   open (until the next stamp, Clean, another show, PANIC or Blank) and Enter lays its own 10 s cost beat. Nothing goes to a phone (D3). Taking the card down never touches the lasting layers, and only happens while the overlay up is still this
    stamp's own. This file listens for no key: Esc reaches the stamp through the page's one Esc (gm/esc.js, the entry the page registers as kind 'stamp').
 
    THE SIZER (1.4). When a 4/5 or a 1-3 is marked on a stamped roll (only then), offer the consequence at FULL size for the stamped position: the severity, ticks and
@@ -296,7 +296,7 @@
        It ENDS (as Take it down ends it) the moment the iPad moves on: PANIC, Blank, another show taking over, or the overlay cleared from
        elsewhere. A once-a-second look while the field is open (the page's ambient document and display kind, no request), and again on Enter,
        so a stale cost can never put the roll back minutes later */
-    function costGone(L) { return covered() || upId() !== L.st.id || expired(L.st); }      /* RK02: a card that has gone by its clock is never laid again */
+    function costGone(L) { return covered() || upId() !== L.st.id; }
     function stopWatch() { if (watchT !== null) clrT(watchT); watchT = null; }
     function endCost() { if (!last) return; last = null; stopWatch(); changed(); }
     function watchCost() { stopWatch(); watchT = setT(function () { watchT = null; if (!last) return; if (costGone(last)) endCost(); else watchCost(); }, WATCH_MS); }
@@ -417,11 +417,15 @@
       return out;
     }
     /* RK02 "Show again": a stamp that has gone from the iPad (stamp.brief on) is laid for another 10 s, as it was, under a new id. Not a new stamp: nothing is
-       logged, no glyph drops and Blade is not asked again. Like a stamp, it goes up whatever the iPad shows (the GM pressed it); a refusal says so and
+       logged, no glyph drops and Blade is not asked again. Unlike a stamp it never punches through PANIC, Blank, the hard start or a frozen iPad; a refusal says so and
        leaves the Roll's line as it was */
     function again() {
       var st = active;
       if (!st || st.result || !brief() || !expired(st)) return Promise.resolve(false);
+      /* never over PANIC, Blank (lights out), the hard start or a frozen iPad: the page names why (host.againBlocked), else covered() */
+      var why = ''; try { why = typeof host.againBlocked === 'function' ? str(host.againBlocked()) : ''; } catch (e) { why = ''; }
+      if (!why && covered()) why = 'the iPad is blank or in PANIC';
+      if (why) { toast('Show again waited: ' + why + '.', true); return Promise.resolve(false); }
       var pk = st.key, pi = st.id, pu = st.until;
       return lay(st).then(function (r) {
         if (active !== st) { if (r) takeBack(copy(st)); return false; }               /* Esc, Take it down or a new stamp came while it was out */

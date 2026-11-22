@@ -303,7 +303,7 @@ function makeBriefHost(over = {}) {
       overlay = Show.idFor(key); return { ok: true };
     },
     keyFor: (k) => Show.idFor(k), overlayId: () => overlay, clearOverlay: async () => { calls.clear++; overlay = ''; return {}; },
-    who: () => 'Nell Arbuthnot', covered: () => covered, vet: () => true,
+    who: () => 'Nell Arbuthnot', covered: () => covered, vet: () => true, againBlocked: () => (over.blocked ? over.blocked() : ''),
     log: (x) => calls.log.push(x), toast: (m, bad) => calls.toast.push([m, !!bad]), now: () => t, changed: () => { calls.changed++; },
     threat: () => { calls.threat++; }, stamped: () => { calls.stamped++; },
     setTimeout: (fn, ms) => { const h = ++tid; timers.push({ h, at: t + ms, ms, fn }); return h; }, clearTimeout: (h) => { timers = timers.filter((x) => x.h !== h); }
@@ -376,9 +376,15 @@ await test('RK02: Show again lays the same report for another 10 s under a new i
   assert.equal(await c.again(), true); assert.equal(calls.show.length, 3, 'as often as the GM asks');
 });
 
-await test('RK02: Show again that the iPad refuses changes nothing and says so; over a blank iPad it goes up, as a stamp does', async () => {
+await test('RK02: Show again that the iPad refuses changes nothing and says so; it never punches through PANIC, Blank, the hard start or a frozen iPad', async () => {
   const m = makeBriefHost(); const c = St.create(m.host); await c.fire(); await m.advance(11000);
-  m.cover(true); assert.equal(await c.again(), true, 'the GM pressed it: it goes up whatever the iPad shows, as a stamp does'); assert.equal(m.calls.show.length, 2);
+  m.cover(true); assert.equal(await c.again(), false, 'a blank iPad or PANIC (covered)'); assert.equal(m.calls.show.length, 1); assert.equal(m.calls.toast.length, 1); assert.equal(m.calls.toast[0][1], true);
+  assert.ok(/blank|PANIC/.test(m.calls.toast[0][0]), 'and says why: ' + m.calls.toast[0][0]); assert.equal(c.view().gone, true, 'still gone, still on the Roll');
+  m.cover(false); assert.equal(await c.again(), true, 'clear again: it goes up'); assert.equal(m.calls.show.length, 2);
+  for (const why of ['the hard start is running', 'the iPad is frozen', 'PANIC is on']) {
+    const b = makeBriefHost({ blocked: () => why }); const e = St.create(b.host); await e.fire(); await b.advance(11000);
+    assert.equal(await e.again(), false, why); assert.equal(b.calls.show.length, 1); assert.ok(b.calls.toast[0][0].indexOf(why) >= 0, 'the toast names it'); assert.equal(e.view().gone, true);
+  }
   const n = makeBriefHost({ refuse: (call) => call.key.indexOf('stamp-2-') === 0 }); const d = St.create(n.host); await d.fire(); await n.advance(11000);
   assert.equal(await d.again(), false); assert.equal(n.calls.show.length, 2); assert.equal(d.view().gone, true, 'refused: still gone, as it was');
   assert.equal(n.calls.toast.length, 1);
@@ -415,22 +421,28 @@ await test('RK02 + kit.stage: a result marked while the card is up is the same 8
   assert.equal(d.calls.show.length, 1, 'PANIC or blank: nothing laid');
 });
 
-await test('RK02 + kit.stage: the cost field does not lay a card that has gone; it ends with the result beat’s 8 s, and Enter after that sends nothing', async () => {
+await test('RK02 + kit.stage: the cost field has no 8 s cut-off: it stays open, with its draft, until the next stamp, Clean, another show or PANIC; Enter lays its own 10 s cost beat', async () => {
   const { c, calls, advance } = await briefStamp({ on: { 'kit.stage': true } }); await advance(2000);
-  await c.mark('45'); assert.ok(c.view().cost);
-  await advance(9000);
-  assert.equal(c.view().cost, undefined, 'the field ended once the card was gone');
-  assert.equal(await c.sendCost('it costs a favour'), false); assert.equal(calls.show.length, 2, 'no third write: the card is not raised again');
-  /* the result beat has its own 8 s from when it was laid: marked at 9 s it runs to 17 s, so the field is open at 13 s and ends by 18 s */
+  await c.mark('45'); assert.ok(c.view().cost); c.costDraft('a favour is owed');
+  await advance(60000);
+  assert.ok(c.view().cost, 'a minute on, the card long gone: the field is still open'); assert.equal(c.view().cost.draft, 'a favour is owed', 'with what was typed');
+  assert.equal(calls.show.length, 2, 'and nothing was laid by itself');
+  assert.equal(await c.sendCost(), true, 'Enter after the card has gone lays a cost beat of its own');
+  const s = calls.show[calls.show.length - 1]; assert.equal(s.ms, 10000); assert.equal(s.payload.cost, 'a favour is owed'); assert.equal(s.payload.result, '45'); assert.equal(s.replace, true);
+  assert.equal(c.view().cost.sent, 'a favour is owed'); await advance(30000); assert.ok(c.view().cost, 'it stays open after its own 10 s too');
+  c.costDraft('and a debt'); assert.equal(await c.sendCost(), true, 'and can be changed and sent again'); assert.equal(calls.show.length, 4);
+  await c.mark('clean'); assert.equal(c.view().cost, undefined, 'Clean ends it');
+  const a2 = await briefStamp({ on: { 'kit.stage': true } }); await a2.c.mark('13'); await a2.advance(30000); assert.ok(a2.c.view().cost);
+  a2.set('some-other-show'); await a2.advance(1500); assert.equal(a2.c.view().cost, undefined, 'another show taking over ends it');
+  const b2 = await briefStamp({ on: { 'kit.stage': true } }); await b2.c.mark('13'); await b2.advance(30000); assert.ok(b2.c.view().cost);
+  assert.equal(await b2.c.fire(), true); assert.equal(b2.c.view().cost, undefined, 'the next stamp ends it');
+  const p = await briefStamp({ on: { 'kit.stage': true } }); await p.c.mark('13'); await p.advance(30000); p.cover(true); await p.advance(1500);
+  assert.equal(p.c.view().cost, undefined, 'PANIC or Blank ends it'); assert.equal(await p.c.sendCost('late'), false); assert.equal(p.calls.show.length, 2, 'and nothing is laid over it');
+  /* a result laid at 9 s is the beat up until 17 s: the field is open then too (and, with no cut-off, after) */
   const w = await briefStamp({ on: { 'kit.stage': true } }); await w.advance(9000); await w.c.mark('45'); await w.advance(4000);
-  assert.ok(w.c.view().cost, 'open at 13 s: the result beat laid at 9 s is still up'); await w.advance(5000); assert.equal(w.c.view().cost, undefined, 'ended by 18 s');
-  /* sent in time: laid for 10 s, then it too is gone and ends the field */
-  const k = await briefStamp({ on: { 'kit.stage': true } }); await k.advance(2000); await k.c.mark('13'); await k.advance(3000);
-  assert.equal(await k.c.sendCost('a favour is owed'), true);
-  const s = k.calls.show[k.calls.show.length - 1]; assert.equal(s.ms, 10000); assert.equal(s.payload.cost, 'a favour is owed'); assert.equal(s.replace, true);
-  await k.advance(11000); assert.equal(k.c.view().cost, undefined); assert.equal(k.calls.show.length, 3);
-  assert.equal(await k.c.sendCost('again'), false); assert.equal(k.calls.show.length, 3);
-  /* the guard is the setting: off, the stored id alone said it was up, and the field stays, as today */
+  assert.ok(w.c.view().cost, 'open at 13 s');
+  await w.c.esc(); assert.equal(w.calls.clear, 1, 'and Esc at 13 s takes the result beat down: it carries its own end, not the stamp card (which ran out at 10 s)');
+  /* the setting off: the stored id alone says it is up, and the field stays, as today */
   const o = await briefStamp({ on: { 'kit.stage': true, 'stamp.brief': false } }); await o.advance(2000); await o.c.mark('45'); await o.advance(9000);
   assert.ok(o.c.view().cost, 'off: the field stays, as today'); assert.equal(await o.c.sendCost('late'), true);
 });

@@ -262,9 +262,16 @@ try {
     check(/Risky, standard/.test(await panel()) && !/On the iPad/.test(await panel()), TAG + 'with what was sent (position and effect)');
     check(!!(await page.$('#gm-stamp [data-gm="stamp-again"]')) && !!(await page.$('#gm-stamp [data-gm="stamp-down"]')) && !!(await page.$('#gm-stamp [data-gm="stamp-clean"]')), TAG + 'Show again, Clear and Clean are there');
     check((DESK || lineBefore !== '') && (await page.inputValue('#gm-c-threat')) === lineBefore, TAG + 'the Roll’s line is still the line: ' + lineBefore.slice(0, 30));
-    await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
-    await page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await sleep(400);
-    check(/Gone from the iPad/.test(await panel()), TAG + 'Esc does not swallow the gone line (nothing is up to take down)');
+    /* Show again never punches through Blank (lights out): it waits, says why, and writes nothing */
+    await api('PUT', '/gm/display', { kind: 'dark' });
+    await until(async () => (((await api('GET', '/gm/display')).json || {}).display || {}).kind === 'dark', 5000, 100); await sleep(1500);
+    await page.click('#gm-stamp [data-gm="stamp-again"]');
+    const waited = await until(() => page.evaluate(() => /Show again waited/.test(document.body.innerText)), 3000, 50);      /* the old desk's toast and the kit desk's stack both land in the body */
+    await sleep(900);
+    check(!(await onIpad()) && /Gone from the iPad/.test(await panel()), TAG + 'Show again over Blank puts nothing on the iPad and keeps the gone line');
+    check(!!waited, TAG + 'and says why');
+    await api('PUT', '/gm/display', { kind: display0 });
+    await until(async () => (((await api('GET', '/gm/display')).json || {}).display || {}).kind === display0, 5000, 100); await sleep(1500);
     await page.click('#gm-stamp [data-gm="stamp-again"]');
     const again = await until(onIpadAt, 6000, 100);
     check(!!again && again.kind === 'report' && again.ms === 10000 && !!up && again.id !== up.id && JSON.stringify(again.payload) === JSON.stringify(up.payload), TAG + 'Show again lays the same report for 10 s under a new id');
@@ -280,6 +287,21 @@ try {
     await page.keyboard.press('Escape');
     check(!!(await until(async () => !(await onIpad()), 4000, 100)), TAG + 'Esc takes it down early');
     check(!!(await until(async () => !!(await page.$(STAMP)) && !/Gone from the iPad/.test(await panel()), 3000, 100)), TAG + 'and the Roll goes back to Stamp it on the iPad');
+    /* Esc while the line reads Gone from the iPad clears the line and nothing else: the display kind is unchanged and PANIC does not fire */
+    await page.click(STAMP); const o4 = await until(onIpadAt, 6000, 100); await sleepTo(Date.parse(o4.at) + 10800);
+    await until(async () => /Gone from the iPad/.test(await panel()), 3000, 100);
+    const kindOf = async () => (((await api('GET', '/gm/display')).json || {}).display || {}).kind;
+    for (let n = 1; n <= 2; n++) {
+      const kind0 = await kindOf();
+      await page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur());
+      if (await panelOpen()) { await page.keyboard.press('Escape'); await sleep(600); }
+      if (n === 2) { await page.click(STAMP); const o5 = await until(onIpadAt, 6000, 100); await sleepTo(Date.parse(o5.at) + 10800); await until(async () => /Gone from the iPad/.test(await panel()), 3000, 100); }
+      await page.keyboard.press('Escape'); await sleep(900);
+      const tx = await page.$$eval('.toast, #toast, [role="status"]', (l) => l.map((x) => x.textContent).join(' | '));
+      check(!!(await page.$(STAMP)) && !/Gone from the iPad/.test(await panel()), TAG + 'Esc #' + n + ' on the gone line clears it');
+      check((await kindOf()) === kind0, TAG + 'Esc #' + n + ': the display kind is unchanged (' + kind0 + ')');
+      check(!/safe scene|PANIC|testcard|sound is down/i.test(tx), TAG + 'Esc #' + n + ': no PANIC toast: ' + tx.slice(0, 80));
+    }
     /* a roll marked after it has gone resolves it: the line goes, the size is offered, nothing is laid */
     await page.click(STAMP); const o3 = await until(onIpadAt, 6000, 100); await sleepTo(Date.parse(o3.at) + 10800);
     await until(async () => /Gone from the iPad/.test(await panel()), 3000, 100);
