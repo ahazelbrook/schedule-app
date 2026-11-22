@@ -125,7 +125,14 @@
     /* RK28 (added to RK01 on 22/11): the map diagnosis's setting, last */
     { key: 'map.fit', label: 'The map fits the iPad', what: 'A map over the iPad’s 600 KiB sheds crowd and figures step by step; one that still can’t fit is stopped on this page with the reason.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
-      said: { 'false': 'The map fits the iPad: off.', 'true': 'The map fits the iPad: on.' } }
+      said: { 'false': 'The map fits the iPad: off.', 'true': 'The map fits the iPad: on.' } },
+    /* RK30 (the second registrar, 22/11): room.intro (the iPad) and phone.glance (the phones), last */
+    { key: 'room.intro', label: 'Room openings', what: 'When you open a room or a band on the live map, the iPad plays a title card for the room, like an NPC introduction.',
+      options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
+      said: { 'false': 'Room openings: off. The iPad follows within a few seconds.', 'true': 'Room openings: on. The iPad follows within a few seconds.' } },
+    { key: 'phone.glance', label: 'The glance sheet', what: 'Phones open on one screen with stress, harm, the actions and the abilities you own; Full sheet shows the official playbook page, filled in.',
+      options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
+      said: { 'false': 'The glance sheet: off. Phones follow within a few seconds.', 'true': 'The glance sheet: on. Phones follow within a few seconds.' } }
   ];
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }

@@ -35,7 +35,8 @@ const SETTINGS = ['phoneCards', 'fx.off', 'room.music', 'display.band',      /* 
   'phone.handouts',                                                             /* IP4 (13/11): one phone setting, off until chosen */
   'map.shade',                                                                  /* IP7 (14/11): one GM setting, the map kit's shade, off until chosen */
   'stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance', 'phone.find',
-  'map.fit'];      /* the room key build (RK01, 22/11): eight more, each off until chosen; phone.find is the only phone one; map.fit (RK28) is last */
+  'map.fit',      /* the room key build (RK01, 22/11): eight more, each off until chosen; phone.find is the only phone one; map.fit (RK28) is last */
+  'room.intro', 'phone.glance'];      /* RK30 (the second registrar, 22/11): a display setting (the iPad's room openings) and a phone one (the glance sheet), last */
 
 // ---------- the shipped registry ----------
 await test('the shipped lines: each well-formed, default false, phoneCards first; the settings are exactly phoneCards, fx.off, room.music, display.band and the kit\'s five; spine.workshop is gone', async () => {
@@ -96,7 +97,7 @@ await test('patches: only a setting can change (features and the old key); any o
   assert.throws(() => F.patchFor({}, 'nope', true), /unknown switch/);
   assert.throws(() => F.patchFor({}, 'spine.rail', false), /always on/);
   await withSwitches([GMX, DISP], () => { assert.throws(() => F.patchFor({}, 'test.disp', false), /always on/); });
-  assert.deepEqual(F.patchAllOff({}), { features: { phoneCards: false, 'fx.off': false, 'room.music': false, 'display.band': false, 'kit.desk': false, 'kit.stage': false, 'kit.phone': false, 'night.who': false, 'blade.pitches': false, 'map.fill': false, 'map.people': false, 'map.lights': false, 'map.room': false, 'stage.players': false, 'phone.handouts': false, 'map.shade': false, 'stamp.brief': false, 'night.flow': false, 'close.crew': false, 'room.key': false, 'room.tables': false, 'gm.glance': false, 'phone.find': false, 'map.fit': false }, phoneCards: false });
+  assert.deepEqual(F.patchAllOff({}), { features: { phoneCards: false, 'fx.off': false, 'room.music': false, 'display.band': false, 'kit.desk': false, 'kit.stage': false, 'kit.phone': false, 'night.who': false, 'blade.pitches': false, 'map.fill': false, 'map.people': false, 'map.lights': false, 'map.room': false, 'stage.players': false, 'phone.handouts': false, 'map.shade': false, 'stamp.brief': false, 'night.flow': false, 'close.crew': false, 'room.key': false, 'room.tables': false, 'gm.glance': false, 'phone.find': false, 'map.fit': false, 'room.intro': false, 'phone.glance': false }, phoneCards: false });
 });
 await test('publicMap: the display and phone lines, complete, as the GM page sees them (a setting as stored, the rest ON); never a GM-only id', async () => {
   await withSwitches([GMX, DISP, PH], () => {
@@ -262,24 +263,24 @@ await test('settings: a failed copy says so and is tried again at the next arriv
   assert.match(r.calls.toast[0][0], /Could not copy the settings/); assert.equal(r.calls.toast[0][1], true);
   assert.equal(r.ctl.heal(), true, 'tried again at once');
 });
-await test('settings: twenty-five rows (Scenes, Music, Phones, Mirror for phones, Band, then the Players screen row, the kit\'s Desk, Stage, Phone sheet, Start the night, Pitches, MK1\'s four map rows, IP4\'s Handouts on phones, IP7\'s Furniture depth and the room key build\'s eight last), each a two-way choice showing the current value', async () => {
+await test('settings: twenty-seven rows (Scenes, Music, Phones, Mirror for phones, Band, then the Players screen row, the kit\'s Desk, Stage, Phone sheet, Start the night, Pitches, MK1\'s four map rows, IP4\'s Handouts on phones, IP7\'s Furniture depth, the room key build\'s eight and RK30\'s two last), each a two-way choice showing the current value', async () => {
   const r = rig({ features: { 'room.music': true }, mirror: false }, { v: 1 });
   const rows = r.ctl.rows();
   assert.deepEqual(rows.map((x) => x.label), ['Scenes', 'Music', 'Phones', 'Mirror for phones', 'Band', 'Players’ screen', 'Desk', 'Stage', 'Phone sheet', 'Start the night', 'Pitches',
     'Map fills the screen', 'People on the map', 'Room lights', 'Cut to the room', 'Handouts on phones', 'Furniture depth',
-    'Stamp banners', 'Night flow', 'The close', 'Things in rooms', 'Rolled rooms', 'The glance', 'Search on phones', 'The map fits the iPad']);
+    'Stamp banners', 'Night flow', 'The close', 'Things in rooms', 'Rolled rooms', 'The glance', 'Search on phones', 'The map fits the iPad', 'Room openings', 'The glance sheet']);
   assert.deepEqual(rows.map((x) => x.key), ['fx.off', 'room.music', 'phoneCards', 'mirror', 'display.band', 'stage.players', 'kit.desk', 'kit.stage', 'kit.phone', 'night.who', 'blade.pitches',
     'map.fill', 'map.people', 'map.lights', 'map.room', 'phone.handouts', 'map.shade',
-    'stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance', 'phone.find', 'map.fit']);
+    'stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance', 'phone.find', 'map.fit', 'room.intro', 'phone.glance']);
   assert.deepEqual(rows.map((x) => x.options.map((o) => o.label)), [['Moving', 'Held still'], ['Scene themes', 'Heat music'], ['Sheet only', 'Mission cards'], ['Off', 'On'], ['Off', 'On'], ['Classic', 'Map first'],
     ['Old desk', 'New desk'], ['Old iPad', 'New iPad'], ['Old sheet', 'Four screens'], ['Off', 'On'], ['Stall and Meanwhile', 'Pitches'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On'], ['Flat', 'Solid'],
-    ['Stays', 'Leaves after 10 s'], ['Off', 'On'], ['Display only', 'Writes the crew'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On']]);
-  assert.deepEqual(rows.map((x) => x.value), [false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]);
+    ['Stays', 'Leaves after 10 s'], ['Off', 'On'], ['Display only', 'Writes the crew'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On'], ['Off', 'On']]);
+  assert.deepEqual(rows.map((x) => x.value), [false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]);
   const box = { parentNode: null, innerHTML: '' }; r.ctl.render(box);
   assert.match(box.innerHTML, /data-set="room\.music" data-v="1" aria-pressed="true">Heat music/);
   assert.match(box.innerHTML, /data-set="fx\.off" data-v="0" aria-pressed="true">Moving/);
   assert.match(box.innerHTML, /data-set="mirror" data-v="0" aria-pressed="true">Off/);
-  assert.equal((box.innerHTML.match(/aria-pressed="true"/g) || []).length, 25, 'one value pressed per row');
+  assert.equal((box.innerHTML.match(/aria-pressed="true"/g) || []).length, 27, 'one value pressed per row');
 });
 await test('the kit\'s five settings (KS01.1): surfaces gm, display, phone, gm, gm; off with nothing stored; nothing is published or healed while they are off; turning one on writes only its own key', async () => {
   const want = { 'kit.desk': 'gm', 'kit.stage': 'display', 'kit.phone': 'phone', 'night.who': 'gm', 'blade.pitches': 'gm' };
@@ -320,6 +321,27 @@ await test('the room key build\'s eight settings (RK01): surfaces gm x7 and phon
   for (const id of six) assert.ok(!(id in r.camp.features), id + ' never in the campaign document');
   assert.equal(r.ctl.choose('phone.find', false), true); await settle();
   assert.deepEqual(r.calls.publish.pop(), { phoneCards: false, 'phone.find': false }, 'and turned off again');
+});
+await test('the second registrar\'s two settings (RK30): room.intro is a display setting and phone.glance a phone one; off with nothing stored; nothing is published or healed while they are off; each is copied for its own surface and served as stored; the iPad hears room.intro, a phone hears both', async () => {
+  const want = { 'room.intro': 'display', 'phone.glance': 'phone' };
+  for (const [id, surface] of Object.entries(want)) {
+    const s = F.get(id); assert.ok(s && s.setting === true && s.default === false && s.saturday === 'off' && s.stage === 'kit', id);
+    assert.equal(s.surface, surface, id); assert.equal(F.valueOf({}, id), false, id + ' reads off with nothing stored'); assert.ok(F.isSetting(id), id + ' is a setting');
+  }
+  assert.deepEqual(F.publishMap({}, undefined), { phoneCards: false }, 'all off: the campaign copy is what it was');
+  assert.deepEqual(F.publishMap({ features: { 'room.intro': true, 'phone.glance': true } }, undefined), { phoneCards: false, 'room.intro': true, 'phone.glance': true }, 'both on: both copied');
+  assert.equal(F.publicView({})['room.intro'], undefined, 'nothing stored: not served, so the iPad reads it off');
+  assert.equal(F.publicView({ 'room.intro': true })['room.intro'], true, 'served as stored');
+  assert.equal(F.publicView({ 'phone.glance': true })['phone.glance'], true, 'served as stored');
+  const r = rig({}, { v: 1 });
+  assert.equal(r.ctl.heal(), false); assert.deepEqual(r.calls.publish, [], 'nothing published while they are off');
+  const settle = () => new Promise((x) => setImmediate(x));
+  assert.equal(r.ctl.choose('room.intro', true), true); await settle();
+  assert.deepEqual(r.calls.publish.pop(), { phoneCards: false, 'room.intro': true }, 'room.intro is copied for the iPad, as stage.players is');
+  assert.equal(r.ctl.choose('phone.glance', true), true); await settle();
+  assert.deepEqual(r.calls.publish.pop(), { phoneCards: false, 'room.intro': true, 'phone.glance': true }, 'phone.glance is copied for the phones, as phone.find is');
+  assert.equal(r.ctl.choose('room.intro', false), true); await settle();
+  assert.deepEqual(r.calls.publish.pop(), { phoneCards: false, 'room.intro': false, 'phone.glance': true }, 'and room.intro turned off again');
 });
 await test('settings: choose takes the page\'s own paths (phone cards: setPhoneCards; mirror: toggleMirror; scenes and music: set, with a toast) and does nothing for the value already chosen', async () => {
   const phone = [];

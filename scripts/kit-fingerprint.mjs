@@ -72,6 +72,9 @@ export const EXEMPTIONS = [
   { name: 'the eight room key Settings rows', reason: 'RK01 added stamp.brief, night.flow, close.crew, room.key, room.tables, gm.glance, map.fit (GM settings) and phone.find (a phone setting), ' +
       'all off, as the last eight rows of the Settings of the iPad view, after Furniture depth, so no row of today moves',
     selector: ['stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance', 'phone.find', 'map.fit'].map((k) => '#gm-ipad-settings [data-set-row="' + k + '"]').join(', ') },
+  { name: 'the two RK30 Settings rows', reason: 'RK30 added room.intro (a display setting) and phone.glance (a phone setting), both off, as the last two rows of the Settings of the iPad view, ' +
+      'after the eight of the room key build, so no row of today moves',
+    selector: ['room.intro', 'phone.glance'].map((k) => '#gm-ipad-settings [data-set-row="' + k + '"]').join(', ') },
   { name: 'the eighteenth scene tile (The landing)', reason: 'IP8 added a new ambient scene, the landing, to the scene tiles of the iPad view: a deliberate visible addition with every setting off',
     selector: '.gm-ipad-tiles [data-gm="ambscene"][data-id="landing"]', pushes: false },      /* it fills the empty second slot of the last tile row at every width: nothing moves for it */
   /* a card on a cold display: by key, because the look's classes are part of the card's key, so the baseline's card reads as gone and this run's as new */
