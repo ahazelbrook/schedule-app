@@ -263,7 +263,11 @@
 
   /* the panel's extras, drawn into the Aftermath's own form (aftermath.js paint). Every string goes in as text */
   function chip(ui, label, on, fn) { var b = ui.btn(label, fn, 'chip'); b.setAttribute('aria-pressed', String(!!on)); return b; }
-  function row(ui, label) { var r = ui.el('div', 'seg cc-row'); r.style.flexWrap = 'wrap'; r.style.gap = '6px'; if (label) r.appendChild(ui.el('span', 'gm-lab', label + ' ')); return r; }
+  function row(ui, label, minW) {
+    var r = ui.el('div', 'seg cc-row'); r.style.flexWrap = 'wrap'; r.style.gap = '6px'; r.style.alignItems = 'center';
+    if (label) { var s = ui.el('span', 'gm-lab', label + ' '); if (minW) s.style.minWidth = minW; r.appendChild(s); }
+    return r;
+  }
   function ruleChip(ui, term) {
     var wrap = ui.el('div', 'cc-rule'), txt = ui.el('p', 'gm-dim cc-rule-text'), open = false;
     txt.hidden = true;
@@ -290,10 +294,10 @@
     });
     form.appendChild(r);
     var h = row(ui, 'House add-on');
-    var lab = ui.el('input'); lab.type = 'text'; lab.className = 'cc-house-why'; lab.placeholder = 'What for (e.g. explosives)'; lab.value = str(d.houseWhy); lab.maxLength = LABEL_MAX;
+    var lab = ui.el('input'); lab.type = 'text'; lab.className = 'cc-house-why'; lab.placeholder = 'What for (e.g. explosives)'; lab.value = str(d.houseWhy); lab.maxLength = LABEL_MAX; lab.style.width = '16em'; lab.style.flex = 'none';
     lab.setAttribute('aria-label', 'House add-on: what for');
     lab.addEventListener('change', function () { ui.set({ houseWhy: lab.value }); });
-    var n = ui.el('input'); n.type = 'number'; n.className = 'cc-house'; n.min = -HOUSE_MAX; n.max = HOUSE_MAX; n.inputMode = 'numeric'; n.style.width = '5em';
+    var n = ui.el('input'); n.type = 'number'; n.className = 'cc-house'; n.min = -HOUSE_MAX; n.max = HOUSE_MAX; n.inputMode = 'numeric'; n.style.width = '5em'; n.style.flex = 'none';
     n.value = d.house === undefined ? '' : String(d.house); n.setAttribute('aria-label', 'House add-on: + or −');
     n.addEventListener('change', function () { ui.set({ house: n.value }); });
     h.appendChild(lab); h.appendChild(n);
@@ -318,7 +322,7 @@
     if (!fs.length) box.appendChild(ui.el('p', 'gm-dim', 'No factions on the crew sheet yet.'));
     fs.forEach(function (f) {
       var cur = 0; picks.forEach(function (p) { if (p.name.toLowerCase() === f.name.toLowerCase()) cur = p.d; });
-      var r = row(ui, f.name + ' (' + signed(f.status) + ')');
+      var r = row(ui, f.name + ' (' + signed(f.status) + ')', '16em');
       [-3, -2, -1, 0, 1, 2, 3].forEach(function (v) {
         r.appendChild(chip(ui, signed(v), cur === v, function () {
           var next = picks.filter(function (p) { return p.name.toLowerCase() !== f.name.toLowerCase(); });
