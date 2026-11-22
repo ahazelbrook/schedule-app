@@ -8381,8 +8381,10 @@
   function aftermathFeed() {
     if (!S) return null;
     var c = isObj(camp) && isObj(camp.crew) ? camp.crew : {}, cast = isObj(S.npcs) ? S.npcs : {};
-    return { doc: S.doc, night: S.night, toast: toast, crew: { heat: +c.heat || 0, wanted: +c.wanted || 0, vault: +c.vault || 0 },
+    var o = { doc: S.doc, night: S.night, toast: toast, crew: { heat: +c.heat || 0, wanted: +c.wanted || 0, vault: +c.vault || 0 },
       npcs: Object.keys(cast).filter(function (id) { return isObj(cast[id]); }).map(function (id) { var d = cast[id]; return { id: id, name: str(d.name), role: str(d.role), revealed: d.revealed === true, firstSeen: str(d.firstSeen), staged: staged(id) }; }) };
+    if (W.B68GmCloseCrew && typeof W.B68GmCloseCrew.feed === 'function' && W.B68Features && W.B68Features.valueOf(S.doc, 'close.crew')) W.B68GmCloseCrew.feed(o, { camp: camp, api: S.api || keptApi, pcs: dtPcs });      /* RK07 (close.crew): the crew writer, the factions and the PCs */
+    return o;
   }
 
   /* 3.8 and 5.4 (gm/castphoto.js, gm/lair.js): the cast and the crew sheet, as the two panels read them */
