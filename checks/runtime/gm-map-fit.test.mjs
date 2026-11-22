@@ -79,7 +79,7 @@ const sceneOf = (f, extra) => TK(SC(f || ONLY('people'), extra));
 test('the module loads under Node, and as a plain script defines window.B68GmMapFit and window.B68GmSvgSlim: neither is a stub any more', () => {
   assert.ok(FIT && typeof FIT === 'object'); assert.ok(!FIT.stub); assert.ok(!SLIM.stub);
   for (const k of ['plan', 'wrap', 'fit', 'halfCrowd', 'oneFigure', 'refusal']) assert.equal(typeof FIT[k], 'function', k);
-  assert.deepEqual(FIT.RUNGS, ['shade', 'halfcrowd', 'crowd', 'figures', 'scene', 'rings']);
+  assert.deepEqual(FIT.RUNGS, ['shade', 'halfcrowd', 'crowd', 'figures', 'nofigures', 'scene', 'rings']);
   for (const [file, name, fn] of [[FILE, 'B68GmMapFit', 'fit'], ['app/gm/svg-slim.js', 'B68GmSvgSlim', 'slim']]) {
     const win = {}; win.self = win; win.window = win;
     vm.runInNewContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), win, { filename: file });
@@ -110,8 +110,8 @@ try {
   if (typeof FK.mini === 'function' && typeof FK.extra === 'function') REAL = { K, FK, roll: P.authoredRoll(L, FIXL, PALAZZO) };
 } catch (e) { REAL = null; }
 function realCase(over) {      /* the Dovetail Crew with the heaviest invented figures, all in one room, its lights on */
-  const { FK } = REAL, roles = ['docker', 'sailor', 'warehouse-hand'];
-  const pcs = PCS3.map((c, i) => ({ id: c.id, name: c.name, spec: FK.extra({ role: roles[i], seed: 's20' }) })), crew = { pc1: { room: 'Cocktail lounge' }, pc2: { room: 'Cocktail lounge' }, pc3: { room: 'Cocktail lounge' } };
+  const { FK } = REAL, roles = over && over.heavy ? ['warehouse-hand', 'photographer', 'mechanic'] : ['docker', 'sailor', 'warehouse-hand'], seeds = over && over.heavy ? ['s6', 's16', 's20'] : ['s20', 's20', 's20'];
+  const pcs = PCS3.map((c, i) => ({ id: c.id, name: c.name, spec: FK.extra({ role: roles[i], seed: seeds[i] }) })), crew = { pc1: { room: 'Cocktail lounge' }, pc2: { room: 'Cocktail lounge' }, pc3: { room: 'Cocktail lounge' } };
   const scene = SC(ALL_ON, Object.assign({ pcs, crew, kit: FK, lights: { 'Cocktail lounge': 'bright' }, view: 'room', room: 'Cocktail lounge' }, over && over.scene || {}));
   return { map: PMAP(Object.assign({ reveal: { public: true } }, over && over.map || {})), tk: TK(scene) };
 }
@@ -186,14 +186,27 @@ test('on, rung 4: a room cut with three figures keeps one full figure and no cro
   const room = () => sceneOf(ALL_ON, { view: 'room', room: 'Showroom' }), specs = (o) => (Array.isArray(o.people) ? o.people.filter((p) => p.spec && !p.image).length : 0);
   let b = spy((o) => (specs(o) > 1 ? BIG : 100)), d = P.playerDisplay(ROLL, PMAP(), b.render, room());
   assert.equal(d.sceneCut, 'figures');
-  assert.deepEqual(b.calls.map((o) => [o.view, o.crowd ? o.crowd.density || 1 : 0, o.people.length]), [['room', 1, 3], ['room', 0.5, 3], ['room', 0, 3], ['room', 0, 1]]);
-  assert.equal(b.calls[3].people[0].room, 'Showroom');
+  assert.deepEqual(b.calls.map((o) => [o.view, o.crowd ? o.crowd.density || 1 : 0, o.people.length]), [['room', 1, 3], ['room', 0, 1]], 'a room cut goes straight to its figures: no shade, half-crowd or no-crowd render first (RK28b)');
+  assert.equal(b.calls[1].people[0].room, 'Showroom');
   const img = { href: 'data:image/png;base64,QUJD', width: 1, height: 1 };      /* a person the page has a picture of stays; only the specs after the first go */
   const one = FIT.oneFigure([{ spec: {}, room: 'a' }, { spec: {}, image: img, room: 'a' }, { spec: {}, room: 'a' }, { spec: {}, room: 'a' }]);
   assert.equal(one.length, 2); assert.ok(one[0].spec && !one[0].image && one[1].image);
   assert.equal(FIT.oneFigure([{ spec: {} }]), null); assert.equal(FIT.oneFigure([]), null); assert.equal(FIT.oneFigure(null), null);
   b = spy((o) => (o.people ? BIG : 100)); d = P.playerDisplay(ROLL, PMAP(), b.render, sceneOf());      /* an iso: crowd steps, then no people */
   assert.equal(d.sceneCut, 'scene'); assert.ok(b.calls.every((o) => !o.people || o.people.length === b.calls[0].people.length), 'no figure rung for an iso');
+}));
+test('on, rung 4b (RK28b): when one figure is still too big the room stays, alone (people [], no crowd); a room cut with one figure takes the crowd rungs first', () => withFit(true, () => {
+  const room = (extra) => sceneOf(ALL_ON, Object.assign({ view: 'room', room: 'Showroom' }, extra)), npeople = (o) => (Array.isArray(o.people) ? o.people.length : 0);
+  let b = spy((o) => (npeople(o) > 0 ? BIG : 100)), d = P.playerDisplay(ROLL, PMAP(), b.render, room());
+  assert.equal(d.sceneCut, 'nofigures'); assert.deepEqual(b.calls.map((o) => [o.view, o.crowd ? 1 : 0, o.people.length]), [['room', 1, 3], ['room', 0, 1], ['room', 0, 0]]);
+  assert.match(P.SCENE_CUT_MSG.nofigures, /^The room went to the iPad on its own, without its people or the crowd.*over the iPad’s 600 KiB\.$/);
+  b = spy(() => BIG); assert.throws(() => P.playerDisplay(ROLL, PMAP(), b.render, room()), (e) => e.steps.map((s) => s.rung).join() === 'full,figures,nofigures,scene,rings');
+  /* one person in the room: nothing to drop but the crowd, then the room alone */
+  b = spy((o) => (npeople(o) ? BIG : 100)); d = P.playerDisplay(ROLL, PMAP(), b.render, room({ pcs: [SC(ALL_ON).pcs[0]], crew: { pc1: { room: 'Showroom' } } }));
+  assert.equal(d.sceneCut, 'nofigures'); assert.deepEqual(b.calls.map((o) => [o.crowd ? o.crowd.density || 1 : 0, o.people.length]), [[1, 1], [0.5, 1], [0, 1], [0, 0]]);
+  /* an iso never has the room alone */
+  b = spy((o) => (o.people ? BIG : 100)); d = P.playerDisplay(ROLL, PMAP(), b.render, sceneOf());
+  assert.equal(d.sceneCut, 'scene'); assert.ok(b.calls.every((o) => o.view === 'iso'));
 }));
 test('on, rungs 5 and 6: no people (the map as chosen stays), then rings; with no scene only rings is left; a map already rings has none', () => withFit(true, () => {
   let b = spy((o) => (o.people ? BIG : 100)), d = P.playerDisplay(ROLL, PMAP(), b.render, sceneOf());
@@ -251,6 +264,34 @@ test('on: a hidden name in the FIRST render is still the page\'s own leak refusa
   assert.throws(() => P.playerDisplay(ROLL, PMAP(), () => ({ svg: hidden }), NOTK()), (e) => e.leak === true);
 }));
 
+/* ---------- 4b. the reason a refusal gives (RK28b: liveReveal's blank, a plan, a board) ---------- */
+test('N2: P.refusalWhy says size for a map.fit refusal (and a leaked smaller copy), and the old reason for any other; liveReveal\'s clearing toast uses it', () => withFit(true, () => {
+  let size; assert.throws(() => P.playerDisplay(ROLL, PMAP(), spy(() => BIG).render, sceneOf()), (e) => { size = e; return e.fit === true; });
+  assert.match(P.refusalWhy(size), /^is too large for the iPad \(smallest tried 7\d\d KiB, at most 600\)$/);
+  let leaky; assert.throws(() => P.playerDisplay(ROLL, PMAP(), spy((o) => (o.people && !o.crowd ? 650 * 1024 : BIG), (o) => (o.people && !o.crowd ? ' Luxury penthouse' : '')).render, sceneOf()), (e) => { leaky = e; return true; });
+  assert.match(P.refusalWhy(leaky), /^is too large for the iPad \(smallest tried \d+ KiB, at most 600\), and a smaller copy would name a hidden room$/);
+  const hidden = new Error(P.LEAK_MSG); hidden.leak = true;
+  assert.equal(P.refusalWhy(hidden), 'would name a hidden room'); assert.equal(P.refusalWhy(new Error('x')), 'would name a hidden room'); assert.equal(P.refusalWhy(null), 'would name a hidden room');
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8'), i = src.indexOf('  function liveReveal() {'), j = src.indexOf('\n  }\n', i), body = src.slice(i, j);
+  assert.ok(body.includes("' this map ' + P.refusalWhy(e) + ', so it could not be sent. Show it again from another view.'"), 'the clearing toast reports the real reason');
+  assert.ok(!body.includes('this map would name a hidden room'), 'and no longer always says "hidden room"');
+  assert.ok(/endLive\(\);\s*pushDisplay\(\{ kind: 'blank' \}\)/.test(body), 'the iPad is still cleared whenever a closed band cannot be sent');
+}));
+test('N3: a plan or a board drawn through playerDisplay says which rung it was cut to (map.fit on only), and says it in its own words', () => {
+  const d = { sceneCut: 'rings', svg: '<svg/>' };
+  withFit(false, () => assert.equal(P.fitNoteText(d, 'blueprint'), ''));
+  withFit(true, () => {
+    assert.equal(P.fitNoteText(d, 'blueprint'), 'The blueprint went as rings, without its people: in the view you chose, it was over the iPad’s 600 KiB.');
+    assert.match(P.fitNoteText({ sceneCut: 'shade' }, 'board'), /^The board went with flat furniture/);
+    assert.match(P.fitNoteText({ sceneCut: 'nofigures' }, 'board'), /^The board went on its own/); assert.equal(P.fitNoteText({}, 'board'), ''); assert.equal(P.fitNoteText(null, 'board'), '');
+    const fit = P.playerDisplay(ROLL, PMAP({ view: 'plan', theme: 'board' }), spy((o) => (o.view === 'plan' ? BIG : 100)).render, { tokens: [], hide: [] });
+    assert.equal(fit.sceneCut, 'rings'); assert.match(P.fitNoteText(fit, 'board'), /^The board went as rings/);
+  });
+  const src = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8');
+  assert.ok(/blueprint: function \(\) \{[^\n]*P\.fitNote\(playerDisplay\([^\n]*'blueprint'\)/.test(src), 'print\'s blueprint');
+  assert.ok(/board: function \(tokens, hide\) \{[^\n]*P\.fitNote\(P\.playerDisplay\([^\n]*'board'\)/.test(src), 'the corkboard\'s board');
+});
+
 /* ---------- 5. slim runs before the scan ---------- */
 test('on: the svg that is scanned is the svg that is sent: slimmed straight after the kit, in the first render and in every step; wrapping twice wraps the kit once', () => withFit(true, () => {
   const d = P.playerDisplay(ROLL, PMAP(), spy().render, sceneOf());
@@ -306,22 +347,39 @@ test('real kits: with the cap set at each rung\'s own measured size, every rung 
   withFit(true, () => withShade(true, () => withKit1(() => {
     const c = realCase(), render = (roll, o) => REAL.K.render(roll, o);
     let steps; withCap(1, () => { try { P.playerDisplay(REAL.roll, c.map, render, cl2(c.tk)); } catch (e) { steps = e.steps; } });
-    assert.deepEqual(steps.map((s) => s.rung), ['full', 'shade', 'halfcrowd', 'crowd', 'figures', 'scene', 'rings']);
+    assert.deepEqual(steps.map((s) => s.rung), ['full', 'figures', 'nofigures', 'scene', 'rings']);
     assert.ok(steps.every((s) => s.leaked === false && s.bytes > 0));
     const sz = Object.fromEntries(steps.map((s) => [s.rung, s.bytes]));
     console.log('  room cut sizes (KiB): ' + steps.map((s) => s.rung + ' ' + Math.round(s.bytes / 1024)).join(', '));
-    assert.ok(sz.halfcrowd < sz.full && sz.crowd < sz.halfcrowd && sz.figures < sz.crowd / 2 && sz.scene < sz.figures && sz.rings < sz.scene, 'each rung is smaller than the last');
+    assert.ok(sz.figures < sz.full / 2 && sz.nofigures < sz.figures && sz.scene > 0 && sz.rings > 0, 'one figure is the big saving, the room alone the next');
     const fired = [];
-    for (const want of ['halfcrowd', 'crowd', 'figures', 'scene', 'rings']) {
+    for (const want of ['figures', 'nofigures']) {      /* the room alone (32 KiB) is smaller than the plain map (92), so scene and rings only fire in the stand-in tests */
       const d = withCap(sz[want], () => P.playerDisplay(REAL.roll, c.map, render, cl2(c.tk)));
       assert.equal(d.sceneCut, want); assert.ok(Buffer.byteLength(d.svg) <= sz[want]); fired.push(d.sceneCut);
     }
-    assert.deepEqual(fired, ['halfcrowd', 'crowd', 'figures', 'scene', 'rings']);
+    assert.deepEqual(fired, ['figures', 'nofigures']);
     /* the figure rung draws one full figure; the page's own rule (MK2) then names the others with the full markers */
     const d1 = withCap(sz.figures, () => P.playerDisplay(REAL.roll, c.map, render, cl2(Object.assign({}, c.tk, { tokens: [tok('Cocktail lounge')], sig: 'x', bare: { tokens: [], hide: [] } }))));
     assert.equal(d1.sceneCut, 'figures'); assert.equal(d1.tokens, 1, 'the people the figure left out are named by their markers');
-    assert.throws(() => withCap(sz.rings - 1, () => P.playerDisplay(REAL.roll, c.map, render, cl2(c.tk))), (e) => e.big === true && e.min === sz.rings && /smallest tried/.test(e.message), 'a cap below the smallest: refused on the page');
+    const dn = withCap(sz.nofigures, () => P.playerDisplay(REAL.roll, c.map, render, cl2(c.tk)));
+    assert.equal(dn.sceneCut, 'nofigures'); assert.ok(/data-view="room"/.test(dn.svg), 'the room is still the room cut'); assert.ok(Buffer.byteLength(dn.svg) <= sz.nofigures, 'with no figure at all');
+    assert.throws(() => withCap(Math.min(...Object.values(sz)) - 1, () => P.playerDisplay(REAL.roll, c.map, render, cl2(c.tk))), (e) => e.big === true && e.min === Math.min(...Object.values(sz)) && /smallest tried/.test(e.message), 'a cap below the smallest: refused on the page');
   })));
+});
+test('real kits, NATURALLY over the real 600 KiB cap (RK28b): three heavy invented figures in the room cut: the room stays, one figure and the markers, in two passes; off, it fell to the plain map', () => {
+  if (!REAL) return;
+  const c = realCase({ heavy: true }), render = (n) => (roll, o) => { n.n++; return REAL.K.render(roll, o); };
+  const names = ['Nell Arbuthnot', 'Ray Okonjo', 'Tam Petrakis'], marks = names.map((nm) => Object.assign(tok('Cocktail lounge'), { label: nm })), tk = () => cl2(Object.assign({}, c.tk, { tokens: marks, sig: 'x', bare: { tokens: [], hide: [] } }));
+  withKit1(() => withShade(true, () => {
+    const n0 = { n: 0 };
+    const off = withFit(false, () => P.playerDisplay(REAL.roll, c.map, render(n0), tk()));
+    assert.equal(off.sceneCut, 'scene'); assert.ok(!/data-view="room"/.test(off.svg), 'off: the room never shows');
+    const n = { n: 0 }, d = withFit(true, () => P.playerDisplay(REAL.roll, c.map, render(n), tk()));
+    assert.equal(d.sceneCut, 'figures'); assert.ok(Buffer.byteLength(d.svg) <= CAP, kib(d.svg) + ' KiB'); assert.ok(/data-view="room"/.test(d.svg), 'the room is shown');
+    assert.equal(d.tokens, 3, 'the markers name everyone'); assert.deepEqual(P.leaks(d.svg, REAL.roll, ['public']), []);
+    assert.ok(n.n <= 4, n.n + ' renders: the first pass is two (the full scene, then one figure), and the page\'s own full-markers pass repeats it');
+    console.log('  natural: sent as ' + d.sceneCut + ' at ' + kib(d.svg) + ' KiB in ' + n.n + ' renders (the plain map, off, was ' + kib(off.svg) + ' KiB)');
+  }));
 });
 test('real kits, the whole map (iso, all bands, the crowd): half the crowd and no crowd fire in order at their own sizes', () => {
   if (!REAL) return;

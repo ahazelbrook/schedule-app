@@ -231,6 +231,11 @@
   P.fitOn = function () { return fitOf(S && S.doc); };
   P.fitMod = function () { var M = P.fitOn() === true ? (W && W.B68GmMapFit) || P.mapFit : null; return M && typeof M.fit === 'function' ? M : null; };
   P.fitWrap = function (render) { var M = P.fitMod(), X = (W && W.B68GmSvgSlim) || P.svgSlim; return M ? M.wrap(render, { bytes: bytesOf, slim: X && typeof X.slim === 'function' ? X.slim : null }) : render; };
+  /* RK28b: why a refused map was refused. A map.fit refusal (e.fit) is about size, and may add that a smaller copy named a hidden room; anything else is the old reason. */
+  P.refusalWhy = function (e) { return e && e.fit ? 'is too large for the iPad (smallest tried ' + Math.round(e.min / 1024) + ' KiB, at most ' + Math.round(P.SVG_CAP / 1024) + ')' + (e.leakedRungs && e.leakedRungs.length ? ', and a smaller copy would name a hidden room' : '') : 'would name a hidden room'; };
+  /* RK28b: a plan or a board drawn through playerDisplay says which rung it was cut to (map.fit on only), as Show on iPad does; d itself comes back */
+  P.fitNoteText = function (d, what) { return d && d.sceneCut && P.fitMod() && P.SCENE_CUT_MSG[d.sceneCut] ? P.SCENE_CUT_MSG[d.sceneCut].replace(/^The (map|room) went to the iPad/, 'The ' + what + ' went') : ''; };
+  P.fitNote = function (d, what) { var m = P.fitNoteText(d, what); if (m) toast(m, true); return d; };
   P.rkWant = function (on) { return [['night.flow', 'night-flow'], ['close.crew', 'close-crew'], ['room.key', 'room-key'], ['room.tables', 'room-tables'], ['gm.glance', 'gm-glance'], ['map.fit', 'map-fit'], ['room.intro', 'room-intro']].filter(function (x) { return on(x[0]); }).map(function (x) { return x[1]; }); };      /* RK01: the room key build's bundles, one per setting, wanted only while the setting is on; [] with all off */
   /* a copy of the options without `shade` (the first step down every size ladder) */
   function flat(o) { var c = Object.assign({}, o); delete c.shade; return c; }
@@ -360,6 +365,7 @@
     shade: 'The map went to the iPad with flat furniture: with depth, it was over the iPad’s 600 KiB.',      /* IP7 */
     halfcrowd: 'The map went to the iPad with half the crowd: with all of it, it was over the iPad’s 600 KiB.',      /* RK28 (map.fit) */
     figures: 'The room went to the iPad with one full figure and no crowd: with all its people, it was over the iPad’s 600 KiB.',
+    nofigures: 'The room went to the iPad on its own, without its people or the crowd: with them, it was over the iPad’s 600 KiB.',
     rings: 'The map went to the iPad as rings, without its people: in the view you chose, it was over the iPad’s 600 KiB.' };
   /* MK1 (gm/scene-state.js): the map kit's new options. tk.scene is the page's scene input (sceneInput, only while a map setting is on); it goes
      through B68GmScene.forPlayer, the one door (the crew only, in the rooms a marker may stand in), then the people's names and marks through
@@ -2524,7 +2530,7 @@
   function prInst() {
     if (!prOn()) return null;
     if (!S.pr) S.pr = W.B68GmPrint.make({ npcs: function () { return S && isObj(S.npcs) ? S.npcs : {}; }, root: function () { return $q('#gm-root'); }, toast: toast, on: function (id) { return W.B68Features.valueOf(S.doc, id); },
-      blueprint: function () { if (!S.locRoll) return null; var d = playerDisplay(S.locRoll, Object.assign({}, mapUi(), { layer: 'player', view: 'plan', theme: 'casefile' }), W.B68Map && W.B68Map.render, null); return { title: d.title, caption: d.caption, svg: d.svg }; } });
+      blueprint: function () { if (!S.locRoll) return null; var d = P.fitNote(playerDisplay(S.locRoll, Object.assign({}, mapUi(), { layer: 'player', view: 'plan', theme: 'casefile' }), W.B68Map && W.B68Map.render, null), 'blueprint'); return { title: d.title, caption: d.caption, svg: d.svg }; } });
     return S.pr;
   }
   /* 2.7 Intel corkboard (gm/corkboard.js, switch map.corkboard): one Menu line while the switch is on; the board is drawn through playerDisplay, the one player door */
@@ -2536,7 +2542,7 @@
       play: function () { var rs = runSite(); return rs ? rs.play : null; }, told: function () { var rs = runSite(); return rs ? ballDoc(rs.name).told : null; },
       phase: function () { var n = S.night && S.night.night ? S.night.night() : null; return n && n.phase || ''; },
       portrait: function (id) { var d = S.npcs && S.npcs[id], K = W.B68Figure; try { return d && isObj(d.spec) && K && K.portrait ? stripSize(K.portrait(Object.assign(clone(d.spec), { id: 'gm-cb-' + slug(id) }), { lod: 'lo' }).svg) : ''; } catch (e) { return ''; } },
-      board: function (tokens, hide) { var r = P.playerDisplay(S.locRoll, Object.assign({}, mapUi(), { layer: 'player', view: 'plan', theme: 'board' }), W.B68Map && W.B68Map.render, { tokens: tokens, hide: hide }); return { title: r.title, caption: r.caption, svg: r.svg, tokens: r.tokens, tokensRefused: r.tokensRefused }; } });
+      board: function (tokens, hide) { var r = P.fitNote(P.playerDisplay(S.locRoll, Object.assign({}, mapUi(), { layer: 'player', view: 'plan', theme: 'board' }), W.B68Map && W.B68Map.render, { tokens: tokens, hide: hide }), 'board'); return { title: r.title, caption: r.caption, svg: r.svg, tokens: r.tokens, tokensRefused: r.tokensRefused }; } });
     return S.cb;
   }
   /* 2.8 Montage (gm/montage.js, switch map.montage): one Menu line while the switch is on; the panels ride the data.montage layer */
@@ -4613,7 +4619,7 @@
       on.tokQ = tk.sig;       /* not asked again until something changes */
       if (!fewer.length) { toast('Not sent: ' + errText(e) + ' The iPad still shows ' + entryBands(on.reveal).join(', ') + (entryRooms(on.reveal).length ? ' + ' + entryRooms(on.reveal).join(', ') : '') + '.', true); dropBands(want, more); return; }
       endLive();
-      pushDisplay({ kind: 'blank' }).then(function () { toast('The iPad was cleared: without ' + bandWords(fewer) + ' this map would name a hidden room, so it could not be sent. Show it again from another view.', true); },
+      pushDisplay({ kind: 'blank' }).then(function () { toast('The iPad was cleared: without ' + bandWords(fewer) + ' this map ' + P.refusalWhy(e) + ', so it could not be sent. Show it again from another view.', true); },
         function (e2) { if (!e2.superseded) toast('Could not clear the iPad: ' + errText(e2) + '. It may still show ' + bandWords(fewer) + ': press Clear (0).', true); });
       return;
     }
