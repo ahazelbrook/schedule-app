@@ -93,6 +93,10 @@
      ctl.ask(q) -> Promise<{ answer } | { error } | null>   POST /gm/assist/ask { q }; null when the box cannot ask or is already asking
      ctl.canAsk() -> bool     false on a phone, with the cap reached or the box not set up, from 85% of the cap (tier core), or when the runtime
                               has no assistAsk
+   night.flow (RK04, o.flow): while the setting is on the page hands the panel `o.flow() -> { decorate(el), refresh(el), chip(btn), is(text), run(text) } | null`
+   (gm/blade-chips.js panel()). Then (1) a card's ▶ lines (code spans in its bullets and its More text) become the prep-action chips, tapped through
+   flow.chip; (2) text that reads as a bare clock command ("tick the alarm 1", "make a 6 clock called Escape", never a question) goes to flow.run
+   instead of Ask: no model call, so it works at the cap. With o.flow absent or null every line below is the old one.
    B68GmAssist.live() -> the live panels' bridges: the new desk's seam (kit.desk, KS07; gm/kit/blade.js). With the kit off nothing calls it.
    _pure: errKind, errLine, mkCard, inlineNodes, appendInline, stripHeadings, cardKind, fitLines, tierLabel, spendLine, absorb, restore, restoreAsks, momentText, askMoment, askAllowed, askErr, hhmm, clip,
    gateText, citesOf, gateLine, screenAllowed. */
@@ -307,7 +311,20 @@
   /* the headline, bullets, SAY and GM ONLY are text with **bold** and *italic* as the only marks. They are built as nodes (strong, em, text
      nodes): nothing here is ever parsed as HTML. An unmatched * stays a *. */
   var INLINE_RE = /\*\*([^*\n](?:[^\n]*?[^*\n])?)\*\*|\*([^*\s](?:[^*\n]*?[^*\s])?)\*/g;
-  function inlineNodes(doc, text) {
+  var ACTION_CODE = /`((?:\u25b6\ufe0f?|>>)[ \u00a0]+[^`\n]+)`/g;      /* RK04: a code span that is a prep-action span (gm/prep-actions.js decorates it) */
+  function inlineNodes(doc, text, code) {
+    if (code && str(text).indexOf('`') >= 0) {      /* night.flow: the action spans stay code, the rest is marked as ever */
+      var s0 = str(text), parts = [], at = 0, m0;
+      ACTION_CODE.lastIndex = 0;
+      while ((m0 = ACTION_CODE.exec(s0))) {
+        if (m0.index > at) parts = parts.concat(inlineNodes(doc, s0.slice(at, m0.index)));
+        var cd = doc.createElement('code'); cd.textContent = m0[1]; parts.push(cd);
+        at = m0.index + m0[0].length;
+      }
+      if (!parts.length) return inlineNodes(doc, s0);
+      if (at < s0.length) parts = parts.concat(inlineNodes(doc, s0.slice(at)));
+      return parts;
+    }
     var s = str(text), out = [], last = 0, m;
     INLINE_RE.lastIndex = 0;
     while ((m = INLINE_RE.exec(s))) {
@@ -318,7 +335,7 @@
     if (last < s.length) out.push(doc.createTextNode(s.slice(last)));
     return out;
   }
-  function appendInline(doc, parent, text) { inlineNodes(doc, text).forEach(function (n) { parent.appendChild(n); }); return parent; }
+  function appendInline(doc, parent, text, code) { inlineNodes(doc, text, code).forEach(function (n) { parent.appendChild(n); }); return parent; }
   P.inlineNodes = inlineNodes; P.appendInline = appendInline;
 
   /* `more` is Markdown without headings: a heading line becomes a bold line (outside a code fence), then B68Markdown.render does the rest */
@@ -643,8 +660,13 @@
       renderHead(); renderStatus(); renderNow(); renderAsk(); renderChips(); renderList(); renderUpdates(); renderFit(); renderScreen();
       if (scrollFeedTop) { scrollFeedTop = false; var fe = q('#as-feed'); if (fe) fe.scrollTop = 0; }
       if (KB && typeof KB.paint === 'function') KB.paint();
+      var fr = fl(); if (fr && typeof fr.refresh === 'function') { try { fr.refresh(host); } catch (e) { /* the chips keep their last words */ } }
     }
     function nowMs() { return typeof o.nowMs === 'function' ? +o.nowMs() : Date.now(); }
+    /* RK04 (night.flow): null unless the page hands a flow while the setting is on; every use below is guarded by it */
+    function fl() { try { return typeof o.flow === 'function' ? o.flow() || null : null; } catch (e) { return null; } }
+    function inl(d, p, t) { return appendInline(d, p, t, !!fl()); }
+    function deco(el) { var f = fl(); if (f && el && typeof f.decorate === 'function') { try { f.decorate(el); } catch (e) { /* the card stays as text */ } } return el; }
     function renderHead() {
       var s = stateOf({ paused: st.paused, setup: st.setup, spend: st.spend, listening: st.listening }), el = q('#as-state'), w = q('#as-state-word');
       if (el) el.setAttribute('data-state', s.key);
@@ -716,7 +738,7 @@
     }
     function buildCard(c, now) {
       cache.builds++;
-      if (KB && typeof KB.card === 'function') { var kc = KB.card(c, now); if (kc) return kc; }
+      if (KB && typeof KB.card === 'function') { var kc = KB.card(c, now); if (kc) return deco(kc); }
       var k = cardKind2(c), kd = KIND[k], open = isOpen(c, now);
       var root = E(now ? 'div' : 'li', 'as-card' + (now ? ' as-now-card' : ''));
       root.setAttribute('data-id', c.id); root.setAttribute('data-seat', c.seat); root.setAttribute('data-kind', k); root.setAttribute('data-open', open ? '1' : '0');
@@ -724,7 +746,7 @@
       var head = now ? E('div', 'as-fold') : B('as-fold', null, { 'data-as': 'fold', 'data-id': c.id, 'aria-expanded': String(open) });
       var kind = E('span', 'as-kind'), gl = E('span', 'as-glyph', kd.glyph); gl.setAttribute('aria-hidden', 'true');
       kind.appendChild(gl); kind.appendChild(E('b', null, kd.word));
-      var tx = E('span', 'as-text'); appendInline(doc, tx, c.headline);
+      var tx = E('span', 'as-text'); inl(doc, tx, c.headline);
       head.appendChild(kind); head.appendChild(tx);
       head.appendChild(c.mock ? E('span', 'as-eg', 'example') : E('time', null, hhmm(c.at)));
       root.appendChild(head);
@@ -733,7 +755,7 @@
       if (c.src === 'ask' && c.q) more.appendChild(E('p', 'as-askq', 'You asked: ' + c.q));
       if (c.bullets.length) {
         var ul = E('ul', 'as-bullets');
-        c.bullets.forEach(function (b) { appendInline(doc, ul.appendChild(E('li')), b); });
+        c.bullets.forEach(function (b) { inl(doc, ul.appendChild(E('li')), b); });
         more.appendChild(ul);
       }
       if (typeof figFns[c.id] === 'function' && c.figKey) {
@@ -745,11 +767,11 @@
         more.appendChild(bd);
       }
       if (c.say) {
-        var say = E('div', 'as-say'); say.appendChild(E('b', 'as-band', 'SAY')); appendInline(doc, say.appendChild(E('p', 'as-band-text')), c.say);
+        var say = E('div', 'as-say'); say.appendChild(E('b', 'as-band', 'SAY')); inl(doc, say.appendChild(E('p', 'as-band-text')), c.say);
         more.appendChild(say);
       }
       if (c.secret) {
-        var sec = E('div', 'as-secret'); sec.appendChild(E('b', 'as-band', 'GM ONLY')); appendInline(doc, sec.appendChild(E('p', 'as-band-text')), c.secret);
+        var sec = E('div', 'as-secret'); sec.appendChild(E('b', 'as-band', 'GM ONLY')); inl(doc, sec.appendChild(E('p', 'as-band-text')), c.secret);
         more.appendChild(sec);
       }
       var chips = E('div', 'as-chiprow');
@@ -782,7 +804,7 @@
       if (!c.mock) acts.appendChild(B('as-ack', c.ackLabel || 'Got it ×', { 'data-as': 'ack', 'data-id': c.id, 'aria-label': 'Dismiss this card' }));
       more.appendChild(acts);
       root.appendChild(more);
-      return root;
+      return deco(root);
     }
     function cardById(id) { for (var i = 0; i < st.cards.length; i++) if (st.cards[i].id === id) return st.cards[i]; return null; }
     function quietLine() { return st.listening === true && st.since ? 'Quiet. Listening since ' + st.since + '.' : 'Quiet.'; }
@@ -901,7 +923,7 @@
     function renderAsk() {
       var sec = q('#as-ask'), go = q('#as-ask-go'); if (!sec || !go) return;
       sec.hidden = !gm || typeof gm.assistAsk !== 'function';      /* an older runtime without the call: the field is not offered */
-      var ta1 = q('#as-ask-q'), can = canAsk() || (isTyped(ta1 ? ta1.value : '') && typedOk()), busy = st.ask.busy, hint = !can && !askAllowed(tierNow()) ? 'Dropped by the budget for tonight.' : '';
+      var ta1 = q('#as-ask-q'), can = canAsk() || (isTyped(ta1 ? ta1.value : '') && typedOk(ta1 ? ta1.value : '')), busy = st.ask.busy, hint = !can && !askAllowed(tierNow()) ? 'Dropped by the budget for tonight.' : '';
       go.disabled = busy || !can; go.textContent = busy ? 'Thinking…' : 'Ask';
       var pr = q('#as-prog'); if (pr) pr.hidden = !busy;
       go.title = can ? 'Ask Blade (Enter)' : hint || 'Not available now';
@@ -911,15 +933,16 @@
        The words stay in the field when it fails, and are cleared when it works. */
     /* C4f: text starting "Blade," or "/" is a typed command for the cue lane (o.onTyped), not a question: no Ask call, and it works at the cap too ($0) */
     var typedBusy = false;
-    function isTyped(t) { return /^\s*(?:blade\s*,|\/)/i.test(str(t)); }
-    function typedOk() { return !gone && !isPhone() && typeof o.onTyped === 'function'; }
+    function isTyped(t) { return /^\s*(?:blade\s*,|\/)/i.test(str(t)) || isBare(t); }
+    function isBare(t) { var f = fl(); return !!(f && typeof f.is === 'function' && typeof f.run === 'function' && f.is(str(t))); }      /* RK04: "tick the alarm 1" typed bare, while night.flow is on */
+    function typedOk(t) { return !gone && !isPhone() && (isBare(t) || typeof o.onTyped === 'function'); }
     function ask(text) {
       var qq = str(text).replace(/\s+/g, ' ').trim().slice(0, ASK_MAX);
-      if (qq && isTyped(qq) && typedOk()) {
+      if (qq && isTyped(qq) && typedOk(qq)) {
         if (typedBusy) return Promise.resolve(null);            /* a second Enter or a click while the first is on its way would post the command twice */
         typedBusy = true;
         var ta0 = q('#as-ask-q'), fin = function () { typedBusy = false; };
-        return Promise.resolve().then(function () { return o.onTyped(qq); }).then(function (r) {
+        return Promise.resolve().then(function () { return isBare(qq) && !/^\s*(?:blade\s*,|\/)/i.test(qq) ? fl().run(qq) : o.onTyped(qq); }).then(function (r) {
           fin();
           if (!gone && r && r.ok && ta0 && str(ta0.value).replace(/\s+/g, ' ').trim() === qq) ta0.value = '';
           if (!gone) render();
@@ -1322,6 +1345,8 @@
     /* ---------- events ---------- */
     function remove(list, id) { for (var i = 0; i < list.length; i++) if (list[i].id === id) { list.splice(i, 1); return true; } return false; }
     function onClick(ev) {
+      var fc = fl(), pb = fc && ev.target && ev.target.closest ? ev.target.closest('[data-gm="pa"]') : null;      /* RK04: a prep-action chip in a card */
+      if (pb && host.contains(pb)) { try { fc.chip(pb); } catch (e) { /* the page said what failed */ } return; }
       var b = ev.target && ev.target.closest ? ev.target.closest('[data-as]') : null; if (!b || !host.contains(b)) return;
       var a = b.getAttribute('data-as'), id = b.getAttribute('data-id');
       if (a === 'toggle') toggle();
@@ -1444,7 +1469,7 @@
        for several cards at once: one mark per 50 (the server's bound), the page cards' own work after. */
     var bridge = {
       ctl: api, doc: doc, win: win, st: st, host: function () { return gone ? null : host; }, render: function () { if (host && !gone) render(); },
-      h: { appendInline: appendInline, moreHtml: moreHtml, canUndo: canUndo, canKeep: canKeep, isOpen: isOpen, hhmm: hhmm, cardKind: cardKind, feedOf: feedOf,
+      h: { appendInline: inl, moreHtml: moreHtml, canUndo: canUndo, canKeep: canKeep, isOpen: isOpen, hhmm: hhmm, cardKind: cardKind, feedOf: feedOf,
         SEAT: SEAT, KIND: KIND, CHECK_WORD: CHECK_WORD, figFns: figFns, setT: setT, clrT: clrT, setI: setI, clrI: clrI },
       use: function (k) {
         k = k || null; if (KB === k || gone) return;

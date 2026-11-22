@@ -14,11 +14,16 @@
                                     holds (B68Rules, the T tab's and Find's search). Hover (a mouse, 350 ms) or a tap opens it; Esc (B68GmEsc),
                                     a tap outside and its own ✕ close it. Open in Rules goes to the T tab.
      ▶ crew sheet                   not built (the shared screen has no crew-sheet kind): a muted chip that says so.
+   WHILE night.flow IS ON (RK04; the page's host.flow() says so, and the Blade panel's cards are decorated too, gm/blade-chips.js):
+     ▶ tick: <clock> / <n>          ticks the table clock by n (default 1, 1 to 12) by an absolute fill, capped at its size, with Undo. The clock is found by
+                                    its name as a cue finds one (exact, then loosely); none, or more than one, makes it a muted chip that says so.
+     ▶ clock: on a clock that is on the table already offers Tick +1 (a tap ticks it once, with Undo) instead of only saying where it stands.
+   With it off none of that exists: ▶ tick: is an unknown verb and a clock chip says where its clock stands, as before.
    Anything else (an unknown verb, a handout not in the pack, a clock size not allowed) is a muted chip showing the span's text, its title saying why.
    Nothing new is stored; nothing goes to the server but what the page's own functions send.
 
    PURE (Node tests)
-     parse(text) -> null | { kind: 'handout'|'clock'|'rule'|'crew'|'unknown', verb, arg, text, clock?: { name, size, ticks } | { bad } }
+     parse(text) -> null | { kind: 'handout'|'clock'|'rule'|'crew'|'unknown'|'tick', verb, arg, text, clock?: { name, size, ticks } | { bad }, tick?: { name, n } | { bad } }
      fold(s)                         lower case, accents and punctuation and spaces dropped: the name match's key
      matchHandout(list, name) -> { hit } | { many: [x] } | { none: true }     id first, then title; exact, then a unique prefix
      strip(md) -> md without its action spans (text and all): for any string that leaves the GM page (room-notes.js, stamp.js carry the same line)
@@ -32,7 +37,7 @@
      close()                         the pop-over shuts
    host: { handouts() -> [x], show(id) -> Promise, sendHtml(x) -> html | '', clocks() -> [clock], addClock(c) -> Promise, clockOps(ops) -> Promise,
            canClock() -> bool, toast(msg, bad), undoToast(text, undo) -> truthy when shown, screen() -> [section], rules() -> B68Rules | null,
-           md() -> B68Markdown, openRule(r), esc() -> B68GmEsc | null }
+           md() -> B68Markdown, openRule(r), esc() -> B68GmEsc | null, flow() -> bool (night.flow is on; absent reads as off) }
    ES5, window.B68GmPrepActions in the browser, module.exports under Node. Every string from the note goes in as text or escaped. */
 (function (root, factory) {
   'use strict';
@@ -52,6 +57,16 @@
     return R && typeof R.isAction === 'function' && typeof R.stripActions === 'function' ? R : null;
   }
 
+  /* RK04 (night.flow): the verbs and the Tick +1 below exist only while the page says the setting is on (decorate, refresh and tap ask its host.flow()),
+     and only once gm/blade-chips.js is here (the night-flow bundle brings both). Off, every branch below is skipped and the code is as it was. */
+  var flow = false;
+  function chips() {
+    var C = W && W.B68GmBladeChips;
+    if (!C && typeof require === 'function') { try { C = require('./blade-chips.js'); } catch (e) { C = null; } }
+    return C && typeof C.parseTick === 'function' ? C : null;
+  }
+  function setFlow(on) { flow = !!on && !!chips(); return flow; }
+  function useFlow(host) { try { setFlow(host && typeof host.flow === 'function' && host.flow()); } catch (e) { flow = false; } }
   function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function esc(s) { return str(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -83,6 +98,7 @@
     else if (verb === 'clock' && arg) { out.kind = 'clock'; out.clock = parseClock(arg); }
     else if (verb === 'rule' && arg) out.kind = 'rule';
     else if (!v && verb === 'crew sheet') out.kind = 'crew';
+    else if (flow && verb === 'tick' && arg) { out.kind = 'tick'; out.tick = chips().parseTickArg(arg); }
     return out;
   }
   function matchHandout(list, name) {
@@ -157,13 +173,32 @@
       var k = p.clock;
       if (k.bad) return { label: p.text, muted: true, why: k.bad };
       var c = clockNow(host, k.name);
+      if (c && flow) {
+        var cb = chips().bumped(c), cs = Math.max(1, +cb.size || k.size), cf = Math.min(cs, Math.floor(+cb.filled) || 0);
+        if (cf >= cs) return { label: 'Clock: ' + str(c.name) + ' ' + cf + '/' + cs + ' full', done: true, why: 'On the table already, and full' + (c.hidden ? ', hidden from the players' : '') };
+        return { label: 'Clock: ' + str(c.name) + ' ' + cf + '/' + cs + ' · Tick +1', done: true, why: 'On the table already' + (c.hidden ? ', hidden from the players' : '') + '. Tap to tick it once.' };
+      }
       if (c) return { label: 'Clock: ' + str(c.name) + ' ' + (Math.floor(+c.filled) || 0) + '/' + (+c.size || k.size), done: true, why: 'On the table already' + (c.hidden ? ', hidden from the players' : '') };
       return { label: 'Clock: ' + k.name + ' (' + k.size + ')', why: 'Add a table clock, hidden from the players: ' + k.name + ', ' + k.size + ' segments' + (k.ticks ? ', ' + k.ticks + ' ticked' : '') };
     }
+    if (p.kind === 'tick') return lookTick(p, host);
     if (p.kind === 'rule') return { label: p.arg, rule: true, why: 'The rule: ' + p.arg };
     if (p.kind === 'crew') return { label: p.text, muted: true, why: 'Not built yet: the shared screen has no way to show the crew sheet' };
     return { label: p.text, muted: true, why: 'Not an action this page knows: ' + (p.verb || p.text) };
   }
+
+  /* ▶ tick: the chip says which clock it found and what the tap does; a name that finds none, or several, is a muted chip */
+  function lookTick(p, host) {
+    var t = p.tick; if (!t || t.bad) return { label: p.text, muted: true, why: t ? t.bad : 'Not a tick' };
+    var C = chips(), m = C.matchClock(t.name, clocksList(host));
+    if (m.many) return { label: p.text, muted: true, why: 'More than one clock matches “' + t.name + '”: ' + m.many.map(function (x) { return str(x.name); }).join(', ') };
+    if (!m.hit) return { label: p.text, muted: true, why: 'No clock called “' + t.name + '” on the table' };
+    var c = C.bumped(m.hit), size = Math.max(1, Math.floor(+c.size) || 1), cur = Math.min(size, Math.floor(+c.filled) || 0);
+    if (cur >= size) return { label: 'Tick: ' + str(c.name) + ' ' + cur + '/' + size + ' full', done: true, why: str(c.name) + ' is full already' };
+    var to = Math.min(size, cur + t.n);
+    return { label: 'Tick: ' + str(c.name) + ' ' + cur + ' to ' + to + ' of ' + size, why: 'Tick the table clock ' + str(c.name) + ' by ' + t.n + ', from ' + cur + ' to ' + to + ' of ' + size + '. Undo is offered.' };
+  }
+  function clocksList(host) { var l = []; try { l = host && typeof host.clocks === 'function' ? host.clocks() : []; } catch (e) { l = []; } return (Array.isArray(l) ? l : []).filter(isObj); }
 
   function paint(btn, host) {
     var p = parse(btn.getAttribute('data-pa')); if (!p) return;
@@ -190,6 +225,7 @@
 
   function decorate(el, host) {
     if (!el || !el.querySelectorAll) return;
+    useFlow(host);
     codes(el).forEach(function (c) {
       var t = textOf(c), p = parse(t); if (!p || !c.parentNode) return;
       var b = c.ownerDocument.createElement('button');
@@ -202,6 +238,7 @@
   }
   function refresh(el, host) {
     if (!el || !el.querySelectorAll) return;
+    useFlow(host);
     [].forEach.call(el.querySelectorAll('button.pa-chip, button[data-pa]:not([data-pa-send])'), function (b) { paint(b, host); });
     [].forEach.call(el.querySelectorAll('button.pa-rule'), function (b) { ruleMute(b, host); });
   }
@@ -323,6 +360,7 @@
   var busy = {};
   function tap(btn, host) {
     if (!btn || !btn.getAttribute) return;
+    useFlow(host);
     if (btn.hasAttribute('data-pa-x')) { close(); return; }
     if (btn.hasAttribute('data-pa-open')) { var r = btn.__paRule; close(); if (r && host && typeof host.openRule === 'function') host.openRule(r); return; }
     var p = parse(btn.getAttribute('data-pa')); if (!p) return;
@@ -344,10 +382,23 @@
       Promise.resolve().then(function () { return host.show(L.x.id); }).then(function () { delete busy['h|' + L.x.id]; }, function () { delete busy['h|' + L.x.id]; });
       return;
     }
+    if (p.kind === 'tick') { tickChip(btn, p.tick, host); return; }
     if (p.kind === 'clock') addClock(btn, p.clock, host);
+  }
+  /* RK04: ▶ tick: and Tick +1 on a clock that is already there: one absolute fill (gm/blade-chips.js tick), then every chip says where the clock stands */
+  function tickChip(btn, t, host) {
+    var m = chips().matchClock(t.name, clocksList(host));
+    if (!m.hit) { host.toast('No clock called “' + t.name + '” on the table.', true); return; }
+    btn.setAttribute('aria-busy', 'true');
+    chips().tick(host, m.hit, t.n).then(function () { btn.removeAttribute('aria-busy'); paintAll(btn, host); }, function () { btn.removeAttribute('aria-busy'); });
   }
   function addClock(btn, k, host) {
     var key = 'c|' + fold(k.name), c = clockNow(host, k.name);
+    if (c && flow) {      /* RK04: a clock that is there already offers Tick +1 */
+      btn.setAttribute('aria-busy', 'true');
+      chips().tick(host, c, 1).then(function () { btn.removeAttribute('aria-busy'); paintAll(btn, host); }, function () { btn.removeAttribute('aria-busy'); });
+      return;
+    }
     if (c) { host.toast('Clock: ' + str(c.name) + ' stands at ' + (Math.floor(+c.filled) || 0) + '/' + (+c.size || k.size) + (c.hidden ? ', hidden from the players' : '') + '. Nothing added.'); return; }
     if (busy[key]) return;
     if (!host.canClock()) { host.toast('The table is not available here: start the clock on the table page.', true); return; }
@@ -394,5 +445,5 @@
   }
 
   return { SIZES: SIZES, parse: parse, parseClock: parseClock, fold: fold, matchHandout: matchHandout, strip: strip, findRule: findRule, excerpt: excerpt,
-    has: has, decorate: decorate, refresh: refresh, tap: tap, close: close, isOpen: isOpen, _esc: esc };
+    has: has, decorate: decorate, refresh: refresh, tap: tap, close: close, isOpen: isOpen, setFlow: setFlow, _esc: esc };
 });
