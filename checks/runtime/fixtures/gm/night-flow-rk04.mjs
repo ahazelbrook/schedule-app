@@ -7,14 +7,26 @@
 //            Tick +1; ▶ tick: ticks, with Undo; the same on the kit desk (kit.desk on)
 //   secrecy  the display's GET and a phone's GET never hold a hidden clock's name; the GM page makes no request outside its own origin
 //   shots    RK_SHOTS=<dir>: the Blade panel with chips, 1366x768 and 1536x864, Paper and Night, kit.desk off and on; 1024x768 (the iPad's width)
+//   reset    at its start and its end (the harness calls reset() before and after the part, pass or fail): the alarm back at the demo night's 2 of 6, no
+//            clock this part makes, night.flow and kit.desk off
+const MADE = ['Reach the boats', 'Reach the roof'];
+export async function reset(c) {
+  const flags = { 'night.flow': false, 'kit.desk': false };
+  await c.api('PATCH', '/gm/state', { features: flags }); await c.api('PATCH', '/campaign', { features: flags });
+  const have = ((await c.api('GET', '/campaign')).json.doc.clocks || []);
+  await c.api('PATCH', '/campaign', { clockOps: [{ id: 'c-alarm', filled: 2 }, ...have.filter((k) => MADE.includes(k.name)).map((k) => ({ remove: k.id }))] });
+}
 export async function rk04(c) {
   const { BASE, GM, IPAD, P1, api, check, until, sleep, browser, errors, atPlace, shots, mkdirSync, path } = c;
+  await reset(c);
+  check(((await api('GET', '/campaign')).json.doc.clocks || []).some((k) => k.id === 'c-alarm' && k.filled === 2), 'reset: the part starts from the demo night’s alarm at 2 of 6');
   const ANSWER = { q: 'a getaway clock', at: new Date().toISOString(), kind: 'idea', headline: 'Start a getaway clock for the quay', text: 'Start a getaway clock for the quay',
     bullets: ['Start it: `▶ clock: Reach the boats / 4 / 0`', 'Then push the alarm: `▶ tick: House alarm / 1`', 'Not a chip: `plain code`'],
     say: '', secret: '', more: 'Two things to tap:\n\n- `▶ clock: Reach the boats / 4 / 0`\n- `▶ tick: House alarm / 1`\n- `▶ tick: Lighthouse / 1` (no clock of that name)\n- `▶ rule: Position and effect`\n' };
   const clocks = async () => ((await api('GET', '/campaign')).json.doc.clocks || []);
   const clockOf = async (name) => (await clocks()).find((k) => k.name === name) || null;
-  const setting = async (on, extra) => { await api('PATCH', '/gm/state', { features: { 'night.flow': on, ...(extra || {}) } }); };
+  const setting = async (on, extra) => { const f = { 'night.flow': on, 'kit.desk': false, ...(extra || {}) }; await api('PATCH', '/gm/state', { features: f }); await api('PATCH', '/campaign', { features: f }); };
+  let answer = ANSWER;      /* what the routed Ask answers: the headline check swaps it for one turn */
   const asks = [];
   const outside = [];
 
@@ -26,7 +38,7 @@ export async function rk04(c) {
     p.on('request', (r) => { const u = r.url(); if (!/^(?:http:\/\/127\.0\.0\.1|data:|blob:|about:)/.test(u)) outside.push(u); });
     await p.route('**/api/gm/assist/ask', (route) => {
       asks.push(JSON.parse(route.request().postData() || '{}'));
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ answer: { ...ANSWER, at: new Date().toISOString() }, spend: { tonight: 1, cap: 20, tier: 'all', tick: 0 } }) });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ answer: { ...answer, at: new Date().toISOString() }, spend: { tonight: 1, cap: 20, tier: 'all', tick: 0 } }) });
     });
     await p.goto(BASE + '/#gm');
     await p.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
@@ -42,6 +54,19 @@ export async function rk04(c) {
   const undoBtn = (p) => p.locator('.gm-ugtoast button:has-text("Undo"), [data-kit-toast] button:has-text("Undo"), .ui-toast button:has-text("Undo")').first();
   const chips = (p) => p.$$eval('#as-list .pa-chip', (l) => l.map((b) => ({ text: b.textContent.trim(), cls: b.className, title: b.title, muted: b.classList.contains('pa-muted') })));
   const wait = (fn, ms = 8000) => until(fn, ms);
+  /* an answer whose headline holds a ▶ span: the headline is text, the newest card's fold holds no chip or code, and its bullets are chips */
+  const HEAD = 'Push it: `▶ tick: House alarm / 1`';
+  const headlinePlain = async (p) => {
+    answer = { ...ANSWER, headline: HEAD, text: HEAD };
+    try {
+      await ask(p, 'a headline with a tick');
+      const card = p.locator('#as-list .as-card', { hasText: 'Push it:' }).first();
+      if (!(await wait(() => card.isVisible()))) return false;
+      const bulletChips = await wait(async () => (await card.locator('.as-bullets .pa-chip').count()) >= 2);
+      const fold = await card.locator('.as-fold').first().evaluate((f) => ({ inner: f.querySelectorAll('button, code').length, text: f.textContent }));
+      return !!bulletChips && fold.inner === 0 && /▶ tick: House alarm/.test(fold.text);
+    } finally { answer = ANSWER; }
+  };
 
   /* ---------- off ---------- */
   await setting(false);
@@ -86,6 +111,21 @@ export async function rk04(c) {
     await undoBtn(p).click();
     check(!!(await wait(async () => !(await clockOf('Reach the roof')))), 'typed: Undo takes it off the table');
 
+    /* a near miss ("alarms") ticks nothing: it asks which clock, with the one it nearly heard as a button */
+    const nm0 = (await clockOf('House alarm')).filled;
+    await ask(p, 'tick the house alarms 1');
+    const which = p.locator('#as-list .as-card', { hasText: 'Which clock?' }).first();
+    check(!!(await wait(() => which.isVisible())), 'typed: a near miss ("tick the house alarms 1") offers the Which clock? card');
+    await sleep(500);
+    check((await clockOf('House alarm')).filled === nm0, 'typed: and ticks nothing until it is tapped');
+    const pick = which.locator('[data-as="act"]', { hasText: 'House alarm' });
+    check((await pick.count()) === 1, 'typed: the card has one button, the clock it nearly heard');
+    await pick.click();
+    check(!!(await wait(async () => (await clockOf('House alarm')).filled === nm0 + 1)), 'typed: a tap on it ticks that clock');
+    await undoBtn(p).click();
+    check(!!(await wait(async () => (await clockOf('House alarm')).filled === nm0)), 'typed: and Undo puts it back');
+    await sleep(500);
+
     const n1 = asks.length;
     await ask(p, 'how do I tick the house alarm?');
     check(!!(await wait(() => asks.length === n1 + 1)), 'typed: a question that mentions ticking is still an Ask');
@@ -126,6 +166,7 @@ export async function rk04(c) {
     await p.keyboard.press('Escape');
     check(!!(await wait(() => p.evaluate(() => !document.querySelector('.pa-pop')))), 'chips: Esc closes it');
     await shots(p, 'rk04-desk-off-paper');
+    check(await headlinePlain(p), 'chips: a ▶ span in a card’s headline stays text (no button inside the fold button); its bullets still have chips');
 
     /* secrecy */
     const dg = await api('GET', '/gm/display', undefined, IPAD);
@@ -151,6 +192,7 @@ export async function rk04(c) {
     await ask(p, 'tick the house alarm 1');
     check(!!(await wait(async () => (await clockOf('House alarm')).filled === a0 + 1)), 'kit desk: "tick the house alarm 1" typed bare ticks it');
     await sleep(500);
+    check(await headlinePlain(p), 'kit desk: a ▶ span in a card’s headline stays text; its bullets still have chips');
     await shots(p, 'rk04-desk-on-paper');
     await ctx.close();
   }
