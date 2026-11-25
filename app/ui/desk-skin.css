@@ -586,6 +586,7 @@
 :where(:root[data-kit~="desk"]) :where(#gm-page .gm-vchips .gm-vc-x) { font-size: 16px; }
 }
 :where(:root[data-kit~="desk"]) :where(#gm-page .gm-rl-seg .chip,
+  #gm-page .gm-rl-up .gm-rl-left,
   #gm-page .gm-scene-chips .gm-chip,
   #gm-page .gm-cs-pop .gm-cs-dim) { font-size: 12px; }
 :where(:root[data-kit~="desk"]) :where(#gm-page .gm-mu-pill .gm-mu-note) { font-size: 14px; }
@@ -1014,6 +1015,7 @@
 @media (max-width: 1099px) {
 :where(:root[data-kit~="desk"]) :where(#gm-page .gm-vchips .gm-vc-x) { font-family: var(--ui-font-text); }
 }
+:where(:root[data-kit~="desk"]) :where(#gm-page .gm-rl-up .gm-rl-left) { font-family: var(--ui-font-text); }
 :where(:root[data-kit~="desk"]) :where(#gm-page .gm-mu-pill .gm-mu-note) { font-family: var(--font-text); }
 :where(:root[data-kit~="desk"]) :where(#gm-page .gm-mu-pill .gm-mu-a) { font-family: var(--font-cond); }
 :where(:root[data-kit~="desk"]) :where(#gm-page .gm-mu-pill .gm-mu-st,
