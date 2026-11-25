@@ -42,7 +42,7 @@ function fakeHost(o = {}) {
     namesHit,
     npcs: () => npcs.map((n) => Object.assign({}, n)),
     reveal(id) { log.push(['reveal', id]); if (o.revealFails) return Promise.reject(new Error('no')); npcs.find((n) => n.id === id).revealed = true; return Promise.resolve(); },
-    confirm(m) { log.push(['confirm', m]); return h.confirmSays; },
+    ask(m) { log.push(['confirm', m]); return Promise.resolve(h.confirmSays); },
     overlayId() { return h.up; },
     clear() { log.push(['clear']); h.up = ''; return Promise.resolve({}); },
     toast(t, bad) { log.push(['toast', t, !!bad]); }

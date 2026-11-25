@@ -23,7 +23,8 @@
      make(host) -> { buttons(ctx), send(ctx, which) -> Promise<bool>, down(ctx, which) -> Promise<bool>, isUp(ctx, which) -> bool }
        host (an object, or a function that returns the current one) = { show(kind, payload, opts) -> Promise<answer | null>,
                 hidden() -> [name], namesHit(text, names) -> bool, npcs() -> [{ id, name, alias, revealed }], reveal(id) -> Promise,
-                confirm(msg) -> bool, overlayId() -> the id up now, clear() -> Promise (the overlay off), toast(text, bad) }
+                ask(msg) -> Promise<bool> (the page's own confirm: the kit's dialog on the kit desk), overlayId() -> the id up now,
+                clear() -> Promise (the overlay off), toast(text, bad) }
        The page's is B68GmPage.roomShow() (null while room.key is off).
      Pure: payload(thing, which) -> { text, sub? } | null   keyOf(ctx, which)   hits(payload, names, namesHit) -> [name]
            WHICH, MS, KIND, QUESTION */
@@ -109,9 +110,14 @@
       var other = found.filter(function (f) { return !theirs[fold(f)]; });
       if (other.length) { toast('Not shown: this names a hidden clock (' + other.join(', ') + '). Show the clock first.', true); return Promise.resolve(false); }
       var who = people.map(function (n) { return flat(n.name); }).join(', ');
-      if (call('confirm', QUESTION + '\n\n' + who + ' will be revealed to everyone, and the line goes on the iPad.') !== true) {
-        toast('Not shown: ' + who + ' stays hidden.'); return Promise.resolve(false);
-      }
+      var h0 = H(), q;
+      try { q = h0 && typeof h0.ask === 'function' ? h0.ask(QUESTION + ' ' + who + ' will be revealed to everyone, and the line goes on the iPad.') : false; } catch (e) { q = false; }
+      return Promise.resolve(q).then(function (yes) {
+        if (yes !== true) { toast('Not shown: ' + who + ' stays hidden.'); return false; }
+        return revealAll(p, people);
+      }, function () { return false; });
+    }
+    function revealAll(p, people) {
       return people.reduce(function (pr, n) {
         return pr.then(function (ok) {
           if (!ok) return false;
