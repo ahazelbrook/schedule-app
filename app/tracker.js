@@ -613,7 +613,7 @@
     return box(esc(pb.cohort.label), h, '<span class="ds-dim">Cohort (' + esc(cohortExpert(pb) || 'Expert') + ')</span>');
   }
   function abilities(play, pb, sheet) {
-    var hull = isHull(pb), vamp = isVamp(pb), tt = isTT(pb), list = [], h = '', versText = 'Choose a special ability from another source.';
+    var hull = isHull(pb), vamp = isVamp(pb), tt = isTT(pb), list = [], h = window.B68AbilityFind && !cur.ui.static ? window.B68AbilityFind.box('abbox') : '', versText = 'Choose a special ability from another source.';      /* RK25 (phone.find): a search box over the rows, '' while off */
     if (pb) {
       if (hull) list.push({ n: AUTOMATON[0], t: AUTOMATON[1], fixed: true });
       if (pb.fixedAbility) list.push({ n: pb.fixedAbility[0], t: pb.fixedAbility[1], fixed: true });
@@ -851,7 +851,7 @@
     var mine = ownAbilities(play, pb), crew = crewAbilitiesNow(), open = !!cur.ui.abStrip;
     var sum = 'Abilities · yours ' + mine.length + (crew ? ' · the crew’s ' + crew.length : '');
     var h = '<div class="ds-abstrip' + (open ? ' open' : '') + '"><button type="button" class="ds-abstrip-t" data-act="abstrip" data-always="1" aria-expanded="' + open + '"><span>' + esc(sum) + '</span><span class="ds-abstrip-c" aria-hidden="true">' + (open ? '−' : '+') + '</span></button>';
-    if (open) h += '<div class="ds-abstrip-b">' + abGroup('p', 'Yours', mine) + (crew ? abGroup('c', 'The crew’s', crew) : '<p class="ds-dim ds-abnone">The crew’s abilities are not available here.</p>') + '</div>';
+    if (open) h += '<div class="ds-abstrip-b">' + (window.B68AbilityFind ? window.B68AbilityFind.box('strip') : '') + abGroup('p', 'Yours', mine) + (crew ? abGroup('c', 'The crew’s', crew) : '<p class="ds-dim ds-abnone">The crew’s abilities are not available here.</p>') + '</div>';
     return h + '</div>';
   }
   function markPanel(play, pb) {
@@ -1148,6 +1148,7 @@
     if (window.B68Kit && window.B68Flags && !cur.ui.static && Object.keys(window.B68Flags.all()).length) window.B68Kit.set('phone', window.B68Flags.on('kit.phone'));   /* KS01.2: data-kit="phone" follows the setting, once the campaign has said */
     var gl = !cur.ui.static && !!window.B68SheetGlance && typeof window.B68SheetGlance.apply === 'function' && window.B68SheetGlance.apply(cur.root, { slots: cur.slots, doc: cur.doc, play: cur.play, pb: cur.pb, ro: readOnly(), gm: B().isGM === true, table: tableNow(), now: nowOn() ? nowCtx() : null, own: ownAbilities(cur.play, cur.pb), rm: canRemove(), commit: commit, act: function (n, d, b) { if (ACTIONS[n]) ACTIONS[n](d || {}, b || null); } }) === true;   /* RK31 (phone.glance): the glance screen (sheet/glance.js), never fetched while off */
     if (!gl && window.B68SheetTabs && window.B68Kit && window.B68Kit.ready('phone') && !cur.ui.static) window.B68SheetTabs.apply(cur.root, { slots: cur.slots, table: tableNow(), id: cur.doc && cur.doc.id, dots: cur.play.dots, actions: CT.ACTIONS });   /* KS17: the four-screen sheet (sheet/kit/tabs.js) */
+    if (window.B68AbilityFind) window.B68AbilityFind.apply(cur.root);      /* RK25 (phone.find): the search boxes' queries, kept across a redraw */
     askOwner();
     if (focus && !(a0 && a0.isConnected)) restoreFocus(focus);
     /* the roll panel: bring it (or, after a roll, its verdict) into view, and keep keyboard focus inside the sheet so Esc closes it.
