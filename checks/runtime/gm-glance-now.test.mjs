@@ -179,6 +179,17 @@ test('html: on the kit desk the buttons are B68Ui parts', () => {
   assert.equal(calls[3].type, 'submit');
 });
 
+test('html: the buttons are B68Ui parts on the old desk too (they keep rv-btn); with no B68Ui the block still reads, without buttons', () => {
+  const h = host(at({ fic: { b: 45, off: 7 } })), out = h.view.html(xOf(h.state), false);
+  assert.equal((out.match(/class="ui-btn ui-btn--quiet rv-btn sm gl-now-b"/g) || []).length, 4, '+5, +15, Clear, Set');
+  assert.doesNotMatch(fs.readFileSync(path.join(ROOT, FILE), 'utf8'), /<button\b/, 'no hand-built button (the ratchet)');
+  const win = { B68GmBall: B }; win.self = win; win.window = win;
+  vm.runInNewContext(fs.readFileSync(path.join(ROOT, FILE), 'utf8'), win, { filename: FILE });
+  const bare = win.B68GmGlanceNow.create({ run: () => ({ pcs: () => PCS }) }).html(xOf(at({})), false);
+  assert.match(text(bare), /^Fiction 21:45Crew Nell Arbuthnot/);
+  assert.match(bare, /<form class="gl-now-form" data-site="gln-set"/, 'Enter in the time box still sets it');
+});
+
 test('act: +5 and +15 write ball.fic quietly (no map push) and redraw; Clear removes it', () => {
   const h = host(at({}));
   assert.equal(h.view.act('gln-add', el({ 'data-min': 5 })), true);

@@ -22,7 +22,7 @@
      people(play, st, t) -> [{ id, label, kind, key, room, till, next, gone }]      crew(pcs, st) -> [{ id, name, room }]
    THE VIEW: create(host) -> { html(x, kit), act(action, el) -> bool (true: the action was this block's) }
      host: run() -> the Run view's host (site(), state(), set(change, quiet), pcs()), redraw(), toast(msg, bad)
-     x is the Run view's render input ({ rs: { name, play }, st }); kit is true on the kit desk (B68Ui buttons).
+     x is the Run view's render input ({ rs: { name, play }, st }); kit is true on the kit desk (the kit's styles). The buttons are B68Ui's on both desks.
      Its controls are data-site="gln-add" (data-min), "gln-set" (a form) and "gln-clear": the Run view routes them to the page's siteAct. */
 (function (root, factory) {
   'use strict';
@@ -42,7 +42,10 @@
     if (root && root.B68GmBall) return root.B68GmBall;
     try { return typeof require === 'function' ? require('./ball.js') : null; } catch (e) { return null; }
   }
-  function Ui() { return root && root.B68Ui ? root.B68Ui : null; }
+  function Ui() {
+    if (root && root.B68Ui) return root.B68Ui;
+    try { return typeof require === 'function' ? require('../ui/ui.js') : null; } catch (e) { return null; }
+  }
 
   /* ---- the clock ---- */
   function started(st) { return isObj(st) && typeof st.start === 'number' && isFinite(st.start); }
@@ -118,16 +121,15 @@
     function run() { try { return typeof host.run === 'function' ? host.run() : null; } catch (e) { return null; } }
     function toast(m, bad) { if (typeof host.toast === 'function') host.toast(m, !!bad); }
     function redraw() { if (typeof host.redraw === 'function') host.redraw(); }
-    function btn(kit, label, data, title) {
-      var U = kit ? Ui() : null;
-      if (U) return U.button({ label: label, rank: 'quiet', cls: ['rv-btn', 'sm', 'gl-now-b'], data: data, title: title });
-      var d = ''; Object.keys(data).forEach(function (k) { d += ' data-' + k + '="' + esc(data[k]) + '"'; });
-      return '<button type="button" class="rv-btn sm gl-now-b"' + d + ' title="' + esc(title) + '">' + esc(label) + '</button>';
+    /* the buttons are B68Ui's on both desks (the page brings the kit-ui bundle in before gm-glance); they keep the old desk's rv-btn classes, as the
+       room key's do. With no B68Ui (its fetch failed) the block still reads, without its buttons, and Enter in the time box still sets the time */
+    function btn(label, data, title) {
+      var U = Ui();
+      return U ? U.button({ label: label, rank: 'quiet', cls: ['rv-btn', 'sm', 'gl-now-b'], data: data, title: title }) : '';
     }
-    function submit(kit) {
-      var U = kit ? Ui() : null, t = 'Set the fiction’s time to the one typed';
-      if (U) return U.button({ label: 'Set', rank: 'quiet', type: 'submit', cls: ['rv-btn', 'sm', 'gl-now-b'], title: t });
-      return '<button type="submit" class="rv-btn sm gl-now-b" title="' + esc(t) + '">Set</button>';
+    function submit() {
+      var U = Ui();
+      return U ? U.button({ label: 'Set', rank: 'quiet', type: 'submit', cls: ['rv-btn', 'sm', 'gl-now-b'], title: 'Set the fiction’s time to the one typed' }) : '';
     }
     function place(room, dim) { return room ? '<span class="gl-now-room">' + esc(room) + '</span>' : '<span class="gl-now-dim">' + esc(dim) + '</span>'; }
     var SEP = '<span class="gl-now-sep" aria-hidden="true"> · </span>';
@@ -142,11 +144,11 @@
         '<span class="gl-now-k">Fiction</span> <output class="gl-now-t" aria-label="The fiction’s time">' + esc(B.timeLabel(play, ft)) + '</output>';
       if (diff) h += ' <small class="gl-now-off" title="' + esc('The beat’s time is ' + B.timeLabel(play, pub)) + '">' + Math.abs(diff) + ' min ' + (diff > 0 ? 'ahead' : 'behind') + '</small>';
       h += '</span>';
-      h += btn(kit, '+5', { site: 'gln-add', min: 5 }, 'Five minutes on in the fiction');
-      h += btn(kit, '+15', { site: 'gln-add', min: 15 }, 'Fifteen minutes on in the fiction');
-      if (r && diff) h += btn(kit, 'Clear', { site: 'gln-clear' }, 'Back to the beat’s time (' + B.timeLabel(play, pub) + ')');
+      h += btn('+5', { site: 'gln-add', min: 5 }, 'Five minutes on in the fiction');
+      h += btn('+15', { site: 'gln-add', min: 15 }, 'Fifteen minutes on in the fiction');
+      if (r && diff) h += btn('Clear', { site: 'gln-clear' }, 'Back to the beat’s time (' + B.timeLabel(play, pub) + ')');
       h += '<form class="gl-now-form" data-site="gln-set" autocomplete="off"><input class="gl-now-in" name="t" type="text" inputmode="numeric" maxlength="5" size="5" placeholder="HH:MM"' +
-        ' aria-label="The fiction’s time, HH:MM" title="Type the fiction’s time (HH:MM), then Enter or Set">' + submit(kit) + '</form>';
+        ' aria-label="The fiction’s time, HH:MM" title="Type the fiction’s time (HH:MM), then Enter or Set">' + submit() + '</form>';
       h += '</div>';
       var pcs = []; try { var rv = run(); pcs = rv && typeof rv.pcs === 'function' ? rv.pcs() : []; } catch (e) { pcs = []; }
       var cw = crew(pcs, st);
