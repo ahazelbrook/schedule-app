@@ -25,7 +25,7 @@ From the repository root (on Windows, in Git Bash: SETUP.md):
 | `npm run dev` | the app on this computer at `http://127.0.0.1:8788`, signed in as a GM (no Access in front) |
 | `npm test` | every check that needs no browser: `check:runtime`, then `check:api` (a few minutes; stop `npm run dev` first, `check:api` uses its port) |
 | `npm run deploy` | puts the committed app live (SETUP.md, *Updating the app*): it stops on uncommitted changes or a missing media file, applies the migrations, and ends with a receipt |
-| `npm run gm:sync` | on the GM's PC: what happened at the table into the vault, and the vault's NPCs and pack back to the app (SYNC.md). The vault is `B68_VAULT`, by default `C:/Vault/Hazel Second Brain` (also for `gm:pack`, `gm:pull`, `gm:push`, `gm:transcript`, `gm:after`) |
+| `npm run gm:sync` | on the GM's PC: what happened at the table into the vault, and the vault's NPCs and pack back to the app (SYNC.md). The vault is `B68_VAULT`, by default `C:/Vault/Hazel Second Brain` (also for `gm:pack`, `gm:pull`, `gm:push`, `gm:transcript`, `gm:after`). `gm:pull` and `gm:sync` plan unless given `--yes`, as `gm:push` and `gm:after` do |
 
 > [!IMPORTANT]
 > **Before a deploy.** Two files are not in git and go up from this disk: `app/media/theme.mp3` (the

@@ -6,11 +6,11 @@ the GM's own `wrangler login`; nothing about it is deployed, and no table text e
 labels only; the tests use the invented vault in `checks/runtime/fixtures/vault/`).
 
 ```
-npm run gm:pull              # after a game: app -> vault (writes the vault)
-npm run gm:pull -- --dry-run # the same, writing nothing: what it would file, and where
+npm run gm:pull              # after a game: app -> vault. A PLAN: writes nothing, says what it would file, and where
+npm run gm:pull -- --yes     # ... and writes the vault (--dry-run is still accepted and means the default)
 npm run gm:push              # vault -> D1: prints the plan, writes nothing
 npm run gm:push -- --yes     # ... and writes it
-npm run gm:sync              # both (pull, then push; push still needs --yes)
+npm run gm:sync              # both (pull, then push): a plan of each half; --yes writes both
 
 node scripts/gm-sync.mjs [pull|push|both] [--dry-run] [--yes] [--vault <path>] [--campaign <id>]
                          [--session <N>] [--baseline] [--only notes|npcs|pack|sites] [--pack <file>] [--private <dir>]
@@ -26,7 +26,7 @@ in, offline, no vault) or mid-push (what landed is in the ledger; run it again).
 | Capture `P` `X` `M` and `L` rolls | `Sessions/b68g-sNN.md`, under `## Names`, `## Loose ends`, `## Moments`, `## Rolled at the table` | the GM station's line, `- **HH:MM** text ^b68-<id>` (Melbourne time); the template's lone `-` is replaced | the block id anywhere in any session note |
 | Pins | the same note, `## Pinned` (added after Rolled at the table) | a collapsed `> [!quote]-` callout, then `^b68-<id>` on its own line | same |
 | Bargains owed, collected; callbacks used | the same note, `## Bargains and callbacks` (added after Pinned) | `- **Owed:** text (who, date) ^b68-owed-<key>`, `**Collected:**`, `**Callback used:**` | same. Blade copies them to the board at close; the sync never writes `b68g-factions.md` |
-| An NPC made in the app with no card | a new `NPCs/<Name>.md` | the vault NPC generator's Save format (replayed through `app/gm/npc.js` from the GM state's `npcgen[id]` (seed, memory and the roll's faction / district / place choices) and the local pack; without those, the same skeleton with `[TODO]`s), tagged `wiki/needs-review` with a `review_note`; a faction dossier line as the generator's Save adds it; one `Wiki/log.md` entry per run that creates cards | the name is checked across the whole vault first: a note outside `NPCs/` with it -> `<Name> (NPC).md` |
+| An NPC made in the app with no card | a new `NPCs/<Name>.md` | the vault NPC generator's Save format (replayed through `app/gm/npc.js` from the GM state's `npcgen[id]` (seed, memory and the roll's faction / district / place choices) and the local pack; without those, the same skeleton with `[TODO]`s), with no review tag (the vault's flag rules allow a flag only for a blocker or a decision), and the report says `filed n new NPC card(s): check them`; a faction dossier line as the generator's Save adds it; one `Wiki/log.md` entry per run that creates cards | the name is checked across the whole vault first: a note outside `NPCs/` with it -> `<Name> (NPC).md` |
 | A reveal | the card's `## In play` | `- **DD/MM/YYYY (app):** revealed to the table. ^b68-rev-<id>` | the block id in the card |
 | GM notes | the card's `## In play` | each new version as a collapsed `> [!note]-` callout, `^b68-gmn-<id>-<hash>` | same |
 | A task box ticked in the Prep tab (`prep.ticks`) | that box, in its own note: `- [ ]` becomes `- [x]` | one character; nothing else in the note changes | the ledger's `ticked`: a box the GM unticks by hand afterwards is not ticked again |
@@ -79,7 +79,7 @@ plus the two narrow rules: a prep note's task box (`assertPrepWritable`) and a s
 | `spec` | three-way merge of `NPCs/figures/<Name>.json` (its `spec`) against the ledger's last-synced copy: vault changed -> pushed; app changed -> kept, reported; both -> neither written, the app's copy saved in `gm-private/sync-conflicts/`, a conflict reported |
 | `role`, `faction`, `revealed`, `firstSeen`, `gmNotes`, `tags` | the app's; never pushed (a faction that differs from the card is reported) |
 
-With no ledger entry for an NPC, every difference is a conflict and nothing is written. `--baseline` records the app's
+With no ledger entry for an NPC, every difference is a conflict and nothing is written. `--baseline` (with `gm:push`, or `gm:sync --yes`: a pulling run that is only a plan saves no ledger) records the app's
 current values as the last-synced copy (for a first run, once the conflicts are understood); the next push then writes
 the vault's side of every vault-owned field that differs. Writes go through the server's own `checkNpc` / `writeNpc`
 (optimistic `updated_at` check), so a change made in the app during the sync is not overwritten: it is reported.

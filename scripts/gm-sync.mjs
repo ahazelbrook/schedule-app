@@ -7,7 +7,8 @@
 //   pull   app -> vault: capture lines, L rolls, pins, bargains and callbacks into the session note; NPCs made in the
 //          app as new NPC cards; reveals and GM notes into a card's "## In play"; the Prep tab's ticks into their task
 //          boxes ([ ] -> [x], never back) and its beat times under "## At the table (app)"; the sites saved against score
-//          cards as location notes and maps in Locations/, linked from the card's site:. Writes the vault unless --dry-run.
+//          cards as location notes and maps in Locations/, linked from the card's site:. A plan (nothing written) unless --yes;
+//          --dry-run is accepted and means the same as the default.
 //   push   vault -> D1: NPC name / description / figure spec (field ownership + three-way merge), the GM pack parts
 //          (staged in pieces, swapped in with one statement). Writes D1 ONLY with --yes; otherwise a plan. A pack that
 //          would lose prep against the server's is refused (lib/pack-guard.mjs) unless --allow-shrink; an assist part with
@@ -59,6 +60,9 @@ export function parseArgs(argv) {
     else if (a === '--help' || a === '-h') o.help = true;
     else throw new Error('unknown argument: ' + a);
   }
+  // RK27.1: a run that pulls PLANS unless --yes (as gm:after and gm:push do). --dry-run stays accepted and wins over --yes.
+  // A push alone keeps its own gate (it plans without --yes, and --baseline still records the ledger).
+  if (o.mode !== 'push') o.dryRun = o.dryRun || !o.yes;
   return o;
 }
 
@@ -133,12 +137,13 @@ export async function run(opts) {
 const USAGE = [
   'node scripts/gm-sync.mjs [pull|push|both] [--dry-run] [--yes] [--vault <path>] [--campaign <id>]',
   '                         [--session <N>] [--baseline] [--only notes|npcs|pack|sites] [--pack <file>] [--private <dir>] [--allow-shrink] [--allow-no-prep]',
-  'pull writes the vault unless --dry-run; push writes D1 only with --yes. See SYNC.md.',
+  'pull plans (writes nothing) unless --yes, and --yes writes the vault; --dry-run is the same as the default.',
+  'push writes D1 only with --yes; both (gm:sync) plans both halves unless --yes. See SYNC.md.',
 ];
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
   let o;
   try { o = parseArgs(process.argv.slice(2)); } catch (e) { console.error(e.message); console.error(USAGE.join('\n')); process.exit(2); }
   if (o.help) { console.log(USAGE.join('\n')); process.exit(0); }
-  run(o).then(({ code }) => process.exit(code), (e) => { console.error('gm-sync failed: ' + (e && e.stack || e)); process.exit(2); });
+  run(o).then(({ code }) => { if (o.dryRun && o.mode !== 'push') console.log('\nNothing was written. Run again with --yes to write.'); process.exit(code); }, (e) => { console.error('gm-sync failed: ' + (e && e.stack || e)); process.exit(2); });
 }

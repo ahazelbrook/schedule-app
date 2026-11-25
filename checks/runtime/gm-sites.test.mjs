@@ -202,7 +202,7 @@ await test('gm-sync: --only sites reads the state from D1, loads the kit from th
   const exec = await memoryExec({ schemaFile: SCHEMA });
   await patchState(asD1(exec), 'default', { sites: { [KEY]: site(S1) } });
   const out = [];
-  const res = await run({ ...parseArgs(['pull', '--only', 'sites']), vault, privateDir: priv, exec, now: NOW, print: (s) => out.push(s), root: ROOT });
+  const res = await run({ ...parseArgs(['pull', '--yes', '--only', 'sites']), vault, privateDir: priv, exec, now: NOW, print: (s) => out.push(s), root: ROOT });
   const text = out.join('\n');
   assert.equal(res.code, 0, text);
   assert.ok(exists(vault, locRel(r.name)) && read(vault, CARD).includes('site: "[[' + r.name + ']]"'));
