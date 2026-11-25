@@ -285,13 +285,15 @@ try {
     });
     await ok(gm('PUT', '/api/gm/display', band.display), 'the band again');
     await until(async () => (await I.page.evaluate(() => window.__ro.mount !== null)), 5000, 30);
-    await sleep(6000);
-    const r = await I.page.evaluate(() => {
-      const o = window.__ro, z = o.mount - o.at, from = z + 3950, to = z + 5000;      /* the card's 3.95 s to 5 s, on this page's clock */
+    await sleep(7500);      /* past the ring's end (6.4 s from the card's zero, which is up to 0.8 s after the mount) */
+    const win = (a, b) => I.page.evaluate(([fa, fb]) => {
+      const o = window.__ro, z = o.mount - o.at, from = z + fa, to = z + fb;      /* the card's fa to fb ms, on this page's clock */
       const f = o.frames.filter((t) => t >= from && t <= to), gaps = f.slice(1).map((t, i) => t - f[i]);
-      return { n: f.length, worst: gaps.length ? Math.max(...gaps.slice(1)) : 0, first: gaps[0] || 0 };
-    });
+      return { n: f.length, worst: gaps.length > 1 ? Math.max(...gaps.slice(1)) : 0, first: gaps[0] || 0 };
+    }, [a, b]);
+    const r = await win(3950, 5000), ring = await win(4900, 6400);
     console.log('INFO the hand-over in ' + ENGINE + ': ' + r.n + ' frames, the first gap ' + Math.round(r.first) + ' ms, the worst after it ' + Math.round(r.worst) + ' ms');
+    console.log('INFO the ring (4.9 to 6.4 s) in ' + ENGINE + ': ' + ring.n + ' frames, the worst gap after the first ' + Math.round(ring.worst) + ' ms');
     if (ENGINE === 'webkit') expect(r.n > 20 && r.worst <= 50, 'a frame over 50 ms: ' + JSON.stringify(r));
   });
   await step('frames for the picture review (KIT_SHOTS): one room and a band, at 1024x768 and 768x1024', async () => {
