@@ -44,7 +44,9 @@
 //   rooms     (optional) the room tables: { v: 1, T: { rooms: { <normRoom>: { name, themes[], band, say[3], people[{ role, w }], things[10] } },
 //             roles: { <role>: { lines[3], looks[2], pose, face } }, aliases: { <normRoom>: <normRoom> } } } (under T so the app's CHECKED loop calls
 //             B68GmRoomTables.check(T) as for every other part), from the vault's Room tables pages
-//             (lib/rooms-export.mjs; npm run gm:rooms-check <folder> checks them). The room key build's RK12 adds buildRooms: until then no part.
+//             (lib/rooms-export.mjs; npm run gm:rooms-check <folder> checks them). The part is the 12th, built by buildRooms from Tools/Room tables/ (pages with `b68: rooms` and `b68: room-roles`);
+//             no such folder or no such pages: no part. Any error in the pages leaves the part OUT with the errors as WARNINGs, and the pack guard then
+//             refuses a pack that would drop a rooms part the app already has (--allow-shrink to override).
 //
 //   assist    { prefix }: the cached prefix for "Claude at the table" (functions/api/gm/assist.js): the rules reference, the NPC
 //             cast, every NPC card's How to play block, the player-to-character table (player: on the PC notes, or the git-ignored
@@ -79,6 +81,7 @@ import { buildPrep, npcCard } from "./lib/prep-export.mjs";
 import { packLosses, lossLines } from "./lib/pack-guard.mjs";
 import { buildScreen } from "./lib/screen-export.mjs";
 import { buildDowntime } from "./lib/downtime-export.mjs";
+import { exportRooms } from "./lib/rooms-export.mjs";
 import { buildAssist, readConfig, parseExtraSpec } from "./lib/assist-export.mjs";
 import { resolvePrep, dateKey } from "./lib/assist-prep.mjs";
 import { buildHandouts } from "./lib/handouts-export.mjs";
@@ -831,6 +834,25 @@ function buildDowntimePart(vault, exportedAt) {
   return buildDowntime({ vault, exportedAt, warn });
 }
 
+// ---- part: rooms ---------------------------------------------------------------------------------------
+// (room.tables: the room tables, lib/rooms-export.mjs). Errors in the pages never fail the pack: they leave this part out, and the pack guard stops that
+// being a quiet loss of a part the app already holds. npm run gm:rooms-check <folder> is the hard check.
+const ROOMS_DIR = [...TOOLS, "Room tables"];
+function buildRooms(vault) {
+  const dir = path.join(vault, ...ROOMS_DIR);
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return null;
+  const r = exportRooms(dir);
+  const n = Object.keys(r.part.T.rooms).length, nr = Object.keys(r.part.T.roles).length;
+  if (!n && !nr && !r.errors.length) return null;                     // no room pages: no part
+  for (const w of r.warnings) warn("rooms: " + w);
+  if (r.errors.length) {
+    for (const e of r.errors.slice(0, 20)) warn("rooms: ERROR " + e);
+    warn("rooms: " + r.errors.length + " error(s) in Tools/Room tables/, so there is no rooms part this time" + (r.errors.length > 20 ? " (the first 20 are shown)" : "") + ': npm run gm:rooms-check "' + dir + '" lists them');
+    return null;
+  }
+  return r.part;
+}
+
 // ---- main ---------------------------------------------------------------------------------------------
 function main() {
   const a = args(process.argv.slice(2));
@@ -854,7 +876,7 @@ function main() {
   const assistPrep = picked ? picked.rel : a.assistPrep;
   if (picked && (picked.how === "date" || picked.how === "past")) console.log("assist prep: " + picked.rel + " (picked by date" + (picked.how === "past" ? "; every prep note is dated before today, so this is the newest" : "") + ")");
   const buildAssistPart = (v, exportedAt) => buildAssist({ vault: v, exportedAt, warn, prep: assistPrep, prepBy: picked ? picked.how : "cli", prepDate: picked ? dateKey(picked.date) : null, config: assistConfig, extra: a.assistExtra, playersFile: path.join(REPO, "gm-private", "players.json"), handouts: parts.handouts || null });
-  const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["score", buildScore], ["prep", buildPrepPart], ["screen", buildScreenPart], ["downtime", buildDowntimePart], ["handouts", buildHandoutsPart], ["assist", buildAssistPart]];
+  const builders = [["console", buildConsole], ["location", buildLocation], ["campaign", buildCampaign], ["npc", buildNpc], ["scenes", buildScenes], ["score", buildScore], ["prep", buildPrepPart], ["screen", buildScreenPart], ["downtime", buildDowntimePart], ["handouts", buildHandoutsPart], ["assist", buildAssistPart], ["rooms", buildRooms]];
   let npcLeverage = 0;
   let locationExtraNames = [];
   for (const [name, fn] of builders) {
@@ -933,6 +955,8 @@ function main() {
     console.log("  handouts: " + (ho ? ho.items.length + " handout(s), " + ho.items.filter(i => i.when).length + " with a cue, from " + ho.rel : "none (no images in the vault's handouts folder)"));
     const dp = parts.downtime;
     console.log("  downtime: " + (dp ? dp.T.benefit.length + " Benefits and " + dp.T.mishap.length + " Mishaps from " + path.basename(dp.rel) : "none (no note has gm_downtime: true)"));
+    const rm = parts.rooms;
+    console.log("  rooms: " + (rm ? Object.keys(rm.T.rooms).length + " room(s), " + Object.keys(rm.T.roles).length + " role(s), " + Object.keys(rm.T.aliases).length + " alias(es)" : "none (no Tools/Room tables pages, or errors in them: see the WARNINGs)"));
     const as = parts.assist;
     console.log("  assist: " + (as ? "about " + as.src.tokens + " tokens, NPC cards " + (as.src.npcWith || 0) + " with How to play / " + (as.src.npcWithout || 0) + " without, players " + (as.src.players || "none") + " (" + as.src.file.split(" + ").map(f => path.basename(f)).join(", ") + ")" : "none (no rules, cast or prep note found)"));
     if (as && as.src.extra) for (const [seat, e] of Object.entries(as.src.extra)) console.log("  assist extra: " + seat + " (" + e.chars + " chars, " + e.rel + ")");
@@ -946,5 +970,5 @@ function main() {
 }
 
 // Runs as a script; importing the file (the unit test does) only exposes the npc helpers below.
-export { buildNpc, buildScenes, buildScore, buildCampaign, layLocation, crossCheckScore, leverageToData, applyLeverage, parseCast, parseFigureMap, warnings as exportWarnings };
+export { buildRooms, buildNpc, buildScenes, buildScore, buildCampaign, layLocation, crossCheckScore, leverageToData, applyLeverage, parseCast, parseFigureMap, warnings as exportWarnings };
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
