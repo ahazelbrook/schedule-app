@@ -72,7 +72,7 @@ body > .pa-pop .pa-popb .pa-acts { display: flex; gap: 6px; flex-wrap: wrap; }
    these selectors matches anything. Kept here because the night-flow bundle always brings this sheet (app/routes.js DEPS). */
 #gm-page .nt-tick { display: grid; gap: 4px; margin: 6px 0 2px; padding: 6px 0 0; border-top: 1px dashed var(--rule); }
 #gm-page .nt-lab { margin: 0; font: 900 12px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
-#gm-page .nt-row { display: grid; grid-template-columns: 4.6em minmax(0, 1fr) 4.4em; align-items: center; gap: 6px; }
+#gm-page .nt-row { display: grid; grid-template-columns: 4.4em minmax(0, 1fr) 4em; align-items: center; gap: 6px; }
 #gm-page .nt-on { font: 700 13px/1.2 var(--font-cond); color: var(--ink); white-space: nowrap; }
 #gm-page .nt-tick select { min-height: 32px; padding: 3px 6px; font-size: 13px; }
 #gm-page .nt-tick select:disabled { opacity: .55; }

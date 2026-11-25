@@ -215,7 +215,7 @@
         cs.textContent = ''; cs.appendChild(opt(doc, '', 'No tick', !cur.id));
         l.forEach(function (c) {
           var sz = Math.max(1, Math.floor(+c.size) || 1);
-          cs.appendChild(opt(doc, str(c.id), plain(c.name, 40) + ' ' + whole(c.filled, 0, sz) + '/' + sz + (c.hidden === true ? ' (hidden)' : ''), str(c.id) === cur.id));
+          cs.appendChild(opt(doc, str(c.id), plain(c.name, 40) + ' ' + whole(c.filled, 0, sz) + '/' + sz, str(c.id) === cur.id));
         });
         ns.textContent = '';
         for (var i = 1, top = Math.max(N_OFFER, cur.n); i <= top; i++) ns.appendChild(opt(doc, String(i), '+' + i, i === cur.n));
@@ -223,7 +223,8 @@
         row.setAttribute('data-nt-on', cur.id ? '1' : '0');
       });
       var note = d.querySelector('.nt-note');
-      note.textContent = noteOf(p, rs);
+      var hid = l.filter(function (c) { return c.hidden === true && (str(c.id) === rs['13'].id || str(c.id) === rs['45'].id); }).length > 0;
+      note.textContent = noteOf(p, rs) + (hid ? ' Hidden from the players.' : '');      /* the GM's own page only: the lists are narrow, so the word is here, not in them */
       if (rs['13'].miss && !rs['13'].picked) note.setAttribute('data-nt-miss', ''); else note.removeAttribute('data-nt-miss');
     }
     function paint(box, on, view) {

@@ -108,8 +108,9 @@ export async function rk03(c) {
     await wait(() => undoBtn(p).isVisible());
     await undoBtn(p).click();
     check(!!(await wait(async () => (await alarm()) === 1)), 'alarm: Undo puts it back to 1');
-    const st = (await api('GET', '/gm/state')).text;
-    check(st.includes('Tick on 1–3: House alarm 0 to 1/6') && st.includes('Tick on 4/5: House alarm 1 to 2/6') && st.includes('Tick undone: House alarm'), 'alarm: the night log has the ticks and the Undo');
+    const want = ['Tick on 1–3: House alarm 0 to 1/6', 'Tick on 4/5: House alarm 1 to 2/6', 'Tick undone: House alarm'];
+    const st = await wait(async () => { const t = (await api('GET', '/gm/state')).text; return want.every((w) => t.includes(w)) ? t : null; }, 8000) || (await api('GET', '/gm/state')).text;
+    check(want.every((w) => st.includes(w)), 'alarm: the night log has the ticks and the Undo (' + want.map((w) => st.includes(w)).join() + '; ' + (st.match(/Tick[^"]{0,40}/g) || []).join(' | ') + ')');
     await ctx.close();
   }
 
