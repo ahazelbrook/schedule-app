@@ -218,5 +218,37 @@ test('things stay GM-side: no display, phone, player or server file names the zo
   assert.deepEqual(hits.sort(), ['app/gm-page.js', 'app/gm/room-zoom.js', 'app/gm/site.js', 'app/routes.js'].sort(), 'the GM page\'s own files only (site.js names it in its doc)');
 });
 
+test('twins (RK11): two rooms of one name are two room-state keys; a mark on one room\'s thing never shows on the other\'s', () => {
+  const rk = 'a:The Pelican Rooms', names = ['Showroom', 'Cocktail lounge', 'Showroom'], keys = RS.roomKeys(names);
+  assert.deepEqual(keys, ['showroom#1', 'cocktail lounge#1', 'showroom#2']);
+  const roll = { key: rk, rooms: names };
+  assert.deepEqual(Z.placeOf(roll, 'Showroom'), { rollKey: rk, roomKey: 'showroom#1' }, 'no n: the first, as before');
+  assert.deepEqual(Z.placeOf(roll, 'Showroom', 1), { rollKey: rk, roomKey: 'showroom#1' });
+  assert.deepEqual(Z.placeOf(roll, 'Showroom', 2), { rollKey: rk, roomKey: 'showroom#2' }, 'the second Showroom has its own key');
+  assert.equal(Z.placeOf(roll, 'Showroom', 3), null, 'no third'); assert.equal(Z.placeOf(roll, 'Nowhere', 1), null);
+  assert.deepEqual(Z.placeOf(roll, 'Cocktail lounge', 2), null);
+  assert.equal(Z.placeOf(roll, 'Showroom', 0).roomKey, 'showroom#1', 'a bad n is 1'); assert.equal(Z.placeOf(roll, 'Showroom', 'x').roomKey, 'showroom#1');
+  const doc = { roomstate: { v: 1, at: '2030-01-07T21:45:00.000Z', keys: { [rk]: { part: '', at: '2030-01-07T21:45:00.000Z', rooms: {
+    [keys[0]]: { marks: { 'velvet-rope': 'taken' } }, [keys[2]]: { marks: { 'grand-piano': 'gone' } } } } } } };
+  const z = Z.create({ md: (room) => room === 'Showroom' ? mdOf('Showroom') : '', roll: () => roll, doc: () => doc });
+  const one = z.html('Showroom'), first = z.html('Showroom', { n: 1 }), two = z.html('Showroom', { n: 2 });
+  assert.equal(one, first, 'n absent is n 1: the same markup');
+  assert.ok(!/data-rn/.test(one), 'the first room\'s buttons carry no data-rn: the markup is what it was');
+  assert.deepEqual([...one.matchAll(/<span class="rk-tstate[^"]*">([^<]*)<\/span>/g)].map((m) => m[1]), ['taken'], 'the first Showroom: its own mark only');
+  assert.match(one, /data-thing="velvet-rope"[\s\S]*?rk-tstate is-done">taken/);
+  assert.deepEqual([...two.matchAll(/<span class="rk-tstate[^"]*">([^<]*)<\/span>/g)].map((m) => m[1]), ['gone'], 'the second Showroom: its own mark only');
+  assert.match(two, /data-thing="grand-piano"[^>]*data-rn="2"|data-rn="2"[^>]*data-thing="grand-piano"/, 'its buttons say which room they are');
+  assert.equal((two.match(/data-rn="2"/g) || []).length, 4, 'every button of the second room');
+  const third = z.html('Showroom', { n: 3 });
+  assert.ok(!/rk-tstate/.test(third), 'a room the roll does not have shows no marks');
+  /* a host that gives its own where and things hears n */
+  const heard = [], own = Z.create({ things: (room, n) => { heard.push('things:' + room + ':' + n); return [RT.clean({ name: 'A tin whistle' })]; },
+    where: (room, n) => { heard.push('where:' + room + ':' + n); return { rollKey: 'seed-1', roomKey: 'hall#' + n }; },
+    rs: () => ({ read: (r, k) => ({ marks: k === 'hall#2' ? { 'tin-whistle': 'taken' } : {} }) }) });
+  assert.ok(!/rk-tstate/.test(own.html('Hall')) && /rk-tstate is-done">taken/.test(own.html('Hall', { n: 2 })), 'the host\'s where is asked for the room\'s own n');
+  assert.ok(heard.includes('where:Hall:2') && heard.includes('things:Hall:2') && heard.includes('where:Hall:1'), heard.join(' '));
+  assert.equal((Z.listHtml('Showroom', SHOW, { n: 2 }).match(/data-rn="2"/g) || []).length, 4, 'listHtml draws data-rn from o.n'); assert.equal(Z.listHtml('Showroom', SHOW, { n: 1 }), Z.listHtml('Showroom', SHOW));
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
