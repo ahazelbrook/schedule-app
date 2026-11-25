@@ -8,6 +8,8 @@
 //      card and in the zoom card), Enter. A tap outside closes it; the same thing again closes it; a Run view redraw keeps it open. The button row's
 //      hook: a slot module's buttons(ctx) and zoom.addButtons(slot, fn), with the ctx's keys; a mark written through room-state shows as a chip.
 //      Secrecy: with a card open, the display's GET, a phone's GETs and the iPad's and a phone's DOM hold no thing text.
+//      RK10: Show on iPad and Show the closer look (a title beat, 12 seconds, Take it down), the secrecy proof (the display's GET, a phone's
+//      /api/table/screen and the campaign document hold no thing text before a send, and only the line sent after), and the names gate.
 //   3. room.key on, the kit desk: the same list in the kit's room card, a click and a key open the card, Esc closes it.
 //   5. (RK11) a thing's state: one tap on a state button in the zoom card sets it (the pressed button, the State, the chip, room-state's marks), it is saved and
 //      survives a reload, two devices writing the room at once both land (merged key by key), a taken thing dims and stays clickable, a tap on the pressed
@@ -232,6 +234,67 @@ try {
   await shot(page, 'desk-1366-paper-marked');
   await page.keyboard.press('Escape');
   await page.evaluate((rk) => window.B68GmPage._roomState().setMark(rk, 'showroom#1', 'velvet-rope', null), rk);
+
+  /* RK10: Show on iPad, and the secrecy proof (RK10.3): the display's GET, a phone's /api/table/screen and the campaign document hold no thing text
+     until a line is sent, and only that line after. The sent line is taken out of what they hold before the scan, so anything else trips it. */
+  {
+    const UMB_NAME = 'A brass umbrella stand', UMB_LINE = 'Too heavy to tip.', UMB_LOOK = 'GM-ONLY-look: one umbrella is dry, though it is raining outside.';
+    const THING_TEXT = /GM-ONLY-(look|roll|danger)|brass umbrella|too heavy to tip|velvet rope|stage curtain|grand piano|cocktail shaker|lipstick on a glass|the bar tab|umbrella is dry|cloakroom ticket|rings like a bell/i;
+    const reads = async () => { const d = await api('GET', '/gm/display', undefined, IPAD), s = await api('GET', '/table/screen', undefined, P1), c = await api('GET', '/campaign', undefined, P1); return { ok: d.status === 200 && s.status === 200 && c.status === 200, d: d.text, s: s.text, c: c.text, ov: d.json && d.json.ambient && d.json.ambient.doc ? d.json.ambient.doc.overlay || null : null }; };
+    const without = (t, lines) => lines.reduce((a, l) => a.split(l).join(''), t);
+    const r0 = await reads();
+    check(r0.ok && !THING_TEXT.test(r0.d + r0.s + r0.c), 'RK10 secrecy: with things on, the display\'s GET, a phone\'s /api/table/screen and the campaign document hold no thing text before a send');
+    await page.click(card('Showroom') + ' [data-site="thing"][data-i="0"]'); z = await until(() => zoom(page), 3000);
+    check(!!z && z.slots[0] === 'show:Show on iPad/Show the closer look', 'RK10: the zoom card\'s show slot has Show on iPad and Show the closer look, and nothing for the roll or the danger (' + (z && z.slots.join(' ')) + ')');
+    const t0 = Date.now();
+    await page.click('.rk-zoom [data-rk-btn="show-thing"]');
+    const r1 = await until(async () => { const r = await reads(); return r.ov && r.ov.kind === 'title' ? r : null; }, 8000);
+    const p1 = r1 && r1.ov ? r1.ov.payload || {} : {};
+    check(!!r1 && p1.text === UMB_NAME && p1.sub === UMB_LINE && r1.ov.ms === 12000 && !/umbrella|brass/i.test(String(r1.ov.id)), 'RK10: Show on iPad puts the thing up as a title beat for 12 seconds: the name and its line, under an opaque id (' + JSON.stringify(r1 && r1.ov) + ')');
+    check(!!r1 && !THING_TEXT.test(without(r1.d, [UMB_NAME, UMB_LINE]) + without(r1.s, [UMB_NAME, UMB_LINE]) + without(r1.c, [UMB_NAME, UMB_LINE])), 'RK10 secrecy: after the send the display, the phone\'s screen and the campaign document hold that line and no other thing text (no closer look, roll or danger)');
+    await sleep(400); z = await zoom(page);
+    check(!!z && z.slots[0] === 'show:Take it down/Show the closer look', 'RK10: while the beat is up its button reads Take it down (' + (z && z.slots[0]) + ')');
+    await page.click('.rk-zoom [data-rk-btn="show-thing"]');
+    const r2 = await until(async () => { const r = await reads(); return !r.ov ? r : null; }, 8000);
+    check(!!r2 && Date.now() - t0 < 12000 && !THING_TEXT.test(r2.d), 'RK10: Take it down takes the beat off the iPad before its 12 seconds');
+    await sleep(400);
+    /* the iPad: the closer look in its DOM, and gone after 12 seconds */
+    const ip = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
+    const dp = await ip.newPage(); dp.on('pageerror', (e) => errors.push('display pageerror: ' + e.message));
+    await dp.addInitScript({ content: 'window.__B68_POLL_MS = 1000;' }); await dp.goto(BASE + '/#display'); await dp.waitForTimeout(5000);
+    const t1 = Date.now();
+    await page.click('.rk-zoom [data-rk-btn="show-look"]');
+    const r3 = await until(async () => { const r = await reads(); return r.ov && r.ov.kind === 'title' ? r : null; }, 8000);
+    const p3 = r3 && r3.ov ? r3.ov.payload || {} : {};
+    check(!!r3 && p3.text === UMB_NAME && p3.sub === UMB_LOOK && !THING_TEXT.test(without(r3.d, [UMB_NAME, UMB_LOOK]) + without(r3.s, [UMB_NAME, UMB_LOOK]) + without(r3.c, [UMB_NAME, UMB_LOOK])), 'RK10: Show the closer look sends the name and the closer look, and nothing else of the thing reaches the GETs (' + JSON.stringify(p3) + ')');
+    const shown = await until(() => dp.evaluate((n) => document.body.textContent.includes(n) ? document.documentElement.outerHTML : '', UMB_NAME), 8000);      /* textContent: the iPad sets its titles in capitals with CSS */
+    check(!!shown && shown.includes('one umbrella is dry') && !/GM-ONLY-(roll|danger)|too heavy to tip|velvet rope|cloakroom ticket/i.test(shown), 'RK10: the iPad shows the name and the closer look, and its DOM holds no roll, danger, line or other thing');
+    if (SHOTS) { fs.mkdirSync(SHOTS, { recursive: true }); await dp.screenshot({ path: path.join(SHOTS, 'ipad-1024-look.png') }); await shot(page, 'desk-1366-paper-shown'); }
+    const gone = await until(async () => { const r = await reads(); return !r.ov ? r : null; }, 16000, 500);
+    const secs = (Date.now() - t1) / 1000;
+    const domGone = await until(() => dp.evaluate((n) => !document.body.textContent.includes(n), UMB_NAME), 6000);
+    check(!!gone && secs >= 11 && secs <= 17 && domGone && !THING_TEXT.test(gone.d + gone.s + gone.c), 'RK10: the beat is gone from the display\'s GET after its 12 seconds (' + secs.toFixed(1) + ' s) and from the iPad, and no thing text is left anywhere');
+    await ip.close();
+    await page.keyboard.press('Escape'); await sleep(200);
+
+    /* the names gate on the page's own host: a line naming a hidden person asks first; no sends nothing, yes reveals them and sends */
+    const gate = await page.evaluate(async () => {
+      const asked = [], M = window.B68GmRoomShow.make(() => window.B68GmPage.roomShow()), was = window.confirm;
+      const ctx = { room: 'Showroom', rollKey: 'rk10-gate', thing: { name: 'A sealed envelope', line: 'addressed to GM-ONLY-Silent Partner', look: '', slug: 'a-sealed-envelope' }, refresh() {} };
+      window.confirm = (m) => { asked.push(m); return false; };
+      const no = await M.send(ctx, 'thing');
+      window.confirm = (m) => { asked.push(m); return true; };
+      const yes = await M.send(ctx, 'thing');
+      window.confirm = was;
+      return { no, yes, asked };
+    });
+    const npc = await api('GET', '/npcs/npc-hidden-partner');
+    const r4 = await reads();
+    check(gate.no === false && gate.yes === true && gate.asked.length === 2 && gate.asked.every((m) => m.startsWith('This names someone hidden: reveal and show?')) && npc.json && npc.json.doc && npc.json.doc.revealed === true &&
+      r4.ov && r4.ov.payload && r4.ov.payload.text === 'A sealed envelope', 'RK10: a line naming a hidden person asks "This names someone hidden: reveal and show?"; no shows nothing, yes reveals them and shows it (' + JSON.stringify({ no: gate.no, yes: gate.yes, asked: gate.asked.length }) + ')');
+    await page.evaluate(() => window.B68GmPage.clearShow({ layers: false }));
+    check((await api('PATCH', '/npcs/npc-hidden-partner', { revealed: false })).status === 200, 'RK10: the demo\'s hidden person is hidden again');
+  }
 
   /* RK11: a thing's state is one tap in the zoom card (B68GmRoomMark), it stays on a reload, and two devices merge key by key */
   const marksOf = (pg) => pg.evaluate((k) => JSON.stringify(window.B68GmPage._roomState().read(k, 'showroom#1').marks), rk);
