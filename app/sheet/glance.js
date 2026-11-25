@@ -191,16 +191,16 @@
   function stressHtml(c) {
     var play = c.play, pb = c.pb, n = stressMax(pb), s = Math.max(0, Math.min(n, +play.stress || 0)), full = s >= n, name = stressName(pb), h = '';
     var dc = struck(play, pb), side;
-    if (isTT(pb)) side = '<gl-btn type="button" class="gl-dl" data-gl="keys" aria-label="Temporal glitches ' + dc + ' of 4: your keys"><span class="gl-lab">Glitches</span><b class="gl-mono">' + dc + '/4</b></gl-btn>';
-    else if (isGhost(pb)) side = '<gl-btn type="button" class="gl-dl" data-gl="keys" aria-label="Echo irregularities ' + dc + ': your keys"><span class="gl-lab">Irregularities</span><b class="gl-mono">' + dc + '</b></gl-btn>';
-    else side = '<gl-btn type="button" class="gl-dl" data-gl="keys" aria-label="Deadlocks ' + Math.min(dc, 4) + ' of 4: your keys"><span class="gl-lab">Deadlocks</span>' + [0, 1, 2, 3].map(function (i) { return burst(i < dc); }).join('') + '</gl-btn>';
+    if (isTT(pb)) side = '<button type="button" class="gl-dl" data-gl="keys" aria-label="Temporal glitches ' + dc + ' of 4: your keys"><span class="gl-lab">Glitches</span><b class="gl-mono">' + dc + '/4</b></button>';
+    else if (isGhost(pb)) side = '<button type="button" class="gl-dl" data-gl="keys" aria-label="Echo irregularities ' + dc + ': your keys"><span class="gl-lab">Irregularities</span><b class="gl-mono">' + dc + '</b></button>';
+    else side = '<button type="button" class="gl-dl" data-gl="keys" aria-label="Deadlocks ' + Math.min(dc, 4) + ' of 4: your keys"><span class="gl-lab">Deadlocks</span>' + [0, 1, 2, 3].map(function (i) { return burst(i < dc); }).join('') + '</button>';
     var can = '';
     if (isTT(pb)) { var an = (pb && pb.alluviumName) || 'canister', al = +play.alluvium || 0; can = '<span class="gl-can">' + esc(cap(an) + 's') + ' <b class="gl-mono">' + al + '</b></span>'; }
     h += '<section class="gl-blk gl-stress' + (full ? ' gl-full' : '') + '" aria-label="' + esc(name) + '">';
-    if (full) h += '<gl-btn type="button" class="gl-fullbar" data-gl="keys">' + burst(true) + '<span class="gl-fw">' + esc(fullWords(pb)) + '</span><span class="gl-fw-s">' + esc(shortFull(pb)) + '</span></gl-btn>';
+    if (full) h += '<button type="button" class="gl-fullbar" data-gl="keys">' + burst(true) + '<span class="gl-fw">' + esc(fullWords(pb)) + '</span><span class="gl-fw-s">' + esc(shortFull(pb)) + '</span></button>';
     else h += '<div class="gl-blkh"><span class="gl-lab">' + esc(name) + '</span><span class="gl-count gl-mono">' + s + '<span class="gl-of">/' + n + '</span></span>' + can + '<span class="gl-sp"></span>' + side + '</div>';
-    h += '<div class="gl-track">';
-    for (var i = 1; i <= n; i++) h += '<gl-btn type="button" class="gl-sbox' + (i <= s ? ' gl-on' : '') + '" data-act="stress" data-n="' + i + '" aria-label="' + esc(name) + ' ' + i + (i <= s ? ', marked' : '') + '"></gl-btn>';
+    h += '<div class="gl-track" style="--n:' + n + '">';
+    for (var i = 1; i <= n; i++) h += '<button type="button" class="gl-sbox' + (i <= s ? ' gl-on' : '') + '" data-act="stress" data-n="' + i + '" aria-label="' + esc(name) + ' ' + i + (i <= s ? ', marked' : '') + '"></button>';
     return h + '</div></section>';
   }
   function harmHtml(c) {
@@ -208,24 +208,24 @@
     var l2 = [].concat(hm.l2 || ['', '']), l1 = [].concat(hm.l1 || ['', '']);
     function cell(t, ph) { t = str(t).trim(); return '<span class="gl-hcell' + (t ? '' : ' gl-empty') + '">' + esc(t || ph) + '</span>'; }
     function row(lv, cells, one, hot, extra) { return '<span class="gl-hrow' + (one ? ' gl-one' : '') + (hot ? ' gl-hot' : '') + (extra || '') + '"><span class="gl-lv">' + lv + '</span>' + cells + '</span>'; }
-    var h = '<gl-btn type="button" class="gl-blk gl-harm" data-gl="harm" aria-label="' + esc(name + ': ' + (list.length ? list.map(function (x) { return 'level ' + x[0] + ' ' + x[1]; }).join(', ') + '. ' + co.text : co.text) + '. Tap to change.') + '">';
+    var h = '<button type="button" class="gl-blk gl-harm" data-gl="harm" aria-label="' + esc(name + ': ' + (list.length ? list.map(function (x) { return 'level ' + x[0] + ' ' + x[1]; }).join(', ') + '. ' + co.text : co.text) + '. Tap to change.') + '">';
     h += '<span class="gl-blkh"><span class="gl-lab">' + esc(name) + '</span><span class="gl-cost gl-k-' + co.kind + '">' + esc(co.text) + '</span></span>';
     if (str(hm.l4).trim()) h += row(4, cell(hm.l4, ''), true, true, ' gl-mortal');
     h += row(3, cell(hm.l3, 'Critical —'), true, !!str(hm.l3).trim());
     h += row(2, cell(l2[0], 'Major —') + cell(l2[1], 'Major —'), false, !!(str(l2[0]).trim() || str(l2[1]).trim()));
     h += row(1, cell(l1[0], 'Passing —') + cell(l1[1], 'Passing —'), false, !!(str(l1[0]).trim() || str(l1[1]).trim()));
     if (list.length) h += '<span class="gl-hsum">' + esc(list.map(function (x) { return x[0] + ' ' + x[1]; }).join(' · ')) + '</span>';
-    return h + '</gl-btn>';
+    return h + '</button>';
   }
   function actsHtml(c) {
     var play = c.play, pb = c.pb, groups = c.groups, shown = isVamp(pb) ? 5 : 4, h = '<section class="gl-blk gl-acts" aria-label="Actions"><div class="gl-cols">';
     groups.forEach(function (g) {
       var r = resistDice(play, pb, g[0], groups);
-      h += '<div class="gl-attr"><gl-btn type="button" class="gl-attrh" data-act="resistopen" data-attr="' + esc(g[0]) + '" data-always="1" aria-label="Resist with ' + esc(g[0]) + ', ' + r + ' dice"><span class="gl-lab">' + esc(g[0]) + '</span><span class="gl-rd gl-mono">' + r + 'd</span></gl-btn>';
+      h += '<div class="gl-attr"><button type="button" class="gl-attrh" data-act="resistopen" data-attr="' + esc(g[0]) + '" data-always="1" aria-label="Resist with ' + esc(g[0]) + ', ' + r + ' dice"><span class="gl-lab">' + esc(g[0]) + '</span><span class="gl-rd gl-mono">' + r + 'd</span></button>';
       g[1].forEach(function (a) {
         var v = +((play.dots || {})[a]) || 0, d = '';
         for (var i = 1; i <= shown; i++) d += '<i class="gl-dot' + (i <= v ? ' gl-on' : '') + '"></i>';
-        h += '<gl-btn type="button" class="gl-act' + (v ? '' : ' gl-zero') + '" data-act="rollopen" data-a="' + esc(a) + '" data-always="1" aria-label="' + esc(a) + ', ' + v + ' dot' + (v === 1 ? '' : 's') + ': roll"><b>' + esc(a) + '</b><span class="gl-dots' + (shown === 5 ? ' gl-five' : '') + '" aria-hidden="true">' + d + '</span></gl-btn>';
+        h += '<button type="button" class="gl-act' + (v ? '' : ' gl-zero') + '" data-act="rollopen" data-a="' + esc(a) + '" data-always="1" aria-label="' + esc(a) + ', ' + v + ' dot' + (v === 1 ? '' : 's') + ': roll"><b>' + esc(a) + '</b><span class="gl-dots' + (shown === 5 ? ' gl-five' : '') + '" aria-hidden="true">' + d + '</span></button>';
       });
       h += '</div>';
     });
@@ -241,24 +241,24 @@
   function absHtml(list) {
     var h = '<section class="gl-blk gl-abs" aria-label="Your abilities"><div class="gl-blkh"><span class="gl-lab">Abilities</span></div><div class="gl-chips">';
     if (!list.length) h += '<span class="gl-faint">None taken yet</span>';
-    list.forEach(function (a, i) { h += '<gl-btn type="button" class="gl-chip' + (a.kind ? ' gl-k-' + a.kind : '') + '" data-gl="ab" data-i="' + i + '">' + esc(a.n) + '</gl-btn>'; });
-    if (list.length) h += '<gl-btn type="button" class="gl-chip gl-plus" data-gl="abs" hidden>+0 more</gl-btn>';
+    list.forEach(function (a, i) { h += '<button type="button" class="gl-chip' + (a.kind ? ' gl-k-' + a.kind : '') + '" data-gl="ab" data-i="' + i + '">' + esc(a.n) + '</button>'; });
+    if (list.length) h += '<button type="button" class="gl-chip gl-plus" data-gl="abs" hidden>+0 more</button>';
     return h + '</div></section>';
   }
   function topHtml(c) {
     var pb = c.pb, doc = c.doc || {}, name = str(doc.name || (doc.sheet && doc.sheet.name)) || 'Your character', crew = str(c.play.crew).trim();
     var sub = (pb ? pb.name : str(doc.playbookName) || 'Character') + (crew ? ' · ' + crew : '');
     var b = c.badge, h = '<div class="gl-top">';
-    h += '<gl-btn type="button" class="gl-who" data-gl="about" aria-label="About ' + esc(name) + '"><b>' + esc(name) + '</b><span>' + esc(sub) + '</span></gl-btn>';
-    h += '<gl-btn type="button" class="gl-tb" data-gl="table" aria-haspopup="dialog" aria-label="Table' + (b ? ', ' + b + ' new' : '') + '">Table' + (b ? '<span class="gl-badge gl-mono" aria-hidden="true">' + b + '</span>' : '') + '</gl-btn>';
-    if (c.quiet) h += '<gl-btn type="button" class="gl-tb gl-quiet" data-act="quiet" aria-haspopup="dialog" title="Tell the GM quietly">Quiet</gl-btn>';
-    return h + '<gl-btn type="button" class="gl-tb gl-more" data-gl="more" aria-haspopup="dialog" aria-label="More">⋯</gl-btn></div>';
+    h += '<button type="button" class="gl-who" data-gl="about" aria-label="About ' + esc(name) + '"><b>' + esc(name) + '</b><span>' + esc(sub) + '</span></button>';
+    h += '<button type="button" class="gl-tb" data-gl="table" aria-haspopup="dialog" aria-label="Table' + (b ? ', ' + b + ' new' : '') + '">Table' + (b ? '<span class="gl-badge gl-mono" aria-hidden="true">' + b + '</span>' : '') + '</button>';
+    if (c.quiet) h += '<button type="button" class="gl-tb gl-quiet" data-act="quiet" aria-haspopup="dialog" title="Tell the GM quietly">Quiet</button>';
+    return h + '<button type="button" class="gl-tb gl-more" data-gl="more" aria-haspopup="dialog" aria-label="More">⋯</button></div>';
   }
   function linesHtml(c) {
     var h = '';
     if (c.status && c.status.bad) h += '<p class="gl-line bad" role="alert">' + esc(c.status.msg) + '</p>';
     var t = c.table, n = +c.play.session || 0;
-    if (t && t.session > n) h += '<div class="gl-line"><span>Table: session ' + t.session + (t.inPlay ? ' · in play' : '') + '. This sheet is on ' + (n || 'none') + '.</span><gl-btn type="button" class="gl-sbtn" data-act="sessjoin">Join</gl-btn></div>';
+    if (t && t.session > n) h += '<div class="gl-line"><span>Table: session ' + t.session + (t.inPlay ? ' · in play' : '') + '. This sheet is on ' + (n || 'none') + '.</span><button type="button" class="gl-sbtn" data-act="sessjoin">Join</button></div>';
     return h;
   }
   /* an event item (sheet/now.js's shape) drawn in full: its title, line, the module's own markup and its buttons */
@@ -268,18 +268,18 @@
     if (str(it.line) || ends) h += '<p class="gl-item-l">' + esc(it.line) + (ends ? ' <span class="gl-mono" data-ends="' + ends + '"></span>' : '') + '</p>';
     if (str(it.html)) h += '<div class="gl-item-h">' + str(it.html) + '</div>';
     var a = (Array.isArray(it.actions) ? it.actions : []).filter(function (x) { return isObj(x) && str(x.label); });
-    if (a.length) h += '<div class="gl-row">' + a.map(function (x) { return '<gl-btn type="button" class="gl-btn' + (x.primary ? ' gl-go' : '') + '" ' + str(x.attrs) + '>' + esc(x.label) + '</gl-btn>'; }).join('') + '</div>';
+    if (a.length) h += '<div class="gl-row">' + a.map(function (x) { return '<button type="button" class="gl-btn' + (x.primary ? ' gl-go' : '') + '" ' + str(x.attrs) + '>' + esc(x.label) + '</button>'; }).join('') + '</div>';
     return h + '</div>';
   }
   function primaryOf(it) { return (Array.isArray(it.actions) ? it.actions : []).filter(function (x) { return isObj(x) && x.primary && str(x.attrs); })[0] || null; }
   function footHtml(c, left) {
     var it = c.strip, h = '<div class="gl-foot">';
-    if (!it) return h + '<gl-btn type="button" class="gl-primary" data-gl="full">' + SHEET_ICON + '<span>Full sheet</span></gl-btn></div>';
+    if (!it) return h + '<button type="button" class="gl-primary" data-gl="full">' + SHEET_ICON + '<span>Full sheet</span></button></div>';
     var w = FOOT_WORDS[it.id] || [str(it.title), 'Open ›'], p = primaryOf(it), ends = typeof it.ends === 'number' && it.ends > 0 ? Math.floor(it.ends) : 0;
     var go = p && !str(it.html) ? str(p.attrs) : 'data-gl="event"';
-    h += '<gl-btn type="button" class="gl-event" ' + go + '><span class="gl-ev-w"><b>' + esc(w[0]) + '</b><span>' + esc(w[1]) + '</span></span>' + (ends ? '<span class="gl-ev-clock gl-mono" data-ends="' + ends + '">' + esc(left(ends)) + '</span>' : '') + '</gl-btn>';
+    h += '<button type="button" class="gl-event" ' + go + '><span class="gl-ev-w"><b>' + esc(w[0]) + '</b><span>' + esc(w[1]) + '</span></span>' + (ends ? '<span class="gl-ev-clock gl-mono" data-ends="' + ends + '">' + esc(left(ends)) + '</span>' : '') + '</button>';
     var not = (Array.isArray(it.actions) ? it.actions : []).filter(function (x) { return isObj(x) && x.cls === 'ds-now-not'; })[0];
-    if (not) h += '<gl-btn type="button" class="gl-not" ' + str(not.attrs) + '>Not now</gl-btn>';
+    if (not) h += '<button type="button" class="gl-not" ' + str(not.attrs) + '>Not now</button>';
     return h + '</div>';
   }
 
@@ -337,27 +337,17 @@
     if (!n || n.parentNode !== r) {
       n = doc().createElement('div'); n.className = 'gl';
       n.innerHTML = '<div class="gl-screen" role="region" aria-label="Your sheet at a glance"><div class="gl-p-top"></div><div class="gl-p-lines"></div><div class="gl-body"><div class="gl-p-stress"></div><div class="gl-p-harm"></div><div class="gl-p-acts"></div><div class="gl-p-abs"></div></div><div class="gl-p-foot"></div></div>' +
-        '<div class="gl-backbar"><gl-btn type="button" class="gl-primary" data-gl="glance"><span>‹ Glance screen</span></gl-btn><gl-btn type="button" class="gl-tb gl-more" data-gl="more" aria-haspopup="dialog" aria-label="More">⋯</gl-btn></div>' +
+        '<div class="gl-backbar"><button type="button" class="gl-primary" data-gl="glance"><span>‹ Glance screen</span></button><button type="button" class="gl-tb gl-more" data-gl="more" aria-haspopup="dialog" aria-label="More">⋯</button></div>' +
         '<div class="gl-page" hidden></div><div class="gl-layer"></div>' +
-        '<div class="gl-undo" role="status" hidden><span class="gl-u-l"></span><span class="gl-u-s gl-mono" aria-hidden="true"></span><gl-btn type="button" class="gl-u-go" data-gl="undo">Undo</gl-btn><gl-btn type="button" class="gl-u-x" data-gl="undox" aria-label="Clear">×</gl-btn></div>';
-      realButtons(n); st.node = n; st.parts = {}; r.appendChild(n); wireNode(n); watch(n);
+        '<div class="gl-undo" role="status" hidden><span class="gl-u-l"></span><span class="gl-u-s gl-mono" aria-hidden="true"></span><button type="button" class="gl-u-go" data-gl="undo">Undo</button><button type="button" class="gl-u-x" data-gl="undox" aria-label="Clear">×</button></div>';
+      st.node = n; st.parts = {}; r.appendChild(n); wireNode(n); watch(n);
     } else if (n !== r.lastElementChild) r.appendChild(n);
     return n;
   }
-  /* the markup names each control gl-btn; every one becomes a real button element here, the one place this file makes buttons */
-  function realButtons(scope) {
-    Array.prototype.forEach.call(scope.querySelectorAll('gl-btn'), function (x) {
-      var b = doc().createElement('button'); b.type = 'button';
-      Array.prototype.forEach.call(x.attributes, function (a) { if (a.name !== 'type') b.setAttribute(a.name, a.value); });
-      while (x.firstChild) b.appendChild(x.firstChild);
-      x.parentNode.replaceChild(b, x);
-    });
-  }
-  function fill(el, html) { el.innerHTML = html; realButtons(el); }
   function part(name, html) {
     if (st.parts[name] === html) return false;
     var el = st.node.querySelector('.gl-p-' + name); if (!el) return false;
-    fill(el, html); st.parts[name] = html; return true;
+    el.innerHTML = html; st.parts[name] = html; return true;
   }
   function draw(c) {
     var n = node(), due = [];
@@ -428,10 +418,10 @@
   /* ---------- the bottom sheets ---------- */
   function sheetFrame(title, sub, body, live, foot) {
     return '<div class="gl-scrim" data-gl="close"></div><div class="gl-sheet" role="dialog" aria-modal="true" aria-labelledby="gl-sh-t" tabindex="-1">' +
-      '<div class="gl-sh-h"><div class="gl-sh-tt"><h3 id="gl-sh-t">' + esc(title) + '</h3><small class="gl-sh-sub">' + esc(sub || '') + '</small></div><gl-btn type="button" class="gl-x" data-gl="close" aria-label="Close">×</gl-btn></div>' +
+      '<div class="gl-sh-h"><div class="gl-sh-tt"><h3 id="gl-sh-t">' + esc(title) + '</h3><small class="gl-sh-sub">' + esc(sub || '') + '</small></div><button type="button" class="gl-x" data-gl="close" aria-label="Close">×</button></div>' +
       '<div class="gl-sh-b">' + (body || '') + '<div class="gl-sh-live">' + (live || '') + '</div>' + (foot || '') + '</div></div>';
   }
-  function rowBtn(label, sub, attrs, extra) { return '<gl-btn type="button" class="gl-li' + (extra || '') + '" ' + attrs + '><b>' + esc(label) + '</b>' + (sub ? '<span>' + esc(sub) + '</span>' : '') + '<i aria-hidden="true">›</i></gl-btn>'; }
+  function rowBtn(label, sub, attrs, extra) { return '<button type="button" class="gl-li' + (extra || '') + '" ' + attrs + '><b>' + esc(label) + '</b>' + (sub ? '<span>' + esc(sub) + '</span>' : '') + '<i aria-hidden="true">›</i></button>'; }
   function keysLive(c) {
     var play = c.play, pb = c.pb, keys = Array.isArray(play.keys) ? play.keys : [], g = isTT(pb) || isGhost(pb), h = '', hs = play.keyHitSession || {}, sm = stressMax(pb);
     if ((+play.stress || 0) >= sm) h += '<p class="gl-alarm">' + esc(fullWords(pb).replace(/ ›$/, '')) + '</p>';
@@ -448,17 +438,17 @@
       h += '</div>';
       if (!dl && !gl) {
         h += '<div class="gl-row">';
-        h += '<gl-btn type="button" class="gl-btn" data-act="keyhit" data-i="' + i + '" data-n="' + Math.min(3, hits + 1) + '"' + (hits >= 3 ? ' disabled' : '') + '>Hit</gl-btn>';
-        if (hits > 0) h += '<gl-btn type="button" class="gl-btn" data-act="keyhit" data-i="' + i + '" data-n="' + hits + '" aria-label="Take a hit off ' + esc(k.name || 'this key') + '">−</gl-btn>';
-        if (g) h += '<gl-btn type="button" class="gl-btn" data-gl="gpick" data-i="' + i + '" aria-expanded="' + (st.glitchPick === i) + '">Strike out</gl-btn>';
-        else if (!isVamp(pb)) h += '<gl-btn type="button" class="gl-btn" data-gl="deadlock" data-i="' + i + '" data-dir="down">▼ ' + esc(k.down || 'Reversed') + '</gl-btn><gl-btn type="button" class="gl-btn" data-gl="deadlock" data-i="' + i + '" data-dir="up">▲ ' + esc(k.up || 'Intensified') + '</gl-btn>';
+        h += '<button type="button" class="gl-btn" data-act="keyhit" data-i="' + i + '" data-n="' + Math.min(3, hits + 1) + '"' + (hits >= 3 ? ' disabled' : '') + '>Hit</button>';
+        if (hits > 0) h += '<button type="button" class="gl-btn" data-act="keyhit" data-i="' + i + '" data-n="' + hits + '" aria-label="Take a hit off ' + esc(k.name || 'this key') + '">−</button>';
+        if (g) h += '<button type="button" class="gl-btn" data-gl="gpick" data-i="' + i + '" aria-expanded="' + (st.glitchPick === i) + '">Strike out</button>';
+        else if (!isVamp(pb)) h += '<button type="button" class="gl-btn" data-gl="deadlock" data-i="' + i + '" data-dir="down">▼ ' + esc(k.down || 'Reversed') + '</button><button type="button" class="gl-btn" data-gl="deadlock" data-i="' + i + '" data-dir="up">▲ ' + esc(k.up || 'Intensified') + '</button>';
         h += '</div>';
-        if (g && st.glitchPick === i) h += '<div class="gl-row">' + glist.map(function (n) { return '<gl-btn type="button" class="gl-btn gl-sm" data-act="glitch" data-i="' + i + '" data-v="' + esc(n) + '"' + (used.indexOf(n) >= 0 ? ' disabled' : '') + '>' + esc(n) + '</gl-btn>'; }).join('') + '</div>';
+        if (g && st.glitchPick === i) h += '<div class="gl-row">' + glist.map(function (n) { return '<button type="button" class="gl-btn gl-sm" data-act="glitch" data-i="' + i + '" data-v="' + esc(n) + '"' + (used.indexOf(n) >= 0 ? ' disabled' : '') + '>' + esc(n) + '</button>'; }).join('') + '</div>';
       }
       h += '</div>';
     });
     h += '</div>';
-    if (isHull(pb)) h += '<div class="gl-lab">Robotic deadlocks</div><div class="gl-row">' + ((pb && pb.roboticDeadlocks) || []).map(function (r) { return '<gl-btn type="button" class="gl-btn gl-sm" data-act="robo" data-v="' + esc(r) + '" aria-pressed="' + ((play.roboticDeadlocks || []).indexOf(r) >= 0) + '">' + esc(r) + '</gl-btn>'; }).join('') + '</div>';
+    if (isHull(pb)) h += '<div class="gl-lab">Robotic deadlocks</div><div class="gl-row">' + ((pb && pb.roboticDeadlocks) || []).map(function (r) { return '<button type="button" class="gl-btn gl-sm" data-act="robo" data-v="' + esc(r) + '" aria-pressed="' + ((play.roboticDeadlocks || []).indexOf(r) >= 0) + '">' + esc(r) + '</button>'; }).join('') + '</div>';
     if (!g && struck(play, pb) >= 4) h += '<p class="gl-alarm">Four deadlocks: time to retire this character</p>';
     if (isTT(pb) && struck(play, pb) >= 4) h += '<p class="gl-alarm">Four glitches: you leave this time after the next score</p>';
     if (resets(pb)) h += '<p class="gl-faint">A deadlock is permanent; your ' + esc(stressName(pb)) + ' goes back to 0.</p>';
@@ -474,18 +464,18 @@
     return h;
   }
   function harmFoot() {
-    return '<div class="gl-row gl-sh-foot"><gl-btn type="button" class="gl-btn gl-go" data-gl="harmdone">Done</gl-btn><gl-btn type="button" class="gl-btn" data-gl="close">Cancel</gl-btn>' + (rulesOn() ? '<gl-btn type="button" class="gl-btn" data-gl="rule">The rule</gl-btn>' : '') + '</div><div class="gl-rule" hidden></div>';
+    return '<div class="gl-row gl-sh-foot"><button type="button" class="gl-btn gl-go" data-gl="harmdone">Done</button><button type="button" class="gl-btn" data-gl="close">Cancel</button>' + (rulesOn() ? '<button type="button" class="gl-btn" data-gl="rule">The rule</button>' : '') + '</div><div class="gl-rule" hidden></div>';
   }
   function harmLive(c) {
     var play = c.play, pb = c.pb, hull = isHull(pb), heal = +play.healing || 0, ar = isObj(play.armor) ? play.armor : {}, res = Array.isArray(play.resource) ? play.resource : [false, false];
     var co = cost(play.harm, pb), h = '<p class="gl-cost gl-k-' + co.kind + '">' + esc(co.text) + '</p>';
     h += '<div class="gl-lab">' + (hull ? 'Repair' : 'Healing') + ' clock ' + heal + '/4</div><div class="gl-row gl-segs">';
-    for (var i = 1; i <= 4; i++) h += '<gl-btn type="button" class="gl-seg' + (i <= heal ? ' gl-on' : '') + '" data-act="heal" data-n="' + i + '" aria-label="' + (hull ? 'Repair' : 'Healing') + ' ' + i + (i <= heal ? ', marked' : '') + '"></gl-btn>';
+    for (var i = 1; i <= 4; i++) h += '<button type="button" class="gl-seg' + (i <= heal ? ' gl-on' : '') + '" data-act="heal" data-n="' + i + '" aria-label="' + (hull ? 'Repair' : 'Healing') + ' ' + i + (i <= heal ? ', marked' : '') + '"></button>';
     h += '</div><div class="gl-row">';
-    h += '<gl-btn type="button" class="gl-btn" data-act="armor" data-k="armor" aria-pressed="' + !!ar.armor + '">Armour ' + (ar.armor ? 'used' : 'ready') + '</gl-btn>';
-    h += '<gl-btn type="button" class="gl-btn" data-act="armor" data-k="heavy" aria-pressed="' + !!ar.heavy + '">Heavy ' + (ar.heavy ? 'used' : 'ready') + '</gl-btn>';
+    h += '<button type="button" class="gl-btn" data-act="armor" data-k="armor" aria-pressed="' + !!ar.armor + '">Armour ' + (ar.armor ? 'used' : 'ready') + '</button>';
+    h += '<button type="button" class="gl-btn" data-act="armor" data-k="heavy" aria-pressed="' + !!ar.heavy + '">Heavy ' + (ar.heavy ? 'used' : 'ready') + '</button>';
     var rname = pb && pb.resource && !hull ? cap(pb.resource) : pb && pb.resource === null && !hull ? 'Resource' : '';
-    if (rname) [0, 1].forEach(function (k) { h += '<gl-btn type="button" class="gl-btn" data-act="resource" data-k="' + k + '" aria-pressed="' + !!res[k] + '">' + esc(rname) + ' ' + (k + 1) + ' ' + (res[k] ? 'used' : 'ready') + '</gl-btn>'; });
+    if (rname) [0, 1].forEach(function (k) { h += '<button type="button" class="gl-btn" data-act="resource" data-k="' + k + '" aria-pressed="' + !!res[k] + '">' + esc(rname) + ' ' + (k + 1) + ' ' + (res[k] ? 'used' : 'ready') + '</button>'; });
     return h + '</div>';
   }
   function tableLive() {
@@ -505,9 +495,9 @@
   function moreLive() {
     var c = st.ctx, s = classicStatus(st.root), lg = !!st.lg, h = '';
     if (s && s.msg) h += '<p class="gl-faint' + (s.bad ? ' gl-alarm' : '') + '">' + esc(s.msg) + '</p>';
-    h += '<div class="gl-row"><span class="gl-lab">Text size</span><gl-btn type="button" class="gl-btn" data-gl="text" data-v="normal" aria-pressed="' + !lg + '">Normal</gl-btn><gl-btn type="button" class="gl-btn" data-gl="text" data-v="large" aria-pressed="' + lg + '">Large</gl-btn></div>';
+    h += '<div class="gl-row"><span class="gl-lab">Text size</span><button type="button" class="gl-btn" data-gl="text" data-v="normal" aria-pressed="' + !lg + '">Normal</button><button type="button" class="gl-btn" data-gl="text" data-v="large" aria-pressed="' + lg + '">Large</button></div>';
     var th = doc().documentElement.getAttribute('data-theme') || 'auto';
-    h += '<div class="gl-row"><span class="gl-lab">Theme</span>' + [['auto', 'Auto'], ['light', 'Paper'], ['dark', 'Night']].map(function (x) { return '<gl-btn type="button" class="gl-btn" data-theme-set="' + x[0] + '" aria-pressed="' + (th === x[0]) + '">' + x[1] + '</gl-btn>'; }).join('') + '</div>';
+    h += '<div class="gl-row"><span class="gl-lab">Theme</span>' + [['auto', 'Auto'], ['light', 'Paper'], ['dark', 'Night']].map(function (x) { return '<button type="button" class="gl-btn" data-theme-set="' + x[0] + '" aria-pressed="' + (th === x[0]) + '">' + x[1] + '</button>'; }).join('') + '</div>';
     h += '<div class="gl-list">' + rowBtn('Recent changes', st.undo.items.length ? st.undo.items.length + ' on this phone' : 'none yet', 'data-gl="recent"');
     if (st.view === 'sheet') h += rowBtn('Glance screen', '', 'data-gl="glance"'); else h += rowBtn('Full sheet', '', 'data-gl="full"');
     h += rowBtn('Notes and log', '', 'data-gl="full" data-to="notes"');
@@ -518,7 +508,7 @@
   function recentLive() {
     var list = st.undo.list(), now = Date.now();
     if (!list.length) return '<p class="gl-faint">Nothing yet. Each change you make on this phone is kept here (the last 20) until you close the sheet.</p>';
-    return '<div class="gl-list">' + list.map(function (u, i) { return '<div class="gl-li gl-static"><b>' + esc(u.label) + '</b><span>' + esc(ago(u.at, now)) + '</span>' + (i === 0 ? '<gl-btn type="button" class="gl-btn" data-gl="undo">Undo</gl-btn>' : '') + '</div>'; }).join('') + '</div>';
+    return '<div class="gl-list">' + list.map(function (u, i) { return '<div class="gl-li gl-static"><b>' + esc(u.label) + '</b><span>' + esc(ago(u.at, now)) + '</span>' + (i === 0 ? '<button type="button" class="gl-btn" data-gl="undo">Undo</button>' : '') + '</div>'; }).join('') + '</div>';
   }
   function absLive() {
     return '<div class="gl-list">' + st.abs.map(function (a) { return '<div class="gl-li gl-static gl-abt"><b>' + esc(a.n) + '</b>' + (a.t ? '<span>' + esc(a.t) + '</span>' : '') + '</div>'; }).join('') + '</div>' + rowBtn('All your abilities on the full sheet', '', 'data-gl="full" data-to="ds-abbox"');
@@ -547,14 +537,14 @@
     var sp = sheetSpec(st.sheet.kind, st.sheet.arg);
     if (!sp) { st.sheet = null; layer.innerHTML = ''; return; }
     if (open || !layer.querySelector('.gl-sheet')) {
-      fill(layer, sheetFrame(sp.title, sp.sub, sp.body, sp.live, sp.foot)); st.sheet.live = sp.live;
+      layer.innerHTML = sheetFrame(sp.title, sp.sub, sp.body, sp.live, sp.foot); st.sheet.live = sp.live;
       var s = layer.querySelector('.gl-sheet');
       try { s.focus({ preventScroll: true }); } catch (e) { /* no focus */ }
       tickIn(layer);
       return;
     }
     var sub = layer.querySelector('.gl-sh-sub'); if (sub && sub.textContent !== sp.sub) sub.textContent = sp.sub;
-    if (st.sheet.live !== sp.live) { var lv = layer.querySelector('.gl-sh-live'); if (lv) fill(lv, sp.live); st.sheet.live = sp.live; tickIn(layer); }
+    if (st.sheet.live !== sp.live) { var lv = layer.querySelector('.gl-sh-live'); if (lv) lv.innerHTML = sp.live; st.sheet.live = sp.live; tickIn(layer); }
   }
   function draftOf(hm) { hm = isObj(hm) ? hm : {}; var l2 = [].concat(hm.l2 || []), l1 = [].concat(hm.l1 || []); return { l4: str(hm.l4), l3: str(hm.l3), 'l2.0': str(l2[0]), 'l2.1': str(l2[1]), 'l1.0': str(l1[0]), 'l1.1': str(l1[1]) }; }
   function openSheet(kind, arg, opener) {

@@ -61,7 +61,7 @@
   #dossier .gl-burst { width: 18px; height: 18px; flex: 0 0 auto; }
   #dossier .gl-burst polygon { fill: none; stroke: var(--accent); stroke-width: 2.2; }
   #dossier .gl-burst.gl-on polygon { fill: var(--accent); }
-  #dossier .gl-track { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; padding: 0 5px; }
+  #dossier .gl-track { display: grid; grid-template-columns: repeat(var(--n, 9), minmax(0, 1fr)); gap: 4px; padding: 0 5px; }
   #dossier .gl-sbox { min-width: 0; height: 44px; padding: 0; border: 2.5px solid var(--rule); border-radius: 4px; background: transparent; transform: skewX(-12deg); cursor: pointer; }
   #dossier .gl-sbox.gl-on { background: var(--ink); border-color: var(--ink); }
   #dossier .gl-stress.gl-full .gl-sbox.gl-on { background: var(--alarm); border-color: var(--alarm); }
