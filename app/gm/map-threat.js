@@ -23,6 +23,7 @@
   'use strict';
 
   var SWITCH = 'map.threat';
+  var FLOW = 'night.flow';
   var NS = 'http://www.w3.org/2000/svg';
   var KINDS = ['guard', 'door', 'alarm', 'harm', 'warn'];
   /* stems, most specific first: "the alarm trips a lock" is an alarm; "the guard hurts you" is a guard turning, then harm if no guard is mentioned */
@@ -84,6 +85,7 @@
     host = host || {};
     var cur = null, frameRef = null, svgRef = null, zoomRef = null;       /* cur: { room, kind } while a stamp's glyph is down */
     function on() { return typeof host.feature === 'function' ? !!host.feature(SWITCH) : false; }
+    function flow() { return typeof host.feature === 'function' ? !!host.feature(FLOW) : false; }
     /* the glyph on the Run map, and (N3) the site's board marks the crew's room with the threat too: host.changed() redraws it */
     function repaint() { if (frameRef && svgRef) paint(frameRef, svgRef, zoomRef); if (typeof host.changed === 'function') host.changed(); }
 
@@ -91,6 +93,7 @@
     function drop(st) {
       if (!on()) return null;
       var kind = glyphFor(st && st.text), room = typeof host.room === 'function' ? str(host.room()) : '';
+      if (kind === 'warn' && flow()) kind = '';      /* RK05.3 (night.flow): a line with no threat stem in it is no threat: no log line, no glyph (off: the plain warning mark, as ever) */
       if (!kind || !room) { cur = null; repaint(); return null; }
       cur = { room: room, kind: kind };
       if (typeof host.log === 'function') host.log('Threat on the map: ' + kind + ' in ' + room);

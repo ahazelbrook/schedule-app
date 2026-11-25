@@ -5271,7 +5271,7 @@
       clearOverlay: function () { return patchAmbient({ overlay: null }); },
       who: function () { return S === me ? fitPc() : ''; }, covered: function () { return S === me && ((isObj(AM.shown) && AM.shown.kind === 'dark') || panicOn()); }, againBlocked: function () { return S === me ? (panicOn() ? 'PANIC is on' : introBlocked()) : ''; }, vet: function (p) { return gate.allowsAmbient({ overlay: { id: 'ks15-vet', kind: 'report', ms: 10000, payload: p } }); },     /* KS15 (kit.stage only): the roll as beats */
       log: function (text) { if (S === me && me.night) me.night.stamp(text); }, toast: toast, changed: function () { if (S === me) { b09Paint(); pcStatusSync(); } },
-      threat: function (st) { var t = S === me && me.b19 && me.b19.threat; if (t) t.drop(st); }, threatClear: function () { var t = S === me && me.b19 && me.b19.threat; if (t) t.clear(); },
+      threat: function (st) { var t = S === me && me.b19 && me.b19.threat; if (t) t.drop(st); var tr = trInst(me); if (tr) tr.stamped(st); }, threatClear: function () { var t = S === me && me.b19 && me.b19.threat; if (t) t.clear(); },
       stamped: function (st) { if (S === me) fitStamped(st); }     /* 08/11: the stamp is what asks Blade for the fit */
     });
     me.cueGrammar = Gr.create({
@@ -5455,10 +5455,22 @@
     var p = a.matrixTransform(inv), q = b.matrixTransform(inv);
     return { x: Math.min(p.x, q.x), y: Math.min(p.y, q.y), w: Math.abs(q.x - p.x), h: Math.abs(q.y - p.y) };
   }
+  /* RK05 (night.flow; gm/threat-room.js, in the night-flow bundle): the threat lands in the room the Run view has selected (else the room most of the crew are in), and a stamp with a Who set moves that PC's marker there. null while the setting is off or the bundle is not in yet: the old pick runs */
+  function trInst(me) {
+    if (S !== me || !b09On('night.flow') || !W.B68GmThreatRoom) return null;
+    if (!me.tr) me.tr = W.B68GmThreatRoom.create({
+      feature: function (id) { return S === me && b09On(id); }, sel: function () { return S === me ? str(S.rollSel) : ''; }, crew: runCrewRooms, pick: function (c) { return W.B68GmStamp ? W.B68GmStamp.pickRoom(c) : ''; },
+      who: function () { return S === me ? str(uiNow().pc) : ''; }, pcs: runPcs,
+      rooms: function () { var m = S === me ? S.b19Model : null; return m && Array.isArray(m.rooms) ? m.rooms.map(function (r) { return str(r && r.name); }).filter(Boolean) : []; },      /* the Run view's own rooms, once its map has been drawn; [] until then (the selected room is trusted) */
+      open: function (room) { return S === me && runIsOpen(room); }, closed: function (room) { if (S === me) toast('Marker stays put: ' + room + ' has not been shown to the players.'); },      /* GM page only, so it may name the room */
+      move: function (id, room) { return S === me && runMovePc(id, room) !== null; },
+      log: function (text) { if (S === me && me.night) me.night.stamp(text); } });
+    return me.tr;
+  }
   function b19Host(me) {
     return {
       feature: function (id) { return S === me && b09On(id); }, doc: function () { return document; }, toast: toast, now: function () { return Date.now(); },
-      room: function () { return S === me ? W.B68GmStamp.pickRoom(runCrewRooms()) : ''; }, roomBox: function (svg, name) { return S === me ? b19Room(svg, name) : null; },
+      room: function () { var tr = trInst(me); return S === me ? (tr ? tr.room() : W.B68GmStamp.pickRoom(runCrewRooms())) : ''; }, roomBox: function (svg, name) { return S === me ? b19Room(svg, name) : null; },
       log: function (text) { if (S === me && me.night) me.night.stamp(text); },
       clockName: function () { var rs = S === me ? runV2() : null; return rs && isObj(rs.play.alarm) ? str(rs.play.alarm.clock).trim() : ''; },
       clocks: function () { return S === me ? tableClocks() : []; },
