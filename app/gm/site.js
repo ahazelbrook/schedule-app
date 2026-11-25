@@ -17,7 +17,8 @@
              play() -> the v2 play | null      clock(name) -> the table clock | null      rooms() -> [{ name, band }] the roll's rooms (a run only)
              npcs() -> [npc]   card(names) -> bool there is a card   face(npcId) -> HTML | ''   roomMd(room) -> the room's prep Markdown
              scoreOver() -> bool    montageOpen() -> bool    montage(view) -> opens or shuts it    dawn()    introduce(npcId)    setThreat(text) -> bool
-             lineShown() -> bool the site line is on screen }
+             lineShown() -> bool the site line is on screen
+             thing(el, view)    RK09 (room.key): a room card's thing (data-site="thing") opens its zoom card (gm/room-zoom.js act) }
      site: alarm(open, attr) alarmPop(gm) tools() stage(gm) states() seg(room) people(room, here) wrong(room) noteMd(md) act(action, el, view)
            costume() setCostume(on) applyCostume() line() mapMarks(svg, model, sel) lineAlarm()
    Pure: noteMd(md) -> the Markdown without its one-line "If it goes wrong: …" lines         COSTUME_KEY */
@@ -160,6 +161,7 @@
           break;
         }
         case 'costume': setCostume(!costume()); redraw(); break;
+        case 'thing': if (typeof page.thing === 'function') page.thing(el, view); break;      /* RK09 (room.key): a room card's thing opens its zoom card */
       }
     }
 

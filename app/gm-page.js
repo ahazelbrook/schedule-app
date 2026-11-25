@@ -2563,6 +2563,8 @@
   }
   /* RK08.4 (room.key, room.tables): the room-state contract (gm/room-state.js), one per page session and the only writer of `roomstate`; null while the room-key bundle is not loaded */
   function rsInst() { var M = W.B68GmRoomState, me = S; if (!me || !M || M.stub || typeof M.create !== 'function') return null; if (!me.rs) me.rs = M.create({ on: function () { return S === me && (b09On('room.key') || b09On('room.tables')); }, doc: function () { return S === me ? me.doc : null; }, patch: function (p) { return S === me ? patch(p) : false; }, busy: function () { var st = me.saver ? me.saver.state() : null; return !!(st && st.pending && st.pending.roomstate); }, now: function () { return Date.now(); }, part: function () { var r = me.pack && me.pack.parts && me.pack.parts.rooms; return r ? str(r.version) : ''; }, toast: toast }); return me.rs; }
+  /* RK09 (room.key): the room card's things and the zoom card (gm/room-zoom.js), one per page session; null while room.key is off or its bundle is not loaded (an open card closes) */
+  function rkZoom() { var M = W.B68GmRoomZoom, me = S; if (!me || !M || M.stub || typeof M.create !== 'function') return null; if (!b09On('room.key')) { if (me.rz) me.rz.close(false); return null; } if (!me.rz) me.rz = M.create({ md: function (room) { var rn = S === me ? runRoomNotes() : null; return rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? str(rn.byRoom[room].md) : ''; }, roll: function () { var r = S === me ? S.locRoll : null; return isObj(r) && Array.isArray(r.rooms) ? { key: str(rollKey(r)), rooms: r.rooms.filter(isObj).map(function (x) { return str(x.name); }) } : null; }, doc: function () { return S === me ? me.doc : null; }, redraw: function () { if (S === me && S.rv) S.rv.rerender(); }, toast: toast }); return me.rz; }
   /* 4.5 / 4.7 / 5.3 the practical speaker, the ringing phone and the Trouble desk (gm/room-desk.js; switches room.practical, room.phone, between.trouble): one Menu line each while its switch is on */
   function rdInst() {
     if (!S || !W.B68GmRoomDesk || !W.B68Features) return null;
@@ -2720,7 +2722,8 @@
     if (S.status === 'ready' && (b09On('kit.stage') || S.ks14On || (isObj(AM.doc) && ks14Left()))) { S.ks14On = b09On('kit.stage'); pcStatusSync(); }      /* KS14 (kit.stage): the faces follow the setting, on, and once more when it goes off (sent only on a change) */
     if (W.B68Kit && S.status === 'ready') W.B68Kit.set('desk', !!(W.B68Features && W.B68Features.valueOf(S.doc, 'kit.desk')));      /* the kit and stage build (KS01.2): data-kit="desk" follows the setting, at once (ui/kit-flag.js) */
     if (S.status === 'ready' && W.B68Features) { var pOn = !!W.B68Features.valueOf(S.doc, 'blade.pitches'); if (W.B68Pitches) W.B68Pitches.set(gmApi(), pOn); else if (pOn && W.B68Load) W.B68Load.need('blade-pitches').then(function () { if (W.B68Pitches && S && S.status === 'ready') W.B68Pitches.set(gmApi(), !!W.B68Features.valueOf(S.doc, 'blade.pitches')); }, function () {}); }      /* blade.pitches (KS18): the blade-pitches bundle while it is on; B68Pitches (gm/kit/blade.js) adds the pitch fields to the tick, and takes them off when it turns off */
-    if (S.status === 'ready' && W.B68Features && W.B68Load) P.rkWant(function (id) { return !!W.B68Features.valueOf(S.doc, id); }).forEach(function (n) { var me = S; if (!me.rkAsked) me.rkAsked = {}; if (!me.rkAsked[n]) { me.rkAsked[n] = true; W.B68Load.need(n).then(function () {}, function () { me.rkAsked[n] = false; }); } });      /* RK01 (night.flow, close.crew, room.key, room.tables, gm.glance): each bundle is fetched once, only while its setting is on; the stubs do nothing until their tickets fill them */
+    if (S.status === 'ready' && W.B68Features && W.B68Load) P.rkWant(function (id) { return !!W.B68Features.valueOf(S.doc, id); }).forEach(function (n) { var me = S; if (!me.rkAsked) me.rkAsked = {}; if (!me.rkAsked[n]) { me.rkAsked[n] = true; W.B68Load.need(n).then(function () { if (n === 'room-key' && S === me && S.rv) S.rv.rerender(); }, function () { me.rkAsked[n] = false; }); } });      /* RK01 (night.flow, close.crew, room.key, room.tables, gm.glance): each bundle is fetched once, only while its setting is on; the stubs do nothing until their tickets fill them */
+    if (S.status === 'ready' && S.rz && S.rv && !!S.rzOn !== b09On('room.key')) { S.rzOn = b09On('room.key'); S.rv.rerender(); }      /* RK09: room.key turned on or off (here or on another device) once its zoom card exists: the room cards draw again, and an open card closes */
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
@@ -2870,7 +2873,7 @@
   var SC_SHEET = 'shortcuts';
   function shortcutsInst() {
     if (!S || !W.B68GmShortcuts || typeof W.B68GmShortcuts.make !== 'function') return null;
-    if (!S.shortcuts) S.shortcuts = W.B68GmShortcuts.make({ root: function () { return $q('#gm-root'); } });
+    if (!S.shortcuts) S.shortcuts = W.B68GmShortcuts.make({ root: function () { return $q('#gm-root'); }, feature: b09On });      /* RK09: a row with a setting is drawn only while it is on */
     return S.shortcuts;
   }
   function shortcutsOpen() { var c = shortcutsInst(); if (!c || !c.open()) toast('The Shortcuts card is not on this page: reload it.', true); }
@@ -4320,7 +4323,9 @@
       npcCard: function (names) { var src = npcCardSrc(names) || p2NotesSrc(names); return src ? npcCardHtml(src, 'rn-') : ''; },      /* IP2: no vault card, the cast notes */
       decorate: function (el) { if (W.B68GmPrep && el) { W.B68GmPrep.decorate(el, {}); paDecorate(el); } },      /* PA: action chips in a room's note and an NPC card too */
       roomNote: function (room) { var rn = runRoomNotes(), e = rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? rn.byRoom[room] : null, si = siteInst(), md = e ? str(e.md) : ''; if (si && md) md = si.noteMd(md);      /* N3: the If it goes wrong line is the card's action line, not the note's */
+        var rz = md ? rkZoom() : null; if (rz) md = rz.noteMd(md);      /* RK09 (room.key): the Things block is drawn as the card's things (roomThings), not twice */
         return e && str(e.md).trim() ? npcCardHtml(md, 'rm-') : null; },
+      roomThings: function (room, o) { var rz = rkZoom(); return rz ? rz.html(room, o) : ''; },      /* RK09 (room.key): the room's things, before its note; '' while off */
       /* a switch's value (map.countdown: the header's countdown pie) */
       feature: function (id) { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, id)); }
     };
@@ -5535,6 +5540,7 @@
     if (me.stageOff) { try { me.stageOff(); } catch (e) {} me.stageOff = null; }
     if (me.b17) { try { me.b17.reset(); } catch (e) {} me.b17 = null; }
     if (me.site) { try { me.site.destroy(); } catch (e) {} me.site = null; }
+    if (me.rz) { try { me.rz.destroy(); } catch (e) {} me.rz = null; }      /* RK09: an open zoom card goes with the page */
   }
   function b17Frozen() { return !!(S && S.b17 && S.b17.holding()); }
   function b17Tint() { if (S && S.b17 && S.locRoll) S.b17.tint($q('#gm-map'), S.locRoll); }
@@ -5558,7 +5564,8 @@
       dawn: function () { return runDawn(); }, introduce: function (id) { npcIntroduce(id); }, players: function () { return introOn(); }, setThreat: siteThreat,
       /* T5: Show on iPad / Take it down for the players' map, in the site's toolbar */
       mapLive: function () { return S === me && mapOnIpad(); }, mapShow: function () { return S === me ? siteMapUp(false) : Promise.resolve(false); }, mapDown: function () { if (S === me) blankIpad(); },
-      lineShown: function () { var l = $q('#gm-runv .rv-siteline'); return !!(l && l.offsetParent !== null); }
+      lineShown: function () { var l = $q('#gm-runv .rv-siteline'); return !!(l && l.offsetParent !== null); },
+      thing: function (el) { var rz = S === me ? rkZoom() : null; if (rz) rz.act(el); }      /* RK09 (room.key): a room card's thing opens its zoom card */
     });
     return me.site;
   }
@@ -8048,6 +8055,7 @@
     if (ev.key === 'Enter' && tg && tg.id === 'gm-gs-q') { ev.preventDefault(); screenFindGo(); return; }
     if (ev.key === 'Enter' && tg && tg.id === 'gm-dt-d100') { ev.preventDefault(); dtD100(tg.value); return; }     /* the morning's d100 */
     if (ev.key === 'A' && ev.shiftKey && !typing(tg) && !ev.ctrlKey && !ev.metaKey && !ev.altKey && (!escTop() || escTop() === 'blade') && pitchGo()) { ev.preventDefault(); return; }      /* KS19: Shift+A is Pitch now while pitches are on (else it is A, as before) */
+    if (S.rz && b09On('room.key') && S.rz.key(ev, { typing: typing(tg), top: escTop() })) return;      /* RK09 (room.key): 1 to 9 and the arrows in a focused room card, or in its open zoom card */
     /* keys never fire behind an open thing (the Menu, the drawer, the Blade panel, a popover, a sheet): only its own. W shuts the drawer, A the Blade
        panel and ? the Shortcuts card when that is the top one; GO (Space, PageDown) still fires behind the Blade panel; everything else waits until it is closed (Esc) */
     var top = escTop();
@@ -8419,6 +8427,7 @@
     _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer, svg: S.map.svg }, panel: S.panel, seg: S.seg, doc: S.doc, runCacheN: S.runCache ? S.runCache.keys.length : 0 } : null; },
     _pushDisplay: function (d) { return pushDisplay(d); },
     _roomState: function () { return rsInst(); },     /* for checks (room-state.e2e.mjs, RK08.4): the room-state API, null while the room-key bundle is not loaded */
+    _roomZoom: function () { return rkZoom(); },     /* for checks (room-key.e2e.mjs, RK09): the zoom card, null while room.key is off or its bundle is not loaded */
     _setPhoneCards: function (on) { return setPhoneCards(on === true); },     /* for checks: the Run menu's Phone cards toggle */
     _ballSet: function (change) { var rs = runSite(); return rs ? ballSet(rs.name, change) : false; },     /* for checks: what the Run view does through its host */
     /* "Claude suggests" (a later step calls this): a Show handout? item in the Rack. Returns false for an id the pack does not hold. */

@@ -289,6 +289,7 @@
         return U.chip({ button: true, label: v.nameOfPc(q.id, ctx) + (q.heard ? ' heard ✓ ' + v.B.timeLabel(ctx.play, q.at) : ' not heard'), pressed: q.heard, cls: 'rv-btn sm rv-tog', data: { rv: 'unhear', way: l.way, pc: q.id }, title: q.heard ? 'Tap to un-hear' : 'Tap to hear' });
       }).join('') + '</div>';
     }).join('');
+    if (typeof host.roomThings === 'function') { try { h += str(host.roomThings(name, { kit: true })); } catch (e) { /* RK09 (room.key): the room's things, '' while off */ } }
     if (typeof host.roomNote === 'function') {
       var note = null; try { note = host.roomNote(name); } catch (e) { note = null; }
       h += typeof note === 'string' ? '<div class="rv-rmnote pp-doc pp-cardbody krv-note">' + note + '</div>'      /* the page's renderer made it from the prep note */
