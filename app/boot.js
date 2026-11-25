@@ -767,6 +767,8 @@
     /* MK2: the character's own figure, for the people the GM page's map may draw (gm/scene-state.js). NOT enumerable, like status: the slim copy's
        JSON (the Downtime panel's change signature) and its keys are what they were; nothing reads it while the map draws no people */
     Object.defineProperty(out, 'spec', { enumerable: false, value: isObj(d.spec) && Object.keys(d.spec).length ? d.spec : null });
+    /* RK20: the GM page's crew panel reads the sheet's play state through this: a lazy getter, NOT enumerable (the slim copy's JSON is what it was), so nothing runs while the setting is off */
+    Object.defineProperty(out, 'glance', { enumerable: false, get: function () { try { return { play: p, facts: playFacts(d) }; } catch (e) { return null; } } });
     return out;
   }
   function gmCharacters() {
