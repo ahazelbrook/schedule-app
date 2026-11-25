@@ -32,7 +32,7 @@ const demo = await startDemo(ROOT, PORT);
 try {
   const browser = await pw.chromium.launch({ channel: process.env.PW_CHANNEL || undefined });
   const mine = (urls) => ALL.filter((f) => urls.some((u) => u.split('?')[0].endsWith('/' + f)));
-  /* RK01b: four rows are not built yet and not drawn (built: false in app/gm/settings.js). To drive their bundles from the Settings, the GM page of this test is served settings.js
+  /* RK01b: three rows are not built yet and not drawn (built: false in app/gm/settings.js). To drive their bundles from the Settings, the GM page of this test is served settings.js
      without the flag; the Settings list itself is checked first, as shipped */
   const unhide = async (ctx) => ctx.route('**/gm/settings.js*', async (route) => { const r = await route.fetch(); const body = (await r.text()).replace(/built: false, /g, ''); await route.fulfill({ response: r, body }); });
   async function open(route, user, size, o = {}) {
@@ -51,8 +51,8 @@ try {
   await G.page.click('.gm-tray [data-tray="open"]');
   await G.page.waitForSelector('#gm-ipad-settings [data-set-row]', { timeout: 10000 });
   const rows = await G.page.$$eval('#gm-ipad-settings [data-set-row]', (els) => els.map((e) => e.getAttribute('data-set-row')));
-  check(rows.slice(-6).join() === 'stamp.brief,night.flow,close.crew,map.fit,room.intro,phone.glance' && rows.length === 23, 'the Settings list as shipped: 23 rows, the six of this deploy last: ' + rows.slice(-7).join(' '));
-  check(['room.key', 'room.tables', 'gm.glance', 'phone.find'].every((id) => !rows.includes(id)), 'the four not built yet are not drawn');
+  check(rows.slice(-7).join() === 'stamp.brief,night.flow,close.crew,room.key,map.fit,room.intro,phone.glance' && rows.length === 24, 'the Settings list as shipped: 24 rows, the seven of this deploy last: ' + rows.slice(-8).join(' '));
+  check(['room.tables', 'gm.glance', 'phone.find'].every((id) => !rows.includes(id)), 'the three not built yet are not drawn');
   await unhide(G.ctx); await G.page.reload();
   await G.page.waitForSelector('#gm-buttons .gm-btn', { state: 'attached', timeout: 30000 }); await G.page.waitForTimeout(2500);
   await G.page.click('.gm-tray [data-tray="open"]');

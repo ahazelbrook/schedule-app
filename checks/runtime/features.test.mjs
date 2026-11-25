@@ -280,12 +280,12 @@ await test('settings: twenty-seven rows (Scenes, Music, Phones, Mirror for phone
   assert.match(box.innerHTML, /data-set="room\.music" data-v="1" aria-pressed="true">Heat music/);
   assert.match(box.innerHTML, /data-set="fx\.off" data-v="0" aria-pressed="true">Moving/);
   assert.match(box.innerHTML, /data-set="mirror" data-v="0" aria-pressed="true">Off/);
-  assert.equal((box.innerHTML.match(/aria-pressed="true"/g) || []).length, 23, 'one value pressed per row drawn: the four rows not built yet (RK01b) are not drawn');
+  assert.equal((box.innerHTML.match(/aria-pressed="true"/g) || []).length, 24, 'one value pressed per row drawn: the three rows not built yet (RK01b) are not drawn');
 });
-const HIDDEN = ['room.key', 'room.tables', 'gm.glance', 'phone.find'];       /* RK01b (25/11): registered, read off, but not built, so not drawn on the Settings screen */
-const SHOWN = ['stamp.brief', 'night.flow', 'close.crew', 'map.fit', 'room.intro', 'phone.glance'];      /* the six that ship in this deploy */
-await test('RK01b: the four settings not built yet (room.key, room.tables, gm.glance, phone.find) are flagged built: false and are not drawn on the Settings screen, yet stay registered and read off; the six that ship are drawn', async () => {
-  assert.deepEqual(SET.ROWS.filter((x) => x.built === false).map((x) => x.key), HIDDEN, 'the one flag, in the registry of rows, names exactly the four');
+const HIDDEN = ['room.tables', 'gm.glance', 'phone.find'];       /* RK01b (25/11): registered, read off, but not built, so not drawn on the Settings screen */
+const SHOWN = ['stamp.brief', 'night.flow', 'close.crew', 'room.key', 'map.fit', 'room.intro', 'phone.glance'];      /* the seven that ship in this deploy */
+await test('RK01b: the three settings not built yet (room.tables, gm.glance, phone.find) are flagged built: false and are not drawn on the Settings screen, yet stay registered and read off; the seven that ship are drawn, room.key among them', async () => {
+  assert.deepEqual(SET.ROWS.filter((x) => x.built === false).map((x) => x.key), HIDDEN, 'the one flag, in the registry of rows, names exactly the three');
   const r = rig({}, { v: 1 }), rows = r.ctl.rows();
   assert.equal(rows.length, 27, 'still every row as data');
   assert.deepEqual(rows.filter((x) => !x.built).map((x) => x.key), HIDDEN);
@@ -295,11 +295,11 @@ await test('RK01b: the four settings not built yet (room.key, room.tables, gm.gl
     assert.ok(F.get(id) && F.isSetting(id), id + ' stays registered'); assert.equal(F.valueOf({}, id), false, id + ' still reads off'); assert.equal(r.ctl.on(id), false, id + ' reads off through the Settings too');
   }
   for (const id of SHOWN) assert.ok(box.innerHTML.includes('data-set-row="' + id + '"'), id + ' is drawn');
-  assert.equal((box.innerHTML.match(/data-set-row=/g) || []).length, 23, 'twenty-three rows drawn');
-  assert.ok(!/Things in rooms|Rolled rooms|Search on phones|>The glance</.test(box.innerHTML), 'nor by label');
+  assert.equal((box.innerHTML.match(/data-set-row=/g) || []).length, 24, 'twenty-four rows drawn');
+  assert.ok(!/Rolled rooms|Search on phones|>The glance</.test(box.innerHTML) && /Things in rooms/.test(box.innerHTML), 'nor by label (and Things in rooms is drawn)');
   /* a stored on does not draw a hidden row either, and it is the registry that still answers */
-  const on = rig({ features: { 'room.key': true } }, { v: 1 }); const box2 = { parentNode: null, innerHTML: '' }; on.ctl.render(box2);
-  assert.ok(!box2.innerHTML.includes('room.key')); assert.equal(on.ctl.on('room.key'), true);
+  const on = rig({ features: { 'room.tables': true } }, { v: 1 }); const box2 = { parentNode: null, innerHTML: '' }; on.ctl.render(box2);
+  assert.ok(!box2.innerHTML.includes('room.tables')); assert.equal(on.ctl.on('room.tables'), true);
   /* phone.glance says what Full sheet does today */
   const pg = rows.find((x) => x.key === 'phone.glance'); assert.match(pg.what, /Full sheet opens today.s classic sheet/); assert.ok(!/official/i.test(pg.what), 'no promise of the official page in the row');
   assert.match(F.get('phone.glance').doc, /classic sheet until the official page is built/);

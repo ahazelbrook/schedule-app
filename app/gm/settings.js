@@ -111,7 +111,7 @@
     { key: 'close.crew', label: 'The close', what: 'The close of a night: shown on the iPad only, or written to the crew (heat and Wanted once, heat reasons, status by faction, xp prompts, an Open list).',
       options: [{ v: false, label: 'Display only' }, { v: true, label: 'Writes the crew' }],
       said: { 'false': 'The close: display only.', 'true': 'The close: it writes the crew.' } },
-    { key: 'room.key', label: 'Things in rooms', built: false, what: 'A room note’s Things on its card, a zoom card on a click, and Show on iPad for one line.',
+    { key: 'room.key', label: 'Things in rooms', what: 'A room note’s Things on its card, a zoom card on a click, and Show on iPad for one line.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'Things in rooms: off.', 'true': 'Things in rooms: on.' } },
     { key: 'room.tables', label: 'Rolled rooms', built: false, what: 'A rolled site’s rooms get a read-aloud, things and people from the room tables, with Swap, Roll another, Keep and the Blade tap.',
