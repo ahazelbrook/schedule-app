@@ -205,7 +205,8 @@ try {
     const z = document.querySelector('.rk-zoom');
     out.slots = [...z.querySelectorAll('[data-rk-slot]')].map((s) => s.getAttribute('data-rk-slot') + ':' + [...s.querySelectorAll('button')].map((b) => (b.querySelector('.ui-label') || b).textContent + '#' + b.getAttribute('data-rk-btn')).join('/')).join(' ');
     z.querySelector('[data-rk-btn="probe"]').click();
-    const st = z.querySelector('[data-rk-slot="state"] button'); st.click(); st.click();
+    await new Promise((r) => setTimeout(r, 200));      /* one hook action at a time: the card draws again once it settles */
+    const st = document.querySelector('.rk-zoom [data-rk-slot="state"] button'); st.click(); st.click();
     out.busy = st.getAttribute('aria-busy');
     await new Promise((r) => setTimeout(r, 500));
     out.ran = ran; out.after = !!document.querySelector('.rk-zoom [data-rk-btn="state"]');
@@ -216,7 +217,7 @@ try {
   const rk = await page.evaluate(() => String(window.B68GmPage._pure.rollKey(window.B68GmPage._state().locRoll)));
   check(hook.slots === 'show:Probe show#probe state:Probe state#state swap:', 'the hook: the show slot from B68GmRoomShow.buttons(ctx), the state slot from addButtons; a button with no label or no run is left out (' + hook.slots + ')');
   check(hook.ctx === ['brass-umbrella-stand', 'Showroom', 'showroom#1', rk, 0, 4, 'function', 'function'].join('|'), 'the hook\'s ctx: the thing, the room, its roomKey and rollKey, n of m, refresh and close (' + hook.ctx + ')');
-  check(hook.busy === 'true' && hook.ran === 1 && hook.after && hook.gone, 'a hook button runs once while busy, the card draws again after, and off() takes it away');
+  check(hook.busy === 'true' && hook.ran === 1 && hook.after && hook.gone, 'a hook button runs once while busy, the card draws again after, and off() takes it away (' + JSON.stringify({ busy: hook.busy, ran: hook.ran, after: hook.after, gone: hook.gone }) + ')');
   await page.keyboard.press('Escape'); await sleep(200);
 
   /* a mark through room-state shows on the card and in the zoom card */
@@ -235,7 +236,8 @@ try {
   const offAgain = await until(() => page.evaluate(() => !document.querySelector('[data-site="thing"]')), 15000);
   await page.evaluate(() => window.B68GmRunView.redrawAll()); await sleep(500);
   const markupOff2 = await page.evaluate((sel) => document.querySelector(sel).outerHTML, card('Showroom'));
-  check(offAgain && !(await zoom(page)) && !(await page.evaluate(() => document.querySelector('.rk-zscope'))), 'off again: the things and the open card go, the scope host too');
+  const og = { offAgain: !!offAgain, zoom: JSON.stringify(await zoom(page)), scope: await page.evaluate(() => !!document.querySelector('.rk-zscope')), rz: await page.evaluate(() => window.B68GmPage._roomZoom() === null) };
+  check(og.offAgain && og.zoom === 'null' && !og.scope && og.rz, 'off again: the things and the open card go, the scope host too (' + JSON.stringify(og) + ')');
   check(markupOff2 === markupOff, 'off again: the Showroom card\'s markup is the same as before room.key was ever on' + (markupOff2 === markupOff ? '' : '\n  off: ' + markupOff.slice(0, 300) + '\n  now: ' + markupOff2.slice(0, 300)));
   await B.c.close();
 

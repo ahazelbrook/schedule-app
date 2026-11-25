@@ -44,6 +44,7 @@
 .rk-zscope .rk-zbtns { display: flex; flex-wrap: wrap; gap: var(--ui-space-2); margin: 0; padding: var(--ui-space-2) 0 0; border-top: 1px solid var(--ui-line); }
 .rk-zscope .rk-zbtns.is-empty { display: none; }
 .rk-zscope .rk-zslot { display: contents; }
-.rk-zscope .rk-znav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ui-space-1); margin: 0; padding: var(--ui-space-2) 0 0;
+.rk-zscope .rk-znav { display: flex; flex-wrap: nowrap; justify-content: flex-end; gap: 2px; margin: 0; padding: var(--ui-space-2) 0 0;
   border-top: 1px solid var(--ui-line); }
-.rk-zscope .rk-znav .ui-btn { min-height: 32px; padding: 0 var(--ui-space-2); }
+.rk-zscope .rk-znav .ui-btn { flex: none; gap: 6px; min-height: 32px; padding: 0 var(--ui-space-2); font-size: var(--ui-type-label); letter-spacing: .06em; }
+.rk-zscope .rk-znav [data-rk-btn="close"] { margin-inline-end: auto; order: -1; }
