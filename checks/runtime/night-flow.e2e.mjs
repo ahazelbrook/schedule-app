@@ -37,6 +37,7 @@ const api = (method, p, body, user = GM) => fetch(BASE + '/api' + p, { method, h
 /* the parts, in the order they run: { name, file (a fixtures/gm module), run (its exported function), ms (its own timeout) }. RK03, RK05 and RK06 add a row. */
 const PARTS = [
   { name: 'RK04', file: './fixtures/gm/night-flow-rk04.mjs', run: 'rk04', ms: (SHOTS ? 720 : 360) * 1000 },
+  { name: 'RK06', file: './fixtures/gm/night-flow-rk06.mjs', run: 'rk06', ms: (SHOTS ? 720 : 480) * 1000 },
 ];
 /* every setting a part may turn on: all off before and after each part */
 const BASE_OFF = { 'night.flow': false, 'kit.desk': false, 'stage.players': false };
