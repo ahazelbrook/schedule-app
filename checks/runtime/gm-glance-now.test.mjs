@@ -140,7 +140,7 @@ const text = (h) => h.replace(/<[^>]+>/g, '').replace(/&#39;/g, "'").replace(/\s
 test('html: answers the four questions in one block (the time, who is where now and next, where the crew is)', () => {
   const h = host(at({ fic: { b: 45, off: 7 } })), out = h.view.html(xOf(h.state), false), t = text(out);
   assert.match(out, /^<div class="gl-now" role="group"/);
-  assert.match(t, /Fiction 21:52 \+7/);
+  assert.match(t, /Fiction 21:52 7 min ahead/);
   assert.match(t, /Crew Nell Arbuthnot Bar · Ray Okonjo not placed · Tam Petrakis Cloakroom/);
   assert.match(t, /Now Mabel Quist Cloakroom till 23:30, then Bar/);
   assert.match(t, /Ada Vell not here till 22:30, then Bar/);
@@ -174,9 +174,9 @@ test('html: on the kit desk the buttons are B68Ui parts', () => {
   vm.runInNewContext(fs.readFileSync(path.join(ROOT, FILE), 'utf8'), win, { filename: FILE });
   const v = win.B68GmGlanceNow.create({ run: () => ({ pcs: () => PCS }) }), out = v.html(xOf(at({ fic: { b: 45, off: 7 } })), true);
   assert.match(out, /class="gl-now gl-now-kit"/);
-  assert.deepEqual(calls.map((o) => o.label), ['+5', '+15', 'Set', 'Clear']);
+  assert.deepEqual(calls.map((o) => o.label), ['+5', '+15', 'Clear', 'Set']);
   assert.equal(calls[0].data.site, 'gln-add');
-  assert.equal(calls[2].type, 'submit');
+  assert.equal(calls[3].type, 'submit');
 });
 
 test('act: +5 and +15 write ball.fic quietly (no map push) and redraw; Clear removes it', () => {

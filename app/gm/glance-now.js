@@ -140,23 +140,23 @@
       h += '<div class="gl-now' + (kit ? ' gl-now-kit' : '') + '" role="group" aria-label="The fiction’s clock and who’s where (GM only)"><div class="gl-now-row">';
       h += '<span class="gl-now-clock" title="The time in the fiction: the beat’s time plus what you added. GM only.">' +
         '<span class="gl-now-k">Fiction</span> <output class="gl-now-t" aria-label="The fiction’s time">' + esc(B.timeLabel(play, ft)) + '</output>';
-      if (diff) h += ' <small class="gl-now-off" title="' + esc((diff > 0 ? 'Ahead of' : 'Behind') + ' the beat’s time (' + B.timeLabel(play, pub) + ')') + '">' + (diff > 0 ? '+' : '−') + Math.abs(diff) + '</small>';
+      if (diff) h += ' <small class="gl-now-off" title="' + esc('The beat’s time is ' + B.timeLabel(play, pub)) + '">' + Math.abs(diff) + ' min ' + (diff > 0 ? 'ahead' : 'behind') + '</small>';
       h += '</span>';
       h += btn(kit, '+5', { site: 'gln-add', min: 5 }, 'Five minutes on in the fiction');
       h += btn(kit, '+15', { site: 'gln-add', min: 15 }, 'Fifteen minutes on in the fiction');
+      if (r && diff) h += btn(kit, 'Clear', { site: 'gln-clear' }, 'Back to the beat’s time (' + B.timeLabel(play, pub) + ')');
       h += '<form class="gl-now-form" data-site="gln-set" autocomplete="off"><input class="gl-now-in" name="t" type="text" inputmode="numeric" maxlength="5" size="5" placeholder="HH:MM"' +
         ' aria-label="The fiction’s time, HH:MM" title="Type the fiction’s time (HH:MM), then Enter or Set">' + submit(kit) + '</form>';
-      if (r && diff) h += btn(kit, 'Clear', { site: 'gln-clear' }, 'Back to the beat’s time (' + B.timeLabel(play, pub) + ')');
       h += '</div>';
       var pcs = []; try { var rv = run(); pcs = rv && typeof rv.pcs === 'function' ? rv.pcs() : []; } catch (e) { pcs = []; }
       var cw = crew(pcs, st);
       h += '<p class="gl-now-line gl-now-crew"><span class="gl-now-k">Crew</span> ' + (cw.length ? cw.map(function (c) {
-        return '<span class="gl-now-who"><b>' + esc(c.name) + '</b> ' + place(c.room, 'not placed') + '</span>';
+        return '<span class="gl-now-who"><span class="gl-now-pair"><b>' + esc(c.name) + '</b> ' + place(c.room, 'not placed') + '</span></span>';
       }).join(SEP) : '<span class="gl-now-dim">No PCs filed</span>') + '</p>';
       var ps = people(play, st, ft), shown = ps.slice(0, SHOW), more = ps.slice(SHOW);
       h += '<p class="gl-now-line gl-now-ppl"><span class="gl-now-k">Now</span> ' + (shown.length ? shown.map(function (p) {
         var nx = p.till === null ? '' : ' <span class="gl-now-dim">till ' + esc(B.timeLabel(play, p.till)) + ', then</span> ' + (p.gone ? '<span class="gl-now-dim">gone</span>' : place(p.next, ''));
-        return '<span class="gl-now-who' + (p.key ? ' gl-now-key' : '') + '"><b>' + esc(p.label) + '</b> ' + place(p.room, 'not here') + nx + '</span>';
+        return '<span class="gl-now-who' + (p.key ? ' gl-now-key' : '') + '"><span class="gl-now-pair"><b>' + esc(p.label) + '</b> ' + place(p.room, 'not here') + '</span>' + nx + '</span>';
       }).join(SEP) : '<span class="gl-now-dim">Nobody placed by the play</span>');
       if (more.length) h += ' <span class="gl-now-dim" title="' + esc(more.map(function (p) { return p.label; }).join(', ')) + '">and ' + more.length + ' more</span>';
       return h + '</p></div>';

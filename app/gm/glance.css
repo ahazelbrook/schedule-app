@@ -16,7 +16,8 @@
   color: var(--ink); font: 13px/1.2 var(--font-mono); }
 #gm-page .gl-now:not(.gl-now-kit) .gl-now-line { margin: 0; }
 #gm-page .gl-now:not(.gl-now-kit) .gl-now-dim { color: var(--ink-soft); }
-#gm-page .gl-now:not(.gl-now-kit) .gl-now-sep { color: var(--ink-soft); }
+#gm-page .gl-now:not(.gl-now-kit) .gl-now-sep { padding: 0 2px; color: var(--ink-soft); }
+#gm-page .gl-now:not(.gl-now-kit) .gl-now-pair { white-space: nowrap; }
 
 /* ---------- RK21: the same block on the kit desk (the kit's tokens) ---------- */
 :root[data-kit~="desk"] .gl-now-kit { display: grid; gap: var(--ui-space-1); margin: 0; padding: var(--ui-space-1) 0 var(--ui-space-2);
@@ -31,5 +32,6 @@
 :root[data-kit~="desk"] .gl-now-kit .gl-now-in { width: 5.2em; min-height: 32px; padding: 0 var(--ui-space-2); border: 1px solid var(--ui-line);
   border-radius: var(--ui-radius, 4px); background: var(--ui-raised); color: var(--ui-ink); font: var(--ui-type-body)/1.2 var(--ui-font-mono); }
 :root[data-kit~="desk"] .gl-now-kit .gl-now-line { margin: 0; }
-:root[data-kit~="desk"] .gl-now-kit .gl-now-dim,
-:root[data-kit~="desk"] .gl-now-kit .gl-now-sep { color: var(--ui-ink-soft); }
+:root[data-kit~="desk"] .gl-now-kit .gl-now-dim { color: var(--ui-ink-soft); }
+:root[data-kit~="desk"] .gl-now-kit .gl-now-sep { padding: 0 2px; color: var(--ui-ink-soft); }
+:root[data-kit~="desk"] .gl-now-kit .gl-now-pair { white-space: nowrap; }

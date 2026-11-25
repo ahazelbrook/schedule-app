@@ -86,7 +86,7 @@ export async function rk21(c) {
       check((await p.$eval('#rv-time', (e) => e.textContent)) === '21:45', 'the published time stays 21:45 (the players’ time is not the fiction’s)');
       const t1 = await block(p);
       check(/Dov Kessler Showroom till 23:00, then Security control room/.test(lineOf(t1, 'Now')), 'the Now line follows the fiction’s time: ' + lineOf(t1, 'Now').slice(0, 200));
-      check(/\+20/.test(t1) && (await p.$$('#gm-runv [data-site="gln-clear"]')).length === 1, 'the block says how far it is ahead, and offers Clear');
+      check(/20 min ahead/.test(t1) &&(await p.$$('#gm-runv [data-site="gln-clear"]')).length === 1, 'the block says how far it is ahead, and offers Clear');
 
       /* a typed time; the keys typed into the box never reach the page's shortcuts */
       await p.fill('#gm-runv .gl-now-in', '');
