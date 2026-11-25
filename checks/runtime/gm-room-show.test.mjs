@@ -39,6 +39,7 @@ function fakeHost(o = {}) {
     log, cast: npcs, up: '', answer: o.answer !== undefined ? o.answer : {}, confirmSays: o.confirm !== undefined ? o.confirm : true,
     show(kind, p, opts) { log.push(['show', kind, p, opts]); if (h.answer != null) h.up = SHOW.idFor(opts.key); return Promise.resolve(h.answer); },
     hidden() { return npcs.filter((n) => !n.revealed).flatMap((n) => [n.name].concat(n.alias ? [n.alias] : [])).concat(o.clocks || []); },
+    rooms() { return (o.rooms || []).slice(); },
     namesHit,
     npcs: () => npcs.map((n) => Object.assign({}, n)),
     reveal(id) { log.push(['reveal', id]); if (o.revealFails) return Promise.reject(new Error('no')); npcs.find((n) => n.id === id).revealed = true; return Promise.resolve(); },
@@ -164,10 +165,64 @@ test('the names gate: yes reveals them (the spotlight\'s reveal), then the beat 
 test('the names gate: a hidden clock is refused (never revealed from here); a failed reveal shows nothing', async () => {
   const h = fakeHost({ npcs: HIDDEN, clocks: ['GM-ONLY-Alarm'] }), m = RS.make(h);
   assert.equal(await m.send(ctxOf({ name: 'A red lamp', line: 'it lights when the GM-ONLY-Alarm fills', slug: 'lamp' }), 'thing'), false);
-  assert.equal(kinds(h.log), 'toast'); assert.equal(h.log[0][2], true); assert.match(h.log[0][1], /hidden clock/);
+  assert.equal(kinds(h.log), 'toast'); assert.equal(h.log[0][2], true); assert.match(h.log[0][1], /something hidden, the clock GM-ONLY-Alarm/);
   const h2 = fakeHost({ npcs: HIDDEN, revealFails: true }), m2 = RS.make(h2);
   assert.equal(await m2.send(ctxOf(NAMING), 'thing'), false);
   assert.equal(kinds(h2.log), 'confirm,reveal,toast');
+});
+
+
+/* the review of 61b332f8: a roll or a danger written without its dash, or typed on the first line, is folded by the parser into the line or
+   the closer look; payload() cuts it off (the parser is RK08's, and is left as it is) */
+const SLIPS = [
+  '- **Things:**',
+  '  1. **A brass umbrella stand**, too heavy to tip.',
+  '     🎲 4/5: GM-ONLY-roll a ticket.',
+  '  2. **A velvet rope**, on two posts.',
+  '     - 🔍 one post is hollow.',
+  '       ! GM-ONLY-danger the post falls.',
+  '  3. **A grand piano**, lid open.',
+  '     Roll: GM-ONLY-roll 4/5 the music.',
+  '  4. **A drinks trolley**, rattling 🎲 GM-ONLY-roll 4/5 a key.',
+  '  5. **A notice**, Look out! The floor creaks.',
+  '     - 🔍 Danger: GM-ONLY-danger the boards give.'
+].join(String.fromCharCode(10));
+
+test('the safety net: a roll or a danger the parser folded into the line or the closer look is cut off; an exclamation inside prose stays whole', () => {
+  const ts = RT.parse(SLIPS);
+  assert.equal(ts.length, 5);
+  assert.ok(/GM-ONLY-roll/.test(ts[0].line) && /GM-ONLY-danger/.test(ts[1].look) && /GM-ONLY-roll/.test(ts[2].line) && /GM-ONLY-roll/.test(ts[3].line), 'the parser does fold them (the slips are real)');
+  assert.deepEqual(RS.payload(ts[0], 'thing'), { text: 'A brass umbrella stand', sub: 'Too heavy to tip.' }, 'a dice line with no dash');
+  assert.deepEqual(RS.payload(ts[1], 'look'), { text: 'A velvet rope', sub: 'One post is hollow.' }, 'a danger line under the closer look');
+  assert.deepEqual(RS.payload(ts[2], 'thing'), { text: 'A grand piano', sub: 'Lid open.' }, 'a Roll: line with no dash');
+  assert.deepEqual(RS.payload(ts[3], 'thing'), { text: 'A drinks trolley', sub: 'Rattling' }, 'the dice typed on the first line');
+  assert.deepEqual(RS.payload(ts[4], 'thing'), { text: 'A notice', sub: 'Look out! The floor creaks.' }, 'an exclamation inside prose stays whole');
+  assert.equal(RS.payload(ts[4], 'look'), null, 'a closer look that is all danger is not offered');
+  for (const t of ts) for (const w of RS.WHICH) { const p = RS.payload(t, w); if (p) assert.ok(!/GM-ONLY-(roll|danger)/.test(JSON.stringify(p)), JSON.stringify(p)); }
+  assert.equal(RS.cut('a warning ⚠ GM-ONLY-danger'), 'a warning');
+  assert.equal(RS.cut('!GM-ONLY-danger at the start'), '');
+  assert.equal(RS.cut('the patrol: two guards'), 'the patrol: two guards', 'a word ending in roll is not a Roll:');
+  assert.equal(RS.cut('it ends here!'), 'it ends here!');
+  assert.deepEqual(RS.make(fakeHost()).buttons(ctxOf(ts[4])).map((b) => b.label), ['Show on iPad'], 'the button row follows: no closer look to show');
+});
+
+test('a room the players have not seen: a hit asks "show anyway?"; no sends nothing; yes sends that line alone and opens nothing', async () => {
+  const LINE = { name: 'A brass key', line: 'it fits the vault door, by the look of it', look: '', slug: 'a-brass-key' };
+  const h = fakeHost({ rooms: ['vault'], confirm: false }), m = RS.make(h);
+  assert.equal(await m.send(ctxOf(LINE), 'thing'), false);
+  assert.equal(kinds(h.log), 'confirm,toast');
+  assert.equal(h.log[0][1], RS.ROOM_QUESTION + ' (vault)');
+  assert.equal(RS.ROOM_QUESTION, "This names a room the players haven't seen yet: show anyway?");
+  const h2 = fakeHost({ rooms: ['vault'], confirm: true }), m2 = RS.make(h2);
+  assert.equal(await m2.send(ctxOf(LINE), 'thing'), true);
+  assert.equal(kinds(h2.log), 'confirm,show,toast', 'asked, then shown: no reveal, nothing opened');
+  assert.deepEqual(h2.log[1][2], { text: 'A brass key', sub: 'It fits the vault door, by the look of it' }, 'only that line');
+  const h3 = fakeHost({ rooms: ['vault'] }), m3 = RS.make(h3);
+  assert.equal(await m3.send(ctxOf({ name: 'A vaulted ceiling', line: 'high above', slug: 'v' }), 'thing'), true);
+  assert.equal(kinds(h3.log), 'show,toast', 'a longer word is no hit');
+  const h4 = fakeHost({ npcs: HIDDEN, rooms: ['vault'], confirm: true }), m4 = RS.make(h4);
+  assert.equal(await m4.send(ctxOf({ name: 'A note', line: 'GM-ONLY-Silent Partner hid it in the vault', slug: 'n' }), 'thing'), true);
+  assert.equal(kinds(h4.log), 'confirm,reveal,confirm,show,toast', 'the person first, then the room');
 });
 
 test('the page: two lines in gm-page.js, the host is null while room.key is off, and no display, phone or server file names the module', () => {

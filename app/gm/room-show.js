@@ -8,11 +8,15 @@
      'look'   Show the closer look   { text: the name, sub: the closer look }   (offered only when the thing has one)
    The roll (the 4/5 and the 6) and the danger are never sendable: payload() knows no other line, so nothing here can put them in a beat.
    Nothing of a thing is sent, stored or drawn anywhere but the GM page until the GM taps one of these, and then only that beat goes.
-   The sub's first letter is raised to a capital (a line reads "too heavy to tip." in the note); nothing else in it changes.
+   The sub's first letter is raised to a capital (a line reads "too heavy to tip." in the note).
+   THE SAFETY NET: a roll or a danger the parser folded into the line or the closer look (written without its dash, or on the first line) is
+   cut off: the text sent stops at the first dice, warning sign, "!" that starts the text or follows a space, or "Roll:" / "Danger:" (cut()).
 
    THE NAMES GATE. Before a beat goes, its words are scanned with the page's namesHit against hiddenSecretNames() (hidden NPCs, name and
    alias, and hidden clocks), as the spotlight is. A hidden NPC asks "This names someone hidden: reveal and show?"; a yes reveals them (the
-   spotlight's reveal) and then shows, a no shows nothing. A hidden clock is never revealed from here: the beat is refused with a toast.
+   spotlight's reveal) and then shows, a no shows nothing. A hidden clock is never revealed from here: the beat is refused with a toast that
+   names it. Then the site's hidden names (tokenHidden: rooms the players have not seen, and the like) are scanned: a hit asks "This names a
+   room the players haven't seen yet: show anyway?"; a yes sends the line alone (nothing is opened), a no sends nothing.
    The page's gate and the server scan the beat again; this only asks first.
 
    TAKE IT DOWN. While a beat this page sent is up (the overlay up is its id, inside its 12 seconds), its button reads "Take it down" and takes
@@ -22,12 +26,12 @@
      buttons(ctx) -> [button]     the 'show' slot (ctx: the zoom card's); none while the page has no host (room.key off, no GM page)
      make(host) -> { buttons(ctx), send(ctx, which) -> Promise<bool>, down(ctx, which) -> Promise<bool>, isUp(ctx, which) -> bool }
        host (an object, or a function that returns the current one) = { show(kind, payload, opts) -> Promise<answer | null>,
-                hidden() -> [name], namesHit(text, names) -> bool, npcs() -> [{ id, name, alias, revealed }], reveal(id) -> Promise,
+                hidden() -> [name], rooms() -> [the site's hidden names], namesHit(text, names) -> bool, npcs() -> [{ id, name, alias, revealed }], reveal(id) -> Promise,
                 ask(msg) -> Promise<bool> (the page's own confirm: the kit's dialog on the kit desk), overlayId() -> the id up now,
                 clear() -> Promise (the overlay off), toast(text, bad) }
        The page's is B68GmPage.roomShow() (null while room.key is off).
-     Pure: payload(thing, which) -> { text, sub? } | null   keyOf(ctx, which)   hits(payload, names, namesHit) -> [name]
-           WHICH, MS, KIND, QUESTION */
+     Pure: payload(thing, which) -> { text, sub? } | null   cut(text)   keyOf(ctx, which)   hits(payload, names, namesHit) -> [name]
+           WHICH, MS, KIND, QUESTION, ROOM_QUESTION */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -38,8 +42,9 @@
 
   var KIND = 'title', MS = 12000, TEXT_MAX = 80, SUB_MAX = 120;
   var WHICH = ['thing', 'look'];
-  var QUESTION = 'This names someone hidden: reveal and show?';
+  var QUESTION = 'This names someone hidden: reveal and show?', ROOM_QUESTION = "This names a room the players haven't seen yet: show anyway?";
   var LABEL = { thing: 'Show on iPad', look: 'Show the closer look' }, DOWN = 'Take it down';
+  var UP_TITLE = { thing: 'On the iPad now: the name and its line. Take it down', look: 'On the iPad now: the closer look. Take it down' };
   var TITLE = { thing: 'The name and its line on the iPad, for 12 seconds', look: 'The name and the closer look on the iPad, for 12 seconds' };
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
@@ -62,10 +67,15 @@
 
   /* ---------- pure ---------- */
   /* the beat for one line of a thing: 'thing' (name + line) or 'look' (name + closer look); anything else (the roll, the danger) is null */
+  /* THE SAFETY NET. A roll or a danger written without its dash, or typed on the thing's first line, is folded by the parser into the line or
+     the closer look. So what goes is cut at the first roll or danger marker: the dice or a warning sign anywhere, a "!" that starts the text or
+     follows a space (not one inside prose: "Look out! The floor creaks" stays whole), or "Roll:" or "Danger:" at the start of a word. */
+  var MARK = /🎲|⚠|(?:^|\s)!|\b(?:roll|danger)\s*:/i;
+  function cut(s) { s = flat(s); var m = MARK.exec(s); return m ? flat(s.slice(0, m.index)).replace(/[\s,;:(–—-]+$/, '') : s; }
   function payload(t, which) {
     if (!isObj(t) || WHICH.indexOf(which) < 0) return null;
-    var text = clip(t.name, TEXT_MAX); if (!text) return null;
-    var sub = which === 'look' ? flat(t.look) : flat(t.line);
+    var text = clip(cut(t.name), TEXT_MAX); if (!text) return null;
+    var sub = which === 'look' ? cut(t.look) : cut(t.line);
     if (which === 'look' && !sub) return null;
     var out = { text: text };
     if (sub) out.sub = upper(clip(sub, SUB_MAX));
@@ -100,7 +110,16 @@
     function later(fn, ms) { if (root && typeof root.setTimeout === 'function') root.setTimeout(fn, ms); }
 
     /* the names gate: -> Promise<true> to send; false when the GM said no, or the words name something that cannot be revealed here */
-    function cleared(p) {
+    function cleared(p) { return people(p).then(function (ok) { return ok ? rooms(p) : false; }); }
+    /* a hidden room of the site (tokenHidden): asked, never opened from here; room names are often common words, so a yes sends the line alone */
+    function rooms(p) {
+      var found = hits(p, list(call('rooms')), namesHit);
+      if (!found.length) return Promise.resolve(true);
+      var h0 = H(), q;
+      try { q = h0 && typeof h0.ask === 'function' ? h0.ask(ROOM_QUESTION + ' (' + found.join(', ') + ')') : false; } catch (e) { q = false; }
+      return Promise.resolve(q).then(function (yes) { if (yes !== true) { toast('Not shown.'); return false; } return true; }, function () { return false; });
+    }
+    function people(p) {
       var found = hits(p, list(call('hidden')), namesHit);
       if (!found.length) return Promise.resolve(true);
       var people = list(call('npcs')).filter(function (n) {
@@ -108,7 +127,7 @@
       });
       var theirs = {}; people.forEach(function (n) { theirs[fold(n.name)] = 1; if (flat(n.alias)) theirs[fold(n.alias)] = 1; });
       var other = found.filter(function (f) { return !theirs[fold(f)]; });
-      if (other.length) { toast('Not shown: this names a hidden clock (' + other.join(', ') + '). Show the clock first.', true); return Promise.resolve(false); }
+      if (other.length) { toast('Not shown: it names something hidden, the clock ' + other.join(', ') + '. Show that clock on the table first.', true); return Promise.resolve(false); }
       var who = people.map(function (n) { return flat(n.name); }).join(', ');
       var h0 = H(), q;
       try { q = h0 && typeof h0.ask === 'function' ? h0.ask(QUESTION + ' ' + who + ' will be revealed to everyone, and the line goes on the iPad.') : false; } catch (e) { q = false; }
@@ -163,7 +182,7 @@
       WHICH.forEach(function (w) {
         if (!payload(ctx.thing, w)) return;
         var up = isUp(ctx, w);
-        out.push({ id: 'show-' + w, label: up ? DOWN : LABEL[w], rank: 'standard', pressed: up, title: up ? 'On the iPad now: take it down' : TITLE[w],
+        out.push({ id: 'show-' + w, label: up ? DOWN : LABEL[w], rank: 'standard', pressed: up, title: up ? UP_TITLE[w] : TITLE[w],
           run: function (c) { return up ? down(c || ctx, w) : send(c || ctx, w); } });
       });
       return out;
@@ -175,5 +194,5 @@
   function pageHost() { var P = mod('B68GmPage'); try { return P && typeof P.roomShow === 'function' ? P.roomShow() : null; } catch (e) { return null; } }
   var slot = make(pageHost);
 
-  return { buttons: function (ctx) { return slot.buttons(ctx); }, make: make, payload: payload, keyOf: keyOf, hits: hits, WHICH: WHICH, MS: MS, KIND: KIND, QUESTION: QUESTION };
+  return { buttons: function (ctx) { return slot.buttons(ctx); }, make: make, payload: payload, cut: cut, keyOf: keyOf, hits: hits, WHICH: WHICH, MS: MS, KIND: KIND, QUESTION: QUESTION, ROOM_QUESTION: ROOM_QUESTION };
 });
