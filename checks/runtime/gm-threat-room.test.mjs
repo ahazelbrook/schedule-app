@@ -149,6 +149,7 @@ test('gm-page: b19Host.room and the threat hook take the new branch only through
   assert.ok(pageJs.includes("room: function () { var tr = trInst(me); return S === me ? (tr ? tr.room() : W.B68GmStamp.pickRoom(runCrewRooms())) : ''; }"), 'room: the new room, else the old pick');
   assert.ok(pageJs.includes('if (t) t.drop(st); var tr = trInst(me); if (tr) tr.stamped(st);'), 'threat: the drop as it was, then the marker');
   assert.ok(inst.includes('move: function (id, room) { return S === me && runMovePc(id, room) !== null; }'), 'the move is the Run view’s own write (moveCrew through the ball)');
+  assert.ok(inst.includes('S.b19Model') && !inst.includes('S.locRoll'), 'the rooms are the Run view’s own, not the Location roll’s');
   assert.ok(inst.includes('str(S.rollSel)'), 'the selected room is the one the Roll’s own line uses');
 });
 test('the bundle: threat-room.js is in night-flow, not in the always-on GM bundle or the display', () => {
