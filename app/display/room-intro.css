@@ -1,2 +1,134 @@
-/* display/room-intro.css: the room opening's card (room.intro). Registered as an empty stub by RK30 (the late registrar) of the room key build; RK29 fills it.
-   In the room-intro bundle, fetched only while its setting is on. Rules go here, scoped to this build's own classes. */
+/* display/room-intro.css: the room opening's card (RK29, setting room.intro; display/room-intro.js builds the markup).
+   The NPC introduction's title card (display/players/intro.css) with the room plate in the figure's place, then out of the way. In the room-intro bundle,
+   fetched only while its setting is on (the GM page fetches it too: one bundle). Every rule is scoped under the card's root class, .ro-card, or the
+   ring's, .ro-rings (drawn inside the map's own svg); no other markup uses either. Every beat's delay is a custom property the script sets from the
+   shared clock (--ro-t-enter ... --ro-t-end): a page that joins mid-card is at the same frame as the others. The base styles are the frozen frame;
+   the animations bring it in and take it away, so .ro-still (the device asking for reduced motion) is the frozen frame with no animation at all.
+   Only transform, opacity and clip-path animate. */
+
+.ro-card {
+  --ro-lb: 5.5vh;            /* the letterbox bars */
+  position: absolute; inset: 0; z-index: 20; overflow: hidden; pointer-events: none; contain: layout paint;
+  color: var(--ro-ink, #14110e); -webkit-user-select: none; user-select: none;
+}
+
+/* ---------- the cut: a flat field in the site's colour, a coarse halftone, a light behind the plate ---------- */
+.ro-card .ro-ground { position: absolute; inset: 0; background: var(--ro-field, #e0691e); }
+.ro-card .ro-ground::before {
+  content: ""; position: absolute; inset: 0;
+  background-image: radial-gradient(circle at center, var(--ro-dot, rgb(20 17 14 / .34)) 0 33%, transparent 37%);
+  background-size: 1.7vh 1.7vh;
+  -webkit-mask-image: linear-gradient(118deg, #000 0%, rgb(0 0 0 / .7) 30%, transparent 62%);
+  mask-image: linear-gradient(118deg, #000 0%, rgb(0 0 0 / .7) 30%, transparent 62%);
+}
+.ro-card .ro-ground::after { content: ""; position: absolute; inset: 0; background: radial-gradient(ellipse 34% 58% at 70% 46%, rgb(255 255 255 / .26), rgb(255 255 255 / 0) 72%); }
+
+/* ---------- the plate: the room cut from the map; a silhouette from the right, then colour, the silhouette left as an offset print shadow ---------- */
+.ro-card .ro-out {
+  position: absolute; right: 5vw; top: calc(var(--ro-lb) + 4vh);
+  height: min(64vh, calc(56vw / var(--ro-ar, 1))); width: calc(min(64vh, calc(56vw / var(--ro-ar, 1))) * var(--ro-ar, 1));
+}
+.ro-card .ro-enter, .ro-card .ro-col { position: relative; width: 100%; height: 100%; }
+.ro-card .ro-piece { position: absolute; transform-origin: 0 0; will-change: transform; }
+.ro-card .ro-sil { position: absolute; inset: 0; transform: translate(1.9vh, 1.3vh); filter: brightness(0); }
+.ro-card .ro-col svg, .ro-card .ro-sil svg { display: block; width: 100%; height: 100%; overflow: visible; }
+
+/* ---------- the type, lower left: two kicker tapes, the name(s) with an offset copy, then "and N more" ---------- */
+.ro-card .ro-type { position: absolute; left: 5vw; bottom: calc(var(--ro-lb) + 5vh); width: 90vw; }
+.ro-card .ro-kick { margin: 0 0 1.4vh; display: flex; flex-direction: column; align-items: flex-start; gap: .7vh; max-width: 100%; }
+.ro-card .ro-kick-t {
+  display: block; max-width: 100%; box-sizing: border-box; padding: .9vh 1.4vh .8vh; background: #14110e; color: #fbf8f1;
+  font: 800 3.4vh/1.1 var(--font-cond, "Archivo Condensed", "Arial Narrow", sans-serif); letter-spacing: .2em; text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ro-card .ro-name {
+  margin: 0; font: 900 14vh/.9 var(--font-poster, "Archivo Compressed", Impact, "Arial Narrow", sans-serif);
+  letter-spacing: .005em; word-spacing: .1em; text-transform: uppercase;
+}
+.ro-card .ro-line { position: relative; display: block; white-space: nowrap; }
+.ro-card .ro-name[data-ro-wrap="1"] .ro-line { white-space: normal; text-wrap: balance; }
+.ro-card .ro-front { position: relative; display: block; color: var(--ro-ink, #14110e); }
+.ro-card .ro-back { position: absolute; left: .055em; top: .055em; width: 100%; color: var(--ro-back, #fbf8f1); }
+.ro-card .ro-more { margin: 1.2vh 0 0; font: italic 700 4.6vh/1.1 var(--font-cond, "Archivo Condensed", "Arial Narrow", sans-serif); color: var(--ro-ink, #14110e); }
+
+/* ---------- the letterbox and the flash ---------- */
+.ro-card .ro-lb { position: absolute; left: 0; right: 0; height: var(--ro-lb); background: #000; }
+.ro-card .ro-lb-t { top: 0; }
+.ro-card .ro-lb-b { bottom: 0; }
+.ro-card .ro-flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
+
+/* ---------- the timeline ---------- */
+.ro-card .ro-enter { animation: ro-enter 700ms cubic-bezier(.22, .62, .34, 1) var(--ro-t-enter, 0ms) both; }
+/* the snap: 1 ms, linear (not steps(1, end), which floors a 1 ms animation back to its start; intro.css) */
+.ro-card .ro-col { animation: ro-snap 1ms linear var(--ro-t-freeze, 0ms) both; }
+.ro-card .ro-sil { animation: ro-shift 1ms linear var(--ro-t-freeze, 0ms) both, ro-silout 150ms linear var(--ro-t-settle, 99s) both; }
+.ro-card .ro-flash { animation: ro-flash 70ms linear var(--ro-t-freeze, 0ms) forwards; }
+.ro-card .ro-kick { animation: ro-wipe 170ms cubic-bezier(.7, 0, .3, 1) var(--ro-t-kicker, 0ms) both; }
+.ro-card .ro-back { animation: ro-wipe 190ms cubic-bezier(.7, 0, .3, 1) var(--ro-t-name, 0ms) both; }
+.ro-card .ro-front { animation: ro-wipe 190ms cubic-bezier(.7, 0, .3, 1) var(--ro-t-name2, 0ms) both; }
+.ro-card .ro-more { animation: ro-wipe 170ms cubic-bezier(.7, 0, .3, 1) var(--ro-t-more, 0ms) both; }
+/* the hand-over: the type, the ground and the bars go; each piece settles onto its room (the script sets --ro-settle), then the plate fades into the map */
+.ro-card .ro-type { animation: ro-wipeout 200ms cubic-bezier(.7, 0, .3, 1) var(--ro-t-out, 99s) both; }
+.ro-card .ro-ground { animation: ro-groundout 620ms cubic-bezier(.65, 0, .35, 1) var(--ro-t-out, 99s) both; }
+.ro-card .ro-lb-t { animation: ro-lbt 420ms cubic-bezier(.6, 0, .4, 1) var(--ro-t-out, 99s) both; }
+.ro-card .ro-lb-b { animation: ro-lbb 420ms cubic-bezier(.6, 0, .4, 1) var(--ro-t-out, 99s) both; }
+.ro-card .ro-piece { animation: ro-settle 560ms cubic-bezier(.6, 0, .25, 1) var(--ro-t-settle, 99s) both; }
+.ro-card .ro-out { animation: ro-fadeout 180ms linear var(--ro-t-fade, 99s) both; }
+
+@keyframes ro-enter { from { transform: translateX(82vw) skewX(-9deg); } 78% { transform: translateX(-1vw) skewX(1.5deg); } to { transform: none; } }
+@keyframes ro-snap { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ro-shift { from { transform: none; } to { transform: translate(1.9vh, 1.3vh); } }
+@keyframes ro-silout { from { opacity: 1; } to { opacity: 0; } }
+@keyframes ro-flash { 0%, 99% { opacity: .9; } 100% { opacity: 0; } }
+@keyframes ro-wipe {
+  from { -webkit-clip-path: inset(-20% 100% -20% 0); clip-path: inset(-20% 100% -20% 0); }
+  to { -webkit-clip-path: inset(-20% -5% -20% 0); clip-path: inset(-20% -5% -20% 0); }
+}
+@keyframes ro-wipeout {
+  from { -webkit-clip-path: inset(-20% -5% -20% 0); clip-path: inset(-20% -5% -20% 0); }
+  to { -webkit-clip-path: inset(-20% 105% -20% 0); clip-path: inset(-20% 105% -20% 0); }
+}
+@keyframes ro-groundout {
+  from { -webkit-clip-path: inset(0 0 0 0); clip-path: inset(0 0 0 0); }
+  to { -webkit-clip-path: inset(0 0 0 100%); clip-path: inset(0 0 0 100%); }
+}
+@keyframes ro-lbt { from { transform: none; } to { transform: translateY(-100%); } }
+@keyframes ro-lbb { from { transform: none; } to { transform: translateY(100%); } }
+@keyframes ro-settle { from { transform: none; } to { transform: var(--ro-settle, none); } }
+@keyframes ro-fadeout { from { opacity: 1; } to { opacity: 0; } }
+
+/* ---------- the ring round each new room, inside the map's own svg: an ink outline held, and two orange pulses ---------- */
+.ro-rings .ro-ring-a, .ro-rings .ro-ring-b { fill: none; vector-effect: non-scaling-stroke; transform-box: fill-box; transform-origin: center; opacity: 0; pointer-events: none; }
+.ro-rings .ro-ring-a { stroke: #14110e; stroke-width: 5px; stroke-linejoin: round; animation: ro-ringhold 1500ms linear var(--ro-t-ring, 99s) both; }
+.ro-rings .ro-ring-b { stroke: var(--ro-ringc, #e0691e); stroke-width: 3px; stroke-linejoin: round; animation: ro-ringpulse 750ms cubic-bezier(.2, .6, .3, 1) var(--ro-t-ring, 99s) 2 both; }
+@keyframes ro-ringhold { 0% { opacity: 0; } 8% { opacity: .9; } 70% { opacity: .9; } 100% { opacity: 0; } }
+@keyframes ro-ringpulse { 0% { opacity: 0; transform: scale(1); } 12% { opacity: 1; } 100% { opacity: 0; transform: scale(1.32); } }
+
+/* no plate could be cut: the type alone on the field */
+.ro-card.ro-noplate .ro-type { width: 90vw; }
+
+/* portrait (an iPad held upright): the plate centred across the top, the type across the foot */
+@media (orientation: portrait) {
+  .ro-card { --ro-lb: 4.5vh; }
+  .ro-card .ro-out {
+    top: calc(var(--ro-lb) + 4vh);
+    height: min(46vh, calc(88vw / var(--ro-ar, 1))); width: calc(min(46vh, calc(88vw / var(--ro-ar, 1))) * var(--ro-ar, 1));
+    right: calc((100vw - min(46vh, calc(88vw / var(--ro-ar, 1))) * var(--ro-ar, 1)) / 2);
+  }
+  .ro-card .ro-type { left: 6vw; width: 88vw; bottom: calc(var(--ro-lb) + 4vh); }
+  .ro-card .ro-kick-t { font-size: 2.6vh; }
+  .ro-card .ro-more { font-size: 3.4vh; }
+}
+
+/* the moment the card is mounted, the plate is measured where it will stand (room-intro.js lifts ro-measure in the same call) */
+.ro-card.ro-measure .ro-enter { animation: none; }
+
+/* reduced motion (the device setting; Hold scenes still does not apply to a sent event): the frozen frame, nothing moves, no ring (room-intro.js cuts after 3 s) */
+.ro-card.ro-still .ro-enter, .ro-card.ro-still .ro-col, .ro-card.ro-still .ro-sil, .ro-card.ro-still .ro-flash, .ro-card.ro-still .ro-kick, .ro-card.ro-still .ro-back,
+.ro-card.ro-still .ro-front, .ro-card.ro-still .ro-more, .ro-card.ro-still .ro-type, .ro-card.ro-still .ro-ground, .ro-card.ro-still .ro-lb-t, .ro-card.ro-still .ro-lb-b,
+.ro-card.ro-still .ro-out, .ro-card.ro-still .ro-piece { animation: none; transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .ro-card .ro-enter, .ro-card .ro-col, .ro-card .ro-sil, .ro-card .ro-flash, .ro-card .ro-kick, .ro-card .ro-back, .ro-card .ro-front, .ro-card .ro-more,
+  .ro-card .ro-type, .ro-card .ro-ground, .ro-card .ro-lb-t, .ro-card .ro-lb-b, .ro-card .ro-out, .ro-card .ro-piece,
+  .ro-rings .ro-ring-a, .ro-rings .ro-ring-b { animation: none; transition: none; }
+}
