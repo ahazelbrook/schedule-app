@@ -82,13 +82,18 @@ function assertMix(things, label) {
   assert.ok(m.weapon <= 1, label + ': ' + m.weapon + ' weapons');
 }
 /* a second weapon weighs more than a missing clue or way out: it never comes in to bring one back */
-const misses = (things) => { const m = mixOf(things); return (m.clue ? 0 : 1) + (m.way ? 0 : 1) + 2 * Math.max(0, m.weapon - 1); };
+const misses = (things) => { const m = mixOf(things); return (m.clue ? 0 : 1) + (m.way ? 0 : 1) + 3 * Math.max(0, m.weapon - 1); };
 /* the fewest misses the table allows: base plus one table thing not on show (cur) and not swapped away (gone), worked out by brute force */
 /* (the weapon cap is hard: a weapon never joins things that hold one; null when nothing may come) */
 const armed = (t) => t.tags.includes('weapon');
 function left(room, cur, gone = []) {
   const on = cur.map((t) => TH.slug(t.name));
   return room.things.filter((t) => !on.includes(TH.slug(t.name)) && !gone.includes(TH.slug(t.name)));
+}
+/* what Swap on the place now showing `now` may not bring back: every stored swap's origin but this place's own (its origin comes home) */
+function goneFrom(swaps, now) {
+  const origin = Object.keys(swaps).find((a) => swaps[a] === now) || now;
+  return Object.keys(swaps).filter((a) => a !== origin);
 }
 function best(room, cur, base, gone = []) {
   const cands = left(room, cur, gone).filter((t) => !(base.some(armed) && armed(t)));
@@ -101,7 +106,9 @@ function rig() {
   r.rs = RS.create({ on: () => true, doc: () => r.doc, now: () => (r.t += 1000), part: () => 'p1', busy: () => false, patch: (p) => { r.doc = merge(r.doc, p); return true; } });
   return r;
 }
-const opts = (rs, rk, key) => { const s = rs.read(rk, key); return { say: s.say, rr: s.rr, extra: s.extra, swaps: s.swaps }; };
+/* site() takes the page's rollKey from its caller, as RK14's will (P.rollKey, gm-page.js) */
+const site = (roll, T, o = {}) => R.site(roll, T, Object.assign({ rollKey: P.rollKey(roll) }, o));
+const opts = (rs, rk, key) =>{ const s = rs.read(rk, key); return { say: s.say, rr: s.rr, extra: s.extra, swaps: s.swaps }; };
 
 const BAR = RT.get('Pelican bar', PACK.T);
 const CLOAK = RT.get('Pelican cloakroom', PACK.T);
@@ -127,21 +134,35 @@ test('the same seed gives the same draw; another room or another roll gives anot
   for (let s = 0; s < 50; s++) if (JSON.stringify(R.roll(BAR, R.key(s, 'pelican bar#1'), {})) !== JSON.stringify(R.roll(BAR, R.key(s, 'pelican bar#2'), {}))) differ++;
   assert.ok(differ >= 40, 'the roomKey forks the streams: ' + differ + '/50 differ');
   const T = partFor([5]), roll = L.generate(FIXL, {}, { seed: 5, mem: {} });
-  assert.deepEqual(R.site(roll, T), R.site(L.generate(FIXL, {}, { seed: 5, mem: {} }), T), 'rolling the same site twice gives the same rooms and things');
+  assert.deepEqual(site(roll, T), site(L.generate(FIXL, {}, { seed: 5, mem: {} }), T), 'rolling the same site twice gives the same rooms and things');
 });
 
-test('the location sweep does not move: rolls are byte-identical with room rolls between them, and no roll is written onto', () => {
+/* The fixture with no controlled or secure rooms (every band of those two made working): no room gets an obstacle, so generate() reaches its
+   last draw (the obstacle fallback, location.js ~:615), and a draw added anywhere inside generate() moves its digest. */
+const FLAT = (() => {
+  const F = clone(FIXL), flat = (b) => (b === 'controlled' || b === 'secure' ? 'working' : b);
+  for (const t of Object.values(F.T.theme)) { t.bands = t.bands.map(flat); t.alsoRooms = t.alsoRooms.map((a) => [a[0], flat(a[1])]); }
+  return F;
+})();
+/* the sweep's digests, pinned: the rolls of location.js as it is on room/main 9efb60be (RK13 leaves it untouched) */
+const SWEEP = { fixture: 'f679f8319bc71dac', flat: '4214d60512129bf5' };
+
+test('the location sweep does not move: pinned digests (one reaching generate()\'s last draw), room rolls between the rolls, none written onto', () => {
   const T = partFor([1, 2, 3, 4, 5, 6, 7, 8]);
-  const plain = [], mixed = [];
-  for (let s = 0; s < 400; s++) plain.push(JSON.stringify(L.generate(FIXL, {}, { seed: s * 2654435761 >>> 0, mem: {} })));
-  for (let s = 0; s < 400; s++) {
-    const o = L.generate(FIXL, {}, { seed: s * 2654435761 >>> 0, mem: {} }), before = JSON.stringify(o);
-    const out = R.site(o, T);
-    assert.ok(out && out.order.length === new Set(RS.roomKeys(o.rooms.map((x) => x.name))).size);
-    assert.equal(JSON.stringify(o), before, 'site() wrote onto the roll (seed ' + s + ')');
-    mixed.push(JSON.stringify(o));
+  for (const [name, pack] of [['fixture', FIXL], ['flat', FLAT]]) {
+    const plain = [], mixed = [];
+    for (let s = 0; s < 400; s++) plain.push(JSON.stringify(L.generate(pack, {}, { seed: s * 2654435761 >>> 0, mem: {} })));
+    for (let s = 0; s < 400; s++) {
+      const o = L.generate(pack, {}, { seed: s * 2654435761 >>> 0, mem: {} }), before = JSON.stringify(o);
+      if (name === 'flat') assert.ok(!o.rooms.some((x) => x.obstacle) && o.obstacle, 'the flat fixture reaches the obstacle fallback');
+      const out = site(o, T);
+      assert.ok(out && out.order.length === new Set(RS.roomKeys(o.rooms.map((x) => x.name))).size);
+      assert.equal(JSON.stringify(o), before, 'site() wrote onto the roll (seed ' + s + ')');
+      mixed.push(JSON.stringify(o));
+    }
+    assert.equal(sha(mixed.join('\n')), sha(plain.join('\n')), name + ': the room rolls moved the sweep');
+    assert.equal(sha(plain.join('\n')), SWEEP[name], name + ': the sweep is not the pinned one (a draw was added to or moved in generate())');
   }
-  assert.equal(sha(mixed.join('\n')), sha(plain.join('\n')));
   const src = fs.readFileSync(path.join(ROOT, 'app', 'gm', 'location.js'), 'utf8');
   assert.ok(!/RoomRoll|room-roll/.test(src), 'location.js does not call the room roll (no draw inside generate())');
 });
@@ -150,7 +171,7 @@ test('the map-kit goldens do not move (24 seeds x 4 views, each roll room-rolled
   const T = partFor(Array.from({ length: 24 }, (_, i) => i + 1)), bad = [];
   for (let seed = 1; seed <= 24; seed++) {
     const r = L.generate(FIXL, {}, { seed, mem: {} });
-    const out = R.site(r, T);
+    const out = site(r, T);
     assert.ok(out.order.every((k) => out.rooms[k].draw.table), 'every room has a table');
     for (const view of ['plan', 'iso', 'rings', 'section']) {
       const h = sha(K.render(r, { view, layer: 'gm', width: 1000 }).svg);
@@ -173,11 +194,13 @@ test('the mix holds over 1,000 seeds, and after Roll another and Swap', () => {
     const r = rig(), rk = String(s), key = normRoom(room.name) + '#1';
     for (let i = 0; i < 4; i++) {
       const cur = R.thingsOf(R.roll(room, k, opts(r.rs, rk, key)), room), rest = cur.filter((_, j) => j !== i);
+      const gone = goneFrom(r.rs.read(rk, key).swaps, TH.slug(cur[i].name));
       const sw = R.swap(room, k, opts(r.rs, rk, key), i);
-      if (!sw) { assert.equal(best(room, cur, rest), null, 'seed ' + s + ': swap ' + i + ' gave null with a thing that fits left'); nulls++; continue; }
+      if (!sw) { assert.equal(best(room, cur, rest, gone), null, 'seed ' + s + ': swap ' + i + ' gave null with a thing that fits left'); nulls++; continue; }
+      assert.ok(!gone.includes(sw.to), 'seed ' + s + ': swap ' + i + ' brought back a thing swapped away from another place');
       assert.ok(r.rs.setSwap(rk, key, sw.slug, sw.to)); swaps++;
       const after = R.thingsOf(R.roll(room, k, opts(r.rs, rk, key)), room);
-      assert.equal(misses(after), best(room, cur, rest), 'seed ' + s + ' after swap ' + i + ': not the best mix the table allows');
+      assert.equal(misses(after), best(room, cur, rest, gone), 'seed ' + s + ' after swap ' + i + ': not the best mix the table allows');
       if (!misses(after)) whole++;
     }
     for (let i = 0; i < 2; i++) {
@@ -192,7 +215,7 @@ test('the mix holds over 1,000 seeds, and after Roll another and Swap', () => {
     }
   }
   assert.ok(swaps > 3900 && swaps + nulls === 4000, swaps + ' swaps, ' + nulls + ' with nothing that fits');
-  assert.ok(whole > 0.9 * swaps, 'the whole mix held after ' + whole + ' of ' + swaps + ' swaps (the rest: the table had no other way out or clue left)');
+  assert.ok(whole > 0.8 * swaps, 'the whole mix held after ' + whole + ' of ' + swaps + ' swaps (the rest: the table had no other way out or clue left)');
   assert.ok(extras > 1500, 'Roll another drew ' + extras);
 });
 
@@ -215,10 +238,72 @@ test('swapping out the only clue, or the only way out or cover, gives one back; 
   assert.ok(clueOut > 50 && wayOut > 50, 'the case came up: ' + clueOut + ' clues, ' + wayOut + ' ways out');
 });
 
+test('the weapon cap is hard in the draw too: a note\'s weapon means no table weapon, even when the only clue and way out are on one', () => {
+  const plain = (n, tags) => ({ name: n, line: 'Invented.', look: 'GM-ONLY-look', roll: '', danger: '', states: [], tags });
+  const room = { name: 'Pelican armoury', themes: ['the Pelican Rooms'], band: 'working', say: ['One.', 'Two.', 'Three.'], people: [{ role: 'cleaner', w: 1 }, { role: 'nobody', w: 3 }],
+    things: [plain('A rusted sabre', ['weapon', 'clue', 'cover']), plain('A loaded cane', ['weapon', 'clue']), plain('A brass lamp', ['loot']), plain('A tall cupboard', ['talk']),
+      plain('A green ladder', ['weird']), plain('A tin bucket', ['tool']), plain('A cracked mirror', ['hazard']), plain('A narrow hatch', ['door']),
+      plain('A velvet coat', ['costume']), plain('A dusty crate', ['loot', 'tool'])] };
+  assert.deepEqual(RT.validate({ rooms: { 'pelican armoury': room }, roles: PACK.T.roles, aliases: {} }, { roles: ROLES }).errors, [], 'a valid table');
+  const hand = [{ name: 'A pocket pistol', tags: ['weapon'] }];
+  let alone = 0;
+  for (let s = 0; s < 1000; s++) {
+    const k = R.key(s, 'pelican armoury#1'), d = R.roll(room, k, { hand }), th = R.thingsOf(d, room, hand);
+    assert.equal(d.things.length, 3);
+    assert.equal(th.filter(armed).length, 1, 'seed ' + s + ': a table weapon joined the note\'s (' + th.map((t) => t.name).join(', ') + ')');
+    const bare = R.thingsOf(R.roll(room, k, {}), room);
+    assert.ok(bare.some((t) => t.name === 'A rusted sabre') && !bare.some((t) => t.name === 'A loaded cane'), 'seed ' + s + ': without the note, the one weapon that brings the whole mix');
+    if (!bare.some((t) => t.name === 'A rusted sabre')) alone++;
+  }
+  assert.equal(alone, 0);
+});
+
+test('Swap on each place in turn never brings back a thing swapped away from another place (the review\'s probe, 500 seeds)', () => {
+  let swaps = 0, home = 0;
+  for (let s = 0; s < 500; s++) {
+    const r = rig(), rk = String(s), key = 'pelican bar#1', k = R.key(rk, key), first = R.roll(BAR, k, {}).shown.map((e) => e.slug);
+    for (let i = 0; i < 4; i++) {
+      const sv = r.rs.read(rk, key).swaps, now = R.roll(BAR, k, opts(r.rs, rk, key)).shown[i].slug, sw = R.swap(BAR, k, opts(r.rs, rk, key), i);
+      if (!sw) continue;
+      const away = Object.keys(sv).filter((a) => a !== first[i]);
+      assert.equal(sw.slug, now);
+      assert.ok(!away.includes(sw.to), 'seed ' + s + ' place ' + i + ': swap brought back ' + sw.to + ', swapped away from another place');
+      r.rs.setSwap(rk, key, sw.slug, sw.to); swaps++;
+    }
+    /* and a run of swaps on place 0 still comes home */
+    for (let n = 0; n < 12; n++) {
+      const sw = R.swap(BAR, k, opts(r.rs, rk, key), 0);
+      if (!sw) break;
+      r.rs.setSwap(rk, key, sw.slug, sw.to);
+      if (sw.to === first[0]) { home++; break; }
+    }
+  }
+  assert.ok(swaps > 1900, swaps + ' swaps');
+  /* the mix may hold a run among the things that keep it best, so the origin is not always reached in the Pelican bar */
+  assert.ok(home > 350, 'a run of swaps on one place comes home (' + home + '/500)');
+  /* where every thing keeps the mix alike, a run on any place walks every free thing once and comes home, after other places' swaps */
+  const even = clone(BAR); even.things.forEach((t) => { t.tags = ['clue', 'cover']; });
+  for (let s = 0; s < 200; s++) {
+    const r = rig(), rk = String(s), key = 'pelican bar#1', k = R.key(rk, key), first = R.roll(even, k, {}).shown.map((e) => e.slug);
+    const a = R.swap(even, k, {}, 1); r.rs.setSwap(rk, key, a.slug, a.to);
+    const seen = [];
+    for (let n = 0; n < 10; n++) {
+      const sw = R.swap(even, k, opts(r.rs, rk, key), 0);
+      assert.ok(sw && sw.to !== first[1], 'seed ' + s + ': place 1\'s origin came to place 0');
+      assert.ok(!seen.includes(sw.to), 'seed ' + s + ': ' + sw.to + ' came twice before home');
+      seen.push(sw.to); r.rs.setSwap(rk, key, sw.slug, sw.to);
+      if (sw.to === first[0]) break;
+    }
+    assert.equal(seen[seen.length - 1], first[0], 'seed ' + s + ': home');
+    assert.equal(seen.length, 10 - 4 - 1 + 1, 'seed ' + s + ': every free thing once, then home');
+  }
+});
+
 test('no repeats: Roll another and Swap never bring back what shows, or what was swapped away; Roll another runs dry', () => {
   for (let s = 0; s < 200; s++) {
     const room = s % 2 ? BAR : makeRoom('Pelican room', 'working', 9000 + s), k = R.key(s, 'pelican room#1'), r = rig(), rk = 'a:Pelican', key = 'pelican room#1';
-    const swappedAway = new Set();
+    /* every slug swapped away, with the origin of the place it left (the thing first drawn there) */
+    const swappedAway = new Map(), originOf = {};
     for (let step = 0; step < 12; step++) {
       const cur = R.roll(room, k, opts(r.rs, rk, key)), slugs = cur.shown.map((e) => e.slug);
       assert.equal(new Set(slugs).size, slugs.length, 'seed ' + s + ' step ' + step + ': a thing shows twice');
@@ -227,7 +312,9 @@ test('no repeats: Roll another and Swap never bring back what shows, or what was
         if (!sw) continue;
         assert.ok(!slugs.includes(sw.to), 'seed ' + s + ': swap brought back a thing on show');
         assert.notEqual(sw.to, sw.slug);
-        swappedAway.add(sw.slug);
+        const origin = originOf[sw.slug] || sw.slug;
+        assert.ok(!swappedAway.has(sw.to) || swappedAway.get(sw.to) === origin, 'seed ' + s + ': swap brought back ' + sw.to + ', swapped away from another place');
+        swappedAway.set(sw.slug, origin); originOf[sw.to] = origin;
         r.rs.setSwap(rk, key, sw.slug, sw.to);
       } else {
         const x = R.another(room, k, opts(r.rs, rk, key));
@@ -343,18 +430,18 @@ test('no table: the draw says so (the caller words "No table for <room>"); a not
   assert.deepEqual(d, { table: false, say: null, things: [], shown: [{ src: 'note', i: 0, slug: 'brass-hook' }], people: [] });
   assert.equal(R.another(null, 'x', {}), null); assert.equal(R.swap(null, 'x', {}, 0), null);
   const roll = L.generate(FIXL, {}, { seed: 3, mem: {} });
-  const out = R.site(roll, { rooms: {}, roles: {}, aliases: {} });
+  const out = site(roll, { rooms: {}, roles: {}, aliases: {} });
   assert.ok(out.order.length > 5 && out.order.every((k) => out.rooms[k].draw.table === false && out.rooms[k].draw.shown.length === 0));
 });
 
 test('site(): an authored site (RK13.4) is keyed by room name, every field optional; two authored sites on one seed differ', () => {
   const rooms = [{ name: 'Pelican bar' }, { name: 'Pelican cloakroom', band: 'working' }, { name: 'Pelican bar' }, { name: 'A room with no table' }, {}];
-  const site = (name) => ({ name, base: { seed: 11 }, patch: { name, rooms: clone(rooms) } });
-  const a = P.authoredRoll(L, FIXL, site('The Pelican Rooms')), b = P.authoredRoll(L, FIXL, site('The Dovetail Rooms'));
+  const authored = (name) => ({ name, base: { seed: 11 }, patch: { name, rooms: clone(rooms) } });
+  const a = P.authoredRoll(L, FIXL, authored('The Pelican Rooms')), b = P.authoredRoll(L, FIXL, authored('The Dovetail Rooms'));
   assert.equal(a.seed, b.seed, 'one base seed');
   const before = JSON.stringify(a);
   const hand = (room, key) => (key === 'pelican cloakroom#1' ? [{ name: 'A brass hook' }] : []);
-  const ra = R.site(a, PACK.T, { hand }), rb = R.site(b, PACK.T, { hand });
+  const ra = site(a, PACK.T, { hand }), rb = site(b, PACK.T, { hand });
   assert.equal(JSON.stringify(a), before, 'site() wrote onto the authored roll');
   assert.equal(ra.rollKey, 'a:The Pelican Rooms');
   assert.deepEqual(ra.order, ['pelican bar#1', 'pelican cloakroom#1', 'pelican bar#2', 'a room with no table#1']);
@@ -366,10 +453,14 @@ test('site(): an authored site (RK13.4) is keyed by room name, every field optio
   /* the overrides come from room-state's read shape */
   const r = rig();
   r.rs.setSay('a:The Pelican Rooms', 'pelican bar#2', 1); r.rs.reroll('a:The Pelican Rooms', 'pelican bar#1');
-  const rc = R.site(a, PACK.T, { state: (rk, key) => r.rs.read(rk, key) });
+  const rc = site(a, PACK.T, { state: (rk, key) => r.rs.read(rk, key) });
   assert.equal(rc.rooms['pelican bar#2'].draw.say, 1);
   assert.deepEqual(rc.rooms['pelican bar#1'].draw, R.roll(BAR, R.key('a:The Pelican Rooms', 'pelican bar#1'), { rr: 1 }));
-  assert.equal(R.site({ rooms: rooms }, PACK.T), null, 'a roll with no key has no draw');
+  /* the rollKey is the caller's (the page's P.rollKey), never worked out here */
+  assert.equal(R.site(a, PACK.T), null, 'no rollKey from the caller: no draw');
+  assert.equal(R.site(a, PACK.T, { rollKey: '' }), null);
+  assert.equal(R.site(a, PACK.T, { rollKey: 'a:Another' }).rollKey, 'a:Another', 'the caller\'s key is the one used');
+  assert.notDeepEqual(R.site(a, PACK.T, { rollKey: 'a:Another' }).rooms, ra.rooms);
 });
 
 test('there(): the line naming the things drawn, by name only', () => {
