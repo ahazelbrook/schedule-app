@@ -311,6 +311,7 @@ try {
   /* 4. off again on the open page: the card goes, and the markup is today's */
   await page.click(card('Showroom') + ' [data-site="thing"][data-i="2"]'); await until(() => zoom(page), 3000);
   check((await feats({ 'room.key': false })).status === 200, 'room.key off again, with a card open');
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));      /* the GM page takes another device's state when it is focused (refetch); with no save of its own after the PATCH it would not see it */
   const offAgain = await until(() => page.evaluate(() => !document.querySelector('[data-site="thing"]')), 15000);
   await page.evaluate(() => window.B68GmRunView.redrawAll()); await sleep(500);
   const markupOff2 = await page.evaluate((sel) => document.querySelector(sel).outerHTML, card('Showroom'));
