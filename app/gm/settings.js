@@ -100,6 +100,7 @@
     { key: 'map.shade', label: 'Furniture depth', what: 'The furniture on every map: flat as before, or solid (a little depth and a short shadow). A map too large for the iPad goes flat.',
       options: [{ v: false, label: 'Flat' }, { v: true, label: 'Solid' }],
       said: { 'false': 'Furniture depth: flat.', 'true': 'Furniture depth: solid.' } },
+    /* RK01b (25/11): built: false hides a row from the Settings screen until its bundle is built; the setting stays registered and reads off. Flip a row back on by deleting its `built: false`. */
     /* the room key build (RK01, 22/11): the seven rows, put LAST so that no row of today changes place (kit-off) */
     { key: 'stamp.brief', label: 'Stamp banners', what: 'The roll’s stamp on the iPad: it stays until Take it down, or it leaves after 10 seconds (the roll panel keeps it until the roll resolves).',
       options: [{ v: false, label: 'Stays' }, { v: true, label: 'Leaves after 10 s' }],
@@ -113,13 +114,13 @@
     { key: 'room.key', label: 'Things in rooms', what: 'A room note’s Things on its card, a zoom card on a click, and Show on iPad for one line.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'Things in rooms: off.', 'true': 'Things in rooms: on.' } },
-    { key: 'room.tables', label: 'Rolled rooms', what: 'A rolled site’s rooms get a read-aloud, things and people from the room tables, with Swap, Roll another, Keep and the Blade tap.',
+    { key: 'room.tables', label: 'Rolled rooms', built: false, what: 'A rolled site’s rooms get a read-aloud, things and people from the room tables, with Swap, Roll another, Keep and the Blade tap.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'Rolled rooms: off.', 'true': 'Rolled rooms: on.' } },
-    { key: 'gm.glance', label: 'The glance', what: 'The crew at a glance, the fiction’s clock and who’s where, quick rules, when it goes loud, and any NPC by name.',
+    { key: 'gm.glance', label: 'The glance', built: false, what: 'The crew at a glance, the fiction’s clock and who’s where, quick rules, when it goes loud, and any NPC by name.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'The glance: off.', 'true': 'The glance: on.' } },
-    { key: 'phone.find', label: 'Search on phones', what: 'A search box over the abilities on a player’s sheet. Off: no box.',
+    { key: 'phone.find', label: 'Search on phones', built: false, what: 'A search box over the abilities on a player’s sheet. Off: no box.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'Search on phones: off. Phones follow within a few seconds.', 'true': 'Search on phones: on. Phones follow within a few seconds.' } },
     /* RK28 (added to RK01 on 22/11): the map diagnosis's setting, last */
@@ -130,7 +131,7 @@
     { key: 'room.intro', label: 'Room openings', what: 'When you open a room or a band on the live map, the iPad plays a title card for the room, like an NPC introduction.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'Room openings: off. The iPad follows within a few seconds.', 'true': 'Room openings: on. The iPad follows within a few seconds.' } },
-    { key: 'phone.glance', label: 'The glance sheet', what: 'Phones open on one screen with stress, harm, the actions and the abilities you own; Full sheet shows the official playbook page, filled in.',
+    { key: 'phone.glance', label: 'The glance sheet', what: 'Phones open on one screen with stress, harm, the actions and the abilities you own. Full sheet opens today’s classic sheet for now.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'The glance sheet: off. Phones follow within a few seconds.', 'true': 'The glance sheet: on. Phones follow within a few seconds.' } }
   ];
@@ -179,7 +180,7 @@
     };
 
     ctl.rows = function () {
-      return ROWS.map(function (r) { return { key: r.key, label: r.label, what: r.what, value: valueOf(r.key), options: r.options.map(function (o) { return { v: o.v, label: o.label }; }) }; });
+      return ROWS.map(function (r) { return { key: r.key, label: r.label, what: r.what, built: r.built !== false, value: valueOf(r.key), options: r.options.map(function (o) { return { v: o.v, label: o.label }; }) }; });
     };
     ctl.choose = function (key, v) {
       var row = ROWS.filter(function (r) { return r.key === key; })[0]; if (!row) return false;
@@ -195,7 +196,7 @@
 
     function html() {
       return '<p class="gm-dim">Everything built is on. These are choices for the night; each one changes at once, with no reload.</p>' +
-        ctl.rows().map(function (r) {
+        ctl.rows().filter(function (r) { return r.built; }).map(function (r) {
           return '<div class="gm-set-row" data-set-row="' + esc(r.key) + '"><span class="gm-lab" id="gm-set-l-' + esc(r.key.replace(/\W/g, '-')) + '">' + esc(r.label) + '</span>' +
             '<div class="seg" role="group" aria-labelledby="gm-set-l-' + esc(r.key.replace(/\W/g, '-')) + '">' + r.options.map(function (o) {
               return '<button type="button" class="chip" data-set="' + esc(r.key) + '" data-v="' + (o.v ? '1' : '0') + '" aria-pressed="' + (r.value === o.v) + '">' + esc(o.label) + '</button>';
@@ -229,5 +230,5 @@
     return ctl;
   }
 
-  return { ROWS: ROWS.map(function (r) { return { key: r.key, label: r.label }; }), create: create, _pure: { esc: esc } };
+  return { ROWS: ROWS.map(function (r) { return r.built === false ? { key: r.key, label: r.label, built: false } : { key: r.key, label: r.label }; }), create: create, _pure: { esc: esc } };
 });

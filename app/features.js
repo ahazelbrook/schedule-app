@@ -235,7 +235,7 @@
     { id: 'room.intro', label: 'Room openings on the iPad', surface: 'display', stage: 'kit', default: false, saturday: 'off', setting: true,
       doc: 'When you open a room or a band on the live map, the iPad plays a title card for the room, like an NPC introduction. Off: as now.' },
     { id: 'phone.glance', label: 'The glance sheet on phones', surface: 'phone', stage: 'kit', default: false, saturday: 'off', setting: true,
-      doc: 'Phones open on one screen with stress, harm, the actions and the abilities you own; Full sheet shows the official playbook page, filled in. Off: as now.' }
+      doc: 'Phones open on one screen with stress, harm, the actions and the abilities you own; Full sheet opens today’s classic sheet until the official page is built. Off: as now.' }
   ];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
