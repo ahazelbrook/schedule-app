@@ -9,6 +9,11 @@
 //   calm     reduced motion: the flash is a cut (no animation)
 //   secrecy  a line that waits is on neither the display's GET nor a phone's; the choice is on neither; the GM page makes no request outside its own origin
 //   shots    RK_SHOTS=<dir>: the large card with auto-send on, 1366x768 and 1536x864, Paper and Night, kit.desk off and on; 1024x768
+/* the part's own state: no choice stored on the night, no overlay up. The harness calls it before and after the part (and after a timeout); the settings are its BASE_OFF's. */
+export async function reset(c) {
+  await c.api('PATCH', '/gm/state', { night: { pubAuto: null } });
+  await c.api('PATCH', '/gm/ambient', { overlay: null });
+}
 export async function rk06(c) {
   const { BASE, GM, IPAD, P1, api, check, until, sleep, browser, errors, atPlace, shots, path, SHOTS } = c;
   const outside = [];
@@ -19,7 +24,7 @@ export async function rk06(c) {
   const overlay = async () => { const j = (await api('GET', '/gm/ambient')).json || {}; return (j.doc || {}).overlay || null; };
   const clearOverlay = () => api('PATCH', '/gm/ambient', { overlay: null });
   /* the part's own state, at its start and at its end (pass or fail): every setting it turns on is off, no choice is stored on the night, no overlay is up */
-  const reset = async () => { await setting({ 'stage.players': false, 'night.flow': false, 'kit.desk': false }); await api('PATCH', '/gm/state', { night: { pubAuto: null } }); await clearOverlay(); };
+  const resetAll = async () => { await setting({ 'stage.players': false, 'night.flow': false, 'kit.desk': false }); await reset(c); };
   const displayText = async () => (await api('GET', '/gm/display?seq=-1&aseq=-1&sseq=-1&hseq=-1', null, IPAD)).text || '';
 
   async function open(w, h, o = {}) {
@@ -71,7 +76,7 @@ export async function rk06(c) {
       full: !!tx && cs.whiteSpace === 'normal' && cs.textOverflow !== 'ellipsis' && tx.scrollWidth <= tx.clientWidth + 1, px: tx ? parseFloat(cs.fontSize) : 0, tabindex: box.getAttribute('tabindex'), flash: box.getAttribute('data-pl-flash'), anim: window.__plAnim };
   });
 
-  await reset();
+  await resetAll();
   try {
   /* ---------- off ---------- */
   await setting({ 'stage.players': true, 'night.flow': false, 'kit.desk': false });
@@ -173,6 +178,30 @@ export async function rk06(c) {
     await p.click('#gm-p2-lines [data-p2-line="later"]');
     check(!!(await until(async () => (await nightLog()).some((t) => /^Public line not shown \(Not now\): The band plays/.test(t)), 5000)), 'hold: Not now puts it away and logs it');
 
+    /* a GM overlay on the iPad holds the countdown: the stamp stays, and the line goes once it has cleared */
+    await inject(p, 'The doors open to the street');
+    await sleep(600);
+    await api('PATCH', '/gm/ambient', { overlay: { id: 'rk06-stamp', kind: 'text', text: 'The stamp is up', ms: 60000 } });
+    await sleep(24000);
+    const held1 = await overlay();
+    check((await rows(p)).length === 1 && !!held1 && held1.id === 'rk06-stamp', 'wait: 24 s on with the GM overlay up, the line still waits and the overlay is untouched (' + (held1 && held1.id) + ')');
+    check(/clear/.test(await p.evaluate(() => (document.querySelector('#gm-p2-lines [data-pl-timer]') || {}).textContent || '')), 'wait: and its card says it sends once the iPad is clear');
+    await clearOverlay();
+    const went = await until(async () => { const o = await overlay(); return o && /doors open/.test(o.text || '') ? o : null; }, 15000, 250);
+    check(!!went && (await rows(p)).length === 0, 'wait: the overlay cleared, the line went (' + (went && went.text) + ')');
+    check(!!(await until(async () => (await nightLog()).some((t) => /^Public line auto-sent: The doors open/.test(t)), 5000)), 'wait: and that is logged');
+    await clearOverlay();
+
+    /* the setting is read at send time: off mid-countdown, nothing is sent */
+    await inject(p, 'The band packs up for the night');
+    await sleep(600);
+    await setting({ 'night.flow': false });
+    await sleep(26000);
+    check(!(await overlay()) && (await rows(p)).length === 1, 'setting: night.flow off mid-countdown, 26 s on, nothing was sent and the line waits');
+    await p.click('#gm-p2-lines [data-p2-line="later"]');
+    await setting({ 'night.flow': true });
+    await sleep(5000);
+
     /* a reload keeps the choice for the night */
     await p.reload();
     await p.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
@@ -234,5 +263,5 @@ export async function rk06(c) {
     }
   }
   check(outside.length === 0, 'the GM page made no request outside its own origin (' + outside.length + ')');
-  } finally { await reset(); }
+  } finally { await resetAll(); }
 }

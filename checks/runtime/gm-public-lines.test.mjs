@@ -97,7 +97,7 @@ test('the choice: the patch writes one key under night, or nulls it; nothing els
 });
 
 test('the timer text: seconds left, or held', () => {
-  assert.equal(PL.timerText(14, false), 'Sends in 14 s'); assert.equal(PL.timerText(0, false), 'Sends in 0 s'); assert.match(PL.timerText(9, true), /^Held/);
+  assert.equal(PL.timerText(14, false), 'Sends in 14 s'); assert.equal(PL.timerText(0, false), 'Sends in 0 s'); assert.match(PL.timerText(9, true), /^Held/); assert.match(PL.timerText(9, false, true), /iPad is clear/);
   assert.equal(PL.secondsLeft(21000, 1000), 20); assert.equal(PL.secondsLeft(21000, 1001), 20); assert.equal(PL.secondsLeft(21000, 20999), 1); assert.equal(PL.secondsLeft(21000, 99999), 0);
 });
 
@@ -130,12 +130,12 @@ test('the timer: 20 s on the one oldest line, ticking each second; the same line
 
 /* ---- the controller, on a fake box and queue ---- */
 function rig(opts) {
-  const c = clock(), box = fake('div'), q = [], log = [], sent = [], st = { auto: !!(opts && opts.auto), sets: [], redraws: 0 };
+  const c = clock(), box = fake('div'), q = [], log = [], sent = [], st = { auto: !!(opts && opts.auto), sets: [], redraws: 0, busy: false };
   let n = 0, ctl = null;
   const h = {
     el: () => box, items: () => q.slice(), env: c,
     send: (id, how) => { const i = q.findIndex((x) => x.id === id); if (i < 0) return; q.splice(i, 1); sent.push(id + ':' + how); ctl.drawn(); },
-    log: (t) => log.push(t), redraw: () => { st.redraws++; ctl.drawn(); }, auto: () => st.auto, setAuto: (on) => { st.auto = on; st.sets.push(on); }, win: () => null,
+    log: (t) => log.push(t), redraw: () => { st.redraws++; ctl.drawn(); }, auto: () => st.auto, busy: () => st.busy, setAuto: (on) => { st.auto = on; st.sets.push(on); }, win: () => null,
   };
   ctl = PL.attach(h);
   const add = (text) => { const id = 'l' + (++n); q.push({ id, o: { text } }); ctl.added(); return id; };
@@ -157,6 +157,35 @@ test('auto-send on: the oldest line goes after 20 s; the next oldest gets its ow
   assert.equal(r.ctl.running(), b, 'the next line is now the oldest, with a clock of its own'); assert.equal(r.ctl.opts(b).sec, 20);
   r.c.advance(20000); assert.deepEqual(r.sent, [a + ':auto', b + ':auto']);
   assert.equal(r.c.live(), 0, 'and nothing is left running');
+});
+test('a GM overlay on the iPad holds the countdown: the line waits (the stamp stays) and goes once it has cleared, then the next gets its own 20 s', () => {
+  const r = rig({ auto: true }); const a = r.add('One'); const b = r.add('Two');
+  r.c.advance(5000); r.st.busy = true;      /* the GM puts a stamp up */
+  r.c.advance(15000); assert.deepEqual(r.sent, [], 'at 20 s the stamp is still up: nothing is sent');
+  assert.equal(r.ctl.opts(a).wait, true, 'the card says it is waiting for the iPad');
+  r.ctl.drawn(); r.c.advance(60000); assert.deepEqual(r.sent, [], 'a redraw does not start another 20 s or send it; a minute on, still waiting');
+  assert.equal(r.ctl.running(), a, 'still the oldest line that waits');
+  r.st.busy = false; r.c.advance(1000); assert.deepEqual(r.sent, [a + ':auto'], 'the stamp is gone: it goes within a second');
+  assert.equal(r.ctl.opts(b).wait, false); assert.equal(r.ctl.opts(b).sec, 20, 'and the next line has its own 20 s');
+  const card = PL.bigRow(doc, { id: 'x', o: { text: 'x' } }, { auto: true, wait: true }); assert.equal(card.byAttr('data-pl-timer')[0].textContent, 'Sends once the iPad is clear');
+});
+test('a line that waits for the iPad can still be held, sent or put away; Hold stops the wait', () => {
+  const r = rig({ auto: true }); const a = r.add('One'); r.st.busy = true; r.c.advance(21000);
+  assert.equal(r.ctl.opts(a).wait, true); r.ctl.click('hold', a); assert.equal(r.ctl.opts(a).wait, false); assert.equal(r.ctl.running(), '');
+  r.st.busy = false; r.c.advance(60000); assert.deepEqual(r.sent, [], 'held: not sent when the iPad clears'); assert.equal(r.c.live(), 0, 'nothing left running');
+});
+test('the setting is read at send time: off mid-countdown (or while it waits for the iPad), nothing is sent', () => {
+  const r = rig({ auto: true }); r.add('One'); r.c.advance(8000); r.st.auto = false;      /* night.flow off: the page's auto() answers false */
+  r.c.advance(30000); assert.deepEqual(r.sent, [], 'nothing sent'); assert.equal(r.c.live(), 0, 'and nothing left running');
+  const w = rig({ auto: true }); w.add('One'); w.st.busy = true; w.c.advance(21000); w.st.auto = false; w.st.busy = false; w.c.advance(5000);
+  assert.deepEqual(w.sent, [], 'off while it waited for the iPad: not sent'); assert.equal(w.c.live(), 0);
+});
+test('the end of the night stops a wait for the iPad', () => {
+  const r = rig({ auto: true }); r.add('One'); r.st.busy = true; r.c.advance(21000); r.ctl.end(); assert.equal(r.c.live(), 0); assert.equal(r.ctl.running(), '');
+});
+test('the held card says it holds the lines behind it too', () => {
+  const card = PL.bigRow(doc, { id: 'x', o: { text: 'x' } }, { auto: true, held: true });
+  assert.equal(card.byAttr('data-pl-timer')[0].textContent, 'Held: it and the lines behind it wait for Send');
 });
 test('Send or Not now before the 20 s: the timer follows to the next line; the line never also goes by itself', () => {
   const r = rig({ auto: true }); const a = r.add('One'); const b = r.add('Two');

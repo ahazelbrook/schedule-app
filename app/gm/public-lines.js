@@ -19,7 +19,7 @@
              isSendKey(ev, box) -> bool     countdown(env) -> the one timer
    DOM       bigRow(d, it, o) -> the large card (o: { auto, held, sec })      footer(d, auto) -> the toggle row      flash(el, win) -> bool
    attach(h) -> the box's controller. h: { el() -> the box | null, items() -> [{ id, o }] oldest first, send(id, how), log(text), redraw(), auto() -> bool,
-             setAuto(bool), win() -> window | null, env (optional: { now, setTimeout, clearTimeout, setInterval, clearInterval }) } */
+             setAuto(bool), busy() -> bool (the GM's own overlay is up on the iPad: an auto-send waits), win() -> window | null, env (optional: { now, setTimeout, clearTimeout, setInterval, clearInterval }) } */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -47,7 +47,7 @@
 
   /* ---- the timer ---- */
   function secondsLeft(due, now) { return Math.max(0, Math.ceil((due - now) / 1000)); }
-  function timerText(sec, held) { return held ? 'Held: it waits for Send' : 'Sends in ' + sec + ' s'; }
+  function timerText(sec, held, wait) { return held ? 'Held: it and the lines behind it wait for Send' : wait ? 'Sends once the iPad is clear' : 'Sends in ' + sec + ' s'; }
   /* Enter, pressed on the box itself (never on a button, field or link inside it, which have their own Enter), with no modifier */
   function isSendKey(ev, box) {
     return !!ev && !!box && ev.key === 'Enter' && ev.target === box && !ev.shiftKey && !ev.ctrlKey && !ev.altKey && !ev.metaKey && !ev.isComposing;
@@ -82,7 +82,7 @@
     return b;
   }
   /* the oldest line, large: the words in full (the class and data-id of a row stay, so the old hooks find it), then Send, Not now and, with auto-send on, its
-     timer and Hold. o: { auto: bool, held: bool, sec: seconds | null } */
+     timer and Hold. o: { auto: bool, held: bool, wait: bool, sec: seconds | null } */
   function bigRow(d, it, o) {
     o = o || {};
     var id = str(it && it.id), row = d.createElement('div'); row.className = 'gm-p2-line gm-pl-big'; row.setAttribute('data-id', id); row.setAttribute('data-pl', 'big');
@@ -93,7 +93,7 @@
     acts.appendChild(btn(d, 'send', id, 'Send', 'btn sm primary')); acts.appendChild(btn(d, 'later', id, 'Not now', 'btn sm'));
     if (o.auto) {
       var tm = d.createElement('span'); tm.className = 'gm-pl-timer'; tm.setAttribute('data-pl-timer', id);
-      tm.textContent = timerText(typeof o.sec === 'number' ? o.sec : AUTO_MS / 1000, !!o.held);
+      tm.textContent = timerText(typeof o.sec === 'number' ? o.sec : AUTO_MS / 1000, !!o.held, !!o.wait);
       var ms = tm.style; ms.flex = '1 1 auto'; ms.fontSize = '12px'; ms.color = '#c9c1b2'; acts.appendChild(tm);
       if (!o.held) acts.appendChild(btn(d, 'hold', id, 'Hold', 'btn sm'));
     }
@@ -127,14 +127,26 @@
 
   /* ---- the box's controller ---- */
   function attach(h) {
-    var held = {}, env = h.env || {}, cd = null;
+    var held = {}, env = h.env || {}, cd = null, waitId = '', waitTo = null;
+    var st = env.setTimeout || function (f, ms) { return setTimeout(f, ms); }, ct = env.clearTimeout || function (x) { clearTimeout(x); };
+    function busy() { return typeof h.busy === 'function' && !!h.busy(); }
+    function unwait() { if (waitTo !== null) ct(waitTo); waitTo = null; waitId = ''; }
     function head() { var l = h.items(); return l.length ? l[0] : null; }
     function on() { return !!h.auto(); }
     function sync() {
       var l = h.items(), live = {}, it = l.length ? l[0] : null;
       l.forEach(function (x) { live[x.id] = true; });
       Object.keys(held).forEach(function (k) { if (!live[k]) delete held[k]; });
+      if (waitId && !(it && it.id === waitId && on() && !held[it.id])) unwait();
+      if (waitId) return;      /* its 20 s is up; it is waiting for the iPad, not for another 20 s */
       cd.sync(it && on() && !held[it.id] ? it.id : '');
+    }
+    /* the 20 s is up: a line never replaces what the GM has put on the iPad (one overlay at a time), so it waits, a second at a time, until that is gone */
+    function due(id) {
+      var it = head();
+      if (!(it && it.id === id && on() && !held[id])) { unwait(); sync(); return; }
+      if (busy()) { waitId = id; waitTo = st(function () { waitTo = null; due(id); }, 1000); var el = h.el(), n = el && el.querySelector ? el.querySelector('[data-pl-timer="' + id + '"]') : null; if (n) n.textContent = timerText(0, false, true); return; }
+      unwait(); h.send(id, 'auto');
     }
     function paintTimer(id, sec) {
       var el = h.el(), n = el && el.querySelector ? el.querySelector('[data-pl-timer="' + id + '"]') : null;
@@ -142,12 +154,12 @@
     }
     cd = countdown({
       now: env.now, setTimeout: env.setTimeout, clearTimeout: env.clearTimeout, setInterval: env.setInterval, clearInterval: env.clearInterval,
-      fire: function (id) { var it = head(); if (it && it.id === id && on() && !held[id]) h.send(id, 'auto'); else sync(); },
+      fire: due,
       tick: paintTimer
     });
     return {
       /* what the box draws for the oldest line */
-      opts: function (id) { return { auto: on(), held: !!held[id], sec: cd.left(id) }; },
+      opts: function (id) { return { auto: on(), held: !!held[id], wait: waitId === id, sec: cd.left(id) }; },
       footer: function (d) { return footer(d, on()); },
       /* a line has queued: the box flashes once, and the timer follows the oldest line */
       added: function () { var el = h.el(); if (el) flash(el, h.win && h.win()); sync(); },
@@ -169,9 +181,9 @@
         h.send(it.id, 'key'); return true;
       },
       /* the night ends: the timer stops, and the choice goes with the night */
-      end: function () { cd.stop(); held = {}; if (on()) h.setAuto(false); },
-      stop: function () { cd.stop(); },
-      running: function () { return cd.running(); }
+      end: function () { cd.stop(); unwait(); held = {}; if (on()) h.setAuto(false); },
+      stop: function () { cd.stop(); unwait(); },
+      running: function () { return cd.running() || waitId; }
     };
   }
 

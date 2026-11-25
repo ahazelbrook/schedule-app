@@ -93,7 +93,7 @@
       if (!f || !f.PL || typeof f.PL.attach !== 'function') { if (rec.fc) { rec.fc.stop(); rec.fc = null; } return null; }
       rec.f = f;
       if (!rec.fc) rec.fc = f.PL.attach({ el: function () { return rec.el; }, items: function () { return rec.p.list.slice().reverse(); }, send: sendLine, log: log, redraw: function () { draw(); },
-        auto: function () { return !!(rec.f && rec.f.auto()); }, setAuto: function (on) { if (rec.f) rec.f.setAuto(on); }, win: function () { return rec.el && rec.el.ownerDocument ? rec.el.ownerDocument.defaultView : null; } });
+        auto: function () { return !!(rec.f && rec.f.auto()); }, busy: function () { return !!(rec.f && typeof rec.f.busy === 'function' && rec.f.busy()); }, setAuto: function (on) { if (rec.f) rec.f.setAuto(on); }, win: function () { return rec.el && rec.el.ownerDocument ? rec.el.ownerDocument.defaultView : null; } });
       return rec.fc;
     }
     function sendLine(id, how) {

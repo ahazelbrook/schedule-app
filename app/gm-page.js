@@ -5208,7 +5208,9 @@
       cast: function (x) { if (S !== me) return; var pf = str(me.p2focus).split('|'), k = pf.length === 2 && pf[1] === x ? '#gm-npc [data-gm="' + pf[0] + '"][data-id="' + pf[1].replace(/[^A-Za-z0-9_-]/g, '') + '"]' : ''; me.p2focus = ''; me.npcCardOpen = x; renderNpcs(); var nb = k ? $q(k) : null; if (nb && nb.focus) nb.focus(); } }, id);      /* IP2b: the row's button keeps the focus through the redraw */
   }
   /* RK06 (night.flow, gm/public-lines.js): the louder public lines and the per-night auto-send. null unless the setting is on and the bundle's file has loaded, so with it off the queue takes its old path */
-  function p2Flow(me) { var P = W.B68GmPublicLines; if (!P || typeof P.attach !== 'function' || S !== me || !b09On('night.flow')) return null; return { PL: P, auto: function () { return S === me && P.autoOn(S.doc, Date.now()); }, setAuto: function (on) { if (S === me) patch(P.autoPatch(on, Date.now())); } }; }
+  /* RK06: is an overlay still up on the iPad (the GM's own stamp or line)? as the Worker reads it: laid at `at`, for `ms` (functions/_lib/show.js overlayRunning) */
+  function p2OverlayUp() { var o = isObj(AM.doc) && isObj(AM.doc.overlay) ? AM.doc.overlay : null; if (!o) return false; var g = gmApi(), now = Date.now() + (g && typeof g.skew === 'function' ? g.skew() || 0 : 0), at = typeof o.at === 'string' ? Date.parse(o.at) : NaN; return !isFinite(at) || typeof o.ms !== 'number' ? true : now - at < o.ms; }
+  function p2Flow(me) { var P = W.B68GmPublicLines; if (!P || typeof P.attach !== 'function' || S !== me || !b09On('night.flow')) return null; return { PL: P, auto: function () { return S === me && b09On('night.flow') && P.autoOn(S.doc, Date.now()); }, busy: function () { return S === me && p2OverlayUp(); }, setAuto: function (on) { if (S === me) patch(P.autoPatch(on, Date.now())); } }; }
   /* IP2c: the night ends (or is reset): the public-line queue is emptied, each line written to the night log as not sent; an empty queue writes nothing */
   function p2LinesEnd(fn, why) {
     return function () {
