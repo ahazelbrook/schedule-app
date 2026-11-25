@@ -39,3 +39,49 @@
   #gm-page .pa-chip, #gm-page .pa-send { min-height: 32px; }
   #gm-page .pa-x { width: 44px; height: 44px; }
 }
+
+/* RK04 (night.flow): the same chips in Blade's cards. The Blade panel sits outside #gm-page, so its own copy of the rules, scoped to .gm-assist; a rule chip's
+   pop-over opens on the body, so it has one too. No chip is drawn here with the setting off, so with it off none of these selectors matches anything. */
+.gm-assist .pa-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-height: 28px; margin: 1px 2px; padding: 1px 8px 1px 6px; vertical-align: baseline;
+  border: 1.5px solid var(--rule); border-radius: 4px; background: var(--card); color: var(--ink); font: 700 13px/1.15 var(--font-cond); cursor: pointer; white-space: normal; text-align: left; }
+.gm-assist .pa-chip .pa-mark { color: var(--accent); font-size: 12px; line-height: 1; flex: none; }
+.gm-assist .pa-chip .pa-l { overflow-wrap: anywhere; }
+.gm-assist .pa-chip:hover { background: var(--rule); color: var(--on-ink); }
+.gm-assist .pa-chip:hover .pa-mark { color: inherit; }
+.gm-assist .pa-chip:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.gm-assist .pa-chip[aria-busy="true"] { opacity: .6; cursor: progress; }
+.gm-assist .pa-chip.pa-rule { border-color: var(--k-rule); color: var(--k-rule); }
+.gm-assist .pa-chip.pa-rule .pa-mark { color: var(--k-rule); }
+.gm-assist .pa-chip.pa-done { border-style: solid; background: transparent; color: var(--ink-soft); }
+.gm-assist .pa-chip.pa-done .pa-mark { color: var(--ink-soft); }
+.gm-assist .pa-chip.pa-muted, .gm-assist .pa-chip.pa-rule.pa-muted { border-style: dashed; border-color: var(--ink-soft); color: var(--ink-soft); background: transparent; font-weight: 600; }
+.gm-assist .pa-chip.pa-muted .pa-mark { color: var(--ink-soft); }
+.gm-assist .as-bullets li > .pa-chip, .gm-assist .as-detail .pa-chip { margin-block: 2px; }
+body > .pa-pop { position: fixed; z-index: 60; max-height: min(60vh, 460px); overflow: auto; overscroll-behavior: contain; border: 2px solid var(--rule); background: var(--card); color: var(--ink);
+  box-shadow: 4px 4px 0 var(--shadow-ink); padding: 0 12px 10px; font-size: 14px; line-height: 1.4; }
+body > .pa-pop .pa-pophead { position: sticky; top: 0; display: flex; align-items: center; gap: 8px; padding: 6px 0; background: var(--card); border-bottom: 1px solid var(--hair, var(--rule)); }
+body > .pa-pop .pa-popt { flex: 1; font: 900 16px/1.1 var(--font-cond); text-transform: uppercase; letter-spacing: .03em; }
+body > .pa-pop .pa-x { flex: none; width: 36px; height: 36px; display: inline-grid; place-items: center; border: 1.5px solid var(--rule); border-radius: 4px; background: var(--card); color: var(--ink); font: 700 16px/1 var(--font-cond); cursor: pointer; }
+body > .pa-pop .pa-popb p { margin: 8px 0 0; }
+body > .pa-pop .pa-popb .pa-cap, body > .pa-pop .pa-popb .pa-dim { color: var(--ink-soft); font-size: 13px; }
+body > .pa-pop .pa-popb .pa-text { white-space: pre-line; }
+body > .pa-pop .pa-popb .pa-acts { display: flex; gap: 6px; flex-wrap: wrap; }
+@media (pointer: coarse) { .gm-assist .pa-chip { min-height: 36px; } body > .pa-pop .pa-x { width: 44px; height: 44px; } }
+
+/* RK03 (night.flow): the Roll's "Tick a clock" control under the stamp (gm/night-ticks.js). It is drawn only while the setting is on, so with it off none of
+   these selectors matches anything. Kept here because the night-flow bundle always brings this sheet (app/routes.js DEPS). */
+#gm-page .nt-tick { display: grid; gap: 4px; margin: 6px 0 2px; padding: 6px 0 0; border-top: 1px dashed var(--rule); }
+#gm-page .nt-lab { margin: 0; font: 900 12px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); }
+#gm-page .nt-row { display: grid; grid-template-columns: 4.4em minmax(0, 1fr) 4em; align-items: center; gap: 6px; }
+#gm-page .nt-on { font: 700 13px/1.2 var(--font-cond); color: var(--ink); white-space: nowrap; }
+#gm-page .nt-tick select { min-height: 32px; padding: 3px 6px; font-size: 13px; }
+#gm-page .nt-tick select:disabled { opacity: .55; }
+#gm-page .nt-row[data-nt-on="0"] .nt-on { color: var(--ink-soft); font-weight: 600; }
+#gm-page .nt-note { margin: 0; font: 400 12px/1.3 var(--font-text); color: var(--ink-soft); }
+#gm-page .nt-note[data-nt-miss] { color: var(--ink); font-weight: 600; }
+#gm-page .nt-note[data-nt-miss]::before { content: "! "; font-weight: 900; }
+@media (pointer: coarse) { #gm-page .nt-tick select { min-height: 44px; } }
+:root[data-kit~="desk"] #gm-page .nt-tick { border-top-color: var(--ui-hairline, var(--rule)); margin-top: var(--ui-space-1, 6px); }
+:root[data-kit~="desk"] #gm-page .nt-lab { font-family: var(--ui-font-text, var(--font-cond)); color: var(--ui-ink-soft, var(--ink-soft)); }
+:root[data-kit~="desk"] #gm-page .nt-on { font-family: var(--ui-font-text, var(--font-cond)); color: var(--ui-ink, var(--ink)); }
+:root[data-kit~="desk"] #gm-page .nt-note { font-family: var(--ui-font-text, var(--font-text)); color: var(--ui-ink-soft, var(--ink-soft)); }

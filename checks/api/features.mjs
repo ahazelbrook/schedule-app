@@ -186,6 +186,24 @@ async function main() {
     expect(sameMap(p2.json.features, servedFeatures({})) && sameMap(g2.json.doc.features, servedFeatures({})), 'and the served map is the one with nothing stored');
   });
 
+  await step('the room key build\'s eight settings (RK01) are all registered off: the seven GM-surface ones are never stored or served (absent from a phone\'s and the iPad\'s answer, written on or off); phone.find is the one phone setting, served as stored and false until written', async () => {
+    const six = ['stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance', 'map.fit'];      /* the seven GM-surface ones (the name stays) */
+    for (const id of six.concat('phone.find')) expect(Features.isSetting(id) && Features.valueOf({}, id) === false, id + ' is a setting and reads off with nothing stored');
+    expect(six.every((i) => GM_SETTINGS.includes(i)) && PUBLIC_SETTINGS.includes('phone.find') && !GM_SETTINGS.includes('phone.find'), 'seven gm, one phone');
+    const body = { phoneCards: false, 'phone.find': true }; six.forEach((i) => { body[i] = true; });
+    const r = await call('PATCH', '/api/campaign', { user: GM, body: { features: body } });
+    expect(r.status === 200 && same(await stored(), { phoneCards: false, 'phone.find': true }), 'only the phone one is stored: ' + JSON.stringify(await stored()));
+    const g = await call('GET', '/api/campaign', { user: PLAYER }), p = await poll(IPAD);
+    for (const m of [g.json.doc.features, p.json.features]) expect(m['phone.find'] === true && six.every((i) => !(i in m)), 'served: ' + JSON.stringify(m));
+    for (const t of [g.text, p.text]) for (const id of six) expect(!t.includes('"' + id + '"'), id + ' reached a phone or the iPad');
+    const o = await call('PATCH', '/api/campaign', { user: GM, body: { features: { 'phone.find': false } } });
+    expect(o.status === 200 && same(await stored(), { phoneCards: false, 'phone.find': false }), 'turned off: stored false (a PATCH merges)');
+    const g2 = await call('GET', '/api/campaign', { user: PLAYER });
+    expect(g2.json.doc.features['phone.find'] === false, 'and served false');
+    const n = await call('PATCH', '/api/campaign', { user: GM, body: { features: null } });
+    expect(n.status === 200 && (await stored()) === undefined, 'null removes the stored map');
+  });
+
   await step('a GM-surface setting written ON into the campaign document (kit.desk, night.who, blade.pitches) is dropped on the write and never served to a phone or the iPad', async () => {
     const body = { phoneCards: false }; GM_SETTINGS.forEach((i) => { body[i] = true; });
     const r = await call('PATCH', '/api/campaign', { user: GM, body: { features: body } });
@@ -193,6 +211,22 @@ async function main() {
     const g = await call('GET', '/api/campaign', { user: PLAYER }), p = await poll(IPAD);
     for (const m of [g.json.doc.features, p.json.features]) expect(m.phoneCards === false && GM_SETTINGS.every((i) => !(i in m)), 'served: ' + JSON.stringify(m));
     for (const t of [g.text, p.text]) for (const id of GM_SETTINGS) expect(!t.includes('"' + id + '"'), 'the GM-surface setting ' + id + ' reached a phone or the iPad');
+    const n = await call('PATCH', '/api/campaign', { user: GM, body: { features: null } });
+    expect(n.status === 200 && (await stored()) === undefined, 'null removes the stored map');
+  });
+
+  await step('the second registrar\'s two settings (RK30) are registered off and served as stored: room.intro (a display setting) and phone.glance (a phone one) reach the iPad and a phone alike, false until written, true once written, and a GM setting beside them still never does', async () => {
+    for (const id of ['room.intro', 'phone.glance']) expect(Features.isSetting(id) && Features.valueOf({}, id) === false && PUBLIC_SETTINGS.includes(id) && !GM_SETTINGS.includes(id), id + ' is a public setting and reads off with nothing stored');
+    expect(Features.get('room.intro').surface === 'display' && Features.get('phone.glance').surface === 'phone', 'surfaces: display, phone');
+    const body = { phoneCards: false, 'room.intro': true, 'phone.glance': true, 'map.fit': true };
+    const r = await call('PATCH', '/api/campaign', { user: GM, body: { features: body } });
+    expect(r.status === 200 && same(await stored(), { phoneCards: false, 'room.intro': true, 'phone.glance': true }), 'both public ones are stored, the GM one is dropped: ' + JSON.stringify(await stored()));
+    const g = await call('GET', '/api/campaign', { user: PLAYER }), p = await poll(IPAD);
+    for (const m of [g.json.doc.features, p.json.features]) expect(m['room.intro'] === true && m['phone.glance'] === true && !('map.fit' in m), 'served as stored: ' + JSON.stringify(m));
+    const o = await call('PATCH', '/api/campaign', { user: GM, body: { features: { 'room.intro': false } } });
+    expect(o.status === 200 && same(await stored(), { phoneCards: false, 'room.intro': false, 'phone.glance': true }), 'room.intro turned off: stored false (a PATCH merges)');
+    const p2 = await poll(IPAD);
+    expect(p2.json.features['room.intro'] === false && p2.json.features['phone.glance'] === true, 'and the iPad is told false: ' + JSON.stringify(p2.json.features));
     const n = await call('PATCH', '/api/campaign', { user: GM, body: { features: null } });
     expect(n.status === 200 && (await stored()) === undefined, 'null removes the stored map');
   });

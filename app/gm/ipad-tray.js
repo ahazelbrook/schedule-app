@@ -98,6 +98,7 @@
   function liveItems(snap) {
     var s = isObj(snap) ? snap : {}, doc = isObj(s.doc) ? s.doc : null, out = [];
     var st = s.intro ? { text: 'Introducing ' + cut(s.intro, 32), up: true } : stageText(s.shown, doc, s.stage, s.names);      /* IP3: snap.intro, the name while the title card plays */
+    if (!s.intro && s.opening) st = { text: 'Opening ' + cut(s.opening, 32) + ' on the iPad', up: true };      /* RK29 (room.intro): snap.opening, the room while its card plays; off, never set */
     out.push({ key: 'stage', text: st.text, up: st.up });
     if (isObj(s.stage) && s.stage.blank && !(isObj(s.shown) && s.shown.kind === 'dark')) out.push({ key: 'stage-blank', text: 'Map blanked', up: true });
     if (doc && overlayUp(doc.overlay, s.now)) out.push({ key: 'overlay', text: overlayText(doc.overlay, s.names), up: true });

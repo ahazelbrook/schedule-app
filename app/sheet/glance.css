@@ -1,0 +1,220 @@
+/* sheet/glance.css: the phone's glance screen (phone.glance), RK31 of the room key build. In the phone-glance bundle, fetched only while its
+   setting is on; not layered (routes.js isKitCss), no important flag. Every rule is scoped to #dossier and this file's own classes (gl-), or to
+   the marks sheet/glance.js puts on today's sheet (data-gl on #dossier, data-gl-off on its parts).
+   The glance is a phone's alone: everything that shows it, or hides today's sheet under it, sits in the phone's media query (tracker.css's own
+   break, screen and 760 px), so a desk, a phone held sideways past 760 px and print are today's sheet.
+   Sizes follow the design (PS-design/DESIGN.md §2): 16 px and up to read, 44 px targets, Stress boxes 44 tall; .gl-c1 and .gl-c2 are the fit
+   steps glance.js steps down through; .gl-lg is Large text (19 px, the actions in two columns, the screen may scroll). Nothing moves. */
+
+#dossier .gl { display: none; }
+
+@media screen and (max-width: 760px) {
+  #dossier > .gl { display: block; --gl-blue: #26418f; --gl-scrim: rgba(20, 17, 14, .45); }
+
+  /* ---- today's sheet under the glance: its parts hidden; an open roll, downtime or end-of-session panel stays (a fixed bottom sheet) ---- */
+  #dossier[data-gl="glance"] [data-gl-off="1"], #dossier[data-gl="page"] [data-gl-off="1"] { display: none; }
+  #dossier[data-gl="glance"] [data-gl-off="panel"], #dossier[data-gl="page"] [data-gl-off="panel"] { display: contents; }
+  #dossier[data-gl="glance"] [data-gl-off="panel"] > :not(.ds-roll), #dossier[data-gl="page"] [data-gl-off="panel"] > :not(.ds-roll) { display: none; }
+  #dossier[data-gl="glance"], #dossier[data-gl="page"] { padding-bottom: 0; }
+  #dossier[data-gl="sheet"] { padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+
+  /* ---- the screen: the whole phone above the on-stage banner (cast.css sets --cp-stage-h); under every panel (55) and dialog (60) ---- */
+  #dossier .gl-screen { display: none; position: fixed; left: 0; right: 0; top: 0; bottom: var(--cp-stage-h, 0px); z-index: 42; flex-direction: column; background: var(--paper); color: var(--ink); font: 400 16px/1.35 var(--font-text); }
+  #dossier[data-gl="glance"] .gl-screen { display: flex; }
+  #dossier .gl button { font-family: inherit; color: inherit; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+  #dossier .gl, #dossier .gl * { transition: none; animation: none; }   /* nothing moves; the fit measures what it set, never a size on its way */
+  #dossier .gl :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  #dossier .gl-p-top, #dossier .gl-p-lines, #dossier .gl-p-foot { flex: 0 0 auto; }
+  #dossier .gl-lab { font: 800 14px/1 var(--font-cond); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-soft); }
+  #dossier .gl-mono { font-family: var(--font-mono); }
+  #dossier .gl-faint { color: var(--ink-faint); }
+  #dossier .gl-alarm { color: var(--alarm); font-weight: 700; }
+
+  /* the top bar */
+  #dossier .gl-top { display: flex; align-items: center; gap: 6px; min-height: 54px; padding: env(safe-area-inset-top, 0px) max(10px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px)); border-bottom: 2px solid var(--rule); background: var(--paper); }
+  #dossier .gl-who { flex: 1 1 auto; min-width: 0; display: grid; align-content: center; min-height: 44px; padding: 4px 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
+  #dossier .gl-who b { font: 900 21px/1.05 var(--font-cond); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #dossier .gl-who span { font: 700 14px/1.1 var(--font-cond); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #dossier .gl-tb { position: relative; flex: 0 0 auto; min-width: 44px; min-height: 44px; padding: 0 10px; border: 2px solid var(--rule); background: var(--card); color: var(--ink); font: 800 15px/1 var(--font-cond); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
+  #dossier .gl-tb.gl-quiet { border-color: var(--gl-blue); color: var(--gl-blue); }
+  #dossier .gl-tb.gl-more { border: 0; background: transparent; padding: 0 6px; font-size: 24px; letter-spacing: 0; }
+  #dossier .gl-badge { position: absolute; top: -9px; right: -9px; min-width: 20px; height: 20px; padding: 0 4px; border-radius: 10px; background: var(--accent); color: var(--on-accent); font: 700 13px/20px var(--font-mono); text-align: center; letter-spacing: 0; }
+  #dossier .gl-line { display: flex; align-items: center; gap: 8px; margin: 0; padding: 4px max(16px, env(safe-area-inset-right, 0px)) 4px max(16px, env(safe-area-inset-left, 0px)); background: var(--inset); font: 600 15px/1.2 var(--font-cond); }
+  #dossier .gl-line > span { flex: 1 1 auto; min-width: 0; }
+  #dossier .gl-line.bad { color: var(--alarm); }
+  #dossier .gl-sbtn { min-height: 44px; padding: 0 14px; border: 2px solid var(--rule); background: var(--card); font: 800 15px/1 var(--font-cond); cursor: pointer; }
+
+  /* the four blocks */
+  #dossier .gl-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 10px max(16px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px)); overflow: hidden; }
+  #dossier .gl-body > div { flex: 0 0 auto; min-width: 0; }
+  #dossier .gl-blk { display: grid; gap: 5px; min-width: 0; }
+  #dossier .gl-blkh { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-height: 24px; min-width: 0; }
+  #dossier .gl-sp { flex: 1 1 auto; }
+
+  /* Stress */
+  #dossier .gl-count { font: 700 20px/1 var(--font-mono); }
+  #dossier .gl-of { color: var(--ink-faint); }
+  #dossier .gl-can { padding: 3px 5px; border: 1.5px solid var(--ink-soft); color: var(--ink-soft); font: 700 13px/1 var(--font-cond); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+  #dossier .gl-dl { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; margin: -10px 0; padding: 0 2px 0 8px; border: 0; background: transparent; cursor: pointer; }
+  #dossier .gl-dl .gl-lab { color: var(--ink); }
+  #dossier .gl-dl b { font: 700 18px/1 var(--font-mono); }
+  #dossier .gl-burst { width: 18px; height: 18px; flex: 0 0 auto; }
+  #dossier .gl-burst polygon { fill: none; stroke: var(--accent); stroke-width: 2.2; }
+  #dossier .gl-burst.gl-on polygon { fill: var(--accent); }
+  #dossier .gl-track { display: grid; grid-template-columns: repeat(var(--n, 9), minmax(0, 1fr)); gap: 4px; padding: 0 5px; }
+  #dossier .gl-sbox { min-width: 0; height: 44px; padding: 0; border: 2.5px solid var(--rule); border-radius: 4px; background: transparent; transform: skewX(-12deg); cursor: pointer; }
+  #dossier .gl-sbox.gl-on { background: var(--ink); border-color: var(--ink); }
+  #dossier .gl-stress.gl-full .gl-sbox.gl-on { background: var(--alarm); border-color: var(--alarm); }
+  #dossier .gl-fullbar { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 6px 10px; border: 0; background: var(--alarm); color: var(--paper); font: 800 17px/1.15 var(--font-cond); text-align: left; cursor: pointer; }
+  #dossier .gl-fullbar .gl-burst polygon { fill: currentColor; stroke: currentColor; }
+  #dossier .gl-fw-s, #dossier .gl-c2 .gl-fw { display: none; }
+  #dossier .gl-c2 .gl-fw-s { display: inline; }
+
+  /* Harm */
+  #dossier .gl-harm { display: grid; gap: 5px; width: 100%; padding: 0; border: 0; background: transparent; text-align: left; font: inherit; cursor: pointer; }
+  #dossier .gl-cost { flex: 1 1 0; min-width: 0; font: 700 16px/1.15 var(--font-cond); color: var(--alarm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #dossier .gl-cost.gl-k-none { color: var(--ink-faint); font-weight: 600; }
+  #dossier .gl-hrow { display: grid; grid-template-columns: 30px minmax(0, 1fr) minmax(0, 1fr); gap: 6px; min-height: 32px; }
+  #dossier .gl-hrow.gl-one { grid-template-columns: 30px minmax(0, 1fr); }
+  #dossier .gl-lv { display: grid; place-items: center; border: 2px solid var(--rule); font: 700 16px/1 var(--font-mono); }
+  #dossier .gl-hrow.gl-hot .gl-lv { background: var(--ink); color: var(--paper); }
+  #dossier .gl-hrow.gl-mortal .gl-lv { background: var(--alarm); border-color: var(--alarm); color: var(--paper); }
+  #dossier .gl-hcell { display: block; min-width: 0; padding: 0 8px; border-bottom: 2px solid var(--hair); font: 600 17px/30px var(--font-cond); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #dossier .gl-hcell.gl-empty { color: var(--ink-faint); font-weight: 400; }
+  #dossier .gl-hsum { display: none; }
+
+  /* the twelve actions */
+  #dossier .gl-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 6px; }
+  #dossier .gl-attr { display: grid; align-content: start; min-width: 0; }
+  #dossier .gl-attrh { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-height: 32px; padding: 0 4px; border: 0; border-bottom: 2.5px solid var(--rule); background: transparent; text-align: left; cursor: pointer; }
+  #dossier .gl-attrh .gl-lab { color: var(--ink); font-size: 15px; letter-spacing: .08em; }
+  #dossier .gl-rd { padding: 3px 5px; border: 1.5px solid var(--ink-soft); color: var(--ink-soft); font: 700 13px/1 var(--font-mono); white-space: nowrap; }
+  #dossier .gl-act { display: flex; align-items: center; justify-content: space-between; gap: 3px; min-width: 0; min-height: 40px; padding: 0 1px; border: 0; border-bottom: 1px solid var(--hair); background: transparent; text-align: left; cursor: pointer; }
+  #dossier .gl-act b { min-width: 0; font: 700 17px/1 var(--font-cond); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #dossier .gl-act.gl-zero b { color: var(--ink-faint); font-weight: 600; }
+  #dossier .gl-dots { display: inline-flex; flex: 0 0 auto; gap: 2px; }
+  #dossier .gl-dot { width: 7px; height: 7px; border: 1.5px solid var(--ink-soft); border-radius: 50%; }
+  #dossier .gl-five .gl-dot { width: 6px; height: 6px; }
+  #dossier .gl-dot.gl-on { background: var(--ink); border-color: var(--ink); }
+  #dossier .gl-act:active, #dossier .gl-attrh:active, #dossier .gl-harm:active { background: var(--inset); }
+  #dossier .gl-act[aria-expanded="true"] b { color: var(--accent); }
+
+  /* the abilities owned */
+  #dossier .gl-chips { display: flex; flex-wrap: wrap; gap: 6px; overflow: hidden; }
+  #dossier .gl-chip { display: inline-block; max-width: 100%; min-height: 42px; padding: 0 12px; border: 2px solid var(--rule); border-radius: 999px; background: var(--card); font: 700 17px/38px var(--font-cond); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+  #dossier .gl-chip.gl-plus { border-style: dashed; color: var(--ink-soft); }
+  #dossier .gl-chip.gl-k-pin { border-color: var(--accent); }
+  #dossier .gl .gl-chip[hidden] { display: none; }
+
+  /* the foot: Full sheet, or the GM's event while it is due */
+  #dossier .gl-foot { display: flex; gap: 8px; padding: 8px max(16px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); border-top: 2px solid var(--rule); background: var(--paper); }
+  #dossier .gl-primary { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 48px; border: 2px solid var(--rule); background: var(--accent); color: var(--on-accent); box-shadow: 3px 3px 0 var(--shadow-ink); font: 900 18px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+  #dossier .gl-ico { width: 28px; height: 20px; flex: 0 0 auto; }
+  #dossier .gl-event { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; min-width: 0; min-height: 48px; padding: 4px 12px; border: 2px solid var(--rule); background: var(--mustard); color: var(--on-mustard); text-align: left; cursor: pointer; }
+  #dossier .gl-ev-w { display: grid; min-width: 0; }
+  #dossier .gl-ev-w b { font: 900 18px/1.05 var(--font-cond); }
+  #dossier .gl-ev-w span { font: 600 16px/1.1 var(--font-cond); }
+  #dossier .gl-ev-clock { font: 700 14px/1.1 var(--font-mono); text-align: right; width: 5.5em; min-height: 2.2em; }
+  #dossier .gl-not { flex: 0 0 auto; min-height: 48px; padding: 0 10px; border: 2px solid var(--rule); background: var(--card); font: 800 15px/1 var(--font-cond); cursor: pointer; }
+
+  /* the fit steps (glance.js fit): c1 trims the gaps and the rows; c2 also folds the harm rows into one line */
+  #dossier .gl-c1 .gl-body, #dossier .gl-c2 .gl-body { gap: 7px; padding-top: 7px; }
+  #dossier .gl-c1 .gl-sbox, #dossier .gl-c2 .gl-sbox { height: 40px; }
+  #dossier .gl-c1 .gl-act, #dossier .gl-c2 .gl-act { min-height: 36px; }
+  #dossier .gl-c1 .gl-hrow, #dossier .gl-c2 .gl-hrow { min-height: 30px; }
+  #dossier .gl-c1 .gl-hcell { line-height: 28px; }
+  #dossier .gl-c1 .gl-chip, #dossier .gl-c2 .gl-chip { min-height: 40px; line-height: 36px; }
+  #dossier .gl-c2 .gl-hrow { display: none; }
+  #dossier .gl-c2 .gl-hsum { display: block; padding: 6px 8px; border-bottom: 2px solid var(--hair); font: 600 17px/1.2 var(--font-cond); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #dossier .gl-c2 .gl-top { min-height: 50px; }
+  #dossier .gl-c2 .gl-foot { padding-top: 6px; padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)); }
+  #dossier .gl-c2 .gl-primary, #dossier .gl-c2 .gl-event, #dossier .gl-c2 .gl-not { min-height: 44px; }
+
+  /* the screen scrolls in Large text (⋯ › Text size: one step up, the actions in two columns) and when the last fit step still overflows
+     (.gl-scroll: a phone held sideways under 760 px), so nothing is ever out of reach */
+  #dossier .gl-scroll .gl-body, #dossier .gl-lg .gl-body { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  #dossier .gl-lg .gl-act b, #dossier .gl-lg .gl-hcell, #dossier .gl-lg .gl-hsum { font-family: var(--font-text); font-size: 19px; }
+  #dossier .gl-lg .gl-chip { font-family: var(--font-text); font-size: 19px; }
+  #dossier .gl-lg .gl-act { min-height: 44px; }
+  #dossier .gl-lg .gl-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+  #dossier .gl-lg .gl-attr:nth-child(3) { grid-column: 1 / -1; }
+  #dossier .gl-lg .gl-cost { white-space: normal; }
+  #dossier .gl-lg .gl-sh-b { font-size: 19px; }
+
+  /* ---- the bottom sheets: over the glance and today's panels (55), under a dialog (60) ---- */
+  #dossier .gl-scrim { position: fixed; inset: 0; z-index: 57; background: var(--gl-scrim); }
+  #dossier .gl-sheet { position: fixed; left: 0; right: 0; bottom: var(--cp-stage-h, 0px); z-index: 58; display: flex; flex-direction: column; max-height: calc(88vh - var(--cp-stage-h, 0px)); background: var(--card); color: var(--ink); border-top: 3px solid var(--rule); box-shadow: 0 -8px 30px rgba(0, 0, 0, .25); outline: none; font: 400 16px/1.4 var(--font-text); }
+  #dossier .gl-sh-h { display: flex; align-items: center; gap: 8px; padding: 10px max(10px, env(safe-area-inset-right, 0px)) 8px max(16px, env(safe-area-inset-left, 0px)); border-bottom: 1px solid var(--hair); }
+  #dossier .gl-sh-tt { flex: 1 1 auto; min-width: 0; }
+  #dossier .gl-sh-h h3 { margin: 0; font: 900 22px/1.1 var(--font-cond); letter-spacing: 0; text-transform: none; overflow-wrap: anywhere; }
+  #dossier .gl-sh-h small { display: block; font: 600 15px/1.2 var(--font-cond); color: var(--ink-soft); }
+  #dossier .gl-x { flex: 0 0 auto; min-width: 44px; min-height: 44px; border: 0; background: transparent; font: 400 28px/1 var(--font-text); cursor: pointer; }
+  #dossier .gl-sh-b { display: grid; gap: 12px; padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  #dossier .gl-sh-live { display: grid; gap: 12px; min-width: 0; }
+  #dossier .gl-sh-b p { margin: 0; }
+  #dossier .gl-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  #dossier .gl-btn { min-height: 44px; padding: 0 14px; border: 2px solid var(--rule); background: var(--paper); font: 800 16px/1.1 var(--font-cond); letter-spacing: .03em; cursor: pointer; }
+  #dossier .gl-btn[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  #dossier .gl-btn.gl-go { background: var(--accent); color: var(--on-accent); box-shadow: 3px 3px 0 var(--shadow-ink); }
+  #dossier .gl-btn.gl-warn { border-color: var(--alarm); color: var(--alarm); }
+  #dossier .gl-btn:disabled { opacity: .45; cursor: default; }
+  #dossier .gl-in { box-sizing: border-box; width: 100%; min-width: 0; padding: 10px; border: 2px solid var(--rule); border-radius: 0; background: var(--paper); color: var(--ink); font: 400 16px/1.3 var(--font-text); }
+  #dossier .gl-two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  #dossier .gl-list { display: grid; }
+  #dossier .gl-li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 10px; width: 100%; min-height: 48px; padding: 6px 0; border: 0; border-bottom: 1px solid var(--hair); background: transparent; text-align: left; font: inherit; cursor: pointer; }
+  #dossier .gl-li > b { grid-column: 1; font: 700 18px/1.15 var(--font-cond); }
+  #dossier .gl-li > span { grid-column: 1; color: var(--ink-soft); font-size: 15px; }
+  #dossier .gl-li > i, #dossier .gl-li > .gl-btn { grid-column: 2; grid-row: 1 / span 2; font-style: normal; color: var(--ink-soft); }
+  #dossier .gl-li > .gl-btn { color: var(--ink); }
+  #dossier .gl-li.gl-static { cursor: default; }
+  #dossier .gl-li.gl-new > b::after { content: " \25CF"; color: var(--accent); }
+  #dossier .gl-li.gl-warn > b { color: var(--alarm); }
+  #dossier .gl-abt > span { color: var(--ink); font-size: 16px; line-height: 1.45; }
+  #dossier .gl-abtext { font-size: 17px; line-height: 1.5; }
+  #dossier .gl-key { display: grid; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--hair); }
+  #dossier .gl-key-n { display: grid; gap: 2px; }
+  #dossier .gl-key-n b { font: 700 18px/1.15 var(--font-cond); }
+  #dossier .gl-key-n span { color: var(--ink-soft); font-size: 15px; }
+  #dossier .gl-key.gl-struck .gl-key-n b { color: var(--ink-faint); text-decoration: line-through; }
+  #dossier .gl-key .gl-dead { color: var(--accent); font: 700 17px/1.2 var(--font-cond); }
+  #dossier .gl-segs { gap: 6px; }
+  #dossier .gl-seg { width: 44px; height: 44px; border: 2px solid var(--rule); background: transparent; cursor: pointer; }
+  #dossier .gl-seg.gl-on { background: var(--ink); }
+  #dossier .gl-rule { max-height: 40vh; overflow-y: auto; padding: 8px 12px; border-left: 4px solid var(--gl-blue); background: var(--inset); }
+  #dossier .gl-rlink { display: inline-block; margin-top: 6px; color: var(--ink); font-weight: 700; }
+  #dossier .gl-item { display: grid; gap: 6px; padding: 8px 0; border-bottom: 1px solid var(--hair); }
+  #dossier .gl-item-t { font: 700 18px/1.15 var(--font-cond); }
+  #dossier .gl-about { display: grid; gap: 12px; }
+  #dossier .gl-about .ds-ident, #dossier .gl-about .ds-bio { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; font-size: 16px; }
+  #dossier .gl-about .ds-lab { font-size: 13px; }
+  #dossier .gl-about .ds-in { font-size: 16px; }
+
+  /* ---- the Undo bar: over the foot; it shows its seconds and can be cleared; it cuts in and out ---- */
+  #dossier .gl-undo { position: fixed; left: 12px; right: 12px; bottom: calc(var(--cp-stage-h, 0px) + 76px + env(safe-area-inset-bottom, 0px)); z-index: 59; display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 4px 4px 4px 14px; background: var(--ink); color: var(--paper); box-shadow: 0 6px 20px rgba(0, 0, 0, .3); font: 600 17px/1.2 var(--font-cond); }
+  #dossier .gl .gl-undo[hidden], #dossier .gl .gl-u-go[hidden] { display: none; }
+  #dossier .gl-u-l { flex: 1 1 auto; min-width: 0; }
+  #dossier .gl-u-s { flex: 0 0 auto; font: 700 13px/1 var(--font-mono); opacity: .8; }
+  #dossier .gl-u-go { min-height: 44px; padding: 0 14px; border: 2px solid var(--paper); background: transparent; color: var(--paper); font: 900 16px/1 var(--font-cond); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
+  #dossier .gl-u-x { min-width: 44px; min-height: 44px; border: 0; background: transparent; color: var(--paper); font-size: 24px; cursor: pointer; }
+
+  /* ---- Full sheet: today's sheet with a bar back to the glance; RK32's page, when it is there ---- */
+  #dossier .gl-backbar { display: none; position: fixed; left: 0; right: 0; bottom: var(--cp-stage-h, 0px); z-index: 45; gap: 8px; padding: 8px max(16px, env(safe-area-inset-right, 0px)) calc(8px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); border-top: 2px solid var(--rule); background: var(--paper); }
+  #dossier[data-gl="sheet"] .gl-backbar { display: flex; }
+  #dossier .gl-backbar .gl-primary { background: var(--card); color: var(--ink); }
+  #dossier .gl-page { display: none; position: fixed; inset: 0; z-index: 43; overflow: auto; background: var(--paper); }
+  #dossier[data-gl="page"] .gl-page:not([hidden]) { display: block; }
+
+  /* today's roll strip and resist helper, over the glance: the design's reading sizes (the panel itself is tracker.css's) */
+  #dossier[data-gl="glance"] .ds-roll .ds-roll-t { font-size: 18px; }
+  #dossier[data-gl="glance"] .ds-roll .ds-roll-t b { font-size: 22px; }
+  #dossier[data-gl="glance"] .ds-roll .ds-roll-sub { font-size: 14px; }
+  #dossier[data-gl="glance"] .ds-roll .ds-roll-body { font-size: 16px; }
+  #dossier[data-gl="glance"] .ds-roll .hint { font-size: 15px; }
+  #dossier[data-gl="glance"] .ds-roll .btn.sm, #dossier[data-gl="glance"] .ds-roll .chip.sm { min-height: 44px; font-size: 15px; }
+}
+
+/* Night: the quiet line's blue, lighter */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) #dossier > .gl { --gl-blue: #8fa3dd; --gl-scrim: rgba(0, 0, 0, .6); }
+}
+:root[data-theme="dark"] #dossier > .gl { --gl-blue: #8fa3dd; --gl-scrim: rgba(0, 0, 0, .6); }

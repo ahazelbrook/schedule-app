@@ -112,6 +112,17 @@ const CHECKS = [
   ['checks/runtime/prep-actions.e2e.mjs', 'prep actions: a note without a span is untouched; handout, clock (once, hidden, Undo), rule pop-over; the cards close on touch (12400; PA)'],
   ['checks/runtime/map-shade.e2e.mjs', 'furniture depth: a shaded map with people through every checker to the display and the planning board, re-sent, stage, room cut, re-pin: never a hidden copy (12520; IP7)'],
   ['checks/runtime/map-shade-paint.e2e.mjs', 'furniture depth, what is on top: people over solids, labels and tokens over everything, nothing that shows flat goes missing shaded (no server; IP7)'],
+  // the room key build (RK01 registered these as stubs; each bundle fills its own). Default ports 9500 to 9504, inspector PORT + 20000 (a builder passes a port of their own)
+  ['checks/runtime/night-flow.e2e.mjs', 'ticks reach the clock (9500; RK03 to RK06)'],
+  ['checks/runtime/close-crew.e2e.mjs', 'the close writes the crew (9501; RK07)'],
+  ['checks/runtime/room-key.e2e.mjs', 'things in rooms: the card, the zoom, Show on iPad (9502; RK09 to RK11)'],
+  ['checks/runtime/room-tables.e2e.mjs', 'rolled rooms: the roll, the cards, Swap and Roll another, people, Keep (9503; RK14 and RK15)'],
+  ['checks/runtime/room-state.e2e.mjs', 'the stored room state: a thing\'s state and kept ids survive a reload and an old build (9505; RK08.4)'],
+  ['checks/runtime/room-bundles.e2e.mjs', 'each room key setting fetches its own bundle and nothing else; off, no room key file on the GM page or a phone (9507; RK01)'],
+  ['checks/runtime/glance.e2e.mjs', "the GM's glance (9504; RK20 to RK24)"],
+  // RK30 (the second registrar) registered these two as stubs: room openings on the iPad (RK29) and the glance sheet on phones (RK31 to RK33)
+  ['checks/runtime/room-intro.e2e.mjs', 'room openings on the iPad: the title card for a room or a band, a late joiner, Take it down, reduced motion, off (9508; RK29)'],
+  ['checks/runtime/phone-glance.e2e.mjs', 'the glance sheet on phones: the glance screen, Full sheet, off (9509; RK31 to RK33)'],
 ];
 
 const want = process.argv.slice(2);

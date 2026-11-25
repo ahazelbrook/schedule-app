@@ -232,8 +232,20 @@
   /* the setting turned off: what this file put in the stack goes, and an empty stack leaves the page (the old sheets do not style it) */
   function clearStack(d) {
     mine.forEach(function (h) { try { h.dismiss(); } catch (e) { /* gone */ } }); mine = []; sticky = [];
-    [].forEach.call(d.querySelectorAll('.ui-toast-stack'), function (b) { if (!b.querySelector('.ui-toast') && b.parentNode) b.parentNode.removeChild(b); });
+    sweepStacks(d, 0);
   }
+  /* a toast still leaving (its element goes when its leave ends, and nothing says so) keeps its stack for now: ask again every SWEEP_MS while one is
+     leaving, and stop when none is (a live toast keeps its stack), when the setting comes back on, or after SWEEP_MAX asks */
+  var SWEEP_MS = 50, SWEEP_MAX = 40;
+  function sweepStacks(d, n) {
+    var leaving = false;
+    [].forEach.call(d.querySelectorAll('.ui-toast-stack'), function (b) {
+      if (!b.querySelector('.ui-toast')) { if (b.parentNode) b.parentNode.removeChild(b); }
+      else if (b.querySelector('.ui-toast.is-leaving')) leaving = true;
+    });
+    if (leaving && n < SWEEP_MAX && !on() && W && typeof W.setTimeout === 'function') W.setTimeout(function () { sweepStacks(d, n + 1); }, SWEEP_MS);
+  }
+
 
   /* ---------- KS09.4 the dialogs ---------- */
   function ask(o) { var U = W && W.B68Ui; return on() && U && typeof U.confirm === 'function' ? U.confirm(o || {}) : null; }

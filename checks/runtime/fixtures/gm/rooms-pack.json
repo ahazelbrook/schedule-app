@@ -1,0 +1,335 @@
+{
+  "v": 1,
+  "T": {
+    "rooms": {
+      "pelican bar": {
+        "name": "Pelican bar",
+        "themes": [
+          "the Pelican Rooms"
+        ],
+        "band": "public",
+        "say": [
+          "A long bar in a low room, the floor still wet from the mop. Somebody has left the radio on.",
+          "Brass rails, green glass and one clean stool. The band next door thumps through the wall.",
+          "The bar is quiet for a Friday. Every bottle has been turned to face the door."
+        ],
+        "people": [
+          {
+            "role": "waiter",
+            "w": 3
+          },
+          {
+            "role": "cleaner",
+            "w": 1
+          },
+          {
+            "role": "nobody",
+            "w": 2
+          }
+        ],
+        "things": [
+          {
+            "name": "A long zinc bar",
+            "line": "Wet rings on the zinc, a cloth left folded.",
+            "look": "GM-ONLY-look: a till key taped under the lip, still warm.",
+            "roll": "GM-ONLY-roll: 4/5 a few notes. 6: the whole float.",
+            "danger": "",
+            "states": [
+              "closed",
+              "open"
+            ],
+            "tags": [
+              "loot"
+            ]
+          },
+          {
+            "name": "A row of upturned stools",
+            "line": "Legs in the air, ready for the floor to be swept.",
+            "look": "GM-ONLY-look: one stool is bolted down and rattles.",
+            "roll": "GM-ONLY-roll: 4/5 a bolt, loose. 6: a stool leg that makes a club.",
+            "danger": "",
+            "states": [],
+            "tags": [
+              "weapon",
+              "cover"
+            ]
+          },
+          {
+            "name": "A mirror behind the bottles",
+            "line": "It shows the door better than the door does.",
+            "look": "GM-ONLY-look: a smear where someone wiped a name off the glass.",
+            "roll": "",
+            "danger": "",
+            "states": [],
+            "tags": [
+              "clue"
+            ]
+          },
+          {
+            "name": "A glass-washer, humming",
+            "line": "Warm steam leaks from the lid.",
+            "look": "GM-ONLY-look: a wristwatch in the rinse tray.",
+            "roll": "GM-ONLY-roll: 4/5 the watch is stopped. 6: it is engraved.",
+            "danger": "GM-ONLY-danger: The lid scalds.",
+            "states": [
+              "shut",
+              "open"
+            ],
+            "tags": [
+              "clue",
+              "hazard"
+            ]
+          },
+          {
+            "name": "A service hatch",
+            "line": "A square of dark at knee height, hinged.",
+            "look": "GM-ONLY-look: it opens on the kitchen passage.",
+            "roll": "",
+            "danger": "",
+            "states": [
+              "shut",
+              "open"
+            ],
+            "tags": [
+              "escape",
+              "door"
+            ]
+          },
+          {
+            "name": "A waiter’s tray",
+            "line": "Left on the bar with one clean glass.",
+            "look": "GM-ONLY-look: a folded note under the glass, a table number.",
+            "roll": "",
+            "danger": "",
+            "states": [],
+            "tags": [
+              "clue",
+              "talk"
+            ]
+          },
+          {
+            "name": "A jar of cocktail sticks",
+            "line": "Coloured, with little paper flags.",
+            "look": "GM-ONLY-look: one flag is a tight scroll of paper.",
+            "roll": "GM-ONLY-roll: 4/5 a time. 6: a time and a street.",
+            "danger": "",
+            "states": [],
+            "tags": [
+              "tool"
+            ]
+          },
+          {
+            "name": "A velvet rope on brass posts",
+            "line": "It cuts the bar off from the dance floor.",
+            "look": "GM-ONLY-look: one post is hollow and rings.",
+            "roll": "",
+            "danger": "GM-ONLY-danger: The posts fall like dominoes.",
+            "states": [],
+            "tags": [
+              "cover",
+              "hazard"
+            ]
+          },
+          {
+            "name": "A radio on the shelf",
+            "line": "A dance band, turned low.",
+            "look": "GM-ONLY-look: it cuts out when anyone nears the till.",
+            "roll": "",
+            "danger": "",
+            "states": [
+              "on",
+              "off"
+            ],
+            "tags": [
+              "weird"
+            ]
+          },
+          {
+            "name": "A barman’s apron on a hook",
+            "line": "Stiff with old cordial.",
+            "look": "GM-ONLY-look: the pocket holds a pencil and a rota.",
+            "roll": "",
+            "danger": "",
+            "states": [],
+            "tags": [
+              "costume"
+            ]
+          }
+        ]
+      },
+      "pelican cloakroom": {
+        "name": "Pelican cloakroom",
+        "themes": [
+          "the Pelican Rooms"
+        ],
+        "band": "working",
+        "say": [
+          "A narrow cloakroom that smells of rain and hair oil. Numbered tags clink on the rail.",
+          "Coats packed so close that the room muffles every word. A bell sits on the counter.",
+          "Cream walls and a single lamp. The attendant’s stool is empty and still warm."
+        ],
+        "people": [
+          {
+            "role": "cleaner",
+            "w": 1
+          },
+          {
+            "role": "nobody",
+            "w": 4
+          }
+        ],
+        "things": [
+          {
+            "name": "A rail of coats",
+            "line": "Numbered tags swing on every hanger.",
+            "look": "GM-ONLY-look: one coat is far too heavy for its owner.",
+            "roll": "GM-ONLY-roll: 4/5 a purse. 6: a purse and a key.",
+            "danger": "",
+            "states": [],
+            "tags": [
+              "loot",
+              "cover"
+            ]
+          },
+          {
+            "name": "A brass bell on the counter",
+            "line": "Dented, with a ribbon for the hammer.",
+            "look": "GM-ONLY-look: the ribbon is cut, not frayed.",
+            "roll": "",
+            "danger": "GM-ONLY-danger: It rings the whole house.",
+            "states": [],
+            "tags": [
+              "hazard"
+            ]
+          },
+          {
+            "name": "A ticket book",
+            "line": "Pink stubs, torn along the dotted line.",
+            "look": "GM-ONLY-look: the last stub has two names on it.",
+            "roll": "",
+            "danger": "",
+            "states": [],
+            "tags": [
+              "clue"
+            ]
+          },
+          {
+            "name": "A hat shelf",
+            "line": "Fedoras and one feathered thing.",
+            "look": "GM-ONLY-look: a hat is dry on a wet night.",
+            "roll": "",
+            "danger": "",
+            "states": [],
+            "tags": [
+              "costume"
+            ]
+          },
+          {
+            "name": "A narrow side door",
+            "line": "Painted the same cream as the wall.",
+            "look": "GM-ONLY-look: it opens on the alley, and its bolt is oiled.",
+            "roll": "",
+            "danger": "",
+            "states": [
+              "bolted",
+              "open"
+            ],
+            "tags": [
+              "escape",
+              "door"
+            ]
+          },
+          {
+            "name": "An umbrella stand",
+            "line": "A dozen black umbrellas, one very long.",
+            "look": "GM-ONLY-look: the long one is a blade in a sleeve.",
+            "roll": "GM-ONLY-roll: 4/5 a blade, short. 6: a blade, and a lord’s crest.",
+            "danger": "",
+            "states": [],
+            "tags": [
+              "weapon"
+            ]
+          },
+          {
+            "name": "A lost-property box",
+            "line": "Gloves, a spectacle case, a child’s shoe.",
+            "look": "GM-ONLY-look: a diary with the corner turned down.",
+            "roll": "",
+            "danger": "",
+            "states": [],
+            "tags": [
+              "clue",
+              "loot"
+            ]
+          },
+          {
+            "name": "A curtain on a pole",
+            "line": "It hides the back of the room.",
+            "look": "GM-ONLY-look: a person could stand behind it, and someone has.",
+            "roll": "",
+            "danger": "",
+            "states": [],
+            "tags": [
+              "cover"
+            ]
+          },
+          {
+            "name": "A stool for the attendant",
+            "line": "Low, with a cushion worn flat.",
+            "look": "GM-ONLY-look: a thermos, and the lid is still hot.",
+            "roll": "",
+            "danger": "",
+            "states": [],
+            "tags": [
+              "talk"
+            ]
+          },
+          {
+            "name": "A flickering lamp",
+            "line": "A shade the colour of weak tea.",
+            "look": "GM-ONLY-look: it flickers when the lift runs.",
+            "roll": "",
+            "danger": "",
+            "states": [
+              "on",
+              "off"
+            ],
+            "tags": [
+              "weird",
+              "tool"
+            ]
+          }
+        ]
+      }
+    },
+    "roles": {
+      "waiter": {
+        "lines": [
+          "Table four was meant to be quiet tonight.",
+          "I carry the tray; I don’t carry the talk.",
+          "If you want the good seats, ask me before they’re taken."
+        ],
+        "looks": [
+          "Starched jacket gone grey at the cuffs.",
+          "Tray balanced on one flat palm."
+        ],
+        "pose": "Weight on one foot, tray high",
+        "face": "Smiles at the room, never at you"
+      },
+      "cleaner": {
+        "lines": [
+          "Mind the floor, it’s wet.",
+          "I’ve seen worse on a Monday.",
+          "Nobody looks at the mop."
+        ],
+        "looks": [
+          "Rubber boots and a bucket on one wrist.",
+          "Sleeves pushed up, hands red from the water."
+        ],
+        "pose": "Leaning on the mop handle",
+        "face": "Eyes on the floor, ears on you"
+      }
+    },
+    "aliases": {}
+  }
+}
