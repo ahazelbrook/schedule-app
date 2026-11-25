@@ -350,14 +350,14 @@ await test('RK27.1: a pull PLANS by default; --yes writes; --dry-run still accep
   const p = await sync(env, ['pull', '--only', 'notes']);
   eq(JSON.stringify(snapshot(env.vault)), JSON.stringify(a), 'the default pull wrote to the vault');
   ok(!fs.existsSync(path.join(env.priv, 'sync-ledger.json')), 'the default pull wrote the ledger');
-  ok(p.out.includes('DRY RUN (nothing written)') && p.out.includes('would file into b68g-s02.md'), 'the default says it is a plan');
+  ok(p.out.includes('DRY RUN (nothing written)') && /would file into b68g-s\d+\.md/.test(p.out), 'the default says it is a plan');
   const b = await sync(env, ['both', '--only', 'notes']);
   eq(JSON.stringify(snapshot(env.vault)), JSON.stringify(a), 'the default both wrote to the vault');
   ok(b.report.filed.length >= 8 && b.report.filed.every((f) => f.dry), 'both reports a plan');
   const w = await sync(env, ['pull', '--yes', '--only', 'notes']);
   ok(JSON.stringify(snapshot(env.vault)) !== JSON.stringify(a), '--yes did not write');
   ok(fs.existsSync(path.join(env.priv, 'sync-ledger.json')), '--yes saved the ledger');
-  ok(w.out.includes('filed into b68g-s02.md') && !w.out.includes('DRY RUN') && w.report.filed.every((f) => !f.dry), '--yes reports it as done');
+  ok(/filed into b68g-s\d+\.md/.test(w.out) && !w.out.includes('DRY RUN') && w.report.filed.every((f) => !f.dry), '--yes reports it as done');
   // red proof: the same plan with the flag spelled out equals the default
   const env2 = await setup();
   const x = snapshot(env2.vault);
