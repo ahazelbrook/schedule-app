@@ -2561,6 +2561,8 @@
     }
     return S.mt;
   }
+  /* RK08.4 (room.key, room.tables): the room-state contract (gm/room-state.js), one per page session and the only writer of `roomstate`; null while the room-key bundle is not loaded */
+  function rsInst() { var M = W.B68GmRoomState, me = S; if (!me || !M || M.stub || typeof M.create !== 'function') return null; if (!me.rs) me.rs = M.create({ on: function () { return S === me && (b09On('room.key') || b09On('room.tables')); }, doc: function () { return S === me ? me.doc : null; }, patch: function (p) { return S === me ? patch(p) : false; }, busy: function () { var st = me.saver ? me.saver.state() : null; return !!(st && st.pending && st.pending.roomstate); }, now: function () { return Date.now(); }, part: function () { var r = me.pack && me.pack.parts && me.pack.parts.rooms; return r ? str(r.version) : ''; }, toast: toast }); return me.rs; }
   /* 4.5 / 4.7 / 5.3 the practical speaker, the ringing phone and the Trouble desk (gm/room-desk.js; switches room.practical, room.phone, between.trouble): one Menu line each while its switch is on */
   function rdInst() {
     if (!S || !W.B68GmRoomDesk || !W.B68Features) return null;
@@ -8416,6 +8418,7 @@
     _stamped: function (st) { fitStamped(st); },     /* tests: what the stamp's host.stamped does (the node rig has no iPad to stamp on) */
     _state: function () { return S ? { status: S.status, locRoll: S.locRoll, map: S.map && { layer: S.map.layer, svg: S.map.svg }, panel: S.panel, seg: S.seg, doc: S.doc, runCacheN: S.runCache ? S.runCache.keys.length : 0 } : null; },
     _pushDisplay: function (d) { return pushDisplay(d); },
+    _roomState: function () { return rsInst(); },     /* for checks (room-state.e2e.mjs, RK08.4): the room-state API, null while the room-key bundle is not loaded */
     _setPhoneCards: function (on) { return setPhoneCards(on === true); },     /* for checks: the Run menu's Phone cards toggle */
     _ballSet: function (change) { var rs = runSite(); return rs ? ballSet(rs.name, change) : false; },     /* for checks: what the Run view does through its host */
     /* "Claude suggests" (a later step calls this): a Show handout? item in the Rack. Returns false for an id the pack does not hold. */

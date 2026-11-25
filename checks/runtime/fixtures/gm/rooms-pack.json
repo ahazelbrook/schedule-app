@@ -70,7 +70,7 @@
             "line": "Warm steam leaks from the lid.",
             "look": "GM-ONLY-look: a wristwatch in the rinse tray.",
             "roll": "GM-ONLY-roll: 4/5 the watch is stopped. 6: it is engraved.",
-            "danger": "The lid scalds.",
+            "danger": "GM-ONLY-danger: The lid scalds.",
             "states": [
               "shut",
               "open"
@@ -123,7 +123,7 @@
             "line": "It cuts the bar off from the dance floor.",
             "look": "GM-ONLY-look: one post is hollow and rings.",
             "roll": "",
-            "danger": "The posts fall like dominoes.",
+            "danger": "GM-ONLY-danger: The posts fall like dominoes.",
             "states": [],
             "tags": [
               "cover",
@@ -196,7 +196,7 @@
             "line": "Dented, with a ribbon for the hammer.",
             "look": "GM-ONLY-look: the ribbon is cut, not frayed.",
             "roll": "",
-            "danger": "It rings the whole house.",
+            "danger": "GM-ONLY-danger: It rings the whole house.",
             "states": [],
             "tags": [
               "hazard"
