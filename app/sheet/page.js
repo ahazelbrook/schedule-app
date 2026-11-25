@@ -50,7 +50,9 @@
   var V = 1, ZMIN = 1, ZMAX = 4, ZDBL = 2.5, ZSTEPS = [1, 1.5, 2, 2.5, 3, 4], TAP_MS = 300, TAP_PX = 30, WIDE = 700, BASE = 'media/sheets/';
   var NOTE = 'This part of the sheet isn’t mapped: use the glance screen';
   var TIP_KEY = 'b68.page.tip';
-  var FAMILY = { 'item loads': 'items', 'key hits': 'keys', dots: 'acts' };
+  /* a waived CHECK name -> its region key (scripts/lib/sheets-check.mjs FAMILY, plus 'abilities' -> 'ab': gm-sheets.mjs writes a waiver on the abilities
+     count into map.waived as 'abilities', a check name, while the region key is 'ab') */
+  var FAMILY = { 'item loads': 'items', 'key hits': 'keys', dots: 'acts', abilities: 'ab' };
   var RECTS = ['stress', 'xp', 'xpi', 'xpp', 'xpr', 'stacks', 'bank'];
   var REGIONS = ['stress', 'xp', 'xpi', 'xpp', 'xpr', 'acts', 'ab', 'items', 'stacks', 'bank', 'harm', 'heal', 'res', 'keys', 'friends', 'coh', 'id', 'load'];
   var ATTRS = [['xpi', 'insight', 'Insight'], ['xpp', 'prowess', 'Prowess'], ['xpr', 'resolve', 'Resolve']];
@@ -378,7 +380,7 @@
         sub = keys.filter(function (k) { return k && k.deadlock; }).length + ' of 4 deadlocked';
         keys.forEach(function (k, i) {
           var struck = k.deadlock ? 'Deadlocked ' + (k.deadlock === 'up' ? '▲ ' + str(k.up) : '▼ ' + str(k.down)) + ' (permanent: the GM can undo it)' : k.glitch ? cap(str(k.glitch)) + ' (permanent)' : '';
-          var dl = isVamp(pb) || isTT(pb) || isGhost(pb) ? '' : '<div class="sp-row">' + btn('▼ ' + esc(k.down || 'Reversed'), 'data-act="deadlock" data-i="' + i + '" data-dir="down"') + btn('▲ ' + esc(k.up || 'Intensified'), 'data-act="deadlock" data-i="' + i + '" data-dir="up"') + '</div>';
+          var dl = isVamp(pb) || isTT(pb) || isGhost(pb) ? '' : '<div class="sp-row">' + btn('▼ ' + esc(k.down || 'Reversed'), 'data-gl="deadlock" data-i="' + i + '" data-dir="down"') + btn('▲ ' + esc(k.up || 'Intensified'), 'data-gl="deadlock" data-i="' + i + '" data-dir="up"') + '</div>';
           live += '<div class="sp-key"><b>' + esc(k.name || 'Key ' + (i + 1)) + '</b>' + pips(3, +k.hits || 0, 'data-act="keyhit" data-i="' + i + '"', 'Hit') + (struck ? '<span class="sp-faint">' + esc(struck) + '</span>' : dl) + '</div>';
           body += '<div class="sp-keyw">' + field('Key ' + (i + 1), 'keys.' + i + '.name', k.name, 'name') + field('▼', 'keys.' + i + '.down', k.down, 'reversed') + field('▲', 'keys.' + i + '.up', k.up, 'intensified') + '</div>';
         });
@@ -473,17 +475,20 @@
   function pbIdOf(ch) { var pb = ch && ch.pb, d = ch && ch.doc; return str((pb && pb.id) || (d && (d.playbook || (d.spec && d.spec.playbook)))); }
   function CTnow() { return (W && W.B68Content) || null; }
 
-  /** The map, then the page (an <img> of the svg: no script in it can run, and the browser draws it afresh at each laid-out size). Cached. */
+  /** The map, then the page (an <img> of the svg: no script in it can run, and the browser draws it afresh at each laid-out size). Cached.
+      Only a real "no sheet" is remembered for the visit: a 404, or a map that is not JSON, not schema 1 or another playbook's (gone: true). A network
+      error, another status or a page that did not load is forgotten, so the next Full sheet asks again (table Wi-Fi drops requests). */
+  function gone(m) { var e = new Error(m); e.gone = true; return e; }
   function load(id) {
     var c = cache[id];
     if (c && c.p) return c.p;
     c = cache[id] = { status: 'loading', map: null, img: null, p: null };
     var F = W && W.fetch, url = BASE + encodeURIComponent(id);
     c.p = (typeof F === 'function' ? Promise.resolve(F.call(W, url + '.map.json', { credentials: 'same-origin' })) : Promise.reject(new Error('no fetch')))
-      .then(function (r) { if (!r || !r.ok) throw new Error('no map (' + (r && r.status) + ')'); return r.json(); })
+      .then(function (r) { if (!r || !r.ok) throw (r && r.status === 404 ? gone('no map (404)') : new Error('the map did not come (' + (r && r.status) + ')')); return r.json().then(null, function () { throw gone('the map is not JSON'); }); })
       .then(function (map) {
-        var v = validate(map); if (!v.ok) throw new Error('map: ' + v.why);
-        if (map.playbook && map.playbook !== id) throw new Error('the map is for ' + map.playbook);
+        var v = validate(map); if (!v.ok) throw gone('map: ' + v.why);
+        if (map.playbook && map.playbook !== id) throw gone('the map is for ' + map.playbook);
         return new Promise(function (res, rej) {
           var I = W.Image; if (typeof I !== 'function') { rej(new Error('no image')); return; }
           var img = new I(); img.decoding = 'async'; img.alt = ''; img.className = 'sp-img'; img.setAttribute('aria-hidden', 'true'); img.draggable = false;
@@ -492,7 +497,7 @@
           img.src = url + '.svg';
         });
       })
-      .then(function (got) { c.status = 'ready'; c.map = got.map; c.img = got.img; return c; }, function (e) { c.status = 'missing'; c.why = str(e && e.message); throw e; });
+      .then(function (got) { c.status = 'ready'; c.map = got.map; c.img = got.img; return c; }, function (e) { c.why = str(e && e.message); if (e && e.gone) c.status = 'missing'; else if (cache[id] === c) delete cache[id]; throw e; });
     return c.p;
   }
 
@@ -532,7 +537,7 @@
     var el = D.createElement('div'); el.className = 'sp' + (cur.wide ? ' sp-wide' : ''); el.setAttribute('data-sp-pb', id);
     el.innerHTML = '<div class="sp-bar">' + barHtml(ch, cur.wide) + '</div>' +
       (cur.wide || tipHidden() ? '' : '<div class="sp-tip"><span>Pinch to zoom · tap a part to change it · turn the phone for a bigger page</span><button type="button" class="sp-x" data-sp="tip" aria-label="Hide the tip">×</button></div>') +
-      '<div class="sp-view" role="region" aria-label="Your playbook page"><div class="sp-box"><p class="sp-wait">Getting the sheet…</p></div></div>' +
+      '<div class="sp-warn" role="status" hidden></div><div class="sp-view" role="region" aria-label="Your playbook page"><div class="sp-box"><p class="sp-wait">Getting the sheet…</p></div></div>' +
       '<div class="sp-layer"></div><div class="sp-menu" role="menu" hidden>' + menuHtml() + '</div>';
     box.appendChild(el);
     cur.el = el; cur.view = el.querySelector('.sp-view'); cur.pbox = el.querySelector('.sp-box');
@@ -552,6 +557,8 @@
     cur.el.classList.add('sp-ready');
     redraw();
     setZoom(1);
+    /* a phone held upright opens at the page's height (fit width leaves a strip too small to read): − goes back to fit width */
+    if (!cur.wide) { var fh = firstZ(); if (fh > 1.05) { setZoom(fh, 0, 0); cur.view.scrollLeft = 0; cur.view.scrollTop = 0; } }
     var f = cur.opts.focus; if (f && FOCUS[f]) openEd(FOCUS[f], null);
   }
   function redraw() {
@@ -561,8 +568,19 @@
     var bar = cur.el.querySelector('.sp-ttl'), t = titleOf(cur.ch);
     if (bar && bar.textContent !== t) bar.textContent = t;
     foot();
+    var bad = Object.keys(g).filter(function (k) { return !g[k].ok && regionRects(map, k).length; }).length, w = cur.el.querySelector('.sp-warn');
+    var wt = bad ? (bad === 1 ? '1 part of this sheet isn\u2019t mapped: use the glance screen for it' : bad + ' parts of this sheet aren\u2019t mapped: use the glance screen for them') : '';
+    if (w && w.textContent !== wt) { w.textContent = wt; w.hidden = !wt; }
     drawEd(false);
+    lift();
   }
+  /* the glance's 6 s Undo bar goes to the top while an editor or today's roll strip is open over the page, so it never covers a control */
+  function lift() {
+    var g = cur && cur.box && cur.box.parentNode; if (!g || !g.classList) return;
+    var on = !!(cur.ed || (cur.root && cur.root.querySelector('[data-gl-off="panel"] .ds-roll')));
+    if (g.classList.contains('sp-lift') !== on) g.classList.toggle('sp-lift', on);
+  }
+  function firstZ() { var v = cur.view; if (!v || !(v.clientHeight > 0)) return 1; return clampZ(Math.floor((v.clientHeight - 16) / (baseW() * aspect()) * 20) / 20); }
 
   /* over 760 px the Now card is a strip at the foot (page.css): the page and a side panel end above it */
   function foot() {
@@ -586,6 +604,7 @@
     closeMenu();
     cur.ed = { region: region, live: null, opener: opener || null };
     drawEd(true);
+    lift();
   }
   function getPath(o, p) { str(p).split('.').forEach(function (k) { o = o == null ? undefined : o[k]; }); return o; }
   function drawEd(fresh) {
@@ -611,7 +630,7 @@
     });
   }
   function closeEd() {
-    if (!cur) return; var o = cur.ed && cur.ed.opener; cur.ed = null; drawEd(false);
+    if (!cur) return; var o = cur.ed && cur.ed.opener; cur.ed = null; drawEd(false); lift();
     if (o && o.isConnected) { try { o.focus({ preventScroll: true }); } catch (e) { /* gone */ } }
   }
   function trimHarm(hm) { hm = hm || {}; function t(x) { return str(x).trim(); } return { l4: t(hm.l4), l3: t(hm.l3), l2: [].concat(hm.l2 || ['', '']).concat(['', '']).slice(0, 2).map(t), l1: [].concat(hm.l1 || ['', '']).concat(['', '']).slice(0, 2).map(t) }; }

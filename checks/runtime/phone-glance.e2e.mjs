@@ -444,13 +444,17 @@ try {
     const want = PG.marks(BLANK.map, { play: doc0.play, pb: CT.byId.hound, doc: doc0 }, null, CT);
     let html = await markHtml(pg);
     check(tags(html) === tags(want) && (await pens(pg)) >= doc0.play.stress && !/sp-unmapped/.test(html) && /Nell Arbuthnot/.test(html), 'the mark layer is the character drawn through the map (' + tags(html) + ', want ' + tags(want) + ')');
-    await shot(pg, 'page-390x664-fit-paper');
+    await shot(pg, 'page-390x664-first-paper');
 
     /* zoom: + to 400% re-lays the box (the vector page with it), never a transform; the page's viewport is untouched */
     const zoom = () => pg.evaluate(() => { const b = document.querySelector('#dossier .sp-box'), i = document.querySelector('#dossier .sp-img'), v = document.querySelector('#dossier .sp-view'), m = document.querySelector('meta[name="viewport"]');
       return { z: window.B68SheetPage.state().z, pct: document.querySelector('#dossier .sp-pct').textContent, bw: Math.round(b.getBoundingClientRect().width), iw: Math.round(i.getBoundingClientRect().width), vw: v.clientWidth, tf: getComputedStyle(b).transform + '|' + getComputedStyle(i).transform, vp: m ? m.content : '', vs: window.visualViewport ? visualViewport.scale : 1, inDis: document.querySelector('#dossier .sp [data-sp="in"]').disabled, outDis: document.querySelector('#dossier .sp [data-sp="out"]').disabled }; });
+    const zf = await zoom(), vh = await pg.evaluate(() => document.querySelector('#dossier .sp-view').clientHeight);
+    check(zf.z > 1.4 && zf.pct === Math.round(zf.z * 100) + '%' && !zf.outDis && Math.abs(zf.bw * 595.28 / 841.89 - (vh - 16)) <= 16, 'a phone held upright opens at the page\'s height (' + zf.pct + ', the view ' + vh + ' px tall), not a strip too small to read: ' + JSON.stringify(zf));
+    for (let i = 0; i < 6 && !(await zoom()).outDis; i++) { await pg.click('#dossier .sp [data-sp="out"]'); await sleep(100); }
     const z0 = await zoom();
-    check(z0.z === 1 && z0.pct === '100%' && z0.outDis && Math.abs(z0.bw - (z0.vw - 16)) <= 1, 'it opens at fit width (100%; − is off): ' + JSON.stringify(z0));
+    check(z0.z === 1 && z0.pct === '100%' && z0.outDis && Math.abs(z0.bw - (z0.vw - 16)) <= 1, '− goes back to fit width (100%; − is off): ' + JSON.stringify(z0));
+    await shot(pg, 'page-390x664-fit-paper');
     for (let i = 0; i < 3; i++) { await pg.click('#dossier .sp [data-sp="in"]'); await sleep(120); }
     await shot(pg, 'page-390x664-250-paper');
     for (let i = 0; i < 2; i++) { await pg.click('#dossier .sp [data-sp="in"]'); await sleep(120); }
@@ -498,6 +502,8 @@ try {
     const s0 = (await server1('pc-nell')).stress, sTo = s0 === 3 ? 4 : 3, pens0 = await pens(pg);
     await region(pg, 'stress'); await pg.click('#dossier .sp-panel [data-act="stress"][data-n="' + sTo + '"]'); await sleep(400);
     let u = await bar(pg);
+    const lifted = await pg.evaluate(() => { const b = document.querySelector('#dossier .gl-undo').getBoundingClientRect(), p = document.querySelector('#dossier .sp-panel').getBoundingClientRect(); return { bar: Math.round(b.bottom), panel: Math.round(p.top) }; });
+    check(lifted.bar <= lifted.panel, 'the Undo bar sits above an open editor, never over its controls: ' + JSON.stringify(lifted));
     check(u && u.label === 'Stress ' + s0 + ' → ' + sTo && u.undo && (await pens(pg)) === pens0 + sTo - s0 && !!(await serverStress('pc-nell', sTo)), 'stress from its editor: the marks follow, the Undo bar says ' + JSON.stringify(u));
     await shot(pg, 'editor-stress-change-390x664-paper');
     await undoBar(pg);
@@ -522,10 +528,26 @@ try {
     u = await bar(pg);
     check(u && u.label === 'Crew changed' && u.undo && /The Dovetail Crew \(Pelican\)/.test(await markHtml(pg)), 'a typed field (the crew): the sheet writes it, the page records it for Undo: ' + JSON.stringify(u));
     await undoBar(pg); await closeEd(pg).catch(() => {});
+    /* a deadlock from the page's keys editor is the glance's: confirmed, struck for good, Stress to 0 with one Undo (design §6); Undo keeps the deadlock */
+    if (!((await server1('pc-nell')).stress > 0)) { await region(pg, 'stress'); await pg.click('#dossier .sp-panel [data-act="stress"][data-n="5"]'); await sleep(400); await closeEd(pg).catch(() => {}); }
+    const sd = (await server1('pc-nell')).stress;
+    await region(pg, 'keys'); await pg.click('#dossier .sp-panel [data-gl="deadlock"][data-i="1"][data-dir="down"]'); await sleep(500);
+    u = await bar(pg);
+    const dz = await until(async () => { const p = await server1('pc-nell'); return p && p.stress === 0 && p.keys[1].deadlock === 'down' ? p : null; }, 8000, 200);
+    check(!!dz && u && u.label === 'Deadlocked KEY-2: Stress ' + sd + ' → 0' && u.undo && (await stressOf(pg)) === 0, 'a deadlock from the page\'s keys editor resets Stress to 0, with Undo: ' + JSON.stringify(u));
+    await shot(pg, 'deadlock-from-page-390x664-paper');
+    await undoBar(pg);
+    const du = await until(async () => { const p = await server1('pc-nell'); return p && p.stress === sd ? p : null; }, 8000, 200);
+    check(!!du && du.keys[1].deadlock === 'down', 'Undo puts Stress back to ' + sd + '; the deadlock stays (the GM\'s to undo): ' + JSON.stringify(du && du.keys[1]));
+    await closeEd(pg).catch(() => {});
     await region(pg, 'actions'); await pg.click('#dossier .sp-panel [data-act="rollopen"][data-a="Hunt"]'); await sleep(500);
     const roll = await pg.evaluate(() => { const r = document.querySelector('#dossier .ds-roll'); return { ed: !!document.querySelector('#dossier .sp-panel'), roll: !!r && r.getClientRects().length > 0 && getComputedStyle(r).position === 'fixed' }; });
     check(!roll.ed && roll.roll, 'actions: a tap on an action opens today\'s roll strip over the page: ' + JSON.stringify(roll));
+    await pg.click('#dossier .ds-roll [data-act="markopt"][data-k="push"]'); await sleep(400);
+    const lr = await pg.evaluate(() => { const b = document.querySelector('#dossier .gl-undo'), r = document.querySelector('#dossier .ds-roll'); return b && !b.hidden ? { bar: Math.round(b.getBoundingClientRect().bottom), roll: Math.round(r.getBoundingClientRect().top) } : null; });
+    check(!!lr && lr.bar <= lr.roll, 'Push in the roll strip over the page: the Undo bar sits above the strip: ' + JSON.stringify(lr));
     await shot(pg, 'roll-from-page-390x664-paper');
+    await undoBar(pg);
     await pg.click('#dossier .ds-roll [data-act="panelclose"]').catch(() => {}); await sleep(200);
     await pg.click('#dossier .sp [data-sp="back"]'); await sleep(300);
     check(!!(await glanceUp(pg, 3000)), '‹ comes back to the glance screen');
@@ -535,9 +557,10 @@ try {
 
     /* a map whose count disagrees: nothing drawn there, the note on the page and in the editor */
     const B = await open('pc-nell', { w: 390, h: 664, sheets: { map: blankSheet(CT, 'hound', { stress: 8 }).map } }), bp = B.page; await glanceUp(bp); await toFull(bp); await ready(bp);
-    const mm = await bp.evaluate(() => ({ notes: Array.from(document.querySelectorAll('#dossier .sp-unmapped text')).map((t) => t.textContent) }));
+    const mm = await bp.evaluate(() => { const w = document.querySelector('#dossier .sp-warn'); return { notes: Array.from(document.querySelectorAll('#dossier .sp-unmapped text')).map((t) => t.textContent), warn: w && !w.hidden && w.getClientRects().length ? w.textContent : null, px: w ? parseFloat(getComputedStyle(w).fontSize) : 0 }; });
     const doc1 = (await api('GET', '/characters/pc-nell', null, P1)).json.doc, want8 = PG.marks(blankSheet(CT, 'hound', { stress: 8 }).map, { play: doc1.play, pb: CT.byId.hound, doc: doc1 }, null, CT);
     const p8 = await region(bp, 'stress');
+    check(mm.warn === '1 part of this sheet isn\u2019t mapped: use the glance screen for it' && mm.px >= 15, 'the page says so in words under its bar, readable at 390 x 664: ' + mm.warn);
     check(mm.notes.length === 1 && mm.notes[0] === PG.NOTE && (await pens(bp)) === (want8.match(/class="sp-pen"/g) || []).length && p8 && p8.note,
       '8 stress boxes on the map for a 9-box track: no stress mark, the note on the page and in the editor: ' + JSON.stringify(mm));
     await closeEd(bp);
@@ -559,6 +582,7 @@ try {
     check(lw.wide && lpn && lpn.r === 664 && lpn.l > 200 && lpn.top >= 50, 'held sideways (664 x 390): the page, and its editors as a side panel: ' + JSON.stringify([lw, lpn]));
     await shot(lp, 'editor-664x390-paper');
     await L.ctx.close();
+    { const LN = await open('pc-nell', { w: 664, h: 390, night: true, sheets: {} }); await glanceUp(LN.page); await toFull(LN.page); await ready(LN.page); await shot(LN.page, 'page-664x390-night'); await region(LN.page, 'harm'); await shot(LN.page, 'editor-664x390-night'); await LN.ctx.close(); }
 
     /* over 760 px (a tablet, a laptop): the page is the main view, with a thin bar, side panels and the Undo bar; print stays today's sheet */
     for (const night of [false, true]) {
@@ -566,6 +590,7 @@ try {
       const wi = await wp.evaluate(() => { const vis = (e) => !!e && e.getClientRects().length > 0; return { v: document.getElementById('dossier').getAttribute('data-gl'), s: window.B68SheetPage.state(), boxes: Array.from(document.querySelectorAll('#dossier section.ds-box:not(.ds-now)')).filter(vis).length,
         back: vis(document.querySelector('#dossier .sp-back')), quiet: !!document.querySelector('#dossier .ds-quietbtn') === vis(document.querySelector('#dossier .sp-bar [data-act="quiet"]')), w: Math.round(document.querySelector('#dossier .sp-box').getBoundingClientRect().width) }; });
       await shot(wp, 'page-1024x768-' + (night ? 'night' : 'paper'));
+      if (night) { await wp.locator('#dossier .sp-hit[data-region="keys"]').first().click(); await panel(wp, 'keys'); await shot(wp, 'editor-1024x768-night'); }
       if (!night) {
         check(wi.v === 'page' && wi.s.wide && wi.boxes === 0 && !wi.back && wi.quiet && wi.w > 900, '1024 x 768: the filled-in page is the main view over today\'s sheet (no back to a glance that is not drawn here): ' + JSON.stringify(wi));
         await wp.locator('#dossier .sp-hit[data-region="stress"]').first().click(); const wpn = await panel(wp, 'stress');
@@ -580,7 +605,7 @@ try {
       }
       await W.ctx.close();
     }
-    { const P = await open('pc-nell', { w: 390, h: 664, night: true, sheets: {} }); await glanceUp(P.page); await toFull(P.page); await ready(P.page); await shot(P.page, 'page-390x664-fit-night'); await region(P.page, 'keys'); await shot(P.page, 'editor-keys-390x664-night'); await P.ctx.close(); }
+    { const P = await open('pc-nell', { w: 390, h: 664, night: true, sheets: {} }); await glanceUp(P.page); await toFull(P.page); await ready(P.page); await shot(P.page, 'page-390x664-first-night'); await P.page.click('#dossier .sp [data-sp="in"]'); await sleep(200); await shot(P.page, 'page-390x664-250-night'); await region(P.page, 'keys'); await shot(P.page, 'editor-keys-390x664-night'); await P.ctx.close(); }
   }
 
   /* ---------- the four-screen sheet stays undrawn; off again ---------- */

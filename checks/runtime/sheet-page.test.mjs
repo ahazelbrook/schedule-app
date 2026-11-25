@@ -125,7 +125,10 @@ test('guards: a waiver covers its whole region, by FAMILY (item loads -> items, 
     const out = P.marks(map, ch(play), g, CT);
     assert.equal(pens(out), base - gone, check + ': ' + pens(out)); assert.equal(count(out, /sp-unmapped/g), 1);
   }
-  assert.deepEqual(clone(P.waivedRegions({ waived: ['item loads', 'key hits', 'dots', 'bank'] })), ['items', 'keys', 'acts', 'bank']);
+  assert.deepEqual(clone(P.waivedRegions({ waived: ['item loads', 'key hits', 'dots', 'bank', 'abilities'] })), ['items', 'keys', 'acts', 'bank', 'ab']);
+  /* gm-sheets.mjs writes the abilities count's waiver as the check name 'abilities' (the region key is 'ab'): it covers the abilities */
+  const wa = sheet('hound', { waived: ['abilities'] }), ga = P.guards(wa, CT, pb('hound'));
+  assert.equal(ga.ab.ok, false, 'a waived abilities check draws no ability'); assert.equal(pens(P.marks(wa, ch({ abilities: ['Fixer'] }), ga, CT)), 0);
 });
 test('guards: a wrong shape, a missing action, the wrong dot count, a stray item line, the wrong harm levels each fail their region only', () => {
   const cases = [
@@ -207,7 +210,7 @@ test('editors: each region is made of the sheet\'s own controls', () => {
   const has = (s, re, n) => { const c = count(s, re); assert.ok(n == null ? c > 0 : c === n, re + ' x' + c + (n == null ? '' : ' (want ' + n + ')')); };
   let s = e('stress'); has(s.live, /data-act="stress"/g, 9); has(s.live, /data-act="stressd"/g, 2); has(s.body, /data-change="vice"/g, 1); has(s.body, /data-path="purveyor"/g, 1); has(s.body, /data-act="dtopen" data-k="indulge"/g, 1); assert.equal(s.sub, '4/9');
   s = e('stress', 'vampire'); has(s.live, /data-act="stress"/g, 12); has(s.live, /data-act="feed"/g, 1); assert.equal(s.body, '', 'no vice on a paranormal page');
-  s = e('keys'); has(s.live, /data-act="keyhit" data-i="0"/g, 3); has(s.live, /data-act="deadlock" data-i="0" data-dir="(down|up)"/g, 2); has(s.body, /data-path="keys\.0\.(name|down|up)"/g, 3);
+  s = e('keys'); has(s.live, /data-act="keyhit" data-i="0"/g, 3); has(s.live, /data-gl="deadlock" data-i="0" data-dir="(down|up)"/g, 2); has(s.live, /data-act="deadlock"/g, 0); has(s.body, /data-path="keys\.0\.(name|down|up)"/g, 3);
   s = e('harm'); assert.equal(s.done, true); has(s.live, /data-act="heal"/g, 4); has(s.live, /data-act="armor" data-k="(armor|heavy)"/g, 2); has(s.live, /data-act="resource" data-k="[01]"/g, 2); has(s.body, /data-sp-h="/g, 6); assert.match(s.body, /value="Winded"/);
   assert.match(e('harm', 'hull').title, /^Damage and repair/);
   s = e('cohort'); has(s.live, /data-act="coharm"/g, 3); has(s.live, /data-act="coarmor"/g, 1); has(s.body, /data-path="cohort\.(name|type|edges|flaws)"/g, 4);
@@ -235,7 +238,7 @@ function fakeWin(o) {
   }
   const win = { innerWidth: o.w || 390, innerHeight: 664, setTimeout, clearTimeout, Promise, B68Content: CT, document: { createElement: el, createElementNS: el, activeElement: null } };
   win.self = win; win.window = win;
-  win.fetch = (url) => { calls.fetch.push(url); return Promise.resolve(o.map ? { ok: true, status: 200, json: () => Promise.resolve(clone(o.map)) } : { ok: false, status: 404, json: () => Promise.reject(new Error('no')) }); };
+  win.fetch = o.fetch ? (url) => { calls.fetch.push(url); return o.fetch(url, calls.fetch.length); } : (url) => { calls.fetch.push(url); return Promise.resolve(o.map ? { ok: true, status: 200, json: () => Promise.resolve(clone(o.map)) } : { ok: false, status: 404, json: () => Promise.reject(new Error('no')) }); };
   win.Image = function () { const img = { setAttribute() {}, parentNode: null }; calls.imgs.push(img); Object.defineProperty(img, 'src', { set(v) { img._src = v; setTimeout(() => (o.img === false ? img.onerror() : img.onload()), 0); }, get() { return img._src; } }); return img; };
   vm.runInNewContext(SRC, win, { filename: FILE });
   return { win, M: win.B68SheetPage, calls, box: el(), opts: { fallback() { calls.fallback++; }, close() {}, record() {}, commit() {}, play() { return null; } } };
@@ -253,6 +256,22 @@ test('fallback: no map (404): open() draws a placeholder, then fallback(); the n
   assert.equal(G.M.open(G.box, nell(), Object.assign({}, G.opts, { focus: 'notes' })), false, 'Notes and log: the classic sheet (the printed page has no notes)');
   assert.equal(G.calls.fetch.length, 0, 'and nothing fetched');
 });
+test('a dropped request is not remembered: a network error, a 503 or a page that did not load falls back once, and the next Full sheet asks again', async () => {
+  const ok = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(sheet()) });
+  for (const [why, first] of [['a network error', () => Promise.reject(new TypeError('Failed to fetch'))], ['a 503', () => Promise.resolve({ ok: false, status: 503, json: () => Promise.reject(new Error('no')) })]]) {
+    const F = fakeWin({ fetch: (u, n) => (n === 1 ? first() : ok()) });
+    assert.equal(F.M.open(F.box, nell(), F.opts), true); await tick();
+    assert.equal(F.calls.fallback, 1, why + ': today\'s sheet this time');
+    assert.equal(F.M.open(F.box, nell(), F.opts), true, why + ': the next open tries again'); await tick();
+    assert.equal(F.calls.fetch.length, 2, why + ': asked again'); assert.equal(F.M.state().ready, true, why + ': and drawn');
+  }
+  const I = fakeWin({ map: sheet(), img: false });
+  assert.equal(I.M.open(I.box, nell(), I.opts), true); await tick(); assert.equal(I.calls.fallback, 1);
+  assert.equal(I.M.open(I.box, nell(), I.opts), true, 'a page that did not load: asked again'); await tick(); assert.equal(I.calls.fetch.length, 2);
+  const J = fakeWin({ fetch: () => Promise.resolve({ ok: true, status: 200, json: () => Promise.reject(new SyntaxError('not JSON')) }) });
+  assert.equal(J.M.open(J.box, nell(), J.opts), true); await tick();
+  assert.equal(J.M.open(J.box, nell(), J.opts), false, 'a map that is not JSON (a page served in its place) is remembered as no sheet');
+});
 test('fallback: a map of another schema, a map for another playbook, a missing page', async () => {
   for (const [why, o] of [['schema 2', { map: Object.assign(sheet(), { v: 2 }) }], ['another playbook', { map: sheet('intellectual') }], ['no page', { map: sheet(), img: false }]]) {
     const F = fakeWin(o);
@@ -266,7 +285,8 @@ test('a sheet that loads: drawn, and cached for the next open (no second request
   const F = fakeWin({ map: sheet() });
   assert.equal(F.M.open(F.box, nell(), F.opts), true);
   await tick();
-  assert.equal(F.calls.fallback, 0); assert.equal(F.M.state().ready, true); assert.equal(F.M.state().z, 1);
+  assert.equal(F.calls.fallback, 0); assert.equal(F.M.state().ready, true);
+  assert.equal(F.M.state().z, 2.2, 'a phone held upright opens at the page\'s height ((600 - 16) / (374 x 0.707), to 0.05)');
   assert.equal(F.calls.imgs.length, 1); assert.equal(F.calls.imgs[0].src, 'media/sheets/hound.svg');
   F.M.update(nell());
   assert.equal(F.M.open(F.box, nell(), F.opts), true); await tick();

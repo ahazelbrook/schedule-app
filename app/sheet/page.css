@@ -20,6 +20,12 @@
   #dossier .sp-zb:disabled { opacity: .4; cursor: default; }
   #dossier .sp-back { font-size: 26px; padding: 0 8px; }
 
+  /* a part of the page not drawn (the guard): said once, in words, under the bar */
+  #dossier .sp-warn { flex: 0 0 auto; padding: 6px 12px; border-left: 4px solid var(--sp-alarm); background: var(--inset, var(--card)); color: var(--ink); font: 700 15px/1.3 var(--font-text); }
+  #dossier .sp-warn[hidden] { display: none; }
+  /* the glance's Undo bar moves to the top while an editor or the roll strip is open over the page (page.js lift()) */
+  #dossier[data-gl="page"] > .gl.sp-lift > .gl-undo { top: calc(58px + env(safe-area-inset-top, 0px)); bottom: auto; }
+
   /* the one-line tip (a phone only), and the page */
   #dossier .sp-tip { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; padding: 4px 4px 4px 12px; background: var(--inset, var(--card)); color: var(--ink-soft); font-size: 14px; }
   #dossier .sp-tip span { flex: 1 1 auto; }
