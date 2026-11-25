@@ -1538,6 +1538,8 @@
     s.intro = root.B68PlayersIntro ? root.B68PlayersIntro.attach(container, { document: document, K: ctx.figures || root.B68Figure, on: function () { return swOn('stage.players'); }, still: function () { return reduced(); }, skew: function () { return s.skew || 0; }, at: function () { return s.updatedAt; }, later: later, clearLater: clearLater,
       figure: function (spec, id) { var r = drawFigure(spec, id, ctx.figures || root.B68Figure); return r ? document.importNode(r.node, true) : null; } }) : null;
     if (s.intro) s.offs.push(function () { s.intro.destroy(); });
+    /* RK29 (room.intro): the room opening, a title card for the rooms a live reveal has just opened (app/display/room-intro.js). Attached once, when its bundle has come (onFeatures below), and fed the display already up; off, never attached */
+    function riAttach() { if (s.ri || s.dead || !root.B68RoomIntro || typeof root.B68RoomIntro.attach !== 'function') return; s.ri = root.B68RoomIntro.attach(container, { document: document, on: function () { return swOn('room.intro'); }, still: function () { return reduced(); }, skew: function () { return s.skew || 0; }, at: function () { return s.updatedAt; }, later: later, clearLater: clearLater, svg: function () { var c = s.current; return c && c.el && c.el.querySelector ? c.el.querySelector('.dp-map-frame svg') : null; } }); if (!s.ri) return; s.offs.push(function () { s.ri.destroy(); }); if (s.lastShow) s.ri.next(s.lastShow[0], s.lastShow[1]); }
     /* the suite's display switches (each does nothing while its switch is off): the hard start (1.2, spine.start) and the FX budget (F7, fx.pause / fx.off) */
     function swOn(id) { return !!(root.B68Flags && root.B68Flags.on(id)); }
     function suiteSync() {
@@ -2105,6 +2107,7 @@
       var my = ++s.token, vm = Pure.viewModel(display);
       s.lastShow = [display, seq]; if (s.stage) s.stage.next(vm);           /* KS13: a redraw when the new stage comes or goes; what the swap brings */
       if (s.intro) s.intro.next(display, seq);                               /* IP3: any other push cuts a card at once; an introduction starts one over the stage below */
+      if (s.ri) s.ri.next(display, seq);                                     /* RK29 (room.intro): likewise; a map that carries arrive starts the room's card over the map painted below */
       var k16npc = vm.kind === 'npc' && !!s.stage && !!root.B68StageScene && root.B68StageScene.on();      /* KS16 (kit.stage): the NPC stands over the dimmed scene (it stops rotating; it moves unless the Scenes setting holds it, IP1) */
       if (vm.kind === 'blank' || k16npc) amb.uncover(); else amb.cover(); amb.still(k16npc);                 /* a spotlight covers the ambient; blank lets it through */
       ovLightsOut(vm.kind === 'dark');                                          /* lights out: no autopilot overlay, no AUTO chip */
@@ -2174,7 +2177,7 @@
            the small one; an adapter that does not simply gets the transcriber part in full each time */
         fetch: function (seq, aseq, sseq, hseq) { return ctx.gm.display(seq === null ? undefined : seq, aseq === null ? undefined : aseq, sseq === null ? undefined : sseq, hseq === null ? undefined : hseq).then(function (r) { s.p2last = r && Array.isArray(r.clocks) ? r.clocks : null; if (s.p2) s.p2.clocks(s.p2last); return r; }); },      /* IP2: the dials' clocks ride on the answer while stage.players is on */
         onMission: function (hud) { applyBand(hud); },
-        onFeatures: function (f) { if (root.B68Flags) { root.B68Flags.apply({ features: f }); suiteSync(); } if (root.B68Kit) root.B68Kit.set('stage', swOn('kit.stage')); p2Sync(); if (swOn('room.intro') && root.B68Load && !s.riAsked) { s.riAsked = true; root.B68Load.need('room-intro').then(function () {}, function () { s.riAsked = false; }); } },      /* KS01.2: data-kit="stage" follows the setting; IP2: the players' screen too; RK30: room.intro (RK29): its bundle is asked for once, only while the served features say it is on; off, no request */
+        onFeatures: function (f) { if (root.B68Flags) { root.B68Flags.apply({ features: f }); suiteSync(); } if (root.B68Kit) root.B68Kit.set('stage', swOn('kit.stage')); p2Sync(); if (swOn('room.intro') && root.B68Load && !s.riAsked) { s.riAsked = true; root.B68Load.need('room-intro').then(function () { riAttach(); }, function () { s.riAsked = false; }); } },      /* KS01.2: data-kit="stage" follows the setting; IP2: the players' screen too; RK30: room.intro (RK29): its bundle is asked for once, only while the served features say it is on; off, no request */
         onSkew: function (ms) { s.skew = ms; },
         isHidden: function () { return document.hidden; },
         onAmbient: function (doc) { applyAmbient(doc); },
