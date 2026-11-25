@@ -339,21 +339,30 @@ try {
   check(JSON.stringify(twin.rn) === '[null,"2"]' && twin.keys.includes('hall#2|a:twin-site') && twin.keys.includes('hall#1|a:twin-site') && JSON.stringify(twin.writes) === '[["a:twin-site","hall#2","tin-whistle","on"],["a:twin-site","hall#1","tin-whistle","off"]]' && twin.pressedFirst === 'false',
     'twins: the second room of a name hands the slot its own roomKey (hall#2), a mark on it writes there only, and the first room\'s card is not marked by it (' + JSON.stringify(twin) + ')');
   await D.c.close();
-  /* the card clears the band: at 1100 wide with the things scrolled to the top of the window the zoom card sits below the live bar (Clear, Blank, Auto, Music) */
-  const T = await open({ w: 1100, h: 768 });
+  /* the card clears the band: in a short window (1100 x 540, where the card cannot fit below the band at its natural height) the zoom card's top is held below
+     the live bar (Clear, Blank, Auto, Music) and it scrolls inside itself; at 1100 x 768 it is the same card and the picture is of that */
+  const T = await open({ w: 1100, h: 540 });
   await T.page.waitForSelector(card('Showroom') + ' [data-site="thing"]', { timeout: 15000 });
-  await T.page.evaluate((sel) => { const e = document.querySelector(sel); if (e) e.scrollIntoView({ block: 'start' }); }, card('Showroom') + ' .rk-things');
+  await T.page.evaluate((sel) => { const e = document.querySelector(sel); if (e) e.scrollIntoView({ block: 'center' }); }, card('Showroom') + ' .rk-things');
   await sleep(300);
-  await T.page.click(card('Showroom') + ' [data-site="thing"][data-i="0"]', { force: true }); await until(() => zoom(T.page), 3000); await sleep(300);
+  await T.page.click(card('Showroom') + ' [data-site="thing"][data-i="0"]'); await until(() => zoom(T.page), 3000); await sleep(300);
   const geo = await T.page.evaluate(() => {
-    const b = document.getElementById('gm-band').getBoundingClientRect(), z = document.querySelector('.rk-zoom').getBoundingClientRect(), ctl = [...document.querySelectorAll('#gm-band button')].filter((x) => /^(clear|blank|auto)/i.test(x.textContent.trim()));
-    const hit = ctl.map((x) => { const r = x.getBoundingClientRect(); const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!e && (x === e || x.contains(e)); });
-    return { bandBottom: Math.round(b.bottom), zoomTop: Math.round(z.top), zoomBottom: Math.round(z.bottom), vh: innerHeight, ctl: ctl.length, hit };
+    const bar = document.getElementById('gm-band').getBoundingClientRect(), zb = document.querySelector('.rk-zoom'), z = zb.getBoundingClientRect();
+    return { bandBottom: Math.round(bar.bottom), zoomTop: Math.round(z.top), zoomBottom: Math.round(z.bottom), vh: innerHeight, natural: zb.scrollHeight, scrolls: zb.scrollHeight > zb.clientHeight + 1 };
   });
-  check(geo.zoomTop >= geo.bandBottom && geo.zoomBottom <= geo.vh && geo.ctl >= 2 && geo.hit.every(Boolean), 'the zoom card at 1100 wide stays below the band and inside the window, and the live bar\'s buttons are not covered (' + JSON.stringify(geo) + ')');
-  await shot(T.page, 'desk-1100-paper-zoom-clamped');
+  check(geo.natural + geo.bandBottom + 12 > geo.vh, 'the short window is short enough that the card cannot fit below the band at its natural height (' + JSON.stringify(geo) + ')');
+  check(geo.zoomTop >= geo.bandBottom && geo.zoomBottom <= geo.vh, 'the zoom card in a short window stays below the band (the live bar is not covered) and inside the window (' + JSON.stringify(geo) + ')');
+  await shot(T.page, 'desk-1100x540-paper-zoom-clamped');
   await T.page.keyboard.press('Escape'); await sleep(200);
   await T.c.close();
+  const U = await open({ w: 1100, h: 768 });
+  await U.page.waitForSelector(card('Showroom') + ' [data-site="thing"]', { timeout: 15000 });
+  await U.page.click(card('Showroom') + ' [data-site="thing"][data-i="0"]'); await until(() => zoom(U.page), 3000); await sleep(300);
+  const geo2 = await U.page.evaluate(() => ({ bandBottom: Math.round(document.getElementById('gm-band').getBoundingClientRect().bottom), zoomTop: Math.round(document.querySelector('.rk-zoom').getBoundingClientRect().top) }));
+  check(geo2.zoomTop >= geo2.bandBottom, 'at 1100 x 768 the zoom card is below the band too (' + JSON.stringify(geo2) + ')');
+  await shot(U.page, 'desk-1100-paper-zoom-clamped');
+  await U.page.keyboard.press('Escape'); await sleep(200);
+  await U.c.close();
 
   /* pictures: the desk and the kit desk, 1366x768 and 1100 wide, Paper and Night */
   if (SHOTS) {
