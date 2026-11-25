@@ -42,7 +42,11 @@
        zoom.act(el) -> bool   (a data-site="thing" control)   zoom.open(room, slug | index, anchor?) -> bool   zoom.close(focusBack)
        zoom.step(d) -> bool   zoom.key(ev, { typing, top }) -> bool (true: the key was the card's, and it is preventDefault()ed)
        zoom.isOpen()   zoom.current() -> { room, slug, index, count } | null   zoom.refresh()   zoom.addButtons(slot, fn) -> off()   zoom.destroy()
-     Pure: listHtml(room, things, { kit, marks }) -> markup   rows(thing, state) -> [{ k, icon, label, lines }]   rollLines(roll) -> [line]
+     TWINS (RK11): rooms of one name are told apart by instance, n (1 to 99, room-state.js's roomKey n: showroom#1, showroom#2). zoom.html(room, { n })
+       draws that instance's things and marks, a button of the 2nd or later carries data-rn, and the card keeps n while it is open, so ctx.roomKey is that room's
+       own key (placeOf). n is 1 when absent, and the markup is then as before. The Run view has one card a name, so it never says; a host that draws a twin does
+       (host.things(room, n) and host.where(room, n) hear it too).
+     Pure: listHtml(room, things, { kit, marks, n }) -> markup   placeOf(roll, room, n) -> { rollKey, roomKey } | null   rows(thing, state) -> [{ k, icon, label, lines }]   rollLines(roll) -> [line]
            slotsOf(slot, ctx, extra, root) -> [button]   noteMd(md)   ESC_ID, SLOTS, KEYS, DIM */
 (function (root, factory) {
   'use strict';
@@ -73,6 +77,17 @@
   function ui() { return mod('B68Ui', '../ui/ui.js'); }
   function things() { return mod('B68GmRoomThings', './room-things.js'); }
   function noteMd(md) { var T = things(); try { return T && typeof T.read === 'function' ? T.read(md).md : str(md); } catch (e) { return str(md); } }
+  /* the room's instance among same-named rooms of the roll, 1 to 99 (room-state.js's roomKey n): 1 unless a host says otherwise, and the markup is unchanged for 1 */
+  function instOf(v) { var n = typeof v === 'number' ? v : parseInt(str(v), 10); return n % 1 === 0 && n >= 1 && n <= 99 ? n : 1; }
+  /* the index of the nth room of a name (1-based), -1 when the roll has no such room */
+  function nth(names, name, n) { var seen = 0; for (var i = 0; i < names.length; i++) if (names[i] === name && ++seen === n) return i; return -1; }
+  /* room-state.js's keys for the nth room of a name in a roll ({ key, rooms: [name] }): two rooms of one name are two keys (showroom#1, showroom#2) */
+  function placeOf(roll, room, n) {
+    var M = mod('B68GmRoomState', './room-state.js'); M = M && !M.stub && typeof M.roomKeys === 'function' ? M : null;
+    if (!isObj(roll) || !M || !Array.isArray(roll.rooms)) return null;
+    var names = roll.rooms.map(str), i = nth(names, str(room), instOf(n)), ks = i < 0 ? [] : M.roomKeys(names);
+    return i >= 0 && ks[i] && str(roll.key) ? { rollKey: str(roll.key), roomKey: ks[i] } : null;
+  }
   function copy(t) {
     return { name: str(t.name), line: str(t.line), look: str(t.look), roll: str(t.roll), danger: str(t.danger),
       states: list(t.states).map(str), tags: list(t.tags).map(str), slug: str(t.slug) };
@@ -82,7 +97,7 @@
   /* ---------- the room card's Things (pure) ---------- */
   function listHtml(room, ts, o) {
     o = o || {};
-    var U = ui(), kit = !!o.kit, marks = isObj(o.marks) ? o.marks : {};
+    var U = ui(), kit = !!o.kit, marks = isObj(o.marks) ? o.marks : {}, n = instOf(o.n);
     ts = list(ts).filter(good);
     if (!U || typeof U.button !== 'function' || !ts.length || !str(room)) return '';
     var e = typeof U.esc === 'function' ? U.esc : esc0;
@@ -91,7 +106,7 @@
     ts.forEach(function (t, i) {
       var st = has(marks, t.slug) ? str(marks[t.slug]) : '', done = DIM.indexOf(st) >= 0;
       var cls = ['rk-thing'].concat(kit ? [] : ['rv-btn', 'sm'], done ? ['is-done'] : []);
-      h += '<li class="rk-ti">' + U.button({ label: str(t.name), rank: 'quiet', cls: cls, data: { site: 'thing', room: str(room), thing: t.slug, i: String(i) },
+      h += '<li class="rk-ti">' + U.button({ label: str(t.name), rank: 'quiet', cls: cls, data: n > 1 ? { site: 'thing', room: str(room), thing: t.slug, i: String(i), rn: String(n) } : { site: 'thing', room: str(room), thing: t.slug, i: String(i) },
         key: i < KEYS ? String(i + 1) : '', title: str(t.line) || 'A closer look', attrs: { 'aria-haspopup': 'dialog' } }) +
         (st ? '<span class="rk-tstate' + (done ? ' is-done' : '') + '">' + e(st) + '</span>' : '') + '</li>';
     });
@@ -132,19 +147,18 @@
     function doc() { return root && root.document ? root.document : null; }
     function later(fn) { if (root && typeof root.setTimeout === 'function') root.setTimeout(fn, 0); else fn(); }
     function call(name, a) { try { return typeof host[name] === 'function' ? host[name](a) : null; } catch (e) { return null; } }
+    function call2(name, a, b) { try { return typeof host[name] === 'function' ? host[name](a, b) : null; } catch (e) { return null; } }
     function toast(t, bad) { if (typeof host.toast === 'function') { try { host.toast(t, !!bad); } catch (e) { /* a toast is a courtesy */ } } }
     /* a room's things: the host's own list (a rolled room, RK14), else the room note's Things block */
-    function thingsOf(room) {
-      if (typeof host.things === 'function') return list(call('things', room)).filter(good);
+    function thingsOf(room, n) {
+      if (typeof host.things === 'function') return list(call2('things', room, n)).filter(good);
       var T = things(); return T && !T.stub && typeof T.parse === 'function' ? list(T.parse(str(call('md', room)))).filter(good) : [];
     }
     function stateMod() { var M = mod('B68GmRoomState', './room-state.js'); return M && !M.stub && typeof M.create === 'function' ? M : null; }
     /* room-state.js's keys for a room: the host's own, else the roll's key and its first same-named room (roomKeys) */
-    function where(room) {
-      if (typeof host.where === 'function') { var w = call('where', room); return isObj(w) ? w : null; }
-      var r = call('roll'), M = stateMod(); if (!isObj(r) || !M || !Array.isArray(r.rooms)) return null;
-      var names = r.rooms.map(str), i = names.indexOf(str(room)), ks = i < 0 ? [] : M.roomKeys(names);
-      return i >= 0 && ks[i] && str(r.key) ? { rollKey: str(r.key), roomKey: ks[i] } : null;
+    function where(room, n) {
+      if (typeof host.where === 'function') { var w = call2('where', room, instOf(n)); return isObj(w) ? w : null; }
+      return placeOf(call('roll'), room, n);
     }
     function rs() { var r = call('rs'); return r && typeof r.read === 'function' ? r : null; }
     /* reads need no writer: a read-only room-state view of the host's GM state (on() false, so it can never write) when the host gives no rs */
@@ -156,8 +170,8 @@
         busy: function () { return false; }, now: function () { return Date.now(); }, part: function () { return ''; } });
       return viewer;
     }
-    function marks(room) {
-      var w = where(room), r = reader(); if (!w || !r || !str(w.rollKey) || !str(w.roomKey)) return {};
+    function marks(room, n) {
+      var w = where(room, n), r = reader(); if (!w || !r || !str(w.rollKey) || !str(w.roomKey)) return {};
       try { var m = r.read(str(w.rollKey), str(w.roomKey)).marks; return isObj(m) ? m : {}; } catch (e) { return {}; }
     }
     function indexOf(ts, slug) { for (var i = 0; i < ts.length; i++) if (ts[i].slug === slug) return i; return -1; }
@@ -165,13 +179,14 @@
     /* the room card */
     function html(room, o) {
       if (cur && !followSoon) { followSoon = true; later(follow); }      /* a redraw while open: the card follows the new button */
-      return listHtml(room, thingsOf(room), { kit: !!(o && o.kit), marks: marks(room) });
+      var n = instOf(o && o.n);
+      return listHtml(room, thingsOf(room, n), { kit: !!(o && o.kit), marks: marks(room, n), n: n });
     }
     function buttonsIn(card) { return card ? Array.prototype.slice.call(card.querySelectorAll('[data-site="thing"][data-thing]')) : []; }
-    function findBtn(room, slug) {
+    function findBtn(room, slug, n) {
       var d = doc(); if (!d) return null;
       var l = Array.prototype.filter.call(d.querySelectorAll('[data-site="thing"][data-thing]'), function (b) {
-        return b.getAttribute('data-room') === room && b.getAttribute('data-thing') === slug && b.isConnected !== false && b.offsetParent !== null;
+        return b.getAttribute('data-room') === room && b.getAttribute('data-thing') === slug && instOf(b.getAttribute('data-rn')) === instOf(n) && b.isConnected !== false && b.offsetParent !== null;
       });
       return l[0] || null;
     }
@@ -201,8 +216,17 @@
       var U = ui(); if (!U || typeof U.popover !== 'function' || !cur || !cur.anchor) return false;
       if (pop) { pop.close({ focus: false }); pop = null; }
       pop = U.popover({ anchor: cur.anchor, el: box, pinned: true, placement: 'left-start', mount: mountScope(), focus: false });
-      pop.open(); popAt = cur.anchor; cur.at = rectOf(cur.anchor);
+      pop.open(); popAt = cur.anchor; cur.at = rectOf(cur.anchor); clamp();
       return true;
+    }
+    /* the card never covers the band (the page's top bars: the live bar's Clear, Blank, Auto and Music stay usable while it is open): its top is held below the band,
+       and where that leaves it too tall for the window it scrolls inside itself */
+    function clamp() {
+      var d = doc(), band = d ? d.getElementById('gm-band') : null; if (!box || !band || !pop) return;
+      var lim = Math.max(0, band.getBoundingClientRect().bottom) + 6, r = box.getBoundingClientRect(), vh = root.innerHeight || 0;
+      box.style.removeProperty('max-height');
+      if (r.top < lim) { var y = parseFloat(box.style.getPropertyValue('--ui-y')) || 0; box.style.setProperty('--ui-y', (y + lim - r.top) + 'px'); r = box.getBoundingClientRect(); }
+      if (vh && r.bottom > vh - 6 && r.top < vh - 120) { box.style.setProperty('max-height', Math.floor(vh - 6 - r.top) + 'px'); box.style.setProperty('overflow-y', 'auto'); }
     }
     function el(tag, cls, text) { var e = doc().createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e; }
     function btn(o, fn) {
@@ -211,7 +235,7 @@
       return b;
     }
     function ctxOf(t, i, n, state) {
-      var w = where(cur.room) || {};
+      var w = where(cur.room, cur.n0) || {};
       return { room: cur.room, rollKey: str(w.rollKey), roomKey: str(w.roomKey), thing: copy(t), index: i, count: n, state: state, rs: rs(), page: host,
         refresh: refresh, close: function () { close(true); }, toast: toast };
     }
@@ -228,9 +252,9 @@
     }
     function draw() {
       if (!cur || !box) return false;
-      var ts = thingsOf(cur.room), i = indexOf(ts, cur.slug);
+      var ts = thingsOf(cur.room, cur.n0), i = indexOf(ts, cur.slug);
       if (i < 0) { close(false); return false; }
-      var t = ts[i], n = ts.length, st = str(marks(cur.room)[t.slug]), d = doc(), had = d.activeElement && box.contains(d.activeElement) ? d.activeElement : null;
+      var t = ts[i], n = ts.length, st = str(marks(cur.room, cur.n0)[t.slug]), d = doc(), had = d.activeElement && box.contains(d.activeElement) ? d.activeElement : null;
       var keep = had && had !== box ? had.getAttribute('data-rk-btn') : null;
       cur.i = i; cur.n = n;
       box.textContent = '';
@@ -264,7 +288,7 @@
         btn({ label: 'Close', rank: 'quiet', key: 'Esc', data: { 'rk-btn': 'close' } }, function () { close(true); })].forEach(function (b) { if (b) nav.appendChild(b); });
       box.appendChild(nav);
       if (had) { var back = keep ? box.querySelector('[data-rk-btn="' + keep.replace(/[^a-z0-9-]/gi, '') + '"]') : null; focusIn(back && !back.disabled ? back : box); }
-      if (pop && popAt && popAt.isConnected !== false) pop.place();      /* the content changed size; a redraw's stale anchor is never measured */
+      if (pop && popAt && popAt.isConnected !== false) { pop.place(); clamp(); }      /* the content changed size; a redraw's stale anchor is never measured */
       return true;
     }
     function focusIn(e) { try { if (e && typeof e.focus === 'function') e.focus({ preventScroll: true }); } catch (x) { /* focus is a courtesy */ } }
@@ -296,14 +320,15 @@
       else if (!ev.shiftKey && a === last) { ev.preventDefault(); focusIn(first); }
     }
 
-    function open(room, which, anchor) {
+    function open(room, which, anchor, inst) {
       room = str(room);
-      var ts = thingsOf(room), i = typeof which === 'number' ? which : indexOf(ts, str(which));
+      var n0 = anchor && anchor.nodeType === 1 ? instOf(anchor.getAttribute('data-rn')) : instOf(inst);
+      var ts = thingsOf(room, n0), i = typeof which === 'number' ? which : indexOf(ts, str(which));
       if (!(i >= 0 && i < ts.length) || !doc() || !ui()) return false;
-      var t = ts[i], a = anchor && anchor.nodeType === 1 ? anchor : findBtn(room, t.slug);
+      var t = ts[i], a = anchor && anchor.nodeType === 1 ? anchor : findBtn(room, t.slug, n0);
       if (!a) return false;
       var moved = !cur || cur.anchor !== a;
-      cur = { room: room, slug: t.slug, anchor: a, i: i, n: ts.length, at: cur ? cur.at : null };
+      cur = { room: room, n0: n0, slug: t.slug, anchor: a, i: i, n: ts.length, at: cur ? cur.at : null };
       ensureBox();
       if (moved || !pop || !pop.isOpen()) float();
       draw();
@@ -320,20 +345,20 @@
       if (unreg) { unreg(); unreg = null; }
       listen(false);
       if (scope && scope.parentNode) scope.parentNode.removeChild(scope);
-      if (focusBack) focusIn(was.anchor && was.anchor.isConnected !== false ? was.anchor : findBtn(was.room, was.slug));
+      if (focusBack) focusIn(was.anchor && was.anchor.isConnected !== false ? was.anchor : findBtn(was.room, was.slug, was.n0));
       return true;
     }
     function step(d) {
       if (!cur) return false;
-      var ts = thingsOf(cur.room), n = ts.length, i = indexOf(ts, cur.slug);
+      var ts = thingsOf(cur.room, cur.n0), n = ts.length, i = indexOf(ts, cur.slug);
       if (n < 2 || i < 0) return false;
-      return open(cur.room, ((i + (d < 0 ? -1 : 1)) % n + n) % n, null);
+      return open(cur.room, ((i + (d < 0 ? -1 : 1)) % n + n) % n, null, cur.n0);
     }
     /* a Run view redraw: the same thing's new button, or the card goes (its room card left the screen, or the thing left the note) */
     function follow() {
       followSoon = false;
       if (!cur) return;
-      var b = findBtn(cur.room, cur.slug);
+      var b = findBtn(cur.room, cur.slug, cur.n0);
       if (!b) { close(false); return; }
       if (b !== cur.anchor) {
         var was = cur.at, now = rectOf(b); cur.anchor = b;
@@ -346,7 +371,7 @@
       if (!e || typeof e.getAttribute !== 'function') return false;
       var room = str(e.getAttribute('data-room')), slug = str(e.getAttribute('data-thing'));
       if (!room || !slug) return false;
-      if (cur && cur.room === room && cur.slug === slug) { close(true); return true; }      /* the same thing again: it closes */
+      if (cur && cur.room === room && cur.slug === slug && cur.n0 === instOf(e.getAttribute('data-rn'))) { close(true); return true; }      /* the same thing again: it closes */
       return open(room, slug, e);
     }
     function focusedCard() {
@@ -361,7 +386,7 @@
       var stop = function () { if (typeof ev.preventDefault === 'function') ev.preventDefault(); return true; };
       if (cur) {
         if (o.top && o.top !== ESC_ID) return false;
-        if (d) step(d); else open(cur.room, n - 1, null);
+        if (d) step(d); else open(cur.room, n - 1, null, cur.n0);
         return stop();
       }
       if (o.top) return false;
@@ -386,6 +411,6 @@
       destroy: function () { close(false); box = null; scope = null; } };
   }
 
-  return { create: create, listHtml: listHtml, rows: rows, rollLines: rollLines, slotsOf: slotsOf, noteMd: noteMd,
+  return { create: create, listHtml: listHtml, rows: rows, rollLines: rollLines, slotsOf: slotsOf, noteMd: noteMd, placeOf: placeOf,
     ESC_ID: ESC_ID, SLOTS: SLOTS, KEYS: KEYS, DIM: DIM };
 });

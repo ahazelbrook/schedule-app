@@ -312,7 +312,48 @@ try {
   check(await until(async () => (await storedMarks()) === '{}', 20000) && (await things(R2.page, 'Showroom')).every((t) => !t.chip && !t.done), 'state: a tap on the pressed state takes the mark away; with every mark gone nothing is stored for the room');
   await R2.page.keyboard.press('Escape'); await D.page.keyboard.press('Escape'); await sleep(200);
   await R2.c.close();
+  /* twins: two rooms of one name are told apart by instance; the card hands the slot the room's own key, and a mark writes to it */
+  const twin = await D.page.evaluate(async () => {
+    const Z = window.B68GmRoomZoom, RT = window.B68GmRoomThings, out = { writes: [], keys: [] };
+    const store = {};
+    const fakeRs = { read: (rk, rm) => ({ marks: store[rm] || {} }), setMark: (rk, rm, slug, st) => { out.writes.push([rk, rm, slug, st]); store[rm] = Object.assign({}, store[rm]); if (st === null) delete store[rm][slug]; else store[rm][slug] = st; return true; } };
+    const things = [RT.clean({ name: 'A tin whistle', states: ['on', 'off'] })];
+    const z = Z.create({ things: () => things, where: (room, n) => ({ rollKey: 'a:twin-site', roomKey: 'hall#' + n }), rs: () => fakeRs, doc: () => ({}), redraw: () => {}, toast: () => {} });
+    const host = document.createElement('div'); host.style.cssText = 'position:fixed;left:40px;top:300px;z-index:1;background:#fff;padding:8px';
+    host.innerHTML = '<div class="rv-rm" data-room="Hall">' + z.html('Hall', { n: 1 }) + '</div><div class="rv-rm" data-room="Hall">' + z.html('Hall', { n: 2 }) + '</div>';
+    document.body.appendChild(host);
+    const bs = [...host.querySelectorAll('[data-site="thing"]')];
+    out.rn = bs.map((b) => b.getAttribute('data-rn'));
+    const off = z.addButtons('swap', (c) => { out.keys.push(c.roomKey + '|' + c.rollKey); return []; });
+    z.act(bs[1]); await new Promise((r) => setTimeout(r, 200));
+    document.querySelector('.rk-zoom [data-rk-btn="mark-on"]').click(); await new Promise((r) => setTimeout(r, 300));
+    out.afterSecond = [...host.querySelectorAll('.rk-tstate')].length;
+    out.chipOn2 = (() => { const l = host.querySelectorAll('.rv-rm'); return [l[0].querySelector('.rk-tstate'), l[1].querySelector('.rk-tstate')].map((e) => e ? e.textContent : ''); })();
+    z.close(false);
+    z.act(bs[0]); await new Promise((r) => setTimeout(r, 200));
+    out.pressedFirst = document.querySelector('.rk-zoom [data-rk-btn="mark-on"]').getAttribute('aria-pressed');
+    document.querySelector('.rk-zoom [data-rk-btn="mark-off"]').click(); await new Promise((r) => setTimeout(r, 300));
+    z.close(false); off(); z.destroy(); host.remove();
+    return out;
+  });
+  check(JSON.stringify(twin.rn) === '[null,"2"]' && twin.keys.includes('hall#2|a:twin-site') && twin.keys.includes('hall#1|a:twin-site') && JSON.stringify(twin.writes) === '[["a:twin-site","hall#2","tin-whistle","on"],["a:twin-site","hall#1","tin-whistle","off"]]' && twin.pressedFirst === 'false',
+    'twins: the second room of a name hands the slot its own roomKey (hall#2), a mark on it writes there only, and the first room\'s card is not marked by it (' + JSON.stringify(twin) + ')');
   await D.c.close();
+  /* the card clears the band: at 1100 wide with the things scrolled to the top of the window the zoom card sits below the live bar (Clear, Blank, Auto, Music) */
+  const T = await open({ w: 1100, h: 768 });
+  await T.page.waitForSelector(card('Showroom') + ' [data-site="thing"]', { timeout: 15000 });
+  await T.page.evaluate((sel) => { const e = document.querySelector(sel); if (e) e.scrollIntoView({ block: 'start' }); }, card('Showroom') + ' .rk-things');
+  await sleep(300);
+  await T.page.click(card('Showroom') + ' [data-site="thing"][data-i="0"]', { force: true }); await until(() => zoom(T.page), 3000); await sleep(300);
+  const geo = await T.page.evaluate(() => {
+    const b = document.getElementById('gm-band').getBoundingClientRect(), z = document.querySelector('.rk-zoom').getBoundingClientRect(), ctl = [...document.querySelectorAll('#gm-band button')].filter((x) => /^(clear|blank|auto)/i.test(x.textContent.trim()));
+    const hit = ctl.map((x) => { const r = x.getBoundingClientRect(); const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!e && (x === e || x.contains(e)); });
+    return { bandBottom: Math.round(b.bottom), zoomTop: Math.round(z.top), zoomBottom: Math.round(z.bottom), vh: innerHeight, ctl: ctl.length, hit };
+  });
+  check(geo.zoomTop >= geo.bandBottom && geo.zoomBottom <= geo.vh && geo.ctl >= 2 && geo.hit.every(Boolean), 'the zoom card at 1100 wide stays below the band and inside the window, and the live bar\'s buttons are not covered (' + JSON.stringify(geo) + ')');
+  await shot(T.page, 'desk-1100-paper-zoom-clamped');
+  await T.page.keyboard.press('Escape'); await sleep(200);
+  await T.c.close();
 
   /* pictures: the desk and the kit desk, 1366x768 and 1100 wide, Paper and Night */
   if (SHOTS) {
