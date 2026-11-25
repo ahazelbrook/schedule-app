@@ -252,12 +252,37 @@ export function checkSvg(svg) {
   return svg.trimStart();
 }
 
+/** RK29: the arrive entries of an svg display, cleaned: at most 8 kept; id r0 to r999; n a whole number 1 to 999 or absent; name a string of at most 80
+ *  characters; band one of the four bands; floor one of the map kit's floor titles or absent. Anything else in an entry goes, and an entry that fails goes. */
+export const ARRIVE_MAX = 8;
+const ARRIVE_BANDS = ['public', 'working', 'controlled', 'secure'];
+const ARRIVE_FLOORS = ['basement', 'ground floor', 'upper floor', 'top floor'];
+export function cleanArrive(list) {
+  const out = [];
+  for (const e of Array.isArray(list) ? list.slice(0, 64) : []) {
+    if (out.length >= ARRIVE_MAX) break;
+    if (!isPlainObject(e) || typeof e.id !== 'string' || !/^r\d{1,3}$/.test(e.id)) continue;
+    if (typeof e.name !== 'string' || !e.name.trim() || e.name.length > 80 || !ARRIVE_BANDS.includes(e.band)) continue;
+    if (e.n !== undefined && !(Number.isInteger(e.n) && e.n >= 1 && e.n <= 999)) continue;
+    if (e.floor !== undefined && !(typeof e.floor === 'string' && ARRIVE_FLOORS.includes(e.floor.toLowerCase()))) continue;
+    const c = { id: e.id };
+    if (e.n !== undefined) c.n = e.n;
+    c.name = e.name; c.band = e.band;
+    if (e.floor !== undefined) c.floor = e.floor;
+    out.push(c);
+  }
+  return out;
+}
+
 /** Validate a PUT /api/gm/display body into the stored display: { kind, title, caption } + svg | npcId | text. */
 export function cleanDisplay(raw) {
   const kind = raw.kind;
   if (!DISPLAY_KINDS.includes(kind)) throw new HttpError(400, 'kind must be one of ' + DISPLAY_KINDS.join(', '));
   const out = { kind, title: str(raw.title, 'title', LIMITS.text), caption: str(raw.caption, 'caption', LIMITS.text) };
   if (kind === 'svg') out.svg = checkSvg(raw.svg);
+  // RK29 (room.intro): an optional `arrive` on svg only, the rooms the GM's live reveal has just opened (the iPad plays a title card). Each entry
+  // is checked and a bad one dropped, never a 400; none left, no key. Deploy 41 drops the whole key here, and its display ignores it.
+  if (kind === 'svg' && Array.isArray(raw.arrive)) { const a = cleanArrive(raw.arrive); if (a.length) out.arrive = a; }
   if (kind === 'npc') {
     if (typeof raw.npcId !== 'string' || !ID_RE.test(raw.npcId)) throw new HttpError(400, 'npcId must be an id (A-Z, a-z, 0-9, _ and -, at most 80)');
     out.npcId = raw.npcId;

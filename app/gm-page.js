@@ -236,6 +236,11 @@
   /* RK28b: a plan or a board drawn through playerDisplay says which rung it was cut to (map.fit on only), as Show on iPad does; d itself comes back */
   P.fitNoteText = function (d, what) { return d && d.sceneCut && P.fitMod() && P.SCENE_CUT_MSG[d.sceneCut] ? P.SCENE_CUT_MSG[d.sceneCut].replace(/^The (map|room) went to the iPad/, 'The ' + what + ' went') : ''; };
   P.fitNote = function (d, what) { var m = P.fitNoteText(d, what); if (m) toast(m, true); return d; };
+  /* RK29 · room.intro (a display setting, off until chosen), read through the registry. P.riMod() is the GM half (gm/room-intro.js, in the room-intro bundle), or
+     null: off, or the bundle not loaded yet, and then playerDisplay and liveReveal run exactly the code they ran before. A test stands P.riOn and P.roomIntro in. */
+  P.riOn = function () { var F = W && W.B68Features; try { return !!(F && typeof F.valueOf === 'function' && S && F.valueOf(S.doc, 'room.intro') === true); } catch (e) { return false; } };
+  P.riMod = function () { var M = P.riOn() === true ? (W && W.B68GmRoomIntro) || P.roomIntro : null; return M && typeof M.prep === 'function' ? M : null; };
+  P.riWrap = function (ri, o) { return ri ? ri.wrap(o) : o; };      /* the live push's options, with arrive added at send time (setting on, rooms newly shown); else o itself */
   P.rkWant = function (on) { return [['night.flow', 'night-flow'], ['close.crew', 'close-crew'], ['room.key', 'room-key'], ['room.tables', 'room-tables'], ['gm.glance', 'gm-glance'], ['map.fit', 'map-fit'], ['room.intro', 'room-intro']].filter(function (x) { return on(x[0]); }).map(function (x) { return x[1]; }); };      /* RK01: the room key build's bundles, one per setting, wanted only while the setting is on; [] with all off */
   /* a copy of the options without `shade` (the first step down every size ladder) */
   function flat(o) { var c = Object.assign({}, o); delete c.shade; return c; }
@@ -357,6 +362,7 @@
     var d = { kind: 'svg', title: str(roll.name).slice(0, 200), caption: (roll.district ? roll.district + ' · ' : '') + 'surveyed: ' + entryBands(reveal).join(', ') + (capRooms.length ? ' + ' + capRooms.join(', ') : ''), svg: r.svg, warnings: r.warnings || [], reveal: reveal,
       tokens: used.length, tokensRefused: scr.refused.length > 0 || dropped };
     if (cut) d.sceneCut = cut;       /* MK2: 'crowd' or 'scene', only when one was cut; IP7: 'shade' when only the depth went */
+    if (P.riMod()) d.rooms = P.riMod().rooms(r);       /* RK29 (room.intro): the rooms of the very render that was sent (r.svg is d.svg; the player copy renumbers); off, no key */
     return d;
   }
   P.playerDisplay = playerDisplay;
@@ -4623,17 +4629,18 @@
         function (e2) { if (!e2.superseded) toast('Could not clear the iPad: ' + errText(e2) + '. It may still show ' + bandWords(fewer) + ': press Clear (0).', true); });
       return;
     }
+    var ri = P.riMod() ? P.riMod().prep(d, { roll: S.locRoll, was: { reveal: on.reveal, know: on.know }, know: wantKnow, landed: function () { return S && S.mapOn; } }) : null; if (ri) d = ri.d;      /* RK29 (room.intro): the new rooms' floors tagged; off, nothing */
     gate.mark(d.svg);
     var me = S, key = on.key, sent = d.reveal.slice(), sig = tk.sig;
     on.tokQ = sig;        /* the markers asked for, so a poll with nothing new asks for nothing */
     on.revQ = sent;       /* and the reveal asked for (bands and rooms), likewise */
     on.knowQ = wantKnow;  /* and the rooms known as blueprint only, so a blueprint room opened in full asks again */
-    pushDisplay({ kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }, {
+    pushDisplay({ kind: 'svg', title: d.title, caption: d.caption, svg: d.svg }, P.riWrap(ri, {      /* RK29: arrive goes on at send time, against what the iPad has landed */
       map: true, live: true,
       prepare: function (body) { return S === me && S.mapOn && S.mapOn.key === key ? Object.assign({}, body, { ifSeq: S.mapOn.seq }) : null; },
       done: function (r) { if (S === me && S.mapOn && S.mapOn.key === key && typeof r.seq === 'number') { S.mapOn.seq = r.seq; S.mapOn.reveal = sent; S.mapOn.tok = sig; S.mapOn.know = wantKnow; } },
       fail: function () { if (S === me) endLive(); }
-    }).then(function () {
+    })).then(function () {
       toast('On the iPad now: ' + d.caption + '.');
       if (d.sceneCut) toast(P.SCENE_CUT_MSG[d.sceneCut], true);      /* MK2 */
       /* a refused set of markers says so once per set (the map itself went) */
@@ -4749,6 +4756,7 @@
   function ipadSnapshot() {
     return {
       shown: AM.shown, doc: AM.doc, now: Date.now(), intro: W.B68GmIntro ? W.B68GmIntro.live(AM.shown, Date.now()) : '',      /* IP3: "Introducing <name>" while the card plays */
+      opening: P.riMod() ? P.riMod().live(AM.shown, Date.now()) : '',      /* RK29 (room.intro): "Opening <room> on the iPad" while the room's card plays */
       names: {
         npc: function (id) { var d = S && isObj(S.npcs) ? S.npcs[id] : null; return isObj(d) ? str(d.name) : ''; },
         clock: function (id) { var c = tableClocks().filter(function (x) { return str(x.id) === str(id); })[0]; return c ? str(c.name) : ''; },
