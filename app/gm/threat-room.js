@@ -6,7 +6,7 @@
      room()      the room a roll is in. The room the Run view has selected (the one the Roll's own line uses) comes first; with none selected, the room most of the
                  crew are in (the old pick, a tie to the first counted). The threat glyph (gm/map-threat.js) drops there.
      stamped(st) a stamp went up with a Who set: that PC's marker moves to the roll's room. A marker move costs nothing: no clock, no heat. Nothing moves when no PC
-                 is picked, the PC is not one of the night's, the room is not one of the site's rooms, or the PC is there already (so a second stamp writes nothing).
+                 is picked, the PC is not one of the night's, the room is not one of the site's rooms, the room is not open to the players, or the PC is there already (so a second stamp writes nothing).
 
    API
      SWITCH
@@ -14,7 +14,8 @@
      pcFor(who, pcs)                 -> the PC's id ('' when the name picks none or more than one)
      create(host) -> { room(), stamped() }
        host: { feature(id), sel() -> the selected room, crew() -> { pcId: room }, pick(crew) -> the most-crewed room, who() -> the Roll's Who (a name or ''),
-               pcs() -> [{ id, name }], rooms() -> [names] (empty when unknown), move(pcId, room) -> true | falsy, log(text) } */
+               pcs() -> [{ id, name }], rooms() -> [names] (empty when unknown), open(room) -> true when the players have been shown it,
+               closed(room) (told when a move was held back), move(pcId, room) -> true | falsy, log(text) } */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -63,6 +64,8 @@
       if (list.length && list.indexOf(to) < 0) return null;
       var crew = get('crew'), at = isObj(crew) ? str(crew[id]) : '';
       if (at === to) return null;
+      /* an implicit move never reveals: a PC standing in a room the players have not been shown opens its public lines on their screens, so the marker stays and the GM is told why */
+      if (typeof host.open === 'function' && !host.open(to)) { if (typeof host.closed === 'function') host.closed(to); return null; }
       if (!host.move(id, to)) return null;
       var p = (Array.isArray(pcs) ? pcs : []).filter(function (x) { return isObj(x) && str(x.id) === id; })[0];
       if (typeof host.log === 'function') host.log('Marker follows the roll: ' + (p ? str(p.name) : 'a PC') + ' to ' + to);

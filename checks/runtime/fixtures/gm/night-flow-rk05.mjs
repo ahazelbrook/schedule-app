@@ -166,6 +166,30 @@ export async function rk05(c) {
       await ctx.close();
     }
 
+    /* ---------- on, a room the players have not been shown: the threat lands there (GM only), the marker does not ---------- */
+    await reset(true);
+    {
+      const CLOSED = 'Private card rooms';
+      const { p, ctx } = await open();
+      const isClosed = await p.$eval('.rv-card[data-room="' + CLOSED + '"]', (e) => !e.classList.contains('open')).catch(() => false);
+      check(isClosed, 'closed room: the demo night has not shown the ' + CLOSED + ' to the players');
+      const camp0 = await campaign();
+      await selectRoom(p, CLOSED); await pickWho(p, 'Ray Okonjo');
+      await stampIt(p, 'The guard turns');
+      check(await logHas('Threat on the map: guard in ' + CLOSED), 'closed room: the threat is logged there (the glyph is GM-only)');
+      const told = await until(() => p.evaluate(() => /Marker stays put: /.test(document.body.innerText)), 6000, 200);
+      const log = await settle();
+      check(!log.includes('Marker follows the roll'), 'closed room: no marker line in the log');
+      check((await roomOf('pc-ray')) === SHOW && (await roomOf('pc-nell')) === LOUNGE && (await roomOf('pc-tam')) === SHOW, 'closed room: no marker moves into it');
+      check(!!told, 'closed room: the GM page says why, in a toast');
+      const dg = await api('GET', '/gm/display', undefined, IPAD);
+      const pc = await api('GET', '/campaign', undefined, P1);
+      const leaks = [CLOSED, 'Marker follows', 'Marker stays', 'Threat on the map'].filter((t) => dg.text.includes(t) || pc.text.includes(t));
+      check(leaks.length === 0, 'closed room: the display’s GET and a phone’s GET never hold its name or the new log lines (' + leaks + ')');
+      check((await campaign()) === camp0, 'closed room: no clock, heat or wanted changed');
+      await ctx.close();
+    }
+
     /* ---------- the screenshots to look at (RK_SHOTS): the Run map with the glyph in the selected room ---------- */
     if (c.SHOTS) {
       for (const desk of [false, true]) {

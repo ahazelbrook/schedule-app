@@ -5460,6 +5460,7 @@
       feature: function (id) { return S === me && b09On(id); }, sel: function () { return S === me ? str(S.rollSel) : ''; }, crew: runCrewRooms, pick: function (c) { return W.B68GmStamp ? W.B68GmStamp.pickRoom(c) : ''; },
       who: function () { return S === me ? str(uiNow().pc) : ''; }, pcs: runPcs,
       rooms: function () { var m = S === me ? S.b19Model : null; return m && Array.isArray(m.rooms) ? m.rooms.map(function (r) { return str(r && r.name); }).filter(Boolean) : []; },      /* the Run view's own rooms, once its map has been drawn; [] until then (the selected room is trusted) */
+      open: function (room) { return S === me && runIsOpen(room); }, closed: function (room) { if (S === me) toast('Marker stays put: ' + room + ' has not been shown to the players.'); },      /* GM page only, so it may name the room */
       move: function (id, room) { return S === me && runMovePc(id, room) !== null; },
       log: function (text) { if (S === me && me.night) me.night.stamp(text); } });
     return me.tr;

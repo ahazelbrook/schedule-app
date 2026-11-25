@@ -25,9 +25,10 @@ const ROOMS = ['Pelican bar', 'Pelican cellar', 'Pelican roof'];
 /* a fake page: the crew's rooms live in `crew`, a move writes them, as the Ball doc's crew[k].room does */
 function page(o) {
   o = o || {};
-  const p = { on: o.on !== false, sel: o.sel || '', crew: Object.assign({}, o.crew || {}), who: o.who || '', rooms: o.rooms || ROOMS, writes: [], logs: [], failMove: !!o.failMove };
+  const p = { on: o.on !== false, sel: o.sel || '', crew: Object.assign({}, o.crew || {}), who: o.who || '', rooms: o.rooms || ROOMS, writes: [], logs: [], told: [], openRooms: o.openRooms || ROOMS, failMove: !!o.failMove };
   p.host = {
     feature: (id) => p.on && id === 'night.flow', sel: () => p.sel, crew: () => p.crew, pick: (c) => St.pickRoom(c), who: () => p.who, pcs: () => PCS, rooms: () => p.rooms,
+    open: (r) => p.openRooms.indexOf(r) >= 0, closed: (r) => p.told.push(r),
     move: (id, room) => { if (p.failMove) return false; p.writes.push([id, room]); p.crew[id] = room; return true; }, log: (t) => p.logs.push(t)
   };
   p.c = M.create(p.host);
@@ -101,6 +102,18 @@ test('stamped(): once, and for nothing that is not a PC or a room of the night',
   q = page({ sel: 'Pelican bar', who: 'Ray Okonjo', failMove: true }); assert.equal(q.c.stamped(), null, 'no night running: the move is refused and nothing is logged'); assert.deepEqual(q.logs, []);
 });
 
+test('stamped(): a room the players have not been shown never takes a marker; the GM is told, and the threat still lands there', () => {
+  const p = page({ sel: 'Pelican cellar', who: 'Ray Okonjo', openRooms: ['Pelican bar', 'Pelican roof'], crew: { pc2: 'Pelican bar' } });
+  assert.equal(p.c.room(), 'Pelican cellar', 'the glyph is GM-only and still goes to the selected room');
+  assert.equal(p.c.stamped(), null);
+  assert.deepEqual(p.writes, []); assert.equal(p.crew.pc2, 'Pelican bar'); assert.deepEqual(p.logs, []);
+  assert.deepEqual(p.told, ['Pelican cellar'], 'told once, naming the room');
+  p.sel = 'Pelican roof';
+  assert.deepEqual(p.c.stamped(), { pc: 'pc2', room: 'Pelican roof' }, 'an open room takes it');
+  assert.deepEqual(p.told, ['Pelican cellar']);
+  const q = page({ sel: 'Pelican bar', who: 'Ray Okonjo', crew: { pc2: 'Pelican bar' } }); q.c.stamped(); assert.deepEqual(q.told, [], 'already there: nothing said');
+});
+
 test('off: nothing moves; room() still answers, so the page’s own branch decides', () => {
   const p = page({ on: false, sel: 'Pelican bar', who: 'Ray Okonjo' });
   assert.equal(p.c.stamped(), null); assert.deepEqual(p.writes, []);
@@ -150,6 +163,7 @@ test('gm-page: b19Host.room and the threat hook take the new branch only through
   assert.ok(pageJs.includes('if (t) t.drop(st); var tr = trInst(me); if (tr) tr.stamped(st);'), 'threat: the drop as it was, then the marker');
   assert.ok(inst.includes('move: function (id, room) { return S === me && runMovePc(id, room) !== null; }'), 'the move is the Run view’s own write (moveCrew through the ball)');
   assert.ok(inst.includes('S.b19Model') && !inst.includes('S.locRoll'), 'the rooms are the Run view’s own, not the Location roll’s');
+  assert.ok(inst.includes('open: function (room) { return S === me && runIsOpen(room); }'), 'the move is held to rooms open to the players (runIsOpen)');
   assert.ok(inst.includes('str(S.rollSel)'), 'the selected room is the one the Roll’s own line uses');
 });
 test('the bundle: threat-room.js is in night-flow, not in the always-on GM bundle or the display', () => {
