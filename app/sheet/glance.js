@@ -105,7 +105,7 @@
     return 0;
   }
   /* the first fit step that does not overflow (over(i) says whether step i overflows), else the last */
-  function pickStep(over) { for (var i = 0; i < STEPS.length; i++) if (!over(i)) return i; return STEPS.length - 1; }
+  function pickStep(over, from) { for (var i = from || 0; i < STEPS.length; i++) if (!over(i)) return i; return STEPS.length - 1; }
 
   /* the undo stack: the newest last, at most KEEP */
   function Undo(max) { this.max = max || KEEP; this.items = []; }
@@ -300,7 +300,6 @@
   }
   function narrow() { try { return !!(W.matchMedia && W.matchMedia('screen and (max-width: 760px)').matches); } catch (e) { return false; } }
   function snap() { return st.ctx ? JSON.stringify(st.ctx.play) : null; }
-  function leftText(ends) { var N = W.B68Now; return N && typeof N.left === 'function' ? 'Closes in ' + N.left(ends, Date.now()) : ''; }
   function classicStatus(r) { var s = r && r.querySelector('#ds-status'); return s ? { msg: str(s.textContent).trim(), bad: s.classList.contains('bad') } : null; }
   function pageReal() { var P = W.B68SheetPage; return !!(P && !P.stub && typeof P.open === 'function'); }
 
@@ -341,7 +340,7 @@
         '<div class="gl-backbar"><button type="button" class="gl-primary" data-gl="glance"><span>‹ Glance screen</span></button><button type="button" class="gl-tb gl-more" data-gl="more" aria-haspopup="dialog" aria-label="More">⋯</button></div>' +
         '<div class="gl-page" hidden></div><div class="gl-layer"></div>' +
         '<div class="gl-undo" role="status" hidden><span class="gl-u-l"></span><span class="gl-u-s gl-mono" aria-hidden="true"></span><button type="button" class="gl-u-go" data-gl="undo">Undo</button><button type="button" class="gl-u-x" data-gl="undox" aria-label="Clear">×</button></div>';
-      st.node = n; st.parts = {}; r.appendChild(n); wireNode(n);
+      st.node = n; st.parts = {}; r.appendChild(n); wireNode(n); watch(n);
     } else if (n !== r.lastElementChild) r.appendChild(n);
     return n;
   }
@@ -363,7 +362,9 @@
     moved = part('harm', harmHtml(v)) || moved;
     moved = part('acts', actsHtml(v)) || moved;
     moved = part('abs', absHtml(st.abs)) || moved;
-    moved = part('foot', footHtml(v, leftText)) || moved;
+    /* the countdown is written in place (B68Now.tick), never into the compared markup, so a ticking clock never redraws the foot */
+    var fm = part('foot', footHtml(v, function () { return ''; })); if (fm) tickIn(st.node.querySelector('.gl-p-foot'));
+    moved = fm || moved;
     if (n.classList.contains('gl-lg') !== !!st.lg) { n.classList.toggle('gl-lg', !!st.lg); moved = true; }
     n.querySelector('.gl-page').hidden = st.view !== 'page';
     if (moved) fit();
@@ -386,7 +387,9 @@
   }
   function over() { var b = st.node.querySelector('.gl-body'); return !!b && b.scrollHeight > b.clientHeight + 1; }
   function setStep(i) { var n = st.node; STEPS.forEach(function (s) { if (s.c) n.classList.remove(s.c); }); if (STEPS[i].c) n.classList.add(STEPS[i].c); clampDom(STEPS[i].rows); }
-  function fit() {
+  /* ro: a ResizeObserver refit. Within 2 s of a full fit it only steps further down, never back up, so two layouts that each measure
+     the other as fitting (a part redrawn mid-change) can never flip-flop */
+  function fit(ro) {
     var n = st.node; if (!n) return;
     var scr = n.querySelector('.gl-screen'), shown = false;
     var cs = null; try { cs = W.getComputedStyle(scr); shown = cs.display !== 'none'; } catch (e) { shown = false; }
@@ -395,9 +398,21 @@
     if (cs.position !== 'fixed') { if (!st.fitT && (st.fitTries = (st.fitTries || 0) + 1) <= 60) st.fitT = W.setTimeout(function () { st.fitT = null; fit(); }, 100); return; }
     st.fitTries = 0;
     if (st.lg) { setStep(0); st.step = 0; n.setAttribute('data-step', 'lg'); return; }
-    st.step = pickStep(function (i) { setStep(i); return over(); });
+    var from = ro === true && Date.now() - (st.fitAt || 0) < 2000 ? st.step || 0 : 0;
+    if (ro !== true) st.fitAt = Date.now();
+    st.step = pickStep(function (i) { setStep(i); return over(); }, from);
     setStep(st.step);
     n.setAttribute('data-step', String(st.step));
+    st.fitSig = sizes();
+  }
+  /* what the fit measured: the body's room and each part's height. Anything that moves them later (a webfont, the stage banner, a part
+     redrawn) fits again; a fit that changes nothing leaves the same sizes, so it never loops */
+  function sizes() { var n = st.node; if (!n) return ''; return Array.prototype.map.call(n.querySelectorAll('.gl-body, .gl-screen > div, .gl-body > div'), function (e) { return Math.round(e.getBoundingClientRect().height); }).join(',') + '|' + Math.round(n.querySelector('.gl-chips') ? n.querySelector('.gl-chips').clientWidth : 0); }
+  function watch(n) {
+    if (typeof W.ResizeObserver !== 'function') return;
+    if (!st.ro) st.ro = new W.ResizeObserver(function () { if (!active() || st.view === 'sheet' || st.lg || st.roT) return; st.roT = W.setTimeout(function () { st.roT = null; if (active() && sizes() !== st.fitSig) fit(true); }, 30); });
+    st.ro.disconnect();
+    Array.prototype.forEach.call(n.querySelectorAll('.gl-body, .gl-screen > div, .gl-body > div, .gl-chips'), function (e) { st.ro.observe(e); });
   }
 
   /* ---------- the bottom sheets ---------- */
@@ -734,6 +749,7 @@
   function teardown() {
     var r = st.root;
     if (st.obs) st.obs.disconnect();
+    if (st.ro) st.ro.disconnect();
     hideBar();
     if (st.node && st.node.parentNode) st.node.parentNode.removeChild(st.node);
     unmark(r);

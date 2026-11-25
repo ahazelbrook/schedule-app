@@ -22,6 +22,7 @@
   #dossier .gl-screen { display: none; position: fixed; left: 0; right: 0; top: 0; bottom: var(--cp-stage-h, 0px); z-index: 42; flex-direction: column; background: var(--paper); color: var(--ink); font: 400 16px/1.35 var(--font-text); }
   #dossier[data-gl="glance"] .gl-screen { display: flex; }
   #dossier .gl button { font-family: inherit; color: inherit; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+  #dossier .gl, #dossier .gl * { transition: none; animation: none; }   /* nothing moves; the fit measures what it set, never a size on its way */
   #dossier .gl :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   #dossier .gl-p-top, #dossier .gl-p-lines, #dossier .gl-p-foot { flex: 0 0 auto; }
   #dossier .gl-lab { font: 800 14px/1 var(--font-cond); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-soft); }
@@ -113,7 +114,7 @@
   #dossier .gl-ev-w { display: grid; min-width: 0; }
   #dossier .gl-ev-w b { font: 900 18px/1.05 var(--font-cond); }
   #dossier .gl-ev-w span { font: 600 16px/1.1 var(--font-cond); }
-  #dossier .gl-ev-clock { font: 700 14px/1.1 var(--font-mono); text-align: right; max-width: 6em; }
+  #dossier .gl-ev-clock { font: 700 14px/1.1 var(--font-mono); text-align: right; width: 5.5em; min-height: 2.2em; }
   #dossier .gl-not { flex: 0 0 auto; min-height: 48px; padding: 0 10px; border: 2px solid var(--rule); background: var(--card); font: 800 15px/1 var(--font-cond); cursor: pointer; }
 
   /* the fit steps (glance.js fit): c1 trims the gaps and the rows; c2 also folds the harm rows into one line */
@@ -121,6 +122,7 @@
   #dossier .gl-c1 .gl-sbox, #dossier .gl-c2 .gl-sbox { height: 40px; }
   #dossier .gl-c1 .gl-act, #dossier .gl-c2 .gl-act { min-height: 36px; }
   #dossier .gl-c1 .gl-hrow, #dossier .gl-c2 .gl-hrow { min-height: 30px; }
+  #dossier .gl-c1 .gl-hcell { line-height: 28px; }
   #dossier .gl-c1 .gl-chip, #dossier .gl-c2 .gl-chip { min-height: 40px; line-height: 36px; }
   #dossier .gl-c2 .gl-hrow { display: none; }
   #dossier .gl-c2 .gl-hsum { display: block; padding: 6px 8px; border-bottom: 2px solid var(--hair); font: 600 17px/1.2 var(--font-cond); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
