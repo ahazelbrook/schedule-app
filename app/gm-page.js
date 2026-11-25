@@ -5206,6 +5206,8 @@
     tableClocks().forEach(function (c) { if (c.hidden && str(c.name).trim()) out.push(c.name); });
     return out;
   }
+  /* RK10 (room.key, gm/room-show.js): what Show on iPad needs of this page (the show contract, the hidden names, the spotlight's reveal); null while room.key is off */
+  function rkShowHost() { var me = S; if (!me || !b09On('room.key')) return null; return { page: me, show: function (k, p, o) { var c = shows(); return c && S === me ? c.show(k, p, o) : Promise.resolve(null); }, hidden: function () { return S === me ? hiddenSecretNames() : []; }, namesHit: namesHit, rooms: function () { if (S !== me || !me.locRoll) return []; var rs = runSite(), reveal = revealList(mapUi()).concat(rs ? cleanRooms(ballDoc(rs.name).open).map(function (n) { return 'room:' + n; }) : []); return tokenHidden(me.locRoll, reveal, []); }, npcs: function () { var c = S === me && isObj(me.npcs) ? me.npcs : {}; return Object.keys(c).filter(function (id) { return isObj(c[id]); }).map(function (id) { return { id: id, name: str(c[id].name), alias: str(c[id].alias), revealed: c[id].revealed === true }; }); }, reveal: function (id) { var ref = S === me ? npcRef(id) : null, d = isObj(me.npcs) ? me.npcs[id] : null; if (!ref) return Promise.reject(new Error('The cast is not available here.')); return Promise.resolve(ref.update({ revealed: true, firstSeen: (isObj(d) && d.firstSeen) || nowIso() })).then(function () { if (isObj(me.npcs) && isObj(me.npcs[id])) me.npcs[id].revealed = true; }); }, ask: function (m, yes) { var K = W.B68KitShell, q = K && K.on() ? K.ask({ body: m, confirm: yes || 'OK' }) : null, y = false; if (q) return Promise.resolve(q).then(function (v) { return !!v; }, function () { return false; }); asked(m, function () { y = true; }); return Promise.resolve(y); }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; }, clear: function () { return S === me ? clearOverlay() : Promise.resolve(null); }, toast: toast }; }
   /* ---------- B09: the stamp (spine.stamp), the sizer (spine.sizer) and the strict cue grammar (ai.grammar) ----------
      The logic is in gm/stamp.js and gm/cue-grammar.js; this is the seam they are given. Every switch is read live from the state document, so with all three off
      nothing here draws, registers a cue word or writes. */
@@ -8446,6 +8448,7 @@
     show: function (kind, payload, opts) { var c = shows(); return c && S ? c.show(kind, payload, opts) : Promise.resolve(null); },
     layer: function (path, value) { var c = shows(); return c && S ? c.layer(path, value) : Promise.resolve(null); },
     clearShow: function (opts) { var c = shows(); return c && S ? c.clear(opts) : Promise.resolve(null); },
+    roomShow: function () { return rkShowHost(); },     /* RK10 (room.key): Show on iPad's host for gm/room-show.js, null while room.key is off */
     /* the players' mission (gm/mission-publish.js): null before the page is ready or without a v2 night's modules. onPublished(fn) -> off (fn({ ok, ended?, time, at, seq, error?, refused? })),
        status() -> { ok, time, at, seq, text } ("Players: HH:MM ✓"), last(), publishNow(), endNight() (asks first), landed(from, to, how) (an overlay only for 'next'),
        changed(), renderPlayersView(el, mission?) (the last published mission by default) */
