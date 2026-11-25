@@ -8,11 +8,21 @@
 //   secrecy  the display's GET and a phone's GET hold none of the new log lines
 //   shots    RK_SHOTS=<dir>: the Run map with the glyph in the selected room, 1366x768 and 1024x768, Paper and Night, kit.desk off and on
 // Every part sets the settings, the ball and the overlay it uses at its start, and leaves night.flow off at its end.
+const SITE = 'The Pelican Rooms';
+const CREW = { 'pc-nell': 'Cocktail lounge', 'pc-ray': 'Showroom', 'pc-tam': 'Showroom' };
+/* the setting, the crew where the demo night has them, no Who picked, no overlay on the iPad, no night log: what a part starts from, and what it leaves */
+async function resetState(c, on, extra) {
+  const { api, sleep } = c;
+  await api('PATCH', '/gm/state', { features: { 'night.flow': on, 'map.threat': true, 'spine.stamp': true, ...(extra || {}) } });
+  const crew = {}; for (const [id, room] of Object.entries(CREW)) crew[id] = { room, disguise: 'guest', moved: null, noticed: null };
+  await api('PATCH', '/gm/state', { ball: { site: SITE, v: 2, crew, view: null }, night: { v: 1, log: null }, con: { live: { pc: '' } } });
+  await api('PATCH', '/gm/ambient', { overlay: null });
+  await sleep(300);
+}
+export const reset = (c) => resetState(c, false, { 'kit.desk': null });
 export async function rk05(c) {
   const { BASE, GM, IPAD, P1, api, check, until, sleep, browser, errors, atPlace, shots } = c;
-  const SITE = 'The Pelican Rooms';
   const LOUNGE = 'Cocktail lounge', SHOW = 'Showroom';
-  const CREW = { 'pc-nell': LOUNGE, 'pc-ray': SHOW, 'pc-tam': SHOW };
   const gmDoc = async () => (await api('GET', '/gm/state')).json.doc;
   const ballCrew = async () => ((await gmDoc()).ball || {}).crew || {};
   const roomOf = async (id) => ((await ballCrew())[id] || {}).room || '';
@@ -23,14 +33,7 @@ export async function rk05(c) {
   const settle = async () => { await sleep(1500); return logText(); };
   const campaign = async () => { const d = (await api('GET', '/campaign')).json.doc; return JSON.stringify({ clocks: d.clocks, heat: d.crew && d.crew.heat, wanted: d.crew && d.crew.wanted }); };
 
-  /* reset: the setting, the crew where the demo night has them, no overlay on the iPad, no night log */
-  async function reset(on, extra) {
-    await api('PATCH', '/gm/state', { features: { 'night.flow': on, 'map.threat': true, 'spine.stamp': true, ...(extra || {}) } });
-    const crew = {}; for (const [id, room] of Object.entries(CREW)) crew[id] = { room, disguise: 'guest', moved: null, noticed: null };
-    await api('PATCH', '/gm/state', { ball: { site: SITE, v: 2, crew, view: null }, night: { v: 1, log: null } });
-    await api('PATCH', '/gm/ambient', { overlay: null });
-    await sleep(300);
-  }
+  const reset = (on, extra) => resetState(c, on, extra);
   async function open(w, h, scheme) {
     const ctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: w || 1366, height: h || 768 }, serviceWorkers: 'block', colorScheme: scheme || 'light' });
     await ctx.addInitScript(atPlace('score'));
@@ -49,7 +52,8 @@ export async function rk05(c) {
     return { p, ctx };
   }
   const selectRoom = async (p, room) => { await p.waitForSelector('.rv-card[data-room="' + room + '"]', { timeout: 20000 }); await p.$eval('.rv-card[data-room="' + room + '"]', (e) => e.click()); await sleep(300); };
-  const pickWho = async (p, name) => { await p.waitForSelector('#gm-who [data-gm="who"][data-v="' + name + '"]', { timeout: 20000 }); await p.click('#gm-who [data-gm="who"][data-v="' + name + '"]'); };
+  /* a tap on the chip that is already picked puts it down again, so tap only a chip that is not picked */
+  const pickWho = async (p, name) => { const sel = '#gm-who [data-gm="who"][data-v="' + name + '"]'; await p.waitForSelector(sel, { timeout: 20000 }); if ((await p.getAttribute(sel, 'aria-checked')) !== 'true') await p.click(sel); await p.waitForSelector(sel + '[aria-checked="true"]', { timeout: 5000 }); };
   const stampIt = async (p, text) => {
     await p.waitForSelector('#gm-stamp [data-gm="stamp"]', { timeout: 20000 });
     await p.fill('#gm-c-threat', text);
