@@ -1,3 +1,35 @@
 /* gm/glance.css: the GM's glance (gm.glance). Registered as an empty stub by RK01 of the room key build; RK20 fills it.
    In the gm-glance bundle, fetched only while its setting is on. Old-desk rules go here, scoped to this build's own classes; kit rules are scoped under
    :root[data-kit~="desk"], unlayered, with no !important. */
+
+/* ---------- RK21: the fiction's clock and who's where, under the Run view's header (gm/glance-now.js). Old desk: gm.css's tokens ---------- */
+#gm-page .gl-now:not(.gl-now-kit) { display: grid; gap: 3px; margin: 0; padding: 5px 10px 6px; border: 2px solid var(--rule); border-top: 0;
+  background: var(--card); color: var(--ink); font: 13px/1.35 var(--font-text); }
+#gm-page .gl-now:not(.gl-now-kit) .gl-now-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+#gm-page .gl-now:not(.gl-now-kit) .gl-now-clock { display: inline-flex; align-items: baseline; gap: 6px; margin-right: 4px; white-space: nowrap; }
+#gm-page .gl-now:not(.gl-now-kit) .gl-now-k { display: inline-block; min-width: 4.6em; color: var(--ink-soft); font: 700 12px/1.2 var(--font-mono);
+  letter-spacing: .04em; text-transform: uppercase; }
+#gm-page .gl-now:not(.gl-now-kit) .gl-now-t { font: 700 19px/1 var(--font-mono); }
+#gm-page .gl-now:not(.gl-now-kit) .gl-now-off { color: var(--ink-soft); font: 700 12px/1 var(--font-mono); }
+#gm-page .gl-now:not(.gl-now-kit) .gl-now-form { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
+#gm-page .gl-now:not(.gl-now-kit) .gl-now-in { width: 5.2em; min-height: 30px; padding: 3px 6px; border: 1px solid var(--hair); background: var(--paper);
+  color: var(--ink); font: 13px/1.2 var(--font-mono); }
+#gm-page .gl-now:not(.gl-now-kit) .gl-now-line { margin: 0; }
+#gm-page .gl-now:not(.gl-now-kit) .gl-now-dim { color: var(--ink-soft); }
+#gm-page .gl-now:not(.gl-now-kit) .gl-now-sep { color: var(--ink-soft); }
+
+/* ---------- RK21: the same block on the kit desk (the kit's tokens) ---------- */
+:root[data-kit~="desk"] .gl-now-kit { display: grid; gap: var(--ui-space-1); margin: 0; padding: var(--ui-space-1) 0 var(--ui-space-2);
+  border-bottom: var(--ui-hairline); color: var(--ui-ink); font: var(--ui-type-body)/1.35 var(--ui-font-text); }
+:root[data-kit~="desk"] .gl-now-kit .gl-now-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-1) var(--ui-space-2); }
+:root[data-kit~="desk"] .gl-now-kit .gl-now-clock { display: inline-flex; align-items: baseline; gap: var(--ui-space-2); margin-right: var(--ui-space-1); white-space: nowrap; }
+:root[data-kit~="desk"] .gl-now-kit .gl-now-k { display: inline-block; min-width: 4.6em; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.2 var(--ui-font-mono);
+  letter-spacing: .04em; text-transform: uppercase; }
+:root[data-kit~="desk"] .gl-now-kit .gl-now-t { font: 700 19px/1 var(--ui-font-mono); }
+:root[data-kit~="desk"] .gl-now-kit .gl-now-off { color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1 var(--ui-font-mono); }
+:root[data-kit~="desk"] .gl-now-kit .gl-now-form { display: inline-flex; align-items: center; gap: var(--ui-space-1); margin: 0; }
+:root[data-kit~="desk"] .gl-now-kit .gl-now-in { width: 5.2em; min-height: 32px; padding: 0 var(--ui-space-2); border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius, 4px); background: var(--ui-raised); color: var(--ui-ink); font: var(--ui-type-body)/1.2 var(--ui-font-mono); }
+:root[data-kit~="desk"] .gl-now-kit .gl-now-line { margin: 0; }
+:root[data-kit~="desk"] .gl-now-kit .gl-now-dim,
+:root[data-kit~="desk"] .gl-now-kit .gl-now-sep { color: var(--ui-ink-soft); }
