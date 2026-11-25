@@ -13,7 +13,7 @@ const CREW = { 'pc-nell': 'Cocktail lounge', 'pc-ray': 'Showroom', 'pc-tam': 'Sh
 /* the setting, the crew where the demo night has them, no Who picked, no overlay on the iPad, no night log: what a part starts from, and what it leaves */
 async function resetState(c, on, extra) {
   const { api, sleep } = c;
-  await api('PATCH', '/gm/state', { features: { 'night.flow': on, 'map.threat': true, 'spine.stamp': true, ...(extra || {}) } });
+  await api('PATCH', '/gm/state', { features: { 'night.flow': on, 'map.threat': null, 'spine.stamp': null, ...(extra || {}) } });
   const crew = {}; for (const [id, room] of Object.entries(CREW)) crew[id] = { room, disguise: 'guest', moved: null, noticed: null };
   await api('PATCH', '/gm/state', { ball: { site: SITE, v: 2, crew, view: null }, night: { v: 1, log: null }, con: { live: { pc: '' } } });
   await api('PATCH', '/gm/ambient', { overlay: null });
