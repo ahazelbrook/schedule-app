@@ -301,6 +301,10 @@ try {
       check(!!(await page.$(STAMP)) && !/Gone from the iPad/.test(await panel()), TAG + 'Esc #' + n + ' on the gone line clears it');
       check((await kindOf()) === kind0, TAG + 'Esc #' + n + ': the display kind is unchanged (' + kind0 + ')');
       check(!/safe scene|PANIC|testcard|sound is down/i.test(tx), TAG + 'Esc #' + n + ': no PANIC toast: ' + tx.slice(0, 80));
+      /* RK03 (from RK02's re-review): PANIC leaves the kind blank and its toast is not matched above, but it puts the iPad on the test card: that is what tells */
+      const scn = (await ambientDoc()).scene;
+      check(scn !== 'testcard', TAG + 'Esc #' + n + ': the iPad is not on the test card (PANIC did not fire): scene ' + scn);
+      if (scn === 'testcard') { await api('PATCH', '/gm/ambient', { scene: null }); await api('PUT', '/gm/display', { kind: display0 }); }      /* so a red run says so once, not on every check after it */
     }
     /* a roll marked after it has gone resolves it: the line goes, the size is offered, nothing is laid */
     await page.click(STAMP); const o3 = await until(onIpadAt, 6000, 100); await sleepTo(Date.parse(o3.at) + 10800);

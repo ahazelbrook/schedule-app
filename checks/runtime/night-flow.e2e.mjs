@@ -39,6 +39,7 @@ const PARTS = [
   { name: 'RK04', file: './fixtures/gm/night-flow-rk04.mjs', run: 'rk04', ms: (SHOTS ? 720 : 360) * 1000 },
   { name: 'RK06', file: './fixtures/gm/night-flow-rk06.mjs', run: 'rk06', ms: (SHOTS ? 720 : 480) * 1000 },
   { name: 'RK05', file: './fixtures/gm/night-flow-rk05.mjs', run: 'rk05', ms: (SHOTS ? 600 : 240) * 1000 },
+  { name: 'RK03', file: './fixtures/gm/night-flow-rk03.mjs', run: 'rk03', ms: (SHOTS ? 720 : 360) * 1000 },
 ];
 /* every setting a part may turn on: all off before and after each part */
 const BASE_OFF = { 'night.flow': false, 'kit.desk': false, 'stage.players': false };
