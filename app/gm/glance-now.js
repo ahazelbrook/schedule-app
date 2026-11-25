@@ -132,6 +132,11 @@
       return U ? U.button({ label: 'Set', rank: 'quiet', type: 'submit', cls: ['rv-btn', 'sm', 'gl-now-b'], title: 'Set the fiction’s time to the one typed' }) : '';
     }
     function place(room, dim) { return room ? '<span class="gl-now-room">' + esc(room) + '</span>' : '<span class="gl-now-dim">' + esc(dim) + '</span>'; }
+    /* the people line's head: Now while the fiction is the beat's time; At HH:MM when it is not, so it never reads as the board's moment */
+    function whenLabel(B, play, ft, pub) {
+      if (ft === pub) return '<span class="gl-now-k">Now</span>';
+      return '<span class="gl-now-k gl-now-at" title="' + esc('The people at the fiction’s time; the board and Who’s here are at the beat’s time, ' + B.timeLabel(play, pub)) + '">At ' + esc(B.timeLabel(play, ft)) + '</span>';
+    }
     var SEP = '<span class="gl-now-sep" aria-hidden="true"> · </span>';
 
     function html(x, kit) {
@@ -152,16 +157,16 @@
       h += '</div>';
       var pcs = []; try { var rv = run(); pcs = rv && typeof rv.pcs === 'function' ? rv.pcs() : []; } catch (e) { pcs = []; }
       var cw = crew(pcs, st);
-      h += '<p class="gl-now-line gl-now-crew"><span class="gl-now-k">Crew</span> ' + (cw.length ? cw.map(function (c) {
+      h += '<p class="gl-now-line gl-now-crew"><span class="gl-now-k">Crew</span> <span class="gl-now-v">' + (cw.length ? cw.map(function (c) {
         return '<span class="gl-now-who"><span class="gl-now-pair"><b>' + esc(c.name) + '</b> ' + place(c.room, 'not placed') + '</span></span>';
-      }).join(SEP) : '<span class="gl-now-dim">No PCs filed</span>') + '</p>';
+      }).join(SEP) : '<span class="gl-now-dim">No PCs filed</span>') + '</span></p>';
       var ps = people(play, st, ft), shown = ps.slice(0, SHOW), more = ps.slice(SHOW);
-      h += '<p class="gl-now-line gl-now-ppl"><span class="gl-now-k">Now</span> ' + (shown.length ? shown.map(function (p) {
-        var nx = p.till === null ? '' : ' <span class="gl-now-dim">till ' + esc(B.timeLabel(play, p.till)) + ', then</span> ' + (p.gone ? '<span class="gl-now-dim">gone</span>' : place(p.next, ''));
+      h += '<p class="gl-now-line gl-now-ppl">' + whenLabel(B, play, ft, pub) + ' <span class="gl-now-v">' + (shown.length ? shown.map(function (p) {
+        var nx = p.till === null ? '' : ' <span class="gl-now-dim">till ' + esc(B.timeLabel(play, p.till)) + ',</span> <span class="gl-now-pair"><span class="gl-now-dim">then</span> ' + (p.gone ? '<span class="gl-now-dim">gone</span>' : place(p.next, '')) + '</span>';
         return '<span class="gl-now-who' + (p.key ? ' gl-now-key' : '') + '"><span class="gl-now-pair"><b>' + esc(p.label) + '</b> ' + place(p.room, 'not here') + '</span>' + nx + '</span>';
       }).join(SEP) : '<span class="gl-now-dim">Nobody placed by the play</span>');
       if (more.length) h += ' <span class="gl-now-dim" title="' + esc(more.map(function (p) { return p.label; }).join(', ')) + '">and ' + more.length + ' more</span>';
-      return h + '</p></div>';
+      return h + '</span></p></div>';
     }
 
     /* a data-site control of this block (gln-*): true when it was ours, whatever came of it */
@@ -177,6 +182,7 @@
         var inp = el && el.querySelector ? el.querySelector('input[name="t"]') : null, hm = parseTime(inp ? inp.value : '');
         if (!hm) { toast('Type the fiction’s time as HH:MM, like 21:50.', true); return true; }
         want = B.minuteOf(hm, startOf(s.play));
+        if (want >= MAX_OFF && want > spanOf(B, s.play)) { toast('That is before the night starts (' + startOf(s.play) + '): the fiction’s clock starts with the night.', true); return true; }
       } else return true;
       var ch = isInt(want) ? ficChange(st, Math.min(DAY - 1, want)) : null;
       if (!ch) { toast('The fiction’s clock stays within 12 hours of the beat’s time.', true); return true; }

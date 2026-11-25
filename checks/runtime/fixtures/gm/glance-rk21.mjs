@@ -47,7 +47,10 @@ export async function rk21(c) {
   const block = (p) => p.evaluate(() => { const b = document.querySelector('#gm-runv .gl-now'); return b ? Array.from(b.querySelectorAll('.gl-now-row, .gl-now-line')).map((e) => e.textContent.replace(/\s+/g, ' ').trim()).join(' ') : null; });
   const fiction = (p) => p.evaluate(() => { const o = document.querySelector('#gm-runv .gl-now-t'); return o ? o.textContent : null; });
   const waitFiction = (p, want) => until(async () => (await fiction(p)) === want, 8000, 150);
-  const lineOf = (txt, k) => { const m = new RegExp(k + ' (.*?)(?= (?:Crew|Now) |$)').exec(txt || ''); return m ? m[1] : ''; };
+  /* a line's text after its head; the people line's head is Now, or At HH:MM while the fiction is off the beat */
+  const PPL = '(?:Now|At [0-9]{2}:[0-9]{2})';
+  const lineOf = (txt, k) => { const m = new RegExp('(?:^| )' + k + ' (.*?)(?= (?:Crew|' + PPL + ') |$)').exec(txt || ''); return m ? m[1] : ''; };
+  const headOf = (txt) => { const m = / (Now|At [0-9]{2}:[0-9]{2}) /.exec(txt || ''); return m ? m[1] : ''; };
 
   try {
     /* ---------- off: today's header, even with a fiction offset stored ---------- */
@@ -73,9 +76,10 @@ export async function rk21(c) {
       check((await fiction(p)) === '21:45', 'what time is it in the fiction: 21:45, the night’s start (the engagement result’s time)');
       const crew = lineOf(t0, 'Crew');
       check(/Nell Arbuthnot Cocktail lounge/.test(crew) && /Ray Okonjo Showroom/.test(crew) && /Tam Petrakis Showroom/.test(crew), 'where the crew is: ' + crew);
-      const now = lineOf(t0, 'Now');
+      const now = lineOf(t0, PPL);
       check(/Mabel Quist Showroom till 23:30, then Private card rooms/.test(now), 'who is where now, and next: ' + now.slice(0, 160));
       check(/^Mabel Quist/.test(now), 'the target comes first');
+      check(headOf(t0) === 'Now', 'the fiction is the beat time: the people line is headed Now (' + headOf(t0) + ')');
       check(!/GM-ONLY-STOP|GM-ONLY-NOTE/.test(t0), 'a stop’s note is never drawn');
 
       await p.click('#gm-runv [data-site="gln-add"][data-min="5"]');
@@ -85,7 +89,8 @@ export async function rk21(c) {
       check(!!(await waitFiction(p, '22:05')), '+15: the fiction reads 22:05');
       check((await p.$eval('#rv-time', (e) => e.textContent)) === '21:45', 'the published time stays 21:45 (the players’ time is not the fiction’s)');
       const t1 = await block(p);
-      check(/Dov Kessler Showroom till 23:00, then Security control room/.test(lineOf(t1, 'Now')), 'the Now line follows the fiction’s time: ' + lineOf(t1, 'Now').slice(0, 200));
+      check(/Dov Kessler Showroom till 23:00, then Security control room/.test(lineOf(t1, PPL)), 'the Now line follows the fiction’s time: ' + lineOf(t1, PPL).slice(0, 200));
+      check(headOf(t1) === 'At 22:05', 'ahead of the beat, the people line is headed At 22:05, not Now (' + headOf(t1) + ')');
       check(/20 min ahead/.test(t1) &&(await p.$$('#gm-runv [data-site="gln-clear"]')).length === 1, 'the block says how far it is ahead, and offers Clear');
 
       /* a typed time; the keys typed into the box never reach the page's shortcuts */
@@ -94,9 +99,10 @@ export async function rk21(c) {
       await p.keyboard.type('23:31');
       await p.keyboard.press('Enter');
       check(!!(await waitFiction(p, '23:31')), 'a typed 23:31 sets the fiction');
+      check(await p.evaluate(() => { const e = document.querySelector('#gm-runv .gl-now-ppl .gl-now-pair .gl-now-room'); return !!e && getComputedStyle(e.parentNode).whiteSpace === 'nowrap'; }), 'then <room> is one unbreakable unit');
       check(!!(await p.$('#gm-runv .rv-head')), 'typing the time fired no page key (the Run view is still up)');
       check(!!(await until(async () => { const f = await ficOf(); return f && f.b === 45 && f.off === 106; }, 6000)), 'stored as an offset: ' + JSON.stringify(await ficOf()));
-      check(/Mabel Quist Private card rooms till 00:15, then Luxury penthouse/.test(lineOf(await block(p), 'Now')), 'at 23:31 Mabel Quist is in the Private card rooms till 00:15');
+      check(/Mabel Quist Private card rooms till 00:15, then Luxury penthouse/.test(lineOf(await block(p), PPL)), 'at 23:31 Mabel Quist is in the Private card rooms till 00:15');
       await p.fill('#gm-runv .gl-now-in', '7pm');
       await p.click('#gm-runv .gl-now-form [type="submit"]');
       await sleep(500);
@@ -111,6 +117,7 @@ export async function rk21(c) {
       await waitFiction(p, '21:50');
       await p.click('#gm-runv [data-rv="next"]');
       check(!!(await waitFiction(p, '22:00')), 'a beat step catches the fiction up (21:50, then the 22:00 beat)');
+      check(headOf(await block(p)) === 'Now', 'caught up: Now again');
 
       /* a marker moved on the board (a chip armed, then a room: the ball's crew, as a drag or RK05.2 writes it) shows in the Crew line */
       await p.$eval('#gm-runv [data-rv="room"][data-room="Showroom"] [data-rv="pc"][data-id="pc-ray"]', (e) => e.click());
@@ -149,7 +156,7 @@ export async function rk21(c) {
       check((await p.$$('#gm-runv .gl-now-kit .ui-btn[data-site="gln-add"]')).length === 2, 'kit desk: +5 and +15 are B68Ui buttons');
       await p.click('#gm-runv [data-site="gln-add"][data-min="15"]');
       check(!!(await waitFiction(p, '22:00')), 'kit desk: +15 reads 22:00');
-      check(/Nell Arbuthnot Cocktail lounge/.test(lineOf(await block(p), 'Crew')) && /Mabel Quist Showroom till 23:30/.test(lineOf(await block(p), 'Now')), 'kit desk: the crew and the people');
+      check(/Nell Arbuthnot Cocktail lounge/.test(lineOf(await block(p), 'Crew')) && /Mabel Quist Showroom till 23:30/.test(lineOf(await block(p), PPL)), 'kit desk: the crew and the people');
       await ctx.close();
     }
 

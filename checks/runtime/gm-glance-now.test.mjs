@@ -142,7 +142,7 @@ test('html: answers the four questions in one block (the time, who is where now 
   assert.match(out, /^<div class="gl-now" role="group"/);
   assert.match(t, /Fiction 21:52 7 min ahead/);
   assert.match(t, /Crew Nell Arbuthnot Bar · Ray Okonjo not placed · Tam Petrakis Cloakroom/);
-  assert.match(t, /Now Mabel Quist Cloakroom till 23:30, then Bar/);
+  assert.match(t, /At 21:52 Mabel Quist Cloakroom till 23:30, then Bar/, 'the fiction is off the beat: the people line says when it is, not Now');
   assert.match(t, /Ada Vell not here till 22:30, then Bar/);
   assert.match(t, /GM-ONLY-PERSON-1 Office till 00:30, then gone/);
   assert.match(t, /Lotte Brand Door · Dov Kessler/, 'no change tonight: no till');
@@ -159,6 +159,27 @@ test('html: no offset, no Clear and no +n; before the night starts, or with no p
   assert.equal(h.view.html(xOf({ t: 0 }), false), '');
   assert.equal(h.view.html({ rs: { name: 'x', play: null }, st: ST }, false), '');
   assert.equal(h.view.html(null, false), '');
+});
+test('html: the people line says Now only while the fiction is the beat time; else At HH:MM, titled with the beat time', () => {
+  const h = host(at({}));
+  assert.match(text(h.view.html(xOf(h.state), false)), /Now Mabel Quist Cloakroom till 23:30, then Bar/);
+  assert.doesNotMatch(h.view.html(xOf(h.state), false), /gl-now-at/);
+  const ahead = h.view.html(xOf(at({ fic: { b: 45, off: 155 } })), false);
+  assert.match(text(ahead), /At 00:20 /);
+  assert.doesNotMatch(text(ahead), /Now /);
+  assert.match(ahead, /class="gl-now-k gl-now-at" title="The people at the fiction’s time; the board and Who’s here are at the beat’s time, 21:45"/);
+  assert.match(text(h.view.html(xOf(at({ fic: { b: 45, off: -5 } })), false)), /At 21:40 /, 'behind the beat too');
+  assert.match(text(h.view.html(xOf(at({ t: 60, fic: { b: 45, off: 7 } })), false)), /Now Mabel/, 'a beat step caught the fiction up: Now again');
+  assert.match(text(h.view.html(xOf(at({ t: 30, fic: { b: 45, off: 7 } })), false)), /Now Mabel/, 'stepped back before the beat it was set at: the offset is suspended, Now');
+});
+test('html: "then <room>" is one unbreakable unit, and each line\'s text sits beside its label (a hanging indent)', () => {
+  const out = host(at({})).view.html(xOf(at({})), false);
+  assert.ok(out.includes('<span class="gl-now-pair"><span class="gl-now-dim">then</span> <span class="gl-now-room">Bar</span></span>'), 'then Bar');
+  assert.ok(out.includes('<span class="gl-now-pair"><span class="gl-now-dim">then</span> <span class="gl-now-dim">gone</span></span>'), 'then gone');
+  assert.equal((out.match(/<span class="gl-now-v">/g) || []).length, 2, 'the Crew and the people lines each wrap their text in one column');
+  const css = fs.readFileSync(path.join(ROOT, 'app/gm/glance.css'), 'utf8');
+  assert.ok(css.includes('.gl-now-pair { white-space: nowrap; }'), 'the pair never breaks');
+  assert.match(css, /\.gl-now-line \{[^}]*grid-template-columns/);
 });
 test('html: the text from the play and the PCs is escaped', () => {
   const h = host(at({}));
@@ -202,7 +223,7 @@ test('act: +5 and +15 write ball.fic quietly (no map push) and redraw; Clear rem
   assert.deepEqual(h.sets[2].c, { fic: null });
   assert.equal(G.ficT(h.state), 45);
 });
-test('act: a typed time sets it; a bad one, or one before the start (past the 12 hours), says so and writes nothing', () => {
+test('act: a typed time sets it; a bad one, one before the night starts and one past 12 hours each say why and write nothing', () => {
   const h = host(at({}));
   h.view.act('gln-set', el({}, '22:10'));
   assert.deepEqual(h.sets[0].c, { fic: { b: 45, off: 25 } });
@@ -211,6 +232,12 @@ test('act: a typed time sets it; a bad one, or one before the start (past the 12
   assert.equal(h.sets.length, 1);
   assert.equal(h.toasts.length, 2);
   assert.ok(h.toasts.every((x) => x[1] === true));
+  assert.match(h.toasts[0][0], /HH:MM/);
+  assert.match(h.toasts[1][0], /before the night starts \(21:00\)/, 'an early time has its own reason');
+  const long = JSON.parse(JSON.stringify(PLAY)); long.clock.end = '20:00';      /* a 23-hour night: 10:00 is inside it, 12 h 15 min past the beat, so the 12 hours is the reason */
+  const h3 = host(at({})); h3.view = G.create({ run: () => ({ site: () => ({ name: 'x', play: long }), state: () => h3.state, pcs: () => PCS, set: () => true }), toast: (m) => h3.toasts.push([m, true]) });
+  h3.view.act('gln-set', el({}, '10:00'));
+  assert.match(h3.toasts[0][0], /within 12 hours/);
   const h2 = host({ t: 0 });
   h2.view.act('gln-add', el({ 'data-min': 5 }));
   assert.equal(h2.sets.length, 0);
