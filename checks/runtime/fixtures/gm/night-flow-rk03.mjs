@@ -158,8 +158,29 @@ export async function rk03(c) {
     await p.press('#gm-c-threat', 'Enter');
     const o = await wait(async () => { const x = await overlay(); return x && x.kind === 'report' && x.id !== prev.id ? x : null; });
     check(!!o && o.payload && o.payload.text === 'The lights go out', 'typed: the iPad’s payload has the line without the span (' + JSON.stringify(o && o.payload) + ')');
+    /* N6 (RK03's review): the players' side too, while the stamp is up and after the tick: the phone's table screen GET, the iPad's DOM and a phone's DOM
+       never hold the hidden clock's name, its id or the span; the iPad does show the line, so the scan can see the stamp */
+    const LEAK = /House alarm|c-alarm|▶|tick:/;
+    const side = async (user, hash) => {
+      const x = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': user }, viewport: { width: hash === '#display' ? 1024 : 390, height: hash === '#display' ? 768 : 844 }, serviceWorkers: 'block' });
+      const pg = await x.newPage(); pg.on('pageerror', (e) => errors.push('rk03 ' + hash + ': ' + e.message));
+      await pg.goto(BASE + '/' + hash); return { x, pg };
+    };
+    const ipad = await side(IPAD, '#display'), phone = await side(P1, '#t');
+    const ipadDom = () => ipad.pg.evaluate(() => document.body.innerHTML), phoneDom = () => phone.pg.evaluate(() => document.body.innerHTML);
+    const seen = await wait(async () => /The lights go out/.test(await ipad.pg.evaluate(() => document.body.innerText)), 15000);
+    check(!!seen, 'typed: the iPad shows the stamp’s line (the scan below can see what is up)');
+    await sleep(1500);
+    const scan = async (when) => {
+      const ts = (await api('GET', '/table/screen', undefined, P1)).text, id = await ipadDom(), pd = await phoneDom();
+      check(!LEAK.test(ts) && !LEAK.test(id) && !LEAK.test(pd), 'typed, ' + when + ': no clock name, id or span in /api/table/screen, the iPad DOM or a phone DOM (' + [LEAK.test(ts), LEAK.test(id), LEAK.test(pd)].join() + ')');
+    };
+    await scan('the stamp up');
     await mark(p, 'onetothree');
     check(!!(await wait(async () => (await alarm()) === 1)), 'typed: the 1–3 ticks the clock it names');
+    await sleep(2500);
+    await scan('after the tick');
+    await ipad.x.close(); await phone.x.close();
     await ctx.close();
   }
 
