@@ -130,8 +130,9 @@
   #dossier .gl-c2 .gl-foot { padding-top: 6px; padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px)); }
   #dossier .gl-c2 .gl-primary, #dossier .gl-c2 .gl-event, #dossier .gl-c2 .gl-not { min-height: 44px; }
 
-  /* Large text (⋯ › Text size): one step up, the actions in two columns; the screen may scroll */
-  #dossier .gl-lg .gl-body { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  /* the screen scrolls in Large text (⋯ › Text size: one step up, the actions in two columns) and when the last fit step still overflows
+     (.gl-scroll: a phone held sideways under 760 px), so nothing is ever out of reach */
+  #dossier .gl-scroll .gl-body, #dossier .gl-lg .gl-body { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
   #dossier .gl-lg .gl-act b, #dossier .gl-lg .gl-hcell, #dossier .gl-lg .gl-hsum { font-family: var(--font-text); font-size: 19px; }
   #dossier .gl-lg .gl-chip { font-family: var(--font-text); font-size: 19px; }
   #dossier .gl-lg .gl-act { min-height: 44px; }

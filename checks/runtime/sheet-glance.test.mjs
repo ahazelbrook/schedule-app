@@ -50,6 +50,14 @@ test('the fit steps: the first that does not overflow, else the last (c1, c2, c2
   assert.equal(P.pickStep(() => false, 2), 2, 'a ResizeObserver refit starts from the step it has: it only steps further down, so it cannot flip-flop');
 });
 
+test('the refit window: a ResizeObserver refit within 2 s of a full fit starts from the step it has (it only steps further down); any other fit starts at the top', () => {
+  assert.equal(P.REFIT_MS, 2000);
+  assert.equal(P.refitFrom(true, 11500, 10000, 2), 2, 'inside the window: from the current step');
+  assert.equal(P.refitFrom(true, 12500, 10000, 2), 0, 'after the window: from the top');
+  assert.equal(P.refitFrom(false, 10100, 10000, 2), 0, 'a full fit (a redraw, a resize, the fonts): from the top');
+  assert.equal(P.refitFrom(undefined, 10100, 10000, 3), 0);
+});
+
 test('the chip clamp: all when they fit; else as many as fit with "+n more" on the rows allowed; a long name takes a row', () => {
   const more = () => 90;
   assert.equal(P.clampChips([150, 170, 90], 358, 6, 2, more), 3, 'three on two rows');
@@ -58,6 +66,7 @@ test('the chip clamp: all when they fit; else as many as fit with "+n more" on t
   assert.equal(P.clampChips([400, 100], 358, 6, 2, more), 2, 'a chip wider than the row is clamped to it and takes a row of its own');
   assert.equal(P.clampChips([400, 100], 358, 6, 1, more), 0, 'and on one row only "+2 more" is left');
   assert.equal(P.clampChips([], 358, 6, 2, more), 0);
+  assert.equal(P.clampChips([100, 100, 100], 300, 6, 1, () => 80), 2, 'one chip short of all: n-1 and "+1 more"');
   assert.equal(P.rowsFor([100, 100, 100], 312, 6), 1);
   assert.equal(P.rowsFor([100, 100, 100], 300, 6), 2);
 });
@@ -83,6 +92,7 @@ test('what a change is called; a change to the log alone is not one', () => {
   assert.equal(P.diffLabel(b, a({ keys: [{ name: 'KEY-1', hits: 1, deadlock: 'down' }] }), hound), 'Deadlocked KEY-1');
   assert.equal(P.diffLabel(b, a({ notes: 'x' }), hound), 'Sheet changed');
   assert.equal(P.diffLabel(b, a({ stress: 7, healing: 1, xpHold: 2 }), hound), 'Stress 6 → 7 · Healing 0 → 1 · …');
+  assert.ok(P.permanent({ keys: [{ name: 'K', glitch: null }] }, { keys: [{ name: 'K', glitch: 'G-1' }] }), 'a glitch is permanent too');
   assert.ok(P.permanent(b, a({ keys: [{ name: 'KEY-1', hits: 1, deadlock: 'up' }] })) && P.permanent({ roboticDeadlocks: [] }, { roboticDeadlocks: ['x'] }) && !P.permanent(b, a({ stress: 2 })));
 });
 

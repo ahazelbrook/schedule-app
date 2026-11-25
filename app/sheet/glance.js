@@ -30,8 +30,12 @@
 
    ctx (tracker.js, one line): { slots, doc, play, pb, ro, gm, table, now (B68Now's ctx or null), own ([{ n, t }]), rm (may remove), commit(),
    act(name, data) (a sheet action by name) }. apply() returns true when it has the sheet, so the four-screen sheet (kit.phone) is not drawn.
-   RK32's page: B68SheetPage.open(container, character { doc, play, pb, own }, opts { main, focus, close(), record(label, before), commit(), act() })
-   -> truthy when it drew; falsy (no page, no map) keeps today's sheet. main: over 760 px wide the page is the main view.
+   RK32's page: B68SheetPage.open(container, character, opts) -> truthy when it drew; falsy keeps today's sheet. character { doc, play, pb, own }
+   are live getters (tracker.js applyRemote swaps the play object). opts { main (over 760 px, the main view), focus, play() (the live play),
+   close() (back to the glance), fallback() (today's sheet: for a page that learns late that it has no sheet or map), record(label, before),
+   commit(), act(name, data) }. B68SheetPage.update(character), if it exists, is called after every redraw while the page is up. A change
+   made by clicking a [data-act] button is recorded by the capture listener: the page must not record() it too. The view is never kept:
+   a phone always reopens on the glance.
    Window.B68SheetGlance, and module.exports under Node (checks/runtime/sheet-glance.test.mjs reads the pure parts). ES5. */
 (function (root, factory) {
   'use strict';
@@ -41,7 +45,7 @@
 })(typeof self !== 'undefined' ? self : this, function (W) {
   'use strict';
 
-  var KEEP = 20, BAR_MS = 6000, TEXT_KEY = 'b68.glance.text', VIEW_KEY = 'b68.glance.view', VIEW_KEEP = 12;
+  var KEEP = 20, BAR_MS = 6000, TEXT_KEY = 'b68.glance.text', REFIT_MS = 2000;
   var FOOT = ['commend', 'debrief', 'absent', 'keys'];
   var FOOT_WORDS = { commend: ['Commendations are open', 'Mark your xp ›'], debrief: ['The Debrief is open', 'Answer it ›'], absent: ['While you were away', 'Read it ›'], keys: ['A key can turn', 'Decide ›'] };
   var STEPS = [{ c: '', rows: 2 }, { c: 'gl-c1', rows: 2 }, { c: 'gl-c2', rows: 2 }, { c: 'gl-c2', rows: 1 }];
@@ -105,6 +109,9 @@
     return 0;
   }
   /* the first fit step that does not overflow (over(i) says whether step i overflows), else the last */
+  /* where a refit starts: a ResizeObserver refit (ro) within REFIT_MS of a full fit only steps further down, never back up, so two
+     layouts that each measure the other as fitting can never flip-flop; any other fit starts from the top */
+  function refitFrom(ro, now, fitAt, step) { return ro === true && now - (fitAt || 0) < REFIT_MS ? step || 0 : 0; }
   function pickStep(over, from) { for (var i = from || 0; i < STEPS.length; i++) if (!over(i)) return i; return STEPS.length - 1; }
 
   /* the undo stack: the newest last, at most KEEP */
@@ -291,13 +298,6 @@
   function store() { try { return W && W.localStorage ? W.localStorage : null; } catch (e) { return null; } }
   function large() { var ls = store(); try { return !!ls && ls.getItem(TEXT_KEY) === 'large'; } catch (e) { return false; } }
   function setLarge(on) { var ls = store(); try { if (ls) { if (on) ls.setItem(TEXT_KEY, 'large'); else ls.removeItem(TEXT_KEY); } } catch (e) { /* private mode: this visit only */ } st.lg = !!on; }
-  function readViews() { var ls = store(); try { var o = JSON.parse((ls && ls.getItem(VIEW_KEY)) || 'null'); return isObj(o) ? o : {}; } catch (e) { return {}; } }
-  function rememberView(id, v) {
-    var ls = store(); if (!ls) return;
-    var all = readViews(), o = {}; delete all[id];
-    Object.keys(all).slice(-(VIEW_KEEP - 1)).forEach(function (k) { o[k] = all[k]; }); o[id] = v;
-    try { ls.setItem(VIEW_KEY, JSON.stringify(o)); } catch (e) { /* private mode */ }
-  }
   function narrow() { try { return !!(W.matchMedia && W.matchMedia('screen and (max-width: 760px)').matches); } catch (e) { return false; } }
   function snap() { return st.ctx ? JSON.stringify(st.ctx.play) : null; }
   function classicStatus(r) { var s = r && r.querySelector('#ds-status'); return s ? { msg: str(s.textContent).trim(), bad: s.classList.contains('bad') } : null; }
@@ -369,6 +369,8 @@
     n.querySelector('.gl-page').hidden = st.view !== 'page';
     if (moved) fit();
     drawSheet(false);
+    /* RK32's page hears every redraw (a poll, a commit, an action) while it is up */
+    if (st.view === 'page' && pageReal() && typeof W.B68SheetPage.update === 'function') { try { W.B68SheetPage.update(character()); } catch (e) { if (W.console) W.console.error(e); } }
   }
 
   /* ---------- fitting: c1, c2, then one chip row ---------- */
@@ -397,11 +399,13 @@
     /* the bundle's stylesheet not in force yet (its link still loading): measure once it is, never before */
     if (cs.position !== 'fixed') { if (!st.fitT && (st.fitTries = (st.fitTries || 0) + 1) <= 60) st.fitT = W.setTimeout(function () { st.fitT = null; fit(); }, 100); return; }
     st.fitTries = 0;
-    if (st.lg) { setStep(0); st.step = 0; n.setAttribute('data-step', 'lg'); return; }
-    var from = ro === true && Date.now() - (st.fitAt || 0) < 2000 ? st.step || 0 : 0;
+    if (st.lg) { setStep(0); st.step = 0; n.classList.remove('gl-scroll'); n.setAttribute('data-step', 'lg'); return; }
+    var from = refitFrom(ro, Date.now(), st.fitAt, st.step);
     if (ro !== true) st.fitAt = Date.now();
     st.step = pickStep(function (i) { setStep(i); return over(); }, from);
     setStep(st.step);
+    /* the last step still overflows (a phone held sideways, under 760 px wide): the body scrolls, so nothing is out of reach */
+    n.classList.toggle('gl-scroll', st.step === STEPS.length - 1 && over());
     n.setAttribute('data-step', String(st.step));
     st.fitSig = sizes();
   }
@@ -646,7 +650,7 @@
     record(harmName(c.pb) + ' updated', before);
   }
   function setView(v, to) {
-    st.view = v; if (st.id) rememberView(st.id, v === 'page' ? 'sheet' : v);
+    st.view = v;   /* never remembered: a phone always reopens on the glance (review, 25/11) */
     closeSheet();
     if (st.ctx) mark(st.ctx);
     if (st.node) st.node.querySelector('.gl-page').hidden = v !== 'page';
@@ -656,12 +660,19 @@
       try { if (box) box.scrollIntoView({ block: 'start' }); else W.scrollTo(0, 0); } catch (e) { /* old engine */ }
     } else fit();
   }
+  /* the character RK32's page reads: live getters, so a play the sheet swapped (tracker.js applyRemote) is the one it reads and edits */
+  function character() {
+    var o = {};
+    ['doc', 'play', 'pb', 'own'].forEach(function (k) { Object.defineProperty(o, k, { enumerable: true, get: function () { return st.ctx ? st.ctx[k] : null; } }); });
+    return o;
+  }
   function openFull(to, main) {
     var c = st.ctx; if (!c) return;
     if (pageReal()) {
       var box = st.node.querySelector('.gl-page'), ok = false;
       try {
-        ok = !!W.B68SheetPage.open(box, { doc: c.doc, play: c.play, pb: c.pb, own: c.own }, { main: !!main, focus: to || null,
+        ok = !!W.B68SheetPage.open(box, character(), { main: !!main, focus: to || null, play: function () { return st.ctx ? st.ctx.play : null; },
+          fallback: function () { if (st.view === 'page') setView('sheet', to || null); },
           close: function () { if (st.view === 'page') setView('glance'); }, record: function (label, before) { record(label, before); },
           commit: function () { if (st.ctx) st.ctx.commit(); }, act: function (n, d) { if (st.ctx) st.ctx.act(n, d || {}); } });
       } catch (e) { if (W.console) W.console.error(e); ok = false; }
@@ -730,7 +741,7 @@
       var fresh = st.id !== id || !st.node || !st.node.parentNode;   /* another sheet, or this one opened again: a clean start */
       if (st.root && st.root !== rootEl) teardown();
       st.root = rootEl; st.id = id;
-      if (fresh) { st.undo.clear(); st.sheet = null; st.wide = false; st.view = readViews()[id] === 'sheet' ? 'sheet' : 'glance'; st.node = null; }
+      if (fresh) { st.undo.clear(); st.sheet = null; st.wide = false; st.view = 'glance'; st.node = null; }
     }
     if (W.B68SheetTabs && typeof W.B68SheetTabs.current === 'function' && W.B68SheetTabs.current() && typeof W.B68SheetTabs.teardown === 'function') W.B68SheetTabs.teardown();
     st.lg = large();
@@ -775,6 +786,6 @@
     start: start, stop: stop, apply: apply, teardown: teardown,
     state: function () { return { on: st.on, view: st.view, step: st.step, sheet: st.sheet ? st.sheet.kind : null, undo: st.undo.items.map(function (u) { return u.label; }), large: !!st.lg }; },
     Pure: { cost: cost, harmList: harmList, clampChips: clampChips, rowsFor: rowsFor, pickStep: pickStep, STEPS: STEPS, Undo: Undo, diffLabel: diffLabel, restore: restore, permanent: permanent,
-      afterDeadlock: afterDeadlock, resets: resets, struck: struck, resistDice: resistDice, footSplit: footSplit, stressMax: stressMax, stressName: stressName, KEEP: KEEP, BAR_MS: BAR_MS, FOOT: FOOT }
+      afterDeadlock: afterDeadlock, refitFrom: refitFrom, REFIT_MS: REFIT_MS, resets: resets, struck: struck, resistDice: resistDice, footSplit: footSplit, stressMax: stressMax, stressName: stressName, KEEP: KEEP, BAR_MS: BAR_MS, FOOT: FOOT }
   };
 });

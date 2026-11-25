@@ -54,7 +54,7 @@ const TRACKER = read('app/tracker.js'), JS = read('app/sheet/glance.js'), CSS = 
   const seams = TRACKER.split('\n').filter((l) => /B68SheetGlance/.test(l));
   check(seams.length === 1 && /var gl = !cur\.ui\.static && !!window\.B68SheetGlance/.test(seams[0]) && TRACKER.split('\n').filter((l) => /B68SheetTabs/.test(l)).every((l) => /if \(!gl && window\.B68SheetTabs/.test(l)),
     'tracker.js meets it in one line, and the four-screen sheet\'s line waits on it');
-  check(/B68SheetPage\.open\(box, \{ doc: c\.doc, play: c\.play, pb: c\.pb, own: c\.own \}/.test(JS), 'Full sheet opens RK32\'s page through B68SheetPage.open(container, character, opts)');
+  check(/B68SheetPage\.open\(box, character\(\), \{ main: !!main/.test(JS) && /fallback: function/.test(JS) && /B68SheetPage\.update\(character\(\)\)/.test(JS), 'Full sheet opens RK32\'s page through B68SheetPage.open(container, character, opts); fallback() and update(character) are there');
 }
 
 /* ---------- the browser run ---------- */
@@ -240,15 +240,27 @@ try {
   const full = await a.evaluate(() => ({ v: document.getElementById('dossier').getAttribute('data-gl'), boxes: Array.from(document.querySelectorAll('#dossier section.ds-box')).filter((b) => b.getClientRects().length).length, back: getComputedStyle(document.querySelector('#dossier .gl-backbar')).display, glance: getComputedStyle(document.querySelector('#dossier .gl-screen')).display }));
   check(full.v === 'sheet' && full.boxes >= 14 && full.back === 'flex' && full.glance === 'none', 'Full sheet (no page yet): today\'s sheet, with the bar back to the glance: ' + JSON.stringify(full));
   await shot(a, 'full-390x664-paper');
-  await a.click('#dossier .gl-backbar [data-gl="glance"]');
-  check(!!(await glanceUp(a, 3000)), '"‹ Glance screen" goes back');
-  /* RK32's page, through its own call (a stand-in for B68SheetPage here) */
-  await a.evaluate(() => { window.B68SheetPage = { open: function (box, ch, o) { window.__pg = { box: !!box && box.classList.contains('gl-page'), name: ch && ch.doc && ch.doc.name, stress: ch && ch.play && ch.play.stress, main: o.main, fns: ['close', 'record', 'commit', 'act'].filter((k) => typeof o[k] === 'function').length }; window.__pgClose = o.close; box.textContent = 'STAND-IN PAGE'; return true; } }; });
+  await a.reload(); await a.waitForSelector('#dossier .ds-bar', { timeout: 30000, state: 'attached' });
+  check(!!(await glanceUp(a)), 'a reload after Full sheet reopens on the glance: the view is never kept');
+  /* RK32's page, through its own call (a stand-in for B68SheetPage here): the character's live getters, update() after each redraw, fallback() */
+  await a.evaluate(() => { window.__upd = 0; window.B68SheetPage = { open: function (box, ch, o) { window.__pg = { box: !!box && box.classList.contains('gl-page'), name: ch && ch.doc && ch.doc.name, stress: ch && ch.play && ch.play.stress, main: o.main, fns: ['close', 'fallback', 'play', 'record', 'commit', 'act'].filter((k) => typeof o[k] === 'function').length }; window.__o = o; window.__ch = ch; box.textContent = 'STAND-IN PAGE'; return true; },
+    update: function (ch) { window.__upd++; window.__updStress = ch.play.stress; } }; });
   await a.click('#dossier .gl-foot [data-gl="full"]'); await sleep(300);
   const pg = await a.evaluate(() => ({ v: document.getElementById('dossier').getAttribute('data-gl'), seen: getComputedStyle(document.querySelector('#dossier .gl-page')).display, call: window.__pg }));
-  check(pg.v === 'page' && pg.seen === 'block' && pg.call && pg.call.box && pg.call.name === 'Nell Arbuthnot' && pg.call.stress === 6 && pg.call.main === false && pg.call.fns === 4, 'Full sheet opens RK32\'s page with (container, character, opts): ' + JSON.stringify(pg));
-  await a.evaluate(() => window.__pgClose()); await sleep(200);
+  check(pg.v === 'page' && pg.seen === 'block' && pg.call && pg.call.box && pg.call.name === 'Nell Arbuthnot' && pg.call.stress === 6 && pg.call.main === false && pg.call.fns === 6, 'Full sheet opens RK32\'s page with (container, character, opts): ' + JSON.stringify(pg));
+  await a.evaluate(() => window.__o.act('stress', { n: '8' })); await sleep(400);
+  const up = await a.evaluate(() => ({ upd: window.__upd, seen: window.__updStress, live: window.__ch.play.stress, fn: window.__o.play().stress }));
+  check(up.upd > 0 && up.seen === 8 && up.live === 8 && up.fn === 8, 'the page hears the redraw (update(character)) and reads the live play: ' + JSON.stringify(up));
+  { const g = await api('GET', '/characters/pc-nell', null, P1), d = g.json.doc; d.play.stress = 5; await must(api('PUT', '/characters/pc-nell', d, P1), 'a change from elsewhere'); }
+  const swapped = await until(() => a.evaluate(() => window.__ch.play.stress === 5 && window.__o.play() === window.__ch.play && window.__updStress === 5), 15000, 200);
+  check(!!swapped, 'a change from elsewhere (the sheet swaps its play object): character.play is the new object, and update() carried it');
+  await a.evaluate(() => window.__o.act('stress', { n: '6' })); await sleep(300);
+  await a.evaluate(() => window.__o.close()); await sleep(200);
   check(!!(await glanceUp(a, 3000)), 'the page\'s close() comes back to the glance');
+  await a.click('#dossier .gl-foot [data-gl="full"]'); await sleep(300);
+  await a.evaluate(() => window.__o.fallback()); await sleep(300);
+  check((await a.evaluate(() => document.getElementById('dossier').getAttribute('data-gl'))) === 'sheet', 'a page that learns late it has no sheet calls fallback(): today\'s sheet');
+  await a.click('#dossier .gl-backbar [data-gl="glance"]'); await glanceUp(a, 3000);
   await a.evaluate(() => { window.B68SheetPage = { open: function () { return false; } }; });
   await a.click('#dossier .gl-foot [data-gl="full"]'); await sleep(300);
   check((await a.evaluate(() => document.getElementById('dossier').getAttribute('data-gl'))) === 'sheet', 'a page that cannot draw (no sheet, no map) falls back to today\'s sheet');
@@ -327,6 +339,40 @@ try {
       await shot(P.page, 'ability-' + tag);
       await P.ctx.close();
     }
+  }
+  /* a phone held sideways (under 760 px): the last step still overflows, so the body scrolls and everything can be reached */
+  for (const [w, h] of [[667, 375], [760, 360]]) {
+    const P = await open('pc-ray', { w, h }); await glanceUp(P.page);
+    const s = await P.page.evaluate(async () => {
+      const n = document.querySelector('#dossier .gl'), b = n.querySelector('.gl-body');
+      const out = { scroll: n.classList.contains('gl-scroll'), oy: getComputedStyle(b).overflowY, step: n.getAttribute('data-step') };
+      b.scrollTop = b.scrollHeight; await new Promise((r) => setTimeout(r, 150));
+      const br = b.getBoundingClientRect(), seen = (e) => { if (!e) return false; const r = e.getBoundingClientRect(); return r.height > 0 && r.top >= br.top - 1 && r.bottom <= br.bottom + 1; };
+      out.sway = seen(n.querySelector('.gl-act[data-a="Sway"]')); out.chips = Array.from(n.querySelectorAll('.gl-chip')).filter((c) => !c.hidden).every(seen);
+      return out;
+    });
+    check(s.scroll && s.oy === 'auto' && s.sway && s.chips, w + ' x ' + h + ' (sideways): the body scrolls, and the last action and every chip can be reached: ' + JSON.stringify(s));
+    await shot(P.page, 'sideways-' + w + 'x' + h + '-paper');
+    await P.ctx.close();
+  }
+  /* the fit stays settled: after a resize and a tap, with the commendations' countdown ticking in the foot (it once redrew the foot every second
+     and the fit flip-flopped), nothing changes the fit for 3 s. The refit window itself is guarded in sheet-glance.test.mjs */
+  {
+    const P = await open('pc-nell', { w: 390, h: 664 }); await glanceUp(P.page);
+    await must(api('PUT', '/docs', { kind: 'commend', owner: '_', scope: 'public', json: { v: 1, secs: 90, until: Date.now() + 90000 } }), 'commend');
+    await until(() => P.page.evaluate(() => !!document.querySelector('#dossier .gl-foot .gl-event [data-ends]')), 20000, 200);
+    await P.page.evaluate(() => { window.__fits = 0; new MutationObserver((m) => { window.__fits += m.length; }).observe(document.querySelector('#dossier .gl'), { attributes: true, attributeFilter: ['class', 'data-step'] }); });
+    await P.page.setViewportSize({ width: 375, height: 553 }); await sleep(400);
+    await P.page.click('#dossier .gl-sbox[data-n="5"]'); await sleep(1500);
+    const settle = await P.page.evaluate(() => window.__fits);
+    /* the sheet redraws as the phone polls: four times a second here, for 3 s */
+    await P.page.evaluate(() => { window.__fits = 0; window.__rf = setInterval(() => window.B68Tracker.refresh(), 250); }); await sleep(3000);
+    await P.page.evaluate(() => clearInterval(window.__rf));
+    const idle = await P.page.evaluate(() => ({ n: window.__fits, step: document.querySelector('#dossier .gl').getAttribute('data-step') }));
+    const clock = await P.page.evaluate(() => (document.querySelector('#dossier .gl-foot [data-ends]') || {}).textContent || '');
+    check(idle.n === 0 && /\d:\d\d/.test(clock), 'with the countdown ticking (' + clock + ') and the sheet redrawn four times a second, after a resize and a tap: no fit change for 3 s (' + settle + ' while it settled): ' + JSON.stringify(idle));
+    await must(api('DELETE', '/docs?kind=commend&owner=_'), 'commend down');
+    await P.ctx.close();
   }
   /* Large text: one step up, two columns, the screen may scroll; kept on this phone */
   {
