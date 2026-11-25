@@ -32,14 +32,18 @@ const demo = await startDemo(ROOT, PORT);
 try {
   const browser = await pw.chromium.launch({ channel: process.env.PW_CHANNEL || undefined });
   const mine = (urls) => ALL.filter((f) => urls.some((u) => u.split('?')[0].endsWith('/' + f)));
+  /* RK01b: four rows are not built yet and not drawn (built: false in app/gm/settings.js). To drive their bundles from the Settings, the GM page of this test is served settings.js
+     without the flag; the Settings list itself is checked first, as shipped */
+  const unhide = async (ctx) => ctx.route('**/gm/settings.js*', async (route) => { const r = await route.fetch(); const body = (await r.text()).replace(/built: false, /g, ''); await route.fulfill({ response: r, body }); });
   async function open(route, user, size, o = {}) {
-    const ctx = await browser.newContext({ viewport: { width: size[0], height: size[1] }, extraHTTPHeaders: { 'X-Dev-User': user }, ...(o.noSw ? { serviceWorkers: 'block' } : {}) });
+    const ctx = await browser.newContext({ viewport: { width: size[0], height: size[1] }, extraHTTPHeaders: { 'X-Dev-User': user }, ...((o.noSw || o.unhide) ? { serviceWorkers: 'block' } : {}) });
+    if (o.unhide) await unhide(ctx);
     const page = await ctx.newPage(); const urls = [];
     page.on('request', (r) => urls.push(r.url()));
     await page.goto(demo.base + '/' + route);
     return { ctx, page, urls };
   }
-  const G = await open('#gm', 'gm@example.test', [1366, 768]);
+  const G = await open('#gm', 'gm@example.test', [1366, 768], { noSw: true });
   await G.page.waitForFunction(() => window.B68 && window.B68Runtime && window.B68Runtime.me, null, { timeout: 30000 });
   await G.page.waitForSelector('#gm-buttons .gm-btn', { state: 'attached', timeout: 30000 });
   await G.page.waitForTimeout(2500);
@@ -47,7 +51,14 @@ try {
   await G.page.click('.gm-tray [data-tray="open"]');
   await G.page.waitForSelector('#gm-ipad-settings [data-set-row]', { timeout: 10000 });
   const rows = await G.page.$$eval('#gm-ipad-settings [data-set-row]', (els) => els.map((e) => e.getAttribute('data-set-row')));
-  check(rows.slice(-10).join() === 'stamp.brief,night.flow,close.crew,room.key,room.tables,gm.glance,phone.find,map.fit,room.intro,phone.glance' && rows.length === 27, 'the Settings list: 27 rows, the ten last: ' + rows.slice(-11).join(' '));
+  check(rows.slice(-6).join() === 'stamp.brief,night.flow,close.crew,map.fit,room.intro,phone.glance' && rows.length === 23, 'the Settings list as shipped: 23 rows, the six of this deploy last: ' + rows.slice(-7).join(' '));
+  check(['room.key', 'room.tables', 'gm.glance', 'phone.find'].every((id) => !rows.includes(id)), 'the four not built yet are not drawn');
+  await unhide(G.ctx); await G.page.reload();
+  await G.page.waitForSelector('#gm-buttons .gm-btn', { state: 'attached', timeout: 30000 }); await G.page.waitForTimeout(2500);
+  await G.page.click('.gm-tray [data-tray="open"]');
+  await G.page.waitForSelector('#gm-ipad-settings [data-set-row]', { timeout: 10000 });
+  const all = await G.page.$$eval('#gm-ipad-settings [data-set-row]', (els) => els.map((e) => e.getAttribute('data-set-row')));
+  check(all.slice(-10).join() === 'stamp.brief,night.flow,close.crew,room.key,room.tables,gm.glance,phone.find,map.fit,room.intro,phone.glance' && all.length === 27, 'with the flag taken off in the served file (the test, not the app): 27 rows, so the rest of this test can drive every bundle');
   let seen = new Set(mine(G.urls));
   for (const id of ['stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance', 'map.fit']) {
     await G.page.click('#gm-ipad-settings [data-set="' + id + '"][data-v="1"]');
@@ -98,7 +109,7 @@ try {
   // off again: a reload of the GM page with all but room.key off asks only for that
   for (const id of ['stamp.brief', 'night.flow', 'close.crew', 'room.tables', 'gm.glance', 'phone.find', 'map.fit', 'room.intro', 'phone.glance']) await G.page.click('#gm-ipad-settings [data-set="' + id + '"][data-v="0"]');
   await G.page.waitForTimeout(1500);
-  const G2 = await open('#gm', 'gm@example.test', [1366, 768]);
+  const G2 = await open('#gm', 'gm@example.test', [1366, 768], { unhide: true });
   await G2.page.waitForTimeout(6000);
   check(mine(G2.urls).sort().join() === BUNDLES['room.key'].slice().sort().join(), 'a fresh GM page with only room.key on fetches room-key\'s files only: ' + mine(G2.urls).join(' '));
   await browser.close();
