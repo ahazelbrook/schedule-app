@@ -43,7 +43,7 @@ function fakeHost(o = {}) {
     namesHit,
     npcs: () => npcs.map((n) => Object.assign({}, n)),
     reveal(id) { log.push(['reveal', id]); if (o.revealFails) return Promise.reject(new Error('no')); npcs.find((n) => n.id === id).revealed = true; return Promise.resolve(); },
-    ask(m) { log.push(['confirm', m]); return Promise.resolve(h.confirmSays); },
+    ask(m, yes) { log.push(['confirm', m, yes]); return Promise.resolve(h.confirmSays); },
     overlayId() { return h.up; },
     clear() { log.push(['clear']); h.up = ''; return Promise.resolve({}); },
     toast(t, bad) { log.push(['toast', t, !!bad]); }
@@ -113,7 +113,7 @@ test('a tap sends one title beat for 12 seconds under the thing\'s key and toast
   assert.ok(!/brass|umbrella/i.test(SHOW.idFor(opts.key)), 'the overlay id is opaque');
   assert.equal(h.log[1][1], 'On the iPad for 12 seconds: A brass umbrella stand.');
   const now = m.buttons(ctx);
-  assert.deepEqual(now.map((x) => x.label + ':' + x.pressed), ['Take it down:true', 'Show the closer look:false']);
+  assert.deepEqual(now.map((x) => x.label + ':' + x.pressed), ['Take it down:false', 'Show the closer look:false']);
   assert.equal(await now[0].run(ctx), true); assert.equal(h.log[h.log.length - 1][0], 'clear', 'Take it down clears our beat');
   assert.deepEqual(m.buttons(ctx).map((x) => x.label), ['Show on iPad', 'Show the closer look']);
   await m.buttons(ctx)[1].run(ctx); h.up = 'someone-else';
@@ -142,7 +142,7 @@ test('the names gate: a line naming a hidden NPC asks the spotlight\'s question;
   const h = fakeHost({ npcs: HIDDEN, confirm: false }), m = RS.make(h);
   assert.equal(await m.send(ctxOf(NAMING), 'thing'), false);
   assert.equal(kinds(h.log), 'confirm,toast');
-  assert.ok(h.log[0][1].startsWith('This names someone hidden: reveal and show?') && h.log[0][1].includes('GM-ONLY-Silent Partner'));
+  assert.ok(h.log[0][1].startsWith('This names someone hidden: reveal and show?') && h.log[0][1].includes('GM-ONLY-Silent Partner') && h.log[0][2] === 'Reveal and show');
   assert.ok(!h.cast.find((n) => n.id === 'npc-hidden-a').revealed);
 });
 
@@ -211,8 +211,8 @@ test('a room the players have not seen: a hit asks "show anyway?"; no sends noth
   const h = fakeHost({ rooms: ['vault'], confirm: false }), m = RS.make(h);
   assert.equal(await m.send(ctxOf(LINE), 'thing'), false);
   assert.equal(kinds(h.log), 'confirm,toast');
-  assert.equal(h.log[0][1], RS.ROOM_QUESTION + ' (vault)');
-  assert.equal(RS.ROOM_QUESTION, "This names a room the players haven't seen yet: show anyway?");
+  assert.equal(h.log[0][1], RS.ROOM_QUESTION + ' (vault)'); assert.equal(h.log[0][2], 'Show anyway', 'its button says what a yes does');
+  assert.equal(RS.ROOM_QUESTION, "This names something the players haven't seen yet: show anyway?");
   const h2 = fakeHost({ rooms: ['vault'], confirm: true }), m2 = RS.make(h2);
   assert.equal(await m2.send(ctxOf(LINE), 'thing'), true);
   assert.equal(kinds(h2.log), 'confirm,show,toast', 'asked, then shown: no reveal, nothing opened');

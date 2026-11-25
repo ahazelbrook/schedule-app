@@ -15,11 +15,11 @@
    THE NAMES GATE. Before a beat goes, its words are scanned with the page's namesHit against hiddenSecretNames() (hidden NPCs, name and
    alias, and hidden clocks), as the spotlight is. A hidden NPC asks "This names someone hidden: reveal and show?"; a yes reveals them (the
    spotlight's reveal) and then shows, a no shows nothing. A hidden clock is never revealed from here: the beat is refused with a toast that
-   names it. Then the site's hidden names (tokenHidden: rooms the players have not seen, and the like) are scanned: a hit asks "This names a
-   room the players haven't seen yet: show anyway?"; a yes sends the line alone (nothing is opened), a no sends nothing.
+   names it. Then the site's hidden names (tokenHidden: rooms, threats, loot and obstacles the players have not seen) are scanned: a hit asks
+   "This names something the players haven't seen yet: show anyway?" (its button: Show anyway); a yes sends the line alone (nothing is opened), a no sends nothing.
    The page's gate and the server scan the beat again; this only asks first.
 
-   TAKE IT DOWN. While a beat this page sent is up (the overlay up is its id, inside its 12 seconds), its button reads "Take it down" and takes
+   TAKE IT DOWN. While a beat this page sent is up (the overlay up is its id, inside its 12 seconds), its button reads "Take it down" (standard, never pressed: the pressed look in the row is the thing's state) and takes
    off that beat only (never another overlay). The card draws again when the 12 seconds are over.
 
    API
@@ -27,7 +27,7 @@
      make(host) -> { buttons(ctx), send(ctx, which) -> Promise<bool>, down(ctx, which) -> Promise<bool>, isUp(ctx, which) -> bool }
        host (an object, or a function that returns the current one) = { show(kind, payload, opts) -> Promise<answer | null>,
                 hidden() -> [name], rooms() -> [the site's hidden names], namesHit(text, names) -> bool, npcs() -> [{ id, name, alias, revealed }], reveal(id) -> Promise,
-                ask(msg) -> Promise<bool> (the page's own confirm: the kit's dialog on the kit desk), overlayId() -> the id up now,
+                ask(msg, yesLabel) -> Promise<bool> (the page's own confirm: the kit's dialog on the kit desk), overlayId() -> the id up now,
                 clear() -> Promise (the overlay off), toast(text, bad) }
        The page's is B68GmPage.roomShow() (null while room.key is off).
      Pure: payload(thing, which) -> { text, sub? } | null   cut(text)   keyOf(ctx, which)   hits(payload, names, namesHit) -> [name]
@@ -42,7 +42,7 @@
 
   var KIND = 'title', MS = 12000, TEXT_MAX = 80, SUB_MAX = 120;
   var WHICH = ['thing', 'look'];
-  var QUESTION = 'This names someone hidden: reveal and show?', ROOM_QUESTION = "This names a room the players haven't seen yet: show anyway?";
+  var QUESTION = 'This names someone hidden: reveal and show?', ROOM_QUESTION = "This names something the players haven't seen yet: show anyway?";
   var LABEL = { thing: 'Show on iPad', look: 'Show the closer look' }, DOWN = 'Take it down';
   var UP_TITLE = { thing: 'On the iPad now: the name and its line. Take it down', look: 'On the iPad now: the closer look. Take it down' };
   var TITLE = { thing: 'The name and its line on the iPad, for 12 seconds', look: 'The name and the closer look on the iPad, for 12 seconds' };
@@ -116,7 +116,7 @@
       var found = hits(p, list(call('rooms')), namesHit);
       if (!found.length) return Promise.resolve(true);
       var h0 = H(), q;
-      try { q = h0 && typeof h0.ask === 'function' ? h0.ask(ROOM_QUESTION + ' (' + found.join(', ') + ')') : false; } catch (e) { q = false; }
+      try { q = h0 && typeof h0.ask === 'function' ? h0.ask(ROOM_QUESTION + ' (' + found.join(', ') + ')', 'Show anyway') : false; } catch (e) { q = false; }
       return Promise.resolve(q).then(function (yes) { if (yes !== true) { toast('Not shown.'); return false; } return true; }, function () { return false; });
     }
     function people(p) {
@@ -130,7 +130,7 @@
       if (other.length) { toast('Not shown: it names something hidden, the clock ' + other.join(', ') + '. Show that clock on the table first.', true); return Promise.resolve(false); }
       var who = people.map(function (n) { return flat(n.name); }).join(', ');
       var h0 = H(), q;
-      try { q = h0 && typeof h0.ask === 'function' ? h0.ask(QUESTION + ' ' + who + ' will be revealed to everyone, and the line goes on the iPad.') : false; } catch (e) { q = false; }
+      try { q = h0 && typeof h0.ask === 'function' ? h0.ask(QUESTION + ' ' + who + ' will be revealed to everyone, and the line goes on the iPad.', 'Reveal and show') : false; } catch (e) { q = false; }
       return Promise.resolve(q).then(function (yes) {
         if (yes !== true) { toast('Not shown: ' + who + ' stays hidden.'); return false; }
         return revealAll(p, people);
@@ -182,7 +182,8 @@
       WHICH.forEach(function (w) {
         if (!payload(ctx.thing, w)) return;
         var up = isUp(ctx, w);
-        out.push({ id: 'show-' + w, label: up ? DOWN : LABEL[w], rank: 'standard', pressed: up, title: up ? UP_TITLE[w] : TITLE[w],
+        out.push({ id: 'show-' + w, label: up ? DOWN : LABEL[w], rank: 'standard', pressed: false,      /* never the dark pressed look: that is the thing's state (RK11), one per card */
+          title: up ? UP_TITLE[w] : TITLE[w],
           run: function (c) { return up ? down(c || ctx, w) : send(c || ctx, w); } });
       });
       return out;

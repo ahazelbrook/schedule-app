@@ -269,7 +269,11 @@ try {
     check(!!r3 && p3.text === UMB_NAME && p3.sub === UMB_LOOK && !THING_TEXT.test(without(r3.d, [UMB_NAME, UMB_LOOK]) + without(r3.s, [UMB_NAME, UMB_LOOK]) + without(r3.c, [UMB_NAME, UMB_LOOK])), 'RK10: Show the closer look sends the name and the closer look, and nothing else of the thing reaches the GETs (' + JSON.stringify(p3) + ')');
     const shown = await until(() => dp.evaluate((n) => document.body.textContent.includes(n) ? document.documentElement.outerHTML : '', UMB_NAME), 8000);      /* textContent: the iPad sets its titles in capitals with CSS */
     check(!!shown && shown.includes('one umbrella is dry') && !/GM-ONLY-(roll|danger)|too heavy to tip|velvet rope|cloakroom ticket/i.test(shown), 'RK10: the iPad shows the name and the closer look, and its DOM holds no roll, danger, line or other thing');
-    if (SHOTS) { fs.mkdirSync(SHOTS, { recursive: true }); await dp.waitForTimeout(1500); await dp.screenshot({ path: path.join(SHOTS, 'ipad-1024-look.png') }); await shot(page, 'desk-1366-paper-shown'); }
+    if (SHOTS) { fs.mkdirSync(SHOTS, { recursive: true }); await dp.waitForTimeout(1500); await dp.screenshot({ path: path.join(SHOTS, 'ipad-1024-look.png') }); await shot(page, 'desk-1366-paper-shown');
+      /* both rows at once: a state pressed (RK11) beside Take it down, for the one-Primary look; the mark is taken off again at once */
+      await page.evaluate((k) => window.B68GmPage._roomState().setMark(k, 'showroom#1', 'brass-umbrella-stand', 'full'), rk); await page.evaluate(() => window.B68GmPage._roomZoom().refresh()); await sleep(400);
+      await shot(page, 'desk-1366-paper-both-rows');
+      await page.evaluate((k) => window.B68GmPage._roomState().setMark(k, 'showroom#1', 'brass-umbrella-stand', null), rk); await page.evaluate(() => window.B68GmPage._roomZoom().refresh()); }
     const gone = await until(async () => { const r = await reads(); return !r.ov ? r : null; }, 16000, 500);
     const secs = (Date.now() - t1) / 1000;
     const domGone = await until(() => dp.evaluate((n) => !document.body.textContent.includes(n), UMB_NAME), 6000);
@@ -295,7 +299,7 @@ try {
     await page.evaluate(() => window.B68GmPage.clearShow({ layers: false }));
     check((await api('PATCH', '/npcs/npc-hidden-partner', { revealed: false })).status === 200, 'RK10: the demo\'s hidden person is hidden again');
 
-    /* a room the players have not seen (the page's own tokenHidden): asked "show anyway?"; no sends nothing, yes sends that line alone */
+    /* something of the site the players have not seen (the page's own tokenHidden: a room here): asked "show anyway?"; no sends nothing, yes sends that line alone */
     const rg = await page.evaluate(async () => {
       const H = window.B68GmPage.roomShow(), rooms = H ? H.rooms() : [], asked = [], M = window.B68GmRoomShow.make(() => window.B68GmPage.roomShow()), was = window.confirm;
       if (!rooms.length) return { rooms };
@@ -309,8 +313,8 @@ try {
       return { rooms, no, yes, asked, upNo: upNo && upNo.payload ? upNo.payload.text : '' };
     });
     const r5 = await reads(), p5 = r5.ov && r5.ov.payload ? r5.ov.payload : {};
-    check(Array.isArray(rg.rooms) && rg.rooms.length > 0 && rg.no === false && rg.upNo !== 'A torn map' && rg.yes === true && rg.asked.length === 2 && rg.asked.every((m) => m.startsWith('This names a room the players haven\'t seen yet: show anyway?')) &&
-      p5.text === 'A torn map' && /^A pencil ring round the /i.test(p5.sub || ''), 'RK10: a line naming a room the players have not seen asks "show anyway?"; no sends nothing, yes sends that line (' + JSON.stringify({ rooms: (rg.rooms || []).length, no: rg.no, yes: rg.yes, asked: (rg.asked || []).length }) + ')');
+    check(Array.isArray(rg.rooms) && rg.rooms.length > 0 && rg.no === false && rg.upNo !== 'A torn map' && rg.yes === true && rg.asked.length === 2 && rg.asked.every((m) => m.startsWith('This names something the players haven\'t seen yet: show anyway?')) &&
+      p5.text === 'A torn map' && /^A pencil ring round the /i.test(p5.sub || ''), 'RK10: a line naming something the players have not seen (the site\'s hidden names) asks "show anyway?"; no sends nothing, yes sends that line (' + JSON.stringify({ rooms: (rg.rooms || []).length, no: rg.no, yes: rg.yes, asked: (rg.asked || []).length }) + ')');
     await page.evaluate(() => window.B68GmPage.clearShow({ layers: false }));
   }
 
