@@ -71,7 +71,7 @@
   var POSITIONS = ['controlled', 'risky', 'desperate'], EFFECTS = ['limited', 'standard', 'great'], EFFECT0 = 'standard';
   var LADDER = ['desperate', 'risky', 'controlled'];          /* worst first: reducing a consequence moves along it */
   var TEXT_MAX = 100, LINE_MAX = 140, LINES_MAX = 5, REFRESH_MS = 170000, ARM_MS = 6000, SHOW_MS = 180000;
-  var KEY = { stamp: 'spine.stamp', sizer: 'spine.sizer', stage: 'kit.stage', brief: 'stamp.brief' };
+  var KEY = { stamp: 'spine.stamp', sizer: 'spine.sizer', stage: 'kit.stage', brief: 'stamp.brief', flow: 'night.flow' };
   /* RK02 (stamp.brief): a stamp stands BRIEF_MS on the iPad, then the server and the iPad let it go; the Roll's line counts the seconds down once a second */
   var BRIEF_MS = 10000, TICK_MS = 1000;
   /* KS15 (the roll as beats, kit.stage): a result stands RESULT_MS on the iPad, a cost COST_MS; then the server lets it go and the iPad folds it into
@@ -178,6 +178,8 @@
 
     function on(id) { return typeof host.feature === 'function' ? !!host.feature(id) : false; }
     function brief() { return on(KEY.brief); }      /* RK02: stamp.brief */
+    /* RK03 (night.flow): what goes to the iPad never holds an action span (a typed `▶ tick: …` names a clock); off, it is payload(st) as it was */
+    function pay(st) { var p = payload(st); if (on(KEY.flow) && p.text) { var t = cutText(actionsOut(p.text), TEXT_MAX); if (t) p.text = t; else delete p.text; } return p; }
     function changed() { if (typeof host.changed === 'function') host.changed(); }
     function toast(m, bad) { if (typeof host.toast === 'function') host.toast(m, bad); }
     function setT(fn, ms) { return typeof host.setTimeout === 'function' ? host.setTimeout(fn, ms) : setTimeout(fn, ms); }
@@ -229,7 +231,7 @@
     function lay(st) {
       var brf = brief(), key = 'stamp-' + (++n) + '-' + st.at, ms = brf ? BRIEF_MS : SHOW_MS;
       st.key = key; st.id = typeof host.keyFor === 'function' ? host.keyFor(key) : key;
-      var p = Promise.resolve(host.show(payload(st), key, ms));
+      var p = Promise.resolve(host.show(pay(st), key, ms));
       if (!brf) { delete st.until; return p; }
       return p.then(function (r) { if (r) st.until = now() + ms; return r; });      /* RK02: its own end, from the moment the server has it */
     }
@@ -252,7 +254,7 @@
     function upId() { return typeof host.overlayId === 'function' ? str(host.overlayId()) : ''; }
     function relay(st, ms) {
       var brf = brief();
-      return Promise.resolve(host.show(payload(st), st.key, ms, { replace: true })).then(function (r) { if (r && brf) st.until = now() + ms; else delete st.until; return r; }, function () { return null; });
+      return Promise.resolve(host.show(pay(st), st.key, ms, { replace: true })).then(function (r) { if (r && brf) st.until = now() + ms; else delete st.until; return r; }, function () { return null; });
     }
     /* a write that landed after its stamp was taken down: take it straight back off (only while it is what is up) */
     function takeBack(st) { if (active === null && upId() === st.id && typeof host.clearOverlay === 'function') return Promise.resolve(host.clearOverlay()).then(null, function () { return null; }); return null; }
@@ -309,7 +311,7 @@
       if (costGone(L)) { endCost(); toast('The iPad has moved on, so the cost was not sent.', true); return Promise.resolve(false); }
       var next = copy(L.st); next.cost = c;
       /* the page's own check first (KS15 review): a hidden name gets this message alone, not the page's general refusal */
-      if (typeof host.vet === 'function' && !host.vet(payload(next))) { toast('The cost did not go to the iPad. It is still in the field.', true); return Promise.resolve(false); }
+      if (typeof host.vet === 'function' && !host.vet(pay(next))) { toast('The cost did not go to the iPad. It is still in the field.', true); return Promise.resolve(false); }
       stopRefresh();
       return relay(next, COST_MS).then(function (r) {
         if (last !== L) { if (r) takeBack(next); return false; }
@@ -408,6 +410,7 @@
       /* KS15 (kit.stage): what beat is up (the result, the cost) and the cost field after a 4/5 or a 1-3 */
       if (out.active && active.result) { out.active.result = active.result; if (active.who) out.active.who = active.who; if (active.cost) out.active.cost = active.cost; }
       if (last && on(KEY.stage)) out.cost = { result: last.st.result, draft: last.draft, sent: last.sent };
+      if (out.active && on(KEY.flow)) out.active.at = active.at;      /* RK03 (night.flow): the stamp's own key, so its tick lands once (gm/night-ticks.js) */
       if (out.on && on(KEY.stage)) out.beats = true;      /* the Roll says what Clean does now (gm/roll.js stampHtml) */
       /* RK02 (stamp.brief): a stamp laid with it on says how long it has left, or that it has gone (the stamp line stays until the roll resolves) */
       if (out.active && active.until && !active.result) {
