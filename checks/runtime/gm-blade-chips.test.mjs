@@ -206,6 +206,29 @@ await test('typed: two clocks that match ask which (a card with the answers as b
   assert.deepEqual(t.ops, [[{ id: 'b', filled: 2 }]]);
   assert.deepEqual(t.dropped, [card.id]);
 });
+await test('typed: only a sure match acts at once (the exact name, or it without a leading a/an/the); a near miss asks "Which clock?" first', async () => {
+  const LIGHTS = { id: 'L', name: 'Lights out', size: 6, filled: 1, kind: 'danger', hidden: true };
+  let t = table([LIGHTS, BOATS]); C._reset();
+  let r = await C.typed('tick the nights 1', t.host);
+  assert.deepEqual(r, { ok: true }, 'handled: a card is up');
+  assert.equal(t.ops.length, 0, 'a near miss ticks nothing');
+  assert.equal(t.cards.length, 1, 'it offers the Which clock? card');
+  assert.match(t.cards[0].headline, /Which clock/);
+  assert.deepEqual(t.cards[0].actions.map((a) => a.label), ['Lights out'], 'one button: the clock it nearly heard');
+  await t.cards[0].actions[0].run();
+  assert.deepEqual(t.ops, [[{ id: 'L', filled: 2 }]], 'a tap on it ticks it');
+  t = table([LIGHTS, BOATS]); C._reset(); await C.typed('tick lights 2', t.host);
+  assert.equal(t.ops.length, 0, 'part of the name is not sure either'); assert.equal(t.cards.length, 1);
+  for (const said of ['tick lights out 1', 'tick the lights out 1', 'Tick LIGHTS-OUT 1', 'tick the lights out clock 1']) {
+    t = table([LIGHTS, BOATS]); C._reset();
+    r = await C.typed(said, t.host);
+    assert.deepEqual(r, { ok: true }, said);
+    assert.deepEqual(t.ops, [[{ id: 'L', filled: 2 }]], said + ' ticks at once');
+    assert.equal(t.cards.length, 0, said + ': no card');
+  }
+  t = table([{ id: 'T', name: 'The Tide', size: 4, filled: 0 }]); C._reset(); await C.typed('tick tide', t.host);
+  assert.deepEqual(t.ops, [[{ id: 'T', filled: 1 }]], 'the clock’s own article may be left off');
+});
 await test('typed: "make a 6 clock called Reach the roof" adds a hidden clock, with Undo; a size the page does not allow is refused; a name already there is not added again', async () => {
   let t = fresh();
   assert.deepEqual(await C.typed('make a 6 clock called Reach the roof', t.host), { ok: true });
@@ -351,6 +374,42 @@ await test('assist-panel: a code span that is an action stays code in a bullet w
   const two = P.inlineNodes(doc, '`▶ tick: A / 1` and `>> tick: B`', true).filter((n) => n.nodeType === 1);
   assert.equal(two.length, 2);
   assert.equal(P.inlineNodes(doc, 'no action `x` here', true).length, 1, 'no action span: the old path');
+});
+// a panel drawn on a small fake document (the gm-assist-panel suite's way): the first element made is the panel's host, the rest are mini nodes
+function panelRig(flow) {
+  const els = {};
+  let made = 0;
+  const host = { className: '', innerHTML: '', parentNode: null, setAttribute() {}, addEventListener() {}, contains() { return true; },
+    querySelector: (sel) => (sel === 'input[name="as-pos"]:checked' ? { value: 'risky' } : els[sel] || (els[sel] = new MiniEl('div'))), querySelectorAll: () => [] };
+  const doc = { hidden: false, activeElement: null, createElement: (tag) => (made++ === 0 ? host : new MiniEl(tag)), createTextNode: (t) => new MiniText(t),
+    body: { appendChild() {}, removeChild() {} }, addEventListener() {}, removeEventListener() {} };
+  const before = AP.live().length;
+  const ctl = AP.create({ gm: { stt: async () => ({}), assistTick: async () => ({ cards: [], updates: [] }), assistFit: async () => ({}) }, doc, win: { matchMedia: () => ({ matches: false }) },
+    noTimer: true, ...(flow ? { flow: () => ({ decorate() {}, refresh() {}, chip() {}, is: () => false, run: async () => ({ ok: false }) }) } : {}) });
+  const bridge = AP.live()[before];
+  return { ctl, doc, bridge, list: () => host.querySelector('#as-list') };
+}
+const walk = (el, pred, out = []) => { for (const c of el.children || []) { if (c.nodeType === 1) { if (pred(c)) out.push(c); walk(c, pred, out); } } return out; };
+await test('assist-panel: a ▶ span is a chip only in a bullet: never in the headline (no button in the fold button), SAY or GM ONLY; with the flow off a ▶ bullet is plain text', () => {
+  const CARD = { kind: 'idea', headline: 'Go: `▶ tick: Alarm / 1`', bullets: ['Then: `▶ clock: Reach the boats / 4 / 0`'], say: 'Say `▶ tick: Alarm`', secret: 'GM-ONLY- `▶ tick: Alarm`', open: true };
+  for (const flow of [false, true]) {
+    const r = panelRig(flow);
+    r.ctl.addCard(CARD);
+    const card = walk(r.list(), (n) => n.classList.contains('as-card'))[0];
+    assert.ok(card, 'the card is drawn');
+    const codesIn = (cls) => walk(card, (n) => n.classList.contains(cls)).reduce((k, e) => k + walk(e, (n) => n.tagName === 'CODE').length, 0);
+    assert.equal(codesIn('as-fold'), 0, (flow ? 'on' : 'off') + ': the headline keeps its ▶ span as text');
+    assert.equal(codesIn('as-say') + codesIn('as-secret'), 0, (flow ? 'on' : 'off') + ': SAY and GM ONLY keep theirs as text');
+    const li = walk(card, (n) => n.tagName === 'LI')[0];
+    if (flow) assert.equal(walk(li, (n) => n.tagName === 'CODE').length, 1, 'on: the bullet’s ▶ span is code, for the chip');
+    else { assert.equal(walk(li, (n) => n.nodeType === 1).length, 0, 'off: the ▶ bullet is plain text'); assert.equal(li.textContent, 'Then: `▶ clock: Reach the boats / 4 / 0`'); }
+    // the kit desk draws through the bridge's appendInline: the same rule
+    const L = new MiniEl('li'), S = new MiniEl('span');
+    r.bridge.h.appendInline(r.doc, L, 'x `▶ tick: Alarm / 1`'); r.bridge.h.appendInline(r.doc, S, 'x `▶ tick: Alarm / 1`');
+    assert.equal(walk(L, (n) => n.tagName === 'CODE').length, flow ? 1 : 0, 'kit desk: a bullet is code only with the flow on');
+    assert.equal(walk(S, (n) => n.tagName === 'CODE').length, 0, 'kit desk: a headline never is');
+    r.ctl.destroy();
+  }
 });
 await test('assist-panel: the source holds every RK04 branch behind o.flow (off means today)', () => {
   const s = fs.readFileSync(path.join(ROOT, 'app/gm/assist-panel.js'), 'utf8');

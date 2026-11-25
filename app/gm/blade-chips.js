@@ -8,6 +8,7 @@
      Ask cards               the panel decorates a card's ▶ lines (its More text and its bullets) into the same chips (gm/assist-panel.js, option flow).
      "tick the alarm 1"      typed bare into Ask (no "Blade," or "/"): a clock command is read here, against the table's clocks, and applied at once. No
                              transcript line, no co-GM lane, no model call: it costs nothing and works at the cap. A question is never taken for one.
+                             Only a sure name acts at once (the clock's own, or it without a leading a/an/the); a loose match asks "Which clock?".
 
    FOR RK03 (the stamp's tick) AND RK23 (a getaway clock chip): everything below is on window.B68GmBladeChips, or module.exports under Node.
      parseTick(spanText) -> null | { name, n } | { bad }     spanText is a code span's text, "▶ tick: Alarm / 2" (or the ">>" lead-in). null when it is not
@@ -194,10 +195,34 @@
     if (res.missing) return missing(host, res, q);
     var acts = (res.actions || []).filter(function (a) { return a && (a.type === 'clock_tick' || a.type === 'clock_add'); });
     if (!acts.length) { said(host, 'I could not read “' + q + '” as a clock command.', true); return Promise.resolve({ ok: false }); }
+    var unsure = res.viaPron ? null : acts.filter(function (a) { return a.type === 'clock_tick' && !sureOf(Q, s, a); })[0];
+    if (unsure) return missing(host, { missing: 'which', candidates: [{ id: str(unsure.clock_id), name: str(unsure.clock_name) }], draft: { by: +unsure.by || 1 } }, q);
     var all = true;
     return acts.reduce(function (p, a) {
       return p.then(function () { return apply(host, a).then(function (r) { if (!r.ok) all = false; }); });
     }, Promise.resolve()).then(function () { return { ok: all }; });
+  }
+  /* a sure match acts at once: the name as heard is the clock's own name (case and punctuation aside), or is it without a leading a, an or the (on
+     either side), or with a trailing "clock" (what the cue's own exact step drops). A loose-only match ("the nights" for "Lights out") asks first.
+     What was heard is the cue's own reading of the words: a parse against no clocks says the name it could not find, with any trailing amount
+     ("1", "twice", "by two", "3 ticks") still on it, so that comes off here as the cue's own second reading takes it off. */
+  var ONCE = { once: 1, twice: 1, thrice: 1 }, TAILN = /^(?:ticks?|segments?|times?|box(?:es)?|marks?)$/;
+  function noAmount(Q, h) {
+    var w = h.split(' '), k = w.length;
+    if (ONCE[w[k - 1]]) return w.slice(0, k - 1).join(' ');
+    if (TAILN.test(w[k - 1])) k--;
+    if (k > 0 && typeof Q.numOf === 'function' && Q.numOf(w[k - 1]) !== null) { k--; if (k > 0 && w[k - 1] === 'by') k--; return w.slice(0, k).join(' '); }
+    return h;
+  }
+  function sureOf(Q, s, a) {
+    var r0 = Q.parse('Blade, ' + s, { clocks: [] }), heard = r0 && r0.missing === 'clock' ? str(r0.name) : '';
+    var nm = typeof Q.norm === 'function' ? Q.norm : function (x) { return words(str(x).toLowerCase().replace(/[^a-z0-9]+/g, ' ')); };
+    var lead = function (x) { return x.replace(/^(?:the|a|an) /, ''); };
+    var h = nm(heard), c = nm(a.clock_name);
+    if (!h || !c) return false;
+    var hs = [];
+    [h, noAmount(Q, h)].forEach(function (x) { var y = x.replace(/ clocks?$/, ''); hs.push(x, lead(x), y, lead(y)); });
+    return hs.indexOf(c) >= 0 || hs.indexOf(lead(c)) >= 0;
   }
   function apply(host, a) {
     if (a.type === 'clock_add') return makeClock(host, a.name, +a.size, a.filled || 0);

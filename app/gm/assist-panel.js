@@ -94,7 +94,7 @@
      ctl.canAsk() -> bool     false on a phone, with the cap reached or the box not set up, from 85% of the cap (tier core), or when the runtime
                               has no assistAsk
    night.flow (RK04, o.flow): while the setting is on the page hands the panel `o.flow() -> { decorate(el), refresh(el), chip(btn), is(text), run(text) } | null`
-   (gm/blade-chips.js panel()). Then (1) a card's ▶ lines (code spans in its bullets and its More text) become the prep-action chips, tapped through
+   (gm/blade-chips.js panel()). Then (1) a card's ▶ lines (code spans in its bullets and its More text; never its headline, SAY or GM ONLY) become the prep-action chips, tapped through
    flow.chip; (2) text that reads as a bare clock command ("tick the alarm 1", "make a 6 clock called Escape", never a question) goes to flow.run
    instead of Ask: no model call, so it works at the cap. With o.flow absent or null every line below is the old one.
    B68GmAssist.live() -> the live panels' bridges: the new desk's seam (kit.desk, KS07; gm/kit/blade.js). With the kit off nothing calls it.
@@ -665,7 +665,9 @@
     function nowMs() { return typeof o.nowMs === 'function' ? +o.nowMs() : Date.now(); }
     /* RK04 (night.flow): null unless the page hands a flow while the setting is on; every use below is guarded by it */
     function fl() { try { return typeof o.flow === 'function' ? o.flow() || null : null; } catch (e) { return null; } }
-    function inl(d, p, t) { return appendInline(d, p, t, !!fl()); }
+    /* a ▶ span stays code (and so becomes a chip) only in a bullet (an li), on both desks: never in the headline (it sits in the fold button, and a
+       button inside a button is not allowed), SAY or GM ONLY. The More text is Markdown and keeps its code spans as ever. */
+    function inl(d, p, t) { return appendInline(d, p, t, !!(p && /^li$/i.test(String(p.tagName || ''))) && !!fl()); }
     function deco(el) { var f = fl(); if (f && el && typeof f.decorate === 'function') { try { f.decorate(el); } catch (e) { /* the card stays as text */ } } return el; }
     function renderHead() {
       var s = stateOf({ paused: st.paused, setup: st.setup, spend: st.spend, listening: st.listening }), el = q('#as-state'), w = q('#as-state-word');
@@ -746,7 +748,7 @@
       var head = now ? E('div', 'as-fold') : B('as-fold', null, { 'data-as': 'fold', 'data-id': c.id, 'aria-expanded': String(open) });
       var kind = E('span', 'as-kind'), gl = E('span', 'as-glyph', kd.glyph); gl.setAttribute('aria-hidden', 'true');
       kind.appendChild(gl); kind.appendChild(E('b', null, kd.word));
-      var tx = E('span', 'as-text'); inl(doc, tx, c.headline);
+      var tx = E('span', 'as-text'); appendInline(doc, tx, c.headline);
       head.appendChild(kind); head.appendChild(tx);
       head.appendChild(c.mock ? E('span', 'as-eg', 'example') : E('time', null, hhmm(c.at)));
       root.appendChild(head);
@@ -767,11 +769,11 @@
         more.appendChild(bd);
       }
       if (c.say) {
-        var say = E('div', 'as-say'); say.appendChild(E('b', 'as-band', 'SAY')); inl(doc, say.appendChild(E('p', 'as-band-text')), c.say);
+        var say = E('div', 'as-say'); say.appendChild(E('b', 'as-band', 'SAY')); appendInline(doc,say.appendChild(E('p', 'as-band-text')), c.say);
         more.appendChild(say);
       }
       if (c.secret) {
-        var sec = E('div', 'as-secret'); sec.appendChild(E('b', 'as-band', 'GM ONLY')); inl(doc, sec.appendChild(E('p', 'as-band-text')), c.secret);
+        var sec = E('div', 'as-secret'); sec.appendChild(E('b', 'as-band', 'GM ONLY')); appendInline(doc,sec.appendChild(E('p', 'as-band-text')), c.secret);
         more.appendChild(sec);
       }
       var chips = E('div', 'as-chiprow');
