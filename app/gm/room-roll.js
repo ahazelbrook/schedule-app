@@ -36,18 +36,20 @@
                                                       away that keeps the mix best; null when none is left. The caller stores it with
                                                       RS.addExtra.
    swap(table, seedKey, opts, i) -> { slug, to } | null   Swap shown[i]: step forward from its place in the things order (a note's
-                                                      thing starts at the top) to the next table thing not shown that keeps the mix
-                                                      best (swapping out the only clue, or the only way out or cover, gives one back
-                                                      when the table has one left); slug is what shows now. The caller stores
-                                                      RS.setSwap(rollKey, roomKey, slug, to), which collapses chains; a run of swaps
-                                                      on one place comes round to its first thing again (which stores nothing).
+                                                      thing starts at the top) to the next table thing not shown and not swapped away
+                                                      from ANOTHER place (every key of swaps but this place's own origin) that keeps
+                                                      the mix best (swapping out the only clue, or the only way out or cover, gives
+                                                      one back when the table has one left); slug is what shows now. The caller
+                                                      stores RS.setSwap(rollKey, roomKey, slug, to), which collapses chains; a run of
+                                                      swaps on one place comes round to its first thing again (which stores nothing).
      Both keep the weapon cap hard: a weapon never joins things that already hold one, so with only such a weapon left they give null.
+     The draw keeps it hard too: a weapon past the cap counts as 3 misses, more than a missing clue and way out together.
    thingsOf(draw, table, hand) -> [thing]             the shown things themselves (copies), in order
    there(names) -> "There's a tall cupboard, a broom and a radio."   the app's line naming the things drawn (names only); '' for none
    site(roll, T, opts) -> { rollKey, order: [roomKey], rooms: { <roomKey>: { name, roomKey, draw } } } | null
      The same pass over any roll: a rolled site, or an authored one after authoredRoll (RK13.4), keyed by room name, every field of a
-     room optional (an authored room may carry only its name). Writes nothing onto roll. opts = { state?(rollKey, roomKey) -> read,
-     hand?(room, roomKey) -> [thing] }. null for a roll with no rollKey.
+     room optional (an authored room may carry only its name). Writes nothing onto roll. opts = { rollKey (the page's P.rollKey(roll):
+     the caller's, never a copy of it), state?(rollKey, roomKey) -> read, hand?(room, roomKey) -> [thing] }. null with no rollKey.
    rng(seedKey, stream, rr) -> () -> [0, 1)          the streams, for tests
    DRAW, MIX, SAY_MAX */
 (function (root, factory) {
@@ -96,8 +98,9 @@
 
   /* ---------- the mix ---------- */
   function tagsOf(t) { return isObj(t) ? listOf(t.tags) : []; }
-  /* how far a set of things is from the mix: a missing clue, a missing escape or cover, and each weapon past one counting twice (so a
-     second weapon never comes in to bring a clue or a way out back) */
+  /* how far a set of things is from the mix: a missing clue, a missing escape or cover, and each weapon past one counting three times
+     (more than both others together, so a second weapon never comes in to bring a clue or a way out back: the cap is hard) */
+  var OVER = 3;
   function misses(set) {
     var clue = 0, way = 0, weapon = 0;
     set.forEach(function (t) {
@@ -106,7 +109,7 @@
       if (g.indexOf(MIX.way[0]) >= 0 || g.indexOf(MIX.way[1]) >= 0) way++;
       if (g.indexOf('weapon') >= 0) weapon++;
     });
-    return (clue >= MIX.clue ? 0 : 1) + (way ? 0 : 1) + 2 * Math.max(0, weapon - MIX.weapon);
+    return (clue >= MIX.clue ? 0 : 1) + (way ? 0 : 1) + OVER * Math.max(0, weapon - MIX.weapon);
   }
   /* the first combination of n positions of order (lexicographic in order's positions) with the fewest misses alongside base */
   function pick(order, n, base, things) {
@@ -194,7 +197,7 @@
     var swaps = isObj(o.swaps) ? o.swaps : {};
     shown.forEach(function (e, k) {
       var j = has(swaps, e.slug) ? usable(str(swaps[e.slug])) : -1;
-      if (j >= 0) shown[k] = { src: 'table', i: j, slug: slugs[j] };
+      if (j >= 0) shown[k] = { src: 'table', i: j, slug: slugs[j], from: e.slug };
     });
     listOf(o.extra).forEach(function (s) {
       var j = usable(str(s));
@@ -236,10 +239,12 @@
     if (!e) return null;
     var rest = w.shown.filter(function (x, k) { return k !== i; }).map(function (x) { return thingAt(w, x); });
     var shownSlugs = w.shown.map(function (x) { return x.slug; });
+    /* what other places swapped away stays away; this place's own origin may come home (a run of swaps on one place ends there) */
+    var origin = e.from || e.slug, gone = Object.keys(w.swaps).filter(function (s) { return s !== origin; });
     var n = w.order.length, at = e.src === 'table' ? w.order.indexOf(e.i) : -1, cands = [], k, j;
     for (k = 1; k <= n; k++) {
       j = w.order[(at + k + n) % n];
-      if (shownSlugs.indexOf(w.slugs[j]) < 0 && cands.indexOf(j) < 0) cands.push(j);
+      if (shownSlugs.indexOf(w.slugs[j]) < 0 && gone.indexOf(w.slugs[j]) < 0 && cands.indexOf(j) < 0) cands.push(j);
     }
     var to = first(cands, rest, w.things);
     return to === null ? null : { slug: e.slug, to: w.slugs[to] };
@@ -261,10 +266,9 @@
     return "There's " + (n.length === 1 ? n[0] : n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1]) + '.';
   }
 
-  function rollKeyOf(r) { return isObj(r) ? (r.auth ? 'a:' + str(r.auth) : r.seed) : undefined; }
   function site(r, T, opts) {
-    var o = isObj(opts) ? opts : {}, rk = rollKeyOf(r), S = State(), Tb = Tables();
-    if (rk === undefined || rk === null || rk === '' || !S || !Tb) return null;
+    var o = isObj(opts) ? opts : {}, rk = o.rollKey, S = State(), Tb = Tables();
+    if (!isObj(r) || (typeof rk !== 'number' && typeof rk !== 'string') || rk === '' || !S || !Tb) return null;
     var rooms = listOf(r.rooms), names = rooms.map(function (x) { return isObj(x) ? str(x.name) : ''; });
     var keys = S.roomKeys(names), out = { rollKey: rk, order: [], rooms: {} };
     names.forEach(function (name, n) {
