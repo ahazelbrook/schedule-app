@@ -249,6 +249,9 @@ test('fallback: no map (404): open() draws a placeholder, then fallback(); the n
   assert.equal(F.calls.fallback, 1); assert.deepEqual(F.calls.fetch, ['media/sheets/hound.map.json']);
   assert.equal(F.M.open(F.box, nell(), F.opts), false, 'remembered'); assert.equal(F.calls.fetch.length, 1);
   assert.equal(F.M.open(F.box, { doc: {}, play: {}, pb: null }, F.opts), false, 'no playbook: false');
+  const G = fakeWin({ map: sheet() });
+  assert.equal(G.M.open(G.box, nell(), Object.assign({}, G.opts, { focus: 'notes' })), false, 'Notes and log: the classic sheet (the printed page has no notes)');
+  assert.equal(G.calls.fetch.length, 0, 'and nothing fetched');
 });
 test('fallback: a map of another schema, a map for another playbook, a missing page', async () => {
   for (const [why, o] of [['schema 2', { map: Object.assign(sheet(), { v: 2 }) }], ['another playbook', { map: sheet('intellectual') }], ['no page', { map: sheet(), img: false }]]) {

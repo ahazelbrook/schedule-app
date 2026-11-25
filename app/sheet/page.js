@@ -735,6 +735,7 @@
   function open(container, character, opts) {
     if (!container || !character || !W || !W.document) return false;
     var id = pbIdOf(character); if (!id) return false;
+    if (opts && opts.focus === 'notes') return false;   /* notes, log and clocks have no place on the printed page: today's sheet has them */
     var c = cache[id]; if (c && c.status === 'missing') return false;
     mount(container, character, opts, id);
     var mine = cur;
