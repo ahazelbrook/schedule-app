@@ -9,6 +9,9 @@
 //      hook: a slot module's buttons(ctx) and zoom.addButtons(slot, fn), with the ctx's keys; a mark written through room-state shows as a chip.
 //      Secrecy: with a card open, the display's GET, a phone's GETs and the iPad's and a phone's DOM hold no thing text.
 //   3. room.key on, the kit desk: the same list in the kit's room card, a click and a key open the card, Esc closes it.
+//   5. (RK11) a thing's state: one tap on a state button in the zoom card sets it (the pressed button, the State, the chip, room-state's marks), it is saved and
+//      survives a reload, two devices writing the room at once both land (merged key by key), a taken thing dims and stays clickable, a tap on the pressed
+//      state takes it away (nothing stored), and the same one tap works on the kit desk.
 //   4. room.key off again on the open page: the open card goes, and the Showroom card's markup is the same as in 1.
 // With ROOM_KEY_SHOTS=<dir>: pictures of the desk and the kit desk at 1366x768 and 1100 wide, Paper and Night, a card open.
 // No model, no network beyond loopback, nothing deployed. Its default port is 9502, with wrangler's inspector on PORT + 20000.
@@ -241,34 +244,6 @@ try {
     }
     await pg.click('.rk-zoom [data-rk-btn="' + id + '"]'); await sleep(500);
   };
-  check(await marksOf(page) === '{}' && await storedMarks() === '{}', 'state: no marks to begin with, here or stored');
-  await tap(page, 'brass-umbrella-stand', 'mark-empty');
-  z = await zoom(page); let chips = await things(page, 'Showroom');
-  check(!!z && /State\s*empty/.test(z.state) && await pressed(page, 'mark-empty') === 'true' && await pressed(page, 'mark-full') === 'false' && await marksOf(page) === '{"brass-umbrella-stand":"empty"}' &&
-    chips.find((t) => t.slug === 'brass-umbrella-stand').chip === 'empty', 'state: one tap on Empty sets it (the pressed button, the zoom card\'s State, the room card\'s chip, room-state\'s marks)');
-  check(await until(async () => (await storedMarks()) === '{"brass-umbrella-stand":"empty"}', 20000), 'state: it is saved (the GM state\'s roomstate holds one small key)');
-  await shot(page, 'desk-1366-paper-state');
-  /* a reload: a new page reads it back, pressed, and one tap takes it away; a second device's write beside it */
-  const R = await open({});
-  await R.page.waitForSelector(card('Showroom') + ' [data-site="thing"]', { timeout: 15000 });
-  chips = await things(R.page, 'Showroom');
-  await R.page.click(card('Showroom') + ' [data-site="thing"][data-thing="brass-umbrella-stand"]'); const zr = await until(() => zoom(R.page), 3000);
-  check(chips.find((t) => t.slug === 'brass-umbrella-stand').chip === 'empty' && !!zr && /State\s*empty/.test(zr.state) && await pressed(R.page, 'mark-empty') === 'true', 'state: after a reload (a new page) the chip, the State and the pressed button are all still Empty');
-  await tap(R.page, 'velvet-rope', 'mark-taken');                      /* device 2 marks the rope taken ... */
-  await tap(page, 'brass-umbrella-stand', 'mark-full');                /* ... while device 1 switches the stand to Full */
-  check(await until(async () => (await storedMarks()) === '{"brass-umbrella-stand":"full","velvet-rope":"taken"}', 20000), 'state: two devices, one room, at once: both marks are stored (merged key by key; the stand switched with one tap)');
-  check(await until(async () => (await marksOf(page)) === '{"brass-umbrella-stand":"full","velvet-rope":"taken"}' && (await marksOf(R.page)) === (await marksOf(page)), 20000), 'state: and both pages read both');
-  /* taken dims and stays clickable; a tap on the pressed state takes it away */
-  chips = await things(R.page, 'Showroom'); const rope = chips.find((t) => t.slug === 'velvet-rope');
-  await R.page.keyboard.press('Escape'); await sleep(200);
-  await R.page.click(card('Showroom') + ' [data-site="thing"][data-thing="velvet-rope"]'); const zd = await until(() => zoom(R.page), 3000);
-  check(rope.chip === 'taken' && rope.done && !!zd && zd.name === NAMES[1] && await pressed(R.page, 'mark-taken') === 'true' && await pressed(R.page, 'mark-found') === 'false', 'state: a taken thing dims, stays clickable, and its zoom card has the default states (found, taken, gone), Taken pressed');
-  await R.page.click('.rk-zoom [data-rk-btn="mark-taken"]'); await sleep(500);
-  await tap(R.page, 'brass-umbrella-stand', 'mark-full');
-  check(await until(async () => (await storedMarks()) === '{}', 20000) && (await things(R.page, 'Showroom')).every((t) => !t.chip && !t.done), 'state: a tap on the pressed state takes the mark away; with every mark gone nothing is stored for the room');
-  await R.page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await sleep(200);
-  check(await until(async () => (await marksOf(page)) === '{}', 20000), 'state: the first device sees them go too');
-  await R.c.close();
 
   /* 4. off again on the open page: the card goes, and the markup is today's */
   await page.click(card('Showroom') + ' [data-site="thing"][data-i="2"]'); await until(() => zoom(page), 3000);
@@ -302,6 +277,42 @@ try {
   check(await until(async () => (await storedMarks()) === '{}' && (await things(K.page, 'Showroom')).every((t) => !t.chip), 20000), 'the kit desk: a second tap takes it away, and nothing is stored');
   await K.page.keyboard.press('Escape');
   await K.c.close();
+
+  /* 5. RK11, on a page of its own (the desk, room.key on): a thing's state is one tap in the zoom card (B68GmRoomMark), it stays on a reload, and two devices merge key by key */
+  check((await feats({ 'room.key': true, 'kit.desk': false })).status === 200, 'room.key on, the old desk, for the state steps');
+  const D = await open({});
+  await D.page.waitForSelector(card('Showroom') + ' [data-site="thing"]', { timeout: 15000 });
+  check(await marksOf(D.page) === '{}' && await until(async () => (await storedMarks()) === '{}', 20000), 'state: no marks to begin with, here or stored (the earlier clear has been saved)');
+  await tap(D.page, 'brass-umbrella-stand', 'mark-empty');
+  z = await zoom(D.page); let chips = await things(D.page, 'Showroom');
+  check(!!z && /State\s*empty/.test(z.state) && await pressed(D.page, 'mark-empty') === 'true' && await pressed(D.page, 'mark-full') === 'false' && await marksOf(D.page) === '{"brass-umbrella-stand":"empty"}' &&
+    chips.find((t) => t.slug === 'brass-umbrella-stand').chip === 'empty', 'state: one tap on Empty sets it (the pressed button, the zoom card\'s State, the room card\'s chip, room-state\'s marks)');
+  check(await until(async () => (await storedMarks()) === '{"brass-umbrella-stand":"empty"}', 20000), 'state: it is saved (the GM state\'s roomstate holds one small key)');
+  await shot(D.page, 'desk-1366-paper-state');
+  /* a reload: a new page reads it back, pressed, and one tap takes it away; a second device's write beside it */
+  const R = await open({});
+  await R.page.waitForSelector(card('Showroom') + ' [data-site="thing"]', { timeout: 15000 });
+  chips = await things(R.page, 'Showroom');
+  await R.page.click(card('Showroom') + ' [data-site="thing"][data-thing="brass-umbrella-stand"]'); const zr = await until(() => zoom(R.page), 3000);
+  check(chips.find((t) => t.slug === 'brass-umbrella-stand').chip === 'empty' && !!zr && /State\s*empty/.test(zr.state) && await pressed(R.page, 'mark-empty') === 'true', 'state: after a reload (a new D.page) the chip, the State and the pressed button are all still Empty');
+  await tap(R.page, 'velvet-rope', 'mark-taken');                      /* device 2 marks the rope taken ... */
+  await tap(D.page, 'brass-umbrella-stand', 'mark-full');                /* ... while device 1 switches the stand to Full */
+  check(await until(async () => (await storedMarks()) === '{"brass-umbrella-stand":"full","velvet-rope":"taken"}', 20000), 'state: two devices, one room, at once: both marks are stored (merged key by key; the stand switched with one tap)');
+  await R.c.close();
+  /* a third page (the GM page does not follow another device live, a reload does): it reads both marks; taken dims and stays clickable; a tap on the pressed state takes it away */
+  const R2 = await open({});
+  await R2.page.waitForSelector(card('Showroom') + ' [data-site="thing"]', { timeout: 15000 });
+  const both = '{"brass-umbrella-stand":"full","velvet-rope":"taken"}';
+  check(await marksOf(R2.page) === both, 'state: a fresh page reads both devices\' marks');
+  chips = await things(R2.page, 'Showroom'); const rope = chips.find((t) => t.slug === 'velvet-rope');
+  await R2.page.click(card('Showroom') + ' [data-site="thing"][data-thing="velvet-rope"]'); const zd = await until(() => zoom(R2.page), 3000);
+  check(rope.chip === 'taken' && rope.done && !!zd && zd.name === NAMES[1] && await pressed(R2.page, 'mark-taken') === 'true' && await pressed(R2.page, 'mark-found') === 'false', 'state: a taken thing dims, stays clickable, and its zoom card has the default states (found, taken, gone), Taken pressed');
+  await R2.page.click('.rk-zoom [data-rk-btn="mark-taken"]'); await sleep(500);
+  await tap(R2.page, 'brass-umbrella-stand', 'mark-full');
+  check(await until(async () => (await storedMarks()) === '{}', 20000) && (await things(R2.page, 'Showroom')).every((t) => !t.chip && !t.done), 'state: a tap on the pressed state takes the mark away; with every mark gone nothing is stored for the room');
+  await R2.page.keyboard.press('Escape'); await D.page.keyboard.press('Escape'); await sleep(200);
+  await R2.c.close();
+  await D.c.close();
 
   /* pictures: the desk and the kit desk, 1366x768 and 1100 wide, Paper and Night */
   if (SHOTS) {
