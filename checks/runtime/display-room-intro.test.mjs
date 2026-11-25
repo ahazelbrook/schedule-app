@@ -100,6 +100,13 @@ test('the name\'s size: the largest step that fits on one line, a single name ma
   assert.deepEqual(P.fit(() => ({ fits: false }), list3), { size: 3.5, wrap: false }, 'nothing fits: the minimum');
   assert.ok(!P.fit((s, w) => ({ fits: w }), list3).wrap, 'a list never wraps');
 });
+test('the plate\'s size against the names\': a wide plate beside a list may be drawn smaller when the names gain more than the plate loses; a single big name keeps the full plate', () => {
+  assert.deepEqual(P.SCALES, [1, 0.85, 0.7, 0.55]);
+  assert.deepEqual(P.pick([{ s: 1, size: 14 }, { s: 0.85, size: 14 }, { s: 0.7, size: 14 }, { s: 0.55, size: 14 }]), { s: 1, size: 14 }, 'the name fits at its top size anyway: the full plate');
+  assert.deepEqual(P.pick([{ s: 1, size: 3.5 }, { s: 0.85, size: 3.7 }, { s: 0.7, size: 4.2 }, { s: 0.55, size: 9.5 }]), { s: 0.55, size: 9.5 }, 'tiny names beside a wide plate: a smaller plate, big names');
+  assert.deepEqual(P.pick([{ s: 1, size: 8 }, { s: 0.55, size: 9 }]), { s: 1, size: 8 }, 'a small gain is not worth half the plate');
+  assert.deepEqual(P.pick([]), { s: 1, size: 0 });
+});
 test('the plate: one piece per room at true scale and left-right place, stacked top to bottom with the empty floors closed up; side by side rooms share a row', () => {
   const st = P.stack([{ x: 0, y: 0, w: 10, h: 10 }, { x: 20, y: 200, w: 10, h: 10 }]);
   assert.equal(st.w, 30); assert.equal(st.h, 21, 'the 190 units of empty floor between them closed to a tenth of the tallest');

@@ -35,7 +35,7 @@
               svg() -> the map svg on screen | null, later(fn, ms), clearLater(id) }
        next() is called by the page's show() for EVERY display it paints: another seq cuts a card that is up, at once; arrive starts one.
      Pure: T, LEAD_MS, STILL_MS, LATE_MS, SIGNAL, position(at, now, skew), clean(arrive), wants(display, on), startable(pos, still), kicker(rooms),
-           names(rooms), colour(v), lum(hex), palette(field), fit(measure, o), sizes(n, portrait), stack(boxes) */
+           names(rooms), colour(v), lum(hex), palette(field), fit(measure, o), sizes(n, portrait), SCALES, pick(trials), stack(boxes) */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -126,6 +126,13 @@
   Pure.sizes = function (n, portrait) {
     if (n > 1) return { max: Math.min(portrait ? 7 : 11, (portrait ? 21 : 33) / n), min: 3.5, wrap: false };
     return { max: portrait ? 9 : 14, min: portrait ? 4.5 : 6, wrap: true };
+  };
+  /* the plate's scales tried, and the choice: the largest name size weighed against the plate's (size × √scale); a tie keeps the larger plate */
+  Pure.SCALES = [1, 0.85, 0.7, 0.55];
+  Pure.pick = function (trials) {
+    var best = null;
+    (Array.isArray(trials) ? trials : []).forEach(function (t) { var sc = num(t.size) * Math.sqrt(num(t.s)); if (!best || sc > best.sc + 1e-9) best = { s: t.s, size: t.size, sc: sc }; });
+    return best ? { s: best.s, size: best.size } : { s: 1, size: 0 };
   };
   /* the largest size from o.max down to o.min (step 0.94) at which measure(size, false) fits, else (o.wrap) measure(size, true); never under o.min */
   Pure.fit = function (measure, o) {
@@ -290,7 +297,7 @@
       return { el: card, out: out, type: type, name: h, fronts: fronts, multi: fronts.length > 1 };
     }
 
-    /* the name(s) as large as fit (Pure.fit; the steps are Pure.sizes) */
+    /* the name(s) as large as fit (Pure.fit; the steps are Pure.sizes); -> the size taken, in vh */
     function fitName(c) {
       var v = view(), portrait = v.h > v.w, o = Pure.sizes(c.fronts.length, portrait);
       var res = Pure.fit(function (size, wrap) {
@@ -303,15 +310,29 @@
       }, o);
       c.name.style.fontSize = res.size + 'vh';
       c.name.setAttribute('data-ro-wrap', res.wrap ? '1' : '0');
+      return res.size;
     }
-    /* the type never runs over the plate: full width when it sits wholly below it, else the room left of it */
+    /* the plate at scale s of its natural box (right-anchored; centred when the screen is upright), and the type: full width when it sits wholly
+       below the plate, else the room left of it. -> the names' size */
+    function place(c, nat, s, v) {
+      var w = Math.round(nat.width * s), h = Math.round(nat.height * s);
+      c.out.style.width = w + 'px'; c.out.style.height = h + 'px';
+      if (v.h > v.w) c.out.style.right = Math.round((v.w - w) / 2) + 'px';
+      c.type.style.width = '';
+      var size = fitName(c), tr = c.type.getBoundingClientRect(), pr = c.out.getBoundingClientRect();
+      if (tr.top < pr.bottom + v.h * 0.02 && pr.left > tr.left) { c.type.style.width = Math.round(Math.max(v.w * 0.3, pr.left - tr.left - v.w * 0.03)) + 'px'; size = fitName(c); }
+      return size;
+    }
+    /* the type never runs over the plate. A wide plate beside a list of names would leave them tiny, so the plate may be drawn smaller (it flies to
+       the map anyway): each scale in Pure.SCALES is tried and the best balance of name size and plate size kept (Pure.pick) */
     function layout(c) {
       var v = view();
-      c.type.style.width = '';
-      fitName(c);
-      if (!c.out) return;
-      var tr = c.type.getBoundingClientRect(), pr = c.out.getBoundingClientRect();
-      if (tr.top < pr.bottom + v.h * 0.02 && pr.left > tr.left) { c.type.style.width = Math.round(Math.max(v.w * 0.3, pr.left - tr.left - v.w * 0.03)) + 'px'; fitName(c); }
+      if (!c.out) { c.type.style.width = ''; fitName(c); return; }
+      c.out.style.width = ''; c.out.style.height = ''; c.out.style.right = '';
+      var nat = c.out.getBoundingClientRect();
+      if (!(nat.width > 0) || !(nat.height > 0)) { c.type.style.width = ''; fitName(c); return; }
+      var trials = Pure.SCALES.map(function (s) { return { s: s, size: place(c, nat, s, v) }; });
+      place(c, nat, Pure.pick(trials).s, v);
     }
     /* where each piece lands: its box on the map, on screen (the map svg's own CTM). .ro-out itself is never transformed, so its box is exact */
     function aim(c, svg, plate) {
@@ -322,9 +343,7 @@
         var b = q.box; p.x = b.x; p.y = b.y; var a = p.matrixTransform(m); p.x = b.x + b.w; p.y = b.y + b.h; var z = p.matrixTransform(m);
         var left = wr.left + q.l * wr.width, top = wr.top + q.t * wr.height, hh = q.fh * wr.height;
         var k = (z.y - a.y) / hh, dx = a.x - left, dy = a.y - top;
-        q.el.style.setProperty('--ro-settle', 'translate(' + Math.round(dx * 10) / 10 + 'px, ' + Math.round(dy * 10) / 10 + 'px) scale(' + Math.round(k * 10000) / 10000 + ')');
-        q.el.setAttribute('data-ro-aim', [Math.round(a.x), Math.round(a.y), Math.round(z.x - a.x), Math.round(z.y - a.y)].join(' '));      /* the room's box on screen (the checks read it) */
-      });
+        q.el.style.setProperty('--ro-settle', 'translate(' + Math.round(dx * 10) / 10 + 'px, ' + Math.round(dy * 10) / 10 + 'px) scale(' + Math.round(k * 10000) / 10000 + ')');      });
     }
 
     function start(display, seq) {

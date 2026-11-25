@@ -30,7 +30,11 @@
 }
 .ro-card .ro-enter, .ro-card .ro-col { position: relative; width: 100%; height: 100%; }
 .ro-card .ro-piece { position: absolute; transform-origin: 0 0; will-change: transform; }
-.ro-card .ro-sil { position: absolute; inset: 0; transform: translate(1.9vh, 1.3vh); filter: brightness(0); }
+.ro-card .ro-sil { position: absolute; inset: 0; transform: translate(1.9vh, 1.3vh); }
+/* the silhouette is drawn by a fill rule, not a filter (the plan's mitigation: a filtered layer per piece made WebKit drop frames in the hand-over) */
+.ro-card .ro-sil [fill]:not([fill="none"]), .ro-card .ro-sil svg > g { fill: #000; }
+.ro-card .ro-sil [stroke]:not([stroke="none"]) { stroke: #000; }
+.ro-card .ro-sil image { visibility: hidden; }
 .ro-card .ro-col svg, .ro-card .ro-sil svg { display: block; width: 100%; height: 100%; overflow: visible; }
 
 /* ---------- the type, lower left: two kicker tapes, the name(s) with an offset copy, then "and N more" ---------- */
