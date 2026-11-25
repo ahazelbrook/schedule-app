@@ -283,7 +283,11 @@ try {
       expect(!(await look(R.page)).card, 'cut after 3 s');
     } finally { await R.ctx.close(); }
   });
-  await step('on: the hand-over\'s frames' + (ENGINE === 'webkit' ? ' in WebKit: none over 50 ms after the first (one retry)' : ' (timed; asserted in WebKit)'), async () => {
+  /* KNOWN LIMIT (RK29 review, overseer's ruling 25/11): in desktop WebKit the hand-over's first frame (card time ~4.01 to 4.03 s) runs 57 to 69 ms.
+     Its cause is the map under the card being uncovered for the first time (hiding .dp-stages alone brings it under 50 ms), which is outside the card,
+     so the 50 ms aim is a warning and only a frame over 80 ms fails. Parked: measure on the real iPad (Safari Web Inspector, Timelines); if it still
+     hitches there, hide the map under the card (a change to the map stage). The worst frame and the card time it fell at are always logged. */
+  await step('on: the hand-over\'s frames' + (ENGINE === 'webkit' ? ' in WebKit: none over 80 ms after the first (over 50 ms warns; one retry)' : ' (timed; asserted in WebKit)'), async () => {
     /* the GM page is closed while the iPad is timed: at the table it is another device, and here its 0.7 s poll shares this PC's CPU (it reopens below) */
     await G.gc.close(); G = null;
     const once = async () => {
@@ -311,8 +315,10 @@ try {
     return r;
     };
     let r = await once();
-    if (ENGINE === 'webkit' && !(r.n > 20 && r.worst <= 50)) { console.log('INFO over 50 ms: timed once more'); r = await once(); }
-    if (ENGINE === 'webkit') expect(r.n > 20 && r.worst <= 50, 'a frame over 50 ms: ' + JSON.stringify(r));
+    if (ENGINE === 'webkit' && !(r.n > 20 && r.worst <= 80)) { console.log('INFO over 80 ms: timed once more'); r = await once(); }
+    console.log('INFO the worst hand-over frame in ' + ENGINE + ': ' + Math.round(r.worst) + ' ms at card time ' + r.at + ' ms');
+    if (ENGINE === 'webkit' && r.worst > 50) console.log('WARN the hand-over has a frame over 50 ms (' + Math.round(r.worst) + ' ms at ' + r.at + ' ms): the known limit, see the comment above this step');
+    if (ENGINE === 'webkit') expect(r.n > 20 && r.worst <= 80, 'a frame over 80 ms: ' + JSON.stringify(r));
   });
   await step('frames for the picture review (KIT_SHOTS): one room and a band, at 1024x768 and 768x1024', async () => {
     if (!SHOTS) { console.log('  (no KIT_SHOTS: skipped)'); return; }
