@@ -627,6 +627,7 @@
           var v = told[x.id], crew = v === "crew", some = Array.isArray(v) && v.length > 0;
           return '<div class="rv-rintel" data-intel="' + esc(x.id) + '"><span>' + esc(x.text) + (some ? ' <small class="rv-dim">told to ' + v.length + "</small>" : "") + '</span><button type="button" class="rv-btn sm rv-tog" data-rv="tellroom" data-intel="' + esc(x.id) + '" aria-pressed="' + crew + '" title="' + (crew ? "Told to the crew: tap to take it back" : "Every PC’s phone learns it") + '">Tell the crew</button></div>';
         }).join("");
+        if (typeof host.roomThings === "function") { try { h += str(host.roomThings(name)); } catch (e) { /* RK09 (room.key): the room's things, '' while off; the card still draws */ } }
         if (typeof host.roomNote === "function") {
           var note = null; try { note = host.roomNote(name); } catch (e) { note = null; }
           h += typeof note === "string" ? '<div class="rv-rmnote pp-doc pp-cardbody">' + note + "</div>"       /* the page's renderer made it from the prep note */

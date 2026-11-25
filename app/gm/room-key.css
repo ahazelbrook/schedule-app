@@ -1,3 +1,49 @@
 /* gm/room-key.css: the room key's own classes (room.key). Registered as an empty stub by RK01 of the room key build; RK09 fills it.
    In the room-key bundle, fetched only while its setting is on. Old-desk rules go here, scoped to this build's own classes; kit rules are scoped under
    :root[data-kit~="desk"], unlayered, with no !important. */
+
+/* ---------- RK09: a room card's Things, the old desk (gm.css's tokens; the kit desk's list carries krv-things and is left to the rules below) ---------- */
+#gm-page .rk-things:not(.krv-things) { display: grid; gap: 4px; min-width: 0; }
+#gm-page .rk-things:not(.krv-things) .rk-tlist { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+#gm-page .rk-things:not(.krv-things) .rk-ti { display: inline-flex; align-items: center; gap: 4px; min-width: 0; max-width: 100%; margin: 0; padding: 0; }
+#gm-page .rk-things:not(.krv-things) .rv-btn.rk-thing { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; text-align: left;
+  font: 700 13px/1.2 var(--font-text); text-transform: none; letter-spacing: 0; }
+#gm-page .rk-things:not(.krv-things) .rk-thing .ui-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#gm-page .rk-things:not(.krv-things) .rk-thing .ui-key { flex: none; min-width: 1.3em; padding: 2px 3px; border: 1px solid currentColor; border-radius: 3px;
+  font: 700 12px/1 var(--font-mono); text-align: center; opacity: .7; }
+#gm-page .rk-things:not(.krv-things) .rk-thing .ui-key[data-ui-key]::before { content: attr(data-ui-key); }
+#gm-page .rk-things:not(.krv-things) .rk-thing.is-done { opacity: .55; }
+#gm-page .rk-things:not(.krv-things) .rk-tstate { padding: 3px 7px; border: 1px solid var(--hair); border-radius: 999px; color: var(--ink-soft);
+  font: 700 12px/1 var(--font-mono); white-space: nowrap; }
+
+/* ---------- RK09: the same list on the kit desk (the kit's tokens; B68Ui's quiet button, made a named chip) ---------- */
+:root[data-kit~="desk"] .krv-things { display: grid; gap: var(--ui-space-1); min-width: 0; }
+:root[data-kit~="desk"] .krv-things .rk-tlist { display: flex; flex-wrap: wrap; gap: var(--ui-space-2); margin: 0; padding: 0; list-style: none; }
+:root[data-kit~="desk"] .krv-things .rk-ti { display: inline-flex; align-items: center; gap: var(--ui-space-1); min-width: 0; max-width: 100%; margin: 0; padding: 0; }
+:root[data-kit~="desk"] .krv-things .rk-thing { max-width: 100%; min-height: 32px; padding: 0 var(--ui-space-2) 0 var(--ui-space-3); border-color: var(--ui-line);
+  background: var(--ui-raised); text-align: left; text-transform: none; letter-spacing: 0; font: 700 var(--ui-type-body)/1.2 var(--ui-font-text); }
+:root[data-kit~="desk"] .krv-things .rk-thing .ui-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root[data-kit~="desk"] .krv-things .rk-thing.is-done { opacity: .55; }
+:root[data-kit~="desk"] .krv-things .rk-tstate { padding: 3px 7px; border: 1px solid var(--ui-line); border-radius: var(--ui-radius-pill); color: var(--ui-ink-soft);
+  font: 700 var(--ui-type-label)/1 var(--ui-font-mono); white-space: nowrap; }
+
+/* ---------- RK09: the zoom card (B68Ui's popover in its own data-ui-scope host: the kit's tokens on either desk) ---------- */
+.rk-zscope .rk-zoom { box-sizing: border-box; display: grid; gap: var(--ui-space-2); width: min(25em, calc(100vw - 32px)); max-width: none;
+  padding: var(--ui-space-3) var(--ui-space-4) var(--ui-space-3); }
+.rk-zscope .rk-zeye { margin: 0; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.25 var(--ui-font-text); letter-spacing: .12em; text-transform: uppercase; }
+.rk-zscope .rk-zname { margin: 0; color: var(--ui-ink); font: 900 22px/1.05 var(--ui-font-cond); letter-spacing: .02em; text-transform: uppercase; }
+.rk-zscope .rk-zline { margin: 0; color: var(--ui-ink); font: 400 var(--ui-type-lead)/1.35 var(--ui-font-text); }
+.rk-zscope .rk-zrows { display: grid; gap: var(--ui-space-2); margin: 0; }
+.rk-zscope .rk-zrow { display: grid; gap: 2px; margin: 0; padding: var(--ui-space-2) 0 0; border-top: 1px solid var(--ui-line); }
+.rk-zscope .rk-zlab { display: flex; align-items: baseline; gap: 6px; margin: 0; color: var(--ui-ink-soft); font: 700 var(--ui-type-label)/1.2 var(--ui-font-text);
+  letter-spacing: .1em; text-transform: uppercase; }
+.rk-zscope .rk-zicon { letter-spacing: 0; text-transform: none; }
+.rk-zscope .rk-zdanger .rk-zlab { color: var(--ui-alarm); }
+.rk-zscope .rk-zt { margin: 0; color: var(--ui-ink); font: 400 var(--ui-type-body)/1.4 var(--ui-font-text); }
+.rk-zscope .rk-zstate.is-done .rk-zt { color: var(--ui-ink-soft); }
+.rk-zscope .rk-zbtns { display: flex; flex-wrap: wrap; gap: var(--ui-space-2); margin: 0; padding: var(--ui-space-2) 0 0; border-top: 1px solid var(--ui-line); }
+.rk-zscope .rk-zbtns.is-empty { display: none; }
+.rk-zscope .rk-zslot { display: contents; }
+.rk-zscope .rk-znav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--ui-space-1); margin: 0; padding: var(--ui-space-2) 0 0;
+  border-top: 1px solid var(--ui-line); }
+.rk-zscope .rk-znav .ui-btn { min-height: 32px; padding: 0 var(--ui-space-2); }

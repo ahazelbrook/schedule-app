@@ -16,6 +16,8 @@
            (drawn after what it does, "or type /clock 6 Alarm"), held to the same `want`
      line  { k: 'line', line, does, want: { kind } | { safe } }     a prep note cue line: through B68GmCueStack.parse under "## Cues"
      term  { k: 'term', term, does, not? }                         a plain line; `not` lists "Blade, …" lines the card says do NOT work (the test checks they don't)
+   Any row may carry `setting` (RK09: 'room.key'): the page draws it only while that setting is on (make's host.feature); html() with no
+   predicate (the test) draws every row.
    A section's `col` (1-4) is the column it stands in on a laptop (the four stacks fold to two, then one, on a narrower screen).
    In an example, {braces} mark the part the GM fills in: drawn as <var>, and taken off (plain()) before the parser sees it, so the parser reads what the card shows.
    In a term, a does or a note: [[X]] draws a key, **x** bold, `x` code, {x} a fill-in.
@@ -25,9 +27,11 @@
      SECTIONS              the card
      rows(kind?) -> [row]  every row (of a kind), in card order, each with its section id as `sec`
      plain(s) -> s         an example without its {braces}
-     html() -> the card's markup          text() -> the card as plain text (what the test scans for any "Blade, …" it did not check)
+     html(on?) -> the card's markup (on(setting) -> bool: a row with a setting is drawn only when on says so; no on: every row)
+     text() -> the card as plain text (what the test scans for any "Blade, …" it did not check)
      findEntry() -> { kind, title, sub, text }     Find's row ("Shortcuts", "keys", "commands", "help", …)
-     make(host) -> { open(), close(), toggle(), isOpen() }      host: { root() -> #gm-root } */
+     make(host) -> { open(), close(), toggle(), isOpen() }      host: { root() -> #gm-root, feature?(id) -> bool }
+                           (the card is drawn again when the settings its rows name change) */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -104,7 +108,9 @@
         hits: [{ key: 'ArrowRight', via: 'site' }, { key: 'ArrowLeft', via: 'site' }, { key: 'ArrowRight', shift: true, via: 'site' }] },
       { k: 'key', keys: ['J', 'K', 'U'], does: 'The Blade panel: move between its cards; undo',
         hits: [{ key: 'j', via: 'panel' }, { key: 'k', via: 'panel' }, { key: 'u', via: 'panel' }] },
-      { k: 'key', keys: ['↑', '↓', 'Enter'], does: 'Find: pick a line; go there', hits: [{ key: 'ArrowUp', via: 'find' }, { key: 'ArrowDown', via: 'find' }, { key: 'Enter', via: 'find' }] }
+      { k: 'key', keys: ['↑', '↓', 'Enter'], does: 'Find: pick a line; go there', hits: [{ key: 'ArrowUp', via: 'find' }, { key: 'ArrowDown', via: 'find' }, { key: 'Enter', via: 'find' }] },
+      { k: 'term', setting: 'room.key', term: '[[1]]–[[9]] [[←]] [[→]]',
+        does: 'A room card’s things, with the card focused: open thing 1 to 9; the arrows step between them (in the zoom card, to the next thing); [[Esc]] closes it' }
     ] },
     { id: 'blade2', col: 4, title: '“Blade, …” the cast and notes', rows: [
       { k: 'say', say: ['Blade, new NPC called {Ada Vell}'], does: 'A hidden NPC in the cast (no name: one is rolled)', how: 'both', want: { type: 'npc_add' }, typed: '/npc {Ada Vell}' },
@@ -159,14 +165,15 @@
     if (r.k === 'say' && r.typed) more += '<span class="gm-sc-or"> · or type <code class="gm-sc-typed">' + ex(r.typed) + '</code></span>';
     return '<div class="' + cls + '" data-sc-row="' + r.k + '"' + (r.k === 'say' ? ' data-how="' + esc(r.how) + '"' : '') + '><dt>' + dt + '</dt><dd>' + rich(r.does) + more + '</dd></div>';
   }
-  function secHtml(s) {
+  function shown(r, on) { return !r.setting || !on || !!on(r.setting); }
+  function secHtml(s, on) {
     return '<section class="gm-box gm-sc-sec" data-sc-sec="' + s.id + '" aria-label="' + esc(bare(s.title)) + '"><h3 class="gm-band">' + esc(s.title) + '</h3>' +
       (s.note ? '<p class="gm-sc-note">' + rich(s.note) + '</p>' : '') +
-      '<dl class="gm-sc-list">' + s.rows.map(rowHtml).join('') + '</dl></section>';
+      '<dl class="gm-sc-list">' + s.rows.filter(function (r) { return shown(r, on); }).map(rowHtml).join('') + '</dl></section>';
   }
-  function html() {
+  function html(on) {
     var cols = [];
-    for (var c = 1; c <= COLS; c++) cols.push('<div class="gm-sc-col" data-sc-col="' + c + '">' + SECTIONS.filter(function (s) { return s.col === c; }).map(secHtml).join('') + '</div>');
+    for (var c = 1; c <= COLS; c++) cols.push('<div class="gm-sc-col" data-sc-col="' + c + '">' + SECTIONS.filter(function (s) { return s.col === c; }).map(function (s) { return secHtml(s, on); }).join('') + '</div>');
     return '<div class="gm-sc" data-sc>' +
       '<p class="gm-sc-lead"><kbd>?</kbd> or <kbd>Esc</kbd> shuts this card; Find (“keys”) and the Menu open it too. <var>Italics</var> are yours to fill in.</p>' +
       '<div class="gm-sc-cols">' + cols.join('') + '</div></div>';
@@ -194,7 +201,9 @@
     function isOpen() { var s = sheet(); return !!(s && s.isOpen()); }
     function open() {
       var s = sheet(); if (!s || !s.body) return false;
-      if (!s.body.querySelector('[data-sc]')) s.body.innerHTML = html();
+      var on = typeof host.feature === 'function' ? function (id) { try { return !!host.feature(id); } catch (e) { return false; } } : null;
+      var sig = on ? rows().filter(function (r) { return r.setting && on(r.setting); }).map(function (r) { return r.setting; }).join(',') : '*';
+      if (!s.body.querySelector('[data-sc]') || s.body.scOn !== sig) { s.body.innerHTML = html(on); s.body.scOn = sig; }
       s.open();
       try { s.body.scrollTop = 0; } catch (e) { /* not laid out */ }
       return true;
