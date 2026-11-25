@@ -2730,6 +2730,7 @@
     if (S.status === 'ready' && W.B68Features) { var pOn = !!W.B68Features.valueOf(S.doc, 'blade.pitches'); if (W.B68Pitches) W.B68Pitches.set(gmApi(), pOn); else if (pOn && W.B68Load) W.B68Load.need('blade-pitches').then(function () { if (W.B68Pitches && S && S.status === 'ready') W.B68Pitches.set(gmApi(), !!W.B68Features.valueOf(S.doc, 'blade.pitches')); }, function () {}); }      /* blade.pitches (KS18): the blade-pitches bundle while it is on; B68Pitches (gm/kit/blade.js) adds the pitch fields to the tick, and takes them off when it turns off */
     if (S.status === 'ready' && W.B68Features && W.B68Load) P.rkWant(function (id) { return !!W.B68Features.valueOf(S.doc, id); }).forEach(function (n) { var me = S; if (!me.rkAsked) me.rkAsked = {}; if (!me.rkAsked[n]) { me.rkAsked[n] = true; W.B68Load.need(n).then(function () { if (n === 'room-key' && S === me && S.rv) S.rv.rerender(); }, function () { me.rkAsked[n] = false; }); } });      /* RK01 (night.flow, close.crew, room.key, room.tables, gm.glance): each bundle is fetched once, only while its setting is on; the stubs do nothing until their tickets fill them */
     if (S.status === 'ready' && S.rz && S.rv && !!S.rzOn !== b09On('room.key')) { S.rzOn = b09On('room.key'); S.rv.rerender(); }      /* RK09: room.key turned on or off (here or on another device) once its zoom card exists: the room cards draw again, and an open card closes */
+    if (S.status === 'ready' && !S.ntAsked && W.B68Load && b09On('night.flow')) { var mn = S; mn.ntAsked = true; W.B68Load.need('night-flow').then(function () { if (S === mn) b09Paint(); }, function () { mn.ntAsked = false; }); }      /* RK03 (night.flow): the Roll draws its Tick control once the bundle is in (the same fetch as the line above: B68Load asks once) */
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
@@ -5312,6 +5313,7 @@
     var v = S.stamp ? S.stamp.view() : null, on = !!(v && v.on);
     var eff = $q('#gm-eff'); if (eff) { eff.hidden = !on; eff.innerHTML = on ? R.effHtml(v.draft.effect) : ''; }
     var box = $q('#gm-stamp'); if (box) { var h = on ? R.stampHtml(v) : ''; if (box.__html !== h) { var kc = v && v.cost && R.costKeep ? R.costKeep(box) : null; box.innerHTML = h; box.__html = h; if (kc) kc(); } box.hidden = !on; if (v && v.cost && R.costBind) R.costBind(box, function () { return S && S.stamp; }); }     /* KS15: the cost field keeps its focus */
+    if (S.nt || (flowOn() && W.B68GmNightTicks)) ntCtl().paint(box, flowOn(), v);      /* RK03 (night.flow): Tick a clock, under the stamp */
     rollMiniPaint(v); rollSizerPaint(v);
   }
   function b09Marked(res) {
@@ -5319,6 +5321,7 @@
     /* M1: a Desperate 1–3 is one of the music's Action triggers (gm/music.js moodOf counts them) */
     if (S && sit === 'onetothree' && isObj(res.meta.position) && str(res.meta.position.pos).toLowerCase() === 'desperate') S.muDesp = (S.muDesp || 0) + 1;
     if (S && S.stamp && (sit === 'fourfive' || sit === 'onetothree')) {
+      if (flowOn() && W.B68GmNightTicks) ntCtl().marked(sit, S.stamp.view());      /* RK03 (night.flow): the stamped consequence ticks its clock, once per stamp, before the stamp is marked */
       var landed = !!S.stamp.view().active;
       S.stamp.mark(sit === 'fourfive' ? '45' : '13');
       /* N4-fix: on a stamped roll the threat has landed: the line is spent (it stays empty in this room), so a later bare "Blade, risky, standard" cannot put
@@ -7241,6 +7244,8 @@
       }
     });
   }
+  /* RK03 (night.flow): the stamp's tick (gm/night-ticks.js): the table's clocks, the Roll's line, the room's notes, the play's alarm clock; it ticks through paHost */
+  function ntCtl() { var me = S; return me.nt || (me.nt = W.B68GmNightTicks.create({ clocks: tableClocks, line: function () { return S === me ? rollLine() : ''; }, roomNotes: function () { return S === me ? runRoomNotes() : null; }, room: function () { return S === me ? rollRoom() : ''; }, normRoom: function (x) { var R = W.B68GmRooms; return R && R.normRoom ? R.normRoom(x) : str(x).toLowerCase(); }, alarm: function () { return S === me ? b19Host(me).clockName() : ''; }, tickHost: function () { return S === me ? paHost() : null; }, log: function (t) { if (S === me && me.night) me.night.stamp(t); }, toast: toast, doc: function () { return document; }, changed: function () { if (S === me) b09Paint(); } })); }
   function prepRedecorate() { decoratePrep($q('#gm-prep')); renderRail(); renderBeat(); }
   /* the note's find box: every word somewhere in a section's heading or text keeps its chip in the rail; Enter goes to the first */
   function prepSectionEl(id) { try { return $q('#gm-prep [id="' + str(id).replace(/"/g, '') + '"]'); } catch (e) { return null; } }
