@@ -84,8 +84,24 @@
   function lines(q) {
     var root = q.root, rec = QS.filter(function (x) { return x.root === root; })[0];
     if (!rec) { rec = { root: root, p: linesPure(), el: null, show: null, open: false, hover: false, hoverT: null, at: null }; QS.push(rec); if (QS.length > 4) QS.shift(); }
-    rec.q = q;
+    rec.q = q; if (typeof q.flow === 'function') rec.flow = q.flow;      /* RK06 (night.flow): the page's seam for the louder lines; it stays when a later call (a test's, the night's end) passes none */
     function log(text) { try { if (typeof rec.q.log === 'function') rec.q.log(text); } catch (e) { /* the log is a nicety */ } }
+    /* RK06 (night.flow, gm/public-lines.js): with the setting on, the oldest line is drawn large, the box flashes as a line queues, Enter on the box sends it, and the
+       per-night auto-send runs its timer. fc() is that controller, or null: with the setting off every branch below takes the old path untouched. */
+    function fc() {
+      var f = typeof rec.flow === 'function' ? rec.flow() : null;
+      if (!f || !f.PL || typeof f.PL.attach !== 'function') { if (rec.fc) { rec.fc.stop(); rec.fc = null; } return null; }
+      rec.f = f;
+      if (!rec.fc) rec.fc = f.PL.attach({ el: function () { return rec.el; }, items: function () { return rec.p.list.slice().reverse(); }, send: sendLine, log: log, redraw: function () { draw(); },
+        auto: function () { return !!(rec.f && rec.f.auto()); }, setAuto: function (on) { if (rec.f) rec.f.setAuto(on); }, win: function () { return rec.el && rec.el.ownerDocument ? rec.el.ownerDocument.defaultView : null; } });
+      return rec.fc;
+    }
+    function sendLine(id, how) {
+      var it = rec.p.take(id); if (!it) return;
+      if (how === 'auto') log('Public line auto-sent: ' + str(it.o.text).trim());
+      Promise.resolve().then(function () { return typeof rec.show === 'function' ? rec.show(it.o) : null; }).then(null, function () { /* the page says why */ });
+      draw();
+    }
     /* IP2c (the delta review): the box never moves under the GM's hand. While the pointer is over it (and for 600 ms after it leaves) or it holds
        the focus, it stays put; a re-place asked meanwhile runs once the hand has gone. Otherwise it is placed when a line comes or goes, the list
        opens or closes, the window is resized, or (IP2d) the page under it changes; never on a timer or a scroll. It keeps its spot unless that spot
@@ -127,7 +143,7 @@
       }
       rec.owed = false;
       el.style.maxHeight = 'calc(100vh - 12px)';
-      var W0 = win.innerWidth, H0 = win.innerHeight, avoid = avoidList(d, el, H0), es = el.style, forms = rec.open ? ['open'] : FORMS;
+      var W0 = win.innerWidth, H0 = win.innerHeight, avoid = avoidList(d, el, H0), es = el.style, forms = rec.open ? ['open'] : fc() ? FORMS.slice(0, 2) : FORMS;      /* RK06: no chip form while the line is large: Send stays one press away */
       for (var i = 0; i < forms.length; i++) {
         if (rec.form !== forms[i]) build(forms[i]);
         var w = el.offsetWidth, h = el.offsetHeight;
@@ -151,13 +167,15 @@
       }
       rec.form = form; rec.domForm = form; el.textContent = '';
       el.style.width = form === 'chip' ? 'auto' : 'min(430px, 34vw)';
+      var bigDone = !fc();      /* RK06: the oldest line is the large one */
       items.forEach(function (it) {
+        if (!it.slot && !bigDone) { bigDone = true; el.appendChild(rec.f.PL.bigRow(d, it, rec.fc.opts(it.id))); return; }
         if (it.slot) { var sl = d.createElement('div'); sl.className = 'gm-p2-slot'; sl.setAttribute('data-id', it.id); sl.style.height = it.h + 'px'; sl.setAttribute('aria-hidden', 'true'); el.appendChild(sl); return; }
         var row = d.createElement('div'); row.className = 'gm-p2-line'; row.setAttribute('data-id', it.id); row.style.display = 'flex'; row.style.alignItems = 'center'; row.style.gap = '6px';
         var t = d.createElement('span'); t.className = 'gm-p2-text'; t.style.flex = '1 1 auto'; t.style.minWidth = '0'; t.style.overflow = 'hidden'; t.style.textOverflow = 'ellipsis'; t.style.whiteSpace = 'nowrap';
         t.textContent = 'Public line: “' + str(it.o.text).trim() + '”'; t.title = t.textContent; row.appendChild(t);
         [['send', 'Send', 'btn sm primary'], ['later', 'Not now', 'btn sm']].forEach(function (b) {
-          var x = d.createElement('button'); x.type = 'button'; x.className = b[2]; x.setAttribute('data-p2-line', b[0]); x.setAttribute('data-id', it.id); x.textContent = b[1]; x.style.flex = '0 0 auto'; row.appendChild(x);
+          var x = d.createElement('button'); x.type = 'button'; x.className = b[2]; x.setAttribute('data-p2-line', b[0]); x.setAttribute('data-id', it.id); x.textContent = b[1]; x.style.flex = '0 0 auto'; if (rec.fc) x.style.fontSize = '12px'; row.appendChild(x);      /* RK06: nothing under 12 px while the setting is on */
         });
         el.appendChild(row);
       });
@@ -167,6 +185,7 @@
         var ms = m.style; ms.background = 'none'; ms.border = '0'; ms.color = V.chip ? '#f2ede1' : '#c9c1b2'; ms.font = 'inherit'; ms.fontSize = V.chip ? '13px' : '12px'; ms.padding = '0 2px'; ms.textAlign = 'left'; ms.cursor = 'pointer'; ms.justifySelf = 'start';
         el.appendChild(m);
       }
+      if (rec.fc && fc()) el.appendChild(rec.fc.footer(d));      /* RK06: the per-night choice, last */
       rec.shown = [].map.call(el.querySelectorAll('.gm-p2-line, .gm-p2-slot'), function (n) { return { id: n.getAttribute('data-id'), h: n.offsetHeight }; });
       if (keep) { var back = el.querySelector('[data-p2-line="' + keep.line + '"]' + (keep.id ? '[data-id="' + keep.id + '"]' : '')) || (keep.line === 'more' ? null : el.querySelector('[data-p2-line="more"]')); if (back && back.focus) { try { back.focus({ preventScroll: true }); } catch (e) { back.focus(); } } }
       el.scrollTop = sTop;
@@ -182,11 +201,13 @@
           var b = ev.target && ev.target.closest ? ev.target.closest('[data-p2-line]') : null; if (!b) return;
           var act = b.getAttribute('data-p2-line');
           if (act === 'more') { rec.open = !rec.open; draw(); rec.press = null; return; }      /* "just opened" covers the open's own redraw only */
+          if ((act === 'auto' || act === 'hold') && fc() && rec.fc.click(act, b.getAttribute('data-id'))) return;      /* RK06 */
           var it = rec.p.take(b.getAttribute('data-id')); if (!it) return;
           if (act === 'send') { Promise.resolve().then(function () { return typeof rec.show === 'function' ? rec.show(it.o) : null; }).then(null, function () { /* the page says why */ }); }
           else log('Public line not shown (Not now): ' + str(it.o.text).trim());
           draw();
         });
+        rec.el.addEventListener('keydown', function (ev) { if (rec.fc && fc()) rec.fc.key(ev); });      /* RK06: Enter on the box sends the oldest line (only while the setting is on) */
         rec.el.addEventListener('pointerdown', function (ev) { var b = ev.target && ev.target.closest ? ev.target.closest('[data-p2-line="more"]') : null; rec.press = b ? { x: ev.clientX, y: ev.clientY, t: Date.now() } : null; });
         rec.el.addEventListener('pointerenter', function () { clearTimeout(rec.hoverT); rec.hover = true; });
         rec.el.addEventListener('pointerleave', function () { clearTimeout(rec.hoverT); rec.hoverT = setTimeout(function () { rec.hover = false; if (rec.el && rec.el.querySelector('.gm-p2-slot')) draw(); else if (rec.owed) place(); }, 600); });
@@ -205,10 +226,11 @@
       if (rec.p.list.length <= LINES_SHOWN) rec.open = false;
       var n = rec.p.list.length;
       rec.el.hidden = !n; rec.el.style.display = n ? 'grid' : 'none';
-      if (!n) { rec.el.textContent = ''; rec.at = null; rec.form = ''; return; }
+      if (!n) { rec.el.textContent = ''; rec.at = null; rec.form = ''; if (rec.fc) rec.fc.stop(); return; }
       build(rec.open ? 'open' : held() && rec.domForm && rec.domForm !== 'open' ? rec.domForm : (rec.form && rec.form !== 'open' ? rec.form : 'two'));
       if (!rec.open) rec.form = '';      /* a collapsed redraw tries the largest form first again */
       place();
+      if (fc()) rec.fc.drawn();      /* RK06: the timer follows whatever is oldest now */
     }
     return {
       add: function (o, show) {
@@ -216,9 +238,10 @@
         log('Public line waiting for Send: ' + str(o.text).trim());      /* IP2c: in the night log from the moment it is queued, so a reload loses nothing untraced */
         rec.p.add(o).forEach(function (it) { log('Public line not shown (more than ' + LINES_MAX + ' waiting): ' + str(it.o.text).trim()); });
         draw();
+        if (fc()) rec.fc.added();      /* RK06: the box flashes once, the timer follows the oldest */
       },
       /* IP2c: the night ends: every line still waiting is dropped, each written to the night log as not sent */
-      clear: function (why) { rec.p.clear().reverse().forEach(function (it) { log('Public line not sent (' + (why || 'the night ended') + '): ' + str(it.o.text).trim()); }); rec.open = false; if (rec.el) draw(); },
+      clear: function (why) { if (fc()) rec.fc.end(); rec.p.clear().reverse().forEach(function (it) { log('Public line not sent (' + (why || 'the night ended') + '): ' + str(it.o.text).trim()); }); rec.open = false; if (rec.el) draw(); },
       list: function () { return rec.p.list.map(function (it) { return str(it.o.text); }); }
     };
   }

@@ -5207,12 +5207,14 @@
     M.openCard({ doc: document, npc: function (x) { return isObj(me.npcs) ? me.npcs[x] : null; }, rv: function () { return S === me && me.rv && me.rvBox && me.rvBox.isConnected ? me.rv : null; },
       cast: function (x) { if (S !== me) return; var pf = str(me.p2focus).split('|'), k = pf.length === 2 && pf[1] === x ? '#gm-npc [data-gm="' + pf[0] + '"][data-id="' + pf[1].replace(/[^A-Za-z0-9_-]/g, '') + '"]' : ''; me.p2focus = ''; me.npcCardOpen = x; renderNpcs(); var nb = k ? $q(k) : null; if (nb && nb.focus) nb.focus(); } }, id);      /* IP2b: the row's button keeps the focus through the redraw */
   }
+  /* RK06 (night.flow, gm/public-lines.js): the louder public lines and the per-night auto-send. null unless the setting is on and the bundle's file has loaded, so with it off the queue takes its old path */
+  function p2Flow(me) { var P = W.B68GmPublicLines; if (!P || typeof P.attach !== 'function' || S !== me || !b09On('night.flow')) return null; return { PL: P, auto: function () { return S === me && P.autoOn(S.doc, Date.now()); }, setAuto: function (on) { if (S === me) patch(P.autoPatch(on, Date.now())); } }; }
   /* IP2c: the night ends (or is reset): the public-line queue is emptied, each line written to the night log as not sent; an empty queue writes nothing */
   function p2LinesEnd(fn, why) {
     return function () {
       var M = W.B68GmPlayersScreen, me = S;
       return Promise.resolve(fn.apply(this, arguments)).then(function (r) {      /* only a night that did end (End the night can be declined) */
-        if (r && r.ok && M && me && me.root && M.lines) M.lines({ root: me.root, log: function (t) { if (S === me && me.night && typeof me.night.cue === 'function') me.night.cue(t); } }).clear(why);
+        if (r && r.ok && M && me && me.root && M.lines) M.lines({ root: me.root, flow: function () { return p2Flow(me); }, log: function (t) { if (S === me && me.night && typeof me.night.cue === 'function') me.night.cue(t); } }).clear(why);
         return r;
       });
     };
@@ -5722,7 +5724,7 @@
       reveal: function (npc) { return S === me ? missionReveal(npc) : Promise.resolve(false); },
       offer: function (spec) { if (S === me) missionOffer(spec); },
       toast: toast,
-      hold: function (o) { var M = S === me ? p2() : null; if (!M) return false; M.offerLine(o, missionOffer, showOverlay, { root: S.root, log: function (t) { if (S === me && S.night && typeof S.night.cue === 'function') S.night.cue(t); } }); return true; },      /* IP2 (stage.players): the public line waits for the GM's Send */
+      hold: function (o) { var M = S === me ? p2() : null; if (!M) return false; M.offerLine(o, missionOffer, showOverlay, { root: S.root, flow: function () { return p2Flow(me); }, log: function (t) { if (S === me && S.night && typeof S.night.cue === 'function') S.night.cue(t); } }); return true; },      /* IP2 (stage.players): the public line waits for the GM's Send */
       overlay: function (o) { return S === me ? showOverlay(o) : Promise.resolve(null); },
       confirm: function (msg) { return W.confirm(msg); }
     });
