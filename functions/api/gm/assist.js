@@ -141,7 +141,8 @@
 
 import { getDb } from '../../_lib/db.js';
 import { HttpError, json, methodNotAllowed, readJsonObject, campaignOf } from '../../_lib/http.js';
-import { requireGm, parseJson } from '../../_lib/gm.js';
+import { requireGm, parseJson, loadState } from '../../_lib/gm.js';
+import Features from '../../_lib/features.js';
 import { pokeLive } from '../../_lib/live.js';
 import { loadStt, readLines, sttStmt, sttOf, linesStmt, lastSeqStmt, lastSeqOf } from '../../_lib/stt.js';
 import { cachedClient, callSeat } from '../../_lib/assist/claude.js';
@@ -152,7 +153,7 @@ import { rosterOf, unnamedNeeds, anyUnnamed, whoisUser, toWhois, WHOIS_LINES, WH
 import { cleanItem, verdictOf, unknownVerdict } from '../../_lib/assist/gatekeeper.js';
 import { checkNpc, newNpcId, writeNpc } from '../../_lib/npcs.js';
 import { toPortrait, toProp, toWire, buildBoard, boardSource, cleanName, cleanAsk, cleanVocab } from '../../_lib/assist/screen.js';
-import { handsUser, portraitUser, propUser, wireUser, SCREEN_WINDOW_MIN, SCREEN_NAME_MAX, askUser, cleanAskFields, clerkUser, CLERK_KNOWN_MAX, CLERK_NAME_MAX, ASK_MAX, ASK_WINDOW_MIN, ASK_HISTORY, ASK_HISTORY_MIN, ASK_HISTORY_ANSWER_MAX } from '../../_lib/assist/prompts.js';
+import { handsUser, portraitUser, propUser, wireUser, SCREEN_WINDOW_MIN, SCREEN_NAME_MAX, askUser, ASK_ACTIONS_NOTE, cleanAskFields, clerkUser, CLERK_KNOWN_MAX, CLERK_NAME_MAX, ASK_MAX, ASK_WINDOW_MIN, ASK_HISTORY, ASK_HISTORY_MIN, ASK_HISTORY_ANSWER_MAX } from '../../_lib/assist/prompts.js';
 import { gatekeeperUser, ITEM_MAX, fitUser, voiceUser, anotherUser, showrunnerUser, mysteryUser, NPC_MAX, SHOWN_MAX, SHOWN_LINE_MAX, SHOWRUNNER_MIN, MYSTERY_MIN, KNOWN_MAX, KNOWN_ITEM_MAX,
   STORY_SEATS, storyBlock, scribeUser, SCRIBE_SLICE_MAX, SCRIBE_FIRST_MIN, MEANWHILE_MIN, meanwhileUser, cleanClocks, silenceUser,
   FIT_THREAT_MAX, FIT_SIZE_MAX, FIT_ROOM_MAX, FIT_STAGE_MAX } from '../../_lib/assist/prompts.js';
@@ -528,6 +529,11 @@ export function cleanScreenBody(action, b) {
   return {};
 }
 
+/** RK04: is night.flow on in the stored GM state? Any failure to read it is off (the seat is asked as it always was). */
+async function nightFlowOn(db, campaign) {
+  try { const { doc } = await loadState(db, campaign); return !!Features.valueOf(doc, 'night.flow'); } catch (_) { return false; }
+}
+
 /** The question Ask Blade is asked: whitespace squashed to single spaces, 1-ASK_MAX characters; null when it is not a string or is empty or too long. */
 export function cleanAskQuestion(v) {
   if (typeof v !== 'string') return null;
@@ -738,7 +744,9 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       storyText = sr ? sr.story : '';
       const history = await askHistory(db, campaign, t0);
       const { lines: recent } = await readLines(db, campaign, { since: new Date(t0 - ASK_WINDOW_MIN * 60 * 1000).toISOString() });
-      const { cfg, r, timing } = await run('ask', askUser({ q: askQ, history, stamp: hhmm(t0), talk: formatLines(recent, speakers) }));
+      // RK04: while night.flow is on (the stored setting, read as the Worker reads every setting), a command is answered with lines the page turns into buttons
+      const flow = await nightFlowOn(db, campaign);
+      const { cfg, r, timing } = await run('ask', askUser({ q: askQ, history, stamp: hhmm(t0), talk: formatLines(recent, speakers) }), flow ? ASK_ACTIONS_NOTE : '');
       const at = new Date(now()).toISOString();
       if (fileMissing) return json({ answer: null, spend: spend(), warnings });                // nothing was billed or logged: the file is gone
       // run() nulls r.json only: a refusal or a reply cut off at the limit shows nothing, whatever text came with it

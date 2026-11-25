@@ -168,6 +168,18 @@ export const ASK_HISTORY = 2;               // earlier exchanges of tonight hand
 export const ASK_HISTORY_MIN = 45;          // ... and only from the last 45 minutes
 export const ASK_HISTORY_ANSWER_MAX = 1200; // characters of each earlier answer handed back
 
+/**
+ * RK04 (setting night.flow): what the Ask seat is told when the GM's page turns Blade's lines into buttons. Handed to the seat only while the stored setting is on
+ * (functions/api/gm/assist.js), after its instructions. The page makes a button of an inline code span that starts with the triangle, so the actions go in `more`.
+ * Public code: no campaign word belongs here.
+ */
+export const ASK_ACTIONS_NOTE = [
+  'When the GM asks you to tick a clock or to start one, or what you suggest should happen to a clock, also put each action in "more", one per line, as an inline code span the GM can tap (the page turns it into a button; nothing happens until it is tapped):',
+  '`▶ tick: <clock name> / <n>` ticks a clock already on the table by n segments (1 to 12; leave n off for one). Use the clock\'s name as the GM or the story gave it.',
+  '`▶ clock: <name> / <size> / <ticks so far>` starts a new clock hidden from the players. The size is 4, 6, 8 or 12; the starting count may be left off.',
+  'Fields are separated by " / ", so a name never holds one. One line per action, and never both for the same clock. Say what you suggest in the headline as well. Offer these only when the GM asked about a clock or one is plainly called for.',
+].join('\n');
+
 /** An answer, trimmed and cut to ANSWER_MAX: at the last line break before the limit when there is one, with an ellipsis. */
 export function clipAnswer(text, max = ANSWER_MAX) {
   const s = String(text == null ? '' : text).replace(/\r\n?/g, '\n').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();

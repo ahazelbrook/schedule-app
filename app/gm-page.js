@@ -1837,7 +1837,7 @@
     var g = gmApi(), A = W.B68GmAssist, me = S;
     if (me.assist) { try { me.assist.destroy(); } catch (e) {} me.assist = null; }
     if (!A || !g || typeof g.assistTick !== 'function' || typeof g.stt !== 'function') return;
-    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onTyped: function (text) { return S === me ? cogmTyped(me, text) : null; }, onAutopilot: function () { if (S === me) apToggle(); }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onWhois: function (w) { if (S === me) whoisIn(w); }, onStall: function (v) { if (S === me) setStall(v); }, onMeanwhile: function (v) { if (S === me) setMeanwhile(v); }, onHandout: function (h) { if (S === me) offerHandoutFromBox(h); },  onNote: function (text) { return S === me && !!addCapture('m', text, true); },
+    try { me.assist = A.create({ gm: g, draws: function (position) { return S === me ? drawsFor(position) : null; }, onTyped: function (text) { return S === me ? cogmTyped(me, text) : null; }, onAutopilot: function () { if (S === me) apToggle(); }, flow: function () { return S === me && flowOn() ? W.B68GmBladeChips.panel(paHost(), W.B68GmPrepActions) : null; }, onStage: function () { return S === me ? onStageName() : ''; }, onVoice: function (v) { if (S === me) setVoice(v); }, onWhois: function (w) { if (S === me) whoisIn(w); }, onStall: function (v) { if (S === me) setStall(v); }, onMeanwhile: function (v) { if (S === me) setMeanwhile(v); }, onHandout: function (h) { if (S === me) offerHandoutFromBox(h); },  onNote: function (text) { return S === me && !!addCapture('m', text, true); },
       screen: { vocab: screenVocab, cleanSpec: screenCleanSpec }, onScreen: function (item) { if (S === me) setScreenItem(item); } }); } catch (e) { me.assist = null; }
   }
 
@@ -7183,10 +7183,14 @@
   }
   /* the one test of an action span (gm/room-notes.js isAction, what room-notes.js and stamp.js strip): a code span outside a fence */
   function paHas(el) { var R = W.B68GmRooms; return !!(R && R.isAction) && [].some.call(el.querySelectorAll('code'), function (c) { return !(c.closest && c.closest('pre')) && R.isAction(c.textContent); }); }
+  /* RK04 (night.flow): Blade's cards act: the setting is on and gm/blade-chips.js is here (the night-flow bundle brings it and prep-actions with it) */
+  function flowOn() { return !!(S && W.B68GmBladeChips && W.B68GmPrepActions && W.B68Features && W.B68Features.valueOf(S.doc, 'night.flow')); }
   function paHost() {
     var me = S;
     if (me.paHost) return me.paHost;
     return (me.paHost = {
+      flow: function () { return S === me && flowOn(); },      /* RK04 */
+      card: function (spec) { return S === me && me.assist ? me.assist.addCard(spec) : null; }, dropCard: function (id) { if (S === me && me.assist) me.assist.removeCard(id); },      /* RK04: a question card in the Blade panel (which clock?) */
       handouts: function () { return S === me ? handouts() : []; }, show: function (id) { return showHandout(id); },
       sendHtml: function (x) { var hs = S === me ? hoSendInst() : null; return hs ? hs.html(x) : ''; },
       clocks: tableClocks, canClock: function () { return !!(S === me && me.api && typeof me.api.addClock === 'function'); },
@@ -8368,6 +8372,7 @@
       apClocksFeed(); apSubjects();
       if (pbOn()) W.B68GmPlayersBoard.follow(pbHost());      /* IP6: a clock hidden (or shown) changes what a pin may say */
       if (W.B68GmPrepActions) W.B68GmPrepActions.refresh(S.root, paHost());      /* PA: a clock chip says where its clock stands */
+      if (flowOn() && S.assist) W.B68GmBladeChips.panel(paHost(), W.B68GmPrepActions).refresh(W.document && W.document.getElementById('as-panel'));      /* RK04: so do the chips in Blade's cards */
       if (S.mission) S.mission.noteClocks();      /* the alarm clock's fill or visibility is on the players' band */
       { var stc = setInst(); if (stc) stc.heal(); }      /* W0.2 / N0: the campaign document's copy of the settings follows the GM state's, on every arrival */
       /* the stage changed: the NPC tab's buttons follow */
