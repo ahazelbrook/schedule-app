@@ -71,6 +71,18 @@ test('the kicker: one room is its band then its floor; several are the band and 
   assert.deepEqual(P.kicker(P.clean(W(3, 'Basement'))), ['Working', '3 rooms · Basement']);
   assert.deepEqual(P.kicker(P.clean([LIB].concat(W(1, 'Basement')))), ['Controlled · Working', '2 rooms'], 'a room opened and a band ticked at once');
 });
+test('over 8 at once: the push\'s arriveTotal is the count the tapes, the names and "and N more" say (8 plates, the true number); a bad one is ignored', () => {
+  const eight = W(8), nine = { kind: 'svg', svg: '<svg/>', arrive: eight, arriveTotal: 9 };
+  assert.equal(P.total(nine), 9);
+  assert.equal(P.total({ kind: 'svg', svg: '<svg/>', arrive: eight }), 8, 'none: the list');
+  for (const bad of [8, 3, 9.5, '9', 1000, null]) assert.equal(P.total({ kind: 'svg', svg: '<svg/>', arrive: eight, arriveTotal: bad }), 8, 'ignored: ' + bad);
+  const rooms = P.clean(eight);
+  assert.deepEqual(P.kicker(rooms, 9), ['Working', '9 rooms']);
+  assert.deepEqual(P.kicker(P.clean(W(8, 'Basement')), 9), ['Working', '9 rooms'], 'cut short: no floor claimed for the room not listed');
+  assert.deepEqual(P.kicker(P.clean(W(8, 'Basement')), 8), ['Working', '8 rooms · Basement']);
+  assert.equal(P.names(rooms, 9).more, 6, 'three named, and 6 more');
+  assert.equal(P.names(rooms).more, 5);
+});
 test('the names: up to three, then "and N more"', () => {
   assert.deepEqual(P.names(P.clean([LIB])), { lines: ['Library'], more: 0 });
   assert.deepEqual(P.names(P.clean(W(3))).more, 0);

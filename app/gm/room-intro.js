@@ -1,7 +1,7 @@
 /* gm/room-intro.js: the GM half of the room opening (RK29 of the room key build, behind the setting room.intro). B68GmRoomIntro.
 
    WHAT IT DOES. While the map is live on the iPad (Show on iPad, then live reveal), a push from liveReveal that newly shows rooms carries
-   `arrive`: [{ id, n, name, band, floor }], at most 8, in the roll's order. The iPad plays a title card for them (display/room-intro.js).
+   `arrive`: [{ id, n, name, band, floor }], at most 8, in the roll's order (and `arriveTotal` when more opened). The iPad plays a title card for them (display/room-intro.js).
      - A room is newly shown when it is opened on its own (room:<name>), when its band is ticked, or when a blueprint room (map.knowledge's `know`:
        a name and an outline only) is now seen in full. The diff is taken against what the iPad has LANDED (S.mapOn when the push is sent), so a
        marker push queued behind a room push never names the room again.
@@ -21,8 +21,9 @@
          d: playerDisplay's answer; ctx: { roll, was: { reveal, know } (what the iPad showed), know (the blueprint rooms now), landed() -> S.mapOn | null,
          later? }. d comes back with its svg tagged; wrap(opts) wraps the push's prepare (adds arrive, diffed at send time) and done (the tray)
      live(shown, nowMs) -> the tray's words ('' when no card plays)      CARD_MS
-     Pure: MAX, BANDS, LEVEL_TITLES, fullNames(roll, reveal, know), fresh(roll, was, now), tagFloors(svg, rooms, ids), drawn(svg, room),
-           entries(names, rooms, svg), arrive(roll, landed, cands) */
+     Pure: MAX, BANDS, LEVEL_TITLES, fullRooms(roll, reveal, know), fullNames(...), fresh(roll, was, now), match(roll, idx, rooms),
+           tagFloors(svg, rooms, ids), drawn(svg, room), entries(roll, idx, rooms, svg), arrive(roll, landed, cands), body(b, list)
+   More than MAX rooms at once: MAX entries go, with arriveTotal (the true count) beside them, so the card and the tray say the real number. */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -45,20 +46,42 @@
 
   function bandsOf(reveal) { return list(reveal).filter(function (e) { return typeof e === 'string' && e.indexOf('room:') !== 0; }); }
   /* the rooms shown IN FULL by a reveal list: shown (its band, or its own room: entry; gm-page.js roomShown), less a room known as a blueprint only
-     (in `know` with its band shut: a name and an outline, nothing of what is in it; gm-page.js tokenRooms). Names, each once, in the roll's order */
-  Pure.fullNames = function (roll, reveal, know) {
+     (in `know` with its band shut: a name and an outline, nothing of what is in it; gm-page.js tokenRooms). Each ROOM is its own (a site may hold two
+     rooms of one name, in two bands): the answer is the rooms' places in roll.rooms, in the roll's order. fullNames is the same, as names */
+  Pure.fullRooms = function (roll, reveal, know) {
     var rv = list(reveal), bp = list(know), bands = bandsOf(rv), out = [];
-    list(roll && roll.rooms).forEach(function (r) {
-      if (!isObj(r) || typeof r.name !== 'string' || !r.name || out.indexOf(r.name) >= 0) return;
+    list(roll && roll.rooms).forEach(function (r, i) {
+      if (!isObj(r) || typeof r.name !== 'string' || !r.name) return;
       var shown = rv.indexOf(r.band) >= 0 || rv.indexOf('room:' + r.name) >= 0;
-      if (shown && !(bp.indexOf(r.name) >= 0 && bands.indexOf(r.band) < 0)) out.push(r.name);
+      if (shown && !(bp.indexOf(r.name) >= 0 && bands.indexOf(r.band) < 0)) out.push(i);
     });
     return out;
   };
-  /* the names shown in full now and not before (was, now: { reveal, know }), in the roll's order */
+  Pure.fullNames = function (roll, reveal, know) {
+    var out = [];
+    Pure.fullRooms(roll, reveal, know).forEach(function (i) { var n = roll.rooms[i].name; if (out.indexOf(n) < 0) out.push(n); });
+    return out;
+  };
+  /* the rooms (places in roll.rooms) shown in full now and not before (was, now: { reveal, know }), in the roll's order: compared room by room, never
+     by name, so a room opened beside a shown room of the same name still counts */
   Pure.fresh = function (roll, was, now) {
-    var before = isObj(was) ? Pure.fullNames(roll, was.reveal, was.know) : [];
-    return Pure.fullNames(roll, isObj(now) ? now.reveal : [], isObj(now) ? now.know : []).filter(function (n) { return before.indexOf(n) < 0; });
+    var before = isObj(was) ? Pure.fullRooms(roll, was.reveal, was.know) : [];
+    return Pure.fullRooms(roll, isObj(now) ? now.reveal : [], isObj(now) ? now.know : []).filter(function (i) { return before.indexOf(i) < 0; });
+  };
+  /* the sent model's room for each of these roll rooms. The kit renumbers its copy and keeps no place in the roll, so a roll room is matched by its
+     band and name, and the k-th roll room with that band and name is the k-th model room with them (two such rooms always open and close together:
+     every reveal is by band, by name, or by name and band). -> [{ i, room }] in the order given; a roll room with no model room is left out */
+  Pure.match = function (roll, idx, rooms) {
+    var rr = list(roll && roll.rooms), out = [];
+    function key(r) { return str(r.band) + '\n' + str(r.name); }
+    list(idx).forEach(function (i) {
+      var r = rr[i]; if (!isObj(r)) return;
+      var k = key(r), nth = 0;
+      for (var j = 0; j < i; j++) if (isObj(rr[j]) && key(rr[j]) === k) nth++;
+      var same = list(rooms).filter(function (m) { return isObj(m) && key(m) === k; });
+      if (same[nth]) out.push({ i: i, room: same[nth] });
+    });
+    return out;
   };
 
   /* the numbers of a points attribute, as [x, y] pairs (a slimmed svg may drop the separators) */
@@ -106,27 +129,34 @@
     var n = Number(room.n);
     return n >= 1 && Math.floor(n) === n && new RegExp('class="room-label[^"]*"[^>]*>(?:<rect[^>]*>(?:</rect>)?)*<text[^>]*>' + n + '</text>').test(svg);
   };
-  /* the arrive entries for these names: every room of the sent model with one of them (names repeat within a site: each is its own room), drawn in
-     the svg, in the roll's order (names) then the model's, at most MAX */
-  Pure.entries = function (names, rooms, svg) {
+  /* the candidates for these roll rooms (places in roll.rooms): each one's room in the sent model (Pure.match), drawn in the svg, in the roll's
+     order, every one of them (the cap is the push's: MAX go, and the true count with them). -> [{ i, e }], e an arrive entry */
+  Pure.entries = function (roll, idx, rooms, svg) {
     var out = [];
-    list(names).forEach(function (n) {
-      list(rooms).forEach(function (r) {
-        if (out.length >= Pure.MAX || !isObj(r) || r.name !== n || !/^r\d{1,3}$/.test(str(r.id)) || Pure.BANDS.indexOf(r.band) < 0 || !Pure.drawn(svg, r)) return;
-        var e = { id: r.id };
-        if (typeof r.n === 'number' && r.n >= 1 && r.n <= 999 && Math.floor(r.n) === r.n) e.n = r.n;
-        e.name = str(r.name).slice(0, 80); e.band = r.band;
-        if (Pure.LEVEL_TITLES.indexOf(str(r.floor).toLowerCase()) >= 0) e.floor = r.floor;
-        out.push(e);
-      });
+    Pure.match(roll, idx, rooms).forEach(function (x) {
+      var r = x.room;
+      if (!/^r\d{1,3}$/.test(str(r.id)) || Pure.BANDS.indexOf(r.band) < 0 || !Pure.drawn(svg, r)) return;
+      var e = { id: r.id };
+      if (typeof r.n === 'number' && r.n >= 1 && r.n <= 999 && Math.floor(r.n) === r.n) e.n = r.n;
+      e.name = str(r.name).slice(0, 80); e.band = r.band;
+      if (Pure.LEVEL_TITLES.indexOf(str(r.floor).toLowerCase()) >= 0) e.floor = r.floor;
+      out.push({ i: x.i, e: e });
     });
     return out;
   };
-  /* the arrive list at send time: the candidates (made when the copy was drawn) less any room the iPad already shows in full (landed) */
+  /* the candidates still new at send time: less any room the iPad already shows in full (landed), room by room */
   Pure.arrive = function (roll, landed, cands) {
     if (!isObj(landed)) return [];
-    var have = Pure.fullNames(roll, landed.reveal, landed.know);
-    return list(cands).filter(function (e) { return have.indexOf(e.name) < 0; });
+    var have = Pure.fullRooms(roll, landed.reveal, landed.know);
+    return list(cands).filter(function (c) { return have.indexOf(c.i) < 0; });
+  };
+  /* what the push carries for them: arrive (at most MAX entries), and arriveTotal, the true count, only when more opened than went */
+  Pure.body = function (b, list2) {
+    var l = list(list2);
+    if (!l.length) return b;
+    var o = Object.assign({}, b, { arrive: l.slice(0, Pure.MAX).map(function (c) { return c.e; }) });
+    if (l.length > Pure.MAX) o.arriveTotal = Math.min(999, l.length);
+    return o;
   };
 
   /* playerDisplay's d.rooms: the model of the render that was sent, with each floor's title (the kit's layout.levels) */
@@ -148,12 +178,11 @@
   function prep(d, ctx) {
     ctx = ctx || {};
     if (!isObj(d) || typeof d.svg !== 'string' || !Array.isArray(d.rooms) || !ctx.roll) return null;
-    var names = Pure.fresh(ctx.roll, ctx.was, { reveal: d.reveal, know: ctx.know });
-    if (!names.length) return null;
-    var ids = [];
-    d.rooms.forEach(function (r) { if (isObj(r) && names.indexOf(r.name) >= 0) ids.push(r.id); });
+    var idx = Pure.fresh(ctx.roll, ctx.was, { reveal: d.reveal, know: ctx.know });
+    if (!idx.length) return null;
+    var ids = Pure.match(ctx.roll, idx, d.rooms).map(function (x) { return x.room.id; });
     var t = Pure.tagFloors(d.svg, d.rooms, ids), svg = t.tagged && bytes(t.svg) <= Pure.CAP ? t.svg : d.svg;
-    var cands = Pure.entries(names, d.rooms, svg);
+    var cands = Pure.entries(ctx.roll, idx, d.rooms, svg);
     if (!cands.length) return null;
     var nd = Object.assign({}, d, { svg: svg });
     return {
@@ -166,12 +195,12 @@
             var b = typeof o.prepare === 'function' ? o.prepare(body) : body;
             if (!isObj(b)) return b;
             arrive = Pure.arrive(ctx.roll, typeof ctx.landed === 'function' ? ctx.landed() : null, cands);
-            return arrive.length ? Object.assign({}, b, { arrive: arrive }) : b;
+            return Pure.body(b, arrive);
           },
           done: function (r) {
             if (typeof o.done === 'function') o.done(r);
             if (!arrive.length) return;
-            last = { label: arrive.length === 1 ? arrive[0].name : arrive.length + ' rooms', title: str(nd.title), until: Date.now() + CARD_MS };
+            last = { label: arrive.length === 1 ? arrive[0].e.name : arrive.length + ' rooms', title: str(nd.title), until: Date.now() + CARD_MS };
             tray();
             var later = typeof ctx.later === 'function' ? ctx.later : function (f, ms) { return setTimeout(f, ms); };
             later(tray, CARD_MS + 50);

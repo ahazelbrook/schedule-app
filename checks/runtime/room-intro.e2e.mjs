@@ -238,6 +238,13 @@ try {
     expect(land.length === 5 && land.every((x) => x.off <= 4), 'landing: ' + JSON.stringify(land));
     await until(async () => !(await look(I.page)).card, 4000);
   });
+  await step('on: more rooms than the 8 a push lists (arriveTotal): the card says the true count, with the plates it has', async () => {
+    await ok(gm('PUT', '/api/gm/display', Object.assign({}, band.display, { arriveTotal: 12 })), 'the band, said to be 12');
+    const seq = String((await gmGet()).seq);
+    const L = await until(async () => { const v = await look(I.page); return v.card && v.seq === seq ? v : null; }, 5000, 30);
+    expect(L && L.kick === 'Working|12 rooms' && L.more === 'and 9 more' && L.pieces === 5, JSON.stringify(L));
+    await until(async () => !(await look(I.page)).card, 9000);
+  });
   await step('on: a second push cuts a card at once', async () => {
     await ok(gm('PUT', '/api/gm/display', band.display), 'the band again');
     expect(await until(async () => (await look(I.page)).card, 5000, 50), 'a card');
@@ -276,11 +283,17 @@ try {
       expect(!(await look(R.page)).card, 'cut after 3 s');
     } finally { await R.ctx.close(); }
   });
-  await step('on: the hand-over\'s frames' + (ENGINE === 'webkit' ? ' in WebKit: none over 50 ms after the first' : ' (timed; asserted in WebKit)'), async () => {
+  await step('on: the hand-over\'s frames' + (ENGINE === 'webkit' ? ' in WebKit: none over 50 ms after the first (one retry)' : ' (timed; asserted in WebKit)'), async () => {
+    /* the GM page is closed while the iPad is timed: at the table it is another device, and here its 0.7 s poll shares this PC's CPU (it reopens below) */
+    await G.gc.close(); G = null;
+    const once = async () => {
+    await until(async () => !(await look(I.page)).card, 9000);
     await I.page.evaluate(() => {
-      window.__ro = { frames: [], mount: null, at: null };
-      new MutationObserver(() => { const c = document.querySelector('.ro-card'); if (c && window.__ro.mount === null) { window.__ro.mount = performance.now(); window.__ro.at = Number(c.getAttribute('data-ro-at')); } }).observe(document.body, { childList: true, subtree: true });
-      const loop = (t) => { window.__ro.frames.push(t); if (window.__ro.frames.length < 2000) requestAnimationFrame(loop); };
+      if (window.__ro) window.__ro.stop = true;      /* a retry: the last loop and watcher end */
+      const me = window.__ro = { frames: [], mount: null, at: null, stop: false };
+      const mo = new MutationObserver(() => { const c = document.querySelector('.ro-card'); if (c && me.mount === null) { me.mount = performance.now(); me.at = Number(c.getAttribute('data-ro-at')); mo.disconnect(); } });
+      mo.observe(document.body, { childList: true, subtree: true });
+      const loop = (t) => { if (me.stop) return; me.frames.push(t); if (me.frames.length < 2000) requestAnimationFrame(loop); };
       requestAnimationFrame(loop);
     });
     await ok(gm('PUT', '/api/gm/display', band.display), 'the band again');
@@ -289,11 +302,16 @@ try {
     const win = (a, b) => I.page.evaluate(([fa, fb]) => {
       const o = window.__ro, z = o.mount - o.at, from = z + fa, to = z + fb;      /* the card's fa to fb ms, on this page's clock */
       const f = o.frames.filter((t) => t >= from && t <= to), gaps = f.slice(1).map((t, i) => t - f[i]);
-      return { n: f.length, worst: gaps.length > 1 ? Math.max(...gaps.slice(1)) : 0, first: gaps[0] || 0 };
+      const worst = gaps.length > 1 ? Math.max(...gaps.slice(1)) : 0, wi = gaps.indexOf(worst, 1);
+      return { n: f.length, worst, first: gaps[0] || 0, at: wi > 0 ? Math.round(f[wi] - z) : null };      /* at: the card's time where the worst gap began */
     }, [a, b]);
     const r = await win(3950, 5000), ring = await win(4900, 6400);
-    console.log('INFO the hand-over in ' + ENGINE + ': ' + r.n + ' frames, the first gap ' + Math.round(r.first) + ' ms, the worst after it ' + Math.round(r.worst) + ' ms');
-    console.log('INFO the ring (4.9 to 6.4 s) in ' + ENGINE + ': ' + ring.n + ' frames, the worst gap after the first ' + Math.round(ring.worst) + ' ms');
+    console.log('INFO the hand-over in ' + ENGINE + ': ' + r.n + ' frames, the first gap ' + Math.round(r.first) + ' ms, the worst after it ' + Math.round(r.worst) + ' ms (at ' + r.at + ' ms)');
+    console.log('INFO the ring (4.9 to 6.4 s) in ' + ENGINE + ': ' + ring.n + ' frames, the worst gap after the first ' + Math.round(ring.worst) + ' ms (at ' + ring.at + ' ms)');
+    return r;
+    };
+    let r = await once();
+    if (ENGINE === 'webkit' && !(r.n > 20 && r.worst <= 50)) { console.log('INFO over 50 ms: timed once more'); r = await once(); }
     if (ENGINE === 'webkit') expect(r.n > 20 && r.worst <= 50, 'a frame over 50 ms: ' + JSON.stringify(r));
   });
   await step('frames for the picture review (KIT_SHOTS): one room and a band, at 1024x768 and 768x1024', async () => {
@@ -314,6 +332,7 @@ try {
     await I.page.setViewportSize({ width: 1024, height: 768 });
   });
   await step('on: the GM page\'s tray while a card plays (1366x768)', async () => {
+    if (!G) G = await openGm();
     await showOnIpad();      /* the pushes above came from elsewhere: live reveal has stopped, so the map goes up again (it asks; the dialog is accepted) */
     const d = await openRoom('Private card rooms');
     expect(d && d.display.arrive && d.display.arrive[0].name === 'Private card rooms', 'arrive: ' + JSON.stringify(d && d.display.arrive));

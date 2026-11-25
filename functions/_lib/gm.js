@@ -283,6 +283,8 @@ export function cleanDisplay(raw) {
   // RK29 (room.intro): an optional `arrive` on svg only, the rooms the GM's live reveal has just opened (the iPad plays a title card). Each entry
   // is checked and a bad one dropped, never a 400; none left, no key. Deploy 41 drops the whole key here, and its display ignores it.
   if (kind === 'svg' && Array.isArray(raw.arrive)) { const a = cleanArrive(raw.arrive); if (a.length) out.arrive = a; }
+  // RK29: arriveTotal, the true count when more rooms opened than the 8 listed: a whole number above the list's length, at most 999; else dropped
+  if (out.arrive && Number.isInteger(raw.arriveTotal) && raw.arriveTotal > out.arrive.length && raw.arriveTotal <= 999) out.arriveTotal = raw.arriveTotal;
   if (kind === 'npc') {
     if (typeof raw.npcId !== 'string' || !ID_RE.test(raw.npcId)) throw new HttpError(400, 'npcId must be an id (A-Z, a-z, 0-9, _ and -, at most 80)');
     out.npcId = raw.npcId;

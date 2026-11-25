@@ -34,8 +34,8 @@
        env: { document, on() -> bool (the setting), still() -> bool (reduced motion), skew() -> ms, at() -> the display's updatedAt,
               svg() -> the map svg on screen | null, later(fn, ms), clearLater(id) }
        next() is called by the page's show() for EVERY display it paints: another seq cuts a card that is up, at once; arrive starts one.
-     Pure: T, LEAD_MS, STILL_MS, LATE_MS, SIGNAL, position(at, now, skew), clean(arrive), wants(display, on), startable(pos, still), kicker(rooms),
-           names(rooms), colour(v), lum(hex), palette(field), fit(measure, o), sizes(n, portrait), SCALES, pick(trials), stack(boxes) */
+     Pure: T, LEAD_MS, STILL_MS, LATE_MS, SIGNAL, position(at, now, skew), clean(arrive), wants(display, on), startable(pos, still), total(display),
+           kicker(rooms, total), names(rooms, total), colour(v), lum(hex), palette(field), fit(measure, o), sizes(n, portrait), SCALES, pick(trials), stack(boxes) */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -88,18 +88,24 @@
     if (typeof pos !== 'number' || !isFinite(pos)) return false;
     return pos < (still ? Pure.STILL_MS : Pure.LATE_MS);
   };
-  /* the tapes: one room: its band, then its floor; several: their band(s), then "4 rooms", with " · <floor>" when they all share one */
-  Pure.kicker = function (rooms) {
-    var r = Array.isArray(rooms) ? rooms : [], bands = [], floors = [];
+  /* how many rooms opened: the list, or the push's arriveTotal when more opened than the 8 it lists (the server keeps it only then) */
+  Pure.total = function (display) {
+    var n = Pure.clean(isObj(display) ? display.arrive : null).length, t = isObj(display) ? display.arriveTotal : null;
+    return typeof t === 'number' && Math.floor(t) === t && t > n && t <= 999 ? t : n;
+  };
+  /* the tapes: one room: its band, then its floor; several: their band(s), then "4 rooms", with " · <floor>" when they all share one (never when
+     the list is cut short: the rooms not listed may be elsewhere) */
+  Pure.kicker = function (rooms, total) {
+    var r = Array.isArray(rooms) ? rooms : [], bands = [], floors = [], n = Math.max(r.length, num(total));
     r.forEach(function (x) { if (bands.indexOf(x.band) < 0) bands.push(x.band); if (x.floor && floors.indexOf(x.floor) < 0) floors.push(x.floor); });
     var bw = bands.map(function (b) { return Pure.BAND_WORD[b] || b; }).join(' · ');
-    if (r.length <= 1) return [bw, r.length && r[0].floor ? r[0].floor : ''].filter(Boolean);
-    return [bw, r.length + ' rooms' + (floors.length === 1 && r.every(function (x) { return x.floor === floors[0]; }) ? ' · ' + floors[0] : '')];
+    if (n <= 1) return [bw, r.length && r[0].floor ? r[0].floor : ''].filter(Boolean);
+    return [bw, n + ' rooms' + (n === r.length && floors.length === 1 && r.every(function (x) { return x.floor === floors[0]; }) ? ' · ' + floors[0] : '')];
   };
-  /* the name block: up to 3 names, then "and N more" */
-  Pure.names = function (rooms) {
-    var r = Array.isArray(rooms) ? rooms : [];
-    return { lines: r.slice(0, 3).map(function (x) { return x.name; }), more: Math.max(0, r.length - 3) };
+  /* the name block: up to 3 names, then "and N more" (N counts every room that opened) */
+  Pure.names = function (rooms, total) {
+    var r = Array.isArray(rooms) ? rooms : [], n = Math.max(r.length, num(total));
+    return { lines: r.slice(0, 3).map(function (x) { return x.name; }), more: Math.max(0, n - Math.min(3, r.length)) };
   };
   /* a colour as #rrggbb, or null */
   Pure.colour = function (v) {
@@ -256,13 +262,13 @@
     function svgNow() { try { return typeof env.svg === 'function' ? env.svg() : null; } catch (e) { return null; } }
     function view() { var r = container && container.getBoundingClientRect ? container.getBoundingClientRect() : null; return { w: r && r.width || (W && W.innerWidth) || 1024, h: r && r.height || (W && W.innerHeight) || 768 }; }
 
-    function build(rooms, plate, pos, still, pal, seq) {
+    function build(rooms, total, plate, pos, still, pal, seq) {
       var card = el(doc, 'div', 'ro-card ro-measure' + (still ? ' ro-still' : '') + (plate ? '' : ' ro-noplate'));
-      var nm = Pure.names(rooms);
+      var nm = Pure.names(rooms, total);
       card.setAttribute('data-ro-seq', String(seq));
       card.setAttribute('data-ro-at', String(pos));
       card.setAttribute('role', 'img');
-      card.setAttribute('aria-label', 'Opening ' + (rooms.length === 1 ? rooms[0].name : rooms.length + ' rooms: ' + rooms.map(function (r) { return r.name; }).join(', ')));
+      card.setAttribute('aria-label', 'Opening ' + (total === 1 ? rooms[0].name : total + ' rooms: ' + rooms.map(function (r) { return r.name; }).join(', ') + (total > rooms.length ? ' and ' + (total - rooms.length) + ' more' : '')));
       card.style.setProperty('--ro-field', pal.field); card.style.setProperty('--ro-ink', pal.ink); card.style.setProperty('--ro-back', pal.back); card.style.setProperty('--ro-dot', pal.dot);
       Object.keys(Pure.T).forEach(function (k) { card.style.setProperty('--ro-t-' + k, (Pure.T[k] - pos) + 'ms'); });
       card.appendChild(el(doc, 'div', 'ro-ground'));
@@ -279,7 +285,7 @@
         });
         out.appendChild(enter); card.appendChild(out);
       }
-      var type = el(doc, 'div', 'ro-type'), kk = Pure.kicker(rooms);
+      var type = el(doc, 'div', 'ro-type'), kk = Pure.kicker(rooms, total);
       if (kk.length) {
         var k = el(doc, 'p', 'ro-kick'); k.setAttribute('aria-label', kk.join(' · '));
         kk.forEach(function (t) { k.appendChild(el(doc, 'span', 'ro-kick-t', t)); });
@@ -343,7 +349,9 @@
         var b = q.box; p.x = b.x; p.y = b.y; var a = p.matrixTransform(m); p.x = b.x + b.w; p.y = b.y + b.h; var z = p.matrixTransform(m);
         var left = wr.left + q.l * wr.width, top = wr.top + q.t * wr.height, hh = q.fh * wr.height;
         var k = (z.y - a.y) / hh, dx = a.x - left, dy = a.y - top;
-        q.el.style.setProperty('--ro-settle', 'translate(' + Math.round(dx * 10) / 10 + 'px, ' + Math.round(dy * 10) / 10 + 'px) scale(' + Math.round(k * 10000) / 10000 + ')');      });
+        var v = 'translate(' + Math.round(dx * 10) / 10 + 'px, ' + Math.round(dy * 10) / 10 + 'px) scale(' + Math.round(k * 10000) / 10000 + ')';
+        if (q.el.style.getPropertyValue('--ro-settle') !== v) q.el.style.setProperty('--ro-settle', v);      /* unchanged: not written (a write restyles every node of the piece, just before the hand-over) */
+      });
     }
 
     function start(display, seq) {
@@ -358,7 +366,7 @@
       try { plate = svg ? cutPlate(doc, svg, rooms) : null; } catch (e) { plate = null; }
       var pal = Pure.palette(cv || (site.title === title ? site.colour : null) || Pure.SIGNAL);
       var c;
-      try { c = build(rooms, plate, pos, still, pal, seq); } catch (e) { return; }
+      try { c = build(rooms, Pure.total(display), plate, pos, still, pal, seq); } catch (e) { return; }
       cur = { seq: seq, at: pos, el: c.el, rings: null, timers: [], offs: [] };
       container.appendChild(c.el);
       layout(c);
@@ -372,6 +380,7 @@
         try { me.rings = addRings(doc, svg, rooms, pal); } catch (e) { me.rings = null; }
         if (me.rings) Object.keys(Pure.T).forEach(function (k) { me.rings.style.setProperty('--ro-t-' + k, (Pure.T[k] - pos) + 'ms'); });
         me.timers.push(later(function () { if (cur === me) aim(c, svg, plate); }, Math.max(0, Pure.T.out - 40 - pos)));      /* aimed again just before the settle (the map is at rest by then) */
+        me.timers.push(later(function () { if (cur === me) c.el.classList.add('ro-silgone'); }, Math.max(0, Pure.T.settle + 160 - pos)));      /* the silhouette's 150 ms fade is over: no more layers for it */
       }
       me.timers.push(later(function () { if (cur === me) cut(); }, Math.max(0, Pure.T.end - pos)));
     }

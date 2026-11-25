@@ -191,14 +191,50 @@ await test('at send time: a room the iPad has meanwhile landed (a marker push qu
   const x = push(was, now, { refuse: true });
   assert.equal(x.body, null, 'the page\'s own prepare refused the push: still refused');
 });
-await test('only rooms drawn in the svg sent count (a room on a floor the iPad is not showing is left out); at most 8', () => {
+await test('only rooms drawn in the svg sent count (a room on a floor the iPad is not showing is left out)', () => {
+  const roll = { rooms: [{ name: 'Showroom', band: 'public' }, { name: 'Library', band: 'controlled' }] };
   const rooms = [{ id: 'r1', n: 1, name: 'Showroom', band: 'public', floor: 'Ground floor' }, { id: 'r2', n: 2, name: 'Library', band: 'controlled', floor: 'Upper floor' }];
   const svg = '<svg xmlns="http://www.w3.org/2000/svg"><g data-room="r1"><rect/></g></svg>';
-  assert.deepEqual(RI.Pure.entries(['Showroom', 'Library'], rooms, svg).map((e) => e.id), ['r1'], 'the Library is not in this svg');
+  assert.deepEqual(RI.Pure.entries(roll, [0, 1], rooms, svg).map((c) => c.e.id), ['r1'], 'the Library is not in this svg');
   const badge = '<svg xmlns="http://www.w3.org/2000/svg"><g class="room-label room-pin"><rect x="1"/><text x="2">2</text></g></svg>';
-  assert.deepEqual(RI.Pure.entries(['Library'], rooms, badge).map((e) => e.id), ['r2'], 'its number badge alone counts');
+  assert.deepEqual(RI.Pure.entries(roll, [1], rooms, badge).map((c) => c.e.id), ['r2'], 'its number badge alone counts');
+});
+await test('more than 8 at once: 8 entries go, with arriveTotal, the true count; the tray says it too; 8 or fewer carry no arriveTotal', () => {
+  RI._reset();
   const r = push({ reveal: PUB }, { reveal: ALL });
-  assert.equal(r.body.arrive.length, 8, 'nine rooms open at once: eight named');
+  assert.equal(r.body.arrive.length, 8, 'eight named');
+  assert.equal(r.body.arriveTotal, 9, 'nine opened: the true count rides beside them');
+  r.opts.done({ seq: 11 });
+  assert.equal(RI.live({ kind: 'svg', title: r.ri.d.title }, Date.now()), '9 rooms', 'the tray: the true count');
+  const w = push({ reveal: PUB }, { reveal: WORK });
+  assert.ok(!('arriveTotal' in w.body), 'five: no arriveTotal');
+  assert.deepEqual(RI.Pure.body({ kind: 'svg' }, []), { kind: 'svg' }, 'none: the body as it was');
+  const twelve = Array.from({ length: 12 }, (_, i) => ({ i, e: { id: 'r' + i, name: 'Room ' + i, band: 'public' } }));
+  const b = RI.Pure.body({ kind: 'svg' }, twelve);
+  assert.equal(b.arrive.length, 8); assert.equal(b.arriveTotal, 12);
+  const svg0 = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>';
+  assert.deepEqual(cleanDisplay({ kind: 'svg', svg: svg0, arrive: b.arrive, arriveTotal: b.arriveTotal }).arriveTotal, 12, 'the server keeps it');
+  for (const bad of [8, 7, 12.5, '12', 1000, -1, null]) assert.ok(!('arriveTotal' in cleanDisplay({ kind: 'svg', svg: svg0, arrive: b.arrive, arriveTotal: bad })), 'dropped: ' + bad);
+  assert.ok(!('arriveTotal' in cleanDisplay({ kind: 'svg', svg: svg0, arriveTotal: 12 })), 'no arrive: no arriveTotal');
+  assert.ok(!('arriveTotal' in cleanDisplay({ kind: 'text', text: 'x', arrive: b.arrive, arriveTotal: 12 })), 'not on another kind');
+});
+await test('rooms are compared room by room, never by name: a room opened beside a shown room of the same name (another band) still gets its card', () => {
+  /* an invented twin: the palazzo with its controlled Library renamed to a working room's name, Gallery (shown once Working is ticked) */
+  const twin = JSON.parse(JSON.stringify(ROLL)); twin.rooms.find((x) => x.name === 'Library').name = 'Gallery';
+  const run = (reveal, extra) => withOn(true, () => { const calls = []; const d = P.playerDisplay(twin, MAP(reveal, extra), (r2, o) => { const x = K.render(r2, o); calls.push(x); return x; }, NOTK()); return d; });
+  const a = run(WORK), b = run({ public: true, working: true, controlled: true });
+  const ri = withOn(true, () => RI.prep(b, { roll: twin, was: { reveal: a.reveal, know: [] }, know: [], landed: () => ({ reveal: a.reveal, know: [] }) }));
+  const body = ri.wrap({ prepare: (x) => x }).prepare({ kind: 'svg', svg: ri.d.svg });
+  const ctl = body.arrive.filter((e) => e.name === 'Gallery');
+  assert.equal(ctl.length, 1, 'the controlled Gallery is named once: ' + JSON.stringify(body.arrive));
+  assert.equal(ctl[0].band, 'controlled', 'and it is the controlled one, not the working Gallery already shown');
+  assert.equal(ctl[0].id, b.rooms.find((x) => x.name === 'Gallery' && x.band === 'controlled').id, 'its id is the controlled room\'s');
+  assert.deepEqual(body.arrive.map((e) => e.band).sort(), ['controlled', 'controlled', 'controlled'], 'every controlled room, and nothing of Working');
+  /* opened on its own by name: room:Gallery shows both rooms of that name; the working one is already up, so only the controlled one arrives */
+  const c = run(WORK, { open: ['Gallery'] });
+  const ri2 = withOn(true, () => RI.prep(c, { roll: twin, was: { reveal: a.reveal, know: [] }, know: [], landed: () => ({ reveal: a.reveal, know: [] }) }));
+  const b2 = ri2.wrap({ prepare: (x) => x }).prepare({ kind: 'svg', svg: ri2.d.svg });
+  assert.deepEqual(b2.arrive.map((e) => e.name + '/' + e.band), ['Gallery/controlled']);
 });
 await test('the tag is an id only (never a name), a polygon already tagged is left alone, and a tagged copy over the cap goes untagged', () => {
   const svg = '<svg xmlns="http://www.w3.org/2000/svg"><g transform="matrix(1 0 0 1 0 0)"><polygon points="0,0 10,0 10,10 0,10" fill="#eee" data-band="public"/><polygon points="0,0 10,0 10,10 0,10" data-band="public" data-room="r9"/></g></svg>';

@@ -13,7 +13,7 @@
 }
 
 /* ---------- the cut: a flat field in the site's colour, a coarse halftone, a light behind the plate ---------- */
-.ro-card .ro-ground { position: absolute; inset: 0; background: var(--ro-field, #e0691e); }
+.ro-card .ro-ground { position: absolute; inset: 0; background: var(--ro-field, #e0691e); will-change: transform; }      /* its wipe is a transform: WebKit composites it (a clip-path repaints the screen each frame) */
 .ro-card .ro-ground::before {
   content: ""; position: absolute; inset: 0;
   background-image: radial-gradient(circle at center, var(--ro-dot, rgb(20 17 14 / .34)) 0 33%, transparent 37%);
@@ -35,6 +35,7 @@
 .ro-card .ro-sil [fill]:not([fill="none"]), .ro-card .ro-sil svg > g { fill: #000; }
 .ro-card .ro-sil [stroke]:not([stroke="none"]) { stroke: #000; }
 .ro-card .ro-sil image { visibility: hidden; }
+.ro-card.ro-silgone .ro-sil { display: none; }      /* once it has faded at the settle, the silhouette is not drawn at all (room-intro.js) */
 .ro-card .ro-col svg, .ro-card .ro-sil svg { display: block; width: 100%; height: 100%; overflow: visible; }
 
 /* ---------- the type, lower left: two kicker tapes, the name(s) with an offset copy, then "and N more" ---------- */
@@ -56,7 +57,7 @@
 .ro-card .ro-more { margin: 1.2vh 0 0; font: italic 700 4.6vh/1.1 var(--font-cond, "Archivo Condensed", "Arial Narrow", sans-serif); color: var(--ro-ink, #14110e); }
 
 /* ---------- the letterbox and the flash ---------- */
-.ro-card .ro-lb { position: absolute; left: 0; right: 0; height: var(--ro-lb); background: #000; }
+.ro-card .ro-lb { position: absolute; left: 0; right: 0; height: var(--ro-lb); background: #000; will-change: transform; }
 .ro-card .ro-lb-t { top: 0; }
 .ro-card .ro-lb-b { bottom: 0; }
 .ro-card .ro-flash { position: absolute; inset: 0; background: #fff; opacity: 0; }
@@ -92,10 +93,7 @@
   from { -webkit-clip-path: inset(-20% -5% -20% 0); clip-path: inset(-20% -5% -20% 0); }
   to { -webkit-clip-path: inset(-20% 105% -20% 0); clip-path: inset(-20% 105% -20% 0); }
 }
-@keyframes ro-groundout {
-  from { -webkit-clip-path: inset(0 0 0 0); clip-path: inset(0 0 0 0); }
-  to { -webkit-clip-path: inset(0 0 0 100%); clip-path: inset(0 0 0 100%); }
-}
+@keyframes ro-groundout { from { transform: none; } to { transform: translateX(100%); } }      /* the ground goes off to the right, its left edge where the preview's wipe ran */
 @keyframes ro-lbt { from { transform: none; } to { transform: translateY(-100%); } }
 @keyframes ro-lbb { from { transform: none; } to { transform: translateY(100%); } }
 @keyframes ro-settle { from { transform: none; } to { transform: var(--ro-settle, none); } }
