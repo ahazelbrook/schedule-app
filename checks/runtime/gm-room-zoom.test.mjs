@@ -166,6 +166,7 @@ test('the page\'s wiring: one-line branches, gated by room.key; the Run view and
   const escAt = onKey.indexOf("if (ev.key === 'Escape' || ev.key === 'Esc') { escPress(ev); return; }");
   assert.ok(k > 0 && top > k && escAt > 0 && escAt < k, 'the card\'s keys: after Esc (the ONE Esc), before the top box and every page key');
   assert.match(P, /W\.B68Load\.need\(n\)\.then\(function \(\) \{ if \(n === 'room-key' && S === me && S\.rv\) S\.rv\.rerender\(\); \}/, 'the Run view draws again once the bundle is in');
+  assert.match(P, /if \(S\.status === 'ready' && S\.rz && S\.rv && !!S\.rzOn !== b09On\('room\.key'\)\) \{ S\.rzOn = b09On\('room\.key'\); S\.rv\.rerender\(\); \}/, 'room.key turned on or off once the card exists: the Run view draws again (off from the start: nothing new)');
   assert.match(P, /if \(me\.rz\) \{ try \{ me\.rz\.destroy\(\); \} catch \(e\) \{\} me\.rz = null; \}/);
   assert.match(P, /S\.shortcuts = W\.B68GmShortcuts\.make\(\{ root: function \(\) \{ return \$q\('#gm-root'\); \}, feature: b09On \}\);/);
 });
