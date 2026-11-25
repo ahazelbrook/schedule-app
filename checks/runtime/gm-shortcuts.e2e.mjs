@@ -23,6 +23,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const { chromium } = require(process.env.PW_MODULE || '/opt/node-tools/node_modules/playwright');
 const SC = require('../../app/gm/shortcuts.js');
 
+/* the rows the card draws under the stored settings: a row with no `setting`, or one whose setting is on (RK09: app/gm/shortcuts.js shown()) */
+const rowsShown = (features) => SC.rows().filter((r) => !r.setting || (features && features[r.setting] === true)).length;
+let page = null;
+const settingsNow = () => page.evaluate(() => fetch('/api/gm/state', { credentials: 'same-origin', cache: 'no-store' }).then((r) => r.json()).then((j) => (j && j.doc && j.doc.features) || {}, () => ({})));
+
 let passed = 0, failed = 0;
 const check = (ok, name) => { if (ok) { passed++; console.log('PASS ' + name); } else { failed++; console.log('FAIL ' + name); } };
 async function until(fn, ms, step = 120) { const t0 = Date.now(); for (;;) { let v; try { v = await fn(); } catch (e) { v = false; } if (v || Date.now() - t0 > ms) return v; await sleep(step); } }
@@ -81,7 +86,7 @@ try {
   if (SHOTS) mkdirSync(SHOTS, { recursive: true });
   browser = await chromium.launch({ channel: process.env.PW_CHANNEL || undefined });
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, extraHTTPHeaders: { 'X-Dev-User': GM }, reducedMotion: 'reduce' });
-  const page = await ctx.newPage();
+  page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
   page.on('console', (m) => { if (m.type() !== 'error') return; const at = (m.location() && m.location().url) || ''; if (at.includes(':' + (PORT + 20000)) || at.endsWith('/media/theme.mp3')) return; errors.push('console: ' + m.text() + (at ? ' @ ' + at : '')); });
@@ -104,8 +109,8 @@ try {
     check(f.cols >= 3, w + ': the sections sit in columns (' + f.cols + ')');
     check(f.sizes.kbd >= 12 && f.sizes.say >= 14 && f.sizes.dd >= 13, w + ': big enough to read at arm\'s length (' + JSON.stringify(f.sizes) + ')');
     check(await page.$eval(SHEET + ' .gm-sheet-h', (e) => e.textContent) === 'Shortcuts', w + ': titled Shortcuts');
-    const rowsDrawn = await page.$$eval(SHEET + ' [data-sc-row]', (a) => a.length);
-    check(rowsDrawn === SC.rows().length, w + ': every row of the card is drawn (' + rowsDrawn + ')');
+    const rowsDrawn = await page.$$eval(SHEET + ' [data-sc-row]', (a) => a.length), want = rowsShown(await settingsNow());
+    check(rowsDrawn === want, w + ': every row of the card is drawn (' + rowsDrawn + ' of ' + SC.rows().length + ': ' + (SC.rows().length - want) + ' behind a setting that is off)');
     if (SHOTS) {
       await page.screenshot({ path: path.join(SHOTS, 'shortcuts-' + w + '.png') });
       if (f.scroll.h > f.scroll.c + 2) { await page.$eval(SHEET + ' .gm-sheet-body', (e) => { e.scrollTop = e.scrollHeight; }); await page.waitForTimeout(150); await page.screenshot({ path: path.join(SHOTS, 'shortcuts-' + w + '-end.png') }); await page.$eval(SHEET + ' .gm-sheet-body', (e) => { e.scrollTop = 0; }); }
@@ -124,6 +129,25 @@ try {
   }
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.waitForTimeout(300);
+
+  /* ---- a row behind a setting (RK09: room.key) is drawn once that setting is on ---- */
+  {
+    const gated = SC.rows().filter((r) => r.setting === 'room.key').length;
+    const setRoomKey = (on) => page.evaluate((v) => Promise.all(['/api/gm/state', '/api/campaign'].map((p) => fetch(p, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ features: { 'room.key': v } }) }).then((r) => r.status))), on);
+    const reload = async () => {
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => window.B68GmShortcuts && window.B68GmEsc && document.querySelector('#gm-band [data-gm="menu"]') && window.B68GmPage && window.B68GmPage.currentPlace, null, { timeout: 60000 });
+      await page.waitForTimeout(1500);
+    };
+    const st = await setRoomKey(true); await reload();
+    await blur(page); await page.keyboard.press('Shift+Slash');
+    const up = await until(() => isOpen(page), 3000);
+    const drawnOn = up ? await page.$$eval(SHEET + ' [data-sc-row]', (a) => a.length) : -1;
+    const termOn = up ? await page.$$eval(SHEET + ' [data-sc-row]', (a) => a.some((e) => /A room card/.test(e.textContent))) : false;
+    check(gated >= 1 && st.every((s) => s === 200) && drawnOn === rowsShown(await settingsNow()) && drawnOn === SC.rows().length && termOn, 'room.key on: its row is drawn too (' + drawnOn + ' of ' + SC.rows().length + ' rows)');
+    await page.keyboard.press('Escape'); await until(async () => !(await isOpen(page)), 2000);
+    await setRoomKey(false); await reload();
+  }
 
   /* ---- Find ---- */
   for (const q of ['keys', 'commands', 'help', 'Shortcuts']) {
