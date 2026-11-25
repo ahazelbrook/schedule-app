@@ -197,7 +197,7 @@ try {
   /* the button row's hook */
   const hook = await page.evaluate(async () => {
     const was = window.B68GmRoomShow, Z = window.B68GmPage._roomZoom(), out = {};
-    window.B68GmRoomShow = { buttons: (c) => [{ label: 'Probe show', id: 'probe', run: (c2) => { out.ctx = [c2.thing.slug, c2.room, c2.roomKey, c2.rollKey, c2.index, c2.count, typeof c2.refresh, typeof c2.close].join('|'); } }] };
+    window.B68GmRoomShow = { buttons: (c) => [{ label: 'Probe show', id: 'probe', run: (c2) => { out.ctx = [c2.thing.slug, c2.room, c2.roomKey, c2.rollKey, c2.index, c2.count, typeof c2.refresh, typeof c2.close, c2.rs && typeof c2.rs.setMark].join('|'); } }] };
     let ran = 0;
     const off = Z.addButtons('state', () => [{ label: 'Probe state', rank: 'quiet', run: () => new Promise((r) => { ran++; setTimeout(r, 300); }) }, { label: '', run: () => 0 }, { label: 'no run' }]);
     document.querySelector('[data-site="thing"][data-thing="brass-umbrella-stand"]').click();
@@ -206,7 +206,7 @@ try {
     out.slots = [...z.querySelectorAll('[data-rk-slot]')].map((s) => s.getAttribute('data-rk-slot') + ':' + [...s.querySelectorAll('button')].map((b) => (b.querySelector('.ui-label') || b).textContent + '#' + b.getAttribute('data-rk-btn')).join('/')).join(' ');
     z.querySelector('[data-rk-btn="probe"]').click();
     await new Promise((r) => setTimeout(r, 200));      /* one hook action at a time: the card draws again once it settles */
-    const st = document.querySelector('.rk-zoom [data-rk-slot="state"] button'); st.click(); st.click();
+    const st = document.querySelector('.rk-zoom [data-rk-slot="state"] [data-rk-btn="state"]'); st.click(); st.click();
     out.busy = st.getAttribute('aria-busy');
     await new Promise((r) => setTimeout(r, 500));
     out.ran = ran; out.after = !!document.querySelector('.rk-zoom [data-rk-btn="state"]');
@@ -215,8 +215,8 @@ try {
     return out;
   });
   const rk = await page.evaluate(() => String(window.B68GmPage._pure.rollKey(window.B68GmPage._state().locRoll)));
-  check(hook.slots === 'show:Probe show#probe state:Probe state#state swap:', 'the hook: the show slot from B68GmRoomShow.buttons(ctx), the state slot from addButtons; a button with no label or no run is left out (' + hook.slots + ')');
-  check(hook.ctx === ['brass-umbrella-stand', 'Showroom', 'showroom#1', rk, 0, 4, 'function', 'function'].join('|'), 'the hook\'s ctx: the thing, the room, its roomKey and rollKey, n of m, refresh and close (' + hook.ctx + ')');
+  check(hook.slots === 'show:Probe show#probe state:Full#mark-full/Empty#mark-empty/Probe state#state swap:', 'the hook: the show slot from B68GmRoomShow.buttons(ctx), the state slot from B68GmRoomMark (the thing\'s own states) then addButtons; a button with no label or no run is left out (' + hook.slots + ')');
+  check(hook.ctx === ['brass-umbrella-stand', 'Showroom', 'showroom#1', rk, 0, 4, 'function', 'function', 'function'].join('|'), 'the hook\'s ctx: the thing, the room, its roomKey and rollKey, n of m, refresh, close and the page\'s room-state writer (' + hook.ctx + ')');
   check(hook.busy === 'true' && hook.ran === 1 && hook.after && hook.gone, 'a hook button runs once while busy, the card draws again after, and off() takes it away (' + JSON.stringify({ busy: hook.busy, ran: hook.ran, after: hook.after, gone: hook.gone }) + ')');
   await page.keyboard.press('Escape'); await sleep(200);
 
@@ -229,6 +229,46 @@ try {
   await shot(page, 'desk-1366-paper-marked');
   await page.keyboard.press('Escape');
   await page.evaluate((rk) => window.B68GmPage._roomState().setMark(rk, 'showroom#1', 'velvet-rope', null), rk);
+
+  /* RK11: a thing's state is one tap in the zoom card (B68GmRoomMark), it stays on a reload, and two devices merge key by key */
+  const marksOf = (pg) => pg.evaluate((k) => JSON.stringify(window.B68GmPage._roomState().read(k, 'showroom#1').marks), rk);
+  const storedMarks = async () => { const r = await api('GET', '/gm/state'), d = r.json && r.json.doc || {}, rs = d.roomstate && d.roomstate.keys && d.roomstate.keys[rk];
+    return JSON.stringify(rs && rs.rooms && rs.rooms['showroom#1'] && rs.rooms['showroom#1'].marks || {}); };
+  const pressed = (pg, id) => pg.evaluate((i) => { const b = document.querySelector('.rk-zoom [data-rk-btn="' + i + '"]'); return b ? b.getAttribute('aria-pressed') + (b.disabled ? ' disabled' : '') : 'none'; }, id);
+  const tap = async (pg, slug, id) => {
+    if (!(await zoom(pg)) || (await pg.evaluate(() => (document.querySelector('.rk-zoom .rk-zname') || {}).textContent)) !== (await things(pg, 'Showroom')).find((t) => t.slug === slug).name) {
+      await pg.click(card('Showroom') + ' [data-site="thing"][data-thing="' + slug + '"]'); await until(() => zoom(pg), 3000);
+    }
+    await pg.click('.rk-zoom [data-rk-btn="' + id + '"]'); await sleep(500);
+  };
+  check(await marksOf(page) === '{}' && await storedMarks() === '{}', 'state: no marks to begin with, here or stored');
+  await tap(page, 'brass-umbrella-stand', 'mark-empty');
+  z = await zoom(page); let chips = await things(page, 'Showroom');
+  check(!!z && /State\s*empty/.test(z.state) && await pressed(page, 'mark-empty') === 'true' && await pressed(page, 'mark-full') === 'false' && await marksOf(page) === '{"brass-umbrella-stand":"empty"}' &&
+    chips.find((t) => t.slug === 'brass-umbrella-stand').chip === 'empty', 'state: one tap on Empty sets it (the pressed button, the zoom card\'s State, the room card\'s chip, room-state\'s marks)');
+  check(await until(async () => (await storedMarks()) === '{"brass-umbrella-stand":"empty"}', 20000), 'state: it is saved (the GM state\'s roomstate holds one small key)');
+  await shot(page, 'desk-1366-paper-state');
+  /* a reload: a new page reads it back, pressed, and one tap takes it away; a second device's write beside it */
+  const R = await open({});
+  await R.page.waitForSelector(card('Showroom') + ' [data-site="thing"]', { timeout: 15000 });
+  chips = await things(R.page, 'Showroom');
+  await R.page.click(card('Showroom') + ' [data-site="thing"][data-thing="brass-umbrella-stand"]'); const zr = await until(() => zoom(R.page), 3000);
+  check(chips.find((t) => t.slug === 'brass-umbrella-stand').chip === 'empty' && !!zr && /State\s*empty/.test(zr.state) && await pressed(R.page, 'mark-empty') === 'true', 'state: after a reload (a new page) the chip, the State and the pressed button are all still Empty');
+  await tap(R.page, 'velvet-rope', 'mark-taken');                      /* device 2 marks the rope taken ... */
+  await tap(page, 'brass-umbrella-stand', 'mark-full');                /* ... while device 1 switches the stand to Full */
+  check(await until(async () => (await storedMarks()) === '{"brass-umbrella-stand":"full","velvet-rope":"taken"}', 20000), 'state: two devices, one room, at once: both marks are stored (merged key by key; the stand switched with one tap)');
+  check(await until(async () => (await marksOf(page)) === '{"brass-umbrella-stand":"full","velvet-rope":"taken"}' && (await marksOf(R.page)) === (await marksOf(page)), 20000), 'state: and both pages read both');
+  /* taken dims and stays clickable; a tap on the pressed state takes it away */
+  chips = await things(R.page, 'Showroom'); const rope = chips.find((t) => t.slug === 'velvet-rope');
+  await R.page.keyboard.press('Escape'); await sleep(200);
+  await R.page.click(card('Showroom') + ' [data-site="thing"][data-thing="velvet-rope"]'); const zd = await until(() => zoom(R.page), 3000);
+  check(rope.chip === 'taken' && rope.done && !!zd && zd.name === NAMES[1] && await pressed(R.page, 'mark-taken') === 'true' && await pressed(R.page, 'mark-found') === 'false', 'state: a taken thing dims, stays clickable, and its zoom card has the default states (found, taken, gone), Taken pressed');
+  await R.page.click('.rk-zoom [data-rk-btn="mark-taken"]'); await sleep(500);
+  await tap(R.page, 'brass-umbrella-stand', 'mark-full');
+  check(await until(async () => (await storedMarks()) === '{}', 20000) && (await things(R.page, 'Showroom')).every((t) => !t.chip && !t.done), 'state: a tap on the pressed state takes the mark away; with every mark gone nothing is stored for the room');
+  await R.page.keyboard.press('Escape'); await page.keyboard.press('Escape'); await sleep(200);
+  check(await until(async () => (await marksOf(page)) === '{}', 20000), 'state: the first device sees them go too');
+  await R.c.close();
 
   /* 4. off again on the open page: the card goes, and the markup is today's */
   await page.click(card('Showroom') + ' [data-site="thing"][data-i="2"]'); await until(() => zoom(page), 3000);
@@ -253,6 +293,13 @@ try {
   const kesc = !(await zoom(K.page)) && (await focused(K.page)) === 'velvet-rope';
   await K.page.keyboard.press('4'); z = await until(() => zoom(K.page), 3000);
   check(kl.map((t) => t.name).join('|') === NAMES.join('|') && kz && kesc && !!z && z.name === NAMES[3], 'the kit desk: the four things in the kit\'s room card, a click opens one, Esc closes it, 4 opens the fourth');
+  await K.page.keyboard.press('Escape');
+  /* RK11 on the kit desk: the same one tap (the kit's buttons, the kit's room card chip), and a second tap takes it away */
+  await tap(K.page, 'velvet-rope', 'mark-gone');
+  const kc = (await things(K.page, 'Showroom')).find((t) => t.slug === 'velvet-rope');
+  check(kc.chip === 'gone' && kc.done && await pressed(K.page, 'mark-gone') === 'true', 'the kit desk: one tap on Gone marks it (the chip on the kit\'s room card, dimmed, the pressed button)');
+  await K.page.click('.rk-zoom [data-rk-btn="mark-gone"]'); await sleep(500);
+  check(await until(async () => (await storedMarks()) === '{}' && (await things(K.page, 'Showroom')).every((t) => !t.chip), 20000), 'the kit desk: a second tap takes it away, and nothing is stored');
   await K.page.keyboard.press('Escape');
   await K.c.close();
 

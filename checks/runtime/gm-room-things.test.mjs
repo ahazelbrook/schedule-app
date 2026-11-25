@@ -161,7 +161,8 @@ test('RK08.3 things stay GM-side: only the room-key bundle loads the two files, 
   const hits = files.filter((f) => /B68GmRoomThings|B68GmRoomState|room-things|room-state|roomstate/.test(fs.readFileSync(path.join(ROOT, f), 'utf8')));
   assert.deepEqual(hits.filter((f) => !/^app\/gm\/room-[a-z]+\.js$/.test(f)).sort(), ['app/gm-page.js', 'app/routes.js'], 'only the room key files, routes.js and gm-page.js name them');
   const page = fs.readFileSync(path.join(ROOT, 'app', 'gm-page.js'), 'utf8').split('\n').filter((l) => /B68GmRoomState|B68GmRoomThings|roomstate|rsInst/.test(l));
-  assert.equal(page.length, 3, 'gm-page.js: the rsInst comment and line, and the check hook (' + page.length + ')');
+  /* RK11: the fourth is the zoom card's state writes (rkZoom's host names rsInst: ctx.rs, on the live page only) */
+  assert.equal(page.length, 4, 'gm-page.js: the rsInst comment and line, the check hook, and the zoom card state writes (' + page.length + ')');
   assert.ok(page.every((l) => !/missionFor|missionSource|playerView|ballDoc|pushDisplay|playerSummary/.test(l)), 'none of them feeds a player path');
   const ball = fs.readFileSync(path.join(ROOT, 'app', 'gm', 'ball.js'), 'utf8');
   assert.ok(!/\bThings\b|room-things|roomstate/.test(ball), 'missionFor (ball.js) never reads things');
