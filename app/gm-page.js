@@ -6843,6 +6843,7 @@
   function nfInst() {
     var me = S, M = W.B68GmNpcFind; if (!me || !M || M.stub || typeof M.create !== 'function' || !b09On('gm.glance')) return null;
     if (!me.nf) me.nf = M.create({ npcs: function () { return S === me ? npcList() : []; }, redraw: function () { if (S === me) renderNpcs(); },
+      askWhy: function () { try { return W.matchMedia('(max-width: 599px)').matches ? 'Blade is not offered at a phone’s width.' : ''; } catch (e) { return ''; } },
       canAsk: function () { return S === me && !!me.assist && typeof me.assist.canAsk === 'function' && me.assist.canAsk(); },
       ask: function (q) { return S === me && me.assist && typeof me.assist.ask === 'function' ? me.assist.ask(q) : Promise.resolve(null); } });
     return me.nf;

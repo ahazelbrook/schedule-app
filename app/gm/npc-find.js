@@ -95,7 +95,7 @@
   /* ---------- the box ---------- */
   function create(host) {
     host = host || {};
-    var ST = { q: '', open: '', who: {}, node: null, box: null, waited: false, esc: null };
+    var ST = { q: '', open: '', fold: false, who: {}, node: null, box: null, waited: false, esc: null };
 
     function ui() { var U = host.ui || (W && W.B68Ui) || null; return U && typeof U.button === 'function' && typeof U.field === 'function' ? U : null; }
     function doc() { return host.doc || (W && W.document) || null; }
@@ -107,10 +107,11 @@
     function listHtml(ms) {
       if (!str(ST.q).trim()) return '';
       if (!ms.length) return '<p class="gl-find-note" role="status">No one by that name.</p>';
+      if (ST.open && ST.fold && ms.length > 1) return '<div class="gl-find-note gl-find-crumb" role="status">' + ms.length + ' matches ' + btn('Show the list', { cls: 'gl-find-relist', data: { glf: 'list' } }) + '</div>';      /* one line once someone is picked, with the way back */
       var shown = ms.slice(0, MAX_LIST), more = ms.length - shown.length;
       return '<p class="gl-find-note" role="status">' + ms.length + (ms.length === 1 ? ' match' : ' matches') + '</p><ul class="gl-find-list">' + shown.map(function (m) {
         var d = byId(m.id) || {}, sub = [str(d.role), str(d.faction)].filter(Boolean).join(' · '), on = ST.open === m.id;
-        return '<li class="gl-find-li">' + btn(str(d.name) || 'Unnamed', { cls: 'gl-find-pick' + (on ? ' is-on' : ''), data: { glf: 'pick', id: m.id }, attrs: { 'aria-pressed': on ? 'true' : 'false' } }) +
+        return '<li class="gl-find-li">' + btn(str(d.name) || 'Unnamed', { rank: 'standard', cls: 'gl-find-pick' + (on ? ' is-on' : ''), data: { glf: 'pick', id: m.id }, attrs: { 'aria-pressed': on ? 'true' : 'false' } }) +
           (sub ? '<small class="gl-find-sub">' + esc(sub) + '</small>' : '') + (d.revealed === true ? '' : '<span class="gm-badge gl-find-hid">Hidden</span>') + '</li>';
       }).join('') + '</ul>' + (more > 0 ? '<p class="gl-find-note">and ' + more + ' more: type more of the name.</p>' : '');
     }
@@ -120,17 +121,20 @@
       var n = notesOf(d.gmNotes), facts = factRow('Voice', n.voice) + factRow('Tell', n.tell) + factRow('Signature', n.signature) + factRow('Wants', n.want) + factRow('Knows', n.knows);
       var al = aliasList(d.alias).join(', '), sub = [str(d.role), str(d.faction)].filter(Boolean).join(' · '), w = ST.who[ST.open] || {}, can = typeof host.canAsk === 'function' && host.canAsk();
       var say = w.busy ? 'Asking Blade…' : w.err ? w.err : '';
+      var why = can ? '' : (typeof host.askWhy === 'function' && str(host.askWhy())) || 'Blade cannot be asked just now.';
       return '<section class="gl-find-card" data-gl-card="' + esc(ST.open) + '" aria-label="' + esc(str(d.name) || 'NPC') + '">' +
         '<h4 class="gl-find-name">' + esc(str(d.name) || 'Unnamed') + (al ? ' <span class="gl-find-al">“' + esc(al) + '”</span>' : '') + '</h4>' +
         (sub ? '<p class="gl-find-line">' + esc(sub) + '</p>' : '') +
         (d.revealed === true ? '' : '<p class="gl-find-line gl-find-hidnote"><span class="gm-badge">Hidden</span> Not shown to the players. Nothing on this card is sent.</p>') +
+        '<div class="gl-find-acts">' + btn('Who is', { rank: 'standard', cls: 'gl-find-who', data: { glf: 'who', id: ST.open }, disabled: !can || !!w.busy, title: can ? 'Ask Blade who they are: for your eyes only' : 'Blade cannot be asked just now' }) +
+        btn('Close', { cls: 'gl-find-close', data: { glf: 'close' } }) + '</div>' + (why ? '<p class="gl-find-line gl-find-why">' + esc(why) + '</p>' : '') +
+        '<div class="gl-find-answer" role="status" aria-live="polite"' + (say || w.text ? '' : ' hidden') + '>' + (say ? '<p class="gl-find-line">' + esc(say) + '</p>' : '') + (w.text ? '<p class="gl-find-text">' + esc(w.text) + '</p>' : '') + '</div>' +
+        '<div class="gl-find-body" tabindex="0" role="region" aria-label="Notes">' +
         (str(d.description) ? '<p class="gl-find-look">' + esc(clip(d.description, 600)) + '</p>' : '') +
         (facts ? '<dl class="gl-find-facts">' + facts + '</dl>' : '') +
         (n.rest.length ? '<ul class="gl-find-rest">' + n.rest.map(function (l) { return '<li>' + esc(l) + '</li>'; }).join('') + '</ul>' : '') +
         (!facts && !n.rest.length && !str(d.description) ? '<p class="gl-find-line">Nothing is filed on them yet.</p>' : '') +
-        '<div class="gl-find-acts">' + btn('Who is', { rank: 'standard', cls: 'gl-find-who', data: { glf: 'who', id: ST.open }, disabled: !can || !!w.busy, title: can ? 'Ask Blade who they are: for your eyes only' : 'Blade cannot be asked just now' }) +
-        btn('Close', { cls: 'gl-find-close', data: { glf: 'close' } }) + '</div>' +
-        '<div class="gl-find-answer" role="status" aria-live="polite"' + (say || w.text ? '' : ' hidden') + '>' + (say ? '<p class="gl-find-line">' + esc(say) + '</p>' : '') + (w.text ? '<p class="gl-find-text">' + esc(w.text) + '</p>' : '') + '</div></section>';
+        '</div></section>';
     }
     function barHtml() {
       return '<div class="gl-find-bar">' + ui().field({ kind: 'search', label: 'Find an NPC', id: 'gl-find-q', cls: 'gl-find-q', value: ST.q, placeholder: 'Name or alias', attrs: { autocomplete: 'off', spellcheck: 'false', maxlength: '60' } }) +
@@ -145,10 +149,10 @@
     function repaint() { if (ST.node && ST.node.parentNode) paintOut(ST.node); }
     function escReg() {
       var E = W && W.B68GmEsc; if (!E || typeof E.register !== 'function' || ST.esc) return;
-      ST.esc = E.register('npc-find', { priority: 40, isOpen: function () { return !!ST.open && !!ST.node && ST.node.isConnected !== false; }, close: function () { ST.open = ''; repaint(); } });
+      ST.esc = E.register('npc-find', { priority: 40, isOpen: function () { return !!ST.open && !!ST.node && ST.node.isConnected !== false; }, close: function () { ST.open = ''; ST.fold = false; repaint(); } });
     }
 
-    function pick(id) { ST.open = id; escReg(); repaint(); }
+    function pick(id) { ST.open = id; ST.fold = true; escReg(); repaint(); }
     function ask(id) {
       var d = byId(id), w = ST.who[id] = ST.who[id] || {}; if (!d || w.busy || typeof host.ask !== 'function') return;
       var name = str(d.name).trim(); if (!name) return;
@@ -165,7 +169,7 @@
     }
 
     function type(v) {
-      ST.q = str(v).slice(0, 60); var ms = matches();
+      ST.q = str(v).slice(0, 60); ST.fold = false; var ms = matches();
       ST.open = ms.length === 1 ? ms[0].id : (ms.some(function (m) { return m.id === ST.open; }) ? ST.open : '');      /* the only match opens its card */
       if (ST.open) escReg();
       if (ST.node) { paintOut(ST.node); var c = ST.node.querySelector('.gl-find-clear'); if (c) c.disabled = !ST.q; }
@@ -179,10 +183,11 @@
       var t = ev.target && ev.target.closest ? ev.target.closest('[data-glf]') : null; if (!t || !ST.node || !ST.node.contains(t)) return;
       var k = t.getAttribute('data-glf'), id = t.getAttribute('data-id') || '';
       if (k === 'pick') pick(id);
-      else if (k === 'close') { ST.open = ''; repaint(); }
+      else if (k === 'close') { ST.open = ''; ST.fold = false; repaint(); }
+      else if (k === 'list') { ST.fold = false; repaint(); }
       else if (k === 'who') ask(id);
       else if (k === 'clear') {
-        ST.q = ''; ST.open = ''; var q = ST.node.querySelector('#gl-find-q'); if (q) { q.value = ''; try { q.focus(); } catch (e) { /* none */ } }
+        ST.q = ''; ST.open = ''; ST.fold = false; var q = ST.node.querySelector('#gl-find-q'); if (q) { q.value = ''; try { q.focus(); } catch (e) { /* none */ } }
         repaint(); t.disabled = true;
       }
     }

@@ -109,7 +109,7 @@ await test('answerText: the headline, the bullets and the More text of an Ask ca
 /* ---------- the box ---------- */
 /* a host that throws on anything it was not meant to be asked: the card can read the cast and ask Blade, and nothing else */
 function strictHost(extra) {
-  const allowed = new Set(['npcs', 'ask', 'canAsk', 'redraw', 'ui', 'doc']), asks = [];
+  const allowed = new Set(['npcs', 'ask', 'canAsk', 'askWhy', 'redraw', 'ui', 'doc']), asks = [];
   const base = Object.assign({ npcs: () => CAST, canAsk: () => true, ask: (q) => { asks.push(q); return Promise.resolve({ answer: { headline: 'A weary guard.', bullets: ['Wants a quiet shift'], more: 'Knows the lift key.' } }); }, ui: U }, extra || {});
   const host = new Proxy(base, { get(t, k) { if (typeof k === 'symbol') return undefined; if (!allowed.has(k)) throw new Error('the box reached for host.' + String(k)); return t[k]; } });
   return { host, asks };
@@ -142,7 +142,29 @@ await test('the box: several matches list them (a button each), nothing opens un
   b.type('ellis'); assert.equal(b.state().open, 'npc-ellis', 'the only match opens its card (Mabel’s closed: she is not an "ellis")');
   b.type('e'); b.pick('npc-ellis'); b.type('ell'); assert.equal(b.state().open, 'npc-ellis', 'a still-matching card stays open as the query grows');
 });
-await test('the box: the list stops at eight, and says how many more', () => {
+await test('the box: once someone is picked from several the list folds to one line, with a way back; typing or Close unfolds it', () => {
+  const b = F.create(strictHost().host); b.type('e');
+  assert.ok((b.html().match(/data-glf="pick"/g) || []).length >= 4, 'the list');
+  b.pick('npc-mabel');
+  let h = b.html();
+  assert.ok(!/data-glf="pick"/.test(h) && /data-glf="list"/.test(h) && /Show the list/.test(h) && /[0-9]+ matches/.test(h), 'one line: the count and Show the list');
+  assert.ok(/data-gl-card="npc-mabel"/.test(h), 'the card stays');
+  const P = fakePanel(), c = F.create(strictHost({ doc: P.doc }).host); c.mount(P.box, null); P.box.listeners.input[0]({ target: { id: 'gl-find-q', value: 'e' } }); c.pick('npc-mabel');
+  P.box.listeners.click[0]({ target: { closest() { return this; }, getAttribute(n) { return n === 'data-glf' ? 'list' : null; } } });
+  assert.ok(/data-glf="pick"/.test(P.out.innerHTML) && /data-gl-card="npc-mabel"/.test(P.out.innerHTML), 'Show the list brings the rows back and keeps the card');
+  b.type('el'); assert.ok(!/Show the list/.test(b.html()), 'typing unfolds it');
+  b.type('e'); b.pick('npc-ellis'); assert.ok(/Show the list/.test(b.html())); b.type('e'); assert.ok(/data-glf="pick"/.test(b.html()), 'a new query shows the rows again');
+  const one = F.create(strictHost().host); one.type('dov'); assert.ok(/data-glf="pick"/.test(one.html()) && !/Show the list/.test(one.html()), 'one match: its row stays, nothing to fold');
+});
+await test('Who is: when Blade cannot be asked the reason is visible text, not only a title (the host’s own, else a plain line)', () => {
+  const a = F.create(strictHost({ canAsk: () => false, askWhy: () => 'Blade is not offered at a phone’s width.' }).host); a.type('dov');
+  assert.ok(a.html().includes('<p class="gl-find-line gl-find-why">Blade is not offered at a phone’s width.</p>'), 'the host’s reason');
+  const b = F.create(strictHost({ canAsk: () => false, askWhy: () => '' }).host); b.type('dov');
+  assert.ok(/gl-find-why">Blade cannot be asked just now./.test(b.html()), 'a plain line');
+  const c = F.create(strictHost().host); c.type('dov'); assert.ok(!/gl-find-why/.test(c.html()), 'nothing when it can be asked');
+});
+await test('the box: the notes can be scrolled by keyboard (they are focusable) and the list stops at eight, and says how many more', () => {
+  assert.ok(/<div class="gl-find-body" tabindex="0"/.test((() => { const b = F.create(strictHost().host); b.type('dov'); return b.html(); })()), 'focusable notes (they scroll inside themselves)');
   const many = Array.from({ length: 12 }, (_, i) => ({ id: 'n' + i, doc: { name: 'Pip Number' + i, revealed: true } }));
   const b = F.create(strictHost({ npcs: () => many }).host); b.type('pip');
   const h = b.html(); assert.equal((h.match(/data-glf="pick"/g) || []).length, 8); assert.ok(/and 4 more/.test(h));

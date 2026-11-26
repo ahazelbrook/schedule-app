@@ -102,6 +102,12 @@ export async function rk24(c) {
     check(rows.length >= 4 && (await cardName(p)) === null, tag + 'find: "e" lists several and opens none (' + rows + ')');
     await p.keyboard.press('Enter');
     check(!!(await until(async () => (await cardName(p)) !== null, 4000)), tag + 'find: Enter opens the first match (' + await cardName(p) + ')');
+    /* picked from several: the list is one line (the count and Show the list), the card is capped and scrolls inside itself, and the way back works */
+    check((await p.$$('[data-gl-panel="find"] .gl-find-pick')).length === 0 && !!(await p.$('[data-gl-panel="find"] [data-glf="list"]')), tag + 'fold: once one is picked the list is one line with Show the list');
+    check(await p.evaluate(() => { const k = document.querySelector('.gl-find-body'); return !!k && k.getAttribute('tabindex') === '0' && k.getBoundingClientRect().height <= window.innerHeight * 0.25 + 2; }), tag + 'fold: the notes are no taller than a quarter of the window, and focusable to scroll');
+    await p.click('[data-glf="list"]');
+    check((await p.$$('[data-gl-panel="find"] .gl-find-pick')).length >= 4 && (await cardName(p)) !== null, tag + 'fold: Show the list brings the rows back and keeps the card');
+    check(await p.evaluate(() => [...document.querySelectorAll('.gl-find-li')].every((li) => { const h = li.querySelector('.gl-find-hid'); return !h || h.getBoundingClientRect().top < li.querySelector('.gl-find-pick').getBoundingClientRect().bottom; })), tag + 'fold: a Hidden badge stays on its row’s line');
     await p.fill('#gl-find-q', ''); await p.keyboard.type('zoe', { delay: 20 });
     check((await p.$$eval('[data-gl-panel="find"] .gl-find-note', (l) => l.map((n) => n.textContent).join(' '))).includes('No one'), tag + 'find: a name that is not in the cast says so');
     await p.fill('#gl-find-q', ''); await p.keyboard.type('MAB', { delay: 20 });
@@ -186,7 +192,10 @@ export async function rk24(c) {
       await shots(p, 'RK24-' + (desk ? 'kit' : 'old') + '-' + theme + '-' + w + '-list');
       await p.fill('#gl-find-q', ''); await p.keyboard.type('dov', { delay: 25 }); await p.waitForSelector('.gl-find-card [data-glf="who"]', { timeout: 10000 });
       /* Blade’s Ask seat is not offered at a phone’s width (assist-panel.js isPhone, 599 px): there Who is is shown off, with its reason */
-      if (w >= 600) { await p.click('[data-glf="who"]:not([disabled])'); await sleep(900); } else check(await p.$eval('[data-glf="who"]', (b) => b.disabled), 'rk24 shots: Who is is off at a phone’s width');
+      if (w >= 600) { await p.click('[data-glf="who"]:not([disabled])'); await sleep(900); } else {
+        check(await p.$eval('[data-glf="who"]', (b) => b.disabled), 'rk24 shots: Who is is off at a phone’s width');
+        check(await p.evaluate(() => { const e = document.querySelector('.gl-find-why'); return !!e && /phone/.test(e.textContent) && e.getBoundingClientRect().height > 0 && parseFloat(getComputedStyle(e).fontSize) >= 12; }), 'rk24 shots: the reason is visible text, 12 px or more');
+      }
       await shots(p, 'RK24-' + (desk ? 'kit' : 'old') + '-' + theme + '-' + w + '-card');
       check((await spill(p)) <= 1 && (await minFont(p)).m >= 12, 'rk24 shots ' + (desk ? 'kit' : 'old') + ' ' + theme + ' ' + w + ': no sideways spill, nothing under 12 px');
       await ctx.close();
