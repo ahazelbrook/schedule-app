@@ -41,7 +41,7 @@ await test('gm-glance-crew: a PC: Stress n/max, harm by level in the player\'s w
   assert.equal(nell.name, 'Nell Arbuthnot'); assert.equal(nell.playbook, 'Hound');
   assert.equal(nell.stressName, 'Stress'); assert.equal(nell.stress, 5); assert.equal(nell.stressMax, 9); assert.equal(nell.full, false);
   assert.deepEqual(nell.harm.map((h) => h.lv + ' ' + h.name + ': ' + h.text), ['3 Critical: Broken arm', '2 Major: Cracked jaw', '1 Passing: Bruised ribs']);
-  assert.deepEqual(nell.locks, ['KEY-1'], 'only the deadlocked key, not KEY-2');
+  assert.deepEqual(nell.locks, [{ kind: 'deadlock', name: 'KEY-1', dir: 'down', word: 'Takes the long way round' }], 'only the deadlocked key, not KEY-2, with its direction and its word');
   assert.equal(nell.xp, 4); assert.equal(nell.xpMax, 8); assert.equal(nell.stacks, 2); assert.equal(nell.fresh, false);
   const tam = M.pcModel(PCS[2]);
   assert.equal(tam.stress, 9); assert.equal(tam.full, true, 'full Stress is flagged'); assert.deepEqual(tam.harm, []); assert.deepEqual(tam.locks, []);
@@ -84,7 +84,7 @@ await test('gm-glance-crew: the recap reads off one panel (harm, stacks, crew ty
   for (const s of ['Shadows', 'Tier 1', 'strong hold', 'Surveillance', 'Heists', 'Subterfuge', 'Cleanup', 'Hunting grounds: The ferry quays', 'Vault 1/2', 'Hidden', 'The Lamplighters', 'gang', 'weak', 'armor', 'Ada Vell',
     '4 held', 'Turf ×2', 'Informants', 'Buy the ferry office', '3/8', 'hidden from players']) assert.ok(t.includes(s), 'the panel shows ' + s + ' in: ' + t);
   assert.ok(!t.includes('Win back the marker'), 'a progress clock is not a project clock');
-  for (const s of ['Nell Arbuthnot', 'Hound', 'Stress 5/9', 'XP 4/8', 'Stacks 2', '3 Critical Broken arm', '2 Major Cracked jaw', '1 Passing Bruised ribs', 'Deadlocks KEY-1',
+  for (const s of ['Nell Arbuthnot', 'Hound', 'Stress 5/9', 'XP 4/8', 'Stacks 2', '3 Critical Broken arm', '2 Major Cracked jaw', '1 Passing Bruised ribs', 'Deadlocks KEY-1 ▼ reversed Takes the long way round',
     'Ray Okonjo', 'Stress 2/9', 'XP 6/8', 'Tam Petrakis', 'Stress 9/9 full', 'No harm']) assert.ok(t.includes(s), 'the panel shows ' + s + ' in: ' + t);
   assert.ok(h.indexOf('Ray Okonjo') > h.indexOf('Nell Arbuthnot'), 'the PCs in the order given');
   assert.ok(!/undefined|NaN|\[object/.test(h), 'no undefined, NaN or [object]');
@@ -100,6 +100,16 @@ await test('gm-glance-crew: what a player or the table typed is escaped; the PC 
   assert.ok(h.includes('data-pc="p&quot;x"'), 'an id is escaped in its attribute');
   const many = M.html({ crew: M.crewModel(CREW, { Crews }), pcs: Array.from({ length: 11 }, (_, i) => M.pcModel(slim(Object.assign({}, RAW[1], { id: 'q' + i, name: 'Mabel ' + i })))) });
   assert.equal((many.match(/<li class="gl-crew-pc/g) || []).length, 8); assert.match(many, /\+3 more on the Players tab/);
+});
+
+await test('gm-glance-crew: a deadlock shows its direction and its word; a glitch (Ghost, Time Traveler) is labelled a glitch, never a deadlock', () => {
+  const keys = [{ name: 'KEY-1', deadlock: 'up', up: 'Never lets go', down: 'Lets go' }, { name: 'KEY-2', deadlock: 'down', down: 'Forgets a face', up: 'x' }, { name: 'KEY-3', glitch: 'Echo skip' }, { name: 'KEY-4', hits: 1 }];
+  const pc = M.pcModel(slim({ id: 'g', name: 'Lotte Brand', playbook: 'ghost', playbookName: 'Ghost', play: { stress: 1, harm: {}, keys } }));
+  assert.deepEqual(pc.locks.map((l) => [l.kind, l.name, l.dir, l.word]), [['deadlock', 'KEY-1', 'up', 'Never lets go'], ['deadlock', 'KEY-2', 'down', 'Forgets a face'], ['glitch', 'KEY-3', '', 'Echo skip']]);
+  const t = text(M.html({ crew: M.crewModel({}, {}), pcs: [pc] }));
+  assert.ok(t.includes('Deadlocks KEY-1 ▲ intensified Never lets go · KEY-2 ▼ reversed Forgets a face'), t);
+  assert.ok(t.includes('Glitches KEY-3 Echo skip') && !/Deadlocks[^.]*KEY-3/.test(t.replace(/Glitches.*/, '')), 'the glitch is on its own line, labelled Glitches');
+  assert.ok(M.pcModel(slim({ id: 'g', name: 'A', playbook: 'ghost', play: { stress: 0, keys: [{ name: 'K', glitch: true }] } })).locks[0].word === '', 'a glitch with no name has no word');
 });
 
 // a minimal DOM: one #gl-crew element whose outerHTML can be replaced
@@ -147,7 +157,8 @@ await test('gm-glance-crew: GM-only: the files are in the gm-glance bundle alone
   assert.ok(/B68GmGlanceCrew/.test(read('gm-page.js')), 'the GM page is the one reader');
 });
 await test('gm-glance-crew: glance.css: nothing under 12 px, no C1 control character, every rule on a .gl- class, kit rules scoped under the desk and unlayered', () => {
-  const css = read('gm/glance.css'), bare = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  const all = read('gm/glance.css'), css = all.slice(all.indexOf('/* ---------- RK20: the crew at a glance')), bare = css.replace(/\/\*[\s\S]*?\*\//g, '');      /* RK20's block only: RK21 to RK24 keep their own */
+  assert.ok(all.includes('/* ---------- RK20: the crew at a glance') && !/[\u0080-\u009f]/.test(all), 'RK20 block present; no C1 character anywhere in the sheet');
   assert.ok(!/[\u0080-\u009f]/.test(css), 'no U+0080 to U+009F');
   const sizes = [...bare.matchAll(/font(?:-size)?\s*:\s*(?:[0-9]+\s+)?([0-9.]+)px/g)].map((m) => +m[1]); assert.ok(sizes.length > 10 && sizes.every((n) => n >= 12), 'every font size is 12 px or more: ' + sizes.join(','));
   assert.ok(!/!important|@layer/.test(bare), 'no !important and no @layer');

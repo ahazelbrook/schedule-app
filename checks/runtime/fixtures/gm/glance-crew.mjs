@@ -20,7 +20,7 @@ export const CLOCKS = [
 export const RAW = [
   { id: 'char_gl1', name: 'Nell Arbuthnot', alias: 'Nettle', playbook: 'hound', playbookName: 'Hound',
     play: { session: 4, stress: 5, harm: { l1: ['Bruised ribs', ''], l2: ['Cracked jaw', ''], l3: 'Broken arm', l4: '' }, xp: { playbook: 4 }, stacks: 2,
-      keys: [{ name: 'KEY-1', hits: 3, deadlock: 'down' }, { name: 'KEY-2', hits: 1, deadlock: null }] } },
+      keys: [{ name: 'KEY-1', hits: 3, deadlock: 'down', down: 'Takes the long way round', up: 'Never lets go of a scent' }, { name: 'KEY-2', hits: 1, deadlock: null }] } },
   { id: 'char_gl2', name: 'Ray Okonjo', alias: '', playbook: 'operative', playbookName: 'Operative',
     play: { session: 4, stress: 2, harm: { l1: ['', ''], l2: ['Cut hand', ''], l3: '', l4: '' }, xp: { playbook: 6 }, stacks: 0, keys: [{ name: 'KEY-1', hits: 2, deadlock: null }] } },
   { id: 'char_gl3', name: 'Tam Petrakis', alias: 'Tink', playbook: 'swinger', playbookName: 'Swinger',

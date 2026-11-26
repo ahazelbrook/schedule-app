@@ -50,7 +50,10 @@
       });
     });
     (Array.isArray(p.keys) ? p.keys : []).forEach(function (k) {
-      if (isObj(k) && (k.deadlock || k.glitch) && m.locks.length < 6) m.locks.push(str(k.name).replace(/\s+/g, ' ').trim().slice(0, 40) || 'A key');
+      if (!isObj(k) || !(k.deadlock || k.glitch) || m.locks.length >= 6) return;
+      var nm = str(k.name).replace(/\s+/g, ' ').trim().slice(0, 40) || 'A key';
+      if (k.deadlock) { var dir = k.deadlock === 'up' ? 'up' : 'down'; m.locks.push({ kind: 'deadlock', name: nm, dir: dir, word: str(k[dir]).replace(/\s+/g, ' ').trim().slice(0, 80) }); }
+      else m.locks.push({ kind: 'glitch', name: nm, dir: '', word: typeof k.glitch === 'string' ? k.glitch.replace(/\s+/g, ' ').trim().slice(0, 80) : '' });
     });
     return m;
   }
@@ -146,7 +149,10 @@
       '<span class="gl-v"><span class="gl-vk">XP</span> <b>' + (p.xp == null ? '—' : p.xp + '/' + p.xpMax) + '</b></span>' +
       '<span class="gl-v"><span class="gl-vk">Stacks</span> <b>' + p.stacks + '</b></span>' +
       '<span class="gl-pc-harm">' + (p.harm.length ? p.harm.map(function (x) { return '<span class="gl-h gl-h' + x.lv + '"><b>' + x.lv + ' ' + x.name + '</b> ' + esc(x.text) + '</span>'; }).join('') : none('No harm')) + '</span></div>';
-    if (p.locks.length) h += '<div class="gl-pc-line gl-pc-locks"><span class="gl-vk">Deadlocks</span> ' + p.locks.map(esc).join(' · ') + '</div>';
+    [['deadlock', 'Deadlocks'], ['glitch', 'Glitches']].forEach(function (g) {
+      var l = p.locks.filter(function (x) { return x.kind === g[0]; });
+      if (l.length) h += '<div class="gl-pc-line gl-pc-locks"><span class="gl-vk">' + g[1] + '</span> ' + l.map(function (x) { return '<span class="gl-lock">' + esc(x.name) + (x.dir ? ' <b>' + (x.dir === 'up' ? '▲ intensified' : '▼ reversed') + '</b>' : '') + (x.word ? ' ' + esc(x.word) : '') + '</span>'; }).join(' · ') + '</div>';
+    });
     return h + '</li>';
   }
   function html(model) {

@@ -36,13 +36,14 @@ const api = (method, p, body, user = GM) => fetch(BASE + '/api' + p, { method, h
 /* the parts, in the order they run: { name, file (a fixtures/gm module), run (its exported function), ms (its own timeout) }. RK20, RK22 to RK24 add a row. */
 const PARTS = [
   { name: 'RK21', file: './fixtures/gm/glance-rk21.mjs', run: 'rk21', ms: (SHOTS ? 900 : 300) * 1000 },
+  { name: 'RK20', file: './fixtures/gm/glance-rk20.mjs', run: 'rk20', ms: (SHOTS ? 900 : 600) * 1000 },
 ];
 /* every setting a part may turn on: all off before and after each part */
 const BASE_OFF = { 'gm.glance': false, 'kit.desk': false };
 const ONLY = (process.env.GL_ONLY || '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
 const RUN = PARTS.filter((p) => !ONLY.length || ONLY.includes(p.name));
 
-for (const f of ['app/routes.js', 'app/features.js', 'app/gm/glance-now.js', 'app/gm/glance.css']) check(existsSync(path.join(ROOT, f)), f + ' exists');
+for (const f of ['app/routes.js', 'app/features.js', 'app/gm/glance-now.js', 'app/gm/glance-crew.js', 'app/gm/glance.css']) check(existsSync(path.join(ROOT, f)), f + ' exists');
 
 if (await fetch(BASE + '/api/me', { signal: AbortSignal.timeout(1500) }).then(() => true, () => false)) { console.log('FAIL port ' + PORT + ' is already in use'); process.exit(1); }
 const demo = spawn(process.execPath, [path.join(ROOT, 'scripts', 'demo-night.mjs'), '--port', String(PORT)], { cwd: ROOT, env: { ...process.env, B68_ANTHROPIC_KEY: '', ANTHROPIC_API_KEY: '' }, detached: !WIN, stdio: ['ignore', 'pipe', 'pipe'] });
