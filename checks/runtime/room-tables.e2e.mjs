@@ -11,6 +11,11 @@
 //   3. The night's authored v2 site (play.v === 2, missionSource live): its Run view card carries the same parts; every room of the authored roll has a
 //      description, 4 things and a people slot; the same secrecy probe.
 //   4. The kit desk: the same cards, a click opens the zoom card.
+//   4b. RK16, the Blade tap (POST /api/gm/assist/room answered by a page.route fake registered before the page loads: no model, no key; GM-ONLY- markers in
+//      every field of its answer): "Fit to tonight (~3¢)" on every tabled room and none on the room with no table; a tap is busy, then the answer lands on the card
+//      marked ✦ Blade (its say, 6 things, the people line) and in the GM state; the request carries no closer look, roll or danger; secrecy after the tap and
+//      after Show on iPad of a Blade thing (one line); a reload keeps it; a malformed answer and the server's refusal are toasts and store nothing; Clear;
+//      the kit desk draws the same.
 //   5. room.tables off again: the Run pane says what it said before.
 //   6. room.tables turned off on a live page (the review of RK14): the rolled instance goes, and a plain RK09 thing opens only RK09's card.
 //   7. RK15, Swap, Roll another and Reroll the room, on the rolled site: every tabled room's card has the two buttons; Swap is in the zoom card's swap slot, replaces
@@ -76,8 +81,9 @@ try {
 
   browser = await pw.chromium.launch(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {});
   const blur = (page) => page.evaluate(() => { const a = document.activeElement; if (a && a.blur) a.blur(); });
-  async function open({ w = 1366, h = 768, theme = 'paper', kit = false, tables = true, v2 = false } = {}) {
+  async function open({ w = 1366, h = 768, theme = 'paper', kit = false, tables = true, v2 = false, route = null } = {}) {
     const c = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': GM }, viewport: { width: w, height: h }, serviceWorkers: 'block' });
+    if (route) await c.route('**/api/gm/assist/room', route);      /* RK16: the Blade tap's fake, in place before the page loads */
     await c.addInitScript({ content: 'window.__B68_POLL_MS = 1000; try { localStorage.setItem("b68.theme", ' + JSON.stringify(theme === 'night' ? 'dark' : 'light') + '); } catch (e) {}' });
     const page = await c.newPage(), fetched = [];
     page.on('request', (r) => fetched.push(r.url()));
@@ -282,6 +288,121 @@ try {
   await shot(F.page, 'kitdesk-1366-paper-zoom-first');
   check(kc.length > 0 && !!z && z.eye.startsWith(kc[0].room + ' · 1 of '), 'the kit desk: the same cards (krv classes beside the old ones), and a click opens the zoom card');
   await F.page.keyboard.press('Escape'); await F.c.close();
+
+  /* ---- 4b. RK16, the Blade tap, on the same rolled site. The seat is a page.route fake (no model, no key); GM-ONLY- markers in every field it answers ---- */
+  {
+    const BLADE = { say: 'GM-ONLY-say: the band stops as you come in.',
+      things: [{ name: 'GM-ONLY-velvet rope', line: 'GM-ONLY-line: it guards a side stair.', look: 'GM-ONLY-look: the hook is loose.', roll: 'GM-ONLY-roll 4/5: it drops.', danger: 'GM-ONLY-danger: the bouncer sees.', states: ['up', 'down'], tags: ['door'] },
+        { name: 'GM-ONLY-ice bucket', line: 'GM-ONLY-line: sweating on the bar.', look: '', roll: '', danger: '', states: [], tags: [] }],
+      people: [{ line: 'GM-ONLY-person: a cleaner counting tips', role: 'cleaner' }] };
+    const BL_TEXTS = [BLADE.say, BLADE.people[0].line].concat(BLADE.things.flatMap((x) => [x.name, x.line, x.look, x.roll, x.danger])).filter(Boolean);
+    const bleaks = (text, sent = []) => { const t = sent.reduce((a, l) => a.split(l).join(''), text); return BL_TEXTS.filter((s) => t.includes(s)); };
+    const SPEND = { tonight: 0.01, cap: 30, tier: 'all', tick: 0.005 };
+    const fake = { mode: 'good', asked: [] };
+    const route = async (rt) => {
+      let b = null; try { b = rt.request().postDataJSON(); } catch (_) { b = null; }
+      fake.asked.push(b); await sleep(700);
+      const body = fake.mode === 'good' ? { room: { ...JSON.parse(JSON.stringify(BLADE)), at: new Date().toISOString() }, cents: 0.5, spend: SPEND }
+        : fake.mode === 'refused' ? { room: null, error: 'Blade’s answer did not fit the card (unknown field: secret): nothing changed', cents: 0.4, spend: SPEND }
+        : { room: { say: 5, things: 'GM-ONLY-not a list', people: [] }, cents: 0.4, spend: SPEND };
+      return rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    };
+    await feats({ 'kit.desk': false, 'room.tables': true, 'room.key': true });
+    /* the site screen with its Fit buttons: a slow page (this PC runs short of memory) gets G pressed again, and says where it is if they never come */
+    const fitUp = async (p) => {
+      for (let i = 0; i < 3; i++) {
+        if (await p.waitForSelector('#gm-runv .rr-site [data-rb="fit"]', { timeout: 15000 }).then(() => true, () => false)) return true;
+        await blur(p); await p.keyboard.press('g');
+      }
+      console.log('  4b: ' + JSON.stringify(await p.evaluate(() => { const s = window.B68GmPage._state(), b = document.querySelector('#gm-runv'); return { panel: s.panel, kit: document.documentElement.getAttribute('data-kit'),
+        blade: !!(window.B68GmRoomBlade && !window.B68GmRoomBlade.stub), rr: !!window.B68GmPage._roomRolled(), html: b ? b.innerHTML.slice(0, 300) : '' }; })));
+      return false;
+    };
+    const BL = await open({ route });
+    page = BL.page;
+    if (!(await fitUp(page))) throw new Error('4b: the Fit buttons never showed');
+    const bc = await page.evaluate(() => [...document.querySelectorAll('#gm-runv .rr-site .rv-rm[data-room]')].map((c) => ({ room: c.getAttribute('data-room'), n: +(c.getAttribute('data-rn') || 1),
+      things: c.querySelectorAll('[data-site="thing"]').length, fit: [...c.querySelectorAll('[data-rb="fit"]')].map((b) => (b.querySelector('.ui-label') || b).textContent) })));
+    const tb = bc.filter((c) => c.things);
+    check(tb.length >= 2 && tb.every((c) => c.fit.length === 1 && c.fit[0] === 'Fit to tonight (~3¢)') && bc.filter((c) => !c.things).every((c) => !c.fit.length),
+      'RK16: "Fit to tonight (~3¢)" on every room with a table, and none on the room with no table (' + tb.length + ' rooms)');
+    const sel1 = card(tb[0].room, tb[0].n), sel2 = card(tb[1].room, tb[1].n);
+    const keyOf = (s) => page.evaluate((x) => document.querySelector(x + ' [data-rr-blade]').getAttribute('data-rr-blade'), s);
+    const key1 = await keyOf(sel1), key2 = await keyOf(sel2);
+    const rkB = await page.evaluate(() => String(window.B68GmPage._pure.rollKey(window.B68GmPage._state().locRoll)));
+    const bladeAt = async (k) => { const s = (await api('GET', '/gm/state')).json; const r = s && s.doc && s.doc.roomstate && s.doc.roomstate.keys && s.doc.roomstate.keys[rkB]; return r && r.rooms && r.rooms[k] ? r.rooms[k].blade || null : null; };
+    await page.click(sel1 + ' [data-rb="fit"]');
+    const busy = await until(() => page.evaluate((s) => { const b = document.querySelector(s + ' [data-rb="fit"]'); return b && b.getAttribute('aria-busy') === 'true' && /Fitting…/.test(b.textContent) ? true : null; }, sel1), 3000, 100);
+    const waits = await page.evaluate(() => [...document.querySelectorAll('#gm-runv [data-rb="fit"]')].filter((b) => b.getAttribute('aria-busy') !== 'true').every((b) => b.disabled));
+    check(!!busy && waits, 'a tap is busy ("Fitting…"), and every other Fit waits');
+    const landed = await until(() => page.evaluate((s) => { const c = document.querySelector(s), m = c && c.querySelector('.rr-bmark'); return m ? { mark: m.textContent, say: c.querySelector('[data-rr-say]').textContent,
+      things: c.querySelectorAll('[data-site="thing"]').length, ppl: [...c.querySelectorAll('.rr-bperson')].map((l) => l.textContent), clear: !!c.querySelector('[data-rb="clear"]') } : null; }, sel1), 8000);
+    check(!!landed && landed.mark === '✦ Blade fitted this room to tonight: the read-aloud, GM-ONLY-velvet rope, GM-ONLY-ice bucket and 1 person.' && landed.say.startsWith('SAY “' + BLADE.say + ' There') && landed.things === 6 &&
+      landed.ppl.length === 1 && landed.ppl[0].includes(BLADE.people[0].line) && landed.clear, 'the fake\'s answer lands on the card marked ✦ Blade: its read-aloud, 6 things (keys 5 and 6 are Blade\'s), its person and Clear (' + JSON.stringify(landed) + ')');
+    const okToast = await until(() => page.evaluate(() => (document.getElementById('toastMsg') || {}).textContent || ''), 3000, 100);
+    check(okToast === '✦ Blade fitted ' + tb[0].room + ' to tonight.', 'a toast says so (' + okToast + ')');
+    const q = fake.asked[0] || {}, qs = JSON.stringify(q);
+    const LOOKS = KINDS.flatMap((t) => t.things.flatMap((x) => [x.look, x.roll, x.danger])).filter((s) => s && s.length >= 8);
+    check(fake.asked.length === 1 && Object.keys(q).join() === 'site,room,tonight' && q.room && q.room.name === tb[0].room && q.room.things.length === 4 && q.room.things.every((x) => Object.keys(x).join() === 'name,line') &&
+      !/GM-ONLY-(look|roll|danger)/.test(qs) && !LOOKS.some((s) => qs.includes(s)), 'the request carries only what the card shows: the site, the room (names and first lines of its things), tonight; no closer look, roll or danger');
+    const stored1 = await until(() => bladeAt(key1), 15000, 500);
+    check(!!stored1 && stored1.say === BLADE.say && stored1.things.length === 2 && stored1.people.length === 1, 'the answer is in the GM state, under the roll\'s key and that room\'s own roomKey (' + key1 + ')');
+    const r4 = await reads();
+    check(r4.ok && bleaks(r4.all).length === 0 && leaks(r4.all).length === 0, 'Gate 2 secrecy after the tap: the display\'s GET, a phone\'s /api/table/screen and character, and the campaign document hold nothing Blade said (' + bleaks(r4.all).slice(0, 3).join(' | ') + ')');
+    if (SHOTS) { await page.evaluate((s) => document.querySelector(s).scrollIntoView({ block: 'start' }), sel1); await shot(page, 'desk-1366-paper-blade'); }
+    /* Show on iPad on a Blade thing: RK10's one line, nothing else */
+    await page.click(sel1 + ' [data-site="thing"][data-i="4"]'); z = await until(() => zoom(page), 4000);
+    check(!!z && z.name === BLADE.things[0].name && z.eye.startsWith(tb[0].room + ' · 5 of 6'), 'a Blade thing opens in the zoom card like any other (' + (z && z.eye) + ')');
+    if (SHOTS) await shot(page, 'desk-1366-paper-blade-zoom');
+    await page.click('.rk-zoom [data-rk-btn="show-thing"]');
+    const r5 = await until(async () => { const r = await reads(); return r.ov && r.ov.kind === 'title' ? r : null; }, 8000);
+    const bsub = BLADE.things[0].line.charAt(0).toUpperCase() + BLADE.things[0].line.slice(1), sentB = [BLADE.things[0].name, BLADE.things[0].line, bsub];
+    check(!!r5 && r5.ov.payload && r5.ov.payload.text === BLADE.things[0].name && bleaks(r5.all, sentB).length === 0 && leaks(r5.all).length === 0,
+      'Show on iPad of a Blade thing sends the one line (its name and line), and nothing else Blade said reaches the GETs (' + JSON.stringify(r5 && r5.ov && r5.ov.payload) + ')');
+    {
+      const ph = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': P1 }, viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
+      const pp = await ph.newPage(); await pp.goto(BASE + '/#c/pc-nell'); await pp.waitForTimeout(5000);
+      const dom = await pp.evaluate(() => document.documentElement.outerHTML);
+      check(dom.length > 2000 && bleaks(dom, sentB).length === 0 && !/rr-blade|data-rb/.test(dom), 'a phone\'s DOM holds nothing Blade said, bar the one line sent');
+      await ph.close();
+    }
+    await sleep(300); await page.click('.rk-zoom [data-rk-btn="show-thing"]'); await until(async () => !(await reads()).ov, 8000);      /* Take it down */
+    await page.keyboard.press('Escape'); await sleep(200);
+    /* refused: the server's { room: null, error }, then a malformed answer: a toast each, nothing stored, the button back */
+    fake.mode = 'refused';
+    await page.click(sel2 + ' [data-rb="fit"]');
+    const e1 = await until(() => page.evaluate(() => { const t = (document.getElementById('toastErr') || {}).textContent || ''; return /unknown field: secret/.test(t) ? t : null; }), 6000, 100);
+    fake.mode = 'bad';
+    await until(() => page.evaluate((s) => { const b = document.querySelector(s + ' [data-rb="fit"]'); return b && !b.disabled && b.getAttribute('aria-busy') !== 'true'; }, sel2), 4000, 100);
+    await page.click(sel2 + ' [data-rb="fit"]');
+    const e2 = await until(() => page.evaluate(() => { const t = (document.getElementById('toastErr') || {}).textContent || ''; return /did not fit the card: nothing changed/.test(t) ? t : null; }), 6000, 100);
+    await sleep(1500);
+    const back = await page.evaluate((s) => { const c = document.querySelector(s), b = c.querySelector('[data-rb="fit"]'); return { label: (b.querySelector('.ui-label') || b).textContent, busy: b.getAttribute('aria-busy') === 'true', mark: !!c.querySelector('.rr-bmark') }; }, sel2);
+    check(!!e1 && !!e2 && !(await bladeAt(key2)) && back.label === 'Fit to tonight (~3¢)' && !back.busy && !back.mark, 'a refusal and a malformed answer are each a toast; nothing is stored and the button is back (' + JSON.stringify({ e1, e2, back }) + ')');
+    /* Clear takes one room's changes off; a reload keeps the other's */
+    fake.mode = 'good';
+    await page.click(sel2 + ' [data-rb="fit"]');
+    await until(() => page.evaluate((s) => !!document.querySelector(s + ' .rr-bmark'), sel2), 8000);
+    await until(() => bladeAt(key2), 15000, 500);
+    await page.click(sel2 + ' [data-rb="clear"]');
+    const cleared = await until(async () => (await page.evaluate((s) => !document.querySelector(s + ' .rr-bmark'), sel2)) && !(await bladeAt(key2)), 15000, 500);
+    check(!!cleared && !!(await bladeAt(key1)), 'Clear takes Blade\'s changes off that room alone, on the card and in the GM state');
+    await BL.c.close();
+    const BR = await open({ route });
+    await fitUp(BR.page);
+    const look = () => BR.page.evaluate(([a, b]) => { const c = document.querySelector(a), m = c && c.querySelector('.rr-bmark'), say = c && c.querySelector('[data-rr-say]');
+      return { kept: m && say ? say.textContent : '', mark2: !!document.querySelector(b + ' .rr-bmark'), card: c ? '' : (document.querySelector('#gm-runv') || { textContent: '' }).textContent.slice(0, 160) }; }, [sel1, sel2]);
+    const kept = (await until(async () => { const v = await look(); return v.kept && !v.mark2 ? v : null; }, 20000, 400)) || (await look());
+    check(kept.kept.startsWith('SAY “' + BLADE.say) && !kept.mark2, 'a reload keeps the fitted room as it was, and the cleared one plain (' + JSON.stringify({ kept: kept.kept.slice(0, 50), mark2: kept.mark2, server1: !!(await bladeAt(key1)), server2: !!(await bladeAt(key2)), card: kept.card }) + ')');
+    await BR.c.close();
+    await feats({ 'kit.desk': true });
+    const BK = await open({ kit: true, route });
+    const kitB = await until(() => BK.page.evaluate((s) => { const c = document.querySelector(s), m = c && c.querySelector('.rr-bmark'); return m ? { kit: m.classList.contains('krv-hint'), fit: !!c.querySelector('[data-rb="fit"]') } : null; }, sel1), 20000, 500);
+    check(!!kitB && kitB.kit && kitB.fit, 'the kit desk draws the same ✦ Blade block, with the kit\'s classes beside the old ones');
+    if (SHOTS) { await BK.page.evaluate((s) => document.querySelector(s).scrollIntoView({ block: 'start' }), sel1); await shot(BK.page, 'kitdesk-1366-paper-blade'); }
+    await BK.c.close();
+    await feats({ 'kit.desk': false });
+  }
 
   /* pictures */
   if (SHOTS) {
