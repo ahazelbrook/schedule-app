@@ -116,14 +116,10 @@
     var k = list(r && r.kept).filter(function (x) { return isObj(x) && x.slot === str(slot); })[0];
     return k ? str(k.id) : '';
   }
-  function btn(o) {
-    var U = ui();
-    if (U && typeof U.button === 'function') return U.button(o);
-    var d = Object.keys(o.data || {}).map(function (k) { return ' data-' + k + '="' + esc(o.data[k]) + '"'; }).join('');
-    return '<button type="button" class="' + (o.cls || []).join(' ') + '"' + (o.title ? ' title="' + esc(o.title) + '"' : '') + d + '>' + esc(o.label) + '</button>';
-  }
+  /* the kit's button (B68Ui, on the GM page on both desks): no hand-built button (kit-ratchet) */
+  function btn(o) { var U = ui(); return U && typeof U.button === 'function' ? U.button(o) : ''; }
   function html(c, ctx) {
-    if (!isObj(c) || !str(c.name) || !isObj(ctx) || !str(ctx.roomKey) || !rsOf(ctx) || typeof ctx.page.file !== 'function') return '';
+    if (!isObj(c) || !str(c.name) || !isObj(ctx) || !str(ctx.roomKey) || !rsOf(ctx) || typeof ctx.page.file !== 'function' || !btn({ label: 'x' })) return '';
     var id = keptOf(ctx, c.id);
     if (!id) {
       return '<span class="rr-pkeep">' + btn({ label: 'Keep', rank: 'quiet', cls: ['rv-btn', 'sm', 'rr-keep'], data: { 'rr-keep': str(c.id), 'rr-room': str(ctx.roomKey) },
