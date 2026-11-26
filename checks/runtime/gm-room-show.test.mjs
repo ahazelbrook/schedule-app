@@ -225,9 +225,10 @@ test('a room the players have not seen: a hit asks "show anyway?"; no sends noth
   assert.equal(kinds(h4.log), 'confirm,reveal,confirm,show,toast', 'the person first, then the room');
 });
 
-test('the page: two lines in gm-page.js, the host is null while room.key is off, and no display, phone or server file names the module', () => {
+test('the page: two lines in gm-page.js, the host is null while room.key and room.tables are both off, and no display, phone or server file names the module', () => {
   const P = read('app/gm-page.js');
-  assert.match(P, /function rkShowHost\(\) \{ var me = S; if \(!me \|\| !b09On\('room\.key'\)\) return null; return \{ page: me, show: function \(k, p, o\) \{ var c = shows\(\);/);
+  /* RK14 ruling (overseer, 26/11): the gate is room.key || room.tables, so a rolled card's Show works with room.tables alone; still 3 lines */
+  assert.match(P, /function rkShowHost\(\) \{ var me = S; if \(!me \|\| !\(b09On\('room\.key'\) \|\| b09On\('room\.tables'\)\)\) return null; return \{ page: me, show: function \(k, p, o\) \{ var c = shows\(\);/);
   assert.match(P, /\n    roomShow: function \(\) \{ return rkShowHost\(\); \},/);
   assert.equal(P.split('\n').filter((l) => /rkShowHost|B68GmRoomShow|room-show/.test(l)).length, 3, 'the comment line, the host and the public hook');
   const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)]);
