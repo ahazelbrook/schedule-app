@@ -5,14 +5,15 @@
    phone: a Blade thing is a thing like any other on the card, and Show on iPad on it is RK10's single-line path, never a second one.
    It defines its module when it loads and reads the others (B68GmRoomState, B68GmRoomRoll, B68GmLocation, B68Ui) only when called.
 
-   WHERE IT DRAWS. RK14's rolled-room cards make one hook per rolled instance, hook(host, inner), on ONE line: the hook wraps that instance's own now(),
-   opts() and click handler, so everything here goes with the instance (room.tables turned off live destroys it: its capture listener on the Run pane
+   WHERE IT DRAWS. RK14's rolled-room cards look this module up on ONE line, when called (it loads after them in the bundle, so a card drawn before it
+   arrives picks it up on its next draw), and make one hook per rolled instance, hook(host, inner): it wraps that instance's own now(), opts() and click
+   handler, so everything here goes with the instance (room.tables turned off live destroys it: its capture listener on the Run pane
    is the wrapped one). No document listener, no key, no stylesheet: only classes the page already styles (rv-* on the old desk, krv-* on the kit).
      now()     the model, with each card's stored Blade entry laid over it (apply): Blade's say in place of the table's read-aloud, its things after
-               the drawn ones (by slug: a thing already on the card is never doubled), the "There's ..." line naming them all, their danger lines
-               in If it goes wrong (as text: Secret), and its people lines. So the zoom card, the keys, marks and Show on iPad see Blade's things too.
-     opts()    the card's Things part gets the Blade block first: "Fit to tonight (~3¢)" (and, once fitted, the ✦ Blade mark, what it changed, its
-               people lines and Clear). Only a room with a table offers it (ruling 6: no theme-item fallback, so a room with no table keeps saying so).
+               the drawn ones (each with a ✦ before its button in the Things list) (by slug: a thing already on the card is never doubled), the "There's ..." line naming them all, their danger lines
+               in If it goes wrong (as text: Secret), and its people lines (in Who's here, each with a ✦). So the zoom card, the keys, marks and Show on iPad see Blade's things too.
+     opts()    the card's Things part gets the Blade block first: "Fit to tonight (~3¢)" (and, once fitted, the ✦ Blade line saying what it changed,
+               and Clear). Only a room with a table offers it (ruling 6: no theme-item fallback, so a room with no table keeps saying so).
      click     a Blade button in a rolled card (data-rb): heard first, then everything else goes to the instance's own handler.
 
    THE TAP. POST /api/gm/assist/room (functions/_lib/assist/room-seat.js, through the page's runtime: host.gm() or window.claude.gm, assistRoom) with
@@ -20,13 +21,14 @@
    names and first lines, the people slots' roles) and tonight (the goal and the plan from the roll's own glance, who is on stage). Never a closer
    look, a roll line or a danger line. One tap at a time: while it runs every Fit button on the page is busy ("Fitting…"). The answer is
    checked again here (check); it lands as setBlade(rollKey, roomKey, { say, things, people }); a refusal, a malformed answer or an error is a toast
-   and nothing changes. Reroll the room (RK15, room-state's reroll) takes the Blade entry away with the rest; Clear takes it away alone.
+   and nothing changes. An answer that comes back after its room was rerolled is dropped with a toast, and one that comes back after the
+   cards were torn down (inner.live() false) is dropped quietly: never written. Reroll the room (RK15, room-state's reroll) takes the Blade entry away with the rest; Clear takes it away alone.
 
    API
-     hook(host, inner) -> { now, opts, click, busy } | null   inner = the instance's { now, opts, click }; host = the rolled instance's host (roll(),
+     hook(host, inner) -> { now, opts, click, busy } | null   inner = the instance's { now, opts, click, live? }; host = the rolled instance's host (roll(),
                                                           rs(), doc(), redraw(), toast(text, bad), gm?() -> the runtime, tonight?() -> { goal?, plan?, onStage? })
      Pure: apply(card, blade, there?) -> card    payload(roll, card, tonight) -> body    check(answer) -> { room } | { error }
-           blockHtml(card, o) -> markup (o: { kit, busy, any })    LABEL, MARK, BUSY, LIMITS */
+           blockHtml(card, o) -> markup (o: { kit, busy, any })    starThings(listHtml, card)    peopleHtml(card, own, kit)    LABEL, MARK, BUSY, LIMITS */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -141,19 +143,36 @@
     o = o || {};
     if (!isObj(c) || !c.table) return '';
     var b = isObj(c.blade) ? c.blade : null, room = str(c.roomKey), h = '';
-    if (b) {
-      h += '<p class="' + (o.kit ? 'rv-dim rr-bmark krv-hint' : 'rv-dim rr-bmark') + '"><b class="rr-bstar">' + esc(MARK) + '</b> fitted this room to tonight: ' + esc(changed(b)) + '.</p>';
-      if (b.people.length) {
-        h += '<ul class="' + (o.kit ? 'rv-who rr-bppl krv-ppl' : 'rv-who rr-bppl') + '">' + b.people.map(function (p) {
-          return '<li class="npc rr-bperson"' + (p.role ? ' data-role="' + esc(p.role) + '"' : '') + '>' + (p.role ? '<b>' + esc(cap(p.role.replace(/-+/g, ' '))) + '</b> ' : '') +
-            esc(p.line) + ' <small class="rv-dim">' + esc(MARK) + '</small></li>';
-        }).join('') + '</ul>';
-      }
-    }
+    if (b) h += '<p class="rr-bmark"><b class="rr-bstar">' + esc(MARK) + '</b> fitted this room to tonight: ' + esc(changed(b)) + '.</p>';      /* body text, not a dim label: >= 12 px */
     var title = 'Blade fits this room for tonight: a read-aloud, up to two things and up to three people (about 3¢, never over 5¢)';
     h += '<p class="rr-bbar">' + btn(o.busy ? BUSY : LABEL, 'fit', { room: room, busy: o.busy, disabled: !!o.any, title: title }) +
       (b ? ' ' + btn('Clear', 'clear', { room: room, disabled: !!o.any, title: 'Take Blade’s changes off this room' }) : '') + '</p>';
     return '<div class="rr-blade" data-rr-blade="' + esc(room) + '">' + h + '</div>';
+  }
+  /* the Things list (RK09's markup) with a ✦ before each of Blade's own things: a mark beside the button, the button itself untouched */
+  function starThings(html, c) {
+    var h = str(html);
+    list(isObj(c) ? c.things : null).forEach(function (t) {
+      if (!t || !t.blade || !str(t.slug)) return;
+      var at = h.indexOf('data-thing="' + esc(t.slug) + '"'), li = at < 0 ? -1 : h.lastIndexOf('<li class="rk-ti">', at);
+      if (li < 0) return;
+      li += '<li class="rk-ti">'.length;
+      h = h.slice(0, li) + '<span class="rr-bstar" title="Blade’s" aria-label="Blade’s">✦</span> ' + h.slice(li);
+    });
+    return h;
+  }
+  /* Who's here with Blade's people in it: own is the list the card would draw (RK17's, or '' for RK14's slot list, drawn here the same way) */
+  function peopleHtml(c, own, kit) {
+    var bp = isObj(c) && isObj(c.blade) ? list(c.blade.people) : [];
+    var mine = bp.map(function (p) {
+      return '<li class="npc rr-bperson"' + (p.role ? ' data-role="' + esc(p.role) + '"' : '') + '><b>' + esc(MARK.charAt(0) + (p.role ? ' ' + cap(str(p.role).replace(/-+/g, ' ')) : '')) + '</b> ' + esc(p.line) + '</li>';
+    }).join('');
+    if (!mine) return str(own);
+    if (str(own)) return str(own) + '<ul class="' + (kit ? 'rv-who rr-bppl krv-ppl' : 'rv-who rr-bppl') + '">' + mine + '</ul>';
+    var slots = list(c.people).map(function (p) {
+      return '<li class="npc rr-slot" data-rr-slot="' + esc(p.id) + '" data-role="' + esc(p.role) + '"><b>' + esc(cap(str(p.role).replace(/[-_]+/g, ' '))) + '</b> <small class="rv-dim">quick-draw</small></li>';
+    }).join('');
+    return '<ul class="' + (kit ? 'rv-who rr-ppl krv-ppl' : 'rv-who rr-ppl') + '">' + slots + mine + '</ul>';
   }
 
   /* ---------- the instance's hook ---------- */
@@ -185,11 +204,13 @@
       return out;
     }
     function opts(kit, m, inRunView) {
-      var o = inner.opts(kit, m, inRunView), was = o.things;
-      o.things = function (c) { return blockHtml(c, { kit: kit, busy: !!busy && busy === str(c.roomKey), any: !!busy }) + (typeof was === 'function' ? str(was(c)) : ''); };
+      var o = inner.opts(kit, m, inRunView), was = o.things, wp = o.people;
+      o.things = function (c) { return blockHtml(c, { kit: kit, busy: !!busy && busy === str(c.roomKey), any: !!busy }) + starThings(typeof was === 'function' ? str(was(c)) : '', c); };
+      o.people = function (c) { var own = typeof wp === 'function' ? str(wp(c)) : ''; return isObj(c.blade) && c.blade.people.length ? peopleHtml(c, own, kit) : own; };
       return o;
     }
     function gm() { var g = call('gm'); if (g) return g; return root && root.claude && root.claude.gm ? root.claude.gm : null; }
+    function rrOf(rk, roomKey) { var rs = reader(), st = null; try { st = rs ? rs.read(rk, roomKey) : null; } catch (e) { st = null; } return st && typeof st.rr === 'number' ? st.rr : 0; }
     function cardOf(m, roomKey) { return isObj(m) ? list(m.cards).filter(function (c) { return c.roomKey === roomKey; })[0] || null : null; }
     function fit(roomKey) {
       if (busy) return false;
@@ -197,18 +218,22 @@
       if (!c || !c.table) return false;
       if (!g || typeof g.assistRoom !== 'function') { toast('Blade can’t fit rooms on this page', true); return true; }
       if (!writer()) { toast('Blade’s answer could not be kept here: nothing was asked', true); return true; }
-      var rk = str(m.rollKey), body = payload(call('roll'), c, call('tonight'));
+      var rk = str(m.rollKey), body = payload(call('roll'), c, call('tonight')), rr0 = rrOf(rk, roomKey);
       busy = roomKey; call('redraw');
       var sent; try { sent = g.assistRoom(body); } catch (e) { sent = Promise.reject(e); }
       Promise.resolve(sent).then(function (res) {
         busy = '';
         var v = check(res), w = writer();
-        if (v.error) toast(v.error, true);
+        /* a late answer is dropped, never written: the cards were torn down (room.tables off, another page state), or the room was rerolled while Blade worked */
+        if (typeof inner.live === 'function' && !inner.live()) return;
+        if (rrOf(rk, roomKey) !== rr0) toast('Blade’s answer came after ' + c.name + ' was rerolled: dropped', true);
+        else if (v.error) toast(v.error, true);
         else if (!w || !w.setBlade(rk, roomKey, v.room)) toast('Blade’s answer could not be kept: nothing changed', true);
         else toast(MARK + ' fitted ' + c.name + ' to tonight.');
         call('redraw');
       }, function (e) {
         busy = '';
+        if (typeof inner.live === 'function' && !inner.live()) return;
         toast('Blade could not fit ' + c.name + ': ' + str(e && e.message || e || 'no answer'), true);
         call('redraw');
       });
@@ -235,5 +260,5 @@
     return { now: now, opts: opts, click: click, busy: function () { return busy; } };
   }
 
-  return { hook: hook, apply: apply, payload: payload, check: check, blockHtml: blockHtml, LABEL: LABEL, MARK: MARK, BUSY: BUSY, LIMITS: LIMITS };
+  return { hook: hook, apply: apply, payload: payload, check: check, blockHtml: blockHtml, starThings: starThings, peopleHtml: peopleHtml, LABEL: LABEL, MARK: MARK, BUSY: BUSY, LIMITS: LIMITS };
 });

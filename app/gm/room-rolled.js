@@ -290,7 +290,7 @@
       return blockHtml(c, opts(!!(o && o.kit), m, true));
     }
     function key(ev, o) { var Z = zoom(); return !!(Z && Z.key(ev, o)); }
-    var bl = live(mod('B68GmRoomBlade', './room-blade.js')); bl = bl && typeof bl.hook === 'function' ? bl.hook(host, { now: now, opts: opts, click: onClick }) : null; if (bl) { now = bl.now; opts = bl.opts; onClick = bl.click; }      /* RK16: the Blade tap (gm/room-blade.js) wraps this instance's model, card parts and click, so they go with it */
+    var bl = null, raw = { now: now, opts: opts, click: onClick, live: function () { return boxes.length > 0; } }; function blade() { if (!bl) { var B = live(mod('B68GmRoomBlade', './room-blade.js')); bl = B && typeof B.hook === 'function' ? B.hook(host, raw) : null; } return bl || raw; } now = function () { return blade().now(); }; opts = function (k, m, r) { return blade().opts(k, m, r); }; onClick = function (ev) { return blade().click(ev); };      /* RK16: the Blade tap (gm/room-blade.js), looked up when called (it loads after this file), wraps the model, card parts and click of this instance */
     return { draw: draw, block: block, act: act, key: key, model: now, zoom: zoom,
       isOpen: function () { return !!(z && z.isOpen()); },
       close: function () { if (z) z.close(false); },

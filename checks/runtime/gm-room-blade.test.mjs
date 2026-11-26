@@ -145,13 +145,23 @@ test('blockHtml(): "Fit to tonight (~3¢)" on a tabled room only; busy reads "Fi
   assert.match(B.blockHtml(card, { any: true }), /disabled[^>]*>Fit to tonight \(~3¢\)</, 'another room\'s tap is running: this one waits');
   const c = B.apply(card, { at: 'x', say: GOOD.say, things: GOOD.things.map((t) => RT.clean(t)), people: GOOD.people }, RL.there);
   const t = B.blockHtml(c, {});
-  assert.match(t, /<p class="rv-dim rr-bmark"><b class="rr-bstar">✦ Blade<\/b> fitted this room to tonight: the read-aloud, GM-ONLY-name velvet rope, GM-ONLY-name ice bucket and 1 person\.<\/p>/);
-  assert.match(t, /<ul class="rv-who rr-bppl"><li class="npc rr-bperson" data-role="cleaner"><b>Cleaner<\/b> GM-ONLY-person: a cleaner counting tips <small class="rv-dim">✦ Blade<\/small><\/li><\/ul>/);
+  assert.match(t, /<p class="rr-bmark"><b class="rr-bstar">✦ Blade<\/b> fitted this room to tonight: the read-aloud, GM-ONLY-name velvet rope, GM-ONLY-name ice bucket and 1 person\.<\/p>/, 'body text, not a dim label (>= 12 px)');
+  assert.ok(!/rr-bperson/.test(t), 'Blade\'s people are not in the block: they are in Who\'s here');
   assert.match(t, />Clear<\/button>/); assert.match(t, /data-rb="clear"/);
   assert.ok(!SECRET.test(t), 'the block names things; never their closer look, roll or danger');
-  assert.match(B.blockHtml(c, { kit: true }), /class="rv-dim rr-bmark krv-hint"[\s\S]*class="rv-who rr-bppl krv-ppl"/, 'the kit desk\'s classes beside the old ones');
-  const esc = B.blockHtml({ ...c, blade: { ...c.blade, people: [{ line: '<img src=x onerror=1>', role: '' }] } }, {});
-  assert.ok(esc.includes('&lt;img src=x onerror=1&gt;') && !esc.includes('<img'), 'Blade\'s text is text');
+  /* Who's here: RK14's slot list with Blade's people in it, each with a ✦; RK17's own list gets Blade's after it */
+  const ppl = B.peopleHtml(c, '', false);
+  assert.equal(ppl, '<ul class="rv-who rr-ppl">' + c.people.map((p) => '<li class="npc rr-slot" data-rr-slot="' + p.id + '" data-role="' + p.role + '"><b>' + p.role.charAt(0).toUpperCase() + p.role.slice(1) + '</b> <small class="rv-dim">quick-draw</small></li>').join('') +
+    '<li class="npc rr-bperson" data-role="cleaner"><b>✦ Cleaner</b> GM-ONLY-person: a cleaner counting tips</li></ul>');
+  assert.match(B.peopleHtml(c, '<div>RK17</div>', true), /^<div>RK17<\/div><ul class="rv-who rr-bppl krv-ppl"><li class="npc rr-bperson"/);
+  assert.equal(B.peopleHtml(card, '<div>own</div>', false), '<div>own</div>', 'no Blade people: the card\'s own list, untouched');
+  const esc = B.peopleHtml({ ...c, blade: { ...c.blade, people: [{ line: '<img src=x onerror=1>', role: '' }] } }, '', false);
+  assert.ok(esc.includes('<b>✦</b> &lt;img src=x onerror=1&gt;') && !esc.includes('<img'), 'Blade\'s text is text');
+  /* the Things list: a ✦ before each of Blade's own buttons, nothing else changed */
+  const listH = Z.listHtml('Pelican bar', c.things, {}), starred = B.starThings(listH, c);
+  assert.equal((starred.match(/<span class="rr-bstar"[^>]*>✦<\/span> /g) || []).length, 2);
+  assert.equal(starred.replace(/<span class="rr-bstar"[^>]*>✦<\/span> /g, ''), listH, 'the buttons themselves are untouched');
+  assert.ok(starred.indexOf('✦') > starred.indexOf('data-thing="' + c.things[3].slug + '"') && starred.indexOf('✦') < starred.indexOf('data-thing="' + c.things[4].slug + '"'), 'the marks sit on Blade\'s two, after the drawn four');
 });
 
 test('the tap: the fake runtime\'s answer lands on the card through setBlade, marked ✦ Blade; the request is the card\'s; one at a time', async () => {
@@ -177,6 +187,8 @@ test('the tap: the fake runtime\'s answer lands on the card through setBlade, ma
   assert.ok(blk.includes('SAY</span> “GM-ONLY-say: the band stops as you come in. ' + c.there.replace(/'/g, '&#39;')) || blk.includes('SAY</span> “GM-ONLY-say: the band stops as you come in. ' + c.there),
     'Blade\'s read-aloud, then the line naming every thing');
   assert.equal((blk.match(/data-site="thing"/g) || []).length, 6, 'the zoom card\'s list holds Blade\'s things too (keys 5 and 6)');
+  assert.equal((blk.match(/class="rr-bstar"[^>]*>✦<\/span>/g) || []).length, 2, 'a ✦ on each of Blade\'s things in the list');
+  assert.match(blk, /(Who’s here|Quick-draw people)<\/h4><ul class="rv-who rr-ppl">[\s\S]*?<li class="npc rr-bperson" data-role="cleaner"><b>✦ Cleaner<\/b> GM-ONLY-person: a cleaner counting tips<\/li><\/ul>/, 'Blade\'s person in Who\'s here');
   assert.deepEqual(r.toasts.slice(-1), [['ok', '✦ Blade fitted Pelican bar to tonight.']]);
   assert.ok(!r.toasts.some((x) => x[0] === 'bad'));
   assert.ok(r.inst.zoom().html('Pelican bar', { n: 1 }).includes('data-thing="' + RT.slug(GOOD.things[0].name) + '"'), 'a Blade thing opens in the zoom card like any other');
@@ -229,21 +241,58 @@ test('no runtime or no writer: a toast and no request; a room with no table and 
   assert.equal(ev.stopped, 0, 'not a Blade button: the instance\'s own handler has it (and it is no thing either, so nothing stops it)');
 });
 
-test('room.tables turned off live: destroy() takes the wrapped listener off the pane; a write after that is refused by room-state (off), with a toast', async () => {
+test('torn down mid-tap: destroy() takes the wrapped listener off the pane, and the late answer is dropped, never written (even with the setting still on)', async () => {
   let open; const wait = new Promise((res) => { open = res; });
   const r = rig({ answer: () => wait.then(() => ({ room: clone(GOOD) })) });
   r.click(r.el('fit', 'pelican bar#1'));
   r.inst.destroy();
   assert.equal(r.listeners.length, 0, 'the one listener came off');
-  r.on = false; open(); await r.settle(); await r.settle();
-  assert.equal(r.doc.roomstate, undefined, 'nothing stored once the setting is off');
-  assert.match(r.toasts.filter((x) => x[0] === 'bad')[0][1], /could not be kept/);
+  open(); await r.settle(); await r.settle();
+  assert.equal(r.on, true, 'room-state would still take a write');
+  assert.equal(r.doc.roomstate, undefined, 'nothing stored: the cards were torn down');
+  assert.equal(r.toasts.filter((x) => x[0] === 'ok').length, 0, 'and nothing claims it landed');
+});
+
+test('rerolled mid-tap: an answer that comes back after its room was rerolled is dropped with a toast, never written into the new draw', async () => {
+  let open; const wait = new Promise((res) => { open = res; });
+  const r = rig({ answer: () => wait.then(() => ({ room: clone(GOOD) })) });
+  r.click(r.el('fit', 'pelican bar#1'));
+  assert.equal(r.rs.reroll('515151', 'pelican bar#1'), true, 'Reroll the room while Blade works (RK15, through room-state)');
+  open(); await r.settle(); await r.settle();
+  const room = r.doc.roomstate.keys['515151'].rooms['pelican bar#1'];
+  assert.equal(room.rr, 1); assert.ok(!room.blade, 'no Blade entry in the rerolled room');
+  assert.equal(r.card('pelican bar#1').blade, undefined);
+  assert.match(r.toasts.filter((x) => x[0] === 'bad').map((x) => x[1]).join('|'), /came after Pelican bar was rerolled: dropped/);
+  /* another room's answer is not affected by this room's reroll */
+  const s = rig();
+  s.click(s.el('fit', 'pelican bar#1'));
+  s.rs.reroll('515151', 'pelican cloakroom#1'); await s.settle();
+  assert.ok(s.card('pelican bar#1').blade, 'a reroll of another room leaves this answer alone');
+});
+
+test('the late load (the review\'s blocker): rolled cards made BEFORE room-blade.js arrives pick the tap up on their next draw, with no new instance', () => {
+  const win = {}; win.self = win; win.window = win;
+  const ctx = vm.createContext(win);
+  const load = (f) => vm.runInContext(read(f), ctx, { filename: f });
+  for (const f of ['app/ui/ui.js', 'app/gm/room-notes.js', 'app/gm/room-things.js', 'app/gm/room-state.js', 'app/gm/room-tables.js', 'app/gm/room-roll.js', 'app/gm/room-rolled.js']) load(f);
+  const doc = {}, host = { roll: () => ROLL, rollKey: (x) => x.seed, T: () => T, doc: () => doc };
+  const early = win.B68GmRoomRolled.create(host);
+  const before = early.block('Pelican bar');
+  assert.ok(typeof before === 'string' && /rr-say/.test(before) && !/data-rb=/.test(before), 'drawn before the tap\'s file arrives: the card, with no Fit (as today)');
+  load('app/gm/room-blade.js');
+  assert.ok(win.B68GmRoomBlade && !win.B68GmRoomBlade.stub);
+  const after = early.block('Pelican bar');
+  assert.match(after, /data-rb="fit"[^>]*>Fit to tonight \(~3¢\)<\/button>/, 'the same instance, drawn again: the Fit button is there');
+  assert.equal(typeof early.model, 'function');
+  const late = win.B68GmRoomRolled.create(host);
+  assert.match(late.block('Pelican bar'), /data-rb="fit"/, 'and an instance made after has it too');
 });
 
 test('the wiring: ONE line in room-rolled.js, two host parts on gm-page.js\'s rrInst line, cf.js\'s assistRoom; nothing else names this file', () => {
   const rolled = read('app/gm/room-rolled.js').split('\n').filter((l) => /B68GmRoomBlade|room-blade/.test(l));
   assert.equal(rolled.length, 1, 'one line in the rolled cards');
-  assert.match(rolled[0], /bl\.hook\(host, \{ now: now, opts: opts, click: onClick \}\) : null; if \(bl\) \{ now = bl\.now; opts = bl\.opts; onClick = bl\.click; \}/);
+  assert.match(rolled[0], /function blade\(\) \{ if \(!bl\) \{ var B = live\(mod\('B68GmRoomBlade', '\.\/room-blade\.js'\)\);/, 'looked up when called, not once at create()');
+  assert.match(rolled[0], /now = function \(\) \{ return blade\(\)\.now\(\); \}; opts = function \(k, m, r\) \{ return blade\(\)\.opts\(k, m, r\); \}; onClick = function \(ev\) \{ return blade\(\)\.click\(ev\); \};/, 'stable wrappers: the listener added is the one destroy() takes off');
   const PAGE = read('app/gm-page.js'), rr = PAGE.split('\n').filter((l) => /function rrInst\(\)/.test(l));
   assert.equal(rr.length, 1);
   assert.match(rr[0], /, gm: function \(\) \{ return S === me \? gmApi\(\) : null; \}, tonight: function \(\) \{ return S === me \? \{ onStage: stageNames\(\) \} : null; \} \}\); return me\.rr; \}$/);

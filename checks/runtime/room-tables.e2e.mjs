@@ -14,7 +14,7 @@
 //   4b. RK16, the Blade tap (POST /api/gm/assist/room answered by a page.route fake registered before the page loads: no model, no key; GM-ONLY- markers in
 //      every field of its answer): "Fit to tonight (~3¢)" on every tabled room and none on the room with no table; a tap is busy, then the answer lands on the card
 //      marked ✦ Blade (its say, 6 things, the people line) and in the GM state; the request carries no closer look, roll or danger; secrecy after the tap and
-//      after Show on iPad of a Blade thing (one line); a reload keeps it; a malformed answer and the server's refusal are toasts and store nothing; Clear;
+//      after Show on iPad of a Blade thing (one line), the iPad's DOM included; a ✦ on Blade's things and its people in Who's here; a reload keeps it; a malformed answer and the server's refusal are toasts and store nothing; Clear;
 //      the kit desk draws the same.
 //   5. room.tables off again: the Run pane says what it said before.
 //   6. room.tables turned off on a live page (the review of RK14): the rolled instance goes, and a plain RK09 thing opens only RK09's card.
@@ -308,12 +308,9 @@ try {
       return rt.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
     };
     await feats({ 'kit.desk': false, 'room.tables': true, 'room.key': true });
-    /* the site screen with its Fit buttons: a slow page (this PC runs short of memory) gets G pressed again, and says where it is if they never come */
+    /* the site screen with its Fit buttons (no retry: the review of RK16 found a G retry only redrew the same stale cards); if they never come, say where the page is */
     const fitUp = async (p) => {
-      for (let i = 0; i < 3; i++) {
-        if (await p.waitForSelector('#gm-runv .rr-site [data-rb="fit"]', { timeout: 15000 }).then(() => true, () => false)) return true;
-        await blur(p); await p.keyboard.press('g');
-      }
+      if (await p.waitForSelector('#gm-runv .rr-site [data-rb="fit"]', { timeout: 20000 }).then(() => true, () => false)) return true;
       console.log('  4b: ' + JSON.stringify(await p.evaluate(() => { const s = window.B68GmPage._state(), b = document.querySelector('#gm-runv'); return { panel: s.panel, kit: document.documentElement.getAttribute('data-kit'),
         blade: !!(window.B68GmRoomBlade && !window.B68GmRoomBlade.stub), rr: !!window.B68GmPage._roomRolled(), html: b ? b.innerHTML.slice(0, 300) : '' }; })));
       return false;
@@ -336,9 +333,12 @@ try {
     const waits = await page.evaluate(() => [...document.querySelectorAll('#gm-runv [data-rb="fit"]')].filter((b) => b.getAttribute('aria-busy') !== 'true').every((b) => b.disabled));
     check(!!busy && waits, 'a tap is busy ("Fitting…"), and every other Fit waits');
     const landed = await until(() => page.evaluate((s) => { const c = document.querySelector(s), m = c && c.querySelector('.rr-bmark'); return m ? { mark: m.textContent, say: c.querySelector('[data-rr-say]').textContent,
-      things: c.querySelectorAll('[data-site="thing"]').length, ppl: [...c.querySelectorAll('.rr-bperson')].map((l) => l.textContent), clear: !!c.querySelector('[data-rb="clear"]') } : null; }, sel1), 8000);
+      things: c.querySelectorAll('[data-site="thing"]').length, ppl: [...c.querySelectorAll('.rr-bperson')].map((l) => l.textContent), clear: !!c.querySelector('[data-rb="clear"]'),
+      stars: c.querySelectorAll('.rk-ti > span.rr-bstar').length, starWho: c.querySelectorAll('.rr-ppl .rr-bperson').length,
+      px: [m, c.querySelector('.rr-bperson')].filter(Boolean).map((e) => parseFloat(getComputedStyle(e).fontSize)) } : null; }, sel1), 8000);
     check(!!landed && landed.mark === '✦ Blade fitted this room to tonight: the read-aloud, GM-ONLY-velvet rope, GM-ONLY-ice bucket and 1 person.' && landed.say.startsWith('SAY “' + BLADE.say + ' There') && landed.things === 6 &&
-      landed.ppl.length === 1 && landed.ppl[0].includes(BLADE.people[0].line) && landed.clear, 'the fake\'s answer lands on the card marked ✦ Blade: its read-aloud, 6 things (keys 5 and 6 are Blade\'s), its person and Clear (' + JSON.stringify(landed) + ')');
+      landed.ppl.length === 1 && landed.ppl[0].includes(BLADE.people[0].line) && landed.clear && landed.stars === 2 && landed.starWho === 1 && landed.px.length === 2 && landed.px.every((x) => x >= 12),
+      'the fake\'s answer lands on the card marked ✦ Blade: its read-aloud, 6 things (keys 5 and 6 are Blade\'s, each with a ✦), its person in Who\'s here, Clear, all 12 px or more (' + JSON.stringify(landed) + ')');
     const okToast = await until(() => page.evaluate(() => (document.getElementById('toastMsg') || {}).textContent || ''), 3000, 100);
     check(okToast === '✦ Blade fitted ' + tb[0].room + ' to tonight.', 'a toast says so (' + okToast + ')');
     const q = fake.asked[0] || {}, qs = JSON.stringify(q);
@@ -350,6 +350,11 @@ try {
     const r4 = await reads();
     check(r4.ok && bleaks(r4.all).length === 0 && leaks(r4.all).length === 0, 'Gate 2 secrecy after the tap: the display\'s GET, a phone\'s /api/table/screen and character, and the campaign document hold nothing Blade said (' + bleaks(r4.all).slice(0, 3).join(' | ') + ')');
     if (SHOTS) { await page.evaluate((s) => document.querySelector(s).scrollIntoView({ block: 'start' }), sel1); await shot(page, 'desk-1366-paper-blade'); }
+    /* the iPad's DOM (Gate 2; the review could not reach it): kept open through the Show below */
+    const ipC = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
+    const ipP = await ipC.newPage(); await ipP.addInitScript({ content: 'window.__B68_POLL_MS = 1000;' }); await ipP.goto(BASE + '/#display'); await ipP.waitForTimeout(5000);
+    const ipDom0 = await ipP.evaluate(() => document.documentElement.outerHTML);
+    check(ipDom0.length > 2000 && bleaks(ipDom0).length === 0 && leaks(ipDom0).length === 0 && !/rr-blade|data-rb/.test(ipDom0), 'Gate 2: the iPad\'s DOM after the tap holds nothing Blade said (' + bleaks(ipDom0).slice(0, 3).join(' | ') + ')');
     /* Show on iPad on a Blade thing: RK10's one line, nothing else */
     await page.click(sel1 + ' [data-site="thing"][data-i="4"]'); z = await until(() => zoom(page), 4000);
     check(!!z && z.name === BLADE.things[0].name && z.eye.startsWith(tb[0].room + ' · 5 of 6'), 'a Blade thing opens in the zoom card like any other (' + (z && z.eye) + ')');
@@ -359,6 +364,11 @@ try {
     const bsub = BLADE.things[0].line.charAt(0).toUpperCase() + BLADE.things[0].line.slice(1), sentB = [BLADE.things[0].name, BLADE.things[0].line, bsub];
     check(!!r5 && r5.ov.payload && r5.ov.payload.text === BLADE.things[0].name && bleaks(r5.all, sentB).length === 0 && leaks(r5.all).length === 0,
       'Show on iPad of a Blade thing sends the one line (its name and line), and nothing else Blade said reaches the GETs (' + JSON.stringify(r5 && r5.ov && r5.ov.payload) + ')');
+    const ipDom1 = (await until(async () => { const d = await ipP.evaluate(() => document.documentElement.outerHTML); return d.includes(BLADE.things[0].name) ? d : null; }, 10000, 500)) || (await ipP.evaluate(() => document.documentElement.outerHTML));
+    check(ipDom1.includes(BLADE.things[0].name) && bleaks(ipDom1, sentB).length === 0 && leaks(ipDom1).length === 0 && !/rr-blade|data-rb/.test(ipDom1),
+      'Gate 2: the iPad\'s DOM after Show on iPad of a Blade thing holds that one line and nothing else Blade said (' + bleaks(ipDom1, sentB).slice(0, 3).join(' | ') + ')');
+    if (SHOTS) { fs.mkdirSync(SHOTS, { recursive: true }); await ipP.screenshot({ path: path.join(SHOTS, 'ipad-1024-blade-beat.png') }); }
+    await ipC.close();
     {
       const ph = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': P1 }, viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
       const pp = await ph.newPage(); await pp.goto(BASE + '/#c/pc-nell'); await pp.waitForTimeout(5000);
@@ -389,7 +399,7 @@ try {
     check(!!cleared && !!(await bladeAt(key1)), 'Clear takes Blade\'s changes off that room alone, on the card and in the GM state');
     await BL.c.close();
     const BR = await open({ route });
-    await fitUp(BR.page);
+    check(await fitUp(BR.page), 'a reload: the Fit buttons are there');
     const look = () => BR.page.evaluate(([a, b]) => { const c = document.querySelector(a), m = c && c.querySelector('.rr-bmark'), say = c && c.querySelector('[data-rr-say]');
       return { kept: m && say ? say.textContent : '', mark2: !!document.querySelector(b + ' .rr-bmark'), card: c ? '' : (document.querySelector('#gm-runv') || { textContent: '' }).textContent.slice(0, 160) }; }, [sel1, sel2]);
     const kept = (await until(async () => { const v = await look(); return v.kept && !v.mark2 ? v : null; }, 20000, 400)) || (await look());
@@ -397,8 +407,8 @@ try {
     await BR.c.close();
     await feats({ 'kit.desk': true });
     const BK = await open({ kit: true, route });
-    const kitB = await until(() => BK.page.evaluate((s) => { const c = document.querySelector(s), m = c && c.querySelector('.rr-bmark'); return m ? { kit: m.classList.contains('krv-hint'), fit: !!c.querySelector('[data-rb="fit"]') } : null; }, sel1), 20000, 500);
-    check(!!kitB && kitB.kit && kitB.fit, 'the kit desk draws the same ✦ Blade block, with the kit\'s classes beside the old ones');
+    const kitB = await until(() => BK.page.evaluate((s) => { const c = document.querySelector(s), m = c && c.querySelector('.rr-bmark'); return m ? { kit: c.classList.contains('krv-rm'), stars: c.querySelectorAll('.rk-ti > span.rr-bstar').length, fit: !!c.querySelector('[data-rb="fit"]') } : null; }, sel1), 20000, 500);
+    check(!!kitB && kitB.kit && kitB.fit && kitB.stars === 2, 'the kit desk draws the same ✦ Blade block and marks (' + JSON.stringify(kitB) + ')');
     if (SHOTS) { await BK.page.evaluate((s) => document.querySelector(s).scrollIntoView({ block: 'start' }), sel1); await shot(BK.page, 'kitdesk-1366-paper-blade'); }
     await BK.c.close();
     await feats({ 'kit.desk': false });
