@@ -201,11 +201,12 @@
     function line(k, text, pre) { return text ? '<span class="rv-prole rr-p' + k + '">' + (pre ? '<strong>' + esc(pre) + '</strong> ' : '') + esc(text) + '</span>' : ''; }
     return '<li class="npc rr-slot rv-p nocast' + (ctx && ctx.kit ? ' krv-p' : '') + '" data-rr-slot="' + esc(c.id) + '" data-role="' + esc(c.role) + '" data-sex="' + c.sex + '"' + (c.masked ? ' data-masked="true"' : '') + '>' +
       '<span class="rv-face" aria-hidden="true">' + (svg || '<span class="rv-ini">' + esc(initials(who)) + '</span>') + '</span>' +
-      '<span class="rv-pn"><span><b>' + esc(who) + '</b> <small class="rv-prole rr-ptag">quick</small></span>' +
+      '<span class="rv-pn"><span><b>' + esc(who) + '</b> <small class="rv-prole rr-ptag">' + (keptTag(c, ctx) ? 'kept' : 'quick') + '</small></span>' +
       line('role', c.kicker) + line('look', c.look) + line('want', c.want) + line('tell', c.tell ? stop(cap(c.tell)) : '', 'Tell:') + (c.line ? '<span class="rv-prole rr-pline">“' + esc(c.line) + '”</span>' : '') + keepOf(c, ctx) + '</span></li>';
   }
   /* RK19: Keep (gm/room-keep.js), or Kept and Show on iPad, on the card; '' when that file is not there or the card has no writer */
   function keepOf(c, ctx) { var Kp = mod('B68GmRoomKeep', './room-keep.js'); try { return Kp && !Kp.stub && typeof Kp.html === 'function' ? str(Kp.html(c, ctx)) : ''; } catch (e) { return ''; } }
+  function keptTag(c, ctx) { var Kp = mod('B68GmRoomKeep', './room-keep.js'); try { return !!(Kp && !Kp.stub && typeof Kp.keptOf === 'function' && Kp.keptOf(ctx, c.id)); } catch (e) { return false; } }      /* a kept person is tagged "kept", not "quick" */
   /* a room's people together: each person's line and clothes steer clear of what an earlier person of the same role in the room already has */
   function cards(slots, ctx) {
     var used = {}, base = isObj(ctx) ? ctx : {};

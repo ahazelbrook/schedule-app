@@ -119,7 +119,9 @@ test('Keep files the person the room SHOWS (cards(), not a lone card()), hidden,
   const reload = stateOf(clone(R.doc));      /* a reload: a fresh room-state on the saved document */
   assert.deepEqual(reload.read(String(ROLL), ROOM).kept, [{ id: r.id, slot: 'p2' }]);
   const h = KP.html(shown, Object.assign({}, R.ctx, { page: Object.assign({}, R.host, { rs: () => reload }) }));
-  assert.ok(/data-rr-kept="npc_/.test(h) && />Kept</.test(h) && /data-gm="npcipad"/.test(h) && h.includes('data-id="' + r.id + '"') && /Show on iPad/.test(h) && !/data-rr-keep=/.test(h), h);
+  assert.ok(/data-rr-kept="npc_/.test(h) && /data-gm="npcipad"/.test(h) && h.includes('data-id="' + r.id + '"') && /Show on iPad/.test(h) && !/data-rr-keep=/.test(h), h);
+  const tags = [...P.html(SLOTS, Object.assign({ npc: NPC, T, K }, R.ctx, { page: Object.assign({}, R.host, { rs: () => reload }) })).matchAll(/rr-ptag">([a-z]+)</g)].map((x) => x[1]);
+  assert.deepEqual(tags, ['quick', 'kept', 'quick'], 'the kept person is tagged "kept" beside the name, the others "quick"');
   assert.ok(/^<span class="rr-pkeep">.*data-rr-keep="p1"/.test(KP.html(shownCards()[0], R.ctx)), 'the other waiter still has Keep');
   assert.equal(JSON.stringify(shownCards().map((c) => [c.name, c.line, c.look])), before, 'Keep never changes what the roll draws');
   assert.ok(R.st.reroll(String(ROLL), ROOM) && R.st.read(String(ROLL), ROOM).kept.length === 1, 'Reroll the room keeps kept');
@@ -140,19 +142,49 @@ test('one Keep a slot: a second Keep of the slot files nothing; busy while the w
   KP.reset();
 });
 
-test('a name clash is refused and files nothing: a cast member of the name, of the alias, or someone this page filed a moment ago', async () => {
+test('a name clash is refused and files nothing: a cast member of the name, of the alias, or a room person met somewhere else', async () => {
   KP.reset();
-  const name = shownCards()[0].name;
-  for (const cast of [{ npc_a: { name: name.toUpperCase(), tags: [] } }, { npc_b: { name: 'Mabel Quist', alias: name, tags: ['generated'] } }]) {
+  const c0 = shownCards()[0], name = c0.name, elsewhere = KP.doc(c0, { site: 'The Pelican Rooms', room: 'Pelican cloakroom', now: NOW });
+  for (const cast of [{ npc_a: { name: name.toUpperCase(), tags: [] } }, { npc_b: { name: 'Mabel Quist', alias: name, tags: ['generated'] } }, { npc_c: elsewhere }]) {
     const R = rig({ cast });
     const r = await R.inst.keep(ROOM, 'p1');
     assert.ok(!r.ok && /is in the cast already, so Keep filed nobody/.test(r.say), r.say);
     assert.equal(R.files.length, 0); assert.deepEqual(R.st.read(String(ROLL), ROOM).kept, []);
   }
-  const A = rig(); assert.ok((await A.inst.keep(ROOM, 'p1')).ok);
-  const B = rig({ cast: {} });      /* the cast's snapshot has not caught up yet */
-  const r = await B.inst.keep(ROOM, 'p1');
-  assert.ok(!r.ok && B.files.length === 0, 'filed a moment ago on this page counts: ' + r.say);
+  KP.reset();
+});
+
+test('the reload gap: a person filed from this room whose slot was never marked is ADOPTED (addKept), never filed twice; one kept elsewhere in the room is not', async () => {
+  KP.reset();
+  const c0 = shownCards()[0], mine = KP.doc(c0, { site: 'The Pelican Rooms', room: 'Pelican bar', now: NOW - 86400000 });
+  const R = rig({ cast: { npc_mine: mine } });      /* the cast holds them; the GM state lost the mark (a reload before the save) */
+  const r = await R.inst.keep(ROOM, 'p1');
+  assert.ok(r.ok && r.id === 'npc_mine' && R.files.length === 0 && /from this room/.test(r.say), JSON.stringify(r));
+  assert.deepEqual(R.st.read(String(ROLL), ROOM).kept, [{ id: 'npc_mine', slot: 'p1' }]);
+  /* this page filed them a moment ago and the cast's snapshot has not caught up: adopted too */
+  const A = rig(); const a = await A.inst.keep(ROOM, 'p1'); assert.ok(a.ok);
+  const B = rig({ cast: {} });
+  const b = await B.inst.keep(ROOM, 'p1');
+  assert.ok(b.ok && b.id === a.id && B.files.length === 0, 'filed a moment ago on this page: adopted, not filed again: ' + JSON.stringify(b));
+  /* the same doc already kept in another slot of this room: refused (a second person of one name) */
+  const doc2 = {}; const C = rig({ cast: { npc_mine: mine }, doc: doc2 });
+  assert.ok(C.st.addKept(String(ROLL), ROOM, 'npc_mine', 'p3'));
+  const c = await C.inst.keep(ROOM, 'p1');
+  assert.ok(!c.ok && C.files.length === 0 && /Keep filed nobody/.test(c.say), c.say);
+  KP.reset();
+});
+
+test('a refused Keep can be tapped again: the button is off while the write is out and on again after a clash, a cast still loading or a failed write', async () => {
+  KP.reset();
+  const el = (slot) => ({ disabled: false, getAttribute: (k) => (k === 'data-rr-room' ? ROOM : k === 'data-rr-keep' ? slot : null) });
+  const L = rig(); L.host.cast = () => null;
+  const b1 = el('p1'); const p1 = L.inst.tap(b1); assert.equal(b1.disabled, true, 'off at once'); await p1; assert.equal(b1.disabled, false, 'on again after "still loading"');
+  const X = rig({ cast: { npc_x: { name: shownCards()[0].name, tags: [] } } });
+  const b2 = el('p1'); await X.inst.tap(b2); assert.equal(b2.disabled, false, 'on again after a clash');
+  const F = rig({ file: () => Promise.reject(new Error('offline')) });
+  const b3 = el('p1'); await F.inst.tap(b3); assert.equal(b3.disabled, false, 'on again after a failed write');
+  L.host.cast = () => ({}); const r = await L.inst.tap(b1);
+  assert.ok(r.ok && b1.disabled === true && L.files.length === 1, 'tapped again, it keeps them (and stays off until the redraw draws Kept)');
   KP.reset();
 });
 
@@ -192,7 +224,7 @@ test('wiring and hygiene: an id the server and room-state take; it names neither
   assert.ok(src.split('\n').every((l) => !/(['"])(?:(?!\1).){221,}\1/.test(l)), 'no string literal over 220 characters');
   const rolled = read('app/gm/room-rolled.js').split('\n').filter((l) => /B68GmRoomKeep|room-keep/.test(l));
   assert.equal(rolled.length, 1, 'one line in the rolled cards makes the instance');
-  assert.ok(/kp\.keep\(kb\.getAttribute\('data-rr-room'\), kb\.getAttribute\('data-rr-keep'\)\)/.test(read('app/gm/room-rolled.js')), 'the click goes to keep()');
+  assert.ok(/ev\.stopPropagation\(\); kp\.tap\(kb\); return; \}/.test(read('app/gm/room-rolled.js')), 'the click goes to tap(), which turns the button on again when Keep did not keep');
   const page = read('app/gm-page.js').split('\n').filter((l) => /function rrInst\(\)/.test(l))[0];
   assert.ok(/cast: function \(\) \{ return S === me && me\.npcsIn/.test(page) && /file: function \(id, d\) \{/.test(page) && /col\.doc\(id\)\.set\(clone\(d\)\)/.test(page), 'the page gives the host cast() and file(), the same db adapter fileNpc writes through');
 });

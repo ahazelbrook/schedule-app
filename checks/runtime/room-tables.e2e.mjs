@@ -755,7 +755,7 @@ try {
     const st8 = await until(async () => { const s = (await api('GET', '/gm/state')).json.doc.roomstate; return kept && keptOfState(s)[kept.id] ? s : null; }, 8000, 300), keptSt = keptOfState(st8);
     check(!!kept && keptSt[kept.id] && keptSt[kept.id].slot === W1.slot && !JSON.stringify(st8).includes(W1.name), 'RK19: the GM state holds the kept id against its slot (room-state\'s kept), and no text of the person');
     const keptBtn = '#gm-runv [data-rr-kept="' + (kept ? kept.id : 'x') + '"]';
-    check(!!(await until(() => KA.page.evaluate((s) => { const e = document.querySelector(s); return !!e && /Kept/.test(e.textContent) && !!e.querySelector('[data-gm="npcipad"]'); }, keptBtn), 6000)), 'RK19: the card shows Kept, with Show on iPad in place of Keep');
+    check(!!(await until(() => KA.page.evaluate((s) => { const e = document.querySelector(s); const li = e && e.closest('[data-rr-slot]'), tag = li ? li.querySelector('.rr-ptag') : null; return !!e && !!tag && tag.textContent === 'kept' && !!e.querySelector('[data-gm="npcipad"]'); }, keptBtn), 6000)), 'RK19: the card tags them "kept" (not "quick"), with Show on iPad in place of Keep');
     check(JSON.stringify(await cards(KA.page)) === cards0, 'RK19: Keep changes nothing the roll draws (the same cards and people)');
     if (SHOTS) { await KA.page.evaluate((s) => { const e = document.querySelector(s); if (e) e.scrollIntoView({ block: 'center' }); }, keptBtn); await shot(KA.page, 'rk19-desk-1366-paper-kept'); }
     /* secrecy: the four GETs, a player's cast, and both DOMs */
@@ -784,9 +784,12 @@ try {
       const cl = await api('PUT', '/npcs/npc_rk19_clash', { name: W2.name, tags: [] });
       await sleep(2500); await KB.page.evaluate(() => window.dispatchEvent(new Event('focus'))); await sleep(1000);
       const n0 = npcWrites.length;
-      await KB.page.click('#gm-runv [data-rr-keep="' + W2.slot + '"][data-rr-room="' + W2.room + '"]'); await sleep(1500);
+      const w2b = '#gm-runv [data-rr-keep="' + W2.slot + '"][data-rr-room="' + W2.room + '"]';
+      await KB.page.click(w2b); await sleep(1500);
+      const again = await KB.page.evaluate((s) => { const b = document.querySelector(s); return !!b && !b.disabled; }, w2b);
       const same = ((await api('GET', '/npcs')).json.docs || []).filter((x) => x.doc.name === W2.name);
       check(cl.status === 200 && npcWrites.length === n0 && same.length === 1 && same[0].id === 'npc_rk19_clash', 'RK19: a name the cast already has is refused: Keep files nobody (' + W2.name + ')');
+      check(again, 'RK19: a refused Keep is on again, so it can be tapped again');
       await api('DELETE', '/npcs/npc_rk19_clash');
     }
     /* Show on iPad: asks "Reveal and show?" first; a no leaves them hidden and shows nothing; a yes reveals and shows them */
@@ -804,7 +807,15 @@ try {
       const KK = await open({ kit: true });
       await KK.page.waitForSelector('#gm-runv [data-rr-kept]', { timeout: 20000 });
       await KK.page.evaluate(() => { const e = document.querySelector('#gm-runv [data-rr-kept]'); if (e) e.scrollIntoView({ block: 'center' }); }); await shot(KK.page, 'rk19-kitdesk-1366-paper-kept');
-      await KK.c.close(); await feats({ 'kit.desk': false });
+      await KK.c.close();
+      for (const [w, h, theme, kit] of [[1536, 864, 'paper', true], [1536, 864, 'night', true], [1366, 768, 'night', false]]) {      /* Kept in Night, and on the kit desk at 1536 */
+        await feats({ 'kit.desk': kit });
+        const KN = await open({ w, h, theme, kit });
+        await KN.page.waitForSelector('#gm-runv [data-rr-kept]', { timeout: 20000 });
+        await KN.page.evaluate(() => { const e = document.querySelector('#gm-runv [data-rr-kept]'); if (e) e.scrollIntoView({ block: 'center' }); }); await shot(KN.page, 'rk19-' + (kit ? 'kitdesk' : 'desk') + '-' + w + '-' + theme + '-kept');
+        await KN.c.close();
+      }
+      await feats({ 'kit.desk': false });
     }
     await KB.c.close();
     await api('DELETE', '/npcs/' + kept.id);

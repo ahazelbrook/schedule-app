@@ -40,6 +40,7 @@
   var TAGS = ['room', 'generated'], MAX_KEPT = 12;
   var filed = {};      /* name (folded) -> id, for the people this page filed (the cast's snapshot can lag a moment behind the write) */
   var shown = {};      /* id -> true: filed here, so Show on iPad is offered before the cast's snapshot holds them */
+  var filedAt = {};    /* id -> the head of its Met line, for the people this page filed (so Keep can adopt them before the snapshot holds them) */
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
@@ -126,7 +127,7 @@
         title: 'Adds them to the cast, hidden from the players' }) + '</span>';
     }
     var cast = call(ctx.page, 'cast'), here = !isObj(cast) || has(cast, id) || shown[id] === true;
-    return '<span class="rr-pkeep rr-pkept" data-rr-kept="' + esc(id) + '"><small class="rv-prole rr-ptag">Kept</small> ' + (here ?
+    return '<span class="rr-pkeep rr-pkept" data-rr-kept="' + esc(id) + '">' + (here ?      /* the tag beside the name says "kept" */
       btn({ label: 'Show on iPad', rank: 'quiet', cls: ['rv-btn', 'sm'], data: { gm: 'npcipad', id: id }, title: 'Asks Reveal and show? first: they are hidden from the players' }) :
       '<small class="rv-prole">not in the cast now</small>') + '</span>';
   }
@@ -153,11 +154,19 @@
       if (kept.length >= MAX_KEPT) return Promise.resolve(toast('This room has kept ' + MAX_KEPT + ' people already.', true));
       var cast = call(host, 'cast');
       if (!isObj(cast)) return Promise.resolve(toast('The cast is still loading: try Keep again in a moment.', true));
-      if (clash(c.name, cast, filed)) return Promise.resolve(toast('Someone called ' + c.name + ' is in the cast already, so Keep filed nobody (two of one name would share a vault card).', true));
-      var at = now(), id = idFor(c.name, at), d = doc(c, { site: isObj(r0) ? str(r0.name) : '', room: room.name + (room.n > 1 ? ' ' + room.n : ''), now: at });
+      var site = isObj(r0) ? str(r0.name) : '', where = room.name + (room.n > 1 ? ' ' + room.n : ''), other = clash(c.name, cast, filed);
+      if (other) {
+        /* this person, filed from this room before the slot was marked (a reload before the save, or full notes): adopt them, never a second doc */
+        if (adoptable(cast[other], other, c, metHead(site, where), kept)) {
+          var ok0 = rs.addKept(ctx.rollKey, roomKey, other, slot); call(host, 'redraw');
+          return Promise.resolve(ok0 ? Object.assign(toast(c.name + ' was in the cast already, from this room: the card marks them Kept.'), { id: other }) : toast('The card could not mark ' + c.name + ' Kept (the room notes are full).', true));
+        }
+        return Promise.resolve(toast('Someone called ' + c.name + ' is in the cast already, so Keep filed nobody (two of one name would share a vault card).', true));
+      }
+      var at = now(), id = idFor(c.name, at), d = doc(c, { site: site, room: where, now: at });
       busy[key] = true;
       return Promise.resolve().then(function () { return host.file(id, d); }).then(function () {
-        busy[key] = false; filed[fold(c.name)] = id; shown[id] = true;
+        busy[key] = false; filed[fold(c.name)] = id; shown[id] = true; filedAt[id] = metHead(site, where);
         var ok = rs.addKept(ctx.rollKey, roomKey, id, slot);
         call(host, 'redraw');
         return ok ? toast(c.name + ' is in the cast, hidden.') : toast(c.name + ' is in the cast, hidden, but the card could not mark them Kept (the room notes are full).', true);
@@ -166,11 +175,28 @@
         return toast('Could not add them to the cast: ' + (e && e.message ? e.message : 'the write failed') + '.', true);
       }).then(function (r) { if (r.ok) r.id = id; return r; });
     }
-    return { keep: keep, busy: function (roomKey, slot) { return !!busy[str(roomKey) + '|' + str(slot)]; } };
+    /* the Keep button: off while the write is out, and on again whenever Keep did not keep (a clash, a cast still loading, a failed write), so it can be tapped again */
+    function tap(el) {
+      if (!el || typeof el.getAttribute !== 'function') return Promise.resolve({ ok: false, say: '' });
+      var rm = el.getAttribute('data-rr-room'), sl = el.getAttribute('data-rr-keep');
+      if (busy[str(rm) + '|' + str(sl)]) return Promise.resolve({ ok: false, say: '' });
+      el.disabled = true;
+      return keep(rm, sl).then(function (r) { if (!r || !r.ok) el.disabled = false; return r; }, function () { el.disabled = false; return { ok: false, say: '' }; });
+    }
+    return { keep: keep, tap: tap, busy: function (roomKey, slot) { return !!busy[str(roomKey) + '|' + str(slot)]; } };
+  }
+  /* "Met: <site> · <room> · ": the head of the Met line, without the date */
+  function metHead(site, room) { return metLine(site, room, 0).replace(/[^·]*$/, ''); }
+  /* a cast doc Keep may adopt for this slot: room-tagged, of this name and role, met in this site and room (its Met line, or this page's record), and not kept here already */
+  function adoptable(d, id, c, head, kept) {
+    if (list(kept).some(function (k) { return k.id === id; })) return false;
+    if (!isObj(d)) return filedAt[id] === head;
+    return list(d.tags).indexOf('room') >= 0 && fold(d.name) === fold(c.name) && str(d.role) === str(c.label) &&
+      str(d.gmNotes).split('\n').some(function (l) { return l.indexOf(head) === 0; });
   }
 
   /* tests only: forget what this page filed */
-  function reset() { filed = {}; shown = {}; }
+  function reset() { filed = {}; shown = {}; filedAt = {}; }
 
   return { html: html, create: create, doc: doc, notes: notes, tellLine: tellLine, sigLine: sigLine, metLine: metLine, idFor: idFor, clash: clash, keptOf: keptOf,
     dmy: dmy, reset: reset, TAGS: TAGS, MAX_KEPT: MAX_KEPT };
