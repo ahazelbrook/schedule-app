@@ -141,7 +141,7 @@
   function initials(s) { var o = ''; str(s).trim().split(/\s+/).filter(Boolean).slice(0, 2).forEach(function (w) { o += Array.from(w)[0].toUpperCase(); }); return o || '?'; }
   function row(c, ctx) {
     var svg = portrait(c, ctx), who = c.name || c.label;
-    function line(k, text, pre) { return text ? '<span class="rv-prole rr-p' + k + '">' + (pre ? '<b>' + esc(pre) + '</b> ' : '') + esc(text) + '</span>' : ''; }
+    function line(k, text, pre) { return text ? '<span class="rv-prole rr-p' + k + '">' + (pre ? '<strong>' + esc(pre) + '</strong> ' : '') + esc(text) + '</span>' : ''; }
     return '<li class="npc rr-slot rv-p nocast' + (ctx && ctx.kit ? ' krv-p' : '') + '" data-rr-slot="' + esc(c.id) + '" data-role="' + esc(c.role) + '" data-sex="' + c.sex + '"' + (c.masked ? ' data-masked="true"' : '') + '>' +
       '<span class="rv-face" aria-hidden="true">' + (svg || '<span class="rv-ini">' + esc(initials(who)) + '</span>') + '</span>' +
       '<span class="rv-pn"><span><b>' + esc(who) + '</b> <small class="rv-prole rr-ptag">quick</small></span>' +
