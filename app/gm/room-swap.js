@@ -10,8 +10,10 @@
    room's things order that keeps the mix, and stores it:
      a thing of the first draw      RS.setSwap(rollKey, roomKey, slug, to)      chains collapse (a to b, then b to c, stores a to c; coming round to a
                                                                                 stores nothing)
-     a thing Roll another added     RS.setExtra(rollKey, roomKey, the list with its slug replaced)      the draw applies swaps to the first draw only,
-                                                                                so a swap stored for an extra would show nothing
+     a thing Roll another added     RS.setSwap(rollKey, roomKey, slug, to) FIRST, then RS.setExtra(... the list with its slug replaced). The draw applies
+                                                                                swaps to the first draw only, so setExtra changes the card; the swap entry is
+                                                                                the record of what is gone, which room-roll's another() and swap() read. At the
+                                                                                cap of 10 swaps the first write is refused and nothing changes
    The zoom card then stays open on the thing now in that place (host.follow, the rolled instance's own). With nothing left in the table to swap in,
    the button is drawn disabled and says so.
 
@@ -28,7 +30,7 @@
                                            redraw(), toast(text, bad) }   every part optional
        swapper.html(card, o) -> markup ('' for a room with no table; o.kit: the kit desk's classes)
        swapper.act(el) -> the control to focus once the card has drawn again, or '' (not this file's)      swapper.destroy()
-     Pure: swapPlan(scene, read, slug) -> { slug, to, extra } | { why }     anotherPlan(scene, read) -> slug | null     marksOf(read) -> n
+     Pure: swapPlan(scene, read, slug) -> { slug, to, extra } | { why }     anotherPlan(scene, read) -> slug | null     marksOf(read, shownSlugs?) -> n
            WHY */
 (function (root, factory) {
   'use strict';
@@ -71,7 +73,16 @@
   /* room-roll's opts for the room as it stands: the note's things and the stored overrides (room-state's read) */
   function optsOf(sc, rd) { return { hand: list(sc.hand), say: rd.say, rr: rd.rr, extra: list(rd.extra), swaps: isObj(rd.swaps) ? rd.swaps : {} }; }
   function placed(sc) { return !!str(sc.rollKey) && !!str(sc.roomKey); }
-  function marksOf(rd) { return isObj(rd) && isObj(rd.marks) ? Object.keys(rd.marks).length : 0; }
+  /* the marks on things SHOWN on the card (a mark on a swapped-away thing stays under its own slug, unseen, so it is not what a reroll's question counts); with no slugs given, every mark */
+  function marksOf(rd, shown) {
+    if (!isObj(rd) || !isObj(rd.marks)) return 0;
+    return Object.keys(rd.marks).filter(function (k) { return !Array.isArray(shown) || shown.indexOf(k) >= 0; }).length;
+  }
+  function shownSlugs(sc, rd) {
+    var R = Roll();
+    if (!R || !isObj(sc) || !isObj(sc.table) || !isObj(rd)) return [];
+    return R.roll(sc.table, R.key(sc.rollKey, sc.roomKey), optsOf(sc, rd)).shown.map(function (e) { return e.slug; });
+  }
 
   /* Swap for the thing now showing as slug: { slug, to, extra } (extra: it was added by Roll another), or { why } where there is nothing to do:
        'table' no table for the room, 'gone' the thing is not on the card, 'hand' the note wrote it, 'none' nothing left in the table to swap in */
@@ -120,9 +131,17 @@
         var p = swapPlan(s2, d2, slug);      /* read again: another device may have written since the card drew */
         if (p.why === 'none') throw new Error(WHY.none);
         if (!p.to) throw new Error(WHY.swapFail);
-        var ok = p.extra ? w.setExtra(str(s2.rollKey), str(s2.roomKey), list(d2.extra).map(function (x) { return x === p.slug ? p.to : x; }))
-          : w.setSwap(str(s2.rollKey), str(s2.roomKey), p.slug, p.to);
-        if (ok !== true) throw new Error(WHY.swapFail);
+        var rk = str(s2.rollKey), rm = str(s2.roomKey), ok;
+        if (p.extra) {
+          /* the swap entry is the record that the old thing is gone (room-roll's another() and swap() skip every key of swaps); the draw applies swaps to the
+             first draw only, so the card is the extra list's. It is written first: at the cap of 10 swaps nothing is changed and the GM is told. */
+          ok = w.setSwap(rk, rm, p.slug, p.to) === true;
+          if (ok) {
+            ok = w.setExtra(rk, rm, list(d2.extra).map(function (x) { return x === p.slug ? p.to : x; })) === true;
+            if (!ok) w.setSwap(rk, rm, p.to, null);      /* put the record back as it was */
+          }
+        } else ok = w.setSwap(rk, rm, p.slug, p.to) === true;
+        if (!ok) throw new Error(WHY.swapFail);
         var pg = c.page;
         if (pg && typeof pg.follow === 'function') pg.follow(str(c.room), s2.n, p.to);      /* the card stays open on what is there now */
       }
@@ -148,7 +167,7 @@
       var sc = call('scene', c.roomKey), rs = call('rs'), kit = !!o.kit;
       if (!isObj(sc) || !isObj(sc.table)) return '';
       var rd = readOf(rs, sc), ok = !!(rd && rs && typeof rs.addExtra === 'function' && placed(sc));
-      var more = ok && anotherPlan(sc, rd) !== null, k = askKey(sc), marks = marksOf(rd), why = rs ? WHY.place : WHY.writer;
+      var more = ok && anotherPlan(sc, rd) !== null, k = askKey(sc), marks = marksOf(rd, shownSlugs(sc, rd)), why = rs ? WHY.place : WHY.writer;
       /* the old desk's own label class (rv-lab) is 10.5 px, under the build's 12 px floor, so there this label is the dim 12.5 px line; the kit's label is 12 px */
       var lab = kit ? '<h4 class="krv-lab rr-lab rr-actlab">This room</h4>' : '<p class="rv-dim rr-lab rr-actlab">This room</p>';
       var head = lab + '<div class="rr-acts' + (kit ? ' krv-acts' : '') + '" data-rr-acts="' + esc(c.roomKey) + '" role="group" aria-label="' + esc('Roll another thing or reroll ' + c.name) + '">';
@@ -181,7 +200,7 @@
         else toast('Added ' + (nameOf(sc, slug) || 'a thing') + '.');
         redraw(); return 'another';
       }
-      if (what === 'reroll' && marksOf(rd) > 0) { asking[k] = true; redraw(); return 'reroll-yes'; }
+      if (what === 'reroll' && marksOf(rd, shownSlugs(sc, rd)) > 0) { asking[k] = true; redraw(); return 'reroll-yes'; }
       if (what === 'reroll-no') { delete asking[k]; redraw(); return 'reroll'; }
       if (what === 'reroll' || what === 'reroll-yes') {
         delete asking[k];

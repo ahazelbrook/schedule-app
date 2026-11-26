@@ -385,8 +385,11 @@ try {
     await page.click('.rk-zoom [data-rk-btn="swap"]');
     const ex2 = await until(async () => { const r = await stored(); const e = r[rkey] && r[rkey].extra ? Object.keys(r[rkey].extra) : []; return e.length === 1 && e[0] !== exSlug ? r : null; }, 15000);
     const n3 = mine(await cards(page), R1);
-    check(!!ex2 && n3.things.length === 5 && n3.things[4] === Object.keys(ex2[rkey].extra)[0] && Object.keys(ex2[rkey].swaps).join() === t0[0], 'Swap on a thing Roll another added replaces it in the extra list (and shows), leaving the first swap alone');
+    check(!!ex2 && n3.things.length === 5 && n3.things[4] === Object.keys(ex2[rkey].extra)[0] && Object.keys(ex2[rkey].swaps).sort().join() === [t0[0], exSlug].sort().join() && ex2[rkey].swaps[exSlug] === n3.things[4], 'Swap on a thing Roll another added replaces it in the extra list (and shows), and records it as swapped away, leaving the first swap alone');
     await page.keyboard.press('Escape'); await sleep(200);
+    await page.click(card(R1.room, R1.n) + ' [data-rr-act="another"]');      /* the review: Roll another must not bring the swapped-away thing back */
+    await until(async () => { const r = await stored(); return r[rkey] && r[rkey].extra && Object.keys(r[rkey].extra).length === 2 ? r : null; }, 15000);
+    check(!mine(await cards(page), R1).things.includes(exSlug) && mine(await cards(page), R1).things.length === 6, 'and Roll another does not bring the swapped-away thing back (' + exSlug + ')');
 
     /* Reroll the room: marked, it asks; Cancel leaves it; the second tap does it */
     await page.click(card(R1.room, R1.n) + ' [data-site="thing"][data-i="1"]'); await until(() => zoom(page), 4000);
@@ -433,6 +436,10 @@ try {
     await K.page.waitForSelector('#gm-runv .rr-site .krv-acts', { timeout: 20000 });
     const ka = await acts(K.page), kb = tab[2], kkey = await keyOf(K.page, kb);
     check(tab.every((c) => mine(ka, c).btns.join('/') === 'Roll another/Reroll the room') && await K.page.evaluate(() => !document.querySelector('#gm-runv .rr-acts .rv-btn')), 'the kit desk: the same two buttons on every tabled room, in the kit\'s button style');
+    const gaps = await K.page.evaluate(() => [...document.querySelectorAll('#gm-runv .krv-acts')].map((g) => { const [x, y] = [...g.querySelectorAll('button')].map((b) => b.getBoundingClientRect()); return y ? Math.round(Math.max(y.left - x.right, y.top - x.bottom)) : -1; }));
+    check(gaps.length >= 4 && gaps.every((g) => g >= 6), 'the kit desk: the two buttons have a gap of at least 6 px, side by side or stacked (' + gaps.join(',') + ')');
+    await K.page.evaluate(() => { const g = document.querySelector('#gm-runv .krv-acts'); if (g) g.scrollIntoView({ block: 'center' }); }); await sleep(300);
+    await shot(K.page, 'rk15-kitdesk-1366-paper-acts-gap');
     await K.page.click(card(kb.room, kb.n) + ' [data-site="thing"][data-i="0"]'); z = await until(() => zoom(K.page), 4000);
     check(!!z && /^swap:Swap$/.test(z.slots[2] || ''), 'the kit desk: the zoom card has Swap too');
     await shot(K.page, 'rk15-kitdesk-1366-paper-zoom-swap');

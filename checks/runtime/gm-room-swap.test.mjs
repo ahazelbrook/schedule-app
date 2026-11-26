@@ -145,16 +145,67 @@ test('Swap keeps the mix and the weapon cap, and a button with nothing to swap i
   assert.ok(weapons() <= 1);
 });
 
-test('Swap on a thing that Roll another added replaces it in the extra list (a swap stored for it would show nothing)', () => {
+test('Swap on a thing that Roll another added replaces it in the extra list, and records it as swapped away (RK15 review)', () => {
   const s = newServer(), d = device(s), p = page(d);
   swapper(p, d).act(elOf('another', BAR));
   const slug = Object.keys(stored(d, BAR).extra)[0];
   assert.equal(slugsOf(p, BAR).length, 5); assert.equal(slugsOf(p, BAR)[4], slug, 'added at the end');
   tap(p, d, BAR, slug);
   const room = stored(d, BAR), now = Object.keys(room.extra);
-  assert.equal(now.length, 1); assert.notEqual(now[0], slug); assert.ok(!room.swaps, 'no swap entry: the draw applies swaps to the first draw only');
+  assert.equal(now.length, 1); assert.notEqual(now[0], slug); assert.deepEqual(room.swaps, { [slug]: now[0] }, 'and a swap entry is the record that the old thing is gone (room-roll reads only the keys of swaps); the draw applies swaps to the first draw only, so the card is the extra list');
   assert.equal(slugsOf(p, BAR).length, 5); assert.equal(slugsOf(p, BAR)[4], now[0], 'the same place, another thing');
   assert.equal(slugsOf(p, BAR).includes(slug), false);
+});
+
+test('the review blocker: a thing swapped away from an added place never comes back, by Roll another or by a Swap elsewhere; 30 mixed taps hold the weapon cap', () => {
+  for (const [key, rname] of [[BAR, 'Pelican bar'], [CLOAK, 'Pelican cloakroom']]) {
+    const s = newServer(), d = device(s), p = page(d), sw = swapper(p, d);
+    sw.act(elOf('another', key));
+    const gone = [Object.keys(stored(d, key).extra)[0]];
+    tap(p, d, key, gone[0]);
+    gone.push(stored(d, key).swaps[gone[0]]);      /* the one that took its place: it too is swapped on below */
+    sw.act(elOf('another', key));
+    assert.ok(!slugsOf(p, key).includes(gone[0]), rname + ': Roll another does not bring ' + gone[0] + ' back');
+    tap(p, d, key, slugsOf(p, key)[0]);
+    assert.ok(!slugsOf(p, key).includes(gone[0]), rname + ': nor does a Swap at another place');
+    for (let k = 0; k < 30; k++) {
+      const shown = slugsOf(p, key), pick = shown[(k * 3) % shown.length], b = swapBtn(p, d, key, pick);
+      if (k % 3 === 0) sw.act(elOf('another', key)); else if (b && !b.disabled) tap(p, d, key, pick);
+      const now = slugsOf(p, key);
+      assert.ok(!now.includes(gone[0]), rname + ': ' + gone[0] + ' stays gone (tap ' + k + ')');
+      assert.equal(new Set(now).size, now.length, 'no duplicate');
+      assert.ok(cardOf(p, key).things.filter((t) => t.tags.includes('weapon')).length <= 1, 'one weapon at most');
+    }
+  }
+});
+
+test('the swaps cap: with 10 swaps stored, a Swap on an added thing is refused and changes nothing', () => {
+  const s = newServer(), d = device(s), p = page(d);
+  swapper(p, d).act(elOf('another', BAR));
+  const extra = Object.keys(stored(d, BAR).extra)[0], tbl = T.rooms['pelican bar'].things.map((t) => require(path.join(ROOT, 'app', 'gm', 'room-things.js')).slug(t.name));
+  const rest = tbl.filter((x) => x !== extra);
+  for (let i = 0; i < 10; i++) assert.equal(d.rs.setSwap(String(SEED), BAR, 'zz-' + i, rest[i % rest.length] === 'zz-' + i ? 'yy' : rest[i % rest.length]), true);
+  const before = JSON.stringify(d.doc.roomstate.keys);
+  const c = ctxFor(p, d, BAR, extra);
+  assert.throws(() => SW.buttons(c)[0].run(c), /not saved/);
+  assert.equal(JSON.stringify(d.doc.roomstate.keys), before, 'nothing was written: the extra list is as it was');
+});
+
+test('the reroll question counts only the marks on things shown (a mark on a swapped-away thing is not what it clears)', () => {
+  const s = newServer(), d = device(s), p = page(d), sw = swapper(p, d);
+  const t0 = slugsOf(p, BAR)[0];
+  assert.equal(d.rs.setMark(String(SEED), BAR, t0, 'taken'), true);
+  tap(p, d, BAR, t0);      /* swapped away: the mark stays under its own slug, unseen */
+  assert.ok(d.rs.read(String(SEED), BAR).marks[t0], 'the mark is still stored');
+  assert.ok(!/rr-asking/.test(sw.html(cardOf(p, BAR), {})));
+  assert.equal(sw.act(elOf('reroll', BAR)), 'reroll', 'no visible mark: no question, it rerolls');
+  assert.equal(stored(d, BAR).rr, 1);
+  const t1 = slugsOf(p, BAR)[1], hidden = SW.swapPlan(p.hooks().scene(BAR), d.rs.read(String(SEED), BAR), t1).to;
+  assert.ok(hidden && !slugsOf(p, BAR).includes(hidden));
+  d.rs.setMark(String(SEED), BAR, hidden, 'found');      /* a mark on a thing that is not on the card: not counted */
+  d.rs.setMark(String(SEED), BAR, t1, 'found');
+  assert.equal(SW.marksOf(d.rs.read(String(SEED), BAR), slugsOf(p, BAR)), 1);
+  assert.equal(sw.act(elOf('reroll', BAR)), 'reroll-yes'); assert.match(sw.html(cardOf(p, BAR), {}), /Rerolling clears 1 mark./);
 });
 
 test('Swap follows: after the write the Run pane draws again, then the zoom card is asked to open on the thing now in that place', () => {
