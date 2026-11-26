@@ -48,6 +48,7 @@ await test('gm-loud: the exporter\'s prep part for the fixture note carries the 
   assert.match(by('VIP')[0].text, /^Mabel Quist goes down to the Underground counting room with Lotte Brand\.$/);
   assert.equal(by('Shut')[0].group, 'Doors'); assert.match(by('Shut')[0].text, /GM-ONLY-LOUD-DOORS/); assert.equal(by('Open')[0].group, 'Doors');
   assert.deepEqual(got.clock, { name: 'Getaway', size: 6, ticks: 0 }, 'the getaway clock is the span\'s name / size / count');
+  assert.equal(got.title, 'Session 4: the Pelican Rooms (an INVENTED fixture, RK23)', 'the plan knows which note it came from');
   const plain = got.items.filter((i) => !i.label);
   assert.ok(plain.some((i) => i.text === 'The house empties by the front, in this order.' && i.group === ''), 'the intro line, ahead of any group');
   assert.ok(plain.some((i) => i.text === 'A plain line, no label, with a Mabel Quist link and bold words.'), 'a plain line: the link is its text, the bold marks are off');
@@ -93,7 +94,7 @@ function popRig(filled, o) {
   const host = { prep: () => part, clocks: () => table, canClock: () => o.canClock !== false,
     addClock: (c) => { if (o.fail) return Promise.reject(new Error('no table')); log.added.push(c); table.push({ ...c }); return Promise.resolve(); },
     clockOps: (ops) => { log.ops.push(ops); for (const op of ops) { const i = table.findIndex((c) => c.id === op.remove); if (i >= 0) table.splice(i, 1); } return Promise.resolve(); },
-    undoToast: o.noUndoToast ? undefined : (text, undo) => { log.undo = { text, undo }; return true; }, toast: (m, bad) => log.toasts.push([m, !!bad]), redraw: () => { log.redraws++; } };
+    fresh: o.fresh, undoToast: o.noUndoToast ? undefined : (text, undo) => { log.undo = { text, undo }; return true; }, toast: (m, bad) => log.toasts.push([m, !!bad]), redraw: () => { log.redraws++; } };
   const loud = L.create(host), v = view(filled), info = { v, clock: 'Fuse', beats: BEATS };
   return { loud, log, table, v, pop: (gm) => loud.pop(Se.popHtml(v, { clock: 'Fuse', beat: BEATS[filled - 1], missing: '', gm: !!gm }, ESC), info, !!gm) };
 }
@@ -111,6 +112,7 @@ await test('gm-loud: pop: the plan shows at the top segment only; before it, one
   assert.match(top, /<section class="gl-loud-plan" aria-label="When it goes loud"><h4 class="gl-loud-h">When it goes loud <span class="gl-loud-sub">the evacuation<\/span><\/h4>/);
   assert.match(top, /<p class="gl-loud-g">Who goes where<\/p><ul class="gl-loud-list">/); assert.match(top, /<b class="gl-loud-k">VIP<\/b> <span class="gl-loud-t">Mabel Quist goes down to the Underground counting room with Lotte Brand\.<\/span>/);
   assert.match(top, /GM-ONLY-LOUD-DOORS/); assert.ok(!/gl-loud-wait/.test(top));
+  assert.match(top, /<p class="gl-loud-src">From the note: Session 4: the Pelican Rooms \(an INVENTED fixture, RK23\)<\/p>/, 'the plan names its note (the first note with the section wins)');
   assert.deepEqual(stateOf(top), ['done', 'done', 'done', 'done', 'done', 'now'], 'at the top the last beat is now');
   const evil = L.create({ prep: () => ({ notes: [{ id: 'n', blocks: [{ src: '## When it goes loud\n- **A<i>:** <img src=x onerror=alert(1)> & "q"\n- <script>x</script> plain\n' }] }] }) });
   const h = evil.pop('<div class="rv-pop"></div>', { v: view(6), clock: 'Fuse', beats: [] }, false); assert.ok(/gl-loud-plan/.test(h) && !/<img|<i>|<script/.test(h), 'a note\'s markup is not markup: ' + h);
@@ -137,6 +139,22 @@ await test('gm-loud: make: one tap adds ONE hidden danger clock through the page
   assert.match(r.pop(false), /is on the table: <b>0\/6<\/b>/, 'the popover reads it at once');
   assert.equal(await r.loud.make(), false); assert.equal(r.log.added.length, 1, 'no second clock'); assert.match(r.log.toasts.slice(-1)[0][0], /Nothing added/);
   assert.match(await r.log.undo.undo(), /Undone/); assert.deepEqual(r.log.ops, [[{ remove: c.id }]]); assert.equal(r.table.length, 0, 'the clock is off the table');
+});
+await test('gm-loud: make: two taps at once add ONE clock (the busy guard)', async () => {
+  const r = popRig(2, { fresh: () => new Promise((res) => setTimeout(() => res([]), 5)) });
+  const both = await Promise.all([r.loud.make(), r.loud.make()]);
+  assert.equal(r.log.added.length, 1, 'one clock for two taps'); assert.deepEqual(both.slice().sort(), [false, true]);
+});
+await test('gm-loud: make: the table is looked at just before the write: a clock another device made since is found and nothing is added; a refresh that fails changes nothing', async () => {
+  const there = popRig(2, { fresh: async () => [{ id: 'other-device', name: 'getaway', size: 6, filled: 1, hidden: true }] });
+  assert.equal(await there.loud.make(), false); assert.equal(there.log.added.length, 0, 'no second clock');
+  assert.match(there.log.toasts.slice(-1)[0][0], /stands at 1\/6\. Nothing added/); assert.match(there.pop(false), /is on the table: <b>1\/6<\/b>/, 'and the popover reads it');
+  for (const fresh of [() => Promise.reject(new Error('offline')), async () => null, async () => 'x']) { const r = popRig(2, { fresh }); assert.equal(await r.loud.make(), true); assert.equal(r.log.added.length, 1, 'a refresh that could not answer: the clock is made as before'); }
+  const mine = popRig(2, { fresh: async () => [{ id: 'x', name: 'Boat', size: 4, filled: 0 }] }); assert.equal(await mine.loud.make(), true, 'another clock is no getaway clock');
+});
+await test('gm-loud: make: Undo after the clock was ticked is refused, with a message, and the clock stays', async () => {
+  const r = popRig(2); await r.loud.make(); r.table[0].filled = 1;
+  assert.match(await r.log.undo.undo(), /Not undone: the clock has changed since\. Change it on the table page/); assert.equal(r.table.length, 1, 'the clock stays'); assert.deepEqual(r.log.ops, [], 'no remove was sent');
 });
 await test('gm-loud: make: Undo refuses a clock the table changed since; no table, a failed add and a bad clock each say so and add nothing', async () => {
   const r = popRig(2); await r.loud.make(); r.table[0].filled = 2;
@@ -168,6 +186,7 @@ await test('gm-loud: GM-ONLY: loud.js is in the gm-glance bundle alone; no phone
 });
 await test('gm-loud: glance.css: the RK23 block is under .gl- classes, nothing under 12 px, no !important, no @layer, kit rules scoped under the desk', () => {
   const all = read('gm/glance.css'), at = all.indexOf('/* ---------- RK23: when it goes loud'); assert.ok(at > 0, 'the RK23 block is there');
+  assert.ok(/#gm-page \.gl-loud \{[^}]*mask-image: linear-gradient\(to bottom, #000 calc\(100% - 26px\), transparent\)/.test(all.slice(at)), 'the block fades at its foot: the scroll cue');
   const bare = all.slice(at).replace(/\/\*[\s\S]*?\*\//g, '');
   const sizes = [...bare.matchAll(/font(?:-size)?\s*:\s*(?:[0-9]+\s+)?([0-9.]+)px/g)].map((m) => +m[1]); assert.ok(sizes.length > 5 && sizes.every((n) => n >= 12), 'every font size is 12 px or more: ' + sizes.join(','));
   assert.ok(!/!important|@layer/.test(bare));

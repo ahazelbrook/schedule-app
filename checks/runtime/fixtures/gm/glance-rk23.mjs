@@ -125,6 +125,21 @@ export async function rk23(c) {
       if (undo) { await undo.click(); check(!!(await until(async () => (await getaways()).length === 0, 8000, 200)), 'Undo takes the clock off the table'); }
       else check(false, 'the toast has an Undo button');
       check(!!(await until(async () => (await p.$$('#gm-runv .rv-alarmpop [data-site="loud-make"]')).length === 1, 8000, 200)), 'after Undo the chip is back');
+      /* two taps at once make ONE clock; a tick on the table, then Undo, is refused and the clock stays */
+      await p.evaluate(() => { const b = document.querySelector('#gm-runv .rv-alarmpop [data-site="loud-make"]'); b.click(); b.click(); });
+      const k2 = await until(async () => (await getaways())[0], 8000, 200);
+      await sleep(1500);
+      check(!!k2 && (await getaways()).length === 1, 'two taps at once make ONE clock');
+      if (k2) {
+        await api('PATCH', '/campaign', { clockOps: [{ id: k2.id, filled: 1 }] });
+        const undo2 = await p.waitForSelector('button:has-text("Undo")', { timeout: 6000 }).catch(() => null);
+        if (undo2) {
+          await undo2.click(); await sleep(1500);
+          const left = await getaways();
+          check(left.length === 1 && left[0].filled === 1, 'Undo after a tick is refused: the clock stays, ticked');
+          check(/Not undone: the clock has changed since/.test(await p.evaluate(() => document.body.textContent)), 'and the toast says why');
+        } else check(false, 'the second make has an Undo button');
+      }
       await ctx.close();
     }
 
@@ -140,6 +155,9 @@ export async function rk23(c) {
       check(/Shut the Private card rooms and the lift \(GM-ONLY-LOUD-DOORS\)/.test(t) && /Open the Cocktail lounge, and nothing else/.test(t), 'top: which doors shut');
       check(/VIP Mabel Quist goes down to the Underground counting room with Lotte Brand/.test(t), 'top: where the VIP goes');
       check(!/The plan for the top segment is written/.test(t), 'top: the dim line is gone');
+      check(/From the note: Session 4: the Pelican Rooms/.test(t), 'top: the plan names the note it came from');
+      const cue = await p.evaluate(() => { const e = document.querySelector('#gm-runv .rv-alarmpop .gl-loud'), cs = getComputedStyle(e); return { more: e.scrollHeight - e.clientHeight, mask: cs.maskImage || cs.webkitMaskImage || '' }; });
+      check(/linear-gradient/.test(cue.mask), 'top: the block fades at its foot (the scroll cue: ' + cue.mask.slice(0, 50) + '), ' + cue.more + ' px more to scroll');
       check(!/▶|handout|night plan|Getaway \/ 6/.test(t), 'top: the chips of the note are not text in the plan');
       check((await p.$$('#gm-runv .rv-alarmpop [data-site="loud-make"]')).length === 1, 'top: the getaway chip is there too');
       const m = await p.evaluate(() => { const e = document.querySelector('#gm-runv .rv-alarmpop'), r = e.getBoundingClientRect(), small = []; e.querySelectorAll('.gl-loud *').forEach((n) => { const s = parseFloat(getComputedStyle(n).fontSize); if (n.textContent.trim() && s < 12) small.push(s); });

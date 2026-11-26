@@ -19,12 +19,13 @@
 
    PURE (tested under Node, checks/runtime/gm-loud.test.mjs)
      parse(md) -> null | { heading, items: [{ group, label, text }], clock: { name, size, ticks } | { bad } | null }     the section of one note's Markdown
-     find(prepPart) -> null | { source (the note's id), heading, items, clock }     the first note (notes order) with the section
+     find(prepPart) -> null | { source (the note's id), title (its title), heading, items, clock }     the first note (notes order) with the section; the plan names it
      beatRows(beats, filled, size) -> [{ n, text, state: 'done' | 'now' | 'next' | '' }]
      topSegment(filled, size) -> bool
    THE VIEW: create(host) -> { pop(html, info, gm) -> html, make() -> Promise, plan() -> find(...) | null }
      host: prep() -> the pack's prep part, clocks() -> [table clock], canClock() -> bool, addClock(clock) -> Promise, clockOps(ops) -> Promise,
-           undoToast(text, undo) -> truthy when shown, toast(msg, bad), redraw()
+           undoToast(text, undo) -> truthy when shown, toast(msg, bad), redraw(),
+           fresh() -> Promise of the table's clocks as the server holds them now (or null): looked at just before the getaway clock is added, so a second device does not make a second one
      info is site.js's alarmInfo: { v (the security view), clock (name), beats, missing }. gm adds data-gm="site" to the button (the site line). Its one
      control is data-site="loud-make", which the Run view routes to the page's siteAct. */
 (function (root, factory) {
@@ -123,7 +124,7 @@
     for (var i = 0; i < notes.length; i++) {
       if (!isObj(notes[i])) continue;
       var p = parse(blocksOf(notes[i]));
-      if (p) return { source: str(notes[i].id), heading: p.heading, items: p.items, clock: p.clock };
+      if (p) return { source: str(notes[i].id), title: words(notes[i].title), heading: p.heading, items: p.items, clock: p.clock };
     }
     return null;
   }
@@ -173,7 +174,7 @@
     function planHtml(p, top) {
       if (!p.items.length) return '';
       if (!top) return '<p class="gl-loud-wait">The plan for the top segment is written: ' + p.items.length + (p.items.length === 1 ? ' line' : ' lines') + '. It shows when the clock is full.</p>';
-      var h = '<section class="gl-loud-plan" aria-label="When it goes loud"><h4 class="gl-loud-h">When it goes loud' + (p.heading ? ' <span class="gl-loud-sub">' + esc(p.heading) + '</span>' : '') + '</h4>', g = null, open = false;
+      var h = '<section class="gl-loud-plan" aria-label="When it goes loud"><h4 class="gl-loud-h">When it goes loud' + (p.heading ? ' <span class="gl-loud-sub">' + esc(p.heading) + '</span>' : '') + '</h4>' + (p.title ? '<p class="gl-loud-src">From the note: ' + esc(p.title) + '</p>' : ''), g = null, open = false;
       p.items.forEach(function (it) {
         if (!open || it.group !== g) { if (open) h += '</ul>'; g = it.group; if (g) h += '<p class="gl-loud-g">' + esc(g) + '</p>'; h += '<ul class="gl-loud-list">'; open = true; }
         h += '<li>' + (it.label ? '<b class="gl-loud-k">' + esc(it.label) + '</b> ' : '') + '<span class="gl-loud-t">' + esc(it.text) + '</span></li>';
@@ -212,7 +213,13 @@
       if (typeof host.canClock !== 'function' || !host.canClock()) { toast('The table is not available here: start the clock on the table page.', true); return Promise.resolve(false); }
       var clock = { id: 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7), name: k.name, size: k.size, filled: k.ticks, kind: 'danger', hidden: true };
       busy = true;
-      return Promise.resolve().then(function () { return host.addClock(clock); }).then(function (r) {
+      /* look at the table as the server holds it just before the write: another device may have made the clock since this page last heard */
+      return Promise.resolve().then(function () { return typeof host.fresh === 'function' ? host.fresh() : null; }).then(null, function () { return null; }).then(function (now) {
+        var k2 = fold(k.name), there = list(now).filter(isObj).filter(function (x) { return fold(x.name) === k2; })[0];
+        if (there) { made[k2] = there; busy = false; redraw(); toast('Clock: ' + str(there.name) + ' stands at ' + (Math.floor(+there.filled) || 0) + '/' + (+there.size || k.size) + '. Nothing added.'); return 'there'; }
+        return host.addClock(clock);
+      }).then(function (r) {
+        if (r === 'there') return false;
         busy = false;
         if (r === false) throw new Error('The clock was not added.');
         made[fold(k.name)] = { id: clock.id, name: clock.name, size: clock.size, filled: clock.filled, hidden: true };
