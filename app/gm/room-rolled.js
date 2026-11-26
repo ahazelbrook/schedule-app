@@ -278,10 +278,14 @@
     function onClick(ev) {
       var t = ev.target, a = t && t.closest ? t.closest('[data-rr-act]') : null;
       if (a && a.closest('.rr-site, .rv-rm')) { onAct(ev, a); return; }      /* RK15: Roll another and Reroll the room (this roll's own cards only) */
+      var kb = t && t.closest ? t.closest('[data-rr-keep]') : null, kp = kb && kb.closest('.rr-site, .rv-rm') ? keeper() : null;      /* RK19: Keep on a quick card (keeper(), below) */
+      if (kp) { ev.preventDefault(); ev.stopPropagation(); kp.tap(kb); return; }      /* off while the write is out, on again whenever Keep did not keep */
       var b = t && t.closest ? t.closest('[data-site="thing"][data-thing]') : null;
       if (!b || !b.closest('.rr-site, .rv-rm') || !act(b)) return;
       ev.preventDefault(); ev.stopPropagation();      /* heard first (capture): the Run view's own routing (site.act, RK09's card) never sees a rolled room's thing */
     }
+    var kpr = null;      /* RK19: Keep's instance, made on the first Keep with this host, this instance's model and the quick cards' cards() */
+    function keeper() { var K = live(mod('B68GmRoomKeep', './room-keep.js')); if (!kpr && K && typeof K.create === 'function') kpr = K.create(host, { model: function () { return now(); }, cards: function (s, x) { var P = live(mod('B68GmRoomPeople', './room-people.js')); return P && typeof P.cards === 'function' ? P.cards(s, x) : []; } }); return kpr; }
     function listen(box) { if (box && boxes.indexOf(box) < 0 && typeof box.addEventListener === 'function') { box.addEventListener('click', onClick, true); boxes.push(box); } }
     function draw(box, line) {
       if (!box) return false;
