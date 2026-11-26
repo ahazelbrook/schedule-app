@@ -410,6 +410,10 @@ try {
     const kitB = await until(() => BK.page.evaluate((s) => { const c = document.querySelector(s), m = c && c.querySelector('.rr-bmark'); return m ? { kit: c.classList.contains('krv-rm'), stars: c.querySelectorAll('.rk-ti > span.rr-bstar').length, fit: !!c.querySelector('[data-rb="fit"]') } : null; }, sel1), 20000, 500);
     check(!!kitB && kitB.kit && kitB.fit && kitB.stars === 2, 'the kit desk draws the same ✦ Blade block and marks (' + JSON.stringify(kitB) + ')');
     if (SHOTS) { await BK.page.evaluate((s) => document.querySelector(s).scrollIntoView({ block: 'start' }), sel1); await shot(BK.page, 'kitdesk-1366-paper-blade'); }
+    /* leave the site as 4b found it (RK15's step 7 counts this room's things): Clear, from the kit desk */
+    await BK.page.click(sel1 + ' [data-rb="clear"]');
+    const left = await until(async () => (await BK.page.evaluate((s) => !document.querySelector(s + ' .rr-bmark'), sel1)) && !(await bladeAt(key1)), 15000, 500);
+    check(!!left, 'Clear on the kit desk takes the answer off, and 4b leaves no Blade answer on the site');
     await BK.c.close();
     await feats({ 'kit.desk': false });
   }
