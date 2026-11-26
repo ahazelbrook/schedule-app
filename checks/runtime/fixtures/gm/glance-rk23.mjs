@@ -134,10 +134,11 @@ export async function rk23(c) {
         await api('PATCH', '/campaign', { clockOps: [{ id: k2.id, filled: 1 }] });
         const undo2 = await p.waitForSelector('button:has-text("Undo")', { timeout: 6000 }).catch(() => null);
         if (undo2) {
-          await undo2.click(); await sleep(1500);
+          await undo2.click();
+          check(!!(await until(() => p.evaluate(() => /Not undone: the clock has changed since/.test(document.body.textContent)), 3000, 50)), 'and the toast says why (it stays 1.5 s)');
+          await sleep(1000);
           const left = await getaways();
           check(left.length === 1 && left[0].filled === 1, 'Undo after a tick is refused: the clock stays, ticked');
-          check(/Not undone: the clock has changed since/.test(await p.evaluate(() => document.body.textContent)), 'and the toast says why');
         } else check(false, 'the second make has an Undo button');
       }
       await ctx.close();
