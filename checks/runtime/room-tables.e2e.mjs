@@ -406,7 +406,7 @@ try {
     check(!!busy && waits, 'a tap is busy ("Fitting…"), and every other Fit waits');
     const landed = await until(() => page.evaluate((s) => { const c = document.querySelector(s), m = c && c.querySelector('.rr-bmark'); return m ? { mark: m.textContent, say: c.querySelector('[data-rr-say]').textContent,
       things: c.querySelectorAll('[data-site="thing"]').length, ppl: [...c.querySelectorAll('.rr-bperson')].map((l) => l.textContent), clear: !!c.querySelector('[data-rb="clear"]'),
-      stars: c.querySelectorAll('.rk-ti > span.rr-bstar').length, starWho: c.querySelectorAll('.rr-ppl .rr-bperson').length,
+      stars: c.querySelectorAll('.rk-ti > span.rr-bstar').length, starWho: c.querySelectorAll('.rr-ppl .rr-bperson, .rr-bppl .rr-bperson').length,      /* RK17: Blade's people follow the quick cards in their own list (rr-bppl), or share the plain list (rr-ppl) */
       px: [m, c.querySelector('.rr-bperson')].filter(Boolean).map((e) => parseFloat(getComputedStyle(e).fontSize)) } : null; }, sel1), 8000);
     check(!!landed && landed.mark === '✦ Blade fitted this room to tonight: the read-aloud, GM-ONLY-velvet rope, GM-ONLY-ice bucket and 1 person.' && landed.say.startsWith('SAY “' + BLADE.say + ' There') && landed.things === 6 &&
       landed.ppl.length === 1 && landed.ppl[0].includes(BLADE.people[0].line) && landed.clear && landed.stars === 2 && landed.starWho === 1 && landed.px.length === 2 && landed.px.every((x) => x >= 12),
