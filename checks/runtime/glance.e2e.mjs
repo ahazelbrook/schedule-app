@@ -38,6 +38,7 @@ const PARTS = [
   { name: 'RK21', file: './fixtures/gm/glance-rk21.mjs', run: 'rk21', ms: (SHOTS ? 900 : 300) * 1000 },
   { name: 'RK20', file: './fixtures/gm/glance-rk20.mjs', run: 'rk20', ms: (SHOTS ? 900 : 600) * 1000 },
   { name: 'RK22', file: './fixtures/gm/glance-rk22.mjs', run: 'rk22', ms: (SHOTS ? 1500 : 480) * 1000 },
+  { name: 'RK23', file: './fixtures/gm/glance-rk23.mjs', run: 'rk23', ms: (SHOTS ? 900 : 300) * 1000 },
 ];
 /* every setting a part may turn on: all off before and after each part */
 const BASE_OFF = { 'gm.glance': false, 'kit.desk': false };

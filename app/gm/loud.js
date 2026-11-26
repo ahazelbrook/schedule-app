@@ -196,7 +196,7 @@
       html = str(html); info = isObj(info) ? info : {};
       if (!html) return html;
       var v = isObj(info.v) ? info.v : {}, p = plan(), top = !!v.site && topSegment(+v.filled || 0, +v.size || 0);
-      var inner = beatsHtml(info) + (p ? planHtml(p, top) + clockHtml(p, !!gm) : '');
+      var inner = (p ? clockHtml(p, !!gm) + planHtml(p, top) : '') + beatsHtml(info);      /* the getaway chip first (it must never scroll out of sight), then the plan, then every beat */
       if (!inner) return html;
       var at = html.lastIndexOf('</div>');
       return (at < 0 ? html : html.slice(0, at)) + '<div class="gl-loud">' + inner + '</div>' + (at < 0 ? '' : html.slice(at));
