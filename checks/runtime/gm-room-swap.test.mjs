@@ -191,6 +191,28 @@ test('the swaps cap: with 10 swaps stored, a Swap on an added thing is refused a
   assert.equal(JSON.stringify(d.doc.roomstate.keys), before, 'nothing was written: the extra list is as it was');
 });
 
+test('a failed setExtra on a SECOND swap of one added thing puts the first swap record back (the re-check note)', () => {
+  const s = newServer(), d = device(s), p = page(d);
+  swapper(p, d).act(elOf('another', BAR));
+  const x = Object.keys(stored(d, BAR).extra)[0];
+  tap(p, d, BAR, x);
+  const y = stored(d, BAR).swaps[x];
+  assert.deepEqual(stored(d, BAR).swaps, { [x]: y }, 'the first record: x gone, y shown');
+  const real = d.rs.setExtra; d.rs.setExtra = () => false;      /* the second swap's setExtra fails */
+  const c = ctxFor(p, d, BAR, y);
+  assert.throws(() => SW.buttons(c)[0].run(c), /not saved/);
+  d.rs.setExtra = real;
+  assert.deepEqual(stored(d, BAR).swaps, { [x]: y }, 'the first record survives, unchanged (not deleted, not left pointing at the failed swap)');
+  assert.deepEqual(Object.keys(stored(d, BAR).extra), [y]);
+  /* and the very first swap failing leaves no record at all */
+  const s2 = newServer(), d2 = device(s2), p2 = page(d2);
+  swapper(p2, d2).act(elOf('another', BAR));
+  const x2 = Object.keys(stored(d2, BAR).extra)[0]; d2.rs.setExtra = () => false;
+  const c2 = ctxFor(p2, d2, BAR, x2);
+  assert.throws(() => SW.buttons(c2)[0].run(c2), /not saved/);
+  assert.ok(!stored(d2, BAR).swaps, 'nothing left behind');
+});
+
 test('the reroll question counts only the marks on things shown (a mark on a swapped-away thing is not what it clears)', () => {
   const s = newServer(), d = device(s), p = page(d), sw = swapper(p, d);
   const t0 = slugsOf(p, BAR)[0];

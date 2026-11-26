@@ -138,7 +138,7 @@
           ok = w.setSwap(rk, rm, p.slug, p.to) === true;
           if (ok) {
             ok = w.setExtra(rk, rm, list(d2.extra).map(function (x) { return x === p.slug ? p.to : x; })) === true;
-            if (!ok) w.setSwap(rk, rm, p.to, null);      /* put the record back as it was */
+            if (!ok) w.setSwap(rk, rm, p.to, p.slug);      /* put the record back as it was: p.to shows in place of the old key, which goes back to p.slug (a null would delete the first record of a chain) */
           }
         } else ok = w.setSwap(rk, rm, p.slug, p.to) === true;
         if (!ok) throw new Error(WHY.swapFail);
