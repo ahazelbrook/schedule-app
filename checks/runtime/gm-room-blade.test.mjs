@@ -149,7 +149,7 @@ test('blockHtml(): "Fit to tonight (~3¢)" on a tabled room only; busy reads "Fi
   assert.ok(!/rr-bperson/.test(t), 'Blade\'s people are not in the block: they are in Who\'s here');
   assert.match(t, />Clear<\/button>/); assert.match(t, /data-rb="clear"/);
   assert.ok(!SECRET.test(t), 'the block names things; never their closer look, roll or danger');
-  /* Who's here: RK14's slot list with Blade's people in it, each with a ✦; RK17's own list gets Blade's after it */
+  /* Who's here: RK14's slot list with Blade's people in it, each with a ✦; RK17's quick cards (room-people.js, live under Node) get Blade's list after them (RK17 edited this pin's shape only) */
   const ppl = B.peopleHtml(c, '', false, (x) => x.people.map((p) => '<li data-slot="' + p.id + '"></li>').join(''));
   assert.equal(ppl, '<ul class="rv-who rr-ppl">' + c.people.map((p) => '<li data-slot="' + p.id + '"></li>').join('') +
     '<li class="npc rr-bperson" data-role="cleaner"><b>✦ Cleaner</b> GM-ONLY-person: a cleaner counting tips</li></ul>', 'the slot items are the rolled cards\' own (handed over), never a copy');
@@ -189,7 +189,7 @@ test('the tap: the fake runtime\'s answer lands on the card through setBlade, ma
     'Blade\'s read-aloud, then the line naming every thing');
   assert.equal((blk.match(/data-site="thing"/g) || []).length, 6, 'the zoom card\'s list holds Blade\'s things too (keys 5 and 6)');
   assert.equal((blk.match(/class="rr-bstar"[^>]*>✦<\/span>/g) || []).length, 2, 'a ✦ on each of Blade\'s things in the list');
-  assert.match(blk, /(Who’s here|Quick-draw people)<\/h4><ul class="rv-who rr-ppl"><li class="npc rr-slot" data-rr-slot="p1"[\s\S]*?<li class="npc rr-bperson" data-role="cleaner"><b>✦ Cleaner<\/b> GM-ONLY-person: a cleaner counting tips<\/li><\/ul>/, 'Blade\'s person in Who\'s here');
+  assert.match(blk, /(Who’s here|Quick-draw people)<\/h4><ul class="rv-(who|ppl) rr-ppl"><li class="npc rr-slot[^"]*" data-rr-slot="p1"[\s\S]*?(<\/ul><ul class="rv-who rr-bppl">|)<li class="npc rr-bperson" data-role="cleaner"><b>✦ Cleaner<\/b> GM-ONLY-person: a cleaner counting tips<\/li><\/ul>/, 'Blade\'s person in Who\'s here');
   assert.deepEqual(r.toasts.slice(-1), [['ok', '✦ Blade fitted Pelican bar to tonight.']]);
   assert.ok(!r.toasts.some((x) => x[0] === 'bad'));
   assert.ok(r.inst.zoom().html('Pelican bar', { n: 1 }).includes('data-thing="' + RT.slug(GOOD.things[0].name) + '"'), 'a Blade thing opens in the zoom card like any other');

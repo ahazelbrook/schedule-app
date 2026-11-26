@@ -248,21 +248,21 @@ test('at a ball only the guests are masked: guest-f, guest-m and the noble, neve
   assert.ok(!viaHost.masked && guest.masked, 'the host says it is a ball: the guest is masked, the waiter is not');
 });
 
-test('the picture memo: it holds 120 pictures, the name is in its key (a pack pushed again with other names draws again), and the figures keep their own memo', () => {
+test('the picture memo: it holds 48 pictures (three sites of 16), the name is in its key (a pack pushed again with other names draws again), and the figures keep their own memo', () => {
   let calls = 0; const K2 = Object.assign({}, K, { portrait: (spec, o) => { calls++; return K.portrait(spec, o); } });
   const ctx = Object.assign({}, CTX, { K: K2, roomKey: 'rk17-cap#1' }), slots = [];
-  for (let i = 0; i < 110; i++) slots.push({ id: 'p' + i, role: ROLES[i % ROLES.length], seed: 5000 + i });
+  for (let i = 0; i < 44; i++) slots.push({ id: 'p' + i, role: ROLES[i % ROLES.length], seed: 5000 + i });
   const cs = slots.map((s) => P.card(s, ctx));
-  cs.forEach((c) => P.portrait(c, ctx)); assert.equal(calls, 110);
-  cs.forEach((c) => P.portrait(c, ctx)); assert.equal(calls, 110, 'a second pass over 110 people makes no picture again (the cap is 120)');
+  cs.forEach((c) => P.portrait(c, ctx)); assert.equal(calls, 44);
+  cs.forEach((c) => P.portrait(c, ctx)); assert.equal(calls, 44, 'a second pass over 44 people makes no picture again (the cap is 48)');
   const renamed = clone(NPC); renamed.family = ['Renamedfamily'];
   const c1 = P.card(slots[0], Object.assign({}, ctx, { npc: renamed }));
   assert.notEqual(c1.name, cs[0].name);
   const svg0 = P.portrait(cs[0], ctx), svg1 = P.portrait(c1, Object.assign({}, ctx, { npc: renamed }));
-  assert.equal(calls, 111, 'the same person under a new name is drawn again');
+  assert.equal(calls, 45, 'the same person under a new name is drawn again');
   assert.ok(svg0.includes('<title>' + cs[0].name + '</title>') && svg1.includes('<title>' + c1.name + '</title>') && svg0 !== svg1, 'and its title is the new name');
-  for (let i = 110; i < 260; i++) P.portrait(P.card({ id: 'p' + i, role: 'waiter', seed: 9000 + i }, ctx), ctx);
-  const before = calls; P.portrait(cs[109], ctx); assert.equal(calls, before + 1, 'past 120 the oldest go first');
+  for (let i = 44; i < 260; i++) P.portrait(P.card({ id: 'p' + i, role: 'waiter', seed: 9000 + i }, ctx), ctx);
+  const before = calls; P.portrait(cs[1], ctx); assert.equal(calls, before + 1, 'past 48 the oldest go first');
 });
 
 test('nothing here is sent, stored or filed: GM-side only, no draw but the forks, no NPC posted, nothing but room-rolled and the page names it', () => {
@@ -275,7 +275,7 @@ test('nothing here is sent, stored or filed: GM-side only, no draw but the forks
   assert.ok(!/Math\.random|Date\.now|new Date/.test(src), 'every draw is a fork of the slot\'s seed');
   assert.ok(src.split('\n').every((l) => !/(['"])(?:(?!\1).){221,}\1/.test(l)), 'no string literal over 220 characters');
   const room = read('app/gm/room-rolled.js'), page = read('app/gm-page.js'), spot = read('app/gm/spotlight.js');
-  assert.ok(/P\.html\(c\.people/.test(room), 'room-rolled hands its slots to B68GmRoomPeople.html');
+  assert.ok(/P\.items\(c\.people/.test(room) && /var h = slotItems\(c,/.test(room), 'room-rolled draws the people through slotItems, which hands the slots to B68GmRoomPeople.items');
   assert.ok(!/RoomPeople|room-people|quick-draw/.test(spot), 'spotlight.js is untouched');
   const rr = page.split('\n').filter((l) => /function rrInst\(\)/.test(l));
   assert.equal(rr.length, 1);

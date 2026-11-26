@@ -154,7 +154,10 @@
     return head + '<ul class="' + cls(o, 'rv-who rr-ppl', 'krv-ppl') + '">' + (c.people.length ? slotItems(c) : '<li class="rv-dim">Nobody drawn.</li>') + '</ul>';
   }
   /* the people slots as list items: the one place for their markup (the Blade tap's people join this list through its hook's slots) */
-  function slotItems(c) {
+  function slotItems(c, x) {
+    var P = live(mod('B68GmRoomPeople', './room-people.js')), h = '';      /* RK17: the quick-draw people's cards (room-people.js), when it is there and the room drew someone */
+    if (x && P && typeof P.items === 'function' && list(c && c.people).length) {      /* only with the card's context (x): a bare call keeps the plain list */ try { h = str(P.items(c.people, x || {})); } catch (e) { h = ''; } }
+    if (h) return h;
     return list(c && c.people).map(function (p) {
       return '<li class="npc rr-slot" data-rr-slot="' + esc(p.id) + '" data-role="' + esc(p.role) + '"><b>' + esc(roleLabel(p.role)) + '</b> <small class="rv-dim">quick-draw</small></li>';
     }).join('');
@@ -252,7 +255,11 @@
         note: function (c) { return c.n === 1 ? call('note', c.name) : null; },
         actions: function (c) { var S = swapper(); return S ? str(S.html(c, { kit: kit })) : ''; },      /* RK15: Roll another and Reroll the room (room-swap.js) */
         wrong: function (c) { return c.n === 1 && !inRunView ? list(call('wrong', c.name)) : []; },      /* the Run view's card draws the note's lines itself */
-        people: function (c) { return P && typeof P.html === 'function' ? str(P.html(c.people, { room: c.name, roomKey: c.roomKey, rollKey: m.rollKey, kit: kit, page: host })) : ''; } };
+        people: function (c) {      /* RK17: slotItems is the one place the slots' markup comes from; the Blade tap's people join its list */
+          if (!P || typeof P.items !== 'function' || !list(c.people).length) return '';
+          var h = slotItems(c, { room: c.name, roomKey: c.roomKey, rollKey: m.rollKey, kit: kit, page: host });
+          return h ? '<ul class="' + cls({ kit: kit }, 'rv-ppl rr-ppl', 'krv-ppl') + '">' + h + '</ul>' : '';
+        } };
     }
     function act(el) {
       if (!el || typeof el.getAttribute !== 'function' || !el.getAttribute('data-thing')) return false;

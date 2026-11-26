@@ -21,13 +21,15 @@
    no npc part, or no figure kit gives a plain card, never an error; a role the kit does not know is drawn by the kit as a resident (its own rule).
 
    API
-     card(slot, ctx) -> card | null
+     card(slot, ctx) -> card | null     ONE person from their slot alone. For a ROOM, Keep (RK19) and anything else that must match what the room shows uses cards(roomSlots)[i], NOT
+                                        card(slot): a lone card() gives a second same-role person different text (line, clothes) from what the room shows
        slot = { id?, role, seed }
        ctx  = { npc?: the npc part's T, T?: the rooms part's T (its roles), K?: the figure kit, masked?: bool (the guests wear masks), roomKey?, page?: a host that may give
                 npc() , T() and masked(room) , room? }
        card = { id, role, label, seed, sex: 'fem' | 'masc', masked, plain: bool (no roles entry), name, first, family, build, hair, standout, wearing, manner, goal, errand,
                 tell, line, face, pose, look (text), want (text), kicker (the line under the name: role, manner, masked), spec (the kit's figure spec, named), known: bool (the kit has the role) }
      portrait(card, ctx) -> svg markup | ''        K.portrait(spec, { lod: 'lo' }), remembered by person, its size stripped as the page does
+     items(slots, ctx) -> markup | ''              the li's of html() alone
      cards(slots, ctx) -> [card]                   a room's people together (ids p1, p2 by place), with the same-role line and clothes made different; what html() draws
      html(slots, ctx) -> markup | ''               the Who's-here list of the quick cards (ul.rr-ppl, one li[data-rr-slot][data-role] a person); '' for no slot (the caller's own list says so)
      rng(seed, role, field) -> () -> [0, 1)        a field's stream, for tests   FIELDS   GUESTS (the roles a ball masks)   hairWords(spec)   factsOf(spec) */
@@ -40,9 +42,8 @@
   'use strict';
 
   var FIELDS = ['first', 'family', 'build', 'standout', 'manner', 'goal', 'errand', 'tell', 'look', 'line', 'sex'];
-  /* two memos: the figures (small) and the pictures (a lo portrait is about 135 KB of SVG, so 120 of them hold about 16 MB: a site's 16 people, with room to go back to
-     an earlier roll); each first in, first out */
-  var SPEC_MAX = 400, PIC_MAX = 120, specs = {}, specOrder = [], pics = {}, picOrder = [];
+  /* two memos: the figures (small) and the pictures (a lo portrait is about 135 KB of SVG, so 48 of them hold about 6 MB: three sites of 16 people, kept small for a memory-starved PC); each first in, first out */
+  var SPEC_MAX = 400, PIC_MAX = 48, specs = {}, specOrder = [], pics = {}, picOrder = [];
   /* a ball masks its guests, never the staff: the roles the kit dresses as a guest (guest-f, guest-m, and the noble it draws as one) */
   var GUESTS = ['guest-f', 'guest-m', 'noble'];
 
@@ -214,12 +215,12 @@
       return c;
     }).filter(Boolean);
   }
+  /* the list items alone (the rolled card's slotItems, the one place the slots' markup comes from, hands them to the card and to the Blade tap) */
+  function items(slots, ctx) { return cards(slots, ctx).map(function (c) { return row(c, ctx); }).join(''); }
   function html(slots, ctx) {
-    var rows = cards(slots, ctx);
-    if (!rows.length) return '';
-    var kit = !!(isObj(ctx) && ctx.kit);
-    return '<ul class="rv-ppl rr-ppl' + (kit ? ' krv-ppl' : '') + '">' + rows.map(function (c) { return row(c, ctx); }).join('') + '</ul>';
+    var h = items(slots, ctx);
+    return h ? '<ul class="rv-ppl rr-ppl' + (isObj(ctx) && ctx.kit ? ' krv-ppl' : '') + '">' + h + '</ul>' : '';
   }
 
-  return { card: card, cards: cards, portrait: portrait, html: html, rng: rng, FIELDS: FIELDS, GUESTS: GUESTS, hairWords: hairWords, factsOf: factsOf };
+  return { card: card, cards: cards, portrait: portrait, items: items, html: html, rng: rng, FIELDS: FIELDS, GUESTS: GUESTS, hairWords: hairWords, factsOf: factsOf };
 });
