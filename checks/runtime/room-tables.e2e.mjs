@@ -477,6 +477,30 @@ try {
     await A1.c.close();
     await feats({ 'room.key': true });
 
+    /* the authored v2 night: its Showroom card (the Run view's own, parts from block()) has the same two buttons, and what they store is keyed by the authored site ('a:' + its name) */
+    check((await api('PATCH', '/gm/state', { cards: { location: Object.assign({}, SITE_CARD, { seed: null, ui: null, mem: null }) } })).status === 200, 'RK15: the night\'s authored v2 site is the Location card');
+    await feats({ 'room.tables': true, 'room.key': true });
+    const V = await open({ v2: true }), sh = '#gm-runv .rv-rm[data-room="Showroom"]';
+    await V.page.waitForSelector(sh + ' [data-rr-act]', { timeout: 20000 });
+    const vb = await V.page.evaluate((sel) => [...document.querySelectorAll(sel + ' [data-rr-act]')].map((b) => (b.querySelector('.ui-label') || b).textContent).join('/'), sh);
+    check(vb === 'Roll another/Reroll the room', 'the authored v2 night\'s Showroom card has Roll another and Reroll the room too (' + vb + ')');
+    await V.page.evaluate((sel) => { const b = document.querySelector(sel + ' [data-rr-act]'); if (b) b.scrollIntoView({ block: 'center' }); }, sh); await sleep(300);
+    await shot(V.page, 'rk15-desk-1366-paper-v2-card');
+    const things0 = await V.page.evaluate((sel) => document.querySelectorAll(sel + ' [data-site="thing"]').length, sh);
+    await V.page.click(sh + ' [data-rr-act="another"]');
+    const keyA = await until(async () => { const k = (await api('GET', '/gm/state')).json.doc.roomstate; const ks = Object.keys((k && k.keys) || {}).filter((x) => /^a:/.test(x)); const r = ks[0] && k.keys[ks[0]].rooms['showroom#1']; return r && r.extra && Object.keys(r.extra).length === 1 ? ks[0] : null; }, 15000);
+    check(things0 >= 3 && !!keyA && await V.page.evaluate(([sel, n]) => document.querySelectorAll(sel + ' [data-site="thing"]').length === n + 1, [sh, things0]), 'Roll another on it adds one more thing (' + things0 + ' to ' + (things0 + 1) + '), stored under the authored site\'s own key (' + keyA + ')');
+    await V.page.click(sh + ' [data-site="thing"][data-i="' + things0 + '"]'); z = await until(() => zoom(V.page), 4000);
+    check(!!z && /^swap:Swap$/.test(z.slots[2] || ''), 'and the new thing\'s zoom card has Swap');
+    await V.page.keyboard.press('Escape'); await V.c.close();
+    if (SHOTS) {      /* the kit desk's Run view (the one-room inspector draws the same parts for the selected room) */
+      await feats({ 'kit.desk': true });
+      const VK = await open({ kit: true, v2: true });
+      await VK.page.evaluate((sel) => { const b = document.querySelector(sel + ' [data-rr-act]') || document.querySelector('#gm-runv [data-rr-act]'); if (b) b.scrollIntoView({ block: 'center' }); }, sh); await sleep(300);
+      await shot(VK.page, 'rk15-kitdesk-1366-paper-v2-card'); await VK.c.close(); await feats({ 'kit.desk': false });
+    }
+    check(!!(ROLLED_CARD && ROLLED_CARD.seed) && (await api('PATCH', '/gm/state', { cards: { location: Object.assign({}, ROLLED_CARD, { auth: null }) } })).status === 200, 'step 2\'s rolled site is the Location card again');
+
     /* room.tables off on the live page: the buttons go with the rolled instance */
     await feats({ 'kit.desk': false, 'room.tables': true });
     const L = await open({});

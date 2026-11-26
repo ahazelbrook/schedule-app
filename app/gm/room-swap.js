@@ -149,7 +149,8 @@
       if (!isObj(sc) || !isObj(sc.table)) return '';
       var rd = readOf(rs, sc), ok = !!(rd && rs && typeof rs.addExtra === 'function' && placed(sc));
       var more = ok && anotherPlan(sc, rd) !== null, k = askKey(sc), marks = marksOf(rd), why = rs ? WHY.place : WHY.writer;
-      var lab = '<h4 class="' + (kit ? 'krv-lab' : 'rv-lab') + ' rr-lab rr-actlab">This room</h4>';
+      /* the old desk's own label class (rv-lab) is 10.5 px, under the build's 12 px floor, so there this label is the dim 12.5 px line; the kit's label is 12 px */
+      var lab = kit ? '<h4 class="krv-lab rr-lab rr-actlab">This room</h4>' : '<p class="rv-dim rr-lab rr-actlab">This room</p>';
       var head = lab + '<div class="rr-acts' + (kit ? ' krv-acts' : '') + '" data-rr-acts="' + esc(c.roomKey) + '" role="group" aria-label="' + esc('Roll another thing or reroll ' + c.name) + '">';
       var a = btn({ kit: kit, label: 'Roll another', act: 'another', room: c.roomKey, disabled: !more,
         title: !ok ? why : more ? 'Add the next thing from this room’s table.' : WHY.more });
