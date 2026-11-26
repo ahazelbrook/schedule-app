@@ -144,8 +144,8 @@
     if (p.fresh) return h + '<div class="gl-pc-line">' + none('new sheet, nothing filed yet') + '</div></li>';
     h += '<div class="gl-pc-line gl-pc-vitals"><span class="gl-v' + (p.full ? ' is-full' : '') + '"><span class="gl-vk">' + esc(p.stressName) + '</span> <b>' + (p.stress == null ? '—' : p.stress + '/' + p.stressMax) + '</b>' + (p.full ? ' <b class="gl-flag">full</b>' : '') + '</span>' +
       '<span class="gl-v"><span class="gl-vk">XP</span> <b>' + (p.xp == null ? '—' : p.xp + '/' + p.xpMax) + '</b></span>' +
-      '<span class="gl-v"><span class="gl-vk">Stacks</span> <b>' + p.stacks + '</b></span></div>';
-    h += '<div class="gl-pc-line gl-pc-harm">' + (p.harm.length ? p.harm.map(function (x) { return '<span class="gl-h gl-h' + x.lv + '"><b>' + x.lv + ' ' + x.name + '</b> ' + esc(x.text) + '</span>'; }).join('') : none('No harm')) + '</div>';
+      '<span class="gl-v"><span class="gl-vk">Stacks</span> <b>' + p.stacks + '</b></span>' +
+      '<span class="gl-pc-harm">' + (p.harm.length ? p.harm.map(function (x) { return '<span class="gl-h gl-h' + x.lv + '"><b>' + x.lv + ' ' + x.name + '</b> ' + esc(x.text) + '</span>'; }).join('') : none('No harm')) + '</span></div>';
     if (p.locks.length) h += '<div class="gl-pc-line gl-pc-locks"><span class="gl-vk">Deadlocks</span> ' + p.locks.map(esc).join(' · ') + '</div>';
     return h + '</li>';
   }
