@@ -186,8 +186,8 @@
       var c = clockNow(k.name), n = c ? Math.floor(+c.filled) || 0 : 0, size = c ? +c.size || k.size : k.size;
       if (c) return '<p class="gl-loud-clock">' + esc(str(c.name) || k.name) + ' is on the table: <b>' + n + '/' + size + '</b>.</p>';
       var U = Ui(), label = 'Make the ' + k.name + ' clock', title = 'Adds a hidden danger clock to the table: ' + k.name + ' ' + k.ticks + ' of ' + k.size + ', with Undo';
-      var b = U ? U.button({ label: label, rank: 'quiet', cls: ['rv-btn', 'sm', 'gl-loud-b'], data: gm ? { gm: 'site', site: 'loud-make' } : { site: 'loud-make' }, title: title })
-        : '<button type="button" class="rv-btn sm gl-loud-b"' + (gm ? ' data-gm="site"' : '') + ' data-site="loud-make" title="' + esc(title) + '">' + esc(label) + '</button>';
+      /* the button is B68Ui's on both desks (the page brings kit-ui in first, routes.js DEPS); with no B68Ui (its fetch failed) the line reads without it */
+      var b = U ? U.button({ label: label, rank: 'quiet', cls: ['rv-btn', 'sm', 'gl-loud-b'], data: gm ? { gm: 'site', site: 'loud-make' } : { site: 'loud-make' }, title: title }) : '';
       return '<p class="gl-loud-clock">' + b + '</p>';
     }
 
