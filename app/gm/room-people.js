@@ -8,7 +8,12 @@
    never moves a person and Reroll the room never changes one. Everything a card holds is a pure function of the slot, the two tables and `masked`:
      the figure first   B68Figure.extra({ role, seed, masked }): the kit picks the sex from the seed, so the name is drawn to match it, never the other way round
      the name           nameFem or nameMasc, then family, from the npc part's tables (T.nameAmb is not used: the figure is a man or a woman)
-     the look           build, hair and standout from the npc tables; what they wear is the role's own look line (the rooms part's roles), so a waiter is in a waiter's clothes
+     the look           build and standout from the npc tables; hair (colour and style) and any facial hair are READ FROM THE DRAWN FIGURE, so the words always agree with the
+                        picture, and a standout that says anything about hair, a beard or glasses the figure lacks is left out of the draw; what they wear is the role's own
+                        look line (the rooms part's roles), so a waiter is in a waiter's clothes. A woman never has facial hair (the kit draws none)
+     at a ball          only the GUESTS are masked (guest-f, guest-m, noble: ball.js says "the guests wear masks"), never a waiter, guard or cleaner
+     in a room          html() / cards() give two people of one role in a room different spoken lines and clothes (the next one of the role's, in order, when an earlier
+                        person of the room already has it): deterministic, since a room's people never move
      a manner, a want (goal, then the errand they are on), a tell (T.tell), one line (the role's own lines)
      face and pose      the role's `face` and `pose`, carried for Keep's Tell and Signature (RK19); the card does not show them
    Each field is its own fork of the slot's seed (mulberry32 of FNV-1a of seed|role|field), so one table changing length moves no other field, and no slot reads
@@ -23,8 +28,9 @@
        card = { id, role, label, seed, sex: 'fem' | 'masc', masked, plain: bool (no roles entry), name, first, family, build, hair, standout, wearing, manner, goal, errand,
                 tell, line, face, pose, look (text), want (text), kicker (the line under the name: role, manner, masked), spec (the kit's figure spec, named), known: bool (the kit has the role) }
      portrait(card, ctx) -> svg markup | ''        K.portrait(spec, { lod: 'lo' }), remembered by person, its size stripped as the page does
+     cards(slots, ctx) -> [card]                   a room's people together (ids p1, p2 by place), with the same-role line and clothes made different; what html() draws
      html(slots, ctx) -> markup | ''               the Who's-here list of the quick cards (ul.rr-ppl, one li[data-rr-slot][data-role] a person); '' for no slot (the caller's own list says so)
-     rng(seed, role, field) -> () -> [0, 1)        a field's stream, for tests   ROLE_MAX   FIELDS */
+     rng(seed, role, field) -> () -> [0, 1)        a field's stream, for tests   FIELDS   GUESTS (the roles a ball masks)   hairWords(spec)   factsOf(spec) */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -33,8 +39,24 @@
 })(typeof self !== 'undefined' ? self : this, function (root) {
   'use strict';
 
-  var FIELDS = ['first', 'family', 'build', 'hair', 'standout', 'manner', 'goal', 'errand', 'tell', 'look', 'line', 'sex'];
-  var MEMO_MAX = 80, memo = {}, memoOrder = [];
+  var FIELDS = ['first', 'family', 'build', 'standout', 'manner', 'goal', 'errand', 'tell', 'look', 'line', 'sex'];
+  /* two memos: the figures (small) and the pictures (a lo portrait is about 135 KB of SVG, so 120 of them hold about 16 MB: a site's 16 people, with room to go back to
+     an earlier roll); each first in, first out */
+  var SPEC_MAX = 400, PIC_MAX = 120, specs = {}, specOrder = [], pics = {}, picOrder = [];
+  /* a ball masks its guests, never the staff: the roles the kit dresses as a guest (guest-f, guest-m, and the noble it draws as one) */
+  var GUESTS = ['guest-f', 'guest-m', 'noble'];
+
+  /* the kit's own hair and facial hair ids, and its colour tokens, in plain words (short neutral labels, no book text) */
+  var HAIR_COL = { 'cloth-black': 'black', 'ink-900': 'black', 'cloth-chocolate': 'dark brown', 'cloth-brown': 'brown', 'cloth-tobacco': 'light brown', 'cloth-rust': 'red', 'cloth-ochre': 'blond',
+    'cloth-camel': 'sandy', 'cloth-tan': 'sandy', 'ink-300': 'grey', 'ink-150': 'white', 'cloth-ash': 'ash grey' };
+  var HAIR_STYLE = { 'bowl-bob': 'in a bowl bob', bob: 'in a bob', flip: 'in a flip', 'mod-mop': 'in a mod mop', pixie: 'in a pixie cut', 'slick-back': 'slicked back', pompadour: 'in a pompadour',
+    'long-straight': 'long and straight', ponytail: 'in a ponytail', bun: 'in a bun', short: 'cut short', 'side-part': 'parted at the side', crew: 'in a crew cut', buzz: 'in a buzz cut',
+    flattop: 'in a flat-top', receding: 'receding', balding: 'balding', afro: 'in an afro', beehive: 'in a beehive' };
+  var FACIAL = { moustache: 'a moustache', pencil: 'a pencil moustache', goatee: 'a goatee', 'beard-short': 'a short beard', 'beard-full': 'a full beard', chops: 'mutton chops', stubble: 'stubble',
+    'five-oclock': 'a five o’clock shadow' };
+  /* a standout that talks about the head, the hair, a beard or glasses is the figure's business, not the table's: such a line is left out of the draw (glasses stay when the figure wears some) */
+  var HEADISH = /\b(bald|balding|shav(?:e|ed|en)|hairs?|haired|beard(?:ed)?|moustache|mustache|whiskers?|stubble|sideburns|chops|goatee|afro|curls?|curly|braids?|plaits?|ponytail|fringe|quiff|wig|bun|bob|crop(?:ped)?|buzz|tonsure|mohican|mohawk|locks|dreadlocks|parting|bangs|head)\b/i;
+  var GLASSES = /\b(spectacles?|glasses|monocle|eye ?patch|goggles|lenses|shades|pince-nez)\b/i;
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
@@ -74,16 +96,16 @@
   function slugOf(s) { return str(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); }
 
   /* the kit's figure for a slot, remembered (the kit's own render checks are the slow part) */
-  function remember(key, make) {
-    if (has(memo, key)) return memo[key];
+  function remember(box, order, max, key, make) {
+    if (has(box, key)) return box[key];
     var v = make();
-    memo[key] = v; memoOrder.push(key);
-    if (memoOrder.length > MEMO_MAX) delete memo[memoOrder.shift()];
+    box[key] = v; order.push(key);
+    if (order.length > max) delete box[order.shift()];
     return v;
   }
   function figureOf(K, role, seed, masked) {
     if (!K) return null;
-    return remember('f|' + role + '|' + seed + '|' + (masked ? 1 : 0), function () {
+    return remember(specs, specOrder, SPEC_MAX, role + '|' + seed + '|' + (masked ? 1 : 0), function () {
       var spec = null;
       try { spec = K.extra({ role: role, seed: seed, masked: masked }); } catch (e) { spec = null; }
       return isObj(spec) ? spec : null;
@@ -95,25 +117,58 @@
     return { label: cap(role.replace(/[-_]+/g, ' ')), known: false };
   }
 
+  /* ---------- what the figure says (so the words agree with the picture) ---------- */
+  function hairWords(spec) {
+    var h = isObj(spec) && isObj(spec.hair) ? spec.hair : (isObj(spec) && typeof spec.hair === 'string' ? { style: spec.hair } : null);
+    if (!h || !str(h.style)) return '';
+    var style = str(h.style);
+    if (style === 'bald') return 'a bald head';
+    var col = has(HAIR_COL, str(h.color)) ? HAIR_COL[str(h.color)] : '';
+    if (h.grey && col && col !== 'grey' && col !== 'white') col = 'greying ' + col;
+    var how = has(HAIR_STYLE, style) ? HAIR_STYLE[style] : 'styled ' + style.replace(/-/g, ' ');
+    return (col ? col + ' ' : '') + 'hair' + (/^an? |^in /.test(how) ? ' ' : ', ') + how;
+  }
+  function facialWords(spec) {
+    var f = isObj(spec) && isObj(spec.face) && isObj(spec.face.facialHair) ? str(spec.face.facialHair.type) : '';
+    return f ? (has(FACIAL, f) ? FACIAL[f] : 'a ' + f.replace(/-/g, ' ')) : '';
+  }
+  function factsOf(spec) {
+    var f = isObj(spec) && isObj(spec.face) ? spec.face : {};
+    return { hair: hairWords(spec), facial: facialWords(spec), glasses: !!f.eyewear, masculine: isObj(spec) && spec.figure !== 'fem' };
+  }
+  /* the standouts the figure does not contradict */
+  function standouts(arr, spec) {
+    var wearsGlasses = !!(isObj(spec) && isObj(spec.face) && spec.face.eyewear);
+    return arr.filter(function (s) { return !HEADISH.test(s) && !(isObj(spec) && !wearsGlasses && GLASSES.test(s)); });
+  }
+  /* a pick that steps on, in the list's order, past what an earlier person of the room already has */
+  function pickAway(arr, seed, role, field, avoid) {
+    if (!arr.length) return '';
+    var i = Math.floor(rng(seed, role, field)() * arr.length), k;
+    for (k = 0; k < arr.length; k++) if (list(avoid).indexOf(arr[(i + k) % arr.length]) < 0) return arr[(i + k) % arr.length];
+    return arr[i];
+  }
+
   /* ---------- the card ---------- */
   function card(slot, ctx) {
     if (!isObj(slot)) return null;
     var role = str(slot.role).trim(), seed = slot.seed;
     if (!role) return null;
     var N = npcOf(ctx), roles = rolesOf(ctx), entry = roles && has(roles, role) && isObj(roles[role]) ? roles[role] : null;
-    var K = kitOf(ctx), masked = maskedOf(ctx), base = figureOf(K, role, seed, masked), lab = labelOf(K, role);
+    var K = kitOf(ctx), masked = maskedOf(ctx) && GUESTS.indexOf(role.toLowerCase()) >= 0, base = figureOf(K, role, seed, masked), lab = labelOf(K, role);
     var sex = base ? (base.figure === 'fem' ? 'fem' : 'masc') : rng(seed, role, 'sex')() < 0.5 ? 'fem' : 'masc';
+    var avoid = isObj(ctx) && isObj(ctx.avoid) ? ctx.avoid : {}, fx = factsOf(base);
     var first = N ? pick(words(sex === 'fem' ? N.nameFem : N.nameMasc), seed, role, 'first') : '';
     var family = N ? pick(words(N.family), seed, role, 'family') : '';
     var c = { id: str(slot.id), role: role, label: lab.label, known: lab.known, seed: seed, sex: sex, masked: masked, plain: !entry,
       first: first, family: family, name: [first, family].filter(Boolean).join(' '),
-      build: N ? pick(words(N.build), seed, role, 'build') : '', hair: N ? pick(words(N.hair), seed, role, 'hair') : '',
-      standout: N ? pick(words(N.standout), seed, role, 'standout') : '', wearing: entry ? pick(words(entry.looks), seed, role, 'look') : '',
+      build: N ? pick(words(N.build), seed, role, 'build') : '', hair: fx.hair, facial: fx.masculine ? fx.facial : '',
+      standout: N ? pick(standouts(words(N.standout), base), seed, role, 'standout') : '', wearing: entry ? pickAway(words(entry.looks), seed, role, 'look', avoid.wearing) : '',
       manner: N ? pick(words(N.manner), seed, role, 'manner') : '', goal: N ? pick(words(N.goal), seed, role, 'goal') : '',
       errand: N ? pick(words(N.errand), seed, role, 'errand') : '', tell: N ? pick(words(N.tell), seed, role, 'tell') : '',
-      line: entry ? pick(words(entry.lines), seed, role, 'line') : '', face: entry ? str(entry.face).trim() : '', pose: entry ? str(entry.pose).trim() : '' };
-    var look = [];
-    if (c.build || c.hair) look.push(stop(c.build ? cap(c.build) + (c.hair ? ', with ' + c.hair : '') : 'With ' + c.hair));
+      line: entry ? pickAway(words(entry.lines), seed, role, 'line', avoid.line) : '', face: entry ? str(entry.face).trim() : '', pose: entry ? str(entry.pose).trim() : '' };
+    var look = [], bits = [c.hair, c.facial].filter(Boolean).join(' and ');
+    if (c.build || bits) look.push(stop(c.build ? cap(c.build) + (bits ? ', with ' + bits : '') : 'With ' + bits));
     if (c.standout) look.push(stop(cap(c.standout)));
     if (c.wearing) look.push(stop(cap(c.wearing)));
     c.look = look.join(' ');
@@ -129,7 +184,8 @@
     var K = kitOf(ctx);
     if (!isObj(c) || !isObj(c.spec) || !K || typeof K.portrait !== 'function') return '';
     var id = 'rq-' + (slugOf(isObj(ctx) ? ctx.roomKey : '') || 'x') + '-' + (slugOf(c.id) || slugOf(c.seed));
-    return remember('p|' + id + '|' + c.role + '|' + c.seed + '|' + (c.masked ? 1 : 0), function () {
+    /* the key holds the name: the picture's <title> is the person's name, so a pack pushed again with other names draws again */
+    return remember(pics, picOrder, PIC_MAX, id + '|' + c.role + '|' + c.seed + '|' + (c.masked ? 1 : 0) + '|' + str(c.name), function () {
       var sp = JSON.parse(JSON.stringify(c.spec)), svg = '';
       sp.id = id;
       try { svg = stripSize(K.portrait(sp, { lod: 'lo' }).svg); } catch (e) { svg = ''; }
@@ -147,12 +203,23 @@
       '<span class="rv-pn"><span><b>' + esc(who) + '</b> <small class="rv-prole rr-ptag">quick</small></span>' +
       line('role', c.kicker) + line('look', c.look) + line('want', c.want) + line('tell', c.tell ? stop(cap(c.tell)) : '', 'Tell:') + (c.line ? '<span class="rv-prole rr-pline">“' + esc(c.line) + '”</span>' : '') + '</span></li>';
   }
+  /* a room's people together: each person's line and clothes steer clear of what an earlier person of the same role in the room already has */
+  function cards(slots, ctx) {
+    var used = {}, base = isObj(ctx) ? ctx : {};
+    return list(slots).map(function (s, i) {
+      if (!isObj(s)) return null;
+      var role = str(s.role).trim(), u = used[role] = used[role] || { line: [], wearing: [] };
+      var c = card(Object.assign({}, s, { id: str(s.id) || 'p' + (i + 1) }), Object.assign({}, base, { avoid: u }));
+      if (c) { if (c.line) u.line.push(c.line); if (c.wearing) u.wearing.push(c.wearing); }
+      return c;
+    }).filter(Boolean);
+  }
   function html(slots, ctx) {
-    var rows = list(slots).map(function (s, i) { return isObj(s) ? card(Object.assign ? Object.assign({}, s, { id: str(s.id) || 'p' + (i + 1) }) : s, ctx) : null; }).filter(Boolean);
+    var rows = cards(slots, ctx);
     if (!rows.length) return '';
     var kit = !!(isObj(ctx) && ctx.kit);
     return '<ul class="rv-ppl rr-ppl' + (kit ? ' krv-ppl' : '') + '">' + rows.map(function (c) { return row(c, ctx); }).join('') + '</ul>';
   }
 
-  return { card: card, portrait: portrait, html: html, rng: rng, FIELDS: FIELDS };
+  return { card: card, cards: cards, portrait: portrait, html: html, rng: rng, FIELDS: FIELDS, GUESTS: GUESTS, hairWords: hairWords, factsOf: factsOf };
 });

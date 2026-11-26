@@ -113,7 +113,7 @@ test('stream independence: each field is its own fork of the slot, so a table ch
   const both = P.html([s1, s2], CTX), alone = P.html([{ id: 'p2', role: 'waiter', seed: 22 }], CTX);
   const rowOf = (h, id) => h.split('<li ').filter((x) => x.includes('data-rr-slot="' + id + '"'))[0];
   assert.equal(rowOf(both, 'p2').replace(/<small class="rv-prole rr-ptag">quick<\/small>/, ''), rowOf(alone, 'p2').replace(/<small class="rv-prole rr-ptag">quick<\/small>/, ''), 'a slot draws the same with its neighbour there or not');
-  const fields = ['first', 'family', 'build', 'hair', 'standout', 'manner', 'goal', 'errand', 'tell', 'look', 'line', 'sex'];
+  const fields = ['first', 'family', 'build', 'standout', 'manner', 'goal', 'errand', 'tell', 'look', 'line', 'sex'];
   assert.deepEqual(P.FIELDS.slice().sort(), fields.sort(), 'the forks are named');
   assert.notEqual(P.rng(5, 'waiter', 'first')(), P.rng(5, 'waiter', 'family')(), 'two fields of one slot are two streams');
   assert.equal(P.rng(5, 'waiter', 'first')(), P.rng(5, 'waiter', 'first')(), 'a stream replays');
@@ -144,7 +144,7 @@ test('masked: the figure wears the kit\'s mask, the card says so, and it comes f
   assert.equal(P.card(slot, { npc: NPC, T, K, masked: false, page }).masked, false, 'an explicit masked: false beats the host');
   const h = P.html([slot], Object.assign({}, CTX, { masked: true }));
   assert.ok(h.includes('data-masked="true"') && /Guest · [a-z ]+ · masked</.test(h), 'the row says masked');
-  ROLES.forEach((role) => assert.ok(P.card({ role, seed: 9 }, Object.assign({}, CTX, { masked: true })).spec.face.mask, role + ': every role can be masked'));
+  ROLES.forEach((role) => { const at = P.card({ role, seed: 9 }, Object.assign({}, CTX, { masked: true })), guest = P.GUESTS.indexOf(role) >= 0; assert.equal(!!at.spec.face.mask, guest, role + ': at a ball only a guest is masked'); assert.equal(at.masked, guest); });
   const viaHost = P.card({ id: 'p1', role: 'waiter', seed: 4 }, { page: { npc: () => NPC, T: () => T, masked: () => false } });
   assert.ok(viaHost.name && viaHost.line, 'the host gives the tables (npc(), T()): ' + viaHost.name);
 });
@@ -180,6 +180,89 @@ test('portraits are remembered: the same person is made once, and a picture is t
   assert.equal(calls, 1, 'one K.portrait call for one person');
   assert.equal(P.portrait(c, Object.assign({}, ctx, { K: { extra: K.extra } })), '', 'a kit with no portrait() gives no picture, not an error');
   assert.equal(P.portrait(null, ctx), '');
+});
+
+/* what the look may never say against the figure (the review of RK17: a blond figure "with a bald head", an afro and a shaved head on one card, a woman with a handlebar moustache) */
+const FACIAL_RE = /moustache|mustache|beard|goatee|stubble|whisker|chops|o.clock shadow/i, BALD_RE = /bald|shav(e|ed|en)|\bhead\b|afro|buzz cut|quiff|beehive|ponytail|\bbun\b/i, GLASS_RE = /spectacle|glasses|monocle|eye ?patch|goggles|lenses|shades|pince-nez/i;
+const WORD_OF = { 'cloth-black': 'black', 'ink-900': 'black', 'cloth-chocolate': 'dark brown', 'cloth-brown': 'brown', 'ink-300': 'grey' };
+test('the look agrees with the drawn figure over every role and 60 seeds: its hair is the figure\'s, no baldness or hair word from the tables, no facial hair on a woman or unless drawn, glasses only if worn', () => {
+  assert.ok(NPC.hair.some((h) => FACIAL_RE.test(h)) && NPC.hair.some((h) => /afro|buzz/.test(h)) && NPC.standout.some((s) => /shaved head/.test(s)), 'precondition: the fixture tables DO hold a moustache, an afro, a buzz cut and a shaved head to be kept out');
+  let n = 0, fem = 0, beards = 0, specs = 0;
+  ROLES.forEach((role, ri) => {
+    for (let s = 0; s < 60; s++) {
+      const seed = (s * 2246822519 + ri * 3266489917 + 11) >>> 0, c = P.card({ id: 'p1', role, seed }, CTX), sp = c.spec, f = sp.face || {};
+      n++; if (sp.figure === 'fem') fem++;
+      assert.ok(c.look.includes(P.hairWords(sp)) && P.hairWords(sp), role + ' ' + seed + ': the look holds the figure\'s own hair: ' + c.look);
+      const colour = WORD_OF[sp.hair && sp.hair.color]; if (colour && !(sp.hair && sp.hair.grey)) { specs++; assert.ok(P.hairWords(sp).startsWith(colour + ' hair'), role + ' ' + seed + ': ' + sp.hair.color + ' reads ' + colour + ': ' + P.hairWords(sp)); }
+      assert.ok(c.look.startsWith(c.build + ', with ' + P.hairWords(sp)) && c.hair === P.hairWords(sp), role + ' ' + seed + ': the hair in the look is the figure hair, not a line of the npc table: ' + c.look);
+      assert.ok(!/shaved head|\bbald\b/i.test(c.look), role + ' ' + seed + ': nothing bald or shaved against a figure with hair: ' + c.look);
+      assert.ok(!BALD_RE.test(c.standout) && !FACIAL_RE.test(c.standout), role + ' ' + seed + ': the standout says nothing about the head or a beard: ' + c.standout);
+      if (sp.figure === 'fem') assert.ok(!FACIAL_RE.test(c.look) && !f.facialHair, role + ' ' + seed + ': no facial hair on a woman: ' + c.look);
+      else if (f.facialHair) { beards++; assert.ok(FACIAL_RE.test(c.look), role + ' ' + seed + ': the beard drawn is in the words: ' + c.look); }
+      if (!f.facialHair) assert.ok(!FACIAL_RE.test(c.look), role + ' ' + seed + ': no facial hair in the words that the figure lacks: ' + c.look);
+      if (!f.eyewear) assert.ok(!GLASS_RE.test(c.standout), role + ' ' + seed + ': no glasses in the words that the figure lacks: ' + c.standout);
+      assert.ok(c.standout === '' || NPC.standout.includes(c.standout), 'a standout is still the table\'s own');
+    }
+  });
+  assert.ok(n > 2000 && fem > 300 && beards > 100 && specs > 300, 'enough of each: ' + JSON.stringify({ n, fem, beards, specs }));
+  const none = P.card({ id: 'p1', role: 'waiter', seed: 5 }, Object.assign({}, CTX, { K: null }));
+  assert.ok(none.hair === '' && !BALD_RE.test(none.standout) && !FACIAL_RE.test(none.look), 'with no kit there is no figure to read, and no hair word comes from the tables either');
+  assert.deepEqual(P.card({ role: 'waiter', seed: 5 }, CTX), P.card({ role: 'waiter', seed: 5 }, CTX), 'still the same person every time');
+  const old = P.card({ role: 'waiter', seed: 5 }, CTX), other = P.card({ role: 'waiter', seed: 6 }, CTX);
+  assert.ok(old.name !== other.name || old.look !== other.look, 'and another seed another person');
+});
+
+test('two people of one role in a room never speak the same line or wear the same clothes (while the role has enough), the same way every time; their order never matters to a person alone', () => {
+  const T3 = clone(T); T3.roles.waiter.lines = ['Line one.', 'Line two.', 'Line three.']; T3.roles.waiter.looks = ['Jacket one.', 'Jacket two.'];
+  const ctx = Object.assign({}, CTX, { T: T3 });
+  let same = 0, pairs = 0;
+  for (let s = 0; s < 120; s++) {
+    const slots = [{ role: 'waiter', seed: s * 7 + 1 }, { role: 'cleaner', seed: s * 7 + 2 }, { role: 'waiter', seed: s * 7 + 3 }, { role: 'waiter', seed: s * 7 + 4 }];
+    const a = P.cards(slots, ctx), b = P.cards(slots, ctx), w = a.filter((c) => c.role === 'waiter');
+    assert.deepEqual(a.map(without), b.map(without), 'deterministic');
+    assert.deepEqual(a.map((c) => c.id), ['p1', 'p2', 'p3', 'p4'], 'ids by place');
+    assert.equal(new Set(w.map((c) => c.line)).size, 3, 'three waiters, three lines: ' + w.map((c) => c.line).join(' | '));
+    assert.ok(new Set(w.slice(0, 2).map((c) => c.wearing)).size === 2, 'two waiters, two jackets');
+    assert.ok(T3.roles.waiter.lines.includes(w[0].line), 'the first person keeps the line the slot alone gives');
+    assert.equal(w[0].line, P.card(slots[0], ctx).line, 'the first person is the same as the person alone');
+    pairs++; if (P.card(slots[0], ctx).line === P.card(slots[2], ctx).line) same++;
+  }
+  assert.ok(same > 10, 'the fixture does give two waiters the same line when alone (' + same + ' of ' + pairs + '), so the test proves something');
+  const h = P.html([{ role: 'waiter', seed: 3 }, { role: 'waiter', seed: 3 }], ctx), said = h.match(/rr-pline">[^<]+/g);
+  assert.ok(said.length === 2 && said[0] !== said[1], 'two waiters of one seed even: two lines in the markup');
+  const one = P.cards([{ role: 'cleaner', seed: 9 }, { role: 'waiter', seed: 9 }], ctx), other = P.cards([{ role: 'waiter', seed: 9 }], ctx);
+  assert.equal(one[1].line, other[0].line, 'a waiter next to a cleaner is unaffected');
+});
+
+test('at a ball only the guests are masked: guest-f, guest-m and the noble, never a waiter, guard or cleaner; the staff are the same person unmasked', () => {
+  assert.deepEqual(P.GUESTS.slice().sort(), ['guest-f', 'guest-m', 'noble']);
+  assert.ok(P.GUESTS.every((g) => ROLES.includes(g)), 'all three are kit roles');
+  ['waiter', 'guard', 'cleaner', 'barkeep', 'croupier', 'photographer', 'servant', 'usher', 'dancer', 'punter'].forEach((role) => {
+    const at = P.card({ role, seed: 21 }, Object.assign({}, CTX, { masked: true })), no = P.card({ role, seed: 21 }, CTX);
+    assert.ok(at.masked === false && !(at.spec.face && at.spec.face.mask), role + ' is not masked at a ball');
+    assert.deepEqual(at.spec, no.spec, role + ': the same figure as with no ball');
+    assert.ok(!/masked/.test(at.kicker), role + ': the card does not say masked');
+  });
+  P.GUESTS.forEach((role) => { const at = P.card({ role, seed: 21 }, Object.assign({}, CTX, { masked: true })); assert.ok(at.masked && at.spec.face.mask && /masked$/.test(at.kicker), role + ' is masked'); });
+  const viaHost = P.card({ role: 'waiter', seed: 4 }, { npc: NPC, T, K, page: { masked: () => true } }), guest = P.card({ role: 'guest-m', seed: 4 }, { npc: NPC, T, K, page: { masked: () => true } });
+  assert.ok(!viaHost.masked && guest.masked, 'the host says it is a ball: the guest is masked, the waiter is not');
+});
+
+test('the picture memo: it holds 120 pictures, the name is in its key (a pack pushed again with other names draws again), and the figures keep their own memo', () => {
+  let calls = 0; const K2 = Object.assign({}, K, { portrait: (spec, o) => { calls++; return K.portrait(spec, o); } });
+  const ctx = Object.assign({}, CTX, { K: K2, roomKey: 'rk17-cap#1' }), slots = [];
+  for (let i = 0; i < 110; i++) slots.push({ id: 'p' + i, role: ROLES[i % ROLES.length], seed: 5000 + i });
+  const cs = slots.map((s) => P.card(s, ctx));
+  cs.forEach((c) => P.portrait(c, ctx)); assert.equal(calls, 110);
+  cs.forEach((c) => P.portrait(c, ctx)); assert.equal(calls, 110, 'a second pass over 110 people makes no picture again (the cap is 120)');
+  const renamed = clone(NPC); renamed.family = ['Renamedfamily'];
+  const c1 = P.card(slots[0], Object.assign({}, ctx, { npc: renamed }));
+  assert.notEqual(c1.name, cs[0].name);
+  const svg0 = P.portrait(cs[0], ctx), svg1 = P.portrait(c1, Object.assign({}, ctx, { npc: renamed }));
+  assert.equal(calls, 111, 'the same person under a new name is drawn again');
+  assert.ok(svg0.includes('<title>' + cs[0].name + '</title>') && svg1.includes('<title>' + c1.name + '</title>') && svg0 !== svg1, 'and its title is the new name');
+  for (let i = 110; i < 260; i++) P.portrait(P.card({ id: 'p' + i, role: 'waiter', seed: 9000 + i }, ctx), ctx);
+  const before = calls; P.portrait(cs[109], ctx); assert.equal(calls, before + 1, 'past 120 the oldest go first');
 });
 
 test('nothing here is sent, stored or filed: GM-side only, no draw but the forks, no NPC posted, nothing but room-rolled and the page names it', () => {
