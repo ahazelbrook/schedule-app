@@ -2569,6 +2569,10 @@
   }
   /* RK08.4 (room.key, room.tables): the room-state contract (gm/room-state.js), one per page session and the only writer of `roomstate`; null while the room-key bundle is not loaded */
   function rsInst() { var M = W.B68GmRoomState, me = S; if (!me || !M || M.stub || typeof M.create !== 'function') return null; if (!me.rs) me.rs = M.create({ on: function () { return S === me && (b09On('room.key') || b09On('room.tables')); }, doc: function () { return S === me ? me.doc : null; }, patch: function (p) { return S === me ? patch(p) : false; }, busy: function () { var st = me.saver ? me.saver.state() : null; return !!(st && st.pending && st.pending.roomstate); }, now: function () { return Date.now(); }, part: function () { var r = me.pack && me.pack.parts && me.pack.parts.rooms; return r ? str(r.version) : ''; }, toast: toast }); return me.rs; }
+  /* RK20 (gm.glance): the crew at a glance (gm/glance-crew.js), one per page session; null while gm.glance is off or its bundle is not in (the rail keeps its old Crew box) */
+  function glHtml() { var g = glInst(); return g ? g.html() : ''; }
+  function glSync() { var g = glInst(); if (g) g.sync(document); }
+  function glInst() { var M = W.B68GmGlanceCrew, me = S; if (!me || !M || M.stub || typeof M.create !== 'function' || !b09On('gm.glance')) return null; if (!me.gl) me.gl = M.create({ campaign: function () { return S === me ? camp : null; }, pcs: function () { return S === me ? dtPcs() : []; }, crews: function () { return W.B68Crews || null; }, need: function (n) { return W.B68Load.need(n); }, again: function () { if (S === me) renderRail(); } }); return me.gl; }
   /* RK09 (room.key): the room card's things and the zoom card (gm/room-zoom.js), one per page session; null while room.key is off or its bundle is not loaded (an open card closes) */
   function rkZoom() { var M = W.B68GmRoomZoom, me = S; if (!me || !M || M.stub || typeof M.create !== 'function') return null; if (!b09On('room.key')) { if (me.rz) me.rz.close(false); return null; } if (!me.rz) me.rz = M.create({ md: function (room) { var rn = S === me ? runRoomNotes() : null; return rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? str(rn.byRoom[room].md) : ''; }, roll: function () { var r = S === me ? S.locRoll : null; return isObj(r) && Array.isArray(r.rooms) ? { key: str(rollKey(r)), rooms: r.rooms.filter(isObj).map(function (x) { return str(x.name); }) } : null; }, doc: function () { return S === me ? me.doc : null; }, redraw: function () { if (S === me && S.rv) S.rv.rerender(); }, toast: toast, rs: function () { return S === me ? rsInst() : null; } }); return me.rz; }
   /* 4.5 / 4.7 / 5.3 the practical speaker, the ringing phone and the Trouble desk (gm/room-desk.js; switches room.practical, room.phone, between.trouble): one Menu line each while its switch is on */
@@ -2732,6 +2736,8 @@
     if (S.status === 'ready' && S.rv && !!S.glnOn !== !!glnInst()) { S.glnOn = !!glnInst(); S.rv.rerender(); }      /* RK21 (gm.glance): its bundle (with kit-ui first, routes.js DEPS) arrived, or the setting went off: the Run view's header draws again */
     if (S.status === 'ready' && S.rz && S.rv && !!S.rzOn !== b09On('room.key')) { S.rzOn = b09On('room.key'); S.rv.rerender(); }      /* RK09: room.key turned on or off (here or on another device) once its zoom card exists: the room cards draw again, and an open card closes */
     if (S.status === 'ready' && !S.ntAsked && W.B68Load && b09On('night.flow')) { var mn = S; mn.ntAsked = true; W.B68Load.need('night-flow').then(function () { if (S === mn) b09Paint(); }, function () { mn.ntAsked = false; }); }      /* RK03 (night.flow): the Roll draws its Tick control once the bundle is in (the same fetch as the line above: B68Load asks once) */
+    if (S.status === 'ready' && W.B68Load && !S.glAsked && b09On('gm.glance')) { var mg = S; mg.glAsked = true; W.B68Load.need('gm-glance').then(function () { if (S === mg) renderRail(); }, function () { mg.glAsked = false; }); }      /* RK20 (gm.glance): the rail draws the crew panel once the bundle is in (the same fetch as RK01's line above: B68Load asks once) */
+    if (S.status === 'ready' && !!S.glOn !== b09On('gm.glance')) { S.glOn = b09On('gm.glance'); if (!S.glOn) S.gl = null; renderRail(); }      /* RK20: gm.glance turned on or off (here or on another device): the rail draws again, the old Crew box back when it is off */
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
@@ -6676,6 +6682,7 @@
     keyturnSync();          /* a turned key (suite 1.8, switch spine.keyturn) */
     pcStatusSync();         /* the band's PC faces (suite 3.7, switch face.pcstatus) */
     if (who()) { var whoSig = whoPcSig(); if (whoSig !== S.whoPcSig) { S.whoPcSig = whoSig; S.who.paint(S.root); whoPolaroids(); } }      /* KS11/KS12.0 (night.who): only when who is filed changed, not every poll */
+    glSync();               /* RK20 (gm.glance): the crew panel in the rail repaints itself when a PC's Stress, harm, keys or xp changed (before the signature return below: those are not in it) */
     if (JSON.stringify(dtPcs()) === S.dtPcSig) return;
     runStale();
     if (S.mission) S.mission.changed();         /* a card carries its PC's name and owner */
@@ -7804,7 +7811,7 @@
     var box = $q('#gm-rail'); if (!box) return;
     var d = isObj(camp) ? camp : {}, crew = isObj(d.crew) ? d.crew : {}, h = prepPinsHtml();
     function stat(k, v, max) { return '<div class="gm-stat"><dt>' + k + '</dt><dd>' + (v == null ? '—' : esc(v) + (max ? '<small>/' + max + '</small>' : '')) + '</dd></div>'; }
-    h += '<section class="gm-box"><h3 class="gm-band">Crew' + (crew.name ? ': ' + esc(crew.name) : '') + '</h3><dl class="gm-stats">' + stat('Heat', +crew.heat || 0, 9) + stat('Wanted', +crew.wanted || 0, 4) + stat('Rep', +crew.rep || 0, 12) + stat('Stacks', +crew.stacks || 0) + stat('Vault', +crew.vault || 0, 16) + '</dl>' +
+    h += glHtml() || '<section class="gm-box"><h3 class="gm-band">Crew' + (crew.name ? ': ' + esc(crew.name) : '') + '</h3><dl class="gm-stats">' + stat('Heat', +crew.heat || 0, 9) + stat('Wanted', +crew.wanted || 0, 4) + stat('Rep', +crew.rep || 0, 12) + stat('Stacks', +crew.stacks || 0) + stat('Vault', +crew.vault || 0, 16) + '</dl>' +
       '<p class="gm-dim">Session ' + esc(isObj(d.session) ? +d.session.number || 0 : 0) + ' · read-only here; change it on <a href="#t">the table</a>.</p></section>';
     var tc = Array.isArray(d.clocks) ? d.clocks : [];
     function none(title) { return '<section class="gm-box gm-box-empty"><h3 class="gm-band">' + title + ' <small>· none</small></h3></section>'; }
