@@ -26,16 +26,16 @@
    Rooms of one name are separate cards, told apart by n (room-state.js's roomKey: showroom#1, showroom#2; RK11's twins).
 
    STATE. Read through room-state (say, rr, extra, swaps, marks): host.rs() when the host gives the page's writer, else a read-only view of host.doc()
-   (as RK09's card reads marks). This file writes nothing; the zoom card's buttons write through ctx.rs (RK11's marks, RK15's Swap). The page gives
-   no writer yet (RK08's pin keeps four rsInst lines in gm-page.js), so a rolled room's state buttons are drawn disabled until the overseer adds it. The draw is room-roll's: three streams from the page's rollKey(roll) and the roomKey, after the roll, so
+   (as RK09's card reads marks). This file writes nothing; the zoom card's buttons write through ctx.rs (RK11's marks, RK15's Swap): the page's writer,
+   rsInst() (the overseer's RK14 ruling: the fifth rsInst line in gm-page.js). Marks are keyed by the rolled room's own roomKey (twins: name#2). The draw is room-roll's: three streams from the page's rollKey(roll) and the roomKey, after the roll, so
    nothing draws inside generate() and a reload gives the same cards.
 
    API
      create(host) -> rolled
        host = { roll() -> the roll on the Location card (S.locRoll) | null, rollKey(roll) -> the page's rollKey, T() -> the rooms part's T | null,
                 md(room) -> the room's prep Markdown ('' for none), note(room) -> the note as markup | null, wrong(room) -> [the note's If it goes
-                wrong lines], decorate(el), doc() -> the GM state (read through a read-only room-state view), rs()? -> the page's room-state writer (the zoom
-                card's ctx.rs: none yet, see STATE), redraw(), toast(text, bad), kit() -> bool (the kit desk),
+                wrong lines], decorate(el), doc() -> the GM state (read through a read-only room-state view), rs() -> the page's room-state writer (the zoom
+                card's ctx.rs, see STATE), redraw(), toast(text, bad), kit() -> bool (the kit desk),
                 zoom(hooks) -> RK09's zoom card made with these hooks (its things(room, n) and where(room, n) in place of a note and a roll; doc, rs,
                 redraw, toast), made once, box() -> the Run pane (a v2 card's things are heard there) }   every part optional; with no zoom the cards draw with no Things list
        rolled.draw(box, line) -> bool        the site line and the cards into box (false, and nothing drawn, with no roll)

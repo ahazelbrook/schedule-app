@@ -200,6 +200,23 @@ test('the page: one-line branches only, each a no-op with room.tables off; runSi
   assert.match(PAGE, /if \(md && !rz && rrInst\(\) && W\.B68GmRoomZoom\) md = W\.B68GmRoomZoom\.noteMd\(md\);/, 'the note loses its Things block while the card draws them');
   assert.match(PAGE, /if \(S\.status === 'ready' && W\.B68Load && b09On\('room\.tables'\) && !S\.rrWait\)/, 'the bundle is asked for only while room.tables is on');
   assert.match(PAGE, /if \(S\.status === 'ready' && !!S\.rrOn !== !!rrInst\(\)\) \{ S\.rrOn = !!rrInst\(\);/);
+  /* the overseer's RK14 rulings: the page's writer for a rolled card's marks (and RK15's Swap), and Show on iPad with room.tables alone */
+  const rrLine = PAGE.split('\n').filter((l) => /function rrInst\(\)/.test(l));
+  assert.equal(rrLine.length, 1); assert.match(rrLine[0], / rs: function \(\) \{ return S === me \? rsInst\(\) : null; \},/, 'rrInst\'s host: the page\'s room-state writer, null off the live page');
+  assert.ok(!/_roomState/.test(rrLine[0]), 'never through the check hook');
+  assert.match(PAGE, /function rkShowHost\(\) \{ var me = S; if \(!me \|\| !\(b09On\('room\.key'\) \|\| b09On\('room\.tables'\)\)\) return null;/, 'Show\'s host: null only while both settings are off');
+});
+
+test('marks are keyed by the rolled room\'s own roomKey: same-named rooms each read their own, and the zoom card\'s place is that key', () => {
+  const store = { 'pelican bar#2': {} };
+  const bar = RR.model(ROLL, T, { rollKey: ROLL.seed }).cards[2];
+  store['pelican bar#2'][bar.things[0].slug] = 'open';
+  const rs = { read: (rk, rm) => (String(rk) === '424242' ? { marks: store[rm] || {} } : {}), setMark: () => true };
+  const r = RR.create({ roll: () => ROLL, rollKey: (x) => x.seed, T: () => T, doc: () => ({}), rs: () => rs, zoom: (h) => Z.create(h) });
+  const one = r.zoom().html('Pelican bar', { n: 1 }), two = r.zoom().html('Pelican bar', { n: 2 });
+  assert.ok(!/rk-tstate/.test(one), 'the first Pelican bar has no mark');
+  assert.match(two, new RegExp('data-thing="' + bar.things[0].slug + '"[^>]*data-rn="2"[\\s\\S]*?<span class="rk-tstate">open</span>'), 'the second one reads its own (pelican bar#2), and its buttons say which room they are');
+  r.destroy();
 });
 
 test('rolled rooms stay GM-side: no display, phone, player or server file names this file; it sends, stores and writes nothing', () => {

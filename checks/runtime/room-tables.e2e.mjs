@@ -202,6 +202,45 @@ try {
   await D.c.close();
   const sNow = (await api('GET', '/gm/state')).json, ROLLED_CARD = sNow && sNow.doc && sNow.doc.cards ? sNow.doc.cards.location : null;
 
+  /* ---- 2b. room.tables alone (room.key off): Show on iPad and the marks still work on a rolled card (the overseer's RK14 rulings) ---- */
+  check((await feats({ 'room.key': false })).status === 200, 'room.key off, room.tables on');
+  const H = await open({});
+  page = H.page;
+  await page.waitForSelector('#gm-runv .rr-site [data-rr-say]', { timeout: 20000 });
+  check(await page.evaluate(() => window.B68GmPage.roomShow() !== null && window.B68GmPage._roomZoom() === null), 'room.tables alone: Show on iPad has its host (RK10\'s, the gate is room.key or room.tables), and RK09\'s card is off');
+  const mc = (await cards(page)).filter((c) => c.things.length)[0];
+  const mKey = await page.evaluate((sel) => document.querySelector(sel + ' [data-rr-room]').getAttribute('data-rr-room'), card(mc.room, mc.n));
+  await page.click(card(mc.room, mc.n) + ' [data-site="thing"][data-i="0"]'); z = await until(() => zoom(page), 4000);
+  const T1 = await page.evaluate(() => { const z = document.querySelector('.rk-zoom'); return { name: z.querySelector('.rk-zname').textContent, line: (z.querySelector('.rk-zline') || { textContent: '' }).textContent }; });
+  const sub1 = T1.line ? T1.line.charAt(0).toUpperCase() + T1.line.slice(1) : '';
+  check(!!z && /^show:Show on iPad/.test(z.slots[0] || ''), 'room.tables alone: the zoom card offers Show on iPad (' + (z && z.slots.join(' ')) + ')');
+  await page.click('.rk-zoom [data-rk-btn="show-thing"]');
+  const r3 = await until(async () => { const r = await reads(); return r.ov && r.ov.kind === 'title' ? r : null; }, 8000);
+  check(!!r3 && r3.ov.payload && r3.ov.payload.text === T1.name && leaks(r3.all, [T1.name, T1.line, sub1]).length === 0, 'room.tables alone: Show on iPad sends the one line, and nothing else of a rolled room reaches the GETs (' + JSON.stringify(r3 && r3.ov && r3.ov.payload) + ')');
+  await sleep(300); await page.click('.rk-zoom [data-rk-btn="show-thing"]'); await until(async () => !(await reads()).ov, 8000);      /* Take it down */
+  const st1 = await page.evaluate(() => { const b = document.querySelector('.rk-zoom [data-rk-slot="state"] button'); return b ? { id: b.getAttribute('data-rk-btn'), label: (b.querySelector('.ui-label') || b).textContent, disabled: b.disabled } : null; });
+  check(!!st1 && !st1.disabled, 'room.tables alone: the state buttons are live on a rolled card (' + JSON.stringify(st1) + ')');
+  const slug1 = mc.things[0], rk1 = await page.evaluate(() => String(window.B68GmPage._pure.rollKey(window.B68GmPage._state().locRoll)));
+  if (st1) await page.click('.rk-zoom [data-rk-btn="' + st1.id + '"]');
+  const stored = async () => { const s = (await api('GET', '/gm/state')).json; const k = s && s.doc && s.doc.roomstate && s.doc.roomstate.keys && s.doc.roomstate.keys[rk1]; return k && k.rooms ? k.rooms : {}; };
+  const want = st1 ? st1.label.toLowerCase() : '?';
+  const rooms1 = await until(async () => { const r = await stored(); return r[mKey] && r[mKey].marks && r[mKey].marks[slug1] === want ? r : null; }, 15000);
+  check(!!rooms1 && Object.keys(rooms1).every((k) => k === mKey), 'a mark on a rolled thing is stored under the roll\'s key and that room\'s own roomKey (' + mKey + ', ' + slug1 + ' = ' + want + ')');
+  await page.keyboard.press('Escape');
+  const chipOf = (p) => p.evaluate(([sel, s]) => { const b = document.querySelector(sel + ' [data-site="thing"][data-thing="' + s + '"]'); const c = b && b.parentNode.querySelector('.rk-tstate'); return c ? c.textContent : ''; }, [card(mc.room, mc.n), slug1]);
+  const I = await open({});
+  await I.page.waitForSelector('#gm-runv .rr-site [data-rr-say]', { timeout: 20000 });
+  check((await chipOf(I.page)) === want, 'a second page shows the mark as a chip on the same rolled thing');
+  await H.c.close(); await I.c.close();
+  const J = await open({});
+  await J.page.waitForSelector('#gm-runv .rr-site [data-rr-say]', { timeout: 20000 });
+  check((await chipOf(J.page)) === want, 'the mark survives a reload');
+  await J.page.click(card(mc.room, mc.n) + ' [data-site="thing"][data-thing="' + slug1 + '"]'); await until(() => zoom(J.page), 4000);
+  if (st1) await J.page.click('.rk-zoom [data-rk-btn="' + st1.id + '"]');      /* tapped again: the mark goes */
+  check(!!(await until(async () => { const r = await stored(); return !(r[mKey] && r[mKey].marks && r[mKey].marks[slug1]); }, 15000)), 'a tap on the pressed state takes the mark away again');
+  await J.page.keyboard.press('Escape'); await J.c.close();
+  await feats({ 'room.key': true });
+
   /* ---- 3. the authored v2 night (play.v === 2) ---- */
   check((await api('PATCH', '/gm/state', { cards: { location: Object.assign({}, SITE_CARD, { seed: null, ui: null, mem: null }) } })).status === 200, 'the night\'s authored v2 site is the Location card again');
   const E = await open({ v2: true });
@@ -255,6 +294,7 @@ try {
   const G = await open({ tables: false });
   await G.page.waitForSelector('#gm-runv .gm-runhelp', { timeout: 20000 });
   check(await G.page.evaluate(() => !document.querySelector('#gm-runv .rr-site, [data-rr-say], .rk-zscope') && !!document.querySelector('#gm-runv .gm-runhelp')), 'off again: the rolled site\'s Run pane says how to get a night, as today, and no card is drawn');
+  check(await G.page.evaluate(() => window.B68GmPage.roomShow() === null), 'with room.key and room.tables both off, Show on iPad has no host (it does not work)');
   await G.c.close();
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 5).join(' | ') : ''));
 } catch (e) {
