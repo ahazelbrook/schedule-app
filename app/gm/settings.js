@@ -100,7 +100,7 @@
     { key: 'map.shade', label: 'Furniture depth', what: 'The furniture on every map: flat as before, or solid (a little depth and a short shadow). A map too large for the iPad goes flat.',
       options: [{ v: false, label: 'Flat' }, { v: true, label: 'Solid' }],
       said: { 'false': 'Furniture depth: flat.', 'true': 'Furniture depth: solid.' } },
-    /* RK01b (25/11): built: false hides a row from the Settings screen until its bundle is built; the setting stays registered and reads off. Flip a row back on by deleting its `built: false`. */
+    /* RK01b (25/11): built: false hides a row from the Settings screen until its bundle is built; the setting stays registered and reads off. Flip a row back on by deleting its `built: false`. room.tables stays hidden until the rooms part is pushed and Alex has skimmed the room tables; the glance and phone-search rows are built and now show. */
     /* the room key build (RK01, 22/11): the seven rows, put LAST so that no row of today changes place (kit-off) */
     { key: 'stamp.brief', label: 'Stamp banners', what: 'The roll’s stamp on the iPad: it stays until Take it down, or it leaves after 10 seconds (the roll panel keeps it until the roll resolves).',
       options: [{ v: false, label: 'Stays' }, { v: true, label: 'Leaves after 10 s' }],
@@ -117,10 +117,10 @@
     { key: 'room.tables', label: 'Rolled rooms', built: false, what: 'A rolled site’s rooms get a read-aloud, things and people from the room tables, with Swap, Roll another, Keep and the Blade tap.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'Rolled rooms: off.', 'true': 'Rolled rooms: on.' } },
-    { key: 'gm.glance', label: 'The glance', built: false, what: 'The crew at a glance, the fiction’s clock and who’s where, quick rules, when it goes loud, and any NPC by name.',
+    { key: 'gm.glance', label: 'The glance', what: 'The crew at a glance, the fiction’s clock and who’s where, quick rules, when it goes loud, and any NPC by name.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'The glance: off.', 'true': 'The glance: on.' } },
-    { key: 'phone.find', label: 'Search on phones', built: false, what: 'A search box over the abilities on a player’s sheet. Off: no box.',
+    { key: 'phone.find', label: 'Search on phones', what: 'A search box over the abilities on a player’s sheet. Off: no box.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'Search on phones: off. Phones follow within a few seconds.', 'true': 'Search on phones: on. Phones follow within a few seconds.' } },
     /* RK28 (added to RK01 on 22/11): the map diagnosis's setting, last */
