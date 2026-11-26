@@ -751,7 +751,8 @@ try {
     check(!!kept && d.revealed === false && JSON.stringify(d.tags) === '["room","generated"]' && d.spec && d.spec.name === W1.name, 'RK19: Keep files the waiter into the cast, hidden, tagged room and generated, with their figure (' + (kept ? kept.id : 'none') + ')');
     check(notes.tell === FIX.roles.waiter.face && notes.signature === FIX.roles.waiter.pose && /^Met: .+ · .+ · \d\d\/\d\d\/\d{4}$/m.test(d.gmNotes || ''), 'RK19: working Tell and Signature lines (the role\'s face and pose: ' + JSON.stringify(notes) + ') and a Met line');
     check(npcWrites.length === before + 1 && /^PUT .*\/api\/npcs\/npc_/.test(npcWrites[before] || ''), 'RK19: one write to the cast (' + npcWrites.slice(before).join(' | ') + ')');
-    const st8 = (await api('GET', '/gm/state')).json.doc.roomstate, keptSt = st8 && st8.keys[rollKey] && st8.keys[rollKey].rooms[W1.room] ? st8.keys[rollKey].rooms[W1.room].kept || {} : {};
+    const keptOfState = (s) => s && s.keys && s.keys[rollKey] && s.keys[rollKey].rooms[W1.room] ? s.keys[rollKey].rooms[W1.room].kept || {} : {};      /* the saver sends the patch a moment after the write */
+    const st8 = await until(async () => { const s = (await api('GET', '/gm/state')).json.doc.roomstate; return kept && keptOfState(s)[kept.id] ? s : null; }, 8000, 300), keptSt = keptOfState(st8);
     check(!!kept && keptSt[kept.id] && keptSt[kept.id].slot === W1.slot && !JSON.stringify(st8).includes(W1.name), 'RK19: the GM state holds the kept id against its slot (room-state\'s kept), and no text of the person');
     const keptBtn = '#gm-runv [data-rr-kept="' + (kept ? kept.id : 'x') + '"]';
     check(!!(await until(() => KA.page.evaluate((s) => { const e = document.querySelector(s); return !!e && /Kept/.test(e.textContent) && !!e.querySelector('[data-gm="npcipad"]'); }, keptBtn), 6000)), 'RK19: the card shows Kept, with Show on iPad in place of Keep');
