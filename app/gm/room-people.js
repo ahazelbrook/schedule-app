@@ -1,8 +1,8 @@
 /* gm/room-people.js: quick-draw people and their figure (RK17 of the room key build, with RK18 folded in; setting room.tables, bundle room-tables).
 
    Plain script, UMD: window.B68GmRoomPeople in the browser, module.exports under Node. ES5. GM page only: nothing here is sent, stored, filed or drawn on the
-   iPad or a phone, and a quick card is NOT an NPC (nothing here posts to /api/npcs: Keep, RK19, is what files one). It defines its module when it loads and
-   reads the others (B68Figure, B68Ui) only when called.
+   iPad or a phone, and a quick card is NOT an NPC (nothing here posts to /api/npcs: Keep, RK19, is what files one: room-keep.js draws its button on the
+   card, row() asks it). It defines its module when it loads and reads the others (B68Figure, B68Ui, B68GmRoomKeep) only when called.
 
    A SLOT is { role, seed } from room-roll.js: the slot's seed was drawn on the people stream (the roll's seed, the roomKey and "people"), so a hand-written thing
    never moves a person and Reroll the room never changes one. Everything a card holds is a pure function of the slot, the two tables and `masked`:
@@ -202,8 +202,10 @@
     return '<li class="npc rr-slot rv-p nocast' + (ctx && ctx.kit ? ' krv-p' : '') + '" data-rr-slot="' + esc(c.id) + '" data-role="' + esc(c.role) + '" data-sex="' + c.sex + '"' + (c.masked ? ' data-masked="true"' : '') + '>' +
       '<span class="rv-face" aria-hidden="true">' + (svg || '<span class="rv-ini">' + esc(initials(who)) + '</span>') + '</span>' +
       '<span class="rv-pn"><span><b>' + esc(who) + '</b> <small class="rv-prole rr-ptag">quick</small></span>' +
-      line('role', c.kicker) + line('look', c.look) + line('want', c.want) + line('tell', c.tell ? stop(cap(c.tell)) : '', 'Tell:') + (c.line ? '<span class="rv-prole rr-pline">“' + esc(c.line) + '”</span>' : '') + '</span></li>';
+      line('role', c.kicker) + line('look', c.look) + line('want', c.want) + line('tell', c.tell ? stop(cap(c.tell)) : '', 'Tell:') + (c.line ? '<span class="rv-prole rr-pline">“' + esc(c.line) + '”</span>' : '') + keepOf(c, ctx) + '</span></li>';
   }
+  /* RK19: Keep (gm/room-keep.js), or Kept and Show on iPad, on the card; '' when that file is not there or the card has no writer */
+  function keepOf(c, ctx) { var Kp = mod('B68GmRoomKeep', './room-keep.js'); try { return Kp && !Kp.stub && typeof Kp.html === 'function' ? str(Kp.html(c, ctx)) : ''; } catch (e) { return ''; } }
   /* a room's people together: each person's line and clothes steer clear of what an earlier person of the same role in the room already has */
   function cards(slots, ctx) {
     var used = {}, base = isObj(ctx) ? ctx : {};
