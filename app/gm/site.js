@@ -18,6 +18,7 @@
              npcs() -> [npc]   card(names) -> bool there is a card   face(npcId) -> HTML | ''   roomMd(room) -> the room's prep Markdown
              scoreOver() -> bool    montageOpen() -> bool    montage(view) -> opens or shuts it    dawn()    introduce(npcId)    setThreat(text) -> bool
              lineShown() -> bool the site line is on screen
+             loud() -> gm/loud.js's instance | null    RK23 (gm.glance): the alarm popover's beats and the prep note's When it goes loud; loud-make is the getaway clock
              thing(el, view)    RK09 (room.key): a room card's thing (data-site="thing") opens its zoom card (gm/room-zoom.js act) }
      site: alarm(open, attr) alarmPop(gm) tools() stage(gm) states() seg(room) people(room, here) wrong(room) noteMd(md) act(action, el, view)
            costume() setCostume(on) applyCostume() line() mapMarks(svg, model, sel) lineAlarm()
@@ -63,10 +64,12 @@
       var sec = get('security'), v = sec ? sec.view() : null; if (!v || !Se) return null;
       var play = get('play'), al = isObj(play) && isObj(play.alarm) ? play.alarm : null, name = al ? str(al.clock).trim() : '';
       var ck = name && typeof page.clock === 'function' ? page.clock(name) : null, beats = al && Array.isArray(al.beats) ? al.beats : [];
-      return { v: v, clock: name, beat: v.site && v.filled > 0 ? str(beats[v.filled - 1]) : '', missing: al && !ck ? name : '' };
+      return { v: v, clock: name, beat: v.site && v.filled > 0 ? str(beats[v.filled - 1]) : '', missing: al && !ck ? name : '', beats: beats };
     }
     function alarm(open, attr) { var a = alarmInfo(); return a ? Se.readoutHtml(a.v, { open: !!open, attr: attr, clock: a.clock }, esc) : ''; }
-    function alarmPop(gm) { var a = alarmInfo(); return a ? Se.popHtml(a.v, { clock: a.clock, beat: a.beat, missing: a.missing, gm: !!gm }, esc) : ''; }
+    function alarmPop(gm) { var a = alarmInfo(); return a ? loudPop(Se.popHtml(a.v, { clock: a.clock, beat: a.beat, missing: a.missing, gm: !!gm }, esc), a, !!gm) : ''; }
+    /* RK23 (gm.glance): every beat of the alarm and the prep note's When it goes loud, in the popover (gm/loud.js); the popover as it was while the page gives no loud */
+    function loudPop(h, a, gm) { var ld = get('loud'); return ld ? ld.pop(h, a, gm) : h; }
 
     /* ---- the map toolbar ---- */
     function tools() {
@@ -161,6 +164,7 @@
           break;
         }
         case 'costume': setCostume(!costume()); redraw(); break;
+        case 'loud-make': { var ld = get('loud'); if (ld) ld.make(); break; }      /* RK23 (gm.glance): the getaway clock, one tap */
         case 'thing': if (typeof page.thing === 'function') page.thing(el, view); break;      /* RK09 (room.key): a room card's thing opens its zoom card */
       }
     }
@@ -179,7 +183,7 @@
       if (a) h += Se.readoutHtml(a.v, { open: lineAlarm, attr: 'data-gm="site" data-site="alarm"', clock: a.clock }, esc);
       h += sg.replace(/ data-site="/g, ' data-gm="site" data-site="');
       if (kind === 'v1') h += '<button type="button" class="rv-btn sm rv-tog" data-gm="site" data-site="costume" aria-pressed="' + costume() + '" title="The Disguise select in the Run the site strip (Location)">Costume engine: ' + (costume() ? 'shown' : 'hidden') + '</button>';
-      h += '</div>' + (a && lineAlarm ? Se.popHtml(a.v, { clock: a.clock, beat: a.beat, missing: a.missing, gm: true }, esc) : '') + '</div></div>';
+      h += '</div>' + (a && lineAlarm ? loudPop(Se.popHtml(a.v, { clock: a.clock, beat: a.beat, missing: a.missing, gm: true }, esc), a, true) : '') + '</div></div>';
       return h;
     }
 
