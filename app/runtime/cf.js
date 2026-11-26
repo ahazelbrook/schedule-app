@@ -1421,6 +1421,8 @@
     assistAnother: function (req) { return api('POST', '/gm/assist/another', req || {}, 60000); },
     /* POST /api/gm/assist/whois {} -> { whois: { "<n>": { name, why } }, spend }: "Blade, guess" in the Who is who fold. A suggestion only; the tick carries the same `whois`. */
     assistWhois: function () { return api('POST', '/gm/assist/whois', {}, 45000); },
+    /* RK16 (room.tables): POST /api/gm/assist/room { site, room, tonight } -> { room | null, error?, cents, spend }: the Blade tap on a rolled room's card */
+    assistRoom: function (req) { return api('POST', '/gm/assist/room', req || {}, 60000); },
     /* GET /api/gm/assist/cards -> { cards, updates }: tonight's shown cards (the box restores its chat after a reload);
        POST { op: 'seen' | 'dismiss' | 'keep', items: [{ at, text, key? }] } -> { marked } */
     assistCards: function () { return api('GET', '/gm/assist/cards'); },

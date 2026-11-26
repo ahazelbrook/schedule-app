@@ -89,6 +89,12 @@
 //        EXISTS over tonight's keys, so two pages posting the same cue cannot both win: the loser's actions come back mode 'seen'. Without parsed the hands seat runs with the cue instruction
 //        after its base instructions and the cue line in the user turn (no 8 s cooldown; lease and cap still apply), same schema and validation, survivors all 'act', no undo/rename/roll_log.
 //        In every mode an action whose key is already in tonight's hands rows (last 12 h; found with json_each in D1) comes back mode 'seen' and must not be applied again. No new table.
+//   POST /api/gm/assist/room { site: { name, theme?, faction? }, room: { name, band?, say?, things?: [{ name, line? }], people?: [role] }, tonight?: { goal?, plan?, onStage?: [name] } }
+//        -> { room: { say, things: [thing], people: [{ line, role? }], at } | null, error?, cents, spend }    RK16 (room.tables), the Blade tap "Fit to tonight (~3¢)" on a rolled room's card
+//        (seat `room`, Sonnet, low, NO prefix: functions/_lib/assist/room-seat.js). Unknown fields and over-limit texts are a 400; room.tables off in the stored state is a 409; a
+//        call whose worst case (every prompt byte a token, plus maxTokens) is over 5¢ is a 413: all before the key, the lease or a row. Not a Core seat (stops at 85% of the cap),
+//        one at a time (429). The answer is checked strictly (toRoom): malformed is { room: null, error } with its row written. One row, seat 'room', shown 0, its cents logged.
+//        Nothing is stored here and nothing reaches the iPad or a phone: the GM page keeps the answer in the GM state (the room's Blade override, setBlade).
 //   GET  /api/gm/assist/cards?session=&since= -> { cards, updates, asks }   tonight's shown cards, open Ledger updates and Ask Blade answers
 //        (last 12 h unless `since`; asks: [{ row, at, q, text, kind, headline, bullets, say, secret, more, kept }], the last 10, oldest first), so a reloaded GM page restores its chat.
 //        Dismissed cards, finished updates and dismissed asks are left out. No model, no key.
@@ -163,6 +169,7 @@ import { toCandidate, toVoice, toAnother, toStall, toScribe, toMeanwhile, toHand
 import { nightCards, markCards, cleanMarks, OPS } from '../../_lib/assist/cards.js';
 import { cleanActBody, validateActions, markSeen, LINES_MAX } from '../../_lib/assist/hands.js';
 import { cleanPitchBody, decidePitch, pitchUser, toPitches } from '../../_lib/assist/pitch.js';
+import { cleanRoomBody, roomUser, toRoom, worstCents, ROOM_CAP_CENTS } from '../../_lib/assist/room-seat.js';
 
 const BODY_MAX = 8 * 1024;
 const ACT_BODY_MAX = 32 * 1024;            // an act request holds a state of at most 8 KB; a bigger one must reach the state check (a 400), not the generic 413 at 8 KB
@@ -533,6 +540,10 @@ export function cleanScreenBody(action, b) {
 async function nightFlowOn(db, campaign) {
   try { const { doc } = await loadState(db, campaign); return !!Features.valueOf(doc, 'night.flow'); } catch (_) { return false; }
 }
+/** RK16: is a setting on in the stored GM state? Any failure to read it is off (the Blade tap is refused, never run). */
+async function settingOn(db, campaign, id) {
+  try { const { doc } = await loadState(db, campaign); return !!Features.valueOf(doc, id); } catch (_) { return false; }
+}
 
 /** The question Ask Blade is asked: whitespace squashed to single spaces, 1-ASK_MAX characters; null when it is not a string or is empty or too long. */
 export function cleanAskQuestion(v) {
@@ -582,7 +593,7 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
   async function handle({ request, env, data, waitUntil }) {
     requireGm(data);                                   // first: before the method, the body or the database
     const url = new URL(request.url);
-    const action = /\/api\/gm\/assist\/(tick|fit|another|gatekeeper|cards|portrait-add|portrait|prop|wire|board|ask|act|whois)\/?$/.exec(url.pathname);
+    const action = /\/api\/gm\/assist\/(tick|fit|another|gatekeeper|cards|portrait-add|portrait|prop|wire|board|ask|act|whois|room)\/?$/.exec(url.pathname);
     if (!action) throw new HttpError(404, 'not found');
     if (action[1] === 'cards') {                       // the box's memory: no key, no model
       if (request.method === 'GET') {
@@ -606,7 +617,13 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const screenIn = SCREEN_ACTIONS.includes(action[1]) ? cleanScreenBody(action[1], body) : null;      // a 400 comes before the database or the key
     const askQ = action[1] === 'ask' ? cleanAskQuestion(body.q) : null;
     if (action[1] === 'ask' && askQ === null) throw new HttpError(400, 'q is the question: 1-' + ASK_MAX + ' characters');
+    const roomIn = action[1] === 'room' ? cleanRoomBody(body) : null;          // RK16: a 400 (an unknown field, a limit) comes before the database or the key
+    if (roomIn && roomIn.error) throw new HttpError(400, roomIn.error);
     const db = await getDb(env), campaign = campaignOf(env), t0 = now();
+    // RK16: the Blade tap runs only while room.tables is on (the stored setting), and never when its worst case is over 5¢. Both come before the key, the lease and any row.
+    const roomTurn = roomIn ? roomUser(roomIn) : '';
+    if (roomIn && !(await settingOn(db, campaign, 'room.tables'))) throw new HttpError(409, 'Rolled rooms (room.tables) is off');
+    if (roomIn && worstCents(seats.room, seats.room ? seats.room.instructions : '', roomTurn) > ROOM_CAP_CENTS) throw new HttpError(413, 'too long for a ' + ROOM_CAP_CENTS + '¢ tap: nothing was asked');
     // the Screen's code-only actions need no model and no key
     if (action[1] === 'board') return json(await boardOf(db, campaign, t0));
     if (action[1] === 'portrait-add') {
@@ -622,8 +639,8 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
     const handsLog = actIn ? await spendAndLastHands(db, campaign, t0) : null;
     const spentBefore = start ? start.spent : handsLog ? handsLog.spent : await tonight(db, campaign, t0);
     const tier = budgetTier(spentBefore, cap);
-    const { fileId, legacy, extra, roster, found } = start ? start.prefix : actIn ? NO_PREFIX : await loadPrefix(db, campaign);
-    const warnings = actIn ? [] : legacy ? [REPUSH] : found && fileId ? [] : ['no assist part in the GM pack'];
+    const { fileId, legacy, extra, roster, found } = start ? start.prefix : actIn || roomIn ? NO_PREFIX : await loadPrefix(db, campaign);
+    const warnings = actIn || roomIn ? [] : legacy ? [REPUSH] : found && fileId ? [] : ['no assist part in the GM pack'];
     const stt = start ? start.stt : await loadStt(db, campaign);
     const speakers = stt.doc.speakers || {};
     const errors = [];
@@ -817,6 +834,20 @@ export function makeHandler({ clientFor = defaultClient, now = () => Date.now(),
       await logRow(db, campaign, { at, session, seat: 'voice_plus', cfg, usage: r && r.usage, cost: r && r.cost, flags: ['another'], timing,
         card: out ? { out, ...(one ? { voice: 1, text: one.line, keys: one.keys } : {}) } : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : 'no JSON' } }).run();
       return done([], [], last, [], one ? { voice: { kind: 'say', who: one.who || npc, lines: [one.line], at } } : {});
+    }
+
+    if (action[1] === 'room') {
+      // RK16, the Blade tap: one room fitted for tonight. Not a Core seat (it stops at 85% of the cap); one at a time (the lease: 429 busy). The answer is
+      // checked strictly (toRoom): a malformed one is { room: null, error } with its row written (the call was paid for), never a 5xx. Nothing is stored here:
+      // the page writes the answer as the room's Blade override (setBlade). The row is never shown, so GET /cards never restores it and gm:after never files it.
+      const gate = canRun('room', { now: t0, lastRun: {}, inFlight: live(), tier });
+      if (!gate.ok) throw new HttpError(429, gate.why === 'budget' ? (tier === 'off' ? "tonight's cap is reached" : 'the budget ladder has dropped this for tonight') : 'Blade is fitting another room');
+      const { cfg, r, timing } = await run('room', roomTurn);
+      const at = new Date(now()).toISOString(), cents = Math.round(((r && r.cost) || 0) * 100 * 10000) / 10000;
+      const v = r && r.json ? toRoom(r.json) : { error: errors.length ? errors[0].error : r && r.stop === 'refusal' ? 'refusal' : r && r.stop === 'max_tokens' ? 'cut off' : 'no JSON' };
+      await logRow(db, campaign, { at, session: '', seat: 'room', cfg, usage: r && r.usage, cost: r && r.cost, flags: ['room'], timing,
+        card: { room: roomIn.room.name, ...(r && r.json ? { out: r.json } : {}), shown: 0, ...(v.room ? { made: 1 } : { error: v.error }), ...(cents > ROOM_CAP_CENTS ? { over_cap: 1 } : {}) } }).run();
+      return json({ room: v.room ? { ...v.room, at } : null, ...(v.room ? {} : { error: (r ? "Blade's answer did not fit the card (" : 'Blade could not be reached (') + v.error + '): nothing changed' }), cents, spend: spend(), ...(errors.length ? { errors } : {}) });
     }
 
     if (action[1] === 'whois') {
