@@ -148,6 +148,7 @@
       '#dossier .abf-x { flex: none; min-height: 44px; padding: 0 12px; border: 1.5px solid var(--hair, #b9b3a6); border-radius: 6px; background: transparent;' +
         ' color: inherit; font: 700 14px/1 var(--font-cond, inherit); cursor: pointer; }',
       '#dossier .abf-n { margin: 0; font-size: 14px; color: var(--ink-soft, #5a554b); }',
+      '#dossier .abf-in::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }',   /* Clear is the one way back */
       '#dossier .abf [hidden] { display: none; }',
       '#dossier [data-abf-off][data-abf-off] { display: none; }',
       '@media print { #dossier .abf { display: none; } }'].join('\n');

@@ -89,6 +89,8 @@ const server1 = async (id) => { const r = await api('GET', '/characters/' + id, 
 
 /* the invented characters: names from the fixtures; abilities, frame features, glitches and irregularities from content.js */
 const CT = (() => { const sb = {}; sb.window = sb; sb.self = sb; vm.runInNewContext(read('app/content.js'), sb, { filename: 'app/content.js' }); return sb.B68Content; })();
+const CRW = (() => { const sb = {}; sb.window = sb; sb.self = sb; vm.runInNewContext(read('app/crews.js'), sb, { filename: 'app/crews.js' }); return sb.B68Crews; })();
+const crewNames = CRW.byId.shadows.abilities.map((a) => a[0]).filter((n) => n !== 'Versatile').slice(0, 3);   /* the invented crew's three taken abilities, from crews.js at run time */
 const abs = (id, n) => CT.byId[id].abilities.slice(0, n).map((a) => a[0]);
 const pc = (id, name, playbook, play) => ({ id, doc: { name, playbook, spec: { name, playbook }, sheet: { name, alias: '', look: 'Long coat' }, play: Object.assign({ crew: 'The Dovetail Crew', keys: [], log: [] }, play) } });
 const KEYS = (hits) => [{ name: 'KEY-1', down: 'Takes the long way', up: 'Never lets go', hits }, { name: 'KEY-2', down: 'Trusts the wrong voice', up: 'Hears the lie first', hits: 1 }];
@@ -159,6 +161,8 @@ try {
   check(!off.gl && off.marks === 0 && off.attr === null && off.mod === 'undefined' && off.bar, 'off: no glance, no mark, the module not loaded, today\'s sheet: ' + JSON.stringify(off));
   const glFiles = A.seen.req.filter((u) => /\/sheet\/(glance|page)\./.test(u));
   check(!glFiles.length, 'off: no glance or page file fetched' + (glFiles.length ? ': ' + glFiles : ''));
+  const offFind = await a.evaluate(() => ({ box: !!document.querySelector('.abf, [data-abf-box], [data-abf-off]'), mod: typeof window.B68AbilityFind, css: !!document.getElementById('b68-abf-css') }));
+  check(!A.seen.req.some((u) => /ability-find/.test(u)) && !offFind.box && offFind.mod === 'undefined' && !offFind.css, 'phone.find off: no ability-find file fetched, no box, no style: ' + JSON.stringify(offFind));
   const offApi = new Set(A.seen.req.filter((u) => u.indexOf('/api/') > 0).map((u) => new URL(u).pathname));
 
   /* ---------- on, from the GM's side, with the sheet open ---------- */
@@ -632,6 +636,151 @@ try {
   const pr = await d.evaluate(() => ({ gl: getComputedStyle(document.querySelector('#dossier .gl')).display, boxes: Array.from(document.querySelectorAll('#dossier section.ds-box')).filter((b) => b.getClientRects().length).length }));
   check(pr.gl === 'none' && pr.boxes >= 14, 'print: today\'s sheet: ' + JSON.stringify(pr));
   await D.ctx.close();
+
+  /* ---------- phone.find: search on the phones (RK25): the filter over the abilities box, the strip and the glance's abilities sheet ---------- */
+  {
+    await must(api('PUT', '/campaign', { v: 1, session: { number: 3, startedAt: started, endedAt: null }, crew: { name: 'The Dovetail Crew', playbook: 'shadows', abilities: Object.fromEntries(crewNames.map((n) => [n, 1])), claims: {}, factions: [], cohorts: [] }, clocks: [], log: [] }), 'the table, with crew abilities');
+    await feature({ 'spine.keyturn': true, 'spine.aftermath': true, 'between.quiet': true, 'phone.glance': false, 'phone.find': true, 'kit.phone': false });
+    const book = CT.byId.intellectual.abilities.map((a) => a[0]), own7 = book.slice(0, 7);
+    const norm = (s) => s.toLowerCase().replace(/[’']/g, '');
+    const want = (list, q) => list.filter((n) => norm(n).includes(q));
+    const q3 = (n) => norm(n).slice(0, 3);
+    const rowsVis = (pg, sel) => pg.evaluate((s) => Array.from(document.querySelectorAll(s)).filter((e) => getComputedStyle(e).display !== 'none' && e.getClientRects().length).map((e) => ((e.querySelector('b') || e).textContent || '').replace(/:$/, '').trim()), sel);
+    const typeIn = async (pg, sel, text) => { await pg.click(sel); await pg.fill(sel, ''); await pg.keyboard.type(text, { delay: 25 }); await sleep(150); };
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const sorted = (a) => a.slice().sort();
+    const writes = [];
+    const watch = (pg) => pg.on('request', (r) => { if (r.method() !== 'GET') writes.push(r.method() + ' ' + new URL(r.url()).pathname); });
+    const target = book[3], q = q3(target);
+
+    /* the classic sheet (the glance off): the abilities box lists every ability the playbook has, taken or not, then the Versatile row */
+    const F = await open('pc-ray', { w: 390, h: 664 }), f = F.page; watch(f);
+    check(!!(await until(() => f.evaluate(() => !!document.querySelector('#dossier .ds-abbox .abf-in')), 20000, 200)), 'phone.find on: the abilities box has its search box');
+    check(F.seen.req.filter((u) => /\/sheet\/ability-find\.js/.test(u)).length === 1, 'the bundle is fetched once, for the phone');
+    const all0 = await rowsVis(f, '#dossier .ds-abbox .ds-ab');
+    check(all0.length === book.length + 1 && all0.includes(target), 'before a word is typed every row shows (' + all0.length + ': the playbook\'s ' + book.length + ' and the Versatile row)');
+    const play0 = await server1('pc-ray'), w0 = writes.length, exp = want(book, q);
+    await typeIn(f, '#dossier .ds-abbox .abf-in', q);
+    let vis = await rowsVis(f, '#dossier .ds-abbox .ds-ab');
+    check(vis.includes(target) && same(vis.filter((n) => n !== 'Versatile'), exp) && exp.length < book.length && vis.includes('Versatile'), 'three letters ("' + q + '") find ' + target + ' in the abilities box: ' + JSON.stringify(vis));
+    const note = await f.evaluate(() => document.querySelector('#dossier .ds-abbox .abf-n').textContent);
+    check(note === exp.length + ' of ' + book.length && (await f.evaluate(() => !document.querySelector('#dossier .ds-abbox [data-abf-clear]').hidden)), 'the line under it says how many, and Clear shows: ' + note);
+    await shot(f, 'find-abbox-390x664-paper');
+    /* a redraw around the box keeps the query and the focus: the abilities slot is drawn again (a seventh ability taken, from the server) */
+    await must(api('PUT', '/characters/pc-ray', Object.assign({}, PCS[1].doc, { play: Object.assign({ session: 3 }, PCS[1].doc.play, { abilities: own7 }) }), P1), 'one more ability');
+    check(!!(await until(() => f.evaluate(() => document.querySelectorAll('#dossier .ds-abbox .ds-ab.on').length === 7), 15000, 200)), 'a redraw: the sheet shows the seventh ability taken');
+    const kept = await f.evaluate(() => { const i = document.querySelector('#dossier .ds-abbox .abf-in'); return { v: i && i.value, focus: document.activeElement === i, off: document.querySelectorAll('#dossier .ds-abbox [data-abf-off]').length }; });
+    check(kept.v === q && kept.focus && kept.off === book.length - exp.length, 'the query, the focus and the hidden rows survive the redraw: ' + JSON.stringify(kept));
+    /* nothing matches: say so, and the add control is still there */
+    await typeIn(f, '#dossier .ds-abbox .abf-in', 'zzq');
+    vis = await rowsVis(f, '#dossier .ds-abbox .ds-ab');
+    const none = await f.evaluate(() => ({ note: document.querySelector('#dossier .ds-abbox .abf-n').textContent, add: !!document.querySelector('#dossier .ds-abbox .ds-newab').getClientRects().length }));
+    check(same(vis, ['Versatile']) && /^No ability matches/.test(none.note) && none.add, 'nothing matches: the row with the add control stays, and the line says so: ' + JSON.stringify(none));
+    await f.click('#dossier .ds-abbox [data-abf-clear]'); await sleep(150);
+    vis = await rowsVis(f, '#dossier .ds-abbox .ds-ab');
+    check(vis.length === book.length + 1 && (await f.evaluate(() => document.querySelector('#dossier .ds-abbox .abf-in').value === '')), 'Clear brings every row back (' + vis.length + ')');
+    check(writes.length === w0 && !writes.length, 'no write request while searching, so the character is not edited: ' + JSON.stringify(writes));
+    check(same(sorted(Object.keys(await server1('pc-ray'))), sorted(Object.keys(play0))), 'the stored play has the same keys (typing adds none)');
+    /* the strip: the player's own and the crew's, in the roll panel */
+    await f.click('#dossier [data-act="rollopen"][data-a="Study"]');
+    await f.waitForSelector('#dossier .ds-roll [data-act="abstrip"]', { timeout: 8000 });
+    await f.click('#dossier .ds-roll [data-act="abstrip"]');
+    check(!!(await until(() => f.evaluate((n) => document.querySelectorAll('#dossier .ds-abstrip-b .ds-abi').length >= n, own7.length + crewNames.length), 15000, 200)) && !!(await f.$('#dossier .ds-abstrip-b .abf-in')), 'the strip lists the player\'s abilities and the crew\'s, with a search box over them');
+    const cq = q3(crewNames[1]), labels = () => f.evaluate(() => Array.from(document.querySelectorAll('#dossier .ds-abstrip-b .ds-abgrp')).filter((g) => getComputedStyle(g).display !== 'none').map((g) => g.querySelector('.ds-lab').textContent));
+    await typeIn(f, '#dossier .ds-abstrip-b .abf-in', cq);
+    vis = await rowsVis(f, '#dossier .ds-abstrip-b .ds-abi');
+    check(vis.includes(crewNames[1]) && same(sorted(vis), sorted(want(crewNames, cq).concat(want(own7, cq)))), 'three letters ("' + cq + '") find the crew\'s ' + crewNames[1] + ' in the strip: ' + JSON.stringify(vis));
+    const lab = await labels();
+    check(same(lab, want(own7, cq).length ? ['Yours', 'The crew’s'] : ['The crew’s']), 'a group with nothing left goes: ' + JSON.stringify(lab));
+    await shot(f, 'find-strip-crew-390x664-paper');
+    const oq = q3(book[0]);
+    await typeIn(f, '#dossier .ds-abstrip-b .abf-in', oq);
+    vis = await rowsVis(f, '#dossier .ds-abstrip-b .ds-abi');
+    check(vis.includes(book[0]) && same(sorted(vis), sorted(want(own7, oq).concat(want(crewNames, oq)))), 'and the player\'s own ' + book[0] + ' ("' + oq + '"): ' + JSON.stringify(vis));
+    await f.click('#dossier .ds-roll [data-act="abstrip"]'); await sleep(200);
+    await f.click('#dossier .ds-roll [data-act="abstrip"]'); await sleep(300);
+    check(await f.evaluate(() => document.querySelector('#dossier .ds-abstrip-b .abf-in').value === '' && !document.querySelector('#dossier .ds-abstrip-b [data-abf-off]')), 'folding the strip and opening it again starts clean');
+    const open0 = await f.evaluate(() => document.querySelectorAll('#dossier .ds-abstrip-b .ds-abi.open').length);
+    await f.click('#dossier .ds-abstrip-b .ds-abi'); await sleep(200);
+    check((await f.evaluate(() => document.querySelectorAll('#dossier .ds-abstrip-b .ds-abi.open').length)) === open0 + 1, 'a row still opens its text (nothing lost)');
+    check(writes.length === w0, 'still no write request: ' + JSON.stringify(writes));
+    await F.ctx.close();
+
+    /* the glance: the abilities sheet (which "+n more" opens), and the strip over it */
+    await feature({ 'phone.glance': true });
+    for (const [w, h, tag] of [[375, 553, '375x553'], [390, 664, '390x664'], [664, 390, '664x390']]) {
+      const G = await open('pc-ray', { w, h }); await glanceUp(G.page); const g = G.page;
+      await until(() => g.evaluate(() => !!window.B68AbilityFind && window.B68AbilityFind.state().on), 15000, 200);
+      const chip = await until(() => g.evaluate(() => { const c = document.querySelector('#dossier .gl-chip.gl-plus'); return !!c && !c.hidden && c.getClientRects().length > 0; }), 4000, 200);
+      if (!chip) {
+        const chips = await g.evaluate(() => Array.from(document.querySelectorAll('#dossier .gl-abs .gl-chip:not(.gl-plus)')).filter((c) => !c.hidden && c.getClientRects().length).length);
+        check(chips === own7.length, tag + ': every ability fits as a chip (' + chips + '), so there is nothing to search and the sheet is not offered');
+      } else {
+        await g.click('#dossier .gl-chip.gl-plus');
+        const sheetOpen = await until(() => g.evaluate(() => !!document.querySelector('#dossier .gl-sheet .abf-in')), 8000, 200);
+        check(!!sheetOpen, tag + ': "+n more" opens the abilities sheet with its search box');
+        const all = await rowsVis(g, '#dossier .gl-sheet .gl-abt');
+        await typeIn(g, '#dossier .gl-sheet .abf-in', q);
+        const v2 = await rowsVis(g, '#dossier .gl-sheet .gl-abt');
+        check(all.length === 7 && v2.includes(target) && same(v2, want(all, q)) && v2.length < all.length, tag + ': three letters ("' + q + '") find ' + target + ' in the glance\'s abilities: ' + JSON.stringify(v2));
+        const lay = await g.evaluate(() => { const i = document.querySelector('#dossier .gl-sheet .abf-in'), r = i.getBoundingClientRect(), s = getComputedStyle(i), n = document.querySelector('#dossier .gl-sheet .abf-n');
+          return { h: Math.round(r.height), left: Math.round(r.left), right: Math.round(r.right), fs: parseFloat(s.fontSize), nfs: parseFloat(getComputedStyle(n).fontSize), sw: document.documentElement.scrollWidth, iw: innerWidth }; });
+        check(lay.h >= 44 && lay.fs >= 16 && lay.nfs >= 12 && lay.left >= 0 && lay.right <= lay.iw && lay.sw <= lay.iw, tag + ': the box is 44 px tall, 16 px type, the line 14 px, inside the screen: ' + JSON.stringify(lay));
+        await shot(g, 'find-glance-' + tag + '-paper');
+        await g.click('#dossier .gl-sheet [data-gl="close"]'); await sleep(250);
+        await g.click('#dossier .gl-chip.gl-plus'); await sleep(300);
+        const again = await g.evaluate(() => ({ v: document.querySelector('#dossier .gl-sheet .abf-in').value, n: document.querySelectorAll('#dossier .gl-sheet .gl-abt:not([data-abf-off])').length }));
+        check(again.v === '' && again.n === 7, tag + ': the sheet closed and opened again starts clean: ' + JSON.stringify(again));
+        await g.click('#dossier .gl-sheet [data-gl="close"]'); await sleep(250);
+      }
+      if (tag === '390x664') {
+        await g.click('#dossier .gl-act[data-a="Study"]');
+        await g.waitForSelector('#dossier .ds-roll [data-act="abstrip"]', { timeout: 8000 });
+        await g.click('#dossier .ds-roll [data-act="abstrip"]');
+        check(!!(await until(() => g.evaluate((n) => document.querySelectorAll('#dossier .ds-abstrip-b .ds-abi').length >= n, own7.length + crewNames.length), 15000, 200)), tag + ': on the glance the roll strip lists the player\'s and the crew\'s too');
+        await typeIn(g, '#dossier .ds-abstrip-b .abf-in', cq);
+        const v3 = await rowsVis(g, '#dossier .ds-abstrip-b .ds-abi');
+        check(v3.includes(crewNames[1]) && same(sorted(v3), sorted(want(crewNames, cq).concat(want(own7, cq)))), tag + ': on the glance three letters find the crew\'s ' + crewNames[1] + ' in the strip: ' + JSON.stringify(v3));
+        await shot(g, 'find-glance-strip-' + tag + '-paper');
+      }
+      await G.ctx.close();
+    }
+    /* Night: the box and the glance's abilities sheet, in the dark (pictures; the box must still be there and readable) */
+    for (const gl of [false, true]) {
+      await feature({ 'phone.glance': gl });
+      const N = await open('pc-ray', { w: 375, h: 553, night: true }), n = N.page;
+      if (gl) { await glanceUp(n); await until(() => n.evaluate(() => !!window.B68AbilityFind && window.B68AbilityFind.state().on), 15000, 200); await n.click('#dossier .gl-chip.gl-plus'); await n.waitForSelector('#dossier .gl-sheet .abf-in'); await typeIn(n, '#dossier .gl-sheet .abf-in', q); }
+      else { await until(() => n.evaluate(() => !!document.querySelector('#dossier .ds-abbox .abf-in')), 20000, 200); await typeIn(n, '#dossier .ds-abbox .abf-in', q); await n.evaluate(() => document.querySelector('#dossier .ds-abbox .abf-in').scrollIntoView({ block: 'center' })); }
+      const ink = await n.evaluate(() => { const i = document.querySelector('#dossier .abf-in'), c = (s) => (s.match(/[0-9.]+/g) || []).slice(0, 3).map(Number); return { ink: c(getComputedStyle(i).color) }; });
+      check(ink.ink.length === 3 && Math.max(...ink.ink) > 150, (gl ? 'glance' : 'classic') + ' in Night: the typed text is light on the dark ground: ' + JSON.stringify(ink));
+      await shot(n, 'find-' + (gl ? 'glance' : 'abbox') + '-375x553-night');
+      await N.ctx.close();
+    }
+    /* the classic sheet at a desk's width: the same box, and print leaves it out */
+    {
+      await feature({ 'phone.glance': false });
+      const D = await open('pc-ray', { w: 1024, h: 768, mobile: false }), d = D.page;
+      check(!!(await until(() => d.evaluate(() => !!document.querySelector('#dossier .ds-abbox .abf-in')), 20000, 200)), '1024 x 768: the abilities box has its search box');
+      await typeIn(d, '#dossier .ds-abbox .abf-in', q);
+      const v4 = await rowsVis(d, '#dossier .ds-abbox .ds-ab');
+      check(v4.includes(target) && same(v4.filter((n) => n !== 'Versatile'), want(book, q)), '1024 x 768: three letters find ' + target + ': ' + JSON.stringify(v4));
+      await shot(d, 'find-abbox-1024x768-paper');
+      await d.emulateMedia({ media: 'print' });
+      check(await d.evaluate(() => getComputedStyle(document.querySelector('#dossier .ds-abbox .abf')).display === 'none'), 'print: the box is not printed');
+      await D.ctx.close();
+    }
+    /* the setting off: the boxes, the hidden rows and the style go at once, and the module stops */
+    {
+      const O = await open('pc-ray', { w: 390, h: 664 }), o = O.page;
+      await until(() => o.evaluate(() => !!document.querySelector('#dossier .abf-in')), 20000, 200);
+      await typeIn(o, '#dossier .ds-abbox .abf-in', q);
+      await feature({ 'phone.find': false });
+      const gone = await until(() => o.evaluate(() => !document.querySelector('.abf') && !document.querySelector('[data-abf-off]') && !document.getElementById('b68-abf-css') && window.B68AbilityFind.state().on === false), 20000, 200);
+      check(!!gone, 'phone.find off: the boxes, the hidden rows and the style are gone, and the module is stopped');
+      check((await rowsVis(o, '#dossier .ds-abbox .ds-ab')).length === book.length + 1, 'and every ability row shows');
+      await O.ctx.close();
+    }
+  }
 
   check(!errors.length, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 5).join(' | ') : ''));
 } catch (e) {
