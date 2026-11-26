@@ -2571,6 +2571,8 @@
   function rsInst() { var M = W.B68GmRoomState, me = S; if (!me || !M || M.stub || typeof M.create !== 'function') return null; if (!me.rs) me.rs = M.create({ on: function () { return S === me && (b09On('room.key') || b09On('room.tables')); }, doc: function () { return S === me ? me.doc : null; }, patch: function (p) { return S === me ? patch(p) : false; }, busy: function () { var st = me.saver ? me.saver.state() : null; return !!(st && st.pending && st.pending.roomstate); }, now: function () { return Date.now(); }, part: function () { var r = me.pack && me.pack.parts && me.pack.parts.rooms; return r ? str(r.version) : ''; }, toast: toast }); return me.rs; }
   /* RK09 (room.key): the room card's things and the zoom card (gm/room-zoom.js), one per page session; null while room.key is off or its bundle is not loaded (an open card closes) */
   function rkZoom() { var M = W.B68GmRoomZoom, me = S; if (!me || !M || M.stub || typeof M.create !== 'function') return null; if (!b09On('room.key')) { if (me.rz) me.rz.close(false); return null; } if (!me.rz) me.rz = M.create({ md: function (room) { var rn = S === me ? runRoomNotes() : null; return rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? str(rn.byRoom[room].md) : ''; }, roll: function () { var r = S === me ? S.locRoll : null; return isObj(r) && Array.isArray(r.rooms) ? { key: str(rollKey(r)), rooms: r.rooms.filter(isObj).map(function (x) { return str(x.name); }) } : null; }, doc: function () { return S === me ? me.doc : null; }, redraw: function () { if (S === me && S.rv) S.rv.rerender(); }, toast: toast, rs: function () { return S === me ? rsInst() : null; } }); return me.rz; }
+  /* RK14 (room.tables): a rolled site's room cards in the Run pane, and the same parts on a v2 night's room card (gm/room-rolled.js), one per page session; null while room.tables is off or its bundle is not loaded (an open card closes) */
+  function rrInst() { var M = W.B68GmRoomRolled, me = S; if (!me || !M || M.stub || typeof M.create !== 'function') return null; if (!b09On('room.tables')) { if (me.rr) me.rr.close(); return null; } if (!me.rr) me.rr = M.create({ roll: function () { return S === me ? S.locRoll : null; }, rollKey: rollKey, T: function () { var b = S === me ? part('rooms') : null; return isObj(b) && isObj(b.T) ? b.T : null; }, md: function (room) { var rn = S === me ? runRoomNotes() : null; return rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? str(rn.byRoom[room].md) : ''; }, note: function (room) { return S === me ? rvHost().roomNote(room) : null; }, wrong: function (room) { var si = S === me ? siteInst() : null; return si ? si.wrong(room) : []; }, decorate: function (el) { if (S === me) rvHost().decorate(el); }, doc: function () { return S === me ? me.doc : null; }, redraw: function () { if (S !== me) return; if (S.rv && runV2()) S.rv.rerender(); else renderRun(); }, toast: toast, kit: function () { return !!(W.B68Kit && typeof W.B68Kit.ready === 'function' && W.B68Kit.ready('desk') && W.B68Ui); }, zoom: function (h) { var Z = W.B68GmRoomZoom; return Z && !Z.stub && typeof Z.create === 'function' ? Z.create(h) : null; }, box: function () { return S === me ? $q('#gm-runv') : null; } }); return me.rr; }
   /* 4.5 / 4.7 / 5.3 the practical speaker, the ringing phone and the Trouble desk (gm/room-desk.js; switches room.practical, room.phone, between.trouble): one Menu line each while its switch is on */
   function rdInst() {
     if (!S || !W.B68GmRoomDesk || !W.B68Features) return null;
@@ -2731,6 +2733,8 @@
     if (S.status === 'ready' && W.B68Features && W.B68Load) P.rkWant(function (id) { return !!W.B68Features.valueOf(S.doc, id); }).forEach(function (n) { var me = S; if (!me.rkAsked) me.rkAsked = {}; if (!me.rkAsked[n]) { me.rkAsked[n] = true; W.B68Load.need(n).then(function () { if (n === 'room-key' && S === me && S.rv) S.rv.rerender(); }, function () { me.rkAsked[n] = false; }); } });      /* RK01 (night.flow, close.crew, room.key, room.tables, gm.glance): each bundle is fetched once, only while its setting is on; the stubs do nothing until their tickets fill them */
     if (S.status === 'ready' && S.rv && !!S.glnOn !== !!glnInst()) { S.glnOn = !!glnInst(); S.rv.rerender(); }      /* RK21 (gm.glance): its bundle (with kit-ui first, routes.js DEPS) arrived, or the setting went off: the Run view's header draws again */
     if (S.status === 'ready' && S.rz && S.rv && !!S.rzOn !== b09On('room.key')) { S.rzOn = b09On('room.key'); S.rv.rerender(); }      /* RK09: room.key turned on or off (here or on another device) once its zoom card exists: the room cards draw again, and an open card closes */
+    if (S.status === 'ready' && W.B68Load && b09On('room.tables') && !S.rrWait) { var me1 = S; me1.rrWait = true; W.B68Load.need('room-tables').then(function () { if (S === me1) renderBar(); }, function () { me1.rrWait = false; }); }      /* RK14: the same request as RK01's line (fetched once), heard here, so the Run pane draws when the bundle is in */
+    if (S.status === 'ready' && !!S.rrOn !== !!rrInst()) { S.rrOn = !!rrInst(); if (S.rv && runV2()) S.rv.rerender(); else renderRun(); }      /* RK14 (room.tables): its bundle arrived, or the setting went on or off (here or on another device): the Run pane draws again */
     if (S.status === 'ready' && !S.ntAsked && W.B68Load && b09On('night.flow')) { var mn = S; mn.ntAsked = true; W.B68Load.need('night-flow').then(function () { if (S === mn) b09Paint(); }, function () { mn.ntAsked = false; }); }      /* RK03 (night.flow): the Roll draws its Tick control once the bundle is in (the same fetch as the line above: B68Load asks once) */
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
@@ -3628,6 +3632,7 @@
     S.locRoll = roll; S.map = null; S.last = { text: 'Location: ' + entry.label };
     renderLocation(true);
     if (W.B68Map && W.B68Map.render) drawMap(true);
+    if (rrInst()) showPanel('run');      /* RK14.3 (room.tables): a new site goes straight to the score's site screen, its room cards drawn */
   }
   function renderLocation(fresh) {
     var box = $q('#gm-loc'), L = W.B68GmLocation, pk = part('location'); if (!box) return;
@@ -4297,8 +4302,10 @@
     if (L && (l.kind === 'npc' || (isObj(L) && L.kind === 'npc')) && S.rv && npcCardSrc([str(L.name)])) { S.rv.showNpc([str(L.name)], str(L.name)); return; }
     prepLink(href);
   }
+  /* RK14 (room.tables): a v2 night's room card asks roomThings for the room's things; with room.tables on it gets the rolled room's whole block (gm/room-rolled.js) instead, and RK09's as before while off */
+  function rrHost(h) { var was = h.roomThings; h.roomThings = function (room, o) { var rr = rrInst(), rb = rr ? rr.block(room, o) : null; return typeof rb === 'string' ? rb : was(room, o); }; return h; }
   function rvHost() {
-    return {
+    return rrHost({
       site: function () { var rs = runV2(); return rs ? { name: rs.name, play: rs.play } : null; },
       state: function () { var rs = runV2(); return rs ? ballDoc(rs.name) : {}; },
       set: function (change, quiet) { var rs = runV2(); if (!rs) return false;
@@ -4333,11 +4340,12 @@
       decorate: function (el) { if (W.B68GmPrep && el) { W.B68GmPrep.decorate(el, {}); paDecorate(el); } },      /* PA: action chips in a room's note and an NPC card too */
       roomNote: function (room) { var rn = runRoomNotes(), e = rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? rn.byRoom[room] : null, si = siteInst(), md = e ? str(e.md) : ''; if (si && md) md = si.noteMd(md);      /* N3: the If it goes wrong line is the card's action line, not the note's */
         var rz = md ? rkZoom() : null; if (rz) md = rz.noteMd(md);      /* RK09 (room.key): the Things block is drawn as the card's things (roomThings), not twice */
+        if (md && !rz && rrInst() && W.B68GmRoomZoom) md = W.B68GmRoomZoom.noteMd(md);      /* RK14 (room.tables): the same, for room.tables on its own */
         return e && str(e.md).trim() ? npcCardHtml(md, 'rm-') : null; },
       roomThings: function (room, o) { var rz = rkZoom(); return rz ? rz.html(room, o) : ''; },      /* RK09 (room.key): the room's things, before its note; '' while off */
       /* a switch's value (map.countdown: the header's countdown pie) */
       feature: function (id) { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, id)); }
-    };
+    });
   }
   /* RK21 (gm.glance): the fiction's clock and who's where (gm/glance-now.js), one per page session; null while gm.glance is off or its bundle is not loaded */
   function glnInst() { var M = W.B68GmGlanceNow, me = S; if (!me || !M || M.stub || typeof M.create !== 'function' || !b09On('gm.glance')) return null; if (!me.gln) me.gln = M.create({ run: function () { return S === me && runV2() ? rvHost() : null; }, redraw: function () { if (S === me && S.rv) S.rv.rerender(); }, toast: toast }); return me.gln; }
@@ -4359,6 +4367,7 @@
       if (S.rv) { S.rv.reset(); S.rvSite = ''; }
       /* N3: no v2 night, but the site line keeps the alarm readout (stepped by hand) and the stage group, so neither is lost with Location's old box */
       var ln = siteLine();
+      var rr = rrInst(); if (rr && rr.draw(box, ln)) return;      /* RK14 (room.tables): a rolled site's room cards (gm/room-rolled.js), drawn by their own path: runSite() and the phones' mission are untouched */
       if (box.getAttribute('data-help') !== '1' || box.__siteLine !== ln) { box.innerHTML = ln + RUN_HELP; box.setAttribute('data-help', '1'); box.__siteLine = ln; }
       return;
     }
@@ -5571,6 +5580,7 @@
     if (me.b17) { try { me.b17.reset(); } catch (e) {} me.b17 = null; }
     if (me.site) { try { me.site.destroy(); } catch (e) {} me.site = null; }
     if (me.rz) { try { me.rz.destroy(); } catch (e) {} me.rz = null; }      /* RK09: an open zoom card goes with the page */
+    if (me.rr) { try { me.rr.destroy(); } catch (e) {} me.rr = null; }      /* RK14: so does a rolled room's */
   }
   function b17Frozen() { return !!(S && S.b17 && S.b17.holding()); }
   function b17Tint() { if (S && S.b17 && S.locRoll) S.b17.tint($q('#gm-map'), S.locRoll); }
@@ -8087,6 +8097,7 @@
     if (ev.key === 'Enter' && tg && tg.id === 'gm-gs-q') { ev.preventDefault(); screenFindGo(); return; }
     if (ev.key === 'Enter' && tg && tg.id === 'gm-dt-d100') { ev.preventDefault(); dtD100(tg.value); return; }     /* the morning's d100 */
     if (ev.key === 'A' && ev.shiftKey && !typing(tg) && !ev.ctrlKey && !ev.metaKey && !ev.altKey && (!escTop() || escTop() === 'blade') && pitchGo()) { ev.preventDefault(); return; }      /* KS19: Shift+A is Pitch now while pitches are on (else it is A, as before) */
+    if (S.rr && b09On('room.tables') && S.rr.key(ev, { typing: typing(tg), top: escTop() })) return;      /* RK14 (room.tables): the same keys in a rolled room's card (before RK09's, which would take a digit there) */
     if (S.rz && b09On('room.key') && S.rz.key(ev, { typing: typing(tg), top: escTop() })) return;      /* RK09 (room.key): 1 to 9 and the arrows in a focused room card, or in its open zoom card */
     /* keys never fire behind an open thing (the Menu, the drawer, the Blade panel, a popover, a sheet): only its own. W shuts the drawer, A the Blade
        panel and ? the Shortcuts card when that is the top one; GO (Space, PageDown) still fires behind the Blade panel; everything else waits until it is closed (Esc) */
@@ -8460,6 +8471,7 @@
     _pushDisplay: function (d) { return pushDisplay(d); },
     _roomState: function () { return rsInst(); },     /* for checks (room-state.e2e.mjs, RK08.4): the room-state API, null while the room-key bundle is not loaded */
     _roomZoom: function () { return rkZoom(); },     /* for checks (room-key.e2e.mjs, RK09): the zoom card, null while room.key is off or its bundle is not loaded */
+    _roomRolled: function () { return rrInst(); },     /* for checks (room-tables.e2e.mjs, RK14): a rolled site's room cards, null while room.tables is off or its bundle is not loaded */
     _setPhoneCards: function (on) { return setPhoneCards(on === true); },     /* for checks: the Run menu's Phone cards toggle */
     _ballSet: function (change) { var rs = runSite(); return rs ? ballSet(rs.name, change) : false; },     /* for checks: what the Run view does through its host */
     /* "Claude suggests" (a later step calls this): a Show handout? item in the Rack. Returns false for an id the pack does not hold. */
