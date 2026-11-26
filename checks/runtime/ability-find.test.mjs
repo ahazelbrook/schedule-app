@@ -119,12 +119,21 @@ test('stop() takes the listeners, the boxes, the hidden rows and the style away 
 });
 test('box(): the markup keeps the hooks the sheet needs (a data-always input, a ds-new class for focus, a Clear that starts hidden), no query in it', () => {
   const { win } = fakeWin(), F = win.B68AbilityFind; F.start();
-  for (const k of ['abbox', 'strip', 'abs']) {
+  for (const k of ['abbox', 'strip', 'abs', 'ed']) {
     const h = F.box(k);
     assert.match(h, new RegExp('data-abf-box="' + k + '"')); assert.match(h, /<input type="search"[^>]*data-always="1"/);
     assert.match(h, new RegExp('class="abf-in ds-newfind' + k + '"')); assert.match(h, /data-abf-clear="[a-z]+" data-always="1" hidden>Clear</);
     assert.match(h, /aria-label="Find an ability"/);
+    assert.match(h, new RegExp('<button type="button" class="' + { abbox: 'btn sm', strip: 'btn sm', abs: 'gl-btn', ed: 'sp-btn' }[k] + ' abf-x"'), 'Clear wears the own button class of its sheet');
     assert.ok(!/ value=/.test(h), 'typing never changes the slot string the sheet compares');
+  }
+});
+
+test('box(n): no box over a short list (under 4 rows) or an empty one; 4 and more draw it; no count draws it', () => {
+  const { win } = fakeWin(), F = win.B68AbilityFind; F.start();
+  for (const k of ['abbox', 'strip', 'abs', 'ed']) {
+    assert.equal(F.box(k, 0), ''); assert.equal(F.box(k, 3), '');
+    assert.match(F.box(k, 4), /data-abf-box/); assert.match(F.box(k, 40), /data-abf-box/); assert.match(F.box(k), /data-abf-box/);
   }
 });
 
@@ -142,13 +151,22 @@ test('file: no request, no storage, no important flag, no Escape handling, nothi
 test('seams: tracker.js meets it in three one-line branches, glance.js in two, each a no-op without the global', () => {
   const T = read('app/tracker.js').split('\n').filter((l) => /B68AbilityFind/.test(l));
   assert.equal(T.length, 3, 'tracker.js: three lines');
-  assert.ok(T.some((l) => /list = \[\], h = window\.B68AbilityFind && !cur\.ui\.static \? window\.B68AbilityFind\.box\('abbox'\) : ''/.test(l)), 'the abilities box');
-  assert.ok(T.some((l) => /\(window\.B68AbilityFind \? window\.B68AbilityFind\.box\('strip'\) : ''\) \+ abGroup\('p'/.test(l)), 'the strip');
+  assert.ok(T.some((l) => /^\s*h = \(window\.B68AbilityFind && !cur\.ui\.static \? window\.B68AbilityFind\.box\('abbox', list\.length \+ \(hull \? \(pb\.frame \|\| \[\]\)\.length : 0\)\) : ''\) \+ h;/.test(l)), 'the abilities box, counted');
+  assert.ok(T.some((l) => /\(window\.B68AbilityFind \? window\.B68AbilityFind\.box\('strip', mine\.length \+ \(crew \? crew\.length : 0\)\) : ''\) \+ abGroup\('p'/.test(l)), 'the strip, counted');
   assert.ok(T.some((l) => /^\s*if \(window\.B68AbilityFind\) window\.B68AbilityFind\.apply\(cur\.root\);/.test(l)), 'after the render');
   const G = read('app/sheet/glance.js').split('\n').filter((l) => /B68AbilityFind/.test(l));
   assert.equal(G.length, 2, 'glance.js: two lines');
-  assert.ok(G.some((l) => /case 'abs':.*body: W\.B68AbilityFind \? W\.B68AbilityFind\.box\('abs'\) : ''/.test(l)), 'the abilities sheet');
+  assert.ok(G.some((l) => /case 'abs':.*body: W\.B68AbilityFind \? W\.B68AbilityFind\.box\('abs', st\.abs\.length\) : ''/.test(l)), 'the abilities sheet, counted');
   assert.ok(G.some((l) => /function tickIn\(scope\) \{ if \(W\.B68AbilityFind\) W\.B68AbilityFind\.apply\(scope, 'gl'\);/.test(l)), 'every sheet draw');
+});
+test('seams: page.js (the full sheet) meets it in three one-line branches, in the abilities editor and drawEd; a waived or failed region has no editor and draws nothing', () => {
+  const src = read('app/sheet/page.js'), P = src.split('\n').filter((l) => /B68AbilityFind/.test(l));
+  assert.equal(P.length, 3, 'page.js: three lines');
+  assert.ok(P.some((l) => /^\s*body = W && W\.B68AbilityFind \? W\.B68AbilityFind\.box\('ed', list\.length\) : '';/.test(l)));
+  assert.equal(P.filter((l) => /W\.B68AbilityFind\.apply\(layer, 'pg'\)/.test(l)).length, 2, 'applied after the fresh draw and after the live redraw');
+  const i = src.indexOf("case 'abilities': {"), j = src.indexOf("case 'friends'", i);
+  assert.ok(i > 0 && src.slice(i, j).indexOf('B68AbilityFind') > 0, 'the box is built only in the abilities case');
+  assert.ok(/var sp = editor\(cur\.ed\.region, cur\.ch, CTnow\(\)\); if \(!sp\) \{ cur\.ed = null;/.test(src), 'drawEd draws nothing without an editor (the guard is RK32 and untouched)');
 });
 test('seams: boot.js asks for the bundle only while phone.find is on (the between list, a player only) and stop()s it when it goes off', () => {
   const boot = read('app/boot.js');

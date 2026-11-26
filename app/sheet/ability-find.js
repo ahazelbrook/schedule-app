@@ -28,11 +28,15 @@
   'use strict';
 
   var STYLE_ID = 'b68-abf-css';
+  /* kind: which draw calls apply() (sheet = tracker.js render, gl = the glance's sheets, pg = the full-sheet page's editor). btn: the sheet's own button class for Clear.
+     group + groupPrev: a block that goes (with its heading) when every row in it is hidden. labs: headings between flat rows, hidden when the rows under one all are. */
   var SCOPES = {
-    abbox: { kind: 'sheet', host: '.ds-abbox', rows: '.ds-ab, .ds-feat', group: '' },
-    strip: { kind: 'sheet', host: '.ds-abstrip-b', rows: '.ds-abi', group: '.ds-abgrp' },
-    abs: { kind: 'gl', host: '.gl-sh-b', rows: '.gl-abt', group: '', fresh: true }
+    abbox: { kind: 'sheet', host: '.ds-abbox', rows: '.ds-ab, .ds-feat', group: '.ds-frame', groupPrev: '.ds-lab', btn: 'btn sm' },
+    strip: { kind: 'sheet', host: '.ds-abstrip-b', rows: '.ds-abi', group: '.ds-abgrp', btn: 'btn sm' },
+    abs: { kind: 'gl', host: '.gl-sh-b', rows: '.gl-abt', fresh: true, btn: 'gl-btn' },
+    ed: { kind: 'pg', host: '.sp-pbody', rows: '.sp-ab', labs: '.sp-lab', fresh: true, btn: 'sp-btn' }
   };
+  var MIN = 4;   /* a list shorter than this has nothing worth searching: no box */
   var S = { on: false, q: {} };
 
   function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
@@ -86,7 +90,18 @@
       for (var g = 0; g < gs.length; g++) {
         var inG = gs[g].querySelectorAll(sc.rows), on = 0;
         for (var j = 0; j < inG.length; j++) if (!inG[j].hasAttribute('data-abf-off')) on++;
-        setOff(gs[g], inG.length > 0 && on === 0);
+        var gone = inG.length > 0 && on === 0;
+        setOff(gs[g], gone);
+        var gp = sc.groupPrev && gs[g].previousElementSibling;
+        if (gp && typeof gp.matches === 'function' && gp.matches(sc.groupPrev)) setOff(gp, gone);
+      }
+    }
+    if (sc.labs) {
+      var ls = host.querySelectorAll(sc.labs);
+      for (var l = 0; l < ls.length; l++) {
+        var nr = 0, no = 0, sib = ls[l].nextElementSibling;
+        while (sib && !sib.matches(sc.labs)) { if (sib.matches(sc.rows)) { nr++; if (!sib.hasAttribute('data-abf-off')) no++; } sib = sib.nextElementSibling; }
+        setOff(ls[l], nr > 0 && no === 0);
       }
     }
     var line = box.querySelector('.abf-n'), x = box.querySelector('[data-abf-clear]'), msg = '';
@@ -98,9 +113,9 @@
   /* the sheet redrew (or the glance sheet drew): put each box's query back and filter again */
   function apply(rootEl, kind) {
     if (!S.on || !rootEl || typeof rootEl.querySelectorAll !== 'function') return false;
-    var gl = kind === 'gl';
+    kind = kind === 'gl' || kind === 'pg' ? kind : 'sheet';
     Object.keys(SCOPES).forEach(function (k) {
-      var sc = SCOPES[k]; if ((sc.kind === 'gl') !== gl) return;
+      var sc = SCOPES[k]; if (sc.kind !== kind) return;
       var boxes = rootEl.querySelectorAll('[data-abf-box="' + k + '"]');
       if (!boxes.length) { if (!sc.fresh) delete S.q[k]; return; }   /* a box that left the page takes its query with it (the glance sheet's is cleared when the next one opens) */
       for (var i = 0; i < boxes.length; i++) {
@@ -111,11 +126,12 @@
     });
     return true;
   }
-  function box(k) {
-    if (!S.on || !SCOPES[k]) return '';
+  /* n: how many rows the list holds (left out: draw it); under MIN there is nothing to search */
+  function box(k, n) {
+    if (!S.on || !SCOPES[k] || (typeof n === 'number' && n < MIN)) return '';
     return '<div class="abf" data-abf-box="' + k + '"><div class="abf-r"><input type="search" class="abf-in ds-newfind' + k + '" data-abf="' + k + '" data-always="1"' +
       ' placeholder="Find an ability" aria-label="Find an ability" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">' +
-      '<button type="button" class="abf-x" data-abf-clear="' + k + '" data-always="1" hidden>Clear</button></div><p class="abf-n" role="status" aria-live="polite" hidden></p></div>';
+      '<button type="button" class="' + SCOPES[k].btn + ' abf-x" data-abf-clear="' + k + '" data-always="1" hidden>Clear</button></div><p class="abf-n" role="status" aria-live="polite" hidden></p></div>';
   }
 
   /* ---------- events (one set on the document, added by start()) ---------- */
@@ -145,12 +161,14 @@
       '#dossier .abf-r { display: flex; gap: 8px; align-items: center; }',
       '#dossier .abf-in { flex: 1 1 auto; min-width: 0; min-height: 44px; box-sizing: border-box; padding: 6px 10px; border: 1.5px solid var(--hair, #b9b3a6);' +
         ' border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 16px; }',
-      '#dossier .abf-x { flex: none; min-height: 44px; padding: 0 12px; border: 1.5px solid var(--hair, #b9b3a6); border-radius: 6px; background: transparent;' +
-        ' color: inherit; font: 700 14px/1 var(--font-cond, inherit); cursor: pointer; }',
+      '#dossier .abf-r .abf-x { flex: none; min-height: 44px; }',   /* the sheet's own button look (btn sm, gl-btn, sp-btn); only the size is ours */
       '#dossier .abf-n { margin: 0; font-size: 14px; color: var(--ink-soft, #5a554b); }',
       '#dossier .abf-in::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }',   /* Clear is the one way back */
       '#dossier .abf [hidden] { display: none; }',
       '#dossier [data-abf-off][data-abf-off] { display: none; }',
+      '#dossier .sp-pbody:has(.abf) > .sp-note { order: -2; }',   /* the full-sheet editor draws its static part last: the box goes first */
+      '#dossier .sp-pbody:has(.abf) { display: flex; flex-direction: column; }',
+      '#dossier .sp-pbody:has(.abf) > .sp-static { order: -1; }',
       '@media print { #dossier .abf { display: none; } }'].join('\n');
   }
   function styleOn() {

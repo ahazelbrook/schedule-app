@@ -408,6 +408,7 @@
         sub = mine.length + ' taken · a new one at 8 playbook xp';
         live = lab('Yours') + (mine.length ? mine.map(function (n) { var t = abText(list, n); return '<div class="sp-ab"><b>' + esc(n) + '</b>' + (t ? '<span>' + esc(t) + '</span>' : '') + '</div>'; }).join('') : '<p class="sp-faint">None yet.</p>') +
           lab('Not taken yet') + list.filter(function (a) { return mine.indexOf(a[0]) < 0; }).map(function (a) { return '<div class="sp-ab sp-not"><b>' + esc(a[0]) + '</b><span>' + esc(a[1]) + '</span>' + btn('Take it', 'data-act="ability" data-n="' + esc(a[0]) + '" data-i="1"') + '</div>'; }).join('');
+        body = W && W.B68AbilityFind ? W.B68AbilityFind.box('ed', list.length) : '';      /* RK25 (phone.find): a search box over the rows, '' while off or for a short list */
         break;
       }
       case 'friends': {
@@ -619,10 +620,12 @@
         (sp.done ? '<div class="sp-pf">' + btn('Done', 'data-sp="harmdone"', 'sp-go') + btn('Cancel', 'data-sp="close"') + '</div>' : '') + '</div>';
       cur.ed.live = sp.live;
       var p = layer.querySelector('.sp-panel'); try { p.focus({ preventScroll: true }); } catch (e) { /* no focus */ }
+      if (W && W.B68AbilityFind) W.B68AbilityFind.apply(layer, 'pg');      /* RK25 (phone.find) */
       return;
     }
     var sub = layer.querySelector('.sp-sub'); if (sub && sub.textContent !== sp.sub) sub.textContent = sp.sub;
     if (cur.ed.live !== sp.live) { var lv = layer.querySelector('.sp-live'); if (lv) lv.innerHTML = sp.live; cur.ed.live = sp.live; }
+    if (W && W.B68AbilityFind) W.B68AbilityFind.apply(layer, 'pg');      /* RK25 (phone.find): the rows redrawn, filter them again */
     /* a typed field not being typed in follows the play (a change from elsewhere) */
     var a = doc().activeElement;
     Array.prototype.forEach.call(layer.querySelectorAll('input[data-path]'), function (inp) {

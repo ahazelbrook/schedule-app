@@ -613,7 +613,7 @@
     return box(esc(pb.cohort.label), h, '<span class="ds-dim">Cohort (' + esc(cohortExpert(pb) || 'Expert') + ')</span>');
   }
   function abilities(play, pb, sheet) {
-    var hull = isHull(pb), vamp = isVamp(pb), tt = isTT(pb), list = [], h = window.B68AbilityFind && !cur.ui.static ? window.B68AbilityFind.box('abbox') : '', versText = 'Choose a special ability from another source.';      /* RK25 (phone.find): a search box over the rows, '' while off */
+    var hull = isHull(pb), vamp = isVamp(pb), tt = isTT(pb), list = [], h = '', versText = 'Choose a special ability from another source.';
     if (pb) {
       if (hull) list.push({ n: AUTOMATON[0], t: AUTOMATON[1], fixed: true });
       if (pb.fixedAbility) list.push({ n: pb.fixedAbility[0], t: pb.fixedAbility[1], fixed: true });
@@ -639,6 +639,7 @@
       h += '</div>';
     }
     if (vamp) h += '<div class="ds-lab ds-sub">Echo special abilities</div>' + (pb.echoAbilitiesRule ? '<p class="hint">' + esc(pb.echoAbilitiesRule) + '</p>' : '') + textarea('echoAbilities', play.echoAbilities, 'Anything carried over from your time as a ghost', 'sm');
+    h = (window.B68AbilityFind && !cur.ui.static ? window.B68AbilityFind.box('abbox', list.length + (hull ? (pb.frame || []).length : 0)) : '') + h;      /* RK25 (phone.find): a search box over the rows, '' while off or for a short list */
     return box(hull ? 'Hull traits' : isPara(pb) ? 'Traits' : 'Special abilities', h, '<span class="ds-xpmini">xp ' + pipRow(8, play.xp.playbook, 'xp', ' data-k="playbook"', 'ds-xbox') + '</span>', 'ds-abbox');
   }
   /* the xp holding bar: earned xp waits here, a mark per xp, until a track box spends it */
@@ -851,7 +852,7 @@
     var mine = ownAbilities(play, pb), crew = crewAbilitiesNow(), open = !!cur.ui.abStrip;
     var sum = 'Abilities · yours ' + mine.length + (crew ? ' · the crew’s ' + crew.length : '');
     var h = '<div class="ds-abstrip' + (open ? ' open' : '') + '"><button type="button" class="ds-abstrip-t" data-act="abstrip" data-always="1" aria-expanded="' + open + '"><span>' + esc(sum) + '</span><span class="ds-abstrip-c" aria-hidden="true">' + (open ? '−' : '+') + '</span></button>';
-    if (open) h += '<div class="ds-abstrip-b">' + (window.B68AbilityFind ? window.B68AbilityFind.box('strip') : '') + abGroup('p', 'Yours', mine) + (crew ? abGroup('c', 'The crew’s', crew) : '<p class="ds-dim ds-abnone">The crew’s abilities are not available here.</p>') + '</div>';
+    if (open) h += '<div class="ds-abstrip-b">' + (window.B68AbilityFind ? window.B68AbilityFind.box('strip', mine.length + (crew ? crew.length : 0)) : '') + abGroup('p', 'Yours', mine) + (crew ? abGroup('c', 'The crew’s', crew) : '<p class="ds-dim ds-abnone">The crew’s abilities are not available here.</p>') + '</div>';
     return h + '</div>';
   }
   function markPanel(play, pb) {

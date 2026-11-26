@@ -665,6 +665,8 @@ try {
     check(vis.includes(target) && same(vis.filter((n) => n !== 'Versatile'), exp) && exp.length < book.length && vis.includes('Versatile'), 'three letters ("' + q + '") find ' + target + ' in the abilities box: ' + JSON.stringify(vis));
     const note = await f.evaluate(() => document.querySelector('#dossier .ds-abbox .abf-n').textContent);
     check(note === exp.length + ' of ' + book.length && (await f.evaluate(() => !document.querySelector('#dossier .ds-abbox [data-abf-clear]').hidden)), 'the line under it says how many, and Clear shows: ' + note);
+    const looks = await f.evaluate(() => { const c = document.querySelector('#dossier .ds-abbox .abf-x'), a = document.querySelector('#dossier .ds-abbox [data-act="addability"]'), s = (e) => { const k = getComputedStyle(e); return [k.textTransform, k.boxShadow, k.borderTopWidth, k.fontFamily].join('|'); }; return { clear: s(c), add: s(a), h: Math.round(c.getBoundingClientRect().height), cls: c.className }; });
+    check(looks.clear === looks.add && looks.h >= 44 && /\bbtn\b/.test(looks.cls), 'Clear has the sheet\'s own button look, the same as Add beside the Versatile row, and is 44 px tall: ' + JSON.stringify(looks));
     await shot(f, 'find-abbox-390x664-paper');
     /* a redraw around the box keeps the query and the focus: the abilities slot is drawn again (a seventh ability taken, from the server) */
     await must(api('PUT', '/characters/pc-ray', Object.assign({}, PCS[1].doc, { play: Object.assign({ session: 3 }, PCS[1].doc.play, { abilities: own7 }) }), P1), 'one more ability');
@@ -745,6 +747,48 @@ try {
       }
       await G.ctx.close();
     }
+    /* the Hull: when every frame feature is hidden its heading goes with them, and comes back with them */
+    {
+      await feature({ 'phone.glance': false });
+      const H = await open('pc-mabel', { w: 390, h: 664 }), h = H.page;
+      await until(() => h.evaluate(() => !!document.querySelector('#dossier .ds-abbox .abf-in')), 20000, 200);
+      const frameVis = () => h.evaluate(() => { const f = document.querySelector('#dossier .ds-abbox .ds-frame'); return !!f && getComputedStyle(f).display !== 'none' && !!f.previousElementSibling && getComputedStyle(f.previousElementSibling).display !== 'none'; });
+      check(await frameVis(), 'the Hull: Frame features and its heading show before a word is typed');
+      await typeIn(h, '#dossier .ds-abbox .abf-in', 'zzq');
+      check(!(await frameVis()), 'the Hull: nothing matches, so the Frame features heading goes with its features');
+      await h.click('#dossier .ds-abbox [data-abf-clear]'); await sleep(150);
+      check(await frameVis(), 'the Hull: Clear brings the Frame features and their heading back');
+      await H.ctx.close();
+    }
+    /* RK32's full sheet: the abilities editor has the box above its rows; Yours and Not taken yet go when empty; a closed and reopened editor starts clean */
+    {
+      await feature({ 'phone.glance': true });
+      const S = await open('pc-nell', { w: 390, h: 664, sheets: {} }), p = S.page; await glanceUp(p);
+      await until(() => p.evaluate(() => !!window.B68AbilityFind && window.B68AbilityFind.state().on), 15000, 200);
+      if (await p.$('#dossier .gl-foot [data-gl="full"]')) await p.click('#dossier .gl-foot [data-gl="full"]'); else { await p.click('#dossier .gl-top [data-gl="more"]'); await p.click('#dossier .gl-sheet [data-gl="full"]'); }
+      await until(() => p.evaluate(() => !!document.querySelector('#dossier .sp.sp-ready')), 10000, 100);
+      await p.locator('#dossier .sp-hit[data-region="abilities"]').first().tap();
+      await p.waitForSelector('#dossier .sp-panel[data-region="abilities"] .abf-in', { timeout: 8000 });
+      const rows0 = await rowsVis(p, '#dossier .sp-panel .sp-ab'), mine = await p.evaluate(() => Array.from(document.querySelectorAll('#dossier .sp-panel .sp-ab:not(.sp-not)')).map((e) => e.querySelector('b').textContent));
+      const above = await p.evaluate(() => { const b = document.querySelector('#dossier .sp-panel .abf').getBoundingClientRect(), r = document.querySelector('#dossier .sp-panel .sp-ab').getBoundingClientRect(); return b.bottom <= r.top + 1; });
+      check(rows0.length >= 4 && above, 'the full sheet\'s abilities editor draws the box above its ' + rows0.length + ' rows');
+      const notMine = rows0.find((n) => mine.indexOf(n) < 0) || rows0[rows0.length - 1], pq = q3(notMine), pe = want(rows0, pq);
+      await typeIn(p, '#dossier .sp-panel .abf-in', pq);
+      const pv = await rowsVis(p, '#dossier .sp-panel .sp-ab'), plabs = await p.evaluate(() => Array.from(document.querySelectorAll('#dossier .sp-panel .sp-lab')).filter((e) => getComputedStyle(e).display !== 'none').map((e) => e.textContent));
+      const takes = await p.evaluate(() => Array.from(document.querySelectorAll('#dossier .sp-panel .sp-ab.sp-not [data-act="ability"]')).filter((e) => e.getClientRects().length).length);
+      check(pv.includes(notMine) && same(pv, pe) && pv.length < rows0.length, 'the editor: three letters ("' + pq + '") find ' + notMine + ': ' + JSON.stringify(pv));
+      check(same(plabs, pv.some((n) => mine.indexOf(n) >= 0) ? ['Yours', 'Not taken yet'] : ['Not taken yet']) && takes === pv.filter((n) => mine.indexOf(n) < 0).length, 'a heading with no rows left goes, and "Take it" stays on the rows that show: ' + JSON.stringify([plabs, takes]));
+      await shot(p, 'find-page-editor-390x664-paper');
+      await p.click('#dossier .sp-panel [data-sp="close"]'); await sleep(250);
+      await p.locator('#dossier .sp-hit[data-region="abilities"]').first().tap();
+      await p.waitForSelector('#dossier .sp-panel[data-region="abilities"] .abf-in', { timeout: 8000 });
+      check((await p.evaluate(() => document.querySelector('#dossier .sp-panel .abf-in').value)) === '' && (await rowsVis(p, '#dossier .sp-panel .sp-ab')).length === rows0.length, 'the editor closed and opened again starts clean');
+      await p.click('#dossier .sp-panel [data-sp="close"]'); await sleep(250);
+      await p.locator('#dossier .sp-hit[data-region="stress"]').first().tap();
+      await p.waitForSelector('#dossier .sp-panel[data-region="stress"]', { timeout: 8000 });
+      check(!(await p.$('#dossier .sp-panel .abf')), 'another region\'s editor has no box');
+      await S.ctx.close();
+    }
     /* Night: the box and the glance's abilities sheet, in the dark (pictures; the box must still be there and readable) */
     for (const gl of [false, true]) {
       await feature({ 'phone.glance': gl });
@@ -768,6 +812,20 @@ try {
       await d.emulateMedia({ media: 'print' });
       check(await d.evaluate(() => getComputedStyle(document.querySelector('#dossier .ds-abbox .abf')).display === 'none'), 'print: the box is not printed');
       await D.ctx.close();
+    }
+    /* a short list is not searched: the crew has taken nothing, so Nell's strip holds only her three own abilities and draws no box; her abilities box (the whole playbook) still does */
+    {
+      await must(api('PUT', '/campaign', { v: 1, session: { number: 3, startedAt: started, endedAt: null }, crew: { name: 'The Dovetail Crew', playbook: 'shadows', abilities: {}, claims: {}, factions: [], cohorts: [] }, clocks: [], log: [] }), 'the table, no crew abilities');
+      await feature({ 'phone.glance': false });
+      const Q = await open('pc-nell', { w: 390, h: 664 }), qp = Q.page;
+      await until(() => qp.evaluate(() => !!document.querySelector('#dossier .ds-abbox .abf-in')), 20000, 200);
+      await qp.click('#dossier [data-act="rollopen"][data-a="Hunt"]');
+      await qp.waitForSelector('#dossier .ds-roll [data-act="abstrip"]', { timeout: 8000 });
+      await qp.click('#dossier .ds-roll [data-act="abstrip"]');
+      await until(() => qp.evaluate(() => document.querySelectorAll('#dossier .ds-abstrip-b .ds-abi').length >= 3), 15000, 200);
+      const nb = await qp.evaluate(() => ({ rows: document.querySelectorAll('#dossier .ds-abstrip-b .ds-abi').length, box: !!document.querySelector('#dossier .ds-abstrip-b .abf') }));
+      check(nb.rows === 3 && !nb.box, 'a strip of three rows draws no search box: ' + JSON.stringify(nb));
+      await Q.ctx.close();
     }
     /* the setting off: the boxes, the hidden rows and the style go at once, and the module stops */
     {

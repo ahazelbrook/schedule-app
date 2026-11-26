@@ -527,7 +527,7 @@
       case 'table': return { title: 'Table', sub: 'What the GM sends you', body: '', live: tableLive() };
       case 'more': return { title: 'More', sub: '', body: '', live: moreLive() };
       case 'recent': return { title: 'Recent changes', sub: 'The last ' + KEEP + ', on this phone', body: '', live: recentLive() };
-      case 'abs': return { title: 'Your abilities', sub: st.abs.length + ' in all', body: W.B68AbilityFind ? W.B68AbilityFind.box('abs') : '', live: absLive() };      /* RK25 (phone.find): the search box, '' while off */
+      case 'abs': return { title: 'Your abilities', sub: st.abs.length + ' in all', body: W.B68AbilityFind ? W.B68AbilityFind.box('abs', st.abs.length) : '', live: absLive() };      /* RK25 (phone.find): the search box, '' while off */
       case 'ab': { var a = st.abs[+arg] || { n: '', t: '' }; return { title: a.n, sub: a.kind === 'pin' ? 'Always in play' : a.kind === 'frame' ? 'Frame feature' : 'Special ability', body: '<p class="gl-abtext">' + esc(a.t || 'No text on this sheet for it.') + '</p>', live: '' }; }
       case 'about': return { title: str((c.doc && c.doc.name) || 'About'), sub: pb ? pb.name : '', body: aboutStatic(), live: '' };
       case 'event': { var it = st.due && st.due.strip; return { title: it ? it.title : 'Nothing due', sub: '', body: '', live: it ? itemHtml(it) : '<p class="gl-faint">Nothing is due now.</p>' }; }
