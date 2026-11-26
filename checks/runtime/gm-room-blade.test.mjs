@@ -50,9 +50,9 @@ function rig(o = {}) {
     patch: (p) => { r.doc = PP.applyPatch(r.doc, p); return true; } });
   r.answer = o.answer || (() => Promise.resolve({ room: { ...clone(GOOD), at: '2026-11-26T09:00:05.000Z' }, cents: 0.5, spend: { tonight: 0.01 } }));
   r.gm = { assistRoom: (body) => { r.asked.push(body); return r.answer(body); } };
-  r.box = { addEventListener: (t, f) => r.listeners.push(f), removeEventListener: (t, f) => { r.listeners = r.listeners.filter((x) => x !== f); } };
+  r.box = { addEventListener: (t, f) => r.listeners.push(f), removeEventListener: (t, f) => { r.listeners = r.listeners.filter((x) => x !== f); }, contains: () => true, querySelectorAll: () => [] };
   r.inst = RR.create({ roll: () => ROLL, rollKey: (x) => x.seed, T: () => T, doc: () => r.doc, rs: () => (o.noWriter ? null : r.rs), redraw: () => { r.redraws++; },
-    toast: (t, bad) => r.toasts.push([bad ? 'bad' : 'ok', t]), zoom: (h) => Z.create(h), box: () => r.box, gm: () => (o.noGm ? null : r.gm), tonight: () => ({ onStage: ['Mabel Quist'] }) });
+    toast: (t, bad) => r.toasts.push([bad ? 'bad' : 'ok', t]), zoom: (h) => { r.hooks = h; return Z.create(h); }, box: () => r.box, gm: () => (o.noGm ? null : r.gm), tonight: () => ({ onStage: ['Mabel Quist'] }) });
   r.inst.block('Pelican bar');           /* puts the instance's (wrapped) capture listener on the fake pane */
   r.el = (rb, room) => { const el = { disabled: false, getAttribute: (k) => ({ 'data-rb': rb, 'data-rb-room': room })[k] || null, closest: (sel) => (/data-rb|rr-blade/.test(sel) ? el : null) }; return el; };
   r.click = (el) => { const ev = { target: el, stopped: 0, prevented: 0, preventDefault() { this.prevented++; }, stopPropagation() { this.stopped++; } }; r.listeners.forEach((f) => f(ev)); return ev; };
@@ -150,9 +150,10 @@ test('blockHtml(): "Fit to tonight (~3¢)" on a tabled room only; busy reads "Fi
   assert.match(t, />Clear<\/button>/); assert.match(t, /data-rb="clear"/);
   assert.ok(!SECRET.test(t), 'the block names things; never their closer look, roll or danger');
   /* Who's here: RK14's slot list with Blade's people in it, each with a ✦; RK17's own list gets Blade's after it */
-  const ppl = B.peopleHtml(c, '', false);
-  assert.equal(ppl, '<ul class="rv-who rr-ppl">' + c.people.map((p) => '<li class="npc rr-slot" data-rr-slot="' + p.id + '" data-role="' + p.role + '"><b>' + p.role.charAt(0).toUpperCase() + p.role.slice(1) + '</b> <small class="rv-dim">quick-draw</small></li>').join('') +
-    '<li class="npc rr-bperson" data-role="cleaner"><b>✦ Cleaner</b> GM-ONLY-person: a cleaner counting tips</li></ul>');
+  const ppl = B.peopleHtml(c, '', false, (x) => x.people.map((p) => '<li data-slot="' + p.id + '"></li>').join(''));
+  assert.equal(ppl, '<ul class="rv-who rr-ppl">' + c.people.map((p) => '<li data-slot="' + p.id + '"></li>').join('') +
+    '<li class="npc rr-bperson" data-role="cleaner"><b>✦ Cleaner</b> GM-ONLY-person: a cleaner counting tips</li></ul>', 'the slot items are the rolled cards\' own (handed over), never a copy');
+  assert.ok(!/rr-slot|quick-draw/.test(read(FILE).replace(/\/\*[\s\S]*?\*\//g, '')), 'room-blade.js holds no copy of the slot markup');
   assert.match(B.peopleHtml(c, '<div>RK17</div>', true), /^<div>RK17<\/div><ul class="rv-who rr-bppl krv-ppl"><li class="npc rr-bperson"/);
   assert.equal(B.peopleHtml(card, '<div>own</div>', false), '<div>own</div>', 'no Blade people: the card\'s own list, untouched');
   const esc = B.peopleHtml({ ...c, blade: { ...c.blade, people: [{ line: '<img src=x onerror=1>', role: '' }] } }, '', false);
@@ -188,7 +189,7 @@ test('the tap: the fake runtime\'s answer lands on the card through setBlade, ma
     'Blade\'s read-aloud, then the line naming every thing');
   assert.equal((blk.match(/data-site="thing"/g) || []).length, 6, 'the zoom card\'s list holds Blade\'s things too (keys 5 and 6)');
   assert.equal((blk.match(/class="rr-bstar"[^>]*>✦<\/span>/g) || []).length, 2, 'a ✦ on each of Blade\'s things in the list');
-  assert.match(blk, /(Who’s here|Quick-draw people)<\/h4><ul class="rv-who rr-ppl">[\s\S]*?<li class="npc rr-bperson" data-role="cleaner"><b>✦ Cleaner<\/b> GM-ONLY-person: a cleaner counting tips<\/li><\/ul>/, 'Blade\'s person in Who\'s here');
+  assert.match(blk, /(Who’s here|Quick-draw people)<\/h4><ul class="rv-who rr-ppl"><li class="npc rr-slot" data-rr-slot="p1"[\s\S]*?<li class="npc rr-bperson" data-role="cleaner"><b>✦ Cleaner<\/b> GM-ONLY-person: a cleaner counting tips<\/li><\/ul>/, 'Blade\'s person in Who\'s here');
   assert.deepEqual(r.toasts.slice(-1), [['ok', '✦ Blade fitted Pelican bar to tonight.']]);
   assert.ok(!r.toasts.some((x) => x[0] === 'bad'));
   assert.ok(r.inst.zoom().html('Pelican bar', { n: 1 }).includes('data-thing="' + RT.slug(GOOD.things[0].name) + '"'), 'a Blade thing opens in the zoom card like any other');
@@ -268,6 +269,41 @@ test('rerolled mid-tap: an answer that comes back after its room was rerolled is
   s.click(s.el('fit', 'pelican bar#1'));
   s.rs.reroll('515151', 'pelican cloakroom#1'); await s.settle();
   assert.ok(s.card('pelican bar#1').blade, 'a reroll of another room leaves this answer alone');
+});
+
+test('with RK15: a Blade answer, then Swap a thing, then Roll another, then Reroll the room; and an answer arriving after a Reroll from the card is dropped', async () => {
+  const SW = require(path.join(ROOT, 'app', 'gm', 'room-swap.js'));
+  const r = rig(), KEY = 'pelican bar#1', blade = () => r.card(KEY).blade;
+  const act = (what) => { const el = { getAttribute: (k) => ({ 'data-rr-act': what, 'data-rr-room': KEY })[k] || null, closest: (sel) => (/data-rr-act|rr-site|rv-rm/.test(sel) ? el : null) }; return r.click(el); };
+  r.click(r.el('fit', KEY)); await r.settle();
+  assert.ok(blade() && r.card(KEY).things.length === 6, 'Blade\'s answer is on the card (4 drawn + 2)');
+  /* Swap the first drawn thing, through RK15's zoom-card slot */
+  r.inst.zoom();
+  const c0 = r.card(KEY), ctx = { room: c0.name, rollKey: '515151', roomKey: KEY, thing: c0.things[0], index: 0, count: c0.things.length, state: '', rs: r.rs, page: r.hooks, refresh() {}, close() {}, toast() {} };
+  const sb = SW.buttons(ctx)[0];
+  assert.ok(sb && sb.label === 'Swap' && !sb.disabled, 'RK15\'s Swap is offered on a drawn thing');
+  sb.run(ctx);
+  const c1 = r.card(KEY);
+  assert.notEqual(c1.things[0].slug, c0.things[0].slug, 'swapped'); assert.ok(c1.blade, 'Blade\'s answer stays through a Swap');
+  assert.deepEqual(c1.things.slice(-2).map((t) => t.slug), c0.things.slice(-2).map((t) => t.slug), 'and Blade\'s things stay at the end');
+  /* Roll another, from the card (the rolled instance's own listener, as RK15 wires it) */
+  act('another');
+  const c2 = r.card(KEY);
+  assert.equal(c2.things.length, 7, 'Roll another adds one'); assert.ok(c2.blade, 'Blade\'s answer stays through Roll another');
+  assert.ok(c2.things.slice(0, 5).every((t) => !t.blade) && c2.things.slice(5).every((t) => t.blade), 'the drawn and added first, Blade\'s two last');
+  /* Reroll the room: the Blade answer goes with the rest */
+  act('reroll');
+  const c3 = r.card(KEY), room = r.doc.roomstate.keys['515151'].rooms[KEY];
+  assert.equal(room.rr, 1); assert.ok(!room.blade, 'Reroll takes the Blade answer away'); assert.equal(c3.blade, undefined); assert.equal(c3.things.length, 4);
+  /* a tap, then Reroll from the card while Blade works: the late answer is dropped */
+  let open; const wait = new Promise((res) => { open = res; });
+  r.answer = () => wait.then(() => ({ room: clone(GOOD) }));
+  r.click(r.el('fit', KEY));
+  act('reroll');
+  open(); await r.settle(); await r.settle();
+  const room2 = r.doc.roomstate.keys['515151'].rooms[KEY];
+  assert.equal(room2.rr, 2); assert.ok(!room2.blade, 'never written into the rerolled room');
+  assert.match(r.toasts.filter((x) => x[0] === 'bad').map((x) => x[1]).join('|'), /came after Pelican bar was rerolled: dropped/);
 });
 
 test('the late load (the review\'s blocker): rolled cards made BEFORE room-blade.js arrives pick the tap up on their next draw, with no new instance', () => {

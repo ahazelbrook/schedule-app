@@ -25,10 +25,10 @@
    cards were torn down (inner.live() false) is dropped quietly: never written. Reroll the room (RK15, room-state's reroll) takes the Blade entry away with the rest; Clear takes it away alone.
 
    API
-     hook(host, inner) -> { now, opts, click, busy } | null   inner = the instance's { now, opts, click, live? }; host = the rolled instance's host (roll(),
+     hook(host, inner) -> { now, opts, click, busy } | null   inner = the instance's { now, opts, click, live?, slots? }; host = the rolled instance's host (roll(),
                                                           rs(), doc(), redraw(), toast(text, bad), gm?() -> the runtime, tonight?() -> { goal?, plan?, onStage? })
      Pure: apply(card, blade, there?) -> card    payload(roll, card, tonight) -> body    check(answer) -> { room } | { error }
-           blockHtml(card, o) -> markup (o: { kit, busy, any })    starThings(listHtml, card)    peopleHtml(card, own, kit)    LABEL, MARK, BUSY, LIMITS */
+           blockHtml(card, o) -> markup (o: { kit, busy, any })    starThings(listHtml, card)    peopleHtml(card, own, kit, slots?)    LABEL, MARK, BUSY, LIMITS */
 (function (root, factory) {
   'use strict';
   var M = factory(root);
@@ -161,18 +161,17 @@
     });
     return h;
   }
-  /* Who's here with Blade's people in it: own is the list the card would draw (RK17's, or '' for RK14's slot list, drawn here the same way) */
-  function peopleHtml(c, own, kit) {
+  /* Who's here with Blade's people in it: own is the list the card would draw (RK17's), or '' for the slot list, whose items come from slots(card)
+     (the rolled cards' own markup, handed over by the hook: one place for it; none given, Blade's people stand alone) */
+  function peopleHtml(c, own, kit, slots) {
     var bp = isObj(c) && isObj(c.blade) ? list(c.blade.people) : [];
     var mine = bp.map(function (p) {
       return '<li class="npc rr-bperson"' + (p.role ? ' data-role="' + esc(p.role) + '"' : '') + '><b>' + esc(MARK.charAt(0) + (p.role ? ' ' + cap(str(p.role).replace(/-+/g, ' ')) : '')) + '</b> ' + esc(p.line) + '</li>';
     }).join('');
     if (!mine) return str(own);
     if (str(own)) return str(own) + '<ul class="' + (kit ? 'rv-who rr-bppl krv-ppl' : 'rv-who rr-bppl') + '">' + mine + '</ul>';
-    var slots = list(c.people).map(function (p) {
-      return '<li class="npc rr-slot" data-rr-slot="' + esc(p.id) + '" data-role="' + esc(p.role) + '"><b>' + esc(cap(str(p.role).replace(/[-_]+/g, ' '))) + '</b> <small class="rv-dim">quick-draw</small></li>';
-    }).join('');
-    return '<ul class="' + (kit ? 'rv-who rr-ppl krv-ppl' : 'rv-who rr-ppl') + '">' + slots + mine + '</ul>';
+    var items = ''; try { items = typeof slots === 'function' ? str(slots(c)) : ''; } catch (e) { items = ''; }
+    return '<ul class="' + (kit ? 'rv-who rr-ppl krv-ppl' : 'rv-who rr-ppl') + '">' + items + mine + '</ul>';
   }
 
   /* ---------- the instance's hook ---------- */
@@ -206,7 +205,7 @@
     function opts(kit, m, inRunView) {
       var o = inner.opts(kit, m, inRunView), was = o.things, wp = o.people;
       o.things = function (c) { return blockHtml(c, { kit: kit, busy: !!busy && busy === str(c.roomKey), any: !!busy }) + starThings(typeof was === 'function' ? str(was(c)) : '', c); };
-      o.people = function (c) { var own = typeof wp === 'function' ? str(wp(c)) : ''; return isObj(c.blade) && c.blade.people.length ? peopleHtml(c, own, kit) : own; };
+      o.people = function (c) { var own = typeof wp === 'function' ? str(wp(c)) : ''; return isObj(c.blade) && c.blade.people.length ? peopleHtml(c, own, kit, inner.slots) : own; };
       return o;
     }
     function gm() { var g = call('gm'); if (g) return g; return root && root.claude && root.claude.gm ? root.claude.gm : null; }
