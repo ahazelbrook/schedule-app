@@ -3,7 +3,7 @@
  "totals": {
   "style": 3684,
   "important": 69,
-  "button": 677,
+  "button": 678,
   "confirm": 56,
   "prompt": 12
  },
@@ -222,6 +222,9 @@
   },
   "app/season.js": {
    "button": 4
+  },
+  "app/sheet/ability-find.js": {
+   "button": 1
   },
   "app/sheet/claims.js": {
    "button": 1
