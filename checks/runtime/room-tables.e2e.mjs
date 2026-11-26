@@ -200,6 +200,7 @@ try {
     await shot(D.page, 'desk-1366-paper-cards-scrolled');
   }
   await D.c.close();
+  const sNow = (await api('GET', '/gm/state')).json, ROLLED_CARD = sNow && sNow.doc && sNow.doc.cards ? sNow.doc.cards.location : null;
 
   /* ---- 3. the authored v2 night (play.v === 2) ---- */
   check((await api('PATCH', '/gm/state', { cards: { location: Object.assign({}, SITE_CARD, { seed: null, ui: null, mem: null }) } })).status === 200, 'the night\'s authored v2 site is the Location card again');
@@ -220,22 +221,19 @@ try {
   check(r2.ok && r2.mission && leaks(r2.all).length === 0, 'secrecy (play.v === 2, the mission published): the display\'s GET, a phone\'s screen and character, and the campaign document with its mission hold no rolled-room text (' + JSON.stringify({ ok: r2.ok, mission: r2.mission, leaks: leaks(r2.all).slice(0, 3) }) + ')');
   await E.c.close();
 
-  /* ---- 4. the kit desk, on a rolled site ---- */
+  /* ---- 4. the kit desk, on the rolled site of step 2 ---- */
+  check(!!(ROLLED_CARD && ROLLED_CARD.seed) && (await api('PATCH', '/gm/state', { cards: { location: Object.assign({}, ROLLED_CARD, { auth: null }) } })).status === 200, 'step 2\'s rolled site is the Location card again');
   await feats({ 'kit.desk': true });
   const F = await open({ kit: true });
-  await F.page.evaluate(() => { window.B68GmPage.openView('location'); });
-  await F.page.waitForSelector('[data-gm="locroll"]', { timeout: 15000 });
-  await F.page.evaluate(() => document.querySelector('[data-gm="locroll"]').click());
   const kitUp = await until(() => F.page.evaluate(() => !!document.querySelector('#gm-runv .rr-site .rv-rm.krv-rm [data-site="thing"]')), 20000, 500);
   if (!kitUp) console.log('  kit desk: ' + JSON.stringify(await F.page.evaluate(() => { const s = window.B68GmPage._state(), b = document.querySelector('#gm-runv'); return { panel: s.panel, auth: !!(s.doc.cards.location || {}).auth, kit: document.documentElement.getAttribute('data-kit'), rr: !!window.B68GmPage._roomRolled(), shown: !!(b && b.offsetParent), html: b ? b.innerHTML.slice(0, 400) : '' }; })));
   await sleep(600);
-  const kc = (await cards(F.page)).filter((c) => c.things.length);
+  const kAll = await cards(F.page), kc = kAll.filter((c) => c.things.length);
+  check(JSON.stringify(kAll) === before, 'the kit desk draws the same cards as the old desk: the same read-aloud, things and people');
   z = null; if (kitUp && kc.length) { await F.page.click(card(kc[0].room, kc[0].n) + ' [data-site="thing"][data-i="0"]'); z = await until(() => zoom(F.page), 4000); }
   await shot(F.page, 'kitdesk-1366-paper-zoom-first');
   check(kc.length > 0 && !!z && z.eye.startsWith(kc[0].room + ' · 1 of '), 'the kit desk: the same cards (krv classes beside the old ones), and a click opens the zoom card');
-  const kitRooms = await F.page.evaluate(() => window.B68GmPage._state().locRoll.rooms.map((r) => r.name));
   await F.page.keyboard.press('Escape'); await F.c.close();
-  if (SHOTS) await putRooms(kitRooms.concat(SITE_ROOMS));      /* the pictures: every room of this roll with a table */
 
   /* pictures */
   if (SHOTS) {
