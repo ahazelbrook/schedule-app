@@ -76,7 +76,8 @@
   border: 1px solid var(--gl-line); border-radius: var(--ui-radius, 6px); background: var(--gl-bg); color: var(--gl-ink); font: 400 var(--ui-type-body, 14px)/1.35 var(--ui-font-text, var(--font-text)); }
 #gm-page .gl-find .gl-find-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--ui-space-2, 6px); min-width: 0; }
 #gm-page .gl-find .gl-find-bar > * { min-width: 0; }
-#gm-page .gl-find .gl-find-bar .ui-field { flex: 1 1 14em; }
+#gm-page .gl-find .gl-find-bar .ui-field { flex: 1 1 14em; color: var(--gl-ink); }
+#gm-page .gl-find .ui-field-label { color: var(--gl-soft); }      /* the old desk's Night theme: the kit's tokens stay light and the card is dark, so the label takes the page's own colour */
 #gm-page .gl-find .gl-find-q { min-height: 36px; width: 100%; box-sizing: border-box; font-size: 14px; }
 #gm-page .gl-find .gl-b { min-height: 32px; text-transform: none; letter-spacing: 0; font-size: 12px; }      /* the old desk's chip.sm is 10 px: nothing here is under 12 */
 #gm-page .gl-find .gl-b .ui-label, #gm-page .gl-find .gl-b .ui-key { font-size: inherit; }

@@ -184,8 +184,9 @@ export async function rk24(c) {
       await toCast(p); await p.waitForSelector('#gl-find-q', { timeout: 20000 });
       await typeIn(p, 'e'); await sleep(400);
       await shots(p, 'RK24-' + (desk ? 'kit' : 'old') + '-' + theme + '-' + w + '-list');
-      await p.fill('#gl-find-q', ''); await p.keyboard.type('dov', { delay: 25 }); await p.waitForSelector('.gl-find-card [data-glf="who"]:not([disabled])', { timeout: 10000 });
-      await p.click('[data-glf="who"]'); await sleep(900);
+      await p.fill('#gl-find-q', ''); await p.keyboard.type('dov', { delay: 25 }); await p.waitForSelector('.gl-find-card [data-glf="who"]', { timeout: 10000 });
+      /* Blade’s Ask seat is not offered at a phone’s width (assist-panel.js isPhone, 599 px): there Who is is shown off, with its reason */
+      if (w >= 600) { await p.click('[data-glf="who"]:not([disabled])'); await sleep(900); } else check(await p.$eval('[data-glf="who"]', (b) => b.disabled), 'rk24 shots: Who is is off at a phone’s width');
       await shots(p, 'RK24-' + (desk ? 'kit' : 'old') + '-' + theme + '-' + w + '-card');
       check((await spill(p)) <= 1 && (await minFont(p)).m >= 12, 'rk24 shots ' + (desk ? 'kit' : 'old') + ' ' + theme + ' ' + w + ': no sideways spill, nothing under 12 px');
       await ctx.close();
