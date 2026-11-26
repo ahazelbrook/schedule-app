@@ -112,7 +112,7 @@ test('stream independence: each field is its own fork of the slot, so a table ch
   const s1 = { id: 'p1', role: 'cleaner', seed: 11 }, s2 = { id: 'p2', role: 'waiter', seed: 22 };
   const both = P.html([s1, s2], CTX), alone = P.html([{ id: 'p2', role: 'waiter', seed: 22 }], CTX);
   const rowOf = (h, id) => h.split('<li ').filter((x) => x.includes('data-rr-slot="' + id + '"'))[0];
-  assert.equal(rowOf(both, 'p2').replace(/<small class="rv-dim">quick<\/small>/, ''), rowOf(alone, 'p2').replace(/<small class="rv-dim">quick<\/small>/, ''), 'a slot draws the same with its neighbour there or not');
+  assert.equal(rowOf(both, 'p2').replace(/<small class="rv-prole rr-ptag">quick<\/small>/, ''), rowOf(alone, 'p2').replace(/<small class="rv-prole rr-ptag">quick<\/small>/, ''), 'a slot draws the same with its neighbour there or not');
   const fields = ['first', 'family', 'build', 'hair', 'standout', 'manner', 'goal', 'errand', 'tell', 'look', 'line', 'sex'];
   assert.deepEqual(P.FIELDS.slice().sort(), fields.sort(), 'the forks are named');
   assert.notEqual(P.rng(5, 'waiter', 'first')(), P.rng(5, 'waiter', 'family')(), 'two fields of one slot are two streams');
@@ -136,13 +136,14 @@ test('masked: the figure wears the kit\'s mask, the card says so, and it comes f
   assert.equal(m.masked, true);
   assert.ok(m.spec.face && m.spec.face.mask && m.spec.face.mask.type, 'masked: the kit\'s mask on the face: ' + JSON.stringify(m.spec.face && m.spec.face.mask));
   assert.equal(m.name, plain.name, 'the person is the same one, masked');
+  assert.ok(/^Guest · [a-z ]+ · masked$/.test(m.kicker) && /^Guest · [a-z ]+$/.test(plain.kicker) && plain.kicker === 'Guest · ' + plain.manner.toLowerCase(), 'the line under the name: role, manner, masked: ' + m.kicker);
   assert.notEqual(P.portrait(m, CTX), P.portrait(plain, CTX), 'a different picture');
   const asked = []; const page = { masked: (room) => { asked.push(room); return true; } };
   assert.equal(P.card(slot, { npc: NPC, T, K, room: 'Showroom', page }).masked, true, 'the host\'s masked() is asked');
   assert.deepEqual(asked, ['Showroom']);
   assert.equal(P.card(slot, { npc: NPC, T, K, masked: false, page }).masked, false, 'an explicit masked: false beats the host');
   const h = P.html([slot], Object.assign({}, CTX, { masked: true }));
-  assert.ok(h.includes('data-masked="true"') && /Guest · masked</.test(h), 'the row says masked');
+  assert.ok(h.includes('data-masked="true"') && /Guest · [a-z ]+ · masked</.test(h), 'the row says masked');
   ROLES.forEach((role) => assert.ok(P.card({ role, seed: 9 }, Object.assign({}, CTX, { masked: true })).spec.face.mask, role + ': every role can be masked'));
   const viaHost = P.card({ id: 'p1', role: 'waiter', seed: 4 }, { page: { npc: () => NPC, T: () => T, masked: () => false } });
   assert.ok(viaHost.name && viaHost.line, 'the host gives the tables (npc(), T()): ' + viaHost.name);
@@ -161,7 +162,7 @@ test('the markup: the hooks stay, every string is escaped, one portrait a person
   const ids = (h.match(/ id="[^"]+"/g) || []);
   assert.equal(new Set(ids).size, ids.length, 'no two ids alike (' + ids.length + ' ids)');
   assert.ok(!/<svg[^>]*\s(width|height)="/.test(h), 'the root svg has no fixed size');
-  assert.ok((h.match(/<small class="rv-dim">quick<\/small>/g) || []).length === 3, 'each is tagged quick');
+  assert.ok((h.match(/<small class="rv-prole rr-ptag">quick<\/small>/g) || []).length === 3, 'each is tagged quick');
   assert.ok(P.html([slots[0]], Object.assign({}, CTX, { kit: true })).startsWith('<ul class="rv-ppl rr-ppl krv-ppl">') && P.html([slots[0]], Object.assign({}, CTX, { kit: true })).includes(' krv-p"'), 'the kit desk\'s classes beside the old ones');
   const evil = clone(NPC); evil.family = ['<img src=x onerror=alert(1)>'], evil.tell = ['"><script>x()</script>']; evil.errand = ['a & b'];
   const roles = clone(T); roles.roles.waiter.lines = ['</li><b>x</b>'];

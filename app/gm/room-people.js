@@ -21,7 +21,7 @@
        ctx  = { npc?: the npc part's T, T?: the rooms part's T (its roles), K?: the figure kit, masked?: bool (the guests wear masks), roomKey?, page?: a host that may give
                 npc() , T() and masked(room) , room? }
        card = { id, role, label, seed, sex: 'fem' | 'masc', masked, plain: bool (no roles entry), name, first, family, build, hair, standout, wearing, manner, goal, errand,
-                tell, line, face, pose, look (text), want (text), spec (the kit's figure spec, named), known: bool (the kit has the role) }
+                tell, line, face, pose, look (text), want (text), kicker (the line under the name: role, manner, masked), spec (the kit's figure spec, named), known: bool (the kit has the role) }
      portrait(card, ctx) -> svg markup | ''        K.portrait(spec, { lod: 'lo' }), remembered by person, its size stripped as the page does
      html(slots, ctx) -> markup | ''               the Who's-here list of the quick cards (ul.rr-ppl, one li[data-rr-slot][data-role] a person); '' for no slot (the caller's own list says so)
      rng(seed, role, field) -> () -> [0, 1)        a field's stream, for tests   ROLE_MAX   FIELDS */
@@ -118,6 +118,7 @@
     if (c.wearing) look.push(stop(cap(c.wearing)));
     c.look = look.join(' ');
     c.want = [c.goal ? 'Wants ' + low(c.goal) + '.' : '', c.errand ? 'Right now: ' + low(c.errand) + '.' : ''].filter(Boolean).join(' ');
+    c.kicker = [c.name ? c.label : '', c.name ? low(c.manner) : '', c.masked ? 'masked' : ''].filter(Boolean).join(' · ');
     c.spec = base ? JSON.parse(JSON.stringify(base)) : null;
     if (c.spec && c.name) c.spec.name = c.name;
     return c;
@@ -139,13 +140,12 @@
   /* ---------- the markup (the Run view's own Who's-here row classes: rv-ppl, rv-p, rv-face, rv-pn, rv-prole; no stylesheet) ---------- */
   function initials(s) { var o = ''; str(s).trim().split(/\s+/).filter(Boolean).slice(0, 2).forEach(function (w) { o += Array.from(w)[0].toUpperCase(); }); return o || '?'; }
   function row(c, ctx) {
-    var svg = portrait(c, ctx), who = c.name || c.label, bits = [c.label, c.masked ? 'masked' : ''].filter(Boolean).join(' · ');
+    var svg = portrait(c, ctx), who = c.name || c.label;
     function line(k, text, pre) { return text ? '<span class="rv-prole rr-p' + k + '">' + (pre ? '<b>' + esc(pre) + '</b> ' : '') + esc(text) + '</span>' : ''; }
     return '<li class="npc rr-slot rv-p nocast' + (ctx && ctx.kit ? ' krv-p' : '') + '" data-rr-slot="' + esc(c.id) + '" data-role="' + esc(c.role) + '" data-sex="' + c.sex + '"' + (c.masked ? ' data-masked="true"' : '') + '>' +
       '<span class="rv-face" aria-hidden="true">' + (svg || '<span class="rv-ini">' + esc(initials(who)) + '</span>') + '</span>' +
-      '<span class="rv-pn"><span><b>' + esc(who) + '</b> <small class="rv-dim">quick</small></span>' +
-      (c.name ? line('role', bits) : c.masked ? line('role', 'masked') : '') + line('look', c.look) + line('manner', c.manner ? cap(c.manner) + '.' : '', 'Manner:') +
-      line('want', c.want) + line('tell', c.tell ? stop(cap(c.tell)) : '', 'Tell:') + (c.line ? '<span class="rv-prole rr-pline">“' + esc(c.line) + '”</span>' : '') + '</span></li>';
+      '<span class="rv-pn"><span><b>' + esc(who) + '</b> <small class="rv-prole rr-ptag">quick</small></span>' +
+      line('role', c.kicker) + line('look', c.look) + line('want', c.want) + line('tell', c.tell ? stop(cap(c.tell)) : '', 'Tell:') + (c.line ? '<span class="rv-prole rr-pline">“' + esc(c.line) + '”</span>' : '') + '</span></li>';
   }
   function html(slots, ctx) {
     var rows = list(slots).map(function (s, i) { return isObj(s) ? card(Object.assign ? Object.assign({}, s, { id: str(s.id) || 'p' + (i + 1) }) : s, ctx) : null; }).filter(Boolean);
