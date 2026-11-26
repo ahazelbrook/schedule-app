@@ -420,7 +420,7 @@ try {
 
   /* pictures */
   if (SHOTS) {
-    for (const [kit, w, theme] of [[false, 1366, 'night'], [false, 1536, 'paper'], [false, 1536, 'night'], [true, 1366, 'paper'], [true, 1366, 'night'], [true, 1536, 'paper'], [true, 1536, 'night']]) {
+    for (const [kit, w, theme] of [[false, 1366, 'night'], [false, 1536, 'paper'], [false, 1536, 'night'], [true, 1366, 'paper'], [true, 1366, 'night'], [true, 1536, 'paper'], [true, 1536, 'night'], [false, 1024, 'paper'], [true, 1024, 'night']]) {
       await feats({ 'kit.desk': kit });
       const o = await open({ kit, w, h: w === 1536 ? 864 : 768, theme });
       await o.page.waitForSelector('#gm-runv .rr-site [data-site="thing"]', { timeout: 20000 });

@@ -34,7 +34,7 @@
   'use strict';
 
   var FIELDS = ['first', 'family', 'build', 'hair', 'standout', 'manner', 'goal', 'errand', 'tell', 'look', 'line', 'sex'];
-  var MEMO_MAX = 120, memo = {}, memoOrder = [];
+  var MEMO_MAX = 80, memo = {}, memoOrder = [];
 
   function isObj(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
   function str(v) { return typeof v === 'string' ? v : v == null ? '' : String(v); }
