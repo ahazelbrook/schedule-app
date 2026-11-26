@@ -180,11 +180,14 @@ try {
     const ip = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
     const dp = await ip.newPage(); await dp.addInitScript({ content: 'window.__B68_POLL_MS = 1000;' }); await dp.goto(BASE + '/#display'); await dp.waitForTimeout(4000);
     fs.mkdirSync(SHOTS, { recursive: true }); await dp.screenshot({ path: path.join(SHOTS, 'ipad-1024-beat.png') }); await ip.close();
+  }
+  {      /* a phone's DOM, always (the review of RK14): no rolled-room text or markup, bar the one line sent */
     const ph = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': P1 }, viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
     const pp = await ph.newPage(); await pp.goto(BASE + '/#c/pc-nell'); await pp.waitForTimeout(5000);
     const dom = await pp.evaluate(() => document.documentElement.outerHTML);
-    check(leaks(dom, [T0.name, T0.line, sub]).length === 0 && !/rr-site|data-rr-/.test(dom), 'a phone\'s DOM holds no rolled-room text or markup');
-    await pp.screenshot({ path: path.join(SHOTS, 'phone-390.png') }); await ph.close();
+    check(dom.length > 2000 && leaks(dom, [T0.name, T0.line, sub]).length === 0 && !/rr-site|data-rr-/.test(dom), 'a phone\'s DOM holds no rolled-room text or markup');
+    if (SHOTS) await pp.screenshot({ path: path.join(SHOTS, 'phone-390.png') });
+    await ph.close();
   }
   await page.click('.rk-zoom [data-rk-btn="show-thing"]'); await sleep(600);      /* Take it down */
   await page.keyboard.press('Escape'); await sleep(200);
@@ -296,6 +299,31 @@ try {
   check(await G.page.evaluate(() => !document.querySelector('#gm-runv .rr-site, [data-rr-say], .rk-zscope') && !!document.querySelector('#gm-runv .gm-runhelp')), 'off again: the rolled site\'s Run pane says how to get a night, as today, and no card is drawn');
   check(await G.page.evaluate(() => window.B68GmPage.roomShow() === null), 'with room.key and room.tables both off, Show on iPad has no host (it does not work)');
   await G.c.close();
+
+  /* ---- 6. room.tables turned off live (no reload; the review of RK14): the rolled instance goes with its Run pane listener, so a plain RK09 thing opens
+     only RK09's zoom card. The fixture's Showroom Things block (checks/runtime/fixtures/gm/pelican-room-things.md) goes into the prep note first, as room-key.e2e does. */
+  {
+    const FIXN = fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'pelican-room-things.md'), 'utf8'), gala = FIXN.slice(FIXN.indexOf('## Rooms · The gala'));
+    const at = gala.indexOf('### Showroom'), ta = gala.indexOf('- **Things:**', at), BLOCK = gala.slice(ta, gala.indexOf('- **Costume:**', ta)).trimEnd();
+    const prep = await api('GET', '/gm/pack?part=prep'), body = prep.json && prep.json.body;
+    let put = 0;
+    for (const n of (body && Array.isArray(body.notes) ? body.notes : [])) for (const b of (n.blocks || [])) if (typeof b.src === 'string' && b.src.includes('### Showroom\n')) { b.src = b.src.replace('### Showroom\n', '### Showroom\n\n' + BLOCK + '\n'); put++; }
+    check(put === 1 && (await api('POST', '/gm/pack', { part: 'prep', src: prep.json.src || {}, body })).status === 200, 'the fixture\'s Showroom Things block is in the prep note');
+    check((await api('PATCH', '/gm/state', { cards: { location: Object.assign({}, SITE_CARD, { seed: null, ui: null, mem: null }) } })).status === 200, 'the night\'s authored v2 site is the Location card');
+    await feats({ 'room.tables': true, 'room.key': true });
+    const K = await open({ v2: true }), kp = K.page, show = '#gm-runv .rv-rm[data-room="Showroom"]';
+    await kp.waitForSelector(show + ' [data-rr-say]', { timeout: 20000 });
+    await kp.click(show + ' [data-site="thing"][data-i="0"]'); await until(() => zoom(kp), 4000); await kp.keyboard.press('Escape'); await sleep(300);      /* the rolled zoom card has been made and used */
+    await feats({ 'room.tables': false });
+    await kp.evaluate(() => window.dispatchEvent(new Event('focus')));      /* the GM page takes another device's state when it is focused (refetch), as room-key.e2e does */
+    const flipped = await until(() => kp.evaluate((sel) => { const c = document.querySelector(sel); return !!c && !!c.querySelector('.rk-things [data-site="thing"]') && !c.querySelector('[data-rr-say]') && window.B68GmPage._roomRolled() === null; }, show), 20000, 500);
+    check(!!flipped, 'room.tables off on the live page: the Showroom card is RK09\'s again (its note\'s things), with no rolled parts, and no rolled instance');
+    await kp.click(show + ' [data-site="thing"][data-i="0"]');
+    const zk = await until(() => zoom(kp), 4000);
+    const only = await kp.evaluate(() => ({ rz: !!(window.B68GmPage._roomZoom() && window.B68GmPage._roomZoom().isOpen()), n: [...document.querySelectorAll('.rk-zoom')].filter((e) => e.isConnected && e.closest('.rk-zscope')).length }));
+    check(!!zk && zk.name === 'A brass umbrella stand' && only.rz && only.n === 1, 'then a plain RK09 thing opens only RK09\'s zoom card: no rolled listener is left on the Run pane (' + JSON.stringify(only) + ')');
+    await kp.keyboard.press('Escape'); await K.c.close();
+  }
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 5).join(' | ') : ''));
 } catch (e) {
   failed++; console.log('FAIL ' + (e && e.stack || e));

@@ -183,7 +183,7 @@ test('create(host): the zoom card is the page\'s (RK09\'s, made through host.zoo
 });
 
 test('the page: one-line branches only, each a no-op with room.tables off; runSite() and the phones\' mission untouched', () => {
-  assert.match(PAGE, /function rrInst\(\) \{ var M = W\.B68GmRoomRolled, me = S; if \(!me \|\| !M \|\| M\.stub \|\| typeof M\.create !== 'function'\) return null; if \(!b09On\('room\.tables'\)\) \{ if \(me\.rr\) me\.rr\.close\(\); return null; \}/, 'rrInst: null (an open card closed) while room.tables is off');
+  assert.match(PAGE, /function rrInst\(\) \{ var M = W\.B68GmRoomRolled, me = S; if \(!me \|\| !M \|\| M\.stub \|\| typeof M\.create !== 'function'\) return null; if \(!b09On\('room\.tables'\)\) \{ if \(me\.rr\) \{ me\.rr\.destroy\(\); me\.rr = null; \} return null; \}/, 'rrInst: null while room.tables is off, and turned off live the instance is destroyed (its zoom card and its Run pane listener go)');
   const at = PAGE.indexOf('  function renderRun() {'), rr = PAGE.slice(at, PAGE.indexOf('\n  }\n', at));
   const br = rr.indexOf('var rr = rrInst(); if (rr && rr.draw(box, ln)) return;'), help = rr.indexOf('box.innerHTML = ln + RUN_HELP;');
   assert.ok(br > rr.indexOf('if (!rs) {') && br > rr.indexOf('var ln = siteLine();') && br < help, 'the cards in the no-v2-night branch, before RUN_HELP');
@@ -205,6 +205,16 @@ test('the page: one-line branches only, each a no-op with room.tables off; runSi
   assert.equal(rrLine.length, 1); assert.match(rrLine[0], / rs: function \(\) \{ return S === me \? rsInst\(\) : null; \},/, 'rrInst\'s host: the page\'s room-state writer, null off the live page');
   assert.ok(!/_roomState/.test(rrLine[0]), 'never through the check hook');
   assert.match(PAGE, /function rkShowHost\(\) \{ var me = S; if \(!me \|\| !\(b09On\('room\.key'\) \|\| b09On\('room\.tables'\)\)\) return null;/, 'Show\'s host: null only while both settings are off');
+});
+
+test('destroy() takes its capture listener off the Run pane (room.tables turned off live), so an RK09 thing never reaches a rolled zoom card', () => {
+  const calls = [], box = { addEventListener: (t, f, c) => calls.push(['add', t, f, c]), removeEventListener: (t, f, c) => calls.push(['remove', t, f, c]) };
+  const r = RR.create({ roll: () => ROLL, rollKey: (x) => x.seed, T: () => T, doc: () => ({}), zoom: (h) => Z.create(h), box: () => box });
+  r.block('Pelican bar'); r.block('Pelican cloakroom');
+  assert.equal(calls.length, 1, 'one listener on the pane, however many cards'); assert.deepEqual([calls[0][0], calls[0][1], calls[0][3]], ['add', 'click', true], 'a capture click listener');
+  r.destroy();
+  assert.equal(calls.length, 2); assert.deepEqual([calls[1][0], calls[1][1], calls[1][3]], ['remove', 'click', true]); assert.equal(calls[1][2], calls[0][2], 'the same listener comes off');
+  assert.equal(r.isOpen(), false);
 });
 
 test('marks are keyed by the rolled room\'s own roomKey: same-named rooms each read their own, and the zoom card\'s place is that key', () => {
