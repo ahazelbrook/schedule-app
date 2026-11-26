@@ -344,7 +344,7 @@ try {
     const X = await open({}), Y = await open({});
     await X.page.waitForSelector('#gm-runv .rr-site [data-rr-say]', { timeout: 20000 }); await Y.page.waitForSelector('#gm-runv .rr-site [data-rr-say]', { timeout: 20000 });
     const tab = (await cards(X.page)).filter((c) => c.things.length), a0 = await acts(X.page);
-    check(tab.length >= 3 && tab.every((c) => mine(a0, c).btns.join('/') === 'Roll another/Reroll the room') && a0.filter((c) => !tab.some((t) => t.room === c.room && t.n === c.n)).every((c) => !c.btns.length),
+    check(tab.length >= 4 && tab.every((c) => mine(a0, c).btns.join('/') === 'Roll another/Reroll the room') && a0.filter((c) => !tab.some((t) => t.room === c.room && t.n === c.n)).every((c) => !c.btns.length),
       'RK15: every room with a table has Roll another and Reroll the room under its things, and the room with no table has neither (' + JSON.stringify(a0.map((c) => c.btns.length)) + ')');
     const R1 = tab[0], R2 = tab[1], t0 = R1.things.slice(), rkey = await keyOf(X.page, R1), rkey2 = await keyOf(X.page, R2);
 
@@ -462,6 +462,20 @@ try {
       const pp = await ph.newPage(); await pp.goto(BASE + '/#c/pc-nell'); await pp.waitForTimeout(3500);
       await pp.screenshot({ path: path.join(SHOTS, 'rk15-phone-390.png') }); await ph.close();
     }
+
+    /* room.tables alone (room.key off): the same buttons, and Swap writes through the page's room-state writer, as the marks do (the overseer's RK14 ruling) */
+    await feats({ 'kit.desk': false, 'room.tables': true, 'room.key': false });
+    const A1 = await open({}); await A1.page.waitForSelector('#gm-runv .rr-site [data-rr-act]', { timeout: 20000 });
+    const R3 = tab[3], rkey3 = await keyOf(A1.page, R3), t3 = mine(await cards(A1.page), R3).things.slice();
+    await A1.page.click(card(R3.room, R3.n) + ' [data-site="thing"][data-i="2"]'); z = await until(() => zoom(A1.page), 4000);
+    check(!!z && /^swap:Swap$/.test(z.slots[2] || '') && await A1.page.evaluate(() => window.B68GmPage._roomZoom() === null), 'room.tables alone: the zoom card has Swap, and RK09\'s own card is off');
+    await A1.page.click('.rk-zoom [data-rk-btn="swap"]');
+    const sw3 = await until(async () => { const r = await stored(); return r[rkey3] && r[rkey3].swaps && Object.keys(r[rkey3].swaps).join() === t3[2] ? r : null; }, 15000);
+    check(!!sw3 && mine(await cards(A1.page), R3).things[2] === sw3[rkey3].swaps[t3[2]], 'room.tables alone: Swap stores its override and the card shows it');
+    await A1.page.keyboard.press('Escape'); await A1.page.click(card(R3.room, R3.n) + ' [data-rr-act="another"]');
+    check(!!(await until(async () => { const r = await stored(); return r[rkey3] && r[rkey3].extra && Object.keys(r[rkey3].extra).length === 1 ? r : null; }, 15000)), 'room.tables alone: Roll another works');
+    await A1.c.close();
+    await feats({ 'room.key': true });
 
     /* room.tables off on the live page: the buttons go with the rolled instance */
     await feats({ 'kit.desk': false, 'room.tables': true });
