@@ -73,7 +73,7 @@ await test('helpers: liveVersion, verifiedParts, stampRoutes, melbourneDate', ()
   assert.match(stampRoutes(ROUTES, '20261103-abcdef0'), /var BUILD = '20261103-abcdef0';/);
   assert.throws(() => stampRoutes('nothing', 'x'), /found 0/);
   assert.equal(melbourneDate(new Date('2026-11-06T20:00:00Z')), '2026-11-07');   // Friday evening UTC is already Saturday in Melbourne
-  assert.equal(GAME_DAYS.length, 4);
+  assert.equal(GAME_DAYS.length, 3);
 });
 
 await test('refuses on a game day, without --go, without --expect, and assist without --assist-prep: no command runs', async () => {
