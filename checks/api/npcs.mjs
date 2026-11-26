@@ -246,6 +246,28 @@ async function main() {
     const many = {}; for (let i = 0; i < 101; i++) many['npc_' + i] = true;
     status(await call('PATCH', '/api/campaign', { user: GM, body: { scene: { npcs: many } } }), 400);
   });
+
+  // RK19 (room.tables): Keep files a quick-draw person (app/gm/room-keep.js, on the invented fixtures) as the page's db adapter writes a doc (PUT by id), hidden
+  await step('RK19 Keep: a kept quick-draw person is stored hidden with its Tell, Signature and Met lines; a player\'s list and GET and the display\'s join leave it out', async () => {
+    const KP = require(join(ROOT, 'app', 'gm', 'room-keep.js')), P = require(join(ROOT, 'app', 'gm', 'room-people.js'));
+    const NPC_T = JSON.parse(readFileSync(join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'npc-pack.json'), 'utf8')).parts.npc.T;
+    const ROOMS_T = JSON.parse(readFileSync(join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'rooms-pack.json'), 'utf8')).T;
+    const c = P.cards([{ id: 'p1', role: 'waiter', seed: 1968 }], { npc: NPC_T, T: ROOMS_T, K, roomKey: 'pelican bar#1' })[0];
+    const doc = KP.doc(c, { site: 'The Pelican Rooms', room: 'Pelican bar', now: Date.now() }), id = KP.idFor(c.name, Date.now());
+    let r = await call('PUT', '/api/npcs/' + id, { user: GM, body: doc }); status(r, 200);
+    r = await call('GET', '/api/npcs/' + id, as(GM)); status(r, 200);
+    const d = r.json.doc;
+    expect(d.revealed === false && JSON.stringify(d.tags) === '["room","generated"]' && d.name === c.name, 'stored hidden, tagged room and generated: ' + r.text.slice(0, 200));
+    expect(/^Tell: \S+/m.test(d.gmNotes) && /^Signature: \S+/m.test(d.gmNotes) && /^Met: The Pelican Rooms · Pelican bar · \d\d\/\d\d\/\d{4}$/m.test(d.gmNotes), 'the GM reads the Tell, Signature and Met lines');
+    r = await call('GET', '/api/npcs', as(PLAYER)); status(r, 200);
+    expect(!r.json.docs.some((x) => x.id === id) && !r.text.includes(c.name) && !r.text.includes('Signature:'), 'a player\'s list leaves a kept person out');
+    status(await call('GET', '/api/npcs/' + id, as(PLAYER)), 404);
+    status(await call('PUT', '/api/gm/display', { user: GM, body: { kind: 'npc', npcId: id } }), 200);
+    r = await call('GET', '/api/gm/display', as(GM)); status(r, 200);
+    expect(!r.text.includes(c.name) && !r.text.includes('Signature:') && !r.text.includes(c.look), 'the display\'s GET joins nothing of a hidden person: ' + r.text.slice(0, 200));
+    status(await call('PUT', '/api/gm/display', { user: GM, body: { kind: 'blank' } }), 200);
+    status(await call('DELETE', '/api/npcs/' + id, as(GM)), 200);
+  });
 }
 
 try {
