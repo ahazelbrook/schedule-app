@@ -22,7 +22,7 @@ export const LEASE_TTL_MS = {
   // the tick's seats
   ref: 45 * S, clerk: 45 * S, ledger: 45 * S, voice: 45 * S, stall: 45 * S, showrunner: 45 * S, mystery: 45 * S, scribe: 45 * S, meanwhile: 45 * S, whois: 45 * S, pitch: 45 * S,
   // the GM's taps
-  fixer: 60 * S, voice_plus: 60 * S, gatekeeper: 60 * S, portrait: 60 * S, wire: 60 * S,
+  fixer: 60 * S, voice_plus: 60 * S, gatekeeper: 60 * S, portrait: 60 * S, wire: 60 * S, room: 60 * S,
   prop: 90 * S, ask: 90 * S,
   hands: 30 * S,
 };
@@ -32,7 +32,7 @@ export const DEFAULT_TTL_MS = 60 * S;
 export const DEADLINE_MS = {
   tripwire: 12 * S,
   ref: 30 * S, clerk: 30 * S, ledger: 30 * S, voice: 30 * S, stall: 30 * S, showrunner: 30 * S, mystery: 30 * S, scribe: 30 * S, meanwhile: 30 * S, whois: 30 * S, pitch: 30 * S,
-  fixer: 45 * S, voice_plus: 45 * S, gatekeeper: 45 * S, portrait: 45 * S, wire: 45 * S,
+  fixer: 45 * S, voice_plus: 45 * S, gatekeeper: 45 * S, portrait: 45 * S, wire: 45 * S, room: 45 * S,
   prop: 75 * S, ask: 75 * S,
   hands: 15 * S,
 };

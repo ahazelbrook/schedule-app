@@ -149,9 +149,13 @@
     var own = str(part(o, 'people', c, ''));
     var head = lab(o, o.run ? 'Quick-draw people' : 'Who’s here');      /* a v2 card has its own Who's here (the play's people) above */
     if (own) return head + own;
-    return head + '<ul class="' + cls(o, 'rv-who rr-ppl', 'krv-ppl') + '">' + (c.people.length ? c.people.map(function (p) {
+    return head + '<ul class="' + cls(o, 'rv-who rr-ppl', 'krv-ppl') + '">' + (c.people.length ? slotItems(c) : '<li class="rv-dim">Nobody drawn.</li>') + '</ul>';
+  }
+  /* the people slots as list items: the one place for their markup (the Blade tap's people join this list through its hook's slots) */
+  function slotItems(c) {
+    return list(c && c.people).map(function (p) {
       return '<li class="npc rr-slot" data-rr-slot="' + esc(p.id) + '" data-role="' + esc(p.role) + '"><b>' + esc(roleLabel(p.role)) + '</b> <small class="rv-dim">quick-draw</small></li>';
-    }).join('') : '<li class="rv-dim">Nobody drawn.</li>') + '</ul>';
+    }).join('');
   }
   function toRoll(l) {
     var U = ui(), title = 'Put this line in the Roll’s If it goes wrong line';
@@ -290,6 +294,7 @@
       return blockHtml(c, opts(!!(o && o.kit), m, true));
     }
     function key(ev, o) { var Z = zoom(); return !!(Z && Z.key(ev, o)); }
+    var bl = null, raw = { now: now, opts: opts, click: onClick, slots: slotItems, live: function () { return boxes.length > 0; } }; function blade() { if (!bl) { var B = live(mod('B68GmRoomBlade', './room-blade.js')); bl = B && typeof B.hook === 'function' ? B.hook(host, raw) : null; } return bl || raw; } now = function () { return blade().now(); }; opts = function (k, m, r) { return blade().opts(k, m, r); }; onClick = function (ev) { return blade().click(ev); };      /* RK16: the Blade tap (gm/room-blade.js), looked up when called (it loads after this file), wraps the model, card parts and click of this instance */
     return { draw: draw, block: block, act: act, key: key, model: now, zoom: zoom,
       isOpen: function () { return !!(z && z.isOpen()); },
       close: function () { if (z) z.close(false); },
