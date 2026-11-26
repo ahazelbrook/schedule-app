@@ -27,7 +27,9 @@
 
    STATE. Read through room-state (say, rr, extra, swaps, marks): host.rs() when the host gives the page's writer, else a read-only view of host.doc()
    (as RK09's card reads marks). This file writes nothing; the zoom card's buttons write through ctx.rs (RK11's marks, RK15's Swap): the page's writer,
-   rsInst() (the overseer's RK14 ruling: the fifth rsInst line in gm-page.js). Marks are keyed by the rolled room's own roomKey (twins: name#2). The draw is room-roll's: three streams from the page's rollKey(roll) and the roomKey, after the roll, so
+   rsInst() (the overseer's RK14 ruling: the fifth rsInst line in gm-page.js). RK15's room-swap.js (a module of this bundle) adds, through this file's own
+   parts and no page line: the card's "This room" row (Roll another, Reroll the room: the `actions` part, heard by this instance's capture listener on the Run
+   pane), and the zoom host's scene(roomKey) and follow(room, n, slug), which Swap reads and calls through ctx.page. Marks are keyed by the rolled room's own roomKey (twins: name#2). The draw is room-roll's: three streams from the page's rollKey(roll) and the roomKey, after the roll, so
    nothing draws inside generate() and a reload gives the same cards.
 
    API
