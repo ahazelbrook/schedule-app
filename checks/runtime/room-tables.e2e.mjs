@@ -1,6 +1,6 @@
 // room-tables (RK14 of the room key build, room.tables): a rolled site's room cards in the Run pane, on the demo night (scripts/demo-night.mjs: invented
 // data, the Pelican Rooms). The rooms part is made here from checks/runtime/fixtures/gm/rooms-pack.json: its two invented tables (GM-ONLY- markers on every
-// closer look, roll and danger), copied under the names of the rooms on the page (never a vault table). RK15 adds its steps after these.
+// closer look, roll and danger), copied under the names of the rooms on the page (never a vault table). RK15's steps follow the last of RK14's (step 7).
 //   1. room.tables off: no room-tables file is fetched, and the night's v2 room card is today's.
 //   2. room.tables on (with room.key, which Show on iPad needs): a roll goes straight to the site screen (RK14.3); with no rooms part every card says
 //      "No table for <room>"; with the part, every tabled room has its read-aloud ("There's ..." naming its things), 4 things to click, a people slot list,
@@ -12,6 +12,12 @@
 //      description, 4 things and a people slot; the same secrecy probe.
 //   4. The kit desk: the same cards, a click opens the zoom card.
 //   5. room.tables off again: the Run pane says what it said before.
+//   6. room.tables turned off on a live page (the review of RK14): the rolled instance goes, and a plain RK09 thing opens only RK09's card.
+//   7. RK15, Swap, Roll another and Reroll the room, on the rolled site: every tabled room's card has the two buttons; Swap is in the zoom card's swap slot, replaces
+//      the thing in its place, is stored as one override under the roll's key and the room's roomKey, and the card stays open on the new thing; a second page on the same
+//      state and a reload both show it; Roll another adds a fifth thing; Reroll the room asks first when a mark is set (Cancel leaves it, the second tap clears it) and
+//      does it at once when nothing is marked, and the people never move; the kit desk; nothing of any of it reaches the GETs or a phone's DOM; room.tables off on a
+//      live page takes the buttons away.
 // With ROOM_TABLES_SHOTS=<dir>: the desk and the kit desk at 1366x768 and 1536x864, Paper and Night, a card open; the iPad at 1024x768; a phone at 390x844.
 // No model, no network beyond loopback, nothing deployed. Its default port is 9503, with wrangler's inspector on PORT + 20000.
 //   PW_MODULE=<path to playwright> [PW_CHANNEL=msedge] [PORT=9503] [ROOM_TABLES_SHOTS=<dir>] node checks/runtime/room-tables.e2e.mjs
@@ -323,6 +329,148 @@ try {
     const only = await kp.evaluate(() => ({ rz: !!(window.B68GmPage._roomZoom() && window.B68GmPage._roomZoom().isOpen()), n: [...document.querySelectorAll('.rk-zoom')].filter((e) => e.isConnected && e.closest('.rk-zscope')).length }));
     check(!!zk && zk.name === 'A brass umbrella stand' && only.rz && only.n === 1, 'then a plain RK09 thing opens only RK09\'s zoom card: no rolled listener is left on the Run pane (' + JSON.stringify(only) + ')');
     await kp.keyboard.press('Escape'); await K.c.close();
+  }
+  /* ---- 7. RK15: Swap, Roll another and Reroll the room, on step 2's rolled site (the rooms part is still the fixture's) ---- */
+  {
+    check(!!(ROLLED_CARD && ROLLED_CARD.seed) && (await api('PATCH', '/gm/state', { cards: { location: Object.assign({}, ROLLED_CARD, { auth: null }) } })).status === 200, 'RK15: step 2\'s rolled site is the Location card again');
+    await feats({ 'room.tables': true, 'room.key': true, 'kit.desk': false });
+    const acts = (pg) => pg.evaluate(() => [...document.querySelectorAll('#gm-runv .rr-site .rv-rm[data-room]')].map((c) => ({ room: c.getAttribute('data-room'), n: +(c.getAttribute('data-rn') || 1),
+      btns: [...c.querySelectorAll('[data-rr-act]')].map((b) => (b.querySelector('.ui-label') || b).textContent + (b.disabled ? '!' : '')), ask: (c.querySelector('.rr-asktext') || { textContent: '' }).textContent })));
+    const mine = (list, r) => list.filter((c) => c.room === r.room && c.n === r.n)[0];
+    const keyOf = (pg, r) => pg.evaluate((sel) => document.querySelector(sel + ' [data-rr-room]').getAttribute('data-rr-room'), card(r.room, r.n));
+    const nameAt = (pg, r, i) => pg.evaluate(([sel, k]) => { const b = document.querySelector(sel + ' [data-site="thing"][data-i="' + k + '"]'); return b ? (b.querySelector('.ui-label') || b).textContent : ''; }, [card(r.room, r.n), i]);
+    const spoken = (s) => s.replace(/^(A|An|The|Some) /, (m) => m.toLowerCase());
+    const focusPage = (pg) => pg.evaluate(() => window.dispatchEvent(new Event('focus')));
+    const X = await open({}), Y = await open({});
+    await X.page.waitForSelector('#gm-runv .rr-site [data-rr-say]', { timeout: 20000 }); await Y.page.waitForSelector('#gm-runv .rr-site [data-rr-say]', { timeout: 20000 });
+    const tab = (await cards(X.page)).filter((c) => c.things.length), a0 = await acts(X.page);
+    check(tab.length >= 3 && tab.every((c) => mine(a0, c).btns.join('/') === 'Roll another/Reroll the room') && a0.filter((c) => !tab.some((t) => t.room === c.room && t.n === c.n)).every((c) => !c.btns.length),
+      'RK15: every room with a table has Roll another and Reroll the room under its things, and the room with no table has neither (' + JSON.stringify(a0.map((c) => c.btns.length)) + ')');
+    const R1 = tab[0], R2 = tab[1], t0 = R1.things.slice(), rkey = await keyOf(X.page, R1), rkey2 = await keyOf(X.page, R2);
+
+    /* Swap */
+    await shot(X.page, 'rk15-desk-1366-paper-cards');
+    await X.page.click(card(R1.room, R1.n) + ' [data-site="thing"][data-i="0"]'); z = await until(() => zoom(X.page), 4000);
+    check(!!z && z.slots.length === 3 && /^swap:Swap$/.test(z.slots[2]), 'RK15: the zoom card\'s swap slot has one button, Swap (' + (z && z.slots.join(' ')) + ')');
+    await shot(X.page, 'rk15-desk-1366-paper-zoom-swap');
+    await X.page.click('.rk-zoom [data-rk-btn="swap"]');
+    const sw1 = await until(async () => { const r = await stored(); return r[rkey] && r[rkey].swaps ? r : null; }, 15000);
+    const n1 = mine(await cards(X.page), R1);
+    check(!!sw1 && Object.keys(sw1[rkey].swaps).join() === t0[0] && n1.things[0] === sw1[rkey].swaps[t0[0]] && n1.things.slice(1).join() === t0.slice(1).join() && Object.keys(sw1).every((k) => k === rkey),
+      'Swap stores one override under the roll\'s key and that room\'s own roomKey, and the thing is replaced in its place (' + t0[0] + ' to ' + n1.things[0] + ')');
+    z = await until(() => zoom(X.page), 3000);
+    const nm1 = await nameAt(X.page, R1, 0);
+    check(!!z && z.eye.startsWith(R1.room + ' · 1 of 4') && !!nm1 && z.name === nm1, 'the zoom card stays open on the thing now in that place (' + (z && z.name) + ')');
+    await shot(X.page, 'rk15-desk-1366-paper-zoom-after-swap');
+    check(n1.say.includes(spoken(nm1)), 'the read-aloud names what is there now');
+    await X.page.keyboard.press('Escape'); await sleep(200);
+    /* a second page on the same state, then a reload */
+    await focusPage(Y.page);
+    check(!!(await until(async () => { const c = mine(await cards(Y.page), R1); return !!c && c.things[0] === n1.things[0]; }, 20000, 500)), 'a second device (another page on the same state) shows the swapped card');
+    await Y.c.close(); await X.c.close();
+    const Z1 = await open({}); await Z1.page.waitForSelector('#gm-runv .rr-site [data-rr-say]', { timeout: 20000 });
+    const z1 = mine(await cards(Z1.page), R1);
+    check(z1.things.join() === n1.things.join() && z1.slots.join() === R1.slots.join() && z1.say === n1.say, 'a swap survives a reload: the same things, the same read-aloud, the same people');
+    page = Z1.page;
+
+    /* Roll another */
+    await page.click(card(R1.room, R1.n) + ' [data-rr-act="another"]');
+    const ex1 = await until(async () => { const r = await stored(); return r[rkey] && r[rkey].extra && Object.keys(r[rkey].extra).length === 1 ? r : null; }, 15000);
+    const n2 = mine(await cards(page), R1), exSlug = ex1 ? Object.keys(ex1[rkey].extra)[0] : '?';
+    check(!!ex1 && n2.things.length === 5 && n2.things[4] === exSlug && n2.keys === '12345' && n2.things.slice(0, 4).join() === n1.things.join() && Object.keys(ex1[rkey].swaps).join() === t0[0],
+      'Roll another adds a fifth thing at the end, stored as one extra under the room\'s key, and keeps the swap (' + exSlug + ')');
+    check(n2.say.includes(spoken(await nameAt(page, R1, 4))) && /^SAY “.+ There['’]s .+ and .+\.”$/.test(n2.say), 'the read-aloud names the new thing');
+    /* Swap on the thing Roll another added: it is replaced in the extra list, and shows */
+    await page.click(card(R1.room, R1.n) + ' [data-site="thing"][data-i="4"]'); await until(() => zoom(page), 4000);
+    await page.click('.rk-zoom [data-rk-btn="swap"]');
+    const ex2 = await until(async () => { const r = await stored(); const e = r[rkey] && r[rkey].extra ? Object.keys(r[rkey].extra) : []; return e.length === 1 && e[0] !== exSlug ? r : null; }, 15000);
+    const n3 = mine(await cards(page), R1);
+    check(!!ex2 && n3.things.length === 5 && n3.things[4] === Object.keys(ex2[rkey].extra)[0] && Object.keys(ex2[rkey].swaps).join() === t0[0], 'Swap on a thing Roll another added replaces it in the extra list (and shows), leaving the first swap alone');
+    await page.keyboard.press('Escape'); await sleep(200);
+
+    /* Reroll the room: marked, it asks; Cancel leaves it; the second tap does it */
+    await page.click(card(R1.room, R1.n) + ' [data-site="thing"][data-i="1"]'); await until(() => zoom(page), 4000);
+    const mark = await page.evaluate(() => { const b = document.querySelector('.rk-zoom [data-rk-slot="state"] button'); return b ? { id: b.getAttribute('data-rk-btn') } : null; });
+    await page.click('.rk-zoom [data-rk-btn="' + mark.id + '"]');
+    await until(async () => { const r = await stored(); return r[rkey] && r[rkey].marks && Object.keys(r[rkey].marks).length === 1 ? r : null; }, 15000);
+    await page.keyboard.press('Escape'); await sleep(200);
+    const before3 = JSON.stringify((await stored())[rkey]);
+    await page.click(card(R1.room, R1.n) + ' [data-rr-act="reroll"]'); await sleep(500);
+    const ask = mine(await acts(page), R1), focusOn = await page.evaluate(() => document.activeElement.getAttribute('data-rr-act') || '');
+    check(ask.btns.join('/') === 'Reroll the room/Cancel' && ask.ask === 'Rerolling clears 1 mark.' && JSON.stringify((await stored())[rkey]) === before3 && focusOn === 'reroll-yes',
+      'a marked room asks first: "Rerolling clears 1 mark." on its own line, then Reroll the room and Cancel, nothing written, the focus on the confirm (' + JSON.stringify(ask) + ', focus ' + focusOn + ')');
+    await shot(page, 'rk15-desk-1366-paper-reroll-ask');
+    await page.click(card(R1.room, R1.n) + ' [data-rr-act="reroll-no"]'); await sleep(500);
+    check(mine(await acts(page), R1).btns.join('/') === 'Roll another/Reroll the room' && JSON.stringify((await stored())[rkey]) === before3, 'Cancel leaves the room as it was');
+    await page.click(card(R1.room, R1.n) + ' [data-rr-act="reroll"]'); await sleep(400);
+    await page.click(card(R1.room, R1.n) + ' [data-rr-act="reroll-yes"]');
+    const rr1 = await until(async () => { const r = await stored(); return r[rkey] && r[rkey].rr === 1 ? r : null; }, 15000);
+    const n4 = mine(await cards(page), R1);
+    check(!!rr1 && !rr1[rkey].marks && !rr1[rkey].extra && !rr1[rkey].swaps && n4.things.length === 4 && (n4.things.join() !== t0.join() || n4.say !== R1.say), 'the second tap rerolls: rr is 1, the mark, the extra and the swap are gone, and the room is drawn again (' + n4.things.join() + ' / ' + t0.join() + ')');
+    check(n4.slots.join() === R1.slots.join(), 'Reroll the room never moves the people (' + n4.slots.join() + ')');
+    await shot(page, 'rk15-desk-1366-paper-after-reroll');
+    /* nothing marked: at once */
+    await page.click(card(R2.room, R2.n) + ' [data-rr-act="reroll"]');
+    const rr2 = await until(async () => { const r = await stored(); return r[rkey2] && r[rkey2].rr === 1 ? r : null; }, 15000);
+    check(!!rr2 && !mine(await acts(page), R2).ask, 'a room with no marks rerolls at once, with no question (' + R2.room + ')');
+    check(Object.keys(await stored()).every((k) => [rkey, rkey2].includes(k)), 'only those two rooms\' keys hold anything');
+
+    /* secrecy: the GETs and a phone's DOM hold nothing of a swap, a roll another or a reroll */
+    const r7 = await reads();
+    check(r7.ok && leaks(r7.all).length === 0 && !/rr-act|room-swap|"roomstate"/.test(r7.all), 'secrecy: the display\'s GET, a phone\'s screen and character and the campaign document hold no rolled-room text, no swap and no roomstate (' + leaks(r7.all).slice(0, 3).join(' | ') + ')');
+    {
+      const ph = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': P1 }, viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
+      const pp = await ph.newPage(); await pp.goto(BASE + '/#c/pc-nell'); await pp.waitForTimeout(4000);
+      const dom = await pp.evaluate(() => document.documentElement.outerHTML);
+      check(dom.length > 2000 && leaks(dom).length === 0 && !/rr-act|rr-site|data-rr-/.test(dom), 'a phone\'s DOM holds no rolled-room text, no Swap and no Roll another');
+      await ph.close();
+    }
+    await Z1.c.close();
+
+    /* the kit desk: the same two buttons, Swap in the zoom card */
+    await feats({ 'kit.desk': true });
+    const K = await open({ kit: true });
+    await K.page.waitForSelector('#gm-runv .rr-site .krv-acts', { timeout: 20000 });
+    const ka = await acts(K.page), kb = tab[2], kkey = await keyOf(K.page, kb);
+    check(tab.every((c) => mine(ka, c).btns.join('/') === 'Roll another/Reroll the room') && await K.page.evaluate(() => !document.querySelector('#gm-runv .rr-acts .rv-btn')), 'the kit desk: the same two buttons on every tabled room, in the kit\'s button style');
+    await K.page.click(card(kb.room, kb.n) + ' [data-site="thing"][data-i="0"]'); z = await until(() => zoom(K.page), 4000);
+    check(!!z && /^swap:Swap$/.test(z.slots[2] || ''), 'the kit desk: the zoom card has Swap too');
+    await shot(K.page, 'rk15-kitdesk-1366-paper-zoom-swap');
+    await K.page.click('.rk-zoom [data-rk-btn="swap"]');
+    check(!!(await until(async () => { const r = await stored(); return r[kkey] && r[kkey].swaps ? r : null; }, 15000)), 'the kit desk: Swap stores its override');
+    await K.page.keyboard.press('Escape'); await sleep(200);
+    await shot(K.page, 'rk15-kitdesk-1366-paper-cards');
+    await K.c.close();
+
+    /* pictures */
+    if (SHOTS) {
+      for (const [kit, w, theme] of [[false, 1366, 'night'], [false, 1536, 'paper'], [false, 1536, 'night'], [true, 1366, 'night'], [true, 1536, 'paper'], [true, 1536, 'night']]) {
+        await feats({ 'kit.desk': kit });
+        const o = await open({ kit, w, h: w === 1536 ? 864 : 768, theme });
+        await o.page.waitForSelector('#gm-runv .rr-site [data-site="thing"]', { timeout: 20000 });
+        await o.page.click(card(R1.room, R1.n) + ' [data-site="thing"][data-i="0"]'); await until(() => zoom(o.page), 3000);
+        await shot(o.page, 'rk15-' + (kit ? 'kitdesk-' : 'desk-') + w + '-' + theme + '-zoom-swap');
+        await o.page.keyboard.press('Escape'); await sleep(200);
+        await o.page.evaluate((sel) => document.querySelector(sel).scrollIntoView({ block: 'center' }), card(R1.room, R1.n));
+        await shot(o.page, 'rk15-' + (kit ? 'kitdesk-' : 'desk-') + w + '-' + theme + '-cards');
+        await o.c.close();
+      }
+      const ip = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
+      const dp = await ip.newPage(); await dp.addInitScript({ content: 'window.__B68_POLL_MS = 1000;' }); await dp.goto(BASE + '/#display'); await dp.waitForTimeout(3500);
+      await dp.screenshot({ path: path.join(SHOTS, 'rk15-ipad-1024.png') }); await ip.close();
+      const ph = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': P1 }, viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
+      const pp = await ph.newPage(); await pp.goto(BASE + '/#c/pc-nell'); await pp.waitForTimeout(3500);
+      await pp.screenshot({ path: path.join(SHOTS, 'rk15-phone-390.png') }); await ph.close();
+    }
+
+    /* room.tables off on the live page: the buttons go with the rolled instance */
+    await feats({ 'kit.desk': false, 'room.tables': true });
+    const L = await open({});
+    await L.page.waitForSelector('#gm-runv .rr-site [data-rr-act]', { timeout: 20000 });
+    await feats({ 'room.tables': false });
+    await focusPage(L.page);
+    check(!!(await until(() => L.page.evaluate(() => !document.querySelector('[data-rr-act]') && window.B68GmPage._roomRolled() === null), 20000, 500)), 'room.tables off on a live page: Roll another and Reroll the room go with the rolled cards');
+    await L.c.close();
   }
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 5).join(' | ') : ''));
 } catch (e) {

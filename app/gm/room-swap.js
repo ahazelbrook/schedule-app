@@ -139,7 +139,7 @@
     function askKey(sc) { return str(sc.rollKey) + '|' + str(sc.roomKey); }
     function btn(o) {
       var U = ui(); if (!U || typeof U.button !== 'function') return '';
-      return U.button({ label: o.label, rank: o.rank || 'quiet', cls: ['rr-act'].concat(o.kit ? [] : ['rv-btn', 'sm']), disabled: !!o.disabled, title: o.title,
+      return U.button({ label: o.label, rank: o.rank || 'standard', cls: ['rr-act'].concat(o.kit ? [] : ['rv-btn', 'sm']), disabled: !!o.disabled, title: o.title,
         data: { 'rr-act': o.act, 'rr-room': o.room } });
     }
     function html(c, o) {
@@ -149,14 +149,16 @@
       if (!isObj(sc) || !isObj(sc.table)) return '';
       var rd = readOf(rs, sc), ok = !!(rd && rs && typeof rs.addExtra === 'function' && placed(sc));
       var more = ok && anotherPlan(sc, rd) !== null, k = askKey(sc), marks = marksOf(rd), why = rs ? WHY.place : WHY.writer;
-      var head = '<div class="rr-acts' + (kit ? ' krv-acts' : '') + '" data-rr-acts="' + esc(c.roomKey) + '" role="group" aria-label="' + esc('Roll another thing or reroll ' + c.name) + '">';
+      var lab = '<h4 class="' + (kit ? 'krv-lab' : 'rv-lab') + ' rr-lab rr-actlab">This room</h4>';
+      var head = lab + '<div class="rr-acts' + (kit ? ' krv-acts' : '') + '" data-rr-acts="' + esc(c.roomKey) + '" role="group" aria-label="' + esc('Roll another thing or reroll ' + c.name) + '">';
       var a = btn({ kit: kit, label: 'Roll another', act: 'another', room: c.roomKey, disabled: !more,
         title: !ok ? why : more ? 'Add the next thing from this room’s table.' : WHY.more });
       var b;
-      if (asking[k] && ok) {
-        b = '<span class="rr-ask"><span class="rr-asktext">' + esc('Rerolling clears ' + marks + (marks === 1 ? ' mark' : ' marks') + '.') + '</span> ' +
+      if (asking[k] && ok) {      /* the question on a line of its own, then the two answers; Roll another waits */
+        return lab + '<div class="rr-acts rr-asking' + (kit ? ' krv-acts' : '') + '" data-rr-acts="' + esc(c.roomKey) + '" role="group" aria-label="' + esc('Reroll ' + c.name + '?') + '">' +
+          '<p class="' + (kit ? 'krv-hint' : 'rv-dim') + ' rr-asktext">' + esc('Rerolling clears ' + marks + (marks === 1 ? ' mark' : ' marks') + '.') + '</p>' +
           btn({ kit: kit, label: 'Reroll the room', rank: 'danger', act: 'reroll-yes', room: c.roomKey, title: 'Reroll this room and clear its marks.' }) + ' ' +
-          btn({ kit: kit, label: 'Cancel', act: 'reroll-no', room: c.roomKey, title: 'Leave the room as it is.' }) + '</span>';
+          btn({ kit: kit, label: 'Cancel', rank: 'quiet', act: 'reroll-no', room: c.roomKey, title: 'Leave the room as it is.' }) + '</div>';
       } else {
         b = btn({ kit: kit, label: 'Reroll the room', act: 'reroll', room: c.roomKey, disabled: !ok,
           title: !ok ? why : 'Draw this room’s read-aloud and things again. The people stay.' });

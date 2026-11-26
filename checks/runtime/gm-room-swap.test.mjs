@@ -204,7 +204,7 @@ test('Roll another and Reroll the room: the card\'s two buttons, in the actions 
   const s = newServer(), d = device(s), p = page(d);
   const m = p.rr.model(), bar = m.cards[0], none = m.cards[2];
   const html = RR.cardHtml(bar, { actions: (c) => swapper(p, d).html(c, {}) });
-  assert.match(html, /<div class="rr-acts" data-rr-acts="pelican bar#1" role="group"/);
+  assert.match(html, /<h4 class="rv-lab rr-lab rr-actlab">This room<\/h4><div class="rr-acts" data-rr-acts="pelican bar#1" role="group"/);
   const a = btnOf(html, 'another'), r = btnOf(html, 'reroll');
   assert.ok(a && r && /data-rr-room="pelican bar#1"/.test(a) && !/ disabled/.test(a) && !/ disabled/.test(r), 'both there and live');
   assert.ok(/Roll another/.test(html) && /Reroll the room/.test(html));
@@ -249,7 +249,8 @@ test('Reroll the room: a fresh draw of the say and the things, never the people;
   assert.equal(sw.act(elOf('reroll', BAR)), 'reroll-yes', 'the first tap asks, and the focus goes to the confirm');
   assert.equal(JSON.stringify(d.doc.roomstate.keys), snap, 'the first tap wrote nothing');
   const h = sw.html(cardOf(p, BAR), {});
-  assert.match(h, /Rerolling clears 1 mark\./); assert.ok(btnOf(h, 'reroll-yes') && btnOf(h, 'reroll-no') && !btnOf(h, 'reroll'), 'a confirm and a Cancel in place of the button');
+  assert.match(h, /<h4 class="rv-lab rr-lab rr-actlab">This room<\/h4><div class="rr-acts rr-asking"[^>]*><p class="rv-dim rr-asktext">Rerolling clears 1 mark\.<\/p>/, 'the question has a line of its own');
+  assert.ok(!/Roll another/.test(h), 'Roll another waits while it asks'); assert.ok(btnOf(h, 'reroll-yes') && btnOf(h, 'reroll-no') && !btnOf(h, 'reroll'), 'a confirm and a Cancel in place of the button');
   assert.match(h, /data-rr-act="reroll-yes"[\s\S]*?Reroll the room[\s\S]*?data-rr-act="reroll-no"[\s\S]*?Cancel/);
   assert.equal(sw.act(elOf('reroll-no', BAR)), 'reroll'); assert.equal(JSON.stringify(d.doc.roomstate.keys), snap, 'Cancel leaves the room as it was');
   assert.ok(btnOf(sw.html(cardOf(p, BAR), {}), 'reroll') && !/rr-ask/.test(sw.html(cardOf(p, BAR), {})), 'the ask is gone');
