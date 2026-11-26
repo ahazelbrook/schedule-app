@@ -20,7 +20,7 @@ async function resetState(c, on, extra) {
   await api('PATCH', '/campaign', { features: { 'gm.glance': on } });
   const crew = {}; for (const [id, room] of Object.entries(CREW)) crew[id] = { room, disguise: 'guest', moved: null, noticed: null };
   /* the night not started: the Run header shows the result row (the engagement panel's place) */
-  await api('PATCH', '/gm/state', { ball: { site: SITE, v: 2, crew, view: null, start: null, t: null }, con: { live: { pc: '' } } });
+  await api('PATCH', '/gm/state', { ball: { site: SITE, v: 2, crew, view: null, start: null, t: null }, con: { live: { pc: '' } }, cues: null });      /* a fresh cue queue: Space (GO) has a cue to fire */
   await api('PATCH', '/gm/ambient', { overlay: null });
   await sleep(300);
 }
@@ -125,12 +125,12 @@ export async function rk22(c) {
     check(await until(() => p.$eval('#gm-card', (c, b) => c.innerHTML !== b, cardBefore), 6000, 150), tag + 'after an action tap, the key 2 still fires They rolled (a result card comes up)');
     check((await lineNow(p)) === lineBefore, tag + 'and 2 was not typed into the Roll’s line (' + (await lineNow(p)) + ')');
     await p.keyboard.press('Escape'); await sleep(300);
-    /* Space is GO, and the cue stack gives it to the page itself only: no chip may hold the focus after a tap. The GM state and the iPad document change when GO fires */
-    const goState = async () => (await api('GET', '/gm/ambient')).text + '|' + (await api('GET', '/gm/state')).text;
+    /* Space is GO, and the cue stack gives it to the page itself only: no chip may hold the focus after a tap. The cue sequence in the GM state grows when GO fires */
+    const goState = async () => { const d = ((await api('GET', '/gm/state')).json || {}).doc || {}; return d.cues && Array.isArray(d.cues.seq) ? d.cues.seq.length : 0; };
     const goBefore = await goState();
     check(await p.evaluate(() => document.activeElement === document.body), tag + 'after an action tap the focus is on the page itself, not on a chip');
     await p.keyboard.press('Space');
-    check(await until(async () => (await goState()) !== goBefore, 8000, 200), tag + 'after an action tap Space is GO: the GM state and the iPad document change (the cue stack fires)');
+    check(await until(async () => (await goState()) > goBefore, 8000, 200), tag + 'after an action tap Space is GO: the cue stack fires (the cue sequence in the GM state grows from ' + goBefore + ')');
     check((await lineNow(p)) === lineBefore && await p.$eval('[data-gl-panel="roll"] [data-gl="act"][data-v="Study"]', (b) => b.getAttribute('aria-pressed') === 'true'), tag + 'and Space neither typed into the line nor toggled the chip off');
     await p.keyboard.press('Escape'); await sleep(300);
 
