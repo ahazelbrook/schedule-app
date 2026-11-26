@@ -469,6 +469,7 @@
       if (m.started) h += timePopHtml(x);
       if (alarmOpen) h += alarmPopHtml(x);
       h += menuHtml(x);
+      if (!m.started && typeof host.quickEng === "function") h += host.quickEng(x);      /* RK22 (gm.glance): the engagement dice under the result row; '' while off */
       return h + "</div>";
     }
     /* the night's squares (a tap looks at that beat: the players are not told) and the timer's +1, +5, Reset and length; drawn shut, so the controls are always there */
