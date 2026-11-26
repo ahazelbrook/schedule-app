@@ -4357,6 +4357,8 @@
   }
   /* RK21 (gm.glance): the fiction's clock and who's where (gm/glance-now.js), one per page session; null while gm.glance is off or its bundle is not loaded */
   function glnInst() { var M = W.B68GmGlanceNow, me = S; if (!me || !M || M.stub || typeof M.create !== 'function' || !b09On('gm.glance')) return null; if (!me.gln) me.gln = M.create({ run: function () { return S === me && runV2() ? rvHost() : null; }, redraw: function () { if (S === me && S.rv) S.rv.rerender(); }, toast: toast }); return me.gln; }
+  /* RK23 (gm.glance): when it goes loud (gm/loud.js), one per page session; null while gm.glance is off or its bundle is not loaded (the alarm popover stays as it was) */
+  function loudInst() { var M = W.B68GmLoud, me = S; if (!me || !M || M.stub || typeof M.create !== 'function' || !b09On('gm.glance')) { if (me && me.loud) me.loud = null; return null; } if (!me.loud) me.loud = M.create({ prep: function () { return S === me ? part('prep') : null; }, clocks: tableClocks, canClock: function () { return !!(S === me && me.api && typeof me.api.addClock === 'function'); }, addClock: function (c) { return me.api.addClock(c); }, clockOps: function (ops) { return me.api && typeof me.api.clockOps === 'function' ? me.api.clockOps(ops) : Promise.reject(new Error('The table cannot change one clock here.')); }, undoToast: function (text, undo) { return S === me && me.cueGrammar ? me.cueGrammar.undoToast(text, undo) : null; }, toast: toast, redraw: function () { if (S === me && S.rv) S.rv.rerender(); else if (S === me) siteChanged(); } }); return me.loud; }
   function glnAct(a, el) { var g = /^gln-/.test(str(a)) ? glnInst() : null; return g ? g.act(a, el) : false; }
   function rvInst() {
     var box = $q('#gm-runv'); if (!box || !W.B68GmRunView) return null;
@@ -5614,7 +5616,8 @@
       /* T5: Show on iPad / Take it down for the players' map, in the site's toolbar */
       mapLive: function () { return S === me && mapOnIpad(); }, mapShow: function () { return S === me ? siteMapUp(false) : Promise.resolve(false); }, mapDown: function () { if (S === me) blankIpad(); },
       lineShown: function () { var l = $q('#gm-runv .rv-siteline'); return !!(l && l.offsetParent !== null); },
-      thing: function (el) { var rz = S === me ? rkZoom() : null; if (rz) rz.act(el); }      /* RK09 (room.key): a room card's thing opens its zoom card */
+      thing: function (el) { var rz = S === me ? rkZoom() : null; if (rz) rz.act(el); },      /* RK09 (room.key): a room card's thing opens its zoom card */
+      loud: function () { return S === me ? loudInst() : null; }      /* RK23 (gm.glance): the alarm popover's beats and the prep note's When it goes loud (gm/loud.js); null while off */
     });
     return me.site;
   }
