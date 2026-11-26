@@ -481,7 +481,7 @@ await test('room key bundles: need() of one fetches only its own files; room-tab
   const dn = fakeDoc(SHEETS), Ln = routes(ROUTES, dn).B68Load; Ln.need('night-flow');
   eq(dn.order().filter((x) => Ln.BUNDLES['prep-actions'].includes(x)), Ln.BUNDLES['prep-actions'], 'night-flow brings prep-actions (it loads only on demand)');
   const dg = fakeDoc(SHEETS), Lg = routes(ROUTES, dg).B68Load; Lg.need('gm-glance');
-  eq(dg.order().filter((x) => Lg.BUNDLES['kit-ui'].includes(x) || Lg.BUNDLES['prep-actions'].includes(x)), [], 'gm-glance, close-crew, phone-find, room-intro and phone-glance bring no dependency');
+  eq(dg.order().filter((x) => Lg.BUNDLES['kit-ui'].includes(x) || Lg.BUNDLES['prep-actions'].includes(x)), Lg.BUNDLES['kit-ui'], 'gm-glance brings kit-ui and nothing else (RK21: its buttons are B68Ui on the old desk too); close-crew, phone-find, room-intro and phone-glance bring no dependency');
   const d2 = fakeDoc(SHEETS), L2 = routes(ROUTES, d2).B68Load;
   L2.need('gm'); L2.need('display'); L2.need('lookbook'); L2.need('table'); L2.need('handouts'); L2.need('kit-desk');
   eq(d2.order().filter((x) => RK_FILES.has(x)), [], 'the old bundles and the kit fetch no room key file');

@@ -2729,6 +2729,7 @@
     if (W.B68Kit && S.status === 'ready') W.B68Kit.set('desk', !!(W.B68Features && W.B68Features.valueOf(S.doc, 'kit.desk')));      /* the kit and stage build (KS01.2): data-kit="desk" follows the setting, at once (ui/kit-flag.js) */
     if (S.status === 'ready' && W.B68Features) { var pOn = !!W.B68Features.valueOf(S.doc, 'blade.pitches'); if (W.B68Pitches) W.B68Pitches.set(gmApi(), pOn); else if (pOn && W.B68Load) W.B68Load.need('blade-pitches').then(function () { if (W.B68Pitches && S && S.status === 'ready') W.B68Pitches.set(gmApi(), !!W.B68Features.valueOf(S.doc, 'blade.pitches')); }, function () {}); }      /* blade.pitches (KS18): the blade-pitches bundle while it is on; B68Pitches (gm/kit/blade.js) adds the pitch fields to the tick, and takes them off when it turns off */
     if (S.status === 'ready' && W.B68Features && W.B68Load) P.rkWant(function (id) { return !!W.B68Features.valueOf(S.doc, id); }).forEach(function (n) { var me = S; if (!me.rkAsked) me.rkAsked = {}; if (!me.rkAsked[n]) { me.rkAsked[n] = true; W.B68Load.need(n).then(function () { if (n === 'room-key' && S === me && S.rv) S.rv.rerender(); }, function () { me.rkAsked[n] = false; }); } });      /* RK01 (night.flow, close.crew, room.key, room.tables, gm.glance): each bundle is fetched once, only while its setting is on; the stubs do nothing until their tickets fill them */
+    if (S.status === 'ready' && S.rv && !!S.glnOn !== !!glnInst()) { S.glnOn = !!glnInst(); S.rv.rerender(); }      /* RK21 (gm.glance): its bundle (with kit-ui first, routes.js DEPS) arrived, or the setting went off: the Run view's header draws again */
     if (S.status === 'ready' && S.rz && S.rv && !!S.rzOn !== b09On('room.key')) { S.rzOn = b09On('room.key'); S.rv.rerender(); }      /* RK09: room.key turned on or off (here or on another device) once its zoom card exists: the room cards draw again, and an open card closes */
     if (S.status === 'ready' && !S.ntAsked && W.B68Load && b09On('night.flow')) { var mn = S; mn.ntAsked = true; W.B68Load.need('night-flow').then(function () { if (S === mn) b09Paint(); }, function () { mn.ntAsked = false; }); }      /* RK03 (night.flow): the Roll draws its Tick control once the bundle is in (the same fetch as the line above: B68Load asks once) */
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
@@ -4315,7 +4316,8 @@
       roomAt: function (svg, ev) { var k = knInst(); return k ? k.roomAt(svg, ev) : ''; },
       pinned: function () { return S && S.b19 && S.b19.flashback ? S.b19.flashback.pinned() : ''; }, threat: function () { return S && S.b19 && S.b19.threat ? S.b19.threat.view() : null; },
       intelGroups: function () { var k = knInst(); return k && k.active() ? k.view().groups.map(function (g) { return { id: g.id, label: g.label }; }) : []; },
-      costume: function () { var si = siteInst(); return si ? si.costume() : false; }, siteAct: function (a, el, view) { if (sceneAct(a, el)) return; var si = siteInst(); if (si) si.act(a, el, view); },
+      costume: function () { var si = siteInst(); return si ? si.costume() : false; }, siteAct: function (a, el, view) { if (sceneAct(a, el)) return; if (glnAct(a, el)) return; var si = siteInst(); if (si) si.act(a, el, view); },
+      glanceNow: function (x, kit) { var g = glnInst(); return g ? g.html(x, kit) : ''; },      /* RK21 (gm.glance): the fiction's clock and who's where, under the header; '' while off */
       clockNamed: function (name) { var l = tableClocks().filter(function (c) { return str(c.name).trim() === name; }); return l.length ? l[0] : null; },
       publish: runPublish, toast: toast, phoneCards: phoneCardsOn, setPhoneCards: setPhoneCards,
       /* server time: the iPad corrects to it, so the beat timer's endsAt is stamped on it (the GM api's Date-header skew; 0 when unknown) */
@@ -4337,6 +4339,9 @@
       feature: function (id) { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, id)); }
     };
   }
+  /* RK21 (gm.glance): the fiction's clock and who's where (gm/glance-now.js), one per page session; null while gm.glance is off or its bundle is not loaded */
+  function glnInst() { var M = W.B68GmGlanceNow, me = S; if (!me || !M || M.stub || typeof M.create !== 'function' || !b09On('gm.glance')) return null; if (!me.gln) me.gln = M.create({ run: function () { return S === me && runV2() ? rvHost() : null; }, redraw: function () { if (S === me && S.rv) S.rv.rerender(); }, toast: toast }); return me.gln; }
+  function glnAct(a, el) { var g = /^gln-/.test(str(a)) ? glnInst() : null; return g ? g.act(a, el) : false; }
   function rvInst() {
     var box = $q('#gm-runv'); if (!box || !W.B68GmRunView) return null;
     if (!S.rv || S.rvBox !== box) { if (S.rv) S.rv.detach(); S.rv = W.B68GmRunView.create(rvHost()); S.rv.attach(box); S.rvBox = box; S.rvSite = ''; }
