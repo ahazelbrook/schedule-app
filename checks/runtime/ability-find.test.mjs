@@ -8,6 +8,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import { blankSheet, loadContent } from './fixtures/sheets/blank-sheet.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const require = createRequire(import.meta.url);
@@ -162,7 +163,7 @@ test('seams: tracker.js meets it in three one-line branches, glance.js in two, e
 test('seams: page.js (the full sheet) meets it in three one-line branches, in the abilities editor and drawEd; a waived or failed region has no editor and draws nothing', () => {
   const src = read('app/sheet/page.js'), P = src.split('\n').filter((l) => /B68AbilityFind/.test(l));
   assert.equal(P.length, 3, 'page.js: three lines');
-  assert.ok(P.some((l) => /^\s*body = W && W\.B68AbilityFind \? W\.B68AbilityFind\.box\('ed', list\.length\) : '';/.test(l)));
+  assert.ok(P.some((l) => /^\s*body = W && W\.B68AbilityFind && !edNote\('abilities'\) \? W\.B68AbilityFind\.box\('ed', list\.length\) : '';/.test(l)));
   assert.equal(P.filter((l) => /W\.B68AbilityFind\.apply\(layer, 'pg'\)/.test(l)).length, 2, 'applied after the fresh draw and after the live redraw');
   const i = src.indexOf("case 'abilities': {"), j = src.indexOf("case 'friends'", i);
   assert.ok(i > 0 && src.slice(i, j).indexOf('B68AbilityFind') > 0, 'the box is built only in the abilities case');
@@ -174,5 +175,60 @@ test('seams: boot.js asks for the bundle only while phone.find is on (the betwee
   assert.ok(/else if \(window\[x\[2\]\]\) window\[x\[2\]\]\.stop\(\);/.test(boot));
 });
 
+/* ---- RK32's full sheet with phone.find on and off: a region it does not draw gets no box; off, the editor is RK32's markup ---- */
+const PAGE_SRC = read('app/sheet/page.js'), CTX = loadContent(path.join(ROOT, 'app', 'content.js')), PAGE = require(path.join(ROOT, 'app/sheet/page.js')).Pure;
+const SENTINEL = '<!--ABF-BOX-->', NOTE = 'This part of the sheet isn’t mapped: use the glance screen', hound = CTX.byId.hound;
+/* page.js in a stand-in window whose elements keep what is written to them; find: a stand-in B68AbilityFind, or none */
+function pageWin(map, find) {
+  function el() {
+    return { style: {}, attrs: {}, children: [], innerHTML: '', isConnected: true, clientWidth: 390, clientHeight: 600, offsetWidth: 0, scrollLeft: 0, scrollTop: 0, hidden: false, _q: {},
+      classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+      setAttribute(k, v) { this.attrs[k] = v; }, getAttribute(k) { return this.attrs[k]; }, appendChild(c) { this.children.push(c); c.parentNode = this; return c; }, removeChild() {},
+      querySelector(sel) { return this._q[sel] || (this._q[sel] = el()); }, querySelectorAll() { return []; }, addEventListener() {}, getBoundingClientRect() { return { left: 0, top: 0 }; }, focus() {} };
+  }
+  const win = { innerWidth: 390, innerHeight: 664, setTimeout, clearTimeout, Promise, B68Content: CTX, document: { createElement: el, createElementNS: el, activeElement: null } };
+  win.self = win; win.window = win;
+  win.fetch = () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(JSON.parse(JSON.stringify(map))) });
+  win.Image = function () { const img = { setAttribute() {}, parentNode: null }; Object.defineProperty(img, 'src', { set() { setTimeout(() => img.onload(), 0); }, get() { return ''; } }); return img; };
+  if (find) win.B68AbilityFind = find;
+  vm.runInNewContext(PAGE_SRC, win, { filename: 'app/sheet/page.js' });
+  return { win, box: el() };
+}
+const nellCh = () => ({ doc: { name: 'Nell Arbuthnot', playbook: 'hound' }, play: { stress: 2, abilities: ['Fixer'] }, pb: hound, own: [] });
+/* opens the full sheet on the abilities editor (the focus the glance's "All your abilities" row gives) and returns the editor's html */
+async function editorHtml(map, withFind) {
+  const calls = { box: [], apply: [] }, find = withFind ? { box(k, n) { calls.box.push([k, n]); return SENTINEL; }, apply(r, kind) { calls.apply.push(kind); return true; } } : null;
+  const w = pageWin(map, find), P = w.win.B68SheetPage;
+  assert.equal(P.open(w.box, nellCh(), { focus: 'ds-abbox', fallback() { throw new Error('fell back'); }, close() {}, record() {}, commit() {}, play() { return null; } }), true);
+  for (let i = 0; i < 40 && !(P.state() && P.state().editor); i++) await new Promise((r) => setTimeout(r, 15));
+  assert.equal(P.state().editor, 'abilities', 'the abilities editor is open');
+  return { calls, html: w.box.children[0]._q['.sp-layer'].innerHTML };
+}
+const pending = [];
+function atest(name, fn) { pending.push(fn().then(() => { passed++; console.log('PASS ' + name); }, (e) => { failed++; console.log('FAIL ' + name + ': ' + (e && e.stack || e)); })); }
+atest('full sheet, phone.find ON: a healthy abilities region gets the box; a waived region and a wrong-count region draw no box and show the note (and RK32 draws no ability mark there)', async () => {
+  const ok = await editorHtml(blankSheet(CTX, 'hound').map, true);
+  assert.ok(ok.html.includes(SENTINEL), 'the box is in the editor'); assert.ok(!ok.html.includes(NOTE)); assert.ok(ok.calls.box.length > 0 && ok.calls.box.every((c) => c[0] === 'ed' && c[1] === hound.abilities.length), 'asked with the playbook\'s row count'); assert.ok(ok.calls.apply.includes('pg'));
+  const waived = await editorHtml(blankSheet(CTX, 'hound', { waived: ['abilities'] }).map, true);
+  assert.ok(!waived.html.includes(SENTINEL), 'a waived region: no box'); assert.ok(waived.html.includes(NOTE), 'the note shows'); assert.deepEqual(waived.calls.box, [], 'box() is not even asked');
+  const m = blankSheet(CTX, 'hound').map; m.ab.pop();
+  const bad = await editorHtml(m, true);
+  assert.ok(!bad.html.includes(SENTINEL), 'a wrong count: no box'); assert.ok(bad.html.includes(NOTE), 'the note shows'); assert.deepEqual(bad.calls.box, []);
+  for (const mp of [m, blankSheet(CTX, 'hound', { waived: ['abilities'] }).map]) {
+    const g = PAGE.guards(mp, CTX, hound); assert.equal(g.ab.ok, false, 'RK32 itself fails that region');
+    assert.equal((PAGE.marks(mp, { play: { abilities: ['Fixer'] }, pb: hound, doc: {} }, g, CTX).match(/class="sp-pen"/g) || []).length, 0, 'so it draws no ability mark');
+  }
+});
+atest('full sheet, phone.find OFF (no B68AbilityFind): the abilities editor is exactly RK32\'s, with no box and no extra node, healthy or waived', async () => {
+  for (const o of [undefined, { waived: ['abilities'] }]) {
+    const on = await editorHtml(blankSheet(CTX, 'hound', o).map, true), off = await editorHtml(blankSheet(CTX, 'hound', o).map, false);
+    assert.ok(!off.html.includes(SENTINEL) && !/abf/.test(off.html), 'no box, no abf node');
+    assert.equal(off.html.includes(NOTE), !!o, 'the note only where RK32 puts it');
+    assert.equal(off.html, on.html.split(SENTINEL).join(''), 'byte for byte RK32\'s markup: the box is the only difference');
+    assert.ok(off.html.includes('<div class="sp-static"></div>'), 'the static part is empty, as RK32 draws it');
+  }
+});
+
+await Promise.all(pending);
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

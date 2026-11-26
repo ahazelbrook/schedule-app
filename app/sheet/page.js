@@ -408,7 +408,7 @@
         sub = mine.length + ' taken · a new one at 8 playbook xp';
         live = lab('Yours') + (mine.length ? mine.map(function (n) { var t = abText(list, n); return '<div class="sp-ab"><b>' + esc(n) + '</b>' + (t ? '<span>' + esc(t) + '</span>' : '') + '</div>'; }).join('') : '<p class="sp-faint">None yet.</p>') +
           lab('Not taken yet') + list.filter(function (a) { return mine.indexOf(a[0]) < 0; }).map(function (a) { return '<div class="sp-ab sp-not"><b>' + esc(a[0]) + '</b><span>' + esc(a[1]) + '</span>' + btn('Take it', 'data-act="ability" data-n="' + esc(a[0]) + '" data-i="1"') + '</div>'; }).join('');
-        body = W && W.B68AbilityFind ? W.B68AbilityFind.box('ed', list.length) : '';      /* RK25 (phone.find): a search box over the rows, '' while off or for a short list */
+        body = W && W.B68AbilityFind && !edNote('abilities') ? W.B68AbilityFind.box('ed', list.length) : '';      /* RK25 (phone.find): a search box over the rows, '' while off, for a short list, or over a region RK32 does not draw (waived, wrong count) */
         break;
       }
       case 'friends': {

@@ -788,6 +788,19 @@ try {
       await p.waitForSelector('#dossier .sp-panel[data-region="stress"]', { timeout: 8000 });
       check(!(await p.$('#dossier .sp-panel .abf')), 'another region\'s editor has no box');
       await S.ctx.close();
+      /* RK32's guard comes first: a waived abilities region and one with the wrong count draw nothing on the page, show the note, and get no box */
+      const wrong = blankSheet(CT, 'hound').map; wrong.ab.pop();
+      for (const [what, map] of [['waived', blankSheet(CT, 'hound', { waived: ['abilities'] }).map], ['wrong count', wrong]]) {
+        const W2 = await open('pc-nell', { w: 390, h: 664, sheets: { map } }), w2 = W2.page; await glanceUp(w2);
+        await until(() => w2.evaluate(() => !!window.B68AbilityFind && window.B68AbilityFind.state().on), 15000, 200);
+        if (await w2.$('#dossier .gl-foot [data-gl="full"]')) await w2.click('#dossier .gl-foot [data-gl="full"]'); else { await w2.click('#dossier .gl-top [data-gl="more"]'); await w2.click('#dossier .gl-sheet [data-gl="full"]'); }
+        await until(() => w2.evaluate(() => !!document.querySelector('#dossier .sp.sp-ready')), 10000, 100);
+        await w2.locator('#dossier .sp-hit[data-region="abilities"]').first().tap();
+        await w2.waitForSelector('#dossier .sp-panel[data-region="abilities"]', { timeout: 8000 });
+        const g2 = await w2.evaluate(() => ({ note: !!document.querySelector('#dossier .sp-panel .sp-note'), box: !!document.querySelector('#dossier .sp-panel .abf, #dossier .sp-panel [data-abf-box]'), marks: document.querySelectorAll('#dossier .sp-marks .sp-pen').length }));
+        check(g2.note && !g2.box, 'the full sheet, ' + what + ' abilities region: the editor shows the note and has no search box: ' + JSON.stringify(g2));
+        await W2.ctx.close();
+      }
     }
     /* Night: the box and the glance's abilities sheet, in the dark (pictures; the box must still be there and readable) */
     for (const gl of [false, true]) {
