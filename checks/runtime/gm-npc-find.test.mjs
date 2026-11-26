@@ -266,7 +266,7 @@ await test('Esc: the open card is a B68GmEsc entry (in-view panel, 40) and Esc s
 
 /* ---------- the sheet ---------- */
 await test('glance.css: the RK24 block is there, every rule on a .gl-find class under #gm-page, nothing under 12 px, no !important, no C1 character', () => {
-  const all = fs.readFileSync(path.join(ROOT, 'app/gm/glance.css'), 'utf8'), i = all.indexOf('/* ---------- RK24'), j = all.indexOf('/* ---------- RK20');
+  const all = fs.readFileSync(path.join(ROOT, 'app/gm/glance.css'), 'utf8'), i = all.indexOf('/* ---------- RK24'), j = all.length;
   assert.ok(i >= 0 && j > i, 'the block sits before RK20\u2019s');
   const css = all.slice(i, j).replace(/\/\*[\s\S]*?\*\//g, '');
   assert.ok(!/[\u0080-\u009f]/.test(all), 'no U+0080 to U+009F');

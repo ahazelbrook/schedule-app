@@ -69,43 +69,6 @@
 :root[data-kit~="desk"] .gl-now-kit .gl-now-pair { white-space: nowrap; }
 
 
-/* ---------- RK24: any NPC by name (.gl-find*; gm/npc-find.js): the search box at the top of the Cast panel, its short list and the NPC's card. One block, a data-ui-scope, so
-   the kit's tokens and parts are the same on either desk (the old desk's own tokens first). Nothing under 12 px. ---------- */
-#gm-page .gl-find { --gl-ink: var(--ink, var(--ui-ink)); --gl-soft: var(--ink-soft, var(--ui-ink-soft)); --gl-line: var(--hair, var(--ui-line)); --gl-bg: var(--card, var(--ui-surface));
-  box-sizing: border-box; display: grid; gap: var(--ui-space-2, 6px); min-width: 0; margin: 0 0 var(--ui-space-3, 10px); padding: var(--ui-space-2, 6px) var(--ui-space-3, 10px);
-  border: 1px solid var(--gl-line); border-radius: var(--ui-radius, 6px); background: var(--gl-bg); color: var(--gl-ink); font: 400 var(--ui-type-body, 14px)/1.35 var(--ui-font-text, var(--font-text)); }
-#gm-page .gl-find .gl-find-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--ui-space-2, 6px); min-width: 0; }
-#gm-page .gl-find .gl-find-bar > * { min-width: 0; }
-#gm-page .gl-find .gl-find-bar .ui-field { flex: 1 1 14em; color: var(--gl-ink); }
-#gm-page .gl-find .ui-field-label { color: var(--gl-soft); }      /* the old desk's Night theme: the kit's tokens stay light and the card is dark, so the label takes the page's own colour */
-#gm-page .gl-find .gl-find-q { min-height: 36px; width: 100%; box-sizing: border-box; font-size: 14px; }
-#gm-page .gl-find .gl-b { min-height: 32px; text-transform: none; letter-spacing: 0; font-size: 12px; }      /* the old desk's chip.sm is 10 px: nothing here is under 12 */
-#gm-page .gl-find .gl-b .ui-label, #gm-page .gl-find .gl-b .ui-key { font-size: inherit; }
-#gm-page .gl-find .gl-b:disabled { opacity: .45; }
-#gm-page .gl-find .gl-find-note, #gm-page .gl-find .gl-find-line, #gm-page .gl-find .gl-find-look, #gm-page .gl-find .gl-find-text { margin: 0; overflow-wrap: anywhere; }
-#gm-page .gl-find .gl-find-note, #gm-page .gl-find .gl-find-sub, #gm-page .gl-find .gl-find-line { color: var(--gl-soft); font-size: 12px; }
-#gm-page .gl-find .gl-find-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-#gm-page .gl-find .gl-find-li { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--ui-space-1, 4px) var(--ui-space-2, 6px); min-width: 0; }
-#gm-page .gl-find .gl-find-li > .gl-find-pick { flex: none; max-width: 60%; }
-#gm-page .gl-find .gl-find-li > .gl-find-sub { flex: 1 1 4em; min-width: 0; overflow-wrap: anywhere; }
-#gm-page .gl-find .gl-find-crumb { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-2, 6px); }
-#gm-page .gl-find .gl-find-pick { font-weight: 700; }
-#gm-page .gl-find .gl-find-pick.is-on, #gm-page .gl-find .gl-find-pick[aria-pressed="true"] { border-left: 4px solid var(--gl-ink); }      /* the open one: a bar, not only a colour */
-#gm-page .gl-find .gl-find-hid, #gm-page .gl-find .gm-badge { flex: none; font-size: 12px; white-space: nowrap; }
-#gm-page .gl-find .gl-find-card { display: grid; gap: var(--ui-space-2, 6px); min-width: 0; padding-top: var(--ui-space-2, 6px); border-top: 1px solid var(--gl-line); }      /* the notes and the answer scroll inside themselves (the notes are focusable, so the arrows work): the cast rows stay in reach */
-#gm-page .gl-find .gl-find-body { display: grid; gap: var(--ui-space-2, 6px); min-width: 0; max-height: min(11em, 24vh); overflow-y: auto; overscroll-behavior: contain; }
-#gm-page .gl-find .gl-find-name { margin: 0; font: 700 var(--ui-type-lead, 16px)/1.2 var(--ui-font-text, var(--font-text)); }
-#gm-page .gl-find .gl-find-al { color: var(--gl-soft); font-weight: 400; }
-#gm-page .gl-find .gl-find-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px var(--ui-space-3, 10px); margin: 0; }
-#gm-page .gl-find .gl-find-facts dt { color: var(--gl-soft); font: 700 12px/1.35 var(--ui-font-cond, var(--font-cond)); letter-spacing: .1em; text-transform: uppercase; }
-#gm-page .gl-find .gl-find-facts dd { margin: 0; overflow-wrap: anywhere; }
-#gm-page .gl-find .gl-find-rest { margin: 0; padding-left: 1.2em; font-size: 12px; }
-#gm-page .gl-find .gl-find-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-2, 6px); }
-#gm-page .gl-find .gl-find-answer { max-height: min(9em, 20vh); overflow-y: auto; padding: var(--ui-space-2, 6px) var(--ui-space-3, 10px); border-left: 3px solid var(--gl-ink); }
-#gm-page .gl-find .gl-find-text { white-space: pre-wrap; }
-@media (max-width: 700px) { #gm-page .gl-find .gl-b { min-height: 40px; } }
-@media (prefers-reduced-motion: reduce) { #gm-page .gl-find, #gm-page .gl-find * { transition: none; animation: none; } }
-
 /* ---------- RK20: the crew at a glance (.gl-crew*), the rail's one panel ---------- */
 /* the old desk (gm.css's tokens; the kit desk's overrides follow). The rail's own .gm-stat labels are 9.5 px: here they are 12. Nothing in this panel is under 12 px. */
 #gm-page .gl-crew .gm-band { font-size: 12px; }
@@ -185,3 +148,38 @@
 :root[data-kit~="desk"] #gm-page .gl-loud h4.gl-loud-h, :root[data-kit~="desk"] #gm-page .gl-loud p.gl-loud-g { font-family: var(--ui-font-text); font-weight: 700; letter-spacing: .04em; }
 :root[data-kit~="desk"] #gm-page .gl-loud p.gl-loud-src, :root[data-kit~="desk"] #gm-page .gl-loud-sub, :root[data-kit~="desk"] #gm-page .gl-loud p.gl-loud-wait, :root[data-kit~="desk"] #gm-page .gl-loud p.gl-loud-bad { color: var(--ui-ink-soft); }
 :root[data-kit~="desk"] #gm-page .gl-loud-list li, :root[data-kit~="desk"] #gm-page .gl-loud p.gl-loud-wait, :root[data-kit~="desk"] #gm-page .gl-loud p.gl-loud-clock { font-size: var(--ui-type-body); }
+
+/* ---------- RK24: any NPC by name (.gl-find*; gm/npc-find.js): the search box at the top of the Cast panel, its short list and the NPC's card. One block, a data-ui-scope, so
+   the kit's tokens and parts are the same on either desk (the old desk's own tokens first). Nothing under 12 px. ---------- */
+#gm-page .gl-find { --gl-ink: var(--ink, var(--ui-ink)); --gl-soft: var(--ink-soft, var(--ui-ink-soft)); --gl-line: var(--hair, var(--ui-line)); --gl-bg: var(--card, var(--ui-surface));
+  box-sizing: border-box; display: grid; gap: var(--ui-space-2, 6px); min-width: 0; margin: 0 0 var(--ui-space-3, 10px); padding: var(--ui-space-2, 6px) var(--ui-space-3, 10px);
+  border: 1px solid var(--gl-line); border-radius: var(--ui-radius, 6px); background: var(--gl-bg); color: var(--gl-ink); font: 400 var(--ui-type-body, 14px)/1.35 var(--ui-font-text, var(--font-text)); }
+#gm-page .gl-find .gl-find-bar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--ui-space-2, 6px); min-width: 0; }
+#gm-page .gl-find .gl-find-bar > * { min-width: 0; }
+#gm-page .gl-find .gl-find-bar .ui-field { flex: 1 1 14em; color: var(--gl-ink); }
+#gm-page .gl-find .ui-field-label { color: var(--gl-soft); }      /* the old desk's Night theme: the kit's tokens stay light and the card is dark, so the label takes the page's own colour */
+#gm-page .gl-find .gl-find-q { min-height: 36px; width: 100%; box-sizing: border-box; font-size: 14px; }
+#gm-page .gl-find .gl-b { min-height: 32px; text-transform: none; letter-spacing: 0; font-size: 12px; }      /* the old desk's chip.sm is 10 px: nothing here is under 12 */
+#gm-page .gl-find .gl-b .ui-label, #gm-page .gl-find .gl-b .ui-key { font-size: inherit; }
+#gm-page .gl-find .gl-b:disabled { opacity: .45; }
+#gm-page .gl-find .gl-find-note, #gm-page .gl-find .gl-find-line, #gm-page .gl-find .gl-find-look, #gm-page .gl-find .gl-find-text { margin: 0; overflow-wrap: anywhere; }
+#gm-page .gl-find .gl-find-note, #gm-page .gl-find .gl-find-sub, #gm-page .gl-find .gl-find-line { color: var(--gl-soft); font-size: 12px; }
+#gm-page .gl-find .gl-find-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+#gm-page .gl-find .gl-find-li { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--ui-space-1, 4px) var(--ui-space-2, 6px); min-width: 0; }
+#gm-page .gl-find .gl-find-li > .gl-find-pick { flex: none; max-width: 60%; }
+#gm-page .gl-find .gl-find-li > .gl-find-sub { flex: 1 1 4em; min-width: 0; overflow-wrap: anywhere; }
+#gm-page .gl-find .gl-find-crumb { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-2, 6px); }
+#gm-page .gl-find .gl-find-pick { font-weight: 700; }
+#gm-page .gl-find .gl-find-pick.is-on, #gm-page .gl-find .gl-find-pick[aria-pressed="true"] { border-left: 4px solid var(--gl-ink); }      /* the open one: a bar, not only a colour */
+#gm-page .gl-find .gl-find-hid, #gm-page .gl-find .gm-badge { flex: none; font-size: 12px; white-space: nowrap; }
+#gm-page .gl-find .gl-find-card { display: grid; gap: var(--ui-space-2, 6px); min-width: 0; padding-top: var(--ui-space-2, 6px); border-top: 1px solid var(--gl-line); }      /* the notes and the answer scroll inside themselves (the notes are focusable, so the arrows work): the cast rows stay in reach */
+#gm-page .gl-find .gl-find-body { display: grid; gap: var(--ui-space-2, 6px); min-width: 0; max-height: min(11em, 24vh); overflow-y: auto; overscroll-behavior: contain; }
+#gm-page .gl-find .gl-find-name { margin: 0; font: 700 var(--ui-type-lead, 16px)/1.2 var(--ui-font-text, var(--font-text)); }
+#gm-page .gl-find .gl-find-al { color: var(--gl-soft); font-weight: 400; }
+#gm-page .gl-find .gl-find-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px var(--ui-space-3, 10px); margin: 0; }
+#gm-page .gl-find .gl-find-facts dt { color: var(--gl-soft); font: 700 12px/1.35 var(--ui-font-cond, var(--font-cond)); letter-spacing: .1em; text-transform: uppercase; }
+#gm-page .gl-find .gl-find-facts dd { margin: 0; overflow-wrap: anywhere; }
+#gm-page .gl-find .gl-find-rest { margin: 0; padding-left: 1.2em; font-size: 12px; }
+#gm-page .gl-find .gl-find-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-2, 6px); }
+#gm-page .gl-find .gl-find-answer { max-height: min(9em, 20vh); overflow-y: auto; padding: var(--ui-space-2, 6px) var(--ui-space-3, 10px); border-left: 3px solid var(--gl-ink); }
+#gm-page .gl-find .gl-find-text { white-space: pre-wrap; }
