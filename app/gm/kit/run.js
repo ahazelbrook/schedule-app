@@ -126,6 +126,7 @@
     if (m.started) h += v.timePop(x);
     if (v.alarmOpen) h += v.alarmPop(x);
     h += menu(x, v);
+    if (!m.started && typeof v.host.quickEng === 'function') h += v.host.quickEng(x);      /* RK22 (gm.glance): the engagement dice under the result row; '' while off */
     return h + '</div>';
   }
 

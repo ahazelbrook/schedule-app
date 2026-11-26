@@ -2742,6 +2742,7 @@
     if (S.status === 'ready' && !S.ntAsked && W.B68Load && b09On('night.flow')) { var mn = S; mn.ntAsked = true; W.B68Load.need('night-flow').then(function () { if (S === mn) b09Paint(); }, function () { mn.ntAsked = false; }); }      /* RK03 (night.flow): the Roll draws its Tick control once the bundle is in (the same fetch as the line above: B68Load asks once) */
     if (S.status === 'ready' && W.B68Load && !S.glAsked && b09On('gm.glance')) { var mg = S; mg.glAsked = true; W.B68Load.need('gm-glance').then(function () { if (S === mg) renderRail(); }, function () { mg.glAsked = false; }); }      /* RK20 (gm.glance): the rail draws the crew panel once the bundle is in (the same fetch as RK01's line above: B68Load asks once) */
     if (S.status === 'ready' && !!S.glOn !== b09On('gm.glance')) { S.glOn = b09On('gm.glance'); if (!S.glOn) S.gl = null; renderRail(); }      /* RK20: gm.glance turned on or off (here or on another device): the rail draws again, the old Crew box back when it is off */
+    if (S.status === 'ready' && !S.qrAsked && W.B68Load && b09On('gm.glance')) { var mq = S; mq.qrAsked = true; W.B68Load.need('gm-glance').then(function () { if (S === mq) b09Paint(); }, function () { mq.qrAsked = false; }); }      /* RK22 (gm.glance): the quick rules draw once the bundle is in (B68Load asks once) */
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
@@ -4349,6 +4350,7 @@
         if (md && !rz && rrInst() && W.B68GmRoomZoom) md = W.B68GmRoomZoom.noteMd(md);      /* RK14 (room.tables): the same, for room.tables on its own */
         return e && str(e.md).trim() ? npcCardHtml(md, 'rm-') : null; },
       roomThings: function (room, o) { var rz = rkZoom(); return rz ? rz.html(room, o) : ''; },      /* RK09 (room.key): the room's things, before its note; '' while off */
+      quickEng: function () { var q = qrMod(); return q && q.engPanel ? q.engPanel(qrHost()) : ''; },      /* RK22 (gm.glance): the engagement dice, beside the result row before the night starts; '' while off */
       /* a switch's value (map.countdown: the header's countdown pie) */
       feature: function (id) { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, id)); }
     });
@@ -5335,6 +5337,7 @@
     var box = $q('#gm-stamp'); if (box) { var h = on ? R.stampHtml(v) : ''; if (box.__html !== h) { var kc = v && v.cost && R.costKeep ? R.costKeep(box) : null; box.innerHTML = h; box.__html = h; if (kc) kc(); } box.hidden = !on; if (v && v.cost && R.costBind) R.costBind(box, function () { return S && S.stamp; }); }     /* KS15: the cost field keeps its focus */
     if (S.nt || (flowOn() && W.B68GmNightTicks)) ntCtl().paint(box, flowOn(), v);      /* RK03 (night.flow): Tick a clock, under the stamp */
     rollMiniPaint(v); rollSizerPaint(v);
+    qrPaint();      /* RK22 (gm.glance): the quick rules under the Roll card; taken down while off */
   }
   function b09Marked(res) {
     var sit = res && res.meta ? res.meta.situation : '';
@@ -6701,6 +6704,16 @@
     renderDowntime();
   }
 
+  /* RK22 (gm.glance, gm/quick-rules.js): the quick rules' module while the setting is on and the bundle is in, else null; its host is what it reads of this page */
+  function qrMod() { var Q = W.B68GmQuickRules; return Q && typeof Q.engPanel === 'function' && b09On('gm.glance') ? Q : null; }
+  function qrHost(pc) {
+    var me = S;
+    return { rules: W.B68Rules || null, Content: W.B68Content || null, aftermath: W.B68GmAftermath || null, pc: pc || null,
+      engage: function () { var r = S === me ? S.scRoll : null; return r && isObj(r.score) && isObj(r.score.engage) ? r.score.engage : null; },
+      crewHeat: function () { var c = isObj(camp) && isObj(camp.crew) ? camp.crew : {}; return Math.max(0, Math.min(9, Math.floor(+c.heat) || 0)); },
+      redraw: function () { if (S !== me) return; if (S.rv) { try { S.rv.rerender(); } catch (e) {} } if ($q('#gm-dt')) renderDowntime(); } };
+  }
+  function qrPaint() { var Q = W.B68GmQuickRules; if (!Q || typeof Q.mountRoll !== 'function') return; Q.mountRoll(qrMod() ? qrHost() : null); }
   /* the activity's ONE row of buttons (a tap rolls the card at once), with what it needs above it; the button that made the card on
      screen stays marked while it is this PC's card for this activity */
   function dtRowHtml(dt, act, u, pc, roll) {
@@ -6715,6 +6728,7 @@
         dt.VICES.map(function (v) { return '<option value="' + esc(v) + '"' + (v === u.vice ? ' selected' : '') + '>' + esc(dtViceLabel(v)) + '</option>'; }).join('') + '</select></label>' +
         '<label class="gm-field gm-dt-pur" for="gm-dt-purveyor"><span class="gm-lab">Purveyor</span><input type="text" id="gm-dt-purveyor" data-dtf="purveyor" maxlength="200" autocomplete="off" value="' + esc(u.purveyor) + '"' +
         ' placeholder="' + (pc ? 'Name, place, district' : 'any: a stock host and place') + '" title="Filled from the sheet. A change here is for these cards only: the sheet keeps its own."></label></div>' +
+        (qrMod() ? qrMod().indulgePanel(qrHost(pc)) : '') +      /* RK22 (gm.glance): Indulge Vice, step by step, above Rolled at the table: its steps decide which button */
         row('Rolled at the table', btn('res', 'in', 'Indulged', 'gm-dtb-in', '', mine && str(on.res) !== 'over') + btn('res', 'over', 'Overindulged', 'gm-dtb-over', '', mine && str(on.res) === 'over'));
     }
     if (act === 'train') return row('Which xp track', dt.ATTRS.map(function (a) { return btn('attr', a, esc(a)); }).join(''));

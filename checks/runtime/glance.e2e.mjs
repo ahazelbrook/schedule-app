@@ -33,10 +33,11 @@ async function until(fn, ms, step = 150) { const t0 = Date.now(); for (;;) { con
 const api = (method, p, body, user = GM) => fetch(BASE + '/api' + p, { method, headers: { 'X-Dev-User': user, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
   .then(async (r) => { const t = await r.text(); let j = null; try { j = JSON.parse(t); } catch (_) {} return { status: r.status, json: j, text: t }; });
 
-/* the parts, in the order they run: { name, file (a fixtures/gm module), run (its exported function), ms (its own timeout) }. RK20, RK22 to RK24 add a row. */
+/* the parts, in the order they run: { name, file (a fixtures/gm module), run (its exported function), ms (its own timeout) }. RK23 and RK24 add a row. */
 const PARTS = [
   { name: 'RK21', file: './fixtures/gm/glance-rk21.mjs', run: 'rk21', ms: (SHOTS ? 900 : 300) * 1000 },
   { name: 'RK20', file: './fixtures/gm/glance-rk20.mjs', run: 'rk20', ms: (SHOTS ? 900 : 600) * 1000 },
+  { name: 'RK22', file: './fixtures/gm/glance-rk22.mjs', run: 'rk22', ms: (SHOTS ? 1500 : 480) * 1000 },
 ];
 /* every setting a part may turn on: all off before and after each part */
 const BASE_OFF = { 'gm.glance': false, 'kit.desk': false };

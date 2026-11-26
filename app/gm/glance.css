@@ -2,6 +2,37 @@
    In the gm-glance bundle, fetched only while its setting is on. Old-desk rules go here, scoped to this build's own classes; kit rules are scoped under
    :root[data-kit~="desk"], unlayered, with no !important. */
 
+/* ---------- RK22: the quick rules (.gl-rules*; gm/quick-rules.js). One block per place (the Roll, the Run header, the Downtime card), each a data-ui-scope, so
+   the kit's tokens and parts are the same on either desk. Shut by default: one quiet line. Nothing under 12 px. ---------- */
+#gm-page .gl-rules { --gl-ink: var(--ink, var(--ui-ink)); --gl-soft: var(--ink-soft, var(--ui-ink-soft)); --gl-line: var(--hair, var(--ui-line)); --gl-bg: var(--paper, var(--ui-surface));
+  box-sizing: border-box; display: grid; gap: var(--ui-space-2, 6px); min-width: 0; margin: var(--ui-space-2, 6px) 0; padding: var(--ui-space-2, 6px) var(--ui-space-3, 10px);
+  border: 1px solid var(--gl-line); border-radius: var(--ui-radius, 6px); color: var(--gl-ink); font: 400 var(--ui-type-body, 14px)/1.35 var(--ui-font-text, var(--font-text)); }
+#gm-page .gl-rules .gl-bar, #gm-page .gl-rules .gl-grp, #gm-page .gl-rules .gl-pick, #gm-page .gl-rules .gl-rowx { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-2, 6px); min-width: 0; }
+#gm-page .gl-rules .gl-lab { display: inline-block; margin: 0; color: var(--gl-soft); font: 700 12px/1.2 var(--ui-font-cond, var(--font-cond)); letter-spacing: .12em; text-transform: uppercase; }
+#gm-page .gl-rules .gl-b { min-height: 32px; text-transform: none; letter-spacing: 0; font-size: 12px; }      /* the old desk's chip.sm is 10 px: nothing here is under 12 */
+#gm-page .gl-rules .gl-b .ui-label, #gm-page .gl-rules .gl-b .ui-key { font-size: inherit; }
+#gm-page .gl-rules .gl-sb { min-width: 32px; padding-inline: 0; }
+#gm-page .gl-rules .gl-b[aria-pressed="true"] { background: var(--gl-ink); border-color: var(--gl-ink); color: var(--gl-bg); }
+#gm-page .gl-rules .gl-b:disabled { opacity: .45; }
+#gm-page .gl-rules .gl-body { display: grid; gap: var(--ui-space-2, 6px); min-width: 0; padding-top: var(--ui-space-2, 6px); border-top: 1px solid var(--gl-line); }
+#gm-page .gl-rules .gl-step { display: inline-flex; align-items: center; gap: var(--ui-space-1, 4px); }
+#gm-page .gl-rules .gl-n { min-width: 2.2em; text-align: center; font: 700 var(--ui-type-lead, 16px)/1 var(--ui-font-mono, monospace); }
+#gm-page .gl-rules .gl-gist { min-width: 0; font-size: 12px; overflow-wrap: anywhere; }
+#gm-page .gl-rules .gl-def, #gm-page .gl-rules .gl-rule-t, #gm-page .gl-rules .gl-sum, #gm-page .gl-rules .gl-note { margin: 0; overflow-wrap: anywhere; }
+#gm-page .gl-rules .gl-note { font-size: 12px; }
+#gm-page .gl-rules .gl-rule-t { padding: var(--ui-space-2, 6px) var(--ui-space-3, 10px); border-left: 3px solid var(--ui-rules, var(--pp-file, currentColor)); background: var(--ui-sunk, transparent); }
+#gm-page .gl-rules .gl-rule-b { border-color: var(--ui-rules, var(--pp-file, currentColor)); }
+#gm-page .gl-rules .gl-notes { margin: 0; padding-left: 1.2em; }
+#gm-page .gl-rules .gl-steps { display: grid; gap: 2px; margin: 0; padding-left: 1.6em; }
+#gm-page .gl-rules .gl-steps .gl-sl { color: var(--gl-soft); }
+#gm-page .gl-rules .gl-body > .gl-b { justify-self: start; }
+#gm-page .gl-rules .gl-steps .is-over { color: var(--ui-alarm, #b3261e); }
+#gm-page .gl-rules .gl-wait { margin: 0; }
+/* the Run header's panel sits under the header's row, across its width */
+#gm-page .rv-headwrap > .gl-rules, #gm-page .krv-headwrap > .gl-rules { margin: 0 var(--ui-space-3, 10px) var(--ui-space-2, 6px); }
+@media (max-width: 700px) { #gm-page .gl-rules { padding-inline: var(--ui-space-2, 6px); } #gm-page .gl-rules .gl-b { min-height: 40px; } #gm-page .gl-rules .gl-sb { min-width: 40px; } }
+@media (prefers-reduced-motion: reduce) { #gm-page .gl-rules, #gm-page .gl-rules * { transition: none; animation: none; } }
+
 /* ---------- RK21: the fiction's clock and who's where, under the Run view's header (gm/glance-now.js). Old desk: gm.css's tokens ---------- */
 #gm-page .gl-now:not(.gl-now-kit) { display: grid; gap: 3px; margin: 0; padding: 5px 10px 6px; border: 2px solid var(--rule); border-top: 0;
   background: var(--card); color: var(--ink); font: 13px/1.35 var(--font-text); }
