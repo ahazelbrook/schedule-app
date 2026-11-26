@@ -121,9 +121,17 @@ export async function rk22(c) {
     /* after a tap the keys are still the page's: 2 is They rolled 4/5 (a result card), and it is not typed into the line */
     await p.click('[data-gl-panel="roll"] [data-gl="act"][data-v="Study"]');
     const cardBefore = await p.$eval('#gm-card', (c) => c.innerHTML), lineBefore = await lineNow(p);
-    await p.keyboard.press('2'); await p.keyboard.press('Space');
+    await p.keyboard.press('2');
     check(await until(() => p.$eval('#gm-card', (c, b) => c.innerHTML !== b, cardBefore), 6000, 150), tag + 'after an action tap, the key 2 still fires They rolled (a result card comes up)');
-    check((await lineNow(p)) === lineBefore, tag + 'and 2 and Space were not typed into the Roll’s line (' + (await lineNow(p)) + ')');
+    check((await lineNow(p)) === lineBefore, tag + 'and 2 was not typed into the Roll’s line (' + (await lineNow(p)) + ')');
+    await p.keyboard.press('Escape'); await sleep(300);
+    /* Space is GO, and the cue stack gives it to the page itself only: no chip may hold the focus after a tap. The GM state and the iPad document change when GO fires */
+    const goState = async () => (await api('GET', '/gm/ambient')).text + '|' + (await api('GET', '/gm/state')).text;
+    const goBefore = await goState();
+    check(await p.evaluate(() => document.activeElement === document.body), tag + 'after an action tap the focus is on the page itself, not on a chip');
+    await p.keyboard.press('Space');
+    check(await until(async () => (await goState()) !== goBefore, 8000, 200), tag + 'after an action tap Space is GO: the GM state and the iPad document change (the cue stack fires)');
+    check((await lineNow(p)) === lineBefore && await p.$eval('[data-gl-panel="roll"] [data-gl="act"][data-v="Study"]', (b) => b.getAttribute('aria-pressed') === 'true'), tag + 'and Space neither typed into the line nor toggled the chip off');
     await p.keyboard.press('Escape'); await sleep(300);
 
     /* heat sum */

@@ -263,11 +263,9 @@
     pickEntry(R, term, prefer).then(function (d) { ST.defs[key] = d; delete ST.loading[key]; repaint(kind); }, function () { ST.defs[key] = null; delete ST.loading[key]; repaint(kind); });
   }
   /* an action tapped fills the Roll's line: its name and a colon at the front; a second action takes the first's place */
-  function fillLine(act, back) {
+  function fillLine(act) {
     var d = W && W.document, t = d && d.getElementById('gm-c-threat'); if (!t) return;
-    back = back || (d && d.activeElement) || null;
-    var sel = back && typeof back.getAttribute === 'function' ? [back.getAttribute('data-gl'), back.getAttribute('data-v'), back.getAttribute('data-k')] : [];
-    try { t.focus(); } catch (e) {}      /* while the field has the focus the page's own repaint leaves what is in it alone; the focus goes back to the button below */
+    try { t.focus(); } catch (e) {}      /* while the field has the focus the page's own repaint leaves what is in it alone; it is let go of below */
     var cur = str(t.value), old = ST.fill;
     if (old && cur.indexOf(old) === 0) cur = cur.slice(old.length);
     /* a name this panel put there before (this page or an earlier one) is replaced, never stacked */
@@ -279,10 +277,9 @@
     /* the page's own setter stores the line at once (the field alone is stored half a second after the last key, and a repaint in between puts the old line back) */
     if (line.trim() && P && typeof P.setThreat === 'function') { try { P.setThreat(line); } catch (e) {} t.value = line; }
     else { try { t.dispatchEvent(new W.Event('input', { bubbles: true })); } catch (e) {} }
-    /* the line is stored and the field was only a means: the keys (1 to 4, Space, the letters) stay the page's, so the focus goes back to where the tap was */
-    /* (the page's own repaint, which setThreat starts, redraws this panel: the button tapped may be a new element by now, found by what it is) */
-    var live = back && back.isConnected !== false ? back : back && d && typeof d.querySelector === 'function' ? d.querySelector('[data-gl="' + str(sel[0]) + '"][data-v="' + str(sel[1]) + '"][data-k="' + str(sel[2]) + '"]') : null;
-    if (live && live !== t && typeof live.focus === 'function') { try { live.focus(); } catch (e) {} }
+    /* the line is stored and the field was only a means. The focus goes to the page itself, not to the chip: the page's keys (1 to 4, the letters, and Space as GO,
+       which the cue stack gives to a focused body only) work from there, and a chip holding the focus would take Space for itself */
+    var on = d && d.activeElement; if (on && typeof on.blur === 'function') { try { on.blur(); } catch (e) {} }
   }
   function onClick(ev) {
     var t = ev.target && ev.target.closest ? ev.target.closest('[data-gl]') : null; if (!t || t.disabled) return;
@@ -291,7 +288,7 @@
       if (k === 'roll') ST.open.roll = ST.open.roll === v ? '' : v; else ST.open[k] = !ST.open[k];
       if (k === 'roll' && ST.act && ST.open.roll === 'acts') need(host, 'roll', ST.act, ST.act);
     } else if (a === 'act') {
-      ST.act = ST.act === v ? '' : v; fillLine(ST.act, t);
+      ST.act = ST.act === v ? '' : v; fillLine(ST.act);
       if (ST.act) need(host, 'roll', ST.act, ST.act);
     } else if (a === 'step') {
       var d = +t.getAttribute('data-d') || 0;

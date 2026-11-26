@@ -41,8 +41,8 @@ function fakeRules(extra) {
 /* a stand-in DOM: elements with attributes, closest(), the Roll's line, and the document the module listens on */
 function fakeDom() {
   const listeners = [];
-  const el = (attrs) => ({ attrs, disabled: false, getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }, closest() { return this; }, focus() { doc.activeElement = this; } });
-  const line = { value: '', maxLength: 100, events: [], dispatchEvent(ev) { this.events.push(ev.type); return true; }, focus() { this.focused = true; doc.activeElement = this; }, setSelectionRange() {} };
+  const el = (attrs) => ({ attrs, disabled: false, getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }, closest() { return this; }, focus() { doc.activeElement = this; }, blur() { if (doc.activeElement === this) doc.activeElement = null; } });
+  const line = { value: '', maxLength: 100, events: [], dispatchEvent(ev) { this.events.push(ev.type); return true; }, focus() { this.focused = true; doc.activeElement = this; }, blur() { if (doc.activeElement === this) doc.activeElement = null; }, setSelectionRange() {} };
   const doc = { activeElement: null, getElementById(id) { return id === 'gm-c-threat' ? line : null; }, querySelectorAll() { return []; }, addEventListener(t, f) { listeners.push([t, f]); } };
   return { doc, line, el, listeners };
 }
@@ -233,7 +233,7 @@ await test('clicks: Actions open, an action fills the Roll\u2019s line with its 
   click(dom, g('act', 'Hunt', 'roll'));
   assert.equal(dom.line.value, 'Hunt: '); assert.ok(dom.line.events.includes('input'), 'the page\u2019s own input handler hears it');
   assert.equal(dom.line.focused, true, 'the field had the focus while it was filled');
-  assert.notEqual(dom.doc.activeElement, dom.line, 'and gave it back: the keys (1 to 4, Space, the letters) stay the page\u2019s, never typed into the line');
+  assert.equal(dom.doc.activeElement, null, 'and let it go: the focus is on the page itself, so the keys (1 to 4, the letters, Space as GO) are the page' + String.fromCharCode(0x2019) + 's, never typed into the line and never taken by a chip');
   dom.line.value = 'Hunt: the guard turns round';
   click(dom, g('act', 'Prowl', 'roll'));
   assert.equal(dom.line.value, 'Prowl: the guard turns round');
@@ -262,15 +262,15 @@ await test('clicks: with the page’s setThreat there, the line goes through it 
   delete globalThis.B68GmPage; delete globalThis.document;
 });
 
-await test('clicks: the page’s repaint (started by setThreat) redraws the panel: the focus goes to the new button, found by what it is', () => {
+await test('clicks: after an action tap no chip holds the focus (the cue stack gives Space as GO to the page itself only), even when the page repaint replaced the button', () => {
   Q.reset(); const dom = fakeDom(); globalThis.document = dom.doc;
-  const attrs = g('act', 'Hunt', 'roll'), old = dom.el(attrs), fresh = dom.el(attrs); let asked = '';
-  dom.doc.querySelector = (sel) => { asked = sel; return fresh; };
-  globalThis.B68GmPage = { setThreat() { old.isConnected = false; return true; } };      /* the redraw took the tapped button out of the page */
+  const btn = dom.el(g('act', 'Hunt', 'roll'));
+  globalThis.B68GmPage = { setThreat() { btn.isConnected = false; return true; } };      /* the redraw took the tapped button out of the page */
   Q.rollHtml(host());
-  Q.onClick({ target: old, preventDefault() {} });
-  assert.equal(dom.doc.activeElement, fresh, 'the focus is on the button that replaced it');
-  assert.ok(/data-gl="act"/.test(asked) && /data-v="Hunt"/.test(asked) && /data-k="roll"/.test(asked), asked);
+  btn.focus(); Q.onClick({ target: btn, preventDefault() {} });
+  assert.equal(dom.doc.activeElement, null, 'nothing holds the focus: not the line, not the chip');
+  btn.focus(); Q.onClick({ target: btn, preventDefault() {} });
+  assert.equal(dom.doc.activeElement, null, 'and a second tap the same');
   delete globalThis.B68GmPage; delete globalThis.document;
 });
 
