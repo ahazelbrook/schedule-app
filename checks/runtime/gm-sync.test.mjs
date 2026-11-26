@@ -134,7 +134,7 @@ await test('d1: wrangler errors are classified (not logged in / offline) and not
 // ======================================================================================================
 await test('pull: lines land under the four headings in the station format, with block ids, in time order', async () => {
   const env = await setup();
-  const r = await sync(env, ['pull', '--only', 'notes']);
+  const r = await sync(env, ['pull', '--yes', '--only', 'notes']);
   const t = read(env.vault, S + '/b68g-s02.md');
   ok(t.includes('## Names\n\n- **20:05** ZQXname Harl the ferry clerk ^b68-cA1\n\n## Loose ends'), 'Names line (whitespace collapsed, placeholder eaten)');
   ok(t.includes('## Loose ends\n\n- **20:08** ZQXloose Who paid for the lamp? ^b68-cA2\n- **20:14** ZQXlater A second loose end ^b68-cA5\n\n## Moments'), 'two loose ends in order');
@@ -147,7 +147,7 @@ await test('pull: lines land under the four headings in the station format, with
 
 await test('pull: pins become collapsed callouts under ## Pinned, bargains under ## Bargains and callbacks, both after Rolled', async () => {
   const env = await setup();
-  await sync(env, ['pull', '--only', 'notes']);
+  await sync(env, ['pull', '--yes', '--only', 'notes']);
   const t = read(env.vault, S + '/b68g-s02.md');
   const rolled = t.indexOf('## Rolled at the table'), pinned = t.indexOf('## Pinned'), barg = t.indexOf('## Bargains and callbacks'), rule = t.indexOf('---\n\n## Related');
   ok(rolled < pinned && pinned < barg && barg < rule, 'order: Rolled, Pinned, Bargains, then the rule before Related');
@@ -157,9 +157,9 @@ await test('pull: pins become collapsed callouts under ## Pinned, bargains under
 
 await test('idempotent: a second run leaves the whole vault byte-identical and files nothing', async () => {
   const env = await setup();
-  await sync(env, ['pull', '--only', 'notes']);
+  await sync(env, ['pull', '--yes', '--only', 'notes']);
   const a = snapshot(env.vault);
-  const r2 = await sync(env, ['pull', '--only', 'notes']);
+  const r2 = await sync(env, ['pull', '--yes', '--only', 'notes']);
   eq(JSON.stringify(snapshot(env.vault)), JSON.stringify(a), 'vault changed on the second run');
   eq(r2.report.filed.length, 0, 'filed something twice');
   ok(r2.report.skipped.filter((s) => s.why === 'already in the vault').length >= 9, 'second run skips as already in the vault');
@@ -167,7 +167,7 @@ await test('idempotent: a second run leaves the whole vault byte-identical and f
 
 await test('missing note: a capture for session 3 is refused and reported; everything else still files', async () => {
   const env = await setup();
-  const r = await sync(env, ['pull', '--only', 'notes']);
+  const r = await sync(env, ['pull', '--yes', '--only', 'notes']);
   const ref = r.report.refused.find((x) => /b68g-s03/.test(x.target));
   ok(ref && ref.why === 'note missing' && ref.ids.includes('cA6'), 'refusal for b68g-s03 reported');
   ok(!fs.existsSync(V.abs(env.vault, S + '/b68g-s03.md')), 'no note created');
@@ -180,7 +180,7 @@ await test('refusal: a note with a heading twice gets nothing (the 14/10 double-
   const f = V.abs(env.vault, S + '/b68g-s02.md');
   fs.writeFileSync(f, fs.readFileSync(f, 'utf8') + '\n## Names\n\n-\n');
   const before = fs.readFileSync(f);
-  const r = await sync(env, ['pull', '--only', 'notes']);
+  const r = await sync(env, ['pull', '--yes', '--only', 'notes']);
   ok(fs.readFileSync(f).equals(before), 's02 was modified');
   const ref = r.report.refused.find((x) => x.target === 'b68g-s02.md');
   ok(ref && /heading twice: ## Names/.test(ref.why), 'reason given');
@@ -191,10 +191,10 @@ await test('refusal: a target lacking one of the four headings is refused (s1.5 
   const env = await setup();
   const f = V.abs(env.vault, S + '/b68g-s1.5.md');
   fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace('## Moments', '## Names\n\n## Loose ends\n\n## Moments\n\n## Rolled at the table') );
-  await sync(env, ['pull', '--only', 'notes']);
+  await sync(env, ['pull', '--yes', '--only', 'notes']);
   ok(read(env.vault, S + '/b68g-s1.5.md').includes('^b68-cA7'), 'filed once the headings exist');
   const env2 = await setup();
-  const r2 = await sync(env2, ['pull', '--only', 'notes']);
+  const r2 = await sync(env2, ['pull', '--yes', '--only', 'notes']);
   ok(r2.report.refused.find((x) => x.target === 'b68g-s1.5.md' && /missing heading: ## Names/.test(x.why)), 'refused while headings are missing');
 });
 
@@ -210,11 +210,11 @@ await test('dry run writes nothing (vault, ledger) but reports what it would fil
 
 await test('a line Alex deleted after it was filed is not filed again (the ledger remembers)', async () => {
   const env = await setup();
-  await sync(env, ['pull', '--only', 'notes']);
+  await sync(env, ['pull', '--yes', '--only', 'notes']);
   const f = V.abs(env.vault, S + '/b68g-s02.md');
   fs.writeFileSync(f, fs.readFileSync(f, 'utf8').replace(/^- \*\*20:05\*\* .*\^b68-cA1\n/m, ''));
   const before = fs.readFileSync(f);
-  const r = await sync(env, ['pull', '--only', 'notes']);
+  const r = await sync(env, ['pull', '--yes', '--only', 'notes']);
   ok(fs.readFileSync(f).equals(before), 're-filed the deleted line');
   ok(r.report.skipped.find((s) => s.id === 'cA1' && /removed/.test(s.why)), 'reported as removed');
 });
@@ -222,7 +222,7 @@ await test('a line Alex deleted after it was filed is not filed again (the ledge
 await test('a line already in ANY session note is not filed again elsewhere (s01 holds ^b68-cold1)', async () => {
   const doc = stateDoc(); doc.capture.cold1 = { bucket: 'n', text: 'ZQXold Tobble again', at: at(-500) };
   const env = await setup({ doc });
-  const r = await sync(env, ['pull', '--only', 'notes']);
+  const r = await sync(env, ['pull', '--yes', '--only', 'notes']);
   ok(!read(env.vault, S + '/b68g-s02.md').includes('cold1'), 'filed into s02 as well');
   ok(r.report.skipped.find((s) => s.id === 'cold1' && s.why === 'already in the vault'));
 });
@@ -232,7 +232,7 @@ await test('CRLF notes keep CRLF on every line (old and new), a BOM stays, Unico
   const f = V.abs(env.vault, S + '/b68g-s02.md');
   const crlf = fs.readFileSync(f, 'utf8').replace(/\n/g, '\r\n');
   fs.writeFileSync(f, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(crlf, 'utf8')]));
-  await sync(env, ['pull', '--only', 'notes']);
+  await sync(env, ['pull', '--yes', '--only', 'notes']);
   const buf = fs.readFileSync(f);
   ok(buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf, 'BOM lost');
   const t = buf.subarray(3).toString('utf8');
@@ -240,14 +240,14 @@ await test('CRLF notes keep CRLF on every line (old and new), a BOM stays, Unico
   ok(t.includes('- **20:05** ZQXname Harl the ferry clerk ^b68-cA1\r\n'), 'new line has CRLF');
   ok(t.includes('“quietly”, and wait. Café, naïve, 東京 ✓\r\n'), 'Unicode line intact');
   const t2 = fs.readFileSync(f);
-  await sync(env, ['pull', '--only', 'notes']);
+  await sync(env, ['pull', '--yes', '--only', 'notes']);
   ok(fs.readFileSync(f).equals(t2), 'second run changed a CRLF note');
 });
 
 await test('LF notes: every byte outside the inserted lines is unchanged', async () => {
   const env = await setup();
   const before = read(env.vault, S + '/b68g-s02.md');
-  await sync(env, ['pull', '--only', 'notes']);
+  await sync(env, ['pull', '--yes', '--only', 'notes']);
   const after = read(env.vault, S + '/b68g-s02.md');
   const strip = (s) => s.split('\n').filter((l) => !/\^b68-/.test(l) && !/^> /.test(l) && l !== '>' && !/^## (Pinned|Bargains and callbacks)$/.test(l) && l.trim() !== '-' && l.trim() !== '').join('\n');
   eq(strip(after), strip(before), 'non-sync content changed');
@@ -266,7 +266,7 @@ await test('Obsidian saves the note mid-run: the edit is redone on the fresh cop
   const f = V.abs(env.vault, S + '/b68g-s02.md');
   let n = 0;
   V.setHooks({ beforeRename(file, attempt) { if (file === f && attempt === 0 && n++ === 0) { const t = fs.readFileSync(f, 'utf8'); fs.writeFileSync(f, t.replace('## Related\n', '## Related\n\n- typed in Obsidian mid-run\n')); } } });
-  try { await sync(env, ['pull', '--only', 'notes']); } finally { V.setHooks(null); }
+  try { await sync(env, ['pull', '--yes', '--only', 'notes']); } finally { V.setHooks(null); }
   const t = read(env.vault, S + '/b68g-s02.md');
   ok(t.includes('- typed in Obsidian mid-run') && t.includes('^b68-cA1'), 'both the mid-run edit and the sync lines are there');
   const env2 = await setup();
@@ -274,7 +274,7 @@ await test('Obsidian saves the note mid-run: the edit is redone on the fresh cop
   let k = 0;
   V.setHooks({ beforeRename(file) { if (file === f2) { k++; fs.appendFileSync(f2, '\n- typed again ' + k + '\n'); } } });
   let r;
-  try { r = await sync(env2, ['pull', '--only', 'notes']); } finally { V.setHooks(null); }
+  try { r = await sync(env2, ['pull', '--yes', '--only', 'notes']); } finally { V.setHooks(null); }
   const t2 = read(env2.vault, S + '/b68g-s02.md');
   ok(t2.includes('- typed again 1') && t2.includes('- typed again 2') && !t2.includes('^b68-cA1'), 'kept both Obsidian edits, wrote nothing');
   ok(r.report.refused.find((x) => x.target === 'b68g-s02.md' && /changed while the sync/.test(x.why)), 'reported');
@@ -289,7 +289,7 @@ await test('--session N sends lines without a session there; old-style highest n
   ok(/b68g-s07\.md is missing/.test(V.noteForSession(notes, 7).error));
   const doc = { capture: { c1: { bucket: 'm', text: 'ZQX for one', at: T0 } } };
   const env = await setup({ doc });
-  await sync(env, ['pull', '--only', 'notes', '--session', '1']);
+  await sync(env, ['pull', '--yes', '--only', 'notes', '--session', '1']);
   ok(read(env.vault, S + '/b68g-s01.md').includes('ZQX for one ^b68-c1'), 'went to s01');
 });
 
@@ -306,7 +306,7 @@ await test('by date: a capture with no session goes to the note dated that night
   const env = await setup({ doc });
   const s01 = V.abs(env.vault, S + '/b68g-s01.md');
   fs.writeFileSync(s01, fs.readFileSync(s01, 'utf8').replace(/^---\n/, '---\ndate: 17/10/2026\n'));
-  await sync(env, ['pull', '--only', 'notes']);
+  await sync(env, ['pull', '--yes', '--only', 'notes']);
   const one = read(env.vault, S + '/b68g-s01.md'), two = read(env.vault, S + '/b68g-s02.md');
   ok(one.includes('ZQX on the night ^b68-d1') && one.includes('ZQX after midnight ^b68-d2'), 'dated captures went to s01 (dated 17/10)');
   ok(two.includes('ZQX a week later ^b68-d3'), 'no note dated 24/10: the highest note');
@@ -314,7 +314,7 @@ await test('by date: a capture with no session goes to the note dated that night
   const env2 = await setup({ doc: { capture: { e1: { bucket: 'n', text: 'ZQX forced', at: '2026-10-17T09:30:00.000Z' } } } });
   const s01b = V.abs(env2.vault, S + '/b68g-s01.md');
   fs.writeFileSync(s01b, fs.readFileSync(s01b, 'utf8').replace(/^---\n/, '---\ndate: 17/10/2026\n'));
-  await sync(env2, ['pull', '--only', 'notes', '--session', '2']);
+  await sync(env2, ['pull', '--yes', '--only', 'notes', '--session', '2']);
   ok(read(env2.vault, S + '/b68g-s02.md').includes('ZQX forced'), '--session overrides the date');
 });
 
@@ -339,9 +339,83 @@ await test('not logged in / offline: the run stops before writing anything', asy
   ok(/not logged in to Cloudflare/.test(r.out) && /Nothing was written/.test(r.out));
 });
 
+await test('RK27.1: a pull PLANS by default; --yes writes; --dry-run still accepted and wins over --yes; push keeps its own gate', async () => {
+  const dr = (a) => parseArgs(a).dryRun;
+  eq(dr(['pull']), true, 'pull default'); eq(dr(['pull', '--yes']), false, 'pull --yes');
+  eq(dr(['pull', '--dry-run']), true, 'pull --dry-run'); eq(dr(['--yes', '-n', 'pull']), true, '--dry-run beats --yes, in either order');
+  eq(dr(['both']), true, 'both default'); eq(dr(['both', '--yes']), false, 'both --yes'); eq(dr([]), true, 'no mode is both');
+  eq(dr(['push']), false, 'push is not a pull: unchanged'); eq(parseArgs(['push']).yes, false);
+  const env = await setup();
+  const a = snapshot(env.vault);
+  const p = await sync(env, ['pull', '--only', 'notes']);
+  eq(JSON.stringify(snapshot(env.vault)), JSON.stringify(a), 'the default pull wrote to the vault');
+  ok(!fs.existsSync(path.join(env.priv, 'sync-ledger.json')), 'the default pull wrote the ledger');
+  ok(p.out.includes('DRY RUN (nothing written)') && /would file into b68g-s\d+\.md/.test(p.out), 'the default says it is a plan');
+  const b = await sync(env, ['both', '--only', 'notes']);
+  eq(JSON.stringify(snapshot(env.vault)), JSON.stringify(a), 'the default both wrote to the vault');
+  ok(b.report.filed.length >= 8 && b.report.filed.every((f) => f.dry), 'both reports a plan');
+  const w = await sync(env, ['pull', '--yes', '--only', 'notes']);
+  ok(JSON.stringify(snapshot(env.vault)) !== JSON.stringify(a), '--yes did not write');
+  ok(fs.existsSync(path.join(env.priv, 'sync-ledger.json')), '--yes saved the ledger');
+  ok(/filed into b68g-s\d+\.md/.test(w.out) && !w.out.includes('DRY RUN') && w.report.filed.every((f) => !f.dry), '--yes reports it as done');
+  // red proof: the same plan with the flag spelled out equals the default
+  const env2 = await setup();
+  const x = snapshot(env2.vault);
+  await sync(env2, ['pull', '--dry-run', '--yes', '--only', 'notes']);
+  eq(JSON.stringify(snapshot(env2.vault)), JSON.stringify(x), '--dry-run --yes wrote');
+});
+
+await test('RK27.1: the CLI usage text says pull plans and --yes writes', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'gm-sync.mjs'), '--help'], { encoding: 'utf8' });
+  eq(r.status, 0);
+  ok(/pull plans \(writes nothing\) unless --yes/.test(r.stdout) && !/pull writes the vault unless/.test(r.stdout), r.stdout);
+});
+
+await test('RK27.1: the CLI path (main) prints the plan footer after a plan, and not after --yes, a push, or a stop', async () => {
+  const { main } = await import('../../scripts/gm-sync.mjs');
+  const go = async (env, argv, over = {}) => {
+    const lines = [];
+    const code = await main(argv, { vault: env.vault, privateDir: env.priv, exec: env.exec, now: Date.parse('2026-10-18T01:00:00.000Z'), root: ROOT, print: (s) => lines.push(s), log: (s) => lines.push(s), error: (s) => lines.push('ERR ' + s), ...over });
+    return { code, out: lines.join('\n') };
+  };
+  const FOOT = 'Nothing was written. Run again with --yes to write.';
+  const env = await setup();
+  const a = snapshot(env.vault);
+  const plan = await go(env, ['pull', '--only', 'notes']);
+  ok(plan.code < 2, plan.out); ok(plan.out.includes(FOOT), 'no footer after a plan'); ok(plan.out.endsWith(FOOT), 'footer is last');
+  eq(JSON.stringify(snapshot(env.vault)), JSON.stringify(a), 'the CLI plan wrote');
+  ok((await go(env, ['--dry-run', 'pull', '--only', 'notes'])).out.includes(FOOT), '--dry-run is a plan too');
+  const done = await go(env, ['pull', '--yes', '--only', 'notes']);
+  ok(!done.out.includes(FOOT) && done.out.includes('filed into'), 'footer after --yes');
+  ok(!(await go(env, ['push', '--only', 'npcs'])).out.includes(FOOT), 'footer after a push');
+  const stop = await go(env, ['pull'], { vault: path.join(env.base, 'no such vault') });
+  eq(stop.code, 2); ok(!stop.out.includes(FOOT) && stop.out.includes('STOPPED'), 'footer after a stop');
+  const bad = await go(env, ['pull', '--nonsense']);
+  eq(bad.code, 2); ok(bad.out.includes('unknown argument') && !bad.out.includes(FOOT));
+  const help = await go(env, ['--help']);
+  eq(help.code, 0); ok(help.out.includes('pull plans'));
+});
+
+await test('RK27.1: a --baseline plan says it saves nothing without --yes (under the DRY RUN header); --yes and a lone push do not', async () => {
+  const { main } = await import('../../scripts/gm-sync.mjs');
+  const go = async (env, argv) => {
+    const lines = [];
+    await main(argv, { vault: env.vault, privateDir: env.priv, exec: env.exec, now: Date.parse('2026-10-18T01:00:00.000Z'), root: ROOT, print: (s) => lines.push(s), log: (s) => lines.push(s), error: (s) => lines.push(s) });
+    return lines;
+  };
+  const LINE = '--baseline saves nothing without --yes';
+  const env = await setup();
+  const p = await go(env, ['both', '--baseline', '--only', 'npcs']);
+  ok(p[0].includes('DRY RUN (nothing written)') && p[1].startsWith(LINE), 'under the header: ' + p.slice(0, 3).join(' | '));
+  ok(!(await go(env, ['both', '--baseline', '--yes', '--only', 'npcs'])).join('\n').includes(LINE), 'shown under --yes');
+  ok(!(await go(env, ['push', '--baseline', '--only', 'npcs'])).join('\n').includes(LINE), 'shown for a lone push, which does save');
+  ok(!(await go(env, ['both', '--only', 'npcs'])).join('\n').includes(LINE), 'shown without --baseline');
+});
+
 await test('table text never reaches the printout or sync-log.jsonl (counts, ids and note names only)', async () => {
   const env = await setup();
-  const r1 = await sync(env, ['pull', '--only', 'notes']);
+  const r1 = await sync(env, ['pull', '--yes', '--only', 'notes']);
   const r2 = await sync(env, ['pull', '--only', 'notes', '--dry-run']);
   for (const m of MARKERS) {
     ok(!r1.out.includes(m) && !r2.out.includes(m), 'marker in the printout');
@@ -395,26 +469,48 @@ const fakeGen = {
 const npcDoc = () => ({ ...stateDoc(), npcgen: { npc_gen: { seed: 77, mem: '{}', at: T0, s: 2 } } });
 const appNpc = (env, id) => JSON.parse(env.exec.db.prepare('SELECT doc FROM npcs WHERE id = ?').get(id).doc);
 
-await testNpc('NPC pull: new cards (generator format, fallback, "(NPC)" on a vault-wide name collision), needs-review, log entry', async () => {
+await testNpc('NPC pull: new cards (generator format, fallback, "(NPC)" on a vault-wide name collision), no review flag (RK27.2), log entry', async () => {
   const env = await setup({ doc: npcDoc(), npcs: npcRows() });
-  const r = await sync(env, ['pull'], { npcModule: fakeGen });
+  const r = await sync(env, ['pull', '--yes'], { npcModule: fakeGen });
   const sab = read(env.vault, NP + '/Sabine Quell.md');
   ok(sab.startsWith('---\nwiki: entity\ncreated: 18/10/2026\n'), 'frontmatter like the generator');
-  ok(sab.includes('  - wiki/npc\n  - wiki/needs-review\nreview_note: "'), 'needs-review + review_note');
+  ok(sab.includes('  - wiki/npc\n---\n') && !sab.includes('needs-review') && !sab.includes('review_note'), 'RK27.2: no needs-review tag, no review_note');
   ok(sab.includes('# Sabine Quell "Quill"') && sab.includes('> ZQXlook A porter with a lantern') && sab.includes('[TODO:'), 'fallback card from the app fields');
   ok(/## In play\n\n\*What they wanted.*\*\n\n> \[!note\]- 10\/10\/2026: GM notes from the app\n> ZQXgm2 Owes the crew one\.\n\n\^b68-gmn-npc-sabine-[0-9a-f]{8}\n\n---/.test(sab), 'GM notes callout inside In play, before the rule');
   ok(fs.existsSync(V.abs(env.vault, NP + '/Pim Calloway (NPC).md')), 'collision with Personal/People -> (NPC)');
   ok(!fs.existsSync(V.abs(env.vault, NP + '/Pim Calloway.md')), 'shadowed the personal note');
   const tam = read(env.vault, NP + '/Tamsin Rook.md');
-  ok(tam.includes('  - wiki/npc\n  - wiki/needs-review\nreview_note: ') && tam.includes('*glass grinder*'), 'generator card + review tag');
+  ok(tam.includes('  - wiki/npc\n---\n') && !tam.includes('needs-review') && !tam.includes('review_note') && tam.includes('*glass grinder*'), 'generator card, no review tag');
   ok(!tam.includes('gmn-'), 'a generator card gets no GM-notes callout (the card already holds them)');
   ok(read(env.vault, V.FACTIONS + '/b68-the-tin-choir.md').endsWith("- [[Odo D'Arcy]] — lamp-oil seller, Member The Tin Choir\n- [[Tamsin Rook]] — glass grinder, Member The Tin Choir\n"), 'dossier line appended like the generator Save');
   const log = read(env.vault, V.LOG);
   ok(/\n\n## \[18\/10\/2026\] sync \| GM app: 3 new NPC cards\n- Created \[\[Sabine Quell\]\], \[\[Pim Calloway \(NPC\)\]\], \[\[Tamsin Rook\]\]/.test(log) || /## \[18\/10\/2026\] sync \| GM app: 3 new NPC cards/.test(log), 'Wiki/log.md entry');
   eq(r.report.created.length, 3);
-  ok(r.out.includes('created ' + NP + '/Tamsin Rook.md (tagged wiki/needs-review), from its generator roll'), 'printed with provenance');
+  ok(r.out.includes('created ' + NP + '/Tamsin Rook.md, from its generator roll') && !r.out.includes('needs-review'), 'printed with provenance, no tag');
+  ok(r.out.includes('  filed 3 new NPC cards: check them'), 'the report line that replaces the flag');
+  ok(!read(env.vault, V.LOG).includes('needs-review'), 'the log entry carries no tag either');
   const odo = read(env.vault, NP + "/Odo D'Arcy.md");
   ok(/## In play\n\n\*What they wanted.*\*\n\n- \*\*17\/10\/2026 \(app\):\*\* revealed to the table\. \^b68-rev-npc-odo\n\n> \[!note\]- 10\/10\/2026: GM notes from the app\n> ZQXgm Speaks softly\.\n> Counts twice\.\n\n\^b68-gmn-npc-odo-[0-9a-f]{8}\n\n---\n\nRolled from/.test(odo), 'reveal line and GM notes in In play, before the footer rule');
+});
+
+await testNpc('RK27.1/27.2: the default NPC pull files no card; --yes files them untagged and the report says check them', async () => {
+  const env = await setup({ doc: npcDoc(), npcs: npcRows() });
+  const a = JSON.stringify(snapshot(env.vault));
+  const d = await sync(env, ['pull'], { npcModule: fakeGen });
+  eq(JSON.stringify(snapshot(env.vault)), a, 'the default pull created a card');
+  ok(!fs.existsSync(V.abs(env.vault, NP + '/Sabine Quell.md')) && d.report.created.length === 3, 'planned three, wrote none');
+  ok(d.out.includes('would create ' + NP + '/Sabine Quell.md') && d.out.includes('would file 3 new NPC cards: check them'));
+  const w = await sync(env, ['pull', '--yes'], { npcModule: fakeGen });
+  for (const n of ['Sabine Quell', 'Tamsin Rook', 'Pim Calloway (NPC)']) {
+    const t = read(env.vault, NP + '/' + n + '.md');
+    ok(!/needs-review|review_note/.test(t), n + ' carries a review flag');
+  }
+  ok(w.out.includes('  filed 3 new NPC cards: check them'), 'report line');
+  const one = await setup({ doc: npcDoc(), npcs: npcRows().filter((r) => r.id === 'npc_sabine') });
+  const o = await sync(one, ['pull', '--yes'], { npcModule: fakeGen });
+  ok(/filed 1 new NPC card: check them/.test(o.out), 'singular');
+  const none = await sync(env, ['pull', '--yes'], { npcModule: fakeGen });
+  ok(!none.out.includes('check them'), 'nothing new, no line');
 });
 
 await testNpc('NPC pull: the roll\'s choices (npcgen[id].ui) go back into the replay', async () => {
@@ -422,12 +518,12 @@ await testNpc('NPC pull: the roll\'s choices (npcgen[id].ui) go back into the re
   const choosy = { create() { const g = fakeGen.create(); return { noteBody: g.noteBody, roll(o) { seen.push(o.ui); return o.ui && o.ui.place === 'ZQXplace' ? g.roll(o) : { npc: { name: 'Someone Else' } }; } }; } };
   const doc = { ...stateDoc(), npcgen: { npc_gen: { seed: 77, mem: '{}', at: T0, s: 2, ui: { faction: '', district: '', place: 'ZQXplace' } } } };
   const env = await setup({ doc, npcs: npcRows() });
-  const r = await sync(env, ['pull'], { npcModule: choosy });
+  const r = await sync(env, ['pull', '--yes'], { npcModule: choosy });
   ok(seen.some((u) => u && u.place === 'ZQXplace'), 'the replay was given the ui');
-  ok(r.out.includes('created ' + NP + '/Tamsin Rook.md (tagged wiki/needs-review), from its generator roll'), 'rebuilt from the roll, not the fallback');
+  ok(r.out.includes('created ' + NP + '/Tamsin Rook.md, from its generator roll'), 'rebuilt from the roll, not the fallback');
   const env2 = await setup({ doc: npcDoc(), npcs: npcRows() });
   seen.length = 0;
-  await sync(env2, ['pull'], { npcModule: choosy });
+  await sync(env2, ['pull', '--yes'], { npcModule: choosy });
   ok(seen.length && seen.every((u) => u && typeof u === 'object' && !Object.keys(u).length), 'an entry with no ui replays with {} (any)');
 });
 
@@ -436,22 +532,22 @@ await testNpc('NPC pull: idempotent (byte-identical second run, no second log en
   const a0 = snapshot(env.vault);
   const d = await sync(env, ['pull', '--dry-run'], { npcModule: fakeGen });
   eq(JSON.stringify(snapshot(env.vault)), JSON.stringify(a0), 'dry run wrote');
-  ok(d.out.includes('would create ' + NP + '/Sabine Quell.md'));
-  await sync(env, ['pull'], { npcModule: fakeGen });
+  ok(d.out.includes('would create ' + NP + '/Sabine Quell.md') && d.out.includes('would file 3 new NPC cards: check them'));
+  await sync(env, ['pull', '--yes'], { npcModule: fakeGen });
   const a = snapshot(env.vault);
-  const r2 = await sync(env, ['pull'], { npcModule: fakeGen });
+  const r2 = await sync(env, ['pull', '--yes'], { npcModule: fakeGen });
   eq(JSON.stringify(snapshot(env.vault)), JSON.stringify(a), 'second run changed the vault');
   eq(r2.report.created.length, 0);
 });
 
 await testNpc('NPC pull: a card Alex deleted is not recreated; a new GM-notes version is added once', async () => {
   const env = await setup({ doc: npcDoc(), npcs: npcRows() });
-  await sync(env, ['pull'], { npcModule: fakeGen });
+  await sync(env, ['pull', '--yes'], { npcModule: fakeGen });
   fs.renameSync(V.abs(env.vault, NP + '/Sabine Quell.md'), V.abs(env.base, 'moved away.md'));
-  const r = await sync(env, ['pull'], { npcModule: fakeGen });
+  const r = await sync(env, ['pull', '--yes'], { npcModule: fakeGen });
   ok(!fs.existsSync(V.abs(env.vault, NP + '/Sabine Quell.md')) && r.report.skipped.find((s) => s.id === 'npc_sabine' && /renamed or removed/.test(s.why)));
   env.exec.db.prepare("UPDATE npcs SET doc = json_set(doc, '$.gmNotes', 'ZQXgm Now louder.') WHERE id = 'npc_odo'").run();
-  await sync(env, ['pull'], { npcModule: fakeGen });
+  await sync(env, ['pull', '--yes'], { npcModule: fakeGen });
   const odo = read(env.vault, NP + "/Odo D'Arcy.md");
   eq((odo.match(/GM notes from the app/g) || []).length, 2, 'two versions of the GM notes');
   ok(odo.indexOf('ZQXgm Speaks softly') < odo.indexOf('ZQXgm Now louder'), 'newest last');
@@ -530,7 +626,7 @@ await testNpc('NPC push: a change made in the app during the sync is not overwri
 
 await testNpc('NPC names and table text stay out of sync-log.jsonl; table text stays out of the printout', async () => {
   const env = await setup({ doc: npcDoc(), npcs: npcRows() });
-  const r1 = await sync(env, ['both'], { npcModule: fakeGen });
+  const r1 = await sync(env, ['both', '--yes'], { npcModule: fakeGen });
   const r2 = await sync(env, ['both', '--baseline', '--yes'], { npcModule: fakeGen });
   const log = logText(env);
   for (const m of MARKERS) ok(!r1.out.includes(m) && !r2.out.includes(m) && !log.includes(m), 'marker leaked');

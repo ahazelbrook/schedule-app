@@ -27,6 +27,7 @@ export function formatReport(r, o) {
   const out = [];
   const mode = o.mode === 'both' ? 'pull + push' : o.mode;
   out.push('GM sync · campaign ' + o.campaign + ' · ' + mode + (o.dryRun ? ' · DRY RUN (nothing written)' : ''));
+  if (o.dryRun && o.baseline && o.mode !== 'pull') out.push('--baseline saves nothing without --yes (gm:push --baseline records it)');
   if (r.errors.length) { out.push(''); for (const e of r.errors) out.push('STOPPED: ' + e); }
   if (r.errors.length && !r.filed.length && !r.created.length && !r.pushed.length && !r.refused.length) return out;
   if (o.mode !== 'push') {
@@ -63,7 +64,8 @@ export function formatReport(r, o) {
   const npcLines = r.filed.filter((x) => x.kind === 'reveal' || x.kind === 'gmnotes');
   if (r.created.length || npcLines.length) {
     out.push('', 'NPC cards (app -> vault)');
-    for (const c of r.created) out.push('  ' + (o.dryRun ? 'would create ' : 'created ') + c.rel + ' (tagged wiki/needs-review)' + (c.from ? ', ' + c.from : ''));
+    for (const c of r.created) out.push('  ' + (o.dryRun ? 'would create ' : 'created ') + c.rel + (c.from ? ', ' + c.from : ''));
+    if (r.created.length) out.push('  ' + (o.dryRun ? 'would file ' : 'filed ') + r.created.length + ' new NPC card' + (r.created.length === 1 ? '' : 's') + ': check them');
     for (const f of npcLines) out.push('  ' + (o.dryRun ? 'would add ' : 'added ') + KIND[f.kind] + ' to ' + f.note);
   }
   const npcSkips = r.skipped.filter((x) => x.kind === 'npc' || x.kind === 'reveal' || x.kind === 'gmnotes');
