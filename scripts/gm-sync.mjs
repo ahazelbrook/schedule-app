@@ -141,9 +141,21 @@ const USAGE = [
   'push writes D1 only with --yes; both (gm:sync) plans both halves unless --yes. See SYNC.md.',
 ];
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+/** The CLI, with its I/O injectable for tests: io = { log, error, ...run() overrides (exec, print, vault, now) }. Returns the exit code. */
+export async function main(argv, io = {}) {
+  const log = io.log || ((s) => console.log(s)), error = io.error || ((s) => console.error(s));
+  const { log: _l, error: _e, ...over } = io;
   let o;
-  try { o = parseArgs(process.argv.slice(2)); } catch (e) { console.error(e.message); console.error(USAGE.join('\n')); process.exit(2); }
-  if (o.help) { console.log(USAGE.join('\n')); process.exit(0); }
-  run(o).then(({ code }) => { if (o.dryRun && o.mode !== 'push') console.log('\nNothing was written. Run again with --yes to write.'); process.exit(code); }, (e) => { console.error('gm-sync failed: ' + (e && e.stack || e)); process.exit(2); });
+  try { o = parseArgs(argv); } catch (e) { error(e.message); error(USAGE.join('\n')); return 2; }
+  if (o.help) { log(USAGE.join('\n')); return 0; }
+  try {
+    const { code } = await run({ ...o, ...over });
+    // RK27.1: a plan says so at the foot, unless the run stopped before it planned anything
+    if (o.dryRun && o.mode !== 'push' && code !== 2) log('\n' + 'Nothing was written. Run again with --yes to write.');
+    return code;
+  } catch (e) { error('gm-sync failed: ' + (e && e.stack || e)); return 2; }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  main(process.argv.slice(2)).then((code) => process.exit(code));
 }

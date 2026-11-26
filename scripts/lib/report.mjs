@@ -27,6 +27,7 @@ export function formatReport(r, o) {
   const out = [];
   const mode = o.mode === 'both' ? 'pull + push' : o.mode;
   out.push('GM sync · campaign ' + o.campaign + ' · ' + mode + (o.dryRun ? ' · DRY RUN (nothing written)' : ''));
+  if (o.dryRun && o.baseline && o.mode !== 'pull') out.push('--baseline saves nothing without --yes (gm:push --baseline records it)');
   if (r.errors.length) { out.push(''); for (const e of r.errors) out.push('STOPPED: ' + e); }
   if (r.errors.length && !r.filed.length && !r.created.length && !r.pushed.length && !r.refused.length) return out;
   if (o.mode !== 'push') {

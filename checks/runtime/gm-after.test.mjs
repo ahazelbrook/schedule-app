@@ -139,5 +139,21 @@ await test('transcript stats: lines, first and last, named and unnamed speakers'
   assert.equal(transcriptStats(null), null);
 });
 
+await test('RK27: gm:after bypasses gm-sync parseArgs and keeps its own gate: no --yes plans its pull, --yes files it', async () => {
+  const env = await setup();
+  await patchState(env.db, 'default', { capture: { c1: { id: 'c1', bucket: 'n', text: 'ZQX Harl the clerk', at: '2026-10-17T09:30:00.000Z' } } });
+  const note = path.join(env.dir, 'b68g-s02.md');
+  const was = fs.readFileSync(note, 'utf8');
+  const plan = await after(env, []);
+  assert.match(plan.out, /DRY RUN \(nothing written\)/, plan.out);
+  assert.match(plan.out, /would file into b68g-s02\.md/);
+  assert.equal(fs.readFileSync(note, 'utf8'), was, 'the plan wrote the note');
+  assert.ok(!fs.existsSync(path.join(env.priv, 'sync-ledger.json')), 'the plan saved the ledger');
+  const done = await after(env, ['--yes']);
+  assert.ok(!/DRY RUN/.test(done.out), 'a --yes run still says DRY RUN');
+  assert.match(done.out, /filed into b68g-s02\.md/);
+  assert.ok(fs.readFileSync(note, 'utf8').includes('ZQX Harl the clerk ^b68-c1'), '--yes did not file the capture');
+});
+
 console.log(failed ? `\n${passed} passed, ${failed} FAILED` : `\nALL PASSED (${passed})`);
 process.exit(failed ? 1 : 0);

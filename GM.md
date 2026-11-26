@@ -405,8 +405,8 @@ fails and nobody is known, nothing is purged.
   (what was stripped, "a stock figure" when the kit would not draw it, or why there is none). When the figure could not be
   built (`fig.failed`), or the kit itself throws or is not loaded, the card draws no portrait and the note reads
   "No portrait: <reason>", never a blank. **Add to the cast** files the NPC as a hidden cast doc (tag `generated`, the look as the description, the
-  play notes as GM notes) and stores the roll's seed and memory under `npcgen[<npc id>]` in the GM state, so `npm run gm:pull`
-  can rebuild the vault card from it (`SYNC.md`). Pin and Copy work as on the other cards. Under it, the app's cast with
+  play notes as GM notes) and stores the roll's seed and memory under `npcgen[<npc id>]` in the GM state, so `npm run gm:pull -- --yes`
+  (a plain `gm:pull` only plans) can rebuild the vault card from it (`SYNC.md`). Pin and Copy work as on the other cards. Under it, the app's cast with
   portraits: **Show on iPad** (a hidden NPC asks first) and **Put on stage**, which stages them from here (a hidden NPC is
   revealed first, after a confirm, as the cast page does; `campaign.scene = { npcs: { id: true }, at }` through boot's
   `saveScene`, the same document the cast page writes); the rail's **On stage** box is the feedback, the button turns into
@@ -484,7 +484,7 @@ fails and nobody is known, nothing is purged.
   written. The page (`app/gm/prep.js`, `app/prep.css`) renders the blocks with `markdown.js`, cut at their `##` headings into
   sections with a sticky rail of section chips, and then adds what it recognises:
   - **task boxes** tick (GM state `prep.ticks[anchor]`: `{ at, s, rel, t }`); orange means ticked here and not yet in the
-    note, solid ink means ticked in the note (locked here). `npm run gm:pull` ticks the box in its note (SYNC.md, "Prep");
+    note, solid ink means ticked in the note (locked here). `npm run gm:pull -- --yes` ticks the box in its note (a plain `gm:pull` only plans; SYNC.md, "Prep");
   - a table with a `✓` or `☐` column: its cells tick (`prep.cells`), filed as lines under `## At the table (app)`;
   - a run-order table (first column `#`, a column headed About, Time, Budget or Length): a start button per beat
     (`prep.beats`) and the running beat's time against its budget, amber at the budget and red at half as much again;
@@ -533,7 +533,7 @@ fails and nobody is known, nothing is purged.
     points at that score (`S.siteFor`, this page only). **Open map** makes the saved roll the Location card, on the GM layer, in the view
     and theme it was saved with, public band only, and draws it; if the location tables changed since, a toast says the seed now
     gives another place. Show on iPad and Set as score scene then work as always: no push starts from Prep.
-  - **The vault.** `npm run gm:pull` (and `gm:after`) files each site (SYNC.md, "Score sites"). Checks: `gm-page.test.mjs` (S1–S3),
+  - **The vault.** `npm run gm:pull -- --yes` (and `gm:after --yes`; both plan without it) files each site (SYNC.md, "Score sites"). Checks: `gm-page.test.mjs` (S1–S3),
     `gm-prep.test.mjs` (score sites), `gm-sites.test.mjs`, `gm-prep.e2e.mjs` (the score site block).
 - **Authored sites** (23/10/2026; the plan is the vault page `Projects/blades-68-authored-sites.md`). A hand-built location, assigned
   to a score card from the vault instead of rolled, that reveals band by band like any roll.
@@ -617,7 +617,7 @@ fails and nobody is known, nothing is purged.
   the campaign log; **Export tonight's note** downloads `b68g-s<NN>-notes.md`.
   `s` is the session number the campaign document held when the line was filed (`camp.session.number`, a whole number; absent when
   there was none), on typed lines, on lines filed by a card's action (a bargain accepted) and on rolls filed with `L`, so the sync
-  (`npm run gm:sync`) files each line in the right session note. The campaign log never gets capture text.
+  (`npm run gm:pull -- --yes`, or `gm:sync -- --yes`; each plans without `--yes`) files each line in the right session note. The campaign log never gets capture text.
 - **Saving.** Writes are debounced 800 ms, one in flight at a time; what is added meanwhile goes when it lands, even
   after leaving the page, and a hidden tab or `pagehide` sends what is pending as a `keepalive` request. A network error,
   409, 429 or 5xx retries with backoff; any other refusal is shown as "Not saved", kept in `b68.gm.sticky` and never

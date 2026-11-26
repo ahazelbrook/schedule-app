@@ -372,6 +372,47 @@ await test('RK27.1: the CLI usage text says pull plans and --yes writes', async 
   ok(/pull plans \(writes nothing\) unless --yes/.test(r.stdout) && !/pull writes the vault unless/.test(r.stdout), r.stdout);
 });
 
+await test('RK27.1: the CLI path (main) prints the plan footer after a plan, and not after --yes, a push, or a stop', async () => {
+  const { main } = await import('../../scripts/gm-sync.mjs');
+  const go = async (env, argv, over = {}) => {
+    const lines = [];
+    const code = await main(argv, { vault: env.vault, privateDir: env.priv, exec: env.exec, now: Date.parse('2026-10-18T01:00:00.000Z'), root: ROOT, print: (s) => lines.push(s), log: (s) => lines.push(s), error: (s) => lines.push('ERR ' + s), ...over });
+    return { code, out: lines.join('\n') };
+  };
+  const FOOT = 'Nothing was written. Run again with --yes to write.';
+  const env = await setup();
+  const a = snapshot(env.vault);
+  const plan = await go(env, ['pull', '--only', 'notes']);
+  ok(plan.code < 2, plan.out); ok(plan.out.includes(FOOT), 'no footer after a plan'); ok(plan.out.endsWith(FOOT), 'footer is last');
+  eq(JSON.stringify(snapshot(env.vault)), JSON.stringify(a), 'the CLI plan wrote');
+  ok((await go(env, ['--dry-run', 'pull', '--only', 'notes'])).out.includes(FOOT), '--dry-run is a plan too');
+  const done = await go(env, ['pull', '--yes', '--only', 'notes']);
+  ok(!done.out.includes(FOOT) && done.out.includes('filed into'), 'footer after --yes');
+  ok(!(await go(env, ['push', '--only', 'npcs'])).out.includes(FOOT), 'footer after a push');
+  const stop = await go(env, ['pull'], { vault: path.join(env.base, 'no such vault') });
+  eq(stop.code, 2); ok(!stop.out.includes(FOOT) && stop.out.includes('STOPPED'), 'footer after a stop');
+  const bad = await go(env, ['pull', '--nonsense']);
+  eq(bad.code, 2); ok(bad.out.includes('unknown argument') && !bad.out.includes(FOOT));
+  const help = await go(env, ['--help']);
+  eq(help.code, 0); ok(help.out.includes('pull plans'));
+});
+
+await test('RK27.1: a --baseline plan says it saves nothing without --yes (under the DRY RUN header); --yes and a lone push do not', async () => {
+  const { main } = await import('../../scripts/gm-sync.mjs');
+  const go = async (env, argv) => {
+    const lines = [];
+    await main(argv, { vault: env.vault, privateDir: env.priv, exec: env.exec, now: Date.parse('2026-10-18T01:00:00.000Z'), root: ROOT, print: (s) => lines.push(s), log: (s) => lines.push(s), error: (s) => lines.push(s) });
+    return lines;
+  };
+  const LINE = '--baseline saves nothing without --yes';
+  const env = await setup();
+  const p = await go(env, ['both', '--baseline', '--only', 'npcs']);
+  ok(p[0].includes('DRY RUN (nothing written)') && p[1].startsWith(LINE), 'under the header: ' + p.slice(0, 3).join(' | '));
+  ok(!(await go(env, ['both', '--baseline', '--yes', '--only', 'npcs'])).join('\n').includes(LINE), 'shown under --yes');
+  ok(!(await go(env, ['push', '--baseline', '--only', 'npcs'])).join('\n').includes(LINE), 'shown for a lone push, which does save');
+  ok(!(await go(env, ['both', '--only', 'npcs'])).join('\n').includes(LINE), 'shown without --baseline');
+});
+
 await test('table text never reaches the printout or sync-log.jsonl (counts, ids and note names only)', async () => {
   const env = await setup();
   const r1 = await sync(env, ['pull', '--yes', '--only', 'notes']);
