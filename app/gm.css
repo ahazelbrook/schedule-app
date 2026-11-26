@@ -1073,6 +1073,7 @@ body.as-dock { --as-w: max(360px, min(400px, 33vw)); }
 #gm-page .rv-view { display: grid; gap: 6px; min-width: 0; }
 #gm-page .rv-main.peeking .rv-view { border: 3px dashed var(--accent); padding: 6px; }
 #gm-page .rv-lab { font: 900 10.5px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; color: var(--ink-soft); margin: 6px 0 2px; }
+#gm-page .rr-actlab { font: 900 12.5px/1.2 var(--font-cond); text-transform: uppercase; letter-spacing: .12em; margin: 6px 0 2px; }
 #gm-page .rv-tray { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; border: 2px dashed var(--hair); padding: 6px 8px; }
 #gm-page .rv-tray .rv-lab { margin: 0; }
 #gm-page .rv-arm { margin: 0; font-size: 13.5px; }
