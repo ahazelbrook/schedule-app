@@ -1,3 +1,5 @@
+// RK17 adds, in steps 2 and 3: every drawn slot is a quick-draw person (the same one room-people.js draws from it, a portrait, a name that fits its figure), nobody is in
+// the cast or in anything a player or the iPad reads, no NPC is posted, and at a ball (play.crowd.masked) the people are masked.
 // room-tables (RK14 of the room key build, room.tables): a rolled site's room cards in the Run pane, on the demo night (scripts/demo-night.mjs: invented
 // data, the Pelican Rooms). The rooms part is made here from checks/runtime/fixtures/gm/rooms-pack.json: its two invented tables (GM-ONLY- markers on every
 // closer look, roll and danger), copied under the names of the rooms on the page (never a vault table). RK15's steps follow the last of RK14's (step 7).
@@ -60,6 +62,13 @@ function roomsPart(names) {
 }
 const putRooms = (names) => api('POST', '/gm/pack', { part: 'rooms', src: { file: 'demo/rooms', blockSha: '0', exportedAt: new Date().toISOString() }, body: roomsPart(names) });
 
+/* RK17: the quick-draw people. The card the page draws is compared with the same module run here on the same fixtures (the invented npc part of npc-pack.json
+   and the two roles of the rooms part), so the browser's kit and the module here must agree on a slot's person */
+const PEOPLE = require(path.join(ROOT, 'app', 'gm', 'room-people.js'));
+const NPC_T = JSON.parse(fs.readFileSync(path.join(ROOT, 'checks', 'runtime', 'fixtures', 'gm', 'npc-pack.json'), 'utf8')).parts.npc.T;
+const npcWrites = [];
+const stopped = (s) => { s = String(s || '').trim(); return s && !/[.!?…”"]$/.test(s) ? s + '.' : s; };
+
 const env = { ...process.env };
 delete env.ANTHROPIC_API_KEY; delete env.B68_ANTHROPIC_KEY;
 if (await fetch(BASE + '/api/me', { signal: AbortSignal.timeout(1500) }).then(() => true, () => false)) { console.log('FAIL port ' + PORT + ' is already in use'); process.exit(1); }
@@ -86,7 +95,7 @@ try {
     if (route) await c.route('**/api/gm/assist/room', route);      /* RK16: the Blade tap's fake, in place before the page loads */
     await c.addInitScript({ content: 'window.__B68_POLL_MS = 1000; try { localStorage.setItem("b68.theme", ' + JSON.stringify(theme === 'night' ? 'dark' : 'light') + '); } catch (e) {}' });
     const page = await c.newPage(), fetched = [];
-    page.on('request', (r) => fetched.push(r.url()));
+    page.on('request', (r) => { fetched.push(r.url()); if (/\/api\/npcs/.test(r.url()) && r.method() !== 'GET') npcWrites.push(r.method() + ' ' + r.url()); });
     page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
     page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
     page.on('dialog', (d) => d.accept());      /* "Replace tonight's site with a rolled location?": yes */
@@ -105,13 +114,25 @@ try {
     room: c.getAttribute('data-room'), n: +(c.getAttribute('data-rn') || 1), say: (c.querySelector('[data-rr-say]') || { textContent: '' }).textContent,
     none: (c.querySelector('.rr-none') || { textContent: '' }).textContent, things: [...c.querySelectorAll('[data-site="thing"]')].map((b) => b.getAttribute('data-thing')),
     keys: [...c.querySelectorAll('[data-site="thing"] .ui-key')].map((k) => k.getAttribute('data-ui-key')).join(''), ppl: !!c.querySelector('ul.rr-ppl'),
-    slots: [...c.querySelectorAll('[data-rr-slot]')].map((s) => s.getAttribute('data-role')), exits: (c.querySelector('.rr-exits') || { textContent: '' }).textContent })));
+    slots: [...c.querySelectorAll('[data-rr-slot]')].map((s) => s.getAttribute('data-role')), who: [...c.querySelectorAll('[data-rr-slot] .rv-pn b')].map((b) => b.textContent), exits: (c.querySelector('.rr-exits') || { textContent: '' }).textContent })));
   const zoom = (page) => page.evaluate(() => {
     const z = document.querySelector('.rk-zscope .rk-zoom'); if (!z || !z.isConnected) return null;
     const t = (s) => { const e = z.querySelector(s); return e ? e.textContent : ''; };
     return { name: t('.rk-zname'), eye: t('.rk-zeye'), line: t('.rk-zline'), slots: [...z.querySelectorAll('[data-rk-slot]')].map((s) => s.getAttribute('data-rk-slot') + ':' + [...s.querySelectorAll('button')].map((b) => (b.querySelector('.ui-label') || b).textContent).join('/')),
       focusIn: z.contains(document.activeElement), esc: (window.B68GmEsc.list().filter((e) => e.open)[0] || {}).id };
   });
+  /* RK17: every quick-draw person on the page, as the DOM shows them (root: the cards' own selector), and what room-people.js here makes of the same slots */
+  const peopleOf = (page, root = '#gm-runv .rv-rm[data-room]') => page.evaluate((sel) => [...document.querySelectorAll(sel + ' [data-rr-slot]')].map((li) => {
+    const t = (s) => { const e = li.querySelector(s); return e ? e.textContent : ''; }, card = li.closest('.rv-rm');
+    return { room: card.getAttribute('data-room'), n: +(card.getAttribute('data-rn') || 1), slot: li.getAttribute('data-rr-slot'), role: li.getAttribute('data-role'), sex: li.getAttribute('data-sex'),
+      masked: li.getAttribute('data-masked') === 'true', name: t('.rv-pn b'), tag: t('.rv-pn small'), rolel: t('.rr-prole'), look: t('.rr-plook'), manner: t('.rr-pmanner'), want: t('.rr-pwant'),
+      tell: t('.rr-ptell'), line: t('.rr-pline'), svg: li.querySelector('.rv-face svg') ? li.querySelector('.rv-face svg').outerHTML : '', ini: t('.rv-ini') };
+  }), root);
+  const expectedPeople = (page, masked = false, T = FIX) => page.evaluate(() => { const drawn = new Set([...document.querySelectorAll('#gm-runv .rv-rm[data-room]')].map((c) => c.getAttribute('data-room') + '|' + (c.getAttribute('data-rn') || 1)));      /* the cards the Run view draws (a v2 card serves the room's first of a name) */
+    return window.B68GmPage._roomRolled().model().cards.filter((c) => drawn.has(c.name + '|' + c.n)).map((c) => ({ room: c.name, n: c.n, roomKey: c.roomKey, people: c.people.map((p) => ({ id: p.id, role: p.role, seed: p.seed })) })); })
+    .then((rooms) => rooms.flatMap((rm) => PEOPLE.cards(rm.people, { npc: NPC_T, T, roomKey: rm.roomKey, masked }).map((c, k) => ({ r: { room: rm.room, n: rm.n, roomKey: rm.roomKey, id: rm.people[k].id }, c }))));      /* a room's people together: cards() steers two of one role off the same line */
+  const personOk = (d, e) => d && e && d.name === e.c.name && d.role === e.c.role && d.sex === e.c.sex && d.look === e.c.look && d.want === e.c.want && d.line === '“' + e.c.line + '”' &&
+    d.tell === 'Tell: ' + stopped(e.c.tell[0].toUpperCase() + e.c.tell.slice(1)) && d.rolel === e.c.kicker && d.tag === 'quick' && d.svg.startsWith('<svg') && d.masked === e.c.masked;
   const shot = async (page, name) => { if (!SHOTS) return; fs.mkdirSync(SHOTS, { recursive: true }); await page.mouse.move(1, 1); await page.waitForTimeout(300); await page.screenshot({ path: path.join(SHOTS, name + '.png'), animations: 'disabled' }); };
   const reads = async () => {
     const d = await api('GET', '/gm/display', undefined, IPAD), s = await api('GET', '/table/screen', undefined, P1), c = await api('GET', '/campaign', undefined, P1), p = await api('GET', '/characters/pc-nell', undefined, P1);
@@ -157,6 +178,18 @@ try {
   check(cs.filter((c) => c.room === LEFT).every((c) => c.none.startsWith('No table for ' + LEFT) && !c.things.length && !c.say), 'the room left out of the part says "No table for ' + LEFT + '", with no things');
   const pub = tabled.filter((c) => c.slots.length), named = tabled.every((c) => c.things.every((s) => c.say.toLowerCase().includes(s.split('-')[0])));
   check(pub.length > 0 && named, 'people slots drawn by the table\'s band, and the read-aloud names each drawn thing (' + pub.length + ' rooms with someone)');
+  /* RK17: the slots are quick-draw people: a name, a look, a manner, a want, a tell, a line and a face that match the role, the same person as room-people.js makes here */
+  const QP = await peopleOf(page), QE = await expectedPeople(page);
+  check(QE.length > 0 && QP.length === QE.length && QE.every((e) => personOk(QP.filter((d) => d.room === e.r.room && d.n === e.r.n && d.slot === e.r.id)[0], e)),
+    'RK17: every drawn slot is a quick-draw person with a name, look, manner, want, tell, line and a portrait, the same person room-people.js draws from that slot (' + QP.length + ' people)');
+  const FEM = new Set(NPC_T.nameFem), MASC = new Set(NPC_T.nameMasc);
+  check(QP.every((d) => d.sex === 'fem' ? FEM.has(d.name.split(' ')[0]) : MASC.has(d.name.split(' ')[0])) && QP.some((d) => d.role === 'waiter') && QP.every((d) => /^(Waiter|Cleaner) · [a-z ]+$/.test(d.rolel)),
+    'RK17: each name matches its figure\'s sex, and the role line is the kit\'s role label then the manner (waiter or cleaner)');
+  check(QP.every((d) => /^<svg/.test(d.svg) && !/\swidth="/.test(d.svg.slice(0, d.svg.indexOf('>'))) && !d.ini) && new Set(QP.map((d) => d.svg.match(/ id="[^"]+"/g).join())).size === QP.length,
+    'RK17: each person has a portrait of their own (the kit\'s lo level, no fixed size, its own ids)');
+  const QCARDS = QP.map((d) => d.name), QTEXT = QE.flatMap((e) => [e.c.name, e.c.line, e.c.tell, e.c.errand]).filter((s) => s && s.length >= 8);
+  const cast0 = await api('GET', '/npcs');
+  check(cast0.status === 200 && cast0.text.includes('Mabel Quist') && QCARDS.every((n) => !cast0.text.includes(n)), 'RK17: a quick card is not an NPC: none of the people is in the cast (GET /api/npcs, which does list the cast)');
   const roll = await page.evaluate(() => { const r = window.B68GmPage._state().locRoll; return { connects: r.rooms.filter((x) => x.connects).map((x) => [x.name, x.connects]), skips: (r.skips || []).length }; });
   check(roll.connects.every(([n, via]) => cs.some((c) => c.room === n && c.exits.includes('Out via ' + via))), 'exits from the roll: each back route shows on its room (' + roll.connects.length + ' rooms, ' + roll.skips + ' ring-skips)');
   await shot(page, 'desk-1366-paper-cards');
@@ -179,6 +212,7 @@ try {
   /* secrecy, no play block: nothing of a rolled room in the GETs, before a send and after one */
   const r0 = await reads();
   check(r0.ok && leaks(r0.all).length === 0, 'secrecy (a rolled site, no play): the display\'s GET, a phone\'s /api/table/screen and character, and the campaign document hold no rolled-room text (' + leaks(r0.all).slice(0, 3).join(' | ') + ')');
+  check(QTEXT.length > 0 && QTEXT.every((s) => !r0.all.includes(s)), 'secrecy: not one quick person\'s name, line, tell or errand is in the display\'s GET, a phone\'s screen or character, or the campaign document (' + QTEXT.length + ' strings)');
   await page.click(card(first.room, first.n) + ' [data-site="thing"][data-i="0"]'); z = await until(() => zoom(page), 3000);
   const T0 = await page.evaluate(() => { const z = document.querySelector('.rk-zoom'); return { name: z.querySelector('.rk-zname').textContent, line: (z.querySelector('.rk-zline') || { textContent: '' }).textContent }; });
   check(!!z && /^show:Show on iPad/.test(z.slots[0] || ''), 'the zoom card offers Show on iPad (RK10\'s, with room.key on) (' + (z && z.slots.join(' ')) + ')');
@@ -187,6 +221,7 @@ try {
   const p1 = r1 && r1.ov ? r1.ov.payload || {} : {};
   const sub = T0.line ? T0.line.charAt(0).toUpperCase() + T0.line.slice(1) : '';
   check(!!r1 && p1.text === T0.name && (!T0.line || p1.sub === sub), 'Show on iPad sends the one line: a title beat of the thing\'s name and its line (' + JSON.stringify(p1) + ')');
+  check(!!r1 && QTEXT.every((s) => !r1.all.includes(s)), 'secrecy after the send: still not one quick person\'s name, line, tell or errand anywhere a player or the iPad can read');
   check(!!r1 && leaks(r1.all, [T0.name, T0.line, sub]).length === 0, 'secrecy after the send: that line and nothing else of a rolled room (' + (r1 ? leaks(r1.all, [T0.name, T0.line, sub]).slice(0, 3).join(' | ') : '') + ')');
   if (SHOTS) {
     const ip = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': IPAD }, viewport: { width: 1024, height: 768 }, serviceWorkers: 'block' });
@@ -197,6 +232,7 @@ try {
     const ph = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': P1 }, viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
     const pp = await ph.newPage(); await pp.goto(BASE + '/#c/pc-nell'); await pp.waitForTimeout(5000);
     const dom = await pp.evaluate(() => document.documentElement.outerHTML);
+    check(QTEXT.every((s) => !dom.includes(s)) && !/rr-slot|rr-ppl|rr-pline/.test(dom), 'a phone\'s DOM holds none of the quick people (no name, line, tell, errand or card markup)');
     check(dom.length > 2000 && leaks(dom, [T0.name, T0.line, sub]).length === 0 && !/rr-site|data-rr-/.test(dom), 'a phone\'s DOM holds no rolled-room text or markup');
     if (SHOTS) await pp.screenshot({ path: path.join(SHOTS, 'phone-390.png') });
     await ph.close();
@@ -265,6 +301,11 @@ try {
   check(/There['’]s /.test(v2.say) && v2.things === 4 && v2.ppl && /Quick-draw people/.test(v2.lab) && !v2.rr, 'the v2 night\'s Showroom card carries the same parts (read-aloud, 4 things, people), inside the Run view\'s own card (' + JSON.stringify(v2) + ')');
   const am = await page.evaluate(() => window.B68GmPage._roomRolled().model().cards.map((c) => ({ room: c.name, ok: c.table && !!c.say && /^There's/.test(c.there) && c.things.length === 4 && Array.isArray(c.people) })));
   check(am.length === SITE_ROOMS.length && am.every((c) => c.ok), 'Alex\'s test, authored: every room of the authored site has a description, 4 things and a people slot (' + am.filter((c) => c.ok).length + ' of ' + am.length + ')');
+  const V2P = await peopleOf(page), V2E = await expectedPeople(page), V2TEXT = V2E.flatMap((e) => [e.c.name, e.c.line, e.c.tell, e.c.errand]).filter((s) => s && s.length >= 8);
+  const v2bad = V2E.filter((e) => !personOk(V2P.filter((d) => d.room === e.r.room && d.n === e.r.n && d.slot === e.r.id)[0], e))[0];
+  if (v2bad || V2P.length !== V2E.length) console.log('  v2 people: ' + JSON.stringify({ dom: V2P.map((d) => Object.assign({}, d, { svg: d.svg.length })), exp: V2E.map((e) => Object.assign({}, e.c, { spec: undefined })).slice(0, 3) }).slice(0, 1800));
+  check(V2E.length > 0 && V2P.length === V2E.length && !v2bad && V2P.every((d) => !d.masked),
+    'RK17: the authored night\'s room cards carry the same quick people (' + V2P.length + ' people, none masked: the site\'s crowd is not masked), in the block labelled Quick-draw people');
   await page.click('#gm-runv .rv-rm[data-room="Showroom"] [data-site="thing"][data-i="0"]'); z = await until(() => zoom(page), 4000);
   check(!!z && z.eye.startsWith('Showroom · 1 of 4') && await page.evaluate(() => document.querySelectorAll('.rk-zscope .rk-zoom').length === 1), 'a click on its thing opens one zoom card (the rolled room\'s), never two');
   await shot(page, 'desk-1366-paper-v2-card');
@@ -273,7 +314,38 @@ try {
   const r2 = (await until(async () => { const r = await reads(); return r.mission ? r : null; }, 15000)) || (await reads());
   await page.evaluate(() => window.B68GmPage._setPhoneCards(false)); await sleep(600);
   check(r2.ok && r2.mission && leaks(r2.all).length === 0, 'secrecy (play.v === 2, the mission published): the display\'s GET, a phone\'s screen and character, and the campaign document with its mission hold no rolled-room text (' + JSON.stringify({ ok: r2.ok, mission: r2.mission, leaks: leaks(r2.all).slice(0, 3) }) + ')');
+  check(V2TEXT.length > 0 && V2TEXT.every((s) => !r2.all.includes(s)), 'secrecy (play.v === 2, the mission published): none of the authored night\'s quick people is in the display\'s GET, a phone\'s screen or character, or the campaign document');
   await E.c.close();
+  {      /* RK17: masked comes from the authored site's play.crowd.masked (a ball), and only the GUESTS wear a mask: the waiter and the cleaner of the fixture do not; a rooms part of guests does */
+    const lp = await api('GET', '/gm/pack?part=location'), lb = lp.json && lp.json.body, site = lb && lb.authored && lb.authored.sites ? lb.authored.sites[SITE_CARD.auth] : null;
+    const had = site && site.play ? site.play.crowd : undefined, NAMES = COVERED.concat(SITE_ROOMS);
+    const putLoc = () => api('POST', '/gm/pack', { part: 'location', src: lp.json.src || {}, body: lb });
+    if (site) site.play.crowd = { masked: true };
+    check(!!site && (await putLoc()).status === 200, 'the authored play.crowd.masked is on (a ball)');
+    const S1 = await open({ v2: true });
+    await S1.page.waitForSelector('#gm-runv .rv-rm [data-rr-slot]', { timeout: 20000 });
+    const SP = await peopleOf(S1.page), SE = await expectedPeople(S1.page, true);
+    check(SP.length === V2P.length && SP.length > 0 && SP.every((d) => !d.masked && !/masked/.test(d.rolel) && /^(waiter|cleaner)$/.test(d.role)) && SE.every((e) => personOk(SP.filter((d) => d.room === e.r.room && d.n === e.r.n && d.slot === e.r.id)[0], e)),
+      'RK17: at a ball the staff are not masked: the fixture waiters and cleaners are the same people as with no ball (' + SP.length + ' people)');
+    await S1.c.close();
+    /* a rooms part whose every room draws a guest: the same copies of the fixture tables, the people only guest-f, and a guest-f entry in the roles */
+    const GT = JSON.parse(JSON.stringify(roomsPart(NAMES).T)); GT.roles['guest-f'] = JSON.parse(JSON.stringify(FIX.roles.waiter)); Object.values(GT.rooms).forEach((rm) => { rm.people = [{ role: 'guest-f', w: 1 }]; });
+    check((await api('POST', '/gm/pack', { part: 'rooms', src: { file: 'demo/rooms', blockSha: '1', exportedAt: new Date().toISOString() }, body: { v: 1, T: GT } })).status === 200, 'a rooms part of guests (every room draws a guest-f)');
+    const M = await open({ v2: true });
+    await M.page.waitForSelector('#gm-runv .rv-rm [data-rr-slot]', { timeout: 20000 });
+    const MP = await peopleOf(M.page), ME = await expectedPeople(M.page, true, GT);
+    check(MP.length > 0 && MP.every((d) => d.role === 'guest-f' && d.masked && /[a-z] · masked$/.test(d.rolel)) && ME.every((e) => personOk(MP.filter((d) => d.room === e.r.room && d.n === e.r.n && d.slot === e.r.id)[0], e)),
+      'RK17: at a ball every guest is masked: the card says masked and the portrait is the kit mask (' + MP.length + ' people)');
+    await M.c.close();
+    if (site) { if (had === undefined) delete site.play.crowd; else site.play.crowd = had; }
+    check(!!site && (await putLoc()).status === 200, 'the authored crowd is put back');
+    const N = await open({ v2: true });
+    await N.page.waitForSelector('#gm-runv .rv-rm [data-rr-slot]', { timeout: 20000 });
+    const NP = await peopleOf(N.page);
+    check(NP.length === MP.length && NP.every((d, i) => !d.masked && d.name === MP[i].name && d.svg !== MP[i].svg), 'RK17: with no ball the same guests are the same people unmasked (the portrait differs)');
+    await N.c.close();
+    check((await putRooms(NAMES)).status === 200, 'the fixture rooms part is put back');
+  }
 
   /* ---- 4. the kit desk, on the rolled site of step 2 ---- */
   check(!!(ROLLED_CARD && ROLLED_CARD.seed) && (await api('PATCH', '/gm/state', { cards: { location: Object.assign({}, ROLLED_CARD, { auth: null }) } })).status === 200, 'step 2\'s rolled site is the Location card again');
@@ -334,7 +406,7 @@ try {
     check(!!busy && waits, 'a tap is busy ("Fitting…"), and every other Fit waits');
     const landed = await until(() => page.evaluate((s) => { const c = document.querySelector(s), m = c && c.querySelector('.rr-bmark'); return m ? { mark: m.textContent, say: c.querySelector('[data-rr-say]').textContent,
       things: c.querySelectorAll('[data-site="thing"]').length, ppl: [...c.querySelectorAll('.rr-bperson')].map((l) => l.textContent), clear: !!c.querySelector('[data-rb="clear"]'),
-      stars: c.querySelectorAll('.rk-ti > span.rr-bstar').length, starWho: c.querySelectorAll('.rr-ppl .rr-bperson').length,
+      stars: c.querySelectorAll('.rk-ti > span.rr-bstar').length, starWho: c.querySelectorAll('.rr-ppl .rr-bperson, .rr-bppl .rr-bperson').length,      /* RK17: Blade's people follow the quick cards in their own list (rr-bppl), or share the plain list (rr-ppl) */
       px: [m, c.querySelector('.rr-bperson')].filter(Boolean).map((e) => parseFloat(getComputedStyle(e).fontSize)) } : null; }, sel1), 8000);
     check(!!landed && landed.mark === '✦ Blade fitted this room to tonight: the read-aloud, GM-ONLY-velvet rope, GM-ONLY-ice bucket and 1 person.' && landed.say.startsWith('SAY “' + BLADE.say + ' There') && landed.things === 6 &&
       landed.ppl.length === 1 && landed.ppl[0].includes(BLADE.people[0].line) && landed.clear && landed.stars === 2 && landed.starWho === 1 && landed.px.length === 2 && landed.px.every((x) => x >= 12),
@@ -420,11 +492,14 @@ try {
 
   /* pictures */
   if (SHOTS) {
-    for (const [kit, w, theme] of [[false, 1366, 'night'], [false, 1536, 'paper'], [false, 1536, 'night'], [true, 1366, 'paper'], [true, 1366, 'night'], [true, 1536, 'paper'], [true, 1536, 'night']]) {
+    for (const [kit, w, theme] of [[false, 1366, 'night'], [false, 1536, 'paper'], [false, 1536, 'night'], [true, 1366, 'paper'], [true, 1366, 'night'], [true, 1536, 'paper'], [true, 1536, 'night'], [false, 1024, 'paper'], [true, 1024, 'night']]) {
       await feats({ 'kit.desk': kit });
       const o = await open({ kit, w, h: w === 1536 ? 864 : 768, theme });
       await o.page.waitForSelector('#gm-runv .rr-site [data-site="thing"]', { timeout: 20000 });
       await shot(o.page, (kit ? 'kitdesk-' : 'desk-') + w + '-' + theme + '-cards');
+      await o.page.evaluate(() => { const li = document.querySelector('#gm-runv .rr-ppl .rr-slot'); if (li) li.scrollIntoView({ block: 'center' }); });
+      await shot(o.page, (kit ? 'kitdesk-' : 'desk-') + w + '-' + theme + '-people');
+      await o.page.evaluate(() => document.querySelector('#gm-runv .rr-cards').scrollIntoView({ block: 'start' }));
       const c0 = (await cards(o.page)).filter((c) => c.things.length)[0];
       await o.page.click(card(c0.room, c0.n) + ' [data-site="thing"][data-i="0"]'); await until(() => zoom(o.page), 3000);
       await shot(o.page, (kit ? 'kitdesk-' : 'desk-') + w + '-' + theme + '-zoom');
@@ -652,6 +727,7 @@ try {
     check(!!(await until(() => L.page.evaluate(() => !document.querySelector('[data-rr-act]') && window.B68GmPage._roomRolled() === null), 20000, 500)), 'room.tables off on a live page: Roll another and Reroll the room go with the rolled cards');
     await L.c.close();
   }
+  check(npcWrites.length === 0, 'RK17: no quick card was filed: not one POST, PUT or DELETE to /api/npcs from any page in this run' + (npcWrites.length ? ' (' + npcWrites.join(' | ') + ')' : ''));
   check(errors.length === 0, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 5).join(' | ') : ''));
 } catch (e) {
   failed++; console.log('FAIL ' + (e && e.stack || e));
