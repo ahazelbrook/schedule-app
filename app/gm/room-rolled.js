@@ -72,6 +72,7 @@
   function Tables() { return live(mod('B68GmRoomTables', './room-tables.js')); }
   function Things() { return live(mod('B68GmRoomThings', './room-things.js')); }
   function State() { return live(mod('B68GmRoomState', './room-state.js')); }
+  function Swap() { return live(mod('B68GmRoomSwap', './room-swap.js')); }
   function ui() { return mod('B68Ui', '../ui/ui.js'); }
   function esc(s) { var U = ui(); return U && typeof U.esc === 'function' ? U.esc(s) : esc0(s); }
   function cap(s) { s = str(s).trim(); return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
@@ -128,7 +129,7 @@
   /* ---------- the markup (pure) ----------
      Only classes the page already styles: the Run view's (rv-*, gm.css) on the old desk, and the kit desk's (krv-*, ui/desk-run.css) beside them, so
      this bundle needs no stylesheet. The cards sit in gm.css's view grid (gm-vgrid), each in a box (gm-box) of its own.
-     o: { kit, run (a v2 card's block), things(card) -> the Things list markup, note(card) -> markup | null, wrong(card) -> [the note's lines], people(card) -> markup | '' } */
+     o: { kit, run (a v2 card's block), things(card) -> the Things list markup, actions(card) -> Roll another and Reroll the room (RK15), note(card) -> markup | null, wrong(card) -> [the note's lines], people(card) -> markup | '' } */
   function part(o, k, c, dflt) { try { return typeof o[k] === 'function' ? o[k](c) : dflt; } catch (e) { return dflt; } }
   function cls(o, old, kit) { return o.kit ? old + ' ' + kit : old; }
   function lab(o, text) { return '<h4 class="' + (o.kit ? 'krv-lab' : 'rv-lab') + ' rr-lab">' + esc(text) + '</h4>'; }
@@ -167,7 +168,7 @@
   /* the card's parts after its heading: the read-aloud, Things, Who's here, If it goes wrong, Exits (block() hands these to the Run view's own card) */
   function blockHtml(c, o) {
     o = o || {};
-    return sayHtml(c, o) + str(part(o, 'things', c, '')) + peopleHtml(c, o) + wrongHtml(c, o) + exitsHtml(c, o);
+    return sayHtml(c, o) + str(part(o, 'things', c, '')) + str(part(o, 'actions', c, '')) + peopleHtml(c, o) + wrongHtml(c, o) + exitsHtml(c, o);
   }
   function cardHtml(c, o) {
     o = o || {};
@@ -203,10 +204,23 @@
     function now() {
       var r = call('roll'); if (!isObj(r)) return null;
       var rk = null; try { rk = typeof host.rollKey === 'function' ? host.rollKey(r) : null; } catch (e) { rk = null; }
-      var rs = reader(), Th = Things();
+      var rs = reader();
       return model(r, call('T'), { rollKey: rk,
         state: function (a, b) { try { return rs && typeof rs.read === 'function' ? rs.read(str(a), b) : null; } catch (e) { return null; } },
-        hand: function (name) { var md = str(call('md', name)); return md && Th && typeof Th.parse === 'function' ? Th.parse(md) : []; } });
+        hand: handOf });
+    }
+    function handOf(name) { var md = str(call('md', name)), Th = Things(); return md && Th && typeof Th.parse === 'function' ? Th.parse(md) : []; }
+    /* RK15 (Swap, Roll another, Reroll the room: gm/room-swap.js): a room of the roll as the draw sees it, by its roomKey */
+    function scene(roomKey) {
+      var m = now(), c = m ? m.cards.filter(function (x) { return x.roomKey === str(roomKey); })[0] : null, Tb = Tables(), T = call('T');
+      return c ? { rollKey: m.rollKey, roomKey: c.roomKey, name: c.name, n: c.n, table: Tb && isObj(T) ? Tb.get(c.name, T) : null, hand: handOf(c.name) } : null;
+    }
+    var sw = null;
+    function swapper() {
+      var S = Swap();
+      if (!sw && S && typeof S.create === 'function') sw = S.create({ scene: scene, rs: function () { return call('rs'); }, redraw: function () { call('redraw'); },
+        toast: function (t, bad) { if (typeof host.toast === 'function') host.toast(t, bad); } });
+      return sw;
     }
     function find(m, room, n) {
       n = n || 1;
@@ -217,7 +231,9 @@
         things: function (room, n) { var c = find(now(), room, n); return c ? c.things : []; },
         where: function (room, n) { var m = now(), c = find(m, room, n); return c ? { rollKey: m.rollKey, roomKey: c.roomKey } : null; },
         doc: function () { return call('doc'); }, rs: function () { return call('rs'); },
-        redraw: function () { call('redraw'); }, toast: function (t, bad) { if (typeof host.toast === 'function') host.toast(t, bad); } }) || null;
+        redraw: function () { call('redraw'); }, toast: function (t, bad) { if (typeof host.toast === 'function') host.toast(t, bad); },
+        scene: scene,      /* RK15: the Swap button asks for the room it is in (ctx.page.scene) */
+        follow: function (room, n, slug) { call('redraw'); if (z) z.open(room, slug, null, n); } }) || null;      /* ... and the card follows the thing now in that place */
       if (z && (typeof z.html !== 'function' || typeof z.act !== 'function' || typeof z.key !== 'function')) z = null;
       return z;
     }
@@ -226,6 +242,7 @@
       return { kit: kit, run: !!inRunView,
         things: function (c) { return Z ? Z.html(c.name, { kit: kit, n: c.n }) : ''; },
         note: function (c) { return c.n === 1 ? call('note', c.name) : null; },
+        actions: function (c) { var S = swapper(); return S ? str(S.html(c, { kit: kit })) : ''; },      /* RK15: Roll another and Reroll the room (room-swap.js) */
         wrong: function (c) { return c.n === 1 && !inRunView ? list(call('wrong', c.name)) : []; },      /* the Run view's card draws the note's lines itself */
         people: function (c) { return P && typeof P.html === 'function' ? str(P.html(c.people, { room: c.name, roomKey: c.roomKey, rollKey: m.rollKey, kit: kit, page: host })) : ''; } };
     }
@@ -236,8 +253,17 @@
       Z.act(el);
       return true;
     }
+    function onAct(ev, a) {
+      var S = swapper(), pane = boxes.filter(function (b) { return b.contains(a); })[0], room = a.getAttribute('data-rr-room'), next = S ? S.act(a) : '';
+      if (!next) return;
+      ev.preventDefault(); ev.stopPropagation();
+      var again = pane ? Array.prototype.filter.call(pane.querySelectorAll('[data-rr-act="' + next + '"]'), function (e) { return e.getAttribute('data-rr-room') === room; })[0] : null;
+      if (again && typeof again.focus === 'function') { try { again.focus({ preventScroll: true }); } catch (e) { /* focus is a courtesy */ } }
+    }
     function onClick(ev) {
-      var t = ev.target, b = t && t.closest ? t.closest('[data-site="thing"][data-thing]') : null;
+      var t = ev.target, a = t && t.closest ? t.closest('[data-rr-act]') : null;
+      if (a && a.closest('.rr-site, .rv-rm')) { onAct(ev, a); return; }      /* RK15: Roll another and Reroll the room (this roll's own cards only) */
+      var b = t && t.closest ? t.closest('[data-site="thing"][data-thing]') : null;
       if (!b || !b.closest('.rr-site, .rv-rm') || !act(b)) return;
       ev.preventDefault(); ev.stopPropagation();      /* heard first (capture): the Run view's own routing (site.act, RK09's card) never sees a rolled room's thing */
     }
@@ -267,6 +293,7 @@
       close: function () { if (z) z.close(false); },
       destroy: function () {
         if (z) z.destroy(); z = null;
+        if (sw) sw.destroy(); sw = null;
         boxes.forEach(function (b) { b.removeEventListener('click', onClick, true); b.__rrHtml = null; }); boxes = [];
       } };
   }
