@@ -280,29 +280,31 @@ await test('settings: twenty-seven rows (Scenes, Music, Phones, Mirror for phone
   assert.match(box.innerHTML, /data-set="room\.music" data-v="1" aria-pressed="true">Heat music/);
   assert.match(box.innerHTML, /data-set="fx\.off" data-v="0" aria-pressed="true">Moving/);
   assert.match(box.innerHTML, /data-set="mirror" data-v="0" aria-pressed="true">Off/);
-  assert.equal((box.innerHTML.match(/aria-pressed="true"/g) || []).length, 26, 'one value pressed per row drawn: the one row not built yet (room.tables, RK01b) is not drawn');
+  assert.equal((box.innerHTML.match(/aria-pressed="true"/g) || []).length, 27, 'one value pressed per row drawn: every row is built and drawn (RK37: room.tables too)');
 });
-const HIDDEN = ['room.tables'];       /* RK01b (25/11): registered, read off, but not built, so not drawn on the Settings screen */
-const SHOWN = ['stamp.brief', 'night.flow', 'close.crew', 'room.key', 'gm.glance', 'phone.find', 'map.fit', 'room.intro', 'phone.glance'];      /* the nine that ship in this deploy (gm.glance and phone.find now built) */
-await test('RK01b: the setting not built yet (room.tables) is flagged built: false and is not drawn on the Settings screen, yet stays registered and reads off; the nine that ship are drawn, room.key among them', async () => {
-  assert.deepEqual(SET.ROWS.filter((x) => x.built === false).map((x) => x.key), HIDDEN, 'the one flag, in the registry of rows, names exactly the one');
+const HIDDEN = [];       /* RK01b (25/11): a row with built: false is registered and reads off but is not drawn; RK37: none is left, room.tables is shown */
+const SHOWN = ['stamp.brief', 'night.flow', 'close.crew', 'room.key', 'room.tables', 'gm.glance', 'phone.find', 'map.fit', 'room.intro', 'phone.glance'];      /* the ten of the room key build, all built and drawn (RK37: room.tables too) */
+await test('RK01b/RK37: no row is flagged built: false; all ten of the room key build are drawn on the Settings screen (room.tables too), registered and reading off by default', async () => {
+  assert.deepEqual(SET.ROWS.filter((x) => x.built === false).map((x) => x.key), HIDDEN, 'no row carries the flag any more');
   const r = rig({}, { v: 1 }), rows = r.ctl.rows();
   assert.equal(rows.length, 27, 'still every row as data');
   assert.deepEqual(rows.filter((x) => !x.built).map((x) => x.key), HIDDEN);
+  assert.ok(F.get('room.tables') && F.isSetting('room.tables') && F.valueOf({}, 'room.tables') === false && r.ctl.on('room.tables') === false, 'room.tables is registered and reads off by default');
   const box = { parentNode: null, innerHTML: '' }; r.ctl.render(box);
   for (const id of HIDDEN) {
     assert.ok(!box.innerHTML.includes('data-set-row="' + id + '"') && !box.innerHTML.includes('data-set="' + id + '"'), id + ' is not drawn');
     assert.ok(F.get(id) && F.isSetting(id), id + ' stays registered'); assert.equal(F.valueOf({}, id), false, id + ' still reads off'); assert.equal(r.ctl.on(id), false, id + ' reads off through the Settings too');
   }
   for (const id of SHOWN) assert.ok(box.innerHTML.includes('data-set-row="' + id + '"'), id + ' is drawn');
-  assert.equal((box.innerHTML.match(/data-set-row=/g) || []).length, 26, 'twenty-six rows drawn');
-  assert.ok(!/Rolled rooms/.test(box.innerHTML) && /Things in rooms/.test(box.innerHTML) && /Search on phones/.test(box.innerHTML), 'nor by label (and Things in rooms and Search on phones are drawn)');
-  /* a stored on does not draw a hidden row either, and it is the registry that still answers */
+  assert.equal((box.innerHTML.match(/data-set-row=/g) || []).length, 27, 'twenty-seven rows drawn');
+  assert.ok(/Rolled rooms/.test(box.innerHTML) && /Things in rooms/.test(box.innerHTML) && /Search on phones/.test(box.innerHTML), 'by label too (Rolled rooms, Things in rooms and Search on phones)');
+  /* a stored on reads on, and its row is drawn */
   const on = rig({ features: { 'room.tables': true } }, { v: 1 }); const box2 = { parentNode: null, innerHTML: '' }; on.ctl.render(box2);
-  assert.ok(!box2.innerHTML.includes('room.tables')); assert.equal(on.ctl.on('room.tables'), true);
-  /* phone.glance says what Full sheet does today */
-  const pg = rows.find((x) => x.key === 'phone.glance'); assert.match(pg.what, /Full sheet opens today.s classic sheet/); assert.ok(!/official/i.test(pg.what), 'no promise of the official page in the row');
-  assert.match(F.get('phone.glance').doc, /classic sheet until the official page is built/);
+  assert.ok(box2.innerHTML.includes('data-set-row="room.tables"')); assert.equal(on.ctl.on('room.tables'), true);
+  /* phone.glance says what Full sheet does: the official page where one is published, else the classic sheet */
+  const pg = rows.find((x) => x.key === 'phone.glance'); assert.match(pg.what, /Full sheet opens the official playbook page, filled in, where one is published, and otherwise today.s classic sheet/);
+  assert.match(F.get('phone.glance').doc, /Full sheet opens the official playbook page, filled in, where one is published, and otherwise today.s classic sheet/);
+  assert.ok(!/for now|until the official page is built/.test(pg.what + F.get('phone.glance').doc), 'no "for now" left');
 });
 await test('the kit\'s five settings (KS01.1): surfaces gm, display, phone, gm, gm; off with nothing stored; nothing is published or healed while they are off; turning one on writes only its own key', async () => {
   const want = { 'kit.desk': 'gm', 'kit.stage': 'display', 'kit.phone': 'phone', 'night.who': 'gm', 'blade.pitches': 'gm' };

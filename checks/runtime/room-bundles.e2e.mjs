@@ -51,12 +51,12 @@ try {
   await G.page.click('.gm-tray [data-tray="open"]');
   await G.page.waitForSelector('#gm-ipad-settings [data-set-row]', { timeout: 10000 });
   const rows = await G.page.$$eval('#gm-ipad-settings [data-set-row]', (els) => els.map((e) => e.getAttribute('data-set-row')));
-  check(rows.slice(-9).join() === 'stamp.brief,night.flow,close.crew,room.key,gm.glance,phone.find,map.fit,room.intro,phone.glance' && rows.length === 26, 'the Settings list as shipped: 26 rows, the nine of this deploy last (gm.glance and phone.find now built): ' + rows.slice(-10).join(' '));
-  /* RK35 follow-up: gm.glance and phone.find are drawn now; room.tables (built: false) is the one row not drawn. All three still read off. */
-  check(!rows.includes('room.tables') && rows.includes('gm.glance') && rows.includes('phone.find'), 'room.tables is not drawn, the other two are');
+  check(rows.slice(-10).join() === 'stamp.brief,night.flow,close.crew,room.key,room.tables,gm.glance,phone.find,map.fit,room.intro,phone.glance' && rows.length === 27, 'the Settings list as shipped: 27 rows, the ten of the room key build last (all built, room.tables too): ' + rows.slice(-10).join(' '));
+  /* RK37: room.tables is drawn now, with gm.glance and phone.find. All three still read off. */
+  check(rows.includes('room.tables') && rows.includes('gm.glance') && rows.includes('phone.find'), 'all three are drawn');
   const feats = await G.page.evaluate(() => fetch('/api/gm/state', { credentials: 'same-origin', cache: 'no-store' }).then((r) => r.json()).then((j) => (j.doc || j).features || {}));
-  const offPressed = await G.page.$$eval('#gm-ipad-settings [data-set="gm.glance"][data-v="0"], #gm-ipad-settings [data-set="phone.find"][data-v="0"]', (els) => els.map((e) => e.getAttribute('aria-pressed')));
-  check(['room.tables', 'gm.glance', 'phone.find'].every((id) => feats[id] !== true) && offPressed.length === 2 && offPressed.every((v) => v === 'true'), 'all three still read off (the two drawn show Off pressed; the state holds none on)');
+  const offPressed = await G.page.$$eval('#gm-ipad-settings [data-set="room.tables"][data-v="0"], #gm-ipad-settings [data-set="gm.glance"][data-v="0"], #gm-ipad-settings [data-set="phone.find"][data-v="0"]', (els) => els.map((e) => e.getAttribute('aria-pressed')));
+  check(['room.tables', 'gm.glance', 'phone.find'].every((id) => feats[id] !== true) && offPressed.length === 3 && offPressed.every((v) => v === 'true'), 'all three are drawn and read off (each shows Off pressed; the state holds none on)');
   await unhide(G.ctx); await G.page.reload();
   await G.page.waitForSelector('#gm-buttons .gm-btn', { state: 'attached', timeout: 30000 }); await G.page.waitForTimeout(2500);
   await G.page.click('.gm-tray [data-tray="open"]');
