@@ -23,13 +23,13 @@
    off that beat only (never another overlay). The card draws again when the 12 seconds are over.
 
    API
-     buttons(ctx) -> [button]     the 'show' slot (ctx: the zoom card's); none while the page has no host (room.key off, no GM page)
+     buttons(ctx) -> [button]     the 'show' slot (ctx: the zoom card's); none while the page has no host (room.key and room.tables off, no GM page)
      make(host) -> { buttons(ctx), send(ctx, which) -> Promise<bool>, down(ctx, which) -> Promise<bool>, isUp(ctx, which) -> bool }
        host (an object, or a function that returns the current one) = { show(kind, payload, opts) -> Promise<answer | null>,
                 hidden() -> [name], rooms() -> [the site's hidden names], namesHit(text, names) -> bool, npcs() -> [{ id, name, alias, revealed }], reveal(id) -> Promise,
                 ask(msg, yesLabel) -> Promise<bool> (the page's own confirm: the kit's dialog on the kit desk), overlayId() -> the id up now,
                 clear() -> Promise (the overlay off), toast(text, bad) }
-       The page's is B68GmPage.roomShow() (null while room.key is off).
+       The page's is B68GmPage.roomShow() (null while room.key and room.tables are both off: RK14).
      Pure: payload(thing, which) -> { text, sub? } | null   cut(text)   keyOf(ctx, which)   hits(payload, names, namesHit) -> [name]
            WHICH, MS, KIND, QUESTION, ROOM_QUESTION */
 (function (root, factory) {
@@ -191,7 +191,7 @@
     return { buttons: buttons, send: send, down: down, isUp: isUp };
   }
 
-  /* the page's slot: one maker for the page, asking B68GmPage.roomShow() for the host each time (null while room.key is off) */
+  /* the page's slot: one maker for the page, asking B68GmPage.roomShow() for the host each time (null while room.key and room.tables are both off) */
   function pageHost() { var P = mod('B68GmPage'); try { return P && typeof P.roomShow === 'function' ? P.roomShow() : null; } catch (e) { return null; } }
   var slot = make(pageHost);
 

@@ -13,6 +13,11 @@
 //   events   the commendations take the foot with their countdown and open End of session; a key that can turn; the rest wait in Table
 //   tracks   Drain 10 and Damage (Hull), Stress 12 and Dayfire (Vampire), Instability 9, canisters and glitches (Time Traveler), Irregularities (Ghost)
 //   full     Full sheet: today's sheet with a bar back; RK32's page through B68SheetPage.open (a stand-in here), and the fallback without it
+//   page     RK32's page itself, on the INVENTED blank sheet (checks/runtime/fixtures/sheets/blank-sheet.mjs, served as the Hound's media/sheets/ files by a
+//            route): fetched only when Full sheet opens; the mark layer is page.js's own marks() of the server's play; + to 400% re-lays the box (no
+//            transform, the viewport untouched), a double tap, ctrl+wheel, a two-pointer pinch and Safari's gesture events; each region's editor (a bottom
+//            sheet) and a change through it with Undo; a count that disagrees draws nothing there and shows the note; no sheet falls back, once; over
+//            760 px the page is the main view with a side panel; held sideways it is a side panel too
 //   secret   no GM-ONLY- text in a response or the DOM; the phone's requests with the glance on are the ones it makes off, and the glance's files
 //   kit      with kit.phone on too, the four-screen sheet is not drawn; the glance off brings it back; off: today's page again
 // SHOTS=<dir> saves the pictures (390 x 664 and 375 x 553, Paper and Night).
@@ -24,6 +29,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { blankSheet } from './fixtures/sheets/blank-sheet.mjs';
 
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -83,6 +89,8 @@ const server1 = async (id) => { const r = await api('GET', '/characters/' + id, 
 
 /* the invented characters: names from the fixtures; abilities, frame features, glitches and irregularities from content.js */
 const CT = (() => { const sb = {}; sb.window = sb; sb.self = sb; vm.runInNewContext(read('app/content.js'), sb, { filename: 'app/content.js' }); return sb.B68Content; })();
+const CRW = (() => { const sb = {}; sb.window = sb; sb.self = sb; vm.runInNewContext(read('app/crews.js'), sb, { filename: 'app/crews.js' }); return sb.B68Crews; })();
+const crewNames = CRW.byId.shadows.abilities.map((a) => a[0]).filter((n) => n !== 'Versatile').slice(0, 3);   /* the invented crew's three taken abilities, from crews.js at run time */
 const abs = (id, n) => CT.byId[id].abilities.slice(0, n).map((a) => a[0]);
 const pc = (id, name, playbook, play) => ({ id, doc: { name, playbook, spec: { name, playbook }, sheet: { name, alias: '', look: 'Long coat' }, play: Object.assign({ crew: 'The Dovetail Crew', keys: [], log: [] }, play) } });
 const KEYS = (hits) => [{ name: 'KEY-1', down: 'Takes the long way', up: 'Never lets go', hits }, { name: 'KEY-2', down: 'Trusts the wrong voice', up: 'Hears the lie first', hits: 1 }];
@@ -105,6 +113,11 @@ async function open(id, o = {}) {
   const w = o.w || 390, h = o.h || 664;
   const ctx = await browser.newContext({ extraHTTPHeaders: { 'X-Dev-User': P1 }, viewport: { width: w, height: h }, isMobile: o.mobile !== false, hasTouch: o.mobile !== false, serviceWorkers: 'block', colorScheme: o.night ? 'dark' : 'light', reducedMotion: 'reduce' });
   await ctx.addInitScript(() => { window.__B68_POLL_MS = 500; window.__B68_HEALTHY_POLL_MS = 500; });
+  /* RK32: media/sheets/ answered from the invented blank sheet (o.sheets: { map } another map, { none: true } nothing published) */
+  if (o.sheets) await ctx.route('**/media/sheets/**', (r) => { const u = new URL(r.request().url()).pathname, b = blankSheet(CT, 'hound');
+    if (!o.sheets.none && u.endsWith('/hound.map.json')) return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(o.sheets.map || b.map) });
+    if (!o.sheets.none && u.endsWith('/hound.svg')) return r.fulfill({ status: 200, contentType: 'image/svg+xml', body: b.svg });
+    return r.fulfill({ status: 404, contentType: 'text/plain', body: 'none' }); });
   const page = await ctx.newPage();
   const seen = { req: [], bodies: [] };
   page.on('request', (r) => seen.req.push(r.url()));
@@ -148,6 +161,8 @@ try {
   check(!off.gl && off.marks === 0 && off.attr === null && off.mod === 'undefined' && off.bar, 'off: no glance, no mark, the module not loaded, today\'s sheet: ' + JSON.stringify(off));
   const glFiles = A.seen.req.filter((u) => /\/sheet\/(glance|page)\./.test(u));
   check(!glFiles.length, 'off: no glance or page file fetched' + (glFiles.length ? ': ' + glFiles : ''));
+  const offFind = await a.evaluate(() => ({ box: !!document.querySelector('.abf, [data-abf-box], [data-abf-off]'), mod: typeof window.B68AbilityFind, css: !!document.getElementById('b68-abf-css') }));
+  check(!A.seen.req.some((u) => /ability-find/.test(u)) && !offFind.box && offFind.mod === 'undefined' && !offFind.css, 'phone.find off: no ability-find file fetched, no box, no style: ' + JSON.stringify(offFind));
   const offApi = new Set(A.seen.req.filter((u) => u.indexOf('/api/') > 0).map((u) => new URL(u).pathname));
 
   /* ---------- on, from the GM's side, with the sheet open ---------- */
@@ -405,6 +420,198 @@ try {
     await P.ctx.close();
   }
 
+  /* ---------- RK32: the full sheet, the official page filled in (the invented blank sheet, served as the Hound's) ---------- */
+  {
+    const PG = require(path.join(ROOT, 'app/sheet/page.js')).Pure, BLANK = blankSheet(CT, 'hound');
+    const sheetReqs = (S) => S.seen.req.filter((u) => /\/media\/sheets\//.test(u)).map((u) => new URL(u).pathname);
+    const gl = (pg) => pg.evaluate(() => document.getElementById('dossier').getAttribute('data-gl'));
+    /* Full sheet: the foot's button, or ⋯ › Full sheet while an event holds the foot */
+    const toFull = async (pg) => {
+      if (await pg.$('#dossier .gl-foot [data-gl="full"]')) await pg.click('#dossier .gl-foot [data-gl="full"]');
+      else { await pg.click('#dossier .gl-top [data-gl="more"]'); await pg.click('#dossier .gl-sheet [data-gl="full"]'); }
+    };
+    const ready = (pg) => until(() => pg.evaluate(() => !!document.querySelector('#dossier .sp.sp-ready')), 10000, 100);
+    const pens = (pg) => pg.evaluate(() => document.querySelectorAll('#dossier .sp-marks .sp-pen').length);
+    const tags = (h) => ['polygon', 'circle', 'rect', 'path', 'line', 'text'].map((t) => (h.match(new RegExp('<' + t + '\\b', 'g')) || []).length).join('/');
+    const markHtml = (pg) => pg.evaluate(() => document.querySelector('#dossier .sp-marks').innerHTML);
+    const panel = (pg, r) => until(() => pg.evaluate((r) => { const p = document.querySelector('#dossier .sp-panel[data-region="' + r + '"]'); if (!p) return null; const b = p.getBoundingClientRect(); return { t: p.querySelector('h3').textContent, l: Math.round(b.left), r: Math.round(b.right), top: Math.round(b.top), b: Math.round(b.bottom), note: !!p.querySelector('.sp-note') }; }, r), 3000, 100);
+    const region = async (pg, r) => { await pg.locator('#dossier .sp-hit[data-region="' + r + '"]').first().tap(); return panel(pg, r); };
+    const closeEd = (pg) => pg.click('#dossier .sp-panel [data-sp="close"]');
+
+    const S = await open('pc-nell', { w: 390, h: 664, sheets: {} }), pg = S.page; await glanceUp(pg);
+    check(!sheetReqs(S).length, 'the page: nothing of the sheet is fetched before Full sheet opens');
+    await toFull(pg); await ready(pg);
+    const st = await pg.evaluate(() => ({ v: document.getElementById('dossier').getAttribute('data-gl'), s: window.B68SheetPage.state(), seen: getComputedStyle(document.querySelector('#dossier .gl-page')).display }));
+    check(st.v === 'page' && st.s && st.s.ready && st.seen === 'block' && sheetReqs(S).join() === '/media/sheets/hound.map.json,/media/sheets/hound.svg', 'Full sheet opens the page: the map, then the page, fetched now: ' + JSON.stringify([st, sheetReqs(S)]));
+    /* the marks are page.js's own marks() of what the server holds */
+    const doc0 = (await api('GET', '/characters/pc-nell', null, P1)).json.doc;
+    const want = PG.marks(BLANK.map, { play: doc0.play, pb: CT.byId.hound, doc: doc0 }, null, CT);
+    let html = await markHtml(pg);
+    check(tags(html) === tags(want) && (await pens(pg)) >= doc0.play.stress && !/sp-unmapped/.test(html) && /Nell Arbuthnot/.test(html), 'the mark layer is the character drawn through the map (' + tags(html) + ', want ' + tags(want) + ')');
+    await shot(pg, 'page-390x664-first-paper');
+
+    /* zoom: + to 400% re-lays the box (the vector page with it), never a transform; the page's viewport is untouched */
+    const zoom = () => pg.evaluate(() => { const b = document.querySelector('#dossier .sp-box'), i = document.querySelector('#dossier .sp-img'), v = document.querySelector('#dossier .sp-view'), m = document.querySelector('meta[name="viewport"]');
+      return { z: window.B68SheetPage.state().z, pct: document.querySelector('#dossier .sp-pct').textContent, bw: Math.round(b.getBoundingClientRect().width), iw: Math.round(i.getBoundingClientRect().width), vw: v.clientWidth, tf: getComputedStyle(b).transform + '|' + getComputedStyle(i).transform, vp: m ? m.content : '', vs: window.visualViewport ? visualViewport.scale : 1, inDis: document.querySelector('#dossier .sp [data-sp="in"]').disabled, outDis: document.querySelector('#dossier .sp [data-sp="out"]').disabled }; });
+    const zf = await zoom(), vh = await pg.evaluate(() => document.querySelector('#dossier .sp-view').clientHeight);
+    check(zf.z > 1.4 && zf.pct === Math.round(zf.z * 100) + '%' && !zf.outDis && Math.abs(zf.bw * 595.28 / 841.89 - (vh - 16)) <= 16, 'a phone held upright opens at the page\'s height (' + zf.pct + ', the view ' + vh + ' px tall), not a strip too small to read: ' + JSON.stringify(zf));
+    for (let i = 0; i < 6 && !(await zoom()).outDis; i++) { await pg.click('#dossier .sp [data-sp="out"]'); await sleep(100); }
+    const z0 = await zoom();
+    check(z0.z === 1 && z0.pct === '100%' && z0.outDis && Math.abs(z0.bw - (z0.vw - 16)) <= 1, '− goes back to fit width (100%; − is off): ' + JSON.stringify(z0));
+    await shot(pg, 'page-390x664-fit-paper');
+    for (let i = 0; i < 3; i++) { await pg.click('#dossier .sp [data-sp="in"]'); await sleep(120); }
+    await shot(pg, 'page-390x664-250-paper');
+    for (let i = 0; i < 2; i++) { await pg.click('#dossier .sp [data-sp="in"]'); await sleep(120); }
+    let z = await zoom();
+    check(z.z === 4 && z.pct === '400%' && z.inDis && Math.abs(z.bw - (z.vw - 16) * 4) <= 2 && Math.abs(z.iw - z.bw) <= 1 && z.tf === 'none|none' && z.vp === z0.vp && z.vs === 1,
+      '+ to 400%: the box re-laid at four times its fit width, the page with it, no transform, the viewport untouched: ' + JSON.stringify(z));
+    await shot(pg, 'page-390x664-400-paper');
+    for (let i = 0; i < 5; i++) { await pg.click('#dossier .sp [data-sp="out"]'); await sleep(80); }
+    check((await zoom()).z === 1, '− back to fit');
+    /* a double tap: 250%, and again: fit; neither opens an editor */
+    const box = await pg.locator('#dossier .sp-box').boundingBox(), cx = box.x + box.width * .45, cy = box.y + box.height * .9;
+    await pg.touchscreen.tap(cx, cy); await sleep(60); await pg.touchscreen.tap(cx, cy); await sleep(500);
+    const dt1 = await pg.evaluate(() => ({ z: window.B68SheetPage.state().z, ed: !!document.querySelector('#dossier .sp-panel') }));
+    await pg.touchscreen.tap(195, 400); await sleep(60); await pg.touchscreen.tap(195, 400); await sleep(500);
+    const dt2 = await pg.evaluate(() => ({ z: window.B68SheetPage.state().z, ed: !!document.querySelector('#dossier .sp-panel') }));
+    check(dt1.z === 2.5 && dt2.z === 1 && !dt1.ed && !dt2.ed, 'a double tap goes to 250% and back to fit, and opens no editor: ' + JSON.stringify([dt1, dt2]));
+    /* ctrl+wheel, a two-pointer pinch, Safari's gesture events (the browser is told no: the sheet zooms, never the page) */
+    const zw = await pg.evaluate(async () => {
+      const v = document.querySelector('#dossier .sp-view'), r = v.getBoundingClientRect(), S = window.B68SheetPage, frames = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      const w = new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, clientX: r.left + 100, clientY: r.top + 100, bubbles: true, cancelable: true }); v.dispatchEvent(w);
+      const wheel = S.state().z;
+      const y = r.top + 150, ev = (t, id, x) => v.dispatchEvent(new PointerEvent(t, { pointerId: id, clientX: x, clientY: y, bubbles: true, cancelable: true, pointerType: 'touch', isPrimary: id === 1 }));
+      ev('pointerdown', 1, r.left + 150); ev('pointerdown', 2, r.left + 200); ev('pointermove', 2, r.left + 225); ev('pointermove', 2, r.left + 250); await frames();
+      ev('pointerup', 2, r.left + 250); ev('pointerup', 1, r.left + 150);
+      const pinch = S.state().z;
+      const g1 = new Event('gesturestart', { bubbles: true, cancelable: true }); g1.scale = 1; v.dispatchEvent(g1);
+      const g2 = new Event('gesturechange', { bubbles: true, cancelable: true }); g2.scale = 1.5; v.dispatchEvent(g2); await frames();
+      const g3 = new Event('gestureend', { bubbles: true, cancelable: true }); v.dispatchEvent(g3);
+      return { wheel, wheelNo: w.defaultPrevented, pinch, gesture: S.state().z, gestureNo: g1.defaultPrevented && g2.defaultPrevented, ed: !!document.querySelector('#dossier .sp-panel') };
+    });
+    check(Math.abs(zw.wheel - 1.12) < .01 && zw.wheelNo && Math.abs(zw.pinch - zw.wheel * 2) < .02 && Math.abs(zw.gesture - Math.min(4, zw.pinch * 1.5)) < .02 && zw.gestureNo && !zw.ed,
+      'ctrl+wheel, a two-finger pinch (twice the spread: twice the size) and Safari\'s gesture events all zoom the sheet: ' + JSON.stringify(zw));
+    for (let i = 0; i < 6 && (await zoom()).z > 1; i++) { await pg.click('#dossier .sp [data-sp="out"]'); await sleep(80); }
+
+    /* every region opens its editor as a bottom sheet */
+    const regions = ['about', 'stress', 'keys', 'harm', 'cohort', 'abilities', 'friends', 'xp', 'stacks', 'actions', 'items'], seenEd = [];
+    for (const r of regions) {
+      const p = await region(pg, r);
+      if (p && p.l === 0 && p.r === 390 && p.b >= 660 && p.t) seenEd.push(r); else console.log('  editor ' + r + ': ' + JSON.stringify(p));
+      if (r === 'stress') await shot(pg, 'editor-stress-390x664-paper');
+      if (p) await closeEd(pg); await sleep(150);
+    }
+    check(seenEd.length === regions.length, 'a tap on each part of the page opens its editor, a bottom sheet on a phone (' + seenEd.length + ' of ' + regions.length + ')');
+    /* a change through an editor: the sheet's own handler, the mark layer redrawn, the Undo bar, Undo (also on the server) */
+    const s0 = (await server1('pc-nell')).stress, sTo = s0 === 3 ? 4 : 3, pens0 = await pens(pg);
+    await region(pg, 'stress'); await pg.click('#dossier .sp-panel [data-act="stress"][data-n="' + sTo + '"]'); await sleep(400);
+    let u = await bar(pg);
+    const lifted = await pg.evaluate(() => { const b = document.querySelector('#dossier .gl-undo').getBoundingClientRect(), p = document.querySelector('#dossier .sp-panel').getBoundingClientRect(); return { bar: Math.round(b.bottom), panel: Math.round(p.top) }; });
+    check(lifted.bar <= lifted.panel, 'the Undo bar sits above an open editor, never over its controls: ' + JSON.stringify(lifted));
+    check(u && u.label === 'Stress ' + s0 + ' → ' + sTo && u.undo && (await pens(pg)) === pens0 + sTo - s0 && !!(await serverStress('pc-nell', sTo)), 'stress from its editor: the marks follow, the Undo bar says ' + JSON.stringify(u));
+    await shot(pg, 'editor-stress-change-390x664-paper');
+    await undoBar(pg);
+    check(!!(await serverStress('pc-nell', s0)) && (await pens(pg)) === pens0, 'Undo puts the stress (and its marks) back');
+    await closeEd(pg).catch(() => {});
+    await region(pg, 'harm'); await pg.fill('#dossier .sp-panel [data-sp-h="l3"]', 'Burned hand'); await pg.click('#dossier .sp-panel [data-sp="harmdone"]'); await sleep(400);
+    u = await bar(pg); html = await markHtml(pg);
+    const h1 = await until(async () => { const p = await server1('pc-nell'); return p && p.harm && p.harm.l3 === 'Burned hand' ? p : null; }, 8000, 200);
+    check(u && u.label === 'Harm updated' && />Burned hand</.test(html) && !!h1, 'the harm editor: Done is one change, written on the page and saved, with Undo: ' + JSON.stringify(u));
+    await undoBar(pg);
+    check(!!(await until(async () => { const p = await server1('pc-nell'); return p && p.harm && !p.harm.l3 ? p : null; }, 8000, 200)) && !/>Burned hand</.test(await markHtml(pg)), 'Undo takes the harm back off');
+    const changes = [['stacks', '[data-act="stacks"][data-n="2"]', /Stacks changed/], ['items', '[data-act="item"][data-n="Binoculars"]', /Load changed/], ['keys', '[data-act="keyhit"][data-i="1"][data-n="2"]', /KEY-2 1 → 2 hits/], ['cohort', '[data-act="coharm"][data-v="weak"]', /changed/]];
+    for (const [r, sel, re] of changes) {
+      await region(pg, r); const before = await markHtml(pg);
+      await pg.click('#dossier .sp-panel ' + sel); await sleep(400);
+      u = await bar(pg); const after = await markHtml(pg);
+      check(u && re.test(u.label) && u.undo && after !== before, r + ': a change through its editor redraws the marks, with Undo (' + (u && u.label) + ')');
+      await undoBar(pg); await closeEd(pg).catch(() => {});
+      check((await markHtml(pg)) === before, r + ': Undo puts the marks back');
+    }
+    await region(pg, 'about'); await pg.fill('#dossier .sp-panel input[data-path="crew"]', 'The Dovetail Crew (Pelican)'); await pg.keyboard.press('Tab'); await sleep(400);
+    u = await bar(pg);
+    check(u && u.label === 'Crew changed' && u.undo && /The Dovetail Crew \(Pelican\)/.test(await markHtml(pg)), 'a typed field (the crew): the sheet writes it, the page records it for Undo: ' + JSON.stringify(u));
+    await undoBar(pg); await closeEd(pg).catch(() => {});
+    /* a deadlock from the page's keys editor is the glance's: confirmed, struck for good, Stress to 0 with one Undo (design §6); Undo keeps the deadlock */
+    if (!((await server1('pc-nell')).stress > 0)) { await region(pg, 'stress'); await pg.click('#dossier .sp-panel [data-act="stress"][data-n="5"]'); await sleep(400); await closeEd(pg).catch(() => {}); }
+    const sd = (await server1('pc-nell')).stress;
+    await region(pg, 'keys'); await pg.click('#dossier .sp-panel [data-gl="deadlock"][data-i="1"][data-dir="down"]'); await sleep(500);
+    u = await bar(pg);
+    const dz = await until(async () => { const p = await server1('pc-nell'); return p && p.stress === 0 && p.keys[1].deadlock === 'down' ? p : null; }, 8000, 200);
+    check(!!dz && u && u.label === 'Deadlocked KEY-2: Stress ' + sd + ' → 0' && u.undo && (await stressOf(pg)) === 0, 'a deadlock from the page\'s keys editor resets Stress to 0, with Undo: ' + JSON.stringify(u));
+    await shot(pg, 'deadlock-from-page-390x664-paper');
+    await undoBar(pg);
+    const du = await until(async () => { const p = await server1('pc-nell'); return p && p.stress === sd ? p : null; }, 8000, 200);
+    check(!!du && du.keys[1].deadlock === 'down', 'Undo puts Stress back to ' + sd + '; the deadlock stays (the GM\'s to undo): ' + JSON.stringify(du && du.keys[1]));
+    await closeEd(pg).catch(() => {});
+    await region(pg, 'actions'); await pg.click('#dossier .sp-panel [data-act="rollopen"][data-a="Hunt"]'); await sleep(500);
+    const roll = await pg.evaluate(() => { const r = document.querySelector('#dossier .ds-roll'); return { ed: !!document.querySelector('#dossier .sp-panel'), roll: !!r && r.getClientRects().length > 0 && getComputedStyle(r).position === 'fixed' }; });
+    check(!roll.ed && roll.roll, 'actions: a tap on an action opens today\'s roll strip over the page: ' + JSON.stringify(roll));
+    await pg.click('#dossier .ds-roll [data-act="markopt"][data-k="push"]'); await sleep(400);
+    const lr = await pg.evaluate(() => { const b = document.querySelector('#dossier .gl-undo'), r = document.querySelector('#dossier .ds-roll'); return b && !b.hidden ? { bar: Math.round(b.getBoundingClientRect().bottom), roll: Math.round(r.getBoundingClientRect().top) } : null; });
+    check(!!lr && lr.bar <= lr.roll, 'Push in the roll strip over the page: the Undo bar sits above the strip: ' + JSON.stringify(lr));
+    await shot(pg, 'roll-from-page-390x664-paper');
+    await undoBar(pg);
+    await pg.click('#dossier .ds-roll [data-act="panelclose"]').catch(() => {}); await sleep(200);
+    await pg.click('#dossier .sp [data-sp="back"]'); await sleep(300);
+    check(!!(await glanceUp(pg, 3000)), '‹ comes back to the glance screen');
+    await toFull(pg); await ready(pg);
+    check(sheetReqs(S).length === 2, 'opened again: the sheet is cached (still two requests)');
+    await S.ctx.close();
+
+    /* a map whose count disagrees: nothing drawn there, the note on the page and in the editor */
+    const B = await open('pc-nell', { w: 390, h: 664, sheets: { map: blankSheet(CT, 'hound', { stress: 8 }).map } }), bp = B.page; await glanceUp(bp); await toFull(bp); await ready(bp);
+    const mm = await bp.evaluate(() => { const w = document.querySelector('#dossier .sp-warn'); return { notes: Array.from(document.querySelectorAll('#dossier .sp-unmapped text')).map((t) => t.textContent), warn: w && !w.hidden && w.getClientRects().length ? w.textContent : null, px: w ? parseFloat(getComputedStyle(w).fontSize) : 0 }; });
+    const doc1 = (await api('GET', '/characters/pc-nell', null, P1)).json.doc, want8 = PG.marks(blankSheet(CT, 'hound', { stress: 8 }).map, { play: doc1.play, pb: CT.byId.hound, doc: doc1 }, null, CT);
+    const p8 = await region(bp, 'stress');
+    check(mm.warn === '1 part of this sheet isn\u2019t mapped: use the glance screen for it' && mm.px >= 15, 'the page says so in words under its bar, readable at 390 x 664: ' + mm.warn);
+    check(mm.notes.length === 1 && mm.notes[0] === PG.NOTE && (await pens(bp)) === (want8.match(/class="sp-pen"/g) || []).length && p8 && p8.note,
+      '8 stress boxes on the map for a 9-box track: no stress mark, the note on the page and in the editor: ' + JSON.stringify(mm));
+    await closeEd(bp);
+    await shot(bp, 'mismatch-390x664-paper');
+    await B.ctx.close();
+
+    /* nothing published: the classic sheet, and the next Full sheet goes there at once */
+    const N = await open('pc-nell', { w: 390, h: 664, sheets: { none: true } }), np = N.page; await glanceUp(np); await toFull(np);
+    const fb = await until(() => gl(np).then((v) => v === 'sheet'), 5000, 100);
+    await np.click('#dossier .gl-backbar [data-gl="glance"]'); await glanceUp(np, 3000); await toFull(np); await sleep(300);
+    check(!!fb && (await gl(np)) === 'sheet' && sheetReqs(N).length === 1, 'no sheet published: Full sheet falls back to today\'s sheet, and once known, with no second request: ' + sheetReqs(N));
+    await N.ctx.close();
+
+    /* held sideways: the page with a side panel (the glance is still a tap away) */
+    const L = await open('pc-nell', { w: 664, h: 390, sheets: {} }), lp = L.page; await glanceUp(lp); await toFull(lp); await ready(lp);
+    const lw = await lp.evaluate(() => window.B68SheetPage.state());
+    await shot(lp, 'page-664x390-paper');
+    const lpn = await region(lp, 'stacks');
+    check(lw.wide && lpn && lpn.r === 664 && lpn.l > 200 && lpn.top >= 50, 'held sideways (664 x 390): the page, and its editors as a side panel: ' + JSON.stringify([lw, lpn]));
+    await shot(lp, 'editor-664x390-paper');
+    await L.ctx.close();
+    { const LN = await open('pc-nell', { w: 664, h: 390, night: true, sheets: {} }); await glanceUp(LN.page); await toFull(LN.page); await ready(LN.page); await shot(LN.page, 'page-664x390-night'); await region(LN.page, 'harm'); await shot(LN.page, 'editor-664x390-night'); await LN.ctx.close(); }
+
+    /* over 760 px (a tablet, a laptop): the page is the main view, with a thin bar, side panels and the Undo bar; print stays today's sheet */
+    for (const night of [false, true]) {
+      const W = await open('pc-nell', { w: 1024, h: 768, mobile: false, night, sheets: {} }), wp = W.page; await ready(wp);
+      const wi = await wp.evaluate(() => { const vis = (e) => !!e && e.getClientRects().length > 0; return { v: document.getElementById('dossier').getAttribute('data-gl'), s: window.B68SheetPage.state(), boxes: Array.from(document.querySelectorAll('#dossier section.ds-box:not(.ds-now)')).filter(vis).length,
+        back: vis(document.querySelector('#dossier .sp-back')), quiet: !!document.querySelector('#dossier .ds-quietbtn') === vis(document.querySelector('#dossier .sp-bar [data-act="quiet"]')), w: Math.round(document.querySelector('#dossier .sp-box').getBoundingClientRect().width) }; });
+      await shot(wp, 'page-1024x768-' + (night ? 'night' : 'paper'));
+      if (night) { await wp.locator('#dossier .sp-hit[data-region="keys"]').first().click(); await panel(wp, 'keys'); await shot(wp, 'editor-1024x768-night'); }
+      if (!night) {
+        check(wi.v === 'page' && wi.s.wide && wi.boxes === 0 && !wi.back && wi.quiet && wi.w > 900, '1024 x 768: the filled-in page is the main view over today\'s sheet (no back to a glance that is not drawn here): ' + JSON.stringify(wi));
+        await wp.locator('#dossier .sp-hit[data-region="stress"]').first().click(); const wpn = await panel(wp, 'stress');
+        await wp.click('#dossier .sp-panel [data-act="stress"][data-n="2"]'); await sleep(400);
+        const wu = await wp.evaluate(() => { const u = document.querySelector('#dossier .gl-undo'); return u && !u.hidden ? { label: u.querySelector('.gl-u-l').textContent, d: getComputedStyle(u).display } : null; });
+        check(wpn && wpn.r === 1024 && wpn.l >= 600 && wpn.top >= 50 && wu && wu.d === 'flex' && /^Stress \d+ → 2$/.test(wu.label), '1024: an editor is a side panel, and a change shows the Undo bar: ' + JSON.stringify([wpn, wu]));
+        await shot(wp, 'editor-1024x768-paper');
+        await wp.click('#dossier .gl-undo .gl-u-go'); await sleep(300);
+        await wp.emulateMedia({ media: 'print' });
+        const pr = await wp.evaluate(() => ({ boxes: Array.from(document.querySelectorAll('#dossier section.ds-box')).filter((b) => b.getClientRects().length).length, sp: getComputedStyle(document.querySelector('#dossier .gl')).display }));
+        check(pr.boxes >= 14 && pr.sp === 'none', 'print with the page up: today\'s sheet: ' + JSON.stringify(pr));
+      }
+      await W.ctx.close();
+    }
+    { const P = await open('pc-nell', { w: 390, h: 664, night: true, sheets: {} }); await glanceUp(P.page); await toFull(P.page); await ready(P.page); await shot(P.page, 'page-390x664-first-night'); await P.page.click('#dossier .sp [data-sp="in"]'); await sleep(200); await shot(P.page, 'page-390x664-250-night'); await region(P.page, 'keys'); await shot(P.page, 'editor-keys-390x664-night'); await P.ctx.close(); }
+  }
+
   /* ---------- the four-screen sheet stays undrawn; off again ---------- */
   const K = await open('pc-nell', { w: 390, h: 664 }), k = K.page; await glanceUp(k);
   await feature({ 'kit.phone': true });
@@ -420,14 +627,231 @@ try {
 
   /* ---------- wide: a desk's width and print are today's sheet ---------- */
   await feature({ 'phone.glance': true });
-  const D = await open('pc-nell', { w: 1024, h: 768, mobile: false }), d = D.page;
-  await until(() => d.evaluate(() => !!document.querySelector('#dossier .gl')), 15000);
+  const D = await open('pc-nell', { w: 1024, h: 768, mobile: false, sheets: { none: true } }), d = D.page;
+  /* RK32: over 760 px the page opens as the main view; with no sheet published it falls back to today's sheet: wait for that */
+  await until(() => d.evaluate(() => !!document.querySelector('#dossier .gl') && document.getElementById('dossier').getAttribute('data-gl') === 'sheet'), 15000);
   const wide = await d.evaluate(() => ({ gl: getComputedStyle(document.querySelector('#dossier .gl')).display, boxes: Array.from(document.querySelectorAll('#dossier section.ds-box')).filter((b) => b.getClientRects().length).length }));
   check(wide.gl === 'none' && wide.boxes >= 14, '1024 px: the glance shows nothing and hides nothing: ' + JSON.stringify(wide));
   await d.emulateMedia({ media: 'print' });
   const pr = await d.evaluate(() => ({ gl: getComputedStyle(document.querySelector('#dossier .gl')).display, boxes: Array.from(document.querySelectorAll('#dossier section.ds-box')).filter((b) => b.getClientRects().length).length }));
   check(pr.gl === 'none' && pr.boxes >= 14, 'print: today\'s sheet: ' + JSON.stringify(pr));
   await D.ctx.close();
+
+  /* ---------- phone.find: search on the phones (RK25): the filter over the abilities box, the strip and the glance's abilities sheet ---------- */
+  {
+    await must(api('PUT', '/campaign', { v: 1, session: { number: 3, startedAt: started, endedAt: null }, crew: { name: 'The Dovetail Crew', playbook: 'shadows', abilities: Object.fromEntries(crewNames.map((n) => [n, 1])), claims: {}, factions: [], cohorts: [] }, clocks: [], log: [] }), 'the table, with crew abilities');
+    await feature({ 'spine.keyturn': true, 'spine.aftermath': true, 'between.quiet': true, 'phone.glance': false, 'phone.find': true, 'kit.phone': false });
+    const book = CT.byId.intellectual.abilities.map((a) => a[0]), own7 = book.slice(0, 7);
+    const norm = (s) => s.toLowerCase().replace(/[’']/g, '');
+    const want = (list, q) => list.filter((n) => norm(n).includes(q));
+    const q3 = (n) => norm(n).slice(0, 3);
+    const rowsVis = (pg, sel) => pg.evaluate((s) => Array.from(document.querySelectorAll(s)).filter((e) => getComputedStyle(e).display !== 'none' && e.getClientRects().length).map((e) => ((e.querySelector('b') || e).textContent || '').replace(/:$/, '').trim()), sel);
+    const typeIn = async (pg, sel, text) => { await pg.click(sel); await pg.fill(sel, ''); await pg.keyboard.type(text, { delay: 25 }); await sleep(150); };
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const sorted = (a) => a.slice().sort();
+    const writes = [];
+    const watch = (pg) => pg.on('request', (r) => { if (r.method() !== 'GET') writes.push(r.method() + ' ' + new URL(r.url()).pathname); });
+    const target = book[3], q = q3(target);
+
+    /* the classic sheet (the glance off): the abilities box lists every ability the playbook has, taken or not, then the Versatile row */
+    const F = await open('pc-ray', { w: 390, h: 664 }), f = F.page; watch(f);
+    check(!!(await until(() => f.evaluate(() => !!document.querySelector('#dossier .ds-abbox .abf-in')), 20000, 200)), 'phone.find on: the abilities box has its search box');
+    check(F.seen.req.filter((u) => /\/sheet\/ability-find\.js/.test(u)).length === 1, 'the bundle is fetched once, for the phone');
+    const all0 = await rowsVis(f, '#dossier .ds-abbox .ds-ab');
+    check(all0.length === book.length + 1 && all0.includes(target), 'before a word is typed every row shows (' + all0.length + ': the playbook\'s ' + book.length + ' and the Versatile row)');
+    const play0 = await server1('pc-ray'), w0 = writes.length, exp = want(book, q);
+    await typeIn(f, '#dossier .ds-abbox .abf-in', q);
+    let vis = await rowsVis(f, '#dossier .ds-abbox .ds-ab');
+    check(vis.includes(target) && same(vis.filter((n) => n !== 'Versatile'), exp) && exp.length < book.length && vis.includes('Versatile'), 'three letters ("' + q + '") find ' + target + ' in the abilities box: ' + JSON.stringify(vis));
+    const note = await f.evaluate(() => document.querySelector('#dossier .ds-abbox .abf-n').textContent);
+    check(note === exp.length + ' of ' + book.length && (await f.evaluate(() => !document.querySelector('#dossier .ds-abbox [data-abf-clear]').hidden)), 'the line under it says how many, and Clear shows: ' + note);
+    const looks = await f.evaluate(() => { const c = document.querySelector('#dossier .ds-abbox .abf-x'), a = document.querySelector('#dossier .ds-abbox [data-act="addability"]'), s = (e) => { const k = getComputedStyle(e); return [k.textTransform, k.boxShadow, k.borderTopWidth, k.fontFamily].join('|'); }; return { clear: s(c), add: s(a), h: Math.round(c.getBoundingClientRect().height), cls: c.className }; });
+    check(looks.clear === looks.add && looks.h >= 44 && /\bbtn\b/.test(looks.cls), 'Clear has the sheet\'s own button look, the same as Add beside the Versatile row, and is 44 px tall: ' + JSON.stringify(looks));
+    await shot(f, 'find-abbox-390x664-paper');
+    /* a redraw around the box keeps the query and the focus: the abilities slot is drawn again (a seventh ability taken, from the server) */
+    await must(api('PUT', '/characters/pc-ray', Object.assign({}, PCS[1].doc, { play: Object.assign({ session: 3 }, PCS[1].doc.play, { abilities: own7 }) }), P1), 'one more ability');
+    check(!!(await until(() => f.evaluate(() => document.querySelectorAll('#dossier .ds-abbox .ds-ab.on').length === 7), 15000, 200)), 'a redraw: the sheet shows the seventh ability taken');
+    const kept = await f.evaluate(() => { const i = document.querySelector('#dossier .ds-abbox .abf-in'); return { v: i && i.value, focus: document.activeElement === i, off: document.querySelectorAll('#dossier .ds-abbox [data-abf-off]').length }; });
+    check(kept.v === q && kept.focus && kept.off === book.length - exp.length, 'the query, the focus and the hidden rows survive the redraw: ' + JSON.stringify(kept));
+    /* nothing matches: say so, and the add control is still there */
+    await typeIn(f, '#dossier .ds-abbox .abf-in', 'zzq');
+    vis = await rowsVis(f, '#dossier .ds-abbox .ds-ab');
+    const none = await f.evaluate(() => ({ note: document.querySelector('#dossier .ds-abbox .abf-n').textContent, add: !!document.querySelector('#dossier .ds-abbox .ds-newab').getClientRects().length }));
+    check(same(vis, ['Versatile']) && /^No ability matches/.test(none.note) && none.add, 'nothing matches: the row with the add control stays, and the line says so: ' + JSON.stringify(none));
+    await f.click('#dossier .ds-abbox [data-abf-clear]'); await sleep(150);
+    vis = await rowsVis(f, '#dossier .ds-abbox .ds-ab');
+    check(vis.length === book.length + 1 && (await f.evaluate(() => document.querySelector('#dossier .ds-abbox .abf-in').value === '')), 'Clear brings every row back (' + vis.length + ')');
+    check(writes.length === w0 && !writes.length, 'no write request while searching, so the character is not edited: ' + JSON.stringify(writes));
+    check(same(sorted(Object.keys(await server1('pc-ray'))), sorted(Object.keys(play0))), 'the stored play has the same keys (typing adds none)');
+    /* the strip: the player's own and the crew's, in the roll panel */
+    await f.click('#dossier [data-act="rollopen"][data-a="Study"]');
+    await f.waitForSelector('#dossier .ds-roll [data-act="abstrip"]', { timeout: 8000 });
+    await f.click('#dossier .ds-roll [data-act="abstrip"]');
+    check(!!(await until(() => f.evaluate((n) => document.querySelectorAll('#dossier .ds-abstrip-b .ds-abi').length >= n, own7.length + crewNames.length), 15000, 200)) && !!(await f.$('#dossier .ds-abstrip-b .abf-in')), 'the strip lists the player\'s abilities and the crew\'s, with a search box over them');
+    const cq = q3(crewNames[1]), labels = () => f.evaluate(() => Array.from(document.querySelectorAll('#dossier .ds-abstrip-b .ds-abgrp')).filter((g) => getComputedStyle(g).display !== 'none').map((g) => g.querySelector('.ds-lab').textContent));
+    await typeIn(f, '#dossier .ds-abstrip-b .abf-in', cq);
+    vis = await rowsVis(f, '#dossier .ds-abstrip-b .ds-abi');
+    check(vis.includes(crewNames[1]) && same(sorted(vis), sorted(want(crewNames, cq).concat(want(own7, cq)))), 'three letters ("' + cq + '") find the crew\'s ' + crewNames[1] + ' in the strip: ' + JSON.stringify(vis));
+    const lab = await labels();
+    check(same(lab, want(own7, cq).length ? ['Yours', 'The crew’s'] : ['The crew’s']), 'a group with nothing left goes: ' + JSON.stringify(lab));
+    await shot(f, 'find-strip-crew-390x664-paper');
+    const oq = q3(book[0]);
+    await typeIn(f, '#dossier .ds-abstrip-b .abf-in', oq);
+    vis = await rowsVis(f, '#dossier .ds-abstrip-b .ds-abi');
+    check(vis.includes(book[0]) && same(sorted(vis), sorted(want(own7, oq).concat(want(crewNames, oq)))), 'and the player\'s own ' + book[0] + ' ("' + oq + '"): ' + JSON.stringify(vis));
+    await f.click('#dossier .ds-roll [data-act="abstrip"]'); await sleep(200);
+    await f.click('#dossier .ds-roll [data-act="abstrip"]'); await sleep(300);
+    check(await f.evaluate(() => document.querySelector('#dossier .ds-abstrip-b .abf-in').value === '' && !document.querySelector('#dossier .ds-abstrip-b [data-abf-off]')), 'folding the strip and opening it again starts clean');
+    const open0 = await f.evaluate(() => document.querySelectorAll('#dossier .ds-abstrip-b .ds-abi.open').length);
+    await f.click('#dossier .ds-abstrip-b .ds-abi'); await sleep(200);
+    check((await f.evaluate(() => document.querySelectorAll('#dossier .ds-abstrip-b .ds-abi.open').length)) === open0 + 1, 'a row still opens its text (nothing lost)');
+    check(writes.length === w0, 'still no write request: ' + JSON.stringify(writes));
+    await F.ctx.close();
+
+    /* the glance: the abilities sheet (which "+n more" opens), and the strip over it */
+    await feature({ 'phone.glance': true });
+    for (const [w, h, tag] of [[375, 553, '375x553'], [390, 664, '390x664'], [664, 390, '664x390']]) {
+      const G = await open('pc-ray', { w, h }); await glanceUp(G.page); const g = G.page;
+      await until(() => g.evaluate(() => !!window.B68AbilityFind && window.B68AbilityFind.state().on), 15000, 200);
+      const chip = await until(() => g.evaluate(() => { const c = document.querySelector('#dossier .gl-chip.gl-plus'); return !!c && !c.hidden && c.getClientRects().length > 0; }), 4000, 200);
+      if (!chip) {
+        const chips = await g.evaluate(() => Array.from(document.querySelectorAll('#dossier .gl-abs .gl-chip:not(.gl-plus)')).filter((c) => !c.hidden && c.getClientRects().length).length);
+        check(chips === own7.length, tag + ': every ability fits as a chip (' + chips + '), so there is nothing to search and the sheet is not offered');
+      } else {
+        await g.click('#dossier .gl-chip.gl-plus');
+        const sheetOpen = await until(() => g.evaluate(() => !!document.querySelector('#dossier .gl-sheet .abf-in')), 8000, 200);
+        check(!!sheetOpen, tag + ': "+n more" opens the abilities sheet with its search box');
+        const all = await rowsVis(g, '#dossier .gl-sheet .gl-abt');
+        await typeIn(g, '#dossier .gl-sheet .abf-in', q);
+        const v2 = await rowsVis(g, '#dossier .gl-sheet .gl-abt');
+        check(all.length === 7 && v2.includes(target) && same(v2, want(all, q)) && v2.length < all.length, tag + ': three letters ("' + q + '") find ' + target + ' in the glance\'s abilities: ' + JSON.stringify(v2));
+        const lay = await g.evaluate(() => { const i = document.querySelector('#dossier .gl-sheet .abf-in'), r = i.getBoundingClientRect(), s = getComputedStyle(i), n = document.querySelector('#dossier .gl-sheet .abf-n');
+          return { h: Math.round(r.height), left: Math.round(r.left), right: Math.round(r.right), fs: parseFloat(s.fontSize), nfs: parseFloat(getComputedStyle(n).fontSize), sw: document.documentElement.scrollWidth, iw: innerWidth }; });
+        check(lay.h >= 44 && lay.fs >= 16 && lay.nfs >= 12 && lay.left >= 0 && lay.right <= lay.iw && lay.sw <= lay.iw, tag + ': the box is 44 px tall, 16 px type, the line 14 px, inside the screen: ' + JSON.stringify(lay));
+        await shot(g, 'find-glance-' + tag + '-paper');
+        await g.click('#dossier .gl-sheet [data-gl="close"]'); await sleep(250);
+        await g.click('#dossier .gl-chip.gl-plus'); await sleep(300);
+        const again = await g.evaluate(() => ({ v: document.querySelector('#dossier .gl-sheet .abf-in').value, n: document.querySelectorAll('#dossier .gl-sheet .gl-abt:not([data-abf-off])').length }));
+        check(again.v === '' && again.n === 7, tag + ': the sheet closed and opened again starts clean: ' + JSON.stringify(again));
+        await g.click('#dossier .gl-sheet [data-gl="close"]'); await sleep(250);
+      }
+      if (tag === '390x664') {
+        await g.click('#dossier .gl-act[data-a="Study"]');
+        await g.waitForSelector('#dossier .ds-roll [data-act="abstrip"]', { timeout: 8000 });
+        await g.click('#dossier .ds-roll [data-act="abstrip"]');
+        check(!!(await until(() => g.evaluate((n) => document.querySelectorAll('#dossier .ds-abstrip-b .ds-abi').length >= n, own7.length + crewNames.length), 15000, 200)), tag + ': on the glance the roll strip lists the player\'s and the crew\'s too');
+        await typeIn(g, '#dossier .ds-abstrip-b .abf-in', cq);
+        const v3 = await rowsVis(g, '#dossier .ds-abstrip-b .ds-abi');
+        check(v3.includes(crewNames[1]) && same(sorted(v3), sorted(want(crewNames, cq).concat(want(own7, cq)))), tag + ': on the glance three letters find the crew\'s ' + crewNames[1] + ' in the strip: ' + JSON.stringify(v3));
+        await shot(g, 'find-glance-strip-' + tag + '-paper');
+      }
+      await G.ctx.close();
+    }
+    /* the Hull: when every frame feature is hidden its heading goes with them, and comes back with them */
+    {
+      await feature({ 'phone.glance': false });
+      const H = await open('pc-mabel', { w: 390, h: 664 }), h = H.page;
+      await until(() => h.evaluate(() => !!document.querySelector('#dossier .ds-abbox .abf-in')), 20000, 200);
+      const frameVis = () => h.evaluate(() => { const f = document.querySelector('#dossier .ds-abbox .ds-frame'); return !!f && getComputedStyle(f).display !== 'none' && !!f.previousElementSibling && getComputedStyle(f.previousElementSibling).display !== 'none'; });
+      check(await frameVis(), 'the Hull: Frame features and its heading show before a word is typed');
+      await typeIn(h, '#dossier .ds-abbox .abf-in', 'zzq');
+      check(!(await frameVis()), 'the Hull: nothing matches, so the Frame features heading goes with its features');
+      await h.click('#dossier .ds-abbox [data-abf-clear]'); await sleep(150);
+      check(await frameVis(), 'the Hull: Clear brings the Frame features and their heading back');
+      await H.ctx.close();
+    }
+    /* RK32's full sheet: the abilities editor has the box above its rows; Yours and Not taken yet go when empty; a closed and reopened editor starts clean */
+    {
+      await feature({ 'phone.glance': true });
+      const S = await open('pc-nell', { w: 390, h: 664, sheets: {} }), p = S.page; await glanceUp(p);
+      await until(() => p.evaluate(() => !!window.B68AbilityFind && window.B68AbilityFind.state().on), 15000, 200);
+      if (await p.$('#dossier .gl-foot [data-gl="full"]')) await p.click('#dossier .gl-foot [data-gl="full"]'); else { await p.click('#dossier .gl-top [data-gl="more"]'); await p.click('#dossier .gl-sheet [data-gl="full"]'); }
+      await until(() => p.evaluate(() => !!document.querySelector('#dossier .sp.sp-ready')), 10000, 100);
+      await p.locator('#dossier .sp-hit[data-region="abilities"]').first().tap();
+      await p.waitForSelector('#dossier .sp-panel[data-region="abilities"] .abf-in', { timeout: 8000 });
+      const rows0 = await rowsVis(p, '#dossier .sp-panel .sp-ab'), mine = await p.evaluate(() => Array.from(document.querySelectorAll('#dossier .sp-panel .sp-ab:not(.sp-not)')).map((e) => e.querySelector('b').textContent));
+      const above = await p.evaluate(() => { const b = document.querySelector('#dossier .sp-panel .abf').getBoundingClientRect(), r = document.querySelector('#dossier .sp-panel .sp-ab').getBoundingClientRect(); return b.bottom <= r.top + 1; });
+      check(rows0.length >= 4 && above, 'the full sheet\'s abilities editor draws the box above its ' + rows0.length + ' rows');
+      const notMine = rows0.find((n) => mine.indexOf(n) < 0) || rows0[rows0.length - 1], pq = q3(notMine), pe = want(rows0, pq);
+      await typeIn(p, '#dossier .sp-panel .abf-in', pq);
+      const pv = await rowsVis(p, '#dossier .sp-panel .sp-ab'), plabs = await p.evaluate(() => Array.from(document.querySelectorAll('#dossier .sp-panel .sp-lab')).filter((e) => getComputedStyle(e).display !== 'none').map((e) => e.textContent));
+      const takes = await p.evaluate(() => Array.from(document.querySelectorAll('#dossier .sp-panel .sp-ab.sp-not [data-act="ability"]')).filter((e) => e.getClientRects().length).length);
+      check(pv.includes(notMine) && same(pv, pe) && pv.length < rows0.length, 'the editor: three letters ("' + pq + '") find ' + notMine + ': ' + JSON.stringify(pv));
+      check(same(plabs, pv.some((n) => mine.indexOf(n) >= 0) ? ['Yours', 'Not taken yet'] : ['Not taken yet']) && takes === pv.filter((n) => mine.indexOf(n) < 0).length, 'a heading with no rows left goes, and "Take it" stays on the rows that show: ' + JSON.stringify([plabs, takes]));
+      await shot(p, 'find-page-editor-390x664-paper');
+      await p.click('#dossier .sp-panel [data-sp="close"]'); await sleep(250);
+      await p.locator('#dossier .sp-hit[data-region="abilities"]').first().tap();
+      await p.waitForSelector('#dossier .sp-panel[data-region="abilities"] .abf-in', { timeout: 8000 });
+      check((await p.evaluate(() => document.querySelector('#dossier .sp-panel .abf-in').value)) === '' && (await rowsVis(p, '#dossier .sp-panel .sp-ab')).length === rows0.length, 'the editor closed and opened again starts clean');
+      await p.click('#dossier .sp-panel [data-sp="close"]'); await sleep(250);
+      await p.locator('#dossier .sp-hit[data-region="stress"]').first().tap();
+      await p.waitForSelector('#dossier .sp-panel[data-region="stress"]', { timeout: 8000 });
+      check(!(await p.$('#dossier .sp-panel .abf')), 'another region\'s editor has no box');
+      await S.ctx.close();
+      /* RK32's guard comes first: a waived abilities region and one with the wrong count draw nothing on the page, show the note, and get no box */
+      const wrong = blankSheet(CT, 'hound').map; wrong.ab.pop();
+      for (const [what, map] of [['waived', blankSheet(CT, 'hound', { waived: ['abilities'] }).map], ['wrong count', wrong]]) {
+        const W2 = await open('pc-nell', { w: 390, h: 664, sheets: { map } }), w2 = W2.page; await glanceUp(w2);
+        await until(() => w2.evaluate(() => !!window.B68AbilityFind && window.B68AbilityFind.state().on), 15000, 200);
+        if (await w2.$('#dossier .gl-foot [data-gl="full"]')) await w2.click('#dossier .gl-foot [data-gl="full"]'); else { await w2.click('#dossier .gl-top [data-gl="more"]'); await w2.click('#dossier .gl-sheet [data-gl="full"]'); }
+        await until(() => w2.evaluate(() => !!document.querySelector('#dossier .sp.sp-ready')), 10000, 100);
+        await w2.locator('#dossier .sp-hit[data-region="abilities"]').first().tap();
+        await w2.waitForSelector('#dossier .sp-panel[data-region="abilities"]', { timeout: 8000 });
+        const g2 = await w2.evaluate(() => ({ note: !!document.querySelector('#dossier .sp-panel .sp-note'), box: !!document.querySelector('#dossier .sp-panel .abf, #dossier .sp-panel [data-abf-box]'), marks: document.querySelectorAll('#dossier .sp-marks .sp-pen').length }));
+        check(g2.note && !g2.box, 'the full sheet, ' + what + ' abilities region: the editor shows the note and has no search box: ' + JSON.stringify(g2));
+        await W2.ctx.close();
+      }
+    }
+    /* Night: the box and the glance's abilities sheet, in the dark (pictures; the box must still be there and readable) */
+    for (const gl of [false, true]) {
+      await feature({ 'phone.glance': gl });
+      const N = await open('pc-ray', { w: 375, h: 553, night: true }), n = N.page;
+      if (gl) { await glanceUp(n); await until(() => n.evaluate(() => !!window.B68AbilityFind && window.B68AbilityFind.state().on), 15000, 200); await n.click('#dossier .gl-chip.gl-plus'); await n.waitForSelector('#dossier .gl-sheet .abf-in'); await typeIn(n, '#dossier .gl-sheet .abf-in', q); }
+      else { await until(() => n.evaluate(() => !!document.querySelector('#dossier .ds-abbox .abf-in')), 20000, 200); await typeIn(n, '#dossier .ds-abbox .abf-in', q); await n.evaluate(() => document.querySelector('#dossier .ds-abbox .abf-in').scrollIntoView({ block: 'center' })); }
+      const ink = await n.evaluate(() => { const i = document.querySelector('#dossier .abf-in'), c = (s) => (s.match(/[0-9.]+/g) || []).slice(0, 3).map(Number); return { ink: c(getComputedStyle(i).color) }; });
+      check(ink.ink.length === 3 && Math.max(...ink.ink) > 150, (gl ? 'glance' : 'classic') + ' in Night: the typed text is light on the dark ground: ' + JSON.stringify(ink));
+      await shot(n, 'find-' + (gl ? 'glance' : 'abbox') + '-375x553-night');
+      await N.ctx.close();
+    }
+    /* the classic sheet at a desk's width: the same box, and print leaves it out */
+    {
+      await feature({ 'phone.glance': false });
+      const D = await open('pc-ray', { w: 1024, h: 768, mobile: false }), d = D.page;
+      check(!!(await until(() => d.evaluate(() => !!document.querySelector('#dossier .ds-abbox .abf-in')), 20000, 200)), '1024 x 768: the abilities box has its search box');
+      await typeIn(d, '#dossier .ds-abbox .abf-in', q);
+      const v4 = await rowsVis(d, '#dossier .ds-abbox .ds-ab');
+      check(v4.includes(target) && same(v4.filter((n) => n !== 'Versatile'), want(book, q)), '1024 x 768: three letters find ' + target + ': ' + JSON.stringify(v4));
+      await shot(d, 'find-abbox-1024x768-paper');
+      await d.emulateMedia({ media: 'print' });
+      check(await d.evaluate(() => getComputedStyle(document.querySelector('#dossier .ds-abbox .abf')).display === 'none'), 'print: the box is not printed');
+      await D.ctx.close();
+    }
+    /* a short list is not searched: the crew has taken nothing, so Nell's strip holds only her three own abilities and draws no box; her abilities box (the whole playbook) still does */
+    {
+      await must(api('PUT', '/campaign', { v: 1, session: { number: 3, startedAt: started, endedAt: null }, crew: { name: 'The Dovetail Crew', playbook: 'shadows', abilities: {}, claims: {}, factions: [], cohorts: [] }, clocks: [], log: [] }), 'the table, no crew abilities');
+      await feature({ 'phone.glance': false });
+      const Q = await open('pc-nell', { w: 390, h: 664 }), qp = Q.page;
+      await until(() => qp.evaluate(() => !!document.querySelector('#dossier .ds-abbox .abf-in')), 20000, 200);
+      await qp.click('#dossier [data-act="rollopen"][data-a="Hunt"]');
+      await qp.waitForSelector('#dossier .ds-roll [data-act="abstrip"]', { timeout: 8000 });
+      await qp.click('#dossier .ds-roll [data-act="abstrip"]');
+      await until(() => qp.evaluate(() => document.querySelectorAll('#dossier .ds-abstrip-b .ds-abi').length >= 3), 15000, 200);
+      const nb = await qp.evaluate(() => ({ rows: document.querySelectorAll('#dossier .ds-abstrip-b .ds-abi').length, box: !!document.querySelector('#dossier .ds-abstrip-b .abf') }));
+      check(nb.rows === 3 && !nb.box, 'a strip of three rows draws no search box: ' + JSON.stringify(nb));
+      await Q.ctx.close();
+    }
+    /* the setting off: the boxes, the hidden rows and the style go at once, and the module stops */
+    {
+      const O = await open('pc-ray', { w: 390, h: 664 }), o = O.page;
+      await until(() => o.evaluate(() => !!document.querySelector('#dossier .abf-in')), 20000, 200);
+      await typeIn(o, '#dossier .ds-abbox .abf-in', q);
+      await feature({ 'phone.find': false });
+      const gone = await until(() => o.evaluate(() => !document.querySelector('.abf') && !document.querySelector('[data-abf-off]') && !document.getElementById('b68-abf-css') && window.B68AbilityFind.state().on === false), 20000, 200);
+      check(!!gone, 'phone.find off: the boxes, the hidden rows and the style are gone, and the module is stopped');
+      check((await rowsVis(o, '#dossier .ds-abbox .ds-ab')).length === book.length + 1, 'and every ability row shows');
+      await O.ctx.close();
+    }
+  }
 
   check(!errors.length, 'no page errors' + (errors.length ? ': ' + errors.slice(0, 5).join(' | ') : ''));
 } catch (e) {

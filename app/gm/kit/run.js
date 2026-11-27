@@ -122,9 +122,11 @@
     h += U.button({ label: '⋯', rank: 'quiet', cls: 'rv-btn rv-more krv-more', data: { rv: 'menu' }, attrs: { 'aria-haspopup': 'menu', 'aria-expanded': String(!!v.menuOpen), 'aria-label': 'More for the night' },
       title: 'More: Back to now, False dawn, Intel, the map on the iPad, End the night' });
     h += '</div>';
+    if (typeof v.host.glanceNow === 'function') { try { h += str(v.host.glanceNow(x, true)); } catch (e) { /* RK21 (gm.glance): the fiction's clock and who's where; '' while off */ } }
     if (m.started) h += v.timePop(x);
     if (v.alarmOpen) h += v.alarmPop(x);
     h += menu(x, v);
+    if (!m.started && typeof v.host.quickEng === 'function') h += v.host.quickEng(x);      /* RK22 (gm.glance): the engagement dice under the result row; '' while off */
     return h + '</div>';
   }
 

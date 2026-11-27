@@ -2569,8 +2569,14 @@
   }
   /* RK08.4 (room.key, room.tables): the room-state contract (gm/room-state.js), one per page session and the only writer of `roomstate`; null while the room-key bundle is not loaded */
   function rsInst() { var M = W.B68GmRoomState, me = S; if (!me || !M || M.stub || typeof M.create !== 'function') return null; if (!me.rs) me.rs = M.create({ on: function () { return S === me && (b09On('room.key') || b09On('room.tables')); }, doc: function () { return S === me ? me.doc : null; }, patch: function (p) { return S === me ? patch(p) : false; }, busy: function () { var st = me.saver ? me.saver.state() : null; return !!(st && st.pending && st.pending.roomstate); }, now: function () { return Date.now(); }, part: function () { var r = me.pack && me.pack.parts && me.pack.parts.rooms; return r ? str(r.version) : ''; }, toast: toast }); return me.rs; }
+  /* RK20 (gm.glance): the crew at a glance (gm/glance-crew.js), one per page session; null while gm.glance is off or its bundle is not in (the rail keeps its old Crew box) */
+  function glHtml() { var g = glInst(); return g ? g.html() : ''; }
+  function glSync() { var g = glInst(); if (g) g.sync(document); }
+  function glInst() { var M = W.B68GmGlanceCrew, me = S; if (!me || !M || M.stub || typeof M.create !== 'function' || !b09On('gm.glance')) return null; if (!me.gl) me.gl = M.create({ campaign: function () { return S === me ? camp : null; }, pcs: function () { return S === me ? dtPcs() : []; }, crews: function () { return W.B68Crews || null; }, need: function (n) { return W.B68Load.need(n); }, again: function () { if (S === me) renderRail(); } }); return me.gl; }
   /* RK09 (room.key): the room card's things and the zoom card (gm/room-zoom.js), one per page session; null while room.key is off or its bundle is not loaded (an open card closes) */
   function rkZoom() { var M = W.B68GmRoomZoom, me = S; if (!me || !M || M.stub || typeof M.create !== 'function') return null; if (!b09On('room.key')) { if (me.rz) me.rz.close(false); return null; } if (!me.rz) me.rz = M.create({ md: function (room) { var rn = S === me ? runRoomNotes() : null; return rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? str(rn.byRoom[room].md) : ''; }, roll: function () { var r = S === me ? S.locRoll : null; return isObj(r) && Array.isArray(r.rooms) ? { key: str(rollKey(r)), rooms: r.rooms.filter(isObj).map(function (x) { return str(x.name); }) } : null; }, doc: function () { return S === me ? me.doc : null; }, redraw: function () { if (S === me && S.rv) S.rv.rerender(); }, toast: toast, rs: function () { return S === me ? rsInst() : null; } }); return me.rz; }
+  /* RK14 (room.tables): a rolled site's room cards in the Run pane, and the same parts on a v2 night's room card (gm/room-rolled.js), one per page session; null while room.tables is off or its bundle is not loaded (turned off live, the instance goes: its card, its zoom card and its Run pane listener) */
+  function rrInst() { var M = W.B68GmRoomRolled, me = S; if (!me || !M || M.stub || typeof M.create !== 'function') return null; if (!b09On('room.tables')) { if (me.rr) { me.rr.destroy(); me.rr = null; } return null; } if (!me.rr) me.rr = M.create({ roll: function () { return S === me ? S.locRoll : null; }, rollKey: rollKey, T: function () { var b = S === me ? part('rooms') : null; return isObj(b) && isObj(b.T) ? b.T : null; }, md: function (room) { var rn = S === me ? runRoomNotes() : null; return rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? str(rn.byRoom[room].md) : ''; }, note: function (room) { return S === me ? rvHost().roomNote(room) : null; }, wrong: function (room) { var si = S === me ? siteInst() : null; return si ? si.wrong(room) : []; }, decorate: function (el) { if (S === me) rvHost().decorate(el); }, doc: function () { return S === me ? me.doc : null; }, rs: function () { return S === me ? rsInst() : null; }, redraw: function () { if (S !== me) return; if (S.rv && runV2()) S.rv.rerender(); else renderRun(); }, toast: toast, npc: function () { var b = S === me ? part('npc') : null; return isObj(b) && isObj(b.T) ? b.T : null; }, masked: function () { var rs = S === me ? runSite() : null; return !!(rs && isObj(rs.play.crowd) && rs.play.crowd.masked === true); }, kit: function () { return !!(W.B68Kit && typeof W.B68Kit.ready === 'function' && W.B68Kit.ready('desk') && W.B68Ui); }, zoom: function (h) { var Z = W.B68GmRoomZoom; return Z && !Z.stub && typeof Z.create === 'function' ? Z.create(h) : null; }, box: function () { return S === me ? $q('#gm-runv') : null; }, cast: function () { return S === me && me.npcsIn && isObj(me.npcs) ? me.npcs : null; }, file: function (id, d) { var db = S === me && S.api && S.api.db ? S.api.db() : null, col = null; try { col = db && db.collection('npcs'); } catch (e) { col = null; } return col ? Promise.resolve().then(function () { return col.doc(id).set(clone(d)); }) : Promise.reject(new Error('the cast is not available here')); }, gm: function () { return S === me ? gmApi() : null; }, tonight: function () { return S === me ? { onStage: stageNames() } : null; } }); return me.rr; }
   /* 4.5 / 4.7 / 5.3 the practical speaker, the ringing phone and the Trouble desk (gm/room-desk.js; switches room.practical, room.phone, between.trouble): one Menu line each while its switch is on */
   function rdInst() {
     if (!S || !W.B68GmRoomDesk || !W.B68Features) return null;
@@ -2729,8 +2735,15 @@
     if (W.B68Kit && S.status === 'ready') W.B68Kit.set('desk', !!(W.B68Features && W.B68Features.valueOf(S.doc, 'kit.desk')));      /* the kit and stage build (KS01.2): data-kit="desk" follows the setting, at once (ui/kit-flag.js) */
     if (S.status === 'ready' && W.B68Features) { var pOn = !!W.B68Features.valueOf(S.doc, 'blade.pitches'); if (W.B68Pitches) W.B68Pitches.set(gmApi(), pOn); else if (pOn && W.B68Load) W.B68Load.need('blade-pitches').then(function () { if (W.B68Pitches && S && S.status === 'ready') W.B68Pitches.set(gmApi(), !!W.B68Features.valueOf(S.doc, 'blade.pitches')); }, function () {}); }      /* blade.pitches (KS18): the blade-pitches bundle while it is on; B68Pitches (gm/kit/blade.js) adds the pitch fields to the tick, and takes them off when it turns off */
     if (S.status === 'ready' && W.B68Features && W.B68Load) P.rkWant(function (id) { return !!W.B68Features.valueOf(S.doc, id); }).forEach(function (n) { var me = S; if (!me.rkAsked) me.rkAsked = {}; if (!me.rkAsked[n]) { me.rkAsked[n] = true; W.B68Load.need(n).then(function () { if (n === 'room-key' && S === me && S.rv) S.rv.rerender(); }, function () { me.rkAsked[n] = false; }); } });      /* RK01 (night.flow, close.crew, room.key, room.tables, gm.glance): each bundle is fetched once, only while its setting is on; the stubs do nothing until their tickets fill them */
+    if (S.status === 'ready' && S.rv && !!S.glnOn !== !!glnInst()) { S.glnOn = !!glnInst(); S.rv.rerender(); }      /* RK21 (gm.glance): its bundle (with kit-ui first, routes.js DEPS) arrived, or the setting went off: the Run view's header draws again */
     if (S.status === 'ready' && S.rz && S.rv && !!S.rzOn !== b09On('room.key')) { S.rzOn = b09On('room.key'); S.rv.rerender(); }      /* RK09: room.key turned on or off (here or on another device) once its zoom card exists: the room cards draw again, and an open card closes */
+    if (S.status === 'ready' && W.B68Load && b09On('room.tables') && !S.rrWait) { var me1 = S; me1.rrWait = true; W.B68Load.need('room-tables').then(function () { if (S === me1) renderBar(); }, function () { me1.rrWait = false; }); }      /* RK14: the same request as RK01's line (fetched once), heard here, so the Run pane draws when the bundle is in */
+    if (S.status === 'ready' && !!S.rrOn !== !!rrInst()) { S.rrOn = !!rrInst(); if (S.rv && runV2()) S.rv.rerender(); else renderRun(); }      /* RK14 (room.tables): its bundle arrived, or the setting went on or off (here or on another device): the Run pane draws again */
     if (S.status === 'ready' && !S.ntAsked && W.B68Load && b09On('night.flow')) { var mn = S; mn.ntAsked = true; W.B68Load.need('night-flow').then(function () { if (S === mn) b09Paint(); }, function () { mn.ntAsked = false; }); }      /* RK03 (night.flow): the Roll draws its Tick control once the bundle is in (the same fetch as the line above: B68Load asks once) */
+    if (S.status === 'ready' && W.B68Load && !S.glAsked && b09On('gm.glance')) { var mg = S; mg.glAsked = true; W.B68Load.need('gm-glance').then(function () { if (S === mg) renderRail(); }, function () { mg.glAsked = false; }); }      /* RK20 (gm.glance): the rail draws the crew panel once the bundle is in (the same fetch as RK01's line above: B68Load asks once) */
+    if (S.status === 'ready' && !!S.glOn !== b09On('gm.glance')) { S.glOn = b09On('gm.glance'); if (!S.glOn) { S.gl = null; qrDown(); } renderRail(); }      /* RK20: gm.glance turned on or off (here or on another device): the rail draws again, the old Crew box back when it is off; RK36: the quick rules take down what they mounted */
+    if (S.status === 'ready' && !S.qrAsked && W.B68Load && b09On('gm.glance')) { var mq = S; mq.qrAsked = true; W.B68Load.need('gm-glance').then(function () { if (S === mq) b09Paint(); }, function () { mq.qrAsked = false; }); }      /* RK22 (gm.glance): the quick rules draw once the bundle is in (B68Load asks once) */
+    if (S.status === 'ready' && !!S.nfOn !== !!nfInst()) { S.nfOn = !!nfInst(); renderNpcs(); }      /* RK24 (gm.glance): its bundle arrived, or the setting went on or off: the Cast panel draws again, with the search box or without it */
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
@@ -3627,6 +3640,7 @@
     S.locRoll = roll; S.map = null; S.last = { text: 'Location: ' + entry.label };
     renderLocation(true);
     if (W.B68Map && W.B68Map.render) drawMap(true);
+    if (rrInst()) showPanel('run');      /* RK14.3 (room.tables): a new site goes straight to the score's site screen, its room cards drawn */
   }
   function renderLocation(fresh) {
     var box = $q('#gm-loc'), L = W.B68GmLocation, pk = part('location'); if (!box) return;
@@ -4296,8 +4310,10 @@
     if (L && (l.kind === 'npc' || (isObj(L) && L.kind === 'npc')) && S.rv && npcCardSrc([str(L.name)])) { S.rv.showNpc([str(L.name)], str(L.name)); return; }
     prepLink(href);
   }
+  /* RK14 (room.tables): a v2 night's room card asks roomThings for the room's things; with room.tables on it gets the rolled room's whole block (gm/room-rolled.js) instead, and RK09's as before while off */
+  function rrHost(h) { var was = h.roomThings; h.roomThings = function (room, o) { var rr = rrInst(), rb = rr ? rr.block(room, o) : null; return typeof rb === 'string' ? rb : was(room, o); }; return h; }
   function rvHost() {
-    return {
+    return rrHost({
       site: function () { var rs = runV2(); return rs ? { name: rs.name, play: rs.play } : null; },
       state: function () { var rs = runV2(); return rs ? ballDoc(rs.name) : {}; },
       set: function (change, quiet) { var rs = runV2(); if (!rs) return false;
@@ -4315,7 +4331,8 @@
       roomAt: function (svg, ev) { var k = knInst(); return k ? k.roomAt(svg, ev) : ''; },
       pinned: function () { return S && S.b19 && S.b19.flashback ? S.b19.flashback.pinned() : ''; }, threat: function () { return S && S.b19 && S.b19.threat ? S.b19.threat.view() : null; },
       intelGroups: function () { var k = knInst(); return k && k.active() ? k.view().groups.map(function (g) { return { id: g.id, label: g.label }; }) : []; },
-      costume: function () { var si = siteInst(); return si ? si.costume() : false; }, siteAct: function (a, el, view) { if (sceneAct(a, el)) return; var si = siteInst(); if (si) si.act(a, el, view); },
+      costume: function () { var si = siteInst(); return si ? si.costume() : false; }, siteAct: function (a, el, view) { if (sceneAct(a, el)) return; if (glnAct(a, el)) return; var si = siteInst(); if (si) si.act(a, el, view); },
+      glanceNow: function (x, kit) { var g = glnInst(); return g ? g.html(x, kit) : ''; },      /* RK21 (gm.glance): the fiction's clock and who's where, under the header; '' while off */
       clockNamed: function (name) { var l = tableClocks().filter(function (c) { return str(c.name).trim() === name; }); return l.length ? l[0] : null; },
       publish: runPublish, toast: toast, phoneCards: phoneCardsOn, setPhoneCards: setPhoneCards,
       /* server time: the iPad corrects to it, so the beat timer's endsAt is stamped on it (the GM api's Date-header skew; 0 when unknown) */
@@ -4331,12 +4348,19 @@
       decorate: function (el) { if (W.B68GmPrep && el) { W.B68GmPrep.decorate(el, {}); paDecorate(el); } },      /* PA: action chips in a room's note and an NPC card too */
       roomNote: function (room) { var rn = runRoomNotes(), e = rn && isObj(rn.byRoom) && isObj(rn.byRoom[room]) ? rn.byRoom[room] : null, si = siteInst(), md = e ? str(e.md) : ''; if (si && md) md = si.noteMd(md);      /* N3: the If it goes wrong line is the card's action line, not the note's */
         var rz = md ? rkZoom() : null; if (rz) md = rz.noteMd(md);      /* RK09 (room.key): the Things block is drawn as the card's things (roomThings), not twice */
+        if (md && !rz && rrInst() && W.B68GmRoomZoom) md = W.B68GmRoomZoom.noteMd(md);      /* RK14 (room.tables): the same, for room.tables on its own */
         return e && str(e.md).trim() ? npcCardHtml(md, 'rm-') : null; },
       roomThings: function (room, o) { var rz = rkZoom(); return rz ? rz.html(room, o) : ''; },      /* RK09 (room.key): the room's things, before its note; '' while off */
+      quickEng: function () { var q = qrMod(); return q && q.engPanel ? q.engPanel(qrHost()) : ''; },      /* RK22 (gm.glance): the engagement dice, beside the result row before the night starts; '' while off */
       /* a switch's value (map.countdown: the header's countdown pie) */
       feature: function (id) { return !!(S && W.B68Features && W.B68Features.valueOf(S.doc, id)); }
-    };
+    });
   }
+  /* RK21 (gm.glance): the fiction's clock and who's where (gm/glance-now.js), one per page session; null while gm.glance is off or its bundle is not loaded */
+  function glnInst() { var M = W.B68GmGlanceNow, me = S; if (!me || !M || M.stub || typeof M.create !== 'function' || !b09On('gm.glance')) return null; if (!me.gln) me.gln = M.create({ run: function () { return S === me && runV2() ? rvHost() : null; }, redraw: function () { if (S === me && S.rv) S.rv.rerender(); }, toast: toast }); return me.gln; }
+  /* RK23 (gm.glance): when it goes loud (gm/loud.js), one per page session; null while gm.glance is off or its bundle is not loaded (the alarm popover stays as it was) */
+  function loudInst() { var M = W.B68GmLoud, me = S; if (!me || !M || M.stub || typeof M.create !== 'function' || !b09On('gm.glance')) { if (me && me.loud) me.loud = null; return null; } if (!me.loud) me.loud = M.create({ prep: function () { return S === me ? part('prep') : null; }, clocks: tableClocks, canClock: function () { return !!(S === me && me.api && typeof me.api.addClock === 'function'); }, addClock: function (c) { return me.api.addClock(c); }, clockOps: function (ops) { return me.api && typeof me.api.clockOps === 'function' ? me.api.clockOps(ops) : Promise.reject(new Error('The table cannot change one clock here.')); }, undoToast: function (text, undo) { return S === me && me.cueGrammar ? me.cueGrammar.undoToast(text, undo) : null; }, toast: toast, redraw: function () { if (S === me && S.rv) S.rv.rerender(); else if (S === me) siteChanged(); }, fresh: function () { return W.fetch('/api/campaign', { credentials: 'same-origin', cache: 'no-store', headers: { Accept: 'application/json' } }).then(function (r) { return r.ok ? r.json() : null; }).then(function (j) { var d = isObj(j) ? (isObj(j.doc) ? j.doc : j) : null; return d && Array.isArray(d.clocks) ? d.clocks : null; }); } }); return me.loud; }
+  function glnAct(a, el) { var g = /^gln-/.test(str(a)) ? glnInst() : null; return g ? g.act(a, el) : false; }
   function rvInst() {
     var box = $q('#gm-runv'); if (!box || !W.B68GmRunView) return null;
     if (!S.rv || S.rvBox !== box) { if (S.rv) S.rv.detach(); S.rv = W.B68GmRunView.create(rvHost()); S.rv.attach(box); S.rvBox = box; S.rvSite = ''; }
@@ -4354,6 +4378,7 @@
       if (S.rv) { S.rv.reset(); S.rvSite = ''; }
       /* N3: no v2 night, but the site line keeps the alarm readout (stepped by hand) and the stage group, so neither is lost with Location's old box */
       var ln = siteLine();
+      var rr = rrInst(); if (rr && rr.draw(box, ln)) return;      /* RK14 (room.tables): a rolled site's room cards (gm/room-rolled.js), drawn by their own path: runSite() and the phones' mission are untouched */
       if (box.getAttribute('data-help') !== '1' || box.__siteLine !== ln) { box.innerHTML = ln + RUN_HELP; box.setAttribute('data-help', '1'); box.__siteLine = ln; }
       return;
     }
@@ -5207,8 +5232,8 @@
     tableClocks().forEach(function (c) { if (c.hidden && str(c.name).trim()) out.push(c.name); });
     return out;
   }
-  /* RK10 (room.key, gm/room-show.js): what Show on iPad needs of this page (the show contract, the hidden names, the spotlight's reveal); null while room.key is off */
-  function rkShowHost() { var me = S; if (!me || !b09On('room.key')) return null; return { page: me, show: function (k, p, o) { var c = shows(); return c && S === me ? c.show(k, p, o) : Promise.resolve(null); }, hidden: function () { return S === me ? hiddenSecretNames() : []; }, namesHit: namesHit, rooms: function () { if (S !== me || !me.locRoll) return []; var rs = runSite(), reveal = revealList(mapUi()).concat(rs ? cleanRooms(ballDoc(rs.name).open).map(function (n) { return 'room:' + n; }) : []); return tokenHidden(me.locRoll, reveal, []); }, npcs: function () { var c = S === me && isObj(me.npcs) ? me.npcs : {}; return Object.keys(c).filter(function (id) { return isObj(c[id]); }).map(function (id) { return { id: id, name: str(c[id].name), alias: str(c[id].alias), revealed: c[id].revealed === true }; }); }, reveal: function (id) { var ref = S === me ? npcRef(id) : null, d = isObj(me.npcs) ? me.npcs[id] : null; if (!ref) return Promise.reject(new Error('The cast is not available here.')); return Promise.resolve(ref.update({ revealed: true, firstSeen: (isObj(d) && d.firstSeen) || nowIso() })).then(function () { if (isObj(me.npcs) && isObj(me.npcs[id])) me.npcs[id].revealed = true; }); }, ask: function (m, yes) { var K = W.B68KitShell, q = K && K.on() ? K.ask({ body: m, confirm: yes || 'OK' }) : null, y = false; if (q) return Promise.resolve(q).then(function (v) { return !!v; }, function () { return false; }); asked(m, function () { y = true; }); return Promise.resolve(y); }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; }, clear: function () { return S === me ? clearOverlay() : Promise.resolve(null); }, toast: toast }; }
+  /* RK10 (room.key, gm/room-show.js): what Show on iPad needs of this page (the show contract, the hidden names, the spotlight's reveal); null while room.key and room.tables are both off (RK14 ruling: a rolled card's Show works with room.tables alone) */
+  function rkShowHost() { var me = S; if (!me || !(b09On('room.key') || b09On('room.tables'))) return null; return { page: me, show: function (k, p, o) { var c = shows(); return c && S === me ? c.show(k, p, o) : Promise.resolve(null); }, hidden: function () { return S === me ? hiddenSecretNames() : []; }, namesHit: namesHit, rooms: function () { if (S !== me || !me.locRoll) return []; var rs = runSite(), reveal = revealList(mapUi()).concat(rs ? cleanRooms(ballDoc(rs.name).open).map(function (n) { return 'room:' + n; }) : []); return tokenHidden(me.locRoll, reveal, []); }, npcs: function () { var c = S === me && isObj(me.npcs) ? me.npcs : {}; return Object.keys(c).filter(function (id) { return isObj(c[id]); }).map(function (id) { return { id: id, name: str(c[id].name), alias: str(c[id].alias), revealed: c[id].revealed === true }; }); }, reveal: function (id) { var ref = S === me ? npcRef(id) : null, d = isObj(me.npcs) ? me.npcs[id] : null; if (!ref) return Promise.reject(new Error('The cast is not available here.')); return Promise.resolve(ref.update({ revealed: true, firstSeen: (isObj(d) && d.firstSeen) || nowIso() })).then(function () { if (isObj(me.npcs) && isObj(me.npcs[id])) me.npcs[id].revealed = true; }); }, ask: function (m, yes) { var K = W.B68KitShell, q = K && K.on() ? K.ask({ body: m, confirm: yes || 'OK' }) : null, y = false; if (q) return Promise.resolve(q).then(function (v) { return !!v; }, function () { return false; }); asked(m, function () { y = true; }); return Promise.resolve(y); }, overlayId: function () { return isObj(AM.doc) && isObj(AM.doc.overlay) ? str(AM.doc.overlay.id) : ''; }, clear: function () { return S === me ? clearOverlay() : Promise.resolve(null); }, toast: toast }; }
   /* ---------- B09: the stamp (spine.stamp), the sizer (spine.sizer) and the strict cue grammar (ai.grammar) ----------
      The logic is in gm/stamp.js and gm/cue-grammar.js; this is the seam they are given. Every switch is read live from the state document, so with all three off
      nothing here draws, registers a cue word or writes. */
@@ -5315,6 +5340,7 @@
     var box = $q('#gm-stamp'); if (box) { var h = on ? R.stampHtml(v) : ''; if (box.__html !== h) { var kc = v && v.cost && R.costKeep ? R.costKeep(box) : null; box.innerHTML = h; box.__html = h; if (kc) kc(); } box.hidden = !on; if (v && v.cost && R.costBind) R.costBind(box, function () { return S && S.stamp; }); }     /* KS15: the cost field keeps its focus */
     if (S.nt || (flowOn() && W.B68GmNightTicks)) ntCtl().paint(box, flowOn(), v);      /* RK03 (night.flow): Tick a clock, under the stamp */
     rollMiniPaint(v); rollSizerPaint(v);
+    qrPaint();      /* RK22 (gm.glance): the quick rules under the Roll card; taken down while off */
   }
   function b09Marked(res) {
     var sit = res && res.meta ? res.meta.situation : '';
@@ -5566,6 +5592,7 @@
     if (me.b17) { try { me.b17.reset(); } catch (e) {} me.b17 = null; }
     if (me.site) { try { me.site.destroy(); } catch (e) {} me.site = null; }
     if (me.rz) { try { me.rz.destroy(); } catch (e) {} me.rz = null; }      /* RK09: an open zoom card goes with the page */
+    if (me.rr) { try { me.rr.destroy(); } catch (e) {} me.rr = null; }      /* RK14: so does a rolled room's */
   }
   function b17Frozen() { return !!(S && S.b17 && S.b17.holding()); }
   function b17Tint() { if (S && S.b17 && S.locRoll) S.b17.tint($q('#gm-map'), S.locRoll); }
@@ -5590,7 +5617,8 @@
       /* T5: Show on iPad / Take it down for the players' map, in the site's toolbar */
       mapLive: function () { return S === me && mapOnIpad(); }, mapShow: function () { return S === me ? siteMapUp(false) : Promise.resolve(false); }, mapDown: function () { if (S === me) blankIpad(); },
       lineShown: function () { var l = $q('#gm-runv .rv-siteline'); return !!(l && l.offsetParent !== null); },
-      thing: function (el) { var rz = S === me ? rkZoom() : null; if (rz) rz.act(el); }      /* RK09 (room.key): a room card's thing opens its zoom card */
+      thing: function (el) { var rz = S === me ? rkZoom() : null; if (rz) rz.act(el); },      /* RK09 (room.key): a room card's thing opens its zoom card */
+      loud: function () { return S === me ? loudInst() : null; }      /* RK23 (gm.glance): the alarm popover's beats and the prep note's When it goes loud (gm/loud.js); null while off */
     });
     return me.site;
   }
@@ -6671,6 +6699,7 @@
     keyturnSync();          /* a turned key (suite 1.8, switch spine.keyturn) */
     pcStatusSync();         /* the band's PC faces (suite 3.7, switch face.pcstatus) */
     if (who()) { var whoSig = whoPcSig(); if (whoSig !== S.whoPcSig) { S.whoPcSig = whoSig; S.who.paint(S.root); whoPolaroids(); } }      /* KS11/KS12.0 (night.who): only when who is filed changed, not every poll */
+    glSync();               /* RK20 (gm.glance): the crew panel in the rail repaints itself when a PC's Stress, harm, keys or xp changed (before the signature return below: those are not in it) */
     if (JSON.stringify(dtPcs()) === S.dtPcSig) return;
     runStale();
     if (S.mission) S.mission.changed();         /* a card carries its PC's name and owner */
@@ -6679,6 +6708,18 @@
     renderDowntime();
   }
 
+  /* RK22 (gm.glance, gm/quick-rules.js): the quick rules' module while the setting is on and the bundle is in, else null; its host is what it reads of this page */
+  function qrMod() { var Q = W.B68GmQuickRules; return Q && typeof Q.engPanel === 'function' && b09On('gm.glance') ? Q : null; }
+  function qrHost(pc) {
+    var me = S;
+    return { rules: W.B68Rules || null, Content: W.B68Content || null, aftermath: W.B68GmAftermath || null, pc: pc || null,
+      engage: function () { var r = S === me ? S.scRoll : null; return r && isObj(r.score) && isObj(r.score.engage) ? r.score.engage : null; },
+      crewHeat: function () { var c = isObj(camp) && isObj(camp.crew) ? camp.crew : {}; return Math.max(0, Math.min(9, Math.floor(+c.heat) || 0)); },
+      redraw: function () { if (S !== me) return; if (S.rv) { try { S.rv.rerender(); } catch (e) {} } if ($q('#gm-dt')) renderDowntime(); } };
+  }
+  function qrPaint() { var Q = W.B68GmQuickRules; if (!Q || typeof Q.mountRoll !== 'function') return; Q.mountRoll(qrMod() ? qrHost() : null); }
+  /* RK36: gm.glance went off on this live page: the quick rules' three panels (Roll card, Run header, Downtime Indulge) and their listeners go, whether or not the page redraws them */
+  function qrDown() { var Q = W.B68GmQuickRules; if (Q && typeof Q.teardown === 'function') Q.teardown(); }
   /* the activity's ONE row of buttons (a tap rolls the card at once), with what it needs above it; the button that made the card on
      screen stays marked while it is this PC's card for this activity */
   function dtRowHtml(dt, act, u, pc, roll) {
@@ -6693,6 +6734,7 @@
         dt.VICES.map(function (v) { return '<option value="' + esc(v) + '"' + (v === u.vice ? ' selected' : '') + '>' + esc(dtViceLabel(v)) + '</option>'; }).join('') + '</select></label>' +
         '<label class="gm-field gm-dt-pur" for="gm-dt-purveyor"><span class="gm-lab">Purveyor</span><input type="text" id="gm-dt-purveyor" data-dtf="purveyor" maxlength="200" autocomplete="off" value="' + esc(u.purveyor) + '"' +
         ' placeholder="' + (pc ? 'Name, place, district' : 'any: a stock host and place') + '" title="Filled from the sheet. A change here is for these cards only: the sheet keeps its own."></label></div>' +
+        (qrMod() ? qrMod().indulgePanel(qrHost(pc)) : '') +      /* RK22 (gm.glance): Indulge Vice, step by step, above Rolled at the table: its steps decide which button */
         row('Rolled at the table', btn('res', 'in', 'Indulged', 'gm-dtb-in', '', mine && str(on.res) !== 'over') + btn('res', 'over', 'Overindulged', 'gm-dtb-over', '', mine && str(on.res) === 'over'));
     }
     if (act === 'train') return row('Which xp track', dt.ATTRS.map(function (a) { return btn('attr', a, esc(a)); }).join(''));
@@ -6799,10 +6841,19 @@
     } catch (e) { S.npcUnsub = null; }
   }
   function npcList() { return Object.keys(S.npcs).map(function (id) { return { id: id, doc: S.npcs[id] }; }).sort(function (a, b) { return str(a.doc.name).toLowerCase() < str(b.doc.name).toLowerCase() ? -1 : 1; }); }
+  /* RK24 (gm.glance): the search box at the top of the Cast panel (gm/npc-find.js). No new key; Who is is Blade's own Ask seat (the Blade panel's question field) */
+  function nfInst() {
+    var me = S, M = W.B68GmNpcFind; if (!me || !M || M.stub || typeof M.create !== 'function' || !b09On('gm.glance')) return null;
+    if (!me.nf) me.nf = M.create({ npcs: function () { return S === me ? npcList() : []; }, redraw: function () { if (S === me) renderNpcs(); },
+      askWhy: function () { try { return W.matchMedia('(max-width: 599px)').matches ? 'Blade is not offered at a phone’s width.' : ''; } catch (e) { return ''; } },
+      canAsk: function () { return S === me && !!me.assist && typeof me.assist.canAsk === 'function' && me.assist.canAsk(); },
+      ask: function (q) { return S === me && me.assist && typeof me.assist.ask === 'function' ? me.assist.ask(q) : Promise.resolve(null); } });
+    return me.nf;
+  }
   function renderNpcs() {
     var box = $q('#gm-npc'); if (!box) return;
-    var list = npcList();
-    box.innerHTML = '<div id="gm-npcgen"></div><h3 class="gm-band">The cast</h3>' +
+    var list = npcList(), nfk = nfInst() ? nfInst().before(box) : null;
+    box.innerHTML ='<div id="gm-npcgen"></div><h3 class="gm-band">The cast</h3>' +
       (list.length ? '<ul class="gm-npcs">' + list.map(function (x) {
         var d = x.doc, rev = d.revealed === true, src = npcCardSrc([d.name].concat(d.alias || [])) || (S.npcCardOpen === x.id ? p2NotesSrc([d.name]) : ''), open = !!src && S.npcCardOpen === x.id;
         return '<li class="gm-npcrow" data-id="' + esc(x.id) + '"><div class="gm-thumb" data-fig="' + esc(x.id) + '" aria-hidden="true"></div><div class="gm-npcmeta"><b>' + esc(d.name || 'Unnamed') + '</b><small>' + esc([d.role, d.faction].filter(Boolean).join(' · ')) + '</small>' + (rev ? '' : '<span class="gm-badge">Hidden</span>') + '</div>' +
@@ -6810,6 +6861,7 @@
           (open ? '<li class="gm-npccardrow"><div class="pp-card gm-castcard pp-doc">' + npcCardHtml(src, 'nc-') + '</div></li>' : '');
       }).join('') + '</ul>' : '<p class="gm-empty">' + (S.api && S.api.db && S.api.db() ? 'No NPCs in the cast yet. Add them on the cast page.' : 'The cast is not available here.') + '</p>') +
       '<p><a class="hm-link" href="#cast">The cast page</a></p>';
+    if (nfInst()) nfInst().mount(box, nfk);      /* RK24 (gm.glance): the search box, first in the panel */
     var nc = box.querySelector('.gm-castcard'); if (nc && W.B68GmPrep) W.B68GmPrep.decorate(nc, {});
     renderNpcGen();
     scMaybeRedraw();
@@ -7799,7 +7851,7 @@
     var box = $q('#gm-rail'); if (!box) return;
     var d = isObj(camp) ? camp : {}, crew = isObj(d.crew) ? d.crew : {}, h = prepPinsHtml();
     function stat(k, v, max) { return '<div class="gm-stat"><dt>' + k + '</dt><dd>' + (v == null ? '—' : esc(v) + (max ? '<small>/' + max + '</small>' : '')) + '</dd></div>'; }
-    h += '<section class="gm-box"><h3 class="gm-band">Crew' + (crew.name ? ': ' + esc(crew.name) : '') + '</h3><dl class="gm-stats">' + stat('Heat', +crew.heat || 0, 9) + stat('Wanted', +crew.wanted || 0, 4) + stat('Rep', +crew.rep || 0, 12) + stat('Stacks', +crew.stacks || 0) + stat('Vault', +crew.vault || 0, 16) + '</dl>' +
+    h += glHtml() || '<section class="gm-box"><h3 class="gm-band">Crew' + (crew.name ? ': ' + esc(crew.name) : '') + '</h3><dl class="gm-stats">' + stat('Heat', +crew.heat || 0, 9) + stat('Wanted', +crew.wanted || 0, 4) + stat('Rep', +crew.rep || 0, 12) + stat('Stacks', +crew.stacks || 0) + stat('Vault', +crew.vault || 0, 16) + '</dl>' +
       '<p class="gm-dim">Session ' + esc(isObj(d.session) ? +d.session.number || 0 : 0) + ' · read-only here; change it on <a href="#t">the table</a>.</p></section>';
     var tc = Array.isArray(d.clocks) ? d.clocks : [];
     function none(title) { return '<section class="gm-box gm-box-empty"><h3 class="gm-band">' + title + ' <small>· none</small></h3></section>'; }
@@ -8082,6 +8134,7 @@
     if (ev.key === 'Enter' && tg && tg.id === 'gm-gs-q') { ev.preventDefault(); screenFindGo(); return; }
     if (ev.key === 'Enter' && tg && tg.id === 'gm-dt-d100') { ev.preventDefault(); dtD100(tg.value); return; }     /* the morning's d100 */
     if (ev.key === 'A' && ev.shiftKey && !typing(tg) && !ev.ctrlKey && !ev.metaKey && !ev.altKey && (!escTop() || escTop() === 'blade') && pitchGo()) { ev.preventDefault(); return; }      /* KS19: Shift+A is Pitch now while pitches are on (else it is A, as before) */
+    if (S.rr && b09On('room.tables') && S.rr.key(ev, { typing: typing(tg), top: escTop() })) return;      /* RK14 (room.tables): the same keys in a rolled room's card (before RK09's, which would take a digit there) */
     if (S.rz && b09On('room.key') && S.rz.key(ev, { typing: typing(tg), top: escTop() })) return;      /* RK09 (room.key): 1 to 9 and the arrows in a focused room card, or in its open zoom card */
     /* keys never fire behind an open thing (the Menu, the drawer, the Blade panel, a popover, a sheet): only its own. W shuts the drawer, A the Blade
        panel and ? the Shortcuts card when that is the top one; GO (Space, PageDown) still fires behind the Blade panel; everything else waits until it is closed (Esc) */
@@ -8455,6 +8508,7 @@
     _pushDisplay: function (d) { return pushDisplay(d); },
     _roomState: function () { return rsInst(); },     /* for checks (room-state.e2e.mjs, RK08.4): the room-state API, null while the room-key bundle is not loaded */
     _roomZoom: function () { return rkZoom(); },     /* for checks (room-key.e2e.mjs, RK09): the zoom card, null while room.key is off or its bundle is not loaded */
+    _roomRolled: function () { return rrInst(); },     /* for checks (room-tables.e2e.mjs, RK14): a rolled site's room cards, null while room.tables is off or its bundle is not loaded */
     _setPhoneCards: function (on) { return setPhoneCards(on === true); },     /* for checks: the Run menu's Phone cards toggle */
     _ballSet: function (change) { var rs = runSite(); return rs ? ballSet(rs.name, change) : false; },     /* for checks: what the Run view does through its host */
     /* "Claude suggests" (a later step calls this): a Show handout? item in the Rack. Returns false for an id the pack does not hold. */
@@ -8465,7 +8519,7 @@
     show: function (kind, payload, opts) { var c = shows(); return c && S ? c.show(kind, payload, opts) : Promise.resolve(null); },
     layer: function (path, value) { var c = shows(); return c && S ? c.layer(path, value) : Promise.resolve(null); },
     clearShow: function (opts) { var c = shows(); return c && S ? c.clear(opts) : Promise.resolve(null); },
-    roomShow: function () { return rkShowHost(); },     /* RK10 (room.key): Show on iPad's host for gm/room-show.js, null while room.key is off */
+    roomShow: function () { return rkShowHost(); },     /* RK10 (room.key): Show on iPad's host for gm/room-show.js, null while room.key and room.tables are both off */
     /* the players' mission (gm/mission-publish.js): null before the page is ready or without a v2 night's modules. onPublished(fn) -> off (fn({ ok, ended?, time, at, seq, error?, refused? })),
        status() -> { ok, time, at, seq, text } ("Players: HH:MM ✓"), last(), publishNow(), endNight() (asks first), landed(from, to, how) (an overlay only for 'next'),
        changed(), renderPlayersView(el, mission?) (the last published mission by default) */

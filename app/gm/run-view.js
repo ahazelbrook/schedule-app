@@ -465,9 +465,11 @@
       h += '<span class="rv-hsp" aria-hidden="true"></span><span class="rv-chip rv-players" data-ok="' + (players.ok ? 1 : 0) + '" title="' + esc(players.text) + '">' + esc(players.text) + "</span>";
       h += '<button type="button" class="rv-btn rv-more" data-rv="menu" aria-haspopup="menu" aria-expanded="' + menuOpen + '" aria-label="More for the night" title="More: Back to now, False dawn, Intel, End the night">⋯</button>';
       h += "</div>";
+      if (typeof host.glanceNow === "function") { try { h += str(host.glanceNow(x, false)); } catch (e) { /* RK21 (gm.glance): the fiction's clock and who's where; '' while off */ } }
       if (m.started) h += timePopHtml(x);
       if (alarmOpen) h += alarmPopHtml(x);
       h += menuHtml(x);
+      if (!m.started && typeof host.quickEng === "function") h += host.quickEng(x);      /* RK22 (gm.glance): the engagement dice under the result row; '' while off */
       return h + "</div>";
     }
     /* the night's squares (a tap looks at that beat: the players are not told) and the timer's +1, +5, Reset and length; drawn shut, so the controls are always there */

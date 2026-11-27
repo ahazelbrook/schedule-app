@@ -1,2 +1,127 @@
-/* sheet/page.css: the phone's Full sheet page (phone.glance). Registered as an empty stub by RK30 (the late registrar) of the room key build; RK32 fills it.
-   In the phone-glance bundle, fetched only while its setting is on. Rules go here, scoped to this build's own classes. */
+/* sheet/page.css: the phone's Full sheet (phone.glance), RK32 of the room key build. In the phone-glance bundle, fetched only while its setting is
+   on; not layered, no important flag. Every rule is scoped to #dossier and this file's own classes (sp-), or to the marks sheet/glance.js puts on
+   today's sheet (data-gl on #dossier, data-gl-off on its parts). Screen only: print is today's classic sheet.
+   The page itself stays white paper in Paper and in Night (it is the printed sheet); the marks are ballpoint blue in the pen face. Under 761 px
+   the page lives in glance.css's .gl-page (fixed, the whole phone). Over 760 px glance.js opens it as the main view: the rules at the end show
+   it there, hide today's sheet under it, keep the Now card as a strip at the foot and an open roll panel as a side panel. Nothing moves. */
+
+@media screen {
+  #dossier .sp { --sp-ink: #1f3a93; --sp-alarm: #b3261e; --sp-scrim: rgba(20, 17, 14, .45); position: relative; display: flex; flex-direction: column; height: 100%; min-height: 100%; background: var(--paper); color: var(--ink); font: 400 16px/1.35 var(--font-text); }
+
+  /* the thin top bar */
+  #dossier .sp-bar { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 52px; padding: 4px max(8px, env(safe-area-inset-right, 0px)) 4px max(8px, env(safe-area-inset-left, 0px)); border-bottom: 2px solid var(--rule); background: var(--paper); }
+  #dossier .sp-ttl { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 700 17px/1.2 var(--font-cond); }
+  #dossier .sp-zoom { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+  #dossier .sp-pct { min-width: 50px; text-align: center; font-size: 14px; }
+  #dossier .sp-mono { font-family: var(--font-mono); }
+  #dossier .sp-zb, #dossier .sp-tb { display: inline-grid; place-items: center; min-width: 44px; min-height: 44px; padding: 0 10px; border: 2px solid var(--rule); border-radius: 0; background: var(--card); color: var(--ink); font: 700 18px/1 var(--font-cond); cursor: pointer; }
+  #dossier .sp-tb { font-size: 16px; }
+  #dossier .sp-tb.sp-quiet { border-color: var(--sp-ink); color: var(--sp-ink); }
+  #dossier .sp-zb:disabled { opacity: .4; cursor: default; }
+  #dossier .sp-back { font-size: 26px; padding: 0 8px; }
+
+  /* a part of the page not drawn (the guard): said once, in words, under the bar */
+  #dossier .sp-warn { flex: 0 0 auto; padding: 6px 12px; border-left: 4px solid var(--sp-alarm); background: var(--inset, var(--card)); color: var(--ink); font: 700 15px/1.3 var(--font-text); }
+  #dossier .sp-warn[hidden] { display: none; }
+  /* the glance's Undo bar moves to the top while an editor or the roll strip is open over the page (page.js lift()) */
+  #dossier[data-gl="page"] > .gl.sp-lift > .gl-undo { top: calc(58px + env(safe-area-inset-top, 0px)); bottom: auto; }
+
+  /* the one-line tip (a phone only), and the page */
+  #dossier .sp-tip { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; padding: 4px 4px 4px 12px; background: var(--inset, var(--card)); color: var(--ink-soft); font-size: 14px; }
+  #dossier .sp-tip span { flex: 1 1 auto; }
+  #dossier .sp-view { position: relative; display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: auto; touch-action: pan-x pan-y; -webkit-user-select: none; user-select: none; overscroll-behavior: contain; padding-bottom: calc(var(--cp-stage-h, 0px) + var(--sp-foot, 0px)); }
+  #dossier .sp-box { position: relative; flex: 0 0 auto; width: calc(100% - 16px); margin: auto 8px; background: #fff; box-shadow: 0 1px 6px rgba(0, 0, 0, .25); }
+  #dossier .sp-wide .sp-box { margin-top: 8px; margin-bottom: 8px; }
+  #dossier .sp:not(.sp-ready) .sp-box { min-height: 200px; display: grid; place-items: center; }
+  #dossier .sp-wait { margin: 0; padding: 24px; color: #555; font-size: 16px; }
+  #dossier .sp-img { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; pointer-events: none; -webkit-user-drag: none; }
+  #dossier .sp-ov { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; }
+
+  /* the pen */
+  #dossier .sp-marks { pointer-events: none; }
+  #dossier .sp-pen { fill: var(--sp-ink); fill-opacity: .82; stroke: none; }
+  #dossier .sp-ink { fill: var(--sp-ink); font-family: "Courier Prime", "Courier New", monospace; font-weight: 700; }
+  #dossier .sp-line, #dossier .sp-ring { fill: none; stroke: var(--sp-ink); stroke-width: 1.1; }
+  #dossier .sp-unmapped rect { fill: #fff; fill-opacity: .85; stroke: var(--sp-alarm); stroke-width: .8; stroke-dasharray: 3 2; }
+  #dossier .sp-unmapped text { fill: var(--sp-alarm); font-family: Arial, sans-serif; font-weight: 700; }
+  #dossier .sp-hit { fill: transparent; cursor: pointer; outline: none; }
+  #dossier .sp-hit:hover { fill: rgba(31, 58, 147, .06); }
+  #dossier .sp-hit:focus-visible { fill: rgba(31, 58, 147, .08); stroke: var(--sp-ink); stroke-width: 1.4; }
+
+  /* an editor: a bottom sheet on a phone, a side panel over 700 px or held sideways */
+  #dossier .sp-scrim { position: fixed; inset: 0; z-index: 57; background: var(--sp-scrim); }
+  #dossier .sp-panel { position: fixed; left: 0; right: 0; bottom: var(--cp-stage-h, 0px); z-index: 58; display: flex; flex-direction: column; max-height: calc(82vh - var(--cp-stage-h, 0px)); background: var(--card); color: var(--ink); border-top: 3px solid var(--rule); box-shadow: 0 -8px 30px rgba(0, 0, 0, .25); outline: none; }
+  #dossier .sp-wide .sp-panel { left: auto; top: 54px; bottom: var(--sp-foot, 0px); width: min(400px, 100%); max-height: none; border-top: 0; border-left: 3px solid var(--rule); box-shadow: -8px 0 30px rgba(0, 0, 0, .2); }
+  #dossier .sp-ph { display: flex; align-items: flex-start; gap: 8px; padding: 10px 8px 6px 16px; border-bottom: 1px solid var(--rule); }
+  #dossier .sp-ph > div { flex: 1 1 auto; min-width: 0; }
+  #dossier .sp-ph h3 { margin: 0; font: 700 20px/1.2 var(--font-cond); }
+  #dossier .sp-sub { display: block; color: var(--ink-soft); font-size: 14px; }
+  #dossier .sp-x { min-width: 44px; min-height: 44px; border: 0; background: transparent; color: var(--ink); font: 400 28px/1 var(--font-text); cursor: pointer; }
+  #dossier .sp-pbody { flex: 1 1 auto; overflow-y: auto; padding: 8px 16px calc(12px + env(safe-area-inset-bottom, 0px)); }
+  #dossier .sp-pf { display: flex; gap: 8px; padding: 8px 16px calc(8px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--rule); }
+  #dossier .sp-note { margin: 4px 0 8px; padding: 8px 10px; border-left: 4px solid var(--sp-alarm); background: var(--inset, var(--paper)); font-weight: 700; }
+  #dossier .sp-lab { color: var(--ink-soft); font: 700 14px/1.2 var(--font-cond); letter-spacing: .04em; text-transform: uppercase; }
+  #dossier .sp-sec { margin: 12px 0 6px; }
+  #dossier .sp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
+  #dossier .sp-btn { min-height: 44px; padding: 6px 14px; border: 2px solid var(--rule); border-radius: 0; background: var(--paper); color: var(--ink); font: 600 16px/1.2 var(--font-cond); cursor: pointer; }
+  #dossier .sp-btn[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  #dossier .sp-btn.sp-go { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  #dossier .sp-pips { display: grid; grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)); gap: 4px; max-width: calc(var(--n, 4) * 48px); margin: 4px 0; padding-left: 4px; }
+  #dossier .sp-pip { min-width: 0; height: 44px; padding: 0; border: 2px solid var(--ink); border-radius: 0; background: var(--paper); transform: skewX(-10deg); cursor: pointer; }
+  #dossier .sp-pip.sp-on { background: var(--sp-ink); border-color: var(--sp-ink); }
+  #dossier .sp-n { min-width: 36px; font-size: 20px; text-align: center; }
+  #dossier .sp-over { color: var(--sp-alarm); }
+  #dossier .sp-f { display: flex; flex-direction: column; gap: 2px; margin: 8px 0; }
+  #dossier .sp-in { box-sizing: border-box; width: 100%; min-width: 0; min-height: 44px; padding: 6px 10px; border: 2px solid var(--rule); border-radius: 0; background: var(--paper); color: var(--ink); font: 400 17px/1.3 var(--font-text); }
+  #dossier .sp-ro { font-size: 17px; }
+  #dossier .sp-faint { color: var(--ink-soft); font-size: 15px; }
+  #dossier .sp-list { display: flex; flex-direction: column; gap: 4px; }
+  #dossier .sp-li { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 6px 12px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); text-align: left; font: 400 16px/1.3 var(--font-text); cursor: pointer; }
+  #dossier .sp-li b { font: 700 17px/1.2 var(--font-cond); }
+  #dossier .sp-li[aria-pressed="true"] { border-color: var(--sp-ink); }
+  #dossier .sp-key, #dossier .sp-ab, #dossier .sp-attr { padding: 6px 0 8px; border-bottom: 1px solid var(--rule); }
+  #dossier .sp-key b, #dossier .sp-ab b { display: block; font: 700 17px/1.2 var(--font-cond); }
+  #dossier .sp-ab span { display: block; font-size: 16px; }
+  #dossier .sp-ab.sp-not b { color: var(--ink-soft); }
+  #dossier .sp-keyw { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 8px; }
+  #dossier .sp-keyw > :first-child { grid-column: 1 / -1; }
+
+  /* the menu */
+  #dossier .sp-menu { position: fixed; right: 8px; top: 56px; z-index: 58; display: flex; flex-direction: column; min-width: 240px; max-width: calc(100vw - 16px); background: var(--card); border: 2px solid var(--rule); box-shadow: 0 8px 24px rgba(0, 0, 0, .25); }
+  #dossier .sp-menu[hidden] { display: none; }
+  #dossier .sp-menu .sp-mi { border: 0; border-bottom: 1px solid var(--rule); text-align: left; }
+}
+
+/* over 760 px there is no glance screen to go back to (glance.css draws it only on a phone): the menu keeps the classic sheet */
+@media screen and (min-width: 761px) {
+  #dossier .sp-back, #dossier .sp-mi[data-sp="back"] { display: none; }
+}
+
+@media screen and (prefers-reduced-motion: reduce) {
+  #dossier .sp-view { scroll-behavior: auto; }
+}
+
+/* Night: the paper page keeps its own ink; the panels follow the app's tokens */
+@media screen and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) #dossier .sp { --sp-scrim: rgba(0, 0, 0, .6); }
+  :root:not([data-theme="light"]) #dossier .sp-pip.sp-on, :root:not([data-theme="light"]) #dossier .sp-tb.sp-quiet { --sp-ink: #8fa3dd; }
+}
+:root[data-theme="dark"] #dossier .sp { --sp-scrim: rgba(0, 0, 0, .6); }
+:root[data-theme="dark"] #dossier .sp-pip.sp-on, :root[data-theme="dark"] #dossier .sp-tb.sp-quiet { --sp-ink: #8fa3dd; }
+
+/* over 760 px (a laptop, a tablet, a phone held sideways): the page is the main view over today's sheet (glance.css shows nothing at this width) */
+@media screen and (min-width: 761px) {
+  #dossier[data-gl="page"] > .gl { display: block; --gl-blue: #26418f; }
+  #dossier[data-gl="page"] > .gl > .gl-screen, #dossier[data-gl="page"] > .gl > .gl-backbar, #dossier[data-gl="page"] > .gl > .gl-layer { display: none; }
+  #dossier[data-gl="page"] .gl-page:not([hidden]) { display: block; position: fixed; inset: 0; z-index: 43; overflow: hidden; background: var(--paper); }
+  #dossier[data-gl="page"] [data-gl-off="1"]:not(.ds-now) { display: none; }
+  #dossier[data-gl="page"] [data-gl-off="panel"] { display: contents; }
+  #dossier[data-gl="page"] [data-gl-off="panel"] > :not(.ds-roll) { display: none; }
+  #dossier[data-gl="page"] [data-gl-off="panel"] .ds-roll { position: fixed; right: 0; top: 54px; bottom: var(--sp-foot, 0px); z-index: 55; width: min(420px, 100%); margin: 0; overflow-y: auto; background: var(--card); border-left: 3px solid var(--rule); box-shadow: -8px 0 30px rgba(0, 0, 0, .2); }
+  #dossier[data-gl="page"] .ds-now[data-gl-off] { position: fixed; left: 0; right: 0; bottom: 0; z-index: 44; max-height: 40vh; margin: 0; overflow-y: auto; border-top: 3px solid var(--rule); }
+  #dossier[data-gl="page"] .gl-undo { position: fixed; left: 50%; transform: translateX(-50%); width: min(520px, calc(100% - 24px)); bottom: 24px; z-index: 59; display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 4px 4px 4px 14px; background: var(--ink); color: var(--paper); box-shadow: 0 6px 20px rgba(0, 0, 0, .3); font: 600 17px/1.2 var(--font-cond); }
+  #dossier[data-gl="page"] .gl-undo[hidden] { display: none; }
+  #dossier[data-gl="page"] .gl-undo .gl-u-l { flex: 1 1 auto; }
+  #dossier[data-gl="page"] .gl-undo button { min-width: 44px; min-height: 44px; border: 0; background: transparent; color: var(--paper); font: 700 17px/1 var(--font-cond); cursor: pointer; }
+  #dossier[data-gl="page"] .gl-undo button[hidden] { display: none; }
+}

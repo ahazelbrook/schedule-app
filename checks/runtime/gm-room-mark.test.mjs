@@ -190,7 +190,8 @@ test('the page\'s wiring: the zoom host gives rs only on the live page, through 
   const zoomLine = P.split('\n').filter((l) => /function rkZoom\(\)/.test(l));
   assert.equal(zoomLine.length, 1); assert.ok(!/_roomState/.test(zoomLine[0]), 'not through the check hook');
   const lines = P.split('\n').filter((l) => /B68GmRoomState|B68GmRoomThings|roomstate|rsInst/.test(l));
-  assert.equal(lines.length, 4, 'the rsInst comment and line, the check hook, and the zoom card\'s state writes (RK11): ' + lines.length);
+  /* RK14 ruling (overseer, 26/11): a fifth line, rrInst's host (a rolled card's state writes, and RK15's Swap), as RK11's ruling added the fourth */
+  assert.equal(lines.length, 5, 'the rsInst comment and line, the check hook, the zoom card\'s state writes (RK11) and a rolled card\'s (RK14): ' + lines.length);
   assert.ok(lines.some((l) => /function rkZoom\(\)/.test(l)), 'the fourth is rkZoom\'s');
   const zoom = read('app/gm/room-zoom.js');
   assert.ok(/function rs\(\) \{ var r = call\('rs'\); return r && typeof r\.read === 'function' \? r : null; \}/.test(zoom), 'the card reads ctx.rs from the host');

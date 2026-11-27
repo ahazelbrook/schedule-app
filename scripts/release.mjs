@@ -29,7 +29,8 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const REPO = path.resolve(HERE, '..');
-export const GAME_DAYS = ['2026-11-07', '2026-11-21', '2026-11-27', '2026-12-18'];
+// 2026-11-27 was cancelled by Alex on 27/11/2026, so it is no longer a game day.
+export const GAME_DAYS = ['2026-11-07', '2026-11-21', '2026-12-18'];
 export const MEDIA = ['app/ambient/calling-cards.html', 'tools/ambient/cards', 'app/media/theme.mp3'];
 export const DB = 'blades68';
 export const STEP_IDS = ['guard', 'worktree', 'media', 'live', 'bookmark', 'handouts', 'check', 'migrate', 'deploy', 'parts', 'assist-file', 'preflight', 'note'];

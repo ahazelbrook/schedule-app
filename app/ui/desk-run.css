@@ -171,6 +171,8 @@
 :root[data-kit~="desk"] .krv-pcs .krv-lab { margin: 0 var(--ui-space-1) 0 0; }
 :root[data-kit~="desk"] .krv-ppl { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
 :root[data-kit~="desk"] .krv-p { padding-left: 0; padding-right: 0; }
+:root[data-kit~="desk"] .krv-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-space-2); margin: var(--ui-space-1) 0 0; }
+:root[data-kit~="desk"] .krv-acts .rr-asktext { flex: 1 0 100%; margin: 0; }
 :root[data-kit~="desk"] .krv-looks { display: flex; flex-wrap: wrap; gap: var(--ui-space-1); margin: 0 0 var(--ui-space-2) 44px; }
 :root[data-kit~="desk"] .krv-looks .ui-btn { min-height: 24px; padding: 0 var(--ui-space-2); font-size: var(--ui-type-label); }
 :root[data-kit~="desk"] .krv-npc { margin: 0; }

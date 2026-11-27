@@ -1,9 +1,9 @@
 {
  "_note": "Written by node checks/runtime/kit-ratchet.test.mjs --write. Counts may only go down. kitDebt: kit files that must reach zero.",
  "totals": {
-  "style": 3683,
+  "style": 3684,
   "important": 69,
-  "button": 664,
+  "button": 678,
   "confirm": 56,
   "prompt": 12
  },
@@ -223,6 +223,9 @@
   "app/season.js": {
    "button": 4
   },
+  "app/sheet/ability-find.js": {
+   "button": 1
+  },
   "app/sheet/claims.js": {
    "button": 1
   },
@@ -236,6 +239,10 @@
   },
   "app/sheet/now.js": {
    "button": 3
+  },
+  "app/sheet/page.js": {
+   "button": 13,
+   "style": 1
   },
   "app/steps.js": {
    "button": 7

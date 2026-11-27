@@ -3,6 +3,7 @@
 // goes in them. Names, NPC cards and prep arrive in the cached prefix, which the replay reads from the GM's vault.
 
 import { PITCH_SEAT, PITCH_WAKES } from './pitch.js';
+import { ROOM_SEAT } from './room-seat.js';
 
 const FLAGS = ['roll_talk', 'harm', 'npc_change', 'new_name', 'clue_mention', 'xp_trigger', 'scene_change', 'stall', 'downtime'];
 
@@ -484,6 +485,7 @@ Reply with JSON only.`,
     },
   },
 
+  room: ROOM_SEAT,     // RK16 (room.tables): the Blade tap that fits one rolled room, POST /api/gm/assist/room (functions/_lib/assist/room-seat.js); no prefix, 5¢ a tap at most
   pitch: PITCH_SEAT,   // Blade's pitches (blade.pitches, the kit and stage build): up to three at a time, in place of Stall and Meanwhile (functions/_lib/assist/pitch.js)
 };
 

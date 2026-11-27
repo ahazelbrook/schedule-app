@@ -3,7 +3,8 @@
 // Pull (app -> vault)
 //   - an NPC made in the app with no card: a new NPCs/<Name>.md in the vault NPC generator's Save format (replayed
 //     through app/gm/npc.js from the GM state's npcgen[id] and the local pack when both exist; otherwise the same
-//     skeleton with [TODO]s), tagged wiki/needs-review. The name is checked across the whole vault first: a note
+//     skeleton with [TODO]s). No wiki/needs-review tag (the vault's flag rules allow a flag only for a blocker or a
+//     decision): the pull's report says "filed n new NPC card(s): check them" instead. The name is checked across the whole vault first: a note
 //     outside NPCs/ with that name -> "<Name> (NPC).md". Faction dossier line appended as the generator's Save does.
 //   - reveals and GM notes -> the card's "## In play": a dated line ^b68-rev-<id>; each new version of the GM notes a
 //     collapsed callout ^b68-gmn-<id>-<hash>.
@@ -63,20 +64,6 @@ function figureSpec(vault, base) {
 
 // ---------- the card for a new NPC ----------
 const yv = (s) => { s = String(s == null ? '' : s); return !s || /^[A-Za-z0-9][\w '.,()&-]*$/.test(s) ? s : JSON.stringify(s); };
-const REVIEW = (d) => JSON.stringify('Made in the GM app and filed by the sync on ' + d + '. Check the look line and fill the [TODO]s from the table.');
-
-function withReview(text, today) {
-  const lines = toLines(text);
-  if (bare(lines[0]) !== '---') return text;
-  let end = 1; while (end < lines.length && bare(lines[end]) !== '---') end++;
-  const t = lines.findIndex((l, i) => i < end && bare(l) === 'tags:');
-  if (t >= 0) {
-    let j = t + 1; while (j < end && /^\s+- /.test(bare(lines[j]))) j++;
-    if (!lines.slice(t, j).some((l) => bare(l).trim() === '- wiki/needs-review')) { lines.splice(j, 0, '  - wiki/needs-review'); end++; }
-  }
-  if (!lines.slice(0, end).some((l) => /^review_note:/.test(bare(l)))) lines.splice(end, 0, 'review_note: ' + REVIEW(today));
-  return fromLines(lines);
-}
 function withPortrait(text, fname, vault) {
   if (!fs.existsSync(abs(vault, FIGURES + '/' + fname + '.svg'))) return text;
   const lines = toLines(text), h = lines.findIndex((l) => /^# /.test(bare(l)));
@@ -91,8 +78,7 @@ export function fallbackCard(doc, today) {
   return [
     '---', 'wiki: entity', 'created: ' + today, 'updated: ' + today, 'quality:', 'district:',
     doc.faction ? 'faction: ' + yv(doc.faction) : 'faction:', 'attitude:', 'played_by:', 'campaign: group',
-    'tags:', '  - wiki/games', '  - wiki/blades-in-the-dark', '  - wiki/npc', '  - wiki/needs-review',
-    'review_note: ' + REVIEW(today), '---', '',
+    'tags:', '  - wiki/games', '  - wiki/blades-in-the-dark', '  - wiki/npc', '---', '',
     '# ' + doc.name.trim() + (doc.alias ? ' "' + doc.alias.replace(/"/g, "'") + '"' : ''), '',
     '*' + (doc.role ? doc.role : '[TODO: profession, rank and faction]') + '*', '',
     '> [!quote] At a glance', '> ' + (look || '[TODO: the look line]'), '', '## Say it out loud', '',
@@ -191,7 +177,7 @@ export async function pullNpcs(ctx, injected) {
       try { r = replay(gen, npcgen[id], doc, today); } catch (e) { r = null; }
       if (r) from = 'from its generator roll';
       else from = 'from the app fields (' + (gen && gen.why ? gen.why : npcgen[id] ? 'the replay did not match' : 'no roll on record') + ')';
-      let text = r ? withReview(r.text, today) : fallbackCard(doc, today);
+      let text = r ? r.text : fallbackCard(doc, today);
       text = withPortrait(text, fname, vault);
       let ip;
       try { ip = inPlay(text, '\n', row, ctx, !!r); } catch (e) { if (e instanceof Refusal) { report.refuse(id, 'new card: ' + e.message, [], safe); continue; } throw e; }
@@ -248,7 +234,7 @@ function logCreated(ctx, created, today) {
     const e = n.eol, t = n.text;
     const lead = t.endsWith(e + e) ? '' : t.endsWith('\n') ? e : e + e;
     return t + lead + '## [' + today + '] sync | GM app: ' + created.length + ' new NPC card' + (created.length > 1 ? 's' : '') + e +
-      '- Created ' + created.map((n) => '[[' + n + ']]').join(', ') + ' from NPCs made in the GM app, tagged `wiki/needs-review`. Filed by `npm run gm:sync`.' + e;
+      '- Created ' + created.map((n) => '[[' + n + ']]').join(', ') + ' from NPCs made in the GM app: check them. Filed by `npm run gm:sync`.' + e;
   });
 }
 

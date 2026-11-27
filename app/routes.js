@@ -103,7 +103,7 @@
 
   var DEPS = { gm: ['figures'], display: ['figures'], lookbook: ['figures'],   /* bundles that need another one in first */
     'kit-desk': ['kit-ui'], 'kit-stage': ['kit-ui'], 'kit-phone': ['kit-ui'], 'night-who': ['kit-ui'], 'blade-pitches': ['kit-ui'], 'kit-lookbook': ['kit-ui'], 'map-scene': ['gm'],
-    'room-key': ['kit-ui'], 'room-tables': ['room-key'], 'night-flow': ['prep-actions'] };      /* RK01: the zoom card uses B68Ui on the old desk too; rolled rooms draw the zoom card, so room-key comes in first; prep-actions loads only on demand (gm-page.js), so night-flow brings it */
+    'room-key': ['kit-ui'], 'gm-glance': ['kit-ui'], 'room-tables': ['room-key'], 'night-flow': ['prep-actions'] };      /* RK01: the zoom card uses B68Ui on the old desk too; rolled rooms draw the zoom card, so room-key comes in first; prep-actions loads only on demand (gm-page.js), so night-flow brings it; RK21: gm-glance brings kit-ui too (the glance uses B68Ui on the old desk) */
   var loading = {};            /* file -> Promise (resolved: loaded; a failure is forgotten so it can be tried again) */
   var loaded = {};             /* file -> true once its load event fired (the core: index.html's own tags) */
   BUNDLES.core.forEach(function (f) { loaded[f] = true; loading[f] = Promise.resolve(f); });

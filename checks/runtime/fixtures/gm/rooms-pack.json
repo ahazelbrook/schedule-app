@@ -313,8 +313,8 @@
           "Starched jacket gone grey at the cuffs.",
           "Tray balanced on one flat palm."
         ],
-        "pose": "Weight on one foot, tray high",
-        "face": "Smiles at the room, never at you"
+        "pose": "hold",
+        "face": "pleased"
       },
       "cleaner": {
         "lines": [
@@ -326,8 +326,8 @@
           "Rubber boots and a bucket on one wrist.",
           "Sleeves pushed up, hands red from the water."
         ],
-        "pose": "Leaning on the mop handle",
-        "face": "Eyes on the floor, ears on you"
+        "pose": "carry",
+        "face": "tired"
       }
     },
     "aliases": {}
