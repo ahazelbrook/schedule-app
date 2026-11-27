@@ -2743,6 +2743,7 @@
     if (S.status === 'ready' && W.B68Load && !S.glAsked && b09On('gm.glance')) { var mg = S; mg.glAsked = true; W.B68Load.need('gm-glance').then(function () { if (S === mg) renderRail(); }, function () { mg.glAsked = false; }); }      /* RK20 (gm.glance): the rail draws the crew panel once the bundle is in (the same fetch as RK01's line above: B68Load asks once) */
     if (S.status === 'ready' && !!S.glOn !== b09On('gm.glance')) { S.glOn = b09On('gm.glance'); if (!S.glOn) S.gl = null; renderRail(); }      /* RK20: gm.glance turned on or off (here or on another device): the rail draws again, the old Crew box back when it is off */
     if (S.status === 'ready' && !S.qrAsked && W.B68Load && b09On('gm.glance')) { var mq = S; mq.qrAsked = true; W.B68Load.need('gm-glance').then(function () { if (S === mq) b09Paint(); }, function () { mq.qrAsked = false; }); }      /* RK22 (gm.glance): the quick rules draw once the bundle is in (B68Load asks once) */
+    if (S.status === 'ready' && !!S.nfOn !== !!nfInst()) { S.nfOn = !!nfInst(); renderNpcs(); }      /* RK24 (gm.glance): its bundle arrived, or the setting went on or off: the Cast panel draws again, with the search box or without it */
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
     if (s) { s.textContent = sn ? 'Session ' + sn : pn ? 'Session ' + pn + ' (prep)' : 'Session 0'; s.title = sn ? '' : pn ? 'The table’s session counter is 0: this is the open Prep note’s session' : ''; }
     renderBeat(); renderNow();
@@ -6838,10 +6839,19 @@
     } catch (e) { S.npcUnsub = null; }
   }
   function npcList() { return Object.keys(S.npcs).map(function (id) { return { id: id, doc: S.npcs[id] }; }).sort(function (a, b) { return str(a.doc.name).toLowerCase() < str(b.doc.name).toLowerCase() ? -1 : 1; }); }
+  /* RK24 (gm.glance): the search box at the top of the Cast panel (gm/npc-find.js). No new key; Who is is Blade's own Ask seat (the Blade panel's question field) */
+  function nfInst() {
+    var me = S, M = W.B68GmNpcFind; if (!me || !M || M.stub || typeof M.create !== 'function' || !b09On('gm.glance')) return null;
+    if (!me.nf) me.nf = M.create({ npcs: function () { return S === me ? npcList() : []; }, redraw: function () { if (S === me) renderNpcs(); },
+      askWhy: function () { try { return W.matchMedia('(max-width: 599px)').matches ? 'Blade is not offered at a phone’s width.' : ''; } catch (e) { return ''; } },
+      canAsk: function () { return S === me && !!me.assist && typeof me.assist.canAsk === 'function' && me.assist.canAsk(); },
+      ask: function (q) { return S === me && me.assist && typeof me.assist.ask === 'function' ? me.assist.ask(q) : Promise.resolve(null); } });
+    return me.nf;
+  }
   function renderNpcs() {
     var box = $q('#gm-npc'); if (!box) return;
-    var list = npcList();
-    box.innerHTML = '<div id="gm-npcgen"></div><h3 class="gm-band">The cast</h3>' +
+    var list = npcList(), nfk = nfInst() ? nfInst().before(box) : null;
+    box.innerHTML ='<div id="gm-npcgen"></div><h3 class="gm-band">The cast</h3>' +
       (list.length ? '<ul class="gm-npcs">' + list.map(function (x) {
         var d = x.doc, rev = d.revealed === true, src = npcCardSrc([d.name].concat(d.alias || [])) || (S.npcCardOpen === x.id ? p2NotesSrc([d.name]) : ''), open = !!src && S.npcCardOpen === x.id;
         return '<li class="gm-npcrow" data-id="' + esc(x.id) + '"><div class="gm-thumb" data-fig="' + esc(x.id) + '" aria-hidden="true"></div><div class="gm-npcmeta"><b>' + esc(d.name || 'Unnamed') + '</b><small>' + esc([d.role, d.faction].filter(Boolean).join(' · ')) + '</small>' + (rev ? '' : '<span class="gm-badge">Hidden</span>') + '</div>' +
@@ -6849,6 +6859,7 @@
           (open ? '<li class="gm-npccardrow"><div class="pp-card gm-castcard pp-doc">' + npcCardHtml(src, 'nc-') + '</div></li>' : '');
       }).join('') + '</ul>' : '<p class="gm-empty">' + (S.api && S.api.db && S.api.db() ? 'No NPCs in the cast yet. Add them on the cast page.' : 'The cast is not available here.') + '</p>') +
       '<p><a class="hm-link" href="#cast">The cast page</a></p>';
+    if (nfInst()) nfInst().mount(box, nfk);      /* RK24 (gm.glance): the search box, first in the panel */
     var nc = box.querySelector('.gm-castcard'); if (nc && W.B68GmPrep) W.B68GmPrep.decorate(nc, {});
     renderNpcGen();
     scMaybeRedraw();
