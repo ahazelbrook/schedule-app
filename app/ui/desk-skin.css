@@ -291,7 +291,8 @@
   #gm-page .rv-chip) { font-size: 12px; }
 :where(:root[data-kit~="desk"]) :where(#gm-page .rv-alarmtext,
   #gm-page .rv-peekbar) { font-size: 14px; }
-:where(:root[data-kit~="desk"]) :where(#gm-page .rv-lab) { font-size: 12px; }
+:where(:root[data-kit~="desk"]) :where(#gm-page .rv-lab,
+  #gm-page .rr-actlab) { font-size: 12px; }
 :where(:root[data-kit~="desk"]) :where(#gm-page .rv-arm) { font-size: 14px; }
 :where(:root[data-kit~="desk"]) :where(#gm-page .rv-floor,
   #gm-page .rv-cn,
@@ -815,6 +816,7 @@
   #gm-page .rv-count) { font-family: var(--font-cond); }
 :where(:root[data-kit~="desk"]) :where(#gm-page .rv-chip) { font-family: var(--ui-font-text); }
 :where(:root[data-kit~="desk"]) :where(#gm-page .rv-lab,
+  #gm-page .rr-actlab,
   #gm-page .rv-floor,
   #gm-page .rv-cn,
   #gm-page .rv-pc) { font-family: var(--font-cond); }
