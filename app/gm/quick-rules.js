@@ -318,7 +318,15 @@
   }
   function attach(doc) {
     doc = doc || (W && W.document); if (!doc || ST.listening) return !!ST.listening;
-    doc.addEventListener('click', onClick); doc.addEventListener('keyup', onKeyUp); ST.listening = true; return true;
+    doc.addEventListener('click', onClick); doc.addEventListener('keyup', onKeyUp); ST.listening = true; ST.doc = doc; return true;
+  }
+  /* gm.glance went off on a live page (RK36): take down every panel this module mounted (the Roll card's, the Run header's engagement dice, the Downtime card's Indulge), drop both
+     listeners, and forget the hosts and the state, so nothing of it is left until the setting comes back on. Only the three panels' own nodes go: the NPC search's box is its own. */
+  function teardown() {
+    var d = (ST && ST.doc) || (W && W.document);
+    if (d && typeof d.querySelectorAll === 'function') ['roll', 'eng', 'indulge'].forEach(function (k) { [].slice.call(d.querySelectorAll('[data-gl-panel="' + k + '"]')).forEach(function (n) { if (n.parentNode) n.parentNode.removeChild(n); }); });
+    if (ST && ST.listening && ST.doc && typeof ST.doc.removeEventListener === 'function') { ST.doc.removeEventListener('click', onClick); ST.doc.removeEventListener('keyup', onKeyUp); }
+    ST = fresh();
   }
   /* Space is the page's GO: with the focus on one of these buttons its release would also press the button (an action chip would toggle off), so it is not let through. Enter still presses it */
   function onKeyUp(ev) {
@@ -348,7 +356,7 @@
 
   return {
     ACTIONS: ACTIONS, signedDice: signedDice, plain: plain, lowestAttr: lowestAttr, engagement: engagement, indulge: indulge, heatSum: heatSum, pickEntry: pickEntry,
-    rollHtml: rollHtml, engHtml: engHtml, indulgeHtml: indulgeHtml, engPanel: engPanel, indulgePanel: indulgePanel, mountRoll: mountRoll, attach: attach, repaint: repaint,
+    rollHtml: rollHtml, engHtml: engHtml, indulgeHtml: indulgeHtml, engPanel: engPanel, indulgePanel: indulgePanel, mountRoll: mountRoll, attach: attach, repaint: repaint, teardown: teardown,
     fillLine: fillLine, reset: reset, onClick: onClick, onKeyUp: onKeyUp, state: function () { return ST; }
   };
 });

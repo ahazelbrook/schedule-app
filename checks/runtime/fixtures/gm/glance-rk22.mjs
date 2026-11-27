@@ -78,6 +78,33 @@ export async function rk22(c) {
     await p.context().close();
   }
 
+  /* ---- live off (RK36): gm.glance on, mounted in all three places, then off on the open page (no reload): nothing of the quick rules is left, and a plain Roll card is what it was ---- */
+  for (const desk of [false, true]) {
+    const tag = 'rk22 live off' + (desk ? ' (kit.desk on)' : '') + ': ';
+    const { p, ctx } = await open(1366, 768, 'light', 'light', false, desk);
+    const setGlance = async (on) => { await api('PATCH', '/gm/state', { features: { 'gm.glance': on } }); await api('PATCH', '/campaign', { features: { 'gm.glance': on } }); };
+    const leftovers = () => p.evaluate(() => { window.dispatchEvent(new Event('focus')); return document.querySelectorAll('.gl-indulge, .gl-rules, .gl-roll, .gl-eng, [data-gl-panel="roll"], [data-gl-panel="eng"], [data-gl-panel="indulge"]').length; });
+    const plainRoll = () => p.$eval('#gm-roll', (n) => n.outerHTML);
+    const plain0 = await plainRoll();
+    check(!plain0.includes('gl-'), tag + 'the plain Roll card carries nothing of the quick rules before it is turned on');
+    await setGlance(true);
+    check(!!(await until(() => p.evaluate(() => { window.dispatchEvent(new Event('focus')); return !!document.querySelector('[data-gl-panel="roll"] .gl-bar'); }), 30000, 1500)), tag + 'turned on live: the Roll card draws its panel');
+    check(await p.evaluate(() => window.B68GmQuickRules && window.B68GmQuickRules.state().listening === true), tag + 'its listeners are on');
+    await toRun(p); await p.waitForSelector('[data-gl-panel="eng"] .gl-bar', { timeout: 15000 });
+    await p.keyboard.press('d'); await p.waitForSelector('#gm-dt [data-gm="dt-who"]', { timeout: 20000 });
+    await p.click('#gm-dt [data-gm="dt-who"][data-id="pc-nell"]'); await p.click('#gm-dt [data-gm="dt-act"][data-v="indulge"]');
+    await p.waitForSelector('#gm-dt .gl-indulge .gl-bar', { timeout: 10000 });
+    const on = await panels(p);
+    check(on.includes('eng') && on.includes('indulge') && on.includes('roll') && (await leftovers()) >= 3, tag + 'all three are mounted (' + on + ')');
+    await setGlance(false);
+    check(!!(await until(async () => (await leftovers()) === 0, 30000, 1500)), tag + 'turned off on the open page, with no reload: no .gl-indulge, .gl-rules or panel element is left anywhere (' + (await leftovers()) + ')');
+    check(await p.evaluate(() => !document.querySelector('#gm-dt .gl-indulge') && !!document.querySelector('#gm-dt .gm-dt-row[aria-label="Rolled at the table"]')), tag + 'the Downtime box is the old one: its own Rolled at the table row is still there');
+    check(await p.evaluate(() => { const s = window.B68GmQuickRules.state(); return s.listening === false && Object.keys(s.hosts).length === 0; }), tag + 'the module let go of its listeners and hosts');
+    const plain1 = await plainRoll();
+    check(plain1 === plain0, tag + 'the plain Roll card is byte for byte what it was' + (plain1 === plain0 ? '' : '\n  was: ' + plain0.slice(0, 300) + '\n  now: ' + plain1.slice(0, 300)));
+    await ctx.close();
+  }
+
   /* ---- on, both desks ---- */
   for (const desk of [false, true]) {
     const tag = 'rk22 ' + (desk ? 'kit.desk on' : 'kit.desk off') + ': ';

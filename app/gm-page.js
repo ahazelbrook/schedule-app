@@ -2741,7 +2741,7 @@
     if (S.status === 'ready' && !!S.rrOn !== !!rrInst()) { S.rrOn = !!rrInst(); if (S.rv && runV2()) S.rv.rerender(); else renderRun(); }      /* RK14 (room.tables): its bundle arrived, or the setting went on or off (here or on another device): the Run pane draws again */
     if (S.status === 'ready' && !S.ntAsked && W.B68Load && b09On('night.flow')) { var mn = S; mn.ntAsked = true; W.B68Load.need('night-flow').then(function () { if (S === mn) b09Paint(); }, function () { mn.ntAsked = false; }); }      /* RK03 (night.flow): the Roll draws its Tick control once the bundle is in (the same fetch as the line above: B68Load asks once) */
     if (S.status === 'ready' && W.B68Load && !S.glAsked && b09On('gm.glance')) { var mg = S; mg.glAsked = true; W.B68Load.need('gm-glance').then(function () { if (S === mg) renderRail(); }, function () { mg.glAsked = false; }); }      /* RK20 (gm.glance): the rail draws the crew panel once the bundle is in (the same fetch as RK01's line above: B68Load asks once) */
-    if (S.status === 'ready' && !!S.glOn !== b09On('gm.glance')) { S.glOn = b09On('gm.glance'); if (!S.glOn) S.gl = null; renderRail(); }      /* RK20: gm.glance turned on or off (here or on another device): the rail draws again, the old Crew box back when it is off */
+    if (S.status === 'ready' && !!S.glOn !== b09On('gm.glance')) { S.glOn = b09On('gm.glance'); if (!S.glOn) { S.gl = null; qrDown(); } renderRail(); }      /* RK20: gm.glance turned on or off (here or on another device): the rail draws again, the old Crew box back when it is off; RK36: the quick rules take down what they mounted */
     if (S.status === 'ready' && !S.qrAsked && W.B68Load && b09On('gm.glance')) { var mq = S; mq.qrAsked = true; W.B68Load.need('gm-glance').then(function () { if (S === mq) b09Paint(); }, function () { mq.qrAsked = false; }); }      /* RK22 (gm.glance): the quick rules draw once the bundle is in (B68Load asks once) */
     if (S.status === 'ready' && !!S.nfOn !== !!nfInst()) { S.nfOn = !!nfInst(); renderNpcs(); }      /* RK24 (gm.glance): its bundle arrived, or the setting went on or off: the Cast panel draws again, with the search box or without it */
     var s = $q('#gm-bar-sess'), sn = isObj(camp) && isObj(camp.session) ? +camp.session.number || 0 : 0, pn = sn ? '' : prepNoteSession();
@@ -6718,6 +6718,8 @@
       redraw: function () { if (S !== me) return; if (S.rv) { try { S.rv.rerender(); } catch (e) {} } if ($q('#gm-dt')) renderDowntime(); } };
   }
   function qrPaint() { var Q = W.B68GmQuickRules; if (!Q || typeof Q.mountRoll !== 'function') return; Q.mountRoll(qrMod() ? qrHost() : null); }
+  /* RK36: gm.glance went off on this live page: the quick rules' three panels (Roll card, Run header, Downtime Indulge) and their listeners go, whether or not the page redraws them */
+  function qrDown() { var Q = W.B68GmQuickRules; if (Q && typeof Q.teardown === 'function') Q.teardown(); }
   /* the activity's ONE row of buttons (a tap rolls the card at once), with what it needs above it; the button that made the card on
      screen stays marked while it is this PC's card for this activity */
   function dtRowHtml(dt, act, u, pc, roll) {
