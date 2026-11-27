@@ -351,5 +351,31 @@ await test('mountRoll and attach: a null host takes the panel down; with no DOM 
   assert.equal(stopped, 1, 'Space released on one of these buttons does not press it (it is the page’s GO); Enter does, and Space elsewhere is untouched');
 });
 
+await test('teardown (RK36): gm.glance off on a live page takes down the three panels (Roll, Run header, Downtime Indulge), both listeners and the state; the NPC search box is left alone', () => {
+  Q.reset();
+  /* a stand-in document that holds one node per panel name, and the listeners that were added to it */
+  const added = [], removed = [], nodes = [];
+  const parent = { removeChild(c) { removed.push(c.kind); nodes.splice(nodes.indexOf(c), 1); } };
+  ['roll', 'eng', 'indulge', 'find'].forEach((kind) => nodes.push({ kind, parentNode: parent }));
+  const doc = { activeElement: null, getElementById: () => null,
+    querySelectorAll(sel) { const m = /data-gl-panel="(\w+)"/.exec(sel); return m ? nodes.filter((n) => n.kind === m[1]) : []; },
+    addEventListener(t, f) { added.push([t, f]); },
+    removeEventListener(t, f) { const i = added.findIndex((a) => a[0] === t && a[1] === f); if (i >= 0) added.splice(i, 1); } };
+  assert.equal(Q.attach(doc), true);
+  assert.deepEqual(added.map((a) => a[0]), ['click', 'keyup'], 'attached');
+  Q.engPanel(host()); Q.indulgePanel(host({ pc: { id: 'p1', name: 'Nell Arbuthnot' } }));
+  Q.state().act = 'Hunt'; Q.state().ind.p1 = { dice: 3, die: 2, stress: 1 };
+  assert.ok(Q.state().listening && Object.keys(Q.state().hosts).length === 2, 'it has mounted: a listener and two hosts');
+  Q.teardown();
+  assert.deepEqual(nodes.map((n) => n.kind), ['find'], 'every roll, eng and indulge node is gone; the NPC search box (data-gl-panel="find") stays');
+  assert.deepEqual(removed.slice().sort(), ['eng', 'indulge', 'roll'], 'each was taken down once');
+  assert.deepEqual(added, [], 'both listeners are dropped (the very functions that were added)');
+  const s = Q.state(); assert.equal(s.listening, false); assert.deepEqual(s.hosts, {}); assert.equal(s.act, ''); assert.deepEqual(s.ind, {});
+  Q.teardown(); assert.deepEqual(added, [], 'a second teardown is harmless');
+  assert.equal(Q.attach(doc), true); assert.equal(added.length, 2, 'it can listen again when the setting comes back on');
+  Q.teardown(); assert.equal(added.length, 0);
+  assert.doesNotThrow(() => Q.teardown(), 'with no document at all it does nothing');
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
