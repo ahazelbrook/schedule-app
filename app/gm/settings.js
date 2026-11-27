@@ -100,7 +100,7 @@
     { key: 'map.shade', label: 'Furniture depth', what: 'The furniture on every map: flat as before, or solid (a little depth and a short shadow). A map too large for the iPad goes flat.',
       options: [{ v: false, label: 'Flat' }, { v: true, label: 'Solid' }],
       said: { 'false': 'Furniture depth: flat.', 'true': 'Furniture depth: solid.' } },
-    /* RK01b (25/11): built: false hides a row from the Settings screen until its bundle is built; the setting stays registered and reads off. Flip a row back on by deleting its `built: false`. room.tables stays hidden until the rooms part is pushed and Alex has skimmed the room tables; the glance and phone-search rows are built and now show. */
+    /* RK01b (25/11): built: false hides a row from the Settings screen until its bundle is built; the setting stays registered and reads off. Flip a row back on by deleting its `built: false`. All rows are now built and shown (room.tables too, since the rooms part is pushed). */
     /* the room key build (RK01, 22/11): the seven rows, put LAST so that no row of today changes place (kit-off) */
     { key: 'stamp.brief', label: 'Stamp banners', what: 'The roll’s stamp on the iPad: it stays until Take it down, or it leaves after 10 seconds (the roll panel keeps it until the roll resolves).',
       options: [{ v: false, label: 'Stays' }, { v: true, label: 'Leaves after 10 s' }],
@@ -114,7 +114,7 @@
     { key: 'room.key', label: 'Things in rooms', what: 'A room note’s Things on its card, a zoom card on a click, and Show on iPad for one line.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'Things in rooms: off.', 'true': 'Things in rooms: on.' } },
-    { key: 'room.tables', label: 'Rolled rooms', built: false, what: 'A rolled site’s rooms get a read-aloud, things and people from the room tables, with Swap, Roll another, Keep and the Blade tap.',
+    { key: 'room.tables', label: 'Rolled rooms', what: 'A rolled site’s rooms get a read-aloud, things and people from the room tables, with Swap, Roll another, Keep and the Blade tap.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'Rolled rooms: off.', 'true': 'Rolled rooms: on.' } },
     { key: 'gm.glance', label: 'The glance', what: 'The crew at a glance, the fiction’s clock and who’s where, quick rules, when it goes loud, and any NPC by name.',
@@ -131,7 +131,7 @@
     { key: 'room.intro', label: 'Room openings', what: 'When you open a room or a band on the live map, the iPad plays a title card for the room, like an NPC introduction.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'Room openings: off. The iPad follows within a few seconds.', 'true': 'Room openings: on. The iPad follows within a few seconds.' } },
-    { key: 'phone.glance', label: 'The glance sheet', what: 'Phones open on one screen with stress, harm, the actions and the abilities you own. Full sheet opens today’s classic sheet for now.',
+    { key: 'phone.glance', label: 'The glance sheet', what: 'Phones open on one screen with stress, harm, the actions and the abilities you own. Full sheet opens the official playbook page, filled in, where one is published, and otherwise today’s classic sheet.',
       options: [{ v: false, label: 'Off' }, { v: true, label: 'On' }],
       said: { 'false': 'The glance sheet: off. Phones follow within a few seconds.', 'true': 'The glance sheet: on. Phones follow within a few seconds.' } }
   ];
